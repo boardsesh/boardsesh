@@ -697,6 +697,50 @@ describe('cues', () => {
     expect(playedCues()).toEqual(['tick:3', 'tick:2', 'tick:1', 'reached']);
   });
 
+  // One terminal cue per rest end: the `reached` cue keeps the advance's 5 s
+  // grace, so a JS stall that still lets the advance move the wall never leaves
+  // a dead end or a rest with auto-advance off silent.
+  it.each([
+    { where: 'with the move', wallMoves: true, terminalCue: 'advance' },
+    { where: 'at a dead end', wallMoves: false, terminalCue: 'reached' },
+  ])('plays the terminal cue $where when the rest end lands 1.5 s late', ({ wallMoves, terminalCue }) => {
+    canNext = wallMoves;
+    armWithTick();
+    render(<RestTimerAutoAdvanceScheduler />);
+
+    advance(56_000);
+    advanceInSteps(3_999);
+    expect(playedCues()).toEqual(['tick:3', 'tick:2', 'tick:1']);
+
+    // The JS thread stalls across the rest's end and the fire lands 1.5 s late.
+    advance(1_501);
+    expect(nextClimb).toHaveBeenCalledTimes(wallMoves ? 1 : 0);
+    expect(getRestTimerState().queueEnded).toBe(!wallMoves);
+    expect(playedCues()).toEqual(['tick:3', 'tick:2', 'tick:1', terminalCue]);
+  });
+
+  it('plays the reached cue a stall held up 1 s with auto-advance off', () => {
+    settings = { ...settings, restTimerAutoAdvance: false };
+    armWithTick();
+    render(<RestTimerAutoAdvanceScheduler />);
+
+    advance(56_000);
+    advanceInSteps(3_999);
+    advance(1_000);
+    expect(playedCues()).toEqual(['tick:3', 'tick:2', 'tick:1', 'reached']);
+  });
+
+  it('plays no reached cue for a rest end past the advance grace', () => {
+    settings = { ...settings, restTimerAutoAdvance: false };
+    armWithTick();
+    render(<RestTimerAutoAdvanceScheduler />);
+
+    advance(56_000);
+    advanceInSteps(3_999);
+    advance(5_002);
+    expect(playedCues()).toEqual(['tick:3', 'tick:2', 'tick:1']);
+  });
+
   it('plays one reached cue at a dead end on the minute, and no beats after it', () => {
     canNext = false;
     settings = { ...settings, restTimerMode: 'onTheMinute', restTimerTargetSeconds: 20 };

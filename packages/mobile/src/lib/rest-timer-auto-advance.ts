@@ -182,14 +182,27 @@ export function getRestTimerCountdownCueTimes(targetAtMs: number, leadSeconds: n
 }
 
 /**
- * A cue that lands later than this after its instant says nothing. JS timers are
- * frozen in the background and flush on resume, and "2" buzzing a minute after
- * the climber saw 0:02 is noise, not a countdown.
+ * A countdown cue (a tick or the warning) that lands later than this after its
+ * instant says nothing. JS timers are frozen in the background and flush on
+ * resume, and "2" buzzing a minute after the climber saw 0:02 is noise, not a
+ * countdown.
  */
 export const REST_TIMER_CUE_LATE_MS = 750;
 
 export function isRestTimerCueLate(cueAtMs: number, nowMs: number): boolean {
   return nowMs - cueAtMs > REST_TIMER_CUE_LATE_MS;
+}
+
+/**
+ * Whether the rest's end is too far past for its `reached` cue. The terminal cue
+ * keeps the advance's tolerance ({@link AUTO_ADVANCE_OVERDUE_GRACE_MS}), not the
+ * countdown's: a rest end up to that late still moves the wall with `advance`,
+ * so a dead end that deadline finds, or a `reached` timeout a JS stall held up,
+ * still says `reached`. Past it the rest gets neither, so every rest end has one
+ * terminal cue or none.
+ */
+export function isRestTimerReachedCueLate(reachedAtMs: number, nowMs: number): boolean {
+  return isAutoAdvanceDeadlineStale(reachedAtMs, nowMs);
 }
 
 /**
@@ -231,9 +244,9 @@ type ReachedInput = {
  * left to cue.
  *
  * `afterTick` has one such instant per anchor. `onTheMinute` has one per beat, so
- * the next beat comes round once this one has played. An instant that went less
- * than {@link REST_TIMER_CUE_LATE_MS} ago without a cue is returned, so a dead end
- * found on the deadline itself still gets its cue.
+ * the next beat comes round once this one has played. An instant that went
+ * without a cue is returned until {@link isRestTimerReachedCueLate}, so a dead end
+ * found on the deadline, or a second after it, still gets its cue.
  */
 export function getRestTimerReachedAtMs({
   mode,
@@ -247,12 +260,12 @@ export function getRestTimerReachedAtMs({
 
   if (mode === 'afterTick') {
     const reachedAtMs = anchorMs + targetSeconds * 1000;
-    return isHandled(reachedAtMs) || isRestTimerCueLate(reachedAtMs, nowMs) ? null : reachedAtMs;
+    return isHandled(reachedAtMs) || isRestTimerReachedCueLate(reachedAtMs, nowMs) ? null : reachedAtMs;
   }
 
   const intervalMs = targetSeconds * 1000;
   const beatsElapsed = Math.floor((nowMs - anchorMs) / intervalMs);
   const lastBeatMs = anchorMs + beatsElapsed * intervalMs;
-  if (beatsElapsed >= 1 && !isHandled(lastBeatMs) && !isRestTimerCueLate(lastBeatMs, nowMs)) return lastBeatMs;
+  if (beatsElapsed >= 1 && !isHandled(lastBeatMs) && !isRestTimerReachedCueLate(lastBeatMs, nowMs)) return lastBeatMs;
   return getAutoAdvanceDeadlineMs({ mode, anchorMs, targetSeconds, nowMs, lastFiredDeadlineMs: handledThroughMs });
 }

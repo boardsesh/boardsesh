@@ -3,6 +3,7 @@
 // nothing moving the wall.
 import { describe, expect, it } from 'vitest';
 import {
+  AUTO_ADVANCE_OVERDUE_GRACE_MS,
   REST_TIMER_CUE_LATE_MS,
   getMsUntilNextRestTimerSecond,
   getRestTimerCountdownCueTimes,
@@ -10,6 +11,7 @@ import {
   getRestTimerReachedAtMs,
   isRestTimerCueLate,
   isRestTimerFinalCountdown,
+  isRestTimerReachedCueLate,
 } from '../rest-timer-auto-advance';
 
 const T0 = Date.parse('2026-09-11T10:00:00.000Z');
@@ -67,6 +69,14 @@ describe('isRestTimerCueLate', () => {
   });
 });
 
+describe('isRestTimerReachedCueLate', () => {
+  it('gives the rest end the advance grace, not the countdown cutoff', () => {
+    expect(isRestTimerReachedCueLate(T0, T0 + REST_TIMER_CUE_LATE_MS + 1)).toBe(false);
+    expect(isRestTimerReachedCueLate(T0, T0 + AUTO_ADVANCE_OVERDUE_GRACE_MS)).toBe(false);
+    expect(isRestTimerReachedCueLate(T0, T0 + AUTO_ADVANCE_OVERDUE_GRACE_MS + 1)).toBe(true);
+  });
+});
+
 describe('isRestTimerFinalCountdown', () => {
   it('covers the lead through 0:00, not the seconds before it or the overrun after', () => {
     expect(isRestTimerFinalCountdown(4, 3)).toBe(false);
@@ -111,11 +121,16 @@ describe('getRestTimerReachedAtMs', () => {
 
   it('still names a rest that ended a moment ago without a cue, so a dead end gets one', () => {
     expect(getRestTimerReachedAtMs({ ...afterTick, nowMs: T0 + 60_000 })).toBe(T0 + 60_000);
-    expect(getRestTimerReachedAtMs({ ...afterTick, nowMs: T0 + 60_000 + REST_TIMER_CUE_LATE_MS })).toBe(T0 + 60_000);
+    expect(getRestTimerReachedAtMs({ ...afterTick, nowMs: T0 + 61_500 })).toBe(T0 + 60_000);
+    expect(getRestTimerReachedAtMs({ ...afterTick, nowMs: T0 + 60_000 + AUTO_ADVANCE_OVERDUE_GRACE_MS })).toBe(
+      T0 + 60_000,
+    );
   });
 
-  it('lets a rest that ended long ago go silent', () => {
-    expect(getRestTimerReachedAtMs({ ...afterTick, nowMs: T0 + 61_000 })).toBeNull();
+  it('lets a rest that ended past the advance grace go silent', () => {
+    expect(
+      getRestTimerReachedAtMs({ ...afterTick, nowMs: T0 + 60_000 + AUTO_ADVANCE_OVERDUE_GRACE_MS + 1 }),
+    ).toBeNull();
   });
 
   it('never names an instant twice', () => {
@@ -140,6 +155,8 @@ describe('getRestTimerReachedAtMs', () => {
 
   it('names a beat that just went without a cue, and skips one an advance already fired on', () => {
     expect(getRestTimerReachedAtMs({ ...onTheMinute, nowMs: T0 + 60_200 })).toBe(T0 + 60_000);
+    expect(getRestTimerReachedAtMs({ ...onTheMinute, nowMs: T0 + 61_500 })).toBe(T0 + 60_000);
+    expect(getRestTimerReachedAtMs({ ...onTheMinute, nowMs: T0 + 66_000 })).toBe(T0 + 120_000);
     expect(getRestTimerReachedAtMs({ ...onTheMinute, nowMs: T0 + 60_200, handledThroughMs: T0 + 60_000 })).toBe(
       T0 + 120_000,
     );

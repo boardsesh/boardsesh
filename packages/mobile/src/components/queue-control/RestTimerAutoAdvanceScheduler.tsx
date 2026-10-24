@@ -24,7 +24,7 @@ import { useEffectiveRestPacing } from '../../hooks/use-effective-rest-pacing';
 import { useSessionTimerDriver } from '../../hooks/use-session-timer-driver';
 import { useRestTimerState } from '../../hooks/use-rest-timer';
 import { nowMs } from '../../lib/clock';
-import { playRestTimerCue, type RestTimerCue } from '../../lib/rest-timer-cues';
+import { playRestTimerCue } from '../../lib/rest-timer-cues';
 import {
   clearRestTimerQueueEnded,
   noteRestTimerAutoAdvanceFired,
@@ -38,6 +38,7 @@ import {
   getRestTimerReachedAtMs,
   isAutoAdvanceDeadlineStale,
   isRestTimerCueLate,
+  isRestTimerReachedCueLate,
   shouldScheduleAutoAdvance,
 } from '../../lib/rest-timer-auto-advance';
 import { useSetting } from '../../settings';
@@ -263,9 +264,12 @@ export function RestTimerAutoAdvanceScheduler() {
   useEffect(() => {
     if (reachedAtMs === null) return undefined;
 
+    // The terminal cue keeps the advance's grace, not the countdown's 750 ms:
+    // a rest end that lands a second late still gets `advance`, so it still
+    // gets `reached` too.
     const cueReached = () => {
       setReachedCuedAtMs(reachedAtMs);
-      playCueUnlessLate({ kind: 'reached' }, reachedAtMs);
+      if (!isRestTimerReachedCueLate(reachedAtMs, nowMs())) playRestTimerCue({ kind: 'reached' });
     };
     const scheduledAtMs = nowMs();
     const remainingMs = reachedAtMs - scheduledAtMs;
@@ -351,8 +355,8 @@ export function RestTimerAutoAdvanceScheduler() {
 
 type CueTimeout = ReturnType<typeof setTimeout>;
 
-/** Plays a cue unless it landed late: a timeout flushed on resume says nothing. */
-function playCueUnlessLate(cue: RestTimerCue, dueAtMs: number): void {
+/** Plays a countdown cue unless it landed late: a timeout flushed on resume says nothing. */
+function playCueUnlessLate(cue: Parameters<typeof playRestTimerCue>[0], dueAtMs: number): void {
   if (isRestTimerCueLate(dueAtMs, nowMs())) return;
   playRestTimerCue(cue);
 }

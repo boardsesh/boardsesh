@@ -144,8 +144,12 @@ The cues, from the scheduler:
   minute with nothing moving the wall, every beat counts down and buzzes. The latch is the instant
   that was cued, and a beat an advance fired on counts as cued, so a beat never gets `advance` and
   `reached`. After a dead end, no further beat counts down until the queue moves again.
-- A cue that lands more than 750 ms late (`REST_TIMER_CUE_LATE_MS`) says nothing. That is a
-  timeout flushed on a resume from the background, for a second the climber never saw.
+- A countdown tick or the warning that lands more than 750 ms late (`REST_TIMER_CUE_LATE_MS`)
+  says nothing. That is a timeout flushed on a resume from the background, for a second the
+  climber never saw.
+- The terminal cue keeps the advance's 5 s grace (`AUTO_ADVANCE_OVERDUE_GRACE_MS`,
+  `isRestTimerReachedCueLate`). A rest end that lands up to 5 s late, from a JS stall or a dead
+  end the deadline found late, still gets `advance` or `reached`. Past that it gets neither.
 - One rest holds at most six timeouts: five cues and the advance (or the `reached`).
 
 The wake lock (one `rest-timer` tag, in the scheduler): `scheduled || (reached cue pending &&
@@ -154,9 +158,9 @@ a workout stage or the crew paces also keeps it up until its `reached` cue, so l
 bouldering's "go" after a fall lands on a lit screen. A climber's own rest with auto-advance off
 never held the screen and still does not.
 
-One case still plays no terminal cue: a dead end found more than 750 ms after the rest ran out,
-which only happens when the beat waited for the next page of a list and that page ended the list.
-The toast is the signal there.
+One case still plays no terminal cue inside an awake app: a dead end found more than 5 s after
+the rest ran out, which only happens when the beat waited that long for the next page of a list
+and that page ended the list. The toast is the signal there.
 
 The sound half needs nothing here: once the native train's `sounds.ts` reports a player, every
 cue above is audible, behind the `restTimerSound` switch.
