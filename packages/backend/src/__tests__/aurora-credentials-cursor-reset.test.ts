@@ -126,14 +126,10 @@ describe('linking an Aurora login resets its logbook watermark for a first-time 
 
     await link(SECOND);
 
-    // The first account's footprint is not the second account's.
+    // The first account's footprint is not the second account's. What the
+    // re-read then does with the first account's sends is covered end to end in
+    // aurora-credentials-enqueue.test.ts.
     expect(await cursorTables('tension', AURORA_LOGIN)).toEqual(NON_LOGBOOK_TABLES);
-    // The first account's send is not touched: the next sync re-reads Aurora
-    // and refuses every tick another user owns.
-    const [tick] = await db.execute<{ user_id: string }>(
-      sql`SELECT user_id FROM "boardsesh_ticks" WHERE aurora_id = 'aurora-ascent-1'`,
-    );
-    expect(tick.user_id).toBe(FIRST);
   });
 
   it('starts a second account from the beginning after the first account was deleted', async () => {
