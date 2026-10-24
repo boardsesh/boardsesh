@@ -27,9 +27,20 @@ import { jobBlocks } from './helpers/workflow-yaml';
 const workflowSource = readFileSync('.github/workflows/ci.yml', 'utf8');
 const jobs = jobBlocks(workflowSource);
 
+type WorkflowStep = { id?: string; if?: string; run?: string; 'continue-on-error'?: boolean | string };
+type WorkflowJob = { needs?: string | string[]; if?: string; steps?: WorkflowStep[] };
+type Workflow = { jobs: Record<string, WorkflowJob> };
+
+function conditionExpression(condition?: string): string {
+  return (condition ?? '')
+    .trim()
+    .replace(/^\$\{\{|\}\}$/g, '')
+    .replace(/'(?:[^']|'')*'|\s+/g, (fragment) => (fragment.startsWith("'") ? fragment : ''));
+}
+
 /** Job dependencies support YAML block lists, inline lists, and a single job. */
 function jobNeeds(jobName: string, source = workflowSource): string[] {
-  const workflow = parse(source) as { jobs: Record<string, { needs?: string | string[] }> };
+  const workflow = parse(source) as Workflow;
   const job = workflow.jobs[jobName];
   if (!job) throw new Error(`ci.yml has no \`${jobName}\` job`);
   const needs = job.needs;
@@ -63,21 +74,13 @@ describe('ci-status is a complete roll-up', () => {
     // Main consolidated the standalone gate into guards. A binary-only PR must
     // still run it, and a failed check must still fail the required roll-up.
     expect(rollupNeeds).toContain('guards');
-    const guards = jobs.get('guards') ?? [];
-    expect(guards).toContain('    if: ${{ !cancelled() }}');
-    const stepId = guards.findIndex((line) => line.trim() === 'id: large-files');
-    expect(stepId).toBeGreaterThan(-1);
-    let stepStart = stepId - 1;
-    while (stepStart >= 0 && !/^ {6}- /.test(guards[stepStart])) stepStart -= 1;
-    expect(stepStart).toBeGreaterThan(-1);
-    const nextStep = guards.findIndex((line, index) => index > stepStart && /^ {6}- /.test(line));
-    const largeFilesStep = guards.slice(stepStart, nextStep < 0 ? undefined : nextStep).join('\n');
-    expect(largeFilesStep).toContain('node scripts/check-large-files.mjs');
-    expect(largeFilesStep.split('\n').filter((line) => /^ {8}if:/.test(line))).toEqual([
-      "        if: ${{ !cancelled() && steps.install.outcome == 'success' }}",
-    ]);
-    expect(largeFilesStep).not.toContain('needs.changes');
-    expect(largeFilesStep).not.toContain('continue-on-error: true');
+    const guards = (parse(workflowSource) as Workflow).jobs.guards;
+    expect(conditionExpression(guards.if)).toBe('!cancelled()');
+    const largeFilesStep = guards.steps?.find((step) => step.id === 'large-files');
+    expect(largeFilesStep).toBeDefined();
+    expect(largeFilesStep?.run).toContain('scripts/check-large-files.mjs');
+    expect(conditionExpression(largeFilesStep?.if)).toBe("!cancelled()&&steps.install.outcome=='success'");
+    expect(largeFilesStep?.['continue-on-error'] ?? false).toBe(false);
   });
 
   it('names only jobs that exist', () => {

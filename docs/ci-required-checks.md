@@ -138,7 +138,10 @@ existing ruleset.
      --jq '.required_pull_request_reviews.bypass_pull_request_allowances.apps[] | "\(.id) \(.slug)"'
    ```
 
-3. Create it:
+3. For initial setup only, create the rule with the historical bot-only payload.
+   **This file is not a live-settings snapshot. Reapplying it would enforce a
+   stricter administrator policy by omitting today's admin bypass. Do not use it
+   to recreate or update the existing rule.**
 
    ```bash
    gh api --method POST repos/boardsesh/boardsesh/rulesets \
