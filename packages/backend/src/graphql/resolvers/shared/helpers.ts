@@ -66,6 +66,11 @@ export const RATE_LIMIT_CONFIRM_CLIMB_ON_WALL_OP = 'confirmClimbOnWall';
 export const RATE_LIMIT_CONFIRM_CLIMB_ON_WALL = 600;
 export const RATE_LIMIT_SET_QUEUE_OP = 'setQueue';
 export const RATE_LIMIT_SET_QUEUE = 300;
+// setSessionRestCadence (#5382) gets its own bucket so a runaway rest timer can
+// never starve climb switching. A crew's clock sees a tick per climb, a fire per
+// rest and the odd pause or settings edit: a few calls a minute per climber.
+export const RATE_LIMIT_REST_CADENCE_OP = 'restCadence';
+export const RATE_LIMIT_REST_CADENCE = 240;
 
 /**
  * The TCP-peer bucket is a coarse direct-origin abuse backstop. Railway and

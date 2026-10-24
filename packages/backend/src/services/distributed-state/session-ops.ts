@@ -20,9 +20,11 @@ import {
   REMOVE_PARTICIPANT_SCRIPT,
   MARK_RECONNECTING_IF_IDLE_SCRIPT,
   EVICT_PARTICIPANT_IF_GHOST_SCRIPT,
+  CAS_SESSION_REST_CADENCE_SCRIPT,
 } from './lua-scripts';
 import { electNewLeaderAfterRemoval } from './leader-election';
 import { logger } from '../../utils/logger';
+import { parseRestCadence, type RestCadenceCasResult, type StoredRestCadence } from '../rest-cadence';
 
 /**
  * Join a session. Handles leader election for first member.
@@ -649,6 +651,40 @@ export async function setSessionBoardSerialAndReturnPrevious(
 }
 
 /**
+ * Read the session's shared rest clock. A missing hash is revision 0, clock off.
+ */
+export async function getSessionRestCadence(redis: Redis, sessionId: string): Promise<StoredRestCadence> {
+  validateSessionId(sessionId);
+  const [storedRevision, storedDoc] = await redis.hmget(KEYS.sessionRestCadence(sessionId), 'rev', 'doc');
+  const revision = Number.parseInt(storedRevision ?? '0', 10);
+  return { revision: Number.isFinite(revision) ? revision : 0, cadence: parseRestCadence(storedDoc) };
+}
+
+/**
+ * Compare-and-set the session's shared rest clock: writes `nextDoc` at
+ * `expectedRevision + 1` only when the stored revision still equals
+ * `expectedRevision`, and refreshes the hash's TTL. See
+ * CAS_SESSION_REST_CADENCE_SCRIPT.
+ */
+export async function casSessionRestCadence(
+  redis: Redis,
+  sessionId: string,
+  expectedRevision: number,
+  nextDoc: string,
+): Promise<RestCadenceCasResult> {
+  validateSessionId(sessionId);
+  const [committed, revision, doc] = (await redis.eval(
+    CAS_SESSION_REST_CADENCE_SCRIPT,
+    1,
+    KEYS.sessionRestCadence(sessionId),
+    expectedRevision.toString(),
+    nextDoc,
+    TTL.sessionMembership.toString(),
+  )) as [number, number, string];
+  return { ok: committed === 1, revision, doc };
+}
+
+/**
  * Push a climbUuid to the per-session recent-climbs ring buffer. Called on
  * every authoritative "current climb" write so confirmClimbOnWall can accept
  * a confirm that arrives after a member has quickly navigated on. LPUSH +
@@ -809,6 +845,7 @@ export async function cleanupEmptySession(redis: Redis, sessionId: string): Prom
   multi.del(KEYS.sessionMembers(sessionId));
   multi.del(KEYS.sessionLeader(sessionId));
   multi.del(KEYS.sessionBoardSerial(sessionId));
+  multi.del(KEYS.sessionRestCadence(sessionId));
   await multi.exec();
 
   logger.info(`[DistributedState] Cleaned up empty session: ${sessionId.slice(0, 8)}`);

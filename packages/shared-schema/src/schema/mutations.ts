@@ -151,6 +151,17 @@ export const mutationsTypeDefs = /* GraphQL */ `
     """
     setSessionBoardPath(boardPath: String!): Session!
 
+    """
+    Change the session's shared rest clock (#5382). Any session participant may
+    call. The server stamps every instant, records the caller as
+    \`setByParticipantId\` on ARM and CONFIGURE, and publishes
+    \`SessionRestCadenceChanged\` to every member only when the call applied.
+    FIRE is compare-and-set on \`expectedRevision\`, so exactly one phone can
+    claim each beat. Session identity is resolved from the WebSocket connection
+    context — no \`sessionId\` argument is required.
+    """
+    setSessionRestCadence(input: SessionRestCadenceInput!): SetSessionRestCadencePayload!
+
     # ============================================
     # Board Presence Mutations ("now on the wall")
     # ============================================

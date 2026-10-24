@@ -27,6 +27,8 @@ import {
   RATE_LIMIT_END_SESSION_OP,
   RATE_LIMIT_CONFIRM_CLIMB_ON_WALL,
   RATE_LIMIT_CONFIRM_CLIMB_ON_WALL_OP,
+  RATE_LIMIT_REST_CADENCE,
+  RATE_LIMIT_REST_CADENCE_OP,
 } from '../shared/helpers';
 import {
   SessionIdSchema,
@@ -40,6 +42,7 @@ import {
   ClimbQueueItemSchema,
   ClimbUuidSchema,
   BoardSerialSchema,
+  SessionRestCadenceInputSchema,
 } from '../../../validation/schemas';
 import { logger } from '../../../utils/logger';
 import { markErrorReported } from '../../../utils/sentry-dedupe';
@@ -53,6 +56,7 @@ import { autoSyncSessionToIntegrations } from '../../../integrations/export-serv
 import { normalizeIanaTimezone } from '../../../utils/timezone';
 import { endLiveActivity } from '../../../services/apns';
 import { buildSessionPayload } from './helpers';
+import { buildRestCadenceChange } from '../../../services/rest-cadence';
 import { logMutationMetrics } from '../queue/mutation-metrics';
 
 /**
@@ -747,6 +751,49 @@ export const sessionMutations = {
       // non-member redaction).
       createdByUserId: sessionData.createdByUserId ?? null,
     };
+  },
+
+  /**
+   * Change the session's shared rest clock (#5382). Any session participant
+   * may call: the crew clock is shared the way the wall is. The server stamps
+   * every instant from its own clock and records `ctx.participantId` verbatim
+   * as `setByParticipantId` on ARM and CONFIGURE (it is already the session
+   * HMAC, or an anonymous connection id, exactly what peers see as
+   * `SessionUser.id`). Every write is a compare-and-set on the per-session
+   * revision; FIRE must carry `expectedRevision`, so exactly one phone claims
+   * each beat. `SessionRestCadenceChanged` is published only when the call
+   * applied, so a lost race or a no-op reaches nobody but the caller, who gets
+   * the state that won. Session identity comes from the WebSocket connection
+   * context — no `sessionId` argument.
+   */
+  setSessionRestCadence: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
+    // Its own bucket, so a runaway rest timer cannot starve climb switching.
+    await applyRateLimit(ctx, RATE_LIMIT_REST_CADENCE, RATE_LIMIT_REST_CADENCE_OP);
+    const sessionId = requireSession(ctx);
+    const validInput = validateInput(SessionRestCadenceInputSchema, input, 'input');
+    await requireSessionMember(ctx, sessionId);
+
+    // Hard-error when ctx.participantId is missing, before any write — same
+    // reasoning as confirmClimbOnWall: connection ids rotate on reconnect.
+    if (!ctx.participantId) {
+      throw new Error('setSessionRestCadence requires ctx.participantId; refusing to fall back to connectionId.');
+    }
+
+    const { applied, stored } = await roomManager.updateSessionRestCadence(
+      sessionId,
+      validInput,
+      ctx.participantId,
+      Date.now(),
+    );
+    const change = buildRestCadenceChange(stored, {
+      isSnapshot: false,
+      action: applied ? validInput.action : null,
+      serverNowMs: Date.now(),
+    });
+    if (applied) {
+      pubsub.publishSessionEvent(sessionId, change);
+    }
+    return { applied, change };
   },
 
   /**

@@ -716,3 +716,38 @@ export const EVICT_PARTICIPANT_IF_GHOST_SCRIPT = `
   end
   return { 'EVICTED', newLeaderId }
 `;
+
+/**
+ * Compare-and-set write of the session's shared rest clock (#5382).
+ *
+ * KEYS[1] = boardsesh:session:{id}:restCadence (HASH { rev, doc })
+ * ARGV[1] = the revision the caller read
+ * ARGV[2] = the next doc ('' = clock off)
+ * ARGV[3] = TTL seconds (session membership)
+ *
+ * Writes rev + 1 only when the stored revision still equals ARGV[1], so two
+ * instances racing on one session can never both commit against the same
+ * read: the loser gets the winner's { rev, doc } back and either retries or,
+ * for a FIRE, reports that the beat was already claimed. One atomic script,
+ * never WATCH: a WATCH belongs to the connection, so every concurrent caller on
+ * the shared ioredis client would share (and clear) it.
+ *
+ * Returns { 1, newRev, doc } on commit, { 0, storedRev, storedDoc } otherwise.
+ */
+export const CAS_SESSION_REST_CADENCE_SCRIPT = `
+  local cadenceKey = KEYS[1]
+  local expectedRev = tonumber(ARGV[1])
+  local nextDoc = ARGV[2]
+  local ttl = tonumber(ARGV[3])
+
+  local storedRev = tonumber(redis.call('HGET', cadenceKey, 'rev') or '0') or 0
+  if storedRev ~= expectedRev then
+    local storedDoc = redis.call('HGET', cadenceKey, 'doc') or ''
+    return { 0, storedRev, storedDoc }
+  end
+
+  local nextRev = storedRev + 1
+  redis.call('HSET', cadenceKey, 'rev', tostring(nextRev), 'doc', nextDoc)
+  redis.call('EXPIRE', cadenceKey, ttl)
+  return { 1, nextRev, nextDoc }
+`;

@@ -1,0 +1,241 @@
+/**
+ * The `setSessionRestCadence` mutation (#5382): the crew's shared rest clock.
+ *
+ * The resolver runs against the REAL room manager (its in-memory fallback,
+ * reset before every test by setup.ts) so validation, the membership gate, the
+ * reducer and the compare-and-set are exercised together. Only pubsub and the
+ * two shared gates are mocked, so each test can see exactly what was published
+ * and decide whether the caller is a member.
+ */
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import type { ConnectionContext } from '@boardsesh/shared-schema';
+
+vi.mock('../pubsub/index', () => ({
+  pubsub: {
+    publishSessionEvent: vi.fn(),
+    publishQueueEvent: vi.fn(),
+  },
+}));
+
+vi.mock('../graphql/resolvers/shared/helpers', async () => {
+  const actual = await vi.importActual<typeof import('../graphql/resolvers/shared/helpers')>(
+    '../graphql/resolvers/shared/helpers',
+  );
+  return {
+    ...actual,
+    requireSessionMember: vi.fn().mockResolvedValue(undefined),
+    applyRateLimit: vi.fn().mockResolvedValue(undefined),
+  };
+});
+
+const { sessionMutations } = await import('../graphql/resolvers/sessions/mutations');
+const { roomManager } = await import('../services/room-manager');
+const { pubsub } = await import('../pubsub/index');
+const sharedHelpers = await import('../graphql/resolvers/shared/helpers');
+
+const pubsubMock = pubsub as unknown as { publishSessionEvent: ReturnType<typeof vi.fn> };
+const requireSessionMember = sharedHelpers.requireSessionMember as unknown as ReturnType<typeof vi.fn>;
+const applyRateLimit = sharedHelpers.applyRateLimit as unknown as ReturnType<typeof vi.fn>;
+
+const NOW = 1_800_000_000_000;
+const SESSION_ID = 'crew-session-1';
+// The session HMAC peers already see as SessionUser.id; it must go out verbatim.
+const PARTICIPANT_ID = 'a1b2c3d4e5f6';
+
+const SETTINGS_CONFIG = {
+  mode: 'afterTick',
+  targetSeconds: 90,
+  autoAdvance: true,
+  advanceOn: 'deadline',
+  source: 'settings',
+} as const;
+
+function makeCtx(overrides: Partial<ConnectionContext> = {}): ConnectionContext {
+  return {
+    connectionId: 'conn-1',
+    transport: 'ws',
+    sessionId: SESSION_ID,
+    participantId: PARTICIPANT_ID,
+    userId: undefined,
+    isAuthenticated: false,
+    ...overrides,
+  };
+}
+
+const setRestCadence = (input: Record<string, unknown>, ctx: ConnectionContext = makeCtx()) =>
+  sessionMutations.setSessionRestCadence(undefined, { input }, ctx);
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(NOW);
+  pubsubMock.publishSessionEvent.mockClear();
+  applyRateLimit.mockClear();
+  requireSessionMember.mockReset().mockResolvedValue(undefined);
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+describe('setSessionRestCadence', () => {
+  it('arms the crew clock with server-stamped instants and publishes the change once', async () => {
+    const result = await setRestCadence({ action: 'ARM', config: SETTINGS_CONFIG, elapsedMs: 4_000 });
+
+    expect(result).toEqual({
+      applied: true,
+      change: {
+        __typename: 'SessionRestCadenceChanged',
+        restCadence: {
+          __typename: 'SessionRestCadence',
+          ...SETTINGS_CONFIG,
+          isRunning: true,
+          anchorAt: String(NOW - 4_000),
+          pausedElapsedSeconds: 0,
+          lastFiredBeatAt: null,
+          lastTickQueueItemUuid: null,
+          lastTickStatus: null,
+          setByParticipantId: PARTICIPANT_ID,
+        },
+        revision: 1,
+        serverNow: String(NOW),
+        isSnapshot: false,
+        action: 'ARM',
+      },
+    });
+    expect(pubsubMock.publishSessionEvent).toHaveBeenCalledOnce();
+    expect(pubsubMock.publishSessionEvent).toHaveBeenCalledWith(SESSION_ID, result.change);
+  });
+
+  it('spends its own 240/min rate-limit bucket, not the shared session one', async () => {
+    await setRestCadence({ action: 'ARM', config: SETTINGS_CONFIG });
+    expect(applyRateLimit).toHaveBeenCalledWith(expect.anything(), 240, 'restCadence');
+  });
+
+  it.each([
+    ['an afterTick rest under 10 s', { action: 'ARM', config: { ...SETTINGS_CONFIG, targetSeconds: 9 } }],
+    [
+      'an onTheMinute beat under 15 s',
+      { action: 'ARM', config: { ...SETTINGS_CONFIG, mode: 'onTheMinute', targetSeconds: 14 } },
+    ],
+    ['a rest over an hour', { action: 'ARM', config: { ...SETTINGS_CONFIG, targetSeconds: 3601 } }],
+    ['an unknown mode', { action: 'ARM', config: { ...SETTINGS_CONFIG, mode: 'everyOtherMinute' } }],
+    ['an unknown advance rule', { action: 'ARM', config: { ...SETTINGS_CONFIG, advanceOn: 'beat' } }],
+    ['ARM without a config', { action: 'ARM' }],
+    ['CONFIGURE without a config', { action: 'CONFIGURE', anchor: 'NOW' }],
+    ['TICK without a status', { action: 'TICK', tickQueueItemUuid: 'item-1' }],
+    ['a TICK status outside flash/send/attempt', { action: 'TICK', tickStatus: 'project' }],
+    ['FIRE without an expected revision', { action: 'FIRE', firedBeatAgoMs: 100 }],
+    ['a negative elapsed', { action: 'ARM', config: SETTINGS_CONFIG, elapsedMs: -1 }],
+  ])('rejects %s without writing or publishing', async (_label, input) => {
+    await expect(setRestCadence(input)).rejects.toThrow(/Invalid input/);
+    expect((await roomManager.getSessionRestCadence(SESSION_ID)).revision).toBe(0);
+    expect(pubsubMock.publishSessionEvent).not.toHaveBeenCalled();
+  });
+
+  it('accepts the 10 s changeover a workout stage uses between climbs', async () => {
+    const result = await setRestCadence({
+      action: 'ARM',
+      config: { ...SETTINGS_CONFIG, targetSeconds: 10, advanceOn: 'tick', source: 'stage' },
+    });
+    expect(result.applied).toBe(true);
+  });
+
+  it('rejects a non-member before anything is stored', async () => {
+    requireSessionMember.mockRejectedValueOnce(new Error('Not a member of this session'));
+    await expect(setRestCadence({ action: 'ARM', config: SETTINGS_CONFIG })).rejects.toThrow('Not a member');
+    expect((await roomManager.getSessionRestCadence(SESSION_ID)).revision).toBe(0);
+    expect(pubsubMock.publishSessionEvent).not.toHaveBeenCalled();
+  });
+
+  it('hard-errors without a participant id instead of falling back to the connection id', async () => {
+    await expect(
+      setRestCadence({ action: 'ARM', config: SETTINGS_CONFIG }, makeCtx({ participantId: undefined })),
+    ).rejects.toThrow('requires ctx.participantId');
+    expect((await roomManager.getSessionRestCadence(SESSION_ID)).revision).toBe(0);
+    expect(pubsubMock.publishSessionEvent).not.toHaveBeenCalled();
+  });
+
+  it('needs a session on the connection', async () => {
+    await expect(
+      setRestCadence({ action: 'ARM', config: SETTINGS_CONFIG }, makeCtx({ sessionId: undefined })),
+    ).rejects.toThrow('Must be in a session');
+  });
+
+  it('lets exactly one FIRE claim a beat: the second, on the same revision, does not apply or publish', async () => {
+    const armed = await setRestCadence({ action: 'ARM', config: SETTINGS_CONFIG, elapsedMs: 90_000 });
+    pubsubMock.publishSessionEvent.mockClear();
+
+    const holder = await setRestCadence({
+      action: 'FIRE',
+      expectedRevision: armed.change.revision,
+      firedBeatAgoMs: 200,
+    });
+    const otherPhone = await setRestCadence(
+      { action: 'FIRE', expectedRevision: armed.change.revision, firedBeatAgoMs: 150 },
+      makeCtx({ connectionId: 'conn-2', participantId: 'f6e5d4c3b2a1' }),
+    );
+
+    expect(holder.applied).toBe(true);
+    expect(holder.change.revision).toBe(2);
+    expect(holder.change.restCadence?.lastFiredBeatAt).toBe(String(NOW - 200));
+    expect(otherPhone).toEqual({ applied: false, change: { ...holder.change, action: null } });
+    expect(pubsubMock.publishSessionEvent).toHaveBeenCalledOnce();
+    expect(pubsubMock.publishSessionEvent).toHaveBeenCalledWith(SESSION_ID, holder.change);
+  });
+
+  it('a stale revision comes back with the stored clock so the caller can adopt it', async () => {
+    await setRestCadence({ action: 'ARM', config: SETTINGS_CONFIG, elapsedMs: 0 });
+    await setRestCadence({ action: 'TICK', tickQueueItemUuid: 'item-1', tickStatus: 'send' });
+    pubsubMock.publishSessionEvent.mockClear();
+
+    const stale = await setRestCadence({ action: 'FIRE', expectedRevision: 1 });
+
+    expect(stale.applied).toBe(false);
+    expect(stale.change).toMatchObject({
+      revision: 2,
+      action: null,
+      isSnapshot: false,
+      restCadence: { lastTickQueueItemUuid: 'item-1', lastTickStatus: 'send' },
+    });
+    expect(pubsubMock.publishSessionEvent).not.toHaveBeenCalled();
+  });
+
+  it('an action that does not apply publishes nothing', async () => {
+    await setRestCadence({ action: 'ARM', config: SETTINGS_CONFIG });
+    await setRestCadence({ action: 'PAUSE', pausedElapsedSeconds: 12 });
+    pubsubMock.publishSessionEvent.mockClear();
+
+    const again = await setRestCadence({ action: 'PAUSE', pausedElapsedSeconds: 20 });
+
+    expect(again.applied).toBe(false);
+    expect(again.change.restCadence?.pausedElapsedSeconds).toBe(12);
+    expect(pubsubMock.publishSessionEvent).not.toHaveBeenCalled();
+  });
+
+  it('records who configured the clock verbatim, and a tick from someone else leaves it', async () => {
+    await setRestCadence({ action: 'ARM', config: SETTINGS_CONFIG });
+    const configured = await setRestCadence(
+      { action: 'CONFIGURE', config: { ...SETTINGS_CONFIG, targetSeconds: 180, source: 'stage' }, anchor: 'CLEAR' },
+      makeCtx({ participantId: 'builder-phone' }),
+    );
+    expect(configured.change.restCadence).toMatchObject({
+      targetSeconds: 180,
+      source: 'stage',
+      anchorAt: null,
+      setByParticipantId: 'builder-phone',
+    });
+
+    const ticked = await setRestCadence({ action: 'TICK', tickStatus: 'attempt' });
+    expect(ticked.change.restCadence?.setByParticipantId).toBe('builder-phone');
+  });
+
+  it('DISARM turns the clock off for everyone and keeps the revision climbing', async () => {
+    await setRestCadence({ action: 'ARM', config: SETTINGS_CONFIG });
+    const off = await setRestCadence({ action: 'DISARM' });
+    expect(off.change).toMatchObject({ restCadence: null, revision: 2, action: 'DISARM' });
+
+    const rearmed = await setRestCadence({ action: 'ARM', config: SETTINGS_CONFIG });
+    expect(rearmed.change.revision).toBe(3);
+  });
+});
