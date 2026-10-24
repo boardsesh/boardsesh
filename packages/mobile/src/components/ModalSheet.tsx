@@ -42,6 +42,8 @@ import {
 } from './sheet-scroll-into-view';
 import { useDetentDragHaptic } from './sheet-detent-haptic';
 import { useIosSheetBackgroundStyle } from './use-ios-sheet-background-style';
+import { SheetKeyboardCalibration } from './sheet-keyboard-calibration';
+import { useSheetKeyboardCalibrationEnabled } from '../lib/sheet-keyboard-calibration-store';
 import {
   useManagedSheet,
   type ManagedSheetHandle,
@@ -164,6 +166,8 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
   const columnStyle = useSheetColumnStyle(snapPoints, { enableDynamicSizing, activeIndex, contentSizedOnAndroid });
   // Dev-only observers for #3922 — they feed a log line, never layout.
   const { probeProps, sentinelProps, onColumnLayout } = useSheetDetentProbe(columnStyle, 'ModalSheet');
+  // QA-only keyboard calibration readout (#5964), off unless its flag is on.
+  const calibrationEnabled = useSheetKeyboardCalibrationEnabled();
 
   // The keyboard-detent snap on field focus is not a drag: no haptic for it.
   const { programmaticSnapRef, snapWithoutHaptic } = useProgrammaticSnap(managed.handle.snapToIndex);
@@ -378,6 +382,16 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
       ) : (
         body
       )}
+      {/* After the column so it draws on top. All absolutely positioned and
+          touch-transparent, so the column stays the single in-flow child. */}
+      {calibrationEnabled && hasChrome ? (
+        <SheetKeyboardCalibration
+          label="ModalSheet"
+          columnRef={columnRef}
+          keyboardOverlap={keyboardOverlap}
+          bottomInset={bottomInset}
+        />
+      ) : null}
     </BottomSheetModal>
   );
 });

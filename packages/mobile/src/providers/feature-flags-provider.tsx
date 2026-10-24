@@ -220,6 +220,13 @@ export const FEATURE_FLAG_DEFINITIONS = [
     description:
       'The "Get updates early" switch in More: a phone that turns it on gets every merge to main ahead of the daily stable release. A POSITIVE rollout flag, not a kill switch, because it has to ship hidden: with no value at all the row is hidden and nobody is moved. Turning it off in PostHog after climbers joined hides the row, moves them back to the regular track at their next online launch and keeps their choice, so they rejoin when it is turned on again.',
   },
+  {
+    key: 'sheet-keyboard-calibration',
+    label: 'Sheet keyboard calibration (QA)',
+    description:
+      'QA only, iPhone and iPad. Draws a black box of numbers at the top of every sheet with a pinned bar or header, such as Log a tick, to show where the keyboard really sits under a sheet (#5964). Open the sheet and screenshot the box, tap a text field and screenshot it again. It only measures: buttons and padding stay exactly as they are. Off by default.',
+    defaultEnabled: false,
+  },
 ] as const satisfies readonly FeatureFlagDefinition[];
 
 // The literal key union (e.g. `'strava-integration'`), preserved via the

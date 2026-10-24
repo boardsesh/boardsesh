@@ -9,9 +9,17 @@
 // On the log-ascent sheet at its keyboard detent it left the Attempt / Save bar
 // half under the keyboard.
 //
-// So the overlap is measured in window coordinates instead. Neither native sheet
+// So the overlap is measured with `measureInWindow` instead. Neither native sheet
 // window resizes for the keyboard (the Android Compose dialog window included,
 // emulator-verified), so the column pads itself by it.
+//
+// KNOWN GAP (#5964): inside an iOS `@expo/ui` sheet, `measureInWindow` is NOT in
+// window coordinates either. The sheet's `RNHostView` is marked `layoutRoot`
+// (the `RootNodeKind` trait), and Fabric's measurement walk stops there, so the
+// column comes back relative to the sheet and the iOS overlap below is the same
+// under-count the KAV had. Which replacement is right depends on native
+// behaviour nobody has observed yet; `sheet-keyboard-calibration.tsx` (behind
+// the `sheet-keyboard-calibration` QA flag) shows the numbers that decide it.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Keyboard,

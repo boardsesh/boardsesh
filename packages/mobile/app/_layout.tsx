@@ -128,6 +128,7 @@ import { SendRecoveryGate } from '../src/components/offline/SendRecoveryGate';
 import { FreezeDebugOverlay } from '../src/components/FreezeDebugOverlay';
 import { BottomChromeDebugOverlay } from '../src/components/BottomChromeDebugOverlay';
 import { WindowInsetPublisher } from '../src/hooks/use-window-bottom-inset';
+import { SheetKeyboardCalibrationPublisher } from '../src/components/SheetKeyboardCalibrationPublisher';
 import { LiveActivityIntentDiagnostics } from '../src/components/LiveActivityIntentDiagnostics';
 import { LaunchUpdateGatePlaceholder } from '../src/components/launch-update/LaunchUpdatePlaceholder';
 import { useLaunchUpdateGate } from '../src/components/launch-update/use-launch-update-gate';
@@ -1091,6 +1092,9 @@ function RootLayout() {
                                                                         {/* Root-sampled window inset for bottom-docked sheets —
                                                             here (outside the tabs) useSafeAreaInsets IS the window's. */}
                                                                         <WindowInsetPublisher />
+                                                                        {/* The `sheet-keyboard-calibration` QA flag, published
+                                                            for Sheet / ModalSheet (#5964); off, it draws nothing. */}
+                                                                        <SheetKeyboardCalibrationPublisher />
                                                                       </UserDrawerProvider>
                                                                     </TabBarHeightProvider>
                                                                     <AnalyticsScreenTracker />

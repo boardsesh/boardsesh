@@ -266,6 +266,14 @@ diagnostic) applies on native. The whole surface lives in three files:
   switch reads unresolved as "feature on", and this one had to ship hidden
   with no flag created yet. Keep it off until the device checks listed in
   #6101 are done.
+  `sheet-keyboard-calibration` is a QA-only diagnostic. It changes no behaviour.
+  On iOS it makes every sheet with a header or footer draw a readout of where
+  the keyboard really sits under the sheet (#5964). See "Known gap" in
+  `docs/mobile-sheets-vs-routes.md`. The root layout reads it once through
+  `SheetKeyboardCalibrationPublisher`, which writes a small store, and
+  `Sheet` / `ModalSheet` read that store instead of `useFeatureFlag`. Dozens of
+  suites mock the provider with only the hooks they use, so a flag hook inside
+  the shared sheets would throw there.
 - **Live read**: `readPosthogFeatureFlags` in `packages/mobile/src/lib/analytics.ts`.
 - **Dev override**: `packages/mobile/src/lib/feature-flag-overrides.ts` — an
   on-device `Record<string, boolean | string>`, persisted to AsyncStorage,

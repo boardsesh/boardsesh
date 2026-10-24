@@ -116,9 +116,25 @@ vi.mock('../../providers/theme-provider', () => ({
   }),
 }));
 
+// The #5964 calibration readout, captured rather than rendered: its own suite
+// (sheet-keyboard-calibration.test.tsx) covers what it draws.
+const calibration = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
+vi.mock('../sheet-keyboard-calibration', () => ({
+  SheetKeyboardCalibration: (props: Record<string, unknown>) => {
+    calibration.props.push(props);
+    return null;
+  },
+}));
+
 import { ModalSheet } from '../ModalSheet';
+import {
+  publishSheetKeyboardCalibration,
+  resetSheetKeyboardCalibrationForTests,
+} from '../../lib/sheet-keyboard-calibration-store';
 
 beforeEach(() => {
+  calibration.props = [];
+  resetSheetKeyboardCalibrationForTests();
   captures.bottomSheetViewUsed = false;
   captures.scrollUsed = false;
   captures.snapPoints = undefined;
@@ -192,6 +208,43 @@ describe('ModalSheet', () => {
       );
       expect(captures.snapPoints).toEqual(['65%', '92%']);
       expect(captures.enableDynamicSizing).toBe(false);
+    });
+  });
+
+  // #5964: the QA calibration readout exists only while its flag is on, and only
+  // on a sheet with a column to measure.
+  describe('keyboard calibration readout', () => {
+    it('is not mounted while the flag is off', () => {
+      render(
+        <ModalSheet visible scrollable footer={<div>save</div>}>
+          <div>body</div>
+        </ModalSheet>,
+      );
+      expect(calibration.props).toHaveLength(0);
+    });
+
+    it('measures the chrome column once the flag is on, with the padding it applies today', () => {
+      publishSheetKeyboardCalibration({ enabled: true, windowTopInset: 62 });
+      render(
+        <ModalSheet visible scrollable footer={<div>save</div>}>
+          <div>body</div>
+        </ModalSheet>,
+      );
+      const latest = calibration.props.at(-1);
+      expect(latest?.label).toBe('ModalSheet');
+      expect(latest?.columnRef).toHaveProperty('current');
+      expect(latest?.keyboardOverlap).toBe(0);
+      expect(latest?.bottomInset).toBe(34);
+    });
+
+    it('is not mounted on a sheet without a header or footer', () => {
+      publishSheetKeyboardCalibration({ enabled: true, windowTopInset: 62 });
+      render(
+        <ModalSheet visible>
+          <div>body</div>
+        </ModalSheet>,
+      );
+      expect(calibration.props).toHaveLength(0);
     });
   });
 

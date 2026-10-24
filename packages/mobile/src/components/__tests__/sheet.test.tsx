@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 vi.mock('../use-ios-sheet-background-style', () => ({ useIosSheetBackgroundStyle: () => undefined }));
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, render } from '@testing-library/react';
 import { createElement, forwardRef, type ReactNode, type Ref } from 'react';
 
@@ -170,7 +170,21 @@ vi.mock('../../providers/theme-provider', () => ({
   }),
 }));
 
+// The #5964 calibration readout, captured rather than rendered: its own suite
+// (sheet-keyboard-calibration.test.tsx) covers what it draws.
+const calibration = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
+vi.mock('../sheet-keyboard-calibration', () => ({
+  SheetKeyboardCalibration: (props: Record<string, unknown>) => {
+    calibration.props.push(props);
+    return null;
+  },
+}));
+
 import { Sheet, dismissSheetAndWait } from '../Sheet';
+import {
+  publishSheetKeyboardCalibration,
+  resetSheetKeyboardCalibrationForTests,
+} from '../../lib/sheet-keyboard-calibration-store';
 
 beforeEach(() => {
   captures.onChange = null;
@@ -508,6 +522,60 @@ describe('Sheet', () => {
     captures.onChange?.(-1);
     captures.onChange?.(0);
     expect(hapticSelection).toHaveBeenCalledTimes(2);
+  });
+});
+
+// #5964: the QA calibration readout must be absent with its flag off, and with
+// it on must only observe: the same column, the same padding.
+describe('Sheet keyboard calibration readout', () => {
+  const IOS_KEYBOARD = { height: 336, screenY: 844 - 336, width: 390 };
+  beforeEach(() => {
+    calibration.props = [];
+    resetSheetKeyboardCalibrationForTests();
+  });
+  afterEach(() => resetSheetKeyboardCalibrationForTests());
+
+  function columnStylesThroughKeyboard(): unknown[] {
+    const seen: unknown[] = [];
+    const { unmount } = render(
+      <Sheet scrollable footer={<div>send</div>}>
+        <div>body</div>
+      </Sheet>,
+    );
+    act(() => captures.onChange?.(1));
+    seen.push(flattenStyle(captures.columnStyle));
+    act(() => keyboard.listeners.get('keyboardWillChangeFrame')?.({ endCoordinates: IOS_KEYBOARD, duration: 250 }));
+    seen.push(flattenStyle(captures.columnStyle));
+    unmount();
+    return seen;
+  }
+
+  it('is not mounted while the flag is off', () => {
+    columnStylesThroughKeyboard();
+    expect(calibration.props).toHaveLength(0);
+  });
+
+  it('is not mounted on a sheet without a header or footer', () => {
+    publishSheetKeyboardCalibration({ enabled: true, windowTopInset: 62 });
+    render(
+      <Sheet scrollable>
+        <div>body</div>
+      </Sheet>,
+    );
+    expect(calibration.props).toHaveLength(0);
+  });
+
+  it('reads the padded column and leaves its layout exactly as it was', () => {
+    const withoutReadout = columnStylesThroughKeyboard();
+    publishSheetKeyboardCalibration({ enabled: true, windowTopInset: 62 });
+    const withReadout = columnStylesThroughKeyboard();
+    expect(withReadout).toEqual(withoutReadout);
+    const latest = calibration.props.at(-1);
+    expect(latest?.label).toBe('Sheet');
+    // The very column the keyboard hook pads (the View mock hands it this handle).
+    expect(latest?.columnRef).toEqual({ current: { measureInWindow: columnMeasure } });
+    expect(latest?.keyboardOverlap).toBe(336);
+    expect(latest?.bottomInset).toBe(0);
   });
 });
 

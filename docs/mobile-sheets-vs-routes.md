@@ -209,8 +209,27 @@ column by `useSheetKeyboardInset` (`src/components/sheet-keyboard-inset.ts`):
   haptic: at a short detent such as FeedbackSheet's 44% the keyboard leaves the body no room.
 - It listens only while the sheet has a header or footer and is open, and seeds from
   `Keyboard.metrics()` when a sheet opens over a keyboard that is already up.
+- A keyboard frame with `screenY` 0 pads nothing. iOS reports that frame when Prefer Cross-Fade
+  Transitions is on, and React Native's KAV ignores it for the same reason; read as a real frame it
+  would pad the column by its whole height.
 
 A raw-sheet surface with a text field (`ClimbFilterSheet`) uses the same hook.
+
+**Known gap (#5964): the iOS measurement is not in window coordinates either.** Inside an `@expo/ui`
+sheet, `RNHostView` is marked `layoutRoot`, which gives it the `RootNodeKind` trait, and Fabric's
+`measureInWindow` stops its walk at the first such node. So the column's "window" position is really
+its position in the sheet, and the iOS overlap comes up short by the sheet's distance from the top of
+the screen, the same as the KAV did. There are three candidate replacements:
+
+- **`.global` probe:** the window origin a tiny SwiftUI `Host` reports through `onGeometryChange`.
+- **K:** the sheet host's own height, if SwiftUI shrinks it to the keyboard top.
+- **F:** window height minus host height, if the host reaches the window bottom.
+
+Which one is right depends on native behaviour nobody has seen yet. Turn on the
+`sheet-keyboard-calibration` QA flag (Settings › Developer › Feature Flags, iOS) and every sheet with a
+header or footer draws a readout of the raw numbers, keyboard down and up, along with the padding each
+design would apply. It also logs them under `[sheet-keyboard #5964]`. The readout only measures:
+nothing it reads reaches the padding.
 
 `skipPartiallyExpanded` still comes for free (the shim sets it whenever `fitToContents` or a
 single detent), so the ~50% partial trap of #4723 stays closed — the sheet can only rest at its
