@@ -62,21 +62,19 @@ The scheduler names a moment and `playRestTimerCue` decides what it feels and so
 
 | Cue | When | Haptic | Sound |
 | --- | --- | --- | --- |
-| `countdownTick` | each of the last seconds | selection | tick |
-| `warning` | once before an auto-advance, when per-second cues are off | light | tick |
+| `countdownTick` | each second of the final countdown | selection | tick |
+| `warning` | once, where the countdown would start, when per-second cues are off | light | tick |
 | `advance` | the scheduler called `nextClimb()` | medium | final |
 | `reached` | the rest ran out and the wall did not move | success | final |
 
 `warning`, `advance` and `reached` are the timer's original three haptics, unchanged.
-`countdownTick` arrives with the countdown (#5396).
+`countdownTick` is the countdown's (#5396); see `## Countdown` for when each plays.
 
 Rules the scheduler keeps:
 
 - One terminal cue per deadline: `advance` when `nextClimb()` ran, `reached` when the rest ran
-  out and the wall did not move. One gap today: at a dead end (the end of the queue or the list)
-  the toast is the only signal, so that deadline plays no terminal cue. The countdown PR (#5396)
-  closes it in the reached region it owns; until then a scheduler test pins the gap, so the change
-  is deliberate.
+  out and the wall did not move, including at a dead end (the end of the queue or the list), where
+  the toast says why.
 - Countdown ticks and the single `warning` never both play for one rest.
 - `playRestTimerCue` never throws. The haptic always plays. The sound plays only when
   `isRestTimerSoundAvailable()` and the `restTimerSound` setting are both true, and the player is
@@ -113,6 +111,70 @@ flag off, every armed phone in a crew used to be able to advance it.
 `canDriveGymTimer` is the Rogue gym timer's gate and keeps its old answer: this phone holds the
 board's Bluetooth link. A virtual hold on a wall with no lights never widens it, so a phone
 without the LED link never scans for the timer.
+
+## Countdown
+
+The last seconds of a rest count down on screen and in cues (#5396), so the climber is on the holds
+when the rest runs out. The lead scales with the rest (`getRestTimerCountdownLeadSeconds`):
+
+| Rest | Countdown |
+| --- | --- |
+| up to 1:00 | 3 s |
+| 1:01 to 2:59 | 4 s |
+| 3:00 and longer | 5 s |
+
+It is never longer than the rest minus one second, and there is none with no rest set.
+
+On screen, the pill, the Record tab's clock and the sheet's hero go to the `final` phase for the
+lead through 0:00: the brand tint (`systemColors.accent`, at least 4.5:1 on every opaque surface
+they draw on, in both schemes and under Increase Contrast), the same semibold digits, and nothing
+animates, so Reduce Motion has nothing to turn off. Past 0:00 the digits go red as before. The
+readout is never a live region. The 1 Hz ticker waits to the anchor's next whole second, not a
+flat 1000 ms, so the digits flip on the instants the cues land on.
+
+The cues, from the scheduler:
+
+- `restTimerCountdownCues` on (the default): one `countdownTick` per second of the lead, then
+  the terminal cue.
+- Off: one `warning` where the countdown would start, then the terminal cue.
+- The choice is made by the first cue that lands for a rest and kept for that rest, so a toggle
+  mid-countdown never plays ticks and the warning together. A change before the countdown starts
+  applies to that rest. Resume counts on from a new anchor, so a change made while paused applies
+  to the seconds left.
+- The countdown plays before `reached` too: auto-advance off, a crew passenger, a dead end. On the
+  minute with nothing moving the wall, every beat counts down and buzzes. The latch is the instant
+  that was cued, and a beat an advance fired on counts as cued, so a beat never gets `advance` and
+  `reached`. After a dead end, no further beat counts down until the queue moves again.
+- The `reached` latch belongs to one rest, and a rest is its anchor: a re-arm (the cadence switch
+  is one), a Reset, a new tick, an `afterTick` advance and a Resume each start a new one, so
+  nothing an earlier rest cued silences the next, whichever way the phone's clock moved. A rest
+  starts handled through the moment the scheduler first saw its anchor, so a mark that went by
+  before then never plays: the mark a paused rest already passed (Resume rebases the anchor on the
+  paused elapsed), one the last mount played before a disarm and re-arm brought the same tick
+  back, or one behind a back-dated tick (the advance never fires for those either).
+- A countdown tick or the warning that lands more than 750 ms late (`REST_TIMER_CUE_LATE_MS`)
+  says nothing. That is a timeout flushed on a resume from the background, for a second the
+  climber never saw.
+- The terminal cue keeps the advance's 5 s grace (`AUTO_ADVANCE_OVERDUE_GRACE_MS`,
+  `isRestTimerReachedCueLate`). A rest end that lands up to 5 s late, from a JS stall or a dead
+  end the deadline found late, still gets `advance` or `reached`. Past that it gets neither.
+- One rest holds at most six timeouts: five cues and the advance (or the `reached`).
+
+The wake lock (one `rest-timer` tag, in the scheduler): `scheduled || (reached cue pending &&
+pacing.source !== 'settings')`. A pending advance keeps the screen up, as it always did. A rest
+a workout stage or the crew paces also keeps it up until its `reached` cue, so limit
+bouldering's "go" after a fall lands on a lit screen. A climber's own rest with auto-advance off
+never held the screen and still does not.
+
+One case still plays no terminal cue inside an awake app: a dead end found more than 5 s after
+the rest ran out, which only happens when the beat waited that long for the next page of a list
+and that page ended the list. The toast is the signal there.
+
+The sound half needs nothing here: once the native train's `sounds.ts` reports a player, every
+cue above is audible, behind the `restTimerSound` switch.
+
+Story: `rest-timer-pill--final-countdown` (also `--running` and `--over`) draws every readout
+against the live timer; shoot it with the clock frozen for a still.
 
 ## Settings
 

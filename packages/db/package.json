@@ -145,6 +145,7 @@
     "@boardsesh/board-look": "workspace:*",
     "@boardsesh/climb-filters": "workspace:*",
     "@boardsesh/kiosk": "workspace:*",
+    "@boardsesh/playlist-generator": "workspace:*",
     "@boardsesh/shared-schema": "workspace:*",
     "@boardsesh/sync-runtime": "workspace:*",
     "drizzle-orm": "^0.45.2",

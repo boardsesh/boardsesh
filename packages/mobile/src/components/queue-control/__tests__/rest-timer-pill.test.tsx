@@ -49,7 +49,7 @@ vi.mock('react-i18next', () => ({
 
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
-    systemColors: { label: '#111111', secondaryLabel: '#666666', tertiaryLabel: '#AAAAAA' },
+    systemColors: { label: '#111111', secondaryLabel: '#666666', tertiaryLabel: '#AAAAAA', accent: '#6D28D9' },
     brandColors: { error: '#C81E1E', primary: '#7C3AED' },
   }),
 }));
@@ -132,9 +132,13 @@ import { RestTimerHeroClock, RestTimerPill } from '../RestTimerPill';
 const START_MS = Date.parse('2026-09-11T10:00:00.000Z');
 
 function advanceSeconds(seconds: number) {
+  advanceMs(seconds * 1000);
+}
+
+function advanceMs(ms: number) {
   act(() => {
-    harness.nowMs += seconds * 1000;
-    vi.advanceTimersByTime(seconds * 1000);
+    harness.nowMs += ms;
+    vi.advanceTimersByTime(ms);
   });
 }
 
@@ -210,9 +214,9 @@ describe('RestTimerPill', () => {
     const { container } = render(<RestTimerPill onPress={vi.fn()} />);
 
     advanceSeconds(60);
-    // Exactly at zero is not yet over.
+    // Exactly at zero is not yet over: it is the last second of the countdown.
     expect(elapsedText(container)).toBe('0:00');
-    expect(elapsedColor(container)).toBe('#111111');
+    expect(elapsedColor(container)).toBe('#6D28D9');
 
     advanceSeconds(5);
     expect(elapsedText(container)).toBe('-0:05');
@@ -457,6 +461,130 @@ describe('RestTimerHeroClock', () => {
 
     expect(container.querySelector('[data-testid="rest-timer-hero-clock"]')?.getAttribute('data-label')).toBe(
       'mobile.restTimer.countdownAria:1:30. mobile.restTimer.clockCaptionRest:2:00',
+    );
+  });
+});
+
+// The final countdown (#5396): the last seconds of the rest in the brand tint, on
+// the pill, the arm row's clock and the sheet's hero alike. The tint is the only
+// change; nothing animates.
+describe('the final countdown', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    harness.nowMs = START_MS;
+    harness.settings = { restTimerTargetSeconds: 60, restTimerMode: 'afterTick', restTimerAutoAdvance: true };
+  });
+
+  afterEach(() => {
+    cleanup();
+    resetRestTimerStoreForTests();
+    vi.useRealTimers();
+  });
+
+  it('tints the last three seconds of a 1 min rest, through 0:00, then goes red', () => {
+    armWithTick();
+    const { container } = render(<RestTimerPill onPress={vi.fn()} />);
+
+    advanceSeconds(56);
+    expect(elapsedText(container)).toBe('0:04');
+    expect(elapsedColor(container)).toBe('#111111');
+
+    advanceSeconds(1);
+    expect(elapsedText(container)).toBe('0:03');
+    expect(elapsedColor(container)).toBe('#6D28D9');
+
+    advanceSeconds(3);
+    expect(elapsedText(container)).toBe('0:00');
+    expect(elapsedColor(container)).toBe('#6D28D9');
+
+    advanceSeconds(1);
+    expect(elapsedText(container)).toBe('-0:01');
+    expect(elapsedColor(container)).toBe('#C81E1E');
+  });
+
+  it('starts five seconds out on a 3 min rest', () => {
+    harness.settings = { ...harness.settings, restTimerTargetSeconds: 180 };
+    armWithTick();
+    const { container } = render(<RestTimerPill onPress={vi.fn()} />);
+
+    advanceSeconds(174);
+    expect(elapsedText(container)).toBe('0:06');
+    expect(elapsedColor(container)).toBe('#111111');
+    advanceSeconds(1);
+    expect(elapsedText(container)).toBe('0:05');
+    expect(elapsedColor(container)).toBe('#6D28D9');
+  });
+
+  it('flips the digits on the anchor’s second, the instant the countdown cue lands', () => {
+    armWithTick();
+    // Mounted 400 ms into a second: a free 1 s interval would flip every digit
+    // 400 ms after the cue for it.
+    advanceMs(56_400);
+    const { container } = render(<RestTimerPill onPress={vi.fn()} />);
+    expect(elapsedText(container)).toBe('0:04');
+
+    advanceMs(599);
+    expect(elapsedText(container)).toBe('0:04');
+    advanceMs(1);
+    expect(elapsedText(container)).toBe('0:03');
+    advanceMs(1_000);
+    expect(elapsedText(container)).toBe('0:02');
+  });
+
+  it('beats in the final tint every minute on the minute', () => {
+    harness.settings = { ...harness.settings, restTimerMode: 'onTheMinute' };
+    act(() => armRestTimer('onTheMinute', harness.nowMs, null));
+    const { container } = render(<RestTimerPill onPress={vi.fn()} />);
+
+    advanceSeconds(58);
+    expect(elapsedText(container)).toBe('0:02');
+    expect(elapsedColor(container)).toBe('#6D28D9');
+
+    // The beat: a fresh minute, out of the countdown again.
+    advanceSeconds(2);
+    expect(elapsedText(container)).toBe('1:00');
+    expect(elapsedColor(container)).toBe('#111111');
+  });
+
+  it('stays paused, not final, when the climber pauses in the last seconds', () => {
+    armWithTick();
+    const { container } = render(<RestTimerPill onPress={vi.fn()} />);
+
+    advanceSeconds(58);
+    act(() => pauseRestTimer(harness.nowMs));
+    expect(elapsedText(container)).toBe('0:02');
+    expect(elapsedColor(container)).toBe('#666666');
+  });
+
+  it('has no countdown with no rest set', () => {
+    harness.settings = { ...harness.settings, restTimerTargetSeconds: null };
+    armWithTick();
+    const { container } = render(<RestTimerPill onPress={vi.fn()} />);
+
+    advanceSeconds(58);
+    expect(elapsedColor(container)).toBe('#111111');
+  });
+
+  it('tints the sheet’s hero and keeps its rest caption', () => {
+    armWithTick();
+    const { container } = render(<RestTimerHeroClock />);
+
+    advanceSeconds(58);
+    const digits = container.querySelector('[data-testid="rest-timer-hero-digits"]');
+    expect(digits?.textContent).toBe('0:02');
+    expect(digits?.getAttribute('data-color')).toBe('#6D28D9');
+    expect(container.querySelector('[data-testid="rest-timer-hero-caption"]')?.textContent).toBe(
+      'mobile.restTimer.clockCaptionRest:1:00',
+    );
+  });
+
+  it('reads the countdown out as the same sentence, never a live region', () => {
+    armWithTick();
+    const { container } = render(<RestTimerPill onPress={vi.fn()} />);
+
+    advanceSeconds(58);
+    expect(container.querySelector('[data-testid="rest-timer-pill"]')?.getAttribute('data-label')).toBe(
+      'mobile.restTimer.countdownAria:0:02',
     );
   });
 });
