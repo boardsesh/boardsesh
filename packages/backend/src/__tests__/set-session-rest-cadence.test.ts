@@ -147,8 +147,41 @@ describe('setSessionRestCadence', () => {
   it('rejects a non-member before anything is stored', async () => {
     requireSessionMember.mockRejectedValueOnce(new Error('Not a member of this session'));
     await expect(setRestCadence({ action: 'ARM', config: SETTINGS_CONFIG })).rejects.toThrow('Not a member');
+    expect(requireSessionMember).toHaveBeenCalledWith(expect.anything(), SESSION_ID);
     expect((await roomManager.getSessionRestCadence(SESSION_ID)).revision).toBe(0);
     expect(pubsubMock.publishSessionEvent).not.toHaveBeenCalled();
+  });
+
+  it('gives a non-member with invalid input the membership error, not the validation one', async () => {
+    requireSessionMember.mockRejectedValueOnce(new Error('Not a member of this session'));
+    const rejection = setRestCadence({ action: 'ARM', config: { ...SETTINGS_CONFIG, targetSeconds: 9 } });
+    await expect(rejection).rejects.toThrow('Not a member');
+    await expect(rejection).rejects.not.toThrow(/Invalid input/);
+    expect((await roomManager.getSessionRestCadence(SESSION_ID)).revision).toBe(0);
+    expect(pubsubMock.publishSessionEvent).not.toHaveBeenCalled();
+  });
+
+  it('stamps serverNow from the same instant as the anchor, even when the store write is slow', async () => {
+    const realUpdate = roomManager.updateSessionRestCadence.bind(roomManager);
+    const slowStore = vi
+      .spyOn(roomManager, 'updateSessionRestCadence')
+      .mockImplementationOnce(async (...args: Parameters<typeof realUpdate>) => {
+        const commit = await realUpdate(...args);
+        // The Redis round trip took 37 ms.
+        vi.setSystemTime(NOW + 37);
+        return commit;
+      });
+
+    try {
+      const result = await setRestCadence({ action: 'ARM', config: SETTINGS_CONFIG, elapsedMs: 4_000 });
+
+      expect(slowStore).toHaveBeenCalledWith(SESSION_ID, expect.anything(), PARTICIPANT_ID, NOW);
+      expect(result.change.restCadence?.anchorAt).toBe(String(NOW - 4_000));
+      expect(result.change.serverNow).toBe(String(NOW));
+      expect(pubsubMock.publishSessionEvent).toHaveBeenCalledWith(SESSION_ID, result.change);
+    } finally {
+      slowStore.mockRestore();
+    }
   });
 
   it('hard-errors without a participant id instead of falling back to the connection id', async () => {

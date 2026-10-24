@@ -773,8 +773,10 @@ export const sessionMutations = {
     // Its own bucket, so a runaway rest timer cannot starve climb switching.
     await applyRateLimit(ctx, RATE_LIMIT_REST_CADENCE, RATE_LIMIT_REST_CADENCE_OP);
     const sessionId = requireSession(ctx);
-    const validInput = validateInput(SessionRestCadenceInputSchema, input, 'input');
+    // Authorize before parsing: a connection that is not a member gets the
+    // membership error whatever it sends.
     await requireSessionMember(ctx, sessionId);
+    const validInput = validateInput(SessionRestCadenceInputSchema, input, 'input');
 
     // Hard-error when ctx.participantId is missing, before any write — same
     // reasoning as confirmClimbOnWall: connection ids rotate on reconnect.
@@ -782,11 +784,16 @@ export const sessionMutations = {
       throw new Error('setSessionRestCadence requires ctx.participantId; refusing to fall back to connectionId.');
     }
 
+    // One clock read for the write and the reply. A client calibrates its
+    // offset on the reply's serverNow and applies it to the anchors inside it,
+    // so both must come from the same instant; a second read after the store
+    // write would skew every offset by the write's latency.
+    const nowMs = Date.now();
     const { applied, rewound, stored } = await roomManager.updateSessionRestCadence(
       sessionId,
       validInput,
       ctx.participantId,
-      Date.now(),
+      nowMs,
     );
     const change = buildRestCadenceChange(stored, {
       // Every phone drops a revision at or below the one it holds unless the
@@ -794,7 +801,8 @@ export const sessionMutations = {
       // above anything the store holds, so only a snapshot reaches them.
       isSnapshot: rewound,
       action: applied ? validInput.action : null,
-      serverNowMs: Date.now(),
+      // The live branch of sessionUpdates re-stamps this at delivery.
+      serverNowMs: nowMs,
     });
     if (applied || rewound) {
       pubsub.publishSessionEvent(sessionId, change);
