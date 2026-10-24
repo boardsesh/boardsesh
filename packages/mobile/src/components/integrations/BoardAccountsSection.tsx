@@ -9,6 +9,7 @@ import { boardTypeLabel } from '@boardsesh/board-constants';
 import { LinkBoardAccountModal, errorMessageFor } from './LinkBoardAccountModal';
 import {
   AURORA_CREDENTIALS_QUERY_KEY,
+  pendingSyncRefetchInterval,
   AURORA_UNSYNCED_QUERY_KEY,
 } from '../../lib/integrations/use-board-account-credentials';
 import { getImportPickerTypes } from '../../lib/integrations/import-picker-types';
@@ -241,9 +242,6 @@ function getMoonBoardProgressLabel(t: TFunction<'settings'>, progress: MoonBoard
 
 const SYNCABLE_SYNC_STATUSES = new Set(['pending', 'active', 'error']);
 
-/** While a board sync is waiting, re-read the cards this often so "Syncing" clears on its own. */
-const PENDING_SYNC_REFRESH_MS = 20_000;
-
 function requestProviderSync(boardType: AuroraBoardName) {
   return getHttpClient().request<RequestProviderSyncMutationResponse, RequestProviderSyncMutationVariables>(
     REQUEST_PROVIDER_SYNC,
@@ -300,8 +298,7 @@ export function BoardAccountsSection() {
   const credentialsQuery = useQuery({
     queryKey: AURORA_CREDENTIALS_QUERY_KEY,
     queryFn: getAuroraCredentials,
-    refetchInterval: (query) =>
-      query.state.data?.credentials.some((credential) => credential.pendingRunId) ? PENDING_SYNC_REFRESH_MS : false,
+    refetchInterval: pendingSyncRefetchInterval,
   });
   const unsyncedQuery = useQuery({
     queryKey: AURORA_UNSYNCED_QUERY_KEY,

@@ -55,7 +55,7 @@ export type {
   CanonicalClimbStats,
   SettledOfflineTickAscent,
 } from './climb-stats-store';
-export { useUpdateTick, useDeleteTick } from './use-mutate-tick';
+export { useUpdateTick, useDeleteTick, invalidateTickDependents } from './use-mutate-tick';
 export { useSaveClimb, useUpdateClimb } from './use-save-climb';
 
 export {

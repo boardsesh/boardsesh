@@ -28,7 +28,7 @@ function gradeNameForDifficultyId(difficultyId: number, boardType: string): stri
 // Stats / feed / climb-state caches that derive from a user's ticks. Editing or
 // deleting a tick must refresh all of them. Prefix matching means the bare root
 // key invalidates every variant (e.g. ['userTicks', '<any-userId>']).
-function invalidateTickDependents(queryClient: QueryClient) {
+export function invalidateTickDependents(queryClient: QueryClient) {
   void queryClient.invalidateQueries({ queryKey: ['userTicks'] });
   void queryClient.invalidateQueries({ queryKey: ['userProfileStats'] });
   void queryClient.invalidateQueries({ queryKey: ['userClimbPercentile'] });

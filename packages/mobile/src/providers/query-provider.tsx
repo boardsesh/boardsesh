@@ -4,6 +4,7 @@ import { QueryCache, QueryClient, QueryClientProvider, MutationCache, focusManag
 import { reportHandledError } from '../lib/error-reporting';
 import { startConnectivityStore } from '../lib/connectivity/start-connectivity';
 import { shouldRetryQuery } from '../lib/graphql/query-retry';
+import { watchBoardImportCompletion } from '../lib/integrations/board-import-completion';
 import { climbProgressCacheScopeFor } from '../lib/climb-progress-cache-owner';
 // React Query keys `refetchOnReconnect` / `refetchOnWindowFocus` off a browser's
 // `navigator.onLine` and window-focus events, neither of which exists on React
@@ -112,6 +113,8 @@ export function createQueryClient(): QueryClient {
     },
   });
   climbProgressCacheScopeFor(queryClient);
+  // The client lives as long as the app, so the unsubscribe is never needed here.
+  watchBoardImportCompletion(queryClient);
   return queryClient;
 }
 
