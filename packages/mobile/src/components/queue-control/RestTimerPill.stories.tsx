@@ -1,131 +1,111 @@
-import { useEffect, useState } from 'react';
-import type { SessionUser } from '@boardsesh/shared-schema';
-import type { ScenarioOverrides } from '../../dev/stories/scenario-overrides';
-import type { StoryModule } from '../../dev/stories/types';
+import { useLayoutEffect, type ReactNode } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { StorySurface, StoryVariant } from '../../dev/stories/StoryCanvas';
-import { useQueueSessionId } from '../../providers/queue-provider';
+import type { StoryModule } from '../../dev/stories/types';
 import { nowMs } from '../../lib/clock';
-import { handleCrewCadenceChange } from '../../lib/crew-rest-cadence';
-import { disarmRestTimer } from '../../lib/rest-timer-store';
-import { RestTimerHeroClock, RestTimerPill } from './RestTimerPill';
-import { RestTimerSheet } from './RestTimerSheet';
+import { armRestTimer, disarmRestTimer, noteRestTimerTick } from '../../lib/rest-timer-store';
+import { getSetting, setSetting } from '../../settings';
+import { spacing } from '../../theme/tokens';
+import { RestTimerClock, RestTimerHeroClock, RestTimerPill } from './RestTimerPill';
 
-// The rest timer in a crew (#5382). A simulator is one participant, so these
-// stories fake the rest: a crew (ScenarioOverrides.queue), who holds the wall
-// (ScenarioOverrides.wall) and the crew's clock, taken the way the session's
-// subscribe seed would hand it over. The clock was set by Sam 40 s ago: two
-// minutes on the minute, moving the wall. Nothing exists on the server under
-// the story session, so nothing a story does reaches anyone.
+// The rest timer's readouts in one state each: the floating pill, the drawer
+// header's compact pill, the Record tab's clock and the sheet's hero (#5396).
+//
+// They read the live timer, not props, so each story arms the REAL rest timer
+// with a 1:00 rest and the given time left, and disarms it when it leaves (an
+// arm made in the app is lost, the same as Stop). The rest settings it pins are
+// put back on the way out. Auto-advance is pinned off, so the app's scheduler
+// counts down and buzzes but never moves a queue.
+//
+// The clock keeps running unless Metro froze it (EXPO_PUBLIC_SCREENSHOT_NOW):
+// frozen, `finalCountdown` stays on 0:03 for a capture; live, it counts on from
+// 0:03 into the overrun.
 
-const STORY_SESSION_ID = 'story-crew-session';
+const STORY_REST_SECONDS = 60;
 
-const CREW: SessionUser[] = [
-  { id: 'story-me', username: 'You', isLeader: true, connectionState: 'CONNECTED' },
-  { id: 'story-sam', username: 'Sam', isLeader: false, userId: 'story-sam-user', connectionState: 'CONNECTED' },
-];
+const noop = () => {};
 
-function crewOverrides(wall: NonNullable<ScenarioOverrides['wall']>): ScenarioOverrides {
-  return {
-    queue: { isSharedSession: true, isCrewSession: true, sessionId: STORY_SESSION_ID, sessionUsers: CREW },
-    wall,
-  };
+function useStoryRestTimer(secondsLeft: number) {
+  // A layout effect, so the first frame on screen is already armed.
+  useLayoutEffect(() => {
+    const previousSettings = {
+      targetSeconds: getSetting('restTimerTargetSeconds'),
+      mode: getSetting('restTimerMode'),
+      autoAdvance: getSetting('restTimerAutoAdvance'),
+    };
+    setSetting('restTimerTargetSeconds', STORY_REST_SECONDS);
+    setSetting('restTimerMode', 'afterTick');
+    setSetting('restTimerAutoAdvance', false);
+
+    const armedAtMs = nowMs();
+    armRestTimer('afterTick', armedAtMs, null);
+    const tickAtMs = armedAtMs - (STORY_REST_SECONDS - secondsLeft) * 1000;
+    noteRestTimerTick(new Date(tickAtMs).toISOString(), 'afterTick', armedAtMs);
+
+    return () => {
+      disarmRestTimer();
+      setSetting('restTimerTargetSeconds', previousSettings.targetSeconds);
+      setSetting('restTimerMode', previousSettings.mode);
+      setSetting('restTimerAutoAdvance', previousSettings.autoAdvance);
+    };
+  }, [secondsLeft]);
 }
 
-/** Take Sam's clock once the story's session is the one on screen, and let it go after. */
-function useStoryCrewClock() {
-  const { sessionId } = useQueueSessionId();
-  useEffect(() => {
-    if (sessionId !== STORY_SESSION_ID) return undefined;
-    const startedAtMs = nowMs();
-    handleCrewCadenceChange(
-      {
-        restCadence: {
-          mode: 'onTheMinute',
-          targetSeconds: 120,
-          autoAdvance: true,
-          advanceOn: 'deadline',
-          source: 'settings',
-          isRunning: true,
-          anchorAt: String(startedAtMs - 40_000),
-          pausedElapsedSeconds: 0,
-          lastFiredBeatAt: null,
-          lastTickQueueItemUuid: null,
-          lastTickStatus: null,
-          setByParticipantId: 'story-sam',
-        },
-        revision: 1,
-        serverNow: String(startedAtMs),
-        isSnapshot: true,
-        action: null,
-      },
-      { sessionId: STORY_SESSION_ID, ownParticipantId: 'story-me', receivedAtMs: startedAtMs },
-    );
-    return () => disarmRestTimer();
-  }, [sessionId]);
-}
-
-function CrewPills() {
-  useStoryCrewClock();
+function EveryReadout({ secondsLeft }: { secondsLeft: number }) {
+  useStoryRestTimer(secondsLeft);
   return (
-    <>
-      <StoryVariant label="Pill">
-        <StorySurface>
-          <RestTimerPill onPress={() => {}} />
-        </StorySurface>
-      </StoryVariant>
-      <StoryVariant label="Drawer header pill">
-        <StorySurface>
-          <RestTimerPill onPress={() => {}} compact />
-        </StorySurface>
-      </StoryVariant>
-      <StoryVariant label="Sheet clock">
-        <StorySurface>
-          <RestTimerHeroClock />
-        </StorySurface>
-      </StoryVariant>
-    </>
+    <View style={styles.stack}>
+      <Readout label="pill">
+        <RestTimerPill onPress={noop} />
+      </Readout>
+      <Readout label="drawer header pill">
+        <RestTimerPill onPress={noop} compact />
+      </Readout>
+      <Readout label="record tab clock">
+        <RestTimerClock variant="headline" />
+      </Readout>
+      <Readout label="sheet hero">
+        <RestTimerHeroClock />
+      </Readout>
+    </View>
   );
 }
 
-function CrewSheet() {
-  useStoryCrewClock();
-  const [visible, setVisible] = useState(true);
-  return <RestTimerSheet visible={visible} onClose={() => setVisible(false)} />;
+function Readout({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <StoryVariant label={label}>
+      <StorySurface>
+        <View style={styles.row}>{children}</View>
+      </StorySurface>
+    </StoryVariant>
+  );
 }
 
-const PASSENGER = crewOverrides({ connection: 'heldByPeer', holderDisplayName: 'Sam' });
-const HOLDER = crewOverrides({ connection: 'connectedByMe' });
-const UNHELD = crewOverrides({ connection: 'disconnected' });
-
 const stories: StoryModule = {
-  title: 'Rest timer / Crew',
+  title: 'Rest timer / Readouts',
   stories: {
-    crewPassenger: {
-      name: 'Pill and clock, Sam holds the board',
-      overrides: PASSENGER,
-      render: () => <CrewPills />,
+    finalCountdown: {
+      name: 'Final countdown, 0:03 left of a 1:00 rest',
+      render: () => <EveryReadout secondsLeft={3} />,
     },
-    crewHolder: {
-      name: 'Pill and clock, this phone holds the board',
-      overrides: HOLDER,
-      render: () => <CrewPills />,
+    running: {
+      name: 'Counting down, 0:20 left',
+      render: () => <EveryReadout secondsLeft={20} />,
     },
-    crewUnheld: {
-      name: 'Pill and clock, nobody holds the board',
-      overrides: UNHELD,
-      render: () => <CrewPills />,
-    },
-    sheetCrewPassenger: {
-      name: 'Rest timer sheet, Sam holds the board',
-      overrides: PASSENGER,
-      render: () => <CrewSheet />,
-    },
-    sheetCrewHolder: {
-      name: 'Rest timer sheet, this phone holds the board',
-      overrides: HOLDER,
-      render: () => <CrewSheet />,
+    over: {
+      name: 'Over the rest by 0:05',
+      render: () => <EveryReadout secondsLeft={-5} />,
     },
   },
 };
 
 export default stories;
+
+const styles = StyleSheet.create({
+  stack: {
+    gap: spacing[4],
+  },
+  row: {
+    alignItems: 'center',
+  },
+});
