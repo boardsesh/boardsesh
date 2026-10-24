@@ -299,6 +299,22 @@ describe('board-queue-preview redaction', () => {
     expect(detachedCurrent.current?.queueItemUuid).toBe('queue-item-99');
     expect(detachedCurrent.upNext.map((item) => item.queueItemUuid)).toEqual(['queue-item-1', 'queue-item-2']);
   });
+
+  it('starts upNext at the History / Up next line when nothing is current (F3)', () => {
+    // After the current climb is removed, History stays History on the kiosk.
+    const queue = [makeQueueItem(1), makeQueueItem(2), makeQueueItem(3)];
+
+    const noCurrent = buildBoardQueuePreview(42, { ...makeQueueState(queue, null), historyCount: 1 });
+    expect(noCurrent.upNext.map((item) => item.queueItemUuid)).toEqual(['queue-item-2', 'queue-item-3']);
+
+    // An orphan current climb (a room written before F3) reads as nothing current.
+    const orphan = buildBoardQueuePreview(42, { ...makeQueueState(queue, makeQueueItem(99)), historyCount: 2 });
+    expect(orphan.upNext.map((item) => item.queueItemUuid)).toEqual(['queue-item-3']);
+
+    // With a climb current the line is derived from it; a stale historyCount is ignored.
+    const withCurrent = buildBoardQueuePreview(42, { ...makeQueueState(queue, queue[0]), historyCount: 2 });
+    expect(withCurrent.upNext.map((item) => item.queueItemUuid)).toEqual(['queue-item-2', 'queue-item-3']);
+  });
 });
 
 // ============================================================

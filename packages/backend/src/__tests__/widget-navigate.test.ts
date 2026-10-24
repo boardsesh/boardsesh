@@ -15,7 +15,7 @@
  * - Per-session rate limit returns 429 after burst exhausted.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { EventEmitter } from 'node:events';
 import {
@@ -41,6 +41,7 @@ vi.hoisted(() => vi.resetModules());
 type MockQueueState = {
   queue: Array<{ uuid: string; climb: { uuid: string } }>;
   currentClimbQueueItem: { uuid: string; climb: { uuid: string } } | null;
+  historyCount?: number;
 };
 
 const tokenLookupRows = vi.fn<() => Array<{ sessionId: string; userId: string | null }>>(() => []);
@@ -396,7 +397,7 @@ describe('handleWidgetNavigate', () => {
     });
   });
 
-  it('wraps previous navigation from the first queue item to the last item', async () => {
+  it('outside QUEUE_NOW_SLOT_PERCENT, wraps previous navigation from the first queue item to the last item', async () => {
     tokenLookupRows.mockReturnValue([{ sessionId: SESSION_ID, userId: USER_ID }]);
 
     const req = makeRequest({
@@ -425,6 +426,85 @@ describe('handleWidgetNavigate', () => {
       serverCurrentIndex: 0,
       targetIndex: 1,
     });
+  });
+
+  describe('F3: inside QUEUE_NOW_SLOT_PERCENT', () => {
+    const previousPercent = process.env.QUEUE_NOW_SLOT_PERCENT;
+    beforeEach(() => {
+      process.env.QUEUE_NOW_SLOT_PERCENT = '100';
+    });
+    afterEach(() => {
+      if (previousPercent === undefined) delete process.env.QUEUE_NOW_SLOT_PERCENT;
+      else process.env.QUEUE_NOW_SLOT_PERCENT = previousPercent;
+    });
+
+    it('stops Previous at the start of the queue instead of wrapping to the last climb', async () => {
+      tokenLookupRows.mockReturnValue([{ sessionId: SESSION_ID, userId: USER_ID }]);
+      const req = makeRequest({
+        method: 'POST',
+        authHeader: `Bearer ${REGISTERED_TOKEN}`,
+        body: { sessionId: SESSION_ID, action: 'previous', currentIndex: 0 },
+      });
+      const res = makeResponse();
+      await handleWidgetNavigate(req as unknown as IncomingMessage, res as unknown as ServerResponse);
+
+      expect(res.statusCode).toBe(409);
+      expect(mockNavigate).not.toHaveBeenCalled();
+      expect(trackLiveActivityWidgetNavigationMock).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: 'target_out_of_bounds', targetIndex: -1 }),
+      );
+    });
+
+    it('stops Next at the end of Up next instead of spilling History', async () => {
+      tokenLookupRows.mockReturnValue([{ sessionId: SESSION_ID, userId: USER_ID }]);
+      getQueueStateMock.mockResolvedValue({
+        queue: [
+          { uuid: 'q1', climb: { uuid: 'c1' } },
+          { uuid: 'q2', climb: { uuid: 'c2' } },
+        ],
+        currentClimbQueueItem: { uuid: 'q2', climb: { uuid: 'c2' } },
+      });
+      const req = makeRequest({
+        method: 'POST',
+        authHeader: `Bearer ${REGISTERED_TOKEN}`,
+        body: { sessionId: SESSION_ID, action: 'next', currentIndex: 1 },
+      });
+      const res = makeResponse();
+      await handleWidgetNavigate(req as unknown as IncomingMessage, res as unknown as ServerResponse);
+
+      expect(res.statusCode).toBe(409);
+      expect(mockNavigate).not.toHaveBeenCalled();
+    });
+  });
+
+  it('with nothing current, Next goes to queue[historyCount] (the head of Up next), not past it', async () => {
+    tokenLookupRows.mockReturnValue([{ sessionId: SESSION_ID, userId: USER_ID }]);
+    getQueueStateMock.mockResolvedValue({
+      queue: [
+        { uuid: 'q1', climb: { uuid: 'c1' } },
+        { uuid: 'q2', climb: { uuid: 'c2' } },
+        { uuid: 'q3', climb: { uuid: 'c3' } },
+      ],
+      currentClimbQueueItem: null,
+      historyCount: 1,
+    });
+    const req = makeRequest({
+      method: 'POST',
+      authHeader: `Bearer ${REGISTERED_TOKEN}`,
+      body: { sessionId: SESSION_ID, action: 'next', currentIndex: 0 },
+    });
+    const res = makeResponse();
+    await handleWidgetNavigate(req as unknown as IncomingMessage, res as unknown as ServerResponse);
+
+    expect(res.statusCode).toBe(200);
+    expect(mockNavigate).toHaveBeenCalledWith(
+      SESSION_ID,
+      1,
+      mockedRoomManager,
+      mockedPubsub,
+      undefined,
+      'widget-navigate',
+    );
   });
 
   it('returns 429 once the per-session token bucket is exhausted', async () => {
