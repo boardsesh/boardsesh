@@ -44,13 +44,35 @@ ours attached, so this tool manages its declared settings through the API.
 
 ## What it manages
 
-| | `boardsesh-ota-v3` | `boardsesh-ota-clickhouse` | `Postgres` | `PostGIS - PG18` | `boardsesh-web` | everything else |
-| --- | --- | --- | --- | --- | --- | --- |
-| Level | `managed` | `managed` | `assert-only` | `assert-only` | `assert-only` | `inventory` |
-| Image | applied | applied | left alone | left alone | left alone | — |
-| Deploy settings | applied | — | — | — | — | — |
-| Variables | applied / asserted | — | — | asserted | asserted | — |
-| Domains, volumes, scale | reported | reported | reported | — | — | — |
+| | `boardsesh-ota-v3` | `boardsesh-ota-clickhouse` | `Postgres` | `PostGIS - PG18` | `boardsesh-web` | `boardsesh-backend` | everything else |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Level | `managed` | `managed` | `assert-only` | `assert-only` | `assert-only` | `assert-only` | `inventory` |
+| Image | applied | applied | left alone | left alone | left alone | left alone | — |
+| Deploy settings | applied | — | — | — | — | — | — |
+| Variables | applied / asserted | — | — | asserted | asserted | asserted | — |
+| Domains, volumes, scale | reported | reported | reported | — | — | — | — |
+- **Services.** Asserts `boardsesh-ota-v3`, `boardsesh-web`, `boardsesh-backend`,
+  and `PostGIS - PG18` exist; reports when
+  the ClickHouse service is missing. It never creates or deletes a service — see
+  [Why services are not created](#why-services-are-not-created).
+- **Variables.** Asserts the declared variables are set and are not still an
+  unfilled `<placeholder>`. It also checks public safe-value rules without
+  printing live values: `boardsesh-web` needs SMTP credentials and
+  `INTERNAL_SERVICE_SECRET` (see below). The backend needs the same secret;
+  the checker compares the two copies and rejects reuse of the backend's
+  `CRON_SECRET` without printing either value. `BOARDSESH_WEB`
+  must be absent or `1`, and `NEXTAUTH_URL` or `BASE_URL` must name the canonical
+  `https://www.boardsesh.com` origin. `PostGIS - PG18` needs
+  `PG_TLS_SERVER_CERT` and `PG_TLS_SERVER_KEY` — the certificate and key the
+  primary serves, which the image's entrypoint writes to the volume at boot. A
+  missing one is drift here rather than a surprise at deploy time, and an absent
+  pair means the primary falls back to its base image's snakeoil certificate,
+  whose private key is published in a public Docker Hub layer. This tool only
+  asserts that the two variables are set; it never writes them without being handed
+  their values, and installing or rolling back the certificate itself is a separate
+  reviewed operator procedure rather than anything a nightly job does.
+- **ClickHouse retention.** Asserts the TTLs on xprem's `observe_metrics` and
+  `observe_logs` tables.
 
 - **The image.** `OTA_SERVER_VERSION` in `infra/railway/config.ts` is the one place
   the deployed xprem version is written down. Applying it rolls a deployment —
@@ -336,6 +358,48 @@ service instance, and a `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` variable. Both wou
 work. The typed field is used because the variable route would need an exception to
 "never overwrite a value that is already set" — and that rule is exactly what
 protects a live DSN. A numeric knob is not worth qualifying it.
+
+### `INTERNAL_SERVICE_SECRET` (web and backend)
+
+The web tier's server-side GraphQL reads (`executeGraphQLInternal`) send it as
+`Authorization: Bearer …`. The backend checks it in
+`packages/backend/src/middleware/internal-service-auth.ts` and gives those reads
+their own rate-limit buckets instead of the anonymous per-IP one (#5291).
+
+- **Same value on both services.** Set it on `boardsesh-web` and on the backend
+  service. If the two values differ, the backend treats every SSR read as anonymous.
+- **Generate:** `openssl rand -hex 32`. Keep it distinct from `CRON_SECRET` and
+  `REVALIDATE_SECRET`, which gate different routes.
+- **Reused cron secret:** the backend denies both service and cron permissions to
+  the shared bearer. Railway drift checks report this collision without printing
+  either credential.
+- **Unset (or mismatched):** nothing breaks loudly. SSR falls back to anonymous
+  per-IP buckets: 600/min for the materialized index used by ordinary callers,
+  and 30/min for the catalog live query. Crawling many climbs can exhaust the
+  caller's shared bucket instead of using the trusted service's per-read partitions.
+- **Rotate:** set the new value on the backend first, then on web. Between the
+  two steps SSR reads run anonymous, which degrades the section but serves the page.
+
+Both services are declared in `infra/railway/config.ts`. The nightly drift job
+reports missing/placeholder credentials and unequal copies. Comparisons are exact
+(including whitespace); neither the secret nor a hash of it is logged. Mismatches
+are reported for manual correction, never automatically overwritten.
+When `--apply` fills a missing copy, it compares the supplied value with its peer
+before writing. A mismatched value is blocked and the command exits non-zero.
+
+Before merging the first deployment, provision both copies. Backend code verifies
+this identity only on HTTP requests; it does not grant user or cron permissions.
+Trusted similar-climb reads use per-read buckets in both memory and Redis: the
+resolver's normal limit is 600/min for the materialized index and 30/min for the
+catalog live query. Other service reads use a finite per-operation fallback.
+Public requests cannot select these service partitions.
+
+Keep the one-hour web cache, backend Redis cache and three-second SSR deadline.
+After deployment, verify known climb pages contain related-climb anchors in the
+initial HTML and check `BOARDSESH-FF` for shared-bucket failures for 24 hours.
+Timeouts remain a separate failure mode (#4968); event counts are not user counts.
+Rollback the code if authentication or rendering regresses; the configured secret
+is inert on older code. Ordinary anonymous limiting remains during a mismatch.
 
 ### Why placeholders are their own state
 
