@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Climb, UserBoard } from '@boardsesh/shared-schema';
 import type { GeneratorGradeScale, StagedSlot, VolumeOptions } from '@boardsesh/playlist-generator';
 import { NO_WORKOUT, singleBlockSelection, type GeneratorSelection } from '../workout-blocks';
-import type { FetchGradePool } from '../workout-preview-pool';
+import { NO_TOP_UPS, type FetchGradePool, type GradePool } from '../workout-preview-pool';
 
 const cryptoMock = vi.hoisted(() => {
   let n = 0;
@@ -64,6 +64,11 @@ function makeClimb(uuid: string): Climb {
     benchmark_difficulty: null,
     is_no_match: false,
   } as Climb;
+}
+
+/** A fetched pool with no top-up climbs, as a grade the first search tier fills. */
+function poolOf(climbs: Climb[]): GradePool {
+  return { climbs, topUpTiers: NO_TOP_UPS };
 }
 
 const board = { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 } as UserBoard;
@@ -131,7 +136,7 @@ describe('useWorkoutPreview', () => {
   });
 
   it('builds a preview after the debounce when turned on', async () => {
-    const fetchPool = vi.fn<FetchGradePool>(async () => [makeClimb('a'), makeClimb('b'), makeClimb('c')]);
+    const fetchPool = vi.fn<FetchGradePool>(async () => poolOf([makeClimb('a'), makeClimb('b'), makeClimb('c')]));
     const { result, rerender } = renderPreview(fetchPool, OFF);
 
     rerender({ selection: on(10) });
@@ -149,7 +154,7 @@ describe('useWorkoutPreview', () => {
   });
 
   it('coalesces rapid selection changes into a single build', async () => {
-    const fetchPool = vi.fn<FetchGradePool>(async () => [makeClimb('a'), makeClimb('b'), makeClimb('c')]);
+    const fetchPool = vi.fn<FetchGradePool>(async () => poolOf([makeClimb('a'), makeClimb('b'), makeClimb('c')]));
     const { result, rerender } = renderPreview(fetchPool, OFF);
 
     rerender({ selection: on(10) }); // schedules a build
@@ -160,7 +165,7 @@ describe('useWorkoutPreview', () => {
   });
 
   it('rebuilds when a workout-shape option changes without changing the target grade', async () => {
-    const fetchPool = vi.fn<FetchGradePool>(async () => [makeClimb('a'), makeClimb('b'), makeClimb('c')]);
+    const fetchPool = vi.fn<FetchGradePool>(async () => poolOf([makeClimb('a'), makeClimb('b'), makeClimb('c')]));
     const { result, rerender } = renderPreview(fetchPool, OFF);
 
     rerender({ selection: on(10, { mainSetClimbs: 20 }) });
@@ -176,7 +181,7 @@ describe('useWorkoutPreview', () => {
   });
 
   it('hides stale generated plan data while a changed selection rebuilds', async () => {
-    const fetchPool = vi.fn<FetchGradePool>(async () => [makeClimb('a'), makeClimb('b'), makeClimb('c')]);
+    const fetchPool = vi.fn<FetchGradePool>(async () => poolOf([makeClimb('a'), makeClimb('b'), makeClimb('c')]));
     const { result, rerender } = renderPreview(fetchPool, OFF);
 
     rerender({ selection: on(10) });
@@ -195,10 +200,9 @@ describe('useWorkoutPreview', () => {
   });
 
   it('hides the previous board’s rows immediately while the new preview loads', async () => {
-    const fetchPool = vi.fn<FetchGradePool>(async (_grade, { board: requestedBoard }) => [
-      makeClimb(`${requestedBoard.boardType}-a`),
-      makeClimb(`${requestedBoard.boardType}-b`),
-    ]);
+    const fetchPool = vi.fn<FetchGradePool>(async (_grade, { board: requestedBoard }) =>
+      poolOf([makeClimb(`${requestedBoard.boardType}-a`), makeClimb(`${requestedBoard.boardType}-b`)]),
+    );
     const selection = on(10);
     const { result, rerender } = renderHook(
       ({ activeBoard }: { activeBoard: UserBoard }) =>
@@ -218,7 +222,7 @@ describe('useWorkoutPreview', () => {
   });
 
   it('rebuilds when authentication changes because climb-bias filters depend on auth', async () => {
-    const fetchPool = vi.fn<FetchGradePool>(async () => [makeClimb('a'), makeClimb('b'), makeClimb('c')]);
+    const fetchPool = vi.fn<FetchGradePool>(async () => poolOf([makeClimb('a'), makeClimb('b'), makeClimb('c')]));
     const selection = on(10, { climbBias: 'unfamiliar' });
     const { result, rerender } = renderPreviewWithAuth(fetchPool, selection, false);
 
@@ -231,7 +235,7 @@ describe('useWorkoutPreview', () => {
   });
 
   it('clears back to idle when the generator is turned off', async () => {
-    const fetchPool = vi.fn<FetchGradePool>(async () => [makeClimb('a'), makeClimb('b')]);
+    const fetchPool = vi.fn<FetchGradePool>(async () => poolOf([makeClimb('a'), makeClimb('b')]));
     const { result, rerender } = renderPreview(fetchPool, OFF);
 
     rerender({ selection: on(10) });
@@ -246,7 +250,7 @@ describe('useWorkoutPreview', () => {
   it('refreshes a single row and de-dupes a double-tap into one fetch', async () => {
     // Pool is exactly [a, b] for 2 slots → both used → refresh misses the cache
     // and must refetch (so we can count the fetch).
-    const fetchPool = vi.fn<FetchGradePool>(async () => [makeClimb('a'), makeClimb('b')]);
+    const fetchPool = vi.fn<FetchGradePool>(async () => poolOf([makeClimb('a'), makeClimb('b')]));
     const { result } = renderPreview(fetchPool, on(10));
 
     await waitFor(() => expect(result.current.status).toBe('ready'));
@@ -269,10 +273,10 @@ describe('useWorkoutPreview', () => {
 
   it('drops a stale build whose fetch resolves after a newer one', async () => {
     vi.useFakeTimers();
-    const deferreds: Array<(climbs: Climb[]) => void> = [];
+    const deferreds: Array<(pool: GradePool) => void> = [];
     const fetchPool = vi.fn<FetchGradePool>(
       () =>
-        new Promise<Climb[]>((resolve) => {
+        new Promise<GradePool>((resolve) => {
           deferreds.push(resolve);
         }),
     );
@@ -289,11 +293,11 @@ describe('useWorkoutPreview', () => {
 
     // Resolve the STALE build first, then the fresh one.
     await act(async () => {
-      deferreds[0]?.([makeClimb('stale')]);
+      deferreds[0]?.(poolOf([makeClimb('stale')]));
       await Promise.resolve();
     });
     await act(async () => {
-      deferreds[1]?.([makeClimb('fresh')]);
+      deferreds[1]?.(poolOf([makeClimb('fresh')]));
       await Promise.resolve();
     });
 
@@ -302,13 +306,13 @@ describe('useWorkoutPreview', () => {
   });
 
   it('drops a stale row refresh after the preview is cleared', async () => {
-    let resolveRefresh: ((climbs: Climb[]) => void) | null = null;
+    let resolveRefresh: ((pool: GradePool) => void) | null = null;
     const fetchPool = vi
       .fn<FetchGradePool>()
-      .mockResolvedValueOnce([makeClimb('a'), makeClimb('b')])
+      .mockResolvedValueOnce(poolOf([makeClimb('a'), makeClimb('b')]))
       .mockImplementationOnce(
         () =>
-          new Promise<Climb[]>((resolve) => {
+          new Promise<GradePool>((resolve) => {
             resolveRefresh = resolve;
           }),
       );
@@ -325,7 +329,7 @@ describe('useWorkoutPreview', () => {
     await waitFor(() => expect(result.current.status).toBe('idle'));
 
     await act(async () => {
-      resolveRefresh?.([makeClimb('c')]);
+      resolveRefresh?.(poolOf([makeClimb('c')]));
       await Promise.resolve();
     });
 
@@ -336,7 +340,7 @@ describe('useWorkoutPreview', () => {
   it('sets error status, toasts, and leaves previous items in place when a rebuild fails', async () => {
     const fetchPool = vi
       .fn<FetchGradePool>()
-      .mockResolvedValueOnce([makeClimb('a'), makeClimb('b')])
+      .mockResolvedValueOnce(poolOf([makeClimb('a'), makeClimb('b')]))
       .mockRejectedValueOnce(new Error('search failed'));
     const { result, rerender } = renderPreview(fetchPool, OFF);
 
@@ -358,7 +362,7 @@ describe('useWorkoutPreview', () => {
 
   it('shuffles every row from the fetched pools without a new fetch', async () => {
     const pool = Array.from({ length: 12 }, (_, index) => makeClimb(`c${index}`));
-    const fetchPool = vi.fn<FetchGradePool>(async () => pool);
+    const fetchPool = vi.fn<FetchGradePool>(async () => poolOf(pool));
     const { result, rerender } = renderPreview(fetchPool, OFF);
     rerender({ selection: on(10) });
     await waitFor(() => expect(result.current.status).toBe('ready'));
@@ -378,7 +382,7 @@ describe('useWorkoutPreview', () => {
   });
 
   it('ignores Shuffle while a changed selection is still rebuilding', async () => {
-    const fetchPool = vi.fn<FetchGradePool>(async () => [makeClimb('a'), makeClimb('b'), makeClimb('c')]);
+    const fetchPool = vi.fn<FetchGradePool>(async () => poolOf([makeClimb('a'), makeClimb('b'), makeClimb('c')]));
     const { result, rerender } = renderPreview(fetchPool, OFF);
     rerender({ selection: on(10) });
     await waitFor(() => expect(result.current.status).toBe('ready'));
@@ -392,7 +396,7 @@ describe('useWorkoutPreview', () => {
   });
 
   it('hands Start the reviewed climbs grouped by their workout stage', async () => {
-    const fetchPool = vi.fn<FetchGradePool>(async () => [makeClimb('a'), makeClimb('b'), makeClimb('c')]);
+    const fetchPool = vi.fn<FetchGradePool>(async () => poolOf([makeClimb('a'), makeClimb('b'), makeClimb('c')]));
     const { result } = renderPreview(fetchPool, on(10));
     await waitFor(() => expect(result.current.status).toBe('ready'));
 
@@ -404,7 +408,7 @@ describe('useWorkoutPreview', () => {
 
   it('passes over the climbs the caller avoids, on build and on shuffle', async () => {
     const pool = Array.from({ length: 12 }, (_, index) => makeClimb(`c${index}`));
-    const fetchPool = vi.fn<FetchGradePool>(async () => pool);
+    const fetchPool = vi.fn<FetchGradePool>(async () => poolOf(pool));
     const avoided = new Set(['c0', 'c1', 'c2', 'c3']);
     const { result } = renderHook(() =>
       useWorkoutPreview(
@@ -425,7 +429,7 @@ describe('useWorkoutPreview', () => {
 
   it('keeps the stage map in step with a row refresh and a shuffle', async () => {
     const pool = Array.from({ length: 12 }, (_, index) => makeClimb(`c${index}`));
-    const fetchPool = vi.fn<FetchGradePool>(async () => pool);
+    const fetchPool = vi.fn<FetchGradePool>(async () => poolOf(pool));
     const { result } = renderPreview(fetchPool, on(10));
     await waitFor(() => expect(result.current.status).toBe('ready'));
 
@@ -446,7 +450,7 @@ describe('useWorkoutPreview', () => {
   });
 
   it('hands Start no run while a changed selection is still rebuilding', async () => {
-    const fetchPool = vi.fn<FetchGradePool>(async () => [makeClimb('a'), makeClimb('b'), makeClimb('c')]);
+    const fetchPool = vi.fn<FetchGradePool>(async () => poolOf([makeClimb('a'), makeClimb('b'), makeClimb('c')]));
     const { result, rerender } = renderPreview(fetchPool, on(10));
     await waitFor(() => expect(result.current.status).toBe('ready'));
 
@@ -456,14 +460,14 @@ describe('useWorkoutPreview', () => {
   });
 
   it('fetches on the upstream grade with the preference off', async () => {
-    const fetchPool = vi.fn<FetchGradePool>(async () => [makeClimb('a'), makeClimb('b'), makeClimb('c')]);
+    const fetchPool = vi.fn<FetchGradePool>(async () => poolOf([makeClimb('a'), makeClimb('b'), makeClimb('c')]));
     const { result } = renderPreview(fetchPool, on(10));
     await waitFor(() => expect(result.current.status).toBe('ready'));
     expect(fetchPool.mock.calls[0][1].boardseshGrades).toBe(false);
   });
 
   it('fetches on the Boardsesh grade, and rebuilds when the preference flips', async () => {
-    const fetchPool = vi.fn<FetchGradePool>(async () => [makeClimb('a'), makeClimb('b'), makeClimb('c')]);
+    const fetchPool = vi.fn<FetchGradePool>(async () => poolOf([makeClimb('a'), makeClimb('b'), makeClimb('c')]));
     const { result, rerender } = renderPreview(fetchPool, on(10));
     await waitFor(() => expect(result.current.status).toBe('ready'));
     const callsBefore = fetchPool.mock.calls.length;

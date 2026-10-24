@@ -58,8 +58,16 @@ export function filtersOf({
   minRating,
   onlyTallClimbs,
   onlyWideClimbs,
+  skipSent,
+  skipTried,
+  onlyBenchmarks,
 }: WorkoutFilters): WorkoutFilters {
-  return { climbBias, minAscents, minRating, onlyTallClimbs, onlyWideClimbs };
+  const filters: WorkoutFilters = { climbBias, minAscents, minRating, onlyTallClimbs, onlyWideClimbs };
+  // Left off when off, so default filters store exactly as they did before these existed.
+  if (skipSent) filters.skipSent = true;
+  if (skipTried) filters.skipTried = true;
+  if (onlyBenchmarks) filters.onlyBenchmarks = true;
+  return filters;
 }
 
 /** The generator's default climb filters: what the first block starts with. */
@@ -68,14 +76,17 @@ export const DEFAULT_WORKOUT_FILTERS: WorkoutFilters = filtersOf(DEFAULT_VOLUME_
 /** No blocks: the climber picks every climb. */
 export const NO_WORKOUT: GeneratorSelection = { blocks: [] };
 
-/** True when two sets of filters fetch the same climbs. */
+/** True when two sets of filters fetch the same climbs. An absent `skipSent`, `skipTried` or `onlyBenchmarks` is off. */
 export function sameFilters(first: WorkoutFilters, second: WorkoutFilters): boolean {
   return (
     first.climbBias === second.climbBias &&
     first.minAscents === second.minAscents &&
     first.minRating === second.minRating &&
     first.onlyTallClimbs === second.onlyTallClimbs &&
-    first.onlyWideClimbs === second.onlyWideClimbs
+    first.onlyWideClimbs === second.onlyWideClimbs &&
+    (first.skipSent ?? false) === (second.skipSent ?? false) &&
+    (first.skipTried ?? false) === (second.skipTried ?? false) &&
+    (first.onlyBenchmarks ?? false) === (second.onlyBenchmarks ?? false)
   );
 }
 

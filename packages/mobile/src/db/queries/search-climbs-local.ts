@@ -549,9 +549,14 @@ export function buildJoinAndWhere(
     );
   }
 
-  // Benchmarks only.
+  // Benchmarks only: a real number above zero, the rule the server applies
+  // (#6232) and the one `mapRowToClimb` draws the ribbon from. SQLite cannot
+  // hold NaN (it stores NULL, which fails `> 0`), but it ranks any TEXT above
+  // every number, so a value that arrived as text would pass `> 0` the way NaN
+  // does in Postgres and come back as a climb with no benchmark.
   if (input.onlyBenchmarks) {
-    push(`${eff('benchmark_difficulty')} > 0`);
+    const benchmarkDifficulty = eff('benchmark_difficulty');
+    push(`(typeof(${benchmarkDifficulty}) IN ('integer', 'real') AND ${benchmarkDifficulty} > 0)`);
   }
 
   // Projects only: 0 ascents or no stats row.

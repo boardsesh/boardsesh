@@ -42,7 +42,14 @@ export type WarmUpStageType = Exclude<WarmUpType, 'none'>;
  */
 export type WorkoutStageFilters = Pick<
   GeneratorOptions,
-  'climbBias' | 'minAscents' | 'minRating' | 'onlyTallClimbs' | 'onlyWideClimbs'
+  | 'climbBias'
+  | 'minAscents'
+  | 'minRating'
+  | 'onlyTallClimbs'
+  | 'onlyWideClimbs'
+  | 'skipSent'
+  | 'skipTried'
+  | 'onlyBenchmarks'
 >;
 
 /**

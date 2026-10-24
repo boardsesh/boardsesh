@@ -186,6 +186,8 @@ export type ClimbRowAscentStatusLeafProps = {
   supportsMirroring: boolean;
   /** `Climb.holdsRevisionNumber`, a primitive so the memo boundary holds. */
   holdsRevisionNumber: number | null;
+  /** See `ClimbListItemContentProps.knownAscentStatus`. Absent or null: the logbook alone. */
+  knownStatus?: AscentStatusValue | null;
   /**
    * On a board that mirrors: lay both directions out on ONE line and hold that
    * line while neither has a status. The row asks for this when it has no
@@ -269,6 +271,14 @@ type ClimbListItemContentProps = {
   showFavorite?: boolean;
   /** Drag hosts keep names on one line so every reorder step has one height. */
   allowNameWrapping?: boolean;
+  /**
+   * A status the host already knows from elsewhere, drawn while the logbook has
+   * none for this climb: the workout preview knows a top-up came from the
+   * search for sent climbs before that climb's ticks have loaded. The logbook
+   * wins once it has a status. Only on a board that cannot mirror, since such a
+   * status names no direction.
+   */
+  knownAscentStatus?: AscentStatusValue | null;
   /**
    * What the row shows. Omitted (every list does this), the row reads the
    * climber's Climb list settings itself, so no host has to thread them through.
@@ -400,6 +410,7 @@ const AscentStatusGlyph = React.memo(function AscentStatusGlyph({
   angle,
   supportsMirroring,
   holdsRevisionNumber,
+  knownStatus = null,
   reserveLine,
   allowLabelWrapping,
 }: ClimbRowAscentStatusLeafProps) {
@@ -413,11 +424,13 @@ const AscentStatusGlyph = React.memo(function AscentStatusGlyph({
     boardName,
   );
   const mirrorStatus = useAscentStatus(climbUuid, angle, true, holdsRevisionNumber, boardName);
+  // A known status names no direction, so a board that mirrors keeps to the logbook.
+  const shownStatus = supportsMirroring ? ascentStatus : (ascentStatus ?? knownStatus);
 
   return (
     <ClimbAscentStatusView
       supportsMirroring={supportsMirroring}
-      ascentStatus={ascentStatus}
+      ascentStatus={shownStatus}
       mirrorStatus={mirrorStatus}
       reserveLine={reserveLine}
       allowLabelWrapping={allowLabelWrapping}
@@ -953,6 +966,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
   showProgress = false,
   showFavorite = false,
   allowNameWrapping = true,
+  knownAscentStatus = null,
   display,
   leaves = LIVE_CLIMB_ROW_LEAVES,
 }: ClimbListItemContentProps) {
@@ -1113,6 +1127,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
         angle={angle}
         supportsMirroring={supportsMirroring}
         holdsRevisionNumber={climb.holdsRevisionNumber ?? null}
+        knownStatus={knownAscentStatus}
         reserveLine={layout.reservesLateLines}
         allowLabelWrapping={allowNameWrapping}
       />

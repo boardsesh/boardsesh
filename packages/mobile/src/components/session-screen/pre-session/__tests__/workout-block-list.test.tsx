@@ -142,6 +142,8 @@ vi.mock('../../../../hooks/use-grade-format', () => ({
 }));
 vi.mock('../../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../../theme/tokens', () => ({ spacing: {} }));
+// WorkoutBlockFilters reads sign-in for Skip what I've sent.
+vi.mock('../../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
 vi.mock('../../../../providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: {}, brandColors: {}, variant: 'liquidGlass', m3: {} }),
 }));
