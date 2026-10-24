@@ -125,6 +125,16 @@ describe('truncateClimbName', () => {
     expect(truncateClimbName('  Crimp Ladder ')).toBe('Crimp Ladder');
   });
 
+  it('cuts a long name at the default length with an ellipsis', () => {
+    const cut = truncateClimbName('x'.repeat(MAX_FIRST_UP_NEXT_NAME_LENGTH + 20));
+    expect(Array.from(cut)).toHaveLength(MAX_FIRST_UP_NEXT_NAME_LENGTH);
+    expect(cut.endsWith('\u2026')).toBe(true);
+  });
+
+  it('returns an empty string for an empty name', () => {
+    expect(truncateClimbName('')).toBe('');
+  });
+
   it('never splits a character made of two code units', () => {
     expect(truncateClimbName('\u{1F9D7}\u{1F9D7}\u{1F9D7}', 2)).toBe('\u{1F9D7}\u2026');
   });

@@ -789,6 +789,7 @@
       "removeFavoriteAria": "Aus Favoriten entfernen",
       "climbActionsAria": "Boulder-Aktionen",
       "queueCountAria": "Warteschlange, {{count}} Boulder",
+      "queueUpNextAria_zero": "Warteschlange, nichts als Nächstes",
       "queueUpNextAria_one": "Warteschlange, als Nächstes {{count}} Boulder",
       "queueUpNextAria_other": "Warteschlange, als Nächstes {{count}} Boulder",
       "changeAngle": "Winkel ändern"
