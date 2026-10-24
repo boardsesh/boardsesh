@@ -14,6 +14,8 @@ import { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-node/
  * Learn more about it here: https://the-guild.dev/graphql/codegen/plugins/presets/preset-client#reducing-bundle-size
  */
 type Documents = {
+  '\n  query GetMyProfile {\n    profile {\n      id\n      email\n      displayName\n      avatarUrl\n      instagramUrl\n      hasPassword\n      linkedProviders\n      isTester\n      createdAt\n      favoriteCount\n    }\n  }\n': typeof types.GetMyProfileDocument;
+  '\n  mutation UpdateMyProfile($input: UpdateProfileInput!) {\n    updateProfile(input: $input) {\n      id\n      email\n      displayName\n      avatarUrl\n      instagramUrl\n      hasPassword\n      linkedProviders\n      isTester\n      createdAt\n      favoriteCount\n    }\n  }\n': typeof types.UpdateMyProfileDocument;
   '\n  query GetDeleteAccountInfo {\n    deleteAccountInfo {\n      publishedClimbCount\n    }\n  }\n': typeof types.GetDeleteAccountInfoDocument;
   '\n  mutation DeleteAccount($input: DeleteAccountInput!) {\n    deleteAccount(input: $input)\n  }\n': typeof types.DeleteAccountDocument;
   '\n  query GetActivityFeed($input: ActivityFeedInput) {\n    activityFeed(input: $input) {\n      items {\n        id\n        type\n        entityType\n        entityId\n        boardUuid\n        actorId\n        actorDisplayName\n        actorAvatarUrl\n        climbName\n        climbUuid\n        boardType\n        layoutId\n        gradeName\n        status\n        angle\n        frames\n        setterUsername\n        commentBody\n        isMirror\n        isBenchmark\n        isNoMatch\n        difficulty\n        difficultyName\n        quality\n        attemptCount\n        comment\n        commentCount\n        createdAt\n      }\n      cursor\n      hasMore\n    }\n  }\n': typeof types.GetActivityFeedDocument;
@@ -165,6 +167,7 @@ type Documents = {
   '\n  mutation FollowUser($input: FollowInput!) {\n    followUser(input: $input)\n  }\n': typeof types.FollowUserDocument;
   '\n  mutation UnfollowUser($input: FollowInput!) {\n    unfollowUser(input: $input)\n  }\n': typeof types.UnfollowUserDocument;
   '\n  query GetPublicProfile($userId: ID!) {\n    publicProfile(userId: $userId) {\n      id\n      displayName\n      avatarUrl\n      instagramUrl\n      followerCount\n      followingCount\n      isFollowedByMe\n    }\n  }\n': typeof types.GetPublicProfileDocument;
+  '\n  query GetWebPublicProfile($userId: ID!) {\n    publicProfile(userId: $userId) {\n      id\n      isPrivate\n      canViewActivity\n      displayName\n      avatarUrl\n      instagramUrl\n      followerCount\n      followingCount\n      isFollowedByMe\n    }\n  }\n': typeof types.GetWebPublicProfileDocument;
   '\n  query GetFollowers($input: FollowListInput!) {\n    followers(input: $input) {\n      users {\n        id\n        displayName\n        avatarUrl\n        followerCount\n        followingCount\n        isFollowedByMe\n      }\n      totalCount\n      hasMore\n    }\n  }\n': typeof types.GetFollowersDocument;
   '\n  query GetFollowing($input: FollowListInput!) {\n    following(input: $input) {\n      users {\n        id\n        displayName\n        avatarUrl\n        followerCount\n        followingCount\n        isFollowedByMe\n      }\n      totalCount\n      hasMore\n    }\n  }\n': typeof types.GetFollowingDocument;
   '\n  query IsFollowing($userId: ID!) {\n    isFollowing(userId: $userId)\n  }\n': typeof types.IsFollowingDocument;
@@ -204,6 +207,10 @@ type Documents = {
   '\n  query GetUserDataExportDownload($boardType: String!, $period: String!, $format: UserDataExportFormat!) {\n    userDataExportDownload(boardType: $boardType, period: $period, format: $format) {\n      url\n      expiresAt\n      filename\n    }\n  }\n': typeof types.GetUserDataExportDownloadDocument;
 };
 const documents: Documents = {
+  '\n  query GetMyProfile {\n    profile {\n      id\n      email\n      displayName\n      avatarUrl\n      instagramUrl\n      hasPassword\n      linkedProviders\n      isTester\n      createdAt\n      favoriteCount\n    }\n  }\n':
+    types.GetMyProfileDocument,
+  '\n  mutation UpdateMyProfile($input: UpdateProfileInput!) {\n    updateProfile(input: $input) {\n      id\n      email\n      displayName\n      avatarUrl\n      instagramUrl\n      hasPassword\n      linkedProviders\n      isTester\n      createdAt\n      favoriteCount\n    }\n  }\n':
+    types.UpdateMyProfileDocument,
   '\n  query GetDeleteAccountInfo {\n    deleteAccountInfo {\n      publishedClimbCount\n    }\n  }\n':
     types.GetDeleteAccountInfoDocument,
   '\n  mutation DeleteAccount($input: DeleteAccountInput!) {\n    deleteAccount(input: $input)\n  }\n':
@@ -503,6 +510,8 @@ const documents: Documents = {
     types.UnfollowUserDocument,
   '\n  query GetPublicProfile($userId: ID!) {\n    publicProfile(userId: $userId) {\n      id\n      displayName\n      avatarUrl\n      instagramUrl\n      followerCount\n      followingCount\n      isFollowedByMe\n    }\n  }\n':
     types.GetPublicProfileDocument,
+  '\n  query GetWebPublicProfile($userId: ID!) {\n    publicProfile(userId: $userId) {\n      id\n      isPrivate\n      canViewActivity\n      displayName\n      avatarUrl\n      instagramUrl\n      followerCount\n      followingCount\n      isFollowedByMe\n    }\n  }\n':
+    types.GetWebPublicProfileDocument,
   '\n  query GetFollowers($input: FollowListInput!) {\n    followers(input: $input) {\n      users {\n        id\n        displayName\n        avatarUrl\n        followerCount\n        followingCount\n        isFollowedByMe\n      }\n      totalCount\n      hasMore\n    }\n  }\n':
     types.GetFollowersDocument,
   '\n  query GetFollowing($input: FollowListInput!) {\n    following(input: $input) {\n      users {\n        id\n        displayName\n        avatarUrl\n        followerCount\n        followingCount\n        isFollowedByMe\n      }\n      totalCount\n      hasMore\n    }\n  }\n':
@@ -591,6 +600,18 @@ const documents: Documents = {
  */
 export function graphql(source: string): unknown;
 
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query GetMyProfile {\n    profile {\n      id\n      email\n      displayName\n      avatarUrl\n      instagramUrl\n      hasPassword\n      linkedProviders\n      isTester\n      createdAt\n      favoriteCount\n    }\n  }\n',
+): (typeof documents)['\n  query GetMyProfile {\n    profile {\n      id\n      email\n      displayName\n      avatarUrl\n      instagramUrl\n      hasPassword\n      linkedProviders\n      isTester\n      createdAt\n      favoriteCount\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation UpdateMyProfile($input: UpdateProfileInput!) {\n    updateProfile(input: $input) {\n      id\n      email\n      displayName\n      avatarUrl\n      instagramUrl\n      hasPassword\n      linkedProviders\n      isTester\n      createdAt\n      favoriteCount\n    }\n  }\n',
+): (typeof documents)['\n  mutation UpdateMyProfile($input: UpdateProfileInput!) {\n    updateProfile(input: $input) {\n      id\n      email\n      displayName\n      avatarUrl\n      instagramUrl\n      hasPassword\n      linkedProviders\n      isTester\n      createdAt\n      favoriteCount\n    }\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
@@ -1497,6 +1518,12 @@ export function graphql(
 export function graphql(
   source: '\n  query GetPublicProfile($userId: ID!) {\n    publicProfile(userId: $userId) {\n      id\n      displayName\n      avatarUrl\n      instagramUrl\n      followerCount\n      followingCount\n      isFollowedByMe\n    }\n  }\n',
 ): (typeof documents)['\n  query GetPublicProfile($userId: ID!) {\n    publicProfile(userId: $userId) {\n      id\n      displayName\n      avatarUrl\n      instagramUrl\n      followerCount\n      followingCount\n      isFollowedByMe\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query GetWebPublicProfile($userId: ID!) {\n    publicProfile(userId: $userId) {\n      id\n      isPrivate\n      canViewActivity\n      displayName\n      avatarUrl\n      instagramUrl\n      followerCount\n      followingCount\n      isFollowedByMe\n    }\n  }\n',
+): (typeof documents)['\n  query GetWebPublicProfile($userId: ID!) {\n    publicProfile(userId: $userId) {\n      id\n      isPrivate\n      canViewActivity\n      displayName\n      avatarUrl\n      instagramUrl\n      followerCount\n      followingCount\n      isFollowedByMe\n    }\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
