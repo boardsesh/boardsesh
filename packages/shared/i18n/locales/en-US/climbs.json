@@ -703,9 +703,9 @@
       "title": "Report climb",
       "kind": {
         "label": "What's wrong?",
-        "hide": "Hide this climb",
+        "hide": "Vote to hide",
         "grade": "Grade is wrong",
-        "hideHint": "Junk, duplicate, or unclimbable. Enough reports hide it for everyone.",
+        "hideHint": "Junk, duplicate, or unclimbable. Your report is one vote. Once enough climbers agree, it's hidden for everyone.",
         "gradeHint": "Pick the grade you think it deserves."
       },
       "sameGrade": "That's already the current grade",
@@ -716,7 +716,7 @@
       "submit": "Send",
       "submitError": "Couldn't send your report",
       "toast": {
-        "reported": "Reported. {{current}} of {{required}} votes to hide it",
+        "reported": "Reported. {{current}} of {{required}} votes to hide it for everyone",
         "reportedGrade": "Grade change proposed. The crew votes on it",
         "alreadyReported": "You've already reported this climb",
         "gradeChanged": "Grade changed"

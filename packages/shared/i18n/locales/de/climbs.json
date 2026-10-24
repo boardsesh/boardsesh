@@ -703,9 +703,9 @@
       "title": "Boulder melden",
       "kind": {
         "label": "Was stimmt nicht?",
-        "hide": "Diesen Boulder ausblenden",
+        "hide": "Für Ausblenden stimmen",
         "grade": "Der Grad stimmt nicht",
-        "hideHint": "Müll, Dublette oder nicht kletterbar. Genug Meldungen blenden ihn für alle aus.",
+        "hideHint": "Müll, Dublette oder nicht kletterbar. Deine Meldung ist eine Stimme. Sobald genug Kletterer*innen zustimmen, wird er für alle ausgeblendet.",
         "gradeHint": "Wähl den Grad, den er deiner Meinung nach verdient."
       },
       "sameGrade": "Das ist schon der aktuelle Grad",
@@ -716,7 +716,7 @@
       "submit": "Senden",
       "submitError": "Deine Meldung konnte nicht gesendet werden",
       "toast": {
-        "reported": "Gemeldet. {{current}} von {{required}} Stimmen zum Ausblenden",
+        "reported": "Gemeldet. {{current}} von {{required}} Stimmen, um ihn für alle auszublenden",
         "reportedGrade": "Gradänderung vorgeschlagen. Die Crew stimmt ab",
         "alreadyReported": "Du hast diesen Boulder schon gemeldet",
         "gradeChanged": "Grad geändert"

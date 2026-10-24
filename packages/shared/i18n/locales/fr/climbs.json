@@ -703,9 +703,9 @@
       "title": "Signaler le bloc",
       "kind": {
         "label": "Qu'est-ce qui cloche ?",
-        "hide": "Masquer ce bloc",
+        "hide": "Voter pour masquer",
         "grade": "La cotation est fausse",
-        "hideHint": "Bloc bidon, doublon ou infaisable. Assez de signalements et il est masqué pour tout le monde.",
+        "hideHint": "Bloc bidon, doublon ou infaisable. Ton signalement compte pour un vote. Quand assez de monde est d'accord, il est masqué pour tout le monde.",
         "gradeHint": "Choisis la cotation qu'il mérite selon toi."
       },
       "sameGrade": "C'est déjà la cotation actuelle",
@@ -716,7 +716,7 @@
       "submit": "Envoyer",
       "submitError": "Impossible d'envoyer ton signalement",
       "toast": {
-        "reported": "Signalé. {{current}} votes sur {{required}} pour le masquer",
+        "reported": "Signalé. {{current}} votes sur {{required}} pour le masquer pour tout le monde",
         "reportedGrade": "Changement de cotation proposé. La crew vote dessus",
         "alreadyReported": "Tu as déjà signalé ce bloc",
         "gradeChanged": "Cotation changée"

@@ -703,9 +703,9 @@
       "title": "Reportar bloque",
       "kind": {
         "label": "¿Qué falla?",
-        "hide": "Ocultar este bloque",
+        "hide": "Votar para ocultar",
         "grade": "El grado está mal",
-        "hideHint": "Basura, duplicado o inescalable. Con suficientes reportes se oculta para todo el mundo.",
+        "hideHint": "Basura, duplicado o inescalable. Tu reporte es un voto. Cuando suficiente gente coincida, se oculta para todo el mundo.",
         "gradeHint": "Elige el grado que crees que merece."
       },
       "sameGrade": "Ese ya es el grado actual",
@@ -716,7 +716,7 @@
       "submit": "Enviar",
       "submitError": "No se pudo enviar tu reporte",
       "toast": {
-        "reported": "Reportado. {{current}} de {{required}} votos para ocultarlo",
+        "reported": "Reportado. {{current}} de {{required}} votos para ocultarlo para todo el mundo",
         "reportedGrade": "Cambio de grado propuesto. Ahora vota el grupo",
         "alreadyReported": "Ya habías reportado este bloque",
         "gradeChanged": "Grado cambiado"
