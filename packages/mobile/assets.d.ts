@@ -1,4 +1,4 @@
-// Metro resolves a static image import to an asset id (a number) at runtime.
+// Metro resolves a static image or sound import to an asset id (a number) at runtime.
 // Declare the common asset extensions so `import img from './x.png'` type-checks:
 // Expo's bundled types only cover CSS modules, and this project has no
 // expo-env.d.ts pulling in `expo/types`.
@@ -19,6 +19,11 @@ declare module '*.webp' {
   export default asset;
 }
 declare module '*.gif' {
+  const asset: number;
+  export default asset;
+}
+// The rest timer's cue sounds (#5395) ship as bundled WAVs.
+declare module '*.wav' {
   const asset: number;
   export default asset;
 }

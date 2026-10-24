@@ -16,6 +16,8 @@ import {
   getSessionLeader,
   getSessionBoardSerial,
   setSessionBoardSerialAndReturnPrevious,
+  getSessionRestCadence,
+  casSessionRestCadence,
   pushRecentClimb,
   isRecentClimb,
   getSessionMemberCount,
@@ -35,6 +37,7 @@ import {
   type EvictGhostResult,
 } from './session-ops';
 import { logger } from '../../utils/logger';
+import type { RestCadenceCasResult, StoredRestCadence } from '../rest-cadence';
 import {
   updateHeartbeat,
   discoverDeadInstances,
@@ -196,6 +199,21 @@ export class DistributedStateManager {
    */
   async setSessionBoardSerialAndReturnPrevious(sessionId: string, serial: string): Promise<string | null> {
     return setSessionBoardSerialAndReturnPrevious(this.redis, sessionId, serial);
+  }
+
+  /** Read the session's shared rest clock (#5382): revision 0 and null when never set. */
+  async getSessionRestCadence(sessionId: string): Promise<StoredRestCadence> {
+    return getSessionRestCadence(this.redis, sessionId);
+  }
+
+  /** Compare-and-set the session's shared rest clock at max(`expectedRevision` + 1, `minimumRevision`). */
+  async casSessionRestCadence(
+    sessionId: string,
+    expectedRevision: number,
+    nextDoc: string,
+    minimumRevision: number,
+  ): Promise<RestCadenceCasResult> {
+    return casSessionRestCadence(this.redis, sessionId, expectedRevision, nextDoc, minimumRevision);
   }
 
   /**

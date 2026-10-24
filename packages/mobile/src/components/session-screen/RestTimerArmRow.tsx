@@ -14,7 +14,7 @@ import { Card } from '../Card';
 import { SwitchRow } from '../SwitchRow';
 import { useQueueSessionId } from '../../providers/queue-provider';
 import { useRestTimerArmed } from '../../hooks/use-rest-timer';
-import { getSetting } from '../../settings';
+import { getEffectiveRestPacing } from '../../hooks/use-effective-rest-pacing';
 import { nowMs } from '../../lib/clock';
 import { armRestTimer, disarmRestTimer } from '../../lib/rest-timer-store';
 import {
@@ -44,10 +44,10 @@ export function RestTimerArmRow() {
         disarmRestTimer();
         return;
       }
-      // `getSetting` rather than `useSetting`: the cadence is read once, at the
-      // moment of arming, and subscribing here would re-render the Record tab's
-      // list header for a preference this row does not display.
-      armRestTimer(getSetting('restTimerMode'), nowMs(), sessionId);
+      // The non-React read rather than the hook: the cadence is read once, at
+      // the moment of arming, and subscribing here would re-render the Record
+      // tab's list header for a preference this row does not display.
+      armRestTimer(getEffectiveRestPacing().mode, nowMs(), sessionId);
     },
     [sessionId],
   );

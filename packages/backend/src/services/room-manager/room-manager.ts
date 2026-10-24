@@ -9,6 +9,14 @@ import {
   forceResetDistributedState,
 } from '../distributed-state';
 import { RECENT_CLIMBS_BUFFER_SIZE } from '../distributed-state/constants';
+import {
+  commitRestCadenceAction,
+  parseRestCadence,
+  type RestCadenceCommit,
+  type RestCadenceInput,
+  type RestCadenceStore,
+  type StoredRestCadence,
+} from '../rest-cadence';
 import { logger } from '../../utils/logger';
 import type {
   ConnectedClient,
@@ -76,6 +84,11 @@ class RoomManager {
   // same bound via Array.unshift + slice on every write, using the canonical
   // RECENT_CLIMBS_BUFFER_SIZE constant so the two paths can't drift.
   private localRecentClimbsBySession = new Map<string, string[]>();
+  // In-memory shared rest clock (#5382) for single-instance / no-Redis
+  // deploys, holding the same { revision, doc } pair the Redis hash does. Its
+  // compare-and-set checks and writes in one synchronous step, so it is as
+  // atomic as the Lua script it stands in for.
+  private localRestCadenceBySession = new Map<string, { revision: number; doc: string }>();
   private sessionGraceTimers = new Map<string, NodeJS.Timeout>();
   private readonly SESSION_GRACE_PERIOD_MS = 60_000;
   private pendingJoinPersists = new Map<string, Promise<void>>();
@@ -121,6 +134,7 @@ class RoomManager {
     this.sessionParticipants.clear();
     this.localBoardSerialBySession.clear();
     this.localRecentClimbsBySession.clear();
+    this.localRestCadenceBySession.clear();
     this.redisStore = null;
     this.distributedState = null;
 
@@ -500,6 +514,55 @@ class RoomManager {
   }
 
   /**
+   * The session's shared rest clock (#5382) and its revision. Revision 0 with
+   * a null clock means it was never set (or its state expired).
+   */
+  async getSessionRestCadence(sessionId: string): Promise<StoredRestCadence> {
+    return this.restCadenceStore(sessionId).read();
+  }
+
+  /**
+   * Apply one `setSessionRestCadence` action: read, reduce, compare-and-set
+   * (see `commitRestCadenceAction`). `applied` is true only when a new
+   * revision was written; the caller publishes `SessionRestCadenceChanged`
+   * then, and never otherwise.
+   */
+  async updateSessionRestCadence(
+    sessionId: string,
+    input: RestCadenceInput,
+    participantId: string,
+    nowMs: number,
+  ): Promise<RestCadenceCommit> {
+    return commitRestCadenceAction(this.restCadenceStore(sessionId), input, nowMs, participantId);
+  }
+
+  private restCadenceStore(sessionId: string): RestCadenceStore {
+    const distributedState = this.distributedState;
+    if (distributedState) {
+      return {
+        read: () => distributedState.getSessionRestCadence(sessionId),
+        compareAndSet: (expectedRevision, nextDoc, minimumRevision) =>
+          distributedState.casSessionRestCadence(sessionId, expectedRevision, nextDoc, minimumRevision),
+      };
+    }
+    // Single-instance (no Redis): the in-memory shadow is the source of truth.
+    const local = this.localRestCadenceBySession;
+    return {
+      read: async () => {
+        const stored = local.get(sessionId);
+        return { revision: stored?.revision ?? 0, cadence: parseRestCadence(stored?.doc) };
+      },
+      compareAndSet: async (expectedRevision, nextDoc, minimumRevision) => {
+        const stored = local.get(sessionId) ?? { revision: 0, doc: '' };
+        if (stored.revision !== expectedRevision) return { ok: false, ...stored };
+        const committed = { revision: Math.max(stored.revision + 1, minimumRevision), doc: nextDoc };
+        local.set(sessionId, committed);
+        return { ok: true, ...committed };
+      },
+    };
+  }
+
+  /**
    * Record a climbUuid as one of this session's recent authoritative current
    * climbs. Called from queue-navigation whenever the wall climb changes, so
    * `confirmClimbOnWall` can accept a confirm that arrives in the small window
@@ -674,12 +737,12 @@ class RoomManager {
   }
 
   /**
-   * Drop the in-memory board-serial / recent-climbs shadows for this
-   * session. The shadows are local to this RoomManager instance (the
-   * single-instance / no-Redis fallback for `localBoardSerialBySession` and
-   * `localRecentClimbsBySession` — see their field comments) and otherwise
-   * grow unbounded across session lifecycles, since nothing else ever
-   * deletes their entries. Distributed-state's Redis keys for the same data
+   * Drop the in-memory board-serial / recent-climbs / rest-clock shadows for
+   * this session. The shadows are local to this RoomManager instance (the
+   * single-instance / no-Redis fallback for `localBoardSerialBySession`,
+   * `localRecentClimbsBySession` and `localRestCadenceBySession` — see their
+   * field comments) and otherwise grow unbounded across session lifecycles,
+   * since nothing else ever deletes their entries. Distributed-state's Redis keys for the same data
    * are cleaned up by `cleanupEmptySession` when the session set drains;
    * this is the single-instance / single-process equivalent, called from
    * every path that durably ends a session (explicit `endSession` and the
@@ -688,6 +751,7 @@ class RoomManager {
   private clearLocalSessionShadows(sessionId: string): void {
     this.localBoardSerialBySession.delete(sessionId);
     this.localRecentClimbsBySession.delete(sessionId);
+    this.localRestCadenceBySession.delete(sessionId);
   }
 
   async endSession(sessionId: string): Promise<void> {

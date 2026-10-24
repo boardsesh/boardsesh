@@ -145,6 +145,18 @@ export type AppSettings = {
    */
   startupScreen: StartupScreen;
   hapticFeedbackEnabled: boolean;
+  /**
+   * The rest timer's cue sound (#5395), read on every cue by `playRestTimerCue`.
+   * Only binaries that can play a sound offer it (`isRestTimerSoundAvailable`);
+   * everywhere else the cue is the haptic alone, whatever this says.
+   */
+  restTimerSound: boolean;
+  /**
+   * A cue on each of the rest's last seconds (#5396). Off, the timer gives the
+   * one heads-up before an auto-advance it always gave. The on-screen countdown
+   * shows either way.
+   */
+  restTimerCountdownCues: boolean;
   notifySessionInvites: boolean;
   notifyClimbComments: boolean;
   /** One-shot: the "kiosk setup lives on the big screen" hint has been seen on My gyms. */

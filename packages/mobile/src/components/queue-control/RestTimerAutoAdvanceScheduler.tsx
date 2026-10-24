@@ -1,34 +1,30 @@
 // Fires the rest timer's auto-advance (#5378). Renders nothing and sets no state
-// per tick: it owns ONE `setTimeout` for the exact remaining milliseconds, so a
-// running timer costs the app tree nothing between beats.
+// per tick: it owns ONE `setTimeout` for the exact remaining milliseconds, plus
+// at most five for the final countdown's cues (#5396), so a running timer costs
+// the app tree nothing between beats.
 //
 // Everything here is a guard. The failure mode this component can produce is
 // "the wall changed under a climber", so each rule below is paired with a test
 // that asserts it does NOT fire.
 
-import { useCallback, useEffect, useMemo, useRef, type Dispatch, type SetStateAction } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { AppState } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { computeNavigationStateWithSuggestions } from '@boardsesh/play-view';
 import { isClimbOnReachableBoard, type PlaylistSuggestionSource } from '@boardsesh/queue';
 import { useReachableBoardKeys } from '../../providers/queue/use-reachable-board-keys';
 import { toBoardName } from '@boardsesh/board-config';
-import {
-  useQueueActions,
-  useQueueData,
-  useIsSharedSession,
-  usePlaylistSuggestionSource,
-} from '../../providers/queue-provider';
+import { useQueueActions, useQueueData, usePlaylistSuggestionSource } from '../../providers/queue-provider';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
-import { useBoardConnectionState } from '../ble/use-board-connection-state';
 import { useToast } from '../../providers/toast-provider';
 import { canLoadMoreOfTrack } from '../../lib/playlists/track-pager';
 import { useTrackPaging } from '../play-drawer/use-track-paging';
 import { useKeepAwakeWhile } from '../../hooks/use-keep-awake-while';
-import { useSetting } from '../../settings';
+import { useEffectiveRestPacing } from '../../hooks/use-effective-rest-pacing';
+import { useSessionTimerDriver } from '../../hooks/use-session-timer-driver';
 import { useRestTimerState } from '../../hooks/use-rest-timer';
 import { nowMs } from '../../lib/clock';
-import { hapticLight, hapticMedium, hapticSuccess } from '../../lib/haptics';
+import { playRestTimerCue } from '../../lib/rest-timer-cues';
 import {
   clearRestTimerQueueEnded,
   noteRestTimerAutoAdvanceFired,
@@ -36,11 +32,16 @@ import {
   reanchorRestTimerAfterBackground,
 } from '../../lib/rest-timer-store';
 import {
-  AUTO_ADVANCE_WARNING_LEAD_MS,
   getAutoAdvanceDeadlineMs,
+  getRestTimerCountdownCueTimes,
+  getRestTimerCountdownLeadSeconds,
+  getRestTimerReachedAtMs,
   isAutoAdvanceDeadlineStale,
+  isRestTimerCueLate,
+  isRestTimerReachedCueLate,
   shouldScheduleAutoAdvance,
 } from '../../lib/rest-timer-auto-advance';
+import { useSetting } from '../../settings';
 
 const KEEP_AWAKE_TAG = 'rest-timer';
 
@@ -50,9 +51,7 @@ const keepPreviewSource: Dispatch<SetStateAction<PlaylistSuggestionSource | null
 export function RestTimerAutoAdvanceScheduler() {
   const { t } = useTranslation('session');
   const timerState = useRestTimerState();
-  const [targetSeconds] = useSetting('restTimerTargetSeconds');
-  const [autoAdvance] = useSetting('restTimerAutoAdvance');
-  const [mode] = useSetting('restTimerMode');
+  const { targetSeconds, autoAdvance, mode } = useEffectiveRestPacing();
 
   const { nextClimb, getQueueSnapshot, refreshPlaylistSuggestionSource } = useQueueActions();
   const { queue, currentClimbQueueItem } = useQueueData();
@@ -73,8 +72,6 @@ export function RestTimerAutoAdvanceScheduler() {
     getCommittedSource: getCommittedSuggestionSource,
     refreshCommittedSource: refreshPlaylistSuggestionSource,
   });
-  const isSharedSession = useIsSharedSession();
-  const { inAppBoardConnection } = useBoardConnectionState();
   const { data: activeBoard } = useActiveBoard();
   // The beat has to agree with what a swipe would actually do: without this it
   // announces "queue ended" while `nextClimb` would happily advance onto a climb
@@ -92,8 +89,9 @@ export function RestTimerAutoAdvanceScheduler() {
 
   // In a crew, only the climber driving the wall may move the shared queue —
   // `nextClimb` broadcasts, so a passenger's timer would change everyone's climb.
-  // Solo there is nothing to stomp on, so no board link is required.
-  const canDriveWall = !isSharedSession || inAppBoardConnection === 'connectedByMe';
+  // Solo there is nothing to stomp on, so no board link is required. One rule,
+  // shared with the sheet: lib/session-timer/driver-rule.ts.
+  const { canAdvanceQueue: canDriveWall } = useSessionTimerDriver();
 
   // Read through refs so the scheduling effect depends only on the timer's own
   // inputs. Re-running it on every queue edit would cancel and reschedule the
@@ -182,7 +180,7 @@ export function RestTimerAutoAdvanceScheduler() {
       // or a remount loses the race here rather than skipping a second climb.
       if (!noteRestTimerAutoAdvanceFired(expectedCycleId, mode, nowMs(), scheduledDeadlineMs)) return;
 
-      hapticMedium();
+      playRestTimerCue({ kind: 'advance' });
       nextClimb();
     },
     [mode, nextClimb],
@@ -208,59 +206,114 @@ export function RestTimerAutoAdvanceScheduler() {
   const scheduled = wantsAdvance && !deadlineStale;
   const deadlineMs = scheduled ? candidateDeadlineMs : null;
 
-  // Keep the screen up while an advance is pending: timers are suspended in the
-  // background and BLE writes need the app active, so a sleeping phone is a
-  // timer that silently stops.
-  useKeepAwakeWhile(scheduled, KEEP_AWAKE_TAG);
+  // The final countdown (#5396). The lead scales with the rest, and each second
+  // of it is a cue, or a single warning with per-second cues off. The choice is
+  // made once per rest, by the first cue that lands, and kept for the rest's
+  // instant: a toggle or a re-run effect mid-countdown can never play ticks AND
+  // the warning for one rest.
+  const [countdownCues] = useSetting('restTimerCountdownCues');
+  const leadSeconds = getRestTimerCountdownLeadSeconds(targetSeconds);
+  const countdownCuesRef = useRef(countdownCues);
+  countdownCuesRef.current = countdownCues;
+  const leadCueChoiceRef = useRef<{ targetAtMs: number; countdown: boolean } | null>(null);
+  const chooseCountdown = useCallback((targetAtMs: number) => {
+    if (leadCueChoiceRef.current?.targetAtMs !== targetAtMs) {
+      leadCueChoiceRef.current = { targetAtMs, countdown: countdownCuesRef.current };
+    }
+    return leadCueChoiceRef.current.countdown;
+  }, []);
 
   const { cycleId } = timerState;
   useEffect(() => {
     if (deadlineMs === null) return undefined;
 
-    const remainingMs = deadlineMs - nowMs();
+    const scheduledAtMs = nowMs();
+    const remainingMs = deadlineMs - scheduledAtMs;
     // Due within the grace window but already past — schedule nothing rather
     // than firing on the spot. Anything further past than the grace never gets
     // here: `deadlineStale` above already read it as not-scheduled.
     if (remainingMs <= 0) return undefined;
 
-    const warnTimeout =
-      remainingMs > AUTO_ADVANCE_WARNING_LEAD_MS
-        ? setTimeout(() => hapticLight(), remainingMs - AUTO_ADVANCE_WARNING_LEAD_MS)
-        : null;
-    const fireTimeout = setTimeout(() => fireAdvance(cycleId, deadlineMs), remainingMs);
+    const timeouts = scheduleLeadCues(deadlineMs, leadSeconds, scheduledAtMs, chooseCountdown);
+    timeouts.push(setTimeout(() => fireAdvance(cycleId, deadlineMs), remainingMs));
+    return () => clearCueTimeouts(timeouts);
+  }, [chooseCountdown, cycleId, deadlineMs, fireAdvance, leadSeconds]);
 
-    return () => {
-      if (warnTimeout !== null) clearTimeout(warnTimeout);
-      clearTimeout(fireTimeout);
-    };
-  }, [cycleId, deadlineMs, fireAdvance]);
-
-  // Target reached with auto-advance off: one haptic, and the digits go red (the
-  // colour lives in the pill). Never while an advance is pending, so the two cues
-  // can't double up.
+  // The rest ran out and nothing moved the wall: auto-advance off, a crew
+  // passenger, or the end of the queue or the list. The same countdown, then one
+  // `reached` cue, and the digits go red (the colour lives in the pill). Never
+  // while an advance is pending, so the two terminal cues can't double up.
   //
-  // The latch is keyed on the TARGET as well as the cycle: lengthening the rest
-  // mid-cycle (1 min → 5 min) is a new mark to reach, and a cycle-only latch
-  // swallowed it silently.
-  const reachedRef = useRef<{ cycleId: number; targetSeconds: number } | null>(null);
-  const { anchorMs, armed, isRunning } = timerState;
+  // The latch belongs to one rest, and a rest is its anchor: a re-arm, a reset,
+  // a new tick, an after-tick advance and a resume each count from a new one, so
+  // nothing an earlier rest cued carries over. A rest starts handled through the
+  // moment this scheduler first saw its anchor, so a mark that went by before
+  // then is never cued late: before a pause (Resume rebases the anchor on the
+  // paused elapsed), before this mount, behind a back-dated tick. Within a rest
+  // the latch is the INSTANT that was cued, not the cycle: lengthening the rest
+  // mid-cycle (1 min → 5 min) is a new mark to reach, and on the minute every
+  // beat is one. An advance that fired on a beat already had its cue, so that
+  // beat counts as cued too. State, not a ref, so the wake lock below lets go
+  // once the cue has played.
+  const { anchorMs, armed, isRunning, lastFiredDeadlineMs } = timerState;
+  const atDeadEnd = timerState.queueEnded;
+  const renderedAtMs = nowMs();
+  const [storedReachedLatch, setReachedLatch] = useState<ReachedLatch>(() => ({
+    anchorMs,
+    handledThroughMs: renderedAtMs,
+  }));
+  let reachedLatch = storedReachedLatch;
+  if (!Object.is(reachedLatch.anchorMs, anchorMs)) {
+    // A new rest. Adopted during render, so no effect below ever runs with the
+    // last rest's latch (`Object.is`, so a NaN anchor cannot loop the render).
+    reachedLatch = { anchorMs, handledThroughMs: renderedAtMs };
+    setReachedLatch(reachedLatch);
+  }
+  const handledThroughMs =
+    lastFiredDeadlineMs === null
+      ? reachedLatch.handledThroughMs
+      : Math.max(reachedLatch.handledThroughMs, lastFiredDeadlineMs);
+  const reachedAtMs =
+    armed && isRunning && !scheduled
+      ? getRestTimerReachedAtMs({ mode, anchorMs, targetSeconds, nowMs: renderedAtMs, handledThroughMs })
+      : null;
   useEffect(() => {
-    if (!armed || !isRunning || scheduled) return undefined;
-    if (anchorMs === null || targetSeconds === null || targetSeconds <= 0) return undefined;
-    if (reachedRef.current?.cycleId === cycleId && reachedRef.current.targetSeconds === targetSeconds) return undefined;
+    if (reachedAtMs === null) return undefined;
 
-    const remainingMs = anchorMs + targetSeconds * 1000 - nowMs();
+    // The terminal cue keeps the advance's grace, not the countdown's 750 ms:
+    // a rest end that lands a second late still gets `advance`, so it still
+    // gets `reached` too.
+    const cueReached = () => {
+      setReachedLatch({ anchorMs, handledThroughMs: reachedAtMs });
+      if (!isRestTimerReachedCueLate(reachedAtMs, nowMs())) playRestTimerCue({ kind: 'reached' });
+    };
+    const scheduledAtMs = nowMs();
+    const remainingMs = reachedAtMs - scheduledAtMs;
+    // Just went with no cue: the deadline that found the dead end, or a rest
+    // shortened to what has already passed.
     if (remainingMs <= 0) {
-      reachedRef.current = { cycleId, targetSeconds };
+      cueReached();
       return undefined;
     }
+    // At a dead end the counting stops with the cue above; the beats after it
+    // have nothing to count down to.
+    if (atDeadEnd) return undefined;
 
-    const timeout = setTimeout(() => {
-      reachedRef.current = { cycleId, targetSeconds };
-      hapticSuccess();
-    }, remainingMs);
-    return () => clearTimeout(timeout);
-  }, [anchorMs, armed, cycleId, isRunning, scheduled, targetSeconds]);
+    const timeouts = scheduleLeadCues(reachedAtMs, leadSeconds, scheduledAtMs, chooseCountdown);
+    timeouts.push(setTimeout(cueReached, remainingMs));
+    return () => clearCueTimeouts(timeouts);
+  }, [anchorMs, atDeadEnd, chooseCountdown, leadSeconds, reachedAtMs]);
+
+  // Keep the screen up while an advance is pending: timers are suspended in the
+  // background and BLE writes need the app active, so a sleeping phone is a
+  // timer that silently stops. A rest paced by a workout stage or the crew holds
+  // it until its `reached` cue too (limit's "go" after a fall, a passenger's
+  // beat). A climber's own rest with auto-advance off never held the screen and
+  // still does not. Read again here, not at the top: that line is the pacing
+  // seam's.
+  const { source: pacingSource } = useEffectiveRestPacing();
+  const reachedCuePending = reachedAtMs !== null && reachedAtMs > renderedAtMs && !atDeadEnd;
+  useKeepAwakeWhile(scheduled || (reachedCuePending && pacingSource !== 'settings'), KEEP_AWAKE_TAG);
 
   // The page a due beat was waiting for has landed (or the track ended): try the
   // beat again. Only for the cycle it was due in; a manual Next or a new tick
@@ -311,4 +364,45 @@ export function RestTimerAutoAdvanceScheduler() {
   }, [deadlineMs]);
 
   return null;
+}
+
+// The countdown's timeouts (#5396). Below the component so the hunks above stay
+// where docs/rest-timer.md says each PR edits.
+
+type CueTimeout = ReturnType<typeof setTimeout>;
+
+/** The rest a `reached` latch belongs to (its anchor), and the latest instant of it that needs no cue. */
+type ReachedLatch = { anchorMs: number | null; handledThroughMs: number };
+
+/** Plays a countdown cue unless it landed late: a timeout flushed on resume says nothing. */
+function playCueUnlessLate(cue: Parameters<typeof playRestTimerCue>[0], dueAtMs: number): void {
+  if (isRestTimerCueLate(dueAtMs, nowMs())) return;
+  playRestTimerCue(cue);
+}
+
+/**
+ * The cues leading up to `targetAtMs`, one timeout per second of the lead (at
+ * most five). Each asks `chooseCountdown` when it lands: a countdown plays a tick
+ * every second, and without one only the first second plays, as the warning.
+ * Only instants still ahead are scheduled, so a re-run effect never replays a
+ * second that already went.
+ */
+function scheduleLeadCues(
+  targetAtMs: number,
+  leadSeconds: number,
+  fromMs: number,
+  chooseCountdown: (targetAtMs: number) => boolean,
+): CueTimeout[] {
+  return getRestTimerCountdownCueTimes(targetAtMs, leadSeconds)
+    .filter(({ atMs }) => atMs > fromMs)
+    .map(({ atMs, secondsLeft }) =>
+      setTimeout(() => {
+        if (chooseCountdown(targetAtMs)) playCueUnlessLate({ kind: 'countdownTick', secondsLeft }, atMs);
+        else if (secondsLeft === leadSeconds) playCueUnlessLate({ kind: 'warning' }, atMs);
+      }, atMs - fromMs),
+    );
+}
+
+function clearCueTimeouts(timeouts: CueTimeout[]): void {
+  for (const timeout of timeouts) clearTimeout(timeout);
 }

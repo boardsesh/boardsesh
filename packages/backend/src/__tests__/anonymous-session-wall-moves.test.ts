@@ -215,9 +215,15 @@ async function connectPeer(sessionId: string) {
   const sessionStream = sessionSubscriptions.sessionUpdates.subscribe(undefined, { sessionId }, peer) as SessionStream;
   const queueStream = queueSubscriptions.queueUpdates.subscribe(undefined, { sessionId }, peer) as QueueStream;
   const seed = await nextSession(sessionStream);
+  // The crew rest clock seed always follows the roster seed (#5382).
+  const restCadenceSeed = await nextSession(sessionStream);
   const queueSeed = await nextQueue(queueStream);
-  if (seed.__typename !== 'SessionRosterSnapshot' || queueSeed.__typename !== 'FullSync') {
-    throw new Error('Expected the roster and queue seeds');
+  if (
+    seed.__typename !== 'SessionRosterSnapshot' ||
+    restCadenceSeed.__typename !== 'SessionRestCadenceChanged' ||
+    queueSeed.__typename !== 'FullSync'
+  ) {
+    throw new Error('Expected the roster, rest clock and queue seeds');
   }
   return {
     sessionStream,

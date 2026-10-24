@@ -247,6 +247,7 @@ vi.mock('../queue/use-board-continuation-feed', () => ({ useBoardContinuationFee
 import {
   QueueProvider,
   useHasActiveClimb,
+  useIsCrewSession,
   useIsSharedSession,
   usePlaylistSuggestionSource,
   useQueue,
@@ -303,6 +304,7 @@ type SelectorSnapshot = {
   sessionIdValue: ReturnType<typeof useQueueSessionId>;
   hasActiveClimb: boolean;
   isSharedSession: boolean;
+  isCrewSession: boolean;
 };
 
 const user = (overrides: Partial<SessionUser> = {}): SessionUser => ({
@@ -442,9 +444,11 @@ function SelectorProbe({ onSnapshot }: { onSnapshot: (snapshot: SelectorSnapshot
   // observed — the pure rule's own tests can't see whether it is wired to
   // anything.
   const isSharedSession = useIsSharedSession();
+  // The wall-driver rule's crew test: the same roster rule without the flag.
+  const isCrewSession = useIsCrewSession();
   useEffect(() => {
-    onSnapshot({ sessionIdValue, hasActiveClimb, isSharedSession });
-  }, [hasActiveClimb, isSharedSession, onSnapshot, sessionIdValue]);
+    onSnapshot({ sessionIdValue, hasActiveClimb, isSharedSession, isCrewSession });
+  }, [hasActiveClimb, isCrewSession, isSharedSession, onSnapshot, sessionIdValue]);
   return null;
 }
 
@@ -1231,13 +1235,16 @@ describe('QueueProvider session update subscription', () => {
     // The gate does NOT arm on arrival. A peer has to still be there after the
     // dwell — see SHARED_SESSION_DWELL_MS — because the roster briefly doubles a
     // lone climber on a reconnect, and arming on that took their board away.
+    // The crew test the rest timer reads waits out the same dwell.
     expect(selectorSnapshots.at(-1)?.isSharedSession).toBe(false);
+    expect(selectorSnapshots.at(-1)?.isCrewSession).toBe(false);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(SHARED_SESSION_DWELL_MS + 100);
     });
 
     await waitFor(() => {
       expect(selectorSnapshots.at(-1)?.isSharedSession).toBe(true);
+      expect(selectorSnapshots.at(-1)?.isCrewSession).toBe(true);
     });
 
     // A third climber changes nothing, and must not churn the value: this
@@ -1298,6 +1305,9 @@ describe('QueueProvider session update subscription', () => {
     });
 
     expect(selectorSnapshots.at(-1)?.isSharedSession).toBe(false);
+    // The flag gates gestures, never who may move the wall: it is still a crew,
+    // so only the wall holder's rest timer may advance it (#5382).
+    expect(selectorSnapshots.at(-1)?.isCrewSession).toBe(true);
     vi.useRealTimers();
   });
 
@@ -1342,6 +1352,7 @@ describe('QueueProvider session update subscription', () => {
     });
 
     expect(selectorSnapshots.at(-1)?.isSharedSession).toBe(false);
+    expect(selectorSnapshots.at(-1)?.isCrewSession).toBe(false);
     vi.useRealTimers();
   });
 
@@ -1386,6 +1397,7 @@ describe('QueueProvider session update subscription', () => {
     });
 
     expect(selectorSnapshots.at(-1)?.isSharedSession).toBe(false);
+    expect(selectorSnapshots.at(-1)?.isCrewSession).toBe(false);
     vi.useRealTimers();
   });
 
@@ -1470,6 +1482,7 @@ describe('QueueProvider session update subscription', () => {
     });
     await waitFor(() => {
       expect(selectorSnapshots.at(-1)?.isSharedSession).toBe(false);
+      expect(selectorSnapshots.at(-1)?.isCrewSession).toBe(false);
     });
     vi.useRealTimers();
   });

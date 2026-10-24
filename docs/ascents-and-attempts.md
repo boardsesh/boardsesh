@@ -201,10 +201,10 @@ There are exactly three production code paths that insert into `boardsesh_ticks`
   `NULL` forever. See [`aurora-sync.md`](aurora-sync.md) for the
   two-writer model that the recompute coordinates with.
 
-Two client hooks call it:
+The client reaches it through two hooks:
 
-- `useSaveTick` (`packages/web/app/hooks/use-save-tick.ts`) — low-level React Query mutation; optimistically updates the logbook cache.
-- `useTickSave` (`packages/web/app/hooks/use-tick-save.ts`) — higher-level wrapper used by `QuickTickBar` and `InlineListTickBar`; handles status derivation, confetti, and IndexedDB drafts for offline retry.
+- `useSaveTick` (`packages/shared/board-react/src/use-save-tick.ts`) — low-level React Query mutation; optimistically updates the logbook cache. On mobile it writes the tick locally and queues it in the offline outbox first.
+- `useTickSaver` (`packages/mobile/src/components/play-drawer/use-tick-saver.ts`) — the one path every mobile tick takes. It snapshots the board the tick lands on, applies the privacy choice and the flash-is-one-try clamp, fires Tick Logged, then nudges the Rogue gym timer and the rest timer. The Log ascent sheet (`useQuickTickForm`) saves through it. The outbox drainer replays a queued tick without it, so a late delivery never fires those side effects twice.
 
 ### 2. Aurora sync — ascents
 

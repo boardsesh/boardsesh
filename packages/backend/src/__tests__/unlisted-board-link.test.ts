@@ -403,6 +403,12 @@ describe.each(UNLISTED_SHAPES)('an Unlisted home board (%s)', (_shape, makeUnlis
       expect((await actor.next()).value).toMatchObject({
         sessionUpdates: { boardPath: expect.stringMatching(/^\/tension\/9\//) },
       });
+      // The crew rest clock seed always follows the roster seed (#5382).
+      for (const stream of [creator, actor]) {
+        expect((await stream.next()).value).toMatchObject({
+          sessionUpdates: { __typename: 'SessionRestCadenceChanged', isSnapshot: true },
+        });
+      }
       const creatorDelta = creator.next();
       const actorDelta = actor.next();
       pubsub.publishSessionEvent(sessionId, {

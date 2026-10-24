@@ -217,7 +217,9 @@ vi.mock('../../../theme/animations', () => ({ springs: { snappy: {} }, timing: {
 
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueSessionId: () => ({ sessionId: harness.sessionId }),
-  useIsSharedSession: () => harness.isSharedSession,
+  // The row reads the wall-driver rule, whose crew input ignores the browse
+  // rollout flag. `harness.isSharedSession` stands for that crew here.
+  useIsCrewSession: () => harness.isSharedSession,
 }));
 
 vi.mock('../../ble/use-board-connection-state', () => ({
@@ -709,5 +711,66 @@ describe('RestTimerSheet', () => {
     fireEvent.click(turnOff);
     expect(getRestTimerState().armed).toBe(false);
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+// The switch follows the scheduler's own wall-driver rule
+// (lib/session-timer/driver-rule.ts), so it can never offer an advance the
+// scheduler would refuse, or refuse one it would make.
+describe('RestTimerSheet auto-advance and who drives the wall', () => {
+  beforeEach(() => {
+    harness.nowMs = NOW_MS;
+    harness.sessionId = 'session-1';
+    harness.isSharedSession = false;
+    harness.inAppBoardConnection = 'connectedByMe';
+    harness.fontScale = 1;
+    settingsStore.values = {
+      restTimerTargetSeconds: 120,
+      restTimerMode: 'afterTick',
+      restTimerAutoAdvance: false,
+    };
+    settingsStore.listeners.clear();
+    armRestTimer('afterTick', NOW_MS, 'session-1');
+  });
+
+  afterEach(() => {
+    cleanup();
+    resetRestTimerStoreForTests();
+  });
+
+  it('blocks the switch in a crew while nobody holds the wall', () => {
+    harness.isSharedSession = true;
+    harness.inAppBoardConnection = 'disconnected';
+    const { container } = renderSheet();
+    const row = container.querySelector(AUTO_ADVANCE_ROW) as HTMLElement;
+
+    expect(row.getAttribute('data-disabled')).toBe('true');
+    expect(row.getAttribute('data-description')).toBe('mobile.restTimer.autoAdvanceBlocked');
+  });
+
+  it('blocks the switch for a passenger whose crewmate holds the wall', () => {
+    harness.isSharedSession = true;
+    harness.inAppBoardConnection = 'heldByPeer';
+    const { container } = renderSheet();
+
+    expect(container.querySelector(AUTO_ADVANCE_ROW)?.getAttribute('data-disabled')).toBe('true');
+  });
+
+  it('lets the crew member holding the wall switch it on', () => {
+    harness.isSharedSession = true;
+    harness.inAppBoardConnection = 'connectedByMe';
+    const { container } = renderSheet();
+    const row = container.querySelector(AUTO_ADVANCE_ROW) as HTMLElement;
+
+    expect(row.getAttribute('data-disabled')).toBe('false');
+    fireEvent.click(row);
+    expect(settingsStore.values.restTimerAutoAdvance).toBe(true);
+  });
+
+  it('lets a solo climber switch it on with no board connected', () => {
+    harness.inAppBoardConnection = 'disconnected';
+    const { container } = renderSheet();
+
+    expect(container.querySelector(AUTO_ADVANCE_ROW)?.getAttribute('data-disabled')).toBe('false');
   });
 });

@@ -29,9 +29,10 @@ const IN_A_CREW: ScenarioOverrides = {
 };
 
 // What a crew looks like today with `shared-session-browse` off: the session has
-// two people, but the gate never arms, so every tap takes the wall.
+// two people, but the gate never arms, so every tap takes the wall. It is still a
+// crew, so only the wall holder's rest timer may advance it.
 const IN_A_CREW_FLAG_OFF: ScenarioOverrides = {
-  queue: { isSharedSession: false, sessionId: 'story-crew-session', sessionUsers: CREW },
+  queue: { isSharedSession: false, isCrewSession: true, sessionId: 'story-crew-session', sessionUsers: CREW },
 };
 
 // In a crew, browsing comes from the session, not from the solo "light on

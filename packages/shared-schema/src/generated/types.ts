@@ -4708,6 +4708,16 @@ export type Mutation = {
    */
   setSessionHealthKitWorkoutId: Scalars['Boolean']['output'];
   /**
+   * Change the session's shared rest clock (#5382). Any session participant may
+   * call. The server stamps every instant, records the caller as
+   * `setByParticipantId` on ARM and CONFIGURE, and publishes
+   * `SessionRestCadenceChanged` to every member only when the call applied.
+   * FIRE is compare-and-set on `expectedRevision`, so exactly one phone can
+   * claim each beat. Session identity is resolved from the WebSocket connection
+   * context — no `sessionId` argument is required.
+   */
+  setSessionRestCadence: SetSessionRestCadencePayload;
+  /**
    * Approve, reject or clear the verdict on one version. Community admins only
    * (`spray`-scoped or global). Refused for a version that is not eligible.
    */
@@ -5537,6 +5547,11 @@ export type MutationSetSessionBoardSerialArgs = {
 export type MutationSetSessionHealthKitWorkoutIdArgs = {
   sessionId: Scalars['ID']['input'];
   workoutId: Scalars['String']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationSetSessionRestCadenceArgs = {
+  input: SessionRestCadenceInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -9232,6 +9247,7 @@ export type SessionEvent =
   | SessionBoardSerialChanged
   | SessionEnded
   | SessionNameChanged
+  | SessionRestCadenceChanged
   | SessionRosterSnapshot
   | SessionStatsUpdated
   | UserJoined
@@ -9458,6 +9474,150 @@ export type SessionParticipant = {
 };
 
 /**
+ * The session's shared rest clock (#5382): one cadence every crew member's
+ * rest timer follows, so the phone holding the board can advance the wall for
+ * everyone. All instants are server epoch milliseconds as decimal strings,
+ * stamped by the backend; clients convert them with the offset they derive
+ * from `SessionRestCadenceChanged.serverNow`.
+ *
+ * `mode` and `advanceOn` are open strings: a client that does not recognise
+ * a value must treat the clock as unsupported and never fire on it.
+ */
+export type SessionRestCadence = {
+  __typename?: 'SessionRestCadence';
+  /** 'deadline' (advance when the rest runs out), 'tick' (only after a tick on the current climb) or 'send' (only after a flash or send on it) */
+  advanceOn: Scalars['String']['output'];
+  /** Server epoch ms the current cycle counts from, or null while the clock waits for a tick */
+  anchorAt?: Maybe<Scalars['String']['output']>;
+  /** Whether the board holder advances the wall when the rest runs out */
+  autoAdvance: Scalars['Boolean']['output'];
+  /** False while paused */
+  isRunning: Scalars['Boolean']['output'];
+  /** Server epoch ms of the last beat an auto-advance fired on, so no beat fires twice */
+  lastFiredBeatAt?: Maybe<Scalars['String']['output']>;
+  /** Queue item the last tick was logged against, or null when it was not the current queue item */
+  lastTickQueueItemUuid?: Maybe<Scalars['ID']['output']>;
+  /** 'flash', 'send' or 'attempt' for the last tick, or null when there is none since the last advance */
+  lastTickStatus?: Maybe<Scalars['String']['output']>;
+  /** 'afterTick' (count from the last tick) or 'onTheMinute' (a fixed beat) */
+  mode: Scalars['String']['output'];
+  /** Frozen elapsed seconds while paused; 0 while running */
+  pausedElapsedSeconds: Scalars['Int']['output'];
+  /** Session participant id (the same id as SessionUser.id) of the member who last armed or configured the clock */
+  setByParticipantId?: Maybe<Scalars['ID']['output']>;
+  /** 'settings' (someone's rest timer settings) or 'stage' (a workout stage's pacing) */
+  source: Scalars['String']['output'];
+  /** Rest length in seconds, or null when the length is Off (count up). afterTick 10..3600, onTheMinute 15..3600. */
+  targetSeconds?: Maybe<Scalars['Int']['output']>;
+};
+
+/** What a `setSessionRestCadence` call does to the session's shared rest clock. */
+export type SessionRestCadenceAction =
+  /** Turn the crew clock on with a config. Replaces any clock already there. */
+  | 'ARM'
+  /** Replace the config of an armed clock (a settings edit, or a workout stage boundary). */
+  | 'CONFIGURE'
+  /** Turn the crew clock off. The stored state becomes null. */
+  | 'DISARM'
+  /**
+   * The board holder's auto-advance fired. Compare-and-set: expectedRevision is
+   * required. Applies once per beat: only when the stored clock's latest due
+   * beat (counted from 2 s before it) is later than lastFiredBeatAt.
+   */
+  | 'FIRE'
+  /** Freeze the clock at pausedElapsedSeconds. */
+  | 'PAUSE'
+  /** Back to zero: a running clock restarts now, a paused one waits for a tick. */
+  | 'RESET'
+  /** Restart a paused clock from its frozen elapsed. */
+  | 'RESUME'
+  /** A climber logged a tick: records it, and re-anchors an afterTick clock. */
+  | 'TICK';
+
+/** Where a CONFIGURE puts the clock's anchor. */
+export type SessionRestCadenceAnchor =
+  /** Clear the anchor, so the clock waits for the next tick (a tick/send stage boundary). */
+  | 'CLEAR'
+  /** Leave the anchor where it is (the default). */
+  | 'KEEP'
+  /** Anchor at server now minus elapsedMs (an onTheMinute stage boundary). */
+  | 'NOW';
+
+/**
+ * The session's shared rest clock changed, or the subscribe seed. Yielded once
+ * right after `SessionRosterSnapshot` on every `sessionUpdates` subscribe
+ * (`isSnapshot: true`, even when the clock is off), then on every applied
+ * `setSessionRestCadence` call. Clients drop an event whose `revision` is at
+ * or below the one they hold, except a snapshot, which replaces their state
+ * and resets that floor.
+ *
+ * Additive: a client whose `sessionUpdates` document lacks the
+ * `... on SessionRestCadenceChanged` fragment receives only the
+ * `__typename` and drops it.
+ */
+export type SessionRestCadenceChanged = {
+  __typename?: 'SessionRestCadenceChanged';
+  /** The action that produced this revision, or null on the seed and on a call that did not apply */
+  action?: Maybe<SessionRestCadenceAction>;
+  /** True only on the subscribe seed: replace local state and reset the revision floor */
+  isSnapshot: Scalars['Boolean']['output'];
+  /** The clock, or null when it is off */
+  restCadence?: Maybe<SessionRestCadence>;
+  /** Monotonic per session. 0 means the clock was never set (or its state expired). */
+  revision: Scalars['Int']['output'];
+  /** Server epoch ms when the delivering backend instance sent this event */
+  serverNow: Scalars['String']['output'];
+};
+
+/** A rest clock config: everything a client's effective rest pacing resolves to. */
+export type SessionRestCadenceConfigInput = {
+  /** 'deadline', 'tick' or 'send' */
+  advanceOn: Scalars['String']['input'];
+  autoAdvance: Scalars['Boolean']['input'];
+  /** 'afterTick' or 'onTheMinute' */
+  mode: Scalars['String']['input'];
+  /** 'settings' or 'stage' */
+  source: Scalars['String']['input'];
+  /** Rest length in seconds, or null for Off. afterTick 10..3600, onTheMinute 15..3600. */
+  targetSeconds?: InputMaybe<Scalars['Int']['input']>;
+};
+
+/**
+ * Input for `setSessionRestCadence`. Each action reads only the fields it
+ * needs and ignores the rest; see SessionRestCadenceAction.
+ */
+export type SessionRestCadenceInput = {
+  action: SessionRestCadenceAction;
+  /** CONFIGURE only. Defaults to KEEP. */
+  anchor?: InputMaybe<SessionRestCadenceAnchor>;
+  /** Required for ARM and CONFIGURE, ignored otherwise */
+  config?: InputMaybe<SessionRestCadenceConfigInput>;
+  /**
+   * Milliseconds already elapsed in the cycle when the client sent the call,
+   * 0..14400000. ARM and CONFIGURE with anchor NOW anchor at server now minus
+   * this; TICK clamps it to 60 s. Omitted means 0, except on ARM, where an
+   * omitted value leaves the clock waiting for a tick.
+   */
+  elapsedMs?: InputMaybe<Scalars['Int']['input']>;
+  /**
+   * Compare-and-set. When present, the call applies only if the stored
+   * revision still equals it. FIRE requires it, so two phones can never both
+   * advance the wall on one beat.
+   */
+  expectedRevision?: InputMaybe<Scalars['Int']['input']>;
+  /** FIRE only, and ignored: the server takes the beat from the stored clock and its own time. */
+  firedBeatAgoMs?: InputMaybe<Scalars['Int']['input']>;
+  /** RESET only: restart running (true) or wait paused for a tick (false). Defaults to the stored state. */
+  isRunning?: InputMaybe<Scalars['Boolean']['input']>;
+  /** PAUSE only: the frozen elapsed, 0..14400. Defaults to the elapsed the server computes from its anchor. */
+  pausedElapsedSeconds?: InputMaybe<Scalars['Int']['input']>;
+  /** TICK only: the queue item the tick was logged against, when it was the current queue item */
+  tickQueueItemUuid?: InputMaybe<Scalars['ID']['input']>;
+  /** TICK only (required): 'flash', 'send' or 'attempt' */
+  tickStatus?: InputMaybe<Scalars['String']['input']>;
+};
+
+/**
  * Full roster snapshot yielded as the FIRST event of every `sessionUpdates`
  * subscription (the session counterpart to `queueUpdates`' `FullSync`). The
  * roster-delta events (`UserJoined`/`UserLeft`/`UserPresenceChanged`/
@@ -9609,6 +9769,20 @@ export type SetContentAudienceInput = {
   entityId: Scalars['ID']['input'];
   entityType: PrivacyContentType;
   privacyRevision: Scalars['Int']['input'];
+};
+
+/** Result of `setSessionRestCadence`. */
+export type SetSessionRestCadencePayload = {
+  __typename?: 'SetSessionRestCadencePayload';
+  /**
+   * True when this call wrote a new revision (and every member was sent it).
+   * False when the revision check failed, the action did not apply to the
+   * stored state (for example PAUSE on a paused clock), or nothing changed.
+   * A FIRE that comes back false must not advance the wall.
+   */
+  applied: Scalars['Boolean']['output'];
+  /** The stored clock after this call: adopt it whether or not the call applied */
+  change: SessionRestCadenceChanged;
 };
 
 export type SetSprayTrainingReviewInput = {
@@ -12017,6 +12191,7 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = Reso
     | SessionBoardSerialChanged
     | SessionEnded
     | SessionNameChanged
+    | SessionRestCadenceChanged
     | SessionRosterSnapshot
     | SessionStatsUpdated
     | UserJoined
@@ -12433,6 +12608,12 @@ export type ResolversTypes = ResolversObject<{
   SessionHealthExportLap: ResolverTypeWrapper<SessionHealthExportLap>;
   SessionNameChanged: ResolverTypeWrapper<SessionNameChanged>;
   SessionParticipant: ResolverTypeWrapper<SessionParticipant>;
+  SessionRestCadence: ResolverTypeWrapper<SessionRestCadence>;
+  SessionRestCadenceAction: SessionRestCadenceAction;
+  SessionRestCadenceAnchor: SessionRestCadenceAnchor;
+  SessionRestCadenceChanged: ResolverTypeWrapper<SessionRestCadenceChanged>;
+  SessionRestCadenceConfigInput: SessionRestCadenceConfigInput;
+  SessionRestCadenceInput: SessionRestCadenceInput;
   SessionRosterSnapshot: ResolverTypeWrapper<SessionRosterSnapshot>;
   SessionStatsUpdated: ResolverTypeWrapper<SessionStatsUpdated>;
   SessionStatus: SessionStatus;
@@ -12441,6 +12622,7 @@ export type ResolversTypes = ResolversObject<{
   SetAnalyticsConsentInput: SetAnalyticsConsentInput;
   SetCommunitySettingInput: SetCommunitySettingInput;
   SetContentAudienceInput: SetContentAudienceInput;
+  SetSessionRestCadencePayload: ResolverTypeWrapper<SetSessionRestCadencePayload>;
   SetSprayTrainingReviewInput: SetSprayTrainingReviewInput;
   SetSprayWallHiddenInput: SetSprayWallHiddenInput;
   SetSprayWallRenderSettingsInput: SetSprayWallRenderSettingsInput;
@@ -12942,6 +13124,10 @@ export type ResolversParentTypes = ResolversObject<{
   SessionHealthExportLap: SessionHealthExportLap;
   SessionNameChanged: SessionNameChanged;
   SessionParticipant: SessionParticipant;
+  SessionRestCadence: SessionRestCadence;
+  SessionRestCadenceChanged: SessionRestCadenceChanged;
+  SessionRestCadenceConfigInput: SessionRestCadenceConfigInput;
+  SessionRestCadenceInput: SessionRestCadenceInput;
   SessionRosterSnapshot: SessionRosterSnapshot;
   SessionStatsUpdated: SessionStatsUpdated;
   SessionSummary: SessionSummary;
@@ -12949,6 +13135,7 @@ export type ResolversParentTypes = ResolversObject<{
   SetAnalyticsConsentInput: SetAnalyticsConsentInput;
   SetCommunitySettingInput: SetCommunitySettingInput;
   SetContentAudienceInput: SetContentAudienceInput;
+  SetSessionRestCadencePayload: SetSessionRestCadencePayload;
   SetSprayTrainingReviewInput: SetSprayTrainingReviewInput;
   SetSprayWallHiddenInput: SetSprayWallHiddenInput;
   SetSprayWallRenderSettingsInput: SetSprayWallRenderSettingsInput;
@@ -15895,6 +16082,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationSetSessionHealthKitWorkoutIdArgs, 'sessionId' | 'workoutId'>
   >;
+  setSessionRestCadence?: Resolver<
+    ResolversTypes['SetSessionRestCadencePayload'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationSetSessionRestCadenceArgs, 'input'>
+  >;
   setSprayTrainingReview?: Resolver<
     ResolversTypes['SprayTrainingReviewResult'],
     ParentType,
@@ -17931,6 +18124,7 @@ export type SessionEventResolvers<
     | 'SessionBoardSerialChanged'
     | 'SessionEnded'
     | 'SessionNameChanged'
+    | 'SessionRestCadenceChanged'
     | 'SessionRosterSnapshot'
     | 'SessionStatsUpdated'
     | 'UserJoined'
@@ -18132,6 +18326,38 @@ export type SessionParticipantResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type SessionRestCadenceResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SessionRestCadence'] = ResolversParentTypes['SessionRestCadence'],
+> = ResolversObject<{
+  advanceOn?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  anchorAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  autoAdvance?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  isRunning?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  lastFiredBeatAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  lastTickQueueItemUuid?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  lastTickStatus?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  mode?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  pausedElapsedSeconds?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  setByParticipantId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  source?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  targetSeconds?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SessionRestCadenceChangedResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SessionRestCadenceChanged'] =
+    ResolversParentTypes['SessionRestCadenceChanged'],
+> = ResolversObject<{
+  action?: Resolver<Maybe<ResolversTypes['SessionRestCadenceAction']>, ParentType, ContextType>;
+  isSnapshot?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  restCadence?: Resolver<Maybe<ResolversTypes['SessionRestCadence']>, ParentType, ContextType>;
+  revision?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  serverNow?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type SessionRosterSnapshotResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['SessionRosterSnapshot'] = ResolversParentTypes['SessionRosterSnapshot'],
@@ -18189,6 +18415,16 @@ export type SessionUserResolvers<
   isLeader?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   userId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   username?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SetSessionRestCadencePayloadResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SetSessionRestCadencePayload'] =
+    ResolversParentTypes['SetSessionRestCadencePayload'],
+> = ResolversObject<{
+  applied?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  change?: Resolver<ResolversTypes['SessionRestCadenceChanged'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -19442,10 +19678,13 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   SessionHealthExportLap?: SessionHealthExportLapResolvers<ContextType>;
   SessionNameChanged?: SessionNameChangedResolvers<ContextType>;
   SessionParticipant?: SessionParticipantResolvers<ContextType>;
+  SessionRestCadence?: SessionRestCadenceResolvers<ContextType>;
+  SessionRestCadenceChanged?: SessionRestCadenceChangedResolvers<ContextType>;
   SessionRosterSnapshot?: SessionRosterSnapshotResolvers<ContextType>;
   SessionStatsUpdated?: SessionStatsUpdatedResolvers<ContextType>;
   SessionSummary?: SessionSummaryResolvers<ContextType>;
   SessionUser?: SessionUserResolvers<ContextType>;
+  SetSessionRestCadencePayload?: SetSessionRestCadencePayloadResolvers<ContextType>;
   SetterClimb?: SetterClimbResolvers<ContextType>;
   SetterClimbsConnection?: SetterClimbsConnectionResolvers<ContextType>;
   SetterProfile?: SetterProfileResolvers<ContextType>;

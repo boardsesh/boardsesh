@@ -27,6 +27,8 @@ import {
   RATE_LIMIT_END_SESSION_OP,
   RATE_LIMIT_CONFIRM_CLIMB_ON_WALL,
   RATE_LIMIT_CONFIRM_CLIMB_ON_WALL_OP,
+  RATE_LIMIT_REST_CADENCE,
+  RATE_LIMIT_REST_CADENCE_OP,
 } from '../shared/helpers';
 import {
   SessionIdSchema,
@@ -40,6 +42,7 @@ import {
   ClimbQueueItemSchema,
   ClimbUuidSchema,
   BoardSerialSchema,
+  SessionRestCadenceInputSchema,
 } from '../../../validation/schemas';
 import { logger } from '../../../utils/logger';
 import { markErrorReported } from '../../../utils/sentry-dedupe';
@@ -53,6 +56,7 @@ import { autoSyncSessionToIntegrations } from '../../../integrations/export-serv
 import { normalizeIanaTimezone } from '../../../utils/timezone';
 import { endLiveActivity } from '../../../services/apns';
 import { buildSessionPayload } from './helpers';
+import { buildRestCadenceChange } from '../../../services/rest-cadence';
 import { logMutationMetrics } from '../queue/mutation-metrics';
 
 /**
@@ -747,6 +751,64 @@ export const sessionMutations = {
       // non-member redaction).
       createdByUserId: sessionData.createdByUserId ?? null,
     };
+  },
+
+  /**
+   * Change the session's shared rest clock (#5382). Any session participant
+   * may call: the crew clock is shared the way the wall is. The server stamps
+   * every instant from its own clock and records `ctx.participantId` verbatim
+   * as `setByParticipantId` on ARM and CONFIGURE (it is already the session
+   * HMAC, or an anonymous connection id, exactly what peers see as
+   * `SessionUser.id`). Every write is a compare-and-set on the per-session
+   * revision; FIRE must carry `expectedRevision` and applies only for a due
+   * beat later than the last one fired, so each beat moves the wall at most
+   * once. `SessionRestCadenceChanged` is published when the call
+   * applied, so a lost race or a no-op reaches nobody but the caller, who gets
+   * the state that won. The one exception is a caller whose expectedRevision is
+   * above the stored one: the store lost state, so the stored clock goes out
+   * to the whole crew as a snapshot that resets every phone's revision floor.
+   * Session identity comes from the WebSocket connection context — no
+   * `sessionId` argument.
+   */
+  setSessionRestCadence: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
+    // Its own bucket, so a runaway rest timer cannot starve climb switching.
+    await applyRateLimit(ctx, RATE_LIMIT_REST_CADENCE, RATE_LIMIT_REST_CADENCE_OP);
+    const sessionId = requireSession(ctx);
+    // Authorize before parsing: a connection that is not a member gets the
+    // membership error whatever it sends.
+    await requireSessionMember(ctx, sessionId);
+    const validInput = validateInput(SessionRestCadenceInputSchema, input, 'input');
+
+    // Hard-error when ctx.participantId is missing, before any write — same
+    // reasoning as confirmClimbOnWall: connection ids rotate on reconnect.
+    if (!ctx.participantId) {
+      throw new Error('setSessionRestCadence requires ctx.participantId; refusing to fall back to connectionId.');
+    }
+
+    // One clock read for the write and the reply. A client calibrates its
+    // offset on the reply's serverNow and applies it to the anchors inside it,
+    // so both must come from the same instant; a second read after the store
+    // write would skew every offset by the write's latency.
+    const nowMs = Date.now();
+    const { applied, rewound, stored } = await roomManager.updateSessionRestCadence(
+      sessionId,
+      validInput,
+      ctx.participantId,
+      nowMs,
+    );
+    const change = buildRestCadenceChange(stored, {
+      // Every phone drops a revision at or below the one it holds unless the
+      // event is a snapshot. After the store lost state, the crew's floors sit
+      // above anything the store holds, so only a snapshot reaches them.
+      isSnapshot: rewound,
+      action: applied ? validInput.action : null,
+      // The live branch of sessionUpdates re-stamps this at delivery.
+      serverNowMs: nowMs,
+    });
+    if (applied || rewound) {
+      pubsub.publishSessionEvent(sessionId, change);
+    }
+    return { applied, change };
   },
 
   /**

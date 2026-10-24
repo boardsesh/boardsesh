@@ -9007,6 +9007,17 @@ type Mutation {
   """
   setSessionBoardPath(boardPath: String!): Session!
 
+  """
+  Change the session's shared rest clock (#5382). Any session participant may
+  call. The server stamps every instant, records the caller as
+  `setByParticipantId` on ARM and CONFIGURE, and publishes
+  `SessionRestCadenceChanged` to every member only when the call applied.
+  FIRE is compare-and-set on `expectedRevision`, so exactly one phone can
+  claim each beat. Session identity is resolved from the WebSocket connection
+  context — no `sessionId` argument is required.
+  """
+  setSessionRestCadence(input: SessionRestCadenceInput!): SetSessionRestCadencePayload!
+
   # ============================================
   # Board Presence Mutations ("now on the wall")
   # ============================================
@@ -10016,6 +10027,7 @@ union SessionEvent =
   | SessionNameChanged
   | SessionEnded
   | SessionStatsUpdated
+  | SessionRestCadenceChanged
 
 """
 Full roster snapshot yielded as the FIRST event of every `sessionUpdates`
@@ -10208,6 +10220,171 @@ type SessionStatsUpdated {
   goal: String
   "Current session ticks (latest first)"
   ticks: [SessionDetailTick!]!
+}
+
+"""
+What a `setSessionRestCadence` call does to the session's shared rest clock.
+"""
+enum SessionRestCadenceAction {
+  "Turn the crew clock on with a config. Replaces any clock already there."
+  ARM
+  "Turn the crew clock off. The stored state becomes null."
+  DISARM
+  "Replace the config of an armed clock (a settings edit, or a workout stage boundary)."
+  CONFIGURE
+  "A climber logged a tick: records it, and re-anchors an afterTick clock."
+  TICK
+  """
+  The board holder's auto-advance fired. Compare-and-set: expectedRevision is
+  required. Applies once per beat: only when the stored clock's latest due
+  beat (counted from 2 s before it) is later than lastFiredBeatAt.
+  """
+  FIRE
+  "Freeze the clock at pausedElapsedSeconds."
+  PAUSE
+  "Restart a paused clock from its frozen elapsed."
+  RESUME
+  "Back to zero: a running clock restarts now, a paused one waits for a tick."
+  RESET
+}
+
+"""
+Where a CONFIGURE puts the clock's anchor.
+"""
+enum SessionRestCadenceAnchor {
+  "Leave the anchor where it is (the default)."
+  KEEP
+  "Anchor at server now minus elapsedMs (an onTheMinute stage boundary)."
+  NOW
+  "Clear the anchor, so the clock waits for the next tick (a tick/send stage boundary)."
+  CLEAR
+}
+
+"""
+The session's shared rest clock (#5382): one cadence every crew member's
+rest timer follows, so the phone holding the board can advance the wall for
+everyone. All instants are server epoch milliseconds as decimal strings,
+stamped by the backend; clients convert them with the offset they derive
+from `SessionRestCadenceChanged.serverNow`.
+
+`mode` and `advanceOn` are open strings: a client that does not recognise
+a value must treat the clock as unsupported and never fire on it.
+"""
+type SessionRestCadence {
+  "'afterTick' (count from the last tick) or 'onTheMinute' (a fixed beat)"
+  mode: String!
+  "Rest length in seconds, or null when the length is Off (count up). afterTick 10..3600, onTheMinute 15..3600."
+  targetSeconds: Int
+  "Whether the board holder advances the wall when the rest runs out"
+  autoAdvance: Boolean!
+  "'deadline' (advance when the rest runs out), 'tick' (only after a tick on the current climb) or 'send' (only after a flash or send on it)"
+  advanceOn: String!
+  "'settings' (someone's rest timer settings) or 'stage' (a workout stage's pacing)"
+  source: String!
+  "False while paused"
+  isRunning: Boolean!
+  "Server epoch ms the current cycle counts from, or null while the clock waits for a tick"
+  anchorAt: String
+  "Frozen elapsed seconds while paused; 0 while running"
+  pausedElapsedSeconds: Int!
+  "Server epoch ms of the last beat an auto-advance fired on, so no beat fires twice"
+  lastFiredBeatAt: String
+  "Queue item the last tick was logged against, or null when it was not the current queue item"
+  lastTickQueueItemUuid: ID
+  "'flash', 'send' or 'attempt' for the last tick, or null when there is none since the last advance"
+  lastTickStatus: String
+  "Session participant id (the same id as SessionUser.id) of the member who last armed or configured the clock"
+  setByParticipantId: ID
+}
+
+"""
+The session's shared rest clock changed, or the subscribe seed. Yielded once
+right after `SessionRosterSnapshot` on every `sessionUpdates` subscribe
+(`isSnapshot: true`, even when the clock is off), then on every applied
+`setSessionRestCadence` call. Clients drop an event whose `revision` is at
+or below the one they hold, except a snapshot, which replaces their state
+and resets that floor.
+
+Additive: a client whose `sessionUpdates` document lacks the
+`... on SessionRestCadenceChanged` fragment receives only the
+`__typename` and drops it.
+"""
+type SessionRestCadenceChanged {
+  "The clock, or null when it is off"
+  restCadence: SessionRestCadence
+  "Monotonic per session. 0 means the clock was never set (or its state expired)."
+  revision: Int!
+  "Server epoch ms when the delivering backend instance sent this event"
+  serverNow: String!
+  "True only on the subscribe seed: replace local state and reset the revision floor"
+  isSnapshot: Boolean!
+  "The action that produced this revision, or null on the seed and on a call that did not apply"
+  action: SessionRestCadenceAction
+}
+
+"""
+A rest clock config: everything a client's effective rest pacing resolves to.
+"""
+input SessionRestCadenceConfigInput {
+  "'afterTick' or 'onTheMinute'"
+  mode: String!
+  "Rest length in seconds, or null for Off. afterTick 10..3600, onTheMinute 15..3600."
+  targetSeconds: Int
+  autoAdvance: Boolean!
+  "'deadline', 'tick' or 'send'"
+  advanceOn: String!
+  "'settings' or 'stage'"
+  source: String!
+}
+
+"""
+Input for `setSessionRestCadence`. Each action reads only the fields it
+needs and ignores the rest; see SessionRestCadenceAction.
+"""
+input SessionRestCadenceInput {
+  action: SessionRestCadenceAction!
+  "Required for ARM and CONFIGURE, ignored otherwise"
+  config: SessionRestCadenceConfigInput
+  """
+  Milliseconds already elapsed in the cycle when the client sent the call,
+  0..14400000. ARM and CONFIGURE with anchor NOW anchor at server now minus
+  this; TICK clamps it to 60 s. Omitted means 0, except on ARM, where an
+  omitted value leaves the clock waiting for a tick.
+  """
+  elapsedMs: Int
+  "CONFIGURE only. Defaults to KEEP."
+  anchor: SessionRestCadenceAnchor
+  "RESET only: restart running (true) or wait paused for a tick (false). Defaults to the stored state."
+  isRunning: Boolean
+  "PAUSE only: the frozen elapsed, 0..14400. Defaults to the elapsed the server computes from its anchor."
+  pausedElapsedSeconds: Int
+  "TICK only: the queue item the tick was logged against, when it was the current queue item"
+  tickQueueItemUuid: ID
+  "TICK only (required): 'flash', 'send' or 'attempt'"
+  tickStatus: String
+  "FIRE only, and ignored: the server takes the beat from the stored clock and its own time."
+  firedBeatAgoMs: Int
+  """
+  Compare-and-set. When present, the call applies only if the stored
+  revision still equals it. FIRE requires it, so two phones can never both
+  advance the wall on one beat.
+  """
+  expectedRevision: Int
+}
+
+"""
+Result of `setSessionRestCadence`.
+"""
+type SetSessionRestCadencePayload {
+  """
+  True when this call wrote a new revision (and every member was sent it).
+  False when the revision check failed, the action did not apply to the
+  stored state (for example PAUSE on a paused clock), or nothing changed.
+  A FIRE that comes back false must not advance the wall.
+  """
+  applied: Boolean!
+  "The stored clock after this call: adopt it whether or not the call applied"
+  change: SessionRestCadenceChanged!
 }
 
 """

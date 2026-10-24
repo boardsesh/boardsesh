@@ -143,6 +143,7 @@ export {
   useQueueSessionId,
   useQueueLiveStats,
   useIsSharedSession,
+  useIsCrewSession,
   useActiveClimbUuid,
   useHasActiveClimb,
   useQueueData,
@@ -2571,8 +2572,14 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     const timer = setTimeout(() => setCrewDwellElapsed(true), SHARED_SESSION_DWELL_MS);
     return () => clearTimeout(timer);
   }, [crewPresentNow, crewHoldingNow]);
-  const isSharedSession = sharedBrowseEnabled && crewHoldingNow && crewDwellElapsed;
-  const sharedSessionValue = useMemo<QueueSharedSessionContextValue>(() => ({ isSharedSession }), [isSharedSession]);
+  // The crew itself, flag or no flag: who may move the wall must not depend on a
+  // gesture rollout (see `isCrewSession` on the context).
+  const isCrewSession = crewHoldingNow && crewDwellElapsed;
+  const isSharedSession = sharedBrowseEnabled && isCrewSession;
+  const sharedSessionValue = useMemo<QueueSharedSessionContextValue>(
+    () => ({ isSharedSession, isCrewSession }),
+    [isSharedSession, isCrewSession],
+  );
 
   const playlistSuggestionValue = useMemo<QueuePlaylistSuggestionContextValue>(
     () => ({ playlistSuggestionSource }),

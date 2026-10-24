@@ -64,7 +64,10 @@ function isHighFrequencySessionEvent(event: unknown): boolean {
   if (typeof event !== 'object' || event === null) return false;
   const eventType = (event as { __typename?: unknown }).__typename;
   return (
-    eventType === 'WallConfirmedClimb' || eventType === 'WallDisconnected' || eventType === 'SessionBoardSerialChanged'
+    eventType === 'WallConfirmedClimb' ||
+    eventType === 'WallDisconnected' ||
+    eventType === 'SessionBoardSerialChanged' ||
+    eventType === 'SessionRestCadenceChanged'
   );
 }
 
@@ -242,9 +245,10 @@ export function createRedisPubSubAdapter(publisher: Redis, subscriber: Redis): R
       };
       // Drop high-frequency wall events to debug to keep INFO useful.
       // `WallConfirmedClimb` fires on every BLE confirm, `WallDisconnected` on
-      // every wall drop, and `SessionBoardSerialChanged` on every reconnect —
-      // all noisy. Membership-level events stay at INFO since they're rare and
-      // useful for triage.
+      // every wall drop, `SessionBoardSerialChanged` on every reconnect and
+      // `SessionRestCadenceChanged` on every crew tick and rest — all noisy.
+      // Membership-level events stay at INFO since they're rare and useful for
+      // triage.
       const logMessage = `[Redis] Publishing session event to channel: ${sessionId} (type: ${event.__typename})`;
       if (isHighFrequencySessionEvent(event)) {
         logger.debug(logMessage);
