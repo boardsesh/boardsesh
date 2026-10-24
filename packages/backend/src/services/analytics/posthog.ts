@@ -55,9 +55,11 @@ export type BackendAnalyticsEvent =
  * - property names that carry identity (`userId`, `email`, ...) are dropped.
  *
  * One written exception: `Community Monthly Rank.climberName`, the display
- * name of a climber in a month's top ten. It is set only for a public account
- * that has not chosen to be anonymous on boards it doesn't own, which are the
- * people a signed-out visitor already sees named on a board leaderboard.
+ * name of a climber in a month's top ten (never the account name, which can
+ * be an email's local part or a legal name). It is set only for a public
+ * account that has not chosen to be anonymous on boards it doesn't own and
+ * has a display name: people a signed-out visitor already sees named on a
+ * board leaderboard.
  * Everyone else keeps their rank with a null name. No id, avatar or profile
  * link travels with it, and the recap re-sends every month in its window daily
  * (the last 2 months) and every Monday (the last 13), so a climber who goes

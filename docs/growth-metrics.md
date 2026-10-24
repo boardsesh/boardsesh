@@ -544,17 +544,27 @@ are not repeated here: read them from `Active Users Snapshot` (above).
   current month and the twelve before it (`months: 13`), plus the month just
   behind that window with every climber name removed (`retireMonths: 1`, see
   "Names age out" below). The first Monday run is the 12-month backfill. The
-  current month fills in day by day (`complete` is false until it ends), and
-  the previous month settles once late lighting has landed.
+  current month fills in day by day (`complete` is false until it ends).
+- **A `complete` month can still change**, on every re-send for as long as it
+  is in the 13-month window. `climbed_at` is set by the climber's device, so a
+  tick can be logged or backdated into an earlier month; a deleted account,
+  board or gym drops out of every month it was in; and a privacy change moves
+  the climber list. A number posted for a month can therefore differ from what
+  the dashboard shows for it later. Quote the dashboard's number with the date
+  it was read.
 - **Dedupe by uuid, keep the newest.** Every re-send reuses the same uuid: a
   v5 hash of `boardsesh:community-monthly:<month>:summary` or
   `boardsesh:community-monthly:<month>:<list>:<rank>`. A query can still see
   several copies of one uuid, so every tile keeps one row per uuid, the one
   with the newest `created_at`, which is the latest measurement
   (`ORDER BY created_at DESC LIMIT 1 BY uuid`).
-- **No cohort, not zero.** A month in which nobody lit a climb sends nothing,
-  not a summary of zeros. A month that had events and then lost every lit
-  climb (every board behind them deleted) keeps its last events.
+- **No cohort, not zero.** A month in which nobody lit a climb sends no
+  summary, not a summary of zeros. It still sends its 20 rank rows, all
+  `empty: true`, so a month that had rows before and has lost every lit climb
+  since (every board behind them deleted) does not keep its old gym or climber
+  rows. Its last summary does stay: read a summary together with the month's
+  rank rows, and treat a month whose rank rows are all empty as having no
+  lighting.
 
 `Community Monthly Summary`, one per month:
 
@@ -565,7 +575,7 @@ are not repeated here: read them from `Active Users Snapshot` (above).
 | `climbersWhoLit` | Distinct climbers who lit a climb: `board_climb_events` with `source = 'boardsesh'` (a phone pushed it to the LEDs after about 60 s of presence), by `confirmed_at`. A lit climb whose climber deleted their account still counts in `climbsLit`, never here. |
 | `climbsLit` | Those lit climbs, on every board. |
 | `boardsLit` | Distinct boards they were lit on, every board (home walls and private boards too: it is a count). |
-| `gymsWithActivity` | Public, undeleted gyms with at least one lit climb on a public, listed, live gym board (`ENUMERABLE_GYM_BOARDS`). |
+| `gymsWithActivity` | Public, undeleted gyms with at least one lit climb on a public, listed, live gym board (`ENUMERABLE_GYM_BOARDS`) that is not a spray wall an admin hid or its owner deleted. |
 | `sendsLogged` | Native flash and send ticks (`origin = 'native'`), by `climbed_at`. Logbook imports never count, so an import does not inflate the month it ran in. A total: no privacy filter. |
 | `climbersWhoLogged` | Distinct climbers behind those ticks. |
 | `newAccounts` | Accounts created in the month (`users.created_at`), without the reserved system accounts. |
@@ -579,9 +589,9 @@ are not repeated here: read them from `Active Users Snapshot` (above).
 | `rank` | 1 to 10. |
 | `empty` | True on a padding row: the list had fewer than ten entries. Every other property but these four is null on it. |
 | `gymName`, `gymSlug` | The gym's public name and slug (`boardsesh.com/gym/<slug>`; the slug can be null). |
-| `climbers` | Distinct climbers who lit a climb on the gym's public, listed, live boards. The rank orders by this, then `climbsLit`, then the older gym. |
+| `climbers` | Distinct climbers who lit a climb on the gym's public, listed, live boards (hidden or deleted spray walls left out). The rank orders by this, then `climbsLit`, then the older gym. |
 | `climbsLit`, `boards` | Lit climbs and distinct boards behind `climbers`. |
-| `climberName` | The climber's display name, else their account name, under the naming rule below; null otherwise. |
+| `climberName` | The climber's display name (trimmed), under the naming rule below; null otherwise. Never the account name. |
 | `named` | Whether `climberName` is set. |
 | `sends`, `flashes` | Native flash and send ticks a signed-out visitor may read (`tickPrivacyCondition` with no viewer), and the flashes among them. The rank orders by sends, then flashes, then `sendDays`, then a fixed order that is not sent. |
 | `sendDays` | Distinct UTC days with one of those sends. |
@@ -591,18 +601,23 @@ are not repeated here: read them from `Active Users Snapshot` (above).
 deleted) its old bottom rows are overwritten by the same uuids instead of
 lingering.
 
-**The naming rule** is the board leaderboard's for a signed-out visitor on a
-board the climber does not own (`boardLeaderboard`):
+**The naming rule** starts from the board leaderboard's for a signed-out
+visitor on a board the climber does not own (`boardLeaderboard`), and is
+stricter about the name itself:
 
 - Only sends a signed-out visitor may read count. A private account's sends
   (except any it marked public itself), `only_me` and followers-only sends, and
   sends on unlisted, draft or private spray-wall climbs drop out of the
   ranking.
-- A ranked climber is named only when their account is public and they have
-  not chosen "Stay anonymous on boards I don't own". A global ranking spans
-  boards they don't own, so that choice always applies. Otherwise
-  `climberName` is null and they keep their rank and counts: show them as
-  "Anonymous climber".
+- A ranked climber is named only when their account is public, they have
+  not chosen "Stay anonymous on boards I don't own" (a global ranking spans
+  boards they don't own, so that choice always applies), and they set a
+  display name that is not blank. Otherwise `climberName` is null and they
+  keep their rank and counts: show them as "Anonymous climber".
+- Only the display name a climber chose. The board leaderboard falls back to
+  the account name when there is none; the recap does not, on purpose: the
+  account name can be the local part of an email address or a legal name from
+  a Google or Apple sign-in.
 - Nothing else about a climber is sent: no id, avatar or profile link.
 
 A climber who goes private, turns on anonymity or deletes their account drops
@@ -615,8 +630,8 @@ that just left the window, under its same uuids with `climberName: null` and
 re-measured as usual. So a name lives in PostHog for at most 13 months plus
 one week, and every month that still holds names is re-sent at least weekly.
 Each month spends four or five Mondays in that 14th position, so one missed
-run does not leave its names behind. A month with no lighting is skipped there
-like anywhere else.
+run does not leave its names behind. A month with no lighting there sends its
+20 empty rank rows like anywhere else.
 
 If the family is off (`BATCH_FAMILIES_DISABLED`, worker down) for more than
 four weeks, a month can pass that position without a run and keep its names.

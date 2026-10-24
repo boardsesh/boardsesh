@@ -1,9 +1,32 @@
 import { sql, type SQL } from 'drizzle-orm';
 
 /** The board alias is `ub` at every spray read. Explicit resource settings
- * replace legacy gym access, and revocation applies even to existing viewers. */
+ * replace legacy gym access, and revocation applies even to existing viewers.
+ *
+ * Every caller puts this inside the WHERE of an EXISTS, where NULL and false
+ * both drop the row. */
 function sprayResourceVisibility(viewer: string | null, wallUuid?: string | null): SQL {
   const capability = wallUuid == null ? sql`false` : sql`ub.uuid = ${wallUuid}::text`;
+  if (viewer === null) {
+    // A signed-out reader. Every other branch compares a row with the viewer,
+    // and a NULL viewer matches nothing: not the owner, no revoked or approved
+    // grant, no follow, no gym membership. Leaving those branches out returns
+    // exactly the same walls and keeps their tables out of the statement, so a
+    // reader with no viewer needs no privilege on the follow graph, grants or
+    // memberships (the batch worker's community recap, job-queue-schema.ts).
+    // The backend's spray-visibility-null-viewer.test.ts pins the equivalence.
+    return sql`(
+      EXISTS (SELECT 1 FROM resource_privacy privacy
+        WHERE privacy.kind = 'board' AND privacy.resource_id = ub.uuid AND (
+          privacy.audience = 'public'
+          OR (privacy.audience = 'unlisted' AND ${capability})
+        ))
+      OR (NOT EXISTS (SELECT 1 FROM resource_privacy privacy
+            WHERE privacy.kind = 'board' AND privacy.resource_id = ub.uuid)
+        AND ((ub.is_public AND NOT ub.is_unlisted)
+          OR (ub.is_unlisted AND ${capability})))
+    )`;
+  }
   return sql`(
     ub.owner_id = ${viewer}::text OR (
       NOT EXISTS (SELECT 1 FROM resource_grants revoked

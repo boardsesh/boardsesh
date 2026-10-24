@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { captureBackendEvent, flushBackendEvents } from '../../services/analytics/posthog';
 import {
+  buildCommunityEmptyMonthEvents,
   buildCommunityMonthlyEvents,
   COMMUNITY_MONTHLY_DISTINCT_ID,
 } from '../../services/analytics/community-monthly-events';
@@ -107,7 +108,9 @@ export const communityMonthlyStatsFamily: BackgroundJobFamilyModule<z.infer<type
       retireMonths,
       signal: context.signal,
     });
-    const skipped = stats.skippedMonths.length ? `; no lit climbs, skipped: ${stats.skippedMonths.join(', ')}` : '';
+    const skipped = stats.skippedMonths.length
+      ? `; no lit climbs, rank rows cleared: ${stats.skippedMonths.map(({ month }) => month).join(', ')}`
+      : '';
     if (dryRun) {
       for (const communityMonth of stats.months) {
         log.info(`community-monthly-stats dry-run ${describeMonth(communityMonth)}`);
@@ -117,19 +120,23 @@ export const communityMonthlyStatsFamily: BackgroundJobFamilyModule<z.infer<type
     }
     let attempted = 0;
     let captured = 0;
-    for (const communityMonth of stats.months) {
-      for (const monthEvent of buildCommunityMonthlyEvents(communityMonth)) {
-        attempted += 1;
-        const queued = captureBackendEvent(monthEvent.event, {
-          systemDistinctId: COMMUNITY_MONTHLY_DISTINCT_ID,
-          properties: monthEvent.properties,
-          timestamp: monthEvent.timestamp,
-          uuid: monthEvent.uuid,
-        });
-        if (queued) captured += 1;
-      }
+    const monthEvents = [
+      ...stats.months.flatMap(buildCommunityMonthlyEvents),
+      // No summary for a month with no lighting, but its rank rows go out
+      // empty, so named rows it held before cannot outlive its boards.
+      ...stats.skippedMonths.flatMap(buildCommunityEmptyMonthEvents),
+    ];
+    for (const monthEvent of monthEvents) {
+      attempted += 1;
+      const queued = captureBackendEvent(monthEvent.event, {
+        systemDistinctId: COMMUNITY_MONTHLY_DISTINCT_ID,
+        properties: monthEvent.properties,
+        timestamp: monthEvent.timestamp,
+        uuid: monthEvent.uuid,
+      });
+      if (queued) captured += 1;
     }
-    // Up to 273 events land at once on a Monday; send them now rather than
+    // Up to 294 events land at once on a Monday; send them now rather than
     // leaving the tail in the client's queue for a worker restart to drop.
     if (captured > 0) await flushBackendEvents();
     // Nothing captured is analytics disabled (dev, no key, non-production

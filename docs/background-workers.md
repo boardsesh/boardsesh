@@ -492,8 +492,8 @@ above: `board_setter_stats`, `board_climb_send_stats`, `playlists`,
 `board_climb_neighbors` (SELECT, INSERT, DELETE), `board_climb_neighbor_runs`
 and `board_climb_neighbor_group_runs`. The neighbours job reads only
 `board_climbs` besides its own tables. On `users` it may insert `(id, name, email)` only, for the two
-reserved system users, and read `id`, plus `name` and `created_at` for the
-community recap below; never `email` or `image`. For `export-board-snapshots` it also reads the catalogue
+reserved system users, and read `id`, plus `created_at` for the community
+recap below; never `name`, `email` or `image`. For `export-board-snapshots` it also reads the catalogue
 tables (`board_products`, `board_layouts`, `board_product_sizes`,
 `board_placement_roles`, `board_leds`, `board_kits`, `board_difficulty_grades`,
 `board_attempts`, and `board_beta_links` without `created_by_user_id`,
@@ -519,21 +519,19 @@ job.
 | `user_boards` | `is_unlisted` | A gym ranks only on its public, listed boards (`ENUMERABLE_GYM_BOARDS`). |
 | `gyms` | `id, name, slug, is_public, deleted_at` | The gym ranking: the public name and slug, and the flags that keep private and deleted gyms out. No owner, contact or location. |
 | `boardsesh_ticks` | `uuid` | The tick privacy rule finds a tick's audience in `content_privacy` by its uuid. |
-| `users` | `name, created_at` | New accounts per month, and a ranked climber's fallback name. |
+| `users` | `created_at` | New accounts per month. Never the account name: a ranked climber is named by their display name only. |
 | `user_profiles` | `display_name, anonymous_on_foreign_boards` | A ranked climber's chosen name and their opt-out from being named. |
-| `resource_privacy` | `kind, resource_id, audience, inherit_followers` | The spray-wall half of the tick privacy rule. |
-| `resource_grants` | `kind, resource_id, user_id, status` | The same. |
-| `user_follows` | `follower_id, following_id` | The same. |
-| `gym_members` | `gym_id, user_id` | The same. |
+| `resource_privacy` | `kind, resource_id, audience` | The spray-wall half of the tick privacy rule: whether a wall is public or unlisted. |
 
-The last four come from `sprayClimbVisibilityCondition`, which the tick
-privacy rule applies to every send: `resource_privacy` decides whether a spray
-wall is public. The grant, follow and membership branches compare against the
-viewer, which is null for the recap, so they never match a row, but PostgreSQL
-checks the privileges of every table a statement names before running it. The
-batch login can therefore read who follows whom, gym memberships and board
-grants; it reads no dates, roles, inviters or location audiences on those
-tables.
+The tick privacy rule applies `sprayClimbVisibilityCondition` to every send.
+For a signed-out reader (no viewer), as the recap is, that rule leaves out
+every branch that compares a row with the viewer, so its SQL names no follow,
+grant or membership table and the batch login holds no grant on
+`user_follows`, `resource_grants` or `gym_members`.
+`spray-visibility-null-viewer.test.ts` pins that the signed-out form returns
+the same walls as the full rule. The recap's gym ranking also leaves out spray
+walls an admin hid or their owner deleted, reading `spray_walls (board_uuid,
+hidden_at, deleted_at)` from the list above.
 
 The family's schedule exists only once the backend has booted with it, and the
 backend deploys after `migrate`, so its first scheduled run already has these

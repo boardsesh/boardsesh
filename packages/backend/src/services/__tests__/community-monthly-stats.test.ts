@@ -13,6 +13,7 @@ import { beforeEach, describe, expect, it } from 'vite-plus/test';
 import * as dbSchema from '@boardsesh/db/schema';
 import { RECOMMENDATIONS_USER_ID } from '@boardsesh/db/queries';
 import { db } from '../../db/client';
+import { buildCommunityMonthlyEvents } from '../analytics/community-monthly-events';
 import {
   communityMonthWindow,
   computeCommunityMonthlyStats,
@@ -24,6 +25,12 @@ const PREFIX = 'recap-';
 const OWNER = `${PREFIX}owner`;
 const LISTED_CLIMB = `${PREFIX}climb-listed`;
 const UNLISTED_CLIMB = `${PREFIX}climb-unlisted`;
+const DRAFT_CLIMB = `${PREFIX}climb-draft`;
+const SPRAY_LAYOUT_PRIVATE = 990_901;
+const SPRAY_LAYOUT_HIDDEN = 990_902;
+const SPRAY_LAYOUT_VISIBLE = 990_903;
+const PRIVATE_WALL_CLIMB = `${PREFIX}climb-private-wall`;
+const HIDDEN_WALL_CLIMB = `${PREFIX}climb-hidden-wall`;
 
 let nextSeq = 1;
 
@@ -78,7 +85,14 @@ async function createGym(
 }
 
 async function createBoard(
-  options: { gymId?: number | null; isPublic?: boolean; isUnlisted?: boolean; deleted?: boolean } = {},
+  options: {
+    gymId?: number | null;
+    isPublic?: boolean;
+    isUnlisted?: boolean;
+    deleted?: boolean;
+    /** A spray wall on this layout, hidden by an admin or deleted on its own if asked. */
+    sprayWall?: { layoutId: number; hidden?: boolean; deleted?: boolean };
+  } = {},
 ): Promise<number> {
   const uuid = randomUUID();
   const [board] = await db
@@ -87,8 +101,8 @@ async function createBoard(
       uuid,
       slug: `${PREFIX}${uuid}`,
       ownerId: OWNER,
-      boardType: 'kilter',
-      layoutId: 1,
+      boardType: options.sprayWall ? 'spray' : 'kilter',
+      layoutId: options.sprayWall?.layoutId ?? 1,
       sizeId: 10,
       setIds: '1',
       name: 'Recap wall',
@@ -98,6 +112,14 @@ async function createBoard(
       deletedAt: options.deleted ? new Date('2025-01-01T00:00:00.000Z') : null,
     })
     .returning({ id: dbSchema.userBoards.id });
+  if (options.sprayWall) {
+    await db.insert(dbSchema.sprayWalls).values({
+      boardUuid: uuid,
+      layoutId: options.sprayWall.layoutId,
+      hiddenAt: options.sprayWall.hidden ? new Date('2025-01-01T00:00:00.000Z') : null,
+      deletedAt: options.sprayWall.deleted ? new Date('2025-01-01T00:00:00.000Z') : null,
+    });
+  }
   return board.id;
 }
 
@@ -127,14 +149,17 @@ async function logTick(
     status?: 'flash' | 'send' | 'attempt';
     origin?: 'native' | 'aurora_pull';
     climbUuid?: string;
+    boardType?: 'kilter' | 'spray';
     audience?: 'public' | 'followers' | 'only_me';
+    /** The privacy revision a public audience was chosen under; a private account's must match its profile. */
+    publicConsentRevision?: number;
   } = {},
 ): Promise<void> {
   const uuid = randomUUID();
   await db.insert(dbSchema.boardseshTicks).values({
     uuid,
     userId,
-    boardType: 'kilter',
+    boardType: options.boardType ?? 'kilter',
     climbUuid: options.climbUuid ?? LISTED_CLIMB,
     angle: 40,
     status: options.status ?? 'send',
@@ -142,19 +167,29 @@ async function logTick(
     climbedAt,
   });
   if (options.audience) {
-    await db
-      .insert(dbSchema.contentPrivacy)
-      .values({ entityType: 'tick', entityId: uuid, ownerId: userId, audience: options.audience });
+    await db.insert(dbSchema.contentPrivacy).values({
+      entityType: 'tick',
+      entityId: uuid,
+      ownerId: userId,
+      audience: options.audience,
+      publicConsentRevision: options.publicConsentRevision ?? null,
+    });
   }
 }
 
 /** A send per day for `days` days from `firstDay` (a March 2025 date). */
-async function logSends(userId: string, count: number, options: { flashes?: number; days?: number } = {}) {
+async function logSends(
+  userId: string,
+  count: number,
+  options: { flashes?: number; days?: number; audience?: 'public'; publicConsentRevision?: number } = {},
+) {
   const days = options.days ?? 1;
   for (let index = 0; index < count; index += 1) {
     const day = String(3 + (index % days)).padStart(2, '0');
     await logTick(userId, `2025-03-${day}T10:00:00.000Z`, {
       status: index < (options.flashes ?? 0) ? 'flash' : 'send',
+      audience: options.audience,
+      publicConsentRevision: options.publicConsentRevision,
     });
   }
 }
@@ -173,6 +208,9 @@ beforeEach(async () => {
   await db.delete(dbSchema.contentPrivacy).where(like(dbSchema.contentPrivacy.ownerId, `${PREFIX}%`));
   await db.delete(dbSchema.boardseshTicks).where(like(dbSchema.boardseshTicks.userId, `${PREFIX}%`));
   await db.delete(dbSchema.boardClimbEvents).where(inArray(dbSchema.boardClimbEvents.boardId, fixtureBoards));
+  await db
+    .delete(dbSchema.sprayWalls)
+    .where(inArray(dbSchema.sprayWalls.layoutId, [SPRAY_LAYOUT_PRIVATE, SPRAY_LAYOUT_HIDDEN, SPRAY_LAYOUT_VISIBLE]));
   await db.delete(dbSchema.userBoards).where(like(dbSchema.userBoards.ownerId, `${PREFIX}%`));
   await db.delete(dbSchema.gyms).where(like(dbSchema.gyms.ownerId, `${PREFIX}%`));
   await db.delete(dbSchema.userProfiles).where(like(dbSchema.userProfiles.userId, `${PREFIX}%`));
@@ -183,6 +221,23 @@ beforeEach(async () => {
   await db.insert(dbSchema.boardClimbs).values([
     { uuid: LISTED_CLIMB, boardType: 'kilter', layoutId: 1, name: 'Listed', isDraft: false, isListed: true },
     { uuid: UNLISTED_CLIMB, boardType: 'kilter', layoutId: 1, name: 'Unlisted', isDraft: false, isListed: false },
+    { uuid: DRAFT_CLIMB, boardType: 'kilter', layoutId: 1, name: 'Draft', isDraft: true, isListed: true },
+    {
+      uuid: PRIVATE_WALL_CLIMB,
+      boardType: 'spray',
+      layoutId: SPRAY_LAYOUT_PRIVATE,
+      name: 'Private wall climb',
+      isDraft: false,
+      isListed: true,
+    },
+    {
+      uuid: HIDDEN_WALL_CLIMB,
+      boardType: 'spray',
+      layoutId: SPRAY_LAYOUT_HIDDEN,
+      name: 'Hidden wall climb',
+      isDraft: false,
+      isListed: true,
+    },
   ]);
 });
 
@@ -230,7 +285,7 @@ describe('computeCommunityMonthlyStats', () => {
 
     const stats = await compute(3);
 
-    expect(stats.skippedMonths).toEqual(['2025-01']);
+    expect(stats.skippedMonths).toEqual([{ month: '2025-01', complete: true }]);
     expect(stats.months.map(({ month, complete, summary }) => ({ month, complete, summary }))).toEqual([
       {
         month: '2025-02',
@@ -302,6 +357,35 @@ describe('computeCommunityMonthlyStats', () => {
     expect(march.summary).toMatchObject({ climbersWhoLit: 5, climbsLit: 21, boardsLit: 8 });
   });
 
+  it('leaves spray walls an admin hid or their owner deleted out of the gym ranking', async () => {
+    const boulderGym = await createGym('Boulder Gym');
+    const hiddenWallGym = await createGym('Hidden Wall Gym');
+    const sprayGym = await createGym('Spray Gym');
+    const climber = await createUser(`${PREFIX}spray-gym-climber`);
+    await lightClimb(await createBoard({ gymId: boulderGym }), climber, '2025-03-03T10:00:00.000Z');
+    const hiddenWall = await createBoard({
+      gymId: hiddenWallGym,
+      sprayWall: { layoutId: SPRAY_LAYOUT_HIDDEN, hidden: true },
+    });
+    await lightClimb(hiddenWall, climber, '2025-03-03T10:00:00.000Z');
+    const deletedWall = await createBoard({
+      gymId: boulderGym,
+      sprayWall: { layoutId: SPRAY_LAYOUT_PRIVATE, deleted: true },
+    });
+    await lightClimb(deletedWall, climber, '2025-03-03T11:00:00.000Z');
+    // A spray wall nobody hid ranks like any other wall.
+    const sprayWall = await createBoard({ gymId: sprayGym, sprayWall: { layoutId: SPRAY_LAYOUT_VISIBLE } });
+    await lightClimb(sprayWall, climber, '2025-03-03T12:00:00.000Z');
+
+    const [march] = (await compute(1)).months;
+
+    expect(march.topGyms.map(({ gymName, climbsLit, boards }) => ({ gymName, climbsLit, boards }))).toEqual([
+      { gymName: 'Boulder Gym', climbsLit: 1, boards: 1 },
+      { gymName: 'Spray Gym', climbsLit: 1, boards: 1 },
+    ]);
+    expect(march.summary).toMatchObject({ gymsWithActivity: 2, climbsLit: 4, boardsLit: 4 });
+  });
+
   it('breaks a gym tie on climbs lit, then on the older gym', async () => {
     const older = await createGym('Older Gym', { slug: null });
     const busier = await createGym('Busier Gym');
@@ -322,27 +406,43 @@ describe('computeCommunityMonthlyStats', () => {
     ]);
   });
 
-  it('ranks the sends a signed-out visitor may read, and names only public climbers who allow it', async () => {
+  it('ranks the sends a signed-out visitor may read, and names only public climbers by their display name', async () => {
     const board = await createBoard();
+    await createBoard({ isPublic: false, sprayWall: { layoutId: SPRAY_LAYOUT_PRIVATE } });
+    await createBoard({ sprayWall: { layoutId: SPRAY_LAYOUT_HIDDEN, hidden: true } });
+    const privateClimber = await createUser(`${PREFIX}private`, {
+      name: 'Private Pat',
+      displayName: 'Private Pat',
+      isPrivate: true,
+    });
     const anonymous = await createUser(`${PREFIX}anonymous`, {
       name: 'Hidden Name',
       displayName: 'Hidden Display',
       anonymousOnForeignBoards: true,
     });
-    const alice = await createUser(`${PREFIX}alice`, { name: 'alice', displayName: 'Alice D' });
-    const bob = await createUser(`${PREFIX}bob`, { name: 'Bob', displayName: '' });
-    const privateClimber = await createUser(`${PREFIX}private`, { name: 'Private Pat', isPrivate: true });
+    const alice = await createUser(`${PREFIX}alice`, { name: 'alice', displayName: '  Alice D  ' });
+    const bob = await createUser(`${PREFIX}bob`, { name: 'Bob Account', displayName: '   ' });
+    const carol = await createUser(`${PREFIX}carol`, { name: 'Carol Account' });
     // The month must have lighting to report at all.
     await lightClimb(board, alice, '2025-03-02T10:00:00.000Z');
-    await logSends(anonymous, 4);
-    await logSends(alice, 3);
-    await logSends(bob, 2);
+    // A private account's sends count only where it made them public under its
+    // current privacy revision; then it ranks, unnamed.
+    await logSends(privateClimber, 6, { audience: 'public', publicConsentRevision: 0 });
     await logSends(privateClimber, 5);
-    // Not readable by a signed-out visitor, so not counted: an only-me send,
-    // a followers-only send, and a send on an unlisted climb.
+    await logTick(privateClimber, '2025-03-04T10:00:00.000Z', { audience: 'public', publicConsentRevision: 1 });
+    await logSends(anonymous, 5);
+    await logSends(alice, 4);
+    await logSends(bob, 3);
+    await logSends(carol, 2);
+    // Not readable by a signed-out visitor, so not counted: an only-me send, a
+    // followers-only send, and sends on an unlisted climb, a draft, and climbs
+    // on a private and an admin-hidden spray wall.
     await logTick(bob, '2025-03-04T10:00:00.000Z', { audience: 'only_me' });
     await logTick(bob, '2025-03-04T11:00:00.000Z', { audience: 'followers' });
     await logTick(bob, '2025-03-04T12:00:00.000Z', { climbUuid: UNLISTED_CLIMB });
+    await logTick(bob, '2025-03-04T13:00:00.000Z', { climbUuid: DRAFT_CLIMB });
+    await logTick(bob, '2025-03-04T14:00:00.000Z', { climbUuid: PRIVATE_WALL_CLIMB, boardType: 'spray' });
+    await logTick(bob, '2025-03-04T15:00:00.000Z', { climbUuid: HIDDEN_WALL_CLIMB, boardType: 'spray' });
     // An imported logbook does not rank anyone.
     for (let index = 0; index < 6; index += 1) {
       await logTick(alice, '2025-03-05T10:00:00.000Z', { origin: 'aurora_pull' });
@@ -352,26 +452,36 @@ describe('computeCommunityMonthlyStats', () => {
     const [march] = stats.months;
 
     expect(march.topClimbers).toEqual([
+      // A private account: ranked on the sends it made public, never named.
+      { rank: 1, climberName: null, sends: 6, flashes: 0, sendDays: 1 },
       // Anonymous on boards they don't own: ranked, never named.
-      { rank: 1, climberName: null, sends: 4, flashes: 0, sendDays: 1 },
-      { rank: 2, climberName: 'Alice D', sends: 3, flashes: 0, sendDays: 1 },
-      // An empty display name falls back to the account name.
-      { rank: 3, climberName: 'Bob', sends: 2, flashes: 0, sendDays: 1 },
+      { rank: 2, climberName: null, sends: 5, flashes: 0, sendDays: 1 },
+      // Named by the display name, trimmed.
+      { rank: 3, climberName: 'Alice D', sends: 4, flashes: 0, sendDays: 1 },
+      // A blank display name, or none, leaves a climber unnamed: the account
+      // name is never a fallback.
+      { rank: 4, climberName: null, sends: 3, flashes: 0, sendDays: 1 },
+      { rank: 5, climberName: null, sends: 2, flashes: 0, sendDays: 1 },
     ]);
+    const climberRows = buildCommunityMonthlyEvents(march).filter(
+      (monthEvent) => monthEvent.properties.list === 'climbers' && monthEvent.properties.empty === false,
+    );
+    expect(climberRows.map((monthEvent) => monthEvent.properties.named)).toEqual([false, false, true, false, false]);
     // The totals are not privacy-filtered: every native send counts.
-    expect(march.summary).toMatchObject({ sendsLogged: 17, climbersWhoLogged: 4 });
+    expect(march.summary).toMatchObject({ sendsLogged: 32, climbersWhoLogged: 5 });
     const serialized = JSON.stringify(stats);
-    for (const userId of [anonymous, alice, bob, privateClimber]) expect(serialized).not.toContain(userId);
-    expect(serialized).not.toContain('Hidden');
-    expect(serialized).not.toContain('Private Pat');
+    for (const userId of [anonymous, alice, bob, carol, privateClimber]) expect(serialized).not.toContain(userId);
+    for (const name of ['Hidden', 'Private Pat', 'Bob Account', 'Carol Account']) {
+      expect(serialized).not.toContain(name);
+    }
   });
 
   it('breaks a climber tie on flashes, then send days, then a stable order it does not report', async () => {
     const board = await createBoard();
-    const flasher = await createUser(`${PREFIX}c1`, { name: 'Flasher' });
-    const regular = await createUser(`${PREFIX}c2`, { name: 'Regular' });
-    const tiedFirst = await createUser(`${PREFIX}c3`, { name: 'Tied First' });
-    const tiedSecond = await createUser(`${PREFIX}c4`, { name: 'Tied Second' });
+    const flasher = await createUser(`${PREFIX}c1`, { displayName: 'Flasher' });
+    const regular = await createUser(`${PREFIX}c2`, { displayName: 'Regular' });
+    const tiedFirst = await createUser(`${PREFIX}c3`, { displayName: 'Tied First' });
+    const tiedSecond = await createUser(`${PREFIX}c4`, { displayName: 'Tied Second' });
     await lightClimb(board, flasher, '2025-03-02T10:00:00.000Z');
     await logSends(tiedSecond, 2);
     await logSends(regular, 2, { days: 2 });
@@ -390,7 +500,9 @@ describe('computeCommunityMonthlyStats', () => {
 
   it('keeps ten of each list and counts every active gym', async () => {
     for (let index = 0; index < 11; index += 1) {
-      const climber = await createUser(`${PREFIX}many-${String(index).padStart(2, '0')}`, { name: `Climber ${index}` });
+      const climber = await createUser(`${PREFIX}many-${String(index).padStart(2, '0')}`, {
+        displayName: `Climber ${index}`,
+      });
       const gym = await createGym(`Gym ${index}`);
       await lightClimb(await createBoard({ gymId: gym }), climber, '2025-03-03T10:00:00.000Z');
       await logSends(climber, 1);
@@ -449,8 +561,18 @@ describe('computeCommunityMonthlyStats', () => {
     const stats = await computeCommunityMonthlyStats({ database: db, now: NOW, months: 13, retireMonths: 1 });
 
     expect(stats.months.map((communityMonth) => communityMonth.month)).toEqual(['2025-03']);
-    expect(stats.skippedMonths[0]).toBe('2024-02');
+    expect(stats.skippedMonths[0]).toEqual({ month: '2024-02', complete: true });
     expect(stats.skippedMonths).toHaveLength(13);
+  });
+
+  it('reports a current month nobody has lit a climb in yet as empty and partial', async () => {
+    const alice = await createUser(`${PREFIX}alice`);
+    await lightClimb(await createBoard(), alice, '2025-02-20T10:00:00.000Z');
+
+    const stats = await compute(2);
+
+    expect(stats.months.map(({ month }) => month)).toEqual(['2025-02']);
+    expect(stats.skippedMonths).toEqual([{ month: '2025-03', complete: false }]);
   });
 
   it('retires months only behind the full window', async () => {

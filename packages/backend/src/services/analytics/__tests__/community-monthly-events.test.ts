@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CommunityMonth } from '../../community-monthly-stats';
 import {
+  buildCommunityEmptyMonthEvents,
   buildCommunityMonthlyEvents,
   COMMUNITY_MONTHLY_DISTINCT_ID,
   COMMUNITY_MONTHLY_RANK_EVENT,
@@ -137,9 +138,28 @@ describe('Community monthly events', () => {
     expect(communityMonthlyEventUuid('2026-09', 'climbers', 3)).toBe('e88ebd8a-116b-5172-96ee-2df80b8278a8');
   });
 
+  it('sends a month with no lighting as 20 empty rank rows under the same uuids, and no summary', () => {
+    const emptyEvents = buildCommunityEmptyMonthEvents({ month: '2026-09', complete: true });
+    expect(emptyEvents).toHaveLength(20);
+    expect(emptyEvents.every((monthEvent) => monthEvent.event === COMMUNITY_MONTHLY_RANK_EVENT)).toBe(true);
+    for (const monthEvent of emptyEvents) {
+      expect(monthEvent.properties).toMatchObject({ month: '2026-09', complete: true, empty: true });
+      expect(monthEvent.properties.gymName ?? monthEvent.properties.climberName ?? null).toBeNull();
+    }
+    // The same uuids the month's rank rows were sent under, so they overwrite them.
+    expect(emptyEvents.map((monthEvent) => monthEvent.uuid)).toEqual(
+      buildCommunityMonthlyEvents(SEPTEMBER)
+        .slice(1)
+        .map((monthEvent) => monthEvent.uuid),
+    );
+  });
+
   it('never carries an id, an email, an avatar or a profile link, and only scalar values', () => {
     const forbidden = ['userid', 'user_id', 'email', 'distinct_id', 'avatar', 'image', 'profile', 'url', 'uuid'];
-    for (const monthEvent of buildCommunityMonthlyEvents(SEPTEMBER)) {
+    for (const monthEvent of [
+      ...buildCommunityMonthlyEvents(SEPTEMBER),
+      ...buildCommunityEmptyMonthEvents({ month: '2026-10', complete: false }),
+    ]) {
       for (const [key, value] of Object.entries(monthEvent.properties)) {
         for (const fragment of forbidden) expect(key.toLowerCase().includes(fragment), key).toBe(false);
         expect(key.toLowerCase()).not.toBe('id');

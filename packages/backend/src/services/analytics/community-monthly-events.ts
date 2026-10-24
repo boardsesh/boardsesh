@@ -1,6 +1,7 @@
 import {
   COMMUNITY_TOP_LIST_SIZE,
   type CommunityClimberRank,
+  type CommunityEmptyMonth,
   type CommunityGymRank,
   type CommunityMonth,
 } from '../community-monthly-stats';
@@ -23,7 +24,9 @@ import { deterministicEventUuid } from './deterministic-event-uuid';
  *   latest measurement;
  * - exactly {@link COMMUNITY_TOP_LIST_SIZE} rank rows per list per month,
  *   padded with `empty: true`, so a list that shrinks overwrites its old
- *   bottom rows instead of leaving them behind;
+ *   bottom rows instead of leaving them behind. A month with no lighting sends
+ *   no summary but still sends its 20 rows, all empty, so rows it held before
+ *   (its boards since deleted) are overwritten too;
  * - scalar properties only, and never a user id, email, avatar or profile
  *   link. `climberName` is the one name, under the exception written in
  *   posthog.ts and docs/analytics-consent.md.
@@ -79,21 +82,17 @@ function climberRankProperties(climber: CommunityClimberRank | undefined): Scala
   };
 }
 
-/** One summary and two padded ten-row lists: 21 events for a month. */
-export function buildCommunityMonthlyEvents(communityMonth: CommunityMonth): CommunityMonthlyEvent[] {
-  const { month, complete, summary } = communityMonth;
+/** Two ten-row lists, padded with empty rows. */
+function rankEvents(
+  { month, complete }: CommunityEmptyMonth,
+  topGyms: readonly CommunityGymRank[],
+  topClimbers: readonly CommunityClimberRank[],
+): CommunityMonthlyEvent[] {
   const timestamp = communityMonthlyEventTimestamp(month);
-  const monthEvents: CommunityMonthlyEvent[] = [
-    {
-      event: COMMUNITY_MONTHLY_SUMMARY_EVENT,
-      uuid: communityMonthlyEventUuid(month),
-      timestamp,
-      properties: { month, complete, ...summary },
-    },
-  ];
+  const monthEvents: CommunityMonthlyEvent[] = [];
   const lists: Array<[CommunityRankList, (rank: number) => ScalarProperties]> = [
-    ['gyms', (rank) => gymRankProperties(communityMonth.topGyms.find((gym) => gym.rank === rank))],
-    ['climbers', (rank) => climberRankProperties(communityMonth.topClimbers.find((climber) => climber.rank === rank))],
+    ['gyms', (rank) => gymRankProperties(topGyms.find((gym) => gym.rank === rank))],
+    ['climbers', (rank) => climberRankProperties(topClimbers.find((climber) => climber.rank === rank))],
   ];
   for (const [list, rowProperties] of lists) {
     for (let rank = 1; rank <= COMMUNITY_TOP_LIST_SIZE; rank += 1) {
@@ -106,4 +105,26 @@ export function buildCommunityMonthlyEvents(communityMonth: CommunityMonth): Com
     }
   }
   return monthEvents;
+}
+
+/** One summary and two padded ten-row lists: 21 events for a month. */
+export function buildCommunityMonthlyEvents(communityMonth: CommunityMonth): CommunityMonthlyEvent[] {
+  const { month, complete, summary } = communityMonth;
+  return [
+    {
+      event: COMMUNITY_MONTHLY_SUMMARY_EVENT,
+      uuid: communityMonthlyEventUuid(month),
+      timestamp: communityMonthlyEventTimestamp(month),
+      properties: { month, complete, ...summary },
+    },
+    ...rankEvents(communityMonth, communityMonth.topGyms, communityMonth.topClimbers),
+  ];
+}
+
+/**
+ * A month with no lighting: no summary (no cohort, not zero), but all 20 rank
+ * rows sent empty under their usual uuids, so nothing it sent before survives.
+ */
+export function buildCommunityEmptyMonthEvents(emptyMonth: CommunityEmptyMonth): CommunityMonthlyEvent[] {
+  return rankEvents(emptyMonth, [], []);
 }

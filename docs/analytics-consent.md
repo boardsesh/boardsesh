@@ -301,15 +301,20 @@ properties are omitted. Rotating the salt breaks joins across the rotation.
 ### Named climbers in the community recap
 
 One backend event carries a person's name, as a written exception to the rule
-above: `Community Monthly Rank.climberName`, the name of a climber in a
-month's top ten by sends (the community recap, see
+above: `Community Monthly Rank.climberName`, the display name of a climber in
+a month's top ten by sends (the community recap, see
 [growth-metrics.md](./growth-metrics.md#community-monthly-recap)). It is kept
 to what a signed-out visitor can already see:
 
-- **Who can be named.** Only a climber whose account is public and who has not
-  chosen "Stay anonymous on boards I don't own", the people a signed-out
-  visitor sees named on a board leaderboard. Everyone else in the top ten is
-  sent with `climberName: null` and keeps their rank and counts.
+- **Who can be named.** Only a climber whose account is public, who has not
+  chosen "Stay anonymous on boards I don't own", and who set a display name:
+  people a signed-out visitor already sees named on a board leaderboard.
+  Everyone else in the top ten is sent with `climberName: null` and keeps
+  their rank and counts.
+- **Which name.** The display name the climber chose, and nothing else. Unlike
+  the board leaderboard, the recap never falls back to the account name,
+  which can be the local part of an email address or a legal name from a
+  Google or Apple sign-in.
 - **What is ranked.** Only sends a signed-out visitor may read
   (`tickPrivacyCondition` with no viewer), so a private account's sends
   (except any it marked public itself), `only_me` and followers-only sends

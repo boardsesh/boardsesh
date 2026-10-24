@@ -204,14 +204,17 @@ const COMMUNITY_RECAP_USER_ID = `${FIXTURE_PREFIX}recap-climber`;
 const COMMUNITY_RECAP_GYM_NAME = 'Recap Fixture Gym';
 const COMMUNITY_RECAP_CLIMBER_NAME = 'Recap Fixture Climber';
 
-/** One public gym board, one lit climb and one native send, this month, by a named public climber. */
+/** One public gym board, one lit climb and one native send, this month, by a public climber with a display name. */
 async function seedCommunityRecap(ownerDatabase: JobDatabase): Promise<void> {
   const now = new Date().toISOString();
   await ownerDatabase.insert(dbSchema.users).values({
     id: COMMUNITY_RECAP_USER_ID,
     email: `${COMMUNITY_RECAP_USER_ID}@example.invalid`,
-    name: COMMUNITY_RECAP_CLIMBER_NAME,
+    name: 'Recap Account Name',
   });
+  await ownerDatabase
+    .insert(dbSchema.userProfiles)
+    .values({ userId: COMMUNITY_RECAP_USER_ID, displayName: COMMUNITY_RECAP_CLIMBER_NAME });
   const [gym] = await ownerDatabase
     .insert(dbSchema.gyms)
     .values({
@@ -480,12 +483,14 @@ describe('batch worker grants', () => {
       // The recap reads a gym's public name and slug, never how to reach it.
       await expect(restricted`SELECT contact_email FROM gyms LIMIT 1`).rejects.toThrow('permission denied');
       await expect(restricted`SELECT owner_id FROM gyms LIMIT 1`).rejects.toThrow('permission denied');
-      // The recap's tick privacy rule names the follow, grant and membership
-      // tables (see COMMUNITY_MONTHLY_STATS_GRANTS); only their key columns.
-      await expect(restricted`SELECT created_at FROM user_follows LIMIT 1`).rejects.toThrow('permission denied');
-      await expect(restricted`SELECT role FROM gym_members LIMIT 1`).rejects.toThrow('permission denied');
-      await expect(restricted`SELECT invited_by FROM resource_grants LIMIT 1`).rejects.toThrow('permission denied');
-      await expect(restricted`SELECT location_audience FROM resource_privacy LIMIT 1`).rejects.toThrow(
+      await expect(restricted`SELECT follower_id FROM user_follows LIMIT 1`).rejects.toThrow('permission denied');
+      // The recap names a climber by display name only, and its signed-out
+      // spray-wall check reads whether a wall is public, nothing about who may
+      // see it otherwise.
+      await expect(restricted`SELECT name FROM users LIMIT 1`).rejects.toThrow('permission denied');
+      await expect(restricted`SELECT user_id FROM gym_members LIMIT 1`).rejects.toThrow('permission denied');
+      await expect(restricted`SELECT user_id FROM resource_grants LIMIT 1`).rejects.toThrow('permission denied');
+      await expect(restricted`SELECT inherit_followers FROM resource_privacy LIMIT 1`).rejects.toThrow(
         'permission denied',
       );
       await expect(restricted`SELECT comment FROM boardsesh_ticks LIMIT 1`).rejects.toThrow('permission denied');

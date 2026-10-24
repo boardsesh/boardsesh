@@ -752,6 +752,30 @@ describe('execute', () => {
       expect(logged).not.toContain('Secretname');
     });
 
+    it('clears the rank rows of a month with no lighting and sends it no summary', async () => {
+      recap.computeCommunityMonthlyStats.mockResolvedValue({
+        months: [september],
+        skippedMonths: [{ month: '2026-10', complete: false }],
+      });
+      await communityMonthlyStatsFamily.execute(context('community-monthly-stats').context, {
+        months: 2,
+        retireMonths: 0,
+        dryRun: false,
+      });
+      const october = capture.captureBackendEvent.mock.calls.filter(
+        ([, options]) => options.properties?.month === '2026-10',
+      );
+      expect(october).toHaveLength(20);
+      for (const [eventName, options] of october) {
+        expect(eventName).toBe('Community Monthly Rank');
+        expect(options.properties).toMatchObject({ empty: true, complete: false });
+      }
+      expect(capture.captureBackendEvent).toHaveBeenCalledTimes(41);
+      expect(loggedLines().at(-1)).toBe(
+        'community-monthly-stats emitted 41 of 41 events for 1 months; no lit climbs, rank rows cleared: 2026-10',
+      );
+    });
+
     it('sends a retired month like any other, under the same uuids, with the names the compute removed', async () => {
       const retired = {
         ...september,

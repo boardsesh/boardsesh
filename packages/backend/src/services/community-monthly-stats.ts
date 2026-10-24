@@ -87,7 +87,11 @@ export type CommunityGymRank = {
 
 export type CommunityClimberRank = {
   rank: number;
-  /** Null when the climber is private or anonymous on boards they don't own; they keep their rank. */
+  /**
+   * The climber's display name. Null when they set none, their account is
+   * private, or they stay anonymous on boards they don't own; they keep their
+   * rank either way.
+   */
   climberName: string | null;
   sends: number;
   flashes: number;
@@ -111,11 +115,17 @@ export type CommunityMonth = {
   topClimbers: CommunityClimberRank[];
 };
 
+/** A month scanned with no lit climb: no cohort, so no summary and no ranked rows. */
+export type CommunityEmptyMonth = {
+  month: string;
+  complete: boolean;
+};
+
 export type CommunityMonthlyStats = {
   /** Months with at least one lit climb, oldest first. */
   months: CommunityMonth[];
-  /** Months scanned with no lit climb: no cohort, so nothing is reported for them. */
-  skippedMonths: string[];
+  /** Months scanned with no lit climb, oldest first. */
+  skippedMonths: CommunityEmptyMonth[];
 };
 
 export type ComputeCommunityMonthlyStatsOptions = {
@@ -191,9 +201,9 @@ function monthOf(column: SQLWrapper) {
 
 /**
  * Compute every month in the window, plus `retireMonths` behind it with the
- * climber names removed. Five statements whatever the window's size, each one
- * scan grouped by month: lighting totals, the gym ranking, sending totals, the
- * climber ranking, and new accounts. Read-only.
+ * climber names removed. Four statements whatever the window's size, each one
+ * scan grouped by month: lighting (totals and the gym ranking), sending
+ * totals, the climber ranking, and new accounts. Read-only.
  */
 export async function computeCommunityMonthlyStats({
   database,
@@ -220,60 +230,102 @@ export async function computeCommunityMonthlyStats({
   const endIso = window.end.toISOString();
   signal?.throwIfAborted();
 
-  const litMonth = monthOf(climbEvents.confirmedAt);
-  const litInWindow = and(
-    eq(climbEvents.source, 'boardsesh'),
-    gte(climbEvents.confirmedAt, startIso),
-    lt(climbEvents.confirmedAt, endIso),
+  // Lighting, in ONE scan of board_climb_events: the window's events grouped
+  // to one row per (month, board, climber), which both the month's totals and
+  // the gym ranking aggregate from. A climber who lit climbs on two boards is
+  // two rows here, so distinct climbers stay distinct-counted downstream.
+  const litMonthStart = sql`date_trunc('month', ${climbEvents.confirmedAt})`;
+  const litByBoard = database.$with('community_lit').as(
+    database
+      .select({
+        // Drizzle names a CTE's columns unqualified, so every alias is unique
+        // across the statement (the gym boards subquery has its own board_id).
+        monthStart: sql<string>`${litMonthStart}`.as('lit_month_start'),
+        boardId: sql<number>`${climbEvents.boardId}`.as('lit_board_id'),
+        climberId: sql<string | null>`${climbEvents.userId}`.as('lit_climber_id'),
+        climbs: sql<number>`count(*)::int`.as('lit_climbs'),
+      })
+      .from(climbEvents)
+      .where(
+        and(
+          eq(climbEvents.source, 'boardsesh'),
+          gte(climbEvents.confirmedAt, startIso),
+          lt(climbEvents.confirmedAt, endIso),
+        ),
+      )
+      .groupBy(litMonthStart, climbEvents.boardId, climbEvents.userId),
   );
+  const litTotals = database.$with('community_lit_totals').as(
+    database
+      .select({
+        monthStart: litByBoard.monthStart,
+        climbersWhoLit: sql<number>`count(distinct ${litByBoard.climberId})::int`.as('climbers_who_lit'),
+        climbsLit: sql<number>`sum(${litByBoard.climbs})::int`.as('climbs_lit_total'),
+        boardsLit: sql<number>`count(distinct ${litByBoard.boardId})::int`.as('boards_lit'),
+      })
+      .from(litByBoard)
+      .groupBy(litByBoard.monthStart),
+  );
+  // Gyms: lighting on the gym's enumerable boards (public, listed, live), on
+  // public undeleted gyms, and never on a spray wall an admin hid or its owner
+  // deleted (ENUMERABLE_GYM_BOARDS reads user_boards alone). Ranked in SQL so
+  // only the top rows travel; `gyms_in_month` rides on each for the summary.
+  const gymClimbers = sql`count(distinct ${litByBoard.climberId})`;
+  const gymClimbsLit = sql`sum(${litByBoard.climbs})`;
+  const gymActivity = database.$with('community_gym_activity').as(
+    database
+      .select({
+        monthStart: sql<string>`${litByBoard.monthStart}`.as('gym_month_start'),
+        gymName: sql<string>`${gyms.name}`.as('gym_name'),
+        gymSlug: sql<string | null>`${gyms.slug}`.as('gym_slug'),
+        climbers: sql<number>`${gymClimbers}::int`.as('gym_climbers'),
+        climbsLit: sql<number>`${gymClimbsLit}::int`.as('gym_climbs_lit'),
+        boards: sql<number>`count(distinct ${litByBoard.boardId})::int`.as('gym_boards'),
+        rank: sql<number>`(row_number() over (partition by ${litByBoard.monthStart} order by ${gymClimbers} desc, ${gymClimbsLit} desc, ${gyms.id} asc))::int`.as(
+          'gym_rank',
+        ),
+        gymsInMonth: sql<number>`(count(*) over (partition by ${litByBoard.monthStart}))::int`.as('gyms_in_month'),
+      })
+      .from(litByBoard)
+      .innerJoin(
+        sql`(${ENUMERABLE_GYM_BOARDS}) AS community_gym_boards`,
+        sql`community_gym_boards.board_id = ${litByBoard.boardId}`,
+      )
+      .innerJoin(
+        gyms,
+        and(eq(gyms.id, sql`community_gym_boards.gym_id`), isNull(gyms.deletedAt), gymVisibleCondition(gyms, null)),
+      )
+      .where(
+        sql`NOT EXISTS (SELECT 1 FROM spray_walls community_gym_wall
+          JOIN user_boards community_gym_wall_board ON community_gym_wall_board.uuid = community_gym_wall.board_uuid
+          WHERE community_gym_wall_board.id = community_gym_boards.board_id
+            AND (community_gym_wall.hidden_at IS NOT NULL OR community_gym_wall.deleted_at IS NOT NULL))`,
+      )
+      .groupBy(litByBoard.monthStart, gyms.id),
+  );
+  // One row per (month, top gym), or one row with no gym for a month whose
+  // lighting reached no ranked gym; every row carries its month's totals.
   const litRows = await database
+    .with(litByBoard, litTotals, gymActivity)
     .select({
-      month: litMonth,
-      climbersWhoLit: countDistinct(climbEvents.userId),
-      climbsLit: count(),
-      boardsLit: countDistinct(climbEvents.boardId),
+      month: sql<string>`to_char(${litTotals.monthStart}, 'YYYY-MM')`,
+      climbersWhoLit: litTotals.climbersWhoLit,
+      climbsLit: litTotals.climbsLit,
+      boardsLit: litTotals.boardsLit,
+      gymsInMonth: gymActivity.gymsInMonth,
+      rank: gymActivity.rank,
+      gymName: gymActivity.gymName,
+      gymSlug: gymActivity.gymSlug,
+      climbers: gymActivity.climbers,
+      gymClimbsLit: gymActivity.climbsLit,
+      boards: gymActivity.boards,
     })
-    .from(climbEvents)
-    .where(litInWindow)
-    .groupBy(litMonth);
-  signal?.throwIfAborted();
-
-  // Gyms: lit climbs on the gym's enumerable boards (public, listed, live),
-  // public undeleted gyms only. Ranked in SQL so only the top rows travel;
-  // `gyms_in_month` rides on each row for the summary's gym count.
-  const gymMonthStart = sql`date_trunc('month', ${climbEvents.confirmedAt})`;
-  const gymClimbers = sql`count(distinct ${climbEvents.userId})`;
-  const gymClimbsLit = sql`count(*)`;
-  const gymActivity = database
-    .select({
-      month: sql<string>`to_char(${gymMonthStart}, 'YYYY-MM')`.as('month'),
-      gymName: sql<string>`${gyms.name}`.as('gym_name'),
-      gymSlug: sql<string | null>`${gyms.slug}`.as('gym_slug'),
-      climbers: sql<number>`${gymClimbers}::int`.as('climbers'),
-      climbsLit: sql<number>`${gymClimbsLit}::int`.as('climbs_lit'),
-      boards: sql<number>`count(distinct ${climbEvents.boardId})::int`.as('boards'),
-      rank: sql<number>`(row_number() over (partition by ${gymMonthStart} order by ${gymClimbers} desc, ${gymClimbsLit} desc, ${gyms.id} asc))::int`.as(
-        'gym_rank',
-      ),
-      gymsInMonth: sql<number>`(count(*) over (partition by ${gymMonthStart}))::int`.as('gyms_in_month'),
-    })
-    .from(climbEvents)
-    .innerJoin(
-      sql`(${ENUMERABLE_GYM_BOARDS}) AS community_gym_boards`,
-      sql`community_gym_boards.board_id = ${climbEvents.boardId}`,
+    .from(litTotals)
+    .leftJoin(
+      gymActivity,
+      and(eq(gymActivity.monthStart, litTotals.monthStart), lte(gymActivity.rank, COMMUNITY_TOP_LIST_SIZE)),
     )
-    .innerJoin(
-      gyms,
-      and(eq(gyms.id, sql`community_gym_boards.gym_id`), isNull(gyms.deletedAt), gymVisibleCondition(gyms, null)),
-    )
-    .where(litInWindow)
-    .groupBy(gymMonthStart, gyms.id)
-    .as('community_gym_activity');
-  const gymRows = await database
-    .select()
-    .from(gymActivity)
-    .where(lte(gymActivity.rank, COMMUNITY_TOP_LIST_SIZE))
-    .orderBy(gymActivity.month, gymActivity.rank);
+    .orderBy(litTotals.monthStart, gymActivity.rank);
   signal?.throwIfAborted();
 
   const sendInWindow = and(
@@ -313,9 +365,11 @@ export async function computeCommunityMonthlyStats({
     .where(and(sendInWindow, tickPrivacyCondition(null)))
     .groupBy(climberMonthStart, ticks.userId)
     .as('community_climber_activity');
-  // The board-leaderboard naming rule for a signed-out viewer on a board the
-  // climber does not own: a public account, not anonymous on foreign boards.
-  // A global ranking spans boards they don't own, so the opt-out always applies.
+  // Named only by the display name they chose, on a public account, and not
+  // anonymous on boards they don't own: a global ranking spans boards they
+  // don't own, so that opt-out always applies. Deliberately stricter than the
+  // board leaderboard, which falls back to the account name: that can be an
+  // email's local part or a legal name from Google or Apple.
   const namedClimber = and(
     userActivityVisibilityCondition(users.id, null),
     sql`${userProfiles.anonymousOnForeignBoards} IS NOT TRUE`,
@@ -329,7 +383,7 @@ export async function computeCommunityMonthlyStats({
       sendDays: climberActivity.sendDays,
       climberName: sql<
         string | null
-      >`CASE WHEN ${namedClimber} THEN COALESCE(NULLIF(${userProfiles.displayName}, ''), NULLIF(${users.name}, '')) END`,
+      >`CASE WHEN ${namedClimber} THEN NULLIF(btrim(${userProfiles.displayName}), '') END`,
     })
     .from(climberActivity)
     .innerJoin(users, eq(users.id, climberActivity.climberId))
@@ -351,42 +405,41 @@ export async function computeCommunityMonthlyStats({
     )
     .groupBy(accountMonth);
 
-  const litByMonth = new Map(litRows.map((row) => [row.month, row]));
+  const litByMonth = new Map<string, typeof litRows>();
+  for (const row of litRows) litByMonth.set(row.month, [...(litByMonth.get(row.month) ?? []), row]);
   const sendsByMonth = new Map(sendRows.map((row) => [row.month, row]));
   const accountsByMonth = new Map(accountRows.map((row) => [row.month, row.newAccounts]));
 
   const result: CommunityMonthlyStats = { months: [], skippedMonths: [] };
   for (const month of window.months) {
-    const lit = litByMonth.get(month);
-    // No cohort, not zero: a month nobody lit a climb in reports nothing.
+    const monthRows = litByMonth.get(month) ?? [];
+    const [lit] = monthRows;
+    const complete = monthIsComplete(month, now);
+    // No cohort, not zero: a month nobody lit a climb in has no summary.
     if (!lit || lit.climbsLit === 0) {
-      result.skippedMonths.push(month);
+      result.skippedMonths.push({ month, complete });
       continue;
     }
-    const monthGyms = gymRows.filter((row) => row.month === month);
     const sends = sendsByMonth.get(month);
     const namesRetired = retiredMonths.has(month);
     result.months.push({
       month,
-      complete: monthIsComplete(month, now),
+      complete,
       namesRetired,
       summary: {
         climbersWhoLit: lit.climbersWhoLit,
         climbsLit: lit.climbsLit,
         boardsLit: lit.boardsLit,
-        gymsWithActivity: monthGyms[0]?.gymsInMonth ?? 0,
+        gymsWithActivity: lit.gymsInMonth ?? 0,
         sendsLogged: sends?.sendsLogged ?? 0,
         climbersWhoLogged: sends?.climbersWhoLogged ?? 0,
         newAccounts: accountsByMonth.get(month) ?? 0,
       },
-      topGyms: monthGyms.map(({ rank, gymName, gymSlug, climbers, climbsLit, boards }) => ({
-        rank,
-        gymName,
-        gymSlug,
-        climbers,
-        climbsLit,
-        boards,
-      })),
+      topGyms: monthRows.flatMap(({ rank, gymName, gymSlug, climbers, gymClimbsLit, boards }) =>
+        rank === null || gymName === null || climbers === null || gymClimbsLit === null || boards === null
+          ? []
+          : [{ rank, gymName, gymSlug, climbers, climbsLit: gymClimbsLit, boards }],
+      ),
       topClimbers: climberRows
         .filter((row) => row.month === month)
         .map(({ rank, climberName, sends: sendCount, flashes, sendDays }) => ({

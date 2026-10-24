@@ -451,27 +451,17 @@ const COMMUNITY_MONTHLY_STATS_GRANTS: readonly WorkerTableGrant[] = [
   // The tick privacy rule finds a tick's own audience in content_privacy by
   // the tick's uuid. Still no comments, sessions or media.
   { table: 'boardsesh_ticks', privileges: ['SELECT'], columns: ['uuid'] },
-  // New accounts per month, and the fallback name of a ranked climber who
-  // may be named. Never email or image.
-  { table: 'users', privileges: ['SELECT'], columns: ['name', 'created_at'] },
+  // New accounts per month. Never the account name, email or image: a ranked
+  // climber is named by their display name only.
+  { table: 'users', privileges: ['SELECT'], columns: ['created_at'] },
   // A ranked climber's chosen name, and their opt-out from being named on
   // boards they don't own. Never avatar or social links.
   { table: 'user_profiles', privileges: ['SELECT'], columns: ['display_name', 'anonymous_on_foreign_boards'] },
-  // The spray-wall half of the tick privacy rule (sprayClimbVisibilityCondition):
-  // a send on a spray climb counts only when a signed-out visitor may see its
-  // wall, which resource_privacy decides. The grant, follow and membership
-  // branches compare against the viewer, null here, so they never match a
-  // row, but PostgreSQL checks the privileges of every table a statement
-  // names before it runs. The keys and states only: no grant's inviter, no
-  // board's location audience, no follow or membership dates or roles.
-  {
-    table: 'resource_privacy',
-    privileges: ['SELECT'],
-    columns: ['kind', 'resource_id', 'audience', 'inherit_followers'],
-  },
-  { table: 'resource_grants', privileges: ['SELECT'], columns: ['kind', 'resource_id', 'user_id', 'status'] },
-  { table: 'user_follows', privileges: ['SELECT'], columns: ['follower_id', 'following_id'] },
-  { table: 'gym_members', privileges: ['SELECT'], columns: ['gym_id', 'user_id'] },
+  // The spray-wall half of the tick privacy rule, for a signed-out reader:
+  // whether a wall is public, unlisted or neither. With no viewer the rule
+  // names no follow, grant or membership table (sprayResourceVisibility), so
+  // none of those is granted.
+  { table: 'resource_privacy', privileges: ['SELECT'], columns: ['kind', 'resource_id', 'audience'] },
 ];
 
 /**
