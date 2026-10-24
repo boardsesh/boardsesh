@@ -153,9 +153,29 @@ export function disarmRestTimer(): void {
 }
 
 /**
+ * Where a tick starts a rest: at the tick, but never earlier than the rest
+ * already running or the last advance, and never in the future.
+ *
+ * The scheduler's `afterTick` deadline is the anchor plus the rest, with no walk
+ * past the last fire (only `onTheMinute` walks). So a send logged 2 s after an
+ * advance but dated 55 s back would, anchored at its own time, put the next
+ * deadline 7 s out on a 60 s rest and move the wall again, skipping the climb
+ * it just lit. Floored at the advance, the newly lit climb gets its whole rest.
+ * The cap at now keeps the anchor off the future: a fire can land a moment
+ * before the deadline it records (a clock step back), and a tick can carry a
+ * time from a clock running ahead of this phone's.
+ */
+function tickAnchorMs(tickStartMs: number, nowMs: number): number {
+  const floorMs = Math.max(tickStartMs, state.anchorMs ?? tickStartMs, state.lastFiredDeadlineMs ?? tickStartMs);
+  return Math.min(nowMs, floorMs);
+}
+
+/**
  * A tick landed. `afterTick` re-anchors on it — that is the whole mode.
  * `onTheMinute` keeps its own beat and only adopts the tick as a starting
- * anchor if it somehow has none.
+ * anchor if it somehow has none. Either way the anchor goes through
+ * `tickAnchorMs`, so a back-dated tick can never shorten a running rest or
+ * reach back past the last advance. `lastTickAt` keeps the tick's own time.
  *
  * `tick` is how it went and the queue item it was logged on, from the tick path.
  * Left out (a tick read back from the session after a cold start), or naming no
@@ -170,7 +190,7 @@ export function noteRestTimerTick(
   tick?: RestTimerLastTick,
 ): void {
   if (!state.armed) return;
-  const tickMs = getRestTimerStartMs(climbedAt) ?? nowMs;
+  const tickStartMs = getRestTimerStartMs(climbedAt) ?? nowMs;
   const lastTick =
     tick && tick.queueItemUuid !== null ? { status: tick.status, queueItemUuid: tick.queueItemUuid } : state.lastTick;
 
@@ -179,7 +199,7 @@ export function noteRestTimerTick(
       ...state,
       lastTickAt: climbedAt,
       lastTick,
-      anchorMs: state.anchorMs ?? tickMs,
+      anchorMs: state.anchorMs ?? tickAnchorMs(tickStartMs, nowMs),
       // A tick means the climber is still going, so give the queue another look.
       // Deliberately NOT re-anchored — holding the beat is the whole mode — but
       // the cycle still has to roll when the latch clears, or the scheduler has
@@ -195,7 +215,7 @@ export function noteRestTimerTick(
     ...state,
     lastTickAt: climbedAt,
     lastTick,
-    anchorMs: tickMs,
+    anchorMs: tickAnchorMs(tickStartMs, nowMs),
     isRunning: true,
     pausedElapsedSeconds: 0,
     cycleId: state.cycleId + 1,

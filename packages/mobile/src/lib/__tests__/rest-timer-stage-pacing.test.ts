@@ -47,11 +47,15 @@ const RUN: WorkoutRun = {
 };
 const QUEUE = ['w1', 'a1', 'b1', 'a2', 'b2', 'l1', 'e1', 'e2', 'hand-queued'];
 
-function stageFor(queueItemUuid: string, queue: readonly string[] = QUEUE): RestTimerStagePacing | null {
+function stageFor(
+  queueItemUuid: string,
+  queue: readonly string[] = QUEUE,
+  run: WorkoutRun = RUN,
+): RestTimerStagePacing | null {
   return resolveStageRestPacing({
     sessionId: SESSION_ID,
-    run: RUN,
-    position: locateInRun(RUN, queueItemUuid, queue),
+    run,
+    position: locateInRun(run, queueItemUuid, queue),
     queueItemUuid,
   });
 }
@@ -175,5 +179,39 @@ describe('planRestTimerPacingTransition', () => {
 
   it('leaves a timed stage for the climber’s own after-tick rest without touching the anchor', () => {
     expect(planRestTimerPacingTransition(effective(stageFor('l1')), effective(null))).toBe('none');
+  });
+
+  it('keeps the rest when the climb on the wall moves into another after-tick stage', () => {
+    // The run is re-planned with b2 still up: it now opens the limit block. The
+    // climb on the wall did not change, so its rest carries (running from its
+    // tick, or still waiting for it), and the limit block's send rule reads the
+    // same last tick. Clearing the anchor here would throw away a tick the
+    // climber already logged on this climb.
+    const RESTAGED: WorkoutRun = {
+      stages: RUN.stages.map((runStage) => {
+        if (runStage.id === 'stage-4x4') return { ...runStage, itemUuids: ['a1', 'b1', 'a2'] };
+        if (runStage.id === 'stage-limit') return { ...runStage, itemUuids: ['b2', 'l1'] };
+        return runStage;
+      }),
+    };
+    const inFourByFour = stageFor('b2');
+    const inLimit = stageFor('b2', QUEUE, RESTAGED);
+    expect(inFourByFour).toMatchObject({ stageId: 'stage-4x4', queueItemUuid: 'b2', advanceOn: 'tick' });
+    expect(inLimit).toMatchObject({ stageId: 'stage-limit', queueItemUuid: 'b2', advanceOn: 'send' });
+
+    expect(planRestTimerPacingTransition(effective(inFourByFour), effective(inLimit))).toBe('none');
+    expect(planRestTimerPacingTransition(effective(inLimit), effective(inFourByFour))).toBe('none');
+  });
+});
+
+describe('the last climb of a stage', () => {
+  it('rests its own stage’s round rest before the next block, not zero and not the next block’s rest', () => {
+    // b2 closes the 4x4's last round and l1 opens the limit block. The rest after
+    // b2 is the 4x4's 30 s round rest: not the 0 s between climbs (or its 10 s
+    // changeover), and not the limit block's 3:00, which is l1's rest after l1.
+    const lastOfFourByFour = stageFor('b2');
+    expect(lastOfFourByFour).toMatchObject({ stageId: 'stage-4x4', closesRound: true, targetSeconds: 30 });
+    expect(effective(lastOfFourByFour)).toMatchObject({ targetSeconds: 30, advanceOn: 'tick', source: 'stage' });
+    expect(stageFor('l1')).toMatchObject({ stageId: 'stage-limit', targetSeconds: 180 });
   });
 });

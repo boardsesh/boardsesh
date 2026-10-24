@@ -158,6 +158,9 @@ const LIMIT: WorkoutRun = {
   ],
 };
 
+/** The same 4x4, then the limit block: the rest after b2 is the 4x4's, not the next block's. */
+const FOUR_BY_FOUR_THEN_LIMIT: WorkoutRun = { stages: [...FOUR_BY_FOUR.stages, ...LIMIT.stages] };
+
 /** A warm-up on the climber's own settings, then a climb every 0:15. */
 const WARM_UP_THEN_ON_THE_MINUTE: WorkoutRun = {
   stages: [
@@ -349,6 +352,34 @@ describe('4x4: every climb waits for its own tick', () => {
     advance(1_000);
     expect(nextClimb).toHaveBeenCalledTimes(2);
     expect(current()).toBe('a2');
+  });
+
+  it('rests the 4x4’s round rest after its last climb before the next block, not zero', () => {
+    startWorkout(FOUR_BY_FOUR_THEN_LIMIT, ['a1', 'b1', 'a2', 'b2', 'l1', 'l2'], 'b2');
+    renderRuntime();
+    armTimer();
+    expect(getRestTimerState().stagePacing).toMatchObject({
+      stageId: 'stage-4x4',
+      queueItemUuid: 'b2',
+      closesRound: true,
+      targetSeconds: 30,
+    });
+
+    logTick('attempt');
+    // Not the 0 s between climbs, nor its 10 s changeover.
+    advance(29_000);
+    expect(nextClimb).not.toHaveBeenCalled();
+    advance(1_000);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+    expect(current()).toBe('l1');
+
+    // The limit block's first climb waits for its own send, then rests 3:00.
+    expect(getRestTimerState()).toMatchObject({
+      anchorMs: null,
+      stagePacing: { stageId: 'stage-limit', queueItemUuid: 'l1', targetSeconds: 180 },
+    });
+    advance(600_000);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
   });
 
   it('does not take a tick on the previous climb as this climb’s', () => {
@@ -557,6 +588,126 @@ describe('the end of the queue under a tick rule', () => {
     advance(600_000);
     expect(nextClimb).not.toHaveBeenCalled();
     expect(current()).toBe('l1');
+  });
+});
+
+/** Climbs outside any workout, paced by the climber's own minute with auto-advance on. */
+function onTheWallWithoutAWorkout(queueUuids: string[]) {
+  harness.settings = { ...harness.settings, restTimerAutoAdvance: true };
+  const queue = queueUuids.map(queueItem);
+  harness.setQueueData({ queue, currentClimbQueueItem: queue[0] });
+}
+
+describe('the tick floor: a tick never starts a rest before the last advance or the rest already running', () => {
+  it('does not skip the climb just lit for a send saved 2 s after the advance but dated 55 s back', () => {
+    onTheWallWithoutAWorkout(['x1', 'x2', 'x3', 'x4']);
+    renderRuntime();
+    armTimer();
+    logTick('send');
+    advance(60_000);
+    expect(current()).toBe('x2');
+
+    // x1's send, climbed 55 s ago and saved now. From its own time the next
+    // deadline would be 7 s out.
+    advance(2_000);
+    logTick('send', 'x1', 55_000);
+
+    advance(57_000);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+    expect(current()).toBe('x2');
+    advance(1_000);
+    expect(nextClimb).toHaveBeenCalledTimes(2);
+    expect(current()).toBe('x3');
+  });
+
+  it('keeps the newly lit climb’s rest when an older tick on the previous climb lands after it', () => {
+    onTheWallWithoutAWorkout(['x1', 'x2', 'x3', 'x4']);
+    renderRuntime();
+    armTimer();
+    logTick('send');
+    advance(60_000);
+    expect(current()).toBe('x2');
+
+    // x2's tick 20 s after the advance: its rest is up 80 s after the advance.
+    advance(20_000);
+    logTick('send', 'x2');
+    // x1's tick, dated 5 s before the advance, lands 10 s later.
+    advance(10_000);
+    logTick('send', 'x1', 35_000);
+
+    advance(49_000);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+    expect(current()).toBe('x2');
+    advance(1_000);
+    expect(nextClimb).toHaveBeenCalledTimes(2);
+    expect(current()).toBe('x3');
+  });
+
+  it('leaves the first tick of a session at its own time', () => {
+    onTheWallWithoutAWorkout(['x1', 'x2']);
+    renderRuntime();
+    armTimer();
+    logTick('send', 'x1', 10_000);
+
+    advance(49_000);
+    expect(nextClimb).not.toHaveBeenCalled();
+    advance(1_000);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+  });
+
+  it('under a send rule, starts the newly lit climb’s rest no earlier than the advance', () => {
+    startWorkout(LIMIT, ['l1', 'l2', 'hand-1']);
+    renderRuntime();
+    armTimer();
+    logTick('send');
+    advance(180_000);
+    expect(current()).toBe('l2');
+
+    // l2 sent and saved 2 s after it came up, dated 55 s back: it gets the
+    // whole 3:00 from the advance, not 2:07.
+    advance(2_000);
+    logTick('send', 'l2', 55_000);
+
+    advance(177_000);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+    expect(current()).toBe('l2');
+    advance(1_000);
+    expect(nextClimb).toHaveBeenCalledTimes(2);
+    expect(current()).toBe('hand-1');
+  });
+
+  it('under a tick rule, starts a late previous-climb tick’s rest at the advance, and never walks on with it', () => {
+    startWorkout(FOUR_BY_FOUR, ['a1', 'b1', 'a2', 'b2']);
+    renderRuntime();
+    armTimer();
+    logTick('send');
+    advance(10_000);
+    expect(current()).toBe('b1');
+    const advancedAt = harness.nowMs;
+
+    // a1's attempt, climbed 3 s before the advance, saved 2 s after it.
+    advance(2_000);
+    logTick('attempt', 'a1', 5_000);
+    expect(getRestTimerState().anchorMs).toBe(advancedAt);
+
+    // b1 closes round 1: the round rest runs its whole 30 s from the advance.
+    advance(27_000);
+    expect(cueCount('reached')).toBe(0);
+    advance(1_000);
+    expect(cueCount('reached')).toBe(1);
+
+    // a1's tick is not b1's: b1 never moves on alone.
+    advance(600_000);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+    expect(current()).toBe('b1');
+
+    // b1's own tick gets its own whole round rest.
+    logTick('attempt');
+    advance(29_000);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+    advance(1_000);
+    expect(nextClimb).toHaveBeenCalledTimes(2);
+    expect(current()).toBe('a2');
   });
 });
 

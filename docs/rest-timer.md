@@ -67,6 +67,15 @@ also waits for the next tick and forgets the last one, as the fire does
 (`clearRestTimerQueueEnded` with `anchorAfterFire`): that tick's rest already ran out at the dead
 end.
 
+A tick never starts a rest earlier than the rest already running or the last advance, and never
+in the future (`noteRestTimerTick`'s floor:
+`min(now, max(tick, anchor, lastFiredDeadlineMs))`). The `afterTick` deadline is the anchor plus
+the rest, with no walk past the last fire, so without the floor a send saved 2 s after an advance
+but dated 55 s back would move the wall again 7 s later and skip the climb it just lit. The one
+change a climber sees: a back-dated tick (the tick sheet's date picker, or a slow save of the
+previous climb) can no longer shorten a running rest. It still shows as the last tick. On the
+minute keeps its beat; a tick only fills a missing anchor, with the same floor.
+
 ## Cues
 
 The scheduler names a moment and `playRestTimerCue` decides what it feels and sounds like:
