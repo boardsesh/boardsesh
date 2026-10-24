@@ -871,10 +871,12 @@ export function usePlaylistActivation({
         }
         if (abortController.signal.aborted || privacyGeneration !== getPrivacyRevocationGeneration()) return;
 
-        if (fetchedClimbs.length === 0) {
-          if (drainStopReason === null || drainStopReason === 'complete') {
-            reportEmptyBoardFetchOnce('append-queue-empty');
-          }
+        if (fetchedClimbs.length === 0 && (drainStopReason === null || drainStopReason === 'complete')) {
+          reportEmptyBoardFetchOnce('append-queue-empty');
+        }
+        // An excluded climb was queued before the append, so an empty list still
+        // has something to confirm.
+        if (fetchedClimbs.length === 0 && !excludeClimbUuid) {
           trackQueued('nothingToAdd', 0, 0);
           showToast(t('detail.addToQueue.nothingToAdd'), 'info');
           return;
@@ -885,18 +887,17 @@ export function usePlaylistActivation({
         // Same rule `buildPlaylistQueue` applies to the replace path.
         const seenClimbUuids = new Set<string>();
         const queueItems: ClimbQueueItem[] = [];
-        let excludedCount = 0;
         for (const climb of fetchedClimbs) {
           if (seenClimbUuids.has(climb.uuid)) continue;
           seenClimbUuids.add(climb.uuid);
-          if (climb.uuid === excludeClimbUuid) {
-            excludedCount = 1;
-            continue;
-          }
+          if (climb.uuid === excludeClimbUuid) continue;
           queueItems.push(climbToQueueItem(toSchemaClimb(climb)));
         }
 
-        // The excluded climb is in the queue already, so it counts as landed.
+        // The excluded climb is in the queue already, so it counts as landed,
+        // even when the list no longer holds it (it was removed between the tap
+        // and the fetch). Otherwise a full batch would read as `queueFull`.
+        const excludedCount = excludeClimbUuid ? 1 : 0;
         const batchAppendedCount = queueItems.length > 0 ? appendQueueItems(queueItems) : 0;
         const listCount = queueItems.length + excludedCount;
         const appendedCount = batchAppendedCount + excludedCount;
