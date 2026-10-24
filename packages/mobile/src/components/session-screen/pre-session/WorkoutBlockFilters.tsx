@@ -1,10 +1,15 @@
-// One block's climb filters: min ascents, min rating, climb bias, Skip what I've
-// sent, Skip what I've tried, Benchmarks only where the board has benchmarks and, where the board has
-// smaller sizes, tall or wide climbs only. A collapsed disclosure at the bottom
-// of the block's fields, with a summary line under its title, so the Record
-// tab's block cards and the in-session "Add a block" sheet both get it.
+// One block's climb filters: climb bias, min ascents, min rating, Skip what I've
+// sent, Skip what I've tried, Benchmarks only where the board has benchmarks
+// and, where the board has smaller sizes, tall or wide climbs only. A collapsed
+// disclosure at the bottom of the block's fields, with a summary line under its
+// title, so the Record tab's block cards and the in-session "Add a block" sheet
+// both get it.
+//
+// Climb bias comes first because it decides what else applies: Attempted, Sent
+// and Liked draw from your own climbs, where min ascents and min rating do not
+// apply, so those two rows hide below it rather than jump the chip you tapped.
 
-import { useCallback, useMemo } from 'react';
+import { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import {
@@ -16,7 +21,6 @@ import { getTallWideScope } from '@boardsesh/board-constants';
 import { CLIMB_BIAS_OPTIONS, type ClimbBias } from '@boardsesh/playlist-generator';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { CollapsibleSection } from '../../CollapsibleSection';
-import { SegmentedControl } from '../../SegmentedControl';
 import { StarRating } from '../../StarRating';
 import { SwitchRow } from '../../SwitchRow';
 import { Text } from '../../Text';
@@ -26,7 +30,7 @@ import { selectByVariant } from '../../../theme/variants';
 import { spacing } from '../../../theme/tokens';
 import { Chip, generatorControlStyles } from './generator-controls';
 import type { SizeFilterAvailability, WorkoutFilters } from './workout-blocks';
-import { biasCanSkipTried } from './workout-search-tiers';
+import { biasCanSkipSent, biasCanSkipTried, biasDrawsOwnClimbs } from './workout-search-tiers';
 
 type Translate = (key: string, options?: Record<string, string | number>) => string;
 
@@ -36,9 +40,43 @@ function climbBiasLabel(value: ClimbBias, t: Translate): string {
       return t('mobile.session.preGeneratorClimbBiasUnfamiliar');
     case 'attempted':
       return t('mobile.session.preGeneratorClimbBiasAttempted');
+    case 'sent':
+      return t('mobile.session.preGeneratorClimbBiasSent');
+    case 'liked':
+      return t('mobile.session.preGeneratorClimbBiasLiked');
     case 'any':
       return t('mobile.session.preGeneratorClimbBiasAny');
   }
+}
+
+/**
+ * The line under the climb bias chips: which climbs the picked bias fills the
+ * block from. Signed out every bias falls back to any climb (`fetchFilters`),
+ * so the line says that instead.
+ */
+function climbBiasDescription(value: ClimbBias, isAuthenticated: boolean, t: Translate): string {
+  if (!isAuthenticated) return t('mobile.session.preGeneratorClimbBiasSignedOut');
+  switch (value) {
+    case 'unfamiliar':
+      return t('mobile.session.preGeneratorClimbBiasUnfamiliarDescription');
+    case 'attempted':
+      return t('mobile.session.preGeneratorClimbBiasAttemptedDescription');
+    case 'sent':
+      return t('mobile.session.preGeneratorClimbBiasSentDescription');
+    case 'liked':
+      return t('mobile.session.preGeneratorClimbBiasLikedDescription');
+    case 'any':
+      return t('mobile.session.preGeneratorClimbBiasAnyDescription');
+  }
+}
+
+/**
+ * Whether a block's min ascents and min rating reach the search: not when it
+ * draws from your own climbs (`biasDrawsOwnClimbs`). Signed out the bias falls
+ * back to Any, so they apply again.
+ */
+export function blockAppliesFloors(filters: WorkoutFilters, isAuthenticated: boolean): boolean {
+  return !isAuthenticated || !biasDrawsOwnClimbs(filters.climbBias);
 }
 
 /** Which size filters a board offers. Neither until the board is known. */
@@ -73,28 +111,45 @@ function skipsTried(filters: WorkoutFilters): boolean {
   return filters.skipTried === true && biasCanSkipTried(filters.climbBias);
 }
 
+/** Whether a block's Skip what I've sent applies: on, and under a bias it can apply to. */
+function skipsSent(filters: WorkoutFilters): boolean {
+  return filters.skipSent === true && biasCanSkipSent(filters.climbBias);
+}
+
 /**
  * The closed disclosure's line, built like ClimbFilterSheet's refineSummary:
  * min ascents · stars · climb bias, then Skip tried or Skip sent and Benchmarks
  * when on. Skip tried leaves out sent climbs too, so it stands in for Skip sent.
  * Stars render as filled glyphs (a symbol, not translatable copy); "Any" rating
- * shows nothing so the line stays short.
+ * shows nothing so the line stays short. A block drawn from your own climbs
+ * shows no min ascents or stars, which it does not apply. Signed out the skip
+ * switches do nothing and the floors apply, and the line says so.
  */
-export function blockFiltersSummary(filters: WorkoutFilters, t: Translate): string {
-  const parts: string[] = [
-    t('mobile.session.preGeneratorMinAscentsOption', { value: formatMinAscentsFilterCount(filters.minAscents) }),
-  ];
-  const ratingValue = getMinRatingPickerValue(filters.minRating);
-  if (ratingValue != null && ratingValue > 0) parts.push('★'.repeat(ratingValue));
+export function blockFiltersSummary(filters: WorkoutFilters, t: Translate, isAuthenticated = true): string {
+  const parts: string[] = [];
+  if (blockAppliesFloors(filters, isAuthenticated)) {
+    parts.push(
+      t('mobile.session.preGeneratorMinAscentsOption', { value: formatMinAscentsFilterCount(filters.minAscents) }),
+    );
+    const ratingValue = getMinRatingPickerValue(filters.minRating);
+    if (ratingValue != null && ratingValue > 0) parts.push('★'.repeat(ratingValue));
+  }
   parts.push(climbBiasLabel(filters.climbBias, t));
-  if (skipsTried(filters)) parts.push(t('mobile.session.preGeneratorSkipTriedSummary'));
-  else if (filters.skipSent) parts.push(t('mobile.session.preGeneratorSkipSentSummary'));
+  if (isAuthenticated && skipsTried(filters)) parts.push(t('mobile.session.preGeneratorSkipTriedSummary'));
+  else if (isAuthenticated && skipsSent(filters)) parts.push(t('mobile.session.preGeneratorSkipSentSummary'));
   if (filters.onlyBenchmarks) parts.push(t('mobile.session.preGeneratorOnlyBenchmarksSummary'));
   return parts.join(' · ');
 }
 
+function skipSentDescription(filters: WorkoutFilters, isAuthenticated: boolean, t: Translate): string {
+  if (!isAuthenticated) return t('mobile.session.preGeneratorSkipSentSignedOut');
+  if (!biasCanSkipSent(filters.climbBias)) return t('mobile.session.preGeneratorSkipNotWithSent');
+  return t('mobile.session.preGeneratorSkipSentDescription');
+}
+
 function skipTriedDescription(filters: WorkoutFilters, isAuthenticated: boolean, t: Translate): string {
   if (!isAuthenticated) return t('mobile.session.preGeneratorSkipTriedSignedOut');
+  if (filters.climbBias === 'sent') return t('mobile.session.preGeneratorSkipNotWithSent');
   if (!biasCanSkipTried(filters.climbBias)) return t('mobile.session.preGeneratorSkipTriedAttempted');
   return t('mobile.session.preGeneratorSkipTriedDescription');
 }
@@ -113,12 +168,14 @@ export function WorkoutBlockFilters({ filters, boardName, sizeFilters, onFilters
   const { systemColors, variant, m3 } = useTheme();
   // The skip switches read your logbook, so they need an account. Signed out
   // the search never sees them (`fetchFilters`), and the switches show them as
-  // off. Skip what I've tried is off under Attempted, which picks tried climbs.
+  // off. Skip what I've tried is off under Attempted and Sent, which pick tried
+  // or sent climbs, and Skip what I've sent under Sent.
   const { isAuthenticated } = useAuth();
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
   const { tall: showTallClimbsFilter, wide: showWideClimbsFilter } = sizeFilters;
   const showBenchmarksFilter = offersBenchmarksOnly(boardName, filters);
-  const skipsSent = isAuthenticated && filters.skipSent === true;
+  const showFloors = blockAppliesFloors(filters, isAuthenticated);
+  const canSkipSent = isAuthenticated && biasCanSkipSent(filters.climbBias);
   const canSkipTried = isAuthenticated && biasCanSkipTried(filters.climbBias);
 
   const minAscentsOptions = useMemo(() => {
@@ -128,10 +185,7 @@ export function WorkoutBlockFilters({ filters, boardName, sizeFilters, onFilters
   }, [filters.minAscents]);
   const title = t('mobile.session.preGeneratorClimbFilters');
   // Signed out a stored skip switch does nothing, so the line leaves it out too.
-  const summary = useMemo(
-    () => blockFiltersSummary(isAuthenticated ? filters : { ...filters, skipSent: false, skipTried: false }, t),
-    [filters, isAuthenticated, t],
-  );
+  const summary = useMemo(() => blockFiltersSummary(filters, t, isAuthenticated), [filters, isAuthenticated, t]);
   // While closed, the title with the line under it, wrapping across the card's
   // width. Beside the title on one line it cut off at "Skip…" on a 393 pt phone
   // once Skip sent or Benchmarks was on, even in English.
@@ -146,85 +200,98 @@ export function WorkoutBlockFilters({ filters, boardName, sizeFilters, onFilters
     ),
     [summary, systemColors.secondaryLabel, title],
   );
-  const climbBiasOptions = useMemo(
-    () => CLIMB_BIAS_OPTIONS.map((climbBias) => ({ key: climbBias, label: climbBiasLabel(climbBias, t) })),
-    [t],
-  );
   const minRatingPickerValue = getMinRatingPickerValue(filters.minRating);
-  const handleClimbBiasSelect = useCallback(
-    (climbBias: ClimbBias) => onFiltersChange({ climbBias }),
-    [onFiltersChange],
-  );
+  const climbBiasGroupLabel = t('mobile.session.preGeneratorClimbBias');
 
   return (
     <CollapsibleSection title={title} summary={collapsedHeader} hideTitleWhenCollapsed>
       <View style={styles.body}>
+        {/* Chips, not a segmented control: five biases cut "Unfamiliar" short in
+            a segment on a 393 pt phone, and longer in French and Spanish. */}
         <View>
           <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.subsectionLabel}>
-            {t('mobile.session.preGeneratorMinAscents')}
+            {climbBiasGroupLabel}
           </Text>
           <View style={generatorControlStyles.chipRow}>
-            {minAscentsOptions.map((minAscents) => {
-              const label = t('mobile.session.preGeneratorMinAscentsOption', {
-                value: formatMinAscentsFilterCount(minAscents),
-              });
+            {CLIMB_BIAS_OPTIONS.map((climbBias) => {
+              const label = climbBiasLabel(climbBias, t);
               return (
                 <Chip
-                  key={minAscents}
+                  key={climbBias}
                   label={label}
-                  selected={filters.minAscents === minAscents}
-                  onPress={() => onFiltersChange({ minAscents })}
+                  selected={filters.climbBias === climbBias}
+                  onPress={() => onFiltersChange({ climbBias })}
                   accessibilityLabel={t('mobile.session.preGeneratorOptionAccessibilityLabel', {
-                    group: t('mobile.session.preGeneratorMinAscents'),
+                    group: climbBiasGroupLabel,
                     value: label,
                   })}
                 />
               );
             })}
           </View>
+          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.biasDescription}>
+            {climbBiasDescription(filters.climbBias, isAuthenticated, t)}
+          </Text>
         </View>
 
-        <View>
-          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.subsectionLabel}>
-            {t('mobile.session.preGeneratorMinRating')}
-          </Text>
-          <View style={styles.ratingRow}>
-            <Chip
-              label={t('mobile.session.preGeneratorAny')}
-              selected={minRatingPickerValue == null}
-              onPress={() => onFiltersChange({ minRating: 0 })}
-              accessibilityLabel={t('mobile.session.preGeneratorOptionAccessibilityLabel', {
-                group: t('mobile.session.preGeneratorMinRating'),
-                value: t('mobile.session.preGeneratorAny'),
-              })}
-            />
-            <StarRating
-              value={minRatingPickerValue ?? undefined}
-              onChange={(rating) => onFiltersChange({ minRating: rating ?? 0 })}
-              accessibilityHint={t('mobile.session.preGeneratorMinRatingStarHint')}
-              getAccessibilityLabel={(rating, selected) =>
-                t(
-                  selected
-                    ? 'mobile.session.preGeneratorMinRatingStarSelectedAccessibilityLabel'
-                    : 'mobile.session.preGeneratorMinRatingStarAccessibilityLabel',
-                  { count: rating },
-                )
-              }
-            />
-          </View>
-        </View>
+        {showFloors ? (
+          <>
+            <View>
+              <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.subsectionLabel}>
+                {t('mobile.session.preGeneratorMinAscents')}
+              </Text>
+              <View style={generatorControlStyles.chipRow}>
+                {minAscentsOptions.map((minAscents) => {
+                  const label = t('mobile.session.preGeneratorMinAscentsOption', {
+                    value: formatMinAscentsFilterCount(minAscents),
+                  });
+                  return (
+                    <Chip
+                      key={minAscents}
+                      label={label}
+                      selected={filters.minAscents === minAscents}
+                      onPress={() => onFiltersChange({ minAscents })}
+                      accessibilityLabel={t('mobile.session.preGeneratorOptionAccessibilityLabel', {
+                        group: t('mobile.session.preGeneratorMinAscents'),
+                        value: label,
+                      })}
+                    />
+                  );
+                })}
+              </View>
+            </View>
 
-        <View>
-          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.subsectionLabel}>
-            {t('mobile.session.preGeneratorClimbBias')}
-          </Text>
-          <SegmentedControl
-            options={climbBiasOptions}
-            selectedKey={filters.climbBias}
-            onSelect={handleClimbBiasSelect}
-            accessibilityLabel={t('mobile.session.preGeneratorClimbBias')}
-          />
-        </View>
+            <View>
+              <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.subsectionLabel}>
+                {t('mobile.session.preGeneratorMinRating')}
+              </Text>
+              <View style={styles.ratingRow}>
+                <Chip
+                  label={t('mobile.session.preGeneratorAny')}
+                  selected={minRatingPickerValue == null}
+                  onPress={() => onFiltersChange({ minRating: 0 })}
+                  accessibilityLabel={t('mobile.session.preGeneratorOptionAccessibilityLabel', {
+                    group: t('mobile.session.preGeneratorMinRating'),
+                    value: t('mobile.session.preGeneratorAny'),
+                  })}
+                />
+                <StarRating
+                  value={minRatingPickerValue ?? undefined}
+                  onChange={(rating) => onFiltersChange({ minRating: rating ?? 0 })}
+                  accessibilityHint={t('mobile.session.preGeneratorMinRatingStarHint')}
+                  getAccessibilityLabel={(rating, selected) =>
+                    t(
+                      selected
+                        ? 'mobile.session.preGeneratorMinRatingStarSelectedAccessibilityLabel'
+                        : 'mobile.session.preGeneratorMinRatingStarAccessibilityLabel',
+                      { count: rating },
+                    )
+                  }
+                />
+              </View>
+            </View>
+          </>
+        ) : null}
 
         <View
           style={[
@@ -234,14 +301,10 @@ export function WorkoutBlockFilters({ filters, boardName, sizeFilters, onFilters
         >
           <SwitchRow
             label={t('mobile.session.preGeneratorSkipSentLabel')}
-            description={
-              isAuthenticated
-                ? t('mobile.session.preGeneratorSkipSentDescription')
-                : t('mobile.session.preGeneratorSkipSentSignedOut')
-            }
+            description={skipSentDescription(filters, isAuthenticated, t)}
             wrapDescription
-            value={skipsSent}
-            disabled={!isAuthenticated}
+            value={canSkipSent && filters.skipSent === true}
+            disabled={!canSkipSent}
             onValueChange={(skipSent) => onFiltersChange({ skipSent })}
           />
           <View
@@ -324,6 +387,9 @@ const styles = StyleSheet.create({
   },
   subsectionLabel: {
     marginBottom: spacing[2],
+  },
+  biasDescription: {
+    marginTop: spacing[2],
   },
   ratingRow: {
     flexDirection: 'row',

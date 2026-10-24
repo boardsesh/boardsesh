@@ -312,7 +312,9 @@ describe('WorkoutBlockList', () => {
 
     // Only the open card shows its filters.
     expect(screen.container.querySelectorAll('[data-filters]')).toHaveLength(1);
-    act(() => segments.byLabel.get('mobile.session.preGeneratorClimbBias')?.('attempted'));
+    fireEvent.click(
+      screen.getByLabelText('mobile.session.preGeneratorClimbBias, mobile.session.preGeneratorClimbBiasAttempted'),
+    );
 
     expect(lastSelection().blocks.map((block) => block.filters.climbBias)).toEqual(['attempted', 'unfamiliar']);
   });

@@ -42,7 +42,12 @@ describe('the bias to tier table', () => {
       Object.fromEntries(
         Object.entries(SEARCH_TIERS_BY_BIAS).map(([bias, tiers]) => [
           bias,
-          { all: flags(tiers.all), unsent: flags(tiers.unsent), untried: flags(tiers.untried) },
+          {
+            all: flags(tiers.all),
+            unsent: flags(tiers.unsent),
+            untried: flags(tiers.untried),
+            ownClimbs: tiers.ownClimbs,
+          },
         ]),
       ),
     ).toEqual({
@@ -50,19 +55,28 @@ describe('the bias to tier table', () => {
         all: [UNTRIED, { hideCompleted: true }, {}],
         unsent: [UNTRIED, { hideCompleted: true }],
         untried: [UNTRIED],
+        ownClimbs: false,
       },
       attempted: {
         all: [{ showOnlyAttempted: true }],
         unsent: [{ showOnlyAttempted: true, hideCompleted: true }],
         untried: null,
+        ownClimbs: true,
       },
-      any: { all: [{}], unsent: [{ hideCompleted: true }], untried: [UNTRIED] },
+      sent: { all: [{ showOnlyCompleted: true }], unsent: null, untried: null, ownClimbs: true },
+      liked: {
+        all: [{ onlyFavorited: true }],
+        unsent: [{ onlyFavorited: true, hideCompleted: true }],
+        untried: [{ onlyFavorited: true, ...UNTRIED }],
+        ownClimbs: true,
+      },
+      any: { all: [{}], unsent: [{ hideCompleted: true }], untried: [UNTRIED], ownClimbs: false },
     });
   });
 
   it('only ever narrows: a skip switch keeps searches that hide what it skips', () => {
     for (const tiers of Object.values(SEARCH_TIERS_BY_BIAS)) {
-      expect(tiers.unsent.every((rule) => rule.flags.hideCompleted)).toBe(true);
+      expect(tiers.unsent?.every((rule) => rule.flags.hideCompleted) ?? true).toBe(true);
       expect(tiers.untried?.every((rule) => rule.flags.hideAttempted && rule.flags.hideCompleted) ?? true).toBe(true);
     }
   });
@@ -105,7 +119,12 @@ describe("Skip what I've tried", () => {
     const signedOut = fetchFilters(skipTried({ skipSent: true }), false);
     expect(signedOut).toEqual({ ...DEFAULT_WORKOUT_FILTERS, climbBias: 'any' });
     const attempted = skipTried({ climbBias: 'attempted' });
-    expect(fetchFilters(attempted, true)).toEqual({ ...DEFAULT_WORKOUT_FILTERS, climbBias: 'attempted' });
+    expect(fetchFilters(attempted, true)).toEqual({
+      ...DEFAULT_WORKOUT_FILTERS,
+      climbBias: 'attempted',
+      minAscents: 0,
+      minRating: 0,
+    });
     const unfamiliar = skipTried();
     expect(fetchFilters(unfamiliar, true)).toBe(unfamiliar);
   });
