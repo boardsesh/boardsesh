@@ -34,7 +34,14 @@ export function WorkoutPreviewListRow({
   onRefresh,
 }: WorkoutPreviewListRowProps) {
   if (row.kind === 'stage') {
-    return <WorkoutPreviewStageHeading stageKind={row.stageKind} count={row.count} isCoolDown={row.isCoolDown} />;
+    return (
+      <WorkoutPreviewStageHeading
+        stageKind={row.stageKind}
+        count={row.count}
+        isCoolDown={row.isCoolDown}
+        rounds={row.rounds}
+      />
+    );
   }
   if (row.kind === 'section') return <WorkoutPreviewSectionHeading section={row.section} count={row.count} />;
   if (!board) return null;

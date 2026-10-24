@@ -79,10 +79,9 @@ too (`rounds`, `restBetweenClimbsSeconds`, `restBetweenRoundsSeconds`, `interval
 `climbsPerRound` on a 4x4. `WORKOUT_STAGE_KINDS` lists every kind this bundle knows, and
 `isWorkoutStageKind` checks stored data against it.
 
-The three timed kinds are modelled end to end but not offered yet: the type chips, "Add a
-block" and the mid-session sheet still offer warm-up, volume, pyramid, ladder and grade
-focus only (`WORKOUT_BLOCK_TYPES`, and `nextBlockType` cycles the four untimed types). Their
-fields exist for when they are: a 4x4 takes 2 to 10 climbs per round (the player keys its
+The three timed kinds are offered in dev builds only until they launch (see "Timed
+blocks" below); a release bundle offers warm-up, volume, pyramid, ladder and grade focus.
+Their fields: a 4x4 takes 2 to 10 climbs per round (the player keys its
 swipe pages by climb, so one climb per round would put the same climb on three pages) and
 1 to 10 rounds; limit bouldering 1 to 10 climbs; on the minute 1 to 40. Their rests use
 the rest timer's own picker, where Off means no rest for a stage rest and an interval can
@@ -310,6 +309,44 @@ started without the generator can turn into one. Both open `AddWorkoutBlockSheet
   with a climb on the wall, the append writes the whole queue with this phone's current
   climb, so a crew member's wall change that has not reached this phone yet can be
   reverted.
+
+### Timed blocks
+
+On the minute, 4x4 and limit bouldering are offered in dev builds only until they launch:
+`timedWorkoutBlocksOffered()` in `workout-blocks.ts` is `__DEV__`, so a release bundle, and
+with it every OTA, shows the five chips climbers have today. Screenshot mode runs dev
+builds too (the store captures, the E2E smokes), so there the timed chips show only when
+`EXPO_PUBLIC_SCREENSHOT_WORKOUT` names a timed type, and the store shots keep today's
+chips. `workoutBlockTypes()` is the block card's chip list, `addBlockTypes()` the
+mid-session sheet's. The Record tab's "Add a block" never steps onto a timed type
+(`nextBlockType` cycles the four untimed ones), so a timed block is always picked from its
+chip. The mid-session sheet opened after a timed stage opens on that type where the build
+offers it, and on volume at the stage's grade where it does not (`defaultMidSessionBlock`).
+
+- **Preview.** A 4x4 previews one row per climb of a round, under a heading that says the
+  rows repeat: "4x4 · 4 climbs × 4 rounds". `buildPreviewListRows` gives a stage with more
+  than one round its heading even when it is the only block. The summary line counts the
+  queue Start hands over, rounds included (16 for a 4x4), and for a workout with a timed
+  block adds "about N min" (`estimateWorkoutMinutes` in `plan-summary.ts`): 45 s a try plus
+  the rest the stage paces after it (`stageRestSeconds`, so round rests and the 10 s
+  changeover count), one interval a climb on the minute, three tries a climb where the
+  stage moves on only after a send, and two minutes a climb for a stage with no pacing of
+  its own; no rest after the last climb; whole minutes under 10, then fives. An untimed
+  workout gets no figure, since its length is the climber's own rests.
+- **Start.** `toStagedQueueItems` (`stagePreviewQueue` in `workout-start-queue.ts`) queues
+  each row once per round, round-major (A B C D, A B C D, ...). Round 1 keeps the row's own
+  queue item; every later round gets a copy under a fresh `randomUUID`, and each entry
+  carries its round (`WorkoutRunEntry.round`) into `roundByUuid`. The queue's 500-climb cap
+  applies after the expansion, and a climb it cuts gets no stage. The same climb then sits
+  in the queue under four uuids, so everything that follows the workout (the run, the tick
+  log, Undo, the crew) goes by queue-item uuid, never by climb. "Add to session" queues a
+  4x4 block the same way.
+- **Arming.** Start and "Add to session" turn the rest timer on for a timed block (see
+  "Pacing").
+- **Analytics.** `SessionQueueGenerated.savedCount` counts the climbs queued, round copies
+  included. `failedCount` counts the planned slots with no climb, each slot once however
+  many rounds it runs, and is never negative: Start reads `filledSlotCount`, and the sheet
+  counts the slots among the climbs the queue took.
 
 ### Sent climbs and benchmarks
 

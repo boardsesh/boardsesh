@@ -455,7 +455,7 @@ describe('useWorkoutPreview', () => {
     await waitFor(() => expect(result.current.status).toBe('ready'));
 
     rerender({ selection: on(11) });
-    expect(result.current.toStagedQueueItems()).toEqual({ items: [], run: null });
+    expect(result.current.toStagedQueueItems()).toMatchObject({ items: [], run: null, filledSlotCount: 0 });
     await waitFor(() => expect(result.current.status).toBe('ready'));
   });
 

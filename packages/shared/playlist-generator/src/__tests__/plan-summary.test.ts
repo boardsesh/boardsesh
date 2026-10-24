@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_PYRAMID_OPTIONS, type GeneratorGradeScale, generatePyramidPlan, summarizePlanFill } from '../index';
+import {
+  DEFAULT_FOUR_BY_FOUR_OPTIONS,
+  DEFAULT_PYRAMID_OPTIONS,
+  type GeneratorGradeScale,
+  type WorkoutRunStage,
+  type WorkoutStagePacing,
+  buildWorkoutRun,
+  estimateWorkoutMinutes,
+  expandRounds,
+  generatePyramidPlan,
+  planFromBlocks,
+  summarizePlanFill,
+} from '../index';
 
 // MoonBoard-shaped table: difficulty ids start at 13, not 1.
 const MOONBOARD_GRADES: GeneratorGradeScale = Array.from({ length: 16 }, (_, i) => ({ difficulty_id: i + 13 }));
@@ -60,5 +72,90 @@ describe('summarizePlanFill', () => {
     const plan = generatePyramidPlan({ ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 20 }, MOONBOARD_GRADES);
 
     expect(summarizePlanFill([], plan).missing).toBe(0);
+  });
+});
+
+describe('estimateWorkoutMinutes', () => {
+  const FOUR_BY_FOUR_PACING: WorkoutStagePacing = {
+    mode: 'afterTick',
+    restSeconds: 0,
+    restBetweenRoundsSeconds: 180,
+    advanceOn: 'tick',
+  };
+
+  /** A stage of `rounds` rounds of `climbsPerRound` climbs, queued round-major like Start queues a 4x4. */
+  function roundsStage(climbsPerRound: number, rounds: number, pacing: WorkoutStagePacing): WorkoutRunStage {
+    const itemUuids: string[] = [];
+    const roundByUuid: Record<string, number> = {};
+    for (let round = 1; round <= rounds; round++) {
+      for (let climb = 0; climb < climbsPerRound; climb++) {
+        const uuid = `r${round}-c${climb}`;
+        itemUuids.push(uuid);
+        roundByUuid[uuid] = round;
+      }
+    }
+    return { id: 'four', kind: 'fourByFour', itemUuids, pacing, rounds, roundByUuid };
+  }
+
+  const flatStage = (id: string, kind: WorkoutRunStage['kind'], count: number, pacing?: WorkoutStagePacing) => ({
+    id,
+    kind,
+    itemUuids: Array.from({ length: count }, (_, index) => `${id}-${index}`),
+    ...(pacing ? { pacing } : {}),
+  });
+
+  it('counts a 4x4 as 16 tries with the changeover between climbs and the long rest between rounds', () => {
+    // Per round: three climbs of 45 s + the 10 s changeover, one of 45 s + 180 s.
+    // Four rounds is 1560 s, less the last round's rest: 1380 s, 23 min.
+    expect(estimateWorkoutMinutes({ stages: [roundsStage(4, 4, FOUR_BY_FOUR_PACING)] })).toBe(25);
+  });
+
+  it('counts one interval per climb on the minute', () => {
+    expect(
+      estimateWorkoutMinutes({
+        stages: [flatStage('otm', 'onTheMinute', 10, { mode: 'onTheMinute', restSeconds: 60 })],
+      }),
+    ).toBe(10);
+    expect(
+      estimateWorkoutMinutes({
+        stages: [flatStage('otm', 'onTheMinute', 3, { mode: 'onTheMinute', restSeconds: 60 })],
+      }),
+    ).toBe(3);
+  });
+
+  it('counts a few tries per climb when the stage moves on only after a send', () => {
+    // Three climbs of three tries of 45 s + 180 s, less the last rest: 1845 s.
+    const limit = flatStage('limit', 'limitBouldering', 3, { mode: 'afterTick', restSeconds: 180, advanceOn: 'send' });
+
+    expect(estimateWorkoutMinutes({ stages: [limit] })).toBe(30);
+  });
+
+  it('counts a stage with no pacing of its own at a two-minute rest per climb', () => {
+    const warmUp = flatStage('warm', 'warmUp', 4);
+    const limit = flatStage('limit', 'limitBouldering', 3, { mode: 'afterTick', restSeconds: 180, advanceOn: 'send' });
+
+    // 4 × 165 s of warm-up, then the 1845 s limit block: 2505 s.
+    expect(estimateWorkoutMinutes({ stages: [warmUp, limit] })).toBe(40);
+  });
+
+  it('leaves an untimed workout without a figure', () => {
+    expect(estimateWorkoutMinutes({ stages: [flatStage('warm', 'warmUp', 4), flatStage('vol', 'volume', 20)] })).toBe(
+      null,
+    );
+    expect(estimateWorkoutMinutes({ stages: [] })).toBe(null);
+  });
+
+  it('reads the rounds from the run, so a run built at Start gets the same figure', () => {
+    const plan = planFromBlocks(
+      [{ kind: 'workout', options: { ...DEFAULT_FOUR_BY_FOUR_OPTIONS, targetGrade: 20 } }],
+      () => 'four',
+    );
+    const entries = expandRounds(
+      ['a', 'b', 'c', 'd'].map((uuid) => ({ uuid })),
+      4,
+      (item, round) => ({ uuid: `${item.uuid}${round}` }),
+    ).map(({ item, round }) => ({ uuid: item.uuid, stageId: 'four', round }));
+
+    expect(estimateWorkoutMinutes(buildWorkoutRun(entries, plan))).toBe(25);
   });
 });

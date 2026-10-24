@@ -12,23 +12,30 @@ type WorkoutPreviewStageHeadingProps = {
   count: number;
   /** A warm-up after the last block, headed "Cool-down". */
   isCoolDown?: boolean;
+  /** Set when the stage's rows repeat (a 4x4): how many rounds the queue runs them. */
+  rounds?: number;
 };
 
 /**
- * "Pyramid · 9 climbs" over each block of a workout built from several blocks.
- * Sits above that block's section headings, so it reads one step louder.
+ * "Pyramid · 9 climbs" over each block of a workout built from several blocks,
+ * or "4x4 · 4 climbs × 4 rounds" over a block whose rows repeat. Sits above that
+ * block's section headings, so it reads one step louder.
  */
 function WorkoutPreviewStageHeadingComponent({
   stageKind,
   count,
   isCoolDown = false,
+  rounds,
 }: WorkoutPreviewStageHeadingProps) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
+  const section = workoutStageName(stageKind, t, isCoolDown);
   return (
     <View style={styles.heading} accessibilityRole="header">
       <Text variant="subheadline" color={systemColors.label} style={styles.text}>
-        {t('mobile.session.preWorkoutSectionHeading', { section: workoutStageName(stageKind, t, isCoolDown), count })}
+        {rounds === undefined
+          ? t('mobile.session.preWorkoutSectionHeading', { section, count })
+          : t('mobile.session.preWorkoutStageRoundsHeading', { section, count, rounds })}
       </Text>
     </View>
   );

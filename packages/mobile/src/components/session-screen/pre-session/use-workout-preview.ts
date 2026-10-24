@@ -2,14 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getGradesForBoard, toBoardName } from '@boardsesh/board-config';
 import { randomUUID } from 'expo-crypto';
 import {
-  buildWorkoutRun,
   generateStagedPlan,
   planFromBlocks,
   type GeneratorGradeScale,
   type StagedSlot,
   type WorkoutBlockSpec,
   type WorkoutPlan,
-  type WorkoutRun,
   type WorkoutStage,
 } from '@boardsesh/playlist-generator';
 import { MAX_SYNCED_QUEUE_ITEMS, type ClimbQueueItem } from '@boardsesh/queue';
@@ -34,6 +32,14 @@ import {
   type WorkoutPreviewData,
 } from './workout-preview-pool';
 import { hasWorkoutBlocks, type GeneratorSelection, type WorkoutBlock } from './workout-blocks';
+import {
+  EMPTY_STAGED_QUEUE_ITEMS,
+  EMPTY_START_QUEUE_SUMMARY,
+  stagePreviewQueue,
+  summarizeStartQueue,
+  type StagedQueueItems,
+  type StartQueueSummary,
+} from './workout-start-queue';
 
 const DEBOUNCE_MS = 300;
 
@@ -46,6 +52,12 @@ export type UseWorkoutPreviewResult = {
   refreshingUuids: ReadonlySet<string>;
   /** Slots the generator planned — for the `SessionQueueGenerated.failedCount` delta. */
   plannedCount: number;
+  /**
+   * What Start would queue from the rows on screen: the climb count, a 4x4's
+   * round copies included, and about how long it takes. Kept while a rebuild
+   * runs, like `items`.
+   */
+  startQueue: StartQueueSummary;
   /** Actual generated slot plan, before climb-pool shortfalls remove rows from the preview. Each slot names its stage. */
   plannedSlots: readonly StagedSlot[];
   /** The stages those slots belong to, in run order. Empty while no preview is current. */
@@ -55,20 +67,16 @@ export type UseWorkoutPreviewResult = {
   shuffle: () => void;
   refreshSlot: (itemUuid: string) => void;
   /**
-   * The current preview as a queue, plus which workout stage each item belongs
-   * to (the hand-off on Start). Empty items and a null run while the preview on
-   * screen is not the one the current settings describe.
+   * The current preview as a queue, plus which workout stage, and round, each
+   * item belongs to (the hand-off on Start). A 4x4's rows are queued once per
+   * round, each copy under a fresh queue-item uuid (`stagePreviewQueue`). Empty
+   * items and a null run while the preview on screen is not the one the current
+   * settings describe.
    */
   toStagedQueueItems: () => StagedQueueItems;
 };
 
-export type StagedQueueItems = {
-  items: ClimbQueueItem[];
-  /** Null when there is nothing to queue. */
-  run: WorkoutRun | null;
-};
-
-const EMPTY_STAGED_QUEUE_ITEMS: StagedQueueItems = { items: [], run: null };
+export type { StagedQueueItems } from './workout-start-queue';
 
 /** Stage ids are uuids so a stage added mid-session can never collide with one already in the run. */
 const makeStageId = () => randomUUID();
@@ -522,12 +530,13 @@ export function useWorkoutPreview(
     // Rows keep their slot through a row refresh (same uuid, new climb) and a
     // shuffle (new uuids, same plan), so a slot's index always finds its stage.
     const stageIdBySlotIndex = new Map(planRef.current.map((slot) => [slot.index, slot.stageId]));
-    const entries: Array<{ uuid: string; stageId: string }> = [];
-    for (const preview of previews) {
-      const stageId = stageIdBySlotIndex.get(preview.slot.index);
-      if (stageId !== undefined) entries.push({ uuid: preview.item.uuid, stageId });
-    }
-    return { items: previews.map((preview) => preview.item), run: buildWorkoutRun(entries, workoutPlan) };
+    return stagePreviewQueue({
+      previews,
+      plan: workoutPlan,
+      stageIdOf: (preview) => stageIdBySlotIndex.get(preview.slot.index),
+      // Every call mints new copies: each Start queues its own queue items.
+      mintUuid: randomUUID,
+    });
   }, []);
 
   // Debounced live rebuild. `off`/no-board clears immediately; a real change
@@ -551,6 +560,10 @@ export function useWorkoutPreview(
     return () => clearTimeout(handle);
   }, [generationKey, boardKey, authKey, boardseshGrades, rebuildForEdit]);
 
+  // Over the committed rows and stages, which change together, so a rounds edit
+  // updates the count as soon as its rebuild lands.
+  const startQueue = useMemo(() => summarizeStartQueue(items, plannedStages), [items, plannedStages]);
+
   const regenerateVoid = useCallback(() => void regenerate(), [regenerate]);
   const refreshSlotVoid = useCallback((itemUuid: string) => void refreshSlot(itemUuid), [refreshSlot]);
 
@@ -573,6 +586,7 @@ export function useWorkoutPreview(
       // Kept while a rebuild runs, like `items`, so the stage headings over the
       // rows still on screen keep their names.
       plannedStages: hasActivePreviewRequest && committedBoardKey === boardKey ? plannedStages : EMPTY_STAGES,
+      startQueue: hasActivePreviewRequest && committedBoardKey === boardKey ? startQueue : EMPTY_START_QUEUE_SUMMARY,
       regenerate: regenerateVoid,
       shuffle,
       refreshSlot: refreshSlotVoid,
@@ -590,6 +604,7 @@ export function useWorkoutPreview(
     plannedCount,
     plannedSlots,
     plannedStages,
+    startQueue,
     regenerateVoid,
     shuffle,
     refreshSlotVoid,

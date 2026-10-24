@@ -6,10 +6,14 @@ import {
   type WorkoutStageKind,
 } from '@boardsesh/playlist-generator';
 import type { PreviewItem } from './workout-preview-pool';
+import { plannedStageRounds } from './workout-start-queue';
 
 export type PreviewSection = PlannedClimbSlot['section'];
 
-/** One FlashList row of the workout preview: a stage heading, a section heading or a climb. */
+/**
+ * One FlashList row of the workout preview: a stage heading, a section heading
+ * or a climb. A stage heading's `rounds` is set when its rows repeat (a 4x4).
+ */
 export type PreviewListRow =
   | {
       kind: 'stage';
@@ -18,6 +22,8 @@ export type PreviewListRow =
       count: number;
       /** Set only on a warm-up stage planned after the last workout block, which steps back down. */
       isCoolDown?: true;
+      /** Set when the stage's rows repeat (a 4x4 of more than one round): how many rounds the queue runs them. */
+      rounds?: number;
     }
   | { kind: 'section'; key: string; section: PreviewSection; count: number }
   | { kind: 'climb'; key: string; preview: PreviewItem };
@@ -38,13 +44,22 @@ export type PreviewListRow =
  *
  * Sections are consecutive runs (`groupSlotsBySection`), so a pyramid's
  * "increasing" and "decreasing" halves stay apart around the peak.
+ *
+ * A stage whose rows run more than one round always gets its heading, alone or
+ * not ("4x4 · 4 climbs × 4 rounds"): the rows show one round, and the heading is
+ * where the preview says the queue repeats them.
  */
 export function buildPreviewListRows(
   items: readonly PreviewItem[],
   stages: readonly WorkoutStage[] = [],
 ): PreviewListRow[] {
   const workoutBlockCount = stages.filter((stage) => !isWarmUpStage(stage)).length;
-  if (workoutBlockCount < 2) return buildSectionRows(items, 'section');
+  const roundsByStageId = new Map<string, number>();
+  for (const stage of stages) {
+    const rounds = plannedStageRounds(stage);
+    if (rounds !== undefined && rounds > 1) roundsByStageId.set(stage.id, rounds);
+  }
+  if (workoutBlockCount < 2 && roundsByStageId.size === 0) return buildSectionRows(items, 'section');
 
   const kindByStageId = new Map(stages.map((stage) => [stage.id, stage.kind]));
   const rows: PreviewListRow[] = [];
@@ -56,6 +71,7 @@ export function buildPreviewListRows(
     while (groupEnd < items.length && items[groupEnd].slot.stageId === stageId) groupEnd++;
     const stageItems = items.slice(groupStart, groupEnd);
     const stageKind = stageId === undefined ? undefined : kindByStageId.get(stageId);
+    const rounds = stageId === undefined ? undefined : roundsByStageId.get(stageId);
     if (stageKind !== undefined) {
       const stageRow: Extract<PreviewListRow, { kind: 'stage' }> = {
         kind: 'stage',
@@ -64,6 +80,7 @@ export function buildPreviewListRows(
         count: stageItems.length,
       };
       if (stageItems[0].slot.section === 'coolDown') stageRow.isCoolDown = true;
+      if (rounds !== undefined) stageRow.rounds = rounds;
       rows.push(stageRow);
     }
     rows.push(...buildSectionRows(stageItems, `section-${stageId ?? groupStart}`));

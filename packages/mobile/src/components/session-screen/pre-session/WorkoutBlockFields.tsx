@@ -21,8 +21,8 @@ import { workoutStageName } from '../../../lib/workout-run-readout';
 import { Chip, GroupedSteppers, generatorControlStyles, workoutStepperRows } from './generator-controls';
 import { WorkoutBlockFilters } from './WorkoutBlockFilters';
 import {
-  WORKOUT_BLOCK_TYPES,
   blockType,
+  workoutBlockTypes,
   type SizeFilterAvailability,
   type WorkoutBlockType,
   type WorkoutFilters,
@@ -49,7 +49,7 @@ type WorkoutBlockFieldsProps = {
   railGrades: readonly Grade[];
   /** Names the chip group for screen readers ("Block 2, Pyramid"). */
   groupLabel: string;
-  /** The type chips, in order. Every type by default, warm-up first. */
+  /** The type chips, in order. Every type on offer by default (`workoutBlockTypes`), warm-up first. */
   blockTypes?: readonly WorkoutBlockType[];
   /** For a warm-up: the grade it ramps to, null when no workout block follows it. */
   warmUpTargetGrade?: number | null;
@@ -73,7 +73,7 @@ export function WorkoutBlockFields({
   boardName,
   railGrades,
   groupLabel,
-  blockTypes = WORKOUT_BLOCK_TYPES,
+  blockTypes = workoutBlockTypes(),
   warmUpTargetGrade = null,
   warmUpTargetBlockNumber = null,
   coolDownFromGrade = null,

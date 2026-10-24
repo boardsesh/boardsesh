@@ -184,6 +184,7 @@ export function PreSessionView({
     plannedCount,
     plannedSlots,
     plannedStages,
+    startQueue,
     refreshSlot,
     shuffle,
     toStagedQueueItems,
@@ -257,7 +258,11 @@ export function PreSessionView({
   const handleStart = useCallback(async () => {
     if (!activeBoard || isStartPending) return;
     const hasWorkout = hasWorkoutBlocks(selection);
-    const { items: generatedItems, run: generatedRun } = hasWorkout ? toStagedQueueItems() : { items: [], run: null };
+    const {
+      items: generatedItems,
+      run: generatedRun,
+      filledSlotCount,
+    } = hasWorkout ? toStagedQueueItems() : { items: [], run: null, filledSlotCount: 0 };
     if (hasWorkout && (status !== 'ready' || refreshingUuids.size > 0 || generatedItems.length === 0)) {
       return;
     }
@@ -299,7 +304,9 @@ export function PreSessionView({
           boardName: activeBoard.boardType,
           angle: activeBoard.angle,
           savedCount: generatedItems.length,
-          failedCount: plannedCount - generatedItems.length,
+          // Planned slots with no climb. A 4x4 queues each slot once per round,
+          // so the queued count would overshoot the plan.
+          failedCount: Math.max(0, plannedCount - filledSlotCount),
           stageCount: generatedRun?.stages.length ?? 0,
           // Start builds the workout; a block added later sends 'in_session'.
           phase: 'pre_session',
@@ -472,6 +479,7 @@ export function PreSessionView({
                 boardName={previewBoard.boardName}
                 onShuffle={shuffle}
                 shuffleDisabled={status !== 'ready' || isRefreshingAnyRow || isStartPending}
+                startQueue={startQueue}
               />
             ) : null}
             {previewStateMessage ? (
@@ -505,6 +513,7 @@ export function PreSessionView({
       previewBoard,
       hasPreviewItems,
       planSummary,
+      startQueue,
       shuffle,
       status,
       isRefreshingAnyRow,

@@ -15,7 +15,13 @@ export {
   groupSlotsBySection,
 } from './generate';
 export type { GroupedSlots } from './generate';
-export { summarizePlanFill } from './plan-summary';
+export {
+  ESTIMATE_SECONDS_PER_TRY,
+  ESTIMATE_TRIES_UNTIL_SEND,
+  ESTIMATE_UNPACED_REST_SECONDS,
+  estimateWorkoutMinutes,
+  summarizePlanFill,
+} from './plan-summary';
 export type { PlanFillSummary, PlanSectionCount } from './plan-summary';
 export {
   MAX_STAGE_REST_SECONDS,

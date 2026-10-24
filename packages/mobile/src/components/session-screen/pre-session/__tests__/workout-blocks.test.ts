@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_FOUR_BY_FOUR_OPTIONS,
   DEFAULT_GRADE_FOCUS_OPTIONS,
@@ -17,8 +17,8 @@ import {
   DEFAULT_WORKOUT_FILTERS,
   MAX_WORKOUT_BLOCKS,
   NO_WORKOUT,
-  WORKOUT_BLOCK_TYPES,
   addBlock,
+  addBlockTypes,
   buildDefaultOptions,
   canAddBlock,
   changeBlockType,
@@ -32,9 +32,11 @@ import {
   selectionWorkoutTypes,
   singleBlockSelection,
   updateBlock,
+  timedWorkoutBlocksOffered,
   updateBlockFilters,
   warmUpTarget,
   withAvailableSizeFilters,
+  workoutBlockTypes,
   type GeneratorSelection,
   type WorkoutBlock,
   type WorkoutFilters,
@@ -105,9 +107,49 @@ describe('nextBlockType', () => {
   });
 });
 
+const UNTIMED_CHIPS = ['warmUp', 'volume', 'pyramid', 'ladder', 'gradeFocus'];
+
 describe('timed block types', () => {
-  it('are not offered on the chips yet', () => {
-    expect(WORKOUT_BLOCK_TYPES).toEqual(['warmUp', 'volume', 'pyramid', 'ladder', 'gradeFocus']);
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  // A release bundle reaches store binaries by OTA: no timed chip until launch.
+  it('are on no chip in a release build', () => {
+    vi.stubGlobal('__DEV__', false);
+
+    expect(timedWorkoutBlocksOffered()).toBe(false);
+    expect(workoutBlockTypes()).toEqual(UNTIMED_CHIPS);
+    expect(addBlockTypes()).toEqual(UNTIMED_CHIPS.slice(1));
+  });
+
+  it('follow the untimed types on the chips of a dev build', () => {
+    vi.stubGlobal('__DEV__', true);
+
+    expect(timedWorkoutBlocksOffered()).toBe(true);
+    expect(workoutBlockTypes()).toEqual([...UNTIMED_CHIPS, 'onTheMinute', 'fourByFour', 'limitBouldering']);
+    expect(addBlockTypes()).toEqual(['volume', 'pyramid', 'ladder', 'gradeFocus', ...TIMED_WORKOUT_TYPES]);
+    // The same arrays every call, so a list a component passes on stays put.
+    expect(workoutBlockTypes()).toBe(workoutBlockTypes());
+    expect(addBlockTypes()).toBe(addBlockTypes());
+  });
+
+  // The store captures run dev builds in screenshot mode; they keep today's chips.
+  it('stay off in screenshot mode unless the capture opens on a timed block', async () => {
+    vi.stubGlobal('__DEV__', true);
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    expect(timedWorkoutBlocksOffered()).toBe(false);
+    expect(workoutBlockTypes()).toEqual(UNTIMED_CHIPS);
+
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_WORKOUT', 'fourByFour');
+    vi.resetModules();
+    const reloaded = await import('../workout-blocks');
+    expect(reloaded.timedWorkoutBlocksOffered()).toBe(true);
+
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_WORKOUT', 'volume');
+    vi.resetModules();
+    expect((await import('../workout-blocks')).timedWorkoutBlocksOffered()).toBe(false);
   });
 
   it('build their defaults at the grade asked for', () => {

@@ -20,7 +20,7 @@ import {
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import {
   DEFAULT_WORKOUT_FILTERS,
-  WORKOUT_BLOCK_TYPES,
+  addBlockTypes,
   buildDefaultOptions,
   type WorkoutFilters,
 } from '../pre-session/workout-blocks';
@@ -96,18 +96,20 @@ export function addWorkoutBlock({
  * workout stage (none yet, only a warm-up left, or stored before stages kept
  * their grade) falls back to a volume block at `fallbackGrade`. Never a warm-up:
  * mid-session the climber is already warm. A last stage of a type the sheet has
- * no chip for (a timed block a newer bundle stored, read after an OTA rollback)
- * opens on volume at that stage's grade, so the sheet never shows fields for a
- * type it does not offer.
+ * no chip for (`addBlockTypes`: a timed block in a build that does not offer
+ * them, or a kind from a newer bundle read after an OTA rollback) opens on
+ * volume at that stage's grade, so the sheet never shows fields for a type it
+ * does not offer.
  */
 export function defaultMidSessionBlock(run: WorkoutRun | null, fallbackGrade: number): GeneratorOptions {
   let type: WorkoutType = 'volume';
   let targetGrade = fallbackGrade;
+  const offeredTypes = addBlockTypes();
   const stages = run?.stages ?? [];
   for (let position = stages.length - 1; position >= 0; position--) {
     const stage = stages[position];
     if (stage.kind === 'warmUp') continue;
-    if (WORKOUT_BLOCK_TYPES.includes(stage.kind)) type = stage.kind;
+    if (offeredTypes.includes(stage.kind)) type = stage.kind;
     targetGrade = stage.targetGrade ?? fallbackGrade;
     break;
   }
