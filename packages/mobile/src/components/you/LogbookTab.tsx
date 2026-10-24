@@ -546,7 +546,7 @@ export function LogbookTab({
     if (input.groupedMode) {
       const result = await fetchNextGroupedPage({ cancelRefetch: false });
       if (result.isError) throw result.error;
-      const hasMore = result.hasNextPage;
+      const hasMore = result.hasNextPage ?? false;
       return {
         rows: logbookEntries(
           buildLogbookRows({
@@ -561,7 +561,7 @@ export function LogbookTab({
     }
     const result = await fetchNextFlatPage({ cancelRefetch: false });
     if (result.isError) throw result.error;
-    const hasMore = result.hasNextPage;
+    const hasMore = result.hasNextPage ?? false;
     return {
       rows: logbookEntries(
         buildLogbookRows({ ...input, flatPages: result.data?.pages, groupedPages: undefined, flatHasMore: hasMore }),

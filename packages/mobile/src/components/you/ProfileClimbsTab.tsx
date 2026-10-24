@@ -40,6 +40,9 @@ function describeProfileClimb(climb: Climb): BoardListRow {
   const described = describedClimbs.get(climb);
   if (described) return described;
   // boardType is typed optional on Climb but the userClimbs query always returns it.
+  // A climb with no board to draw on gets `board: null` here, and `renderItem`
+  // renders no row for it under the same two checks, so a tap never reaches
+  // the list hook without a board and this list needs no `openFallback`.
   const config = climb.boardType
     ? renderBoardToPlaylistConfig(climb.boardType, climb.layoutId, climb.renderBoard)
     : null;
@@ -93,14 +96,14 @@ export function ProfileClimbsTab({ userId, topInset = 0, scrollEdge }: ProfileCl
   const loadMoreClimbs = useCallback(async () => {
     const result = await fetchNextClimbsPage({ cancelRefetch: false });
     if (result.isError) throw result.error;
-    return { rows: result.data?.pages.flatMap((page) => page.climbs) ?? [], hasMore: result.hasNextPage };
+    return { rows: result.data?.pages.flatMap((page) => page.climbs) ?? [], hasMore: result.hasNextPage ?? false };
   }, [fetchNextClimbsPage]);
   const handlePress = useBoardListActivation<Climb>({
     sourceId: `profile-climbs:${userId ?? ''}`,
     label: tSession('playView.track.createdClimbs'),
     rows: climbs,
     describeRow: describeProfileClimb,
-    hasMore: feed.hasNextPage,
+    hasMore: feed.hasNextPage ?? false,
     loadMore: loadMoreClimbs,
   });
 

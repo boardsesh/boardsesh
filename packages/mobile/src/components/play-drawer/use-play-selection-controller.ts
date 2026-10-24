@@ -369,11 +369,17 @@ export function usePlaySelectionController({
    *   queue add's cross-board prompt; there is no add any more.
    * Otherwise the climb goes up, inserted after the current one and flagged
    * `suggested` like every list play.
+   *
+   * The displayed climb is read from a ref at tap time, not listed as a dep:
+   * it changes on every player move, and a fresh handler each time would
+   * rebuild every memoized similar-climb row's press handler with it.
    */
+  const displayedClimbUuidRef = useRef(displayedClimbUuid);
+  displayedClimbUuidRef.current = displayedClimbUuid;
   const handleSimilarClimbPress = useCallback(
     (similarClimb: Climb, similarClimbs: Climb[] = []) => {
       const track = createPlaylistSuggestionSource({
-        playlistUuid: `similar:${displayedClimbUuid ?? similarClimb.uuid}`,
+        playlistUuid: `similar:${displayedClimbUuidRef.current ?? similarClimb.uuid}`,
         activatedClimb: toQueueClimb(similarClimb),
         climbs: toQueueClimbs(similarClimbs),
         boardKey: similarTrack.boardKey,
@@ -403,7 +409,6 @@ export function usePlaySelectionController({
       viewer,
       browseByDefault,
       showBoardMismatch,
-      displayedClimbUuid,
       similarTrack,
       setDrawerPreviewItem,
       setDrawerPreviewSuggestionSource,
