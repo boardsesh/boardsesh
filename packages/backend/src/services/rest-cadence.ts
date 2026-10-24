@@ -442,6 +442,7 @@ export function isRestCadenceState(candidate: unknown): candidate is RestCadence
     typeof state.isRunning === 'boolean' &&
     isNullableNumber(state.anchorMs) &&
     typeof state.pausedElapsedSeconds === 'number' &&
+    Number.isFinite(state.pausedElapsedSeconds) &&
     isNullableNumber(state.lastFiredBeatMs) &&
     isLastTick(state.lastTick) &&
     isNullableString(state.setByParticipantId)

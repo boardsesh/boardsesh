@@ -68,8 +68,11 @@ export const sessionSubscriptions = {
    * seed is skipped with a warning. The subscription goes on, because it also
    * carries the roster, and no "off" seed stands in, because that would clear
    * every client's clock. The client keeps its local clock until the next
-   * cadence event, and the holder's next FIRE is fenced by revision. The
-   * wall-move roster re-snapshot does not re-seed it.
+   * cadence event, and the holder's next FIRE is fenced by revision (its
+   * mutation response carries the server's clock). If the clock was turned off
+   * while this client was away, no later event may come, so a passenger can
+   * show a stale clock until it resubscribes or someone changes the clock.
+   * The wall-move roster re-snapshot does not re-seed it.
    */
   sessionUpdates: {
     subscribe: withSubscriptionCleanup(async function* (

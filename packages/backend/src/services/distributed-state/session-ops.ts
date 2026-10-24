@@ -674,7 +674,7 @@ export async function casSessionRestCadence(
   minimumRevision: number,
 ): Promise<RestCadenceCasResult> {
   validateSessionId(sessionId);
-  const [committed, revision, doc] = (await redis.eval(
+  const reply: unknown = await redis.eval(
     CAS_SESSION_REST_CADENCE_SCRIPT,
     1,
     KEYS.sessionRestCadence(sessionId),
@@ -682,7 +682,19 @@ export async function casSessionRestCadence(
     nextDoc,
     TTL.sessionMembership.toString(),
     minimumRevision.toString(),
-  )) as [number, number, string];
+  );
+  // ioredis maps a nil bulk string to null; the script never returns one today,
+  // so a malformed reply is a script regression and must not reach parsing.
+  if (
+    !Array.isArray(reply) ||
+    reply.length !== 3 ||
+    typeof reply[0] !== 'number' ||
+    typeof reply[1] !== 'number' ||
+    typeof reply[2] !== 'string'
+  ) {
+    throw new Error('Unexpected reply from the rest cadence CAS script');
+  }
+  const [committed, revision, doc] = reply as [number, number, string];
   return { ok: committed === 1, revision, doc };
 }
 
