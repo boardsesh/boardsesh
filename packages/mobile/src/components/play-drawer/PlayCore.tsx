@@ -60,6 +60,7 @@ import { PlayDrawerActionBar } from './PlayDrawerActionBar';
 import { PlayDrawerActionsMenu } from './PlayDrawerActionsMenu';
 import { resolveQueuedSlotUuid } from './play-drawer-menu-rows';
 import { resolveActionBarLayout, type ActionBarCommitButton } from './action-bar-layout';
+import { shouldShowWorkoutOutcome, type WorkoutOutcomeTarget } from './workout-outcome';
 import { WallStatePill } from './WallStatePill';
 import { WallStateCallout } from './WallStateCallout';
 import {
@@ -1537,6 +1538,47 @@ export function PlayCore({
     onPressSetter: openSetterPlaylist,
     workoutStageLabel,
   });
+  // A timed workout block's one-tap Fell / Sent (#6231): the climb on the wall,
+  // in a stage that paces the rest, that this climber can log from here.
+  const workoutOutcome = useMemo<WorkoutOutcomeTarget | null>(() => {
+    const committedQueueItemUuid = currentClimbQueueItem?.uuid ?? null;
+    const show = shouldShowWorkoutOutcome({
+      run: workoutRun,
+      displayedQueueItemUuid: displayedQueueItemUuid ?? null,
+      committedQueueItemUuid,
+      signedIn: isAuthenticated && !isAnonymous,
+      boardMismatch: showBoardMismatch,
+      isDraft: displayedClimbIsDraft,
+    });
+    if (!show || !displayedClimb || committedQueueItemUuid === null || sessionId === null) return null;
+    return {
+      climb: displayedClimb,
+      queueItemUuid: committedQueueItemUuid,
+      sessionId,
+      boardName,
+      layoutId,
+      sizeId,
+      setIds,
+      angle,
+      isMirror: isMirrored,
+    };
+  }, [
+    workoutRun,
+    displayedQueueItemUuid,
+    currentClimbQueueItem?.uuid,
+    isAuthenticated,
+    isAnonymous,
+    showBoardMismatch,
+    displayedClimbIsDraft,
+    displayedClimb,
+    sessionId,
+    boardName,
+    layoutId,
+    sizeId,
+    setIds,
+    angle,
+    isMirrored,
+  ]);
   const supportsMirroring = boardSupportsMirroring(boardName, layoutId);
   // The same layout the action bar resolves from the same inputs, read here for
   // the buttons it has put away (⋯ carries a row for each) and for the opening
@@ -1550,6 +1592,7 @@ export function PlayCore({
         isAnonymous,
         connectPill: showConnectPill,
         commitButton,
+        workoutOutcome: workoutOutcome !== null,
         showLightbulb: hasBluetooth,
         hasShare: !displayedClimbIsDraft,
         angleAvailable,
@@ -1561,6 +1604,7 @@ export function PlayCore({
       isAnonymous,
       showConnectPill,
       commitButton,
+      workoutOutcome,
       hasBluetooth,
       displayedClimbIsDraft,
       angleAvailable,
@@ -1606,6 +1650,7 @@ export function PlayCore({
             isTickBarActive,
             commitButton,
             showConnectPill,
+            workoutOutcome !== null,
             bluetooth !== null,
             boardSupportsMirroring(boardName, layoutId),
             actionBarLayout.secondaryRow,
@@ -1752,6 +1797,8 @@ export function PlayCore({
       // the whole row: Keep theirs / Put mine up, where the second
       // tap on the filled button is the commit.
       commitButton={commitButton}
+      // A timed workout block: the second row is one-tap Fell / Sent.
+      workoutOutcome={workoutOutcome}
       wallClimbName={wallClimb.name}
       wallClimbUuid={wallClimbUuid}
       commitLabel={commitBarModel.commitLabel}

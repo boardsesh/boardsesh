@@ -9,6 +9,8 @@ import type { BleLightbulbLabelKind } from '../ble/ble-lightbulb-button-state';
 import { LightbulbHolderBadge } from './LightbulbHolderBadge';
 import { FirstConnectPill } from './FirstConnectPill';
 import { PlayDrawerCommitBar, PutOnWallButton } from './PlayDrawerCommitBar';
+import { WorkoutOutcomeRow } from './WorkoutOutcomeRow';
+import type { WorkoutOutcomeTarget } from './workout-outcome';
 import type { CommitButtonLabel } from './wall-state';
 import { resolveActionBarLayout, type ActionBarCommitButton, type ActionBarSecondaryItem } from './action-bar-layout';
 import { DEFAULT_PLAYER_BUTTONS, type PlayerButtonsLayout } from '../../lib/player-buttons';
@@ -85,6 +87,12 @@ type PlayDrawerActionBarProps = {
    * rest of the `viewer` rules.
    */
   commitButton?: ActionBarCommitButton;
+  /**
+   * The climb up is in a timed workout block (#6231): the second row becomes
+   * one-tap Fell / Sent for it. Resolved by the host (`shouldShowWorkoutOutcome`);
+   * the browse latch's controls and an anonymous viewer still win here.
+   */
+  workoutOutcome?: WorkoutOutcomeTarget | null;
   /** Confirm only: the lit climb's name, for the question. */
   wallClimbName?: string | null;
   /** Confirm only: the lit climb's uuid, to name who put it up. */
@@ -163,6 +171,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   onConnectPill,
   showHolderBadge = true,
   commitButton = null,
+  workoutOutcome = null,
   wallClimbName = null,
   wallClimbUuid = null,
   commitLabel = 'putOnWall',
@@ -220,6 +229,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
     isAnonymous,
     connectPill,
     commitButton: commit,
+    workoutOutcome: workoutOutcome !== null,
     showLightbulb,
     hasShare: onShare != null,
     angleAvailable: onOpenAngleSelector != null && currentAngle != null,
@@ -227,8 +237,9 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
     previousNext,
   });
   // No second row at all: the climber switched every small button off, and
-  // neither Put on the wall, the busy-wall question nor the connect pill wants it.
-  const hasSecondaryRow = layout.secondaryRow === 'confirm' || layout.secondaryRow.length > 0;
+  // neither Put on the wall, the busy-wall question, the workout's Fell / Sent
+  // nor the connect pill wants it.
+  const hasSecondaryRow = typeof layout.secondaryRow === 'string' || layout.secondaryRow.length > 0;
 
   // Haptics follow HIG "Playing haptics": plain buttons (prev / next / share /
   // sign in / angle) get none — the press itself is the feedback. The two
@@ -362,7 +373,9 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
               onKeepTheirs={onKeepTheirs}
               onConfirm={onCommit}
             />
-          ) : layout.secondaryRow === 'confirm' ? null : (
+          ) : layout.secondaryRow === 'workoutOutcome' && workoutOutcome ? (
+            <WorkoutOutcomeRow target={workoutOutcome} onOpenLogSheet={onTickPress} />
+          ) : typeof layout.secondaryRow === 'string' ? null : (
             layout.secondaryRow.map((item: ActionBarSecondaryItem, index: number) => {
               switch (item) {
                 case 'mirror':

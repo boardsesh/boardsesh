@@ -862,6 +862,15 @@
       "sendSaveLabel": "Getoppt",
       "starRating_one": "{{count}} Stern",
       "starRating_other": "{{count}} Sterne"
+    },
+    "workoutOutcome": {
+      "fell": "Gestürzt",
+      "sent": "Getoppt",
+      "fellHint": "Trägt einen Versuch an diesem Boulder ein",
+      "sentHint": "Trägt diesen Boulder als getoppt ein",
+      "attemptLogged": "Versuch eingetragen",
+      "flashLogged": "Flash eingetragen",
+      "sendLogged": "Begehung eingetragen"
     }
   },
   "mobileDetail": {

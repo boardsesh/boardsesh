@@ -312,8 +312,11 @@ export const SHARED_EVENTS = {
   // Canonical "a climb was logged" join event and the single commit event on both
   // platforms — it absorbed QuickTickSaved's payload. Required props: { climbUuid,
   // status, platform: 'web' | 'mobile', surface: 'web_full_form' |
-  // 'web_quick_modal' | 'mobile_quick_tick' }, plus the tick detail
-  // (attemptCount, hasQuality, hasDifficulty, difficulty, grade, hasComment).
+  // 'web_quick_modal' | 'mobile_quick_tick' | 'mobile_workout_runner' }, plus the
+  // tick detail (attemptCount, hasQuality, hasDifficulty, difficulty, grade,
+  // hasComment). 'mobile_workout_runner' is the player's one-tap Fell / Sent in a
+  // timed workout block (#6231): no sheet opens, so those ticks have no Quick Tick
+  // Opened and sit outside the Dismissed + Logged <= Opened invariant above.
   // Mobile adds `boardType` (#6027): one of the nine board types or null, from
   // `boardTypeProperty`. `layoutId` alone cannot say "spray wall".
   TickLogged: 'Tick Logged',

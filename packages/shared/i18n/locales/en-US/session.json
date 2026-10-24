@@ -862,6 +862,15 @@
       "sendSaveLabel": "Send",
       "starRating_one": "{{count}} star",
       "starRating_other": "{{count}} stars"
+    },
+    "workoutOutcome": {
+      "fell": "Fell",
+      "sent": "Sent",
+      "fellHint": "Logs one try on this climb",
+      "sentHint": "Logs this climb as sent",
+      "attemptLogged": "Try logged",
+      "flashLogged": "Flash logged",
+      "sendLogged": "Send logged"
     }
   },
   "mobileDetail": {

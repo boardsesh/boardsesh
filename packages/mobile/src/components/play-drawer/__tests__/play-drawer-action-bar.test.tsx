@@ -15,6 +15,7 @@ vi.mock('../../PressableSurface', async () => {
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
+import type { Climb } from '@boardsesh/shared-schema';
 
 const themeState = vi.hoisted(() => ({ variant: 'liquidGlass' as 'liquidGlass' | 'material' }));
 afterEach(() => {
@@ -914,5 +915,106 @@ describe('PlayDrawerActionBar haptics', () => {
     expect(onToggleFavorite).toHaveBeenCalledTimes(1);
     expect(haptics.hapticSelection).toHaveBeenCalledTimes(2);
     expect(haptics.hapticMedium).not.toHaveBeenCalled();
+  });
+});
+
+// The row's own taps are covered by use-workout-one-tap.test.tsx; here only where
+// it goes, what it pushes out, and that it is handed the climb and the tick
+// sheet opener.
+vi.mock('../WorkoutOutcomeRow', () => ({
+  WorkoutOutcomeRow: ({ target, onOpenLogSheet }: { target: { queueItemUuid: string }; onOpenLogSheet: () => void }) =>
+    createElement('button', {
+      'data-workout-outcome': target.queueItemUuid,
+      onClick: onOpenLogSheet,
+    }),
+}));
+
+describe('PlayDrawerActionBar (timed workout block)', () => {
+  const workoutOutcome = {
+    climb: { uuid: 'climb-1' } as unknown as Climb,
+    queueItemUuid: 'item-1',
+    sessionId: 'session-1',
+    boardName: 'tension',
+    layoutId: 9,
+    sizeId: 1,
+    setIds: '1',
+    angle: 40,
+    isMirror: false,
+  };
+  const workoutProps = { ...baseProps, workoutOutcome };
+
+  it('gives the whole second row to Fell / Sent for the climb up', () => {
+    const { container } = render(createElement(PlayDrawerActionBar, workoutProps));
+
+    expect(container.querySelector('[data-workout-outcome]')?.getAttribute('data-workout-outcome')).toBe('item-1');
+    expect(container.querySelector(`[data-label="${FAVORITE_LABEL}"]`)).toBeNull();
+    expect(container.querySelector(`[data-label="${ANGLE_LABEL}"]`)).toBeNull();
+    expect(container.querySelector(`[data-label="${SHARE_LABEL}"]`)).toBeNull();
+    // Mirror keeps the first slot, Log the middle; the queue steps into ⋯.
+    expect(actions(container)).toEqual([ACTION_ICONS.mirror, ACTION_ICONS.previous, ACTION_ICONS.next]);
+    expect(container.querySelector(`[data-label="${QUEUE_LABEL}"]`)).toBeNull();
+    expect(container.querySelector('[data-icon="tick.outline"]')).toBeTruthy();
+  });
+
+  it('keeps the queue in the first slot on a board without mirror', () => {
+    const { container } = render(createElement(PlayDrawerActionBar, { ...workoutProps, supportsMirroring: false }));
+
+    expect(labels(container)[0]).toBe(QUEUE_LABEL);
+    expect(container.querySelector('[data-workout-outcome]')).toBeTruthy();
+  });
+
+  it('hands the row the tick sheet opener, for a spray climb that needs a grade', () => {
+    const onTickPress = vi.fn();
+    const { container } = render(createElement(PlayDrawerActionBar, { ...workoutProps, onTickPress }));
+
+    fireEvent.click(container.querySelector('[data-workout-outcome]') as HTMLElement);
+
+    expect(onTickPress).toHaveBeenCalledTimes(1);
+  });
+
+  it('brings the row back with every small button switched off', () => {
+    const allOff = {
+      order: ['mirror', 'favorite', 'angle', 'share', 'queue'] as const,
+      visible: { mirror: false, favorite: false, angle: false, share: false, queue: false },
+    };
+    const { container } = render(createElement(PlayDrawerActionBar, { ...workoutProps, buttons: allOff }));
+
+    expect(container.querySelector('[data-workout-outcome]')).toBeTruthy();
+  });
+
+  it('gives way to the busy-wall question', () => {
+    const { container } = render(
+      createElement(PlayDrawerActionBar, {
+        ...workoutProps,
+        commitButton: 'confirm' as const,
+        onCommit: vi.fn(),
+        onKeepTheirs: vi.fn(),
+      }),
+    );
+
+    expect(container.querySelector('[data-commit-bar]')).toBeTruthy();
+    expect(container.querySelector('[data-workout-outcome]')).toBeNull();
+  });
+
+  it('puts the bulb back in its slot over the connect pill', () => {
+    const { container } = render(createElement(PlayDrawerActionBar, { ...workoutProps, connectPill: true }));
+
+    expect(container.querySelector('[data-connect-pill]')).toBeNull();
+    expect(container.querySelector('[data-ble]')).toBeTruthy();
+    expect(container.querySelector('[data-workout-outcome]')).toBeTruthy();
+  });
+
+  it('never reaches a signed-out reader', () => {
+    const { container } = render(createElement(PlayDrawerActionBar, { ...workoutProps, viewer: 'anonymous' as const }));
+
+    expect(container.querySelector('[data-workout-outcome]')).toBeNull();
+    expect(container.querySelector(`[data-label="${SHARE_LABEL}"]`)).toBeTruthy();
+  });
+
+  it('leaves the bar as it was outside a timed block', () => {
+    const { container } = render(createElement(PlayDrawerActionBar, { ...baseProps, workoutOutcome: null }));
+
+    expect(container.querySelector('[data-workout-outcome]')).toBeNull();
+    expect(container.querySelector(`[data-label="${FAVORITE_LABEL}"]`)).toBeTruthy();
   });
 });

@@ -7,6 +7,7 @@ const MEMBER: ActionBarLayoutInput = {
   isAnonymous: false,
   connectPill: false,
   commitButton: null,
+  workoutOutcome: false,
   showLightbulb: true,
   hasShare: true,
   angleAvailable: true,
@@ -342,5 +343,65 @@ describe('resolveActionBarLayout: the climber’s buttons', () => {
     expect(resolveActionBarLayout({ ...MIRROR, isAnonymous: true, buttons: ALL_OFF, previousNext: false })).toEqual(
       resolveActionBarLayout({ ...MIRROR, isAnonymous: true }),
     );
+  });
+});
+
+describe('resolveActionBarLayout: a timed workout block’s Fell / Sent', () => {
+  const WORKOUT: ActionBarLayoutInput = { ...MEMBER, workoutOutcome: true };
+
+  // [☰] [⏮] [✓] [⏭] [💡] / [ Fell ] [ Sent ]
+  it('gives the whole small row to Fell / Sent and hands its buttons to ⋯; the first-slot queue stays', () => {
+    expect(resolveActionBarLayout(WORKOUT)).toEqual({
+      leadingSlot: 'queue',
+      trailingSlot: 'lightbulb',
+      showPreviousNext: true,
+      secondaryRow: 'workoutOutcome',
+      showConnectPill: false,
+      hidden: { ...NOTHING_HIDDEN, favorite: true, share: true, angle: true },
+    });
+  });
+
+  it('hands the queue to ⋯ too on a mirror board, and leaves Mirror in its big slot', () => {
+    const layout = resolveActionBarLayout({ ...MIRROR, workoutOutcome: true });
+    expect(layout.leadingSlot).toBe('mirror');
+    expect(layout.secondaryRow).toBe('workoutOutcome');
+    expect(layout.hidden).toEqual({ favorite: true, share: true, queue: true, mirror: false, angle: true });
+  });
+
+  it('gives way to the busy-wall question and to Put on the wall', () => {
+    expect(resolveActionBarLayout({ ...WORKOUT, commitButton: 'confirm' }).secondaryRow).toBe('confirm');
+    expect(resolveActionBarLayout({ ...WORKOUT, commitButton: 'putOnWall' }).secondaryRow).toEqual(
+      resolveActionBarLayout({ ...MEMBER, commitButton: 'putOnWall' }).secondaryRow,
+    );
+  });
+
+  it('wins over the connect pill, which puts the bulb back in its slot', () => {
+    const layout = resolveActionBarLayout({ ...WORKOUT, connectPill: true });
+    expect(layout.secondaryRow).toBe('workoutOutcome');
+    expect(layout.showConnectPill).toBe(false);
+    expect(layout.trailingSlot).toBe('lightbulb');
+  });
+
+  it('never reaches a signed-out reader', () => {
+    expect(resolveActionBarLayout({ ...WORKOUT, isAnonymous: true })).toEqual(
+      resolveActionBarLayout({ ...MEMBER, isAnonymous: true }),
+    );
+  });
+
+  // The row is a session state, not a button: it shows with every button off,
+  // and the buttons the climber switched off stay in ⋯.
+  it('brings the small row back with every button switched off', () => {
+    const layout = resolveActionBarLayout({ ...MIRROR, buttons: ALL_OFF, workoutOutcome: true });
+    expect(layout.secondaryRow).toBe('workoutOutcome');
+    expect(layout.hidden).toEqual({ favorite: true, share: true, queue: true, mirror: true, angle: true });
+  });
+
+  it('flags only what could have drawn here', () => {
+    const draftOnFixedAngle = resolveActionBarLayout({ ...WORKOUT, hasShare: false, angleAvailable: false });
+    expect(draftOnFixedAngle.hidden).toEqual({ ...NOTHING_HIDDEN, favorite: true });
+  });
+
+  it('gives the buttons back once the block is over', () => {
+    expect(resolveActionBarLayout({ ...WORKOUT, workoutOutcome: false })).toEqual(resolveActionBarLayout(MEMBER));
   });
 });

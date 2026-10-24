@@ -197,6 +197,10 @@ stage, leaves the climber's own rest settings in charge, exactly as before. The 
   block: the block) has a timed stage and the timer is off (`armRestTimerForWorkout`), so a
   timed block runs hands-free. A timer the climber already set up is left alone, and arming
   still never survives a cold start.
+- **Logging every go.** While the climb on the wall is in a timed stage, the player's small row
+  is one-tap Fell / Sent (`docs/climb-view-options.md` › One-tap Fell / Sent). Fell logs a 1-try
+  attempt at once; Sent logs a flash or a send. Both reach the rest timer and the tick log through
+  the same tick path as the sheet.
 - **The sheet.** While a stage paces the timer, the rest timer sheet and the Record tab's arm
   row show "Set by your workout" (`RestTimerWorkoutPacingRow`: the stage, its rests and how it
   moves on) in place of the rest length, cadence and auto-advance controls, which edit the

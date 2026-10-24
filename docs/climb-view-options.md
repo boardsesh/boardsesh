@@ -22,7 +22,7 @@ Fixed, and why:
 | ---------------------------------------- | --------------------------------------------------------------------------- |
 | Log                                      | The core loop. Always the centre of the big row.                            |
 | Board light                              | Wall control must not move under a climber's thumb. Always the right slot.  |
-| Put on the wall, busy-wall question, connect pill | Session states, not preferences. They show up in the small row when they need it. |
+| Put on the wall, busy-wall question, connect pill, Fell / Sent | Session states, not preferences. They show up in the small row when they need it. |
 | Playback slider                          | Belongs to the board, so it always sits next to it.                         |
 | Top row ⌄ · list · rest timer · ⋯        | ⋯ is how a hidden button comes back. The list you're playing from ("Projects · 4 of 23") sits between ⌄ and the timer and costs the board nothing. |
 
@@ -50,10 +50,15 @@ Small row   [first half of the rest] ········ [last half]
   ~120 pt on a 375 pt phone. Only the busy-wall question (`commitButton: 'confirm'`, "Keep Sam's" / "Put mine up")
   replaces the whole row. Whatever the pill, the button and the question push out, and every button the climber
   switched off, is flagged in `hidden`, and ⋯ carries a row for each.
+- **Fell / Sent** (`workoutOutcome: true`, `secondaryRow: 'workoutOutcome'`) takes the whole small row while the climb
+  on the wall is in a timed workout block: its stage paces the rest timer (a 4x4, limit bouldering, on the minute).
+  See [One-tap Fell / Sent](#one-tap-fell--sent). The order of the session states is busy-wall question > Put on the
+  wall > Fell / Sent > connect pill > the climber's buttons. The lead slot keeps its button, the bulb stays in its
+  slot (the pill gives way), and every small-row button steps into ⋯ while the pair shows.
 - **Nothing left to draw**, no pill and no commit button: there is no small row (`secondaryRow: []`). The board gets
   52 pt back (the 8 pt gap and the 44 pt row; the 12 pt bottom padding moves to the big row). Put on the wall, the
-  busy-wall question and the connect pill bring the row back while they need it, so a row with every button
-  switched off still appears with Put on the wall alone in it. Share switched on keeps the row even on a draft, where it
+  busy-wall question, Fell / Sent and the connect pill bring the row back while they need it, so a row with every
+  button switched off still appears with Put on the wall alone in it. Share switched on keeps the row even on a draft, where it
   can't draw (`['spacer']`, held at the row's usual 64 pt): it is the one button that comes and goes climb to
   climb, and the board must not jump mid-swipe. The angle depends on the board, not the climb, so an angle-only
   row on a fixed-angle board does collapse.
@@ -75,6 +80,30 @@ offers a row only while its flag is up (`play-drawer-menu-rows.ts`), so an actio
 Change angle form their own group after the queue rows. Both are disabled on another board's climb, like every row
 that writes or touches the wall. The Mirror row runs the same `handleMirror` as the button (shared-session
 orientation included); Change angle opens the player's own angle sheet, so it presents above `/play`.
+
+### One-tap Fell / Sent
+
+In a timed workout block (#6231, #5380) every go gets logged, so the small row becomes two 44 pt buttons. Both save
+through `useTickSaver`, the same path as the Log ascent sheet, so the rest timer and the workout's tick log get the
+tick's status and queue item exactly as from the sheet (`docs/workout-stages.md` › Pacing).
+
+- **Fell** logs one try at once (`attempt`, 1 try). Nothing waits for the end of the climb, so an early End, a killed
+  app or a dead signal loses no falls.
+- **Sent** logs a flash when the climber has no tick on the climb at this angle and no fall on this queue item
+  earlier in the block, else a send (`deriveAscentType`). While the logbook is still loading it says send, as the
+  sheet does.
+- **A spray climb nobody has sent** needs a grade, which only the sheet asks for, so Sent opens Log ascent instead.
+  Fell still logs at once: a try sets no grade.
+- **One tap at a time.** A second tap within 700 ms (`ONE_TAP_GUARD_MS`), on either button, is dropped, and so is a
+  tap while a save is still in flight. A fumbled double tap logs one go, never a fall and a send.
+- **When it shows** (`shouldShowWorkoutOutcome`): the climb on screen is the committed current one (not a climb the
+  climber swiped to or a preview), its run stage has `pacing` (keyed on the pacing, not the stage kinds, so any
+  future timed block gets it too), the climber is signed in, it is not another board's climb and not a draft. A
+  crew phone without the run never shows it.
+- Each save says so in a toast ("Try logged", "Flash logged", "Send logged"); a failure toasts its reason. Tick
+  Logged reports `surface: 'mobile_workout_runner'`, with no Quick Tick Opened before it.
+- The pair holds the row's usual 64 pt, so the board moves only for a climber who switched every small button off.
+  The opening-layout cache keys on it (`controlsFingerprint`).
 
 ### Above the board
 
@@ -122,6 +151,7 @@ The sections below the climb keep their own AsyncStorage record (`playDrawerSect
 | Store, hooks, Restore defaults          | `packages/mobile/src/lib/player-buttons-preference.ts`                          |
 | Layout rule                             | `packages/mobile/src/components/play-drawer/action-bar-layout.ts`               |
 | Bar                                     | `packages/mobile/src/components/play-drawer/PlayDrawerActionBar.tsx`            |
+| Fell / Sent row and its taps            | `packages/mobile/src/components/play-drawer/WorkoutOutcomeRow.tsx`, `use-workout-one-tap.ts` |
 | Placement, callout offset, ⋯ wiring     | `packages/mobile/src/components/play-drawer/PlayCore.tsx`                       |
 | View options sheet (both tabs)          | `packages/mobile/src/components/play-drawer/PlayDrawerSectionsSheet.tsx`        |
 | Shared labels and actions               | `packages/mobile/src/components/settings/use-player-button-controls.ts`         |

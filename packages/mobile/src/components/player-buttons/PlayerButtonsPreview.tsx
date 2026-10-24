@@ -68,6 +68,7 @@ export const PlayerButtonsPreview = memo(function PlayerButtonsPreview({
         isAnonymous: false,
         connectPill: false,
         commitButton: null,
+        workoutOutcome: false,
         showLightbulb: board.showLightbulb,
         hasShare: true,
         angleAvailable: board.angleAvailable,
@@ -76,7 +77,8 @@ export const PlayerButtonsPreview = memo(function PlayerButtonsPreview({
       }),
     [board.supportsMirroring, board.showLightbulb, board.angleAvailable, buttons, previousNext],
   );
-  const secondaryItems = layout.secondaryRow === 'confirm' ? [] : layout.secondaryRow;
+  // The preview draws the climber's own buttons, never a session state's row.
+  const secondaryItems = typeof layout.secondaryRow === 'string' ? [] : layout.secondaryRow;
 
   const buttonLabel = (buttonId: PlayerButtonId): string => {
     switch (buttonId) {

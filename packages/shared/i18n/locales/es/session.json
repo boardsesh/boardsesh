@@ -862,6 +862,15 @@
       "sendSaveLabel": "Encadenado",
       "starRating_one": "{{count}} estrella",
       "starRating_other": "{{count}} estrellas"
+    },
+    "workoutOutcome": {
+      "fell": "Caída",
+      "sent": "Encadenado",
+      "fellHint": "Guarda un intento en este bloque",
+      "sentHint": "Guarda este bloque como encadenado",
+      "attemptLogged": "Intento guardado",
+      "flashLogged": "Flash guardado",
+      "sendLogged": "Encadene guardado"
     }
   },
   "mobileDetail": {
