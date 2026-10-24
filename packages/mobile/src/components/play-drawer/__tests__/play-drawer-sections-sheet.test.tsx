@@ -333,7 +333,9 @@ describe('PlayDrawerSectionsSheet', () => {
   it('leaves broad content grounds unpainted on native Apple iOS sheets, retaining the inset group surface', () => {
     presentation.platform = 'ios';
     const screen = render(sheet());
-    const controlsGround = screen.getByText('mobile.settings.climbDrawer.description').parentElement;
+    const controlsGround = screen.getByRole('radiogroup', {
+      name: 'mobile.settings.climbDrawer.sheetTitle',
+    }).parentElement;
     const list = screen.container.querySelector('[data-sheet-list]');
     expect(controlsGround?.getAttribute('data-style')).not.toContain('backgroundColor');
     expect(list?.getAttribute('data-style')).not.toContain('backgroundColor');
@@ -349,21 +351,29 @@ describe('PlayDrawerSectionsSheet', () => {
     presentation.platform = mode.platform;
     presentation.iosBackgroundStyle = mode.iosBackgroundStyle;
     const screen = render(sheet());
-    const controlsGround = screen.getByText('mobile.settings.climbDrawer.description').parentElement;
+    const controlsGround = screen.getByRole('radiogroup', {
+      name: 'mobile.settings.climbDrawer.sheetTitle',
+    }).parentElement;
     expect(controlsGround?.getAttribute('data-style')).toContain('"backgroundColor":"grouped"');
     expect(screen.container.querySelector('[data-sheet-list]')?.getAttribute('data-style')).toContain(
       '"backgroundColor":"grouped"',
     );
   });
 
-  it('pins equal text bulk actions above the virtualized switches and explains immediate choices', () => {
+  it('scrolls the description, equal text bulk actions and group title above the virtualized switches', () => {
     const screen = render(sheet());
     expect(screen.getByText('mobile.settings.climbDrawer.sheetTitle')).toBeTruthy();
-    expect(screen.getByText('mobile.settings.climbDrawer.groupTitle')).toBeTruthy();
+    const listHeader = screen.container.querySelector('[data-list-header]');
+    expect(listHeader).not.toBeNull();
+    expect(screen.getByText('mobile.settings.climbDrawer.description').closest('[data-list-header]')).toBe(listHeader);
+    expect(screen.getByText('mobile.settings.climbDrawer.groupTitle').closest('[data-list-header]')).toBe(listHeader);
     const showAll = screen.getByTestId('play-drawer-sections-show-all');
     const hideAll = screen.getByTestId('play-drawer-sections-hide-all');
-    expect(showAll.closest('[data-sheet-list]')).toBeNull();
-    expect(hideAll.closest('[data-sheet-list]')).toBeNull();
+    expect(showAll.closest('[data-list-header]')).toBe(listHeader);
+    expect(hideAll.closest('[data-list-header]')).toBe(listHeader);
+    expect(
+      screen.getByRole('radiogroup', { name: 'mobile.settings.climbDrawer.sheetTitle' }).closest('[data-sheet-list]'),
+    ).toBeNull();
     expect(showAll.parentElement?.nextElementSibling).toBe(hideAll.parentElement);
     for (const button of [showAll, hideAll]) {
       expect(button.getAttribute('data-variant')).toBe('text');

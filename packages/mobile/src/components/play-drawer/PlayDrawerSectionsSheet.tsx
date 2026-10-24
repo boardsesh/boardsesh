@@ -106,6 +106,21 @@ export function PlayDrawerSectionsSheet({
     [playerButtons.footer, buttonsRestore],
   );
 
+  // Scroll the description and actions away so large text cannot fill a small
+  // phone's sheet above the switches. Only the tab selector stays pinned.
+  const sectionsHeader = useMemo(
+    () => (
+      <View style={sectionLayoutSheetStyles.listIntro}>
+        <SectionLayoutSheetIntro
+          description={sections.description}
+          actions={sectionActions}
+          groupTitle={sections.groupTitle}
+        />
+      </View>
+    ),
+    [sections.description, sectionActions, sections.groupTitle],
+  );
+
   // The position and Previous and next scroll with the list rather than staying
   // pinned: on a small phone at the medium detent, a pinned block that tall
   // would leave the list no room. The preview stays pinned, so every change
@@ -164,20 +179,14 @@ export function PlayDrawerSectionsSheet({
             onSelect={setTab}
             accessibilityLabel={sections.sheetTitle}
           />
-          {tab === 'sections' ? (
-            <SectionLayoutSheetIntro
-              description={sections.description}
-              actions={sectionActions}
-              groupTitle={sections.groupTitle}
-            />
-          ) : (
+          {tab === 'buttons' ? (
             <PlayerButtonsPreview
               buttons={playerButtons.buttons}
               previousNext={playerButtons.previousNext}
               position={playerButtons.position}
               board={previewBoard}
             />
-          )}
+          ) : null}
         </>
       }
     >
@@ -188,6 +197,7 @@ export function PlayDrawerSectionsSheet({
           disabled={!sections.ready}
           onVisibleChange={sections.onSectionChange}
           onMove={sections.onMove}
+          ListHeaderComponent={sectionsHeader}
           ListFooterComponent={sectionsFooter}
         />
       ) : (
