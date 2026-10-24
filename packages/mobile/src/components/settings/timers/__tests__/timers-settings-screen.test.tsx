@@ -95,6 +95,24 @@ describe('TimersSettingsScreen', () => {
     expect(modeChange.change).toHaveBeenCalledWith('onTheMinute', 'session-1');
   });
 
+  it('reports a cadence change under the timers page', () => {
+    render(<TimersSettingsScreen />);
+    row<MoreSegmentedRow>('restMode', 'segmented').onSelect('onTheMinute');
+    expect(analytics.track).toHaveBeenCalledWith('Setting Changed', {
+      page: 'timers',
+      key: 'restMode',
+      value: 'onTheMinute',
+    });
+  });
+
+  it('disables auto-advance and asks for a rest length when the length is Off', () => {
+    values.set('restTimerTargetSeconds', null);
+    render(<TimersSettingsScreen />);
+    const autoAdvance = row<MoreToggleRow>('autoAdvance', 'toggle');
+    expect(autoAdvance.disabled).toBe(true);
+    expect(autoAdvance.subtitle).toBe('mobile.settings.timers.autoAdvanceNeedsLength');
+  });
+
   it('disables auto-advance for a crew passenger', () => {
     driver.blockedReason = 'crewPassenger';
     render(<TimersSettingsScreen />);
