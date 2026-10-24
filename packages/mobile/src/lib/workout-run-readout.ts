@@ -111,3 +111,19 @@ export function formatWorkoutStagePosition(position: WorkoutRunPosition, t: Tran
     total: position.stageSize,
   });
 }
+
+/**
+ * The player's subtitle part with the try the climber is on, for a stage that
+ * stays on a climb until it is sent: "Limit Bouldering · 2 of 3 · Try 3". With
+ * no try number (every other stage, or the climb is sent) it is
+ * `formatWorkoutStagePosition` alone.
+ */
+export function formatWorkoutStagePositionWithTry(
+  position: WorkoutRunPosition,
+  tryNumber: number | null,
+  t: TranslateWorkoutStage,
+): string {
+  const stagePosition = formatWorkoutStagePosition(position, t);
+  if (tryNumber === null) return stagePosition;
+  return t('mobile.workoutRunner.positionWithTry', { position: stagePosition, number: tryNumber });
+}

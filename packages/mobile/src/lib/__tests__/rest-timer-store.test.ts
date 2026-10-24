@@ -14,6 +14,7 @@ import {
   resumeRestTimer,
   subscribeRestTimer,
 } from '../rest-timer-store';
+import { getAutoAdvanceDeadlineMs } from '../rest-timer-auto-advance';
 
 const T0 = Date.parse('2026-09-11T10:00:00.000Z');
 const tickAt = (offsetSeconds: number) => new Date(T0 + offsetSeconds * 1000).toISOString();
@@ -104,6 +105,93 @@ describe('ticks', () => {
     const beforeCycle = getRestTimerState().cycleId;
     noteRestTimerTick(tickAt(10), 'afterTick', T0 + 10_000);
     expect(getRestTimerState().cycleId).toBeGreaterThan(beforeCycle);
+  });
+});
+
+/** When the next after-tick advance is due on a 60 s rest, from the store as it is now. */
+function afterTickDeadlineMs(nowMs: number): number | null {
+  const { anchorMs, lastFiredDeadlineMs } = getRestTimerState();
+  return getAutoAdvanceDeadlineMs({ mode: 'afterTick', anchorMs, targetSeconds: 60, nowMs, lastFiredDeadlineMs });
+}
+
+/** Arm an after-tick timer, tick at T0 and fire its 60 s rest at T0 + 60 s. */
+function advancedOnceAtSixtySeconds() {
+  armRestTimer('afterTick', T0, 'session-1');
+  noteRestTimerTick(tickAt(0), 'afterTick', T0);
+  noteRestTimerAutoAdvanceFired(getRestTimerState().cycleId, 'afterTick', T0 + 60_000, T0 + 60_000);
+}
+
+describe('the tick floor: a tick never starts a rest before the last advance or the rest already running', () => {
+  it('starts the rest at the advance for a send logged 2 s after it but dated 55 s back', () => {
+    advancedOnceAtSixtySeconds();
+    noteRestTimerTick(tickAt(7), 'afterTick', T0 + 62_000);
+
+    // Anchored at its own time, the deadline would be T0 + 67 s: 7 s after the
+    // climber saw the wall change, skipping the climb it just lit.
+    expect(getRestTimerState()).toMatchObject({ anchorMs: T0 + 60_000, lastTickAt: tickAt(7) });
+    expect(afterTickDeadlineMs(T0 + 62_000)).toBe(T0 + 120_000);
+  });
+
+  it('still anchors a tick dated after the advance at its own time', () => {
+    advancedOnceAtSixtySeconds();
+    noteRestTimerTick(tickAt(61), 'afterTick', T0 + 62_000);
+
+    expect(getRestTimerState().anchorMs).toBe(T0 + 61_000);
+    expect(afterTickDeadlineMs(T0 + 62_000)).toBe(T0 + 121_000);
+  });
+
+  it('keeps the newly lit climb’s rest when an older tick on the previous climb lands after it', () => {
+    advancedOnceAtSixtySeconds();
+    const advancedAt = T0 + 60_000;
+    noteRestTimerTick(new Date(advancedAt + 20_000).toISOString(), 'afterTick', advancedAt + 20_000, {
+      status: 'send',
+      queueItemUuid: 'queue-new',
+    });
+    expect(afterTickDeadlineMs(advancedAt + 20_000)).toBe(advancedAt + 80_000);
+
+    // The previous climb's send, dated 5 s before the advance, saved 30 s after it.
+    noteRestTimerTick(new Date(advancedAt - 5_000).toISOString(), 'afterTick', advancedAt + 30_000, {
+      status: 'send',
+      queueItemUuid: 'queue-previous',
+    });
+    expect(getRestTimerState()).toMatchObject({
+      anchorMs: advancedAt + 20_000,
+      lastTickAt: new Date(advancedAt - 5_000).toISOString(),
+    });
+    expect(afterTickDeadlineMs(advancedAt + 30_000)).toBe(advancedAt + 80_000);
+  });
+
+  it('never anchors ahead of the clock when the last fire landed a moment before its deadline', () => {
+    // A clock step back: the fire runs 500 ms before the deadline it fired on.
+    armRestTimer('afterTick', T0, 'session-1');
+    noteRestTimerTick(tickAt(0), 'afterTick', T0);
+    noteRestTimerAutoAdvanceFired(getRestTimerState().cycleId, 'afterTick', T0 + 59_500, T0 + 60_000);
+    expect(getRestTimerState().lastFiredDeadlineMs).toBe(T0 + 60_000);
+
+    noteRestTimerTick(new Date(T0 + 59_800).toISOString(), 'afterTick', T0 + 59_800);
+    expect(getRestTimerState().anchorMs).toBe(T0 + 59_800);
+
+    // A climbedAt from a clock running ahead of this phone's is capped at now too.
+    noteRestTimerTick(tickAt(90), 'afterTick', T0 + 59_900);
+    expect(getRestTimerState()).toMatchObject({ anchorMs: T0 + 59_900, lastTickAt: tickAt(90) });
+  });
+
+  it('leaves the first tick of a session at its own time, back-dated or not', () => {
+    armRestTimer('afterTick', T0, 'session-1');
+    noteRestTimerTick(tickAt(-30), 'afterTick', T0);
+    expect(getRestTimerState().anchorMs).toBe(T0 - 30_000);
+    expect(afterTickDeadlineMs(T0)).toBe(T0 + 30_000);
+  });
+
+  it('fills a missing on-the-minute anchor with the floored tick, never one from before the last beat', () => {
+    armRestTimer('onTheMinute', T0, 'session-1');
+    noteRestTimerAutoAdvanceFired(getRestTimerState().cycleId, 'onTheMinute', T0 + 60_000, T0 + 60_000);
+    pauseRestTimer(T0 + 65_000);
+    resetRestTimer(T0 + 65_000);
+    expect(getRestTimerState().anchorMs).toBeNull();
+
+    noteRestTimerTick(tickAt(40), 'onTheMinute', T0 + 70_000);
+    expect(getRestTimerState()).toMatchObject({ anchorMs: T0 + 60_000, lastTickAt: tickAt(40) });
   });
 });
 

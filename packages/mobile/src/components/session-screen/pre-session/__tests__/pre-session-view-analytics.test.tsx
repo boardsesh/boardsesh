@@ -45,6 +45,10 @@ const previewRun = vi.hoisted((): WorkoutRun => ({
 }));
 const workoutRunStore = vi.hoisted(() => ({ setWorkoutRun: vi.fn() }));
 vi.mock('../../../../lib/workout-run-store', () => workoutRunStore);
+// Whether a run arms the timer is pinned in rest-timer-effective.test.ts; here,
+// only that Start hands it the run it just stored.
+const restTimerEffective = vi.hoisted(() => ({ armRestTimerForWorkout: vi.fn(() => false) }));
+vi.mock('../../../../lib/rest-timer-effective', () => restTimerEffective);
 const preview = vi.hoisted(() => ({
   result: {
     items: previewRows as unknown[],
@@ -246,6 +250,7 @@ beforeEach(() => {
   queue.startSession.mockResolvedValue('session-1');
   queue.appendQueueItems.mockClear();
   workoutRunStore.setWorkoutRun.mockClear();
+  restTimerEffective.armRestTimerForWorkout.mockClear();
   screenState.sessionId = null;
   screenState.isFocused = true;
   activeBoard.data = { boardType: 'kilter', layoutId: 8, sizeId: 21, setIds: '1,2', angle: 40 };
@@ -401,6 +406,15 @@ describe('PreSessionView analytics', () => {
     });
     // The run is kept on the phone for the session that just started.
     expect(workoutRunStore.setWorkoutRun).toHaveBeenCalledExactlyOnceWith('session-1', previewRun);
+    // Then a timed block in it can turn the rest timer on, for that session.
+    expect(restTimerEffective.armRestTimerForWorkout).toHaveBeenCalledExactlyOnceWith(
+      'session-1',
+      previewRun,
+      expect.any(Number),
+    );
+    expect(workoutRunStore.setWorkoutRun.mock.invocationCallOrder[0]).toBeLessThan(
+      restTimerEffective.armRestTimerForWorkout.mock.invocationCallOrder[0],
+    );
   });
 
   it('reports every block of a multi-block workout and stores its multi-stage run', async () => {

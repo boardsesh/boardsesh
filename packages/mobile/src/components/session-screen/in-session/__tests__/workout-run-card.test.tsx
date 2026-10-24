@@ -2,13 +2,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
-import type { WorkoutRun } from '@boardsesh/playlist-generator';
+import { locateInRun, type WorkoutRun } from '@boardsesh/playlist-generator';
 
+type TestQueueItem = { uuid: string; climb?: { uuid: string; name: string } };
 const queueState = vi.hoisted(() => ({
   sessionId: 'session-1' as string | null,
-  queue: [] as Array<{ uuid: string }>,
-  currentClimbQueueItem: null as { uuid: string } | null,
+  queue: [] as TestQueueItem[],
+  currentClimbQueueItem: null as TestQueueItem | null,
+  playlistSuggestionSource: null as null,
 }));
+const queueActions = vi.hoisted(() => ({ setCurrentClimb: vi.fn() }));
+// A queue item as the runner reads it: every one carries its climb.
+const withClimb = vi.hoisted(
+  () => (item: { uuid: string; climb?: { uuid: string; name: string } }) =>
+    item.climb ? item : { ...item, climb: { uuid: `climb-${item.uuid}`, name: `Climb ${item.uuid}` } },
+);
 // A queue the card subscribes to like the real context, so a change re-renders it.
 const queueListeners = vi.hoisted(() => new Set<() => void>());
 vi.mock('../../../../providers/queue-provider', async () => {
@@ -21,10 +29,40 @@ vi.mock('../../../../providers/queue-provider', async () => {
     useQueueSessionId: () => ({ sessionId: queueState.sessionId }),
     useQueueData: () => {
       const queue = useSyncExternalStore(subscribe, () => queueState.queue);
-      return { queue, currentClimbQueueItem: queueState.currentClimbQueueItem };
+      const current = queueState.currentClimbQueueItem;
+      return { queue, currentClimbQueueItem: current ? withClimb(current) : null };
     },
+    usePlaylistSuggestionSource: () => queueState.playlistSuggestionSource,
+    useQueueActions: () => queueActions,
   };
 });
+vi.mock('../../../../lib/graphql/use-active-board', () => ({ useActiveBoard: () => ({ data: null }) }));
+vi.mock('../../../../providers/queue/use-reachable-board-keys', () => ({
+  useReachableBoardKeys: () => new Set<string>(),
+}));
+const drawerHost = vi.hoisted(() => ({ openPlayDrawer: vi.fn(), boardConfig: null }));
+vi.mock('../../../../providers/drawer-host-provider', () => ({ useDrawerHost: () => drawerHost }));
+vi.mock('../../../../hooks/use-display-grade', () => ({
+  useDisplayGrade: () => ({ resolveGrade: () => ({ label: 'V5', color: '#000000' }) }),
+}));
+// The live clock is its own leaf; here it only has to show where it sits. The
+// rest line reads the display for its spoken sentence: 12 s over the rest.
+vi.mock('../../../queue-control/RestTimerPill', () => ({
+  RestTimerClock: () => createElement('span', { 'data-testid': 'rest-clock' }, 'clock'),
+  useRestTimerDisplay: () => ({
+    phase: 'exceeded',
+    displayLabel: '-0:12',
+    targetLabel: '3m',
+    remainingSeconds: -12,
+  }),
+  restTimerClockAccessibilityLabel: ({ remainingSeconds }: { remainingSeconds: number | null }) =>
+    `overrunAria:${remainingSeconds}`,
+}));
+// Solo by default: this phone moves its own wall.
+const timerDriver = vi.hoisted(() => ({ canAdvanceQueue: true }));
+vi.mock('../../../../hooks/use-session-timer-driver', () => ({ useSessionTimerDriver: () => timerDriver }));
+const armRestTimerForWorkout = vi.hoisted(() => vi.fn());
+vi.mock('../../../../lib/rest-timer-effective', () => ({ armRestTimerForWorkout }));
 function setQueue(uuids: string[]): void {
   queueState.queue = queued(uuids);
   for (const listener of queueListeners) listener();
@@ -56,8 +94,17 @@ vi.mock('../../../Card', () => ({
 }));
 vi.mock('../../../Icon', () => ({ Icon: () => null }));
 vi.mock('../../../PressableSurface', () => ({
-  PressableSurface: ({ children, onPress, testID }: { children?: ReactNode; onPress?: () => void; testID?: string }) =>
-    createElement('button', { onClick: onPress, 'data-testid': testID }, children),
+  PressableSurface: ({
+    children,
+    onPress,
+    testID,
+    accessibilityHint,
+  }: {
+    children?: ReactNode;
+    onPress?: () => void;
+    testID?: string;
+    accessibilityHint?: string;
+  }) => createElement('button', { onClick: onPress, 'data-testid': testID, 'data-hint': accessibilityHint }, children),
 }));
 vi.mock('../../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../Text', () => ({
@@ -77,7 +124,15 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-import { resetWorkoutRunStoreForTests, setWorkoutRun } from '../../../../lib/workout-run-store';
+import { noteWorkoutRunTick, resetWorkoutRunStoreForTests, setWorkoutRun } from '../../../../lib/workout-run-store';
+import {
+  applyRestTimerStagePacing,
+  armRestTimer,
+  disarmRestTimer,
+  noteRestTimerTick,
+  resetRestTimerStoreForTests,
+} from '../../../../lib/rest-timer-store';
+import { resolveStageRestPacing } from '../../../../lib/rest-timer-pacing';
 import { WorkoutRunCard } from '../WorkoutRunCard';
 
 const run: WorkoutRun = {
@@ -86,13 +141,19 @@ const run: WorkoutRun = {
     { id: 'main', kind: 'volume', itemUuids: ['m1', 'm2'] },
   ],
 };
-const queued = (uuids: string[]) => uuids.map((uuid) => ({ uuid }));
+const queued = (uuids: string[]): TestQueueItem[] => uuids.map((uuid) => withClimb({ uuid }));
 
 const rowTexts = () =>
   [...screen.getAllByTestId(/^workout-stage/)].map((row) => `${row.getAttribute('data-testid')}|${row.textContent}`);
 
 beforeEach(() => {
   resetWorkoutRunStoreForTests();
+  resetRestTimerStoreForTests();
+  queueActions.setCurrentClimb.mockClear();
+  drawerHost.openPlayDrawer.mockClear();
+  armRestTimerForWorkout.mockClear();
+  timerDriver.canAdvanceQueue = true;
+  queueState.playlistSuggestionSource = null;
   queueListeners.clear();
   queueState.sessionId = 'session-1';
   queueState.queue = queued(['w1', 'w2', 'w3', 'm1', 'm2']);
@@ -135,6 +196,188 @@ describe('WorkoutRunCard', () => {
     queueState.currentClimbQueueItem = { uuid: 'hand-queued' };
     const { container } = render(createElement(WorkoutRunCard));
     expect(container.textContent).toBe('');
+  });
+
+  describe('the runner', () => {
+    // A 2-climb 4x4 over 2 rounds, then one limit climb.
+    const timedRun: WorkoutRun = {
+      stages: [
+        {
+          id: 'four',
+          kind: 'fourByFour',
+          itemUuids: ['a', 'b', 'a2', 'b2'],
+          pacing: { mode: 'afterTick', restSeconds: 0, restBetweenRoundsSeconds: 180, advanceOn: 'tick' },
+          rounds: 2,
+          roundByUuid: { a: 1, b: 1, a2: 2, b2: 2 },
+        },
+        {
+          id: 'limit',
+          kind: 'limitBouldering',
+          itemUuids: ['l1'],
+          pacing: { mode: 'afterTick', restSeconds: 180, advanceOn: 'send' },
+        },
+      ],
+    };
+    const timedQueue = ['a', 'b', 'a2', 'b2', 'l1'];
+
+    /** Put `uuid` on the wall, with the stage pacing RestTimerPacingSync would store for it. */
+    function onTheWall(uuid: string): void {
+      queueState.queue = queued(timedQueue);
+      queueState.currentClimbQueueItem = { uuid };
+      const position = locateInRun(timedRun, uuid, timedQueue);
+      applyRestTimerStagePacing(
+        resolveStageRestPacing({ sessionId: 'session-1', run: timedRun, position, queueItemUuid: uuid }),
+        1000,
+        'none',
+      );
+    }
+
+    /** A tick on the climb on the wall, as the tick path records it. */
+    function logTick(uuid: string, status: 'flash' | 'send' | 'attempt'): void {
+      const climbedAt = new Date(5000).toISOString();
+      noteRestTimerTick(climbedAt, 'afterTick', 5000, { status, queueItemUuid: uuid });
+      noteWorkoutRunTick('session-1', { queueItemUuid: uuid, status, climbedAt });
+    }
+
+    it('shows where you are in the round and the climb on the wall, which opens the player', () => {
+      setWorkoutRun('session-1', timedRun);
+      onTheWall('b');
+      render(createElement(WorkoutRunCard));
+
+      expect(screen.getByText('overallPosition')).toBeTruthy();
+      expect(screen.getByTestId('workout-runner-current').textContent).toContain('workoutStageRoundPosition');
+      expect(screen.getByTestId('workout-runner-current').textContent).toContain('Climb b');
+      fireEvent.click(screen.getByTestId('workout-runner-current'));
+      expect(drawerHost.openPlayDrawer).toHaveBeenCalledWith({ uuid: 'climb-b', name: 'Climb b' }, {});
+    });
+
+    it('offers to turn the rest timer on while a timed block has it off', () => {
+      setWorkoutRun('session-1', timedRun);
+      onTheWall('a');
+      render(createElement(WorkoutRunCard));
+
+      expect(screen.getByTestId('workout-runner-turn-on').getAttribute('data-hint')).toBe('turnOnHint');
+      fireEvent.click(screen.getByTestId('workout-runner-turn-on'));
+      expect(armRestTimerForWorkout).toHaveBeenCalledWith('session-1', timedRun, expect.any(Number));
+      expect(screen.queryByTestId('workout-runner-rest')).toBeNull();
+    });
+
+    it('counts the round rest down after a tick, then names the next climb', () => {
+      setWorkoutRun('session-1', timedRun);
+      armRestTimer('afterTick', 1000, 'session-1');
+      onTheWall('b');
+      queueState.queue = queued(timedQueue);
+      render(createElement(WorkoutRunCard));
+      expect(screen.queryByTestId('workout-runner-rest')).toBeNull();
+
+      act(() => logTick('b', 'send'));
+      const restLine = screen.getByTestId('workout-runner-rest');
+      expect(restLine.textContent).toBe('roundRestLabelclockthenNext');
+      // One sentence to a screen reader, the overrun in words rather than signed digits.
+      expect(restLine.getAttribute('aria-label')).toBe('roundRestLabel. overrunAria:-12. thenNext');
+      expect(screen.queryByTestId('workout-runner-turn-on')).toBeNull();
+
+      // Turning the timer off brings the offer back and stops the clock.
+      act(() => disarmRestTimer());
+      expect(screen.queryByTestId('workout-runner-rest')).toBeNull();
+      expect(screen.getByTestId('workout-runner-turn-on')).toBeTruthy();
+    });
+
+    it('rests a limit climb after a fall and says the next try comes back to it', () => {
+      setWorkoutRun('session-1', timedRun);
+      armRestTimer('afterTick', 1000, 'session-1');
+      onTheWall('l1');
+      render(createElement(WorkoutRunCard));
+      expect(screen.getByTestId('workout-runner-current').textContent).toContain('positionWithTry');
+
+      act(() => logTick('l1', 'attempt'));
+      expect(screen.getByTestId('workout-runner-rest').textContent).toBe('restLabelclockthenTryAgain');
+    });
+
+    it('never promises the next climb on a crew phone that does not hold the wall', () => {
+      timerDriver.canAdvanceQueue = false;
+      setWorkoutRun('session-1', timedRun);
+      onTheWall('b');
+      render(createElement(WorkoutRunCard));
+      expect(screen.getByTestId('workout-runner-turn-on').getAttribute('data-hint')).toBe('turnOnPassengerHint');
+
+      act(() => armRestTimer('afterTick', 1000, 'session-1'));
+      act(() => logTick('b', 'send'));
+      expect(screen.getByTestId('workout-runner-rest').textContent).toBe('roundRestLabelclockautoAdvanceBlocked');
+    });
+
+    it('says what each finished block came to, and keeps the climb count for one with nothing logged', () => {
+      setWorkoutRun('session-1', run);
+      queueState.queue = queued(['w1', 'w2', 'w3', 'm1', 'm2']);
+      queueState.currentClimbQueueItem = { uuid: 'm1' };
+      noteWorkoutRunTick('session-1', { queueItemUuid: 'w1', status: 'send', climbedAt: '2026-10-24T12:00:00.000Z' });
+      noteWorkoutRunTick('session-1', {
+        queueItemUuid: 'w2',
+        status: 'attempt',
+        climbedAt: '2026-10-24T12:01:00.000Z',
+      });
+      render(createElement(WorkoutRunCard));
+
+      expect(rowTexts()).toEqual([
+        'workout-stage|preWorkoutSectionWarmUptallySent:1 · tallyTried:1 · tallySkipped:1',
+        'workout-stage-current|preGeneratorVolumeworkoutStageToGo:1',
+      ]);
+    });
+
+    it('finishes with the totals of the blocks logged here once the last climb is logged, and Add a block stays', () => {
+      setWorkoutRun('session-1', run);
+      queueState.queue = queued(['w1', 'w2', 'w3', 'm1', 'm2']);
+      queueState.currentClimbQueueItem = { uuid: 'm2' };
+      noteWorkoutRunTick('session-1', { queueItemUuid: 'm1', status: 'flash', climbedAt: '2026-10-24T12:00:00.000Z' });
+      noteWorkoutRunTick('session-1', { queueItemUuid: 'm2', status: 'send', climbedAt: '2026-10-24T12:01:00.000Z' });
+      render(createElement(WorkoutRunCard, { onAddBlock: vi.fn() }));
+
+      // The warm-up has nothing logged on this phone, so it keeps its climb count
+      // and adds nothing to the totals: it may have been logged on another phone.
+      expect(screen.getByTestId('workout-runner-done').textContent).toBe('donetallySent:2');
+      expect(rowTexts()[0]).toBe('workout-stage|preWorkoutSectionWarmUpworkoutStageClimbs:3');
+      expect(screen.queryByTestId('workout-runner-current')).toBeNull();
+      expect(screen.queryByText('overallPosition')).toBeNull();
+      expect(screen.getByTestId('workout-add-block')).toBeTruthy();
+    });
+
+    it('takes you to the first workout climb when Start left another climb on the wall', () => {
+      setWorkoutRun('session-1', run);
+      queueState.queue = queued(['earlier', 'w1', 'w2', 'w3', 'm1', 'm2']);
+      queueState.currentClimbQueueItem = { uuid: 'earlier' };
+      render(createElement(WorkoutRunCard));
+
+      expect(screen.queryByTestId('workout-runner-current')).toBeNull();
+      expect(screen.getByTestId('workout-runner-resume').textContent).toContain('startWorkout');
+      fireEvent.click(screen.getByTestId('workout-runner-resume'));
+      expect(queueActions.setCurrentClimb).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'w1' }), {
+        playlistSuggestionSource: null,
+      });
+    });
+  });
+
+  describe('off the plan', () => {
+    it('takes you back to the workout climb you left for a climb from search, without counting it skipped', () => {
+      setWorkoutRun('session-1', run);
+      // On m1, nothing logged, the climber opened a climb from search: it went in
+      // right after m1 and onto the wall.
+      queueState.queue = queued(['w1', 'w2', 'w3', 'm1', 'from-search', 'm2']);
+      queueState.currentClimbQueueItem = { uuid: 'from-search' };
+      for (const uuid of ['w1', 'w2', 'w3']) {
+        noteWorkoutRunTick('session-1', { queueItemUuid: uuid, status: 'send', climbedAt: '2026-10-24T12:00:00.000Z' });
+      }
+      render(createElement(WorkoutRunCard));
+
+      expect(screen.getByTestId('workout-runner-resume').textContent).toBe('backToWorkoutClimb m1');
+      expect(rowTexts()).toEqual([
+        'workout-stage|preWorkoutSectionWarmUptallySent:3',
+        'workout-stage|preGeneratorVolumeworkoutStageClimbs:2',
+      ]);
+      fireEvent.click(screen.getByTestId('workout-runner-resume'));
+      expect(queueActions.setCurrentClimb).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'm1' }), {
+        playlistSuggestionSource: null,
+      });
+    });
   });
 
   describe('Add a block', () => {

@@ -40,14 +40,25 @@ import { spacing } from '../../theme/tokens';
 import { RestTimerHeroClock } from './RestTimerPill';
 import { RestLengthPicker } from './RestLengthPicker';
 import { formatRestLength, hasRestLength } from './rest-length.logic';
+import { RestTimerWorkoutPacingRow } from './RestTimerWorkoutPacingRow';
+import { useRestTimerStagePacing } from '../../hooks/use-effective-rest-pacing';
 
 /**
  * Rest length: one pill that steps 30 s a tap, and the fine slider it reveals on
  * a long press. Exported because the Record tab's arm row mounts the same
  * control — one implementation, two mounts, so the two surfaces can never
  * disagree about what "3:00" means.
+ *
+ * While a timed workout block paces the timer, "Set by your workout" stands in
+ * for it (and the cadence and auto-advance controls step aside).
  */
 export function RestTimerLengthControl({ inset = true }: { inset?: boolean } = {}) {
+  const stagePacing = useRestTimerStagePacing();
+  if (stagePacing !== null) return <RestTimerWorkoutPacingRow stage={stagePacing} inset={inset} />;
+  return <RestTimerLengthSetting inset={inset} />;
+}
+
+function RestTimerLengthSetting({ inset }: { inset: boolean }) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
   const [targetSeconds, setTargetSeconds] = useSetting('restTimerTargetSeconds');
@@ -94,8 +105,14 @@ export function RestTimerLengthControl({ inset = true }: { inset?: boolean } = {
  * The crew reason OUTRANKS the no-length one: a passenger who sets a rest length
  * still can't move the queue, so telling them to pick one would send them round
  * a loop that ends where it started.
+ *
+ * Hidden while a workout stage paces the timer: a stage always auto-advances.
  */
 export function RestTimerAutoAdvanceRow() {
+  return useRestTimerStagePacing() === null ? <RestTimerAutoAdvanceSetting /> : null;
+}
+
+function RestTimerAutoAdvanceSetting() {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
   const [autoAdvance, setAutoAdvance] = useSetting('restTimerAutoAdvance');
@@ -149,8 +166,14 @@ export function RestTimerAutoAdvanceRow() {
  * `inset={false}` cancels a caller-owned card gutter, exactly as for
  * {@link RestTimerLengthControl}. The Record card uses one shared wrapper for
  * all its controls, so it keeps the default inset here.
+ *
+ * Hidden while a workout stage paces the timer: the stage sets the cadence.
  */
 export function RestTimerCadenceSection({ inset = true }: { inset?: boolean } = {}) {
+  return useRestTimerStagePacing() === null ? <RestTimerCadenceSetting inset={inset} /> : null;
+}
+
+function RestTimerCadenceSetting({ inset }: { inset: boolean }) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
   const { fontScale } = useWindowDimensions();
