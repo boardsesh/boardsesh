@@ -59,17 +59,25 @@ vi.mock('../../../SwitchRow', () => ({
       onChange: () => onValueChange(!value),
     }),
 }));
-// A button per chip, named by its accessibility label and pressed state.
+// A button per chip, named by its accessibility label, with its pressed and disabled state.
 vi.mock('../generator-controls', () => ({
   Chip: ({
     selected,
     onPress,
     accessibilityLabel,
+    disabled,
   }: {
     selected: boolean;
     onPress: () => void;
     accessibilityLabel?: string;
-  }) => createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel, 'aria-pressed': selected }),
+    disabled?: boolean;
+  }) =>
+    createElement('button', {
+      onClick: onPress,
+      'aria-label': accessibilityLabel,
+      'aria-pressed': selected,
+      disabled,
+    }),
   generatorControlStyles: { chipRow: {}, groupedCard: {}, groupDivider: {} },
 }));
 vi.mock('../../../../providers/auth-provider', () => ({ useAuth: () => auth }));
@@ -80,6 +88,13 @@ vi.mock('../../../../providers/theme-provider', () => ({
 import { WorkoutBlockFilters, blockAppliesFloors, blockFiltersSummary } from '../WorkoutBlockFilters';
 
 const BIAS_GROUP = 'mobile.session.preGeneratorClimbBias';
+const BIAS_LABELS = {
+  unfamiliar: 'mobile.session.preGeneratorClimbBiasUnfamiliar',
+  attempted: 'mobile.session.preGeneratorClimbBiasAttempted',
+  sent: 'mobile.session.preGeneratorClimbBiasSent',
+  liked: 'mobile.session.preGeneratorClimbBiasLiked',
+  any: 'mobile.session.preGeneratorClimbBiasAny',
+} as const satisfies Record<ClimbBias, string>;
 const SKIP_SENT = 'mobile.session.preGeneratorSkipSentLabel';
 const SKIP_TRIED = 'mobile.session.preGeneratorSkipTriedLabel';
 const NOT_WITH_SENT = 'mobile.session.preGeneratorSkipNotWithSent';
@@ -139,14 +154,43 @@ describe('the climb bias chips', () => {
     expect(screen.getByText('mobile.session.preGeneratorClimbBiasSignedOut')).toBeTruthy();
     expect(screen.queryByText('mobile.session.preGeneratorClimbBiasSentDescription')).toBeNull();
   });
+
+  it('turns off every bias but Any signed out and shows Any picked, the bias the search applies', () => {
+    auth.isAuthenticated = false;
+    renderFilters(withBias('liked'));
+
+    for (const climbBias of ['unfamiliar', 'attempted', 'sent', 'liked'] as const) {
+      const chip = biasChip(BIAS_LABELS[climbBias]) as HTMLButtonElement;
+      expect(chip.disabled).toBe(true);
+      expect(chip.getAttribute('aria-pressed')).toBe('false');
+    }
+    const anyChip = biasChip(BIAS_LABELS.any) as HTMLButtonElement;
+    expect(anyChip.disabled).toBe(false);
+    expect(anyChip.getAttribute('aria-pressed')).toBe('true');
+
+    fireEvent.click(biasChip(BIAS_LABELS.sent));
+    expect(onFiltersChange).not.toHaveBeenCalled();
+  });
+
+  it('keeps every bias on signed in', () => {
+    renderFilters(withBias('liked'));
+
+    for (const label of Object.values(BIAS_LABELS)) {
+      expect((biasChip(label) as HTMLButtonElement).disabled).toBe(false);
+    }
+    expect(biasChip(BIAS_LABELS.liked).getAttribute('aria-pressed')).toBe('true');
+  });
 });
 
-describe('min ascents and min rating under your own climbs', () => {
-  it('shows them for the catalogue biases', () => {
-    renderFilters(withBias('unfamiliar'));
-
-    expect(minAscentsChips()).toBeGreaterThan(0);
-    expect(screen.getByTestId('min-rating-stars')).toBeTruthy();
+describe('min ascents and min rating under Sent and Liked', () => {
+  it('shows them under Unfamiliar, Attempted and Any, which apply them', () => {
+    for (const climbBias of ['unfamiliar', 'attempted', 'any'] as const) {
+      const { unmount } = renderFilters(withBias(climbBias));
+      expect(minAscentsChips()).toBeGreaterThan(0);
+      expect(screen.getByTestId('min-rating-stars')).toBeTruthy();
+      expect(blockAppliesFloors(withBias(climbBias), true)).toBe(true);
+      unmount();
+    }
   });
 
   it('hides them under Sent and Liked, which do not apply them', () => {
@@ -189,7 +233,7 @@ describe('the skip switches under Sent and Liked', () => {
   });
 });
 
-describe('blockFiltersSummary under your own climbs', () => {
+describe('blockFiltersSummary under Sent and Liked', () => {
   it('leaves out the floors and the skip switches the bias does not apply', () => {
     expect(blockFiltersSummary(withBias('sent', { skipSent: true, skipTried: true }), t)).toBe(
       'mobile.session.preGeneratorClimbBiasSent',
@@ -200,10 +244,21 @@ describe('blockFiltersSummary under your own climbs', () => {
     );
   });
 
-  it('shows the floors and no skip switch signed out', () => {
-    expect(blockFiltersSummary(withBias('liked', { skipSent: true }), t, false)).toBe(
-      'mobile.session.preGeneratorMinAscentsOption(5) · ★★ · mobile.session.preGeneratorClimbBiasLiked',
-    );
+  it('names Any signed out, the bias the search applies, with the floors and no skip switch', () => {
+    for (const climbBias of ['unfamiliar', 'attempted', 'sent', 'liked'] as const) {
+      expect(blockFiltersSummary(withBias(climbBias, { skipSent: true }), t, false)).toBe(
+        'mobile.session.preGeneratorMinAscentsOption(5) · ★★ · mobile.session.preGeneratorClimbBiasAny',
+      );
+    }
+  });
+
+  it('names Any in the closed header signed out', () => {
+    auth.isAuthenticated = false;
+    renderFilters(withBias('liked'));
+
+    const header = screen.getByTestId('collapsed-header').textContent;
+    expect(header).toContain('mobile.session.preGeneratorClimbBiasAny');
+    expect(header).not.toContain('mobile.session.preGeneratorClimbBiasLiked');
   });
 
   it('is the closed header of the filters', () => {

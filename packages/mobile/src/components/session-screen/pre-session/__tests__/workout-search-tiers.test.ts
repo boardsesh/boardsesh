@@ -46,7 +46,7 @@ describe('the bias to tier table', () => {
             all: flags(tiers.all),
             unsent: flags(tiers.unsent),
             untried: flags(tiers.untried),
-            ownClimbs: tiers.ownClimbs,
+            dropsFloors: tiers.dropsFloors,
           },
         ]),
       ),
@@ -55,22 +55,22 @@ describe('the bias to tier table', () => {
         all: [UNTRIED, { hideCompleted: true }, {}],
         unsent: [UNTRIED, { hideCompleted: true }],
         untried: [UNTRIED],
-        ownClimbs: false,
+        dropsFloors: false,
       },
       attempted: {
         all: [{ showOnlyAttempted: true }],
         unsent: [{ showOnlyAttempted: true, hideCompleted: true }],
         untried: null,
-        ownClimbs: true,
+        dropsFloors: false,
       },
-      sent: { all: [{ showOnlyCompleted: true }], unsent: null, untried: null, ownClimbs: true },
+      sent: { all: [{ showOnlyCompleted: true }], unsent: null, untried: null, dropsFloors: true },
       liked: {
         all: [{ onlyFavorited: true }],
         unsent: [{ onlyFavorited: true, hideCompleted: true }],
         untried: [{ onlyFavorited: true, ...UNTRIED }],
-        ownClimbs: true,
+        dropsFloors: true,
       },
-      any: { all: [{}], unsent: [{ hideCompleted: true }], untried: [UNTRIED], ownClimbs: false },
+      any: { all: [{}], unsent: [{ hideCompleted: true }], untried: [UNTRIED], dropsFloors: false },
     });
   });
 
@@ -119,12 +119,7 @@ describe("Skip what I've tried", () => {
     const signedOut = fetchFilters(skipTried({ skipSent: true }), false);
     expect(signedOut).toEqual({ ...DEFAULT_WORKOUT_FILTERS, climbBias: 'any' });
     const attempted = skipTried({ climbBias: 'attempted' });
-    expect(fetchFilters(attempted, true)).toEqual({
-      ...DEFAULT_WORKOUT_FILTERS,
-      climbBias: 'attempted',
-      minAscents: 0,
-      minRating: 0,
-    });
+    expect(fetchFilters(attempted, true)).toEqual({ ...DEFAULT_WORKOUT_FILTERS, climbBias: 'attempted' });
     const unfamiliar = skipTried();
     expect(fetchFilters(unfamiliar, true)).toBe(unfamiliar);
   });

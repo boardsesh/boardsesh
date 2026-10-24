@@ -8,7 +8,8 @@ import { fetchFilters, filtersSignature, type PreviewFilters } from '../workout-
 import {
   biasCanSkipSent,
   biasCanSkipTried,
-  biasDrawsOwnClimbs,
+  biasDropsFloors,
+  biasNeedsSignIn,
   searchTiers,
   tierAscentStatus,
 } from '../workout-search-tiers';
@@ -61,9 +62,13 @@ describe('Liked: climbs you have hearted', () => {
   });
 });
 
-describe('which biases draw from your own climbs', () => {
-  it('is Attempted, Sent and Liked, not Unfamiliar or Any', () => {
-    expect(CLIMB_BIAS_OPTIONS.filter(biasDrawsOwnClimbs)).toEqual(['attempted', 'sent', 'liked']);
+describe('which biases drop the crowd floors', () => {
+  it('is Sent and Liked; Attempted keeps them, as it always did', () => {
+    expect(CLIMB_BIAS_OPTIONS.filter(biasDropsFloors)).toEqual(['sent', 'liked']);
+  });
+
+  it('needs an account for every bias but Any, which reads no logbook or hearts', () => {
+    expect(CLIMB_BIAS_OPTIONS.filter(biasNeedsSignIn)).toEqual(['unfamiliar', 'attempted', 'sent', 'liked']);
   });
 
   it('offers every bias on the picker, Sent and Liked between Attempted and Any', () => {
@@ -88,6 +93,16 @@ describe('fetchFilters for your own climbs', () => {
     expect(fetchFilters(filtersFor('sent', BOTH_SKIPS), true)).toEqual(
       filtersFor('sent', { minAscents: 0, minRating: 0 }),
     );
+  });
+
+  it("keeps Attempted's request the one it always sent: the block's floors, then Skip what I've sent", () => {
+    const attempted = filtersFor('attempted', { minAscents: 50, minRating: 3 });
+    expect(fetchFilters(attempted, true)).toBe(attempted);
+    // Tried but not sent is Attempted with Skip what I've sent, floors and all.
+    const triedNotSent = filtersFor('attempted', { minAscents: 50, minRating: 3, skipSent: true });
+    expect(fetchFilters(triedNotSent, true)).toBe(triedNotSent);
+    expect(searchTiers(triedNotSent, true)).toEqual([{ showOnlyAttempted: true, hideCompleted: true }]);
+    expect(tierAscentStatus(triedNotSent, 0)).toBe('attempt');
   });
 
   it('hands back the same filters when there is nothing to drop', () => {

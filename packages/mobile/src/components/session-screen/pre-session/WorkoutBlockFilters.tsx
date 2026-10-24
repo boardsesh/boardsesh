@@ -5,9 +5,10 @@
 // title, so the Record tab's block cards and the in-session "Add a block" sheet
 // both get it.
 //
-// Climb bias comes first because it decides what else applies: Attempted, Sent
-// and Liked draw from your own climbs, where min ascents and min rating do not
-// apply, so those two rows hide below it rather than jump the chip you tapped.
+// Climb bias comes first because it decides what else applies: Sent and Liked
+// are lists you made by sending or hearting, where min ascents and min rating do
+// not apply, so those two rows hide below it rather than jump the chip you
+// tapped. Signed out there is no logbook to read, so every bias but Any is off.
 
 import { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -30,7 +31,7 @@ import { selectByVariant } from '../../../theme/variants';
 import { spacing } from '../../../theme/tokens';
 import { Chip, generatorControlStyles } from './generator-controls';
 import type { SizeFilterAvailability, WorkoutFilters } from './workout-blocks';
-import { biasCanSkipSent, biasCanSkipTried, biasDrawsOwnClimbs } from './workout-search-tiers';
+import { biasCanSkipSent, biasCanSkipTried, biasDropsFloors, biasNeedsSignIn } from './workout-search-tiers';
 
 type Translate = (key: string, options?: Record<string, string | number>) => string;
 
@@ -50,9 +51,18 @@ function climbBiasLabel(value: ClimbBias, t: Translate): string {
 }
 
 /**
+ * The bias a block's search applies, the one its chip row and summary show.
+ * Signed out every bias falls back to Any (`fetchFilters`): the stored one is
+ * kept for when the climber signs in, like a stored skip switch.
+ */
+function appliedClimbBias(filters: WorkoutFilters, isAuthenticated: boolean): ClimbBias {
+  return isAuthenticated ? filters.climbBias : 'any';
+}
+
+/**
  * The line under the climb bias chips: which climbs the picked bias fills the
  * block from. Signed out every bias falls back to any climb (`fetchFilters`),
- * so the line says that instead.
+ * so the line says that instead, and why the other chips are off.
  */
 function climbBiasDescription(value: ClimbBias, isAuthenticated: boolean, t: Translate): string {
   if (!isAuthenticated) return t('mobile.session.preGeneratorClimbBiasSignedOut');
@@ -71,12 +81,12 @@ function climbBiasDescription(value: ClimbBias, isAuthenticated: boolean, t: Tra
 }
 
 /**
- * Whether a block's min ascents and min rating reach the search: not when it
- * draws from your own climbs (`biasDrawsOwnClimbs`). Signed out the bias falls
- * back to Any, so they apply again.
+ * Whether a block's min ascents and min rating reach the search: not under Sent
+ * or Liked (`biasDropsFloors`). Signed out the bias falls back to Any, so they
+ * apply again.
  */
 export function blockAppliesFloors(filters: WorkoutFilters, isAuthenticated: boolean): boolean {
-  return !isAuthenticated || !biasDrawsOwnClimbs(filters.climbBias);
+  return !biasDropsFloors(appliedClimbBias(filters, isAuthenticated));
 }
 
 /** Which size filters a board offers. Neither until the board is known. */
@@ -121,9 +131,9 @@ function skipsSent(filters: WorkoutFilters): boolean {
  * min ascents · stars · climb bias, then Skip tried or Skip sent and Benchmarks
  * when on. Skip tried leaves out sent climbs too, so it stands in for Skip sent.
  * Stars render as filled glyphs (a symbol, not translatable copy); "Any" rating
- * shows nothing so the line stays short. A block drawn from your own climbs
- * shows no min ascents or stars, which it does not apply. Signed out the skip
- * switches do nothing and the floors apply, and the line says so.
+ * shows nothing so the line stays short. A Sent or Liked block shows no min
+ * ascents or stars, which it does not apply. Signed out it names the bias the
+ * search applies, Any, with its floors and no skip switch.
  */
 export function blockFiltersSummary(filters: WorkoutFilters, t: Translate, isAuthenticated = true): string {
   const parts: string[] = [];
@@ -134,7 +144,7 @@ export function blockFiltersSummary(filters: WorkoutFilters, t: Translate, isAut
     const ratingValue = getMinRatingPickerValue(filters.minRating);
     if (ratingValue != null && ratingValue > 0) parts.push('★'.repeat(ratingValue));
   }
-  parts.push(climbBiasLabel(filters.climbBias, t));
+  parts.push(climbBiasLabel(appliedClimbBias(filters, isAuthenticated), t));
   if (isAuthenticated && skipsTried(filters)) parts.push(t('mobile.session.preGeneratorSkipTriedSummary'));
   else if (isAuthenticated && skipsSent(filters)) parts.push(t('mobile.session.preGeneratorSkipSentSummary'));
   if (filters.onlyBenchmarks) parts.push(t('mobile.session.preGeneratorOnlyBenchmarksSummary'));
@@ -166,14 +176,16 @@ type WorkoutBlockFiltersProps = {
 export function WorkoutBlockFilters({ filters, boardName, sizeFilters, onFiltersChange }: WorkoutBlockFiltersProps) {
   const { t } = useTranslation('session');
   const { systemColors, variant, m3 } = useTheme();
-  // The skip switches read your logbook, so they need an account. Signed out
-  // the search never sees them (`fetchFilters`), and the switches show them as
-  // off. Skip what I've tried is off under Attempted and Sent, which pick tried
-  // or sent climbs, and Skip what I've sent under Sent.
+  // The climb bias and the skip switches read your logbook, so they need an
+  // account. Signed out the search never sees them (`fetchFilters`): the chips
+  // show Any picked with the others off, and the switches show off. Skip what
+  // I've tried is off under Attempted and Sent, which pick tried or sent
+  // climbs, and Skip what I've sent under Sent.
   const { isAuthenticated } = useAuth();
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
   const { tall: showTallClimbsFilter, wide: showWideClimbsFilter } = sizeFilters;
   const showBenchmarksFilter = offersBenchmarksOnly(boardName, filters);
+  const shownClimbBias = appliedClimbBias(filters, isAuthenticated);
   const showFloors = blockAppliesFloors(filters, isAuthenticated);
   const canSkipSent = isAuthenticated && biasCanSkipSent(filters.climbBias);
   const canSkipTried = isAuthenticated && biasCanSkipTried(filters.climbBias);
@@ -184,7 +196,8 @@ export function WorkoutBlockFilters({ filters, boardName, sizeFilters, onFilters
     return [...baseOptions, filters.minAscents].sort((first, second) => first - second);
   }, [filters.minAscents]);
   const title = t('mobile.session.preGeneratorClimbFilters');
-  // Signed out a stored skip switch does nothing, so the line leaves it out too.
+  // Signed out a stored bias or skip switch does nothing, so the line shows Any
+  // and leaves the switch out.
   const summary = useMemo(() => blockFiltersSummary(filters, t, isAuthenticated), [filters, isAuthenticated, t]);
   // While closed, the title with the line under it, wrapping across the card's
   // width. Beside the title on one line it cut off at "Skip…" on a 393 pt phone
@@ -219,7 +232,8 @@ export function WorkoutBlockFilters({ filters, boardName, sizeFilters, onFilters
                 <Chip
                   key={climbBias}
                   label={label}
-                  selected={filters.climbBias === climbBias}
+                  selected={shownClimbBias === climbBias}
+                  disabled={!isAuthenticated && biasNeedsSignIn(climbBias)}
                   onPress={() => onFiltersChange({ climbBias })}
                   accessibilityLabel={t('mobile.session.preGeneratorOptionAccessibilityLabel', {
                     group: climbBiasGroupLabel,
