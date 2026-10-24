@@ -122,7 +122,12 @@ export function WorkoutBlockFields({
         />
       )}
 
-      <WorkoutBlockFilters filters={filters} sizeFilters={sizeFilters} onFiltersChange={onFiltersChange} />
+      <WorkoutBlockFilters
+        filters={filters}
+        boardName={boardName}
+        sizeFilters={sizeFilters}
+        onFiltersChange={onFiltersChange}
+      />
     </View>
   );
 }
