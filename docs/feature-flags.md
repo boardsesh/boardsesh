@@ -286,6 +286,23 @@ above is the sharpest example of this rule; the two render-mode flags below are
 a plainer one — the shipped defaults ARE the unresolved reading, so there is
 nothing to invert.
 
+### `cross-angle-stats` also needs the backend switched on
+
+The flag makes the climb list send `crossAngleStats: true` on every board but
+Woods, which has its own Other angles switch. On a large catalogue that search
+ranks the whole layout before it cuts a page: about 0.9 s on MoonBoard and
+5.6 s on Kilter, measured on production (issue #5412). So the backend honours it
+only on boards its `CROSS_ANGLE_STATS_BOARDS` env var names (`gateCrossAngleStats`,
+`packages/backend/src/graphql/resolvers/climbs/cross-angle-gate.ts`):
+
+- unset or empty: no board. This is production.
+- `*`: every board, which is how it behaved before the gate.
+- a comma list, e.g. `moonboard,kilter`.
+
+Raising the flag on its own changes nothing. The dev backend sets `*` in
+`packages/backend/.env.development` so a forced-on flag can still be tried locally.
+Turning a board on in production waits for the index-ordered query #5412 tracks.
+
 ### Spray walls are enabled by default
 
 The former `spray-walls` rollout flag has been retired. The boards picker and

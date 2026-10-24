@@ -76,8 +76,11 @@ export type BoardCapabilities = {
    * early termination needs two index-ordered streams merged at the page boundary,
    * which needs a new `(board_type, ascensionist_count DESC, climb_uuid)` index
    * because every existing ascent/quality index is prefixed `(board_type, angle, …)`.
-   * Until that lands, the mobile flag that opts non-Woods boards in MUST stay at 0%.
-   * Tracked in issue #5412.
+   * Tracked in issue #5412. Until then the backend ignores `crossAngleStats: true`
+   * on every board where this is false unless its `CROSS_ANGLE_STATS_BOARDS` env var
+   * names the board (unset in production; `gateCrossAngleStats` in
+   * packages/backend/src/graphql/resolvers/climbs/cross-angle-gate.ts), so the
+   * mobile flag that opts those boards in cannot reach the slow query on its own.
    */
   angleBoundClimbs: boolean;
   /**

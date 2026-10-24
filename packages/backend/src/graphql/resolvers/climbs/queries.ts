@@ -34,6 +34,7 @@ import { isSprayBoardType, sprayLayoutIsReadable, sprayLayoutIsReadableWithCapab
 import { findMoonBoardDuplicateMatches } from './moonboard-duplicates';
 import { parseFramesToHoldEntries, type NormalizedHold } from './climb-similarity';
 import { findSimilarClimbsCached } from './similar-climbs-cache';
+import { gateCrossAngleStats } from './cross-angle-gate';
 import { hasCatalogQueryAccess, requireCatalogQueryAccess } from '../social/roles';
 import {
   BoardNameSchema,
@@ -398,7 +399,11 @@ export const climbQueries = {
 
     // Build search parameters via the shared mapper — same falsy-collapse
     // rules as the web SSR path. Don't inline the field-by-field copy here.
-    const searchParams: ClimbSearchParams = mapSearchInputToParams(parsedInput);
+    // Then drop a cross-angle opt-in on a board the server has not switched on
+    // for it (#5412, `CROSS_ANGLE_STATS_BOARDS`). Every field resolver, the count
+    // and the Redis cache key read this one object, so gating it here gates all
+    // of them.
+    const searchParams: ClimbSearchParams = gateCrossAngleStats(params.board_name, mapSearchInputToParams(parsedInput));
     if (parsedInput.onlyFollowedAuthors) requireAuthenticated(ctx);
 
     if (DEBUG) {
