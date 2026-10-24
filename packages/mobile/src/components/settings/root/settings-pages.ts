@@ -12,6 +12,7 @@ export type SettingsRootPage =
   | 'board'
   | 'climbs'
   | 'home'
+  | 'timers'
   | 'earlyAccess'
   | 'developer';
 
@@ -25,6 +26,7 @@ export const SETTINGS_ROOT_ROUTES = {
   board: '/settings/board-look',
   climbs: '/settings/climbs',
   home: '/settings/home',
+  timers: '/settings/timers',
   earlyAccess: '/settings/early-access',
   developer: '/settings/developer',
 } as const satisfies Record<SettingsRootPage, `/settings/${string}`>;
@@ -37,6 +39,7 @@ export const SETTINGS_ROOT_ICONS = {
   board: 'boardLook',
   climbs: 'climbs',
   home: 'home',
+  timers: 'timers',
   earlyAccess: 'earlyAccess',
   developer: 'developer',
 } as const satisfies Record<SettingsRootPage, MoreIconName>;
@@ -64,6 +67,8 @@ export function settingsPageTitle(page: SettingsRootPage, t: SettingsTranslate):
       return t('mobile.settings.pages.climbs.title');
     case 'home':
       return t('mobile.settings.pages.home.title');
+    case 'timers':
+      return t('mobile.settings.pages.timers.title');
     case 'earlyAccess':
       return t('mobile.settings.pages.earlyAccess.title');
     case 'developer':

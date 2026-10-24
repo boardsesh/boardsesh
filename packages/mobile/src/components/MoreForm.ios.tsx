@@ -120,6 +120,7 @@ const IOS_SF_SYMBOL: Record<MoreIconName, string> = {
   climbs: 'figure.climbing',
   // The Home tab's own glyph.
   home: 'house',
+  timers: 'timer',
   // Sparkles for features not everyone has yet. `testtube.2` drew filled
   // liquid, and `flask` needs iOS 17 (the app's floor is 16.4).
   earlyAccess: 'sparkles',

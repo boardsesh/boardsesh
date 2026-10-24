@@ -124,6 +124,29 @@ without the LED link never scans for the timer.
 | `restTimerSound` | on | `playRestTimerCue`, on a binary that can play sound |
 | `restTimerCountdownCues` | on | the countdown (#5396) |
 
+## Settings › Timers
+
+Settings › Timers (`/settings/timers`, the last page of the climbing group) holds the rest timer's
+saved defaults and its cues, over the same settings the in-session sheet writes, so the two always
+agree. The root row shows the rest length (or Off).
+
+| Section | Rows |
+| --- | --- |
+| Rest | Rest length (a menu: Off, 0:30 to 10:00 in 30 s rungs, plus a saved length that sits between rungs), cadence, auto-advance |
+| Cues | Count down the last seconds; Sound, only when `isRestTimerSoundAvailable()` |
+
+- A cadence change goes through `changeRestTimerMode` (`lib/rest-timer-mode-change.ts`), the one
+  re-arm rule the sheet's cadence control uses too: choosing the saved cadence does nothing, and a
+  running timer is re-armed on the new one.
+- Auto-advance is disabled with the reason when a crewmate drives the wall (`useSessionTimerDriver`)
+  or no rest length is set, crew first. This is the sheet's rule.
+- The Sound row is absent on a binary that cannot play sound, so the mute lives here and the native
+  train needs no UI edit.
+- `keepScreenAwake` was deleted: nothing read it. The rest timer and the play drawer keep the screen
+  awake through `useKeepAwakeWhile`.
+- Copy lives in `common.json` under `mobile.settings.timers`, the settings-page convention, not in
+  `settings.json` as #5398 first said. The Rogue pairing row joins the page in a later PR.
+
 ## Who edits what
 
 Several PRs change these files at once, so each owns its region:

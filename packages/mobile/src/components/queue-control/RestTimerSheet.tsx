@@ -34,13 +34,8 @@ import { useRestTimerArmed, useRestTimerState } from '../../hooks/use-rest-timer
 import { nowMs } from '../../lib/clock';
 import { hapticMedium } from '../../lib/haptics';
 import { type RestTimerMode } from '../../lib/rest-timer';
-import {
-  armRestTimer,
-  disarmRestTimer,
-  pauseRestTimer,
-  resetRestTimer,
-  resumeRestTimer,
-} from '../../lib/rest-timer-store';
+import { changeRestTimerMode } from '../../lib/rest-timer-mode-change';
+import { disarmRestTimer, pauseRestTimer, resetRestTimer, resumeRestTimer } from '../../lib/rest-timer-store';
 import { spacing } from '../../theme/tokens';
 import { RestTimerHeroClock } from './RestTimerPill';
 import { RestLengthPicker } from './RestLengthPicker';
@@ -159,7 +154,7 @@ export function RestTimerCadenceSection({ inset = true }: { inset?: boolean } = 
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
   const { fontScale } = useWindowDimensions();
-  const [mode, setMode] = useSetting('restTimerMode');
+  const [mode] = useSetting('restTimerMode');
   const [targetSeconds] = useSetting('restTimerTargetSeconds');
   // Only whether it is armed: the full state emits on every tick, pause and
   // reset, and this block sits on the Record card as well as the sheet.
@@ -180,17 +175,9 @@ export function RestTimerCadenceSection({ inset = true }: { inset?: boolean } = 
 
   const handleSelect = useCallback(
     (nextMode: RestTimerMode) => {
-      // Paper's SegmentedButtons (Android, web) calls back on a press of the
-      // segment that is ALREADY selected. Re-arming on that would restart a
-      // fixed window mid-block, or wipe a running after-tick rest (#5664).
-      if (nextMode === mode) return;
-      setMode(nextMode);
-      // Re-arm rather than leave a half-converted anchor: `onTheMinute` needs an
-      // anchor from this instant, `afterTick` needs none until the next tick, and
-      // the two cannot be reconciled by editing the existing one.
-      if (armed) armRestTimer(nextMode, nowMs(), sessionId);
+      changeRestTimerMode(nextMode, sessionId, armed);
     },
-    [armed, mode, sessionId, setMode],
+    [armed, sessionId],
   );
   // Match the iOS segmented control's large-text fallback. Paper's fixed-width
   // Android segments ellipsize the cadence labels when the text grows.

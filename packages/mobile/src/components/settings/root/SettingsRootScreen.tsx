@@ -11,6 +11,8 @@ import { useQaMenu } from '../../../lib/qa/use-qa-menu';
 import { homeLayoutPreset, useHomeSectionLayout, type HomeLayoutPreset } from '../../../lib/home-sections';
 import { useAuth } from '../../../providers/auth-provider';
 import { gradeFormatOptions } from '../climbs/climbs-model';
+import { restLengthSummary } from '../timers/timers-model';
+import { useSetting } from '../../../settings';
 import { useDeveloperSettingsAccess } from '../developer/use-developer-settings-access';
 import { SETTINGS_ROOT_ROUTES } from './settings-pages';
 import { buildSettingsRootModel } from './settings-root-model';
@@ -31,6 +33,7 @@ export function SettingsRootScreen() {
   const { settings: boardRenderSettings, loaded: boardRenderSettingsLoaded } = useBoardRenderSettings();
   const { allowed: showDeveloper } = useDeveloperSettingsAccess();
   const { show: showQaPreviews } = useQaMenu();
+  const [restTargetSeconds] = useSetting('restTimerTargetSeconds');
 
   // Whether this build can draw the Boardsesh look at all. Without it every
   // board renders Classic, so the value must say Classic, not the Aura look
@@ -68,13 +71,24 @@ export function SettingsRootScreen() {
           board: boardLookLabel,
           climbs: gradeFormatOptions(t).find((option) => option.key === gradeFormat)?.label,
           home: homeLabel,
+          timers: restLengthSummary(t, restTargetSeconds),
         },
         onOpen: (page) => {
           hapticLight();
           router.push(SETTINGS_ROOT_ROUTES[page]);
         },
       }),
-    [t, syncIssues, isAuthenticated, showQaPreviews, showDeveloper, boardLookLabel, gradeFormat, homeLabel],
+    [
+      t,
+      syncIssues,
+      isAuthenticated,
+      showQaPreviews,
+      showDeveloper,
+      boardLookLabel,
+      gradeFormat,
+      homeLabel,
+      restTargetSeconds,
+    ],
   );
 
   return <MoreForm model={model} />;
