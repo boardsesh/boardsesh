@@ -7,6 +7,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vite-plus/test'
 import { v4 as uuidv4 } from 'uuid';
 import { roomManager, VersionConflictError } from '../services/room-manager';
 import type { ClimbQueueItem } from '@boardsesh/shared-schema';
+import { GraphQLError } from 'graphql';
 import { queueMutations } from '../graphql/resolvers/queue/mutations';
 import { sessionMutations } from '../graphql/resolvers/sessions/mutations';
 import { pubsub } from '../pubsub/index';
@@ -67,7 +68,7 @@ describe('updateQueueOnly - Redis-first approach', () => {
 
       // Update state to get a known version/sequence
       const initialState = await roomManager.getQueueState(sessionId);
-      await roomManager.updateQueueState(sessionId, [createTestClimb()], null, initialState.version);
+      await roomManager.updateQueueState(sessionId, [createTestClimb()], null, initialState.version, 0);
 
       // Get state after update
       const state = await roomManager.getQueueState(sessionId);
@@ -75,7 +76,13 @@ describe('updateQueueOnly - Redis-first approach', () => {
       const previousSequence = state.sequence;
 
       // Call updateQueueOnly
-      const result = await roomManager.updateQueueOnly(sessionId, [createTestClimb(), createTestClimb()]);
+      const result = await roomManager.updateQueueOnly(
+        sessionId,
+        [createTestClimb(), createTestClimb()],
+        undefined,
+        undefined,
+        0,
+      );
 
       // Should have incremented version and sequence
       expect(result.version).toBe(previousVersion + 1);
@@ -90,7 +97,7 @@ describe('updateQueueOnly - Redis-first approach', () => {
       await registerAndJoinSession('client-1', sessionId, boardPath, 'User1');
       const climb = createTestClimb();
       const initialState = await roomManager.getQueueState(sessionId);
-      await roomManager.updateQueueState(sessionId, [climb], null, initialState.version);
+      await roomManager.updateQueueState(sessionId, [climb], null, initialState.version, 0);
 
       // Flush to ensure Postgres has the data
       await roomManager.flushPendingWrites();
@@ -103,7 +110,7 @@ describe('updateQueueOnly - Redis-first approach', () => {
       await roomManager.initialize(mockRedis);
 
       // updateQueueOnly should still work by falling back to Postgres
-      const result = await roomManager.updateQueueOnly(sessionId, [climb, createTestClimb()]);
+      const result = await roomManager.updateQueueOnly(sessionId, [climb, createTestClimb()], undefined, undefined, 0);
 
       // Should have a valid result (incremented from Postgres values)
       expect(result.version).toBeGreaterThan(0);
@@ -124,7 +131,7 @@ describe('updateQueueOnly - Redis-first approach', () => {
       const climb2 = createTestClimb();
 
       // Call updateQueueOnly
-      await roomManager.updateQueueOnly(sessionId, [climb1, climb2]);
+      await roomManager.updateQueueOnly(sessionId, [climb1, climb2], undefined, undefined, 0);
 
       // Verify Redis was updated
       const redisSession = mockRedis._hashes.get(`boardsesh:session:${sessionId}`);
@@ -151,7 +158,7 @@ describe('updateQueueOnly - Redis-first approach', () => {
       const initialState = await roomManager.getQueueState(sessionId);
 
       // Call updateQueueOnly
-      const result = await roomManager.updateQueueOnly(sessionId, [climb1, climb2]);
+      const result = await roomManager.updateQueueOnly(sessionId, [climb1, climb2], undefined, undefined, 0);
 
       // Verify version and sequence incremented
       expect(result.version).toBe(initialState.version + 1);
@@ -175,9 +182,9 @@ describe('updateQueueOnly - Redis-first approach', () => {
       const currentVersion = state.version;
 
       // Try to update with wrong version
-      await expect(roomManager.updateQueueOnly(sessionId, [createTestClimb()], currentVersion + 100)).rejects.toThrow(
-        VersionConflictError,
-      );
+      await expect(
+        roomManager.updateQueueOnly(sessionId, [createTestClimb()], currentVersion + 100, undefined, 0),
+      ).rejects.toThrow(VersionConflictError);
     });
 
     it('should succeed when expectedVersion matches current version', async () => {
@@ -192,7 +199,7 @@ describe('updateQueueOnly - Redis-first approach', () => {
       const currentVersion = state.version;
 
       // Update with correct version
-      const result = await roomManager.updateQueueOnly(sessionId, [createTestClimb()], currentVersion);
+      const result = await roomManager.updateQueueOnly(sessionId, [createTestClimb()], currentVersion, undefined, 0);
 
       expect(result.version).toBe(currentVersion + 1);
     });
@@ -208,11 +215,11 @@ describe('updateQueueOnly - Redis-first approach', () => {
       const initialState = await roomManager.getQueueState(sessionId);
 
       // First update
-      const result1 = await roomManager.updateQueueOnly(sessionId, [createTestClimb()]);
+      const result1 = await roomManager.updateQueueOnly(sessionId, [createTestClimb()], undefined, undefined, 0);
       expect(result1.version).toBe(initialState.version + 1);
 
       // Second update
-      const result2 = await roomManager.updateQueueOnly(sessionId, [createTestClimb()]);
+      const result2 = await roomManager.updateQueueOnly(sessionId, [createTestClimb()], undefined, undefined, 0);
       expect(result2.version).toBe(result1.version + 1);
     });
   });
@@ -225,7 +232,7 @@ describe('updateQueueOnly - Redis-first approach', () => {
       // Create session
       await registerAndJoinSession('client-1', sessionId, boardPath, 'User1');
 
-      const result = await roomManager.updateQueueOnly(sessionId, [createTestClimb()]);
+      const result = await roomManager.updateQueueOnly(sessionId, [createTestClimb()], undefined, undefined, 0);
 
       expect(typeof result.version).toBe('number');
       expect(typeof result.sequence).toBe('number');
@@ -244,10 +251,10 @@ describe('updateQueueOnly - Redis-first approach', () => {
       const climb2 = createTestClimb();
 
       // Update with first set of climbs
-      const result1 = await roomManager.updateQueueOnly(sessionId, [climb1]);
+      const result1 = await roomManager.updateQueueOnly(sessionId, [climb1], undefined, undefined, 0);
 
       // Update with different set
-      const result2 = await roomManager.updateQueueOnly(sessionId, [climb1, climb2]);
+      const result2 = await roomManager.updateQueueOnly(sessionId, [climb1, climb2], undefined, undefined, 0);
 
       // Hashes should be different
       expect(result1.stateHash).not.toBe(result2.stateHash);
@@ -267,7 +274,7 @@ describe('updateQueueOnly - Redis-first approach', () => {
 
       // Make 5 sequential updates without version checking
       for (let i = 0; i < 5; i++) {
-        await roomManager.updateQueueOnly(sessionId, [createTestClimb()]);
+        await roomManager.updateQueueOnly(sessionId, [createTestClimb()], undefined, undefined, 0);
       }
 
       // Final state should reflect all updates
@@ -338,7 +345,7 @@ describe('addQueueItem - Event publishing fix', () => {
 
     // Pre-populate the queue with the item using updateQueueState
     const state = await roomManager.getQueueState(sessionId);
-    await roomManager.updateQueueState(sessionId, [climb], null, state.version);
+    await roomManager.updateQueueState(sessionId, [climb], null, state.version, 0);
 
     // Clear spy
     publishSpy.mockClear();
@@ -441,7 +448,7 @@ describe('addQueueItem - Event publishing fix', () => {
 
     // Pre-populate the queue with first item
     const state = await roomManager.getQueueState(sessionId);
-    await roomManager.updateQueueState(sessionId, [climb1], null, state.version);
+    await roomManager.updateQueueState(sessionId, [climb1], null, state.version, 0);
 
     publishSpy.mockClear();
 
@@ -493,7 +500,7 @@ describe('reorderQueueItem - Return type handling', () => {
 
     // Add items to queue using updateQueueState
     const state = await roomManager.getQueueState(sessionId);
-    await roomManager.updateQueueState(sessionId, [climb1, climb2], null, state.version);
+    await roomManager.updateQueueState(sessionId, [climb1, climb2], null, state.version, 0);
 
     // Clear any previous publish calls
     publishSpy.mockClear();
@@ -550,13 +557,13 @@ describe('order-sensitive dual-hash (stateHashOrdered)', () => {
     await registerAndJoinSession('client-1', sessionId, '/kilter/1/2/3/40', 'User1');
 
     const climbs = [createTestClimb(), createTestClimb()];
-    const updateResult = await roomManager.updateQueueState(sessionId, climbs, null);
+    const updateResult = await roomManager.updateQueueState(sessionId, climbs, null, undefined, 0);
     expect(typeof updateResult.stateHash).toBe('string');
     expect(updateResult.stateHash.length).toBeGreaterThan(0);
     expect(typeof updateResult.stateHashOrdered).toBe('string');
     expect(updateResult.stateHashOrdered.length).toBeGreaterThan(0);
 
-    const onlyResult = await roomManager.updateQueueOnly(sessionId, climbs);
+    const onlyResult = await roomManager.updateQueueOnly(sessionId, climbs, undefined, undefined, 0);
     expect(typeof onlyResult.stateHashOrdered).toBe('string');
     expect(onlyResult.stateHashOrdered.length).toBeGreaterThan(0);
 
@@ -573,7 +580,7 @@ describe('order-sensitive dual-hash (stateHashOrdered)', () => {
     const climb1 = createTestClimb();
     const climb2 = createTestClimb();
     const initial = await roomManager.getQueueState(sessionId);
-    await roomManager.updateQueueState(sessionId, [climb1, climb2], null, initial.version);
+    await roomManager.updateQueueState(sessionId, [climb1, climb2], null, initial.version, 0);
     const before = await roomManager.getQueueState(sessionId);
     publishSpy.mockClear();
 
@@ -831,7 +838,7 @@ describe('setCurrentClimb - combined queue/current state publishing', () => {
 
     const climb = createTestClimb();
     const state = await roomManager.getQueueState(sessionId);
-    await roomManager.updateQueueState(sessionId, [climb], null, state.version);
+    await roomManager.updateQueueState(sessionId, [climb], null, state.version, 0);
     publishSpy.mockClear();
 
     const ctx = {
@@ -960,7 +967,7 @@ describe('setQueue - tolerant per-item validation (issue #3857)', () => {
     );
   });
 
-  it('clears currentClimbQueueItem to null when its own queue slot is the dropped item, instead of leaving a dangling pointer', async () => {
+  it('inserts currentClimbQueueItem at the History / Up next line when its own queue slot is the dropped item (F3 invariant 1), instead of clearing it', async () => {
     const sessionId = uuidv4();
     await registerAndJoinSession('client-1', sessionId, '/kilter/1/2/3/40', 'User1');
 
@@ -980,10 +987,12 @@ describe('setQueue - tolerant per-item validation (issue #3857)', () => {
       ctxFor(sessionId),
     );
 
-    expect(state.queue).toHaveLength(1);
-    expect(state.queue[0]?.uuid).toBe(validItem.uuid);
-    expect(state.currentClimbQueueItem).toBeNull();
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('currentClimbQueueItem uuid not present'));
+    // Nothing in the payload is in the (empty) stored History, so the line is
+    // 0: the current climb takes the Now slot at the head and the valid item
+    // stays Up next.
+    expect(state.queue.map((item: ClimbQueueItem) => item.uuid)).toEqual([currentUuid, validItem.uuid]);
+    expect(state.currentClimbQueueItem?.uuid).toBe(currentUuid);
+    expect(state.historyCount).toBe(0);
   });
 
   it('still rejects the whole setQueue call when the queue array itself exceeds the 500-item size cap', async () => {
@@ -1023,7 +1032,7 @@ describe('setQueue - tolerant per-item validation (issue #3857)', () => {
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Dropped 1/2 invalid initialQueue item'));
   });
 
-  it('joinSession clears initialCurrentClimb to null when its own initialQueue slot is the dropped item', async () => {
+  it('joinSession inserts initialCurrentClimb at the line when its own initialQueue slot is the dropped item (F3 invariant 1)', async () => {
     const sessionId = uuidv4();
     const connectionId = 'client-join-3857-dangling';
     await roomManager.registerClient(connectionId);
@@ -1052,9 +1061,250 @@ describe('setQueue - tolerant per-item validation (issue #3857)', () => {
     );
 
     expect(result.queueState).not.toBeNull();
-    expect(result.queueState?.queue).toHaveLength(1);
-    expect(result.queueState?.queue[0]?.uuid).toBe(validItem.uuid);
-    expect(result.queueState?.currentClimbQueueItem).toBeNull();
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('initialCurrentClimb uuid not present'));
+    expect(result.queueState?.queue.map((item: ClimbQueueItem) => item.uuid)).toEqual([currentUuid, validItem.uuid]);
+    expect(result.queueState?.currentClimbQueueItem?.uuid).toBe(currentUuid);
+    expect(result.queueState?.historyCount).toBe(0);
+  });
+});
+
+describe('F3: setQueue, joinSession and addQueueItem around the History / Up next line (#6666)', () => {
+  let mockRedis: MockRedis;
+  let publishSpy: ReturnType<typeof vi.spyOn>;
+  const previousPercent = process.env.QUEUE_NOW_SLOT_PERCENT;
+
+  beforeEach(async () => {
+    mockRedis = createMockRedis();
+    roomManager.reset();
+    await roomManager.initialize(mockRedis);
+    publishSpy = vi.spyOn(pubsub, 'publishQueueEvent').mockImplementation(() => {});
+    delete process.env.QUEUE_NOW_SLOT_PERCENT;
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (previousPercent === undefined) delete process.env.QUEUE_NOW_SLOT_PERCENT;
+    else process.env.QUEUE_NOW_SLOT_PERCENT = previousPercent;
+  });
+
+  const ctxFor = (sessionId: string, connectionId = 'client-1') => ({
+    connectionId,
+    sessionId,
+    rateLimitTokens: 1000,
+    rateLimitLastReset: Date.now(),
+  });
+  const uuidsOf = (queue: ClimbQueueItem[]) => queue.map((item) => item.uuid);
+
+  async function roomWith(queue: ClimbQueueItem[], current: ClimbQueueItem | null, historyCount: number) {
+    const sessionId = uuidv4();
+    await registerAndJoinSession('client-1', sessionId, '/kilter/1/2/3/40', 'User1');
+    await roomManager.updateQueueState(sessionId, queue, current, undefined, historyCount);
+    return sessionId;
+  }
+
+  describe('setQueue historyCount input', () => {
+    it('rejects -1 through QueueIndexSchema', async () => {
+      const sessionId = await roomWith([], null, 0);
+      await expect(
+        queueMutations.setQueue({}, { queue: [createTestClimb()], historyCount: -1 }, ctxFor(sessionId)),
+      ).rejects.toThrow();
+    });
+
+    it('clamps 9999 to the queue length', async () => {
+      const sessionId = await roomWith([], null, 0);
+      const queue = [createTestClimb(), createTestClimb()];
+      const state = await queueMutations.setQueue({}, { queue, historyCount: 9999 }, ctxFor(sessionId));
+      expect(state.historyCount).toBe(2);
+    });
+
+    it('ignores a value sent with a current climb that is in the queue', async () => {
+      const sessionId = await roomWith([], null, 0);
+      const queue = [createTestClimb(), createTestClimb(), createTestClimb()];
+      const state = await queueMutations.setQueue(
+        {},
+        { queue, currentClimbQueueItem: queue[1], historyCount: 0 },
+        ctxFor(sessionId),
+      );
+      expect(state.historyCount).toBe(1);
+    });
+  });
+
+  describe('setQueue without historyCount and nothing current', () => {
+    it("derives the line from the stored History: an old phone's Undo of a History removal puts it back", async () => {
+      const [itemA, itemB, itemC, itemD] = [createTestClimb(), createTestClimb(), createTestClimb(), createTestClimb()];
+      // Stored [B | C D] after A was removed.
+      const sessionId = await roomWith([itemB, itemC, itemD], null, 1);
+      const state = await queueMutations.setQueue({}, { queue: [itemA, itemB, itemC, itemD] }, ctxFor(sessionId));
+      expect(state.historyCount).toBe(2);
+    });
+
+    it('gives 0 for a playlist clear', async () => {
+      const sessionId = await roomWith([createTestClimb(), createTestClimb()], null, 2);
+      const state = await queueMutations.setQueue({}, { queue: [] }, ctxFor(sessionId));
+      expect(state.historyCount).toBe(0);
+    });
+  });
+
+  describe('the 500 cap', () => {
+    it('trims a 600-item payload from History instead of throwing, with a climb current (inside the percent)', async () => {
+      process.env.QUEUE_NOW_SLOT_PERCENT = '100';
+      const sessionId = await roomWith([], null, 0);
+      const queue = Array.from({ length: 600 }, () => createTestClimb());
+      const current = queue[550];
+      const state = await queueMutations.setQueue({}, { queue, currentClimbQueueItem: current }, ctxFor(sessionId));
+      // History 550 -> 100 (the History cap), Now + Up next 50 kept.
+      expect(state.queue).toHaveLength(150);
+      expect(state.historyCount).toBe(100);
+      expect(state.currentClimbQueueItem?.uuid).toBe(current.uuid);
+    });
+
+    it('rejects a 600-climb Up next with nothing current with QUEUE_FULL, never dropping its first climbs', async () => {
+      const sessionId = await roomWith([], null, 0);
+      const queue = Array.from({ length: 600 }, () => createTestClimb());
+      const error = await queueMutations.setQueue({}, { queue, historyCount: 0 }, ctxFor(sessionId)).then(
+        () => null,
+        (rejection: unknown) => rejection,
+      );
+      expect(error).toBeInstanceOf(GraphQLError);
+      expect((error as GraphQLError).extensions.code).toBe('QUEUE_FULL');
+      expect((error as GraphQLError).message).toMatch(/Now and Up next/);
+    });
+
+    it('trims History, not Up next, from a 600-item payload with nothing current', async () => {
+      const sessionId = await roomWith([], null, 0);
+      const queue = Array.from({ length: 600 }, () => createTestClimb());
+      const state = await queueMutations.setQueue({}, { queue, historyCount: 200 }, ctxFor(sessionId));
+      // History 200 -> 100 (the History cap); the 400 Up next climbs are kept.
+      expect(state.queue).toHaveLength(500);
+      expect(state.historyCount).toBe(100);
+      expect(uuidsOf(state.queue)[100]).toBe(queue[200].uuid);
+    });
+
+    it('outside the percent, an orphan in a 500-item payload trims one History entry instead of storing 501', async () => {
+      process.env.QUEUE_NOW_SLOT_PERCENT = '0';
+      const queue = Array.from({ length: 500 }, () => createTestClimb());
+      const sessionId = await roomWith(queue, null, 10);
+      const orphan = createTestClimb();
+      const state = await queueMutations.setQueue({}, { queue, currentClimbQueueItem: orphan }, ctxFor(sessionId));
+      expect(state.queue).toHaveLength(500);
+      expect(uuidsOf(state.queue)[0]).toBe(queue[1].uuid);
+      expect(uuidsOf(state.queue)[9]).toBe(orphan.uuid);
+      expect(state.currentClimbQueueItem?.uuid).toBe(orphan.uuid);
+    });
+
+    it('still throws a 600-item placement-less payload outside the percent', async () => {
+      const sessionId = await roomWith([], null, 0);
+      const queue = Array.from({ length: 600 }, () => createTestClimb());
+      await expect(queueMutations.setQueue({}, { queue }, ctxFor(sessionId))).rejects.toThrow(/Invalid queue/);
+    });
+
+    it('throws when Now + Up next alone exceed 500 with a climb current', async () => {
+      const sessionId = await roomWith([], null, 0);
+      const queue = Array.from({ length: 600 }, () => createTestClimb());
+      await expect(
+        queueMutations.setQueue({}, { queue, currentClimbQueueItem: queue[10], historyCount: 0 }, ctxFor(sessionId)),
+      ).rejects.toThrow(/Now and Up next/);
+    });
+  });
+
+  describe.each(['0', '100'])('payload orphans at QUEUE_NOW_SLOT_PERCENT=%s', (percent) => {
+    beforeEach(() => {
+      process.env.QUEUE_NOW_SLOT_PERCENT = percent;
+    });
+
+    it('joinSession with [A B C] + orphan X stores [X A B C], A B C still Up next', async () => {
+      const connectionId = `join-orphan-${percent}`;
+      await roomManager.registerClient(connectionId);
+      const joinCtx = { connectionId, rateLimitTokens: 60, rateLimitLastReset: Date.now() };
+      const [itemA, itemB, itemC, orphan] = [
+        createTestClimb(),
+        createTestClimb(),
+        createTestClimb(),
+        createTestClimb(),
+      ];
+      const result = await sessionMutations.joinSession(
+        {},
+        {
+          sessionId: uuidv4(),
+          boardPath: '/kilter/1/2/3/40',
+          username: 'User1',
+          initialQueue: [itemA, itemB, itemC],
+          initialCurrentClimb: orphan,
+        },
+        joinCtx,
+      );
+      expect(uuidsOf(result.queueState?.queue ?? [])).toEqual([orphan.uuid, itemA.uuid, itemB.uuid, itemC.uuid]);
+      expect(result.queueState?.currentClimbQueueItem?.uuid).toBe(orphan.uuid);
+      expect(result.queueState?.historyCount).toBe(0);
+    });
+
+    it('setQueue inserts a payload orphan at the line it sent instead of clearing or appending it', async () => {
+      const sessionId = await roomWith([], null, 0);
+      const [history, upNextA, upNextB, orphan] = [
+        createTestClimb(),
+        createTestClimb(),
+        createTestClimb(),
+        createTestClimb(),
+      ];
+      const state = await queueMutations.setQueue(
+        {},
+        { queue: [history, upNextA, upNextB], currentClimbQueueItem: orphan, historyCount: 1 },
+        ctxFor(sessionId),
+      );
+      expect(uuidsOf(state.queue)).toEqual([history.uuid, orphan.uuid, upNextA.uuid, upNextB.uuid]);
+      expect(state.currentClimbQueueItem?.uuid).toBe(orphan.uuid);
+      expect(publishSpy).toHaveBeenCalledWith(sessionId, expect.objectContaining({ __typename: 'FullSync' }));
+    });
+  });
+
+  it('joinSession with only a current climb stores [current]', async () => {
+    const connectionId = 'join-current-only';
+    await roomManager.registerClient(connectionId);
+    const joinCtx = { connectionId, rateLimitTokens: 60, rateLimitLastReset: Date.now() };
+    const current = createTestClimb();
+    const result = await sessionMutations.joinSession(
+      {},
+      { sessionId: uuidv4(), boardPath: '/kilter/1/2/3/40', username: 'User1', initialCurrentClimb: current },
+      joinCtx,
+    );
+    expect(uuidsOf(result.queueState?.queue ?? [])).toEqual([current.uuid]);
+    expect(result.queueState?.currentClimbQueueItem?.uuid).toBe(current.uuid);
+  });
+
+  describe('addQueueItem inside the percent', () => {
+    beforeEach(() => {
+      process.env.QUEUE_NOW_SLOT_PERCENT = '100';
+    });
+
+    it('refuses with QUEUE_FULL when Now + Up next already hold 500', async () => {
+      const queue = Array.from({ length: 500 }, () => createTestClimb());
+      const sessionId = await roomWith(queue, queue[0], 0);
+      await expect(
+        queueMutations.addQueueItem({}, { item: createTestClimb() }, ctxFor(sessionId)),
+      ).rejects.toMatchObject({ extensions: { code: 'QUEUE_FULL' } });
+      expect(publishSpy).not.toHaveBeenCalled();
+    });
+
+    it('honours a position inside History while a climb is current', async () => {
+      const queue = [createTestClimb(), createTestClimb(), createTestClimb()];
+      const sessionId = await roomWith(queue, queue[2], 2);
+      const added = createTestClimb();
+      await queueMutations.addQueueItem({}, { item: added, position: 0 }, ctxFor(sessionId));
+      const state = await roomManager.getQueueState(sessionId);
+      expect(uuidsOf(state.queue)[0]).toBe(added.uuid);
+      expect(state.historyCount).toBe(3);
+      expect(publishSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('clamps a History position to the line with nothing current and follows with a FullSync', async () => {
+      const queue = [createTestClimb(), createTestClimb(), createTestClimb()];
+      const sessionId = await roomWith(queue, null, 2);
+      const added = createTestClimb();
+      await queueMutations.addQueueItem({}, { item: added, position: 0 }, ctxFor(sessionId));
+      const state = await roomManager.getQueueState(sessionId);
+      expect(uuidsOf(state.queue)).toEqual([queue[0].uuid, queue[1].uuid, added.uuid, queue[2].uuid]);
+      expect(state.historyCount).toBe(2);
+      const typenames = publishSpy.mock.calls.map((call: unknown[]) => (call[1] as { __typename: string }).__typename);
+      expect(typenames).toEqual(['QueueItemAdded', 'FullSync']);
+    });
   });
 });

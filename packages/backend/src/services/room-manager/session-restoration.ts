@@ -96,6 +96,13 @@ async function restoreFromPostgres(
       sequence: queueState.sequence,
       stateHash: queueState.stateHash,
       stateHashOrdered: queueState.stateHashOrdered,
+      // F3: the line comes back derived (no Postgres column), and the hold's
+      // clock from `board_session_queues.updated_at` (getQueueState's
+      // Postgres branch). Both count as written at this version.
+      historyCount: queueState.historyCount,
+      historyCountVersion: queueState.version,
+      currentUuid: queueState.currentClimbQueueItem?.uuid ?? null,
+      currentChangedAt: queueState.currentChangedAt ? new Date(queueState.currentChangedAt) : null,
       lastActivity: pgSession.lastActivity,
       discoverable: pgSession.discoverable,
       latitude: pgSession.latitude,

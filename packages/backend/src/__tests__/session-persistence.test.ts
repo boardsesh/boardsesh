@@ -135,7 +135,7 @@ describe('Session Persistence - Hybrid Redis + Postgres', () => {
       // Create session and add climb to queue
       await registerAndJoinSession('client-1', sessionId, boardPath, 'User1');
       const currentState = await roomManager.getQueueState(sessionId);
-      await roomManager.updateQueueState(sessionId, [climb], null, currentState.version);
+      await roomManager.updateQueueState(sessionId, [climb], null, currentState.version, 0);
 
       // Leave session (makes it inactive but keeps in Redis)
       await roomManager.leaveSession('client-1');
@@ -510,7 +510,7 @@ describe('Session Persistence - Hybrid Redis + Postgres', () => {
       // Create session and add climb to queue
       await registerAndJoinSession('client-1', sessionId, boardPath, 'User1');
       const currentState = await roomManager.getQueueState(sessionId);
-      await roomManager.updateQueueState(sessionId, [climb], null, currentState.version);
+      await roomManager.updateQueueState(sessionId, [climb], null, currentState.version, 0);
 
       // Flush pending writes to ensure data in Postgres
       await roomManager.flushPendingWrites();
@@ -584,10 +584,10 @@ describe('Session Persistence - Hybrid Redis + Postgres', () => {
 
       // Add multiple climbs rapidly
       let currentState = await roomManager.getQueueState(sessionId);
-      await roomManager.updateQueueState(sessionId, [climb1], null, currentState.version);
+      await roomManager.updateQueueState(sessionId, [climb1], null, currentState.version, 0);
 
       currentState = await roomManager.getQueueState(sessionId);
-      await roomManager.updateQueueState(sessionId, [climb1, climb2], null, currentState.version);
+      await roomManager.updateQueueState(sessionId, [climb1, climb2], null, currentState.version, 0);
 
       // Check Postgres immediately - should not have latest state yet
       let queueRows = await db.select().from(sessionQueues).where(eq(sessionQueues.sessionId, sessionId));
@@ -622,7 +622,7 @@ describe('Session Persistence - Hybrid Redis + Postgres', () => {
       // Create session and update queue
       await registerAndJoinSession('client-1', sessionId, boardPath, 'User1');
       const currentState = await roomManager.getQueueState(sessionId);
-      await roomManager.updateQueueState(sessionId, [climb], null, currentState.version);
+      await roomManager.updateQueueState(sessionId, [climb], null, currentState.version, 0);
 
       // Flush immediately (don't wait for timer)
       await roomManager.flushPendingWrites();
@@ -646,14 +646,14 @@ describe('Session Persistence - Hybrid Redis + Postgres', () => {
 
       // First update
       let currentState = await roomManager.getQueueState(sessionId);
-      await roomManager.updateQueueState(sessionId, [climb1], null, currentState.version);
+      await roomManager.updateQueueState(sessionId, [climb1], null, currentState.version, 0);
 
       // Wait 15 seconds
       await vi.advanceTimersByTimeAsync(15000);
 
       // Second update (should reset timer)
       currentState = await roomManager.getQueueState(sessionId);
-      await roomManager.updateQueueState(sessionId, [climb1, climb2], null, currentState.version);
+      await roomManager.updateQueueState(sessionId, [climb1, climb2], null, currentState.version, 0);
 
       // Wait another 15 seconds (total 30s from start, but only 15s from second update)
       await vi.advanceTimersByTimeAsync(15000);
@@ -828,7 +828,7 @@ describe('Session Persistence - Hybrid Redis + Postgres', () => {
       // Should still work
       await registerAndJoinSession('client-1', sessionId, boardPath, 'User1');
       const currentState = await roomManager.getQueueState(sessionId);
-      await roomManager.updateQueueState(sessionId, [climb], null, currentState.version);
+      await roomManager.updateQueueState(sessionId, [climb], null, currentState.version, 0);
 
       // Verify queue works
       const state = await roomManager.getQueueState(sessionId);
@@ -877,7 +877,7 @@ describe('Session Persistence - Hybrid Redis + Postgres', () => {
       // Create session and update queue
       await registerAndJoinSession('client-1', sessionId, boardPath, 'User1');
       const currentState = await roomManager.getQueueState(sessionId);
-      await roomManager.updateQueueState(sessionId, [climb], null, currentState.version);
+      await roomManager.updateQueueState(sessionId, [climb], null, currentState.version, 0);
 
       // Flush to Postgres
       await roomManager.flushPendingWrites();
@@ -905,7 +905,7 @@ describe('Session Persistence - Hybrid Redis + Postgres', () => {
       // Update queue to trigger Redis session hash creation
       // (new sessions only get their Redis hash written on queue update, not on creation)
       const currentState = await roomManager.getQueueState(sessionId);
-      await roomManager.updateQueueState(sessionId, [climb], null, currentState.version);
+      await roomManager.updateQueueState(sessionId, [climb], null, currentState.version, 0);
 
       // With distributed state enabled, users are tracked via the distributed state manager
       // (session members set), not via redisStore.saveUsers(). Verify users are accessible
@@ -943,8 +943,8 @@ describe('Session Persistence - Hybrid Redis + Postgres', () => {
       const climb2 = createTestClimb();
 
       const outcomes = await Promise.allSettled([
-        roomManager.updateQueueState(sessionId, [climb1], null, currentState.version),
-        roomManager.updateQueueState(sessionId, [climb2], null, currentState.version),
+        roomManager.updateQueueState(sessionId, [climb1], null, currentState.version, 0),
+        roomManager.updateQueueState(sessionId, [climb2], null, currentState.version, 0),
       ]);
 
       const fulfilled = outcomes.filter((outcome) => outcome.status === 'fulfilled');

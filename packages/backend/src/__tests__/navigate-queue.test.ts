@@ -348,6 +348,112 @@ describe('navigateQueue mutation', () => {
       expect(result).not.toBeNull();
       expect(result!.uuid).toBe(item2.uuid);
     });
+
+    describe('F3: nothing current with History', () => {
+      const previousPercent = process.env.QUEUE_NOW_SLOT_PERCENT;
+      afterEach(() => {
+        if (previousPercent === undefined) delete process.env.QUEUE_NOW_SLOT_PERCENT;
+        else process.env.QUEUE_NOW_SLOT_PERCENT = previousPercent;
+      });
+
+      const historyAndUpNext = () => {
+        const history = createMockQueueItem({ climb: createMockClimb({ name: 'History' }) });
+        const upNext = createMockQueueItem({ climb: createMockClimb({ name: 'Up next' }) });
+        getQueueStateSpy.mockResolvedValue({
+          queue: [history, upNext],
+          currentClimbQueueItem: null,
+          historyCount: 1,
+          version: 1,
+          sequence: 1,
+          stateHash: 'test-hash',
+        });
+        updateQueueStateSpy.mockResolvedValue({ version: 2, sequence: 2, stateHash: 'new-hash' });
+        return { history, upNext };
+      };
+
+      it('"next" starts at the head of Up next, not the oldest History climb', async () => {
+        const { upNext } = historyAndUpNext();
+        const controllerCtx = createControllerContext(registeredController.controllerId, registeredController.apiKey);
+        const result = await controllerMutations.navigateQueue(
+          undefined,
+          { sessionId: TEST_SESSION_ID, direction: 'next' },
+          controllerCtx,
+        );
+        expect(result!.uuid).toBe(upNext.uuid);
+        expect(updateQueueStateSpy).toHaveBeenCalledWith(TEST_SESSION_ID, expect.any(Array), expect.anything(), 1, 1);
+      });
+
+      it('"previous" goes to History\'s last entry', async () => {
+        const { history } = historyAndUpNext();
+        const controllerCtx = createControllerContext(registeredController.controllerId, registeredController.apiKey);
+        const result = await controllerMutations.navigateQueue(
+          undefined,
+          { sessionId: TEST_SESSION_ID, direction: 'previous' },
+          controllerCtx,
+        );
+        expect(result!.uuid).toBe(history.uuid);
+      });
+
+      it('a pre-F3 orphan current climb stays in History on "next", with FullSync + trailing', async () => {
+        const history = createMockQueueItem({ climb: createMockClimb({ name: 'History' }) });
+        const upNext = createMockQueueItem({ climb: createMockClimb({ name: 'Up next' }) });
+        const orphan = createMockQueueItem({ climb: createMockClimb({ name: 'Orphan' }) });
+        getQueueStateSpy.mockResolvedValue({
+          queue: [history, upNext],
+          currentClimbQueueItem: orphan,
+          historyCount: 1,
+          version: 1,
+          sequence: 1,
+          stateHash: 'test-hash',
+        });
+        updateQueueStateSpy.mockResolvedValue({
+          version: 2,
+          sequence: 2,
+          stateHash: 'new-hash',
+          stateHashOrdered: 'new-ordered',
+          historyCount: 2,
+        });
+        const controllerCtx = createControllerContext(registeredController.controllerId, registeredController.apiKey);
+        const result = await controllerMutations.navigateQueue(
+          undefined,
+          { sessionId: TEST_SESSION_ID, direction: 'next', currentClimbUuid: orphan.uuid },
+          controllerCtx,
+        );
+        expect(result!.uuid).toBe(upNext.uuid);
+        expect(updateQueueStateSpy).toHaveBeenCalledWith(
+          TEST_SESSION_ID,
+          [history, orphan, upNext],
+          expect.objectContaining({ uuid: upNext.uuid }),
+          1,
+          2,
+        );
+        const publishedCalls = publishSpy.mock.calls as unknown as [string, { __typename: string }, unknown?][];
+        expect(publishedCalls.map(([, event]) => event.__typename)).toEqual(['FullSync', 'CurrentClimbChanged']);
+        expect(publishedCalls[1][2]).toEqual({ buffer: false });
+      });
+
+      it('inside the percent, "next" with Up next empty stops instead of jumping to queue[0]', async () => {
+        process.env.QUEUE_NOW_SLOT_PERCENT = '100';
+        const history = createMockQueueItem({ climb: createMockClimb({ name: 'History' }) });
+        getQueueStateSpy.mockResolvedValue({
+          queue: [history],
+          currentClimbQueueItem: null,
+          historyCount: 1,
+          version: 1,
+          sequence: 1,
+          stateHash: 'test-hash',
+        });
+        const controllerCtx = createControllerContext(registeredController.controllerId, registeredController.apiKey);
+        const result = await controllerMutations.navigateQueue(
+          undefined,
+          { sessionId: TEST_SESSION_ID, direction: 'next' },
+          controllerCtx,
+        );
+        expect(result).toBeNull();
+        expect(updateQueueStateSpy).not.toHaveBeenCalled();
+        expect(publishSpy).not.toHaveBeenCalled();
+      });
+    });
   });
 
   describe('Edge cases', () => {

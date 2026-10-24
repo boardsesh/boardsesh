@@ -76,9 +76,12 @@ function installFakeEventBuffer() {
   let evictBelowSequence = Number.NEGATIVE_INFINITY;
 
   vi.spyOn(pubsub, 'isRedisConnected').mockReturnValue(true);
-  vi.spyOn(pubsub, 'publishQueueEvent').mockImplementation((_sessionId: string, event: QueueEvent) => {
-    if (event.__typename !== 'PlaybackStateChanged') stored.push(event);
-  });
+  vi.spyOn(pubsub, 'publishQueueEvent').mockImplementation(
+    (_sessionId: string, event: QueueEvent, options?: { buffer?: boolean }) => {
+      // The F3 trailing CurrentClimbChanged is published with buffer: false.
+      if (event.__typename !== 'PlaybackStateChanged' && options?.buffer !== false) stored.push(event);
+    },
+  );
   vi.spyOn(pubsub, 'getEventsSince').mockImplementation(async (_sessionId: string, sinceSequence: number) => {
     const visible = withheldFromTail > 0 ? stored.slice(0, -withheldFromTail) : stored;
     return visible
@@ -300,9 +303,9 @@ describe('setQueue merges concurrent adds (#3933)', () => {
     const realUpdate = roomManager.updateQueueState.bind(roomManager);
     const updateSpy = vi
       .spyOn(roomManager, 'updateQueueState')
-      .mockImplementation(async (id, queue, currentClimb, expectedVersion) => {
+      .mockImplementation(async (id, queue, currentClimb, expectedVersion, historyCount) => {
         if (expectedVersion !== undefined) throw new VersionConflictError(id, expectedVersion);
-        return realUpdate(id, queue, currentClimb, expectedVersion);
+        return realUpdate(id, queue, currentClimb, expectedVersion, historyCount);
       });
 
     const replacement = createTestClimb('replacement');
@@ -418,5 +421,56 @@ describe('collectConcurrentAdds', () => {
     });
 
     expect(outcome).toEqual({ status: 'merged', survivors: [] });
+  });
+});
+
+describe("F3: an add that trims while an old phone's Undo is in flight (#6666)", () => {
+  let mockRedis: MockRedis;
+  const previousPercent = process.env.QUEUE_NOW_SLOT_PERCENT;
+
+  beforeEach(async () => {
+    mockRedis = createMockRedis();
+    roomManager.reset();
+    await roomManager.initialize(mockRedis);
+    process.env.QUEUE_NOW_SLOT_PERCENT = '100';
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (previousPercent === undefined) delete process.env.QUEUE_NOW_SLOT_PERCENT;
+    else process.env.QUEUE_NOW_SLOT_PERCENT = previousPercent;
+  });
+
+  it('publishes QueueItemAdded then a FullSync under the next sequence, and the merge keeps the add', async () => {
+    const sessionId = uuidv4();
+    await registerAndJoinSession('client-old', sessionId, '/kilter/1/2/3/40', 'Old');
+    await registerAndJoinSession('client-peer', sessionId, '/kilter/1/2/3/40', 'Peer');
+    const buffer = installFakeEventBuffer();
+
+    const history = Array.from({ length: 125 }, (_, index) => createTestClimb(`h${index}`));
+    const current = createTestClimb('current');
+    const upNext = createTestClimb('up next');
+    await roomManager.updateQueueState(sessionId, [...history, current, upNext], current, undefined, 125);
+    const baseline = (await roomManager.getQueueState(sessionId)).sequence;
+
+    // A crewmate adds while History is at 125: write 1 publishes the add, write 2 trims.
+    const added = createTestClimb('added');
+    await queueMutations.addQueueItem({}, { item: added }, mockCtx('client-peer', sessionId));
+    const [addEvent, trimEvent] = buffer.published;
+    expect(addEvent).toMatchObject({ __typename: 'QueueItemAdded', sequence: baseline + 1 });
+    expect(trimEvent).toMatchObject({ __typename: 'FullSync', sequence: baseline + 2 });
+    expect(trimEvent.__typename === 'FullSync' && trimEvent.state.historyCount).toBe(100);
+
+    // The old phone's Undo, composed at the baseline, never saw the add.
+    await queueMutations.setQueue(
+      {},
+      { queue: [...history, current, upNext], currentClimbQueueItem: current, baselineSequence: baseline },
+      mockCtx('client-old', sessionId),
+    );
+    const state = await roomManager.getQueueState(sessionId);
+    expect(state.queue.some((item) => item.uuid === added.uuid)).toBe(true);
+    // Up next keeps the add after the old phone's climbs; History is trimmed again to 100.
+    expect(state.queue.slice(-3).map((item) => item.uuid)).toEqual([current.uuid, upNext.uuid, added.uuid]);
+    expect(state.historyCount).toBe(100);
   });
 });

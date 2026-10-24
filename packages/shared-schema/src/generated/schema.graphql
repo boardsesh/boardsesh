@@ -756,6 +756,17 @@ input ClimbQueueItemInput {
 }
 
 """
+How setCurrentClimb puts a climb on the wall (docs/current-climb-outside-queue.md, section 1).
+NOW: a new client opening a climb; an entry already in the queue moves into the Now slot.
+STEP: Previous on the queue walk; the pointer steps back into History.
+Omitted by shipped clients, the native socket and the LED path.
+"""
+enum CurrentClimbPlacement {
+  NOW
+  STEP
+}
+
+"""
 The complete state of a session's climb queue.
 Used for synchronization between clients.
 """
@@ -770,6 +781,10 @@ type QueueState {
   queue: [ClimbQueueItem!]!
   "The climb currently being attempted"
   currentClimbQueueItem: ClimbQueueItem
+  "Entries before Up next. Equals the current index when a climb is current. Null from a pre-F3 server."
+  historyCount: Int
+  "When the room's current climb last changed to a different climb (ISO 8601). Null from a pre-F3 server."
+  currentChangedAt: String
 }
 
 """
@@ -8872,6 +8887,8 @@ type Mutation {
     initialQueue: [ClimbQueueItemInput!]
     initialCurrentClimb: ClimbQueueItemInput
     sessionName: String
+    "Entries of initialQueue before Up next when no seed climb is current in it (F3). Ignored when initialCurrentClimb is in initialQueue."
+    initialHistoryCount: Int
   ): Session!
 
   """
@@ -8922,8 +8939,15 @@ type Mutation {
   """
   Set the currently displayed climb.
   Optionally adds it to the queue if not already present.
+  `placement` (F3) marks a client that puts the climb in the Now slot instead of copying it;
+  omit it for the shipped behaviour.
   """
-  setCurrentClimb(item: ClimbQueueItemInput, shouldAddToQueue: Boolean, correlationId: ID): ClimbQueueItem
+  setCurrentClimb(
+    item: ClimbQueueItemInput
+    shouldAddToQueue: Boolean
+    correlationId: ID
+    placement: CurrentClimbPlacement
+  ): ClimbQueueItem
 
   """
   Toggle mirrored display for the current climb.
@@ -8952,11 +8976,16 @@ type Mutation {
   that point and re-appends any climb a peer added inside the window instead of
   silently overwriting it (issue #3933). Omit it for the historical wholesale
   overwrite — old clients send nothing here.
+
+  `historyCount` (F3) is the number of `queue` entries before Up next when no climb is
+  current in `queue`. Ignored when the current climb is in `queue`. Omit it to have the
+  server derive the line from the stored History.
   """
   setQueue(
     queue: [ClimbQueueItemInput!]!
     currentClimbQueueItem: ClimbQueueItemInput
     baselineSequence: Int
+    historyCount: Int
   ): QueueState!
 
   """

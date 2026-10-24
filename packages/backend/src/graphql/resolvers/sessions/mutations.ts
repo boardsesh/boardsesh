@@ -40,6 +40,7 @@ import {
   ClimbQueueItemSchema,
   ClimbUuidSchema,
   BoardSerialSchema,
+  QueueIndexSchema,
 } from '../../../validation/schemas';
 import { logger } from '../../../utils/logger';
 import { markErrorReported } from '../../../utils/sentry-dedupe';
@@ -54,6 +55,9 @@ import { normalizeIanaTimezone } from '../../../utils/timezone';
 import { endLiveActivity } from '../../../services/apns';
 import { buildSessionPayload } from './helpers';
 import { logMutationMetrics } from '../queue/mutation-metrics';
+import { MAX_SYNCED_QUEUE_ITEMS } from '@boardsesh/queue';
+import { isNowSlotSession } from '../../../services/queue-now-slot-rollout';
+import { MAX_RAW_PAYLOAD_ITEMS, composeQueuePayload } from '../queue/now-slot-payload';
 
 /**
  * `isLeader` audit (always-live sessions):
@@ -109,6 +113,7 @@ export const sessionMutations = {
       initialQueue,
       initialCurrentClimb,
       sessionName,
+      initialHistoryCount,
     }: {
       sessionId: string;
       boardPath: string;
@@ -118,6 +123,7 @@ export const sessionMutations = {
       initialQueue?: ClimbQueueItem[];
       initialCurrentClimb?: ClimbQueueItem;
       sessionName?: string;
+      initialHistoryCount?: number | null;
     },
     ctx: ConnectionContext,
   ) => {
@@ -135,6 +141,14 @@ export const sessionMutations = {
     if (avatarUrl) validateInput(AvatarUrlSchema, avatarUrl, 'avatarUrl');
     if (participantId) validateInput(ParticipantIdSchema, participantId, 'participantId');
     if (sessionName) validateInput(SessionNameSchema, sessionName, 'sessionName');
+    // F3: the seed's line goes through `QueueIndexSchema`, then
+    // `composeQueuePayload` clamps it. The caps apply when the seed carries a
+    // line, and to every seed inside `QUEUE_NOW_SLOT_PERCENT`.
+    const historyCountInput =
+      initialHistoryCount === undefined || initialHistoryCount === null
+        ? null
+        : validateInput(QueueIndexSchema, initialHistoryCount, 'initialHistoryCount');
+    const capsApply = historyCountInput !== null || isNowSlotSession(sessionId);
 
     // Validate the seed queue tolerantly — one malformed/legacy item must not
     // sink the whole join. Same class of bug as setQueue (issue #3857): a
@@ -143,7 +157,12 @@ export const sessionMutations = {
     let seedQueue: ClimbQueueItem[] | undefined;
     if (initialQueue) {
       const seedValidationStartTime = performance.now();
-      const { items, droppedCount } = parseArrayTolerant(ClimbQueueItemSchema, initialQueue, 'initialQueue', 500);
+      const { items, droppedCount } = parseArrayTolerant(
+        ClimbQueueItemSchema,
+        initialQueue,
+        'initialQueue',
+        capsApply ? MAX_RAW_PAYLOAD_ITEMS : MAX_SYNCED_QUEUE_ITEMS,
+      );
       // ClimbQueueItemSchema's `.nullish()` fields infer as `T | null | undefined`,
       // one shade looser than the hand-written `ClimbQueueItem` type (`T | null`)
       // — both mean "absent" downstream, so the cast is safe (see setQueue).
@@ -171,16 +190,31 @@ export const sessionMutations = {
         initialCurrentClimb,
         'initialCurrentClimb',
       ) as ClimbQueueItem;
-      // A current-climb pointer whose slot didn't survive tolerant parsing
-      // would dangle — only check membership when we actually filtered a
-      // seed queue; a caller seeding just a current climb (no queue) is an
-      // existing, independently-valid combination.
-      if (seedQueue && !seedQueue.some((item) => item.uuid === seedCurrentClimb?.uuid)) {
-        logger.warn(
-          `[joinSession] initialCurrentClimb uuid not present in the (post-filter) initialQueue for session ${sessionId} — clearing seed current climb instead of leaving a dangling pointer.`,
+    }
+
+    // Invariant 1 of F3, at every percent: a seed current climb missing from
+    // the seed queue (it didn't survive tolerant parsing, or an old solo
+    // snapshot never held it) is inserted at the line instead of being
+    // cleared, and a seed of only a current climb becomes `[current]` instead
+    // of being dropped. Seeds apply only to a brand-new room, so there is no
+    // stored History: with nothing current and no line, the line is 0.
+    let seedHistoryCount = 0;
+    if (seedQueue || seedCurrentClimb) {
+      const composed = composeQueuePayload({
+        queue: seedQueue ?? [],
+        currentClimbQueueItem: seedCurrentClimb,
+        historyCountInput,
+        stored: null,
+        capsApply,
+      });
+      if (composed.orphanInserted) {
+        logger.info(
+          `[joinSession] Inserted initialCurrentClimb at the History / Up next line for session ${sessionId} instead of clearing it (F3).`,
         );
-        seedCurrentClimb = null;
       }
+      seedQueue = composed.queue;
+      seedCurrentClimb = composed.currentClimbQueueItem;
+      seedHistoryCount = composed.historyCount;
     }
 
     const result = await roomManager.joinSession(
@@ -193,6 +227,8 @@ export const sessionMutations = {
       seedCurrentClimb,
       sessionName || undefined,
       participantId || undefined,
+      undefined, // isPublic: only createSession sets it
+      seedHistoryCount,
     );
     if (DEBUG)
       logger.info(
@@ -237,6 +273,8 @@ export const sessionMutations = {
         stateHashOrdered: result.stateHashOrdered,
         queue: result.queue,
         currentClimbQueueItem: result.currentClimbQueueItem,
+        historyCount: result.historyCount,
+        currentChangedAt: result.currentChangedAt,
       },
       isLeader: result.isLeader,
       clientId: result.clientId,
@@ -380,6 +418,8 @@ export const sessionMutations = {
             stateHashOrdered: result.stateHashOrdered,
             queue: result.queue,
             currentClimbQueueItem: result.currentClimbQueueItem,
+            historyCount: result.historyCount,
+            currentChangedAt: result.currentChangedAt,
           },
           isLeader: result.isLeader,
           // No board has been paired yet; gets set the first time anyone in the
@@ -730,6 +770,8 @@ export const sessionMutations = {
         stateHashOrdered: queueState.stateHashOrdered,
         queue: queueState.queue,
         currentClimbQueueItem: queueState.currentClimbQueueItem,
+        historyCount: queueState.historyCount,
+        currentChangedAt: queueState.currentChangedAt,
       },
       isLeader: leaderConnectionId === ctx.connectionId,
       lastConnectedBoardSerial,

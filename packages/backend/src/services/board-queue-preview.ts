@@ -2,6 +2,7 @@ import { canReadClimbContent } from './board-session-privacy';
 import { canAccessResourceWithoutLink } from './privacy';
 import { and, desc, eq } from 'drizzle-orm';
 import type { BoardQueuePreview, BoardQueuePreviewItem, ClimbQueueItem, QueueState } from '@boardsesh/shared-schema';
+import { upNextStart } from '@boardsesh/queue';
 import { db } from '../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { pubsub, type QueueEventHook } from '../pubsub';
@@ -80,15 +81,16 @@ export function toBoardQueuePreviewItem(item: ClimbQueueItem): BoardQueuePreview
 /**
  * Build the redacted preview snapshot from a session's queue state. Pure —
  * gates must already have been applied by the caller. `upNext` is the items
- * strictly after the current one (or the head of the queue when no current
- * item is present in it), capped at BOARD_QUEUE_PREVIEW_UP_NEXT_CAP;
- * `queueLength` is the uncapped total.
+ * strictly after the current one, or from the History / Up next line on when
+ * no current item is present in it (F3: `upNextStart` from `@boardsesh/queue`,
+ * so History stays out of the kiosk's Up next after the current climb is
+ * removed), capped at BOARD_QUEUE_PREVIEW_UP_NEXT_CAP; `queueLength` is the
+ * uncapped total.
  */
 export function buildBoardQueuePreview(boardId: number, queueState: QueueState): BoardQueuePreview {
-  const { queue, currentClimbQueueItem } = queueState;
-  const currentIndex = currentClimbQueueItem ? queue.findIndex((item) => item.uuid === currentClimbQueueItem.uuid) : -1;
-  const upNextStart = currentIndex === -1 ? 0 : currentIndex + 1;
-  const upNext = queue.slice(upNextStart, upNextStart + BOARD_QUEUE_PREVIEW_UP_NEXT_CAP).map(toBoardQueuePreviewItem);
+  const { queue, currentClimbQueueItem, historyCount } = queueState;
+  const firstUpNext = upNextStart(queue, currentClimbQueueItem, historyCount);
+  const upNext = queue.slice(firstUpNext, firstUpNext + BOARD_QUEUE_PREVIEW_UP_NEXT_CAP).map(toBoardQueuePreviewItem);
   return {
     boardId,
     current: currentClimbQueueItem ? toBoardQueuePreviewItem(currentClimbQueueItem) : null,
