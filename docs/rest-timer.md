@@ -77,6 +77,17 @@ change a climber sees: a back-dated tick (the tick sheet's date picker, or a slo
 previous climb) can no longer shorten a running rest. It still shows as the last tick. On the
 minute keeps its beat; a tick only fills a missing anchor, with the same floor.
 
+The floor is for a slow save, not for history. A tick dated more than
+`AUTO_ADVANCE_MAX_BACKDATE_MS` (60 s) before it lands, judged on its own `climbedAt`
+(`isTickFreshEnoughToArm`), is history: yesterday's session logged with the date picker. It
+never replaces `lastTick`, so it never moves the wall under a tick or send rule. On a running
+rest it goes through the floor, so it never rewinds it. With no rest running (no anchor, or
+paused) it anchors at its own time, as every tick did before the floor, so its deadline is long
+gone and nothing is scheduled. Floored there instead, it would start a rest at the last advance:
+after a workout advance, yesterday's send on the climb just lit would read as fresh and walk the
+wall on after the rest with that climb never climbed. A cold start still picks the rest up from
+the session's last tick, however old.
+
 ## Cues
 
 The scheduler names a moment and `playRestTimerCue` decides what it feels and sounds like:

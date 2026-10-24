@@ -159,8 +159,13 @@ export function useTickSaver({
       const quality = fields.quality !== null && fields.quality > 0 ? fields.quality : null;
       // Which queue item this tick counts for, decided now: by the time the save
       // lands the wall may have moved on, and the tick still belongs to the climb
-      // that was up when the climber logged it.
-      const queueItemUuid = attributeTickToQueueItem(climbUuid, getQueueSnapshot?.().currentClimbQueueItem ?? null);
+      // that was up when the climber logged it. Only at the angle it is up at: a
+      // send picked at another angle in the form still saves, but counts for no
+      // queue item, so it never moves the wall or lands in the workout's log.
+      const queueItemUuid = attributeTickToQueueItem(
+        { climbUuid, angle: fields.angle },
+        getQueueSnapshot?.().currentClimbQueueItem ?? null,
+      );
 
       saveTick.mutate(
         {

@@ -22,6 +22,7 @@
 // wall under a tick or send rule (`restAdvanceAllowed`). Neither is persisted.
 
 import { getRestTimerStartMs, type RestTimerMode } from './rest-timer';
+import { isTickFreshEnoughToArm } from './rest-timer-auto-advance';
 import {
   sameStagePacing,
   type RestTimerLastTick,
@@ -90,7 +91,8 @@ export type RestTimerState = {
    * The last tick this phone logged on a queue item while armed: its status and
    * that queue item. Cleared on arm, on disarm, and by a fire or a refilled queue
    * that waits for the next tick, so one tick never moves the wall twice. A tick
-   * on another climb never replaces one on the climb on the wall.
+   * on another climb never replaces one on the climb on the wall, and a tick
+   * dated more than a minute before it landed never replaces any.
    */
   lastTick: RestTimerLastTick | null;
 };
@@ -190,6 +192,20 @@ function lastTickAfter(tick: RestTimerLastTick | undefined): RestTimerLastTick |
 }
 
 /**
+ * Where a tick dated more than `AUTO_ADVANCE_MAX_BACKDATE_MS` before it landed
+ * starts a rest: yesterday's session logged with the date picker, not a climb
+ * just done. On a running rest it goes through the floor, so it never rewinds
+ * that rest. With none running (no anchor, or paused) it anchors at its own time,
+ * as a tick always did before the floor: that rest ran out long ago, so the
+ * scheduler reads its deadline as stale and schedules nothing. Floored instead,
+ * it would start a rest at the last advance, a live deadline a send from
+ * yesterday has no claim to.
+ */
+function historicalTickAnchorMs(tickStartMs: number, nowMs: number): number {
+  return state.isRunning && state.anchorMs !== null ? tickAnchorMs(tickStartMs, nowMs) : tickStartMs;
+}
+
+/**
  * A tick landed. `afterTick` re-anchors on it — that is the whole mode.
  * `onTheMinute` keeps its own beat and only adopts the tick as a starting
  * anchor if it somehow has none. Either way the anchor goes through
@@ -203,6 +219,13 @@ function lastTickAfter(tick: RestTimerLastTick | undefined): RestTimerLastTick |
  * cancel an advance that climb already earned. A late tick on the previous climb
  * never takes the place of one the climb on the wall already earned either
  * (`lastTickAfter`); it still goes through the anchor floor.
+ *
+ * A tick dated more than `AUTO_ADVANCE_MAX_BACKDATE_MS` before it landed is
+ * history, judged on its own `climbedAt`, never the floored anchor: it never
+ * earns an advance under a tick or send rule (`lastTick` stands), and it anchors
+ * as `historicalTickAnchorMs` says. Without that, yesterday's send logged on a
+ * workout climb just lit would be floored onto the advance, read as fresh, and
+ * walk the wall on after the rest with the climb never climbed.
  */
 export function noteRestTimerTick(
   climbedAt: string,
@@ -212,14 +235,16 @@ export function noteRestTimerTick(
 ): void {
   if (!state.armed) return;
   const tickStartMs = getRestTimerStartMs(climbedAt) ?? nowMs;
-  const lastTick = lastTickAfter(tick);
+  const isFresh = isTickFreshEnoughToArm(tickStartMs, nowMs);
+  const lastTick = isFresh ? lastTickAfter(tick) : state.lastTick;
+  const anchorFromTick = isFresh ? tickAnchorMs(tickStartMs, nowMs) : historicalTickAnchorMs(tickStartMs, nowMs);
 
   if (mode === 'onTheMinute') {
     setState({
       ...state,
       lastTickAt: climbedAt,
       lastTick,
-      anchorMs: state.anchorMs ?? tickAnchorMs(tickStartMs, nowMs),
+      anchorMs: state.anchorMs ?? anchorFromTick,
       // A tick means the climber is still going, so give the queue another look.
       // Deliberately NOT re-anchored — holding the beat is the whole mode — but
       // the cycle still has to roll when the latch clears, or the scheduler has
@@ -235,7 +260,7 @@ export function noteRestTimerTick(
     ...state,
     lastTickAt: climbedAt,
     lastTick,
-    anchorMs: tickAnchorMs(tickStartMs, nowMs),
+    anchorMs: anchorFromTick,
     isRunning: true,
     pausedElapsedSeconds: 0,
     cycleId: state.cycleId + 1,

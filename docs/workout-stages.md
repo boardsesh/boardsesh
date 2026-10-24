@@ -177,11 +177,16 @@ stage, leaves the climber's own rest settings in charge, exactly as before. The 
   and stays on it, with the "rest over" cue. On the minute moves on every beat, logged or not.
 - **Which climb a tick is for.** The tick path (`use-tick-saver.ts`) reads the committed
   current queue item when the save starts (`attributeTickToQueueItem`): a tick counts for it
-  only when it is that climb's. The status and queue item go to the rest timer (`lastTick`)
-  and to the run's tick log. A tick on any other climb counts for no queue item, and leaves the
-  rest timer's last tick as it was: it says nothing about the climb on the wall. A save started
-  on the previous climb keeps that climb's queue item when it finishes after the advance, but it
-  never replaces a tick the new climb already has, so the new climb still moves on at its rest.
+  only when it is that climb's, at the angle the climb is up at (the queue item's
+  `climb.angle`, which the queue keeps on the board's angle and lighting reports as the
+  wall's). The status and queue item go to the rest timer (`lastTick`) and to the run's tick
+  log. A tick on any other climb, or on this one at an angle picked in the ascent form, counts
+  for no queue item: it still saves, and leaves the rest timer's last tick as it was, since it
+  says nothing about the climb on the wall. So does any tick when the queue item carries no
+  angle. Nor does a tick dated more than a minute back ever earn an advance, whatever it is on
+  (docs/rest-timer.md, "Effective pacing"). A save started on the previous climb keeps that
+  climb's queue item when it finishes after the advance, but it never replaces a tick the new
+  climb already has, so the new climb still moves on at its rest.
 - **A stage change on a running timer** (`planRestTimerPacingTransition`). An on-the-minute
   stage starting, or changing interval, starts its beat at that moment, so its first climb gets
   a whole interval. A new climb of a `tick` or `send` stage, or on the minute ending, clears

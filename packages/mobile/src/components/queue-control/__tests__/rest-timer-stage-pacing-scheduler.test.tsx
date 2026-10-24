@@ -783,6 +783,47 @@ describe('a late tick on the previous climb', () => {
   });
 });
 
+describe('yesterday’s send, logged on the climb just lit', () => {
+  const A_DAY_MS = 24 * 60 * 60 * 1000;
+
+  /** Limit: l1 sent and moved on; 2 s later the date picker logs a send a day back on l2. */
+  function yesterdaysSendOnTheNewClimb() {
+    startWorkout(LIMIT, ['l1', 'l2', 'hand-1']);
+    renderRuntime();
+    armTimer();
+    logTick('send');
+    advance(180_000);
+    expect(current()).toBe('l2');
+
+    advance(2_000);
+    logTick('send', 'l2', A_DAY_MS);
+  }
+
+  it('never walks the wall on: it earns no advance, and no rest runs out for it', () => {
+    yesterdaysSendOnTheNewClimb();
+    expect(getRestTimerState().lastTick).toBeNull();
+    const cuesSoFar = vi.mocked(playRestTimerCue).mock.calls.length;
+
+    advance(600_000);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+    expect(current()).toBe('l2');
+    expect(vi.mocked(playRestTimerCue).mock.calls.length).toBe(cuesSoFar);
+  });
+
+  it('a send logged now still moves it on after its whole rest', () => {
+    yesterdaysSendOnTheNewClimb();
+
+    advance(10_000);
+    logTick('send', 'l2');
+    advance(179_000);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+    expect(current()).toBe('l2');
+    advance(1_000);
+    expect(nextClimb).toHaveBeenCalledTimes(2);
+    expect(current()).toBe('hand-1');
+  });
+});
+
 describe('the pacing sync', () => {
   it('never reads the queue without a workout, and leaves no stage behind one', () => {
     harness.settings = { ...harness.settings, restTimerAutoAdvance: true };

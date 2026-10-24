@@ -104,12 +104,15 @@ vi.mock('../../../settings', async (importOriginal) => {
     getSetting: (key: string) => (key === 'restTimerMode' ? settingsState.restTimerMode : undefined),
   };
 });
+// The real store underneath, so a test can read what a tick did to the wall's
+// advance rule; it ignores every tick until something arms it.
 vi.mock('../../../lib/rest-timer-store', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../lib/rest-timer-store')>();
   return {
     ...actual,
-    noteRestTimerTick: vi.fn(() => {
+    noteRestTimerTick: vi.fn((...args: Parameters<typeof actual.noteRestTimerTick>) => {
       callLog.push('restTimer');
+      actual.noteRestTimerTick(...args);
     }),
   };
 });
@@ -143,12 +146,15 @@ import { track } from '../../../lib/analytics';
 import { hapticError } from '../../../lib/haptics';
 import {
   applyRestTimerStagePacing,
+  armRestTimer,
+  getRestTimerState,
   noteRestTimerTick,
   resetRestTimerStoreForTests,
 } from '../../../lib/rest-timer-store';
 import { noteWorkoutRunTick } from '../../../lib/workout-run-store';
 import { QueueActionsContext } from '../../../providers/queue/queue-contexts';
-import type { RestTimerStagePacing } from '../../../lib/rest-timer-pacing';
+import { restAdvanceAllowed, type RestTimerStagePacing } from '../../../lib/rest-timer-pacing';
+import { getAutoAdvanceDeadlineMs } from '../../../lib/rest-timer-auto-advance';
 
 const SAVER_INPUT: UseTickSaverInput = {
   climbUuid: CLIMB_UUID,
@@ -173,9 +179,9 @@ function fields(overrides: Partial<TickSaveFields> = {}): TickSaveFields {
   };
 }
 
-/** The committed current climb, as the queue provider's snapshot reports it. */
+/** The committed current climb, as the queue provider's snapshot reports it, up at `angle`. */
 const queueSnapshot = {
-  current: null as { uuid: string; climb: { uuid: string } } | null,
+  current: null as { uuid: string; climb: { uuid: string; angle?: number } } | null,
 };
 const getQueueSnapshot = vi.fn(() => ({
   queue: [],
@@ -439,7 +445,7 @@ describe('useTickSaver after a save', () => {
   });
 
   it('counts the tick for the climb on the wall, in the rest timer and the workout log', () => {
-    queueSnapshot.current = { uuid: 'queue-7', climb: { uuid: CLIMB_UUID } };
+    queueSnapshot.current = { uuid: 'queue-7', climb: { uuid: CLIMB_UUID, angle: ANGLE } };
     saveMock.state.result = { savedTick: { uuid: 'tick-9' } };
     const onSaved = vi.fn(() => {
       callLog.push('saved');
@@ -462,9 +468,9 @@ describe('useTickSaver after a save', () => {
   });
 
   it('keeps the climb that was up when the save started, even if the wall moves before it lands', () => {
-    queueSnapshot.current = { uuid: 'queue-7', climb: { uuid: CLIMB_UUID } };
+    queueSnapshot.current = { uuid: 'queue-7', climb: { uuid: CLIMB_UUID, angle: ANGLE } };
     saveMock.state.whileSaving = () => {
-      queueSnapshot.current = { uuid: 'queue-8', climb: { uuid: 'climb-2' } };
+      queueSnapshot.current = { uuid: 'queue-8', climb: { uuid: 'climb-2', angle: ANGLE } };
     };
     const { result } = renderSaver({}, { withQueue: true });
 
@@ -476,7 +482,7 @@ describe('useTickSaver after a save', () => {
   });
 
   it('counts a tick on any other climb for no queue item, and leaves the workout log alone', () => {
-    queueSnapshot.current = { uuid: 'queue-7', climb: { uuid: 'climb-on-the-wall' } };
+    queueSnapshot.current = { uuid: 'queue-7', climb: { uuid: 'climb-on-the-wall', angle: ANGLE } };
     const { result } = renderSaver({}, { withQueue: true });
 
     result.current.save(fields());
@@ -486,7 +492,7 @@ describe('useTickSaver after a save', () => {
   });
 
   it('writes no workout log for a tick outside a session', () => {
-    queueSnapshot.current = { uuid: 'queue-7', climb: { uuid: CLIMB_UUID } };
+    queueSnapshot.current = { uuid: 'queue-7', climb: { uuid: CLIMB_UUID, angle: ANGLE } };
     const { result } = renderSaver({ sessionId: null }, { withQueue: true });
 
     result.current.save(fields());
@@ -502,6 +508,79 @@ describe('useTickSaver after a save', () => {
     result.current.save(fields(), { onSaved });
 
     expect(onSaved).toHaveBeenCalledWith(null);
+  });
+});
+
+describe('useTickSaver at another angle than the climb is up at', () => {
+  /** Limit bouldering on queue-7: a 3:00 rest that moves the wall only after a send. */
+  const LIMIT_STAGE: RestTimerStagePacing = {
+    sessionId: 'session-1',
+    stageId: 'stage-limit',
+    kind: 'limitBouldering',
+    queueItemUuid: 'queue-7',
+    mode: 'afterTick',
+    targetSeconds: 180,
+    advanceOn: 'send',
+    closesRound: false,
+    stagePacing: { mode: 'afterTick', restSeconds: 180, advanceOn: 'send' },
+  };
+  const SENT_NOW = new Date(NOW_MS).toISOString();
+
+  /** The limit climb up at 40°, the rest timer armed and paced by its stage. */
+  function limitClimbOnTheWall(climb: { uuid: string; angle?: number } = { uuid: CLIMB_UUID, angle: ANGLE }) {
+    queueSnapshot.current = { uuid: 'queue-7', climb };
+    armRestTimer('afterTick', NOW_MS, 'session-1');
+    applyRestTimerStagePacing(LIMIT_STAGE, NOW_MS, 'none');
+  }
+
+  /** Whether the timer would move the wall on from queue-7, and when. */
+  function advance(): { allowed: boolean; deadlineMs: number | null } {
+    const { lastTick, anchorMs, lastFiredDeadlineMs } = getRestTimerState();
+    return {
+      allowed: restAdvanceAllowed({ advanceOn: 'send', currentQueueItemUuid: 'queue-7', lastTick }),
+      deadlineMs: getAutoAdvanceDeadlineMs({
+        mode: 'afterTick',
+        anchorMs,
+        targetSeconds: 180,
+        nowMs: NOW_MS,
+        lastFiredDeadlineMs,
+      }),
+    };
+  }
+
+  it('saves a send picked at another angle, but it counts for no queue item and never moves the wall', () => {
+    limitClimbOnTheWall();
+    const { result } = renderSaver({}, { withQueue: true });
+
+    result.current.save(fields({ angle: 30, climbedAtIso: SENT_NOW }));
+
+    expect(sentInput()).toMatchObject({ climbUuid: CLIMB_UUID, angle: 30, status: 'send' });
+    expect(vi.mocked(noteRestTimerTick).mock.calls[0]?.[3]).toEqual({ status: 'send', queueItemUuid: null });
+    expect(noteWorkoutRunTick).not.toHaveBeenCalled();
+    expect(getRestTimerState().lastTick).toBeNull();
+    expect(advance().allowed).toBe(false);
+  });
+
+  it('counts the same send at the angle the climb is up at, and the wall moves on after the rest', () => {
+    limitClimbOnTheWall();
+    const { result } = renderSaver({}, { withQueue: true });
+
+    result.current.save(fields({ angle: ANGLE, climbedAtIso: SENT_NOW }));
+
+    expect(vi.mocked(noteRestTimerTick).mock.calls[0]?.[3]).toEqual({ status: 'send', queueItemUuid: 'queue-7' });
+    expect(vi.mocked(noteWorkoutRunTick).mock.calls[0]?.[1]).toMatchObject({ queueItemUuid: 'queue-7' });
+    expect(advance()).toEqual({ allowed: true, deadlineMs: NOW_MS + 180_000 });
+  });
+
+  it('counts no queue item when the climb on the wall carries no angle', () => {
+    limitClimbOnTheWall({ uuid: CLIMB_UUID });
+    const { result } = renderSaver({}, { withQueue: true });
+
+    result.current.save(fields({ angle: ANGLE, climbedAtIso: SENT_NOW }));
+
+    expect(vi.mocked(noteRestTimerTick).mock.calls[0]?.[3]).toEqual({ status: 'send', queueItemUuid: null });
+    expect(noteWorkoutRunTick).not.toHaveBeenCalled();
+    expect(advance().allowed).toBe(false);
   });
 });
 

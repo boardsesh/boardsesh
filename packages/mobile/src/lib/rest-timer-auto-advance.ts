@@ -9,7 +9,10 @@ import type { RestTimerState } from './rest-timer-store';
 /**
  * The tick sheet lets a climber back-date a send. A tick older than this updates
  * the display but must not schedule an advance — otherwise logging yesterday's
- * session yanks the wall the instant you save it.
+ * session yanks the wall the instant you save it. The rest-timer store judges
+ * every tick by it, on the tick's own time (`noteRestTimerTick`): such a tick
+ * never earns an advance under a tick or send rule, and never rewinds a running
+ * rest.
  */
 export const AUTO_ADVANCE_MAX_BACKDATE_MS = 60_000;
 
@@ -40,7 +43,9 @@ type DeadlineInput = {
  * When the next advance is due, or null when nothing is scheduled.
  *
  * `afterTick` is one interval past the anchor, so it can already be in the past
- * for a back-dated tick — callers gate that with `isTickFreshEnoughToArm`.
+ * for a back-dated tick: the store anchors one older than
+ * `AUTO_ADVANCE_MAX_BACKDATE_MS` at its own time when no rest is running, and
+ * the scheduler reads the deadline as stale (`isAutoAdvanceDeadlineStale`).
  *
  * `onTheMinute` returns the next beat STRICTLY after now, so arming exactly on a
  * boundary waits a full interval instead of firing on the spot.
