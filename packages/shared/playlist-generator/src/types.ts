@@ -237,7 +237,8 @@ export const WARM_UP_CONFIG = {
 
 export type PlannedClimbSlot = {
   grade: number;
-  section: 'warmUp' | 'increasing' | 'peak' | 'decreasing' | 'main';
+  /** `coolDown`: a warm-up after the last workout block, stepping back down from its grade. */
+  section: 'warmUp' | 'increasing' | 'peak' | 'decreasing' | 'main' | 'coolDown';
   index: number;
 };
 

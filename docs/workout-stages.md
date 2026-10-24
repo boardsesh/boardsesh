@@ -22,8 +22,11 @@ wide only). Each block becomes one **stage**. The code lives in
   `options` carry. The generator plans grades only, so filters never change a slot.
 - `generateStagedPlan(plan, grades)` fills every stage with grade slots. Each slot names
   its stage id. A warm-up ramps to the grade of the first workout stage after it,
-  skipping any warm-ups in between. With no workout stage after it, it plans no climbs
-  (partner warm-ups carry their own `targetGrade` and use that instead). A warm-up plus
+  skipping any warm-ups in between (partner warm-ups carry their own `targetGrade` and
+  use that instead). With no workout stage after it, it is a **cool-down**: the climbs
+  the same warm-up would plan for the nearest workout stage before it, hardest first, in
+  the `coolDown` section, so a standard warm-up after a V5 volume block plans V4, V3,
+  V2, V1. A warm-up with no workout stage on either side plans no climbs. A warm-up plus
   one workout plans exactly what the single-type generator always planned.
 - `WorkoutRun` is what actually got queued: per stage, the queue-item uuids that belong
   to it (`buildWorkoutRun`). A stage with no climbs is left out. A workout stage also
@@ -56,7 +59,10 @@ wide only). Each block becomes one **stage**. The code lives in
   For a climb with a round it also gives `round`: the round's rank among the stage's
   rounds with queued climbs (ranked by the stored number, so a reordered queue still
   says round 2 for a round-2 climb) and the climb's place in it, so the player reads
-  "4x4 · Round 2 of 4 · 3 of 4".
+  "4x4 · Round 2 of 4 · 3 of 4". A warm-up stage queued after every workout stage gets
+  `isCoolDown`, and the card and the player name it "Cool-down". The run keeps no flag:
+  it follows the queue, so a cool-down the climber moves in front of the workout, or a
+  block added after it mid-session, reads "Warm-up" again.
 
 Stage kinds use the partner API block names (`warmUp`, `volume`, `pyramid`, `ladder`,
 `gradeFocus`, `onTheMinute`, `fourByFour`, `limitBouldering`; see `docs/partner-api.md`,
@@ -163,7 +169,9 @@ starts empty: no blocks means no workout, and the climber picks every climb. "Ad
 block" appends a workout block at the last workout block's grade, with the next type. A
 card's type chips turn any block into a warm-up or another workout type. A workout card
 holds its target grade and counts; a warm-up card holds its length and names the block
-it ramps to, or says nothing follows it. Any block can move up or down or be removed. The cap is five
+it ramps to (`warmUpTarget`). After the last workout block it names the block it eases
+off from instead (`coolDownSource`), and the preview heads its climbs "Cool-down". A
+warm-up with no workout block on either side says it needs one. Any block can move up or down or be removed. The cap is five
 blocks, warm-ups included (`MAX_WORKOUT_BLOCKS` in `workout-blocks.ts`).
 A ladder block has a "Hardest first" switch (`descending` on `LadderOptions`): the steps run from the target grade down, the first step is the peak and the rest are decreasing, and a warm-up before it still ramps to the target grade.
 
@@ -206,7 +214,7 @@ started without the generator can turn into one. Both open `AddWorkoutBlockSheet
 `ModalSheet` over the session screen:
 
 - It offers the workout types only, never a warm-up: mid-session the climber is already
-  warm, and a warm-up with no workout block after it would plan no climbs.
+  warm, and the sheet plans its one block alone, where a warm-up plans no climbs.
 - The block opens on the run's last workout stage: same type, same target grade. With no
   run it opens on volume at the board's middle grade. A last stage of a type the sheet
   has no chip for (a timed block, read after a rollback to a bundle that does not offer

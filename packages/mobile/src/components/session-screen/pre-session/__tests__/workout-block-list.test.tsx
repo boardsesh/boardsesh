@@ -283,17 +283,38 @@ describe('WorkoutBlockList', () => {
     expect(screen.getByText('mobile.session.preGeneratorWarmUpTarget(V20,3)')).toBeTruthy();
   });
 
-  it('tells a trailing warm-up it has nothing to ramp to', () => {
+  it('tells a trailing warm-up it eases off from the last block before it', () => {
     const screen = renderList([pyramid('first', 12), warmUp('warm')]);
+
+    expect(headers(screen.container)[1].getAttribute('aria-label')).toContain(
+      'mobile.session.preGeneratorCoolDownSummaryEasesOff(V12)',
+    );
+    fireEvent.click(headers(screen.container)[1]);
+    expect(screen.getByText('mobile.session.preGeneratorCoolDownFrom(V12,1)')).toBeTruthy();
+
+    act(() => segments.byLabel.get('mobile.session.preGeneratorWarmUp')?.('extended'));
+    expect(lastSelection().blocks[1]).toEqual({ ...warmUp('warm'), warmUpType: 'extended' });
+  });
+
+  it('turns a trailing warm-up back into a ramp once a block is added after it', () => {
+    const screen = renderList([pyramid('first', 12), warmUp('warm')]);
+
+    fireEvent.click(screen.getByLabelText('mobile.session.preGeneratorAddBlock'));
+
+    // The new block opens; the warm-up's card stays closed and now ramps to it.
+    expect(headers(screen.container)[1].getAttribute('aria-label')).toContain(
+      'mobile.session.preGeneratorWarmUpSummaryRamps(V12)',
+    );
+  });
+
+  it('tells a warm-up with no workout block on either side it has nothing to ramp to', () => {
+    const screen = renderList([warmUp('first'), warmUp('second')]);
 
     expect(headers(screen.container)[1].getAttribute('aria-label')).toContain(
       'mobile.session.preGeneratorWarmUpSummaryNoTarget',
     );
-    fireEvent.click(headers(screen.container)[1]);
+    // The first card opens on render.
     expect(screen.getByText('mobile.session.preGeneratorWarmUpNoTarget')).toBeTruthy();
-
-    act(() => segments.byLabel.get('mobile.session.preGeneratorWarmUp')?.('extended'));
-    expect(lastSelection().blocks[1]).toEqual({ ...warmUp('warm'), warmUpType: 'extended' });
   });
 
   it('switches a block to a warm-up and back from its chips', () => {

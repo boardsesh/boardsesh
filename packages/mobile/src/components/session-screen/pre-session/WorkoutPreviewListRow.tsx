@@ -33,7 +33,9 @@ export function WorkoutPreviewListRow({
   onPress,
   onRefresh,
 }: WorkoutPreviewListRowProps) {
-  if (row.kind === 'stage') return <WorkoutPreviewStageHeading stageKind={row.stageKind} count={row.count} />;
+  if (row.kind === 'stage') {
+    return <WorkoutPreviewStageHeading stageKind={row.stageKind} count={row.count} isCoolDown={row.isCoolDown} />;
+  }
   if (row.kind === 'section') return <WorkoutPreviewSectionHeading section={row.section} count={row.count} />;
   if (!board) return null;
   const { item, knownStatus = null } = row.preview;

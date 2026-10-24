@@ -18,6 +18,7 @@ import {
   addBlock,
   canAddBlock,
   changeBlockType,
+  coolDownSource,
   moveBlock,
   removeBlock,
   updateBlock,
@@ -138,6 +139,7 @@ export function WorkoutBlockList({
       ) : (
         blocks.map((block, position) => {
           const target = block.kind === 'warmUp' ? warmUpTarget(blocks, position) : null;
+          const coolDownFrom = block.kind === 'warmUp' ? coolDownSource(blocks, position) : null;
           return (
             <WorkoutBlockCard
               key={block.id}
@@ -148,6 +150,8 @@ export function WorkoutBlockList({
               expanded={block.id === expandedBlockId}
               warmUpTargetGrade={target?.targetGrade ?? null}
               warmUpTargetBlockNumber={target?.blockNumber ?? null}
+              coolDownFromGrade={coolDownFrom?.targetGrade ?? null}
+              coolDownFromBlockNumber={coolDownFrom?.blockNumber ?? null}
               boardName={boardName}
               railGrades={railGrades}
               sizeFilters={sizeFilters}

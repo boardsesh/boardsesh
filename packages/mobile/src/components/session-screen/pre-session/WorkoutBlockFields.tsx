@@ -55,6 +55,10 @@ type WorkoutBlockFieldsProps = {
   warmUpTargetGrade?: number | null;
   /** For a warm-up: the 1-based number of the block it ramps to. */
   warmUpTargetBlockNumber?: number | null;
+  /** For a warm-up after the last workout block: the grade it eases off from, the block before it's. */
+  coolDownFromGrade?: number | null;
+  /** For that warm-up: the 1-based number of the block it eases off from. */
+  coolDownFromBlockNumber?: number | null;
   /** The block's own climb filters. */
   filters: WorkoutFilters;
   /** Which size filters the board offers. */
@@ -72,6 +76,8 @@ export function WorkoutBlockFields({
   blockTypes = WORKOUT_BLOCK_TYPES,
   warmUpTargetGrade = null,
   warmUpTargetBlockNumber = null,
+  coolDownFromGrade = null,
+  coolDownFromBlockNumber = null,
   filters,
   sizeFilters,
   onTypeChange,
@@ -111,6 +117,8 @@ export function WorkoutBlockFields({
           boardName={boardName}
           targetGrade={warmUpTargetGrade}
           targetBlockNumber={warmUpTargetBlockNumber}
+          coolDownFromGrade={coolDownFromGrade}
+          coolDownFromBlockNumber={coolDownFromBlockNumber}
           onBlockChange={onBlockChange}
         />
       ) : (
@@ -185,10 +193,20 @@ type WarmUpFieldsProps = {
   boardName: BoardName | null;
   targetGrade: number | null;
   targetBlockNumber: number | null;
+  coolDownFromGrade: number | null;
+  coolDownFromBlockNumber: number | null;
   onBlockChange: (block: WorkoutBlockSpec) => void;
 };
 
-function WarmUpFields({ warmUpType, boardName, targetGrade, targetBlockNumber, onBlockChange }: WarmUpFieldsProps) {
+function WarmUpFields({
+  warmUpType,
+  boardName,
+  targetGrade,
+  targetBlockNumber,
+  coolDownFromGrade,
+  coolDownFromBlockNumber,
+  onBlockChange,
+}: WarmUpFieldsProps) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
   const { formatGradeByDifficultyId } = useGradeFormat();
@@ -200,13 +218,22 @@ function WarmUpFields({ warmUpType, boardName, targetGrade, targetBlockNumber, o
     (nextWarmUpType: WarmUpStageType) => onBlockChange({ kind: 'warmUp', warmUpType: nextWarmUpType }),
     [onBlockChange],
   );
-  const targetNote =
-    targetGrade != null && targetBlockNumber != null
-      ? t('mobile.session.preGeneratorWarmUpTarget', {
-          grade: formatGradeByDifficultyId(targetGrade, boardName) ?? String(targetGrade),
-          position: targetBlockNumber,
-        })
-      : t('mobile.session.preGeneratorWarmUpNoTarget');
+  const formatGrade = (difficultyId: number) =>
+    formatGradeByDifficultyId(difficultyId, boardName) ?? String(difficultyId);
+  let targetNote: string;
+  if (targetGrade != null && targetBlockNumber != null) {
+    targetNote = t('mobile.session.preGeneratorWarmUpTarget', {
+      grade: formatGrade(targetGrade),
+      position: targetBlockNumber,
+    });
+  } else if (coolDownFromGrade != null && coolDownFromBlockNumber != null) {
+    targetNote = t('mobile.session.preGeneratorCoolDownFrom', {
+      grade: formatGrade(coolDownFromGrade),
+      position: coolDownFromBlockNumber,
+    });
+  } else {
+    targetNote = t('mobile.session.preGeneratorWarmUpNoTarget');
+  }
 
   return (
     <>

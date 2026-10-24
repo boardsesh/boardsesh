@@ -34,35 +34,51 @@ type MoveDirection = 'up' | 'down';
 type BlockAction = 'moveUp' | 'moveDown' | 'remove';
 
 /**
+ * Which way a warm-up's grades run: `up` to the workout block after it, or
+ * `down` from the last workout block before it (a cool-down). `grade` is that
+ * block's target grade.
+ */
+export type WarmUpRamp = { direction: 'up' | 'down'; grade: number };
+
+/**
  * The one-line summary under a closed card's type: `V6 · 20 climbs · spread 0`
  * for a workout, `V6 · 4 climbs · 4 rounds · 3:00 between rounds` for a 4x4,
- * `Standard · ramps to V6` for a warm-up. `filtered` adds a `· filtered`
- * marker, for a block whose climb filters are not the defaults.
+ * `Standard · ramps to V6` for a warm-up, `Standard · eases off from V6` for one
+ * after the last workout block. `filtered` adds a `· filtered` marker, for a
+ * block whose climb filters are not the defaults.
  */
 export function blockSummary(
   block: WorkoutBlockSpec,
   formatGrade: (difficultyId: number) => string,
-  warmUpTargetGrade: number | null,
+  warmUpRamp: WarmUpRamp | null,
   t: Translate,
   filtered = false,
 ): string {
-  const parts = blockSettingsSummary(block, formatGrade, warmUpTargetGrade, t);
+  const parts = blockSettingsSummary(block, formatGrade, warmUpRamp, t);
   if (filtered) parts.push(t('mobile.session.preGeneratorBlockSummaryFiltered'));
   return parts.join(' · ');
+}
+
+function warmUpRampSummary(
+  warmUpRamp: WarmUpRamp | null,
+  formatGrade: (difficultyId: number) => string,
+  t: Translate,
+): string {
+  if (!warmUpRamp) return t('mobile.session.preGeneratorWarmUpSummaryNoTarget');
+  const grade = formatGrade(warmUpRamp.grade);
+  return warmUpRamp.direction === 'up'
+    ? t('mobile.session.preGeneratorWarmUpSummaryRamps', { grade })
+    : t('mobile.session.preGeneratorCoolDownSummaryEasesOff', { grade });
 }
 
 function blockSettingsSummary(
   block: WorkoutBlockSpec,
   formatGrade: (difficultyId: number) => string,
-  warmUpTargetGrade: number | null,
+  warmUpRamp: WarmUpRamp | null,
   t: Translate,
 ): string[] {
   if (block.kind === 'warmUp') {
-    const target =
-      warmUpTargetGrade != null
-        ? t('mobile.session.preGeneratorWarmUpSummaryRamps', { grade: formatGrade(warmUpTargetGrade) })
-        : t('mobile.session.preGeneratorWarmUpSummaryNoTarget');
-    return [warmUpLengthLabel(block.warmUpType, t), target];
+    return [warmUpLengthLabel(block.warmUpType, t), warmUpRampSummary(warmUpRamp, formatGrade, t)];
   }
   const { options } = block;
   const parts = [formatGrade(options.targetGrade)];
@@ -139,6 +155,10 @@ type WorkoutBlockCardProps = {
   warmUpTargetGrade: number | null;
   /** For a warm-up: that block's 1-based number. */
   warmUpTargetBlockNumber: number | null;
+  /** For a warm-up after the last workout block: the grade of the block before it, which it eases off from. */
+  coolDownFromGrade: number | null;
+  /** For that warm-up: that block's 1-based number. */
+  coolDownFromBlockNumber: number | null;
   boardName: BoardName | null;
   railGrades: readonly Grade[];
   /** Which size filters the board offers. Keep its identity stable: the card is memoised. */
@@ -161,6 +181,8 @@ export const WorkoutBlockCard = memo(function WorkoutBlockCard({
   expanded,
   warmUpTargetGrade,
   warmUpTargetBlockNumber,
+  coolDownFromGrade,
+  coolDownFromBlockNumber,
   boardName,
   railGrades,
   sizeFilters,
@@ -180,17 +202,21 @@ export const WorkoutBlockCard = memo(function WorkoutBlockCard({
   const title = t('mobile.session.preGeneratorBlockTitle', { position });
   const typeName = workoutStageName(blockType(block), t);
 
-  const summary = useMemo(
-    () =>
-      blockSummary(
-        block,
-        (difficultyId) => formatGradeByDifficultyId(difficultyId, boardName) ?? String(difficultyId),
-        warmUpTargetGrade,
-        t,
-        !sameFilters(block.filters, DEFAULT_WORKOUT_FILTERS),
-      ),
-    [block, formatGradeByDifficultyId, boardName, warmUpTargetGrade, t],
-  );
+  const summary = useMemo(() => {
+    const warmUpRamp: WarmUpRamp | null =
+      warmUpTargetGrade != null
+        ? { direction: 'up', grade: warmUpTargetGrade }
+        : coolDownFromGrade != null
+          ? { direction: 'down', grade: coolDownFromGrade }
+          : null;
+    return blockSummary(
+      block,
+      (difficultyId) => formatGradeByDifficultyId(difficultyId, boardName) ?? String(difficultyId),
+      warmUpRamp,
+      t,
+      !sameFilters(block.filters, DEFAULT_WORKOUT_FILTERS),
+    );
+  }, [block, formatGradeByDifficultyId, boardName, warmUpTargetGrade, coolDownFromGrade, t]);
 
   // Stable per block, so the fields don't get new handlers on every render.
   const handleToggle = useCallback(() => {
@@ -340,6 +366,8 @@ export const WorkoutBlockCard = memo(function WorkoutBlockCard({
               groupLabel={title}
               warmUpTargetGrade={warmUpTargetGrade}
               warmUpTargetBlockNumber={warmUpTargetBlockNumber}
+              coolDownFromGrade={coolDownFromGrade}
+              coolDownFromBlockNumber={coolDownFromBlockNumber}
               filters={block.filters}
               sizeFilters={sizeFilters}
               onTypeChange={handleTypeChange}

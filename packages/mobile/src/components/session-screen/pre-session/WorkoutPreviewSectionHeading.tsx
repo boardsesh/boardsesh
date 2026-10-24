@@ -19,6 +19,8 @@ function sectionLabel(section: PreviewSection, t: (key: string) => string): stri
       return t('mobile.session.preWorkoutSectionDecreasing');
     case 'main':
       return t('mobile.session.preWorkoutSectionMain');
+    case 'coolDown':
+      return t('mobile.session.preWorkoutSectionCoolDown');
   }
 }
 

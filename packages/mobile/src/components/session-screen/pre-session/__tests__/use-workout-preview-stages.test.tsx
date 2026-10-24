@@ -354,7 +354,7 @@ describe('useWorkoutPreview stages', () => {
     expect(result.current.toStagedQueueItems().items.length).toBeGreaterThan(0);
   });
 
-  it("ramps a warm-up at position 2 to block 3's grade and plans none for a trailing warm-up", async () => {
+  it("ramps a warm-up at position 2 to block 3's grade and eases a trailing warm-up off from it", async () => {
     const selection = selectionOf([
       workoutBlock('focus', { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 12, mainSetClimbs: 2 }),
       warmUpBlock('middle'),
@@ -366,17 +366,17 @@ describe('useWorkoutPreview stages', () => {
     );
     await waitFor(() => expect(result.current.status).toBe('ready'));
 
-    const middleGrades = result.current.items
-      .filter((preview) => preview.slot.section === 'warmUp')
-      .map((preview) => preview.slot.grade);
-    expect(middleGrades).toEqual([18, 19, 20, 21]);
-    // The trailing warm-up has nothing to ramp to: no climbs, no heading.
-    expect(result.current.plannedStages.map((stage) => stage.kind)).toEqual(['volume', 'warmUp', 'pyramid']);
-    expect(result.current.toStagedQueueItems().run?.stages.map((stage) => stage.kind)).toEqual([
-      'volume',
-      'warmUp',
-      'pyramid',
-    ]);
+    const gradesIn = (section: string) =>
+      result.current.items.filter((preview) => preview.slot.section === section).map((preview) => preview.slot.grade);
+    expect(gradesIn('warmUp')).toEqual([18, 19, 20, 21]);
+    // The trailing warm-up steps back down from the pyramid's grade, hardest first.
+    expect(gradesIn('coolDown')).toEqual([21, 20, 19, 18]);
+    expect(result.current.plannedStages.map((stage) => stage.kind)).toEqual(['volume', 'warmUp', 'pyramid', 'warmUp']);
+
+    // Start queues the cool-down last, in the order it was planned.
+    const { items, run } = result.current.toStagedQueueItems();
+    expect(run?.stages.map((stage) => stage.kind)).toEqual(['volume', 'warmUp', 'pyramid', 'warmUp']);
+    expect(items.slice(-4).map((item) => item.uuid)).toEqual(run?.stages[3].itemUuids);
   });
 
   it('plans nothing, and hands Start nothing, for a warm-up on its own', async () => {
