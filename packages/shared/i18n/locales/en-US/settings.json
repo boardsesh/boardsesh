@@ -487,7 +487,9 @@
       "onSwipeLabel": "Light problems on swipe",
       "onSwipeDescription": "Light the board when you swipe between climbs in the play view.",
       "onTapLabel": "Light problems when tapping the list",
-      "onTapDescription": "Light the board when you select a climb from a climbs list."
+      "onTapDescription": "Light the board when you select a climb from a climbs list.",
+      "playlistTapLoadsQueueLabel": "Tapping a playlist loads it into my queue",
+      "playlistTapLoadsQueueDescription": "A tap in a playlist, For You list or setter's page replaces your queue with that list."
     },
     "turnOff": "Turn off the board",
     "holdForControls": "Hold for board controls",

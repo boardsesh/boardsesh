@@ -487,7 +487,9 @@
       "onSwipeLabel": "Allumer en faisant défiler les blocs",
       "onSwipeDescription": "Allume la board quand vous passez d'un bloc à l'autre en faisant défiler.",
       "onTapLabel": "Allumer en sélectionnant dans la liste",
-      "onTapDescription": "Allume la board quand vous sélectionnez un bloc dans une liste."
+      "onTapDescription": "Allume la board quand vous sélectionnez un bloc dans une liste.",
+      "playlistTapLoadsQueueLabel": "Toucher une playlist la charge dans ma file",
+      "playlistTapLoadsQueueDescription": "Toucher un bloc d'une playlist, de Pour vous ou de la page d'un ouvreur remplace votre file par cette liste."
     },
     "turnOff": "Éteindre la board",
     "holdForControls": "Maintenir pour les commandes",

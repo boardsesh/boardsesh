@@ -7,6 +7,7 @@ function makeInput(overrides: Partial<BoardLightingModelInput> = {}): BoardLight
     t: (key: string) => key,
     lightOnSwipe: { enabled: true, onChange: vi.fn() },
     lightOnClimbTap: { enabled: false, onChange: vi.fn() },
+    playlistTapLoadsQueue: { enabled: false, onChange: vi.fn() },
     moonboardLightAdjacentHolds: null,
     autoDisconnect: { enabled: true, onChange: vi.fn() },
     autoDisconnectTimeout: {
@@ -33,7 +34,7 @@ describe('buildBoardLightingSections', () => {
   it('lists what lights the board, then Bluetooth with auto-disconnect', () => {
     const sections = buildBoardLightingSections(makeInput());
     expect(sections.map((section) => [section.key, section.rows.map((row) => row.key)])).toEqual([
-      ['lighting', ['lightOnSwipe', 'lightOnClimbTap']],
+      ['lighting', ['lightOnSwipe', 'lightOnClimbTap', 'playlistTapLoadsQueue']],
       ['bluetooth', ['autoDisconnectBle', 'autoDisconnectTimeoutSeconds']],
     ]);
   });
@@ -73,6 +74,18 @@ describe('buildBoardLightingSections', () => {
     row.onSelect('999');
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange).toHaveBeenCalledWith(10);
+  });
+
+  it('offers the playlist-tap switch under the tap-lighting one, off unless the climber chose it', () => {
+    const input = makeInput();
+    const row = findRow(input, 'playlistTapLoadsQueue');
+    if (row.kind !== 'toggle') throw new Error('not a toggle');
+    expect(row.label).toBe('settings:ble.lighting.playlistTapLoadsQueueLabel');
+    expect(row.subtitle).toBe('settings:ble.lighting.playlistTapLoadsQueueDescription');
+    expect(row.value).toBe(false);
+    row.onValueChange(true);
+    expect(input.playlistTapLoadsQueue.onChange).toHaveBeenCalledWith(true);
+    expect(input.lightOnClimbTap.onChange).not.toHaveBeenCalled();
   });
 
   it('hands each switch flip to its own handler', () => {

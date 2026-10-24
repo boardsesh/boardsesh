@@ -18,6 +18,7 @@ export function useBoardLightingSections(): MoreSection[] {
   const { t } = useTranslation('common');
   const [lightOnSwipe, setLightOnSwipe] = useSetting('lightOnSwipe');
   const [lightOnClimbTap, setLightOnClimbTap] = useSetting('lightOnClimbTap');
+  const [playlistTapLoadsQueue, setPlaylistTapLoadsQueue] = useSetting('playlistTapLoadsQueue');
   const [autoDisconnectBle, setAutoDisconnectBle] = useSetting('autoDisconnectBle');
   const [autoDisconnectTimeoutSeconds, setAutoDisconnectTimeoutSeconds] = useSetting('autoDisconnectTimeoutSeconds');
   const autoDisconnectTimeoutLabels = useAutoDisconnectTimeoutLabels();
@@ -46,6 +47,13 @@ export function useBoardLightingSections(): MoreSection[] {
           onChange: (enabled) => {
             hapticSelection();
             setLightOnClimbTap(enabled);
+          },
+        },
+        playlistTapLoadsQueue: {
+          enabled: playlistTapLoadsQueue,
+          onChange: (enabled) => {
+            hapticSelection();
+            setPlaylistTapLoadsQueue(enabled);
           },
         },
         moonboardLightAdjacentHolds: showMoonboardLightAdjacentHolds
@@ -83,6 +91,8 @@ export function useBoardLightingSections(): MoreSection[] {
       setLightOnSwipe,
       lightOnClimbTap,
       setLightOnClimbTap,
+      playlistTapLoadsQueue,
+      setPlaylistTapLoadsQueue,
       showMoonboardLightAdjacentHolds,
       moonboardLightAdjacentHolds,
       setMoonboardLightAdjacentHolds,

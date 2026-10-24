@@ -8,6 +8,12 @@ export type BoardLightingModelInput = {
   lightOnSwipe: Toggle;
   lightOnClimbTap: Toggle;
   /**
+   * Whether a playlist, For You or setter-page tap loads that list into the
+   * queue (F4, #6667). Sits under Light problems when tapping the list: both
+   * say what a list tap does.
+   */
+  playlistTapLoadsQueue: Toggle;
+  /**
    * The MoonBoard "V2" extra LEDs, or `null` when the connected board is not a
    * MoonBoard. Same setting and handler as the board's control sheet, so it is
    * reachable without a live connection.
@@ -23,8 +29,8 @@ export type BoardLightingModelInput = {
 };
 
 /**
- * The Board page's lighting half: what lights the connected board on its own,
- * then the Bluetooth group, which says when the phone lets go of the board so
+ * The Board page's lighting half: what lights the connected board on its own
+ * (and what a list tap does, which is when it lights), then the Bluetooth group, which says when the phone lets go of the board so
  * another climber can connect.
  */
 export function buildBoardLightingSections(input: BoardLightingModelInput): MoreSection[] {
@@ -46,6 +52,14 @@ export function buildBoardLightingSections(input: BoardLightingModelInput): More
       subtitle: t('settings:ble.lighting.onTapDescription'),
       value: input.lightOnClimbTap.enabled,
       onValueChange: input.lightOnClimbTap.onChange,
+    },
+    {
+      kind: 'toggle',
+      key: 'playlistTapLoadsQueue',
+      label: t('settings:ble.lighting.playlistTapLoadsQueueLabel'),
+      subtitle: t('settings:ble.lighting.playlistTapLoadsQueueDescription'),
+      value: input.playlistTapLoadsQueue.enabled,
+      onValueChange: input.playlistTapLoadsQueue.onChange,
     },
   ];
   if (input.moonboardLightAdjacentHolds) {
