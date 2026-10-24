@@ -1,8 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { focusManager, onlineManager, QueryClient } from '@tanstack/react-query';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { focusManager, onlineManager, QueryClient, QueryObserver } from '@tanstack/react-query';
 import { invalidatePrivacySnapshots } from '../../privacy/privacy-cache';
 import {
   bindOfflineUserReadRecovery,
+  beginPlaylistMembershipWrite,
   getUserReadRefreshEpoch,
   recordLocalUserRead,
 } from '../offline-user-read-recovery';
@@ -82,5 +83,93 @@ describe('offline user read recovery', () => {
     stop();
     onlineManager.setOnline(true);
     expect(client.getQueryData(['logbook', 'kilter', 'accumulated'])).toEqual([]);
+  });
+
+  it('keeps optimistic memberships until every pending toggle settles, then refreshes once', async () => {
+    onlineManager.setOnline(true);
+    const membershipKey = ['playlistsForClimb', 'kilter', 1, 'climb'];
+    let serverMemberships: string[] = [];
+    const readMemberships = vi.fn(async () => serverMemberships);
+    const observer = new QueryObserver<string[]>(client, {
+      queryKey: membershipKey,
+      queryFn: readMemberships,
+      initialData: [],
+      staleTime: 30_000,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+    });
+    let stopObserver = observer.subscribe(() => {});
+    const releaseFirst = beginPlaylistMembershipWrite(client, membershipKey);
+    const releaseSecond = beginPlaylistMembershipWrite(client, membershipKey);
+    try {
+      recordLocalUserRead('playlists', 'kilter');
+      await client.cancelQueries({ queryKey: membershipKey });
+      client.setQueryData(membershipKey, ['first-playlist', 'second-playlist']);
+      focusManager.setFocused(true);
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      expect(readMemberships).not.toHaveBeenCalled();
+      expect(client.getQueryData(membershipKey)).toEqual(['first-playlist', 'second-playlist']);
+      expect(client.getQueryState(membershipKey)?.isInvalidated).toBe(false);
+
+      // The picker unmounts when returning to the reaction menu. Reopening it
+      // during the mutation must not use recovery's stale bit to start a GET.
+      stopObserver();
+      const remountedObserver = new QueryObserver<string[]>(client, {
+        queryKey: membershipKey,
+        queryFn: readMemberships,
+        staleTime: 30_000,
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
+      });
+      stopObserver = remountedObserver.subscribe(() => {});
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      expect(readMemberships).not.toHaveBeenCalled();
+
+      serverMemberships = ['first-playlist'];
+      releaseFirst();
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      expect(readMemberships).not.toHaveBeenCalled();
+      expect(client.getQueryData(membershipKey)).toEqual(['first-playlist', 'second-playlist']);
+
+      serverMemberships = ['first-playlist', 'second-playlist'];
+      releaseSecond();
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      expect(readMemberships).toHaveBeenCalledTimes(1);
+      expect(client.getQueryData(membershipKey)).toEqual(serverMemberships);
+      expect(client.getQueryState(membershipKey)?.isInvalidated).toBe(false);
+    } finally {
+      releaseFirst();
+      releaseSecond();
+      stopObserver();
+    }
+  });
+
+  it('does not flush a retired account’s deferred membership refresh', async () => {
+    onlineManager.setOnline(true);
+    const membershipKey = ['playlistsForClimb', 'kilter', 1, 'climb'];
+    const readMemberships = vi.fn(async () => ['old-account-playlist']);
+    const observer = new QueryObserver<string[]>(client, {
+      queryKey: membershipKey,
+      queryFn: readMemberships,
+      initialData: [],
+      staleTime: 30_000,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+    });
+    const stopObserver = observer.subscribe(() => {});
+    const release = beginPlaylistMembershipWrite(client, membershipKey);
+    try {
+      recordLocalUserRead('playlists', 'kilter');
+      focusManager.setFocused(true);
+      invalidatePrivacySnapshots('credential');
+      client.setQueryData(membershipKey, ['new-account-playlist']);
+      release();
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      expect(readMemberships).not.toHaveBeenCalled();
+      expect(client.getQueryData(membershipKey)).toEqual(['new-account-playlist']);
+    } finally {
+      release();
+      stopObserver();
+    }
   });
 });

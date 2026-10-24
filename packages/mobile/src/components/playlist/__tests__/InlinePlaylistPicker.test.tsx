@@ -121,7 +121,8 @@ vi.mock('react-i18next', () => ({
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast }) }));
 vi.mock('../../../lib/error-reporting', () => ({ reportHandledError }));
 
-vi.mock('@tanstack/react-query', () => ({
+vi.mock('@tanstack/react-query', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-query')>()),
   useQuery: () => ({ data: qstate.data, isLoading: qstate.loading }),
   useQueryClient: () => queryClientMock,
 }));

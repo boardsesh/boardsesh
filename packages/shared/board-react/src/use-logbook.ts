@@ -173,8 +173,16 @@ export function useLogbook(boardName: BoardName | null, climbUuids: string[]) {
       // One local read for the whole batch, joined by tick uuid. A failure
       // costs the versions, never the rows.
       if (!readLocalTickRevisions || entries.length === 0) return entries;
+      const missingRevisionUuids = new Set(
+        entries.filter((entry) => entry.climb_revision === undefined).map((entry) => entry.uuid),
+      );
+      if (missingRevisionUuids.size === 0) return entries;
       try {
-        return withTickRevisions(entries, await readLocalTickRevisions(boardName, uuidsToFetch));
+        // A local response already resolved twins as one ascent. Its grouped
+        // version outranks the original row retained as that ascent's UUID.
+        const revisions = await readLocalTickRevisions(boardName, uuidsToFetch);
+        const missingRevisions = new Map([...revisions].filter(([uuid]) => missingRevisionUuids.has(uuid)));
+        return withTickRevisions(entries, missingRevisions);
       } catch {
         return entries;
       }

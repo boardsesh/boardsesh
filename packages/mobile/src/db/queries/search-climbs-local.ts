@@ -282,15 +282,13 @@ export function gradeValueSql(displayDifficulty: string, gradeSource: ClimbSearc
   return `CAST(ROUND(${coalesced}) AS INTEGER)`;
 }
 
-// Every "has this climber sent / tried / rated it" check below reads only ticks
-// logged on the holds the climb has now (#6023), the same rule the server
-// applies in create-climb-filters.ts. A send from before a hold moved belongs
-// to a different climb. The personal GRADE further down is not filtered, as on
-// the server: a grade given to an older version is still the climber's grade.
-function ticksExists(negated: boolean, statusSql: string): string {
+// Catalogue progress/ratings read the current holds (#6023). Playlist filters
+// follow their server contract, which counts the climber's ticks on any holds
+// revision. Personal grades below are revision-independent in both contexts.
+function ticksExists(negated: boolean, statusSql: string, currentHoldsOnly = true): string {
   return `${negated ? 'NOT EXISTS' : 'EXISTS'} (SELECT 1 FROM boardsesh_ticks t
     WHERE t.climb_uuid = c.uuid AND t.board_type = ? AND t.angle = ? AND ${ownedTicks('t')} AND ${statusSql}
-    AND ${tickOnCurrentHoldsLocalSql('t')})`;
+    ${currentHoldsOnly ? `AND ${tickOnCurrentHoldsLocalSql('t')}` : ''})`;
 }
 
 // ---------------------------------------------------------------------------
@@ -601,32 +599,37 @@ export function buildJoinAndWhere(
   }
 
   // Personal progress against local ticks (device is single-user).
-  if (input.hideAttempted) push(ticksExists(true, "t.status = 'attempt'"), boardType, angle, ownerUserId);
-  if (input.hideCompleted) push(ticksExists(true, `t.status IN ${COMPLETED_STATUSES}`), boardType, angle, ownerUserId);
-  if (input.showOnlyAttempted) push(ticksExists(false, "t.status = 'attempt'"), boardType, angle, ownerUserId);
+  const currentHoldsOnly = context === 'catalogue';
+  if (input.hideAttempted)
+    push(ticksExists(true, "t.status = 'attempt'", currentHoldsOnly), boardType, angle, ownerUserId);
+  if (input.hideCompleted)
+    push(ticksExists(true, `t.status IN ${COMPLETED_STATUSES}`, currentHoldsOnly), boardType, angle, ownerUserId);
+  if (input.showOnlyAttempted)
+    push(ticksExists(false, "t.status = 'attempt'", currentHoldsOnly), boardType, angle, ownerUserId);
   if (input.showOnlyCompleted)
-    push(ticksExists(false, `t.status IN ${COMPLETED_STATUSES}`), boardType, angle, ownerUserId);
+    push(ticksExists(false, `t.status IN ${COMPLETED_STATUSES}`, currentHoldsOnly), boardType, angle, ownerUserId);
 
   // Personal rating, mirroring create-climb-filters.ts case for case so an
   // offline search returns the same rows as an online one. The local ticks
   // table has no bigserial id, so the latest-rating tie-break falls back to
   // updated_at where the server uses id — only reachable when two ratings of
   // one climb share a climbed_at.
-  if (input.onlyRatedByMe) push(ticksExists(false, 't.quality IS NOT NULL'), boardType, angle, ownerUserId);
+  if (input.onlyRatedByMe)
+    push(ticksExists(false, 't.quality IS NOT NULL', currentHoldsOnly), boardType, angle, ownerUserId);
   if (input.minUserRating) {
     push(
       `NOT EXISTS (SELECT 1 FROM boardsesh_ticks rating_below
         WHERE rating_below.climb_uuid = c.uuid AND rating_below.board_type = ? AND rating_below.angle = ?
         AND ${ownedTicks('rating_below')}
         AND rating_below.quality IS NOT NULL AND rating_below.quality < ?
-        AND ${tickOnCurrentHoldsLocalSql('rating_below')}
+        AND ${currentHoldsOnly ? tickOnCurrentHoldsLocalSql('rating_below') : '1 = 1'}
         AND NOT EXISTS (SELECT 1 FROM boardsesh_ticks rating_newer
           WHERE rating_newer.climb_uuid = rating_below.climb_uuid
           AND rating_newer.board_type = rating_below.board_type
           AND rating_newer.angle = rating_below.angle
           AND ${ownedTicks('rating_newer')}
           AND rating_newer.quality IS NOT NULL
-          AND ${tickOnCurrentHoldsLocalSql('rating_newer')}
+          AND ${currentHoldsOnly ? tickOnCurrentHoldsLocalSql('rating_newer') : '1 = 1'}
           AND (rating_newer.climbed_at > rating_below.climbed_at
             OR (rating_newer.climbed_at = rating_below.climbed_at
               AND rating_newer.updated_at > rating_below.updated_at))))`,

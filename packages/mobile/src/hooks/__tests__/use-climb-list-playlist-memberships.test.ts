@@ -11,7 +11,9 @@ const device = vi.hoisted(() => ({
   userLoading: false,
   refreshEpoch: 0,
   credentialGeneration: 0,
+  protectedClimbs: new Set<string>(),
 }));
+const queryClient = vi.hoisted(() => ({}));
 const { request, useStoredUserId, useUserReadRefresh, runAfterInteractions } = vi.hoisted(() => ({
   request: vi.fn(),
   useStoredUserId: vi.fn(),
@@ -23,6 +25,11 @@ const { request, useStoredUserId, useUserReadRefresh, runAfterInteractions } = v
 }));
 
 vi.mock('react-native', () => ({ InteractionManager: { runAfterInteractions } }));
+vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => queryClient }));
+vi.mock('../../lib/graphql/offline-user-read-recovery', () => ({
+  isPlaylistMembershipWritePending: (_client: unknown, queryKey: readonly unknown[]) =>
+    device.protectedClimbs.has(String(queryKey[3])),
+}));
 vi.mock('../../lib/graphql/offline-request', () => ({ offlineAwareRequest: request }));
 vi.mock('../../lib/climb-row-display-preference', () => ({ useClimbRowField: () => device.enabled }));
 vi.mock('../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: device.isAuthenticated }) }));
@@ -70,6 +77,7 @@ beforeEach(() => {
   device.userLoading = false;
   device.refreshEpoch = 0;
   device.credentialGeneration = 0;
+  device.protectedClimbs.clear();
   useStoredUserId.mockReset().mockImplementation(() => ({ userId: device.userId, isLoading: device.userLoading }));
   useUserReadRefresh.mockReset().mockImplementation(() => device.refreshEpoch);
 });
@@ -121,6 +129,29 @@ describe('useClimbListPlaylistMemberships', () => {
     expect(device.isAuthenticated).toBe(true);
     expect(membershipsFor('a')).toEqual([]);
   });
+
+  it.each([false, true])(
+    'retains optimistic chips across recovery when the pending write settles before the read: %s',
+    async (settlesBeforeRead) => {
+      const climbUuids = ['a', 'b'];
+      request.mockResolvedValueOnce({ playlistsForClimbs: [{ climbUuid: 'b', playlistUuids: ['old-b'] }] });
+      const { rerender } = mountList(climbUuids);
+      await flush();
+      playlistMembershipStore.setMembershipForClimb('a', ['new-a']);
+      device.protectedClimbs.add('a');
+      const lookup = deferredResponse();
+      request.mockReturnValueOnce(lookup.promise);
+      device.refreshEpoch += 1;
+      rerender({ climbUuids });
+      expect(membershipsFor('a')).toEqual(['new-a']);
+      expect(membershipsFor('b')).toEqual(['old-b']);
+      if (settlesBeforeRead) device.protectedClimbs.delete('a');
+      lookup.resolve({ playlistsForClimbs: [{ climbUuid: 'b', playlistUuids: ['new-b'] }] });
+      await flush();
+      expect(membershipsFor('a')).toEqual(['new-a']);
+      expect(membershipsFor('b')).toEqual(['new-b']);
+    },
+  );
 
   it('drops an in-flight batch after a credential transition before auth renders again', async () => {
     const lookup = deferredResponse();

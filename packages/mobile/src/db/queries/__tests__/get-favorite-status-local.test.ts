@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { markUserDataComplete, runMigrations, stampLocalUserId, USER_DATA_COMPLETE_KEY } from '@boardsesh/offline-sync';
 import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
-import { getFavoriteStatusLocal } from '../get-favorite-status-local';
+import { getFavoriteStatusLocal, getPendingFavoriteOverridesLocal } from '../get-favorite-status-local';
 
 let db: TestSqliteDb;
 
@@ -26,6 +26,85 @@ beforeEach(async () => {
   await runMigrations(db);
   await stampLocalUserId(db, 'user-a');
   await markUserDataComplete(db);
+});
+
+describe('getPendingFavoriteOverridesLocal', () => {
+  let nextFixtureId = 0;
+  async function queueFavorite(
+    climbUuid: string,
+    operation: string,
+    { status = 'pending', boardName = 'kilter', angle = 40, tableName = 'user_favorites' } = {},
+  ): Promise<void> {
+    await db.runAsync(
+      'INSERT INTO pending_mutations (table_name, operation, payload, status, idempotency_key) VALUES (?, ?, ?, ?, ?)',
+      [tableName, operation, JSON.stringify({ climbUuid, boardName, angle }), status, `fixture-${nextFixtureId++}`],
+    );
+  }
+
+  it('keeps the latest queued intent by climb UUID across boards and angles', async () => {
+    await queueFavorite('add', 'create');
+    await queueFavorite('remove', 'delete');
+    await queueFavorite('changed', 'create', { angle: 25 });
+    await queueFavorite('changed', 'delete', { boardName: 'tension' });
+    await queueFavorite('dead-letter', 'create', { status: 'dead_letter' });
+    await queueFavorite('not-requested', 'create');
+    await queueFavorite('wrong-table', 'create', { tableName: 'boardsesh_ticks' });
+    await queueFavorite('unsupported-operation', 'update');
+
+    expect(
+      await getPendingFavoriteOverridesLocal(
+        db,
+        ['add', 'remove', 'changed', 'dead-letter', 'wrong-table', 'unsupported-operation'],
+        'user-a',
+      ),
+    ).toEqual(
+      new Map([
+        ['add', true],
+        ['remove', false],
+        ['changed', false],
+        ['dead-letter', true],
+      ]),
+    );
+  });
+
+  it('does not require completed pull sync to retain this account’s unsent writes', async () => {
+    await queueFavorite('add', 'create');
+    await db.runAsync('DELETE FROM sync_meta WHERE key = ?', [USER_DATA_COMPLETE_KEY]);
+    expect(await getPendingFavoriteOverridesLocal(db, ['add'], 'user-a')).toEqual(new Map([['add', true]]));
+  });
+
+  it('uses drain order when a revived older row now has the newest intent', async () => {
+    await queueFavorite('same-climb', 'create', { boardName: 'kilter' });
+    await queueFavorite('same-climb', 'delete', { boardName: 'tension' });
+    await db.runAsync("UPDATE pending_mutations SET created_at = '2026-10-01T12:00:00Z' WHERE operation = 'create'");
+    await db.runAsync("UPDATE pending_mutations SET created_at = '2026-10-01T10:00:00Z' WHERE operation = 'delete'");
+
+    expect(await getPendingFavoriteOverridesLocal(db, ['same-climb'], 'user-a')).toEqual(
+      new Map([['same-climb', true]]),
+    );
+  });
+
+  it.each(['other-owner', 'no-stamp', 'signed-out'])('does not overlay rows for %s', async (gateState) => {
+    await queueFavorite('add', 'create');
+    if (gateState === 'other-owner') await stampLocalUserId(db, 'user-b');
+    if (gateState === 'no-stamp') await db.runAsync("DELETE FROM sync_meta WHERE key = 'local_user_id'");
+    const reads = vi.spyOn(db, 'getAllAsync');
+    expect(await getPendingFavoriteOverridesLocal(db, ['add'], gateState === 'signed-out' ? '' : 'user-a')).toEqual(
+      new Map(),
+    );
+    expect(reads).not.toHaveBeenCalled();
+  });
+
+  it('drops captured intent if the owner changes while reading the outbox', async () => {
+    await queueFavorite('add', 'create');
+    const originalRead = db.getAllAsync.bind(db);
+    vi.spyOn(db, 'getAllAsync').mockImplementationOnce(async (source, ...params) => {
+      const rows = await originalRead(source, ...(params as [never]));
+      await stampLocalUserId(db, 'user-b');
+      return rows;
+    });
+    expect(await getPendingFavoriteOverridesLocal(db, ['add'], 'user-a')).toEqual(new Map());
+  });
 });
 
 describe('getFavoriteStatusLocal', () => {

@@ -26,6 +26,10 @@ import { Icon } from '../Icon';
 import { ListRow } from '../ListRow';
 import { useClimbPlaylistMemberships } from '../../hooks/use-climb-playlist-memberships';
 import { offlineAwareRequest } from '../../lib/graphql/offline-request';
+import {
+  beginPlaylistMembershipWrite,
+  isPlaylistMembershipWritePending,
+} from '../../lib/graphql/offline-user-read-recovery';
 import { usePlaylistsContext, type Playlist } from '../../providers/playlists-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
@@ -155,6 +159,11 @@ export function InlinePlaylistPicker({
   const { data: memberUuids } = useQuery({
     queryKey: membershipKey,
     queryFn: async (): Promise<string[]> => {
+      // A retained/reopened picker may mount after staleTime while a slow
+      // toggle is still pending. Keep its optimistic snapshot until it settles.
+      if (isPlaylistMembershipWritePending(queryClient, membershipKey)) {
+        return queryClient.getQueryData<string[]>(membershipKey) ?? [];
+      }
       const response = await offlineAwareRequest<GetPlaylistsForClimbQueryResponse>(GET_PLAYLISTS_FOR_CLIMB, {
         input: { boardType: boardName, layoutId, climbUuid: climb.uuid },
       });
@@ -249,6 +258,7 @@ export function InlinePlaylistPicker({
     async (playlist: Playlist) => {
       if (togglingRef.current.has(playlist.uuid)) return;
       togglingRef.current.add(playlist.uuid);
+      const finishMembershipWrite = beginPlaylistMembershipWrite(queryClient, membershipKey);
       try {
         await queryClient.cancelQueries({ queryKey: membershipKey });
         const before = queryClient.getQueryData<string[]>(membershipKey) ?? [...members];
@@ -291,6 +301,7 @@ export function InlinePlaylistPicker({
         }
       } finally {
         togglingRef.current.delete(playlist.uuid);
+        finishMembershipWrite();
       }
     },
     [

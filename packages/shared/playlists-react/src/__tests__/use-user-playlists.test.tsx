@@ -115,3 +115,61 @@ describe('useUserPlaylists (shared) — background pagination failure', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
   });
 });
+
+describe('useUserPlaylists (shared) — refresh during pagination', () => {
+  it.each(['success', 'failure'] as const)(
+    'replaces old pages after reconnect while pagination settles with %s',
+    async (outcome) => {
+      let finishPage: ((response: AllUserPlaylistsResponse) => void) | undefined;
+      let failPage: ((error: Error) => void) | undefined;
+      const executeGraphQL = vi
+        .fn()
+        .mockResolvedValueOnce({
+          allUserPlaylists: { playlists: [makePlaylist('offline-page-zero')], totalCount: 2, hasMore: true },
+        })
+        .mockImplementationOnce(
+          () =>
+            new Promise<AllUserPlaylistsResponse>((resolve, reject) => {
+              finishPage = resolve;
+              failPage = reject;
+            }),
+        )
+        .mockResolvedValueOnce({
+          allUserPlaylists: { playlists: [makePlaylist('server-page-zero')], totalCount: 1, hasMore: false },
+        });
+      const { wrapper } = buildWrapper(executeGraphQL as ExecutePlaylistsGraphQL);
+      const { result } = renderHook(() => useUserPlaylists({ token: 'tok' }), { wrapper });
+
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      act(() => result.current.loadMore());
+      expect(executeGraphQL).toHaveBeenCalledTimes(2);
+
+      // Reconnect and returning focus can both request a refresh while the
+      // next page is out. One eventual page-zero replacement must win.
+      act(() => {
+        result.current.refetch();
+        result.current.refetch();
+      });
+      expect(executeGraphQL).toHaveBeenCalledTimes(2);
+
+      await act(async () => {
+        if (outcome === 'failure') failPage?.(new Error('connection lost during pagination'));
+        else {
+          finishPage?.({
+            allUserPlaylists: { playlists: [makePlaylist('server-page-one')], totalCount: 2, hasMore: false },
+          });
+        }
+      });
+      await waitFor(() =>
+        expect(result.current.playlists.map((playlist) => playlist.uuid)).toEqual(['server-page-zero']),
+      );
+      expect(executeGraphQL).toHaveBeenCalledTimes(3);
+      expect(executeGraphQL.mock.calls[2]?.[1]).toMatchObject({ input: { page: 0 } });
+      expect(result.current.hasMore).toBe(false);
+      expect(result.current.isLoading).toBe(false);
+      expect(result.current.isLoadingMore).toBe(false);
+      expect(result.current.hasError).toBe(false);
+      expect(result.current.hasLoadMoreError).toBe(false);
+    },
+  );
+});

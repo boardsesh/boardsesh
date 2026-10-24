@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { InteractionManager } from 'react-native';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   GET_PLAYLISTS_FOR_CLIMBS,
   type GetPlaylistsForClimbsQueryResponse,
@@ -11,6 +12,7 @@ import { useAuth } from '../providers/auth-provider';
 import { useClimbRowField } from '../lib/climb-row-display-preference';
 import { useStoredUserId } from './use-current-user-id';
 import { useUserReadRefresh } from './use-user-read-refresh';
+import { isPlaylistMembershipWritePending } from '../lib/graphql/offline-user-read-recovery';
 
 // The backend caps `climbUuids` per request; chunk longer visible sets.
 const CHUNK_SIZE = 500;
@@ -45,9 +47,10 @@ export function useClimbListPlaylistMemberships({
   const { isAuthenticated } = useAuth();
   const { userId, isLoading: isUserIdLoading } = useStoredUserId(isAuthenticated && enabled);
   const refreshEpoch = useUserReadRefresh('playlists');
+  const queryClient = useQueryClient();
 
   const fetchedRef = useRef<Set<string>>(new Set());
-  const contextKey = `${userId ?? 'anonymous'}:${boardName}:${layoutId}:${enabled ? 1 : 0}:${isAuthenticated ? 1 : 0}:${refreshEpoch}`;
+  const contextKey = `${userId ?? 'anonymous'}:${boardName}:${layoutId}:${enabled ? 1 : 0}:${isAuthenticated ? 1 : 0}`;
   const contextKeyRef = useRef(contextKey);
 
   // Reset before any fetch when the context changes. Runs in the same render
@@ -58,6 +61,10 @@ export function useClimbListPlaylistMemberships({
     fetchedRef.current = new Set();
     playlistMembershipStore.reset();
   }, [contextKey]);
+
+  useEffect(() => {
+    fetchedRef.current = new Set();
+  }, [refreshEpoch]);
 
   useEffect(() => {
     if (!enabled || !isAuthenticated || isUserIdLoading || !userId || layoutId <= 0 || climbUuids.length === 0) return;
@@ -78,6 +85,9 @@ export function useClimbListPlaylistMemberships({
       try {
         for (let offset = 0; offset < toFetch.length; offset += CHUNK_SIZE) {
           const chunk = toFetch.slice(offset, offset + CHUNK_SIZE);
+          const hasPendingWrite = (climbUuid: string) =>
+            isPlaylistMembershipWritePending(queryClient, ['playlistsForClimb', boardName, layoutId, climbUuid]);
+          const protectedBeforeRequest = new Set(chunk.filter(hasPendingWrite));
           const membershipsBeforeRequest = new Map(
             chunk.map((climbUuid) => [climbUuid, playlistMembershipStore.getMembershipsForClimb(climbUuid)]),
           );
@@ -93,6 +103,8 @@ export function useClimbListPlaylistMemberships({
             chunk
               .filter(
                 (climbUuid) =>
+                  !protectedBeforeRequest.has(climbUuid) &&
+                  !hasPendingWrite(climbUuid) &&
                   playlistMembershipStore.getMembershipsForClimb(climbUuid) === membershipsBeforeRequest.get(climbUuid),
               )
               .map((climbUuid) => ({
@@ -114,5 +126,5 @@ export function useClimbListPlaylistMemberships({
       handle.cancel();
       releaseUnmerged();
     };
-  }, [enabled, isAuthenticated, isUserIdLoading, userId, boardName, layoutId, climbUuids, refreshEpoch]);
+  }, [enabled, isAuthenticated, isUserIdLoading, userId, boardName, layoutId, climbUuids, refreshEpoch, queryClient]);
 }

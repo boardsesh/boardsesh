@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { markUserDataComplete, runMigrations, stampLocalUserId, USER_DATA_COMPLETE_KEY } from '@boardsesh/offline-sync';
 import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
+import { toLogbookEntry } from '@boardsesh/board-react';
 import { getTicksLocal } from '../get-ticks-local';
 
 type TickFixture = {
@@ -85,6 +86,7 @@ describe('getTicksLocal', () => {
           upvotes: 0,
           downvotes: 0,
           commentCount: 0,
+          climbRevision: null,
         },
       ],
     });
@@ -138,6 +140,32 @@ describe('getTicksLocal', () => {
       'different-comment',
       'twin-a',
     ]);
+  });
+
+  it.each([null, 1])('keeps the stamped twin revision when the selected UUID carries %s', async (originalRevision) => {
+    await insertTick({ uuid: 'a-import' });
+    await insertTick({ uuid: 'b-stamped' });
+    await db.runAsync('UPDATE boardsesh_ticks SET climb_revision = ? WHERE uuid = ?', [originalRevision, 'a-import']);
+    await db.runAsync('UPDATE boardsesh_ticks SET climb_revision = 4 WHERE uuid = ?', ['b-stamped']);
+
+    const response = await getTicksLocal(db, { boardType: 'kilter', climbUuids: ['climb-1'] }, 'user-a');
+    expect(response?.ticks).toHaveLength(1);
+    expect(response?.ticks[0]).toMatchObject({ uuid: 'a-import', climbRevision: 4 });
+    expect(response?.ticks.map(toLogbookEntry)[0]?.climb_revision).toBe(4);
+  });
+
+  it('distinguishes a synced versionless import from an unknown pending tick', async () => {
+    await insertTick({ uuid: 'synced-import', climbUuid: 'import-climb' });
+    await insertTick({ uuid: 'pending-tick', climbUuid: 'pending-climb' });
+    await db.runAsync(
+      `INSERT INTO pending_mutations (table_name, operation, payload, idempotency_key, status)
+       VALUES ('boardsesh_ticks', 'create', '{}', 'pending-tick', 'pending')`,
+    );
+
+    const response = await getTicksLocal(db, { boardType: 'kilter' }, 'user-a');
+    const entries = new Map(response?.ticks.map((tick) => [tick.uuid, toLogbookEntry(tick)]));
+    expect(entries.get('synced-import')).toHaveProperty('climb_revision', null);
+    expect(entries.get('pending-tick')).not.toHaveProperty('climb_revision');
   });
 
   it('chunks requests and orders the whole answer newest first without changing timestamps', async () => {

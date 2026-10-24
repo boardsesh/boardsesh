@@ -3,6 +3,11 @@ import type { GetTicksInput } from '@boardsesh/shared-schema';
 import type { SqlExecutor } from '@boardsesh/offline-sync';
 import { readTickRowsLocal } from './get-climb-ticks-local';
 
+/** Local-only knowledge; the pinned GraphQL document does not select this. */
+export type LocalTicksQueryResponse = {
+  ticks: Array<GetTicksQueryResponse['ticks'][number] & { climbRevision?: number | null }>;
+};
+
 /**
  * Offline GET_TICKS, using the same query and twin collapse as the drawer's
  * local display rows. User-data sync is independent of board downloads.
@@ -15,7 +20,7 @@ export async function getTicksLocal(
   db: SqlExecutor,
   input: GetTicksInput,
   viewerId: string,
-): Promise<GetTicksQueryResponse | null> {
+): Promise<LocalTicksQueryResponse | null> {
   const rows = await readTickRowsLocal(
     db,
     input.boardType,
@@ -40,6 +45,7 @@ export async function getTicksLocal(
       isBenchmark: row.is_benchmark === 1,
       comment: row.comment ?? '',
       climbedAt: row.climbed_at,
+      ...(row.revision_known ? { climbRevision: row.climb_revision } : {}),
       upvotes: 0,
       downvotes: 0,
       commentCount: 0,

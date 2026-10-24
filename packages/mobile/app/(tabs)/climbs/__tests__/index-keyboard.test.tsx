@@ -336,6 +336,10 @@ vi.mock('../../../../src/lib/onboarding/onboarding-storage', () => ({
 vi.mock('../../../../src/hooks/use-current-user-id', () => ({
   useStoredUserId: () => ({ userId: undefined, isLoading: false }),
 }));
+// Membership recovery uses QueryClient; this keyboard harness has no provider.
+vi.mock('../../../../src/hooks/use-climb-list-playlist-memberships', () => ({
+  useClimbListPlaylistMemberships: () => {},
+}));
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'queue-item-1' }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 

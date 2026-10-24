@@ -88,9 +88,11 @@ export function useUserPlaylists({
   const pageRef = useRef(hasInitialData ? 1 : 0);
   const isFetchingRef = useRef(false);
   const loadMoreFailCountRef = useRef(0);
+  const queuedRefreshRef = useRef<(() => void) | null>(null);
+  const currentFetchPageRef = useRef<((page: number, isInitial: boolean) => Promise<void>) | null>(null);
 
   const fetchPage = useCallback(
-    async (page: number, isInitial: boolean) => {
+    async (page: number, isInitial: boolean): Promise<void> => {
       if (!token) return;
       if (isFetchingRef.current) return;
       isFetchingRef.current = true;
@@ -109,6 +111,9 @@ export function useUserPlaylists({
           GET_ALL_USER_PLAYLISTS,
           variables,
         );
+        // A refresh supersedes this page. Keep the old library until page 0
+        // replaces it, rather than appending a page from a different order.
+        if (currentFetchPageRef.current !== fetchPage || queuedRefreshRef.current) return;
         const { playlists: newPlaylists, totalCount: nextTotal, hasMore: more } = response.allUserPlaylists;
 
         setPlaylists((prev) => (isInitial ? newPlaylists : [...prev, ...newPlaylists]));
@@ -120,6 +125,7 @@ export function useUserPlaylists({
         setHasError(false);
         setHasLoadMoreError(false);
       } catch (err: unknown) {
+        if (currentFetchPageRef.current !== fetchPage || queuedRefreshRef.current) return;
         console.error('Failed to fetch user playlists:', err);
         if (isInitial) {
           setHasError(true);
@@ -140,10 +146,36 @@ export function useUserPlaylists({
           setIsLoadingMore(false);
         }
         isFetchingRef.current = false;
+        const refresh = queuedRefreshRef.current;
+        queuedRefreshRef.current = null;
+        refresh?.();
       }
     },
     [token, boardType, layoutId, pageSize, executeGraphQL],
   );
+  currentFetchPageRef.current = fetchPage;
+
+  const refetch = useCallback(() => {
+    const refresh = () => {
+      // The token or board may have changed while the previous page settled.
+      if (currentFetchPageRef.current !== fetchPage) return;
+      pageRef.current = 0;
+      void fetchPage(0, true);
+    };
+    if (isFetchingRef.current) {
+      queuedRefreshRef.current = refresh;
+      return;
+    }
+    refresh();
+  }, [fetchPage]);
+
+  useEffect(() => {
+    currentFetchPageRef.current = fetchPage;
+    return () => {
+      currentFetchPageRef.current = null;
+      queuedRefreshRef.current = null;
+    };
+  }, [fetchPage]);
 
   // Reset + re-fetch when filters change. Skip the very first run if SSR
   // already populated initialData for the current filter.
@@ -166,8 +198,8 @@ export function useUserPlaylists({
     }
     setPlaylists([]);
     pageRef.current = 0;
-    void fetchPage(0, true);
-  }, [fetchPage, token]);
+    refetch();
+  }, [refetch, token]);
 
   const loadMore = useCallback(() => {
     if (hasMoreRef.current && !isFetchingRef.current) {
@@ -185,11 +217,6 @@ export function useUserPlaylists({
     setHasMore(true);
     hasMoreRef.current = true;
     void fetchPage(pageRef.current, false);
-  }, [fetchPage]);
-
-  const refetch = useCallback(() => {
-    pageRef.current = 0;
-    void fetchPage(0, true);
   }, [fetchPage]);
 
   return {

@@ -469,7 +469,7 @@ describe('local playlist view parity', () => {
     expect((await readPage({ view: { onlyFavorited: true } }))?.playlistClimbs.unfilteredCount).toBe(2);
   });
 
-  it('reads owner and legacy progress only, at the active angle and current holds', async () => {
+  it('reads owner and legacy progress at the active angle, including earlier holds like the server', async () => {
     for (const uuid of ['mine', 'legacy', 'other', 'old-holds']) {
       await climb({ uuid });
       await member(uuid);
@@ -494,7 +494,58 @@ describe('local playlist view parity', () => {
         activeAngle: 40,
         view: { showOnlyCompleted: true },
       }),
-    ).toEqual(['legacy', 'mine']);
+    ).toEqual(['legacy', 'mine', 'old-holds']);
+  });
+
+  it.each([
+    ['showOnlyCompleted', ['sent']],
+    ['hideCompleted', ['attempted', 'unticked']],
+    ['showOnlyAttempted', ['attempted']],
+    ['hideAttempted', ['sent', 'unticked']],
+  ] as const)('matches server %s after the climb holds change', async (filter, expected) => {
+    for (const [index, uuid] of ['sent', 'attempted', 'unticked'].entries()) {
+      await climb({ uuid });
+      await member(uuid, index);
+    }
+    await db.runAsync('UPDATE board_climbs SET holds_revision_number = 2');
+    for (const [uuid, status] of [
+      ['sent', 'send'],
+      ['attempted', 'attempt'],
+    ] as const) {
+      await db.runAsync(
+        `INSERT INTO boardsesh_ticks (uuid, climb_uuid, board_type, angle, user_id, status, climbed_at, climb_revision)
+         VALUES (?, ?, 'kilter', 40, 'owner', ?, '2026-10-01', 1)`,
+        [`tick-${uuid}`, uuid, status],
+      );
+    }
+    const board = { activeBoardName: 'kilter', activeLayoutId: 1, activeSizeId: 5, activeAngle: 40 };
+    expect(await pageUuids({ ...board, view: { [filter]: true } })).toEqual(expected);
+    expect(await pageUuids({ ...board, activeAngle: 30, view: { [filter]: true } })).toEqual(
+      filter.startsWith('showOnly') ? [] : ['sent', 'attempted', 'unticked'],
+    );
+  });
+
+  it('keeps earlier-holds ratings and chooses the latest rating across holds revisions', async () => {
+    for (const [index, uuid] of ['old-low', 'rerated-high', 'unrated'].entries()) {
+      await climb({ uuid });
+      await member(uuid, index);
+    }
+    await db.runAsync('UPDATE board_climbs SET holds_revision_number = 3');
+    for (const [tickUuid, climbUuid, quality, revision, climbedAt] of [
+      ['low', 'old-low', 2, 1, '2026-10-01'],
+      ['first', 'rerated-high', 2, 1, '2026-10-01'],
+      ['latest', 'rerated-high', 5, 2, '2026-10-02'],
+    ] as const) {
+      await db.runAsync(
+        `INSERT INTO boardsesh_ticks (uuid, climb_uuid, board_type, angle, user_id, status, quality, climb_revision, climbed_at)
+         VALUES (?, ?, 'kilter', 40, 'owner', 'send', ?, ?, ?)`,
+        [tickUuid, climbUuid, quality, revision, climbedAt],
+      );
+    }
+    const board = { activeBoardName: 'kilter', activeLayoutId: 1, activeSizeId: 5, activeAngle: 40 };
+    expect(await pageUuids({ ...board, view: { onlyRatedByMe: true } })).toEqual(['old-low', 'rerated-high']);
+    expect(await pageUuids({ ...board, view: { minUserRating: 4 } })).toEqual(['rerated-high', 'unrated']);
+    expect(await pageUuids({ ...board, view: { onlyRatedByMe: true, minUserRating: 4 } })).toEqual(['rerated-high']);
   });
 
   it('uses personal grades consistently for filtering, sorting and row projection', async () => {

@@ -4,20 +4,26 @@ import { renderHook } from '@testing-library/react';
 
 // Run scheduled interaction callbacks immediately — this hook's deferral is
 // covered by the shared `runAfterInteractions` contract, not by these tests.
-const { runAfterInteractions, request, isAuthenticated, storedUser, refresh } = vi.hoisted(() => ({
-  runAfterInteractions: vi.fn((callback: () => void) => {
-    callback();
-    return { cancel: vi.fn() };
+const { runAfterInteractions, request, isAuthenticated, storedUser, refresh, database, pendingOverrides } = vi.hoisted(
+  () => ({
+    runAfterInteractions: vi.fn((callback: () => void) => {
+      callback();
+      return { cancel: vi.fn() };
+    }),
+    request: vi.fn(),
+    refresh: { epoch: 0 },
+    isAuthenticated: { value: true },
+    storedUser: { userId: 'user-a' as string | undefined, isLoading: false },
+    database: { handle: null as object | null },
+    pendingOverrides: vi.fn(),
   }),
-  request: vi.fn(),
-  refresh: { epoch: 0 },
-  isAuthenticated: { value: true },
-  storedUser: { userId: 'user-a' as string | undefined, isLoading: false },
-}));
+);
 
 vi.mock('react-native', () => ({ InteractionManager: { runAfterInteractions } }));
 vi.mock('../../lib/graphql/offline-request', () => ({ offlineAwareRequest: request }));
 vi.mock('../use-user-read-refresh', () => ({ useUserReadRefresh: () => refresh.epoch }));
+vi.mock('../../db', () => ({ getDatabaseHandle: () => database.handle }));
+vi.mock('../../db/queries/get-favorite-status-local', () => ({ getPendingFavoriteOverridesLocal: pendingOverrides }));
 vi.mock('../../providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: isAuthenticated.value }),
 }));
@@ -27,6 +33,7 @@ vi.mock('../use-current-user-id', () => ({
 
 import { favoritesStore } from '@boardsesh/climb-actions';
 import { useClimbListFavorites } from '../use-climb-list-favorites';
+import { invalidatePrivacySnapshots } from '../../lib/privacy/privacy-cache';
 
 // A promise the request resolves with, awaited via a microtask flush so the
 // hook's async batch completes before assertions.
@@ -42,6 +49,8 @@ describe('useClimbListFavorites', () => {
     isAuthenticated.value = true;
     storedUser.userId = 'user-a';
     storedUser.isLoading = false;
+    database.handle = null;
+    pendingOverrides.mockReset().mockResolvedValue(new Map());
   });
 
   it('refetches already displayed hearts after local-read recovery', async () => {
@@ -57,6 +66,84 @@ describe('useClimbListFavorites', () => {
     expect(favoritesStore.getIsFavorited('a')).toBe(false);
   });
 
+  it('keeps queued adds and removes when reconnect reads the server before the outbox drains', async () => {
+    const climbUuids = ['added', 'removed'];
+    request.mockResolvedValue({ favorites: ['removed'] });
+    const { rerender } = renderHook(() => useClimbListFavorites({ boardName: 'kilter', angle: 40, climbUuids }));
+    await flush();
+    favoritesStore.setIsFavorited('added', true);
+    favoritesStore.setIsFavorited('removed', false);
+    database.handle = {};
+    pendingOverrides.mockResolvedValue(
+      new Map([
+        ['added', true],
+        ['removed', false],
+      ]),
+    );
+    refresh.epoch += 1;
+    rerender();
+    await flush();
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(favoritesStore.getIsFavorited('added')).toBe(true);
+    expect(favoritesStore.getIsFavorited('removed')).toBe(false);
+  });
+
+  it('restores queued favorite intent on a new mount before the server sees it', async () => {
+    database.handle = {};
+    pendingOverrides.mockResolvedValue(
+      new Map([
+        ['added', true],
+        ['removed', false],
+      ]),
+    );
+    request.mockResolvedValue({ favorites: ['removed'] });
+    const climbUuids = ['added', 'removed'];
+    renderHook(() => useClimbListFavorites({ boardName: 'kilter', angle: 40, climbUuids }));
+    await flush();
+    expect(pendingOverrides).toHaveBeenCalledWith(database.handle, climbUuids, 'user-a');
+    expect(favoritesStore.getIsFavorited('added')).toBe(true);
+    expect(favoritesStore.getIsFavorited('removed')).toBe(false);
+  });
+
+  it('keeps captured intent when the outbox drains before a stale server response settles', async () => {
+    database.handle = {};
+    pendingOverrides.mockResolvedValue(new Map([['added', true]]));
+    let finishRead: ((response: { favorites: string[] }) => void) | undefined;
+    request.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishRead = resolve;
+        }),
+    );
+    const climbUuids = ['added'];
+    renderHook(() => useClimbListFavorites({ boardName: 'kilter', angle: 40, climbUuids }));
+    await flush();
+    expect(request).toHaveBeenCalledTimes(1);
+    pendingOverrides.mockResolvedValue(new Map());
+    finishRead?.({ favorites: [] });
+    await flush();
+    expect(favoritesStore.getIsFavorited('added')).toBe(true);
+  });
+
+  it('lets a newer toggle override the queued intent captured before the read', async () => {
+    database.handle = {};
+    pendingOverrides.mockResolvedValue(new Map([['added', true]]));
+    let finishRead: ((response: { favorites: string[] }) => void) | undefined;
+    request.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishRead = resolve;
+        }),
+    );
+    const climbUuids = ['added'];
+    renderHook(() => useClimbListFavorites({ boardName: 'kilter', angle: 40, climbUuids }));
+    await flush();
+    favoritesStore.setIsFavorited('added', false);
+    finishRead?.({ favorites: [] });
+    await flush();
+    expect(favoritesStore.getIsFavorited('added')).toBe(false);
+  });
+
   it('writes the favorited subset of the visible climbs into the store', async () => {
     request.mockResolvedValue({ favorites: ['b'] });
 
@@ -70,6 +157,27 @@ describe('useClimbListFavorites', () => {
       climbUuids: ['a', 'b'],
       angle: 40,
     });
+  });
+
+  it('drops a pending override read across a credential change before auth rerenders', async () => {
+    database.handle = {};
+    let finishOverrides: ((overrides: Map<string, boolean>) => void) | undefined;
+    pendingOverrides.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishOverrides = resolve;
+        }),
+    );
+    request.mockResolvedValue({ favorites: [] });
+    const climbUuids = ['added'];
+    renderHook(() => useClimbListFavorites({ boardName: 'kilter', angle: 40, climbUuids }));
+    await flush();
+    expect(request).not.toHaveBeenCalled();
+    invalidatePrivacySnapshots('credential');
+    finishOverrides?.(new Map([['added', true]]));
+    await flush();
+    expect(request).not.toHaveBeenCalled();
+    expect(favoritesStore.getIsFavorited('added')).toBe(false);
   });
 
   it('keeps earlier pages favorited when a later page comes back empty', async () => {

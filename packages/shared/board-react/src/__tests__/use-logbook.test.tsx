@@ -128,6 +128,27 @@ describe('useLogbook (shared)', () => {
     expect(byUuid.get('tick-climb-1')?.climb_revision).toBeUndefined();
   });
 
+  it.each([
+    { sourceRevision: 4, uuidRevision: null },
+    { sourceRevision: 4, uuidRevision: 1 },
+    { sourceRevision: null, uuidRevision: 4 },
+  ])(
+    'keeps explicit source revision $sourceRevision over UUID enrichment $uuidRevision',
+    async ({ sourceRevision, uuidRevision }) => {
+      const executeHttp = vi.fn(async () => ({
+        ticks: [{ ...serverTick('tick-climb-1', 'climb-1'), climbRevision: sourceRevision }],
+      })) as unknown as ExecuteHttp;
+      const readLocalTickRevisions = vi.fn(
+        async () => new Map<string, number | null>([['tick-climb-1', uuidRevision]]),
+      );
+      const { wrapper } = createWrapper({ executeHttp, readLocalTickRevisions });
+
+      const drawer = renderHook(() => useLogbook('kilter', DRAWER_CLIMB), { wrapper });
+      await waitFor(() => expect(drawer.result.current.fetchedUuids.has('climb-1')).toBe(true));
+      expect(drawer.result.current.logbook[0]).toHaveProperty('climb_revision', sourceRevision);
+    },
+  );
+
   // The second-device case: the GetTicks batch lands before the platform has
   // pulled the ticks, so the first join finds no local row. The pull then
   // invalidates ['logbook'], the batch is read again, and this time the join
