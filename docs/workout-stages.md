@@ -433,27 +433,41 @@ Benchmarks only are what usually bring it here.
 
 - **Picking.** `selectItemsFromPools` takes the grade scale. Kept rows go first, then every
   slot at its own grade, then one step at a time across every slot still empty, so each
-  short slot gets the nearest grade before any slot takes one further away. Within a
-  grade a climb already in the live queue (mid-session) still beats borrowing. One
-  used-climb set spans every pool, so a borrowed climb never fills a second row, and the
-  slots planned at a grade take its climbs before a neighbour borrows any. Rows keep plan
-  order, stage and section.
+  short slot gets the nearest grade before any slot takes one further away. At the planned
+  grade a climb already in the live queue (mid-session) still beats borrowing. At a nearby
+  grade it is the last resort: the steps run once for climbs that are not in the queue,
+  then once more for a queued one, so a fresh climb two grades away beats a queued one
+  next door, and a queued one still beats an empty row. One used-climb set spans every
+  pool, so a borrowed climb never fills a second row, and the slots planned at a grade
+  take its climbs before a neighbour borrows any. Rows keep plan order, stage and section.
 - **Searching.** `borrowForShortSlots` runs between `buildPoolsReusing` and the final
-  pick. For each step it searches the pool one step away for the slots still empty, with
-  their filters, sized by the slots planned at that grade plus the ones that would borrow.
-  A plan that fills at its own grades sends no extra request. Each nearby pool is searched
-  at most once a build, never once it is read out (`exhausted`), and a rebuild reuses it
-  under the same rule as the plan's own pools, so editing another block does not search
-  it again. A nearby search that fails is skipped (the next step can still fill the slot)
-  and never fails the preview. A superseded build stops between steps. On a fresh build, a
-  grade that comes up short costs at most four more pool searches, each paged and tiered
-  the usual way.
+  pick. It reaches one step further at a time. At each reach it fills the plan from the
+  pools it has, using no step past that reach and no queued climb at a nearby grade, and
+  for each slot still empty searches the nearest step it has not searched yet, with its
+  filters, sized by the slots planned at that grade plus the ones that would borrow. So a
+  slot searches one grade easier before a pool another block fetched one grade harder, or
+  two away, can fill it. A plan that fills at its own grades sends no extra request. Each
+  nearby pool is searched at most once a build, never once it is read out (`exhausted`),
+  and a rebuild reuses it under the same rule as the plan's own pools, so editing another
+  block does not search it again. A nearby search that fails is skipped (the next step can
+  still fill the slot), never fails the preview, and is sent again by the next rebuild, the
+  way a short plan pool is: remembering it would leave the block short after one network
+  blip until Regenerate. A superseded build stops between steps.
+- **Search budget.** `MAX_BORROW_SEARCHES_PER_BUILD` caps a build at 6 nearby searches,
+  nearer steps first; a pool reused from the previous build costs none of them, so the next
+  rebuild picks up the steps the cap left. A thin grade reads one page per search tier,
+  three tiers under the default Unfamiliar bias signed in, so the borrow pass sends at most
+  about 18 requests a build on top of the plan's own pools. The search allows 120 a minute
+  (`search-climbs`), shared with the climb list. One block whose filters leave every
+  nearby grade thin costs up to 4 searches, about 12 requests, each time its filters change;
+  past the limit the plan's own pool search fails and the preview shows its error toast.
 - **Rows.** For a borrowed row `PreviewItem.slot.grade` is the grade the climb came from,
   and `borrowedFrom.plannedGrade` the grade planned. The row says "V4 for V5" under the
   climb, and its spoken label says it too.
 - **Refresh.** A row refresh tries the planned grade first (its cached pool, then one
   refetch unless the pool is read out), then the nearby grades in step order the same
-  way, then a repeat that differs from the row's climb. A borrowed row whose planned grade
+  way, for a climb not in the queue, then a queued climb at the nearest grade that has one,
+  then a repeat that differs from the row's climb. A borrowed row whose planned grade
   has a climb free again goes back to it. A refresh no longer refetches a pool that is
   read out, at any grade. Shuffle borrows again from the pools it has, with no request.
 - **Summary and Start.** `summarizePlanFill` counts `substituted`: filled slots whose grade

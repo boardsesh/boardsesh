@@ -177,10 +177,14 @@ export function borrowScaleFor(grades: GeneratorGradeScale): GeneratorGradeScale
   return process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? NO_GRADES : grades;
 }
 
-/** `slot` at each grade it may borrow from, nearest first (`BORROW_GRADE_STEPS`). */
-function borrowSources(slot: PreviewSlot, grades: GeneratorGradeScale): PreviewSlot[] {
+/** `slot` at each grade it may borrow from, nearest first: every step of `steps`, by default `BORROW_GRADE_STEPS`. */
+function borrowSources(
+  slot: PreviewSlot,
+  grades: GeneratorGradeScale,
+  steps: readonly number[] = BORROW_GRADE_STEPS,
+): PreviewSlot[] {
   const sources: PreviewSlot[] = [];
-  for (const step of BORROW_GRADE_STEPS) {
+  for (const step of steps) {
     const grade = borrowedGrade(grades, slot.grade, step);
     if (grade !== null) sources.push({ ...slot, grade });
   }
@@ -441,21 +445,37 @@ export type BorrowOptions = {
 };
 
 /**
+ * The most nearby-pool searches one build sends. A thin grade reads one page
+ * per search tier, up to three under the default filters signed in, so this
+ * caps the borrow pass near 18 requests a build against the 120 a minute the
+ * search allows. Nearer steps spend it first, a pool reused from the cache
+ * costs none of it, and the next rebuild reuses what this one found.
+ */
+export const MAX_BORROW_SEARCHES_PER_BUILD = 6;
+
+/**
  * Fetches the nearby-grade pools a plan's short slots borrow from, into `built`.
  * Runs after `buildPoolsReusing` and before the `selectItemsFromPools` that
  * fills the rows, with the same avoided climbs and kept rows. One step of
  * `BORROW_GRADE_STEPS` at a time, nearest first, it fills the plan from the
- * pools it has, and for each slot still empty fetches the pool that step away
- * with the slot's own filters, sized by every slot planned at that grade plus
- * the ones that would borrow from it. A plan that fills at its own grades
- * fetches nothing more, and so does a step whose earlier steps filled it.
+ * pools it has, reaching no further than that step, and for each slot still
+ * empty fetches the nearest pool it has not searched yet, with the slot's own
+ * filters, sized by every slot planned at that grade plus the ones that would
+ * borrow from it. So a slot searches one grade easier before a pool another
+ * block already fetched one grade harder, or two away, can fill it. A nearby
+ * grade fills a slot here only with a climb not in `avoidClimbUuids`, so a slot
+ * that would fall back on a queued climb there searches the next grade first.
+ * A plan that fills at its own grades fetches nothing more, and so does a step
+ * whose earlier steps filled it.
  *
  * Each nearby pool is fetched at most once a build, never when it already
  * holds every climb its grade has, and a pool in `cache` is reused under the
  * same rule as `buildPoolsReusing`, so an edit to another block searches no
- * nearby grade again. A nearby search that fails is skipped, never failing the
- * build. Stops once `ctx.isCurrent` says the build is superseded. An empty
- * `grades` borrows nothing. Returns `built`, the nearby pools added.
+ * nearby grade again. At most `MAX_BORROW_SEARCHES_PER_BUILD` searches go out.
+ * A nearby search that fails is skipped, never failing the build, and is sent
+ * again by the next rebuild, as a short plan pool is. Stops once `ctx.isCurrent`
+ * says the build is superseded. An empty `grades` borrows nothing. Returns
+ * `built`, the nearby pools added.
  */
 export async function borrowForShortSlots(
   slots: readonly PreviewSlot[],
@@ -467,45 +487,78 @@ export async function borrowForShortSlots(
 ): Promise<BuiltPools> {
   if (grades.length === 0) return built;
   const demandByGrade = slotsAtGrade(slots);
-  const borrowedKeys = new Set<string>();
-  for (const step of BORROW_GRADE_STEPS) {
+  // Every nearby pool this build has searched, reused from the cache, or given
+  // up on once the searches ran out.
+  const settledKeys = new Set<string>();
+  let searchesLeft = MAX_BORROW_SEARCHES_PER_BUILD;
+  let stepCount = 1;
+  while (stepCount <= BORROW_GRADE_STEPS.length) {
     if (ctx.isCurrent?.() === false) break;
-    const { shortSlots } = fillSlots(slots, built.pools, avoidClimbUuids, keptItems, built.poolTopUpTiers, grades);
+    const borrowSteps = BORROW_GRADE_STEPS.slice(0, stepCount);
+    const { shortSlots } = fillSlots(slots, built.pools, {
+      avoidClimbUuids,
+      keptItems,
+      poolTopUpTiers: built.poolTopUpTiers,
+      grades,
+      borrowSteps,
+      borrowAvoided: false,
+    });
     if (shortSlots.length === 0) break;
-    // The short slots each nearby pool would serve at this step, by pool key.
+    // The short slots each nearby pool would serve, by pool key: for each slot
+    // the nearest step whose pool is neither settled nor read out. The fill
+    // reached every one of those steps, so the slot found nothing in them.
     const needsByKey = new Map<string, { source: PreviewSlot; count: number }>();
     for (const slot of shortSlots) {
-      const grade = borrowedGrade(grades, slot.grade, step);
-      if (grade === null) continue;
-      const source: PreviewSlot = { ...slot, grade };
+      const source = borrowSources(slot, grades, borrowSteps).find((candidate) => {
+        const candidateKey = poolKeyForSlot(candidate);
+        return !settledKeys.has(candidateKey) && !built.exhaustedPoolKeys.has(candidateKey);
+      });
+      if (!source) continue;
       const key = poolKeyForSlot(source);
-      // Already searched for this build, or as full as it can get.
-      if (borrowedKeys.has(key) || built.exhaustedPoolKeys.has(key)) continue;
       const need = needsByKey.get(key);
       if (need) need.count++;
       else needsByKey.set(key, { source, count: 1 });
     }
-    await Promise.all(
-      Array.from(needsByKey, async ([key, { source, count }]) => {
-        borrowedKeys.add(key);
-        const demand = (demandByGrade.get(source.grade) ?? 0) + count;
-        // A pool `built` already has is out of free climbs (the fill above would
-        // have used them) and was weighed against the cache when it was built,
-        // so only a fetch can add to it.
-        if (!built.pools.has(key) && reuseCachedPool(built, key, demand, cache)) return;
-        let fetched: GradePool;
-        try {
-          fetched = await fetchPool(source.grade, { ...ctx, filters: source.filters }, demand);
-        } catch {
-          // Borrowing only adds to a plan that already built: a nearby search
-          // that fails leaves its slots for the next step, or short.
-          return;
-        }
-        storeFetchedPool(built, key, fetched, demand);
-      }),
-    );
+    // Every step so far is settled for every short slot: reach one further.
+    if (needsByKey.size === 0) {
+      stepCount++;
+      continue;
+    }
+    const searches: Array<Promise<void>> = [];
+    for (const [key, { source, count }] of needsByKey) {
+      settledKeys.add(key);
+      const demand = (demandByGrade.get(source.grade) ?? 0) + count;
+      // A pool `built` already has gave these slots nothing (the fill above
+      // reached it) and was weighed against the cache when it was built, so
+      // only a fetch can add to it.
+      if (!built.pools.has(key) && reuseCachedPool(built, key, demand, cache)) continue;
+      if (searchesLeft === 0) continue;
+      searchesLeft--;
+      searches.push(searchNearbyPool(built, key, source, demand, ctx, fetchPool));
+    }
+    await Promise.all(searches);
   }
   return built;
+}
+
+/** Fetches one nearby pool into `built`, leaving `built` as it was when the search fails. */
+async function searchNearbyPool(
+  built: BuiltPools,
+  key: string,
+  source: PreviewSlot,
+  demand: number,
+  ctx: PreviewFetchContext,
+  fetchPool: FetchGradePool,
+): Promise<void> {
+  let fetched: GradePool;
+  try {
+    fetched = await fetchPool(source.grade, { ...ctx, filters: source.filters }, demand);
+  } catch {
+    // Borrowing only adds to a plan that already built: a nearby search that
+    // fails leaves its slots for the next step, or short.
+    return;
+  }
+  storeFetchedPool(built, key, fetched, demand);
 }
 
 /** `buildPoolsReusing` with nothing cached, for callers that only need the pools. */
@@ -547,8 +600,10 @@ const NO_POOL_TOP_UPS: ReadonlyMap<string, TopUpTiers> = new Map();
  *
  * `avoidClimbUuids` are climbs to pass over when the pool has others, such as
  * the climbs already in a live session's queue when a block is added mid-session.
- * They are a preference, not a filter: when only avoided climbs are left at a
- * grade, one of them still fills the slot rather than leave it empty.
+ * They are a preference, not a filter: when only avoided climbs are left at the
+ * slot's own grade, one of them fills the slot before it borrows. At a nearby
+ * grade one is the last resort, taken only once no nearby grade has a climb
+ * that is not avoided, and never leaving the slot empty while one is there.
  *
  * `keptItems[i]`, when set, is the row slot `i` showed before a rebuild. It is
  * kept as it is (same queue-item uuid, same climb) while its climb is still in
@@ -574,9 +629,30 @@ export function selectItemsFromPools(
   poolTopUpTiers: ReadonlyMap<string, TopUpTiers> = NO_POOL_TOP_UPS,
   grades: GeneratorGradeScale = NO_GRADES,
 ): { items: PreviewItem[]; usedUuids: Set<string> } {
-  const { items, usedUuids } = fillSlots(slots, pools, avoidClimbUuids, keptItems, poolTopUpTiers, grades);
+  const { items, usedUuids } = fillSlots(slots, pools, {
+    avoidClimbUuids,
+    keptItems,
+    poolTopUpTiers,
+    grades,
+    borrowSteps: BORROW_GRADE_STEPS,
+    borrowAvoided: true,
+  });
   return { items, usedUuids };
 }
+
+type FillOptions = {
+  avoidClimbUuids: ReadonlySet<string>;
+  keptItems: ReadonlyArray<ClimbQueueItem | undefined>;
+  poolTopUpTiers: ReadonlyMap<string, TopUpTiers>;
+  grades: GeneratorGradeScale;
+  /**
+   * The borrow steps a slot may take a climb from, nearest first: every one for
+   * the rows, or the ones the borrow pass has reached so far.
+   */
+  borrowSteps: readonly number[];
+  /** Whether a slot no nearby grade has a fresh climb for may then take an avoided one there. */
+  borrowAvoided: boolean;
+};
 
 type FilledSlots = {
   /** One row per slot that found a climb, in plan order. */
@@ -586,14 +662,14 @@ type FilledSlots = {
   shortSlots: PreviewSlot[];
 };
 
-/** `selectItemsFromPools`, also naming the slots left empty. */
+/** One pass of `fillSlots`: where each empty slot looks, and whether an avoided climb there will do. */
+type FillPass = { sourceFor: (slot: PreviewSlot) => PreviewSlot | null; takesAvoided: boolean };
+
+/** `selectItemsFromPools`, reaching only `borrowSteps`, and also naming the slots left empty. */
 function fillSlots(
   slots: readonly PreviewSlot[],
   pools: ReadonlyMap<string, Climb[]>,
-  avoidClimbUuids: ReadonlySet<string>,
-  keptItems: ReadonlyArray<ClimbQueueItem | undefined>,
-  poolTopUpTiers: ReadonlyMap<string, TopUpTiers>,
-  grades: GeneratorGradeScale,
+  { avoidClimbUuids, keptItems, poolTopUpTiers, grades, borrowSteps, borrowAvoided }: FillOptions,
 ): FilledSlots {
   const usedUuids = new Set<string>();
   const rowBySlotPosition = new Map<number, PreviewItem>();
@@ -607,16 +683,23 @@ function fillSlots(
     usedUuids.add(kept.climb.uuid);
     rowBySlotPosition.set(position, toPreviewItem(slot, source, kept, poolTopUpTiers));
   });
-  // Every slot's own grade first, then one borrow step at a time across all the
-  // slots still empty. Within a grade an avoided climb still beats a borrowed one.
-  const sourcePasses: Array<(slot: PreviewSlot) => PreviewSlot | null> = [
-    (slot) => slot,
-    ...BORROW_GRADE_STEPS.map((step) => (slot: PreviewSlot) => {
+  // Every slot's own grade first, where an avoided climb still beats borrowing.
+  // Then one borrow step at a time across all the slots still empty, climbs
+  // that are not avoided only, and last the same steps again for an avoided one.
+  const nearby =
+    (step: number) =>
+    (slot: PreviewSlot): PreviewSlot | null => {
       const grade = borrowedGrade(grades, slot.grade, step);
       return grade === null ? null : { ...slot, grade };
-    }),
+    };
+  const passes: FillPass[] = [
+    { sourceFor: (slot) => slot, takesAvoided: true },
+    ...borrowSteps.map((step) => ({ sourceFor: nearby(step), takesAvoided: false })),
+    ...(borrowAvoided && avoidClimbUuids.size > 0
+      ? borrowSteps.map((step) => ({ sourceFor: nearby(step), takesAvoided: true }))
+      : []),
   ];
-  for (const sourceFor of sourcePasses) {
+  for (const { sourceFor, takesAvoided } of passes) {
     slots.forEach((slot, position) => {
       if (rowBySlotPosition.has(position)) return;
       const source = sourceFor(slot);
@@ -624,7 +707,7 @@ function fillSlots(
       const pool = pools.get(poolKeyForSlot(source)) ?? [];
       const next =
         pool.find((climb) => !usedUuids.has(climb.uuid) && !avoidClimbUuids.has(climb.uuid)) ??
-        pickUnused(pool, usedUuids);
+        (takesAvoided ? pickUnused(pool, usedUuids) : null);
       if (!next) return;
       usedUuids.add(next.uuid);
       rowBySlotPosition.set(
@@ -659,8 +742,9 @@ export type RefreshSlotResult = { state: WorkoutPreviewData; changed: boolean };
  * identity and highlight — mirroring DELTA_REPLACE_QUEUE_ITEM.
  *
  * `avoidClimbUuids` is the same preference `selectItemsFromPools` takes: the
- * refresh passes over those climbs while the pool has others, and falls back to
- * one of them before calling the pool exhausted.
+ * refresh passes over those climbs while the pool has others. At the planned
+ * grade it falls back to one of them before borrowing; at a nearby grade only
+ * once no nearby grade has another climb, and before a repeat.
  */
 export async function refreshSlotInState(
   state: WorkoutPreviewData,
@@ -685,18 +769,24 @@ export async function refreshSlotInState(
   // Avoided climbs only if nothing else is left; null means nothing unused at all.
   // Within either, the earliest tier left wins, so a sent climb comes up last.
   const usedOrAvoided = avoidClimbUuids.size > 0 ? new Set([...state.usedUuids, ...avoidClimbUuids]) : state.usedUuids;
-  const pickPreferred = (pool: readonly Climb[], topUpTiers: TopUpTiers): Climb | null =>
-    pickRandomUnused(pool, usedOrAvoided, screenshotModeRandom(), topUpTiers) ??
-    (usedOrAvoided === state.usedUuids
+  const pickFresh = (pool: readonly Climb[], topUpTiers: TopUpTiers): Climb | null =>
+    pickRandomUnused(pool, usedOrAvoided, screenshotModeRandom(), topUpTiers);
+  const pickAvoided = (pool: readonly Climb[], topUpTiers: TopUpTiers): Climb | null =>
+    usedOrAvoided === state.usedUuids
       ? null
-      : pickRandomUnused(pool, state.usedUuids, screenshotModeRandom(), topUpTiers));
+      : pickRandomUnused(pool, state.usedUuids, screenshotModeRandom(), topUpTiers);
+  // At the planned grade an avoided climb still beats borrowing.
+  const pickPreferred = (pool: readonly Climb[], topUpTiers: TopUpTiers): Climb | null =>
+    pickFresh(pool, topUpTiers) ?? pickAvoided(pool, topUpTiers);
   const topUpTiersOf = (poolKey: string): TopUpTiers => poolTopUpTiers?.get(poolKey) ?? NO_TOP_UPS;
 
+  const nearbySources = borrowSources(plannedSlot, grades);
   let picked: { climb: Climb; source: PreviewSlot } | null = null;
-  for (const source of [plannedSlot, ...borrowSources(plannedSlot, grades)]) {
+  for (const source of [plannedSlot, ...nearbySources]) {
+    const pick = source === plannedSlot ? pickPreferred : pickFresh;
     const poolKey = poolKeyForSlot(source);
     const cachedPool = pools.get(poolKey);
-    let climb = cachedPool ? pickPreferred(cachedPool, topUpTiersOf(poolKey)) : null;
+    let climb = cachedPool ? pick(cachedPool, topUpTiersOf(poolKey)) : null;
     // Nothing unused in the cache → refetch + reshuffle this pool once, unless
     // it already holds every climb its grade has and would come back the same.
     if (!climb && exhaustedPoolKeys?.has(poolKey) !== true) {
@@ -718,11 +808,25 @@ export async function refreshSlotInState(
       exhaustedPoolKeys = new Set(exhaustedPoolKeys);
       if (refetched.exhausted) exhaustedPoolKeys.add(poolKey);
       else exhaustedPoolKeys.delete(poolKey);
-      climb = pickPreferred(refreshedPool, refetched.topUpTiers);
+      climb = pick(refreshedPool, refetched.topUpTiers);
     }
     if (climb) {
       picked = { climb, source };
       break;
+    }
+  }
+
+  // No nearby grade has a climb that is not avoided: an avoided one there, from
+  // the pools just searched, still beats a repeat.
+  if (!picked) {
+    for (const source of nearbySources) {
+      const poolKey = poolKeyForSlot(source);
+      const pool = pools.get(poolKey);
+      const climb = pool ? pickAvoided(pool, topUpTiersOf(poolKey)) : null;
+      if (climb) {
+        picked = { climb, source };
+        break;
+      }
     }
   }
 
