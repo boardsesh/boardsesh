@@ -43,8 +43,13 @@ function find<T>(input: TimersModelInput, key: string, kind: string): T {
 }
 
 describe('buildTimersModel', () => {
-  it('runs the rest section, then the cues', () => {
-    expect(buildTimersModel(makeInput()).sections.map((section) => section.key)).toEqual(['rest', 'cues']);
+  it('leaves the cues section out when it has no rows', () => {
+    expect(buildTimersModel(makeInput()).sections.map((section) => section.key)).toEqual(['rest']);
+  });
+
+  it('runs the rest section, then the cues when one is available', () => {
+    const input = makeInput({ cues: { sound: { enabled: true, onChange: vi.fn() } } });
+    expect(buildTimersModel(input).sections.map((section) => section.key)).toEqual(['rest', 'cues']);
     expect(rowsOf(makeInput()).map((row) => row.key)).toEqual(['restLength', 'restMode', 'autoAdvance']);
   });
 

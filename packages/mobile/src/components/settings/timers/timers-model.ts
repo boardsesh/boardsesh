@@ -5,7 +5,7 @@ import {
   MAX_TAP_REST_LENGTH_SECONDS,
   REST_LENGTH_TAP_STEP_SECONDS,
 } from '../../queue-control/rest-length.logic';
-import type { MoreFormModel, MoreOption } from '../../MoreForm.types';
+import type { MoreFormModel, MoreOption, MoreRow } from '../../MoreForm.types';
 import type { SettingsTranslate } from '../root/settings-pages';
 
 export type TimersModelInput = {
@@ -90,6 +90,33 @@ export function buildTimersModel(input: TimersModelInput): MoreFormModel {
       ? t('mobile.settings.timers.autoAdvanceHint')
       : t('mobile.settings.timers.autoAdvanceNeedsLength');
 
+  const cueRows: MoreRow[] = [
+    ...(cues.countdownCues
+      ? [
+          {
+            kind: 'toggle' as const,
+            key: 'countdownCues',
+            label: t('mobile.settings.timers.countdownCues'),
+            subtitle: t('mobile.settings.timers.countdownCuesHint'),
+            value: cues.countdownCues.enabled,
+            onValueChange: cues.countdownCues.onChange,
+          },
+        ]
+      : []),
+    ...(cues.sound
+      ? [
+          {
+            kind: 'toggle' as const,
+            key: 'sound',
+            label: t('mobile.settings.timers.sound'),
+            subtitle: t('mobile.settings.timers.soundHint'),
+            value: cues.sound.enabled,
+            onValueChange: cues.sound.onChange,
+          },
+        ]
+      : []),
+  ];
+
   return {
     sections: [
       {
@@ -130,37 +157,16 @@ export function buildTimersModel(input: TimersModelInput): MoreFormModel {
           },
         ],
       },
-      {
-        key: 'cues',
-        title: t('mobile.settings.timers.cuesTitle'),
-        footer: t('mobile.settings.timers.cuesFooter'),
-        rows: [
-          ...(cues.countdownCues
-            ? [
-                {
-                  kind: 'toggle' as const,
-                  key: 'countdownCues',
-                  label: t('mobile.settings.timers.countdownCues'),
-                  subtitle: t('mobile.settings.timers.countdownCuesHint'),
-                  value: cues.countdownCues.enabled,
-                  onValueChange: cues.countdownCues.onChange,
-                },
-              ]
-            : []),
-          ...(cues.sound
-            ? [
-                {
-                  kind: 'toggle' as const,
-                  key: 'sound',
-                  label: t('mobile.settings.timers.sound'),
-                  subtitle: t('mobile.settings.timers.soundHint'),
-                  value: cues.sound.enabled,
-                  onValueChange: cues.sound.onChange,
-                },
-              ]
-            : []),
-        ],
-      },
+      ...(cueRows.length > 0
+        ? [
+            {
+              key: 'cues' as const,
+              title: t('mobile.settings.timers.cuesTitle'),
+              footer: t('mobile.settings.timers.cuesFooter'),
+              rows: cueRows,
+            },
+          ]
+        : []),
     ],
   };
 }
