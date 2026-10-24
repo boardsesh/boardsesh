@@ -113,6 +113,14 @@ describe('TimersSettingsScreen', () => {
     expect(autoAdvance.subtitle).toBe('mobile.settings.timers.autoAdvanceNeedsLength');
   });
 
+  it('saves the auto-advance toggle when it is enabled', () => {
+    render(<TimersSettingsScreen />);
+    const autoAdvance = row<MoreToggleRow>('autoAdvance', 'toggle');
+    expect(autoAdvance.disabled).toBe(false);
+    autoAdvance.onValueChange(true);
+    expect(values.get('restTimerAutoAdvance')).toBe(true);
+  });
+
   it('disables auto-advance for a crew passenger', () => {
     driver.blockedReason = 'crewPassenger';
     render(<TimersSettingsScreen />);
