@@ -48,7 +48,9 @@ export type WorkoutStageFilters = Pick<
 /**
  * Climbs stepping up to a target grade: its own `targetGrade` when set
  * (partner `warmUp` blocks carry their own range), else the grade of the first
- * workout stage after it. The app's warm-ups never set one.
+ * workout stage after it. The app's warm-ups never set one. With neither, after
+ * the last workout stage, it steps back down from that stage's grade instead: a
+ * cool-down.
  */
 export type WarmUpStage = {
   id: string;
@@ -119,8 +121,8 @@ const toMainStage = (options: GeneratorOptions, id: string): WorkoutMainStage =>
 /**
  * One block of a workout as the climber builds it: a warm-up, or a workout of
  * one type. A warm-up has no grade of its own; it ramps to the next workout
- * block after it. `filters`, when set, are the block's own climb filters and
- * pass to its stage.
+ * block after it, or after the last one eases off from the block before it.
+ * `filters`, when set, are the block's own climb filters and pass to its stage.
  */
 export type WorkoutBlockSpec = (
   | { kind: 'warmUp'; warmUpType: WarmUpStageType }
@@ -146,13 +148,48 @@ export const planFromBlocks = (blocks: readonly WorkoutBlockSpec[], makeId: Stag
   return { stages };
 };
 
+/** The grade of the nearest runnable workout stage before `stagePosition`, skipping warm-ups. */
+const gradeOfWorkoutBefore = (stages: readonly WorkoutStage[], stagePosition: number): number | undefined => {
+  for (let before = stagePosition - 1; before >= 0; before--) {
+    const stage = stages[before];
+    if (isRunnableMainStage(stage)) return stage.options.targetGrade;
+  }
+  return undefined;
+};
+
+/**
+ * A warm-up stage's slots. It ramps up to its own `targetGrade`, else to the
+ * first workout stage after it. With neither, it is a cool-down: the climbs
+ * the same warm-up would plan for the nearest workout stage before it, hardest
+ * first, in the `coolDown` section. A warm-up with no workout on either side
+ * plans nothing.
+ */
+const warmUpStageSlots = (
+  stages: readonly WorkoutStage[],
+  stagePosition: number,
+  stage: WarmUpStage,
+  grades: GeneratorGradeScale,
+): PlannedClimbSlot[] => {
+  const rampTarget =
+    stage.targetGrade ?? stages.slice(stagePosition + 1).find(isRunnableMainStage)?.options.targetGrade;
+  if (rampTarget !== undefined) return generateWarmUp(rampTarget, stage.warmUpType, grades);
+
+  const coolDownFrom = gradeOfWorkoutBefore(stages, stagePosition);
+  if (coolDownFrom === undefined) return [];
+  return generateWarmUp(coolDownFrom, stage.warmUpType, grades)
+    .reverse()
+    .map((slot, index): PlannedClimbSlot => ({ ...slot, section: 'coolDown', index }));
+};
+
 /**
  * Generates every stage's slots in plan order. `index` runs across the whole
  * plan, so a warm-up plus one workout yields exactly what `generateWorkoutPlan`
  * yields for the same options. A warm-up stage ramps to its own `targetGrade`,
  * else to the first workout stage after it, skipping any warm-ups in between;
- * with neither it generates nothing. A workout stage whose `kind` no longer
- * matches `options.type` generates nothing rather than throwing on persisted data.
+ * after the last workout stage it ramps back down from the nearest one before
+ * it (a cool-down), and with no workout stage at all it generates nothing. A
+ * workout stage whose `kind` no longer matches `options.type` generates nothing
+ * rather than throwing on persisted data.
  */
 export const generateStagedPlan = (plan: WorkoutPlan, grades: GeneratorGradeScale): StagedSlot[] => {
   const stagedSlots: StagedSlot[] = [];
@@ -160,9 +197,7 @@ export const generateStagedPlan = (plan: WorkoutPlan, grades: GeneratorGradeScal
   plan.stages.forEach((stage, stagePosition) => {
     let stageSlots: PlannedClimbSlot[];
     if (isWarmUpStage(stage)) {
-      const warmUpTarget =
-        stage.targetGrade ?? plan.stages.slice(stagePosition + 1).find(isRunnableMainStage)?.options.targetGrade;
-      stageSlots = warmUpTarget === undefined ? [] : generateWarmUp(warmUpTarget, stage.warmUpType, grades);
+      stageSlots = warmUpStageSlots(plan.stages, stagePosition, stage, grades);
     } else if (!isRunnableMainStage(stage)) {
       stageSlots = [];
     } else {
@@ -394,6 +429,12 @@ export type WorkoutRunPosition = {
   remainingInStage: number;
   /** Set only when the current climb has a round (a 4x4): where it sits among the stage's rounds. */
   round?: WorkoutRunRoundPosition;
+  /**
+   * Set only on a warm-up stage queued after every workout stage: a warm-up
+   * there was planned stepping back down (`generateStagedPlan`), so it reads as
+   * a cool-down.
+   */
+  isCoolDown?: true;
 };
 
 /**
@@ -404,6 +445,7 @@ export type WorkoutRunPosition = {
  * reason only uuids still in the queue count, and stages with none are skipped.
  * Stages are ordered by the queue position of their first queued climb, so
  * `stageIndex` matches the order the climber sees after moving a stage around.
+ * In that order, a warm-up stage after every workout stage is a cool-down.
  * Returns null when the current uuid is not queued or belongs to no stage.
  */
 export const locateInRun = (
@@ -426,6 +468,10 @@ export const locateInRun = (
   }
   const firstQueuePosition = (queuedStage: WorkoutRunStage) => queuePositionByUuid.get(queuedStage.itemUuids[0]) ?? 0;
   queuedStages.sort((left, right) => firstQueuePosition(left) - firstQueuePosition(right));
+  let lastWorkoutStageIndex = -1;
+  queuedStages.forEach((queuedStage, stageIndex) => {
+    if (queuedStage.kind !== 'warmUp') lastWorkoutStageIndex = stageIndex;
+  });
 
   for (let stageIndex = 0; stageIndex < queuedStages.length; stageIndex++) {
     const queuedStage = queuedStages[stageIndex];
@@ -440,6 +486,9 @@ export const locateInRun = (
       stageSize: queuedStage.itemUuids.length,
       remainingInStage: queuedStage.itemUuids.length - positionInStage - 1,
     };
+    if (queuedStage.kind === 'warmUp' && lastWorkoutStageIndex >= 0 && stageIndex > lastWorkoutStageIndex) {
+      position.isCoolDown = true;
+    }
     const round = queuedStage.roundByUuid
       ? locateRound(queuedStage.itemUuids, queuedStage.roundByUuid, currentUuid)
       : null;

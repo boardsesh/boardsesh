@@ -93,7 +93,7 @@ function WorkoutRunCardContent({ run, onAddBlock }: { run: WorkoutRun; onAddBloc
       </Text>
       <View style={styles.stageList}>
         {readout.stages.map((stage) => {
-          const name = workoutStageName(stage.kind, t);
+          const name = workoutStageName(stage.kind, t, stage.isCoolDown);
           const status = stageStatus(stage, t);
           return (
             <View

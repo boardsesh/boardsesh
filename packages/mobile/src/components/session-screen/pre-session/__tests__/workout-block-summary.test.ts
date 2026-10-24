@@ -1,5 +1,5 @@
-// The one-line summary on a closed block card, for the timed types. Their cards
-// are not offered yet, so nothing else renders these lines.
+// The one-line summary on a closed block card: the timed types, whose cards are
+// not offered yet so nothing else renders these lines, and the warm-up's ramp.
 import { describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_FOUR_BY_FOUR_OPTIONS,
@@ -7,6 +7,7 @@ import {
   DEFAULT_LIMIT_BOULDERING_OPTIONS,
   DEFAULT_ON_THE_MINUTE_OPTIONS,
   type GeneratorOptions,
+  type WorkoutBlockSpec,
 } from '@boardsesh/playlist-generator';
 
 vi.mock('react-native', () => ({
@@ -74,5 +75,27 @@ describe('blockSummary for timed blocks', () => {
 
   it('leaves the untimed summaries as they were', () => {
     expect(summaryOf({ ...DEFAULT_GRADE_FOCUS_OPTIONS, targetGrade: 4 })).toBe('V4 · Climbs(15)');
+  });
+});
+
+describe('blockSummary for warm-ups', () => {
+  const warmUpBlock: WorkoutBlockSpec = { kind: 'warmUp', warmUpType: 'standard' };
+
+  it('says which grade a warm-up ramps up to', () => {
+    expect(blockSummary(warmUpBlock, formatGrade, { direction: 'up', grade: 6 }, t)).toBe(
+      'warm-up · mobile.session.preGeneratorWarmUpSummaryRamps(V6)',
+    );
+  });
+
+  it('says a warm-up after the last block eases off from that block’s grade', () => {
+    expect(blockSummary(warmUpBlock, formatGrade, { direction: 'down', grade: 5 }, t)).toBe(
+      'warm-up · mobile.session.preGeneratorCoolDownSummaryEasesOff(V5)',
+    );
+  });
+
+  it('says a warm-up with no workout block on either side needs one', () => {
+    expect(blockSummary(warmUpBlock, formatGrade, null, t, true)).toBe(
+      'warm-up · mobile.session.preGeneratorWarmUpSummaryNoTarget · mobile.session.preGeneratorBlockSummaryFiltered',
+    );
   });
 });
