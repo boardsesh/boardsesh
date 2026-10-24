@@ -14,7 +14,13 @@ export type WarmUpType = 'standard' | 'extended' | 'none';
 
 export type EffortLevel = 'moderate' | 'challenging' | 'veryDifficult' | 'maxEffort';
 
-export type ClimbBias = 'unfamiliar' | 'attempted' | 'any';
+/**
+ * Which climbs of a grade a block draws from. `unfamiliar` prefers climbs the
+ * climber has not tried, and `any` takes the whole catalogue. `attempted`,
+ * `sent` and `liked` draw from the climber's own climbs: the ones they have
+ * tried or sent at this angle, or hearted at any angle (#6739).
+ */
+export type ClimbBias = 'unfamiliar' | 'attempted' | 'sent' | 'liked' | 'any';
 
 export type BaseGeneratorOptions = {
   warmUp: WarmUpType;
@@ -132,7 +138,7 @@ export const WARM_UP_OPTIONS: WarmUpType[] = ['none', 'standard', 'extended'];
 
 export const EFFORT_LEVELS: EffortLevel[] = ['moderate', 'challenging', 'veryDifficult', 'maxEffort'];
 
-export const CLIMB_BIAS_OPTIONS: ClimbBias[] = ['unfamiliar', 'attempted', 'any'];
+export const CLIMB_BIAS_OPTIONS: ClimbBias[] = ['unfamiliar', 'attempted', 'sent', 'liked', 'any'];
 
 export const DEFAULT_VOLUME_OPTIONS: Omit<VolumeOptions, 'targetGrade'> = {
   type: 'volume',

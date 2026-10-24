@@ -43,7 +43,6 @@ vi.mock('../../../CollapsibleSection', () => ({
       children,
     ),
 }));
-vi.mock('../../../SegmentedControl', () => ({ SegmentedControl: () => null }));
 vi.mock('../../../StarRating', () => ({ StarRating: () => null }));
 vi.mock('../../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
@@ -241,11 +240,9 @@ describe("Skip what I've tried", () => {
       'mobile.session.preGeneratorMinAscentsOption(5) · ★★ · mobile.session.preGeneratorClimbBiasUnfamiliar · ' +
         'mobile.session.preGeneratorSkipTriedSummary',
     );
+    // Attempted draws from your own climbs, so the line drops the floors it does not apply.
     expect(
       blockFiltersSummary({ ...DEFAULT_WORKOUT_FILTERS, climbBias: 'attempted', skipSent: true, skipTried: true }, t),
-    ).toBe(
-      'mobile.session.preGeneratorMinAscentsOption(5) · ★★ · mobile.session.preGeneratorClimbBiasAttempted · ' +
-        'mobile.session.preGeneratorSkipSentSummary',
-    );
+    ).toBe('mobile.session.preGeneratorClimbBiasAttempted · mobile.session.preGeneratorSkipSentSummary');
   });
 });

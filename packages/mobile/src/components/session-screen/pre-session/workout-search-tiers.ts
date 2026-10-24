@@ -5,7 +5,12 @@ import type { ClimbSearchInput } from '@boardsesh/shared-schema';
  * The personal flags of one search tier: which climbs of a grade it returns,
  * read from your logbook at this angle. Only the flags a tier sets are sent.
  */
-export type ClimbSearchTier = Readonly<Pick<ClimbSearchInput, 'hideAttempted' | 'hideCompleted' | 'showOnlyAttempted'>>;
+export type ClimbSearchTier = Readonly<
+  Pick<
+    ClimbSearchInput,
+    'hideAttempted' | 'hideCompleted' | 'showOnlyAttempted' | 'showOnlyCompleted' | 'onlyFavorited'
+  >
+>;
 
 /** The ascent mark a search tier proves: tried and not sent, or sent. */
 export type TierAscentStatus = 'attempt' | 'send';
@@ -29,43 +34,80 @@ const TRIED: SearchTierRule = { flags: { showOnlyAttempted: true }, adds: null }
 const TRIED_UNSENT: SearchTierRule = { flags: { showOnlyAttempted: true, hideCompleted: true }, adds: 'attempt' };
 const UNSENT: SearchTierRule = { flags: { hideCompleted: true }, adds: null };
 const EVERY_CLIMB: SearchTierRule = { flags: {}, adds: null };
+// showOnlyCompleted keeps the climbs with a flash or send tick at this angle.
+const SENT: SearchTierRule = { flags: { showOnlyCompleted: true }, adds: 'send' };
+// A heart belongs to the climb, not an angle: onlyFavorited matches at every angle.
+const LIKED: SearchTierRule = { flags: { onlyFavorited: true }, adds: null };
+const LIKED_UNSENT: SearchTierRule = { flags: { onlyFavorited: true, hideCompleted: true }, adds: null };
+const LIKED_UNTRIED: SearchTierRule = {
+  flags: { onlyFavorited: true, hideAttempted: true, hideCompleted: true },
+  adds: null,
+};
 
 type BiasSearchTiers = Readonly<{
   /** Every search, best first. Each returns every climb the one before it does, and more. */
   all: readonly SearchTierRule[];
-  /** Skip what I've sent: only searches that hide every climb you have sent. */
-  unsent: readonly SearchTierRule[];
+  /**
+   * Skip what I've sent: only searches that hide every climb you have sent.
+   * Null where the bias asks for climbs you have sent, so the switch cannot apply.
+   */
+  unsent: readonly SearchTierRule[] | null;
   /**
    * Skip what I've tried: only searches that hide every climb you have tried or
-   * sent. Null where the bias asks for climbs you have tried, so the switch
-   * cannot apply.
+   * sent. Null where the bias asks for climbs you have tried or sent, so the
+   * switch cannot apply.
    */
   untried: readonly SearchTierRule[] | null;
+  /**
+   * The bias draws from the climber's own climbs, a list they made by climbing
+   * or hearting, so the crowd's floors (min ascents, min rating) do not apply:
+   * `fetchFilters` drops them and the block's filters hide them.
+   */
+  ownClimbs: boolean;
 }>;
 
 /**
- * The search tiers of each climb bias (#6232), and what each skip switch leaves
- * of them. One table, so a later preference (liked climbs, say) is one more
- * column or row here rather than another branch in the fetch.
+ * The search tiers of each climb bias (#6232, #6739), and what each skip switch
+ * leaves of them. One table, so a new bias is one more row here rather than
+ * another branch in the fetch.
  *
  * - Unfamiliar (the default) prefers climbs you have not tried, then the ones
  *   you tried but did not send, then the ones you sent, as top-ups.
  * - Attempted and Any send the one search each always sent; a skip switch swaps
  *   it for the search that hides what it skips.
+ * - Sent and Liked are one search each too: the climbs you have sent at this
+ *   angle, or hearted. Neither skip switch fits Sent; both narrow Liked.
  */
 export const SEARCH_TIERS_BY_BIAS: Readonly<Record<ClimbBias, BiasSearchTiers>> = {
   unfamiliar: {
     all: [UNTRIED, TRIED_UNSENT_TOP_UP, SENT_TOP_UP],
     unsent: [UNTRIED, TRIED_UNSENT_TOP_UP],
     untried: [UNTRIED],
+    ownClimbs: false,
   },
-  attempted: { all: [TRIED], unsent: [TRIED_UNSENT], untried: null },
-  any: { all: [EVERY_CLIMB], unsent: [UNSENT], untried: [UNTRIED] },
+  attempted: { all: [TRIED], unsent: [TRIED_UNSENT], untried: null, ownClimbs: true },
+  sent: { all: [SENT], unsent: null, untried: null, ownClimbs: true },
+  liked: { all: [LIKED], unsent: [LIKED_UNSENT], untried: [LIKED_UNTRIED], ownClimbs: true },
+  any: { all: [EVERY_CLIMB], unsent: [UNSENT], untried: [UNTRIED], ownClimbs: false },
 };
 
-/** Whether Skip what I've tried can apply under a climb bias. Not under Attempted, which picks tried climbs. */
+/** Whether Skip what I've sent can apply under a climb bias. Not under Sent, which picks sent climbs. */
+export function biasCanSkipSent(climbBias: ClimbBias): boolean {
+  return SEARCH_TIERS_BY_BIAS[climbBias].unsent !== null;
+}
+
+/** Whether Skip what I've tried can apply under a climb bias. Not under Attempted or Sent, which pick tried or sent climbs. */
 export function biasCanSkipTried(climbBias: ClimbBias): boolean {
   return SEARCH_TIERS_BY_BIAS[climbBias].untried !== null;
+}
+
+/**
+ * Whether a climb bias draws from the climber's own climbs (Attempted, Sent,
+ * Liked), where min ascents and min rating do not apply. Signed out none does:
+ * the search reads no logbook, so the bias falls back to Any (`fetchFilters`).
+ */
+export function biasDrawsOwnClimbs(climbBias: ClimbBias): boolean {
+  return SEARCH_TIERS_BY_BIAS[climbBias].ownClimbs;
 }
 
 /**
@@ -80,7 +122,8 @@ export function searchTierRules(
   if (!isAuthenticated || !filters) return [EVERY_CLIMB];
   const tiers = SEARCH_TIERS_BY_BIAS[filters.climbBias];
   if (filters.skipTried && tiers.untried) return tiers.untried;
-  return filters.skipSent ? tiers.unsent : tiers.all;
+  if (filters.skipSent && tiers.unsent) return tiers.unsent;
+  return tiers.all;
 }
 
 /**

@@ -4,7 +4,13 @@ import type { PlannedClimbSlot, WorkoutStageFilters } from '@boardsesh/playlist-
 import { climbToQueueItem } from '../../../lib/climb-to-queue-item';
 import { screenshotModeRandom } from '../../../lib/screenshot-mode';
 import type { RandomSource } from '../../../lib/seeded-random';
-import { biasCanSkipTried, tierAscentStatus, type TierAscentStatus } from './workout-search-tiers';
+import {
+  biasCanSkipSent,
+  biasCanSkipTried,
+  biasDrawsOwnClimbs,
+  tierAscentStatus,
+  type TierAscentStatus,
+} from './workout-search-tiers';
 
 /**
  * Pure climb-pool bookkeeping for the live workout preview. No GraphQL, no React
@@ -102,10 +108,14 @@ export function filtersSignature(filters: PreviewFilters | undefined): string {
 /**
  * The filters a fetch can actually apply. Signed out, climb bias and the skip
  * switches never reach the search (they read your logbook), so bias is set to
- * `any` and `skipSent` and `skipTried` dropped. Under the Attempted bias Skip
- * what I've tried cannot apply (`biasCanSkipTried`) and is dropped too. Two
- * blocks that differ only in what got dropped then share one pool instead of
- * fetching the same climbs twice.
+ * `any` and `skipSent` and `skipTried` dropped. Signed in, a skip switch the
+ * bias rules out is dropped: Skip what I've tried under Attempted or Sent
+ * (`biasCanSkipTried`), Skip what I've sent under Sent (`biasCanSkipSent`). A
+ * bias that draws from your own climbs (`biasDrawsOwnClimbs`: Attempted, Sent,
+ * Liked) has min ascents and min rating set to 0, which the search reads as no
+ * floor: a climb you have sent or liked is in the block whatever the crowd made
+ * of it. Two blocks that differ only in what got dropped then share one pool
+ * instead of fetching the same climbs twice.
  */
 export function fetchFilters(
   filters: PreviewFilters | undefined,
@@ -113,9 +123,14 @@ export function fetchFilters(
 ): PreviewFilters | undefined {
   if (!filters) return filters;
   if (isAuthenticated) {
-    if (!filters.skipTried || biasCanSkipTried(filters.climbBias)) return filters;
-    const applicable: PreviewFilters = { ...filters };
-    delete applicable.skipTried;
+    const { climbBias } = filters;
+    const dropsSkipSent = filters.skipSent === true && !biasCanSkipSent(climbBias);
+    const dropsSkipTried = filters.skipTried === true && !biasCanSkipTried(climbBias);
+    const dropsFloors = biasDrawsOwnClimbs(climbBias) && (filters.minAscents !== 0 || filters.minRating !== 0);
+    if (!dropsSkipSent && !dropsSkipTried && !dropsFloors) return filters;
+    const applicable: PreviewFilters = dropsFloors ? { ...filters, minAscents: 0, minRating: 0 } : { ...filters };
+    if (dropsSkipSent) delete applicable.skipSent;
+    if (dropsSkipTried) delete applicable.skipTried;
     return applicable;
   }
   if (filters.climbBias === 'any' && !filters.skipSent && !filters.skipTried) return filters;
