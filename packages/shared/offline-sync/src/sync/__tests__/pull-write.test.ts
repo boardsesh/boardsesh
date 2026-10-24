@@ -67,7 +67,7 @@ describe('runPullWrite (#5851)', () => {
     expect(transactions).toHaveLength(2);
     expect(reporter).toHaveBeenCalledTimes(1);
     expect(reporter).toHaveBeenCalledWith(
-      expect.objectContaining({ site: 'deletions-coverage', sizing: 'background', attempts: 2, recovered: true }),
+      expect.objectContaining({ site: 'deletions-coverage', sizing: 'background', attempts: 2, outcome: 'committed' }),
     );
   });
 
@@ -82,7 +82,7 @@ describe('runPullWrite (#5851)', () => {
     expect(failure).toBeInstanceOf(Error);
     expect((failure as Error).message).toContain('database is locked');
     expect(getSqliteWriteSite(failure)).toBe('scope-complete');
-    expect(reporter).toHaveBeenCalledWith(expect.objectContaining({ site: 'scope-complete', recovered: false }));
+    expect(reporter).toHaveBeenCalledWith(expect.objectContaining({ site: 'scope-complete', outcome: 'exhausted' }));
   });
 
   it('does not report or tag a task that threw something other than a lost lock', async () => {
@@ -103,6 +103,44 @@ describe('runPullWrite (#5851)', () => {
 
     expect(reporter).not.toHaveBeenCalled();
     expect(getSqliteWriteSite(abort)).toBeNull();
+  });
+
+  it('reports a write that lost attempt 1 and then hit its own abort sentinel as aborted', async () => {
+    // The teardown race the event exists for: attempt 1 waits out a removal and
+    // loses; attempt 2 finds the scope gone and throws its sentinel. The last
+    // error is that sentinel, not a lock, and the report must still go out.
+    const reporter = vi.fn();
+    setPullWriteSettledReporter(reporter);
+    const { db } = scriptedDatabase(1);
+    const sentinel = new Error('scope torn down');
+
+    await expect(
+      runPullWrite(
+        db,
+        async () => {
+          throw sentinel;
+        },
+        { site: 'deletions-page' },
+      ),
+    ).rejects.toBe(sentinel);
+
+    expect(reporter).toHaveBeenCalledTimes(1);
+    expect(reporter).toHaveBeenCalledWith(
+      expect.objectContaining({ site: 'deletions-page', attempts: 2, outcome: 'aborted' }),
+    );
+  });
+
+  it('reports a write whose retry was refused by its guard as refused, not committed', async () => {
+    const reporter = vi.fn();
+    setPullWriteSettledReporter(reporter);
+    const { db } = scriptedDatabase(1);
+
+    const wrote = await runGuardedPullWrite(db, { site: 'scope-complete', canWrite: () => false }, async () => {});
+
+    expect(wrote).toBe(false);
+    expect(reporter).toHaveBeenCalledWith(
+      expect.objectContaining({ site: 'scope-complete', attempts: 2, outcome: 'refused' }),
+    );
   });
 
   it('sizes a foreground write for the tap: two attempts, 2.5 s then 1.5 s', async () => {

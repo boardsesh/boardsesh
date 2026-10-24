@@ -439,23 +439,23 @@ describe('startBackgroundTracking', () => {
     expect(appStateRemove).toHaveBeenCalledTimes(1);
   });
 
-  it('reports a contended background write as one PostHog event and unregisters on stop (#5851)', () => {
+  it('reports a contended sync write as one PostHog event and unregisters on stop (#5851)', () => {
     const stop = startBackgroundTracking();
     expect(pullWriteTelemetry.reporter).toBeTypeOf('function');
 
     pullWriteTelemetry.reporter?.({
-      site: 'deletions-coverage',
+      site: 'scope-complete',
       sizing: 'background',
       attempts: 2,
-      recovered: true,
+      outcome: 'refused',
       elapsedMs: 5_310,
     });
 
-    expect(trackMock).toHaveBeenCalledWith(SHARED_EVENTS.OfflineBackgroundWriteRetried, {
-      site: 'deletions-coverage',
+    expect(trackMock).toHaveBeenCalledWith(SHARED_EVENTS.OfflineSyncWriteRetried, {
+      site: 'scope-complete',
       sizing: 'background',
       attempts: 2,
-      recovered: true,
+      outcome: 'refused',
       elapsedMs: 5_310,
     });
     stop();

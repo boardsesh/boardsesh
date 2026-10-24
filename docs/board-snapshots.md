@@ -790,7 +790,7 @@ every scoped row ≤ W, `reconcileScope` removes local scoped rows ≤ W absent 
 checkpoint moves forward to W with the strict-`>` delta covering (W, head].
 
 **Rollback safety: the legacy dual-write.** `bootstrap-retry:<scopeKey>` (a JSON `BootstrapRetryState`) is
-the source of truth, but `writeBootstrapRetryState` also mirrors the legacy `bootstrap-attempts:` /
+the source of truth, but `writeBootstrapRetryRows` also mirrors the legacy `bootstrap-attempts:` /
 `bootstrap-attempts-healed:` / `bootstrap-paged-fallback:` rows and **never deletes them**. Production
 branch rollback and `pr-<n>` preview branches are live paths here: an older bundle that read no legacy row
 would re-arm a fresh 2-attempt round plus another one-shot heal. Reads reconcile the other way too — if the

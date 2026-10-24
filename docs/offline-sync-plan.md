@@ -1151,9 +1151,13 @@ refresh tail — goes through `runPullWrite`, which does two things the raw
 
 A recovered lock reports nothing to Sentry. One the ladder cannot win still surfaces
 as a failed cycle through `warnCycleError`, so a genuinely wedged database stays
-visible. Since #5851 every recovered or exhausted lock also reaches PostHog as
-`Offline Background Write Retried` (`site`, `attempts`, `recovered`, `elapsedMs`),
-and an exhausted one tags its cycle failure with `sqliteWriteSite`.
+visible. Since #5851 every `runPullWrite` whose first attempt lost the lock also
+reaches PostHog as `Offline Sync Write Retried` (`site`, `sizing`, `attempts`,
+`outcome`, `elapsedMs`), whatever its later attempts did: `committed`, `refused` by
+its teardown guard, `aborted` by its own sentinel, or `exhausted`. An exhausted one
+tags its cycle failure with `sqliteWriteSite`. Writes outside `runPullWrite` (the
+drainer, the snapshot import's own batches, the foreground tick ladder) are not in
+this event.
 
 **Why the cycle never writes on the main connection** (issue #5851)
 
@@ -1188,8 +1192,14 @@ own connection, `BEGIN IMMEDIATE`, the background ladder. Three rules come with 
 - **A read the write depends on is read under the same lock.** A main-connection read
   can be a snapshot older than the last commit; deriving a write from it on another
   connection is a lost update (the grades attempt counter, the start stamp, the
-  Started-once marker, the reused-artifact free round). Main reads stay only as cheap
-  pre-checks whose stale answer can skip a write but never cause one.
+  Started-once marker, the reused-artifact free round, the Completed event's
+  `method` / `bootstrapHealed`). The other main reads in the cycle are mostly cheap
+  pre-checks whose stale answer can skip a write but never cause one. The exception
+  is the bootstrap phase's loop-top retry-state read: every retry-state write in that
+  scope still derives from it. Those rows already committed on their own connection
+  before #5851, so a stale read there is not new; the visible cost is a fallback
+  caption that a concurrent "try the fast download again" just cleared, re-stamped
+  until the import clears it.
 - **One decision, one commit.** A retry state and its fallback caption, or the
   `bootstrap-done:` marker and the free-round clear, commit together.
 
@@ -1200,7 +1210,11 @@ confirm awaits, runs on the foreground ladder (2.5 s then 1.5 s) instead.
 
 Not covered: the mutation drainer still writes `pending_mutations` through the main
 connection (`queue.ts`), and those writes now meet more cross-connection commits
-than before. Watch phase-`null` `exception` cycle failures after the OTA.
+than before. Watch phase-`null` `exception` cycle failures after the OTA. And
+`bootstrap-done:` commits after the import's last batch, not inside it, so a
+sign-out that keeps boards and lands between the two leaves imported rows without
+the marker; the next cycle heals over them (follow-up: write the marker in the
+importer's final transaction).
 
 **Why the launch gate opens before the schema is ready**
 

@@ -25,7 +25,7 @@ vi.mock('../../db/migrations', async (importOriginal) => {
   return { ...original, LATEST_SCHEMA_VERSION: original.ARTIFACT_SCHEMA_VERSION + 1 };
 });
 
-import type { QueryInvalidator } from '../../database';
+import type { OfflineDatabase, QueryInvalidator } from '../../database';
 import {
   pullSync,
   emptyScopeDownloadPhases,
@@ -50,8 +50,9 @@ import {
 import {
   getBootstrapAttempts,
   readBootstrapRetryState,
-  writeBootstrapRetryState,
+  writeBootstrapRetryRows,
   restoreBootstrapRetryBudget,
+  type BootstrapRetryState,
   EMPTY_BOOTSTRAP_RETRY_STATE,
   MAX_BOOTSTRAP_ATTEMPTS,
   MAX_FREE_BACKGROUND_PAUSES,
@@ -71,6 +72,18 @@ import {
 } from '../../mutation-queue/drainer';
 import { createTestDatabase, type TestSqliteDb } from '../../testing/sqlite-test-db';
 import { openSharedMainConnection } from '../../testing/shared-main-connection';
+import { runPullWrite } from '../pull-write';
+
+/** A retry state committed the way the engine commits one (#5851): rows in their own write transaction. */
+function writeRetryState(
+  database: OfflineDatabase,
+  scopeKey: string,
+  retryState: BootstrapRetryState,
+): Promise<BootstrapRetryState> {
+  return runPullWrite(database, (transaction) => writeBootstrapRetryRows(transaction, scopeKey, retryState), {
+    site: 'test-seed',
+  });
+}
 import type { OfflineBoardScope } from '../../offline-board-key';
 import {
   SNAPSHOT_MANIFEST_FORMAT_VERSION,
@@ -1005,7 +1018,7 @@ describe('pullSync snapshot bootstrap', () => {
         await transaction.runAsync('DELETE FROM sync_meta WHERE key = ?', [`checkpoint:${table}:${scopeKey}`]);
       await transaction.runAsync('DELETE FROM sync_meta WHERE key = ?', [`scope-complete:${scopeKey}`]);
     });
-    await writeBootstrapRetryState(db, scopeKey, {
+    await writeRetryState(db, scopeKey, {
       ...EMPTY_BOOTSTRAP_RETRY_STATE,
       ...(retryAfter === null
         ? {}
@@ -2248,6 +2261,39 @@ describe('pullSync bootstrap: healing a scope stranded mid-crawl', () => {
       random: () => 0,
     });
 
+    expect(onScopeDownloadComplete).toHaveBeenCalledWith(
+      expect.objectContaining({ scopeKey: 'kilter:1:5', method: 'snapshot', bootstrapHealed: true }),
+    );
+  });
+
+  it('attributes the once-ever Completed event from the lock, not a main read older than the import (#5851)', async () => {
+    await seedStrandedMidCrawl();
+    const filePath = join(workDir, 'shared-main-heal.db');
+    buildHealArtifact(filePath);
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
+    const onScopeDownloadComplete = vi.fn();
+    const shared = openSharedMainConnection(join(workDir, 'client.db'), db);
+    try {
+      // A local read opens its snapshot on the main connection before the import
+      // commits `bootstrap-done:` on its own connection, and is still open when
+      // the scope completes. Read there, the marker is not down yet.
+      shared.holdStaleSnapshot(
+        (_sql, params) => params.includes('checkpoint:board_climbs:kilter:1:5'),
+        () => {},
+      );
+      await pullSync(shared.db, noopQueryClient(), makeGraphqlFetch().fetch, {
+        enabledBoards: ['kilter:1:5'],
+        snapshotSource: source,
+        onScopeDownloadComplete,
+        now: () => BASE_NOW,
+        random: () => 0,
+      });
+    } finally {
+      shared.close();
+    }
+    // Fires once per scope, ever: a wrong `method` here skews the snapshot-vs-paged
+    // comparison for good.
+    expect(onScopeDownloadComplete).toHaveBeenCalledTimes(1);
     expect(onScopeDownloadComplete).toHaveBeenCalledWith(
       expect.objectContaining({ scopeKey: 'kilter:1:5', method: 'snapshot', bootstrapHealed: true }),
     );

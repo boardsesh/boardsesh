@@ -640,7 +640,7 @@ const warnCycleError = (error: unknown) => {
   const errorKind = classifyCycleErrorKind(error, expected, status);
   const phase = progress?.phase ?? null;
   const currentTable = progress?.currentTable ?? null;
-  // Which background write lost the SQLite lock, when that is what ended the
+  // Which sync write lost the SQLite lock, when that is what ended the
   // cycle (#5851). The stack stops at expo's CodedError, so without this the
   // statement that lost is a guess.
   const sqliteWriteSite = getSqliteWriteSite(error);
@@ -699,27 +699,27 @@ export function __resetCycleErrorDedupeForTests(): void {
 }
 
 /**
- * One background SQLite write lost the lock on its first attempt (#5851). Only
+ * One sync-engine SQLite write lost the lock on its first attempt (#5851). Only
  * contended writes reach here, so the event's count is the contention rate and
  * `elapsedMs` is how long the holder really kept the lock. Never throws: the
  * engine also guards the call, and a broken report must not fail a write.
  */
-function reportBackgroundWriteRetried(report: PullWriteSettledReport): void {
+function reportSyncWriteRetried(report: PullWriteSettledReport): void {
   try {
-    track(SHARED_EVENTS.OfflineBackgroundWriteRetried, {
+    track(SHARED_EVENTS.OfflineSyncWriteRetried, {
       site: report.site,
       sizing: report.sizing,
       attempts: report.attempts,
-      recovered: report.recovered,
+      outcome: report.outcome,
       elapsedMs: report.elapsedMs,
     });
   } catch (reportError) {
-    if (__DEV__) console.warn('[Sync] background write report failed:', reportError);
+    if (__DEV__) console.warn('[Sync] sync write report failed:', reportError);
   }
 }
 
 // Feeds setBackgrounded() (Sentry BOARDSESH-AN), the metered-link flag above and
-// the background-write telemetry sink; call once for the app's lifetime — see
+// the sync-write telemetry sink; call once for the app's lifetime — see
 // OfflineSyncBridge.
 export function startBackgroundTracking(): () => void {
   const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
@@ -729,7 +729,7 @@ export function startBackgroundTracking(): () => void {
   const unsubscribeNetInfo = NetInfo.addEventListener((state) => {
     isConnectionMetered = readMetered(state);
   });
-  const unregisterWriteTelemetry = setPullWriteSettledReporter(reportBackgroundWriteRetried);
+  const unregisterWriteTelemetry = setPullWriteSettledReporter(reportSyncWriteRetried);
   return () => {
     subscription.remove();
     unsubscribeNetInfo();

@@ -359,7 +359,7 @@ export type { LocalWriteRetryOptions, LocalWriteRetryOutcome } from './db/write-
 // sink for contended background writes, and reads the losing write's site off a
 // lock error that escaped a sync cycle.
 export { setPullWriteSettledReporter, getSqliteWriteSite } from './sync/pull-write';
-export type { PullWriteSettledReport, PullWriteSizing } from './sync/pull-write';
+export type { PullWriteOutcome, PullWriteSettledReport, PullWriteSizing } from './sync/pull-write';
 // One predicate for "was this write-lock contention?", so reporting (#4329) and
 // the sqlite-init retry loop (#4314) can never disagree about which failures
 // count. `classifySqliteLockError` is the same verdict plus the SQLite result

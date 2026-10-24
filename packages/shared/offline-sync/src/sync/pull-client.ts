@@ -1600,7 +1600,7 @@ async function settleBootstrapFailure(
       }
       return rows;
     },
-    { site: 'bootstrap-settle' },
+    { site: 'bootstrap-settle', refusedWhen: (rows) => rows === null },
   );
   if (!written) return { state, failureKind, expected, cause, persisted: false, refused: true };
   return { state: written, failureKind, expected, cause, persisted: true, refused: false };
@@ -1854,7 +1854,7 @@ async function runBootstrapPhase(params: {
   ): Promise<boolean> => runGuardedPullWrite(db, { site, canWrite: () => wipeVerdict(scopeKey) === null }, task);
 
   /**
-   * `writeBootstrapRetryState`, guarded the same way. `alsoInTransaction` puts a
+   * `writeBootstrapRetryRows` in its own guarded transaction. `alsoInTransaction` puts a
    * marker that belongs to the same decision in the same commit. Resolves the
    * state that was written, or null when a wipe refused it.
    */
@@ -1871,7 +1871,7 @@ async function runBootstrapPhase(params: {
         await alsoInTransaction?.(transaction, written);
         return written;
       },
-      { site: 'bootstrap-retry-state' },
+      { site: 'bootstrap-retry-state', refusedWhen: (written) => written === null },
     );
 
   /** `markBootstrapPagedFallback`, guarded. False when a wipe refused it. */
@@ -3708,16 +3708,20 @@ async function performPullSync(
       // Read and written under one lock: the stamp is read-modify-write, and a
       // read on the main connection can be older than the last commit.
       const stamp: { startedAt?: number } = {};
-      await runGuardedPullWrite(
+      const stamped = await runGuardedPullWrite(
         db,
         { site: 'scope-download-started-at', canWrite: () => scopeWritable(scopeKey) },
         async (transaction) => {
+          // Per attempt, like every value an attempt captures: only the attempt
+          // that commits may leave one behind.
+          stamp.startedAt = undefined;
           stamp.startedAt = await ensureScopeDownloadStartedAt(transaction, scopeKey, Date.now());
         },
       );
       // Refused: the board is being torn down, and the caller's own purge check
-      // after this await takes it from here.
-      if (stamp.startedAt !== undefined) scopeStartedAt.set(scopeKey, stamp.startedAt);
+      // after this await takes it from here. A value an earlier, rolled-back
+      // attempt captured is ignored with it.
+      if (stamped && stamp.startedAt !== undefined) scopeStartedAt.set(scopeKey, stamp.startedAt);
     };
 
     // Per-scope phase breakdown for ScopeDownloadCompleteInfo.phases, accumulated
@@ -4091,7 +4095,12 @@ async function performPullSync(
         //
         // Serialize the final retry read with completion: a request arriving on
         // the terminal page must not lose to a completed marker before its queued run.
-        const completion = { committed: false, wasScopeComplete: completeBeforeLock };
+        const completion = {
+          committed: false,
+          wasScopeComplete: completeBeforeLock,
+          method: 'paged' as ScopeDownloadCompleteInfo['method'],
+          bootstrapHealed: false,
+        };
         await runPullWrite(
           db,
           async (transaction) => {
@@ -4100,8 +4109,16 @@ async function performPullSync(
             if (continuePagedScope && !(await continuePagedScope(transaction))) return;
             if (cycleAborted() || scopePurged(boardScope)) return;
             completion.wasScopeComplete = await isScopeDownloadComplete(transaction, scopeKey);
-            // Clears the persisted start stamp as well as writing the complete marker.
-            if (!completion.wasScopeComplete) await markScopeDownloadComplete(transaction, scopeKey);
+            if (!completion.wasScopeComplete) {
+              // Clears the persisted start stamp as well as writing the complete marker.
+              await markScopeDownloadComplete(transaction, scopeKey);
+              // The once-ever Completed event's attribution, read under this lock
+              // too. `bootstrap-done:` commits on the import's own connection, so
+              // a main-connection read whose snapshot predates that commit would
+              // report a snapshot download as paged, for good.
+              completion.method = (await isBootstrapDone(transaction, scopeKey)) ? 'snapshot' : 'paged';
+              completion.bootstrapHealed = await wasBootstrapHealed(transaction, scopeKey);
+            }
             completion.committed = true;
           },
           { site: 'scope-complete' },
@@ -4145,11 +4162,11 @@ async function performPullSync(
         const timings = bootstrapTimings.get(scopeKey);
         options?.onScopeDownloadComplete?.({
           scopeKey,
-          method: (await isBootstrapDone(db, scopeKey)) ? 'snapshot' : 'paged',
+          method: completion.method,
           durationMs,
           // A healed scope's duration excludes the paged work earlier cycles did,
           // so it must be filtered out of snapshot-vs-paged comparisons.
-          bootstrapHealed: await wasBootstrapHealed(db, scopeKey),
+          bootstrapHealed: completion.bootstrapHealed,
           // Spread rather than set explicitly: absent when this cycle did not do
           // the import, which is the honest answer (see ScopeDownloadCompleteInfo).
           ...timings,

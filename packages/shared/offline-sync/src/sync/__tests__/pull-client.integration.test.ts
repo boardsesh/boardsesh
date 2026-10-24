@@ -24,7 +24,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { QueryInvalidator } from '../../database';
+import type { OfflineDatabase, QueryInvalidator } from '../../database';
 
 // Capture schema-drift telemetry through the injected reporter seam.
 const onSchemaDrift = vi.fn();
@@ -44,7 +44,19 @@ import { runMigrations, LATEST_SCHEMA_VERSION } from '../../db/migrations';
 import { ensureMutationQueueTable } from '../../mutation-queue/schema';
 import { createTestDatabase, type TestSqliteDb } from '../../testing/sqlite-test-db';
 import { getDeletionsCoverageAt } from '../deletions-coverage';
-import { EMPTY_BOOTSTRAP_RETRY_STATE, writeBootstrapRetryState } from '../bootstrap-retry';
+import { EMPTY_BOOTSTRAP_RETRY_STATE, writeBootstrapRetryRows, type BootstrapRetryState } from '../bootstrap-retry';
+import { runPullWrite } from '../pull-write';
+
+/** A retry state committed the way the engine commits one (#5851): rows in their own write transaction. */
+function writeRetryState(
+  database: OfflineDatabase,
+  scopeKey: string,
+  retryState: BootstrapRetryState,
+): Promise<BootstrapRetryState> {
+  return runPullWrite(database, (transaction) => writeBootstrapRetryRows(transaction, scopeKey, retryState), {
+    site: 'test-seed',
+  });
+}
 import { compareCheckpoints, setCheckpoint } from '../checkpoints';
 import { markUserDataComplete } from '../local-user-owner';
 import { DELETIONS_COVERAGE_EPOCH_FLOOR_MS } from '../retention';
@@ -1918,7 +1930,7 @@ describe('a scope the snapshot bootstrap has finished with still runs its paged 
 
   it('still holds a fresh scope back while its snapshot retry is cooling down', async () => {
     const cycleStartedAt = 1_800_000_000_000;
-    await writeBootstrapRetryState(db, SCOPE_KEY, {
+    await writeRetryState(db, SCOPE_KEY, {
       ...EMPTY_BOOTSTRAP_RETRY_STATE,
       transportFailures: 1,
       lastFailureKind: 'transport',

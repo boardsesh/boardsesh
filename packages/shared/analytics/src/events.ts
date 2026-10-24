@@ -1211,19 +1211,23 @@ export const SHARED_EVENTS = {
   // Props: { tableName, operation, attempts, outcome: 'recovered' | 'exhausted',
   // isLockError, wasOffline, elapsedMs }.
   OfflineLocalWriteAttemptFailed: 'Offline Local Write Attempt Failed',
-  // Offline sync — the FIRST attempt of a background SQLite write (a sync page,
-  // a sync marker, the holds index, a bootstrap retry state) lost the write lock,
-  // so the background retry ladder ran (#5851). Silent on a clean write, so its
-  // raw count is the contention rate. `site` names the write, never the board:
-  // 'deletions-coverage', 'scope-complete', 'pull-page', 'bootstrap-settle', ….
-  // `recovered: true` means a later attempt committed and the cycle went on;
-  // false means the ladder gave up and the cycle failed (its `Offline Sync Cycle
-  // Failed` carries the same `sqliteWriteSite`). Every attempt waits the lock
-  // out with the busy handler honoured, so `elapsedMs` is how long another
-  // connection really held it — the number that names the holder class.
-  // Props: { site, sizing: 'background' | 'foreground', attempts, recovered,
-  // elapsedMs }.
-  OfflineBackgroundWriteRetried: 'Offline Background Write Retried',
+  // Offline sync — the FIRST attempt of one of the sync engine's own SQLite
+  // writes lost the write lock, so its retry ladder ran (#5851). Covers every
+  // `runPullWrite`: sync pages, sync markers, the holds index, bootstrap retry
+  // states, and the one the climber waits on — the Download confirm's budget
+  // restore, reported with `sizing: 'foreground'`. Silent on a clean write, so
+  // its raw count is the contention rate. `site` names the write, never the
+  // board: 'deletions-coverage', 'scope-complete', 'pull-page',
+  // 'bootstrap-settle', …. `outcome`: 'committed' (a later attempt wrote),
+  // 'refused' (a later attempt's teardown guard said no — a board removal or
+  // sign-out landed while it waited; nothing was written, by design), 'aborted'
+  // (a later attempt's own abort sentinel threw, for the same reason), or
+  // 'exhausted' (every attempt lost the lock; the cycle failed, and its `Offline
+  // Sync Cycle Failed` carries the same `sqliteWriteSite`). Every attempt waits
+  // the lock out with the busy handler honoured, so `elapsedMs` is how long
+  // another connection really held it. Props: { site, sizing: 'background' |
+  // 'foreground', attempts, outcome, elapsedMs }.
+  OfflineSyncWriteRetried: 'Offline Sync Write Retried',
   // Offline sync — the local SQLite write behind an offline tick threw. `outcome`
   // says what happened next: 'queued' means the outbox-only fallback still saved
   // the tick and it will sync; 'fell_through' means it did not, and the direct
@@ -1254,8 +1258,8 @@ export const SHARED_EVENTS = {
   // during global deletion work; `expected` is true for transport-shaped
   // failures. Raw exception text stays in Sentry rather than analytics; an
   // unchanged signature is emitted at most once per five minutes.
-  // `sqliteWriteSite` (#5851) names the background write that lost the SQLite
-  // lock when that is what failed the cycle, null otherwise.
+  // `sqliteWriteSite` (#5851) names the sync write that lost the SQLite lock when
+  // that is what failed the cycle, and is absent otherwise.
   // `errorKind` is 'aborted' | 'server_unavailable' | 'network' | 'server' |
   // 'exception' | 'non-error', in that precedence. 'server_unavailable' (#4862)
   // is a 502/503/504, or any failure raised while the connectivity store had

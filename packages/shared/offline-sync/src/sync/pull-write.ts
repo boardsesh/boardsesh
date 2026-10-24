@@ -106,13 +106,15 @@ export function buildMultiRowInsertSql(
  * the ladder's default `shouldRetry` is `isDatabaseLockedError`, so it rethrows
  * immediately.
  *
- * TELEMETRY (issue #5851). Every call names its `site`. A write whose first
+ * TELEMETRY (issue #5851). Every call names its `site`. A write whose FIRST
  * attempt lost the lock reports once through the injected settle reporter
- * (`setPullWriteSettledReporter`), recovered or not, so "how often does a
- * background write meet a held lock, and for how long" is a number rather than
- * an inference. A write the ladder could not win still surfaces where it did
- * before, as a failed cycle, and now carries its site on the error
- * (`getSqliteWriteSite`), so the report names the statement that lost.
+ * (`setPullWriteSettledReporter`), whatever its later attempts did — committed,
+ * refused by its guard (`refusedWhen`), aborted by its own sentinel, or out of
+ * attempts — so "how often does an engine write meet a held lock, for how long,
+ * and to what" is a number rather than an inference. A write the ladder could not
+ * win still surfaces where it did before, as a failed cycle, and now carries its
+ * site on the error (`getSqliteWriteSite`), so the report names the statement
+ * that lost.
  *
  * NEVER CALL THIS FROM INSIDE A TRANSACTION. It opens its own connection; from
  * inside another write transaction that connection waits on the caller's own
@@ -122,18 +124,31 @@ export function buildMultiRowInsertSql(
 export async function runPullWrite<T = void>(
   db: OfflineDatabase,
   task: (transaction: SqlExecutor) => Promise<T>,
-  options: PullWriteOptions,
+  options: PullWriteOptions & {
+    /** True for a result that means "the task's guard refused, nothing was written". */
+    refusedWhen?: (result: T) => boolean;
+  },
 ): Promise<T> {
   const sizing = options.sizing ?? 'background';
   const ladder = PULL_WRITE_LADDERS[sizing];
   let result: T | undefined;
+  // Decided by attempt 1, not by the last error: a write that lost attempt 1 to a
+  // teardown and then hit its own guard or abort sentinel is exactly the case the
+  // report exists for, and its last error is that sentinel, not a lock.
+  let firstAttemptLostLock = false;
   try {
     await runLocalWriteWithRetry(
-      (attempt) =>
-        db.withExclusiveTransactionAsync(async (transaction) => {
-          await beginImmediateWrite(transaction, ladder.busyTimeoutMs(attempt));
-          result = await task(transaction);
-        }),
+      async (attempt) => {
+        try {
+          await db.withExclusiveTransactionAsync(async (transaction) => {
+            await beginImmediateWrite(transaction, ladder.busyTimeoutMs(attempt));
+            result = await task(transaction);
+          });
+        } catch (error) {
+          if (attempt === 1) firstAttemptLostLock = isDatabaseLockedError(error);
+          throw error;
+        }
+      },
       {
         maxAttempts: ladder.maxAttempts,
         retryDelayMs: ladder.retryDelayMs,
@@ -141,8 +156,15 @@ export async function runPullWrite<T = void>(
         onSettled: ({ attempts, error, recovered, elapsedMs }) => {
           // A non-lock throw on attempt 1 is a task's own control flow (an abort
           // sentinel, a guard), not contention, and is not worth an event.
-          if (!isDatabaseLockedError(error)) return;
-          pullWriteSettledReporter?.({ site: options.site, sizing, attempts, recovered, elapsedMs });
+          if (!firstAttemptLostLock) return;
+          const outcome: PullWriteOutcome = recovered
+            ? options.refusedWhen?.(result as T)
+              ? 'refused'
+              : 'committed'
+            : isDatabaseLockedError(error)
+              ? 'exhausted'
+              : 'aborted';
+          pullWriteSettledReporter?.({ site: options.site, sizing, attempts, outcome, elapsedMs });
         },
       },
     );
@@ -182,7 +204,7 @@ export async function runGuardedPullWrite(
       await task(transaction);
       return true;
     },
-    options,
+    { site: options.site, sizing: options.sizing, refusedWhen: (wrote) => !wrote },
   );
 }
 
@@ -225,14 +247,24 @@ const PULL_WRITE_LADDERS: Record<PullWriteSizing, PullWriteLadder> = {
   },
 };
 
-/** One background write whose first attempt lost the SQLite write lock. */
+/**
+ * What a write whose first attempt lost the lock ended as.
+ * - `committed`: a later attempt wrote and committed.
+ * - `refused`: a later attempt took the lock and its guard refused (a teardown
+ *   landed while it waited); nothing was written, by design.
+ * - `aborted`: a later attempt's own abort sentinel threw (a page, holds-index
+ *   chunk or mirror that found its scope torn down).
+ * - `exhausted`: every attempt lost the lock; the caller sees the lock error.
+ */
+export type PullWriteOutcome = 'committed' | 'refused' | 'aborted' | 'exhausted';
+
+/** One engine write whose first attempt lost the SQLite write lock. */
 export type PullWriteSettledReport = {
   site: string;
   sizing: PullWriteSizing;
   /** Attempts run, 1-based. */
   attempts: number;
-  /** True when a later attempt committed; false when the ladder gave up. */
-  recovered: boolean;
+  outcome: PullWriteOutcome;
   /** First attempt to settle, wall clock. */
   elapsedMs: number;
 };

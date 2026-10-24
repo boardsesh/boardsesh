@@ -63,7 +63,7 @@
 import type { OfflineDatabase, SqlExecutor } from '../database';
 import { isNetworkError } from '../mutation-queue/error-classification';
 import { classifySqliteLockError } from '../db/lock-errors';
-import { runPullWrite, type PullWriteSizing } from './pull-write';
+import { runPullWrite } from './pull-write';
 
 // --- sync_meta keys -----------------------------------------------------------
 //
@@ -556,7 +556,7 @@ export function shouldSkipPagedPull(input: {
  * bug — so its value is not carried into `structuralFailures`. A stranded scope
  * gets exactly one clean pass under the new taxonomy (bounded at 3 transport + 2
  * structural), which is what un-strands the mid-crawl population. The legacy rows
- * are never DELETED, but the first `writeBootstrapRetryState` after a migration
+ * are never DELETED, but the first `writeBootstrapRetryRows` after a migration
  * re-stamps `bootstrap-attempts:` down to the mirrored value — the clean pass has
  * to be visible to a rolled-back bundle too, or it would re-read the pre-migration
  * count and settle the scope again. `mirroredAttempts` records what we wrote, so a
@@ -699,48 +699,17 @@ export async function readBootstrapRetryState(
 }
 
 /**
- * Persist a retry state AND its legacy mirror. The mirror is what keeps an OTA
- * rollback honest, so it lives in exactly one function — there is no second
- * place that can forget it.
+ * Persist a retry state AND its legacy mirror, on the executor given. The mirror
+ * is what keeps an OTA rollback honest, so it lives in exactly one function —
+ * there is no second place that can forget it.
  *
- * The rows go down in ONE transaction when the handle offers one, because the
- * read path infers "an older bundle counted failures we never saw" from the
- * legacy counter sitting above `mirroredAttempts`. A torn write would forge that
- * evidence: a user retry lowers the counter from 2 to 0, and if only the JSON
- * row committed, the next read would fold the stale 2 back into
- * `structuralFailures` and settle the scope again — the confirmed retry
- * silently lost. A plain `SqlExecutor` (no transaction method) still works; it
- * just falls back to the two autocommit statements.
- *
- * The transaction is `runPullWrite`'s (issue #5851): its own connection opened
- * `BEGIN IMMEDIATE` with the busy timeout armed, on the ladder `sizing` names. It
- * used to be a bare `withExclusiveTransactionAsync`, whose fresh connection
- * starts at `busy_timeout = 0` and whose deferred `BEGIN` let the first INSERT
- * fail the instant any other connection held the lock.
- *
- * Pass the MAIN handle here, never a transaction executor: expo's transaction
- * object has `withExclusiveTransactionAsync` too, and a nested connection would
- * wait on its caller's own lock. Inside a transaction, call
- * `writeBootstrapRetryRows` instead.
- */
-export async function writeBootstrapRetryState(
-  db: SqlExecutor | OfflineDatabase,
-  scopeKey: string,
-  state: BootstrapRetryState,
-  options: { sizing?: PullWriteSizing } = {},
-): Promise<BootstrapRetryState> {
-  if ('withExclusiveTransactionAsync' in db) {
-    return runPullWrite(db, (txn) => writeBootstrapRetryRows(txn, scopeKey, state), {
-      site: 'bootstrap-retry-state',
-      sizing: options.sizing,
-    });
-  }
-  return writeBootstrapRetryRows(db, scopeKey, state);
-}
-
-/**
- * The rows `writeBootstrapRetryState` writes, on the executor given: for a
- * caller that is already inside the write transaction it wants them in.
+ * Call it inside a write transaction (`runPullWrite`, issue #5851), never as
+ * autocommit statements: the read path infers "an older bundle counted failures
+ * we never saw" from the legacy counter sitting above `mirroredAttempts`. A torn
+ * write would forge that evidence: a user retry lowers the counter from 2 to 0,
+ * and if only the JSON row committed, the next read would fold the stale 2 back
+ * into `structuralFailures` and settle the scope again — the confirmed retry
+ * silently lost.
  */
 export async function writeBootstrapRetryRows(
   txn: SqlExecutor,
