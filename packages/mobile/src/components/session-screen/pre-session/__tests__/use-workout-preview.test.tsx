@@ -10,6 +10,10 @@ const cryptoMock = vi.hoisted(() => {
   let n = 0;
   return { randomUUID: () => `qi-${n++}` };
 });
+const gradeSource = vi.hoisted(() => ({ active: false }));
+vi.mock('../../../../lib/graphql/hooks/search-grade-source', () => ({
+  useSearchGradeSourceActive: () => gradeSource.active,
+}));
 vi.mock('expo-crypto', () => ({ randomUUID: () => cryptoMock.randomUUID() }));
 
 // Plan is mocked so tests control the slot count/grades independent of the
@@ -109,6 +113,7 @@ function renderPreviewWithAuth(fetchPool: FetchGradePool, initial: GeneratorSele
 
 beforeEach(() => {
   generator.plan = TWO_SLOTS_AT_10;
+  gradeSource.active = false;
 });
 
 afterEach(() => {
@@ -448,5 +453,25 @@ describe('useWorkoutPreview', () => {
     rerender({ selection: on(11) });
     expect(result.current.toStagedQueueItems()).toEqual({ items: [], run: null });
     await waitFor(() => expect(result.current.status).toBe('ready'));
+  });
+
+  it('fetches on the upstream grade with the preference off', async () => {
+    const fetchPool = vi.fn<FetchGradePool>(async () => [makeClimb('a'), makeClimb('b'), makeClimb('c')]);
+    const { result } = renderPreview(fetchPool, on(10));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(fetchPool.mock.calls[0][1].boardseshGrades).toBe(false);
+  });
+
+  it('fetches on the Boardsesh grade, and rebuilds when the preference flips', async () => {
+    const fetchPool = vi.fn<FetchGradePool>(async () => [makeClimb('a'), makeClimb('b'), makeClimb('c')]);
+    const { result, rerender } = renderPreview(fetchPool, on(10));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    const callsBefore = fetchPool.mock.calls.length;
+
+    gradeSource.active = true;
+    rerender({ selection: on(10) });
+    await waitFor(() => expect(fetchPool.mock.calls.length).toBeGreaterThan(callsBefore));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(fetchPool.mock.calls[fetchPool.mock.calls.length - 1][1].boardseshGrades).toBe(true);
   });
 });

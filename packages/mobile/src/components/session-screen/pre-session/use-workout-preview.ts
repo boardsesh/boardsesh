@@ -17,6 +17,7 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 import { useTranslation } from 'react-i18next';
 import { useToast } from '../../../providers/toast-provider';
 import { screenshotModeRandom } from '../../../lib/screenshot-mode';
+import { useSearchGradeSourceActive } from '../../../lib/graphql/hooks/search-grade-source';
 import { fetchGradePool } from './select-climbs-for-plan';
 import {
   buildPoolsReusing,
@@ -186,13 +187,19 @@ function getBoardGenerationKey(board: UserBoard | null): string {
   return board ? `${board.boardType}:${board.layoutId}:${board.sizeId}:${board.setIds}:${board.angle}` : 'none';
 }
 
+/** Empty with the preference off, so the keys are what they were before the grade source existed. */
+function gradeSourceKeySuffix(boardseshGrades: boolean): string {
+  return boardseshGrades ? '|boardsesh-grades' : '';
+}
+
 function getPreviewGenerationKey(
   selection: GeneratorSelection,
   board: UserBoard | null,
   isAuthenticated: boolean,
+  boardseshGrades: boolean,
 ): string {
   const authKey = isAuthenticated ? 'authenticated' : 'anonymous';
-  return `${getSelectionGenerationKey(selection)}|${getBoardGenerationKey(board)}|${authKey}`;
+  return `${getSelectionGenerationKey(selection)}|${getBoardGenerationKey(board)}|${authKey}${gradeSourceKeySuffix(boardseshGrades)}`;
 }
 
 /**
@@ -246,6 +253,9 @@ export function useWorkoutPreview(
   boardRef.current = board;
   const isAuthRef = useRef(options.isAuthenticated);
   isAuthRef.current = options.isAuthenticated;
+  const boardseshGrades = useSearchGradeSourceActive();
+  const boardseshGradesRef = useRef(boardseshGrades);
+  boardseshGradesRef.current = boardseshGrades;
   const getAvoidedClimbUuidsRef = useRef(options.getAvoidedClimbUuids);
   getAvoidedClimbUuidsRef.current = options.getAvoidedClimbUuids;
   const fetchPoolRef = useRef<FetchGradePool>(deps?.fetchPool ?? fetchGradePool);
@@ -264,7 +274,7 @@ export function useWorkoutPreview(
     const currentSelection = selectionRef.current;
     if (!currentBoard || !hasWorkoutBlocks(currentSelection)) return null;
     // No filters here: each fetch takes the filters of the slot it fills.
-    return { board: currentBoard, isAuthenticated: isAuthRef.current };
+    return { board: currentBoard, isAuthenticated: isAuthRef.current, boardseshGrades: boardseshGradesRef.current };
   }, []);
 
   const resolveGrades = useCallback((targetBoard: UserBoard): GeneratorGradeScale | null => {
@@ -308,9 +318,14 @@ export function useWorkoutPreview(
         return;
       }
 
-      const nextPreviewKey = getPreviewGenerationKey(currentSelection, currentBoard, isAuthRef.current);
+      const nextPreviewKey = getPreviewGenerationKey(
+        currentSelection,
+        currentBoard,
+        isAuthRef.current,
+        boardseshGradesRef.current,
+      );
       const nextBoardKey = getBoardGenerationKey(currentBoard);
-      const fetchKey = `${nextBoardKey}|${isAuthRef.current ? 'authenticated' : 'anonymous'}`;
+      const fetchKey = `${nextBoardKey}|${isAuthRef.current ? 'authenticated' : 'anonymous'}${gradeSourceKeySuffix(boardseshGradesRef.current)}`;
       const canReuse = reuse && committedFetchKeyRef.current === fetchKey;
       // Read now: a refresh landing during the fetch below must not change what this build keeps.
       const previous = {
@@ -425,7 +440,12 @@ export function useWorkoutPreview(
     if (inFlightSlotsRef.current.size > 0) return;
     // Only reshuffle the preview on screen. During a debounce or rebuild the
     // committed plan belongs to the previous settings.
-    const currentPreviewKey = getPreviewGenerationKey(selectionRef.current, boardRef.current, isAuthRef.current);
+    const currentPreviewKey = getPreviewGenerationKey(
+      selectionRef.current,
+      boardRef.current,
+      isAuthRef.current,
+      boardseshGradesRef.current,
+    );
     if (committedPreviewKeyRef.current !== currentPreviewKey || planRef.current.length === 0) return;
     const pools = reshufflePools(dataRef.current.pools, screenshotModeRandom());
     const avoided = getAvoidedClimbUuidsRef.current?.() ?? NO_AVOIDED_CLIMBS;
@@ -435,7 +455,12 @@ export function useWorkoutPreview(
   }, []);
 
   const toStagedQueueItems = useCallback((): StagedQueueItems => {
-    const currentPreviewKey = getPreviewGenerationKey(selectionRef.current, boardRef.current, isAuthRef.current);
+    const currentPreviewKey = getPreviewGenerationKey(
+      selectionRef.current,
+      boardRef.current,
+      isAuthRef.current,
+      boardseshGradesRef.current,
+    );
     if (committedPreviewKeyRef.current !== currentPreviewKey) return EMPTY_STAGED_QUEUE_ITEMS;
     const previews = dataRef.current.items;
     const workoutPlan = workoutPlanRef.current;
@@ -457,8 +482,8 @@ export function useWorkoutPreview(
   const authKey = options.isAuthenticated ? 'authenticated' : 'anonymous';
   const boardKey = getBoardGenerationKey(board);
   const currentPreviewKey = useMemo(
-    () => getPreviewGenerationKey(selection, board, options.isAuthenticated),
-    [selection, board, options.isAuthenticated],
+    () => getPreviewGenerationKey(selection, board, options.isAuthenticated, boardseshGrades),
+    [selection, board, options.isAuthenticated, boardseshGrades],
   );
 
   useEffect(() => {
@@ -470,7 +495,7 @@ export function useWorkoutPreview(
     setStatus('loading');
     const handle = setTimeout(() => void rebuildForEdit(), DEBOUNCE_MS);
     return () => clearTimeout(handle);
-  }, [generationKey, boardKey, authKey, rebuildForEdit]);
+  }, [generationKey, boardKey, authKey, boardseshGrades, rebuildForEdit]);
 
   const regenerateVoid = useCallback(() => void regenerate(), [regenerate]);
   const refreshSlotVoid = useCallback((itemUuid: string) => void refreshSlot(itemUuid), [refreshSlot]);

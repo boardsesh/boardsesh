@@ -19,6 +19,11 @@ export type PreviewFetchContext = {
   /** Gates the climbBias hide/show-attempted filters, which require auth. */
   isAuthenticated: boolean;
   /**
+   * Search on the Boardsesh grade, the one the preview rows show, instead of the
+   * upstream grade. Off (or absent) leaves the request untouched.
+   */
+  boardseshGrades?: boolean;
+  /**
    * The filters one fetch runs with. `buildPools` and a row refresh set them
    * from the slot they fetch for. Absent → no filtering.
    */

@@ -1,6 +1,7 @@
 import type { Climb, ClimbSearchInput, UserBoard } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { PlannedClimbSlot } from '@boardsesh/playlist-generator';
+import { withGradeSource } from '../../../lib/graphql/hooks/search-grade-source';
 import { offlineAwareRequest } from '../../../lib/graphql/offline-request';
 import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '../../../lib/graphql/operations';
 import {
@@ -24,6 +25,8 @@ type SelectClimbsForPlanOptions = {
   /** Filters that survived the generator UI; mapped onto SEARCH_CLIMBS the
    *  same way the web `playlist-generator-drawer` maps them. */
   filters?: PreviewFilters;
+  /** Search on the Boardsesh grade (see `PreviewFetchContext.boardseshGrades`). */
+  boardseshGrades?: boolean;
 };
 
 /**
@@ -38,8 +41,8 @@ export function buildClimbSearchInput(
   page = 0,
   pageSize = POOL_SIZE_PER_GRADE,
 ): ClimbSearchInput {
-  const { board, isAuthenticated, filters } = ctx;
-  return {
+  const { board, isAuthenticated, filters, boardseshGrades = false } = ctx;
+  const input: ClimbSearchInput = {
     boardName: board.boardType,
     layoutId: board.layoutId,
     sizeId: board.sizeId,
@@ -61,6 +64,7 @@ export function buildClimbSearchInput(
     ...(isAuthenticated && filters?.climbBias === 'unfamiliar' ? { hideAttempted: true, hideCompleted: true } : {}),
     ...(isAuthenticated && filters?.climbBias === 'attempted' ? { showOnlyAttempted: true } : {}),
   };
+  return withGradeSource(input, boardseshGrades);
 }
 
 /** How many climbs to fetch for a grade that `demand` slots draw from. */
@@ -111,7 +115,11 @@ export async function selectClimbsForPlan(
   board: UserBoard,
   options?: SelectClimbsForPlanOptions,
 ): Promise<ClimbQueueItem[]> {
-  const ctx: PreviewFetchContext = { board, isAuthenticated: options?.isAuthenticated ?? false };
+  const ctx: PreviewFetchContext = {
+    board,
+    isAuthenticated: options?.isAuthenticated ?? false,
+    boardseshGrades: options?.boardseshGrades ?? false,
+  };
   // Every slot shares the one set of filters; the pools read them from the slot.
   const filteredSlots = slots.map((slot) => ({ ...slot, filters: options?.filters }));
   const pools = await buildPools(filteredSlots, ctx, fetchGradePool);

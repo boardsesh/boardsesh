@@ -134,3 +134,19 @@ function requestedPages() {
     return { page: input.page, pageSize: input.pageSize };
   });
 }
+
+describe('buildClimbSearchInput grade source', () => {
+  it('leaves the request untouched with the preference off', () => {
+    const off = buildClimbSearchInput(15, ctx);
+    expect(off).not.toHaveProperty('gradeSource');
+    expect(buildClimbSearchInput(15, { ...ctx, boardseshGrades: false })).toEqual(off);
+  });
+
+  it('searches on the Boardsesh grade with the preference on', () => {
+    expect(buildClimbSearchInput(15, { ...ctx, boardseshGrades: true })).toMatchObject({
+      minGrade: 15,
+      maxGrade: 15,
+      gradeSource: 'BOARDSESH',
+    });
+  });
+});
