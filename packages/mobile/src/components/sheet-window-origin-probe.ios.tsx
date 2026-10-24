@@ -1,5 +1,5 @@
 import { forwardRef, useMemo } from 'react';
-import type { View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Host, Spacer } from '@expo/ui/swift-ui';
 import { onGeometryChange } from '@expo/ui/swift-ui/modifiers';
 import type { SheetWindowOriginProbeProps } from './sheet-window-origin-probe.types';
@@ -25,8 +25,10 @@ export const SheetWindowOriginProbe = forwardRef<View, SheetWindowOriginProbePro
 ) {
   const modifiers = useMemo(() => [onGeometryChange(onFrame)], [onFrame]);
   return (
-    <Host ref={ref} pointerEvents="none" ignoreSafeArea="all" style={style} modifiers={modifiers}>
-      <Spacer />
-    </Host>
+    <View ref={ref} collapsable={false} pointerEvents="none" style={style}>
+      <Host ignoreSafeArea="all" style={StyleSheet.absoluteFill} modifiers={modifiers}>
+        <Spacer />
+      </Host>
+    </View>
   );
 });

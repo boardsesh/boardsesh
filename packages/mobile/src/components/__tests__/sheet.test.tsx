@@ -3,6 +3,7 @@ vi.mock('../use-ios-sheet-background-style', () => ({ useIosSheetBackgroundStyle
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, render } from '@testing-library/react';
 import { createElement, forwardRef, type ReactNode, type Ref } from 'react';
+import type { LayoutChangeEvent } from 'react-native';
 
 // Captured across renders so tests can assert what Sheet hands the native sheet:
 // the onChange handler, the snap points, whether a footer subtree rendered, the
@@ -20,6 +21,7 @@ const captures = vi.hoisted(() => ({
   viewStyle: undefined as unknown,
   viewStyles: [] as unknown[],
   columnStyle: undefined as unknown,
+  onHostLayout: undefined as ((event: LayoutChangeEvent) => void) | undefined,
 }));
 const platform = vi.hoisted(() => ({ os: 'ios' }));
 type KeyboardListener = (event: {
@@ -28,9 +30,11 @@ type KeyboardListener = (event: {
 }) => void;
 const keyboard = vi.hoisted(() => ({ listeners: new Map<string, KeyboardListener>() }));
 const snapToIndex = vi.hoisted(() => vi.fn());
-// The column's window frame: bottom at the 844pt window's bottom edge.
+// Expo's sheet measures relative to its own host, including 16pt top padding.
 const columnMeasure = vi.hoisted(() =>
-  vi.fn((callback: (x: number, y: number, width: number, height: number) => void) => callback(0, 244, 390, 600)),
+  vi.fn((callback: (x: number, y: number, width: number, height: number) => void) =>
+    callback(0, 16, 390, Number(flattenStyle(captures.columnStyle).height)),
+  ),
 );
 
 // Faithful recursive flatten (nested arrays merge left-to-right) so the tests read
@@ -87,9 +91,16 @@ vi.mock('react-native', () => ({
     style,
     testID,
     ref,
-  }: ViewMockProps & { style?: unknown; testID?: string; ref?: { current: unknown } }) => {
+    onLayout,
+  }: ViewMockProps & {
+    style?: unknown;
+    testID?: string;
+    ref?: { current: unknown };
+    onLayout?: (event: LayoutChangeEvent) => void;
+  }) => {
     captures.viewStyle = style;
     captures.viewStyles.push(style);
+    if (testID === 'sheet-keyboard-host') captures.onHostLayout = onLayout;
     if (testID === 'sheet-chrome-column') {
       captures.columnStyle = style;
       // React 19 hands a function component its ref as a prop.
@@ -197,12 +208,20 @@ beforeEach(() => {
   captures.viewStyle = undefined;
   captures.viewStyles = [];
   captures.columnStyle = undefined;
+  captures.onHostLayout = undefined;
   keyboard.listeners.clear();
   snapToIndex.mockClear();
   columnMeasure.mockClear();
   platform.os = 'ios';
   hapticSelection.mockClear();
 });
+
+function reportHostHeight(height: number): void {
+  expect(captures.onHostLayout).toBeTypeOf('function');
+  act(() =>
+    captures.onHostLayout?.({ nativeEvent: { layout: { x: 0, y: 0, width: 390, height } } } as LayoutChangeEvent),
+  );
+}
 
 describe('Sheet', () => {
   it('renders a footer subtree below the content when a footer is provided', () => {
@@ -307,7 +326,11 @@ describe('Sheet', () => {
 
     it('pads the column by the keyboard and swaps the inset out of the footer on iOS', () => {
       renderOpenFooterSheet();
+      expect(flattenStyle(captures.columnStyle).height).toBe(718);
+      reportHostHeight(734);
       act(() => keyboard.listeners.get('keyboardWillChangeFrame')?.({ endCoordinates: IOS_KEYBOARD, duration: 250 }));
+      expect(columnPadding()).toBeUndefined();
+      reportHostHeight(398); // Column bottom 734 minus the keyboard-safe host.
       expect(columnPadding()).toBe(336);
       expect(footerPadding()).toBe(12);
       act(() =>
@@ -543,8 +566,10 @@ describe('Sheet keyboard calibration readout', () => {
       </Sheet>,
     );
     act(() => captures.onChange?.(1));
+    reportHostHeight(734);
     seen.push(flattenStyle(captures.columnStyle));
     act(() => keyboard.listeners.get('keyboardWillChangeFrame')?.({ endCoordinates: IOS_KEYBOARD, duration: 250 }));
+    reportHostHeight(398);
     seen.push(flattenStyle(captures.columnStyle));
     unmount();
     return seen;

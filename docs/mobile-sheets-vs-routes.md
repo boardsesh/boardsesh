@@ -17,8 +17,7 @@ Most things are sheets. Routes are the exception, and each route variant earns i
 ### Bottom sheets (`@expo/ui/community/bottom-sheet`)
 
 Wrapped by two helpers so they don't drift (both supply the scrim, drag handle, and iOS 26 glass
-background natively, plus JS-side keyboard avoidance for the `header` / `footer` column — neither
-native sheet window resizes for the keyboard, so the wrappers pad on both platforms):
+background natively, plus JS-side keyboard avoidance for the `header` / `footer` column):
 
 **Background rule.** On iOS with the Apple variant, leave the sheet's native
 `backgroundStyle` unset, even when `surface="solid"` is requested. The system
@@ -196,12 +195,17 @@ view, not the window. It under-pads by the sheet's distance from the top of the 
 the log-ascent Attempt / Save bar half under the keyboard. The wrappers instead pad the chrome
 column by `useSheetKeyboardInset` (`src/components/sheet-keyboard-inset.ts`):
 
-- iOS measures it: the column's bottom in window coordinates (`measureInWindow`, re-measured on
-  every keyboard event) minus the keyboard's top. On iPhone that is the keyboard height; an iPad
-  sheet UIKit lifts clear gets 0, and an undocked or split keyboard (narrower than the window) is
-  ignored. iPad reads only the did-event (at the will-event the sheet is not lifted yet, so the pad
-  would flash in and back out), and a detent change with the keyboard up re-measures once more
-  300 ms after the native `onChange`.
+- iOS measures the column's bottom and the host's height in the same sheet-local space.
+  SwiftUI shrinks the host to the keyboard top; an absolute-fill sibling reports that height
+  through `onLayout`. Padding is `max(0, columnY + columnHeight - hostHeight)`. This includes
+  Expo's 16-point column offset and needs no screen-origin estimate. Host layout changes update
+  clearance even without a new keyboard event. A lifted iPad sheet whose column fits gets 0;
+  narrow floating keyboards are ignored. iPad reads only the keyboard did-event.
+- iPad also clears host overflow at rest. Its floating form's fraction detents use a smaller
+  maximum than the window-based column estimate: a measured column bottom of 656 in a
+  325-point host needs 331 points of padding before the keyboard opens. The resting safe-area
+  inset is preserved, including with a floating keyboard. This keeps the note reachable so
+  focusing it can raise the sheet normally.
 - Android pads by keyboard + window inset (RN reports the IME without the nav bar).
 - While the keyboard covers the sheet the footer's resting window inset is swapped out, not added,
   so the bar rests `spacing[3]` above the keyboard. On iOS the change rides the keyboard's animation.
@@ -217,21 +221,21 @@ column by `useSheetKeyboardInset` (`src/components/sheet-keyboard-inset.ts`):
 
 A raw-sheet surface with a text field (`ClimbFilterSheet`) uses the same hook.
 
-**Known gap (#5964): the iOS measurement is not in window coordinates either.** Inside an `@expo/ui`
-sheet, `RNHostView` is marked `layoutRoot`, which gives it the `RootNodeKind` trait, and Fabric's
-`measureInWindow` stops its walk at the first such node. So the column's "window" position is really
-its position in the sheet, and the iOS overlap comes up short by the sheet's distance from the top of
-the screen, the same as the KAV did. There are three candidate replacements:
+**Measured on iOS 26.5 (#5964).** On an iPhone 13 mini, the keyboard top was 468,
+the sheet-local column bottom was 660, and the host shrank to 418 points.
+The old screen-coordinate subtraction applied 192 points; the host-height calculation applies
+242, clearing the 50-point sheet origin that left the tick buttons under the keyboard.
+Fabric's `measureInWindow` stops at the sheet's `RNHostView` layout root, so its result must
+not be compared directly with the keyboard's screen coordinates.
 
-- **`.global` probe:** the window origin a tiny SwiftUI `Host` reports through `onGeometryChange`.
-- **K:** the sheet host's own height, if SwiftUI shrinks it to the keyboard top.
-- **F:** window height minus host height, if the host reaches the window bottom.
-
-Which one is right depends on native behaviour nobody has seen yet. Turn on the
+Turn on the
 `sheet-keyboard-calibration` QA flag (Settings › Developer › Feature Flags, iOS) and every sheet with a
 header or footer draws a readout of the raw numbers, keyboard down and up, along with the padding each
 design would apply. It also logs them under `[sheet-keyboard #5964]`. The readout only measures:
 nothing it reads reaches the padding.
+Its SwiftUI `Host` sits inside a non-collapsible React Native `View`: only that `View`
+exposes `measureInWindow`. Dev stories `sheet-keyboard--tick`, `sheet-keyboard--title`, and `sheet-keyboard--comment`
+open the real forms without saving anything; add `?calibration=0` for clean screenshots.
 
 `skipPartiallyExpanded` still comes for free (the shim sets it whenever `fitToContents` or a
 single detent), so the ~50% partial trap of #4723 stays closed — the sheet can only rest at its

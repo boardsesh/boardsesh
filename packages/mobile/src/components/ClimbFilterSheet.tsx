@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState, useEffect, type ComponentRef, type SetStateAction } from 'react';
-import { View, StyleSheet, type LayoutChangeEvent } from 'react-native';
+import { Platform, View, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import { BottomSheetModal, BottomSheetScrollView } from '@expo/ui/community/bottom-sheet';
 import { useWindowBottomInset } from '../hooks/use-window-bottom-inset';
 import { useSheetSubRoute } from '../hooks/use-sheet-sub-route';
@@ -423,6 +423,7 @@ export function ClimbFilterSheet({
     keyboardOverlap,
     columnRef,
     onColumnLayout: measureColumnForKeyboard,
+    onHostLayout,
   } = useSheetKeyboardInset({ enabled: true });
   // Dev-only observers for #3922 — they feed a log line, never layout. This is
   // the sheet #3776 was reported against, so it is the one to capture on an SE 3.
@@ -1044,12 +1045,19 @@ export function ClimbFilterSheet({
           below still holds. */}
       {sentinelProps ? <View {...sentinelProps} /> : null}
       {probeProps ? <View {...probeProps} /> : null}
+      {Platform.OS === 'ios' ? (
+        <View
+          testID="sheet-keyboard-host"
+          pointerEvents="none"
+          style={StyleSheet.absoluteFill}
+          onLayout={onHostLayout}
+        />
+      ) : null}
       {/* One column child bounded to the detent height (JS-computed on iOS, see
           sheetColumnStyle) — the scroll body then actually scrolls. Handed
           multiple direct children, the native sheet sizes to content and the
           flex:1 ScrollView collapses (no scrolling). The column is padded by
-          the keyboard overlap, as in ModalSheet: neither native sheet window
-          resizes for the keyboard, so the padding keeps the scroll body, and
+          the keyboard overlap, as in ModalSheet: the padding keeps the scroll body, and
           the name field in it, above it (see sheet-keyboard-inset.ts). */}
       <View
         testID="climb-filter-column"

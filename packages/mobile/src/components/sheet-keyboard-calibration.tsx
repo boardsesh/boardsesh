@@ -7,16 +7,15 @@
 // `measureInWindow`, but inside an `@expo/ui` sheet that measurement stops at the
 // sheet's `RNHostView` (a layout root), so it is relative to the sheet, not the
 // window, and the padding comes up short by the sheet's distance from the top
-// of the screen. Three replacement designs are possible, and which one is right
-// depends on native behaviour nobody has observed:
+// of the screen. This readout compares the original three replacement designs:
 //
 // - the `.global` frame SwiftUI reports for a probe Host (window space?),
 // - the sheet host's own height, if SwiftUI shrinks it to the keyboard top (K),
 // - the window height minus the host height, if the host reaches the window
 //   bottom (F).
 //
-// This readout shows the raw numbers for all three, with the keyboard down and
-// up, so one look on a real iPhone picks the design. It is an OBSERVER: every
+// The iOS 26.5 simulator confirmed K: the host shrinks to the keyboard top.
+// This readout keeps the raw numbers for comparisons across devices. It is an OBSERVER: every
 // view it adds is absolutely positioned and touch-transparent, and nothing it
 // measures reaches `useSheetKeyboardInset`.
 import { useCallback, useEffect, useReducer, useRef, useState, type RefObject } from 'react';
@@ -31,6 +30,7 @@ import {
   type LayoutChangeEvent,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { textStyles } from '../theme/typography';
 import { SheetWindowOriginProbe } from './sheet-window-origin-probe';
 import type { SheetWindowFrame } from './sheet-window-origin-probe.types';
 import { useSheetKeyboardCalibrationWindowTopInset } from '../lib/sheet-keyboard-calibration-store';
@@ -354,6 +354,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
   },
-  title: { color: '#34d399', fontSize: 10, fontWeight: '700' },
-  line: { color: '#ffffff', fontSize: 10, fontVariant: ['tabular-nums'] },
+  title: { color: '#34d399', fontSize: textStyles.caption2.fontSize, fontWeight: '700' },
+  line: { color: '#ffffff', fontSize: textStyles.caption2.fontSize, fontVariant: ['tabular-nums'] },
 });

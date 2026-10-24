@@ -77,17 +77,21 @@ vi.mock('react-native', () => ({
       ref: Ref<unknown>,
     ) => {
       if (testID && onLayout) layoutHandlers.set(testID, onLayout);
+      const measuredHeight = flattenStyle(style).height;
       useImperativeHandle(
         ref,
         () => ({
           measure: (callback: (left: number, top: number, width: number, height: number) => void) => {
             if (testID) nativeMeasurements.push({ testID, deliver: (height) => callback(0, 0, 0, height) });
           },
-          // Keep the existing keyboard fallback: this suite does not simulate a
-          // native window-frame callback, only intrinsic chrome measurements.
-          measureInWindow: () => {},
+          // The native sheet's 16pt content offset is local, not a screen y.
+          measureInWindow: (callback: (x: number, y: number, width: number, height: number) => void) => {
+            if (testID === 'sheet-chrome-column' && measuredHeight > 0) {
+              callback(0, 16, dimensions.width, measuredHeight);
+            }
+          },
         }),
-        [testID],
+        [testID, measuredHeight],
       );
       return createElement('div', { 'data-style': JSON.stringify(style ?? null), 'data-testid': testID }, children);
     },
@@ -759,12 +763,14 @@ describe('LogAscentSheet compact visible fields at the opening detent (#6503)', 
     const { getByTestId, container } = renderSheet();
     reportCompactMeasurements(56, 116, 230);
     expect(nativeSnapPoints(getByTestId)).toEqual([422, '90%']);
+    reportLayout('sheet-keyboard-host', 418);
     act(() =>
       keyboardListeners.get('keyboardWillChangeFrame')?.({
         endCoordinates: { height: 336, screenY: 508, width: 390 },
         duration: 250,
       }),
     );
+    reportLayout('sheet-keyboard-host', 82); // Compact column bottom 418 minus keyboard 336.
     reportLayout('sheet-footer', 196); // Same composer, now without its 34pt window inset.
     expect(nativeSnapPoints(getByTestId)).toEqual([422, '90%']);
     fireEvent.click(getByTestId('simulate-expand'));
@@ -1028,7 +1034,7 @@ describe('LogAscentSheet pinned comment', () => {
 });
 
 // The user-reported bug: typing a note left the Attempt / Save bar half under
-// the keyboard. The column must pad by the whole keyboard and the bar must drop
+// the keyboard. Native host shrinkage must lift the column and the bar must drop
 // its window inset (spacing is mocked to 0 here, so the bar's padding IS the
 // inset it still owes).
 describe('LogAscentSheet keyboard', () => {
@@ -1036,6 +1042,7 @@ describe('LogAscentSheet keyboard', () => {
     const { container, getByTestId } = renderSheet();
     fireEvent.click(getByTestId('simulate-expand'));
     expect(footerPaddingBottom(container)).toBe(34);
+    reportLayout('sheet-keyboard-host', 694); // Local y 16 plus expanded column 678.
 
     act(() =>
       keyboardListeners.get('keyboardWillChangeFrame')?.({
@@ -1043,6 +1050,8 @@ describe('LogAscentSheet keyboard', () => {
         duration: 250,
       }),
     );
+    expect(columnStyle(container)).toEqual({ height: 678 });
+    reportLayout('sheet-keyboard-host', 358);
     expect(columnStyle(container)).toEqual({ height: 678, paddingBottom: 336 });
     expect(footerPaddingBottom(container)).toBe(0);
 

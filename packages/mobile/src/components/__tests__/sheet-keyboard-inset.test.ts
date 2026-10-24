@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
+import type { LayoutChangeEvent } from 'react-native';
 
 type KeyboardEnd = { height: number; screenY: number; width: number };
 type KeyboardListener = (event: { endCoordinates?: KeyboardEnd; duration?: number }) => void;
@@ -42,60 +43,133 @@ import { SHEET_SETTLE_MS, sheetKeyboardInset, useSheetKeyboardInset } from '../s
 const WINDOW = { windowWidth: 390, windowHeight: 844, windowInsetBottom: 34 };
 const DOCKED = { height: 336, screenY: 844 - 336, width: 390 };
 
+function hostLayout(height: number): LayoutChangeEvent {
+  return { nativeEvent: { layout: { x: 0, y: 0, width: 390, height } } } as LayoutChangeEvent;
+}
+
+function measureColumn(current: ReturnType<typeof useSheetKeyboardInset>, columnBottom = 660, hostHeight = 324) {
+  const measureInWindow = vi.fn((callback: (x: number, y: number, width: number, height: number) => void) =>
+    callback(0, 16, 390, columnBottom - 16),
+  );
+  Object.assign(current.columnRef, { current: { measureInWindow } });
+  act(() => {
+    current.onHostLayout(hostLayout(hostHeight));
+    current.onColumnLayout();
+  });
+  return measureInWindow;
+}
+
 describe('sheetKeyboardInset', () => {
   it('owes only the window inset while the keyboard is down, on every platform', () => {
     for (const platform of ['ios', 'android', 'web'] as const) {
-      expect(sheetKeyboardInset({ platform, keyboard: null, columnBottomInWindow: 844, ...WINDOW })).toEqual({
+      expect(
+        sheetKeyboardInset({ platform, keyboard: null, columnBottomInHost: 660, hostHeight: 660, ...WINDOW }),
+      ).toEqual({ keyboardOverlap: 0, bottomInset: 34 });
+    }
+  });
+
+  it('fits a fractional iPad column inside its shorter floating host before the keyboard opens', () => {
+    // iOS 26.5: a 50% JS column uses the 1376pt window, but UIKit's floating
+    // form is shorter. Its local column bottom 656 exceeds its 325pt host.
+    expect(
+      sheetKeyboardInset({
+        platform: 'ios',
+        isPad: true,
+        keyboard: null,
+        columnBottomInHost: 656,
+        hostHeight: 325,
+        windowWidth: 1024,
+        windowHeight: 1376,
+        windowInsetBottom: 20,
+      }),
+    ).toEqual({ keyboardOverlap: 331, bottomInset: 20 });
+  });
+
+  it('preserves the iPad host overflow and safe inset with a floating keyboard', () => {
+    expect(
+      sheetKeyboardInset({
+        platform: 'ios',
+        isPad: true,
+        keyboard: { height: 300, screenY: 700, width: 320 },
+        columnBottomInHost: 656,
+        hostHeight: 325,
+        windowWidth: 1024,
+        windowHeight: 1376,
+        windowInsetBottom: 20,
+      }),
+    ).toEqual({ keyboardOverlap: 331, bottomInset: 20 });
+  });
+
+  it('does not pad an iPhone at rest when its host measurements show overflow', () => {
+    expect(
+      sheetKeyboardInset({ platform: 'ios', keyboard: null, columnBottomInHost: 656, hostHeight: 325, ...WINDOW }),
+    ).toEqual({ keyboardOverlap: 0, bottomInset: 34 });
+  });
+
+  it('pads by the column overflow beyond the host that shrank to the keyboard', () => {
+    expect(
+      sheetKeyboardInset({ platform: 'ios', keyboard: DOCKED, columnBottomInHost: 660, hostHeight: 324, ...WINDOW }),
+    ).toEqual({ keyboardOverlap: 336, bottomInset: 0 });
+  });
+
+  it('includes the sheet-local column y instead of mixing it with the keyboard screen y (#5964)', () => {
+    // iPhone 13 mini, iOS 26.5: column y 16 + height 644, host height 418.
+    // Comparing its local bottom to keyboard screenY 468 incorrectly gives 192.
+    expect(
+      sheetKeyboardInset({
+        platform: 'ios',
+        keyboard: { height: 344, screenY: 468, width: 375 },
+        columnBottomInHost: 16 + 644,
+        hostHeight: 418,
+        windowWidth: 375,
+        windowHeight: 812,
+        windowInsetBottom: 34,
+      }),
+    ).toEqual({ keyboardOverlap: 242, bottomInset: 0 });
+  });
+
+  it('pads only as far as the column extends past the host', () => {
+    expect(
+      sheetKeyboardInset({ platform: 'ios', keyboard: DOCKED, columnBottomInHost: 646, hostHeight: 324, ...WINDOW }),
+    ).toEqual({ keyboardOverlap: 322, bottomInset: 0 });
+  });
+
+  it('waits for valid measurements instead of guessing a window-space overlap', () => {
+    for (const geometry of [
+      { columnBottomInHost: null, hostHeight: 324 },
+      { columnBottomInHost: 660, hostHeight: null },
+      { columnBottomInHost: Number.NaN, hostHeight: 324 },
+      { columnBottomInHost: 660, hostHeight: 0 },
+      { columnBottomInHost: 660, hostHeight: Number.NaN },
+    ]) {
+      expect(sheetKeyboardInset({ platform: 'ios', keyboard: DOCKED, ...geometry, ...WINDOW })).toEqual({
         keyboardOverlap: 0,
         bottomInset: 34,
       });
     }
   });
 
-  it('pads an iPhone sheet, whose bottom is the window bottom, by the docked keyboard', () => {
-    expect(sheetKeyboardInset({ platform: 'ios', keyboard: DOCKED, columnBottomInWindow: 844, ...WINDOW })).toEqual({
-      keyboardOverlap: 336,
-      bottomInset: 0,
-    });
-  });
-
-  it('pads by only the part of the keyboard the column reaches into', () => {
-    // The iOS column errs a few points short of the sheet bottom (#3330).
-    expect(sheetKeyboardInset({ platform: 'ios', keyboard: DOCKED, columnBottomInWindow: 830, ...WINDOW })).toEqual({
-      keyboardOverlap: 322,
-      bottomInset: 0,
-    });
-  });
-
-  it('takes the window bottom before the column has been measured, and as a ceiling', () => {
-    expect(sheetKeyboardInset({ platform: 'ios', keyboard: DOCKED, columnBottomInWindow: null, ...WINDOW })).toEqual({
-      keyboardOverlap: 336,
-      bottomInset: 0,
-    });
-    // Mid-presentation the column can still be below the screen.
-    expect(sheetKeyboardInset({ platform: 'ios', keyboard: DOCKED, columnBottomInWindow: 1400, ...WINDOW })).toEqual({
-      keyboardOverlap: 336,
-      bottomInset: 0,
-    });
-  });
-
-  it('adds nothing for an iPad sheet UIKit has lifted clear of the keyboard', () => {
+  it('adds nothing for a lifted iPad sheet whose column fits inside its host', () => {
     const ipad = { windowWidth: 1024, windowHeight: 1366, windowInsetBottom: 20 };
-    const keyboard = { height: 398, screenY: 1366 - 398, width: 1024 };
-    // A form sheet whose bottom sits above the keyboard's top edge.
-    expect(sheetKeyboardInset({ platform: 'ios', keyboard, columnBottomInWindow: 940, ...ipad })).toEqual({
-      keyboardOverlap: 0,
-      bottomInset: 20,
-    });
+    const keyboard = { height: 398, screenY: 968, width: 1024 };
+    expect(
+      sheetKeyboardInset({ platform: 'ios', isPad: true, keyboard, columnBottomInHost: 600, hostHeight: 620, ...ipad }),
+    ).toEqual({ keyboardOverlap: 0, bottomInset: 20 });
   });
 
   it('ignores an undocked or split iPad keyboard, which floats narrower than the window', () => {
     const ipad = { windowWidth: 1024, windowHeight: 1366, windowInsetBottom: 20 };
     const floating = { height: 300, screenY: 700, width: 320 };
-    expect(sheetKeyboardInset({ platform: 'ios', keyboard: floating, columnBottomInWindow: 1366, ...ipad })).toEqual({
-      keyboardOverlap: 0,
-      bottomInset: 20,
-    });
+    expect(
+      sheetKeyboardInset({
+        platform: 'ios',
+        isPad: true,
+        keyboard: floating,
+        columnBottomInHost: 600,
+        hostHeight: 620,
+        ...ipad,
+      }),
+    ).toEqual({ keyboardOverlap: 0, bottomInset: 20 });
   });
 
   it('pads by keyboard + inset on Android, whose IME height leaves out the nav bar', () => {
@@ -104,7 +178,8 @@ describe('sheetKeyboardInset', () => {
       sheetKeyboardInset({
         platform: 'android',
         keyboard,
-        columnBottomInWindow: null,
+        columnBottomInHost: null,
+        hostHeight: null,
         ...WINDOW,
         windowInsetBottom: 48,
       }),
@@ -112,10 +187,9 @@ describe('sheetKeyboardInset', () => {
   });
 
   it('leaves web to the Gorhom shim, which handles the keyboard itself', () => {
-    expect(sheetKeyboardInset({ platform: 'web', keyboard: DOCKED, columnBottomInWindow: 844, ...WINDOW })).toEqual({
-      keyboardOverlap: 0,
-      bottomInset: 34,
-    });
+    expect(
+      sheetKeyboardInset({ platform: 'web', keyboard: DOCKED, columnBottomInHost: 660, hostHeight: 324, ...WINDOW }),
+    ).toEqual({ keyboardOverlap: 0, bottomInset: 34 });
   });
 });
 
@@ -134,6 +208,7 @@ describe('useSheetKeyboardInset', () => {
     });
     expect(native.listeners.size).toBe(0);
     rerender({ enabled: true });
+    measureColumn(result.current);
     act(() => native.listeners.get('keyboardWillChangeFrame')?.({ endCoordinates: DOCKED, duration: 250 }));
     expect(result.current.keyboardOverlap).toBe(336);
     rerender({ enabled: false });
@@ -151,27 +226,44 @@ describe('useSheetKeyboardInset', () => {
     });
     expect(result.current.keyboardOverlap).toBe(0);
     rerender({ enabled: true });
+    expect(result.current.keyboardOverlap).toBe(0);
+    measureColumn(result.current);
     expect(result.current.keyboardOverlap).toBe(336);
     expect(onKeyboardShow).not.toHaveBeenCalled();
   });
 
-  it('measures the column in window coordinates and re-measures on keyboard events (lifted iPad sheet)', () => {
-    let columnBottom = 844;
+  it('follows host shrinkage after the keyboard event without comparing coordinate spaces', () => {
+    const { result } = renderHook(() => useSheetKeyboardInset({ enabled: true }));
+    measureColumn(result.current, 660, 664);
+    act(() => native.listeners.get('keyboardWillChangeFrame')?.({ endCoordinates: DOCKED, duration: 250 }));
+    expect(result.current.keyboardOverlap).toBe(0);
+    // Native SwiftUI geometry arrives after the keyboard event. The footer must
+    // lift even when neither the column nor the keyboard frame changes again.
+    act(() => result.current.onHostLayout(hostLayout(418)));
+    expect(result.current.keyboardOverlap).toBe(242);
+    expect(result.current.bottomInset).toBe(0);
+    act(() => native.listeners.get('keyboardWillHide')?.({ endCoordinates: { ...DOCKED, screenY: 844 } }));
+    expect(result.current.keyboardOverlap).toBe(0);
+    expect(result.current.bottomInset).toBe(34);
+  });
+
+  it('re-measures sheet-local column geometry when the keyboard frame changes', () => {
+    let columnBottom = 660;
     const measureInWindow = vi.fn((callback: (x: number, y: number, width: number, height: number) => void) =>
-      callback(0, columnBottom - 600, 390, 600),
+      callback(0, 16, 390, columnBottom - 16),
     );
     const { result } = renderHook(() => useSheetKeyboardInset({ enabled: true }));
     Object.assign(result.current.columnRef, { current: { measureInWindow } });
-    act(() => result.current.onColumnLayout());
-    const keyboard = { height: 300, screenY: 844 - 300, width: 390 };
-    act(() => native.listeners.get('keyboardWillChangeFrame')?.({ endCoordinates: keyboard, duration: 250 }));
-    expect(result.current.keyboardOverlap).toBe(300);
-    // UIKit has lifted the sheet clear by the time the did-event re-measures.
-    columnBottom = 520;
-    act(() => native.listeners.get('keyboardDidChangeFrame')?.({ endCoordinates: keyboard }));
+    act(() => {
+      result.current.onHostLayout(hostLayout(418));
+      result.current.onColumnLayout();
+    });
+    act(() => native.listeners.get('keyboardWillChangeFrame')?.({ endCoordinates: DOCKED, duration: 250 }));
+    expect(result.current.keyboardOverlap).toBe(242);
+    columnBottom = 640;
+    act(() => native.listeners.get('keyboardDidChangeFrame')?.({ endCoordinates: DOCKED }));
+    expect(result.current.keyboardOverlap).toBe(222);
     expect(measureInWindow).toHaveBeenCalledTimes(3);
-    expect(result.current.keyboardOverlap).toBe(0);
-    expect(result.current.bottomInset).toBe(34);
   });
 
   describe('the zero frame iOS reports with Prefer Cross-Fade Transitions on', () => {
@@ -184,6 +276,7 @@ describe('useSheetKeyboardInset', () => {
     it('counts as a keyboard show, once, but pads nothing', () => {
       const onKeyboardShow = vi.fn();
       const { result } = renderHook(() => useSheetKeyboardInset({ enabled: true, onKeyboardShow }));
+      measureColumn(result.current);
       act(() => native.listeners.get('keyboardWillChangeFrame')?.({ endCoordinates: crossFade, duration: 250 }));
       act(() => native.listeners.get('keyboardDidChangeFrame')?.({ endCoordinates: crossFade }));
       expect(onKeyboardShow).toHaveBeenCalledTimes(1);
@@ -194,6 +287,7 @@ describe('useSheetKeyboardInset', () => {
     it('lets a following real frame pad normally, without a second show', () => {
       const onKeyboardShow = vi.fn();
       const { result } = renderHook(() => useSheetKeyboardInset({ enabled: true, onKeyboardShow }));
+      measureColumn(result.current);
       act(() => native.listeners.get('keyboardWillChangeFrame')?.({ endCoordinates: crossFade, duration: 250 }));
       expect(onKeyboardShow).toHaveBeenCalledTimes(1);
       act(() => native.listeners.get('keyboardDidChangeFrame')?.({ endCoordinates: DOCKED }));
@@ -246,6 +340,7 @@ describe('useSheetKeyboardInset', () => {
     native.visible = true;
     native.metrics = { height: 336, screenY: 0, width: 390 };
     const { result } = renderHook(() => useSheetKeyboardInset({ enabled: true }));
+    measureColumn(result.current);
     expect(result.current.keyboardOverlap).toBe(0);
     expect(result.current.bottomInset).toBe(34);
   });
@@ -272,40 +367,64 @@ describe('useSheetKeyboardInset', () => {
     expect(result.current.keyboardOverlap).toBe(0);
   });
 
-  it('waits for the did-event on iPad, so a sheet UIKit lifts never flashes the full pad', () => {
+  it('bounds the iPad column to its host before any keyboard event, then follows a resize', () => {
     native.isPad = true;
-    let columnBottom = 1366;
-    const measureInWindow = vi.fn((callback: (x: number, y: number, width: number, height: number) => void) =>
-      callback(0, columnBottom - 600, 700, 600),
-    );
     const { result } = renderHook(() => useSheetKeyboardInset({ enabled: true }));
-    Object.assign(result.current.columnRef, { current: { measureInWindow } });
-    act(() => result.current.onColumnLayout());
-    // Before the lift the sheet still reaches the window bottom: a will-event
-    // here would pad by the whole keyboard.
-    const keyboard = { height: 300, screenY: 844 - 300, width: 390 };
-    act(() => native.listeners.get('keyboardWillChangeFrame')?.({ endCoordinates: keyboard, duration: 250 }));
+    measureColumn(result.current, 656, 325);
+    expect(result.current.keyboardOverlap).toBe(331);
+    expect(result.current.bottomInset).toBe(34);
+    act(() => result.current.onHostLayout(hostLayout(700)));
     expect(result.current.keyboardOverlap).toBe(0);
-    columnBottom = 520;
-    act(() => native.listeners.get('keyboardDidChangeFrame')?.({ endCoordinates: keyboard }));
+    expect(result.current.bottomInset).toBe(34);
+  });
+
+  it('retains iPad host clearance and the safe inset for a floating or unusable keyboard frame', () => {
+    native.isPad = true;
+    native.visible = true;
+    native.metrics = { height: 336, screenY: 0, width: 390 };
+    const { result } = renderHook(() => useSheetKeyboardInset({ enabled: true }));
+    measureColumn(result.current, 656, 325);
+    expect(result.current.keyboardOverlap).toBe(331);
+    expect(result.current.bottomInset).toBe(34);
+    act(() =>
+      native.listeners.get('keyboardDidChangeFrame')?.({
+        endCoordinates: { height: 300, screenY: 400, width: 320 },
+      }),
+    );
+    expect(result.current.keyboardOverlap).toBe(331);
+    expect(result.current.bottomInset).toBe(34);
+  });
+
+  it('waits for the did-event on iPad and leaves a lifted sheet that fits unpadded', () => {
+    native.isPad = true;
+    const { result } = renderHook(() => useSheetKeyboardInset({ enabled: true }));
+    measureColumn(result.current, 600, 620);
+    act(() => native.listeners.get('keyboardWillChangeFrame')?.({ endCoordinates: DOCKED, duration: 250 }));
     expect(result.current.keyboardOverlap).toBe(0);
-    // A sheet the keyboard does reach is padded from the did-event.
-    columnBottom = 844;
-    act(() => native.listeners.get('keyboardDidChangeFrame')?.({ endCoordinates: keyboard }));
-    expect(result.current.keyboardOverlap).toBe(300);
-    act(() => native.listeners.get('keyboardDidChangeFrame')?.({ endCoordinates: { ...keyboard, screenY: 844 } }));
+    act(() => native.listeners.get('keyboardDidChangeFrame')?.({ endCoordinates: DOCKED }));
+    expect(result.current.keyboardOverlap).toBe(0);
+    expect(result.current.bottomInset).toBe(34);
+    // If native geometry instead leaves part of the column below the host,
+    // only that overflow is padded, regardless of the sheet's screen origin.
+    act(() => result.current.onHostLayout(hostLayout(500)));
+    expect(result.current.keyboardOverlap).toBe(100);
+    act(() => native.listeners.get('keyboardDidChangeFrame')?.({ endCoordinates: { ...DOCKED, screenY: 844 } }));
+    expect(result.current.keyboardOverlap).toBe(100);
+    expect(result.current.bottomInset).toBe(34);
+    act(() => result.current.onHostLayout(hostLayout(620)));
     expect(result.current.keyboardOverlap).toBe(0);
   });
 
   it('re-measures once, 300ms after a detent change, only while the keyboard is up', () => {
     vi.useFakeTimers();
     try {
-      let columnBottom = 844;
+      let columnBottom = 660;
       const measureInWindow = vi.fn((callback: (x: number, y: number, width: number, height: number) => void) =>
-        callback(0, columnBottom - 600, 390, 600),
+        callback(0, 16, 390, columnBottom - 16),
       );
       const { result } = renderHook(() => useSheetKeyboardInset({ enabled: true }));
       Object.assign(result.current.columnRef, { current: { measureInWindow } });
+      act(() => result.current.onHostLayout(hostLayout(324)));
       act(() => result.current.measureAfterDetentChange());
       act(() => {
         vi.advanceTimersByTime(1000);
@@ -314,7 +433,7 @@ describe('useSheetKeyboardInset', () => {
 
       act(() => native.listeners.get('keyboardWillChangeFrame')?.({ endCoordinates: DOCKED, duration: 250 }));
       measureInWindow.mockClear();
-      columnBottom = 820;
+      columnBottom = 640;
       act(() => result.current.measureAfterDetentChange());
       act(() => {
         vi.advanceTimersByTime(299);
@@ -324,7 +443,7 @@ describe('useSheetKeyboardInset', () => {
         vi.advanceTimersByTime(1);
       });
       expect(measureInWindow).toHaveBeenCalledTimes(1);
-      expect(result.current.keyboardOverlap).toBe(820 - DOCKED.screenY);
+      expect(result.current.keyboardOverlap).toBe(640 - 324);
     } finally {
       vi.useRealTimers();
     }

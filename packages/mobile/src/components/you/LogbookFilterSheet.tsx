@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
-import { View, StyleSheet, type LayoutChangeEvent } from 'react-native';
+import { Platform, View, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import { BottomSheetModal, BottomSheetScrollView } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { GradeBound } from '@boardsesh/climb-filters';
@@ -158,7 +158,7 @@ export function LogbookFilterSheet({
   // child to the detent so the body scrolls (#3330). Android bounds it natively.
   const sheetColumnStyle = useSheetColumnStyle(detentSnapPoints);
   // The sheet mounts only while open and has one detent: nothing to raise.
-  const { keyboardOverlap, columnRef, onColumnLayout } = useSheetKeyboardInset({ enabled: true });
+  const { keyboardOverlap, columnRef, onColumnLayout, onHostLayout } = useSheetKeyboardInset({ enabled: true });
   const scrollContentStyle = useMemo(() => ({ paddingBottom: windowInsetBottom + spacing[4] }), [windowInsetBottom]);
 
   // The name field keeps its own display text (a trailing space survives while
@@ -395,8 +395,16 @@ export function LogbookFilterSheet({
       handleIndicatorStyle={[styles.indicator, { backgroundColor: systemColors.separator }]}
       backgroundStyle={iosBackgroundStyle}
     >
-      {/* One column child bounded to the detent, padded by the keyboard overlap
-          (neither native sheet window resizes for the keyboard). */}
+      {/* One column child bounded to the detent. The iOS sibling measures the
+          keyboard-safe host height so overflow can be padded away. */}
+      {Platform.OS === 'ios' ? (
+        <View
+          testID="sheet-keyboard-host"
+          pointerEvents="none"
+          style={StyleSheet.absoluteFill}
+          onLayout={onHostLayout}
+        />
+      ) : null}
       <View
         testID="logbook-filter-column"
         style={keyboardOverlap > 0 ? [sheetColumnStyle, { paddingBottom: keyboardOverlap }] : sheetColumnStyle}
