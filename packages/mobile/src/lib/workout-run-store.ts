@@ -221,12 +221,18 @@ async function readStoredRecord(key: string): Promise<WorkoutRunRecord | null> {
   return readWorkoutRunRecord(await getPreference<unknown>(key));
 }
 
-/** One tick, as a string, so the same tick in two logs is kept once. */
+/**
+ * One tick's identity, as a string, so the same tick in two logs is kept once.
+ * A tick with a uuid is that uuid alone: its copies in the two slots can differ
+ * in `climbedAt` or `status` and are still one tick. Without a uuid, the queue
+ * item, status and time are all there is, so two attempts on one climb at
+ * different times stay two.
+ */
 function tickLogEntryKey({ queueItemUuid, status, climbedAt, tickUuid }: WorkoutTickLogEntry): string {
-  return JSON.stringify([queueItemUuid, status, climbedAt, tickUuid ?? null]);
+  return tickUuid ? JSON.stringify(['tick', tickUuid]) : JSON.stringify(['entry', queueItemUuid, status, climbedAt]);
 }
 
-/** `earlier` then the entries of `later` it lacks, capped like any log. */
+/** `earlier` then the entries of `later` it lacks, capped like any log. A tick in both keeps `earlier`'s copy. */
 function joinTickLogs(
   earlier: WorkoutTickLogEntry[] | undefined,
   later: WorkoutTickLogEntry[] | undefined,
@@ -327,7 +333,7 @@ export function getWorkoutRunLog(sessionId: string | null): readonly WorkoutTick
  * already holds that session's run, and a stored run for another session
  * misses. Both slots are read, `_v2` first; the one naming this session is the
  * run, and when both name it they are merged (`mergeSlotsForSession`). A read
- * that fails leaves the store as it is.
+ * that fails, of either slot, leaves the store as it is (see the catch).
  */
 export async function hydrateWorkoutRun(sessionId: string): Promise<void> {
   if (state?.sessionId === sessionId) return;
@@ -338,6 +344,16 @@ export async function hydrateWorkoutRun(sessionId: string): Promise<void> {
     try {
       record = await readStoredRecord(key);
     } catch {
+      // Fail closed: do not hydrate from the other slot alone. The slot that
+      // failed may name this session too (after a rollback both can, see
+      // `mergeSlotsForSession`), and a run read without its part is not just a
+      // short readout: the next write of it ("Add a block" or a tick) goes
+      // through `persist`, which writes one slot and removes the other. A run
+      // read from `_v1` alone holds only original kinds, so that write lands in
+      // `_v1` and removes `_v2`, and the stages queued at Start are gone for
+      // good (read from `_v2` alone, it removes the block `_v1` holds). With
+      // the store left empty a tick is not logged and nothing is written, and
+      // the next hydrate (Add a block runs one first) reads both slots again.
       return;
     }
     if (generationAtRead !== writeGeneration) return;

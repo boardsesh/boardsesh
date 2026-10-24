@@ -431,6 +431,65 @@ describe('workout-run-store: timed stages and the storage slot', () => {
     });
   });
 
+  it('keeps a tick in both slots once by its uuid, even when its times differ', async () => {
+    const inV2 = { ...tick('a', 'send'), tickUuid: 'tick-1' };
+    const inV1 = { ...inV2, climbedAt: '2026-10-24T12:05:00.000Z' };
+    await storage.setItem(
+      WORKOUT_RUN_V2_STORAGE_KEY,
+      JSON.stringify({ sessionId: 'session-1', run: timedRun, log: [inV2] }),
+    );
+    await storage.setItem(WORKOUT_RUN_STORAGE_KEY, JSON.stringify({ sessionId: 'session-1', run, log: [inV1] }));
+
+    await hydrateWorkoutRun('session-1');
+
+    expect(getWorkoutRunLog('session-1')).toEqual([inV2]);
+  });
+
+  it('keeps two attempts on one climb with no tick uuid when their times differ', async () => {
+    const first = tick('a', 'attempt');
+    const second = { ...first, climbedAt: '2026-10-24T12:05:00.000Z' };
+    await storage.setItem(
+      WORKOUT_RUN_V2_STORAGE_KEY,
+      JSON.stringify({ sessionId: 'session-1', run: timedRun, log: [first] }),
+    );
+    await storage.setItem(WORKOUT_RUN_STORAGE_KEY, JSON.stringify({ sessionId: 'session-1', run, log: [second] }));
+
+    await hydrateWorkoutRun('session-1');
+
+    expect(getWorkoutRunLog('session-1')).toEqual([first, second]);
+  });
+
+  it('hydrates nothing when the _v2 read fails, so no later write can remove it', async () => {
+    // The rollback case: both slots name the session and neither alone is the run.
+    const blockAddedAfterRollback = { id: 'later', kind: 'volume', itemUuids: ['v1', 'v2'], targetGrade: 16 } as const;
+    const v2Record = { sessionId: 'session-1', run: timedRun };
+    const v1Record = { sessionId: 'session-1', run: { stages: [blockAddedAfterRollback] } };
+    await storage.setItem(WORKOUT_RUN_V2_STORAGE_KEY, JSON.stringify(v2Record));
+    await storage.setItem(WORKOUT_RUN_STORAGE_KEY, JSON.stringify(v1Record));
+    storage.setItem.mockClear();
+    storage.removeItem.mockClear();
+    storage.getItem.mockImplementationOnce(async (key: string) => {
+      throw new Error(`could not read ${key}`);
+    });
+
+    await hydrateWorkoutRun('session-1');
+
+    expect(storage.getItem.mock.calls).toEqual([[WORKOUT_RUN_V2_STORAGE_KEY]]);
+    expect(getWorkoutRunState()).toBeNull();
+    // A tick on a climb of either part finds no run, so nothing is written or removed.
+    noteWorkoutRunTick('session-1', tick('v1'));
+    noteWorkoutRunTick('session-1', tick('a'));
+    await flushStorageWrites();
+    expect(storage.setItem).not.toHaveBeenCalled();
+    expect(storage.removeItem).not.toHaveBeenCalled();
+    expect(storedRecord(WORKOUT_RUN_V2_STORAGE_KEY)).toEqual(v2Record);
+    expect(storedRecord(WORKOUT_RUN_STORAGE_KEY)).toEqual(v1Record);
+
+    // The next clean read gets both parts back.
+    await hydrateWorkoutRun('session-1');
+    expect(getWorkoutRunForSession('session-1')).toEqual({ stages: [...timedRun.stages, blockAddedAfterRollback] });
+  });
+
   it('leaves out a _v1 stage whose id names a _v2 stage of another kind', async () => {
     await storage.setItem(WORKOUT_RUN_V2_STORAGE_KEY, JSON.stringify({ sessionId: 'session-1', run: timedRun }));
     await storage.setItem(

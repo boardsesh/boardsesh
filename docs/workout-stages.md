@@ -118,13 +118,20 @@ The limits that follow:
   is a stage's `pacing`, `rounds` or `roundByUuid` it cannot read.
 - **Hydrate.** `WorkoutRunSessionSync` hydrates the slot when a session id appears, so a
   cold start mid-workout gets its stages back. Both slots are read, `_v2` first, and the
-  one naming this session is the run. A stored run for another session misses.
+  one naming this session is the run. A stored run for another session misses. A read
+  error on either slot leaves the store empty instead of taking the other slot alone:
+  that slot may hold only part of the run (see below), and the next write of a part
+  removes the other slot, so a slot that failed to read would be lost for good. With the
+  store empty a tick is not logged and nothing is written; the next hydrate, which "Add
+  a block" runs first, reads both again.
 - **Both slots, one session.** That happens only after a rollback mid-session. This
   bundle wrote a timed run to `_v2` and removed `_v1`; the older bundle, which never
   reads, writes or clears `_v2`, then saw no run and stored its "Add a block" alone in
   `_v1`. Neither copy is the whole run, so the hydrate merges them: `_v1`'s stages go
   after `_v2`'s (blocks mint fresh stage ids and queue-item uuids, and a uuid already in
-  `_v2` is skipped) and the tick logs are joined. Nothing is written back until the next
+  `_v2` is skipped) and the tick logs are joined: a tick with a uuid is kept once by that
+  uuid, and one without is told apart by climb, status and time, so two attempts on one
+  climb stay two. Nothing is written back until the next
   write, which stores the whole run under `_v2`, so a second rollback still finds its
   block in `_v1`.
 - **Known limit: an older bundle's clears miss `_v2`.** A bundle from before the timed
