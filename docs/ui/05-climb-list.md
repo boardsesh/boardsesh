@@ -54,6 +54,12 @@ supported search uses the same recovery actions as online search.
 Dev stories under **Climb search / Empty recovery** show the former state, the recovery actions,
 and an empty search with no removable filters.
 
+Simulator captures of the dev stories (example query and filters):
+
+| Before | After |
+| --- | --- |
+| ![Former empty search](images/empty-search-before.png) | ![Search recovery actions](images/empty-search-after.png) |
+
 ### Legacy Web Board Page Climb List
 
 The following describes the earlier web climbing surface. The current climbing UI lives in the
