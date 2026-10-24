@@ -1,4 +1,4 @@
-import { eq, and, desc, sql, or, isNull } from 'drizzle-orm';
+import { eq, and, desc, sql, or, isNull, inArray } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -20,8 +20,19 @@ import {
   tickPrivacyCondition,
 } from '../shared/activity-privacy';
 
-function mapFeedItemToGraphQL(row: typeof dbSchema.feedItems.$inferSelect, commentCount = 0) {
+/** The climb uuid a feed row's metadata names, if any. Follows and sessions name none. */
+function feedRowClimbUuid(row: typeof dbSchema.feedItems.$inferSelect): string | null {
+  const climbUuid = row.metadata?.climbUuid;
+  return typeof climbUuid === 'string' && climbUuid.length > 0 ? climbUuid : null;
+}
+
+function mapFeedItemToGraphQL(
+  row: typeof dbSchema.feedItems.$inferSelect,
+  commentCount = 0,
+  liveNoMatchByClimbUuid: ReadonlyMap<string, boolean> = new Map(),
+) {
   const meta = row.metadata || {};
+  const climbUuid = feedRowClimbUuid(row);
   return {
     id: String(row.id),
     type: row.type,
@@ -43,7 +54,9 @@ function mapFeedItemToGraphQL(row: typeof dbSchema.feedItems.$inferSelect, comme
     commentBody: (meta.commentBody as string) ?? null,
     isMirror: (meta.isMirror as boolean) ?? null,
     isBenchmark: (meta.isBenchmark as boolean) ?? null,
-    isNoMatch: (meta.isNoMatch as boolean) ?? null,
+    // The live climb's rule, not the one written at fan-out (#5263). The
+    // snapshot is only the fallback for a row whose climb is gone.
+    isNoMatch: (climbUuid ? liveNoMatchByClimbUuid.get(climbUuid) : undefined) ?? (meta.isNoMatch as boolean) ?? null,
     difficulty: (meta.difficulty as number) ?? null,
     difficultyName: (meta.difficultyName as string) ?? null,
     quality: (meta.quality as number) ?? null,
@@ -82,6 +95,34 @@ async function getCommentCountMap(
     .groupBy(dbSchema.comments.entityType, dbSchema.comments.entityId);
 
   return new Map(commentRows.map((row) => [`${row.entityType}:${row.entityId}`, Number(row.commentCount)]));
+}
+
+/**
+ * The current no-match rule of every climb a page of feed rows names.
+ *
+ * `feed_items.metadata` is written once at fan-out and never refreshed, so its
+ * `isNoMatch` keeps whatever the rule was then: rows fanned out before #5261 read
+ * the description alone, and a setter can change the rule afterwards. Same
+ * read-time treatment as `activityFeed`'s hidden-climb gate, but after the page is cut:
+ * at most one primary-key probe per row, so the feed query's plan is untouched.
+ */
+async function getLiveNoMatchMap(rows: (typeof dbSchema.feedItems.$inferSelect)[]): Promise<Map<string, boolean>> {
+  const climbUuids = [...new Set(rows.map(feedRowClimbUuid).filter((uuid): uuid is string => uuid !== null))];
+  if (climbUuids.length === 0) return new Map();
+
+  const climbs = await db
+    .select({
+      uuid: dbSchema.boardClimbs.uuid,
+      boardType: dbSchema.boardClimbs.boardType,
+      characteristics: dbSchema.boardClimbs.characteristics,
+      description: dbSchema.boardClimbs.description,
+    })
+    .from(dbSchema.boardClimbs)
+    .where(inArray(dbSchema.boardClimbs.uuid, climbUuids));
+
+  return new Map(
+    climbs.map((climb) => [climb.uuid, resolveClimbNoMatch(climb.boardType, climb.characteristics, climb.description)]),
+  );
 }
 
 type TickJoinRow = {
@@ -259,17 +300,21 @@ export const activityFeedQueries = {
 
     const hasMore = rows.length > limit;
     const resultRows = hasMore ? rows.slice(0, limit) : rows;
-    const commentCountMap = await getCommentCountMap(resultRows, myUserId);
-    // Each row follows its author; the wall it names is shown only to people
-    // who may see that wall.
-    const visibleBoardUuids = await visibleBoardIdentityUuids(
-      resultRows.map((row) => row.boardUuid),
-      myUserId,
-    );
+    const [commentCountMap, liveNoMatchByClimbUuid, visibleBoardUuids] = await Promise.all([
+      getCommentCountMap(resultRows, myUserId),
+      getLiveNoMatchMap(resultRows),
+      // Each row follows its author; the wall it names is shown only to people
+      // who may see that wall.
+      visibleBoardIdentityUuids(
+        resultRows.map((row) => row.boardUuid),
+        myUserId,
+      ),
+    ]);
     const items = resultRows.map((row) =>
       mapFeedItemToGraphQL(
         redactBoardIdentity(row, !!row.boardUuid && visibleBoardUuids.has(row.boardUuid)),
         commentCountMap.get(`${row.entityType}:${row.entityId}`) ?? 0,
+        liveNoMatchByClimbUuid,
       ),
     );
 

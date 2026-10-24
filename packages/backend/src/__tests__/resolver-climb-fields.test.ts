@@ -1,5 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
-import type { ConnectionContext } from '@boardsesh/shared-schema';
+import {
+  buildSchema,
+  getNamedType,
+  isInterfaceType,
+  isObjectType,
+  isUnionType,
+  type GraphQLObjectType,
+  type GraphQLSchema,
+} from 'graphql';
+import { typeDefs, type ConnectionContext } from '@boardsesh/shared-schema';
 
 // Regression guard: every resolver that returns Climb objects must project the
 // same set of board_climbs columns that searchClimbs and getClimb do. The list
@@ -9,7 +18,9 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 //
 // It covers userFavoriteClimbs, playlistClimbs (specific-board + all-boards via
 // hydrateClimbsByRefs), smartPlaylist, setterClimbsFull (both modes) and
-// userClimbs.
+// userClimbs. The coverage check at the bottom walks the live schema and fails
+// when a new query hands out a Climb without a row here (issue #5263): the table
+// only guards the producers someone remembered to list.
 //
 // The field list has now been outgrown three times: framesCount/framesPace
 // (multi-frame routes played at the wrong pace), compatibleSizeIds (threaded
@@ -436,3 +447,176 @@ for (const entryPoint of ENTRY_POINTS) {
     }
   });
 }
+
+// ============================================================
+// Coverage: every root that hands out a Climb has a row above
+// ============================================================
+//
+// The table only guards producers somebody remembered to add. A new query whose
+// mapper never reads `characteristics` compiles clean, and `Climb.is_no_match`
+// quietly falls back to the description (issue #5263). So the live schema decides
+// which roots need a row, not this file.
+
+/**
+ * Field edges the walk does not follow, each with the guard that covers it
+ * instead. A queue item's climb is the client's own ClimbInput, stored and echoed
+ * back, not a board_climbs projection.
+ */
+const NON_PROJECTION_CLIMB_EDGES: Record<string, string> = {
+  'ClimbQueueItem.climb': 'client-supplied ClimbInput, pinned by queue-climb-field-contract.test.ts',
+};
+
+/**
+ * Which ENTRY_POINTS rows exercise a root's producers, or, for the two reference
+ * projections every row is measured against, the guard that covers them.
+ */
+type ClimbRootCoverage = { entryPoints: string[] } | { reference: string };
+
+const CLIMB_ROOT_COVERAGE: Record<string, ClimbRootCoverage> = {
+  'Query.searchClimbs': {
+    reference:
+      '@boardsesh/db search: ClimbRow requires `characteristics`, and search-climbs.test.ts pins the outer SELECT to statsDrivenClimbFields()',
+  },
+  'Query.climb': {
+    reference: 'getClimbByUuid: a typed drizzle select, so a dropped column fails to compile in the mapper',
+  },
+  'Query.userFavoriteClimbs': { entryPoints: ['userFavoriteClimbs'] },
+  'Query.playlistClimbs': { entryPoints: ['playlistClimbs (specific board)', 'hydrateClimbsByRefs'] },
+  'Query.smartPlaylist': { entryPoints: ['hydrateClimbsByRefs'] },
+  'Query.setterClimbsFull': { entryPoints: ['setterClimbsFull (specific board)', 'setterClimbsFull (all boards)'] },
+  'Query.userClimbs': { entryPoints: ['userClimbs'] },
+};
+
+/**
+ * `Root.field` for every Query / Mutation / Subscription field whose result can
+ * hold a `Climb`, through any depth of object fields, lists, unions and
+ * interfaces.
+ *
+ * Reachability is worked backwards from `Climb` over the whole type graph rather
+ * than by a memoised descent from each root: the schema has cycles, and a descent
+ * records a type as "no Climb" when its only way back runs through a type still
+ * on the stack — so one root would hide another depending on field order.
+ */
+function rootFieldsReturningClimb(schema: GraphQLSchema, skippedEdges: ReadonlySet<string>): string[] {
+  const rootTypes = [schema.getQueryType(), schema.getMutationType(), schema.getSubscriptionType()].filter(
+    (rootType): rootType is GraphQLObjectType => rootType != null,
+  );
+  const rootTypeNames = new Set(rootTypes.map((rootType) => rootType.name));
+
+  // Child type name → the type names that can hand it out. Root types are left
+  // out on both ends: their fields are read directly below.
+  const parentsByChild = new Map<string, Set<string>>();
+  const addEdge = (parentName: string, childName: string) => {
+    if (rootTypeNames.has(parentName) || rootTypeNames.has(childName)) return;
+    const parentNames = parentsByChild.get(childName) ?? new Set<string>();
+    parentNames.add(parentName);
+    parentsByChild.set(childName, parentNames);
+  };
+
+  for (const namedType of Object.values(schema.getTypeMap())) {
+    if (namedType.name.startsWith('__')) continue;
+    if (isObjectType(namedType) || isInterfaceType(namedType)) {
+      for (const field of Object.values(namedType.getFields())) {
+        if (skippedEdges.has(`${namedType.name}.${field.name}`)) continue;
+        addEdge(namedType.name, getNamedType(field.type).name);
+      }
+    }
+    if (isUnionType(namedType) || isInterfaceType(namedType)) {
+      for (const memberType of schema.getPossibleTypes(namedType)) addEdge(namedType.name, memberType.name);
+    }
+  }
+
+  const typesReachingClimb = new Set<string>(['Climb']);
+  const pendingTypeNames = ['Climb'];
+  while (pendingTypeNames.length > 0) {
+    const childName = pendingTypeNames.pop()!;
+    for (const parentName of parentsByChild.get(childName) ?? []) {
+      if (typesReachingClimb.has(parentName)) continue;
+      typesReachingClimb.add(parentName);
+      pendingTypeNames.push(parentName);
+    }
+  }
+
+  return rootTypes
+    .flatMap((rootType) =>
+      Object.values(rootType.getFields())
+        .filter(
+          (field) =>
+            !skippedEdges.has(`${rootType.name}.${field.name}`) &&
+            typesReachingClimb.has(getNamedType(field.type).name),
+        )
+        .map((field) => `${rootType.name}.${field.name}`),
+    )
+    .sort();
+}
+
+describe('every GraphQL root that returns a Climb has a row in ENTRY_POINTS (#5263)', () => {
+  const skippedEdges = new Set(Object.keys(NON_PROJECTION_CLIMB_EDGES));
+
+  it('hands out Climb from exactly the roots in CLIMB_ROOT_COVERAGE', () => {
+    const roots = rootFieldsReturningClimb(buildSchema(typeDefs.join('\n')), skippedEdges);
+
+    expect(
+      roots,
+      'A query now returns Climb without a row here. Add an ENTRY_POINTS row that drives its ' +
+        'producer, then list the root in CLIMB_ROOT_COVERAGE. Remove a root only once the schema dropped it.',
+    ).toEqual(Object.keys(CLIMB_ROOT_COVERAGE).sort());
+  });
+
+  it('names only ENTRY_POINTS rows that exist', () => {
+    const entryPointNames = new Set(ENTRY_POINTS.map((entryPoint) => entryPoint.name));
+
+    for (const [rootField, coverage] of Object.entries(CLIMB_ROOT_COVERAGE)) {
+      if ('reference' in coverage) continue;
+      expect(coverage.entryPoints.length, `${rootField} names no ENTRY_POINTS row`).toBeGreaterThan(0);
+      for (const entryPointName of coverage.entryPoints) {
+        expect(entryPointNames.has(entryPointName), `${rootField} → missing ENTRY_POINTS row "${entryPointName}"`).toBe(
+          true,
+        );
+      }
+    }
+  });
+
+  // The two tests above pass on a walker that finds nothing new, so prove it
+  // finds a Climb wherever a real one could hide.
+  it('finds a Climb behind a new root, through lists, unions and cycles, and skips the queue edge', () => {
+    const probeTypeDefs = /* GraphQL */ `
+      union ClimbProducerProbeResult = PlaylistClimbsResult | QueueState
+
+      type ClimbProducerProbeCycleA {
+        back: ClimbProducerProbeCycleB
+        climbs: PlaylistClimbsResult
+      }
+
+      type ClimbProducerProbeCycleB {
+        forward: ClimbProducerProbeCycleA
+      }
+
+      extend type Query {
+        climbProducerProbeDirect: PlaylistClimbsResult!
+        climbProducerProbeThroughUnion: [ClimbProducerProbeResult!]!
+        climbProducerProbeCycleEntry: ClimbProducerProbeCycleA
+        climbProducerProbeCycleBack: ClimbProducerProbeCycleB
+        climbProducerProbeQueueOnly: QueueState
+      }
+
+      extend type Mutation {
+        climbProducerProbeBareClimb: Climb
+      }
+    `;
+    const roots = rootFieldsReturningClimb(buildSchema([...typeDefs, probeTypeDefs].join('\n')), skippedEdges);
+
+    expect(roots).toEqual(
+      expect.arrayContaining([
+        ...Object.keys(CLIMB_ROOT_COVERAGE),
+        'Query.climbProducerProbeDirect',
+        'Query.climbProducerProbeThroughUnion',
+        'Query.climbProducerProbeCycleEntry',
+        'Query.climbProducerProbeCycleBack',
+        'Mutation.climbProducerProbeBareClimb',
+      ]),
+    );
+    // A queue state reaches Climb only through ClimbQueueItem.climb, which is skipped.
+    expect(roots).not.toContain('Query.climbProducerProbeQueueOnly');
+  });
+});

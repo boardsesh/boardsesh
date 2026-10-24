@@ -477,6 +477,7 @@ The activity feed shows social activity from followed users and boards.
 - Board-scoped filtering via `board_uuid`
 - Sort modes: new, top, controversial, hot
 - 180-day retention with periodic cleanup
+- `metadata` is what fan-out wrote and is never refreshed, so `activityFeed` re-applies the rules that can change afterwards at read time: hidden climbs, private spray walls, and the climb's no-match rule (read from the live `board_climbs` row; the stored `isNoMatch` is only the fallback when that row is gone)
 
 **Planned enhancements (M13):**
 

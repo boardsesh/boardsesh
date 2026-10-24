@@ -246,7 +246,9 @@ export const resolvers = {
   Climb: {
     // One definition for every surface — see resolveClimbNoMatch.
     // A parent that doesn't select `characteristics` silently falls back to the
-    // description, so every Climb producer must project the column.
+    // description, so every Climb producer must project the column. The parent
+    // type below checks nothing (this map is untyped): resolver-climb-fields.test.ts
+    // is the guard, and it fails when a new query returns Climb without a row there.
     is_no_match: (climb: {
       characteristics?: string[] | null;
       description?: string | null;

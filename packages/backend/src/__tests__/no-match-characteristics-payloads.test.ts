@@ -1,7 +1,9 @@
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
+import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../db/client';
+import { activityFeedQueries } from '../graphql/resolvers/social/activity-feed';
 import { newClimbSubscriptionResolvers } from '../graphql/resolvers/social/new-climb-subscriptions';
 import { sessionFeedQueries } from '../graphql/resolvers/social/session-feed';
 
@@ -27,6 +29,8 @@ const RUN_ID = crypto.randomUUID().slice(0, 8);
 // again, so they can never reach an assertion.
 const LAYOUT_ID = 900000000 + (parseInt(RUN_ID, 16) % 50_000_000);
 const OWNER_ID = `nm5127-owner-${RUN_ID}`;
+// Follows OWNER_ID's activity through feed_items rows written straight into the table.
+const FEED_READER_ID = `nm5127-reader-${RUN_ID}`;
 const BOARD_UUID = `nm5127-board-${RUN_ID}`;
 // The description that made the two disagree: the rule is declared after prose.
 const TRAILING_NO_MATCH = 'Kick board is off. No matching.';
@@ -79,7 +83,8 @@ async function cleanup(): Promise<void> {
   await db.execute(sql`DELETE FROM board_sessions WHERE created_by_user_id = ${OWNER_ID}`);
   await db.execute(sql`DELETE FROM board_climbs WHERE board_type = 'kilter' AND layout_id = ${LAYOUT_ID}`);
   await db.execute(sql`DELETE FROM user_boards WHERE owner_id = ${OWNER_ID}`);
-  await db.execute(sql`DELETE FROM "users" WHERE id = ${OWNER_ID}`);
+  // feed_items.recipient_id cascades, so this also removes the reader's feed rows.
+  await db.execute(sql`DELETE FROM "users" WHERE id IN (${OWNER_ID}, ${FEED_READER_ID})`);
 }
 
 describe('no-match payloads read characteristics, not just the description (#5127)', () => {
@@ -88,7 +93,9 @@ describe('no-match payloads read characteristics, not just the description (#512
 
     await db.execute(sql`
       INSERT INTO "users" (id, email, name, created_at, updated_at)
-      VALUES (${OWNER_ID}, ${`${OWNER_ID}@test.invalid`}, 'No-match fixture owner', now(), now())
+      VALUES
+        (${OWNER_ID}, ${`${OWNER_ID}@test.invalid`}, 'No-match fixture owner', now(), now()),
+        (${FEED_READER_ID}, ${`${FEED_READER_ID}@test.invalid`}, 'No-match fixture feed reader', now(), now())
       ON CONFLICT (id) DO NOTHING
     `);
     const boardRows = await db.execute(sql`
@@ -144,5 +151,45 @@ describe('no-match payloads read characteristics, not just the description (#512
     expect(sends.get(SESSION_EXPLICIT_FALSE)?.isNoMatch).toBe(false);
     expect(sends.get(SESSION_NULL_ARRAY)?.climbUuid).toBe(CLIMB_NULL_ARRAY);
     expect(sends.get(SESSION_NULL_ARRAY)?.isNoMatch).toBe(true);
+  });
+
+  it("activityFeed reads the climb's rule now, not the snapshot fan-out wrote (#5263)", async () => {
+    // feed_items.metadata is written once at fan-out. Each row below carries the
+    // OPPOSITE of the live answer, as a row fanned out before the rule changed
+    // would: the author turned it off afterwards, or the row predates the
+    // trailing-declaration fix and the array that now carries the rule.
+    const staleSnapshotByClimb: Array<[climbUuid: string, staleIsNoMatch: boolean]> = [
+      [CLIMB_EXPLICIT_FALSE, true],
+      [CLIMB_NULL_ARRAY, false],
+      [CLIMB_EXPLICIT_TRUE, false],
+    ];
+    await db.insert(dbSchema.feedItems).values(
+      staleSnapshotByClimb.map(([climbUuid, staleIsNoMatch], index) => ({
+        recipientId: FEED_READER_ID,
+        actorId: OWNER_ID,
+        type: 'new_climb' as const,
+        entityType: 'climb' as const,
+        entityId: climbUuid,
+        metadata: { climbUuid, boardType: 'kilter', climbName: 'No-match fixture', isNoMatch: staleIsNoMatch },
+        createdAt: new Date(Date.UTC(2026, 1, 10 + index)),
+      })),
+    );
+
+    const feed = await activityFeedQueries.activityFeed(null, { input: { limit: 10 } }, {
+      connectionId: `nm5127-reader-${RUN_ID}`,
+      isAuthenticated: true,
+      userId: FEED_READER_ID,
+    } as unknown as ConnectionContext);
+
+    const isNoMatchByClimb = new Map(feed.items.map((item) => [item.climbUuid, item.isNoMatch]));
+    expect(isNoMatchByClimb).toEqual(
+      new Map([
+        // The empty array wins over the prose, and over the stale `true`.
+        [CLIMB_EXPLICIT_FALSE, false],
+        // No array: the trailing declaration in the prose still counts.
+        [CLIMB_NULL_ARRAY, true],
+        [CLIMB_EXPLICIT_TRUE, true],
+      ]),
+    );
   });
 });
