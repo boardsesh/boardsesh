@@ -178,4 +178,21 @@ describe('defaultMidSessionBlock', () => {
     expect(options.type).toBe('ladder');
     expect(options.targetGrade).toBe(12);
   });
+
+  // A timed stage reaches this sheet only after an OTA rollback to a bundle that
+  // models the timed kinds but offers none of them.
+  it.each(['fourByFour', 'limitBouldering', 'onTheMinute'] as const)(
+    'opens on a volume block at the stage grade after a %s stage, which has no chip',
+    (kind) => {
+      const run: WorkoutRun = {
+        stages: [...existingRun.stages, { id: 'timed', kind, itemUuids: ['t1', 't2'], targetGrade: 22, rounds: 4 }],
+      };
+
+      const options = defaultMidSessionBlock(run, 12);
+
+      // The same as a volume block opened at that grade: no round or rest fields carried over.
+      expect(options).toEqual(defaultMidSessionBlock(null, 22));
+      expect(options.type).toBe('volume');
+    },
+  );
 });

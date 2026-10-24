@@ -364,7 +364,7 @@ describe('workout-run-store: timed stages and the storage slot', () => {
     expect(getWorkoutRunForSession('session-1')).toEqual(timedRun);
   });
 
-  it('reads _v2 first and falls back to _v1 when _v2 is another session’s', async () => {
+  it('hydrates whichever slot names the session when the slots hold different sessions', async () => {
     await storage.setItem(WORKOUT_RUN_V2_STORAGE_KEY, JSON.stringify({ sessionId: 'session-1', run: timedRun }));
     await storage.setItem(WORKOUT_RUN_STORAGE_KEY, JSON.stringify({ sessionId: 'session-2', run }));
 
@@ -374,6 +374,98 @@ describe('workout-run-store: timed stages and the storage slot', () => {
     resetWorkoutRunStoreForTests();
     await hydrateWorkoutRun('session-1');
     expect(getWorkoutRunForSession('session-1')).toEqual(timedRun);
+  });
+
+  it('keeps both parts of a run split across the slots by a rollback mid-session', async () => {
+    // This bundle starts a 4x4 and logs a tick on it: the run sits in _v2 only.
+    setWorkoutRun('session-1', timedRun);
+    noteWorkoutRunTick('session-1', tick('a', 'send'));
+    await flushStorageWrites();
+    // Rolled back to a bundle from before the timed kinds. It reads only _v1, finds
+    // nothing, and its "Add a block" stores the block alone there, with no log.
+    const blockAddedAfterRollback = { id: 'later', kind: 'volume', itemUuids: ['v1', 'v2'], targetGrade: 16 } as const;
+    await storage.setItem(
+      WORKOUT_RUN_STORAGE_KEY,
+      JSON.stringify({ sessionId: 'session-1', run: { stages: [blockAddedAfterRollback] } }),
+    );
+    resetWorkoutRunStoreForTests();
+
+    // Rolled forward: neither copy alone is the run.
+    await hydrateWorkoutRun('session-1');
+
+    expect(getWorkoutRunForSession('session-1')).toEqual({ stages: [...timedRun.stages, blockAddedAfterRollback] });
+    expect(getWorkoutRunLog('session-1')).toEqual([tick('a', 'send')]);
+    // Nothing is written back, so a second rollback still finds its block.
+    expect(storedRecord(WORKOUT_RUN_STORAGE_KEY)).toEqual({
+      sessionId: 'session-1',
+      run: { stages: [blockAddedAfterRollback] },
+    });
+
+    // The next write stores the whole run under _v2 and empties _v1.
+    noteWorkoutRunTick('session-1', tick('v1'));
+    await flushStorageWrites();
+    expect(storedRecord(WORKOUT_RUN_V2_STORAGE_KEY)).toEqual({
+      sessionId: 'session-1',
+      run: { stages: [...timedRun.stages, blockAddedAfterRollback] },
+      log: [tick('a', 'send'), tick('v1')],
+    });
+    expect(storedRecord(WORKOUT_RUN_STORAGE_KEY)).toBeNull();
+  });
+
+  it('reads a leftover copy of the same run in both slots once', async () => {
+    // A write to _v2 whose remove of _v1 failed: _v1 still holds the run as it was
+    // before the 4x4 was added.
+    const withFourByFour: WorkoutRun = { stages: [...run.stages, timedRun.stages[1]] };
+    await storage.setItem(
+      WORKOUT_RUN_V2_STORAGE_KEY,
+      JSON.stringify({ sessionId: 'session-1', run: withFourByFour, log: [tick('m1'), tick('a')] }),
+    );
+    await storage.setItem(WORKOUT_RUN_STORAGE_KEY, JSON.stringify({ sessionId: 'session-1', run, log: [tick('m1')] }));
+
+    await hydrateWorkoutRun('session-1');
+
+    expect(getWorkoutRunState()).toEqual({
+      sessionId: 'session-1',
+      run: withFourByFour,
+      log: [tick('m1'), tick('a')],
+    });
+  });
+
+  it('leaves out a _v1 stage whose id names a _v2 stage of another kind', async () => {
+    await storage.setItem(WORKOUT_RUN_V2_STORAGE_KEY, JSON.stringify({ sessionId: 'session-1', run: timedRun }));
+    await storage.setItem(
+      WORKOUT_RUN_STORAGE_KEY,
+      JSON.stringify({
+        sessionId: 'session-1',
+        run: {
+          stages: [
+            { id: 'four', kind: 'ladder', itemUuids: ['l1'] },
+            { id: 'later', kind: 'pyramid', itemUuids: ['p1'] },
+          ],
+        },
+      }),
+    );
+
+    await hydrateWorkoutRun('session-1');
+
+    expect(getWorkoutRunForSession('session-1')).toEqual({
+      stages: [...timedRun.stages, { id: 'later', kind: 'pyramid', itemUuids: ['p1'] }],
+    });
+  });
+
+  it('hydrates the _v1 copy when the _v2 copy of the same session shows nothing', async () => {
+    await storage.setItem(
+      WORKOUT_RUN_V2_STORAGE_KEY,
+      JSON.stringify({
+        sessionId: 'session-1',
+        run: { stages: [{ id: 'x', kind: 'campusLadder', itemUuids: ['c1'] }] },
+      }),
+    );
+    await storage.setItem(WORKOUT_RUN_STORAGE_KEY, JSON.stringify({ sessionId: 'session-1', run }));
+
+    await hydrateWorkoutRun('session-1');
+
+    expect(getWorkoutRunForSession('session-1')).toEqual(run);
   });
 
   it('drops a stage of a kind this bundle does not know and keeps the rest of the run', async () => {

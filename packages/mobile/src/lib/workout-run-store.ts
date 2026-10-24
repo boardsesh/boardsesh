@@ -27,11 +27,13 @@
 // crashes on it; an OTA rollback lands on the bundle embedded in the binary by
 // default, which can be that old. So a run holding any kind outside
 // `V1_STAGE_KINDS` is written under `_v2`, which no such bundle reads, and every
-// other run stays under `_v1`. One slot holds the run at a time.
+// other run stays under `_v1`. One slot holds the run at a time, except after a
+// rollback mid-session: see `mergeSlotsForSession`.
 
 import { useCallback, useSyncExternalStore } from 'react';
 import {
   CLIMB_BIAS_OPTIONS,
+  appendStageToRun,
   isRoundNumber,
   isWorkoutStageKind,
   isWorkoutStagePacing,
@@ -47,7 +49,10 @@ export const WORKOUT_RUN_STORAGE_KEY = 'boardsesh_workout_run_v1';
 /** The slot for a run with any newer kind, so a rolled-back bundle never reads it. */
 export const WORKOUT_RUN_V2_STORAGE_KEY = 'boardsesh_workout_run_v2';
 
-/** Read first: a slot names its session, so the one for the session asked about wins. */
+/**
+ * `_v2` then `_v1`. A slot names its session, so the one for the session asked
+ * about is the run; when both name it, `_v1`'s stages are merged in after `_v2`'s.
+ */
 const STORAGE_KEYS_IN_READ_ORDER = [WORKOUT_RUN_V2_STORAGE_KEY, WORKOUT_RUN_STORAGE_KEY] as const;
 
 /** The kinds the `_v1` readers know. Frozen: a new kind goes under `_v2`, never on this list. */
@@ -216,6 +221,50 @@ async function readStoredRecord(key: string): Promise<WorkoutRunRecord | null> {
   return readWorkoutRunRecord(await getPreference<unknown>(key));
 }
 
+/** One tick, as a string, so the same tick in two logs is kept once. */
+function tickLogEntryKey({ queueItemUuid, status, climbedAt, tickUuid }: WorkoutTickLogEntry): string {
+  return JSON.stringify([queueItemUuid, status, climbedAt, tickUuid ?? null]);
+}
+
+/** `earlier` then the entries of `later` it lacks, capped like any log. */
+function joinTickLogs(
+  earlier: WorkoutTickLogEntry[] | undefined,
+  later: WorkoutTickLogEntry[] | undefined,
+): WorkoutTickLogEntry[] | undefined {
+  if (!later || later.length === 0) return earlier;
+  if (!earlier || earlier.length === 0) return later;
+  const earlierKeys = new Set(earlier.map(tickLogEntryKey));
+  const joined = [...earlier, ...later.filter((entry) => !earlierKeys.has(tickLogEntryKey(entry)))];
+  return joined.length > MAX_WORKOUT_TICK_LOG ? joined.slice(joined.length - MAX_WORKOUT_TICK_LOG) : joined;
+}
+
+/**
+ * The run when both slots name the same session. That only happens after an
+ * OTA rollback mid-session: a bundle that knows the timed kinds wrote `_v2` and
+ * removed `_v1`, then a bundle from before them, which never reads, writes or
+ * clears `_v2`, saw no run and wrote its "Add a block" to `_v1`. Each copy then
+ * holds part of the run and `_v1`'s part is the newer one, so taking either
+ * alone would read the other's climbs as hand-queued, and the next write, which
+ * removes the other slot, would lose them for good. So `_v1`'s stages go after
+ * `_v2`'s. Every block mints fresh stage ids and queue-item uuids, and a uuid
+ * already in `_v2` (a copy left by a remove that failed) is skipped; a `_v1`
+ * stage whose id names a `_v2` stage of another kind is left out. The logs are
+ * joined the same way. Nothing is written back: the next write stores the whole
+ * run, and until then a second rollback still finds its `_v1`.
+ */
+function mergeSlotsForSession(newerKinds: WorkoutRunRecord, originalKinds: WorkoutRunRecord): WorkoutRunRecord {
+  let run = newerKinds.run;
+  for (const stage of originalKinds.run.stages) {
+    const stageWithSameId = run.stages.find((runStage) => runStage.id === stage.id);
+    if (stageWithSameId && stageWithSameId.kind !== stage.kind) continue;
+    run = appendStageToRun(run, stage, stage.itemUuids);
+  }
+  const merged: WorkoutRunRecord = { sessionId: newerKinds.sessionId, run };
+  const log = joinTickLogs(newerKinds.log, originalKinds.log);
+  if (log) merged.log = log;
+  return merged;
+}
+
 export function subscribeWorkoutRun(listener: () => void): () => void {
   listeners.add(listener);
   return () => {
@@ -276,13 +325,14 @@ export function getWorkoutRunLog(sessionId: string | null): readonly WorkoutTick
 /**
  * Load the stored run for `sessionId` after a cold start. No-op when the store
  * already holds that session's run, and a stored run for another session
- * misses. `_v2` is read before `_v1`, and the first slot holding this session's
- * run with a stage this bundle can show wins. A read that fails leaves the store
- * as it is.
+ * misses. Both slots are read, `_v2` first; the one naming this session is the
+ * run, and when both name it they are merged (`mergeSlotsForSession`). A read
+ * that fails leaves the store as it is.
  */
 export async function hydrateWorkoutRun(sessionId: string): Promise<void> {
   if (state?.sessionId === sessionId) return;
   const generationAtRead = writeGeneration;
+  let hydrated: WorkoutRunRecord | null = null;
   for (const key of STORAGE_KEYS_IN_READ_ORDER) {
     let record: WorkoutRunRecord | null;
     try {
@@ -291,11 +341,12 @@ export async function hydrateWorkoutRun(sessionId: string): Promise<void> {
       return;
     }
     if (generationAtRead !== writeGeneration) return;
-    // Every stage of a kind this bundle does not know leaves nothing to show.
-    if (record?.sessionId !== sessionId || record.run.stages.length === 0) continue;
-    setState(record);
-    return;
+    if (record?.sessionId !== sessionId) continue;
+    hydrated = hydrated ? mergeSlotsForSession(hydrated, record) : record;
   }
+  // Every stage of a kind this bundle does not know leaves nothing to show.
+  if (!hydrated || hydrated.run.stages.length === 0) return;
+  setState(hydrated);
 }
 
 /** Forget the run, in memory and on disk. */

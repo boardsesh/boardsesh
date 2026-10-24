@@ -12,7 +12,9 @@ import type { GeneratorOptions } from './types';
 
 /**
  * The rest timer's two cadences. Mobile's `RestTimerMode` names the same two
- * literals; the shared package cannot import it, so mobile asserts they match.
+ * literals; the shared package cannot import it, so mobile asserts they match
+ * with a `Same<>` type in `packages/mobile/src/lib/__tests__/stage-pacing-mode.test.ts`,
+ * which mobile's typecheck covers.
  */
 export type StagePacingMode = 'afterTick' | 'onTheMinute';
 

@@ -117,8 +117,20 @@ The limits that follow:
   of a kind the bundle does not know is dropped on read and the rest of the run kept, as
   is a stage's `pacing`, `rounds` or `roundByUuid` it cannot read.
 - **Hydrate.** `WorkoutRunSessionSync` hydrates the slot when a session id appears, so a
-  cold start mid-workout gets its stages back. `_v2` is read before `_v1`, and the slot
-  holding this session's run wins. A stored run for another session misses.
+  cold start mid-workout gets its stages back. Both slots are read, `_v2` first, and the
+  one naming this session is the run. A stored run for another session misses.
+- **Both slots, one session.** That happens only after a rollback mid-session. This
+  bundle wrote a timed run to `_v2` and removed `_v1`; the older bundle, which never
+  reads, writes or clears `_v2`, then saw no run and stored its "Add a block" alone in
+  `_v1`. Neither copy is the whole run, so the hydrate merges them: `_v1`'s stages go
+  after `_v2`'s (blocks mint fresh stage ids and queue-item uuids, and a uuid already in
+  `_v2` is skipped) and the tick logs are joined. Nothing is written back until the next
+  write, which stores the whole run under `_v2`, so a second rollback still finds its
+  block in `_v1`.
+- **Known limit: an older bundle's clears miss `_v2`.** A bundle from before the timed
+  kinds clears only `_v1` when a session ends or the account signs out, so a timed run
+  stored before the rollback stays in `_v2`. Only a hydrate for that same session id
+  reads it, and the next write of any run replaces it.
 - **Tick log.** The record also keeps the ticks logged on this phone on the run's climbs,
   by queue item, with their status (`flash`, `send` or `attempt`; `noteWorkoutRunTick`,
   `useWorkoutRunLog`). A tick on a hand-queued climb or for another session is ignored.
@@ -129,7 +141,7 @@ The limits that follow:
   that session's run, in memory and on disk (whichever slot names it). A hydrate still in
   flight for it cannot land afterwards.
 - **Clear on sign-out.** `auth-provider` clears the store, both slots, with the rest of
-  the per-user state.
+  the per-user state (see the known limit above for an older bundle's sign-out).
 - **No prune.** The run is never trimmed as climbs leave the queue. Undo in the queue
   sheet brings removed climbs back under their old uuids, and they must come back in
   their stage. Readers skip uuids that are not queued, so the stale ones cost nothing,
@@ -185,7 +197,9 @@ started without the generator can turn into one. Both open `AddWorkoutBlockSheet
 - It offers the workout types only, never a warm-up: mid-session the climber is already
   warm, and a warm-up with no workout block after it would plan no climbs.
 - The block opens on the run's last workout stage: same type, same target grade. With no
-  run it opens on volume at the board's middle grade.
+  run it opens on volume at the board's middle grade. A last stage of a type the sheet
+  has no chip for (a timed block, read after a rollback to a bundle that does not offer
+  them) opens on volume at that stage's grade.
 - Its climb filters open on the last stage in the run that kept any, warm-ups included
   (`defaultMidSessionFilters`). Tall/wide are turned off on every render where the
   board has no smaller sizes, from the filters the climber asked for, so a board that
