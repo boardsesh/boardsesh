@@ -204,6 +204,40 @@ stage, leaves the climber's own rest settings in charge, exactly as before. The 
 - **Crew.** Stage pacing lives on the phone that built the workout. In a crew only the phone
   holding the wall moves it (`docs/rest-timer.md`), stage or not; a passenger's sheet says so.
 
+**The runner** (#6291). The Record tab's "Your workout" card runs the workout without a
+separate engine: it reads the queue, the run, the run's tick log and the rest timer through
+`useWorkoutRunner`, which feeds the pure `describeWorkoutRunner`
+(`lib/workout-runner-readout.ts`). Any other runner surface reads the same hook, so they all
+agree on these points:
+
+- **Phase.** `climbing`; `resting`, when the current climb's stage paces the timer, the timer
+  is armed with a rest to count from (paused counts), and its last tick was on the current climb;
+  or `done`, when the climber is past every staged climb, or on the last one and it met its
+  stage's rule (sent on limit, logged anywhere else). The rest is the store's `stagePacing`, the
+  value the timer runs on, and whether it moves the wall is `restAdvanceAllowed`, the
+  scheduler's own rule: after a fall on a limit climb it reads "Then try again".
+- **What the card shows.** Where the current climb sits ("4x4 · Round 2 of 4 · 3 of 4", and
+  "· Try 3" on a limit climb, in the player's subtitle too) over the climb itself, which opens
+  the player. A paced stage adds the rest line (the `RestTimerClock` leaf, then the next
+  climb) or, with the timer off, "Rest timer off · Turn on" (`armRestTimerForWorkout`). Nothing
+  above the clock leaf re-renders per second.
+- **Next** is what Next lands on (`selectNextQueueItemWithSuggestions`, with the scheduler's
+  board rules), so a list the climber is walking counts. `startsRound` and `startsStage` mark
+  the boundaries.
+- **Outcomes.** Every queued staged climb is `sent` (a flash or send logged on it), `tried`
+  (ticks but no send), `skipped` (the current climb is past it with nothing logged) or
+  `upcoming`, per stage (`climbs`, `tally`) and in total. A finished stage with anything
+  logged on it shows its tally in place of the climb count; one passed with nothing logged
+  keeps the count, since its climbs may have been logged elsewhere. "Workout done" carries
+  the totals.
+- **Off the plan.** When the climb on the wall is in no stage (Start ran while another climb
+  was up, or the climber wandered off), the card offers "Start your workout" (or "Back to your
+  workout"): it puts the first staged climb not reached yet on the wall and stops walking any
+  list.
+- **Limits.** Outcomes come from this phone's tick log, so a tick logged on another device, or
+  deleted later from the session detail, is not reflected. Tries count ticks, so one tick saying
+  "3 attempts" counts as one try.
+
 ## Building a workout
 
 **Before Start.** The Record tab shows the workout as a list of block cards, and it
