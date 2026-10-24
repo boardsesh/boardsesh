@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render } from '@testing-library/react';
 import { createElement, useState, type ReactNode, type Ref } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  DEFAULT_FOUR_BY_FOUR_OPTIONS,
   DEFAULT_LADDER_OPTIONS,
   DEFAULT_PYRAMID_OPTIONS,
   DEFAULT_VOLUME_OPTIONS,
@@ -361,5 +362,32 @@ describe('WorkoutBlockList', () => {
     fireEvent.click(screen.getByLabelText('mobile.session.preGeneratorAddBlock'));
     act(() => layouts.byTestId.get('workout-block-3')?.());
     expect(revealBlock).toHaveBeenCalledTimes(2);
+  });
+
+  describe('timed block chips', () => {
+    afterEach(() => vi.unstubAllGlobals());
+    const TIMED_CHIP_LABELS = [
+      'Block 1, mobile.session.preGeneratorOnTheMinute',
+      'Block 1, mobile.session.preGeneratorFourByFour',
+      'Block 1, mobile.session.preGeneratorLimitBouldering',
+    ];
+
+    it('are on no card in a release build', () => {
+      vi.stubGlobal('__DEV__', false);
+      const screen = renderList([pyramid('first', 20)]);
+
+      for (const label of TIMED_CHIP_LABELS) expect(screen.queryByLabelText(label)).toBeNull();
+      expect(screen.getByLabelText('Block 1, mobile.session.preGeneratorGradeFocus')).toBeTruthy();
+    });
+
+    it('follow the untimed chips in a dev build, and turn a block into a 4x4 at its grade', () => {
+      vi.stubGlobal('__DEV__', true);
+      const screen = renderList([pyramid('first', 20)]);
+
+      for (const label of TIMED_CHIP_LABELS) expect(screen.getByLabelText(label)).toBeTruthy();
+      fireEvent.click(screen.getByLabelText('Block 1, mobile.session.preGeneratorFourByFour'));
+
+      expect(lastSelection().blocks[0]).toEqual(workout('first', { ...DEFAULT_FOUR_BY_FOUR_OPTIONS, targetGrade: 20 }));
+    });
   });
 });

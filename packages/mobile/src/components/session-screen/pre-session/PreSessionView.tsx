@@ -13,6 +13,8 @@ import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import { track } from '../../../lib/analytics';
 import { setWorkoutRun } from '../../../lib/workout-run-store';
+import { armRestTimerForWorkout } from '../../../lib/rest-timer-effective';
+import { nowMs } from '../../../lib/clock';
 import { Card } from '../../Card';
 import { SectionHeader } from '../../SectionHeader';
 import { Text } from '../../Text';
@@ -182,6 +184,7 @@ export function PreSessionView({
     plannedCount,
     plannedSlots,
     plannedStages,
+    startQueue,
     refreshSlot,
     shuffle,
     toStagedQueueItems,
@@ -255,7 +258,11 @@ export function PreSessionView({
   const handleStart = useCallback(async () => {
     if (!activeBoard || isStartPending) return;
     const hasWorkout = hasWorkoutBlocks(selection);
-    const { items: generatedItems, run: generatedRun } = hasWorkout ? toStagedQueueItems() : { items: [], run: null };
+    const {
+      items: generatedItems,
+      run: generatedRun,
+      filledSlotCount,
+    } = hasWorkout ? toStagedQueueItems() : { items: [], run: null, filledSlotCount: 0 };
     if (hasWorkout && (status !== 'ready' || refreshingUuids.size > 0 || generatedItems.length === 0)) {
       return;
     }
@@ -284,7 +291,11 @@ export function PreSessionView({
         // Remember which stage each queued climb belongs to, so the session
         // screen and the player can say "Warm-up · 2 of 5". Keyed by the same
         // queue-item uuids just appended; it never goes over the wire.
-        if (generatedRun) setWorkoutRun(newSessionId, generatedRun);
+        if (generatedRun) {
+          setWorkoutRun(newSessionId, generatedRun);
+          // A timed block runs hands-free: its rest timer is on from Start.
+          armRestTimerForWorkout(newSessionId, generatedRun, nowMs());
+        }
         track(SHARED_EVENTS.SessionQueueGenerated, {
           // The first workout block's type, so single-workout funnels keep their
           // meaning. Never a warm-up: null if a queue ever starts with no workout block.
@@ -293,7 +304,9 @@ export function PreSessionView({
           boardName: activeBoard.boardType,
           angle: activeBoard.angle,
           savedCount: generatedItems.length,
-          failedCount: plannedCount - generatedItems.length,
+          // Planned slots with no climb. A 4x4 queues each slot once per round,
+          // so the queued count would overshoot the plan.
+          failedCount: Math.max(0, plannedCount - filledSlotCount),
           stageCount: generatedRun?.stages.length ?? 0,
           // Start builds the workout; a block added later sends 'in_session'.
           phase: 'pre_session',
@@ -466,6 +479,7 @@ export function PreSessionView({
                 boardName={previewBoard.boardName}
                 onShuffle={shuffle}
                 shuffleDisabled={status !== 'ready' || isRefreshingAnyRow || isStartPending}
+                startQueue={startQueue}
               />
             ) : null}
             {previewStateMessage ? (
@@ -499,6 +513,7 @@ export function PreSessionView({
       previewBoard,
       hasPreviewItems,
       planSummary,
+      startQueue,
       shuffle,
       status,
       isRefreshingAnyRow,

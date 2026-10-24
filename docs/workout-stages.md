@@ -67,10 +67,9 @@ too (`rounds`, `restBetweenClimbsSeconds`, `restBetweenRoundsSeconds`, `interval
 `climbsPerRound` on a 4x4. `WORKOUT_STAGE_KINDS` lists every kind this bundle knows, and
 `isWorkoutStageKind` checks stored data against it.
 
-The three timed kinds are modelled end to end but not offered yet: the type chips, "Add a
-block" and the mid-session sheet still offer warm-up, volume, pyramid, ladder and grade
-focus only (`WORKOUT_BLOCK_TYPES`, and `nextBlockType` cycles the four untimed types). Their
-fields exist for when they are: a 4x4 takes 2 to 10 climbs per round (the player keys its
+The three timed kinds are offered in dev builds only until they launch (see "Timed
+blocks" below); a release bundle offers warm-up, volume, pyramid, ladder and grade focus.
+Their fields: a 4x4 takes 2 to 10 climbs per round (the player keys its
 swipe pages by climb, so one climb per round would put the same climb on three pages) and
 1 to 10 rounds; limit bouldering 1 to 10 climbs; on the minute 1 to 40. Their rests use
 the rest timer's own picker, where Off means no rest for a stage rest and an interval can
@@ -156,6 +155,49 @@ The limits that follow:
   their stage. Readers skip uuids that are not queued, so the stale ones cost nothing,
   and the whole run goes when the session ends.
 
+## Pacing
+
+A timed stage paces the rest timer itself (#5380, #6231): its own rest, its own cadence, and
+its own rule for when a finished rest moves the wall. Every other stage, and a climb in no
+stage, leaves the climber's own rest settings in charge, exactly as before. The rest timer side
+(effective pacing, the advance rules, who may move the wall) is in `docs/rest-timer.md`.
+
+- **What the climb on the wall gets.** `RestTimerPacingSync` (mounted with the rest timer, but
+  outside its armed gate) locates the current climb in the run once per queue change and
+  resolves it with `resolveStageRestPacing` into a `RestTimerStagePacing`: the stage, the queue
+  item, the cadence, the rest after THIS climb (`stageRestSeconds`: a 4x4's round rest on the
+  last queued climb of a round, the 10 s changeover for a rest of 0, the interval on the
+  minute) and the advance rule (`tick` for a 4x4, `send` for limit, `deadline` on the minute).
+  It sits in the rest-timer store, never in settings, and is not persisted; the readers merge
+  it with the settings through `useEffectiveRestPacing()`. A stage always auto-advances.
+- **Moving on.** Under `tick` or `send` the wall moves only once the climb on it was logged
+  (limit: flashed or sent), and the fire clears the anchor, so the next climb rests only after
+  its own tick. A 4x4 never walks on with nobody climbing, and a fall on a limit climb rests
+  and stays on it, with the "rest over" cue. On the minute moves on every beat, logged or not.
+- **Which climb a tick is for.** The tick path (`use-tick-saver.ts`) reads the committed
+  current queue item when the save starts (`attributeTickToQueueItem`): a tick counts for it
+  only when it is that climb's. The status and queue item go to the rest timer (`lastTick`)
+  and to the run's tick log. A tick on any other climb counts for no queue item, and leaves the
+  rest timer's last tick as it was: it says nothing about the climb on the wall. A save started
+  on the previous climb keeps that climb's queue item when it finishes after the advance, but it
+  never replaces a tick the new climb already has, so the new climb still moves on at its rest.
+- **A stage change on a running timer** (`planRestTimerPacingTransition`). An on-the-minute
+  stage starting, or changing interval, starts its beat at that moment, so its first climb gets
+  a whole interval. A new climb of a `tick` or `send` stage, or on the minute ending, clears
+  the anchor: the rest waits for the next tick. A paused timer takes the change too, so Resume
+  starts a fresh rest instead of carrying the last climb's into the new stage: the first climb
+  on the minute still gets a whole interval.
+- **Arming.** Start, and "Add a block", arm the timer when the workout (for a mid-session
+  block: the block) has a timed stage and the timer is off (`armRestTimerForWorkout`), so a
+  timed block runs hands-free. A timer the climber already set up is left alone, and arming
+  still never survives a cold start.
+- **The sheet.** While a stage paces the timer, the rest timer sheet and the Record tab's arm
+  row show "Set by your workout" (`RestTimerWorkoutPacingRow`: the stage, its rests and how it
+  moves on) in place of the rest length, cadence and auto-advance controls, which edit the
+  climber's own settings. Pause, Reset and Turn off stay.
+- **Crew.** Stage pacing lives on the phone that built the workout. In a crew only the phone
+  holding the wall moves it (`docs/rest-timer.md`), stage or not; a passenger's sheet says so.
+
 ## Building a workout
 
 **Before Start.** The Record tab shows the workout as a list of block cards, and it
@@ -230,7 +272,8 @@ started without the generator can turn into one. Both open `AddWorkoutBlockSheet
   not move the wall on this phone. Then the block's stage is appended to the run (or
   becomes the run). Climbs cut by the queue's size cap get no stage; a climb whose wire
   send fails afterwards keeps its stage, which is harmless because readers count only
-  queued climbs. Climbs already in the queue are left out, and a second tap during the
+  queued climbs. A slot with a climb already in the queue is left out, every round of
+  it, since a 4x4's later rounds get fresh uuids on each add; a second tap during the
   slide-down does nothing. The pure part is `add-workout-block.ts`.
 - Before it composes the run, the confirm waits for the store to finish reading this
   session's run after a cold start, so the run queued at Start is never overwritten.
@@ -243,15 +286,52 @@ started without the generator can turn into one. Both open `AddWorkoutBlockSheet
   climb, so a crew member's wall change that has not reached this phone yet can be
   reverted.
 
+### Timed blocks
+
+On the minute, 4x4 and limit bouldering are offered in dev builds only until they launch:
+`timedWorkoutBlocksOffered()` in `workout-blocks.ts` is `__DEV__`, so a release bundle, and
+with it every OTA, shows the five chips climbers have today. Screenshot mode runs dev
+builds too (the store captures, the E2E smokes), so there the timed chips show only when
+`EXPO_PUBLIC_SCREENSHOT_WORKOUT` names a timed type, and the store shots keep today's
+chips. `workoutBlockTypes()` is the block card's chip list, `addBlockTypes()` the
+mid-session sheet's. The Record tab's "Add a block" never steps onto a timed type
+(`nextBlockType` cycles the four untimed ones), so a timed block is always picked from its
+chip. The mid-session sheet opened after a timed stage opens on that type where the build
+offers it, and on volume at the stage's grade where it does not (`defaultMidSessionBlock`).
+
+- **Preview.** A 4x4 previews one row per climb of a round, under a heading that says the
+  rows repeat: "4x4 · 4 climbs × 4 rounds". `buildPreviewListRows` gives a stage with more
+  than one round its heading even when it is the only block. The summary line counts the
+  queue Start hands over, rounds included (16 for a 4x4), and for a workout with a timed
+  block adds "about N min" (`estimateWorkoutMinutes` in `plan-summary.ts`): 45 s a try plus
+  the rest the stage paces after it (`stageRestSeconds`, so round rests and the 10 s
+  changeover count), one interval a climb on the minute, three tries a climb where the
+  stage moves on only after a send, and two minutes a climb for a stage with no pacing of
+  its own; no rest after the last climb; whole minutes under 10, then fives. An untimed
+  workout gets no figure, since its length is the climber's own rests.
+- **Start.** `toStagedQueueItems` (`stagePreviewQueue` in `workout-start-queue.ts`) queues
+  each row once per round, round-major (A B C D, A B C D, ...). Round 1 keeps the row's own
+  queue item; every later round gets a copy under a fresh `randomUUID`, and each entry
+  carries its round (`WorkoutRunEntry.round`) into `roundByUuid`. The queue's 500-climb cap
+  applies after the expansion, and a climb it cuts gets no stage. The same climb then sits
+  in the queue under four uuids, so everything that follows the workout (the run, the tick
+  log, Undo, the crew) goes by queue-item uuid, never by climb. "Add to session" queues a
+  4x4 block the same way.
+- **Arming.** Start and "Add to session" turn the rest timer on for a timed block (see
+  "Pacing").
+- **Analytics.** `SessionQueueGenerated.savedCount` counts the climbs queued, round copies
+  included. `failedCount` counts the planned slots with no climb, each slot once however
+  many rounds it runs, and is never negative: Start reads `filledSlotCount`, and the sheet
+  counts the slots among the climbs the queue took.
+
 ## What comes next
 
 - **4x4 rounds** ([#5380](https://github.com/boardsesh/boardsesh/issues/5380)): a
   `fourByFour` stage that knows it is four climbs repeated four times, and which round a
   tick belongs to.
-- **Per-stage pacing.** `RestTimerAutoAdvanceScheduler` runs one rest length for the whole
-  session. A stage could carry its own rest and cadence, so a warm-up rests less than a
-  limit block. Every rest-timer reader already goes through `useEffectiveRestPacing()`, so a
-  stage's pacing plugs in there (`docs/rest-timer.md`).
+- **Per-stage pacing for untimed blocks.** Timed blocks pace the rest timer (see "Pacing"); a
+  volume, pyramid, ladder or grade-focus block still runs on the climber's own rest. A partner
+  `restSeconds` on those blocks would reach the same `WorkoutRunStage.pacing`.
 - **Limit bouldering** ([#6231](https://github.com/boardsesh/boardsesh/issues/6231)) as its
   own stage kind.
 - **Partner `plan_snapshot`.** Partner workouts (`docs/partner-workouts-internal.md`) map

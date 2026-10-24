@@ -45,6 +45,10 @@ const previewRun = vi.hoisted((): WorkoutRun => ({
 }));
 const workoutRunStore = vi.hoisted(() => ({ setWorkoutRun: vi.fn() }));
 vi.mock('../../../../lib/workout-run-store', () => workoutRunStore);
+// Whether a run arms the timer is pinned in rest-timer-effective.test.ts; here,
+// only that Start hands it the run it just stored.
+const restTimerEffective = vi.hoisted(() => ({ armRestTimerForWorkout: vi.fn(() => false) }));
+vi.mock('../../../../lib/rest-timer-effective', () => restTimerEffective);
 const preview = vi.hoisted(() => ({
   result: {
     items: previewRows as unknown[],
@@ -55,7 +59,15 @@ const preview = vi.hoisted(() => ({
     regenerate: vi.fn(),
     shuffle: vi.fn(),
     refreshSlot: vi.fn(),
-    toStagedQueueItems: () => ({ items: previewItems, run: previewRun }),
+    toStagedQueueItems: () => ({
+      items: previewItems,
+      run: previewRun,
+      slotIndexByUuid: new Map([
+        ['c1', 0],
+        ['c2', 1],
+      ]),
+      filledSlotCount: 2,
+    }),
   },
 }));
 
@@ -246,6 +258,7 @@ beforeEach(() => {
   queue.startSession.mockResolvedValue('session-1');
   queue.appendQueueItems.mockClear();
   workoutRunStore.setWorkoutRun.mockClear();
+  restTimerEffective.armRestTimerForWorkout.mockClear();
   screenState.sessionId = null;
   screenState.isFocused = true;
   activeBoard.data = { boardType: 'kilter', layoutId: 8, sizeId: 21, setIds: '1,2', angle: 40 };
@@ -401,6 +414,15 @@ describe('PreSessionView analytics', () => {
     });
     // The run is kept on the phone for the session that just started.
     expect(workoutRunStore.setWorkoutRun).toHaveBeenCalledExactlyOnceWith('session-1', previewRun);
+    // Then a timed block in it can turn the rest timer on, for that session.
+    expect(restTimerEffective.armRestTimerForWorkout).toHaveBeenCalledExactlyOnceWith(
+      'session-1',
+      previewRun,
+      expect.any(Number),
+    );
+    expect(workoutRunStore.setWorkoutRun.mock.invocationCallOrder[0]).toBeLessThan(
+      restTimerEffective.armRestTimerForWorkout.mock.invocationCallOrder[0],
+    );
   });
 
   it('reports every block of a multi-block workout and stores its multi-stage run', async () => {
@@ -411,7 +433,15 @@ describe('PreSessionView analytics', () => {
       ],
     };
     const singleStageQueueItems = preview.result.toStagedQueueItems;
-    preview.result.toStagedQueueItems = () => ({ items: previewItems, run: multiStageRun });
+    preview.result.toStagedQueueItems = () => ({
+      items: previewItems,
+      run: multiStageRun,
+      slotIndexByUuid: new Map([
+        ['c1', 0],
+        ['c2', 1],
+      ]),
+      filledSlotCount: 2,
+    });
     try {
       render(createElement(PreSessionView));
       act(() =>
@@ -459,6 +489,57 @@ describe('PreSessionView analytics', () => {
       preview.result.toStagedQueueItems = singleStageQueueItems;
     }
   });
+
+  // A 4x4 queues each of its planned slots once per round: the queue is bigger
+  // than the plan, and only a slot with no climb at all counts as failed.
+  it.each([
+    { plannedCount: 3, filledSlotCount: 2, failedCount: 1 },
+    { plannedCount: 2, filledSlotCount: 2, failedCount: 0 },
+    // Never below zero, whatever the counts say.
+    { plannedCount: 1, filledSlotCount: 2, failedCount: 0 },
+  ])(
+    'reports the queued rounds as saved and $failedCount of $plannedCount planned slots as failed',
+    async ({ plannedCount, filledSlotCount, failedCount }) => {
+      const roundItems = [0, 1, 2, 3].flatMap((round) =>
+        previewItems.map((item) => ({ ...item, uuid: round === 0 ? item.uuid : `${item.uuid}-r${round + 1}` })),
+      );
+      const fourByFourRun: WorkoutRun = {
+        stages: [
+          {
+            id: 'stage-four',
+            kind: 'fourByFour',
+            itemUuids: roundItems.map((item) => item.uuid),
+            rounds: 4,
+            roundByUuid: Object.fromEntries(roundItems.map((item, index) => [item.uuid, Math.floor(index / 2) + 1])),
+          },
+        ],
+      };
+      const singleStageQueueItems = preview.result.toStagedQueueItems;
+      const singleStagePlannedCount = preview.result.plannedCount;
+      preview.result.plannedCount = plannedCount;
+      preview.result.toStagedQueueItems = () => ({
+        items: roundItems,
+        run: fourByFourRun,
+        slotIndexByUuid: new Map(roundItems.map((item, index) => [item.uuid, index % 2])),
+        filledSlotCount,
+      });
+      try {
+        render(createElement(PreSessionView));
+        act(() => picker.onChange?.(singleBlockSelection({ ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 10 }, 'b')));
+
+        await act(async () => startButton.onPress?.());
+
+        expect(queue.appendQueueItems).toHaveBeenCalledExactlyOnceWith(roundItems, { activateFirstWhenIdle: true });
+        expect(analytics.track).toHaveBeenCalledWith(
+          'Session Queue Generated',
+          expect.objectContaining({ savedCount: 8, failedCount, stageCount: 1 }),
+        );
+      } finally {
+        preview.result.toStagedQueueItems = singleStageQueueItems;
+        preview.result.plannedCount = singleStagePlannedCount;
+      }
+    },
+  );
 
   it('does not replace the queue or fire when the generator is off', async () => {
     render(createElement(PreSessionView));

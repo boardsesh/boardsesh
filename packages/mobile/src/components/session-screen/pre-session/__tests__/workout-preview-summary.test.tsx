@@ -116,4 +116,48 @@ describe('WorkoutPreviewSummary', () => {
 
     expect(container.innerHTML).toBe('');
   });
+
+  describe('with the queue Start hands over', () => {
+    const renderWithQueue = (
+      summary: PlanFillSummary,
+      startQueue: { climbCount: number; estimatedMinutes: number | null },
+    ) =>
+      render(
+        createElement(WorkoutPreviewSummary, {
+          summary,
+          boardName: 'moonboard',
+          onShuffle,
+          shuffleDisabled: false,
+          startQueue,
+        }),
+      );
+
+    it("counts a 4x4's rounds and says about how long it takes", () => {
+      const { getByText } = renderWithQueue(makeSummary({ planned: 4, filled: 4, lowestGrade: 18, highestGrade: 18 }), {
+        climbCount: 16,
+        estimatedMinutes: 25,
+      });
+
+      getByText('mobile.session.preWorkoutPreviewSummaryTimed {"count":16,"grades":"G18","minutes":25}');
+    });
+
+    it('gives no time for an untimed workout', () => {
+      const { getByText, queryByText } = renderWithQueue(makeSummary({ lowestGrade: 18, highestGrade: 18 }), {
+        climbCount: 6,
+        estimatedMinutes: null,
+      });
+
+      getByText('mobile.session.preWorkoutPreviewSummary {"count":6,"grades":"G18"}');
+      expect(queryByText(/preWorkoutPreviewSummaryTimed/)).toBeNull();
+    });
+
+    it('still names the shortfall in planned slots, not queued climbs', () => {
+      const { getByText } = renderWithQueue(makeSummary({ planned: 4, filled: 3, missing: 1 }), {
+        climbCount: 12,
+        estimatedMinutes: 20,
+      });
+
+      getByText('mobile.session.preWorkoutPreviewShortfall {"filled":3,"planned":4}');
+    });
+  });
 });

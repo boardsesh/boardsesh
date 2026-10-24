@@ -85,6 +85,7 @@ const bottomChrome = vi.hoisted(() => ({
 }));
 
 vi.mock('../../RestTimerArmRow', () => ({ RestTimerArmRow: () => null }));
+vi.mock('../../../../lib/rest-timer-effective', () => ({ armRestTimerForWorkout: () => false }));
 vi.mock('../../SessionVisibilityRow', () => ({ SessionVisibilityRow: () => null }));
 vi.mock('react-native', () => ({
   // This suite exercises the JS chrome fallback; native headers have their own navigation tests.

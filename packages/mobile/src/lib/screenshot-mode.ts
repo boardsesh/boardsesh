@@ -140,9 +140,20 @@ export const SCREENSHOT_VARIANT_PREFERENCE: UiVariantPreference = isUiVariantPre
  * Workout type the session/Record screen starts with in screenshot mode: one
  * open block of this type, so the block card and its generated preview render
  * on load without the flow driving the picker. Empty/unset (the default) starts
- * with no blocks. Set e.g. `EXPO_PUBLIC_SCREENSHOT_WORKOUT=volume`.
+ * with no blocks. Set e.g. `EXPO_PUBLIC_SCREENSHOT_WORKOUT=volume`. The timed
+ * types (`onTheMinute`, `fourByFour`, `limitBouldering`) are for QA of a dev
+ * build: only they turn the timed chips on in screenshot mode
+ * (`timedWorkoutBlocksOffered`), so the store captures keep today's chips.
  */
-const SCREENSHOT_WORKOUT_TYPES = ['volume', 'pyramid', 'ladder', 'gradeFocus'] as const;
+const SCREENSHOT_WORKOUT_TYPES = [
+  'volume',
+  'pyramid',
+  'ladder',
+  'gradeFocus',
+  'onTheMinute',
+  'fourByFour',
+  'limitBouldering',
+] as const;
 export type ScreenshotWorkout = (typeof SCREENSHOT_WORKOUT_TYPES)[number];
 const screenshotWorkoutEnv = process.env.EXPO_PUBLIC_SCREENSHOT_WORKOUT;
 export const SCREENSHOT_WORKOUT: ScreenshotWorkout | null = SCREENSHOT_WORKOUT_TYPES.includes(
