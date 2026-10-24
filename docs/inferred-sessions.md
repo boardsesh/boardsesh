@@ -118,9 +118,14 @@ environment. The backend has no feature-flag framework — the registry in
 `docs/feature-flags.md` is a web concern — so this is a deploy-time toggle, and
 unsetting it is the rollback.
 
-With it off, `reconcileInferredSessions` returns immediately: no rows are written and
-no query is issued. Nothing reads inferred sessions yet either, so the two halves can
-be enabled independently.
+Production runs with it on, and the historical backfill has been applied (#5194; see
+[inferred-sessions-backfill.md](./inferred-sessions-backfill.md)). With it off,
+`reconcileInferredSessions` returns immediately: no rows are written and no query is
+issued. Nothing already written is undone.
+
+Inferred sessions are ordinary `board_sessions` rows, so the session feed and detail
+queries return them with no extra branch. A climber's loose ticks therefore show up
+as sessions in the Sessions tab without pressing Start.
 
 The tick writers call it inside their own transaction, so a climb and its session
 assignment commit or roll back together:
@@ -131,9 +136,10 @@ assignment commit or roll back together:
 | `updateTick` | on the old and the new `climbed_at` — an edit can move a tick between runs |
 | `deleteTick` | on each removed tick's `climbed_at` — a deletion can split a run |
 
-Still to wire: the Aurora / Kilter / MoonBoard / JSON importers (batched — one call per
-climber per contiguous window, never per tick, since a single import can carry 300k
-rows) and the offline outbox drain.
+Not wired yet: the Aurora / Kilter / MoonBoard / JSON importers. They write ticks
+without reconciling, so imported history is grouped by the backfill script, not live.
+When wiring them, batch: one call per climber per contiguous window, never per tick,
+since a single import can carry 300k rows.
 
 ## Historical backfill
 
@@ -181,4 +187,4 @@ by accident while editing that CTE chain.
 - `packages/shared/session-inference/` — the algorithm and its tests
 - `packages/db/src/schema/app/sessions.ts` — `sessionOriginEnum`, `anchor_tick_id`
 - `packages/backend/src/graphql/resolvers/social/session-feed.ts` — the read path
-- `docs/scheduler.md` — where a safety-net reconciliation sweep belongs
+- `docs/inferred-sessions-backfill.md` — the manual backfill and its recovery steps
