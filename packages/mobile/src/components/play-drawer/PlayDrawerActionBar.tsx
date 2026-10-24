@@ -23,7 +23,7 @@ import { glassSize } from '../../theme/layout';
 import { spacing } from '../../theme/tokens';
 import { useVariantValue } from '../../theme/variants';
 import { hapticMedium, hapticSelection } from '../../lib/haptics';
-import { COUNT_BADGE_MAX_FONT_SCALE, countBadgeBox, countBadgeText } from '../count-badge-style';
+import { COUNT_BADGE_MAX_FONT_SCALE, countBadgeBox, countBadgeText, formatCountBadge } from '../count-badge-style';
 
 type PlayDrawerActionBarProps = {
   canSwipePrevious: boolean;
@@ -33,10 +33,12 @@ type PlayDrawerActionBarProps = {
   isFavorited: boolean;
   remainingQueueCount: number;
   /**
-   * Up next, badged on the queue button while the player walks a list (#6238),
-   * when Next plays the list and not the queue. Zero draws no badge.
+   * Up next while the player walks a list (#6238), when Next plays the list and
+   * not the queue: badged on the queue button and spoken in its label. Zero
+   * draws no badge but still speaks Up next; null (no list walked) keeps the
+   * plain queue label.
    */
-  upNextBadgeCount?: number;
+  upNextBadgeCount?: number | null;
   /** Filled/lit visual — OR'd in the parent (this device's BLE, a board-presence
    *  holder, or the session wall-lit signal). Visual only. */
   lightbulbActive: boolean;
@@ -155,7 +157,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   supportsMirroring,
   isFavorited,
   remainingQueueCount,
-  upNextBadgeCount = 0,
+  upNextBadgeCount = null,
   lightbulbActive,
   lightbulbConnected,
   lightbulbPending = false,
@@ -478,8 +480,11 @@ type QueueButtonProps = {
   size: ButtonSize;
   /** Climbs a forward swipe can still reach; spoken, never drawn. */
   remainingCount: number;
-  /** Up next while a list is walked; drawn as a badge and spoken instead of `remainingCount`. */
-  upNextBadgeCount: number;
+  /**
+   * Up next while a list is walked, spoken instead of `remainingCount` and
+   * badged when above zero; null when no list is walked.
+   */
+  upNextBadgeCount: number | null;
   onPress: () => void;
 };
 
@@ -490,49 +495,42 @@ type QueueButtonProps = {
 // nothing about the queue: the badge and the label carry Up next instead.
 function QueueButton({ size, remainingCount, upNextBadgeCount, onPress }: QueueButtonProps) {
   const { t } = useTranslation('session');
-  const showBadge = upNextBadgeCount > 0;
-  const button = (
+  const listWalked = upNextBadgeCount !== null;
+  return (
     <ActionButton
       size={size}
       iconName="queue"
       onPress={onPress}
       accessibilityLabel={
-        showBadge
+        listWalked
           ? t('playView.actionBar.queueUpNextAria', { count: upNextBadgeCount })
           : t('playView.actionBar.queueCountAria', { count: remainingCount })
       }
+      badge={
+        listWalked && upNextBadgeCount > 0 ? (
+          // On the button's corner, like the tick count. Drawn only: the
+          // button's label already says the number.
+          <View
+            style={styles.countBadge}
+            pointerEvents="none"
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+            testID="play-drawer-queue-badge"
+          >
+            <Text
+              variant="caption2"
+              color={iosSystemColors.white}
+              numeric
+              maxFontSizeMultiplier={COUNT_BADGE_MAX_FONT_SCALE}
+              style={styles.countText}
+            >
+              {formatCountBadge(upNextBadgeCount)}
+            </Text>
+          </View>
+        ) : undefined
+      }
     />
   );
-  if (!showBadge) return button;
-  return (
-    <View>
-      {button}
-      {/* On the button's corner, like the tick count. Drawn only: the button's
-          label already says the number. */}
-      <View
-        style={styles.countBadge}
-        pointerEvents="none"
-        accessibilityElementsHidden
-        importantForAccessibility="no-hide-descendants"
-        testID="play-drawer-queue-badge"
-      >
-        <Text
-          variant="caption2"
-          color={iosSystemColors.white}
-          numeric
-          maxFontSizeMultiplier={COUNT_BADGE_MAX_FONT_SCALE}
-          style={styles.countText}
-        >
-          {formatQueueBadgeCount(upNextBadgeCount)}
-        </Text>
-      </View>
-    </View>
-  );
-}
-
-/** The queue holds at most 500 climbs; past two digits the badge says "99+". */
-function formatQueueBadgeCount(count: number): string {
-  return count > 99 ? '99+' : String(count);
 }
 
 type ShareButtonProps = {
@@ -605,7 +603,7 @@ function TickButton({ size, ascentCount, onPress, onLongPress, accessibilityLabe
             maxFontSizeMultiplier={COUNT_BADGE_MAX_FONT_SCALE}
             style={styles.countText}
           >
-            {ascentCount > 99 ? '99' : String(ascentCount)}
+            {formatCountBadge(ascentCount)}
           </Text>
         </View>
       )}

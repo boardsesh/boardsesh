@@ -109,6 +109,7 @@ vi.mock('../../drawer-action-bar/DrawerActionBar', () => ({
     testID,
     size,
     onPress,
+    badge,
   }: {
     iconName?: string;
     iconColor?: string;
@@ -118,17 +119,22 @@ vi.mock('../../drawer-action-bar/DrawerActionBar', () => ({
     testID?: string;
     size?: string;
     onPress?: () => void;
+    badge?: ReactNode;
   }) =>
-    createElement('div', {
-      onClick: onPress,
-      'data-action': iconName,
-      'data-testid': testID,
-      'data-size': size,
-      'data-icon-color': iconColor,
-      'data-checked': checked == null ? undefined : String(checked),
-      'data-label': accessibilityLabel,
-      'data-value': accessibilityValueText,
-    }),
+    createElement(
+      'div',
+      {
+        onClick: onPress,
+        'data-action': iconName,
+        'data-testid': testID,
+        'data-size': size,
+        'data-icon-color': iconColor,
+        'data-checked': checked == null ? undefined : String(checked),
+        'data-label': accessibilityLabel,
+        'data-value': accessibilityValueText,
+      },
+      badge,
+    ),
   drawerActionBarStyles: {
     container: { borderTopWidth: 1 },
     rowPrimary: {},
@@ -930,29 +936,41 @@ describe('PlayDrawerActionBar haptics', () => {
         createElement(PlayDrawerActionBar, { ...baseProps, supportsMirroring, upNextBadgeCount: 3 }),
       );
 
-      expect(badge(container)?.textContent).toBe('3');
       const queueButton = container.querySelector(`[data-action="${ACTION_ICONS.queue}"]`);
+      // Inside the button, so it presses with it like the tick count.
+      expect(queueButton?.querySelector('[data-testid="play-drawer-queue-badge"]')?.textContent).toBe('3');
       expect(queueButton?.getAttribute('data-label')).toBe(UP_NEXT_LABEL);
       expect(queueButton?.getAttribute('data-size')).toBe(size);
     });
 
-    it('draws no badge at zero, and keeps the plain queue label', () => {
+    it('draws no badge at zero, but still speaks Up next while the list is walked', () => {
+      // "Queue, 12 climbs" here would count the list ahead over an empty queue.
       const { container } = render(createElement(PlayDrawerActionBar, { ...baseProps, upNextBadgeCount: 0 }));
 
+      expect(badge(container)).toBeNull();
+      expect(container.querySelector(`[data-action="${ACTION_ICONS.queue}"]`)?.getAttribute('data-label')).toBe(
+        UP_NEXT_LABEL,
+      );
+    });
+
+    it('draws no badge and keeps the plain queue label when no list is walked', () => {
+      const { container } = render(createElement(PlayDrawerActionBar, baseProps));
       expect(badge(container)).toBeNull();
       expect(container.querySelector(`[data-action="${ACTION_ICONS.queue}"]`)?.getAttribute('data-label')).toBe(
         QUEUE_LABEL,
       );
     });
 
-    it('draws no badge when the host passes none', () => {
-      const { container } = render(createElement(PlayDrawerActionBar, baseProps));
-      expect(badge(container)).toBeNull();
-    });
-
     it('caps a long queue at 99+', () => {
       const { container } = render(createElement(PlayDrawerActionBar, { ...baseProps, upNextBadgeCount: 140 }));
       expect(badge(container)?.textContent).toBe('99+');
+    });
+
+    it('caps the tick count beside it the same way', () => {
+      const { container } = render(
+        createElement(PlayDrawerActionBar, { ...baseProps, ascentCount: 140, upNextBadgeCount: 140 }),
+      );
+      expect(container.textContent?.match(/99\+/g)).toHaveLength(2);
     });
   });
 });

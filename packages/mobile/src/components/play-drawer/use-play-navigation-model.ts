@@ -171,8 +171,9 @@ export function usePlayNavigationModel({
     () => (currentClimbQueueItemUuid ? (preparedQueue.firstIndexByUuid.get(currentClimbQueueItemUuid) ?? -1) : -1),
     [preparedQueue, currentClimbQueueItemUuid],
   );
-  // The queue button's badge while a list is walked (#6238): the same Up next
+  // The queue button's Up next count while a list is walked (#6238): the same
   // count the end card offers, so Up next stays in sight before the list ends.
+  // Null when no list is walked.
   const listWalkUpNextCount = resolveListWalkUpNextBadge(
     currentTrackLabel,
     countUpNext(queue.length, committedQueueIndex),
@@ -182,20 +183,20 @@ export function usePlayNavigationModel({
   // queue" goes. Only worked out at the end of a list; everywhere else it is null
   // and costs nothing. Withheld while more of the list is on its way.
   const atTrackEnd = navigationState.atTrackEnd;
-  const previewPinned = drawerPreviewItem != null;
+  // A preview goes back to Now only when there is one to go back to.
+  const previewOverNow = drawerPreviewItem != null && currentClimbQueueItem != null;
   const trackEndCard = useMemo(() => {
     if (!atTrackEnd) return null;
-    const queueSuccessor =
-      committedQueueIndex >= 0
-        ? selectNextQueueItemWithSuggestions(
-            queue,
-            currentClimbQueueItem,
-            null,
-            navigationBoardConfig,
-            isReachableClimb,
-            preparedQueue,
-          ).item
-        : null;
+    // From Now, or from the top of the queue without one. A Now that is not
+    // in the queue walks nothing, and the card falls back to the first climb.
+    const queueSuccessor = selectNextQueueItemWithSuggestions(
+      queue,
+      currentClimbQueueItem,
+      null,
+      navigationBoardConfig,
+      isReachableClimb,
+      preparedQueue,
+    ).item;
     return resolveTrackEndCard({
       navigationState: { atTrackEnd },
       moreToLoad: canLoadMoreOfTrack(navigationSuggestionSource),
@@ -203,7 +204,7 @@ export function usePlayNavigationModel({
       queue,
       committedQueueIndex,
       queueSuccessor,
-      previewPinned,
+      previewOverNow,
     });
   }, [
     atTrackEnd,
@@ -215,7 +216,7 @@ export function usePlayNavigationModel({
     isReachableClimb,
     navigationSuggestionSource,
     currentTrackLabel,
-    previewPinned,
+    previewOverNow,
   ]);
   const nextHeaderBoard = useMemo(
     () => resolveClimbRenderBoard(nextHeaderClimb, boardConfig)?.boardConfig ?? renderBoardConfig,

@@ -2168,7 +2168,7 @@ describe('PlayDrawer — the list it walks, and its end (#6664)', () => {
     render(drawerElement('member', committedTargetFor(last)));
     expect(lastListParts()).toBeNull();
     // Playing from the queue, Next is Up next already: no badge.
-    expect(lastActionBarProps().upNextBadgeCount).toBe(0);
+    expect(lastActionBarProps().upNextBadgeCount).toBeNull();
   });
 
   it('keeps Next live at the end of the list, and opens the end card instead of the queue', () => {

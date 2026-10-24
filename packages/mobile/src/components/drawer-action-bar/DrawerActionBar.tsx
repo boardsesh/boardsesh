@@ -1,4 +1,5 @@
 import { PressableSurface } from '../PressableSurface';
+import type { ReactNode } from 'react';
 import { StyleSheet, type ColorValue, type ViewStyle } from 'react-native';
 import { Icon } from '../Icon';
 import { ActivityIndicator } from '../ActivityIndicator';
@@ -47,6 +48,11 @@ type ActionButtonProps = {
   /** Spoken after the label, e.g. the heatmap's current mode. */
   accessibilityValueText?: string;
   testID?: string;
+  /**
+   * Drawn over the glyph, inside the pressable, so it presses with the button
+   * (a count badge on the corner). Visual only: say its meaning in the label.
+   */
+  badge?: ReactNode;
 };
 
 export function ActionButton({
@@ -63,6 +69,7 @@ export function ActionButton({
   checked,
   accessibilityValueText,
   testID,
+  badge,
 }: ActionButtonProps) {
   const { systemColors } = useTheme();
   const neutralActionColor = useVariantValue({
@@ -104,6 +111,7 @@ export function ActionButton({
       ) : (
         <Icon maxFontSizeMultiplier={1} name={iconName} size={icon} color={resolvedColor} />
       )}
+      {badge}
     </PressableSurface>
   );
 }
