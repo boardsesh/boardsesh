@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { clampQueueWindow, MAX_SYNCED_QUEUE_ITEMS } from '../limits';
+import { clampQueueAroundCurrent, clampQueueWindow, MAX_SYNCED_QUEUE_ITEMS } from '../limits';
 
 function rows(count: number): number[] {
   return Array.from({ length: count }, (_unused, index) => index);
@@ -35,5 +35,28 @@ describe('clampQueueWindow', () => {
   it('honours a smaller max', () => {
     expect(clampQueueWindow(rows(10), 8, 4)).toEqual([6, 7, 8, 9]);
     expect(clampQueueWindow(rows(10), 2, 4)).toEqual([2, 3, 4, 5]);
+  });
+});
+
+describe('clampQueueAroundCurrent', () => {
+  function items(count: number): { uuid: string }[] {
+    return Array.from({ length: count }, (_unused, index) => ({ uuid: `row-${index}` }));
+  }
+
+  it('hands back a queue that already fits as the same array', () => {
+    const queue = items(MAX_SYNCED_QUEUE_ITEMS);
+    expect(clampQueueAroundCurrent(queue, queue[499])).toBe(queue);
+  });
+
+  it('windows around the current item by uuid, not by reference', () => {
+    const window = clampQueueAroundCurrent(items(601), { uuid: 'row-600' });
+    expect(window).toHaveLength(MAX_SYNCED_QUEUE_ITEMS);
+    expect(window[0]?.uuid).toBe('row-101');
+    expect(window.at(-1)?.uuid).toBe('row-600');
+  });
+
+  it('keeps the first items without a current item, or when it is not queued', () => {
+    expect(clampQueueAroundCurrent(items(600), null).at(-1)?.uuid).toBe('row-499');
+    expect(clampQueueAroundCurrent(items(600), { uuid: 'elsewhere' }).at(-1)?.uuid).toBe('row-499');
   });
 });

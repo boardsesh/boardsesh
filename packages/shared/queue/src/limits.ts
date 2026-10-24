@@ -36,3 +36,18 @@ export function clampQueueWindow<Item>(
   const windowStart = Math.min(anchorIndex, items.length - max);
   return items.slice(windowStart, windowStart + max);
 }
+
+/**
+ * {@link clampQueueWindow} anchored on the current climb, found by queue-item
+ * uuid. For every wholesale `setQueue` payload: the local replace, the session
+ * seed and its #3878 re-seed. No current climb keeps the first `max` items.
+ */
+export function clampQueueAroundCurrent<Item extends { uuid: string }>(
+  items: Item[],
+  currentItem: { uuid: string } | null | undefined,
+  max: number = MAX_SYNCED_QUEUE_ITEMS,
+): Item[] {
+  if (items.length <= max) return items;
+  const currentIndex = currentItem ? items.findIndex((item) => item.uuid === currentItem.uuid) : -1;
+  return clampQueueWindow(items, currentIndex, max);
+}

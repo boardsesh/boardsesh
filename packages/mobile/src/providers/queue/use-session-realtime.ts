@@ -2,7 +2,7 @@ import { getPrivacyRevocationGeneration } from '../../lib/privacy/privacy-cache'
 import { useContext, useEffect } from 'react';
 import { AppState } from 'react-native';
 import { QueryClientContext } from '@tanstack/react-query';
-import { computeQueueStateHash, computeQueueStateHashOrdered } from '@boardsesh/queue';
+import { clampQueueAroundCurrent, computeQueueStateHash, computeQueueStateHashOrdered } from '@boardsesh/queue';
 import type { ClimbQueueItem, QueueAction, QueueState } from '@boardsesh/queue';
 import {
   applySessionRuntimeEvent,
@@ -274,8 +274,10 @@ export function useSessionRealtime({
       }
       reSeedInFlight = true;
       const pushedHash = computeQueueStateHashOrdered(queue, currentClimbQueueItem?.uuid ?? null);
+      // The payload is clamped like the first seed (#6673); the hash above is
+      // of the local queue, so the convergence check still compares local to local.
       void reSeedQueueRef
-        .current(queue, currentClimbQueueItem ?? undefined)
+        .current(clampQueueAroundCurrent(queue, currentClimbQueueItem), currentClimbQueueItem ?? undefined)
         .then(() => {
           reSeedInFlight = false;
           if (!isCurrent() || sessionIdRef.current !== sessionId) return;

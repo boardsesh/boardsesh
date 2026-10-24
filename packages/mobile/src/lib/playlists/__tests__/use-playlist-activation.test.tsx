@@ -1664,7 +1664,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
         expect(finalTrack).not.toHaveProperty('continuation');
       });
 
-      it('stops paging once a full queue from the tapped climb is in, and the track pages on', async () => {
+      it('queues 500 from the tapped climb and keeps the whole drained list as the track', async () => {
         const tapped = makeClimb('row-10');
         const fetchPage = pagedList(2000);
         const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true, allClimbs: [tapped] });
@@ -1674,8 +1674,6 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
         });
 
         await waitFor(() => expect(mocks.setQueue).toHaveBeenCalledTimes(2));
-        // Rows 0 to 599 hold row 10 and 589 climbs after it: six pages, not twenty.
-        expect(fetchPage).toHaveBeenCalledTimes(6);
         const [queue, current] = mocks.setQueue.mock.calls[1];
         const queuedUuids = queue.map((item: ClimbQueueItem) => item.climb.uuid);
         expect(queuedUuids).toHaveLength(500);
@@ -1684,18 +1682,18 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
         expect(current.climb.uuid).toBe('row-10');
         expect(mocks.showToast).toHaveBeenCalledWith('detail.queueReplace.trimmed', 'info');
 
+        // Only the queue is windowed: the track holds all 2,000, as before the cap.
         const finalTrack = mocks.setPlaylistSuggestionSource.mock.calls.at(-1)?.[0];
-        expect(finalTrack.climbs).toHaveLength(600);
+        expect(finalTrack.climbs).toHaveLength(2000);
         expect(finalTrack.total).toBe(2000);
-        expect(finalTrack.continuation).toMatchObject({ nextPage: 6 });
-        const nextPage = await loadNextTrackPage(finalTrack);
-        expect(fetchPage.mock.calls.at(-1)?.[0]).toMatchObject({ page: 6 });
-        expect(nextPage?.climbs[0].uuid).toBe('row-600');
+        expect(finalTrack).not.toHaveProperty('continuation');
       });
 
-      it('says what fit without a count when the list never reports one', async () => {
-        const tapped = makeClimb('row-0');
-        const fetchPage = pagedList(2000, { reportsTotal: false });
+      // Past the track pager's 10-page bound, a continuation would only fetch
+      // nothing and strip the count. The track must run to the list's end.
+      it('keeps the track and its count to the list end when tapped deep in a long list', async () => {
+        const tapped = makeClimb('row-950');
+        const fetchPage = pagedList(2000);
         const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true, allClimbs: [tapped] });
 
         await act(async () => {
@@ -1703,8 +1701,31 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
         });
 
         await waitFor(() => expect(mocks.setQueue).toHaveBeenCalledTimes(2));
-        // Five pages hold row 0 and the 499 after it, and the list goes on.
-        expect(fetchPage).toHaveBeenCalledTimes(5);
+        const [queue, current] = mocks.setQueue.mock.calls[1];
+        const queuedUuids = queue.map((item: ClimbQueueItem) => item.climb.uuid);
+        expect(queuedUuids).toHaveLength(500);
+        expect(queuedUuids[0]).toBe('row-950');
+        expect(queuedUuids.at(-1)).toBe('row-1449');
+        expect(current.climb.uuid).toBe('row-950');
+
+        const finalTrack = mocks.setPlaylistSuggestionSource.mock.calls.at(-1)?.[0];
+        expect(finalTrack).toMatchObject({ activatedClimbUuid: 'row-950', total: 2000 });
+        expect(finalTrack.climbs).toHaveLength(2000);
+        expect(finalTrack.climbs.at(-1).uuid).toBe('row-1999');
+        expect(finalTrack).not.toHaveProperty('continuation');
+      });
+
+      it('says what fit without a count when the list never reports one', async () => {
+        const tapped = makeClimb('row-0');
+        // Longer than the 20-page drain, so the drain cannot count it either.
+        const fetchPage = pagedList(2500, { reportsTotal: false });
+        const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true, allClimbs: [tapped] });
+
+        await act(async () => {
+          await result.current.activate(tapped);
+        });
+
+        await waitFor(() => expect(mocks.setQueue).toHaveBeenCalledTimes(2));
         expect(mocks.setQueue.mock.calls[1][0]).toHaveLength(500);
         expect(mocks.showToast).toHaveBeenCalledWith('detail.queueReplace.trimmedUnknownTotal', 'info');
       });

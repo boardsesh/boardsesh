@@ -24,7 +24,7 @@ import {
   planPlayNext,
   playNextInsertPosition,
   MAX_SYNCED_QUEUE_ITEMS,
-  clampQueueWindow,
+  clampQueueAroundCurrent,
 } from '@boardsesh/queue';
 import type {
   Climb,
@@ -1677,18 +1677,15 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // session mutations.
   //
   // Clamped to MAX_SYNCED_QUEUE_ITEMS as a backstop: `Mutation.setQueue` THROWS
-  // on a longer payload (see packages/shared/queue/src/limits.ts), and a solo
-  // queue past the cap would also wedge the session seed that pushes it later.
-  // The window keeps the current climb. Callers that can say what fit clamp
-  // first (the playlist replace toasts it); this only stops a caller that
-  // forgot from sending a payload the server refuses.
+  // on a longer payload (see packages/shared/queue/src/limits.ts). The window
+  // keeps the current climb. Callers that can say what fit clamp first (the
+  // playlist replace toasts it); this only stops a caller of `setQueue` that
+  // forgot from sending a payload the server refuses. The session seed and
+  // re-seed push the live queue themselves and clamp it the same way.
   const setQueue = useCallback(
     (queue: ClimbQueueItem[], currentClimbQueueItem?: ClimbQueueItem | null) => {
       if (privacyRevocationGeneration !== getPrivacyRevocationGeneration()) return;
-      const currentIndex = currentClimbQueueItem
-        ? queue.findIndex((queueItem) => queueItem.uuid === currentClimbQueueItem.uuid)
-        : -1;
-      const syncableQueue = clampQueueWindow(queue, currentIndex);
+      const syncableQueue = clampQueueAroundCurrent(queue, currentClimbQueueItem);
       invalidateQueuedQueueMutations();
       applyQueueSnapshot(syncableQueue, currentClimbQueueItem, captureQueueMutationOrigin());
     },

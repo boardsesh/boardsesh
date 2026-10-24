@@ -3,6 +3,7 @@ import { buildSessionBoardPath } from '../../lib/boards/session-board-path';
 import { execute } from '@boardsesh/graphql-client';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { LEAVE_SESSION } from '@boardsesh/graphql/operations/queue-session';
+import { clampQueueAroundCurrent } from '@boardsesh/queue';
 import type { ClimbQueueItem, PlaylistSuggestionSource, QueueAction, QueueState } from '@boardsesh/queue';
 import type { SessionSummary, UserBoard } from '@boardsesh/shared-schema';
 import { getHttpClient } from '../../lib/graphql/client';
@@ -165,7 +166,14 @@ export function useSessionCommands({
           if (queue.length > 0 || currentClimbQueueItem) {
             try {
               await ensureJoined(newId);
-              await setQueueMutation(queue, currentClimbQueueItem ?? undefined);
+              // Clamped like the local setQueue (#6673): the queue can pass the
+              // cap one track swipe at a time, and `Mutation.setQueue` throws on
+              // a longer payload, which would leave the room empty. The FullSync
+              // that follows brings the local queue down to the same window.
+              await setQueueMutation(
+                clampQueueAroundCurrent(queue, currentClimbQueueItem),
+                currentClimbQueueItem ?? undefined,
+              );
               // Queue ownership moved to the session — drop the local snapshot
               // so a stale copy can't resurrect after the session ends. Only on
               // a successful seed: if seeding failed, the snapshot is the sole

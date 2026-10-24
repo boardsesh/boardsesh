@@ -17,6 +17,7 @@
 import { act, render, waitFor } from '@testing-library/react';
 import { createElement, useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { MAX_SYNCED_QUEUE_ITEMS } from '@boardsesh/queue';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { SessionUser, SubscriptionQueueEvent, UserBoard } from '@boardsesh/shared-schema';
 
@@ -474,6 +475,41 @@ describe('QueueProvider session-seed failure guard (#3878)', () => {
     // snapshot is dropped — mirroring the happy-path seed — so a later cold start
     // can't resurrect the pre-session queue.
     expect(queueSnapshotStore.clearStoredQueueSnapshot).toHaveBeenCalled();
+  });
+
+  // #6673: a track swipe can append one past the cap, and `Mutation.setQueue`
+  // throws on more than 500, so an unclamped seed and re-seed would both fail
+  // on every reconnect and leave the room empty for the crew.
+  it('seeds and re-seeds at most MAX_SYNCED_QUEUE_ITEMS when the local queue is past the cap', async () => {
+    queueMutations.setQueue.mockReset();
+    queueMutations.setQueue.mockRejectedValueOnce(new Error('seed failed'));
+    queueMutations.setQueue.mockResolvedValue(undefined);
+
+    const itemUuids = Array.from({ length: MAX_SYNCED_QUEUE_ITEMS + 1 }, (_unused, index) => `q${index}`);
+    const snapshots = await renderWithLocalQueue(itemUuids);
+
+    await act(async () => {
+      await snapshots.at(-1)?.startSession();
+    });
+    await waitFor(() => {
+      expect(ws.getQueueUpdatesSink()).not.toBeNull();
+    });
+    const queueUpdatesSink = ws.getQueueUpdatesSink();
+    if (!queueUpdatesSink) throw new Error('queue updates sink was not captured');
+    act(() => {
+      queueUpdatesSink.next({ data: { queueUpdates: wireFullSync(1, 'empty-hash') } });
+    });
+    await waitFor(() => expect(queueMutations.setQueue).toHaveBeenCalledTimes(2));
+
+    const setQueueCalls = queueMutations.setQueue.mock.calls as unknown as Array<
+      [ClimbQueueItem[], ClimbQueueItem | null | undefined]
+    >;
+    for (const [payload] of setQueueCalls) {
+      expect(payload).toHaveLength(MAX_SYNCED_QUEUE_ITEMS);
+      expect(payload[0]?.uuid).toBe('q0');
+    }
+    // The local queue is untouched; only the wire payload is windowed.
+    expect(snapshots.at(-1)?.state.queue).toHaveLength(MAX_SYNCED_QUEUE_ITEMS + 1);
   });
 
   it('applies an empty FullSync normally when the seed failed but the local queue is empty', async () => {
