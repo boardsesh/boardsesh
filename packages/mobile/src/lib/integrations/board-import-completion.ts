@@ -1,7 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query';
 import { invalidateTickDependents } from '@boardsesh/board-react';
 import type { AuroraCredentialStatus } from '../aurora-credentials';
-import { AURORA_CREDENTIALS_QUERY_KEY } from './use-board-account-credentials';
+import { AURORA_CREDENTIALS_QUERY_KEY } from './board-account-query-keys';
 
 export type BoardImportState = Pick<AuroraCredentialStatus, 'boardType' | 'pendingRunId' | 'lastSyncAt'>;
 
