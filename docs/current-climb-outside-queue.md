@@ -477,8 +477,8 @@ and both send paths fall back to `queue[0]` (`:461`, `:528`) and send its index.
 `queue[0]` is History's oldest climb. The fix is JS and rides the OTA: new phones fall back to
 `queue[upNextStart]`, the climb Next would pick (S13), or end the update when Up next is empty
 (section 7, other readers). Swift's own `FullSync` handling still lands on index 0 until a
-JS update overwrites it; teaching Swift to read `historyCount` is a separate, optional
-`release/next` PR with a Fable review.
+JS update overwrites it; teaching Swift to read `historyCount` is planned as its own
+`release/next` PR, opened after the backend field is deployed and reviewed by Fable (section 10).
 
 No Bluetooth or Live Activity file changes, so the Fable / Astra rule isn't triggered by a
 path. Two PRs still get a Fable review because they change what the wall lights: the backend
@@ -768,16 +768,20 @@ old build with a Live Activity and a board connected. Tester steps for the PR bo
 
 ---
 
-## 10. Open questions for the owner
+## 10. Decisions
 
-1. **Previous on the queue walk.** It steps back, so the climb you left is first in Up next and
-   Next returns to it. Is that the one allowed way into Up next without adding?
-2. **Tapping a History row.** New phones move that climb into Now, so History keeps each climb's
-   latest time on the wall with no copies. Old phones keep today's pointer move. OK?
-3. **The gap.** 4 h, and the board stays dark while the app shows the climb? This answers
-   climber question 3 in `docs/climb-lists-and-queue.md`.
-4. **History size.** 100 kept, trimmed at 125. Enough?
-5. **Mirror.** Reuse a queued climb whatever its mirror state, keeping the queued entry's
-   mirror flag?
-6. **Native.** None is needed. A separate `release/next` slice that teaches Swift to read
-   `historyCount` (a "nothing on the wall" lock screen after a removal) is optional. Want it?
+Owner answers, 2026-10-24, posted on PR #6699.
+
+1. **Model.** Approved: build on the existing `currentClimbQueueItem`. Its copy in the queue
+   moves to the History / Up next line (the Now slot) instead of being duplicated. A literal
+   out-of-array current climb (option b) is not pursued.
+2. **Previous on the queue walk.** Previous steps back into Up next, as the doc proposes.
+3. **Tapping a History row.** On new phones the tap moves that climb into Now. Old phones keep
+   today's pointer move.
+4. **The gap.** 4 h (#4979). After it the board stays dark and the app shows the climb with
+   Put on the wall.
+5. **History size.** 100 kept, trimmed at 125.
+6. **Mirror.** A queued climb is reused whatever its mirror state, keeping the queued entry's
+   mirror flag.
+7. **Native.** The optional Swift slice that reads `historyCount` will be built as its own
+   `release/next` PR after the backend field is deployed, with a Fable Live Activity review.
