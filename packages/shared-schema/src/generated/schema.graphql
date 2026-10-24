@@ -10234,7 +10234,11 @@ enum SessionRestCadenceAction {
   CONFIGURE
   "A climber logged a tick: records it, and re-anchors an afterTick clock."
   TICK
-  "The board holder's auto-advance fired. Compare-and-set: expectedRevision is required."
+  """
+  The board holder's auto-advance fired. Compare-and-set: expectedRevision is
+  required. Applies once per beat: only when the stored clock's latest due
+  beat (counted from 2 s before it) is later than lastFiredBeatAt.
+  """
   FIRE
   "Freeze the clock at pausedElapsedSeconds."
   PAUSE
@@ -10358,7 +10362,7 @@ input SessionRestCadenceInput {
   tickQueueItemUuid: ID
   "TICK only (required): 'flash', 'send' or 'attempt'"
   tickStatus: String
-  "FIRE only: how long ago the beat fell due, in ms. Clamped to 60 s."
+  "FIRE only, and ignored: the server takes the beat from the stored clock and its own time."
   firedBeatAgoMs: Int
   """
   Compare-and-set. When present, the call applies only if the stored

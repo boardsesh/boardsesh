@@ -760,8 +760,9 @@ export const sessionMutations = {
    * as `setByParticipantId` on ARM and CONFIGURE (it is already the session
    * HMAC, or an anonymous connection id, exactly what peers see as
    * `SessionUser.id`). Every write is a compare-and-set on the per-session
-   * revision; FIRE must carry `expectedRevision`, so exactly one phone claims
-   * each beat. `SessionRestCadenceChanged` is published when the call
+   * revision; FIRE must carry `expectedRevision` and applies only for a due
+   * beat later than the last one fired, so each beat moves the wall at most
+   * once. `SessionRestCadenceChanged` is published when the call
    * applied, so a lost race or a no-op reaches nobody but the caller, who gets
    * the state that won. The one exception is a caller whose expectedRevision is
    * above the stored one: the store lost state, so the stored clock goes out

@@ -9,7 +9,9 @@
 // rest-timer-store.ts) action for action, so a phone that adopts the crew clock
 // behaves exactly as if it had run the same actions itself. Every instant is
 // server epoch ms, stamped here from `nowMs` — clients never send a timestamp,
-// only how long ago something happened (`elapsedMs`, `firedBeatAgoMs`).
+// only how long ago something happened (`elapsedMs`). A FIRE's beat comes from
+// the stored anchor and interval, never from the phone (see
+// claimableRestCadenceBeatMs).
 
 import type {
   SessionRestCadence,
@@ -48,11 +50,20 @@ export const MAX_REST_CADENCE_ELAPSED_MS = 4 * 60 * 60 * 1000;
 export const MAX_REST_CADENCE_PAUSED_SECONDS = MAX_REST_CADENCE_ELAPSED_MS / 1000;
 
 /**
- * How far back a TICK may re-anchor and a FIRE may date its beat. A tick that
- * waited longer in an offline queue anchors at most a minute in the past, so a
- * replayed tick can never fire an instant advance on a long-gone rest.
+ * How far back a TICK may re-anchor. A tick that waited longer in an offline
+ * queue anchors at most a minute in the past, so a replayed tick can never fire
+ * an instant advance on a long-gone rest.
  */
 export const REST_CADENCE_LATE_CLAMP_MS = 60_000;
+
+/**
+ * How early a FIRE may claim a beat: a beat counts as due once the server's
+ * clock reaches the beat minus this. It covers the error in a phone's estimate
+ * of the server clock (calibrated on a round-trip midpoint), so the holder's
+ * FIRE for the beat it just watched fall due is not refused as early. It is a
+ * fifth of the shortest interval (10 s), so no FIRE can reach a beat ahead.
+ */
+export const REST_CADENCE_FIRE_EARLY_TOLERANCE_MS = 2_000;
 
 /** Internal retries for an un-fenced write that lost a compare-and-set race. */
 export const REST_CADENCE_CAS_ATTEMPTS = 5;
@@ -116,6 +127,7 @@ export type RestCadenceInput = {
   pausedElapsedSeconds?: number | null;
   tickQueueItemUuid?: string | null;
   tickStatus?: RestCadenceTickStatus | null;
+  /** Accepted on the wire and ignored: a FIRE's beat comes from the stored clock (claimableRestCadenceBeatMs). */
   firedBeatAgoMs?: number | null;
   expectedRevision?: number | null;
 };
@@ -160,6 +172,30 @@ function hasQualifyingTick(state: RestCadenceState): boolean {
   if (state.advanceOn === 'deadline') return true;
   if (!state.lastTick) return false;
   return state.advanceOn === 'tick' || state.lastTick.status !== 'attempt';
+}
+
+/**
+ * The beat a FIRE at server time `nowMs` claims, worked out from the stored
+ * anchor and interval alone, never from anything the phone reports. afterTick
+ * has one deadline per cycle, anchor + interval. onTheMinute claims the latest
+ * beat on its grid, anchor + k × interval with k ≥ 1 (the anchor itself is not
+ * a beat, as on the phone). A beat counts as due from
+ * REST_CADENCE_FIRE_EARLY_TOLERANCE_MS before it; null means none is due yet.
+ *
+ * Deriving the beat here is what makes "once per beat" hold: two FIREs inside
+ * one interval resolve to the same instant whatever beat ages they report, so
+ * the second fails the `> lastFiredBeatMs` check in the reducer.
+ */
+export function claimableRestCadenceBeatMs(state: RestCadenceState, nowMs: number): number | null {
+  if (state.anchorMs === null || state.targetSeconds === null || state.targetSeconds <= 0) return null;
+  const intervalMs = state.targetSeconds * 1000;
+  const dueByMs = nowMs + REST_CADENCE_FIRE_EARLY_TOLERANCE_MS;
+  if (state.mode === 'afterTick') {
+    const deadlineMs = state.anchorMs + intervalMs;
+    return deadlineMs <= dueByMs ? deadlineMs : null;
+  }
+  const beatsDue = Math.floor((dueByMs - state.anchorMs) / intervalMs);
+  return beatsDue >= 1 ? state.anchorMs + beatsDue * intervalMs : null;
 }
 
 /**
@@ -228,16 +264,21 @@ export function applyRestCadenceAction(
     }
 
     case 'FIRE': {
-      // The compare-and-set on expectedRevision happens in the store; this only
-      // refuses a beat the stored clock could never have produced, so a buggy
-      // phone can never walk the wall on a paused clock or without the tick.
+      // The compare-and-set on expectedRevision happens in the store; this
+      // refuses a beat the stored clock could never have produced (so a buggy
+      // phone can never walk the wall on a paused clock or without the tick)
+      // and a beat that is not due yet or was already claimed. The revision
+      // alone cannot stop a second FIRE on one beat: a phone that adopted the
+      // first FIRE's revision holds a valid one. lastFiredBeatMs lives in the
+      // same revisioned doc, so the store's compare-and-set makes this check
+      // atomic across instances.
       if (input.expectedRevision == null) return NOT_APPLICABLE;
       if (!previous.isRunning || !previous.autoAdvance || previous.targetSeconds === null) return NOT_APPLICABLE;
       if (previous.anchorMs === null || !hasQualifyingTick(previous)) return NOT_APPLICABLE;
-      const fired = {
-        ...previous,
-        lastFiredBeatMs: nowMs - clampMs(input.firedBeatAgoMs, REST_CADENCE_LATE_CLAMP_MS),
-      };
+      const beatMs = claimableRestCadenceBeatMs(previous, nowMs);
+      if (beatMs === null) return NOT_APPLICABLE;
+      if (previous.lastFiredBeatMs !== null && beatMs <= previous.lastFiredBeatMs) return NOT_APPLICABLE;
+      const fired = { ...previous, lastFiredBeatMs: beatMs };
       const anchor = anchorAfterFire(previous);
       if (anchor === 'now') return { applicable: true, next: { ...fired, anchorMs: nowMs, pausedElapsedSeconds: 0 } };
       if (anchor === 'keep') return { applicable: true, next: fired };

@@ -9516,7 +9516,11 @@ export type SessionRestCadenceAction =
   | 'CONFIGURE'
   /** Turn the crew clock off. The stored state becomes null. */
   | 'DISARM'
-  /** The board holder's auto-advance fired. Compare-and-set: expectedRevision is required. */
+  /**
+   * The board holder's auto-advance fired. Compare-and-set: expectedRevision is
+   * required. Applies once per beat: only when the stored clock's latest due
+   * beat (counted from 2 s before it) is later than lastFiredBeatAt.
+   */
   | 'FIRE'
   /** Freeze the clock at pausedElapsedSeconds. */
   | 'PAUSE'
@@ -9598,7 +9602,7 @@ export type SessionRestCadenceInput = {
    * advance the wall on one beat.
    */
   expectedRevision?: InputMaybe<Scalars['Int']['input']>;
-  /** FIRE only: how long ago the beat fell due, in ms. Clamped to 60 s. */
+  /** FIRE only, and ignored: the server takes the beat from the stored clock and its own time. */
   firedBeatAgoMs?: InputMaybe<Scalars['Int']['input']>;
   /** RESET only: restart running (true) or wait paused for a tick (false). Defaults to the stored state. */
   isRunning?: InputMaybe<Scalars['Boolean']['input']>;

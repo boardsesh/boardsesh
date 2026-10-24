@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vite-plus/test';
 import {
   REST_CADENCE_CAS_ATTEMPTS,
+  REST_CADENCE_FIRE_EARLY_TOLERANCE_MS,
   REST_CADENCE_REVISION_EPOCH_MS,
   applyRestCadenceAction,
   buildRestCadenceChange,
+  claimableRestCadenceBeatMs,
   commitRestCadenceAction,
   parseRestCadence,
   restCadenceRevisionFloor,
@@ -192,43 +194,97 @@ describe('applyRestCadenceAction', () => {
   });
 
   describe('FIRE', () => {
-    const fire = (previous: RestCadenceState, firedBeatAgoMs = 0) =>
-      reduce(previous, { action: 'FIRE', expectedRevision: 4, firedBeatAgoMs });
+    const fire = (previous: RestCadenceState, firedBeatAgoMs = 0, nowMs = NOW) =>
+      applyRestCadenceAction(previous, { action: 'FIRE', expectedRevision: 4, firedBeatAgoMs }, nowMs, ME);
+    // A 90 s afterTick rest that started 90 s ago: its deadline is NOW.
+    const due = (overrides: Partial<RestCadenceState> = {}) => clock({ anchorMs: NOW - 90_000, ...overrides });
+    // A 60 s beat armed a minute ago: its first beat is NOW.
+    const beat = (overrides: Partial<RestCadenceState> = {}) =>
+      clock({ ...ON_THE_MINUTE, anchorMs: NOW - 60_000, ...overrides });
 
-    it('afterTick + deadline restarts the rest from the advance', () => {
-      expect(next(fire(clock(), 800))).toMatchObject({ anchorMs: NOW, lastFiredBeatMs: NOW - 800 });
+    it('afterTick + deadline restarts the rest from the advance and records the deadline it claimed', () => {
+      expect(next(fire(due()))).toMatchObject({ anchorMs: NOW, lastFiredBeatMs: NOW });
+      // Three seconds late: the claimed beat is still the deadline, not the moment the FIRE landed.
+      expect(next(fire(due({ anchorMs: NOW - 93_000 })))).toMatchObject({
+        anchorMs: NOW,
+        lastFiredBeatMs: NOW - 3_000,
+      });
     });
 
     it('onTheMinute keeps its beat', () => {
-      const beat = clock({
-        ...ON_THE_MINUTE,
-        anchorMs: NOW - 60_000,
-        lastTick: { queueItemUuid: 'a', status: 'send' },
-      });
-      expect(next(fire(beat))).toMatchObject({
+      expect(next(fire(beat({ lastTick: { queueItemUuid: 'a', status: 'send' } })))).toMatchObject({
         anchorMs: NOW - 60_000,
         lastFiredBeatMs: NOW,
         lastTick: { queueItemUuid: 'a', status: 'send' },
       });
     });
 
+    it('onTheMinute claims the latest beat that is due, skipping the ones nobody fired', () => {
+      // Beats at NOW - 140 s, - 80 s and - 20 s.
+      expect(next(fire(beat({ anchorMs: NOW - 200_000 })))?.lastFiredBeatMs).toBe(NOW - 20_000);
+    });
+
     it.each(['tick', 'send'] as const)(
       'afterTick + %s clears the anchor and the tick, so the next climb waits for its own tick',
       (advanceOn) => {
-        const staged = clock({ advanceOn, lastTick: { queueItemUuid: 'item-1', status: 'send' } });
+        const staged = due({ advanceOn, lastTick: { queueItemUuid: 'item-1', status: 'send' } });
         expect(next(fire(staged))).toMatchObject({ anchorMs: null, lastTick: null, lastFiredBeatMs: NOW });
       },
     );
 
-    it('clamps how long ago the beat fell due to a minute', () => {
-      expect(next(fire(clock(), 3_600_000))?.lastFiredBeatMs).toBe(NOW - 60_000);
+    it('takes the beat from the stored clock and ignores the beat age the phone reports', () => {
+      expect(next(fire(due(), 3_600_000))).toEqual(next(fire(due(), 0)));
+      expect(next(fire(beat(), 45_000))?.lastFiredBeatMs).toBe(NOW);
+    });
+
+    describe('a beat counts as due from REST_CADENCE_FIRE_EARLY_TOLERANCE_MS before it', () => {
+      const early = REST_CADENCE_FIRE_EARLY_TOLERANCE_MS;
+
+      it('afterTick: claims a deadline exactly that far ahead, refuses one a millisecond further', () => {
+        expect(next(fire(due({ anchorMs: NOW - 90_000 + early })))?.lastFiredBeatMs).toBe(NOW + early);
+        expect(fire(due({ anchorMs: NOW - 90_000 + early + 1 }))).toEqual({ applicable: false });
+      });
+
+      it('onTheMinute: claims a beat exactly that far ahead, refuses one a millisecond further', () => {
+        expect(next(fire(beat({ anchorMs: NOW - 60_000 + early })))?.lastFiredBeatMs).toBe(NOW + early);
+        expect(fire(beat({ anchorMs: NOW - 60_000 + early + 1 }))).toEqual({ applicable: false });
+      });
+
+      it('onTheMinute never claims the anchor itself, so arming on a boundary waits a full beat', () => {
+        expect(claimableRestCadenceBeatMs(beat({ anchorMs: NOW }), NOW)).toBeNull();
+        expect(claimableRestCadenceBeatMs(beat({ anchorMs: NOW }), NOW + 60_000 - early)).toBe(NOW + 60_000);
+      });
+    });
+
+    describe('once per beat', () => {
+      it('onTheMinute refuses the beat it already fired, whatever beat age the phone reports', () => {
+        const fired = beat({ lastFiredBeatMs: NOW });
+        expect(fire(fired, 0, NOW + 100)).toEqual({ applicable: false });
+        expect(fire(fired, 90, NOW + 100)).toEqual({ applicable: false });
+        expect(fire(fired, 0, NOW + 30_000)).toEqual({ applicable: false });
+      });
+
+      it('onTheMinute claims the next beat from the tolerance before it, and not a millisecond sooner', () => {
+        const fired = beat({ lastFiredBeatMs: NOW });
+        const nextBeat = NOW + 60_000;
+        expect(fire(fired, 0, nextBeat - REST_CADENCE_FIRE_EARLY_TOLERANCE_MS - 1)).toEqual({ applicable: false });
+        expect(next(fire(fired, 0, nextBeat - REST_CADENCE_FIRE_EARLY_TOLERANCE_MS))?.lastFiredBeatMs).toBe(nextBeat);
+      });
+
+      it('afterTick refuses a deadline at or before the last beat it fired, such as a tick dated before that advance', () => {
+        expect(fire(due({ anchorMs: NOW - 95_000, lastFiredBeatMs: NOW - 5_000 }))).toEqual({ applicable: false });
+        expect(next(fire(due({ anchorMs: NOW - 95_000, lastFiredBeatMs: NOW - 5_001 })))?.lastFiredBeatMs).toBe(
+          NOW - 5_000,
+        );
+      });
     });
 
     it.each([
-      ['paused', clock({ isRunning: false })],
-      ['auto-advance off', clock({ autoAdvance: false })],
-      ['the length Off', clock({ targetSeconds: null })],
-      ['waiting for a tick', clock({ anchorMs: null })],
+      ['paused', due({ isRunning: false })],
+      ['auto-advance off', due({ autoAdvance: false })],
+      ['the length Off', due({ targetSeconds: null })],
+      ['waiting for a tick', due({ anchorMs: null })],
+      ['not due yet', clock()],
     ])('cannot fire a clock that is %s', (_label, previous) => {
       expect(fire(previous)).toEqual({ applicable: false });
     });
@@ -238,7 +294,7 @@ describe('applyRestCadenceAction', () => {
       ['send', null],
       ['send', { queueItemUuid: 'item-1', status: 'attempt' }],
     ] as const)('cannot fire under %s without the tick it needs (last tick %j)', (advanceOn, lastTick) => {
-      expect(fire(clock({ advanceOn, lastTick }))).toEqual({ applicable: false });
+      expect(fire(due({ advanceOn, lastTick }))).toEqual({ applicable: false });
     });
 
     it.each([
@@ -246,11 +302,11 @@ describe('applyRestCadenceAction', () => {
       ['send', 'flash'],
       ['send', 'send'],
     ] as const)('fires under %s after a %s', (advanceOn, status) => {
-      expect(fire(clock({ advanceOn, lastTick: { queueItemUuid: 'item-1', status } })).applicable).toBe(true);
+      expect(fire(due({ advanceOn, lastTick: { queueItemUuid: 'item-1', status } })).applicable).toBe(true);
     });
 
     it('cannot fire without a revision to compare against', () => {
-      expect(reduce(clock(), { action: 'FIRE' })).toEqual({ applicable: false });
+      expect(reduce(due(), { action: 'FIRE' })).toEqual({ applicable: false });
     });
   });
 
@@ -441,7 +497,7 @@ describe('commitRestCadenceAction', () => {
   it('a FIRE that loses the race reports the winner and never retries', async () => {
     const winner = clock({ lastFiredBeatMs: NOW - 10, anchorMs: NOW - 10 });
     let raced = false;
-    const { store, writes } = memoryStore({ revision: 5, cadence: clock() }, () => {
+    const { store, writes } = memoryStore({ revision: 5, cadence: clock({ anchorMs: NOW - 90_000 }) }, () => {
       if (raced) return null;
       raced = true;
       return { revision: 6, cadence: winner };
@@ -467,6 +523,110 @@ describe('commitRestCadenceAction', () => {
     expect(commit.applied).toBe(true);
     expect(commit.stored.revision).toBe(FLOOR + 4);
     expect(commit.stored.cadence?.lastTick).toEqual({ queueItemUuid: 'item-9', status: 'flash' });
+  });
+
+  describe('a FIRE claims each beat once (#6724 review)', () => {
+    it('refuses a second FIRE on the same onTheMinute beat, even on the revision the first one returned', async () => {
+      // Armed a minute ago on a 60 s beat: the first beat falls due at NOW.
+      const { store, writes } = memoryStore({
+        revision: FLOOR,
+        cadence: clock({ ...ON_THE_MINUTE, anchorMs: NOW - 60_000 }),
+      });
+      const first = await commitRestCadenceAction(
+        store,
+        { action: 'FIRE', expectedRevision: FLOOR, firedBeatAgoMs: 0 },
+        NOW,
+        ME,
+      );
+      const second = await commitRestCadenceAction(
+        store,
+        { action: 'FIRE', expectedRevision: first.stored.revision, firedBeatAgoMs: 90 },
+        NOW + 100,
+        PEER,
+      );
+      expect(first.applied).toBe(true);
+      expect(second).toEqual({ applied: false, rewound: false, stored: first.stored });
+      expect(writes).toHaveLength(1);
+    });
+
+    it('refuses a second afterTick + deadline FIRE on the revision the first one returned', async () => {
+      // A 90 s rest that started 90 s ago: due at NOW.
+      const { store, writes } = memoryStore({ revision: FLOOR, cadence: clock({ anchorMs: NOW - 90_000 }) });
+      const first = await commitRestCadenceAction(
+        store,
+        { action: 'FIRE', expectedRevision: FLOOR, firedBeatAgoMs: 0 },
+        NOW,
+        ME,
+      );
+      const second = await commitRestCadenceAction(
+        store,
+        { action: 'FIRE', expectedRevision: first.stored.revision, firedBeatAgoMs: 0 },
+        NOW + 100,
+        PEER,
+      );
+      expect(first.applied).toBe(true);
+      expect(second).toEqual({ applied: false, rewound: false, stored: first.stored });
+      expect(writes).toHaveLength(1);
+    });
+
+    /** FIRE on whatever revision the store holds now, as a phone that adopted every event would. */
+    const fireOnLatest = async (store: RestCadenceStore, nowMs: number, firedBeatAgoMs = 0) =>
+      commitRestCadenceAction(
+        store,
+        { action: 'FIRE', expectedRevision: (await store.read()).revision, firedBeatAgoMs },
+        nowMs,
+        PEER,
+      );
+
+    it('onTheMinute: the next beat applies from the tolerance before it, on the revision the last FIRE wrote', async () => {
+      const { store, writes } = memoryStore({
+        revision: FLOOR,
+        cadence: clock({ ...ON_THE_MINUTE, anchorMs: NOW - 60_000 }),
+      });
+      expect((await fireOnLatest(store, NOW)).applied).toBe(true);
+
+      const nextBeat = NOW + 60_000;
+      const tooEarly = await fireOnLatest(store, nextBeat - REST_CADENCE_FIRE_EARLY_TOLERANCE_MS - 1);
+      const onTime = await fireOnLatest(store, nextBeat - REST_CADENCE_FIRE_EARLY_TOLERANCE_MS);
+
+      expect(tooEarly.applied).toBe(false);
+      expect(onTime.applied).toBe(true);
+      expect(onTime.stored.cadence?.lastFiredBeatMs).toBe(nextBeat);
+      expect(writes).toHaveLength(2);
+    });
+
+    it('afterTick + deadline: the next cycle applies once its own rest has run', async () => {
+      const { store } = memoryStore({ revision: FLOOR, cadence: clock({ anchorMs: NOW - 90_000 }) });
+      expect((await fireOnLatest(store, NOW)).applied).toBe(true);
+
+      // The first FIRE restarted the rest at NOW, so the next deadline is NOW + 90 s.
+      expect((await fireOnLatest(store, NOW + 30_000)).applied).toBe(false);
+      const nextCycle = await fireOnLatest(store, NOW + 90_000);
+      expect(nextCycle.applied).toBe(true);
+      expect(nextCycle.stored.cadence).toMatchObject({ lastFiredBeatMs: NOW + 90_000, anchorMs: NOW + 90_000 });
+    });
+
+    it.each(['tick', 'send'] as const)(
+      'afterTick + %s: a second FIRE is refused, and the next one waits for a tick and its full rest',
+      async (advanceOn) => {
+        const { store } = memoryStore({
+          revision: FLOOR,
+          cadence: clock({ advanceOn, anchorMs: NOW - 90_000, lastTick: { queueItemUuid: 'item-1', status: 'send' } }),
+        });
+        expect((await fireOnLatest(store, NOW)).applied).toBe(true);
+        expect((await fireOnLatest(store, NOW + 100)).applied).toBe(false);
+
+        // A send on the next climb, ten seconds later, starts its rest.
+        await commitRestCadenceAction(
+          store,
+          { action: 'TICK', tickQueueItemUuid: 'item-2', tickStatus: 'send' },
+          NOW + 10_000,
+          ME,
+        );
+        expect((await fireOnLatest(store, NOW + 10_100)).applied).toBe(false);
+        expect((await fireOnLatest(store, NOW + 100_000)).applied).toBe(true);
+      },
+    );
   });
 
   it('gives up after a bounded number of lost races', async () => {

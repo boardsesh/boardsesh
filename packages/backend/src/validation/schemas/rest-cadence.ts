@@ -54,6 +54,7 @@ export const SessionRestCadenceInputSchema = z
     pausedElapsedSeconds: nonNegativeIntUpTo(MAX_REST_CADENCE_PAUSED_SECONDS, 'Paused elapsed time').nullish(),
     tickQueueItemUuid: QueueItemIdSchema.nullish(),
     tickStatus: z.enum(REST_CADENCE_TICK_STATUSES).nullish(),
+    // Still on the wire and still bounded, but the reducer ignores it: a FIRE's beat comes from the stored clock.
     firedBeatAgoMs: nonNegativeIntUpTo(MAX_REST_CADENCE_ELAPSED_MS, 'Fired beat age').nullish(),
     // GraphQL Int is 32-bit; revisions start at 0.
     expectedRevision: nonNegativeIntUpTo(2_147_483_647, 'Expected revision').nullish(),

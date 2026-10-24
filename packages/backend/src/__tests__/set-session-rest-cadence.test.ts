@@ -214,10 +214,77 @@ describe('setSessionRestCadence', () => {
 
     expect(holder.applied).toBe(true);
     expect(holder.change.revision).toBe(FIRST_REVISION + 1);
-    expect(holder.change.restCadence?.lastFiredBeatAt).toBe(String(NOW - 200));
+    // The beat is the deadline the stored clock gives (anchor + 90 s), not the age the phone reported.
+    expect(holder.change.restCadence?.lastFiredBeatAt).toBe(String(NOW));
     expect(otherPhone).toEqual({ applied: false, change: { ...holder.change, action: null } });
     expect(pubsubMock.publishSessionEvent).toHaveBeenCalledOnce();
     expect(pubsubMock.publishSessionEvent).toHaveBeenCalledWith(SESSION_ID, holder.change);
+  });
+
+  describe('a FIRE claims each beat once (#6724 review)', () => {
+    const ON_THE_MINUTE_CONFIG = { ...SETTINGS_CONFIG, mode: 'onTheMinute', targetSeconds: 60 } as const;
+    const otherPhone = () => makeCtx({ connectionId: 'conn-2', participantId: 'f6e5d4c3b2a1' });
+
+    it('refuses a second FIRE on the same onTheMinute beat, on the revision the first one returned', async () => {
+      // Armed a minute ago on a 60 s beat: the first beat falls due now.
+      const armed = await setRestCadence({ action: 'ARM', config: ON_THE_MINUTE_CONFIG, elapsedMs: 60_000 });
+      pubsubMock.publishSessionEvent.mockClear();
+
+      const first = await setRestCadence({
+        action: 'FIRE',
+        expectedRevision: armed.change.revision,
+        firedBeatAgoMs: 0,
+      });
+      vi.setSystemTime(NOW + 100);
+      const second = await setRestCadence(
+        { action: 'FIRE', expectedRevision: first.change.revision, firedBeatAgoMs: 90 },
+        otherPhone(),
+      );
+
+      expect(first.applied).toBe(true);
+      expect(second.applied).toBe(false);
+      expect(second.change).toMatchObject({ revision: first.change.revision, action: null, isSnapshot: false });
+      expect(second.change.restCadence).toEqual(first.change.restCadence);
+      expect(pubsubMock.publishSessionEvent).toHaveBeenCalledOnce();
+      expect(pubsubMock.publishSessionEvent).toHaveBeenCalledWith(SESSION_ID, first.change);
+    });
+
+    it('refuses a second afterTick + deadline FIRE on the revision the first one returned', async () => {
+      const armed = await setRestCadence({ action: 'ARM', config: SETTINGS_CONFIG, elapsedMs: 90_000 });
+      pubsubMock.publishSessionEvent.mockClear();
+
+      const first = await setRestCadence({ action: 'FIRE', expectedRevision: armed.change.revision });
+      vi.setSystemTime(NOW + 100);
+      const second = await setRestCadence({ action: 'FIRE', expectedRevision: first.change.revision }, otherPhone());
+
+      expect(first.applied).toBe(true);
+      expect(second.applied).toBe(false);
+      expect(pubsubMock.publishSessionEvent).toHaveBeenCalledOnce();
+    });
+
+    it('lets the holder claim the next beat, even a little early by its own clock', async () => {
+      const armed = await setRestCadence({ action: 'ARM', config: ON_THE_MINUTE_CONFIG, elapsedMs: 60_000 });
+      const first = await setRestCadence({ action: 'FIRE', expectedRevision: armed.change.revision });
+      pubsubMock.publishSessionEvent.mockClear();
+
+      // The holder's estimate of the server clock runs 1.5 s fast.
+      vi.setSystemTime(NOW + 60_000 - 1_500);
+      const nextBeat = await setRestCadence({ action: 'FIRE', expectedRevision: first.change.revision });
+
+      expect(nextBeat.applied).toBe(true);
+      expect(nextBeat.change.restCadence?.lastFiredBeatAt).toBe(String(NOW + 60_000));
+      expect(pubsubMock.publishSessionEvent).toHaveBeenCalledWith(SESSION_ID, nextBeat.change);
+    });
+
+    it('refuses a FIRE before the beat is due, and publishes nothing', async () => {
+      const armed = await setRestCadence({ action: 'ARM', config: ON_THE_MINUTE_CONFIG, elapsedMs: 30_000 });
+      pubsubMock.publishSessionEvent.mockClear();
+
+      const early = await setRestCadence({ action: 'FIRE', expectedRevision: armed.change.revision });
+
+      expect(early).toEqual({ applied: false, change: { ...armed.change, action: null } });
+      expect(pubsubMock.publishSessionEvent).not.toHaveBeenCalled();
+    });
   });
 
   it('a stale revision comes back with the stored clock so the caller can adopt it', async () => {

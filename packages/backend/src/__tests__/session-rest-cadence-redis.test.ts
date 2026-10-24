@@ -15,6 +15,7 @@ import { KEYS, TTL } from '../services/distributed-state/constants';
 import { RedisSessionStore } from '../services/redis-session-store';
 import { RoomManager } from '../services/room-manager';
 import {
+  REST_CADENCE_FIRE_EARLY_TOLERANCE_MS,
   commitRestCadenceAction,
   restCadenceRevisionFloor,
   serializeRestCadence,
@@ -148,6 +149,126 @@ describe.skipIf(!redisAvailable)('crew rest clock storage on Redis', () => {
     for (const loser of commits.filter((commit) => !commit.applied)) {
       expect(loser.stored.revision).toBe(FLOOR);
       expect(loser.rewound).toBe(false);
+    }
+  });
+
+  it('refuses a second FIRE on the same beat from another instance, on the revision the first returned (#6724 review)', async () => {
+    const sessionId = newSessionId();
+    // A 60 s beat armed a minute ago: the first beat falls due at NOW.
+    const beat: RestCadenceState = { ...CLOCK, mode: 'onTheMinute', anchorMs: NOW - 60_000 };
+    await instanceOne.casSessionRestCadence(sessionId, 0, serializeRestCadence(beat), NO_FLOOR);
+
+    const first = await commitRestCadenceAction(
+      storeFor(instanceOne, sessionId),
+      { action: 'FIRE', expectedRevision: 1, firedBeatAgoMs: 0 },
+      NOW,
+      'holder',
+    );
+    const second = await commitRestCadenceAction(
+      storeFor(instanceTwo, sessionId),
+      { action: 'FIRE', expectedRevision: first.stored.revision, firedBeatAgoMs: 90 },
+      NOW + 100,
+      'other-phone',
+    );
+
+    expect(first.applied).toBe(true);
+    expect(second).toEqual({ applied: false, rewound: false, stored: first.stored });
+    expect(await instanceOne.getSessionRestCadence(sessionId)).toEqual(first.stored);
+  });
+
+  it('lets one FIRE per beat apply across two instances, even when every phone re-reads the latest revision', async () => {
+    const sessionId = newSessionId();
+    const beat: RestCadenceState = { ...CLOCK, mode: 'onTheMinute', anchorMs: NOW - 60_000 };
+    await instanceOne.casSessionRestCadence(sessionId, 0, serializeRestCadence(beat), NO_FLOOR);
+    /** A phone that adopted every event: it FIREs on the revision stored right now. */
+    const fireOnLatest = async (manager: DistributedStateManager, nowMs: number, firedBeatAgoMs: number) =>
+      commitRestCadenceAction(
+        storeFor(manager, sessionId),
+        { action: 'FIRE', expectedRevision: (await manager.getSessionRestCadence(sessionId)).revision, firedBeatAgoMs },
+        nowMs,
+        'phone',
+      );
+
+    // Twelve FIREs inside the first beat, alternating instances, each with a different reported beat age.
+    const onFirstBeat = [];
+    for (let index = 0; index < 12; index++) {
+      onFirstBeat.push(await fireOnLatest(index % 2 === 0 ? instanceOne : instanceTwo, NOW + index * 50, index * 7));
+    }
+    expect(onFirstBeat.filter((commit) => commit.applied)).toHaveLength(1);
+    expect(onFirstBeat[0].applied).toBe(true);
+
+    // The next beat applies once, from whichever instance gets there first.
+    const nextBeat = NOW + 60_000;
+    const [fromTwo, fromOne] = [
+      await fireOnLatest(instanceTwo, nextBeat - REST_CADENCE_FIRE_EARLY_TOLERANCE_MS, 0),
+      await fireOnLatest(instanceOne, nextBeat + 40, 0),
+    ];
+    expect(fromTwo.applied).toBe(true);
+    expect(fromOne.applied).toBe(false);
+    expect(await instanceOne.getSessionRestCadence(sessionId)).toEqual(fromTwo.stored);
+    expect(fromTwo.stored.cadence?.lastFiredBeatMs).toBe(nextBeat);
+  });
+
+  it('fences FIREs the same way on Redis and on the in-memory fallback', async () => {
+    const sessionId = newSessionId();
+    const onRedis = new RoomManager();
+    await onRedis.initialize(instanceOneRedis);
+    const inMemory = new RoomManager();
+    const onTheMinute = {
+      mode: 'onTheMinute',
+      targetSeconds: 60,
+      autoAdvance: true,
+      advanceOn: 'deadline',
+      source: 'settings',
+    } as const;
+    const steps: Array<{ nowMs: number; input: RestCadenceInput }> = [
+      { nowMs: NOW, input: { action: 'ARM', config: onTheMinute, elapsedMs: 60_000 } },
+      { nowMs: NOW, input: { action: 'FIRE', firedBeatAgoMs: 0 } },
+      { nowMs: NOW + 100, input: { action: 'FIRE', firedBeatAgoMs: 90 } },
+      { nowMs: NOW + 60_000 - REST_CADENCE_FIRE_EARLY_TOLERANCE_MS - 1, input: { action: 'FIRE' } },
+      { nowMs: NOW + 60_000 - REST_CADENCE_FIRE_EARLY_TOLERANCE_MS, input: { action: 'FIRE' } },
+      {
+        nowMs: NOW + 61_000,
+        input: {
+          action: 'CONFIGURE',
+          config: { ...onTheMinute, mode: 'afterTick', targetSeconds: 90 },
+          anchor: 'NOW',
+          elapsedMs: 90_000,
+        },
+      },
+      { nowMs: NOW + 61_000, input: { action: 'FIRE' } },
+      { nowMs: NOW + 61_100, input: { action: 'FIRE' } },
+    ];
+    /** Run every step, fencing each FIRE on the revision the manager holds at that moment. */
+    const run = async (manager: RoomManager) => {
+      const outcomes = [];
+      for (const { nowMs, input } of steps) {
+        const fenced =
+          input.action === 'FIRE'
+            ? { ...input, expectedRevision: (await manager.getSessionRestCadence(sessionId)).revision }
+            : input;
+        outcomes.push(await manager.updateSessionRestCadence(sessionId, fenced, 'phone', nowMs));
+      }
+      return outcomes;
+    };
+    try {
+      const redisOutcomes = await run(onRedis);
+      const memoryOutcomes = await run(inMemory);
+      expect(redisOutcomes.map((commit) => commit.applied)).toEqual([
+        true,
+        true,
+        false,
+        false,
+        true,
+        true,
+        true,
+        false,
+      ]);
+      expect(memoryOutcomes).toEqual(redisOutcomes);
+    } finally {
+      await onRedis.shutdown();
+      onRedis.reset();
+      inMemory.reset();
     }
   });
 
