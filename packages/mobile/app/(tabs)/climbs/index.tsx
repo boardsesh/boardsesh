@@ -332,7 +332,6 @@ function ClimbListInner() {
   const { t: tCommon } = useTranslation('common');
   const { t: tSession } = useTranslation('session');
   const { openClimbActions, openAddToPlaylist, openBoardSheet, openPlayDrawer, usesDetailPane } = useDrawerHost();
-  const [lightOnClimbTap] = useSetting('lightOnClimbTap');
   // The grade row is hidden until the Grade chip opens it. Then it stays, across
   // opening a climb, search, Filters and app launches, until the chip hides it.
   const [gradeRowShown, setGradeRowShown] = useSetting('gradeRowShown');
@@ -1323,36 +1322,13 @@ function ClimbListInner() {
       requestPlayBoardPrewarm({ boardName: boardName as BoardName, layoutId, sizeId, setIds }, climb.frames);
       blurSearchInputs();
       // This tap IS the selection, so it is the one moment the swipe track may be
-      // re-derived. Capture before either branch: the view-only branch seeds a
-      // track too, by way of the activation hook's previewOnly path (#5402).
+      // re-derived. Every tap re-captures it, previews included: in a crew, or
+      // with "Light problems when tapping the list" off, the activation hook
+      // opens a preview seeded with these results, so swipes walk them (#5157).
       searchBasis.capture();
-      if (!lightOnClimbTap && !isSharedSession) {
-        // Board lighting off for taps: open view-only (the Browsing pill + the
-        // commit row) instead of committing — same landing as the explicit
-        // "Preview" climb action, so the tap doesn't light the board or touch
-        // the queue until the climber puts it up.
-        openPlayDrawer(climb, { readyBoardArt, previewQueueItem: climbToQueueItem(climb) });
-        return;
-      }
-      // In a shared session this still routes through the activation hook, whose
-      // `previewOnly` branch opens the SAME view-only drawer — but seeded with the
-      // results list, which the bare preview above can't do. So the crew case gets
-      // browsing AND a swipe track, and a tap in a crew never commits regardless
-      // of the lighting setting.
       void activateClimbListClimb.activate(toQueueClimb(climb), readyBoardArt);
     },
-    [
-      activateClimbListClimb,
-      blurSearchInputs,
-      searchBasis,
-      isSharedSession,
-      lightOnClimbTap,
-      openPlayDrawer,
-      boardName,
-      layoutId,
-      sizeId,
-      setIds,
-    ],
+    [activateClimbListClimb, blurSearchInputs, searchBasis, boardName, layoutId, sizeId, setIds],
   );
 
   // Screenshot mode: when a specific board index is requested, switch the active
