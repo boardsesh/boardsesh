@@ -180,6 +180,7 @@ export type ClimbRowGradeLeafProps = {
 };
 
 export type ClimbRowAscentStatusLeafProps = {
+  boardName: BoardName;
   climbUuid: string;
   angle: number;
   supportsMirroring: boolean;
@@ -394,6 +395,7 @@ const LostHoldsChip = React.memo(function LostHoldsChip({ count }: { count: numb
  * exists to prevent.
  */
 const AscentStatusGlyph = React.memo(function AscentStatusGlyph({
+  boardName,
   climbUuid,
   angle,
   supportsMirroring,
@@ -403,8 +405,14 @@ const AscentStatusGlyph = React.memo(function AscentStatusGlyph({
 }: ClimbRowAscentStatusLeafProps) {
   // Unconditional hooks keep capability changes safe. The nonmirrorable board
   // keeps its existing aggregate glyph; each mirrorable direction is independent.
-  const ascentStatus = useAscentStatus(climbUuid, angle, supportsMirroring ? false : undefined, holdsRevisionNumber);
-  const mirrorStatus = useAscentStatus(climbUuid, angle, true, holdsRevisionNumber);
+  const ascentStatus = useAscentStatus(
+    climbUuid,
+    angle,
+    supportsMirroring ? false : undefined,
+    holdsRevisionNumber,
+    boardName,
+  );
+  const mirrorStatus = useAscentStatus(climbUuid, angle, true, holdsRevisionNumber, boardName);
 
   return (
     <ClimbAscentStatusView
@@ -1100,6 +1108,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
   const ascentStatus =
     layout.sentMarkPlace === 'none' || layout.hasProgressLine ? null : (
       <leaves.AscentStatus
+        boardName={boardName}
         climbUuid={climb.uuid}
         angle={angle}
         supportsMirroring={supportsMirroring}

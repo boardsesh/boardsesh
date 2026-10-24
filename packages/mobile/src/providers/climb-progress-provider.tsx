@@ -22,7 +22,8 @@ export function ClimbProgressProvider({
   children: ReactNode;
 }) {
   const showProgress = useClimbRowField('progress');
-  const active = showProgress && enabled;
+  const showSentMark = useClimbRowField('sentMark');
+  const active = (showProgress || showSentMark) && enabled;
   // The wrapper stays mounted when the switch changes. Disabled lists need no
   // auth/query adapter, and subscribe to no credential events.
   const generation = useSyncExternalStore(

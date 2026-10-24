@@ -1,13 +1,10 @@
-import { useCallback, useMemo, useSyncExternalStore } from 'react';
+import { useMemo } from 'react';
 import { logbookClimbAngleKey, useOptionalBoardActions, useOptionalBoardLogbook } from '@boardsesh/board-react';
 import { isTickOnCurrentHolds } from '@boardsesh/logbook';
 import { tickTimeMs } from '@boardsesh/profile-stats';
 import type { BoardName } from '@boardsesh/shared-schema';
-import { useClimbProgressStore } from '../lib/climb-progress-context';
-import { climbProgressKey, NO_CLIMB_PROGRESS_ENTRIES } from '../lib/climb-progress-store';
 import { deriveClimbProgress } from '../lib/climb-progress';
-
-const noSubscription = () => () => {};
+import { useClimbProgressEntries } from './use-climb-progress-entries';
 
 /** Isolated personal leaf: indexed lookup, with holds filtering before derivation. */
 export function useClimbProgress(
@@ -16,14 +13,7 @@ export function useClimbProgress(
   angle: number,
   holdsRevisionNumber?: number | null,
 ) {
-  const store = useClimbProgressStore();
-  const key = climbProgressKey(boardName, climbUuid, angle);
-  const subscribe = useCallback(
-    (listener: () => void) => store?.subscribe(key, listener) ?? noSubscription(),
-    [store, key],
-  );
-  const snapshot = useCallback(() => store?.getSnapshot(key) ?? NO_CLIMB_PROGRESS_ENTRIES, [store, key]);
-  const scopedEntries = useSyncExternalStore(subscribe, snapshot, snapshot);
+  const scopedEntries = useClimbProgressEntries(boardName, climbUuid, angle);
   return useMemo(
     () => deriveProgressOnCurrentHolds(scopedEntries, holdsRevisionNumber),
     [scopedEntries, holdsRevisionNumber],

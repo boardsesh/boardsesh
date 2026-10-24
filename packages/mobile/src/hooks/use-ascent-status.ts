@@ -1,13 +1,15 @@
 import { useMemo } from 'react';
 import { logbookClimbAngleKey, useOptionalBoardLogbook } from '@boardsesh/board-react';
 import { isTickOnCurrentHolds } from '@boardsesh/logbook';
+import type { BoardName } from '@boardsesh/shared-schema';
 import { normalizeAscentStatus, pickHighestAscentStatus, type AscentStatusValue } from '../lib/ascent-status-utils';
 import { useClimbListTickDisplay } from '../providers/climb-list-tick-display-context';
+import { useClimbProgressEntries } from './use-climb-progress-entries';
 
 /**
  * The user's highest recorded ascent status (flash / send / attempt) for a climb
- * at a given angle, read from the list's offline-aware display index or the
- * denormalised logbook via `BoardProvider`. Returns null without matching ticks.
+ * at a given angle, read from the list's offline-aware display index, its scoped
+ * tick store, or the logbook via `BoardProvider`. Returns null without matching ticks.
  * Drives the climb-row status glyph in `ClimbListItemContent`.
  *
  * Reads a pre-grouped climb/angle index (built once per tick batch)
@@ -27,11 +29,15 @@ export function useAscentStatus(
   angle: number,
   isMirror?: boolean,
   holdsRevisionNumber?: number | null,
+  boardName?: BoardName,
 ): AscentStatusValue | null {
   const logbook = useOptionalBoardLogbook();
   const display = useClimbListTickDisplay();
+  const scopedEntries = useClimbProgressEntries(boardName, climbUuid, angle);
   const key = logbookClimbAngleKey(climbUuid, angle);
-  const entries = display ? display.entriesByClimbAngle.get(key) : logbook?.logbookByClimbAngle.get(key);
+  const entries = display
+    ? display.entriesByClimbAngle.get(key)
+    : (scopedEntries ?? logbook?.logbookByClimbAngle.get(key));
   return useMemo<AscentStatusValue | null>(() => {
     if (!entries || entries.length === 0) return null;
     const matching = entries.filter(
