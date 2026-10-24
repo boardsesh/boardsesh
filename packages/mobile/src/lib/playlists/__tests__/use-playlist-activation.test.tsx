@@ -1546,6 +1546,55 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       expect(mocks.showToast).not.toHaveBeenCalled();
     });
 
+    it('queues the tapped climb once when climbs land while the list loads and the climber picks "Add to queue"', async () => {
+      // Nothing queued at the tap, so the queue is seeded with the tapped climb
+      // and the list loads behind it. A climb queued during the load raises the
+      // prompt again once the list is in hand.
+      const tapped = makeClimb('b');
+      let releaseFetch: (page: { climbs: Climb[]; hasMore: boolean }) => void = () => {};
+      const fetchPage = vi.fn(
+        () =>
+          new Promise<{ climbs: Climb[]; hasMore: boolean }>((resolve) => {
+            releaseFetch = resolve;
+          }),
+      );
+      mocks.choose.mockResolvedValue('append');
+      const { result } = renderActivation(fetchPage, {
+        replaceQueueOnActivate: true,
+        allClimbs: [makeClimb('a'), tapped, makeClimb('c')],
+      });
+      let activation: Promise<void> = Promise.resolve();
+      act(() => {
+        activation = result.current.activate(tapped);
+      });
+      const seedItem = mocks.queueState.currentClimbQueueItem;
+      expect(seedItem?.climb.uuid).toBe('b');
+      expect(mocks.choose).not.toHaveBeenCalled();
+      if (!seedItem) throw new Error('the tap did not seed the queue');
+      const landed = makeQueueItem('q-landed', 'landed');
+      mocks.queueState = { queue: [seedItem, landed], currentClimbQueueItem: seedItem };
+
+      await act(async () => {
+        releaseFetch({ climbs: [makeClimb('a'), tapped, makeClimb('c')], hasMore: false });
+        await activation;
+      });
+
+      expect(mocks.choose).toHaveBeenCalledTimes(1);
+      // The tapped climb is current from the seed, so the batch leaves it out.
+      expect(mocks.appendQueueItems).toHaveBeenCalledTimes(1);
+      expect(mocks.appendQueueItems.mock.calls[0][0].map((item) => item.climb.uuid)).toEqual(['a', 'c']);
+      // The queue is otherwise untouched: only the seed ever replaced it.
+      expect(mocks.setQueue).toHaveBeenCalledTimes(1);
+      // The count matches the list, the tapped climb counted as landed.
+      expect(mocks.track.mock.calls[0][1]).toMatchObject({
+        entryPoint: 'replacePrompt',
+        outcome: 'added',
+        fetchedCount: 3,
+        appendedCount: 3,
+      });
+      expect(mocks.showQueueAddedSnackbar).toHaveBeenCalledWith({ kind: 'added', count: 3 });
+    });
+
     it('says so instead of silently dropping the pick when an append is already in flight', async () => {
       const current = makeQueueItem('q-current', 'current');
       const future = makeQueueItem('q-future', 'future');
