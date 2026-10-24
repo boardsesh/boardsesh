@@ -64,13 +64,6 @@ permissions:
   pull-requests: write # sticky comment
   checks: write # neutral check-run
 
-concurrency:
-  # The HEAD BRANCH, not github.ref: a push is `refs/heads/<branch>` while a
-  # pull_request is `refs/pull/<n>/merge`, and the two events must share one lane
-  # or a retarget could race the push that triggered the stale verdict.
-  group: mobile-ota-check-${{ github.head_ref || github.ref_name }}
-  cancel-in-progress: true
-
 # ─── SHARED BUILD ENV (workflow-level) ───────────────────────────────────────
 # Byte-identical to ios-testflight-rn.yml / android-apk-rn.yml /
 # mobile-ota-production.yml — scripts/mobile-ci-env-parity.test.ts fails the build
@@ -103,6 +96,12 @@ env:
 
 jobs:
   ota-check:
+    # A skipped PR job must not cancel the push that computes its verdict.
+    # Actual retarget jobs share the head-branch lane with pushes, so the old
+    # base's verdict cannot race the new one.
+    concurrency:
+      group: mobile-ota-check-${{ github.head_ref || github.ref_name }}
+      cancel-in-progress: true
     # Three gates on the pull_request path. None of them touches the push path,
     # which keeps serving every branch it served before:
     #

@@ -511,7 +511,17 @@ describe('native release workflow contracts', () => {
     expect(otaCheck).toContain('head_sha: process.env.HEAD_SHA,');
     // Both event paths must serialize in ONE lane, or a retarget can race the
     // push whose stale verdict it is trying to replace.
-    expect(otaCheck).toContain('group: mobile-ota-check-${{ github.head_ref || github.ref_name }}');
+    const parsedCheck = parse(otaCheck) as {
+      concurrency?: unknown;
+      jobs: { 'ota-check': { concurrency: { group: string; 'cancel-in-progress': boolean } } };
+    };
+    // Workflow concurrency runs even when its only job is skipped. Keeping the
+    // lane on the job prevents a title/body edit from cancelling the push.
+    expect(parsedCheck.concurrency).toBeUndefined();
+    expect(parsedCheck.jobs['ota-check'].concurrency).toEqual({
+      group: 'mobile-ota-check-${{ github.head_ref || github.ref_name }}',
+      'cancel-in-progress': true,
+    });
   });
 
   // The PR CI gate diffs head against the branch it will merge into. Diffing a
