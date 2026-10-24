@@ -69,7 +69,8 @@ export function jobQueueErrorDiagnostics(error: unknown) {
   const queueSuffix = / \(Queue: ([a-z0-9_-]{1,64}), Worker: [0-9a-f-]{36}\)$/.exec(message);
   const queueCandidate = typeof errorRecord.queue === 'string' ? errorRecord.queue : queueSuffix?.[1];
   const queue = queueCandidate && QUEUE_NAMES.has(queueCandidate) ? queueCandidate : 'unknown';
-  // pg-pool's acquisition timeout has no code; retain its meaning without copying its text.
+  // pg-pool's acquisition timeout and pg's client-side read deadline (a worker
+  // pool's `query_timeout`) have no code; retain their meaning without copying their text.
   const failure =
     code === 'CONNECT_TIMEOUT' ||
     code === 'ETIMEDOUT' ||
@@ -78,9 +79,11 @@ export function jobQueueErrorDiagnostics(error: unknown) {
       ? 'connection_timeout'
       : code === '57014'
         ? 'query_canceled'
-        : code === 'unknown'
-          ? 'unknown'
-          : 'driver_error';
+        : message.startsWith('Query read timeout')
+          ? 'query_timeout'
+          : code === 'unknown'
+            ? 'unknown'
+            : 'driver_error';
   return { code, errorType, queue, failure };
 }
 

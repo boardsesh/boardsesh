@@ -1070,6 +1070,35 @@ backlog and last-success timestamps come from durable records. No credentials,
 provider responses or payloads enter logs or metrics. Alert on backlog age and
 freshness as well as failures; independent monitors must detect primary outages.
 
+### A worker that loses its job queue (#6683)
+
+Docker only restarts a container whose process exits. An unhealthy container
+keeps running, so a 503 on `/health` changes nothing by itself. In October 2026
+two workers sat unhealthy for three days. Each had one job-queue query that
+never got an answer, and that query held the worker's only pg-boss connection.
+Two guards now cover this:
+
+- **A 30 s read deadline on the worker's pg-boss pool**
+  (`WORKER_JOB_QUEUE_QUERY_TIMEOUT_MS`). A query with no answer after 30 s is
+  dropped along with its socket, and the next poll opens a fresh connection. The
+  worker logs one `[worker] poll failed` and carries on. See
+  [`docs/db-connectivity.md`](db-connectivity.md), "Worker job-queue read
+  deadline", for why it is write-safe and why the backend's pool has none.
+- **A stall watchdog** (`packages/backend/src/workers/stall-watchdog.ts`). Every
+  30 s it runs one round trip on the pg-boss pool, on its own timer. If none has
+  succeeded for 10 minutes, it logs
+  `[worker] job queue unreachable, exiting so Docker restarts the worker` and the
+  process exits with code 1. A long job does not count as silence, because a
+  running job never uses that pool. Each run's I/O goes through the Drizzle
+  adapter, on the application pool.
+
+Restart cadence during a real outage comes from Docker's restart manager. The
+delay starts at 100 ms and doubles on each restart up to 1 minute. It drops back
+to 100 ms whenever the last run lasted 10 s or more. A worker that exits after
+10 minutes therefore restarts at once. If the database is still down, startup
+fails, and the loop is paced either by Docker's doubling (a quick failure) or by
+the 30 s connect timeout (a hung connect). It never spins.
+
 ## Deployment and evidence gates
 
 The `Background Worker Image` workflow builds the dependency-scoped

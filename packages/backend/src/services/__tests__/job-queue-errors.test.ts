@@ -42,6 +42,23 @@ describe('job queue diagnostics', () => {
     ).toEqual({ code: 'unknown', errorType: 'Error', queue: '__pgboss__send-it', failure: 'connection_timeout' });
   });
 
+  it("names pg's client-side read deadline, which has no error code either", () => {
+    // The shape pg-boss's queue-cache refresh emits: the Error spread into a plain object.
+    const readTimeout = new Error('Query read timeout');
+    expect(
+      jobQueueErrorDiagnostics({
+        ...Object.fromEntries(Object.entries(readTimeout)),
+        message: readTimeout.message,
+        stack: readTimeout.stack,
+      }),
+    ).toEqual({
+      code: 'unknown',
+      errorType: 'unknown',
+      queue: 'unknown',
+      failure: 'query_timeout',
+    });
+  });
+
   it('retains socket codes and structured queue fields without exposing the cause', () => {
     expect(
       jobQueueErrorDiagnostics({

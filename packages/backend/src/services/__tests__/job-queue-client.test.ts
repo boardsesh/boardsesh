@@ -1,6 +1,6 @@
 import { PgBoss } from 'pg-boss';
 import { describe, expect, it } from 'vitest';
-import { JOB_QUEUE_TIMER_OPTIONS, createJobQueueClient } from '../job-queue-client';
+import { JOB_QUEUE_TIMER_OPTIONS, WORKER_JOB_QUEUE_QUERY_TIMEOUT_MS, createJobQueueClient } from '../job-queue-client';
 
 // pg-boss validates its options in the constructor and only connects on
 // start(), so an unreachable connection string is enough here.
@@ -17,5 +17,20 @@ describe('job queue client timers', () => {
     expect(() => new PgBoss({ connectionString, ...JOB_QUEUE_TIMER_OPTIONS, cronMonitorIntervalSeconds: 46 })).toThrow(
       /cronMonitorIntervalSeconds/,
     );
+  });
+});
+
+describe('job queue client read deadline (#6683)', () => {
+  // pg-boss's default Db keeps the config it hands to pg.Pool, so this is what pg sees.
+  const poolConfig = (boss: PgBoss) => (boss.getDb() as unknown as { config: Record<string, unknown> }).config;
+
+  it('gives the worker pool a client-side read deadline', () => {
+    const worker = createJobQueueClient({ connectionString, poolSize: 1, owner: 'worker' });
+    expect(poolConfig(worker).query_timeout).toBe(WORKER_JOB_QUEUE_QUERY_TIMEOUT_MS);
+  });
+
+  it('leaves the backend pool without one, so long supervision passes are not cut off', () => {
+    const backend = createJobQueueClient({ connectionString, poolSize: 2, owner: 'backend' });
+    expect(poolConfig(backend)).not.toHaveProperty('query_timeout');
   });
 });

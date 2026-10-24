@@ -89,6 +89,34 @@ export const JOB_QUEUE_TIMER_OPTIONS = {
  */
 export const MAINTENANCE_POLLING_INTERVAL_SECONDS = 30;
 
+/**
+ * How long a worker's pg-boss pool waits for a query's answer before giving up
+ * on the connection (#6683). A worker's pool holds one connection, and pg-pool
+ * never takes back a connection that is checked out. A query that never gets
+ * an answer, such as a fetch sent down a socket the network silently dropped
+ * after acknowledging it, used to hold that one slot forever: every later
+ * checkout then waited 10 s and failed, once a minute, for days.
+ *
+ * With this set, pg rejects the stuck query, pg-pool discards the client, and
+ * pg destroys its socket. The next poll opens a fresh connection. Nothing is
+ * retried: a fetch whose answer was lost may have activated a job on the
+ * server, and the backend supervisor fails and retries that job on its missed
+ * heartbeat, as it does when a worker dies.
+ *
+ * Workers only. Every worker statement on this pool is a short read or the
+ * fetch; run I/O goes through the Drizzle adapter. The backend's pool runs
+ * supervision passes that can legitimately take longer. See
+ * docs/db-connectivity.md, "Worker job-queue read deadline".
+ */
+export const WORKER_JOB_QUEUE_QUERY_TIMEOUT_MS = 30_000;
+
+// pg-boss hands its whole config to `pg.Pool`, which hands it to each
+// `pg.Client`, so pg reads `query_timeout` from here. pg-boss's option type just
+// does not list it.
+const WORKER_JOB_QUEUE_POOL_OPTIONS: { query_timeout: number } = {
+  query_timeout: WORKER_JOB_QUEUE_QUERY_TIMEOUT_MS,
+};
+
 /** Shared connection factory. Only the backend owns scheduling/supervision. */
 export function createJobQueueClient(options: {
   connectionString: string;
@@ -107,6 +135,7 @@ export function createJobQueueClient(options: {
     connectionString: options.connectionString,
     max: options.poolSize,
     connectionTimeoutMillis: 10_000,
+    ...(options.owner === 'worker' ? WORKER_JOB_QUEUE_POOL_OPTIONS : {}),
     migrate: options.owner === 'backend' && options.testBootstrap === true,
     schedule: options.owner === 'backend',
     supervise: options.owner === 'backend',

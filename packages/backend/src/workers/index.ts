@@ -5,10 +5,10 @@ async function main() {
   const config = workerConfig();
   configureWorkerPools();
   const { startWorker } = await import('./runtime');
-  const worker = await startWorker(config);
+  let worker: Awaited<ReturnType<typeof startWorker>> | undefined;
   let stopping = false;
   const stop = async () => {
-    if (stopping) return;
+    if (stopping || !worker) return;
     stopping = true;
     const timeout = setTimeout(() => process.exit(1), 120_000);
     timeout.unref();
@@ -20,6 +20,15 @@ async function main() {
       clearTimeout(timeout);
     }
   };
+  worker = await startWorker(config, {
+    // A wedged job queue (#6683): drain like a SIGTERM, then exit non-zero so
+    // Docker's `restart: unless-stopped` starts a fresh process. If the drain
+    // itself hangs, the 120 s timer above still ends the process.
+    onStalled: () => {
+      process.exitCode = 1;
+      void stop().finally(() => process.exit(1));
+    },
+  });
   process.once('SIGTERM', () => {
     void stop();
   });

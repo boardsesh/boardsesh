@@ -496,6 +496,53 @@ entry points against a fake server that sends a FATAL during startup: no
 unhandled rejection, one socket, the server's error, and the caller's statement
 written once.
 
+### Worker job-queue read deadline (#6683)
+
+A background worker's pg-boss pool has exactly one connection (`PGBOSS_POOL_SIZE=1`).
+In pg-boss 12.33, pg 8.23 and pg-pool 3.14, nothing ever takes back a connection
+that is checked out:
+
+- pg-pool's `connectionTimeoutMillis` covers only callers waiting for a
+  connection and new connects (`pg-pool/index.js`, `connect()` and `newClient()`).
+- Its idle timer starts only on release.
+- pg has no read deadline (`query_timeout: false` in `pg/lib/defaults.js`) and no
+  keepalive by default.
+
+So a query that is sent and acknowledged but never answered holds the only slot
+for good. A TCP proxy whose upstream leg has gone does exactly that, and
+keepalive cannot see it, because the proxy answers the probes itself. Every
+later checkout then fails with `timeout exceeded when trying to connect`. That
+is the line two homelab workers logged once a minute for three days, from
+pg-boss's 60 s queue-cache refresh.
+
+`createJobQueueClient` therefore sets `query_timeout`
+(`WORKER_JOB_QUEUE_QUERY_TIMEOUT_MS`, 30 s) on worker-owned pools. pg-boss
+passes its config through to `pg.Pool` and each `pg.Client`. When the deadline
+fires:
+
+1. pg rejects the query with `Query read timeout`, which our diagnostics call
+   `failure: 'query_timeout'`.
+2. pg-pool discards the client.
+3. `client.end()` destroys the socket, because a query is still active.
+
+`job-queue-dead-socket.test.ts` reproduces it with a fake server that swallows
+a query on an open socket.
+
+**It is write-safe.** The only write on a worker's pg-boss pool is `fetch`, and
+nothing retries it. A fetch whose answer was lost may have activated a job on
+the server. The backend supervisor then fails that job on its missed heartbeat
+and pg-boss retries it, exactly as when a worker dies. The retry is a new
+attempt with its own claim. That job uses one retry. Run I/O (`touch`,
+`complete`, `fail`, `send`) never touches this pool: it goes through the Drizzle
+adapter on the application pool.
+
+**The backend's pool has no deadline.** Its supervision and maintenance passes,
+such as the queue-stats pass that seq-scans `pgboss.job_common`, can
+legitimately run longer than 30 s. A client-side deadline would drop the
+connection and leave the statement running on the server. `statement_timeout`
+is no substitute for any of this: the server enforces it, and the server never
+sees a query that went missing, or an answer that was lost on the way back.
+
 ## Health endpoints
 
 - **`GET /health`** — status code is governed by Redis alone. It reports
