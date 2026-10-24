@@ -387,10 +387,25 @@ describe('describeWorkoutRunner', () => {
     });
 
     it('is done once the climber is past every workout climb', () => {
-      const readout = readoutFor({ queueUuids: [...queue, 'hand-queued'], currentUuid: 'hand-queued' });
+      const readout = readoutFor({
+        queueUuids: [...queue, 'hand-queued'],
+        currentUuid: 'hand-queued',
+        log: [tick('l2', 'attempt')],
+      });
 
       expect(readout.phase).toBe('done');
       expect(readout.resumeUuid).toBeNull();
+    });
+
+    it('is not done while the last workout climb, left for another one, has nothing logged', () => {
+      const readout = readoutFor({ queueUuids: [...queue, 'from-search'], currentUuid: 'from-search' });
+
+      expect(readout.phase).toBe('climbing');
+      expect(readout.resumeUuid).toBe('l2');
+      expect(readout.stages.find((stage) => stage.id === 'limit')?.climbs).toEqual([
+        { queueItemUuid: 'l1', attempts: 0, sent: false, outcome: 'skipped' },
+        { queueItemUuid: 'l2', attempts: 0, sent: false, outcome: 'upcoming' },
+      ]);
     });
   });
 
@@ -452,10 +467,15 @@ describe('describeWorkoutRunner', () => {
     });
 
     it('finishes every stage once the workout is done', () => {
-      const readout = readoutFor({ queueUuids: [...queue, 'hand-queued'], currentUuid: 'hand-queued' });
+      const readout = readoutFor({
+        queueUuids: [...queue, 'hand-queued'],
+        currentUuid: 'hand-queued',
+        log: [tick('l2', 'send')],
+      });
 
       expect(readout.stages.every((stage) => stage.finished)).toBe(true);
-      expect(readout.totals).toEqual({ sent: 0, tried: 0, skipped: 0, total: 0 });
+      // Only the limit block was logged here.
+      expect(readout.totals).toEqual({ sent: 1, tried: 0, skipped: 1, total: 2 });
     });
   });
 
@@ -478,6 +498,49 @@ describe('describeWorkoutRunner', () => {
       });
 
       expect(readout.resumeUuid).toBe('b');
+    });
+
+    it('points back at the workout climb the climber left unclimbed, and never counts it skipped', () => {
+      // On 'a', nothing logged, the climber opens a climb from search: it goes in
+      // right after 'a' and onto the wall.
+      const readout = readoutFor({
+        queueUuids: ['w1', 'w2', 'a', 'from-search', 'b', 'a2', 'b2', 'l1', 'l2'],
+        currentUuid: 'from-search',
+        log: [tick('w1', 'send'), tick('w2', 'send')],
+      });
+
+      expect(readout.resumeUuid).toBe('a');
+      expect(readout.phase).toBe('climbing');
+      const fourByFour = readout.stages.find((stage) => stage.id === 'four');
+      expect(fourByFour?.climbs[0]).toEqual({ queueItemUuid: 'a', attempts: 0, sent: false, outcome: 'upcoming' });
+      expect(fourByFour?.tally).toEqual({ sent: 0, tried: 0, skipped: 0, total: 4 });
+      expect(fourByFour?.finished).toBe(false);
+    });
+
+    it('still counts the workout climbs before the one left as skipped', () => {
+      const readout = readoutFor({
+        queueUuids: ['w1', 'w2', 'a', 'from-search', 'b', 'a2', 'b2', 'l1', 'l2'],
+        currentUuid: 'from-search',
+        log: [tick('w1', 'send')],
+      });
+
+      expect(readout.resumeUuid).toBe('a');
+      const warmUp = readout.stages.find((stage) => stage.id === 'warm');
+      expect(warmUp?.climbs.map(({ outcome }) => outcome)).toEqual(['sent', 'skipped']);
+      expect(warmUp?.finished).toBe(true);
+    });
+
+    it('counts a left climb as skipped once the climber moves on in the workout', () => {
+      const readout = readoutFor({
+        queueUuids: ['w1', 'w2', 'a', 'from-search', 'b', 'a2', 'b2', 'l1', 'l2'],
+        currentUuid: 'b',
+        log: [tick('w1', 'send'), tick('w2', 'send')],
+      });
+
+      expect(readout.stages.find((stage) => stage.id === 'four')?.climbs[0]).toMatchObject({
+        queueItemUuid: 'a',
+        outcome: 'skipped',
+      });
     });
 
     it('points at the first workout climb with nothing on the wall', () => {

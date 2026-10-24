@@ -233,14 +233,17 @@ agree on these points:
   the boundaries.
 - **Outcomes.** Every queued staged climb is `sent` (a flash or send logged on it), `tried`
   (ticks but no send), `skipped` (the current climb is past it with nothing logged) or
-  `upcoming`, per stage (`climbs`, `tally`). A finished stage with anything logged on it
+  `upcoming`, per stage (`climbs`, `tally`). One exception: a climb opened from a list or
+  search goes in right after the climb on the wall, so with an off-plan climb up, the staged
+  climb just before it is the one the climber left. With nothing logged on it, it stays
+  `upcoming`, not `skipped`, until the climber moves on in the workout. A finished stage with anything logged on it
   (`logged`) shows its tally in place of the climb count; one passed with nothing logged keeps
   the count, since its climbs may have been logged elsewhere. `totals`, which "Workout done"
   carries, add up the `logged` stages only, by the same rule.
 - **Off the plan.** When the climb on the wall is in no stage (Start ran while another climb
   was up, or the climber wandered off), the card offers "Start your workout" (or "Back to your
-  workout"): it puts the first staged climb not reached yet on the wall and stops walking any
-  list.
+  workout"): it puts the first `upcoming` staged climb on the wall (the one the climber left,
+  if nothing is logged on it) and stops walking any list.
 - **Limits.** Outcomes come from this phone's tick log, so a tick logged on another device, or
   deleted later from the session detail, is not reflected. Tries count ticks, so one tick saying
   "3 attempts" counts as one try.

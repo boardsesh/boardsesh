@@ -153,8 +153,9 @@ export type WorkoutRunnerReadout = {
   rest: WorkoutRunnerRest | null;
   /**
    * The staged climb to go to while the current climb is in no stage: the first
-   * one not reached yet. Null when the current climb is staged, or the workout is
-   * done.
+   * one still `upcoming`. That is the workout climb the climber left for the
+   * off-plan one while nothing is logged on it, else the first one not reached
+   * yet. Null when the current climb is staged, or the workout is done.
    */
   resumeUuid: string | null;
   stages: WorkoutRunnerStageReadout[];
@@ -233,8 +234,11 @@ function addToTally(tally: WorkoutClimbTally, outcome: WorkoutClimbOutcomeKind):
  * - `climbing`: everything else, an off-plan current climb included.
  *
  * A staged climb is `skipped` once the current climb sits after it in the queue
- * (or its last beat ran out) with nothing logged on it. Only queued climbs count,
- * as everywhere in the run.
+ * (or its last beat ran out) with nothing logged on it. One exception: with an
+ * off-plan climb on the wall, the staged climb just before it is the one the
+ * climber left for it (a list or search tap inserts after the climb on the wall),
+ * so while nothing is logged on it, it stays `upcoming`. Only queued climbs
+ * count, as everywhere in the run.
  */
 export function describeWorkoutRunner({
   run,
@@ -279,9 +283,16 @@ export function describeWorkoutRunner({
   // the scheduler latches `queueEnded`: the climber is past that climb too.
   const lastBeatRanOut = onLastStaged && stagePacing?.mode === 'onTheMinute' && rest.queueEnded;
   const currentQueuePosition = currentUuid === null ? undefined : queuePositionByUuid.get(currentUuid);
+  const isBeforeCurrent = (uuid: string): boolean =>
+    currentQueuePosition !== undefined && (queuePositionByUuid.get(uuid) ?? Infinity) < currentQueuePosition;
+  // A climb opened from a list or search goes into the queue right after the
+  // climb on the wall. So with an off-plan climb up, the last staged climb before
+  // it is the one the climber left for it. While nothing is logged on it, it is
+  // still to come, not skipped, and "Back to your workout" returns to it.
+  const leftUuid = position === null ? stagedInQueueOrder.filter(isBeforeCurrent).at(-1) : undefined;
+  const leftUnclimbedUuid = leftUuid !== undefined && climbLog(leftUuid).attempts === 0 ? leftUuid : undefined;
   const isPassed = (uuid: string): boolean =>
-    (currentQueuePosition !== undefined && (queuePositionByUuid.get(uuid) ?? Infinity) < currentQueuePosition) ||
-    (lastBeatRanOut && uuid === currentUuid);
+    (isBeforeCurrent(uuid) && uuid !== leftUnclimbedUuid) || (lastBeatRanOut && uuid === currentUuid);
 
   const lastStagedMetItsRule = (() => {
     if (lastStagedUuid === undefined || !onLastStaged) return false;

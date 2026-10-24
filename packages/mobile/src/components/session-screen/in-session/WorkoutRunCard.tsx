@@ -189,21 +189,27 @@ function WorkoutRunCardContent({
                     : { borderColor: systemColors.tertiaryLabel },
                 ]}
               />
-              <Text
-                variant="body"
-                color={stage.isCurrent ? systemColors.label : systemColors.secondaryLabel}
-                style={[styles.stageName, stage.isCurrent ? styles.currentStageName : null]}
-                numberOfLines={1}
-              >
-                {name}
-              </Text>
-              <Text
-                variant="subheadline"
-                color={stage.isCurrent ? brandColors.primary : systemColors.secondaryLabel}
-                numeric
-              >
-                {status}
-              </Text>
+              {/* The name and its status share a line while they fit; a long tally
+                  (German, Spanish, large text) drops under the name instead of
+                  squeezing it to "4…". */}
+              <View style={styles.stageText}>
+                <Text
+                  variant="body"
+                  color={stage.isCurrent ? systemColors.label : systemColors.secondaryLabel}
+                  style={[styles.stageName, stage.isCurrent ? styles.currentStageName : null]}
+                  numberOfLines={1}
+                >
+                  {name}
+                </Text>
+                <Text
+                  variant="subheadline"
+                  color={stage.isCurrent ? brandColors.primary : systemColors.secondaryLabel}
+                  style={styles.stageStatus}
+                  numeric
+                >
+                  {status}
+                </Text>
+              </View>
             </View>
           );
         })}
@@ -300,9 +306,10 @@ function CurrentClimbRow({ readout, item }: { readout: WorkoutRunnerReadout; ite
 
 /**
  * The climb on the wall is in no stage: Start ran while another climb was up,
- * or the climber wandered off the plan. One tap puts the first workout climb not
- * reached yet on the wall, and stops walking any list, so Next and the rest
- * timer follow the workout again.
+ * or the climber wandered off the plan. One tap puts the workout climb they left
+ * back on the wall (or, once something is logged on it, the first one not
+ * reached yet), and stops walking any list, so Next and the rest timer follow
+ * the workout again.
  */
 function ResumeWorkoutRow({ readout, item }: { readout: WorkoutRunnerReadout; item: ClimbQueueItem }) {
   const { t } = useTranslation('session');
@@ -479,8 +486,20 @@ const styles = StyleSheet.create({
     borderRadius: STAGE_MARKER_SIZE / 2,
     borderWidth: 2,
   },
-  stageName: {
+  stageText: {
     flex: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    columnGap: spacing[3],
+    rowGap: 2,
+  },
+  stageName: {
+    flexShrink: 1,
+  },
+  stageStatus: {
+    flexShrink: 1,
   },
   currentStageName: {
     fontWeight: '600',
