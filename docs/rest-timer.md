@@ -85,11 +85,60 @@ Rules the scheduler keeps:
 
 ## Sound (native train)
 
-On `main` there is no sound: `packages/mobile/src/lib/sounds.ts` is a placeholder whose
-`isSoundSupported()` returns false and `createSoundPlayer()` returns null, so every cue is the
-haptic alone and the Sound setting row stays hidden. Playing a sound needs `expo-audio`, a native
-module, so the body ships in a `[native-train]` PR on `release/next` (#5395). Only that PR edits
-this section and `sounds.ts`.
+The cues beep through `expo-audio` (57.0.5), a native module, so the sound ships with the store
+binary built from `release/next` (#5395) and never by OTA. Until the merge-back, only the
+`[native-train]` PR edits this section and `packages/mobile/src/lib/sounds.ts`.
+
+What a binary without the module does. The same JavaScript reaches every store binary built
+before this train, older dev clients and the Expo web app, and importing `expo-audio` throws on
+all of them. `sounds.ts` touches nothing native when it loads. On the first cue that wants a
+sound, `isSoundSupported()` asks `requireOptionalNativeModule('ExpoAudio')` (iOS and Android
+only, answered once per app run), and only a yes leads to `require('expo-audio')`. A no means
+every cue is the haptic alone and the Sound row stays hidden.
+
+The climber's music:
+
+- The audio mode is set once, before the first beep: `playsInSilentMode: true`,
+  `interruptionMode: 'duckOthers'`, `shouldPlayInBackground: false`, `allowsRecording: false`.
+  Their music dips under the beep and keeps playing. iOS only ducks from the `.playback`
+  category, which is what `playsInSilentMode` selects, so the beep also plays through the silent
+  switch. If the mode cannot be set, that beep is skipped: the default session would stop the
+  music.
+- Both players are made with `keepAudioSessionActive`, so a countdown keeps the session from its
+  first tick to its final tone and the music dips once, not once a second. 1.2 s after the last
+  beep (`SOUND_SESSION_IDLE_MS`), `setIsAudioActiveAsync(false)` hands the session back and the
+  music returns to full volume. Leaving the foreground hands it back at once.
+- After a hand-back, the next beep calls `setIsAudioActiveAsync(true)` first. Android refuses
+  every play until audio is turned back on; on iOS `play()` reactivates the session anyway.
+- Native calls run one at a time, in order, and each gets 1 s to answer
+  (`SOUND_NATIVE_CALL_DEADLINE_MS`), so one stuck call costs one beep, not every beep after it.
+  Each failing step (`create`, `play`, `release`) reports once per app run, as a warning.
+- Foreground only. The JavaScript timers that fire the cues stop in the background anyway, and a
+  locked-phone alert is #6530's local notification.
+
+The config plugin entry in `app.config.ts` turns off background playback and background
+recording (their defaults add the `audio` UIBackgroundMode and the Android media-playback
+foreground service) and does not ask for `RECORD_AUDIO`. It leaves `microphonePermission` unset on
+purpose: the binary already carries `NSMicrophoneUsageDescription` from `expo-image-picker`,
+`expo-audio` links the recording APIs that App Store processing checks for it (ITMS-90683), and
+`false` would delete the string whenever this plugin's Info.plist step runs after the image
+picker's. Nothing records. Android gains `MODIFY_AUDIO_SETTINGS`, a normal permission with no
+prompt.
+
+The sounds are two generated sine tones in `packages/mobile/assets/sounds/`, 16-bit PCM mono
+WAV at 44,100 Hz, with raised-cosine fades so they start and stop without a click:
+
+| File | Cue | Tone | Length | Peak | Fade in / out |
+| --- | --- | --- | --- | --- | --- |
+| `rest-timer-tick.wav` | `countdownTick`, `warning` | 880 Hz | 100 ms | -6 dBFS | 5 ms / 30 ms |
+| `rest-timer-final.wav` | `advance`, `reached` | 1,320 Hz, a fifth above the tick | 450 ms | -3 dBFS | 5 ms / 120 ms |
+
+To change one, regenerate it with the same parameters and check the length still fits under
+`SOUND_SESSION_IDLE_MS`.
+
+Testing: the iOS simulator plays the beeps through the Mac's speakers, but its screen recordings
+are silent. Ducking another app's music, the silent switch and Bluetooth headphones can only be
+checked on a phone.
 
 ## Which phone moves the wall
 
