@@ -9,7 +9,7 @@
 // None of this runs from outbox replay: the drainer delivers a queued tick
 // without this hook, so a tick that reaches the server twenty minutes late can
 // never fire analytics twice or reset a live timer.
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { hasGraphqlErrorCode } from '@boardsesh/offline-sync/error-classification';
 import { resolveTickBoardContext, clampAttempts, type TickStatus } from '@boardsesh/play-view';
@@ -25,9 +25,12 @@ import { usePublicationAudience } from '../privacy/use-publication-audience';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { extractGraphqlCode } from '../../lib/graphql/extract-error-message';
 import { useOptionalRogueTimer } from '../../providers/rogue-timer-provider';
-import { getSetting } from '../../settings';
+import { QueueActionsContext } from '../../providers/queue/queue-contexts';
+import { getEffectiveRestPacing } from '../../hooks/use-effective-rest-pacing';
 import { nowMs } from '../../lib/clock';
 import { noteRestTimerTick } from '../../lib/rest-timer-store';
+import { attributeTickToQueueItem } from '../../lib/tick-attribution';
+import { noteWorkoutRunTick } from '../../lib/workout-run-store';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { useLocalPendingTicks } from '../../hooks/use-local-ticks';
 import { useIsOffline } from '../../hooks/use-is-offline';
@@ -115,6 +118,11 @@ export function useTickSaver({
   // it directly so save isn't recreated on every timer status / deviceName change.
   const startTimerStopwatch = useOptionalRogueTimer()?.startStopwatch;
   const { enabled: boardPresenceEnabled, boardId: boardPresenceBoardId } = useBoardPresenceControls();
+  // The committed current climb is READ when a save starts, never subscribed:
+  // the play drawer must not re-render on every queue change. Optional, because
+  // a sheet rendered without a QueueProvider (a test, a story) has no wall to
+  // attribute a tick to.
+  const getQueueSnapshot = useContext(QueueActionsContext)?.getQueueSnapshot;
 
   const { data: activeBoard } = useActiveBoard();
   const liveContext = resolveTickBoardContext(
@@ -149,6 +157,15 @@ export function useTickSaver({
       // Mirrors the server's flash-is-one-try rule; a no-op for every value the picker can show.
       const attemptCount = clampAttempts(fields.attemptCount, status);
       const quality = fields.quality !== null && fields.quality > 0 ? fields.quality : null;
+      // Which queue item this tick counts for, decided now: by the time the save
+      // lands the wall may have moved on, and the tick still belongs to the climb
+      // that was up when the climber logged it. Only at the angle it is up at: a
+      // send picked at another angle in the form still saves, but counts for no
+      // queue item, so it never moves the wall or lands in the workout's log.
+      const queueItemUuid = attributeTickToQueueItem(
+        { climbUuid, angle: fields.angle },
+        getQueueSnapshot?.().currentClimbQueueItem ?? null,
+      );
 
       saveTick.mutate(
         {
@@ -205,9 +222,21 @@ export function useTickSaver({
             // delivery too, which is correct: a rest timer is about when YOU
             // logged the send, not when the server heard about it. The outbox
             // drainer replays without this hook, so a tick delivered twenty
-            // minutes later can never reset a live timer.
-            noteRestTimerTick(climbedAtIso, getSetting('restTimerMode'), nowMs());
-            handlers?.onSaved?.(result?.savedTick.uuid ?? null);
+            // minutes later can never reset a live timer. The status and queue
+            // item are what a workout stage's advance rule reads (#5380).
+            noteRestTimerTick(climbedAtIso, getEffectiveRestPacing().mode, nowMs(), { status, queueItemUuid });
+            const tickUuid = result?.savedTick.uuid ?? null;
+            // The workout's own count of tries and sends, by queue item. It
+            // ignores a climb outside this session's run.
+            if (queueItemUuid !== null && sessionId) {
+              noteWorkoutRunTick(sessionId, {
+                queueItemUuid,
+                status,
+                climbedAt: climbedAtIso,
+                ...(tickUuid ? { tickUuid } : {}),
+              });
+            }
+            handlers?.onSaved?.(tickUuid);
           },
           onError: (error: unknown) => {
             hapticError();
@@ -239,6 +268,7 @@ export function useTickSaver({
       tickContext,
       surface,
       startTimerStopwatch,
+      getQueueSnapshot,
       tClimbs,
       tSettings,
     ],

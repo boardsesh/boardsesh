@@ -7,7 +7,16 @@
 // "the wall changed under a climber", so each rule below is paired with a test
 // that asserts it does NOT fire.
 
-import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from 'react';
 import { AppState } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { computeNavigationStateWithSuggestions } from '@boardsesh/play-view';
@@ -25,13 +34,17 @@ import { useSessionTimerDriver } from '../../hooks/use-session-timer-driver';
 import { useRestTimerState } from '../../hooks/use-rest-timer';
 import { nowMs } from '../../lib/clock';
 import { playRestTimerCue } from '../../lib/rest-timer-cues';
+import { anchorAfterFire, restAdvanceAllowed } from '../../lib/rest-timer-pacing';
 import {
   clearRestTimerQueueEnded,
+  floorRestTimerAnchorAtLastAdvance,
+  getRestTimerState,
   noteRestTimerAutoAdvanceFired,
   noteRestTimerQueueEnded,
   reanchorRestTimerAfterBackground,
 } from '../../lib/rest-timer-store';
 import {
+  getAfterTickRestFloorMs,
   getAutoAdvanceDeadlineMs,
   getRestTimerCountdownCueTimes,
   getRestTimerCountdownLeadSeconds,
@@ -51,7 +64,7 @@ const keepPreviewSource: Dispatch<SetStateAction<PlaylistSuggestionSource | null
 export function RestTimerAutoAdvanceScheduler() {
   const { t } = useTranslation('session');
   const timerState = useRestTimerState();
-  const { targetSeconds, autoAdvance, mode } = useEffectiveRestPacing();
+  const { targetSeconds, autoAdvance, mode, advanceOn } = useEffectiveRestPacing();
 
   const { nextClimb, getQueueSnapshot, refreshPlaylistSuggestionSource } = useQueueActions();
   const { queue, currentClimbQueueItem } = useQueueData();
@@ -176,23 +189,45 @@ export function RestTimerAutoAdvanceScheduler() {
         return;
       }
 
+      // A tick or send rule asks again at the fire, against the climb on the
+      // wall NOW: a manual Next that lands just before the timeout leaves the new
+      // climb without its tick, and walking on from it would skip a climb.
+      const { lastTick } = getRestTimerState();
+      const currentQueueItemUuid = inputs.currentClimbQueueItem?.uuid ?? null;
+      if (!restAdvanceAllowed({ advanceOn, currentQueueItemUuid, lastTick })) return;
+
       // Claim the cycle BEFORE advancing: a stale timeout from a re-run effect
       // or a remount loses the race here rather than skipping a second climb.
-      if (!noteRestTimerAutoAdvanceFired(expectedCycleId, mode, nowMs(), scheduledDeadlineMs)) return;
+      // Under a tick or send rule the claim also clears the anchor and the tick,
+      // so the next climb rests only once it is logged.
+      const anchorAfter = anchorAfterFire({ mode, advanceOn });
+      if (!noteRestTimerAutoAdvanceFired(expectedCycleId, mode, nowMs(), scheduledDeadlineMs, anchorAfter)) return;
 
       playRestTimerCue({ kind: 'advance' });
       nextClimb();
     },
-    [mode, nextClimb],
+    [mode, advanceOn, nextClimb],
   );
 
-  const wantsAdvance = shouldScheduleAutoAdvance({ state: timerState, targetSeconds, autoAdvance, canDriveWall });
+  // A workout stage's tick or send rule: the rest only moves the wall once the
+  // climb on it was logged (limit: sent). Otherwise the rest runs out with the
+  // reached cue below and the climb stays up.
+  const wantsAdvance =
+    shouldScheduleAutoAdvance({ state: timerState, targetSeconds, autoAdvance, canDriveWall }) &&
+    restAdvanceAllowed({
+      advanceOn,
+      currentQueueItemUuid: currentClimbQueueItem?.uuid ?? null,
+      lastTick: timerState.lastTick,
+    });
+  // One clock read for the three rules below, so the deadline, its staleness
+  // and the rest floor always agree within a render.
+  const renderNowMs = nowMs();
   const candidateDeadlineMs = wantsAdvance
     ? getAutoAdvanceDeadlineMs({
         mode,
         anchorMs: timerState.anchorMs,
         targetSeconds,
-        nowMs: nowMs(),
+        nowMs: renderNowMs,
         lastFiredDeadlineMs: timerState.lastFiredDeadlineMs,
       })
     : null;
@@ -202,9 +237,28 @@ export function RestTimerAutoAdvanceScheduler() {
   // scheduled rather than arming a pointless timer: otherwise the timer wedges
   // (no advance, and the target buzz below stays suppressed because it is gated
   // on nothing being pending) and the screen-wake lock is held for nothing.
-  const deadlineStale = isAutoAdvanceDeadlineStale(candidateDeadlineMs, nowMs());
+  const deadlineStale = isAutoAdvanceDeadlineStale(candidateDeadlineMs, renderNowMs);
   const scheduled = wantsAdvance && !deadlineStale;
   const deadlineMs = scheduled ? candidateDeadlineMs : null;
+
+  // A running after-tick rest that began before the last advance counts from
+  // it, less 3 s (`getAfterTickRestFloorMs`); the deadline above already does.
+  // Written into the store the first time it applies, before paint, so the pill
+  // reaches 0:00 as the wall moves, a pause freezes that rest, and the rest
+  // never flips back to its own anchor once that one's end goes by.
+  const restFloorMs = wantsAdvance
+    ? getAfterTickRestFloorMs({
+        mode,
+        anchorMs: timerState.anchorMs,
+        targetSeconds,
+        nowMs: renderNowMs,
+        lastFiredDeadlineMs: timerState.lastFiredDeadlineMs,
+      })
+    : null;
+  useLayoutEffect(() => {
+    if (restFloorMs === null) return;
+    floorRestTimerAnchorAtLastAdvance(timerState.cycleId, mode, targetSeconds, nowMs());
+  }, [mode, restFloorMs, targetSeconds, timerState.cycleId]);
 
   // The final countdown (#5396). The lead scales with the rest, and each second
   // of it is a cue, or a single warning with per-second cues off. The choice is
@@ -349,8 +403,18 @@ export function RestTimerAutoAdvanceScheduler() {
       activeConfig,
       isReachable,
     );
-    if (canNext) clearRestTimerQueueEnded(nowMs(), mode);
-  }, [armed, mode, queue, currentClimbQueueItem, playlistSuggestionSource, activeBoard, queueEnded, isReachable]);
+    if (canNext) clearRestTimerQueueEnded(nowMs(), mode, anchorAfterFire({ mode, advanceOn }));
+  }, [
+    armed,
+    mode,
+    advanceOn,
+    queue,
+    currentClimbQueueItem,
+    playlistSuggestionSource,
+    activeBoard,
+    queueEnded,
+    isReachable,
+  ]);
 
   // Coming back from the background, a deadline that passed while away was never
   // actionable. Re-anchor and start a fresh cycle rather than moving the wall for

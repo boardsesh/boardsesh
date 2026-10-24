@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   AUTO_ADVANCE_MAX_BACKDATE_MS,
   AUTO_ADVANCE_OVERDUE_GRACE_MS,
+  AUTO_ADVANCE_REST_FLOOR_SLACK_MS,
+  getAfterTickRestFloorMs,
   getAutoAdvanceDeadlineMs,
   isAutoAdvanceDeadlineStale,
   getRestTimerCycleElapsedSeconds,
@@ -23,6 +25,8 @@ const armedState = (overrides: Partial<RestTimerState> = {}): RestTimerState => 
   queueEnded: false,
   listEnded: false,
   lastFiredDeadlineMs: null,
+  stagePacing: null,
+  lastTick: null,
   ...overrides,
 });
 
@@ -203,6 +207,77 @@ describe('a beat that already fired', () => {
         lastFiredDeadlineMs: T0 + 60_000,
       }),
     ).toBe(T0 + 120_000);
+  });
+});
+
+describe('the after-tick rest floor', () => {
+  // The last advance, B. A 90 s rest.
+  const B = T0 + 600_000;
+  const afterTick = (anchorMs: number, nowMs: number, targetSeconds = 90, lastFiredDeadlineMs: number | null = B) => ({
+    mode: 'afterTick' as const,
+    anchorMs,
+    targetSeconds,
+    nowMs,
+    lastFiredDeadlineMs,
+  });
+
+  it('counts a running rest that began 83 s before the advance from 3 s before it', () => {
+    // A send from 85 s ago, logged 2 s after the advance: its own rest ends at B + 7 s.
+    expect(getAfterTickRestFloorMs(afterTick(B - 83_000, B + 2_000))).toBe(B - AUTO_ADVANCE_REST_FLOOR_SLACK_MS);
+    expect(getAutoAdvanceDeadlineMs(afterTick(B - 83_000, B + 2_000))).toBe(B + 87_000);
+  });
+
+  it('leaves a rest that has already run out as it was: past, so nothing is scheduled', () => {
+    // A send from 5 min ago: its own rest ran out 3:28 before the advance.
+    expect(getAfterTickRestFloorMs(afterTick(B - 298_000, B + 2_000))).toBeNull();
+    expect(getAutoAdvanceDeadlineMs(afterTick(B - 298_000, B + 2_000))).toBe(B - 208_000);
+    // One that ran out a moment ago is past too, never revived.
+    expect(getAutoAdvanceDeadlineMs(afterTick(B - 83_000, B + 7_000))).toBe(B + 7_000);
+  });
+
+  it('floors a rest lengthened back to life in the settings', () => {
+    // The same 5 min-old anchor on 5:10 now ends at B + 12 s, 2 s from now.
+    expect(getAutoAdvanceDeadlineMs(afterTick(B - 298_000, B + 10_000, 310))).toBe(B + 307_000);
+    // On 5:00 it ended at B + 2 s, already gone: still past.
+    expect(getAutoAdvanceDeadlineMs(afterTick(B - 298_000, B + 10_000, 300))).toBe(B + 2_000);
+  });
+
+  it('leaves an ordinary rest alone: the fire’s own re-anchor, one up to 3 s early, and one after it', () => {
+    expect(getAutoAdvanceDeadlineMs(afterTick(B, B))).toBe(B + 90_000);
+    expect(getAutoAdvanceDeadlineMs(afterTick(B - 3_000, B))).toBe(B + 87_000);
+    expect(getAfterTickRestFloorMs(afterTick(B - 3_000, B))).toBeNull();
+    expect(getAutoAdvanceDeadlineMs(afterTick(B + 20_000, B + 20_000))).toBe(B + 110_000);
+  });
+
+  it('takes the stage changeover as the rest: 10 s from the advance, less the slack', () => {
+    expect(getAutoAdvanceDeadlineMs(afterTick(B - 5_000, B + 1_000, 10))).toBe(B + 7_000);
+    expect(getAutoAdvanceDeadlineMs(afterTick(B + 1_000, B + 1_000, 10))).toBe(B + 11_000);
+    // A changeover that ran out before the advance stays run out.
+    expect(getAutoAdvanceDeadlineMs(afterTick(B - 20_000, B + 1_000, 10))).toBe(B - 10_000);
+  });
+
+  it('does nothing without a last advance, or on the minute', () => {
+    expect(getAutoAdvanceDeadlineMs(afterTick(B - 83_000, B + 2_000, 90, null))).toBe(B + 7_000);
+    expect(getAfterTickRestFloorMs({ ...afterTick(B - 83_000, B + 2_000), mode: 'onTheMinute' })).toBeNull();
+  });
+
+  it('never hands back a deadline still ahead that is less than a rest after the advance, less the slack', () => {
+    for (const targetSeconds of [10, 30, 90, 180, 310]) {
+      for (let anchorOffsetMs = -400_000; anchorOffsetMs <= 20_000; anchorOffsetMs += 1_000) {
+        for (let nowOffsetMs = 0; nowOffsetMs <= 400_000; nowOffsetMs += 10_000) {
+          const nowMs = B + nowOffsetMs;
+          const deadlineMs = getAutoAdvanceDeadlineMs(afterTick(B + anchorOffsetMs, nowMs, targetSeconds));
+          const ownDeadlineMs = B + anchorOffsetMs + targetSeconds * 1000;
+          if (deadlineMs === null) throw new Error('an anchored rest always has a deadline');
+          if (deadlineMs > nowMs) {
+            expect(deadlineMs).toBeGreaterThanOrEqual(B + targetSeconds * 1000 - AUTO_ADVANCE_REST_FLOOR_SLACK_MS);
+          }
+          // It only ever delays: a deadline the anchor alone puts in the past stays there.
+          if (ownDeadlineMs <= nowMs) expect(deadlineMs).toBe(ownDeadlineMs);
+          else expect(deadlineMs).toBeGreaterThanOrEqual(ownDeadlineMs);
+        }
+      }
+    }
   });
 });
 

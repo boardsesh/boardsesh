@@ -524,8 +524,8 @@ describe('backgrounding', () => {
 });
 
 describe('a back-dated tick', () => {
-  it('never moves the wall, and does not wedge the timer holding the screen awake', () => {
-    armWithTick();
+  it('never moves the wall on its own, and does not wedge the timer holding the screen awake', () => {
+    act(() => armRestTimer('afterTick', currentNowMs, 'session-1'));
     render(<RestTimerAutoAdvanceScheduler />);
 
     // The tick sheet's date picker, moved back five minutes.
@@ -537,6 +537,23 @@ describe('a back-dated tick', () => {
     expect(nextClimb).not.toHaveBeenCalled();
     // Nothing is pending, so the wake lock is released rather than held forever.
     expect(keepAwakeCalls.at(-1)).toEqual({ active: false, tag: 'rest-timer' });
+  });
+
+  it('leaves a running rest alone: the wall moves when that rest is up, not before', () => {
+    armWithTick();
+    render(<RestTimerAutoAdvanceScheduler />);
+
+    // Yesterday's climb, logged 10 s into today's rest.
+    advance(10_000);
+    act(() => {
+      noteRestTimerTick(new Date(currentNowMs - 300_000).toISOString(), 'afterTick', currentNowMs);
+    });
+    expect(getRestTimerState().anchorMs).toBe(T0);
+
+    advance(49_000);
+    expect(nextClimb).not.toHaveBeenCalled();
+    advance(1_000);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
   });
 });
 

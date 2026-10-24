@@ -9,7 +9,10 @@ import type { RestTimerState } from './rest-timer-store';
 /**
  * The tick sheet lets a climber back-date a send. A tick older than this updates
  * the display but must not schedule an advance — otherwise logging yesterday's
- * session yanks the wall the instant you save it.
+ * session yanks the wall the instant you save it. The rest-timer store judges
+ * every tick by it, on the tick's own time (`noteRestTimerTick`): such a tick
+ * never earns an advance under a tick or send rule, and never rewinds a running
+ * rest.
  */
 export const AUTO_ADVANCE_MAX_BACKDATE_MS = 60_000;
 
@@ -32,30 +35,84 @@ type DeadlineInput = {
   anchorMs: number | null;
   targetSeconds: number | null;
   nowMs: number;
-  /** {@link RestTimerState.lastFiredDeadlineMs} — never schedule at or before it. */
+  /**
+   * {@link RestTimerState.lastFiredDeadlineMs}. `onTheMinute` never schedules at
+   * or before it; `afterTick` never schedules a running rest earlier than one
+   * whole rest after it, less {@link AUTO_ADVANCE_REST_FLOOR_SLACK_MS}.
+   */
   lastFiredDeadlineMs?: number | null;
 };
 
 /**
- * When the next advance is due, or null when nothing is scheduled.
- *
- * `afterTick` is one interval past the anchor, so it can already be in the past
- * for a back-dated tick — callers gate that with `isTickFreshEnoughToArm`.
- *
- * `onTheMinute` returns the next beat STRICTLY after now, so arming exactly on a
- * boundary waits a full interval instead of firing on the spot.
+ * How far before the last advance an `afterTick` rest may start and still run
+ * from its own anchor (see {@link getAfterTickRestFloorMs}). A rest that starts
+ * this close to an advance is an ordinary one: the fire re-anchors at its own
+ * `nowMs`, which reads a moment before the deadline it records when the clock
+ * steps back, and a crew clock rounds a pause to whole seconds and re-anchors an
+ * early FIRE up to 2 s off the beat. Further back the rest is moved, never
+ * refused, so the slack only sets how soon after an advance the next may come:
+ * a whole rest less 3 s.
  */
-export function getAutoAdvanceDeadlineMs({
+export const AUTO_ADVANCE_REST_FLOOR_SLACK_MS = 3_000;
+
+/**
+ * Where a running `afterTick` rest counts from when its anchor is earlier than
+ * the last advance less {@link AUTO_ADVANCE_REST_FLOOR_SLACK_MS}, or null when
+ * its anchor stands.
+ *
+ * The tick floor in the store keeps a fresh tick off such an anchor, but other
+ * paths still reach one. A send dated more than a minute back, logged with no
+ * rest running (after a tick or send rule's advance, or after an on-the-minute
+ * stage), anchors at its own time, and on a long enough rest that rest is still
+ * running. A rest lengthened in the settings turns one that ran out long ago
+ * into one that runs out seconds after the advance. Either would move the wall
+ * again seconds after the last time. So the rest counts from the advance
+ * instead, and the next advance waits a whole rest from it, less the slack.
+ *
+ * It only ever delays: a rest that has already run out (its own end at or
+ * before `nowMs`) is left as it is, so its deadline stays past and nothing is
+ * scheduled for it. Floored, a send from yesterday would get a live rest.
+ *
+ * The answer depends on `nowMs`, so the scheduler writes it into the store the
+ * moment it first applies (`floorRestTimerAnchorAtLastAdvance`): from then on the
+ * pill and a pause count from the floored anchor too, and the rest no longer
+ * flips back to its own anchor once that one's end goes by.
+ */
+export function getAfterTickRestFloorMs({
   mode,
   anchorMs,
   targetSeconds,
   nowMs,
   lastFiredDeadlineMs = null,
 }: DeadlineInput): number | null {
+  if (mode !== 'afterTick' || anchorMs === null || lastFiredDeadlineMs === null) return null;
+  if (targetSeconds === null || targetSeconds <= 0) return null;
+  const floorMs = lastFiredDeadlineMs - AUTO_ADVANCE_REST_FLOOR_SLACK_MS;
+  if (anchorMs >= floorMs) return null;
+  if (anchorMs + targetSeconds * 1000 <= nowMs) return null;
+  return floorMs;
+}
+
+/**
+ * When the next advance is due, or null when nothing is scheduled.
+ *
+ * `afterTick` is one interval past the anchor, so it can already be in the past
+ * for a back-dated tick: the store anchors one older than
+ * `AUTO_ADVANCE_MAX_BACKDATE_MS` at its own time when no rest is running, and
+ * the scheduler reads the deadline as stale (`isAutoAdvanceDeadlineStale`). A
+ * running rest that began before the last advance counts from it instead
+ * ({@link getAfterTickRestFloorMs}), so any `afterTick` deadline still ahead of
+ * `nowMs` is at least `lastFiredDeadlineMs + targetSeconds * 1000 - 3 s`.
+ *
+ * `onTheMinute` returns the next beat STRICTLY after now, so arming exactly on a
+ * boundary waits a full interval instead of firing on the spot.
+ */
+export function getAutoAdvanceDeadlineMs(input: DeadlineInput): number | null {
+  const { mode, anchorMs, targetSeconds, nowMs, lastFiredDeadlineMs = null } = input;
   if (anchorMs === null || targetSeconds === null || targetSeconds <= 0) return null;
   const intervalMs = targetSeconds * 1000;
 
-  if (mode === 'afterTick') return anchorMs + intervalMs;
+  if (mode === 'afterTick') return (getAfterTickRestFloorMs(input) ?? anchorMs) + intervalMs;
 
   const beatsElapsed = Math.floor((nowMs - anchorMs) / intervalMs);
   const deadlineMs = anchorMs + (beatsElapsed + 1) * intervalMs;
