@@ -73,6 +73,8 @@ vi.mock('../../providers/theme-provider', async () => {
 import { Button } from '../Button.ios';
 import { ButtonSurfaceProvider } from '../Button.surface';
 import type { ButtonVariant } from '../Button.types';
+import { brandColors } from '../../theme/colors';
+import { overlays } from '../../theme/tokens';
 
 function lastHostProps(): Record<string, unknown> {
   const props = hostCalls.props.at(-1);
@@ -190,5 +192,50 @@ describe('iOS Button surface', () => {
       </ButtonSurfaceProvider>,
     );
     expect(modifierArg('buttonStyle')).toBe('borderedProminent');
+  });
+});
+
+// A fixed foreground defeats SwiftUI's disabled appearance on borderless
+// buttons. The native style needs the accent as its tint instead (#6570).
+describe('iOS Button text colour', () => {
+  it.each([
+    { state: 'enabled', disabled: false, loading: false },
+    { state: 'disabled', disabled: true, loading: false },
+    { state: 'loading', disabled: false, loading: true },
+  ])('leaves the $state text label colour to its native style', ({ disabled, loading }) => {
+    render(<Button title="Show all" onPress={vi.fn()} variant="text" disabled={disabled} loading={loading} />);
+
+    expect(modifierArg('tint')).toBe(brandColors.primary);
+    expect(modifierArg('foregroundStyle')).toBeUndefined();
+    expect(modifierArg('disabled')).toBe(disabled || loading);
+  });
+
+  it('keeps a custom text accent without forcing the disabled foreground', () => {
+    render(<Button title="Restore defaults" onPress={vi.fn()} variant="text" tintColor="#123456" disabled />);
+
+    expect(modifierArg('tint')).toBe('#123456');
+    expect(modifierArg('foregroundStyle')).toBeUndefined();
+  });
+
+  it('keeps text over board art legible through its tint', () => {
+    render(<Button title="Switch" onPress={vi.fn()} variant="text" over="content" />);
+
+    expect(modifierArg('tint')).toBe(overlays.onScrim);
+    expect(modifierArg('foregroundStyle')).toBeUndefined();
+  });
+
+  it.each<ButtonVariant>(['filled', 'outlined', 'tonal'])('preserves the %s foreground', (variant) => {
+    render(<Button title="Save" onPress={vi.fn()} variant={variant} />);
+
+    expect(modifierArg('foregroundStyle')).toBe(variant === 'filled' ? brandColors.onPrimary : brandColors.primary);
+  });
+
+  it('leaves a destructive text button colour to its native role', () => {
+    render(<Button title="Delete" onPress={vi.fn()} variant="text" role="destructive" disabled />);
+
+    expect(buttonCalls.props.at(-1)?.role).toBe('destructive');
+    expect(modifierArg('disabled')).toBe(true);
+    expect(modifierArg('tint')).toBeUndefined();
+    expect(modifierArg('foregroundStyle')).toBeUndefined();
   });
 });

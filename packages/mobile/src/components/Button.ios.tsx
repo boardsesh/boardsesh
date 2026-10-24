@@ -158,8 +158,14 @@ export function Button({
     dynamicTypeSize({ max: dynamicTypeSizeCap(resolveButtonMaxFontScale(maxFontSizeMultiplier)) }),
   ];
   if (!isDestructive) {
-    if (fillTint) modifiers.push(tint(fillTint));
-    modifiers.push(foregroundStyle(contentColor));
+    if (variant === 'text') {
+      // A fixed foreground keeps disabled text accent-coloured. Tint lets the
+      // native borderless style draw its disabled label, as Settings does.
+      modifiers.push(tint(contentColor));
+    } else {
+      if (fillTint) modifiers.push(tint(fillTint));
+      modifiers.push(foregroundStyle(contentColor));
+    }
   }
 
   // The spinner follows the content colour, except destructive (whose content is
