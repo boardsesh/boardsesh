@@ -800,6 +800,7 @@
       "sessionClimbs": "Bloques de la sesión",
       "createdClimbs": "Bloques creados",
       "hardestSend": "Encadene más duro",
+      "wallHistory": "Historial del muro",
       "end": {
         "title": "Fin de {{name}}",
         "titleUnnamed": "Fin de la lista",

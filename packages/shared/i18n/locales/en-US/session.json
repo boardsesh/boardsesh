@@ -800,6 +800,7 @@
       "sessionClimbs": "Session climbs",
       "createdClimbs": "Created climbs",
       "hardestSend": "Hardest send",
+      "wallHistory": "Wall history",
       "end": {
         "title": "End of {{name}}",
         "titleUnnamed": "End of the list",

@@ -800,6 +800,7 @@
       "sessionClimbs": "Blocs de la session",
       "createdClimbs": "Blocs créés",
       "hardestSend": "Croix la plus dure",
+      "wallHistory": "Historique du mur",
       "end": {
         "title": "Fin de {{name}}",
         "titleUnnamed": "Fin de la liste",

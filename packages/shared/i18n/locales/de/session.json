@@ -800,6 +800,7 @@
       "sessionClimbs": "Boulder der Session",
       "createdClimbs": "Erstellte Boulder",
       "hardestSend": "Schwerste Begehung",
+      "wallHistory": "Wandverlauf",
       "end": {
         "title": "Ende von {{name}}",
         "titleUnnamed": "Ende der Liste",
