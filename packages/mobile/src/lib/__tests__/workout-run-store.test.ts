@@ -582,6 +582,20 @@ describe('workout-run-store: timed stages and the storage slot', () => {
     expect(storedRecord(WORKOUT_RUN_V2_STORAGE_KEY)).toBeNull();
   });
 
+  it('clears both slots when each holds the ended session, so a later hydrate finds nothing', async () => {
+    // The rollback case in docs/workout-stages.md: a rolled-back bundle wrote _v1
+    // for a session whose timed run is still in _v2.
+    await storage.setItem(WORKOUT_RUN_V2_STORAGE_KEY, JSON.stringify({ sessionId: 'session-1', run: timedRun }));
+    await storage.setItem(WORKOUT_RUN_STORAGE_KEY, JSON.stringify({ sessionId: 'session-1', run }));
+
+    await clearWorkoutRunForSession('session-1');
+
+    expect(storedRecord(WORKOUT_RUN_STORAGE_KEY)).toBeNull();
+    expect(storedRecord(WORKOUT_RUN_V2_STORAGE_KEY)).toBeNull();
+    await hydrateWorkoutRun('session-1');
+    expect(getWorkoutRunState()).toBeNull();
+  });
+
   it('clears only the slot that names the ended session', async () => {
     await storage.setItem(WORKOUT_RUN_V2_STORAGE_KEY, JSON.stringify({ sessionId: 'session-1', run: timedRun }));
     await storage.setItem(WORKOUT_RUN_STORAGE_KEY, JSON.stringify({ sessionId: 'session-2', run }));

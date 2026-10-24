@@ -344,7 +344,10 @@ export async function hydrateWorkoutRun(sessionId: string): Promise<void> {
     if (record?.sessionId !== sessionId) continue;
     hydrated = hydrated ? mergeSlotsForSession(hydrated, record) : record;
   }
-  // Every stage of a kind this bundle does not know leaves nothing to show.
+  // Nothing to show: no slot named this session, or the slot that did held only
+  // stages of a kind this bundle does not know. A _v1 slot naming the same session
+  // is merged in above, before this check, so the second case reaches here only
+  // when there is no _v1 fallback.
   if (!hydrated || hydrated.run.stages.length === 0) return;
   setState(hydrated);
 }

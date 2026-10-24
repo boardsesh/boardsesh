@@ -632,6 +632,20 @@ describe('appendStageToRun', () => {
     expect('filters' in unfiltered.stages[2]).toBe(false);
   });
 
+  it('starts the round map of an existing stage that had none from the appended climbs', () => {
+    const noRounds: WorkoutRun = { stages: [{ id: 'four', kind: 'fourByFour', itemUuids: ['a', 'b'] }] };
+    const next = appendStageToRun(
+      noRounds,
+      { id: 'four', kind: 'fourByFour', roundByUuid: { c: 2, d: 2, unrelated: 3 } },
+      ['c', 'd'],
+    );
+
+    expect(next).toEqual({
+      stages: [{ id: 'four', kind: 'fourByFour', itemUuids: ['a', 'b', 'c', 'd'], roundByUuid: { c: 2, d: 2 } }],
+    });
+    expect('roundByUuid' in noRounds.stages[0]).toBe(false);
+  });
+
   it('returns the same run when there is nothing to add', () => {
     expect(appendStageToRun(RUN, { id: 'stage-2', kind: 'volume' }, [])).toBe(RUN);
     expect(appendStageToRun(RUN, { id: 'stage-2', kind: 'volume' }, ['p1'])).toBe(RUN);
