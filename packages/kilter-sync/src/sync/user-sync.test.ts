@@ -868,7 +868,7 @@ describe('applyLogs — natural-key adoption', () => {
       created_at: '2026-05-01T12:00:00.000Z',
     });
 
-    await applyLogs(tx as unknown as TxArg, 'user-1', [op], aliasCacheFor(['climb-1']), logSpy);
+    const result = await applyLogs(tx as unknown as TxArg, 'user-1', [op], aliasCacheFor(['climb-1']), logSpy);
 
     expect(calls.filter((c) => c.kind === 'select')).toHaveLength(1);
     expect(calls.filter((c) => c.kind === 'execute')).toHaveLength(0);
@@ -878,6 +878,28 @@ describe('applyLogs — natural-key adoption', () => {
     const message = logSpy.mock.calls[0]?.[0] as string;
     expect(message).toContain('different Boardsesh user');
     expect(message).toContain('log-FOREIGN');
+    // Reported back, not just logged: the runner turns it into the board
+    // card's "your sends are on another account" warning (#6687).
+    expect(result.foreignLogIds).toEqual(['log-FOREIGN']);
+  });
+
+  it("reports no foreign logs when the matching tick is the syncing user's own (#6687)", async () => {
+    // Same kilter_id hit, but the owner is the syncing user: the ordinary
+    // idempotent re-sync, not a duplicate-account link.
+    const { tx } = createTx({
+      selectResults: [[existingKilterTick({ uuid: 'tick-own', kilterId: 'log-OWN', ownerUserId: 'user-1' })]],
+    });
+
+    const op = makeLogPutOp({
+      log_uuid: 'log-OWN',
+      climb_uuid: 'climb-1',
+      angle: 40,
+      created_at: '2026-05-01T12:00:00.000Z',
+    });
+
+    const result = await applyLogs(tx as unknown as TxArg, 'user-1', [op], aliasCacheFor(['climb-1']), logSpy);
+
+    expect(result.foreignLogIds).toEqual([]);
   });
 });
 

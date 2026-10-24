@@ -37,7 +37,7 @@ import WarningAmberOutlined from '@mui/icons-material/WarningAmberOutlined';
 import WarningOutlined from '@mui/icons-material/WarningOutlined';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { circuitPlaylistSyncWarningKind } from '@boardsesh/shared-schema/sync-error-codes';
+import { boardAccountSyncWarningKind } from '@boardsesh/shared-schema/sync-error-codes';
 import { boardTypeLabel } from '@boardsesh/board-constants';
 import { ConfirmPopover } from '@/app/components/ui/confirm-popover';
 import type { AuroraCredentialStatus } from '@/app/lib/aurora-credentials/client';
@@ -120,7 +120,7 @@ export function BoardCredentialCard({
 }: BoardCredentialCardProps) {
   const { t } = useTranslation('settings');
   const syncWarningKind = credential?.syncError
-    ? circuitPlaylistSyncWarningKind(credential.syncError, credential.syncErrorReason)
+    ? boardAccountSyncWarningKind(credential.syncError, credential.syncErrorReason)
     : null;
   const boardName = boardTypeLabel(boardType);
   const totalUnsynced = unsyncedCounts.ascents + unsyncedCounts.climbs;
@@ -237,13 +237,15 @@ export function BoardCredentialCard({
           {credential.syncError && (
             <div className={styles.errorRow}>
               <Typography variant="body2" component="span" color={syncWarningKind ? 'warning.main' : 'error'}>
-                {syncWarningKind === 'foreign'
-                  ? t('aurora.status.foreignAccountCircuits')
-                  : syncWarningKind === 'ambiguous'
-                    ? t('aurora.status.ambiguousAccountCircuits')
-                    : syncWarningKind === 'legacy'
-                      ? t('aurora.status.duplicateAccountCircuits')
-                      : credential.syncError}
+                {syncWarningKind === 'logbook'
+                  ? t('aurora.status.foreignAccountLogbook')
+                  : syncWarningKind === 'foreign'
+                    ? t('aurora.status.foreignAccountCircuits')
+                    : syncWarningKind === 'ambiguous'
+                      ? t('aurora.status.ambiguousAccountCircuits')
+                      : syncWarningKind === 'legacy'
+                        ? t('aurora.status.duplicateAccountCircuits')
+                        : credential.syncError}
               </Typography>
             </div>
           )}

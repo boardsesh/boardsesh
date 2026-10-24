@@ -211,10 +211,11 @@
       "error": "Error",
       "expired": "Expired",
       "syncing": "Syncing",
-      "duplicateAccountCircuits": "Circuits aren't syncing: another Boardsesh account is connected to this board login, so playlist sync is paused for both of you. Your sends and ratings still come through.",
+      "duplicateAccountCircuits": "Circuits aren't syncing: another Boardsesh account is connected to this board login, so playlist sync is paused for both of you.",
       "syncingHint": "Syncing, check back in a bit",
-      "foreignAccountCircuits": "Circuits aren't syncing on this account because another Boardsesh account owns the matching playlists. Your sends and ratings still come through. Contact Boardsesh support to resolve playlist ownership.",
-      "ambiguousAccountCircuits": "Circuits aren't syncing because the matching playlists have multiple Boardsesh owners. Your sends and ratings still come through. Contact Boardsesh support to resolve playlist ownership."
+      "foreignAccountCircuits": "Circuits aren't syncing on this account because another Boardsesh account owns the matching playlists. Contact Boardsesh support to resolve playlist ownership.",
+      "ambiguousAccountCircuits": "Circuits aren't syncing because the matching playlists have multiple Boardsesh owners. Contact Boardsesh support to resolve playlist ownership.",
+      "foreignAccountLogbook": "Some sends from this board login are on another Boardsesh account, so they won't show up here. Sign in to that account, or contact Boardsesh support."
     },
     "unsynced": {
       "title_one": "{{count}} item pending sync",
