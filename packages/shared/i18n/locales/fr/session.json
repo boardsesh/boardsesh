@@ -801,6 +801,7 @@
       "createdClimbs": "Blocs créés",
       "hardestSend": "Croix la plus dure",
       "wallHistory": "Historique du mur",
+      "similarClimbs": "Blocs similaires",
       "end": {
         "title": "Fin de {{name}}",
         "titleUnnamed": "Fin de la liste",

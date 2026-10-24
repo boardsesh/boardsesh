@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useRef, type Dispatch, type RefObject, type SetStateAction } from 'react';
 import type { Climb } from '@boardsesh/shared-schema';
-import { reanchorPlaylistSuggestionSource, type ClimbQueueItem, type PlaylistSuggestionSource } from '@boardsesh/queue';
+import {
+  createPlaylistSuggestionSource,
+  reanchorPlaylistSuggestionSource,
+  type ClimbQueueItem,
+  type PlaylistSuggestionSource,
+} from '@boardsesh/queue';
 import type { ActiveSubDrawer, NavigationState } from '@boardsesh/play-view';
 import type { QueueActionsContextValue } from '../../providers/queue/queue-contexts';
-import { getPrivacyRevocationGeneration } from '../../lib/privacy/privacy-cache';
 import { climbToQueueItem, resolveCommittableQueueItem } from '../../lib/climb-to-queue-item';
+import { toQueueClimb, toQueueClimbs } from '../../lib/climb-types';
+import { getSetting } from '../../settings/hooks';
 import { getSimilarClimbTapMode, getSwipeNavigationTarget } from './play-drawer-navigation';
 import { shouldArmBusyWallConfirm, type WallLatchExit } from './wall-state';
 import type { PlayDrawerOpenOptions, PlayDrawerOpenTarget, PlayDrawerProps } from './play-drawer-types';
@@ -37,14 +43,20 @@ type CommitConfirmation = {
   setBusyWallConfirmArmed: Dispatch<SetStateAction<boolean>>;
   markLatchExit: (exit: WallLatchExit) => void;
 };
+/** The similar-climbs strip as a track: the board its climbs are drawn on, and its name. */
+type SimilarClimbsTrack = {
+  boardKey: string;
+  label: string;
+};
 type PlaySelectionInputs = {
   openTarget: PlayDrawerOpenTarget | null;
   viewer: NonNullable<PlayDrawerProps['viewer']>;
   showBoardMismatch: boolean;
   preview: PreviewSelection;
-  queue: Pick<QueueActionsContextValue, 'setCurrentClimb' | 'addToQueue' | 'previousClimb' | 'nextClimb'> & {
+  queue: Pick<QueueActionsContextValue, 'setCurrentClimb' | 'previousClimb' | 'nextClimb'> & {
     currentClimbQueueItem: ClimbQueueItem | null;
   };
+  similarTrack: SimilarClimbsTrack;
   navigation: SelectionNavigation;
   chrome: SelectionChrome;
   confirmation: CommitConfirmation;
@@ -120,7 +132,8 @@ export function usePlaySelectionController({
     setDrawerPreviewIsWallClimb,
     setSharedBrowseLatched,
   },
-  queue: { currentClimbQueueItem, setCurrentClimb, addToQueue, previousClimb, nextClimb },
+  queue: { currentClimbQueueItem, setCurrentClimb, previousClimb, nextClimb },
+  similarTrack,
   navigation: { navigationState, lightOnSwipe, browseByDefault },
   chrome: { clearMirror, resetFavoriteOverride, setIsTickBarActive, setActiveSubDrawer },
   confirmation: {
@@ -338,45 +351,65 @@ export function usePlaySelectionController({
     ],
   );
 
+  /**
+   * A tap on a similar climb plays from the similar-climbs strip (issue #6665),
+   * like a row of any list: swipes walk the strip and stop at its end card.
+   * It used to append the climb to the END of the queue and make it current,
+   * which put everything Up next behind it as History.
+   *
+   * It is a preview, nothing written, when any of these hold:
+   * - a signed-out reader (`getSimilarClimbTapMode`): there is no queue to
+   *   write and `setCurrentClimb` would re-arm the BLE auto-sender;
+   * - a crew is here (also `getSimilarClimbTapMode`): a look must not take
+   *   their wall;
+   * - the climber turned off Light problems when tapping the list;
+   * - the player is showing a climb from another board, whose similar climbs
+   *   are on that board too and can't go up on this one. That used to be the
+   *   queue add's cross-board prompt; there is no add any more.
+   * Otherwise the climb goes up, inserted after the current one and flagged
+   * `suggested` like every list play.
+   */
   const handleSimilarClimbPress = useCallback(
-    async (similarClimb: Climb) => {
-      const privacyGeneration = getPrivacyRevocationGeneration();
-      const queueItem = climbToQueueItem(similarClimb);
-      // A signed-out reader swaps what the drawer is showing and writes nothing:
-      // no queue entry they cannot carry anywhere, and no `setCurrentClimb`,
-      // which is what re-arms the BLE auto-sender. Similar Climbs is the only
-      // affordance in the anonymous view that could otherwise still drive a
-      // wall, so it takes the preview path the wrong-board drawer already uses.
-      //
-      // A member in a crew takes the same path for a different reason: the member
-      // branch below writes TWICE (append to the shared queue, then take the
-      // wall), which is the loudest possible outcome for the idlest possible
-      // intent. Browsing is what the tap means there.
-      if (getSimilarClimbTapMode(viewer, { inSharedSession: browseByDefault }) === 'preview') {
-        setDrawerPreviewItem(queueItem);
-        setDrawerPreviewSuggestionSource(null);
+    (similarClimb: Climb, similarClimbs: Climb[] = []) => {
+      const track = createPlaylistSuggestionSource({
+        playlistUuid: `similar:${displayedClimbUuid ?? similarClimb.uuid}`,
+        activatedClimb: toQueueClimb(similarClimb),
+        climbs: toQueueClimbs(similarClimbs),
+        boardKey: similarTrack.boardKey,
+        label: similarTrack.label,
+      });
+      const previewOnly =
+        getSimilarClimbTapMode(viewer, { inSharedSession: browseByDefault }) === 'preview' ||
+        showBoardMismatch ||
+        !getSetting('lightOnClimbTap');
+      clearMirror();
+      setIsTickBarActive(false);
+      if (previewOnly) {
+        setDrawerPreviewItem(climbToQueueItem(similarClimb));
+        setDrawerPreviewSuggestionSource(track);
         // A different climb is on screen now, so it is not the lit one.
         setDrawerPreviewIsWallClimb(false);
-        clearMirror();
-        setIsTickBarActive(false);
         return;
       }
-      // A similar climb can be set on another board, so this add may raise the
-      // cross-board prompt. Wait for it: backing out has to leave the drawer on
-      // the climb they were already looking at, not activate the one they just
-      // declined to queue.
-      if ((await addToQueue(queueItem)) === 'cancelled') return;
-      if (privacyGeneration !== getPrivacyRevocationGeneration()) return;
-      // Tapping a similar climb activates it (commit), so it's never a preview —
-      // clear any preview that was showing.
+      // Committed, so it's never a preview: clear any preview that was showing.
+      // The favorite override is cleared by the climb-change effect.
       setDrawerPreviewItem(null);
       setDrawerPreviewSuggestionSource(null);
-      clearMirror();
-      // The favorite override is cleared by the climb-change effect.
-      setIsTickBarActive(false);
-      setCurrentClimb(queueItem, { playlistSuggestionSource: null });
+      setCurrentClimb(climbToQueueItem(similarClimb, { suggested: true }), { playlistSuggestionSource: track });
     },
-    [addToQueue, setCurrentClimb, viewer, browseByDefault, setDrawerPreviewItem, setDrawerPreviewSuggestionSource],
+    [
+      setCurrentClimb,
+      viewer,
+      browseByDefault,
+      showBoardMismatch,
+      displayedClimbUuid,
+      similarTrack,
+      setDrawerPreviewItem,
+      setDrawerPreviewSuggestionSource,
+      setDrawerPreviewIsWallClimb,
+      clearMirror,
+      setIsTickBarActive,
+    ],
   );
 
   return {

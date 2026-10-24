@@ -801,6 +801,7 @@
       "createdClimbs": "Created climbs",
       "hardestSend": "Hardest send",
       "wallHistory": "Wall history",
+      "similarClimbs": "Similar climbs",
       "end": {
         "title": "End of {{name}}",
         "titleUnnamed": "End of the list",
