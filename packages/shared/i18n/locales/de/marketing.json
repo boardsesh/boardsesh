@@ -769,7 +769,7 @@
         "title": "Einen Boulder ansehen, ohne das Board zu beleuchten",
         "intro": "Vorschau ist der erste Eintrag in der Liste.",
         "p1": "Sie öffnet den Boulder im Player, ohne deine Warteschlange anzurühren. Dein nächster Wisch bringt dich zurück.",
-        "p2": "In einer Session, oder wenn „Board beim Wischen beleuchten“ aus ist, erscheint die Anzeige Stöbern. Unter dem Namen steht dann Vorschau, nicht beleuchtet, in einer Session Nur du siehst das. Tipp auf Aktiv setzen oder Am Board beleuchten, wenn du den Boulder willst.",
+        "p2": "In einer Session, oder wenn „Board beim Wischen beleuchten“ aus ist, erscheint die Anzeige Stöbern. Unter dem Namen steht dann in einer Session Nur du siehst das, sonst Vorschau, nicht beleuchtet, sobald ein Board verbunden oder ein Boulder beleuchtet ist. Tipp auf Aktiv setzen oder Am Board beleuchten, wenn du den Boulder willst.",
         "sessionsLink": "Wie eine Session die Wand in Ruhe lässt",
         "clipAlt": "Die Anzeige Stöbern",
         "clipCaption": "Die Anzeige kommt nach dem Wisch. Die Wand bleibt, wie sie war."

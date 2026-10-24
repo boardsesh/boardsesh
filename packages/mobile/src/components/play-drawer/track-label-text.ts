@@ -43,11 +43,21 @@ export function formatTrackLabel(model: TrackLabelModel, t: TFunction<'session'>
  * The header's words for the browse caption: "Preview, not lit" solo, "Only you
  * see this" in a crew, with "· the wall is on Crimp Ladder" when the room has a
  * climb lit. It leads the stats line, so the climb name is cut like a list name.
+ *
+ * `sharesLine` is true when the same line also carries a workout stage or a
+ * track label. The wall climb's name is then left out: the stats line holds
+ * about 45 characters on a 375pt phone, and the long crew form alone runs to
+ * 59, which would push "4 of 23" off the end. The pill's face still says who
+ * lit the wall.
  */
-export function formatBrowseCaption(caption: BrowseCaption, t: TFunction<'session'>): string | null {
+export function formatBrowseCaption(
+  caption: BrowseCaption,
+  t: TFunction<'session'>,
+  { sharesLine = false }: { sharesLine?: boolean } = {},
+): string | null {
   if (caption === null) return null;
   if (caption.kind === 'preview') return t('playView.wallState.previewNotLit');
   const wallClimbName = caption.wallClimbName?.trim();
-  if (!wallClimbName) return t('playView.wallState.onlyYouSeeThis');
+  if (!wallClimbName || sharesLine) return t('playView.wallState.onlyYouSeeThis');
   return t('playView.wallState.onlyYouSeeThisWallOn', { name: shortHeaderName(wallClimbName) });
 }

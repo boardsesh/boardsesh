@@ -769,7 +769,7 @@
         "title": "Preview a climb without lighting the board",
         "intro": "Preview is the first item in the list.",
         "p1": "It opens the climb in the play drawer without touching your queue. Your next swipe returns to your queue.",
-        "p2": "In a session, or with Light the board as I swipe off, a Browsing pill appears. The line under the name says Preview, not lit, or Only you see this in a session. Tap Set active or Put on the wall when you want the climb.",
+        "p2": "In a session, or with Light the board as I swipe off, a Browsing pill appears. The line under the name says Only you see this in a session, or Preview, not lit when a board is connected or a climb is lit. Tap Set active or Put on the wall when you want the climb.",
         "sessionsLink": "How a session keeps browsing off the wall",
         "clipAlt": "The Browsing pill",
         "clipCaption": "The pill arrives after the swipe. The wall stays as it was."

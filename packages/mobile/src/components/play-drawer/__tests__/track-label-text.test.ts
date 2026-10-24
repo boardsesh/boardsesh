@@ -71,4 +71,21 @@ describe('formatBrowseCaption', () => {
     const printedName = caption?.slice('Only you see this · the wall is on '.length) ?? '';
     expect(Array.from(printedName)).toHaveLength(MAX_TRACK_NAME_LENGTH);
   });
+
+  it('drops the wall climb name when the line also names a list, so the position still fits', () => {
+    // The stats line holds about 45 characters at caption size on a 375pt phone.
+    const statsLineBudget = 45;
+    const caption = formatBrowseCaption({ kind: 'crew', wallClimbName: 'Crimpladder Overhangtraverse Project' }, t, {
+      sharesLine: true,
+    });
+    expect(caption).toBe('Only you see this');
+    const trackLabel = formatTrackLabel({ kind: 'counted', name: 'Projects', position: 4, total: 23 }, t, 'en-US');
+    const statsLine = [caption, trackLabel].join(' · ');
+    expect(statsLine).toBe('Only you see this · From Projects · 4 of 23');
+    expect(Array.from(statsLine).length).toBeLessThanOrEqual(statsLineBudget);
+  });
+
+  it('keeps the solo preview words when the line also names a list', () => {
+    expect(formatBrowseCaption({ kind: 'preview' }, t, { sharesLine: true })).toBe('Preview, not lit');
+  });
 });

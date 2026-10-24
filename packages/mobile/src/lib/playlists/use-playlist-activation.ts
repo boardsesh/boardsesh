@@ -1258,8 +1258,9 @@ export function usePlaylistActivation({
           ...openingArtOptions,
           previewQueueItem: climbToQueueItem(schemaClimb),
           // A null target or no active board degrades to a trackless preview:
-          // the tapped climb still shows, swipes just walk the queue instead of
-          // this list, the same fallback the wrong-board branch above has. A
+          // the tapped climb still shows, and swipes have nothing to walk (its
+          // queue item is fresh, so it is not in the queue), the same fallback
+          // the wrong-board branch above has. A
           // climber with the setting off and no board picked can land here:
           // with no wall to light, a preview is all a tap can be.
           playlistSuggestionSource:

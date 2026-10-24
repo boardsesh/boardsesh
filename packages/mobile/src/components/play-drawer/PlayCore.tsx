@@ -1152,8 +1152,10 @@ export function PlayCore({
   // preview when this one latches, or when a swipe off the committed climb
   // opens one (a crew, or Light the board as I swipe off).
   const peekIsPreview = isPreview ? browseLatchActive : !navigationCommits;
-  // Plain strings out, so the memoized headers below compare by value.
-  const browseCaptionFor = (climbUuid: string | null, climbIsPreview: boolean) =>
+  // Plain strings out, so the memoized headers below compare by value. A header
+  // whose line also names a workout stage or a list gets the short crew form,
+  // so the list position still fits.
+  const browseCaptionFor = (climbUuid: string | null, climbIsPreview: boolean, sharesLine: boolean) =>
     formatBrowseCaption(
       resolveBrowseCaption({
         isAnonymous,
@@ -1166,10 +1168,23 @@ export function PlayCore({
         wallDriven: lightbulbActive,
       }),
       t,
+      { sharesLine },
     );
-  const browseCaption = browseCaptionFor(displayedClimbUuid ?? null, isPreview);
-  const previousBrowseCaption = browseCaptionFor(previousHeaderClimb?.uuid ?? null, peekIsPreview);
-  const nextBrowseCaption = browseCaptionFor(nextHeaderClimb?.uuid ?? null, peekIsPreview);
+  const browseCaption = browseCaptionFor(
+    displayedClimbUuid ?? null,
+    isPreview,
+    Boolean(workoutStageLabel || currentTrackLabelText),
+  );
+  const previousBrowseCaption = browseCaptionFor(
+    previousHeaderClimb?.uuid ?? null,
+    peekIsPreview,
+    Boolean(previousWorkoutStageLabel || previousTrackLabelText),
+  );
+  const nextBrowseCaption = browseCaptionFor(
+    nextHeaderClimb?.uuid ?? null,
+    peekIsPreview,
+    Boolean(nextWorkoutStageLabel || nextTrackLabelText),
+  );
 
   // The SELECTED board's angle moved (the angle pill / sheet — `activeAngle`, not
   // the render board's, which follows the displayed climb).
