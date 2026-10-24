@@ -319,7 +319,8 @@
         "body": "Name: [full name]\nMoonBoard username: [username]\nAccount email: [email address]\n\nMy MoonBoard logbook is personal data because it records my climbing activity and sporting achievements and is linked to my identifiable account. Please treat this as a UK GDPR subject access request and, where applicable, a data portability request. ICO guidance on personal data, subject access requests, data portability, and response time limits is linked below for reference:\nhttps://ico.org.uk/for-the-public/time-limits-for-responding-to-data-protection-rights-requests/\n\nPlease include all personal data linked to my MoonBoard account, including where available:\n\naccount/profile details;\nusername and account identifiers;\nproblems I have created or logged;\nsends, ascents, benchmarks, grades, repeats, attempts, dates, and session/history data;\nfavourites, saved problems, custom problems, and user-generated content linked to my account;\nboard/setup preferences and app/service usage data linked to my account;\nany related metadata or identifiers associated with my MoonBoard profile.\n\nThe ICO’s guidance says organisations should respond to subject access requests without undue delay and within one month. If you require identity verification, clarification, or a secure delivery method, please let me know promptly.\n\nWhere technically feasible, I would prefer the export in CSV or JSON format. Alternatively, please provide the data in another structured, commonly used, machine-readable format.\n\nPlease confirm receipt of this request and the date by which you expect to respond.\n\nKind regards,\n[name]"
       },
       "csvImport": {
-        "parseError": "Couldn't read that MoonBoard CSV. Check that it starts with ProblemId,Grade,Tries,Attempts,Rating,Date.",
+        "parseError": "Couldn't read that MoonBoard CSV. Each row needs Grade, Tries and Date, plus ProblemId or Name.",
+        "notMoonExport": "That file isn't a MoonBoard logbook. Pick the CSV MoonBoard sent you. If it's in Google Sheets, download it as a CSV first.",
         "parserUnavailable": "MoonBoard CSV import isn't available in this build yet.",
         "failed": "MoonBoard import failed. Try again.",
         "successCount": "{{count}} MoonBoard logbook items imported",
@@ -373,6 +374,7 @@
       "requestFailed": "Couldn't save that link. Try again.",
       "loadFailed": "Couldn't load your board accounts.",
       "importMissingUser": "Pick an Aurora JSON export file.",
+      "importNotJson": "That file isn't a JSON export. Pick the Aurora export that ends in .json.",
       "importBoardWarning": "This looks like {{layoutName}}. Import to {{boardName}} only if that's right.",
       "importPreviewIntro": "Import data from {{username}} to {{boardName}}:",
       "importPartial": "Import partially finished. Re-importing the file is safe.",

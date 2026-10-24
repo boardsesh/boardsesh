@@ -36,6 +36,7 @@ const mocks = vi.hoisted(() => ({
   parseMoonBoardCsv: vi.fn(),
   pickDocument: vi.fn(),
   fileText: vi.fn(),
+  platform: { OS: 'ios' } as { OS: string },
   showToast: vi.fn(),
   openURL: vi.fn((_url: string) => Promise.resolve()),
   setClipboard: vi.fn((_text: string) => Promise.resolve()),
@@ -156,7 +157,7 @@ vi.mock('react-native', () => ({
     create: (styles: Record<string, unknown>) => styles,
     hairlineWidth: 1,
   },
-  Platform: { OS: 'ios' },
+  Platform: mocks.platform,
   Linking: { openURL: mocks.openURL },
 }));
 
@@ -239,6 +240,7 @@ const input = (root: HTMLElement, placeholder: string) =>
 
 beforeEach(() => {
   mocks.auroraBoards.splice(0, mocks.auroraBoards.length, 'kilter', 'tension');
+  mocks.platform.OS = 'ios';
 });
 
 describe('BoardAccountsSection — board cards', () => {
@@ -472,6 +474,46 @@ describe('BoardAccountsSection — MoonBoard card', () => {
     });
   });
 
+  // #5426: Drive and mail label CSVs application/octet-stream, so any MIME
+  // list greys a real export out of the Android picker.
+  it('opens the Android picker unfiltered so a Drive CSV can be picked', async () => {
+    mocks.platform.OS = 'android';
+    const { container } = render(<BoardAccountsSection />);
+
+    fireEvent.click(button(container, 'aurora.moonboard.import')!);
+
+    await waitFor(() => {
+      expect(mocks.pickDocument).toHaveBeenCalledWith({ type: '*/*', copyToCacheDirectory: true });
+    });
+  });
+
+  it('says the file is not a MoonBoard logbook when no MoonBoard header is found', async () => {
+    mocks.parseMoonBoardCsv.mockImplementation(() => {
+      throw new Error('missing_moonboard_log_header');
+    });
+    const { container } = render(<BoardAccountsSection />);
+
+    fireEvent.click(button(container, 'aurora.moonboard.import')!);
+
+    await waitFor(() => {
+      expect(mocks.showToast).toHaveBeenCalledWith('aurora.moonboard.csvImport.notMoonExport', 'error');
+    });
+    expect(button(container, 'aurora.import.dialog.confirm')).toBeNull();
+  });
+
+  it('keeps the row-level parse message for a MoonBoard CSV with a bad row', async () => {
+    mocks.parseMoonBoardCsv.mockImplementation(() => {
+      throw new Error('missing_grade_line_3');
+    });
+    const { container } = render(<BoardAccountsSection />);
+
+    fireEvent.click(button(container, 'aurora.moonboard.import')!);
+
+    await waitFor(() => {
+      expect(mocks.showToast).toHaveBeenCalledWith('aurora.moonboard.csvImport.parseError', 'error');
+    });
+  });
+
   it('copies the letter but leaves email unopened when the dialog is dismissed', async () => {
     mocks.confirm.mockReset().mockResolvedValueOnce(false);
     const { container } = render(<BoardAccountsSection />);
@@ -556,6 +598,63 @@ describe('BoardAccountsSection — MoonBoard card', () => {
 
     fireEvent.click(button(container, 'actions.cancel')!);
     expect(button(container, 'aurora.import.dialog.confirm')).toBeNull();
+  });
+});
+
+describe('BoardAccountsSection — Aurora JSON import', () => {
+  beforeEach(() => {
+    mocks.showToast.mockReset();
+    mocks.flags = {};
+    mocks.credentials = [];
+    mocks.pickDocument.mockReset().mockResolvedValue({
+      canceled: false,
+      assets: [{ uri: 'file://export.json', size: 128 }],
+    });
+    mocks.fileText.mockReset().mockResolvedValue('{"user":{"username":"aurora"}}');
+  });
+
+  it('keeps the JSON filter on the iOS picker', async () => {
+    const { container } = render(<BoardAccountsSection />);
+
+    fireEvent.click(button(container, 'aurora.card.import')!);
+
+    await waitFor(() => {
+      expect(mocks.pickDocument).toHaveBeenCalledWith({ type: ['application/json'], copyToCacheDirectory: true });
+    });
+  });
+
+  it('opens the Android picker unfiltered so a Drive export can be picked', async () => {
+    mocks.platform.OS = 'android';
+    const { container } = render(<BoardAccountsSection />);
+
+    fireEvent.click(button(container, 'aurora.card.import')!);
+
+    await waitFor(() => {
+      expect(mocks.pickDocument).toHaveBeenCalledWith({ type: '*/*', copyToCacheDirectory: true });
+    });
+  });
+
+  it('says the file is not a JSON export when it is not JSON at all', async () => {
+    mocks.platform.OS = 'android';
+    mocks.fileText.mockResolvedValue('ProblemId,Grade\n123,6B+');
+    const { container } = render(<BoardAccountsSection />);
+
+    fireEvent.click(button(container, 'aurora.card.import')!);
+
+    await waitFor(() => {
+      expect(mocks.showToast).toHaveBeenCalledWith('aurora.mobile.importNotJson', 'error');
+    });
+  });
+
+  it('asks for an Aurora export when the JSON is not one', async () => {
+    mocks.fileText.mockResolvedValue('[1, 2, 3]');
+    const { container } = render(<BoardAccountsSection />);
+
+    fireEvent.click(button(container, 'aurora.card.import')!);
+
+    await waitFor(() => {
+      expect(mocks.showToast).toHaveBeenCalledWith('aurora.mobile.importMissingUser', 'error');
+    });
   });
 });
 

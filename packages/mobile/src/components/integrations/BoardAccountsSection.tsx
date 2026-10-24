@@ -11,10 +11,8 @@ import {
   AURORA_CREDENTIALS_QUERY_KEY,
   AURORA_UNSYNCED_QUERY_KEY,
 } from '../../lib/integrations/use-board-account-credentials';
-import {
-  circuitPlaylistSyncWarningKind,
-  DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
-} from '@boardsesh/shared-schema/sync-error-codes';
+import { getImportPickerTypes } from '../../lib/integrations/import-picker-types';
+import { circuitPlaylistSyncWarningKind } from '@boardsesh/shared-schema/sync-error-codes';
 import {
   AURORA_BOARDS,
   parseAuroraExportJson,
@@ -97,14 +95,6 @@ type MoonBoardSharedSchemaModule = {
 };
 
 const MAX_IMPORT_SIZE_BYTES = 200 * 1024 * 1024;
-
-// Android file providers label .csv files inconsistently: Downloads often says
-// text/comma-separated-values, and files saved from mail or Drive arrive as
-// application/octet-stream, so a MIME filter greys out real exports. Android
-// shows every file and lets the parser reject anything that isn't a Moon log;
-// iOS matches by file type and keeps the filter.
-const MOONBOARD_CSV_PICKER_TYPES =
-  Platform.OS === 'android' ? '*/*' : ['text/csv', 'text/plain', 'application/vnd.ms-excel'];
 const IMPORT_RESULT_LIMIT = 8;
 
 // MoonBoard isn't an Aurora board, so it has no credential/sync flow.
@@ -273,6 +263,24 @@ function getSyncNowErrorMessage(t: TFunction<'settings'>, error: unknown): strin
   }
 }
 
+// Android's picker shows every file, so these messages are what tells a
+// climber they picked the wrong one.
+function getAuroraFileErrorMessage(t: TFunction<'settings'>, error: unknown): string {
+  // JSON.parse throws a SyntaxError for anything that isn't JSON at all.
+  if (error instanceof SyntaxError) return t('aurora.mobile.importNotJson');
+  const errorCode = error instanceof Error ? error.message : '';
+  if (errorCode === 'missing_user' || errorCode === 'invalid_json') return t('aurora.mobile.importMissingUser');
+  return t('aurora.import.parseError');
+}
+
+function getMoonBoardFileErrorMessage(t: TFunction<'settings'>, error: unknown): string {
+  const errorCode = error instanceof Error ? error.message : '';
+  if (errorCode === 'moonboard_parser_unavailable') return t('aurora.moonboard.csvImport.parserUnavailable');
+  // No row looked like a MoonBoard log header: not an export at all.
+  if (errorCode === 'missing_moonboard_log_header') return t('aurora.moonboard.csvImport.notMoonExport');
+  return t('aurora.moonboard.csvImport.parseError');
+}
+
 function getMoonBoardImportErrorMessage(t: TFunction<'settings'>, error: unknown): string {
   const errorCode = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
   if (errorCode === 'moonboard_import_interrupted') {
@@ -419,7 +427,7 @@ export function BoardAccountsSection() {
         try {
           const DocumentPicker = await import('expo-document-picker');
           const document = await DocumentPicker.getDocumentAsync({
-            type: 'application/json',
+            type: getImportPickerTypes('auroraJson', Platform.OS),
             copyToCacheDirectory: true,
           });
           if (document.canceled) {
@@ -458,11 +466,7 @@ export function BoardAccountsSection() {
           setImportPreview(parsed.preview);
           setImportPhase('preview');
         } catch (error) {
-          const message =
-            error instanceof Error && error.message === 'missing_user'
-              ? t('aurora.mobile.importMissingUser')
-              : t('aurora.import.parseError');
-          showToast(message, 'error');
+          showToast(getAuroraFileErrorMessage(t, error), 'error');
           setImportBoard(null);
         }
       })();
@@ -682,7 +686,7 @@ const MoonBoardAccountCard = memo(function MoonBoardAccountCard() {
       try {
         const DocumentPicker = await import('expo-document-picker');
         const document = await DocumentPicker.getDocumentAsync({
-          type: MOONBOARD_CSV_PICKER_TYPES,
+          type: getImportPickerTypes('moonBoardCsv', Platform.OS),
           copyToCacheDirectory: true,
         });
         if (document.canceled) return;
@@ -702,11 +706,7 @@ const MoonBoardAccountCard = memo(function MoonBoardAccountCard() {
         setImportResult(null);
         setImportError(null);
       } catch (error) {
-        const message =
-          error instanceof Error && error.message === 'moonboard_parser_unavailable'
-            ? t('aurora.moonboard.csvImport.parserUnavailable')
-            : t('aurora.moonboard.csvImport.parseError');
-        showToast(message, 'error');
+        showToast(getMoonBoardFileErrorMessage(t, error), 'error');
         setImportPreview(null);
         setImportData(null);
         setImportPhase(null);

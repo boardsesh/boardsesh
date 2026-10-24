@@ -260,6 +260,7 @@
       "requestFailed": "Impossible d'enregistrer ce lien. Réessaie.",
       "loadFailed": "Impossible de charger tes comptes de board.",
       "importMissingUser": "Choisis un fichier d'export JSON Aurora.",
+      "importNotJson": "Ce fichier n'est pas un export JSON. Choisis l'export Aurora qui se termine par .json.",
       "importBoardWarning": "Cela ressemble à {{layoutName}}. Importe vers {{boardName}} seulement si c'est correct.",
       "importPreviewIntro": "Importer les données de {{username}} vers {{boardName}} :",
       "importPartial": "Import partiellement terminé. Réimporter le fichier est sans risque.",
@@ -346,7 +347,8 @@
         "body": "Name: [full name]\nMoonBoard username: [username]\nAccount email: [email address]\n\nMy MoonBoard logbook is personal data because it records my climbing activity and sporting achievements and is linked to my identifiable account. Please treat this as a UK GDPR subject access request and, where applicable, a data portability request. ICO guidance on personal data, subject access requests, data portability, and response time limits is linked below for reference:\nhttps://ico.org.uk/for-the-public/time-limits-for-responding-to-data-protection-rights-requests/\n\nPlease include all personal data linked to my MoonBoard account, including where available:\n\naccount/profile details;\nusername and account identifiers;\nproblems I have created or logged;\nsends, ascents, benchmarks, grades, repeats, attempts, dates, and session/history data;\nfavourites, saved problems, custom problems, and user-generated content linked to my account;\nboard/setup preferences and app/service usage data linked to my account;\nany related metadata or identifiers associated with my MoonBoard profile.\n\nThe ICO’s guidance says organisations should respond to subject access requests without undue delay and within one month. If you require identity verification, clarification, or a secure delivery method, please let me know promptly.\n\nWhere technically feasible, I would prefer the export in CSV or JSON format. Alternatively, please provide the data in another structured, commonly used, machine-readable format.\n\nPlease confirm receipt of this request and the date by which you expect to respond.\n\nKind regards,\n[name]"
       },
       "csvImport": {
-        "parseError": "Impossible de lire ce CSV MoonBoard. Vérifiez qu'il commence par ProblemId,Grade,Tries,Attempts,Rating,Date.",
+        "parseError": "Impossible de lire ce CSV MoonBoard. Chaque ligne doit contenir Grade, Tries et Date, plus ProblemId ou Name.",
+        "notMoonExport": "Ce fichier n'est pas un carnet MoonBoard. Choisissez le CSV envoyé par MoonBoard. S'il est dans Google Sheets, téléchargez-le d'abord au format CSV.",
         "parserUnavailable": "L'import CSV MoonBoard n'est pas encore disponible dans cette version.",
         "failed": "L'import MoonBoard a échoué. Réessayez.",
         "successCount": "{{count}} éléments du carnet MoonBoard importés",
