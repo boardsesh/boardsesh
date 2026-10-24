@@ -54,6 +54,7 @@ import { useSwipeNavigation, useSwipePager, useSwipePages, useTrackEndSwipe } fr
 import { useTrackPaging } from './use-track-paging';
 import { formatTrackLabelParts } from './track-label-text';
 import { PlayListContext } from './PlayListContext';
+import { resolveTopListContextFrame } from './top-list-context-frame';
 import { TrackEndCard } from './TrackEndCard';
 import { PlayDrawerActionBar } from './PlayDrawerActionBar';
 import { PlayDrawerActionsMenu } from './PlayDrawerActionsMenu';
@@ -747,22 +748,19 @@ export function PlayCore({
   );
   // The list label sits between ⌄ and the timer + ⋯ cluster, so it needs the
   // cluster's width, which grows when the rest timer comes up. Null until the
-  // cluster has laid out: the label waits for it rather than paint one frame
-  // under a timer that was already running.
+  // cluster has laid out (see `resolveTopListContextFrame`).
   const [topTrailingContentWidth, setTopTrailingContentWidth] = useState<number | null>(null);
   const handleTopTrailingLayout = useCallback((event: LayoutChangeEvent) => {
     const measured = Math.ceil(event.nativeEvent.layout.width);
     setTopTrailingContentWidth((previous) => (previous === measured ? previous : measured));
   }, []);
-  // Clear of ⌄ on the left and of the cluster on the right. ⋯ carries its own
-  // gap from the timer (`menuSlot`), which is not room the label can use beside
-  // ⋯ alone, so it is taken back off. While both sides match, the label is
-  // centred on the screen; once the timer widens the right, it centres in the
-  // room left over, so the name still fits beside it.
-  const topLeadingReserve = isPane ? 0 : spacing[2] + chromeButtonSize;
-  const topTrailingReserve = spacing[2] + (topTrailingContentWidth ?? 0) - (isAnonymous ? 0 : spacing[2]);
-  const topLeadingInset = topLeadingReserve + spacing[2];
-  const topTrailingInset = Math.max(topLeadingReserve, topTrailingReserve) + spacing[2];
+  const topListContextFrame = resolveTopListContextFrame({
+    isPane,
+    chromeButtonSize,
+    trailingContentWidth: topTrailingContentWidth,
+    hasMenu: !isAnonymous,
+    gap: spacing[2],
+  });
   // More of a long list arrives as the climber nears the end of what is loaded.
   const getCommittedSuggestionSource = useCallback(
     () => getQueueSnapshot().playlistSuggestionSource,
@@ -1888,8 +1886,12 @@ export function PlayCore({
                           <View
                             style={[
                               styles.topListContext,
-                              { height: chromeButtonSize, left: topLeadingInset, right: topTrailingInset },
-                              topTrailingContentWidth === null ? styles.topListContextUnmeasured : null,
+                              {
+                                height: chromeButtonSize,
+                                left: topListContextFrame.left,
+                                right: topListContextFrame.right,
+                              },
+                              topListContextFrame.measured ? null : styles.topListContextUnmeasured,
                             ]}
                           >
                             <PlayListContext parts={currentTrackParts} testID="play-drawer-track-label" />
