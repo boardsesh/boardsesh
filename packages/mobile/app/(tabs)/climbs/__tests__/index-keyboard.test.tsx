@@ -397,6 +397,11 @@ vi.mock('../../../../src/providers/climb-list-tick-display-provider', () => ({
     return children;
   },
 }));
+// Rows and their tick leaves are stubbed in this keyboard/layout harness, which
+// mounts no query/auth providers. The real loader has its own integration suite.
+vi.mock('../../../../src/providers/climb-progress-provider', () => ({
+  ClimbProgressProvider: ({ children }: { children: ReactNode }) => children,
+}));
 
 // Reads mocks.searchState (mutated per-test) instead of the real reducer, so a
 // test can force a specific filter/name without driving the UI through it.

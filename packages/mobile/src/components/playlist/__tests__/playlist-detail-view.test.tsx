@@ -205,6 +205,11 @@ vi.mock('react-i18next', () => ({
 }));
 
 // ── Theme / providers ─────────────────────────────────────────────────────────
+// Layout/action tests stub the climb rows and omit query/auth providers; tick
+// loading is exercised with the real provider in climb-progress-provider.test.tsx.
+vi.mock('../../../providers/climb-progress-provider', () => ({
+  ClimbProgressProvider: ({ children }: { children: ReactNode }) => children,
+}));
 vi.mock('../../../providers/theme-provider', () => ({
   useOptionalTheme: () => null,
   useTheme: () => ({

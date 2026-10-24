@@ -176,6 +176,11 @@ vi.mock('react-i18next', () => ({
 }));
 
 // ── Theme / providers ─────────────────────────────────────────────────────────
+// This route/action harness stubs row leaves and mounts no query/auth providers.
+// The real tick loader remains covered by climb-progress-provider.test.tsx.
+vi.mock('../../../../src/providers/climb-progress-provider', () => ({
+  ClimbProgressProvider: ({ children }: { children: ReactNode }) => children,
+}));
 vi.mock('../../../../src/providers/theme-provider', () => ({
   useOptionalTheme: () => null,
   useTheme: () => ({

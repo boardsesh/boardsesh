@@ -37,6 +37,11 @@ vi.mock('../../ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-loading': 'true' }),
 }));
 vi.mock('../../ClimbListRow', () => ({ ClimbListRow: () => null }));
+// Scroll/layout tests stub rows and omit query/auth providers. Tick loading is
+// exercised separately with the real provider in climb-progress-provider.test.tsx.
+vi.mock('../../../providers/climb-progress-provider', () => ({
+  ClimbProgressProvider: ({ children }: { children: ReactNode }) => children,
+}));
 vi.mock('../../../lib/graphql/hooks', () => ({ useUserClimbs: () => feed }));
 vi.mock('../../../lib/playlists/board-details-for-playlist', () => ({ renderBoardToPlaylistConfig: () => null }));
 vi.mock('../../../lib/open-climb-in-play-drawer', () => ({ openClimbInPlayDrawer: vi.fn() }));
