@@ -120,6 +120,44 @@ and the web cron `packages/web/app/lib/data-sync/aurora/user-sync.ts`) route
   since the last sync (`updated_at > aurora_synced_at`) and any no-op (unchanged
   payload).
 
+### One watermark per Aurora login (`board_user_syncs`)
+
+The user-sync cursor is keyed on `(board_type, aurora user id, table_name)`,
+not on the Boardsesh user. An unlink deletes the credential and the mapping
+but leaves the cursor. Deleting a Boardsesh account cascades its ticks away
+and leaves the cursor too. Before #6692, a second Boardsesh account linking
+that login started from the old watermark, so Aurora never sent it the
+history. When the first account had been deleted, those sends were lost to
+both accounts.
+
+`saveAuroraCredential` now clears the login's `ascents`, `bids` and
+`circuits` watermarks in the link transaction when the linking user has no
+Aurora footprint on that board. A footprint is a tick on that board with a
+real `aurora_id`, or an Aurora circuit playlist they own there.
+`json-import-%` ids don't count. The first sync then reads the whole logbook,
+which costs the same as a first link of a fresh login. Only those three tables
+are cleared, because they become the linker's own ticks and playlists. Users,
+walls, drafts and tags land in rows keyed on the Aurora login, which every
+later linker already reads.
+
+- **Nothing moves between accounts.** The re-read goes through the same
+  appliers, which refuse every tick and playlist another Boardsesh user owns.
+  If the first account only unlinked and still holds the sends, they stay with
+  it, and the second account still sees none of them. Joining two accounts is
+  the account-merge work in #3278 / #3541, not a sync.
+- **A climber relinking their own login keeps the watermark**, with or without
+  an unlink in between, because their synced ticks or playlists survive the
+  unlink.
+- **Known false positive.** A climber who synced the login before but holds
+  none of its ticks or playlists now (they deleted them all, or the login has
+  no history) re-reads it on relink. `deleteTick` hard-deletes and Aurora is
+  never told, so ticks they deleted here come back, as on any watermark reset.
+- **Known false negative.** A climber who synced a *different* login on the
+  same board keeps the watermark of the login they link now. A mapping holds
+  one login per board, so this needs a switch of logins.
+- Climbers who linked before this change are not reset after the fact. A
+  relink resets them, because they have no footprint.
+
 ### Tables Synced
 
 #### Per-user tables
@@ -723,7 +761,9 @@ A skipped row is **not** re-fetched automatically: Aurora's user sync is
 incremental and the checkpoint advances past it (not advancing is the wedge this
 fixes). It comes back when the user edits it upstream, when the watermark is
 reset (`clearAuroraBoardData` drops `board_user_syncs`, so the next sync starts
-from 1970), or via the JSON export import below, which ignores the watermark.
+from 1970; a link by a user with no Aurora footprint on the board clears the
+logbook watermarks, see "One watermark per Aurora login" above), or via the
+JSON export import below, which ignores the watermark.
 
 A rising `seen_count` on the same row means it keeps being re-delivered and
 re-refused — worth a look at `detail`.

@@ -59,7 +59,15 @@ import {
   saveKilterCredential,
 } from '../services/aurora-credentials';
 import { executeBackgroundJob, handlerForRole, type BackgroundJobPayload } from '../workers/jobs';
-import { ensureBackgroundJobSchema } from '../workers/families/__tests__/provider-sync-fixtures';
+import {
+  AURORA_USER_ID,
+  FIXTURE_BOARD,
+  ensureBackgroundJobSchema,
+  fullSyncPage,
+  insertLinkedTensionAccount,
+  removeFixtures,
+  stubAuroraApi,
+} from '../workers/families/__tests__/provider-sync-fixtures';
 
 const role = 'interactive-import' as const;
 const queue = BACKGROUND_JOB_QUEUES[role];
@@ -244,5 +252,103 @@ describe('linking a board queues its first sync', () => {
     const control = await controlRow('kilter');
     expect(control).toMatchObject({ linked: false, pendingRunId: null });
     expect(control.linkGeneration).not.toBe(linkedGeneration);
+  });
+});
+
+// #6692: the Aurora cursor is one watermark per login. A new account linking a
+// login another account synced must ask Aurora for the whole logbook, and the
+// appliers must still leave every send the other account holds where it is.
+describe('the first sync after a new account links a login another account synced', () => {
+  const FIRST_USER = 'psync-producer-first';
+  const CLIMB_UUID = 'psync-climb-producer';
+  const WATERMARK = '2026-05-03 00:00:00.000000';
+  const FROM_THE_BEGINNING = '1970-01-01 00:00:00.000000';
+
+  const cleanUp = async () => {
+    await removeFixtures(database, [FIRST_USER], [CLIMB_UUID]);
+    await db.execute(sql`DELETE FROM boardsesh_ticks WHERE user_id = ${USER_ID}`);
+    await db.execute(sql`DELETE FROM playlist_ownership WHERE user_id = ${USER_ID}`);
+  };
+
+  /** The first account synced this login: its watermark is on every user table it pulls. */
+  const firstAccountSynced = async () => {
+    await insertLinkedTensionAccount(database, FIRST_USER, CLIMB_UUID);
+    for (const tableName of ['users', 'ascents', 'bids', 'circuits']) {
+      await db.execute(sql`
+        INSERT INTO board_user_syncs (board_type, user_id, table_name, last_synchronized_at)
+        VALUES (${FIXTURE_BOARD}, ${AURORA_USER_ID}, ${tableName}, ${WATERMARK})
+      `);
+    }
+    await db.execute(sql`
+      INSERT INTO boardsesh_ticks (uuid, user_id, board_type, climb_uuid, angle, status, climbed_at, origin, aurora_id, aurora_type)
+      VALUES ('psync-first-tick', ${FIRST_USER}, ${FIXTURE_BOARD}, ${CLIMB_UUID}, 40, 'send', '2026-05-01 22:00:00',
+              'aurora_pull', 'psync-ascent-1', 'ascents')
+    `);
+  };
+
+  /** Link the second account and run the sync that link queued against a stand-in Aurora. */
+  const linkAndRunFirstSync = async () => {
+    signInMock.mockResolvedValue({ token: 'aurora-token', user_id: AURORA_USER_ID });
+    const status = await link();
+    const aurora = stubAuroraApi({ pages: [fullSyncPage(CLIMB_UUID)] });
+    const [job] = await boss.fetch<BackgroundJobPayload>(queue, { includeMetadata: true, batchSize: 1 });
+    expect(job?.id).toBe(status.syncRunId);
+    expect(await executeBackgroundJob(database, boss, job, handlerForRole(role), new AbortController().signal)).toBe(
+      'succeeded',
+    );
+    // The first /sync request carries the watermark of every table it asks for.
+    const [syncBody] = aurora.fetchMock.mock.calls
+      .filter(([input]) => typeof input === 'string' && input.endsWith('/sync'))
+      .map(([, init]) => init?.body);
+    if (typeof syncBody !== 'string') throw new Error('the sync sent no /sync request with a form body');
+    return new URLSearchParams(syncBody);
+  };
+
+  const tickOwners = async () =>
+    (
+      await db.execute<{ aurora_id: string; user_id: string }>(
+        sql`SELECT aurora_id, user_id FROM boardsesh_ticks WHERE aurora_id LIKE 'psync-%' ORDER BY aurora_id`,
+      )
+    ).map((row) => ({ auroraId: row.aurora_id, userId: row.user_id }));
+
+  beforeEach(cleanUp);
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+  afterAll(cleanUp);
+
+  it('asks Aurora for the whole logbook when the first account was deleted', async () => {
+    await firstAccountSynced();
+    // Account deletion: prod cascades the ticks off users; the test schema has
+    // no FK on boardsesh_ticks.user_id, so delete them the way the cascade would.
+    await db.execute(sql`DELETE FROM boardsesh_ticks WHERE user_id = ${FIRST_USER}`);
+    await db.execute(sql`DELETE FROM users WHERE id = ${FIRST_USER}`);
+
+    const request = await linkAndRunFirstSync();
+
+    expect(request.get('ascents')).toBe(FROM_THE_BEGINNING);
+    expect(request.get('bids')).toBe(FROM_THE_BEGINNING);
+    expect(request.get('circuits')).toBe(FROM_THE_BEGINNING);
+    // Rows keyed on the Aurora login itself keep their watermark.
+    expect(request.get('users')).toBe(WATERMARK);
+    expect(await tickOwners()).toEqual([
+      { auroraId: 'psync-ascent-1', userId: USER_ID },
+      { auroraId: 'psync-bid-1', userId: USER_ID },
+    ]);
+  });
+
+  it('leaves every send the first account still holds with it when that account only unlinked', async () => {
+    await firstAccountSynced();
+    await deleteAuroraCredential(FIRST_USER, FIXTURE_BOARD);
+
+    const request = await linkAndRunFirstSync();
+
+    expect(request.get('ascents')).toBe(FROM_THE_BEGINNING);
+    // The re-read ascent belongs to the first account and stays there; the bid
+    // nobody held lands on the new account.
+    expect(await tickOwners()).toEqual([
+      { auroraId: 'psync-ascent-1', userId: FIRST_USER },
+      { auroraId: 'psync-bid-1', userId: USER_ID },
+    ]);
   });
 });
