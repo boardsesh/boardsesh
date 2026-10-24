@@ -1,20 +1,32 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { MoreForm } from '../../MoreForm';
+import { TimerPairingSheet } from '../../ble/TimerPairingSheet';
 import { useSessionTimerDriver } from '../../../hooks/use-session-timer-driver';
+import { useViewerUserId } from '../../../hooks/use-viewer-user-id';
+import { useMyBoards, useUpdateBoard } from '../../../lib/graphql/hooks';
+import { useActiveBoard, useSetActiveBoard } from '../../../lib/graphql/use-active-board';
 import { hapticSelection } from '../../../lib/haptics';
 import { isRestTimerSoundAvailable } from '../../../lib/rest-timer-cues';
 import { changeRestTimerMode } from '../../../lib/rest-timer-mode-change';
-import { withSettingTracking } from '../../../lib/settings-analytics';
+import { trackSettingChanged, withSettingTracking } from '../../../lib/settings-analytics';
+import { useAuth } from '../../../providers/auth-provider';
 import { useQueueSessionId } from '../../../providers/queue-provider';
+import { useOptionalRogueTimer } from '../../../providers/rogue-timer-context';
+import { useToast } from '../../../providers/toast-provider';
 import { useSetting } from '../../../settings';
-import { buildTimersModel } from './timers-model';
+import { buildTimersModel, rogueTimerBoards } from './timers-model';
 
 /**
  * Settings › Timers. The rest timer's saved defaults and its cues, over the same
  * settings the in-session sheet writes, so the two always agree. A cadence change
  * goes through `changeRestTimerMode`, the one re-arm rule the sheet uses too.
  * Every change reports one `Setting Changed` under the `timers` page.
+ *
+ * The gym timer section pairs a Rogue timer to each of the climber's own boards.
+ * The pairing is saved on the board (`timerName`), the field the board form
+ * writes too, and the pairing sheet is hosted here as a sibling of the form.
  */
 export function TimersSettingsScreen() {
   const { t } = useTranslation('common');
@@ -47,6 +59,8 @@ export function TimersSettingsScreen() {
     };
   }, []);
 
+  const rogue = useRogueTimerPairing();
+
   const model = useMemo(
     () =>
       withSettingTracking(
@@ -67,6 +81,7 @@ export function TimersSettingsScreen() {
             countdownCues: null,
             sound: soundAvailable ? { enabled: sound, onChange: onToggle(setSound) } : null,
           },
+          rogue: rogue.section,
         }),
         'timers',
       ),
@@ -83,8 +98,105 @@ export function TimersSettingsScreen() {
       soundAvailable,
       sound,
       setSound,
+      rogue.section,
     ],
   );
 
-  return <MoreForm model={model} />;
+  return (
+    <View style={styles.root}>
+      <MoreForm model={model} />
+      {rogue.pairingOpen ? <TimerPairingSheet onSelect={rogue.onTimerPicked} onDismiss={rogue.closePairing} /> : null}
+    </View>
+  );
 }
+
+/**
+ * The gym timer section's data and its writes. Pairing saves the board's
+ * `timerName` and, for the active board, re-saves the stored copy the Rogue
+ * provider connects from: `updateBoard` refreshes the board lists but never the
+ * active board (see app/boards/edit.tsx).
+ */
+function useRogueTimerPairing() {
+  const { t } = useTranslation('common');
+  const { isAuthenticated } = useAuth();
+  const viewerUserId = useViewerUserId();
+  const { data: myBoards } = useMyBoards(undefined, { enabled: isAuthenticated });
+  const { data: activeBoard } = useActiveBoard();
+  const setActiveBoard = useSetActiveBoard();
+  const { mutateAsync: updateBoard } = useUpdateBoard();
+  const linkStatus = useOptionalRogueTimer()?.status ?? 'idle';
+  const { showToast } = useToast();
+
+  const [pairingBoardUuid, setPairingBoardUuid] = useState<string | null>(null);
+  const [savingBoardUuid, setSavingBoardUuid] = useState<string | null>(null);
+
+  // Read when a save lands: the active board may change while it is out.
+  const activeBoardRef = useRef(activeBoard);
+  activeBoardRef.current = activeBoard;
+
+  const saveTimerName = useCallback(
+    async (boardUuid: string, timerName: string | null) => {
+      setSavingBoardUuid(boardUuid);
+      try {
+        const updated = await updateBoard({ boardUuid, timerName });
+        // Counted, never named: the event carries no device name.
+        trackSettingChanged('timers', 'rogueTimer', timerName ? 'paired' : 'removed');
+        const currentActiveBoard = activeBoardRef.current;
+        if (currentActiveBoard?.uuid === updated.uuid) {
+          await setActiveBoard({ ...currentActiveBoard, timerName: updated.timerName ?? null });
+        }
+      } catch {
+        showToast(t('mobile.settings.timers.rogueSaveFailed'), 'error');
+      } finally {
+        setSavingBoardUuid((saving) => (saving === boardUuid ? null : saving));
+      }
+    },
+    [updateBoard, setActiveBoard, showToast, t],
+  );
+
+  const onPair = useCallback((boardUuid: string) => {
+    hapticSelection();
+    setPairingBoardUuid(boardUuid);
+  }, []);
+  const onRemove = useCallback(
+    (boardUuid: string) => {
+      hapticSelection();
+      void saveTimerName(boardUuid, null);
+    },
+    [saveTimerName],
+  );
+  const closePairing = useCallback(() => setPairingBoardUuid(null), []);
+  const onTimerPicked = useCallback(
+    (pickedTimerName: string) => {
+      const boardUuid = pairingBoardUuid;
+      setPairingBoardUuid(null);
+      const timerName = pickedTimerName.trim();
+      if (boardUuid && timerName) void saveTimerName(boardUuid, timerName);
+    },
+    [pairingBoardUuid, saveTimerName],
+  );
+
+  const boards = myBoards?.boards;
+  const activeBoardUuid = activeBoard?.uuid ?? null;
+  // Hidden signed out (a pairing is saved on the board) and until the boards
+  // load, so "no boards yet" never flashes up for someone who has them.
+  const section = useMemo(
+    () =>
+      isAuthenticated && boards
+        ? {
+            boards: rogueTimerBoards({ boards, viewerUserId, activeBoardUuid, savingBoardUuid, linkStatus }),
+            onPair,
+            onRemove,
+          }
+        : null,
+    [isAuthenticated, boards, viewerUserId, activeBoardUuid, savingBoardUuid, linkStatus, onPair, onRemove],
+  );
+
+  return { section, pairingOpen: pairingBoardUuid !== null, onTimerPicked, closePairing };
+}
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
+});

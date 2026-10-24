@@ -179,7 +179,7 @@
       "limitReached": "Has llegado al número máximo de plafones para una cuenta. Borra uno que ya no uses para añadir otro.",
       "timer": "Temporizador de entrenamiento",
       "timerNone": "Sin temporizador vinculado",
-      "timerHint": "Vincula un temporizador Rogue a este plafón. Mientras controlas el muro, cada encadene arranca su cronómetro.",
+      "timerHint": "Vincula un temporizador Rogue a este plafón. Mientras controlas el muro, su cronómetro vuelve a empezar con cada descanso, o con cada bloque que registras si el temporizador de descanso está desactivado.",
       "timerPairCta": "Vincular temporizador",
       "timerChangeCta": "Cambiar temporizador",
       "timerRemoveCta": "Quitar",

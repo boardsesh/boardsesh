@@ -2,7 +2,8 @@ import { PressableSurface } from '../PressableSurface';
 // Bottom sheet for pairing a Rogue Fitness workout timer to a board. Scans for
 // nearby Rogue/Echo timers (via a throwaway RogueTimerController — pairing only
 // *records the timer's name*, it doesn't hold a connection) and returns the
-// picked timer's advertised name so the board form can store it.
+// picked timer's advertised name so the host (Settings › Timers or the board
+// form) can store it.
 //
 // Kept separate from the board DevicePickerSheet: that one renders board art and
 // resolves climbing-board serials, none of which apply to a plain UART timer.
@@ -13,6 +14,7 @@ import { BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { DiscoveredDevice } from '../../lib/ble/types';
 import { RogueTimerController } from '../../lib/ble/rogue-timer-ble';
+import { useOptionalRogueTimer } from '../../providers/rogue-timer-context';
 import { ModalSheet } from '../ModalSheet';
 import { SheetTopBar } from '../SheetTopBar';
 import { Text } from '../Text';
@@ -90,16 +92,26 @@ export function TimerPairingSheet({ onSelect, onDismiss }: TimerPairingSheetProp
   const [devices, setDevices] = useState<DiscoveredDevice[]>([]);
   const [isScanning, setIsScanning] = useState(true);
 
+  // The radio has one scan slot, and the Rogue provider's reconnect scan uses it
+  // too. Inside the provider the scan waits its turn; outside it (a story, a
+  // test) nothing else scans, so it starts at once.
+  const schedulePairingScan = useOptionalRogueTimer()?.schedulePairingScan;
+
   // Scan for the sheet's lifetime; the host mounts it only while pairing.
   useEffect(() => {
     const controller = controllerRef.current;
     if (!controller) return;
     setIsScanning(true);
-    const stopScan = controller.scanForTimers(setDevices, () => setIsScanning(false));
+    const startScan = (releaseSlot: () => void) =>
+      controller.scanForTimers(setDevices, () => {
+        setIsScanning(false);
+        releaseSlot();
+      });
+    const stopScan = schedulePairingScan ? schedulePairingScan(startScan) : startScan(() => {});
     return () => {
       stopScan();
     };
-  }, []);
+  }, [schedulePairingScan]);
 
   const sortedDevices = useMemo(() => [...devices].sort((deviceA, deviceB) => deviceB.rssi - deviceA.rssi), [devices]);
 

@@ -91,11 +91,6 @@ const activeBoardState = vi.hoisted(() => ({
 vi.mock('../../../lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: activeBoardState.current }),
 }));
-// Mock the Rogue-timer provider so the test doesn't pull its rogue-timer-ble →
-// react-native-ble-plx chain (Flow source Rolldown can't parse) into the graph.
-vi.mock('../../../providers/rogue-timer-provider', () => ({
-  useOptionalRogueTimer: () => null,
-}));
 vi.mock('../../../hooks/use-local-ticks', () => ({ useLocalPendingTicks: () => ({ data: 0 }) }));
 // Connectivity drives which save-failure message the form shows (issue #4315).
 const connectivityState = vi.hoisted(() => ({ isOffline: false }));
@@ -891,7 +886,7 @@ describe('useQuickTickForm tries count', () => {
 });
 
 // The rest timer (#5378) anchors on the tick from this hook's per-call
-// onSuccess, beside the shipped Rogue-stopwatch kick. There is deliberately no
+// onSuccess, beside the session timer's tick. There is deliberately no
 // branch on delivery in the production code: React Query runs onSuccess for the
 // acknowledged AND the offline-queued save, and a rest timer is about when YOU
 // logged the send. Two tests dressed up as "two deliveries" would assert the

@@ -103,6 +103,7 @@ vi.mock('../../Text', () => ({ Text: ({ children }: ChildrenProps) => createElem
 vi.mock('../../Icon', () => ({ Icon: () => createElement('span', { 'data-icon': 'true' }) }));
 
 import { TimerPairingSheet } from '../TimerPairingSheet';
+import { RogueTimerContext, type RogueTimerPairingScanStarter } from '../../../providers/rogue-timer-context';
 
 const device = (id: string, name: string, rssi = -50): DiscoveredDevice => ({ deviceId: id, name, rssi });
 
@@ -164,5 +165,60 @@ describe('TimerPairingSheet', () => {
 
     expect(container.querySelectorAll('[data-bg="theme-error"]')).toHaveLength(1);
     expect(container.querySelectorAll('[data-bg="theme-fill"]').length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('TimerPairingSheet inside the Rogue provider', () => {
+  beforeEach(() => {
+    scan.scanForTimers.mockClear();
+    scan.state.stop.mockClear();
+    scan.state.onUpdate = undefined;
+    scan.state.onScanStopped = undefined;
+  });
+
+  /** A provider whose scan slot the test opens by hand. */
+  function renderInProvider() {
+    const slot = {
+      starter: undefined as RogueTimerPairingScanStarter | undefined,
+      stopScheduled: vi.fn(),
+      releaseSlot: vi.fn(),
+    };
+    const schedulePairingScan = vi.fn((startScan: RogueTimerPairingScanStarter) => {
+      slot.starter = startScan;
+      return slot.stopScheduled;
+    });
+    const value = { status: 'connected' as const, isConnected: true, deviceName: undefined, schedulePairingScan };
+    const rendered = render(
+      <RogueTimerContext.Provider value={value}>
+        <TimerPairingSheet onSelect={vi.fn()} onDismiss={vi.fn()} />
+      </RogueTimerContext.Provider>,
+    );
+    return { ...rendered, slot, schedulePairingScan };
+  }
+
+  it('asks the provider for the scan slot instead of scanning straight away', () => {
+    const { container, schedulePairingScan } = renderInProvider();
+    expect(schedulePairingScan).toHaveBeenCalledTimes(1);
+    expect(scan.scanForTimers).not.toHaveBeenCalled();
+    // Waiting for the slot reads as looking, not as nothing found.
+    expect(container.textContent).toContain('mobile.timerPair.scanning');
+  });
+
+  it('scans once the slot is free, and hands it back when the scan stops by itself', () => {
+    const { container, slot } = renderInProvider();
+    act(() => {
+      slot.starter?.(slot.releaseSlot);
+    });
+    expect(scan.scanForTimers).toHaveBeenCalledTimes(1);
+
+    act(() => scan.state.onScanStopped?.());
+    expect(slot.releaseSlot).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain('mobile.timerPair.empty');
+  });
+
+  it('stops through the provider when the sheet closes', () => {
+    const { unmount, slot } = renderInProvider();
+    unmount();
+    expect(slot.stopScheduled).toHaveBeenCalledTimes(1);
   });
 });

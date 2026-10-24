@@ -20,6 +20,8 @@ and which phone may move the wall. The workout stages that pace it are in
 | Which queue item a tick counts for | `packages/mobile/src/lib/tick-attribution.ts`, read by `play-drawer/use-tick-saver.ts` |
 | Cues | `packages/mobile/src/lib/rest-timer-cues.ts`, `src/lib/sounds.ts` |
 | Wall-driver rule | `packages/mobile/src/lib/session-timer/driver-rule.ts`, `src/hooks/use-session-timer-driver.ts` |
+| Session timer: snapshot, commands, command queue, tick bus | `packages/mobile/src/lib/session-timer/` |
+| Rogue gym timer: connection, scan slot, the sink | `packages/mobile/src/providers/rogue-timer-provider.tsx`, `rogue-timer-context.ts` |
 
 The durable preferences (rest length, cadence, auto-advance, sound, countdown cues) live in
 `packages/mobile/src/settings`. Arming never survives a cold start.
@@ -250,6 +252,7 @@ agree. The root row shows the rest length (or Off).
 | --- | --- |
 | Rest | Rest length (a menu: Off, 0:30 to 10:00 in 30 s rungs, plus a saved length that sits between rungs), cadence, auto-advance |
 | Cues | Sound, only when `isRestTimerSoundAvailable()` |
+| Gym timer | One row per board the climber owns, with its paired Rogue timer; Remove under a paired one. Signed out: no section |
 
 - A cadence change goes through `changeRestTimerMode` (`lib/rest-timer-mode-change.ts`), the one
   re-arm rule the sheet's cadence control uses too: choosing the saved cadence does nothing, and a
@@ -261,7 +264,73 @@ agree. The root row shows the rest length (or Off).
 - `keepScreenAwake` was deleted: nothing read it. The rest timer and the play drawer keep the screen
   awake through `useKeepAwakeWhile`.
 - Copy lives in `common.json` under `mobile.settings.timers`, the settings-page convention, not in
-  `settings.json` as #5398 first said. The Rogue pairing row joins the page in a later PR.
+  `settings.json` as #5398 first said.
+- Gym timer pairing is covered under "Rogue gym timer" below.
+
+## Session timer
+
+`packages/mobile/src/lib/session-timer/` turns the rest timer into one value a display can follow
+(#5397). Pure, apart from the tick bus.
+
+| Module | What it does |
+| --- | --- |
+| `snapshot.ts` | `buildSessionTimerSnapshot`: `off`, `waiting`, `paused`, or a live clock (`running`, `countUp`, `queueEnded`) with its cycle start, deadline and fixed-window period, plus `lastAdvanceMs`. Same phase order as the pill and the Lock Screen payload. `getSessionTimerWakeMs` is the one moment it changes with no store write: a fixed window's end |
+| `commands.ts` | `deriveSessionTimerCommands(prev, next, nowMs)` diffs two snapshots into `restartCountUp` or `reset`; `deriveSessionTimerTickCommand` covers a tick with the rest timer off |
+| `command-queue.ts` | `createLatestWinsQueue`: one command at a time, the newest waiting one wins, and a command the one in flight already delivers is dropped |
+| `tick-events.ts` | `noteSessionTimerTick`: the tick saver tells the sinks about a committed tick, just before the rest timer hears of it. Never from outbox replay |
+
+The command rules:
+
+- A sink that just connected sends nothing. Connecting is never a reason to restart a clock.
+- The timer going off (disarmed, or armed for a session this phone left) sends `reset`, once.
+- A new rest sends `restartCountUp`: the live clock's cycle start or the last auto-advance moved
+  forward, and that instant is at most 60 s old. One rule covers a tick, Reset, an auto-advance (also
+  when a tick or send rule clears the anchor), a fixed-window beat, a refilled queue and a rest
+  restarted after the background.
+- Pause and resume send nothing. A resume carries at least a second of rest already counted; that
+  is how it differs from a tick logged while paused, which starts a new rest.
+- A tick with the rest timer off restarts the count-up from now, unless it is backdated by more
+  than a minute.
+
+What changed for the gym timer, which used to restart on every logged climb:
+
+- An auto-advance and every fixed-window beat restart it.
+- In a fixed window a logged climb no longer restarts it: the window holds, as the pill does.
+- A climb backdated by more than a minute, or a tick replayed on a cold start, no longer restarts it.
+
+The pill stays on `useRestTimerDisplay`. The Lock Screen countdown moves onto the snapshot after
+the release train's merge-back.
+
+## Rogue gym timer
+
+- `RogueTimerProvider` connects only while `canDriveGymTimer` (this phone holds the board's
+  Bluetooth link) and the active board has a `timerName`. A crew passenger never holds the link, so
+  a passenger's phone never touches the timer, and nothing scans at launch.
+- `RogueSessionTimerSink` is a null-render leaf, mounted only while connected. It rebuilds the
+  snapshot on rest-timer store writes and pacing changes, plus one wake per fixed window (no
+  per-second work), and pushes commands into a latest-wins queue around `pressButton`.
+  `restartCountUp` is STOPWATCH, 180 ms, RESET, 180 ms, OK. `reset` is RESET.
+- OK is an unconfirmed start/stop toggle, so two restarts must never interleave. A restart whose OK
+  has not gone out yet absorbs any restart asked for meanwhile: a tick and an auto-advance 100 ms
+  apart press one STOPWATCH, RESET, OK, and a double tick within 0.3 s still ends counting.
+- Pause leaves the gym timer running: stopping it would mean pressing OK blind. Countdown
+  programming and a stop are unverified on the hardware (`docs/ROGUE_TIMER_BLE_SPEC.md` §6, §7), so
+  the timer only ever counts up.
+- The radio has one scan slot. `schedulePairingScan` starts a pairing scan only after any reconnect
+  in flight has settled (a reconnect stops every scan on its way out), and no reconnect starts while
+  a pairing scan holds the slot. A reconnect held back runs when the pairing scan stops, by itself
+  or with the sheet. `TimerPairingSheet` asks for the slot whenever it renders inside the provider.
+- Pairing lives in Settings › Timers under "Gym timer", one row per board the climber owns
+  (`ownerId`, as My Boards reads it; `isOwned` means "a real wall"), never a spray wall. It stays in
+  the board form too. A pair or a remove saves `timerName` through `updateBoard`, then re-saves the
+  stored active board when it is that board: `updateBoard` never refreshes the stored copy the
+  provider connects from.
+- `lib/ble/**` and `packages/shared/ble-protocol` are untouched: the release train rewrote
+  `rogue-timer-ble.ts`.
+
+Checks only a phone and a Rogue Echo can do: a tick restarts it, an auto-advance restarts it, a
+fixed-window beat restarts it, switching the rest timer off shows 0:00, pause leaves it running, a
+double tick within 0.3 s still ends counting, and a passenger's phone never touches it.
 
 ## Who edits what
 

@@ -597,7 +597,19 @@
         "countdownCues": "Letzte Sekunden herunterzählen",
         "countdownCuesHint": "Eine Vibration bei jeder der letzten Sekunden, damit du an den Griffen bist, wenn der nächste Boulder leuchtet.",
         "sound": "Ton",
-        "soundHint": "Spielt einen Ton zu den Signalen. Er läuft auch im Stumm-Modus und lässt deine Musik weiterlaufen."
+        "soundHint": "Spielt einen Ton zu den Signalen. Er läuft auch im Stumm-Modus und lässt deine Musik weiterlaufen.",
+        "rogueTitle": "Hallentimer",
+        "rogueFooter": "Koppel einen Rogue-Timer mit einem Board, dann startet seine Stoppuhr mit deiner Pause neu: wenn du einen Boulder einträgst, wenn die Warteschlange weiterschaltet und bei jedem festen Takt. Nur das Handy, das mit dem Board verbunden ist, steuert ihn.",
+        "rogueNotPaired": "Nicht gekoppelt",
+        "roguePairHint": "Koppelt einen Hallentimer mit diesem Board",
+        "rogueChangeHint": "Koppelt einen anderen Hallentimer mit diesem Board",
+        "rogueRemove": "Timer von {{board}} entfernen",
+        "rogueNoBoardsTitle": "Noch kein eigenes Board",
+        "rogueNoBoards": "Füg dein eigenes Board hinzu, um einen Hallentimer damit zu koppeln.",
+        "rogueConnected": "Verbunden",
+        "rogueConnecting": "Verbinde…",
+        "rogueUnreachable": "Nicht erreichbar. Prüf, ob er an und in der Nähe ist.",
+        "rogueSaveFailed": "Der Timer konnte nicht gespeichert werden. Versuch es noch mal."
       }
     },
     "sendRecovery": {

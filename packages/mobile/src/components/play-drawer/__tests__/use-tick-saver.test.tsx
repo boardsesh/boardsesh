@@ -46,9 +46,6 @@ const activeBoardState = vi.hoisted(() => ({
 }));
 const connectivityState = vi.hoisted(() => ({ isOffline: false }));
 const localPendingState = vi.hoisted(() => ({ count: 0, boardNames: [] as string[] }));
-const rogueState = vi.hoisted(() => ({
-  timer: null as { startStopwatch: () => Promise<void> } | null,
-}));
 const settingsState = vi.hoisted(() => ({ restTimerMode: 'afterTick' as 'afterTick' | 'onTheMinute' }));
 const privacyState = vi.hoisted(() => ({
   publication: undefined as { audience: 'public' | 'followers' | 'only_me'; privacyRevision: number } | undefined,
@@ -80,8 +77,10 @@ vi.mock('../../../providers/board-presence-provider', () => ({
 vi.mock('../../../lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: activeBoardState.current }),
 }));
-vi.mock('../../../providers/rogue-timer-provider', () => ({
-  useOptionalRogueTimer: () => rogueState.timer,
+vi.mock('../../../lib/session-timer/tick-events', () => ({
+  noteSessionTimerTick: vi.fn(() => {
+    callLog.push('sessionTimer');
+  }),
 }));
 vi.mock('../../../hooks/use-local-ticks', () => ({
   useLocalPendingTicks: (_climbUuid: string, boardName: string) => {
@@ -155,6 +154,7 @@ import { noteWorkoutRunTick } from '../../../lib/workout-run-store';
 import { QueueActionsContext } from '../../../providers/queue/queue-contexts';
 import { restAdvanceAllowed, type RestTimerStagePacing } from '../../../lib/rest-timer-pacing';
 import { getAutoAdvanceDeadlineMs } from '../../../lib/rest-timer-auto-advance';
+import { noteSessionTimerTick } from '../../../lib/session-timer/tick-events';
 
 const SAVER_INPUT: UseTickSaverInput = {
   climbUuid: CLIMB_UUID,
@@ -224,12 +224,12 @@ beforeEach(() => {
   connectivityState.isOffline = false;
   localPendingState.count = 0;
   localPendingState.boardNames = [];
-  rogueState.timer = null;
   settingsState.restTimerMode = 'afterTick';
   privacyState.publication = undefined;
   vi.mocked(track).mockClear();
   vi.mocked(hapticError).mockClear();
   vi.mocked(noteRestTimerTick).mockClear();
+  vi.mocked(noteSessionTimerTick).mockClear();
 });
 
 describe('useTickSaver save input', () => {
@@ -366,12 +366,7 @@ describe('useTickSaver board', () => {
 });
 
 describe('useTickSaver after a save', () => {
-  it('runs analytics, then the gym timer, then the rest timer, then hands back to the caller', () => {
-    const startStopwatch = vi.fn(() => {
-      callLog.push('rogue');
-      return Promise.resolve();
-    });
-    rogueState.timer = { startStopwatch };
+  it('runs analytics, then the session timer, then the rest timer, then hands back to the caller', () => {
     saveMock.state.result = { savedTick: { uuid: 'tick-9' } };
     const onSaved = vi.fn(() => {
       callLog.push('saved');
@@ -380,8 +375,16 @@ describe('useTickSaver after a save', () => {
 
     result.current.save(fields(), { onSaved });
 
-    expect(callLog).toEqual(['track:Tick Logged', 'rogue', 'restTimer', 'saved']);
+    expect(callLog).toEqual(['track:Tick Logged', 'sessionTimer', 'restTimer', 'saved']);
     expect(onSaved).toHaveBeenCalledWith('tick-9');
+  });
+
+  it('hands the session timer the exact climbedAt it sent', () => {
+    const { result } = renderSaver();
+
+    result.current.save(fields({ climbedAtIso: '2026-10-24T09:31:15.000Z' }));
+
+    expect(noteSessionTimerTick).toHaveBeenCalledWith('2026-10-24T09:31:15.000Z', NOW_MS);
   });
 
   it('anchors the rest timer on the exact climbedAt it sent, in the climber’s cadence', () => {
@@ -594,14 +597,11 @@ describe('useTickSaver when a save fails', () => {
   }
 
   it('touches no timer, logs no tick and reports the failure', () => {
-    const startStopwatch = vi.fn(() => Promise.resolve());
-    rogueState.timer = { startStopwatch };
-
     const { onSaved, onFailed } = failWith(new Error('Board is offline'));
 
     expect(onSaved).not.toHaveBeenCalled();
     expect(onFailed).toHaveBeenCalledWith('Board is offline');
-    expect(startStopwatch).not.toHaveBeenCalled();
+    expect(noteSessionTimerTick).not.toHaveBeenCalled();
     expect(noteRestTimerTick).not.toHaveBeenCalled();
     expect(noteWorkoutRunTick).not.toHaveBeenCalled();
     expect(hapticError).toHaveBeenCalledTimes(1);

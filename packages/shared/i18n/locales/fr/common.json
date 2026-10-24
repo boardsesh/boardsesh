@@ -597,7 +597,19 @@
         "countdownCues": "Décompte des dernières secondes",
         "countdownCuesHint": "Une vibration à chacune des dernières secondes, pour être sur les prises quand le bloc suivant s’allume.",
         "sound": "Son",
-        "soundHint": "Joue un son avec les signaux. Il passe même en mode silencieux et laisse ta musique en route."
+        "soundHint": "Joue un son avec les signaux. Il passe même en mode silencieux et laisse ta musique en route.",
+        "rogueTitle": "Minuteur de salle",
+        "rogueFooter": "Associe un minuteur Rogue à une board et son chrono repart avec ton repos : quand tu enregistres un bloc, quand la file avance et à chaque créneau du rythme fixe. Seul le téléphone connecté à la board le pilote.",
+        "rogueNotPaired": "Non associé",
+        "roguePairHint": "Associe un minuteur à cette board",
+        "rogueChangeHint": "Associe un autre minuteur à cette board",
+        "rogueRemove": "Retirer le minuteur de {{board}}",
+        "rogueNoBoardsTitle": "Pas encore de board à toi",
+        "rogueNoBoards": "Ajoute ta propre board pour lui associer un minuteur.",
+        "rogueConnected": "Connecté",
+        "rogueConnecting": "Connexion…",
+        "rogueUnreachable": "Introuvable. Vérifie qu’il est allumé et à proximité.",
+        "rogueSaveFailed": "Impossible d’enregistrer le minuteur. Réessaie."
       }
     },
     "sendRecovery": {

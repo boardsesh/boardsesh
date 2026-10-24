@@ -179,7 +179,7 @@
       "limitReached": "Du hast die maximale Anzahl Boards für ein Konto erreicht. Lösch ein Board, das du nicht mehr nutzt, um ein neues anzulegen.",
       "timer": "Workout-Timer",
       "timerNone": "Kein Timer gekoppelt",
-      "timerHint": "Koppel einen Rogue-Hallentimer mit diesem Board. Solange du die Wand steuerst, startet jeder beleuchtete Boulder die Stoppuhr.",
+      "timerHint": "Koppel einen Rogue-Hallentimer mit diesem Board. Solange du die Wand steuerst, startet seine Stoppuhr mit jeder Pause neu, oder bei jedem eingetragenen Boulder, wenn der Pausentimer aus ist.",
       "timerPairCta": "Timer koppeln",
       "timerChangeCta": "Timer wechseln",
       "timerRemoveCta": "Entfernen",

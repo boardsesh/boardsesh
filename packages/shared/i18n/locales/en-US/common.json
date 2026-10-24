@@ -597,7 +597,19 @@
         "countdownCues": "Count down the last seconds",
         "countdownCuesHint": "A buzz on each of the final seconds, so you are on the holds when the next climb lights up.",
         "sound": "Sound",
-        "soundHint": "Play a tone with the cues. It plays over the silent switch and keeps your music going."
+        "soundHint": "Play a tone with the cues. It plays over the silent switch and keeps your music going.",
+        "rogueTitle": "Gym timer",
+        "rogueFooter": "Pair a Rogue timer to a board and its stopwatch restarts with your rest: when you log a climb, when the queue moves on and on every fixed-window beat. Only the phone connected to the board drives it.",
+        "rogueNotPaired": "Not paired",
+        "roguePairHint": "Pairs a gym timer with this board",
+        "rogueChangeHint": "Pairs a different gym timer with this board",
+        "rogueRemove": "Remove the timer from {{board}}",
+        "rogueNoBoardsTitle": "No boards of your own yet",
+        "rogueNoBoards": "Add your own board to pair a gym timer with it.",
+        "rogueConnected": "Connected",
+        "rogueConnecting": "Connecting…",
+        "rogueUnreachable": "Can't reach it. Check it's on and close by.",
+        "rogueSaveFailed": "Couldn't save the timer. Try again."
       }
     },
     "sendRecovery": {

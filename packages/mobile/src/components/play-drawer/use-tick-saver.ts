@@ -24,9 +24,9 @@ import { SHARED_EVENTS, boardTypeProperty } from '@boardsesh/analytics';
 import { usePublicationAudience } from '../privacy/use-publication-audience';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { extractGraphqlCode } from '../../lib/graphql/extract-error-message';
-import { useOptionalRogueTimer } from '../../providers/rogue-timer-provider';
 import { QueueActionsContext } from '../../providers/queue/queue-contexts';
 import { getEffectiveRestPacing } from '../../hooks/use-effective-rest-pacing';
+import { noteSessionTimerTick } from '../../lib/session-timer/tick-events';
 import { nowMs } from '../../lib/clock';
 import { noteRestTimerTick } from '../../lib/rest-timer-store';
 import { attributeTickToQueueItem } from '../../lib/tick-attribution';
@@ -114,9 +114,6 @@ export function useTickSaver({
   const { t: tClimbs } = useTranslation('climbs');
   const { t: tSettings } = useTranslation('settings');
   const privacy = usePublicationAudience(climbUuid);
-  // Only the (stable, memoized) startStopwatch action is used here — depend on
-  // it directly so save isn't recreated on every timer status / deviceName change.
-  const startTimerStopwatch = useOptionalRogueTimer()?.startStopwatch;
   const { enabled: boardPresenceEnabled, boardId: boardPresenceBoardId } = useBoardPresenceControls();
   // The committed current climb is READ when a save starts, never subscribed:
   // the play drawer must not re-render on every queue change. Optional, because
@@ -212,11 +209,11 @@ export function useTickSaver({
               hasComment: fields.comment.length > 0,
             });
             // No haptic here: the caller's saved toast plays the success haptic.
-            // Kick off the paired gym timer's stopwatch. No-op unless a Rogue
-            // timer is connected — which only happens while this user is driving
-            // the wall (see RogueTimerProvider), so a passenger's tick can't
-            // touch the timer. Fire-and-forget; never block the save flow.
-            void startTimerStopwatch?.();
+            // Tell the session timer's sinks (the paired gym timer). A Rogue
+            // timer is only connected while this phone drives the wall (see
+            // RogueTimerProvider), so a passenger's tick can't touch it, and the
+            // sink decides whether this tick restarts it. Never throws.
+            noteSessionTimerTick(climbedAtIso, nowMs());
             // Anchor the in-app rest timer on the same instant (#5378). No-op
             // unless the climber armed it. This runs on the offline-queued
             // delivery too, which is correct: a rest timer is about when YOU
@@ -267,7 +264,6 @@ export function useTickSaver({
       sessionId,
       tickContext,
       surface,
-      startTimerStopwatch,
       getQueueSnapshot,
       tClimbs,
       tSettings,

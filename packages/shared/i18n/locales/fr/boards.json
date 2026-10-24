@@ -179,7 +179,7 @@
       "limitReached": "Tu as atteint le nombre maximum de boards pour un compte. Supprime une board que tu n'utilises plus pour en ajouter une autre.",
       "timer": "Minuteur d'entraînement",
       "timerNone": "Aucun minuteur associé",
-      "timerHint": "Associe un minuteur Rogue à cette board. Quand tu pilotes le mur, chaque croix démarre son chronomètre.",
+      "timerHint": "Associe un minuteur Rogue à cette board. Quand tu pilotes le mur, son chrono repart à chaque repos, ou à chaque bloc enregistré si le minuteur de repos est désactivé.",
       "timerPairCta": "Associer un minuteur",
       "timerChangeCta": "Changer de minuteur",
       "timerRemoveCta": "Retirer",
