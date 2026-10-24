@@ -593,7 +593,7 @@
         "autoAdvanceBlocked": "Nur wer das Board steuert, kann die Warteschlange weiterschalten.",
         "autoAdvanceNeedsLength": "Wähl eine Pausenlänge, damit die Warteschlange automatisch weiterschaltet.",
         "cuesTitle": "Signale",
-        "cuesFooter": "Aus, bekommst du trotzdem eine Warn-Vibration, bevor das Board von selbst weiterschaltet.",
+        "cuesFooter": "Wenn sie aus sind, bekommst du trotzdem eine Warn-Vibration, bevor das Board von selbst weiterschaltet.",
         "countdownCues": "Letzte Sekunden herunterzählen",
         "countdownCuesHint": "Eine Vibration bei jeder der letzten Sekunden, damit du an den Griffen bist, wenn der nächste Boulder leuchtet.",
         "sound": "Ton",
