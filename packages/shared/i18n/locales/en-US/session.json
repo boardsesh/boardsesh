@@ -796,6 +796,10 @@
       "fromPosition": "From {{name}} · {{position}} of {{total}}",
       "searchResults": "Search results",
       "setterClimbs": "{{name}}'s climbs",
+      "logbook": "Logbook",
+      "sessionClimbs": "Session climbs",
+      "createdClimbs": "Created climbs",
+      "hardestSend": "Hardest send",
       "end": {
         "title": "End of {{name}}",
         "titleUnnamed": "End of the list",

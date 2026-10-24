@@ -796,6 +796,10 @@
       "fromPosition": "Desde {{name}} · {{position}} de {{total}}",
       "searchResults": "Resultados de búsqueda",
       "setterClimbs": "Bloques de {{name}}",
+      "logbook": "Historial",
+      "sessionClimbs": "Bloques de la sesión",
+      "createdClimbs": "Bloques creados",
+      "hardestSend": "Encadene más duro",
       "end": {
         "title": "Fin de {{name}}",
         "titleUnnamed": "Fin de la lista",
