@@ -1,12 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_FOUR_BY_FOUR_OPTIONS,
   DEFAULT_GRADE_FOCUS_OPTIONS,
   DEFAULT_LADDER_OPTIONS,
+  DEFAULT_LIMIT_BOULDERING_OPTIONS,
+  DEFAULT_ON_THE_MINUTE_OPTIONS,
   DEFAULT_PYRAMID_OPTIONS,
   DEFAULT_VOLUME_OPTIONS,
   type GeneratorGradeScale,
+  generateFourByFourPlan,
   generateGradeFocusPlan,
   generateLadderPlan,
+  generateLimitBoulderingPlan,
+  generateOnTheMinutePlan,
   generatePyramidPlan,
   generateVolumePlan,
   generateWorkoutPlan,
@@ -287,5 +293,88 @@ describe('groupSlotsBySection', () => {
 
   it('returns an empty array for empty input', () => {
     expect(groupSlotsBySection([])).toEqual([]);
+  });
+});
+
+describe('timed workout plans', () => {
+  it('plans one on-the-minute slot per climb, all at the target grade', () => {
+    const slots = generateOnTheMinutePlan(
+      { ...DEFAULT_ON_THE_MINUTE_OPTIONS, numberOfClimbs: 12, intervalSeconds: 45, targetGrade: 15 },
+      GRADES,
+    );
+
+    expect(slots).toEqual(Array.from({ length: 12 }, (_, index) => ({ grade: 15, section: 'main', index })));
+  });
+
+  it('plans one 4x4 slot per climb of a round, whatever the rounds', () => {
+    for (const rounds of [1, 4, 10]) {
+      const slots = generateFourByFourPlan(
+        { ...DEFAULT_FOUR_BY_FOUR_OPTIONS, climbsPerRound: 4, rounds, targetGrade: 20 },
+        GRADES,
+      );
+      expect(slots).toEqual(Array.from({ length: 4 }, (_, index) => ({ grade: 20, section: 'main', index })));
+    }
+  });
+
+  it('plans one limit-bouldering slot per climb at the target grade', () => {
+    const slots = generateLimitBoulderingPlan({ ...DEFAULT_LIMIT_BOULDERING_OPTIONS, targetGrade: 24 }, GRADES);
+
+    expect(slots).toEqual([0, 1, 2].map((index) => ({ grade: 24, section: 'main', index })));
+  });
+
+  it('puts a warm-up in front, the way grade focus does', () => {
+    const warmUp = generateGradeFocusPlan(
+      { ...DEFAULT_GRADE_FOCUS_OPTIONS, warmUp: 'standard', numberOfClimbs: 0, targetGrade: 20 },
+      GRADES,
+    );
+    const slots = generateFourByFourPlan(
+      { ...DEFAULT_FOUR_BY_FOUR_OPTIONS, warmUp: 'standard', climbsPerRound: 2, targetGrade: 20 },
+      GRADES,
+    );
+
+    expect(slots.slice(0, warmUp.length)).toEqual(warmUp);
+    expect(slots.slice(warmUp.length).map((slot) => [slot.grade, slot.section, slot.index])).toEqual([
+      [20, 'main', warmUp.length],
+      [20, 'main', warmUp.length + 1],
+    ]);
+  });
+
+  it('generateWorkoutPlan dispatches each timed type to its own plan', () => {
+    const onTheMinute = { ...DEFAULT_ON_THE_MINUTE_OPTIONS, targetGrade: 15 };
+    const fourByFour = { ...DEFAULT_FOUR_BY_FOUR_OPTIONS, targetGrade: 15 };
+    const limitBouldering = { ...DEFAULT_LIMIT_BOULDERING_OPTIONS, targetGrade: 15 };
+
+    expect(generateWorkoutPlan(onTheMinute, GRADES)).toEqual(generateOnTheMinutePlan(onTheMinute, GRADES));
+    expect(generateWorkoutPlan(fourByFour, GRADES)).toEqual(generateFourByFourPlan(fourByFour, GRADES));
+    expect(generateWorkoutPlan(limitBouldering, GRADES)).toEqual(generateLimitBoulderingPlan(limitBouldering, GRADES));
+    expect(generateWorkoutPlan(fourByFour, GRADES)).toHaveLength(4);
+  });
+
+  it('copies the default climb filters from volume', () => {
+    for (const defaults of [
+      DEFAULT_ON_THE_MINUTE_OPTIONS,
+      DEFAULT_FOUR_BY_FOUR_OPTIONS,
+      DEFAULT_LIMIT_BOULDERING_OPTIONS,
+    ]) {
+      expect(defaults).toMatchObject({
+        warmUp: 'none',
+        climbBias: DEFAULT_VOLUME_OPTIONS.climbBias,
+        minAscents: DEFAULT_VOLUME_OPTIONS.minAscents,
+        minRating: DEFAULT_VOLUME_OPTIONS.minRating,
+        onlyTallClimbs: DEFAULT_VOLUME_OPTIONS.onlyTallClimbs,
+        onlyWideClimbs: DEFAULT_VOLUME_OPTIONS.onlyWideClimbs,
+      });
+    }
+  });
+
+  it('defaults to 10 climbs every minute, 4 climbs for 4 rounds and 3 limit climbs with 3-minute rests', () => {
+    expect(DEFAULT_ON_THE_MINUTE_OPTIONS).toMatchObject({ numberOfClimbs: 10, intervalSeconds: 60 });
+    expect(DEFAULT_FOUR_BY_FOUR_OPTIONS).toMatchObject({
+      climbsPerRound: 4,
+      rounds: 4,
+      restBetweenClimbsSeconds: 0,
+      restBetweenRoundsSeconds: 180,
+    });
+    expect(DEFAULT_LIMIT_BOULDERING_OPTIONS).toMatchObject({ numberOfClimbs: 3, restSeconds: 180 });
   });
 });

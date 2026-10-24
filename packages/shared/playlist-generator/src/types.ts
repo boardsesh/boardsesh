@@ -1,7 +1,14 @@
 // Playlist Generator Types and Constants
 // Pure TS, no React. Web and mobile both consume from here.
 
-export type WorkoutType = 'volume' | 'pyramid' | 'ladder' | 'gradeFocus';
+export type WorkoutType =
+  | 'volume'
+  | 'pyramid'
+  | 'ladder'
+  | 'gradeFocus'
+  | 'onTheMinute'
+  | 'fourByFour'
+  | 'limitBouldering';
 
 export type WarmUpType = 'standard' | 'extended' | 'none';
 
@@ -42,7 +49,48 @@ export type GradeFocusOptions = {
   numberOfClimbs: number;
 } & BaseGeneratorOptions;
 
-export type GeneratorOptions = VolumeOptions | PyramidOptions | LadderOptions | GradeFocusOptions;
+// The three timed types. Field names follow the partner API's block fields
+// (docs/partner-api.md, "Blocks"); its `climbCount` is `numberOfClimbs`, or
+// `climbsPerRound` on a 4x4. Their rests and intervals are whole seconds, read by
+// `pacingForOptions` (pacing.ts).
+
+/** One climb per interval at the target grade; the wall moves on every `intervalSeconds`. */
+export type OnTheMinuteOptions = {
+  type: 'onTheMinute';
+  numberOfClimbs: number;
+  intervalSeconds: number;
+} & BaseGeneratorOptions;
+
+/**
+ * `climbsPerRound` climbs at the target grade, climbed `rounds` times. The plan
+ * holds one slot per climb of a round; the rounds are queue copies made at Start.
+ */
+export type FourByFourOptions = {
+  type: 'fourByFour';
+  climbsPerRound: number;
+  rounds: number;
+  restBetweenClimbsSeconds: number;
+  restBetweenRoundsSeconds: number;
+} & BaseGeneratorOptions;
+
+/** A few climbs at the target grade, a long rest after every attempt, and on to the next climb after a send. */
+export type LimitBoulderingOptions = {
+  type: 'limitBouldering';
+  numberOfClimbs: number;
+  restSeconds: number;
+} & BaseGeneratorOptions;
+
+export type GeneratorOptions =
+  | VolumeOptions
+  | PyramidOptions
+  | LadderOptions
+  | GradeFocusOptions
+  | OnTheMinuteOptions
+  | FourByFourOptions
+  | LimitBoulderingOptions;
+
+/** The workout types that pace the rest timer themselves (see `pacingForOptions`). */
+export const TIMED_WORKOUT_TYPES: readonly WorkoutType[] = ['onTheMinute', 'fourByFour', 'limitBouldering'];
 
 /** Workout-type metadata for UI rendering. Display labels live in the
  *  consuming app's i18n catalog (web: `playlists:generator.workoutTypes.<type>.name`,
@@ -51,7 +99,7 @@ export type GeneratorOptions = VolumeOptions | PyramidOptions | LadderOptions | 
  *  English leaking through `t(variable)` patterns. */
 export type WorkoutTypeInfo = {
   type: WorkoutType;
-  icon: 'volume' | 'pyramid' | 'ladder' | 'focus';
+  icon: 'volume' | 'pyramid' | 'ladder' | 'focus' | 'minute' | 'rounds' | 'limit';
 };
 
 export const WORKOUT_TYPES: WorkoutTypeInfo[] = [
@@ -59,6 +107,9 @@ export const WORKOUT_TYPES: WorkoutTypeInfo[] = [
   { type: 'pyramid', icon: 'pyramid' },
   { type: 'ladder', icon: 'ladder' },
   { type: 'gradeFocus', icon: 'focus' },
+  { type: 'onTheMinute', icon: 'minute' },
+  { type: 'fourByFour', icon: 'rounds' },
+  { type: 'limitBouldering', icon: 'limit' },
 ];
 
 export const WARM_UP_OPTIONS: WarmUpType[] = ['none', 'standard', 'extended'];
@@ -112,6 +163,47 @@ export const DEFAULT_GRADE_FOCUS_OPTIONS: Omit<GradeFocusOptions, 'targetGrade'>
   minRating: 2,
   onlyTallClimbs: false,
   onlyWideClimbs: false,
+};
+
+// The timed types copy their climb filters from volume's field by field, so a
+// change to the generator's default filters reaches them too.
+
+export const DEFAULT_ON_THE_MINUTE_OPTIONS: Omit<OnTheMinuteOptions, 'targetGrade'> = {
+  type: 'onTheMinute',
+  warmUp: 'none',
+  numberOfClimbs: 10,
+  intervalSeconds: 60,
+  climbBias: DEFAULT_VOLUME_OPTIONS.climbBias,
+  minAscents: DEFAULT_VOLUME_OPTIONS.minAscents,
+  minRating: DEFAULT_VOLUME_OPTIONS.minRating,
+  onlyTallClimbs: DEFAULT_VOLUME_OPTIONS.onlyTallClimbs,
+  onlyWideClimbs: DEFAULT_VOLUME_OPTIONS.onlyWideClimbs,
+};
+
+export const DEFAULT_FOUR_BY_FOUR_OPTIONS: Omit<FourByFourOptions, 'targetGrade'> = {
+  type: 'fourByFour',
+  warmUp: 'none',
+  climbsPerRound: 4,
+  rounds: 4,
+  restBetweenClimbsSeconds: 0,
+  restBetweenRoundsSeconds: 180,
+  climbBias: DEFAULT_VOLUME_OPTIONS.climbBias,
+  minAscents: DEFAULT_VOLUME_OPTIONS.minAscents,
+  minRating: DEFAULT_VOLUME_OPTIONS.minRating,
+  onlyTallClimbs: DEFAULT_VOLUME_OPTIONS.onlyTallClimbs,
+  onlyWideClimbs: DEFAULT_VOLUME_OPTIONS.onlyWideClimbs,
+};
+
+export const DEFAULT_LIMIT_BOULDERING_OPTIONS: Omit<LimitBoulderingOptions, 'targetGrade'> = {
+  type: 'limitBouldering',
+  warmUp: 'none',
+  numberOfClimbs: 3,
+  restSeconds: 180,
+  climbBias: DEFAULT_VOLUME_OPTIONS.climbBias,
+  minAscents: DEFAULT_VOLUME_OPTIONS.minAscents,
+  minRating: DEFAULT_VOLUME_OPTIONS.minRating,
+  onlyTallClimbs: DEFAULT_VOLUME_OPTIONS.onlyTallClimbs,
+  onlyWideClimbs: DEFAULT_VOLUME_OPTIONS.onlyWideClimbs,
 };
 
 export const WARM_UP_CONFIG = {

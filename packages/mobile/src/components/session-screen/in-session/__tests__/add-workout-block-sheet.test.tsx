@@ -495,7 +495,8 @@ describe('AddWorkoutBlockSheet', () => {
 
   it('closes without queueing when the session switches during the confirm', async () => {
     let finishRead: (value: string | null) => void = () => undefined;
-    storage.getItem.mockImplementation(
+    // Holds the store's first slot read; the store reads its other slot after it.
+    storage.getItem.mockImplementationOnce(
       () =>
         new Promise<string | null>((resolve) => {
           finishRead = resolve;

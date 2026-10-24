@@ -3,11 +3,32 @@
 // Pure TS and JSON-serialisable: plans and runs are persisted by the apps.
 
 import { generateWarmUp, generateWorkoutPlan } from './generate';
+import { pacingForOptions, roundsForOptions, type WorkoutStagePacing } from './pacing';
+import { isRoundNumber, locateRound, type WorkoutRunRoundPosition } from './rounds';
 import type { GeneratorGradeScale, GeneratorOptions, PlannedClimbSlot, WarmUpType, WorkoutType } from './types';
 
 // Stage kinds use the partner API block type names (docs/partner-api.md, "Blocks"),
-// so `onTheMinute`, `fourByFour` and `limitBouldering` can join without renames.
+// so a partner block maps onto a stage without renames.
 export type WorkoutStageKind = 'warmUp' | WorkoutType;
+
+// A record so a kind added to the union fails to compile until it is listed here.
+const STAGE_KIND_FLAGS: Record<WorkoutStageKind, true> = {
+  warmUp: true,
+  volume: true,
+  pyramid: true,
+  ladder: true,
+  gradeFocus: true,
+  onTheMinute: true,
+  fourByFour: true,
+  limitBouldering: true,
+};
+
+/** Every stage kind this bundle can run, for checking persisted data. */
+export const WORKOUT_STAGE_KINDS = Object.keys(STAGE_KIND_FLAGS) as readonly WorkoutStageKind[];
+
+/** True for a stage kind this bundle knows. A run written by a newer bundle can hold one it does not. */
+export const isWorkoutStageKind = (kind: unknown): kind is WorkoutStageKind =>
+  typeof kind === 'string' && Object.hasOwn(STAGE_KIND_FLAGS, kind);
 
 /** Warm-up length for a warm-up stage. `'none'` is expressed by leaving the stage out. */
 export type WarmUpStageType = Exclude<WarmUpType, 'none'>;
@@ -81,6 +102,12 @@ const toMainStage = (options: GeneratorOptions, id: string): WorkoutMainStage =>
       return { id, kind: 'ladder', options: { ...options, warmUp: 'none' } };
     case 'gradeFocus':
       return { id, kind: 'gradeFocus', options: { ...options, warmUp: 'none' } };
+    case 'onTheMinute':
+      return { id, kind: 'onTheMinute', options: { ...options, warmUp: 'none' } };
+    case 'fourByFour':
+      return { id, kind: 'fourByFour', options: { ...options, warmUp: 'none' } };
+    case 'limitBouldering':
+      return { id, kind: 'limitBouldering', options: { ...options, warmUp: 'none' } };
     default: {
       const exhaustiveOptions: never = options;
       return exhaustiveOptions;
@@ -171,32 +198,68 @@ export type WorkoutRunStage = {
    * it existed and on stages planned without filters.
    */
   filters?: WorkoutStageFilters;
+  /**
+   * How the rest timer runs during this stage, from its block's options
+   * (`pacingForOptions`). Absent on every untimed stage: the climber's own rest
+   * settings apply.
+   */
+  pacing?: WorkoutStagePacing;
+  /** The rounds the stage was planned with (a 4x4). */
+  rounds?: number;
+  /**
+   * The 1-based round of each of the stage's queue items. Stored, never worked
+   * out from positions: removals and reorders shift positions. An item with no
+   * entry has no round.
+   */
+  roundByUuid?: Record<string, number>;
 };
 
 /** What a run stage says about itself, without its climbs. */
-export type WorkoutRunStageIdentity = Pick<WorkoutRunStage, 'id' | 'kind' | 'targetGrade' | 'filters'>;
+export type WorkoutRunStageIdentity = Pick<
+  WorkoutRunStage,
+  'id' | 'kind' | 'targetGrade' | 'filters' | 'pacing' | 'rounds' | 'roundByUuid'
+>;
 
 /** Stages in workout order. A stage with no items is never kept. */
 export type WorkoutRun = { stages: WorkoutRunStage[] };
 
+/** One queued climb of a plan: its queue-item uuid, its stage, and its round when the stage has rounds. */
+export type WorkoutRunEntry = { uuid: string; stageId: string; round?: number };
+
+/** `roundByUuid` cut down to `uuids`. Undefined when none of them has a round. */
+const roundsFor = (
+  roundByUuid: Readonly<Record<string, number>> | undefined,
+  uuids: readonly string[],
+): Record<string, number> | undefined => {
+  if (!roundByUuid) return undefined;
+  const kept: Record<string, number> = {};
+  let keptAny = false;
+  for (const uuid of uuids) {
+    if (!Object.hasOwn(roundByUuid, uuid)) continue;
+    kept[uuid] = roundByUuid[uuid];
+    keptAny = true;
+  }
+  return keptAny ? kept : undefined;
+};
+
 /**
  * Groups queue-item uuids by stage, in plan order. Entries for unknown stages
  * are dropped, and a stage id repeated in the plan is emitted once, so no two
- * run stages ever share an `itemUuids` list.
+ * run stages ever share an `itemUuids` list. A workout stage keeps the pacing
+ * and rounds its options give, and every stage keeps the rounds its entries name.
  */
-export const buildWorkoutRun = (
-  entries: ReadonlyArray<{ uuid: string; stageId: string }>,
-  plan: WorkoutPlan,
-): WorkoutRun => {
+export const buildWorkoutRun = (entries: ReadonlyArray<WorkoutRunEntry>, plan: WorkoutPlan): WorkoutRun => {
   // Each uuid belongs to one stage: the first entry naming a stage in the plan
   // claims it, so a replayed or corrupted entry can't leave one climb in two
   // stages, and an entry for an unknown stage can't hide a valid one.
   const planStageIds = new Set(plan.stages.map((stage) => stage.id));
   const uuidsByStageId = new Map<string, string[]>();
+  const roundByUuid: Record<string, number> = {};
   const claimedUuids = new Set<string>();
-  for (const { uuid, stageId } of entries) {
+  for (const { uuid, stageId, round } of entries) {
     if (!planStageIds.has(stageId) || claimedUuids.has(uuid)) continue;
     claimedUuids.add(uuid);
+    if (isRoundNumber(round)) roundByUuid[uuid] = round;
     const stageUuids = uuidsByStageId.get(stageId);
     if (stageUuids) {
       stageUuids.push(uuid);
@@ -211,12 +274,21 @@ export const buildWorkoutRun = (
     if (emittedStageIds.has(stage.id)) continue;
     emittedStageIds.add(stage.id);
     const itemUuids = uuidsByStageId.get(stage.id);
-    if (itemUuids && itemUuids.length > 0) {
-      const runStage: WorkoutRunStage = isWarmUpStage(stage)
-        ? { id: stage.id, kind: stage.kind, itemUuids }
-        : { id: stage.id, kind: stage.kind, itemUuids, targetGrade: stage.options.targetGrade };
-      stages.push(stage.filters ? { ...runStage, filters: stage.filters } : runStage);
+    if (!itemUuids || itemUuids.length === 0) continue;
+    // Optional fields are left off rather than set to undefined, so a run
+    // without them reads the same as one stored before they existed.
+    const runStage: WorkoutRunStage = { id: stage.id, kind: stage.kind, itemUuids };
+    if (!isWarmUpStage(stage)) {
+      runStage.targetGrade = stage.options.targetGrade;
+      const pacing = pacingForOptions(stage.options);
+      if (pacing) runStage.pacing = pacing;
+      const rounds = roundsForOptions(stage.options);
+      if (rounds !== undefined) runStage.rounds = rounds;
     }
+    if (stage.filters) runStage.filters = stage.filters;
+    const stageRounds = roundsFor(roundByUuid, itemUuids);
+    if (stageRounds) runStage.roundByUuid = stageRounds;
+    stages.push(runStage);
   }
   return { stages };
 };
@@ -226,7 +298,9 @@ export const buildWorkoutRun = (
  * with the same kind gets the items appended to it instead; the same id with a
  * different kind is a caller bug and throws. Uuids already in the run are
  * skipped, and when nothing is left to add the same run object comes back. A
- * new stage keeps the `targetGrade` and `filters` it was given.
+ * new stage keeps the `targetGrade`, `filters`, `pacing` and `rounds` it was
+ * given. Rounds in `stage.roundByUuid` are kept for the uuids added, on a new
+ * stage and an existing one alike; an existing stage keeps its own pacing.
  */
 export const appendStageToRun = (
   run: WorkoutRun,
@@ -248,17 +322,24 @@ export const appendStageToRun = (
     return true;
   });
   if (newUuids.length === 0) return run;
+  const addedRounds = roundsFor(stage.roundByUuid, newUuids);
 
   if (existingPosition < 0) {
     const newStage: WorkoutRunStage = { id: stage.id, kind: stage.kind, itemUuids: newUuids };
     if (stage.targetGrade !== undefined) newStage.targetGrade = stage.targetGrade;
     if (stage.filters !== undefined) newStage.filters = stage.filters;
+    if (stage.pacing !== undefined) newStage.pacing = stage.pacing;
+    if (stage.rounds !== undefined) newStage.rounds = stage.rounds;
+    if (addedRounds) newStage.roundByUuid = addedRounds;
     return { stages: [...run.stages, newStage] };
   }
   return {
-    stages: run.stages.map((runStage, position) =>
-      position === existingPosition ? { ...runStage, itemUuids: [...runStage.itemUuids, ...newUuids] } : runStage,
-    ),
+    stages: run.stages.map((runStage, position) => {
+      if (position !== existingPosition) return runStage;
+      const appended: WorkoutRunStage = { ...runStage, itemUuids: [...runStage.itemUuids, ...newUuids] };
+      if (addedRounds) appended.roundByUuid = { ...runStage.roundByUuid, ...addedRounds };
+      return appended;
+    }),
   };
 };
 
@@ -283,13 +364,21 @@ export const pruneRun = (run: WorkoutRun, queueUuids: readonly string[]): Workou
       continue;
     }
     changed = true;
-    if (keptUuids.length > 0) {
-      stages.push({ ...runStage, itemUuids: keptUuids });
-    }
+    if (keptUuids.length === 0) continue;
+    const { roundByUuid, ...keptStage } = runStage;
+    const keptRounds = roundsFor(roundByUuid, keptUuids);
+    stages.push(
+      keptRounds
+        ? { ...keptStage, itemUuids: keptUuids, roundByUuid: keptRounds }
+        : { ...keptStage, itemUuids: keptUuids },
+    );
   }
 
   return changed ? { stages } : run;
 };
+
+/** True when any stage paces the rest timer itself (a timed block). */
+export const workoutRunHasPacing = (run: WorkoutRun): boolean => run.stages.some((stage) => stage.pacing !== undefined);
 
 export type WorkoutRunPosition = {
   /** 0-based position of the current stage among the stages with queued items. */
@@ -302,6 +391,8 @@ export type WorkoutRunPosition = {
   stageSize: number;
   /** Climbs after the current one in the same stage. */
   remainingInStage: number;
+  /** Set only when the current climb has a round (a 4x4): where it sits among the stage's rounds. */
+  round?: WorkoutRunRoundPosition;
 };
 
 /**
@@ -339,7 +430,7 @@ export const locateInRun = (
     const queuedStage = queuedStages[stageIndex];
     const positionInStage = queuedStage.itemUuids.indexOf(currentUuid);
     if (positionInStage < 0) continue;
-    return {
+    const position: WorkoutRunPosition = {
       stageIndex,
       stageCount: queuedStages.length,
       stageId: queuedStage.id,
@@ -348,6 +439,10 @@ export const locateInRun = (
       stageSize: queuedStage.itemUuids.length,
       remainingInStage: queuedStage.itemUuids.length - positionInStage - 1,
     };
+    const round = queuedStage.roundByUuid
+      ? locateRound(queuedStage.itemUuids, queuedStage.roundByUuid, currentUuid)
+      : null;
+    return round ? { ...position, round } : position;
   }
   return null;
 };

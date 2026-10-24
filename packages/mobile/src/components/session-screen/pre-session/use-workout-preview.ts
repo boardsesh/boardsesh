@@ -102,9 +102,13 @@ function positionsInStage(slots: readonly StagedSlot[]): Map<number, number> {
   return positionBySlotIndex;
 }
 
-/** Names a block with its settings and filters: equal names plan the same climbs. */
+/**
+ * Names a block with the settings that shape its slots, and its filters: equal
+ * names plan the same climbs, so a rebuild keeps their rows. A 4x4's rounds or
+ * a rest length are not in it, so changing one keeps the climbs.
+ */
 function blockRowKey(block: WorkoutBlock): string {
-  return `${block.id}|${getBlockGenerationKey(block)}`;
+  return `${block.id}|${getBlockSlotKey(block)}`;
 }
 
 /**
@@ -153,9 +157,10 @@ export type UseWorkoutPreviewOptions = {
 const EMPTY_DATA = (): WorkoutPreviewData => ({ items: [], pools: new Map(), usedUuids: new Set() });
 const EMPTY_STAGES: readonly WorkoutStage[] = [];
 
+// The settings that change a block's slots: equal keys plan the same grades.
 // The filter copies inside a workout block's options are left out: the block's
 // own `filters` are the ones its climbs are fetched with.
-function getBlockSettingsKey(block: WorkoutBlockSpec): string {
+function getBlockSlotSettingsKey(block: WorkoutBlockSpec): string {
   if (block.kind === 'warmUp') return `warmUp:${block.warmUpType}`;
   const { options } = block;
   const commonKey = `${options.type}:${options.targetGrade}`;
@@ -167,12 +172,44 @@ function getBlockSettingsKey(block: WorkoutBlockSpec): string {
     case 'ladder':
       return `${commonKey}:${options.numberOfSteps}:${options.climbsPerStep}`;
     case 'gradeFocus':
+    case 'onTheMinute':
+    case 'limitBouldering':
       return `${commonKey}:${options.numberOfClimbs}`;
+    case 'fourByFour':
+      return `${commonKey}:${options.climbsPerRound}`;
+  }
+}
+
+// Every setting of a block. Past the slot settings, a timed block's rounds and
+// rests shape the queue and the run Start hands over, so they rebuild the
+// preview too; `blockRowKey` leaves them out, so its rows survive the rebuild.
+function getBlockSettingsKey(block: WorkoutBlockSpec): string {
+  const slotKey = getBlockSlotSettingsKey(block);
+  if (block.kind === 'warmUp') return slotKey;
+  const { options } = block;
+
+  switch (options.type) {
+    case 'volume':
+    case 'pyramid':
+    case 'ladder':
+    case 'gradeFocus':
+      return slotKey;
+    case 'onTheMinute':
+      return `${slotKey}:${options.intervalSeconds}`;
+    case 'fourByFour':
+      return `${slotKey}:${options.rounds}:${options.restBetweenClimbsSeconds}:${options.restBetweenRoundsSeconds}`;
+    case 'limitBouldering':
+      return `${slotKey}:${options.restSeconds}`;
   }
 }
 
 function getBlockGenerationKey(block: WorkoutBlock): string {
   return `${getBlockSettingsKey(block)}/${filtersSignature(block.filters)}`;
+}
+
+/** A block's slot settings and filters: what its rows' climbs depend on. */
+export function getBlockSlotKey(block: WorkoutBlock): string {
+  return `${getBlockSlotSettingsKey(block)}/${filtersSignature(block.filters)}`;
 }
 
 function getSelectionGenerationKey(selection: GeneratorSelection): string {

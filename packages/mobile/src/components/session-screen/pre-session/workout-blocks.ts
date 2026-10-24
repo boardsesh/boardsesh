@@ -6,8 +6,11 @@
 // can share them and tests need no React.
 
 import {
+  DEFAULT_FOUR_BY_FOUR_OPTIONS,
   DEFAULT_GRADE_FOCUS_OPTIONS,
   DEFAULT_LADDER_OPTIONS,
+  DEFAULT_LIMIT_BOULDERING_OPTIONS,
+  DEFAULT_ON_THE_MINUTE_OPTIONS,
   DEFAULT_PYRAMID_OPTIONS,
   DEFAULT_VOLUME_OPTIONS,
   type GeneratorOptions,
@@ -40,10 +43,13 @@ export type WorkoutBlockType = WorkoutStageKind;
 /** Most blocks one session can hold, warm-ups included. */
 export const MAX_WORKOUT_BLOCKS = 5;
 
-const WORKOUT_TYPES: readonly WorkoutType[] = ['volume', 'pyramid', 'ladder', 'gradeFocus'];
+// The untimed workout types, in picker order. The timed ones (on the minute,
+// 4x4, limit) are modelled but not offered yet, so they are on no chip and in no
+// "Add a block" cycle.
+const UNTIMED_WORKOUT_TYPES: readonly WorkoutType[] = ['volume', 'pyramid', 'ladder', 'gradeFocus'];
 
 /** Picker order for a block's type chips. */
-export const WORKOUT_BLOCK_TYPES: readonly WorkoutBlockType[] = ['warmUp', ...WORKOUT_TYPES];
+export const WORKOUT_BLOCK_TYPES: readonly WorkoutBlockType[] = ['warmUp', ...UNTIMED_WORKOUT_TYPES];
 
 /** Just the filter fields, from any object that carries them (a block's options, say). */
 export function filtersOf({
@@ -91,6 +97,12 @@ export function buildDefaultOptions(type: WorkoutType, targetGrade: number): Gen
       return { ...DEFAULT_LADDER_OPTIONS, targetGrade };
     case 'gradeFocus':
       return { ...DEFAULT_GRADE_FOCUS_OPTIONS, targetGrade };
+    case 'onTheMinute':
+      return { ...DEFAULT_ON_THE_MINUTE_OPTIONS, targetGrade };
+    case 'fourByFour':
+      return { ...DEFAULT_FOUR_BY_FOUR_OPTIONS, targetGrade };
+    case 'limitBouldering':
+      return { ...DEFAULT_LIMIT_BOULDERING_OPTIONS, targetGrade };
   }
 }
 
@@ -103,10 +115,14 @@ export function singleBlockSelection(
   return { blocks: [{ id: blockId, kind: 'workout', options, filters }] };
 }
 
-/** The workout type after `type` in picker order, wrapping round, so a new block never repeats the last one. */
+/**
+ * The untimed workout type after `type` in picker order, wrapping round, so a
+ * new block never repeats the last one. After a timed type it starts again at
+ * volume.
+ */
 export function nextBlockType(type: WorkoutType): WorkoutType {
-  const position = WORKOUT_TYPES.indexOf(type);
-  return WORKOUT_TYPES[(position + 1) % WORKOUT_TYPES.length];
+  const position = UNTIMED_WORKOUT_TYPES.indexOf(type);
+  return UNTIMED_WORKOUT_TYPES[(position + 1) % UNTIMED_WORKOUT_TYPES.length];
 }
 
 function workoutOptionsAt(blocks: readonly WorkoutBlockSpec[], position: number): GeneratorOptions | null {

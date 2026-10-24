@@ -1,8 +1,11 @@
 import {
+  type FourByFourOptions,
   type GeneratorGradeScale,
   type GeneratorOptions,
   type GradeFocusOptions,
   type LadderOptions,
+  type LimitBoulderingOptions,
+  type OnTheMinuteOptions,
   type PlannedClimbSlot,
   type PyramidOptions,
   type VolumeOptions,
@@ -157,16 +160,22 @@ export const generateLadderPlan = (options: LadderOptions, grades: GeneratorGrad
   return slots;
 };
 
-export const generateGradeFocusPlan = (options: GradeFocusOptions, grades: GeneratorGradeScale): PlannedClimbSlot[] => {
+// The warm-up, then `climbCount` main-set slots all at the target grade.
+const generateFlatPlan = (
+  targetGrade: number,
+  warmUp: WarmUpType,
+  climbCount: number,
+  grades: GeneratorGradeScale,
+): PlannedClimbSlot[] => {
   const slots: PlannedClimbSlot[] = [];
 
-  slots.push(...generateWarmUp(options.targetGrade, options.warmUp, grades));
+  slots.push(...generateWarmUp(targetGrade, warmUp, grades));
 
   const mainStartIndex = slots.length;
 
-  for (let i = 0; i < options.numberOfClimbs; i++) {
+  for (let i = 0; i < climbCount; i++) {
     slots.push({
-      grade: options.targetGrade,
+      grade: targetGrade,
       section: 'main',
       index: mainStartIndex + i,
     });
@@ -174,6 +183,27 @@ export const generateGradeFocusPlan = (options: GradeFocusOptions, grades: Gener
 
   return slots;
 };
+
+export const generateGradeFocusPlan = (options: GradeFocusOptions, grades: GeneratorGradeScale): PlannedClimbSlot[] =>
+  generateFlatPlan(options.targetGrade, options.warmUp, options.numberOfClimbs, grades);
+
+/** One slot per climb at the target grade. The interval is pacing, not a slot (pacing.ts). */
+export const generateOnTheMinutePlan = (options: OnTheMinuteOptions, grades: GeneratorGradeScale): PlannedClimbSlot[] =>
+  generateFlatPlan(options.targetGrade, options.warmUp, options.numberOfClimbs, grades);
+
+/**
+ * One slot per climb of a round, at the target grade. Rounds are not slots: one
+ * climb fills each slot, and Start queues the round's climbs `rounds` times
+ * (`expandRounds`), so every round repeats the same climbs.
+ */
+export const generateFourByFourPlan = (options: FourByFourOptions, grades: GeneratorGradeScale): PlannedClimbSlot[] =>
+  generateFlatPlan(options.targetGrade, options.warmUp, options.climbsPerRound, grades);
+
+/** One slot per climb at the target grade. Attempts stay on one queued climb, so they are not slots either. */
+export const generateLimitBoulderingPlan = (
+  options: LimitBoulderingOptions,
+  grades: GeneratorGradeScale,
+): PlannedClimbSlot[] => generateFlatPlan(options.targetGrade, options.warmUp, options.numberOfClimbs, grades);
 
 export const generateWorkoutPlan = (options: GeneratorOptions, grades: GeneratorGradeScale): PlannedClimbSlot[] => {
   switch (options.type) {
@@ -185,6 +215,12 @@ export const generateWorkoutPlan = (options: GeneratorOptions, grades: Generator
       return generateLadderPlan(options, grades);
     case 'gradeFocus':
       return generateGradeFocusPlan(options, grades);
+    case 'onTheMinute':
+      return generateOnTheMinutePlan(options, grades);
+    case 'fourByFour':
+      return generateFourByFourPlan(options, grades);
+    case 'limitBouldering':
+      return generateLimitBoulderingPlan(options, grades);
     default: {
       // Exhaustiveness check — a new WorkoutType variant fails to compile
       // here rather than silently emitting an empty plan.

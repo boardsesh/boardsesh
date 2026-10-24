@@ -15,6 +15,7 @@ import { Text } from '../../Text';
 import { useGradeFormat } from '../../../hooks/use-grade-format';
 import { hapticSelection } from '../../../lib/haptics';
 import { workoutStageName } from '../../../lib/workout-run-readout';
+import { formatRestLength } from '../../queue-control/rest-length.logic';
 import { useTheme } from '../../../providers/theme-provider';
 import { spacing } from '../../../theme/tokens';
 import { WorkoutBlockFields, warmUpLengthLabel } from './WorkoutBlockFields';
@@ -34,8 +35,9 @@ type BlockAction = 'moveUp' | 'moveDown' | 'remove';
 
 /**
  * The one-line summary under a closed card's type: `V6 · 20 climbs · spread 0`
- * for a workout, `Standard · ramps to V6` for a warm-up. `filtered` adds a
- * `· filtered` marker, for a block whose climb filters are not the defaults.
+ * for a workout, `V6 · 4 climbs · 4 rounds · 3:00 between rounds` for a 4x4,
+ * `Standard · ramps to V6` for a warm-up. `filtered` adds a `· filtered`
+ * marker, for a block whose climb filters are not the defaults.
  */
 export function blockSummary(
   block: WorkoutBlockSpec,
@@ -81,6 +83,44 @@ function blockSettingsSummary(
     case 'gradeFocus':
       parts.push(t('mobile.session.preGeneratorBlockSummaryClimbs', { count: options.numberOfClimbs }));
       break;
+    case 'onTheMinute':
+      parts.push(
+        t('mobile.session.preGeneratorBlockSummaryClimbs', { count: options.numberOfClimbs }),
+        t('mobile.session.preGeneratorBlockSummaryEvery', { value: formatRestLength(options.intervalSeconds) }),
+      );
+      break;
+    case 'fourByFour':
+      parts.push(
+        t('mobile.session.preGeneratorBlockSummaryClimbs', { count: options.climbsPerRound }),
+        t('mobile.session.preGeneratorBlockSummaryRounds', { count: options.rounds }),
+      );
+      // No rest between climbs is the default, and says nothing worth a part.
+      if (options.restBetweenClimbsSeconds > 0) {
+        parts.push(
+          t('mobile.session.preGeneratorBlockSummaryClimbRest', {
+            value: formatRestLength(options.restBetweenClimbsSeconds),
+          }),
+        );
+      }
+      if (options.restBetweenRoundsSeconds > 0) {
+        parts.push(
+          t('mobile.session.preGeneratorBlockSummaryRoundRest', {
+            value: formatRestLength(options.restBetweenRoundsSeconds),
+          }),
+        );
+      }
+      break;
+    case 'limitBouldering':
+      parts.push(t('mobile.session.preGeneratorBlockSummaryClimbs', { count: options.numberOfClimbs }));
+      if (options.restSeconds > 0) {
+        parts.push(t('mobile.session.preGeneratorBlockSummaryRest', { value: formatRestLength(options.restSeconds) }));
+      }
+      break;
+    default: {
+      // A void switch would let a new type through with no summary; this fails to compile instead.
+      const exhaustiveOptions: never = options;
+      void exhaustiveOptions;
+    }
   }
   return parts;
 }

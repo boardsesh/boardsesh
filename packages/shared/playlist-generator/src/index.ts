@@ -8,6 +8,9 @@ export {
   generatePyramidPlan,
   generateLadderPlan,
   generateGradeFocusPlan,
+  generateOnTheMinutePlan,
+  generateFourByFourPlan,
+  generateLimitBoulderingPlan,
   generateWorkoutPlan,
   groupSlotsBySection,
 } from './generate';
@@ -15,6 +18,21 @@ export type { GroupedSlots } from './generate';
 export { summarizePlanFill } from './plan-summary';
 export type { PlanFillSummary, PlanSectionCount } from './plan-summary';
 export {
+  MAX_STAGE_REST_SECONDS,
+  MAX_STAGE_ROUNDS,
+  MIN_STAGE_INTERVAL_SECONDS,
+  STAGE_CHANGEOVER_SECONDS,
+  isWorkoutStagePacing,
+  pacingForOptions,
+  roundsForOptions,
+  stageRestSeconds,
+} from './pacing';
+export type { StageAdvanceOn, StagePacingMode, WorkoutStagePacing } from './pacing';
+export { expandRounds, isRoundNumber, locateRound } from './rounds';
+export type { WorkoutRunRoundPosition } from './rounds';
+export {
+  WORKOUT_STAGE_KINDS,
+  isWorkoutStageKind,
   planFromBlocks,
   generateStagedPlan,
   isWarmUpStage,
@@ -22,6 +40,7 @@ export {
   appendStageToRun,
   pruneRun,
   locateInRun,
+  workoutRunHasPacing,
 } from './stages';
 export type {
   WorkoutBlockSpec,
@@ -38,5 +57,6 @@ export type {
   WorkoutRunStage,
   WorkoutRunStageIdentity,
   WorkoutRun,
+  WorkoutRunEntry,
   WorkoutRunPosition,
 } from './stages';

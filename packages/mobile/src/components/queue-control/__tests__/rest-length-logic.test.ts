@@ -249,3 +249,30 @@ describe('hasRestLength', () => {
     expect(hasRestLength(100)).toBe(true);
   });
 });
+
+describe('nextRestLength — a length that cannot be Off', () => {
+  it('wraps from 10:00 straight back to 0:30, never through Off', () => {
+    const walked: (number | null)[] = [];
+    let current: number | null = 60;
+    for (let tap = 0; tap < 20; tap += 1) {
+      current = nextRestLength(current, { allowOff: false });
+      walked.push(current);
+    }
+
+    expect(walked).not.toContain(null);
+    expect(walked[17]).toBe(MAX_TAP_REST_LENGTH_SECONDS);
+    expect(walked[18]).toBe(30);
+    expect(nextRestLength(MAX_REST_LENGTH_SECONDS, { allowOff: false })).toBe(30);
+  });
+
+  it('steps like the rest timer everywhere below the wrap', () => {
+    for (const seconds of [15, 30, 59, 100, 570]) {
+      expect(nextRestLength(seconds, { allowOff: false })).toBe(nextRestLength(seconds));
+    }
+  });
+
+  it('keeps today’s cycle through Off when allowed, the default', () => {
+    expect(nextRestLength(MAX_TAP_REST_LENGTH_SECONDS, { allowOff: true })).toBeNull();
+    expect(nextRestLength(MAX_TAP_REST_LENGTH_SECONDS)).toBeNull();
+  });
+});

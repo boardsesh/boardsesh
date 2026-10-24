@@ -1,25 +1,34 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  DEFAULT_FOUR_BY_FOUR_OPTIONS,
   DEFAULT_GRADE_FOCUS_OPTIONS,
   DEFAULT_LADDER_OPTIONS,
+  DEFAULT_LIMIT_BOULDERING_OPTIONS,
+  DEFAULT_ON_THE_MINUTE_OPTIONS,
   DEFAULT_PYRAMID_OPTIONS,
   DEFAULT_VOLUME_OPTIONS,
   type GeneratorGradeScale,
   type GeneratorOptions,
   type StagedSlot,
   WARM_UP_OPTIONS,
+  WORKOUT_STAGE_KINDS,
   type WorkoutPlan,
   type WorkoutRun,
+  type WorkoutRunEntry,
   type WorkoutBlockSpec,
   type WorkoutStage,
   type WorkoutStageFilters,
+  type WorkoutStagePacing,
   appendStageToRun,
   buildWorkoutRun,
+  expandRounds,
   generateStagedPlan,
   generateWorkoutPlan,
+  isWorkoutStageKind,
   locateInRun,
   planFromBlocks,
   pruneRun,
+  workoutRunHasPacing,
 } from '../index';
 
 const DENSE_GRADES: GeneratorGradeScale = Array.from({ length: 33 }, (_, i) => ({ difficulty_id: i + 1 }));
@@ -45,6 +54,9 @@ const WORKOUT_CASES: GeneratorOptions[] = [
   { ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 0, numberOfSteps: 4, climbsPerStep: 1 },
   { ...DEFAULT_LADDER_OPTIONS, targetGrade: 0, numberOfSteps: 5, climbsPerStep: 2 },
   { ...DEFAULT_GRADE_FOCUS_OPTIONS, targetGrade: 0, numberOfClimbs: 7 },
+  { ...DEFAULT_ON_THE_MINUTE_OPTIONS, targetGrade: 0, numberOfClimbs: 6 },
+  { ...DEFAULT_FOUR_BY_FOUR_OPTIONS, targetGrade: 0, climbsPerRound: 4, rounds: 3 },
+  { ...DEFAULT_LIMIT_BOULDERING_OPTIONS, targetGrade: 0, numberOfClimbs: 3 },
 ];
 
 const EQUIVALENCE_CASES = WORKOUT_CASES.flatMap((workout) =>
@@ -726,5 +738,296 @@ describe('locateInRun', () => {
 
   it('returns null for an empty run', () => {
     expect(locateInRun({ stages: [] }, 'w1', QUEUE)).toBeNull();
+  });
+});
+
+describe('stage kinds', () => {
+  it('lists every kind, the partner block names for the timed ones included', () => {
+    expect([...WORKOUT_STAGE_KINDS]).toEqual([
+      'warmUp',
+      'volume',
+      'pyramid',
+      'ladder',
+      'gradeFocus',
+      'onTheMinute',
+      'fourByFour',
+      'limitBouldering',
+    ]);
+  });
+
+  it('knows only those kinds', () => {
+    expect(WORKOUT_STAGE_KINDS.every(isWorkoutStageKind)).toBe(true);
+    for (const candidate of ['freeClimbing', 'FourByFour', '', 'constructor', 'toString', 4, null, undefined]) {
+      expect(isWorkoutStageKind(candidate)).toBe(false);
+    }
+  });
+
+  it.each([
+    { ...DEFAULT_ON_THE_MINUTE_OPTIONS, targetGrade: 18 },
+    { ...DEFAULT_FOUR_BY_FOUR_OPTIONS, targetGrade: 18 },
+    { ...DEFAULT_LIMIT_BOULDERING_OPTIONS, targetGrade: 18 },
+  ] satisfies GeneratorOptions[])('plans a $type block as a stage of that kind', (options) => {
+    const plan = planFromBlocks([workoutBlock({ ...options, warmUp: 'extended' })], counterIds());
+
+    expect(plan.stages).toEqual([{ id: 'stage-0', kind: options.type, options: { ...options, warmUp: 'none' } }]);
+  });
+
+  it('plans one slot per climb of a 4x4 round, never one per round', () => {
+    const plan = planFromBlocks(
+      [workoutBlock({ ...DEFAULT_FOUR_BY_FOUR_OPTIONS, targetGrade: 18, climbsPerRound: 4, rounds: 4 })],
+      counterIds(),
+    );
+
+    expect(generateStagedPlan(plan, DENSE_GRADES).map((slot) => slot.grade)).toEqual([18, 18, 18, 18]);
+  });
+});
+
+const FOUR_BY_FOUR_PACING: WorkoutStagePacing = {
+  mode: 'afterTick',
+  restSeconds: 0,
+  restBetweenRoundsSeconds: 180,
+  advanceOn: 'tick',
+};
+
+describe('the run carries pacing and rounds', () => {
+  const timedPlan = planFromBlocks(
+    [
+      { kind: 'warmUp', warmUpType: 'standard' },
+      workoutBlock({ ...DEFAULT_FOUR_BY_FOUR_OPTIONS, targetGrade: 18, climbsPerRound: 2, rounds: 3 }),
+      workoutBlock({ ...DEFAULT_LIMIT_BOULDERING_OPTIONS, targetGrade: 22 }),
+      workoutBlock({ ...DEFAULT_ON_THE_MINUTE_OPTIONS, targetGrade: 16, intervalSeconds: 75 }),
+    ],
+    counterIds(),
+  );
+  // What Start would hand over: the 4x4's two climbs queued for three rounds.
+  const fourByFourEntries: WorkoutRunEntry[] = expandRounds(
+    [
+      { uuid: 'a', stageId: 'stage-1' },
+      { uuid: 'b', stageId: 'stage-1' },
+    ],
+    3,
+    (entry, round) => ({ ...entry, uuid: `${entry.uuid}${round}` }),
+  ).map(({ item, round }) => ({ ...item, round }));
+  const entries: WorkoutRunEntry[] = [
+    { uuid: 'w1', stageId: 'stage-0' },
+    ...fourByFourEntries,
+    { uuid: 'l1', stageId: 'stage-2' },
+    { uuid: 'm1', stageId: 'stage-3' },
+  ];
+
+  it('derives each stage’s pacing from its options and keeps every round', () => {
+    expect(buildWorkoutRun(entries, timedPlan)).toEqual({
+      stages: [
+        { id: 'stage-0', kind: 'warmUp', itemUuids: ['w1'] },
+        {
+          id: 'stage-1',
+          kind: 'fourByFour',
+          itemUuids: ['a', 'b', 'a2', 'b2', 'a3', 'b3'],
+          targetGrade: 18,
+          pacing: FOUR_BY_FOUR_PACING,
+          rounds: 3,
+          roundByUuid: { a: 1, b: 1, a2: 2, b2: 2, a3: 3, b3: 3 },
+        },
+        {
+          id: 'stage-2',
+          kind: 'limitBouldering',
+          itemUuids: ['l1'],
+          targetGrade: 22,
+          pacing: { mode: 'afterTick', restSeconds: 180, advanceOn: 'send' },
+        },
+        {
+          id: 'stage-3',
+          kind: 'onTheMinute',
+          itemUuids: ['m1'],
+          targetGrade: 16,
+          pacing: { mode: 'onTheMinute', restSeconds: 75 },
+        },
+      ],
+    });
+  });
+
+  it('leaves the new fields off every untimed stage', () => {
+    const run = buildWorkoutRun(
+      [
+        { uuid: 'w1', stageId: 'stage-0' },
+        { uuid: 'p1', stageId: 'stage-1' },
+      ],
+      PLAN,
+    );
+
+    for (const stage of run.stages) {
+      expect(['pacing', 'rounds', 'roundByUuid'].filter((field) => field in stage)).toEqual([]);
+    }
+    expect(workoutRunHasPacing(run)).toBe(false);
+  });
+
+  it('keeps rounds on any stage its entries name them for, and drops broken ones', () => {
+    const run = buildWorkoutRun(
+      [
+        { uuid: 'p1', stageId: 'stage-1', round: 1 },
+        { uuid: 'p2', stageId: 'stage-1', round: 2 },
+        { uuid: 'p3', stageId: 'stage-1', round: 0 },
+        { uuid: 'p4', stageId: 'stage-1', round: 1.5 },
+      ],
+      PLAN,
+    );
+
+    expect(run.stages[0].roundByUuid).toEqual({ p1: 1, p2: 2 });
+    expect('rounds' in run.stages[0]).toBe(false);
+  });
+
+  it('gives a round only to the stage that claims its uuid', () => {
+    const run = buildWorkoutRun(
+      [
+        { uuid: 'x', stageId: 'stage-0' },
+        { uuid: 'x', stageId: 'stage-1', round: 2 },
+      ],
+      PLAN,
+    );
+
+    expect(run.stages).toEqual([{ id: 'stage-0', kind: 'warmUp', itemUuids: ['x'] }]);
+  });
+
+  it('survives a JSON round trip', () => {
+    const run = buildWorkoutRun(entries, timedPlan);
+
+    expect(JSON.parse(JSON.stringify(run))).toEqual(run);
+  });
+
+  it('says whether any stage paces the rest timer', () => {
+    expect(workoutRunHasPacing(buildWorkoutRun(entries, timedPlan))).toBe(true);
+    expect(workoutRunHasPacing({ stages: [] })).toBe(false);
+  });
+});
+
+const ROUNDS_RUN: WorkoutRun = {
+  stages: [
+    { id: 'warm', kind: 'warmUp', itemUuids: ['w1'] },
+    {
+      id: 'four',
+      kind: 'fourByFour',
+      itemUuids: ['a', 'b', 'a2', 'b2'],
+      targetGrade: 18,
+      pacing: FOUR_BY_FOUR_PACING,
+      rounds: 2,
+      roundByUuid: { a: 1, b: 1, a2: 2, b2: 2 },
+    },
+  ],
+};
+
+describe('appendStageToRun with pacing and rounds', () => {
+  it('gives a new stage its pacing, rounds and the rounds of the climbs it adds', () => {
+    const next = appendStageToRun(
+      { stages: [] },
+      { ...ROUNDS_RUN.stages[1], roundByUuid: { a: 1, b: 1, a2: 2, b2: 2, gone: 2 } },
+      ['a', 'a2', 'a'],
+    );
+
+    expect(next.stages).toEqual([
+      {
+        id: 'four',
+        kind: 'fourByFour',
+        itemUuids: ['a', 'a2'],
+        targetGrade: 18,
+        pacing: FOUR_BY_FOUR_PACING,
+        rounds: 2,
+        roundByUuid: { a: 1, a2: 2 },
+      },
+    ]);
+  });
+
+  it('merges the added climbs’ rounds into a stage already in the run, keeping its own pacing', () => {
+    const snapshot = structuredClone(ROUNDS_RUN);
+    const next = appendStageToRun(
+      ROUNDS_RUN,
+      {
+        id: 'four',
+        kind: 'fourByFour',
+        pacing: { mode: 'afterTick', restSeconds: 60, advanceOn: 'tick' },
+        roundByUuid: { a3: 3, b3: 3, a: 9 },
+      },
+      ['a3', 'b3', 'a'],
+    );
+
+    expect(next.stages[1]).toEqual({
+      ...ROUNDS_RUN.stages[1],
+      itemUuids: ['a', 'b', 'a2', 'b2', 'a3', 'b3'],
+      roundByUuid: { a: 1, b: 1, a2: 2, b2: 2, a3: 3, b3: 3 },
+    });
+    expect(ROUNDS_RUN).toEqual(snapshot);
+  });
+
+  it('leaves the new fields off a stage given none', () => {
+    const next = appendStageToRun(RUN, { id: 'stage-2', kind: 'volume' }, ['v1']);
+
+    expect(next.stages[2]).toEqual({ id: 'stage-2', kind: 'volume', itemUuids: ['v1'] });
+  });
+
+  it('leaves roundByUuid off when none of the added climbs has a round', () => {
+    const next = appendStageToRun(RUN, { id: 'stage-2', kind: 'fourByFour', roundByUuid: { other: 1 } }, ['v1']);
+
+    expect('roundByUuid' in next.stages[2]).toBe(false);
+  });
+});
+
+describe('pruneRun with rounds', () => {
+  it('drops the rounds of climbs that left the queue', () => {
+    const next = pruneRun(ROUNDS_RUN, ['w1', 'a', 'a2', 'b2']);
+
+    expect(next.stages[1]).toEqual({
+      ...ROUNDS_RUN.stages[1],
+      itemUuids: ['a', 'a2', 'b2'],
+      roundByUuid: { a: 1, a2: 2, b2: 2 },
+    });
+    expect(next.stages[0]).toBe(ROUNDS_RUN.stages[0]);
+  });
+
+  it('keeps the same run when every climb is still queued', () => {
+    expect(pruneRun(ROUNDS_RUN, ['w1', 'a', 'b', 'a2', 'b2'])).toBe(ROUNDS_RUN);
+  });
+
+  it('leaves roundByUuid off a stage whose climbs with rounds are all gone', () => {
+    const run: WorkoutRun = {
+      stages: [{ id: 's', kind: 'gradeFocus', itemUuids: ['g1', 'g2'], roundByUuid: { g1: 1 } }],
+    };
+
+    expect(pruneRun(run, ['g2'])).toEqual({ stages: [{ id: 's', kind: 'gradeFocus', itemUuids: ['g2'] }] });
+  });
+});
+
+describe('locateInRun with rounds', () => {
+  const QUEUE = ['w1', 'a', 'b', 'a2', 'b2'];
+
+  it('places the current climb in its round', () => {
+    expect(locateInRun(ROUNDS_RUN, 'a2', QUEUE)).toEqual({
+      stageIndex: 1,
+      stageCount: 2,
+      stageId: 'four',
+      kind: 'fourByFour',
+      positionInStage: 3,
+      stageSize: 4,
+      remainingInStage: 1,
+      round: { round: 2, roundCount: 2, positionInRound: 1, roundSize: 2 },
+    });
+  });
+
+  it('keeps each climb’s stored round when the queue is reordered or trimmed', () => {
+    expect(locateInRun(ROUNDS_RUN, 'b', ['w1', 'a2', 'b', 'a', 'b2'])?.round).toEqual({
+      round: 1,
+      roundCount: 2,
+      positionInRound: 1,
+      roundSize: 2,
+    });
+    expect(locateInRun(ROUNDS_RUN, 'b2', ['a2', 'b2'])?.round).toEqual({
+      round: 1,
+      roundCount: 1,
+      positionInRound: 2,
+      roundSize: 2,
+    });
+  });
+
+  it('gives no round to a climb without one, rounds or not in its stage', () => {
+    expect('round' in (locateInRun(ROUNDS_RUN, 'w1', QUEUE) ?? {})).toBe(false);
+    expect('round' in (locateInRun(RUN, 'p2', ['w1', 'w2', 'p1', 'p2', 'p3']) ?? {})).toBe(false);
   });
 });

@@ -81,13 +81,32 @@ export function workoutStageName(kind: WorkoutStageKind, t: TranslateWorkoutStag
       return t('mobile.session.preGeneratorLadder');
     case 'gradeFocus':
       return t('mobile.session.preGeneratorGradeFocus');
+    case 'onTheMinute':
+      return t('mobile.session.preGeneratorOnTheMinute');
+    case 'fourByFour':
+      return t('mobile.session.preGeneratorFourByFour');
+    case 'limitBouldering':
+      return t('mobile.session.preGeneratorLimitBouldering');
   }
 }
 
-/** "Warm-up · 2 of 5", the player's subtitle part for a workout climb. */
+/**
+ * "Warm-up · 2 of 5", the player's subtitle part for a workout climb. A climb
+ * with a round counts within its round instead: "4x4 · Round 2 of 4 · 3 of 4".
+ */
 export function formatWorkoutStagePosition(position: WorkoutRunPosition, t: TranslateWorkoutStage): string {
+  const stage = workoutStageName(position.kind, t);
+  if (position.round) {
+    return t('mobile.session.workoutStageRoundPosition', {
+      stage,
+      round: position.round.round,
+      rounds: position.round.roundCount,
+      position: position.round.positionInRound,
+      total: position.round.roundSize,
+    });
+  }
   return t('mobile.session.workoutStagePosition', {
-    stage: workoutStageName(position.kind, t),
+    stage,
     position: position.positionInStage,
     total: position.stageSize,
   });

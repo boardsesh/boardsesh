@@ -53,6 +53,16 @@ type RestLengthPickerProps = {
   /** The persisted rest length in seconds; `null` is `Off`. */
   value: number | null;
   onChange: (nextSeconds: number | null) => void;
+  /**
+   * False for a length that cannot be `Off` (an on-the-minute interval): the tap
+   * wraps from 10:00 back to 0:30 and `onChange` never gets null. Default true.
+   */
+  allowOff?: boolean;
+  /**
+   * What the pill and slider are announced as, when the field is not the rest
+   * timer's own rest length (a workout block's "Rest between rounds", say).
+   */
+  accessibilityName?: string;
 };
 
 /**
@@ -63,7 +73,13 @@ type RestLengthPickerProps = {
  * moves it themselves — silently rounding a persisted setting because the UI was
  * redesigned underneath it is the one thing this control must not do.
  */
-export function RestLengthPicker({ label: fieldLabel, value, onChange }: RestLengthPickerProps) {
+export function RestLengthPicker({
+  label: fieldLabel,
+  value,
+  onChange,
+  allowOff = true,
+  accessibilityName,
+}: RestLengthPickerProps) {
   const { t } = useTranslation('session');
   const reduceMotion = useReduceMotion();
   const [expanded, setExpanded] = useState(false);
@@ -83,8 +99,8 @@ export function RestLengthPicker({ label: fieldLabel, value, onChange }: RestLen
 
   const handleStep = useCallback(() => {
     hapticSelection();
-    onChange(nextRestLength(value));
-  }, [onChange, value]);
+    onChange(nextRestLength(value, { allowOff }));
+  }, [allowOff, onChange, value]);
 
   const handleToggleSlider = useCallback(() => {
     hapticLight();
@@ -92,6 +108,10 @@ export function RestLengthPicker({ label: fieldLabel, value, onChange }: RestLen
   }, []);
 
   const label = hasRestLength(liveValue) ? formatRestLength(liveValue) : t('mobile.restTimer.off');
+  const pillAccessibilityLabel =
+    accessibilityName === undefined
+      ? t('mobile.restTimer.lengthPillAria', { value: label })
+      : t('mobile.session.preGeneratorOptionAccessibilityLabel', { group: accessibilityName, value: label });
 
   return (
     <View>
@@ -104,7 +124,7 @@ export function RestLengthPicker({ label: fieldLabel, value, onChange }: RestLen
           reduceMotion={reduceMotion}
           onCycle={handleStep}
           onToggleSlider={handleToggleSlider}
-          accessibilityLabel={t('mobile.restTimer.lengthPillAria', { value: label })}
+          accessibilityLabel={pillAccessibilityLabel}
           accessibilityHint={t('mobile.restTimer.lengthPillHint')}
           testID="rest-length-pill"
         />
@@ -129,7 +149,7 @@ export function RestLengthPicker({ label: fieldLabel, value, onChange }: RestLen
             minNotchTravelPx={MIN_NOTCH_TRAVEL_PX}
             magnet={magnetRestLength}
             format={formatRestLength}
-            accessibilityLabel={t('mobile.restTimer.targetAria')}
+            accessibilityLabel={accessibilityName ?? t('mobile.restTimer.targetAria')}
             adjust={adjustRestLength}
             reduceMotion={reduceMotion}
             onLiveChange={setLiveValue}

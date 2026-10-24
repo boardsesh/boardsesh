@@ -9,9 +9,10 @@ Issue [#5379](https://github.com/boardsesh/boardsesh/issues/5379), part of epic
 
 A workout is an ordered list of **blocks**, and every part of it is one, the warm-up
 included. A block (`WorkoutBlockSpec`) is either a warm-up of one length (standard or
-extended) or one run of the generator (volume, pyramid, ladder or grade focus) at one
-target grade, plus its own climb filters (`WorkoutStageFilters`: climb bias, min
-ascents, min rating, tall only, wide only). Each block becomes one **stage**. The code lives in
+extended) or one run of the generator (volume, pyramid, ladder, grade focus, or one of
+the timed types: on the minute, 4x4, limit bouldering) at one target grade, plus its own
+climb filters (`WorkoutStageFilters`: climb bias, min ascents, min rating, tall only,
+wide only). Each block becomes one **stage**. The code lives in
 `packages/shared/playlist-generator/src/stages.ts`, pure TS and JSON-serialisable.
 
 - `WorkoutPlan` is what the climber asked for: `planFromBlocks(blocks, makeId)` turns
@@ -32,13 +33,48 @@ ascents, min rating, tall only, wide only). Each block becomes one **stage**. Th
   (a malformed field, or a climb bias it does not know) loses just that field; the
   stage and the run load, so the next mid-session block cannot overwrite the stages
   queued at Start.
+- A timed stage also keeps its **pacing** (`WorkoutStagePacing`, `pacing.ts`), and a 4x4
+  its **rounds**. Pacing is worked out from the block's options by `pacingForOptions` and
+  stored only on the run stage, because a run keeps no options. On the minute paces
+  `onTheMinute` with its interval (15 s to an hour). A 4x4 paces `afterTick` with its
+  between-climbs rest, its between-rounds rest after a round's last climb, and moves on
+  after any tick. Limit bouldering paces `afterTick` with its rest and moves on only after
+  a flash or a send, so a fall rests and stays on the climb. Every other kind has no
+  pacing: the climber's own rest-timer settings apply. `stageRestSeconds` never runs an
+  `afterTick` rest under `STAGE_CHANGEOVER_SECONDS` (10 s), a rest of 0 included, so a
+  tick saved a few seconds late can't land past the timer's 5 s overdue grace.
+- A 4x4 plans one slot per climb of a round, not one per climb it will climb: one climb
+  fills each slot, and Start queues the round's climbs once per round, round-major
+  (`expandRounds`: A B C D, A B C D, ...). Every copy has its own queue-item uuid, and the
+  stage stores each one's round in `roundByUuid`, never worked out from positions,
+  because removals and reorders move positions. `rounds` is the count it was planned
+  with. All three fields are optional, threaded through `buildWorkoutRun` (from
+  `WorkoutRunEntry.round`), `appendStageToRun` (the added climbs' rounds, merged into a
+  stage already in the run) and `pruneRun`.
 - `locateInRun` answers "where is the current climb". It orders by the queue, not by the
   run, and counts only uuids still queued, because climbers reorder and remove climbs.
+  For a climb with a round it also gives `round`: the round's rank among the stage's
+  rounds with queued climbs (ranked by the stored number, so a reordered queue still
+  says round 2 for a round-2 climb) and the climb's place in it, so the player reads
+  "4x4 · Round 2 of 4 · 3 of 4".
 
 Stage kinds use the partner API block names (`warmUp`, `volume`, `pyramid`, `ladder`,
-`gradeFocus`; see `docs/partner-api.md`, "Blocks"). A partner workout is a list of blocks
-in the same vocabulary, so `onTheMinute`, `fourByFour` and `limitBouldering` can become
-stage kinds later without renaming anything or translating between two lists.
+`gradeFocus`, `onTheMinute`, `fourByFour`, `limitBouldering`; see `docs/partner-api.md`,
+"Blocks"). A partner workout is a list of blocks in the same vocabulary, so nothing is
+renamed or translated between two lists. The option fields keep the partner field names
+too (`rounds`, `restBetweenClimbsSeconds`, `restBetweenRoundsSeconds`, `intervalSeconds`,
+`restSeconds`); only the partner's `climbCount` becomes `numberOfClimbs`, or
+`climbsPerRound` on a 4x4. `WORKOUT_STAGE_KINDS` lists every kind this bundle knows, and
+`isWorkoutStageKind` checks stored data against it.
+
+The three timed kinds are modelled end to end but not offered yet: the type chips, "Add a
+block" and the mid-session sheet still offer warm-up, volume, pyramid, ladder and grade
+focus only (`WORKOUT_BLOCK_TYPES`, and `nextBlockType` cycles the four untimed types). Their
+fields exist for when they are: a 4x4 takes 2 to 10 climbs per round (the player keys its
+swipe pages by climb, so one climb per round would put the same climb on three pages) and
+1 to 10 rounds; limit bouldering 1 to 10 climbs; on the minute 1 to 40. Their rests use
+the rest timer's own picker, where Off means no rest for a stage rest and an interval can
+never be Off (`RestLengthPicker`'s `allowOff`).
 
 Stage ids are uuids, never positions. Stages get added mid-session and runs get joined,
 and a position-based id would collide.
@@ -72,13 +108,28 @@ The limits that follow:
 
 ## Store lifecycle
 
+- **Two slots, one run.** A run made only of the original kinds (warm-up, volume,
+  pyramid, ladder, grade focus) is stored under `boardsesh_workout_run_v1`; a run with any
+  other kind goes under `boardsesh_workout_run_v2`, and writing one slot removes the other.
+  An OTA rollback lands on the bundle embedded in the binary by default, and a bundle from
+  before the timed kinds passes an unknown kind straight through and crashes in "Add a
+  block". It reads only `_v1`, so it never sees a timed run. From this bundle on, a stage
+  of a kind the bundle does not know is dropped on read and the rest of the run kept, as
+  is a stage's `pacing`, `rounds` or `roundByUuid` it cannot read.
 - **Hydrate.** `WorkoutRunSessionSync` hydrates the slot when a session id appears, so a
-  cold start mid-workout gets its stages back. A stored run for another session misses.
+  cold start mid-workout gets its stages back. `_v2` is read before `_v1`, and the slot
+  holding this session's run wins. A stored run for another session misses.
+- **Tick log.** The record also keeps the ticks logged on this phone on the run's climbs,
+  by queue item, with their status (`flash`, `send` or `attempt`; `noteWorkoutRunTick`,
+  `useWorkoutRunLog`). A tick on a hand-queued climb or for another session is ignored.
+  The log keeps the newest 2000 entries, survives "Add a block" (which rewrites the run for
+  the same session) and goes with the run. It is how a 4x4's rounds and a limit climb's
+  falls get counted, since ticks carry no queue item on the server.
 - **Clear on session end.** When the sync sees a session id go away or change, it clears
-  that session's run, in memory and on disk. A hydrate still in flight for it cannot land
-  afterwards.
-- **Clear on sign-out.** `auth-provider` clears the store with the rest of the per-user
-  state.
+  that session's run, in memory and on disk (whichever slot names it). A hydrate still in
+  flight for it cannot land afterwards.
+- **Clear on sign-out.** `auth-provider` clears the store, both slots, with the rest of
+  the per-user state.
 - **No prune.** The run is never trimmed as climbs leave the queue. Undo in the queue
   sheet brings removed climbs back under their old uuids, and they must come back in
   their stage. Readers skip uuids that are not queued, so the stale ones cost nothing,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { WorkoutRun } from '@boardsesh/playlist-generator';
+import { WORKOUT_STAGE_KINDS, type WorkoutRun } from '@boardsesh/playlist-generator';
 import { describeWorkoutRun, formatWorkoutStagePosition, workoutStageName } from '../workout-run-readout';
 
 const run: WorkoutRun = {
@@ -53,6 +53,35 @@ describe('workout stage labels', () => {
   it('names each stage with the workout picker labels', () => {
     expect(workoutStageName('warmUp', t)).toBe('mobile.session.preWorkoutSectionWarmUp');
     expect(workoutStageName('gradeFocus', t)).toBe('mobile.session.preGeneratorGradeFocus');
+  });
+
+  it('names the timed stages', () => {
+    expect(workoutStageName('onTheMinute', t)).toBe('mobile.session.preGeneratorOnTheMinute');
+    expect(workoutStageName('fourByFour', t)).toBe('mobile.session.preGeneratorFourByFour');
+    expect(workoutStageName('limitBouldering', t)).toBe('mobile.session.preGeneratorLimitBouldering');
+  });
+
+  it('names every stage kind', () => {
+    for (const kind of WORKOUT_STAGE_KINDS) expect(workoutStageName(kind, t)).toMatch(/^mobile\.session\./);
+  });
+
+  it('counts a 4x4 climb within its round', () => {
+    const fourByFour: WorkoutRun = {
+      stages: [
+        {
+          id: 'four',
+          kind: 'fourByFour',
+          itemUuids: ['a', 'b', 'a2', 'b2'],
+          roundByUuid: { a: 1, b: 1, a2: 2, b2: 2 },
+        },
+      ],
+    };
+    const position = describeWorkoutRun(fourByFour, ['a', 'b', 'a2', 'b2'], 'b2')?.current;
+    expect(position).toBeTruthy();
+    if (!position) return;
+    expect(formatWorkoutStagePosition(position, t)).toBe(
+      'mobile.session.workoutStageRoundPosition(stage=mobile.session.preGeneratorFourByFour,round=2,rounds=2,position=2,total=2)',
+    );
   });
 
   it('formats the player subtitle part', () => {

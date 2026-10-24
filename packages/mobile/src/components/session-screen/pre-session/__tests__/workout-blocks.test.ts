@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_FOUR_BY_FOUR_OPTIONS,
   DEFAULT_GRADE_FOCUS_OPTIONS,
   DEFAULT_LADDER_OPTIONS,
+  DEFAULT_LIMIT_BOULDERING_OPTIONS,
+  DEFAULT_ON_THE_MINUTE_OPTIONS,
   DEFAULT_PYRAMID_OPTIONS,
   DEFAULT_VOLUME_OPTIONS,
+  TIMED_WORKOUT_TYPES,
   generateStagedPlan,
   planFromBlocks,
   type GeneratorGradeScale,
@@ -13,7 +17,9 @@ import {
   DEFAULT_WORKOUT_FILTERS,
   MAX_WORKOUT_BLOCKS,
   NO_WORKOUT,
+  WORKOUT_BLOCK_TYPES,
   addBlock,
+  buildDefaultOptions,
   canAddBlock,
   changeBlockType,
   clearUnavailableSizeFilters,
@@ -88,6 +94,44 @@ describe('nextBlockType', () => {
     expect(nextBlockType('pyramid')).toBe('ladder');
     expect(nextBlockType('ladder')).toBe('gradeFocus');
     expect(nextBlockType('gradeFocus')).toBe('volume');
+  });
+
+  it('never steps onto a timed type, and steps off one back to volume', () => {
+    for (const type of TIMED_WORKOUT_TYPES) expect(nextBlockType(type)).toBe('volume');
+    for (const type of ['volume', 'pyramid', 'ladder', 'gradeFocus'] as const) {
+      expect(TIMED_WORKOUT_TYPES).not.toContain(nextBlockType(type));
+    }
+  });
+});
+
+describe('timed block types', () => {
+  it('are not offered on the chips yet', () => {
+    expect(WORKOUT_BLOCK_TYPES).toEqual(['warmUp', 'volume', 'pyramid', 'ladder', 'gradeFocus']);
+  });
+
+  it('build their defaults at the grade asked for', () => {
+    expect(buildDefaultOptions('onTheMinute', 18)).toEqual({ ...DEFAULT_ON_THE_MINUTE_OPTIONS, targetGrade: 18 });
+    expect(buildDefaultOptions('fourByFour', 18)).toEqual({ ...DEFAULT_FOUR_BY_FOUR_OPTIONS, targetGrade: 18 });
+    expect(buildDefaultOptions('limitBouldering', 22)).toEqual({
+      ...DEFAULT_LIMIT_BOULDERING_OPTIONS,
+      targetGrade: 22,
+    });
+  });
+
+  it('keep the grade and filters when a block changes to one', () => {
+    const selection = withBlocks([workout('block-0', { ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 19 }, STRICT)]);
+
+    expect(changeBlockType(selection, 'block-0', 'fourByFour', FALLBACK_GRADE).blocks).toEqual([
+      workout('block-0', { ...DEFAULT_FOUR_BY_FOUR_OPTIONS, targetGrade: 19 }, STRICT),
+    ]);
+  });
+
+  it('add a block after a timed one as volume at its grade', () => {
+    const selection = withBlocks([workout('block-0', { ...DEFAULT_LIMIT_BOULDERING_OPTIONS, targetGrade: 24 })]);
+
+    expect(addBlock(selection, () => 'block-1', FALLBACK_GRADE).blocks[1]).toEqual(
+      workout('block-1', { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 24 }),
+    );
   });
 });
 

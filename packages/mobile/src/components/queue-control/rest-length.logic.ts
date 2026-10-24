@@ -175,15 +175,22 @@ export function adjustRestLength(seconds: number, direction: 1 | -1): number {
  * past 10:00. `Off` itself steps to 0:30, so the whole cycle is
  * `Off → 0:30 → 1:00 → … → 10:00 → Off`.
  *
+ * `allowOff: false` is for a length that cannot be Off, like an on-the-minute
+ * interval: past 10:00 the tap wraps straight back to 0:30.
+ *
  * An arbitrary persisted rest steps to the next MULTIPLE of 30 above it (100 s →
  * 2:00), rather than to 100 + 30: a tap is how you get back onto the ladder, not
  * how you carry an odd number up it. Nothing rewrites the odd value until the
  * climber taps — see `sliderRestLength`.
  */
-export function nextRestLength(current: number | null): number | null {
+export function nextRestLength(
+  current: number | null,
+  { allowOff = true }: { allowOff?: boolean } = {},
+): number | null {
   if (!hasRestLength(current)) return REST_LENGTH_TAP_STEP_SECONDS;
   const next = (Math.floor(current / REST_LENGTH_TAP_STEP_SECONDS) + 1) * REST_LENGTH_TAP_STEP_SECONDS;
-  return next > MAX_TAP_REST_LENGTH_SECONDS ? null : next;
+  if (next <= MAX_TAP_REST_LENGTH_SECONDS) return next;
+  return allowOff ? null : REST_LENGTH_TAP_STEP_SECONDS;
 }
 
 /** The rest length the slider opens at: the persisted one when there is one

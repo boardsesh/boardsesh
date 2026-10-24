@@ -1,15 +1,16 @@
 // Controls the workout block cards and the climb filters share: the filled
-// chip, the grouped stepper card, the per-type count steppers and the grade
-// helpers.
+// chip, the grouped stepper card, the per-type count steppers and rest rows, and
+// the grade helpers.
 
-import type { ReactNode } from 'react';
+import { useCallback, useRef, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View, type Insets, type ViewStyle } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { Chip as PaperChip } from 'react-native-paper';
 import type { BoardName, Grade } from '@boardsesh/shared-schema';
 import { getGradesForBoard } from '@boardsesh/board-config';
-import type { GeneratorOptions } from '@boardsesh/playlist-generator';
+import { MAX_STAGE_ROUNDS, MIN_STAGE_INTERVAL_SECONDS, type GeneratorOptions } from '@boardsesh/playlist-generator';
 import { Stepper } from '../../Stepper';
+import { RestLengthPicker } from '../../queue-control/RestLengthPicker';
 import { Text } from '../../Text';
 import { useTheme } from '../../../providers/theme-provider';
 import { createVariantComponent, selectByVariant } from '../../../theme/variants';
@@ -162,11 +163,64 @@ function stepperRow(
   return { key: fieldKey, node: <Stepper label={label} value={value} min={min} max={max} onChange={onValue} /> };
 }
 
+type RestRowProps = {
+  label: string;
+  /** Whole seconds. For a stage rest, 0 is no rest and shows as Off. */
+  seconds: number;
+  /** False for an interval, which cannot be Off. */
+  allowOff: boolean;
+  onSeconds: (next: number) => void;
+};
+
+// A rest length in the stepper card: the rest timer's own pill and slider, with
+// the stepper row's gutter and height so the card reads as one list.
+function RestRow({ label, seconds, allowOff, onSeconds }: RestRowProps) {
+  const { systemColors, variant } = useTheme();
+  const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
+  // The picker hands its callback to the slider's gesture, which rebuilds when
+  // the callback's identity changes; the rows are rebuilt on every options change.
+  const onSecondsRef = useRef(onSeconds);
+  onSecondsRef.current = onSeconds;
+  const handleChange = useCallback(
+    (next: number | null) => onSecondsRef.current(next ?? (allowOff ? 0 : MIN_STAGE_INTERVAL_SECONDS)),
+    [allowOff],
+  );
+  return (
+    <View style={[generatorControlStyles.restRow, isMaterial && generatorControlStyles.restRowMaterial]}>
+      <RestLengthPicker
+        label={
+          <Text variant="body" color={systemColors.label} style={generatorControlStyles.restLabel}>
+            {label}
+          </Text>
+        }
+        value={allowOff && seconds <= 0 ? null : seconds}
+        allowOff={allowOff}
+        accessibilityName={label}
+        onChange={handleChange}
+      />
+    </View>
+  );
+}
+
+/** A stage rest: Off is no rest, which the timer runs as the short changeover. */
+function restRow(label: string, fieldKey: string, seconds: number, onSeconds: (next: number) => void): StepperRow {
+  return { key: fieldKey, node: <RestRow label={label} seconds={seconds} allowOff onSeconds={onSeconds} /> };
+}
+
+/** An on-the-minute interval: always a length, never Off. */
+function intervalRow(label: string, fieldKey: string, seconds: number, onSeconds: (next: number) => void): StepperRow {
+  return { key: fieldKey, node: <RestRow label={label} seconds={seconds} allowOff={false} onSeconds={onSeconds} /> };
+}
+
 /**
  * The count steppers for one workout: the primary count (volume's main-set
  * climbs, pyramid/ladder's steps, grade focus's climbs) then each shape's
  * secondary knob (volume's grade spread, pyramid/ladder's climbs per step).
+ * The timed types follow their counts with their rest rows.
  * Labels are literal `t()` keys so the i18n key analyser sees each one.
+ *
+ * A 4x4 round holds at least 2 climbs: the player keys its swipe pages by climb,
+ * so one climb per round would put the same climb on three pages at once.
  */
 export function workoutStepperRows(
   options: GeneratorOptions,
@@ -224,6 +278,66 @@ export function workoutStepperRows(
           (numberOfClimbs) => onOptionsChange({ ...options, numberOfClimbs }),
         ),
       ];
+    case 'onTheMinute':
+      return [
+        stepperRow(
+          t('mobile.session.preGeneratorNumberOfClimbs'),
+          'numberOfClimbs',
+          options.numberOfClimbs,
+          1,
+          40,
+          (numberOfClimbs) => onOptionsChange({ ...options, numberOfClimbs }),
+        ),
+        intervalRow(
+          t('mobile.session.preGeneratorInterval'),
+          'intervalSeconds',
+          options.intervalSeconds,
+          (intervalSeconds) => onOptionsChange({ ...options, intervalSeconds }),
+        ),
+      ];
+    case 'fourByFour':
+      return [
+        stepperRow(
+          t('mobile.session.preGeneratorClimbsPerRound'),
+          'climbsPerRound',
+          options.climbsPerRound,
+          2,
+          10,
+          (climbsPerRound) => onOptionsChange({ ...options, climbsPerRound }),
+        ),
+        stepperRow(t('mobile.session.preGeneratorRounds'), 'rounds', options.rounds, 1, MAX_STAGE_ROUNDS, (rounds) =>
+          onOptionsChange({ ...options, rounds }),
+        ),
+        restRow(
+          t('mobile.session.preGeneratorRestBetweenClimbs'),
+          'restBetweenClimbsSeconds',
+          options.restBetweenClimbsSeconds,
+          (restBetweenClimbsSeconds) => onOptionsChange({ ...options, restBetweenClimbsSeconds }),
+        ),
+        restRow(
+          t('mobile.session.preGeneratorRestBetweenRounds'),
+          'restBetweenRoundsSeconds',
+          options.restBetweenRoundsSeconds,
+          (restBetweenRoundsSeconds) => onOptionsChange({ ...options, restBetweenRoundsSeconds }),
+        ),
+      ];
+    case 'limitBouldering':
+      return [
+        stepperRow(
+          t('mobile.session.preGeneratorNumberOfClimbs'),
+          'numberOfClimbs',
+          options.numberOfClimbs,
+          1,
+          10,
+          (numberOfClimbs) => onOptionsChange({ ...options, numberOfClimbs }),
+        ),
+        restRow(
+          t('mobile.session.preGeneratorRestAfterEachAttempt'),
+          'restSeconds',
+          options.restSeconds,
+          (restSeconds) => onOptionsChange({ ...options, restSeconds }),
+        ),
+      ];
   }
 }
 
@@ -243,5 +357,19 @@ export const generatorControlStyles = StyleSheet.create({
   groupDivider: {
     height: StyleSheet.hairlineWidth,
     marginStart: spacing[4],
+  },
+  // The stepper row's gutter and height (Stepper.tsx), so a rest row lines up with the counts.
+  restRow: {
+    justifyContent: 'center',
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[2],
+    minHeight: 44,
+  },
+  restRowMaterial: {
+    minHeight: 48,
+  },
+  restLabel: {
+    flex: 1,
+    minWidth: 0,
   },
 });
