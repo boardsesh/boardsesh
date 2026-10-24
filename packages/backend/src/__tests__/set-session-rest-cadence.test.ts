@@ -285,6 +285,24 @@ describe('setSessionRestCadence', () => {
       expect(early).toEqual({ applied: false, change: { ...armed.change, action: null } });
       expect(pubsubMock.publishSessionEvent).not.toHaveBeenCalled();
     });
+
+    it('applies a FIRE up to 5 s after its beat and refuses one later, publishing nothing', async () => {
+      // A 90 s rest that ran out just now.
+      const armed = await setRestCadence({ action: 'ARM', config: SETTINGS_CONFIG, elapsedMs: 90_000 });
+      pubsubMock.publishSessionEvent.mockClear();
+
+      vi.setSystemTime(NOW + 5_001);
+      const tooLate = await setRestCadence({ action: 'FIRE', expectedRevision: armed.change.revision });
+      expect(tooLate.applied).toBe(false);
+      expect(tooLate.change).toMatchObject({ revision: armed.change.revision, action: null });
+      expect(pubsubMock.publishSessionEvent).not.toHaveBeenCalled();
+
+      vi.setSystemTime(NOW + 5_000);
+      const late = await setRestCadence({ action: 'FIRE', expectedRevision: armed.change.revision });
+      expect(late.applied).toBe(true);
+      expect(late.change.restCadence?.lastFiredBeatAt).toBe(String(NOW));
+      expect(pubsubMock.publishSessionEvent).toHaveBeenCalledOnce();
+    });
   });
 
   it('a stale revision comes back with the stored clock so the caller can adopt it', async () => {

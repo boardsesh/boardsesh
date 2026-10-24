@@ -65,6 +65,22 @@ export const REST_CADENCE_LATE_CLAMP_MS = 60_000;
  */
 export const REST_CADENCE_FIRE_EARLY_TOLERANCE_MS = 2_000;
 
+/**
+ * How late a FIRE may claim a beat: a beat more than this far behind the
+ * server's clock is never claimed. It mirrors the phone's overdue grace
+ * (AUTO_ADVANCE_OVERDUE_GRACE_MS in mobile's rest-timer-auto-advance.ts): a
+ * beat that far gone fell due while nobody was watching (a backgrounded
+ * holder, a RESUME or ARM whose elapsed is past a beat), and moving the wall
+ * for it now would surprise the crew. It must stay below the shortest
+ * onTheMinute interval minus the early tolerance (15 s − 2 s = 13 s);
+ * otherwise a late claim of one beat and an early claim of the next could land
+ * a moment apart. At 5 s, two FIREs that both apply are at least 8 s apart.
+ * An afterTick deadline that goes stale stays stale until a TICK, a RESET or a
+ * CONFIGURE with anchor NOW re-anchors the clock; onTheMinute recovers on its
+ * next beat.
+ */
+export const REST_CADENCE_FIRE_LATE_TOLERANCE_MS = 5_000;
+
 /** Internal retries for an un-fenced write that lost a compare-and-set race. */
 export const REST_CADENCE_CAS_ATTEMPTS = 5;
 
@@ -177,25 +193,34 @@ function hasQualifyingTick(state: RestCadenceState): boolean {
 /**
  * The beat a FIRE at server time `nowMs` claims, worked out from the stored
  * anchor and interval alone, never from anything the phone reports. afterTick
- * has one deadline per cycle, anchor + interval. onTheMinute claims the latest
- * beat on its grid, anchor + k × interval with k ≥ 1 (the anchor itself is not
- * a beat, as on the phone). A beat counts as due from
- * REST_CADENCE_FIRE_EARLY_TOLERANCE_MS before it; null means none is due yet.
+ * has one deadline per cycle, anchor + interval. onTheMinute takes the latest
+ * beat on its grid that is due, anchor + k × interval with k ≥ 1 (the anchor
+ * itself is not a beat, as on the phone). The beat B is claimable only while
+ * B − REST_CADENCE_FIRE_EARLY_TOLERANCE_MS ≤ nowMs ≤ B +
+ * REST_CADENCE_FIRE_LATE_TOLERANCE_MS; null means nothing is claimable: no
+ * beat is due yet, or the latest one is too far gone.
  *
- * Deriving the beat here is what makes "once per beat" hold: two FIREs inside
- * one interval resolve to the same instant whatever beat ages they report, so
- * the second fails the `> lastFiredBeatMs` check in the reducer.
+ * Deriving the beat here is what makes "once per beat" hold: every FIRE inside
+ * one beat's window resolves to the same instant whatever beat age it
+ * reports, so the second fails the `> lastFiredBeatMs` check in the reducer.
+ * The two bounds keep the windows of neighbouring beats at least
+ * interval − 7 s apart, so a late claim of one beat can never sit a moment
+ * before an early claim of the next.
  */
 export function claimableRestCadenceBeatMs(state: RestCadenceState, nowMs: number): number | null {
   if (state.anchorMs === null || state.targetSeconds === null || state.targetSeconds <= 0) return null;
   const intervalMs = state.targetSeconds * 1000;
   const dueByMs = nowMs + REST_CADENCE_FIRE_EARLY_TOLERANCE_MS;
+  let beatMs: number;
   if (state.mode === 'afterTick') {
-    const deadlineMs = state.anchorMs + intervalMs;
-    return deadlineMs <= dueByMs ? deadlineMs : null;
+    beatMs = state.anchorMs + intervalMs;
+    if (beatMs > dueByMs) return null;
+  } else {
+    const beatsDue = Math.floor((dueByMs - state.anchorMs) / intervalMs);
+    if (beatsDue < 1) return null;
+    beatMs = state.anchorMs + beatsDue * intervalMs;
   }
-  const beatsDue = Math.floor((dueByMs - state.anchorMs) / intervalMs);
-  return beatsDue >= 1 ? state.anchorMs + beatsDue * intervalMs : null;
+  return nowMs - beatMs > REST_CADENCE_FIRE_LATE_TOLERANCE_MS ? null : beatMs;
 }
 
 /**
@@ -267,7 +292,7 @@ export function applyRestCadenceAction(
       // The compare-and-set on expectedRevision happens in the store; this
       // refuses a beat the stored clock could never have produced (so a buggy
       // phone can never walk the wall on a paused clock or without the tick)
-      // and a beat that is not due yet or was already claimed. The revision
+      // and a beat that is not due yet, too far gone, or already claimed. The revision
       // alone cannot stop a second FIRE on one beat: a phone that adopted the
       // first FIRE's revision holds a valid one. lastFiredBeatMs lives in the
       // same revisioned doc, so the store's compare-and-set makes this check
@@ -280,7 +305,11 @@ export function applyRestCadenceAction(
       if (previous.lastFiredBeatMs !== null && beatMs <= previous.lastFiredBeatMs) return NOT_APPLICABLE;
       const fired = { ...previous, lastFiredBeatMs: beatMs };
       const anchor = anchorAfterFire(previous);
-      if (anchor === 'now') return { applicable: true, next: { ...fired, anchorMs: nowMs, pausedElapsedSeconds: 0 } };
+      if (anchor === 'now') {
+        // A FIRE inside the early tolerance restarts the rest from the
+        // deadline, not from the FIRE, so the next rest is a full interval.
+        return { applicable: true, next: { ...fired, anchorMs: Math.max(nowMs, beatMs), pausedElapsedSeconds: 0 } };
+      }
       if (anchor === 'keep') return { applicable: true, next: fired };
       return { applicable: true, next: { ...fired, anchorMs: null, lastTick: null } };
     }
@@ -302,23 +331,40 @@ export function applyRestCadenceAction(
       };
     }
 
-    case 'RESUME':
+    case 'RESUME': {
       if (previous.isRunning) return NOT_APPLICABLE;
+      const anchorMs = nowMs - previous.pausedElapsedSeconds * 1000;
+      // The grid moves by however long the pause lasted, so the fired beat
+      // moves with it: otherwise the beat fired just before a pause comes due
+      // again just after it, under a later instant than lastFiredBeatMs.
+      const lastFiredBeatMs =
+        previous.lastFiredBeatMs === null || previous.anchorMs === null
+          ? previous.lastFiredBeatMs
+          : previous.lastFiredBeatMs + (anchorMs - previous.anchorMs);
+      return {
+        applicable: true,
+        next: { ...previous, isRunning: true, anchorMs, pausedElapsedSeconds: 0, lastFiredBeatMs },
+      };
+    }
+
+    case 'RESET': {
+      // Back to zero, like ARM: the fired beat and the last tick go too. A
+      // running clock's first beat is now a full interval (10 s or more) away,
+      // after every beat already claimed (each at most the early tolerance
+      // after its FIRE), so no fired beat can come back. A paused one waits
+      // for a TICK, which starts a new rest either way. And a tick from before
+      // the reset no longer satisfies a tick/send advance.
+      const isRunning = input.isRunning ?? previous.isRunning;
       return {
         applicable: true,
         next: {
           ...previous,
-          isRunning: true,
-          anchorMs: nowMs - previous.pausedElapsedSeconds * 1000,
+          isRunning,
+          anchorMs: isRunning ? nowMs : null,
           pausedElapsedSeconds: 0,
+          lastFiredBeatMs: null,
+          lastTick: null,
         },
-      };
-
-    case 'RESET': {
-      const isRunning = input.isRunning ?? previous.isRunning;
-      return {
-        applicable: true,
-        next: { ...previous, isRunning, anchorMs: isRunning ? nowMs : null, pausedElapsedSeconds: 0 },
       };
     }
 

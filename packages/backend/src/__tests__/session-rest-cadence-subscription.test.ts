@@ -51,6 +51,7 @@ vi.mock('../services/board-session-privacy', () => ({
 }));
 
 const { sessionSubscriptions } = await import('../graphql/resolvers/sessions/subscriptions');
+const { logger } = await import('../utils/logger');
 
 const context = { connectionId: 'passenger', userId: 'passenger', isAuthenticated: true } as ConnectionContext;
 const SUBSCRIBED_AT = 1_800_000_000_000;
@@ -203,17 +204,46 @@ describe('sessionUpdates crew rest clock', () => {
     },
   );
 
-  it('skips only the clock seed when its read fails, and keeps delivering the clock live', async () => {
+  it('retries a failed clock seed read once, and seeds from the retry', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    hooks.readRestCadence
+      .mockReset()
+      .mockRejectedValueOnce(new Error('redis blip'))
+      .mockResolvedValueOnce({ revision: REVISION, cadence: ARMED });
+    const stream = subscribe();
+    try {
+      expect(await nextEvent(stream)).toMatchObject({ __typename: 'SessionRosterSnapshot' });
+      expect(await nextEvent(stream)).toMatchObject({
+        __typename: 'SessionRestCadenceChanged',
+        revision: REVISION,
+        isSnapshot: true,
+        action: null,
+      });
+      expect(hooks.readRestCadence).toHaveBeenCalledTimes(2);
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+      await stream.return();
+    }
+  });
+
+  it('skips only the clock seed, with a warning, when the retry fails too, and keeps delivering the clock live', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
     hooks.readRestCadence.mockReset().mockRejectedValue(new Error('redis unavailable'));
     const stream = subscribe();
     try {
       expect(await nextEvent(stream)).toMatchObject({ __typename: 'SessionRosterSnapshot' });
+      expect(hooks.readRestCadence).toHaveBeenCalledTimes(2);
+      expect(warn).toHaveBeenCalledOnce();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('rest cadence seed read failed twice'));
 
+      // No stand-in "off" seed: the next event is the live change.
       const change = published({ revision: REVISION + 1, cadence: TICKED });
       publish(change);
 
       expect(await nextEvent(stream)).toEqual({ ...change, serverNow: String(SUBSCRIBED_AT) });
     } finally {
+      warn.mockRestore();
       await stream.return();
     }
   });

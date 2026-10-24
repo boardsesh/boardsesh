@@ -229,8 +229,13 @@ describe('sessionUpdates roster seed ↔ real backend (#2860)', () => {
         const loser = fromAlex.applied ? fromBlake : fromAlex;
         expect(loser.change.revision).toBe(winner.change.revision);
         expect(loser.change.action).toBeNull();
-        await waitFor(() => alex.restCadenceEvents.some((event) => event.action === 'FIRE'), { label: 'FIRE event' });
-        await new Promise((resolve) => setTimeout(resolve, 200));
+        // A write sent after both FIREs returned is published after anything they published, so
+        // once it arrives every FIRE event the server sent is already in: no sleep needed.
+        const sentinel = await alex.setRestCadence({ action: 'PAUSE' });
+        expect(sentinel.applied).toBe(true);
+        await waitFor(() => alex.restCadenceEvents.some((event) => event.revision === sentinel.change.revision), {
+          label: 'the write after the FIREs',
+        });
         expect(alex.restCadenceEvents.filter((event) => event.action === 'FIRE')).toHaveLength(1);
       } finally {
         await blake.dispose();

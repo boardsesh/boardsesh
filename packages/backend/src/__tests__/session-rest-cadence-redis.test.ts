@@ -16,6 +16,7 @@ import { RedisSessionStore } from '../services/redis-session-store';
 import { RoomManager } from '../services/room-manager';
 import {
   REST_CADENCE_FIRE_EARLY_TOLERANCE_MS,
+  REST_CADENCE_FIRE_LATE_TOLERANCE_MS,
   commitRestCadenceAction,
   restCadenceRevisionFloor,
   serializeRestCadence,
@@ -126,6 +127,30 @@ describe.skipIf(!redisAvailable)('crew rest clock storage on Redis', () => {
     expect(await instanceOne.getSessionRestCadence(sessionId)).toEqual({ revision: 2, cadence: null });
   });
 
+  it('refreshes the TTL on a write that loses too, so a session whose writes keep losing keeps its clock', async () => {
+    const sessionId = newSessionId();
+    const key = KEYS.sessionRestCadence(sessionId);
+    await instanceOne.casSessionRestCadence(sessionId, 0, serializeRestCadence(CLOCK), NO_FLOOR);
+    await instanceOneRedis.expire(key, 30);
+
+    const lost = await instanceTwo.casSessionRestCadence(sessionId, 7, '', NO_FLOOR);
+
+    expect(lost).toEqual({ ok: false, revision: 1, doc: serializeRestCadence(CLOCK) });
+    const ttl = await instanceOneRedis.ttl(key);
+    expect(ttl).toBeGreaterThan(TTL.sessionMembership - 10);
+    expect(ttl).toBeLessThanOrEqual(TTL.sessionMembership);
+  });
+
+  it('a losing write on a hash that is gone leaves it gone', async () => {
+    const sessionId = newSessionId();
+    expect(await instanceOne.casSessionRestCadence(sessionId, 3, '', NO_FLOOR)).toEqual({
+      ok: false,
+      revision: 0,
+      doc: '',
+    });
+    expect(await instanceOneRedis.exists(KEYS.sessionRestCadence(sessionId))).toBe(0);
+  });
+
   it('lets exactly one of many racing FIREs from two instances claim the beat', async () => {
     const sessionId = newSessionId();
     await instanceOne.casSessionRestCadence(sessionId, 0, serializeRestCadence(CLOCK), NO_FLOOR);
@@ -209,6 +234,40 @@ describe.skipIf(!redisAvailable)('crew rest clock storage on Redis', () => {
     expect(fromTwo.stored.cadence?.lastFiredBeatMs).toBe(nextBeat);
   });
 
+  it('lets one FIRE per beat apply across two instances when every phone reads and commits at the same time', async () => {
+    const sessionId = newSessionId();
+    const beat: RestCadenceState = { ...CLOCK, mode: 'onTheMinute', anchorMs: NOW - 60_000 };
+    await instanceOne.casSessionRestCadence(sessionId, 0, serializeRestCadence(beat), NO_FLOOR);
+    /** A phone that adopted every event: it reads the stored revision, then FIREs on it. */
+    const fireOnLatest = async (manager: DistributedStateManager, nowMs: number, firedBeatAgoMs: number) =>
+      commitRestCadenceAction(
+        storeFor(manager, sessionId),
+        { action: 'FIRE', expectedRevision: (await manager.getSessionRestCadence(sessionId)).revision, firedBeatAgoMs },
+        nowMs,
+        'phone',
+      );
+    /** Twelve phones, alternating instances, each reading and committing at once: the reads and compare-and-sets interleave. */
+    const burst = (nowMs: number) =>
+      Promise.all(
+        Array.from({ length: 12 }, (_, index) =>
+          fireOnLatest(index % 2 === 0 ? instanceOne : instanceTwo, nowMs + index * 50, index * 7),
+        ),
+      );
+
+    const onFirstBeat = await burst(NOW);
+    expect(onFirstBeat.filter((commit) => commit.applied)).toHaveLength(1);
+    const afterFirst = await instanceTwo.getSessionRestCadence(sessionId);
+    expect(afterFirst.cadence?.lastFiredBeatMs).toBe(NOW);
+    for (const commit of onFirstBeat) expect(commit.stored).toEqual(afterFirst);
+
+    const onNextBeat = await burst(NOW + 60_000 - REST_CADENCE_FIRE_EARLY_TOLERANCE_MS);
+    expect(onNextBeat.filter((commit) => commit.applied)).toHaveLength(1);
+    const afterNext = await instanceOne.getSessionRestCadence(sessionId);
+    expect(afterNext.cadence?.lastFiredBeatMs).toBe(NOW + 60_000);
+    expect(afterNext.revision).toBeGreaterThan(afterFirst.revision);
+    for (const commit of onNextBeat) expect(commit.stored).toEqual(afterNext);
+  });
+
   it('fences FIREs the same way on Redis and on the in-memory fallback', async () => {
     const sessionId = newSessionId();
     const onRedis = new RoomManager();
@@ -238,6 +297,32 @@ describe.skipIf(!redisAvailable)('crew rest clock storage on Redis', () => {
       },
       { nowMs: NOW + 61_000, input: { action: 'FIRE' } },
       { nowMs: NOW + 61_100, input: { action: 'FIRE' } },
+      // #6724 review. The beat ran out more than the late tolerance ago: refused, until a RESET re-anchors.
+      { nowMs: NOW + 151_000 + REST_CADENCE_FIRE_LATE_TOLERANCE_MS + 1, input: { action: 'FIRE' } },
+      { nowMs: NOW + 160_000, input: { action: 'RESET' } },
+      // An early FIRE restarts the rest from its deadline (NOW + 250 s), so the next one opens at NOW + 338 s.
+      { nowMs: NOW + 250_000 - REST_CADENCE_FIRE_EARLY_TOLERANCE_MS, input: { action: 'FIRE' } },
+      { nowMs: NOW + 340_000 - REST_CADENCE_FIRE_EARLY_TOLERANCE_MS - 1, input: { action: 'FIRE' } },
+      { nowMs: NOW + 340_000 - REST_CADENCE_FIRE_EARLY_TOLERANCE_MS, input: { action: 'FIRE' } },
+      // A missed onTheMinute beat: the late claim is refused, the next beat applies.
+      { nowMs: NOW + 400_000, input: { action: 'ARM', config: onTheMinute, elapsedMs: 0 } },
+      { nowMs: NOW + 517_500, input: { action: 'FIRE' } },
+      { nowMs: NOW + 518_500, input: { action: 'FIRE' } },
+      // PAUSE just after a beat fired, RESUME later: the fired beat moves with the grid.
+      { nowMs: NOW + 520_500, input: { action: 'PAUSE' } },
+      { nowMs: NOW + 550_000, input: { action: 'RESUME' } },
+      { nowMs: NOW + 550_000, input: { action: 'FIRE' } },
+      { nowMs: NOW + 608_000, input: { action: 'FIRE' } },
+      // RESET drops a stale tick: a send-gated FIRE needs a new one.
+      {
+        nowMs: NOW + 700_000,
+        input: { action: 'ARM', config: { ...onTheMinute, mode: 'afterTick', advanceOn: 'send' } },
+      },
+      { nowMs: NOW + 700_000, input: { action: 'TICK', tickQueueItemUuid: 'item-1', tickStatus: 'send' } },
+      { nowMs: NOW + 701_000, input: { action: 'RESET' } },
+      { nowMs: NOW + 761_000, input: { action: 'FIRE' } },
+      { nowMs: NOW + 762_000, input: { action: 'TICK', tickQueueItemUuid: 'item-2', tickStatus: 'flash' } },
+      { nowMs: NOW + 822_000, input: { action: 'FIRE' } },
     ];
     /** Run every step, fencing each FIRE on the revision the manager holds at that moment. */
     const run = async (manager: RoomManager) => {
@@ -263,7 +348,30 @@ describe.skipIf(!redisAvailable)('crew rest clock storage on Redis', () => {
         true,
         true,
         false,
+        // #6724 review: late, RESET, early, too early, on time.
+        false,
+        true,
+        true,
+        false,
+        true,
+        // ARM, missed beat late, next beat early.
+        true,
+        false,
+        true,
+        // PAUSE, RESUME, the fired beat again, the next beat.
+        true,
+        true,
+        false,
+        true,
+        // ARM, TICK, RESET, FIRE on the stale tick, a new TICK, FIRE.
+        true,
+        true,
+        true,
+        false,
+        true,
+        true,
       ]);
+      expect(redisOutcomes.map((commit) => commit.stored.cadence?.lastFiredBeatMs ?? null)).toContain(NOW + 250_000);
       expect(memoryOutcomes).toEqual(redisOutcomes);
     } finally {
       await onRedis.shutdown();

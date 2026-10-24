@@ -20,6 +20,26 @@ import { requireSessionMember } from '../shared/helpers';
 import { createEagerAsyncIterator } from '../shared/async-iterators';
 import { withSubscriptionCleanup } from '../shared/managed-subscription';
 
+/**
+ * The rest clock seed's read, retried once straight away: one failed Redis
+ * command should not cost a reconnecting phone its seed. Null after a second
+ * failure, so the caller skips the seed instead of failing the subscription.
+ */
+async function readRestCadenceSeed(sessionId: string): Promise<StoredRestCadence | null> {
+  try {
+    return await roomManager.getSessionRestCadence(sessionId);
+  } catch {
+    try {
+      return await roomManager.getSessionRestCadence(sessionId);
+    } catch (error) {
+      logger.warn(
+        `[sessionUpdates] rest cadence seed read failed twice for ${sessionId.slice(0, 8)}, skipping the seed: ${String(error)}`,
+      );
+      return null;
+    }
+  }
+}
+
 export const sessionSubscriptions = {
   /**
    * Subscribe to real-time session events.
@@ -38,14 +58,17 @@ export const sessionSubscriptions = {
    * snapshot is a self-contained REPLACE on the client and the next delta
    * converges.
    *
-   * The second event is ALWAYS the crew rest clock seed
-   * (`SessionRestCadenceChanged` with `isSnapshot: true`), even when the clock
-   * is off, so a reconnecting phone clears a clock that was turned off while it
-   * was away. Its read runs after the eager subscribe like the roster's, so a
-   * cadence write that races the seed is either inside the snapshot or queued
-   * behind it with a higher revision; clients drop the duplicate by revision.
-   * A failed cadence read skips just that seed (the client keeps what it had)
-   * rather than failing the whole subscription for old clients too. The
+   * The second event is the crew rest clock seed (`SessionRestCadenceChanged`
+   * with `isSnapshot: true`), sent even when the clock is off, so a
+   * reconnecting phone clears a clock that was turned off while it was away.
+   * Its read runs after the eager subscribe like the roster's, so a cadence
+   * write that races the seed is either inside the snapshot or queued behind
+   * it with a higher revision; clients drop the duplicate by revision. A failed
+   * read is retried once (readRestCadenceSeed); when the retry fails too, the
+   * seed is skipped with a warning. The subscription goes on, because it also
+   * carries the roster, and no "off" seed stands in, because that would clear
+   * every client's clock. The client keeps its local clock until the next
+   * cadence event, and the holder's next FIRE is fenced by revision. The
    * wall-move roster re-snapshot does not re-seed it.
    */
   sessionUpdates: {
@@ -80,12 +103,7 @@ export const sessionSubscriptions = {
         const [users, session, restCadence] = await Promise.all([
           roomManager.getSessionUsers(sessionId),
           roomManager.getSessionById(sessionId),
-          roomManager.getSessionRestCadence(sessionId).catch((error: unknown): StoredRestCadence | null => {
-            logger.warn(
-              `[sessionUpdates] rest cadence seed read failed for ${sessionId.slice(0, 8)}: ${String(error)}`,
-            );
-            return null;
-          }),
+          readRestCadenceSeed(sessionId),
         ]);
         if (!(await canAccessResource('session', sessionId, ctx.userId))) return;
         const protocolIds = new Map(

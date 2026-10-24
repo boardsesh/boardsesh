@@ -738,6 +738,10 @@ export const EVICT_PARTICIPANT_IF_GHOST_SCRIPT = `
  * old revision, and without the floor the next write would land below what
  * every live phone holds, so they would all drop it.
  *
+ * Both branches refresh the TTL, the losing one too: a refused write still
+ * means a member is driving the clock, and the hash must not expire under a
+ * session whose writes keep losing races.
+ *
  * Returns { 1, newRev, doc } on commit, { 0, storedRev, storedDoc } otherwise.
  */
 export const CAS_SESSION_REST_CADENCE_SCRIPT = `
@@ -750,6 +754,8 @@ export const CAS_SESSION_REST_CADENCE_SCRIPT = `
   local storedRev = tonumber(redis.call('HGET', cadenceKey, 'rev') or '0') or 0
   if storedRev ~= expectedRev then
     local storedDoc = redis.call('HGET', cadenceKey, 'doc') or ''
+    -- A losing write still proves the session is live. A no-op on a missing key.
+    redis.call('EXPIRE', cadenceKey, ttl)
     return { 0, storedRev, storedDoc }
   end
 

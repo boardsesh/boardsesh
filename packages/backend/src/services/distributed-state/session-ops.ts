@@ -663,8 +663,8 @@ export async function getSessionRestCadence(redis: Redis, sessionId: string): Pr
 /**
  * Compare-and-set the session's shared rest clock: writes `nextDoc` at
  * max(`expectedRevision` + 1, `minimumRevision`) only when the stored revision
- * still equals `expectedRevision`, and refreshes the hash's TTL. See
- * CAS_SESSION_REST_CADENCE_SCRIPT.
+ * still equals `expectedRevision`, and refreshes the hash's TTL whether it
+ * commits or loses. See CAS_SESSION_REST_CADENCE_SCRIPT.
  */
 export async function casSessionRestCadence(
   redis: Redis,
