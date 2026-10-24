@@ -60,6 +60,16 @@ describe('the search a block drawn from your own climbs sends', () => {
     expect(buildClimbSearchInput(20, fetchContext('liked', true))).toMatchObject({ minAscents: 0, minRating: 0 });
   });
 
+  it("sends Attempted's request as it always did, with the block's floors", () => {
+    const tried = buildClimbSearchInput(20, fetchContext('attempted', true, { minAscents: 50, minRating: 3 }));
+    expect(personalFlags(tried)).toEqual({ showOnlyAttempted: true });
+    expect(tried).toMatchObject({ minAscents: 50, minRating: 3 });
+
+    const triedNotSent = buildClimbSearchInput(20, fetchContext('attempted', true, { skipSent: true }));
+    expect(personalFlags(triedNotSent)).toEqual({ showOnlyAttempted: true, hideCompleted: true });
+    expect(triedNotSent).toMatchObject({ minAscents: 5, minRating: 2 });
+  });
+
   it('keeps Benchmarks only on a liked block', () => {
     expect(buildClimbSearchInput(20, fetchContext('liked', true, { onlyBenchmarks: true }))).toMatchObject({
       onlyFavorited: true,

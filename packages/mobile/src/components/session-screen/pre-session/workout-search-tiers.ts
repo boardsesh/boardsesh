@@ -59,11 +59,12 @@ type BiasSearchTiers = Readonly<{
    */
   untried: readonly SearchTierRule[] | null;
   /**
-   * The bias draws from the climber's own climbs, a list they made by climbing
-   * or hearting, so the crowd's floors (min ascents, min rating) do not apply:
-   * `fetchFilters` drops them and the block's filters hide them.
+   * The bias is a list the climber made by sending or hearting, so the crowd's
+   * floors (min ascents, min rating) do not apply: `fetchFilters` drops them and
+   * the block's filters hide them. Attempted keeps them, so its request stays
+   * the one it always sent.
    */
-  ownClimbs: boolean;
+  dropsFloors: boolean;
 }>;
 
 /**
@@ -73,22 +74,24 @@ type BiasSearchTiers = Readonly<{
  *
  * - Unfamiliar (the default) prefers climbs you have not tried, then the ones
  *   you tried but did not send, then the ones you sent, as top-ups.
- * - Attempted and Any send the one search each always sent; a skip switch swaps
- *   it for the search that hides what it skips.
+ * - Attempted and Any send the one search each always sent, floors and all; a
+ *   skip switch swaps it for the search that hides what it skips. Tried but not
+ *   sent is Attempted with Skip what I've sent, not a bias of its own.
  * - Sent and Liked are one search each too: the climbs you have sent at this
- *   angle, or hearted. Neither skip switch fits Sent; both narrow Liked.
+ *   angle, or hearted, with no floors. Neither skip switch fits Sent; both
+ *   narrow Liked.
  */
 export const SEARCH_TIERS_BY_BIAS: Readonly<Record<ClimbBias, BiasSearchTiers>> = {
   unfamiliar: {
     all: [UNTRIED, TRIED_UNSENT_TOP_UP, SENT_TOP_UP],
     unsent: [UNTRIED, TRIED_UNSENT_TOP_UP],
     untried: [UNTRIED],
-    ownClimbs: false,
+    dropsFloors: false,
   },
-  attempted: { all: [TRIED], unsent: [TRIED_UNSENT], untried: null, ownClimbs: true },
-  sent: { all: [SENT], unsent: null, untried: null, ownClimbs: true },
-  liked: { all: [LIKED], unsent: [LIKED_UNSENT], untried: [LIKED_UNTRIED], ownClimbs: true },
-  any: { all: [EVERY_CLIMB], unsent: [UNSENT], untried: [UNTRIED], ownClimbs: false },
+  attempted: { all: [TRIED], unsent: [TRIED_UNSENT], untried: null, dropsFloors: false },
+  sent: { all: [SENT], unsent: null, untried: null, dropsFloors: true },
+  liked: { all: [LIKED], unsent: [LIKED_UNSENT], untried: [LIKED_UNTRIED], dropsFloors: true },
+  any: { all: [EVERY_CLIMB], unsent: [UNSENT], untried: [UNTRIED], dropsFloors: false },
 };
 
 /** Whether Skip what I've sent can apply under a climb bias. Not under Sent, which picks sent climbs. */
@@ -102,12 +105,21 @@ export function biasCanSkipTried(climbBias: ClimbBias): boolean {
 }
 
 /**
- * Whether a climb bias draws from the climber's own climbs (Attempted, Sent,
- * Liked), where min ascents and min rating do not apply. Signed out none does:
- * the search reads no logbook, so the bias falls back to Any (`fetchFilters`).
+ * Whether a climb bias leaves out min ascents and min rating: Sent and Liked, a
+ * list the climber made by sending or hearting. Signed out none does: the
+ * search reads no logbook, so the bias falls back to Any (`fetchFilters`).
  */
-export function biasDrawsOwnClimbs(climbBias: ClimbBias): boolean {
-  return SEARCH_TIERS_BY_BIAS[climbBias].ownClimbs;
+export function biasDropsFloors(climbBias: ClimbBias): boolean {
+  return SEARCH_TIERS_BY_BIAS[climbBias].dropsFloors;
+}
+
+/**
+ * Whether a climb bias reads your logbook or your hearts, so it needs an
+ * account: every bias with a search that sets a personal flag, which is every
+ * bias but Any. Signed out `fetchFilters` turns each of them into Any.
+ */
+export function biasNeedsSignIn(climbBias: ClimbBias): boolean {
+  return SEARCH_TIERS_BY_BIAS[climbBias].all.some((rule) => Object.keys(rule.flags).length > 0);
 }
 
 /**

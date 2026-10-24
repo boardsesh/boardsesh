@@ -266,7 +266,8 @@ first tier's climbs already give a row somewhere to go.
 | Any                  | every climb (no flag), one search as before                                                                     | not sent (`hideCompleted`)                              | never tried (`hideAttempted` + `hideCompleted`)                          |
 
 Sent and Liked came later ([#6739](https://github.com/boardsesh/boardsesh/issues/6739)); see
-"Climbs you've tried, sent or liked" below for them and for what Attempted changed with them.
+"Climbs you've tried, sent or liked" below. Tried but not sent is the Attempted row with Skip
+what I've sent, not a bias of its own.
 
 A climb a later tier adds is a top-up, named in the pool's `topUpTiers` with the tier it
 came from. A pool is shuffled within each tier (`shuffleByTier`), on the first build and
@@ -368,13 +369,18 @@ the fetch, the pools, the preview and Start are unchanged.
   it has a grade there. Both work offline on a downloaded board: the local search answers
   `showOnlyCompleted` from the synced ticks and `onlyFavorited` from `user_favorites`,
   once the phone's user data is this climber's (`canServeSearchLocal`).
-- **No crowd floors.** Attempted, Sent and Liked draw from your own climbs
-  (`biasDrawsOwnClimbs`, the table's `ownClimbs` column), so min ascents and min rating do
-  not apply: `fetchFilters` sets both to 0, which the search reads as no floor, and the
-  block's filters hide those two rows while one of these biases is picked. A climb you
+- **No crowd floors under Sent and Liked.** Both are lists you made by sending or
+  hearting (`biasDropsFloors`, the table's `dropsFloors` column), so min ascents and min
+  rating do not apply: `fetchFilters` sets both to 0, which the search reads as no floor,
+  and the block's filters hide those two rows while one of them is picked. A climb you
   scouted on a spray wall with two ascents still fills the block. The stored values are
-  kept, so switching back to Unfamiliar or Any brings them back. This also changes
-  Attempted, which used to keep the floors. Tall, wide and Benchmarks only still apply.
+  kept, so switching to another bias brings them back. Tall, wide and Benchmarks only
+  still apply.
+- **Attempted is unchanged.** It keeps the block's floors and sends the one search it
+  always sent, so a stored run's Attempted stage and the "Add a block" defaults behave as
+  before. Tried but not sent is Attempted with Skip what I've sent (`showOnlyAttempted` +
+  `hideCompleted`), floors and all. A sixth chip for it would send that same request under
+  a second name and a second pool.
 - **Skip switches.** Neither fits Sent, so both are disabled there and say why
   (`biasCanSkipSent`, `biasCanSkipTried`), and the fetch drops them. Under Liked both
   narrow the list: Skip what I've sent leaves the liked climbs you have not sent yet.
@@ -383,12 +389,16 @@ the fetch, the pools, the preview and Start are unchanged.
   line under the chips says the block takes only the climbs you have sent or liked, so a
   short or empty preview explains itself. The pool runs out on its one search, so it is
   `exhausted` and a rebuild reuses it instead of asking again.
-- **Signed out** there is no logbook or heart to read: the bias falls back to Any, as
-  Attempted always did, with the floors applying. The line under the chips says so.
+- **Signed out** there is no logbook or heart to read: every bias falls back to Any, as
+  Unfamiliar and Attempted always did, with the floors applying. The chips show Any picked
+  and every other bias off (`biasNeedsSignIn`), the closed filter line names Any, and the
+  line under the chips says why. The stored bias is kept for when you sign in, like a
+  stored skip switch.
 - **Chips, not a segmented control.** Five biases cut "Unfamiliar" short in an iOS
   segment on a 393 pt phone, and "Déjà essayés" or "Encadenados" more, so the bias is a
   wrapping chip row like Min ascents, and it now comes first in the filters, since it
-  decides which rows below it apply.
+  decides which rows below it apply. A menu row would hide the five choices behind a tap;
+  as chips they all stay in view, with the line under them saying what the picked one does.
 - **Stored filters.** A new bias is a new value, not a new stage kind, so a run with one
   stays under `_v1`. A bundle from before Sent and Liked reads such a stage's filters as
   unreadable (`isStageFilters` checks the bias against `CLIMB_BIAS_OPTIONS`) and drops

@@ -18,7 +18,8 @@ export type EffortLevel = 'moderate' | 'challenging' | 'veryDifficult' | 'maxEff
  * Which climbs of a grade a block draws from. `unfamiliar` prefers climbs the
  * climber has not tried, and `any` takes the whole catalogue. `attempted`,
  * `sent` and `liked` draw from the climber's own climbs: the ones they have
- * tried or sent at this angle, or hearted at any angle (#6739).
+ * tried or sent at this angle, or hearted at any angle (#6739). Tried but not
+ * sent is `attempted` with `skipSent`, not a value of its own.
  */
 export type ClimbBias = 'unfamiliar' | 'attempted' | 'sent' | 'liked' | 'any';
 
