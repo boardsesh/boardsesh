@@ -19,6 +19,7 @@ import {
   AMBIGUOUS_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
   DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
   FOREIGN_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
+  FOREIGN_BOARD_ACCOUNT_LOGBOOK_SYNC_ERROR,
 } from '@boardsesh/shared-schema/sync-error-codes';
 import {
   BoardAccountError,
@@ -703,6 +704,18 @@ describe('BoardAccountsSection — sync_error on a connected board card (#3526)'
 
     expect(container.textContent).toContain('aurora.status.duplicateAccountCircuits');
     expect(container.textContent).not.toContain(DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR);
+  });
+
+  it('tells the climber their sends are on another Boardsesh account (#6687)', () => {
+    // Connected over an empty logbook used to be the whole story. A warning,
+    // not the red error line: the credential is active and syncing.
+    mocks.credentials = [connectedCredential(FOREIGN_BOARD_ACCOUNT_LOGBOOK_SYNC_ERROR)];
+    const { container } = render(<BoardAccountsSection />);
+
+    expect(container.textContent).toContain('aurora.status.foreignAccountLogbook');
+    expect(container.textContent).not.toContain('aurora.status.error');
+    expect(container.textContent).not.toContain('aurora.status.duplicateAccountCircuits');
+    expect(container.textContent).not.toContain(FOREIGN_BOARD_ACCOUNT_LOGBOOK_SYNC_ERROR);
   });
 
   it('still shows the generic error copy for a sync_error it does not recognise', () => {
