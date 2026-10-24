@@ -36,7 +36,7 @@ vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 34, left: 0, right: 0 }),
 }));
 
-import { sheetKeyboardInset, useSheetKeyboardInset } from '../sheet-keyboard-inset';
+import { SHEET_SETTLE_MS, sheetKeyboardInset, useSheetKeyboardInset } from '../sheet-keyboard-inset';
 
 // An iPhone-sized window: 390 x 844, 34pt home indicator, 336pt keyboard.
 const WINDOW = { windowWidth: 390, windowHeight: 844, windowInsetBottom: 34 };
@@ -174,18 +174,72 @@ describe('useSheetKeyboardInset', () => {
     expect(result.current.bottomInset).toBe(34);
   });
 
-  it('pads nothing for the zero frame iOS reports with Prefer Cross-Fade Transitions on', () => {
-    // RN's KeyboardAvoidingView treats `screenY` 0 the same way. Read as a real
-    // frame it would pad the column by the whole window (844 here).
+  describe('the zero frame iOS reports with Prefer Cross-Fade Transitions on', () => {
+    // `screenY` 0 says the keyboard is up but not where it is. RN's
+    // KeyboardAvoidingView pads nothing for it; read as a real frame it would
+    // pad the column by the whole window (844 here). It must still count as a
+    // show, or the sheets never rise to their keyboard detent.
     const crossFade = { height: 336, screenY: 0, width: 390 };
-    const onKeyboardShow = vi.fn();
-    const { result } = renderHook(() => useSheetKeyboardInset({ enabled: true, onKeyboardShow }));
-    act(() => native.listeners.get('keyboardWillChangeFrame')?.({ endCoordinates: crossFade, duration: 250 }));
-    expect(result.current.keyboardOverlap).toBe(0);
-    expect(result.current.bottomInset).toBe(34);
-    act(() => native.listeners.get('keyboardDidChangeFrame')?.({ endCoordinates: crossFade }));
-    expect(result.current.keyboardOverlap).toBe(0);
-    expect(onKeyboardShow).not.toHaveBeenCalled();
+
+    it('counts as a keyboard show, once, but pads nothing', () => {
+      const onKeyboardShow = vi.fn();
+      const { result } = renderHook(() => useSheetKeyboardInset({ enabled: true, onKeyboardShow }));
+      act(() => native.listeners.get('keyboardWillChangeFrame')?.({ endCoordinates: crossFade, duration: 250 }));
+      act(() => native.listeners.get('keyboardDidChangeFrame')?.({ endCoordinates: crossFade }));
+      expect(onKeyboardShow).toHaveBeenCalledTimes(1);
+      expect(result.current.keyboardOverlap).toBe(0);
+      expect(result.current.bottomInset).toBe(34);
+    });
+
+    it('lets a following real frame pad normally, without a second show', () => {
+      const onKeyboardShow = vi.fn();
+      const { result } = renderHook(() => useSheetKeyboardInset({ enabled: true, onKeyboardShow }));
+      act(() => native.listeners.get('keyboardWillChangeFrame')?.({ endCoordinates: crossFade, duration: 250 }));
+      expect(onKeyboardShow).toHaveBeenCalledTimes(1);
+      act(() => native.listeners.get('keyboardDidChangeFrame')?.({ endCoordinates: DOCKED }));
+      expect(result.current.keyboardOverlap).toBe(336);
+      expect(result.current.bottomInset).toBe(0);
+      expect(onKeyboardShow).toHaveBeenCalledTimes(1);
+    });
+
+    it('is cleared by a real hide, so the next show raises the sheet again', () => {
+      const onKeyboardShow = vi.fn();
+      const { result } = renderHook(() => useSheetKeyboardInset({ enabled: true, onKeyboardShow }));
+      act(() => native.listeners.get('keyboardWillChangeFrame')?.({ endCoordinates: crossFade, duration: 250 }));
+      expect(onKeyboardShow).toHaveBeenCalledTimes(1);
+      act(() =>
+        native.listeners.get('keyboardWillHide')?.({ endCoordinates: { ...crossFade, screenY: 844 }, duration: 250 }),
+      );
+      expect(result.current.keyboardOverlap).toBe(0);
+      expect(result.current.bottomInset).toBe(34);
+      act(() => native.listeners.get('keyboardWillChangeFrame')?.({ endCoordinates: crossFade, duration: 250 }));
+      expect(onKeyboardShow).toHaveBeenCalledTimes(2);
+      // A frame moved below the window is a hide too.
+      act(() => native.listeners.get('keyboardDidChangeFrame')?.({ endCoordinates: { ...crossFade, screenY: 844 } }));
+      act(() => native.listeners.get('keyboardWillChangeFrame')?.({ endCoordinates: crossFade, duration: 250 }));
+      expect(onKeyboardShow).toHaveBeenCalledTimes(3);
+    });
+
+    it('keeps the post-detent re-measure armed while the keyboard is up', () => {
+      vi.useFakeTimers();
+      try {
+        const measureInWindow = vi.fn((callback: (x: number, y: number, width: number, height: number) => void) =>
+          callback(0, 244, 390, 600),
+        );
+        const { result } = renderHook(() => useSheetKeyboardInset({ enabled: true }));
+        Object.assign(result.current.columnRef, { current: { measureInWindow } });
+        act(() => native.listeners.get('keyboardWillChangeFrame')?.({ endCoordinates: crossFade, duration: 250 }));
+        measureInWindow.mockClear();
+        act(() => result.current.measureAfterDetentChange());
+        act(() => {
+          vi.advanceTimersByTime(SHEET_SETTLE_MS);
+        });
+        expect(measureInWindow).toHaveBeenCalledTimes(1);
+        expect(result.current.keyboardOverlap).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   it('pads nothing when a sheet opens over a keyboard whose frame reads screenY 0', () => {

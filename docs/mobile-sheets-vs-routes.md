@@ -211,7 +211,9 @@ column by `useSheetKeyboardInset` (`src/components/sheet-keyboard-inset.ts`):
   `Keyboard.metrics()` when a sheet opens over a keyboard that is already up.
 - A keyboard frame with `screenY` 0 pads nothing. iOS reports that frame when Prefer Cross-Fade
   Transitions is on, and React Native's KAV ignores it for the same reason; read as a real frame it
-  would pad the column by its whole height.
+  would pad the column by its whole height. It still counts as the keyboard being up, so the sheet
+  rises to its keyboard detent and re-measures after the detent change; only a real hide (a frame
+  below the window, or no height) clears that.
 
 A raw-sheet surface with a text field (`ClimbFilterSheet`) uses the same hook.
 

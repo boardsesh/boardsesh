@@ -96,23 +96,29 @@ export function sheetKeyboardInset({
   return overlap > 0 ? { keyboardOverlap: overlap, bottomInset: 0 } : resting;
 }
 
-/** The on-screen keyboard frame an event reports, or `null` once it is down or
- * the frame does not say where the keyboard is. */
-function shownFrame(end: KeyboardMetrics | undefined, windowHeight: number): SheetKeyboardFrame | null {
-  if (!end || end.height <= 0) return null;
+/** What a keyboard event says: whether the keyboard is on screen, and the
+ * frame to pad by. `frame` is `null` while it is down, and also while it is up
+ * but its frame does not say where it is. */
+type KeyboardReading = { shown: boolean; frame: SheetKeyboardFrame | null };
+
+const KEYBOARD_DOWN: KeyboardReading = { shown: false, frame: null };
+
+function readKeyboard(end: KeyboardMetrics | undefined, windowHeight: number): KeyboardReading {
+  if (!end || end.height <= 0) return KEYBOARD_DOWN;
   if (Platform.OS === 'ios') {
     // iOS reports a hide as a frame moved below the window.
-    if (end.screenY >= windowHeight) return null;
+    if (end.screenY >= windowHeight) return KEYBOARD_DOWN;
     // With Settings › Accessibility › Motion › Prefer Cross-Fade Transitions on,
     // iOS reports `screenY` 0, which would read as a keyboard covering the
     // whole window and pad the column by its full height. RN's
     // KeyboardAvoidingView pads nothing for this frame
     // (`KeyboardAvoidingView.js`, `_relativeKeyboardHeight`); do the same. A
     // docked keyboard never starts at the top of the window, so no real frame
-    // is lost.
-    if (end.screenY <= 0) return null;
+    // is lost. The keyboard IS up, though: it still counts as a show, so the
+    // sheets rise to their keyboard detent.
+    if (end.screenY <= 0) return { shown: true, frame: null };
   }
-  return { screenY: end.screenY, height: end.height, width: end.width };
+  return { shown: true, frame: { screenY: end.screenY, height: end.height, width: end.width } };
 }
 
 /** How long a native detent change takes to settle before re-measuring. */
@@ -184,23 +190,26 @@ export function useSheetKeyboardInset({ enabled, onKeyboardShow }: SheetKeyboard
       return undefined;
     }
     // Opened with the keyboard already up: start from where it is.
-    let current = Keyboard.isVisible() ? shownFrame(Keyboard.metrics(), windowHeightRef.current) : null;
-    keyboardUpRef.current = current != null;
-    setKeyboard(current);
+    const opening = Keyboard.isVisible() ? readKeyboard(Keyboard.metrics(), windowHeightRef.current) : KEYBOARD_DOWN;
+    // "Up" is tracked apart from the frame: a frame that cannot be padded by
+    // (cross-fade's `screenY` 0) is still a keyboard on screen.
+    let shown = opening.shown;
+    keyboardUpRef.current = shown;
+    setKeyboard(opening.frame);
     measureColumn();
 
     const apply = (event: KeyboardEvent | undefined, hidden: boolean, animate: boolean) => {
-      const next = hidden ? null : shownFrame(event?.endCoordinates, windowHeightRef.current);
+      const next = hidden ? KEYBOARD_DOWN : readKeyboard(event?.endCoordinates, windowHeightRef.current);
       if (animate && Platform.OS === 'ios' && event) {
         // RCTLayoutAnimation's minimum accepted duration is 10ms.
         const duration = Math.max(event.duration ?? 0, 10);
         LayoutAnimation.configureNext({ duration, update: { duration, type: 'keyboard' } });
       }
-      setKeyboard(next);
+      setKeyboard(next.frame);
       measureColumn();
-      if (next && !current) onKeyboardShowRef.current?.();
-      current = next;
-      keyboardUpRef.current = next != null;
+      if (next.shown && !shown) onKeyboardShowRef.current?.();
+      shown = next.shown;
+      keyboardUpRef.current = next.shown;
     };
 
     const isPad = Platform.OS === 'ios' && Platform.isPad;
