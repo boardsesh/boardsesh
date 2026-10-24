@@ -18,6 +18,19 @@ function safeJSONParse<T>(value: string | undefined | null, fallback: T): T {
   }
 }
 
+/** An integer hash field, or null when it is absent or blank (a hash from before the field existed). */
+function parseOptionalInt(value: string | undefined): number | null {
+  if (value === undefined || value === '') return null;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+/** An epoch-ms hash field as a Date, or null when absent or blank. */
+function parseOptionalDate(value: string | undefined): Date | null {
+  const epochMs = parseOptionalInt(value);
+  return epochMs === null ? null : new Date(epochMs);
+}
+
 export type RedisSessionData = {
   sessionId: string;
   boardPath: string;
@@ -33,6 +46,20 @@ export type RedisSessionData = {
    * legacy empty `stateHash` case already handled in queue-state.ts.
    */
   stateHashOrdered: string;
+  /**
+   * The History / Up next line (F3, docs/current-climb-outside-queue.md,
+   * section 2). Meaningful only while nothing is current; null when the hash
+   * predates F3. Trust it only when `historyCountVersion === version`: a write
+   * by a pre-F3 instance during a rolling deploy bumps `version` and leaves
+   * this field behind.
+   */
+  historyCount: number | null;
+  /** The `version` the line was written at; null when the hash predates F3. */
+  historyCountVersion: number | null;
+  /** The stored current climb's queue-item uuid, as the CAS script compares it. */
+  currentUuid: string | null;
+  /** When the current climb last changed to a different climb (the #4979 hold's clock). */
+  currentChangedAt: Date | null;
   lastActivity: Date;
   discoverable: boolean;
   latitude: number | null;
@@ -58,6 +85,8 @@ export type QueueStateCasResult =
       sequence: number;
       previousStateHash: string;
       previousStateHashOrdered: string;
+      /** Epoch ms the current climb last changed to a different climb, after this write. */
+      currentChangedAt: number;
     }
   | { status: 'CONFLICT'; version: number; sequence: number }
   /**
@@ -91,6 +120,18 @@ export type QueueStateCasResult =
  *
  * Returns the *prior* hashes so `setQueue`'s redundant-resync diagnostic keeps
  * working without a second round trip.
+ *
+ * F3 (#6666) adds four fields, written in the same HSET so they move atomically
+ * with `queue` under the same version check: `historyCount` (ARGV[13]),
+ * `historyCountVersion` (the new version), `currentUuid` (ARGV[14], '' for no
+ * current climb) and `currentChangedAt`. `currentChangedAt` is stamped only
+ * when the incoming current uuid differs from the stored one (no current climb
+ * counts as a value). It compares uuids, never the stored JSON: different
+ * writers serialise the same item differently, so a byte compare would stamp
+ * on nearly every no-op write-back. When the stored fields are stale (a hash
+ * from before F3, or a write by a pre-F3 instance in a rolling deploy, which
+ * bumps `version` past `historyCountVersion`), the stored uuid can't be
+ * trusted and the write stamps now, which errs towards lighting the wall.
  */
 export const UPDATE_QUEUE_STATE_CAS_SCRIPT = `
   local sessionKey = KEYS[1]
@@ -108,15 +149,18 @@ export const UPDATE_QUEUE_STATE_CAS_SCRIPT = `
   local sequenceFloor = tonumber(ARGV[10]) or 0
   local anySentinel = ARGV[11]
   local floorsKnown = ARGV[12]
+  local historyCount = ARGV[13]
+  local currentUuid = ARGV[14]
 
-  local stored = redis.call('HMGET', sessionKey, 'version', 'sequence', 'stateHash', 'stateHashOrdered')
+  local stored = redis.call('HMGET', sessionKey, 'version', 'sequence', 'stateHash', 'stateHashOrdered',
+    'currentUuid', 'currentChangedAt', 'historyCountVersion')
 
   -- No hash at all: the session may be dormant-but-durable (past the 4h TTL,
   -- counters still in Postgres). Bail out WITHOUT writing so the caller can go
   -- read the floors and come back, rather than rewinding the sequence to 1.
   -- Skipped once the caller says it has consulted Postgres.
   if stored[1] == false and floorsKnown ~= '1' then
-    return { 'NEEDS_FLOOR', 0, 0, '', '' }
+    return { 'NEEDS_FLOOR', 0, 0, '', '', '' }
   end
 
   local storedVersion = tonumber(stored[1]) or 0
@@ -130,11 +174,19 @@ export const UPDATE_QUEUE_STATE_CAS_SCRIPT = `
   if sequenceFloor > baseSequence then baseSequence = sequenceFloor end
 
   if expectedVersion ~= anySentinel and baseVersion ~= tonumber(expectedVersion) then
-    return { 'CONFLICT', baseVersion, baseSequence, priorStateHash, priorStateHashOrdered }
+    return { 'CONFLICT', baseVersion, baseSequence, priorStateHash, priorStateHashOrdered, '' }
   end
 
   local newVersion = baseVersion + 1
   local newSequence = baseSequence + 1
+
+  local storedCurrentUuid = stored[5]
+  local currentChangedAt = stored[6]
+  local storedFieldsFresh = stored[7] ~= false and tonumber(stored[7]) == storedVersion
+  if storedCurrentUuid == false or currentChangedAt == false or not storedFieldsFresh
+      or storedCurrentUuid ~= currentUuid then
+    currentChangedAt = now
+  end
 
   redis.call('HSET', sessionKey,
     'sessionId', sessionId,
@@ -144,11 +196,15 @@ export const UPDATE_QUEUE_STATE_CAS_SCRIPT = `
     'sequence', tostring(newSequence),
     'stateHash', stateHash,
     'stateHashOrdered', stateHashOrdered,
+    'historyCount', historyCount,
+    'historyCountVersion', tostring(newVersion),
+    'currentUuid', currentUuid,
+    'currentChangedAt', currentChangedAt,
     'lastActivity', now)
   redis.call('EXPIRE', sessionKey, ttl)
   redis.call('ZADD', recentKey, now, sessionId)
 
-  return { 'OK', newVersion, newSequence, priorStateHash, priorStateHashOrdered }
+  return { 'OK', newVersion, newSequence, priorStateHash, priorStateHashOrdered, currentChangedAt }
 `;
 
 /**
@@ -180,6 +236,10 @@ export class RedisSessionStore {
       sequence: data.sequence.toString(),
       stateHash: data.stateHash,
       stateHashOrdered: data.stateHashOrdered,
+      historyCount: data.historyCount === null ? '' : data.historyCount.toString(),
+      historyCountVersion: data.historyCountVersion === null ? '' : data.historyCountVersion.toString(),
+      currentUuid: data.currentUuid ?? '',
+      currentChangedAt: data.currentChangedAt ? data.currentChangedAt.getTime().toString() : '',
       lastActivity: data.lastActivity.getTime().toString(),
       discoverable: data.discoverable ? '1' : '0',
       latitude: data.latitude?.toString() || '',
@@ -208,6 +268,10 @@ export class RedisSessionStore {
    * session creation / restoration and the Postgres-authoritative
    * `updateQueueStateImmediate`, where the version was already settled by a
    * guarded SQL statement.
+   *
+   * Writes the F3 fields the same way the CAS script does. It stamps
+   * `currentChangedAt` now: every caller is seeding or settling a room, so the
+   * current climb it writes is new to Redis.
    */
   async updateQueueState(
     sessionId: string,
@@ -217,9 +281,11 @@ export class RedisSessionStore {
     sequence: number,
     stateHash: string,
     stateHashOrdered: string,
+    historyCount: number,
   ): Promise<void> {
     const key = `boardsesh:session:${sessionId}`;
     const multi = this.redis.multi();
+    const now = Date.now().toString();
 
     multi.hmset(key, {
       sessionId,
@@ -229,7 +295,11 @@ export class RedisSessionStore {
       sequence: sequence.toString(),
       stateHash: stateHash,
       stateHashOrdered: stateHashOrdered,
-      lastActivity: Date.now().toString(),
+      historyCount: historyCount.toString(),
+      historyCountVersion: version.toString(),
+      currentUuid: currentClimbQueueItem?.uuid ?? '',
+      currentChangedAt: now,
+      lastActivity: now,
     });
 
     multi.expire(key, this.TTL);
@@ -254,6 +324,8 @@ export class RedisSessionStore {
     expectedVersion: number | typeof CAS_ANY_VERSION;
     stateHash: string;
     stateHashOrdered: string;
+    /** The line to store (F3). Required so every writer states it. */
+    historyCount: number;
     versionFloor: number;
     sequenceFloor: number;
     floorsKnown: boolean;
@@ -276,9 +348,11 @@ export class RedisSessionStore {
       String(input.sequenceFloor),
       CAS_ANY_VERSION,
       input.floorsKnown ? '1' : '0',
-    )) as [string, number, number, string, string];
+      String(input.historyCount),
+      input.currentClimbQueueItem?.uuid ?? '',
+    )) as [string, number, number, string, string, string];
 
-    const [status, version, sequence, previousStateHash, previousStateHashOrdered] = raw;
+    const [status, version, sequence, previousStateHash, previousStateHashOrdered, currentChangedAt] = raw;
 
     if (status === 'NEEDS_FLOOR') {
       return { status: 'NEEDS_FLOOR' };
@@ -294,6 +368,7 @@ export class RedisSessionStore {
       sequence,
       previousStateHash,
       previousStateHashOrdered,
+      currentChangedAt: Number.parseInt(currentChangedAt, 10) || Date.now(),
     };
   }
 
@@ -317,6 +392,10 @@ export class RedisSessionStore {
       sequence: parseInt(data.sequence, 10) || 0,
       stateHash: data.stateHash || '',
       stateHashOrdered: data.stateHashOrdered || '',
+      historyCount: parseOptionalInt(data.historyCount),
+      historyCountVersion: parseOptionalInt(data.historyCountVersion),
+      currentUuid: data.currentUuid || null,
+      currentChangedAt: parseOptionalDate(data.currentChangedAt),
       lastActivity: new Date(parseInt(data.lastActivity, 10)),
       discoverable: data.discoverable === '1',
       latitude: data.latitude ? parseFloat(data.latitude) : null,

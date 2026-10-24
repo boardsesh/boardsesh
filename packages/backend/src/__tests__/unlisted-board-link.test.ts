@@ -881,6 +881,8 @@ describe.each(UNLISTED_SHAPES)('an Unlisted spray wall (%s)', (_shape, makeUnlis
       stateHashOrdered: 'test',
       queue: [current],
       currentClimbQueueItem: current,
+      historyCount: 0,
+      currentChangedAt: null,
     };
     vi.spyOn(pubsub, 'getBoardSession').mockResolvedValue(sessionId);
     vi.spyOn(roomManager, 'getQueueState').mockResolvedValue(queueState);

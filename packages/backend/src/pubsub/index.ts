@@ -400,11 +400,18 @@ class PubSub {
    * non-monotonic/duplicate sequences. See `publishPlaybackState` in
    * `graphql/resolvers/queue/mutations.ts`.
    *
+   * `options.buffer: false` keeps an event out of the replay buffer as well.
+   * The F3 trailing `CurrentClimbChanged` (docs/current-climb-outside-queue.md,
+   * section 2) uses it: it shares its `FullSync`'s sequence and carries
+   * nothing the `FullSync` lacks, so buffering it would only halve how far back
+   * the 100-entry buffer reaches for the #3933 merge, and a replay sorted by
+   * sequence could put it before its own `FullSync`. The hooks still run.
+   *
    * Note: Redis publish errors are logged but not thrown to avoid blocking
    * the local dispatch. In Redis mode, events may not reach other instances
    * if Redis publish fails.
    */
-  publishQueueEvent(sessionId: string, event: QueueEvent): void {
+  publishQueueEvent(sessionId: string, event: QueueEvent, options: { buffer?: boolean } = {}): void {
     // Always dispatch to local subscribers first (low latency). Deliberately
     // NOT `queueChannel.publish()`: the queue domain must interleave the
     // replay-buffer write between local dispatch and the Redis publish (see
@@ -418,7 +425,7 @@ class PubSub {
     // dispatch an event that a reconnecting client's `getEventsSince` replay
     // can't yet see. Both commands go through the same Redis connection, so
     // call order here fixes wire order.
-    if (event.__typename !== 'PlaybackStateChanged') {
+    if (event.__typename !== 'PlaybackStateChanged' && options.buffer !== false) {
       this.storeEventInBuffer(sessionId, event).catch((error) => {
         logger.error(`[PubSub] Failed to buffer event for session ${sessionId}:`, error);
         // Non-fatal: clients will fall back to full sync if delta sync fails

@@ -24,6 +24,7 @@ import type {
   LiveSession,
   LocalSessionParticipant,
   QueueState,
+  QueueWriteResult,
   RoomManagerDeps,
   SessionDisconnectResult,
   SessionLeaveResult,
@@ -342,6 +343,7 @@ class RoomManager {
     sessionName?: string,
     participantId?: string | null,
     isPublic?: boolean,
+    initialHistoryCount?: number,
   ): Promise<{
     clientId: string;
     users: SessionUser[];
@@ -350,6 +352,8 @@ class RoomManager {
     sequence: number;
     stateHash: string;
     stateHashOrdered: string;
+    historyCount: number;
+    currentChangedAt: string | null;
     isLeader: boolean;
     sessionName: string | null;
     participantId: string;
@@ -366,7 +370,7 @@ class RoomManager {
         getSessionUsers: (sid) => this.getSessionUsers(sid),
         getSessionUsersLocal: (sid) => this.getSessionUsersLocal(sid),
         getSessionById: (sid) => this.getSessionById(sid),
-        updateQueueStateImmediate: (sid, q, c, v) => this.updateQueueStateImmediate(sid, q, c, v),
+        updateQueueStateImmediate: (sid, q, c, v, line) => this.updateQueueStateImmediate(sid, q, c, v, line),
         leaveSession: (cid) => this.leaveSession(cid),
       },
       {
@@ -374,6 +378,7 @@ class RoomManager {
         avatarUrl,
         initialQueue,
         initialCurrentClimb,
+        initialHistoryCount,
         sessionName,
         participantId,
         isPublic,
@@ -630,38 +635,47 @@ class RoomManager {
     }
   }
 
+  /**
+   * Write the queue and current climb. `historyCount` is the History / Up next
+   * line computed with `@boardsesh/queue` now-slot.ts (F3); it is required so
+   * no writer leaves it to a default. `expectedVersion: undefined` is a blind
+   * write, allowed only when a climb is current (the line is then derived).
+   */
   async updateQueueState(
     sessionId: string,
     queue: ClimbQueueItem[],
     currentClimbQueueItem: ClimbQueueItem | null,
-    expectedVersion?: number,
-  ): Promise<{
-    version: number;
-    sequence: number;
-    stateHash: string;
-    stateHashOrdered: string;
-    previousStateHash: string | null;
-    previousStateHashOrdered: string | null;
-  }> {
-    return updateQueueStateFn(this.deps(), sessionId, queue, currentClimbQueueItem, expectedVersion);
+    expectedVersion: number | undefined,
+    historyCount: number,
+  ): Promise<QueueWriteResult & { previousStateHash: string | null; previousStateHashOrdered: string | null }> {
+    return updateQueueStateFn(this.deps(), sessionId, queue, currentClimbQueueItem, expectedVersion, historyCount);
   }
 
   async updateQueueStateImmediate(
     sessionId: string,
     queue: ClimbQueueItem[],
     currentClimbQueueItem: ClimbQueueItem | null,
-    expectedVersion?: number,
+    expectedVersion: number | undefined,
+    historyCount: number,
   ): Promise<number> {
-    return updateQueueStateImmediateFn(this.deps(), sessionId, queue, currentClimbQueueItem, expectedVersion);
+    return updateQueueStateImmediateFn(
+      this.deps(),
+      sessionId,
+      queue,
+      currentClimbQueueItem,
+      expectedVersion,
+      historyCount,
+    );
   }
 
   async updateQueueOnly(
     sessionId: string,
     queue: ClimbQueueItem[],
-    expectedVersion?: number,
-    knownState?: Pick<QueueState, 'currentClimbQueueItem'>,
-  ): Promise<{ version: number; sequence: number; stateHash: string; stateHashOrdered: string }> {
-    return updateQueueOnlyFn(this.deps(), sessionId, queue, expectedVersion, knownState);
+    expectedVersion: number | undefined,
+    knownState: Pick<QueueState, 'currentClimbQueueItem'> | undefined,
+    historyCount: number,
+  ): Promise<QueueWriteResult> {
+    return updateQueueOnlyFn(this.deps(), sessionId, queue, expectedVersion, knownState, historyCount);
   }
 
   async getQueueState(sessionId: string): Promise<QueueState> {

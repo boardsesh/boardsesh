@@ -21,6 +21,9 @@ import {
   requireControllerAuthorizedForSession,
 } from '../shared/helpers';
 import { withQueueVersionRetry } from '../shared/queue-retry';
+import { capHistory, historyLine, normaliseOrphanCurrent, placeOnWall, upNextStart } from '@boardsesh/queue';
+import { isNowSlotSession } from '../../../services/queue-now-slot-rollout';
+import { publishFullSync } from '../../../services/queue-now-slot-events';
 import { randomBytes, randomUUID } from 'crypto';
 import { matchClimbByFrames, getClimbByUuid } from '../../../db/queries/climbs';
 import { roomManager } from '../../../services/room-manager';
@@ -241,40 +244,55 @@ export const controllerMutations = {
     // the top of this resolver: the climb lookup above is a database round trip,
     // so that snapshot is old, and writing a queue derived from it would discard
     // anything a party member added meanwhile (#3906).
-    const { sequence, stateHash, stateHashOrdered, updatedQueue } = await withQueueVersionRetry(
+    //
+    // F3 (docs/current-climb-outside-queue.md, sections 3 and 5): inside
+    // `QUEUE_NOW_SLOT_PERCENT` the LED read goes through `placeOnWall`, so a
+    // climb already queued is reused (moved into the Now slot) instead of
+    // copied, and History is capped. Outside it, today's insert after the
+    // current climb, except that a stored orphan is normalised first.
+    const nowSlotRules = isNowSlotSession(sessionId);
+    const { write, updatedQueue, currentItem } = await withQueueVersionRetry(
       'setClimbFromLedPositions',
       sessionId,
       async (freshState) => {
-        // Insert the new climb after the current climb in the queue (matching double-click behavior)
-        const currentIndex = freshState.currentClimbQueueItem
-          ? freshState.queue.findIndex(({ uuid }) => uuid === freshState.currentClimbQueueItem?.uuid)
-          : -1;
+        let nextQueue: ClimbQueueItem[];
+        let nextCurrent: ClimbQueueItem;
+        let historyCount: number;
+        if (nowSlotRules) {
+          const capped = capHistory(placeOnWall(freshState, queueItem), 0);
+          nextQueue = capped.queue;
+          // Never null: the request names a climb.
+          nextCurrent = capped.currentClimbQueueItem ?? queueItem;
+          historyCount = capped.historyCount;
+        } else {
+          const normalised = normaliseOrphanCurrent(freshState);
+          // Insert the new climb after the current climb in the queue (matching
+          // double-click behavior), or at the end if no current climb.
+          const currentIndex = normalised.currentClimbQueueItem
+            ? normalised.queue.findIndex(({ uuid }) => uuid === normalised.currentClimbQueueItem?.uuid)
+            : -1;
+          const insertIndex = currentIndex === -1 ? normalised.queue.length : currentIndex + 1;
+          nextQueue = [...normalised.queue.slice(0, insertIndex), queueItem, ...normalised.queue.slice(insertIndex)];
+          nextCurrent = queueItem;
+          historyCount = insertIndex;
+        }
 
-        // Insert after current climb, or at end if no current climb
-        const nextQueue =
-          currentIndex === -1
-            ? [...freshState.queue, queueItem]
-            : [...freshState.queue.slice(0, currentIndex + 1), queueItem, ...freshState.queue.slice(currentIndex + 1)];
-
-        const updated = await roomManager.updateQueueState(sessionId, nextQueue, queueItem, freshState.version);
-        return { ...updated, updatedQueue: nextQueue };
+        const updated = await roomManager.updateQueueState(
+          sessionId,
+          nextQueue,
+          nextCurrent,
+          freshState.version,
+          historyCount,
+        );
+        return { write: updated, updatedQueue: nextQueue, currentItem: nextCurrent };
       },
     );
+    const { sequence, stateHash, stateHashOrdered } = write;
 
     // Publish a FullSync for clients because one mutation changed both queue
     // membership and current climb. The controller-specific CurrentClimbChanged
     // follows so ESP32 clients still receive the originating clientId.
-    pubsub.publishQueueEvent(sessionId, {
-      __typename: 'FullSync',
-      sequence,
-      state: {
-        sequence,
-        stateHash,
-        stateHashOrdered,
-        queue: updatedQueue,
-        currentClimbQueueItem: queueItem,
-      },
-    });
+    publishFullSync(pubsub, sessionId, write, updatedQueue, currentItem);
 
     // Publish CurrentClimbChanged event with controllerMac as clientId
     // ESP32 compares this with its own MAC address to decide whether to disconnect BLE client
@@ -285,7 +303,7 @@ export const controllerMutations = {
       sequence,
       stateHash,
       stateHashOrdered,
-      item: queueItem,
+      item: currentItem,
       clientId: matchClientId,
       correlationId: null,
     });
@@ -412,7 +430,13 @@ export const controllerMutations = {
             `[Controller] Navigate: direct to queueItemUuid ${queueItemUuid}, index ${targetIndex}, climb: ${newCurrentClimb.climb.name}`,
           );
 
-          const updated = await roomManager.updateQueueState(sessionId, queue, newCurrentClimb, currentState.version);
+          const updated = await roomManager.updateQueueState(
+            sessionId,
+            queue,
+            newCurrentClimb,
+            currentState.version,
+            targetIndex,
+          );
           return { item: newCurrentClimb, update: updated };
         }
       }
@@ -430,12 +454,26 @@ export const controllerMutations = {
         `[Controller] Navigate ${direction}: using referenceUuid=${referenceUuid} (from ESP32: ${!!currentClimbUuid}), found at index ${currentIndex}`,
       );
 
+      // With nothing current (or a reference the queue no longer holds), read
+      // the History / Up next line (F3): Next starts at Up next[0], Previous at
+      // History's last entry. Inside `QUEUE_NOW_SLOT_PERCENT` an empty side
+      // stops there; outside it, today's start-at-the-beginning / end.
+      const firstUpNext = upNextStart(queue, currentClimbQueueItem, currentState.historyCount);
+      const lastHistory = historyLine(currentState) - 1;
+      const stopAtEnds = isNowSlotSession(sessionId);
+
       // Calculate target index based on direction
       if (direction === 'next') {
         // Move forward in queue
         if (currentIndex === -1) {
-          // No current climb, start at beginning
-          targetIndex = 0;
+          if (firstUpNext < queue.length) {
+            targetIndex = firstUpNext;
+          } else if (stopAtEnds) {
+            logger.info(`[Controller] Navigate next: nothing current and Up next is empty`);
+            return { item: null, update: null };
+          } else {
+            targetIndex = 0;
+          }
         } else if (currentIndex >= queue.length - 1) {
           // Already at end, stay there
           logger.info(`[Controller] Navigate next: already at end of queue`);
@@ -446,8 +484,14 @@ export const controllerMutations = {
       } else {
         // Move backward in queue (previous)
         if (currentIndex === -1) {
-          // No current climb, start at end
-          targetIndex = queue.length - 1;
+          if (lastHistory >= 0) {
+            targetIndex = lastHistory;
+          } else if (stopAtEnds) {
+            logger.info(`[Controller] Navigate previous: nothing current and History is empty`);
+            return { item: null, update: null };
+          } else {
+            targetIndex = queue.length - 1;
+          }
         } else if (currentIndex <= 0) {
           // Already at beginning, stay there
           logger.info(`[Controller] Navigate previous: already at start of queue`);
@@ -466,7 +510,13 @@ export const controllerMutations = {
       logger.info(`[Controller] Queue has ${queue.length} items, updating current to index ${targetIndex}`);
 
       // Update queue state (keep the same queue, just change current climb)
-      const updated = await roomManager.updateQueueState(sessionId, queue, newCurrentClimb, currentState.version);
+      const updated = await roomManager.updateQueueState(
+        sessionId,
+        queue,
+        newCurrentClimb,
+        currentState.version,
+        targetIndex,
+      );
       return { item: newCurrentClimb, update: updated };
     });
 

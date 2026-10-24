@@ -20,6 +20,8 @@ function snapshot(uuid = 'slot-1', mirrored = false): QueueState {
     version: 4,
     stateHash: 'before',
     stateHashOrdered: 'before-v2',
+    historyCount: 0,
+    currentChangedAt: null,
   };
 }
 
@@ -32,7 +34,8 @@ describe('confirmed session mirroring', () => {
 
   it('updates the current slot and queue together and broadcasts the absolute orientation', async () => {
     const result = await mirrorSessionClimb('session', true, 'slot-1');
-    expect(mocks.write).toHaveBeenCalledWith('session', [result?.item], result?.item, 4);
+    // The slot is rewritten in place, so the stored line (its index, 0) stands.
+    expect(mocks.write).toHaveBeenCalledWith('session', [result?.item], result?.item, 4, 0);
     expect(result?.item.climb.mirrored).toBe(true);
     expect(mocks.publish).toHaveBeenCalledWith(
       'session',

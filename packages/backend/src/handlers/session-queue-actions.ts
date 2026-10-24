@@ -1,6 +1,8 @@
 import { roomManager } from '../services/room-manager';
 import { pubsub } from '../pubsub/index';
+import { historyLine, upNextStart } from '@boardsesh/queue';
 import { navigateToQueueItem, setCurrentClimbAndPublish } from '../services/queue-navigation';
+import { isNowSlotSession } from '../services/queue-now-slot-rollout';
 
 export type NavigateAction = 'next' | 'previous';
 
@@ -17,15 +19,24 @@ export type NavigateOutcome =
   | { kind: 'out_of_bounds'; queueLength: number; serverCurrentIndex: number; targetIndex: number };
 
 /**
- * Advance/rewind a session's current climb by one queue position, wrapping at
- * the ends, and publish the resulting `CurrentClimbChanged` to every member.
+ * Advance/rewind a session's current climb by one queue position and publish
+ * the resulting `CurrentClimbChanged` to every member.
  *
- * The server resolves the authoritative current index from `roomManager`
- * (never trusting a client-supplied index — a peer may have moved the queue),
- * so both the iOS lock-screen widget (`/api/widget/navigate`) and the Garmin
- * watch (`/api/session/navigate`) share one implementation of the index math +
+ * The server resolves the authoritative position from `roomManager` (never
+ * trusting a client-supplied index — a peer may have moved the queue), so both
+ * the iOS lock-screen widget (`/api/widget/navigate`) and the Garmin watch
+ * (`/api/session/navigate`) share one implementation of the index math +
  * event publish. `correlationId` tags the published event so the originating
  * client can echo-suppress its own change.
+ *
+ * F3 (docs/current-climb-outside-queue.md, section 3): Next goes to Up next[0]
+ * and Previous to History's last entry, read with `upNextStart` /
+ * `historyLine`, so with nothing current Next lands on `queue[historyCount]`
+ * rather than the oldest History climb. Inside `QUEUE_NOW_SLOT_PERCENT` it
+ * stops at the ends (`out_of_bounds`), as controller `navigateQueue` does:
+ * wrapping sent every Up next climb to History unclimbed (Previous from the
+ * start) or spilled all of History into Up next (Next from the end). Outside
+ * the percent it still wraps.
  */
 export async function navigateSessionQueue(
   sessionId: string,
@@ -41,22 +52,20 @@ export async function navigateSessionQueue(
 
   // Use the server's authoritative current index, not any client-supplied one
   // which may be stale (another user changed the climb while the caller's local
-  // state was out of date).
+  // state was out of date). The analytics field keeps its old meaning: 0 with
+  // nothing current.
   const currentItem = queueState.currentClimbQueueItem;
-  const serverCurrentIndex = currentItem ? queueState.queue.findIndex((q) => q.uuid === currentItem.uuid) : 0;
-  const baseIndex = serverCurrentIndex >= 0 ? serverCurrentIndex : 0;
+  const currentIndex = currentItem ? queueState.queue.findIndex((q) => q.uuid === currentItem.uuid) : -1;
+  const serverCurrentIndex = currentItem ? currentIndex : 0;
+  const nextIndex = upNextStart(queueState.queue, currentItem, queueState.historyCount);
+  const previousIndex = historyLine(queueState) - 1;
 
-  let targetIndex: number;
-  if (action === 'next') {
-    targetIndex = baseIndex + 1;
-    if (targetIndex >= queueLength) {
-      targetIndex = 0;
+  let targetIndex = action === 'next' ? nextIndex : previousIndex;
+  if (targetIndex < 0 || targetIndex >= queueLength) {
+    if (isNowSlotSession(sessionId)) {
+      return { kind: 'out_of_bounds', queueLength, serverCurrentIndex, targetIndex };
     }
-  } else {
-    targetIndex = baseIndex - 1;
-    if (targetIndex < 0) {
-      targetIndex = queueLength - 1;
-    }
+    targetIndex = action === 'next' ? 0 : queueLength - 1;
   }
 
   const result = await navigateToQueueItem(sessionId, targetIndex, roomManager, pubsub, undefined, correlationId);
