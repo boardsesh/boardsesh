@@ -769,7 +769,7 @@
         "title": "Voir un bloc sans allumer la board",
         "intro": "Aperçu est le premier élément de la liste.",
         "p1": "Ça ouvre le bloc dans le lecteur sans toucher à ta file. Ton glissement suivant te ramène à ta file.",
-        "p2": "En session, ou avec Allumer la board quand je fais défiler désactivé, une étiquette Exploration apparaît. La ligne sous le nom indique Il n'y a que toi qui le vois en session, ou Aperçu, pas allumé quand une board est connectée ou un bloc allumé. Touche Activer ou Allumer au mur quand tu veux le bloc.",
+        "p2": "En session, ou avec Allumer la board quand je fais défiler désactivé, une étiquette Exploration apparaît. La ligne sous le nom indique Toi seul le vois en session, ou Aperçu, pas allumé quand une board est connectée ou un bloc allumé. Touche Activer ou Allumer au mur quand tu veux le bloc.",
         "sessionsLink": "Comment une session garde le mur tranquille",
         "clipAlt": "L'étiquette Exploration",
         "clipCaption": "L'étiquette arrive après le glissement. Le mur ne bouge pas."
