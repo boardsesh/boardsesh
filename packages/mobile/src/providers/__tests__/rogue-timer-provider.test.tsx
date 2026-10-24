@@ -236,6 +236,119 @@ describe('RogueTimerProvider', () => {
   });
 });
 
+describe('RogueTimerProvider runs one connect at a time', () => {
+  /** connectByName calls that are still scanning or connecting, and the most at once. */
+  function trackConnects() {
+    const pending: Array<{ name: string; resolve: () => void; reject: () => void }> = [];
+    let inFlight = 0;
+    let mostAtOnce = 0;
+    controllerMock.connectByName.mockImplementation(
+      (name: string) =>
+        new Promise((resolve, reject) => {
+          inFlight += 1;
+          mostAtOnce = Math.max(mostAtOnce, inFlight);
+          pending.push({
+            name,
+            resolve: () => {
+              inFlight -= 1;
+              controllerMock.state.connected = true;
+              resolve({ deviceId: 'timer-1', deviceName: name });
+            },
+            reject: () => {
+              inFlight -= 1;
+              reject(new Error(`No Rogue timer matching "${name}"`));
+            },
+          });
+        }),
+    );
+    return { pending, mostAtOnce: () => mostAtOnce };
+  }
+
+  afterEach(() => {
+    controllerMock.connectByName.mockImplementation(async (name: string) => {
+      controllerMock.state.connected = true;
+      return { deviceId: 'timer-1', deviceName: name };
+    });
+  });
+
+  it('waits for the connect in flight when the paired timer changes, then connects the new one', async () => {
+    const connects = trackConnects();
+    scenario.timerName = 'Rogue Echo Old';
+    scenario.boardConnected = true;
+    const { result, rerender } = renderHook(() => useRogueTimer(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe('connecting'));
+
+    // A new timer is saved while the old one is still being looked for.
+    scenario.timerName = 'Rogue Echo New';
+    rerender();
+    expect(controllerMock.connectByName).toHaveBeenCalledTimes(1);
+    expect(result.current.status).toBe('connecting');
+
+    // The old one never turns up. Only then does the new one get a scan.
+    await act(async () => {
+      connects.pending[0].reject();
+    });
+    await waitFor(() => expect(controllerMock.connectByName).toHaveBeenCalledTimes(2));
+    expect(controllerMock.connectByName).toHaveBeenLastCalledWith('Rogue Echo New');
+
+    await act(async () => {
+      connects.pending[1].resolve();
+    });
+    await waitFor(() => expect(result.current.status).toBe('connected'));
+    expect(connects.mostAtOnce()).toBe(1);
+  });
+
+  it('drops the old link when it lands after the switch, before connecting the new timer', async () => {
+    const connects = trackConnects();
+    scenario.timerName = 'Rogue Echo Old';
+    scenario.boardConnected = true;
+    const { result, rerender } = renderHook(() => useRogueTimer(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe('connecting'));
+
+    scenario.timerName = 'Rogue Echo New';
+    rerender();
+    await act(async () => {
+      connects.pending[0].resolve();
+    });
+    await waitFor(() => expect(controllerMock.connectByName).toHaveBeenCalledTimes(2));
+    // The cancelled old link went first, so it cannot tear down the new one.
+    expect(controllerMock.disconnect.mock.invocationCallOrder[0]).toBeLessThan(
+      controllerMock.connectByName.mock.invocationCallOrder[1],
+    );
+
+    await act(async () => {
+      connects.pending[1].resolve();
+    });
+    await waitFor(() => expect(result.current.status).toBe('connected'));
+    expect(connects.mostAtOnce()).toBe(1);
+  });
+
+  it('connects again when the climber switches back to the timer still being looked for', async () => {
+    const connects = trackConnects();
+    scenario.timerName = 'Rogue Echo Old';
+    scenario.boardConnected = true;
+    const { result, rerender } = renderHook(() => useRogueTimer(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe('connecting'));
+
+    scenario.timerName = 'Rogue Echo New';
+    rerender();
+    scenario.timerName = 'Rogue Echo Old';
+    rerender();
+    await act(async () => {
+      connects.pending[0].resolve();
+    });
+    // The first attempt was cancelled on the switch, so it can't count as the link.
+    await waitFor(() => expect(controllerMock.connectByName).toHaveBeenCalledTimes(2));
+    expect(controllerMock.connectByName).toHaveBeenLastCalledWith('Rogue Echo Old');
+
+    await act(async () => {
+      connects.pending[1].resolve();
+    });
+    await waitFor(() => expect(result.current.status).toBe('connected'));
+    expect(connects.mostAtOnce()).toBe(1);
+  });
+});
+
 describe('RogueTimerProvider driven by the session timer', () => {
   it('restarts the stopwatch when a tick starts a rest: STOPWATCH, RESET, OK with gaps', async () => {
     await renderConnected();
@@ -282,6 +395,50 @@ describe('RogueTimerProvider driven by the session timer', () => {
     });
     await advance(2000);
     expect(pressed()).toEqual(RESTART);
+  });
+
+  it("gaps a reset queued behind a restart from the restart's OK", async () => {
+    await renderConnected();
+    act(() => {
+      armRestTimer('afterTick', scenario.nowMs, null);
+      noteRestTimerTick(nowIso(), 'afterTick', scenario.nowMs);
+    });
+    expect(pressed()).toEqual([RogueTimerCommand.STOPWATCH]);
+    // Switched off 100 ms into the restart: the reset waits its turn.
+    await advance(100);
+    act(() => {
+      disarmRestTimer();
+    });
+    await advance(80);
+    expect(pressed()).toEqual([RogueTimerCommand.STOPWATCH, RogueTimerCommand.RESET]);
+    await advance(180);
+    expect(pressed()).toEqual(RESTART);
+    // No RESET straight after OK: the HM-10 drops back-to-back frames.
+    await advance(179);
+    expect(pressed()).toEqual(RESTART);
+    await advance(1);
+    expect(pressed()).toEqual([...RESTART, RogueTimerCommand.RESET]);
+  });
+
+  it('gaps a restart queued behind a reset from the RESET', async () => {
+    armRestTimer('afterTick', scenario.nowMs, null);
+    await renderConnected();
+    act(() => {
+      disarmRestTimer();
+    });
+    // Let the RESET go out at this instant.
+    await act(async () => {});
+    expect(pressed()).toEqual([RogueTimerCommand.RESET]);
+    await advance(10);
+    // The rest timer is off, so a fresh tick restarts the clock, 180 ms after the RESET.
+    act(() => {
+      noteSessionTimerTick(nowIso(), scenario.nowMs);
+    });
+    expect(pressed()).toEqual([RogueTimerCommand.RESET]);
+    await advance(169);
+    expect(pressed()).toEqual([RogueTimerCommand.RESET]);
+    await advance(1);
+    expect(pressed()).toEqual([RogueTimerCommand.RESET, RogueTimerCommand.STOPWATCH]);
   });
 
   it('a double tick within 0.3 s still ends with the clock counting', async () => {

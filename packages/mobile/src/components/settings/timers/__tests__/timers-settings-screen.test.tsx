@@ -30,6 +30,8 @@ const rogueScenario = vi.hoisted(() => ({
   updateBoard: vi.fn(),
   setActiveBoard: vi.fn(),
   showToast: vi.fn(),
+  fetchAllMyBoards: vi.fn(),
+  boardsQuery: null as null | { queryKey: readonly unknown[]; queryFn: unknown; enabled?: boolean },
 }));
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
@@ -62,12 +64,14 @@ vi.mock('../../../../providers/auth-provider', () => ({
 }));
 vi.mock('../../../../hooks/use-viewer-user-id', () => ({ useViewerUserId: () => rogueScenario.viewerUserId }));
 vi.mock('../../../../lib/graphql/hooks', () => ({
-  useMyBoards: () => ({
-    data: rogueScenario.boards
-      ? { boards: rogueScenario.boards, totalCount: rogueScenario.boards.length, hasMore: false }
-      : undefined,
-  }),
+  fetchAllMyBoards: rogueScenario.fetchAllMyBoards,
   useUpdateBoard: () => ({ mutateAsync: rogueScenario.updateBoard }),
+}));
+vi.mock('@tanstack/react-query', () => ({
+  useQuery: (options: { queryKey: readonly unknown[]; queryFn: unknown; enabled?: boolean }) => {
+    rogueScenario.boardsQuery = options;
+    return { data: options.enabled === false ? undefined : rogueScenario.boards };
+  },
 }));
 vi.mock('../../../../lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: rogueScenario.activeBoard }),
@@ -126,6 +130,7 @@ beforeEach(() => {
   rogueScenario.setActiveBoard.mockReset();
   rogueScenario.setActiveBoard.mockResolvedValue(true);
   rogueScenario.showToast.mockReset();
+  rogueScenario.boardsQuery = null;
 });
 afterEach(cleanup);
 
@@ -254,6 +259,21 @@ describe('TimersSettingsScreen gym timer', () => {
   it('waits for the boards instead of saying there are none', () => {
     render(<TimersSettingsScreen />);
     expect(sectionKeys()).not.toContain('rogue');
+  });
+
+  it('waits for the climber id instead of saying there are no boards', () => {
+    rogueScenario.viewerUserId = null;
+    rogueScenario.boards = [board({})];
+    render(<TimersSettingsScreen />);
+    expect(sectionKeys()).not.toContain('rogue');
+  });
+
+  it("reads every page of the climber's boards, under the root updateBoard refreshes", () => {
+    rogueScenario.boards = [board({})];
+    render(<TimersSettingsScreen />);
+    expect(rogueScenario.boardsQuery?.queryFn).toBe(rogueScenario.fetchAllMyBoards);
+    expect(rogueScenario.boardsQuery?.queryKey[0]).toBe('myBoards');
+    expect(rogueScenario.boardsQuery?.enabled).toBe(true);
   });
 
   it("lists the climber's own boards", () => {

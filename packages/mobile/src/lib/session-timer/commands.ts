@@ -16,11 +16,20 @@
 // "A new rest started" is one instant moving forward: the live clock's cycle
 // start, or the last auto-advance. That one rule covers a tick, a Reset, an
 // auto-advance (also when a tick or send rule clears the anchor), a fixed-window
-// beat and a refilled queue. A backdated tick and a cold-start hydration move it
-// to an instant more than a minute ago, which is not fresh, so they never
-// restart the clock.
+// beat and a refilled queue.
+//
+// "Fresh" depends on what moved it, because the Rogue can only count from 0 now:
+//   - a logged climb or an auto-advance (the store records both): up to a minute
+//     old. A tick dates from when it was submitted and lands when the save
+//     returns; an advance's deadline was already checked by the scheduler. A
+//     tick backdated further, from an old session, never restarts the clock.
+//   - anything else (a Reset, arming, a refilled queue, a fixed window's beat):
+//     a few seconds. Those start a rest now, so an older one was seen late: a
+//     beat whose wake was held while the phone was locked, or a window re-cut by
+//     a new rest length. Restarting then would put the wall clock off the
+//     window, so it waits for the next beat instead.
 
-import { AUTO_ADVANCE_MAX_BACKDATE_MS } from '../rest-timer-auto-advance';
+import { AUTO_ADVANCE_MAX_BACKDATE_MS, AUTO_ADVANCE_OVERDUE_GRACE_MS } from '../rest-timer-auto-advance';
 import { isLiveSessionTimerSnapshot, type SessionTimerSnapshot } from './snapshot';
 
 export type SessionTimerCommand =
@@ -31,10 +40,14 @@ export type SessionTimerCommand =
 
 /**
  * A resume rebases the anchor by the time already rested, so its cycle started
- * at least a second before now. A tick logged while paused (afterTick resumes
- * on it) starts its cycle at the tick, within this of now.
+ * at least a second before now. A Reset while paused leaves nothing to carry, so
+ * its resume starts a new rest at now. A tick logged while paused (afterTick
+ * resumes on it) is told apart by its `lastTickAt`, not by this.
  */
 export const SESSION_TIMER_RESUME_CARRY_MS = 1000;
+
+/** How old a rest no logged climb or auto-advance explains can be and still restart the clock. */
+export const SESSION_TIMER_RESTART_GRACE_MS = AUTO_ADVANCE_OVERDUE_GRACE_MS;
 
 /** The instant the current rest started, as far as a restart is concerned. */
 function restartMarkMs(snapshot: SessionTimerSnapshot): number | null {
@@ -49,6 +62,21 @@ function isFresh(markMs: number, nowMs: number): boolean {
   return nowMs - markMs <= AUTO_ADVANCE_MAX_BACKDATE_MS;
 }
 
+/**
+ * Whether a logged climb or an auto-advance landed between the two snapshots and
+ * can account for the new rest. A tick never moves a fixed window, so there a
+ * new window start is the clock's, even with a tick in the same snapshot.
+ */
+function startedByRecordedEvent(prev: SessionTimerSnapshot, next: SessionTimerSnapshot): boolean {
+  if (next.status === 'off') return false;
+  const prevTickAt = prev.status === 'off' ? null : prev.lastTickAt;
+  const prevAdvanceMs = prev.status === 'off' ? null : prev.lastAdvanceMs;
+  const advanceFired = next.lastAdvanceMs !== null && next.lastAdvanceMs !== prevAdvanceMs;
+  const tickLanded = next.lastTickAt !== null && next.lastTickAt !== prevTickAt;
+  const isFixedWindow = isLiveSessionTimerSnapshot(next) && next.periodSeconds !== null;
+  return advanceFired || (tickLanded && !isFixedWindow);
+}
+
 export function deriveSessionTimerCommands(
   prev: SessionTimerSnapshot | null,
   next: SessionTimerSnapshot,
@@ -61,6 +89,13 @@ export function deriveSessionTimerCommands(
   const nextMarkMs = restartMarkMs(next);
   if (nextMarkMs === null) return [];
 
+  const prevMarkMs = restartMarkMs(prev);
+  if (prevMarkMs !== null && nextMarkMs <= prevMarkMs) return [];
+
+  if (startedByRecordedEvent(prev, next)) {
+    return isFresh(nextMarkMs, nowMs) ? [{ kind: 'restartCountUp', cycleStartMs: nextMarkMs }] : [];
+  }
+
   // Resuming a pause keeps the rest already counted, and the gym clock kept
   // running through the pause, so there is nothing to restart.
   if (
@@ -71,9 +106,7 @@ export function deriveSessionTimerCommands(
     return [];
   }
 
-  const prevMarkMs = restartMarkMs(prev);
-  if (prevMarkMs !== null && nextMarkMs <= prevMarkMs) return [];
-  if (!isFresh(nextMarkMs, nowMs)) return [];
+  if (nowMs - nextMarkMs > SESSION_TIMER_RESTART_GRACE_MS) return [];
   return [{ kind: 'restartCountUp', cycleStartMs: nextMarkMs }];
 }
 

@@ -69,7 +69,7 @@ describe('off', () => {
 describe('afterTick', () => {
   it('waits for the first tick with the rest length and no clock', () => {
     armRestTimer('afterTick', at(0), null);
-    expect(snapshotAt(5)).toEqual({ status: 'waiting', targetSeconds: 60, lastAdvanceMs: null });
+    expect(snapshotAt(5)).toEqual({ status: 'waiting', targetSeconds: 60, lastAdvanceMs: null, lastTickAt: null });
   });
 
   it('runs from the tick to one rest later', () => {
@@ -79,6 +79,7 @@ describe('afterTick', () => {
       status: 'running',
       targetSeconds: 60,
       lastAdvanceMs: null,
+      lastTickAt: iso(10),
       cycleStartMs: at(10),
       deadlineMs: at(70),
       periodSeconds: null,
@@ -112,6 +113,7 @@ describe('afterTick', () => {
       status: 'paused',
       targetSeconds: 60,
       lastAdvanceMs: null,
+      lastTickAt: iso(10),
       frozenElapsedSeconds: 15,
     });
   });
@@ -137,6 +139,7 @@ describe('onTheMinute', () => {
       status: 'running',
       targetSeconds: 60,
       lastAdvanceMs: null,
+      lastTickAt: null,
       cycleStartMs: at(0),
       deadlineMs: at(60),
       periodSeconds: 60,
@@ -165,10 +168,10 @@ describe('onTheMinute', () => {
     });
   });
 
-  it('a tick does not move the window', () => {
+  it('a tick does not move the window, but is still seen', () => {
     armRestTimer('onTheMinute', at(0), null);
     noteRestTimerTick(iso(20), 'onTheMinute', at(20));
-    expect(snapshotAt(30, { mode: 'onTheMinute' })).toMatchObject({ cycleStartMs: at(0) });
+    expect(snapshotAt(30, { mode: 'onTheMinute' })).toMatchObject({ cycleStartMs: at(0), lastTickAt: iso(20) });
   });
 });
 

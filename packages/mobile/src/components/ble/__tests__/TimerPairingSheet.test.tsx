@@ -12,7 +12,7 @@ vi.mock('../../PressableSurface', async () => {
       createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
   };
 });
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { DiscoveredDevice } from '../../../lib/ble/types';
@@ -39,6 +39,31 @@ vi.mock('../../../lib/ble/rogue-timer-ble', () => ({
   RogueTimerController: class {
     scanForTimers = scan.scanForTimers;
   },
+}));
+
+// What the sheet checks before it scans: the permission answer, the radio, and
+// why the radio said no.
+const radio = vi.hoisted(() => ({
+  permission: 'granted' as 'granted' | 'denied' | 'blocked' | 'unsupported',
+  poweredOn: true,
+  unavailableReason: 'unknown' as 'unauthorized' | 'powered_off' | 'unsupported' | 'unknown',
+  openAppSettings: vi.fn(async () => true),
+}));
+vi.mock('../../../lib/ble/use-ble-permissions', () => ({
+  requestBleRuntimePermissionStatus: async () => radio.permission,
+}));
+vi.mock('../../../lib/ble/availability', () => ({ waitForBlePoweredOn: async () => radio.poweredOn }));
+vi.mock('../../../lib/ble/bluetooth-unavailable', () => ({
+  readBluetoothUnavailableReason: async () => radio.unavailableReason,
+}));
+vi.mock('../../../lib/ble/bluetooth-unavailable-alert', () => ({ bluetoothBlockedBody: () => 'ble.blockedBody' }));
+vi.mock('../../../lib/open-app-settings', () => ({
+  canOpenAppSettings: () => true,
+  openAppSettings: radio.openAppSettings,
+}));
+vi.mock('../../Button', () => ({
+  Button: ({ title, onPress }: { title: string; onPress: () => void }) =>
+    createElement('button', { 'data-button': title, onClick: onPress }, title),
 }));
 
 type ChildrenProps = { children?: ReactNode };
@@ -107,30 +132,133 @@ import { RogueTimerContext, type RogueTimerPairingScanStarter } from '../../../p
 
 const device = (id: string, name: string, rssi = -50): DiscoveredDevice => ({ deviceId: id, name, rssi });
 
+function resetScan() {
+  scan.scanForTimers.mockClear();
+  scan.state.stop.mockClear();
+  scan.state.onUpdate = undefined;
+  scan.state.onScanStopped = undefined;
+  radio.permission = 'granted';
+  radio.poweredOn = true;
+  radio.unavailableReason = 'unknown';
+  radio.openAppSettings.mockClear();
+}
+
+/** Render the sheet and let its permission and radio checks answer. */
+async function renderSheet(onSelect = vi.fn(), onDismiss = vi.fn()) {
+  const rendered = render(<TimerPairingSheet onSelect={onSelect} onDismiss={onDismiss} />);
+  await act(async () => {});
+  return rendered;
+}
+
 describe('TimerPairingSheet', () => {
-  beforeEach(() => {
-    scan.scanForTimers.mockClear();
-    scan.state.stop.mockClear();
-    scan.state.onUpdate = undefined;
-    scan.state.onScanStopped = undefined;
+  beforeEach(resetScan);
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
-  it('starts a scan on mount and shows the scanning state', () => {
+  it('starts a scan on mount and shows the scanning state', async () => {
     const { container } = render(<TimerPairingSheet onSelect={vi.fn()} onDismiss={vi.fn()} />);
+    // Looking, while the permission and radio checks answer.
+    expect(container.textContent).toContain('mobile.timerPair.scanning');
+    await act(async () => {});
     expect(scan.scanForTimers).toHaveBeenCalledTimes(1);
     expect(container.textContent).toContain('mobile.timerPair.scanning');
   });
 
-  it('stops the scan on unmount', () => {
-    const { unmount } = render(<TimerPairingSheet onSelect={vi.fn()} onDismiss={vi.fn()} />);
+  it('stops the scan on unmount', async () => {
+    const { unmount } = await renderSheet();
     expect(scan.state.stop).not.toHaveBeenCalled();
     unmount();
     expect(scan.state.stop).toHaveBeenCalledTimes(1);
   });
 
-  it('lists discovered timers and reports the picked timer name on tap', () => {
+  it('never scans when closed before the checks answer', async () => {
+    const { unmount } = render(<TimerPairingSheet onSelect={vi.fn()} onDismiss={vi.fn()} />);
+    unmount();
+    await act(async () => {});
+    expect(scan.scanForTimers).not.toHaveBeenCalled();
+  });
+
+  it('asks for Bluetooth instead of spinning when the radio is off', async () => {
+    radio.poweredOn = false;
+    radio.unavailableReason = 'powered_off';
+    const { container } = await renderSheet();
+    expect(scan.scanForTimers).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('mobile.bluetooth.unavailable');
+    expect(container.textContent).not.toContain('mobile.timerPair.scanning');
+    expect(container.textContent).not.toContain('mobile.timerPair.empty');
+  });
+
+  it('asks for Bluetooth on a phone with none, like the simulator', async () => {
+    radio.poweredOn = false;
+    radio.unavailableReason = 'unsupported';
+    const { container } = await renderSheet();
+    expect(container.textContent).toContain('mobile.bluetooth.unavailable');
+  });
+
+  it('asks for the permission when the Android dialog was answered no', async () => {
+    radio.permission = 'denied';
+    const { container } = await renderSheet();
+    expect(scan.scanForTimers).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('mobile.timerPair.permissionDenied');
+  });
+
+  it('points to Settings when Bluetooth is blocked for the app', async () => {
+    radio.poweredOn = false;
+    radio.unavailableReason = 'unauthorized';
+    const { container } = await renderSheet();
+    expect(container.textContent).toContain('ble.blockedTitle');
+    expect(container.textContent).toContain('ble.blockedBody');
+    act(() => (container.querySelector('[data-button="ble.openSettings"]') as HTMLButtonElement).click());
+    expect(radio.openAppSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it('points to Settings when Android stopped asking', async () => {
+    radio.permission = 'blocked';
+    const { container } = await renderSheet();
+    expect(container.textContent).toContain('ble.blockedTitle');
+  });
+
+  it('stops looking a little after the scan window when the scan ended without saying so', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { container } = await renderSheet();
+    expect(scan.scanForTimers).toHaveBeenCalledTimes(1);
+    // The scan errored: the radio went off, and no stop callback came.
+    radio.unavailableReason = 'powered_off';
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(32_999);
+    });
+    expect(container.textContent).toContain('mobile.timerPair.scanning');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(container.textContent).toContain('mobile.bluetooth.unavailable');
+  });
+
+  it('shows the empty state after a quiet stop with the radio fine', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { container } = await renderSheet();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(33_000);
+    });
+    expect(container.textContent).toContain('mobile.timerPair.empty');
+  });
+
+  it('keeps the timers it found when the radio goes off mid-scan', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { container } = await renderSheet();
+    act(() => scan.state.onUpdate?.([device('a', 'Rogue Home Timer')]));
+    radio.unavailableReason = 'powered_off';
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(33_000);
+    });
+    expect(container.querySelector('[data-list="true"]')?.getAttribute('data-count')).toBe('1');
+    expect(container.textContent).not.toContain('mobile.bluetooth.unavailable');
+  });
+
+  it('lists discovered timers and reports the picked timer name on tap', async () => {
     const onSelect = vi.fn();
-    const { container } = render(<TimerPairingSheet onSelect={onSelect} onDismiss={vi.fn()} />);
+    const { container } = await renderSheet(onSelect);
 
     act(() => scan.state.onUpdate?.([device('a', 'Rogue Home Timer', -40), device('b', 'Rogue Echo Gym Timer', -70)]));
 
@@ -144,23 +272,23 @@ describe('TimerPairingSheet', () => {
     expect(onSelect).toHaveBeenCalledWith('Rogue Home Timer');
   });
 
-  it('shows the empty state when the scan stops with no timers', () => {
-    const { container } = render(<TimerPairingSheet onSelect={vi.fn()} onDismiss={vi.fn()} />);
+  it('shows the empty state when the scan stops with no timers', async () => {
+    const { container } = await renderSheet();
     act(() => scan.state.onScanStopped?.());
     expect(container.textContent).toContain('mobile.timerPair.empty');
   });
 
-  it('dismisses via the top bar Cancel', () => {
+  it('dismisses via the top bar Cancel', async () => {
     const onDismiss = vi.fn();
-    const { container } = render(<TimerPairingSheet onSelect={vi.fn()} onDismiss={onDismiss} />);
+    const { container } = await renderSheet(vi.fn(), onDismiss);
     expect(container.querySelector('[data-top-bar="mobile.timerPair.title"]')).not.toBeNull();
     const cancel = container.querySelector('[data-leading="cancel"]') as HTMLButtonElement;
     act(() => cancel.click());
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 
-  it('draws a weak timer signal in the theme error role', () => {
-    const { container } = render(<TimerPairingSheet onSelect={vi.fn()} onDismiss={vi.fn()} />);
+  it('draws a weak timer signal in the theme error role', async () => {
+    const { container } = await renderSheet();
     act(() => scan.state.onUpdate?.([device('weak', 'Rogue Far Timer', -90)]));
 
     expect(container.querySelectorAll('[data-bg="theme-error"]')).toHaveLength(1);
@@ -169,12 +297,7 @@ describe('TimerPairingSheet', () => {
 });
 
 describe('TimerPairingSheet inside the Rogue provider', () => {
-  beforeEach(() => {
-    scan.scanForTimers.mockClear();
-    scan.state.stop.mockClear();
-    scan.state.onUpdate = undefined;
-    scan.state.onScanStopped = undefined;
-  });
+  beforeEach(resetScan);
 
   /** A provider whose scan slot the test opens by hand. */
   function renderInProvider() {
@@ -204,9 +327,9 @@ describe('TimerPairingSheet inside the Rogue provider', () => {
     expect(container.textContent).toContain('mobile.timerPair.scanning');
   });
 
-  it('scans once the slot is free, and hands it back when the scan stops by itself', () => {
+  it('scans once the slot is free, and hands it back when the scan stops by itself', async () => {
     const { container, slot } = renderInProvider();
-    act(() => {
+    await act(async () => {
       slot.starter?.(slot.releaseSlot);
     });
     expect(scan.scanForTimers).toHaveBeenCalledTimes(1);
@@ -220,5 +343,32 @@ describe('TimerPairingSheet inside the Rogue provider', () => {
     const { unmount, slot } = renderInProvider();
     unmount();
     expect(slot.stopScheduled).toHaveBeenCalledTimes(1);
+  });
+
+  it('hands the slot back when Bluetooth is off, so a held reconnect can run', async () => {
+    radio.poweredOn = false;
+    radio.unavailableReason = 'powered_off';
+    const { container, slot } = renderInProvider();
+    await act(async () => {
+      slot.starter?.(slot.releaseSlot);
+    });
+    expect(scan.scanForTimers).not.toHaveBeenCalled();
+    expect(slot.releaseSlot).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain('mobile.bluetooth.unavailable');
+  });
+
+  it('hands the slot back after a scan that ended without saying so', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { slot } = renderInProvider();
+    await act(async () => {
+      slot.starter?.(slot.releaseSlot);
+    });
+    expect(scan.scanForTimers).toHaveBeenCalledTimes(1);
+    expect(slot.releaseSlot).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(33_000);
+    });
+    expect(slot.releaseSlot).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
   });
 });

@@ -2,7 +2,6 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 import { toBoardName } from '@boardsesh/board-config';
 import type { RestTimerMode } from '../../../lib/rest-timer';
 import type { RogueTimerStatus } from '../../../providers/rogue-timer-context';
-import { boardIsOwnedBy } from '../../board-discovery/manage-items';
 import {
   formatRestLength,
   hasRestLength,
@@ -99,7 +98,7 @@ const ROGUE_LINK_BY_STATUS: Record<RogueTimerStatus, RogueTimerLinkState | null>
 };
 
 export type RogueTimerBoardsInput = {
-  /** `myBoards`: the climber's own boards and the ones they follow. */
+  /** Every page of `myBoards`: the climber's own boards and the ones they follow. */
   boards: readonly UserBoard[];
   viewerUserId: string | null;
   activeBoardUuid: string | null;
@@ -109,10 +108,19 @@ export type RogueTimerBoardsInput = {
 };
 
 /**
+ * Whether the climber owns this board, by the rule the server uses before it
+ * sends `timerName`: `ownerId` is the viewer. Stricter than My Boards'
+ * `boardIsOwnedBy`, whose `isOwned` fallback is for old offline snapshots. The
+ * server also sends no `ownerId` for a followed board whose owner keeps their
+ * activity private, and `isOwned` there means "a real wall", not "yours".
+ */
+function isViewersBoard(board: UserBoard, viewerUserId: string | null): boolean {
+  return viewerUserId !== null && board.ownerId === viewerUserId;
+}
+
+/**
  * The boards a timer can be paired to: the climber's own (the server shows a
  * board's timer to its owner only), never a spray wall, which has no hardware.
- * Ownership is `ownerId`, as My Boards reads it: `isOwned` means "a real wall",
- * not "yours".
  */
 export function rogueTimerBoards({
   boards,
@@ -122,7 +130,7 @@ export function rogueTimerBoards({
   linkStatus,
 }: RogueTimerBoardsInput): TimersRogueBoard[] {
   return boards
-    .filter((board) => toBoardName(board.boardType) !== 'spray' && boardIsOwnedBy(board, viewerUserId ?? undefined))
+    .filter((board) => toBoardName(board.boardType) !== 'spray' && isViewersBoard(board, viewerUserId))
     .map((board) => {
       const timerName = board.timerName?.trim() || null;
       return {

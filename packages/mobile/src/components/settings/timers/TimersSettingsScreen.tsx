@@ -1,11 +1,12 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { MoreForm } from '../../MoreForm';
 import { TimerPairingSheet } from '../../ble/TimerPairingSheet';
 import { useSessionTimerDriver } from '../../../hooks/use-session-timer-driver';
 import { useViewerUserId } from '../../../hooks/use-viewer-user-id';
-import { useMyBoards, useUpdateBoard } from '../../../lib/graphql/hooks';
+import { fetchAllMyBoards, useUpdateBoard } from '../../../lib/graphql/hooks';
 import { useActiveBoard, useSetActiveBoard } from '../../../lib/graphql/use-active-board';
 import { hapticSelection } from '../../../lib/haptics';
 import { isRestTimerSoundAvailable } from '../../../lib/rest-timer-cues';
@@ -111,6 +112,14 @@ export function TimersSettingsScreen() {
 }
 
 /**
+ * Every page of `myBoards`, under the `myBoards` root so `updateBoard`'s
+ * invalidation refetches it. One page is not enough: it mixes owned and followed
+ * boards in pin and recency order, so a home wall behind 20 followed gym boards
+ * would never show.
+ */
+const ROGUE_TIMER_BOARDS_QUERY_KEY = ['myBoards', 'rogueTimerBoards'] as const;
+
+/**
  * The gym timer section's data and its writes. Pairing saves the board's
  * `timerName` and, for the active board, re-saves the stored copy the Rogue
  * provider connects from: `updateBoard` refreshes the board lists but never the
@@ -120,7 +129,11 @@ function useRogueTimerPairing() {
   const { t } = useTranslation('common');
   const { isAuthenticated } = useAuth();
   const viewerUserId = useViewerUserId();
-  const { data: myBoards } = useMyBoards(undefined, { enabled: isAuthenticated });
+  const { data: boards } = useQuery({
+    queryKey: ROGUE_TIMER_BOARDS_QUERY_KEY,
+    queryFn: fetchAllMyBoards,
+    enabled: isAuthenticated,
+  });
   const { data: activeBoard } = useActiveBoard();
   const setActiveBoard = useSetActiveBoard();
   const { mutateAsync: updateBoard } = useUpdateBoard();
@@ -176,13 +189,13 @@ function useRogueTimerPairing() {
     [pairingBoardUuid, saveTimerName],
   );
 
-  const boards = myBoards?.boards;
   const activeBoardUuid = activeBoard?.uuid ?? null;
-  // Hidden signed out (a pairing is saved on the board) and until the boards
-  // load, so "no boards yet" never flashes up for someone who has them.
+  // Hidden signed out (a pairing is saved on the board), and until the boards
+  // and the climber's id are known, so "no boards yet" never flashes up for
+  // someone who has them.
   const section = useMemo(
     () =>
-      isAuthenticated && boards
+      isAuthenticated && boards && viewerUserId !== null
         ? {
             boards: rogueTimerBoards({ boards, viewerUserId, activeBoardUuid, savingBoardUuid, linkStatus }),
             onPair,

@@ -86,7 +86,12 @@ describe('afterTick restarts', () => {
     armRestTimer('afterTick', at(0), null);
     noteRestTimerTick(iso(10), 'afterTick', at(10));
     const prev = buildSnapshot(10, 'afterTick');
-    const next: SessionTimerSnapshot = { status: 'waiting', targetSeconds: 60, lastAdvanceMs: at(70) };
+    const next: SessionTimerSnapshot = {
+      status: 'waiting',
+      targetSeconds: 60,
+      lastAdvanceMs: at(70),
+      lastTickAt: iso(10),
+    };
     expect(deriveSessionTimerCommands(prev, next, at(70.01))).toEqual(restartFrom(70));
   });
 
@@ -126,6 +131,26 @@ describe('afterTick restarts', () => {
     sink.at(25);
     noteRestTimerTick(iso(40), 'afterTick', at(40));
     expect(sink.at(40)).toEqual(restartFrom(40));
+  });
+
+  it('restarts on a tick logged while paused that took a moment to save, never reading it as a resume', () => {
+    // The tick is dated at submit and lands when the save returns, 1.5 s later.
+    const sink = follow();
+    armRestTimer('afterTick', at(0), null);
+    noteRestTimerTick(iso(10), 'afterTick', at(10));
+    pauseRestTimer(at(25));
+    sink.at(25);
+    noteRestTimerTick(iso(40), 'afterTick', at(41.5));
+    expect(sink.at(41.5)).toEqual(restartFrom(40));
+  });
+
+  it('restarts on a tick that took several seconds to save on gym wifi', () => {
+    const sink = follow();
+    armRestTimer('afterTick', at(0), null);
+    noteRestTimerTick(iso(10), 'afterTick', at(10));
+    sink.at(10);
+    noteRestTimerTick(iso(30), 'afterTick', at(38));
+    expect(sink.at(38)).toEqual(restartFrom(30));
   });
 });
 
@@ -270,6 +295,41 @@ describe('onTheMinute', () => {
     armRestTimer('onTheMinute', at(0), null);
     sink.at(1);
     expect(sink.at(190)).toEqual([]);
+  });
+
+  it('a beat seen late in a short window waits for the next beat instead of starting off it', () => {
+    // A locked phone holds the wake for the 60 s beat until the unlock at 97 s.
+    // The Rogue could only start from 0:00 then, while the window reads 0:37.
+    const sink = follow(fixed);
+    armRestTimer('onTheMinute', at(0), null);
+    sink.at(1);
+    expect(sink.at(97)).toEqual([]);
+    expect(sink.at(120.025)).toEqual(restartFrom(120));
+  });
+
+  it('a tick in the same snapshot as a late beat does not excuse it', () => {
+    const sink = follow(fixed);
+    armRestTimer('onTheMinute', at(0), null);
+    sink.at(1);
+    noteRestTimerTick(iso(96), 'onTheMinute', at(96));
+    expect(sink.at(97)).toEqual([]);
+  });
+
+  it('a shorter rest length mid-window waits for the next beat', () => {
+    // 120 s windows cut to 60 s at 90 s: the current window now started at 60 s.
+    const sink = follow({ targetSeconds: 120, mode: 'onTheMinute' });
+    armRestTimer('onTheMinute', at(0), null);
+    sink.at(1);
+    expect(sink.at(90, fixed)).toEqual([]);
+    expect(sink.at(120.025, fixed)).toEqual(restartFrom(120));
+  });
+
+  it('an auto-advance a few seconds late still restarts it: the wall moved', () => {
+    const sink = follow(fixed);
+    armRestTimer('onTheMinute', at(0), null);
+    sink.at(1);
+    noteRestTimerAutoAdvanceFired(getRestTimerState().cycleId, 'onTheMinute', at(64.9), at(60));
+    expect(sink.at(65.2)).toEqual(restartFrom(60));
   });
 });
 

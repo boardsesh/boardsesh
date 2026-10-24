@@ -23,6 +23,13 @@ type SnapshotBase = {
    * advance has to be visible without a live clock.
    */
   lastAdvanceMs: number | null;
+  /**
+   * The last logged climb's timestamp, as the store keeps it. A gym timer reads
+   * a change as "a climb was just logged", which is how it tells a tick that
+   * resumes a paused rest from a plain resume, and how it lets a tick that took
+   * a while to save still restart the clock.
+   */
+  lastTickAt: string | null;
 };
 
 export type SessionTimerLiveStatus = 'running' | 'countUp' | 'queueEnded';
@@ -69,10 +76,10 @@ export function buildSessionTimerSnapshot({
   // RestTimerSessionSync is about to disarm.
   if (state.armedForSessionId !== null && state.armedForSessionId !== sessionId) return OFF;
 
-  const { anchorMs, isRunning, pausedElapsedSeconds, queueEnded, lastFiredDeadlineMs } = state;
+  const { anchorMs, isRunning, pausedElapsedSeconds, queueEnded, lastFiredDeadlineMs, lastTickAt } = state;
   const { mode } = pacing;
   const targetSeconds = pacing.targetSeconds !== null && pacing.targetSeconds > 0 ? pacing.targetSeconds : null;
-  const base: SnapshotBase = { targetSeconds, lastAdvanceMs: lastFiredDeadlineMs };
+  const base: SnapshotBase = { targetSeconds, lastAdvanceMs: lastFiredDeadlineMs, lastTickAt };
 
   if (!isRunning) {
     return {

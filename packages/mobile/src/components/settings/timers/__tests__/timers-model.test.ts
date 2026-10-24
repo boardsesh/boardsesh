@@ -354,6 +354,13 @@ describe('rogueTimerBoards', () => {
     expect(rogueTimerBoards({ ...base, boards }).map((entry) => entry.uuid)).toEqual(['mine']);
   });
 
+  it('drops a followed board whose owner the server hides, though it reads as a real wall', () => {
+    // A followed board whose owner keeps their activity private comes back with
+    // no ownerId and isOwned true. Its timer is not the climber's to change.
+    const boards = [board({ uuid: 'mine' }), board({ uuid: 'followed-hidden-owner', ownerId: null, isOwned: true })];
+    expect(rogueTimerBoards({ ...base, boards }).map((entry) => entry.uuid)).toEqual(['mine']);
+  });
+
   it('drops spray walls, which have no hardware', () => {
     const boards = [board({ uuid: 'kilter' }), board({ uuid: 'wall', boardType: 'spray' })];
     expect(rogueTimerBoards({ ...base, boards }).map((entry) => entry.uuid)).toEqual(['kilter']);

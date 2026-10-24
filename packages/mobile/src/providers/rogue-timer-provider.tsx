@@ -54,9 +54,10 @@ import {
   type RogueTimerStatus,
 } from './rogue-timer-context';
 
-// Gap between composed key presses. The timer is a slow HM-10 UART display;
-// back-to-back frames can be dropped, so we space the STOPWATCH → RESET → OK
-// sequence out. Tune on-device — we can't exercise real hardware in CI.
+// Gap between key presses. The timer is a slow HM-10 UART display; back-to-back
+// frames can be dropped, so we space the STOPWATCH → RESET → OK sequence out, and
+// the first press of a command from the last press of the one before. Tune
+// on-device — we can't exercise real hardware in CI.
 const KEY_SEQUENCE_GAP_MS = 180;
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -152,6 +153,24 @@ export function RogueTimerProvider({ children }: { children: ReactNode }) {
       if (openPairingScansRef.current > 0) {
         connectDeferredRef.current = true;
         return;
+      }
+      // An earlier connect is still scanning or connecting on this controller
+      // (the paired timer changed under it, or the board LED flapped). Its run
+      // was cleaned up, so it is cancelled. A second one now would overlap it:
+      // the first one's settle stops every scan, and its cancelled path
+      // disconnects whatever link the controller holds by then. Wait for it to
+      // settle, then try again. Its target no longer counts as held, or a
+      // switch back to that timer would read as already connected.
+      const pendingConnect = connectAttemptRef.current;
+      if (pendingConnect !== null) {
+        connectedTargetRef.current = null;
+        setStatus('connecting');
+        void pendingConnect.then(() => {
+          if (!cancelled) setReconnectTick((tick) => tick + 1);
+        });
+        return () => {
+          cancelled = true;
+        };
       }
       connectedTargetRef.current = timerName;
       setStatus('connecting');
@@ -312,14 +331,24 @@ function RogueSessionTimerSink({ controller }: { controller: RogueTimerControlle
   // queue instead of the one its first cleanup disposed.
   const queueRef = useRef<LatestWinsQueue<SessionTimerCommand> | null>(null);
   useEffect(() => {
+    // When the last press went out. The queue starts the next command the moment
+    // the one before resolves, so a reset queued behind a restart would follow
+    // its OK with no gap at all.
+    let lastPressAtMs: number | null = null;
     const queue = createLatestWinsQueue<SessionTimerCommand>(
       async (command) => {
-        const keys = rogueKeysForCommand(command);
-        for (const [index, key] of keys.entries()) {
-          if (index > 0) await wait(KEY_SEQUENCE_GAP_MS);
-          // Throws once the link has gone, and the queue swallows it: the timer
-          // is a display, not a source of truth.
-          await controller.pressButton(key);
+        for (const key of rogueKeysForCommand(command)) {
+          if (lastPressAtMs !== null) {
+            const sinceLastPressMs = Math.max(0, nowMs() - lastPressAtMs);
+            if (sinceLastPressMs < KEY_SEQUENCE_GAP_MS) await wait(KEY_SEQUENCE_GAP_MS - sinceLastPressMs);
+          }
+          try {
+            // Throws once the link has gone, and the queue swallows it: the
+            // timer is a display, not a source of truth.
+            await controller.pressButton(key);
+          } finally {
+            lastPressAtMs = nowMs();
+          }
         }
       },
       { absorbs: restartAbsorbsRestart },

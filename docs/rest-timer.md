@@ -274,7 +274,7 @@ agree. The root row shows the rest length (or Off).
 
 | Module | What it does |
 | --- | --- |
-| `snapshot.ts` | `buildSessionTimerSnapshot`: `off`, `waiting`, `paused`, or a live clock (`running`, `countUp`, `queueEnded`) with its cycle start, deadline and fixed-window period, plus `lastAdvanceMs`. Same phase order as the pill and the Lock Screen payload. `getSessionTimerWakeMs` is the one moment it changes with no store write: a fixed window's end |
+| `snapshot.ts` | `buildSessionTimerSnapshot`: `off`, `waiting`, `paused`, or a live clock (`running`, `countUp`, `queueEnded`) with its cycle start, deadline and fixed-window period, plus `lastAdvanceMs` and `lastTickAt`. Same phase order as the pill and the Lock Screen payload. `getSessionTimerWakeMs` is the one moment it changes with no store write: a fixed window's end |
 | `commands.ts` | `deriveSessionTimerCommands(prev, next, nowMs)` diffs two snapshots into `restartCountUp` or `reset`; `deriveSessionTimerTickCommand` covers a tick with the rest timer off |
 | `command-queue.ts` | `createLatestWinsQueue`: one command at a time, the newest waiting one wins, and a command the one in flight already delivers is dropped |
 | `tick-events.ts` | `noteSessionTimerTick`: the tick saver tells the sinks about a committed tick, just before the rest timer hears of it. Never from outbox replay |
@@ -284,11 +284,19 @@ The command rules:
 - A sink that just connected sends nothing. Connecting is never a reason to restart a clock.
 - The timer going off (disarmed, or armed for a session this phone left) sends `reset`, once.
 - A new rest sends `restartCountUp`: the live clock's cycle start or the last auto-advance moved
-  forward, and that instant is at most 60 s old. One rule covers a tick, Reset, an auto-advance (also
-  when a tick or send rule clears the anchor), a fixed-window beat, a refilled queue and a rest
-  restarted after the background.
-- Pause and resume send nothing. A resume carries at least a second of rest already counted; that
-  is how it differs from a tick logged while paused, which starts a new rest.
+  forward, and that instant is fresh. One rule covers a tick, Reset, an auto-advance (also when a
+  tick or send rule clears the anchor), a fixed-window beat, a refilled queue and a rest restarted
+  after the background.
+- Fresh depends on what moved it, because the gym timer can only count from 0 now. A logged climb
+  (a new `lastTickAt`) or an auto-advance (a new `lastAdvanceMs`) may be up to 60 s old: a tick is
+  dated when it was submitted and lands when the save returns. Anything else (Reset, arming, a
+  refilled queue, a fixed-window beat) must be at most 5 s old (`AUTO_ADVANCE_OVERDUE_GRACE_MS`). An
+  older one was seen late, like a beat whose wake was held while the phone was locked or a window
+  re-cut by a new rest length, so the clock waits for the next beat instead of starting off the
+  window. A tick never moves a fixed window, so it never excuses a late beat.
+- Pause and resume send nothing. A resume carries at least a second of rest already counted. A tick
+  logged while paused is told apart by its new `lastTickAt`, however long its save took, and starts
+  a new rest.
 - A tick with the rest timer off restarts the count-up from now, unless it is backdated by more
   than a minute.
 
@@ -316,15 +324,27 @@ the release train's merge-back.
 - Pause leaves the gym timer running: stopping it would mean pressing OK blind. Countdown
   programming and a stop are unverified on the hardware (`docs/ROGUE_TIMER_BLE_SPEC.md` §6, §7), so
   the timer only ever counts up.
+- Key presses are at least 180 ms apart across commands too: a reset queued behind a restart waits
+  out the gap after the restart's OK.
 - The radio has one scan slot. `schedulePairingScan` starts a pairing scan only after any reconnect
   in flight has settled (a reconnect stops every scan on its way out), and no reconnect starts while
   a pairing scan holds the slot. A reconnect held back runs when the pairing scan stops, by itself
   or with the sheet. `TimerPairingSheet` asks for the slot whenever it renders inside the provider.
-- Pairing lives in Settings › Timers under "Gym timer", one row per board the climber owns
-  (`ownerId`, as My Boards reads it; `isOwned` means "a real wall"), never a spray wall. It stays in
-  the board form too. A pair or a remove saves `timerName` through `updateBoard`, then re-saves the
-  stored active board when it is that board: `updateBoard` never refreshes the stored copy the
-  provider connects from.
+- One connect at a time on the provider's controller. A connect asked for while another is still
+  scanning or connecting (the paired timer changed, say) waits for it to settle: the first one's
+  scan stop and its cancelled-path disconnect would otherwise end the second's scan or link.
+- `TimerPairingSheet` checks permission and the radio itself before it scans, because the scan
+  says nothing when either is missing. It shows "Turn on Bluetooth to scan", the Android "allow
+  permissions" copy, or the blocked state with Open Settings, and hands the scan slot back. A scan
+  that ends without its stop callback (an error, most often the radio switched off) is given up 3 s
+  after its 30 s window, so the sheet never spins with the slot held.
+- Pairing lives in Settings › Timers under "Gym timer", one row per board the climber owns, never
+  a spray wall. Owned is `ownerId` equal to the climber's id, the rule the server uses before it
+  sends `timerName`. There is no `isOwned` fallback: the server sends a followed board with a
+  private owner as `ownerId: null, isOwned: true`. The section walks every page of `myBoards`
+  (`fetchAllMyBoards`), since one page mixes followed boards in. It stays in the board form too. A
+  pair or a remove saves `timerName` through `updateBoard`, then re-saves the stored active board
+  when it is that board: `updateBoard` never refreshes the stored copy the provider connects from.
 - `lib/ble/**` and `packages/shared/ble-protocol` are untouched: the release train rewrote
   `rogue-timer-ble.ts`.
 
