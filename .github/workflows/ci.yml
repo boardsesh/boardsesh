@@ -860,6 +860,22 @@ jobs:
             packages/web/app/lib/api-docs/__tests__/openapi-document.test.ts
           vp test run --project scripts scripts/__tests__/ci-rest-surface-workflow.test.ts
 
+      # Deliberately not `--changed`-filtered, same rationale as deploy-config and
+      # rest-surface: the parity spec reads every X.ts / X.web.ts(x) pair and every
+      # importer with readFileSync, so Vitest's module graph never relates it to a
+      # source diff. #6067 added getQueueSnapshotGeneration to queue-snapshot-store.ts
+      # but not to its .web fork; this spec went red on main 13 min after merge while
+      # the PR's test-default never selected it, and app.boardsesh.com failed to
+      # boot for 1 h 40 min (#6110). Do not fold this into test-default and do not
+      # add `--changed`. The second command reads ci.yml itself, so a diff that
+      # narrows this gate cannot go green.
+      - name: web-fork-parity (every name a web-bundled module imports exists in its .web fork)
+        id: web-fork-parity
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && (needs.changes.outputs.mobile == 'true' || needs.changes.outputs.rootCi == 'true') }}
+        run: |
+          vp test run --project mobile packages/mobile/src/__tests__/web-fork-export-parity.test.ts
+          vp test run --project scripts scripts/__tests__/ci-web-fork-parity-workflow.test.ts
+
       # Last on purpose: `vp run codegen` rewrites generated files in the
       # working tree, and no earlier guard should see that.
       #
