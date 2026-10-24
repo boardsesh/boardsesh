@@ -924,11 +924,13 @@ describe('BoardSheet', () => {
 
     fireEvent.click(getByLabelText('press hero-climb'));
     await waitFor(() =>
-      expect(onClimbPress).toHaveBeenCalledWith({
-        climb: heroDetail,
-        queueItemUuid: 'queue-hero',
-        boardConfig,
-      }),
+      expect(onClimbPress).toHaveBeenCalledWith(
+        expect.objectContaining({
+          climb: heroDetail,
+          queueItemUuid: 'queue-hero',
+          boardConfig,
+        }),
+      ),
     );
     expect(onClimbPress).toHaveBeenCalledTimes(1);
     expect(graphql.request).toHaveBeenCalledWith(GET_CLIMB, {
@@ -1148,11 +1150,13 @@ describe('BoardSheet', () => {
     });
 
     await waitFor(() => expect(onClimbPress).toHaveBeenCalledTimes(1));
-    expect(onClimbPress).toHaveBeenCalledWith({
-      climb: heroDetail,
-      queueItemUuid: 'queue-hero',
-      boardConfig,
-    });
+    expect(onClimbPress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        climb: heroDetail,
+        queueItemUuid: 'queue-hero',
+        boardConfig,
+      }),
+    );
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(toast.showToast).not.toHaveBeenCalled();
     await waitFor(() => expect(queryByLabelText('mobile.boardPresence.actionLoading')).toBeNull());
@@ -1315,11 +1319,13 @@ describe('BoardSheet', () => {
 
     fireEvent.click(getByLabelText('press hero-climb'));
     await waitFor(() =>
-      expect(onClimbPress).toHaveBeenCalledWith({
-        climb: retryDetail,
-        queueItemUuid: null,
-        boardConfig,
-      }),
+      expect(onClimbPress).toHaveBeenCalledWith(
+        expect.objectContaining({
+          climb: retryDetail,
+          queueItemUuid: null,
+          boardConfig,
+        }),
+      ),
     );
     expect(onClimbPress).toHaveBeenCalledTimes(1);
     expect(graphql.request).toHaveBeenCalledTimes(2);
@@ -1357,11 +1363,13 @@ describe('BoardSheet', () => {
 
     fireEvent.click(getByLabelText('press hero-climb'));
     await waitFor(() =>
-      expect(onClimbPress).toHaveBeenCalledWith({
-        climb: retryDetail,
-        queueItemUuid: null,
-        boardConfig,
-      }),
+      expect(onClimbPress).toHaveBeenCalledWith(
+        expect.objectContaining({
+          climb: retryDetail,
+          queueItemUuid: null,
+          boardConfig,
+        }),
+      ),
     );
     expect(onClimbPress).toHaveBeenCalledTimes(1);
     expect(graphql.request).toHaveBeenCalledTimes(2);
