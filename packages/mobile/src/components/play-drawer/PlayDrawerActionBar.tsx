@@ -32,6 +32,11 @@ type PlayDrawerActionBarProps = {
   supportsMirroring: boolean;
   isFavorited: boolean;
   remainingQueueCount: number;
+  /**
+   * Up next, badged on the queue button while the player walks a list (#6238),
+   * when Next plays the list and not the queue. Zero draws no badge.
+   */
+  upNextBadgeCount?: number;
   /** Filled/lit visual — OR'd in the parent (this device's BLE, a board-presence
    *  holder, or the session wall-lit signal). Visual only. */
   lightbulbActive: boolean;
@@ -150,6 +155,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   supportsMirroring,
   isFavorited,
   remainingQueueCount,
+  upNextBadgeCount = 0,
   lightbulbActive,
   lightbulbConnected,
   lightbulbPending = false,
@@ -273,7 +279,12 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
               }
             />
           ) : layout.leadingSlot === 'queue' ? (
-            <QueueButton size="lg" remainingCount={remainingQueueCount} onPress={onOpenQueue} />
+            <QueueButton
+              size="lg"
+              remainingCount={remainingQueueCount}
+              upNextBadgeCount={upNextBadgeCount}
+              onPress={onOpenQueue}
+            />
           ) : null}
         </View>
         {/* Previous and next switched off leaves both slots standing empty,
@@ -424,7 +435,13 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
                   ) : null;
                 case 'queue':
                   return (
-                    <QueueButton key={item} size="sm" remainingCount={remainingQueueCount} onPress={onOpenQueue} />
+                    <QueueButton
+                      key={item}
+                      size="sm"
+                      remainingCount={remainingQueueCount}
+                      upNextBadgeCount={upNextBadgeCount}
+                      onPress={onOpenQueue}
+                    />
                   );
               }
             })
@@ -461,21 +478,61 @@ type QueueButtonProps = {
   size: ButtonSize;
   /** Climbs a forward swipe can still reach; spoken, never drawn. */
   remainingCount: number;
+  /** Up next while a list is walked; drawn as a badge and spoken instead of `remainingCount`. */
+  upNextBadgeCount: number;
   onPress: () => void;
 };
 
 // A queue means nothing without a wall or a session, and the sheet it opens is
 // a write surface, so an anonymous reader never gets one (see `viewer`).
-function QueueButton({ size, remainingCount, onPress }: QueueButtonProps) {
+//
+// Walking a list, a forward swipe counts the list, so "N climbs" would say
+// nothing about the queue: the badge and the label carry Up next instead.
+function QueueButton({ size, remainingCount, upNextBadgeCount, onPress }: QueueButtonProps) {
   const { t } = useTranslation('session');
-  return (
+  const showBadge = upNextBadgeCount > 0;
+  const button = (
     <ActionButton
       size={size}
       iconName="queue"
       onPress={onPress}
-      accessibilityLabel={t('playView.actionBar.queueCountAria', { count: remainingCount })}
+      accessibilityLabel={
+        showBadge
+          ? t('playView.actionBar.queueUpNextAria', { count: upNextBadgeCount })
+          : t('playView.actionBar.queueCountAria', { count: remainingCount })
+      }
     />
   );
+  if (!showBadge) return button;
+  return (
+    <View>
+      {button}
+      {/* On the button's corner, like the tick count. Drawn only: the button's
+          label already says the number. */}
+      <View
+        style={styles.countBadge}
+        pointerEvents="none"
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        testID="play-drawer-queue-badge"
+      >
+        <Text
+          variant="caption2"
+          color={iosSystemColors.white}
+          numeric
+          maxFontSizeMultiplier={COUNT_BADGE_MAX_FONT_SCALE}
+          style={styles.countText}
+        >
+          {formatQueueBadgeCount(upNextBadgeCount)}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+/** The queue holds at most 500 climbs; past two digits the badge says "99+". */
+function formatQueueBadgeCount(count: number): string {
+  return count > 99 ? '99+' : String(count);
 }
 
 type ShareButtonProps = {

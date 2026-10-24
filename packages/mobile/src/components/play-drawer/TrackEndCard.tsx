@@ -2,7 +2,8 @@
 //
 // Swipes and Next walk the list a climb was tapped in, and at its last climb
 // they stop. This card is what Next, or one more forward swipe, shows there:
-// the list's name, and one way to carry on with the queue instead. It used to
+// the list's name, and one way to carry on with the queue instead, naming the
+// climb that comes first (#6238). It used to
 // be that Next fell silently into whatever older climb sat in the queue.
 //
 // An anchored transient card over the board, NOT a sheet — the same reasoning
@@ -97,6 +98,20 @@ function TrackEndCardImpl({ model, onKeepGoing, onDismiss }: TrackEndCardProps) 
             {t('playView.track.end.finished')}
           </Text>
         )}
+        {/* What "Keep going" opens (#6238), on its own line rather than in the
+            button: a native button label does not wrap, and a German label
+            plus a climb name outgrows the card. */}
+        {model.action && model.firstUpNextName ? (
+          <Text
+            variant="subheadline"
+            color={systemColors.secondaryLabel}
+            numberOfLines={2}
+            style={styles.centered}
+            testID="play-drawer-track-end-first-up-next"
+          >
+            {t('playView.track.end.firstUpNext', { name: model.firstUpNextName })}
+          </Text>
+        ) : null}
         <View style={styles.actions}>
           {model.action ? (
             <Button

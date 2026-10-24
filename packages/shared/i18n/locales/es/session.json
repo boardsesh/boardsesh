@@ -789,6 +789,8 @@
       "removeFavoriteAria": "Quitar favorito",
       "climbActionsAria": "Acciones del bloque",
       "queueCountAria": "Cola, {{count}} bloques",
+      "queueUpNextAria_one": "Cola, {{count}} bloque a continuación",
+      "queueUpNextAria_other": "Cola, {{count}} bloques a continuación",
       "changeAngle": "Cambiar ángulo"
     },
     "track": {
@@ -801,6 +803,7 @@
         "titleUnnamed": "Fin de la lista",
         "finished": "Esa es toda la lista y no hay nada en tu cola después de este bloque.",
         "keepGoing": "Sigue con tu cola ({{upNextCount}})",
+        "firstUpNext": "Primero en tu cola: {{name}}",
         "stay": "Quedarme aquí"
       }
     },

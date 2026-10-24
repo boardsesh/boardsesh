@@ -16,7 +16,7 @@ import { toBoardName } from '@boardsesh/board-config';
 import { resolveClimbRenderBoard, sameRenderBoard } from '../../lib/boards/climb-render-board';
 import { canLoadMoreOfTrack, trackForCounting } from '../../lib/playlists/track-pager';
 import type { BoardConfig } from './play-drawer-types';
-import { resolveTrackEndCard } from './track-end';
+import { countUpNext, resolveListWalkUpNextBadge, resolveTrackEndCard } from './track-end';
 
 /**
  * The frames a swipe peek may draw, or null when the neighbouring climb belongs
@@ -177,6 +177,19 @@ export function usePlayNavigationModel({
     [labelSource, previousHeaderClimbUuid],
   );
 
+  // Where the queue's Now sits: one Map read off the prepared queue, never a scan.
+  const currentClimbQueueItemUuid = currentClimbQueueItem?.uuid;
+  const committedQueueIndex = useMemo(
+    () => (currentClimbQueueItemUuid ? (preparedQueue.firstIndexByUuid.get(currentClimbQueueItemUuid) ?? -1) : -1),
+    [preparedQueue, currentClimbQueueItemUuid],
+  );
+  // The queue button's badge while a list is walked (#6238): the same Up next
+  // count the end card offers, so Up next stays in sight before the list ends.
+  const listWalkUpNextCount = resolveListWalkUpNextBadge(
+    currentTrackLabel,
+    countUpNext(queue.length, committedQueueIndex),
+  );
+
   // Past the list's last climb: the end card, and where "Keep going with your
   // queue" goes. Only worked out at the end of a list; everywhere else it is null
   // and costs nothing. Withheld while more of the list is on its way.
@@ -184,9 +197,6 @@ export function usePlayNavigationModel({
   const previewPinned = drawerPreviewItem != null;
   const trackEndCard = useMemo(() => {
     if (!atTrackEnd) return null;
-    const committedQueueIndex = currentClimbQueueItem
-      ? (preparedQueue.firstIndexByUuid.get(currentClimbQueueItem.uuid) ?? -1)
-      : -1;
     const queueSuccessor =
       committedQueueIndex >= 0
         ? selectNextQueueItemWithSuggestions(
@@ -209,6 +219,7 @@ export function usePlayNavigationModel({
     });
   }, [
     atTrackEnd,
+    committedQueueIndex,
     currentClimbQueueItem,
     preparedQueue,
     queue,
@@ -296,6 +307,7 @@ export function usePlayNavigationModel({
     nextTrackLabel,
     previousTrackLabel,
     trackEndCard,
+    listWalkUpNextCount,
     nextHeaderClimb,
     previousHeaderClimb,
     nextHeaderBoard,

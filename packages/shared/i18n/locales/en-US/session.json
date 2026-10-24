@@ -789,6 +789,8 @@
       "removeFavoriteAria": "Remove favorite",
       "climbActionsAria": "Climb actions",
       "queueCountAria": "Queue, {{count}} climbs",
+      "queueUpNextAria_one": "Queue, {{count}} climb up next",
+      "queueUpNextAria_other": "Queue, {{count}} climbs up next",
       "changeAngle": "Change angle"
     },
     "track": {
@@ -801,6 +803,7 @@
         "titleUnnamed": "End of the list",
         "finished": "That's the whole list, and nothing's queued after this climb.",
         "keepGoing": "Keep going with your queue ({{upNextCount}})",
+        "firstUpNext": "First up: {{name}}",
         "stay": "Stay here"
       }
     },
