@@ -118,8 +118,11 @@ environment. The backend has no feature-flag framework — the registry in
 `docs/feature-flags.md` is a web concern — so this is a deploy-time toggle, and
 unsetting it is the rollback.
 
-Production runs with it on, and the historical backfill has been applied (#5194; see
-[inferred-sessions-backfill.md](./inferred-sessions-backfill.md)). With it off,
+Production is meant to run with it on; the value lives in the deploy environment, not
+in this repo, so check it there before relying on it. The historical backfill (#5194)
+ran as a canary and a partial batch, and the full-fleet run is paused pending the
+eight-hour repair; see [inferred-sessions-backfill.md](./inferred-sessions-backfill.md)
+for what remains. With it off,
 `reconcileInferredSessions` returns immediately: no rows are written and no query is
 issued. Nothing already written is undone.
 
