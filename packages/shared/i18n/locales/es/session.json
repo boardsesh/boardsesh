@@ -871,7 +871,11 @@
       "attemptLogged": "Intento guardado · {{name}}",
       "flashLogged": "Flash guardado · {{name}}",
       "sendLogged": "Encadene guardado · {{name}}",
-      "wallMovedFirstAscent": "Vuelve a {{name}} para guardar su primer ascenso con un grado."
+      "wallMovedFirstAscent": "Vuelve a {{name}} para guardar su primer ascenso con un grado.",
+      "attemptLoggedLabel": "Intento guardado",
+      "flashLoggedLabel": "Flash guardado",
+      "sendLoggedLabel": "Encadene guardado",
+      "messageHint": "Vuelve a mostrar Caída y Encadenado"
     }
   },
   "mobileDetail": {

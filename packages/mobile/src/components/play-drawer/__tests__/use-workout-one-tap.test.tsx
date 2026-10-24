@@ -12,6 +12,8 @@ import type { Climb } from '@boardsesh/shared-schema';
 // flash rule, and what the rest timer and the workout's tick log hear about it.
 // The mutation itself is a double that settles at once, except where a test
 // saves through React Query to pin what happens when the row is gone first.
+// While the row is up it says what a tap did (the notice); the toast is only for
+// a save that lands after the row is gone, since the player hides root toasts.
 
 const CLIMB_UUID = 'climb-1';
 const QUEUE_ITEM_UUID = 'item-1';
@@ -89,6 +91,7 @@ vi.mock('../../../hooks/use-local-ticks', () => ({ useLocalPendingTicks: () => (
 vi.mock('../../../hooks/use-is-offline', () => ({ useIsOffline: () => false }));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 vi.mock('../../../lib/haptics', () => ({ hapticSuccess: vi.fn(), hapticError: vi.fn() }));
+vi.mock('../../../lib/announce-queued', () => ({ announceQueued: vi.fn() }));
 vi.mock('../../../lib/clock', () => ({ nowMs: () => START_MS }));
 vi.mock('../../../lib/preference-store', () => ({
   getPreference: vi.fn(async () => null),
@@ -112,9 +115,17 @@ vi.mock('../../privacy/use-publication-audience', () => ({
   }),
 }));
 
-import { ONE_TAP_GUARD_MS, WALL_MOVED_GRACE_MS, useWorkoutOneTap } from '../use-workout-one-tap';
+import {
+  MESSAGE_NOTICE_MS,
+  ONE_TAP_GUARD_MS,
+  SAVED_NOTICE_MS,
+  WALL_MOVED_GRACE_MS,
+  useWorkoutOneTap,
+} from '../use-workout-one-tap';
 import type { WorkoutOutcomeTarget } from '../workout-outcome';
 import { track } from '../../../lib/analytics';
+import { hapticError, hapticSuccess } from '../../../lib/haptics';
+import { announceQueued } from '../../../lib/announce-queued';
 import { noteRestTimerTick } from '../../../lib/rest-timer-store';
 import {
   getWorkoutRunLog,
@@ -231,6 +242,9 @@ beforeEach(() => {
   activeBoardState.current = null;
   queueSnapshot.current = { uuid: QUEUE_ITEM_UUID, climb: { uuid: CLIMB_UUID } };
   toastMock.showToast.mockClear();
+  vi.mocked(hapticSuccess).mockClear();
+  vi.mocked(hapticError).mockClear();
+  vi.mocked(announceQueued).mockClear();
   vi.mocked(track).mockClear();
   vi.mocked(noteRestTimerTick).mockClear();
   resetWorkoutRunStoreForTests();
@@ -264,7 +278,12 @@ describe('useWorkoutOneTap: Fell', () => {
       'Tick Logged',
       expect.objectContaining({ surface: 'mobile_workout_runner', status: 'attempt', attemptCount: 1 }),
     );
-    expect(toastMock.showToast).toHaveBeenCalledWith('playView.workoutOutcome.attemptLogged:Crimp line', 'success');
+    expect(result.current.notice).toEqual({
+      kind: 'saved',
+      status: 'attempt',
+      queueItemUuid: QUEUE_ITEM_UUID,
+      message: 'playView.workoutOutcome.attemptLogged:Crimp line',
+    });
   });
 
   it('tells the rest timer and the workout’s tick log which queue item fell', () => {
@@ -322,7 +341,11 @@ describe('useWorkoutOneTap: Sent', () => {
       status: 'flash',
       queueItemUuid: QUEUE_ITEM_UUID,
     });
-    expect(toastMock.showToast).toHaveBeenCalledWith('playView.workoutOutcome.flashLogged:Crimp line', 'success');
+    expect(result.current.notice).toMatchObject({
+      kind: 'saved',
+      status: 'flash',
+      message: 'playView.workoutOutcome.flashLogged:Crimp line',
+    });
   });
 
   it('logs a send when the climber has logged the climb at this angle before', () => {
@@ -332,7 +355,11 @@ describe('useWorkoutOneTap: Sent', () => {
     act(() => result.current.onSent());
 
     expect(sentInput()).toMatchObject({ status: 'send', attemptCount: 1 });
-    expect(toastMock.showToast).toHaveBeenCalledWith('playView.workoutOutcome.sendLogged:Crimp line', 'success');
+    expect(result.current.notice).toMatchObject({
+      kind: 'saved',
+      status: 'send',
+      message: 'playView.workoutOutcome.sendLogged:Crimp line',
+    });
   });
 
   it('logs a send after a fall on this queue item, before the logbook has caught up', () => {
@@ -435,18 +462,24 @@ describe('useWorkoutOneTap: the tap guard', () => {
     act(() => result.current.onFell());
 
     expect(saveMock.mutateAsync).not.toHaveBeenCalled();
+    expect(result.current.notice).toBeNull();
     expect(toastMock.showToast).not.toHaveBeenCalled();
   });
 });
 
 describe('useWorkoutOneTap: failure', () => {
-  it('says why in a toast and leaves the workout’s log alone', () => {
+  it('says why in the row and leaves the workout’s log alone', () => {
     saveMock.state.failure = new Error('Server said no');
     const { result } = renderOneTap();
 
     act(() => result.current.onFell());
 
-    expect(toastMock.showToast).toHaveBeenCalledWith('Server said no', 'error');
+    expect(result.current.notice).toEqual({ kind: 'message', tone: 'error', message: 'Server said no' });
+    expect(toastMock.showToast).not.toHaveBeenCalled();
+    // One buzz: the saver's. No success haptic for a go that didn't save.
+    expect(hapticError).toHaveBeenCalledTimes(1);
+    expect(hapticSuccess).not.toHaveBeenCalled();
+    expect(announceQueued).toHaveBeenCalledWith('Server said no');
     expect(getWorkoutRunLog(SESSION_ID)).toEqual([]);
     expect(noteRestTimerTick).not.toHaveBeenCalled();
     // Told apart from a Log ascent sheet failure, which has a Quick Tick Opened before it.
@@ -504,7 +537,10 @@ describe('useWorkoutOneTap: the row is gone before the save lands', () => {
       },
     ]);
     expect(track).toHaveBeenCalledWith('Tick Logged', expect.objectContaining({ surface: 'mobile_workout_runner' }));
+    // No row left to say it, so the toast does, and it owns the haptic.
     expect(toastMock.showToast).toHaveBeenCalledWith('playView.workoutOutcome.attemptLogged:Crimp line', 'success');
+    expect(hapticSuccess).not.toHaveBeenCalled();
+    expect(announceQueued).not.toHaveBeenCalled();
   });
 
   it('still says why a save failed', async () => {
@@ -601,7 +637,14 @@ describe('useWorkoutOneTap: just after the wall moved on', () => {
       queueItemUuid: QUEUE_ITEM_UUID,
     });
     expect(getWorkoutRunLog(SESSION_ID)).toEqual([expect.objectContaining({ queueItemUuid: QUEUE_ITEM_UUID })]);
-    expect(toastMock.showToast).toHaveBeenCalledWith('playView.workoutOutcome.flashLogged:Crimp line', 'success');
+    // The notice keeps the queue item it logged, so the row can name the climb
+    // that is no longer on screen.
+    expect(result.current.notice).toEqual({
+      kind: 'saved',
+      status: 'flash',
+      queueItemUuid: QUEUE_ITEM_UUID,
+      message: 'playView.workoutOutcome.flashLogged:Crimp line',
+    });
   });
 
   it('keeps the flash rule of the climb it left: a fall there makes it a send', () => {
@@ -623,7 +666,12 @@ describe('useWorkoutOneTap: just after the wall moved on', () => {
 
     expect(sentInput()).toMatchObject({ climbUuid: 'climb-2', status: 'attempt' });
     expect(getWorkoutRunLog(SESSION_ID)).toEqual([expect.objectContaining({ queueItemUuid: NEXT_QUEUE_ITEM_UUID })]);
-    expect(toastMock.showToast).toHaveBeenCalledWith('playView.workoutOutcome.attemptLogged:Pinch roof', 'success');
+    expect(result.current.notice).toEqual({
+      kind: 'saved',
+      status: 'attempt',
+      queueItemUuid: NEXT_QUEUE_ITEM_UUID,
+      message: 'playView.workoutOutcome.attemptLogged:Pinch roof',
+    });
   });
 
   it('says where to log a first ascent on the climb it left, since the sheet would open on the new one', () => {
@@ -643,7 +691,11 @@ describe('useWorkoutOneTap: just after the wall moved on', () => {
 
     expect(openLogSheet).not.toHaveBeenCalled();
     expect(saveMock.mutateAsync).not.toHaveBeenCalled();
-    expect(toastMock.showToast).toHaveBeenCalledWith('playView.workoutOutcome.wallMovedFirstAscent:Crimp line', 'info');
+    expect(result.current.notice).toEqual({
+      kind: 'message',
+      tone: 'info',
+      message: 'playView.workoutOutcome.wallMovedFirstAscent:Crimp line',
+    });
   });
 
   it('treats a refreshed copy of the same queue item as no move', () => {
@@ -652,9 +704,101 @@ describe('useWorkoutOneTap: just after the wall moved on', () => {
     rerender({ target: target({ climb: climb({ name: 'Crimp line (renamed)' }) }) });
     act(() => result.current.onSent());
 
-    expect(toastMock.showToast).toHaveBeenCalledWith(
-      'playView.workoutOutcome.flashLogged:Crimp line (renamed)',
-      'success',
-    );
+    expect(result.current.notice).toMatchObject({
+      queueItemUuid: QUEUE_ITEM_UUID,
+      message: 'playView.workoutOutcome.flashLogged:Crimp line (renamed)',
+    });
+  });
+});
+
+// The player is a native modal on iOS and the root toast overlay draws behind
+// it, so while the row is up it is the row that says what a tap did.
+describe('useWorkoutOneTap: what the row says', () => {
+  function withNoticeClock() {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    vi.setSystemTime(START_MS);
+  }
+
+  it('confirms a saved go with the success haptic and says it aloud, never through a toast', () => {
+    const { result } = renderOneTap();
+
+    act(() => result.current.onFell());
+
+    expect(hapticSuccess).toHaveBeenCalledTimes(1);
+    expect(announceQueued).toHaveBeenCalledExactlyOnceWith('playView.workoutOutcome.attemptLogged:Crimp line');
+    expect(toastMock.showToast).not.toHaveBeenCalled();
+  });
+
+  it('lets a saved go’s line go after a moment', () => {
+    withNoticeClock();
+    const { result } = renderOneTap();
+
+    act(() => result.current.onFell());
+    act(() => {
+      vi.advanceTimersByTime(SAVED_NOTICE_MS - 1);
+    });
+    expect(result.current.notice).not.toBeNull();
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+
+    expect(result.current.notice).toBeNull();
+  });
+
+  it('restarts the moment for the next go, which replaces the last', () => {
+    withNoticeClock();
+    const { result } = renderOneTap();
+
+    act(() => result.current.onFell());
+    act(() => {
+      vi.advanceTimersByTime(SAVED_NOTICE_MS - 100);
+    });
+    act(() => result.current.onSent());
+    act(() => {
+      vi.advanceTimersByTime(SAVED_NOTICE_MS - 1);
+    });
+
+    expect(result.current.notice).toMatchObject({ kind: 'saved', status: 'send' });
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(result.current.notice).toBeNull();
+  });
+
+  it('holds a failure long enough to read, unless the climber taps it away', () => {
+    withNoticeClock();
+    saveMock.state.failure = new Error('Server said no');
+    const { result } = renderOneTap();
+
+    act(() => result.current.onFell());
+    act(() => {
+      vi.advanceTimersByTime(MESSAGE_NOTICE_MS - 1);
+    });
+    expect(result.current.notice).toMatchObject({ kind: 'message', tone: 'error' });
+    act(() => result.current.dismissNotice());
+
+    expect(result.current.notice).toBeNull();
+  });
+
+  it('lets a failure go on its own after a while', () => {
+    withNoticeClock();
+    saveMock.state.failure = new Error('Server said no');
+    const { result } = renderOneTap();
+
+    act(() => result.current.onFell());
+    act(() => {
+      vi.advanceTimersByTime(MESSAGE_NOTICE_MS);
+    });
+
+    expect(result.current.notice).toBeNull();
+  });
+
+  it('keeps the line across the wall moving on, so the row can still name the climb', () => {
+    const { result, rerender } = renderOneTap();
+
+    act(() => result.current.onSent());
+    rerender({ target: target({ climb: climb({ uuid: 'climb-2', name: 'Pinch roof' }), queueItemUuid: 'item-2' }) });
+
+    expect(result.current.notice).toMatchObject({ queueItemUuid: QUEUE_ITEM_UUID, status: 'flash' });
   });
 });

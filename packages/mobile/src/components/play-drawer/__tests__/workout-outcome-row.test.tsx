@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { Climb } from '@boardsesh/shared-schema';
@@ -49,27 +49,43 @@ vi.mock('../../Text', () => ({
   Text: ({ children, maxFontSizeMultiplier }: { children?: ReactNode; maxFontSizeMultiplier?: number }) =>
     createElement('span', { 'data-max-font-scale': maxFontSizeMultiplier }, children),
 }));
+vi.mock('../../Icon', () => ({
+  Icon: ({ name, color }: { name: string; color?: string }) =>
+    createElement('i', { 'data-icon': name, 'data-color': color }),
+}));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
-    brandColors: { primaryFill: 'primaryFill', onPrimary: 'onPrimary' },
+    brandColors: { primaryFill: 'primaryFill', onPrimary: 'onPrimary', error: 'error', primary: 'primary' },
     systemColors: { fill: 'fill', label: 'label' },
     radii: { button: 22 },
   }),
 }));
-vi.mock('../../../theme/tokens', () => ({ androidRipple: () => undefined, spacing: { 3: 12, 4: 16 } }));
+vi.mock('../../../theme/tokens', () => ({ androidRipple: () => undefined, spacing: { 1: 4, 2: 8, 3: 12, 4: 16 } }));
 vi.mock('../../../theme/typography', () => ({ CHROME_LABEL_MAX_FONT_SCALE: 1.2 }));
 vi.mock('../../../theme/layout', () => ({ glassSize: { inline: 44 } }));
 
-const oneTap = vi.hoisted(() => ({ onFell: vi.fn(), onSent: vi.fn(), calls: [] as unknown[][] }));
+const oneTap = vi.hoisted(() => ({
+  onFell: vi.fn(),
+  onSent: vi.fn(),
+  dismissNotice: vi.fn(),
+  notice: null as WorkoutOneTapNotice | null,
+  calls: [] as unknown[][],
+}));
 vi.mock('../use-workout-one-tap', () => ({
   useWorkoutOneTap: (...args: unknown[]) => {
     oneTap.calls.push(args);
-    return { onFell: oneTap.onFell, onSent: oneTap.onSent };
+    return {
+      onFell: oneTap.onFell,
+      onSent: oneTap.onSent,
+      notice: oneTap.notice,
+      dismissNotice: oneTap.dismissNotice,
+    };
   },
 }));
 
 import { WorkoutOutcomeRow } from '../WorkoutOutcomeRow';
+import type { WorkoutOneTapNotice } from '../use-workout-one-tap';
 
 const TARGET = {
   climb: { uuid: 'climb-1' } as unknown as Climb,
@@ -82,6 +98,11 @@ const TARGET = {
   angle: 40,
   isMirror: false,
 };
+
+beforeEach(() => {
+  oneTap.notice = null;
+  oneTap.dismissNotice.mockClear();
+});
 
 describe('WorkoutOutcomeRow', () => {
   it('draws Fell then Sent, each a labelled button with a hint', () => {
@@ -122,5 +143,83 @@ describe('WorkoutOutcomeRow', () => {
     expect(oneTap.onFell).toHaveBeenCalledTimes(1);
     expect(oneTap.onSent).toHaveBeenCalledTimes(1);
     expect(oneTap.calls.at(-1)).toEqual([TARGET, onOpenLogSheet]);
+  });
+});
+
+// The player is a native modal on iOS and root toasts draw behind it, so the
+// row is where a tap's outcome shows.
+describe('WorkoutOutcomeRow: what a tap did', () => {
+  function renderRow() {
+    return render(createElement(WorkoutOutcomeRow, { target: TARGET, onOpenLogSheet: vi.fn() }));
+  }
+
+  it('says a try saved on Fell, and leaves Sent as it was', () => {
+    oneTap.notice = {
+      kind: 'saved',
+      status: 'attempt',
+      queueItemUuid: 'item-1',
+      message: 'Try logged · Crimp line',
+    };
+    const { getByTestId } = renderRow();
+
+    const fell = getByTestId('workout-outcome-fell');
+    const sent = getByTestId('workout-outcome-sent');
+    expect(fell.textContent).toBe('playView.workoutOutcome.attemptLoggedLabel');
+    expect(fell.querySelector('[data-icon="success"]')).toBeTruthy();
+    expect(fell.querySelector('[data-large-content]')?.getAttribute('data-large-content')).toBe(
+      'playView.workoutOutcome.attemptLoggedLabel',
+    );
+    // Still the button it was, for a screen reader and for the next go.
+    expect(fell.getAttribute('data-label')).toBe('playView.workoutOutcome.fell');
+    expect(sent.textContent).toBe('playView.workoutOutcome.sent');
+    expect(sent.querySelector('[data-icon]')).toBeNull();
+  });
+
+  it.each([
+    ['flash', 'playView.workoutOutcome.flashLoggedLabel'],
+    ['send', 'playView.workoutOutcome.sendLoggedLabel'],
+  ] as const)('says a %s saved on Sent', (status, label) => {
+    oneTap.notice = { kind: 'saved', status, queueItemUuid: 'item-1', message: 'named' };
+    const { getByTestId } = renderRow();
+
+    expect(getByTestId('workout-outcome-sent').textContent).toBe(label);
+    expect(getByTestId('workout-outcome-fell').textContent).toBe('playView.workoutOutcome.fell');
+  });
+
+  it('names the climb when the go was for the one the wall just left', () => {
+    oneTap.notice = {
+      kind: 'saved',
+      status: 'flash',
+      queueItemUuid: 'item-0',
+      message: 'Flash logged · Crimp line',
+    };
+    const { getByTestId } = renderRow();
+
+    expect(getByTestId('workout-outcome-sent').textContent).toBe('Flash logged · Crimp line');
+  });
+
+  it('gives a failure the whole row, and a tap on it brings the buttons back', () => {
+    oneTap.notice = { kind: 'message', tone: 'error', message: 'Could not save your ascent.' };
+    const { getByTestId, queryByTestId } = renderRow();
+
+    const message = getByTestId('workout-outcome-message');
+    expect(message.textContent).toBe('Could not save your ascent.');
+    expect(message.getAttribute('data-label')).toBe('Could not save your ascent.');
+    expect(message.getAttribute('data-hint')).toBe('playView.workoutOutcome.messageHint');
+    expect(message.querySelector('[data-icon="error"]')?.getAttribute('data-color')).toBe('error');
+    expect(queryByTestId('workout-outcome-fell')).toBeNull();
+    expect(queryByTestId('workout-outcome-sent')).toBeNull();
+
+    fireEvent.click(message);
+    expect(oneTap.dismissNotice).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows where to log a first ascent the same way, as information', () => {
+    oneTap.notice = { kind: 'message', tone: 'info', message: 'Swipe back to Crimp line.' };
+    const { getByTestId } = renderRow();
+
+    const message = getByTestId('workout-outcome-message');
+    expect(message.textContent).toBe('Swipe back to Crimp line.');
+    expect(message.querySelector('[data-icon="info"]')?.getAttribute('data-color')).toBe('primary');
   });
 });

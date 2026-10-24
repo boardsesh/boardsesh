@@ -101,7 +101,7 @@ tick's status and queue item exactly as from the sheet (`docs/workout-stages.md`
 - **Just after the wall moves on.** An on-the-minute beat advances whether the climber logged or not, so a tap within
   2 s (`WALL_MOVED_GRACE_MS`) of the climb on the wall changing logs for the climb it left, against that queue item
   (`TickSaveFields.queueItemUuid`), with that climb's own flash rule. Nobody gets a go on a climb that fast after it
-  lights up. A first ascent there can't open the sheet (it would open on the new climb), so a toast says to swipe
+  lights up. A first ascent there can't open the sheet (it would open on the new climb), so the row says to swipe
   back to it. A new copy of the same queue item is not a move.
 - **The wall at the tap.** The row leaves `useTickSaver`'s `active` out, so each save takes the board as it is right
   then: a board bound from the bulb mid-block is on the next tick. The sheet snapshots it when it opens instead.
@@ -110,13 +110,19 @@ tick's status and queue item exactly as from the sheet (`docs/workout-stages.md`
   future timed block gets it too), the climber is signed in, it is not another board's climb and not a draft. A
   crew phone without the run never shows it. While it shows, the connect pill can't, so the pill's day budget is not
   spent (`deriveFirstConnectPillWouldConnect`'s `workoutOutcome`).
-- Each save says so in a toast that names the climb ("Try logged · Crimp line", "Flash logged · …", "Send logged ·
-  …"); a failure toasts its reason. Tick Logged and Quick Tick Failed report `surface: 'mobile_workout_runner'`, with
-  no Quick Tick Opened before them.
+- **The row says what a tap did, not a toast.** The player is a native modal on iOS, and the root toast overlay draws
+  behind it (a toast fired from the player is never seen there). So after a save the tapped button reads "Try logged"
+  (Fell) or "Flash logged" / "Send logged" (Sent) with a check for 2 s (`SAVED_NOTICE_MS`), and both buttons stay
+  live. When the go was for the climb the wall just left, the line names it ("Flash logged · Crimp line"). The
+  buttons keep their Fell / Sent accessibility labels; the full sentence is announced. A failure, or where to log a
+  first ascent, needs reading, so it takes the whole row for 5 s (`MESSAGE_NOTICE_MS`) or until tapped, then the
+  buttons come back. The success haptic plays with the line; a failure's comes from `useTickSaver`. Tick Logged and
+  Quick Tick Failed report `surface: 'mobile_workout_runner'`, with no Quick Tick Opened before them.
 - **A save outlives the row.** Swiping to a preview, the wall leaving the timed block or closing the player unmounts
   the row while a save can still be in flight. `useTickSaver` runs the side effects (rest timer, the workout's tick
-  log, Tick Logged, the toast) off the `mutateAsync` promise, which settles either way, never off a per-call `mutate`
-  callback, which React Query drops once the caller is gone.
+  log, Tick Logged, the confirmation) off the `mutateAsync` promise, which settles either way, never off a per-call
+  `mutate` callback, which React Query drops once the caller is gone. With no row left to say it, that late save
+  falls back to the toast, which shows once the player is closed.
 - The pair holds the row's usual 64 pt, so the board moves only for a climber who switched every small button off.
   The opening-layout cache keys on it (`controlsFingerprint`).
 

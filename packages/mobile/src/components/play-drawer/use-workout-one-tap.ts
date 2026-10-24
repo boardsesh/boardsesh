@@ -14,11 +14,18 @@
 // climber logged or not. Nobody gets a go on the new climb within a couple of
 // seconds of it lighting up, so a tap that soon after the wall moved is for the
 // climb it left, and it logs there, against that queue item.
-import { useCallback, useMemo, useRef } from 'react';
+//
+// The row says what each tap did (`WorkoutOneTapNotice`), not a toast: the
+// player is a native modal on iOS, and the root toast overlay draws behind it.
+// Only a save that lands after the row is gone falls back to the toast, since
+// there is no row left to say it.
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { deriveAscentType, type TickStatus } from '@boardsesh/play-view';
 import { logbookClimbAngleKey, useOptionalBoardLogbook } from '@boardsesh/board-react';
 import { useToast } from '../../providers/toast-provider';
+import { announceQueued } from '../../lib/announce-queued';
+import { hapticSuccess } from '../../lib/haptics';
 import { getWorkoutRunLog } from '../../lib/workout-run-store';
 import { isFirstAscentTick, useHasPriorTickHistory, useTickSaver } from './use-tick-saver';
 import type { WorkoutOutcomeTarget } from './workout-outcome';
@@ -36,9 +43,35 @@ export const ONE_TAP_GUARD_MS = 700;
  */
 export const WALL_MOVED_GRACE_MS = 2000;
 
+/** How long the tapped button says "Try logged" (or Flash / Send) before its label comes back. */
+export const SAVED_NOTICE_MS = 2000;
+
+/** How long a failure, or where to log a first ascent, holds the row unless tapped away. Long enough to read. */
+export const MESSAGE_NOTICE_MS = 5000;
+
+/**
+ * What the row says about the last tap.
+ *
+ * A `saved` notice: the tapped button (Fell for a try, Sent for a flash or
+ * send) shows the outcome in place of its label, and both buttons stay live.
+ * Its `message` is the full sentence, naming the climb: the row shows it when
+ * the go was logged on a climb that is no longer the one on screen, and a
+ * screen reader hears it.
+ *
+ * A `message` notice: a failure, or where to log a first ascent. Both need
+ * reading, so they take the whole row until tapped away or `MESSAGE_NOTICE_MS`
+ * passes.
+ */
+export type WorkoutOneTapNotice =
+  | { kind: 'saved'; status: TickStatus; queueItemUuid: string; message: string }
+  | { kind: 'message'; tone: 'error' | 'info'; message: string };
+
 export type WorkoutOneTap = {
   onFell: () => void;
   onSent: () => void;
+  notice: WorkoutOneTapNotice | null;
+  /** Clears the notice now, for a tap on the message. */
+  dismissNotice: () => void;
 };
 
 /**
@@ -47,12 +80,13 @@ export type WorkoutOneTap = {
  * sheet asks for, so its Sent opens the sheet instead of logging.
  */
 export function useWorkoutOneTap(target: WorkoutOutcomeTarget, openLogSheet: () => void): WorkoutOneTap {
+  const { notice, report, dismissNotice } = useOneTapNotice();
   const wallLeft = useClimbTheWallLeft(target);
-  const onTheWall = useOneTapLogger(target, openLogSheet);
+  const onTheWall = useOneTapLogger(target, openLogSheet, report);
   // Bound to the climb the wall just left, or to the same climb as `onTheWall`
   // while it hasn't moved. The sheet opens on the climb on screen, so this one
   // has no opener.
-  const justLeft = useOneTapLogger(wallLeft?.target ?? target, null);
+  const justLeft = useOneTapLogger(wallLeft?.target ?? target, null, report);
   // Wall-clock, not `nowMs()`: screenshot mode freezes that, and a frozen clock
   // would drop every tap after the first.
   const lastTapAtRef = useRef<number | null>(null);
@@ -69,7 +103,52 @@ export function useWorkoutOneTap(target: WorkoutOutcomeTarget, openLogSheet: () 
   const onFell = useCallback(() => claimTap()?.logFell(), [claimTap]);
   const onSent = useCallback(() => claimTap()?.logSent(), [claimTap]);
 
-  return { onFell, onSent };
+  return { onFell, onSent, notice, dismissNotice };
+}
+
+type ReportNotice = (notice: WorkoutOneTapNotice) => void;
+
+/**
+ * The row's notice, and how a logger reports one. While the row is up the
+ * notice goes to the row, with the success haptic (the toast used to own it;
+ * a failure already buzzed in `useTickSaver`) and a spoken copy, since the
+ * buttons keep their own labels for a screen reader. Once the row is gone (the
+ * player closed, a swipe to a preview) a late save falls back to the toast.
+ */
+function useOneTapNotice(): { notice: WorkoutOneTapNotice | null; report: ReportNotice; dismissNotice: () => void } {
+  const { showToast } = useToast();
+  const [notice, setNotice] = useState<WorkoutOneTapNotice | null>(null);
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const report = useCallback<ReportNotice>(
+    (reportedNotice) => {
+      if (!mountedRef.current) {
+        showToast(reportedNotice.message, reportedNotice.kind === 'saved' ? 'success' : reportedNotice.tone);
+        return;
+      }
+      if (reportedNotice.kind === 'saved') hapticSuccess();
+      announceQueued(reportedNotice.message);
+      setNotice(reportedNotice);
+    },
+    [showToast],
+  );
+
+  // Each new notice replaces the last and restarts the clock.
+  useEffect(() => {
+    if (notice === null) return undefined;
+    const timeout = setTimeout(() => setNotice(null), notice.kind === 'saved' ? SAVED_NOTICE_MS : MESSAGE_NOTICE_MS);
+    return () => clearTimeout(timeout);
+  }, [notice]);
+
+  const dismissNotice = useCallback(() => setNotice(null), []);
+
+  return { notice, report, dismissNotice };
 }
 
 /** The climb the wall moved on from, and when, as the row saw it. */
@@ -100,9 +179,12 @@ type OneTapLogger = {
  * on another climb than this one (the climb the wall just left), and a first
  * ascent there says where to log it instead.
  */
-function useOneTapLogger(target: WorkoutOutcomeTarget, openLogSheet: (() => void) | null): OneTapLogger {
+function useOneTapLogger(
+  target: WorkoutOutcomeTarget,
+  openLogSheet: (() => void) | null,
+  report: ReportNotice,
+): OneTapLogger {
   const { t } = useTranslation('session');
-  const { showToast } = useToast();
   const { climb, queueItemUuid, sessionId, boardName, layoutId, sizeId, setIds, angle, isMirror } = target;
   // No `active`: the tap is the commit, so each save takes the wall as it is.
   const { save, tickBoardName } = useTickSaver({
@@ -147,13 +229,13 @@ function useOneTapLogger(target: WorkoutOutcomeTarget, openLogSheet: (() => void
                 : status === 'flash'
                   ? t('playView.workoutOutcome.flashLogged', { name: climb.name })
                   : t('playView.workoutOutcome.sendLogged', { name: climb.name });
-            showToast(message, 'success');
+            report({ kind: 'saved', status, queueItemUuid, message });
           },
-          onFailed: (message) => showToast(message, 'error'),
+          onFailed: (message) => report({ kind: 'message', tone: 'error', message }),
         },
       );
     },
-    [save, climb, angle, isMirror, queueItemUuid, showToast, t],
+    [save, climb, angle, isMirror, queueItemUuid, report, t],
   );
 
   const logFell = useCallback(() => logGo('attempt'), [logGo]);
@@ -170,7 +252,12 @@ function useOneTapLogger(target: WorkoutOutcomeTarget, openLogSheet: (() => void
       );
       if (!sentInThisBlock && !sentInLogbook) {
         if (openLogSheet) openLogSheet();
-        else showToast(t('playView.workoutOutcome.wallMovedFirstAscent', { name: climb.name }), 'info');
+        else
+          report({
+            kind: 'message',
+            tone: 'info',
+            message: t('playView.workoutOutcome.wallMovedFirstAscent', { name: climb.name }),
+          });
         return;
       }
     }
@@ -185,7 +272,7 @@ function useOneTapLogger(target: WorkoutOutcomeTarget, openLogSheet: (() => void
     angle,
     boardLogbook,
     openLogSheet,
-    showToast,
+    report,
     t,
     hasPriorHistory,
     logGo,

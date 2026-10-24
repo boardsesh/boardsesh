@@ -871,7 +871,11 @@
       "attemptLogged": "Try logged · {{name}}",
       "flashLogged": "Flash logged · {{name}}",
       "sendLogged": "Send logged · {{name}}",
-      "wallMovedFirstAscent": "Swipe back to {{name}} to log its first ascent with a grade."
+      "wallMovedFirstAscent": "Swipe back to {{name}} to log its first ascent with a grade.",
+      "attemptLoggedLabel": "Try logged",
+      "flashLoggedLabel": "Flash logged",
+      "sendLoggedLabel": "Send logged",
+      "messageHint": "Brings back Fell and Sent"
     }
   },
   "mobileDetail": {

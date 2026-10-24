@@ -871,7 +871,11 @@
       "attemptLogged": "Essai enregistré · {{name}}",
       "flashLogged": "Flash enregistré · {{name}}",
       "sendLogged": "Croix enregistrée · {{name}}",
-      "wallMovedFirstAscent": "Reviens sur {{name}} pour enregistrer sa première ascension avec une cotation."
+      "wallMovedFirstAscent": "Reviens sur {{name}} pour enregistrer sa première ascension avec une cotation.",
+      "attemptLoggedLabel": "Essai enregistré",
+      "flashLoggedLabel": "Flash enregistré",
+      "sendLoggedLabel": "Croix enregistrée",
+      "messageHint": "Réaffiche Chute et Enchaîné"
     }
   },
   "mobileDetail": {

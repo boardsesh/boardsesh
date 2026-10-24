@@ -871,7 +871,11 @@
       "attemptLogged": "Versuch eingetragen · {{name}}",
       "flashLogged": "Flash eingetragen · {{name}}",
       "sendLogged": "Begehung eingetragen · {{name}}",
-      "wallMovedFirstAscent": "Wisch zurück zu {{name}}, um die Erstbegehung mit Grad einzutragen."
+      "wallMovedFirstAscent": "Wisch zurück zu {{name}}, um die Erstbegehung mit Grad einzutragen.",
+      "attemptLoggedLabel": "Versuch eingetragen",
+      "flashLoggedLabel": "Flash eingetragen",
+      "sendLoggedLabel": "Begehung eingetragen",
+      "messageHint": "Zeigt wieder Gestürzt und Getoppt"
     }
   },
   "mobileDetail": {

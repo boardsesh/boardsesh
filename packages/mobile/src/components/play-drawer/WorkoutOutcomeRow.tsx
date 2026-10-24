@@ -3,17 +3,25 @@
 // does, so both buttons are big enough to hit with chalky fingers between goes.
 // `resolveActionBarLayout` decides when it shows; the buttons it displaces wait
 // in ⋯.
+//
+// The row also says what a tap did. The player is a native modal on iOS and the
+// root toast draws behind it, so the confirmation lives here: the tapped button
+// reads "Try logged" (or Flash / Send) for a moment, and a failure takes the row
+// until it is read.
 import { memo } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, type ColorValue } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
+import type { TickStatus } from '@boardsesh/play-view';
 import { PressableSurface } from '../PressableSurface';
 import { LargeContentViewer } from '../LargeContentViewer';
+import { Icon } from '../Icon';
 import { Text } from '../Text';
 import { useTheme } from '../../providers/theme-provider';
 import { androidRipple, spacing } from '../../theme/tokens';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import { glassSize } from '../../theme/layout';
-import { useWorkoutOneTap } from './use-workout-one-tap';
+import { useWorkoutOneTap, type WorkoutOneTapNotice } from './use-workout-one-tap';
 import type { WorkoutOutcomeTarget } from './workout-outcome';
 
 type WorkoutOutcomeRowProps = {
@@ -22,12 +30,51 @@ type WorkoutOutcomeRowProps = {
   onOpenLogSheet: () => void;
 };
 
+type SavedNotice = Extract<WorkoutOneTapNotice, { kind: 'saved' }>;
+
 export const WorkoutOutcomeRow = memo(function WorkoutOutcomeRow({ target, onOpenLogSheet }: WorkoutOutcomeRowProps) {
   const { t } = useTranslation('session');
   const { brandColors, systemColors, radii } = useTheme();
-  const { onFell, onSent } = useWorkoutOneTap(target, onOpenLogSheet);
+  const { onFell, onSent, notice, dismissNotice } = useWorkoutOneTap(target, onOpenLogSheet);
+
+  if (notice?.kind === 'message') {
+    return (
+      <View style={styles.row} testID="workout-outcome-row">
+        <PressableSurface
+          testID="workout-outcome-message"
+          onPress={dismissNotice}
+          accessibilityRole="button"
+          accessibilityLabel={notice.message}
+          accessibilityHint={t('playView.workoutOutcome.messageHint')}
+          style={[styles.message, { backgroundColor: systemColors.fill, borderRadius: radii.button }]}
+        >
+          <Icon
+            name={notice.tone === 'error' ? 'error' : 'info'}
+            size={18}
+            color={notice.tone === 'error' ? brandColors.error : brandColors.primary}
+            maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+          />
+          <Text
+            variant="footnote"
+            color={systemColors.label}
+            numberOfLines={2}
+            adjustsFontSizeToFit
+            minimumFontScale={0.8}
+            maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+            style={styles.messageText}
+          >
+            {notice.message}
+          </Text>
+        </PressableSurface>
+      </View>
+    );
+  }
+
   const fellLabel = t('playView.workoutOutcome.fell');
   const sentLabel = t('playView.workoutOutcome.sent');
+  const fellSavedLabel = notice?.status === 'attempt' ? savedNoticeLabel(t, notice, target.queueItemUuid) : null;
+  const sentSavedLabel =
+    notice && notice.status !== 'attempt' ? savedNoticeLabel(t, notice, target.queueItemUuid) : null;
 
   return (
     <View style={styles.row} testID="workout-outcome-row">
@@ -39,17 +86,12 @@ export const WorkoutOutcomeRow = memo(function WorkoutOutcomeRow({ target, onOpe
         accessibilityHint={t('playView.workoutOutcome.fellHint')}
         style={[styles.button, { backgroundColor: systemColors.fill, borderRadius: radii.button }]}
       >
-        <LargeContentViewer title={fellLabel} onActivate={onFell}>
-          <Text
-            variant="subheadline"
-            color={systemColors.label}
-            numberOfLines={1}
-            maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-            style={styles.label}
-          >
-            {fellLabel}
-          </Text>
-        </LargeContentViewer>
+        <OutcomeButtonLabel
+          label={fellLabel}
+          savedLabel={fellSavedLabel}
+          color={systemColors.label}
+          onActivate={onFell}
+        />
       </PressableSurface>
       <PressableSurface
         testID="workout-outcome-sent"
@@ -60,21 +102,69 @@ export const WorkoutOutcomeRow = memo(function WorkoutOutcomeRow({ target, onOpe
         android_ripple={androidRipple(brandColors.onPrimary)}
         style={[styles.button, { backgroundColor: brandColors.primaryFill, borderRadius: radii.button }]}
       >
-        <LargeContentViewer title={sentLabel} onActivate={onSent}>
-          <Text
-            variant="subheadline"
-            color={brandColors.onPrimary}
-            numberOfLines={1}
-            maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-            style={styles.label}
-          >
-            {sentLabel}
-          </Text>
-        </LargeContentViewer>
+        <OutcomeButtonLabel
+          label={sentLabel}
+          savedLabel={sentSavedLabel}
+          color={brandColors.onPrimary}
+          onActivate={onSent}
+        />
       </PressableSurface>
     </View>
   );
 });
+
+/**
+ * What a saved go reads on its button. Short while the climb it was logged on is
+ * the one on screen; the full sentence, naming the climb, when the go was for
+ * the climb the wall just left.
+ */
+function savedNoticeLabel(t: TFunction<'session'>, notice: SavedNotice, shownQueueItemUuid: string): string {
+  if (notice.queueItemUuid !== shownQueueItemUuid) return notice.message;
+  return shortSavedLabel(t, notice.status);
+}
+
+function shortSavedLabel(t: TFunction<'session'>, status: TickStatus): string {
+  if (status === 'attempt') return t('playView.workoutOutcome.attemptLoggedLabel');
+  if (status === 'flash') return t('playView.workoutOutcome.flashLoggedLabel');
+  return t('playView.workoutOutcome.sendLoggedLabel');
+}
+
+type OutcomeButtonLabelProps = {
+  label: string;
+  /** Set for a moment after this button's go saved; shown in place of `label`. */
+  savedLabel: string | null;
+  color: ColorValue;
+  onActivate: () => void;
+};
+
+/**
+ * The button's words. The accessibility label stays Fell / Sent while the saved
+ * line shows: a screen reader already heard the full sentence, and the button
+ * still does what it says.
+ */
+function OutcomeButtonLabel({ label, savedLabel, color, onActivate }: OutcomeButtonLabelProps) {
+  const shownLabel = savedLabel ?? label;
+  return (
+    <LargeContentViewer title={shownLabel} onActivate={onActivate} style={styles.labelBox}>
+      {savedLabel !== null ? (
+        <Icon name="success" size={16} color={color} maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE} />
+      ) : null}
+      <Text
+        variant="subheadline"
+        color={color}
+        numberOfLines={1}
+        // A saved line runs longer than Fell / Sent in some languages, and it
+        // names the climb after the wall moved: shrink a little before cutting.
+        adjustsFontSizeToFit={savedLabel !== null}
+        minimumFontScale={0.75}
+        maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+        style={styles.label}
+      >
+        {shownLabel}
+      </Text>
+    </LargeContentViewer>
+  );
+}
 
 const styles = StyleSheet.create({
   // Fills the second row it replaces. The host row is horizontal, so `flex`
@@ -95,8 +185,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[4],
     overflow: 'hidden',
   },
+  labelBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[1],
+    maxWidth: '100%',
+  },
   label: {
     fontWeight: '600',
+    flexShrink: 1,
+  },
+  // The buttons' height, so a message in the row never moves the board.
+  message: {
+    flex: 1,
+    height: glassSize.inline,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    paddingHorizontal: spacing[4],
+    overflow: 'hidden',
+  },
+  messageText: {
     flexShrink: 1,
   },
 });
