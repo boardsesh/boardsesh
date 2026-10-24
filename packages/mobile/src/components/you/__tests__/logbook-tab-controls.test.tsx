@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+// The list-play hook has its own suite; here a tap only has to reach it.
+vi.mock('../../../lib/playlists/use-tick-list-activation', () => ({ useTickListActivation: () => vi.fn() }));
 vi.mock('../../../providers/logbook-delete-provider', () => ({
   usePendingLogbookDeletes: () => new Set(),
   useLogbookDeleteActions: () => ({ getDeleteScope: () => 'scope', scheduleDelete: vi.fn(() => true) }),
@@ -212,7 +214,6 @@ vi.mock('expo-router', () => ({
     focusState.callbacks.add(callback);
   },
 }));
-vi.mock('../../../lib/open-climb-in-play-drawer', () => ({ openClimbInPlayDrawer: vi.fn() }));
 vi.mock('../../../lib/tick-to-climb', () => ({ tickToClimb: vi.fn() }));
 vi.mock('../../../lib/playlists/board-details-for-playlist', () => ({ renderBoardToPlaylistConfig: vi.fn() }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn(), hapticSuccess: vi.fn(), hapticError: vi.fn() }));

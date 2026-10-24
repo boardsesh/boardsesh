@@ -5,11 +5,9 @@ import { Gesture, GestureDetector, ScrollView as GestureScrollView } from 'react
 import { useSharedValue, withSpring, type SharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FlashList } from '@shopify/flash-list';
-import { randomUUID } from 'expo-crypto';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
-import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { SessionDetailTick, SessionFeedParticipant } from '@boardsesh/shared-schema';
 import { getGradeTextColor } from '@boardsesh/play-view';
 import { tickTimeMs } from '@boardsesh/profile-stats';
@@ -30,13 +28,12 @@ import { useDrawerHost } from '../../../providers/drawer-host-provider';
 import { useSessionDetail, useSessionPreview, useSessionSummary } from '../../../lib/graphql/hooks';
 import { runSessionEndExports } from '../../../lib/integrations';
 import { SESSION_STORE_REVIEW_CANDIDATE_PARAM, isSessionStoreReviewEligible } from '../../../lib/store-review';
-import { climbToQueueItem } from '../../../lib/climb-to-queue-item';
 import { setDraftComment, clearDraftComment } from '../../../lib/session-comment-draft-store';
 import { renderBoardToPlaylistConfig } from '../../../lib/playlists/board-details-for-playlist';
 import { isMultiFrameClimb } from '../../../lib/is-multi-frame-climb';
 import { tickToClimb } from '../../../lib/tick-to-climb';
 import { formatRelativeTime } from '../../../lib/format-relative-time';
-import { openClimbInPlayDrawer } from '../../../lib/open-climb-in-play-drawer';
+import { useTickListActivation } from '../../../lib/playlists/use-tick-list-activation';
 import { useGradeFormat } from '../../../hooks/use-grade-format';
 import { useBottomChromeMetrics } from '../../../hooks/use-bottom-chrome-metrics';
 import { withAlpha } from '../../../theme/colors';
@@ -127,12 +124,6 @@ function statusTint(
     case 'attempt':
       return neutral;
   }
-}
-
-function tickToQueueItem(tick: SessionDetailTick): ClimbQueueItem | null {
-  const climb = tickToClimb(tick);
-  if (!climb) return null;
-  return climbToQueueItem(climb, { uuid: randomUUID() });
 }
 
 function historyKeyExtractor(tick: SessionDetailTick): string {
@@ -279,10 +270,9 @@ export function InSessionView({
   const bottomChrome = useBottomChromeMetrics();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { openPlayDrawer } = useDrawerHost();
   const { showToast } = useToast();
   const { sessionId, participantId } = useQueueSessionControls();
-  const { setCurrentClimb, endSession, clearSession } = useQueueActions();
+  const { endSession, clearSession } = useQueueActions();
   const { liveStats, sessionUsers } = useQueueLiveStats();
   // End-for-everyone vs. drop-out-quietly, and which of the two this device
   // leads with. See use-session-exit-options for the id-space reasoning.
@@ -436,21 +426,17 @@ export function InSessionView({
     return entries;
   }, [participants]);
 
-  const handlePressHistoryTick = useCallback(
-    (tick: SessionDetailTick) => {
-      // Always-live: tapping a history tick makes it the shared current climb for
-      // everyone in the session (no driver gate).
-      const item = tickToQueueItem(tick);
-      if (item) {
-        // Opening from session history means "walk the queue" — drop any list
-        // source so next/previous follow the queue again, not a stale list.
-        setCurrentClimb(item, { playlistSuggestionSource: null });
-      }
-
-      openClimbInPlayDrawer({ kind: 'tick', tick }, { openPlayDrawer, router });
-    },
-    [openPlayDrawer, router, setCurrentClimb],
-  );
+  // A history tick opens playing from this session's ticks, newest first, as
+  // the history lists them (issue #6665). It used to make the climb current for
+  // everyone with a fresh queue entry, so in a crew it took a crewmate's wall
+  // and queued a second copy of a climb already there. Now it follows every
+  // list's rules: a preview in a crew or with Light problems when tapping the
+  // list off, otherwise the climb goes up like any list tap.
+  const handlePressHistoryTick = useTickListActivation<SessionDetailTick>({
+    sourceId: `session:${sessionId ?? ''}`,
+    label: t('playView.track.sessionClimbs'),
+    rows: sessionHistoryTicks,
+  });
 
   // Swipe-down-to-dismiss from the body (overlay mode only). Drag the sheet only
   // when the inner scroll is at the top and the pull is downward; otherwise the

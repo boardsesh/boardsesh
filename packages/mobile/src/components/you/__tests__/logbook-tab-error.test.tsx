@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+// The list-play hook has its own suite; here a tap only has to reach it.
+vi.mock('../../../lib/playlists/use-tick-list-activation', () => ({ useTickListActivation: () => vi.fn() }));
 vi.mock('../../../providers/logbook-delete-provider', () => ({
   usePendingLogbookDeletes: () => new Set(),
   useLogbookDeleteActions: () => ({ getDeleteScope: () => 'scope', scheduleDelete: vi.fn(() => true) }),
@@ -107,7 +109,6 @@ vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: {}, brandColors: {} }),
 }));
 vi.mock('expo-router', () => ({ useRouter: () => ({ push: vi.fn() }), useFocusEffect: () => {} }));
-vi.mock('../../../lib/open-climb-in-play-drawer', () => ({ openClimbInPlayDrawer: vi.fn() }));
 vi.mock('../../../providers/drawer-host-provider', () => ({ useDrawerHost: () => ({ openPlayDrawer: vi.fn() }) }));
 vi.mock('@boardsesh/board-react', () => ({ useDeleteTick: () => ({ mutate: vi.fn(), isPending: false }) }));
 vi.mock('../../../providers/dialog-provider', () => ({ useConfirm: () => vi.fn(async () => false) }));

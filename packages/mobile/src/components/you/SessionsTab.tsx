@@ -6,7 +6,7 @@ import { FlashList } from '@shopify/flash-list';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
-import type { SessionFeedItem, SocialEntityType } from '@boardsesh/shared-schema';
+import type { SessionFeedItem, SessionFeedTickHighlight, SocialEntityType } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { Button } from '../Button';
@@ -20,10 +20,9 @@ import { CommentSheet } from './CommentSheet';
 import { bucketSessionsByRecency, dedupeSessionsById, type FeedRecencyBucket } from '../../lib/feed-time-buckets';
 import { useSessionGroupedFeed, useBulkVoteSummaries } from '../../lib/graphql/hooks';
 import { navigateToSessionFeedItem } from '../../lib/session-feed-navigation';
-import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
+import { useTickListActivation } from '../../lib/playlists/use-tick-list-activation';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { useOfflineQueryState } from '../../hooks/use-offline-query-state';
-import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { nowMs } from '../../lib/clock';
@@ -33,6 +32,8 @@ type CommentTarget = { entityId: string; entityType: SocialEntityType };
 
 type TFunc = (key: string) => string;
 const PENDING_SKELETON_KEYS = ['session-skeleton-1', 'session-skeleton-2'];
+// A session card shows one climb, so it plays from a list of just that one.
+const NO_TICKS: SessionFeedTickHighlight[] = [];
 
 type SessionsTabProps = {
   userId: string | undefined;
@@ -97,9 +98,16 @@ function SessionCardSkeleton() {
 export function SessionsTab({ userId, topInset = 0, scrollEdge }: SessionsTabProps) {
   const nativeRootHeader = useNativeRootHeader();
   const { t } = useTranslation('you');
+  const { t: tSession } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
   const router = useRouter();
-  const { openPlayDrawer } = useDrawerHost();
+  // A session card's hardest send opens like a row of any list (issue #6665),
+  // playing from a one-climb list of its own.
+  const handleOpenClimb = useTickListActivation<SessionFeedTickHighlight>({
+    sourceId: 'profile-session-cards',
+    label: tSession('playView.track.hardestSend'),
+    rows: NO_TICKS,
+  });
   const bottomChrome = useBottomChromeMetrics();
   const paddingBottom = bottomChrome.scrollBottomPadding + spacing[4];
 
@@ -213,11 +221,11 @@ export function SessionsTab({ userId, topInset = 0, scrollEdge }: SessionsTabPro
           voteSummary={summaryMap.get(`${row.item.socialEntityType}:${row.item.socialEntityId}`)}
           onOpenComments={handleOpenComments}
           onPress={handleOpenSession}
-          onOpenClimb={(tick) => openClimbInPlayDrawer({ kind: 'tick', tick }, { openPlayDrawer, router })}
+          onOpenClimb={handleOpenClimb}
         />
       );
     },
-    [handleOpenComments, handleOpenSession, summaryMap, t, openPlayDrawer, router],
+    [handleOpenComments, handleOpenSession, summaryMap, t, handleOpenClimb],
   );
 
   // The feed rollup, shown when there are sessions. Memoized so FlashList doesn't
