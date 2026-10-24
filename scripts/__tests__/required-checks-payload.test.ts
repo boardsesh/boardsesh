@@ -105,6 +105,8 @@ describe('the main required-checks ruleset payload', () => {
     // push is accepted. Most skip CI, but screenshot commits deliberately run
     // store metadata publication. Keep the documented inventory complete and
     // ignore commented examples when identifying the app's direct pushers.
+    // This recognizes today's literal push syntax and OTA_PUSH_APP_ID name.
+    // New push syntax or credential names need explicit review and an update.
     const pushers = githubYamlPaths()
       .map((path) => ({ path, source: withoutCommentLines(readFileSync(path, 'utf8')).join('\n') }))
       .filter(
