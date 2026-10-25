@@ -2,12 +2,13 @@
 // React-specific wrappers (useQueueReducer) and web-specific types
 // (QueueContextType, QueueDataType, QueueActionsType) stay in the web app.
 
-export { queueReducer, initialState } from './reducer';
+export { queueReducer, initialState, heldHistoryCount } from './reducer';
 
 export { fnv1aHash, computeQueueStateHash, computeQueueStateHashOrdered } from './state-hash';
 
 export type {
   QueueState,
+  HeldHistoryLine,
   QueueAction,
   UnconfirmedQueueMove,
   QueueSearchParams,

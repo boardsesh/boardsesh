@@ -12,6 +12,7 @@ import type {
   Climb,
   QueueClimbReadTarget,
   UnconfirmedQueueMove,
+  HeldHistoryLine,
 } from './types';
 import { insertQueueItemIdempotent } from './event-utils';
 import { playlistSuggestionSourceMatches, pruneSuggestedQueueItemsAfterCurrent } from './playlist-suggestions';
@@ -49,6 +50,35 @@ function payloadLine(
   historyCount: number | null | undefined,
 ): number {
   return normaliseHistoryCount(historyCount, queue, current) ?? 0;
+}
+
+/**
+ * A payload line that legacy mode cannot use yet: kept with the queue it
+ * describes, or null when the payload has none.
+ */
+function holdHistoryLine(
+  queue: readonly ClimbQueueItem[],
+  current: ClimbQueueItem | null,
+  historyCount: number | null | undefined,
+): HeldHistoryLine | null {
+  if (historyCount == null || !Number.isFinite(historyCount)) return null;
+  return { historyCount, queueUuids: queue.map(({ uuid }) => uuid), currentUuid: current?.uuid ?? null };
+}
+
+/**
+ * The held line, while it still describes this queue: the same entries in the
+ * same order and the same current climb. Null once anything moved, so a stale
+ * line can't split a queue the climber reshaped. The solo save reads it too,
+ * so a legacy-mode save before the flag resolves keeps the line on disk.
+ */
+export function heldHistoryCount(
+  state: Pick<QueueState, 'queue' | 'currentClimbQueueItem' | 'heldHistoryLine'>,
+): number | null {
+  const held = state.heldHistoryLine;
+  if (!held) return null;
+  if ((state.currentClimbQueueItem?.uuid ?? null) !== held.currentUuid) return null;
+  if (state.queue.length !== held.queueUuids.length) return null;
+  return state.queue.every((item, index) => item.uuid === held.queueUuids[index]) ? held.historyCount : null;
 }
 
 type NowSlotCurrentChange = {
@@ -225,6 +255,8 @@ function reduceQueue<TSearchParams extends QueueSearchParams>(
         historyCount: state.nowSlotMode
           ? payloadLine(filteredQueue, currentClimbQueueItem, action.payload.historyCount)
           : null,
+        // The server's snapshot replaces whatever a restore held.
+        heldHistoryLine: null,
         playlistSuggestionSource: null,
         // Clear pending updates on full sync since we're getting complete server state
         pendingCurrentClimbUpdates: [],
@@ -327,6 +359,11 @@ function reduceQueue<TSearchParams extends QueueSearchParams>(
         historyCount: state.nowSlotMode
           ? payloadLine(filteredQueue, currentClimbQueueItem, action.payload.historyCount)
           : null,
+        // Legacy mode can't read the line, but the mode may not be known yet (a
+        // cold-start restore before the flag resolves): hold it for the switch.
+        heldHistoryLine: state.nowSlotMode
+          ? null
+          : holdHistoryLine(filteredQueue, currentClimbQueueItem, action.payload.historyCount),
         playlistSuggestionSource: null,
         // Request resync if we filtered out corrupted data
         needsResync: state.needsResync || hadCorruptedData,
@@ -871,13 +908,23 @@ function reduceQueue<TSearchParams extends QueueSearchParams>(
         currentClimbQueueItem: null,
         playlistSuggestionSource: null,
         historyCount: state.nowSlotMode ? 0 : null,
+        heldHistoryLine: null,
       };
 
     case 'SET_NOW_SLOT_MODE': {
       if ((state.nowSlotMode ?? false) === action.payload) return state;
-      // Entering the mode derives the line from the current climb; the next
-      // FullSync (or restore) brings the server's or the snapshot's value.
-      return { ...state, nowSlotMode: action.payload, historyCount: action.payload ? historyLine(state) : null };
+      // Entering the mode takes a line a restore held for it, while that line
+      // still describes this queue; otherwise it derives the line from the
+      // current climb, and the next FullSync (or restore) brings the server's
+      // or the snapshot's value. Either way the held line is spent.
+      if (!action.payload) return { ...state, nowSlotMode: false, historyCount: null, heldHistoryLine: null };
+      const held = heldHistoryCount(state);
+      return {
+        ...state,
+        nowSlotMode: true,
+        historyCount: held === null ? historyLine(state) : payloadLine(state.queue, state.currentClimbQueueItem, held),
+        heldHistoryLine: null,
+      };
     }
 
     default:

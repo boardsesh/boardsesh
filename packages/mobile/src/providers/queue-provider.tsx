@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next';
 import {
   queueReducer,
   initialState,
+  heldHistoryCount,
   createQueueSyncCoordinator,
   generateClientId,
   playlistSuggestionSourceMatches,
@@ -1255,6 +1256,19 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     },
     [mutations],
   );
+  // F3: the line the solo save writes. Before the flag resolves the mode reads
+  // as legacy and keeps no line, so a save in that window writes the line the
+  // restore is holding for the mode instead of dropping it from disk.
+  const savedHistoryCount = useMemo(
+    () =>
+      state.historyCount ??
+      heldHistoryCount({
+        queue: state.queue,
+        currentClimbQueueItem: state.currentClimbQueueItem,
+        heldHistoryLine: state.heldHistoryLine,
+      }),
+    [state.historyCount, state.queue, state.currentClimbQueueItem, state.heldHistoryLine],
+  );
   // Solo-queue persistence: cold-start restore (explicit session first, then the
   // local snapshot) + the debounced solo snapshot save. See useQueuePersistence.
   useQueuePersistence({
@@ -1268,7 +1282,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     sessionId,
     queue: state.queue,
     currentClimbQueueItem: state.currentClimbQueueItem,
-    historyCount: state.historyCount,
+    historyCount: savedHistoryCount,
     playlistSuggestionSource,
     setPlaylistSuggestionSourceState,
     activeBoardSettled: !isActiveBoardPending,

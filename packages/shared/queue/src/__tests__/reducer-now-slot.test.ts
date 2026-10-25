@@ -4,7 +4,7 @@
  * with `nowSlotMode` off and must stay green unchanged.
  */
 import { describe, it, expect } from 'vitest';
-import { queueReducer, initialState } from '../reducer';
+import { queueReducer, initialState, heldHistoryCount } from '../reducer';
 import { chooseQueueEvent, placeOnWall, reorderAcrossLine } from '../now-slot';
 import { computeQueueStateHashOrdered } from '../state-hash';
 import { legacyQueueReducer } from '../testing';
@@ -79,6 +79,49 @@ describe('SET_NOW_SLOT_MODE', () => {
   it('returns the same state when the mode does not change', () => {
     const state = nowSlotState();
     expect(queueReducer(state, { type: 'SET_NOW_SLOT_MODE', payload: true })).toBe(state);
+  });
+  // A cold start whose restore runs before the flag resolves (no cached flag
+  // values): the line waits in legacy mode and lands when the mode turns on.
+  describe('a line restored before the mode is known', () => {
+    const restore = (historyCount?: number) =>
+      queueReducer(initialState({}), {
+        type: 'UPDATE_QUEUE',
+        payload: {
+          queue: [A, B, C],
+          currentClimbQueueItem: null,
+          ...(historyCount === undefined ? {} : { historyCount }),
+        },
+      });
+
+    it('is held, never read, in legacy mode, and applied when the mode turns on', () => {
+      const legacy = restore(2);
+      expect(legacy.historyCount).toBeNull();
+      expect(heldHistoryCount(legacy)).toBe(2);
+      const on = queueReducer(legacy, { type: 'SET_NOW_SLOT_MODE', payload: true });
+      expect(on.historyCount).toBe(2);
+      expect(on.heldHistoryLine).toBeNull();
+    });
+
+    it('is dropped when the queue changed before the mode turned on', () => {
+      const reshaped = queueReducer(restore(2), { type: 'ADD_TO_QUEUE', payload: D });
+      expect(heldHistoryCount(reshaped)).toBeNull();
+      expect(queueReducer(reshaped, { type: 'SET_NOW_SLOT_MODE', payload: true }).historyCount).toBe(0);
+    });
+
+    it('is dropped when a climb went on the wall before the mode turned on', () => {
+      const opened = queueReducer(restore(2), { type: 'SET_CURRENT_CLIMB_QUEUE_ITEM', payload: A });
+      expect(heldHistoryCount(opened)).toBeNull();
+      expect(queueReducer(opened, { type: 'SET_NOW_SLOT_MODE', payload: true }).historyCount).toBe(0);
+    });
+
+    it('is replaced by a server snapshot and absent from a snapshot without a line', () => {
+      const synced = queueReducer(restore(2), {
+        type: 'INITIAL_QUEUE_DATA',
+        payload: { queue: [A, B, C], currentClimbQueueItem: null },
+      });
+      expect(heldHistoryCount(synced)).toBeNull();
+      expect(heldHistoryCount(restore())).toBeNull();
+    });
   });
 });
 

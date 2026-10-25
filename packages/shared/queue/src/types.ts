@@ -329,6 +329,16 @@ export type UnconfirmedQueueMove = {
   resend: 'none' | 'awaiting-snapshot' | 'ready' | 'resent';
 };
 
+/**
+ * A History line that arrived before now-slot mode was known (F3, #6666): the
+ * line and the queue it describes, so it is applied only to that same queue.
+ */
+export type HeldHistoryLine = {
+  historyCount: number;
+  queueUuids: readonly string[];
+  currentUuid: string | null;
+};
+
 export type QueueState<TSearchParams extends QueueSearchParams = QueueSearchParams> = {
   /** Server sequence committed with this queue snapshot. */
   serverSequence?: number;
@@ -364,6 +374,14 @@ export type QueueState<TSearchParams extends QueueSearchParams = QueueSearchPara
    * Off (absent) is today's reducer, unchanged.
    */
   nowSlotMode?: boolean;
+  /**
+   * The line a restore brought while the mode was still legacy, typically a
+   * cold start that ran before the `queue-now-slot` flag resolved. Legacy mode
+   * never reads it. Turning the mode on applies it, but only while the queue
+   * still holds the same entries in the same order around the same current
+   * climb; a climber who changed the queue in between gets the derived line.
+   */
+  heldHistoryLine?: HeldHistoryLine | null;
 };
 
 export type QueueAction<TSearchParams extends QueueSearchParams = QueueSearchParams> =

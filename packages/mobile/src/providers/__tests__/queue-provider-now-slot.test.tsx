@@ -285,6 +285,37 @@ async function renderSolo(items: ClimbQueueItem[], current: ClimbQueueItem | nul
   };
 }
 
+/**
+ * A cold start whose restore lands while the flag is still unresolved (read as
+ * off), with nothing current and a saved line. `flipFlag` then resolves it on.
+ */
+async function renderBeforeFlagResolves(items: ClimbQueueItem[], historyCount: number) {
+  const storedSnapshot: StoredSnapshot & { historyCount: number } = {
+    queue: items,
+    currentClimbQueueItem: null,
+    playlistSuggestionSource: null,
+    savedAt: '2026-10-25T00:00:00.000Z',
+    historyCount,
+  };
+  queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(storedSnapshot);
+  const snapshots: Snapshot[] = [];
+  const onSnapshot = (snapshot: Snapshot) => snapshots.push(snapshot);
+  const tree = () => createElement(QueueProvider, null, createElement(Probe, { onSnapshot }));
+  const { rerender } = render(tree());
+  await waitFor(() => expect(uuidsOf(snapshots.at(-1))).toEqual(items.map(({ uuid }) => uuid)));
+  const latest = () => {
+    const snapshot = snapshots.at(-1);
+    if (!snapshot) throw new Error('provider never rendered');
+    return snapshot;
+  };
+  const flipFlag = async () => {
+    flags.nowSlot = true;
+    rerender(tree());
+    await waitFor(() => expect(latest().state.nowSlotMode).toBe(true));
+  };
+  return { latest, flipFlag };
+}
+
 async function renderSession(items: ClimbQueueItem[], current: ClimbQueueItem) {
   sessionStore.getStoredSessionId.mockResolvedValue('session-1');
   const snapshots: Snapshot[] = [];
@@ -463,6 +494,34 @@ describe('QueueProvider now-slot mode (F3)', () => {
         expect(latest().state.historyCount).toBe(2);
         act(() => latest().nextClimb());
         expect(latest().state.currentClimbQueueItem?.uuid).toBe('c');
+      });
+
+      // No cached flag values on the phone: the restore runs while the flag is
+      // still unresolved (legacy), and the flag resolves on afterwards.
+      it('a cold start before the flag resolves keeps the saved line for the mode', async () => {
+        flags.nowSlot = false;
+        queueSnapshotStore.setStoredQueueSnapshot.mockClear();
+        const { latest, flipFlag } = await renderBeforeFlagResolves([A, B, C], 2);
+        expect(latest().state.nowSlotMode).toBe(false);
+        expect(latest().state.historyCount).toBeNull();
+        // A legacy-mode save in that window keeps the line on disk.
+        await waitFor(() => expect(queueSnapshotStore.setStoredQueueSnapshot).toHaveBeenCalled(), { timeout: 2000 });
+        const savedSnapshots = queueSnapshotStore.setStoredQueueSnapshot.mock.calls as unknown as unknown[][];
+        expect(savedSnapshots.at(-1)?.[0]).toMatchObject({ historyCount: 2 });
+
+        await flipFlag();
+        expect(latest().state.historyCount).toBe(2);
+        act(() => latest().nextClimb());
+        expect(latest().state.currentClimbQueueItem?.uuid).toBe('c');
+      });
+
+      it('a held line is dropped once the climber reshapes the queue before the flag resolves', async () => {
+        flags.nowSlot = false;
+        const { latest, flipFlag } = await renderBeforeFlagResolves([A, B, C], 2);
+        act(() => latest().removeQueueItems(['a']));
+        expect(uuidsOf(latest())).toEqual(['b', 'c']);
+        await flipFlag();
+        expect(latest().state.historyCount).toBe(0);
       });
 
       it('an older snapshot with no line still restores (the reducer derives it)', async () => {
