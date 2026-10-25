@@ -136,6 +136,40 @@ export function forgetOverlays(cacheKeys: Iterable<string>): number {
   return forgotten;
 }
 
+/**
+ * The generation the next insertion will get. Every entry in the index right now
+ * has a generation strictly below it.
+ *
+ * A disk walk is async and chunked, so a render can land in the index while the
+ * walk is still listing. Taking this before the walk and passing it to
+ * `forgetOverlaysMissingFromDisk` keeps that fresh write out of reach: the walk
+ * may well have listed the directory before its file appeared.
+ */
+export function getOverlayGenerationWatermark(): number {
+  return nextOverlayGeneration;
+}
+
+/**
+ * Drop indexed keys whose PNG a disk walk did not find (issue #5882).
+ *
+ * The index is filled from the directory listing at warm-up and never re-checked
+ * after that, but files leave the directory behind JS's back: the native
+ * renderer's once-per-launch prune runs on the first render, AFTER the warm-up,
+ * and iOS can purge `Library/Caches` whenever it likes. Each dead key costs a
+ * surface a failed image load and a re-render, and the hook reports it as
+ * `cache_entry_missing`.
+ *
+ * Only entries older than `generationBefore` are candidates. Anything inserted
+ * since the caller took the watermark may have been written after the listing.
+ */
+export function forgetOverlaysMissingFromDisk(presentKeys: ReadonlySet<string>, generationBefore: number): number {
+  const missingKeys: string[] = [];
+  for (const [cacheKey, entry] of renderedOverlays) {
+    if (entry.generation < generationBefore && !presentKeys.has(cacheKey)) missingKeys.push(cacheKey);
+  }
+  return forgetOverlays(missingKeys);
+}
+
 export function clearOverlayIndex(): void {
   renderedOverlays.clear();
   lastUsedAtMs.clear();

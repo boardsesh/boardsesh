@@ -71,7 +71,10 @@ vi.mock('../../lib/error-reporting', () => ({ reportError: reportErrorMock, addE
 const sweepBoardArtCache = vi.hoisted(() =>
   vi.fn(() => Promise.resolve({ beforeBytes: 0, freedBytes: 0, filesDeleted: 0 })),
 );
-vi.mock('../../lib/sweep-caches', () => ({ sweepBoardArtCache }));
+vi.mock('../../lib/sweep-caches', () => ({
+  sweepBoardArtCache,
+  reconcileOverlayIndexWithDisk: vi.fn(() => Promise.resolve(0)),
+}));
 
 vi.mock('../../lib/hold-color-overrides', async (importOriginal) => {
   const original = await importOriginal<typeof import('../../lib/hold-color-overrides')>();

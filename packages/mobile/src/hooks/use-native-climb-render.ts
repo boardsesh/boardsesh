@@ -50,7 +50,7 @@ import {
 import { useAppColorScheme } from '../providers/theme-provider';
 import { addErrorBreadcrumb, reportError } from '../lib/error-reporting';
 import { track } from '../lib/analytics';
-import { sweepBoardArtCache } from '../lib/sweep-caches';
+import { reconcileOverlayIndexWithDisk, sweepBoardArtCache } from '../lib/sweep-caches';
 import { measureFreeCacheSpaceBytes } from '../lib/cache-dir-io';
 import {
   isRenderCancelled,
@@ -63,6 +63,7 @@ import {
 } from '../lib/board-render/render-scheduler';
 import {
   cacheRenderedOverlay,
+  getOverlayGenerationWatermark,
   getRenderedOverlay,
   invalidateRenderedOverlay,
   _renderedOverlaysForTests,
@@ -1017,9 +1018,18 @@ onOverlayCacheHydrated(() => {
   warmupRenderedOverlaysOnce();
 });
 
+/**
+ * Set once the first native render of this JS lifetime has resolved and the
+ * index has been checked against the directory (issue #5882). Both native
+ * modules prune `board-thumbnails` once per launch, inside that first render and
+ * after the warm-up above indexed it, without telling JS what they deleted.
+ */
+let reconciledAfterNativePrune = false;
+
 /** Test-only handle for re-running the warm-up against a fresh mock list. */
 export function _resetWarmupForTests(): void {
   warmupRun = false;
+  reconciledAfterNativePrune = false;
   // Board hold ids are memoised per board key, so a suite that swaps what
   // `getBoardRenderData` returns for the SAME board would otherwise keep
   // matching against the previous fixture's holds.
@@ -1065,7 +1075,18 @@ export function getOrStartInflightRender(
       deleteOverlayCacheEntry(uri);
       throw new RenderCancelledError(cacheKey);
     }
-    return cacheRenderedOverlay(cacheKey, uri);
+    // The watermark is taken before this result goes in: the file native just
+    // wrote is on disk, and only what the index held before the prune is suspect.
+    const generationBeforeFirstRender = reconciledAfterNativePrune ? null : getOverlayGenerationWatermark();
+    const entry = cacheRenderedOverlay(cacheKey, uri);
+    if (generationBeforeFirstRender !== null) {
+      reconciledAfterNativePrune = true;
+      void reconcileOverlayIndexWithDisk(generationBeforeFirstRender).catch(() => {
+        // Best-effort: an index left unreconciled still recovers each dead key
+        // through the cache_entry_missing re-render, as it did before.
+      });
+    }
+    return entry;
   });
   inflightRenders.set(cacheKey, promise);
   // Run cleanup as a detached handler so it doesn't change the promise
