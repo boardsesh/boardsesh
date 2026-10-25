@@ -10,6 +10,7 @@ import { validateToken } from '../middleware/auth';
 import { isS3Configured, uploadToS3 } from '../storage/s3';
 import { extractAuthTokenFromHeader, formatByteCapForMessage, GYM_IMAGE_ALLOWED_MIME_TYPES } from './gym-image-upload';
 import { detectImageMimeType, MIME_TO_EXT } from '../lib/image-mime';
+import { UndecodableImageError, reencodeUploadedImage } from '../lib/image-resize';
 import { logger } from '../utils/logger';
 
 // Screenshot attached to a bug report or a QA verdict. One image per request;
@@ -253,14 +254,31 @@ export async function handleFeedbackScreenshotUpload(req: IncomingMessage, res: 
       const key = `${FEEDBACK_SCREENSHOT_PREFIX}/${fileName}`;
 
       try {
+        // Store sharp's re-encode, never the raw upload: a real JPEG with a
+        // payload appended after its end marker passes the magic-byte check
+        // AND decodes, so only re-encoding keeps that payload out of the public
+        // bucket. Same format, so the key's extension still matches.
+        const storedBuffer = await reencodeUploadedImage(fileBuffer, mimeType);
         if (useS3) {
           // Immutable key, so uploadToS3's default immutable Cache-Control is
           // the right one and no resize variants are pre-written.
-          await uploadToS3('media', fileBuffer, key, mimeType);
+          await uploadToS3('media', storedBuffer, key, mimeType);
         } else {
-          await writeFile(path.join(FEEDBACK_SCREENSHOTS_DIR, fileName), fileBuffer);
+          await writeFile(path.join(FEEDBACK_SCREENSHOTS_DIR, fileName), storedBuffer);
         }
       } catch (saveErr) {
+        if (saveErr instanceof UndecodableImageError) {
+          // Also covers UPLOAD_MAX_INPUT_PIXELS: log sharp's reason so a real
+          // device format that starts failing shows up.
+          logger.warn(
+            `Rejected feedback screenshot for user ${authResult.userId}: sharp could not decode it:`,
+            saveErr.cause,
+          );
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'File is not a readable image' }));
+          resolve();
+          return;
+        }
         logger.error('Failed to save feedback screenshot:', saveErr);
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Failed to save screenshot' }));

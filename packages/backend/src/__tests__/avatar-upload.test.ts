@@ -15,6 +15,7 @@ vi.mock('../middleware/auth', () => ({
 const { handleAvatarUpload, getAvatarsDir } = await import('../handlers/avatars');
 const { handleStaticAvatar } = await import('../handlers/static');
 const { parseSizeParam, reencodeUploadedImage } = await import('../lib/image-resize');
+const { overPixelCapPng } = await import('./helpers/upload-images');
 
 const USER_ID = '11111111-1111-4111-8111-111111111111';
 // Real, decodable images: the handler stores sharp's re-encode, so bytes sharp
@@ -259,6 +260,20 @@ describe('avatar upload routes', () => {
         error: 'File contents do not match the declared image type',
       });
       await expect(access(path.join(getAvatarsDir(), `${USER_ID}.jpg`))).rejects.toThrow();
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it('refuses a small PNG whose pixels exceed the decode cap (400) and writes nothing', async () => {
+    validateTokenMock.mockResolvedValue({ userId: USER_ID });
+    const { baseUrl, server } = await startAvatarServer();
+    try {
+      const response = await uploadAvatar(baseUrl, new Blob([overPixelCapPng()], { type: 'image/png' }), 'avatar.png');
+
+      expect(response.status).toBe(400);
+      expect((await response.json()) as { error?: string }).toEqual({ error: 'File is not a readable image' });
+      await expect(access(path.join(getAvatarsDir(), `${USER_ID}.png`))).rejects.toThrow();
     } finally {
       await closeServer(server);
     }

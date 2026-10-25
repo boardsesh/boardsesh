@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { once } from 'node:events';
-import { access, rm } from 'node:fs/promises';
+import { access, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { v4 as uuidv4 } from 'uuid';
 import { sql } from 'drizzle-orm';
@@ -23,6 +23,7 @@ const s3Control = vi.hoisted(() => ({
   forceS3: false,
   uploadError: null as Error | null,
   deleteCalls: [] as Array<{ gymUuid: string; keepExt?: string }>,
+  uploads: [] as Array<{ key: string; body: Buffer }>,
 }));
 
 vi.mock('../storage/s3', async (importOriginal) => {
@@ -32,7 +33,10 @@ vi.mock('../storage/s3', async (importOriginal) => {
     isS3Configured: () => s3Control.forceS3 || actual.isS3Configured(),
     uploadToS3: async (...args: Parameters<typeof actual.uploadToS3>) => {
       if (s3Control.uploadError) throw s3Control.uploadError;
-      if (s3Control.forceS3) return { url: `stub://${args[1]}`, key: args[1] }; // never touch real S3 from tests
+      if (s3Control.forceS3) {
+        s3Control.uploads.push({ key: args[2], body: args[1] });
+        return { url: `stub://${args[2]}`, key: args[2] }; // never touch real S3 from tests
+      }
       return actual.uploadToS3(...args);
     },
     deleteGymLogosFromS3: async (targetGymUuid: string, keepExt?: string) => {
@@ -46,7 +50,9 @@ vi.mock('../storage/s3', async (importOriginal) => {
 const { db } = await import('../db/client');
 const { handleGymLogoUpload, getGymLogosDir } = await import('../handlers/gym-logos');
 const { handleStaticGymLogo } = await import('../handlers/static');
-const { parseSizeParam } = await import('../lib/image-resize');
+const { ALLOWED_IMAGE_SIZES, parseSizeParam, reencodeUploadedImage } = await import('../lib/image-resize');
+const { APPENDED_PAYLOAD_MARKER, overPixelCapPng, smallJpeg, smallPng, withAppendedPayload } =
+  await import('./helpers/upload-images');
 const { socialGymQueries, socialGymMutations } = await import('../graphql/resolvers/social/gyms');
 
 /**
@@ -63,10 +69,12 @@ const COMMUNITY_ADMIN = 'gl-community-admin';
 const RANDOM = 'gl-random';
 const ALL_USERS = [OWNER, ADMIN_MEMBER, EDITOR_MEMBER, COMMUNITY_ADMIN, RANDOM];
 
-// Real magic bytes for each format: the handler sniffs the payload and rejects
-// anything whose header contradicts the declared multipart Content-Type.
-const JPEG_BYTES = Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43, 0xff, 0xd9]);
-const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]);
+// Real, decodable images: the handler sniffs the magic bytes, then stores
+// sharp's re-encode, so bytes sharp cannot read are refused.
+const JPEG_BYTES = await smallJpeg();
+const PNG_BYTES = await smallPng();
+// What the handler stores for the JPEG upload above.
+const STORED_JPEG_BYTES = await reencodeUploadedImage(JPEG_BYTES, 'image/jpeg');
 
 let gymUuid: string;
 
@@ -167,6 +175,7 @@ afterEach(async () => {
   s3Control.forceS3 = false;
   s3Control.uploadError = null;
   s3Control.deleteCalls = [];
+  s3Control.uploads = [];
   await removeUploadedLogos();
 });
 
@@ -202,10 +211,10 @@ describe('POST /api/gym-logos', () => {
       expect(body.success).toBe(true);
       expect(body.logoUrl).toMatch(new RegExp(`^/static/gym-logos/${gymUuid}\\.jpg\\?v=[0-9a-f-]{36}$`));
 
-      // The static route serves the uploaded bytes back.
+      // The static route serves the stored re-encode back.
       const staticResponse = await fetch(`${baseUrl}${body.logoUrl}`);
       expect(staticResponse.status).toBe(200);
-      expect(Buffer.from(await staticResponse.arrayBuffer())).toEqual(JPEG_BYTES);
+      expect(Buffer.from(await staticResponse.arrayBuffer())).toEqual(STORED_JPEG_BYTES);
 
       // And the returned static path passes updateGym's logo validation + persists.
       await socialGymMutations.updateGym(null, { input: { gymUuid, logoUrl: body.logoUrl! } }, authCtx(OWNER));
@@ -383,6 +392,86 @@ describe('POST /api/gym-logos', () => {
       expect(response.status).toBe(400);
       const body = (await response.json()) as { error?: string };
       expect(body.error).toBe('File contents do not match the declared image type');
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it('writes a re-encode to disk, not a payload appended after a real JPEG', async () => {
+    validateTokenMock.mockResolvedValue({ userId: OWNER });
+    const { baseUrl, server } = await startLogoServer();
+    try {
+      const smuggled = withAppendedPayload(JPEG_BYTES);
+      const response = await uploadLogo(baseUrl, {
+        token: 'owner',
+        gymUuid,
+        blob: new Blob([smuggled], { type: 'image/jpeg' }),
+      });
+      expect(response.status).toBe(200);
+
+      const written = await readFile(path.join(getGymLogosDir(), `${gymUuid}.jpg`));
+      expect(written.includes(APPENDED_PAYLOAD_MARKER)).toBe(false);
+      expect(written).toEqual(STORED_JPEG_BYTES);
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it('stores a re-encode at the base and every variant key in S3, not the appended payload', async () => {
+    validateTokenMock.mockResolvedValue({ userId: OWNER });
+    s3Control.forceS3 = true;
+    const { baseUrl, server } = await startLogoServer();
+    try {
+      const response = await uploadLogo(baseUrl, {
+        token: 'owner',
+        gymUuid,
+        blob: new Blob([withAppendedPayload(JPEG_BYTES)], { type: 'image/jpeg' }),
+      });
+      expect(response.status).toBe(200);
+
+      expect(s3Control.uploads).toHaveLength(ALLOWED_IMAGE_SIZES.length + 1);
+      for (const { body } of s3Control.uploads) {
+        expect(body.includes(APPENDED_PAYLOAD_MARKER)).toBe(false);
+      }
+      const base = s3Control.uploads.find(({ key }) => key === `gym-logos/${gymUuid}.jpg`);
+      expect(base?.body).toEqual(STORED_JPEG_BYTES);
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it('refuses JPEG magic bytes sharp cannot decode instead of storing them (400)', async () => {
+    validateTokenMock.mockResolvedValue({ userId: OWNER });
+    s3Control.forceS3 = true;
+    const { baseUrl, server } = await startLogoServer();
+    try {
+      const response = await uploadLogo(baseUrl, {
+        token: 'owner',
+        gymUuid,
+        blob: new Blob([Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43, 0xff, 0xd9])], { type: 'image/jpeg' }),
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: 'File is not a readable image' });
+      expect(s3Control.uploads).toEqual([]);
+      expect(s3Control.deleteCalls).toEqual([]);
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it('refuses a small PNG whose pixels exceed the decode cap (400) and writes nothing', async () => {
+    validateTokenMock.mockResolvedValue({ userId: OWNER });
+    const { baseUrl, server } = await startLogoServer();
+    try {
+      const response = await uploadLogo(baseUrl, {
+        token: 'owner',
+        gymUuid,
+        blob: new Blob([overPixelCapPng()], { type: 'image/png' }),
+        fileName: 'logo.png',
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: 'File is not a readable image' });
+      await expect(access(path.join(getGymLogosDir(), `${gymUuid}.png`))).rejects.toThrow();
     } finally {
       await closeServer(server);
     }

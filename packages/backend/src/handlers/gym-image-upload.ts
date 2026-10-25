@@ -9,7 +9,12 @@ import { guardUploadFileStream } from './http-utils';
 import { validateToken } from '../middleware/auth';
 import { isS3Configured, uploadToS3 } from '../storage/s3';
 import { detectImageMimeType, MIME_TO_EXT } from '../lib/image-mime';
-import { MUTABLE_IMAGE_CACHE_CONTROL, writeImageVariants } from '../lib/image-resize';
+import {
+  MUTABLE_IMAGE_CACHE_CONTROL,
+  UndecodableImageError,
+  reencodeUploadedImage,
+  writeImageVariants,
+} from '../lib/image-resize';
 import { logger } from '../utils/logger';
 import { db } from '../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -358,27 +363,49 @@ export function createGymImageUploadHandler(
         // failed upload can't leave the gym image-less while the gym row still
         // points at a deleted object.
         try {
+          // Store sharp's re-encode, never the raw upload: a real JPEG with a
+          // payload appended after its end marker passes the magic-byte check
+          // AND decodes, so only re-encoding keeps that payload off our origin.
+          // Same format, so the key and extension do not change. Runs before
+          // the first write, so a rejection leaves the existing image alone.
+          const storedBuffer = await reencodeUploadedImage(fileBuffer, mimeType);
           if (useS3) {
             const s3Key = `${config.storagePrefix}/${imageFileName}`;
             // Variants first, then the base — see the note in handlers/avatars.ts.
             await writeImageVariants(
-              fileBuffer,
+              storedBuffer,
               s3Key,
               (key, body, contentType) =>
                 uploadToS3('media', body, key, contentType, { cacheControl: MUTABLE_IMAGE_CACHE_CONTROL }),
               undefined,
               mimeType,
+              // storedBuffer already decoded once, so this should never fire;
+              // if a resize still fails, refuse rather than store the base
+              // bytes at every variant key.
+              { rejectUndecodable: true },
             );
-            await uploadToS3('media', fileBuffer, s3Key, mimeType);
+            await uploadToS3('media', storedBuffer, s3Key, mimeType);
             // Backend-relative URL — we proxy the bytes from S3 ourselves, so no
             // public-read ACL is required.
             storedUrl = config.buildStaticUrl(imageFileName, randomUUID());
           } else {
             const filePath = path.join(config.localDir, imageFileName);
-            await writeFile(filePath, fileBuffer);
+            await writeFile(filePath, storedBuffer);
             storedUrl = config.buildStaticUrl(imageFileName, randomUUID());
           }
         } catch (saveErr) {
+          if (saveErr instanceof UndecodableImageError) {
+            // Also covers UPLOAD_MAX_INPUT_PIXELS: log sharp's reason so a real
+            // device format that starts failing shows up.
+            logger.warn(
+              `Rejected ${config.logLabel} upload for gym ${gymUuid}: sharp could not decode it:`,
+              saveErr.cause,
+            );
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'File is not a readable image' }));
+            resolve();
+            return;
+          }
           logger.error(`Failed to save ${config.logLabel}:`, saveErr);
           res.writeHead(500, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: config.messages.saveFailed }));

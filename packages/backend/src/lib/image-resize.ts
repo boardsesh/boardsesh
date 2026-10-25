@@ -36,12 +36,36 @@ export function resizedVariantKey(baseKey: string, size: AllowedImageSize): stri
 }
 
 /**
+ * The most pixels sharp may decode from an uploaded avatar, gym logo, gym photo
+ * or feedback screenshot: 8192 x 8192, about 67 MP.
+ *
+ * The largest real input is a web upload of a phone photo straight off the
+ * camera. The biggest mainstream captures are the 48-50 MP high-resolution
+ * modes (iPhone 48 MP is 8064 x 6048, Pixel and Galaxy 50 MP are 8160 x 6144),
+ * so the cap clears those with a third to spare. A 200 MP capture is a 20 MB+
+ * JPEG and never gets past the 2 MB / 5 MB byte caps anyway.
+ *
+ * sharp's own default (about 268 MP) is the problem this replaces: a flat PNG
+ * that size compresses to a few hundred KB, fits under every byte cap, and
+ * decodes to about 1 GB on a 4 GB box. At this cap the worst decode is about
+ * 268 MB (4 bytes a pixel). sharp checks the cap against the header before it
+ * decodes a pixel, and for an animated image it counts every frame, so a GIF
+ * with more than 67 MP across its frames is refused too.
+ */
+export const UPLOAD_MAX_INPUT_PIXELS = 8192 * 8192;
+
+/**
  * Resize an image buffer to fill a size×size square, re-encoding as JPEG.
  * Never upscales beyond the source (`withoutEnlargement`), so a small
- * source is returned at its own size rather than blown up.
+ * source is returned at its own size rather than blown up. Refuses a source
+ * over UPLOAD_MAX_INPUT_PIXELS; every caller already falls back on a failed
+ * resize.
  */
 export async function resizeImageBuffer(input: Buffer, size: AllowedImageSize): Promise<Buffer> {
-  return sharp(input).resize(size, size, { fit: 'cover', withoutEnlargement: true }).jpeg({ quality: 80 }).toBuffer();
+  return sharp(input, { limitInputPixels: UPLOAD_MAX_INPUT_PIXELS })
+    .resize(size, size, { fit: 'cover', withoutEnlargement: true })
+    .jpeg({ quality: 80 })
+    .toBuffer();
 }
 
 /**
@@ -89,16 +113,18 @@ const STORED_FORMAT_BY_MIME_TYPE: Record<string, 'jpeg' | 'png' | 'webp' | 'gif'
  * only turn a multi-page image by 180 degrees, so animated GIF/WebP frames
  * keep their stored orientation.
  *
- * Throws UndecodableImageError for a type it does not store or bytes sharp
- * cannot decode.
+ * Throws UndecodableImageError for a type it does not store, bytes sharp
+ * cannot decode, or an image over UPLOAD_MAX_INPUT_PIXELS.
  */
 export async function reencodeUploadedImage(input: Buffer, mimeType: string): Promise<Buffer> {
   const format = STORED_FORMAT_BY_MIME_TYPE[mimeType];
   if (!format) throw new UndecodableImageError(new Error(`Unsupported image type ${mimeType}`));
   try {
-    const { pages = 1 } = await sharp(input).metadata();
+    // The metadata read applies the cap to the first frame's header; the
+    // pipeline applies it again to every frame of an animated image.
+    const { pages = 1 } = await sharp(input, { limitInputPixels: UPLOAD_MAX_INPUT_PIXELS }).metadata();
     const animated = pages > 1;
-    let pipeline = sharp(input, { animated });
+    let pipeline = sharp(input, { animated, limitInputPixels: UPLOAD_MAX_INPUT_PIXELS });
     if (!animated) pipeline = pipeline.autoOrient();
     if (format === 'jpeg') pipeline = pipeline.jpeg({ quality: 90 });
     else if (format === 'webp') pipeline = pipeline.webp({ quality: 90 });

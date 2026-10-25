@@ -2,7 +2,8 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vite-
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { once } from 'node:events';
-import { rm } from 'node:fs/promises';
+import { readFile, rm } from 'node:fs/promises';
+import path from 'node:path';
 import {
   FEEDBACK_SCREENSHOT_KEY_PATTERN,
   FEEDBACK_SCREENSHOT_MAX_UPLOAD_BYTES,
@@ -11,7 +12,9 @@ import {
 
 const validateTokenMock = vi.hoisted(() => vi.fn());
 const isS3ConfiguredMock = vi.hoisted(() => vi.fn(() => false));
-const uploadToS3Mock = vi.hoisted(() => vi.fn(async () => undefined));
+const uploadToS3Mock = vi.hoisted(() =>
+  vi.fn(async (_bucket: string, _body: Buffer, _key: string, _contentType: string) => undefined),
+);
 
 vi.mock('../middleware/auth', () => ({
   validateToken: validateTokenMock,
@@ -27,6 +30,9 @@ vi.mock('../storage/s3', () => ({
 
 const { handleFeedbackScreenshotUpload, resetFeedbackScreenshotRateLimit } =
   await import('../handlers/feedback-screenshots');
+const { reencodeUploadedImage } = await import('../lib/image-resize');
+const { APPENDED_PAYLOAD_MARKER, overPixelCapPng, smallJpeg, smallPng, withAppendedPayload } =
+  await import('./helpers/upload-images');
 
 /** Mirrors the handler's own local-dev directory, used only to clean up after. */
 const LOCAL_UPLOAD_DIR = `./${FEEDBACK_SCREENSHOT_PREFIX}`;
@@ -42,9 +48,12 @@ const LOCAL_UPLOAD_DIR = `./${FEEDBACK_SCREENSHOT_PREFIX}`;
 
 const UPLOADER = 'fs-uploader';
 
-// Smallest byte sequences that satisfy detectImageMimeType.
-const JPEG_BYTES = Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43, 0xff, 0xd9]);
-const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]);
+// Real, decodable images: the handler stores sharp's re-encode, so bytes sharp
+// cannot read are refused.
+const JPEG_BYTES = await smallJpeg();
+const PNG_BYTES = await smallPng();
+// What the handler stores for the JPEG upload above.
+const STORED_JPEG_BYTES = await reencodeUploadedImage(JPEG_BYTES, 'image/jpeg');
 
 async function startScreenshotServer(): Promise<{ baseUrl: string; server: Server }> {
   const server = createServer((req, res) => {
@@ -132,7 +141,80 @@ describe('POST /api/feedback-screenshots', () => {
       expect(uploadToS3Mock).toHaveBeenCalledTimes(1);
       // Bucket, bytes, the key we handed the client, and the sniffed type — the
       // key is immutable, so no resize variants are written alongside it.
-      expect(uploadToS3Mock).toHaveBeenCalledWith('media', JPEG_BYTES, key, 'image/jpeg');
+      expect(uploadToS3Mock).toHaveBeenCalledWith('media', STORED_JPEG_BYTES, key, 'image/jpeg');
+    } finally {
+      isS3ConfiguredMock.mockReturnValue(false);
+      await closeServer(server);
+    }
+  });
+
+  it('stores a re-encode in the media bucket, not a payload appended after a real JPEG', async () => {
+    isS3ConfiguredMock.mockReturnValue(true);
+    const { baseUrl, server } = await startScreenshotServer();
+    try {
+      const response = await uploadScreenshot(baseUrl, {
+        token: 'uploader',
+        blob: new Blob([withAppendedPayload(JPEG_BYTES)], { type: 'image/jpeg' }),
+      });
+      expect(response.status).toBe(200);
+
+      const { key } = (await response.json()) as { key: string };
+      expect(uploadToS3Mock).toHaveBeenCalledTimes(1);
+      const storedBody = uploadToS3Mock.mock.calls[0][1];
+      expect(storedBody.includes(APPENDED_PAYLOAD_MARKER)).toBe(false);
+      expect(uploadToS3Mock).toHaveBeenCalledWith('media', STORED_JPEG_BYTES, key, 'image/jpeg');
+    } finally {
+      isS3ConfiguredMock.mockReturnValue(false);
+      await closeServer(server);
+    }
+  });
+
+  it('writes a re-encode to disk, not a payload appended after a real JPEG', async () => {
+    const { baseUrl, server } = await startScreenshotServer();
+    try {
+      const response = await uploadScreenshot(baseUrl, {
+        token: 'uploader',
+        blob: new Blob([withAppendedPayload(JPEG_BYTES)], { type: 'image/jpeg' }),
+      });
+      expect(response.status).toBe(200);
+
+      const { key } = (await response.json()) as { key: string };
+      const written = await readFile(path.join(LOCAL_UPLOAD_DIR, path.basename(key)));
+      expect(written.includes(APPENDED_PAYLOAD_MARKER)).toBe(false);
+      expect(written).toEqual(STORED_JPEG_BYTES);
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it('refuses a small PNG whose pixels exceed the decode cap (400) and stores nothing', async () => {
+    isS3ConfiguredMock.mockReturnValue(true);
+    const { baseUrl, server } = await startScreenshotServer();
+    try {
+      const response = await uploadScreenshot(baseUrl, {
+        token: 'uploader',
+        blob: new Blob([overPixelCapPng()], { type: 'image/png' }),
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: 'File is not a readable image' });
+      expect(uploadToS3Mock).not.toHaveBeenCalled();
+    } finally {
+      isS3ConfiguredMock.mockReturnValue(false);
+      await closeServer(server);
+    }
+  });
+
+  it('refuses JPEG magic bytes sharp cannot decode instead of storing them (400)', async () => {
+    isS3ConfiguredMock.mockReturnValue(true);
+    const { baseUrl, server } = await startScreenshotServer();
+    try {
+      const response = await uploadScreenshot(baseUrl, {
+        token: 'uploader',
+        blob: new Blob([Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43, 0xff, 0xd9])], { type: 'image/jpeg' }),
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: 'File is not a readable image' });
+      expect(uploadToS3Mock).not.toHaveBeenCalled();
     } finally {
       isS3ConfiguredMock.mockReturnValue(false);
       await closeServer(server);

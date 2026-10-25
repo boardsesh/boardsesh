@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { once } from 'node:events';
-import { access, rm } from 'node:fs/promises';
+import { access, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { v4 as uuidv4 } from 'uuid';
 import { sql } from 'drizzle-orm';
@@ -17,6 +17,9 @@ vi.mock('../middleware/auth', () => ({
 const { db } = await import('../db/client');
 const { handleGymPhotoUpload, handleGymPhotoDelete, getGymPhotosDir } = await import('../handlers/gym-photos');
 const { socialGymQueries, socialGymMutations } = await import('../graphql/resolvers/social/gyms');
+const { reencodeUploadedImage } = await import('../lib/image-resize');
+const { APPENDED_PAYLOAD_MARKER, overPixelCapPng, smallJpeg, withAppendedPayload } =
+  await import('./helpers/upload-images');
 
 /**
  * Real-DB + real-HTTP coverage for POST and DELETE /api/gym-photos. The upload
@@ -30,7 +33,9 @@ const OWNER = 'gp-owner';
 const RANDOM = 'gp-random';
 const ALL_USERS = [OWNER, RANDOM];
 
-const JPEG_BYTES = Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43, 0xff, 0xd9]);
+// A real JPEG: the handler stores sharp's re-encode, so bytes sharp cannot
+// read are refused.
+const JPEG_BYTES = await smallJpeg();
 
 let gymUuid: string;
 
@@ -148,6 +153,42 @@ describe('POST /api/gym-photos', () => {
     try {
       const response = await uploadPhoto(baseUrl, { token: 'random', gymUuid });
       expect(response.status).toBe(403);
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it('writes a re-encode to disk, not a payload appended after a real JPEG', async () => {
+    validateTokenMock.mockResolvedValue({ userId: OWNER });
+    const { baseUrl, server } = await startPhotoServer();
+    try {
+      const response = await uploadPhoto(baseUrl, {
+        token: 'owner',
+        gymUuid,
+        blob: new Blob([withAppendedPayload(JPEG_BYTES)], { type: 'image/jpeg' }),
+      });
+      expect(response.status).toBe(200);
+
+      const written = await readFile(path.join(getGymPhotosDir(), `${gymUuid}.jpg`));
+      expect(written.includes(APPENDED_PAYLOAD_MARKER)).toBe(false);
+      expect(written).toEqual(await reencodeUploadedImage(JPEG_BYTES, 'image/jpeg'));
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it('refuses a small PNG whose pixels exceed the decode cap (400) and writes nothing', async () => {
+    validateTokenMock.mockResolvedValue({ userId: OWNER });
+    const { baseUrl, server } = await startPhotoServer();
+    try {
+      const response = await uploadPhoto(baseUrl, {
+        token: 'owner',
+        gymUuid,
+        blob: new Blob([overPixelCapPng()], { type: 'image/png' }),
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: 'File is not a readable image' });
+      await expect(access(path.join(getGymPhotosDir(), `${gymUuid}.png`))).rejects.toThrow();
     } finally {
       await closeServer(server);
     }
