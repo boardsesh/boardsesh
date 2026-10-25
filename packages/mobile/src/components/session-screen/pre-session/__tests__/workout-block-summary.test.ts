@@ -44,10 +44,8 @@ describe('blockSummary for timed blocks', () => {
     );
   });
 
-  it('says a 4x4’s sets, reps and set rest, and its rest between reps only when there is one', () => {
-    expect(summaryOf({ ...DEFAULT_FOUR_BY_FOUR_OPTIONS, targetGrade: 6 })).toBe(
-      'V6 · Sets(4) · RepsEach(4) · SetRest(3:00)',
-    );
+  it('says a 4x4’s reps and sets (reps first), its set rest, and its rest between reps only when there is one', () => {
+    expect(summaryOf({ ...DEFAULT_FOUR_BY_FOUR_OPTIONS, targetGrade: 6 })).toBe('V6 · RepsBySets(4,4) · SetRest(3:00)');
     expect(
       summaryOf({
         ...DEFAULT_FOUR_BY_FOUR_OPTIONS,
@@ -56,7 +54,7 @@ describe('blockSummary for timed blocks', () => {
         restBetweenRepsSeconds: 30,
         restBetweenSetsSeconds: 0,
       }),
-    ).toBe('V6 · Sets(4) · RepsEach(3) · RepRest(0:30)');
+    ).toBe('V6 · RepsBySets(3,4) · RepRest(0:30)');
   });
 
   it('says no rest at all for a 4x4 with both rests at zero', () => {
@@ -67,7 +65,7 @@ describe('blockSummary for timed blocks', () => {
         restBetweenRepsSeconds: 0,
         restBetweenSetsSeconds: 0,
       }),
-    ).toBe('V6 · Sets(4) · RepsEach(4)');
+    ).toBe('V6 · RepsBySets(4,4)');
   });
 
   it('says how many limit climbs and the rest after each attempt', () => {

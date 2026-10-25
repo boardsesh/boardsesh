@@ -53,7 +53,7 @@ function plannedRepsPerSet(stage: WorkoutStage): number | undefined {
  * Sections are consecutive runs (`groupSlotsBySection`), so a pyramid's
  * "increasing" and "decreasing" halves stay apart around the peak.
  *
- * A 4x4 always gets its heading, alone or not ("4x4 · 4 sets × 4 reps"): each
+ * A 4x4 always gets its heading, alone or not ("4x4 · 4 reps × 4 sets"): each
  * row is one climb, and the heading is where the preview says it is done for
  * every rep of its set.
  */

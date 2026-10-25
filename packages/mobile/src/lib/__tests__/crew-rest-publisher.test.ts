@@ -420,7 +420,7 @@ describe('CONFIGURE', () => {
         stagePacing: {
           mode: 'afterTick',
           restSeconds: 0,
-          advanceOn: 'tick',
+          advanceOn: 'set',
           sets: { repsPerSet: 4, restBetweenSetsSeconds: 180 },
         },
       },
@@ -450,7 +450,7 @@ describe('CONFIGURE', () => {
       stagePacing: {
         mode: 'afterTick' as const,
         restSeconds: 0,
-        advanceOn: 'tick' as const,
+        advanceOn: 'set' as const,
         sets: { repsPerSet: 2, restBetweenSetsSeconds: 180 },
       },
     });

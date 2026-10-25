@@ -18,7 +18,7 @@ type WorkoutPreviewStageHeadingProps = {
 
 /**
  * "Pyramid · 9 climbs" over each block of a workout built from several blocks,
- * or "4x4 · 4 sets × 4 reps" over a 4x4, whose rows are each done for every
+ * or "4x4 · 4 reps × 4 sets" over a 4x4, whose rows are each done for every
  * rep. Sits above that block's section headings, so it reads one step louder.
  */
 function WorkoutPreviewStageHeadingComponent({
@@ -35,7 +35,7 @@ function WorkoutPreviewStageHeadingComponent({
       <Text variant="subheadline" color={systemColors.label} style={styles.text}>
         {repsPerSet === undefined
           ? t('mobile.session.preWorkoutSectionHeading', { section, count })
-          : t('mobile.session.preWorkoutStageSetsHeading', { section, count, reps: repsPerSet })}
+          : t('mobile.session.preWorkoutStageSetsHeading', { section, reps: repsPerSet, count })}
       </Text>
     </View>
   );

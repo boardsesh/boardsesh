@@ -34,7 +34,7 @@ const T0 = Date.parse('2026-09-11T10:00:00.000Z');
 const FOUR_BY_FOUR_PACING = {
   mode: 'afterTick',
   restSeconds: 0,
-  advanceOn: 'tick',
+  advanceOn: 'set',
   sets: { repsPerSet: 4, restBetweenSetsSeconds: 180 },
 } as const;
 

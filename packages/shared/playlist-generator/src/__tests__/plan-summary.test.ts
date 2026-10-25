@@ -110,7 +110,7 @@ describe('estimateWorkoutMinutes', () => {
   const FOUR_BY_FOUR_PACING: WorkoutStagePacing = {
     mode: 'afterTick',
     restSeconds: 0,
-    advanceOn: 'tick',
+    advanceOn: 'set',
     sets: { repsPerSet: 4, restBetweenSetsSeconds: 180 },
   };
 
@@ -133,7 +133,7 @@ describe('estimateWorkoutMinutes', () => {
     const triples: WorkoutStagePacing = {
       mode: 'afterTick',
       restSeconds: 60,
-      advanceOn: 'tick',
+      advanceOn: 'set',
       sets: { repsPerSet: 3, restBetweenSetsSeconds: 300 },
     };
 
@@ -146,7 +146,7 @@ describe('estimateWorkoutMinutes', () => {
     const noSetRest: WorkoutStagePacing = {
       mode: 'afterTick',
       restSeconds: 0,
-      advanceOn: 'tick',
+      advanceOn: 'set',
       sets: { repsPerSet: 2, restBetweenSetsSeconds: 0 },
     };
 

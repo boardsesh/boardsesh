@@ -30,6 +30,8 @@ import { QueueActionsContext } from '../../providers/queue/queue-contexts';
 import { getEffectiveRestPacing } from '../../hooks/use-effective-rest-pacing';
 import { noteSessionTimerTick } from '../../lib/session-timer/tick-events';
 import { nowMs } from '../../lib/clock';
+import { getRestTimerStartMs } from '../../lib/rest-timer';
+import { isTickFreshEnoughToArm } from '../../lib/rest-timer-auto-advance';
 import { noteRestTimerTick } from '../../lib/rest-timer-store';
 import { attributeTickToQueueItem, type TickAttributionCandidate } from '../../lib/tick-attribution';
 import { noteWorkoutRunTick } from '../../lib/workout-run-store';
@@ -222,12 +224,13 @@ export function useTickSaver({
               grade: fields.gradeName ?? null,
               hasComment: fields.comment.length > 0,
             });
+            const landedAtMs = nowMs();
             // No haptic here: the caller's saved toast plays the success haptic.
             // Tell the session timer's sinks (the paired gym timer). A Rogue
             // timer is only connected while this phone drives the wall (see
             // RogueTimerProvider), so a passenger's tick can't touch it, and the
             // sink decides whether this tick restarts it. Never throws.
-            noteSessionTimerTick(climbedAtIso, nowMs());
+            noteSessionTimerTick(climbedAtIso, landedAtMs);
             // Anchor the in-app rest timer on the same instant (#5378). No-op
             // unless the climber armed it. This runs on the offline-queued
             // delivery too, which is correct: a rest timer is about when YOU
@@ -235,11 +238,16 @@ export function useTickSaver({
             // drainer replays without this hook, so a tick delivered twenty
             // minutes later can never reset a live timer. The status and queue
             // item are what a workout stage's advance rule reads (#5380).
-            noteRestTimerTick(climbedAtIso, getEffectiveRestPacing().mode, nowMs(), { status, queueItemUuid });
+            noteRestTimerTick(climbedAtIso, getEffectiveRestPacing().mode, landedAtMs, { status, queueItemUuid });
             const tickUuid = result?.savedTick.uuid ?? null;
             // The workout's own count of tries and sends, by queue item. It
-            // ignores a climb outside this session's run.
-            if (queueItemUuid !== null && sessionId) {
+            // ignores a climb outside this session's run. A tick dated more than
+            // a minute before it landed is history (yesterday's send logged with
+            // the date picker), judged by the rest timer's own rule: it is no
+            // go of this workout, so it is never a 4x4 rep or a limit try. As a
+            // rep it would close the set one real rep early and move the wall.
+            const isWorkoutGo = isTickFreshEnoughToArm(getRestTimerStartMs(climbedAtIso) ?? landedAtMs, landedAtMs);
+            if (queueItemUuid !== null && sessionId && isWorkoutGo) {
               noteWorkoutRunTick(sessionId, {
                 queueItemUuid,
                 status,

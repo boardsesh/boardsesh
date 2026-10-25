@@ -20,11 +20,18 @@ export type StagePacingMode = 'afterTick' | 'onTheMinute';
 
 /**
  * When an `afterTick` stage lets the wall move on once the rest is over: after
- * any tick on the current climb (`tick`; with `sets`, once it was logged for
- * every rep of the set), or only after a flash or a send on it (`send`, so a
- * fall rests and stays on the same climb).
+ * any tick on the current climb (`tick`), only after a flash or a send on it
+ * (`send`, so a fall rests and stays on the same climb), or once it was logged
+ * for every rep of its set (`set`, a 4x4: a fall and a send each count as one).
+ *
+ * `set` is a value of its own, never `tick` with `sets` beside it, because of
+ * what an older bundle does with a stored run. Every bundle from before sets
+ * knows only `tick` and `send` and never looks at `sets`: read as `tick`, a 4x4
+ * would move the wall 10 s after its first rep. `set` fails those bundles'
+ * `isWorkoutStagePacing`, so after a rollback the stage loses its pacing (their
+ * documented degrade) and runs on the climber's own rest settings instead.
  */
-export type StageAdvanceOn = 'tick' | 'send';
+export type StageAdvanceOn = 'tick' | 'send' | 'set';
 
 /**
  * A 4x4's sets: the climb on the wall stays up until it was logged
@@ -41,13 +48,22 @@ export type WorkoutStagePacing =
       /**
        * The rest after each logged climb (limit bouldering: after each try). 0
        * means no rest; the changeover still applies wherever the rest moves the
-       * wall. With `sets`, the rest between two reps of a set, where 0 runs no
-       * rest at all, since that rest never moves the wall.
+       * wall.
        */
       restSeconds: number;
-      advanceOn: StageAdvanceOn;
-      /** A 4x4 only: reps per climb, and the rest after a set's last rep. */
-      sets?: StageSetPacing;
+      advanceOn: Exclude<StageAdvanceOn, 'set'>;
+      sets?: undefined;
+    }
+  | {
+      mode: 'afterTick';
+      /**
+       * The rest between two reps of a set. That rest never moves the wall, so
+       * 0 runs no rest at all.
+       */
+      restSeconds: number;
+      advanceOn: 'set';
+      /** A 4x4: reps per climb, and the rest after a set's last rep. */
+      sets: StageSetPacing;
     };
 
 /**
@@ -96,7 +112,7 @@ export function pacingForOptions(options: GeneratorOptions): WorkoutStagePacing 
       return {
         mode: 'afterTick',
         restSeconds: stageRest(options.restBetweenRepsSeconds),
-        advanceOn: 'tick',
+        advanceOn: 'set',
         sets: {
           repsPerSet: wholeNumberIn(options.repsPerSet, MIN_STAGE_REPS_PER_SET, MAX_STAGE_REPS_PER_SET),
           restBetweenSetsSeconds: stageRest(options.restBetweenSetsSeconds),
@@ -143,6 +159,8 @@ function isStageSetPacing(candidate: unknown): candidate is StageSetPacing {
  * True when stored data is pacing this bundle can run. Rejects an unknown mode
  * or advance rule, and seconds that are not whole or out of range, so a run
  * written by a newer bundle loses just its pacing rather than misreading it.
+ * `sets` goes with `set` and nothing else: one without the other is no shape
+ * any bundle writes.
  *
  * Also rejects the round 4x4 a tester's run may still hold from before sets
  * (`restBetweenRoundsSeconds`): its queue holds every climb once per round, so
@@ -156,10 +174,8 @@ export function isWorkoutStagePacing(candidate: unknown): candidate is WorkoutSt
     return isWholeNumberIn(pacing.restSeconds, MIN_STAGE_INTERVAL_SECONDS, MAX_STAGE_REST_SECONDS);
   }
   if (pacing.mode !== 'afterTick') return false;
-  return (
-    isWholeNumberIn(pacing.restSeconds, 0, MAX_STAGE_REST_SECONDS) &&
-    pacing.restBetweenRoundsSeconds === undefined &&
-    (pacing.sets === undefined || isStageSetPacing(pacing.sets)) &&
-    (pacing.advanceOn === 'tick' || pacing.advanceOn === 'send')
-  );
+  if (!isWholeNumberIn(pacing.restSeconds, 0, MAX_STAGE_REST_SECONDS)) return false;
+  if (pacing.restBetweenRoundsSeconds !== undefined) return false;
+  if (pacing.advanceOn === 'set') return isStageSetPacing(pacing.sets);
+  return (pacing.advanceOn === 'tick' || pacing.advanceOn === 'send') && pacing.sets === undefined;
 }

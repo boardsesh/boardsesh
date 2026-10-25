@@ -89,7 +89,9 @@ minute keeps its beat; a tick only fills a missing anchor, with the same floor.
 The floor is for a slow save, not for history. A tick dated more than
 `AUTO_ADVANCE_MAX_BACKDATE_MS` (60 s) before it lands, judged on its own `climbedAt`
 (`isTickFreshEnoughToArm`), is history: yesterday's session logged with the date picker. It
-never replaces `lastTick`, so it never moves the wall under a tick or send rule. On a running
+never replaces `lastTick`, so it never moves the wall under a tick or send rule, and the tick
+path keeps it out of the workout's tick log by the same test, so it is never a 4x4 rep either
+(`use-tick-saver.ts`). On a running
 rest it goes through the floor, so it never rewinds it. A paused rest stays paused. With no
 anchor it anchors at its own time, as every tick did before the floor, so its deadline is
 usually long gone and nothing is scheduled. Floored there instead, it would start a rest at the

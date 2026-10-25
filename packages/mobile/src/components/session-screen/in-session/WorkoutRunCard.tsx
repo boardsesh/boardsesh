@@ -1,5 +1,5 @@
 // The workout you generated, on the session screen (#5379, #6291): where you
-// are in it ("4x4 · Set 2 of 4 · Rep 3 of 4") and the climb on the wall, which
+// are in it ("4x4 · Rep 3 of 4 · Set 2 of 4") and the climb on the wall, which
 // opens the player; the rest a timed block gives you, counting down, and what
 // comes after it; its stages in the order you will reach them, with what each
 // finished one came to (sent, tried, skipped); and "Add a block" under them. A
@@ -247,8 +247,8 @@ function WorkoutDoneLine({ totals }: { totals: WorkoutClimbTally }) {
 }
 
 /**
- * The climb on the wall, under where it sits in the workout ("4x4 · Set 2 of 4
- * · Rep 3 of 4", and "· Try 3" on a limit climb). Tap it to open the player.
+ * The climb on the wall, under where it sits in the workout ("4x4 · Rep 3 of 4
+ * · Set 2 of 4", and "· Try 3" on a limit climb). Tap it to open the player.
  */
 function CurrentClimbRow({ readout, item }: { readout: WorkoutRunnerReadout; item: ClimbQueueItem }) {
   const { t } = useTranslation('session');

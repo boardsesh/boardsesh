@@ -39,7 +39,7 @@ describe('pacingForOptions', () => {
     expect(pacingForOptions(fourByFour)).toEqual({
       mode: 'afterTick',
       restSeconds: 0,
-      advanceOn: 'tick',
+      advanceOn: 'set',
       sets: { repsPerSet: 4, restBetweenSetsSeconds: 180 },
     });
     expect(
@@ -47,7 +47,7 @@ describe('pacingForOptions', () => {
     ).toEqual({
       mode: 'afterTick',
       restSeconds: 45,
-      advanceOn: 'tick',
+      advanceOn: 'set',
       sets: { repsPerSet: 3, restBetweenSetsSeconds: 300 },
     });
   });
@@ -112,7 +112,7 @@ describe('stageRestSeconds', () => {
   const fourByFourPacing: WorkoutStagePacing = {
     mode: 'afterTick',
     restSeconds: 30,
-    advanceOn: 'tick',
+    advanceOn: 'set',
     sets: { repsPerSet: 4, restBetweenSetsSeconds: 180 },
   };
 
@@ -176,20 +176,29 @@ describe('isWorkoutStagePacing', () => {
       'a 4x4 from before sets, with its round rest',
       { mode: 'afterTick', restSeconds: 0, restBetweenRoundsSeconds: 180, advanceOn: 'tick' },
     ],
-    ['sets that are not an object', { mode: 'afterTick', restSeconds: 0, advanceOn: 'tick', sets: 4 }],
+    ['sets that are not an object', { mode: 'afterTick', restSeconds: 0, advanceOn: 'set', sets: 4 }],
     [
       'one rep a set',
-      { mode: 'afterTick', restSeconds: 0, advanceOn: 'tick', sets: { repsPerSet: 1, restBetweenSetsSeconds: 180 } },
+      { mode: 'afterTick', restSeconds: 0, advanceOn: 'set', sets: { repsPerSet: 1, restBetweenSetsSeconds: 180 } },
     ],
     [
       'eleven reps a set',
-      { mode: 'afterTick', restSeconds: 0, advanceOn: 'tick', sets: { repsPerSet: 11, restBetweenSetsSeconds: 180 } },
+      { mode: 'afterTick', restSeconds: 0, advanceOn: 'set', sets: { repsPerSet: 11, restBetweenSetsSeconds: 180 } },
     ],
     [
       'a set rest over an hour',
-      { mode: 'afterTick', restSeconds: 0, advanceOn: 'tick', sets: { repsPerSet: 4, restBetweenSetsSeconds: 3601 } },
+      { mode: 'afterTick', restSeconds: 0, advanceOn: 'set', sets: { repsPerSet: 4, restBetweenSetsSeconds: 3601 } },
     ],
-    ['sets with no set rest', { mode: 'afterTick', restSeconds: 0, advanceOn: 'tick', sets: { repsPerSet: 4 } }],
+    ['sets with no set rest', { mode: 'afterTick', restSeconds: 0, advanceOn: 'set', sets: { repsPerSet: 4 } }],
+    ['the set rule with no sets', { mode: 'afterTick', restSeconds: 0, advanceOn: 'set' }],
+    [
+      'sets beside the tick rule',
+      { mode: 'afterTick', restSeconds: 0, advanceOn: 'tick', sets: { repsPerSet: 4, restBetweenSetsSeconds: 180 } },
+    ],
+    [
+      'sets beside the send rule',
+      { mode: 'afterTick', restSeconds: 0, advanceOn: 'send', sets: { repsPerSet: 4, restBetweenSetsSeconds: 180 } },
+    ],
   ])('rejects %s', (_label, candidate) => {
     expect(isWorkoutStagePacing(candidate)).toBe(false);
   });
@@ -205,11 +214,43 @@ describe('isWorkoutStagePacing', () => {
           isWorkoutStagePacing({
             mode: 'afterTick',
             restSeconds: 0,
-            advanceOn: 'tick',
+            advanceOn: 'set',
             sets: { repsPerSet, restBetweenSetsSeconds },
           }),
         ).toBe(true);
       }
     }
+  });
+});
+
+describe('a 4x4 read by a bundle from before sets', () => {
+  /**
+   * `isWorkoutStagePacing` as the bundles before sets ship it (the round model,
+   * #6727, and the binary's embedded bundle). It knows `tick` and `send` and
+   * never looks at `sets`, so a 4x4 stored on `tick` would pass it and move the
+   * wall after its first rep.
+   */
+  function isPacingForABundleBeforeSets(candidate: unknown): boolean {
+    if (typeof candidate !== 'object' || candidate === null) return false;
+    const pacing = candidate as Record<string, unknown>;
+    const isWholeSecondsIn = (seconds: unknown, min: number, max: number) =>
+      typeof seconds === 'number' && Number.isInteger(seconds) && seconds >= min && seconds <= max;
+    if (pacing.mode === 'onTheMinute') return isWholeSecondsIn(pacing.restSeconds, 15, 3600);
+    if (pacing.mode !== 'afterTick') return false;
+    return (
+      isWholeSecondsIn(pacing.restSeconds, 0, 3600) &&
+      (pacing.restBetweenRoundsSeconds === undefined || isWholeSecondsIn(pacing.restBetweenRoundsSeconds, 0, 3600)) &&
+      (pacing.advanceOn === 'tick' || pacing.advanceOn === 'send')
+    );
+  }
+
+  it('loses its pacing there, so the older bundle runs it on the climber’s own rest settings', () => {
+    expect(isPacingForABundleBeforeSets(pacingForOptions(fourByFour))).toBe(false);
+    expect(isPacingForABundleBeforeSets(JSON.parse(JSON.stringify(pacingForOptions(fourByFour))))).toBe(false);
+  });
+
+  it('keeps the pacing of every other timed type readable there', () => {
+    expect(isPacingForABundleBeforeSets(pacingForOptions(onTheMinute))).toBe(true);
+    expect(isPacingForABundleBeforeSets(pacingForOptions(limitBouldering))).toBe(true);
   });
 });

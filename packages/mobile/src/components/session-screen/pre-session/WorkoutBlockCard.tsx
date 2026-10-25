@@ -42,7 +42,7 @@ export type WarmUpRamp = { direction: 'up' | 'down'; grade: number };
 
 /**
  * The one-line summary under a closed card's type: `V6 · 20 climbs · spread 0`
- * for a workout, `V6 · 4 sets · 4 reps each · 3:00 between sets` for a 4x4,
+ * for a workout, `V6 · 4 reps × 4 sets · 3:00 between sets` for a 4x4 (reps first, sets second),
  * `Standard · ramps to V6` for a warm-up, `Standard · eases off from V6` for one
  * after the last workout block. `filtered` adds a `· filtered` marker, for a
  * block whose climb filters are not the defaults.
@@ -110,8 +110,7 @@ function blockSettingsSummary(
       break;
     case 'fourByFour':
       parts.push(
-        t('mobile.session.preGeneratorBlockSummarySets', { count: options.sets }),
-        t('mobile.session.preGeneratorBlockSummaryRepsEach', { count: options.repsPerSet }),
+        t('mobile.session.preGeneratorBlockSummaryRepsBySets', { reps: options.repsPerSet, count: options.sets }),
       );
       // No rest between reps is the default, and says nothing worth a part.
       if (options.restBetweenRepsSeconds > 0) {

@@ -19,7 +19,7 @@ const SESSION_ID = 'session-1';
 const FOUR_BY_FOUR_PACING = {
   mode: 'afterTick',
   restSeconds: 0,
-  advanceOn: 'tick',
+  advanceOn: 'set',
   sets: { repsPerSet: 2, restBetweenSetsSeconds: 30 },
 } as const;
 
@@ -125,7 +125,7 @@ describe('resolveStageRestPacing', () => {
           pacing: {
             mode: 'afterTick',
             restSeconds: 45,
-            advanceOn: 'tick',
+            advanceOn: 'set',
             sets: { repsPerSet: 3, restBetweenSetsSeconds: 0 },
           },
         },

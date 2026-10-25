@@ -55,7 +55,7 @@ describe('stagePreviewQueue', () => {
       pacing: {
         mode: 'afterTick',
         restSeconds: 0,
-        advanceOn: 'tick',
+        advanceOn: 'set',
         sets: { repsPerSet: 3, restBetweenSetsSeconds: 180 },
       },
     });

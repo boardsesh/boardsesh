@@ -199,7 +199,7 @@ function logByQueueItem(log: readonly WorkoutTickLogEntry[]): Map<string, ClimbL
  * climb the try (null once it is sent), on a 4x4 the rep, counting every tick
  * as one, a fall included, and staying on the set's last rep once it is
  * logged. Null on every other stage. The player subtitle's "· Try 3" or
- * "Set 2 of 4 · Rep 3 of 4" and the runner read it the same way.
+ * "Rep 3 of 4 · Set 2 of 4" and the runner read it the same way.
  */
 export function workoutClimbGo(
   run: WorkoutRun,

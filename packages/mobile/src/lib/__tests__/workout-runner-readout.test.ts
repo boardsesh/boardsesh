@@ -16,7 +16,7 @@ import { formatWorkoutStagePositionWithGo } from '../workout-run-readout';
 const FOUR_BY_FOUR: WorkoutStagePacing = {
   mode: 'afterTick',
   restSeconds: 0,
-  advanceOn: 'tick',
+  advanceOn: 'set',
   sets: { repsPerSet: 2, restBetweenSetsSeconds: 180 },
 };
 const LIMIT: WorkoutStagePacing = { mode: 'afterTick', restSeconds: 180, advanceOn: 'send' };
@@ -702,7 +702,7 @@ describe('formatWorkoutStagePositionWithGo', () => {
     if (!position) throw new Error('expected a position');
 
     expect(formatWorkoutStagePositionWithGo(position, { kind: 'rep', number: 2, total: 2 }, t)).toBe(
-      'mobile.session.workoutStageSetPosition(stage=mobile.session.preGeneratorFourByFour,set=3,sets=4,rep=2,reps=2)',
+      'mobile.session.workoutStageSetPosition(stage=mobile.session.preGeneratorFourByFour,rep=2,reps=2,set=3,sets=4)',
     );
   });
 });

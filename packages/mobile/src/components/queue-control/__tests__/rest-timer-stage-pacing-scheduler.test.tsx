@@ -114,6 +114,7 @@ vi.mock('../../../lib/clock', () => ({ nowMs: () => harness.nowMs }));
 vi.mock('../../../lib/rest-timer-cues', () => ({ playRestTimerCue: vi.fn() }));
 
 import { playRestTimerCue, type RestTimerCueKind } from '../../../lib/rest-timer-cues';
+import { isTickFreshEnoughToArm } from '../../../lib/rest-timer-auto-advance';
 import {
   armRestTimer,
   getRestTimerState,
@@ -143,7 +144,7 @@ function fourByFour(repsPerSet: number, restBetweenRepsSeconds: number, restBetw
         pacing: {
           mode: 'afterTick',
           restSeconds: restBetweenRepsSeconds,
-          advanceOn: 'tick',
+          advanceOn: 'set',
           sets: { repsPerSet, restBetweenSetsSeconds },
         },
       },
@@ -217,9 +218,10 @@ function startWorkout(run: WorkoutRun, queueUuids: string[], currentUuid = queue
 }
 
 /**
- * The tick path: a tick on `queueItemUuid` (or on whatever is up), noted now.
- * The rest timer first, then the workout's tick log, which a 4x4 counts its
- * reps from.
+ * The tick path, as use-tick-saver runs it: a tick on `queueItemUuid` (or on
+ * whatever is up), dated `lateMs` before it lands. The rest timer first, then
+ * the workout's tick log, which a 4x4 counts its reps from. A tick dated more
+ * than a minute back is history and stays out of the log.
  */
 function logTick(status: RestTimerTickStatus, queueItemUuid: string | null = current(), lateMs = 0) {
   act(() => {
@@ -228,7 +230,9 @@ function logTick(status: RestTimerTickStatus, queueItemUuid: string | null = cur
       status,
       queueItemUuid,
     });
-    if (queueItemUuid !== null) noteWorkoutRunTick('session-1', { queueItemUuid, status, climbedAt });
+    if (queueItemUuid !== null && isTickFreshEnoughToArm(Date.parse(climbedAt), harness.nowMs)) {
+      noteWorkoutRunTick('session-1', { queueItemUuid, status, climbedAt });
+    }
   });
 }
 
@@ -911,6 +915,47 @@ describe('yesterday’s send, logged on the climb just lit', () => {
     advance(1_000);
     expect(nextClimb).toHaveBeenCalledTimes(2);
     expect(current()).toBe('hand-1');
+  });
+});
+
+describe('yesterday’s send of the 4x4 climb on the wall', () => {
+  const A_DAY_MS = 24 * 60 * 60 * 1000;
+
+  /** A 2-rep set on a; the date picker logs a send of a a day back before any real rep. */
+  function yesterdaysSendOnTheSetClimb() {
+    startWorkout(FOUR_BY_FOUR, ['a', 'b', 'c']);
+    renderRuntime();
+    armTimer();
+    logTick('send', 'a', A_DAY_MS);
+    expect(getRestTimerState().stagePacing).toMatchObject({ queueItemUuid: 'a', reps: { logged: 0, perSet: 2 } });
+  }
+
+  it('is no rep: one real rep leaves the set open, and the wall stays past the set rest', () => {
+    yesterdaysSendOnTheSetClimb();
+
+    logTick('send');
+    expect(getRestTimerState().stagePacing).toMatchObject({ closesSet: false, reps: { logged: 1, perSet: 2 } });
+    advance(600_000);
+    expect(nextClimb).not.toHaveBeenCalled();
+    expect(current()).toBe('a');
+  });
+
+  it('a second real rep closes the set, and the wall moves on after the set rest', () => {
+    yesterdaysSendOnTheSetClimb();
+
+    logTick('send');
+    advance(10_000);
+    logTick('attempt');
+    expect(getRestTimerState().stagePacing).toMatchObject({
+      targetSeconds: 30,
+      closesSet: true,
+      reps: { logged: 2, perSet: 2 },
+    });
+    advance(29_000);
+    expect(nextClimb).not.toHaveBeenCalled();
+    advance(1_000);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+    expect(current()).toBe('b');
   });
 });
 

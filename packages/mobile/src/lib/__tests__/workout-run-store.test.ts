@@ -67,7 +67,7 @@ const timedRun: WorkoutRun = {
       pacing: {
         mode: 'afterTick',
         restSeconds: 0,
-        advanceOn: 'tick',
+        advanceOn: 'set',
         sets: { repsPerSet: 4, restBetweenSetsSeconds: 180 },
       },
     },
@@ -646,7 +646,7 @@ describe('workout-run-store: timed stages and the storage slot', () => {
               ...fourByFour,
               id: 'bad-sets',
               itemUuids: ['s1'],
-              pacing: { mode: 'afterTick', restSeconds: 0, advanceOn: 'tick', sets: { repsPerSet: 'four' } },
+              pacing: { mode: 'afterTick', restSeconds: 0, advanceOn: 'set', sets: { repsPerSet: 'four' } },
             },
           ],
         },

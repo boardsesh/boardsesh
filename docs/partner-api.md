@@ -241,7 +241,7 @@ Block types, and how Boardsesh runs each one today:
 | `ladder`          | Up the grades, then stop                                                  | yes                 |
 | `gradeFocus`      | N climbs all at the target grade                                          | yes                 |
 | `onTheMinute`     | One climb per interval, the wall advances on its own                      | yes                 |
-| `fourByFour`      | Four climbs, four rounds, timed rests between climbs and between rounds   | later, see below    |
+| `fourByFour`      | Sets of one climb done for every rep, rests between reps and between sets | later, see below    |
 | `limitBouldering` | A few hard problems, long rests, attempts count more than sends           | later               |
 | `freeClimbing`    | Just the instructions text and a timer; the climber picks their own climbs| yes                 |
 
@@ -249,9 +249,17 @@ Block types, and how Boardsesh runs each one today:
 the climber's board and paces it. A block that does not run natively yet is
 still shown, as a card with your `label` and `instructions`, and the climber
 climbs it freestyle. Every tick they log during the session still comes back
-in the results, so nothing is lost; the app just does not count rounds for
-them yet. The create response tells you which is which per block, so you can
+in the results, so nothing is lost; the app just does not pace those blocks
+for them yet. The create response tells you which is which per block, so you can
 say so in your UI.
+
+The app's own 4x4 is reps × sets: each set is one climb, done for every rep
+(a fall counts as a rep), with a rest between reps and another between sets,
+and the wall moves to the next climb for the next set. The `fourByFour` fields
+keep the shape above. How `climbCount`, `rounds` and the two rests map onto
+the app's reps and sets will be announced with
+[#6734](https://github.com/boardsesh/boardsesh/issues/6734) before
+`fourByFour` runs natively.
 
 ### Grades
 
@@ -536,7 +544,7 @@ notes, the mapping is direct:
 | `session.notes`                    | Session notes                                      |
 
 For an interval-style exercise (a 4x4, on-the-minute), `blocks[].done` gives
-sets and reps completed; per-round timing comes later.
+reps and sets completed; per-round timing comes later.
 
 Sequence's Strava integration lets a climber decide per workout and per
 completion whether to sync. The same switch fits here: a workout the climber
@@ -580,9 +588,11 @@ running for at least six months.
 These are on the Boardsesh roadmap and shape how the payload will grow. None
 of them changes the shape of what is described above.
 
-- `fourByFour` and `limitBouldering` running natively, with a round counter
-  and both rest timers. When that ships, `climbs[].round` and per-round
-  timing in `blocks[]` start being populated.
+- `fourByFour` and `limitBouldering` running natively: a 4x4 as reps × sets
+  on one climb per set, with a rep and set counter and both rest timers. The
+  `fourByFour` field mapping comes first, with #6734. When that ships,
+  `climbs[].round` and per-round timing in `blocks[]` start being populated,
+  and the same announcement says what `round` counts in a 4x4.
 - Rest adherence per block (planned rest vs actual), once blocks are tracked
   on the server instead of inferred from tick timing.
 - Optional effort rating on the session summary.

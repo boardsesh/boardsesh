@@ -102,21 +102,21 @@ describe('workoutStepperRows for a ladder', () => {
 });
 
 describe('workoutStepperRows for timed blocks', () => {
-  it('gives a 4x4 its sets (1 to 10), reps per set (2 to 10) and both rests', () => {
+  it('gives a 4x4 its reps per set (2 to 10) above its sets (1 to 10), then both rests', () => {
     const rows = rowsFor({ ...DEFAULT_FOUR_BY_FOUR_OPTIONS, targetGrade: 18 });
 
     expect(rows.map((row) => row.key)).toEqual([
-      'sets',
       'repsPerSet',
+      'sets',
       'restBetweenRepsSeconds',
       'restBetweenSetsSeconds',
     ]);
-    expect(rows[0].element.props).toMatchObject({ label: 'mobile.session.preGeneratorSets', min: 1, max: 10 });
-    expect(rows[1].element.props).toMatchObject({
+    expect(rows[0].element.props).toMatchObject({
       label: 'mobile.session.preGeneratorRepsPerSet',
       min: 2,
       max: 10,
     });
+    expect(rows[1].element.props).toMatchObject({ label: 'mobile.session.preGeneratorSets', min: 1, max: 10 });
     expect(rows[2].element.props).toMatchObject({
       label: 'mobile.session.preGeneratorRestBetweenReps',
       allowOff: true,

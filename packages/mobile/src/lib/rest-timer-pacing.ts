@@ -241,14 +241,23 @@ export function resolveStageRestPacing({
     queueItemUuid,
     mode: stagePacing.mode,
     targetSeconds: restSeconds > 0 ? restSeconds : null,
-    // On the minute, the beat itself moves the wall: logged or not, the next
-    // climb comes up on time.
-    advanceOn: stagePacing.mode === 'onTheMinute' ? 'deadline' : stagePacing.advanceOn,
+    advanceOn: restAdvanceRuleForStage(stagePacing),
     closesSet,
     ...(sets !== undefined ? { reps: { logged: Math.max(0, repsLogged), perSet: sets.repsPerSet } } : {}),
     ...(position.isCoolDown === true ? { isCoolDown: true as const } : {}),
     stagePacing,
   };
+}
+
+/**
+ * The timer's advance rule for a stage. On the minute the beat itself moves the
+ * wall: logged or not, the next climb comes up on time. A 4x4 set (`set`) runs
+ * on `tick`, the rule a crew clock carries too: what holds it until the set's
+ * last rep is its `reps` (`stageHasRepsLeft`), not the rule.
+ */
+function restAdvanceRuleForStage(stagePacing: WorkoutStagePacing): RestAdvanceRule {
+  if (stagePacing.mode === 'onTheMinute') return 'deadline';
+  return stagePacing.advanceOn === 'set' ? 'tick' : stagePacing.advanceOn;
 }
 
 function sameWorkoutStagePacing(left: WorkoutStagePacing, right: WorkoutStagePacing): boolean {

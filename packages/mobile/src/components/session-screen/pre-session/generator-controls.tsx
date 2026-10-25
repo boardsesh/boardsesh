@@ -336,12 +336,10 @@ export function workoutStepperRows(
           (intervalSeconds) => onOptionsChange({ ...options, intervalSeconds }),
         ),
       ];
-    // A set is one climb done for every rep, so the sets are the climbs.
+    // A set is one climb done for every rep, so the sets are the climbs. Reps
+    // come first, sets second, as everywhere a 4x4 is described.
     case 'fourByFour':
       return [
-        stepperRow(t('mobile.session.preGeneratorSets'), 'sets', options.sets, 1, MAX_STAGE_SETS, (sets) =>
-          onOptionsChange({ ...options, sets }),
-        ),
         stepperRow(
           t('mobile.session.preGeneratorRepsPerSet'),
           'repsPerSet',
@@ -349,6 +347,9 @@ export function workoutStepperRows(
           MIN_STAGE_REPS_PER_SET,
           MAX_STAGE_REPS_PER_SET,
           (repsPerSet) => onOptionsChange({ ...options, repsPerSet }),
+        ),
+        stepperRow(t('mobile.session.preGeneratorSets'), 'sets', options.sets, 1, MAX_STAGE_SETS, (sets) =>
+          onOptionsChange({ ...options, sets }),
         ),
         restRow(
           t('mobile.session.preGeneratorRestBetweenReps'),

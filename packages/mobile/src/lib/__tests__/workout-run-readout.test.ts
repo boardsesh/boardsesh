@@ -141,7 +141,7 @@ describe('workout stage labels', () => {
     const position = describeWorkoutRun(fourByFour, ['a', 'b', 'c', 'd'], 'b')?.current;
     if (!position) throw new Error('expected a current climb');
     expect(formatWorkoutStagePositionWithGo(position, { kind: 'rep', number: 3, total: 4 }, t)).toBe(
-      'mobile.session.workoutStageSetPosition(stage=mobile.session.preGeneratorFourByFour,set=2,sets=4,rep=3,reps=4)',
+      'mobile.session.workoutStageSetPosition(stage=mobile.session.preGeneratorFourByFour,rep=3,reps=4,set=2,sets=4)',
     );
     // With no go to say (a stored 4x4 from before sets, unpaced), it reads like any stage.
     expect(formatWorkoutStagePositionWithGo(position, null, t)).toBe(
@@ -187,9 +187,9 @@ describe('formatWorkoutStageParts', () => {
     if (!position) throw new Error('expected a current climb');
     expect(formatWorkoutStageParts(position, { kind: 'rep', number: 1, total: 4 }, t)).toEqual({
       stage: 'mobile.session.preGeneratorFourByFour',
-      count: 'mobile.session.workoutStageSetCount(set=2,sets=2,rep=1,reps=4)',
+      count: 'mobile.session.workoutStageSetCount(rep=1,reps=4,set=2,sets=2)',
       accessibilityLabel:
-        'mobile.session.workoutStageTopBarSetAria(stage=mobile.session.preGeneratorFourByFour,set=2,sets=2,rep=1,reps=4)',
+        'mobile.session.workoutStageTopBarSetAria(stage=mobile.session.preGeneratorFourByFour,rep=1,reps=4,set=2,sets=2)',
     });
   });
 

@@ -518,7 +518,7 @@ describe('PreSessionView analytics', () => {
             pacing: {
               mode: 'afterTick',
               restSeconds: 0,
-              advanceOn: 'tick',
+              advanceOn: 'set',
               sets: { repsPerSet: 4, restBetweenSetsSeconds: 180 },
             },
           },

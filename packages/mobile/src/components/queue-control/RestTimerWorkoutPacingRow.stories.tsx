@@ -37,7 +37,7 @@ const FOUR_BY_FOUR: RestTimerStagePacing = {
   stagePacing: {
     mode: 'afterTick',
     restSeconds: 45,
-    advanceOn: 'tick',
+    advanceOn: 'set',
     sets: { repsPerSet: 3, restBetweenSetsSeconds: 30 },
   },
 };

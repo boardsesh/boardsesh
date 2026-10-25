@@ -95,7 +95,7 @@ const FOUR_BY_FOUR: RestTimerStagePacing = {
   stagePacing: {
     mode: 'afterTick',
     restSeconds: 0,
-    advanceOn: 'tick',
+    advanceOn: 'set',
     sets: { repsPerSet: 4, restBetweenSetsSeconds: 180 },
   },
 };
@@ -108,7 +108,7 @@ const TRIPLES: RestTimerStagePacing = {
   stagePacing: {
     mode: 'afterTick',
     restSeconds: 45,
-    advanceOn: 'tick',
+    advanceOn: 'set',
     sets: { repsPerSet: 3, restBetweenSetsSeconds: 300 },
   },
 };

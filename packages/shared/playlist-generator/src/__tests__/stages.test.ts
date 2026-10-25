@@ -1106,7 +1106,7 @@ describe('stage kinds', () => {
 const FOUR_BY_FOUR_PACING: WorkoutStagePacing = {
   mode: 'afterTick',
   restSeconds: 0,
-  advanceOn: 'tick',
+  advanceOn: 'set',
   sets: { repsPerSet: 4, restBetweenSetsSeconds: 180 },
 };
 

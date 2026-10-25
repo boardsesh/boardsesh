@@ -153,6 +153,7 @@ import {
   resetRestTimerStoreForTests,
   resumeRestTimer,
 } from '../../../lib/rest-timer-store';
+import { isTickFreshEnoughToArm } from '../../../lib/rest-timer-auto-advance';
 import type { RestTimerTickStatus } from '../../../lib/rest-timer-pacing';
 import { noteWorkoutRunTick, resetWorkoutRunStoreForTests, setWorkoutRun } from '../../../lib/workout-run-store';
 import { RestTimerAutoAdvanceScheduler } from '../RestTimerAutoAdvanceScheduler';
@@ -173,7 +174,7 @@ const FOUR_BY_FOUR: WorkoutRun = {
       pacing: {
         mode: 'afterTick',
         restSeconds: 0,
-        advanceOn: 'tick',
+        advanceOn: 'set',
         sets: { repsPerSet: 2, restBetweenSetsSeconds: 30 },
       },
     },
@@ -190,7 +191,7 @@ const FOUR_BY_FOUR_CHANGEOVER: WorkoutRun = {
       pacing: {
         mode: 'afterTick',
         restSeconds: 0,
-        advanceOn: 'tick',
+        advanceOn: 'set',
         sets: { repsPerSet: 2, restBetweenSetsSeconds: 0 },
       },
     },
@@ -234,9 +235,10 @@ function current(): string | null {
 }
 
 /**
- * The tick path: a tick on `queueItemUuid` (or on whatever is up), climbed
- * `agoMs` before it lands. The rest timer first, then the workout's tick log,
- * which a 4x4 counts its reps from.
+ * The tick path, as use-tick-saver runs it: a tick on `queueItemUuid` (or on
+ * whatever is up), climbed `agoMs` before it lands. The rest timer first, then
+ * the workout's tick log, which a 4x4 counts its reps from. A tick dated more
+ * than a minute back is history and stays out of the log.
  */
 function logTick(status: RestTimerTickStatus, queueItemUuid: string | null = current(), agoMs = 0) {
   act(() => {
@@ -245,7 +247,9 @@ function logTick(status: RestTimerTickStatus, queueItemUuid: string | null = cur
       status,
       queueItemUuid,
     });
-    if (queueItemUuid !== null) noteWorkoutRunTick('session-1', { queueItemUuid, status, climbedAt });
+    if (queueItemUuid !== null && isTickFreshEnoughToArm(Date.parse(climbedAt), harness.nowMs)) {
+      noteWorkoutRunTick('session-1', { queueItemUuid, status, climbedAt });
+    }
   });
 }
 

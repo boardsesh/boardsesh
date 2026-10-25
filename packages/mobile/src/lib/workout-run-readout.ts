@@ -126,8 +126,8 @@ export function formatWorkoutStagePosition(position: WorkoutRunPosition, t: Tran
 /**
  * The player's subtitle part with the go the climber is on (`workoutClimbGo`):
  * the try on a stage that stays on a climb until it is sent, "Limit Bouldering
- * · 2 of 3 · Try 3", or the set and rep on a 4x4, "4x4 · Set 2 of 4 · Rep 3 of
- * 4". With no go (every other stage, or the climb is sent) it is
+ * · 2 of 3 · Try 3", or the rep and set on a 4x4, "4x4 · Rep 3 of 4 · Set 2 of
+ * 4" (reps first, sets second). With no go (every other stage, or the climb is sent) it is
  * `formatWorkoutStagePosition` alone.
  */
 export function formatWorkoutStagePositionWithGo(
@@ -138,7 +138,7 @@ export function formatWorkoutStagePositionWithGo(
   if (go?.kind === 'rep') {
     return t('mobile.session.workoutStageSetPosition', {
       stage: workoutStageName(position.kind, t, position.isCoolDown === true),
-      ...setAndRep(position, go),
+      ...repAndSet(position, go),
     });
   }
   const stagePosition = formatWorkoutStagePosition(position, t);
@@ -146,19 +146,19 @@ export function formatWorkoutStagePositionWithGo(
   return t('mobile.workoutRunner.positionWithTry', { position: stagePosition, number: go.number });
 }
 
-/** A 4x4 climb's numbers: which set (one climb each) and which rep of it. */
-function setAndRep(
+/** A 4x4 climb's numbers: which rep, and which set (one climb each) it is of. */
+function repAndSet(
   position: WorkoutRunPosition,
   go: Extract<WorkoutClimbGo, { kind: 'rep' }>,
-): { set: number; sets: number; rep: number; reps: number } {
-  return { set: position.positionInStage, sets: position.stageSize, rep: go.number, reps: go.total };
+): { rep: number; reps: number; set: number; sets: number } {
+  return { rep: go.number, reps: go.total, set: position.positionInStage, sets: position.stageSize };
 }
 
 /**
  * Where a workout climb sits, as the two pieces the player's top bar lays out:
  * the stage's name, which may be cut, and its numbers, which never are (#6745).
  * "Warm-up" and "2 of 5" ("Cool-down" after the last block), or on a 4x4 "4x4"
- * and "Set 2 of 4 · Rep 3 of 4". A limit climb's try rides with the numbers:
+ * and "Rep 3 of 4 · Set 2 of 4". A limit climb's try rides with the numbers:
  * "2 of 3 · Try 3". VoiceOver gets the numbers in words, not "·".
  */
 export function formatWorkoutStageParts(
@@ -168,7 +168,7 @@ export function formatWorkoutStageParts(
 ): { stage: string; count: string; accessibilityLabel: string } {
   const stage = workoutStageName(position.kind, t, position.isCoolDown === true);
   if (go?.kind === 'rep') {
-    const numbers = setAndRep(position, go);
+    const numbers = repAndSet(position, go);
     return {
       stage,
       count: t('mobile.session.workoutStageSetCount', numbers),

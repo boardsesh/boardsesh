@@ -501,6 +501,27 @@ describe('useTickSaver after a save', () => {
     expect(noteWorkoutRunTick).not.toHaveBeenCalled();
   });
 
+  it('keeps a tick dated more than a minute back out of the workout log, and still tells the rest timer', () => {
+    queueSnapshot.current = { uuid: 'queue-7', climb: { uuid: CLIMB_UUID, angle: ANGLE } };
+    const { result } = renderSaver({}, { withQueue: true });
+
+    // Yesterday's send of the climb on the wall, logged with the date picker:
+    // no rep and no try of this workout. The rest timer judges it itself.
+    result.current.save(fields({ climbedAtIso: new Date(NOW_MS - 24 * 60 * 60 * 1000).toISOString() }));
+
+    expect(vi.mocked(noteRestTimerTick).mock.calls[0]?.[3]).toEqual({ status: 'send', queueItemUuid: 'queue-7' });
+    expect(noteWorkoutRunTick).not.toHaveBeenCalled();
+  });
+
+  it('still logs a tick that lands a whole minute after it was dated', () => {
+    queueSnapshot.current = { uuid: 'queue-7', climb: { uuid: CLIMB_UUID, angle: ANGLE } };
+    const { result } = renderSaver({}, { withQueue: true });
+
+    result.current.save(fields({ climbedAtIso: new Date(NOW_MS - 60_000).toISOString() }));
+
+    expect(vi.mocked(noteWorkoutRunTick).mock.calls[0]?.[1]).toMatchObject({ queueItemUuid: 'queue-7' });
+  });
+
   it('writes no workout log for a tick outside a session', () => {
     queueSnapshot.current = { uuid: 'queue-7', climb: { uuid: CLIMB_UUID, angle: ANGLE } };
     const { result } = renderSaver({ sessionId: null }, { withQueue: true });

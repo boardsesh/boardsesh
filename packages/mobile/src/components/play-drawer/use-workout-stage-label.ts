@@ -24,8 +24,8 @@ export function useWorkoutQueueUuids(
  * Where a queue item sits in the workout, for the player's top bar: "Warm-up"
  * and "2 of 5", in the same two pieces as a list's name and count. A limit
  * climb also says which try the climber is on, from the ticks logged on it on
- * this phone: "Limit Bouldering" and "2 of 3 · Try 3"; a 4x4 climb says its set
- * and rep: "4x4" and "Set 2 of 4 · Rep 3 of 4". Null for a climb outside the
+ * this phone: "Limit Bouldering" and "2 of 3 · Try 3"; a 4x4 climb says its rep
+ * and set: "4x4" and "Rep 3 of 4 · Set 2 of 4". Null for a climb outside the
  * workout.
  */
 export function useWorkoutStageParts(

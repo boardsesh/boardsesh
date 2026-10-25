@@ -81,7 +81,7 @@ describe('useWorkoutPreview with timed blocks', () => {
         pacing: {
           mode: 'afterTick',
           restSeconds: 0,
-          advanceOn: 'tick',
+          advanceOn: 'set',
           sets: { repsPerSet: 4, restBetweenSetsSeconds: 180 },
         },
       }),
@@ -148,7 +148,7 @@ describe('useWorkoutPreview with timed blocks', () => {
       expect(result.current.toStagedQueueItems().run?.stages[0].pacing).toEqual({
         mode: 'afterTick',
         restSeconds: 30,
-        advanceOn: 'tick',
+        advanceOn: 'set',
         sets: { repsPerSet: 6, restBetweenSetsSeconds: 240 },
       });
       expect(result.current.status).toBe('ready');
