@@ -18,8 +18,6 @@ const cfg = vi.hoisted(() => ({
   // the iOS 26 extras (accessory, search role, minimize). false models iOS 18.
   glassCapable: true,
   platformOS: 'ios' as 'ios' | 'android' | 'web',
-  // iOS reports a dotted string. `prominent` (the separated search tab) is iOS 27+.
-  platformVersion: '27.0',
   // 'regular' takes the tablet sidebar shell; 'compact' keeps the phone tab bars.
   widthClass: 'compact' as 'compact' | 'regular',
   // Tablet in a narrow split: compact width but still a tablet, which the shell keeps on
@@ -49,9 +47,6 @@ vi.mock('react-native', () => ({
   Platform: {
     get OS() {
       return cfg.platformOS;
-    },
-    get Version() {
-      return cfg.platformVersion;
     },
   },
   // _layout.tsx wraps the iPad shell in Views + calls StyleSheet.create at module
@@ -225,34 +220,9 @@ vi.mock('expo-keep-awake', () => ({
 
 vi.mock('expo-router/unstable-native-tabs', () => {
   const Trigger = Object.assign(
-    ({
-      name,
-      hidden,
-      role,
-      disableAutomaticSearchActivation,
-      prominent,
-      children,
-    }: {
-      name: string;
-      hidden?: boolean;
-      role?: string;
-      disableAutomaticSearchActivation?: boolean;
-      prominent?: boolean;
-      children?: ReactNode;
-    }) =>
+    ({ name, hidden, role, children }: { name: string; hidden?: boolean; role?: string; children?: ReactNode }) =>
       // Model NativeTabs: a `hidden` trigger declares the route but is not a tab.
-      hidden
-        ? null
-        : createElement(
-            'section',
-            {
-              'data-trigger': name,
-              'data-tab-role': role,
-              'data-search-activation-disabled': String(disableAutomaticSearchActivation ?? false),
-              'data-prominent': String(prominent ?? false),
-            },
-            children,
-          ),
+      hidden ? null : createElement('section', { 'data-trigger': name, 'data-tab-role': role }, children),
     {
       Icon: ({ sf }: { sf?: unknown }) => createElement('span', { 'data-icon': 'true', 'data-sf': JSON.stringify(sf) }),
       Label: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
@@ -331,7 +301,6 @@ describe('TabLayout', () => {
     cfg.variant = 'liquidGlass';
     cfg.glassCapable = true;
     cfg.platformOS = 'ios';
-    cfg.platformVersion = '27.0';
     cfg.widthClass = 'compact';
     cfg.isTablet = false;
     cfg.windowWidth = 1024;
@@ -400,35 +369,15 @@ describe('TabLayout', () => {
     },
   );
 
-  it('keeps Climbs in the native search role when it is the initial tab', () => {
-    const { container } = render(<TabLayout />);
-
-    expect(container.querySelector('[data-trigger="climbs"]')?.getAttribute('data-tab-role')).toBe('search');
-    expect(container.querySelectorAll('[data-tab-role="search"]')).toHaveLength(1);
-  });
-
-  it('opens Climbs without focusing search and keeps it on its own surface', () => {
-    // SDK 58 makes role="search" a UISearchTab that focuses its field on the first
-    // tap. Climbs turns that off (a second tap focuses instead, see useTabReselect),
-    // and `prominent` keeps the tab separate on iOS 27, where turning activation
-    // off would otherwise put it back inline.
+  it('keeps Climbs an ordinary labelled tab on the iOS 26 bar, like Apple Music', () => {
+    // No role="search": since SDK 58 that is a UISearchTab, which iOS 26 sets apart
+    // from the other tabs and which moves the search field into the bottom bar.
     const { container } = render(<TabLayout />);
     const climbs = container.querySelector('[data-trigger="climbs"]');
 
-    expect(climbs?.getAttribute('data-search-activation-disabled')).toBe('true');
-    expect(climbs?.getAttribute('data-prominent')).toBe('true');
-    expect(container.querySelectorAll('[data-prominent="true"]')).toHaveLength(1);
-  });
-
-  it('keeps Climbs off the iOS 27-only prominent surface on iOS 26', () => {
-    cfg.platformVersion = '26.1';
-
-    const { container } = render(<TabLayout />);
-    const climbs = container.querySelector('[data-trigger="climbs"]');
-
-    expect(climbs?.getAttribute('data-tab-role')).toBe('search');
-    expect(climbs?.getAttribute('data-search-activation-disabled')).toBe('true');
-    expect(container.querySelector('[data-prominent="true"]')).toBeNull();
+    expect(climbs?.hasAttribute('data-tab-role')).toBe(false);
+    expect(container.querySelector('[data-tab-role]')).toBeNull();
+    expect(climbs?.textContent).toContain('mobile.nav.climbs');
   });
 
   it('registers Home as the leftmost material tab', () => {
@@ -465,7 +414,7 @@ describe('TabLayout', () => {
 
   it('leaves the iOS 26-only extras off the iOS 18 native bar', () => {
     // No minimize behavior (react-native-screens warns below iOS 26), no search role
-    // (Climbs stays a labelled tab with its own search field), and no accessory even
+    // (Climbs is a labelled tab with its own search field), and no accessory even
     // with a climb current: the floating JS queue bar carries it instead.
     cfg.variant = 'liquidGlass';
     cfg.glassCapable = false;
@@ -476,7 +425,6 @@ describe('TabLayout', () => {
 
     expect(tabs?.getAttribute('data-minimize-behavior')).toBe('');
     expect(container.querySelector('[data-tab-role="search"]')).toBeNull();
-    expect(container.querySelector('[data-prominent="true"]')).toBeNull();
     expect(container.querySelector('[data-trigger="climbs"]')).not.toBeNull();
     expect(container.querySelector('[data-bottom-accessory="true"]')).toBeNull();
     expect(accessoryMounts.count).toBe(0);

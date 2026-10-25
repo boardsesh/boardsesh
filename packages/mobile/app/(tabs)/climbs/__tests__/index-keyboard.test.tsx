@@ -999,9 +999,8 @@ beforeEach(() => {
   resetClimbRowDisplayForTests();
 });
 
-// SDK 58's search tab focused the field on the tap that opened Climbs. The tab
-// layout turns that off; a second tap on the tab, with the list open, focuses
-// the native search field instead (like Apple Music).
+// Like Apple Music: a second tap on the Climbs tab, with the list open, focuses
+// the native search field.
 describe('ClimbList second tap on the Climbs tab', () => {
   it('focuses the native search field', () => {
     mocks.nativeSearch = true;
@@ -1036,7 +1035,11 @@ describe('ClimbList native header ownership', () => {
         expect(typeof effectiveOptions.headerTitle).toBe('function');
       }
       if (nativeSearch) {
-        expect(screenOptions.headerSearchBarOptions).toMatchObject({ placeholder: 'search.placeholders.climbs' });
+        // Under the title, like Apple Music: `automatic` lets iOS 26 move it into the bottom bar.
+        expect(screenOptions.headerSearchBarOptions).toMatchObject({
+          placeholder: 'search.placeholders.climbs',
+          placement: 'stacked',
+        });
       } else {
         expect(screenOptions.headerSearchBarOptions).toBeUndefined();
       }

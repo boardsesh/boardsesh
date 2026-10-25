@@ -80,7 +80,8 @@ older iPhone is the variant with the chrome degraded, not Material.
     system UIKit tab bar through `NativeTabs` (HIG, Tab bars). Material, Android and the tablet
     shell keep the JS `Tabs` + `MaterialTabBar` / sidebar.
   - `liquidGlassTabBar`: the iOS 26 extras on that bar, also gated on `useGlassCapability()` —
-    Climbs as the separated `role="search"` tab and minimize-on-scroll.
+    Climbs' native search field under its title and minimize-on-scroll. Climbs stays an ordinary
+    labelled tab, like Apple Music's Search tab, not a separated `role="search"` tab.
   - `nativeAccessory`: the `BottomAccessory` platter carries the current climb (iOS 26 only).
     Wherever it is false, including the native bar on iOS 18, the floating JS `PersistentQueueBar`
     carries the current climb, positioned above whichever bar is on screen.
