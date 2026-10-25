@@ -61,6 +61,15 @@ function withLatency(fetchImpl: typeof fetch, delayMs: number) {
   return { fetchImpl: slowFetch, stats };
 }
 
+/** Delays only the named paths, so a test can pick which download finishes last. */
+function withSlowPaths(fetchImpl: typeof fetch, slowPaths: Record<string, number>): typeof fetch {
+  return async (input, init) => {
+    const delayMs = slowPaths[requestedPath(input)];
+    if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
+    return fetchImpl(input, init);
+  };
+}
+
 const shell = (...scripts: string[]) =>
   `<!doctype html><html><body><div id="root"></div>${scripts
     .map((script) => `<script src="${script}" defer></script>`)
@@ -426,6 +435,71 @@ describe('carryOverChunks', () => {
     expect(existsSync(join(exportDir, chunk('entry-n1')))).toBe(true);
     expect(existsSync(join(exportDir, chunk('newer')))).toBe(true);
     expect(existsSync(join(exportDir, chunk('older')))).toBe(false);
+    expect(warnings.some((message) => message.includes('--max-files'))).toBe(true);
+  });
+
+  it('keeps the newest files when an older download finishes first', async () => {
+    // Codex review on #6860: with eight downloads in flight, a slow live entry
+    // used to lose its slot to older files that happened to finish sooner.
+    const fetchImpl = withSlowPaths(
+      liveSite({
+        '/': html(shell(chunk('entry-n1'))),
+        [chunk('entry-n1')]: js('entry'),
+        '/chunk-carryover.json': {
+          contentType: 'application/json',
+          body: JSON.stringify({
+            version: 1,
+            current: [chunk('entry-n1')],
+            carried: {
+              [chunk('older')]: new Date(NOW_MS - 2 * DAY_MS).toISOString(),
+              [chunk('newer')]: new Date(NOW_MS - DAY_MS).toISOString(),
+            },
+          }),
+        },
+        [chunk('older')]: js('older'),
+        [chunk('newer')]: js('newer'),
+      }),
+      { [chunk('entry-n1')]: 30 },
+    );
+
+    const result = await run(fetchImpl, { maxFiles: 2 });
+
+    expect(result.carriedCount).toBe(2);
+    expect(existsSync(join(exportDir, chunk('entry-n1')))).toBe(true);
+    expect(existsSync(join(exportDir, chunk('newer')))).toBe(true);
+    expect(existsSync(join(exportDir, chunk('older')))).toBe(false);
+    expect(Object.keys(readWrittenManifest().carried).sort()).toEqual([chunk('entry-n1'), chunk('newer')].sort());
+    expect(result.previousEntry).toBe(chunk('entry-n1'));
+  });
+
+  it('lets a route the live entry names replace an older file that filled the cap first', async () => {
+    // The route is only discovered once the slow entry lands, after the older
+    // carried file already took the last slot.
+    const fetchImpl = withSlowPaths(
+      liveSite({
+        '/': html(shell(chunk('entry-n1'))),
+        [chunk('entry-n1')]: js(`import("${chunk('route-a')}")`),
+        [chunk('route-a')]: js('route a'),
+        '/chunk-carryover.json': {
+          contentType: 'application/json',
+          body: JSON.stringify({
+            version: 1,
+            current: [],
+            carried: { [chunk('older')]: new Date(NOW_MS - DAY_MS).toISOString() },
+          }),
+        },
+        [chunk('older')]: js('older'),
+      }),
+      { [chunk('entry-n1')]: 30 },
+    );
+
+    const result = await run(fetchImpl, { maxFiles: 2 });
+
+    expect(result.carriedCount).toBe(2);
+    expect(readExportChunk(chunk('entry-n1'))).toContain('route-a');
+    expect(readExportChunk(chunk('route-a'))).toBe('route a');
+    expect(existsSync(join(exportDir, chunk('older')))).toBe(false);
+    expect(result.carriedBytes).toBe(Buffer.byteLength(`import("${chunk('route-a')}")`) + Buffer.byteLength('route a'));
     expect(warnings.some((message) => message.includes('--max-files'))).toBe(true);
   });
 });

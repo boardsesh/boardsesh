@@ -27,7 +27,7 @@
 // The export's own checks (inspect-expo-web-export.mjs, the baked-env grep)
 // run before this, so carried files never count toward the eager budget.
 
-import { existsSync, mkdirSync, readdirSync, realpathSync, writeFileSync, appendFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync, writeFileSync, appendFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -109,6 +109,14 @@ export function parseCarryoverManifest(manifestText) {
 }
 
 /**
+ * The carry order: newest first, then by path so ties are deterministic.
+ * Negative when `left` should be kept ahead of `right`.
+ */
+export function compareCarryRank(left, right) {
+  return right.lastLiveAtMs - left.lastLiveAtMs || left.path.localeCompare(right.path);
+}
+
+/**
  * Which files to try to carry, newest first. A file the live deployment serves
  * right now (its eager scripts, or the manifest's `current` list) was live
  * until this moment, so it gets `nowMs`. A file the live deployment itself
@@ -128,7 +136,7 @@ export function selectCarryCandidates({ livePaths, manifest, nowMs, maxAgeMs }) 
   }
   return [...lastLiveAtByPath]
     .map(([candidatePath, lastLiveAtMs]) => ({ path: candidatePath, lastLiveAtMs }))
-    .sort((left, right) => right.lastLiveAtMs - left.lastLiveAtMs || left.path.localeCompare(right.path));
+    .sort(compareCarryRank);
 }
 
 /**
@@ -265,10 +273,31 @@ export async function carryOverChunks({
     let skippedForCap = 0;
     let cutOffByBudget = 0;
 
+    // Downloads finish in whatever order the network gives, and a carried chunk
+    // can name newer files nothing listed yet. So the cap is enforced against
+    // the carried set's lowest-ranked file, never by first come, first kept:
+    // a newer file that lands once the cap is full replaces the oldest one.
+    /** @type {Map<string, number>} */
+    const carriedSizes = new Map();
+    const lowestRankedCarried = () => {
+      let lowest;
+      for (const [carriedPath, carriedLastLiveAtMs] of carried) {
+        const candidate = { path: carriedPath, lastLiveAtMs: carriedLastLiveAtMs };
+        if (!lowest || compareCarryRank(candidate, lowest) > 0) lowest = candidate;
+      }
+      return lowest;
+    };
+    /** True when the cap is full and `candidate` ranks below every carried file. */
+    const losesToCap = (candidate) => {
+      if (carried.size < maxFiles) return false;
+      const lowest = lowestRankedCarried();
+      return !lowest || compareCarryRank(candidate, lowest) > 0;
+    };
+
     const carryOne = async ({ path: chunkPath, lastLiveAtMs }) => {
       // Same name means same hash means same bytes. The fresh build wins.
       if (currentPathSet.has(chunkPath) || existsSync(join(exportDir, chunkPath))) return;
-      if (carried.size >= maxFiles) {
+      if (losesToCap({ path: chunkPath, lastLiveAtMs })) {
         skippedForCap += 1;
         return;
       }
@@ -291,16 +320,25 @@ export async function carryOverChunks({
         recordWarning(`dropped ${chunkPath}: answered ${response.status} ${contentType || '(no content-type)'}`);
         return;
       }
-      // Re-check the cap: another worker may have filled it while this one
-      // was downloading.
-      if (carried.size >= maxFiles) {
+      // Re-check the cap: other workers may have filled it while this one
+      // was downloading. A newer file takes the oldest carried file's slot.
+      if (losesToCap({ path: chunkPath, lastLiveAtMs })) {
         skippedForCap += 1;
         return;
+      }
+      if (carried.size >= maxFiles) {
+        const evicted = lowestRankedCarried();
+        rmSync(join(exportDir, evicted.path), { force: true });
+        carried.delete(evicted.path);
+        carriedBytes -= carriedSizes.get(evicted.path) ?? 0;
+        carriedSizes.delete(evicted.path);
+        skippedForCap += 1;
       }
       const targetPath = join(exportDir, chunkPath);
       mkdirSync(dirname(targetPath), { recursive: true });
       writeFileSync(targetPath, body);
       carried.set(chunkPath, lastLiveAtMs);
+      carriedSizes.set(chunkPath, body.length);
       carriedBytes += body.length;
 
       // A carried chunk can name chunks of its own deploy that nothing above
