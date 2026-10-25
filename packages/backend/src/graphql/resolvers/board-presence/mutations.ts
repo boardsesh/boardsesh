@@ -882,6 +882,9 @@ export const boardPresenceMutations = {
     // through re-takes the writer and re-broadcasts. The cost is one
     // duplicate history/durable row in exactly that edge — holder correctness
     // wins over row dedup.
+    //
+    // Unknown orientation (null) dedups as un-mirrored on purpose: an older
+    // reporter's exact retry still matches, and the presence climb keeps null.
     const dedupMarker = boardReportDedupMarker({
       emitterId,
       climbUuid,
