@@ -20,6 +20,8 @@ export type GymListRow =
       expanded: boolean;
       selected: boolean;
       boards: UserBoard[];
+      /** The expanded gym's roster has not settled (loading or failed): don't claim "no boards". */
+      boardsPending: boolean;
     }
   | { kind: 'standalone'; key: string; board: UserBoard; subtitle: string; selected: boolean };
 
@@ -43,6 +45,8 @@ type BuildGymListRowsArgs = {
    * map centre, so it can miss boards the gym itself lists.
    */
   expandedGymRoster?: readonly UserBoard[];
+  /** True while the roster query is loading or has failed with nothing to show. */
+  expandedGymRosterPending?: boolean;
   /** The selected gym/board (mirrors the map pin) — drives the row accent. */
   selectedId: string | null;
   gymsLoading: boolean;
@@ -67,7 +71,8 @@ export function mergeGymBoards(roster: readonly UserBoard[], nearby: readonly Us
 
 /**
  * Applies the board-type / layout / size chips to a gym's roster, as the server
- * does for the nearby search. The name filter is skipped on purpose: it matched
+ * does for the nearby search. Angles are deliberately not filtered (this screen
+ * never sends them). The name filter is skipped on purpose: it matched
  * the gym, and a gym's boards need not share its name.
  */
 export function filterBoardsByChips(boards: readonly UserBoard[], filter: GymBoardFilter): UserBoard[] {
@@ -86,6 +91,7 @@ export function buildGymListRows({
   standaloneBoards,
   expandedGymUuid,
   expandedGymRoster,
+  expandedGymRosterPending = false,
   selectedId,
   gymsLoading,
   labels,
@@ -110,6 +116,7 @@ export function buildGymListRows({
         expandedGymUuid === gym.uuid
           ? mergeGymBoards(expandedGymRoster ?? [], boardsByGym.get(gym.uuid) ?? [])
           : (boardsByGym.get(gym.uuid) ?? []),
+      boardsPending: expandedGymUuid === gym.uuid && expandedGymRosterPending,
     });
   }
 

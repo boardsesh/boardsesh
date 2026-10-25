@@ -134,6 +134,7 @@ export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(fu
               expanded={item.expanded}
               selected={item.selected}
               boards={item.boards}
+              boardsPending={item.boardsPending}
               noBoardsLabel={noBoardsLabel}
               onPressGym={onPressGym}
               onActivateBoard={onActivateBoard}
@@ -246,6 +247,7 @@ type GymRowProps = {
   expanded: boolean;
   selected: boolean;
   boards: UserBoard[];
+  boardsPending: boolean;
   noBoardsLabel: string;
   onPressGym: (gym: Gym) => void;
   onActivateBoard: (board: UserBoard) => void;
@@ -260,6 +262,7 @@ const GymRow = memo(function GymRow({
   expanded,
   selected,
   boards,
+  boardsPending,
   noBoardsLabel,
   onPressGym,
   onActivateBoard,
@@ -306,6 +309,8 @@ const GymRow = memo(function GymRow({
           boards.map((board) => (
             <BoardRow key={board.uuid} board={board} onActivateBoard={onActivateBoard} onEditBoard={onEditBoard} />
           ))
+        ) : boardsPending ? (
+          <ActivityIndicator style={styles.listSpinner} />
         ) : (
           <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.noBoards}>
             {noBoardsLabel}

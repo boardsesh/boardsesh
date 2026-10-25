@@ -191,4 +191,11 @@ describe('filterBoardsByChips', () => {
     expect(filterBoardsByChips([kilter, tension], { layoutIds: [2] })).toEqual([tension]);
     expect(filterBoardsByChips([kilter, tension], { sizeIds: [10, 20], boardTypes: ['tension'] })).toEqual([tension]);
   });
+
+  it('flags only the expanded gym as pending while its roster has not settled', () => {
+    const other = makeGym('g2');
+    const rows = build({ gyms: [makeGym('g1'), other], expandedGymUuid: 'g1', expandedGymRosterPending: true });
+    const pending = rows.flatMap((row) => (row.kind === 'gym' ? [row.boardsPending] : []));
+    expect(pending).toEqual([true, false]);
+  });
 });

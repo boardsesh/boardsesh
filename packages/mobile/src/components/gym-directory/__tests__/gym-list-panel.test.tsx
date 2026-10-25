@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/react';
+import { cleanup, render, fireEvent } from '@testing-library/react';
 import { createElement, forwardRef, type ReactNode, type Ref } from 'react';
 import type { Gym, UserBoard } from '@boardsesh/shared-schema';
 import type { GymListRow } from '../gym-list-rows';
@@ -144,7 +144,16 @@ const gym = {
 function makeData(): GymListRow[] {
   return [
     { kind: 'sectionHeader', key: 'sh:gyms', label: 'GYMS' },
-    { kind: 'gym', key: 'gym:g1', gym, subtitle: '1 Crag St', expanded: false, selected: false, boards: [] },
+    {
+      kind: 'gym',
+      key: 'gym:g1',
+      gym,
+      subtitle: '1 Crag St',
+      expanded: false,
+      selected: false,
+      boards: [],
+      boardsPending: false,
+    },
   ];
 }
 
@@ -167,6 +176,7 @@ function makeExpandedClaimData(): GymListRow[] {
       expanded: true,
       selected: false,
       boards: [],
+      boardsPending: false,
     },
   ];
 }
@@ -292,7 +302,16 @@ describe('GymListPanel board rows', () => {
 
   function makeExpandedGymData(board: UserBoard): GymListRow[] {
     return [
-      { kind: 'gym', key: 'gym:g1', gym, subtitle: '1 Crag St', expanded: true, selected: false, boards: [board] },
+      {
+        kind: 'gym',
+        key: 'gym:g1',
+        gym,
+        subtitle: '1 Crag St',
+        expanded: true,
+        selected: false,
+        boards: [board],
+        boardsPending: false,
+      },
     ];
   }
 
@@ -310,6 +329,36 @@ describe('GymListPanel board rows', () => {
       />,
     );
   }
+
+  it('shows the no-boards caption only once an empty roster has settled', () => {
+    const render1 = (boardsPending: boolean) =>
+      render(
+        <GymListPanel
+          data={[
+            {
+              kind: 'gym',
+              key: 'gym:g1',
+              gym,
+              subtitle: '1 Crag St',
+              expanded: true,
+              selected: false,
+              boards: [],
+              boardsPending,
+            },
+          ]}
+          mapAvailable
+          onPressGym={vi.fn()}
+          onActivateBoard={vi.fn()}
+          onEditGym={vi.fn()}
+          onEditBoard={vi.fn()}
+          noBoardsLabel="No boards yet"
+          searchSlot={<div>search</div>}
+        />,
+      );
+    expect(render1(true).queryByText('No boards yet')).toBeNull();
+    cleanup();
+    expect(render1(false).getByText('No boards yet')).toBeTruthy();
+  });
 
   it('captions a board with its config, not the raw board type', () => {
     const { getByText, queryByText } = renderExpanded(gymBoard);
@@ -336,6 +385,7 @@ describe('GymListPanel board rows', () => {
         expanded: false,
         selected: false,
         boards: [],
+        boardsPending: false,
       },
     ];
     const { container } = render(

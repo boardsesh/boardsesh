@@ -257,7 +257,8 @@ export default function GymDiscovery() {
   // The expanded gym's own linked boards. The nearby search above only returns
   // boards with a visible pin near the map centre, so a gym can list a board it
   // never returns.
-  const { data: gymRoster } = useGymBoards(expandedGymUuid);
+  const { data: gymRoster, isPending: gymRosterPending, isError: gymRosterError } = useGymBoards(expandedGymUuid);
+  const expandedGymRosterPending = expandedGymUuid != null && (gymRosterPending || gymRosterError);
   const expandedGymRoster = useMemo(
     () => (gymRoster ? filterBoardsByChips(gymRoster, search.filter) : undefined),
     [gymRoster, search.filter],
@@ -271,6 +272,7 @@ export default function GymDiscovery() {
         standaloneBoards,
         expandedGymUuid,
         expandedGymRoster,
+        expandedGymRosterPending,
         selectedId,
         gymsLoading,
         labels: {
@@ -280,7 +282,17 @@ export default function GymDiscovery() {
           boardCount: (count: number) => t('mobile.gyms.boardCount', { count }),
         },
       }),
-    [gyms, boardsByGym, standaloneBoards, expandedGymUuid, expandedGymRoster, selectedId, gymsLoading, t],
+    [
+      gyms,
+      boardsByGym,
+      standaloneBoards,
+      expandedGymUuid,
+      expandedGymRoster,
+      expandedGymRosterPending,
+      selectedId,
+      gymsLoading,
+      t,
+    ],
   );
 
   // Nested filter chips, derived from board-constants so they're deterministic

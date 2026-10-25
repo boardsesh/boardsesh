@@ -59,6 +59,17 @@ const captured = vi.hoisted(() => ({
   gymsQuery: null as DiscoveryQuery | null,
   boardsQuery: null as DiscoveryQuery | null,
   standaloneBoards: [] as UserBoard[],
+  rowArgs: null as {
+    expandedGymUuid: string | null;
+    expandedGymRoster?: UserBoard[];
+    expandedGymRosterPending?: boolean;
+  } | null,
+  rosterQuery: { data: undefined, isPending: false, isError: false } as {
+    data: UserBoard[] | undefined;
+    isPending: boolean;
+    isError: boolean;
+  },
+  rosterGymUuids: [] as (string | null)[],
 }));
 
 vi.mock('react-native', () => ({
@@ -114,7 +125,10 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
   },
 }));
 vi.mock('../../../src/lib/graphql/hooks/use-gym-boards', () => ({
-  useGymBoards: () => ({ data: undefined }),
+  useGymBoards: (gymUuid: string | null) => {
+    captured.rosterGymUuids.push(gymUuid);
+    return captured.rosterQuery;
+  },
 }));
 vi.mock('../../../src/lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: null, isError: false }),
@@ -189,9 +203,16 @@ vi.mock('../../../src/components/gym-directory/WallFinderFilterChips', () => ({
     return null;
   },
 }));
-vi.mock('../../../src/components/gym-directory/gym-list-rows', () => ({
-  buildGymListRows: (props: { standaloneBoards: UserBoard[] }) => {
+vi.mock('../../../src/components/gym-directory/gym-list-rows', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/components/gym-directory/gym-list-rows')>()),
+  buildGymListRows: (props: {
+    standaloneBoards: UserBoard[];
+    expandedGymUuid: string | null;
+    expandedGymRoster?: UserBoard[];
+    expandedGymRosterPending?: boolean;
+  }) => {
     captured.standaloneBoards = props.standaloneBoards;
+    captured.rowArgs = props;
     return [];
   },
 }));
@@ -217,6 +238,9 @@ beforeEach(() => {
   captured.chips = null;
   captured.coords = undefined;
   captured.standaloneBoards = [];
+  captured.rowArgs = null;
+  captured.rosterQuery = { data: undefined, isPending: false, isError: false };
+  captured.rosterGymUuids = [];
   captured.gymsQuery = idleQuery();
   captured.boardsQuery = idleQuery();
 });
@@ -431,5 +455,35 @@ describe('discovery search integration', () => {
     captured.boardsQuery = { ...idleQuery(), isSuccess: true, data: { gyms: [], boards: [] } };
     screen.rerender(createElement(GymDiscovery));
     expect(captured.standaloneBoards).toEqual([]);
+  });
+
+  it('fetches the expanded gym roster and narrows it by the board-type chip', () => {
+    const kilter = { ...GYM_WALL, uuid: 'k', boardType: 'kilter', layoutId: 1, sizeId: 7 } as unknown as UserBoard;
+    const tension = { ...GYM_WALL, uuid: 't', boardType: 'tension', layoutId: 9, sizeId: 3 } as unknown as UserBoard;
+    captured.rosterQuery = { data: [kilter, tension], isPending: false, isError: false };
+    const screen = render(createElement(GymDiscovery));
+    act(() => captured.onPressGym?.({ uuid: 'gym-1', name: 'Crux' } as unknown as Gym));
+    expect(captured.rosterGymUuids.at(-1)).toBe('gym-1');
+    expect(captured.rowArgs?.expandedGymRoster?.map((board) => board.uuid)).toEqual(['k', 't']);
+    vi.useFakeTimers();
+    act(() => captured.chips?.onToggle('tension'));
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(captured.rowArgs?.expandedGymRoster?.map((board) => board.uuid)).toEqual(['t']);
+    screen.unmount();
+  });
+
+  it('marks the roster pending while loading or failed, not once it has settled', () => {
+    captured.rosterQuery = { data: undefined, isPending: true, isError: false };
+    render(createElement(GymDiscovery));
+    act(() => captured.onPressGym?.({ uuid: 'gym-1', name: 'Crux' } as unknown as Gym));
+    expect(captured.rowArgs?.expandedGymRosterPending).toBe(true);
+    captured.rosterQuery = { data: undefined, isPending: false, isError: true };
+    act(() => captured.onPressGym?.({ uuid: 'gym-2', name: 'Other' } as unknown as Gym));
+    expect(captured.rowArgs?.expandedGymRosterPending).toBe(true);
+    captured.rosterQuery = { data: [], isPending: false, isError: false };
+    act(() => captured.onPressGym?.({ uuid: 'gym-3', name: 'Third' } as unknown as Gym));
+    expect(captured.rowArgs?.expandedGymRosterPending).toBe(false);
   });
 });
