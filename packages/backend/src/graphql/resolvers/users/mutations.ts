@@ -276,7 +276,7 @@ export const userMutations = {
     let previewBoardIds: number[] = [];
     await retryAccountDeletion(() =>
       db.transaction(async (tx) => {
-        // This guard must be serving before migration 0250 can create its
+        // This guard must be serving before migration 0280 can create its
         // archive. The migration's DDL takes ACCESS EXCLUSIVE on the live table;
         // holding ROW EXCLUSIVE here makes one operation wait for the other.
         // The archive lookup is a separate READ COMMITTED statement after the

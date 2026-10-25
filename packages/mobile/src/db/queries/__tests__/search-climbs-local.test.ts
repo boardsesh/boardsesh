@@ -1868,6 +1868,19 @@ describe('searchClimbsLocal: liked climbs', () => {
     expect(uuids(await searchClimbsLocal(db, liked))).toEqual(['hearted-at-25']);
   });
 
+  it('matches a heart given offline before a pull stamped its board', async () => {
+    await insertClimb(db, { uuid: 'hearted-offline' });
+    // addFavoriteLocal writes climb_uuid alone; board_name and angle stay NULL.
+    await db.runAsync('INSERT INTO user_favorites (climb_uuid, user_id, created_at, updated_at) VALUES (?, ?, ?, ?)', [
+      'hearted-offline',
+      LOCAL_OWNER,
+      '2026-10-01T00:00:00Z',
+      '2026-10-01T00:00:00Z',
+    ]);
+
+    expect(uuids(await searchClimbsLocal(db, liked))).toEqual(['hearted-offline']);
+  });
+
   it('does not match a heart on another board with the same climb uuid', async () => {
     await insertClimb(db, { uuid: 'shared-uuid' });
     await insertFavorite({ climbUuid: 'shared-uuid', boardName: 'tension' });

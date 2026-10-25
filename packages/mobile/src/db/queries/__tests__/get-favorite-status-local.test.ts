@@ -108,10 +108,10 @@ describe('getPendingFavoriteOverridesLocal', () => {
 });
 
 describe('getFavoriteStatusLocal', () => {
-  it('matches the UUID-only server identity across angles and old board stamps', async () => {
-    await insertFavorite('liked', { angle: 40 });
-    await insertFavorite('liked', { angle: 25 });
-    await insertFavorite('liked', { boardName: 'tension' });
+  it('matches the UUID-only server identity whatever board or angle the row carries', async () => {
+    // The local table is keyed by climb_uuid, so one row per climb; its legacy
+    // board and angle stamps do not decide whether it is a favorite.
+    await insertFavorite('liked', { boardName: 'tension', angle: 25 });
     await insertFavorite('other-requested', { boardName: 'moonboard' });
     await insertFavorite('not-requested');
 

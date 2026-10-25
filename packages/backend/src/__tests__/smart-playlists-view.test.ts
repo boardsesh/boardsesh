@@ -357,11 +357,11 @@ describe('smartPlaylist — views (real DB, #6651)', () => {
       });
     }
 
-    // k-2 liked twice (two angles): the later like is when it entered the list.
+    // One row per climb: favorites are keyed by (user, climb), whatever angle
+    // the heart was given at.
     await db.execute(sql`
       INSERT INTO user_favorites (user_id, board_name, climb_uuid, angle, created_at) VALUES
         (${OWNER}, 'kilter', 'k-2', 40, '2026-06-10 10:00'),
-        (${OWNER}, 'kilter', 'k-2', 50, '2026-06-01 10:00'),
         (${OWNER}, 'tension', 't-1', 30, '2026-06-09 10:00'),
         (${OWNER}, 'kilter', 'k-4', 40, '2026-06-08 10:00'),
         (${OWNER}, 'kilter', 'k-1', 40, '2026-06-07 10:00')

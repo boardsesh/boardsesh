@@ -98,7 +98,7 @@ import { createAbortError, createGraphqlTimeoutError } from '../request-timeout'
 
 const fakeDb = { tag: 'user-db' };
 const tickVariables = { input: { boardType: 'kilter', climbUuids: ['climb-1'] } };
-const favoriteVariables = { boardName: 'kilter', climbUuids: ['climb-1'], angle: 25 };
+const favoriteVariables = { climbUuids: ['climb-1'] };
 const localTickResponse = { ticks: [{ uuid: 'tick-1', upvotes: 0, downvotes: 0, commentCount: 0 }] };
 const serverTickResponse = { ticks: [{ uuid: 'tick-1', upvotes: 7, downvotes: 2, commentCount: 4 }] };
 
@@ -119,7 +119,8 @@ const registeredReads = [
     reader: readers.favorites,
     response: { favorites: ['climb-1'] },
     family: 'favorites',
-    boardName: 'kilter',
+    // A favorite read names no board: hearts follow the climb uuid.
+    boardName: 'all',
   },
   {
     name: 'all owned playlists',

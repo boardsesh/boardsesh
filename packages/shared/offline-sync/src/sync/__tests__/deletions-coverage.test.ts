@@ -208,7 +208,7 @@ async function seedEverything(db: TestSqliteDb): Promise<void> {
   await db.runAsync("INSERT INTO boardsesh_ticks (uuid, status) VALUES ('tick-1', 'send')", []);
   await db.runAsync("INSERT INTO playlists (uuid, name) VALUES ('playlist-1', 'Projects')", []);
   await db.runAsync("INSERT INTO playlist_climbs (playlist_uuid, climb_uuid) VALUES ('playlist-1', 'climb-1')", []);
-  await db.runAsync("INSERT INTO user_favorites (board_name, climb_uuid, angle) VALUES ('kilter', 'climb-1', 40)", []);
+  await db.runAsync("INSERT INTO user_favorites (climb_uuid) VALUES ('climb-1')", []);
   await db.runAsync("INSERT INTO user_follows (following_id) VALUES ('user-2')", []);
   await db.runAsync("INSERT INTO setter_follows (setter_username) VALUES ('setter-1')", []);
   await db.runAsync("INSERT INTO playlist_follows (playlist_uuid) VALUES ('playlist-9')", []);

@@ -658,9 +658,12 @@ export function buildJoinAndWhere(
     if (ownerUserId === null) {
       push('0 = 1');
     } else {
+      // A heart given offline carries no board until the next pull stamps
+      // one, so a NULL board matches; a heart stamped for another board that
+      // shares this climb uuid does not.
       push(
         `EXISTS (SELECT 1 FROM user_favorites f
-          WHERE f.board_name = ? AND f.climb_uuid = c.uuid AND ${ownedTicks('f')})`,
+          WHERE (f.board_name = ? OR f.board_name IS NULL) AND f.climb_uuid = c.uuid AND ${ownedTicks('f')})`,
         boardType,
         ownerUserId,
       );

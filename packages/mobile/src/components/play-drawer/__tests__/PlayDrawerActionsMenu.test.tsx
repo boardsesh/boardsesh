@@ -75,7 +75,7 @@ vi.mock('../../../lib/graphql/hooks', () => ({
     return { data: profile.id ? { id: profile.id } : undefined };
   },
   useToggleFavorite: () => ({ mutate: toggleFavoriteMutate }),
-  useFavoriteStatus: (_board: string, _uuid: string | null, _angle: number, options?: { enabled?: boolean }) => {
+  useFavoriteStatus: (_uuid: string | null, options?: { enabled?: boolean }) => {
     favoriteStatusReads.push(options ?? {});
     return { data: false };
   },

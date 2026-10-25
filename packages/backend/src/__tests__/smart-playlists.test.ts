@@ -299,14 +299,14 @@ describe('smartPlaylist resolver', () => {
     expect(notInArraySpy).not.toHaveBeenCalled();
   });
 
-  it('LIKED_CLIMBS reads user_favorites, applies board filter, dedups across angles, orders by latest like', async () => {
+  it('LIKED_CLIMBS reads user_favorites, derives the board from board_climbs, orders by latest like', async () => {
     const ctx = makeCtx();
 
     // user lookup
     mockDb.select.mockReturnValueOnce(makeChain([USER_ROW]).chain);
-    // page query — favorites have an angle column, so we dedupe via GROUP BY
-    // (board_name, climb_uuid) to avoid returning the same climb twice when a
-    // user has favourited it at multiple angles.
+    // page query — favorites are keyed by (user_id, climb_uuid) and carry no
+    // board, so the board comes from a board_climbs join and the GROUP BY is
+    // (climb_uuid, board_climbs.board_type).
     const { chain: pageChain, calls: pageCalls } = makeChain([
       { climbUuid: 'fav1', boardType: 'kilter' },
       { climbUuid: 'fav2', boardType: 'kilter' },
@@ -331,9 +331,9 @@ describe('smartPlaylist resolver', () => {
     expect(pageCalls.limit[0]).toEqual([5]);
     expect(pageCalls.offset[0]).toEqual([5]);
 
-    // Dedup: GROUP BY (climbUuid, boardName)
+    // Dedup: GROUP BY (favorites.climbUuid, boardClimbs.boardType)
     expect(pageCalls.groupBy.length).toBe(1);
-    expect(pageCalls.groupBy[0]).toEqual([dbSchema.userFavorites.climbUuid, dbSchema.userFavorites.boardName]);
+    expect(pageCalls.groupBy[0]).toEqual([dbSchema.userFavorites.climbUuid, dbSchema.boardClimbs.boardType]);
     // Ordered (by max(createdAt) DESC); we just assert orderBy was called
     expect(pageCalls.orderBy.length).toBe(1);
 
@@ -345,7 +345,7 @@ describe('smartPlaylist resolver', () => {
     );
     expect(userIdFilters.length).toBeGreaterThanOrEqual(2);
     const boardFilters = eqSpy.mock.calls.filter(
-      ([col, val]) => col === dbSchema.userFavorites.boardName && val === 'kilter',
+      ([col, val]) => col === dbSchema.boardClimbs.boardType && val === 'kilter',
     );
     expect(boardFilters.length).toBeGreaterThanOrEqual(2);
     for (const calls of [pageCalls, countCalls]) {
@@ -376,7 +376,7 @@ describe('smartPlaylist resolver', () => {
       ctx,
     );
 
-    const boardFilters = eqSpy.mock.calls.filter(([col]) => col === dbSchema.userFavorites.boardName);
+    const boardFilters = eqSpy.mock.calls.filter(([col]) => col === dbSchema.boardClimbs.boardType);
     expect(boardFilters.length).toBe(0);
   });
 
@@ -696,8 +696,9 @@ describe('mySmartPlaylistCounts resolver', () => {
       /SELECT DISTINCT climb_uuid, board_type\s+FROM base\s+WHERE status IN \('flash', 'send'\)/,
     );
     expect(rendered).toMatch(/sent\.climb_uuid = base\.climb_uuid\s+AND sent\.board_type = base\.board_type/);
-    // The logbook cards never read board_climbs.
-    expect(rendered).not.toMatch(/JOIN/);
+    // The logbook cards never read board_climbs; only the Liked card joins it,
+    // for the catalog board type its list uses.
+    expect(rendered.slice(0, rendered.indexOf('liked_climbs AS'))).not.toMatch(/JOIN/);
   });
 
   it('appends RECOMMENDED_* counts when a board resolves', async () => {

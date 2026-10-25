@@ -85,7 +85,8 @@ export function registerOfflineUserOperations(register: Register): void {
   add<FavoritesQueryVariables, FavoritesQueryResponse>(
     GET_FAVORITES,
     'favorites',
-    ({ boardName }) => boardName,
+    // A favorite is keyed by the climb alone; the read names no board.
+    () => 'all',
     (db, { climbUuids }, owner) => getFavoriteStatusLocal(db, climbUuids, owner),
   );
   add<GetAllUserPlaylistsQueryVariables, GetAllUserPlaylistsQueryResponse>(
