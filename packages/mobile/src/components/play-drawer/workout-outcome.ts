@@ -5,6 +5,15 @@ import type { Climb } from '@boardsesh/shared-schema';
 import type { WorkoutRun, WorkoutRunStage } from '@boardsesh/playlist-generator';
 
 /**
+ * A tap within this long of the wall moving on logs for the climb it left. Long
+ * enough for a climber who topped out just before an on-the-minute beat to reach
+ * the button, too short for a go on the climb that just lit up. When the climb
+ * the wall moved to has no Fell / Sent, the row stays up this long too
+ * (`use-workout-outcome-hold.ts`), so the tap still lands on Fell or Sent.
+ */
+export const WALL_MOVED_GRACE_MS = 2000;
+
+/**
  * Whether a stage gets the Fell / Sent row: it paces the rest timer itself. Keyed
  * on the pacing rather than on the stage kinds, so any timed block gets it,
  * whatever it is called.

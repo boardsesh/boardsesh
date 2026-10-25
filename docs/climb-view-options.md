@@ -100,9 +100,21 @@ tick's status and queue item exactly as from the sheet (`docs/workout-stages.md`
   tap while a save is still in flight. A fumbled double tap logs one go, never a fall and a send.
 - **Just after the wall moves on.** An on-the-minute beat advances whether the climber logged or not, so a tap within
   2 s (`WALL_MOVED_GRACE_MS`) of the climb on the wall changing logs for the climb it left, against that queue item
-  (`TickSaveFields.queueItemUuid`), with that climb's own flash rule. Nobody gets a go on a climb that fast after it
+  (`TickSaveFields.queueItem`), with that climb's own flash rule. Every one-tap names its queue item this way, and
+  the saver still holds it to `attributeTickToQueueItem`'s angle rule: a tap at another angle than the item is up at
+  (the board moved, the queue has not regraded yet) saves the tick but counts it for no queue item. Nobody gets a go on a climb that fast after it
   lights up. A first ascent there can't open the sheet (it would open on the new climb), so the row says to swipe
   back to it. A new copy of the same queue item is not a move.
+- **The row stays through the grace when the wall leaves the block** (`useWorkoutOutcomeHold`). When the beat moves
+  the wall onto a climb outside the timed block, the gate turns false at once, and the normal row would put the heart
+  and the angle button where Fell was, under a finger already on its way (simulator QA: a Fell tap just after the
+  last beat opened Choose Angle). So the player keeps Fell / Sent for the climb it left for the same 2 s, then swaps.
+  Taps in that window log there, exactly as above; one past it is dropped, never sent to the new climb. The hints
+  name that climb ("Logs one try on Crimp line, the previous climb") and the saved line is the full sentence, since
+  the board already shows the next one. The hold starts only when the committed climb changed with the player still
+  on it; a swipe to browse, the gate coming back, the switch-board gate or a sign-out ends it at once. PlayCore reads
+  the held row for the bar layout, ⋯, the connect pill and the opening layout key, so the row and the board change
+  once, at the swap.
 - **The wall at the tap.** The row leaves `useTickSaver`'s `active` out, so each save takes the board as it is right
   then: a board bound from the bulb mid-block is on the next tick. The sheet snapshots it when it opens instead.
 - **When it shows** (`shouldShowWorkoutOutcome`): the climb on screen is the committed current one (not a climb the
@@ -118,8 +130,8 @@ tick's status and queue item exactly as from the sheet (`docs/workout-stages.md`
   first ascent, needs reading, so it takes the whole row for 5 s (`MESSAGE_NOTICE_MS`) or until tapped, then the
   buttons come back. The success haptic plays with the line; a failure's comes from `useTickSaver`. Tick Logged and
   Quick Tick Failed report `surface: 'mobile_workout_runner'`, with no Quick Tick Opened before them.
-- **A save outlives the row.** Swiping to a preview, the wall leaving the timed block or closing the player unmounts
-  the row while a save can still be in flight. `useTickSaver` runs the side effects (rest timer, the workout's tick
+- **A save outlives the row.** Swiping to a preview, the end of the hold after the wall left the timed block or
+  closing the player unmounts the row while a save can still be in flight. `useTickSaver` runs the side effects (rest timer, the workout's tick
   log, Tick Logged, the confirmation) off the `mutateAsync` promise, which settles either way, never off a per-call
   `mutate` callback, which React Query drops once the caller is gone. With no row left to say it, that late save
   falls back to the toast, which shows once the player is closed.
@@ -173,6 +185,7 @@ The sections below the climb keep their own AsyncStorage record (`playDrawerSect
 | Layout rule                             | `packages/mobile/src/components/play-drawer/action-bar-layout.ts`               |
 | Bar                                     | `packages/mobile/src/components/play-drawer/PlayDrawerActionBar.tsx`            |
 | Fell / Sent row and its taps            | `packages/mobile/src/components/play-drawer/WorkoutOutcomeRow.tsx`, `use-workout-one-tap.ts` |
+| Fell / Sent hold after the wall leaves  | `packages/mobile/src/components/play-drawer/use-workout-outcome-hold.ts`        |
 | Placement, callout offset, ⋯ wiring     | `packages/mobile/src/components/play-drawer/PlayCore.tsx`                       |
 | View options sheet (both tabs)          | `packages/mobile/src/components/play-drawer/PlayDrawerSectionsSheet.tsx`        |
 | Shared labels and actions               | `packages/mobile/src/components/settings/use-player-button-controls.ts`         |

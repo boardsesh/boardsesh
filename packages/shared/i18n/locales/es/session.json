@@ -868,6 +868,8 @@
       "sent": "Encadenado",
       "fellHint": "Guarda un intento en este bloque",
       "sentHint": "Guarda este bloque como encadenado",
+      "fellHintPrevious": "Guarda un intento en {{name}}, el bloque anterior",
+      "sentHintPrevious": "Guarda {{name}}, el bloque anterior, como encadenado",
       "attemptLogged": "Intento guardado · {{name}}",
       "flashLogged": "Flash guardado · {{name}}",
       "sendLogged": "Encadene guardado · {{name}}",

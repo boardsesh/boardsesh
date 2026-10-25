@@ -115,14 +115,8 @@ vi.mock('../../privacy/use-publication-audience', () => ({
   }),
 }));
 
-import {
-  MESSAGE_NOTICE_MS,
-  ONE_TAP_GUARD_MS,
-  SAVED_NOTICE_MS,
-  WALL_MOVED_GRACE_MS,
-  useWorkoutOneTap,
-} from '../use-workout-one-tap';
-import type { WorkoutOutcomeTarget } from '../workout-outcome';
+import { MESSAGE_NOTICE_MS, ONE_TAP_GUARD_MS, SAVED_NOTICE_MS, useWorkoutOneTap } from '../use-workout-one-tap';
+import { WALL_MOVED_GRACE_MS, type WorkoutOutcomeTarget } from '../workout-outcome';
 import { track } from '../../../lib/analytics';
 import { hapticError, hapticSuccess } from '../../../lib/haptics';
 import { announceQueued } from '../../../lib/announce-queued';
@@ -151,6 +145,8 @@ function climb(overrides: Partial<Climb> = {}): Climb {
   return {
     uuid: CLIMB_UUID,
     name: 'Crimp line',
+    // The angle the queue item is up at: a one-tap counts for it only there.
+    angle: ANGLE,
     ascensionist_count: 12,
     benchmark_difficulty: null,
     ...overrides,
@@ -303,6 +299,20 @@ describe('useWorkoutOneTap: Fell', () => {
         tickUuid: 'tick-1',
       },
     ]);
+  });
+
+  it('still logs a fall at another angle than the climb is up at, but for no queue item', () => {
+    // The board moved to 45° and the queue has not regraded the climb yet.
+    const { result } = renderOneTap(target({ angle: 45 }));
+
+    act(() => result.current.onFell());
+
+    expect(sentInput()).toMatchObject({ climbUuid: CLIMB_UUID, status: 'attempt', angle: 45 });
+    expect(noteRestTimerTick).toHaveBeenCalledWith(expect.any(String), 'afterTick', START_MS, {
+      status: 'attempt',
+      queueItemUuid: null,
+    });
+    expect(getWorkoutRunLog(SESSION_ID)).toEqual([]);
   });
 
   it('logs each fall as its own tick, so an early end loses none', () => {
@@ -713,6 +723,98 @@ describe('useWorkoutOneTap: just after the wall moved on', () => {
 
 // The player is a native modal on iOS and the root toast overlay draws behind
 // it, so while the row is up it is the row that says what a tap did.
+// The wall left the timed block (an on-the-minute beat onto a climb outside
+// it), so the player holds the row for the climb it left: a tap already on its
+// way to Fell must land there, never on the next climb and never on the angle
+// button the normal row puts in the same place.
+describe('useWorkoutOneTap: held for the climb the wall left', () => {
+  const COOL_DOWN_ITEM = 'item-cool';
+
+  function renderHeld(heldTarget = target(), openLogSheet = vi.fn()) {
+    // The wall is on the cool-down climb now.
+    queueSnapshot.current = { uuid: COOL_DOWN_ITEM, climb: { uuid: 'climb-cool' } };
+    const rendered = renderHook(
+      (props: { target: WorkoutOutcomeTarget; wallLeftAtMs: number | null }) =>
+        useWorkoutOneTap(props.target, openLogSheet, props.wallLeftAtMs),
+      { initialProps: { target: heldTarget, wallLeftAtMs: START_MS }, wrapper: withQueue },
+    );
+    return { ...rendered, openLogSheet };
+  }
+
+  it('logs a Fell 300 ms after the beat on the climb it left, against its queue item', () => {
+    const { result } = renderHeld();
+
+    advanceClock(300);
+    act(() => result.current.onFell());
+
+    expect(saveMock.mutateAsync).toHaveBeenCalledTimes(1);
+    expect(sentInput()).toMatchObject({ climbUuid: CLIMB_UUID, status: 'attempt', attemptCount: 1 });
+    expect(noteRestTimerTick).toHaveBeenCalledWith(expect.any(String), 'afterTick', START_MS, {
+      status: 'attempt',
+      queueItemUuid: QUEUE_ITEM_UUID,
+    });
+    expect(getWorkoutRunLog(SESSION_ID)).toEqual([expect.objectContaining({ queueItemUuid: QUEUE_ITEM_UUID })]);
+    expect(result.current.notice).toMatchObject({ kind: 'saved', status: 'attempt', queueItemUuid: QUEUE_ITEM_UUID });
+  });
+
+  it('logs a Sent there too, with that climb’s flash rule', () => {
+    noteWorkoutRunTick(SESSION_ID, { queueItemUuid: QUEUE_ITEM_UUID, status: 'attempt', climbedAt: 'earlier' });
+    const { result } = renderHeld();
+
+    advanceClock(300);
+    act(() => result.current.onSent());
+
+    expect(sentInput()).toMatchObject({ climbUuid: CLIMB_UUID, status: 'send' });
+  });
+
+  it('drops a tap once the grace has run out, before the row swaps', () => {
+    const { result } = renderHeld();
+
+    advanceClock(WALL_MOVED_GRACE_MS);
+    act(() => result.current.onFell());
+    act(() => result.current.onSent());
+
+    expect(saveMock.mutateAsync).not.toHaveBeenCalled();
+    expect(noteRestTimerTick).not.toHaveBeenCalled();
+    expect(result.current.notice).toBeNull();
+  });
+
+  it('never opens Log ascent, which would open on the climb now on screen', () => {
+    const { result, openLogSheet } = renderHeld(
+      target({ boardName: 'spray', climb: climb({ ascensionist_count: 0 }) }),
+    );
+
+    advanceClock(300);
+    act(() => result.current.onSent());
+
+    expect(openLogSheet).not.toHaveBeenCalled();
+    expect(saveMock.mutateAsync).not.toHaveBeenCalled();
+    expect(result.current.notice).toEqual({
+      kind: 'message',
+      tone: 'info',
+      message: 'playView.workoutOutcome.wallMovedFirstAscent:Crimp line',
+    });
+  });
+
+  it('keeps the tap guard and the notice from before the hold', () => {
+    queueSnapshot.current = { uuid: QUEUE_ITEM_UUID, climb: { uuid: CLIMB_UUID } };
+    const openLogSheet = vi.fn();
+    const { result, rerender } = renderHook(
+      (props: { wallLeftAtMs: number | null }) => useWorkoutOneTap(target(), openLogSheet, props.wallLeftAtMs),
+      { initialProps: { wallLeftAtMs: null as number | null }, wrapper: withQueue },
+    );
+
+    act(() => result.current.onFell());
+    // The beat, a moment after the tap.
+    queueSnapshot.current = { uuid: COOL_DOWN_ITEM, climb: { uuid: 'climb-cool' } };
+    rerender({ wallLeftAtMs: Date.now() });
+    act(() => result.current.onFell());
+
+    expect(saveMock.mutateAsync).toHaveBeenCalledTimes(1);
+    expect(result.current.notice).toMatchObject({ kind: 'saved', status: 'attempt', queueItemUuid: QUEUE_ITEM_UUID });
+  });
+});
+
 describe('useWorkoutOneTap: what the row says', () => {
   function withNoticeClock() {
     vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });

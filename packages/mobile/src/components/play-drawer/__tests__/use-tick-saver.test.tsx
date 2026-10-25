@@ -745,7 +745,9 @@ describe('useTickSaver queue item', () => {
     saveMock.state.result = { savedTick: { uuid: 'tick-9' } };
     const { result } = renderSaver({}, { withQueue: true });
 
-    result.current.save(fields({ status: 'flash', queueItemUuid: 'queue-7' }));
+    result.current.save(
+      fields({ status: 'flash', queueItem: { uuid: 'queue-7', climb: { uuid: CLIMB_UUID, angle: ANGLE } } }),
+    );
 
     expect(vi.mocked(noteRestTimerTick).mock.calls[0]?.[3]).toEqual({ status: 'flash', queueItemUuid: 'queue-7' });
     expect(noteWorkoutRunTick).toHaveBeenCalledExactlyOnceWith('session-1', {
@@ -755,5 +757,28 @@ describe('useTickSaver queue item', () => {
       tickUuid: 'tick-9',
     });
     expect(sentInput()).not.toHaveProperty('queueItemUuid');
+    expect(sentInput()).not.toHaveProperty('queueItem');
+  });
+
+  it('still holds the named queue item to the angle it is up at', () => {
+    queueSnapshot.current = { uuid: 'queue-8', climb: { uuid: 'climb-2' } };
+    const { result } = renderSaver({}, { withQueue: true });
+
+    result.current.save(
+      fields({ status: 'flash', queueItem: { uuid: 'queue-7', climb: { uuid: CLIMB_UUID, angle: 25 } } }),
+    );
+
+    expect(vi.mocked(noteRestTimerTick).mock.calls[0]?.[3]).toEqual({ status: 'flash', queueItemUuid: null });
+    expect(noteWorkoutRunTick).not.toHaveBeenCalled();
+  });
+
+  it('never counts the tick for a named queue item on another climb', () => {
+    const { result } = renderSaver({}, { withQueue: true });
+
+    result.current.save(
+      fields({ status: 'flash', queueItem: { uuid: 'queue-7', climb: { uuid: 'climb-2', angle: ANGLE } } }),
+    );
+
+    expect(vi.mocked(noteRestTimerTick).mock.calls[0]?.[3]).toEqual({ status: 'flash', queueItemUuid: null });
   });
 });

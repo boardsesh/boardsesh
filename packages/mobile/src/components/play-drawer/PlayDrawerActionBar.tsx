@@ -93,6 +93,12 @@ type PlayDrawerActionBarProps = {
    * the browse latch's controls and an anonymous viewer still win here.
    */
   workoutOutcome?: WorkoutOutcomeTarget | null;
+  /**
+   * Set while the host holds Fell / Sent for a climb the wall just left
+   * (`useWorkoutOutcomeHold`): when it left. Null while `workoutOutcome` is the
+   * climb on the wall.
+   */
+  workoutOutcomeWallLeftAtMs?: number | null;
   /** Confirm only: the lit climb's name, for the question. */
   wallClimbName?: string | null;
   /** Confirm only: the lit climb's uuid, to name who put it up. */
@@ -172,6 +178,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   showHolderBadge = true,
   commitButton = null,
   workoutOutcome = null,
+  workoutOutcomeWallLeftAtMs = null,
   wallClimbName = null,
   wallClimbUuid = null,
   commitLabel = 'putOnWall',
@@ -374,7 +381,11 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
               onConfirm={onCommit}
             />
           ) : layout.secondaryRow === 'workoutOutcome' && workoutOutcome ? (
-            <WorkoutOutcomeRow target={workoutOutcome} onOpenLogSheet={onTickPress} />
+            <WorkoutOutcomeRow
+              target={workoutOutcome}
+              wallLeftAtMs={workoutOutcomeWallLeftAtMs}
+              onOpenLogSheet={onTickPress}
+            />
           ) : typeof layout.secondaryRow === 'string' ? null : (
             layout.secondaryRow.map((item: ActionBarSecondaryItem, index: number) => {
               switch (item) {

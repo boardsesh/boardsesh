@@ -31,7 +31,7 @@ import { QueueActionsContext } from '../../providers/queue/queue-contexts';
 import { getEffectiveRestPacing } from '../../hooks/use-effective-rest-pacing';
 import { nowMs } from '../../lib/clock';
 import { noteRestTimerTick } from '../../lib/rest-timer-store';
-import { attributeTickToQueueItem } from '../../lib/tick-attribution';
+import { attributeTickToQueueItem, type TickAttributionCandidate } from '../../lib/tick-attribution';
 import { noteWorkoutRunTick } from '../../lib/workout-run-store';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { useLocalPendingTicks } from '../../hooks/use-local-ticks';
@@ -80,12 +80,13 @@ export type TickSaveFields = {
   /** The picked difficulty's grade name, for analytics only. */
   gradeName?: string | null;
   /**
-   * The queue item this tick counts for, when the caller knows it better than
+   * The queue item this tick is meant for, when the caller knows it better than
    * the wall does: a one-tap Fell / Sent just after the wall moved on is for the
-   * climb it left. Left out, it is the committed current item when that item's
-   * climb is the ticked one (`attributeTickToQueueItem`).
+   * climb it left. Left out, it is the committed current item. Either way the
+   * tick counts for it only when it is that item's climb at the angle the item
+   * is up at (`attributeTickToQueueItem`).
    */
-  queueItemUuid?: string;
+  queueItem?: TickAttributionCandidate;
 };
 
 export type TickSaveHandlers = {
@@ -174,9 +175,10 @@ export function useTickSaver({
       // that was up when the climber logged it. Only at the angle it is up at: a
       // send picked at another angle in the form still saves, but counts for no
       // queue item, so it never moves the wall or lands in the workout's log.
-      const queueItemUuid =
-        fields.queueItemUuid ??
-        attributeTickToQueueItem({ climbUuid, angle: fields.angle }, getQueueSnapshot?.().currentClimbQueueItem ?? null);
+      const queueItemUuid = attributeTickToQueueItem(
+        { climbUuid, angle: fields.angle },
+        fields.queueItem ?? getQueueSnapshot?.().currentClimbQueueItem ?? null,
+      );
 
       saveSurvivingUnmount(
         saveTick,

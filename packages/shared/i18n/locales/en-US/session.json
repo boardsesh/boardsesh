@@ -868,6 +868,8 @@
       "sent": "Sent",
       "fellHint": "Logs one try on this climb",
       "sentHint": "Logs this climb as sent",
+      "fellHintPrevious": "Logs one try on {{name}}, the previous climb",
+      "sentHintPrevious": "Logs {{name}}, the previous climb, as sent",
       "attemptLogged": "Try logged · {{name}}",
       "flashLogged": "Flash logged · {{name}}",
       "sendLogged": "Send logged · {{name}}",

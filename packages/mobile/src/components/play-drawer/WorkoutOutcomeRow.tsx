@@ -8,6 +8,11 @@
 // root toast draws behind it, so the confirmation lives here: the tapped button
 // reads "Try logged" (or Flash / Send) for a moment, and a failure takes the row
 // until it is read.
+//
+// Just after the wall leaves the timed block the player holds the row for the
+// climb it left (`use-workout-outcome-hold.ts`). The buttons still log there,
+// so their hints and saved lines name that climb: the board already shows the
+// next one.
 import { memo } from 'react';
 import { StyleSheet, View, type ColorValue } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -26,16 +31,28 @@ import type { WorkoutOutcomeTarget } from './workout-outcome';
 
 type WorkoutOutcomeRowProps = {
   target: WorkoutOutcomeTarget;
+  /**
+   * Set while the row is held for `target` after the wall left it: when it
+   * left. Null while `target` is the climb on the wall.
+   */
+  wallLeftAtMs?: number | null;
   /** The player's Log ascent opener, for a spray climb nobody has sent yet. */
   onOpenLogSheet: () => void;
 };
 
 type SavedNotice = Extract<WorkoutOneTapNotice, { kind: 'saved' }>;
 
-export const WorkoutOutcomeRow = memo(function WorkoutOutcomeRow({ target, onOpenLogSheet }: WorkoutOutcomeRowProps) {
+export const WorkoutOutcomeRow = memo(function WorkoutOutcomeRow({
+  target,
+  wallLeftAtMs = null,
+  onOpenLogSheet,
+}: WorkoutOutcomeRowProps) {
   const { t } = useTranslation('session');
   const { brandColors, systemColors, radii } = useTheme();
-  const { onFell, onSent, notice, dismissNotice } = useWorkoutOneTap(target, onOpenLogSheet);
+  const { onFell, onSent, notice, dismissNotice } = useWorkoutOneTap(target, onOpenLogSheet, wallLeftAtMs);
+  // While held, the climb the buttons log is no longer the one on screen.
+  const held = wallLeftAtMs !== null;
+  const onScreenQueueItemUuid = held ? null : target.queueItemUuid;
 
   if (notice?.kind === 'message') {
     return (
@@ -72,9 +89,15 @@ export const WorkoutOutcomeRow = memo(function WorkoutOutcomeRow({ target, onOpe
 
   const fellLabel = t('playView.workoutOutcome.fell');
   const sentLabel = t('playView.workoutOutcome.sent');
-  const fellSavedLabel = notice?.status === 'attempt' ? savedNoticeLabel(t, notice, target.queueItemUuid) : null;
+  const fellHint = held
+    ? t('playView.workoutOutcome.fellHintPrevious', { name: target.climb.name })
+    : t('playView.workoutOutcome.fellHint');
+  const sentHint = held
+    ? t('playView.workoutOutcome.sentHintPrevious', { name: target.climb.name })
+    : t('playView.workoutOutcome.sentHint');
+  const fellSavedLabel = notice?.status === 'attempt' ? savedNoticeLabel(t, notice, onScreenQueueItemUuid) : null;
   const sentSavedLabel =
-    notice && notice.status !== 'attempt' ? savedNoticeLabel(t, notice, target.queueItemUuid) : null;
+    notice && notice.status !== 'attempt' ? savedNoticeLabel(t, notice, onScreenQueueItemUuid) : null;
 
   return (
     <View style={styles.row} testID="workout-outcome-row">
@@ -83,7 +106,7 @@ export const WorkoutOutcomeRow = memo(function WorkoutOutcomeRow({ target, onOpe
         onPress={onFell}
         accessibilityRole="button"
         accessibilityLabel={fellLabel}
-        accessibilityHint={t('playView.workoutOutcome.fellHint')}
+        accessibilityHint={fellHint}
         style={[styles.button, { backgroundColor: systemColors.fill, borderRadius: radii.button }]}
       >
         <OutcomeButtonLabel
@@ -98,7 +121,7 @@ export const WorkoutOutcomeRow = memo(function WorkoutOutcomeRow({ target, onOpe
         onPress={onSent}
         accessibilityRole="button"
         accessibilityLabel={sentLabel}
-        accessibilityHint={t('playView.workoutOutcome.sentHint')}
+        accessibilityHint={sentHint}
         android_ripple={androidRipple(brandColors.onPrimary)}
         style={[styles.button, { backgroundColor: brandColors.primaryFill, borderRadius: radii.button }]}
       >
@@ -116,10 +139,11 @@ export const WorkoutOutcomeRow = memo(function WorkoutOutcomeRow({ target, onOpe
 /**
  * What a saved go reads on its button. Short while the climb it was logged on is
  * the one on screen; the full sentence, naming the climb, when the go was for
- * the climb the wall just left.
+ * the climb the wall just left (`onScreenQueueItemUuid` is null while the row is
+ * held for that climb).
  */
-function savedNoticeLabel(t: TFunction<'session'>, notice: SavedNotice, shownQueueItemUuid: string): string {
-  if (notice.queueItemUuid !== shownQueueItemUuid) return notice.message;
+function savedNoticeLabel(t: TFunction<'session'>, notice: SavedNotice, onScreenQueueItemUuid: string | null): string {
+  if (notice.queueItemUuid !== onScreenQueueItemUuid) return notice.message;
   return shortSavedLabel(t, notice.status);
 }
 

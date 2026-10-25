@@ -13,7 +13,9 @@
 // The wall can move on under a tap: an on-the-minute beat advances whether the
 // climber logged or not. Nobody gets a go on the new climb within a couple of
 // seconds of it lighting up, so a tap that soon after the wall moved is for the
-// climb it left, and it logs there, against that queue item.
+// climb it left, and it logs there, against that queue item. When the wall
+// moves to a climb without Fell / Sent, the player holds the row for that climb
+// for the same couple of seconds (`use-workout-outcome-hold.ts`, `wallLeftAtMs`).
 //
 // The row says what each tap did (`WorkoutOneTapNotice`), not a toast: the
 // player is a native modal on iOS, and the root toast overlay draws behind it.
@@ -28,20 +30,13 @@ import { announceQueued } from '../../lib/announce-queued';
 import { hapticSuccess } from '../../lib/haptics';
 import { getWorkoutRunLog } from '../../lib/workout-run-store';
 import { isFirstAscentTick, useHasPriorTickHistory, useTickSaver } from './use-tick-saver';
-import type { WorkoutOutcomeTarget } from './workout-outcome';
+import { WALL_MOVED_GRACE_MS, type WorkoutOutcomeTarget } from './workout-outcome';
 
 /**
  * A second tap within this long of the last one, on either button, is dropped:
  * a fumbled double tap must not log two goes, or a fall and a send.
  */
 export const ONE_TAP_GUARD_MS = 700;
-
-/**
- * A tap within this long of the wall moving on logs for the climb it left. Long
- * enough for a climber who topped out just before an on-the-minute beat to reach
- * the button, too short for a go on the climb that just lit up.
- */
-export const WALL_MOVED_GRACE_MS = 2000;
 
 /** How long the tapped button says "Try logged" (or Flash / Send) before its label comes back. */
 export const SAVED_NOTICE_MS = 2000;
@@ -78,12 +73,23 @@ export type WorkoutOneTap = {
  * Fell and Sent for the climb on the wall. `openLogSheet` is the player's own
  * Log ascent opener: a spray climb nobody has sent needs a grade, which only the
  * sheet asks for, so its Sent opens the sheet instead of logging.
+ *
+ * `wallLeftAtMs` is set while the player holds the row for a climb the wall has
+ * already left: `target` is that climb, a tap logs there only within
+ * `WALL_MOVED_GRACE_MS` of the move, and never opens the sheet, which would open
+ * on the climb now on screen.
  */
-export function useWorkoutOneTap(target: WorkoutOutcomeTarget, openLogSheet: () => void): WorkoutOneTap {
+export function useWorkoutOneTap(
+  target: WorkoutOutcomeTarget,
+  openLogSheet: () => void,
+  wallLeftAtMs: number | null = null,
+): WorkoutOneTap {
   const { notice, report, dismissNotice } = useOneTapNotice();
   const wallLeft = useClimbTheWallLeft(target);
-  const onTheWall = useOneTapLogger(target, openLogSheet, report);
-  // Bound to the climb the wall just left, or to the same climb as `onTheWall`
+  // Bound to the climb the row was handed: the one on the wall, or, while the
+  // row is held, the one the wall left.
+  const forTarget = useOneTapLogger(target, wallLeftAtMs === null ? openLogSheet : null, report);
+  // Bound to the climb the wall just left, or to the same climb as `forTarget`
   // while it hasn't moved. The sheet opens on the climb on screen, so this one
   // has no opener.
   const justLeft = useOneTapLogger(wallLeft?.target ?? target, null, report);
@@ -91,14 +97,18 @@ export function useWorkoutOneTap(target: WorkoutOutcomeTarget, openLogSheet: () 
   // would drop every tap after the first.
   const lastTapAtRef = useRef<number | null>(null);
 
-  /** The logger this tap goes to, or null when the tap guard drops it. */
+  /** The logger this tap goes to, or null when the tap guard or a spent hold drops it. */
   const claimTap = useCallback((): OneTapLogger | null => {
     const tappedAtMs = Date.now();
+    // Held for the climb the wall left, and the swap is late: the climber is on
+    // the next climb by now, and it has no Fell / Sent.
+    if (wallLeftAtMs !== null && tappedAtMs - wallLeftAtMs >= WALL_MOVED_GRACE_MS) return null;
     const lastTapAtMs = lastTapAtRef.current;
     if (lastTapAtMs !== null && tappedAtMs - lastTapAtMs < ONE_TAP_GUARD_MS) return null;
     lastTapAtRef.current = tappedAtMs;
-    return wallLeft !== null && tappedAtMs - wallLeft.leftAtMs < WALL_MOVED_GRACE_MS ? justLeft : onTheWall;
-  }, [wallLeft, justLeft, onTheWall]);
+    if (wallLeftAtMs !== null) return forTarget;
+    return wallLeft !== null && tappedAtMs - wallLeft.leftAtMs < WALL_MOVED_GRACE_MS ? justLeft : forTarget;
+  }, [wallLeftAtMs, wallLeft, justLeft, forTarget]);
 
   const onFell = useCallback(() => claimTap()?.logFell(), [claimTap]);
   const onSent = useCallback(() => claimTap()?.logSent(), [claimTap]);
@@ -217,7 +227,8 @@ function useOneTapLogger(
           baseAscensionistCount,
           gradeName: null,
           // The climb this row was showing, even when the wall has since moved on.
-          queueItemUuid,
+          // It still counts only at the angle that queue item is up at.
+          queueItem: { uuid: queueItemUuid, climb },
         },
         {
           onSaved: () => {

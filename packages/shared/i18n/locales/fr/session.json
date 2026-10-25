@@ -868,6 +868,8 @@
       "sent": "Enchaîné",
       "fellHint": "Enregistre un essai sur ce bloc",
       "sentHint": "Fait la croix sur ce bloc",
+      "fellHintPrevious": "Enregistre un essai sur {{name}}, le bloc précédent",
+      "sentHintPrevious": "Fait la croix sur {{name}}, le bloc précédent",
       "attemptLogged": "Essai enregistré · {{name}}",
       "flashLogged": "Flash enregistré · {{name}}",
       "sendLogged": "Croix enregistrée · {{name}}",

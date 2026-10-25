@@ -142,7 +142,53 @@ describe('WorkoutOutcomeRow', () => {
 
     expect(oneTap.onFell).toHaveBeenCalledTimes(1);
     expect(oneTap.onSent).toHaveBeenCalledTimes(1);
-    expect(oneTap.calls.at(-1)).toEqual([TARGET, onOpenLogSheet]);
+    expect(oneTap.calls.at(-1)).toEqual([TARGET, onOpenLogSheet, null]);
+  });
+});
+
+// Held for the climb the wall just left (`useWorkoutOutcomeHold`): the board
+// already shows the next climb, so the row says which climb its buttons log.
+describe('WorkoutOutcomeRow: held for the climb the wall left', () => {
+  const WALL_LEFT_AT_MS = 1_760_000_000_000;
+
+  function renderHeldRow() {
+    return render(
+      createElement(WorkoutOutcomeRow, { target: TARGET, wallLeftAtMs: WALL_LEFT_AT_MS, onOpenLogSheet: vi.fn() }),
+    );
+  }
+
+  it('hands the hook when the wall left, so a tap logs there and only within the grace', () => {
+    oneTap.calls.length = 0;
+    const onOpenLogSheet = vi.fn();
+    render(createElement(WorkoutOutcomeRow, { target: TARGET, wallLeftAtMs: WALL_LEFT_AT_MS, onOpenLogSheet }));
+
+    expect(oneTap.calls.at(-1)).toEqual([TARGET, onOpenLogSheet, WALL_LEFT_AT_MS]);
+  });
+
+  it('keeps Fell and Sent as live buttons, with hints that name the previous climb', () => {
+    const { getByTestId } = renderHeldRow();
+
+    const fell = getByTestId('workout-outcome-fell');
+    const sent = getByTestId('workout-outcome-sent');
+    expect(fell.getAttribute('data-label')).toBe('playView.workoutOutcome.fell');
+    expect(fell.getAttribute('data-hint')).toBe('playView.workoutOutcome.fellHintPrevious');
+    expect(sent.getAttribute('data-label')).toBe('playView.workoutOutcome.sent');
+    expect(sent.getAttribute('data-hint')).toBe('playView.workoutOutcome.sentHintPrevious');
+
+    fireEvent.click(fell);
+    expect(oneTap.onFell).toHaveBeenCalled();
+  });
+
+  it('names the climb on a saved go, since it is not the one on screen', () => {
+    oneTap.notice = {
+      kind: 'saved',
+      status: 'attempt',
+      queueItemUuid: 'item-1',
+      message: 'Try logged · Crimp line',
+    };
+    const { getByTestId } = renderHeldRow();
+
+    expect(getByTestId('workout-outcome-fell').textContent).toBe('Try logged · Crimp line');
   });
 });
 
