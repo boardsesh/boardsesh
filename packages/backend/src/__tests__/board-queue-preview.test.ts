@@ -181,6 +181,7 @@ async function bindSessionToBoard(sessionId: string, boardId: number): Promise<v
     climb: makePresenceClimb(),
     climbUuid: 'presence-climb',
     effectiveAngle: 40,
+    mirrored: false,
     sessionId,
   });
 }
@@ -366,6 +367,7 @@ describe('board-queue-preview binding', () => {
         climb: makePresenceClimb(),
         climbUuid: 'presence-climb',
         effectiveAngle: 40,
+        mirrored: false,
         sessionId,
       });
 
@@ -385,6 +387,7 @@ describe('board-queue-preview binding', () => {
       climb: makePresenceClimb(),
       climbUuid: 'presence-climb',
       effectiveAngle: 40,
+      mirrored: false,
       sessionId: firstSessionId,
     });
     expect(moved.sessionBoardChanged).toBe(true);
@@ -1636,6 +1639,7 @@ describe('board-queue-preview Redis binding', () => {
         climb: makePresenceClimb(),
         climbUuid: 'presence-climb',
         effectiveAngle: 40,
+        mirrored: false,
         sessionId: commitSessionId,
       });
 

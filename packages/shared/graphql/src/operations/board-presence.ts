@@ -19,6 +19,7 @@ const BOARD_PRESENCE_CLIMB_FIELDS = `
   gradeColor
   frames
   angle
+  mirrored
   setter
   sentByDisplayName
   sentByAvatarUrl

@@ -4301,6 +4301,50 @@ describe('board-presence write-side idempotency (Redis)', () => {
     expect(await testRedis.get(writerKey)).toBe(SECOND_USER_ID);
   });
 
+  it('does not suppress a flip of the same climb, and records the orientation on the presence climb (#5238)', async () => {
+    if (!redisOn || !testRedis) return;
+    const boardId = await makeIdemBoard();
+
+    await boardPresenceMutations.reportBoardClimb(
+      undefined,
+      { boardId, climb: makeQueueItemInput({ mirrored: false }), angle: 40 },
+      authCtx(),
+    );
+    // Same user, climb and angle, inside the 10 s dedup window, but flipped on
+    // the wall. That is a real wall change, not a retry.
+    await boardPresenceMutations.reportBoardClimb(
+      undefined,
+      { boardId, climb: makeQueueItemInput({ mirrored: true }), angle: 40 },
+      authCtx(),
+    );
+    // An exact retry of the flipped send is still a no-op.
+    await boardPresenceMutations.reportBoardClimb(
+      undefined,
+      { boardId, climb: makeQueueItemInput({ mirrored: true }), angle: 40 },
+      authCtx(),
+    );
+
+    const history = await testRedis.lrange(`board:${boardId}:history`, 0, -1);
+    expect(history).toHaveLength(2);
+    const [newest, oldest] = history.map((entry) => JSON.parse(entry) as BoardPresenceClimb);
+    expect(newest.mirrored).toBe(true);
+    expect(oldest.mirrored).toBe(false);
+  });
+
+  it('stores an unknown orientation as null when an older reporter leaves mirrored out', async () => {
+    if (!redisOn || !testRedis) return;
+    const boardId = await makeIdemBoard();
+
+    await boardPresenceMutations.reportBoardClimb(
+      undefined,
+      { boardId, climb: makeQueueItemInput(), angle: 40 },
+      authCtx(),
+    );
+
+    const [entry] = await testRedis.lrange(`board:${boardId}:history`, 0, -1);
+    expect((JSON.parse(entry) as BoardPresenceClimb).mirrored).toBeNull();
+  });
+
   it('re-accepts a retry once the dedup window has expired', async () => {
     if (!redisOn || !testRedis) return;
     const boardId = await makeIdemBoard();
@@ -4879,6 +4923,7 @@ describe('board-presence commit degradation', () => {
       climb: { climbUuid: 'climb-degraded', sentAt: new Date().toISOString(), seq: 1 },
       climbUuid: 'climb-degraded',
       effectiveAngle: 40,
+      mirrored: false,
       sessionId: null,
     });
     expect(result).toEqual({

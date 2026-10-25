@@ -255,17 +255,25 @@ function formatPickerBoardConfig(t: TFunction<'settings'>, config: BleBoardConfi
 
 type PendingWallReport = {
   item: ClimbQueueItem;
+  /** The orientation the auto-sender actually wrote (see `effectiveMirrored`). */
+  mirrored: boolean;
   undoTarget: BoardPresenceClimb | null;
   undoToastArmId: number | null;
 };
 
-function queueItemReportSignature(item: ClimbQueueItem): string {
-  return `${item.climb.uuid}:${item.climb.frames}:${item.climb.angle ?? ''}`;
+// Report signatures carry the orientation: flipping a lit climb is a wall
+// change peers must see, not a duplicate of the last report (#5238). A feed
+// climb from an older reporter has no orientation and signs as un-mirrored.
+function queueItemReportSignature(item: ClimbQueueItem, mirrored: boolean): string {
+  return `${item.climb.uuid}:${item.climb.frames}:${item.climb.angle ?? ''}:${mirrored ? 1 : 0}`;
 }
 
-function presenceClimbReportSignature(climb: BoardPresenceClimb | null): string | null {
+function presenceClimbReportSignature(
+  climb: BoardPresenceClimb | null,
+  mirrored: boolean | null = climb?.mirrored ?? null,
+): string | null {
   if (!climb) return null;
-  return `${climb.climbUuid}:${climb.frames ?? ''}:${climb.angle ?? ''}`;
+  return `${climb.climbUuid}:${climb.frames ?? ''}:${climb.angle ?? ''}:${mirrored === true ? 1 : 0}`;
 }
 
 /** The `frames::mirror` of the LEDs physically on the wall — what any write path
@@ -274,7 +282,7 @@ function physicalFramesSignature(frames: string, mirrored: boolean): string {
   return `${frames}::${mirrored ? 1 : 0}`;
 }
 
-function presenceClimbToQueueInput(climb: BoardPresenceClimb): ClimbQueueItemInput {
+function presenceClimbToQueueInput(climb: BoardPresenceClimb, mirrored: boolean): ClimbQueueItemInput {
   return {
     uuid: climb.queueItemUuid ?? `undo:${climb.climbUuid}:${climb.seq}`,
     climb: {
@@ -288,6 +296,7 @@ function presenceClimbToQueueInput(climb: BoardPresenceClimb): ClimbQueueItemInp
       quality_average: '',
       stars: 0,
       difficulty_error: '',
+      mirrored,
     },
   };
 }
@@ -330,8 +339,10 @@ function BluetoothAutoSender({
    * Fired once a climb is on the wall (a fresh write or a deduped re-broadcast).
    * Receives the full lit queue item so consumers can both emit the local
    * confirm (uuid only) and report the climb to the board-presence channel.
+   * `mirrored` is the orientation actually written to the wall, which a solo
+   * drawer flip can make differ from `item.climb.mirrored`.
    */
-  onWallConfirmed: (item: ClimbQueueItem) => void;
+  onWallConfirmed: (item: ClimbQueueItem, mirrored: boolean) => void;
   reassertNonce: number;
   // Changes when the mirror intent slot changes. Only a dep, so the drain
   // re-runs and its own signature dedup decides whether a write is due.
@@ -623,7 +634,7 @@ function BluetoothAutoSender({
             // A relight/undo may have changed the wall out from under us, in which
             // case confirming here would report a climb that isn't lit (a phantom).
             if (physicalFramesSignature(item.climb.frames, effectiveMirrored) === lastPhysicalFramesRef.current) {
-              onWallConfirmedRef.current(item);
+              onWallConfirmedRef.current(item, effectiveMirrored);
             }
             toSend = pendingSendRef.current;
             pendingSendRef.current = null;
@@ -646,7 +657,7 @@ function BluetoothAutoSender({
             if (result === true) {
               lastSentSignatureRef.current = sendSignature;
               lastPhysicalFramesRef.current = physicalFramesSignature(item.climb.frames, effectiveMirrored);
-              onWallConfirmedRef.current(item);
+              onWallConfirmedRef.current(item, effectiveMirrored);
               hapticSuccess();
             }
           } catch (error) {
@@ -1033,6 +1044,7 @@ export function BluetoothProvider({
   const reportWallClimb = useCallback(
     async (
       item: ClimbQueueItem,
+      mirrored: boolean,
       boardId: number,
       undoTarget: BoardPresenceClimb | null,
       undoToastArmId: number | null,
@@ -1043,7 +1055,17 @@ export function BluetoothProvider({
         operationEpoch === wallOperationEpochRef.current && reportBoardUuid === boardUuidRef.current;
       const virtualHold = virtualWallHoldRef.current;
       if (virtualHold && virtualHold.boardId === null) virtualHold.boardId = boardId;
-      const reportSignature = queueItemReportSignature(item);
+      const reportSignature = queueItemReportSignature(item, mirrored);
+      // A flip of the climb this phone already reported is not a new wall
+      // change to undo: the wall still shows our last accepted report, only the
+      // orientation differs. Keep the climb that report replaced as the undo
+      // target, so undo after a flip still restores the other climber's climb.
+      const isOrientationOnlyChange =
+        undoTarget !== null &&
+        lastAcceptedReportSignatureRef.current !== null &&
+        presenceClimbReportSignature(undoTarget) === lastAcceptedReportSignatureRef.current &&
+        undoTarget.climbUuid === item.climb.uuid &&
+        (undoTarget.angle ?? null) === (item.climb.angle ?? null);
       if (lastAcceptedReportSignatureRef.current === reportSignature) {
         const currentWallSignature = presenceClimbReportSignature(wallCurrentClimbRef.current);
         if (
@@ -1061,7 +1083,9 @@ export function BluetoothProvider({
         return true;
       }
 
-      const climbInput = { uuid: item.uuid, climb: toClimbInput(item.climb) };
+      // Report what the wall shows, not the queue item's flag: a solo drawer
+      // flip never reaches `item.climb.mirrored`.
+      const climbInput = { uuid: item.uuid, climb: { ...toClimbInput(item.climb), mirrored } };
       const angle = item.climb.angle ?? null;
       const sendReport = () =>
         reportClimbForBoardRef.current(boardId, climbInput, angle).catch((error: unknown) => {
@@ -1096,9 +1120,9 @@ export function BluetoothProvider({
 
       lastAcceptedReportSignatureRef.current = reportSignature;
       lastAcceptedWallSignatureRef.current = presenceClimbReportSignature(wallCurrentClimbRef.current);
-      undoWallChangeTargetRef.current = undoTarget;
+      if (!isOrientationOnlyChange) undoWallChangeTargetRef.current = undoTarget;
       const showUndoToast = consumeUndoWallChangeToastArm(undoToastArmId);
-      if (showUndoToast && undoTarget?.frames) {
+      if (showUndoToast && !isOrientationOnlyChange && undoTarget?.frames) {
         showUndoWallChangeSnackbarRef.current();
       }
       return true;
@@ -1111,13 +1135,19 @@ export function BluetoothProvider({
       const pendingReport = pendingWallReportRef.current;
       if (!pendingReport) return;
       pendingWallReportRef.current = null;
-      void reportWallClimb(pendingReport.item, boardId, pendingReport.undoTarget, pendingReport.undoToastArmId);
+      void reportWallClimb(
+        pendingReport.item,
+        pendingReport.mirrored,
+        boardId,
+        pendingReport.undoTarget,
+        pendingReport.undoToastArmId,
+      );
     },
     [reportWallClimb],
   );
 
   const handleWallConfirmed = useCallback(
-    (item: ClimbQueueItem) => {
+    (item: ClimbQueueItem, mirrored: boolean) => {
       emitWallConfirm(item.climb.uuid);
       if (sessionIdRef.current) {
         void confirmClimbOnWall(item.climb.uuid);
@@ -1133,13 +1163,13 @@ export function BluetoothProvider({
       const undoToastArmId = getUndoWallChangeToastArmId();
       if (boardId === null) {
         if (pendingPresenceResolveRef.current) {
-          pendingWallReportRef.current = { item, undoTarget, undoToastArmId };
+          pendingWallReportRef.current = { item, mirrored, undoTarget, undoToastArmId };
         } else {
           consumeUndoWallChangeToastArm(undoToastArmId);
         }
         return;
       }
-      void reportWallClimb(item, boardId, undoTarget, undoToastArmId);
+      void reportWallClimb(item, mirrored, boardId, undoTarget, undoToastArmId);
     },
     [confirmClimbOnWall, consumeUndoWallChangeToastArm, getUndoWallChangeToastArmId, reportWallClimb],
   );
@@ -1901,12 +1931,10 @@ export function BluetoothProvider({
     }
 
     lastAcceptedReportSignatureRef.current = null;
-    // A flip belongs to the climb, so every write path honours it — not just the
-    // auto-sender. Restoring this climb un-mirrored while its flip still stands
-    // would leave the wall disagreeing with the toggle the drawer will show.
-    // (Board presence carries no mirror field, so the orientation can only come
-    // from our own intent, never from the report — see #5238.)
-    const undoMirrored = mirrorIntentFor(undoTarget.climbUuid) ?? false;
+    // Undo restores what was lit, so the orientation the feed recorded wins
+    // (#5238). Our own intent only fills in for a climb reported by an older
+    // build, which carries no orientation.
+    const undoMirrored = undoTarget.mirrored ?? mirrorIntentFor(undoTarget.climbUuid) ?? false;
     const writeSucceeded = await commitWallFrames(frames, undoMirrored, undefined, {
       sendSource: 'undo',
       climbUuid: undoTarget.climbUuid,
@@ -1920,7 +1948,7 @@ export function BluetoothProvider({
     lastPhysicalFramesRef.current = physicalFramesSignature(frames, undoMirrored);
 
     const accepted = await reportClimbForBoardRef
-      .current(boardId, presenceClimbToQueueInput(undoTarget), undoTarget.angle ?? null)
+      .current(boardId, presenceClimbToQueueInput(undoTarget, undoMirrored), undoTarget.angle ?? null)
       .catch((error: unknown) => {
         console.warn('[board-presence] undo report failed', error);
         return false;
@@ -1929,7 +1957,7 @@ export function BluetoothProvider({
       return false;
     }
 
-    lastAcceptedReportSignatureRef.current = presenceClimbReportSignature(undoTarget);
+    lastAcceptedReportSignatureRef.current = presenceClimbReportSignature(undoTarget, undoMirrored);
     undoWallChangeTargetRef.current = null;
     return true;
   }, [commitWallFrames]);
@@ -1957,10 +1985,11 @@ export function BluetoothProvider({
       }
 
       lastAcceptedReportSignatureRef.current = null;
-      // Honour a standing flip for this climb, as undo does above: relighting it
-      // un-mirrored would leave the wall disagreeing with the toggle a drawer
-      // opening on it will show.
-      const relightMirrored = mirrorIntentFor(climb.climbUuid) ?? false;
+      // A standing flip on this phone wins, so the wall agrees with the toggle a
+      // drawer opening on it will show. Without one, relight the climb the way
+      // the feed recorded it (#5238); a climb from an older reporter or from
+      // durable history has no orientation and relights un-mirrored.
+      const relightMirrored = mirrorIntentFor(climb.climbUuid) ?? climb.mirrored ?? false;
       const writeSucceeded = await commitWallFrames(frames, relightMirrored, undefined, {
         sendSource: 'wall-relight',
         climbUuid: climb.climbUuid,
@@ -1974,7 +2003,7 @@ export function BluetoothProvider({
       lastPhysicalFramesRef.current = physicalFramesSignature(frames, relightMirrored);
 
       const accepted = await reportClimbForBoardRef
-        .current(boardId, presenceClimbToQueueInput(climb), climb.angle ?? null)
+        .current(boardId, presenceClimbToQueueInput(climb, relightMirrored), climb.angle ?? null)
         .catch((error: unknown) => {
           console.warn('[board-presence] kiosk relight report failed', error);
           return false;
@@ -1983,7 +2012,7 @@ export function BluetoothProvider({
         return false;
       }
 
-      lastAcceptedReportSignatureRef.current = presenceClimbReportSignature(climb);
+      lastAcceptedReportSignatureRef.current = presenceClimbReportSignature(climb, relightMirrored);
       return true;
     },
     [commitWallFrames],

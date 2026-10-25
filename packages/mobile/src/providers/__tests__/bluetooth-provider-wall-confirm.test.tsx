@@ -1304,7 +1304,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
       await waitFor(() => {
         expect(presence.reportClimbForBoard).toHaveBeenCalledWith(
           99,
-          { uuid: 'queue-climb-1', climb: { uuid: 'climb-1' } },
+          { uuid: 'queue-climb-1', climb: { uuid: 'climb-1', mirrored: false } },
           40,
         );
       });
@@ -1399,7 +1399,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
       });
       expect(presence.reportClimbForBoard).toHaveBeenCalledWith(
         99,
-        { uuid: 'queue-climb-1', climb: { uuid: 'climb-1' } },
+        { uuid: 'queue-climb-1', climb: { uuid: 'climb-1', mirrored: false } },
         40,
       );
       expect(queue.confirmClimbOnWall).not.toHaveBeenCalled();
@@ -1761,7 +1761,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
       await waitFor(() => {
         expect(presence.reportClimbForBoard).toHaveBeenCalledWith(
           123,
-          { uuid: 'queue-climb-1', climb: { uuid: 'climb-1' } },
+          { uuid: 'queue-climb-1', climb: { uuid: 'climb-1', mirrored: false } },
           40,
         );
       });
@@ -1820,7 +1820,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
       await waitFor(() => {
         expect(presence.reportClimbForBoard).toHaveBeenCalledWith(
           222,
-          { uuid: 'queue-climb-1', climb: { uuid: 'climb-1' } },
+          { uuid: 'queue-climb-1', climb: { uuid: 'climb-1', mirrored: false } },
           40,
         );
       });
@@ -1872,7 +1872,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
       await waitFor(() => {
         expect(presence.reportClimbForBoard).toHaveBeenCalledWith(
           321,
-          { uuid: 'queue-climb-1', climb: { uuid: 'climb-1' } },
+          { uuid: 'queue-climb-1', climb: { uuid: 'climb-1', mirrored: false } },
           40,
         );
       });
@@ -2156,9 +2156,156 @@ describe('BluetoothProvider wall-confirm integration', () => {
             quality_average: '',
             stars: 0,
             difficulty_error: '',
+            mirrored: false,
           },
         },
         35,
+      );
+    });
+
+    // #5238: board presence carries the orientation, so a flip reaches peers and
+    // undo / relight restore the wall the way it was actually lit.
+    it('re-reports the lit climb when the drawer flips it, carrying the orientation written to the wall', async () => {
+      queue.sessionId = null;
+      presence.enabled = true;
+      presence.boardId = 99;
+      presence.currentClimb = makePresenceClimb();
+      bluetooth.sendFramesToBoardForOptions = () => async (frames, mirrored, signal, sendContext) =>
+        bluetooth.state.sendFramesToBoard(frames, mirrored, signal, sendContext);
+
+      renderProvider(createElement(BluetoothProbe));
+      await waitFor(() => {
+        expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
+      });
+
+      act(() => {
+        capturedBluetooth?.setMirrorIntent('climb-1', true);
+      });
+
+      await waitFor(() => {
+        expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(2);
+      });
+      expect(presence.reportClimbForBoard).toHaveBeenLastCalledWith(
+        99,
+        { uuid: 'queue-climb-1', climb: { uuid: 'climb-1', mirrored: true } },
+        40,
+      );
+    });
+
+    it('undo relights the previous climb in the orientation the feed recorded', async () => {
+      queue.sessionId = null;
+      presence.enabled = true;
+      presence.boardId = 99;
+      // Another climber lit this mirrored; this phone holds no intent for it.
+      presence.currentClimb = makePresenceClimb({ mirrored: true });
+
+      renderProvider(createElement(BluetoothProbe));
+      await waitFor(() => {
+        expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
+      });
+
+      const undoResult = await capturedBluetooth?.undoWallChange();
+
+      expect(undoResult).toBe(true);
+      expect(bluetooth.state.sendFramesToBoard).toHaveBeenNthCalledWith(
+        2,
+        'previous-frames',
+        true,
+        undefined,
+        expect.objectContaining({ sendSource: 'undo' }),
+      );
+      expect(presence.reportClimbForBoard).toHaveBeenNthCalledWith(
+        2,
+        99,
+        expect.objectContaining({
+          uuid: 'queue-previous-climb',
+          climb: expect.objectContaining({ uuid: 'previous-climb', mirrored: true }),
+        }),
+        35,
+      );
+    });
+
+    it('relights a feed climb mirrored when it was lit mirrored and this phone holds no flip for it', async () => {
+      queue.sessionId = null;
+      presence.enabled = true;
+      presence.boardId = 99;
+      presence.currentClimb = makePresenceClimb();
+
+      renderProvider(createElement(BluetoothProbe));
+      await waitFor(() => {
+        expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
+      });
+
+      await act(async () => {
+        await capturedBluetooth?.relightPresenceClimb(
+          makePresenceClimb({ climbUuid: 'relit-climb', frames: 'relit-frames', mirrored: true }),
+        );
+      });
+
+      expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
+        'relit-frames',
+        true,
+        undefined,
+        expect.objectContaining({ sendSource: 'wall-relight' }),
+      );
+      expect(presence.reportClimbForBoard).toHaveBeenLastCalledWith(
+        99,
+        expect.objectContaining({ climb: expect.objectContaining({ uuid: 'relit-climb', mirrored: true }) }),
+        35,
+      );
+    });
+
+    it('keeps the replaced climb as the undo target when you only flip your own climb', async () => {
+      queue.sessionId = null;
+      presence.enabled = true;
+      presence.boardId = 99;
+      presence.currentClimb = makePresenceClimb();
+      bluetooth.sendFramesToBoardForOptions = () => async (frames, mirrored, signal, sendContext) =>
+        bluetooth.state.sendFramesToBoard(frames, mirrored, signal, sendContext);
+
+      const { rerender } = renderProvider(createElement(BluetoothProbe));
+      await waitFor(() => {
+        expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
+      });
+
+      // The feed echoes this phone's report back as the climb on the wall.
+      presence.currentClimb = makePresenceClimb({
+        climbUuid: 'climb-1',
+        queueItemUuid: 'queue-climb-1',
+        name: 'Climb climb-1',
+        frames: 'p1r12',
+        angle: 40,
+        mirrored: false,
+        seq: 8,
+      });
+      act(() => {
+        rerender(
+          createElement(BluetoothProvider, {
+            boardName: 'kilter',
+            layoutId: 1,
+            sizeId: 10,
+            setIds: '1,20',
+            children: createElement(BluetoothProbe),
+          }),
+        );
+      });
+
+      act(() => {
+        capturedBluetooth?.setMirrorIntent('climb-1', true);
+      });
+      await waitFor(() => {
+        expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(2);
+      });
+
+      await act(async () => {
+        await capturedBluetooth?.undoWallChange();
+      });
+
+      expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
+        'previous-frames',
+        false,
+        undefined,
+        expect.objectContaining({ sendSource: 'undo' }),
       );
     });
 

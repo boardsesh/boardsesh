@@ -444,6 +444,7 @@ describe('followedLiveSessions — board arm', () => {
       climb: { climbUuid: 'ls-bound-climb', sentAt: new Date().toISOString(), seq: 1 },
       climbUuid: 'ls-bound-climb',
       effectiveAngle: 40,
+      mirrored: false,
       sessionId,
     });
 

@@ -355,7 +355,7 @@ describe('BluetoothProvider — taking a wall with no LED light kit', () => {
     expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
     expect(presence.reportClimbForBoard).toHaveBeenCalledWith(
       42,
-      { uuid: 'queue-climb-1', climb: { uuid: 'climb-1' } },
+      { uuid: 'queue-climb-1', climb: { uuid: 'climb-1', mirrored: false } },
       40,
     );
     // Zero bytes: nothing reached the radio.

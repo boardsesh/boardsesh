@@ -29,6 +29,8 @@ export const boardPresenceTypeDefs = /* GraphQL */ `
     frames: String
     "Board angle in degrees. Null means unspecified (0 is a valid angle)."
     angle: Int
+    "Whether the climb was lit mirrored. Null means unknown (an older reporter, or a durable-history row)."
+    mirrored: Boolean
     "Catalog route setter display name (who set the climb)"
     setter: String
     "Display name of the Boardsesh user who lit it. Server-derived from the caller; never client-supplied."

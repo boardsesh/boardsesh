@@ -26,7 +26,7 @@ import { logger } from '../../../utils/logger';
 import { canAccessResourceWithoutLink, canViewResourceLocation } from '../../../services/privacy';
 import { projectBoardLocation } from '../../../services/board-location-projection';
 import { assertSprayBoardIsReadable } from '../climbs/spray-read-access';
-import { pubsub } from '../../../pubsub/index';
+import { boardReportDedupMarker, pubsub } from '../../../pubsub/index';
 import { roomManager } from '../../../services/room-manager';
 import { isApnsConfigured, sendLiveActivityUpdate } from '../../../services/apns';
 import { buildContentStateFromQueueState } from '../../../services/apns/content-state';
@@ -860,12 +860,16 @@ export const boardPresenceMutations = {
     // clients always send integer wall angles).
     const effectiveAngle = Math.round(validatedAngle ?? validatedClimb.climb.angle ?? Number(board.angle));
     const climbUuid = validatedClimb.climb.uuid;
+    // The orientation the reporter wrote to the wall. Older reporters send the
+    // queue item's flag (or nothing); a missing value stays null on the
+    // presence climb so clients can tell "unknown" from "not mirrored".
+    const reportedMirrored = validatedClimb.climb.mirrored ?? null;
 
     // Write-side idempotency (A2): a retry of the exact same (emitter, climb,
-    // angle) within REPORT_DEDUP_WINDOW_MS is a no-op — no new seq, no event,
+    // angle, orientation) within REPORT_DEDUP_WINDOW_MS is a no-op — no new seq, no event,
     // no durable insert. Still note the WS-close backstop so a deduped retry
     // doesn't let a stale backstop entry lapse. A different climb / angle /
-    // user is never suppressed (a user change still needs to broadcast the
+    // user / orientation is never suppressed (a user change still needs to broadcast the
     // hand-off).
     //
     // The short-circuit additionally requires this emitter to STILL hold the
@@ -878,7 +882,13 @@ export const boardPresenceMutations = {
     // through re-takes the writer and re-broadcasts. The cost is one
     // duplicate history/durable row in exactly that edge — holder correctness
     // wins over row dedup.
-    if (gate.lastReport === `${emitterId}|${climbUuid}|${effectiveAngle}` && gate.currentWriter === emitterId) {
+    const dedupMarker = boardReportDedupMarker({
+      emitterId,
+      climbUuid,
+      effectiveAngle,
+      mirrored: reportedMirrored === true,
+    });
+    if (gate.lastReport === dedupMarker && gate.currentWriter === emitterId) {
       roomManager.noteBoardWriter(ctx.connectionId, boardId, emitterId);
       return true;
     }
@@ -1002,6 +1012,7 @@ export const boardPresenceMutations = {
       gradeColor: null,
       frames: catalogClimb.frames ?? null,
       angle: effectiveAngle,
+      mirrored: reportedMirrored,
       setter: catalogClimb.setterUsername ?? null,
       sentByDisplayName: sender?.displayName ?? sender?.name ?? null,
       sentByAvatarUrl: sender?.avatarUrl ?? sender?.image ?? null,
@@ -1029,6 +1040,7 @@ export const boardPresenceMutations = {
       climb: presenceClimb,
       climbUuid,
       effectiveAngle,
+      mirrored: reportedMirrored === true,
       sessionId: reportingSessionId,
     });
 

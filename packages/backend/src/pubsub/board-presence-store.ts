@@ -8,7 +8,7 @@ export type BoardReportGate = {
   isMember: boolean;
   /** First-seen epoch-ms for the durable-history dwell gate, or null when unknown/implausible. */
   firstSeenMs: number | null;
-  /** Value of `board:{id}:lastReport` ("emitterId|climbUuid|angle"), or null when never set / expired. */
+  /** Value of `board:{id}:lastReport` (see `boardReportDedupMarker`), or null when never set / expired. */
   lastReport: string | null;
   /**
    * The board's current connection holder (`board:{id}:writer`), or null when
@@ -27,9 +27,25 @@ export type CommitBoardClimbInput = {
   climb: BoardPresenceClimb;
   climbUuid: string;
   effectiveAngle: number;
+  /** Orientation the reporter wrote to the wall; part of the dedup marker. */
+  mirrored: boolean;
   /** The reporting connection's party-session id, when it's in one. */
   sessionId: string | null;
 };
+
+/**
+ * The A2 dedup marker stored in `board:{id}:lastReport`. Orientation is part of
+ * it: flipping the climb on the wall is a real wall change, not a retry (#5238).
+ * The resolver compares against this same builder, so the two never drift.
+ */
+export function boardReportDedupMarker(input: {
+  emitterId: string;
+  climbUuid: string;
+  effectiveAngle: number;
+  mirrored: boolean;
+}): string {
+  return `${input.emitterId}|${input.climbUuid}|${input.effectiveAngle}|${input.mirrored ? 1 : 0}`;
+}
 
 export type CommitBoardClimbResult = {
   /** The writer key's previous value (from the atomic SET..GET), or null when
@@ -92,7 +108,7 @@ const BOARD_SEQ_RESEED_THRESHOLD = 50;
 // enough for a climbing session; a reconnect re-stamps it.
 const BOARD_MEMBERSHIP_TTL = 43_200; // 12 hours
 // Write-side idempotency window for reportBoardClimb: a retry of the exact
-// same (emitter, climb, angle) within this window is treated as a no-op
+// same (emitter, climb, angle, orientation) within this window is treated as a no-op
 // duplicate rather than a new send (see `getBoardReportGate` / A2 dedup).
 const REPORT_DEDUP_WINDOW_MS = 10_000;
 // Epoch-ms floor a first-seen stamp must clear to be trusted. Guards against
@@ -709,7 +725,7 @@ export class BoardPresenceStore {
       const historyKey = `board:${input.boardId}:history`;
       const writerKey = `board:${input.boardId}:writer`;
       const lastReportKey = `board:${input.boardId}:lastReport`;
-      const lastReportValue = `${input.emitterId}|${input.climbUuid}|${input.effectiveAngle}`;
+      const lastReportValue = boardReportDedupMarker(input);
 
       const pipeline = publisher.pipeline();
       const commandLabels: string[] = [];

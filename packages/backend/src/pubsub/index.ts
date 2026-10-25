@@ -25,6 +25,7 @@ import { logger } from '../utils/logger';
 // board-presence-store.ts; re-exported here so consumers keep importing them
 // from the pubsub entry point.
 export type { BoardReportGate, CommitBoardClimbInput, CommitBoardClimbResult } from './board-presence-store';
+export { boardReportDedupMarker } from './board-presence-store';
 
 type QueueSubscriber = ChannelSubscriber<QueueEvent>;
 type SessionSubscriber = ChannelSubscriber<SessionEvent>;

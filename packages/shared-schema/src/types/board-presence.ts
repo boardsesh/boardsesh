@@ -15,6 +15,8 @@ export type BoardPresenceClimb = {
   gradeColor?: string | null;
   frames?: string | null;
   angle?: number | null;
+  /** Orientation the reporter wrote to the wall. Null/missing means unknown (older reporter). */
+  mirrored?: boolean | null;
   setter?: string | null;
   /** Server-derived from the caller; never client-supplied. */
   sentByDisplayName?: string | null;

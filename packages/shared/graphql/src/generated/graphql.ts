@@ -823,6 +823,8 @@ export type BoardPresenceClimb = {
   grade?: Maybe<Scalars['String']['output']>;
   /** Grade colour as a hex string */
   gradeColor?: Maybe<Scalars['String']['output']>;
+  /** Whether the climb was lit mirrored. Null means unknown (an older reporter, or a durable-history row). */
+  mirrored?: Maybe<Scalars['Boolean']['output']>;
   /** Climb name */
   name?: Maybe<Scalars['String']['output']>;
   /** Queue item UUID that triggered the send, if any (disambiguates duplicates) */
