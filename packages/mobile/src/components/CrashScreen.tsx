@@ -37,6 +37,10 @@ const errorStyles = StyleSheet.create({
   message: {
     textAlign: 'center',
     marginBottom: spacing[8],
+  },
+  // Only the fallback (no explicit palette) dims; an explicit secondaryLabel is
+  // already the muted tone and dimming it again drops it under 4.5:1.
+  dimmed: {
     opacity: 0.7,
   },
   buttonRow: {
@@ -72,7 +76,6 @@ const errorStyles = StyleSheet.create({
     textAlign: 'center',
     marginTop: spacing[4],
     maxWidth: 280,
-    opacity: 0.7,
   },
 });
 
@@ -202,15 +205,18 @@ export function CrashScreen({ error, retry }: ErrorBoundaryProps) {
   return (
     <View style={[errorStyles.container, palette.background ? { backgroundColor: palette.background } : null]}>
       <View style={errorStyles.iconContainer}>
-        {/* Static brand colour on purpose: this boundary can render outside the
-            ThemeProvider (the crash screen), where useTheme() would throw — so
-            it can't read the scheme-aware brand. */}
+        {/* Palette comes from the OS colour scheme on purpose: this boundary can
+            render outside the ThemeProvider, where useTheme() would throw. */}
         <Icon name="warning" size={48} color={palette.brand.warning} />
       </View>
       <Text variant="title2" color={palette.label} style={errorStyles.title}>
         Something went wrong
       </Text>
-      <Text variant="body" color={palette.secondaryLabel} style={errorStyles.message}>
+      <Text
+        variant="body"
+        color={palette.secondaryLabel}
+        style={[errorStyles.message, !palette.secondaryLabel && errorStyles.dimmed]}
+      >
         The app hit an unexpected error. You can try again or head back home.
       </Text>
       <View style={errorStyles.buttonRow}>
@@ -267,12 +273,20 @@ export function CrashScreen({ error, retry }: ErrorBoundaryProps) {
         </PressableSurface>
       </View>
       {recovery.kind === 'no-fix-available' && (
-        <Text variant="footnote" color={palette.secondaryLabel} style={errorStyles.statusText}>
+        <Text
+          variant="footnote"
+          color={palette.secondaryLabel}
+          style={[errorStyles.statusText, !palette.secondaryLabel && errorStyles.dimmed]}
+        >
           No fix available yet — try again in a few minutes.
         </Text>
       )}
       {recovery.kind === 'failed' && (
-        <Text variant="footnote" color={palette.secondaryLabel} style={errorStyles.statusText}>
+        <Text
+          variant="footnote"
+          color={palette.secondaryLabel}
+          style={[errorStyles.statusText, !palette.secondaryLabel && errorStyles.dimmed]}
+        >
           Couldn&apos;t reach the update server. Check your connection and try again.
         </Text>
       )}

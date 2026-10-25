@@ -31,8 +31,15 @@ vi.mock('react-native', () => ({
     ),
 }));
 vi.mock('../Text', () => ({
-  Text: ({ children, color }: { children?: ReactNode; color?: string }) =>
-    createElement('span', { 'data-color': color ?? 'unset' }, children),
+  Text: ({ children, color, style }: { children?: ReactNode; color?: string; style?: unknown }) =>
+    createElement(
+      'span',
+      {
+        'data-color': color ?? 'unset',
+        'data-opacity': String(Object.assign({}, ...[style].flat(10).filter(Boolean)).opacity ?? 'unset'),
+      },
+      children,
+    ),
 }));
 vi.mock('../Icon', () => ({ Icon: () => null }));
 vi.mock('../PressableSurface', () => ({ PressableSurface: () => null }));
@@ -73,6 +80,18 @@ describe('CrashScreen palette', () => {
     expect(screen.getAllByTestId('crash-container')[0].getAttribute('data-background')).toBe(
       materialSurfaces.dark.background,
     );
+  });
+
+  it('does not dim the muted label on the dark palette (keeps 4.5:1 contrast)', () => {
+    renderCrash();
+    expect(screen.getByText(/unexpected error/).getAttribute('data-opacity')).toBe('unset');
+  });
+
+  it('dims the message only on the system-default native light path', () => {
+    env.os = 'ios';
+    env.scheme = 'light';
+    renderCrash();
+    expect(screen.getByText(/unexpected error/).getAttribute('data-opacity')).toBe('0.7');
   });
 
   it('paints native dark in the dark Velvet colours', () => {
