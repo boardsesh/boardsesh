@@ -123,6 +123,24 @@ describe('iOS Button label weight', () => {
   });
 });
 
+// The tick bar pins both buttons to 48pt. At `.large` glass and borderedProminent
+// have natural heights above that (48.7 / 55.3pt), so they overflowed by
+// different amounts (#5663). Pinned, they render at `.regular` and fill the pin.
+describe('iOS Button pinned height', () => {
+  it.each<[ButtonVariant]>([['tonal'], ['filled']])('%s pinned large renders at regular control size', (variant) => {
+    render(<Button title="Attempt" onPress={vi.fn()} variant={variant} size="large" style={{ flex: 1, height: 48 }} />);
+
+    expect(modifierArg('controlSize')).toBe('regular');
+    expect(modifierArg('font')).toMatchObject({ textStyle: 'body' });
+  });
+
+  it('keeps large control size when the height is not pinned', () => {
+    render(<Button title="Attempt" onPress={vi.fn()} variant="tonal" size="large" />);
+
+    expect(modifierArg('controlSize')).toBe('large');
+  });
+});
+
 // Every native label is capped, so a button never outgrows the 1.5x-capped Text
 // around it. A caller's own cap (the tick bar's 1.3) still wins.
 describe('iOS Button Dynamic Type cap', () => {

@@ -18,6 +18,7 @@ import {
   isFullWidthStyle,
   makeButtonPressHandler,
   pinnedButtonHeight,
+  iosControlSize,
 } from '../Button.logic';
 
 // The Button is a native @expo/ui control split across Button.ios.tsx /
@@ -225,5 +226,22 @@ describe('buttonLabelStyle', () => {
 
   it('keeps labelLarge and scales the 20/14 line height when the size is capped', () => {
     expect(buttonLabelStyle(10.5)).toEqual({ typography: 'labelLarge', fontSize: 10.5, lineHeight: 15 });
+  });
+});
+
+describe('iosControlSize', () => {
+  it('drops a pinned large button to regular so the pin owns the height (#5663)', () => {
+    expect(iosControlSize('large', { flex: 1, height: 48 })).toBe('regular');
+  });
+
+  it('keeps large when nothing is pinned', () => {
+    expect(iosControlSize('large', { flex: 1 })).toBe('large');
+    expect(iosControlSize('large', undefined)).toBe('large');
+  });
+
+  it('maps medium and small the same pinned or not', () => {
+    expect(iosControlSize('medium', { height: 48 })).toBe('regular');
+    expect(iosControlSize('medium', undefined)).toBe('regular');
+    expect(iosControlSize('small', { height: 48 })).toBe('small');
   });
 });

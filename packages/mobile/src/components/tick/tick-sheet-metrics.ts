@@ -41,7 +41,9 @@ export const TICK_ANGLE_ROW_HEIGHT = 64;
 export const TICK_HEADER_HEIGHT = 56;
 
 /** The pinned action row: the standard 48pt control, not the 56pt hero. At 56
- *  the two buttons and their 17pt labels outweighed the form they finish. */
+ *  the two buttons and their 17pt labels outweighed the form they finish. The
+ *  buttons render at `.regular` control size so both sit below the pin and fill
+ *  it to one height (#5663). */
 export const TICK_ACTION_HEIGHT = glassSize.standard; // 48
 
 /** How far the action labels grow with the OS text size. The buttons pass it as

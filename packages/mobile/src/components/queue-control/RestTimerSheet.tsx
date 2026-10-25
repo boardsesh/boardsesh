@@ -330,7 +330,7 @@ export function RestTimerSheet({ visible, onClose }: RestTimerSheetProps) {
   // a fresh prop on both of them. Same shared height, 2:1 split and Dynamic Type
   // cap as TickActionBar (48pt, labels stop at 1.3x) — two different native
   // controls left to measure themselves land about 7pt apart and the row reads
-  // crooked.
+  // crooked. Pinned buttons render at `.regular` control size so both fill the pin.
   const transportStyles = useMemo(() => transportButtonStyles(tickActionHeight(fontScale)), [fontScale]);
 
   const handleTogglePause = useCallback(() => {

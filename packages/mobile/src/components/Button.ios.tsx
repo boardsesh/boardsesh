@@ -47,6 +47,7 @@ import {
   buttonLabelWeight,
   buttonMatchContents,
   dynamicTypeSizeCap,
+  iosControlSize,
   makeButtonPressHandler,
   resolveButtonMaxFontScale,
   resolveIosButtonStyle,
@@ -54,12 +55,6 @@ import {
 import { useButtonSurface } from './Button.surface';
 import { iconMap } from './icon-map';
 import type { ButtonProps, ButtonSize } from './Button.types';
-
-const CONTROL_SIZE: Record<ButtonSize, 'small' | 'regular' | 'large'> = {
-  small: 'small',
-  medium: 'regular',
-  large: 'large',
-};
 
 const TEXT_STYLE: Record<ButtonSize, 'footnote' | 'callout' | 'body'> = {
   small: 'footnote',
@@ -142,7 +137,7 @@ export function Button({
   const modifiers: ModifierConfig[] = [
     styleModifier,
     buttonBorderShape('roundedRectangle', radii.button),
-    controlSize(CONTROL_SIZE[size]),
+    controlSize(iosControlSize(size, style)),
     font({
       textStyle: TEXT_STYLE[size],
       weight: boldText
@@ -178,12 +173,7 @@ export function Button({
   // that overlaps it. Keyboard avoidance belongs to the React Native layout
   // (the sheets' KeyboardAvoidingView), not to each button: a per-button inset
   // only squeezes the label, and glass and borderedProminent respond to that
-  // squeeze differently. That is the suspected cause of the tick sheet's
-  // Attempt sitting lower than Flash with the keyboard up (#5663, unproven on
-  // a device). React Native does not fully clear the keyboard everywhere yet:
-  // at the tick sheet's 65% detent the action row still sits ~4pt under the
-  // keyboard edge until #5772 raises the sheet to 92% on note focus. With this
-  // prop that sliver is covered instead of re-laid-out.
+  // squeeze differently (#5663).
   //
   // `"all"` (opt-in, `ignoreContainerSafeArea`): a host that mounts while it
   // is scrolled above the top of the screen also takes the container's

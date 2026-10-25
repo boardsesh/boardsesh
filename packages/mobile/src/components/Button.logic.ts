@@ -5,7 +5,7 @@
 
 import type { ViewStyle } from 'react-native';
 import { hapticLight } from '../lib/haptics';
-import type { ButtonVariant } from './Button.types';
+import type { ButtonSize, ButtonVariant } from './Button.types';
 
 /** Zero means full system text scaling. Fixed chrome opts into an explicit cap. */
 export const DEFAULT_BUTTON_MAX_FONT_SCALE = 0;
@@ -97,6 +97,21 @@ export function makeButtonPressHandler(
  */
 export function pinnedButtonHeight(style: ViewStyle | undefined): number | undefined {
   return typeof style?.height === 'number' ? style.height : undefined;
+}
+
+/**
+ * The SwiftUI `controlSize` for a button. A pinned height owns the vertical
+ * size, so a pinned `large` button drops to `regular`. At `.large` the tonal
+ * (glass) and filled (borderedProminent) styles have built-in minimums of about
+ * 48.7pt and 55.3pt (#4226), both above the tick bar's 48pt pin. The label's
+ * fill frame can only grow a button, never shrink it, so each overflowed the pin
+ * by a different amount and Attempt and Flash drew at different heights (#5663).
+ * At `.regular` both sit below the pin and the fill frame grows them to it.
+ */
+export function iosControlSize(size: ButtonSize, style: ViewStyle | undefined): 'small' | 'regular' | 'large' {
+  if (size === 'small') return 'small';
+  if (size === 'large' && pinnedButtonHeight(style) == null) return 'large';
+  return 'regular';
 }
 
 /**
