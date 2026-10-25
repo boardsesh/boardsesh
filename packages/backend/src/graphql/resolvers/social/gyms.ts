@@ -24,6 +24,7 @@ import {
 import { distanceMeters } from '@boardsesh/db/queries';
 import { computeCanClaimByDomain } from '@boardsesh/gym-claim';
 import { logger } from '../../../utils/logger';
+import { parsePostgresUtcTimestamp } from '../../../utils/postgres-timestamps';
 import { PROXIMITY_MATCH_RADIUS_METERS } from './gym-matching';
 import { syncLocationGeography } from './location-geography';
 import { SYSTEM_BOARD_OWNER_ID } from '../board-presence/shared';
@@ -80,6 +81,11 @@ export async function generateUniqueGymSlug(name: string): Promise<string> {
  * off a raw `SELECT *`, so a camelCase typo type-checks fine and silently maps
  * to null forever on the proximity path while the Drizzle path looks healthy.
  */
+function rawUtcTimestamp(value: unknown): Date | null {
+  const iso = parsePostgresUtcTimestamp(value instanceof Date || typeof value === 'string' ? value : null);
+  return iso ? new Date(iso) : null;
+}
+
 export function mapRawGymRow(row: Record<string, unknown>): typeof dbSchema.gyms.$inferSelect {
   return {
     id: row.id as number,
@@ -103,21 +109,20 @@ export function mapRawGymRow(row: Record<string, unknown>): typeof dbSchema.gyms
     // the Drizzle text-search path renders it correctly (same class of bug as
     // website_vouched_by_owner above).
     hours: (row.hours as string | null) ?? null,
-    hoursUpdatedAt: row.hours_updated_at != null ? new Date(row.hours_updated_at as string) : null,
+    hoursUpdatedAt: rawUtcTimestamp(row.hours_updated_at),
     imageUrl: (row.image_url as string | null) ?? null,
     logoUrl: (row.logo_url as string | null) ?? null,
     brandPrimaryColor: (row.brand_primary_color as string | null) ?? null,
     brandAccentColor: (row.brand_accent_color as string | null) ?? null,
     brandBackgroundColor: (row.brand_background_color as string | null) ?? null,
     mergedIntoGymId: row.merged_into_gym_id != null ? Number(row.merged_into_gym_id) : null,
-    // Raw `db.execute` returns timestamps as strings (the Drizzle query builder
-    // hydrates them to Date). Coerce here so downstream `.toISOString()` works
-    // regardless of which path produced the row. `new Date(Date)` is a no-op, so
-    // this is safe even if the driver ever returns Date objects.
-    createdAt: row.created_at != null ? new Date(row.created_at as string) : (null as unknown as Date),
-    updatedAt: row.updated_at != null ? new Date(row.updated_at as string) : (null as unknown as Date),
-    deletedAt: row.deleted_at != null ? new Date(row.deleted_at as string) : null,
-    syncFrozenAt: row.sync_frozen_at != null ? new Date(row.sync_frozen_at as string) : null,
+    // Raw `db.execute` returns timestamps as offset-less strings (the Drizzle
+    // query builder hydrates them to Date, reading them as UTC). Parse them as
+    // UTC here too, so both paths agree on any host TZ (#4588).
+    createdAt: rawUtcTimestamp(row.created_at) ?? (null as unknown as Date),
+    updatedAt: rawUtcTimestamp(row.updated_at) ?? (null as unknown as Date),
+    deletedAt: rawUtcTimestamp(row.deleted_at),
+    syncFrozenAt: rawUtcTimestamp(row.sync_frozen_at),
   };
 }
 
