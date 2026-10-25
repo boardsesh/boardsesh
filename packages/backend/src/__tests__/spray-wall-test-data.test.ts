@@ -193,8 +193,33 @@ describe('POST /api/spray-wall-test-data', () => {
       const body = (await response.json()) as { success?: boolean; skipped?: boolean };
       expect(body.skipped).toBe(true);
       expect(uploadToS3Mock).not.toHaveBeenCalled();
-      // The early-out happens before auth, so no token is ever inspected.
-      expect(validateTokenMock).not.toHaveBeenCalled();
+      // Auth runs before the storage check, so the token is inspected first.
+      expect(validateTokenMock).toHaveBeenCalledTimes(1);
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it('answers an unauthenticated caller 401 even when the bucket is not configured', async () => {
+    isS3ConfiguredMock.mockReturnValue(false);
+    const { baseUrl, server } = await startSprayWallServer();
+    try {
+      const response = await uploadPhoto(baseUrl);
+      expect(response.status).toBe(401);
+      expect(uploadToS3Mock).not.toHaveBeenCalled();
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it('answers an invalid token 401 even when the bucket is not configured', async () => {
+    isS3ConfiguredMock.mockReturnValue(false);
+    validateTokenMock.mockResolvedValue(null);
+    const { baseUrl, server } = await startSprayWallServer();
+    try {
+      const response = await uploadPhoto(baseUrl, { token: 'bad' });
+      expect(response.status).toBe(401);
+      expect(uploadToS3Mock).not.toHaveBeenCalled();
     } finally {
       await closeServer(server);
     }
