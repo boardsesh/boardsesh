@@ -93,7 +93,8 @@ const renderPage = () =>
       size_id: String(routeSizeId),
       set_ids: '1',
       angle: '40',
-      climb_uuid: CLIMB_UUID,
+      // Slug-form, so the page's own uuid-only redirect does not fire.
+      climb_uuid: `tiny-crimp-${CLIMB_UUID}`,
     }),
   });
 
