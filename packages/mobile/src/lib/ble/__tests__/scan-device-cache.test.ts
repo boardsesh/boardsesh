@@ -15,6 +15,34 @@ describe('upsertDiscoveredDevice', () => {
     expect(storedDevice(devices, 'a')?.deviceId).toBe('a');
   });
 
+  it('re-pushes with a fresh object when the signal moves to a new bar bucket', () => {
+    const devices = new Map<string, DiscoveredDevice>();
+    upsertDiscoveredDevice(devices, { deviceId: 'a', name: 'Kilter Board', rssi: -85 });
+    const before = storedDevice(devices, 'a');
+
+    const pushedAgain = upsertDiscoveredDevice(devices, { deviceId: 'a', name: 'Kilter Board', rssi: -50 });
+
+    expect(pushedAgain).toBe(true);
+    expect(storedDevice(devices, 'a')?.rssi).toBe(-50);
+    expect(storedDevice(devices, 'a')).not.toBe(before);
+  });
+
+  it('keeps the stored rssi fresh inside one bucket without re-pushing', () => {
+    const devices = new Map<string, DiscoveredDevice>();
+    upsertDiscoveredDevice(devices, { deviceId: 'a', name: 'Kilter Board', rssi: -70 });
+
+    expect(upsertDiscoveredDevice(devices, { deviceId: 'a', name: 'Kilter Board', rssi: -65 })).toBe(false);
+    expect(storedDevice(devices, 'a')?.rssi).toBe(-65);
+  });
+
+  it('ignores the CoreBluetooth unavailable reading (127)', () => {
+    const devices = new Map<string, DiscoveredDevice>();
+    upsertDiscoveredDevice(devices, { deviceId: 'a', name: 'Kilter Board', rssi: -70 });
+
+    expect(upsertDiscoveredDevice(devices, { deviceId: 'a', name: 'Kilter Board', rssi: 127 })).toBe(false);
+    expect(storedDevice(devices, 'a')?.rssi).toBe(-70);
+  });
+
   it('enriches the stored record with recon data that arrives in a later packet', () => {
     // BLE splits the advertisement across packets: the name lands first, the
     // manufacturer/service data in a later callback with the same identity.

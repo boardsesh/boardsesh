@@ -14,6 +14,7 @@ import { isKilterBuiltBox, parseBoardTypeFromDeviceName, parseSerialNumber } fro
 import { isMoonboardDeviceName } from '@boardsesh/ble-protocol/moonboard';
 import { MOONBOARD_BOARD_NAME, toBoardName } from '@boardsesh/board-config';
 import { isLikelyBoardDevice } from './board-device-filter';
+import { isUsableRssi } from './rssi-strength';
 
 type QuickstartScanDeviceBase = {
   /**
@@ -56,14 +57,6 @@ export type QuickstartSeriallessDevice = QuickstartScanDeviceBase & {
 };
 
 export type QuickstartScanDevice = QuickstartSerialDevice | QuickstartSeriallessDevice;
-
-// CoreBluetooth reports 127 when it has no RSSI for a packet. Read as a number
-// it would sort that board above every real reading.
-const RSSI_UNAVAILABLE = 127;
-
-function usableRssi(rssi: number | null | undefined): number | null {
-  return typeof rssi === 'number' && Number.isFinite(rssi) && rssi < RSSI_UNAVAILABLE ? rssi : null;
-}
 
 const AURORA_SERVICE_UUID = AURORA_ADVERTISED_SERVICE_UUID.toLowerCase();
 // `Kilter Board@2`: the spec allows an API level with no serial.
@@ -116,7 +109,7 @@ export function classifyQuickstartDevice({
   rssi: number | null | undefined;
 }): QuickstartScanDevice | null {
   if (!name) return null;
-  const signal = usableRssi(rssi);
+  const signal = isUsableRssi(rssi) ? rssi : null;
 
   if (isMoonboardDeviceName(name)) {
     return {

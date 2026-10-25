@@ -15,15 +15,8 @@ import { useTheme } from '../../providers/theme-provider';
 import { hapticLight } from '../../lib/haptics';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
+import { classifyRssiStrength, type RssiStrength } from '../../lib/ble/rssi-strength';
 import { formatRelativeTime } from '../../lib/format-relative-time';
-
-type RssiStrength = 'strong' | 'good' | 'weak';
-
-function classifyRssi(rssi: number): RssiStrength {
-  if (rssi > -60) return 'strong';
-  if (rssi > -80) return 'good';
-  return 'weak';
-}
 
 // Weak signal reads in the theme's adaptive error red, resolved per render.
 const rssiBarColor: Record<Exclude<RssiStrength, 'weak'>, string> = {
@@ -36,7 +29,7 @@ const PREVIEW_IMAGE_MAX_SIZE = 58;
 
 function RssiIndicator({ rssi }: { rssi: number }) {
   const { systemColors } = useTheme();
-  const strength = classifyRssi(rssi);
+  const strength = classifyRssiStrength(rssi);
   const activeColor = strength === 'weak' ? systemColors.error : rssiBarColor[strength];
   const inactiveColor = systemColors.fill;
 

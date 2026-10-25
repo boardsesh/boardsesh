@@ -1,4 +1,5 @@
 import { parseSerialNumber } from '@boardsesh/ble-protocol';
+import { classifyRssiStrength, isUsableRssi } from './rssi-strength';
 import type { DiscoveredDevice } from './types';
 
 // One picker row per physical controller. An Aurora name carries the box's
@@ -17,7 +18,8 @@ export function upsertDiscoveredDevice(devices: Map<string, DiscoveredDevice>, d
   const deviceKey = getDiscoveredDeviceKey(device);
   const existingDevice = devices.get(deviceKey);
   if (existingDevice?.deviceId === device.deviceId && existingDevice.name === device.name) {
-    // Same board, unchanged identity — no picker re-push. But BLE splits the
+    // Same board, unchanged identity — no picker re-push unless the signal bars
+    // change bucket (below). But BLE splits the
     // advertisement across packets (ADV_IND vs SCAN_RSP), so manufacturer/service
     // data can arrive in a later callback than the name. Enrich the stored record
     // in place (the connect-time telemetry reads it back later) rather than
@@ -25,6 +27,17 @@ export function upsertDiscoveredDevice(devices: Map<string, DiscoveredDevice>, d
     if (device.manufacturerData !== undefined) existingDevice.manufacturerData = device.manufacturerData;
     if (device.serviceData !== undefined) {
       existingDevice.serviceData = { ...existingDevice.serviceData, ...device.serviceData };
+    }
+    // Keep RSSI fresh so the sort and the bars follow the climber walking
+    // toward a box. Only a bucket change re-pushes, so duplicate adverts do not
+    // re-render the picker at advert rate. A new object is stored then, because
+    // the memoized DeviceCard compares the device by reference.
+    if (isUsableRssi(device.rssi) && device.rssi !== existingDevice.rssi) {
+      if (classifyRssiStrength(device.rssi) !== classifyRssiStrength(existingDevice.rssi)) {
+        devices.set(deviceKey, { ...existingDevice, rssi: device.rssi });
+        return true;
+      }
+      existingDevice.rssi = device.rssi;
     }
     return false;
   }
