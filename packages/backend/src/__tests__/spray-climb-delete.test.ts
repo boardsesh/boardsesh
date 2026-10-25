@@ -641,6 +641,19 @@ describe('a deleted draft tombstones only to its setter', () => {
       WHERE table_name = 'board_climbs' AND record_id = ${climbUuid}
     `)) as unknown as Tombstone[];
 
+  const statsTombstones = async (climbUuid: string): Promise<Tombstone[]> =>
+    (await db.execute(sql`
+      SELECT table_name, record_id, user_id FROM sync_deletions
+      WHERE table_name = 'board_climb_stats' AND record_id LIKE ${`%:${climbUuid}:%`}
+    `)) as unknown as Tombstone[];
+
+  const statsRowCount = async (climbUuid: string): Promise<number> => {
+    const [row] = (await db.execute(sql`
+      SELECT count(*)::int AS stats_rows FROM board_climb_stats WHERE climb_uuid = ${climbUuid}
+    `)) as unknown as Array<{ stats_rows: number }>;
+    return row.stats_rows;
+  };
+
   const pulledDeletionIds = async (userId: string): Promise<string[]> => {
     const page = (await syncQueries.syncDeletions(
       undefined,
@@ -665,6 +678,31 @@ describe('a deleted draft tombstones only to its setter', () => {
 
     expect(await climbTombstones(draftUuid)).toEqual([
       { table_name: 'board_climbs', record_id: draftUuid, user_id: OWNER },
+    ]);
+  });
+
+  it("scopes a graded draft's stats tombstone to the setter too", async () => {
+    const { wall, holdIds } = await createPublishedWall();
+    // setClimb passes a userGrade, so saveClimb seeds a board_climb_stats row.
+    const draftUuid = await setClimb(wall, holdIds, OWNER, true);
+    expect(await statsRowCount(draftUuid)).toBe(1);
+
+    await deleteClimb(OWNER, draftUuid);
+
+    expect(await statsTombstones(draftUuid)).toEqual([
+      { table_name: 'board_climb_stats', record_id: `spray:${draftUuid}:${ANGLE}`, user_id: OWNER },
+    ]);
+  });
+
+  it("keeps a published climb's stats tombstone NULL-scoped", async () => {
+    const { wall, holdIds } = await createPublishedWall();
+    const publishedUuid = await setClimb(wall, holdIds);
+    expect(await statsRowCount(publishedUuid)).toBe(1);
+
+    await deleteClimb(OWNER, publishedUuid);
+
+    expect(await statsTombstones(publishedUuid)).toEqual([
+      { table_name: 'board_climb_stats', record_id: `spray:${publishedUuid}:${ANGLE}`, user_id: null },
     ]);
   });
 
@@ -698,12 +736,20 @@ describe('a deleted draft tombstones only to its setter', () => {
     await deleteClimb(OWNER, draftUuid);
     await deleteClimb(OWNER, publishedUuid);
 
-    expect(await pulledDeletionIds(OWNER)).toEqual(expect.arrayContaining([draftUuid, publishedUuid]));
-    // The published climb's tombstone still reaches everybody (see the
-    // unscoped-tombstone test above); only the draft's is withheld.
+    expect(await pulledDeletionIds(OWNER)).toEqual(
+      expect.arrayContaining([
+        draftUuid,
+        `spray:${draftUuid}:${ANGLE}`,
+        publishedUuid,
+        `spray:${publishedUuid}:${ANGLE}`,
+      ]),
+    );
+    // The published climb's tombstones still reach everybody (see the
+    // unscoped-tombstone test above); only the draft's are withheld, the stats
+    // one included (its record_id is '<board>:<uuid>:<angle>').
     const strangerPulled = await pulledDeletionIds(STRANGER);
-    expect(strangerPulled).toContain(publishedUuid);
-    expect(strangerPulled).not.toContain(draftUuid);
+    expect(strangerPulled).toEqual(expect.arrayContaining([publishedUuid, `spray:${publishedUuid}:${ANGLE}`]));
+    expect(strangerPulled.filter((recordId) => recordId.includes(draftUuid))).toEqual([]);
   });
 
   it('keeps an ownerless draft (an Aurora import) NULL-scoped', async () => {
@@ -726,19 +772,35 @@ describe('a deleted draft tombstones only to its setter', () => {
       await db.execute(sql.raw(statement));
     }
 
-    const [functionRow] = (await db.execute(sql`
-      SELECT proconfig FROM pg_proc WHERE proname = 'log_deletion_board_climbs'
-    `)) as unknown as Array<{ proconfig: string[] | null }>;
+    const functionRows = (await db.execute(sql`
+      SELECT proname, proconfig FROM pg_proc
+      WHERE proname IN ('log_deletion_board_climbs', 'log_deletion_board_climb_stats')
+      ORDER BY proname
+    `)) as unknown as Array<{ proname: string; proconfig: string[] | null }>;
     // CREATE OR REPLACE FUNCTION clears the 0210 pin; the migration must restore it.
-    expect(functionRow.proconfig?.map((setting) => setting.replace(/\s+/g, ''))).toEqual([
-      'search_path=public,pg_catalog',
+    expect(
+      functionRows.map(({ proname, proconfig }) => ({
+        proname,
+        config: proconfig?.map((setting) => setting.replace(/\s+/g, '')),
+      })),
+    ).toEqual([
+      { proname: 'log_deletion_board_climb_stats', config: ['search_path=public,pg_catalog'] },
+      { proname: 'log_deletion_board_climbs', config: ['search_path=public,pg_catalog'] },
     ]);
 
     const draftUuid = uuidv4();
     await insertCatalogueDraft(draftUuid, OWNER);
+    await db.execute(sql`
+      INSERT INTO board_climb_stats (board_type, climb_uuid, angle, ascensionist_count)
+      VALUES ('kilter', ${draftUuid}, 40, 0)
+    `);
+    await db.execute(sql`DELETE FROM board_climb_stats WHERE climb_uuid = ${draftUuid}`);
     await db.execute(sql`DELETE FROM board_climbs WHERE uuid = ${draftUuid}`);
     expect(await climbTombstones(draftUuid)).toEqual([
       { table_name: 'board_climbs', record_id: draftUuid, user_id: OWNER },
+    ]);
+    expect(await statsTombstones(draftUuid)).toEqual([
+      { table_name: 'board_climb_stats', record_id: `kilter:${draftUuid}:40`, user_id: OWNER },
     ]);
   });
 });

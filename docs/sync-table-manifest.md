@@ -341,7 +341,9 @@ AND bc.compatible_size_ids @> ARRAY[$sizeId])` when scoped — the stats table h
   draft rule, so a draft's stats go only to its owner. Seq: **`sync_seq`**. Hook: no.
 - Local PK: **`(board_type, climb_uuid, angle)`** (B9). table-config: change `['climb_uuid','angle']` →
   **`['board_type','climb_uuid','angle']`**.
-- Del: trigger emits `record_id = OLD.board_type:OLD.climb_uuid:OLD.angle` (3 segs) — matches the doc. `user_id = NULL`.
+- Del: trigger emits `record_id = OLD.board_type:OLD.climb_uuid:OLD.angle` (3 segs) — matches the doc. `user_id = NULL`,
+  except when the climb is a draft with an owner: the trigger looks the climb up (it still exists, since
+  `deleteClimbDependentRows` runs first) and sets `user_id` to the setter, as `board_climbs` does (0280, #6150).
 - Columns: `board_type`, `climb_uuid`, `angle`, `display_difficulty`, `benchmark_difficulty`, `ascensionist_count`,
   `difficulty_average`, `quality_average`, `fa_username`, `fa_at`, `updated_at`, `sync_seq`.
 - Server-only (NOT pulled to devices): the provenance columns `upstream_synced_at` and `tick_graded_at` (#4798),

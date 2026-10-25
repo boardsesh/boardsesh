@@ -1701,13 +1701,19 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     FOR EACH ROW EXECUTE FUNCTION log_deletion_favorites();
 
   CREATE OR REPLACE FUNCTION log_deletion_board_climb_stats() RETURNS TRIGGER AS $$
+  DECLARE
+    draft_owner text;
   BEGIN
     -- Mirrors 0144: see log_deletion_board_climbs.
     IF current_setting('boardsesh.suppress_sync_tombstones', true) = 'on' THEN
       RETURN OLD;
     END IF;
+    -- Mirrors 0280 (#6150): a draft's stats tombstone is scoped to its setter.
+    SELECT bc.user_id INTO draft_owner
+    FROM board_climbs bc
+    WHERE bc.board_type = OLD.board_type AND bc.uuid = OLD.climb_uuid AND bc.is_draft IS TRUE;
     INSERT INTO sync_deletions (table_name, record_id, user_id)
-    VALUES (TG_TABLE_NAME, OLD.board_type || ':' || OLD.climb_uuid || ':' || OLD.angle::text, NULL);
+    VALUES (TG_TABLE_NAME, OLD.board_type || ':' || OLD.climb_uuid || ':' || OLD.angle::text, draft_owner);
     RETURN OLD;
   END;
   $$ LANGUAGE plpgsql;
