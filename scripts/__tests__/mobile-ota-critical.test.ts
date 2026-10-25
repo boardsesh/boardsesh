@@ -416,6 +416,7 @@ interface WorkflowStep {
 interface WorkflowJob {
   needs?: string[];
   if?: string;
+  'continue-on-error'?: boolean;
   permissions?: Record<string, string>;
   outputs?: Record<string, string>;
   steps?: WorkflowStep[];
@@ -527,17 +528,23 @@ describe('critical OTA production workflow', () => {
   it('pushes the changelog after any verified non-critical promotion, outside every environment gate', () => {
     const job = workflow.jobs['push-promoted-changelog'];
     expect(job?.needs).toContain('verify-mobile-ota');
+    // Without a status function the implicit success() skips this job whenever
+    // promote-mobile-ota (upstream through verify) is skipped — every daily-stable OTA.
+    expect(job?.if).toMatch(/^!cancelled\(\)/);
     expect(job?.if).toContain("needs.verify-mobile-ota.result == 'success'");
     expect(job?.if).toContain("needs.detect-changes.outputs.critical_ota != 'true'");
+    expect(job?.if).toContain("vars.OTA_PUSH_APP_ID != ''");
     // A daily-stable OTA skips promote-mobile-ota, so the push must not hang off it.
     expect(job?.if).not.toContain('promote-mobile-ota');
     expect(job?.environment).toBeUndefined();
+    // The run's conclusion gates the daily stable release; a changelog push can't fail it.
+    expect(job?.['continue-on-error']).toBe(true);
     const steps = job?.steps ?? [];
     const mintIndex = steps.findIndex((step) => step.id === 'push_token');
     const pushIndex = steps.findIndex((step) => step.name === 'Push promoted changelog to main');
     expect(mintIndex).toBeGreaterThan(-1);
     expect(pushIndex).toBeGreaterThan(mintIndex);
-    expect(workflow.jobs['notify-failure']?.needs).toContain('push-promoted-changelog');
+    expect(workflow.jobs['notify-failure']?.needs).not.toContain('push-promoted-changelog');
   });
 
   it('retains original receipt and critical proof for thirty days after success or partial failure', () => {

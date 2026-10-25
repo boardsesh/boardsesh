@@ -986,15 +986,20 @@ jobs:
   # landed. No environment: OTA_PUSH_APP_PRIVATE_KEY is a repository secret, and a job
   # waiting at an environment gate holds this run's group for every later push.
   # Critical publication still never mints the push token.
+  # continue-on-error: the run's conclusion is what the daily stable release
+  # (latestSource) and the next deploy's baseline read, so a failed changelog push
+  # must not hold back an OTA that already promoted. The job still shows red, and it
+  # stays out of notify-failure, which would announce a deploy failure that wasn't one.
   push-promoted-changelog:
     needs: [detect-changes, verify-mobile-ota]
     if: >-
-      always()
+      !cancelled()
       && needs.verify-mobile-ota.result == 'success'
       && needs.detect-changes.outputs.critical_ota != 'true'
       && vars.OTA_PUSH_APP_ID != ''
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    continue-on-error: true
     permissions:
       contents: read
     steps:
@@ -1031,17 +1036,23 @@ jobs:
           git add packages/mobile/src/data/changelog.generated.json CHANGELOG.md
           if git diff --cached --quiet; then
             echo 'Promoted changelog already matches main.'
-          else
-            git commit -m 'chore(changelog): refresh from promoted OTA [skip ci]'
-            if ! git push origin HEAD:main; then
-              git fetch origin main
-              if [ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]; then
-                echo '::notice::main advanced during the changelog push; leaving it to the newer deploy.'
-              else
-                exit 1
-              fi
-            fi
+            exit 0
           fi
+          git commit -m 'chore(changelog): refresh from promoted OTA [skip ci]'
+          for attempt in 1 2 3; do
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            git fetch origin main
+            if [ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]; then
+              echo '::notice::main advanced during the changelog push; leaving it to the newer deploy.'
+              exit 0
+            fi
+            echo "Changelog push failed (attempt ${attempt}/3)."
+            sleep $((attempt * 15))
+          done
+          echo "::error::Could not push the changelog to main after 3 attempts. The OTA shipped; main's What's New stays stale until a later deploy pushes it."
+          exit 1
 
   # www on Railway — the only web deployer since the Vercel scrub. Still gated
   # by WEB_DEPLOY_TARGETS so `none` remains the deploy hold, and so a second
@@ -1608,7 +1619,6 @@ jobs:
         promote-mobile-ota,
         promote-early-mobile-ota,
         verify-mobile-ota,
-        push-promoted-changelog,
         resolve-web-targets,
         sync-static-assets,
         build-web,

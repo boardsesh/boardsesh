@@ -2673,7 +2673,11 @@ push can't re-trigger the OTA:
   New in every TestFlight build cut from it. The job declares no environment: a job waiting at an
   environment gate would hold the deploy group (see
   [production-deploy.md](./production-deploy.md#the-failure-mode-a-run-that-holds-the-group-without-running)).
-  It skips a critical OTA and leaves the refresh to the next normal deploy.
+  It skips a critical OTA and leaves the refresh to the next normal deploy. It is best-effort: three
+  push attempts, then a red job under `continue-on-error`. The run stays green because its
+  conclusion is what the daily stable release and the next deploy's baseline read, and a stale
+  changelog must not hold back an OTA that already promoted. The commit it lands is excluded from
+  the backend's change detection, so it doesn't redeploy the backend on the next run.
 - **A manual `workflow_dispatch` on `main`:** the "Push changelog to main" step, after every
   requested platform succeeds.
 
