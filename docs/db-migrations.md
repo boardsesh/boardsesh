@@ -185,13 +185,19 @@ on the branch that creates it.
 `VERIFY_MIGRATION_JOURNAL=0` is the escape hatch: it turns off the journal gate in
 `db:migrate`, for a database with a gap nobody can repair right now. It does not make an
 uncertain dev-database history safe to replay. The dev appliers stay fail-closed on gaps,
-unknown rows and ambiguous history.
+unknown rows and ambiguous history before any migration they would apply. Rows past the end of
+a checkout's journal are the one exception, because nothing would be applied: the shared
+container is often ahead of an older worktree (the `:latest` image is rebuilt on every push to
+`main` that touches drizzle, and other worktrees apply their own branch migrations). Those
+rows print a warning and `db:up` carries on.
 
 Two dev database paths can still encounter unverified history: a shared tailnet database
 reached through `scripts/dev-db-discover.ts`, and a persistent volume that predates a
 migration renumber or collapse. Both stop before applying migration SQL when they encounter
-such a gap. Local failure guidance names the discovered container's Compose owner; it never
-prints a reset command for the current checkout to run against another project's volume. A
+such a gap. Local failure guidance, on a refusal or on an apply failure, names the discovered
+container's Compose owner. When that owner is the current checkout, it prints
+`docker compose down -v && vp run db:up` for a volume with nothing worth keeping. It never
+prints a reset command for the current checkout to run against another project's volume. That
 reset needs the actual owner to inspect the data and confirm that volume is disposable.
 
 Run it read-only against any database, without applying anything:

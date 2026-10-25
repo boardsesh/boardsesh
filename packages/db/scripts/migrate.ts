@@ -136,7 +136,8 @@ async function runMigrations() {
     // image was missing 0187_sad_freak's ledger row, and a default-on check
     // would have reddened every developer's `vp run db:migrate` for a defect in
     // the image. Since #4474 the image carries every journal entry's row, and `vp run
-    // db:up` reconciles a stale volume per hash before this runs (#3979).
+    // db:up` applies only a verified contiguous suffix before this runs, stopping
+    // on any gap with no SQL run (#3979).
     // Opt-in also meant the check was off on the one machine where a gap is
     // created — the branch author's. VERIFY_MIGRATION_JOURNAL=0 is the escape
     // hatch. The gate itself is `runMigrationJournalGate` so it has test

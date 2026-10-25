@@ -417,7 +417,9 @@ async function readLedgerHashes(client: postgres.Sql): Promise<string[]> {
 // than the peer's image build — was skipped here on every run, for good.
 // Throws, before any SQL runs, when the ledger is not a verified journal prefix.
 async function listPendingMigrations(client: postgres.Sql): Promise<ExpectedMigrationWithWhen[]> {
-  return selectPendingMigrations(readJournalMigrations(drizzleDirectory), await readLedgerHashes(client));
+  return selectPendingMigrations(readJournalMigrations(drizzleDirectory), await readLedgerHashes(client), (message) =>
+    console.warn(`  ${message}`),
+  );
 }
 
 async function applyPendingMigrations(

@@ -41,7 +41,10 @@ function main(): void {
     // hundred short lines, and a synchronous read keeps this a single expression
     // the shell can capture in a `$(...)`.
     const ledgerHashes = parseLedgerHashes(readFileSync(0, 'utf8'));
-    const pending = selectPendingMigrations(readJournalMigrations(drizzleDir), ledgerHashes);
+    // Warnings go to stderr: stdout is the tag|when|hash list the shell loops over.
+    const pending = selectPendingMigrations(readJournalMigrations(drizzleDir), ledgerHashes, (message) =>
+      console.error(`  ${message}`),
+    );
     if (pending.length === 0) return;
     process.stdout.write(`${formatPendingMigrations(pending)}\n`);
   } catch (error) {

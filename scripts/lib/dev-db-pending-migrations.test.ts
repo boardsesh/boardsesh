@@ -83,10 +83,38 @@ describe('selectPendingMigrations', () => {
     );
   });
 
-  it('refuses excess duplicate rows even when the hash is known', () => {
+  it('applies nothing when a newer image has rows past the end of this journal', () => {
+    // The shared dev container: `:latest` was rebuilt from a newer main, so an
+    // older worktree sees its whole journal followed by one row it never heard of.
     const journal = [entry('0000_a', 1000), entry('0001_b', 2000)];
-    expect(() => selectPendingMigrations(journal, ['hash-of-0000_a', 'hash-of-0001_b', 'hash-of-0001_b'])).toThrow(
-      /excess hash.*No migration SQL was executed/,
+    const warnings: string[] = [];
+    const ledger = ['hash-of-0000_a', 'hash-of-0001_b', 'hash-of-0002_from_newer_main'];
+    expect(selectPendingMigrations(journal, ledger, (message) => warnings.push(message))).toEqual([]);
+    expect(warnings).toEqual([expect.stringMatching(/Ignoring 1 ledger row\(s\).*Nothing to apply/)]);
+  });
+
+  it('applies nothing when another branch left an unknown or duplicate trailing row', () => {
+    const journal = [entry('0000_a', 1000), entry('0001_b', 2000)];
+    const warnings: string[] = [];
+    const ledger = ['hash-of-0000_a', 'hash-of-0001_b', 'hash-of-branch-only', 'hash-of-0001_b'];
+    expect(selectPendingMigrations(journal, ledger, (message) => warnings.push(message))).toEqual([]);
+    expect(warnings).toEqual([expect.stringMatching(/Ignoring 2 ledger row\(s\)/)]);
+  });
+
+  it('stays silent when the ledger matches the journal exactly', () => {
+    const warnings: string[] = [];
+    const journal = [entry('0000_a', 1000)];
+    expect(selectPendingMigrations(journal, ['hash-of-0000_a'], (message) => warnings.push(message))).toEqual([]);
+    expect(warnings).toEqual([]);
+  });
+
+  it('still refuses an unknown row sitting where a pending migration would apply', () => {
+    // Another branch's row took the slot of this checkout's new migration, so
+    // the pending entry would land after history this journal cannot verify.
+    const journal = [entry('0000_a', 1000), entry('0001_new_on_this_branch', 2000)];
+    const ledger = ['hash-of-0000_a', 'hash-of-other-branch', 'hash-of-newer-main'];
+    expect(() => selectPendingMigrations(journal, ledger)).toThrow(
+      /ledger row 2 has an unknown hash.*No migration SQL was executed/,
     );
   });
 

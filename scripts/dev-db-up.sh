@@ -92,8 +92,13 @@ EOF
     fi
     if [ "$reset_owner_working_dir" != "$REPO_ROOT" ]; then
       echo "       This checkout is '$REPO_ROOT'; do not run a volume reset from this project." >&2
+      echo "       Only the owning project's operator may inspect the data and confirm its volume is disposable before any reset." >&2
+      return
     fi
-    echo "       Only the owning project's operator may inspect the data and confirm its volume is disposable before any reset." >&2
+    # This checkout started the container, so the volume is the developer's own.
+    # Printing the reset is still advice, not an action: it deletes local data.
+    echo "       This checkout owns the volume. If nothing in it needs keeping, reset it from '$REPO_ROOT':" >&2
+    echo "         docker compose down -v && vp run db:up" >&2
     return
   fi
 
@@ -220,19 +225,29 @@ run_pending_drizzle_sql_migrations() {
   # Which migrations are pending is a per-entry, hash-keyed question — never
   # "is this entry's `when` above the ledger's newest created_at" (#3979). That
   # mark only ever moves up, so a migration landing at or below it was skipped
-  # on that run and on every run after it: silently, permanently, and for the
-  # entirely ordinary reasons a dev database hits (a rebase renumbered the
-  # migration, two branches collapsed theirs into one, or the pre-built image
-  # was built after the branch's `when` was minted). Same defect #2933 found in
-  # drizzle's own applier; scripts/lib/dev-db-pending-migrations.ts reuses the
-  # reconciliation #3977 put in front of the production path.
+  # on that run and on every run after it, silently. Same defect #2933 found in
+  # drizzle's own applier.
+  #
+  # scripts/lib/dev-db-pending-migrations.ts applies only a verified contiguous
+  # suffix: the ledger must start with this journal as an exact prefix. Any gap,
+  # unknown row or reorder before a migration that would apply (a rebase that
+  # renumbered it, two branches that collapsed theirs into one) stops here with
+  # no SQL run. Rows past the end of the journal (a newer image, another
+  # worktree's branch migration on the shared container) apply nothing and are
+  # only reported.
   ledger_hashes=$(docker exec -u postgres "$PG_CONTAINER" psql -U postgres -d main -t -A -c \
     "SELECT hash FROM drizzle.\"__drizzle_migrations\" ORDER BY id;")
 
-  # The selector rejects empty or non-prefix history before this function can
-  # enter the SQL application loop.
-  pending_migrations=$(printf '%s\n' "$ledger_hashes" \
-    | (cd "$REPO_ROOT" && DRIZZLE_DIR="$DRIZZLE_DIR" vp exec tsx scripts/dev-db-pending-migrations.ts))
+  # `if !` keeps the refusal explicit rather than leaning on `set -e`, which a
+  # caller running this under `if` or `||` would switch off.
+  if ! pending_migrations=$(printf '%s\n' "$ledger_hashes" \
+    | (cd "$REPO_ROOT" && DRIZZLE_DIR="$DRIZZLE_DIR" vp exec tsx scripts/dev-db-pending-migrations.ts)); then
+    echo "" >&2
+    echo "ERROR: the dev database's migration history does not match this checkout's journal." >&2
+    echo "       No migration SQL was run." >&2
+    explain_container_reset_owner
+    exit 1
+  fi
 
   if [ -z "$pending_migrations" ]; then
     echo "  No pending migrations."

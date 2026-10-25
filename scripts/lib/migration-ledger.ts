@@ -46,12 +46,11 @@ export const VERIFY_MIGRATION_JOURNAL_OFF = '0';
  * It shipped opt-in (`=1`) for one reason: the `boardsesh-dev-db` image was
  * missing `0187_sad_freak`'s ledger row, so a default-on check would have
  * reddened every developer's `vp run db:migrate` for a defect in the image
- * rather than in their branch. The image carries the row now (190 of 190 journal
- * entries recorded on `:latest`), the image build asserts the ledger's
- * high-water mark equals the journal's newest `when` on every publish (#4211),
- * and `vp run db:up` now fills any remaining gap hash-by-hash before
- * `db:migrate` ever runs (#3979) — so the condition that justified the opt-in is
- * gone. Leaving it opt-in means the check is off in exactly the place a gap is
+ * rather than in their branch. Since #4474 the image applies every migration
+ * with its ledger row, and its build fails unless the ledger row count equals
+ * the journal entry count. `vp run db:up` applies only a verified contiguous
+ * suffix before `db:migrate` runs, and stops on any gap with no SQL run (#3979).
+ * So the condition that justified the opt-in is gone. Leaving it opt-in means the check is off in exactly the place a gap is
  * created: a developer's machine, on the branch that creates it.
  *
  * `0` remains an escape hatch for the one shape this cannot help — a database

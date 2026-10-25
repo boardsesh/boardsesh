@@ -21,8 +21,9 @@
  * The selection here still compares journal entries by hash, through the same
  * `findUnappliedMigrations()` the production gate uses. Before returning any
  * SQL to execute, it also proves that the applied rows are an exact journal
- * prefix. An absent hash in the middle of an existing ledger is unverified
- * history, not permission to replay that migration's SQL.
+ * prefix, so it applies only a verified contiguous suffix and stops on any gap.
+ * An absent hash in the middle of an existing ledger is unverified history, not
+ * permission to replay that migration's SQL.
  *
  * ## Hash parity with drizzle
  *
@@ -60,30 +61,31 @@ export const PENDING_MIGRATION_SEPARATOR = '|';
  * A missing hash is safe to apply automatically only when every preceding
  * journal entry has its ledger row. Otherwise the database may have lost a
  * historical row for SQL that already ran; replaying that SQL can delete user
- * data. We fail closed on holes, unknown hashes, duplicate/excess rows, and an
- * empty existing ledger. The shared missing-only comparator remains an extra
- * consistency check and preserves multiset behavior for byte-identical files.
+ * data. Before any migration would be applied, we fail closed on holes, unknown
+ * hashes, duplicate or reordered rows, and an empty existing ledger. The shared
+ * missing-only comparator remains an extra consistency check and preserves
+ * multiset behavior for byte-identical files.
+ *
+ * Rows after the whole journal are a different case: nothing would be applied,
+ * so no SQL can be replayed. That is the everyday shape of the shared dev
+ * container on port 5432. The `:latest` image is rebuilt on every push to
+ * `main` that touches drizzle, and another worktree may have applied its own
+ * branch migration, so an older checkout sees its full journal followed by rows
+ * it does not know. Those rows are reported through `warn` and ignored.
  */
 export function selectPendingMigrations(
   expected: readonly ExpectedMigrationWithWhen[],
   ledgerHashes: readonly string[],
+  warn: (message: string) => void = () => undefined,
 ): ExpectedMigrationWithWhen[] {
-  if (expected.length === 0) {
-    if (ledgerHashes.length > 0) {
-      throw unsafeLedgerError(`the ledger has ${ledgerHashes.length} row(s), but the journal has no entries.`);
-    }
-    return [];
-  }
-
-  if (ledgerHashes.length === 0) {
+  if (expected.length > 0 && ledgerHashes.length === 0) {
     throw unsafeLedgerError('the existing database has an empty migration ledger.');
   }
 
-  for (const [index, ledgerHash] of ledgerHashes.entries()) {
+  const comparedRowCount = Math.min(expected.length, ledgerHashes.length);
+  for (let index = 0; index < comparedRowCount; index += 1) {
+    const ledgerHash = ledgerHashes[index];
     const expectedMigration = expected[index];
-    if (!expectedMigration) {
-      throw unsafeLedgerError(`ledger row ${index + 1} has an excess hash ${ledgerHash}.`);
-    }
     if (ledgerHash === expectedMigration.hash) continue;
 
     const matchingJournalIndex = expected.findIndex((migration) => migration.hash === ledgerHash);
@@ -101,6 +103,18 @@ export function selectPendingMigrations(
       );
     }
     throw unsafeLedgerError(`ledger row ${index + 1} has an unknown hash ${ledgerHash}.`);
+  }
+
+  if (ledgerHashes.length >= expected.length) {
+    const trailingRowCount = ledgerHashes.length - expected.length;
+    if (trailingRowCount > 0) {
+      warn(
+        `Ignoring ${trailingRowCount} ledger row(s) after this checkout's last journal entry: ` +
+          'the database is ahead of this checkout (a newer dev-db image, or a migration another branch applied). ' +
+          'Nothing to apply.',
+      );
+    }
+    return [];
   }
 
   const safeSuffix = expected.slice(ledgerHashes.length);
