@@ -5,7 +5,7 @@
 // foreground. The backend follows merge tombstones and returns the canonical
 // board; a null result means an ordinary deletion.
 //
-// Refresh the authorized projection after privacy changes and on foreground,
+// Refresh the authorized projection after credential changes and on foreground,
 // including owner/location redaction and light-kit capability changes. The
 // local angle is preserved when the board reference still matches.
 

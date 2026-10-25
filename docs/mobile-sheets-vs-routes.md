@@ -800,8 +800,7 @@ mode.
 navigation model, layout measurements, selection handlers, favorite actions, and sheet
 hosts live in separate modules. The sheet host stays mounted beneath the existing root
 View; visibility does not control its lifetime. Composer credential keys are distinct
-per sheet so an account change resets each draft, while privacy-only changes preserve
-drafts.
+per sheet so an account change resets each draft.
 
 ## Worked examples
 

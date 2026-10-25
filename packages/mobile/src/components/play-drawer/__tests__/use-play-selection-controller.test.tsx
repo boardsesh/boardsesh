@@ -7,7 +7,7 @@ import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue'
 import { usePlaySelectionController } from '../use-play-selection-controller';
 import { setSetting } from '../../../settings/hooks';
 
-const authority = vi.hoisted(() => ({ privacy: 0, uuid: 0, platform: 'ios', announce: vi.fn() }));
+const authority = vi.hoisted(() => ({ uuid: 0, platform: 'ios', announce: vi.fn() }));
 vi.mock('react-native', () => ({
   AccessibilityInfo: { announceForAccessibility: authority.announce },
   Platform: {
@@ -17,7 +17,6 @@ vi.mock('react-native', () => ({
   },
 }));
 vi.mock('expo-crypto', () => ({ randomUUID: () => `selection-${++authority.uuid}` }));
-vi.mock('../../../lib/privacy/privacy-cache', () => ({ getCredentialGeneration: () => authority.privacy }));
 
 type SelectionInputs = Parameters<typeof usePlaySelectionController>[0];
 function item(uuid: string): ClimbQueueItem {
@@ -97,7 +96,6 @@ function open(selected: ClimbQueueItem, options?: PlayDrawerOpenOptions) {
 }
 
 beforeEach(() => {
-  authority.privacy = 0;
   authority.uuid = 0;
   authority.platform = 'ios';
   authority.announce.mockClear();

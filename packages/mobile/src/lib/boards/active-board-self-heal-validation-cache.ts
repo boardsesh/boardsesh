@@ -6,7 +6,7 @@
 import { subscribeToCredentialChanges } from '../privacy/privacy-cache';
 
 const initiallyValidatedUuids = new Set<string>();
-// Privacy changes retire permissions without retiring the mounted account tree.
+// A credential change retires validated permissions without retiring the mounted account tree.
 subscribeToCredentialChanges(() => initiallyValidatedUuids.clear());
 let validationCacheEpoch = 0;
 

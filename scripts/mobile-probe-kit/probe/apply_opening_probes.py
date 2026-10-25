@@ -138,21 +138,21 @@ if candidate:
     activation = "src/lib/playlists/use-playlist-activation.ts"
     add_import(activation, "import { probeOpeningRejected } from '../perf-probe';")
     replace(activation,
-        "      if (!loadedSnapshotCurrent || credentialGeneration !== getCredentialGeneration()) return Promise.resolve();",
-        """      if (!loadedSnapshotCurrent || credentialGeneration !== getCredentialGeneration()) {
+        "      if (!loadedSnapshotCurrent || privacyGeneration !== getPrivacyRevocationGeneration()) return Promise.resolve();",
+        """      if (!loadedSnapshotCurrent || privacyGeneration !== getPrivacyRevocationGeneration()) {
         probeOpeningRejected(requestedClimb.uuid,
           !loadedSnapshotCurrent ? 'withdrawn-loaded-snapshot' : 'stale-activation-scope', suppliedClimbs.length);
         return Promise.resolve();
       }""")
     replace(activation,
-        "      if (capturedGeneration !== undefined && capturedGeneration !== credentialGeneration) return Promise.resolve();",
-        """      if (capturedGeneration !== undefined && capturedGeneration !== credentialGeneration) {
+        "      if (capturedGeneration !== undefined && capturedGeneration !== privacyGeneration) return Promise.resolve();",
+        """      if (capturedGeneration !== undefined && capturedGeneration !== privacyGeneration) {
         probeOpeningRejected(requestedClimb.uuid, 'stale-row-object', suppliedClimbs.length);
         return Promise.resolve();
       }""")
     replace(activation,
-        "      if (!loadedClimb && initialPrivacyGeneration.current !== credentialGeneration) return Promise.resolve();",
-        """      if (!loadedClimb && initialPrivacyGeneration.current !== credentialGeneration) {
+        "      if (!loadedClimb && initialPrivacyGeneration.current !== privacyGeneration) return Promise.resolve();",
+        """      if (!loadedClimb && initialPrivacyGeneration.current !== privacyGeneration) {
         probeOpeningRejected(requestedClimb.uuid, 'row-not-reauthorized', suppliedClimbs.length);
         return Promise.resolve();
       }""")
