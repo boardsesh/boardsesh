@@ -185,7 +185,10 @@ vi.mock('../queue-snackbar-provider', () => ({ useQueueSnackbar: () => ({ showQu
 vi.mock('../queue/use-cross-board-add-gate', () => ({
   useCrossBoardAddGate: () => async () => ({ outcome: 'add' }),
 }));
-vi.mock('../feature-flags-provider', () => ({ useSharedSessionBrowseEnabled: () => false }));
+vi.mock('../feature-flags-provider', () => ({
+  useSharedSessionBrowseEnabled: () => false,
+  useQueueNowSlotEnabled: () => false,
+}));
 vi.mock('../party-profile-provider', () => ({
   usePartyProfile: () => ({ username: undefined, avatarUrl: undefined }),
 }));

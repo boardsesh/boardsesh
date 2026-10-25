@@ -1,6 +1,6 @@
 import { getPrivacyRevocationGeneration } from '../../lib/privacy/privacy-cache';
 import { useLayoutEffect } from 'react';
-import { isPlaylistPeekQueueItemUuid } from '@boardsesh/queue';
+import { historyLine, isPlaylistPeekQueueItemUuid } from '@boardsesh/queue';
 import type {
   ClimbQueueItem,
   ClimbRegradePatch,
@@ -17,6 +17,8 @@ type UseQueueRegradeParams = {
   privacyRevocationGeneration?: number;
   activeBoard: UserBoard | null | undefined;
   queue: ClimbQueueItem[];
+  /** F3 now-slot mode: the line while nothing is current; null in legacy mode. */
+  historyCount?: number | null;
   currentClimbQueueItem: ClimbQueueItem | null;
   playlistSuggestionSourceRef: React.RefObject<PlaylistSuggestionSource | null>;
   playlistSuggestionSource: PlaylistSuggestionSource | null;
@@ -32,6 +34,7 @@ export function useQueueRegrade({
   privacyRevocationGeneration,
   activeBoard,
   queue,
+  historyCount = null,
   currentClimbQueueItem,
   playlistSuggestionSourceRef,
   playlistSuggestionSource,
@@ -113,11 +116,12 @@ export function useQueueRegrade({
           },
         });
       };
-      const currentIndex = currentClimbQueueItem
-        ? queue.findIndex((item) => item.uuid === currentClimbQueueItem.uuid)
-        : -1;
+      // History keeps its climbed-at angle: everything before the current climb,
+      // or before the line while nothing is current (F3 now-slot mode; 0 in
+      // legacy mode, so nothing is frozen there, as before).
+      const historyEnd = historyLine({ queue, currentClimbQueueItem: currentClimbQueueItem ?? null, historyCount });
       queue.forEach((item, index) => {
-        if (index >= currentIndex) consider(item, 'queue');
+        if (index >= historyEnd) consider(item, 'queue');
       });
       consider(currentClimbQueueItem, 'current');
       if (source?.boardKey === boardKey) {
@@ -131,6 +135,7 @@ export function useQueueRegrade({
     return () => climbReads.unregister('regrade');
   }, [
     queue,
+    historyCount,
     currentClimbQueueItem,
     activeBoard,
     playlistSuggestionSource,

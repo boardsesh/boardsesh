@@ -6,7 +6,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
 import { useManagedSheet, type DismissAndWaitResult } from '../../providers/sheet-presentation-provider';
 import { useTranslation } from 'react-i18next';
-import type { Climb, ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
+import { upNextStart, type Climb, type ClimbQueueItem, type PlaylistSuggestionSource } from '@boardsesh/queue';
 import { QueueSheetHeader } from './QueueSheetHeader';
 import { QueueList } from './QueueList';
 import { Text } from '../Text';
@@ -133,7 +133,7 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
   const activeOrPresented = isActive || isPresented;
   const [snapshot, setSnapshot] = usePrivacyScopedState(liveQueueData, sanitizeQueueSnapshot);
   if (activeOrPresented && snapshot !== liveQueueData) setSnapshot(liveQueueData);
-  const { queue, currentClimbQueueItem } = snapshot ?? sanitizeQueueSnapshot(liveQueueData);
+  const { queue, currentClimbQueueItem, historyCount } = snapshot ?? sanitizeQueueSnapshot(liveQueueData);
 
   const currentItemUuid = currentClimbQueueItem?.uuid ?? null;
 
@@ -287,12 +287,13 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
 
   const viewOnlyMode = queue.length === 0;
   // The header is titled "Up next", so it counts what is still ahead: everything
-  // after the current climb (the whole queue when none is current), not History
-  // or the current climb itself.
-  const upNextCount = useMemo(() => {
-    const currentIndex = currentItemUuid ? queue.findIndex((item) => item.uuid === currentItemUuid) : -1;
-    return queue.length - (currentIndex + 1);
-  }, [queue, currentItemUuid]);
+  // after the current climb, not History or the current climb itself. With
+  // nothing current it starts at the line (F3 now-slot mode), or counts the
+  // whole queue in legacy mode, where `historyCount` is null.
+  const upNextCount = useMemo(
+    () => queue.length - upNextStart(queue, currentClimbQueueItem, historyCount),
+    [queue, currentClimbQueueItem, historyCount],
+  );
 
   const sheetContent = (
     <>
@@ -311,6 +312,7 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
       <QueueList
         queue={queue}
         currentItemUuid={currentItemUuid}
+        historyCount={historyCount ?? null}
         board={board}
         isEditMode={isEditMode}
         showHistory={showHistory}

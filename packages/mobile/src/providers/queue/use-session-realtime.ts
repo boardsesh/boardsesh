@@ -2,7 +2,7 @@ import { getPrivacyRevocationGeneration } from '../../lib/privacy/privacy-cache'
 import { useContext, useEffect } from 'react';
 import { AppState } from 'react-native';
 import { QueryClientContext } from '@tanstack/react-query';
-import { clampQueueAroundCurrent, computeQueueStateHash, computeQueueStateHashOrdered } from '@boardsesh/queue';
+import { computeQueueStateHash, computeQueueStateHashOrdered } from '@boardsesh/queue';
 import type { ClimbQueueItem, QueueAction, QueueState } from '@boardsesh/queue';
 import {
   applySessionRuntimeEvent,
@@ -24,6 +24,7 @@ import { subscribeWsClientDisposed } from '../../lib/graphql/ws-client-lifecycle
 import { AUTH_REFRESH_RETRY_CLOSE_CODE } from '../../lib/graphql/ws-close-codes';
 import {
   QUEUE_UPDATES_SUBSCRIPTION,
+  QUEUE_UPDATES_SUBSCRIPTION_NOW_SLOT,
   SESSION_UPDATES_SUBSCRIPTION,
   type SessionUpdateEvent,
   type SessionLiveStatsEvent,
@@ -38,6 +39,7 @@ import { nowMs } from '../../lib/clock';
 import { track } from '../../lib/analytics';
 import { reportHandledError } from '../../lib/error-reporting';
 import type { ToastVariant } from '../../components/Toast';
+import { clampSyncedQueue } from './now-slot-server';
 
 const JOIN_SESSION_RETRY_BACKOFF_MS = [1_000, 2_500, 5_000] as const;
 // ws-client remaps a rejected-auth 4401 to the retryable AUTH_REFRESH_RETRY_CLOSE_CODE
@@ -160,8 +162,17 @@ type UseSessionRealtimeParams = {
    *  FullSync guard fires, so the server catches up to local instead of local
    *  being clobbered down to the empty room. Self-joins via ensureReady. */
   reSeedQueueRef: React.RefObject<
-    (queue: ClimbQueueItem[], currentClimbQueueItem?: ClimbQueueItem | null) => Promise<void>
+    (
+      queue: ClimbQueueItem[],
+      currentClimbQueueItem?: ClimbQueueItem | null,
+      historyCount?: number | null,
+    ) => Promise<void>
   >;
+  /**
+   * F3 now-slot mode as last set for this connection (the flag AND the server
+   * probe the join ran). Picks the subscription document and the re-seed clamp.
+   */
+  nowSlotModeRef: React.RefObject<boolean>;
   activeBoardRef: React.RefObject<UserBoard | null | undefined>;
   setActiveBoardRef: React.RefObject<(board: UserBoard) => Promise<boolean>>;
   showToastRef: React.RefObject<(message: string, variant?: ToastVariant, duration?: number) => void>;
@@ -211,6 +222,7 @@ export function useSessionRealtime({
   stateRef,
   seedFailedSessionIdRef,
   reSeedQueueRef,
+  nowSlotModeRef,
   activeBoardRef,
   setActiveBoardRef,
   showToastRef,
@@ -298,7 +310,7 @@ export function useSessionRealtime({
     // queue edit that lands mid-push.
     const reSeedQueueAfterFailedSeed = (triggeredByFullSync = false) => {
       if (reSeedInFlight) return;
-      const { queue, currentClimbQueueItem } = stateRef.current;
+      const { queue, currentClimbQueueItem, historyCount } = stateRef.current;
       if (queue.length === 0 && currentClimbQueueItem == null) return;
       if (triggeredByFullSync) {
         track(SHARED_EVENTS.QueueSeedFullSyncGuarded, {
@@ -309,10 +321,12 @@ export function useSessionRealtime({
       }
       reSeedInFlight = true;
       const pushedHash = computeQueueStateHashOrdered(queue, currentClimbQueueItem?.uuid ?? null);
-      // The payload is clamped like the first seed (#6673); the hash above is
-      // of the local queue, so the convergence check still compares local to local.
+      // The payload is clamped like the first seed (#6673), and the clamp follows
+      // the server probe (F3); the hash above is of the local queue, so the
+      // convergence check still compares local to local.
+      const reSeedPayload = clampSyncedQueue(queue, currentClimbQueueItem, historyCount, nowSlotModeRef.current);
       void reSeedQueueRef
-        .current(clampQueueAroundCurrent(queue, currentClimbQueueItem), currentClimbQueueItem ?? undefined)
+        .current(reSeedPayload.queue, currentClimbQueueItem ?? undefined, reSeedPayload.historyCount)
         .then(() => {
           reSeedInFlight = false;
           if (!isCurrent() || sessionIdRef.current !== sessionId) return;
@@ -632,7 +646,9 @@ export function useSessionRealtime({
       queueUpdatesCleanup = subscribe<{ queueUpdates: QueueUpdateEvent }>(
         client,
         {
-          query: QUEUE_UPDATES_SUBSCRIPTION,
+          // F3: the join above ran the server probe, so the mode is settled for
+          // this connection. Now-slot mode selects the line in FullSync.state.
+          query: nowSlotModeRef.current ? QUEUE_UPDATES_SUBSCRIPTION_NOW_SLOT : QUEUE_UPDATES_SUBSCRIPTION,
           variables: { sessionId },
         },
         {

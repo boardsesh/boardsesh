@@ -18,6 +18,7 @@ import { resetCrewCadenceForTests } from '../../lib/crew-rest-cadence';
 const browseFlag = vi.hoisted(() => ({ enabled: true }));
 vi.mock('../feature-flags-provider', () => ({
   useSharedSessionBrowseEnabled: () => browseFlag.enabled,
+  useQueueNowSlotEnabled: () => false,
 }));
 
 const ws = vi.hoisted(() => {

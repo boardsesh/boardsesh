@@ -208,6 +208,13 @@ export type SetCurrentClimbOptions = {
    */
   keepTrackIfUpNext?: boolean;
   trigger?: SetCurrentClimbTrigger;
+  /**
+   * F3 now-slot mode: how the climb goes on the wall. Absent is `NOW`, the
+   * plain open (a History row tap moves that one climb into Now). `STEP` is
+   * Replay from here on a History row: the line moves back to that climb and
+   * the climbs after it are Up next again, in order. Ignored in legacy mode.
+   */
+  placement?: CurrentClimbPlacement;
 };
 
 /**

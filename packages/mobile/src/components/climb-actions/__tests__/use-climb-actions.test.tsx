@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import type { Climb } from '@boardsesh/shared-schema';
 import type { ClimbActionId } from '../use-climb-actions';
@@ -11,6 +11,8 @@ const ctrl = vi.hoisted(() => ({
   sessionId: null as string | null,
   moderationEnabled: true,
   activeClimbUuid: null as string | null,
+  // The History row Replay from here would replay; null hides the row (F3).
+  replayItem: null as { uuid: string; climb: unknown } | null,
 }));
 const openers = vi.hoisted(() => ({
   openPlayDrawer: vi.fn(),
@@ -20,6 +22,8 @@ const openers = vi.hoisted(() => ({
   openReportClimb: vi.fn(),
   addToQueue: vi.fn(),
   playNext: vi.fn(),
+  setCurrentClimb: vi.fn(),
+  findReplayFromHereItem: vi.fn((_queueItemUuid: string) => ctrl.replayItem),
   toggleFavoriteMutate: vi.fn(),
   track: vi.fn(),
   push: vi.fn(),
@@ -60,7 +64,12 @@ vi.mock('../../../providers/feature-flags-provider', () => ({
   useClimbModerationEnabled: () => ctrl.moderationEnabled,
 }));
 vi.mock('../../../providers/queue-provider', () => ({
-  useQueueActions: () => ({ addToQueue: openers.addToQueue, playNext: openers.playNext }),
+  useQueueActions: () => ({
+    addToQueue: openers.addToQueue,
+    playNext: openers.playNext,
+    setCurrentClimb: openers.setCurrentClimb,
+    findReplayFromHereItem: openers.findReplayFromHereItem,
+  }),
   useQueueSessionId: () => ({ sessionId: ctrl.sessionId }),
   useActiveClimbUuid: () => ctrl.activeClimbUuid,
 }));
@@ -554,6 +563,49 @@ describe('useClimbActions colours and dispatch', () => {
     // Fire-and-forget: the cross-board prompt sits above the dismissed sheet, so
     // the dismiss must not wait on the promise.
     expect(onAfterAction).toHaveBeenCalledTimes(1);
+  });
+
+  describe('Replay from here (F3)', () => {
+    const historyRow = { uuid: 'history-slot-2', climb };
+
+    afterEach(() => {
+      ctrl.replayItem = null;
+    });
+
+    it('a History row with a climb current offers it, and it sends STEP for that row', () => {
+      ctrl.replayItem = historyRow;
+      const onAfterAction = vi.fn();
+      const { result } = renderActions({
+        climb,
+        boardConfig: kilterBoard,
+        isAuthenticated: false,
+        queueItemUuid: 'history-slot-2',
+        onAfterAction,
+      });
+      expect(openers.findReplayFromHereItem).toHaveBeenCalledWith('history-slot-2');
+      const replay = result.current.find((action) => action.id === 'replayFromHere');
+      expect(replay?.title).toBe('mobile.climbActions.replayFromHere');
+      replay?.run();
+      expect(openers.setCurrentClimb).toHaveBeenCalledWith(historyRow, {
+        placement: 'STEP',
+        playlistSuggestionSource: null,
+      });
+      expect(onAfterAction).toHaveBeenCalledTimes(1);
+    });
+
+    it('is absent when the provider has no History entry to replay (Up next, Now, nothing current, legacy)', () => {
+      ctrl.replayItem = null;
+      expect(
+        ids({ climb, boardConfig: kilterBoard, isAuthenticated: false, queueItemUuid: 'up-next-slot' }),
+      ).not.toContain('replayFromHere');
+    });
+
+    it('is absent everywhere but a queue row', () => {
+      ctrl.replayItem = historyRow;
+      openers.findReplayFromHereItem.mockClear();
+      expect(ids({ climb, boardConfig: kilterBoard, isAuthenticated: false })).not.toContain('replayFromHere');
+      expect(openers.findReplayFromHereItem).not.toHaveBeenCalled();
+    });
   });
 
   it('playNext.run omits the queue slot everywhere else', () => {

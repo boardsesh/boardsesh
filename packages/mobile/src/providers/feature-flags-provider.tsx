@@ -141,6 +141,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
       'In a session with 2+ climbers, swipes and climb-list taps browse instead of writing the shared queue and lighting the wall; "Put on the wall" becomes the one commit. Off = every gesture drives the wall as it always did.',
   },
   {
+    key: 'queue-now-slot',
+    label: 'Current climb outside the queue',
+    description:
+      "F3 (#6666). Opening a climb puts it on the wall without copying it into Up next; History, Now and Up next stay apart, and a History row's long-press offers Replay from here. In a session it also needs the backend to serve the Now slot fields (a probe on every connect); otherwise the phone stays on today's documents and reducer. A POSITIVE flag: off or unresolved is today's behaviour. Takes effect on the next session join or reconnect.",
+  },
+  {
     key: 'moonboard-wide-angles',
     label: 'MoonBoard wide angles',
     description:
@@ -608,6 +614,17 @@ export function useSharedSessionBrowseEnabled(): boolean {
  */
 export function useWorkoutTimedBlocksFlag(): boolean {
   return useFeatureFlag('workout-timed-blocks') === true;
+}
+
+/**
+ * F3 now-slot mode (#6666, docs/current-climb-outside-queue.md section 8). A
+ * POSITIVE flag read `=== true`: unresolved or off is legacy mode, with today's
+ * GraphQL documents and today's reducer, so it is a kill switch for every
+ * failure the Now slot can cause. In a session it is not enough on its own: the
+ * per-connect server probe must also say the backend serves the fields.
+ */
+export function useQueueNowSlotEnabled(): boolean {
+  return useFeatureFlag('queue-now-slot') === true;
 }
 
 /**

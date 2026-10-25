@@ -3,13 +3,13 @@ import { buildSessionBoardPath } from '../../lib/boards/session-board-path';
 import { execute } from '@boardsesh/graphql-client';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { LEAVE_SESSION } from '@boardsesh/graphql/operations/queue-session';
-import { clampQueueAroundCurrent } from '@boardsesh/queue';
 import type { ClimbQueueItem, PlaylistSuggestionSource, QueueAction, QueueState } from '@boardsesh/queue';
 import type { SessionSummary, UserBoard } from '@boardsesh/shared-schema';
 import { getHttpClient } from '../../lib/graphql/client';
 import { getStoredActiveBoard } from '../../lib/active-board-store';
 import { getActiveBoardWriteGeneration } from '../../lib/graphql/use-active-board';
 import { getWsClient } from '../../lib/graphql/ws-client';
+import { clampSyncedQueue } from './now-slot-server';
 import {
   CREATE_SESSION,
   END_SESSION,
@@ -37,7 +37,13 @@ type UseSessionCommandsParams = {
   stateRef: React.RefObject<QueueState>;
   ensureJoined: (sessionIdToJoin: string) => Promise<unknown>;
   /** `mutations.setQueue` — the party-sync seed used by createSessionWithConfig. */
-  setQueueMutation: (queue: ClimbQueueItem[], currentClimbQueueItem?: ClimbQueueItem | null) => Promise<void>;
+  setQueueMutation: (
+    queue: ClimbQueueItem[],
+    currentClimbQueueItem?: ClimbQueueItem | null,
+    historyCount?: number | null,
+  ) => Promise<void>;
+  /** F3 now-slot mode as last set (the join ran the probe); picks the seed clamp. */
+  nowSlotModeRef: React.RefObject<boolean>;
   /**
    * Holds the id of a session whose local-queue seed threw. Set here on seed
    * failure and read by useSessionRealtime, which then refuses to let the empty
@@ -80,6 +86,7 @@ export function useSessionCommands({
   stateRef,
   ensureJoined,
   setQueueMutation,
+  nowSlotModeRef,
   seedFailedSessionIdRef,
   setSessionId,
   sessionIdRef,
@@ -162,7 +169,7 @@ export function useSessionCommands({
           // for an empty room would wipe the local queue via INITIAL_QUEUE_DATA.
           // SET_QUEUE is connection-scoped, so JOIN first (the subscription
           // effect's later eager ensureJoined hits the tracker cache).
-          const { queue, currentClimbQueueItem } = stateRef.current;
+          const { queue, currentClimbQueueItem, historyCount } = stateRef.current;
           if (queue.length > 0 || currentClimbQueueItem) {
             try {
               await ensureJoined(newId);
@@ -170,10 +177,11 @@ export function useSessionCommands({
               // cap one track swipe at a time, and `Mutation.setQueue` throws on
               // a longer payload, which would leave the room empty. The FullSync
               // that follows brings the local queue down to the same window.
-              await setQueueMutation(
-                clampQueueAroundCurrent(queue, currentClimbQueueItem),
-                currentClimbQueueItem ?? undefined,
-              );
+              // The join above ran the F3 server probe, so the clamp follows it
+              // (501 in now-slot mode, 500 in legacy) and the solo line goes up
+              // with the seed.
+              const seedPayload = clampSyncedQueue(queue, currentClimbQueueItem, historyCount, nowSlotModeRef.current);
+              await setQueueMutation(seedPayload.queue, currentClimbQueueItem ?? undefined, seedPayload.historyCount);
               // Queue ownership moved to the session — drop the local snapshot
               // so a stale copy can't resurrect after the session ends. Only on
               // a successful seed: if seeding failed, the snapshot is the sole

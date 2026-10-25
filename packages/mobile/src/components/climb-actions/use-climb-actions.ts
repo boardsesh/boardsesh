@@ -42,6 +42,7 @@ export type ClimbActionId =
   | 'queue'
   | 'openQueue'
   | 'playNext'
+  | 'replayFromHere'
   | 'mirror'
   | 'angle'
   | 'playlist'
@@ -240,7 +241,7 @@ export function useClimbActions({
   // edit and new climb on it, so neither Edit nor Fork is offered there.
   const wallArchived = useSprayWallIsArchived(boardConfig?.boardName, boardConfig?.layoutId ?? null);
   const { actionColors } = useTheme();
-  const { addToQueue, playNext } = useQueueActions();
+  const { addToQueue, playNext, setCurrentClimb, findReplayFromHereItem } = useQueueActions();
   // The active session, so a tick logged from a climb-actions sheet lands on it.
   // Every other tick entry point (play drawer, queue bar, queue sheet) already
   // passes this; this one didn't, so ticking from the climbs list, board sheet,
@@ -375,6 +376,27 @@ export function useClimbActions({
           // play route, under an overlay that is already on its way out.
           after();
           onOpenQueue();
+        },
+      });
+    }
+
+    // Replay from here (F3, decision 8): a History row's long-press, while a
+    // climb is on the wall and only in now-slot mode. It puts that climb back on
+    // the wall with `placement: STEP`, so the climbs after it are Up next again
+    // in their old order and nothing is copied. The plain row tap is unchanged:
+    // it moves just that one climb into Now. Read at menu-build time; the menu
+    // mounts per long-press, so it can't go stale while open.
+    const replayItem = queueItemUuid ? findReplayFromHereItem(queueItemUuid) : null;
+    if (replayItem) {
+      items.push({
+        id: 'replayFromHere',
+        title: t('mobile.climbActions.replayFromHere'),
+        icon: 'history',
+        color: accentColor,
+        run: () => {
+          // Walking the queue again, like the row tap: drop any list source.
+          setCurrentClimb(replayItem, { placement: 'STEP', playlistSuggestionSource: null });
+          after();
         },
       });
     }
@@ -689,6 +711,8 @@ export function useClimbActions({
     shareClimb,
     addToQueue,
     playNext,
+    setCurrentClimb,
+    findReplayFromHereItem,
     toggleFavoriteMutate,
     bluetoothConnected,
     isFavorited,

@@ -105,6 +105,8 @@ type QueueContextValue = {
   getQueueSnapshot: () => {
     queue: ClimbQueueItem[];
     currentClimbQueueItem: ClimbQueueItem | null;
+    /** F3 now-slot mode: the History / Up next line. Null or absent in legacy mode. */
+    historyCount?: number | null;
     playlistSuggestionSource: PlaylistSuggestionSource | null;
   };
   /**
@@ -128,6 +130,13 @@ type QueueContextValue = {
     items: ClimbQueueItem[],
     options?: { activateFirstWhenIdle?: boolean; placement?: QueueAddPlacement },
   ) => number;
+  /**
+   * F3 Replay from here: the History entry `queueItemUuid` names, when the long-
+   * press menu should offer Replay from here for it. Null outside now-slot mode,
+   * with nothing current, and for any row that is not History. Reads live state
+   * without subscribing, like `getQueueSnapshot`.
+   */
+  findReplayFromHereItem: (queueItemUuid: string) => ClimbQueueItem | null;
   setCurrentClimb: (item: ClimbQueueItem, options?: SetCurrentClimbOptions) => void;
   /**
    * Correct every queued copy of a climb its setter just saved again (name,
@@ -361,6 +370,12 @@ export const QueueHasActiveClimbContext = createContext<QueueHasActiveClimbConte
 type QueueDataContextValue = {
   queue: ClimbQueueItem[];
   currentClimbQueueItem: ClimbQueueItem | null;
+  /**
+   * F3 now-slot mode: the History / Up next line while nothing is current
+   * (`upNextStart` reads it). Null or absent in legacy mode, which every reader
+   * then treats exactly as today.
+   */
+  historyCount?: number | null;
 };
 
 export const QueueDataContext = createContext<QueueDataContextValue | null>(null);

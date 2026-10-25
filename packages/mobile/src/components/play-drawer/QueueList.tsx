@@ -46,6 +46,8 @@ type QueueListRow = QueueFlatRow | SuggestionRow | SectionHeaderRow;
 type QueueListProps = {
   queue: ClimbQueueItem[];
   currentItemUuid: string | null;
+  /** F3 now-slot mode: the History / Up next line with nothing current; null in legacy mode. */
+  historyCount?: number | null;
   board: QueueItemRowBoard;
   isEditMode: boolean;
   showHistory: boolean;
@@ -73,6 +75,7 @@ type QueueListProps = {
 function QueueListComponent({
   queue,
   currentItemUuid,
+  historyCount = null,
   board,
   isEditMode,
   showHistory,
@@ -136,8 +139,9 @@ function QueueListComponent({
       buildQueueListModel(queue, currentItemUuid, {
         showHistory,
         showFullHistory,
+        historyCount,
       }),
-    [queue, currentItemUuid, showHistory, showFullHistory],
+    [queue, currentItemUuid, showHistory, showFullHistory, historyCount],
   );
 
   // Suggested climbs follow the queue rows under a "Suggestions" header with a

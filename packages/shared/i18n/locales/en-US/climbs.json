@@ -746,6 +746,7 @@
       "preview": "Preview",
       "playNext": "Play next",
       "playLast": "Play last",
+      "replayFromHere": "Replay from here",
       "nameCopied": "Name copied",
       "copyNameError": "Couldn't copy name",
       "copyNameHint": "Press and hold to copy the name",

@@ -746,6 +746,7 @@
       "preview": "Vista previa",
       "playNext": "Poner a continuación",
       "playLast": "Poner al final",
+      "replayFromHere": "Repetir desde aquí",
       "nameCopied": "Nombre copiado",
       "copyNameError": "No se pudo copiar el nombre",
       "copyNameHint": "Mantén pulsado para copiar el nombre",

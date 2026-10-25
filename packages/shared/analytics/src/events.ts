@@ -137,7 +137,11 @@ export const SHARED_EVENTS = {
   // queued a climb it had just saved, 'put_on_wall' when a climber committed a
   // pinned preview on purpose (Put on the wall / Set active, or the bulb relay;
   // #4281), and null for any other pick. Before the #6027 OTA a save fired this
-  // event with nothing to tell it apart.
+  // event with nothing to tell it apart. F3 (#6666) adds `nowSlotMode`, and in
+  // that mode `rewrite` (the `placeOnWall` row the local open took: `insert`,
+  // `dedupe-up-next`, ...) and `placement` (`NOW` / `STEP`); both null in legacy
+  // mode. Solo opens never reach the server, so this is the only signal for the
+  // no-copy fix there.
   SetActiveClimb: 'Set Active Climb',
   SessionStarted: 'Session Started',
   SessionEnded: 'Session Ended',
@@ -182,6 +186,13 @@ export const SHARED_EVENTS = {
   // failed seed from wiping the live queue, plus the re-seed it kicks off. Lets
   // us measure how often the seed lifecycle degrades in the field (#3878).
   QueueSeedFullSyncGuarded: 'Queue Seed FullSync Guarded',
+  // F3 (#6666): the per-connect probe that decides whether a phone in a session
+  // sends the `_NOW_SLOT` documents. Props: { nowSlotServer: boolean,
+  // fallback: 'probe' | 'validation-error' }. Fired at most once per launch
+  // while the answer is true, and on every false: any false after the F3
+  // backend is live, outside a deploy window, means a rollback or a probe that
+  // broke. See docs/current-climb-outside-queue.md, section 8 (telemetry).
+  QueueServerProbe: 'Queue Server Probe',
   // Props: { kind: 'field' | 'preset', field?, value?, preset? }. Controller interactions only.
   ClimbRowDisplayChanged: 'Climb Row Display Changed',
   // A climber changed a toggle, select or segmented control on a Settings page.

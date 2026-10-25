@@ -12,6 +12,7 @@ const ICONS: Record<ClimbActionId, IconName> = {
   queue: 'add',
   openQueue: 'queue',
   playNext: 'queue.next',
+  replayFromHere: 'history',
   mirror: 'mirror',
   angle: 'angle',
   playlist: 'playlist',

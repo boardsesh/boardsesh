@@ -25,6 +25,12 @@ export type LocalQueueSnapshot = {
   queue: ClimbQueueItem[];
   currentClimbQueueItem: ClimbQueueItem | null;
   playlistSuggestionSource: PlaylistSuggestionSource | null;
+  /**
+   * F3 now-slot mode: the History / Up next line, so a cold start with nothing
+   * current keeps History as History. Absent from an older snapshot (and null in
+   * legacy mode); the reducer then derives the line. Optional, so no key bump.
+   */
+  historyCount?: number | null;
   /** ISO 8601 write timestamp, for debugging stale restores. */
   savedAt: string;
   /** Native snapshots predate account scoping; legacy references can be adopted. */

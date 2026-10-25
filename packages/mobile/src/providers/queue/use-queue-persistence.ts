@@ -35,6 +35,8 @@ type UseQueuePersistenceParams = {
   /** Reactive queue/current climb — the solo persist effect's dependency array. */
   queue: ClimbQueueItem[];
   currentClimbQueueItem: ClimbQueueItem | null;
+  /** F3 now-slot mode: the History / Up next line, saved with the snapshot. */
+  historyCount?: number | null;
   /**
    * The board-masked source (see QueueProvider): a source stamped with another
    * board reads as null here, so the next debounced save drops it from the
@@ -69,6 +71,7 @@ export function useQueuePersistence({
   sessionId,
   queue,
   currentClimbQueueItem,
+  historyCount = null,
   playlistSuggestionSource,
   setPlaylistSuggestionSourceState,
   activeBoardSettled,
@@ -123,10 +126,16 @@ export function useQueuePersistence({
       queue: ClimbQueueItem[];
       currentClimbQueueItem: ClimbQueueItem | null;
       playlistSuggestionSource: PlaylistSuggestionSource | null;
+      historyCount?: number | null;
     }) => {
+      // An older (or legacy-mode) snapshot has no line; the reducer derives it.
       dispatch({
         type: 'UPDATE_QUEUE',
-        payload: { queue: snapshot.queue, currentClimbQueueItem: snapshot.currentClimbQueueItem },
+        payload: {
+          queue: snapshot.queue,
+          currentClimbQueueItem: snapshot.currentClimbQueueItem,
+          ...(snapshot.historyCount == null ? {} : { historyCount: snapshot.historyCount }),
+        },
       });
       dispatch({ type: 'SET_PLAYLIST_SUGGESTION_SOURCE', payload: snapshot.playlistSuggestionSource });
       setPlaylistSuggestionSourceState(snapshot.playlistSuggestionSource);
@@ -246,6 +255,8 @@ export function useQueuePersistence({
         {
           queue,
           currentClimbQueueItem,
+          // Legacy mode keeps no line, and its snapshot keeps today's shape.
+          ...(historyCount == null ? {} : { historyCount }),
           playlistSuggestionSource,
         },
         owner,
@@ -256,6 +267,7 @@ export function useQueuePersistence({
   }, [
     queue,
     currentClimbQueueItem,
+    historyCount,
     playlistSuggestionSource,
     sessionId,
     activeBoardSettled,

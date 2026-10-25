@@ -746,6 +746,7 @@
       "preview": "Vorschau",
       "playNext": "Als Nächstes dran",
       "playLast": "Als Letztes dran",
+      "replayFromHere": "Ab hier wiederholen",
       "nameCopied": "Name kopiert",
       "copyNameError": "Name konnte nicht kopiert werden",
       "copyNameHint": "Lang drücken, um den Namen zu kopieren",

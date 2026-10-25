@@ -1,5 +1,5 @@
 import { useLayoutEffect } from 'react';
-import type { ClimbQueueItem, QueueAction, QueueClimbReadTarget } from '@boardsesh/queue';
+import { historyLine, type ClimbQueueItem, type QueueAction, type QueueClimbReadTarget } from '@boardsesh/queue';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { climbToQueueItem, isClimbResolved } from '../../lib/climb-to-queue-item';
 import type { QueueClimbReads, QueueClimbReadDemand } from './use-queue-climb-reads';
@@ -7,6 +7,8 @@ import type { QueueClimbReads, QueueClimbReadDemand } from './use-queue-climb-re
 type UseQueueResolveClimbsParams = {
   activeBoard: UserBoard | null | undefined;
   queue: ClimbQueueItem[];
+  /** F3 now-slot mode: the line while nothing is current; null in legacy mode. */
+  historyCount?: number | null;
   currentClimbQueueItem?: ClimbQueueItem | null;
   privacyRevocationGeneration?: number;
   climbReads: QueueClimbReads;
@@ -17,6 +19,7 @@ type UseQueueResolveClimbsParams = {
 export function useQueueResolveClimbs({
   activeBoard,
   queue,
+  historyCount = null,
   currentClimbQueueItem,
   privacyRevocationGeneration,
   climbReads,
@@ -26,9 +29,10 @@ export function useQueueResolveClimbs({
     const demands: QueueClimbReadDemand[] = [];
     if (activeBoard) {
       const { boardType, layoutId, angle } = activeBoard;
-      const currentIndex = currentClimbQueueItem
-        ? queue.findIndex((item) => item.uuid === currentClimbQueueItem.uuid)
-        : -1;
+      // History keeps its climbed-at angle: everything before the current climb,
+      // or before the line while nothing is current (F3 now-slot mode; 0 in
+      // legacy mode, so nothing is frozen there, as before).
+      const historyEnd = historyLine({ queue, currentClimbQueueItem: currentClimbQueueItem ?? null, historyCount });
       const consider = (item: ClimbQueueItem, role: QueueClimbReadTarget['role'], targetAngle: number) => {
         const climb = item.climb;
         if (!climb?.uuid || isClimbResolved(climb)) return;
@@ -57,11 +61,11 @@ export function useQueueResolveClimbs({
             }),
         });
       };
-      queue.forEach((item, index) => consider(item, 'queue', index < currentIndex ? item.climb.angle : angle));
+      queue.forEach((item, index) => consider(item, 'queue', index < historyEnd ? item.climb.angle : angle));
       // The current representation may be mirrored independently of its queue slot.
       if (currentClimbQueueItem) consider(currentClimbQueueItem, 'current', angle);
     }
     climbReads.register('resolve', demands);
     return () => climbReads.unregister('resolve');
-  }, [queue, currentClimbQueueItem, activeBoard, dispatch, privacyRevocationGeneration, climbReads]);
+  }, [queue, historyCount, currentClimbQueueItem, activeBoard, dispatch, privacyRevocationGeneration, climbReads]);
 }

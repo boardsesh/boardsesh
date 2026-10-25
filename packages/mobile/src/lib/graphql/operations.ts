@@ -733,6 +733,9 @@ export type GetSessionQueueStateQueryResponse = {
       stateHashOrdered?: string | null;
       queue: SubscriptionQueueItem[];
       currentClimbQueueItem: SubscriptionQueueItem | null;
+      /** F3: selected only by GET_SESSION_QUEUE_STATE_NOW_SLOT. */
+      historyCount?: number | null;
+      currentChangedAt?: string | null;
     } | null;
   } | null;
 };
@@ -1361,6 +1364,80 @@ export const QUEUE_UPDATES_SUBSCRIPTION = `
   }
 `;
 
+// F3 (#6666): the same subscription selecting the Now slot fields in
+// `FullSync.state`. Sent only in now-slot mode (the `queue-now-slot` flag and
+// the per-connect server probe); today's document above stays for legacy mode
+// and is never edited in place, because selecting an unknown field is a
+// validation error against a backend without F3. Deleted in the F3 cleanup PR.
+export const QUEUE_UPDATES_SUBSCRIPTION_NOW_SLOT = `
+  subscription QueueUpdatesNowSlot($sessionId: ID!) {
+    queueUpdates(sessionId: $sessionId) {
+      __typename
+      ... on FullSync {
+        sequence
+        state {
+          sequence
+          stateHash
+          stateHashOrdered
+          historyCount
+          currentChangedAt
+          queue { ${SUBSCRIPTION_QUEUE_ITEM_FIELDS} }
+          currentClimbQueueItem { ${SUBSCRIPTION_QUEUE_ITEM_FIELDS} }
+        }
+      }
+      ... on QueueItemAdded {
+        sequence
+        stateHash
+        stateHashOrdered
+        addedItem: item { ${SUBSCRIPTION_QUEUE_ITEM_FIELDS} }
+        position
+        clientId
+      }
+      ... on QueueItemRemoved {
+        sequence
+        stateHash
+        stateHashOrdered
+        uuid
+        clientId
+      }
+      ... on QueueReordered {
+        sequence
+        stateHash
+        stateHashOrdered
+        uuid
+        oldIndex
+        newIndex
+      }
+      ... on CurrentClimbChanged {
+        sequence
+        stateHash
+        stateHashOrdered
+        currentItem: item { ${SUBSCRIPTION_QUEUE_ITEM_FIELDS} }
+        clientId
+        correlationId
+      }
+      ... on ClimbMirrored {
+        sequence
+        stateHash
+        stateHashOrdered
+        mirroredUuid: uuid
+        mirrored
+      }
+      ... on PlaybackStateChanged {
+        sequence
+        climbUuid
+        frameIndex
+        frameCount
+        isPlaying
+        speed
+        paceMs
+        anchorTimestamp
+        clientId
+      }
+    }
+  }
+`;
+
 // Authoritative queue snapshot for the active session. Fetched over the HTTP
 // transport (it's a query, not a subscription) after a queue mutation fails, so
 // the local optimistic delta is reconciled against the server immediately
@@ -1373,6 +1450,25 @@ export const GET_SESSION_QUEUE_STATE = gql`
         sequence
         stateHash
         stateHashOrdered
+        queue { ${SUBSCRIPTION_QUEUE_ITEM_FIELDS} }
+        currentClimbQueueItem { ${SUBSCRIPTION_QUEUE_ITEM_FIELDS} }
+      }
+    }
+  }
+`;
+
+// F3 (#6666): the HTTP resync snapshot with the Now slot fields, so a resync
+// with nothing current keeps History as History. Now-slot mode only, beside
+// today's document, for the same reason as QUEUE_UPDATES_SUBSCRIPTION_NOW_SLOT.
+export const GET_SESSION_QUEUE_STATE_NOW_SLOT = gql`
+  query GetSessionQueueStateNowSlot($sessionId: ID!) {
+    session(sessionId: $sessionId) {
+      queueState {
+        sequence
+        stateHash
+        stateHashOrdered
+        historyCount
+        currentChangedAt
         queue { ${SUBSCRIPTION_QUEUE_ITEM_FIELDS} }
         currentClimbQueueItem { ${SUBSCRIPTION_QUEUE_ITEM_FIELDS} }
       }
