@@ -37,7 +37,7 @@ export const FRONT_DOOR_PAGE_SIZE = 50;
  * would invite crawlers down a corridor whose per-request `OFFSET` grows without
  * limit. (MoonBoard front doors used to compound that by bypassing the server
  * cache entirely; they now cache for 15 minutes like every other board — see
- * `CACHE_DURATION_MOONBOARD_FRONT_DOOR` — so the cap is about `OFFSET` growth
+ * `CACHE_DURATION_LIVE_DATA_FRONT_DOOR` — so the cap is about `OFFSET` growth
  * alone.)
  */
 export const FRONT_DOOR_MAX_INDEXABLE_PAGE = 10;

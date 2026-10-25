@@ -138,6 +138,15 @@ describe('cachedSearchClimbs — MoonBoard and Woods front-door caching', () => 
     expect(onlyRevalidate()).toBe(LIVE_DATA_FRONT_DOOR_TTL_SECONDS);
   });
 
+  it('caches Woods without an explicit opt-in, unlike MoonBoard', async () => {
+    const woodsParams: ParsedBoardRouteParameters = { ...moonboardParams, board_name: 'woods' };
+
+    await cachedSearchClimbs(woodsParams, searchParams, true, undefined, undefined);
+    await cachedSearchClimbs(woodsParams, searchParams, true, undefined, undefined);
+
+    expect(searchExecutions.count).toBe(1);
+  });
+
   it('leaves the non-MoonBoard front door caching as it was', async () => {
     const kilterParams: ParsedBoardRouteParameters = { ...moonboardParams, board_name: 'kilter' };
 
