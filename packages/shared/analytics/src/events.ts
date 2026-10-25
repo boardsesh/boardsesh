@@ -680,15 +680,6 @@ export const SHARED_EVENTS = {
   // that passed no source) }. Once per mount.
   SmartPlaylistOpened: 'Smart Playlist Opened',
 
-  // Mobile-only, iOS 26 Liquid Glass iPhones (#5654): the one-time tip "To get
-  // back to your climbs, tap the magnifier in the tab bar". There the Climbs tab
-  // is the tab bar's search-role magnifier, set apart from the other tabs, and
-  // newcomers who leave Climbs often never come back. Shown once per device, to
-  // an account at most 7 days old, the first time another tab is open. Read it
-  // with "left Climbs, never returned" by platform for the tab-label decision.
-  // Props: { fromTab: 'home' | 'record' | 'discover' | 'profile' | other tab
-  //          segment (where the climber was when it showed) }.
-  ClimbsTabTipShown: 'Climbs Tab Tip Shown',
   BetaVideoAdded: 'Beta Video Added',
   // Board ENTITY creation — adding a wall to your boards (distinct from the
   // board-presence events below, which are about being on one). Added with

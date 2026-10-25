@@ -681,7 +681,7 @@ an ordinary pick: no `Onboarding Board Activated`, no reveal banner.
 | `Board Builder Abandoned` | `boardType`, `hadLayout`, `hadSize` (what was selected at the end), `source` (`popular_seed` / `scratch`, as on `Board Created`), `preset` (opened from "My own board", which preselects the board type's most used setup when the popular list carries that type), `openedFrom` (`onboarding` / `no_board` / `board_picker`), `submitAttempted`, `secondsOpen` | `app/boards/create.tsx`, when the builder unmounts without a board created, reused or followed | At most one per builder visit |
 | `Board Created` (changed) | adds `preset` (as on `Board Builder Abandoned`) and `presetKept` (the saved layout, size and sets are exactly the preselection: no chip below the board type changed) | `app/boards/create.tsx` | Unchanged |
 | `Board Create Reused Existing` (changed) | adds `preset`, `presetKept` (as on `Board Created`) | `app/boards/create.tsx` | Unchanged |
-| `Climbs Tab Tip Shown` | `fromTab` (the tab segment it showed on: `home` / `record` / `discover` / `profile`) | `ClimbsTabReturnTip.tsx` (root overlay) | At most once per device; iOS 26 Liquid Glass iPhones, accounts at most 7 days old |
+| `Climbs Tab Tip Shown` (retired, #6827) | `fromTab` | Was `ClimbsTabReturnTip.tsx` | None since #6827: Climbs became a labelled tab, so the tip and its event were removed |
 
 - **Read the launch gate's skip rate on `entry = 'launch_gate'` only.** Rows without `entry` came
   from builds that had PR 3 but not PR 5, where every showing was the gate's.
@@ -695,9 +695,9 @@ an ordinary pick: no `Onboarding Board Activated`, no reveal banner.
   `Board Created` is the wrong-board watch: those boards were saved with a setup nobody changed.
   Split on `boardType` too. Only setups on the popular list are preselected, so a MoonBoard (absent
   from that list today) opens with nothing chosen and never reads `presetKept = true`.
-- **iOS 26 tab decision**: compare "left Climbs, never returned" on iOS 26 before and after the
-  tip, against Android, using `$screen` views. `Climbs Tab Tip Shown` is the exposure count; the tip
-  goes away when they tap back to Climbs or close it, and never shows again on that device.
+- **iOS 26 tab decision**: made in #6827. Climbs is an ordinary labelled tab on iOS 26 and 27,
+  like Apple Music's Search tab, so the tip went away with its reason. Rows before that build still
+  carry `Climbs Tab Tip Shown` as the exposure count.
 
 ## Appendix D — 2026-10-04 launch update gate telemetry (#6006)
 
