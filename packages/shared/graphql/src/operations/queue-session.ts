@@ -767,8 +767,10 @@ export const QUEUE_UPDATES = `
 // decodes manually, including climb.mirrored for widget-triggered BLE updates,
 // and state.historyCount (F3, #6666), which the native reducer reads to land on
 // the head of Up next when nothing is current. A server without that field
-// rejects this whole document, so the native slice must not ship to a binary
-// before the backend that serves it is live.
+// rejects this whole document; native then resubscribes once without the
+// historyCount line (QueueSubscriptionDocument in SessionQueueState.swift).
+// That fallback covers historyCount only, so any other new field still needs
+// its backend live before a binary ships it.
 export const NATIVE_IOS_QUEUE_UPDATES = `
   subscription QueueUpdates($sessionId: ID!) {
     queueUpdates(sessionId: $sessionId) {

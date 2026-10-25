@@ -459,9 +459,11 @@ describe('the operations mobile sends', () => {
   // The native Live Activity socket (SessionWebSocketManager.swift) sends its
   // own subscription, which the registry above never sees because no JS call
   // site sends it. A train binary that selects a field main's schema lacks
-  // (QueueState.historyCount, F3) gets a subscription error on every connect
-  // and stops updating the lock screen. NATIVE_IOS_QUEUE_UPDATES is pinned to
-  // the Swift text by the backend's native drift guard.
+  // gets a subscription error on every connect and stops updating the lock
+  // screen. Only QueueState.historyCount (F3) has a native fallback (it
+  // resubscribes without that line), and that fallback costs the F3 behaviour,
+  // so this still holds the train to main's schema. NATIVE_IOS_QUEUE_UPDATES is
+  // pinned to the Swift text by the backend's native drift guard.
   it.runIf(process.env.PRODUCTION_SCHEMA_SDL)(
     'validates the native Live Activity subscription against the production (main) schema',
     () => {

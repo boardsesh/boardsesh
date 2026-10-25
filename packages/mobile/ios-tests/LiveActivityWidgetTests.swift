@@ -841,6 +841,69 @@ final class LiveActivityWidgetTests: XCTestCase {
         )
     }
 
+    func testSubscriptionRejectingHistoryCountResubscribesWithoutIt() {
+        // A backend without QueueState.historyCount (before F3, or rolled back
+        // past it) rejects the whole native document. Reconnecting would send
+        // the same document until the attempt cap and freeze the lock screen,
+        // so the socket resubscribes with the pre-F3 document instead.
+        let errorJson = #"""
+        {"id":"1","type":"error","payload":[{"message":"Cannot query field \"historyCount\" on type \"QueueState\".","locations":[{"line":8,"column":17}]}]}
+        """#
+        let errorPayload = (try? JSONSerialization.jsonObject(with: Data(errorJson.utf8)) as? [String: Any])?["payload"]
+        let messages = QueueGraphQLErrorRouting.errorMessages(inPayload: errorPayload)
+        XCTAssertEqual(messages, ["Cannot query field \"historyCount\" on type \"QueueState\"."])
+        XCTAssertEqual(
+            QueueGraphQLErrorRouting.action(forOperationId: "1", subscriptionId: "1", errorMessages: messages),
+            .resubscribeWithoutHistoryCount
+        )
+
+        // Only the subscription resubscribes: join-session and mutations keep
+        // their routing whatever the message says, and an unrelated
+        // subscription error still reconnects.
+        XCTAssertEqual(
+            QueueGraphQLErrorRouting.action(forOperationId: "join-session", subscriptionId: "1", errorMessages: messages),
+            .reconnect
+        )
+        XCTAssertEqual(
+            QueueGraphQLErrorRouting.action(forOperationId: "mutation-abc123", subscriptionId: "1", errorMessages: messages),
+            .revertOptimisticNavigation(correlationId: "abc123")
+        )
+        XCTAssertEqual(
+            QueueGraphQLErrorRouting.action(forOperationId: "1", subscriptionId: "1", errorMessages: ["Session not found"]),
+            .reconnect
+        )
+        // An object payload (not graphql-ws's error array) carries no messages.
+        XCTAssertEqual(QueueGraphQLErrorRouting.errorMessages(inPayload: ["message": "x"]), [])
+        XCTAssertEqual(QueueGraphQLErrorRouting.errorMessages(inPayload: nil), [])
+    }
+
+    func testFallbackDocumentDropsOnlyTheHistoryCountLine() {
+        let document = """
+        subscription QueueUpdates($sessionId: ID!) {
+          queueUpdates(sessionId: $sessionId) {
+            ... on FullSync {
+              state {
+                sequence
+                stateHash
+                historyCount
+                queue { uuid }
+              }
+            }
+          }
+        }
+        """
+        let fallback = QueueSubscriptionDocument.withoutHistoryCount(document)
+        XCTAssertFalse(fallback.contains("historyCount"))
+        XCTAssertEqual(
+            fallback.components(separatedBy: "\n").count,
+            document.components(separatedBy: "\n").count - 1
+        )
+        XCTAssertTrue(fallback.contains("stateHash"))
+        XCTAssertTrue(fallback.contains("queue { uuid }"))
+        // A document without the field is left as it is.
+        XCTAssertEqual(QueueSubscriptionDocument.withoutHistoryCount(fallback), fallback)
+    }
+
     func testOffQueueCurrentClimbIsAppendedNotIgnored() {
         // Mirrors the JS reducer's shouldAddToQueue: a peer navigating to a
         // search result (not a queue member) must not leave the stale index
@@ -907,11 +970,13 @@ final class LiveActivityWidgetTests: XCTestCase {
         XCTAssertEqual(noHistory.currentIndex, 0)
     }
 
-    func testFullSyncLineIsClampedIntoTheQueue() {
-        // Up next empty (historyCount == count) lands on History's newest climb
-        // rather than past the end; out-of-range values clamp the same way.
-        XCTAssertEqual(QueueStateReducer.lineIndex(historyCount: 3, itemCount: 3), 2)
-        XCTAssertEqual(QueueStateReducer.lineIndex(historyCount: 9999, itemCount: 3), 2)
+    func testFullSyncWithAnEmptyUpNextShowsNoClimb() {
+        // Up next empty (historyCount == count): the line sits one past
+        // History's newest climb, out of bounds on purpose, so no
+        // already-climbed climb is presented as current. Larger values clamp
+        // to the same place, negative ones to 0.
+        XCTAssertEqual(QueueStateReducer.lineIndex(historyCount: 3, itemCount: 3), 3)
+        XCTAssertEqual(QueueStateReducer.lineIndex(historyCount: 9999, itemCount: 3), 3)
         XCTAssertEqual(QueueStateReducer.lineIndex(historyCount: -3, itemCount: 3), 0)
         XCTAssertEqual(QueueStateReducer.lineIndex(historyCount: 0, itemCount: 0), 0)
         XCTAssertEqual(QueueStateReducer.lineIndex(historyCount: 2, itemCount: 0), 0)
@@ -922,10 +987,27 @@ final class LiveActivityWidgetTests: XCTestCase {
             .fullSync(items: makeQueueItems(["A", "B", "C"]), currentItem: nil, sequence: 6, historyCount: 3),
             to: makeQueueState(uuids: [], currentIndex: 0)
         )
-        XCTAssertEqual(emptyUpNext.currentIndex, 2)
+        XCTAssertEqual(emptyUpNext.currentIndex, 3)
+        // Nothing reads as current (LiveActivityManager.buildContentState
+        // bounds-checks the same way, so the Live Activity gets no frame)...
+        SharedQueueState.save(items: emptyUpNext.items, currentIndex: emptyUpNext.currentIndex, to: defaults)
+        XCTAssertNil(SharedQueueState.currentItem(from: defaults))
+        // ...and the widget's Previous lands on History's newest climb, the
+        // one the server's Previous picks with nothing current, while Next
+        // is out of bounds, as the server's Next is with Up next empty.
+        XCTAssertEqual(ClimbNavigationDirection.previous.newIndex(from: emptyUpNext.currentIndex, count: 3), 2)
+        XCTAssertNil(ClimbNavigationDirection.next.newIndex(from: emptyUpNext.currentIndex, count: 3))
+
+        // A climb added to the empty Up next becomes the line's head.
+        let added = QueueStateReducer.apply(
+            .itemAdded(item: makeQueueItem(uuid: "D", climbUuid: "climb-D", climbName: "Climb D"), position: 3, sequence: 7),
+            to: emptyUpNext
+        )
+        XCTAssertEqual(added.items.map(\.uuid), ["A", "B", "C", "D"])
+        XCTAssertEqual(added.currentIndex, 3)
 
         let emptyQueue = QueueStateReducer.apply(
-            .fullSync(items: [], currentItem: nil, sequence: 7, historyCount: 0),
+            .fullSync(items: [], currentItem: nil, sequence: 8, historyCount: 0),
             to: emptyUpNext
         )
         XCTAssertTrue(emptyQueue.items.isEmpty)

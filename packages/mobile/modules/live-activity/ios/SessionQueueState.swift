@@ -83,14 +83,24 @@ enum QueueGraphQLErrorRouting {
         /// join-session or the queueUpdates subscription failed — reconnect so
         /// the session/subscription is re-established.
         case reconnect
+        /// The queueUpdates subscription was rejected because the server's
+        /// schema has no `QueueState.historyCount` (a backend from before F3,
+        /// #6666, or one rolled back past it). Resubscribe on the same socket
+        /// without that field instead of reconnecting: every reconnect would
+        /// send the same document, burn the attempt cap and leave the lock
+        /// screen frozen until the app restarts.
+        case resubscribeWithoutHistoryCount
         /// An optimistic widget navigation was rejected — revert to the index
         /// recorded before it.
         case revertOptimisticNavigation(correlationId: String)
         case ignore
     }
 
-    static func action(forOperationId id: String?, subscriptionId: String) -> Action {
+    static func action(forOperationId id: String?, subscriptionId: String, errorMessages: [String] = []) -> Action {
         guard let id else { return .ignore }
+        if id == subscriptionId, QueueSubscriptionDocument.rejectsHistoryCount(errorMessages: errorMessages) {
+            return .resubscribeWithoutHistoryCount
+        }
         if id == "join-session" || id == subscriptionId {
             return .reconnect
         }
@@ -98,6 +108,37 @@ enum QueueGraphQLErrorRouting {
             return .revertOptimisticNavigation(correlationId: String(id.dropFirst("mutation-".count)))
         }
         return .ignore
+    }
+
+    /// The `message` of each GraphQL error in a graphql-ws `error` payload,
+    /// which is an array of errors rather than an object.
+    static func errorMessages(inPayload payload: Any?) -> [String] {
+        guard let errors = payload as? [[String: Any]] else { return [] }
+        return errors.compactMap { $0["message"] as? String }
+    }
+}
+
+// MARK: - Subscription Document
+
+/// The native queueUpdates document selects `QueueState.historyCount` (F3,
+/// #6666). A backend without the field rejects the whole document with a
+/// validation error, so the socket falls back to the same document minus that
+/// one line, which reads as a pre-F3 server: index 0 when nothing is current.
+enum QueueSubscriptionDocument {
+    static let historyCountField = "historyCount"
+
+    /// The document without its `historyCount` selection line.
+    static func withoutHistoryCount(_ document: String) -> String {
+        document
+            .components(separatedBy: "\n")
+            .filter { $0.trimmingCharacters(in: .whitespaces) != historyCountField }
+            .joined(separator: "\n")
+    }
+
+    /// True when a validation error names the field, e.g. graphql-js's
+    /// `Cannot query field "historyCount" on type "QueueState".`
+    static func rejectsHistoryCount(errorMessages: [String]) -> Bool {
+        errorMessages.contains { $0.contains("\"\(historyCountField)\"") }
     }
 }
 
@@ -185,13 +226,17 @@ enum QueueStateReducer {
     }
 
     /// The index to show when nothing is current: `queue[historyCount]`, the
-    /// head of Up next. Clamped into bounds the same way `resolveCurrentIndex`
-    /// clamps, so an empty Up next (`historyCount == items.count`) lands on
-    /// History's newest climb. A pre-F3 server sends no `historyCount`, which
-    /// keeps today's index 0.
+    /// head of Up next. With Up next empty (`historyCount >= items.count`) it
+    /// is `items.count`, one past History's newest climb, deliberately out of
+    /// bounds: `buildContentState` and `SharedQueueState.currentItem` read it
+    /// as no climb, so the lock screen is not handed an already-climbed climb
+    /// as current (JS sends no climb in that state too), and the widget's
+    /// Previous lands on `count - 1`, the climb the server's Previous picks
+    /// (`queue[historyCount - 1]`). A pre-F3 server sends no `historyCount`,
+    /// which keeps today's index 0.
     static func lineIndex(historyCount: Int?, itemCount: Int) -> Int {
         guard let historyCount else { return 0 }
-        return min(max(historyCount, 0), max(itemCount - 1, 0))
+        return min(max(historyCount, 0), max(itemCount, 0))
     }
 
     /// The current item follows its uuid; if it vanished, clamp the old index

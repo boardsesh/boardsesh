@@ -518,7 +518,7 @@ server runs `placeOnWall` for every request. Old clients never send `placement`.
 | Old JS, Next / Previous on the queue | `setCurrentClimb(neighbour's uuid)`. With nothing current, Next sends `queue[0]` and Previous sends nothing (`shared/play-view/src/queue-navigation.ts:53`, `:73`). | `next` / `step`: pointer only. With nothing current: `next-from-line` (S12, S15). |
 | Old JS, queue-row tap | `setCurrentClimb(that row's uuid, shouldAddToQueue: true)` (`queue-provider.tsx:2113`, via `use-queue-sheet-handlers.ts:65`) | `move-up-next`, or `step` for a History row. With nothing current, a History row is `move-history` (`step` for History's only entry); the `true` keeps a tap on `queue[0]` from being read as Next (S18). |
 | Old JS, Undo after a remove, playlist replace or clear, workout append, empty-room reseed after a failed seed | `setQueue(queue, current)`, no `historyCount` (`queue-provider.tsx:1677-1683` `setQueue`, `:1692` `restoreQueueItems`, `:1754` `appendQueueItems`; `reSeedQueueRef`, `:976`) | Line = index of current; with nothing current, derived from the stored History (below). Caps apply (section 5). |
-| Native Live Activity Next / Previous | `setCurrentClimb(item, correlationId)` without `shouldAddToQueue` (`SessionWebSocketManager.swift:343`) | `next` / `step`; a stale item that left the queue is inserted at the Now slot instead of becoming an orphan, at every percent, with the trailing `CurrentClimbChanged` so the wall still repaints. With nothing current Swift's index depends on how the climb left the wall. After a `FullSync` with a null current it sits on index 0, so Next names `queue[1]` and Previous sends nothing. After `CurrentClimbChanged(null)` it keeps the cleared climb's index (`SessionQueueState.swift:119` ignores a nil item), so Next names Up next[0] and Previous names an older History entry, `queue[0]` included. It sends no `shouldAddToQueue`, so `queue[0]` is never read as an old Next: each press is a pointer `step` / `next` or a `move-history` / `move-up-next` that lights the climb named, never a spill. |
+| Native Live Activity Next / Previous | `setCurrentClimb(item, correlationId)` without `shouldAddToQueue` (`SessionWebSocketManager.swift:343`) | `next` / `step`; a stale item that left the queue is inserted at the Now slot instead of becoming an orphan, at every percent, with the trailing `CurrentClimbChanged` so the wall still repaints. With nothing current Swift's index depends on how the climb left the wall. After a `FullSync` with a null current, a binary before PR 7 sits on index 0, so Next names `queue[1]` and Previous sends nothing. From PR 7 it sits on `queue[historyCount]`, so its Next names Up next[1] (`move-up-next`), and with Up next empty it sits one past the end, so its Previous names History's last entry (`step`). After `CurrentClimbChanged(null)` every binary keeps the cleared climb's index (`SessionQueueState.swift:173` ignores a nil item), so Next names Up next[0] and Previous names an older History entry, `queue[0]` included. It sends no `shouldAddToQueue`, so `queue[0]` is never read as an old Next: each press is a pointer `step` / `next` or a `move-history` / `move-up-next` that lights the climb named, never a spill. |
 | Widget, Garmin | REST navigate, server-side index ± 1 with wrap-around (`handlers/session-queue-actions.ts:50-59`; Garmin `handlers/session-actions.ts:125`, widget `handlers/widget-navigate.ts:230`) | Pointer only. Inside the percent it stops at the ends, as controller `navigateQueue` already does (`controller/mutations.ts:439-442`, `:451-454`): Next with Up next empty and Previous with History empty return the existing `out_of_bounds` result, which both routes already handle (`session-actions.ts:131`, `widget-navigate.ts:247`). Today Previous from index 0 wraps to the last climb and sends every Up next climb to History unclimbed, and Next from the end wraps to `queue[0]` and spills all of History. With nothing current, Next goes to `queue[historyCount]` and Previous to `queue[historyCount - 1]`. |
 | ESP32 LED detect | `setClimbFromLedPositions` (`controller/mutations.ts:233-262`) | Now goes through `placeOnWall` with a fresh uuid, so a queued climb is reused instead of copied |
 
@@ -676,7 +676,7 @@ the same-sequence acceptance (below), and the optional `release/next` slice that
 | `SessionQueueState.swift` `QueueStateReducer` (`:103-195`) | It always finds the current uuid, so its "append if missing" branch (`:183-193`) goes dead. `FullSync` reorders already apply (`:114-116`). |
 | `QueueEventRepaintPolicy` (`:32-41`) | The trailing same-sequence `CurrentClimbChanged` (section 2) keeps the wall lit for every move that today is a pointer event. |
 | `LiveActivityManager.buildContentState` | Its index is always in bounds while a climb is current. |
-| `ClimbNavigationIntent` | Steps the native index by ±1 and sends `setCurrentClimb(item)` without `shouldAddToQueue` (`SessionWebSocketManager.swift:343`). The server reads an adjacent step as `next` / `step` (S9). |
+| `ClimbNavigationIntent` | Steps the native index by ±1 and sends `setCurrentClimb(item)` without `shouldAddToQueue` (`SessionWebSocketManager.swift:343`). The server reads an adjacent step as `next` / `step` (S9). With nothing current it is off by one from PR 7 on, accepted: see the PR 7 paragraph below. |
 | Android `BoardSessionService.kt`, `SessionPresenceModule.kt` | Get `currentIndex` from JS, computed the same way as today. |
 | APNs `buildContentStateFromQueueState` | Unchanged and never sees an orphan. |
 
@@ -695,6 +695,31 @@ and both send paths fall back to `queue[0]` (`:461`, `:528`) and send its index.
 JS update overwrites it. Teaching Swift to read `historyCount` is PR 7 in the rollout table: a
 `release/next` PR, opened after the backend field is deployed and reviewed by Fable
 (section 10, decision 7).
+
+**What PR 7 does and doesn't fix.** With nothing current Swift lands on `queue[historyCount]`,
+and with Up next empty on `queue.count`, one past the end, so no frame is built and nothing
+reads as current, matching JS in now-slot mode. Three things stay as they are:
+
+1. The shared snapshot holds an index only, with no "nothing current" marker, so the
+   lock-screen Next steps from Up next[0] to Up next[1]. Over REST (`/api/widget/navigate`
+   ignores the client index) the server lights Up next[0] while the intent has already
+   BLE-written Up next[1]: one round trip of the wrong climb, then the trailing
+   `CurrentClimbChanged` repaints. On the socket fallback after a retryable REST failure, inside
+   the percent, Up next[1] is `move-up-next` and goes in front of Up next[0]. Before PR 7 the
+   same tap lit `queue[1]`, a History climb, so this is accepted rather than fixed. A real fix
+   needs JS to tell native that nothing is current over the bridge too, or the last writer
+   decides (point 2).
+2. JS writes the same snapshot at the same sequence. Until a phone runs in now-slot mode, its
+   JS falls back to `queue[0]` (`use-live-activity.ts:461`, `:528`), so the lock screen shows
+   History's oldest climb or Up next[0], whichever writer ran last, and every reconnect's
+   `FullSync` moves it back to Up next[0]. Turning `queue-now-slot` off doesn't restore index 0
+   on native.
+3. With an empty Up next both writers send no frame, so the last frame, the climb just taken
+   off, stays up until the next climb is current.
+
+PR 7 also falls back by itself on a backend without the field: a subscription validation error
+that names `historyCount` resubscribes on the same socket with the document minus that line,
+which reads as index 0. Each new connection tries the `historyCount` document first.
 
 **The Swift test on `main`.** The design rests on a trailing `CurrentClimbChanged` with the
 same sequence as its `FullSync` being applied, persisted and repainted natively (section 2).
@@ -1184,6 +1209,9 @@ was measured, so old and new clients can be compared.
   deploy drops every socket, the reconnect probe says legacy, and new phones run legacy mode
   with today's documents until the backend comes back. A request already in flight on the old
   socket can fail once with a validation error; the fallback retries it on the legacy document.
+- PR 7 binaries survive it too: their socket resubscribes without `historyCount` when the
+  server rejects the field (section 4), and land on index 0 with nothing current until the
+  backend comes back.
 - After PR 6 deletes the legacy documents and the probe, the old rule returns: don't roll the
   backend back past PR 2.
 
