@@ -121,6 +121,23 @@ export function boardseshGradeTickJoin({
 }
 
 /**
+ * The canonical uuid for a climb uuid a client sent: the `board_climb_aliases`
+ * target when the uuid was merged away, else the uuid itself. Same rule as
+ * {@link boardseshGradeTickJoin} and `getClimbByUuid`, for point reads that
+ * key `board_climb_grades` / `board_climb_stats` by a single client uuid.
+ * Queue snapshots keep retired uuids, so those reads must resolve here.
+ * The (board_type, alias_uuid) primary key makes the scalar subquery safe.
+ */
+export function canonicalClimbUuidSql(boardType: string, climbUuid: string): SQL<string> {
+  return sql<string>`COALESCE(
+    (SELECT ${dbSchema.boardClimbAliases.canonicalUuid} FROM ${dbSchema.boardClimbAliases}
+      WHERE ${dbSchema.boardClimbAliases.boardType} = ${boardType}
+        AND ${dbSchema.boardClimbAliases.aliasUuid} = ${climbUuid}),
+    ${climbUuid}
+  )`;
+}
+
+/**
  * Boardsesh grade for the joined `board_climb_grades` row, flattened to a single
  * value on the shared difficulty scale: the cross-board universal grade when
  * present, else the within-board local grade. NULL when no grade row is joined.

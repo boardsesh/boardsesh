@@ -35,6 +35,7 @@ import { findMoonBoardDuplicateMatches } from './moonboard-duplicates';
 import { parseFramesToHoldEntries, type NormalizedHold } from './climb-similarity';
 import { findSimilarClimbsCached } from './similar-climbs-cache';
 import { gateCrossAngleStats } from './cross-angle-gate';
+import { canonicalClimbUuidSql } from '../shared/sql-expressions';
 import { hasCatalogQueryAccess, requireCatalogQueryAccess } from '../social/roles';
 import {
   BoardNameSchema,
@@ -661,7 +662,7 @@ export const climbQueries = {
       .where(
         and(
           eq(dbSchema.boardClimbStats.boardType, boardName),
-          eq(dbSchema.boardClimbStats.climbUuid, climbUuid),
+          eq(dbSchema.boardClimbStats.climbUuid, canonicalClimbUuidSql(boardName, climbUuid)),
           gt(dbSchema.boardClimbStats.ascensionistCount, 0),
           // The same rule `climbStatsForAngles` carries: a retained uuid must not
           // keep buying the ascent, quality and grade numbers of a climb on a
@@ -747,7 +748,7 @@ export const climbQueries = {
       .where(
         and(
           eq(dbSchema.boardClimbStats.boardType, boardName),
-          eq(dbSchema.boardClimbStats.climbUuid, climbUuid),
+          eq(dbSchema.boardClimbStats.climbUuid, canonicalClimbUuidSql(boardName, climbUuid)),
           // Numbers, but not ONLY numbers: a spray climb's stats row carries the
           // setter's grade and `fa_username`, and it is seeded at creation — so
           // anyone who kept a uuid could keep reading them after the wall went
@@ -897,7 +898,7 @@ export const climbQueries = {
       .where(
         and(
           eq(dbSchema.boardClimbGrades.boardType, boardName),
-          eq(dbSchema.boardClimbGrades.climbUuid, climbUuid),
+          eq(dbSchema.boardClimbGrades.climbUuid, canonicalClimbUuidSql(boardName, climbUuid)),
           eq(dbSchema.boardClimbGrades.angle, angle),
           // `board_climb_grades` carries no spray rows today — the nightly model
           // runs over CROWD_MEAN_BOARDS only — so this predicate is closing the
@@ -962,7 +963,7 @@ export const climbQueries = {
       .where(
         and(
           eq(dbSchema.boardClimbGrades.boardType, boardName),
-          eq(dbSchema.boardClimbGrades.climbUuid, climbUuid),
+          eq(dbSchema.boardClimbGrades.climbUuid, canonicalClimbUuidSql(boardName, climbUuid)),
           // `board_climb_grades` carries no spray rows today — the nightly model
           // runs over CROWD_MEAN_BOARDS only — so this predicate is closing the
           // gap ahead of the day spray joins that list, not a live leak. Both
