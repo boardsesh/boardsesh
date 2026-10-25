@@ -211,6 +211,31 @@ describe('POST /api/gym-photos', () => {
     }
   });
 
+  it('leaves the stored photo untouched when a later upload is refused', async () => {
+    validateTokenMock.mockResolvedValue({ userId: OWNER });
+    const { baseUrl, server } = await startPhotoServer();
+    try {
+      const first = await uploadPhoto(baseUrl, {
+        token: 'owner',
+        gymUuid,
+        blob: new Blob([JPEG_BYTES], { type: 'image/jpeg' }),
+      });
+      expect(first.status).toBe(200);
+      const storedPath = path.join(getGymPhotosDir(), `${gymUuid}.jpg`);
+      const stored = await readFile(storedPath);
+
+      const refused = await uploadPhoto(baseUrl, {
+        token: 'owner',
+        gymUuid,
+        blob: new Blob([Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43, 0xff, 0xd9])], { type: 'image/jpeg' }),
+      });
+      expect(refused.status).toBe(400);
+      expect(await readFile(storedPath)).toEqual(stored);
+    } finally {
+      await closeServer(server);
+    }
+  });
+
   it('rejects bytes that contradict the declared image type (400)', async () => {
     validateTokenMock.mockResolvedValue({ userId: OWNER });
     const { baseUrl, server } = await startPhotoServer();
