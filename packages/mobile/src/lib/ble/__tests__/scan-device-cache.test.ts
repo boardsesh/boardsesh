@@ -35,6 +35,25 @@ describe('upsertDiscoveredDevice', () => {
     expect(storedDevice(devices, 'a')?.rssi).toBe(-65);
   });
 
+  it('does not flap the bars when a reading jitters around a bucket edge', () => {
+    const devices = new Map<string, DiscoveredDevice>();
+    upsertDiscoveredDevice(devices, { deviceId: 'a', name: 'Kilter Board', rssi: -58 });
+    for (const rssi of [-62, -58, -61, -59, -63]) {
+      expect(upsertDiscoveredDevice(devices, { deviceId: 'a', name: 'Kilter Board', rssi })).toBe(false);
+    }
+    expect(upsertDiscoveredDevice(devices, { deviceId: 'a', name: 'Kilter Board', rssi: -66 })).toBe(true);
+    expect(upsertDiscoveredDevice(devices, { deviceId: 'a', name: 'Kilter Board', rssi: -57 })).toBe(false);
+    expect(upsertDiscoveredDevice(devices, { deviceId: 'a', name: 'Kilter Board', rssi: -54 })).toBe(true);
+  });
+
+  it('does not keep a first-sight 127 reading, and a real reading corrects it', () => {
+    const devices = new Map<string, DiscoveredDevice>();
+    upsertDiscoveredDevice(devices, { deviceId: 'a', name: 'Kilter Board', rssi: 127 });
+    expect(storedDevice(devices, 'a')?.rssi).toBe(-100);
+    expect(upsertDiscoveredDevice(devices, { deviceId: 'a', name: 'Kilter Board', rssi: -55 })).toBe(true);
+    expect(storedDevice(devices, 'a')?.rssi).toBe(-55);
+  });
+
   it('ignores the CoreBluetooth unavailable reading (127)', () => {
     const devices = new Map<string, DiscoveredDevice>();
     upsertDiscoveredDevice(devices, { deviceId: 'a', name: 'Kilter Board', rssi: -70 });

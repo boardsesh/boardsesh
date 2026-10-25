@@ -233,7 +233,7 @@ export function useBoardScan(): BoardScan {
       const replacesEarlier = earlier !== undefined && earlier.kind !== 'serial';
       if (replacesEarlier) found.delete(earlier.key);
       // Advertisements repeat many times a second. Only a board not heard yet
-      // writes state; its signal is the first one heard, like the picker's.
+      // writes state; its signal is the first one heard (the picker, unlike this scan, refreshes it).
       const isNewBoard = !found.has(scanned.key);
       if (!isNewBoard && !replacesEarlier) return;
       if (isNewBoard) found.set(scanned.key, scanned);
