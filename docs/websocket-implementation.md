@@ -1117,9 +1117,11 @@ The last row is a known gap, not an oversight: a peer's removal arrives as a ser
 
 Mobile's **Play next** is the other client-initiated user of `position`. It sends `currentIndex + 1`, or `0` in the two cases where there is no current index to count from. Those two are not the same: with **no current climb at all** the head genuinely is next, because `findNextQueueItemWithSuggestions` returns `queue[0]` when the current item is `null`. With a current climb that is **set but absent from the queue** — an uncommitted playlist peek, or a slot a peer removed — `0` is only the best available landing slot; that function falls through to the playlist peek and never consults `queue[0]`, so forward navigation will not reach the climb until the current item rejoins the queue. The head still beats appending, which would bury it. The index is derived in `queue-provider.tsx` from live state at commit time, after the cross-board prompt resolves, and the same number goes to both the local `DELTA_ADD_QUEUE_ITEM` and the broadcast, so the origin and its peers cannot disagree about where the climb landed. A Play next on a climb **already in the queue** takes `reorderQueueItem` instead — it moves the existing slot rather than leaving a duplicate for the crew to delete. The move index is direction-aware, because the resolver splices the item out before inserting it: pulling a history item forward targets `currentIndex`, not `currentIndex + 1`. The placement maths is one pure function, `planPlayNext` in `@boardsesh/queue`. Overshoot clamps to an append here too.
 
-The server-sync row is the one that matters most. The burst's head activation is itself an add, so the server answers it with `FullSync` (published with no `clientId`, so the origin cannot suppress its own echo), which `INITIAL_QUEUE_DATA` applies by **replacing** the local queue. A rate-limited drain rejects seconds later, by which time the pending item's optimistic slot is already gone. Skipping on mere absence would make the whole recovery inert in exactly the interleaving it exists for.
+The server-sync row is the one that matters most. The burst's head activation is itself an add, so the server answers it with `FullSync` (published with no `clientId`, so the origin cannot suppress its own echo), which `INITIAL_QUEUE_DATA` applies by **replacing** the local queue. A rate-limited drain rejects seconds later, by which time the pending item's optimistic slot is already gone. Skipping on mere absence would make the whole recovery inert in exactly the interleaving it exists for. Mobile's replay of an unconfirmed move (see [A wall move across a reconnect](#a-wall-move-across-a-reconnect-mobile)) does not change this: that FullSync carries a newer sequence than the phone had applied, so the reducer takes it as is, by design.
 
 The burst _head_ — the call whose `enqueue` promise actually rejects — is not covered by the coalescer at all. Mobile recovers it caller-side (`recoverThrottledQueueAdd`); web does not. Tracked in #4009 and #4006.
+
+A drained call's own promise resolved the moment it superseded the head, so its caller never sees it fail. The coalescer hands the failure to `onDrainError` together with the call's args, and `createQueueMutations` passes it on as `onSetCurrentClimbDrainError(error, { item, shouldAddToQueue, correlationId })` after `onBestEffortError`. Mobile uses it to tell which move missed the session.
 
 ### Tick Mode and Queue Bar Freeze
 
@@ -1160,6 +1162,35 @@ sequenceDiagram
         R->>R: Apply server state
     end
 ```
+
+### A wall move across a reconnect (mobile)
+
+Found in QA of #6783: a backend deploy swapped the session socket while the rest timer moved the wall to the next climb. Two things undid the move.
+
+1. **The rejoin's FullSync predated the move.** It is read before the move lands, and `INITIAL_QUEUE_DATA` replaced the current climb with the older one and cleared `pendingCurrentClimbUpdates`. The move's own broadcast was then applied as if a peer had sent it, and only that put the wall right again. A connection that missed the broadcast stayed on the old climb, and the sync gate's baseline was the FullSync's hash, so the 60 s watchdog saw no drift.
+2. **A move that beat the JOIN was resynced.** graphql-ws re-sends an in-flight mutation on the fresh socket, and when that lands before the socket's `JOIN_SESSION` the backend answers `Must be in a session to perform this operation` once `requireSessionWithReconnectGrace`'s ~350 ms runs out. The provider read that as divergence: an HTTP resync put the wall back and toasted "out of sync — refreshed".
+
+The shared reducer now keeps the climber's latest unconfirmed move (`QueueState.unconfirmedMove`, `UnconfirmedQueueMove` in `@boardsesh/queue`). `dispatchSetCurrent` records it by passing the room's `sessionId` on the local `DELTA_UPDATE_CURRENT_CLIMB`, only when a `setCurrentClimb` really goes out. The record holds the queue-item uuid it moved onto and every climb it moved off along a chain of moves the session has not confirmed, never a copy of the climb. Mobile tags its server snapshots with the session they were read from (the realtime FullSync also as `live`; the HTTP resync is a point read) and dispatches them with their sequence. A tagged `INITIAL_QUEUE_DATA` from the same session is compared with the record:
+
+| The snapshot                                                                  | What the reducer does                                                                                                                                                                          |
+| ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| shows the move's climb                                                        | the session has the move; the record is retired                                                                                                                                                |
+| carries the sequence this phone last applied, and shows a climb it moved off | nothing happened in the session since this phone last heard from it: the move is replayed on top (a climb it added goes back right after the snapshot's current climb) and the pending ids stay |
+| anything else                                                                 | the snapshot wins and the record is retired                                                                                                                                                    |
+
+The sequence test is what keeps a crewmate's move safe. A climb this phone moved off, at a higher sequence, is ambiguous: this phone's move may have run on the old socket and a crewmate moved the wall back, and this phone saw neither. Every event it did see either confirmed the move, retired it (a crewmate's move) or left the wall alone, so an equal sequence is proof. The cost is that a reconnect during which anything else happened (a crewmate queued a climb) falls back to the old behaviour: the wall flicks back and the move's own echo brings it forward again.
+
+The record is also retired by the latest send's echo, by any server current-climb change that is not ours, by its correlation id's 30 s TTL, and whenever the current climb stops being the move's climb (a local move that is not sent, a removal, a clear). An untagged `INITIAL_QUEUE_DATA`, such as leaving a session, retires it too. Solo moves are never recorded.
+
+`handleSetCurrentClimbFailure` in `queue-provider.tsx` handles a failed `setCurrentClimb`, from the call's own rejection or from `onSetCurrentClimbDrainError`. A send that **missed the session** (`isNotInSessionError`, or `GraphQLTransportClosedError` from `execute` when graphql-ws gives up on the socket) is not a divergence:
+
+- the latest send of the recorded move is marked `UNCONFIRMED_MOVE_NOT_SENT`. When the queue stream on the bound connection has already opened with its FullSync (`queueStreamLiveRef`, cleared on every socket close), the re-send is `ready` at once: from there every crewmate's move reaches the phone live and would already have retired the record. Otherwise it waits for a `live` snapshot in the "nothing happened" row; an HTTP point read keeps the wall but releases nothing. An effect re-sends it once, with the same correlation id, after checking the room, account and queue generation are unchanged. If no live snapshot comes within 20 s (`MOVE_RESEND_WAIT_MS`, inside the 30 s TTL, which the failure restarts), the move is given up the old way: resync and "out of sync — refreshed";
+- an older send that a newer one covers, or one the wall has already moved past, changes nothing on screen;
+- every other failure, and a re-send that misses again, retires the record and behaves as before: a resync and "out of sync — refreshed" for the call's own rejection, silence for a drained one, and the #2763 handling for a throttled one.
+
+A queue slot a lost send added (`shouldAddToQueue`) is re-sent through `recoverThrottledQueueAdd`, but not while a re-send is pending: a new slot landing first moves the session's sequence on, and the rejoin snapshot would then fail the "nothing happened" test. The slots wait with the pending re-send (the re-send's own `setCurrentClimb` adds the move's climb) and go out right after it, or as soon as the move is given up (a newer move, a crewmate's move, the TTL, the 20 s fallback). A drained send's slot was already re-sent by the coalescer (#3936).
+
+What it does not settle: a move whose echo is missed after it landed stays recorded until its TTL, and the watchdog's next resync confirms it. A re-send already released by a live snapshot goes out through the coalescer, which waits for the join if the socket drops again in that instant; nothing re-checks the session in between. A same-climb re-assert (the #3868 re-broadcast) never creates a record, so a missed one still resyncs.
 
 ### Sequence Gap Detection
 
@@ -1366,6 +1397,7 @@ sequenceDiagram
 - Up to 10 retry attempts
 - On reconnection: re-join session with the same `participantId` and sync state
 - `graphql-ws` socket `closed`/`connected` events drive teardown and rejoin/resubscribe. Subscription `error`/`complete` handlers do not directly trigger reconnect; mobile clears subscription refs on socket close and reopens them only after the rejoin promise resolves.
+- A wall move in flight across the reconnect survives the rejoin's FullSync and a "Must be in a session" refusal on the fresh socket: see [A wall move across a reconnect](#a-wall-move-across-a-reconnect-mobile).
 - Delta sync attempted if gap ≤ 100 events and the replay buffer has contiguous coverage
 - Falls back to full sync if the gap is too large, replay is incomplete, or the local hash disagrees despite no sequence gap
 - Client-side supervisor detects stale connections and triggers reconnect (see [Client-Side Connection Supervisor](#client-side-connection-supervisor))

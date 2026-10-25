@@ -54,8 +54,11 @@ export type SetCurrentClimbCoalescerOptions<TContext = void, TItem = ClimbQueueI
    *  captured into the pending entry and threaded through to sendArgs /
    *  sendDeferredQueueAdd. Defaults to `() => undefined`. */
   getContext?: () => TContext;
-  /** Errors during the drain loop are swallowed — this is the sink. */
-  onDrainError?: (error: unknown) => void;
+  /** Errors during the drain loop are swallowed — this is the sink. It also
+   *  receives the drained call's args: its caller's promise resolved the moment
+   *  it superseded an earlier call, so this is the only place that learns the
+   *  move never landed (and which move, by its `correlationId`). */
+  onDrainError?: (error: unknown, args: SetCurrentClimbArgs<TItem>) => void;
   /** Sink for errors when the fire-and-forget deferred ADD_QUEUE_ITEM
    *  rejects (or throws synchronously). */
   onDeferredQueueAddError?: (error: unknown) => void;
@@ -141,7 +144,15 @@ export function createSetCurrentClimbCoalescer<TContext = void, TItem = ClimbQue
             // Before onDrainError, so a caller sink that throws can't swallow
             // the recovery.
             fireDeferredQueueAdd(next);
-            onDrainError(error);
+            // A throw out of the sink would escape the enclosing `finally` and
+            // leave `inFlight` true for good, parking every later activation as
+            // pending and never sending it. The sink now runs caller recovery
+            // (mobile re-sends a move that missed the session), so contain it.
+            try {
+              onDrainError(error, next.args);
+            } catch (sinkError) {
+              console.error('setCurrentClimb drain-error sink threw:', sinkError);
+            }
           }
         }
         state.inFlight = false;

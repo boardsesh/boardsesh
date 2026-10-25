@@ -179,6 +179,59 @@ describe('createSetCurrentClimbCoalescer', () => {
     expect(onDrainError.mock.calls[0]?.[0]).toBeInstanceOf(Error);
   });
 
+  // The drained call's own promise resolved when it superseded the head, so the
+  // sink is the only place that can say WHICH move never landed.
+  it('hands onDrainError the drained call’s args', async () => {
+    const first = deferred();
+    let sendCount = 0;
+    const sendArgs = vi.fn(async (_args: SetCurrentClimbArgs) => {
+      sendCount += 1;
+      if (sendCount === 1) await first.promise;
+      if (sendCount === 2) throw new Error('drain failed');
+    });
+    const onDrainError = vi.fn();
+    const coalescer = createSetCurrentClimbCoalescer({ sendArgs, onDrainError });
+
+    const firstEnqueue = coalescer.enqueue({ item: makeItem('a'), correlationId: 'corr-a' });
+    await Promise.resolve();
+    await coalescer.enqueue({ item: makeItem('b'), shouldAddToQueue: true, correlationId: 'corr-b' });
+    first.resolve();
+    await firstEnqueue;
+
+    expect(onDrainError).toHaveBeenCalledWith(expect.any(Error), {
+      item: makeItem('b'),
+      shouldAddToQueue: true,
+      correlationId: 'corr-b',
+    });
+  });
+
+  it('keeps sending later activations when the drain-error sink throws', async () => {
+    const first = deferred();
+    let sendCount = 0;
+    const sendArgs = vi.fn(async (_args: SetCurrentClimbArgs) => {
+      sendCount += 1;
+      if (sendCount === 1) await first.promise;
+      if (sendCount === 2) throw new Error('drain failed');
+    });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const coalescer = createSetCurrentClimbCoalescer({
+      sendArgs,
+      onDrainError: () => {
+        throw new Error('sink bug');
+      },
+    });
+
+    const firstEnqueue = coalescer.enqueue({ item: makeItem('a') });
+    await Promise.resolve();
+    await coalescer.enqueue({ item: makeItem('b') });
+    first.resolve();
+    await firstEnqueue;
+    await coalescer.enqueue({ item: makeItem('c') });
+
+    expect(sendArgs.mock.calls.map(([args]) => args.item?.uuid)).toEqual(['a', 'b', 'c']);
+    consoleError.mockRestore();
+  });
+
   it('returns to idle state after drain so a later enqueue starts fresh', async () => {
     const sendArgs = vi.fn(async (_args: SetCurrentClimbArgs) => {});
     const coalescer = createSetCurrentClimbCoalescer({ sendArgs });

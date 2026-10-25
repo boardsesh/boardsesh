@@ -9,6 +9,7 @@ export { fnv1aHash, computeQueueStateHash, computeQueueStateHashOrdered } from '
 export type {
   QueueState,
   QueueAction,
+  UnconfirmedQueueMove,
   QueueSearchParams,
   QueueClimbReadTarget,
   ClimbQueue,

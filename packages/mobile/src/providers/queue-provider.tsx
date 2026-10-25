@@ -44,7 +44,7 @@ import {
 import { useQueueMutations, type PublishPlaybackStateInput } from '@boardsesh/queue-react';
 import type { QueueItemAttribution } from '@boardsesh/queue-react/queue-item-input';
 import type { PlaybackStateChangedEvent, SessionUser } from '@boardsesh/shared-schema';
-import { execute, isRateLimitedError } from '@boardsesh/graphql-client';
+import { execute, isNotInSessionError, isRateLimitedError, isTransportClosedError } from '@boardsesh/graphql-client';
 import {
   classifyClimbBoardCompatibility,
   toBoardName,
@@ -213,6 +213,41 @@ function queueMutationOriginKey(origin: QueueMutationOrigin): string {
   return JSON.stringify([origin.generation, origin.sessionId, origin.authenticatedUserId]);
 }
 
+// A setCurrentClimb that never reached the session. Either the server refused
+// it because the connection it arrived on had not re-joined yet (after a socket
+// drop graphql-ws re-sends an in-flight mutation on the fresh socket, and it can
+// beat that socket's JOIN_SESSION), or graphql-ws gave up on the socket before
+// an answer came. Neither says the crew's wall disagrees with this phone's: the
+// move just has not landed. A re-send waits for the live stream's FullSync to
+// show that nothing happened in the session since this phone last heard from it
+// (same sequence, still on a climb it moved off), so a move that did land and
+// was then undone by a crewmate, or a crewmate's newer move, is not overwritten.
+function moveMissedTheSession(error: unknown): boolean {
+  return isNotInSessionError(error) || isTransportClosedError(error);
+}
+
+/** One failed setCurrentClimb, as `handleSetCurrentClimbFailure` needs it. */
+type SetCurrentClimbFailure = {
+  item: ClimbQueueItem;
+  shouldAddToQueue: boolean;
+  correlationId: string;
+  /** The account, room and queue generation the send was aimed at. */
+  origin: QueueMutationOrigin;
+  /** Sent from the coalescer's drain loop: its caller's promise had long resolved. */
+  drained: boolean;
+};
+
+/** Sends whose origin a drained failure may still need; older ones are long settled. */
+const MAX_TRACKED_MOVE_SENDS = 16;
+
+/**
+ * How long a move that missed the session waits for the live snapshot that
+ * releases its re-send. A reconnect normally delivers it in about a second;
+ * past this the move is given up the old way (resync, "out of sync" notice),
+ * well inside the 30 s correlation TTL that would otherwise drop it silently.
+ */
+const MOVE_RESEND_WAIT_MS = 20_000;
+
 /**
  * How long a peer must stay on the roster before their presence turns the
  * climber's gestures into browsing.
@@ -344,6 +379,11 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // through this ref so it always evaluates against the CURRENT session's
   // gate rather than one captured in a stale closure.
   const queueSyncGateRef = useRef<QueueSyncGate | null>(null);
+  // True once the queueUpdates stream on the bound connection has delivered its
+  // opening FullSync, false from every socket close until the next one. Past
+  // that point every change in the session reaches this phone as a live event.
+  // useSessionRealtime owns the writes.
+  const queueStreamLiveRef = useRef(false);
 
   // A current-climb change whose broadcast was skipped because the target climb
   // was still unresolved (a thin peer item advanced onto by next/previousClimb —
@@ -366,6 +406,35 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // into the new one. Comparing `deferred.sessionId` to `sessionIdRef.current` at
   // fire time closes that window; the effect-based clear stays as a backstop.
   const pendingUnsyncedCurrentRef = useRef<{ queueItemUuid: string; sessionId: string | null } | null>(null);
+
+  // The origin of each recent setCurrentClimb send, by correlation id. A send
+  // the coalescer drained fails long after its caller's promise resolved, so
+  // this is where its failure handler finds the room it was aimed at.
+  const moveSendOriginsRef = useRef(new Map<string, QueueMutationOrigin>());
+  // A move whose send missed the session and waits to be re-sent (see
+  // handleSetCurrentClimbFailure). The re-send effect fires it once the reducer
+  // marks the unconfirmed move `ready`. `queueAdds` are slots that never reached
+  // the crew: the move's own (when it added one) and any a superseded lost send
+  // added. They go out once the re-send has, or once the move is given up, and
+  // not before: a new slot landing first moves the session's sequence on, and
+  // the reducer would then read the rejoin snapshot as "something happened".
+  const moveResendRef = useRef<{
+    correlationId: string;
+    origin: QueueMutationOrigin;
+    sent: boolean;
+    queueAdds: ClimbQueueItem[];
+  } | null>(null);
+  // Gives up a move still waiting for its re-send after MOVE_RESEND_WAIT_MS.
+  const moveResendFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (moveResendFallbackTimerRef.current) clearTimeout(moveResendFallbackTimerRef.current);
+    },
+    [],
+  );
+  // The mutations factory is built before the failure handler exists, so its
+  // drained-failure hook reaches the handler through this ref.
+  const handleSetCurrentClimbFailureRef = useRef<(error: unknown, failure: SetCurrentClimbFailure) => void>(() => {});
 
   // The active board is the angle source of truth. Read it here so the
   // self-healing re-grade effect can compare each queued climb's display angle
@@ -1012,6 +1081,21 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         reportHandledError(error, { tags: { source: 'queue-sync', op: 'set-board-path' } });
       }
     },
+    // A move that superseded an earlier one and then failed from the drain
+    // loop. Its caller never hears of it, so this is the only way to learn the
+    // climber's latest move missed the session (a reconnect, #6783 QA).
+    onSetCurrentClimbDrainError: (error, { item, shouldAddToQueue, correlationId }) => {
+      if (!item || !correlationId) return;
+      const origin = moveSendOriginsRef.current.get(correlationId);
+      if (!origin) return;
+      handleSetCurrentClimbFailureRef.current(error, {
+        item,
+        shouldAddToQueue: shouldAddToQueue === true,
+        correlationId,
+        origin,
+        drained: true,
+      });
+    },
   });
 
   // Stable handle to the whole-queue seed for useSessionRealtime's re-seed after
@@ -1177,6 +1261,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
             currentClimbQueueItem: queueState.currentClimbQueueItem
               ? toClimbQueueItem(queueState.currentClimbQueueItem)
               : null,
+            // A server snapshot of this room: the reducer keeps a move of ours
+            // the snapshot predates instead of putting the wall back.
+            sessionId: activeSessionId,
           },
         });
         // Re-baseline the sync gate to this snapshot's authoritative
@@ -1243,6 +1330,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     playbackEventListenersRef,
     unsubscribeRef,
     queueSyncGateRef,
+    queueStreamLiveRef,
     restartJoinedSubscriptionsRef,
     resyncQueueFromServerRef,
     setLiveStats,
@@ -2087,6 +2175,173 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     [isQueueMutationOriginCurrent, mutations, resyncQueueAfterMutationFailure],
   );
 
+  // Hand the queue slots a pending re-send was holding back to their own
+  // recovery, and forget it. Called when the move is given up before its
+  // re-send (a newer move, a crewmate's move, the TTL, a room change) and right
+  // after the re-send goes out.
+  const releasePendingResend = useCallback(() => {
+    const pending = moveResendRef.current;
+    if (!pending) return;
+    if (!pending.sent) {
+      moveResendRef.current = null;
+      if (moveResendFallbackTimerRef.current) {
+        clearTimeout(moveResendFallbackTimerRef.current);
+        moveResendFallbackTimerRef.current = null;
+      }
+    }
+    const queueAdds = pending.queueAdds;
+    pending.queueAdds = [];
+    for (const queueAdd of queueAdds) void recoverThrottledQueueAdd(queueAdd, pending.origin);
+  }, [recoverThrottledQueueAdd]);
+
+  // Re-send a slot a lost send added, unless a move's re-send is still pending:
+  // then it waits with that move (see moveResendRef).
+  const queueOrRecoverMoveAdd = useCallback(
+    (item: ClimbQueueItem, origin: QueueMutationOrigin) => {
+      const pending = moveResendRef.current;
+      if (pending && !pending.sent) {
+        pending.queueAdds.push(item);
+        return;
+      }
+      void recoverThrottledQueueAdd(item, origin);
+    },
+    [recoverThrottledQueueAdd],
+  );
+
+  // Every way a setCurrentClimb can fail, for both the call's own rejection and
+  // a drained send (see onSetCurrentClimbDrainError).
+  //
+  // A send that MISSED the session (moveMissedTheSession) is not a divergence:
+  // the server never ran it, so nobody's wall moved. Resyncing there pulled the
+  // wall back to the previous climb under the climber and toasted "out of sync"
+  // (#6783 QA, a backend deploy mid-session). Instead:
+  //   - the climber's latest move is re-sent once, after the live stream's
+  //     snapshot proves nothing happened in the session since (the reducer
+  //     marks the unconfirmed move `ready`, the effect below sends it), or
+  //     given up the old way if that snapshot does not come in time;
+  //   - an older send, already superseded on screen, changes nothing; only a
+  //     queue slot it added still needs to reach the crew (see moveResendRef).
+  // Every other failure, and a re-send that fails again, keeps the behaviour it
+  // always had, after retiring the move so the next snapshot is the truth.
+  const handleSetCurrentClimbFailure = useCallback(
+    (error: unknown, { item, shouldAddToQueue, correlationId, origin, drained }: SetCurrentClimbFailure) => {
+      if (!isQueueMutationOriginCurrent(origin)) return;
+      const { unconfirmedMove, currentClimbQueueItem } = stateRef.current;
+      const isLatestSend = unconfirmedMove?.correlationId === correlationId;
+      const missedTheSession = origin.sessionId !== null && moveMissedTheSession(error);
+      if (missedTheSession) {
+        if (unconfirmedMove && isLatestSend && unconfirmedMove.resend === 'none') {
+          // A move still waiting for its own re-send is history now; its slots
+          // go out on their own.
+          releasePendingResend();
+          moveResendRef.current = {
+            correlationId,
+            origin,
+            sent: false,
+            // The re-send carries the add itself; this is in case it never goes.
+            queueAdds: shouldAddToQueue && !drained ? [item] : [],
+          };
+          // The wait starts now: keep the echo's correlation id alive past it.
+          coordinator.trackPendingMutation(correlationId);
+          dispatch({
+            type: 'UNCONFIRMED_MOVE_NOT_SENT',
+            payload: {
+              correlationId,
+              // Once the bound connection's stream has opened with a FullSync,
+              // every crewmate's move reaches this phone live, and one would
+              // already have retired the move. Before that, wait for it.
+              serverViewIsLive: queueStreamLiveRef.current,
+            },
+          });
+          if (moveResendFallbackTimerRef.current) clearTimeout(moveResendFallbackTimerRef.current);
+          moveResendFallbackTimerRef.current = setTimeout(() => {
+            moveResendFallbackTimerRef.current = null;
+            const waiting = stateRef.current.unconfirmedMove;
+            if (waiting?.correlationId !== correlationId || waiting.resend !== 'awaiting-snapshot') return;
+            if (!isQueueMutationOriginCurrent(origin)) return;
+            // The session never came back for it: the old reconciliation, late.
+            dispatch({ type: 'UNCONFIRMED_MOVE_DROPPED', payload: { correlationId } });
+            void resyncQueueAfterMutationFailure(origin);
+          }, MOVE_RESEND_WAIT_MS);
+          return;
+        }
+        // A newer send of this climb, or a different climb on the wall: this
+        // send's pointer half is moot, so no resync and no toast.
+        const coveredByNewerSend = !isLatestSend && unconfirmedMove?.itemUuid === item.uuid;
+        const movedOnSince = currentClimbQueueItem?.uuid !== item.uuid;
+        if (coveredByNewerSend || (!isLatestSend && movedOnSince)) {
+          // A slot it added still has to reach the crew. The coalescer already
+          // re-sent a drained one's (#3936).
+          if (shouldAddToQueue && !drained) queueOrRecoverMoveAdd(item, origin);
+          return;
+        }
+      }
+      // This move is not coming. Stop protecting it so the next snapshot wins.
+      if (isLatestSend) dispatch({ type: 'UNCONFIRMED_MOVE_DROPPED', payload: { correlationId } });
+      // A drained send has always been best-effort: the coalescer re-sent its
+      // queue-add, and the hash watchdog reconciles the pointer.
+      if (drained) return;
+      // A slot a lost send added would otherwise vanish in the resync below.
+      if (missedTheSession && shouldAddToQueue) void recoverThrottledQueueAdd(item, origin);
+      // A throttled POINTER move is not a divergence: the rate-limit gate
+      // throws before the resolver runs, so the server still holds the climb
+      // it held a moment ago and the next activation (or any peer's
+      // broadcast) re-establishes it. Resyncing here would yank the user back
+      // to the previous boulder mid-swipe and fire another query into the
+      // limiter that just throttled us — which is what #2763 was reported as
+      // ("the connection fails every time we try to switch boulders"). Show
+      // the gentle "slow down" toast instead and leave the local pointer put.
+      const throttled = isRateLimitedError(error);
+      if (sessionIdRef.current && !throttled) {
+        // Any other party-session failure means peers really did diverge —
+        // reconcile against the server (and toast that we refreshed).
+        void resyncQueueAfterMutationFailure(origin);
+        return;
+      }
+      // Throttled while ALSO adding a fresh climb to the queue: the pointer
+      // half self-heals, the new slot doesn't. Re-send it on its own so the
+      // content change isn't stranded locally (solo no-ops — its queue is
+      // authoritative and there's no server to fall behind).
+      if (throttled && shouldAddToQueue) {
+        void recoverThrottledQueueAdd(item, origin);
+      }
+      // Solo (no server to reconcile) and the rate-limited party case both
+      // land here: toast only, no resync.
+      showQueueMutationErrorToast(error, t, showToast);
+    },
+    [
+      coordinator,
+      isQueueMutationOriginCurrent,
+      queueOrRecoverMoveAdd,
+      recoverThrottledQueueAdd,
+      releasePendingResend,
+      resyncQueueAfterMutationFailure,
+      showToast,
+      t,
+    ],
+  );
+  handleSetCurrentClimbFailureRef.current = handleSetCurrentClimbFailure;
+
+  // Send one SET_CURRENT_CLIMB, from a fresh activation or a re-send.
+  const sendCurrentClimb = useCallback(
+    (item: ClimbQueueItem, shouldAddToQueue: boolean, correlationId: string, origin: QueueMutationOrigin) => {
+      // (Re)start the echo's TTL: a re-send's echo can come well after the
+      // first send's window opened.
+      coordinator.trackPendingMutation(correlationId);
+      const origins = moveSendOriginsRef.current;
+      origins.delete(correlationId);
+      origins.set(correlationId, origin);
+      if (origins.size > MAX_TRACKED_MOVE_SENDS) {
+        const oldest = origins.keys().next().value;
+        if (oldest !== undefined) origins.delete(oldest);
+      }
+      mutations.setCurrentClimb(item, shouldAddToQueue, correlationId).catch((error: unknown) => {
+        handleSetCurrentClimbFailure(error, { item, shouldAddToQueue, correlationId, origin, drained: false });
+      });
+    },
+    [coordinator, handleSetCurrentClimbFailure, mutations],
+  );
+
   // Optimistic local dispatch + correlated SET_CURRENT_CLIMB mutation. The
   // reducer stores `correlationId` in pendingCurrentClimbUpdates so the echoed
   // CurrentClimbChanged event (same id in `serverCorrelationId`) is suppressed
@@ -2107,6 +2362,8 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // alone, so stepping through the crew's queue never re-authors it (#3995).
       const item = attributeNewItem(rawItem);
       const correlationId = suppliedCorrelationId ?? coordinator.generateCorrelationId();
+      // Skip the broadcast for an unresolved climb (#2527), see below.
+      const broadcasts = isClimbResolved(item.climb);
       dispatch({
         type: 'DELTA_UPDATE_CURRENT_CLIMB',
         // playlistSuggestionSource is client-only state — when present the
@@ -2122,6 +2379,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         // leftovers straight back. List-first swipes (#4829) don't need the
         // prune for correctness, so it runs solo-only; in a session the crew's
         // queue stays exactly as the server holds it.
+        // sessionId: the room this move is sent to, so the reducer keeps it
+        // through a snapshot of that room that predates it. Only when a
+        // mutation really goes out (resolved climb, in a session).
         payload: {
           item,
           shouldAddToQueue,
@@ -2130,6 +2390,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           playlistSuggestionSource,
           insertAfterCurrent,
           pruneSuggestedAfterCurrent: sessionIdRef.current == null,
+          sessionId: broadcasts ? (sessionIdRef.current ?? undefined) : undefined,
         },
       });
       // Skip the broadcast for an unresolved climb (#2527) — a placeholder
@@ -2140,7 +2401,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // correlation is tracked since no server echo will arrive. Remember the slot
       // AND the session it belongs to so the re-broadcast effect fires once it
       // hydrates while still current, but only back into the same room (#3868).
-      if (!isClimbResolved(item.climb)) {
+      if (!broadcasts) {
         if (__DEV__) console.warn('[queue] skipping setCurrentClimb sync for an unresolved climb. See #2527.');
         pendingUnsyncedCurrentRef.current = { queueItemUuid: item.uuid, sessionId: sessionIdRef.current };
         return;
@@ -2148,53 +2409,70 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // A real broadcast supersedes any deferred one — drop it so a late hydrate
       // of the previously-skipped slot can't re-broadcast an item we've moved off.
       pendingUnsyncedCurrentRef.current = null;
-      coordinator.trackPendingMutation(correlationId);
       // The account, room and queue generation this activation is aimed at. A
       // throttled setCurrentClimb can sit in back-off long enough for the
       // climber to change origin before recovery runs (#4009).
-      const activationOrigin = captureQueueMutationOrigin();
-      mutations.setCurrentClimb(item, shouldAddToQueue, correlationId).catch((error: unknown) => {
-        if (!isQueueMutationOriginCurrent(activationOrigin)) return;
-        // A throttled POINTER move is not a divergence: the rate-limit gate
-        // throws before the resolver runs, so the server still holds the climb
-        // it held a moment ago and the next activation (or any peer's
-        // broadcast) re-establishes it. Resyncing here would yank the user back
-        // to the previous boulder mid-swipe and fire another query into the
-        // limiter that just throttled us — which is what #2763 was reported as
-        // ("the connection fails every time we try to switch boulders"). Show
-        // the gentle "slow down" toast instead and leave the local pointer put.
-        const throttled = isRateLimitedError(error);
-        if (sessionIdRef.current && !throttled) {
-          // Any other party-session failure means peers really did diverge —
-          // reconcile against the server (and toast that we refreshed).
-          void resyncQueueAfterMutationFailure(activationOrigin);
-          return;
-        }
-        // Throttled while ALSO adding a fresh climb to the queue: the pointer
-        // half self-heals, the new slot doesn't. Re-send it on its own so the
-        // content change isn't stranded locally (solo no-ops — its queue is
-        // authoritative and there's no server to fall behind).
-        if (throttled && shouldAddToQueue) {
-          void recoverThrottledQueueAdd(item, activationOrigin);
-        }
-        // Solo (no server to reconcile) and the rate-limited party case both
-        // land here: toast only, no resync.
-        showQueueMutationErrorToast(error, t, showToast);
-      });
+      sendCurrentClimb(item, shouldAddToQueue, correlationId, captureQueueMutationOrigin());
     },
-    [
-      privacyRevocationGeneration,
-      attributeNewItem,
-      captureQueueMutationOrigin,
-      coordinator,
-      isQueueMutationOriginCurrent,
-      mutations,
-      recoverThrottledQueueAdd,
-      resyncQueueAfterMutationFailure,
-      showToast,
-      t,
-    ],
+    [privacyRevocationGeneration, attributeNewItem, captureQueueMutationOrigin, coordinator, sendCurrentClimb],
   );
+
+  // Re-send a move whose send missed the session, once the reducer says the
+  // live stream's snapshot shows nothing happened since (`resend: 'ready'`).
+  // One re-send per move: it goes out with the move's own correlation id, so
+  // its echo is suppressed like the original's, and the reducer moves the
+  // record to `resent` before it leaves.
+  const moveAwaitingResend = state.unconfirmedMove;
+  useEffect(() => {
+    const pending = moveResendRef.current;
+    // The move a re-send was waiting for is gone (a newer move, a crewmate's
+    // move, the TTL, the fallback): it will not be re-sent, so its slots go out
+    // on their own now.
+    if (pending && !pending.sent && moveAwaitingResend?.correlationId !== pending.correlationId) {
+      releasePendingResend();
+      return;
+    }
+    if (moveAwaitingResend?.resend !== 'ready') return;
+    const { correlationId } = moveAwaitingResend;
+    // Already on its way: this run only saw a commit that predates the
+    // reducer's `resent`. Never a second send.
+    if (pending?.correlationId === correlationId && pending.sent) return;
+    // The wall's own copy of the climb: anything done to it locally since the
+    // first send (a mirror, a hydrate) goes with it. The record only lives
+    // while that climb is current, so this is always the move's climb.
+    const current = stateRef.current.currentClimbQueueItem;
+    if (
+      !pending ||
+      pending.correlationId !== correlationId ||
+      pending.origin.sessionId !== moveAwaitingResend.sessionId ||
+      !isQueueMutationOriginCurrent(pending.origin) ||
+      privacyRevocationGeneration !== getPrivacyRevocationGeneration() ||
+      current?.uuid !== moveAwaitingResend.itemUuid
+    ) {
+      // The room, account or queue intent changed while it waited. The move
+      // belongs to that origin; let the next snapshot decide.
+      moveResendRef.current = null;
+      dispatch({ type: 'UNCONFIRMED_MOVE_DROPPED', payload: { correlationId } });
+      return;
+    }
+    pending.sent = true;
+    if (moveResendFallbackTimerRef.current) {
+      clearTimeout(moveResendFallbackTimerRef.current);
+      moveResendFallbackTimerRef.current = null;
+    }
+    dispatch({ type: 'UNCONFIRMED_MOVE_RESENT', payload: { correlationId } });
+    sendCurrentClimb(current, moveAwaitingResend.shouldAddToQueue, correlationId, pending.origin);
+    // The re-send carries the move's own add; anything a superseded lost send
+    // added goes now.
+    pending.queueAdds = pending.queueAdds.filter((queueAdd) => queueAdd.uuid !== current.uuid);
+    releasePendingResend();
+  }, [
+    moveAwaitingResend,
+    isQueueMutationOriginCurrent,
+    privacyRevocationGeneration,
+    releasePendingResend,
+    sendCurrentClimb,
+  ]);
 
   // Re-broadcast the current climb once a deferred thin item hydrates (#3868).
   // dispatchSetCurrent skips the broadcast when it lands on an unresolved climb
