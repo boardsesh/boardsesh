@@ -330,8 +330,10 @@ export const WorkoutBlockCard = memo(function WorkoutBlockCard({
               <Text variant="headline" numberOfLines={1}>
                 {typeName}
               </Text>
+              {/* Two lines: a 4x4 with both rests ("V2 · 3 reps × 2 sets · 0:20
+                  between sets") is longer than one line on a 6.3-inch phone. */}
               {expanded ? null : (
-                <Text variant="footnote" color={systemColors.secondaryLabel} numberOfLines={1}>
+                <Text variant="footnote" color={systemColors.secondaryLabel} numberOfLines={2}>
                   {summary}
                 </Text>
               )}
