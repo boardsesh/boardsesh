@@ -176,7 +176,8 @@ export type ReplayCompatibilityEvidence = {
  * after `isNoMatch`, sometimes twice in one document (a session's highlights
  * and its grouped items), so the single-copy `matchesWithoutSelection` rule does
  * not fit. Replayed as null on every tick, which is what the drawer showed for
- * these climbs when the set was recorded.
+ * these climbs when the set was recorded. GetCrewFeed shares the session feed
+ * fragment but has no pinned recording, so it needs no entry here.
  */
 const TICK_CHARACTERISTICS_OPERATIONS = new Set([
   'GetSessionDetail',
@@ -418,7 +419,10 @@ function containsKey(value: unknown, key: string): boolean {
   return key in value || Object.values(value).some((child) => containsKey(child, key));
 }
 
-/** Every object that answers `isNoMatch` here is a tick, and every tick now selects `characteristics`. */
+/**
+ * Every object that answers `isNoMatch` here is a tick or an ascent group, and
+ * each of them now selects `characteristics` straight after it.
+ */
 function withNullCharacteristics(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(withNullCharacteristics);
   if (!isRecord(value)) return value;
