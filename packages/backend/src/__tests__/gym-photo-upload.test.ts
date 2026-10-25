@@ -194,6 +194,23 @@ describe('POST /api/gym-photos', () => {
     }
   });
 
+  it('refuses JPEG magic bytes sharp cannot decode instead of storing them (400)', async () => {
+    validateTokenMock.mockResolvedValue({ userId: OWNER });
+    const { baseUrl, server } = await startPhotoServer();
+    try {
+      const response = await uploadPhoto(baseUrl, {
+        token: 'owner',
+        gymUuid,
+        blob: new Blob([Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43, 0xff, 0xd9])], { type: 'image/jpeg' }),
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: 'File is not a readable image' });
+      await expect(access(path.join(getGymPhotosDir(), `${gymUuid}.jpg`))).rejects.toThrow();
+    } finally {
+      await closeServer(server);
+    }
+  });
+
   it('rejects bytes that contradict the declared image type (400)', async () => {
     validateTokenMock.mockResolvedValue({ userId: OWNER });
     const { baseUrl, server } = await startPhotoServer();

@@ -187,7 +187,7 @@ The one place a long lifetime may ever be set is the public-promotion path: SW-1
 Three things about this path are deliberate:
 
 - **It stores to the public bucket**, not `private`. GitHub's comment API accepts no file uploads, so the body has to embed a URL an anonymous reader can fetch, and `private` has no custom domain. Anyone who attaches a screenshot is publishing it; the sheet says so before they pick.
-- **The declared mime type must match the file's magic bytes.** Without that check any signed-in account could host arbitrary bytes on `media.boardsesh.com` under our key.
+- **The declared mime type must match the file's magic bytes, and the stored object is a re-encode.** Without the check any signed-in account could host arbitrary bytes on `media.boardsesh.com` under our key, and without the re-encode a payload appended after a real JPEG would ride along (#6812). Avatars and gym images take the same re-encode (#5065, #6811), and every upload decode is capped at `UPLOAD_MAX_INPUT_PIXELS` (#6813).
 - **Every upload writes a new uuid key**, unlike avatars, which overwrite one key per user. That removes the stale-variant problem and makes the object immutable, but it also means an authenticated caller could otherwise fill the bucket, so the handler carries its own per-user rate limit. Nothing deletes these objects — add an R2 lifecycle rule on the prefix if retention ever matters.
 
 ## Migration runbook
