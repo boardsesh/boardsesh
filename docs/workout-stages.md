@@ -443,16 +443,19 @@ Benchmarks only are what usually bring it here.
 - **Searching.** `borrowForShortSlots` runs between `buildPoolsReusing` and the final
   pick. It reaches one step further at a time. At each reach it fills the plan from the
   pools it has, using no step past that reach and no queued climb at a nearby grade, and
-  for each slot still empty searches the nearest step it has not searched yet, with its
-  filters, sized by the slots planned at that grade plus the ones that would borrow. So a
-  slot searches one grade easier before a pool another block fetched one grade harder, or
-  two away, can fill it. A plan that fills at its own grades sends no extra request. Each
-  nearby pool is searched at most once a build, never once it is read out (`exhausted`),
-  and a rebuild reuses it under the same rule as the plan's own pools, so editing another
-  block does not search it again. A nearby search that fails is skipped (the next step can
-  still fill the slot), never fails the preview, and is sent again by the next rebuild, the
-  way a short plan pool is: remembering it would leave the block short after one network
-  blip until Regenerate. A superseded build stops between steps.
+  for each slot still empty searches the nearest step whose pool can still grow, with its
+  filters, sized by the slots planned at that grade or already taking from it plus the ones
+  still short. So a slot searches one grade easier before a pool another block fetched one
+  grade harder, or two away, can fill it. A plan that fills at its own grades sends no extra
+  request. A nearby pool is searched again when slots still come up short there and its
+  last search found more climbs, so a grade that blocks on both sides borrow from grows for
+  both (a 40-climb block at 16 and one at 18 with every climb at 17: 17 is searched for 40,
+  then for 80). It is never searched once it is read out (`exhausted`) or a search found
+  nothing more, and a rebuild reuses it under the same rule as the plan's own pools, so
+  editing another block does not search it again. A nearby search that fails is skipped
+  (the next step can still fill the slot), never fails the preview, and is sent again by the
+  next rebuild, the way a short plan pool is: remembering it would leave the block short
+  after one network blip until Regenerate. A superseded build stops between steps.
 - **Search budget.** `MAX_BORROW_SEARCHES_PER_BUILD` caps a build at 6 nearby searches,
   nearer steps first; a pool reused from the previous build costs none of them, so the next
   rebuild picks up the steps the cap left. Once the cap is spent, a short slot can still take

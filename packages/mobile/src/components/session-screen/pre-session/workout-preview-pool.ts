@@ -465,21 +465,23 @@ export const MAX_BORROW_SEARCHES_PER_BUILD = 6;
  * fills the rows, with the same avoided climbs and kept rows. One step of
  * `BORROW_GRADE_STEPS` at a time, nearest first, it fills the plan from the
  * pools it has, reaching no further than that step, and for each slot still
- * empty fetches the nearest pool it has not searched yet, with the slot's own
- * filters, sized by every slot planned at that grade plus the ones that would
- * borrow from it. So a slot searches one grade easier before a pool another
- * block already fetched one grade harder, or two away, can fill it. A nearby
+ * empty searches the nearest pool it may still grow, with the slot's own
+ * filters, sized by every slot planned at that grade or taking climbs from it
+ * plus the ones still short. So a slot searches one grade easier before a pool
+ * another block already fetched one grade harder, or two away, can fill it, and
+ * a pool that blocks on both sides of a grade borrow from grows for both. A nearby
  * grade fills a slot here only with a climb not in `avoidClimbUuids`, so a slot
  * that would fall back on a queued climb there searches the next grade first.
  * A plan that fills at its own grades fetches nothing more, and so does a step
  * whose earlier steps filled it.
  *
- * Each nearby pool is fetched at most once a build, never when it already
- * holds every climb its grade has, and a pool in `cache` is reused under the
- * same rule as `buildPoolsReusing`, so an edit to another block searches no
- * nearby grade again. At most `MAX_BORROW_SEARCHES_PER_BUILD` searches go out.
- * A nearby search that fails is skipped, never failing the build, and is sent
- * again by the next rebuild, as a short plan pool is. Stops once `ctx.isCurrent`
+ * A nearby pool is searched again only while slots still come up short there
+ * and its last search found more climbs; never once it holds every climb its
+ * grade has. A pool in `cache` is reused under the same rule as
+ * `buildPoolsReusing`, so an edit to another block searches no nearby grade
+ * again. At most `MAX_BORROW_SEARCHES_PER_BUILD` searches go out. A nearby
+ * search that fails is skipped, never failing the build, and is sent again by
+ * the next rebuild, as a short plan pool is. Stops once `ctx.isCurrent`
  * says the build is superseded. An empty `grades` borrows nothing. Returns
  * `built`, the nearby pools added.
  */
@@ -493,15 +495,16 @@ export async function borrowForShortSlots(
 ): Promise<BuiltPools> {
   if (grades.length === 0) return built;
   const demandByGrade = slotsAtGrade(slots);
-  // Every nearby pool this build has searched, reused from the cache, or given
-  // up on once the searches ran out.
+  // The nearby pools this build will not search again: a search failed or found
+  // nothing more, or the searches ran out. A read-out pool is in
+  // `built.exhaustedPoolKeys` instead.
   const settledKeys = new Set<string>();
   let searchesLeft = MAX_BORROW_SEARCHES_PER_BUILD;
   let stepCount = 1;
   while (stepCount <= BORROW_GRADE_STEPS.length) {
     if (ctx.isCurrent?.() === false) break;
     const borrowSteps = BORROW_GRADE_STEPS.slice(0, stepCount);
-    const { shortSlots } = fillSlots(slots, built.pools, {
+    const { items, shortSlots } = fillSlots(slots, built.pools, {
       avoidClimbUuids,
       keptItems,
       poolTopUpTiers: built.poolTopUpTiers,
@@ -510,9 +513,17 @@ export async function borrowForShortSlots(
       borrowAvoided: false,
     });
     if (shortSlots.length === 0) break;
+    // The rows each pool fills now, by pool key, so a pool searched again is
+    // asked for every one of them as well as the slots still short.
+    const rowsByPoolKey = new Map<string, number>();
+    for (const row of items) {
+      const rowPoolKey = poolKeyForSlot(row.slot);
+      rowsByPoolKey.set(rowPoolKey, (rowsByPoolKey.get(rowPoolKey) ?? 0) + 1);
+    }
     // The short slots each nearby pool would serve, by pool key: for each slot
     // the nearest step whose pool is neither settled nor read out. The fill
-    // reached every one of those steps, so the slot found nothing in them.
+    // reached every one of those steps, so the slot found nothing in them: a
+    // pool it has is out of free climbs and can only grow.
     const needsByKey = new Map<string, { source: PreviewSlot; count: number }>();
     for (const slot of shortSlots) {
       const source = borrowSources(slot, grades, borrowSteps).find((candidate) => {
@@ -532,18 +543,28 @@ export async function borrowForShortSlots(
     }
     const searches: Array<Promise<void>> = [];
     for (const [key, { source, count }] of needsByKey) {
-      // Settled even when the cap stops its search: with no search left, the
-      // slot may take a pool the build already has one step further out
-      // rather than stay empty, and the next rebuild searches this one.
-      settledKeys.add(key);
-      const demand = (demandByGrade.get(source.grade) ?? 0) + count;
+      // Every slot planned at the grade or already taking from the pool, at
+      // least what it was last fetched for, and the slots still short there.
+      const demand =
+        Math.max(demandByGrade.get(source.grade) ?? 0, rowsByPoolKey.get(key) ?? 0, built.poolDemands.get(key) ?? 0) +
+        count;
       // A pool `built` already has gave these slots nothing (the fill above
       // reached it) and was weighed against the cache when it was built, so
       // only a fetch can add to it.
       if (!built.pools.has(key) && reuseCachedPool(built, key, demand, cache)) continue;
-      if (searchesLeft === 0) continue;
+      // Settled when the cap stops its search: with no search left, the slot
+      // may take a pool the build already has one step further out rather than
+      // stay empty, and the next rebuild searches this one.
+      if (searchesLeft === 0) {
+        settledKeys.add(key);
+        continue;
+      }
       searchesLeft--;
-      searches.push(searchNearbyPool(built, key, source, demand, ctx, fetchPool));
+      searches.push(
+        searchNearbyPool(built, key, source, demand, ctx, fetchPool).then((grew) => {
+          if (!grew) settledKeys.add(key);
+        }),
+      );
     }
     await Promise.all(searches);
     // `stepCount` stays on purpose: the next pass fills again with the pools
@@ -554,7 +575,12 @@ export async function borrowForShortSlots(
   return built;
 }
 
-/** Fetches one nearby pool into `built`, leaving `built` as it was when the search fails. */
+/**
+ * Fetches one nearby pool into `built` for `demand`. True when it came back
+ * with more climbs than `built` held for it. A search that fails, or finds no
+ * more, leaves the pool `built` has as it was (marking it read out when the
+ * search says so), so a pool never shrinks under the rows it already fills.
+ */
 async function searchNearbyPool(
   built: BuiltPools,
   key: string,
@@ -562,16 +588,23 @@ async function searchNearbyPool(
   demand: number,
   ctx: PreviewFetchContext,
   fetchPool: FetchGradePool,
-): Promise<void> {
+): Promise<boolean> {
   let fetched: GradePool;
   try {
     fetched = await fetchPool(source.grade, { ...ctx, filters: source.filters }, demand);
   } catch {
     // Borrowing only adds to a plan that already built: a nearby search that
     // fails leaves its slots for the next step, or short.
-    return;
+    return false;
+  }
+  const heldClimbs = built.pools.get(key);
+  if (fetched.climbs.length <= (heldClimbs?.length ?? 0)) {
+    if (!heldClimbs) storeFetchedPool(built, key, fetched, demand);
+    else if (fetched.exhausted) built.exhaustedPoolKeys.add(key);
+    return false;
   }
   storeFetchedPool(built, key, fetched, demand);
+  return true;
 }
 
 /** `buildPoolsReusing` with nothing cached, for callers that only need the pools. */

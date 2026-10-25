@@ -370,6 +370,61 @@ describe('borrowForShortSlots', () => {
     expect(fetchPool.mock.calls.map(([grade]) => grade)).toEqual([19, 18, 17]);
   });
 
+  it('grows a nearby pool that blocks on both sides of a grade borrow from', async () => {
+    // Two 40-climb blocks at 16 and 18 with the same filters, and every climb
+    // that fits at 17, which has hundreds. Fetched for the 18 block alone, 17
+    // came back with 50 and the 16 block was left 30 short.
+    const available: Record<number, number> = { 17: 300 };
+    const fetchPool = vi.fn<FetchGradePool>(async (grade, _ctx, demand) => {
+      const count = Math.min(available[grade] ?? 0, demand + 10);
+      return { climbs: climbsAt(grade, count), topUpTiers: NO_TOP_UPS, exhausted: count === (available[grade] ?? 0) };
+    });
+    const slots = [
+      ...Array.from({ length: 40 }, (_, index) => slot(16, index, BENCHMARKS)),
+      ...Array.from({ length: 40 }, (_, index) => slot(18, 40 + index, BENCHMARKS)),
+    ];
+
+    const preview = await buildPreview(slots, fetchPool);
+
+    expect(preview.items).toHaveLength(80);
+    expect(new Set(preview.items.map((row) => row.item.climb.uuid)).size).toBe(80);
+    expect(preview.items.every((row) => gradeOfClimb(row) === 17)).toBe(true);
+    expect(preview.items.filter((row) => row.borrowedFrom?.plannedGrade === 16)).toHaveLength(40);
+    expect(preview.items.filter((row) => row.borrowedFrom?.plannedGrade === 18)).toHaveLength(40);
+    // 17 was searched for the 18 block, then again for both blocks' 80 rows,
+    // and 15, one grade easier for the 16 block, came first.
+    const searches = fetchPool.mock.calls.map(([grade, , demand]) => [grade, demand]);
+    expect(searches).toEqual([
+      [16, 40],
+      [18, 40],
+      [15, 40],
+      [17, 40],
+      [17, 80],
+    ]);
+  });
+
+  it('stops growing a nearby pool once a search finds no more climbs', async () => {
+    // Grade 17 never reports itself read out (a page cap, say) but has only 12.
+    const fetchPool = vi.fn<FetchGradePool>(async (grade, _ctx, demand) => ({
+      climbs: climbsAt(grade, grade === 17 ? Math.min(12, demand + 2) : 0),
+      topUpTiers: NO_TOP_UPS,
+      exhausted: grade !== 17,
+    }));
+    const slots = [
+      ...Array.from({ length: 10 }, (_, index) => slot(16, index, BENCHMARKS)),
+      ...Array.from({ length: 10 }, (_, index) => slot(18, 10 + index, BENCHMARKS)),
+    ];
+
+    const preview = await buildPreview(slots, fetchPool);
+
+    // 17's twelve climbs fill twelve rows. Searched again for its 12 rows and
+    // the 8 slots still short, it comes back with the same twelve and is left.
+    expect(preview.items.filter((row) => gradeOfClimb(row) === 17)).toHaveLength(12);
+    const seventeen = fetchPool.mock.calls.filter(([grade]) => grade === 17).map(([, , demand]) => demand);
+    expect(seventeen).toEqual([10, 20]);
+    expect(fetchPool.mock.calls.length).toBeLessThanOrEqual(2 + MAX_BORROW_SEARCHES_PER_BUILD);
+  });
+
   it('searches the grade harder when the grade easier has only climbs already in the queue', async () => {
     // Adding a block mid-session: grade 17's one climb is in the queue.
     const fetchPool = catalogue({ 18: 0, 17: 1, 19: 1 });
