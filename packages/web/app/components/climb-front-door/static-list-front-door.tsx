@@ -239,6 +239,9 @@ export default async function StaticListFrontDoor({
           placement="climb-list"
           helperText={t('list.frontDoor.install.helper')}
           labels={storeButtonLabels}
+          // A kiosk or poster code lands on the `/b/{slug}` list only, so only
+          // that tree's link id names the code (`climb-list.kiosk`).
+          qrLanding={tree === 'slug'}
         />
       </ClimbHandoffCta>
     </Box>

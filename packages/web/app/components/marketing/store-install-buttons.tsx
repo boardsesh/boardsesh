@@ -5,6 +5,7 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import { useInstallPlatform } from '@/app/hooks/use-install-platform';
 import { useInboundCampaign } from '@/app/hooks/use-inbound-campaign';
+import { useBoardQrLandingMedium } from '@/app/hooks/use-board-qr-landing-medium';
 import { resolveHeroInstall, type HeroInstall } from '@/app/lib/hero-install';
 import { buildStoreUrl } from '@/app/lib/store-links';
 import { brandCtaSx, brandCtaOutlinedSx } from '@/app/components/ui/brand-cta';
@@ -52,6 +53,13 @@ type StoreInstallButtonsProps = {
    * the pair narrows to this visitor's store only after mount.
    */
   sharedHtml?: boolean;
+  /**
+   * Set on a page a printed board code lands on (`/b/{slug}/{angle}/list`).
+   * After a scan, the link id and the click say which code it was
+   * (`spray-wall.board`), read in the browser after mount, so the shared HTML
+   * stays the same for everyone.
+   */
+  qrLanding?: boolean;
 };
 
 /** What a shared page says before the browser has been asked: both stores, App Store first. */
@@ -83,7 +91,9 @@ const PLAIN_SX = { textTransform: 'none' };
  * WHERE THE LINK SAYS IT CAME FROM. `buildStoreUrl` with this surface's
  * placement, the one link format www has. A visitor who arrived on a tagged
  * link has that source added after hydration (`useInboundCampaign` is `null` on
- * the server), which is what keeps the cached HTML the same for everyone.
+ * the server), which is what keeps the cached HTML the same for everyone. On a
+ * page a printed board code lands on (`qrLanding`), the code's medium is added
+ * the same way, after hydration.
  *
  * The click handler only adds the event. It never calls `preventDefault`, and
  * the link opens a new tab, so the document stays and a plain `track()` lands.
@@ -94,8 +104,10 @@ export default function StoreInstallButtons({
   appearance = 'brand',
   align = 'center',
   sharedHtml = false,
+  qrLanding = false,
 }: StoreInstallButtonsProps) {
   const inboundCampaign = useInboundCampaign();
+  const qrMedium = useBoardQrLandingMedium(qrLanding);
   const { platform, nativeStore } = useInstallPlatform();
   // Flips in the same commit as `useInstallPlatform`'s own effect, so the pair
   // goes straight from both stores to this visitor's, with no frame in between
@@ -114,7 +126,7 @@ export default function StoreInstallButtons({
         return (
           <Button
             key={store}
-            href={buildStoreUrl(store, { placement, inbound: inboundCampaign })}
+            href={buildStoreUrl(store, { placement, inbound: inboundCampaign, qrMedium })}
             target="_blank"
             rel="noopener noreferrer"
             variant={isPrimary ? 'contained' : 'outlined'}
@@ -129,6 +141,7 @@ export default function StoreInstallButtons({
                   source: store === 'ios' ? 'app-store' : 'google-play',
                   placement,
                   mode,
+                  ...(qrMedium ? { qrMedium } : {}),
                 }),
               );
             }}

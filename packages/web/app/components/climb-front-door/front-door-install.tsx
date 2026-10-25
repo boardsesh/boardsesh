@@ -6,10 +6,12 @@ import type { AppInstallPlacement } from '@/app/lib/app-install-event';
 import { themeTokens } from '@/app/theme/theme-config';
 
 type FrontDoorInstallProps = {
-  placement: Extract<AppInstallPlacement, 'climb-view' | 'climb-list' | 'spray-climb'>;
+  placement: Extract<AppInstallPlacement, 'climb-view' | 'climb-list' | 'spray-climb' | 'spray-wall'>;
   /** One line saying who the button is for, already translated. */
   helperText: string;
   labels: StoreButtonLabels;
+  /** The page a printed board code lands on: the link id names the code after a scan. See `StoreInstallButtons`. */
+  qrLanding?: boolean;
 };
 
 const wrapperSx = {
@@ -34,19 +36,26 @@ const helperSx = { color: 'var(--neutral-400)' };
  * that says who it is for, and its own event (`App Install Click`), so the
  * hand-off funnel reads exactly as it did.
  *
- * These three pages are stored at the edge and handed to everyone, so the
+ * These pages are stored at the edge and handed to everyone, so the
  * buttons are rendered `sharedHtml`: both stores in the HTML, one after mount.
  *
  * No hooks and no data here: the wrapper is plain markup a server component can
  * render, and the only client code is the `StoreInstallButtons` island.
  */
-export default function FrontDoorInstall({ placement, helperText, labels }: FrontDoorInstallProps) {
+export default function FrontDoorInstall({ placement, helperText, labels, qrLanding = false }: FrontDoorInstallProps) {
   return (
     <Box sx={wrapperSx}>
       <Typography variant="body2" sx={helperSx}>
         {helperText}
       </Typography>
-      <StoreInstallButtons placement={placement} labels={labels} appearance="plain" align="start" sharedHtml />
+      <StoreInstallButtons
+        placement={placement}
+        labels={labels}
+        appearance="plain"
+        align="start"
+        sharedHtml
+        qrLanding={qrLanding}
+      />
     </Box>
   );
 }

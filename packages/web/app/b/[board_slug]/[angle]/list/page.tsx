@@ -19,6 +19,7 @@ import { getServerTranslation } from '@/app/lib/i18n/server';
 import { WALL_CAPABILITY_PARAM, readWallCapability } from '@/app/lib/spray/spray-visibility';
 import { BOARD_INVITE_PARAM, readBoardInviteToken } from '@/app/lib/board-invite';
 import SprayWallListPage, { buildSprayWallListMetadata } from './spray-wall-view';
+import BoardQrLandingTracker from './board-qr-landing-tracker';
 
 /**
  * A wall takes its own branch out of both exports below: it has no catalogue row
@@ -132,8 +133,16 @@ export default async function BoardSlugListPage(props: BoardSlugListPageProps) {
   // ceiling and the angle parse below, because neither applies — a wall has one
   // fixed angle and no pagination — and before `getBoardDetailsForBoard`, which
   // has no catalogue row to resolve for a wall and throws.
+  //
+  // Both branches mount `BoardQrLandingTracker`: this page is where a printed
+  // board code lands after the `/b/{slug}` hop, so this is where a scan is counted.
   if (board.boardType === SPRAY_BOARD_TYPE) {
-    return <SprayWallListPage board={board} wallParam={searchParams[WALL_CAPABILITY_PARAM]} />;
+    return (
+      <>
+        <BoardQrLandingTracker boardType={board.boardType} />
+        <SprayWallListPage board={board} wallParam={searchParams[WALL_CAPABILITY_PARAM]} />
+      </>
+    );
   }
 
   // Same ceiling as the config-tuple twin: nothing links past
@@ -150,6 +159,7 @@ export default async function BoardSlugListPage(props: BoardSlugListPageProps) {
 
   return (
     <>
+      <BoardQrLandingTracker boardType={board.boardType} />
       {preloadUrls.map((preloadUrl) => (
         <link key={preloadUrl} rel="preload" as="image" href={preloadUrl} fetchPriority="high" />
       ))}

@@ -1,4 +1,5 @@
 // @vitest-environment node
+import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { SearchRequestPagination } from '@/app/lib/types';
 
@@ -111,6 +112,13 @@ vi.mock('@/app/components/spray-wall/spray-wall-front-door', () => ({ default: (
 
 const { default: BoardSlugListPage, generateMetadata } = await import('../page');
 const { default: SprayWallListPage } = await import('../spray-wall-view');
+const { default: BoardQrLandingTracker } = await import('../board-qr-landing-tracker');
+const { default: StaticListFrontDoor } = await import('@/app/components/climb-front-door/static-list-front-door');
+
+/** The page's top-level elements: a fragment's children, or the one element. */
+function topLevelElements(page: React.ReactElement<{ children?: React.ReactNode }>): React.ReactElement[] {
+  return React.Children.toArray(page.props.children).filter(React.isValidElement);
+}
 const { resolveSprayWallAccess } = await import('@/app/lib/spray/spray-visibility');
 
 type ListSearchParams = SearchRequestPagination & { wall?: string | string[] };
@@ -157,11 +165,33 @@ describe('the /b/{slug}/{angle}/list route on a spray wall', () => {
     // the page — so the assertions here are about routing, and the cases below
     // call the branch itself.
     const element = await BoardSlugListPage(propsWith(WALL_UUID));
+    const wallBranch = topLevelElements(element).find((child) => child.type === SprayWallListPage);
 
-    expect(element.type).toBe(SprayWallListPage);
-    expect(element.props).toEqual({ board: boardFor('unlisted'), wallParam: WALL_UUID });
+    expect(wallBranch?.props).toEqual({ board: boardFor('unlisted'), wallParam: WALL_UUID });
     expect(getBoardDetailsForBoard).not.toHaveBeenCalled();
     expect(fetchFrontDoorListPage).not.toHaveBeenCalled();
+  });
+
+  it("counts a scan of the wall's printed code, naming the board type and nothing else (#4415)", async () => {
+    const element = await BoardSlugListPage(propsWith(WALL_UUID));
+    const tracker = topLevelElements(element).find((child) => child.type === BoardQrLandingTracker);
+
+    // The tracker gets no slug, no name and no uuid: `Board QR Scanned` names no wall.
+    expect(tracker?.props).toEqual({ boardType: 'spray' });
+  });
+
+  it('counts a scan on a catalogue board list too', async () => {
+    resolveBoardBySlug.mockResolvedValueOnce({ ...boardFor('public'), boardType: 'kilter', slug: 'the-kilter' });
+    fetchFrontDoorListPage.mockResolvedValueOnce({ boardDetails: {}, climbs: [], hasMore: false, preloadUrls: [] });
+
+    const element = await BoardSlugListPage({
+      params: Promise.resolve({ board_slug: 'the-kilter', angle: '40' }),
+      searchParams: Promise.resolve({} as ListSearchParams),
+    });
+    const children = topLevelElements(element);
+
+    expect(children.find((child) => child.type === BoardQrLandingTracker)?.props).toEqual({ boardType: 'kilter' });
+    expect(children.some((child) => child.type === StaticListFrontDoor)).toBe(true);
   });
 
   it('presents the capability to the backend, because a slug alone opens no unlisted wall', async () => {

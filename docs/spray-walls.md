@@ -3712,6 +3712,7 @@ through `trackSprayEvent`; nothing calls `track` with a spray event name directl
 | `Spray Wall Reset Started` | `source` (`board_sheet`, `board_edit`) | The owner confirmed "Reset this wall?" on the board sheet, or from the edit screen's "Reset wall with a new photo" under a photo too skewed for a generated look. Fired once per confirm tap, whether the reset then makes a new clone or reopens an unfinished one; the wizard fires nothing. Read `Board Created` with `isReset: true` against it for the share of confirms that reached a published replacement. |
 | `Spray Wall Holds Removed In Use` | `holdCount`, `publishedClimbCount`, `usageKnown` | The owner tapped "Remove anyway" on "Remove a hold that climbs use?" in the hold editor. `publishedClimbCount` is the usage read's sum (0 with `usageKnown: false`, when the read failed and the alert used its generic wording). Never fired on "Keep holds". |
 | `Climb Remixed From Broken` | `lostHoldCount`, `source` (`play_drawer`) | A climber tapped Remix on the play drawer's "This climb lost a hold" banner. Fires on the tap, not the save. |
+| `Board QR Scanned` (shared with every board) | `medium` (`board`, `kiosk`), `surface` (`web`; `app` is reserved), `boardType: 'spray'` | A Spraywall's printed code was scanned and its www page loaded (#4415). Fired once per landing by `BoardQrLandingTracker` on `/b/{slug}/{angle}/list`, which serves catalogue boards too, so filter on `boardType = 'spray'`. Its properties name no wall: no slug, no name, no uuid, and `?wall=` stays in the address bar only, for a reload. A phone with the app installed opens the app instead and fires nothing yet. Full contract: `docs/gym-funnel-analytics.md`, "Which code fires which event". |
 
 Two rules, both enforced by a test in
 `packages/shared/analytics/src/__tests__/spray-wall-events.test.ts`:
@@ -3719,9 +3720,10 @@ Two rules, both enforced by a test in
 - **Outcomes, not gestures.** PostHog is past the 1M-event tier, so every event
   fires once per wall per step. Nothing fires per tap, per frame, or per hold.
 - **Nothing identifies the wall or what is on it.** No photo, no URI, no file
-  name, no wall name, no gym, no hold coordinates, no free text. Every property
-  is a number, a boolean, or a member of a closed string union, and the test
-  reads the payloads back field by field rather than trusting the types.
+  name, no wall name, no slug, no gym, no hold coordinates, no free text. Every
+  property is a number, a boolean, or a member of a closed string union, and the
+  test reads the payloads back field by field rather than trusting the types.
+  `Board QR Scanned` is read back with them, since it fires on a wall's own page.
 
 Three older events also fire on a wall and now say so (#6027): `Tick Logged`,
 `Set Active Climb` and `Climb Created` carry `boardType`, built by

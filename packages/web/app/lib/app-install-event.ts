@@ -36,6 +36,9 @@ export type AppInstallSource = 'app-store' | 'google-play' | 'capacitor-retireme
  *  - `climb-view`: a climb page, in both route trees (`ClimbFrontDoor`).
  *  - `climb-list`: a board's climb list (`StaticListFrontDoor`).
  *  - `spray-climb`: a climb on a spray wall (`SprayClimbFrontDoor`).
+ *  - `spray-wall`: a Spraywall's own page (`SprayWallFrontDoor`), where its
+ *    share link and its printed QR land (#4415). After a scan the link id is
+ *    `spray-wall.board`; nothing in it names the wall.
  *  - `gyms-directory`: `/gyms` and its three board pages.
  *  - `site-banner`: the iOS Smart App Banner (`smart-app-banner.ts`). It is a
  *    campaign token only; Safari reports no tap, so no click carries it.
@@ -57,6 +60,7 @@ export const APP_INSTALL_PLACEMENTS = [
   'climb-view',
   'climb-list',
   'spray-climb',
+  'spray-wall',
   'gyms-directory',
   'join-page',
   'site-banner',

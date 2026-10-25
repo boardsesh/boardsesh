@@ -111,22 +111,16 @@ export type GymClaimResultStatus = 'email_sent' | 'approved' | 'admin_review' | 
 /**
  * Physical medium the scanned QR code was printed on or displayed by.
  *
- * PRODUCER REALITY, and it is not what the member list suggests: only `poster`
- * currently has a producer that can reach a gym page. `Gym QR Scanned` fires
- * from the QR landing tracker, which mounts on `/gym/[gym_slug]` and nowhere
- * else. The kiosk's per-board QR (`components/kiosk/board-slot/board-install-qr.tsx`)
- * encodes `/b/{slug}`, and `app/b/[board_slug]/page.tsx` redirects to
- * `/b/{slug}/{angle}/list`, which renders no tracker. A `kiosk` or `board` scan
- * therefore cannot fire this event today.
+ * PRODUCER REALITY: only `poster` reaches a gym page, so only `poster` fires
+ * `Gym QR Scanned`, whose tracker mounts on `/gym/[gym_slug]` and nowhere else.
+ * The kiosk's per-board QR (`components/kiosk/board-slot/board-install-qr.tsx`)
+ * and the per-board poster (#4415) encode `/b/{slug}`, which the `/b/{slug}`
+ * page carries through `gymQrAttributionQuery` onto `/b/{slug}/{angle}/list`.
+ * That page counts them as `Board QR Scanned` (board-qr-events.ts), which names
+ * no board and so has no `gymSlug`.
  *
- * The params themselves DO survive that hop as of #4379 — the redirect carries
- * them through `gymQrAttributionQuery` (`packages/web/app/lib/gym-attribution.ts`),
- * so a kiosk scan is attributable from a server log. It is the missing tracker
- * at the destination, and only that, which keeps the event unfireable.
- *
- * Both members are kept anyway: the param contract has to parse all three so a
- * future gym-page-targeted kiosk or board QR is a call-site change, not a
- * vocabulary change that breaks the printed codes already on walls.
+ * One vocabulary and one parser for both events: a code printed today has to
+ * keep parsing whichever page it is pointed at later.
  */
 export const GYM_QR_MEDIUMS = ['poster', 'kiosk', 'board'] as const;
 export type GymQrMedium = (typeof GYM_QR_MEDIUMS)[number];
@@ -370,8 +364,9 @@ export function gymDirectorySearched(
 //
 // Printed QR codes point at a normal Boardsesh URL with two extra params:
 // `?src=qr&medium=<poster|kiosk|board>`. The landing surface reads them, fires
-// `Gym QR Scanned` once, then rewrites the URL without them so a shared or
-// bookmarked link doesn't re-attribute someone else's visit to a poster.
+// its scan event once (`Gym QR Scanned` on a gym page, `Board QR Scanned` on a
+// board page), then rewrites the URL without them so a shared or bookmarked
+// link doesn't re-attribute someone else's visit to a poster.
 
 export const GYM_QR_SRC_PARAM = 'src';
 export const GYM_QR_MEDIUM_PARAM = 'medium';

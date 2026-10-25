@@ -5,7 +5,8 @@ import type { ResolvedBoard } from '@/app/lib/board-slug-utils';
 import SprayWallFrontDoor from '@/app/components/spray-wall/spray-wall-front-door';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createBoardContentPageMetadata } from '@/app/lib/seo/metadata';
-import { resolveSprayWallAccess } from '@/app/lib/spray/spray-visibility';
+import { readWallCapability, resolveSprayWallAccess } from '@/app/lib/spray/spray-visibility';
+import { buildNativeBoardListUrl } from '@/app/lib/native-app-link';
 import {
   fetchSprayWallArtChoice,
   fetchSprayWallPageData,
@@ -106,6 +107,9 @@ export default async function SprayWallListPage({
       art={art}
       artUrl={resolveSprayArtUrl(wallData.wall.uuid, art)}
       angle={board.angle}
+      // The capability rides along when the page was opened with one; the check
+      // above has already matched it to this wall.
+      appLink={buildNativeBoardListUrl(board.slug, board.angle, readWallCapability(wallParam))}
     />
   );
 }

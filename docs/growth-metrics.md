@@ -878,6 +878,42 @@ ORDER BY people DESC
   properties. They are not on the `Install Attributed` event.
 - iOS has no referrer, so there is no link id on iOS.
 
+### Wall posters
+
+A board's printed QR (#4415) and the kiosk screen's install code both land on
+`/b/{slug}/{angle}/list`, which fires `Board QR Scanned` once per landing. Its
+contract is in `docs/gym-funnel-analytics.md` ("Which code fires which event").
+
+- **Scans.** Count `Board QR Scanned`, broken down by `surface` and `medium`.
+  `medium` is `board` for a per-board poster and `kiosk` for the kiosk screen;
+  `boardType = 'spray'` splits Spraywalls from catalogue boards. `surface` is
+  `web` on every event today, and on `/b/` that means a phone WITHOUT the app: a
+  phone with it opens the app, which does not fire the event yet. No property
+  names the board, so there is no per-wall scan count, by design.
+
+  ```sql
+  SELECT properties.surface AS surface, properties.medium AS medium,
+    properties.boardType AS board_type, count() AS scans
+  FROM events
+  WHERE event = 'Board QR Scanned' AND timestamp > now() - INTERVAL 28 DAY
+  GROUP BY surface, medium, board_type
+  ORDER BY scans DESC
+  ```
+
+- **Store clicks after a scan.** `App Install Click` with `placement = 'spray-wall'`
+  (or `climb-list` for a catalogue board) and `qrMedium` set.
+- **Android installs.** `install_referrer_raw` containing `spray-wall.board`, the
+  link id a store button on a Spraywall page carries after a poster scan (query
+  under "Link ids on Android installs" above). A kiosk scan on a catalogue board
+  says `climb-list.kiosk`. The link id never holds a slug or a wall id, because
+  `install_referrer_raw` is a person property.
+- **iOS installs cannot be attributed to a person** (#3402). App Analytics counts
+  downloads per `ct` (`spray-wall.board`) in aggregate only, after 5 first-time
+  downloads, and only once `NEXT_PUBLIC_APP_STORE_PROVIDER_ID` is set ("App
+  Store" below).
+
+Kiosk scans had no count before this event. Annotate its deploy date.
+
 ### Counting sign-ups
 
 From the 2.6.0 integration for #6285, native `Signup Completed` covers verified
@@ -1039,7 +1075,9 @@ Link ids today: `hero`, `help`, `gym-page`, `gym-page.poster`, and since the
 store buttons of #6027 `climb-view` (a climb page, in both the config-tuple and
 the `/b/{slug}` tree), `climb-list` (a board's climb list), `spray-climb` (a
 climb on a spray wall) and `gyms-directory` (`/gyms` and its three board
-pages). `help` covers the /help index and its seven sub-pages; tell them apart
+pages). Since #4415, `spray-wall` (a Spraywall's own page, where its share link
+and printed QR land), and on the `/b/{slug}` list pages a scan adds the medium:
+`spray-wall.board`, `climb-list.kiosk` ("Wall posters" above). `help` covers the /help index and its seven sub-pages; tell them apart
 by `$pathname` on the click. `site-banner` is the iOS Smart App
 Banner, which has a campaign token and no click event (below). Reserved for a
 button still to come (`AppInstallPlacement` in
@@ -1154,6 +1192,7 @@ finished the period shown as final. Mark the current, unfinished period.
 | #6358 web deploy and OTA (fill in the date when it ships) | Analytics starts on by default outside the prompt regions (EU, EEA, UK, Switzerland, China, South Korea and the rest of `CONSENT_PROMPT_COUNTRIES`), so PostHog person and event counts from those other countries jump on this date. Do not compare those counts across it. Install attribution (`Install Attributed`, Apple Ads campaign fields, `install_*` person properties) keeps needing an explicit Allow, so its counts do not jump; the share of people who carry them falls instead |
 | community-monthly-stats first run (fill in the date when it ships) | `Community Monthly Summary` and `Community Monthly Rank` start. The first Monday run sends the 12 months before it as well, so those months appear on one day; read them by their own `month`, not by when they arrived |
 | 2026-10-19 (crew browse UI, #4281) | `Set Active Climb` gains `trigger = 'put_on_wall'` when a climber commits a pinned preview on purpose: the Put on the wall (or Set active) button, or the lightbulb relaying it. It is a real pick: filters on `trigger != 'climb_saved'` count it unchanged. Crew commits are the ones with `participantCount >= 2` |
+| #4415 web deploy (fill in the date when it ships) | `Board QR Scanned` starts on `/b/{slug}/{angle}/list`: kiosk and board-poster scans had no count before it. Store buttons on a Spraywall page start sending `placement: 'spray-wall'`, and a `/b` list page reached by a scan adds the medium to the link id (`spray-wall.board`, `climb-list.kiosk`) |
 
 None of these repairs past data. Annotate them; do not backfill.
 

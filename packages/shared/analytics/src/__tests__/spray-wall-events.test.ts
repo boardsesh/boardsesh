@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { boardQrScanned } from '../board-qr-events';
 import { SHARED_EVENTS } from '../events';
 import {
   SPRAY_ROLLOUT_GATES,
@@ -33,7 +34,20 @@ import {
  * Matched on the KEY, not the value, so a field carrying a coordinate under an
  * innocent name is still caught by the numeric check below.
  */
-const FORBIDDEN_KEY_FRAGMENTS = ['uri', 'url', 'name', 'uuid', 'path', 'file', 'photo', 'cx', 'cy', 'gym', 'note'];
+const FORBIDDEN_KEY_FRAGMENTS = [
+  'uri',
+  'url',
+  'name',
+  'uuid',
+  'slug',
+  'path',
+  'file',
+  'photo',
+  'cx',
+  'cy',
+  'gym',
+  'note',
+];
 
 const EVERY_PAYLOAD = [
   sprayWallPhotoPicked('camera'),
@@ -52,6 +66,10 @@ const EVERY_PAYLOAD = [
   sprayWallResetStarted('board_edit'),
   sprayWallHoldsRemovedInUse({ holdCount: 2, publishedClimbCount: 5, usageKnown: true }),
   climbRemixedFromBroken({ lostHoldCount: 1, source: 'play_drawer' }),
+  // Not a spray builder, but it fires on a Spraywall's own page (the code on its
+  // poster), so the same rule holds it: nothing that names the wall.
+  boardQrScanned({ medium: 'board', surface: 'web', boardType: 'spray' }),
+  boardQrScanned({ medium: 'kiosk', surface: 'app', boardType: 'spray' }),
 ];
 
 describe('spray wall event builders', () => {
