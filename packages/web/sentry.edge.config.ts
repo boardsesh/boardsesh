@@ -10,7 +10,7 @@ import {
   WEB_IGNORED_SPANS,
   WEB_TRACE_PROPAGATION_TARGETS,
 } from './app/lib/observability/sentry-tracing';
-import { redactBoardInviteFromEvent } from './app/lib/observability/redact-board-invite';
+import { redactShareCapabilitiesFromEvent } from './app/lib/observability/redact-share-capabilities';
 
 Sentry.init({
   dsn: 'https://f55e6626faf787ae5291ad75b010ea14@o4510644927660032.ingest.us.sentry.io/4510644930150400',
@@ -56,5 +56,5 @@ Sentry.init({
   ignoreSpans: WEB_IGNORED_SPANS,
 });
 
-// A home board's share-link token is a capability; it never leaves in an event.
-Sentry.addEventProcessor(redactBoardInviteFromEvent);
+// A share link's capability (a home board's ?invite=, an unlisted wall's ?wall=) never leaves in an event.
+Sentry.addEventProcessor(redactShareCapabilitiesFromEvent);

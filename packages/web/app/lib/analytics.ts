@@ -3,6 +3,7 @@ import { PostHog } from 'posthog-js-lite';
 import { createAnalytics } from '@boardsesh/analytics';
 import { isAdminAnalyticsUrl, isEmbedAnalyticsUrl, isKioskAnalyticsUrl } from './analytics-paths';
 import { searchCarriesBoardInvite } from './board-invite';
+import { scrubShareCapabilitiesFromEvent } from './share-capability';
 import { getWebConsentRecord, hasAnalyticsConsent, subscribeWebConsent } from './consent';
 import {
   ANALYTICS_CONSENT_HEADER,
@@ -191,6 +192,11 @@ function getPosthog(): PostHog | null {
   if (isEmbedAnalyticsUrl(window.location.pathname) || isKioskAnalyticsUrl(window.location.pathname)) return null;
   // A home board's share link, or the sign-in page carrying it back: the SDK
   // stamps `location.href` on every event, and that URL holds a membership token.
+  // `before_send` below scrubs the token from every event anyway; this stays as
+  // the second lock, because a page whose whole subject is a membership token
+  // has nothing to measure that is worth the risk of a scrub that misses.
+  // A wall's `?wall=` capability has no such switch: its pages are ordinary
+  // board pages people browse, so they keep analytics and rely on the scrub.
   if (searchCarriesBoardInvite(window.location.search)) return null;
   if (posthogClient) return posthogClient;
   if (posthogInitAttempted) return null;
@@ -248,6 +254,12 @@ function getPosthog(): PostHog | null {
     preloadFeatureFlags: false,
     bootstrap:
       !hasAnalyticsConsent() && flagAccountId ? { distinctId: flagAccountId, isIdentifiedId: true } : undefined,
+    // An unlisted wall's `?wall=<uuid>` and a home board's `?invite=` are
+    // capabilities, and the SDK copies `location.href` and `document.referrer`
+    // onto every event. The hook runs on every capture path (queued and
+    // immediate) after the SDK adds them. The `/flags` request is the one call
+    // that skips it, and it carries no URL. share-capability.ts has the rule.
+    before_send: scrubShareCapabilitiesFromEvent,
   });
 
   posthogPersisted = hasAnalyticsConsent();

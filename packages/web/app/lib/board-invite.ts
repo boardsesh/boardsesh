@@ -8,8 +8,9 @@
  *
  * The token is a capability, so it is kept out of everything that outlives
  * the request: shared caches (middleware, the TTL helpers and the Cloudflare
- * rule all bypass it), analytics (`getPosthog` stays off on such a URL) and
- * error reports (`redactBoardInviteTokens`). Pure and dependency-free so the
+ * rule all bypass it), analytics (`getPosthog` stays off on such a URL, and
+ * every event is scrubbed besides) and error reports (both through
+ * `share-capability.ts`, which covers a wall's `?wall=` too). Pure and dependency-free so the
  * middleware, the client analytics and the server page all share one reading.
  */
 
@@ -51,9 +52,4 @@ const INVITE_PAIR = /(invite(?:=|%(?:25)*3D))[^&#\s"']*/gi;
 export function searchCarriesBoardInvite(search: string): boolean {
   INVITE_PAIR.lastIndex = 0;
   return INVITE_PAIR.test(search);
-}
-
-/** The same string with every token value replaced, for anything that leaves the browser. */
-export function redactBoardInviteTokens(text: string): string {
-  return text.replace(INVITE_PAIR, '$1[redacted]');
 }

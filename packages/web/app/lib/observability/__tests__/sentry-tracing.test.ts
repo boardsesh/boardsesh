@@ -283,6 +283,19 @@ describe('redactSensitiveSpanUrls', () => {
     expect(redactSensitiveSpanUrls(signIn).data['http.url']).toBe('https://www.boardsesh.com/auth/login');
   });
 
+  it("strips an unlisted wall's uuid, and a sign-in page carrying it back", () => {
+    const wallUuid = '3f2b8c1e-4d5a-4b6c-9e7f-0a1b2c3d4e5f';
+    const shareLink = { data: { 'url.full': `https://www.boardsesh.com/b/the-garage/40/list?wall=${wallUuid}` } };
+    const signIn = {
+      data: {
+        'http.url': `https://www.boardsesh.com/auth/login?callbackUrl=${encodeURIComponent(`/b/the-garage?wall=${wallUuid}`)}`,
+      },
+    };
+
+    expect(redactSensitiveSpanUrls(shareLink).data['url.full']).toBe('https://www.boardsesh.com/b/the-garage/40/list');
+    expect(redactSensitiveSpanUrls(signIn).data['http.url']).toBe('https://www.boardsesh.com/auth/login');
+  });
+
   it('leaves an ordinary span untouched', () => {
     const span = {
       data: {

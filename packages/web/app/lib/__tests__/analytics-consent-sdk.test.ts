@@ -120,3 +120,37 @@ describe('consent suspension with the installed PostHog SDK', () => {
     expect(JSON.stringify(queued)).not.toContain('account-a');
   });
 });
+
+describe('share-link capabilities with the installed PostHog SDK', () => {
+  const wallUuid = '3f2b8c1e-4d5a-4b6c-9e7f-0a1b2c3d4e5f';
+  const inviteToken = 'Ab3_dE-fGhIjKlMnOpQrSt';
+
+  afterEach(() => {
+    Object.defineProperty(document, 'referrer', { configurable: true, value: '' });
+  });
+
+  it("keeps an unlisted wall's uuid and an invite token out of every queued event", async () => {
+    // A climber scans a wall poster, lands on the wall's list, and arrived from
+    // a sign-in page that was carrying a home board's invite back.
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: new URL(`https://boardsesh.com/b/garage/40/list?wall=${wallUuid}&src=qr&medium=board`),
+    });
+    Object.defineProperty(document, 'referrer', {
+      configurable: true,
+      value: `https://boardsesh.com/auth/login?callbackUrl=${encodeURIComponent(`/b/home-wall?invite=${inviteToken}`)}`,
+    });
+    const analytics = await import('../analytics');
+    analytics.pageview('/b/garage/40/list');
+    analytics.track('Spray Wall Opened');
+    analytics.identify('account-a', { email: 'climber@example.com' });
+    analytics.setPersonProperties({ last_wall_url: window.location.href }, { first_wall_url: window.location.href });
+
+    const queued = harness.clients[0].getPersistedProperty('queue' as Parameters<PostHog['getPersistedProperty']>[0]);
+    const serialized = JSON.stringify(queued);
+    expect(serialized).toContain('Spray Wall Opened');
+    expect(serialized).not.toContain(wallUuid);
+    expect(serialized).not.toContain(inviteToken);
+    expect(serialized).toContain('https://boardsesh.com/b/garage/40/list?src=qr&medium=board');
+  });
+});

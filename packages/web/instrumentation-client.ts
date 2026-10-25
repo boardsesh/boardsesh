@@ -5,7 +5,7 @@
 import * as Sentry from '@sentry/nextjs';
 import { isAutomatedCrawlerUserAgent } from './app/lib/is-crawler';
 import { isProductionHost } from './app/lib/production-hosts';
-import { redactBoardInviteFromEvent } from './app/lib/observability/redact-board-invite';
+import { redactShareCapabilitiesFromEvent } from './app/lib/observability/redact-share-capabilities';
 
 // Only enable Sentry on the production boardsesh.com hosts. Exact-host match
 // (see production-hosts.ts for why), NOT a substring: preview deploys run at
@@ -123,9 +123,10 @@ Sentry.init({
   },
 });
 
-// A home board's share link (`/b/{slug}?invite=…`) and the sign-in page that
-// carries it back both hold a membership token in the URL Sentry records.
-Sentry.addEventProcessor(redactBoardInviteFromEvent);
+// A home board's share link (`/b/{slug}?invite=…`), an unlisted wall's share
+// link (`?wall=<uuid>`) and the sign-in page that carries either back all hold a
+// capability in the URL Sentry records.
+Sentry.addEventProcessor(redactShareCapabilitiesFromEvent);
 
 // eslint-disable-next-line import/namespace -- oxlint can't see captureRouterTransitionStart in @sentry/nextjs's exports, but it's a real export.
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;
