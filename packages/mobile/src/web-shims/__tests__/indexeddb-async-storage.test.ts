@@ -325,6 +325,46 @@ describe('createIndexedDbAsyncStorage', () => {
     expect(fakeIndexedDb.openCalls).toHaveLength(2);
   });
 
+  it('keeps the newer write when an older one to the same key retries', async () => {
+    const { fakeIndexedDb, storage } = setup();
+    await storage.getItem('warm-up');
+    // The first write loses its transaction; the second, issued right after
+    // without awaiting (as setSectionExpanded does), is fine.
+    fakeIndexedDb.injectedFailures.push({ at: 'request', error: noInProgressTransaction() });
+
+    await Promise.all([storage.setItem('sections', 'older'), storage.setItem('sections', 'newer')]);
+
+    await expect(storage.getItem('sections')).resolves.toBe('newer');
+  });
+
+  it('lets a read issued after a retrying write see that write', async () => {
+    const { fakeIndexedDb, storage } = setup();
+    await storage.getItem('warm-up');
+    fakeIndexedDb.injectedFailures.push({ at: 'request', error: noInProgressTransaction() });
+
+    const write = storage.setItem('theme', 'dark');
+    const read = storage.getItem('theme');
+
+    await write;
+    await expect(read).resolves.toBe('dark');
+  });
+
+  it('still runs a later write after an earlier one fails for good', async () => {
+    const { fakeIndexedDb, storage } = setup();
+    await storage.getItem('warm-up');
+    fakeIndexedDb.injectedFailures.push({
+      at: 'request',
+      error: new DOMException('The quota has been exceeded.', 'QuotaExceededError'),
+    });
+
+    const failed = storage.setItem('big', 'value');
+    const next = storage.setItem('theme', 'dark');
+
+    await expect(failed).rejects.toThrow(/quota has been exceeded/);
+    await next;
+    await expect(storage.getItem('theme')).resolves.toBe('dark');
+  });
+
   it('does not retry a quota failure', async () => {
     const { fakeIndexedDb, storage } = setup();
     await storage.getItem('warm-up');

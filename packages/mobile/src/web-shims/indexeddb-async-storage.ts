@@ -15,7 +15,8 @@ import type { AsyncStorage } from '@react-native-async-storage/async-storage';
 const ENTRIES_STORE = 'entries';
 const DATABASE_VERSION = 1;
 // One first try plus one retry on a fresh connection. Every operation here is
-// idempotent (get, put, delete, getAllKeys, clear), so repeating one is safe.
+// idempotent (get, put, delete, getAllKeys, clear), so repeating one is safe,
+// as long as a retried write cannot land after a newer one (see `runInOrder`).
 const DEFAULT_MAX_ATTEMPTS = 2;
 // An open normally settles in milliseconds. WebKit can leave one pending with
 // neither success nor error after the page resumes; without a bound, every
@@ -76,6 +77,9 @@ export function createIndexedDbAsyncStorage(
 
   let pendingConnection: Promise<IDBDatabase> | null = null;
   let openConnection: IDBDatabase | null = null;
+  // Settles once every write issued so far has finished its whole retry cycle,
+  // whether it committed or failed for good.
+  let earlierWritesSettled: Promise<void> = Promise.resolve();
 
   // Drops the cached connection, but only if it is still the one that failed:
   // a concurrent caller may already have opened a fresh one.
@@ -205,17 +209,35 @@ export function createIndexedDbAsyncStorage(
     }
   }
 
+  // IndexedDB runs overlapping transactions in the order they were created, but
+  // a retry creates a new transaction after any call issued in the meantime. A
+  // write that fails, reopens and retries would then overwrite a newer write to
+  // the same key, and a read issued after a write would miss it. So each write
+  // waits for every earlier write to settle, and each read waits for the writes
+  // issued before it. Reads still run alongside each other.
+  function runInOrder<TResult>(
+    mode: IDBTransactionMode,
+    issueRequests: (store: IDBObjectStore) => IDBRequest<TResult>[],
+  ): Promise<TResult[]> {
+    const operation = earlierWritesSettled.then(() => withRecovery(mode, issueRequests));
+    if (mode === 'readwrite') {
+      const ignoreOutcome = () => undefined;
+      earlierWritesSettled = operation.then(ignoreOutcome, ignoreOutcome);
+    }
+    return operation;
+  }
+
   async function readValues(keys: string[]): Promise<(string | null)[]> {
-    const results = await withRecovery<unknown>('readonly', (store) => keys.map((key) => store.get(key)));
+    const results = await runInOrder<unknown>('readonly', (store) => keys.map((key) => store.get(key)));
     return results.map((stored) => (typeof stored === 'string' ? stored : null));
   }
 
   async function writeValues(entries: [string, string][]): Promise<void> {
-    await withRecovery('readwrite', (store) => entries.map(([key, value]) => store.put(value, key)));
+    await runInOrder('readwrite', (store) => entries.map(([key, value]) => store.put(value, key)));
   }
 
   async function deleteValues(keys: string[]): Promise<void> {
-    await withRecovery('readwrite', (store) => keys.map((key) => store.delete(key)));
+    await runInOrder('readwrite', (store) => keys.map((key) => store.delete(key)));
   }
 
   return {
@@ -236,12 +258,12 @@ export function createIndexedDbAsyncStorage(
     setMany: (entries) => writeValues(Object.entries(entries)),
     removeMany: (keys) => deleteValues(keys),
     getAllKeys: async () => {
-      const [storedKeys] = await withRecovery('readonly', (store) => [store.getAllKeys()]);
+      const [storedKeys] = await runInOrder('readonly', (store) => [store.getAllKeys()]);
       // Keys are always written as strings; skip anything another writer put there.
       return (storedKeys ?? []).filter((storedKey): storedKey is string => typeof storedKey === 'string');
     },
     clear: async () => {
-      await withRecovery('readwrite', (store) => [store.clear()]);
+      await runInOrder('readwrite', (store) => [store.clear()]);
     },
   };
 }
