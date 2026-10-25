@@ -129,6 +129,9 @@ export function boardseshGradeTickJoin({
  * Same rule as `resolveCanonicalClimbUuid` in `@boardsesh/db/queries` and the
  * COALESCE in `playlists/grade-summaries.ts`.
  * The (board_type, alias_uuid) primary key makes the scalar subquery safe.
+ * The subquery runs on whichever database the outer query uses, so a read on
+ * the replica can miss an alias written in the last few seconds and fall back
+ * to the uuid as sent (an empty grade) until the replica catches up.
  */
 export function canonicalClimbUuidSql(boardType: string, climbUuid: string): SQL<string> {
   return sql<string>`COALESCE(
