@@ -965,7 +965,7 @@
     "retry": "Nochmal versuchen",
     "confirmTitle": "Session von {{host}} beitreten?",
     "boardLabel": "{{board}} · {{count}} dabei",
-    "namesVisible": "Alle in dieser Session sehen deinen Namen und deine Begehungen. Dauerhafte Hallen-Sessions folgen deinen Privatsphäre-Einstellungen.",
+    "namesVisible": "Alle in dieser Session sehen deinen Namen und deine Begehungen.",
     "join": "Session beitreten",
     "cancel": "Abbrechen",
     "switchTitle": "Aktuelle Session verlassen?",

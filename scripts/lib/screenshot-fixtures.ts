@@ -152,6 +152,23 @@ export const SESSION_REST_CADENCE_SELECTION =
   'anchorAt pausedElapsedSeconds lastFiredBeatAt lastTickQueueItemUuid lastTickStatus setByParticipantId } ' +
   'revision serverNow isSnapshot action }';
 
+/**
+ * The selection a pinned GetSession recording predates: whether the session is
+ * a gym's always-on one (#6591), which decides whether the join screen says
+ * everyone in it sees your name. Non-null, so it is never invented: see
+ * `replayGetSessionWithPermanence`.
+ */
+const GET_SESSION_PERMANENCE_SELECTION = 'isPermanent';
+
+/** Recordings from the same fixture set that a compatibility adapter may cite. */
+export type ReplayCompatibilityEvidence = {
+  /**
+   * Every JoinSession recording in the set. Read only when a GetSession
+   * recording predates `isPermanent`, so callers can load it lazily.
+   */
+  joinSessionFixtures?: () => readonly GraphqlFixtureFile[];
+};
+
 /** Exact optional capability-argument change; selections and fixture variable keys stay unchanged. */
 const PRESENCE_CAPABILITY_OPERATIONS = new Set([
   'BoardNowPlaying',
@@ -178,13 +195,17 @@ const PRESENCE_CAPABILITY_OPERATIONS = new Set([
  * - GetSmartPlaylist: the list's `unfilteredCount`.
  * - SessionUpdates: the crew rest clock's union member, which the recorded
  *   roster frame never is.
+ * - GetSession: the non-null `isPermanent`, taken from what the set recorded
+ *   (`replayGetSessionWithPermanence`), never defaulted.
  */
 export function replayCompatibleFixtureResponse(
   requestQuery: string,
   fixture: GraphqlFixtureFile,
+  evidence: ReplayCompatibilityEvidence = {},
 ): { response: unknown } | null {
   const operationName = resolveOperationName({ query: requestQuery });
   if (operationName !== fixture.operationName) return null;
+  if (operationName === 'GetSession') return replayGetSessionWithPermanence(requestQuery, fixture, evidence);
   if (PRESENCE_CAPABILITY_OPERATIONS.has(operationName ?? '')) {
     const normalized = normalizeDocument(requestQuery);
     const declaration = ', $boardUuid: ID';
@@ -234,6 +255,65 @@ function matchesWithoutSelection(requestQuery: string, selection: string, fixtur
   const normalized = normalizeDocument(requestQuery);
   if (normalized.split(selection).length !== 2) return false;
   return normalizeDocument(normalized.replace(selection, '')) === normalizeDocument(fixture.query);
+}
+
+/**
+ * GetSession recorded before the join screen selected `isPermanent` (#6591).
+ * The field is non-null and decides what the screen tells the climber, so this
+ * only replays a value the same set recorded:
+ *
+ * - the recorded session already carries a boolean `isPermanent` (the recorder
+ *   kept the server's whole reply), which replays unchanged;
+ * - or it carries none, and the set's JoinSession replies recorded one for the
+ *   same session id (`recordedJoinSessionPermanence`). The CPP sets are this
+ *   case: their sessions are permanent by design.
+ *
+ * Anything else stays a miss: a null session, a non-boolean value, no or
+ * disagreeing JoinSession evidence, or any other change to the document.
+ */
+function replayGetSessionWithPermanence(
+  requestQuery: string,
+  fixture: GraphqlFixtureFile,
+  evidence: ReplayCompatibilityEvidence,
+): { response: unknown } | null {
+  // A whole token, exactly once: `matchesWithoutSelection` alone would also
+  // accept the name spliced into another field's.
+  if (normalizeDocument(requestQuery).split(` ${GET_SESSION_PERMANENCE_SELECTION} `).length !== 2) return null;
+  if (!matchesWithoutSelection(requestQuery, GET_SESSION_PERMANENCE_SELECTION, fixture)) return null;
+  if (!isRecord(fixture.response) || !isRecord(fixture.response.data)) return null;
+  const response = fixture.response;
+  const data = fixture.response.data;
+  const session = data.session;
+  if (!isRecord(session)) return null;
+  if (typeof session.isPermanent === 'boolean') return { response };
+  if (session.isPermanent !== undefined) return null;
+  const sessionId = isRecord(fixture.variables) ? fixture.variables.sessionId : undefined;
+  if (typeof sessionId !== 'string' || session.id !== sessionId) return null;
+  const isPermanent = recordedJoinSessionPermanence(sessionId, evidence.joinSessionFixtures?.() ?? []);
+  if (isPermanent === null) return null;
+  return { response: { ...response, data: { ...data, session: { ...session, isPermanent } } } };
+}
+
+/**
+ * The `isPermanent` the JoinSession replies among `joinSessionFixtures`
+ * recorded for `sessionId`, or null when none recorded one or they disagree.
+ * Replies that selected no `isPermanent` (the native Live Activity join) say
+ * nothing either way and are skipped.
+ */
+export function recordedJoinSessionPermanence(
+  sessionId: string,
+  joinSessionFixtures: readonly GraphqlFixtureFile[],
+): boolean | null {
+  const recorded = new Set<boolean>();
+  for (const fixture of joinSessionFixtures) {
+    if (fixture.operationName !== 'JoinSession') continue;
+    if (!isRecord(fixture.variables) || fixture.variables.sessionId !== sessionId) continue;
+    if (!isRecord(fixture.response) || !isRecord(fixture.response.data)) continue;
+    const joined = fixture.response.data.joinSession;
+    if (!isRecord(joined) || joined.id !== sessionId || typeof joined.isPermanent !== 'boolean') continue;
+    recorded.add(joined.isPermanent);
+  }
+  return recorded.size === 1 ? [...recorded][0] : null;
 }
 
 function replaySessionUpdatesWithoutRestCadence(

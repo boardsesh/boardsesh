@@ -75,6 +75,7 @@ import {
   findUnpseudonymisedPersonFields,
   validateScreenshotFixtureManifest,
   type GraphqlFixtureFile,
+  type ReplayCompatibilityEvidence,
   type ScreenshotFixtureManifest,
 } from '../../../../../../scripts/lib/screenshot-fixtures';
 import { fixtureSnapshotDirectory } from '../../../../../../scripts/lib/screenshot-fixture-snapshot';
@@ -391,6 +392,12 @@ function readFixture(file: string): GraphqlFixtureFile {
   return JSON.parse(readFileSync(join(FIXTURES_DIR, file), 'utf8')) as GraphqlFixtureFile;
 }
 
+/** The same evidence the replay server hands the compatibility adapters: this set's JoinSession recordings. */
+const compatibilityEvidence: ReplayCompatibilityEvidence = {
+  joinSessionFixtures: () =>
+    manifest.graphql.filter((entry) => entry.operationName === 'JoinSession').map((entry) => readFixture(entry.file)),
+};
+
 // ---------------------------------------------------------------------------
 // (a) Every document the app sends is a valid operation
 // ---------------------------------------------------------------------------
@@ -482,7 +489,11 @@ describe('the recorded screenshot fixtures', () => {
         continue;
       }
       if (documents.some((candidate) => candidate.documentHash === entry.documentHash)) continue;
-      if (documents.some((candidate) => replayCompatibleFixtureResponse(candidate.document, readFixture(entry.file))))
+      if (
+        documents.some((candidate) =>
+          replayCompatibleFixtureResponse(candidate.document, readFixture(entry.file), compatibilityEvidence),
+        )
+      )
         continue;
       failures.push(
         `Fixture ${entry.file} was recorded from a ${entry.operationName} document the app no longer sends ` +
@@ -514,7 +525,7 @@ describe('the recorded screenshot fixtures', () => {
           entries.some(
             (entry) =>
               entry.operationName === operationName &&
-              replayCompatibleFixtureResponse(registered.document, readFixture(entry.file)),
+              replayCompatibleFixtureResponse(registered.document, readFixture(entry.file), compatibilityEvidence),
           )
         )
           continue;
@@ -564,10 +575,12 @@ describe('the recorded screenshot fixtures', () => {
       const fixture = readFixture(entry.file);
       const current = documents?.find(
         (candidate) =>
-          candidate.documentHash === entry.documentHash || replayCompatibleFixtureResponse(candidate.document, fixture),
+          candidate.documentHash === entry.documentHash ||
+          replayCompatibleFixtureResponse(candidate.document, fixture, compatibilityEvidence),
       );
       if (!current) continue; // already reported by the document-drift check above
-      const response = (replayCompatibleFixtureResponse(current.document, fixture)?.response ?? fixture.response) as {
+      const response = (replayCompatibleFixtureResponse(current.document, fixture, compatibilityEvidence)?.response ??
+        fixture.response) as {
         data?: unknown;
       } | null;
       if (!response || typeof response !== 'object' || response.data === undefined) continue;
