@@ -1791,15 +1791,17 @@ describe('QueueProvider local solo queue', () => {
       ]);
     });
 
-    // #6776 review: a move carries indexes, and the backend's reorderQueueItem
-    // splices by index after only a range check. While a whole-list Play next
+    // #6776 review: a move carries indexes. The backend's reorderQueueItem finds
+    // the climb by uuid but places it at the newIndex it is sent, and answers a
+    // stale index with a FullSync (#6792). While a whole-list Play next
     // drains, this phone already shows every climb and the server does not, so
     // the move must wait on the same lane and read its indexes against the
     // queue the server holds when it goes.
     describe('moves and removals while a list drains', () => {
       // The backend's queue rules, so each test can assert the crew ends where
       // this phone does: an add clamps a missing or out-of-range position to an
-      // append, a reorder rejects an out-of-range index, a remove filters.
+      // append, a reorder finds the climb by uuid and clamps newIndex to the
+      // tail, a remove filters.
       function installServerModel(seed: ClimbQueueItem[]) {
         const server = { queue: [...seed] };
         let releaseFirstSend: () => void = () => {};
@@ -1815,12 +1817,11 @@ describe('QueueProvider local solo queue', () => {
           }
         });
         queueMutations.reorderQueueItem.mockImplementation(
-          async (_uuid: string, oldIndex: number, newIndex: number) => {
-            if (oldIndex >= server.queue.length || newIndex >= server.queue.length) {
-              throw new Error(`Invalid index: queue has ${server.queue.length} items`);
-            }
-            const [moved] = server.queue.splice(oldIndex, 1);
-            server.queue.splice(newIndex, 0, moved);
+          async (uuid: string, _oldIndex: number, newIndex: number) => {
+            const movedFromIndex = server.queue.findIndex((entry) => entry.uuid === uuid);
+            if (movedFromIndex < 0) throw new Error(`Queue item ${uuid} is not in the queue`);
+            const [moved] = server.queue.splice(movedFromIndex, 1);
+            server.queue.splice(Math.min(newIndex, server.queue.length), 0, moved);
           },
         );
         queueMutations.removeQueueItem.mockImplementation(async (uuid: string) => {
@@ -1863,7 +1864,7 @@ describe('QueueProvider local solo queue', () => {
           expect(outcome).toBe('moved');
         });
         expect(localUuids(snapshots)).toEqual(['item-y', 'list-1', 'list-2', 'list-3', 'item-x']);
-        // The server holds three climbs here; oldIndex 4 would be refused.
+        // The server holds three climbs here; oldIndex 4 would be stale.
         expect(queueMutations.reorderQueueItem).not.toHaveBeenCalled();
 
         await act(async () => {

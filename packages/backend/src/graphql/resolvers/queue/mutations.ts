@@ -287,16 +287,18 @@ export const queueMutations = {
    * The server finds the climb by `uuid` and ignores a stale `oldIndex` (#6792).
    * A peer's add or remove that lands first shifts positions, so the phone's
    * index can point at another climb or past the end of the queue. `newIndex`
-   * past the end is clamped to the tail. The published `QueueReordered` carries
-   * the indexes the server actually used, so peers in step with the server pass
-   * the reducer's uuid-at-oldIndex check.
+   * past the end is clamped to the tail. When the indexes matched, the
+   * published `QueueReordered` carries them and every phone applies it. When
+   * they were stale, the sender's optimistic order was built on a queue the
+   * server no longer has, and a `QueueReordered` echo fails its
+   * uuid-at-oldIndex check, so a stale reorder publishes a `FullSync` instead.
    *
    * F3: the line moves by `lineAfterDelta` at every percent. Inside
    * `QUEUE_NOW_SLOT_PERCENT`, with nothing current, an Up next entry dragged
    * above the line is clamped to the head of Up next (`reorderAcrossLine`): a
    * shipped phone sees one flat Up next list there, so this keeps its intent
    * instead of filing the climb under History. A clamped reorder, or one that
-   * normalised a stored orphan, publishes a `FullSync`.
+   * normalised a stored orphan, publishes a `FullSync` too.
    */
   reorderQueueItem: async (
     _: unknown,
@@ -387,7 +389,10 @@ export const queueMutations = {
       });
     }
 
-    if (clamped || orphanNormalised) {
+    // A stale index means the sender's view differs from the server's. Its own
+    // optimistic move cannot be corrected by a QueueReordered (the echo fails
+    // the uuid-at-oldIndex check on its shifted queue), so send the whole state.
+    if (clamped || orphanNormalised || staleIndex) {
       publishFullSync(pubsub, sessionId, write, state.queue, state.currentClimbQueueItem);
     } else {
       pubsub.publishQueueEvent(sessionId, {

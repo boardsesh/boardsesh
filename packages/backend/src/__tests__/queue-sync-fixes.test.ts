@@ -560,6 +560,20 @@ describe('reorderQueueItem - moves the climb named by uuid when the index is sta
   const uuidsOf = (queue: ClimbQueueItem[]) => queue.map((item) => item.uuid);
   const staleIndexLogs = () =>
     infoSpy.mock.calls.filter((call: unknown[]) => call[0] === '[reorderQueueItem] stale client index');
+  // A stale reorder must reach the sender as a FullSync of the stored order: a
+  // QueueReordered echo fails the uuid-at-oldIndex check on its shifted queue.
+  async function expectFullSyncOfStoredQueue(sessionId: string) {
+    const stored = await roomManager.getQueueState(sessionId);
+    expect(publishSpy).toHaveBeenCalledTimes(1);
+    const [publishedSessionId, event] = publishSpy.mock.calls[0] as [
+      string,
+      { __typename: string; sequence: number; state: { queue: ClimbQueueItem[] } },
+    ];
+    expect(publishedSessionId).toBe(sessionId);
+    expect(event.__typename).toBe('FullSync');
+    expect(event.sequence).toBe(stored.sequence);
+    expect(uuidsOf(event.state.queue)).toEqual(uuidsOf(stored.queue));
+  }
 
   async function roomWith(queue: ClimbQueueItem[], current: ClimbQueueItem | null = null) {
     const sessionId = uuidv4();
@@ -579,11 +593,7 @@ describe('reorderQueueItem - moves the climb named by uuid when the index is sta
 
     const stored = await roomManager.getQueueState(sessionId);
     expect(uuidsOf(stored.queue)).toEqual([climbA.uuid, climbC.uuid, climbB.uuid]);
-    expect(publishSpy).toHaveBeenCalledTimes(1);
-    expect(publishSpy).toHaveBeenCalledWith(
-      sessionId,
-      expect.objectContaining({ __typename: 'QueueReordered', uuid: climbC.uuid, oldIndex: 2, newIndex: 1 }),
-    );
+    await expectFullSyncOfStoredQueue(sessionId);
     expect(staleIndexLogs()).toHaveLength(1);
     expect(staleIndexLogs()[0][1]).toMatchObject({ uuid: climbC.uuid, oldIndex: 0, resolvedOldIndex: 2 });
   });
@@ -596,13 +606,10 @@ describe('reorderQueueItem - moves the climb named by uuid when the index is sta
 
     const stored = await roomManager.getQueueState(sessionId);
     expect(uuidsOf(stored.queue)).toEqual([climbB.uuid, climbA.uuid]);
-    expect(publishSpy).toHaveBeenCalledWith(
-      sessionId,
-      expect.objectContaining({ __typename: 'QueueReordered', uuid: climbB.uuid, oldIndex: 1, newIndex: 0 }),
-    );
+    await expectFullSyncOfStoredQueue(sessionId);
   });
 
-  it('clamps a newIndex past the end to the tail and publishes the clamped index', async () => {
+  it('clamps a newIndex past the end to the tail and resyncs the sender', async () => {
     const [climbA, climbB] = [createTestClimb(), createTestClimb()];
     const sessionId = await roomWith([climbA, climbB]);
 
@@ -610,10 +617,23 @@ describe('reorderQueueItem - moves the climb named by uuid when the index is sta
 
     const stored = await roomManager.getQueueState(sessionId);
     expect(uuidsOf(stored.queue)).toEqual([climbB.uuid, climbA.uuid]);
-    expect(publishSpy).toHaveBeenCalledWith(
-      sessionId,
-      expect.objectContaining({ __typename: 'QueueReordered', uuid: climbA.uuid, oldIndex: 0, newIndex: 1 }),
-    );
+    await expectFullSyncOfStoredQueue(sessionId);
+  });
+
+  it('resyncs the sender when a peer remove made its drag a no-op on the server', async () => {
+    // Server [X,Y,Z]; a peer removes X; the sender, still on [X,Y,Z], drags Z
+    // from 2 to 1. On the server Z is already at 1, so nothing moves. The
+    // sender then applies the remove and holds [Z,Y]: a QueueReordered (Z,1,1)
+    // would fail its uuid-at-oldIndex check and leave it on [Z,Y].
+    const [climbX, climbY, climbZ] = [createTestClimb(), createTestClimb(), createTestClimb()];
+    const sessionId = await roomWith([climbY, climbZ]);
+
+    await queueMutations.reorderQueueItem({}, { uuid: climbZ.uuid, oldIndex: 2, newIndex: 1 }, ctxFor(sessionId));
+
+    const stored = await roomManager.getQueueState(sessionId);
+    expect(uuidsOf(stored.queue)).toEqual([climbY.uuid, climbZ.uuid]);
+    expect(uuidsOf(stored.queue)).not.toContain(climbX.uuid);
+    await expectFullSyncOfStoredQueue(sessionId);
   });
 
   it('rejects a uuid that is not in the queue without writing or publishing', async () => {
@@ -653,10 +673,7 @@ describe('reorderQueueItem - moves the climb named by uuid when the index is sta
 
     const stored = await roomManager.getQueueState(sessionId);
     expect(uuidsOf(stored.queue)).toEqual([climbA.uuid, climbC.uuid, climbB.uuid]);
-    expect(publishSpy).toHaveBeenCalledWith(
-      sessionId,
-      expect.objectContaining({ __typename: 'QueueReordered', uuid: climbC.uuid, oldIndex: 2, newIndex: 1 }),
-    );
+    await expectFullSyncOfStoredQueue(sessionId);
   });
 });
 

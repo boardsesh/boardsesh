@@ -1833,8 +1833,10 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       const reorderedQueue = [...previousQueue];
       const [movedItem] = reorderedQueue.splice(oldIndex, 1);
       reorderedQueue.splice(targetIndex, 0, movedItem);
-      // Optimistic local reorder; the server's QueueReordered echo is a safe
-      // no-op thanks to the same uuid-at-oldIndex check.
+      // Optimistic local reorder. While this phone is in step with the server,
+      // the QueueReordered echo is a no-op thanks to the same uuid-at-oldIndex
+      // check. When its indexes were stale, the server sends a FullSync of its
+      // own order instead (#6792).
       dispatch({ type: 'DELTA_REORDER_QUEUE_ITEM', payload: { uuid, oldIndex, newIndex: targetIndex } });
       track(SHARED_EVENTS.QueueReordered, {
         boardName: activeBoardRef.current?.boardType,
