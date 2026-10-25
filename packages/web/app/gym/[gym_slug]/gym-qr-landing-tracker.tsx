@@ -40,6 +40,14 @@ export function __resetReportedScansForTests(): void {
  * (the session and the region lookup are async), and `track()` drops an event
  * sent before then, so counting on mount lost nearly every cold scan. The scan
  * is marked reported only when it is sent.
+ *
+ * A scan whose page the climber left before consent settled is lost, and,
+ * unlike `BoardQrLandingTracker`, coming back does not recover it. Deliberate:
+ * this tracker is mounted only when the SERVER saw the QR pair, and the return
+ * visit's URL no longer carries it, so there is nothing mounted to count it.
+ * Matching the board tracker would mean mounting on every gym page and
+ * remembering landings in the browser, for a scan lost only by someone who
+ * leaves before consent settles soon after hydration. Not worth the change.
  */
 export default function GymQrLandingTracker({ gymSlug, medium }: GymQrLandingTrackerProps) {
   const { granted } = useConsent();

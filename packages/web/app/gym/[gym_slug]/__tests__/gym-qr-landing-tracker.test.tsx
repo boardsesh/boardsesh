@@ -103,6 +103,25 @@ describe('GymQrLandingTracker', () => {
     });
   });
 
+  it('does not count a scan whose page was left before consent settled, and a re-scan still counts', () => {
+    // Unlike the board tracker, a return visit cannot recover it: the page mounts
+    // this tracker only when the server saw the QR pair, and the stripped URL a
+    // climber comes back on has none (gym-page-qr-landing.test.tsx pins that).
+    consentState.granted = false;
+    window.history.replaceState(null, '', '/gym/boulderwelt?src=qr&medium=poster');
+    render(<GymQrLandingTracker gymSlug="boulderwelt" medium="poster" />).unmount();
+
+    consentState.granted = true;
+
+    expect(trackGymFunnelEvent).not.toHaveBeenCalled();
+
+    // The lost attempt was never marked reported, so scanning the poster again counts.
+    window.history.replaceState(null, '', '/gym/boulderwelt?src=qr&medium=poster');
+    render(<GymQrLandingTracker gymSlug="boulderwelt" medium="poster" />);
+
+    expect(trackGymFunnelEvent).toHaveBeenCalledTimes(1);
+  });
+
   it('leaves a URL that carries no attribution params alone', () => {
     window.history.replaceState(null, '', '/gym/boulderwelt?tab=boards');
 
