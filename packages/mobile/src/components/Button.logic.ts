@@ -107,10 +107,12 @@ export function pinnedButtonHeight(style: ViewStyle | undefined): number | undef
  * fill frame can only grow a button, never shrink it, so each overflowed the pin
  * by a different amount and Attempt and Flash drew at different heights (#5663).
  * At `.regular` both sit below the pin and the fill frame grows them to it.
+ * Only a plain `style` object is read; a style array is not resolved, so it
+ * counts as unpinned.
  */
 export function iosControlSize(size: ButtonSize, style: ViewStyle | undefined): 'small' | 'regular' | 'large' {
   if (size === 'small') return 'small';
-  if (size === 'large' && pinnedButtonHeight(style) == null) return 'large';
+  if (size === 'large' && pinnedButtonHeight(style) === undefined) return 'large';
   return 'regular';
 }
 
