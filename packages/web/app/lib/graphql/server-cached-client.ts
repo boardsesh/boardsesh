@@ -6,6 +6,7 @@ import { type RequestDocument, type Variables, GraphQLClient } from 'graphql-req
 import { sortObjectKeys } from '@/app/lib/cache-utils';
 import { compactErrorMessage } from '@/app/lib/observability/compact-error';
 import { getGraphQLHttpUrl } from './client';
+import { SSR_BACKEND_FETCH_TIMEOUT_MS } from '@/app/lib/ssr-fetch-deadline';
 import { webClientIdentityHeaders } from '@/app/lib/client-identity';
 import type { DiscoverablePlaylist, DiscoverPlaylistsQueryResponse } from '@boardsesh/graphql/operations/playlists';
 import type { GetCommunityStatsQueryResponse } from '@boardsesh/graphql/operations';
@@ -24,7 +25,8 @@ export const USER_CLIMB_PERCENTILE_CACHE_TAG = 'user-climb-percentile';
 
 /**
  * Execute a GraphQL query via HTTP (non-cached version for internal use).
- * Pass `signal` to enforce a deadline via `AbortController`.
+ * Without a `signal` the call is bounded by SSR_BACKEND_FETCH_TIMEOUT_MS; an
+ * explicit signal replaces that default.
  */
 export async function executeGraphQLInternal<T = unknown, V extends Variables = Variables>(
   document: RequestDocument,
@@ -37,7 +39,7 @@ export async function executeGraphQLInternal<T = unknown, V extends Variables = 
       'Content-Type': 'application/json',
       ...webClientIdentityHeaders(),
     },
-    signal,
+    signal: signal ?? AbortSignal.timeout(SSR_BACKEND_FETCH_TIMEOUT_MS),
   });
 
   return client.request<T>(document, variables);
@@ -65,9 +67,9 @@ function createCacheKeyFromVariables(variables: Variables | undefined): string[]
  * @param variables - Query variables
  * @param cacheTag - Tag for cache invalidation (e.g., 'climb-search')
  * @param revalidate - Cache duration in seconds
- * @param timeoutMs - Optional wall-clock ceiling. Without one a wedged backend
- *   hangs the caller indefinitely; `graphql-request` honours the signal, so the
- *   call rejects with an abort error the caller can degrade on.
+ * @param timeoutMs - Optional wall-clock ceiling override. Defaults to
+ *   SSR_BACKEND_FETCH_TIMEOUT_MS; `graphql-request` honours the signal, so a
+ *   wedged backend rejects with an abort error the caller can degrade on.
  */
 export function createCachedGraphQLQuery<T = unknown, V extends Variables = Variables>(
   document: RequestDocument,

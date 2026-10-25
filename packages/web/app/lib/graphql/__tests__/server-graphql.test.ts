@@ -3,11 +3,20 @@ import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 
 vi.mock('server-only', () => ({}));
 
-const { requestMock } = vi.hoisted(() => ({ requestMock: vi.fn() }));
+const { requestMock, constructorOptions } = vi.hoisted(() => ({
+  requestMock: vi.fn(),
+  constructorOptions: [] as ({ signal?: AbortSignal } | undefined)[],
+}));
 
 vi.mock('graphql-request', async (importOriginal) => {
   const actual = await importOriginal<typeof import('graphql-request')>();
   class MockGraphQLClient {
+    constructor(
+      public url: string,
+      options?: { signal?: AbortSignal },
+    ) {
+      constructorOptions.push(options);
+    }
     request = requestMock;
   }
   return {
@@ -20,12 +29,25 @@ vi.mock('@/app/lib/graphql/client', () => ({
   getGraphQLHttpUrl: () => 'http://test.local/graphql',
 }));
 
+import { SSR_AUTHENTICATED_FETCH_TIMEOUT_MS } from '@/app/lib/ssr-fetch-deadline';
 // Import after vi.mock so the mocks are applied to the helpers' transitive deps.
 import { serverMyBoards, serverPlaylist, serverPlaylistClimbs, serverUserPlaylists } from '../server-graphql';
 
 describe('server-graphql helpers', () => {
   beforeEach(() => {
     requestMock.mockReset();
+    constructorOptions.length = 0;
+  });
+
+  it('bounds every authenticated read with SSR_AUTHENTICATED_FETCH_TIMEOUT_MS', async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
+    requestMock.mockResolvedValueOnce({ playlist: null });
+
+    await serverPlaylist('auth-token', 'pl-1');
+
+    expect(constructorOptions[0]?.signal).toBeInstanceOf(AbortSignal);
+    expect(timeoutSpy).toHaveBeenCalledWith(SSR_AUTHENTICATED_FETCH_TIMEOUT_MS);
+    timeoutSpy.mockRestore();
   });
 
   describe('serverPlaylist', () => {

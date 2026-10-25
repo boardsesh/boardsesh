@@ -1,6 +1,7 @@
 import 'server-only';
 import { type RequestDocument, type Variables, GraphQLClient } from 'graphql-request';
 import { getGraphQLHttpUrl } from './client';
+import { SSR_AUTHENTICATED_FETCH_TIMEOUT_MS } from '@/app/lib/ssr-fetch-deadline';
 import { webClientIdentityHeaders } from '@/app/lib/client-identity';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { GET_MY_BOARDS, type GetMyBoardsQueryResponse } from '@boardsesh/graphql/operations/boards';
@@ -20,11 +21,13 @@ import {
  * Used for server-side rendering of authenticated pages where results
  * should not be shared across users or requests.
  * Also used by server-cached-client.ts for cached-but-authenticated queries.
+ * Bounded by SSR_AUTHENTICATED_FETCH_TIMEOUT_MS unless the caller passes a signal.
  */
 export async function executeAuthenticatedGraphQL<T = unknown, V extends Variables = Variables>(
   document: RequestDocument,
   variables?: V,
   authToken?: string,
+  signal?: AbortSignal,
 ): Promise<T> {
   const url = getGraphQLHttpUrl();
   const headers: Record<string, string> = {
@@ -34,7 +37,10 @@ export async function executeAuthenticatedGraphQL<T = unknown, V extends Variabl
   if (authToken) {
     headers['Authorization'] = `Bearer ${authToken}`;
   }
-  const client = new GraphQLClient(url, { headers });
+  const client = new GraphQLClient(url, {
+    headers,
+    signal: signal ?? AbortSignal.timeout(SSR_AUTHENTICATED_FETCH_TIMEOUT_MS),
+  });
   return client.request<T>(document, variables);
 }
 

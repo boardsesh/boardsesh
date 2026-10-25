@@ -51,7 +51,8 @@ vi.mock('../server-graphql', () => ({
   serverPlaylistClimbs: vi.fn(),
 }));
 
-import { createCachedGraphQLQuery } from '../server-cached-client';
+import { SSR_BACKEND_FETCH_TIMEOUT_MS } from '@/app/lib/ssr-fetch-deadline';
+import { createCachedGraphQLQuery, executeGraphQLInternal } from '../server-cached-client';
 
 describe('createCachedGraphQLQuery timeout', () => {
   beforeEach(() => {
@@ -78,14 +79,35 @@ describe('createCachedGraphQLQuery timeout', () => {
     expect(signal?.aborted).toBe(true);
   });
 
-  it('passes no signal when no timeout is asked for', async () => {
+  it('falls back to SSR_BACKEND_FETCH_TIMEOUT_MS when no timeout is asked for', async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
     const query = createCachedGraphQLQuery('query Q { x }', 'session-grouped-feed-public', 86400);
     void query();
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(constructorOptions[0]?.signal).toBeUndefined();
-    // And no stray timer keeps a serverless instance alive past its response.
-    expect(vi.getTimerCount()).toBe(0);
+    expect(constructorOptions[0]?.signal).toBeInstanceOf(AbortSignal);
+    expect(timeoutSpy).toHaveBeenCalledWith(SSR_BACKEND_FETCH_TIMEOUT_MS);
+    timeoutSpy.mockRestore();
+  });
+
+  it('bounds the discover-playlists tags too', async () => {
+    const query = createCachedGraphQLQuery('query Q { x }', 'discover-playlists-curated', 300);
+    void query();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(constructorOptions[0]?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('executeGraphQLInternal uses a caller-supplied signal as is', async () => {
+    backend.wedged = false;
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
+    const controller = new AbortController();
+
+    await executeGraphQLInternal('query Q { x }', undefined, controller.signal);
+
+    expect(constructorOptions[0]?.signal).toBe(controller.signal);
+    expect(timeoutSpy).not.toHaveBeenCalled();
+    timeoutSpy.mockRestore();
   });
 
   it('clears the timer when the backend answers in time', async () => {

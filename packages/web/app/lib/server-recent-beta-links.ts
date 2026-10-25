@@ -2,6 +2,7 @@ import 'server-only';
 import { GET_RECENT_BETA_LINKS } from '@boardsesh/graphql/operations/beta-links';
 import { executeAuthenticatedGraphQL } from '@/app/lib/graphql/server-graphql';
 import { getServerAuthToken } from '@/app/lib/auth/server-auth';
+import { SSR_BACKEND_FETCH_TIMEOUT_MS } from '@/app/lib/ssr-fetch-deadline';
 import type { BetaLinksGqlRow } from '@/app/lib/beta-video-url';
 export type RecentBetaLinkRow = {
   climbName: string | null;
@@ -17,6 +18,7 @@ export async function getRecentBetaLinks(limit = 20): Promise<RecentBetaLinkRow[
       GET_RECENT_BETA_LINKS,
       { limit },
       await getServerAuthToken(),
+      AbortSignal.timeout(SSR_BACKEND_FETCH_TIMEOUT_MS),
     );
     return result.recentBetaLinks;
   } catch {

@@ -38,10 +38,13 @@ vi.mock('@/app/lib/graphql/client', () => ({
   getGraphQLHttpUrl: vi.fn(() => 'http://localhost:4000/graphql'),
 }));
 
+vi.mock('../session-detail-content', () => ({ default: () => null }));
+
 vi.mock('@/app/lib/seo/dynamic-og-data', () => ({
   getSessionOgSummary: vi.fn(),
 }));
 
+const { GraphQLClient } = await import('graphql-request');
 const pageModule = await import('../page');
 const { getSessionOgSummary } = await import('@/app/lib/seo/dynamic-og-data');
 const getSessionOgSummaryMock = vi.mocked(getSessionOgSummary);
@@ -144,5 +147,14 @@ describe('session page metadata', () => {
     expect((metadata.title as { absolute: string }).absolute).not.toContain(secretRecap);
     expect(metadata.description).not.toContain(secretRecap);
     expect(getOpenGraphImageUrl(image) ?? '').not.toContain(secretRecap);
+  });
+
+  it('bounds the session detail fetch with a deadline', async () => {
+    await pageModule.default({ params: Promise.resolve({ sessionId: 'session-deadline' }) });
+
+    expect(vi.mocked(GraphQLClient)).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 });
