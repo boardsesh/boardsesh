@@ -1793,7 +1793,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   );
   // A later render does not authorize the old row projection again.
   // Conservatively retire its handoff source for the rest of this hook's life.
-  const artworkPrivacyGeneration = useRef(credentialGeneration).current;
+  const artworkCredentialGeneration = useRef(credentialGeneration).current;
   const {
     frames,
     boardName,
@@ -3108,9 +3108,9 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   );
   const getReadyBoardArtSnapshot = useCallback(
     (climbUuid: string, mirrored: boolean, displayedOverlayLoadKey: string | null) => {
-      // Credential/privacy invalidation is synchronous, before React gets to
+      // Credential invalidation is synchronous, before React gets to
       // replace this recycled row's closure. Never bless its old pixels anew.
-      if (artworkPrivacyGeneration !== getCredentialGeneration()) return undefined;
+      if (artworkCredentialGeneration !== getCredentialGeneration()) return undefined;
       const width = getPlayOverlayWidth({ boardName, layoutId, sizeId, setIds });
       if (width !== undefined) {
         // This is the renderer's own key builder and resolved signature, not a
@@ -3199,7 +3199,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       missingBackgroundCount,
       backgroundPaths,
       filledStyle,
-      artworkPrivacyGeneration,
+      artworkCredentialGeneration,
     ],
   );
   return {

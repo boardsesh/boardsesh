@@ -24,7 +24,7 @@ export type TrackPageLoader = (page: number, signal: AbortSignal) => Promise<Pla
 type RegisteredLoader = {
   load: TrackPageLoader;
   /** Pages loaded under one account must never land in the next one's track. */
-  privacyGeneration: number;
+  credentialGeneration: number;
 };
 
 // Each tap on a list registers one, and only the tracks the climber can still
@@ -52,7 +52,7 @@ const launchId = Math.random().toString(36).slice(2, 10);
 export function registerTrackPageLoader(load: TrackPageLoader): string {
   loaderSequence += 1;
   const loaderId = `track-pages-${launchId}-${loaderSequence}`;
-  loaders.set(loaderId, { load, privacyGeneration: getCredentialGeneration() });
+  loaders.set(loaderId, { load, credentialGeneration: getCredentialGeneration() });
   const pinned = new Set(pinnedLoaderIds.values());
   while (loaders.size > MAX_REGISTERED_LOADERS) {
     const oldestUnpinned = [...loaders.keys()].find((id) => !pinned.has(id));
@@ -95,7 +95,7 @@ export function registerPendingTrackLoader(settled: Promise<boolean>): string {
 function liveLoader(loaderId: string): RegisteredLoader | null {
   const registered = loaders.get(loaderId);
   if (!registered) return null;
-  if (registered.privacyGeneration !== getCredentialGeneration()) {
+  if (registered.credentialGeneration !== getCredentialGeneration()) {
     loaders.delete(loaderId);
     return null;
   }
@@ -150,9 +150,9 @@ export function loadNextTrackPage(source: PlaylistSuggestionSource): Promise<Pla
   const controller = new AbortController();
   const request = registered
     .load(continuation.nextPage, controller.signal)
-    .then((page) => (registered.privacyGeneration === getCredentialGeneration() ? page : null))
+    .then((page) => (registered.credentialGeneration === getCredentialGeneration() ? page : null))
     .catch((error: unknown): PlaylistTrackPage | null => {
-      if (registered.privacyGeneration !== getCredentialGeneration()) return null;
+      if (registered.credentialGeneration !== getCredentialGeneration()) return null;
       console.warn('Loading more of the swipe track failed:', error);
       // The page already had the drain's network retries. Ending here leaves the
       // track short of its list, so the count no longer fits it.

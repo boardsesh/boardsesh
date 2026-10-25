@@ -275,8 +275,8 @@ export function useSessionRealtime({
     const gate = createQueueSyncGate();
     queueSyncGateRef.current = gate;
     let disposed = false;
-    const privacyGeneration = getCredentialGeneration();
-    const isCurrent = () => !disposed && privacyGeneration === getCredentialGeneration();
+    const sessionCredentialGeneration = getCredentialGeneration();
+    const isCurrent = () => !disposed && sessionCredentialGeneration === getCredentialGeneration();
     let subscriptionStartToken = 0;
     let queueUpdatesCleanup: (() => void) | null = null;
     let sessionUpdatesCleanup: (() => void) | null = null;
@@ -1045,7 +1045,7 @@ export function useSessionRealtime({
     // effect re-runs or `resyncQueueFromServer` restarts the join, exactly as
     // when it sat on the dead client. On Expo web the auth transport revision
     // re-runs the effect after a credential change. A native sign-out stays
-    // dormant: the privacy generation moves before the dispose, so the re-run
+    // dormant: the credential generation moves before the dispose, so the re-run
     // effect binds the doomed client and lets go of it here. Re-joining a
     // session the account just left is not this code's call.
     const unsubscribeClientDisposed = subscribeWsClientDisposed((disposedClient) => {

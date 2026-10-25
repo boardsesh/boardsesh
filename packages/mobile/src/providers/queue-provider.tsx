@@ -968,7 +968,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           return buildSessionBoardPath(activeBoard);
         },
         execute: async ({ sessionId: sid, boardPath }) => {
-          const privacyGeneration = getCredentialGeneration();
+          const joinCredentialGeneration = getCredentialGeneration();
           // Snapshot identity at the moment we build the payload. If the profile
           // resolves while JOIN is in flight, we must record the values we
           // actually sent — not identityRef.current's newer ones — so the
@@ -1018,7 +1018,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           } else {
             result = await runJoin(JOIN_SESSION);
           }
-          if (privacyGeneration !== getCredentialGeneration()) throw new Error('Queue authorization changed');
+          if (joinCredentialGeneration !== getCredentialGeneration()) throw new Error('Queue authorization changed');
           // Remember what we announced so the re-announce effect only fires if
           // the identity changes after this join (profile loaded late / edited).
           announcedIdentityRef.current = sentIdentity;

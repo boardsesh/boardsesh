@@ -98,7 +98,7 @@ export function useActiveBoardSelfHeal(): void {
       validationInFlightRef.current = true;
       const requestGeneration = selectionGenerationRef.current;
       const requestWriteGeneration = getActiveBoardWriteGeneration();
-      const requestPrivacyGeneration = getCredentialGeneration();
+      const requestCredentialGeneration = getCredentialGeneration();
 
       void (async () => {
         let definitive = false;
@@ -106,7 +106,7 @@ export function useActiveBoardSelfHeal(): void {
           const resolved = await fetchBoardByUuid(storedUuid);
           if (
             !mountedRef.current ||
-            requestPrivacyGeneration !== getCredentialGeneration() ||
+            requestCredentialGeneration !== getCredentialGeneration() ||
             selectionGenerationRef.current !== requestGeneration ||
             activeUuidRef.current !== storedUuid
           ) {
@@ -140,7 +140,7 @@ export function useActiveBoardSelfHeal(): void {
           // later mount, selection effect, or foreground transition retries.
           if (__DEV__) console.warn('[ActiveBoardSelfHeal] validation failed; will retry');
         } finally {
-          if (definitive && requestPrivacyGeneration === getCredentialGeneration())
+          if (definitive && requestCredentialGeneration === getCredentialGeneration())
             markInitiallyValidatedActiveBoardUuid(storedUuid, hookValidationCacheEpoch);
           validationInFlightRef.current = false;
           const pendingReason = pendingReasonRef.current;
