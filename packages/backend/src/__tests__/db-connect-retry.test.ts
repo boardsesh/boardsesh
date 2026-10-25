@@ -52,11 +52,11 @@ describe('withDbConnectRetry', () => {
           calls += 1;
           return calls === 1 ? Promise.reject(connectError('ECONNREFUSED')) : Promise.resolve('rows');
         },
-        { random: () => 0, budgetMs: 10_000 },
+        { baseDelayMs: 40, random: () => 0, budgetMs: 10_000 },
       );
 
       expect(result).toBe('rows');
-      const retryCallIndex = timerSpy.mock.calls.findIndex(([, delayMs]) => delayMs === 75);
+      const retryCallIndex = timerSpy.mock.calls.findIndex(([, delayMs]) => delayMs === 20);
       expect(retryCallIndex).toBeGreaterThanOrEqual(0);
       const retryTimer = timerSpy.mock.results[retryCallIndex].value as NodeJS.Timeout;
       expect(retryTimer.hasRef()).toBe(true);
