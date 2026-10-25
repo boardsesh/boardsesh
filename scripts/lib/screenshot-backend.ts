@@ -1237,10 +1237,19 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     if (serializedResponse === undefined) {
       try {
         const fixture = JSON.parse(readFileSync(join(fixturesDir, entry.file), 'utf8')) as GraphqlFixtureFile;
+        // This set's own JoinSession replies: the only evidence an adapter may
+        // cite (GetSession's `isPermanent`, #6591). Read only when one asks.
+        const joinSessionFixtures = (): GraphqlFixtureFile[] =>
+          manifest.graphql
+            .filter((recorded) => recorded.operationName === 'JoinSession')
+            .map((recorded) => {
+              if (!isFixtureFileWithinDirectory(fixturesDir, recorded.file)) throw new Error('Invalid fixture path');
+              return JSON.parse(readFileSync(join(fixturesDir, recorded.file), 'utf8')) as GraphqlFixtureFile;
+            });
         const compatibility =
           campaignResponse ??
           (entry.documentHash !== key.documentHash
-            ? (replayCompatibleFixtureResponse(query, fixture) ??
+            ? (replayCompatibleFixtureResponse(query, fixture, { joinSessionFixtures }) ??
               (manifest.flow === 'app-store-campaign' || cppReplayScope
                 ? replayCampaignSessionResponse(query, parsedBody.variables, fixture)
                 : null))
@@ -1250,7 +1259,8 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
           return;
         }
         // Preserve recorded errors. Compatibility is limited to known nullable
-        // board fields and the campaign's recorded session projections.
+        // board fields, GetSession's recorded `isPermanent`, and the campaign's
+        // recorded session projections.
         serializedResponse = JSON.stringify(compatibility?.response ?? fixture.response);
         const boundAddress = httpServer.address();
         if (!boundAddress || typeof boundAddress === 'string') throw new Error('Replay asset origin is unavailable');

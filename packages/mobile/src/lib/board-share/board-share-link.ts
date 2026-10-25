@@ -43,8 +43,40 @@ export function buildPlainBoardShareUrl(slug: string): string {
   return `${WEB_BASE_URL}/b/${encodeURIComponent(slug)}`;
 }
 
+/**
+ * The www print page for a board's wall poster (#4415): `/poster/b/{slug}`.
+ * Callers gate it first; this only builds the URL. A Spraywall's own gate and
+ * `?wall=` live in `buildSprayWallPosterUrl` (spray-share.ts).
+ */
+export function buildBoardPosterPageUrl(slug: string): string {
+  return `${WEB_BASE_URL}/poster/b/${encodeURIComponent(slug)}`;
+}
+
+/**
+ * The poster page for a home board, or `null` when the board can't have one.
+ *
+ * Only Public and Unlisted, the two whose plain `/b/{slug}` link opens for
+ * anyone holding it, which is the link the printed code encodes. A Followers or
+ * Invite-only board would need its `?invite=` token on the wall, and a token
+ * taped to a wall is no longer an invite, so those get no poster. Spraywalls
+ * have their own builder.
+ */
+export function buildHomeBoardPosterUrl(
+  board: Pick<HomeBoardShareBoard, 'slug' | 'boardType' | 'isPublic' | 'isUnlisted'> | null | undefined,
+): string | null {
+  if (!board?.slug || toBoardName(board.boardType) === 'spray') return null;
+  if (!board.isPublic && !board.isUnlisted) return null;
+  return buildBoardPosterPageUrl(board.slug);
+}
+
 export type HomeBoardShareTarget =
-  | { kind: 'plain'; url: string; visibility: 'public' | 'unlisted' }
+  | {
+      kind: 'plain';
+      url: string;
+      visibility: 'public' | 'unlisted';
+      /** The print page for the board's wall poster (`buildHomeBoardPosterUrl`). */
+      posterUrl: string | null;
+    }
   | { kind: 'invite'; boardUuid: string };
 
 /** The board fields the gate reads. Structural so a partial board works uncast. */
@@ -74,8 +106,12 @@ export function homeBoardShareTarget(
   audience: PrivacyResourceAudience | null | undefined,
 ): HomeBoardShareTarget | null {
   if (!board || toBoardName(board.boardType) === 'spray') return null;
-  if (board.isUnlisted) return { kind: 'plain', url: buildPlainBoardShareUrl(board.slug), visibility: 'unlisted' };
-  if (board.isPublic) return { kind: 'plain', url: buildPlainBoardShareUrl(board.slug), visibility: 'public' };
+  const posterUrl = buildHomeBoardPosterUrl(board);
+  if (board.isUnlisted) {
+    return { kind: 'plain', url: buildPlainBoardShareUrl(board.slug), visibility: 'unlisted', posterUrl };
+  }
+  if (board.isPublic)
+    return { kind: 'plain', url: buildPlainBoardShareUrl(board.slug), visibility: 'public', posterUrl };
   const isOwner = typeof board.ownerId === 'string' && board.ownerId.length > 0 && board.ownerId === viewerUserId;
   if (!isOwner) return null;
   if (audience !== 'followers' && audience !== 'invite_only') return null;

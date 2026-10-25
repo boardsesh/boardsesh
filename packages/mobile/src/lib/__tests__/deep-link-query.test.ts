@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseDeepLinkQueryParams } from '../deep-link-query';
+import { parseDeepLinkQueryEntries, parseDeepLinkQueryParams } from '../deep-link-query';
 
 // This parser decodes the OAuth redirect deep links that drive the Strava
 // connect flow (status/reason) — a regression here silently breaks onboarding,
@@ -45,5 +45,32 @@ describe('parseDeepLinkQueryParams', () => {
     const params = parseDeepLinkQueryParams('app://cb?bad=%E0%A4%A&status=connected');
     expect(params.has('bad')).toBe(false);
     expect(params.get('status')).toBe('connected');
+  });
+});
+
+// The one decoder behind both readers: the map keeps a repeated name's last
+// value, the entries keep every copy so a caller can refuse a duplicate.
+describe('parseDeepLinkQueryEntries', () => {
+  it('keeps every pair in order, a repeated name once per copy', () => {
+    expect(parseDeepLinkQueryEntries('app://b/x?src=qr&medium=board&medium=kiosk#frag')).toEqual([
+      ['src', 'qr'],
+      ['medium', 'board'],
+      ['medium', 'kiosk'],
+    ]);
+    expect(parseDeepLinkQueryParams('app://b/x?medium=board&medium=kiosk').get('medium')).toBe('kiosk');
+  });
+
+  it('decodes exactly as the map does: percent escapes, plus as a space in values', () => {
+    const url = 'app://cb?%73rc=q%72&note=hello+world&bad=%E0%A4%A&flag&&';
+    expect(parseDeepLinkQueryEntries(url)).toEqual([
+      ['src', 'qr'],
+      ['note', 'hello world'],
+      ['flag', ''],
+    ]);
+    expect([...parseDeepLinkQueryParams(url)]).toEqual(parseDeepLinkQueryEntries(url));
+  });
+
+  it('has no pairs without a query', () => {
+    expect(parseDeepLinkQueryEntries('app://cb')).toEqual([]);
   });
 });

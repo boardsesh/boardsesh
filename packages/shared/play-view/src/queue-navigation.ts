@@ -1,5 +1,16 @@
-import type { Climb, ClimbQueueItem, ClimbQueue, PlaylistSuggestionSource } from '@boardsesh/queue';
-import { getPlaylistSuggestedClimbs, getPlaylistPeekQueueItemUuid, findPlaylistClimbIndex } from '@boardsesh/queue';
+import type {
+  Climb,
+  ClimbQueueItem,
+  ClimbQueue,
+  PlaylistSuggestionSource,
+  PlaylistTrackResume,
+} from '@boardsesh/queue';
+import {
+  getPlaylistSuggestedClimbs,
+  getPlaylistPeekQueueItemUuid,
+  findPlaylistClimbIndex,
+  withPlaylistTrackResume,
+} from '@boardsesh/queue';
 import {
   classifyClimbBoardCompatibility,
   findNextCompatibleQueueItem,
@@ -31,14 +42,18 @@ export function prepareQueueNavigation(queue: ClimbQueue): PreparedQueueNavigati
   return { queue, firstIndexByUuid };
 }
 
+function findQueueIndexOfEntry(queue: ClimbQueue, itemUuid: string, prepared?: PreparedQueueNavigation): number {
+  return prepared?.queue === queue
+    ? (prepared.firstIndexByUuid.get(itemUuid) ?? -1)
+    : queue.findIndex(({ uuid }) => uuid === itemUuid);
+}
+
 function findCurrentQueueIndex(
   queue: ClimbQueue,
   currentItem: ClimbQueueItem,
   prepared?: PreparedQueueNavigation,
 ): number {
-  return prepared?.queue === queue
-    ? (prepared.firstIndexByUuid.get(currentItem.uuid) ?? -1)
-    : queue.findIndex(({ uuid }) => uuid === currentItem.uuid);
+  return findQueueIndexOfEntry(queue, currentItem.uuid, prepared);
 }
 
 /**
@@ -118,6 +133,148 @@ function toPeekItem(climb: Climb): ClimbQueueItem {
   return { climb, addedBy: null, uuid: getPlaylistPeekQueueItemUuid(climb.uuid), suggested: true };
 }
 
+/**
+ * Where the climb being navigated from stands on a track (issue #6777).
+ *
+ * - `off`: the track does not steer this climb. No track, or the climb is off
+ *   it and the walk is not in Up next.
+ * - `list`: on the list, at `trackIndex`.
+ * - `upNext`: playing Up next in the middle of the list. `resume` is the list
+ *   climb the walk left from, at `resumeIndex` on the track, and the list picks
+ *   up after it once Up next is played.
+ */
+export type TrackPosition =
+  | { kind: 'off' }
+  | { kind: 'list'; trackIndex: number }
+  | { kind: 'upNext'; resume: PlaylistTrackResume; resumeIndex: number };
+
+const OFF_TRACK: TrackPosition = { kind: 'off' };
+
+/**
+ * Where `currentItem` stands on `source` (see {@link TrackPosition}).
+ *
+ * Up next needs the climb to be a real queue entry other than the one the walk
+ * left from: stepping back onto that entry is being on the list again, and a
+ * preview (not in the queue) only ever walks its list, so a crew browse or a
+ * wrong-board look never plays anyone's Up next.
+ *
+ * A stale `resume` never puts a climb in Up next that the walk can't be
+ * playing there: an entry the list walk put in the queue itself is the list
+ * (see {@link isListWalkEntry}), and a queue entry at or before the one the
+ * walk left from is History. Both happen when something other than Next or
+ * Previous moves the current climb (a crewmate's move onto a later list
+ * climb), and both read as the list, or off it, as they did before #6777. An
+ * entry it left from that is gone from the queue (a crewmate removed it) still
+ * counts as left behind: the list knows where it picks up from the track.
+ */
+export function resolveTrackPosition(
+  queue: ClimbQueue,
+  currentItem: ClimbQueueItem | null,
+  source: PlaylistSuggestionSource | null,
+  prepared?: PreparedQueueNavigation,
+): TrackPosition {
+  const climbUuid = currentItem?.climb?.uuid;
+  if (!source || !currentItem || !climbUuid) return OFF_TRACK;
+  const { resume } = source;
+  if (resume && resume.queueItemUuid !== currentItem.uuid && !isListWalkEntry(currentItem, source)) {
+    const resumeIndex = trackIndexOf(source, resume.climbUuid);
+    const currentIndex = findCurrentQueueIndex(queue, currentItem, prepared);
+    if (
+      resumeIndex >= 0 &&
+      currentIndex >= 0 &&
+      findQueueIndexOfEntry(queue, resume.queueItemUuid, prepared) < currentIndex
+    ) {
+      return { kind: 'upNext', resume, resumeIndex };
+    }
+  }
+  const trackIndex = trackIndexOf(source, climbUuid);
+  return trackIndex >= 0 ? { kind: 'list', trackIndex } : OFF_TRACK;
+}
+
+/**
+ * The list climb a walk is at: the climb itself on the list, the one it picks
+ * up after while it plays Up next, null off the list. What paging a track and
+ * any other "how far down the list" question should measure from, rather than
+ * the queued climb on screen (issue #6777).
+ */
+export function resolveTrackListClimbUuid(
+  position: TrackPosition,
+  source: PlaylistSuggestionSource | null,
+): string | null {
+  if (position.kind === 'upNext') return position.resume.climbUuid;
+  if (position.kind === 'list') return source?.climbs[position.trackIndex]?.uuid ?? null;
+  return null;
+}
+
+/**
+ * A queue entry the list walk itself put there, not one anybody queued: a list
+ * tap or a committed swipe is flagged `suggested`, and its climb is on the
+ * track. Swiping back down a list commits each climb after the current one, so
+ * those climbs sit in the queue after it; they are the list, walked by the
+ * list's own rule, and never Up next ahead of it. A `suggested` climb from
+ * another list (a workout's climbs, an older list's leftovers) is not on this
+ * track, so it is Up next like anything else queued (issue #6777).
+ */
+function isListWalkEntry(item: ClimbQueueItem, source: PlaylistSuggestionSource): boolean {
+  const climbUuid = item.climb?.uuid;
+  return item.suggested === true && climbUuid !== undefined && trackIndexOf(source, climbUuid) >= 0;
+}
+
+/** Up next as a list walk plays it: the queue after `currentIndex`, list-walk entries left out. */
+function upNextQueueItems(queue: ClimbQueue, currentIndex: number, source: PlaylistSuggestionSource): ClimbQueue {
+  const upNext: ClimbQueue = [];
+  for (let index = currentIndex + 1; index < queue.length; index += 1) {
+    const item = queue[index];
+    if (!isListWalkEntry(item, source)) upNext.push(item);
+  }
+  return upNext;
+}
+
+/**
+ * "Up next · 1 of 3": where the climb on screen sits in the stretch of Up next
+ * the walk is playing (issue #6777), or null when it is not playing Up next or
+ * the stretch can't be counted (the entry it left from is gone from the queue).
+ *
+ * `position` counts the Up next climbs from the one the walk left from up to
+ * this one. `total` adds the ones still ahead, up to the list's next climb: a
+ * queued copy of it is where the list carries on, not more Up next.
+ *
+ * Both count only climbs the walk plays: `activeConfig` and `isReachable` are
+ * the selectors' own, so a queued climb this wall can't draw (in a crew whose
+ * queue mixes boards) is walked past here as it is by Next.
+ */
+export function resolveUpNextProgress(
+  queue: ClimbQueue,
+  currentItem: ClimbQueueItem | null,
+  source: PlaylistSuggestionSource | null,
+  prepared?: PreparedQueueNavigation,
+  activeConfig?: ActiveBoardForCompatibility,
+  isReachable?: ReachableClimbPredicate,
+): { position: number; total: number } | null {
+  const position = resolveTrackPosition(queue, currentItem, source, prepared);
+  if (position.kind !== 'upNext' || !source || !currentItem) return null;
+  const currentIndex = findCurrentQueueIndex(queue, currentItem, prepared);
+  let played = 1;
+  let foundResume = false;
+  for (let index = currentIndex - 1; index >= 0; index -= 1) {
+    const item = queue[index];
+    if (item.uuid === position.resume.queueItemUuid) {
+      foundResume = true;
+      break;
+    }
+    if (!isListWalkEntry(item, source) && !swipeWalksPast(item, activeConfig, isReachable)) played += 1;
+  }
+  if (!foundResume) return null;
+  const listSuccessorUuid = source.climbs[position.resumeIndex + 1]?.uuid;
+  let ahead = 0;
+  for (const item of upNextQueueItems(queue, currentIndex, source)) {
+    if (swipeWalksPast(item, activeConfig, isReachable)) continue;
+    if (item.climb?.uuid === listSuccessorUuid) break;
+    ahead += 1;
+  }
+  return { position: played, total: played + ahead };
+}
+
 /** The queue neighbour on either side of `currentIndex` that already holds
  * `climbUuid`, if there is one. See the "symmetric dedupe" note on
  * findNextQueueItemWithSuggestions for why both sides count. `queue[-1]` is
@@ -160,6 +317,11 @@ function swipeWalksPast(
  * between two of the list's climbs: without this, every swipe past one added
  * a second copy of the next climb. The walk stops at the first climb the board
  * can draw, so a climb queued on purpose ("Play next") is never walked past.
+ *
+ * `aheadOnly` leaves out the neighbour behind: picking the list up after Up
+ * next, an entry behind the current climb is one the walk already played
+ * before it (History, or the list climb Up next was played from), and
+ * stepping back onto it would play everything after it a second time.
  */
 function findQueuedListNeighbour(
   queue: ClimbQueue,
@@ -168,10 +330,13 @@ function findQueuedListNeighbour(
   step: 1 | -1,
   activeConfig: ActiveBoardForCompatibility | undefined,
   isReachable: ReachableClimbPredicate | undefined,
+  aheadOnly = false,
 ): ClimbQueueItem | null {
   if (currentIndex < 0) return null;
-  const adjacentItem = findAdjacentQueueItemForClimb(queue, currentIndex, climbUuid);
-  if (adjacentItem || !activeConfig) return adjacentItem;
+  if (!aheadOnly) {
+    const adjacentItem = findAdjacentQueueItemForClimb(queue, currentIndex, climbUuid);
+    if (adjacentItem || !activeConfig) return adjacentItem;
+  }
   for (let index = currentIndex + step; index >= 0 && index < queue.length; index += step) {
     const item = queue[index];
     if (item.climb?.uuid === climbUuid) return item;
@@ -194,6 +359,15 @@ export type NextQueueItemSelection = {
    * walk has nothing to end.
    */
   atTrackEnd: boolean;
+  /**
+   * What the track's `resume` becomes once `item` is current (issue #6777): the
+   * list climb the walk leaves when it steps into Up next, null when it steps
+   * onto the list, absent when the step walks no list or stays where it is
+   * (another Up next climb keeps the same resume). A caller that commits the
+   * step stores it on the track (`withPlaylistTrackResume`), so the list picks
+   * up in the right place after the queue.
+   */
+  trackResume?: PlaylistTrackResume | null;
 };
 
 const NOTHING_NEXT: NextQueueItemSelection = { item: null, skippedItems: [], atTrackEnd: false };
@@ -232,29 +406,42 @@ function scanForFirstCompatible(
 }
 
 /**
- * Next-climb target for a play-drawer swipe, walking the LIST the current climb
- * was opened from rather than the queue (issue #4829).
+ * Next-climb target for a play-drawer swipe, Next, the rest timer and every
+ * other forward step.
  *
- * The queue is cross-board and accumulates browse history: every climb you tap
- * lands in it, and activation inserts right after the current item. Walking the
- * queue therefore replays leftovers from whatever list or board you were on
- * before — tap K1, K2, K3 on Kilter, swipe back to K1, switch to Woods and tap
- * W1, and a queue-first "next" hands you K2. So when the current climb is in the
- * active suggestion source (`source.climbs`), next/prev walk that ordered list;
- * only a current climb with no list (or off it) falls back to the queue.
+ * While the player walks a list (issue #4829: the climb was opened from search
+ * results, a playlist, the logbook and so on), Next plays Up next first: the
+ * queue after the current climb, in queue order, so Play next climbs come
+ * before Play last ones (issue #6777, reversing the list-first rule of #6664).
+ * Once Up next is played, the list picks up at the climb after the last list
+ * climb played, the track's `resume`. Three cases for a current item that IS in
+ * the queue, on a list or in Up next between two of its climbs:
  *
- * Three cases for a current item that IS in the queue:
- *  1. Its climb is in `source.climbs` → target is the list successor, as a
- *     transient "peek". On commit the peek is inserted even if that climb
- *     already appears elsewhere in the queue, so re-activating a playlist climb
- *     starts a fresh pass (the queue grows 1..10, 1..10) instead of jumping
- *     ahead to the first un-queued climb.
- *  2. No source, or the current climb isn't in it → the queue successor.
- *  3. List boundary (in the source, nothing after it) → nothing, with
- *     `atTrackEnd` set (issue #6664). Falling into the queue here used to hand
- *     the climber whatever older climb sat after the current one, with nothing
- *     on screen to say the list had ended. The player shows an end card
- *     instead, and the queue is one deliberate tap on it.
+ *  1. Something is Up next → that queue item. Leaving the list for it reports
+ *     `trackResume` (the list climb left from), so the caller can store where
+ *     the list picks up again. An Up next climb that IS the list's next climb
+ *     (a playlist loaded into the queue in order, Play next on the next list
+ *     climb) is the list carrying on, and reports `trackResume: null`.
+ *  2. Up next is played → the list successor of the list climb the walk is at,
+ *     as a transient "peek" (or the real queue entry already holding it, see
+ *     the symmetric dedupe below). On commit the peek is inserted even if that
+ *     climb already appears elsewhere in the queue, so re-activating a playlist
+ *     climb starts a fresh pass (the queue grows 1..10, 1..10).
+ *  3. Up next is played and the list has ended → nothing, with `atTrackEnd`
+ *     set (issue #6664): the player shows its end card, so the end card only
+ *     comes up once both the list and Up next are done.
+ *
+ * Up next leaves out the climbs the list walk put in the queue itself (a list
+ * tap or a committed swipe on this list, see {@link isListWalkEntry}): swiping
+ * back down a list commits each climb after the current one, and those are the
+ * list, never queued on purpose.
+ *
+ * A current climb off the list with no walk in Up next walks the queue, as it
+ * always did. The queue is cross-board and holds leftovers from other lists,
+ * which is why a list once walked only the list; the active board still skips
+ * climbs this wall can't draw in Up next as it does anywhere in the queue. A
+ * step that lands on the list never reports those as skipped: the track leaves
+ * them out on its own.
  *
  * Symmetric dedupe: if the list target is ALREADY the queue item immediately
  * before or after current, return that real item instead of minting a peek, so
@@ -267,12 +454,13 @@ function scanForFirstCompatible(
  * took off the track: see {@link findQueuedListNeighbour}.
  *
  * An orphan current (not in the queue at all — the wrong-board view-only
- * preview, or transiently between a peek commit and the server echo) peeks the
- * list successor, and at the list's last climb reports `atTrackEnd` like a
- * queued one. Off the list it has nothing to walk. It never falls back to
- * `queue[0]`, and it never dedupes (there is no meaningful adjacency).
+ * preview, a crew browse, or transiently between a peek commit and the server
+ * echo) walks only its list: a preview never plays Up next, since a look must
+ * not use up anybody's queue. At the list's last climb it reports `atTrackEnd`
+ * like a queued one. Off the list it has nothing to walk. It never falls back
+ * to `queue[0]`, and it never dedupes (there is no meaningful adjacency).
  *
- * `activeConfig` makes the QUEUE branch board-aware (issue #5099): a swipe walks
+ * `activeConfig` makes the QUEUE walk board-aware (issue #5099): a swipe walks
  * past queued climbs the board on the wall cannot draw rather than handing back
  * a climb that renders nothing and lights nothing. Skipped climbs stay in the
  * queue and stay reachable from the queue sheet — they just stop being swipe
@@ -288,10 +476,10 @@ function scanForFirstCompatible(
  * navigation target: the drawer offers to move them to it. A climb on a board in
  * another city stays skipped, which is what #5099 was actually about.
  *
- * The SUGGESTION branch is deliberately left board-blind: the play drawer feeds
- * it a source that is sometimes bound to another board on purpose (the
- * wrong-board view-only preview). Staleness of the provider's own source is
- * handled where that source lives, not here.
+ * The LIST step is deliberately left board-blind: the play drawer feeds it a
+ * source that is sometimes bound to another board on purpose (the wrong-board
+ * view-only preview). Staleness of the provider's own source is handled where
+ * that source lives, not here.
  */
 export function selectNextQueueItemWithSuggestions(
   queue: ClimbQueue,
@@ -303,12 +491,22 @@ export function selectNextQueueItemWithSuggestions(
 ): NextQueueItemSelection {
   if (currentClimbQueueItem) {
     const currentIndex = findCurrentQueueIndex(queue, currentClimbQueueItem, prepared);
-    const trackIndex = trackIndexOf(source, currentClimbQueueItem.climb?.uuid);
-    if (source && trackIndex >= 0) {
-      const listSuccessor = source.climbs[trackIndex + 1];
-      if (!listSuccessor) return TRACK_END;
-      const queuedItem = findQueuedListNeighbour(queue, currentIndex, listSuccessor.uuid, 1, activeConfig, isReachable);
-      return { item: queuedItem ?? toPeekItem(listSuccessor), skippedItems: [], atTrackEnd: false };
+    const position = resolveTrackPosition(queue, currentClimbQueueItem, source, prepared);
+    if (source && position.kind !== 'off') {
+      if (currentIndex >= 0) {
+        return selectNextOnTrack(
+          queue,
+          currentClimbQueueItem,
+          currentIndex,
+          source,
+          position,
+          activeConfig,
+          isReachable,
+        );
+      }
+      // A preview walks its list and nothing else.
+      const listSuccessor = position.kind === 'list' ? source.climbs[position.trackIndex + 1] : undefined;
+      return listSuccessor ? { item: toPeekItem(listSuccessor), skippedItems: [], atTrackEnd: false } : TRACK_END;
     }
     // No list, or off it: a queued climb walks the queue, with board filtering;
     // an orphan has nothing to walk.
@@ -334,6 +532,49 @@ export function selectNextQueueItemWithSuggestions(
   return firstSuggestion ? { item: toPeekItem(firstSuggestion), skippedItems: [], atTrackEnd: false } : NOTHING_NEXT;
 }
 
+/**
+ * The forward step for a queued climb on a list, or in Up next between two of
+ * its climbs: Up next first, then the list after the list climb the walk is
+ * at. See {@link selectNextQueueItemWithSuggestions}.
+ */
+function selectNextOnTrack(
+  queue: ClimbQueue,
+  currentItem: ClimbQueueItem,
+  currentIndex: number,
+  source: PlaylistSuggestionSource,
+  position: Exclude<TrackPosition, { kind: 'off' }>,
+  activeConfig: ActiveBoardForCompatibility | undefined,
+  isReachable: ReachableClimbPredicate | undefined,
+): NextQueueItemSelection {
+  const listIndex = position.kind === 'list' ? position.trackIndex : position.resumeIndex;
+  const listSuccessor: Climb | undefined = source.climbs[listIndex + 1];
+  const upNext = scanForFirstCompatible(upNextQueueItems(queue, currentIndex, source), activeConfig, isReachable);
+  if (upNext.item) {
+    // Up next and the list agree on what comes next: the list carries on, and
+    // anything walked past on the way is a climb the track left out too.
+    if (listSuccessor && upNext.item.climb?.uuid === listSuccessor.uuid) {
+      return { item: upNext.item, skippedItems: [], atTrackEnd: false, trackResume: null };
+    }
+    const trackResume =
+      position.kind === 'list' ? { climbUuid: currentItem.climb.uuid, queueItemUuid: currentItem.uuid } : undefined;
+    return { item: upNext.item, skippedItems: upNext.skippedItems, atTrackEnd: false, trackResume };
+  }
+  // Up next is played (or holds nothing this wall can draw: those stay queued,
+  // and the end card counts them). The list picks up again. Coming out of Up
+  // next, only an entry ahead of the current climb carries the list on.
+  if (!listSuccessor) return TRACK_END;
+  const queuedItem = findQueuedListNeighbour(
+    queue,
+    currentIndex,
+    listSuccessor.uuid,
+    1,
+    activeConfig,
+    isReachable,
+    position.kind === 'upNext',
+  );
+  return { item: queuedItem ?? toPeekItem(listSuccessor), skippedItems: [], atTrackEnd: false, trackResume: null };
+}
+
 /** `selectNextQueueItemWithSuggestions` for callers that don't report skips. */
 export function findNextQueueItemWithSuggestions(
   queue: ClimbQueue,
@@ -347,45 +588,85 @@ export function findNextQueueItemWithSuggestions(
     .item;
 }
 
+/** What a backward step resolved to. See {@link NextQueueItemSelection.trackResume} for `trackResume`. */
+export type PreviousQueueItemSelection = {
+  item: ClimbQueueItem | null;
+  trackResume?: PlaylistTrackResume | null;
+};
+
+const NOTHING_PREVIOUS: PreviousQueueItemSelection = { item: null };
+
 /**
  * Previous-climb target for a play-drawer swipe — the mirror of
- * findNextQueueItemWithSuggestions, list-first for the same reason (issue
- * #4829): the cross-board queue accumulates browse history, so swiping back
- * used to walk climbs from a list or board you already left.
+ * selectNextQueueItemWithSuggestions. Previous retraces the climber's steps
+ * (issue #6777):
  *
- * Three cases for a current item that IS in the queue:
- *  1. Its climb is in `source.climbs` → the list predecessor, as a transient
- *     "peek" (or the adjacent real queue item — see the symmetric dedupe note
- *     on findNextQueueItemWithSuggestions).
- *  2. No source, or the current climb isn't in it → the queue predecessor.
- *  3. List boundary (first in the list) → null. The list's start is a stop,
- *     like its end (issue #6664): falling back into History here walked the
- *     climber into climbs from before the list with nothing to say so.
+ *  1. Playing Up next → the queue entry before it, which is where the walk came
+ *     from: the previous Up next climb, or, from the first one, the list climb
+ *     it left (back on the list: `trackResume: null`). List-walk entries and
+ *     climbs this wall can't draw are passed over, since Next never played them.
+ *     When the list climb's entry is gone from the queue (a crewmate removed
+ *     it), there is no telling Up next from History behind the current climb,
+ *     so Previous goes straight back to that list climb, as a peek, rather
+ *     than walking into climbs from before the list.
+ *  2. On the list, right after a stretch of Up next (History holds the list's
+ *     previous climb, or an older list-walk entry of this same climb, then Up
+ *     next climbs, then this one) → the last of those Up next climbs, with
+ *     `trackResume` naming the list entry before them.
+ *  3. Otherwise on the list → the list predecessor, as a transient "peek" (or
+ *     the adjacent real queue item — see the symmetric dedupe note on
+ *     selectNextQueueItemWithSuggestions). The list's start is a stop, like its
+ *     end (issue #6664): falling back into History here walked the climber into
+ *     climbs from before the list with nothing to say so.
+ *  4. No source, or off the list → the queue predecessor.
  *
  * An orphan current (not in the queue — the wrong-board view-only preview,
  * whose peeked climbs are never committed) peeks the list predecessor if the
  * climb is in the source, else null.
  *
- * `activeConfig` and `isReachable` only steer which queue entry stands for the
- * list predecessor (see {@link findQueuedListNeighbour}); the queue branch
- * stays board-blind going back, as computeNavigationStateWithSuggestions
- * explains.
+ * `activeConfig` and `isReachable` steer which queue entry stands for the
+ * list predecessor (see {@link findQueuedListNeighbour}) and which Up next
+ * climbs were walked past; the plain queue walk stays board-blind going back,
+ * as computeNavigationStateWithSuggestions explains.
  */
-export function findPreviousQueueItemWithSuggestions(
+export function selectPreviousQueueItemWithSuggestions(
   queue: ClimbQueue,
   currentClimbQueueItem: ClimbQueueItem | null,
   source: PlaylistSuggestionSource | null,
   prepared?: PreparedQueueNavigation,
   activeConfig?: ActiveBoardForCompatibility,
   isReachable?: ReachableClimbPredicate,
-): ClimbQueueItem | null {
-  if (!currentClimbQueueItem) return null;
+): PreviousQueueItemSelection {
+  if (!currentClimbQueueItem) return NOTHING_PREVIOUS;
 
   const currentIndex = findCurrentQueueIndex(queue, currentClimbQueueItem, prepared);
-  const trackIndex = trackIndexOf(source, currentClimbQueueItem.climb?.uuid);
-  if (source && trackIndex >= 0) {
-    const listPredecessor = source.climbs[trackIndex - 1];
-    if (!listPredecessor) return null;
+  const position = resolveTrackPosition(queue, currentClimbQueueItem, source, prepared);
+  if (source && position.kind === 'upNext') {
+    if (findQueueIndexOfEntry(queue, position.resume.queueItemUuid, prepared) < 0) {
+      const resumeClimb = source.climbs[position.resumeIndex];
+      return resumeClimb ? { item: toPeekItem(resumeClimb), trackResume: null } : NOTHING_PREVIOUS;
+    }
+    for (let index = currentIndex - 1; index >= 0; index -= 1) {
+      const item = queue[index];
+      if (item.uuid === position.resume.queueItemUuid) return { item, trackResume: null };
+      if (isListWalkEntry(item, source) || swipeWalksPast(item, activeConfig, isReachable)) continue;
+      return { item };
+    }
+    return NOTHING_PREVIOUS;
+  }
+  if (source && position.kind === 'list') {
+    const listPredecessor = source.climbs[position.trackIndex - 1];
+    if (!listPredecessor) return NOTHING_PREVIOUS;
+    const upNextBehind = findUpNextBehind(
+      queue,
+      currentIndex,
+      source,
+      currentClimbQueueItem.climb.uuid,
+      listPredecessor.uuid,
+      activeConfig,
+      isReachable,
+    );
+    if (upNextBehind) return upNextBehind;
     const queuedItem = findQueuedListNeighbour(
       queue,
       currentIndex,
@@ -394,10 +675,111 @@ export function findPreviousQueueItemWithSuggestions(
       activeConfig,
       isReachable,
     );
-    return queuedItem ?? toPeekItem(listPredecessor);
+    return { item: queuedItem ?? toPeekItem(listPredecessor), trackResume: null };
   }
   // No list, or off it: a queued climb walks the queue; an orphan has nothing.
-  return currentIndex > 0 ? queue[currentIndex - 1] : null;
+  return { item: currentIndex > 0 ? queue[currentIndex - 1] : null };
+}
+
+/**
+ * The Up next stretch right behind a list climb, if History has one: walking
+ * back from `currentIndex`, queued climbs Next would have played, then the
+ * queue entry of the list's previous climb. Returns the last of those climbs,
+ * and the list climb before them as the resume point, so Previous retraces the
+ * queue before going back up the list. Null when the entry right behind is the
+ * list's previous climb itself, when a list-walk entry of another place on the
+ * list comes first, or when History never reaches the list's previous climb
+ * (climbs from before the list was tapped).
+ *
+ * The stretch can also end at an older list-walk entry of the current climb
+ * itself: swipe from s1 to s2, back to s1, add X, then Next plays X and picks
+ * the list up with a fresh s2 entry, so the queue reads s1, s2, X, s2. That
+ * older s2 is the list climb before the detour. Previous goes to X, and from X
+ * back onto that older entry, then up the list to s1. The resume point keeps
+ * the list's previous climb (s1) as where the list picks up, so Next from X
+ * still lands back on the newer s2, and names the older entry as the one the
+ * walk left from.
+ */
+function findUpNextBehind(
+  queue: ClimbQueue,
+  currentIndex: number,
+  source: PlaylistSuggestionSource,
+  currentClimbUuid: string,
+  listPredecessorUuid: string,
+  activeConfig: ActiveBoardForCompatibility | undefined,
+  isReachable: ReachableClimbPredicate | undefined,
+): PreviousQueueItemSelection | null {
+  let lastPlayed: ClimbQueueItem | null = null;
+  for (let index = currentIndex - 1; index >= 0; index -= 1) {
+    const item = queue[index];
+    const climbUuid = item.climb?.uuid;
+    const endsStretch =
+      climbUuid === listPredecessorUuid || (climbUuid === currentClimbUuid && isListWalkEntry(item, source));
+    if (endsStretch) {
+      return lastPlayed
+        ? { item: lastPlayed, trackResume: { climbUuid: listPredecessorUuid, queueItemUuid: item.uuid } }
+        : null;
+    }
+    if (isListWalkEntry(item, source)) return null;
+    if (!lastPlayed && !swipeWalksPast(item, activeConfig, isReachable)) lastPlayed = item;
+  }
+  return null;
+}
+
+/**
+ * What the track's `resume` becomes when a queue entry reached outside the walk
+ * goes up on the wall (issue #6777): with Light on swipe off, or in a crew, a
+ * swipe off the committed climb is a look that walks the queue, and Put on the
+ * wall commits the queued climb it landed on.
+ *
+ * An entry ahead of the current climb that the walk would play as Up next goes
+ * up the way Next steps into it: the list climb the walk is at (the current
+ * one, or the one it already left from) is where the list picks up. An entry
+ * that carries the list on (a queued copy of the list's next climb, or one the
+ * list walk itself put there) returns null: it is on the list. Anything else
+ * (no track, a list with nothing left, History, the current climb itself)
+ * returns undefined: the track stops steering, as it did before.
+ */
+export function resolveUpNextCommitResume(
+  queue: ClimbQueue,
+  currentItem: ClimbQueueItem | null,
+  source: PlaylistSuggestionSource | null,
+  targetItem: ClimbQueueItem,
+  prepared?: PreparedQueueNavigation,
+): PlaylistTrackResume | null | undefined {
+  if (!source || !currentItem) return undefined;
+  const position = resolveTrackPosition(queue, currentItem, source, prepared);
+  if (position.kind === 'off') return undefined;
+  const currentIndex = findCurrentQueueIndex(queue, currentItem, prepared);
+  if (currentIndex < 0 || findQueueIndexOfEntry(queue, targetItem.uuid, prepared) <= currentIndex) return undefined;
+  const listIndex = position.kind === 'list' ? position.trackIndex : position.resumeIndex;
+  const listSuccessorUuid = source.climbs[listIndex + 1]?.uuid;
+  // A finished list has no place to keep: the end card's "Keep going with your
+  // queue" leaves it behind, previewed or not.
+  if (!listSuccessorUuid) return undefined;
+  if (targetItem.climb?.uuid === listSuccessorUuid || isListWalkEntry(targetItem, source)) return null;
+  return position.kind === 'list'
+    ? { climbUuid: currentItem.climb.uuid, queueItemUuid: currentItem.uuid }
+    : position.resume;
+}
+
+/** `selectPreviousQueueItemWithSuggestions` for callers that only need the climb. */
+export function findPreviousQueueItemWithSuggestions(
+  queue: ClimbQueue,
+  currentClimbQueueItem: ClimbQueueItem | null,
+  source: PlaylistSuggestionSource | null,
+  prepared?: PreparedQueueNavigation,
+  activeConfig?: ActiveBoardForCompatibility,
+  isReachable?: ReachableClimbPredicate,
+): ClimbQueueItem | null {
+  return selectPreviousQueueItemWithSuggestions(
+    queue,
+    currentClimbQueueItem,
+    source,
+    prepared,
+    activeConfig,
+    isReachable,
+  ).item;
 }
 
 /**
@@ -418,7 +800,8 @@ const REMAINING_COUNT_CAP = 99;
  * opened as a source-less preview inherited the track from an earlier activation
  * on a different list, and swiping walked climbs the climber had filtered out.
  *
- * The committed track is usable only while it still anchors the committed climb.
+ * The committed track is usable only while it still anchors the committed climb,
+ * or while the walk plays Up next in the middle of it (its `resume`).
  * That predicate lives here, evaluated during render at the point of use, rather
  * than in an effect beside whoever wrote the current climb: roughly eight call
  * sites write it without going through the activation helper, and an effect
@@ -442,7 +825,9 @@ export function resolveNavigationSuggestionSource({
 /**
  * The committed half of {@link resolveNavigationSuggestionSource}: a source is
  * only usable while its ordered list still contains the climb being navigated
- * from. Off the list, next/prev fall back to the queue.
+ * from, or while the walk plays Up next in the middle of it (issue #6777: the
+ * track's `resume` names a climb still on it). Otherwise next/prev fall back
+ * to the queue.
  *
  * Exported so the queue provider can derive its own navigation source through
  * the same predicate instead of keeping a second copy of the rule — its
@@ -459,14 +844,16 @@ export function anchoredSuggestionSource(
 ): PlaylistSuggestionSource | null {
   const climbUuid = item?.climb?.uuid;
   if (!source || !climbUuid) return source;
-  return findPlaylistClimbIndex(source, climbUuid) >= 0 ? source : null;
+  if (findPlaylistClimbIndex(source, climbUuid) >= 0) return source;
+  // Playing Up next in the middle of the list (issue #6777): the climb is off
+  // the list, and the list picks up again after it.
+  return source.resume && findPlaylistClimbIndex(source, source.resume.climbUuid) >= 0 ? source : null;
 }
 
 /**
- * computeNavigationState over the list-first swipe rules: canNext/nextItem and
- * canPrevious/prevItem come from the active suggestion source's ordered list
- * whenever the current climb is on it (in either direction), and from the queue
- * otherwise.
+ * computeNavigationState over the track rules: while a list is walked,
+ * canNext/nextItem come from Up next and then the list (issue #6777), and
+ * canPrevious/prevItem retrace the walk; with no list they come from the queue.
  *
  * `remainingCount` counts the forward WALK, not the queue tail: it is the number
  * of climbs a climber could actually reach by swiping, capped at
@@ -566,8 +953,9 @@ export function computeNavigationStateWithSuggestions(
 
 /**
  * The next `count` swipe targets after `currentClimbQueueItem`, in the order a
- * climber would reach them — the same walk `findNextQueueItemWithSuggestions`
- * does for one step, repeated with each result as the next step's current item.
+ * climber would reach them — the same walk `selectNextQueueItemWithSuggestions`
+ * does for one step, repeated with each result as the next step's current item
+ * and its `trackResume` stored on the track, as committing the step would.
  *
  * Written for the play drawer's render prefetch (issue #5187): warming the
  * board renders for the climbs just ahead turns the next few swipes into cache
@@ -605,14 +993,25 @@ export function findUpcomingQueueItemsWithSuggestions(
   }
 
   let walkFrom = currentClimbQueueItem;
+  // Each step leaves the track where a committed step would (into Up next and
+  // back to the list), so the walk visits Up next and then the list, in order.
+  let walkSource = source;
   let stepsLeft = count + queue.length;
   while (upcomingItems.length < count && stepsLeft > 0) {
     stepsLeft -= 1;
-    const nextItem = findNextQueueItemWithSuggestions(queue, walkFrom, source, activeConfig, isReachable, prepared);
+    const { item: nextItem, trackResume } = selectNextQueueItemWithSuggestions(
+      queue,
+      walkFrom,
+      walkSource,
+      activeConfig,
+      isReachable,
+      prepared,
+    );
     if (!nextItem) break;
     if (seenItemUuids.has(nextItem.uuid)) break;
     seenItemUuids.add(nextItem.uuid);
     walkFrom = nextItem;
+    if (walkSource && trackResume !== undefined) walkSource = withPlaylistTrackResume(walkSource, trackResume);
     const nextClimbUuid = nextItem.climb?.uuid;
     if (nextClimbUuid !== undefined && seenClimbUuids.has(nextClimbUuid)) continue;
     if (nextClimbUuid) seenClimbUuids.add(nextClimbUuid);

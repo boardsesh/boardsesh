@@ -1,15 +1,26 @@
 import React from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
-import StoreInstallButtons, { type StoreButtonLabels } from '@/app/components/marketing/store-install-buttons';
+import StoreInstallButtons, {
+  type StoreButtonAppearance,
+  type StoreButtonLabels,
+} from '@/app/components/marketing/store-install-buttons';
 import type { AppInstallPlacement } from '@/app/lib/app-install-event';
 import { themeTokens } from '@/app/theme/theme-config';
 
 type FrontDoorInstallProps = {
-  placement: Extract<AppInstallPlacement, 'climb-view' | 'climb-list' | 'spray-climb'>;
+  placement: Extract<AppInstallPlacement, 'climb-view' | 'climb-list' | 'spray-climb' | 'spray-wall'>;
   /** One line saying who the button is for, already translated. */
   helperText: string;
   labels: StoreButtonLabels;
+  /** The page a printed board code lands on: the link id names the code after a scan. See `StoreInstallButtons`. */
+  qrLanding?: boolean;
+  /**
+   * `plain` (outlined) under a filled hand-off, the default. `brand` where the
+   * store IS the primary action: a Spraywall's page, which a poster scan
+   * reaches mostly on phones with no app.
+   */
+  appearance?: StoreButtonAppearance;
 };
 
 const wrapperSx = {
@@ -34,19 +45,32 @@ const helperSx = { color: 'var(--neutral-400)' };
  * that says who it is for, and its own event (`App Install Click`), so the
  * hand-off funnel reads exactly as it did.
  *
- * These three pages are stored at the edge and handed to everyone, so the
+ * These pages are stored at the edge and handed to everyone, so the
  * buttons are rendered `sharedHtml`: both stores in the HTML, one after mount.
  *
  * No hooks and no data here: the wrapper is plain markup a server component can
  * render, and the only client code is the `StoreInstallButtons` island.
  */
-export default function FrontDoorInstall({ placement, helperText, labels }: FrontDoorInstallProps) {
+export default function FrontDoorInstall({
+  placement,
+  helperText,
+  labels,
+  qrLanding = false,
+  appearance = 'plain',
+}: FrontDoorInstallProps) {
   return (
     <Box sx={wrapperSx}>
       <Typography variant="body2" sx={helperSx}>
         {helperText}
       </Typography>
-      <StoreInstallButtons placement={placement} labels={labels} appearance="plain" align="start" sharedHtml />
+      <StoreInstallButtons
+        placement={placement}
+        labels={labels}
+        appearance={appearance}
+        align="start"
+        sharedHtml
+        qrLanding={qrLanding}
+      />
     </Box>
   );
 }

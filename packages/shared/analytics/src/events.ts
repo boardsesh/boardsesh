@@ -816,6 +816,17 @@ export const SHARED_EVENTS = {
   // says whether a climb that lost a hold is a dead end or a starting point.
   // Fires on the tap, not on the save.
   ClimbRemixedFromBroken: 'Climb Remixed From Broken',
+  // A printed board QR was scanned and its landing loaded (#4415). The code
+  // encodes `/b/{slug}?src=qr&medium=<poster|kiosk|board>`; the landing reads
+  // the pair, fires this once, and drops it from the address bar. Props:
+  // { medium: 'kiosk' | 'board', surface: 'web' | 'app', boardType }
+  // (`boardType` from `boardTypeProperty`). Built by `boardQrScanned`
+  // (board-qr-events.ts). Nothing names the board: no slug, no name, no uuid,
+  // no gym, because a Spraywall's slug is derived from its name. Only www fires
+  // it today (`surface: 'web'`, the `/b/{slug}/{angle}/list` page); `app` is
+  // the value for the app's own landing, which is not built yet. The gym
+  // poster's scan is the separate `Gym QR Scanned` on `/gym/{slug}`.
+  BoardQrScanned: 'Board QR Scanned',
   // Board presence — "now on the wall" (board-level collaboration, keyed on the
   // shared board_id resolved from the BLE serial). `boardId` is attached as an
   // event PROPERTY at the call sites — never the raw serial. Keep these to user

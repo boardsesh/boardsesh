@@ -3,7 +3,7 @@ import { EventBroker } from './event-broker';
 import { pubsub } from '../pubsub/index';
 import { db } from '../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, and, isNull, or, sql } from 'drizzle-orm';
 import {
   fanoutCommentFeedItems,
   fanoutFeedItems,
@@ -16,8 +16,8 @@ import {
   resolveClimbCreatedSubscriptionRecipients,
   resolveCommentRecipients,
 } from './recipient-resolution';
-import { isHideProposalEvent } from './notification-worker';
-import { canReadSocialEntity, canSeeActorOnEntity } from '../graphql/resolvers/shared/activity-privacy';
+import { isHideProposalEvent, notifiesWithoutActor, resolveNotificationActor } from './notification-worker';
+import { canSeeActorOnEntity } from '../graphql/resolvers/shared/activity-privacy';
 import { resolveClimbNoMatch } from '../graphql/resolvers/shared/helpers';
 import { logger } from '../utils/logger';
 import { writeFollowRequestNotification } from './follow-request-notifications';
@@ -97,8 +97,9 @@ async function createInlineNotification(event: SocialEvent): Promise<void> {
       case 'comment.reply': {
         // The worker's recipients and its read check, so local-only mode tells
         // the same people: the item's owners and, for a reply, the parent
-        // comment's author, each only if they may read the comment. An owner
-        // always may (#6356), so a private commenter still reaches them.
+        // comment's author, each only if they may read the comment (checked in
+        // writeInlineNotification). An owner always may (#6356), so a private
+        // commenter still reaches them.
         const commentUuid = event.metadata.commentUuid;
         if (!commentUuid) return;
         const commentRecipients = await resolveCommentRecipients(
@@ -107,7 +108,6 @@ async function createInlineNotification(event: SocialEvent): Promise<void> {
           event.type === 'comment.reply' ? event.metadata.parentCommentId : undefined,
         );
         for (const recipient of commentRecipients) {
-          if (!(await canReadSocialEntity('comment', commentUuid, recipient.recipientId, 'listed'))) continue;
           await writeInlineNotification(event, recipient.recipientId, recipient.notificationType, commentUuid);
         }
         return;
@@ -320,6 +320,11 @@ async function createInlineNotification(event: SocialEvent): Promise<void> {
  * case shares, and the loop body of the multi-recipient comment case. Never to
  * the actor themselves.
  *
+ * Who may be told, and who they are told acted, is the worker's own
+ * `resolveNotificationActor`, asked before anything is stored or pushed: a
+ * recipient who may not see a private actor gets no live push naming them
+ * (#6558).
+ *
  * A comment notification stores its comment, like the worker's, so the inbox
  * shows the body and reads the row by the comment rule. Each comment is its own
  * notification, as in the worker; everything else is written once per actor,
@@ -331,7 +336,22 @@ async function writeInlineNotification(
   notificationType: dbSchema.NotificationType,
   commentUuid?: string,
 ): Promise<void> {
-  if (recipientId === event.actorId) return;
+  // `follow.created` carries entityType 'user', which is NOT a member of the
+  // social_entity_type enum — passing it through threw on insert and the catch
+  // below swallowed it, so a follow made no notification at all whenever Redis
+  // was down. The worker path already passes null here.
+  const entityType = SOCIAL_ENTITY_TYPES.has(event.entityType) ? (event.entityType as dbSchema.SocialEntityType) : null;
+
+  const actorDecision = await resolveNotificationActor(
+    recipientId,
+    event.actorId,
+    notificationType,
+    entityType,
+    event.entityId,
+    commentUuid,
+  );
+  if (!actorDecision.send) return;
+  const { storedActorId } = actorDecision;
 
   let commentId: number | undefined;
   if (commentUuid) {
@@ -342,13 +362,16 @@ async function writeInlineNotification(
       .limit(1);
     commentId = comment?.id;
   } else {
-    // Deduplicate: check if a similar notification already exists recently
+    // Deduplicate: check if a similar notification already exists recently.
+    // A row stored unnamed matches too, as in the worker's isDuplicate.
     const [existing] = await db
       .select({ id: dbSchema.notifications.id })
       .from(dbSchema.notifications)
       .where(
         and(
-          eq(dbSchema.notifications.actorId, event.actorId),
+          notifiesWithoutActor(notificationType)
+            ? or(eq(dbSchema.notifications.actorId, event.actorId), isNull(dbSchema.notifications.actorId))
+            : eq(dbSchema.notifications.actorId, event.actorId),
           eq(dbSchema.notifications.recipientId, recipientId),
           eq(dbSchema.notifications.type, notificationType),
           eq(dbSchema.notifications.entityId, event.entityId),
@@ -359,41 +382,37 @@ async function writeInlineNotification(
     if (existing) return;
   }
 
-  // `follow.created` carries entityType 'user', which is NOT a member of the
-  // social_entity_type enum — passing it through threw on insert and the catch
-  // below swallowed it, so a follow made no notification at all whenever Redis
-  // was down. The worker path already passes null here.
-  const entityType = SOCIAL_ENTITY_TYPES.has(event.entityType) ? (event.entityType as dbSchema.SocialEntityType) : null;
-
   const uuid = crypto.randomUUID();
   await db.insert(dbSchema.notifications).values({
     uuid,
     recipientId,
-    actorId: event.actorId,
+    actorId: storedActorId,
     type: notificationType,
     entityType,
     entityId: event.entityId,
     commentId,
   });
 
-  // Enrich and push via PubSub
-  const [actor] = await db
-    .select({
-      name: dbSchema.users.name,
-      image: dbSchema.users.image,
-      displayName: dbSchema.userProfiles.displayName,
-      avatarUrl: dbSchema.userProfiles.avatarUrl,
-    })
-    .from(dbSchema.users)
-    .leftJoin(dbSchema.userProfiles, eq(dbSchema.users.id, dbSchema.userProfiles.userId))
-    .where(eq(dbSchema.users.id, event.actorId))
-    .limit(1);
+  // Enrich and push via PubSub. An unnamed notification carries no actor.
+  const [actor] = storedActorId
+    ? await db
+        .select({
+          name: dbSchema.users.name,
+          image: dbSchema.users.image,
+          displayName: dbSchema.userProfiles.displayName,
+          avatarUrl: dbSchema.userProfiles.avatarUrl,
+        })
+        .from(dbSchema.users)
+        .leftJoin(dbSchema.userProfiles, eq(dbSchema.users.id, dbSchema.userProfiles.userId))
+        .where(eq(dbSchema.users.id, storedActorId))
+        .limit(1)
+    : [];
 
   pubsub.publishNotificationEvent(recipientId, {
     notification: {
       uuid,
       type: notificationType as NotificationType,
-      actorId: event.actorId,
+      actorId: storedActorId,
       actorDisplayName: actor?.displayName || actor?.name || undefined,
       actorAvatarUrl: actor?.avatarUrl || actor?.image || undefined,
       entityType,

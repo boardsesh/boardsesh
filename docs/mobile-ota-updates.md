@@ -2660,13 +2660,29 @@ be requested.
 
 ## Changelog ownership (the in-app "What's New")
 
-`packages/mobile/src/data/changelog.generated.json` is owned **solely** by the
-`mobile-ota-production.yml` workflow. On every production OTA it regenerates the file from merged-PR
-`## Release Notes` sections and publishes it **uncommitted** — `expo export` reads the working tree,
-so the fresh entries ship in the bundle either way. It **commits and pushes to `main`** only after
-every requested platform succeeds (the commit is tagged `[skip ci]` so the push can't re-trigger the
-OTA). A partial or total publish failure leaves the regenerated files unpushed; the next run
-regenerates the same source-of-truth files.
+`packages/mobile/src/data/changelog.generated.json` is owned **solely** by the OTA pipeline. On
+every OTA, `mobile-ota-production.yml` regenerates the file from merged-PR `## Release Notes`
+sections and publishes it **uncommitted** — `expo export` reads the working tree, so the fresh
+entries ship in the bundle either way. Two places commit it to `main`, both tagged `[skip ci]` so the
+push can't re-trigger the OTA:
+
+- **A main push:** `production-deploy.yml`'s `push-promoted-changelog` job, once `verify-mobile-ota`
+  passes. It copies the staged files out of the `mobile-ota-stage` artifact. It hangs off verify
+  rather than a promote job because a daily-stable OTA skips `promote-mobile-ota`. While the push
+  was a step in that job (until 2026-10-25), `main`'s copy froze for a week, and so did the What's
+  New in every TestFlight build cut from it. The job declares no environment: a job waiting at an
+  environment gate would hold the deploy group (see
+  [production-deploy.md](./production-deploy.md#the-failure-mode-a-run-that-holds-the-group-without-running)).
+  It skips a critical OTA and leaves the refresh to the next normal deploy. It is best-effort: three
+  push attempts, then a red job under `continue-on-error`. The run stays green because its
+  conclusion is what the daily stable release and the next deploy's baseline read, and a stale
+  changelog must not hold back an OTA that already promoted. The commit it lands is excluded from
+  the backend's change detection, so it doesn't redeploy the backend on the next run.
+- **A manual `workflow_dispatch` on `main`:** the "Push changelog to main" step, after every
+  requested platform succeeds.
+
+A `release/next` train OTA never pushes. A partial or total publish failure leaves the regenerated
+files unpushed; the next run regenerates the same source-of-truth files.
 
 **Why it is not committed before the publish.** It used to be, because `eoas publish` aborts on a
 dirty tree. But eoas reads an update's `message` **and** its `commitHash` from `HEAD`

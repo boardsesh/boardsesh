@@ -3,7 +3,16 @@
  * The React `useReducer` wrapper lives in the web app.
  */
 
-import type { QueueState, QueueAction, QueueSearchParams, ClimbQueueItem, Climb, QueueClimbReadTarget } from './types';
+import type {
+  QueueState,
+  QueueAction,
+  QueueSearchParams,
+  ClimbQueue,
+  ClimbQueueItem,
+  Climb,
+  QueueClimbReadTarget,
+  UnconfirmedQueueMove,
+} from './types';
 import { insertQueueItemIdempotent } from './event-utils';
 import { playlistSuggestionSourceMatches, pruneSuggestedQueueItemsAfterCurrent } from './playlist-suggestions';
 
@@ -22,6 +31,46 @@ function isReadTargetCurrent(item: ClimbQueueItem, target: QueueClimbReadTarget 
   return !!target && target.expectedClimb === item.climb && target.angle === angle;
 }
 
+/**
+ * Bound on `UnconfirmedQueueMove.movedOff`: a chain of moves the session never
+ * confirms. Past it the record is marked `movedOffTruncated` and protects nothing.
+ */
+const MAX_UNCONFIRMED_MOVED_OFF = 20;
+
+/**
+ * The record describes the move the wall is on. Once the current climb is
+ * anything else (a peer's move, a local move that is not sent, a removal) it no
+ * longer does, so a later snapshot must not bring it back.
+ */
+function retireStaleUnconfirmedMove<TSearchParams extends QueueSearchParams>(
+  state: QueueState<TSearchParams>,
+): QueueState<TSearchParams> {
+  const move = state.unconfirmedMove;
+  if (!move || state.currentClimbQueueItem?.uuid === move.itemUuid) return state;
+  return { ...state, unconfirmedMove: null };
+}
+
+/**
+ * Re-apply an unconfirmed move on top of a snapshot that predates it, the same
+ * way the local DELTA_UPDATE_CURRENT_CLIMB applied it: a climb the move added
+ * goes back in right after the snapshot's current climb, which is where the
+ * server inserts it when the move lands (#2217).
+ */
+function replayUnconfirmedMove(
+  queue: ClimbQueue,
+  snapshotCurrentUuid: string | null,
+  move: UnconfirmedQueueMove,
+  item: ClimbQueueItem,
+): ClimbQueue {
+  if (!move.shouldAddToQueue || queue.some((queueItem) => queueItem.uuid === item.uuid)) return queue;
+  const anchorIndex =
+    move.insertAfterCurrent && snapshotCurrentUuid !== null
+      ? queue.findIndex((queueItem) => queueItem.uuid === snapshotCurrentUuid)
+      : -1;
+  if (anchorIndex === -1) return [...queue, item];
+  return [...queue.slice(0, anchorIndex + 1), item, ...queue.slice(anchorIndex + 1)];
+}
+
 export const initialState = <TSearchParams extends QueueSearchParams>(
   initialSearchParams: TSearchParams,
 ): QueueState<TSearchParams> => ({
@@ -32,13 +81,14 @@ export const initialState = <TSearchParams extends QueueSearchParams>(
   hasDoneFirstFetch: false,
   pendingCurrentClimbUpdates: [],
   needsResync: false,
+  unconfirmedMove: null,
 });
 
 export function queueReducer<TSearchParams extends QueueSearchParams>(
   state: QueueState<TSearchParams>,
   action: QueueAction<TSearchParams>,
 ): QueueState<TSearchParams> {
-  const nextState = reduceQueue(state, action);
+  const nextState = retireStaleUnconfirmedMove(reduceQueue(state, action));
   return action.serverSequence === undefined ? nextState : { ...nextState, serverSequence: action.serverSequence };
 }
 
@@ -89,7 +139,7 @@ function reduceQueue<TSearchParams extends QueueSearchParams>(
         console.warn('[QueueReducer] Filtered corrupted items from INITIAL_QUEUE_DATA, requesting resync');
       }
 
-      return {
+      const snapshotState: QueueState<TSearchParams> = {
         ...state,
         queue: filteredQueue,
         currentClimbQueueItem: hasCurrentClimbQueueItem(action.payload)
@@ -100,10 +150,72 @@ function reduceQueue<TSearchParams extends QueueSearchParams>(
         pendingCurrentClimbUpdates: [],
         // Request resync if we filtered out corrupted data
         needsResync: hadCorruptedData,
+        unconfirmedMove: null,
+        serverSequenceSessionId: action.payload.sessionId ?? null,
+      };
+
+      // A snapshot can be older than this client's latest move: a reconnect's
+      // FullSync is read before the re-sent move lands, an HTTP resync can race
+      // it. See UnconfirmedQueueMove for the three outcomes.
+      const move = state.unconfirmedMove;
+      const movedItem = state.currentClimbQueueItem;
+      if (
+        !move ||
+        move.sessionId !== action.payload.sessionId ||
+        !hasCurrentClimbQueueItem(action.payload) ||
+        movedItem?.uuid !== move.itemUuid
+      ) {
+        return snapshotState;
+      }
+      const snapshotCurrentUuid = action.payload.currentClimbQueueItem?.uuid ?? null;
+      // The snapshot predates the move only if nothing at all happened in the
+      // session since this client last heard from it: same sequence as the
+      // last one it applied in this same session, and on a climb it moved off. A higher sequence
+      // means events it never saw, and a climb it moved off then proves
+      // nothing: its own move may have landed and a crewmate moved the wall
+      // back. Every event it did see either confirmed the move, retired it (a
+      // crewmate's move) or left the wall alone.
+      const nothingHappenedSince =
+        action.serverSequence !== undefined &&
+        state.serverSequenceSessionId === move.sessionId &&
+        action.serverSequence === state.serverSequence;
+      // A chain longer than `movedOff` keeps may have dropped the climb the
+      // session still holds: no proof either way, so the snapshot wins.
+      if (
+        snapshotCurrentUuid === move.itemUuid ||
+        !nothingHappenedSince ||
+        move.movedOffTruncated ||
+        !move.movedOff.includes(snapshotCurrentUuid)
+      ) {
+        return snapshotState;
+      }
+      // The session has not seen the move yet. Keep the wall where the climber
+      // put it, and keep the pending correlation ids so the move's echo is still
+      // recognised as this client's own instead of re-applied. The local copy of
+      // the climb is the freshest one (hydrated, regraded, mirrored).
+      return {
+        ...snapshotState,
+        queue: replayUnconfirmedMove(filteredQueue, snapshotCurrentUuid, move, movedItem),
+        currentClimbQueueItem: movedItem,
+        pendingCurrentClimbUpdates: state.pendingCurrentClimbUpdates,
+        // A send that missed the session was waiting for exactly this: the
+        // opening snapshot of a live stream that still predates the move. From
+        // here every crewmate's move reaches this client as an event and
+        // retires the record, so the provider can re-send now. A point read
+        // (HTTP) keeps the wall but releases nothing.
+        unconfirmedMove:
+          move.resend === 'awaiting-snapshot' && action.payload.live === true ? { ...move, resend: 'ready' } : move,
       };
     }
 
     case 'UPDATE_QUEUE': {
+      // A local replacement, never a server snapshot: the climber's own queue
+      // replace, a reorder rolled back, a privacy scrub, a cold-start restore.
+      // When it changes the current climb, retireStaleUnconfirmedMove retires
+      // the move without a word, as for any local move that is not sent; the
+      // last two keep the current climb. Server state reaches the reducer as
+      // INITIAL_QUEUE_DATA tagged with its session (the stream's FullSync and
+      // the HTTP resync both), which is where a move is weighed against it.
       // Filter out any undefined/null items that could corrupt queue operations
       const filteredQueue = action.payload.queue.filter(
         (item): item is NonNullable<typeof item> => item != null && item.climb != null,
@@ -225,6 +337,7 @@ function reduceQueue<TSearchParams extends QueueSearchParams>(
         serverCorrelationId,
         playlistSuggestionSource,
         pruneSuggestedAfterCurrent = true,
+        sessionId,
       } = action.payload;
 
       // NO MORE TIMESTAMP FILTERING - reducer is now pure!
@@ -234,10 +347,14 @@ function reduceQueue<TSearchParams extends QueueSearchParams>(
       if (isServerEvent && item) {
         // Primary: Correlation ID matching (most precise)
         if (serverCorrelationId && pendingUpdates.includes(serverCorrelationId)) {
-          // This is our own update echoed back - skip it and remove from pending
+          // This is our own update echoed back - skip it and remove from pending.
+          // When it is the latest send of the unconfirmed move, the session now
+          // holds that move: nothing left to protect.
           return {
             ...state,
             pendingCurrentClimbUpdates: pendingUpdates.filter((id) => id !== serverCorrelationId),
+            unconfirmedMove:
+              state.unconfirmedMove?.correlationId === serverCorrelationId ? null : state.unconfirmedMove,
           };
         }
 
@@ -275,9 +392,15 @@ function reduceQueue<TSearchParams extends QueueSearchParams>(
         // from this early return, so seed here. No id ⇒ a pure local re-tap with
         // no broadcast: leave state untouched.
         if (!correlationId) return state;
+        // A re-assert of the move still waiting for confirmation is that move's
+        // newest send: its echo is the one that confirms it now, and it replaces
+        // any re-send the earlier send was waiting for.
+        const move = state.unconfirmedMove;
         return {
           ...state,
           pendingCurrentClimbUpdates: [...state.pendingCurrentClimbUpdates, correlationId].slice(-50),
+          unconfirmedMove:
+            move && sessionId && move.sessionId === sessionId ? { ...move, correlationId, resend: 'none' } : move,
         };
       }
 
@@ -304,6 +427,31 @@ function reduceQueue<TSearchParams extends QueueSearchParams>(
         pendingUpdates = [...pendingUpdates, correlationId].slice(-50); // Still bound to 50 items for safety
       }
 
+      // A server event that got this far moved the wall for someone else, so
+      // any unconfirmed local move is history. A local move that is sent to a
+      // session becomes the new unconfirmed move, chained onto the previous one
+      // when that one was never confirmed either: the session may still hold
+      // any climb along the chain. A local move that is not sent changes the
+      // current climb, which retires the record (retireStaleUnconfirmedMove).
+      let unconfirmedMove = isServerEvent ? null : state.unconfirmedMove;
+      if (!isServerEvent && item && correlationId && sessionId) {
+        const chainedMove = state.unconfirmedMove?.sessionId === sessionId ? state.unconfirmedMove : null;
+        const movedOffUuid = state.currentClimbQueueItem?.uuid ?? null;
+        const movedOff = [...(chainedMove?.movedOff ?? []), movedOffUuid].filter(
+          (uuid, index, all) => uuid !== item.uuid && all.lastIndexOf(uuid) === index,
+        );
+        unconfirmedMove = {
+          sessionId,
+          correlationId,
+          itemUuid: item.uuid,
+          shouldAddToQueue: !!shouldAddToQueue,
+          insertAfterCurrent: !!insertAfterCurrent,
+          movedOff: movedOff.slice(-MAX_UNCONFIRMED_MOVED_OFF),
+          movedOffTruncated: (chainedMove?.movedOffTruncated ?? false) || movedOff.length > MAX_UNCONFIRMED_MOVED_OFF,
+          resend: 'none',
+        };
+      }
+
       return {
         ...state,
         queue:
@@ -314,6 +462,7 @@ function reduceQueue<TSearchParams extends QueueSearchParams>(
         playlistSuggestionSource:
           playlistSuggestionSource === undefined ? state.playlistSuggestionSource : playlistSuggestionSource,
         pendingCurrentClimbUpdates: pendingUpdates,
+        unconfirmedMove,
       };
     }
 
@@ -335,11 +484,16 @@ function reduceQueue<TSearchParams extends QueueSearchParams>(
     }
 
     case 'CLEANUP_PENDING_UPDATE': {
+      // The id's echo never came within the TTL. If it was the unconfirmed
+      // move's latest send, stop protecting the move too: the next snapshot is
+      // the truth again.
       return {
         ...state,
         pendingCurrentClimbUpdates: state.pendingCurrentClimbUpdates.filter(
           (id) => id !== action.payload.correlationId,
         ),
+        unconfirmedMove:
+          state.unconfirmedMove?.correlationId === action.payload.correlationId ? null : state.unconfirmedMove,
       };
     }
 
@@ -349,7 +503,32 @@ function reduceQueue<TSearchParams extends QueueSearchParams>(
       return {
         ...state,
         pendingCurrentClimbUpdates: state.pendingCurrentClimbUpdates.filter((id) => !idsToRemove.has(id)),
+        unconfirmedMove:
+          state.unconfirmedMove && idsToRemove.has(state.unconfirmedMove.correlationId) ? null : state.unconfirmedMove,
       };
+    }
+
+    case 'UNCONFIRMED_MOVE_NOT_SENT': {
+      const move = state.unconfirmedMove;
+      const { correlationId, serverViewIsLive } = action.payload;
+      if (!move || move.correlationId !== correlationId || move.resend !== 'none') return state;
+      return {
+        ...state,
+        unconfirmedMove: { ...move, resend: serverViewIsLive ? 'ready' : 'awaiting-snapshot' },
+      };
+    }
+
+    case 'UNCONFIRMED_MOVE_RESENT': {
+      const move = state.unconfirmedMove;
+      if (!move || move.correlationId !== action.payload.correlationId || move.resend !== 'ready') return state;
+      return { ...state, unconfirmedMove: { ...move, resend: 'resent' } };
+    }
+
+    case 'UNCONFIRMED_MOVE_DROPPED': {
+      const move = state.unconfirmedMove;
+      const { correlationId } = action.payload;
+      if (!move || (correlationId !== undefined && move.correlationId !== correlationId)) return state;
+      return { ...state, unconfirmedMove: null };
     }
 
     case 'DELTA_MIRROR_CURRENT_CLIMB': {

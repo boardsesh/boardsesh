@@ -14,6 +14,7 @@
 
 import { generateSlugFromText } from '@boardsesh/play-view/readable-url-utils';
 import { WEB_BASE_URL } from '../env';
+import { buildBoardPosterPageUrl } from '../board-share/board-share-link';
 
 export type SprayWallVisibility = 'private' | 'unlisted' | 'public';
 
@@ -60,6 +61,30 @@ export function buildSprayWallShareUrl({
   const board = `${WEB_BASE_URL}/b/${encodeURIComponent(slug)}`;
   const url = angle == null ? board : `${board}/${encodeURIComponent(String(angle))}/list`;
 
+  return visibility === 'unlisted' ? `${url}?wall=${encodeURIComponent(wallUuid)}` : url;
+}
+
+/**
+ * The www print page for one wall's poster (#4415), or `null` when the wall is
+ * private.
+ *
+ * The same two rules as {@link buildSprayWallShareUrl}: a private wall has no
+ * poster, and an unlisted one carries `?wall=` so the code printed on the page
+ * opens it. The page prints the board link (`/b/{slug}`), so there is no angle.
+ * Opened in the in-app browser, never through `Linking`: a phone whose
+ * association file still claims `/poster` would hand it straight back to the app.
+ */
+export function buildSprayWallPosterUrl({
+  slug,
+  wallUuid,
+  isPublic,
+  isUnlisted,
+}: Omit<SprayWallShareTarget, 'angle'>): string | null {
+  if (!slug) return null;
+  const visibility = sprayWallVisibility({ isPublic, isUnlisted });
+  if (visibility === 'private') return null;
+
+  const url = buildBoardPosterPageUrl(slug);
   return visibility === 'unlisted' ? `${url}?wall=${encodeURIComponent(wallUuid)}` : url;
 }
 

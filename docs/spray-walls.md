@@ -3712,6 +3712,7 @@ through `trackSprayEvent`; nothing calls `track` with a spray event name directl
 | `Spray Wall Reset Started` | `source` (`board_sheet`, `board_edit`) | The owner confirmed "Reset this wall?" on the board sheet, or from the edit screen's "Reset wall with a new photo" under a photo too skewed for a generated look. Fired once per confirm tap, whether the reset then makes a new clone or reopens an unfinished one; the wizard fires nothing. Read `Board Created` with `isReset: true` against it for the share of confirms that reached a published replacement. |
 | `Spray Wall Holds Removed In Use` | `holdCount`, `publishedClimbCount`, `usageKnown` | The owner tapped "Remove anyway" on "Remove a hold that climbs use?" in the hold editor. `publishedClimbCount` is the usage read's sum (0 with `usageKnown: false`, when the read failed and the alert used its generic wording). Never fired on "Keep holds". |
 | `Climb Remixed From Broken` | `lostHoldCount`, `source` (`play_drawer`) | A climber tapped Remix on the play drawer's "This climb lost a hold" banner. Fires on the tap, not the save. |
+| `Board QR Scanned` (shared with every board) | `medium` (`board`, `kiosk`), `surface` (`web`, `app`), `boardType: 'spray'` | A Spraywall's printed code was scanned and its page loaded (#4415). On www it is fired once per landing by `BoardQrLandingTracker` on `/b/{slug}/{angle}/list`, which serves catalogue boards too, so filter on `boardType = 'spray'`. `?wall=` stays in the address bar for a reload, so the page URL the SDK stamps on every event (`$current_url`) holds it until the share-link scrub removes it, as for `$pageview`. A phone with the app installed opens the app instead, which fires it with `surface: 'app'` once the board route's hand-off has opened the wall (`trackBoardQrScan`). Its properties name no wall on either surface: no slug, no name, no uuid. Full contract: `docs/gym-funnel-analytics.md`, "Which code fires which event". |
 
 Two rules, both enforced by a test in
 `packages/shared/analytics/src/__tests__/spray-wall-events.test.ts`:
@@ -3719,9 +3720,10 @@ Two rules, both enforced by a test in
 - **Outcomes, not gestures.** PostHog is past the 1M-event tier, so every event
   fires once per wall per step. Nothing fires per tap, per frame, or per hold.
 - **Nothing identifies the wall or what is on it.** No photo, no URI, no file
-  name, no wall name, no gym, no hold coordinates, no free text. Every property
-  is a number, a boolean, or a member of a closed string union, and the test
-  reads the payloads back field by field rather than trusting the types.
+  name, no wall name, no slug, no gym, no hold coordinates, no free text. Every
+  property is a number, a boolean, or a member of a closed string union, and the
+  test reads the payloads back field by field rather than trusting the types.
+  `Board QR Scanned` is read back with them, since it fires on a wall's own page.
 
 Three older events also fire on a wall and now say so (#6027): `Tick Logged`,
 `Set Active Climb` and `Climb Created` carry `boardType`, built by

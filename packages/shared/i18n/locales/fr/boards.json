@@ -487,6 +487,11 @@
       "resetDone": "Nouveau lien prêt. L'ancien ne marche plus.",
       "resetFailed": "Impossible de réinitialiser le lien. Réessaie."
     },
+    "wallPoster": {
+      "print": "Imprimer une affiche",
+      "sprayHint": "Colle-la près du Spraywall pour que les grimpeurs la scannent.",
+      "boardHint": "Colle-la près de la board pour que les grimpeurs la scannent."
+    },
     "sprayVisibility": {
       "label": "Qui peut le voir",
       "private": "Privé",

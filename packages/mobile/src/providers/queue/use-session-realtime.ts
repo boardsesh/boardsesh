@@ -90,6 +90,25 @@ function toSyncQueueEvent(event: QueueUpdateEvent): QueueSyncGateEvent {
   return event;
 }
 
+/**
+ * A FullSync is a snapshot of THIS session, read after the stream subscribed.
+ * Saying so lets the reducer compare it with a move of ours that is still on
+ * its way to the same session, and keep that move when the snapshot predates it
+ * (a reconnect's FullSync is read before the re-sent move lands).
+ *
+ * `live` (every later change arrives as an event) also releases a re-send that
+ * waited for it, so it holds only once JOIN_SESSION has bound the connection.
+ * A stream graphql-ws kept across an auth-refresh close re-subscribes at once
+ * and can deliver its FullSync inside the server's ~350 ms reconnect grace,
+ * before the JOIN binds: a re-send released then is refused "Must be in a
+ * session" and falls back to a resync. The streams the JOIN opens bring their
+ * own FullSync. Every other action passes through untouched.
+ */
+function tagSnapshotWithSession(action: QueueAction, sessionId: string, live: boolean): QueueAction {
+  if (action.type !== 'INITIAL_QUEUE_DATA') return action;
+  return { ...action, payload: { ...action.payload, sessionId, live } };
+}
+
 export const createEmptySessionRuntimeState = (): MobileSessionRuntimeState => ({
   users: [],
   isLeader: false,
@@ -151,6 +170,12 @@ type UseSessionRealtimeParams = {
   playbackEventListenersRef: React.RefObject<Set<(event: PlaybackStateChangedEvent) => void>>;
   unsubscribeRef: React.RefObject<(() => void) | null>;
   queueSyncGateRef: React.RefObject<QueueSyncGate | null>;
+  /**
+   * True once the queueUpdates stream on the bound connection has opened with
+   * its FullSync; false from every socket close, restart or teardown until the
+   * next one. The provider reads it to decide whether a re-send can go now.
+   */
+  queueStreamLiveRef: React.RefObject<boolean>;
   restartJoinedSubscriptionsRef: React.RefObject<(() => void) | null>;
   resyncQueueFromServerRef: React.RefObject<() => Promise<boolean>>;
   setLiveStats: React.Dispatch<React.SetStateAction<SessionLiveStatsEvent | null>>;
@@ -194,6 +219,7 @@ export function useSessionRealtime({
   playbackEventListenersRef,
   unsubscribeRef,
   queueSyncGateRef,
+  queueStreamLiveRef,
   restartJoinedSubscriptionsRef,
   resyncQueueFromServerRef,
   setLiveStats,
@@ -214,6 +240,7 @@ export function useSessionRealtime({
 
   useEffect(() => {
     if (!sessionId) {
+      queueStreamLiveRef.current = false;
       unsubscribeRef.current?.();
       unsubscribeRef.current = null;
       participantIdRef.current = null;
@@ -244,6 +271,11 @@ export function useSessionRealtime({
     let joinRetryTimer: ReturnType<typeof setTimeout> | null = null;
     let joinRetryCount = 0;
     let authRefreshRejoinInProgress = false;
+    // JOIN_SESSION completed on the bound connection. A stream graphql-ws kept
+    // across an auth-refresh close re-subscribes at once and can deliver its
+    // FullSync before the JOIN binds the new connection, so the live flag
+    // waits for both.
+    let joinedOnBoundConnection = false;
 
     // Single-flight, snapshot-checked recovery for a failed session seed. The
     // empty-room FullSync guard (below) calls this to re-push the local queue so
@@ -328,6 +360,8 @@ export function useSessionRealtime({
     };
 
     const cleanupSubscriptions = () => {
+      queueStreamLiveRef.current = false;
+      joinedOnBoundConnection = false;
       clearJoinRetryTimer();
       authRefreshRejoinInProgress = false;
       queueUpdatesCleanup?.();
@@ -423,6 +457,10 @@ export function useSessionRealtime({
         authRefreshRejoinInProgress = true;
         clearJoinRetryTimer();
         gate.reset();
+        // The retained streams belong to the closed socket: not live until the
+        // new connection has joined and a stream on it opens with a FullSync.
+        queueStreamLiveRef.current = false;
+        joinedOnBoundConnection = false;
         return;
       }
       preserveSubscriptionsOnNextConnect = false;
@@ -589,6 +627,7 @@ export function useSessionRealtime({
 
       if (!isCurrent() || currentStartToken !== subscriptionStartToken || sessionIdRef.current !== sessionId) return;
       joinRetryCount = 0;
+      joinedOnBoundConnection = true;
 
       queueUpdatesCleanup = subscribe<{ queueUpdates: QueueUpdateEvent }>(
         client,
@@ -689,7 +728,13 @@ export function useSessionRealtime({
             // sequence slot).
             gate.noteApplied(gateEvent);
             if (result.kind !== 'dispatch') return;
-            dispatch({ ...result.action, serverSequence: gateEvent.sequence ?? undefined });
+            dispatch({
+              ...tagSnapshotWithSession(result.action, sessionId, joinedOnBoundConnection),
+              serverSequence: gateEvent.sequence ?? undefined,
+            });
+            // A FullSync on a joined connection is applied: from here every
+            // change in the session reaches this phone as an event.
+            if (event.__typename === 'FullSync' && joinedOnBoundConnection) queueStreamLiveRef.current = true;
             switch (result.eventType) {
               case 'QueueItemAdded': {
                 // The server echoes our own adds back to us. A locally

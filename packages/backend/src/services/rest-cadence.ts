@@ -158,6 +158,17 @@ export type RestCadenceConfig = {
   /** null = Off: the timer counts up and never fires. */
   targetSeconds: number | null;
   autoAdvance: boolean;
+  /**
+   * Auto-advance for one beat only. The FIRE that applies on it turns
+   * autoAdvance off and drops this flag in the same compare-and-set write, so
+   * the wall moves once and then waits until a CONFIGURE turns auto-advance
+   * back on. A 4x4 set counts its reps only on the phone that built the
+   * workout; if that phone sleeps, the wall waits instead of moving on early.
+   * Absent means false, today's behaviour. The doc holds the key only while it
+   * is true (pickConfig), so a clock that never uses it stores exactly what it
+   * stored before.
+   */
+  autoAdvanceOnce?: boolean;
   advanceOn: RestCadenceAdvanceRule;
   source: RestCadenceSource;
 };
@@ -212,9 +223,16 @@ function pickConfig(config: RestCadenceConfig): RestCadenceConfig {
     mode: config.mode,
     targetSeconds: config.targetSeconds,
     autoAdvance: config.autoAdvance,
+    ...(config.autoAdvanceOnce === true ? { autoAdvanceOnce: true } : {}),
     advanceOn: config.advanceOn,
     source: config.source,
   };
+}
+
+/** The state without autoAdvanceOnce, which the doc holds only while it is true. */
+function withoutAdvanceOnce(state: RestCadenceState): RestCadenceState {
+  const { autoAdvanceOnce: _dropped, ...rest } = state;
+  return rest;
 }
 
 /**
@@ -462,9 +480,15 @@ export function applyRestCadenceAction(
             : anchor === 'KEEP' && previous.mode === 'onTheMinute' && input.config.mode === 'afterTick'
               ? restFromLastAdvance(previous)
               : {};
+      // The whole config comes from the input, autoAdvanceOnce too: a CONFIGURE without it clears a stored one.
       return {
         applicable: true,
-        next: { ...previous, ...pickConfig(input.config), ...reanchored, setByParticipantId: participantId },
+        next: {
+          ...withoutAdvanceOnce(previous),
+          ...pickConfig(input.config),
+          ...reanchored,
+          setByParticipantId: participantId,
+        },
       };
     }
 
@@ -501,7 +525,12 @@ export function applyRestCadenceAction(
       if (beatMs === null) return NOT_APPLICABLE;
       if (previous.lastFiredBeatMs !== null && beatMs <= previous.lastFiredBeatMs) return NOT_APPLICABLE;
       if (tooSoonAfterLastBeat(previous, beatMs)) return NOT_APPLICABLE;
-      const fired = { ...previous, lastFiredBeatMs: beatMs };
+      // A once-only clock spends its advance here, in this same write:
+      // auto-advance goes off, so the check above refuses every later FIRE
+      // until a CONFIGURE turns it back on.
+      const fired: RestCadenceState = previous.autoAdvanceOnce
+        ? { ...withoutAdvanceOnce(previous), autoAdvance: false, lastFiredBeatMs: beatMs }
+        : { ...previous, lastFiredBeatMs: beatMs };
       const anchor = anchorAfterFire(previous);
       if (anchor === 'now') {
         // A FIRE inside the early tolerance restarts the rest from the
@@ -617,6 +646,7 @@ export function isRestCadenceState(candidate: unknown): candidate is RestCadence
     isOneOf(REST_CADENCE_MODES, state.mode) &&
     isNullableNumber(state.targetSeconds) &&
     typeof state.autoAdvance === 'boolean' &&
+    (state.autoAdvanceOnce === undefined || typeof state.autoAdvanceOnce === 'boolean') &&
     isOneOf(REST_CADENCE_ADVANCE_RULES, state.advanceOn) &&
     isOneOf(REST_CADENCE_SOURCES, state.source) &&
     typeof state.isRunning === 'boolean' &&
@@ -650,6 +680,7 @@ export function sameRestCadence(left: RestCadenceState | null, right: RestCadenc
     left.mode === right.mode &&
     left.targetSeconds === right.targetSeconds &&
     left.autoAdvance === right.autoAdvance &&
+    (left.autoAdvanceOnce === true) === (right.autoAdvanceOnce === true) &&
     left.advanceOn === right.advanceOn &&
     left.source === right.source &&
     left.isRunning === right.isRunning &&
@@ -675,6 +706,7 @@ export function toWireRestCadence(cadence: RestCadenceState | null): SessionRest
     mode: cadence.mode,
     targetSeconds: cadence.targetSeconds,
     autoAdvance: cadence.autoAdvance,
+    autoAdvanceOnce: cadence.autoAdvanceOnce === true,
     advanceOn: cadence.advanceOn,
     source: cadence.source,
     isRunning: cadence.isRunning,

@@ -487,6 +487,11 @@
       "resetDone": "Enlace nuevo listo. El anterior ya no funciona.",
       "resetFailed": "No se pudo restablecer el enlace. Inténtalo de nuevo."
     },
+    "wallPoster": {
+      "print": "Imprimir un póster",
+      "sprayHint": "Pégalo junto al Spraywall para que la gente lo escanee.",
+      "boardHint": "Pégalo junto al plafón para que la gente lo escanee."
+    },
     "sprayVisibility": {
       "label": "Quién puede verlo",
       "private": "Privado",

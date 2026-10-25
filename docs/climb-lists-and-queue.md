@@ -53,7 +53,7 @@ Player wording is being agreed with #6229. Until then this page uses these words
 | Word                         | Meaning                                                                                                                        | In code                                              |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
 | List                         | Any screen that shows climbs in rows: search results, a playlist, your logbook, a session, the queue.                          | —                                                    |
-| Track, shown in the top bar  | The list the player is walking. The player's top bar, between ⌄ and ⋯, names it: "Projects · 4 of 23" (the count only when it is known to be right). A long name is cut at its end; the count never is. F1 first put it on the header's stats line, where it pushed the sends and stars off the end. | `playlistSuggestionSource`, `resolveTrackLabel`      |
+| Track, shown in the top bar  | The list the player is walking. The player's top bar, between ⌄ and ⋯, names it: "Projects · 4 of 23" (the count only when it is known to be right). While a queued climb plays in the middle of it, the top bar says "Up next · 1 of 3" instead (#6777). A long name is cut at its end; the count never is. F1 first put it on the header's stats line, where it pushed the sends and stars off the end. | `playlistSuggestionSource`, `resolveTrackLabel`      |
 | Queue                        | Your climbs in order: **History** (climbs before the current one), **Now** (the current climb), **Up next**. In a crew, the room's queue. | `queue`, `currentClimbQueueItem`                     |
 | Preview                      | The player shows a climb without making it current.                                                                             | `previewQueueItem`                                   |
 | Browsing (back chip)         | A preview whose swipes are guaranteed not to touch the wall.                                                                    | `WallPillState 'browsing'`                           |
@@ -82,7 +82,7 @@ Three terms keep the tables short.
 | --- | --- | --- |
 | Commit | A new queue entry for the climb is inserted right after the current climb and becomes current, even if that climb is already queued further on. Only three taps reuse an existing entry: re-tapping the current climb, a queue-sheet row, and a board-history row whose climb has a queue entry. | `setCurrentClimb`, `src/providers/queue-provider.tsx:2068`; the reducer skips the insert only for the same entry uuid (`packages/shared/queue/src/reducer.ts:289`), and every list tap mints one (`src/lib/climb-to-queue-item.ts:106`) |
 | Trackless preview | The player shows the climb without committing it and has no list to walk. The climb is not in the queue, so swiping and the Next and Previous buttons are disabled. | `packages/shared/play-view/src/queue-navigation.ts:269-270`, `canNext` at `:449` |
-| Track end | Since F1 (#6664): at the last climb of the list it is walking, Next or one more forward swipe opens an end card, "Keep going with your queue (N)", N being Up next. From a committed climb its action goes to the next queued climb (a preview of it when swipes are view-only), and the card names that climb on its own line, "First up: Crimp Ladder" (#6238; names past 32 characters end in an ellipsis, and a climb with no name leaves the line out); from a preview it goes back to the queue's Now and names nothing, since Now is not Up next (a preview over a queue with no Now has nowhere to go back to, so it opens the queue's first climb, named). Up next is everything after Now, or the whole queue without one, the same count as the queue sheet's header. With nothing Up next the card says the list is finished. Previous stops at the list's first climb. While more of the list is still loading (the next page, or the load that follows a tap) the card waits and Next stays off until it lands. Rest-timer auto-advance stops here too, with "End of the list" on its pill. Before F1, a committed climb fell into the queue here and a preview stopped dead. While a list is walked (the header names it), the player's queue button carries a badge with the same Up next count, and its label says "Queue, N climbs up next", at 0 too; at 0 there is no badge, and playing from the queue the button has no badge and keeps its plain label (#6238). | `selectNextQueueItemWithSuggestions` (`atTrackEnd`), `resolveTrackEndCard`, `countUpNext`, `resolveListWalkUpNextBadge`, `TrackEndCard.tsx` |
+| Track end | Since F1 (#6664): at the last climb of the list it is walking, Next or one more forward swipe opens an end card, "Keep going with your queue (N)", N being Up next. Since #6777 Next plays Up next before the list goes on, so the card only comes up once Up next is played too; what N counts then is what the walk passed over, such as queued climbs this wall can't draw. From a committed climb its action goes to the next queued climb (a preview of it when swipes are view-only), and the card names that climb on its own line, "First up: Crimp Ladder" (#6238; names past 32 characters end in an ellipsis, and a climb with no name leaves the line out); from a preview it goes back to the queue's Now and names nothing, since Now is not Up next (a preview over a queue with no Now has nowhere to go back to, so it opens the queue's first climb, named). Up next is everything after Now, or the whole queue without one, the same count as the queue sheet's header. With nothing Up next the card says the list is finished. Previous stops at the list's first climb. While more of the list is still loading (the next page, or the load that follows a tap) the card waits and Next stays off until it lands. Rest-timer auto-advance stops here too, with "End of the list" on its pill. Before F1, a committed climb fell into the queue here and a preview stopped dead. While a list is walked (the header names it), the player's queue button carries a badge with the same Up next count, and its label says "Queue, N climbs up next", at 0 too; at 0 there is no badge, and playing from the queue the button has no badge and keeps its plain label (#6238). | `selectNextQueueItemWithSuggestions` (`atTrackEnd`), `resolveTrackEndCard`, `countUpNext`, `resolveListWalkUpNextBadge`, `TrackEndCard.tsx` |
 
 **The crew column has two halves.** Everything that makes a tap a private look in a crew
 (#4281) sits behind the PostHog flag `shared-session-browse`
@@ -108,6 +108,11 @@ drives the wall, and the "flag on" behaviour below is built but nobody has it ye
 | Similar climbs | The strip under the board in the player | Since F2: commits, flagged `suggested`, inserted after the current climb, with the strip as the track, named "Similar climbs" (`use-play-selection-controller.ts:373`). The strip is the climbs this wall fits, plus the one tapped. A preview with the same track with Light on tap off, or when the player shows a climb from another board. | Walks the strip | Track end |
 | Workout preview | Record tab before a session, workout on | A trackless preview (`src/components/session-screen/pre-session/PreSessionView.tsx:245-251`). **Start** appends the workout behind the queue (`:301`). | Nothing | — |
 | Wall tab kiosk | Wall tab on an iPad bound to a board | No rows. Older and Newer step through the wall's own history locally; **Light this** lights the board without touching the queue (`src/components/board-presence/wall-kiosk/useWallPreview.ts:345-357`). | The wall's history | Returns to live |
+
+Since #6777, every "Walks …" in the Next column plays Up next first: the queue after the
+climb on the wall, Play next climbs at the top of it, then Play last ones. The list picks up
+again after the last list climb played, and its end card comes once both are done (rule 2).
+A preview walks only its list.
 
 ### Crew, swipes and long-press
 
@@ -298,7 +303,10 @@ says.
 
 Fixed by F1 (#6664): the player names the list, swipes stop at both ends with an end card,
 tracks page past the first load, and "Start playlist" keeps a track named after the playlist.
-What follows is how it was.
+F1 kept the queue behind the end card. #6777 then turned that round, after the owner QA of
+#6772 (climbers queued climbs from search results and the next swipe still showed the next
+result): Next plays Up next first, the top bar says "Up next · 1 of 3" while it does, and the
+list picks up after the last list climb played. What follows is how it was before F1.
 
 The player doesn't say which list it is walking, and the walk ends silently.
 
@@ -505,9 +513,30 @@ Seven rules. Each one reuses a part that already exists in the code: the list tr
 
 1. **Tap a climb in any list and the player plays from that list**, and says so in its top bar:
    "Projects · 4 of 23".
-2. **Swipes walk that list and stop at its ends.** The last swipe shows an end card, "Keep going
-   with your queue (3)" with "First up: Crimp Ladder" under it, instead of dropping silently into
-   older queue climbs. On the way there, the queue button's badge counts Up next.
+2. **Your queue plays before the list continues.** Next, the swipes and the rest timer play Up
+   next first: Play next climbs at the top of it, then Play last ones, and the top bar says
+   "Up next · 1 of 3". Then the list picks up at the climb after the last list climb played, and
+   its name comes back: "Search results · 5 of 23". The track keeps that list climb while the
+   queue plays (`PlaylistSuggestionSource.resume`), so the place survives the queue. Previous
+   retraces the walk: from the first queued climb it goes back to the list climb it was played
+   from. The list's start is a stop, and its end card comes only once both the list and Up next
+   are done; it still offers the queue when the walk passed queued climbs over (ones this wall
+   can't draw), "Keep going with your queue (1)" with "First up: Crimp Ladder" under it. The
+   queue button's badge counts Up next all the way. In a crew the room's Up next plays before
+   this phone's list goes on. A preview (a crew browse, a wrong-board look, Light on tap off)
+   walks only its list, so a look never uses up anybody's Up next; committing it (Put on the
+   wall) starts the walk from there. With Light on swipe off, or in a crew, a swipe off the
+   climb on the wall is a look that walks the queue with no list of its own (#5403); Put on
+   the wall on a queued climb ahead of it keeps this phone's list and its place, as Next
+   would (`resolveUpNextCommitResume`), and leaves the list for anything else. The look itself
+   never borrows or captures this phone's list, even when it starts from a list climb: only Put
+   on the wall keeps the list (owner decision, 2026-10-25, keeping the #5403 rule). If the list
+   climb's own queue entry is removed while Up next plays, Previous goes back to that list
+   climb instead of into History. From the list climb the walk picked up after Up next,
+   Previous goes back to the last queued climb played, then to the list climb before it, even
+   when an older entry of the same climb sits there. Owner decision, 2026-10-25 (#6777), reversing the
+   list-first walk F1 shipped, where the queue waited behind the end card and the persona panel
+   in discussion #6708 predicted climbers would get lost.
 3. **The queue holds only what you or your crew add**: the right swipe (Play next), Play next,
    Play last, a workout. Looking at a climb never adds it to Up next. Climbs that were on the wall show
    under History.
@@ -545,7 +574,8 @@ replacing the old one.
 ## Before and after
 
 What each surface does today, and what it does once F1 to F6 land. "Plays from" means the
-player names that list, walks it, and stops at its end card.
+player names that list, plays Up next first and then walks the list (#6777), and stops at its end
+card once both are done. Every "walks … to the end card" under Today plays Up next first too.
 
 | Surface                                  | Today                                                                                     | After                                                                                              |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
@@ -553,7 +583,7 @@ player names that list, walks it, and stops at its end card.
 | Playlist                                 | Plays from the playlist: inserts the climb and walks the named playlist to the end card, queue and History untouched; a preview with Light on tap off or in a crew. Play button in both looks. Play next and Play last copy it in, at the top or the bottom of Up next (#6772). The playlist switch keeps the old replace, and its prompt's Cancel and Play last now open the tapped climb (F4). | Plays from the playlist. Nothing is added to Up next (F3). |
 | For You and smart lists                  | As the playlist (F4); the track pages the board the rows on screen were read on.           | Plays from the list (F3).                                                                          |
 | Setter page                              | As the playlist (F4); the track pages with the same cross-angle stats as the list.         | Plays from the setter's list (F3).                                                                 |
-| Logbook | Inserts the climb and plays from the logbook, named "Logbook", to the end card; a preview with the same track with Light on tap off or in a crew (F2). | Plays from the logbook. Nothing is added to Up next (F2, F3). |
+| Logbook | Inserts the climb and plays from the logbook, named "Logbook": Up next first, then the logbook to the end card (#6777); a preview with the same track with Light on tap off or in a crew, which walks only the logbook (F2). | Plays from the logbook. Nothing is added to Up next (F2, F3). |
 | Session detail | Inserts the climb and plays from the session's ticks (F2). | Plays from the session's ticks (F2, F3). |
 | Profile climbs | Inserts the climb and plays from the profile list (F2). | Plays from the profile list (F2, F3). |
 | Home cards | New-climb card: trackless preview. A session card's climb plays from a one-climb list and follows Light on tap and the crew rule (F2). | Same as every other list, once #6289 settles what Home shows. |
@@ -576,7 +606,7 @@ The model keeps what exists and adds one switch, which shipped with F4.
 | Light the board when I tap a climb          | Exists, default on        | Off: a tap opens a preview instead of lighting the board, and the preview still walks the list it came from. Since F2 every list reads it, at the tap (`src/lib/playlists/use-playlist-activation.ts:1350`); before, only search results did. Since F4 playlists, For You and setter pages read it too, with the playlist switch on as well. The header Play button skips it, so with Light on tap off it is how a climber plays or loads the list. |
 | Light the board as I swipe                  | Exists, default on        | Off: swipes in the player stay Browsing (`play-drawer-navigation.ts:67`). On, it only applies once a climb is on the wall: a preview stays a preview as you swipe, and the setting's caption says so. Nested under Light on tap in Settings › Board. |
 | Tapping a playlist loads it into my queue   | Exists since F4, default off | On: a playlist, For You or setter tap (and their Play button) replaces the queue with that list, the behaviour before F4, after "Start playlist?" when anything is queued after the current climb. Off: the tap plays from the list (rule 5). With Light on tap off a row tap is still a preview, and the Play button loads the list. In Settings › Board, in the lighting group under Light on tap (`playlistTapLoadsQueue`, read at the tap). |
-| End of list: stop or continue into my queue | Rejected                  | The end card (rule 2) offers both on the spot, so a setting would only hide the choice.                                                                             |
+| End of list: stop or continue into my queue | Rejected                  | Moot since #6777: the queue plays before the list continues (rule 2), so a list only ends once Up next is played too, and the end card offers what the walk passed over. A "list first" setting would bring back the order the owner QA of #6772 rejected. |
 
 F1, F2, F3 and F5 change behaviour for everyone without a setting; F4 changes it too, with
 the playlist setting for climbers who want the old replace. Each one fixes an open bug
@@ -600,19 +630,19 @@ Post this page in Discord before filing F1 to F6, and ask @brownbeagle whether i
 
 | File                                                                   | What it owns                                                                                                   |
 | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `packages/shared/play-view/src/queue-navigation.ts`                    | The list-first walk: `selectNextQueueItemWithSuggestions` (line 248), `findPreviousQueueItemWithSuggestions`. |
-| `packages/shared/queue/src/playlist-suggestions.ts`                    | Tracks, peeks and the browse-origin prune (`pruneSuggestedQueueItemsAfterCurrent`).                            |
+| `packages/shared/play-view/src/queue-navigation.ts`                    | The walk, Up next first and then the list (#6777): `selectNextQueueItemWithSuggestions`, `selectPreviousQueueItemWithSuggestions`, `resolveTrackPosition` (on the list, or in Up next with the list climb it picks up after), `resolveUpNextProgress`. |
+| `packages/shared/queue/src/playlist-suggestions.ts`                    | Tracks, peeks, the resume point kept while Up next plays (`withPlaylistTrackResume`) and the browse-origin prune (`pruneSuggestedQueueItemsAfterCurrent`). |
 | `packages/shared/queue/src/reducer.ts`                                 | Insert-after-current on activation (lines 289-299).                                                            |
 | `packages/shared/play-view/src/browse-defaults.ts`                     | The crew gate, `shouldDefaultToBrowse`.                                                                        |
 | `packages/shared/playlists-react/src/fetch-playlist-suggestion-climbs.ts` | A track's first load, the one-page `fetchPlaylistTrackPage`, the 1,000-climb track bound and the 20-page replace drain. |
 | `src/lib/playlists/track-pager.ts`, `src/components/play-drawer/use-track-paging.ts` | Paging a track past what is loaded, one page as the climber nears its end.                               |
-| `packages/shared/play-view/src/track-label.ts`, `src/components/play-drawer/track-end.ts` | The top bar's "Projects · 4 of 23" and the end card model.                                      |
+| `packages/shared/play-view/src/track-label.ts`, `src/components/play-drawer/track-end.ts` | The top bar's "Projects · 4 of 23" and "Up next · 1 of 3", and the end card model.               |
 | `src/lib/playlists/use-playlist-activation.ts`                         | Every list tap: wrong board, preview (crew or Light on tap off), replace, insert.                            |
 | `src/lib/playlists/use-board-list-activation.ts`, `use-tick-list-activation.ts`, `loaded-list-pages.ts` | Lists whose rows carry their own board (logbook, sessions, profile climbs, session cards, Record history): the tapped row's board and angle, and paging a track through the screen's own query. |
 | `src/components/play-drawer/use-play-selection-controller.ts`          | Opens without a track (notifications, deep links, the climb route's hand-off) and the similar-climbs tap.    |
 | `src/components/play-drawer/play-drawer-navigation.ts`                 | Whether a swipe stays a preview or commits.                                                                    |
 | `src/components/play-drawer/wall-state.ts`                             | The header pill and the Put on the wall / Set active button.                                                 |
-| `src/providers/queue-provider.tsx`                                     | `setCurrentClimb`, `nextClimb`, `setQueue`, `appendQueueItems`, and where the prune is switched on.            |
+| `src/providers/queue-provider.tsx`                                     | `setCurrentClimb`, `nextClimb` and `previousClimb` (which store the track's resume point, `storeTrackResume`), `setQueue`, `appendQueueItems`, and where the prune is switched on. |
 | `src/providers/queue/use-queue-persistence.ts`, `src/lib/queue-snapshot-store.ts` | The solo queue saved across restarts.                                                                |
 | `src/components/play-drawer/QueueList.tsx`, `use-queue-sheet-handlers.ts` | The queue sheet: sections, suggestions, row taps.                                                          |
 

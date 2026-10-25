@@ -24,7 +24,8 @@ import { getClimbStatsForAllAngles, type ClimbStatsForAngle } from '@/app/lib/da
 const climbRow = vi.hoisted(() => ({ description: null as string | null }));
 
 vi.mock('server-only', () => ({}));
-vi.mock('next/navigation', () => ({ notFound: vi.fn() }));
+// `usePathname` for the store button island, which re-reads a QR landing per page.
+vi.mock('next/navigation', () => ({ notFound: vi.fn(), usePathname: () => null }));
 
 vi.mock('@/app/lib/i18n/server', () => ({
   getServerTranslation: vi.fn(async () => ({

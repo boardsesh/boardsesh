@@ -7,6 +7,7 @@ const browser = vi.hoisted(() => ({ openBrowserAsync: vi.fn().mockResolvedValue(
 const scrollView = vi.hoisted(() => ({ contentContainerStyle: null as unknown }));
 const routerMock = vi.hoisted(() => ({ push: vi.fn() }));
 const toastMock = vi.hoisted(() => ({ showToast: vi.fn() }));
+const analyticsMock = vi.hoisted(() => ({ track: vi.fn() }));
 const partnerships = vi.hoisted(() => ({
   openPartnershipsEmail: vi.fn().mockResolvedValue(true),
   PARTNERSHIPS_EMAIL: 'partnerships@boardsesh.com',
@@ -35,6 +36,7 @@ vi.mock('react-i18next', () => ({
         'mobile.about.changelogLink': "What's New",
         'mobile.about.viewOnGithub': 'View on GitHub',
         'mobile.about.emailPartners': 'Email us',
+        'mobile.about.shareApp.link': 'Share Boardsesh',
       })[key] ?? key,
   }),
 }));
@@ -65,6 +67,14 @@ vi.mock('../../src/components/PressableSurface', () => ({
 vi.mock('../../src/components/SectionHeader', () => ({
   SectionHeader: ({ title }: { title: string }) => createElement('h2', null, title),
 }));
+vi.mock('../../src/components/ShareAppSheet', () => ({
+  ShareAppSheet: ({ onDismiss }: { onDismiss: () => void }) =>
+    createElement(
+      'div',
+      { 'data-testid': 'share-app-sheet' },
+      createElement('button', { onClick: onDismiss }, 'close'),
+    ),
+}));
 vi.mock('../../src/components/Text', () => ({
   Text: ({ children, selectable }: { children?: ReactNode; selectable?: boolean }) =>
     createElement('span', { 'data-selectable': selectable ? 'true' : undefined }, children),
@@ -73,6 +83,7 @@ vi.mock('../../src/hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({ scrollBottomPadding: 80 }),
 }));
 vi.mock('../../src/lib/partnerships', () => partnerships);
+vi.mock('../../src/lib/analytics', () => analyticsMock);
 vi.mock('../../src/providers/toast-provider', () => ({ useToast: () => toastMock }));
 vi.mock('../../src/providers/theme-provider', () => ({
   useTheme: () => ({
@@ -161,5 +172,20 @@ describe('AboutScreen partnerships + acknowledgements', () => {
     fireEvent.click(screen.getByRole('button', { name: 'View on GitHub' }));
 
     expect(browser.openBrowserAsync).toHaveBeenCalledWith('https://github.com/boardsesh/boardsesh');
+  });
+});
+
+describe('AboutScreen share the app', () => {
+  it('opens the share sheet from its row and closes it again', () => {
+    analyticsMock.track.mockClear();
+    render(<AboutScreen />);
+
+    expect(screen.queryByTestId('share-app-sheet')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Share Boardsesh' }));
+    expect(screen.getByTestId('share-app-sheet')).toBeTruthy();
+    expect(analyticsMock.track).toHaveBeenCalledWith('App Share Action', { action: 'open' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'close' }));
+    expect(screen.queryByTestId('share-app-sheet')).toBeNull();
   });
 });

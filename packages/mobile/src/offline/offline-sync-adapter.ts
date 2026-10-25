@@ -36,6 +36,7 @@ import {
   setPullWriteSettledReporter,
   getSqliteWriteSite,
   type DrainOptions,
+  type OutboxOwnerRefusal,
   type MutationDeadLetterReporter,
   type MutationDeliveryEvent,
   type MutationStatusListenerFailure,
@@ -777,15 +778,53 @@ const schedulerTriggers: SchedulerTriggers = {
   },
 };
 
+// A drain that declined because the database still belongs to another account.
+// Reported once per credential generation (#6824): after the first, every tick
+// save in that session would repeat it, but the next sign-in is a new account
+// and gets its own report. The generation moves only on sign-in and sign-out
+// (storeTokens / clearTokens), never on a token refresh, so this is at most one
+// event per sign-in. No ids ride along, only the reason.
+let reportedOtherAccountOutboxGeneration: number | null = null;
+
+function reportOutboxOwnerRefused(reason: OutboxOwnerRefusal): void {
+  // The moment between sign-in and the stamp is ordinary; leave a trail only.
+  addErrorBreadcrumb({ category: 'offline-sync.outbox-owner', message: `Drain declined: ${reason}`, level: 'info' });
+  if (reason !== 'other-account') return;
+  const generation = captureAuthCredentialGeneration();
+  if (reportedOtherAccountOutboxGeneration === generation) return;
+  reportedOtherAccountOutboxGeneration = generation;
+  reportHandledError(new Error('Offline outbox held: the local database belongs to another account'), {
+    level: 'warning',
+    tags: { source: 'offline-sync', kind: 'outbox-owner-hold', reason },
+  });
+}
+
+export function __resetOutboxOwnerReportForTests(): void {
+  reportedOtherAccountOutboxGeneration = null;
+}
+
 export function drainMutationQueue(
   db: OfflineDatabase,
   queryClient: QueryClient,
   graphqlFetch: GraphQLFetch,
-  options?: Partial<DrainOptions>,
+  // The owner check is not a caller's choice: every mobile drain sends with the
+  // token in SecureStore, so every one compares the stamp against that token.
+  options?: Partial<Omit<DrainOptions, 'getSignedInUserId'>>,
 ): Promise<void> {
   return drainMutationQueueCore(db, queryClient, graphqlFetch, {
     ...options,
     isOnline: options?.isOnline ?? isOnline,
+    // Whose account the server will file these sends under (#6824). The token
+    // the HTTP client attaches, read the same way, so the check and the send
+    // cannot disagree about who is signed in.
+    getSignedInUserId: readSignedInUserId,
+    onOutboxOwnerRefused: (reason) => {
+      try {
+        options?.onOutboxOwnerRefused?.(reason);
+      } finally {
+        reportOutboxOwnerRefused(reason);
+      }
+    },
     // A 5xx is not a reason to burn a queued write's retry budget (#4862): the
     // request was fine, the server was not. The store answers from its backoff
     // ladder when an outage is already known, so this costs a probe only when
@@ -878,10 +917,36 @@ export type SyncRunOptions = {
   snapshotSource?: SnapshotSource;
 };
 
-async function getSnapshotViewerUserId(): Promise<string | undefined> {
+export type SignedInAccount =
+  | { status: 'signed-in'; userId: string }
+  /** A token is stored but names no user: nothing can ever be matched against it. */
+  | { status: 'no-user-id' }
+  /** No token yet, or credentials changed during the read. Ask again later. */
+  | { status: 'unsettled' };
+
+/**
+ * The signed-in account, from the token in SecureStore: the same token
+ * `authenticatedFetch` attaches to every request the drain and the pull make.
+ * Unsettled when credentials changed while it was read, so a sign-in landing
+ * mid-read is never mistaken for the account that started it.
+ *
+ * Deliberately not `useStoredUserId`'s cached answer (#6824). That query never
+ * goes stale, so an observer mounted on the login screen keeps whatever it read
+ * there: nothing on a fresh install, or the previous account's id from an
+ * expired token the light signed-out launch left in place. The owner claim in
+ * `OfflineSyncBridge`, the drainer and every pull ask this instead.
+ */
+export async function readSignedInAccount(): Promise<SignedInAccount> {
   const generation = captureAuthCredentialGeneration();
   const token = await getAuthToken();
-  return isAuthCredentialGenerationCurrent(generation) ? userIdFromJwt(token) : undefined;
+  if (!token || !isAuthCredentialGenerationCurrent(generation)) return { status: 'unsettled' };
+  const userId = userIdFromJwt(token);
+  return userId ? { status: 'signed-in', userId } : { status: 'no-user-id' };
+}
+
+async function readSignedInUserId(): Promise<string | undefined> {
+  const account = await readSignedInAccount();
+  return account.status === 'signed-in' ? account.userId : undefined;
 }
 
 export function startSyncScheduler(
@@ -893,7 +958,9 @@ export function startSyncScheduler(
   options?: SyncRunOptions,
 ): () => void {
   return startSyncSchedulerCore(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, schedulerTriggers, {
-    getViewerUserId: getSnapshotViewerUserId,
+    getViewerUserId: readSignedInUserId,
+    // Pull only into a database stamped for that account (#6824).
+    requireOwnedDatabase: true,
     isOnline,
     onProgress: downloadTrackingProgressSink(db, options?.onProgress),
     getPriorityBoards: getPendingUserStartedDownloads,
@@ -927,7 +994,9 @@ export function triggerSync(
   options?: SyncRunOptions,
 ): void {
   triggerSyncCore(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, {
-    getViewerUserId: getSnapshotViewerUserId,
+    getViewerUserId: readSignedInUserId,
+    // Pull only into a database stamped for that account (#6824).
+    requireOwnedDatabase: true,
     isOnline,
     onProgress: downloadTrackingProgressSink(db, options?.onProgress),
     getPriorityBoards: getPendingUserStartedDownloads,
@@ -964,7 +1033,8 @@ export async function pullSync(
 ): Promise<void> {
   return pullSyncCore(db, queryClient, graphqlFetch, {
     ...options,
-    viewerUserId: options?.viewerUserId ?? (await getSnapshotViewerUserId()),
+    viewerUserId: options?.viewerUserId ?? (await readSignedInUserId()),
+    requireOwnedDatabase: true,
     isOnline: options?.isOnline ?? isOnline,
     onSchemaDrift: options?.onSchemaDrift ?? reportSchemaDrift,
     onSnapshotBootstrapError: options?.onSnapshotBootstrapError ?? reportSnapshotBootstrapError,

@@ -14,8 +14,9 @@ type HomeBoardShareSheetProps = {
 
 /**
  * The Share sheet for a home board. A Public or Unlisted board hands out its
- * plain link; a Followers or Invite-only board hands out the owner's invite
- * link, which grants access after the recipient confirms Join (`board-share-link.ts`).
+ * plain link, and offers a wall poster that prints it; a Followers or
+ * Invite-only board hands out the owner's invite link, which grants access
+ * after the recipient confirms Join (`board-share-link.ts`), and has no poster.
  */
 export function HomeBoardShareSheet({ target, boardName, onDismiss }: HomeBoardShareSheetProps) {
   if (target.kind === 'plain') {
@@ -27,6 +28,7 @@ export function HomeBoardShareSheet({ target, boardName, onDismiss }: HomeBoardS
         wallName={boardName}
         visibility={target.visibility}
         subject="board"
+        posterUrl={target.posterUrl}
       />
     );
   }

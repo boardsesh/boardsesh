@@ -1059,6 +1059,12 @@
       "summary": "Un Spraywall à {{angle}}° avec {{holdCount}} prises.",
       "photoAlt": "Le Spraywall {{wallName}}",
       "openInApp": "Ouvre ce Spraywall dans l’app Boardsesh pour voir ses blocs, ouvrir les tiens et enregistrer tes croix.",
+      "openButton": "Ouvrir dans l’app",
+      "haveApp": "Tu as déjà Boardsesh ?",
+      "install": {
+        "helper": "Pas encore l’app ? Installe-la et grimpe sur ce Spraywall.",
+        "scanAgain": "Tu viens de l’installer ? Scanne à nouveau le code pour ouvrir ce Spraywall."
+      },
       "metadata": {
         "title": "{{wallName}} | Spraywall",
         "description": "{{wallName}}, un Spraywall à {{angle}}°. Vois le Spraywall et ouvre-le dans l’app Boardsesh."

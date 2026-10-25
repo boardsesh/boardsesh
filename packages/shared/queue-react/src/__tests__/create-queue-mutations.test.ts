@@ -352,6 +352,74 @@ describe('setCurrentClimb coalescer', () => {
     await Promise.all([pA, pB, pC]);
   });
 
+  // A drained activation's caller resolved long ago, so mobile learns its loss
+  // only here, with the args that say which move it was (#6783 QA).
+  it('hands a drained setCurrentClimb failure to onSetCurrentClimbDrainError with its args', async () => {
+    let firstResolve: (() => void) | undefined;
+    let setCurrentCalls = 0;
+    const lost = new Error('Must be in a session to perform this operation (connectionId: c2)');
+    executeMock.mockImplementation((_c, op) => {
+      if (op.query !== SET_CURRENT_CLIMB) return Promise.resolve();
+      setCurrentCalls += 1;
+      if (setCurrentCalls === 1)
+        return new Promise<void>((resolve) => {
+          firstResolve = () => resolve();
+        });
+      return Promise.reject(lost);
+    });
+    const onBestEffortError = vi.fn();
+    const onSetCurrentClimbDrainError = vi.fn();
+
+    const m = make({ onBestEffortError, onSetCurrentClimbDrainError });
+    const pA = m.setCurrentClimb(item('A'), false, 'corr-A');
+    const pB = m.setCurrentClimb(item('B'), true, 'corr-B');
+    firstResolve?.();
+    await Promise.all([pA, pB]);
+    await flush();
+
+    expect(onSetCurrentClimbDrainError).toHaveBeenCalledExactlyOnceWith(lost, {
+      item: item('B'),
+      shouldAddToQueue: true,
+      correlationId: 'corr-B',
+    });
+    expect(onBestEffortError).toHaveBeenCalledWith('setCurrentClimb', lost);
+  });
+
+  it('skips the deferred ADD_QUEUE_ITEM when onSetCurrentClimbDrainError claims it', async () => {
+    localQueue = [item('A'), item('B')];
+    let firstResolve: (() => void) | undefined;
+    let setCurrentCalls = 0;
+    executeMock.mockImplementation((_c, op) => {
+      if (op.query !== SET_CURRENT_CLIMB) return Promise.resolve();
+      setCurrentCalls += 1;
+      if (setCurrentCalls === 1)
+        return new Promise<void>((resolve) => {
+          firstResolve = () => resolve();
+        });
+      return Promise.reject(new Error('Must be in a session to perform this operation (connectionId: c2)'));
+    });
+
+    const m = make({ onSetCurrentClimbDrainError: () => true });
+    const pA = m.setCurrentClimb(item('A'), false, 'corr-A');
+    const pB = m.setCurrentClimb(item('B'), true, 'corr-B');
+    firstResolve?.();
+    await Promise.all([pA, pB]);
+    await flush();
+
+    expect(queriesFor(ADD_QUEUE_ITEM)).toHaveLength(0);
+  });
+
+  it('does not call onSetCurrentClimbDrainError for the head call, whose caller sees its own rejection', async () => {
+    const lost = new Error('Must be in a session to perform this operation (connectionId: c2)');
+    executeMock.mockImplementation((_c, op) =>
+      op.query === SET_CURRENT_CLIMB ? Promise.reject(lost) : Promise.resolve(),
+    );
+    const onSetCurrentClimbDrainError = vi.fn();
+
+    await expect(make({ onSetCurrentClimbDrainError }).setCurrentClimb(item('A'), false, 'corr-A')).rejects.toBe(lost);
+    expect(onSetCurrentClimbDrainError).not.toHaveBeenCalled();
+  });
+
   it('fires a positioned ADD_QUEUE_ITEM when the DRAINED activation is throttled away (#3936)', async () => {
     localQueue = [item('X'), item('cur'), item('A'), item('B')];
     let firstResolve: (() => void) | undefined;

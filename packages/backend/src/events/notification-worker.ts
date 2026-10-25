@@ -50,6 +50,62 @@ export function notifiesWithoutActor(type: string): boolean {
   return isNewClimbNotification(type) || type === 'proposal_on_your_climb';
 }
 
+/** Whether a notification goes out and, if it does, the actor it stores (null: unnamed). */
+export type NotificationActorDecision = { send: false } | { send: true; storedActorId: string | null };
+
+/**
+ * Whether a notification may reach this recipient, and who it names. Both
+ * writers ask this before they store or push anything: the notification worker,
+ * and the inline fallback `publishSocialEvent` takes when the broker is not up.
+ * So a recipient who may not see an actor is never shown them live in either
+ * mode (#6558). The inbox applies the same rules again when it is read, through
+ * `notificationPrivacyCondition`.
+ *
+ * Never sent to the actor themselves. A new climb whose setter's account the
+ * recipient may not see is still announced, stored with no actor, under its
+ * setter name alone.
+ */
+export async function resolveNotificationActor(
+  recipientId: string,
+  actorId: string,
+  type: NotificationType,
+  entityType: string | null,
+  entityId: string,
+  commentUuid?: string,
+): Promise<NotificationActorDecision> {
+  // Guard: don't notify yourself
+  if (recipientId === actorId) return { send: false };
+
+  // A follower is telling the recipient about themselves, so the recipient
+  // seeing their name is the point, whatever the actor's own activity privacy
+  // says. Follow requests are written by handleFollowRequested, not here.
+  if (type === 'new_follower') return { send: true, storedActorId: actorId };
+
+  // The owner of the item hears about every comment and like on it, private
+  // commenters included: `canReadSocialEntity` admits the owner of a
+  // commented item, and `canSeeActorOnEntity` the owner of a liked one.
+  // On a climb, every actor keeps their own account privacy, its author
+  // included.
+  const canSeeActor = commentUuid
+    ? await canReadSocialEntity('comment', commentUuid, recipientId, 'listed')
+    : entityType
+      ? await canSeeActorOnEntity(entityType, entityId, actorId, recipientId)
+      : await canViewUserActivity(recipientId, actorId);
+  // An inbox is a list: nothing about an unlisted climb reaches anyone but
+  // its owner, the same test notificationPrivacyCondition reads with.
+  if (entityType && !(await canReadSocialEntity(entityType, entityId, recipientId, 'listed'))) {
+    return { send: false };
+  }
+  if (canSeeActor) return { send: true, storedActorId: actorId };
+  // A published climb is public, and so is its setter name: a stranger
+  // watching the layout hears about it with no account id or avatar, the
+  // way the board's new-climb feed shows it. A report on the
+  // recipient's own climb goes out unnamed too. Anything else about a
+  // hidden actor is not sent.
+  if (!notifiesWithoutActor(type)) return { send: false };
+  return { send: true, storedActorId: null };
+}
+
 /**
  * Whether the proposal behind this event is a `hide`.
  *
@@ -459,39 +515,9 @@ export class NotificationWorker {
     entityId: string,
     commentUuid?: string,
   ): Promise<void> {
-    // Guard: don't notify yourself
-    if (recipientId === actorId) return;
-
-    // Who the stored notification names. A new climb whose setter's account the
-    // recipient may not see is still announced, under its setter name alone.
-    let storedActorId: string | null = actorId;
-    // A follower is telling the recipient about themselves, so the recipient
-    // seeing their name is the point, whatever the actor's own activity privacy
-    // says. Follow requests are written by handleFollowRequested, not here.
-    if (type !== 'new_follower') {
-      // The owner of the item hears about every comment and like on it, private
-      // commenters included: `canReadSocialEntity` admits the owner of a
-      // commented item, and `canSeeActorOnEntity` the owner of a liked one.
-      // On a climb, every actor keeps their own account privacy, its author
-      // included.
-      const canSeeActor = commentUuid
-        ? await canReadSocialEntity('comment', commentUuid, recipientId, 'listed')
-        : entityType
-          ? await canSeeActorOnEntity(entityType, entityId, actorId, recipientId)
-          : await canViewUserActivity(recipientId, actorId);
-      // An inbox is a list: nothing about an unlisted climb reaches anyone but
-      // its owner, the same test notificationPrivacyCondition reads with.
-      if (entityType && !(await canReadSocialEntity(entityType, entityId, recipientId, 'listed'))) return;
-      if (!canSeeActor) {
-        // A published climb is public, and so is its setter name: a stranger
-        // watching the layout hears about it with no account id or avatar, the
-        // way the board's new-climb feed shows it. A report on the
-        // recipient's own climb goes out unnamed too. Anything else about a
-        // hidden actor is not sent.
-        if (!notifiesWithoutActor(type)) return;
-        storedActorId = null;
-      }
-    }
+    const actorDecision = await resolveNotificationActor(recipientId, actorId, type, entityType, entityId, commentUuid);
+    if (!actorDecision.send) return;
+    const { storedActorId } = actorDecision;
 
     const uuid = crypto.randomUUID();
 

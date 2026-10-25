@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { Stack, useRouter } from 'expo-router';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -7,12 +7,15 @@ import { Button } from '../src/components/Button';
 import { Icon } from '../src/components/Icon';
 import { PressableSurface } from '../src/components/PressableSurface';
 import { SectionHeader } from '../src/components/SectionHeader';
+import { ShareAppSheet } from '../src/components/ShareAppSheet';
 import { Text } from '../src/components/Text';
 import { useBottomChromeMetrics } from '../src/hooks/use-bottom-chrome-metrics';
 import { useStackScreenOptions } from '../src/hooks/use-stack-screen-options';
+import { track } from '../src/lib/analytics';
 import { openDiscordInvite } from '../src/lib/discord';
 import { openExternalUrl } from '../src/lib/open-url';
 import { openPartnershipsEmail, PARTNERSHIPS_EMAIL } from '../src/lib/partnerships';
+import { APP_SHARE_ACTION_EVENT, type AppShareActionProperties } from '../src/lib/store-links';
 import { useTheme } from '../src/providers/theme-provider';
 import { useToast } from '../src/providers/toast-provider';
 import { borderRadius, cardCorners, spacing } from '../src/theme/tokens';
@@ -33,6 +36,12 @@ export default function AboutScreen() {
   const bottomChrome = useBottomChromeMetrics();
   const router = useRouter();
   const { showToast } = useToast();
+  const [shareAppOpen, setShareAppOpen] = useState(false);
+  const handleOpenShareApp = useCallback(() => {
+    track(APP_SHARE_ACTION_EVENT, { action: 'open' } satisfies AppShareActionProperties);
+    setShareAppOpen(true);
+  }, []);
+  const handleCloseShareApp = useCallback(() => setShareAppOpen(false), []);
   const handleJoinDiscord = useCallback(() => {
     void openDiscordInvite('about');
   }, []);
@@ -81,6 +90,28 @@ export default function AboutScreen() {
             {t('mobile.about.heroBody')}
           </Text>
         </View>
+
+        <PressableSurface
+          onPress={handleOpenShareApp}
+          feedback="opacity"
+          opacityTo={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={t('mobile.about.shareApp.link')}
+          style={[styles.linkRow, { backgroundColor: systemColors.secondaryBackground }]}
+        >
+          <View style={[styles.cardIcon, { backgroundColor: systemColors.fill }]}>
+            <Icon name="share" size={22} color={systemColors.accent} />
+          </View>
+          <View style={styles.cardText}>
+            <Text variant="headline" style={styles.cardTitle}>
+              {t('mobile.about.shareApp.link')}
+            </Text>
+            <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.cardBody}>
+              {t('mobile.about.shareApp.linkBody')}
+            </Text>
+          </View>
+          <Icon name="chevron.right" size={16} color={systemColors.secondaryLabel} />
+        </PressableSurface>
 
         <View style={styles.section}>
           <SectionHeader title={t('mobile.about.sectionTitle')} />
@@ -178,6 +209,7 @@ export default function AboutScreen() {
 
         <Button title={t('mobile.about.joinDiscord')} icon="open.external" onPress={handleJoinDiscord} />
       </ScrollView>
+      {shareAppOpen ? <ShareAppSheet onDismiss={handleCloseShareApp} /> : null}
     </>
   );
 }

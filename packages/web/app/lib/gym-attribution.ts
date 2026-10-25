@@ -39,15 +39,13 @@ export function gymQrUrl(gymSlug: string, medium: GymQrMedium = 'poster'): strin
 
 /**
  * The absolute URL a per-board QR encodes — the kiosk's install code, and the
- * printed board poster (`/poster/b/{slug}`, `medium=board`).
+ * printed board poster (`/poster/b/{slug}`, `medium=board`, #4415).
  *
- * IMPORTANT and deliberate: `/b/{slug}` does NOT reach the QR landing tracker,
- * which only mounts on `/gym/[gym_slug]`. A `medium=kiosk` or `medium=board`
- * scan therefore cannot fire `Gym QR Scanned` — see the module comment on
- * `GYM_QR_MEDIUMS`. The params are still carried through
- * `app/b/[board_slug]/page.tsx`'s redirect so a first-party counter (#4387) or
- * a server log can attribute the visit, and so pointing one of these codes at a
- * gym page later is a one-line change rather than a reprint.
+ * `/b/{slug}` is not a gym page, so these scans never fire `Gym QR Scanned`.
+ * `app/b/[board_slug]/page.tsx`'s redirect carries the params onto
+ * `/b/{slug}/{angle}/list`, where `BoardQrLandingTracker` counts them as
+ * `Board QR Scanned`. See "Which code fires which event" in
+ * `docs/gym-funnel-analytics.md`.
  *
  * `wallUuid` is an UNLISTED spray wall's share-link capability. It goes first,
  * `?wall=<uuid>&src=qr&medium=board`, the same param `buildSprayWallShareUrl`

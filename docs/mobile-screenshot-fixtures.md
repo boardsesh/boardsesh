@@ -186,6 +186,17 @@ declaration and argument, with unchanged response selections. Replay still requi
 an exact variables hash: a request presenting a UUID needs its own recording and
 cannot reuse a recorded numeric-only read. Other document changes remain drift errors.
 
+`GetSession` accepts the exact addition of `isPermanent` (#6591), which decides
+whether the join screen says everyone in the session sees your name. The field is
+non-null, so replay never makes up a value. A recorded session that already holds
+a boolean `isPermanent` replays unchanged; the shared and Apple campaign sets'
+hand-curated session recording holds `false`. A recorded session with no
+`isPermanent` takes the one value the same set's `JoinSession` replies recorded
+for that session id; the CPP sets recorded `true`, because their sessions are
+permanent. A null session, a non-boolean value, no `JoinSession` evidence,
+evidence that disagrees, and every other document change still miss and fail
+the drift check.
+
 Recordings still go to ignored `packages/mobile/screenshot-fixtures/`, or an explicit
 `--fixtures-dir`. Downloads never touch that directory. Publish a sanitized merged
 recording with `vp run mobile:screenshot-fixtures-publish -- [recording-directory]`,

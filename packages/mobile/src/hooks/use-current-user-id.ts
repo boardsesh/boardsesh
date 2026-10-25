@@ -35,6 +35,15 @@ export type StoredUserId = {
  * `runSignedOutCleanup`. That's the whole reason it derives the id instead of
  * persisting a second identity field — one less thing that can outlive an
  * account on a shared device.
+ *
+ * Sign-in is the other boundary, and the cache does not take care of itself
+ * there (#6824). Some readers run while signed out (`useFollowedAuthors` reads
+ * with `enabled: true` from the root), so the login screen caches an answer:
+ * nothing, or the previous account's id from a lapsed token still in
+ * SecureStore. `staleTime: Infinity` would keep it for the session, so the auth
+ * provider resets this query on every sign-in. Code that decides ownership
+ * (the offline owner claim, the drainer, the pull) does not read it at all and
+ * asks the token directly (`readSignedInAccount`).
  */
 export function useStoredUserId(enabled: boolean): StoredUserId {
   const { data, isLoading } = useQuery({

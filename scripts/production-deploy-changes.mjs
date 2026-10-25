@@ -111,7 +111,9 @@ function isStaticAssetsAffecting(filePath) {
 
 function isBackendAffecting(filePath) {
   return (
-    filePath.startsWith('packages/') ||
+    // The [skip ci] changelog push lands in the next run's range after every OTA;
+    // only the app reads the file, so it must not rebuild and redeploy the backend.
+    (filePath.startsWith('packages/') && filePath !== 'packages/mobile/src/data/changelog.generated.json') ||
     filePath === 'Dockerfile.backend' ||
     filePath === 'scripts/create-service-docker-context.mjs' ||
     filePath === 'scripts/production-backend-smoke.mjs' ||

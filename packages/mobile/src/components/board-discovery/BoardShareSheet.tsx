@@ -12,6 +12,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 import { hapticSelection } from '../../lib/haptics';
+import { openExternalUrl } from '../../lib/open-url';
 import { spacing, borderRadius } from '../../theme/tokens';
 import type { SprayWallVisibility } from '../../lib/spray/spray-share';
 
@@ -41,6 +42,12 @@ type BoardShareSheetProps = {
   /** Offered for an invite link: revoke it and mint a new one. The caller confirms first. */
   onResetLink?: () => void;
   resettingLink?: boolean;
+  /**
+   * The www print page for this wall's or board's poster, already gated by its
+   * builder (`buildSprayWallPosterUrl`, `buildHomeBoardPosterUrl`). Unset or
+   * null hides the action, and an invite link never shows it.
+   */
+  posterUrl?: string | null;
 };
 
 const QR_SIZE = 200;
@@ -71,6 +78,7 @@ export function BoardShareSheet({
   linkFailed = false,
   onResetLink,
   resettingLink = false,
+  posterUrl = null,
 }: BoardShareSheetProps) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
@@ -89,6 +97,18 @@ export function BoardShareSheet({
     hapticSelection();
     void Share.share({ message: shareUrl, url: shareUrl });
   }, [shareUrl]);
+
+  // An invite token printed and taped to a wall is no longer an invite, so the
+  // sheet refuses the poster for one even if a caller passes a URL.
+  const printableUrl = visibility === 'invite' ? null : posterUrl;
+  // The in-app browser, never `Linking.openURL`: until a phone refetches the
+  // association file, `/poster` can still be claimed by the app and the tap
+  // would come straight back here.
+  const handlePrintPoster = useCallback(() => {
+    if (!printableUrl) return;
+    hapticSelection();
+    void openExternalUrl(printableUrl, 'board-share-poster');
+  }, [printableUrl]);
 
   const title = subject === 'board' ? t('mobile.boardShare.title') : t('mobile.sprayShare.title');
   const body = shareBody(subject, visibility, t);
@@ -162,6 +182,20 @@ export function BoardShareSheet({
           style={styles.button}
         />
       </View>
+      {printableUrl ? (
+        <View style={styles.poster}>
+          <Button
+            title={t('mobile.wallPoster.print')}
+            icon="print"
+            variant="outlined"
+            onPress={handlePrintPoster}
+            style={styles.posterButton}
+          />
+          <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.subtitle}>
+            {subject === 'board' ? t('mobile.wallPoster.boardHint') : t('mobile.wallPoster.sprayHint')}
+          </Text>
+        </View>
+      ) : null}
       {onResetLink ? (
         <Button
           title={t('mobile.boardShare.resetLink')}
@@ -232,6 +266,15 @@ const styles = StyleSheet.create({
   },
   button: {
     flex: 1,
+  },
+  poster: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    gap: spacing[2],
+    marginTop: spacing[2],
+  },
+  posterButton: {
+    alignSelf: 'stretch',
   },
   resetButton: {
     alignSelf: 'center',

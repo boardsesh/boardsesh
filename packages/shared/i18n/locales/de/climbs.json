@@ -1059,6 +1059,12 @@
       "summary": "Eine Spraywall mit {{angle}}° und {{holdCount}} Griffen.",
       "photoAlt": "Die Spraywall {{wallName}}",
       "openInApp": "Öffne diese Spraywall in der Boardsesh-App, um ihre Boulder zu sehen, eigene zu schrauben und deine Begehungen zu erfassen.",
+      "openButton": "In der App öffnen",
+      "haveApp": "Hast du Boardsesh schon?",
+      "install": {
+        "helper": "Noch keine App? Hol sie dir und klettere an dieser Spraywall.",
+        "scanAgain": "Gerade installiert? Scann den Code noch einmal, um diese Spraywall zu öffnen."
+      },
       "metadata": {
         "title": "{{wallName}} | Spraywall",
         "description": "{{wallName}}, eine Spraywall mit {{angle}}°. Sieh dir die Spraywall an und öffne sie in der Boardsesh-App."

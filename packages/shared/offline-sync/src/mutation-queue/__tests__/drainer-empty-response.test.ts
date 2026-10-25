@@ -9,6 +9,12 @@ vi.mock('../queue', () => ({
   markDeadLetter: vi.fn().mockResolvedValue(undefined),
 }));
 
+// The owner check (#6824) reads the stamp; these suites are about other
+// branches, so the database always belongs to the account that is signed in.
+// drainer-outbox-owner.test.ts covers the check itself on a real database.
+vi.mock('../../sync/local-user-owner', () => ({ getLocalUserId: async () => 'climber-1' }));
+const signedInAsStampedOwner = async (): Promise<string> => 'climber-1';
+
 vi.mock('../handlers', () => ({
   processMutation: vi.fn(),
 }));
@@ -68,6 +74,7 @@ describe('drainMutationQueue with the real error classifier', () => {
 
     await drainMutationQueue(mockDb, queryClient, graphqlFetch, {
       isOnline: () => true,
+      getSignedInUserId: signedInAsStampedOwner,
       sleep,
       maxCycleAttempts: 3,
     });
@@ -93,6 +100,7 @@ describe('drainMutationQueue with the real error classifier', () => {
 
     await drainMutationQueue(mockDb, queryClient, graphqlFetch, {
       isOnline: () => true,
+      getSignedInUserId: signedInAsStampedOwner,
       sleep,
       maxCycleAttempts,
     });
@@ -115,6 +123,7 @@ describe('drainMutationQueue with the real error classifier', () => {
 
     await drainMutationQueue(mockDb, queryClient, graphqlFetch, {
       isOnline: () => true,
+      getSignedInUserId: signedInAsStampedOwner,
       sleep,
       maxCycleAttempts: 0,
     });
@@ -136,6 +145,7 @@ describe('drainMutationQueue with the real error classifier', () => {
 
     await drainMutationQueue(mockDb, queryClient, graphqlFetch, {
       isOnline: () => true,
+      getSignedInUserId: signedInAsStampedOwner,
       sleep,
       maxCycleAttempts: 3,
     });
@@ -159,6 +169,7 @@ describe('drainMutationQueue with the real error classifier', () => {
 
     await drainMutationQueue(mockDb, queryClient, graphqlFetch, {
       isOnline: () => true,
+      getSignedInUserId: signedInAsStampedOwner,
       sleep,
       maxCycleAttempts: 3,
     });
@@ -180,6 +191,7 @@ describe('drainMutationQueue with the real error classifier', () => {
     try {
       await drainMutationQueue(mockDb, queryClient, graphqlFetch, {
         isOnline: () => true,
+        getSignedInUserId: signedInAsStampedOwner,
         sleep,
         maxCycleAttempts: 3,
       });
@@ -204,6 +216,7 @@ describe('drainMutationQueue with the real error classifier', () => {
 
     await drainMutationQueue(mockDb, queryClient, graphqlFetch, {
       isOnline: () => isOnline,
+      getSignedInUserId: signedInAsStampedOwner,
       sleep,
       maxCycleAttempts: 3,
     });

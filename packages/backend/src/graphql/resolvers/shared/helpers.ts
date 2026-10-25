@@ -84,6 +84,21 @@ const ANONYMOUS_SOCKET_PEER_RATE_LIMIT_MULTIPLIER = 5;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 
 /**
+ * Code on the refusal `requireSession` / `requireSessionWithReconnectGrace`
+ * throw: the operation's connection is not bound to a session. Clients branch
+ * on it (`isNotInSessionError` in @boardsesh/graphql-client); servers before it
+ * existed sent the same message with no code, so clients keep a message
+ * fallback and the message stays as it is.
+ */
+export const SESSION_REQUIRED_CODE = 'SESSION_REQUIRED';
+
+function sessionRequiredError(connectionId: string): GraphQLError {
+  return new GraphQLError(`Must be in a session to perform this operation (connectionId: ${connectionId})`, {
+    extensions: { code: SESSION_REQUIRED_CODE },
+  });
+}
+
+/**
  * Helper to require a session context.
  * Throws if the user is not in a session.
  */
@@ -97,7 +112,7 @@ export function requireSession(ctx: ConnectionContext): string {
       connectionId: ctx.connectionId,
       reason: 'no-session-id' satisfies SessionMembershipDenialReason,
     });
-    throw new Error(`Must be in a session to perform this operation (connectionId: ${ctx.connectionId})`);
+    throw sessionRequiredError(ctx.connectionId);
   }
   return ctx.sessionId;
 }
@@ -183,7 +198,7 @@ export async function requireSessionWithReconnectGrace(
   logger.warn('[Auth] requireSessionWithReconnectGrace failed after grace window', {
     connectionId: ctx.connectionId,
   });
-  throw new Error(`Must be in a session to perform this operation (connectionId: ${ctx.connectionId})`);
+  throw sessionRequiredError(ctx.connectionId);
 }
 
 /**

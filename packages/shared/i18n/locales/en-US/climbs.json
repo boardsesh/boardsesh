@@ -1059,6 +1059,12 @@
       "summary": "A Spraywall at {{angle}}° with {{holdCount}} holds.",
       "photoAlt": "The {{wallName}} Spraywall",
       "openInApp": "Open this Spraywall in the Boardsesh app to browse its climbs, set your own and log your sends.",
+      "openButton": "Open in the app",
+      "haveApp": "Already have Boardsesh?",
+      "install": {
+        "helper": "No app yet? Get it and climb on this Spraywall.",
+        "scanAgain": "Just installed? Scan again to open this Spraywall."
+      },
       "metadata": {
         "title": "{{wallName}} | Spraywall",
         "description": "{{wallName}}, a Spraywall at {{angle}}°. See the Spraywall and open it in the Boardsesh app."

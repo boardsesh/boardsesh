@@ -11,7 +11,7 @@ import { StyleSheet, View } from 'react-native';
 import { Redirect, Stack, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { onlineManager } from '@tanstack/react-query';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { SHARED_EVENTS, type BoardQrMedium } from '@boardsesh/analytics';
 import { ActivityIndicator } from './ActivityIndicator';
 import { AnonymousClimbView } from './AnonymousClimbView';
 import { Button } from './Button';
@@ -21,9 +21,15 @@ import { useAnonymousClimbViewEnabled } from '../providers/feature-flags-provide
 import { useTheme } from '../providers/theme-provider';
 import { useConfirm } from '../providers/dialog-provider';
 import { track } from '../lib/analytics';
+import { trackBoardQrScan } from '../lib/board-qr-scan';
 import { buildLoginHrefWithReturn } from '../lib/routing/anonymous-auth-gate';
 import { toBoardPath, type BoardRouteTarget } from '../lib/routing/board-route-target';
-import { useBoardRouteTarget, type BoardRouteMode, type BoardRouteStatus } from '../lib/routing/use-board-route-target';
+import {
+  useBoardRouteTarget,
+  type BoardRouteHandedOff,
+  type BoardRouteMode,
+  type BoardRouteStatus,
+} from '../lib/routing/use-board-route-target';
 
 /** Where `app/+not-found.tsx` sends people; the dead end below has to match it. */
 const HOME_TAB = '/(tabs)/home' as const;
@@ -93,6 +99,31 @@ function useBoardRouteHandoffReporter(target: BoardRouteTarget | null, mode: Boa
       track(SHARED_EVENTS.BoardRouteHandoff, { kind, status: eventStatus, source });
     },
     [identity, kind, source],
+  );
+}
+
+/**
+ * One `Board QR Scanned` per printed-code open, and only once the hand-off has
+ * opened the board: a dead slug, a refused wall or a signed-out bounce to login
+ * is not a scan that landed. A signed-out scanner's link is replayed after
+ * sign-in with its `src` and `medium` kept (`board-deep-link.ts`), so that open
+ * counts then. Keyed on the URL and the medium like the hand-off reporter, so a
+ * re-render cannot send it twice; `trackBoardQrScan` also drops the same landing
+ * arriving on a second route screen.
+ */
+function useBoardQrScanReporter(target: BoardRouteTarget | null, qrMedium: BoardQrMedium | null | undefined) {
+  const reportedRef = useRef<string | null>(null);
+  // A printed code names a board, never a climb, so the board path is the landing.
+  const landing = target ? toBoardPath(target) : 'unparsed';
+  return useCallback(
+    (boardType: string | null) => {
+      if (!qrMedium) return;
+      const reportKey = `${landing}#${qrMedium}`;
+      if (reportedRef.current === reportKey) return;
+      reportedRef.current = reportKey;
+      trackBoardQrScan(qrMedium, boardType, landing);
+    },
+    [landing, qrMedium],
   );
 }
 
@@ -169,6 +200,7 @@ export function BoardRouteHandoff({
   activationIntent,
   wallUuid,
   inviteToken,
+  qrMedium,
 }: {
   target: BoardRouteTarget | null;
   mode?: BoardRouteMode;
@@ -178,6 +210,11 @@ export function BoardRouteHandoff({
   wallUuid?: string | string[];
   /** A home board share link's token; redeemed before board adoption. */
   inviteToken?: string | string[];
+  /**
+   * The medium of the printed code this URL came from, already parsed by
+   * `boardQrScanMedium`. Counted once the board opens; null for any other open.
+   */
+  qrMedium?: BoardQrMedium | null;
 }) {
   const { t } = useTranslation('boards');
   const confirm = useConfirm();
@@ -192,7 +229,14 @@ export function BoardRouteHandoff({
     [confirm, t],
   );
   const report = useBoardRouteHandoffReporter(target, mode);
-  const onHandedOff = useCallback(() => report('resolved'), [report]);
+  const reportQrScan = useBoardQrScanReporter(target, qrMedium);
+  const onHandedOff = useCallback(
+    ({ boardType }: BoardRouteHandedOff) => {
+      report('resolved');
+      reportQrScan(boardType);
+    },
+    [report, reportQrScan],
+  );
   // Read unconditionally, applied only where the gate already relaxes: on native
   // `RELAXES_ANONYMOUS_ROUTES` is false, so the flag cannot reach a decision
   // there however it resolves.

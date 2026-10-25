@@ -52,11 +52,12 @@ import {
   suspendLinkEmptyDismissalWrites,
 } from '../lib/onboarding/onboarding-storage';
 import { clearUserData, purgeLocalDataForSignOut, getDatabaseHandle } from '../db';
+import { STORED_USER_ID_QUERY_KEY } from '../hooks/use-current-user-id';
 import { clearStoredSprayPhotos } from '../lib/spray/spray-photo-store';
 import { clearSprayWallPrivateCaches } from '../lib/spray/spray-privacy-cleanup';
 import { dropSprayWallViewerAccess, refreshSprayWallViewerAccess } from '../lib/spray/spray-wall-loader';
-import { resetSyncStatus } from '../sync/sync-status';
-import { setSetting, clearOfflineBoards, clearSprayWallArchives, clearOwnedSprayWallPins } from '../settings';
+import { resetOfflineAccountSettings } from '../offline/account-boundary';
+import { clearSprayWallArchives, clearOwnedSprayWallPins } from '../settings';
 import { getOutboxSummary, setSigningOut } from '@boardsesh/offline-sync';
 import { drainMutationQueue, reportScopeDownloadAbandonedOnSignOut } from '../offline/offline-sync-adapter';
 import { reportAbandonedDownloadsOnSignOut } from '../offline/abandoned-download-terminals';
@@ -425,9 +426,9 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       // #4452). The SELECTIVE branch only: the explicit wipe already reported
       // through purgeLocalDataForSignOut's seam and its markers are gone, while
       // this branch keeps every marker and every row — and still ends the
-      // download for good, because `setSetting('syncEnabledBoards', [])` below
-      // runs on all three sign-out paths and pullSync only ever visits enabled
-      // scopes.
+      // download for good, because `resetOfflineAccountSettings()` below empties
+      // `syncEnabledBoards` on all three sign-out paths and pullSync only ever
+      // visits enabled scopes.
       if (localDb && !purgeOfflineBoards) await reportAbandonedDownloadsOnSignOut(localDb);
       // Only NOW. Every sign-out event above — the discarded outbox, the wipe's
       // own `Offline Data Wiped On Sign Out`, and the abandonment terminals —
@@ -456,19 +457,14 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       // leaving and must not merge into the next one.
       if (wasAuthenticated || isAnalyticsPinnedToAPerson()) resetAnalytics();
       if (!isAuthTransitionCurrent(transitionEpoch)) return false;
-      // Reset the per-user "downloaded boards" list so the next account on a shared
-      // device doesn't inherit the previous user's offline selection. After a
+      // The "downloaded boards" list, the sync status and the board names the
+      // offline picker replays, so the next account on a shared device inherits
+      // none of them. The owner-stamp recovery runs the same reset (#6563). After a
       // selective wipe the cached board rows + checkpoints survive, so if the next
       // user enables the same board the download resumes instantly; after a purge
       // the rows those keys point at are gone, so leaving the list populated would
       // advertise boards as available offline over an empty catalog.
-      setSetting('syncEnabledBoards', []);
-      // "Last synced 5 minutes ago" belonged to the account that just left.
-      resetSyncStatus();
-      // ...and the board snapshots the offline picker replays. These carry the
-      // previous account's board NAMES, so on a shared device a missed clear would
-      // show one user's walls in the next user's picker.
-      clearOfflineBoards();
+      resetOfflineAccountSettings();
       // Drop the in-memory active-board cache too. It's `staleTime: Infinity`, so
       // without this the next user to sign in on a shared device would inherit the
       // previous user's board until a manual switch.
@@ -615,6 +611,16 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       // climbers who had just signed up). Invalidating before the tree swaps
       // puts the refetch in flight, and the remounted readers wait on it.
       if (!wasAuthenticated) void queryClient.invalidateQueries({ queryKey: ['profile'], exact: true });
+      // The same, and worse, for the user id decoded from the stored token
+      // (#6824). That query never goes stale, and the offline bridge observes it
+      // on the login screen too, so it would keep what it read there for the
+      // whole session: nothing on a fresh install or after a sign-out, or the
+      // previous account's id from the token a lapsed session left behind. Reset,
+      // not invalidate: every mounted reader drops the old answer at once and
+      // the active ones read the new token.
+      if (!wasAuthenticated || authenticatedIdentityChanged) {
+        void queryClient.resetQueries({ queryKey: STORED_USER_ID_QUERY_KEY, exact: true });
+      }
       authStateRef.current = { ...authStateRef.current, isAuthenticated: true };
       setIsSessionUnavailable(false);
       // Rechecking the same credentials preserves pending account conversions.

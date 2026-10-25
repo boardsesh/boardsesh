@@ -9493,6 +9493,14 @@ export type SessionRestCadence = {
   anchorAt?: Maybe<Scalars['String']['output']>;
   /** Whether the board holder advances the wall when the rest runs out */
   autoAdvance: Scalars['Boolean']['output'];
+  /**
+   * True while the clock may advance the wall one more time only: the FIRE that
+   * applies turns autoAdvance off and this back to false in the same write, so
+   * the wall waits until a CONFIGURE turns auto-advance on again. This backend
+   * always sends true or false; treat null (an event from an older instance) as
+   * false.
+   */
+  autoAdvanceOnce?: Maybe<Scalars['Boolean']['output']>;
   /** False while paused */
   isRunning: Scalars['Boolean']['output'];
   /** Server epoch ms of the last beat an auto-advance fired on, so no beat fires twice */
@@ -9524,7 +9532,9 @@ export type SessionRestCadenceAction =
   /**
    * The board holder's auto-advance fired. Compare-and-set: expectedRevision is
    * required. Applies once per beat: only when the stored clock's latest due
-   * beat (counted from 2 s before it) is later than lastFiredBeatAt.
+   * beat (counted from 2 s before it) is later than lastFiredBeatAt. On a
+   * clock with autoAdvanceOnce, the FIRE that applies also turns autoAdvance
+   * off.
    */
   | 'FIRE'
   /** Freeze the clock at pausedElapsedSeconds. */
@@ -9576,6 +9586,13 @@ export type SessionRestCadenceConfigInput = {
   /** 'deadline', 'tick' or 'send' */
   advanceOn: Scalars['String']['input'];
   autoAdvance: Scalars['Boolean']['input'];
+  /**
+   * True: advance the wall once, then switch auto-advance off until a
+   * CONFIGURE turns it back on (a 4x4 set's rest after its last rep). Omitted
+   * or null means false: auto-advance stays on after every advance. ARM and
+   * CONFIGURE store it as sent, so a CONFIGURE without it clears it.
+   */
+  autoAdvanceOnce?: InputMaybe<Scalars['Boolean']['input']>;
   /** 'afterTick' or 'onTheMinute' */
   mode: Scalars['String']['input'];
   /** 'settings' or 'stage' */
@@ -18338,6 +18355,7 @@ export type SessionRestCadenceResolvers<
   advanceOn?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   anchorAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   autoAdvance?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  autoAdvanceOnce?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
   isRunning?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   lastFiredBeatAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   lastTickQueueItemUuid?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;

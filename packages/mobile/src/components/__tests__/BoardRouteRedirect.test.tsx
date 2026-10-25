@@ -13,6 +13,7 @@ import type { BoardRouteStatus } from '../../lib/routing/use-board-route-target'
 const LOGIN_HREF = vi.hoisted(() => '/auth/login?next=%2Fb%2Fthe-gym%2F40%2Flist');
 
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
+const qrScans = vi.hoisted(() => ({ track: vi.fn() }));
 const routeStatus = vi.hoisted(() => ({ current: 'resolving' as BoardRouteStatus }));
 // The kill switch, as the component reads it. `true` = feature on.
 const anonymousClimbView = vi.hoisted(() => ({ enabled: true, seen: [] as (boolean | undefined)[] }));
@@ -27,7 +28,9 @@ const router = vi.hoisted(() => ({ replace: vi.fn() }));
 // is the only handle a test has on the `resolved` leg.
 const joinConfirm = vi.hoisted(() => vi.fn(async () => true));
 const boardJoin = vi.hoisted(() => ({ current: null as ((boardName: string) => Promise<boolean>) | null }));
-const handoff = vi.hoisted(() => ({ current: null as (() => void) | null }));
+const handoff = vi.hoisted(() => ({
+  current: null as ((handedOff: { boardType: string | null }) => void) | null,
+}));
 // Whatever `onlineManager` reports when the not-found lands. An offline
 // not-found is the transient state a reconnect heals, not a dead link.
 const connectivity = vi.hoisted(() => ({ isOnline: true }));
@@ -61,6 +64,7 @@ vi.mock('../Button', () => ({
 }));
 
 vi.mock('../../lib/analytics', () => ({ track: analytics.track }));
+vi.mock('../../lib/board-qr-scan', () => ({ trackBoardQrScan: qrScans.track }));
 vi.mock('../../lib/routing/anonymous-auth-gate', () => ({
   buildLoginHrefWithReturn: () => LOGIN_HREF,
 }));
@@ -78,7 +82,7 @@ vi.mock('../../lib/routing/use-board-route-target', () => ({
   useBoardRouteTarget: (
     _target: unknown,
     options?: {
-      onHandedOff?: () => void;
+      onHandedOff?: (handedOff: { boardType: string | null }) => void;
       anonymousClimbEnabled?: boolean;
       confirmBoardJoin?: (boardName: string) => Promise<boolean>;
     },
@@ -174,7 +178,7 @@ describe('Board Route Handoff event', () => {
   /** Fire the hand-off the way the real hook does: from inside its effect. */
   function handOff() {
     if (!handoff.current) throw new Error('the hook was never handed an onHandedOff callback');
-    act(() => handoff.current?.());
+    act(() => handoff.current?.({ boardType: 'kilter' }));
   }
 
   // The success leg never arrives as a status: the hand-off effect navigates the
@@ -386,6 +390,57 @@ describe('BoardRouteHandoff anonymous climb', () => {
     render(createElement(BoardRouteHandoff, { target: CLIMB_TARGET }));
 
     expect(anonymousClimbView.seen.at(-1)).toBe(false);
+  });
+});
+
+// A printed code that opened the app (#4415). Counted only once the board has
+// opened: a dead link or a bounce to login is not a scan that landed.
+describe('Board QR Scanned', () => {
+  const SLUG_LIST_TARGET = { kind: 'slug-list', slug: 'garage', angle: null } as BoardRouteTarget;
+
+  function handOff(boardType: string | null) {
+    if (!handoff.current) throw new Error('the hook was never handed an onHandedOff callback');
+    act(() => handoff.current?.({ boardType }));
+  }
+
+  it('counts the scan once the hand-off opens the board, with its type', () => {
+    render(createElement(BoardRouteHandoff, { target: SLUG_LIST_TARGET, qrMedium: 'board' }));
+    expect(qrScans.track).not.toHaveBeenCalled();
+
+    handOff('spray');
+
+    expect(qrScans.track).toHaveBeenCalledTimes(1);
+    // The URL is the dedupe key and never leaves the phone.
+    expect(qrScans.track).toHaveBeenCalledWith('board', 'spray', '/b/garage');
+    // The route's own funnel event still fires alongside it.
+    expect(analytics.track).toHaveBeenCalledWith(SHARED_EVENTS.BoardRouteHandoff, {
+      kind: 'slug-list',
+      status: 'resolved',
+      source: 'deep-link',
+    });
+  });
+
+  it('counts once when the hand-off is reported twice', () => {
+    render(createElement(BoardRouteHandoff, { target: SLUG_LIST_TARGET, qrMedium: 'kiosk' }));
+    handOff('kilter');
+    handOff('kilter');
+
+    expect(qrScans.track).toHaveBeenCalledTimes(1);
+  });
+
+  it('counts nothing for an open that did not come off a code', () => {
+    render(createElement(BoardRouteHandoff, { target: SLUG_LIST_TARGET, qrMedium: null }));
+    handOff('kilter');
+
+    expect(qrScans.track).not.toHaveBeenCalled();
+  });
+
+  it.each(['not-found', 'auth-required', 'resolving'] as const)('counts nothing while the route is %s', (status) => {
+    routeStatus.current = status;
+
+    render(createElement(BoardRouteHandoff, { target: SLUG_LIST_TARGET, qrMedium: 'board' }));
+
+    expect(qrScans.track).not.toHaveBeenCalled();
   });
 });
 

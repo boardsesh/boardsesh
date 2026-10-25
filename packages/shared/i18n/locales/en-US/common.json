@@ -637,7 +637,25 @@
       "partnerTitle": "Partner with us officially",
       "partnerBody": "Boardsesh works with Kilter, Tension, and MoonBoard from the outside. If you build boards and want to make something official together, we're keen to talk.",
       "acknowledgementsLink": "Acknowledgements",
-      "acknowledgementsLinkBody": "The people behind Boardsesh"
+      "acknowledgementsLinkBody": "The people behind Boardsesh",
+      "shareApp": {
+        "link": "Share Boardsesh",
+        "linkBody": "QR code for your crew's phones",
+        "title": "Share Boardsesh",
+        "body": "Have your crew scan this with their phone camera to get the app.",
+        "appStore": "App Store",
+        "googlePlay": "Google Play",
+        "storeToggleLabel": "Store",
+        "qrLabelIos": "QR code for Boardsesh on the App Store",
+        "qrLabelAndroid": "QR code for Boardsesh on Google Play",
+        "copyLink": "Copy link",
+        "share": "Share",
+        "copied": "Link copied",
+        "copyFailed": "Couldn't copy the link",
+        "messageCopied": "Message copied",
+        "messageCopyFailed": "Couldn't copy the message",
+        "message": "Get Boardsesh for your board sessions.\niPhone: {{iosUrl}}\nAndroid: {{androidUrl}}"
+      }
     },
     "acknowledgements": {
       "title": "Acknowledgements",

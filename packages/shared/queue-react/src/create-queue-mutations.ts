@@ -28,7 +28,7 @@ import type { Client, RateLimitRetryEvent } from '@boardsesh/graphql-client';
 import { execute } from '@boardsesh/graphql-client';
 import type { ClimbQueueItemInput } from '@boardsesh/shared-schema';
 import type { SessionRestCadenceInput, SetSessionRestCadencePayload } from '@boardsesh/shared-schema/generated';
-import { createSetCurrentClimbCoalescer } from '@boardsesh/queue-runtime';
+import { createSetCurrentClimbCoalescer, type SetCurrentClimbArgs } from '@boardsesh/queue-runtime';
 import {
   ADD_QUEUE_ITEM,
   REMOVE_QUEUE_ITEM,
@@ -166,6 +166,18 @@ export type QueueMutationsDeps<TItem> = {
   /** Sink for swallowed transport errors (best-effort actions + coalescer drains). */
   onBestEffortError?: (action: BestEffortAction, error: unknown) => void;
   /**
+   * A drained `setCurrentClimb` rejected. A call that superseded an earlier one
+   * resolves at once and is sent later from the coalescer's drain loop, so its
+   * caller never sees this failure; this hands it over with the call's own args
+   * (item, shouldAddToQueue, correlationId) so the caller can tell WHICH move
+   * never landed. Fires after `onBestEffortError('setCurrentClimb', …)`. Return
+   * `true` when the caller re-sends a lost `shouldAddToQueue` slot itself; the
+   * coalescer then skips its own deferred queue-add (#3936). Mobile uses it to
+   * re-send a move that missed the session during a reconnect, and holds the
+   * slot back until then.
+   */
+  onSetCurrentClimbDrainError?: (error: unknown, args: SetCurrentClimbArgs<TItem>) => boolean | void;
+  /**
    * Notified when a queue mutation is throttled and `execute` is backing off to
    * retry it (not on the final give-up). Web wires a debounced "catching up"
    * snackbar here so a burst of buffered adds replaying on reconnect reads as
@@ -270,6 +282,7 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
     ensureReady,
     getBaselineSequence,
     onBestEffortError,
+    onSetCurrentClimbDrainError,
     onRateLimited,
   } = deps;
 
@@ -496,7 +509,10 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
       // peek-promotion) without the coalescer knowing which one ran.
       await runMutation(client, { query: ADD_QUEUE_ITEM, variables: { item: input, position } });
     },
-    onDrainError: (error) => onBestEffortError?.('setCurrentClimb', error),
+    onDrainError: (error, args) => {
+      onBestEffortError?.('setCurrentClimb', error);
+      return onSetCurrentClimbDrainError?.(error, args) === true;
+    },
     onDeferredQueueAddError: (error) => onBestEffortError?.('addQueueItem', error),
   });
 

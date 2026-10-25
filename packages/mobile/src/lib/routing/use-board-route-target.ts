@@ -109,6 +109,9 @@ export type BoardRouteResult = {
  */
 export type BoardRouteMode = 'deep-link' | 'in-app';
 
+/** What a hand-off reports: the type of the board the URL opened (`kilter`, `spray`, …). */
+export type BoardRouteHandedOff = { boardType: string | null };
+
 const CLIMBS_TAB = '/(tabs)/climbs' as const;
 
 /** The board config a URL carries outright — only the tuple form has one. */
@@ -519,7 +522,7 @@ export function useBoardRouteTarget(
     /** A home board share link's token (`?invite=`); redeemed before board adoption. */
     inviteToken?: string | string[];
     confirmBoardJoin?: (boardName: string) => Promise<boolean>;
-    onHandedOff?: () => void;
+    onHandedOff?: (handedOff: BoardRouteHandedOff) => void;
     anonymousClimbEnabled?: boolean;
   },
 ): BoardRouteResult {
@@ -684,16 +687,20 @@ export function useBoardRouteTarget(
       router.replace(CLIMBS_TAB);
     };
 
+    // The config's board name is the board type: the URL's own for a tuple
+    // link, the adopted board's for a `/b/{slug}` one.
+    const handedOff: BoardRouteHandedOff = { boardType: boardConfig?.boardName ?? null };
+
     if (!wantsClimb) {
       handedOffRef.current = targetKey;
-      onHandedOffRef.current?.();
+      onHandedOffRef.current?.(handedOff);
       leave();
       return;
     }
 
     if (!climb || !boardConfig) return;
     handedOffRef.current = targetKey;
-    onHandedOffRef.current?.();
+    onHandedOffRef.current?.(handedOff);
     // Public URLs preview. Only the internal tick's one-use target-bound intent activates.
     const activate = !adoptsBoard && consumeClimbHandoffIntent(activationIntent, target);
     const openDrawer = () =>

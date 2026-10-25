@@ -607,6 +607,11 @@ export type GetNearbySessionsQueryResponse = {
 // host, board, and participant count before the user commits to joining. The
 // `session` query does not join the session — joining happens via JOIN_SESSION
 // once the user confirms (see QueueProvider.joinSession).
+//
+// The screenshot fixtures were recorded before `isPermanent` was selected here;
+// replay fills it from what each set recorded (`replayCompatibleFixtureResponse`
+// in scripts/lib/screenshot-fixtures.ts). Any other change to this document
+// still needs a re-record.
 export const GET_SESSION = gql`
   query GetSession($sessionId: ID!) {
     session(sessionId: $sessionId) {
@@ -616,6 +621,7 @@ export const GET_SESSION = gql`
       color
       goal
       isPublic
+      isPermanent
       startedAt
       endedAt
       users {
@@ -642,6 +648,12 @@ export type SessionPreview = {
   goal: string | null;
   /** Shown in live-session listings. The creator flips it from the Record tab. */
   isPublic: boolean;
+  /**
+   * A gym's always-on session. Its members are not named to each other by
+   * membership (`sessionCoMemberCondition`): names follow each climber's
+   * privacy settings, so the join screen drops its "everyone sees your name" line.
+   */
+  isPermanent: boolean;
   startedAt: string | null;
   endedAt: string | null;
   users: SessionUser[];

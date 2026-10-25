@@ -10,11 +10,17 @@ import { findPlaylistClimbIndex, type PlaylistSuggestionSource } from '@boardses
  * - `named`: the list's name with no count, because the count is not known or
  *   could be wrong (see `PlaylistSuggestionSource.total`).
  * - `counted`: the name plus a 1-based position and the list's total.
+ * - `upNext`: a queued climb plays in the middle of the list (issue #6777), so
+ *   the player says "Up next · 1 of 3" until the list picks up again. `count`
+ *   is where it sits in that stretch of Up next, null when it can't be counted.
+ *   `listName` is the list the walk returns to, null for a list nobody named:
+ *   the end card names it when the queue ran out at the list's end.
  */
 export type TrackLabelModel =
   | { kind: 'hidden' }
   | { kind: 'named'; name: string }
-  | { kind: 'counted'; name: string; position: number; total: number };
+  | { kind: 'counted'; name: string; position: number; total: number }
+  | { kind: 'upNext'; listName: string | null; count: { position: number; total: number } | null };
 
 const HIDDEN: TrackLabelModel = { kind: 'hidden' };
 
@@ -42,4 +48,22 @@ export function resolveTrackLabel(
   const position = index + 1;
   if (total === undefined || !Number.isInteger(total) || total < position) return { kind: 'named', name };
   return { kind: 'counted', name, position, total };
+}
+
+/**
+ * The label while the walk plays Up next in the middle of `source` (issue
+ * #6777). `progress` is `resolveUpNextProgress` for the climb on screen. Shown
+ * for a list with no name too: the climber is in their queue either way.
+ */
+export function resolveUpNextTrackLabel(
+  source: PlaylistSuggestionSource | null,
+  progress: { position: number; total: number } | null,
+): TrackLabelModel {
+  return { kind: 'upNext', listName: source?.label?.trim() || null, count: progress };
+}
+
+/** The list's name as a label carries it, or null: nothing named, or a list nobody named. */
+export function trackLabelListName(model: TrackLabelModel): string | null {
+  if (model.kind === 'hidden') return null;
+  return model.kind === 'upNext' ? model.listName : model.name;
 }

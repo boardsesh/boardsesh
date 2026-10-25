@@ -431,3 +431,159 @@ describe('QueueProvider — crew session after Offline mode on → off', () => {
     ]);
   });
 });
+
+// The same real stack, a different socket loss (found in QA of #6783). A
+// backend deploy closes the session socket while a wall move is in flight.
+// graphql-ws re-sends that SetCurrentClimb on the fresh socket, where it beats
+// the slow JOIN_SESSION and is refused "Must be in a session"; the rejoin's
+// FullSync then shows the climb the climber moved off. The wall used to snap
+// back to it, with an "out of sync" toast. Now the move is re-sent once the
+// FullSync proves nobody else moved the wall, and the wall never leaves it.
+describe('QueueProvider — a wall move in flight across a socket drop', () => {
+  const wireClimb = (uuid: string) => ({
+    uuid: `climb-${uuid}`,
+    name: `Climb ${uuid}`,
+    frames: 'p1r12',
+    setter_username: 'setter',
+    angle: 40,
+    ascensionist_count: 0,
+    difficulty: 'V3',
+    quality_average: '3.0',
+    stars: 3,
+    difficulty_error: '0.3',
+    benchmark_difficulty: null,
+  });
+  const shadowChaser = { uuid: 'shadow-chaser', climb: wireClimb('shadow-chaser') };
+  const lukewarm = { uuid: 'lukewarm', climb: wireClimb('lukewarm') };
+
+  beforeEach(() => {
+    server.reset();
+    __resetConnectivityStoreForTests();
+    bindConnectivityStore({
+      probe: async () => 'healthy',
+      readDeviceState: async () => ({ device: 'online', deviceReachability: 'reachable' }),
+      onOnlineChange: () => {},
+    });
+    activeBoard.getStoredActiveBoard.mockReset();
+    activeBoard.getStoredActiveBoard.mockResolvedValue(activeBoard.stored);
+    toast.showToast.mockClear();
+    sessionStore.getStoredSessionId.mockReset();
+    sessionStore.getStoredSessionId.mockResolvedValue('session-1');
+    http.request.mockReset();
+    http.request.mockImplementation(async (operation: string) => {
+      if (operation.includes('SessionStatus')) return { sessionStatus: 'active' };
+      if (operation.includes('GetSessionQueueState')) return { session: { queueState: null } };
+      return {};
+    });
+    server.queueFeed.enabled = true;
+    server.queueFeed.queue = [shadowChaser, lukewarm];
+    server.queueFeed.current = shadowChaser;
+  });
+
+  afterEach(() => {
+    cleanup();
+    disposeWsClient();
+    __resetWsClientLifecycleForTests();
+    __resetConnectivityStoreForTests();
+    vi.useRealTimers();
+  });
+
+  /** A session on Shadow Chaser, then a move to Lukewarm in flight when the server closes the socket. */
+  async function moveAcrossASocketDrop(hold: 'unapplied' | 'applied', beforeTheDrop: () => void = () => {}) {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const wallHistory: Array<string | null> = [];
+    const queueRef: RefObject<QueueHandle | null> = { current: null };
+    function HistoryProbe() {
+      const queue = useQueue();
+      useEffect(() => {
+        queueRef.current = queue;
+        wallHistory.push(queue.state.currentClimbQueueItem?.uuid ?? null);
+      }, [queue]);
+      return null;
+    }
+    render(
+      createElement(
+        'div',
+        null,
+        createElement(ConnectivityBridge),
+        createElement(QueueProvider, null, createElement(HistoryProbe)),
+      ),
+    );
+    const firstSocket = await waitForLiveSession();
+    await waitFor(() => {
+      expect(queueRef.current?.state.currentClimbQueueItem?.uuid).toBe('shadow-chaser');
+    });
+
+    server.queueFeed.holdNextSetCurrentClimb = hold;
+    server.queueFeed.joinLatencyMs = 400;
+    const lukewarmItem = currentQueue(queueRef).state.queue.find((item) => item.uuid === 'lukewarm');
+    if (!lukewarmItem) throw new Error('lukewarm is not queued');
+    act(() => {
+      currentQueue(queueRef).setCurrentClimb(lukewarmItem);
+    });
+    await waitFor(() => {
+      expect(server.operations.some((operation) => operation.outcome === 'held')).toBe(true);
+    });
+    const movedAt = wallHistory.lastIndexOf('lukewarm');
+    const mark = server.operations.length;
+    beforeTheDrop();
+    act(() => {
+      firstSocket.close(1012, 'Service Restart');
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3_000);
+    });
+    await waitFor(() => {
+      expect(server.liveSessionSocket()).not.toBeNull();
+    });
+    await settleNetwork();
+    const setCurrentOutcomes = () =>
+      server.operations
+        .slice(mark)
+        .filter((operation) => operation.operationName === 'SetCurrentClimb')
+        .map((operation) => operation.outcome);
+    return { queueRef, wallHistory, movedAt, setCurrentOutcomes };
+  }
+
+  it('keeps the wall on the move and lands it after the rejoin', async () => {
+    const { queueRef, wallHistory, movedAt, setCurrentOutcomes } = await moveAcrossASocketDrop('unapplied');
+
+    await waitFor(() => {
+      expect(server.queueFeed.current?.uuid).toBe('lukewarm');
+    });
+    // graphql-ws's own re-send beat the JOIN and was refused; the provider's
+    // re-send after the FullSync landed.
+    expect(setCurrentOutcomes()).toEqual(['not_in_session', 'ok']);
+    await settleNetwork();
+    expect(currentQueue(queueRef).state.currentClimbQueueItem?.uuid).toBe('lukewarm');
+    expect(currentQueue(queueRef).state.unconfirmedMove).toBeNull();
+    // The wall never went back to the climb the climber left.
+    expect(wallHistory.slice(movedAt)).not.toContain('shadow-chaser');
+    expect(toast.showToast).not.toHaveBeenCalledWith('mobile.queue.outOfSyncRefreshed', 'error');
+    expect(http.request.mock.calls.some(([operation]) => String(operation).includes('GetSessionQueueState'))).toBe(
+      false,
+    );
+  });
+
+  // The move ran on the old socket before it died, then a crewmate put the wall
+  // back on Shadow Chaser. The rejoin FullSync shows the climb this phone moved
+  // off, but at a later sequence: the crewmate's move stands.
+  it('leaves a crewmate’s move back alone when the lost move had already run', async () => {
+    const { queueRef, setCurrentOutcomes } = await moveAcrossASocketDrop('applied', () => {
+      server.queueFeed.current = shadowChaser;
+      server.queueFeed.sequence += 1;
+    });
+
+    await waitFor(() => {
+      expect(currentQueue(queueRef).state.currentClimbQueueItem?.uuid).toBe('shadow-chaser');
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    expect(setCurrentOutcomes()).toEqual(['not_in_session']);
+    expect(server.queueFeed.current?.uuid).toBe('shadow-chaser');
+    expect(currentQueue(queueRef).state.unconfirmedMove).toBeNull();
+    // The wall moved without a tap: the climber is told, as the old resync did.
+    expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.outOfSyncRefreshed', 'error');
+  });
+});

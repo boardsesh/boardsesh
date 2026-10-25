@@ -429,6 +429,7 @@ vi.mock('../../lib/auth-interceptor', () => ({
 }));
 
 import { AuthProvider, useAuth } from '../auth-provider';
+import { STORED_USER_ID_QUERY_KEY, useStoredUserId } from '../../hooks/use-current-user-id';
 import { commitVerifiedAuthResult, getVerifiedAuthResult } from '../../lib/verified-auth-result';
 import {
   clearSprayWallRegistry,
@@ -1036,6 +1037,38 @@ describe('AuthProvider sign-in and the cached signed-out profile', () => {
     });
 
     expect(queryClient.getQueryState(['profile'])?.isInvalidated).toBe(true);
+  });
+
+  // #6824. The offline bridge reads the stored user id from the root, so the login
+  // screen caches an answer, and that query never goes stale. A sign-in has to
+  // drop it or every reader keeps "nobody" (or the previous account) all session.
+  it('re-reads the stored user id the login screen cached once the climber signs in', async () => {
+    routerState.segments = ['auth', 'login'];
+    let storedJwt: string | null = null;
+    getAuthTokenMock.mockImplementation(async () => storedJwt);
+    authSignInWithCredentialsMock.mockImplementation(async () => {
+      // `{"sub":"user-b"}`: what the backend's JWT carries for this climber.
+      storedJwt = 'e30.eyJzdWIiOiJ1c2VyLWIifQ.signature';
+      return { success: true };
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{children}</AuthProvider>
+      </QueryClientProvider>
+    );
+    // The login screen's reader, as the offline bridge's `useFollowedAuthors` is.
+    const { result } = renderHook(() => ({ auth: useAuth(), stored: useStoredUserId(true) }), { wrapper });
+    await waitFor(() => expect(result.current.auth.isLoading).toBe(false));
+    await waitFor(() => expect(queryClient.getQueryState(STORED_USER_ID_QUERY_KEY)?.status).toBe('success'));
+    expect(queryClient.getQueryData(STORED_USER_ID_QUERY_KEY)).toBeNull();
+
+    await act(async () => {
+      await result.current.auth.signInWithCredentials('climber@example.com', 'password');
+    });
+
+    // The cached "nobody" is gone, and the reader that was mounted read the new token.
+    await waitFor(() => expect(queryClient.getQueryData(STORED_USER_ID_QUERY_KEY)).toBe('user-b'));
   });
 
   it('leaves a signed-in profile alone when the session is only re-checked', async () => {

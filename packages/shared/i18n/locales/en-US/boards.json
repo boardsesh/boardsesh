@@ -487,6 +487,11 @@
       "resetDone": "New link ready. The old one no longer works.",
       "resetFailed": "Couldn't reset the link. Try again."
     },
+    "wallPoster": {
+      "print": "Print a poster",
+      "sprayHint": "Tape it by the Spraywall so climbers can scan in.",
+      "boardHint": "Tape it by the board so climbers can scan in."
+    },
     "sprayVisibility": {
       "label": "Who can see it",
       "private": "Private",

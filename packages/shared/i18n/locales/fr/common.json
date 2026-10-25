@@ -637,7 +637,25 @@
       "partnerTitle": "Devenez partenaire officiel",
       "partnerBody": "Boardsesh fonctionne avec Kilter, Tension et MoonBoard depuis l'extérieur. Si vous fabriquez des boards et voulez construire quelque chose d'officiel ensemble, on serait ravis d'en parler.",
       "acknowledgementsLink": "Remerciements",
-      "acknowledgementsLinkBody": "Les personnes derrière Boardsesh"
+      "acknowledgementsLinkBody": "Les personnes derrière Boardsesh",
+      "shareApp": {
+        "link": "Partager Boardsesh",
+        "linkBody": "Un QR code pour les téléphones de ta crew",
+        "title": "Partager Boardsesh",
+        "body": "Ta crew scanne ce code avec l'appareil photo du téléphone pour installer l'app.",
+        "appStore": "App Store",
+        "googlePlay": "Google Play",
+        "storeToggleLabel": "Store",
+        "qrLabelIos": "QR code de Boardsesh sur l'App Store",
+        "qrLabelAndroid": "QR code de Boardsesh sur Google Play",
+        "copyLink": "Copier le lien",
+        "share": "Partager",
+        "copied": "Lien copié",
+        "copyFailed": "Impossible de copier le lien",
+        "messageCopied": "Message copié",
+        "messageCopyFailed": "Impossible de copier le message",
+        "message": "Installe Boardsesh pour tes séances de board.\niPhone : {{iosUrl}}\nAndroid : {{androidUrl}}"
+      }
     },
     "acknowledgements": {
       "title": "Remerciements",

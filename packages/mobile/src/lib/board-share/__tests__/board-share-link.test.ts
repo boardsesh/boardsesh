@@ -3,8 +3,13 @@ import type { HomeBoardShareBoard } from '../board-share-link';
 
 vi.mock('../../env', () => ({ WEB_BASE_URL: 'https://www.boardsesh.com' }));
 
-const { buildBoardShareUrl, buildPlainBoardShareUrl, homeBoardShareTarget, isBoardInviteToken } =
-  await import('../board-share-link');
+const {
+  buildBoardShareUrl,
+  buildHomeBoardPosterUrl,
+  buildPlainBoardShareUrl,
+  homeBoardShareTarget,
+  isBoardInviteToken,
+} = await import('../board-share-link');
 
 const OWNER = 'owner-1';
 const homeBoard = (overrides: Partial<HomeBoardShareBoard> = {}): HomeBoardShareBoard => ({
@@ -23,6 +28,7 @@ describe('homeBoardShareTarget', () => {
       kind: 'plain',
       url: 'https://www.boardsesh.com/b/the-garage',
       visibility: 'public',
+      posterUrl: 'https://www.boardsesh.com/poster/b/the-garage',
     });
   });
 
@@ -31,6 +37,7 @@ describe('homeBoardShareTarget', () => {
       kind: 'plain',
       url: 'https://www.boardsesh.com/b/the-garage',
       visibility: 'unlisted',
+      posterUrl: 'https://www.boardsesh.com/poster/b/the-garage',
     });
   });
 
@@ -53,6 +60,45 @@ describe('homeBoardShareTarget', () => {
 
   it('leaves spray walls to their own share rules', () => {
     expect(homeBoardShareTarget(homeBoard({ boardType: 'spray', isPublic: true }), OWNER, 'public')).toBeNull();
+  });
+});
+
+describe('buildHomeBoardPosterUrl', () => {
+  it.each([
+    ['Public', { isPublic: true }],
+    ['Unlisted', { isUnlisted: true }],
+    ['Unlisted with a stale Public flag', { isPublic: true, isUnlisted: true }],
+  ] as const)('prints the plain board link for a %s board', (_label, flags) => {
+    expect(buildHomeBoardPosterUrl(homeBoard(flags))).toBe('https://www.boardsesh.com/poster/b/the-garage');
+  });
+
+  // Followers, Invite-only and Only me store the same two false flags. None of
+  // them gets a poster: the plain link 404s for a stranger, and an invite token
+  // taped to a wall is no longer an invite.
+  it('has no poster for a board that is neither Public nor Unlisted', () => {
+    expect(buildHomeBoardPosterUrl(homeBoard())).toBeNull();
+  });
+
+  it('never carries an invite token or any other query', () => {
+    const url = buildHomeBoardPosterUrl(homeBoard({ isUnlisted: true }));
+    expect(url).not.toContain('?');
+    expect(url).not.toContain('invite');
+  });
+
+  it('leaves spray walls to their own builder', () => {
+    expect(buildHomeBoardPosterUrl(homeBoard({ boardType: 'spray', isPublic: true }))).toBeNull();
+  });
+
+  it('has no poster without a board or a slug', () => {
+    expect(buildHomeBoardPosterUrl(null)).toBeNull();
+    expect(buildHomeBoardPosterUrl(undefined)).toBeNull();
+    expect(buildHomeBoardPosterUrl(homeBoard({ slug: '', isPublic: true }))).toBeNull();
+  });
+
+  it('encodes the slug', () => {
+    expect(buildHomeBoardPosterUrl(homeBoard({ slug: 'kilter#1', isPublic: true }))).toBe(
+      'https://www.boardsesh.com/poster/b/kilter%231',
+    );
   });
 });
 

@@ -17,10 +17,13 @@ export {
 export type { GraphQLErrorExtensions, ParsedRateLimit } from './errors';
 export {
   GraphQLOperationError,
+  GraphQLTransportClosedError,
   isClimbDuplicateExtension,
   isRateLimitedExtension,
   isNotSessionMemberExtension,
   isNotSessionMemberError,
+  isNotInSessionError,
+  isTransportClosedError,
   parseRateLimitError,
   isRateLimitedError,
 } from './errors';

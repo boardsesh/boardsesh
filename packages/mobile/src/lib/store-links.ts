@@ -21,8 +21,11 @@
 // this repo yet. `storeUrlForBrowserApp` takes it as an optional argument so
 // adding it later is a one-line change with no new link format.
 //
-// Pure TS, no platform imports: only the `.web.tsx` prompt imports this, so it
-// never reaches a native bundle.
+// The About screen's share sheet (native, and the browser build's copy of the
+// screen) uses the same builders with its own medium (`app-share`), so a
+// climber-to-climber install reads apart from both.
+//
+// Pure TS, no platform imports, so the browser prompt and native code share it.
 
 // Same two URLs as `app.config.ts`, which is build-time config and cannot be
 // imported from here. `store-links.test.ts` pins the two together.
@@ -31,6 +34,10 @@ export const ANDROID_PLAY_STORE_URL = 'https://play.google.com/store/apps/detail
 
 export const BROWSER_APP_UTM_SOURCE = 'boardsesh';
 export const BROWSER_APP_UTM_MEDIUM = 'browser-app';
+/** `utm_medium` of a link a climber handed on from the About share sheet, native or browser. */
+export const APP_SHARE_UTM_MEDIUM = 'app-share';
+/** `utm_campaign` of that link: the screen the share sheet opens from. Do not rename. */
+export const APP_SHARE_CAMPAIGN = 'about';
 
 /** Apple's documented limit for the `ct` campaign token. */
 export const APP_STORE_CAMPAIGN_TOKEN_MAX_LENGTH = 40;
@@ -66,37 +73,51 @@ export function appStoreCampaignToken(surface: StorePromptSurface): string {
   return `${BROWSER_APP_UTM_MEDIUM}-${surface}`.slice(0, APP_STORE_CAMPAIGN_TOKEN_MAX_LENGTH);
 }
 
-/** The Play link for a surface, with the install referrer set. */
-export function playStoreUrlForBrowserApp(surface: StorePromptSurface): string {
+function playStoreUrl(medium: string, campaign: string): string {
   // The value Play hands the app verbatim. It is built as a query string and
   // then encoded once as a parameter value, which is the shape the parser in
   // `install-referrer.ts` expects.
   const referrer = new URLSearchParams({
     utm_source: BROWSER_APP_UTM_SOURCE,
-    utm_medium: BROWSER_APP_UTM_MEDIUM,
-    utm_campaign: surface,
+    utm_medium: medium,
+    utm_campaign: campaign,
   });
 
   const url = new URL(ANDROID_PLAY_STORE_URL);
   url.searchParams.set('utm_source', BROWSER_APP_UTM_SOURCE);
-  url.searchParams.set('utm_medium', BROWSER_APP_UTM_MEDIUM);
-  url.searchParams.set('utm_campaign', surface);
+  url.searchParams.set('utm_medium', medium);
+  url.searchParams.set('utm_campaign', campaign);
   url.searchParams.set('referrer', referrer.toString());
   return url.toString();
 }
 
-/** The App Store link for a surface, with the campaign token set. */
-export function appStoreUrlForBrowserApp(surface: StorePromptSurface, providerToken?: string): string {
+function appStoreUrl(campaignToken: string, providerToken?: string): string {
   const url = new URL(IOS_APP_STORE_URL);
   if (providerToken) url.searchParams.set('pt', providerToken);
-  url.searchParams.set('ct', appStoreCampaignToken(surface));
+  url.searchParams.set('ct', campaignToken);
   // 8 = iOS app. Apple's campaign-link generator always emits it.
   url.searchParams.set('mt', '8');
   return url.toString();
 }
 
+/** The Play link for a surface, with the install referrer set. */
+export function playStoreUrlForBrowserApp(surface: StorePromptSurface): string {
+  return playStoreUrl(BROWSER_APP_UTM_MEDIUM, surface);
+}
+
+/** The App Store link for a surface, with the campaign token set. */
+export function appStoreUrlForBrowserApp(surface: StorePromptSurface, providerToken?: string): string {
+  return appStoreUrl(appStoreCampaignToken(surface), providerToken);
+}
+
 export function storeUrlForBrowserApp(platform: StorePlatform, surface: StorePromptSurface): string {
   return platform === 'android' ? playStoreUrlForBrowserApp(surface) : appStoreUrlForBrowserApp(surface);
+}
+
+/** The store link the About share sheet hands on, tagged `app-share` / `about`. */
+export function storeUrlForAppShare(platform: StorePlatform): string {
+  if (platform === 'android') return playStoreUrl(APP_SHARE_UTM_MEDIUM, APP_SHARE_CAMPAIGN);
+  return appStoreUrl(`${APP_SHARE_UTM_MEDIUM}-${APP_SHARE_CAMPAIGN}`);
 }
 
 // `App Install Click` is www's event (packages/web/app/lib/app-install-event.ts).
@@ -129,3 +150,11 @@ export function buildBrowserAppInstallClickProperties(
     placement: `browser-app-${surface}`,
   };
 }
+
+// `App Share Action` counts use of the About share sheet: `open` when it opens,
+// `copy-link` and `share` per button, with the store the QR code showed. The
+// UTM tags above say which installs it brought; this says how often it is used.
+// Like `App Install Click`, it carries no `utm_*` properties.
+export const APP_SHARE_ACTION_EVENT = 'App Share Action';
+
+export type AppShareActionProperties = { action: 'open' } | { action: 'copy-link' | 'share'; store: StorePlatform };

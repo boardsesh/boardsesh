@@ -909,7 +909,25 @@
       "partnerTitle": "Colabora oficialmente con nosotros",
       "partnerBody": "Boardsesh funciona con Kilter, Tension y MoonBoard desde fuera. Si fabricas plafones y quieres crear algo oficial juntos, nos encantaría hablar.",
       "acknowledgementsLink": "Agradecimientos",
-      "acknowledgementsLinkBody": "Las personas detrás de Boardsesh"
+      "acknowledgementsLinkBody": "Las personas detrás de Boardsesh",
+      "shareApp": {
+        "link": "Comparte Boardsesh",
+        "linkBody": "Código QR para los móviles de tu grupo",
+        "title": "Comparte Boardsesh",
+        "body": "Que tu grupo escanee esto con la cámara del móvil para bajarse la app.",
+        "appStore": "App Store",
+        "googlePlay": "Google Play",
+        "storeToggleLabel": "Tienda",
+        "qrLabelIos": "Código QR de Boardsesh en la App Store",
+        "qrLabelAndroid": "Código QR de Boardsesh en Google Play",
+        "copyLink": "Copiar enlace",
+        "share": "Compartir",
+        "copied": "Enlace copiado",
+        "copyFailed": "No se ha podido copiar el enlace",
+        "messageCopied": "Mensaje copiado",
+        "messageCopyFailed": "No se ha podido copiar el mensaje",
+        "message": "Bájate Boardsesh para tus sesiones de plafón.\niPhone: {{iosUrl}}\nAndroid: {{androidUrl}}"
+      }
     },
     "acknowledgements": {
       "title": "Agradecimientos",

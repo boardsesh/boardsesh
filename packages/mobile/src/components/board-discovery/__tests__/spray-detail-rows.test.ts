@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { sprayDetailRows, viewerOwnsSprayWall, type SprayDetailRowContext } from '../spray-detail-rows';
+import {
+  sprayDetailRows,
+  sprayShareTarget,
+  viewerOwnsSprayWall,
+  type SprayDetailRowContext,
+} from '../spray-detail-rows';
+import { WEB_BASE_URL } from '../../../lib/env';
 import { SPRAY_HOLD_EDITOR_PATH, SPRAY_NEW_WALL_PATH } from '../../../lib/spray/spray-routes';
 import { LIVE_SPRAY_WALL_ARCHIVE_STATE } from '../../../lib/spray/spray-wall-registry';
 
@@ -96,5 +102,28 @@ describe('viewerOwnsSprayWall', () => {
     expect(viewerOwnsSprayWall({ ownerId: 'owner-1' }, null)).toBe(false);
     expect(viewerOwnsSprayWall({ ownerId: '' }, '')).toBe(false);
     expect(viewerOwnsSprayWall({}, undefined)).toBe(false);
+  });
+});
+
+describe('sprayShareTarget', () => {
+  const shareable = { ...wall, slug: 'garage-spray', angle: 40, name: 'Garage', isPublic: false, isUnlisted: false };
+
+  // The poster rides the share gate: whoever can hand out the link can print it.
+  it('offers the poster with the link, carrying the same capability', () => {
+    expect(sprayShareTarget({ ...shareable, isUnlisted: true })).toEqual({
+      url: `${WEB_BASE_URL}/b/garage-spray/40/list?wall=wall-uuid-1`,
+      visibility: 'unlisted',
+      posterUrl: `${WEB_BASE_URL}/poster/b/garage-spray?wall=wall-uuid-1`,
+    });
+    expect(sprayShareTarget({ ...shareable, isPublic: true })).toEqual({
+      url: `${WEB_BASE_URL}/b/garage-spray/40/list`,
+      visibility: 'public',
+      posterUrl: `${WEB_BASE_URL}/poster/b/garage-spray`,
+    });
+  });
+
+  it('has neither for a private wall or a catalogue board', () => {
+    expect(sprayShareTarget(shareable)).toBeNull();
+    expect(sprayShareTarget({ ...shareable, boardType: 'kilter', isPublic: true })).toBeNull();
   });
 });

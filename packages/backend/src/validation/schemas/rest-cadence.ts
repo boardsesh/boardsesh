@@ -15,13 +15,16 @@ const nonNegativeIntUpTo = (max: number, label: string) =>
 
 /**
  * One rest clock config. `targetSeconds` is null for Off, otherwise inside the
- * per-mode bounds (afterTick 10..3600, onTheMinute 15..3600).
+ * per-mode bounds (afterTick 10..3600, onTheMinute 15..3600). `autoAdvanceOnce`
+ * is optional: omitted, null and false all mean auto-advance stays on, and only
+ * true reaches the reducer (RestCadenceConfig.autoAdvanceOnce).
  */
 export const SessionRestCadenceConfigSchema = z
   .object({
     mode: z.enum(REST_CADENCE_MODES),
     targetSeconds: z.number().int('Rest length must be a whole number of seconds').nullish(),
     autoAdvance: z.boolean(),
+    autoAdvanceOnce: z.boolean().nullish(),
     advanceOn: z.enum(REST_CADENCE_ADVANCE_RULES),
     source: z.enum(REST_CADENCE_SOURCES),
   })
@@ -36,7 +39,11 @@ export const SessionRestCadenceConfigSchema = z
       });
     }
   })
-  .transform((config) => ({ ...config, targetSeconds: config.targetSeconds ?? null }));
+  .transform(({ autoAdvanceOnce, ...config }) => ({
+    ...config,
+    targetSeconds: config.targetSeconds ?? null,
+    ...(autoAdvanceOnce === true ? { autoAdvanceOnce: true } : {}),
+  }));
 
 /**
  * `setSessionRestCadence` input. Each action reads only its own fields; the

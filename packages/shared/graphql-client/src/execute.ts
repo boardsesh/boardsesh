@@ -1,5 +1,5 @@
 import type { Client } from 'graphql-ws';
-import { GraphQLOperationError, parseRateLimitError } from './errors';
+import { GraphQLOperationError, GraphQLTransportClosedError, isLikeCloseEvent, parseRateLimitError } from './errors';
 import { getOperationName } from './operation-name';
 import {
   MUTATION_TIMEOUT_MS,
@@ -131,6 +131,12 @@ export function execute<TData = unknown, TVariables = Record<string, unknown>>(
               // too, otherwise fall back to a generic Error.
               if (Array.isArray(err) && err.length > 0 && typeof err[0]?.message === 'string') {
                 reject(new GraphQLOperationError(err));
+              } else if (isLikeCloseEvent(err)) {
+                // graphql-ws gave up on the socket and handed over its close
+                // event. Keep the code so a caller can tell a lost transport
+                // from a server answer. Checked before `instanceof Error`:
+                // graphql-ws's own TerminatedCloseEvent is an Error subclass.
+                reject(new GraphQLTransportClosedError(err.code, err.reason));
               } else if (err instanceof Error) {
                 reject(err);
               } else {

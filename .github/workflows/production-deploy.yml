@@ -782,18 +782,9 @@ jobs:
               exit 1
             fi
           done
-      - name: Mint changelog push token
-        id: push_token
-        if: needs.detect-changes.outputs.critical_ota != 'true' && vars.OTA_PUSH_APP_ID != ''
-        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
-        with:
-          app-id: ${{ vars.OTA_PUSH_APP_ID }}
-          private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
-
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
-          token: ${{ steps.push_token.outputs.token || github.token }}
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
@@ -872,36 +863,6 @@ jobs:
           --receipt ota-stage/receipt.json
           --ios-export ota-stage/ios
           --android-export ota-stage/android
-
-      - name: Push promoted changelog to main
-        if: steps.promote.outcome == 'success' && vars.OTA_PUSH_APP_ID != ''
-        run: |
-          set -euo pipefail
-          git fetch origin main
-          if [ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]; then
-            echo '::notice::main advanced; leaving the changelog to the newer deploy.'
-            exit 0
-          fi
-          git worktree add --detach "$RUNNER_TEMP/ota-changelog" origin/main
-          cp ota-stage/changelog.generated.json "$RUNNER_TEMP/ota-changelog/packages/mobile/src/data/changelog.generated.json"
-          cp ota-stage/CHANGELOG.md "$RUNNER_TEMP/ota-changelog/CHANGELOG.md"
-          cd "$RUNNER_TEMP/ota-changelog"
-          git config user.email 'github-actions[bot]@users.noreply.github.com'
-          git config user.name 'github-actions[bot]'
-          git add packages/mobile/src/data/changelog.generated.json CHANGELOG.md
-          if git diff --cached --quiet; then
-            echo 'Promoted changelog already matches main.'
-          else
-            git commit -m 'chore(changelog): refresh from promoted OTA [skip ci]'
-            if ! git push origin HEAD:main; then
-              git fetch origin main
-              if [ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]; then
-                echo '::notice::main advanced during the changelog push; leaving it to the newer deploy.'
-              else
-                exit 1
-              fi
-            fi
-          fi
 
       - name: OTA health check (non-blocking)
         id: health
@@ -1016,6 +977,82 @@ jobs:
             echo "::error::Main OTA not promoted (critical=$CRITICAL_OTA, stage=$STAGE_RESULT, early=$EARLY_RESULT, production=$PROMOTE_RESULT)."
             exit 1
           fi
+
+  # Keeps main's committed What's New current. The native builds (TestFlight, Play
+  # internal, store) embed main's copy of changelog.generated.json; an OTA carries its
+  # own regenerated copy. This used to be a step in promote-mobile-ota, which skips
+  # every non-critical OTA since the daily stable release (#6267), so main's copy
+  # froze. It runs after verify-mobile-ota, so whichever promotion this run owed has
+  # landed. No environment: OTA_PUSH_APP_PRIVATE_KEY is a repository secret, and a job
+  # waiting at an environment gate holds this run's group for every later push.
+  # Critical publication still never mints the push token.
+  # continue-on-error: the run's conclusion is what the daily stable release
+  # (latestSource) and the next deploy's baseline read, so a failed changelog push
+  # must not hold back an OTA that already promoted. The job still shows red, and it
+  # stays out of notify-failure, which would announce a deploy failure that wasn't one.
+  push-promoted-changelog:
+    needs: [detect-changes, verify-mobile-ota]
+    if: >-
+      !cancelled()
+      && needs.verify-mobile-ota.result == 'success'
+      && needs.detect-changes.outputs.critical_ota != 'true'
+      && vars.OTA_PUSH_APP_ID != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    permissions:
+      contents: read
+    steps:
+      - name: Mint changelog push token
+        id: push_token
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
+        with:
+          app-id: ${{ vars.OTA_PUSH_APP_ID }}
+          private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          token: ${{ steps.push_token.outputs.token }}
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: mobile-ota-stage
+          path: ota-stage
+
+      - name: Push promoted changelog to main
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          if [ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]; then
+            echo '::notice::main advanced; leaving the changelog to the newer deploy.'
+            exit 0
+          fi
+          git worktree add --detach "$RUNNER_TEMP/ota-changelog" origin/main
+          cp ota-stage/changelog.generated.json "$RUNNER_TEMP/ota-changelog/packages/mobile/src/data/changelog.generated.json"
+          cp ota-stage/CHANGELOG.md "$RUNNER_TEMP/ota-changelog/CHANGELOG.md"
+          cd "$RUNNER_TEMP/ota-changelog"
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git config user.name 'github-actions[bot]'
+          git add packages/mobile/src/data/changelog.generated.json CHANGELOG.md
+          if git diff --cached --quiet; then
+            echo 'Promoted changelog already matches main.'
+            exit 0
+          fi
+          git commit -m 'chore(changelog): refresh from promoted OTA [skip ci]'
+          for attempt in 1 2 3; do
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            git fetch origin main
+            if [ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]; then
+              echo '::notice::main advanced during the changelog push; leaving it to the newer deploy.'
+              exit 0
+            fi
+            echo "Changelog push failed (attempt ${attempt}/3)."
+            sleep $((attempt * 15))
+          done
+          echo "::error::Could not push the changelog to main after 3 attempts. The OTA shipped; main's What's New stays stale until a later deploy pushes it."
+          exit 1
 
   # www on Railway — the only web deployer since the Vercel scrub. Still gated
   # by WEB_DEPLOY_TARGETS so `none` remains the deploy hold, and so a second

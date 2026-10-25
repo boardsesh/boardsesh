@@ -26,8 +26,14 @@ function continuesFrom(current: PlaylistSuggestionSource | null, requested: Play
 type TrackPagingInputs = {
   /** The track navigation walks: the preview's own, or the committed climb's. */
   source: PlaylistSuggestionSource | null;
-  /** The climb on screen. */
-  displayedClimbUuid: string | null | undefined;
+  /**
+   * The list climb the walk is at: the climb on screen while it is on the
+   * list, or, while a queued climb plays Up next in the middle of the list,
+   * the list climb the walk picks up after (`resolveTrackListClimbUuid`,
+   * issue #6777). Measured from the queued climb, the list would never page
+   * while Up next plays, and would stall at the end of what is loaded.
+   */
+  listClimbUuid: string | null | undefined;
   /** True when `source` is the pinned preview's track, which lives in the drawer. */
   previewTrack: boolean;
   setPreviewSource: Dispatch<SetStateAction<PlaylistSuggestionSource | null>>;
@@ -49,7 +55,7 @@ type TrackPagingInputs = {
  */
 export function useTrackPaging({
   source,
-  displayedClimbUuid,
+  listClimbUuid,
   previewTrack,
   setPreviewSource,
   getCommittedSource,
@@ -63,8 +69,8 @@ export function useTrackPaging({
   }, [source, previewTrack]);
 
   useEffect(() => {
-    if (!source?.continuation || !displayedClimbUuid) return;
-    const index = findPlaylistClimbIndex(source, displayedClimbUuid);
+    if (!source?.continuation || !listClimbUuid) return;
+    const index = findPlaylistClimbIndex(source, listClimbUuid);
     if (index < 0 || source.climbs.length - 1 - index > TRACK_PAGE_LOOKAHEAD) return;
     if (!canLoadMoreOfTrack(source)) return;
     const atLastClimb = index === source.climbs.length - 1;
@@ -90,5 +96,5 @@ export function useTrackPaging({
       }
     };
     void loadNextTrackPage(source).then(land);
-  }, [source, displayedClimbUuid, previewTrack, setPreviewSource, getCommittedSource, refreshCommittedSource]);
+  }, [source, listClimbUuid, previewTrack, setPreviewSource, getCommittedSource, refreshCommittedSource]);
 }

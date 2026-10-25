@@ -15,8 +15,9 @@ export function createFakeGraphqlWsServer() {
   type OperationRecord = {
     connectionId: string;
     operationName: string;
-    outcome: 'ok' | 'not_in_session' | 'subscribed';
+    outcome: 'ok' | 'not_in_session' | 'subscribed' | 'held';
   };
+  type WireQueueItem = { uuid: string; climb: Record<string, unknown> };
   type ClientFrame = {
     id?: string;
     type: string;
@@ -45,6 +46,25 @@ export function createFakeGraphqlWsServer() {
   const sockets: FakeServerSocket[] = [];
   const operations: OperationRecord[] = [];
   let connectionCount = 0;
+
+  // Off unless a test turns it on: the session's queue as the backend keeps it.
+  // A QueueUpdates subscription then opens with a FullSync of it, and a joined
+  // SetCurrentClimb moves it and broadcasts CurrentClimbChanged to every live
+  // QueueUpdates stream, like queue/subscriptions.ts and queue-navigation.ts.
+  const queueFeed = {
+    enabled: false,
+    sequence: 0,
+    queue: [] as WireQueueItem[],
+    current: null as WireQueueItem | null,
+    /**
+     * Leave the next joined SetCurrentClimb unanswered, so the socket dies with
+     * it in flight: `unapplied` never runs it, `applied` runs it (the session
+     * moves on) but the answer and the broadcast are lost with the socket.
+     */
+    holdNextSetCurrentClimb: null as null | 'unapplied' | 'applied',
+    /** How long a JoinSession takes to bind its connection; 0 binds it at once. */
+    joinLatencyMs: 0,
+  };
 
   function lowerFirst(name: string): string {
     return name.charAt(0).toLowerCase() + name.slice(1);
@@ -117,32 +137,47 @@ export function createFakeGraphqlWsServer() {
     addEventListener(): void {}
     removeEventListener(): void {}
 
+    completeJoin(id: string, variables: Record<string, unknown>): void {
+      this.joinedSessionId = typeof variables.sessionId === 'string' ? variables.sessionId : null;
+      operations.push({ connectionId: this.connectionId, operationName: 'JoinSession', outcome: 'ok' });
+      this.deliverLater([
+        {
+          id,
+          type: 'next',
+          payload: {
+            data: {
+              joinSession: {
+                id: this.joinedSessionId,
+                participantId: 'participant-self',
+                clientId: 'client-self',
+                isLeader: true,
+                lastConnectedBoardSerial: null,
+                boardPath: '/kilter/1/10/1,2/40/list',
+                users: [],
+              },
+            },
+          },
+        },
+        { id, type: 'complete' },
+      ]);
+    }
+
     private handleOperation(id: string, payload: { query?: string; variables?: Record<string, unknown> }): void {
       const operationName = /\b(?:mutation|subscription|query)\s+(\w+)/.exec(payload.query ?? '')?.[1] ?? 'Anonymous';
       const variables = payload.variables ?? {};
       if (operationName === 'JoinSession') {
-        this.joinedSessionId = typeof variables.sessionId === 'string' ? variables.sessionId : null;
-        operations.push({ connectionId: this.connectionId, operationName, outcome: 'ok' });
-        this.deliverLater([
-          {
-            id,
-            type: 'next',
-            payload: {
-              data: {
-                joinSession: {
-                  id: this.joinedSessionId,
-                  participantId: 'participant-self',
-                  clientId: 'client-self',
-                  isLeader: true,
-                  lastConnectedBoardSerial: null,
-                  boardPath: '/kilter/1/10/1,2/40/list',
-                  users: [],
-                },
-              },
-            },
-          },
-          { id, type: 'complete' },
-        ]);
+        if (queueFeed.joinLatencyMs > 0) {
+          // A slow JOIN: the connection is bound only once it completes, so a
+          // mutation that arrives first is refused, as on the real backend once
+          // its ~350 ms reconnect grace runs out.
+          const latencyMs = queueFeed.joinLatencyMs;
+          setTimeout(() => {
+            if (this.readyState !== 1) return;
+            this.completeJoin(id, variables);
+          }, latencyMs);
+          return;
+        }
+        this.completeJoin(id, variables);
         return;
       }
       if (/^\s*subscription\b/.test(payload.query ?? '')) {
@@ -150,6 +185,24 @@ export function createFakeGraphqlWsServer() {
         // backend accepts the stream on any connection; it simply stays open.
         this.liveSubscriptions.set(id, operationName);
         operations.push({ connectionId: this.connectionId, operationName, outcome: 'subscribed' });
+        if (queueFeed.enabled && operationName === 'QueueUpdates') {
+          const { sequence, queue, current } = queueFeed;
+          this.deliverLater([
+            {
+              id,
+              type: 'next',
+              payload: {
+                data: {
+                  queueUpdates: {
+                    __typename: 'FullSync',
+                    sequence,
+                    state: { sequence, stateHash: `hash-${sequence}`, queue, currentClimbQueueItem: current },
+                  },
+                },
+              },
+            },
+          ]);
+        }
         return;
       }
       if (MEMBERSHIP_REQUIRED.has(operationName) && !this.joinedSessionId) {
@@ -159,11 +212,54 @@ export function createFakeGraphqlWsServer() {
             id,
             type: 'error',
             payload: [
-              { message: `Must be in a session to perform this operation (connectionId: ${this.connectionId})` },
+              {
+                message: `Must be in a session to perform this operation (connectionId: ${this.connectionId})`,
+                extensions: { code: 'SESSION_REQUIRED' },
+              },
             ],
           },
         ]);
         return;
+      }
+      if (queueFeed.enabled && operationName === 'SetCurrentClimb') {
+        const hold = queueFeed.holdNextSetCurrentClimb;
+        if (hold) {
+          queueFeed.holdNextSetCurrentClimb = null;
+          if (hold === 'applied') {
+            queueFeed.current = variables.item as WireQueueItem;
+            queueFeed.sequence += 1;
+          }
+          operations.push({ connectionId: this.connectionId, operationName, outcome: 'held' });
+          return;
+        }
+        const item = variables.item as WireQueueItem;
+        queueFeed.current = item;
+        queueFeed.sequence += 1;
+        const { sequence } = queueFeed;
+        for (const socket of sockets) {
+          if (socket.readyState !== 1) continue;
+          for (const [subscriptionId, name] of socket.liveSubscriptions) {
+            if (name !== 'QueueUpdates') continue;
+            socket.deliverLater([
+              {
+                id: subscriptionId,
+                type: 'next',
+                payload: {
+                  data: {
+                    queueUpdates: {
+                      __typename: 'CurrentClimbChanged',
+                      sequence,
+                      stateHash: `hash-${sequence}`,
+                      currentItem: item,
+                      clientId: 'client-self',
+                      correlationId: variables.correlationId ?? null,
+                    },
+                  },
+                },
+              },
+            ]);
+          }
+        }
       }
       operations.push({ connectionId: this.connectionId, operationName, outcome: 'ok' });
       this.deliverLater([
@@ -172,7 +268,7 @@ export function createFakeGraphqlWsServer() {
       ]);
     }
 
-    private deliverLater(messages: Array<Record<string, unknown>>): void {
+    deliverLater(messages: Array<Record<string, unknown>>): void {
       setTimeout(() => {
         for (const message of messages) {
           if (this.readyState !== 1) return;
@@ -185,6 +281,7 @@ export function createFakeGraphqlWsServer() {
   return {
     FakeServerSocket,
     operations,
+    queueFeed,
     openSockets: () => sockets.filter((socket) => socket.readyState === 1),
     /** The open connection that is joined AND carries the live queue stream. */
     liveSessionSocket: () =>
@@ -205,6 +302,12 @@ export function createFakeGraphqlWsServer() {
       sockets.length = 0;
       operations.length = 0;
       connectionCount = 0;
+      queueFeed.enabled = false;
+      queueFeed.sequence = 0;
+      queueFeed.queue = [];
+      queueFeed.current = null;
+      queueFeed.holdNextSetCurrentClimb = null;
+      queueFeed.joinLatencyMs = 0;
     },
   };
 }

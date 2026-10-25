@@ -40,6 +40,7 @@ const preview = vi.hoisted(() => ({
     id: 'session-42',
     boardPath: 'kilter/8/17/27,28/40',
     endedAt: null as string | null,
+    isPermanent: false as boolean | undefined,
     users: [{ id: 'u1', username: 'host', avatarUrl: null, isLeader: true }],
   },
   isLoading: false,
@@ -172,6 +173,7 @@ beforeEach(() => {
   alerts.actions = [];
   queue.sessionId = null;
   preview.data.boardPath = SESSION_BOARD_PATH;
+  preview.data.isPermanent = false;
   fetchAllMyOwnedBoards.mockResolvedValue({ viewerId: 'viewer-1', boards: [] });
   fetchBoardBySlug.mockResolvedValue(null);
   fetchBoardByUuid.mockResolvedValue(null);
@@ -186,6 +188,19 @@ describe('JoinSessionScreen board resolution', () => {
     const rendered = render(createElement(JoinSessionScreen));
     expect(rendered.getByText('mobileJoin.namesVisible')).toBeDefined();
     expect(rendered.getByRole('button', { name: 'mobileJoin.join' })).toBeDefined();
+  });
+
+  it("drops the names line on a gym's always-on session, where names follow privacy settings (#6591)", () => {
+    preview.data.isPermanent = true;
+    const rendered = render(createElement(JoinSessionScreen));
+    expect(rendered.queryByText('mobileJoin.namesVisible')).toBeNull();
+    expect(rendered.getByRole('button', { name: 'mobileJoin.join' })).toBeDefined();
+  });
+
+  it('keeps the names line when the reply says nothing about permanence, so it fails towards telling', () => {
+    preview.data.isPermanent = undefined;
+    const rendered = render(createElement(JoinSessionScreen));
+    expect(rendered.getByText('mobileJoin.namesVisible')).toBeDefined();
   });
 
   it('reuses the current viewer board when a followed physical wall sorts first', async () => {

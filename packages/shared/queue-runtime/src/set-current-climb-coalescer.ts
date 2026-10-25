@@ -54,8 +54,14 @@ export type SetCurrentClimbCoalescerOptions<TContext = void, TItem = ClimbQueueI
    *  captured into the pending entry and threaded through to sendArgs /
    *  sendDeferredQueueAdd. Defaults to `() => undefined`. */
   getContext?: () => TContext;
-  /** Errors during the drain loop are swallowed — this is the sink. */
-  onDrainError?: (error: unknown) => void;
+  /** Errors during the drain loop are swallowed — this is the sink. It also
+   *  receives the drained call's args: its caller's promise resolved the moment
+   *  it superseded an earlier call, so this is the only place that learns the
+   *  move never landed (and which move, by its `correlationId`). Return `true`
+   *  when the sink re-sends a lost `shouldAddToQueue` slot itself (mobile holds
+   *  it back while it waits to re-send the move); the coalescer then skips its
+   *  own deferred queue-add. A sink that throws claims nothing. */
+  onDrainError?: (error: unknown, args: SetCurrentClimbArgs<TItem>) => boolean | void;
   /** Sink for errors when the fire-and-forget deferred ADD_QUEUE_ITEM
    *  rejects (or throws synchronously). */
   onDeferredQueueAddError?: (error: unknown) => void;
@@ -137,11 +143,19 @@ export function createSetCurrentClimbCoalescer<TContext = void, TItem = ClimbQue
           } catch (error) {
             // This drained activation's SET_CURRENT_CLIMB never landed, so its
             // queue slot exists on this device and nowhere else. Recover the
-            // content half exactly like the superseded branch does (#3936).
-            // Before onDrainError, so a caller sink that throws can't swallow
-            // the recovery.
-            fireDeferredQueueAdd(next);
-            onDrainError(error);
+            // content half exactly like the superseded branch does (#3936),
+            // unless the sink takes that over. A throw out of the sink would
+            // escape the enclosing `finally` and leave `inFlight` true for good,
+            // parking every later activation as pending and never sending it,
+            // so contain it; a sink that throws claims nothing and the recovery
+            // still runs.
+            let sinkClaimedQueueAdd = false;
+            try {
+              sinkClaimedQueueAdd = onDrainError(error, next.args) === true;
+            } catch (sinkError) {
+              console.error('setCurrentClimb drain-error sink threw:', sinkError);
+            }
+            if (!sinkClaimedQueueAdd) fireDeferredQueueAdd(next);
           }
         }
         state.inFlight = false;

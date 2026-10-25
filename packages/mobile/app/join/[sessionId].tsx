@@ -344,9 +344,13 @@ function JoinSessionScreen() {
           ))}
         </View>
 
-        <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.namesVisible}>
-          {t('mobileJoin.namesVisible')}
-        </Text>
+        {/* A gym's always-on session names nobody by membership: names there
+            follow each climber's privacy settings, so the line would overstate. */}
+        {session.isPermanent ? null : (
+          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.namesVisible}>
+            {t('mobileJoin.namesVisible')}
+          </Text>
+        )}
 
         <View style={styles.buttonColumn}>
           <Button

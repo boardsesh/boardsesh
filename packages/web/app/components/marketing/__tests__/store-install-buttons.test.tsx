@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
 import { __resetSessionInboundCampaignForTests } from '@/app/lib/inbound-campaign';
+import { __resetBoardQrLandingForTests } from '@/app/lib/board-qr-landing';
 import { buildStoreUrl } from '@/app/lib/store-links';
 
 const track = vi.hoisted(() => vi.fn());
@@ -34,6 +35,7 @@ describe('StoreInstallButtons', () => {
   beforeEach(() => {
     track.mockReset();
     __resetSessionInboundCampaignForTests();
+    __resetBoardQrLandingForTests();
   });
 
   afterEach(() => {
@@ -138,6 +140,90 @@ describe('StoreInstallButtons', () => {
 
     expect(firstLink.className).toContain('MuiButton-contained');
     expect(secondLink.className).toContain('MuiButton-outlined');
+  });
+
+  describe('on a page a printed board code lands on', () => {
+    it('names the scanned code in the link id and on the click (#4415)', async () => {
+      setUserAgent(ANDROID_UA);
+      window.history.replaceState(null, '', '/b/garage-wall/40/list?src=qr&medium=board&wall=abc');
+      render(<StoreInstallButtons placement="spray-wall" labels={LABELS} appearance="plain" sharedHtml qrLanding />);
+
+      await waitFor(() =>
+        expect(screen.getByRole('link', { name: 'Google Play' }).getAttribute('href')).toBe(
+          buildStoreUrl('android', { placement: 'spray-wall', qrMedium: 'board' }),
+        ),
+      );
+      const playLink = screen.getByRole('link', { name: 'Google Play' });
+      const referrer = new URLSearchParams(
+        new URL(playLink.getAttribute('href') ?? '').searchParams.get('referrer') ?? '',
+      );
+      // The link id and the medium say "a code", and nothing in them names the wall.
+      expect(referrer.get('utm_content')).toBe('spray-wall.board');
+      expect(referrer.get('utm_medium')).toBe('qr');
+      expect(playLink.getAttribute('href')).not.toContain('garage-wall');
+      expect(playLink.getAttribute('href')).not.toContain('abc');
+
+      fireEvent.click(playLink);
+      expect(track).toHaveBeenCalledWith('App Install Click', {
+        platform: 'android',
+        source: 'google-play',
+        placement: 'spray-wall',
+        mode: 'install',
+        qrMedium: 'board',
+      });
+    });
+
+    it('keeps the plain link id for a visit that did not come off a code', async () => {
+      setUserAgent(ANDROID_UA);
+      window.history.replaceState(null, '', '/b/garage-wall/40/list');
+      render(<StoreInstallButtons placement="spray-wall" labels={LABELS} appearance="plain" sharedHtml qrLanding />);
+
+      await waitFor(() => expect(screen.getAllByRole('link')).toHaveLength(1));
+      const playLink = screen.getByRole('link', { name: 'Google Play' });
+
+      expect(playLink.getAttribute('href')).toBe(buildStoreUrl('android', { placement: 'spray-wall' }));
+      fireEvent.click(playLink);
+      expect(track.mock.calls[0]?.[1]).not.toHaveProperty('qrMedium');
+    });
+
+    it('ignores the scan on a button that did not ask for it', async () => {
+      setUserAgent(ANDROID_UA);
+      window.history.replaceState(null, '', '/b/garage-wall/40/list?src=qr&medium=board');
+      render(<StoreInstallButtons placement="climb-view" labels={LABELS} appearance="plain" sharedHtml />);
+
+      await waitFor(() => expect(screen.getAllByRole('link')).toHaveLength(1));
+
+      expect(screen.getByRole('link', { name: 'Google Play' }).getAttribute('href')).toBe(
+        buildStoreUrl('android', { placement: 'climb-view' }),
+      );
+    });
+
+    it('keeps the plain link id when a shared page turns the scan off explicitly', async () => {
+      setUserAgent(ANDROID_UA);
+      window.history.replaceState(null, '', '/b/garage-wall/40/list?src=qr&medium=board');
+      render(
+        <StoreInstallButtons placement="spray-wall" labels={LABELS} appearance="plain" sharedHtml qrLanding={false} />,
+      );
+
+      await waitFor(() => expect(screen.getAllByRole('link')).toHaveLength(1));
+      const playLink = screen.getByRole('link', { name: 'Google Play' });
+
+      expect(playLink.getAttribute('href')).toBe(buildStoreUrl('android', { placement: 'spray-wall' }));
+      expect(playLink.getAttribute('href')).not.toContain('spray-wall.board');
+      fireEvent.click(playLink);
+      expect(track.mock.calls[0]?.[1]).not.toHaveProperty('qrMedium');
+    });
+
+    it('renders the untagged link on the server, so the shared HTML is the same for a scan', () => {
+      window.history.replaceState(null, '', '/b/garage-wall/40/list?src=qr&medium=board');
+
+      const html = renderToString(
+        <StoreInstallButtons placement="spray-wall" labels={LABELS} appearance="plain" sharedHtml qrLanding />,
+      );
+
+      expect(html).toContain('ct=spray-wall&amp;');
+      expect(html).not.toContain('spray-wall.board');
+    });
   });
 
   describe('on a page whose HTML is shared', () => {

@@ -65,6 +65,12 @@ vi.mock('../../sync', () => ({
 }));
 
 const drainMutationQueueMock = vi.fn(async (..._args: unknown[]) => {});
+// The account in the stored token: what the owner claim reads (#6824), never the
+// cached `useStoredUserId` answer.
+type SignedInAccountStub = { status: 'signed-in'; userId: string } | { status: 'no-user-id' } | { status: 'unsettled' };
+const readSignedInAccountMock = vi.hoisted(() =>
+  vi.fn(async (): Promise<SignedInAccountStub> => ({ status: 'signed-in', userId: 'user-1' })),
+);
 const startBackgroundTrackingStop = vi.fn();
 const startBackgroundTrackingMock = vi.fn(() => startBackgroundTrackingStop);
 // The scheduler + drain bindings live in the adapter (which statically imports
@@ -73,6 +79,7 @@ vi.mock('../../offline/offline-sync-adapter', () => ({
   startSyncScheduler: (...args: unknown[]) => startSyncSchedulerMock(...(args as [])),
   drainMutationQueue: (...args: unknown[]) => drainMutationQueueMock(...args),
   startBackgroundTracking: () => startBackgroundTrackingMock(),
+  readSignedInAccount: () => readSignedInAccountMock(),
 }));
 
 // A stable sentinel so tests can assert the bridge passes THIS reference
@@ -122,8 +129,10 @@ vi.mock('../../hooks/use-current-user-id', () => ({
   useStoredUserId: () => ({ userId: storedUserId, isLoading: false }),
 }));
 
+const reportHandledErrorMock = vi.hoisted(() => vi.fn());
 vi.mock('../../lib/error-reporting', () => ({
   reportError: vi.fn(),
+  reportHandledError: reportHandledErrorMock,
 }));
 
 // The gauge itself is unit-tested in offline/__tests__/outbox-telemetry.test.ts;
@@ -135,21 +144,44 @@ vi.mock('../../offline/outbox-telemetry', () => ({
 // Another launch-time writer (it clears the markers it reports). Stubbed so the
 // launch-gate case can see when it runs.
 const sweepDelistedDownloadTerminalsMock = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => {}));
+// The owner-stamp wipe closes the previous account's download funnels without
+// an event (#6563). Its own behaviour is pinned against the real DDL in
+// abandoned-download-terminals.test.ts; here, only when the bridge reaches it.
+const forgetAbandonedDownloadsMock = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => {}));
 vi.mock('../../offline/abandoned-download-terminals', () => ({
   sweepDelistedDownloadTerminals: sweepDelistedDownloadTerminalsMock,
+  forgetAbandonedDownloads: forgetAbandonedDownloadsMock,
 }));
 
 // Stub the settings barrel so the static import graph never pulls
-// react-native-mmkv (its react-native Flow entry breaks Rolldown's scan).
+// react-native-mmkv (its react-native Flow entry breaks Rolldown's scan). The
+// two writers are the owner-stamp wipe's per-account reset (#6563).
+const setSettingMock = vi.hoisted(() => vi.fn());
+const clearOfflineBoardsMock = vi.hoisted(() => vi.fn());
+// The owned-wall pin record, cleared last so the pin can turn the signed-in
+// account's own walls back on after the reset.
+const clearOwnedSprayWallPinsMock = vi.hoisted(() => vi.fn());
 vi.mock('../../settings', () => ({
   getSetting: vi.fn(() => []),
+  setSetting: setSettingMock,
+  clearOfflineBoards: clearOfflineBoardsMock,
+  clearOwnedSprayWallPins: clearOwnedSprayWallPinsMock,
+}));
+// "Last synced 5 minutes ago" is the third thing that reset forgets.
+const resetSyncStatusMock = vi.hoisted(() => vi.fn());
+vi.mock('../../sync/sync-status', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../sync/sync-status')>()),
+  resetSyncStatus: resetSyncStatusMock,
 }));
 
 vi.mock('../../lib/graphql/client', () => ({
   getOfflineSyncHttpClient: () => ({ request: vi.fn() }),
   getHttpClient: () => ({ request: vi.fn() }),
 }));
-vi.mock('../../db', () => ({ getDatabaseHandle: () => null }));
+vi.mock('../../db', () => ({
+  getDatabaseHandle: () => null,
+  clearUserData: (...args: unknown[]) => clearUserDataMock(...args),
+}));
 
 const snapshotBaseUrlConfigured = vi.hoisted(() => ({ value: true }));
 vi.mock('../../lib/env', () => ({
@@ -312,7 +344,11 @@ beforeEach(() => {
   assertLocalUserDataOwnerMock.mockClear();
   assertLocalUserDataOwnerMock.mockResolvedValue('ok');
   stampLocalUserIdMock.mockClear();
-  clearUserDataMock.mockClear();
+  readSignedInAccountMock.mockReset();
+  readSignedInAccountMock.mockResolvedValue({ status: 'signed-in', userId: 'user-1' });
+  clearUserDataMock.mockReset();
+  clearUserDataMock.mockResolvedValue(undefined);
+  reportHandledErrorMock.mockClear();
   clearStoredSprayPhotosMock.mockClear();
   beginGlobalPurgeMock.mockClear();
   snapshotBaseUrlConfigured.value = true;
@@ -351,6 +387,13 @@ describe('OfflineSyncBridge — the same account keeps its downloads', () => {
   function expectNoCull() {
     expect(beginGlobalPurgeMock).not.toHaveBeenCalled();
     expect(clearUserDataMock).not.toHaveBeenCalled();
+    // The same account keeps its offline selection, its board names and its
+    // sync status (#6563): only another account's data is reset.
+    expect(setSettingMock).not.toHaveBeenCalled();
+    expect(clearOfflineBoardsMock).not.toHaveBeenCalled();
+    expect(resetSyncStatusMock).not.toHaveBeenCalled();
+    expect(forgetAbandonedDownloadsMock).not.toHaveBeenCalled();
+    expect(clearOwnedSprayWallPinsMock).not.toHaveBeenCalled();
     expect(clearStoredSprayPhotosMock).not.toHaveBeenCalled();
     expect(stampLocalUserIdMock).not.toHaveBeenCalled();
     expect(startSyncSchedulerStop).not.toHaveBeenCalled();
@@ -414,6 +457,132 @@ describe('OfflineSyncBridge — the same account keeps its downloads', () => {
   });
 });
 
+// #6824. The outbox records no owner, and the server files a replayed write under
+// the token that sends it. Everything that drains or reports the outbox waits
+// for the owner claim: `ok`, or the wipe and the new stamp done.
+describe('OfflineSyncBridge — nothing drains before the owner claim', () => {
+  it('starts the scheduler, the sweep and the outbox recovery only after the wipe and the new stamp', async () => {
+    let settleOwnership: (ownership: string) => void = () => {};
+    assertLocalUserDataOwnerMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          settleOwnership = resolve;
+        }),
+    );
+    render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
+    await waitFor(() => expect(assertLocalUserDataOwnerMock).toHaveBeenCalled());
+    await act(async () => {});
+    expect(startSyncSchedulerMock).not.toHaveBeenCalled();
+    expect(sweepDelistedDownloadTerminalsMock).not.toHaveBeenCalled();
+    expect(recoverAndReportOutboxOnceMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      settleOwnership('mismatch');
+    });
+    await waitFor(() => expect(startSyncSchedulerMock).toHaveBeenCalledOnce());
+    await waitFor(() => expect(sweepDelistedDownloadTerminalsMock).toHaveBeenCalledOnce());
+    await waitFor(() => expect(recoverAndReportOutboxOnceMock).toHaveBeenCalledOnce());
+    const stampedAt = stampLocalUserIdMock.mock.invocationCallOrder[0];
+    expect(clearUserDataMock.mock.invocationCallOrder[0]).toBeLessThan(stampedAt);
+    expect(startSyncSchedulerMock.mock.invocationCallOrder[0]).toBeGreaterThan(stampedAt);
+    expect(sweepDelistedDownloadTerminalsMock.mock.invocationCallOrder[0]).toBeGreaterThan(stampedAt);
+    expect(recoverAndReportOutboxOnceMock.mock.invocationCallOrder[0]).toBeGreaterThan(stampedAt);
+  });
+
+  it('holds all three for the session when the wipe fails, and reports it once', async () => {
+    assertLocalUserDataOwnerMock.mockResolvedValue('mismatch');
+    clearUserDataMock.mockRejectedValue(new Error('database is locked'));
+    const queryClient = makeQueryClient();
+    const view = render(<Harness flags={FLAG_ON} queryClient={queryClient} />);
+    await waitFor(() => expect(reportHandledErrorMock).toHaveBeenCalledOnce());
+    // A re-render, or a foreground, does not retry it: the previous account's
+    // rows are still on disk. A second attempt would fail the same way anyway.
+    view.rerender(<Harness flags={FLAG_ON} queryClient={queryClient} />);
+    await act(async () => {
+      for (const listener of appState.listeners) listener('active');
+    });
+    await act(async () => {});
+    expect(clearUserDataMock).toHaveBeenCalledOnce();
+
+    expect(stampLocalUserIdMock).not.toHaveBeenCalled();
+    expect(startSyncSchedulerMock).not.toHaveBeenCalled();
+    expect(sweepDelistedDownloadTerminalsMock).not.toHaveBeenCalled();
+    expect(recoverAndReportOutboxOnceMock).not.toHaveBeenCalled();
+    expect(reportHandledErrorMock).toHaveBeenCalledOnce();
+    expect(reportHandledErrorMock.mock.calls[0][1]).toEqual({
+      level: 'warning',
+      tags: { source: 'offline-sync', op: 'owner-claim-hold', reason: 'wipe-failed' },
+    });
+  });
+
+  it('holds all three when the token names nobody', async () => {
+    readSignedInAccountMock.mockResolvedValue({ status: 'no-user-id' });
+    render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
+    await waitFor(() => expect(reportHandledErrorMock).toHaveBeenCalledOnce());
+    await act(async () => {});
+
+    expect(assertLocalUserDataOwnerMock).not.toHaveBeenCalled();
+    expect(startSyncSchedulerMock).not.toHaveBeenCalled();
+    expect(sweepDelistedDownloadTerminalsMock).not.toHaveBeenCalled();
+    expect(recoverAndReportOutboxOnceMock).not.toHaveBeenCalled();
+    expect(reportHandledErrorMock.mock.calls[0][1]).toEqual({
+      level: 'warning',
+      tags: { source: 'offline-sync', op: 'owner-claim-hold', reason: 'no-user-id' },
+    });
+  });
+
+  it('runs a claim that failed without deciding anything again on the next foreground', async () => {
+    assertLocalUserDataOwnerMock.mockRejectedValueOnce(new Error('disk I/O error'));
+    render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
+    await waitFor(() => expect(assertLocalUserDataOwnerMock).toHaveBeenCalledOnce());
+    await act(async () => {});
+    expect(startSyncSchedulerMock).not.toHaveBeenCalled();
+    expect(reportHandledErrorMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      for (const listener of appState.listeners) listener('active');
+    });
+    await waitFor(() => expect(startSyncSchedulerMock).toHaveBeenCalledOnce());
+    expect(assertLocalUserDataOwnerMock).toHaveBeenCalledTimes(2);
+    expect(reportHandledErrorMock).not.toHaveBeenCalled();
+  });
+
+  it('runs it again when the connection comes back, too', async () => {
+    readSignedInAccountMock.mockResolvedValueOnce({ status: 'unsettled' });
+    render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
+    await waitFor(() => expect(readSignedInAccountMock).toHaveBeenCalledOnce());
+    await act(async () => {});
+    expect(startSyncSchedulerMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      onlineManager.setOnline(false);
+    });
+    await act(async () => {
+      onlineManager.setOnline(true);
+    });
+    await waitFor(() => expect(startSyncSchedulerMock).toHaveBeenCalledOnce());
+  });
+
+  it('starts over after a sign-out: the next sign-in waits for its own claim', async () => {
+    const queryClient = makeQueryClient();
+    const view = render(<Harness flags={FLAG_ON} queryClient={queryClient} />);
+    await waitFor(() => expect(startSyncSchedulerMock).toHaveBeenCalledOnce());
+
+    isAuthenticated = false;
+    view.rerender(<Harness flags={FLAG_ON} queryClient={queryClient} />);
+    await waitFor(() => expect(startSyncSchedulerStop).toHaveBeenCalledOnce());
+
+    // The same account and connection sign in again, and this time the check
+    // has not answered yet.
+    assertLocalUserDataOwnerMock.mockImplementation(() => new Promise(() => {}));
+    isAuthenticated = true;
+    view.rerender(<Harness flags={FLAG_ON} queryClient={queryClient} />);
+    await waitFor(() => expect(assertLocalUserDataOwnerMock).toHaveBeenCalledTimes(2));
+    await act(async () => {});
+    expect(startSyncSchedulerMock).toHaveBeenCalledOnce();
+  });
+});
+
 describe('OfflineSyncBridge — local user-data owner stamp', () => {
   it('claims a never-stamped device for the signed-in climber', async () => {
     assertLocalUserDataOwnerMock.mockResolvedValue('unstamped');
@@ -438,6 +607,54 @@ describe('OfflineSyncBridge — local user-data owner stamp', () => {
     expect(beginGlobalPurgeMock.mock.invocationCallOrder[0]).toBeLessThan(
       clearUserDataMock.mock.invocationCallOrder[0],
     );
+  });
+
+  // #6563. No sign-out ran for the previous account (its session expired while
+  // the app was closed, or the keychain read failed), so this recovery is the
+  // only place its offline selection, board names and sync status can be reset.
+  it("resets the previous account's downloaded boards, board names and sync status on that recovery", async () => {
+    assertLocalUserDataOwnerMock.mockResolvedValue('mismatch');
+    render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
+    await waitFor(() => expect(stampLocalUserIdMock).toHaveBeenCalledTimes(1));
+
+    expect(setSettingMock).toHaveBeenCalledTimes(1);
+    expect(setSettingMock).toHaveBeenCalledWith('syncEnabledBoards', []);
+    expect(clearOfflineBoardsMock).toHaveBeenCalledTimes(1);
+    expect(resetSyncStatusMock).toHaveBeenCalledTimes(1);
+    // Its unfinished downloads are closed silently, BEFORE the list empties, so
+    // the launch sweep cannot report them on this account.
+    expect(forgetAbandonedDownloadsMock).toHaveBeenCalledTimes(1);
+    expect(forgetAbandonedDownloadsMock.mock.invocationCallOrder[0]).toBeLessThan(
+      setSettingMock.mock.invocationCallOrder[0],
+    );
+    // After the purge epoch, and before the row wipe's await, so a sync cycle
+    // starting during the wipe reads an empty list.
+    expect(beginGlobalPurgeMock.mock.invocationCallOrder[0]).toBeLessThan(
+      forgetAbandonedDownloadsMock.mock.invocationCallOrder[0],
+    );
+    expect(setSettingMock.mock.invocationCallOrder[0]).toBeLessThan(clearUserDataMock.mock.invocationCallOrder[0]);
+    // The pin record goes last, after the rows, so the pin re-runs on a list the
+    // wipe has finished with.
+    expect(clearOwnedSprayWallPinsMock).toHaveBeenCalledTimes(1);
+    expect(clearUserDataMock.mock.invocationCallOrder[0]).toBeLessThan(
+      clearOwnedSprayWallPinsMock.mock.invocationCallOrder[0],
+    );
+    // Then the device is claimed for the signed-in climber.
+    expect(clearOwnedSprayWallPinsMock.mock.invocationCallOrder[0]).toBeLessThan(
+      stampLocalUserIdMock.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('resets no offline settings when it claims a never-stamped device', async () => {
+    assertLocalUserDataOwnerMock.mockResolvedValue('unstamped');
+    render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
+    await waitFor(() => expect(stampLocalUserIdMock).toHaveBeenCalledTimes(1));
+
+    expect(setSettingMock).not.toHaveBeenCalled();
+    expect(clearOfflineBoardsMock).not.toHaveBeenCalled();
+    expect(resetSyncStatusMock).not.toHaveBeenCalled();
+    expect(forgetAbandonedDownloadsMock).not.toHaveBeenCalled();
+    expect(clearOwnedSprayWallPinsMock).not.toHaveBeenCalled();
   });
 
   it('deletes the stored wall photographs on that same recovery', async () => {

@@ -41,6 +41,7 @@ export function useQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Queue
         // keeps sending the legacy SET_QUEUE document unchanged.
         getBaselineSequence: () => depsRef.current.getBaselineSequence?.() ?? null,
         onBestEffortError: (action, error) => depsRef.current.onBestEffortError?.(action, error),
+        onSetCurrentClimbDrainError: (error, args) => depsRef.current.onSetCurrentClimbDrainError?.(error, args),
         onRateLimited: (event) => depsRef.current.onRateLimited?.(event),
       }),
     [hasEnsureReady],

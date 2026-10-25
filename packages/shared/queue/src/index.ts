@@ -9,11 +9,13 @@ export { fnv1aHash, computeQueueStateHash, computeQueueStateHashOrdered } from '
 export type {
   QueueState,
   QueueAction,
+  UnconfirmedQueueMove,
   QueueSearchParams,
   QueueClimbReadTarget,
   ClimbQueue,
   PlaylistSuggestionSource,
   PlaylistTrackContinuation,
+  PlaylistTrackResume,
   PlaylistTrackPage,
   SetCurrentClimbOptions,
   SetCurrentClimbTrigger,
@@ -91,6 +93,8 @@ export {
   findPlaylistClimbIndex,
   appendPlaylistTrackPage,
   withPlaylistTrackClimbs,
+  withPlaylistTrackResume,
+  samePlaylistTrackResume,
 } from './playlist-suggestions';
 export type { QueueBoardKeyTarget, PreparedPlaylistClimbs } from './playlist-suggestions';
 

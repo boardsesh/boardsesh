@@ -18,6 +18,7 @@ vi.mock('../../lib/auth-store', () => ({
 vi.mock('../../lib/analytics', () => ({ track: () => {} }));
 vi.mock('../../lib/graphql/ws-client', () => ({ getWsClient: () => null }));
 vi.mock('../../lib/graphql/hooks/fetch-board-by-uuid', () => ({ fetchBoardByUuid: async () => null }));
+vi.mock('../../lib/graphql/use-active-board', () => ({ useActiveBoard: () => ({ data: null }) }));
 vi.mock('../../lib/board-presence/board-presence-client', () => ({
   createMobileBoardPresenceClient: () => {
     throw new Error('Screenshot feed must not open a live board transport');

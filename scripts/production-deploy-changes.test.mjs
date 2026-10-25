@@ -70,6 +70,9 @@ void test('ignores incomplete runs and malformed head SHAs from the Actions resp
 
 void test('classifies changed paths with the production workflow semantics', () => {
   assert.equal(classifyChangedFiles(['packages/mobile/src/data/changelog.generated.json']).ota, false);
+  assert.equal(classifyChangedFiles(['packages/mobile/src/data/changelog.generated.json']).backend, false);
+  // The Expo web export bundles What's New, so app.boardsesh.com still picks it up.
+  assert.equal(classifyChangedFiles(['packages/mobile/src/data/changelog.generated.json']).app, true);
   assert.deepEqual(classifyChangedFiles(['docs/deployments.md']), {
     web: false,
     backend: false,

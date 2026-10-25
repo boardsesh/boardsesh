@@ -211,6 +211,115 @@ describe('legacy SessionUpdates replay compatibility', () => {
   });
 });
 
+describe('legacy GetSession replay compatibility (#6591)', () => {
+  const SESSION_ID = 'session-1';
+  const legacy =
+    'query GetSession($sessionId: ID!) { session(sessionId: $sessionId) { id name isPublic startedAt users { id username } } }';
+  const current = legacy.replace('isPublic startedAt', 'isPublic isPermanent startedAt');
+  const recordedFixture = (operationName: string, query: string, variables: unknown, data: unknown) =>
+    ({
+      formatVersion: 1,
+      operationName,
+      documentHash: 'original-hash',
+      variablesHash: 'variables',
+      query,
+      variables,
+      response: { data },
+      status: 200,
+      recordedAt: '2026-01-01T00:00:00Z',
+      upstream: 'https://example.test',
+    }) satisfies GraphqlFixtureFile;
+  const getSession = (session: unknown, sessionId = SESSION_ID) =>
+    recordedFixture('GetSession', legacy, { sessionId }, { session });
+  const joinSession = (joined: unknown, sessionId = SESSION_ID, operationName = 'JoinSession') =>
+    recordedFixture(
+      operationName,
+      `mutation ${operationName}($sessionId: ID!, $boardPath: String!) { joinSession(sessionId: $sessionId, boardPath: $boardPath) { id isPermanent } }`,
+      { sessionId, boardPath: 'kilter/8/25/26/40' },
+      { joinSession: joined },
+    );
+  const evidence = (...fixtures: GraphqlFixtureFile[]) => ({ joinSessionFixtures: () => fixtures });
+  // A session recorded before the document selected isPermanent, like the CPP sets'.
+  const unrecorded = { id: SESSION_ID, name: 'Kilter crew', isPublic: false, startedAt: null, users: [] };
+  const permanentJoin = joinSession({ id: SESSION_ID, isPermanent: true });
+
+  it('replays a recording that already holds the server’s isPermanent unchanged, whatever a JoinSession says', () => {
+    const recorded = getSession({ ...unrecorded, isPermanent: false });
+    const bytes = JSON.stringify(recorded);
+    expect(replayCompatibleFixtureResponse(current, recorded, evidence(permanentJoin))).toEqual({
+      response: recorded.response,
+    });
+    expect(replayCompatibleFixtureResponse(current, recorded)).toEqual({ response: recorded.response });
+    expect(JSON.stringify(recorded)).toBe(bytes);
+  });
+
+  it('fills a missing isPermanent from the same set’s JoinSession reply for that session, without mutating it', () => {
+    const recorded = getSession(unrecorded);
+    const bytes = JSON.stringify(recorded);
+    expect(
+      replayCompatibleFixtureResponse(current, recorded, evidence(joinSession({ id: SESSION_ID }), permanentJoin)),
+    ).toEqual({ response: { data: { session: { ...unrecorded, isPermanent: true } } } });
+    expect(JSON.stringify(recorded)).toBe(bytes);
+  });
+
+  it.each([
+    ['no evidence at all', []],
+    [
+      'a JoinSession recorded under another session id',
+      [joinSession({ id: SESSION_ID, isPermanent: true }, 'session-2')],
+    ],
+    ['a JoinSession reply that selected no isPermanent', [joinSession({ id: SESSION_ID })]],
+    ['a JoinSession reply with a null isPermanent', [joinSession({ id: SESSION_ID, isPermanent: null })]],
+    ['a JoinSession reply naming another session', [joinSession({ id: 'session-2', isPermanent: true })]],
+    ['a null JoinSession reply', [joinSession(null)]],
+    [
+      'a JoinSession reply with no data (errors only)',
+      [{ ...joinSession(null), response: { errors: [{ message: 'Session not found' }] } }],
+    ],
+    ['another operation’s reply', [joinSession({ id: SESSION_ID, isPermanent: true }, SESSION_ID, 'LeaveSession')]],
+    ['JoinSession replies that disagree', [permanentJoin, joinSession({ id: SESSION_ID, isPermanent: false })]],
+  ])('refuses to fill isPermanent from %s', (_label, fixtures) => {
+    expect(replayCompatibleFixtureResponse(current, getSession(unrecorded), evidence(...fixtures))).toBeNull();
+  });
+
+  it('refuses a recording with no data, no session, a non-boolean isPermanent, or a session its variables do not name', () => {
+    expect(
+      replayCompatibleFixtureResponse(
+        current,
+        { ...getSession(unrecorded), response: { errors: [{ message: 'Session not found' }] } },
+        evidence(permanentJoin),
+      ),
+    ).toBeNull();
+    expect(replayCompatibleFixtureResponse(current, getSession(null), evidence(permanentJoin))).toBeNull();
+    expect(
+      replayCompatibleFixtureResponse(
+        current,
+        getSession({ ...unrecorded, isPermanent: null }),
+        evidence(permanentJoin),
+      ),
+    ).toBeNull();
+    expect(
+      replayCompatibleFixtureResponse(
+        current,
+        getSession(unrecorded, 'session-2'),
+        evidence(permanentJoin, joinSession({ id: 'session-2', isPermanent: true }, 'session-2')),
+      ),
+    ).toBeNull();
+  });
+
+  it('keeps every other GetSession document change subject to drift checks', () => {
+    const recorded = getSession({ ...unrecorded, isPermanent: false });
+    expect(replayCompatibleFixtureResponse(current.replace('name', 'name goal'), recorded)).toBeNull();
+    expect(replayCompatibleFixtureResponse(legacy.replace('name', 'name goal'), recorded)).toBeNull();
+    expect(replayCompatibleFixtureResponse(legacy, recorded)).toBeNull();
+    expect(
+      replayCompatibleFixtureResponse(current.replace('isPermanent', 'isPermanent isPermanent'), recorded),
+    ).toBeNull();
+    // Spliced into another field's name rather than selected on its own.
+    expect(replayCompatibleFixtureResponse(legacy.replace('name', 'nameisPermanent'), recorded)).toBeNull();
+  });
+});
+
 describe('legacy DiscoverPlaylists replay compatibility', () => {
   const selection = 'gradeSummary { gradedClimbCount p10Difficulty p90Difficulty }';
   const legacy = 'query DiscoverPlaylists { discoverPlaylists { playlists { uuid name } hasMore } }';

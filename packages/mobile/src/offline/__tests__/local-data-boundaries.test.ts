@@ -12,14 +12,18 @@ import { describe, expect, it } from 'vitest';
 // token) would have shown up as one.
 const REPO_ROOT = fileURLToPath(new URL('../../../../../', import.meta.url));
 const SCANNED = ['packages/mobile/src', 'packages/mobile/app', 'packages/shared/offline-sync/src'];
+// `wipePreviousAccountLocalData` wraps the owner-stamp wipe (#6563), so a new
+// caller of the wrapper (on a token refresh, say) has to show up here too.
 const PURGE_CALL =
-  /\b(beginGlobalPurge|beginScopePurge|setSigningOut|clearUserData|purgeLocalDataForSignOut|removeBoardScopeData)\(/g;
+  /\b(beginGlobalPurge|beginScopePurge|setSigningOut|clearUserData|purgeLocalDataForSignOut|removeBoardScopeData|wipePreviousAccountLocalData)\(/g;
 
 const EXPECTED: Record<string, number> = {
-  // The owner-stamp wipe: rows stamped for another account (beginGlobalPurge + clearUserData).
-  'packages/mobile/src/components/offline-sync-bridge.tsx': 2,
+  // The owner-stamp wipe's one caller: rows stamped for another account.
+  'packages/mobile/src/components/offline-sync-bridge.tsx': 1,
   // The two wipes' definitions.
   'packages/mobile/src/db/connection.ts': 2,
+  // The owner-stamp wipe: its definition, plus beginGlobalPurge + clearUserData.
+  'packages/mobile/src/offline/account-boundary.ts': 3,
   // The climber removes a board (scope purge + teardown) or taps Compact (global epoch).
   'packages/mobile/src/offline/remove-offline-board.ts': 3,
   // Sign-out: setSigningOut on/off around the explicit purge or the selective wipe.

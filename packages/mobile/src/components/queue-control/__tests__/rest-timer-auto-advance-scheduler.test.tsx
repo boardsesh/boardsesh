@@ -5,6 +5,7 @@
 // REAL — the cycle guard only means anything if it is exercised end to end.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, act } from '@testing-library/react';
+import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 
 const nextClimb = vi.fn();
 const showToast = vi.fn();
@@ -12,7 +13,21 @@ const keepAwakeCalls: { active: boolean; tag: string }[] = [];
 let canNext = true;
 let atTrackEnd = false;
 let moreToLoad = false;
-let suggestionSource: { playlistUuid: string } | null = null;
+let suggestionSource: PlaylistSuggestionSource | null = null;
+// The real selection, for the cases that pin the scheduler to what Next does.
+let useRealNavigation = false;
+const currentQueueItem = { uuid: 'queue-current', climb: { uuid: 'current' } } as ClimbQueueItem;
+let queue: ClimbQueueItem[] = [];
+
+/** A track holding the current climb, then `after`. */
+function trackOf(playlistUuid: string, after: string[] = []): PlaylistSuggestionSource {
+  return {
+    playlistUuid,
+    activatedClimbUuid: 'current',
+    boardKey: 'kilter:1:1:1',
+    climbs: [{ uuid: 'current' }, ...after.map((uuid) => ({ uuid }))] as PlaylistSuggestionSource['climbs'],
+  };
+}
 const trackPagingInputs: Record<string, unknown>[] = [];
 let isCrewSession = false;
 let inAppBoardConnection = 'connectedByMe';
@@ -47,21 +62,29 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => k
 
 // Partial mock: @boardsesh/profile-stats (reached through the real rest-timer
 // store) reads other exports of this package at module load.
-vi.mock('@boardsesh/play-view', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@boardsesh/play-view')>()),
-  computeNavigationStateWithSuggestions: () => ({
-    canNext,
-    canPrevious: false,
-    nextItem: null,
-    prevItem: null,
-    remainingCount: 0,
-    atTrackEnd,
-  }),
-}));
+vi.mock('@boardsesh/play-view', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@boardsesh/play-view')>();
+  return {
+    ...actual,
+    computeNavigationStateWithSuggestions: (
+      ...args: Parameters<typeof actual.computeNavigationStateWithSuggestions>
+    ) =>
+      useRealNavigation
+        ? actual.computeNavigationStateWithSuggestions(...args)
+        : {
+            canNext,
+            canPrevious: false,
+            nextItem: null,
+            prevItem: null,
+            remainingCount: 0,
+            atTrackEnd,
+          },
+  };
+});
 
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueActions: () => ({ nextClimb, getQueueSnapshot: vi.fn(), refreshPlaylistSuggestionSource: vi.fn() }),
-  useQueueData: () => ({ queue: [], currentClimbQueueItem: { uuid: 'queue-current', climb: { uuid: 'current' } } }),
+  useQueueData: () => ({ queue, currentClimbQueueItem: currentQueueItem }),
   // The wall-driver rule's crew input. Deliberately not `useIsSharedSession`:
   // that one is gated on the browse rollout flag, and a flag-off crew is still a
   // crew whose wall a passenger's timer must not move.
@@ -168,6 +191,8 @@ beforeEach(() => {
   atTrackEnd = false;
   moreToLoad = false;
   suggestionSource = null;
+  useRealNavigation = false;
+  queue = [];
   trackPagingInputs.length = 0;
   isCrewSession = false;
   inAppBoardConnection = 'connectedByMe';
@@ -374,7 +399,7 @@ describe('the end of a list', () => {
   });
 
   it('waits without a word while more of the list is loading, then takes the beat when it lands', () => {
-    suggestionSource = { playlistUuid: 'playlist:projects' };
+    suggestionSource = trackOf('playlist:projects');
     canNext = false;
     atTrackEnd = true;
     moreToLoad = true;
@@ -389,7 +414,7 @@ describe('the end of a list', () => {
 
     // The page lands as a longer track. The beat was due already, so it goes
     // now, not after another whole rest (#6664 second review).
-    suggestionSource = { playlistUuid: 'playlist:projects' };
+    suggestionSource = trackOf('playlist:projects');
     canNext = true;
     atTrackEnd = false;
     moreToLoad = false;
@@ -401,7 +426,7 @@ describe('the end of a list', () => {
     // A late page must not move a crew's shared queue from a passenger's phone.
     isCrewSession = true;
     inAppBoardConnection = 'connectedByMe';
-    suggestionSource = { playlistUuid: 'playlist:projects' };
+    suggestionSource = trackOf('playlist:projects');
     canNext = false;
     atTrackEnd = true;
     moreToLoad = true;
@@ -411,7 +436,7 @@ describe('the end of a list', () => {
 
     inAppBoardConnection = 'heldByPeer';
     act(() => rerender(<RestTimerAutoAdvanceScheduler />));
-    suggestionSource = { playlistUuid: 'playlist:projects' };
+    suggestionSource = trackOf('playlist:projects');
     canNext = true;
     atTrackEnd = false;
     moreToLoad = false;
@@ -420,7 +445,7 @@ describe('the end of a list', () => {
   });
 
   it('says the list ended once the page it waited for ends the track', () => {
-    suggestionSource = { playlistUuid: 'playlist:projects' };
+    suggestionSource = trackOf('playlist:projects');
     canNext = false;
     atTrackEnd = true;
     moreToLoad = true;
@@ -429,7 +454,7 @@ describe('the end of a list', () => {
     advance(60_000);
 
     // The page failed or was the last: the track ends where it is.
-    suggestionSource = { playlistUuid: 'playlist:projects' };
+    suggestionSource = trackOf('playlist:projects');
     moreToLoad = false;
     act(() => rerender(<RestTimerAutoAdvanceScheduler />));
     expect(nextClimb).not.toHaveBeenCalled();
@@ -437,15 +462,66 @@ describe('the end of a list', () => {
   });
 
   it('pages the list the climber is on with the player closed', () => {
-    suggestionSource = { playlistUuid: 'smart:projects:user' };
+    suggestionSource = trackOf('smart:projects:user');
     armWithTick();
     render(<RestTimerAutoAdvanceScheduler />);
 
     expect(trackPagingInputs.at(-1)).toMatchObject({
       source: suggestionSource,
-      displayedClimbUuid: 'current',
+      listClimbUuid: 'current',
       previewTrack: false,
     });
+  });
+
+  // #6777: while a queued climb plays in the middle of the list, the list's
+  // place is the list climb it left, not the queued climb on the wall.
+  it('pages from the list climb it left while Up next plays', () => {
+    const listEntry = { uuid: 'queue-list-climb', climb: { uuid: 'list-climb' } } as ClimbQueueItem;
+    queue = [listEntry, currentQueueItem];
+    suggestionSource = {
+      ...trackOf('playlist:projects'),
+      climbs: [{ uuid: 'list-climb' }, { uuid: 'after' }] as PlaylistSuggestionSource['climbs'],
+      resume: { climbUuid: 'list-climb', queueItemUuid: 'queue-list-climb' },
+    };
+    armWithTick();
+    render(<RestTimerAutoAdvanceScheduler />);
+
+    expect(trackPagingInputs.at(-1)).toMatchObject({ listClimbUuid: 'list-climb' });
+  });
+});
+
+// #6777: the beat makes the same selection as Next, so it plays Up next before
+// the list goes on, and only says the list ended once both are done.
+describe('Up next before the list', () => {
+  beforeEach(() => {
+    useRealNavigation = true;
+  });
+
+  it('moves on into Up next from the last climb of the list', () => {
+    queue = [currentQueueItem, { uuid: 'queued', climb: { uuid: 'queued-climb' } } as ClimbQueueItem];
+    suggestionSource = trackOf('playlist:projects');
+    armWithTick();
+    render(<RestTimerAutoAdvanceScheduler />);
+
+    advance(60_000);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('says the list ended once Up next is played too', () => {
+    const listEntry = { uuid: 'queue-list-climb', climb: { uuid: 'list-climb' } } as ClimbQueueItem;
+    queue = [listEntry, currentQueueItem];
+    suggestionSource = {
+      ...trackOf('playlist:projects'),
+      climbs: [{ uuid: 'list-climb' }] as PlaylistSuggestionSource['climbs'],
+      resume: { climbUuid: 'list-climb', queueItemUuid: 'queue-list-climb' },
+    };
+    armWithTick();
+    render(<RestTimerAutoAdvanceScheduler />);
+
+    advance(60_000);
+    expect(nextClimb).not.toHaveBeenCalled();
+    expect(showToast).toHaveBeenCalledWith('mobile.restTimer.listEndedToast', 'info');
   });
 });
 

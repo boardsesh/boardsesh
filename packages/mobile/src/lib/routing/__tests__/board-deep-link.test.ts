@@ -75,6 +75,46 @@ describe('parseBoardLinkPath', () => {
     );
   });
 
+  // #4415: a signed-out scanner's poster link is replayed after sign-in, and
+  // the scan is counted then. Only a pair the strict parser accepts survives.
+  it.each(['board', 'kiosk'])('keeps a printed code’s src=qr&medium=%s pair', (medium) => {
+    expect(parseBoardLinkPath(`https://www.boardsesh.com/b/the-garage?src=qr&medium=${medium}`)).toBe(
+      `/b/the-garage?src=qr&medium=${medium}`,
+    );
+  });
+
+  it("keeps an unlisted wall's poster link whole, in canonical order", () => {
+    expect(parseBoardLinkPath(`https://www.boardsesh.com/b/the-garage?wall=${WALL_UUID}&src=qr&medium=board`)).toBe(
+      `/b/the-garage?wall=${WALL_UUID}&src=qr&medium=board`,
+    );
+    expect(
+      parseBoardLinkPath(`com.boardsesh.app://b/the-garage/40/list?medium=board&utm_source=x&src=qr&wall=${WALL_UUID}`),
+    ).toBe(`/b/the-garage/40/list?wall=${WALL_UUID}&src=qr&medium=board`);
+  });
+
+  it('reads an encoded pair and writes it back plainly', () => {
+    expect(parseBoardLinkPath('https://www.boardsesh.com/b/the-garage?%73rc=q%72&medium=%62oard')).toBe(
+      '/b/the-garage?src=qr&medium=board',
+    );
+  });
+
+  it.each([
+    ['src without medium', '?src=qr'],
+    ['medium without src', '?medium=board'],
+    ['another src', '?src=email&medium=board'],
+    ['an upper-case src', '?src=QR&medium=board'],
+    ['an unknown medium', '?src=qr&medium=flyer'],
+    ['the gym poster medium, which no board code prints', '?src=qr&medium=poster'],
+    ['an empty medium', '?src=qr&medium='],
+    ['a repeated medium', '?src=qr&medium=board&medium=kiosk'],
+    ['a repeated src', '?src=qr&src=qr&medium=board'],
+    ['a malformed escape', '?src=qr&medium=%E0%A4%A'],
+    ['a plus that decodes to a space', '?src=qr&medium=board+'],
+    ['a repeated pair', '?src=qr&medium=board&src=qr&medium=board'],
+  ])('drops the pair with %s', (_label, query) => {
+    expect(parseBoardLinkPath(`https://www.boardsesh.com/b/the-garage${query}`)).toBe('/b/the-garage');
+  });
+
   it.each([
     ['another host', `https://evil.example${CLIMB_PATH}`],
     ['a look-alike host', `https://www.boardsesh.com.evil.example${CLIMB_PATH}`],
@@ -115,11 +155,27 @@ describe('isBoardLinkPath', () => {
   it('accepts exactly what parseBoardLinkPath produces', () => {
     expect(isBoardLinkPath(CLIMB_PATH)).toBe(true);
     expect(isBoardLinkPath(`/b/the-garage/40/list?wall=${WALL_UUID}`)).toBe(true);
+    expect(isBoardLinkPath('/b/the-garage?src=qr&medium=board')).toBe(true);
+    expect(isBoardLinkPath(`/b/the-garage?wall=${WALL_UUID}&src=qr&medium=board`)).toBe(true);
+  });
+
+  // The stash is read back through this check, so every shape the parser can
+  // write has to pass it, or a stored poster scan would be thrown away.
+  it.each([
+    'https://www.boardsesh.com/b/the-garage?medium=kiosk&src=qr',
+    `https://www.boardsesh.com/b/the-garage/40/list?src=qr&medium=board&wall=${WALL_UUID}`,
+    `com.boardsesh.app://b/the-garage?invite=Ab3_dE-fGhIjKlMnOpQrSt&medium=kiosk&src=qr`,
+  ])('round-trips what the parser writes for %s', (url) => {
+    const path = parseBoardLinkPath(url);
+    expect(path).not.toBeNull();
+    expect(isBoardLinkPath(path)).toBe(true);
   });
 
   it.each([
     ['a path the parser would have rewritten', `/es${CLIMB_PATH}`],
     ['a path with a query the parser would have dropped', `${CLIMB_PATH}?utm_source=reddit`],
+    ['a QR pair out of canonical order', '/b/the-garage?medium=board&src=qr'],
+    ['a QR pair the parser would refuse', '/b/the-garage?src=qr&medium=flyer'],
     ['a route that is not a board', '/auth/login'],
     ['a tab route', '/(tabs)/home'],
     ['a full URL', `https://www.boardsesh.com${CLIMB_PATH}`],

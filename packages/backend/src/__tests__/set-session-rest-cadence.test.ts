@@ -92,6 +92,7 @@ describe('setSessionRestCadence', () => {
         restCadence: {
           __typename: 'SessionRestCadence',
           ...SETTINGS_CONFIG,
+          autoAdvanceOnce: false,
           isRunning: true,
           anchorAt: String(NOW - 4_000),
           pausedElapsedSeconds: 0,
@@ -130,6 +131,14 @@ describe('setSessionRestCadence', () => {
     ['a TICK status outside flash/send/attempt', { action: 'TICK', tickStatus: 'project' }],
     ['FIRE without an expected revision', { action: 'FIRE', firedBeatAgoMs: 100 }],
     ['a negative elapsed', { action: 'ARM', config: SETTINGS_CONFIG, elapsedMs: -1 }],
+    [
+      'an autoAdvanceOnce that is not a boolean',
+      { action: 'ARM', config: { ...SETTINGS_CONFIG, autoAdvanceOnce: 'yes' } },
+    ],
+    [
+      'a CONFIGURE whose autoAdvanceOnce is not a boolean',
+      { action: 'CONFIGURE', config: { ...SETTINGS_CONFIG, autoAdvanceOnce: 1 } },
+    ],
   ])('rejects %s without writing or publishing', async (_label, input) => {
     await expect(setRestCadence(input)).rejects.toThrow(/Invalid input/);
     expect((await roomManager.getSessionRestCadence(SESSION_ID)).revision).toBe(0);
@@ -302,6 +311,86 @@ describe('setSessionRestCadence', () => {
       expect(late.applied).toBe(true);
       expect(late.change.restCadence?.lastFiredBeatAt).toBe(String(NOW));
       expect(pubsubMock.publishSessionEvent).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe('autoAdvanceOnce: a 4x4 set rest advances the wall once, then waits for the builder’s phone', () => {
+    // The set rest the builder's phone sends after the last rep: afterTick + tick, 90 s.
+    const SET_REST = { ...SETTINGS_CONFIG, advanceOn: 'tick', source: 'stage', autoAdvanceOnce: true } as const;
+    const holderPhone = () => makeCtx({ connectionId: 'conn-2', participantId: 'f6e5d4c3b2a1' });
+    const fireOnLatest = async () =>
+      setRestCadence(
+        { action: 'FIRE', expectedRevision: (await roomManager.getSessionRestCadence(SESSION_ID)).revision },
+        holderPhone(),
+      );
+
+    /** The last rep's send at NOW, then the set rest from the builder's phone: due at NOW + 90 s. */
+    async function setRestAfterLastRep(config: Record<string, unknown> = SET_REST) {
+      await setRestCadence({ action: 'ARM', config: { ...SET_REST, autoAdvance: false, autoAdvanceOnce: null } });
+      await setRestCadence({ action: 'TICK', tickQueueItemUuid: 'rep-4', tickStatus: 'send' });
+      const configured = await setRestCadence({ action: 'CONFIGURE', config });
+      pubsubMock.publishSessionEvent.mockClear();
+      return configured;
+    }
+
+    it('accepts the flag, stores it, and sends it back true', async () => {
+      const configured = await setRestAfterLastRep();
+      expect(configured.applied).toBe(true);
+      expect(configured.change.restCadence).toMatchObject({ autoAdvance: true, autoAdvanceOnce: true });
+    });
+
+    it('reads a null flag as absent: auto-advance stays on after the advance', async () => {
+      await setRestAfterLastRep({ ...SET_REST, autoAdvanceOnce: null });
+      vi.setSystemTime(NOW + 90_000);
+      const fired = await fireOnLatest();
+      expect(fired.applied).toBe(true);
+      expect(fired.change.restCadence).toMatchObject({ autoAdvance: true, autoAdvanceOnce: false });
+    });
+
+    it('publishes the advance with auto-advance off, and refuses and publishes nothing on the next rest', async () => {
+      await setRestAfterLastRep();
+      vi.setSystemTime(NOW + 90_000);
+      const fired = await fireOnLatest();
+
+      expect(fired.applied).toBe(true);
+      expect(fired.change.action).toBe('FIRE');
+      expect(fired.change.restCadence).toMatchObject({
+        autoAdvance: false,
+        autoAdvanceOnce: false,
+        lastFiredBeatAt: String(NOW + 90_000),
+        anchorAt: null,
+      });
+      expect(pubsubMock.publishSessionEvent).toHaveBeenCalledOnce();
+      expect(pubsubMock.publishSessionEvent).toHaveBeenCalledWith(SESSION_ID, fired.change);
+
+      // The builder's phone sleeps. A crewmate's first rep of the next set starts a rest that runs out.
+      vi.setSystemTime(NOW + 100_000);
+      await setRestCadence({ action: 'TICK', tickQueueItemUuid: 'rep-1', tickStatus: 'send' });
+      pubsubMock.publishSessionEvent.mockClear();
+      vi.setSystemTime(NOW + 190_000);
+      const waiting = await fireOnLatest();
+      expect(waiting.applied).toBe(false);
+      expect(waiting.change.restCadence).toMatchObject({ autoAdvance: false, anchorAt: String(NOW + 100_000) });
+      expect(pubsubMock.publishSessionEvent).not.toHaveBeenCalled();
+
+      // The builder's phone wakes and turns auto-advance back on: the rest that just ran out advances.
+      vi.setSystemTime(NOW + 191_000);
+      const back = await setRestCadence({ action: 'CONFIGURE', config: { ...SET_REST, autoAdvanceOnce: false } });
+      expect(back.change.restCadence).toMatchObject({ autoAdvance: true, autoAdvanceOnce: false });
+      const advanced = await fireOnLatest();
+      expect(advanced.applied).toBe(true);
+      expect(advanced.change.restCadence).toMatchObject({ autoAdvance: true, lastFiredBeatAt: String(NOW + 190_000) });
+    });
+
+    it('a FIRE before the rest runs out is refused and keeps the flag', async () => {
+      const configured = await setRestAfterLastRep();
+      vi.setSystemTime(NOW + 30_000);
+      const early = await fireOnLatest();
+      expect(early.applied).toBe(false);
+      expect(early.change).toMatchObject({ revision: configured.change.revision, action: null });
+      expect(early.change.restCadence).toEqual(configured.change.restCadence);
+      expect(early.change.restCadence).toMatchObject({ autoAdvance: true, autoAdvanceOnce: true });
+      expect(pubsubMock.publishSessionEvent).not.toHaveBeenCalled();
     });
   });
 

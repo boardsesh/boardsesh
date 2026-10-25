@@ -132,6 +132,7 @@ export function BoardDetailSheet({ board, visible, onClose, onSetActive }: Board
           shareUrl={shareSnapshot.target.url}
           wallName={shareSnapshot.wallName}
           visibility={shareSnapshot.target.visibility}
+          posterUrl={shareSnapshot.target.posterUrl}
         />
       ) : null}
       {homeShareSnapshot ? (

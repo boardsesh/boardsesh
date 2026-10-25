@@ -9,6 +9,8 @@ import {
   reanchorPlaylistSuggestionSource,
   appendPlaylistTrackPage,
   withPlaylistTrackClimbs,
+  withPlaylistTrackResume,
+  samePlaylistTrackResume,
 } from '../playlist-suggestions';
 import type { Climb, ClimbQueueItem, PlaylistSuggestionSource, PlaylistTrackPage } from '../types';
 
@@ -348,5 +350,53 @@ describe('appendPlaylistTrackPage', () => {
     const next = appendPlaylistTrackPage(source, pageOf({ climbs: firstPage }));
     expect(next.climbs).toBe(source.climbs);
     expect(next.continuation).toEqual({ loaderId: 'loader', nextPage: 2 });
+  });
+});
+
+// Issue #6777: the list climb a walk left for Up next, kept on the track.
+describe('withPlaylistTrackResume', () => {
+  const climbs = [makeClimb('a'), makeClimb('b'), makeClimb('c')];
+  const track = createPlaylistSuggestionSource({ playlistUuid: 'p', activatedClimb: climbs[0], climbs, boardKey: 'k' });
+  const resume = { climbUuid: 'b', queueItemUuid: 'item-b' };
+
+  it('sets and clears the resume point, keeping everything else', () => {
+    const walking = withPlaylistTrackResume(track, resume);
+    expect(walking).not.toBe(track);
+    expect(walking).toEqual({ ...track, resume });
+    const back = withPlaylistTrackResume(walking, null);
+    expect(back).toEqual(track);
+    expect('resume' in back).toBe(false);
+  });
+
+  it('returns the same track when nothing changes', () => {
+    expect(withPlaylistTrackResume(track, null)).toBe(track);
+    const walking = withPlaylistTrackResume(track, resume);
+    expect(withPlaylistTrackResume(walking, { ...resume })).toBe(walking);
+  });
+
+  it('keeps the prepared index, so lookups never rescan the list', () => {
+    const walking = withPlaylistTrackResume(track, resume);
+    const scan = vi.spyOn(walking.climbs, 'findIndex');
+    expect(findPlaylistClimbIndex(walking, 'c')).toBe(2);
+    expect(scan).not.toHaveBeenCalled();
+  });
+
+  it('compares resume points by both halves, absent and null alike', () => {
+    expect(samePlaylistTrackResume(undefined, null)).toBe(true);
+    expect(samePlaylistTrackResume(resume, { ...resume })).toBe(true);
+    expect(samePlaylistTrackResume(resume, { ...resume, queueItemUuid: 'repeat-b' })).toBe(false);
+    expect(samePlaylistTrackResume(resume, null)).toBe(false);
+  });
+});
+
+describe('findPlaylistClimbIndex on a track built elsewhere', () => {
+  it('indexes the list once and answers by first occurrence', () => {
+    const climbs = [makeClimb('a'), makeClimb('b'), makeClimb('a')];
+    const restored: PlaylistSuggestionSource = { playlistUuid: 'p', activatedClimbUuid: 'a', boardKey: 'k', climbs };
+    const scan = vi.spyOn(climbs, 'findIndex');
+    expect(findPlaylistClimbIndex(restored, 'a')).toBe(0);
+    expect(findPlaylistClimbIndex(restored, 'b')).toBe(1);
+    expect(findPlaylistClimbIndex(restored, 'missing')).toBe(-1);
+    expect(scan).not.toHaveBeenCalled();
   });
 });

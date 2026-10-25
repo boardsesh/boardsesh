@@ -1083,3 +1083,382 @@ describe('REFRESH_AUTHORED_CLIMB', () => {
     expect(result.pendingCurrentClimbUpdates).toEqual(['corr-9']);
   });
 });
+
+// A move of the shared wall that the session has not confirmed yet, and what a
+// server snapshot does to it (found in QA of #6783: a reconnect's FullSync, read
+// before the move landed, put the wall back). Paired: a snapshot that predates
+// the move keeps it; a snapshot that shows anyone else's move, or that comes
+// after events this client never saw, wins.
+describe('unconfirmed moves', () => {
+  const wall = makeClimbQueueItem({ uuid: 'wall' });
+  const next = makeClimbQueueItem({ uuid: 'next' });
+  const later = makeClimbQueueItem({ uuid: 'later' });
+  const crewPick = makeClimbQueueItem({ uuid: 'crew-pick' });
+  // The last sequence this client applied before any of the moves below.
+  const SEEN = 5;
+
+  function moveTo(
+    state: QueueState,
+    item: ClimbQueueItem,
+    correlationId: string,
+    extra: { sessionId?: string; shouldAddToQueue?: boolean } = { sessionId: 'session-1' },
+  ): QueueState {
+    return queueReducer(state, {
+      type: 'DELTA_UPDATE_CURRENT_CLIMB',
+      payload: {
+        item,
+        shouldAddToQueue: extra.shouldAddToQueue ?? false,
+        insertAfterCurrent: true,
+        isServerEvent: false,
+        correlationId,
+        sessionId: extra.sessionId,
+      },
+    });
+  }
+
+  function snapshot(
+    state: QueueState,
+    queue: ClimbQueueItem[],
+    current: ClimbQueueItem | null,
+    options: { sequence?: number; sessionId?: string | null; live?: boolean } = {},
+  ): QueueState {
+    // sessionId null: a local INITIAL_QUEUE_DATA that names no session (leaving one, say).
+    const sessionId = options.sessionId === undefined ? 'session-1' : (options.sessionId ?? undefined);
+    return queueReducer(state, {
+      type: 'INITIAL_QUEUE_DATA',
+      serverSequence: options.sequence ?? SEEN,
+      payload: { queue, currentClimbQueueItem: current, sessionId, live: options.live ?? true },
+    });
+  }
+
+  function serverMove(
+    state: QueueState,
+    item: ClimbQueueItem,
+    sequence: number,
+    serverCorrelationId?: string,
+  ): QueueState {
+    return queueReducer(state, {
+      type: 'DELTA_UPDATE_CURRENT_CLIMB',
+      serverSequence: sequence,
+      payload: { item, shouldAddToQueue: true, insertAfterCurrent: true, isServerEvent: true, serverCorrelationId },
+    });
+  }
+
+  const onWall = () =>
+    makeState({
+      queue: [wall, next],
+      currentClimbQueueItem: wall,
+      serverSequence: SEEN,
+      serverSequenceSessionId: 'session-1',
+    });
+
+  it('records a move that is sent to a session, with the climb it moved off', () => {
+    const moved = moveTo(onWall(), next, 'corr-1');
+    expect(moved.unconfirmedMove).toEqual({
+      sessionId: 'session-1',
+      correlationId: 'corr-1',
+      itemUuid: 'next',
+      shouldAddToQueue: false,
+      insertAfterCurrent: true,
+      movedOff: ['wall'],
+      movedOffTruncated: false,
+      resend: 'none',
+    });
+  });
+
+  it('does not record a move that is not sent (solo, or an unresolved climb)', () => {
+    const moved = moveTo(onWall(), next, 'corr-1', {});
+    expect(moved.currentClimbQueueItem?.uuid).toBe('next');
+    expect(moved.unconfirmedMove).toBeNull();
+  });
+
+  it('keeps the move and its pending id through a snapshot that predates it', () => {
+    const moved = moveTo(onWall(), next, 'corr-1');
+    const synced = snapshot(moved, [wall, next], wall);
+    expect(synced.currentClimbQueueItem?.uuid).toBe('next');
+    expect(synced.pendingCurrentClimbUpdates).toEqual(['corr-1']);
+    expect(synced.unconfirmedMove?.correlationId).toBe('corr-1');
+    // ...so the move's own echo is still recognised and swallowed.
+    const echoed = serverMove(synced, next, SEEN + 1, 'corr-1');
+    expect(echoed.currentClimbQueueItem?.uuid).toBe('next');
+    expect(echoed.pendingCurrentClimbUpdates).toEqual([]);
+    expect(echoed.unconfirmedMove).toBeNull();
+  });
+
+  it('takes the snapshot when it shows a climb nobody here moved off', () => {
+    const moved = moveTo(onWall(), next, 'corr-1');
+    const synced = snapshot(moved, [wall, next, crewPick], crewPick, { sequence: SEEN + 1 });
+    expect(synced.currentClimbQueueItem?.uuid).toBe('crew-pick');
+    expect(synced.pendingCurrentClimbUpdates).toEqual([]);
+    expect(synced.unconfirmedMove).toBeNull();
+  });
+
+  // The review's case: the move ran on the old socket (the session moved to
+  // `next`), a crewmate then moved the wall back to `wall`, and this client saw
+  // neither. The snapshot shows a climb it moved off, but its sequence is ahead.
+  it('takes a snapshot on a climb it moved off when the session has moved on since', () => {
+    const moved = moveTo(onWall(), next, 'corr-1');
+    const synced = snapshot(moved, [wall, next], wall, { sequence: SEEN + 2 });
+    expect(synced.currentClimbQueueItem?.uuid).toBe('wall');
+    expect(synced.unconfirmedMove).toBeNull();
+    expect(synced.pendingCurrentClimbUpdates).toEqual([]);
+  });
+
+  it('keeps the move across events it saw that left the wall alone', () => {
+    const added = makeClimbQueueItem({ uuid: 'added' });
+    const moved = queueReducer(moveTo(onWall(), next, 'corr-1'), {
+      type: 'DELTA_ADD_QUEUE_ITEM',
+      serverSequence: SEEN + 1,
+      payload: { item: added },
+    });
+    expect(moved.unconfirmedMove?.correlationId).toBe('corr-1');
+    const synced = snapshot(moved, [wall, next, added], wall, { sequence: SEEN + 1 });
+    expect(synced.currentClimbQueueItem?.uuid).toBe('next');
+  });
+
+  it('retires the move once a snapshot already shows it', () => {
+    const moved = moveTo(onWall(), next, 'corr-1');
+    const synced = snapshot(moved, [wall, next], next, { sequence: SEEN + 1 });
+    expect(synced.currentClimbQueueItem?.uuid).toBe('next');
+    expect(synced.unconfirmedMove).toBeNull();
+    expect(synced.pendingCurrentClimbUpdates).toEqual([]);
+  });
+
+  // Joined straight from another room: the sequence this client last applied
+  // counts in that room, so an equal number here proves nothing.
+  it('takes a snapshot whose sequence matches one this client applied in another session', () => {
+    const moved = moveTo({ ...onWall(), serverSequenceSessionId: 'session-0' }, next, 'corr-1');
+    const synced = snapshot(moved, [wall, next], wall);
+    expect(synced.currentClimbQueueItem?.uuid).toBe('wall');
+    expect(synced.serverSequenceSessionId).toBe('session-1');
+  });
+
+  it('takes a snapshot of another session, or one that names none, whatever it shows', () => {
+    const moved = moveTo(onWall(), next, 'corr-1');
+    expect(snapshot(moved, [wall, next], wall, { sessionId: 'session-2' }).currentClimbQueueItem?.uuid).toBe('wall');
+    expect(snapshot(moved, [wall, next], wall, { sessionId: null }).currentClimbQueueItem?.uuid).toBe('wall');
+    expect(snapshot(moved, [wall, next], wall, { sessionId: null }).unconfirmedMove).toBeNull();
+  });
+
+  it('puts a climb the move added back right after the snapshot’s current climb', () => {
+    const fresh = makeClimbQueueItem({ uuid: 'fresh' });
+    const moved = moveTo(onWall(), fresh, 'corr-1', { sessionId: 'session-1', shouldAddToQueue: true });
+    expect(moved.queue.map((item) => item.uuid)).toEqual(['wall', 'fresh', 'next']);
+    // The snapshot has never heard of it.
+    const synced = snapshot(moved, [wall, next], wall);
+    expect(synced.queue.map((item) => item.uuid)).toEqual(['wall', 'fresh', 'next']);
+    expect(synced.currentClimbQueueItem).toBe(moved.currentClimbQueueItem);
+  });
+
+  it('treats any climb along a chain of unconfirmed moves as predating the latest one', () => {
+    const state = makeState({
+      queue: [wall, next, later],
+      currentClimbQueueItem: wall,
+      serverSequence: SEEN,
+      serverSequenceSessionId: 'session-1',
+    });
+    const chained = moveTo(moveTo(state, next, 'corr-1'), later, 'corr-2');
+    expect(chained.unconfirmedMove?.movedOff).toEqual(['wall', 'next']);
+    expect(snapshot(chained, [wall, next, later], wall).currentClimbQueueItem?.uuid).toBe('later');
+    // The first move's echo came: the session is on `next` now, at a sequence this client saw.
+    const firstEcho = serverMove(chained, next, SEEN + 1, 'corr-1');
+    expect(firstEcho.currentClimbQueueItem?.uuid).toBe('later');
+    expect(firstEcho.unconfirmedMove?.correlationId).toBe('corr-2');
+    expect(snapshot(firstEcho, [wall, next, later], next, { sequence: SEEN + 1 }).currentClimbQueueItem?.uuid).toBe(
+      'later',
+    );
+    // A later snapshot back on `wall` can only be a crewmate's move.
+    expect(snapshot(firstEcho, [wall, next, later], wall, { sequence: SEEN + 2 }).currentClimbQueueItem?.uuid).toBe(
+      'wall',
+    );
+    expect(serverMove(firstEcho, later, SEEN + 2, 'corr-2').unconfirmedMove).toBeNull();
+  });
+
+  // `movedOff` keeps the last 20 climbs. Past that the record cannot prove the
+  // session still holds one of them, so it protects nothing, as before it existed.
+  it('lets every snapshot win once a chain outgrows the climbs it keeps', () => {
+    const climbs = Array.from({ length: 22 }, (_, index) => makeClimbQueueItem({ uuid: `climb-${index}` }));
+    const start = makeState({
+      queue: climbs,
+      currentClimbQueueItem: climbs[0],
+      serverSequence: SEEN,
+      serverSequenceSessionId: 'session-1',
+    });
+    // Twenty moves: climb-0 to climb-19 moved off, every one kept.
+    const atCap = climbs.slice(1, 21).reduce((state, climb, index) => moveTo(state, climb, `corr-${index + 1}`), start);
+    expect(atCap.unconfirmedMove).toMatchObject({ itemUuid: 'climb-20', movedOffTruncated: false });
+    expect(atCap.unconfirmedMove?.movedOff).toHaveLength(20);
+    expect(snapshot(atCap, climbs, climbs[0]).currentClimbQueueItem?.uuid).toBe('climb-20');
+
+    // One more, and climb-0 falls off the list.
+    const pastCap = moveTo(atCap, climbs[21], 'corr-21');
+    expect(pastCap.unconfirmedMove).toMatchObject({ itemUuid: 'climb-21', movedOffTruncated: true });
+    expect(pastCap.unconfirmedMove?.movedOff).toHaveLength(20);
+    expect(pastCap.unconfirmedMove?.movedOff).not.toContain('climb-0');
+    // The session still on the chain's first climb: the snapshot wins and retires it.
+    const synced = snapshot(pastCap, climbs, climbs[0]);
+    expect(synced.currentClimbQueueItem?.uuid).toBe('climb-0');
+    expect(synced.unconfirmedMove).toBeNull();
+    // A climb the list still holds proves nothing either.
+    expect(snapshot(pastCap, climbs, climbs[10]).currentClimbQueueItem?.uuid).toBe('climb-10');
+
+    // It stays that way down the chain; a chain after a confirmed move starts clean.
+    expect(moveTo(pastCap, climbs[0], 'corr-22').unconfirmedMove?.movedOffTruncated).toBe(true);
+    const confirmed = serverMove(pastCap, climbs[21], SEEN + 1, 'corr-21');
+    expect(confirmed.unconfirmedMove).toBeNull();
+    expect(moveTo(confirmed, climbs[1], 'corr-23').unconfirmedMove).toMatchObject({
+      movedOff: ['climb-21'],
+      movedOffTruncated: false,
+    });
+  });
+
+  it('retires the move when a peer moves the wall, even back to the climb it moved off', () => {
+    const moved = moveTo(onWall(), next, 'corr-1');
+    const peerMoved = serverMove(moved, wall, SEEN + 1);
+    expect(peerMoved.currentClimbQueueItem?.uuid).toBe('wall');
+    expect(peerMoved.unconfirmedMove).toBeNull();
+    expect(snapshot(peerMoved, [wall, next], wall, { sequence: SEEN + 1 }).currentClimbQueueItem?.uuid).toBe('wall');
+  });
+
+  it('retires the move when the climb leaves the wall locally', () => {
+    const moved = moveTo(onWall(), next, 'corr-1');
+    expect(moveTo(moved, later, 'corr-local', {}).unconfirmedMove).toBeNull();
+    expect(
+      queueReducer(moved, { type: 'DELTA_REMOVE_QUEUE_ITEM', payload: { uuid: 'next' } }).unconfirmedMove,
+    ).toBeNull();
+    expect(queueReducer(moved, { type: 'CLEAR_QUEUE' }).unconfirmedMove).toBeNull();
+  });
+
+  // A local replacement (the climber's own queue replace, a rolled-back
+  // reorder, a privacy scrub) is never a server snapshot. One that moves the
+  // wall retires the move like any local move that is not sent; one that keeps
+  // the current climb keeps it.
+  it('retires the move on a local queue replacement only when it moves the wall', () => {
+    const moved = moveTo(onWall(), next, 'corr-1');
+    const kept = queueReducer(moved, {
+      type: 'UPDATE_QUEUE',
+      payload: { queue: [next, wall], currentClimbQueueItem: moved.currentClimbQueueItem },
+    });
+    expect(kept.unconfirmedMove?.correlationId).toBe('corr-1');
+    const replaced = queueReducer(moved, {
+      type: 'UPDATE_QUEUE',
+      payload: { queue: [later], currentClimbQueueItem: later },
+    });
+    expect(replaced.currentClimbQueueItem?.uuid).toBe('later');
+    expect(replaced.unconfirmedMove).toBeNull();
+  });
+
+  // null in movedOff: the wall had no current climb before the move.
+  it('reads a snapshot with no current climb as predating a move made from an empty wall', () => {
+    const emptyWall = makeState({
+      queue: [wall, next],
+      currentClimbQueueItem: null,
+      serverSequence: SEEN,
+      serverSequenceSessionId: 'session-1',
+    });
+    const moved = moveTo(emptyWall, next, 'corr-1');
+    expect(moved.unconfirmedMove?.movedOff).toEqual([null]);
+    // Nothing happened since: the session simply has not seen the move.
+    const predates = snapshot(moved, [wall, next], null);
+    expect(predates.currentClimbQueueItem?.uuid).toBe('next');
+    expect(predates.unconfirmedMove?.correlationId).toBe('corr-1');
+    // Something happened that this client never saw: the snapshot wins.
+    const movedOn = snapshot(moved, [wall, next], null, { sequence: SEEN + 1 });
+    expect(movedOn.currentClimbQueueItem).toBeNull();
+    expect(movedOn.unconfirmedMove).toBeNull();
+    // An empty snapshot proves nothing for a move made from a climb.
+    expect(snapshot(moveTo(onWall(), next, 'corr-2'), [wall, next], null).currentClimbQueueItem).toBeNull();
+  });
+
+  it('retires the move when its echo times out', () => {
+    const moved = moveTo(onWall(), next, 'corr-1');
+    expect(
+      queueReducer(moved, { type: 'CLEANUP_PENDING_UPDATE', payload: { correlationId: 'other' } }).unconfirmedMove,
+    ).not.toBeNull();
+    expect(
+      queueReducer(moved, { type: 'CLEANUP_PENDING_UPDATE', payload: { correlationId: 'corr-1' } }).unconfirmedMove,
+    ).toBeNull();
+    expect(
+      queueReducer(moved, { type: 'CLEANUP_PENDING_UPDATES_BATCH', payload: { correlationIds: ['corr-1'] } })
+        .unconfirmedMove,
+    ).toBeNull();
+  });
+
+  it('takes a re-assert of the same climb as the move’s newest send', () => {
+    const moved = queueReducer(moveTo(onWall(), next, 'corr-1'), {
+      type: 'UNCONFIRMED_MOVE_NOT_SENT',
+      payload: { correlationId: 'corr-1', serverViewIsLive: false },
+    });
+    const reasserted = moveTo(moved, next, 'corr-2');
+    expect(reasserted.unconfirmedMove).toMatchObject({ correlationId: 'corr-2', resend: 'none', movedOff: ['wall'] });
+  });
+
+  describe('re-send state', () => {
+    const notSent = (state: QueueState, correlationId: string, serverViewIsLive: boolean) =>
+      queueReducer(state, { type: 'UNCONFIRMED_MOVE_NOT_SENT', payload: { correlationId, serverViewIsLive } });
+
+    it('waits for a live snapshot that still predates the move', () => {
+      const waiting = notSent(moveTo(onWall(), next, 'corr-1'), 'corr-1', false);
+      expect(waiting.unconfirmedMove?.resend).toBe('awaiting-snapshot');
+      expect(snapshot(waiting, [wall, next], wall).unconfirmedMove?.resend).toBe('ready');
+      expect(snapshot(waiting, [wall, next, crewPick], crewPick, { sequence: SEEN + 1 }).unconfirmedMove).toBeNull();
+      expect(snapshot(waiting, [wall, next], wall, { sequence: SEEN + 2 }).unconfirmedMove).toBeNull();
+    });
+
+    it('keeps the wall but releases nothing on a point read (HTTP resync)', () => {
+      const waiting = notSent(moveTo(onWall(), next, 'corr-1'), 'corr-1', false);
+      const read = snapshot(waiting, [wall, next], wall, { live: false });
+      expect(read.currentClimbQueueItem?.uuid).toBe('next');
+      expect(read.unconfirmedMove?.resend).toBe('awaiting-snapshot');
+    });
+
+    // An HTTP resync can land while a re-send is due or already out. It follows
+    // the rule any snapshot does: the move is kept while nothing happened
+    // since, retired when the read shows it or moved on. The provider surfaces
+    // a retirement it did not cause (the re-send's echo or its failure).
+    it('weighs a point read during a due or sent re-send like any snapshot', () => {
+      const ready = notSent(moveTo(onWall(), next, 'corr-1'), 'corr-1', true);
+      const resent = queueReducer(ready, { type: 'UNCONFIRMED_MOVE_RESENT', payload: { correlationId: 'corr-1' } });
+      for (const [state, resend] of [
+        [ready, 'ready'],
+        [resent, 'resent'],
+      ] as const) {
+        const predates = snapshot(state, [wall, next], wall, { live: false });
+        expect(predates.currentClimbQueueItem?.uuid).toBe('next');
+        expect(predates.unconfirmedMove?.resend).toBe(resend);
+        const showsMove = snapshot(state, [wall, next], next, { sequence: SEEN + 1, live: false });
+        expect(showsMove.currentClimbQueueItem?.uuid).toBe('next');
+        expect(showsMove.unconfirmedMove).toBeNull();
+        const movedOn = snapshot(state, [wall, next, crewPick], crewPick, { sequence: SEEN + 2, live: false });
+        expect(movedOn.currentClimbQueueItem?.uuid).toBe('crew-pick');
+        expect(movedOn.unconfirmedMove).toBeNull();
+      }
+    });
+
+    it('is ready at once when the server view is already live', () => {
+      expect(notSent(moveTo(onWall(), next, 'corr-1'), 'corr-1', true).unconfirmedMove?.resend).toBe('ready');
+    });
+
+    it('ignores a lost send that is not the move’s latest, or a second loss', () => {
+      const moved = moveTo(onWall(), next, 'corr-1');
+      expect(notSent(moved, 'corr-0', true)).toBe(moved);
+      const ready = notSent(moved, 'corr-1', true);
+      const resent = queueReducer(ready, { type: 'UNCONFIRMED_MOVE_RESENT', payload: { correlationId: 'corr-1' } });
+      expect(resent.unconfirmedMove?.resend).toBe('resent');
+      expect(notSent(resent, 'corr-1', true)).toBe(resent);
+      // A resent move is never made ready again by a snapshot either.
+      expect(snapshot(resent, [wall, next], wall).unconfirmedMove?.resend).toBe('resent');
+    });
+
+    it('drops the move on request, only when the id matches', () => {
+      const moved = moveTo(onWall(), next, 'corr-1');
+      expect(queueReducer(moved, { type: 'UNCONFIRMED_MOVE_DROPPED', payload: { correlationId: 'other' } })).toBe(
+        moved,
+      );
+      expect(
+        queueReducer(moved, { type: 'UNCONFIRMED_MOVE_DROPPED', payload: { correlationId: 'corr-1' } }).unconfirmedMove,
+      ).toBeNull();
+      expect(queueReducer(moved, { type: 'UNCONFIRMED_MOVE_DROPPED', payload: {} }).unconfirmedMove).toBeNull();
+    });
+  });
+});

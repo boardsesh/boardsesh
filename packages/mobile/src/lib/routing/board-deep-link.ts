@@ -15,14 +15,24 @@
 // - the first segment must be `b` or one of the nine board names;
 // - the rest must be one of the shapes the app has a route for (list, view,
 //   play), by the same matcher the browser app's auth gate uses;
-// - of the query, only `wall` (as a uuid) and `invite` (as a share-link token)
-//   survive. A home board's share link has to survive sign-in: it is how a
-//   new climber is meant to join a friend's board, so dropping the token would
-//   land them on a board they cannot open.
+// - of the query, only `wall` (as a uuid), `invite` (as a share-link token)
+//   and the printed-code pair `src` + `medium` survive. A home board's share
+//   link has to survive sign-in: it is how a new climber is meant to join a
+//   friend's board, so dropping the token would land them on a board they
+//   cannot open. The QR pair survives so the scan that brought a new installer
+//   into the app is still counted once they sign in (#4415), and only as a pair
+//   the strict `parseBoardQrLanding` accepts, rewritten to its canonical spelling.
 // Pure and React-free so every rule is a unit test.
 
+import {
+  GYM_QR_MEDIUM_PARAM,
+  GYM_QR_SRC_PARAM,
+  GYM_QR_SRC_VALUE,
+  parseBoardQrLanding,
+  type GymQrSearchParams,
+} from '@boardsesh/analytics';
 import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
-import { parseDeepLinkQueryParams } from '../deep-link-query';
+import { parseDeepLinkQueryEntries } from '../deep-link-query';
 import { isReadOnlyAnonymousPath, isSafeReturnPath } from './read-only-routes';
 import { stripLocalePrefix } from './strip-locale-prefix';
 import { BOARD_INVITE_PARAM, isBoardInviteToken } from '../board-share/board-share-link';
@@ -34,6 +44,21 @@ const BOARDSESH_LINK_PREFIX = /^(?:https:\/\/(?:www\.)?boardsesh\.com(?=[/?#]|$)
 const WALL_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const boardNames: ReadonlySet<string> = new Set<string>(SUPPORTED_BOARDS);
+
+/**
+ * `src` and `medium` as `parseBoardQrLanding` expects them, from the query's
+ * decoded pairs. A name that appears twice becomes an array, which the parser
+ * refuses: a duplicated param is a hand-edited URL, not a scan.
+ */
+function qrLandingParams(entries: ReadonlyArray<readonly [string, string]>): GymQrSearchParams {
+  const params: GymQrSearchParams = {};
+  for (const [name, value] of entries) {
+    if (name !== GYM_QR_SRC_PARAM && name !== GYM_QR_MEDIUM_PARAM) continue;
+    const earlier = params[name];
+    params[name] = earlier === undefined ? value : [...(Array.isArray(earlier) ? earlier : [earlier]), value];
+  }
+  return params;
+}
 
 /**
  * The in-app path a board or climb link points at, or null when `url` is not
@@ -57,12 +82,17 @@ export function parseBoardLinkPath(url: string | null | undefined): string | nul
   if (firstSegment === undefined || (firstSegment !== 'b' && !boardNames.has(firstSegment))) return null;
   if (!isReadOnlyAnonymousPath(path)) return null;
 
-  const query = queryIndex === -1 ? undefined : parseDeepLinkQueryParams(afterHost);
-  const wallUuid = query?.get('wall');
-  const inviteToken = query?.get(BOARD_INVITE_PARAM);
+  // One decode of the query for every param read below. A repeated `wall` or
+  // `invite` keeps its last copy; a repeated QR param is refused.
+  const entries = queryIndex === -1 ? [] : parseDeepLinkQueryEntries(afterHost);
+  const query = new Map(entries);
+  const wallUuid = query.get('wall');
+  const inviteToken = query.get(BOARD_INVITE_PARAM);
+  const qrLanding = parseBoardQrLanding(qrLandingParams(entries));
   const kept = [
     wallUuid !== undefined && WALL_UUID.test(wallUuid) ? `wall=${wallUuid}` : null,
     isBoardInviteToken(inviteToken) ? `${BOARD_INVITE_PARAM}=${inviteToken}` : null,
+    qrLanding ? `${GYM_QR_SRC_PARAM}=${GYM_QR_SRC_VALUE}&${GYM_QR_MEDIUM_PARAM}=${qrLanding.medium}` : null,
   ].filter((part): part is string => part !== null);
   const href = kept.length > 0 ? `${path}?${kept.join('&')}` : path;
   return isSafeReturnPath(href) ? href : null;

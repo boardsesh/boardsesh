@@ -14,6 +14,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { OfflineDatabase, QueryInvalidator, SqlRunResult, SqlValue } from '../../database';
 
+// The owner check (#6824) reads the stamp; these suites are about other
+// branches, so the database always belongs to the account that is signed in.
+// drainer-outbox-owner.test.ts covers the check itself on a real database.
+vi.mock('../../sync/local-user-owner', () => ({ getLocalUserId: async () => 'climber-1' }));
+const signedInAsStampedOwner = async (): Promise<string> => 'climber-1';
+
 vi.mock('../handlers', () => ({
   processMutation: vi.fn().mockResolvedValue(undefined),
 }));
@@ -90,6 +96,7 @@ describe('a local write lock lost while clearing the outbox', () => {
 
     await drainMutationQueue(lockedDb, createRecordingQueryClient(), graphqlFetch, {
       isOnline: () => true,
+      getSignedInUserId: signedInAsStampedOwner,
       maxCycleAttempts: 0,
       sleep: async () => {},
       onMutationDeadLettered,
@@ -107,6 +114,7 @@ describe('a local write lock lost while clearing the outbox', () => {
 
     await drainMutationQueue(lockedDb, createRecordingQueryClient(), graphqlFetch, {
       isOnline: () => true,
+      getSignedInUserId: signedInAsStampedOwner,
       sleep: async () => {},
       onMutationDeadLettered,
     });
@@ -120,7 +128,12 @@ describe('a local write lock lost while clearing the outbox', () => {
 
   it('re-sends the still-pending row on the next drain', async () => {
     const lockedDb = withFailingOutboxDelete(db, 10, ANDROID_LOCK_MESSAGE);
-    const drainOptions = { isOnline: () => true, maxCycleAttempts: 0, sleep: async () => {} };
+    const drainOptions = {
+      isOnline: () => true,
+      getSignedInUserId: signedInAsStampedOwner,
+      maxCycleAttempts: 0,
+      sleep: async () => {},
+    };
 
     await drainMutationQueue(lockedDb, createRecordingQueryClient(), graphqlFetch, drainOptions);
     // The lock has cleared by the time the scheduler fires again.
@@ -144,6 +157,7 @@ describe('a genuine non-retryable failure', () => {
 
     await drainMutationQueue(db, createRecordingQueryClient(), graphqlFetch, {
       isOnline: () => true,
+      getSignedInUserId: signedInAsStampedOwner,
       sleep: async () => {},
       onMutationDeadLettered,
     });

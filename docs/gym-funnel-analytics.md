@@ -189,32 +189,108 @@ Printed QR codes point at a normal Boardsesh URL carrying two extra params:
   result is written into the address bar, so an untouched param must not visibly
   change shape.
 
-### Only `poster` can fire `Gym QR Scanned` today
+### Which code fires which event
 
-The member list reads as three live mediums. It is one. `Gym QR Scanned` fires
-from the QR landing tracker, which mounts on `/gym/[gym_slug]` and nowhere else.
-The kiosk's per-board QR (`app/components/kiosk/board-slot/board-install-qr.tsx`)
-encodes `/b/{slug}`, which renders no tracker. #4379 gave that code its
-`?src=qr&medium=kiosk` params and stopped `app/b/[board_slug]/page.tsx` dropping
-the query on the way to `/b/{slug}/{angle}/list`, so a kiosk scan is now
-attributable from a server log — but the destination still has no tracker, so it
-still fires no `Gym QR Scanned`. The poster is the only scan count there is.
+Three printed or on-screen codes share the param contract above, and they land
+on two pages, so a scan is counted by one of two events:
 
-The board poster (`/poster/b/{slug}`, #4415) is the producer for `board`: its
-code is `boardQrUrl(slug, 'board')`, `/b/{slug}?src=qr&medium=board`, with an
-unlisted Spraywall's `wall=<uuid>` in front of the pair. It lands on the same
-`/b/{slug}` hop as the kiosk code, so it fires no `Gym QR Scanned` either; a
-`board` scan is countable from a server log only.
+| `medium` | Code | Lands on | Event |
+| --- | --- | --- | --- |
+| `poster` | The gym poster (`/gym/{slug}/poster`) | `/gym/{slug}` | `Gym QR Scanned` |
+| `kiosk` | The kiosk screen's per-board install code (`app/components/kiosk/board-slot/board-install-qr.tsx`) | `/b/{slug}`, then `/b/{slug}/{angle}/list` | `Board QR Scanned` |
+| `board` | The board poster (`/poster/b/{slug}`, #4415): `boardQrUrl(slug, 'board')`, with an unlisted Spraywall's `wall=<uuid>` in front of the pair | `/b/{slug}`, then `/b/{slug}/{angle}/list` | `Board QR Scanned` |
 
-`kiosk` and `board` stay in `GYM_QR_MEDIUMS` anyway: the parser has to accept all
-three so that pointing a future kiosk or board QR at a gym page is a call-site
-change rather than a vocabulary change that invalidates codes already printed on
-walls. Until then, expect `medium: 'poster'` and only `poster` in PostHog — a
-`kiosk` or `board` row appearing means one of those codes was re-aimed at a gym
-page.
+`Gym QR Scanned` stays poster-only: its tracker mounts on `/gym/[gym_slug]` and
+nowhere else, and it carries `gymSlug`. A `kiosk` or `board` row on it means
+someone pointed a new code at a gym page.
+
+`Board QR Scanned` is in `SHARED_EVENTS`, built by `boardQrScanned`
+(`packages/shared/analytics/src/board-qr-events.ts`):
+
+| Property | Values |
+| --- | --- |
+| `medium` | `kiosk`, `board`. A `/b` landing with `medium=poster` counts nothing: no board code prints it, so `parseBoardQrLanding` (the strict parser, narrowed to `BOARD_QR_MEDIUMS`) refuses it |
+| `surface` | `web` for the www page, `app` when the code opened the app (below) |
+| `boardType` | One of the nine board types (`kilter`, `spray`, …) or null, from `boardTypeProperty` |
+
+Its properties name no board: no slug, no name, no uuid, no gym. A Spraywall's
+slug is made from its name, and its uuid opens an unlisted one, so the
+Spraywall telemetry rule applies (`docs/spray-walls.md`, "Telemetry"), and the
+payload is checked by the same test. The web SDK still stamps the page URL
+(`$current_url`, `$pathname`) on this event as on every other one, so the
+`?wall=` capability has to be scrubbed from it there, as it is for `$pageview`.
+
+`BoardQrLandingTracker` (`app/b/[board_slug]/[angle]/list/board-qr-landing-tracker.tsx`)
+fires it, on both branches of the list page: the Spraywall front door and the
+catalogue board list. Two ways it differs from the gym tracker:
+
+- **It reads the pair in the browser.** The list page's HTML is stored at the
+  edge with a shared `s-maxage`, so the server cannot say whether this visit came
+  off a code. `captureBoardQrLandingMedium` (`app/lib/board-qr-landing.ts`) parses
+  `window.location.search` with `parseBoardQrLanding`, the strict
+  `parseGymQrLanding` narrowed to the board mediums, and remembers the answer
+  for that page, so the store buttons can still read it after the strip.
+- **It keeps `?wall=`.** Only `src` and `medium` leave the address bar. The
+  `wall` param is what opens an unlisted Spraywall, and a reload without it is a
+  404.
+
+Both trackers strip one task later, like `useClaimParamStrip`: on the hydration
+commit their effect runs before Next has patched `history.replaceState`, and a
+native call then leaves the router's own URL holding the pair. Both count only
+once consent has settled (`useConsent().granted`).
+Consent resolves after the hydration commit, because the session and the
+region lookup are async, and `track()` drops anything sent before that. The
+gym tracker counted on mount until #4415, so it lost nearly every cold scan:
+read `Gym QR Scanned` from before that deploy as broken, not as zero scans. The
+address-bar cleanup does not wait for consent.
+
+Kiosk scans start counting with this event. There is no kiosk scan count before
+its deploy, so annotate the date and do not read the first week as growth.
+
+**A board code opens the app when the app is installed.** `/b/` is claimed for
+the app on both platforms (the iOS association file's `/*`, and Android's
+`pathPrefix: '/b/'`), so a phone with Boardsesh skips the web page. The app
+counts those scans itself: `app/b/[board_slug]/index.tsx` and
+`app/b/[board_slug]/[angle]/list.tsx` read the pair with the same strict
+`parseBoardQrLanding`, and `BoardRouteHandoff` fires `Board QR Scanned` with
+`surface: 'app'` once its hand-off has opened the board
+(`packages/mobile/src/lib/board-qr-scan.ts`). A dead slug, a refused wall or a
+bounce to login counts nothing. The capture waits for the SDK when consent is
+already given, and is dropped without consent. The same landing counts once in
+60 s, because a signed-out cold start can reach the route twice (the consent
+prompt's deferred destination and the sign-in replay). The browser app sends
+nothing: `app` means the store app.
+
+A signed-out scanner is sent to login first. The deep-link provider keeps the
+link through sign-in, and its allowlist (`parseBoardLinkPath` in
+`packages/mobile/src/lib/routing/board-deep-link.ts`) keeps `src` and `medium`
+as a pair `parseBoardQrLanding` accepts, rewritten to `src=qr&medium=…`. So the
+scan that brings a new installer into the app is counted when the replayed
+link opens the board, up to a day later.
+
+Read the two surfaces as two populations. `surface: 'web'` counts phones
+WITHOUT the app, plus scanners that open links in their own browser. That is
+the population the store buttons are for, so read installs against it without
+the dilution the gym page has (below). `surface: 'app'` counts climbers who
+already had the app, or installed it and signed in. Scans before the app's
+deploy fired nothing there, so annotate the date.
+
+**Printing the poster from the app.** The app's share sheet
+(`BoardShareSheet`, opened from a Spraywall's Share link and from the board
+detail sheet) offers "Print a poster" for a Public or Unlisted Spraywall or
+board. `buildSprayWallPosterUrl` (`lib/spray/spray-share.ts`) and
+`buildHomeBoardPosterUrl` (`lib/board-share/board-share-link.ts`) build
+`/poster/b/{slug}`, plus `?wall=` for an unlisted Spraywall. Never `?invite=`:
+a Followers or Invite-only board gets no poster. The page opens in the in-app
+browser, never through `Linking`, because a phone that still holds an
+association file claiming `/poster` would hand it straight back to the app.
+For a `/poster` link tapped outside a browser while that older file is still on
+the phone, `app/poster/[...rest].tsx` re-opens the same page in the in-app
+browser and puts Home underneath. Only `wall` (a uuid) and `layout` (`photo`,
+`plain`, `cards`) are carried over (`posterPageUrlFromRoute`).
 
 `/b/...` is itself a www climbing surface that #4358 is deleting. When it goes,
-the kiosk QR needs a new target; the params and the builders in
+the kiosk and board codes need a new target; the params and the builders in
 `app/lib/gym-attribution.ts` survive that move unchanged.
 
 ### A scan only counts if the page loads: iOS and the association file
@@ -286,12 +362,9 @@ nothing it did not have, since the same params on the canonical URL are read
 with no redirect involved. The `/b/{slug}` redirect still carries the QR pair
 only.
 
-Known gap, worth knowing before anyone reads a kiosk number: the board list
-(`/b/{slug}/{angle}/list`) has no equivalent of `stripGymQrParams`, so the params
-stay in the address bar after a kiosk scan. A climber who then shares that URL
-passes the attribution on, and every recipient looks like another kiosk scan.
-The gym page does strip them; the board list should too if `medium: 'kiosk'` ever
-gets a real counter.
+The board list (`/b/{slug}/{angle}/list`) strips the pair too, since
+`Board QR Scanned` (#4415): a climber who shares the URL after a kiosk or poster
+scan passes on a clean link, and a recipient is not counted as another scan.
 
 ## Amendments to issue #4374
 
@@ -341,7 +414,9 @@ bare `redirect('/b/{slug}/{angle}/list')` that renders no tracker and drops the
 query string, so a board scan cannot produce this event under any property name.
 `landingPath` would also have been a rename of a required property, which is the
 one kind of drift this whole module exists to prevent — additive extras are
-tolerable, renames split funnels.
+tolerable, renames split funnels. Board scans now have their own event,
+`Board QR Scanned` (#4415, "Which code fires which event" above), which names
+no board at all.
 
 **`directory-card` was renamed to `directory-footer`.** The directory used to
 repeat "Is this your gym?" on every unclaimed result row — 24 prompts a page —

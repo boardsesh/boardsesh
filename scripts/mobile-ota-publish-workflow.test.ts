@@ -66,7 +66,10 @@ describe('production OTA workflow reliability', () => {
     expect(promotion).toContain('scripts/mobile-ota-schema-ready.mjs');
     expect(promotion).not.toContain('main advanced since staging');
     expect(promotion).not.toContain('git diff --quiet "$GITHUB_SHA" origin/main');
-    expect(promotion).toContain('main advanced; leaving the changelog to the newer deploy');
+    expect(promotion).not.toContain('Push promoted changelog to main');
+    expect(jobBlock(pipeline, 'push-promoted-changelog')).toContain(
+      'main advanced; leaving the changelog to the newer deploy',
+    );
     expect(promotion).toContain('scripts/mobile-ota-promote.ts');
     expect(promotion).toContain('ota-stage/ios');
     expect(promotion).toContain('ota-stage/android');

@@ -56,6 +56,8 @@ export type SchedulerTriggers = {
 
 export type SchedulerOptions = {
   viewerUserId?: SyncOptions['viewerUserId'];
+  /** Threaded through to pullSync's SyncOptions — see its doc (#6824). */
+  requireOwnedDatabase?: SyncOptions['requireOwnedDatabase'];
   /** Resolve secure-store credentials once for each cycle, after its queued writes drain. */
   getViewerUserId?: () => Promise<SyncOptions['viewerUserId']>;
   getPriorityBoards?: SyncOptions['getPriorityBoards'];
@@ -180,6 +182,7 @@ async function runSync(request: SyncRunRequest): Promise<void> {
     const viewerUserId = options?.getViewerUserId ? await options.getViewerUserId() : options?.viewerUserId;
     await pullSync(db, queryClient, graphqlFetch, {
       viewerUserId,
+      requireOwnedDatabase: options?.requireOwnedDatabase,
       enabledBoards: getEnabledBoards(),
       getPriorityBoards: options?.getPriorityBoards,
       isOnline: options?.isOnline,

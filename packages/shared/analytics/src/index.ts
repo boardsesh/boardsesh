@@ -97,6 +97,20 @@ export {
   type SprayRemixSurface,
   type ClimbRemixedFromBrokenProps,
 } from './spray-wall-events';
+// Board QR scans (#4415). A cross-platform name, www-only call site today; the
+// `app` surface is for the app's own landing. Names no board, like the spray
+// events above.
+export {
+  boardQrScanned,
+  parseBoardQrLanding,
+  BOARD_QR_MEDIUMS,
+  type BoardQrMedium,
+  type BoardQrLanding,
+  type BoardQrSurface,
+  type BoardQrScannedInput,
+  type BoardQrScannedProps,
+  type BoardQrPayload,
+} from './board-qr-events';
 export {
   buildCohortPersonProperties,
   type CohortProfileInput,

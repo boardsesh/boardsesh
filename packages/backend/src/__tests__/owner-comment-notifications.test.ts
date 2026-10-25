@@ -4,18 +4,23 @@
  * commenter's account privacy. A private commenter is named to the owner. A
  * proposal has no owner, but the setter of a reported climb is still told,
  * with no reporter named when they may not see the reporter's account.
+ *
+ * Also #6558: with no broker, the inline writer asks the worker's own rule
+ * before it stores or pushes, so a live notification never names a private
+ * actor to someone who may not see them.
  */
 import { randomUUID } from 'crypto';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { and, eq, sql } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
 import { executeRows } from '@boardsesh/db/client';
 import { entityOwnerCondition, entityOwnerIdsQuery } from '@boardsesh/db/queries';
-import type { ConnectionContext, SocialEvent } from '@boardsesh/shared-schema';
+import type { ConnectionContext, Notification, SocialEvent } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
 import type { EventBroker } from '../events/event-broker';
 import { NotificationWorker } from '../events/notification-worker';
 import { publishSocialEvent } from '../events';
+import { pubsub } from '../pubsub/index';
 import { socialCommentMutations } from '../graphql/resolvers/social/comments';
 import { socialNotificationQueries } from '../graphql/resolvers/social/notifications';
 
@@ -650,5 +655,135 @@ describe('a report on your climb', () => {
     const likers = likes.map((like) => like.actorId);
     expect(likers).toHaveLength(2);
     expect(likers).toEqual(expect.arrayContaining([PUBLIC_COMMENTER, null]));
+  });
+});
+
+describe('local-only mode names an actor only to who may see them (#6558)', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  type Pushed = { recipientId: string; notification: Notification };
+
+  /** Spy on the live push and collect every notification it carried. */
+  function capturePushes(): Pushed[] {
+    const pushed: Pushed[] = [];
+    vi.spyOn(pubsub, 'publishNotificationEvent').mockImplementation((recipientId, event) => {
+      pushed.push({ recipientId, notification: event.notification });
+    });
+    return pushed;
+  }
+
+  /** A grade proposal the stranger opened on the climb: a proposal has no owner. */
+  async function strangersProposal(): Promise<string> {
+    const proposalUuid = randomUUID();
+    await db.insert(dbSchema.climbProposals).values({
+      uuid: proposalUuid,
+      climbUuid: CLIMB_UUID,
+      boardType: 'kilter',
+      proposerId: STRANGER,
+      type: 'grade',
+      proposedValue: '20',
+      currentValue: '18',
+    });
+    return proposalUuid;
+  }
+
+  const proposalEvent = (
+    type: 'proposal.voted' | 'proposal.approved' | 'proposal.rejected',
+    actorId: string,
+    proposalUuid: string,
+  ): SocialEvent => ({
+    type,
+    actorId,
+    entityType: 'proposal',
+    entityId: proposalUuid,
+    timestamp: Date.now(),
+    metadata: { climbUuid: CLIMB_UUID, boardType: 'kilter', proposalType: 'grade', value: '1' },
+  });
+
+  const proposalEvents = [
+    { eventType: 'proposal.voted', notificationType: 'proposal_vote' },
+    { eventType: 'proposal.approved', notificationType: 'proposal_approved' },
+    { eventType: 'proposal.rejected', notificationType: 'proposal_rejected' },
+  ] as const;
+
+  /** The rows one writer leaves about the proposal, starting from an empty inbox. */
+  async function rowsWrittenBy(write: () => Promise<void>, proposalUuid: string): Promise<StoredNotification[]> {
+    await db.delete(dbSchema.notifications);
+    await write();
+    return notificationsAbout(proposalUuid);
+  }
+
+  it.each(proposalEvents)(
+    'pushes nothing naming a private climber on $eventType, the same as the worker',
+    async ({ eventType }) => {
+      const proposalUuid = await strangersProposal();
+      const event = proposalEvent(eventType, PRIVATE_COMMENTER, proposalUuid);
+      const pushed = capturePushes();
+
+      // No broker in tests, so publishSocialEvent takes the inline path.
+      const inlineRows = await rowsWrittenBy(() => publishSocialEvent(event), proposalUuid);
+      expect(pushed).toEqual([]);
+      expect(inlineRows).toEqual([]);
+
+      // The worker drops it too: the stranger may not see a private account.
+      const workerRows = await rowsWrittenBy(() => captureWorkerHandler()(event), proposalUuid);
+      expect(workerRows).toEqual(inlineRows);
+      expect(pushed).toEqual([]);
+    },
+  );
+
+  it.each(proposalEvents)(
+    'still tells the proposer who acted on $eventType when they may see them',
+    async ({ eventType, notificationType }) => {
+      const proposalUuid = await strangersProposal();
+      const event = proposalEvent(eventType, PUBLIC_COMMENTER, proposalUuid);
+      const pushed = capturePushes();
+
+      const inlineRows = await rowsWrittenBy(() => publishSocialEvent(event), proposalUuid);
+      expect(inlineRows).toEqual([
+        { recipientId: STRANGER, actorId: PUBLIC_COMMENTER, type: notificationType, commentId: null },
+      ]);
+      const namedPush = [
+        {
+          recipientId: STRANGER,
+          notification: expect.objectContaining({
+            type: notificationType,
+            actorId: PUBLIC_COMMENTER,
+            actorDisplayName: PUBLIC_COMMENTER,
+          }),
+        },
+      ];
+      expect(pushed).toEqual(namedPush);
+
+      // The worker writes the same row and pushes the same actor.
+      pushed.length = 0;
+      const workerRows = await rowsWrittenBy(() => captureWorkerHandler()(event), proposalUuid);
+      expect(workerRows).toEqual(inlineRows);
+      expect(pushed).toEqual(namedPush);
+    },
+  );
+
+  it('still names a private follower to the climber they followed', async () => {
+    // A follower is introducing themselves, so their name is the point.
+    const pushed = capturePushes();
+    await publishSocialEvent({
+      type: 'follow.created',
+      actorId: PRIVATE_COMMENTER,
+      entityType: 'user',
+      entityId: STRANGER,
+      timestamp: Date.now(),
+      metadata: { followedUserId: STRANGER },
+    });
+
+    expect(pushed).toEqual([
+      {
+        recipientId: STRANGER,
+        notification: expect.objectContaining({
+          type: 'new_follower',
+          actorId: PRIVATE_COMMENTER,
+          actorDisplayName: PRIVATE_COMMENTER,
+        }),
+      },
+    ]);
   });
 });

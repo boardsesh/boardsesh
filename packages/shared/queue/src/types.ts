@@ -116,6 +116,30 @@ export type PlaylistSuggestionSource = {
    * `nextPage` is the page to ask it for. Absent means `climbs` is the whole track.
    */
   continuation?: PlaylistTrackContinuation;
+  /**
+   * Set while the player plays Up next in the middle of this list (issue
+   * #6777): Next walks the queue before the list continues, and this is the
+   * list climb it left from, so the list picks up after it once Up next is
+   * played. Absent while the player is on the list itself. Client-only, like
+   * the rest of the track.
+   */
+  resume?: PlaylistTrackResume;
+};
+
+/**
+ * The list climb a walk left for Up next. See {@link PlaylistSuggestionSource.resume}.
+ *
+ * Both halves matter: `climbUuid` is where the list picks up again, and
+ * `queueItemUuid` is the queue entry the walk left from, so stepping back onto
+ * it (Previous from the first queued climb) is back on the list, while a queued
+ * repeat of the same climb is still Up next. That entry is usually the
+ * climb's own. After Previous retraced Up next from a list climb whose older
+ * list-walk entry sits before the detour, it is that older entry instead (see
+ * selectPreviousQueueItemWithSuggestions in `@boardsesh/play-view`).
+ */
+export type PlaylistTrackResume = {
+  climbUuid: string;
+  queueItemUuid: string;
 };
 
 /** Where a track's next page comes from. See {@link PlaylistSuggestionSource}. */
@@ -163,6 +187,15 @@ export type SetCurrentClimbOptions = {
    * Left out, the context is untouched, the same as passing no options.
    */
   playlistSuggestionSource?: PlaylistSuggestionSource | null;
+  /**
+   * A queued climb a look reached went up on the wall (issue #6777): a preview
+   * that walked the queue from the current climb, then Put on the wall. Where
+   * the climb is Up next on the held track, the track keeps steering and
+   * learns where the list picks up, as Next stepping into Up next does;
+   * otherwise it is cleared, like `playlistSuggestionSource: null`. Passed
+   * instead of `playlistSuggestionSource`.
+   */
+  keepTrackIfUpNext?: boolean;
   trigger?: SetCurrentClimbTrigger;
 };
 
@@ -211,6 +244,67 @@ export type QueueClimbReadTarget = {
 
 export type QueueSearchParams = Record<string, unknown>;
 
+/**
+ * This client's latest move of the shared wall that the session has not
+ * confirmed yet: the climb it moved onto, and the climbs it moved off.
+ *
+ * A server snapshot (a reconnect FullSync, an HTTP resync) can be older than a
+ * move that is still on its way. Applied as is, it puts the wall back on the
+ * previous climb and drops the move's correlation id, so the move's own echo is
+ * then applied as if a peer sent it. The reducer instead compares the
+ * snapshot with this record:
+ *   - shows the move's climb → the session has it; the record is done.
+ *   - carries the sequence this client last applied, and shows one of
+ *     `movedOff` → nothing happened in the session since this client last
+ *     heard from it, so the move simply has not landed; keep it.
+ *   - anything else → something happened that this client never saw (its own
+ *     move landing and a crewmate moving the wall back looks exactly like a
+ *     stale climb otherwise); take the snapshot.
+ *
+ * Only a move sent to a party session is recorded, and only a snapshot read
+ * from that same session is compared with it. Every other way the current
+ * climb changes (a peer's move, a local move that is not sent) retires it.
+ * The climb itself is not copied: the record is only ever alive while the
+ * current climb is the one it names.
+ */
+export type UnconfirmedQueueMove = {
+  /** The party session the move was sent to. */
+  sessionId: string;
+  /** Correlation id of the latest send of this move; its echo confirms it. */
+  correlationId: string;
+  /** Queue-item uuid of the climb the move put on the wall. */
+  itemUuid: string;
+  shouldAddToQueue: boolean;
+  insertAfterCurrent: boolean;
+  /**
+   * Uuids of the current climbs this client moved the wall off since the
+   * session last confirmed one of its moves, oldest first.
+   *
+   * `null` means the wall had no current climb before a move (the first pick
+   * of a session, or after a clear). It is kept on purpose: the reducer's
+   * `movedOff.includes(snapshotCurrentUuid)` reads a snapshot with no current
+   * climb as `null`, so one at an unchanged sequence counts as predating the
+   * move (the session has not seen it yet) and the move is kept, exactly as for
+   * a climb it moved off. At a later sequence the snapshot wins as usual.
+   */
+  movedOff: Array<string | null>;
+  /**
+   * The chain moved off more climbs than `movedOff` keeps, so the list may lack
+   * the one the session still holds. Every snapshot then wins, as before the
+   * record existed, and a send that missed the session is given up at once.
+   */
+  movedOffTruncated: boolean;
+  /**
+   * Re-send state for a send that never reached the session (the connection
+   * had not re-joined yet, or the socket closed for good):
+   *   - `none`:              no re-send wanted.
+   *   - `awaiting-snapshot`: wait for a live snapshot to prove nobody else moved the wall.
+   *   - `ready`:             that snapshot came and still predates the move: re-send now.
+   *   - `resent`:            re-sent once. A second loss falls back to a resync.
+   */
+  resend: 'none' | 'awaiting-snapshot' | 'ready' | 'resent';
+};
+
 export type QueueState<TSearchParams extends QueueSearchParams = QueueSearchParams> = {
   /** Server sequence committed with this queue snapshot. */
   serverSequence?: number;
@@ -221,6 +315,15 @@ export type QueueState<TSearchParams extends QueueSearchParams = QueueSearchPara
   hasDoneFirstFetch: boolean;
   pendingCurrentClimbUpdates: string[];
   needsResync: boolean;
+  /** See `UnconfirmedQueueMove`. Optional so state built before it existed still type-checks. */
+  unconfirmedMove?: UnconfirmedQueueMove | null;
+  /**
+   * The party session `serverSequence` counts in: the one the last
+   * INITIAL_QUEUE_DATA named, null after one that named none. A sequence is
+   * only comparable within one session, and switching rooms keeps the old
+   * room's number until the new room's first snapshot.
+   */
+  serverSequenceSessionId?: string | null;
 };
 
 export type QueueAction<TSearchParams extends QueueSearchParams = QueueSearchParams> =
@@ -240,7 +343,24 @@ type QueueActionPayload<TSearchParams extends QueueSearchParams> =
     }
   | {
       type: 'INITIAL_QUEUE_DATA';
-      payload: { queue: ClimbQueue; currentClimbQueueItem?: ClimbQueueItem | null };
+      payload: {
+        queue: ClimbQueue;
+        currentClimbQueueItem?: ClimbQueueItem | null;
+        /**
+         * The party session this snapshot was read from. Set it only on a real
+         * server snapshot: only then is it compared with the unconfirmed move
+         * sent to that session. Any other INITIAL_QUEUE_DATA retires the move.
+         * Pass the snapshot's sequence as the action's `serverSequence`.
+         */
+        sessionId?: string;
+        /**
+         * The snapshot opened the stream this client is subscribed on, so every
+         * later change in the session reaches it as an event. Only such a
+         * snapshot can release a re-send (`awaiting-snapshot` → `ready`). An
+         * HTTP resync is a point read and leaves it unset.
+         */
+        live?: boolean;
+      };
     }
   | { type: 'SET_FIRST_FETCH'; payload: boolean }
   | { type: 'MIRROR_CLIMB' }
@@ -270,6 +390,13 @@ type QueueActionPayload<TSearchParams extends QueueSearchParams> =
          * room's and the ordered-hash watchdog resyncs it back within a minute.
          */
         pruneSuggestedAfterCurrent?: boolean;
+        /**
+         * Local moves only: the party session a setCurrentClimb mutation for
+         * this move is being sent to. Set it only when that mutation really goes
+         * out; the reducer then records the move as unconfirmed (see
+         * `UnconfirmedQueueMove`). Needs `correlationId`.
+         */
+        sessionId?: string;
       };
     }
   | { type: 'DELTA_MIRROR_CURRENT_CLIMB'; payload: { mirrored: boolean; mirroredUuid: string | null } }
@@ -277,6 +404,18 @@ type QueueActionPayload<TSearchParams extends QueueSearchParams> =
   | { type: 'SET_PLAYLIST_SUGGESTION_SOURCE'; payload: PlaylistSuggestionSource | null }
   | { type: 'REFRESH_PLAYLIST_SUGGESTION_SOURCE'; payload: PlaylistSuggestionSource }
   | { type: 'CLEANUP_PENDING_UPDATE'; payload: { correlationId: string } }
+  /**
+   * The send of the unconfirmed move with this correlation id never reached the
+   * session. `serverViewIsLive`: the client has applied the opening snapshot of
+   * its current connection's stream and is receiving its live events, so a
+   * re-send can go now; otherwise it waits for a live snapshot. Ignored unless
+   * the id is the record's latest and no re-send was asked for yet.
+   */
+  | { type: 'UNCONFIRMED_MOVE_NOT_SENT'; payload: { correlationId: string; serverViewIsLive: boolean } }
+  /** The re-send of this move went out. Ignored unless the record is `ready` for it. */
+  | { type: 'UNCONFIRMED_MOVE_RESENT'; payload: { correlationId: string } }
+  /** Forget the unconfirmed move (only the one with this correlation id, when given). */
+  | { type: 'UNCONFIRMED_MOVE_DROPPED'; payload: { correlationId?: string } }
   | { type: 'CLEANUP_PENDING_UPDATES_BATCH'; payload: { correlationIds: string[] } }
   | { type: 'CLEAR_RESYNC_FLAG' }
   | {

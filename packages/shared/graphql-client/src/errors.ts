@@ -114,6 +114,75 @@ export class GraphQLOperationError extends Error {
 }
 
 /**
+ * What the backend's `requireSession` / `requireSessionWithReconnectGrace`
+ * throw (packages/backend/src/graphql/resolvers/shared/helpers.ts). The
+ * resolver refused before doing anything: the connection the operation arrived
+ * on was not bound to a session. After a socket drop that is a mutation
+ * graphql-ws re-sent on the fresh socket before its JOIN_SESSION landed.
+ *
+ * The code is the contract. A server from before the code sends the same
+ * message with no code, so its prefix is the fallback while a deploy rolls.
+ */
+const SESSION_REQUIRED_CODE = 'SESSION_REQUIRED';
+const NOT_IN_SESSION_MESSAGE_RE = /^Must be in a session to perform this operation\b/;
+
+function isNotInSessionGraphqlError(graphqlError: { message?: unknown; extensions?: unknown }): boolean {
+  const { extensions } = graphqlError;
+  const code =
+    typeof extensions === 'object' && extensions !== null ? (extensions as { code?: unknown }).code : undefined;
+  if (code === SESSION_REQUIRED_CODE) return true;
+  return typeof graphqlError.message === 'string' && NOT_IN_SESSION_MESSAGE_RE.test(graphqlError.message);
+}
+
+/**
+ * Did the server refuse this operation because its connection had not
+ * (re)joined a session? Matches a `GraphQLOperationError` from `execute()` and a
+ * raw graphql-ws `GraphQLError[]` payload, like `isNotSessionMemberError`.
+ */
+export function isNotInSessionError(error: unknown): boolean {
+  if (error instanceof GraphQLOperationError) {
+    return error.graphqlErrors.some(isNotInSessionGraphqlError);
+  }
+  if (Array.isArray(error)) {
+    return error.some(
+      (item: unknown): boolean => typeof item === 'object' && item !== null && isNotInSessionGraphqlError(item),
+    );
+  }
+  return false;
+}
+
+/**
+ * `execute()`'s rejection when graphql-ws stopped retrying and handed the
+ * operation the socket's close event instead of a result: a close code it treats
+ * as fatal, or a spent reconnect budget. The server may or may not have run the
+ * operation before the socket went. Before this class the close event was
+ * stringified into `Error('[object Object]')`, which no caller could classify.
+ */
+export class GraphQLTransportClosedError extends Error {
+  readonly code: number;
+  readonly reason: string;
+
+  constructor(code: number, reason: string) {
+    super(`WebSocket closed before the operation finished (${code}${reason ? `: ${reason}` : ''})`);
+    this.name = 'GraphQLTransportClosedError';
+    this.code = code;
+    this.reason = reason;
+  }
+}
+
+/** Structural CloseEvent test, the same shape check graphql-ws makes. */
+export function isLikeCloseEvent(value: unknown): value is { code: number; reason: string } {
+  if (typeof value !== 'object' || value === null) return false;
+  const { code, reason } = value as { code?: unknown; reason?: unknown };
+  return typeof code === 'number' && typeof reason === 'string';
+}
+
+/** Boolean form of `instanceof GraphQLTransportClosedError`, for `unknown` catch values. */
+export function isTransportClosedError(error: unknown): boolean {
+  return error instanceof GraphQLTransportClosedError;
+}
+
+/**
  * Legacy message shape the backend emits alongside the `RATE_LIMITED` code —
  * kept as a fallback so a pre-#2763 server (code-less throw) or a subscription
  * error that arrives message-only is still recognised as a rate limit. Mirrors

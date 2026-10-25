@@ -434,6 +434,53 @@ describe('screenshot backend', () => {
     expect(readFileSync(join(fixturesDir, entry.file), 'utf8')).toBe(before);
   });
 
+  it('replays GetSession’s isPermanent only from the same set’s JoinSession reply for that session (#6591)', async () => {
+    const oldQuery = 'query GetSession($sessionId: ID!) { session(sessionId: $sessionId) { id name isPublic } }';
+    const newQuery = oldQuery.replace('isPublic', 'isPublic isPermanent');
+    const joinQuery =
+      'mutation JoinSession($sessionId: ID!, $boardPath: String!) { joinSession(sessionId: $sessionId, boardPath: $boardPath) { id isPermanent } }';
+    const crew = { id: 'crew-session', name: 'Kilter crew', isPublic: false };
+    const solo = { id: 'solo-session', name: 'Solo', isPublic: false };
+    await start({ mode: 'record', fresh: true });
+    upstream.nextGraphqlResponse = { status: 200, body: { data: { session: crew } } };
+    await postGraphql({ operationName: 'GetSession', query: oldQuery, variables: { sessionId: crew.id } });
+    upstream.nextGraphqlResponse = { status: 200, body: { data: { session: solo } } };
+    await postGraphql({ operationName: 'GetSession', query: oldQuery, variables: { sessionId: solo.id } });
+    upstream.nextGraphqlResponse = { status: 200, body: { data: { joinSession: { id: crew.id, isPermanent: true } } } };
+    await postGraphql({
+      operationName: 'JoinSession',
+      query: joinQuery,
+      variables: { sessionId: crew.id, boardPath: 'kilter/8/25/26/40' },
+    });
+    await stop();
+    const manifest = readScreenshotFixtureManifest(fixturesDir)!;
+    expect(manifest.graphql.map((recorded) => recorded.operationName).sort()).toEqual([
+      'GetSession',
+      'GetSession',
+      'JoinSession',
+    ]);
+    const before = manifest.graphql.map((recorded) => readFileSync(join(fixturesDir, recorded.file), 'utf8'));
+    await start({ mode: 'replay' });
+
+    const crewReply = await postGraphql({
+      operationName: 'GetSession',
+      query: newQuery,
+      variables: { sessionId: crew.id },
+    });
+    expect(await crewReply.json()).toEqual({ data: { session: { ...crew, isPermanent: true } } });
+    expect(hasLine('reason=document-changed')).toBe(false);
+
+    // No JoinSession reply recorded this session's permanence: still a miss.
+    const soloReply = await postGraphql({
+      operationName: 'GetSession',
+      query: newQuery,
+      variables: { sessionId: solo.id },
+    });
+    expect(await soloReply.json()).toMatchObject({ errors: [{ extensions: { code: 'SCREENSHOT_FIXTURE_MISS' } }] });
+    expect(hasLine('reason=document-changed')).toBe(true);
+    expect(manifest.graphql.map((recorded) => readFileSync(join(fixturesDir, recorded.file), 'utf8'))).toEqual(before);
+  });
+
   describe('record mode', () => {
     const profileQuery = 'query GetProfile { profile { id email displayName avatarUrl } }';
     const profileBody = {

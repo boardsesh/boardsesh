@@ -8,6 +8,10 @@ import {
   findUpcomingQueueItemsWithSuggestions,
   resolveNavigationSuggestionSource,
   resolveTrackLabel,
+  resolveTrackListClimbUuid,
+  resolveTrackPosition,
+  resolveUpNextProgress,
+  resolveUpNextTrackLabel,
   selectNextQueueItemWithSuggestions,
   type ReachableClimbPredicate,
 } from '@boardsesh/play-view';
@@ -156,14 +160,48 @@ export function usePlayNavigationModel({
   // "Projects · 4 of 23" (issue #6664): the list the player is walking, read
   // off the RESOLVED track, so the name goes the moment swipes stop following
   // it. It sits in the top bar, which doesn't swipe, so the count changes on
-  // landing and the neighbours need no label of their own.
+  // landing and the neighbours need no label of their own. While a queued
+  // climb plays in the middle of the list it says "Up next · 1 of 3" instead,
+  // and the list's own label comes back when the list picks up (#6777).
   const displayedClimbUuid = displayedClimb?.uuid;
   // A track that can't load the rest of its list ends early, so it shows no count.
   const labelSource = useMemo(() => trackForCounting(navigationSuggestionSource), [navigationSuggestionSource]);
-  const currentTrackLabel = useMemo(
-    () => resolveTrackLabel(labelSource, displayedClimbUuid),
-    [labelSource, displayedClimbUuid],
+  const trackPosition = useMemo(
+    () => resolveTrackPosition(queue, displayedQueueItem, navigationSuggestionSource, preparedQueue),
+    [queue, displayedQueueItem, navigationSuggestionSource, preparedQueue],
   );
+  const playsUpNext = trackPosition.kind === 'upNext';
+  const currentTrackLabel = useMemo(
+    () =>
+      playsUpNext
+        ? resolveUpNextTrackLabel(
+            labelSource,
+            // The same board filter as the walk, so the count is the climbs Next plays.
+            resolveUpNextProgress(
+              queue,
+              displayedQueueItem,
+              navigationSuggestionSource,
+              preparedQueue,
+              navigationBoardConfig,
+              isReachableClimb,
+            ),
+          )
+        : resolveTrackLabel(labelSource, displayedClimbUuid),
+    [
+      playsUpNext,
+      labelSource,
+      queue,
+      displayedQueueItem,
+      navigationSuggestionSource,
+      preparedQueue,
+      navigationBoardConfig,
+      isReachableClimb,
+      displayedClimbUuid,
+    ],
+  );
+  // How far down the list the walk is, for paging: while Up next plays, the
+  // list climb it picks up after, not the queued climb on screen.
+  const trackListClimbUuid = resolveTrackListClimbUuid(trackPosition, navigationSuggestionSource);
 
   // Where the queue's Now sits: one Map read off the prepared queue, never a scan.
   const currentClimbQueueItemUuid = currentClimbQueueItem?.uuid;
@@ -293,6 +331,7 @@ export function usePlayNavigationModel({
     navigationSuggestionSource,
     navigationState,
     currentTrackLabel,
+    trackListClimbUuid,
     trackEndCard,
     listWalkUpNextCount,
     nextHeaderClimb,

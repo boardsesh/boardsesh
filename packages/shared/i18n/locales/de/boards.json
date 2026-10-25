@@ -487,6 +487,11 @@
       "resetDone": "Neuer Link ist bereit. Der alte funktioniert nicht mehr.",
       "resetFailed": "Der Link konnte nicht zurückgesetzt werden. Versuch es noch mal."
     },
+    "wallPoster": {
+      "print": "Poster drucken",
+      "sprayHint": "Kleb es neben die Spraywall, damit alle es scannen können.",
+      "boardHint": "Kleb es neben das Board, damit alle es scannen können."
+    },
     "sprayVisibility": {
       "label": "Wer sie sehen kann",
       "private": "Privat",

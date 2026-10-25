@@ -53,6 +53,7 @@ import {
 import { selectOfflineMode, useConnectivityField } from '../lib/connectivity/use-connectivity';
 import { BoardDisambiguationSheet } from '../components/board-discovery/BoardDisambiguationSheet';
 import { fetchBoardByUuid } from '../lib/graphql/hooks/fetch-board-by-uuid';
+import { useActiveBoard } from '../lib/graphql/use-active-board';
 import { boardUuidOrNull } from '../lib/boards/board-identity';
 import { DevScenarioOverridesHost } from '../dev/stories/load';
 
@@ -92,7 +93,9 @@ export type BoardBindingIdentity = Pick<ResolvedBoard, 'boardId'> & { boardUuid?
 
 type BoardBindingResolutionKind = 'serial' | 'config' | 'uuid';
 type BoardBindingIntent =
-  | { kind: 'serial'; args: ResolveBoardArgs }
+  // `selectedBoardId` is the selected board's own numeric id when the connect
+  // started, kept for the disambiguation pick that settles this intent later.
+  | { kind: 'serial'; args: ResolveBoardArgs; selectedBoardId: number | null }
   | { kind: 'config'; args: ResolveBoardConfigArgs }
   | { kind: 'uuid'; args: ResolveBoardUuidArgs };
 
@@ -250,6 +253,37 @@ async function uuidForResolvedBoard(
   }
 }
 
+/**
+ * The uuid a serial binding to `boundBoardId` may present, or null.
+ *
+ * A serial is not a board's link. The uuid a serial binding carries starts from
+ * one the climber already held, the board they had selected when they
+ * connected, and that uuid must resolve to the bound board. The resolver
+ * follows a merged-away uuid to the survivor's id, so a merge passes that check
+ * alone; `uuidForResolvedBoard` then compares the selection's own numeric id,
+ * as the uuid binding does. On a mismatch the binding carries the survivor's
+ * uuid that `board(uuid)` returns for the held one, or no uuid. Each read goes
+ * out only while the binding is still current, because a resolve stamps
+ * presence membership on the server.
+ */
+async function heldUuidForBoundBoard(
+  resolveBoardForUuid: (args: { boardUuid: string }) => Promise<ResolvedBoard>,
+  held: ResolveBoardUuidArgs,
+  boundBoardId: number,
+  isStillCurrent: () => boolean,
+): Promise<string | null> {
+  if (!isStillCurrent()) return null;
+  let heldBoard: ResolvedBoard;
+  try {
+    heldBoard = await resolveBoardForUuid({ boardUuid: held.boardUuid });
+  } catch {
+    // The binding stays numeric when the held uuid cannot be verified.
+    return null;
+  }
+  if (heldBoard.boardId !== boundBoardId || !isStillCurrent()) return null;
+  return uuidForResolvedBoard(resolveBoardForUuid, held, boundBoardId, isStillCurrent);
+}
+
 export function MobileBoardPresenceProvider({ children }: { children: ReactNode }) {
   // Always-on: presence shipped GA, so the provider is never inert. `enabled` is
   // kept (constant true here) so consumers and the outside-provider fallback can
@@ -353,6 +387,14 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
   // reads the serial it must confirm against.
   const pendingDisambiguationRef = useRef(pendingDisambiguation);
   pendingDisambiguationRef.current = pendingDisambiguation;
+  // The climber's selected board: the Bluetooth connect's `selectedBoardUuid`
+  // comes from it, and its own numeric id is what exposes a uuid that a merge
+  // redirected (`heldUuidForBoundBoard`). Same `['activeBoard']` cache entry
+  // the Bluetooth wrapper and the drawer read. Held in a ref, so a board switch
+  // leaves the callbacks and the controls value alone.
+  const { data: selectedBoard } = useActiveBoard();
+  const selectedBoardRef = useRef(selectedBoard);
+  selectedBoardRef.current = selectedBoard;
 
   const settleActiveResolution = useCallback(
     (pendingResolution: PendingBoardBindingResolution, binding: BoardBindingIdentity | null): boolean => {
@@ -452,8 +494,21 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
         });
       }
 
-      bindingIntentRef.current = { kind: 'serial', args: { ...args } };
+      // The selection's own numeric id, read when the connect starts. Only a
+      // selection written in this app run carries it: the snapshot on disk is
+      // sanitized without `boardId`, so before the active-board self-heal (or a
+      // pick) it is null, as it is for a selection that names another board.
+      // Null keeps the plain resolve check, and the self-heal is the repair.
+      const storedSelection = selectedBoardRef.current;
+      const selectedBoardId =
+        args.selectedBoardUuid && storedSelection?.uuid === args.selectedBoardUuid
+          ? (storedSelection.boardId ?? null)
+          : null;
+      bindingIntentRef.current = { kind: 'serial', args: { ...args }, selectedBoardId };
       const newResolution = beginResolution(resolutionKey, 'serial');
+      const isStillCurrent = () =>
+        pendingBoardBindingResolutionRef.current === newResolution &&
+        isAuthCredentialGenerationCurrent(newResolution.credentialGeneration);
       void activeClient
         .resolveBoardCandidatesForSerial(args)
         .then(async (result) => {
@@ -463,17 +518,19 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
             return;
           }
           if (result.board) {
-            let selectedUuid: string | null = null;
-            if (args.selectedBoardUuid && activeClient.resolveBoardForUuid) {
-              try {
-                const selectedBoard = await activeClient.resolveBoardForUuid({ boardUuid: args.selectedBoardUuid });
-                if (selectedBoard.boardId === result.board.boardId) selectedUuid = args.selectedBoardUuid;
-              } catch {
-                /* Serial binding stays numeric when the selected UUID cannot be verified. */
-              }
-            }
+            const boundBoardId = result.board.boardId;
+            const resolveBoardForUuid = activeClient.resolveBoardForUuid;
+            const selectedUuid =
+              args.selectedBoardUuid && resolveBoardForUuid
+                ? await heldUuidForBoundBoard(
+                    resolveBoardForUuid,
+                    { boardUuid: args.selectedBoardUuid, boardId: selectedBoardId },
+                    boundBoardId,
+                    isStillCurrent,
+                  )
+                : null;
             settleActiveResolution(newResolution, {
-              boardId: result.board.boardId,
+              boardId: boundBoardId,
               ...(selectedUuid ? { boardUuid: selectedUuid } : {}),
             });
             return;
@@ -678,19 +735,23 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
         });
         // A serial is not a board's link, so a candidate's uuid is never paired
         // with the binding. Only a uuid the climber already held (the board they
-        // had selected when they connected), verified to be the chosen board the
-        // same way the single-board branch verifies it, opens its presence.
+        // had selected when they connected), or the survivor's uuid `board(uuid)`
+        // returns for it after a merge, opens its presence, verified to be the
+        // chosen board the same way the single-board branch verifies it. The
+        // selection's numeric id is the one captured when the connect started.
         const intent = bindingIntentRef.current;
-        const heldBoardUuid = intent?.kind === 'serial' ? (intent.args.selectedBoardUuid ?? null) : null;
-        let verifiedBoardUuid: string | null = null;
-        if (heldBoardUuid && resolved.boardId === chosenBoardId && activeClient.resolveBoardForUuid) {
-          try {
-            const heldBoard = await activeClient.resolveBoardForUuid({ boardUuid: heldBoardUuid });
-            if (heldBoard.boardId === chosenBoardId) verifiedBoardUuid = heldBoardUuid;
-          } catch {
-            /* The chosen board stays bound by its numeric id alone. */
-          }
-        }
+        const heldBoard: ResolveBoardUuidArgs | null =
+          intent?.kind === 'serial' && intent.args.selectedBoardUuid
+            ? { boardUuid: intent.args.selectedBoardUuid, boardId: intent.selectedBoardId }
+            : null;
+        const resolveBoardForUuid = activeClient.resolveBoardForUuid;
+        const isStillCurrent = () =>
+          pendingBoardBindingResolutionRef.current === pendingResolution &&
+          isAuthCredentialGenerationCurrent(pendingResolution.credentialGeneration);
+        const verifiedBoardUuid =
+          heldBoard && resolved.boardId === chosenBoardId && resolveBoardForUuid
+            ? await heldUuidForBoundBoard(resolveBoardForUuid, heldBoard, chosenBoardId, isStillCurrent)
+            : null;
         settleActiveResolution(pendingResolution, {
           boardId: resolved.boardId,
           ...(verifiedBoardUuid ? { boardUuid: verifiedBoardUuid } : {}),

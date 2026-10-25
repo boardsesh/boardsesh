@@ -75,6 +75,7 @@ vi.mock('../../sheet-snap-points', () => ({
   MEDIUM_LARGE_SNAP_POINTS: ['50%', '90%'],
 }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
+vi.mock('../../../lib/open-url', () => ({ openExternalUrl: vi.fn(async () => {}) }));
 vi.mock('../../../theme/tokens', () => ({
   spacing: { 2: 8, 3: 12, 4: 16, 6: 24 },
   borderRadius: { lg: 12 },
@@ -83,6 +84,7 @@ vi.mock('../../../theme/tokens', () => ({
 import { BoardShareSheet } from '../BoardShareSheet';
 import { Share } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
+import { openExternalUrl } from '../../../lib/open-url';
 
 const URL = 'https://www.boardsesh.com/b/garage/40/list?wall=abc';
 
@@ -236,5 +238,80 @@ describe('BoardShareSheet for a home board', () => {
       />,
     );
     expect(getByText('mobile.boardShare.loadFailed')).toBeTruthy();
+  });
+});
+
+const POSTER_URL = 'https://www.boardsesh.com/poster/b/garage?wall=abc';
+
+describe('BoardShareSheet poster', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('opens the poster page in the in-app browser', () => {
+    const { getByText } = render(
+      <BoardShareSheet
+        visible
+        onDismiss={vi.fn()}
+        shareUrl={URL}
+        wallName="Garage"
+        visibility="unlisted"
+        posterUrl={POSTER_URL}
+      />,
+    );
+    expect(getByText('mobile.wallPoster.sprayHint')).toBeTruthy();
+    act(() => getByText('mobile.wallPoster.print').click());
+    expect(openExternalUrl).toHaveBeenCalledWith(POSTER_URL, 'board-share-poster');
+  });
+
+  it("says board, not wall, under a home board's poster", () => {
+    const { getByText, queryByText } = render(
+      <BoardShareSheet
+        visible
+        onDismiss={vi.fn()}
+        shareUrl="https://www.boardsesh.com/b/garage"
+        wallName="Garage"
+        visibility="public"
+        subject="board"
+        posterUrl="https://www.boardsesh.com/poster/b/garage"
+      />,
+    );
+    expect(getByText('mobile.wallPoster.boardHint')).toBeTruthy();
+    expect(queryByText('mobile.wallPoster.sprayHint')).toBeNull();
+  });
+
+  it.each([
+    ['no poster URL', undefined],
+    ['a null poster URL', null],
+  ])('hides the action with %s', (_label, posterUrl) => {
+    const { queryByText } = render(
+      <BoardShareSheet
+        visible
+        onDismiss={vi.fn()}
+        shareUrl={URL}
+        wallName="Garage"
+        visibility="public"
+        posterUrl={posterUrl}
+      />,
+    );
+    expect(queryByText('mobile.wallPoster.print')).toBeNull();
+    expect(queryByText('mobile.wallPoster.sprayHint')).toBeNull();
+  });
+
+  // An invite token taped to a wall is no longer an invite.
+  it('never offers a poster for an invite link, whatever the caller passes', () => {
+    const { queryByText } = render(
+      <BoardShareSheet
+        visible
+        onDismiss={vi.fn()}
+        shareUrl={INVITE_URL}
+        wallName="Garage"
+        visibility="invite"
+        subject="board"
+        posterUrl="https://www.boardsesh.com/poster/b/the-garage"
+      />,
+    );
+    expect(queryByText('mobile.wallPoster.print')).toBeNull();
+    expect(openExternalUrl).not.toHaveBeenCalled();
   });
 });
