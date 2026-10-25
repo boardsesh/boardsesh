@@ -9,6 +9,7 @@ import { POSTHOG_PERSON_DELETION_QUEUE } from '@boardsesh/db/job-queue-schema';
 import {
   type PersistDiscoveredIds,
   PosthogPersonDeletionRetryableError,
+  MAX_IDENTIFIED_AS_PER_ANONYMOUS_ID,
   SPLIT_PERSON_QUERY,
   deletePosthogPerson,
   enqueuePosthogPersonDeletion,
@@ -109,6 +110,12 @@ describe('deletePosthogPerson, discovery step', () => {
     expect(SPLIT_PERSON_QUERY).toContain("event = '$identify'");
     expect(SPLIT_PERSON_QUERY).toContain('distinct_id = {account_id}');
     expect(SPLIT_PERSON_QUERY).toContain('LIMIT 999');
+  });
+
+  it('bounds the identified-as aggregate one past the crowded cutoff', () => {
+    expect(MAX_IDENTIFIED_AS_PER_ANONYMOUS_ID).toBe(100);
+    expect(SPLIT_PERSON_QUERY).toContain(`groupUniqArray(${MAX_IDENTIFIED_AS_PER_ANONYMOUS_ID + 1})(distinct_id)`);
+    expect(SPLIT_PERSON_QUERY).not.toContain('groupUniqArray(distinct_id)');
   });
 
   it('persists what it found and deletes nothing: the delete step does that', async () => {

@@ -88,7 +88,7 @@ const MAX_DISTINCT_ID_LENGTH = 200;
  * climber's device (a kiosk, or ids sent with the public key): skipped like a
  * shared phone. It also caps one discovery's account check near 101,000 ids.
  */
-const MAX_IDENTIFIED_AS_PER_ANONYMOUS_ID = 100;
+export const MAX_IDENTIFIED_AS_PER_ANONYMOUS_ID = 100;
 /** Ids per `users` query: postgres.js refuses a query with 65,534 parameters. */
 const ACCOUNT_LOOKUP_CHUNK_SIZE = 1000;
 
@@ -362,9 +362,13 @@ function logDroppedAnonymousIds(
  * One HogQL query returns each such id with every distinct id that ever
  * identified from it, so an id another account also signed in from (a shared
  * phone) can be skipped: deleting it would erase that account's person.
+ *
+ * `groupUniqArray(N)` stops ClickHouse collecting past N ids, so a crafted
+ * anonymous id cannot make the reply huge. The +1 keeps the "more than
+ * MAX_IDENTIFIED_AS_PER_ANONYMOUS_ID" check able to fire: 101 entries means crowded.
  */
 export const SPLIT_PERSON_QUERY = `
-  SELECT toString(properties.$anon_distinct_id) AS anon_id, groupUniqArray(distinct_id) AS identified_as
+  SELECT toString(properties.$anon_distinct_id) AS anon_id, groupUniqArray(${MAX_IDENTIFIED_AS_PER_ANONYMOUS_ID + 1})(distinct_id) AS identified_as
   FROM events
   WHERE event = '$identify'
     AND toString(properties.$anon_distinct_id) IN (
