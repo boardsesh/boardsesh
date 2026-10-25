@@ -1,4 +1,3 @@
-import { PressableSurface } from '../src/components/PressableSurface';
 // Import first so Sentry.init() runs (and installs its global handler) before
 // any other module side-effect — notably posthog-client's analytics init and the
 // worklet-serialization global-error-capture install, which must wrap Sentry's
@@ -15,18 +14,11 @@ import { markStartup } from '../src/lib/profiling/startup-profile';
 import { initializeUserDataExportDownloads } from '../src/lib/user-data-export-download';
 import { startHoldShapeSystemDefaultSync } from '../src/lib/hold-shape-system-default';
 import { useCallback, useEffect, useLayoutEffect, useRef, useMemo, useState, type ReactNode } from 'react';
-import { LogBox, StyleSheet, View } from 'react-native';
+import { LogBox, StyleSheet } from 'react-native';
 // Navigation theme comes from expo-router's vendored React Navigation. Expo
 // SDK 57's expo-router is not compatible with a separately-installed
 // @react-navigation/* package, so import these from `expo-router` directly.
-import {
-  Stack,
-  SplashScreen,
-  router,
-  ThemeProvider as NavigationThemeProvider,
-  DarkTheme,
-  DefaultTheme,
-} from 'expo-router';
+import { Stack, SplashScreen, ThemeProvider as NavigationThemeProvider, DarkTheme, DefaultTheme } from 'expo-router';
 import * as Updates from 'expo-updates';
 import { SystemBars } from 'react-native-edge-to-edge';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -77,27 +69,17 @@ import { useActiveBoard } from '../src/lib/graphql/use-active-board';
 import { useActiveBoardSelfHeal } from '../src/lib/boards/use-active-board-self-heal';
 import { useActiveBoardFollowHeal } from '../src/lib/boards/use-active-board-follow-heal';
 import { ScreenshotBoardAutoActivator } from '../src/components/screenshot-board-auto-activator';
-import { Text } from '../src/components/Text';
-import { Icon } from '../src/components/Icon';
-import { brandColors } from '../src/theme/colors';
 import { iosDarkColors } from '../src/theme/ios-colors';
-import { spacing } from '../src/theme/tokens';
 import { glassStackScreenOptions } from '../src/theme/navigation';
 import { ensurePlayDrawerSectionsLoaded } from '../src/lib/play-drawer-sections-preference';
 import { ensureClimbRowLegacySynced } from '../src/lib/climb-row-display-preference';
 import { reportError, reportHandledError } from '../src/lib/error-reporting';
-import { track, getAnalyticsClient } from '../src/lib/analytics';
-import { performOtaRecovery, type OtaRecoveryPhase } from '../src/lib/ota-recovery';
+import { track } from '../src/lib/analytics';
 import { watchForSchemaDowngrade } from '../src/lib/schema-downgrade-recovery';
 import { runOtaOperation } from '../src/lib/ota-operation-owner';
-import {
-  captureOtaReloadReceipt,
-  fetchOwnedOtaUpdate,
-  isOtaReloadReceiptCurrent,
-  waitForOtaUpdatesIdle,
-  waitForOtaReloadReceipt,
-} from '../src/lib/qa/qa-surf';
+import { fetchOwnedOtaUpdate, waitForOtaUpdatesIdle } from '../src/lib/qa/qa-surf';
 import { isChunkLoadError, markRootLayoutLoaded } from '../src/lib/chunk-load-recovery';
+import { CrashScreen, type ErrorBoundaryProps } from '../src/components/CrashScreen';
 import { ChunkLoadErrorScreen } from '../src/components/ChunkLoadErrorScreen';
 import { loadRequiredFonts } from '../src/lib/required-fonts';
 import { loadSectionExpandState } from '../src/lib/section-expand-store';
@@ -138,7 +120,6 @@ import {
   runChannelOverrideCleanupOnce,
 } from '../src/lib/ota-channel-override-cleanup-run';
 import { setOtaBranchSurfingState } from '../src/lib/ota-branch-surfing-state';
-import { reportScreenshotSmokeError } from '../src/lib/screenshot-smoke';
 // Side-effect import: instantiates the Android-only MemoryTrim native module
 // (expo-modules-core creates modules lazily on first JS access), whose Kotlin
 // OnCreate registers the Glide trim-on-UI_HIDDEN callback. No-op on iOS.
@@ -235,245 +216,12 @@ function OtaBranchSurfingInitializer() {
   return null;
 }
 
-const errorStyles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: spacing[6],
-  },
-  iconContainer: {
-    marginBottom: spacing[5],
-  },
-  title: {
-    textAlign: 'center',
-    marginBottom: spacing[2],
-  },
-  message: {
-    textAlign: 'center',
-    marginBottom: spacing[8],
-    opacity: 0.7,
-  },
-  buttonRow: {
-    gap: spacing[3],
-    width: '100%',
-    maxWidth: 280,
-  },
-  primaryButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 52,
-    borderRadius: 12,
-    backgroundColor: brandColors.primaryFill,
-    paddingHorizontal: spacing[5],
-  },
-  secondaryButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 52,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 12,
-    borderColor: brandColors.primary,
-    paddingHorizontal: spacing[5],
-  },
-  pressedButton: {
-    opacity: 0.72,
-  },
-  disabledButton: {
-    opacity: 0.5,
-  },
-  buttonLabel: {
-    fontWeight: '700',
-  },
-  statusText: {
-    textAlign: 'center',
-    marginTop: spacing[4],
-    maxWidth: 280,
-    opacity: 0.7,
-  },
-});
-
-type ErrorBoundaryProps = {
-  error: Error;
-  retry: () => void;
-};
-
-// Recovery-button UI state. `busy` carries the live phase so the button label
-// doubles as a status line; the two terminal non-reload results each surface a
-// short message under the buttons (the reload results restart the app, so they
-// never render a follow-up state here).
-type RecoveryState =
-  | { kind: 'idle' }
-  | { kind: 'busy'; phase: OtaRecoveryPhase }
-  | { kind: 'no-fix-available' }
-  | { kind: 'failed' };
-
 export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
   // A route chunk that failed to load (web only; the native predicate is
   // constant false) gets its own screen: this one's "Try again" and "Go home"
   // cannot recover it, a page load can (#5611).
   if (isChunkLoadError(error)) return <ChunkLoadErrorScreen error={error} />;
   return <CrashScreen error={error} retry={retry} />;
-}
-
-function CrashScreen({ error, retry }: ErrorBoundaryProps) {
-  // No useTranslation here: Expo Router renders this before any of our
-  // providers mount, so i18next isn't initialized. Calling the hook would
-  // return raw key strings exactly when the user most needs readable copy.
-  // Hardcode English as the last-resort safe fallback.
-  const reportedRef = useRef<Error | null>(null);
-  const [recovery, setRecovery] = useState<RecoveryState>({ kind: 'idle' });
-
-  // The check/fetch/reload calls throw ERR_UPDATES_DISABLED in dev, so only offer
-  // recovery on a real store/TestFlight binary that ships with updates enabled.
-  const showRecoveryButton = Updates.isEnabled && !__DEV__;
-  const isBusy = recovery.kind === 'busy';
-
-  useEffect(() => {
-    if (reportedRef.current !== error) {
-      reportedRef.current = error;
-      reportError(error);
-      // The E2E gate's smoke fails on this ping (docs/mobile-e2e-gate.md): iOS
-      // Maestro cannot see this screen, so the screen says it mounted. Inlined
-      // so a normal build strips it.
-      if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') reportScreenshotSmokeError(error);
-      // Module-level track() works without AnalyticsProvider (it drives the same
-      // lazily-built PostHog client), so the crash screen is observable. Tag the
-      // OTA cohort so a broken-bundle spike is sliceable by update id / channel.
-      track('Error Screen Shown', {
-        ota_update_id: Updates.updateId,
-        ota_is_embedded: Updates.isEmbeddedLaunch,
-        ota_channel: Updates.channel,
-      });
-    }
-  }, [error]);
-
-  const handleGoHome = () => {
-    router.replace('/(tabs)/home');
-  };
-
-  const handleCheckForFix = useCallback(async () => {
-    setRecovery({ kind: 'busy', phase: 'checking' });
-    const { result, error: recoveryError } = await performOtaRecovery(
-      {
-        runOperation: runOtaOperation,
-        waitForIdle: waitForOtaUpdatesIdle,
-        checkForUpdate: () => Updates.checkForUpdateAsync(),
-        fetchUpdate: fetchOwnedOtaUpdate,
-        reload: () => Updates.reloadAsync(),
-        captureReloadReceipt: captureOtaReloadReceipt,
-        waitForReloadReceipt: waitForOtaReloadReceipt,
-        isReloadReceiptCurrent: isOtaReloadReceiptCurrent,
-      },
-      {
-        onPhase: (phase) => setRecovery({ kind: 'busy', phase }),
-        // Track the reloaded-* outcomes BEFORE the reload — a post-return track()
-        // would race the app restart and typically be lost. track() only enqueues,
-        // so flush best-effort (fire-and-forget; the reload follows immediately, we
-        // don't delay it — delivery is best-effort) to give it a window.
-        onBeforeReload: (result) => {
-          track('OTA Recovery Attempted', { result });
-          void getAnalyticsClient()?.flush();
-        },
-      },
-    );
-    // The reloaded-* outcomes are tracked in onBeforeReload above (before the
-    // restart). Only these non-reload terminal results reliably reach here, so
-    // guard the post-return track to avoid double-counting a reloaded-* result if
-    // JS happens to survive the reload.
-    if (result === 'failed' || result === 'no-fix-available') {
-      track('OTA Recovery Attempted', { result });
-    }
-    if (result === 'failed') {
-      reportHandledError(recoveryError, { tags: { source: 'ota-error-screen' } });
-      setRecovery({ kind: 'failed' });
-    } else if (result === 'no-fix-available') {
-      setRecovery({ kind: 'no-fix-available' });
-    }
-    // A reloaded-* result means the app is restarting — leave the busy state be.
-  }, []);
-
-  const recoveryLabel =
-    recovery.kind === 'busy' ? (recovery.phase === 'downloading' ? 'Downloading…' : 'Checking…') : 'Check for a fix';
-
-  return (
-    <View style={errorStyles.container}>
-      <View style={errorStyles.iconContainer}>
-        {/* Static brand colour on purpose: this boundary can render outside the
-            ThemeProvider (the crash screen), where useTheme() would throw — so
-            it can't read the scheme-aware brand. */}
-        <Icon name="warning" size={48} color={brandColors.warning} />
-      </View>
-      <Text variant="title2" style={errorStyles.title}>
-        Something went wrong
-      </Text>
-      <Text variant="body" style={errorStyles.message}>
-        The app hit an unexpected error. You can try again or head back home.
-      </Text>
-      <View style={errorStyles.buttonRow}>
-        {/* On a real binary, offer the one-tap OTA recovery first: check for a
-            newer bundle (or a published rollback directive), download it, and
-            reload onto it. It takes the primary slot; "Try again" demotes to the
-            secondary style. In dev / when the button is hidden, "Try again" keeps
-            the primary style. */}
-        {showRecoveryButton && (
-          <PressableSurface
-            onPress={() => void handleCheckForFix()}
-            disabled={isBusy}
-            accessibilityRole="button"
-            accessibilityLabel="Check for a fix"
-            accessibilityState={{ disabled: isBusy, busy: isBusy }}
-            style={({ pressed }) => [
-              errorStyles.primaryButton,
-              pressed && errorStyles.pressedButton,
-              isBusy && errorStyles.disabledButton,
-            ]}
-          >
-            <Text variant="body" color={brandColors.onPrimary} style={errorStyles.buttonLabel}>
-              {recoveryLabel}
-            </Text>
-          </PressableSurface>
-        )}
-        <PressableSurface
-          onPress={retry}
-          accessibilityRole="button"
-          accessibilityLabel="Try again"
-          style={({ pressed }) => [
-            showRecoveryButton ? errorStyles.secondaryButton : errorStyles.primaryButton,
-            pressed && errorStyles.pressedButton,
-          ]}
-        >
-          <Text
-            variant="body"
-            color={showRecoveryButton ? brandColors.primary : brandColors.onPrimary}
-            style={errorStyles.buttonLabel}
-          >
-            Try again
-          </Text>
-        </PressableSurface>
-        <PressableSurface
-          onPress={handleGoHome}
-          accessibilityRole="button"
-          accessibilityLabel="Go home"
-          style={({ pressed }) => [errorStyles.secondaryButton, pressed && errorStyles.pressedButton]}
-        >
-          <Text variant="body" color={brandColors.primary} style={errorStyles.buttonLabel}>
-            Go home
-          </Text>
-        </PressableSurface>
-      </View>
-      {recovery.kind === 'no-fix-available' && (
-        <Text variant="footnote" style={errorStyles.statusText}>
-          No fix available yet — try again in a few minutes.
-        </Text>
-      )}
-      {recovery.kind === 'failed' && (
-        <Text variant="footnote" style={errorStyles.statusText}>
-          Couldn&apos;t reach the update server. Check your connection and try again.
-        </Text>
-      )}
-    </View>
-  );
 }
 
 // Wires real React Query data into FavoritesProvider and PlaylistsProvider.

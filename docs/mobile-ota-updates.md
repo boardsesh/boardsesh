@@ -2245,7 +2245,7 @@ corrected commit) on `main` so the next publish moves the fleet forward again.
 ### Crash-screen recovery button ("Check for a fix")
 
 When a bad OTA crashes the app hard enough to reach the root `ErrorBoundary`
-(`packages/mobile/app/_layout.tsx`), the built-in "Try again" only re-renders the same broken
+(`packages/mobile/app/_layout.tsx`, screen in `src/components/CrashScreen.tsx`), the built-in "Try again" only re-renders the same broken
 in-memory bundle. The **"Check for a fix"** button next to it runs `checkForUpdateAsync →
 fetchUpdateAsync → reloadAsync` in one tap, so it applies **both** a newer fixed bundle **and** a
 published rollback-to-embedded directive (and any update already downloaded in the background). That
