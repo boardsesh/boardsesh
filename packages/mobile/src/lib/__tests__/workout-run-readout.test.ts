@@ -220,7 +220,7 @@ describe('formatWorkoutStageParts', () => {
     });
   });
 
-  it('carries a limit climb\'s try with the numbers, never with the name', () => {
+  it("carries a limit climb's try with the numbers, never with the name", () => {
     const position = describeWorkoutRun(run, ['w1', 'w2', 'm1'], 'm1')?.current;
     if (!position) throw new Error('expected a current climb');
     const parts = formatWorkoutStageParts(position, 3, t);
