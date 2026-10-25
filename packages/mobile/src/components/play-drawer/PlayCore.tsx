@@ -9,7 +9,6 @@ import {
   type RefObject,
 } from 'react';
 import { usePrivacyCredentialScope, usePrivacyScopedState } from '../../hooks/use-privacy-scoped-state';
-import { getCredentialGeneration } from '../../lib/privacy/privacy-cache';
 import {
   AccessibilityInfo,
   Platform,
@@ -641,8 +640,7 @@ export function PlayCore({
   const matchingEnhancement =
     enhancementSnapshot?.targetKey ===
       getPlayCoreEnhancementTargetKey(boardName, displayedClimb?.uuid ?? null, angle) &&
-    enhancementSnapshot.credentialGeneration === composerCredentialScope &&
-    enhancementSnapshot.credentialGeneration === getCredentialGeneration()
+    enhancementSnapshot.credentialGeneration === composerCredentialScope
       ? enhancementSnapshot
       : null;
   const serverFavorited = matchingEnhancement?.serverFavorited;
