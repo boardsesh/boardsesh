@@ -11,6 +11,9 @@
 //   wall moved by this phone
 //   settings edit, stage      CONFIGURE with this phone's own pacing, 400 ms
 //   change on the wall        debounced, anchor NOW / CLEAR at a stage boundary
+//                             (no settings edit in a crew: RestTimerCrewPublisher)
+//   crew pacing edit          CONFIGURE with the crew's config and that one
+//                             change, at once (editCrewRestPacing)
 // and, on the subscribe seed, an ARM for a timer this phone runs that the
 // server does not have (it was armed before the session, or the server lost it).
 //
@@ -23,18 +26,26 @@ import type { SessionRestCadenceInput, SetSessionRestCadencePayload } from '@boa
 import {
   buildArmInput,
   buildConfigureInput,
+  buildCrewPacingEditInput,
   buildRestartInput,
   buildTickInput,
   getLastCrewCadenceSnapshot,
   handleCrewCadenceChange,
   normalizeCrewConfig,
+  noteCrewClockArmedHere,
+  noteCrewClockTurnedOffHere,
   toCrewConfigInput,
   type CrewAnchorRequest,
   type CrewCadenceSnapshot,
   type CrewConfigFields,
   type OwnRestPacing,
 } from './crew-rest-cadence';
-import type { LocalRestTimerAction, RestTimerState } from './rest-timer-store';
+import {
+  dropCrewRestPacingDraft,
+  settleCrewRestPacingDraft,
+  type LocalRestTimerAction,
+  type RestTimerState,
+} from './rest-timer-store';
 
 /** Settings edits and stage changes inside this window go out as one CONFIGURE. */
 export const CREW_CONFIGURE_DEBOUNCE_MS = 400;
@@ -59,9 +70,11 @@ export type CrewRestPublisher = {
   dispose: () => void;
 };
 
-type PendingConfigure = { anchor: CrewAnchorRequest; elapsedFromLocalAnchor: boolean };
+/** `boundaryAtMs`: when an anchor NOW's beat started on this phone, so the crew's counts from the same instant. */
+type PendingConfigure = { anchor: CrewAnchorRequest; boundaryAtMs: number | null };
 
-type QueuedSend = { input: SessionRestCadenceInput; config: CrewConfigFields | null };
+/** `onSettled` runs once the server answered, or the send failed. */
+type QueuedSend = { input: SessionRestCadenceInput; config: CrewConfigFields | null; onSettled?: () => void };
 
 export function createCrewRestPublisher({
   sessionId,
@@ -100,7 +113,7 @@ export function createCrewRestPublisher({
       void pump();
       return;
     }
-    const { input, config } = queued;
+    const { input, config, onSettled } = queued;
     sending = true;
     const sentAtMs = nowMs();
     try {
@@ -118,6 +131,7 @@ export function createCrewRestPublisher({
       if (!disposed) report(error, input.action);
     } finally {
       sending = false;
+      if (!disposed) onSettled?.();
     }
     void pump();
   }
@@ -155,7 +169,7 @@ export function createCrewRestPublisher({
         own,
         previous: state.crew?.config ?? lastPublishedConfig,
         anchor: request.anchor,
-        elapsedFromLocalAnchor: request.elapsedFromLocalAnchor,
+        boundaryAtMs: request.boundaryAtMs,
         state,
         nowMs: nowMs(),
       });
@@ -200,11 +214,33 @@ export function createCrewRestPublisher({
     return getState().crew?.config ?? getOwnPacing();
   }
 
+  /**
+   * A crew pacing edit from the timer's controls. Built when it goes out, from
+   * the draft as it is then, so taps that queue up behind one send go out as
+   * one; the draft goes once the server answers the CONFIGURE that carries it.
+   */
+  function enqueueCrewPacingEdit(): void {
+    enqueue(() => {
+      if (!armedHere()) return null;
+      const state = getState();
+      const draft = state.crewPacingDraft;
+      if (draft === null || state.crew?.sessionId !== sessionId) return null;
+      const settle = () => settleCrewRestPacingDraft(draft);
+      const input = buildCrewPacingEditInput({ draft, held: state.crew.config });
+      if (input === null) {
+        settle();
+        return null;
+      }
+      return { input, config: normalizeCrewConfig(draft), onSettled: settle };
+    });
+  }
+
   return {
     handleLocalAction(action) {
       if (disposed || action.sessionId !== sessionId) return;
       switch (action.type) {
         case 'arm':
+          noteCrewClockArmedHere(sessionId);
           cancelPendingConfigure();
           enqueueArm();
           return;
@@ -212,6 +248,7 @@ export function createCrewRestPublisher({
           armIfServerHasNoClock();
           return;
         case 'disarm':
+          noteCrewClockTurnedOffHere(sessionId);
           cancelPendingConfigure();
           enqueueInput(() => ({ action: 'DISARM' }));
           return;
@@ -252,8 +289,11 @@ export function createCrewRestPublisher({
         case 'stagePacing':
           requestConfigure({
             anchor: action.transition === 'anchorNow' ? 'NOW' : action.transition === 'waitForTick' ? 'CLEAR' : 'KEEP',
-            elapsedFromLocalAnchor: action.transition === 'anchorNow',
+            boundaryAtMs: action.transition === 'anchorNow' ? action.atMs : null,
           });
+          return;
+        case 'crewPacingEdited':
+          enqueueCrewPacingEdit();
           return;
         default: {
           const unhandled: never = action;
@@ -263,7 +303,7 @@ export function createCrewRestPublisher({
     },
     noteSettingsEdited() {
       if (!armedHere()) return;
-      requestConfigure({ anchor: 'KEEP', elapsedFromLocalAnchor: false });
+      requestConfigure({ anchor: 'KEEP', boundaryAtMs: null });
     },
     handleSnapshot(snapshot) {
       if (disposed || snapshot.sessionId !== sessionId) return;
@@ -273,6 +313,7 @@ export function createCrewRestPublisher({
       disposed = true;
       cancelPendingConfigure();
       queue.length = 0;
+      dropCrewRestPacingDraft(sessionId);
     },
   };
 }

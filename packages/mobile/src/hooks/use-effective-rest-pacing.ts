@@ -3,8 +3,9 @@
 // through here, so a workout stage or the crew clock changes what they run on
 // without any of them changing. The sheet's controls keep WRITING the settings:
 // they edit the climber's own preferences, not the effective value. While a
-// crew clock runs they show its values and copy them into the settings before
-// an edit (useRestPacingControls in RestTimerSheet.tsx).
+// crew clock runs they show its values (useCrewRestControlsConfig), send an
+// edit to the crew clock and copy it into the settings too
+// (useRestPacingControls in RestTimerSheet.tsx).
 //
 // It resolves the three settings, the workout stage pacing of the climb on the
 // wall (which `RestTimerPacingSync` keeps in the rest-timer store) and the
@@ -36,6 +37,23 @@ const getCrewConfig = (): CrewRestConfig | null => getRestTimerState().crew?.con
 /** The crew clock's config this phone follows, or null. Re-renders only when it changes. */
 export function useCrewRestConfig(): CrewRestConfig | null {
   return useSyncExternalStore(subscribeRestTimer, getCrewConfig, getCrewConfig);
+}
+
+/** What the timer's controls show on a crew clock: this phone's unanswered edit, else the crew's config. */
+const getCrewControlsConfig = (): CrewRestConfig | null => {
+  const { crew, crewPacingDraft } = getRestTimerState();
+  if (crew?.config == null) return null;
+  return crewPacingDraft ?? crew.config;
+};
+
+/**
+ * The crew config the sheet's and the Record tab's length, cadence and
+ * auto-advance controls show and edit (#5382): the crew's, or an edit of this
+ * phone's the server has not answered yet, so a second tap steps on from the
+ * first. Null with no crew clock this phone can run.
+ */
+export function useCrewRestControlsConfig(): CrewRestConfig | null {
+  return useSyncExternalStore(subscribeRestTimer, getCrewControlsConfig, getCrewControlsConfig);
 }
 
 /**

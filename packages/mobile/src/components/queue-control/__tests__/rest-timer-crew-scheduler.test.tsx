@@ -532,6 +532,50 @@ describe('on the minute', () => {
   });
 });
 
+describe('a beat the server’s spacing fence refuses (#6754)', () => {
+  it('sends no FIRE on the minute for a beat 5 s after the last one taken, and claims the next', async () => {
+    // A grid kept from another interval put the next beat 5 s after the last advance.
+    crewArmed({ mode: 'onTheMinute', anchorAt: String(T0 - 55_000), lastFiredBeatAt: String(T0) });
+    render(<RestTimerAutoAdvanceScheduler />);
+    setSessionRestCadence.mockImplementation(async () =>
+      fireReply({ applied: true, clock: { lastFiredBeatAt: String(currentNowMs) } }),
+    );
+    advance(5_000);
+    await settle();
+    expect(fireCalls()).toHaveLength(0);
+    expect(nextClimb).not.toHaveBeenCalled();
+    expect(cueCount('reached')).toBe(1);
+
+    advance(60_000);
+    await settle();
+    expect(fireCalls()).toHaveLength(1);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+  });
+
+  it('claims an on-the-minute beat 12 s after the last one taken', async () => {
+    crewArmed({ mode: 'onTheMinute', targetSeconds: 60, anchorAt: String(T0 - 48_000), lastFiredBeatAt: String(T0) });
+    render(<RestTimerAutoAdvanceScheduler />);
+    setSessionRestCadence.mockImplementation(async () =>
+      fireReply({ applied: true, clock: { lastFiredBeatAt: String(currentNowMs) } }),
+    );
+    advance(12_000);
+    await settle();
+    expect(fireCalls()).toHaveLength(1);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends no FIRE after a tick for a rest the server counts from before the last advance', async () => {
+    // A CONFIGURE that reached back left the crew's anchor 10 s before its last advance.
+    crewArmed({ anchorAt: String(T0 - 10_000), lastFiredBeatAt: String(T0) });
+    render(<RestTimerAutoAdvanceScheduler />);
+    setSessionRestCadence.mockImplementation(async () => fireReply({ applied: true }));
+    advance(60_000);
+    await settle();
+    expect(fireCalls()).toHaveLength(0);
+    expect(nextClimb).not.toHaveBeenCalled();
+  });
+});
+
 describe('back from the background', () => {
   it('the holder restarts the crew’s rest instead of claiming a beat nobody watched', async () => {
     crewArmed();

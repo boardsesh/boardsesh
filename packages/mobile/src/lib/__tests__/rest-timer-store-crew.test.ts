@@ -20,7 +20,9 @@ import {
   resetRestTimer,
   resetRestTimerStoreForTests,
   resumeRestTimer,
+  setCrewRestPacingDraft,
   setRestTimerWallQueueItemReader,
+  settleCrewRestPacingDraft,
   subscribeLocalRestTimerActions,
   type LocalRestTimerAction,
 } from '../rest-timer-store';
@@ -219,7 +221,12 @@ describe('local actions', () => {
     expect(actions).toEqual([]);
     armRestTimer('afterTick', T0, SESSION);
     applyRestTimerStagePacing({ ...stage, queueItemUuid: 'item-2' }, T0 + 1_000, 'anchorNow');
-    expect(actions.at(-1)).toEqual({ type: 'stagePacing', sessionId: SESSION, transition: 'anchorNow' });
+    expect(actions.at(-1)).toEqual({
+      type: 'stagePacing',
+      sessionId: SESSION,
+      transition: 'anchorNow',
+      atMs: T0 + 1_000,
+    });
   });
 });
 
@@ -382,5 +389,69 @@ describe('noteRestTimerCrewBeatSkipped', () => {
     const ownTimer = getRestTimerState();
     noteRestTimerCrewBeatSkipped(T0 + 60_000);
     expect(getRestTimerState()).toBe(ownTimer);
+  });
+});
+
+describe('crewPacingDraft', () => {
+  const draft = {
+    mode: 'afterTick' as const,
+    targetSeconds: 90,
+    autoAdvance: true,
+    advanceOn: 'deadline' as const,
+    source: 'settings' as const,
+    setByParticipantId: 'participant-sam',
+  };
+
+  it('is held only while this phone follows a crew clock, and announced to the publisher', () => {
+    const actions = recordActions();
+    expect(setCrewRestPacingDraft(draft)).toBe(false);
+    armRestTimer('afterTick', T0, SESSION);
+    expect(setCrewRestPacingDraft(draft)).toBe(false);
+    expect(getRestTimerState().crewPacingDraft).toBeNull();
+
+    adoptCrewCadence(crewClock());
+    expect(setCrewRestPacingDraft(draft)).toBe(true);
+    expect(getRestTimerState().crewPacingDraft).toEqual(draft);
+    expect(actions.at(-1)).toEqual({ type: 'crewPacingEdited', sessionId: SESSION });
+  });
+
+  it('never moves the timer itself: the crew’s config still runs it', () => {
+    adoptCrewCadence(crewClock());
+    const before = getRestTimerState();
+    setCrewRestPacingDraft(draft);
+    const after = getRestTimerState();
+    expect(after.cycleId).toBe(before.cycleId);
+    expect(after.anchorMs).toBe(before.anchorMs);
+    expect(after.crew).toBe(before.crew);
+  });
+
+  it('goes once the crew’s config matches it, and stays through a change that does not', () => {
+    adoptCrewCadence(crewClock());
+    setCrewRestPacingDraft(draft);
+    adoptCrewCadence(crewClock({ revision: 6, lastTick: { status: 'send', queueItemUuid: 'item-1' } }));
+    expect(getRestTimerState().crewPacingDraft).toEqual(draft);
+    adoptCrewCadence(crewClock({ revision: 7, config: { ...draft, setByParticipantId: 'participant-me' } }));
+    expect(getRestTimerState().crewPacingDraft).toBeNull();
+  });
+
+  it('settles only the draft that was sent, never a newer one', () => {
+    adoptCrewCadence(crewClock());
+    setCrewRestPacingDraft({ ...draft, targetSeconds: 120 });
+    settleCrewRestPacingDraft(draft);
+    expect(getRestTimerState().crewPacingDraft?.targetSeconds).toBe(120);
+    settleCrewRestPacingDraft({ ...draft, targetSeconds: 120 });
+    expect(getRestTimerState().crewPacingDraft).toBeNull();
+  });
+
+  it('goes with the crew clock and with a disarm', () => {
+    adoptCrewCadence(crewClock());
+    setCrewRestPacingDraft(draft);
+    clearCrewCadence();
+    expect(getRestTimerState().crewPacingDraft).toBeNull();
+
+    adoptCrewCadence(crewClock());
+    setCrewRestPacingDraft(draft);
+    disarmRestTimer();
+    expect(getRestTimerState().crewPacingDraft).toBeNull();
   });
 });

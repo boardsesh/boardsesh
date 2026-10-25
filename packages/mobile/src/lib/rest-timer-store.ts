@@ -36,6 +36,7 @@ import { getRestTimerStartMs, type RestTimerMode } from './rest-timer';
 import { getAfterTickRestFloorMs, isTickFreshEnoughToArm } from './rest-timer-auto-advance';
 import {
   sameStagePacing,
+  type CrewRestConfig,
   type RestTimerLastTick,
   type RestTimerPacingTransition,
   type RestTimerStagePacing,
@@ -61,6 +62,14 @@ export type RestTimerState = {
    * config is null for a clock this app cannot run (never fired on).
    */
   crew: CrewRestCadence | null;
+  /**
+   * A change to the crew clock's length, cadence or auto-advance this phone
+   * made from the timer's own controls (`editCrewRestPacing`) that the server
+   * has not answered yet. Only the controls show it, so a second tap steps on
+   * from the first; the timer keeps running on the crew's config until the
+   * answer comes back. Cleared by that answer, or a crew config that matches it.
+   */
+  crewPacingDraft: CrewRestConfig | null;
   /** What the countdown counts from. `null` = armed but nothing to count yet. */
   anchorMs: number | null;
   isRunning: boolean;
@@ -125,6 +134,7 @@ const INITIAL_STATE: RestTimerState = {
   armed: false,
   armedForSessionId: null,
   crew: null,
+  crewPacingDraft: null,
   anchorMs: null,
   isRunning: false,
   pausedElapsedSeconds: 0,
@@ -164,7 +174,10 @@ export type LocalRestTimerAction =
   /** This phone moved the wall itself (no crew clock, or a solo FIRE that got no answer). */
   | { type: 'fired'; sessionId: string | null; anchorAfter: RestTimerAnchorAfter }
   | { type: 'reanchored'; sessionId: string | null }
-  | { type: 'stagePacing'; sessionId: string | null; transition: RestTimerPacingTransition };
+  /** `atMs`: the instant an `anchorNow` transition started the beat at, so the crew's NOW counts from it. */
+  | { type: 'stagePacing'; sessionId: string | null; transition: RestTimerPacingTransition; atMs: number }
+  /** The climber changed the crew clock from the timer's controls: `crewPacingDraft` holds what to send. */
+  | { type: 'crewPacingEdited'; sessionId: string | null };
 
 const localActionListeners = new Set<(action: LocalRestTimerAction) => void>();
 
@@ -609,7 +622,7 @@ export function applyRestTimerStagePacing(
   if (sameStagePacing(state.stagePacing, next)) return;
   if (!state.armed || transition === 'none') {
     setState({ ...state, stagePacing: next });
-    if (state.armed) announce({ type: 'stagePacing', sessionId: state.armedForSessionId, transition });
+    if (state.armed) announce({ type: 'stagePacing', sessionId: state.armedForSessionId, transition, atMs: nowMs });
     return;
   }
   setState({
@@ -619,7 +632,7 @@ export function applyRestTimerStagePacing(
     pausedElapsedSeconds: 0,
     cycleId: state.cycleId + 1,
   });
-  announce({ type: 'stagePacing', sessionId: state.armedForSessionId, transition });
+  announce({ type: 'stagePacing', sessionId: state.armedForSessionId, transition, atMs: nowMs });
 }
 
 function sameCrewTimerConfig(left: CrewRestCadence['config'], right: CrewRestCadence['config']): boolean {
@@ -637,6 +650,54 @@ function sameCrewTimerConfig(left: CrewRestCadence['config'], right: CrewRestCad
 function sameLastTick(left: RestTimerLastTick | null, right: RestTimerLastTick | null): boolean {
   if (left === null || right === null) return left === right;
   return left.status === right.status && left.queueItemUuid === right.queueItemUuid;
+}
+
+/** The five fields a CONFIGURE carries, compared one by one. */
+function sameCrewPacingFields(
+  left: Pick<CrewRestConfig, 'mode' | 'targetSeconds' | 'autoAdvance' | 'advanceOn' | 'source'>,
+  right: Pick<CrewRestConfig, 'mode' | 'targetSeconds' | 'autoAdvance' | 'advanceOn' | 'source'>,
+): boolean {
+  return (
+    left.mode === right.mode &&
+    left.targetSeconds === right.targetSeconds &&
+    left.autoAdvance === right.autoAdvance &&
+    left.advanceOn === right.advanceOn &&
+    left.source === right.source
+  );
+}
+
+/**
+ * The climber changed the crew clock's length, cadence or auto-advance from the
+ * timer's controls (lib/crew-rest-cadence.ts `editCrewRestPacing` builds
+ * `config`). Held as the draft the controls show, and announced so the crew
+ * publisher sends it as a CONFIGURE. Only while this phone follows a crew clock
+ * it can run. The timer itself waits for the server's answer.
+ */
+export function setCrewRestPacingDraft(config: CrewRestConfig): boolean {
+  const crew = state.crew;
+  if (!state.armed || crew === null || crew.config === null) return false;
+  setState({ ...state, crewPacingDraft: config });
+  announce({ type: 'crewPacingEdited', sessionId: crew.sessionId });
+  return true;
+}
+
+/**
+ * The server answered (or failed to answer) a CONFIGURE sent for `sent`. The
+ * draft goes unless the climber has changed it again since, in which case the
+ * newer one is still on its way.
+ */
+export function settleCrewRestPacingDraft(
+  sent: Pick<CrewRestConfig, 'mode' | 'targetSeconds' | 'autoAdvance' | 'advanceOn' | 'source'>,
+): void {
+  const draft = state.crewPacingDraft;
+  if (draft === null || !sameCrewPacingFields(draft, sent)) return;
+  setState({ ...state, crewPacingDraft: null });
+}
+
+/** The publisher for the draft's session went: nothing will send it. */
+export function dropCrewRestPacingDraft(sessionId: string): void {
+  if (state.crewPacingDraft === null || state.crew?.sessionId !== sessionId) return;
+  setState({ ...state, crewPacingDraft: null });
 }
 
 /**
@@ -681,8 +742,15 @@ export function adoptCrewCadence(
   // this phone did meanwhile, including an action whose send never landed.
   const previous = !replaceLocal && state.crew !== null && state.crew.sessionId === crew.sessionId ? state.crew : null;
   const config = previous !== null && sameCrewTimerConfig(previous.config, crew.config) ? previous.config : crew.config;
+  // A draft the crew's config now matches has landed; one for another session never will.
+  const crewPacingDraft =
+    state.crewPacingDraft === null ||
+    previous === null ||
+    (config !== null && sameCrewPacingFields(state.crewPacingDraft, config))
+      ? null
+      : state.crewPacingDraft;
   if (config === null) {
-    setState({ ...state, crew: { ...crew, config }, cycleId: state.cycleId + 1 });
+    setState({ ...state, crew: { ...crew, config }, crewPacingDraft: null, cycleId: state.cycleId + 1 });
     return;
   }
   const serverClockHeld =
@@ -732,6 +800,7 @@ export function adoptCrewCadence(
     armed: true,
     armedForSessionId: crew.sessionId,
     crew: { ...crew, config, anchorMs: crewAnchorMs, lastFiredBeatMs: crewLastFiredBeatMs },
+    crewPacingDraft,
     anchorMs,
     isRunning,
     pausedElapsedSeconds,

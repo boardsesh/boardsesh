@@ -8,9 +8,12 @@ import {
   buildConfigureInput,
   buildRestartInput,
   buildTickInput,
+  crewBeatFenced,
   crewBeatServerMs,
   getLastCrewCadenceSnapshot,
   handleCrewCadenceChange,
+  noteCrewClockArmedHere,
+  noteCrewClockTurnedOffHere,
   parseCrewRestCadence,
   planCrewFireOutcome,
   resetCrewCadenceForTests,
@@ -168,10 +171,40 @@ describe('handleCrewCadenceChange: who may take an armed clock', () => {
     expect(state.anchorMs).toBe(T0);
   });
 
-  it('never brings back a clock this phone set while it is not armed (a cold start)', () => {
+  it('never re-arms from an echo of a clock this phone set while it is not armed', () => {
     expect(handleCrewCadenceChange(change({ restCadence: wireClock({ setByParticipantId: ME }) }), context)).toBe(
       'ignored',
     );
+    expect(getRestTimerState().armed).toBe(false);
+  });
+
+  it('brings back a live clock this phone set from the seed, so the setter keeps pacing (a cold start)', () => {
+    const seed = change({ restCadence: wireClock({ setByParticipantId: ME }), isSnapshot: true, action: null });
+    expect(handleCrewCadenceChange(seed, context)).toBe('adopted');
+    const state = getRestTimerState();
+    expect(state.armed).toBe(true);
+    expect(state.armedForSessionId).toBe(SESSION);
+    expect(state.anchorMs).toBe(T0);
+    expect(state.crew?.config?.setByParticipantId).toBe(ME);
+  });
+
+  it('does not bring back its own clock from the seed once the climber turned the timer off here', () => {
+    noteCrewClockTurnedOffHere(SESSION);
+    const seed = change({ restCadence: wireClock({ setByParticipantId: ME }), isSnapshot: true, action: null });
+    expect(handleCrewCadenceChange(seed, context)).toBe('ignored');
+    expect(getRestTimerState().armed).toBe(false);
+  });
+
+  it('brings its own clock back again once the climber turned the timer on again here', () => {
+    noteCrewClockTurnedOffHere(SESSION);
+    noteCrewClockArmedHere(SESSION);
+    const seed = change({ restCadence: wireClock({ setByParticipantId: ME }), isSnapshot: true, action: null });
+    expect(handleCrewCadenceChange(seed, context)).toBe('adopted');
+  });
+
+  it('cannot restore its own clock from the seed without knowing its own id', () => {
+    const seed = change({ restCadence: wireClock({ setByParticipantId: ME }), isSnapshot: true, action: null });
+    expect(handleCrewCadenceChange(seed, { ...context, ownParticipantId: null })).toBe('ignored');
     expect(getRestTimerState().armed).toBe(false);
   });
 
@@ -290,7 +323,7 @@ describe('inputs', () => {
         own: ownSettings,
         previous,
         anchor,
-        elapsedFromLocalAnchor: false,
+        boundaryAtMs: null,
         state: getRestTimerState(),
         nowMs: T0,
       });
@@ -308,7 +341,7 @@ describe('inputs', () => {
       own: ownSettings,
       previous: { ...ownSettings, mode: 'onTheMinute' },
       anchor: 'KEEP',
-      elapsedFromLocalAnchor: false,
+      boundaryAtMs: null,
       state: getRestTimerState(),
       nowMs: T0,
     });
@@ -317,7 +350,7 @@ describe('inputs', () => {
       own: { ...ownSettings, mode: 'onTheMinute' },
       previous: ownSettings,
       anchor: 'KEEP',
-      elapsedFromLocalAnchor: false,
+      boundaryAtMs: null,
       state: getRestTimerState(),
       nowMs: T0,
     });
@@ -332,11 +365,40 @@ describe('inputs', () => {
         own: { ...ownSettings, mode: 'onTheMinute', source: 'stage' },
         previous: ownSettings,
         anchor: 'NOW',
-        elapsedFromLocalAnchor: true,
+        boundaryAtMs: T0,
         state: getRestTimerState(),
         nowMs: T0 + 400,
       }),
     ).toMatchObject({ anchor: 'NOW', elapsedMs: 400 });
+  });
+
+  it('counts a stage boundary’s NOW from the boundary even when a crew change replaced the anchor meanwhile', () => {
+    // The beat moved to T0 here; a crewmate's change put the timer back on an older anchor before the send.
+    armRestTimer('onTheMinute', T0 - 50_000, SESSION);
+    expect(
+      buildConfigureInput({
+        own: { ...ownSettings, mode: 'onTheMinute', source: 'stage' },
+        previous: { ...ownSettings, mode: 'onTheMinute', targetSeconds: 120 },
+        anchor: 'NOW',
+        boundaryAtMs: T0,
+        state: getRestTimerState(),
+        nowMs: T0 + 400,
+      }),
+    ).toMatchObject({ anchor: 'NOW', elapsedMs: 400 });
+  });
+
+  it('starts the beat now when entering on the minute on a clock whose mode it cannot tell', () => {
+    armRestTimer('afterTick', T0, SESSION);
+    expect(
+      buildConfigureInput({
+        own: { ...ownSettings, mode: 'onTheMinute' },
+        previous: null,
+        anchor: 'KEEP',
+        boundaryAtMs: null,
+        state: getRestTimerState(),
+        nowMs: T0,
+      }),
+    ).toMatchObject({ anchor: 'NOW', elapsedMs: 0 });
   });
 
   it('dates a TICK by how long ago the climb was logged', () => {
@@ -346,6 +408,16 @@ describe('inputs', () => {
       tickQueueItemUuid: 'item-1',
       elapsedMs: 2_500,
     });
+  });
+
+  it('dates a TICK from history by its own climbedAt, never clamped to a minute, up to the 4 h wire bound', () => {
+    const tick = { status: 'send' as const, queueItemUuid: 'item-1' };
+    // Two hours back: the server needs the real age to apply its history rule (#6754).
+    expect(buildTickInput(tick, T0, T0 + 2 * 60 * 60 * 1000).elapsedMs).toBe(7_200_000);
+    // Past 4 h the server's validation would refuse it, so it is capped there.
+    expect(buildTickInput(tick, T0, T0 + 5 * 60 * 60 * 1000).elapsedMs).toBe(14_400_000);
+    // A climbedAt from a clock ahead of this phone's is from now.
+    expect(buildTickInput(tick, T0 + 3_000, T0).elapsedMs).toBe(0);
   });
 });
 
@@ -400,6 +472,35 @@ describe('planCrewFireOutcome', () => {
     expect(planCrewFireOutcome({ applied: false, change: reply({}, clock), beatServerMs, attempt: 0 })).toEqual({
       kind: 'refused',
     });
+  });
+
+  it('skips the retry for a beat the server’s spacing fence refuses, and retries one it does not', () => {
+    // After a tick: the last advance 10 s after the anchor, so this deadline is 50 s after it (< 60 − 3).
+    expect(
+      planCrewFireOutcome({
+        applied: false,
+        change: reply({ serverNow: String(beatServerMs - 2_500) }, { lastFiredBeatAt: String(T0 + 10_000) }),
+        beatServerMs,
+        attempt: 0,
+      }),
+    ).toEqual({ kind: 'refused' });
+    // 57 s after the last advance is a whole rest less the 3 s slack: not fenced, so "not due yet" retries.
+    expect(
+      planCrewFireOutcome({
+        applied: false,
+        change: reply({ serverNow: String(beatServerMs - 2_500) }, { lastFiredBeatAt: String(T0 + 3_000) }),
+        beatServerMs,
+        attempt: 0,
+      }),
+    ).toEqual({ kind: 'retry', atServerMs: beatServerMs });
+  });
+
+  it('pins the fence to the server’s numbers', () => {
+    expect(crewBeatFenced({ mode: 'afterTick', targetSeconds: 60 }, T0, T0 + 56_999)).toBe(true);
+    expect(crewBeatFenced({ mode: 'afterTick', targetSeconds: 60 }, T0, T0 + 57_000)).toBe(false);
+    expect(crewBeatFenced({ mode: 'onTheMinute', targetSeconds: 60 }, T0, T0 + 11_999)).toBe(true);
+    expect(crewBeatFenced({ mode: 'onTheMinute', targetSeconds: 60 }, T0, T0 + 12_000)).toBe(false);
+    expect(crewBeatFenced({ mode: 'afterTick', targetSeconds: 60 }, null, T0)).toBe(false);
   });
 
   it('drops it when the crew turned the clock off', () => {

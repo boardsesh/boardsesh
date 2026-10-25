@@ -8,7 +8,12 @@
 // the queue provider, the settings and the store.
 
 import { useEffect, useRef } from 'react';
-import { useQueueActions, useQueueSessionControls, useQueueSessionId } from '../../providers/queue-provider';
+import {
+  useIsCrewSession,
+  useQueueActions,
+  useQueueSessionControls,
+  useQueueSessionId,
+} from '../../providers/queue-provider';
 import { useSetting } from '../../settings';
 import { getOwnRestPacing } from '../../hooks/use-effective-rest-pacing';
 import { nowMs } from '../../lib/clock';
@@ -37,6 +42,9 @@ function SessionCrewPublisher({ sessionId }: { sessionId: string }) {
   const [targetSeconds] = useSetting('restTimerTargetSeconds');
   const [mode] = useSetting('restTimerMode');
   const [autoAdvance] = useSetting('restTimerAutoAdvance');
+  const isCrewSession = useIsCrewSession();
+  const isCrewSessionRef = useRef(isCrewSession);
+  isCrewSessionRef.current = isCrewSession;
 
   // Read through refs: the publisher lives for the whole session, and a new
   // participant id or action identity is not a reason to drop its queue.
@@ -82,14 +90,19 @@ function SessionCrewPublisher({ sessionId }: { sessionId: string }) {
     };
   }, [sessionId]);
 
-  // A settings edit (here, the sheet, the arm row or Settings › Timers) hands
-  // the crew this phone's pacing. Not on mount: that is no edit.
+  // A settings edit (Settings › Timers, or the sheet with no crew clock yet)
+  // hands a session alone this phone's pacing, as the timer always followed the
+  // settings. Not in a crew (Marco, 2026-10-25): there the shared clock changes
+  // only from the timer's own controls, which send the crew's config with that
+  // one change (editCrewRestPacing), and a default edited in Settings › Timers
+  // stays the climber's own. Not on mount: that is no edit.
   const mountedSettingsRef = useRef(false);
   useEffect(() => {
     if (!mountedSettingsRef.current) {
       mountedSettingsRef.current = true;
       return;
     }
+    if (isCrewSessionRef.current) return;
     publisherRef.current?.noteSettingsEdited();
   }, [targetSeconds, mode, autoAdvance]);
 

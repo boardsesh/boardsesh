@@ -10,10 +10,12 @@
 //   - A change at or below the revision this phone holds is dropped, unless it
 //     is a snapshot (the subscribe seed, or a reply after the server lost
 //     state), which replaces everything and resets the floor.
-//   - An armed clock is taken only when this phone is already armed for that
-//     session, or another member set it. So a cold start never quietly brings
-//     back a clock this phone set in an earlier life, and an echo of this
-//     phone's own ARM can never re-arm a timer it has since turned off.
+//   - An armed clock is taken when this phone is already armed for that
+//     session, or another member set it, or (on the subscribe seed only) this
+//     phone set it and has not turned the timer off here since launch. So a
+//     cold start brings back the setter's live clock and the setter keeps
+//     pacing the wall (Marco, 2026-10-25), while an echo of this phone's own
+//     ARM can never re-arm a timer it has since turned off.
 //   - A mode or advance rule this app does not know makes the clock
 //     unsupported: it is held (config null) so the scheduler never fires on it.
 //   - Every instant is server epoch ms on the wire and is converted when the
@@ -34,6 +36,7 @@ import {
   clearCrewCadence,
   crewConversionMoved,
   getRestTimerState,
+  setCrewRestPacingDraft,
   type RestTimerState,
 } from './rest-timer-store';
 import { noteServerTimeFromEvent, noteServerTimeFromMutation, serverToLocalMs, localToServerMs } from './server-clock';
@@ -80,6 +83,17 @@ export const CREW_FIRE_EARLY_TOLERANCE_MS = 2_000;
 export const CREW_FIRE_LATE_TOLERANCE_MS = 5_000;
 /** Retries of one beat after a refusal that might still land (not due yet, or a race). */
 export const MAX_CREW_FIRE_RETRIES = 2;
+/**
+ * How much closer than one rest an after-tick beat may sit to the last one the
+ * server took and still be taken (REST_CADENCE_AFTER_TICK_SPACING_SLACK_MS).
+ */
+export const CREW_AFTER_TICK_SPACING_SLACK_MS = 3_000;
+/**
+ * The closest an on-the-minute beat may sit to the last one taken: the shortest
+ * interval less that slack, 12 s (REST_CADENCE_ON_THE_MINUTE_MIN_SPACING_MS).
+ */
+export const CREW_ON_THE_MINUTE_MIN_SPACING_MS =
+  CREW_REST_TARGET_SECONDS.onTheMinute.min * 1000 - CREW_AFTER_TICK_SPACING_SLACK_MS;
 
 function isOneOf<T extends string>(options: readonly T[], candidate: unknown): candidate is T {
   return typeof candidate === 'string' && (options as readonly string[]).includes(candidate);
@@ -152,6 +166,25 @@ export function sameCrewConfig(left: CrewConfigFields | null, right: CrewConfigF
 // ---------------------------------------------------------------------------
 
 let revisionFloor: { sessionId: string; revision: number } | null = null;
+
+/**
+ * Sessions whose rest timer the climber turned off on this phone since launch.
+ * A seed carrying a clock this phone set is not taken for these: the off was
+ * the climber's, and a DISARM that never reached the server must not come back
+ * on with the next seed. Lives as long as the JS runtime, so a cold start
+ * starts with none.
+ */
+const turnedOffHere = new Set<string>();
+
+/** The climber turned the timer off on this phone in this session (the publisher's DISARM). */
+export function noteCrewClockTurnedOffHere(sessionId: string): void {
+  turnedOffHere.add(sessionId);
+}
+
+/** The climber turned it on again here: a seed may bring it back after all. */
+export function noteCrewClockArmedHere(sessionId: string): void {
+  turnedOffHere.delete(sessionId);
+}
 
 export type CrewCadenceSnapshot = { sessionId: string; hasClock: boolean };
 let lastSnapshot: CrewCadenceSnapshot | null = null;
@@ -226,7 +259,12 @@ function applyCrewCadence(
   }
   const setBy = wire.setByParticipantId ?? null;
   const setByAnotherMember = setBy !== null && ownParticipantId !== null && setBy !== ownParticipantId;
-  if (!armedFor(state, sessionId) && !setByAnotherMember) return 'ignored';
+  // A cold start (or a rejoin) brings back a live clock this phone set, so the
+  // setter keeps pacing the wall. Only from the seed: an echo of this phone's
+  // own ARM after it turned the timer off must never turn it back on.
+  const restoresOwnClock =
+    change.isSnapshot && setBy !== null && setBy === ownParticipantId && !state.armed && !turnedOffHere.has(sessionId);
+  if (!armedFor(state, sessionId) && !setByAnotherMember && !restoresOwnClock) return 'ignored';
   const crew = parseCrewRestCadence(sessionId, change.revision, wire);
   adoptCrewCadence(crew, { replaceLocal: change.isSnapshot });
   return crew.config === null ? 'unsupported' : 'adopted';
@@ -271,6 +309,7 @@ export function resetCrewCadenceLink(): void {
 export function resetCrewCadenceForTests(): void {
   resetCrewCadenceLink();
   snapshotListeners.clear();
+  turnedOffHere.clear();
 }
 
 // ---------------------------------------------------------------------------
@@ -349,7 +388,7 @@ export function buildConfigureInput({
   own,
   previous,
   anchor,
-  elapsedFromLocalAnchor,
+  boundaryAtMs,
   state,
   nowMs,
 }: {
@@ -357,17 +396,26 @@ export function buildConfigureInput({
   /** The clock's config as this phone last knew it: the crew's, else what it last published. */
   previous: CrewConfigFields | null;
   anchor: CrewAnchorRequest;
-  /** NOW counts from this phone's own anchor (a stage boundary it already applied) rather than from now. */
-  elapsedFromLocalAnchor: boolean;
+  /**
+   * NOW counts from this instant (a stage boundary this phone already applied,
+   * sent after the debounce) rather than from now. Kept apart from the timer's
+   * anchor, which a crew change taken meanwhile can replace.
+   */
+  boundaryAtMs: number | null;
   state: RestTimerState;
   nowMs: number;
 }): SessionRestCadenceInput | null {
   const config = normalizeCrewConfig(own);
   let resolvedAnchor: SessionRestCadenceAnchor = anchor;
-  let fromLocalAnchor = elapsedFromLocalAnchor;
-  if (anchor === 'KEEP' && previous !== null && previous.mode !== config.mode) {
+  let fromMs = boundaryAtMs;
+  // Entering on the minute always starts the beat now, also when this phone
+  // cannot tell the mode the clock had: kept, an after-tick anchor (a tick from
+  // a minute ago, or none) would become the grid (contracts §16, Fable's PACE
+  // review). Leaving it for after the tick waits for the next tick.
+  const entersOnTheMinute = config.mode === 'onTheMinute' && (previous === null || previous.mode !== 'onTheMinute');
+  if (anchor === 'KEEP' && (entersOnTheMinute || (previous !== null && previous.mode !== config.mode))) {
     resolvedAnchor = config.mode === 'onTheMinute' ? 'NOW' : 'CLEAR';
-    fromLocalAnchor = false;
+    fromMs = null;
   }
   const unchanged = sameCrewConfig(previous, config);
   if (unchanged && resolvedAnchor === 'KEEP') return null;
@@ -376,8 +424,51 @@ export function buildConfigureInput({
     action: 'CONFIGURE',
     config,
     anchor: resolvedAnchor,
-    ...(resolvedAnchor === 'NOW' ? { elapsedMs: fromLocalAnchor ? elapsedSince(state.anchorMs, nowMs) : 0 } : {}),
+    ...(resolvedAnchor === 'NOW' ? { elapsedMs: elapsedSince(fromMs, nowMs) } : {}),
   };
+}
+
+/** What the timer's own controls change on a crew clock: one of the three the sheet shows. */
+export type CrewRestPacingEdit = Partial<Pick<CrewConfigFields, 'targetSeconds' | 'mode' | 'autoAdvance'>>;
+
+/**
+ * The climber changed the crew clock's rest length, cadence or auto-advance
+ * from the timer's sheet or the Record tab (Marco, 2026-10-25: in a crew those
+ * controls show and change the crew's clock). The crew's config, as this phone
+ * holds it or last edited it, with only that change; the advance rule stays,
+ * and the source becomes 'settings', since a workout no longer set it. The
+ * publisher sends it as a CONFIGURE (buildCrewPacingEditInput). False when this
+ * phone follows no crew clock it can run, or nothing changed.
+ */
+export function editCrewRestPacing(edit: CrewRestPacingEdit): boolean {
+  const state = getRestTimerState();
+  const crewConfig = state.crew?.config ?? null;
+  if (!state.armed || crewConfig === null) return false;
+  const base = state.crewPacingDraft ?? crewConfig;
+  const next = normalizeCrewConfig({ ...base, ...edit, source: 'settings' });
+  if (sameCrewConfig(next, base)) return false;
+  return setCrewRestPacingDraft({ ...base, ...next });
+}
+
+/**
+ * The CONFIGURE for a crew pacing edit, against the config the server holds. A
+ * change of cadence moves the anchor as the server's own rule for a stage
+ * boundary does: on the minute starts its beat now, after the tick waits for
+ * the next one. The same cadence keeps it, so a new rest length on the minute
+ * keeps the crew's beat. Null when the server already holds exactly this.
+ */
+export function buildCrewPacingEditInput({
+  draft,
+  held,
+}: {
+  draft: CrewConfigFields;
+  held: CrewConfigFields | null;
+}): SessionRestCadenceInput | null {
+  const config = normalizeCrewConfig(draft);
+  if (held !== null && sameCrewConfig(held, config)) return null;
+  const anchor: SessionRestCadenceAnchor =
+    held !== null && held.mode === config.mode ? 'KEEP' : config.mode === 'onTheMinute' ? 'NOW' : 'CLEAR';
+  return { action: 'CONFIGURE', config, anchor, ...(anchor === 'NOW' ? { elapsedMs: 0 } : {}) };
 }
 
 /** A tick's TICK: how long ago the climb was logged, the queue item and how it went. */
@@ -409,6 +500,26 @@ export function crewBeatServerMs(crew: CrewRestCadence, localDeadlineMs: number)
   if (config.mode === 'afterTick') return crew.anchorServerMs + intervalMs;
   const beats = Math.max(1, Math.round((localToServerMs(localDeadlineMs) - crew.anchorServerMs) / intervalMs));
   return crew.anchorServerMs + beats * intervalMs;
+}
+
+/**
+ * Whether the server would refuse a FIRE for this beat however early or late
+ * it came: too close to the last beat it took (its spacing fence, #6754). After
+ * a tick, closer than one rest less 3 s; on the minute, closer than 12 s. Such
+ * a refusal reads like "not due yet", so the phone checks first and lets the
+ * beat go rather than send a FIRE, or a retry, the server will not take.
+ */
+export function crewBeatFenced(
+  config: Pick<CrewConfigFields, 'mode' | 'targetSeconds'>,
+  lastFiredBeatServerMs: number | null,
+  beatServerMs: number,
+): boolean {
+  if (lastFiredBeatServerMs === null || config.targetSeconds === null) return false;
+  const minSpacingMs =
+    config.mode === 'afterTick'
+      ? config.targetSeconds * 1000 - CREW_AFTER_TICK_SPACING_SLACK_MS
+      : CREW_ON_THE_MINUTE_MIN_SPACING_MS;
+  return beatServerMs < lastFiredBeatServerMs + minSpacingMs;
 }
 
 /**
@@ -458,6 +569,8 @@ export function planCrewFireOutcome({
       ? anchorMs + intervalMs === beatServerMs
       : beatServerMs > anchorMs && (beatServerMs - anchorMs) % intervalMs === 0;
   if (!stillTheBeat) return { kind: 'refused' };
+  // The spacing fence refuses the retry too: no use waiting for the beat.
+  if (crewBeatFenced(config, lastFiredMs, beatServerMs)) return { kind: 'refused' };
   const serverNowMs = Number(change.serverNow);
   if (!Number.isFinite(serverNowMs)) return { kind: 'refused' };
   if (serverNowMs - beatServerMs > CREW_FIRE_LATE_TOLERANCE_MS) return { kind: 'lost' };

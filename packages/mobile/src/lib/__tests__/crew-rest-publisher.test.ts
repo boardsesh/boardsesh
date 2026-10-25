@@ -2,9 +2,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionRestCadenceInput, SetSessionRestCadencePayload } from '@boardsesh/shared-schema/generated';
 import {
+  editCrewRestPacing,
   handleCrewCadenceChange,
   resetCrewCadenceForTests,
   toCrewConfigInput,
+  type CrewRestCadence,
   type OwnRestPacing,
 } from '../crew-rest-cadence';
 import { CREW_CONFIGURE_DEBOUNCE_MS, createCrewRestPublisher, type CrewRestPublisher } from '../crew-rest-publisher';
@@ -116,9 +118,59 @@ describe('arm and disarm', () => {
     await flush();
     expect(sent).toEqual([]);
   });
+
+  it('keeps a clock this phone set off on the next seed once the climber turned it off here', async () => {
+    armRestTimer('afterTick', currentNowMs, SESSION);
+    disarmRestTimer();
+    await flush();
+    const seed = {
+      restCadence: {
+        mode: 'afterTick',
+        targetSeconds: 90,
+        autoAdvance: true,
+        advanceOn: 'deadline',
+        source: 'settings',
+        isRunning: true,
+        anchorAt: String(T0),
+        pausedElapsedSeconds: 0,
+        lastFiredBeatAt: null,
+        lastTickQueueItemUuid: null,
+        lastTickStatus: null,
+        setByParticipantId: ME,
+      },
+      revision: 500,
+      serverNow: String(T0),
+      isSnapshot: true,
+      action: null,
+    };
+    const context = { sessionId: SESSION, ownParticipantId: ME, receivedAtMs: T0 };
+    expect(handleCrewCadenceChange(seed, context)).toBe('ignored');
+    expect(getRestTimerState().armed).toBe(false);
+
+    // Turned on again here, then the timer state went (as after a crash):
+    // the next seed brings the clock this phone set back.
+    armRestTimer('afterTick', currentNowMs, SESSION);
+    await flush();
+    resetRestTimerStoreForTests();
+    expect(handleCrewCadenceChange({ ...seed, revision: 600 }, context)).toBe('adopted');
+    expect(getRestTimerState().armed).toBe(true);
+  });
 });
 
 describe('ticks', () => {
+  it('sends a tick from history with its real age, so the server applies its own history rule', async () => {
+    armRestTimer('afterTick', currentNowMs, SESSION);
+    await flush();
+    sent.length = 0;
+    currentNowMs = T0 + 2 * 60 * 60 * 1000;
+    noteRestTimerTick(new Date(T0).toISOString(), 'afterTick', currentNowMs, {
+      status: 'send',
+      queueItemUuid: 'item-1',
+    });
+    await flush();
+    expect(sent).toEqual([{ action: 'TICK', tickStatus: 'send', tickQueueItemUuid: 'item-1', elapsedMs: 7_200_000 }]);
+  });
+
   it('sends a tick with its queue item, how it went, and how long ago it was', async () => {
     armRestTimer('afterTick', currentNowMs, SESSION);
     await flush();
@@ -458,5 +510,139 @@ describe('replies', () => {
     pauseRestTimer(T0 + 1_000);
     await flush();
     expect(sent.map((input) => input.action)).toEqual(['ARM']);
+  });
+});
+
+describe('crew pacing edits from the timer’s controls', () => {
+  function followSamsClock(config: Partial<NonNullable<CrewRestCadence['config']>> = {}) {
+    adoptCrewCadence({
+      sessionId: SESSION,
+      revision: 3,
+      config: {
+        mode: 'onTheMinute',
+        targetSeconds: 120,
+        autoAdvance: true,
+        advanceOn: 'deadline',
+        source: 'settings',
+        setByParticipantId: 'participant-sam',
+        ...config,
+      },
+      isRunning: true,
+      anchorMs: T0,
+      pausedElapsedSeconds: 0,
+      lastFiredBeatMs: null,
+      lastTick: null,
+      anchorServerMs: T0,
+      lastFiredBeatServerMs: null,
+    });
+  }
+
+  it('sends a new rest length on the minute with the crew’s beat kept', async () => {
+    followSamsClock();
+    editCrewRestPacing({ targetSeconds: 90 });
+    await flush();
+    expect(sent).toEqual([
+      {
+        action: 'CONFIGURE',
+        config: {
+          mode: 'onTheMinute',
+          targetSeconds: 90,
+          autoAdvance: true,
+          advanceOn: 'deadline',
+          source: 'settings',
+        },
+        anchor: 'KEEP',
+      },
+    ]);
+  });
+
+  it('starts the beat now on a switch to on the minute, and waits for a tick on a switch back', async () => {
+    followSamsClock({ mode: 'afterTick', advanceOn: 'tick' });
+    editCrewRestPacing({ mode: 'onTheMinute' });
+    await flush();
+    expect(sent.at(-1)).toMatchObject({ action: 'CONFIGURE', anchor: 'NOW', elapsedMs: 0 });
+    expect(sent.at(-1)?.config).toMatchObject({ mode: 'onTheMinute', advanceOn: 'tick' });
+
+    followSamsClock();
+    editCrewRestPacing({ mode: 'afterTick' });
+    await flush();
+    expect(sent.at(-1)).toMatchObject({ action: 'CONFIGURE', anchor: 'CLEAR' });
+    expect(sent.at(-1)).not.toHaveProperty('elapsedMs');
+  });
+
+  it('sends taps that queue up behind one send as one, and keeps the newer draft until it lands', async () => {
+    followSamsClock();
+    autoReply = false;
+    editCrewRestPacing({ targetSeconds: 150 });
+    await flush();
+    editCrewRestPacing({ targetSeconds: 180 });
+    editCrewRestPacing({ targetSeconds: 210 });
+    await flush();
+    expect(sent.map((input) => input.config?.targetSeconds)).toEqual([150]);
+
+    const replyWithLength = (targetSeconds: number): SetSessionRestCadencePayload => {
+      revision += 1;
+      return {
+        applied: true,
+        change: {
+          restCadence: {
+            mode: 'onTheMinute',
+            targetSeconds,
+            autoAdvance: true,
+            advanceOn: 'deadline',
+            source: 'settings',
+            isRunning: true,
+            anchorAt: String(T0),
+            pausedElapsedSeconds: 0,
+            setByParticipantId: ME,
+          },
+          revision,
+          serverNow: String(currentNowMs),
+          isSnapshot: false,
+          action: 'CONFIGURE',
+        },
+      };
+    };
+    pendingReplies.shift()?.resolve(replyWithLength(150));
+    await flush();
+    // The first answer does not take the draft the climber has moved on from.
+    expect(getRestTimerState().crewPacingDraft?.targetSeconds).toBe(210);
+    expect(getRestTimerState().crew?.config?.targetSeconds).toBe(150);
+    expect(sent.map((input) => input.config?.targetSeconds)).toEqual([150, 210]);
+
+    pendingReplies.shift()?.resolve(replyWithLength(210));
+    await flush();
+    expect(getRestTimerState().crewPacingDraft).toBeNull();
+    expect(getRestTimerState().crew?.config?.targetSeconds).toBe(210);
+    expect(sent).toHaveLength(2);
+  });
+
+  it('lets the draft go when the send fails, so the controls show the crew’s clock again', async () => {
+    followSamsClock();
+    autoReply = false;
+    editCrewRestPacing({ autoAdvance: false });
+    await flush();
+    pendingReplies.shift()?.reject(new Error('socket closed'));
+    await flush();
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(getRestTimerState().crewPacingDraft).toBeNull();
+  });
+
+  it('changes nothing without a crew clock this phone follows', async () => {
+    armRestTimer('afterTick', currentNowMs, SESSION);
+    await flush();
+    sent.length = 0;
+    expect(editCrewRestPacing({ targetSeconds: 90 })).toBe(false);
+    await flush();
+    expect(sent).toEqual([]);
+    expect(getRestTimerState().crewPacingDraft).toBeNull();
+  });
+
+  it('drops the draft with the publisher, since nothing will send it', () => {
+    followSamsClock();
+    autoReply = false;
+    editCrewRestPacing({ targetSeconds: 90 });
+    publisher.dispose();
+    expect(getRestTimerState().crewPacingDraft).toBeNull();
   });
 });

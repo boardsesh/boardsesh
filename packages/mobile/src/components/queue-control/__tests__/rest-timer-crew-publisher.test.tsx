@@ -13,11 +13,13 @@ const harness = vi.hoisted(() => ({
   nowMs: Date.parse('2026-10-24T10:00:00.000Z'),
   settings: {} as Record<string, unknown>,
   sent: [] as Array<Record<string, unknown>>,
+  isCrewSession: false,
 }));
 
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueSessionId: () => ({ sessionId: harness.sessionId }),
   useQueueSessionControls: () => ({ participantId: harness.participantId }),
+  useIsCrewSession: () => harness.isCrewSession,
   useQueueActions: () => ({
     getQueueSnapshot: () => ({ currentClimbQueueItem: { uuid: harness.currentQueueItemUuid } }),
     setSessionRestCadence: async (input: Record<string, unknown>) => {
@@ -35,6 +37,7 @@ vi.mock('../../../lib/clock', () => ({ nowMs: () => harness.nowMs }));
 vi.mock('../../../lib/error-reporting', () => ({ reportHandledError: vi.fn() }));
 
 import {
+  editCrewRestPacing,
   handleCrewCadenceChange,
   getLastCrewCadenceSnapshot,
   resetCrewCadenceForTests,
@@ -67,6 +70,7 @@ beforeEach(() => {
   harness.participantId = 'participant-me';
   harness.currentQueueItemUuid = 'queue-current';
   harness.sent = [];
+  harness.isCrewSession = false;
   harness.settings = { restTimerTargetSeconds: 60, restTimerMode: 'afterTick', restTimerAutoAdvance: true };
 });
 
@@ -115,6 +119,60 @@ describe('RestTimerCrewPublisher', () => {
         anchor: 'KEEP',
       },
     ]);
+  });
+
+  it('sends no settings edit in a crew: the shared clock changes only from the timer’s controls', async () => {
+    harness.isCrewSession = true;
+    const { rerender } = render(<RestTimerCrewPublisher />);
+    armRestTimer('afterTick', T0, 'session-1');
+    await flush();
+    harness.sent = [];
+
+    harness.settings = { ...harness.settings, restTimerTargetSeconds: 150, restTimerMode: 'onTheMinute' };
+    rerender(<RestTimerCrewPublisher />);
+    act(() => {
+      vi.advanceTimersByTime(CREW_CONFIGURE_DEBOUNCE_MS);
+    });
+    await flush();
+    expect(harness.sent).toEqual([]);
+  });
+
+  it('sends a crew pacing edit at once with only that change, and lets the draft go on the answer', async () => {
+    harness.isCrewSession = true;
+    render(<RestTimerCrewPublisher />);
+    adoptCrewCadence({
+      sessionId: 'session-1',
+      revision: 7,
+      config: {
+        mode: 'afterTick',
+        targetSeconds: 120,
+        autoAdvance: true,
+        advanceOn: 'send',
+        source: 'stage',
+        setByParticipantId: 'participant-sam',
+      },
+      isRunning: true,
+      anchorMs: T0,
+      pausedElapsedSeconds: 0,
+      lastFiredBeatMs: null,
+      lastTick: null,
+      anchorServerMs: T0,
+      lastFiredBeatServerMs: null,
+    });
+    harness.sent = [];
+
+    expect(editCrewRestPacing({ targetSeconds: 150 })).toBe(true);
+    expect(getRestTimerState().crewPacingDraft?.targetSeconds).toBe(150);
+    await flush();
+    expect(harness.sent).toEqual([
+      {
+        action: 'CONFIGURE',
+        config: { mode: 'afterTick', targetSeconds: 150, autoAdvance: true, advanceOn: 'send', source: 'settings' },
+        anchor: 'KEEP',
+      },
+    ]);
+    // The send got no answer here (no session reply), so the draft goes and the controls show the crew's again.
+    expect(getRestTimerState().crewPacingDraft).toBeNull();
   });
 
   it('arms the server from the seed for a timer armed before the session', async () => {

@@ -61,6 +61,7 @@ import type { SetSessionRestCadencePayload } from '@boardsesh/shared-schema/gene
 import {
   CREW_FIRE_LATE_TOLERANCE_MS,
   CREW_FIRE_TIMEOUT_MS,
+  crewBeatFenced,
   crewBeatServerMs,
   handleCrewCadenceChange,
   planCrewFireOutcome,
@@ -299,6 +300,14 @@ export function RestTimerAutoAdvanceScheduler() {
       if (crewFireInFlightRef.current) return;
       const beatServerMs = crewBeatServerMs(crew, localDeadlineMs);
       if (beatServerMs === null) return;
+      // Too close to the last beat the server took for it ever to take this one
+      // (its spacing fence, #6754): a FIRE, or a retry, would only be refused.
+      // The beat goes as one refused would.
+      if (crewBeatFenced(crew.config, crew.lastFiredBeatServerMs, beatServerMs)) {
+        playRestTimerCue({ kind: 'reached' });
+        letCrewBeatGo(crew, localDeadlineMs, beatServerMs);
+        return;
+      }
       // The climb this beat moves on from: a crewmate who moves the wall by hand
       // while the claim is in flight has already spent the beat.
       const wallQueueItemUuid = advanceInputsRef.current.currentClimbQueueItem?.uuid ?? null;

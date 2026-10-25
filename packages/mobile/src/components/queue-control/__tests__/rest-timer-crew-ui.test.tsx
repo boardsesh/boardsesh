@@ -340,7 +340,13 @@ vi.mock('../../tick/TickDestructiveRow', () => ({
 
 import { handleCrewCadenceChange, resetCrewCadenceForTests } from '../../../lib/crew-rest-cadence';
 import type { SessionRestCadenceWire } from '../../../lib/graphql/operations';
-import { armRestTimer, resetRestTimerStoreForTests } from '../../../lib/rest-timer-store';
+import {
+  applyRestTimerStagePacing,
+  armRestTimer,
+  getRestTimerState,
+  resetRestTimerStoreForTests,
+  subscribeLocalRestTimerActions,
+} from '../../../lib/rest-timer-store';
 import { resetServerClock } from '../../../lib/server-clock';
 import { RestTimerSheet } from '../RestTimerSheet';
 import { RestTimerPacerCaption, restTimerPacerCaption } from '../RestTimerPacerCaption';
@@ -606,6 +612,81 @@ describe('the sheet’s rest controls follow the crew clock', () => {
       restTimerTargetSeconds: 120,
       restTimerMode: 'afterTick',
       restTimerAutoAdvance: true,
+    });
+  });
+
+  it('sends each edit to the crew clock with only that change, keeping its advance rule', () => {
+    followCrewClock({ advanceOn: 'tick' });
+    const actions: string[] = [];
+    const unsubscribe = subscribeLocalRestTimerActions((action) => actions.push(action.type));
+    const { container } = render(<RestTimerSheet visible onClose={() => {}} />);
+    fireEvent.click(container.querySelector('[data-segment="mobile.restTimer.modeAria:afterTick"]') as HTMLElement);
+    unsubscribe();
+    expect(actions).toEqual(['crewPacingEdited']);
+    expect(getRestTimerState().crewPacingDraft).toMatchObject({
+      mode: 'afterTick',
+      targetSeconds: 120,
+      autoAdvance: true,
+      advanceOn: 'tick',
+      source: 'settings',
+    });
+    // The timer runs on the crew's clock until the server answers.
+    expect(getRestTimerState().crew?.config?.mode).toBe('onTheMinute');
+  });
+
+  it('steps on from the first tap with a second before the server answers', () => {
+    followCrewClock();
+    const { container } = render(<RestTimerSheet visible onClose={() => {}} />);
+    const lengthPill = () => container.querySelector('[data-testid="rest-length-pill"]') as HTMLElement;
+    fireEvent.click(lengthPill());
+    fireEvent.click(lengthPill());
+    expect(controls(container).length).toBe('mobile.restTimer.lengthPillAria:3:00');
+    expect(getRestTimerState().crewPacingDraft?.targetSeconds).toBe(180);
+    expect(settingsStore.values.restTimerTargetSeconds).toBe(180);
+  });
+
+  it('sends nothing to the crew from a tap that changes nothing', () => {
+    followCrewClock();
+    const actions: string[] = [];
+    const unsubscribe = subscribeLocalRestTimerActions((action) => actions.push(action.type));
+    const { container } = render(<RestTimerSheet visible onClose={() => {}} />);
+    fireEvent.click(container.querySelector('[data-segment="mobile.restTimer.modeAria:onTheMinute"]') as HTMLElement);
+    unsubscribe();
+    expect(actions).toEqual([]);
+    expect(getRestTimerState().crewPacingDraft).toBeNull();
+  });
+
+  describe('with a workout stage on this phone', () => {
+    const stage = {
+      sessionId: 'session-1',
+      stageId: 'stage-1',
+      kind: 'limitBouldering' as const,
+      queueItemUuid: 'item-1',
+      mode: 'afterTick' as const,
+      targetSeconds: 180,
+      advanceOn: 'send' as const,
+      closesRound: false,
+      stagePacing: { mode: 'afterTick' as const, restSeconds: 180, advanceOn: 'send' as const },
+    };
+
+    it('says the workout sets it while the crew clock runs a workout’s pacing', () => {
+      applyRestTimerStagePacing(stage, NOW_MS, 'none');
+      followCrewClock({ mode: 'afterTick', targetSeconds: 180, advanceOn: 'send', source: 'stage' });
+      const { container } = render(<RestTimerSheet visible onClose={() => {}} />);
+      expect(container.querySelector('[data-section="mobile.restTimer.workoutPacingTitle"]')).not.toBeNull();
+      expect(container.querySelector('[data-testid="rest-length-pill"]')).toBeNull();
+    });
+
+    it('shows the crew’s controls once a crewmate set the crew clock by hand', () => {
+      applyRestTimerStagePacing(stage, NOW_MS, 'none');
+      followCrewClock();
+      const { container } = render(<RestTimerSheet visible onClose={() => {}} />);
+      expect(container.querySelector('[data-section="mobile.restTimer.workoutPacingTitle"]')).toBeNull();
+      expect(controls(container)).toEqual({
+        autoAdvance: 'true',
+        length: 'mobile.restTimer.lengthPillAria:2:00',
+        cadence: 'mobile.restTimer.modeAria:onTheMinute',
+      });
     });
   });
 });
