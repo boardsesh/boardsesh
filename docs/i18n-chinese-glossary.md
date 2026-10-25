@@ -8,7 +8,7 @@ Catalogs live in `packages/shared/i18n/locales/zh-Hans/`. The English source is 
 
 ## Scope: the app only
 
-`zh-Hans` is an app-only locale (`APP_ONLY_LOCALES` in `packages/shared/i18n/src/config.ts`). It ships the twelve `MOBILE_NAMESPACES` and nothing else. There is no `/zh-Hans` page on www, and the web-only namespaces (`marketing`, `admin`, `gyms`, `kiosk`) must not be added to the `zh-Hans` folder: `catalog-completeness.test.ts` fails if they appear.
+`zh-Hans` is an app-only locale (`APP_ONLY_LOCALES` in `packages/shared/i18n/src/config.ts`). It ships the thirteen `MOBILE_NAMESPACES` and nothing else. There is no `/zh-Hans` page on www, and the web-only namespaces (`marketing`, `admin`, `gyms`, `kiosk`) must not be added to the `zh-Hans` folder: `catalog-completeness.test.ts` fails if they appear.
 
 Traditional Chinese (`zh-Hant`, `zh-TW`, `zh-HK`, `zh-MO`) is not translated. Those devices get English, not Simplified.
 
