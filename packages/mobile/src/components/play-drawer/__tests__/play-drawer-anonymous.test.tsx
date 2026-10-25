@@ -2246,7 +2246,8 @@ describe('PlayDrawer — the list it walks, and its end (#6664)', () => {
   // so they wait while it is open, and they are for the climb on screen.
   it('holds the workout cards back while the end card owns the board', () => {
     session.sessionId = 'session-1';
-    onTheLastClimbOfProjects();
+    // Up next is for another board, so Next opens the end card instead of playing it.
+    onTheLastClimbOfProjects(itemOffBoard);
     expect(recorded.workoutOverlay.at(-1)).toMatchObject({
       sessionId: 'session-1',
       run: null,
@@ -2256,6 +2257,7 @@ describe('PlayDrawer — the list it walks, and its end (#6664)', () => {
 
     pressNext();
 
+    expect(recorded.trackEndCard.length).toBeGreaterThan(0);
     expect(recorded.workoutOverlay.at(-1)).toMatchObject({ suppressed: true });
   });
 
