@@ -385,12 +385,11 @@ registerOfflineOperation<LocalHoldHeatmapVariables, LocalHoldHeatmapResponse>({
 });
 
 // Boardsesh grade reads. These carry only boardName (+ climbUuid + angle), no
-// layout/size, so they gate on the board TYPE being downloaded and then read
-// board_climb_grades by the exact key. A single-row null is a local miss (the
-// row may just not have synced, or the climb is from a non-downloaded scope of
-// the same board type) → retried over the network while online. The by-angle
-// list treats an empty result as a real answer (a MoonBoard / Woods / no-grade climb),
-// exactly like an empty search — no needless network retry.
+// layout/size. The single grade gates on the board TYPE being downloaded and
+// reads board_climb_grades by the exact key; a null row is a local miss (the
+// row may not have synced, or the climb is from a non-downloaded scope) →
+// retried over the network while online. The by-angle list gates on the
+// climb's own layout instead (see below).
 registerOfflineOperation<BoardseshGradeVariables, BoardseshGradeResponse>({
   document: BOARDSESH_GRADE,
   surface: 'grade',
@@ -403,30 +402,20 @@ registerOfflineOperation<BoardseshGradeVariables, BoardseshGradeResponse>({
   isLocalMiss: (response) => response.boardseshGrade === null,
 });
 
-// Deliberately NO `isLocalMiss` here, unlike the BOARDSESH_GRADE op above — this is
-// a collapsed-vs-expanded divergence, not an oversight. The single-angle op treats a
-// null row as a miss and retries over the network (see its isLocalMiss above); this
-// by-angle op treats an empty list as a real answer and never retries. Two reasons:
-//   1. An empty by-angle list is frequently CORRECT (MoonBoard / too-few-ascents
-//      climbs are never graded), so retrying it would be a needless network round
-//      trip on every chart open for those climbs — the same reasoning search results
-//      use (see the class doc above `OfflineOperation.isLocalMiss`).
-//   2. Neither grade op carries layout/size, only boardName — so there's no way to
-//      tell "genuinely ungraded" apart from "this exact climb scope never synced to
-//      this device" (e.g. viewed cross-scope via party queue / deep link / similar
-//      climbs). Adding isLocalMiss here would retry on every miss including the
-//      common ungraded case, which is the exact overhead skipping it is meant to
-//      avoid.
-// Net effect: for a climb whose grades never synced to THIS device, the collapsed
-// single-grade view (BOARDSESH_GRADE) falls back to the network and shows a grade,
-// while the expanded by-angle chart (this op) shows empty until the board's next
-// background sync catches the row up. This is accepted, not a bug — see
-// offline-request.test.ts's "does not retry an empty local list" case.
+// Deliberately NO `isLocalMiss` here, unlike the BOARDSESH_GRADE op above. An
+// empty by-angle list is often CORRECT (MoonBoard / too-few-ascents climbs are
+// never graded), so retrying it would cost a network round trip on every chart
+// open for those climbs. Instead the gate is the climb's own downloaded layout
+// (grade rows sync per scope, like stats): past it, empty means empty. A uuid
+// with no local board_climbs row (a merged-away alias, or a climb from a scope
+// that was never downloaded) fails the gate and goes to the server, which
+// resolves aliases. With no signal such a uuid still reads as empty, because
+// board_climb_aliases is not on the phone.
 registerOfflineOperation<BoardseshGradesForAnglesVariables, BoardseshGradesForAnglesResponse>({
   document: BOARDSESH_GRADES_FOR_ANGLES,
   surface: 'grade',
   boardNameOf: ({ boardName }) => boardName,
-  canServeLocal: (db, { boardName }) => isBoardTypeDownloadedLocally(db, boardName),
+  canServeLocal: (db, { boardName, climbUuid }) => isClimbLayoutDownloadedLocally(db, boardName, climbUuid),
   resolveLocal: async (db, { boardName, climbUuid }) => ({
     boardseshGradesForAngles: await getBoardseshGradesForAnglesLocal(db, {
       boardName,
