@@ -81,8 +81,9 @@ too (`rounds`, `restBetweenClimbsSeconds`, `restBetweenRoundsSeconds`, `interval
 `climbsPerRound` on a 4x4. `WORKOUT_STAGE_KINDS` lists every kind this bundle knows, and
 `isWorkoutStageKind` checks stored data against it.
 
-The three timed kinds are offered in dev builds only until they launch (see "Timed
-blocks" below); a release bundle offers warm-up, volume, pyramid, ladder and grade focus.
+The three timed kinds are offered in dev builds and to testers with the
+`workout-timed-blocks` flag until they launch (see "Timed blocks" below); a release bundle
+with the flag off offers warm-up, volume, pyramid, ladder and grade focus.
 Their fields: a 4x4 takes 2 to 10 climbs per round (the player keys its
 swipe pages by climb, so one climb per round would put the same climb on three pages) and
 1 to 10 rounds; limit bouldering 1 to 10 climbs; on the minute 1 to 40. Their rests use
@@ -523,13 +524,12 @@ the fetch, the pools, the preview and Start are unchanged.
 
 ## What comes next
 
-- **4x4 rounds** ([#5380](https://github.com/boardsesh/boardsesh/issues/5380)): a
-  `fourByFour` stage that knows it is four climbs repeated four times, and which round a
-  tick belongs to.
+- **Launch the timed blocks** ([#5380](https://github.com/boardsesh/boardsesh/issues/5380)):
+  4x4 rounds, limit bouldering and on the minute are built (see "Timed blocks") and offered
+  in dev builds and to testers through `workout-timed-blocks`. The launch removes that flag
+  and `timedWorkoutBlocksOffered`, so every climber gets the eight chips.
 - **Per-stage pacing for untimed blocks.** Timed blocks pace the rest timer (see "Pacing"); a
   volume, pyramid, ladder or grade-focus block still runs on the climber's own rest. A partner
   `restSeconds` on those blocks would reach the same `WorkoutRunStage.pacing`.
-- **Limit bouldering** ([#6231](https://github.com/boardsesh/boardsesh/issues/6231)) as its
-  own stage kind.
 - **Partner `plan_snapshot`.** Partner workouts (`docs/partner-workouts-internal.md`) map
   their blocks onto these stages and report what was queued per block.

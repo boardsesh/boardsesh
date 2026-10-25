@@ -31,8 +31,8 @@ type WorkoutPreviewSummaryProps = {
  * climbs (a 4x4's four rows run four rounds, so 16), over which grades, and for
  * a timed workout about how long it takes, plus a Shuffle that re-picks every
  * climb at the same grades. When a thin catalogue left slots empty, a note says
- * how many of the planned climbs were found, because those are all Start will
- * queue.
+ * how many of the planned climbs were found: Start queues only those, each once,
+ * or once per round in a 4x4 (one found climb of a 4-round 4x4 queues 4).
  */
 export function WorkoutPreviewSummary({
   summary,
