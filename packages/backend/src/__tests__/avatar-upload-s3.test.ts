@@ -234,6 +234,39 @@ describe('avatar upload S3 path (write-first, clean-after)', () => {
     }
   });
 
+  it('keeps every frame of an animated GIF avatar through the re-encode', async () => {
+    validateTokenMock.mockResolvedValue({ userId: USER_ID });
+    isS3ConfiguredMock.mockReturnValue(true);
+    const frame = (background: string) =>
+      sharp({ create: { width: 4, height: 4, channels: 3, background } })
+        .png()
+        .toBuffer();
+    const animatedGif = await sharp([await frame('#7c3aed'), await frame('#f59e0b')], { join: { animated: true } })
+      .gif()
+      .toBuffer();
+    expect((await sharp(animatedGif).metadata()).pages).toBe(2);
+    const { baseUrl, server } = await startAvatarServer();
+    try {
+      const formData = new FormData();
+      formData.set('userId', USER_ID);
+      formData.set('avatar', new Blob([new Uint8Array(animatedGif)], { type: 'image/gif' }), 'avatar.gif');
+      const response = await fetch(`${baseUrl}/api/avatars`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer avatar-token' },
+        body: formData,
+      });
+
+      expect(response.status).toBe(200);
+      const baseCall = uploadToS3Mock.mock.calls.find(([, , key]) => key === `avatars/${USER_ID}.gif`);
+      const storedMetadata = await sharp(baseCall?.[1] as Buffer).metadata();
+      expect(storedMetadata.format).toBe('gif');
+      // A still-image re-encode would flatten this to one frame.
+      expect(storedMetadata.pages).toBe(2);
+    } finally {
+      await closeServer(server);
+    }
+  });
+
   it('never deletes the existing avatar when the S3 upload fails', async () => {
     validateTokenMock.mockResolvedValue({ userId: USER_ID });
     isS3ConfiguredMock.mockReturnValue(true);
