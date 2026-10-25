@@ -33,13 +33,14 @@ const CMDLINE_TOOLS_URL = `https://dl.google.com/android/repository/commandlinet
 // Latest Temurin 21 GA for linux/x64. Redirects to the actual tarball.
 const ADOPTIUM_JDK21_URL = 'https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jdk/hotspot/normal/eclipse';
 
-// API level for the platform + system image. Matches CI (android-36).
+// Keep the emulator image independent from the SDK used to compile Expo modules.
 export const ANDROID_API_LEVEL = 36;
+export const ANDROID_COMPILE_SDK = 37;
 export const SYSTEM_IMAGE = `system-images;android-${ANDROID_API_LEVEL};google_apis;x86_64`;
-export const BUILD_TOOLS_VERSION = `${ANDROID_API_LEVEL}.0.0`;
+export const BUILD_TOOLS_VERSION = `${ANDROID_COMPILE_SDK}.0.0`;
 
 // Core packages to boot an emulator and install/run an APK (no Java build needed).
-const SDK_PACKAGES_CORE = ['platform-tools', 'emulator', `platforms;android-${ANDROID_API_LEVEL}`, SYSTEM_IMAGE];
+const SDK_PACKAGES_CORE = ['platform-tools', 'emulator', `platforms;android-${ANDROID_COMPILE_SDK}`, SYSTEM_IMAGE];
 // Extra packages the local Gradle fallback build needs.
 const SDK_PACKAGES_BUILD = [`build-tools;${BUILD_TOOLS_VERSION}`];
 // Subset of the core list a Gradle build alone needs: platform-tools + the

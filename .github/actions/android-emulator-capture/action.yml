@@ -92,7 +92,7 @@ runs:
       shell: bash
       run: |
         yes | sdkmanager --licenses > /dev/null 2>&1 || true
-        sdkmanager "platforms;android-36" "build-tools;36.0.0"
+        sdkmanager "platforms;android-37" "build-tools;37.0.0"
 
     # Only the local-build fallback below runs Gradle, so this cache only pays
     # off on that path; the common (download) path just restores it as a cheap

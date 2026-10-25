@@ -99,6 +99,22 @@ describe('NAME_INVARIANTS', () => {
     expect(NAME_INVARIANTS.map(({ className }) => className).sort()).toEqual([...pinned].sort());
   });
 
+  it('retains only the class-name contract used by the installed Sentry navigation tracer', () => {
+    const tracer = readFileSync(
+      resolve(
+        dirname(fileURLToPath(import.meta.url)),
+        '../packages/mobile/node_modules/@sentry/react-native/android/src/main/java/io/sentry/react/RNSentryReactFragmentLifecycleTracer.java',
+      ),
+      'utf8',
+    );
+    expect(tracer).toContain('"com.swmansion.rnscreens.ScreenStackFragment".equals(f.getClass().getCanonicalName())');
+    expect(tracer).toContain('SCREEN_APPEAR_EVENT_NAME.equals(event.getEventName())');
+    expect(NAME_INVARIANTS.map(({ className }) => className)).toContain('com.swmansion.rnscreens.ScreenStackFragment');
+    expect(NAME_INVARIANTS.map(({ className }) => className)).not.toContain(
+      'com.swmansion.rnscreens.events.ScreenAppearEvent',
+    );
+  });
+
   it('gives every entry a reason a reader can act on', () => {
     for (const { className, why } of NAME_INVARIANTS) {
       expect({ className, described: why.length > 20 }).toEqual({ className, described: true });
@@ -139,13 +155,11 @@ describe('verifyObfuscation', () => {
     expect(verdict.message).toContain('absent from the mapping');
   });
 
-  // Sentry reads TWO react-native-screens names as strings. The first invariant
-  // covered only ScreenStackFragment, so a mapping that renamed ScreenAppearEvent
-  // and kept the fragment passed while time-to-initial-display went dark.
-  it('fails when only ScreenAppearEvent was renamed', () => {
-    const appearEvent = 'com.swmansion.rnscreens.events.ScreenAppearEvent';
+  // The current SDK still compares the fragment class name as a string.
+  it('fails when the Sentry-traced ScreenStackFragment was renamed', () => {
+    const fragmentClass = 'com.swmansion.rnscreens.ScreenStackFragment';
     const entries = INVARIANT_ENTRIES.map(([className]) =>
-      className === appearEvent
+      className === fragmentClass
         ? ([className, 'a.b.d'] as [string, string])
         : ([className, className] as [string, string]),
     );
@@ -153,7 +167,7 @@ describe('verifyObfuscation', () => {
     const verdict = verifyObfuscation(parseMapping(mapping([...entries, ...renamedFiller(7)])), OPTIONS);
 
     expect(verdict.ok).toBe(false);
-    expect(verdict.message).toContain(appearEvent);
+    expect(verdict.message).toContain(fragmentClass);
     expect(verdict.message).toContain('renamed to a.b.d');
   });
 

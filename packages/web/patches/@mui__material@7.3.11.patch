@@ -1,0 +1,16 @@
+diff --git a/internal/index.d.ts b/internal/index.d.ts
+--- a/internal/index.d.ts
++++ b/internal/index.d.ts
+@@ -1,3 +1,4 @@
++import type * as React from 'react';
+ import { DistributiveOmit } from '@mui/types';
+ import { StyledComponentProps } from "../styles/index.js";
+ /**
+diff --git a/esm/internal/index.d.ts b/esm/internal/index.d.ts
+--- a/esm/internal/index.d.ts
++++ b/esm/internal/index.d.ts
+@@ -1,3 +1,4 @@
++import type * as React from 'react';
+ import { DistributiveOmit } from '@mui/types';
+ import { StyledComponentProps } from "../styles/index.js";
+ /**

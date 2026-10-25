@@ -39,7 +39,7 @@ runs:
       shell: bash
       run: |
         yes | sdkmanager --licenses > /dev/null 2>&1 || true
-        sdkmanager "platforms;android-36" "build-tools;36.0.0"
+        sdkmanager "platforms;android-37" "build-tools;37.0.0"
 
     - name: Restore Gradle cache (read-only, warmed by android-apk-rn.yml on main)
       # restore, not cache: PR runs never save. Each save was a 3.4 GB entry that

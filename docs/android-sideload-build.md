@@ -25,6 +25,10 @@ downgrade for React Native's older Foojay resolver is obsolete; restoring it
 breaks both APK builds and Robolectric before compilation. Expo still owns the
 wrapper's download URL, timeout, validation, and cache paths.
 
+Local Expo modules inherit the app's compile SDK through
+`expo-module-gradle-plugin`. SDK 58 needs compile SDK 37 and build tools 37.0.0;
+older module-level compile SDK overrides fail native dependency metadata checks.
+
 ## How it runs
 
 - **Trigger:** push to `release/next` touching `packages/mobile/**` (+ its shared

@@ -9,6 +9,7 @@ export function scheduleIdleTask(callback: () => void): { cancel: () => void } {
   const frameHandle = requestAnimationFrame(() => {
     if (cancelled) return;
     if (typeof requestIdleCallback === 'function') {
+      // RN 0.88 installs this native API in Libraries/Core/setUpTimers.js.
       idleHandle = requestIdleCallback(run, { timeout: 2_000 });
     } else {
       // Browser engines without idle callbacks still defer work past the frame.

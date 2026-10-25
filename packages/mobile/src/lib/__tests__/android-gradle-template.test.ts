@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +12,21 @@ const require = createRequire(import.meta.url);
 afterEach(() => vi.unstubAllEnvs());
 
 describe('Expo Android build toolchain', () => {
+  it('lets Expo local modules inherit the app compile SDK required by native dependencies', () => {
+    const mobileRoot = fileURLToPath(new URL('../../..', import.meta.url));
+    const modulesRoot = join(mobileRoot, 'modules');
+    const moduleBuildFiles = readdirSync(modulesRoot)
+      .map((moduleName) => join(modulesRoot, moduleName, 'android/build.gradle'))
+      .filter((buildFile) => existsSync(buildFile));
+    moduleBuildFiles.push(join(mobileRoot, '../../scripts/fixtures/mobile-profile/native/android/build.gradle'));
+    expect(moduleBuildFiles.length).toBeGreaterThan(0);
+    for (const buildFile of moduleBuildFiles) {
+      const gradleSource = readFileSync(buildFile, 'utf8');
+      expect(gradleSource, buildFile).toContain("id 'expo-module-gradle-plugin'");
+      expect(gradleSource, buildFile).not.toMatch(/\bcompileSdk(?:Version)?\s*(?:=\s*)?\d+/);
+    }
+  });
+
   it('keeps Expo in control of the wrapper instead of downgrading its Gradle runtime', () => {
     vi.stubEnv('TAILSCALE_HOSTS', '');
     const config = createExpoConfig({

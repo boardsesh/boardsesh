@@ -30,7 +30,9 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DEFAULT_MOBILE_DIR = resolve(REPO_ROOT, 'packages', 'mobile');
 // Audit the official Expo uploader's pairing and Debug ID contract before adding
 // a version. Main and frozen release anchors must keep their own installed SDK.
-const SUPPORTED_SENTRY_REACT_NATIVE_VERSIONS = ['7.11.0', '8.24.0'];
+// 8.32 retains bundle.map pairing, debugId -> debug_id, Hermes Debug ID
+// references, and nonzero CLI-exit propagation in the delegated uploader.
+const SUPPORTED_SENTRY_REACT_NATIVE_VERSIONS = ['7.11.0', '8.24.0', '8.32.0'];
 const VALID_DEBUG_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type MobilePlatform = 'ios' | 'android';
@@ -363,10 +365,10 @@ export function resolveInstalledSentryUploader(mobileDirInput: string): string {
   if (!existsSync(uploaderPath) || !statSync(uploaderPath).isFile()) {
     throw new Error(`Official Sentry Expo source-map uploader is missing: ${uploaderPath}`);
   }
-  // 8.24 keeps the SDK entrypoint but delegates to a separate package. Check it
+  // The audited 8.x SDKs keep the entrypoint but delegate to a separate package. Check it
   // from the SDK's dependency graph, including pnpm's isolated linker, before
   // letting a workflow publish an OTA whose maps cannot be uploaded.
-  if (sentryPackage.version === '8.24.0') {
+  if (sentryPackage.version === '8.24.0' || sentryPackage.version === '8.32.0') {
     const requireFromSentry = createRequire(sentryPackageJsonPath);
     try {
       const delegatedUploaderPath = requireFromSentry.resolve('@sentry/expo-upload-sourcemaps/cli.js');

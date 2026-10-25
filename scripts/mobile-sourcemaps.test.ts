@@ -417,10 +417,10 @@ describe('OTA source-map artifact validation', () => {
 });
 
 describe('official Sentry uploader invocation', () => {
-  it.each(['7.11.0', '8.24.0'])('accepts the audited Sentry React Native uploader %s', (version) => {
+  it.each(['7.11.0', '8.24.0', '8.32.0'])('accepts the audited Sentry React Native uploader %s', (version) => {
     const fixture = createMobileFixture();
     const uploaderPath = installFixtureSentryUploader(fixture, version);
-    if (version === '8.24.0') {
+    if (version === '8.24.0' || version === '8.32.0') {
       // Only the SDK owns this dependency; resolving from mobile would fail
       // under pnpm's isolated linker even though the real uploader can load it.
       const delegatedUploaderPath = join(
@@ -440,13 +440,13 @@ describe('official Sentry uploader invocation', () => {
     const fixture = createMobileFixture();
     installFixtureSentryUploader(fixture, version);
     expect(() => resolveInstalledSentryUploader(fixture.mobileDir)).toThrow(
-      `Unsupported @sentry/react-native version ${version}; audited versions: 7.11.0, 8.24.0.`,
+      `Unsupported @sentry/react-native version ${version}; audited versions: 7.11.0, 8.24.0, 8.32.0.`,
     );
   });
 
-  it('rejects an 8.24 SDK whose delegated uploader is missing', () => {
+  it.each(['8.24.0', '8.32.0'])('rejects SDK %s when its delegated uploader is missing', (version) => {
     const fixture = createMobileFixture();
-    installFixtureSentryUploader(fixture, '8.24.0');
+    installFixtureSentryUploader(fixture, version);
     expect(() => resolveInstalledSentryUploader(fixture.mobileDir)).toThrow(
       'Official Sentry Expo source-map uploader dependency @sentry/expo-upload-sourcemaps is missing',
     );

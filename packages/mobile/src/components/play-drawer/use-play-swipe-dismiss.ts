@@ -81,6 +81,8 @@ export function usePlaySwipeDismiss(openTargetNonce?: number | null) {
     const unsubscribeBlocked = navigation.addListener('removePrevented', () => onRemoval({ defaultPrevented: true }));
     const unsubscribeRemoved = navigation.addListener('removed', () => onRemoval({ defaultPrevented: false }));
     return () => {
+      // Blocked removal can restore state only while mounted. `removed` is
+      // delivered after unmount, so retain that observer through this task.
       unsubscribeBlocked();
       queueMicrotask(unsubscribeRemoved);
     };

@@ -23,6 +23,15 @@ describe('React Native source-build Podfile', () => {
     expect(enforceReactNativeSourceBuilds(configured)).toBe(configured);
   });
 
+  it('enforces every assignment, including later indented overrides', () => {
+    const configured = enforceReactNativeSourceBuilds(
+      `${podfile}  ENV['RCT_USE_RN_DEP'] = '1'\n\tENV['RCT_USE_PREBUILT_RNCORE'] ||= '1'\n`,
+    );
+    expect(configured).toBe(
+      "ENV['RCT_USE_RN_DEP'] = '0'\nENV['RCT_USE_PREBUILT_RNCORE'] = '0'\n  ENV['RCT_USE_RN_DEP'] = '0'\n\tENV['RCT_USE_PREBUILT_RNCORE'] = '0'\n",
+    );
+  });
+
   it('fails closed when Expo changes the source-build switches', () => {
     expect(() => enforceReactNativeSourceBuilds("ENV['RCT_USE_PREBUILT_RNCORE'] = '0'\n")).toThrow('RCT_USE_RN_DEP');
   });

@@ -618,6 +618,8 @@ jobs:
       #
       # Effective config is the `lint` block in root vite.config.ts, NOT
       # .oxlintrc.json — see issue #4548 and the comment on that block.
+      - name: Check web and native React declaration isolation
+        run: vp test run --project scripts scripts/__tests__/react-types-resolution.test.ts --reporter=agent
       - name: Lint full repo
         # vp/Vite+ panics with "failed printing to stdout: Resource temporarily
         # unavailable (os error 11)" when it flushes the full-repo warning list to the

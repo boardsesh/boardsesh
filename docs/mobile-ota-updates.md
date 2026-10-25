@@ -253,12 +253,24 @@ Build iOS with Xcode 27. Expo prebuild generates the scene delegate and scene
 manifest required by iOS 27; generated native projects must be regenerated after
 this upgrade. Existing Expo app-delegate subscribers receive scene lifecycle events.
 
+React Native 0.88 registers `requestIdleCallback` in its timer setup, so optional
+work uses that native scheduler after the first frame. Gesture Handler 3 still
+supports its builder API and ref-based relations. Existing editor and drawer
+graphs keep that compatibility path; rows interacting with the new Swipeable
+use the hook API so a gesture relation never crosses between the two APIs.
+
 Web remains on React 19.2. Next, MUI's styled engine and react-i18next import
 React declarations without declaring their types peer, so pnpm otherwise gives
 them the hoisted mobile 19.3 declarations. The precise optional peer extensions
 in `pnpm-workspace.yaml` bind each package to its consuming app's React types.
+Next's ReactDOM declarations use the same explicit peer binding so their own
+React peer cannot fall back to the mobile version.
 `scripts/__tests__/react-types-resolution.test.ts` checks the installed module
 paths; keep that check when updating or removing these extensions.
+MUI's internal declarations also import React explicitly through the web-only
+patch in `packages/web/patches`: their fallback ref type must not use the mobile
+ambient React namespace. The compiler regression exercises both declaration
+variants against that mixed context before and after the import.
 
 `with-react-native-source-builds` forces React Native source builds on iOS so the
 scheduler lifetime fix in `patches/react-native@0.88.0.patch` actually compiles.
@@ -266,6 +278,9 @@ React Native 0.88 removed the runtime flag used by our previous workaround for
 #5293 without retaining its delegate invalidation. The compile gate checks the
 source patch and rejects archives linked against prebuilt React. Expect a slower
 first native build; subsequent builds can reuse the shared local Xcode cache.
+Remove this source-build requirement only after an upstream React Native release
+preserves the scheduler delegate lifetime guard, the behavioral C++ tests pass
+against that release, and both Release native builds pass without our patch.
 
 The fingerprint explicitly uses the `strict` preset. SDK 58's new `balanced`
 default hashes package versions; we continue hashing native source and config
