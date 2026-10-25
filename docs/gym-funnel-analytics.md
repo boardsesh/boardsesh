@@ -252,7 +252,7 @@ the app on both platforms (the iOS association file's `/*`, and Android's
 `pathPrefix: '/b/'`), so a phone with Boardsesh skips the web page. The app
 counts those scans itself: `app/b/[board_slug]/index.tsx` and
 `app/b/[board_slug]/[angle]/list.tsx` read the pair with the same strict
-`parseGymQrLanding`, and `BoardRouteHandoff` fires `Board QR Scanned` with
+`parseBoardQrLanding`, and `BoardRouteHandoff` fires `Board QR Scanned` with
 `surface: 'app'` once its hand-off has opened the board
 (`packages/mobile/src/lib/board-qr-scan.ts`). A dead slug, a refused wall or a
 bounce to login counts nothing. The capture waits for the SDK when consent is
@@ -264,7 +264,7 @@ nothing: `app` means the store app.
 A signed-out scanner is sent to login first. The deep-link provider keeps the
 link through sign-in, and its allowlist (`parseBoardLinkPath` in
 `packages/mobile/src/lib/routing/board-deep-link.ts`) keeps `src` and `medium`
-as a pair `parseGymQrLanding` accepts, rewritten to `src=qr&medium=…`. So the
+as a pair `parseBoardQrLanding` accepts, rewritten to `src=qr&medium=…`. So the
 scan that brings a new installer into the app is counted when the replayed
 link opens the board, up to a day later.
 

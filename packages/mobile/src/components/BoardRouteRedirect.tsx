@@ -11,7 +11,7 @@ import { StyleSheet, View } from 'react-native';
 import { Redirect, Stack, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { onlineManager } from '@tanstack/react-query';
-import { SHARED_EVENTS, type GymQrMedium } from '@boardsesh/analytics';
+import { SHARED_EVENTS, type BoardQrMedium } from '@boardsesh/analytics';
 import { ActivityIndicator } from './ActivityIndicator';
 import { AnonymousClimbView } from './AnonymousClimbView';
 import { Button } from './Button';
@@ -111,7 +111,7 @@ function useBoardRouteHandoffReporter(target: BoardRouteTarget | null, mode: Boa
  * re-render cannot send it twice; `trackBoardQrScan` also drops the same landing
  * arriving on a second route screen.
  */
-function useBoardQrScanReporter(target: BoardRouteTarget | null, qrMedium: GymQrMedium | null | undefined) {
+function useBoardQrScanReporter(target: BoardRouteTarget | null, qrMedium: BoardQrMedium | null | undefined) {
   const reportedRef = useRef<string | null>(null);
   // A printed code names a board, never a climb, so the board path is the landing.
   const landing = target ? toBoardPath(target) : 'unparsed';
@@ -214,7 +214,7 @@ export function BoardRouteHandoff({
    * The medium of the printed code this URL came from, already parsed by
    * `boardQrScanMedium`. Counted once the board opens; null for any other open.
    */
-  qrMedium?: GymQrMedium | null;
+  qrMedium?: BoardQrMedium | null;
 }) {
   const { t } = useTranslation('boards');
   const confirm = useConfirm();

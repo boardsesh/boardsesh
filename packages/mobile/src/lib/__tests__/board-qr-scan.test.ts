@@ -30,7 +30,7 @@ const {
 const LANDING = '/b/garage-spray';
 
 describe('boardQrScanMedium', () => {
-  it.each(['board', 'kiosk', 'poster'] as const)('reads a %s scan', (medium) => {
+  it.each(['board', 'kiosk'] as const)('reads a %s scan', (medium) => {
     expect(boardQrScanMedium({ src: 'qr', medium })).toBe(medium);
   });
 
@@ -42,6 +42,8 @@ describe('boardQrScanMedium', () => {
     ['another src', { src: 'email', medium: 'board' }],
     ['an upper-case src', { src: 'QR', medium: 'board' }],
     ['an unknown medium', { src: 'qr', medium: 'flyer' }],
+    // The gym poster's medium: no board code prints it.
+    ['the gym poster medium', { src: 'qr', medium: 'poster' }],
     ['a repeated medium', { src: 'qr', medium: ['board', 'kiosk'] }],
     ['a repeated src', { src: ['qr', 'qr'], medium: 'board' }],
   ])('is not a scan with %s', (_label, params) => {

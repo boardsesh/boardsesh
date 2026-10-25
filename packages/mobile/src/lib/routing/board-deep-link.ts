@@ -21,14 +21,14 @@
 //   friend's board, so dropping the token would land them on a board they
 //   cannot open. The QR pair survives so the scan that brought a new installer
 //   into the app is still counted once they sign in (#4415), and only as a pair
-//   the strict `parseGymQrLanding` accepts, rewritten to its canonical spelling.
+//   the strict `parseBoardQrLanding` accepts, rewritten to its canonical spelling.
 // Pure and React-free so every rule is a unit test.
 
 import {
   GYM_QR_MEDIUM_PARAM,
   GYM_QR_SRC_PARAM,
   GYM_QR_SRC_VALUE,
-  parseGymQrLanding,
+  parseBoardQrLanding,
   type GymQrSearchParams,
 } from '@boardsesh/analytics';
 import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
@@ -46,7 +46,7 @@ const WALL_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
 const boardNames: ReadonlySet<string> = new Set<string>(SUPPORTED_BOARDS);
 
 /**
- * `src` and `medium` as `parseGymQrLanding` expects them, from the query's
+ * `src` and `medium` as `parseBoardQrLanding` expects them, from the query's
  * decoded pairs. A name that appears twice becomes an array, which the parser
  * refuses: a duplicated param is a hand-edited URL, not a scan.
  */
@@ -88,7 +88,7 @@ export function parseBoardLinkPath(url: string | null | undefined): string | nul
   const query = new Map(entries);
   const wallUuid = query.get('wall');
   const inviteToken = query.get(BOARD_INVITE_PARAM);
-  const qrLanding = parseGymQrLanding(qrLandingParams(entries));
+  const qrLanding = parseBoardQrLanding(qrLandingParams(entries));
   const kept = [
     wallUuid !== undefined && WALL_UUID.test(wallUuid) ? `wall=${wallUuid}` : null,
     isBoardInviteToken(inviteToken) ? `${BOARD_INVITE_PARAM}=${inviteToken}` : null,

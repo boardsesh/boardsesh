@@ -77,7 +77,7 @@ describe('parseBoardLinkPath', () => {
 
   // #4415: a signed-out scanner's poster link is replayed after sign-in, and
   // the scan is counted then. Only a pair the strict parser accepts survives.
-  it.each(['board', 'kiosk', 'poster'])('keeps a printed code’s src=qr&medium=%s pair', (medium) => {
+  it.each(['board', 'kiosk'])('keeps a printed code’s src=qr&medium=%s pair', (medium) => {
     expect(parseBoardLinkPath(`https://www.boardsesh.com/b/the-garage?src=qr&medium=${medium}`)).toBe(
       `/b/the-garage?src=qr&medium=${medium}`,
     );
@@ -104,6 +104,7 @@ describe('parseBoardLinkPath', () => {
     ['another src', '?src=email&medium=board'],
     ['an upper-case src', '?src=QR&medium=board'],
     ['an unknown medium', '?src=qr&medium=flyer'],
+    ['the gym poster medium, which no board code prints', '?src=qr&medium=poster'],
     ['an empty medium', '?src=qr&medium='],
     ['a repeated medium', '?src=qr&medium=board&medium=kiosk'],
     ['a repeated src', '?src=qr&src=qr&medium=board'],
@@ -163,7 +164,7 @@ describe('isBoardLinkPath', () => {
   it.each([
     'https://www.boardsesh.com/b/the-garage?medium=kiosk&src=qr',
     `https://www.boardsesh.com/b/the-garage/40/list?src=qr&medium=board&wall=${WALL_UUID}`,
-    `com.boardsesh.app://b/the-garage?invite=Ab3_dE-fGhIjKlMnOpQrSt&medium=poster&src=qr`,
+    `com.boardsesh.app://b/the-garage?invite=Ab3_dE-fGhIjKlMnOpQrSt&medium=kiosk&src=qr`,
   ])('round-trips what the parser writes for %s', (url) => {
     const path = parseBoardLinkPath(url);
     expect(path).not.toBeNull();

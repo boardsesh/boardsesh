@@ -8,7 +8,7 @@
 // The event names no board: no slug, no name, no uuid, only the board type
 // through `boardTypeProperty` (`docs/spray-walls.md`, "Telemetry").
 
-import { boardQrScanned, parseGymQrLanding, type GymQrMedium } from '@boardsesh/analytics';
+import { boardQrScanned, parseBoardQrLanding, type BoardQrMedium } from '@boardsesh/analytics';
 import { isAnalyticsGranted } from '@boardsesh/consent';
 import { track } from './analytics';
 import { AUTH_CONVERSION_WAIT_MS, createConsentBoundAnalyticsRunner } from './consent-bound-analytics';
@@ -67,11 +67,12 @@ export type BoardQrRouteParams = {
 
 /**
  * The medium a board URL says it was scanned from, or `null` when it was not a
- * scan. The strict www parser: `src` must be exactly `qr`, `medium` a known
- * value, and a repeated param of either is not a scan.
+ * scan of a board code. The strict shared parser (`parseBoardQrLanding`): `src`
+ * must be exactly `qr`, `medium` one a board code prints (`kiosk`, `board`), and
+ * a repeated param of either is not a scan.
  */
-export function boardQrScanMedium(params: BoardQrRouteParams): GymQrMedium | null {
-  return parseGymQrLanding({ src: params.src, medium: params.medium })?.medium ?? null;
+export function boardQrScanMedium(params: BoardQrRouteParams): BoardQrMedium | null {
+  return parseBoardQrLanding({ src: params.src, medium: params.medium })?.medium ?? null;
 }
 
 /**
@@ -91,7 +92,7 @@ export function boardQrScanMedium(params: BoardQrRouteParams): GymQrMedium | nul
  * printed code never points at the browser app.
  */
 export function trackBoardQrScan(
-  medium: GymQrMedium,
+  medium: BoardQrMedium,
   boardType: string | null | undefined,
   landingKey: string,
   nowMs: number = Date.now(),
