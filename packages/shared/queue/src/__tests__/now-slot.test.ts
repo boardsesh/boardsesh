@@ -6,6 +6,7 @@ import {
   capHistory,
   chooseQueueEvent,
   clampInsertPosition,
+  clampNowSlotPayload,
   historyAndUpNextCount,
   historyLine,
   historyOf,
@@ -1058,5 +1059,42 @@ describe('package exports', () => {
     expect(queuePackage.chooseQueueEvent).toBe(chooseQueueEvent);
     expect(queuePackage.reorderAcrossLine).toBe(reorderAcrossLine);
     expect(queuePackage.QUEUE_FULL).toBe(QUEUE_FULL);
+    expect(queuePackage.clampNowSlotPayload).toBe(clampNowSlotPayload);
+  });
+});
+
+describe('clampNowSlotPayload (the whole-queue payload a new phone sends)', () => {
+  it('returns the same array when the payload fits', () => {
+    const queue = [...historyItems(3), makeItem('X'), makeItem('U')];
+    const clamped = clampNowSlotPayload(state(queue, queue[3]));
+    expect(clamped.queue).toBe(queue);
+    expect(clamped.historyCount).toBe(3);
+  });
+
+  it('keeps all 501 entries with a climb current: the climb on the wall is extra', () => {
+    const upNext = Array.from({ length: 400 }, (_, index) => makeItem(`U${index}`));
+    const current = makeItem('X');
+    const queue = [...historyItems(100), current, ...upNext];
+    expect(queue).toHaveLength(MAX_SYNCED_QUEUE_ITEMS + 1);
+    const clamped = clampNowSlotPayload(state(queue, current));
+    expect(clamped.queue).toHaveLength(MAX_SYNCED_QUEUE_ITEMS + 1);
+    expect(clamped.currentClimbQueueItem?.uuid).toBe('X');
+  });
+
+  it('trims History first, oldest first, and moves the line with it', () => {
+    const upNext = Array.from({ length: 450 }, (_, index) => makeItem(`U${index}`));
+    const queue = [...historyItems(60), ...upNext];
+    const clamped = clampNowSlotPayload(state(queue, null, 60));
+    expect(clamped.queue).toHaveLength(MAX_SYNCED_QUEUE_ITEMS);
+    expect(clamped.queue[0].uuid).toBe('H10');
+    expect(clamped.historyCount).toBe(50);
+  });
+
+  it('drops the tail of an Up next over the cap instead of sending a payload the server refuses', () => {
+    const upNext = Array.from({ length: 510 }, (_, index) => makeItem(`U${index}`));
+    const current = makeItem('X');
+    const clamped = clampNowSlotPayload(state([current, ...upNext], current));
+    expect(clamped.queue).toHaveLength(MAX_SYNCED_QUEUE_ITEMS + 1);
+    expect(clamped.queue.at(-1)?.uuid).toBe('U499');
   });
 });

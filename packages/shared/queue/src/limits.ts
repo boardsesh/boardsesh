@@ -20,7 +20,10 @@
  * An append can still trip the throw by addition, which is why the bulk append
  * clamps against it before broadcasting. `clampQueueAroundCurrent` below keeps
  * this many entries in all, the current climb included: stricter than the
- * server, so its payloads are never refused.
+ * server, so its payloads are never refused. It is the legacy-mode clamp, and
+ * a pre-F3 server refuses 501 entries. In now-slot mode (the server probe said
+ * the backend serves F3) phones clamp with `clampNowSlotPayload` in
+ * `now-slot.ts` instead, which keeps the climb on the wall out of the count.
  */
 export const MAX_SYNCED_QUEUE_ITEMS = 500;
 

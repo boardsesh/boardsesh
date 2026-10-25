@@ -345,3 +345,26 @@ describe('standalone id generators', () => {
     expect(generateCorrelationId()).toMatch(/.+/);
   });
 });
+
+describe('FullSync historyCount (F3)', () => {
+  it('passes the line through to INITIAL_QUEUE_DATA', () => {
+    const result = mapQueueEventToAction({
+      __typename: 'FullSync',
+      state: { queue: [], currentClimbQueueItem: null, historyCount: 3 },
+    });
+    expect(result.kind === 'dispatch' && result.action.type === 'INITIAL_QUEUE_DATA' && result.action.payload).toEqual({
+      queue: [],
+      currentClimbQueueItem: null,
+      historyCount: 3,
+    });
+  });
+
+  it('reads a legacy FullSync without the field as null', () => {
+    const result = mapQueueEventToAction({ __typename: 'FullSync', state: { queue: [], currentClimbQueueItem: null } });
+    expect(result.kind === 'dispatch' && result.action.type === 'INITIAL_QUEUE_DATA' && result.action.payload).toEqual({
+      queue: [],
+      currentClimbQueueItem: null,
+      historyCount: null,
+    });
+  });
+});

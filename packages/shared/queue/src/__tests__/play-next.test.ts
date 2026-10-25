@@ -182,3 +182,40 @@ describe('playNextInsertPosition', () => {
     expect(plan).toEqual({ kind: 'insert', position: playNextInsertPosition(queue, queue[1]) });
   });
 });
+
+describe('Play next with nothing current (F3 now-slot mode)', () => {
+  it('a new climb lands at the line, not at 0', () => {
+    const queue = buildQueue('h1', 'h2', 'h3', 'u1');
+    expect(playNextInsertPosition(queue, null, 3)).toBe(3);
+    expect(planPlayNext(queue, null, { climbUuid: 'c-new' }, 3)).toEqual({ kind: 'insert', position: 3 });
+  });
+
+  it('legacy mode (no historyCount) still lands at 0', () => {
+    const queue = buildQueue('h1', 'u1');
+    expect(playNextInsertPosition(queue, null, null)).toBe(0);
+    expect(planPlayNext(queue, null, { climbUuid: 'c-new' })).toEqual({ kind: 'insert', position: 0 });
+  });
+
+  it('prefers the Up next copy of a climb that is also in History', () => {
+    const queue = [makeItem('h1', 'dup'), makeItem('h2'), makeItem('u1'), makeItem('u2', 'dup')];
+    const plan = planPlayNext(queue, null, { climbUuid: 'c-dup' }, 2);
+    expect(plan).toEqual({ kind: 'move', uuid: 'q-u2', oldIndex: 3, newIndex: 2 });
+    if (plan.kind === 'move')
+      expect(applyMove(queue, plan.oldIndex, plan.newIndex)).toEqual(['q-h1', 'q-h2', 'q-u2', 'q-u1']);
+  });
+
+  it('an Up next head is already next', () => {
+    const queue = buildQueue('h1', 'u1', 'u2');
+    expect(planPlayNext(queue, null, { climbUuid: 'c-u1' }, 1)).toEqual({ kind: 'unchanged', reason: 'already-next' });
+  });
+
+  it('a History entry is moved to the line, joining Up next', () => {
+    const queue = buildQueue('h1', 'h2', 'u1');
+    expect(planPlayNext(queue, null, { queueItemUuid: 'q-h1', climbUuid: 'c-h1' }, 2)).toEqual({
+      kind: 'move',
+      uuid: 'q-h1',
+      oldIndex: 0,
+      newIndex: 2,
+    });
+  });
+});

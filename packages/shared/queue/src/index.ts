@@ -46,6 +46,7 @@ export {
   normaliseOrphanCurrent,
   placeOnWall,
   capHistory,
+  clampNowSlotPayload,
   lineAfterDelta,
   reorderAcrossLine,
   clampInsertPosition,

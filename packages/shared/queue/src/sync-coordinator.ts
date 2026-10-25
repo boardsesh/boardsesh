@@ -33,6 +33,8 @@ export type SyncQueueEvent =
       state: {
         queue: ClimbQueueItem[];
         currentClimbQueueItem: ClimbQueueItem | null;
+        /** The History / Up next line (F3). Absent or null from a pre-F3 server or a legacy document. */
+        historyCount?: number | null;
       };
     }
   | {
@@ -100,6 +102,8 @@ export function mapQueueEventToAction<TSearchParams extends QueueSearchParams = 
           payload: {
             queue: event.state.queue,
             currentClimbQueueItem: event.state.currentClimbQueueItem,
+            // The reducer keeps it only in now-slot mode; legacy mode ignores it.
+            historyCount: event.state.historyCount ?? null,
           },
         },
       };

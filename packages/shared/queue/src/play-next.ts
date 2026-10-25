@@ -22,6 +22,7 @@
  */
 
 import type { ClimbQueue, ClimbQueueItem } from './types';
+import { upNextStart } from './now-slot';
 
 /** What a "Play next" tap resolves to against the live queue. */
 export type PlayNextPlan =
@@ -58,40 +59,45 @@ export type QueueAddPlacement = 'end' | 'next';
  * match anywhere — so "Play next" on a climb that only exists in the history
  * pulls that entry forward instead of leaving a stale copy behind.
  */
-function findTargetIndex(queue: ClimbQueue, currentIndex: number, target: PlayNextTarget): number {
+function findTargetIndex(queue: ClimbQueue, historyEnd: number, target: PlayNextTarget): number {
   if (target.queueItemUuid !== undefined) {
     return queue.findIndex((queueItem) => queueItem.uuid === target.queueItemUuid);
   }
 
   const matchesClimb = (queueItem: ClimbQueueItem) => queueItem.climb.uuid === target.climbUuid;
-  const afterCurrentIndex = queue.findIndex((queueItem, index) => index > currentIndex && matchesClimb(queueItem));
+  const afterCurrentIndex = queue.findIndex((queueItem, index) => index > historyEnd && matchesClimb(queueItem));
   if (afterCurrentIndex !== -1) return afterCurrentIndex;
 
   return queue.findIndex(matchesClimb);
 }
 
 /**
- * The index a BRAND-NEW queue item takes to play next.
+ * The index a BRAND-NEW queue item takes to play next: `upNextStart`.
  *
- * - **No current climb at all** (`null`), empty queue included → `0`. Here 0
- *   really is next: `findNextQueueItemWithSuggestions` (`@boardsesh/play-view`)
- *   returns `queue[0]` when there is no current item.
  * - **Current climb set and present in the queue** → directly after it.
+ * - **No current climb** (`null`), empty queue included → the History / Up next
+ *   line, `historyCount` (F3, now-slot mode). In legacy mode `historyCount` is
+ *   null and this is `0`, which really is next there:
+ *   `findNextQueueItemWithSuggestions` (`@boardsesh/play-view`) returns
+ *   `queue[0]` when there is no current item.
  * - **Current climb set but NOT in the queue** — an uncommitted playlist peek, or
- *   a slot a peer removed → `0`, as the best available landing slot. NOT because
- *   0 is what plays next: with an orphan current pointer
- *   `findNextQueueItemWithSuggestions` falls through to the playlist peek (or
- *   `null`) and never consults `queue[0]`, so forward navigation will not reach
- *   this climb until the current item rejoins the queue. The head is simply the
- *   least-bad slot — appending buries the climb behind everything instead.
+ *   a slot a peer removed → the line too (`0` in legacy mode), as the best
+ *   available landing slot. NOT because it is what plays next: with an orphan
+ *   current pointer `findNextQueueItemWithSuggestions` falls through to the
+ *   playlist peek (or `null`) and never consults the queue, so forward
+ *   navigation will not reach this climb until the current item rejoins the
+ *   queue. The head of Up next is simply the least-bad slot — appending buries
+ *   the climb behind everything instead.
  *
  * Total, so a caller committing a fresh item never has to fall back to an
  * append it did not ask for.
  */
-export function playNextInsertPosition(queue: ClimbQueue, currentClimbQueueItem: ClimbQueueItem | null): number {
-  if (!currentClimbQueueItem) return 0;
-  const currentIndex = queue.findIndex((queueItem) => queueItem.uuid === currentClimbQueueItem.uuid);
-  return currentIndex === -1 ? 0 : currentIndex + 1;
+export function playNextInsertPosition(
+  queue: ClimbQueue,
+  currentClimbQueueItem: ClimbQueueItem | null,
+  historyCount?: number | null,
+): number {
+  return upNextStart(queue, currentClimbQueueItem, historyCount);
 }
 
 /**
@@ -105,32 +111,41 @@ export function playNextInsertPosition(queue: ClimbQueue, currentClimbQueueItem:
  * - `oldIndex > currentIndex` → `newIndex = currentIndex + 1` (current stayed put)
  * - `oldIndex < currentIndex` → `newIndex = currentIndex` (current slid down one)
  * A flat `currentIndex + 1` lands a history item one slot too late.
+ *
+ * With nothing current the target index is the line, `historyCount` (0 in
+ * legacy mode). An Up next entry moves to the head of Up next. A History entry
+ * moved to index `historyCount` joins Up next as its SECOND entry: the shared
+ * line rule (`lineAfterDelta`) files an entry that lands one slot earlier under
+ * History, so no single reorder can make it Up next's first climb.
  */
 export function planPlayNext(
   queue: ClimbQueue,
   currentClimbQueueItem: ClimbQueueItem | null,
   target: PlayNextTarget,
+  historyCount?: number | null,
 ): PlayNextPlan {
   const currentIndex = currentClimbQueueItem
     ? queue.findIndex((queueItem) => queueItem.uuid === currentClimbQueueItem.uuid)
     : -1;
+  const firstUpNextIndex = upNextStart(queue, currentClimbQueueItem, historyCount);
 
-  const existingIndex = findTargetIndex(queue, currentIndex, target);
+  const existingIndex = findTargetIndex(queue, firstUpNextIndex - 1, target);
 
   if (existingIndex === -1) {
-    return { kind: 'insert', position: playNextInsertPosition(queue, currentClimbQueueItem) };
+    return { kind: 'insert', position: firstUpNextIndex };
   }
 
   if (existingIndex === currentIndex) {
     return { kind: 'unchanged', reason: 'is-current' };
   }
 
-  // Both arms are `playNextInsertPosition(queue, currentClimbQueueItem)` by
-  // construction — `currentIndex + 1` when current is in the queue, `0` when it
-  // is not — restated here only because the forward arm needs the post-removal
-  // correction the helper (which places a NEW item) must not apply. Change one
-  // and change the other; the orphan-current move test pins them together.
-  const newIndex = currentIndex === -1 ? 0 : existingIndex > currentIndex ? currentIndex + 1 : currentIndex;
+  // With a climb current, both arms are `playNextInsertPosition` by
+  // construction — `currentIndex + 1` — restated here only because the forward
+  // arm needs the post-removal correction the helper (which places a NEW item)
+  // must not apply. Change one and change the other; the orphan-current move
+  // test pins them together.
+  const newIndex =
+    currentIndex === -1 ? firstUpNextIndex : existingIndex > currentIndex ? currentIndex + 1 : currentIndex;
 
   if (newIndex === existingIndex) {
     return { kind: 'unchanged', reason: 'already-next' };

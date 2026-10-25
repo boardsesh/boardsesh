@@ -400,6 +400,34 @@ export function capHistory<TItem extends NowSlotQueueItem>(
 }
 
 /**
+ * The whole-queue payload a new phone sends (`setQueue`, the session seed and
+ * re-seed) in now-slot mode: what the server would store for it (section 5).
+ * History is trimmed with {@link capHistory}, so History + Up next is at most
+ * `MAX_SYNCED_QUEUE_ITEMS` and the climb on the wall is extra (501 entries with
+ * a climb current). The server never trims Up next and refuses a payload whose
+ * Up next alone passes the cap (`QUEUE_FULL`), so as a last backstop the tail
+ * of Up next beyond the cap is dropped here instead of sending a write the
+ * server refuses. A payload that already fits comes back with the same array.
+ *
+ * Legacy mode keeps `clampQueueAroundCurrent` (500 entries in all): a server
+ * before F3 refuses 501.
+ */
+export function clampNowSlotPayload<TItem extends NowSlotQueueItem>(
+  state: NowSlotState<TItem>,
+): NowSlotResolvedState<TItem> {
+  const capped = capHistory(state);
+  const firstUpNext = upNextStart(capped.queue, capped.currentClimbQueueItem, capped.historyCount);
+  const upNextOverflow = capped.queue.length - firstUpNext - MAX_SYNCED_QUEUE_ITEMS;
+  const queue =
+    capped.trimmedCount === 0 && upNextOverflow <= 0
+      ? (state.queue as TItem[])
+      : upNextOverflow > 0
+        ? capped.queue.slice(0, capped.queue.length - upNextOverflow)
+        : capped.queue;
+  return { queue, currentClimbQueueItem: capped.currentClimbQueueItem, historyCount: capped.historyCount };
+}
+
+/**
  * A change to the array, applied as given. `add` and `reorder` indexes are in
  * the final array: for `add` that is the resolved insert index (after
  * {@link clampInsertPosition} or the append fallback), not the wire
