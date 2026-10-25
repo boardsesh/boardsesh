@@ -270,7 +270,7 @@ For indexable pages:
 
 ## Mobile Development (packages/mobile/)
 
-React Native + Expo SDK 57, React Native 0.86, Expo Router 57.
+React Native + Expo SDK 58, React Native 0.88, Expo Router 58, React 19.3.
 
 ### Stack
 
