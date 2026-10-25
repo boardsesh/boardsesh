@@ -1329,9 +1329,10 @@ describe('MobileBoardPresenceProvider', () => {
         expect(boardRead.fetchBoardByUuid).not.toHaveBeenCalled();
       });
 
-      // A stored board written before boards carried `boardId`, or a selection
-      // that no longer names the held uuid, has no numeric id to compare with.
-      // It keeps the plain resolve check until the self-heal swaps it.
+      // The snapshot read from disk carries no `boardId` (it is sanitized), so
+      // a selection not yet rewritten in this app run, or one that no longer
+      // names the held uuid, has no numeric id to compare with. It keeps the
+      // plain resolve check until the active-board self-heal swaps it.
       it.each([
         ['a stored board without a numeric id', { uuid: LOSER }],
         ['a selection that names another board', { uuid: SURVIVOR, boardId: 12 }],
@@ -1391,6 +1392,34 @@ describe('MobileBoardPresenceProvider', () => {
       });
 
       expect(transport.resolveBoardForUuid).not.toHaveBeenCalled();
+    });
+
+    // The pick settles the connect's intent, so it compares the numeric id the
+    // selection carried when the connect started, not whatever it holds later.
+    it('checks a pick against the selection id captured when the connect started', async () => {
+      arrangeSerial('disambiguation');
+      activeBoard.board = { uuid: LOSER, boardId: 12 };
+      resolvedByUuid({ [LOSER]: BOUND, [SURVIVOR]: BOUND });
+      boardRead.fetchBoardByUuid.mockResolvedValue({ uuid: SURVIVOR });
+      const { rerender } = renderProvider();
+
+      let binding: Promise<BoardBindingIdentity | null> | undefined;
+      act(() => {
+        binding = capturedControls?.resolveAndBindBoard(connectArgs);
+      });
+      await waitFor(() => expect(disambiguationSheet.props?.visible).toBe(true));
+      // Same uuid, a different numeric id: read at pick time, it would match the
+      // bound board and pair the held loser uuid with no board(uuid) read.
+      activeBoard.board = { uuid: LOSER, boardId: BOUND };
+      rerender(createElement(MobileBoardPresenceProvider, null, createElement(Probe)));
+      let settled: BoardBindingIdentity | null | undefined;
+      await act(async () => {
+        await disambiguationSheet.props?.onPick(BOUND);
+        settled = await binding;
+      });
+
+      expect(settled).toEqual({ boardId: BOUND, boardUuid: SURVIVOR });
+      expect(boardRead.fetchBoardByUuid.mock.calls).toEqual([[LOSER]]);
     });
 
     it('reads the selection through a ref, keeping the controls value across a board switch', () => {

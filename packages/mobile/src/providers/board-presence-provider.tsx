@@ -256,13 +256,15 @@ async function uuidForResolvedBoard(
 /**
  * The uuid a serial binding to `boundBoardId` may present, or null.
  *
- * A serial is not a board's link, so the only uuid a serial binding carries is
- * one the climber already held: the board they had selected when they
- * connected. It must resolve to the bound board. The resolver follows a
- * merged-away uuid to the survivor's id, so a merge passes that check alone;
- * `uuidForResolvedBoard` then compares the selection's own numeric id, as the
- * uuid binding does. Each read goes out only while the binding is still
- * current, because a resolve stamps presence membership on the server.
+ * A serial is not a board's link. The uuid a serial binding carries starts from
+ * one the climber already held, the board they had selected when they
+ * connected, and that uuid must resolve to the bound board. The resolver
+ * follows a merged-away uuid to the survivor's id, so a merge passes that check
+ * alone; `uuidForResolvedBoard` then compares the selection's own numeric id,
+ * as the uuid binding does. On a mismatch the binding carries the survivor's
+ * uuid that `board(uuid)` returns for the held one, or no uuid. Each read goes
+ * out only while the binding is still current, because a resolve stamps
+ * presence membership on the server.
  */
 async function heldUuidForBoundBoard(
   resolveBoardForUuid: (args: { boardUuid: string }) => Promise<ResolvedBoard>,
@@ -492,9 +494,11 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
         });
       }
 
-      // The selection's own numeric id, read when the connect starts. A stored
-      // board without one (or a selection that has since moved on) leaves it
-      // null, which keeps the plain resolve check.
+      // The selection's own numeric id, read when the connect starts. Only a
+      // selection written in this app run carries it: the snapshot on disk is
+      // sanitized without `boardId`, so before the active-board self-heal (or a
+      // pick) it is null, as it is for a selection that names another board.
+      // Null keeps the plain resolve check, and the self-heal is the repair.
       const storedSelection = selectedBoardRef.current;
       const selectedBoardId =
         args.selectedBoardUuid && storedSelection?.uuid === args.selectedBoardUuid
@@ -731,8 +735,10 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
         });
         // A serial is not a board's link, so a candidate's uuid is never paired
         // with the binding. Only a uuid the climber already held (the board they
-        // had selected when they connected), verified to be the chosen board the
-        // same way the single-board branch verifies it, opens its presence.
+        // had selected when they connected), or the survivor's uuid `board(uuid)`
+        // returns for it after a merge, opens its presence, verified to be the
+        // chosen board the same way the single-board branch verifies it. The
+        // selection's numeric id is the one captured when the connect started.
         const intent = bindingIntentRef.current;
         const heldBoard: ResolveBoardUuidArgs | null =
           intent?.kind === 'serial' && intent.args.selectedBoardUuid
