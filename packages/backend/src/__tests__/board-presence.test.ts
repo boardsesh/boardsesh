@@ -3123,12 +3123,6 @@ describe('board-presence resolvers', () => {
       Plans?: ExplainPlanNode[];
     };
 
-    const ACTIVE_ROW_PARTIAL_INDEXES = new Set([
-      'user_boards_serial_idx',
-      'user_boards_owner_config_idx',
-      'user_boards_unique_owner_serial',
-    ]);
-
     const flattenPlan = (node: ExplainPlanNode): ExplainPlanNode[] => [
       node,
       ...(node.Plans ?? []).flatMap(flattenPlan),
@@ -3136,27 +3130,44 @@ describe('board-presence resolvers', () => {
 
     // True when every scan of the candidate `active_board` side keeps the
     // active-row predicate, either through a partial index that requires
-    // `deleted_at IS NULL` or through a scan-level condition that carries it.
-    const activeBoardScansKeepActiveRowPredicate = (root: ExplainPlanNode): boolean => {
+    // `deleted_at IS NULL` (passed in, read from pg_index) or through a
+    // scan-level condition that carries it.
+    const activeBoardScansKeepActiveRowPredicate = (
+      root: ExplainPlanNode,
+      activeRowPartialIndexes: ReadonlySet<string>,
+    ): boolean => {
       const nodes = flattenPlan(root);
       const activeBoardScans = nodes.filter(
         (node) => node['Relation Name'] === 'user_boards' && node.Alias === 'active_board',
       );
       if (activeBoardScans.length === 0) return false;
       return activeBoardScans.every((scan) => {
-        const usesPartialIndex = scan['Index Name'] !== undefined && ACTIVE_ROW_PARTIAL_INDEXES.has(scan['Index Name']);
-        const childUsesPartialIndex = flattenPlan(scan).some(
-          (node) => node['Index Name'] !== undefined && ACTIVE_ROW_PARTIAL_INDEXES.has(node['Index Name']),
+        const usesPartialIndex = flattenPlan(scan).some(
+          (node) => node['Index Name'] !== undefined && activeRowPartialIndexes.has(node['Index Name']),
         );
         const carriesPredicate = [scan.Filter, scan['Index Cond'], scan['Recheck Cond']].some((condition) =>
           condition?.includes('deleted_at IS NULL'),
         );
-        return usesPartialIndex || childUsesPartialIndex || carriesPredicate;
+        return usesPartialIndex || carriesPredicate;
       });
     };
 
-    it('keeps the serial-cluster lock lookup eligible for the active-row partial indexes', async () => {
+    it('keeps the active-row predicate on the serial-cluster candidate scan', async () => {
       const sharedBoardId = await createSecondUserSharedBoard();
+      // Every partial index on user_boards that implies the active-row
+      // predicate. Read from the catalog so a new or renamed index cannot
+      // leave the allow-list stale.
+      const partialIndexRows = await db.execute(sql`
+        SELECT c.relname AS index_name
+        FROM pg_index i
+        JOIN pg_class c ON c.oid = i.indexrelid
+        WHERE i.indrelid = 'user_boards'::regclass
+          AND pg_get_expr(i.indpred, i.indrelid) LIKE '%deleted_at IS NULL%'
+      `);
+      const activeRowPartialIndexes = new Set(
+        (partialIndexRows as unknown as Array<{ index_name: string }>).map((row) => row.index_name),
+      );
+      expect(activeRowPartialIndexes.size).toBeGreaterThan(0);
       const planRows = await db.transaction(async (transaction) => {
         // Tiny test tables naturally favor a sequential scan. Disabling it
         // keeps the plan on index paths so the active-row predicate shows up.
@@ -3179,7 +3190,7 @@ describe('board-presence resolvers', () => {
       // own: the same two strings appear in the plan for the `requested_board`
       // side of the join, so a `toContain` on them passes even with the
       // candidate side's copy removed.
-      expect(activeBoardScansKeepActiveRowPredicate(parsedPlan[0].Plan)).toBe(true);
+      expect(activeBoardScansKeepActiveRowPredicate(parsedPlan[0].Plan, activeRowPartialIndexes)).toBe(true);
     });
 
     it('recognises the active-row predicate in the plan shapes the planner flips between', () => {
@@ -3188,6 +3199,14 @@ describe('board-presence resolvers', () => {
         Alias: 'active_board',
         ...fields,
       });
+      const partialIndexes = new Set([
+        'user_boards_serial_idx',
+        'user_boards_owner_config_idx',
+        'user_boards_owner_owned_idx',
+        'user_boards_public_idx',
+        'user_boards_unique_slug',
+        'user_boards_gym_filter_idx',
+      ]);
       const underNestedLoop = (scan: ExplainPlanNode): ExplainPlanNode => ({ Plans: [{ Plans: [scan] }] });
 
       // The plan that failed CI in #6704: full pkey scan carrying a Filter.
@@ -3199,6 +3218,7 @@ describe('board-presence resolvers', () => {
               Filter: "((serial_number IS NOT NULL) AND (deleted_at IS NULL) AND (serial_number <> ''::text))",
             }),
           ),
+          partialIndexes,
         ),
       ).toBe(true);
       expect(
@@ -3209,6 +3229,7 @@ describe('board-presence resolvers', () => {
               'Index Cond': '(serial_number = requested_board.serial_number)',
             }),
           ),
+          partialIndexes,
         ),
       ).toBe(true);
       expect(
@@ -3218,8 +3239,24 @@ describe('board-presence resolvers', () => {
               Plans: [{ 'Index Name': 'user_boards_owner_config_idx' }],
             }),
           ),
+          partialIndexes,
         ),
       ).toBe(true);
+      // Partial indexes the planner can pick that imply the predicate: the scan
+      // Filter drops it, which is correct on `active_board`.
+      for (const indexName of ['user_boards_gym_filter_idx', 'user_boards_owner_owned_idx']) {
+        expect(
+          activeBoardScansKeepActiveRowPredicate(
+            underNestedLoop(
+              activeBoardScan({
+                'Index Name': indexName,
+                Filter: "((serial_number IS NOT NULL) AND (serial_number <> ''::text))",
+              }),
+            ),
+            partialIndexes,
+          ),
+        ).toBe(true);
+      }
       // Predicate dropped: a pkey scan whose Filter lacks deleted_at.
       expect(
         activeBoardScansKeepActiveRowPredicate(
@@ -3229,9 +3266,12 @@ describe('board-presence resolvers', () => {
               Filter: "((serial_number IS NOT NULL) AND (serial_number <> ''::text))",
             }),
           ),
+          partialIndexes,
         ),
       ).toBe(false);
-      expect(activeBoardScansKeepActiveRowPredicate(underNestedLoop({ 'Relation Name': 'climbs' }))).toBe(false);
+      expect(
+        activeBoardScansKeepActiveRowPredicate(underNestedLoop({ 'Relation Name': 'climbs' }), partialIndexes),
+      ).toBe(false);
     });
 
     it('pushes a BoardStatsUpdated event that excludes attempts, resolves grades, and equals the cold fetch', async () => {
