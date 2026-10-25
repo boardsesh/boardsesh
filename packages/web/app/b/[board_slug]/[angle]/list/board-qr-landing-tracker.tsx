@@ -1,14 +1,17 @@
 'use client';
 
-import { useEffect } from 'react';
-import { boardQrScanned, stripGymQrParams } from '@boardsesh/analytics';
+import { useEffect, useRef } from 'react';
+import { boardQrScanned, stripGymQrParams, type AnalyticsBoardType } from '@boardsesh/analytics';
 import { useConsent } from '@/app/components/consent/consent-provider';
 import { track } from '@/app/lib/analytics';
 import { captureBoardQrLandingMedium } from '@/app/lib/board-qr-landing';
 
 type BoardQrLandingTrackerProps = {
-  /** The board's type. Never its slug, name or uuid: `Board QR Scanned` names no board. */
-  boardType: string;
+  /**
+   * The board's type, already narrowed to the nine (`boardTypeProperty`), or
+   * null. Never a slug, name or uuid: `Board QR Scanned` names no board.
+   */
+  boardType: AnalyticsBoardType | null;
 };
 
 /**
@@ -50,10 +53,23 @@ export function __resetReportedBoardQrLandingsForTests(): void {
  *    commit (the session and the region lookup are async), and `track()` drops
  *    an event sent before that, so counting on mount would lose nearly every
  *    cold scan. The landing is marked reported only when it is sent, and the
- *    remembered medium is still readable after the strip.
+ *    remembered medium is still readable after the strip. Its only deps are
+ *    `granted`: the board type is read through a ref, so whether the scan is
+ *    sent once cannot hinge on that prop staying stable.
+ *
+ * By design, a scan whose page the climber has already left when consent
+ * settles is not counted. The landing belongs to its pathname, and an event
+ * fired on another page would carry that page's URL. Consent settles soon
+ * after hydration (a session read and a region lookup), so this costs a scan
+ * only for someone who leaves the page before then; coming back to the
+ * scanned page counts it.
  */
 export default function BoardQrLandingTracker({ boardType }: BoardQrLandingTrackerProps) {
   const { granted } = useConsent();
+  const boardTypeRef = useRef(boardType);
+  useEffect(() => {
+    boardTypeRef.current = boardType;
+  }, [boardType]);
 
   useEffect(() => {
     // Read before the strip below runs, so the landing is remembered for this page.
@@ -77,9 +93,9 @@ export default function BoardQrLandingTracker({ boardType }: BoardQrLandingTrack
     if (reportedLandings.has(landingKey)) return;
     reportedLandings.add(landingKey);
 
-    const { name, properties } = boardQrScanned({ medium, surface: 'web', boardType });
+    const { name, properties } = boardQrScanned({ medium, surface: 'web', boardType: boardTypeRef.current });
     track(name, properties);
-  }, [granted, boardType]);
+  }, [granted]);
 
   return null;
 }

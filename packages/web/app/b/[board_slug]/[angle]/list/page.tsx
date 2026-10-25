@@ -19,6 +19,7 @@ import { getServerTranslation } from '@/app/lib/i18n/server';
 import { WALL_CAPABILITY_PARAM, readWallCapability } from '@/app/lib/spray/spray-visibility';
 import { BOARD_INVITE_PARAM, readBoardInviteToken } from '@/app/lib/board-invite';
 import SprayWallListPage, { buildSprayWallListMetadata } from './spray-wall-view';
+import { boardTypeProperty } from '@boardsesh/analytics';
 import BoardQrLandingTracker from './board-qr-landing-tracker';
 
 /**
@@ -139,7 +140,7 @@ export default async function BoardSlugListPage(props: BoardSlugListPageProps) {
   if (board.boardType === SPRAY_BOARD_TYPE) {
     return (
       <>
-        <BoardQrLandingTracker boardType={board.boardType} />
+        <BoardQrLandingTracker boardType={SPRAY_BOARD_TYPE} />
         <SprayWallListPage board={board} wallParam={searchParams[WALL_CAPABILITY_PARAM]} />
       </>
     );
@@ -159,7 +160,7 @@ export default async function BoardSlugListPage(props: BoardSlugListPageProps) {
 
   return (
     <>
-      <BoardQrLandingTracker boardType={board.boardType} />
+      <BoardQrLandingTracker boardType={boardTypeProperty(board.boardType).boardType} />
       {preloadUrls.map((preloadUrl) => (
         <link key={preloadUrl} rel="preload" as="image" href={preloadUrl} fetchPriority="high" />
       ))}

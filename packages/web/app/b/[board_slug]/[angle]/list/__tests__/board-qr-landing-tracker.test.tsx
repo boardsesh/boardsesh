@@ -167,6 +167,47 @@ describe('BoardQrLandingTracker', () => {
     expect(track).toHaveBeenCalledWith('Board QR Scanned', { medium: 'board', surface: 'web', boardType: 'spray' });
   });
 
+  it('does not count a scan whose page was left before consent settled, and counts it on return', () => {
+    // By design (see the component): the landing belongs to its pathname.
+    consentState.granted = false;
+    window.history.replaceState(null, '', `${WALL_PATH}?src=qr&medium=board`);
+    render(<BoardQrLandingTracker boardType="spray" />).unmount();
+
+    window.history.replaceState(null, '', '/b/the-kilter/40/list');
+    consentState.granted = true;
+    render(<BoardQrLandingTracker boardType="kilter" />).unmount();
+
+    expect(track).not.toHaveBeenCalled();
+
+    window.history.replaceState(null, '', WALL_PATH);
+    render(<BoardQrLandingTracker boardType="spray" />);
+
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('Board QR Scanned', { medium: 'board', surface: 'web', boardType: 'spray' });
+  });
+
+  it('sends once even when the board type prop changes after the scan was sent', () => {
+    window.history.replaceState(null, '', `${WALL_PATH}?src=qr&medium=board`);
+
+    const { rerender } = render(<BoardQrLandingTracker boardType="spray" />);
+    rerender(<BoardQrLandingTracker boardType={null} />);
+    rerender(<BoardQrLandingTracker boardType="kilter" />);
+
+    expect(track).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends the board type current when consent settles', () => {
+    consentState.granted = false;
+    window.history.replaceState(null, '', `${WALL_PATH}?src=qr&medium=board`);
+
+    const { rerender } = render(<BoardQrLandingTracker boardType={null} />);
+    rerender(<BoardQrLandingTracker boardType="spray" />);
+    consentState.granted = true;
+    rerender(<BoardQrLandingTracker boardType="spray" />);
+
+    expect(track).toHaveBeenCalledWith('Board QR Scanned', { medium: 'board', surface: 'web', boardType: 'spray' });
+  });
+
   it('counts nothing without consent, and still cleans the address bar', () => {
     consentState.granted = false;
     window.history.replaceState(null, '', `${WALL_PATH}?src=qr&medium=board`);

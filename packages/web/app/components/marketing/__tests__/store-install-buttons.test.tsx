@@ -198,6 +198,22 @@ describe('StoreInstallButtons', () => {
       );
     });
 
+    it('keeps the plain link id when a shared page turns the scan off explicitly', async () => {
+      setUserAgent(ANDROID_UA);
+      window.history.replaceState(null, '', '/b/garage-wall/40/list?src=qr&medium=board');
+      render(
+        <StoreInstallButtons placement="spray-wall" labels={LABELS} appearance="plain" sharedHtml qrLanding={false} />,
+      );
+
+      await waitFor(() => expect(screen.getAllByRole('link')).toHaveLength(1));
+      const playLink = screen.getByRole('link', { name: 'Google Play' });
+
+      expect(playLink.getAttribute('href')).toBe(buildStoreUrl('android', { placement: 'spray-wall' }));
+      expect(playLink.getAttribute('href')).not.toContain('spray-wall.board');
+      fireEvent.click(playLink);
+      expect(track.mock.calls[0]?.[1]).not.toHaveProperty('qrMedium');
+    });
+
     it('renders the untagged link on the server, so the shared HTML is the same for a scan', () => {
       window.history.replaceState(null, '', '/b/garage-wall/40/list?src=qr&medium=board');
 
