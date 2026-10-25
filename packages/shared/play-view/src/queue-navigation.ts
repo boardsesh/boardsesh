@@ -610,8 +610,9 @@ const NOTHING_PREVIOUS: PreviousQueueItemSelection = { item: null };
  *     so Previous goes straight back to that list climb, as a peek, rather
  *     than walking into climbs from before the list.
  *  2. On the list, right after a stretch of Up next (History holds the list's
- *     previous climb, then Up next climbs, then this one) → the last of those
- *     Up next climbs, with `trackResume` naming the list climb before them.
+ *     previous climb, or an older list-walk entry of this same climb, then Up
+ *     next climbs, then this one) → the last of those Up next climbs, with
+ *     `trackResume` naming the list entry before them.
  *  3. Otherwise on the list → the list predecessor, as a transient "peek" (or
  *     the adjacent real queue item — see the symmetric dedupe note on
  *     selectNextQueueItemWithSuggestions). The list's start is a stop, like its
@@ -656,7 +657,15 @@ export function selectPreviousQueueItemWithSuggestions(
   if (source && position.kind === 'list') {
     const listPredecessor = source.climbs[position.trackIndex - 1];
     if (!listPredecessor) return NOTHING_PREVIOUS;
-    const upNextBehind = findUpNextBehind(queue, currentIndex, source, listPredecessor.uuid, activeConfig, isReachable);
+    const upNextBehind = findUpNextBehind(
+      queue,
+      currentIndex,
+      source,
+      currentClimbQueueItem.climb.uuid,
+      listPredecessor.uuid,
+      activeConfig,
+      isReachable,
+    );
     if (upNextBehind) return upNextBehind;
     const queuedItem = findQueuedListNeighbour(
       queue,
@@ -681,11 +690,21 @@ export function selectPreviousQueueItemWithSuggestions(
  * list's previous climb itself, when a list-walk entry of another place on the
  * list comes first, or when History never reaches the list's previous climb
  * (climbs from before the list was tapped).
+ *
+ * The stretch can also end at an older list-walk entry of the current climb
+ * itself: swipe from s1 to s2, back to s1, add X, then Next plays X and picks
+ * the list up with a fresh s2 entry, so the queue reads s1, s2, X, s2. That
+ * older s2 is the list climb before the detour. Previous goes to X, and from X
+ * back onto that older entry, then up the list to s1. The resume point keeps
+ * the list's previous climb (s1) as where the list picks up, so Next from X
+ * still lands back on the newer s2, and names the older entry as the one the
+ * walk left from.
  */
 function findUpNextBehind(
   queue: ClimbQueue,
   currentIndex: number,
   source: PlaylistSuggestionSource,
+  currentClimbUuid: string,
   listPredecessorUuid: string,
   activeConfig: ActiveBoardForCompatibility | undefined,
   isReachable: ReachableClimbPredicate | undefined,
@@ -693,7 +712,10 @@ function findUpNextBehind(
   let lastPlayed: ClimbQueueItem | null = null;
   for (let index = currentIndex - 1; index >= 0; index -= 1) {
     const item = queue[index];
-    if (item.climb?.uuid === listPredecessorUuid) {
+    const climbUuid = item.climb?.uuid;
+    const endsStretch =
+      climbUuid === listPredecessorUuid || (climbUuid === currentClimbUuid && isListWalkEntry(item, source));
+    if (endsStretch) {
       return lastPlayed
         ? { item: lastPlayed, trackResume: { climbUuid: listPredecessorUuid, queueItemUuid: item.uuid } }
         : null;

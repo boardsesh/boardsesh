@@ -130,9 +130,12 @@ export type PlaylistSuggestionSource = {
  * The list climb a walk left for Up next. See {@link PlaylistSuggestionSource.resume}.
  *
  * Both halves matter: `climbUuid` is where the list picks up again, and
- * `queueItemUuid` is that climb's own queue entry, so stepping back onto it
- * (Previous from the first queued climb) is back on the list, while a queued
- * repeat of the same climb is still Up next.
+ * `queueItemUuid` is the queue entry the walk left from, so stepping back onto
+ * it (Previous from the first queued climb) is back on the list, while a queued
+ * repeat of the same climb is still Up next. That entry is usually the
+ * climb's own. After Previous retraced Up next from a list climb whose older
+ * list-walk entry sits before the detour, it is that older entry instead (see
+ * selectPreviousQueueItemWithSuggestions in `@boardsesh/play-view`).
  */
 export type PlaylistTrackResume = {
   climbUuid: string;

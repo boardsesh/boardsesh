@@ -528,9 +528,13 @@ Seven rules. Each one reuses a part that already exists in the code: the list tr
    wall) starts the walk from there. With Light on swipe off, or in a crew, a swipe off the
    climb on the wall is a look that walks the queue with no list of its own (#5403); Put on
    the wall on a queued climb ahead of it keeps this phone's list and its place, as Next
-   would (`resolveUpNextCommitResume`), and leaves the list for anything else. If the list
+   would (`resolveUpNextCommitResume`), and leaves the list for anything else. The look itself
+   never borrows or captures this phone's list, even when it starts from a list climb: only Put
+   on the wall keeps the list (owner decision, 2026-10-25, keeping the #5403 rule). If the list
    climb's own queue entry is removed while Up next plays, Previous goes back to that list
-   climb instead of into History. Owner decision, 2026-10-25 (#6777), reversing the
+   climb instead of into History. From the list climb the walk picked up after Up next,
+   Previous goes back to the last queued climb played, then to the list climb before it, even
+   when an older entry of the same climb sits there. Owner decision, 2026-10-25 (#6777), reversing the
    list-first walk F1 shipped, where the queue waited behind the end card and the persona panel
    in discussion #6708 predicted climbers would get lost.
 3. **The queue holds only what you or your crew add**: the right swipe (Play next), Play next,
