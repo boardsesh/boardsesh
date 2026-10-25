@@ -1,10 +1,11 @@
 import { z } from 'zod';
 import { CONFIDENCE, MAX_SEARCH_PAGE } from '@boardsesh/db/queries/constants';
 
-type ConfidenceTier = (typeof CONFIDENCE)[keyof typeof CONFIDENCE];
 import { CLIMB_CHARACTERISTICS, TOGGLEABLE_CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
 import { ClimbUuidSchema, ExternalUUIDSchema, BoardNameSchema, UUIDSchema } from './primitives';
 import { BOARD_ANGLE_VALIDATION_MESSAGE, isBoardAngleSupported } from './board-angles';
+
+type ConfidenceTier = (typeof CONFIDENCE)[keyof typeof CONFIDENCE];
 
 // Cap holdsFilter entries: each ANY entry becomes a LIKE scan over board_climbs.frames
 // (no trigram index there), so an unbounded record is a cheap amplification vector on

@@ -245,8 +245,8 @@ export const resolvers = {
   // Climb type resolvers (derived fields)
   Climb: {
     // One definition for every surface — see resolveClimbNoMatchField. The
-    // parent's own `is_no_match` is kept only when characteristics and
-    // description are both absent (a queued tick/proposal stub, #6681).
+    // parent's own `is_no_match` is kept only when characteristics are absent
+    // (a queued tick/proposal/feed stub, #6681), whatever the description says.
     // A parent that doesn't select `characteristics` silently falls back to the
     // description, so every Climb producer must project the column. The map is
     // untyped: resolver-climb-fields.test.ts is the guard, and it fails when a

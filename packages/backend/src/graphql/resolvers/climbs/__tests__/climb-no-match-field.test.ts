@@ -27,6 +27,10 @@ describe('resolveClimbNoMatchField', () => {
     );
   });
 
+  it('falls back to false when a stub sends is_no_match null and no characteristics', () => {
+    expect(resolveClimbNoMatchField(parseQueuedClimb({ ...stub, is_no_match: null }))).toBe(false);
+  });
+
   it('is wired as Climb.is_no_match in the resolver map', () => {
     const resolveField = resolvers.Climb.is_no_match as (parent: unknown) => boolean;
     expect(resolveField(parseQueuedClimb(stub))).toBe(true);
