@@ -26,7 +26,8 @@ type TabNavigation = NavigationProp<
  * navigator. The navigator emits `tabPress` before it acts on the press, so the
  * screen's focus at that moment says whether the tab was already open.
  * `onReselect` runs on the next frame, after the bar's own repeat-tap effects
- * (scroll to top) have started.
+ * (scroll to top) have started. Pass a stable callback (`useCallback`): a new
+ * one re-subscribes the listener.
  */
 export function useTabReselect(onReselect: () => void): void {
   const navigation = useNavigation();
