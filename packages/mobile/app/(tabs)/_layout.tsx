@@ -126,8 +126,9 @@ export default function TabLayout() {
   // Route term on the same mount gate: the host stays mounted anywhere the tab bar is
   // on screen — every route inside the tabs group, pushed sub-routes included, plus the
   // transparent player. The accessory is a CHILD of the bar, so unmounting it on a push
-  // ran `setBottomAccessory:nil` with the bar still up and left the docked role="search"
-  // Climbs item on a stale frame, unhittable until a force-quit (#5055). It unmounts only
+  // ran `setBottomAccessory:nil` with the bar still up and left the then docked
+  // role="search" Climbs item on a stale frame, unhittable until a force-quit (#5055;
+  // Climbs is an ordinary tab since #6827, the rule stands). It unmounts only
   // on a root push/modal, where the whole tab VC leaves and the accessory co-detaches
   // with the bar — the case that releases the backing view, so UIKit still never stacks a
   // stale glass platter under the fresh one on return (doubled, offset text). See

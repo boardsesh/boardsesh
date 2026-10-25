@@ -1014,6 +1014,15 @@ describe('ClimbList second tap on the Climbs tab', () => {
 
     expect(searchBar.focus).toHaveBeenCalledOnce();
   });
+
+  it('does nothing on Android and iOS 18, which have no native search field', () => {
+    mocks.nativeSearch = false;
+    render(<ClimbList />);
+
+    expect(mocks.stackOptions.some((options) => options.headerSearchBarOptions)).toBe(false);
+    expect(mocks.tabReselect).toBeDefined();
+    expect(() => act(() => mocks.tabReselect?.())).not.toThrow();
+  });
 });
 
 describe('ClimbList native header ownership', () => {

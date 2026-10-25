@@ -119,7 +119,8 @@ export function isAccessorySurfaceRoute(segments: Segments): boolean {
  *
  * So the host mounts exactly when the bar is up, and unmounts only when the whole tab
  * view controller leaves (root pushes/modals) — where the accessory co-detaches with the
- * bar, which is the case `d12aa606a` device-verified as safe.
+ * bar, which is the case `d12aa606a` device-verified as safe. Climbs has been an
+ * ordinary tab since #6827, not the docked search item; the rule stands for the bar.
  *
  * NOT interchangeable with `isAccessorySurfaceRoute`: that one is narrower and keeps the
  * bar hidden on sub-routes for the JS bar. Narrowing THIS one back to it reintroduces
