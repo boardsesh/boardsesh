@@ -124,6 +124,15 @@ export type PlaylistSuggestionSource = {
    * the rest of the track.
    */
   resume?: PlaylistTrackResume;
+  /**
+   * The `resume` the walk held while it last played Up next, kept once it came
+   * back to the list. From the list climb it picked up at, Previous retraces
+   * that stretch of Up next exactly, back to the list climb it left, even when
+   * older list-walk entries sit between them in the queue. Set and cleared by
+   * `withPlaylistTrackResume` alone: clearing `resume` moves it here, setting a
+   * new one drops it. Client-only, like the rest of the track.
+   */
+  detour?: PlaylistTrackResume;
 };
 
 /**

@@ -609,10 +609,13 @@ const NOTHING_PREVIOUS: PreviousQueueItemSelection = { item: null };
  *     it), there is no telling Up next from History behind the current climb,
  *     so Previous goes straight back to that list climb, as a peek, rather
  *     than walking into climbs from before the list.
- *  2. On the list, right after a stretch of Up next (History holds the list's
+ *  2. On the list, right after a stretch of Up next → the last of those Up
+ *     next climbs, with `trackResume` naming the list entry before them. The
+ *     track's `detour` says which stretch the walk came back from, and where
+ *     it left the list, so Previous retraces it exactly (see
+ *     {@link retraceDetour}). Without one, History has to show it: the list's
  *     previous climb, or an older list-walk entry of this same climb, then Up
- *     next climbs, then this one) → the last of those Up next climbs, with
- *     `trackResume` naming the list entry before them.
+ *     next climbs, then this one (see {@link findUpNextBehind}).
  *  3. Otherwise on the list → the list predecessor, as a transient "peek" (or
  *     the adjacent real queue item — see the symmetric dedupe note on
  *     selectNextQueueItemWithSuggestions). The list's start is a stop, like its
@@ -657,6 +660,8 @@ export function selectPreviousQueueItemWithSuggestions(
   if (source && position.kind === 'list') {
     const listPredecessor = source.climbs[position.trackIndex - 1];
     if (!listPredecessor) return NOTHING_PREVIOUS;
+    const detour = retraceDetour(queue, currentIndex, source, position.trackIndex, activeConfig, isReachable);
+    if (detour) return detour;
     const upNextBehind = findUpNextBehind(
       queue,
       currentIndex,
@@ -679,6 +684,48 @@ export function selectPreviousQueueItemWithSuggestions(
   }
   // No list, or off it: a queued climb walks the queue; an orphan has nothing.
   return { item: currentIndex > 0 ? queue[currentIndex - 1] : null };
+}
+
+/**
+ * The Up next stretch the walk last came back to the list from, retraced from
+ * the track's `detour` (the resume it held while playing it), when the climb on
+ * screen is the list climb that stretch handed back to: the one right after
+ * the detour's list climb, with the stretch's queued climbs right behind it.
+ *
+ * Returns the last Up next climb played, with the detour as the resume point,
+ * so the next Previous walks the rest of the stretch back to the list climb it
+ * left. Between that list climb's entry and the stretch, Next walked past the
+ * list's own entries (a swipe down the list and back commits them), so this
+ * passes over them too: s1, s2, s3, back to s1, Play last X, then Next to X and
+ * to a fresh s2 reads s1, s2, s3, X, s2' in the queue, and Previous goes
+ * s2' -> X -> s1.
+ *
+ * Null when the track has no detour, when this is not the list climb it handed
+ * back to, when a list-walk entry comes before any queued climb (the walk got
+ * here along the list, not out of Up next), or when the entry the detour left
+ * from is gone from the queue; Previous then reads History as before.
+ */
+function retraceDetour(
+  queue: ClimbQueue,
+  currentIndex: number,
+  source: PlaylistSuggestionSource,
+  trackIndex: number,
+  activeConfig: ActiveBoardForCompatibility | undefined,
+  isReachable: ReachableClimbPredicate | undefined,
+): PreviousQueueItemSelection | null {
+  const { detour } = source;
+  if (!detour || trackIndexOf(source, detour.climbUuid) !== trackIndex - 1) return null;
+  let lastPlayed: ClimbQueueItem | null = null;
+  for (let index = currentIndex - 1; index >= 0; index -= 1) {
+    const item = queue[index];
+    if (item.uuid === detour.queueItemUuid) return lastPlayed ? { item: lastPlayed, trackResume: detour } : null;
+    if (isListWalkEntry(item, source)) {
+      if (!lastPlayed) return null;
+      continue;
+    }
+    if (!lastPlayed && !swipeWalksPast(item, activeConfig, isReachable)) lastPlayed = item;
+  }
+  return null;
 }
 
 /**

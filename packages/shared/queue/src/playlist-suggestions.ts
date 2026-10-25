@@ -369,6 +369,10 @@ export function samePlaylistTrackResume(
  * A copy of `source` with its Up next resume point set, or cleared with null
  * (issue #6777). `source` itself when nothing changes, so a step that stays on
  * the list costs no new track. The copy keeps the source's prepared index.
+ *
+ * Clearing a resume is the walk coming back to the list from Up next, so the
+ * cleared one is kept as `detour` for Previous to retrace. Setting a resume
+ * starts a new stretch of Up next and drops the old detour.
  */
 export function withPlaylistTrackResume(
   source: PlaylistSuggestionSource,
@@ -376,8 +380,38 @@ export function withPlaylistTrackResume(
 ): PlaylistSuggestionSource {
   if (samePlaylistTrackResume(source.resume, resume)) return source;
   const next: PlaylistSuggestionSource = { ...source };
-  if (resume) next.resume = resume;
+  if (resume) {
+    next.resume = resume;
+    delete next.detour;
+  } else {
+    if (source.resume) next.detour = source.resume;
+    delete next.resume;
+  }
+  return keepPreparedIndex(source, next);
+}
+
+/**
+ * `source` carrying `held`'s place on the walk: its Up next resume point and
+ * its last detour (issue #6777). For a fresh copy of the same list (a refresh,
+ * a longer page) that replaces the held track while the walk is under way.
+ */
+export function withPlaylistTrackPlace(
+  source: PlaylistSuggestionSource,
+  held: PlaylistSuggestionSource,
+): PlaylistSuggestionSource {
+  if (samePlaylistTrackResume(source.resume, held.resume) && samePlaylistTrackResume(source.detour, held.detour)) {
+    return source;
+  }
+  const next: PlaylistSuggestionSource = { ...source };
+  if (held.resume) next.resume = held.resume;
   else delete next.resume;
+  if (held.detour) next.detour = held.detour;
+  else delete next.detour;
+  return keepPreparedIndex(source, next);
+}
+
+/** Hand `source`'s prepared index to `next`, a copy walking the same climbs. */
+function keepPreparedIndex(source: PlaylistSuggestionSource, next: PlaylistSuggestionSource): PlaylistSuggestionSource {
   const preparedIndex = sourceIndices.get(source);
   if (preparedIndex?.climbs === source.climbs) sourceIndices.set(next, preparedIndex);
   return next;

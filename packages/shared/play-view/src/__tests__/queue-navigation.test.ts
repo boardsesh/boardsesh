@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { Climb, ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
+import type { Climb, ClimbQueue, ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import {
   getPlaylistPeekQueueItemUuid,
   createPlaylistSuggestionSource,
@@ -1507,6 +1507,125 @@ describe('Up next plays before the list continues (#6777)', () => {
     expect(selectPreviousQueueItemWithSuggestions(afterDetour, playLastX, onX)).toEqual({
       item: s1Entry,
       trackResume: null,
+    });
+  });
+
+  // Codex review on #6798: with the list's own entries retained (a crew keeps
+  // every swipe's entry), older entries of other list climbs sit between the
+  // list climb the walk left and Up next. The track's `detour` says where the
+  // walk left, so Previous follows the forward walk instead of reading History.
+  describe('retracing a detour past older list entries', () => {
+    const s1Entry: ClimbQueueItem = { uuid: 'item-s1', climb: s1, suggested: true };
+    const s3Entry: ClimbQueueItem = { uuid: 'item-s3', climb: s3, suggested: true };
+    const s4Entry: ClimbQueueItem = { uuid: 'item-s4', climb: s4, suggested: true };
+    const playLastX = makeItem('x');
+    const freshS2: ClimbQueueItem = { uuid: 'item-s2-again', climb: s2, suggested: true };
+    const resumeAtS1 = { climbUuid: 's1', queueItemUuid: 'item-s1' };
+
+    /**
+     * From s1 with `walkedPast` between it and X: Next to X, then Next to a
+     * fresh s2, storing each step's resume as the provider does. Returns the
+     * queue with s2' committed after X, and the track s2' is played with.
+     */
+    function walkOutAndBack(walkedPast: ClimbQueueItem[]) {
+      const beforeX = [s1Entry, ...walkedPast, playLastX];
+      const intoUpNext = selectNextQueueItemWithSuggestions(beforeX, s1Entry, results);
+      expect(intoUpNext).toMatchObject({ item: playLastX, trackResume: resumeAtS1 });
+      const onX = withPlaylistTrackResume(results, intoUpNext.trackResume ?? null);
+      const backOnList = selectNextQueueItemWithSuggestions(beforeX, playLastX, onX);
+      expect(backOnList.item?.uuid).toBe(getPlaylistPeekQueueItemUuid('s2'));
+      expect(backOnList.trackResume).toBeNull();
+      const onFreshS2 = withPlaylistTrackResume(onX, backOnList.trackResume ?? null);
+      expect(onFreshS2.detour).toEqual(resumeAtS1);
+      return { afterDetour: [...beforeX, freshS2], onFreshS2 };
+    }
+
+    function expectRetraceToS1(afterDetour: ClimbQueue, onFreshS2: PlaylistSuggestionSource) {
+      const toX = selectPreviousQueueItemWithSuggestions(afterDetour, freshS2, onFreshS2);
+      expect(toX).toEqual({ item: playLastX, trackResume: resumeAtS1 });
+      const onX = withPlaylistTrackResume(onFreshS2, toX.trackResume ?? null);
+      expect(resolveTrackPosition(afterDetour, playLastX, onX)).toEqual({
+        kind: 'upNext',
+        resume: resumeAtS1,
+        resumeIndex: 0,
+      });
+      expect(resolveUpNextProgress(afterDetour, playLastX, onX)).toEqual({ position: 1, total: 1 });
+      // Next from X still lands back on s2', no new copy.
+      expect(selectNextQueueItemWithSuggestions(afterDetour, playLastX, onX)).toMatchObject({
+        item: freshS2,
+        trackResume: null,
+      });
+      // Previous from X: where the detour started, past the older entries.
+      const toS1 = selectPreviousQueueItemWithSuggestions(afterDetour, playLastX, onX);
+      expect(toS1).toEqual({ item: s1Entry, trackResume: null });
+      // s1 is the list's first climb: the start is a stop.
+      const onS1 = withPlaylistTrackResume(onX, toS1.trackResume ?? null);
+      expect(selectPreviousQueueItemWithSuggestions(afterDetour, s1Entry, onS1).item).toBeNull();
+    }
+
+    it('goes s2 to X to s1 with an older s3 entry between s1 and X', () => {
+      // s1, s2, s3, back to s1, Play last X, Next, Next: s1, s2, s3, X, s2'.
+      const { afterDetour, onFreshS2 } = walkOutAndBack([tapped, s3Entry]);
+      expectRetraceToS1(afterDetour, onFreshS2);
+    });
+
+    it('goes s2 to X to s1 with older entries of two other climbs between', () => {
+      // s1, s2, s3, s4, back to s1, Play last X, Next, Next: s1, s2, s3, s4, X, s2'.
+      const { afterDetour, onFreshS2 } = walkOutAndBack([tapped, s3Entry, s4Entry]);
+      expectRetraceToS1(afterDetour, onFreshS2);
+    });
+
+    it('goes s2 to X to s1 solo, where nothing sits between s1 and X', () => {
+      // Tap s1, Play last X, Next, Next: s1, X, s2'.
+      const { afterDetour, onFreshS2 } = walkOutAndBack([]);
+      expectRetraceToS1(afterDetour, onFreshS2);
+    });
+
+    it('retraces every Up next climb of the stretch, past the list entries between them', () => {
+      const playLastY = makeItem('y');
+      const queue = [s1Entry, tapped, playLastX, s3Entry, playLastY, freshS2];
+      const onFreshS2 = withPlaylistTrackResume(withPlaylistTrackResume(results, resumeAtS1), null);
+      const toY = selectPreviousQueueItemWithSuggestions(queue, freshS2, onFreshS2);
+      expect(toY).toEqual({ item: playLastY, trackResume: resumeAtS1 });
+      const onY = withPlaylistTrackResume(onFreshS2, resumeAtS1);
+      expect(selectPreviousQueueItemWithSuggestions(queue, playLastY, onY)).toEqual({ item: playLastX });
+      expect(selectPreviousQueueItemWithSuggestions(queue, playLastX, onY)).toEqual({
+        item: s1Entry,
+        trackResume: null,
+      });
+    });
+
+    it('keeps the detour while the walk goes on down the list and comes back', () => {
+      const { afterDetour, onFreshS2 } = walkOutAndBack([tapped, s3Entry]);
+      const toS3 = selectNextQueueItemWithSuggestions(afterDetour, freshS2, onFreshS2);
+      expect(toS3.trackResume).toBeNull();
+      const onS3 = withPlaylistTrackResume(onFreshS2, toS3.trackResume ?? null);
+      expect(onS3).toBe(onFreshS2);
+      const freshS3: ClimbQueueItem = { uuid: 'item-s3-again', climb: s3, suggested: true };
+      const further = [...afterDetour, freshS3];
+      // s3' is not where the detour handed back: Previous is the list's s2'.
+      expect(selectPreviousQueueItemWithSuggestions(further, freshS3, onS3)).toEqual({
+        item: freshS2,
+        trackResume: null,
+      });
+      expect(selectPreviousQueueItemWithSuggestions(further, freshS2, onS3)).toEqual({
+        item: playLastX,
+        trackResume: resumeAtS1,
+      });
+    });
+
+    it('ignores a detour the climb on screen did not come back from', () => {
+      // The detour left s1, but the wall is on the older s2 entry right after it.
+      const { afterDetour, onFreshS2 } = walkOutAndBack([tapped, s3Entry]);
+      expect(selectPreviousQueueItemWithSuggestions(afterDetour, tapped, onFreshS2)).toEqual({
+        item: s1Entry,
+        trackResume: null,
+      });
+      // The entry it left from is gone: History decides, as without a detour.
+      const removed = afterDetour.filter(({ uuid }) => uuid !== 'item-s1');
+      expect(selectPreviousQueueItemWithSuggestions(removed, freshS2, onFreshS2)).toEqual(
+        selectPreviousQueueItemWithSuggestions(removed, freshS2, results),
+      );
     });
   });
 

@@ -18,6 +18,7 @@ import {
   playlistSuggestionSourceMatches,
   samePlaylistTrackResume,
   withPlaylistTrackResume,
+  withPlaylistTrackPlace,
   getQueueBoardKey,
   isPlaylistPeekQueueItemUuid,
   decideAdd,
@@ -2601,9 +2602,10 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   /**
    * Store where the list picks up after a step into or out of Up next (#6777).
    * A walk that steps from a list climb into the queue records that list climb
-   * on the track, and stepping back onto the list clears it: that is what keeps
-   * the list's place while queued climbs play, and what tells the player to
-   * say "Up next · 1 of 3" instead of the list's name.
+   * on the track, and stepping back onto the list clears it (keeping it as the
+   * track's `detour`, for Previous to retrace): that is what keeps the list's
+   * place while queued climbs play, and what tells the player to say
+   * "Up next · 1 of 3" instead of the list's name.
    *
    * Written onto the held track only while it is still the one the step walked
    * (same list, tap and board), so a track replaced meanwhile is left alone.
@@ -2979,11 +2981,12 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     (source: PlaylistSuggestionSource): boolean => {
       const sameAccount = privacyRevocationGeneration === getPrivacyRevocationGeneration();
       // The refresh is built from the list, not from the walk: it keeps the
-      // held track's place in Up next (#6777), or the list would forget where
-      // to pick up while a queued climb plays.
+      // held track's place in Up next and its last detour (#6777), or the list
+      // would forget where to pick up while a queued climb plays, and Previous
+      // what it came back from.
       setPlaylistSuggestionSourceState((current) =>
         sameAccount && current && playlistSuggestionSourceMatches(current, source)
-          ? withPlaylistTrackResume(source, current.resume ?? null)
+          ? withPlaylistTrackPlace(source, current)
           : current,
       );
       return sameAccount && playlistSuggestionSourceMatches(playlistSuggestionSourceRef.current, source);

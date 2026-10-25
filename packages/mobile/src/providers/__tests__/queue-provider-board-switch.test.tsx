@@ -234,6 +234,7 @@ type Snapshot = {
   previousClimb: ReturnType<typeof useQueue>['previousClimb'];
   refreshPlaylistSuggestionSource: ReturnType<typeof useQueue>['refreshPlaylistSuggestionSource'];
   dispatchWidgetNavigation: ReturnType<typeof useQueue>['dispatchWidgetNavigation'];
+  addToQueue: ReturnType<typeof useQueue>['addToQueue'];
 };
 
 function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
@@ -248,6 +249,7 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
       previousClimb: queue.previousClimb,
       refreshPlaylistSuggestionSource: queue.refreshPlaylistSuggestionSource,
       dispatchWidgetNavigation: queue.dispatchWidgetNavigation,
+      addToQueue: queue.addToQueue,
     });
   }, [
     queue.state,
@@ -257,6 +259,7 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
     queue.previousClimb,
     queue.refreshPlaylistSuggestionSource,
     queue.dispatchWidgetNavigation,
+    queue.addToQueue,
     onSnapshot,
   ]);
   return null;
@@ -1206,6 +1209,55 @@ describe('QueueProvider plays Up next before the list continues (#6777)', () => 
     act(() => latest().setCurrentClimb(elsewhere, { keepTrackIfUpNext: true, trigger: 'put_on_wall' }));
     expect(latest().state.currentClimbQueueItem?.uuid).toBe('item-elsewhere');
     expect(latest().playlistSuggestionSource).toBeNull();
+  });
+
+  // Codex review on #6798: the swipe down the list and back leaves the list's
+  // own entries between the climb Up next was played from and Up next.
+  it('retraces Up next past the list entries a swipe down and back left behind', async () => {
+    const s1Entry: ClimbQueueItem = { uuid: 'item-s1', climb: s1, suggested: true };
+    const playLastX = makeItem('item-x', makeClimb('x', 'kilter', 1));
+    queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue({
+      queue: [s1Entry],
+      currentClimbQueueItem: s1Entry,
+      playlistSuggestionSource: { ...kilterSource([s1, s2, s3, s4], s1), label: 'Search results' },
+      savedAt: '2026-10-25T00:00:00.000Z',
+    });
+    render(createElement(QueueProvider, null, createElement(Probe, { onSnapshot: (s) => snapshots.push(s) })));
+    await waitFor(() => expect(latest().state.currentClimbQueueItem?.uuid).toBe('item-s1'));
+    await waitFor(() => expect(latest().playlistSuggestionSource?.playlistUuid).toBe('climblist'));
+    const queuedClimbs = () => latest().state.queue.map(({ climb }) => climb.uuid);
+
+    // s1, s2, s3, then back to s1 over the same entries.
+    act(() => latest().nextClimb());
+    act(() => latest().nextClimb());
+    expect(currentClimbUuid()).toBe('s3');
+    act(() => latest().previousClimb());
+    act(() => latest().previousClimb());
+    expect(latest().state.currentClimbQueueItem).toBe(s1Entry);
+    expect(queuedClimbs()).toEqual(['s1', 's2', 's3']);
+
+    await act(async () => {
+      await latest().addToQueue(playLastX);
+    });
+    expect(queuedClimbs()).toEqual(['s1', 's2', 's3', 'x']);
+
+    // Next plays X, then the list picks up with a fresh s2.
+    act(() => latest().nextClimb());
+    expect(latest().state.currentClimbQueueItem?.uuid).toBe('item-x');
+    act(() => latest().nextClimb());
+    expect(currentClimbUuid()).toBe('s2');
+    expect(queuedClimbs()).toEqual(['s1', 's2', 's3', 'x', 's2']);
+    expect(latest().playlistSuggestionSource?.detour).toEqual({ climbUuid: 's1', queueItemUuid: 'item-s1' });
+
+    // Previous follows the walk back: X, then s1, where the detour started.
+    act(() => latest().previousClimb());
+    expect(latest().state.currentClimbQueueItem?.uuid).toBe('item-x');
+    expect(latest().playlistSuggestionSource?.resume).toEqual({ climbUuid: 's1', queueItemUuid: 'item-s1' });
+    act(() => latest().previousClimb());
+    expect(latest().state.currentClimbQueueItem).toBe(s1Entry);
+    expect(latest().playlistSuggestionSource?.resume).toBeUndefined();
+    // Nothing was copied on the way back.
+    expect(queuedClimbs()).toEqual(['s1', 's2', 's3', 'x', 's2']);
   });
 
   it('keeps the list place when a fuller copy of the list lands mid-queue', async () => {

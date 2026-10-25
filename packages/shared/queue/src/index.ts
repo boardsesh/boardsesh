@@ -94,6 +94,7 @@ export {
   appendPlaylistTrackPage,
   withPlaylistTrackClimbs,
   withPlaylistTrackResume,
+  withPlaylistTrackPlace,
   samePlaylistTrackResume,
 } from './playlist-suggestions';
 export type { QueueBoardKeyTarget, PreparedPlaylistClimbs } from './playlist-suggestions';

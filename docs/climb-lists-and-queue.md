@@ -533,8 +533,12 @@ Seven rules. Each one reuses a part that already exists in the code: the list tr
    on the wall keeps the list (owner decision, 2026-10-25, keeping the #5403 rule). If the list
    climb's own queue entry is removed while Up next plays, Previous goes back to that list
    climb instead of into History. From the list climb the walk picked up after Up next,
-   Previous goes back to the last queued climb played, then to the list climb before it, even
-   when an older entry of the same climb sits there. Owner decision, 2026-10-25 (#6777), reversing the
+   Previous goes back to the last queued climb played, then to the list climb the walk left
+   for the queue. The track keeps that stretch once the walk is back on the list
+   (`PlaylistSuggestionSource.detour`), so Previous follows it even when older entries of list
+   climbs sit between them in the queue (a swipe down the list and back leaves them there, and
+   a crew keeps every one). Without it, Previous reads the stretch from the queue, and an older
+   entry of the same climb ends it. Owner decision, 2026-10-25 (#6777), reversing the
    list-first walk F1 shipped, where the queue waited behind the end card and the persona panel
    in discussion #6708 predicted climbers would get lost.
 3. **The queue holds only what you or your crew add**: the right swipe (Play next), Play next,

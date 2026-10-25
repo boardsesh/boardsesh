@@ -10,6 +10,7 @@ import {
   appendPlaylistTrackPage,
   withPlaylistTrackClimbs,
   withPlaylistTrackResume,
+  withPlaylistTrackPlace,
   samePlaylistTrackResume,
 } from '../playlist-suggestions';
 import type { Climb, ClimbQueueItem, PlaylistSuggestionSource, PlaylistTrackPage } from '../types';
@@ -364,8 +365,19 @@ describe('withPlaylistTrackResume', () => {
     expect(walking).not.toBe(track);
     expect(walking).toEqual({ ...track, resume });
     const back = withPlaylistTrackResume(walking, null);
-    expect(back).toEqual(track);
+    expect(back).toEqual({ ...track, detour: resume });
     expect('resume' in back).toBe(false);
+  });
+
+  it('keeps the cleared resume as the detour until a new one is set', () => {
+    const back = withPlaylistTrackResume(withPlaylistTrackResume(track, resume), null);
+    expect(back.detour).toEqual(resume);
+    // Another step on the list keeps it: nothing changes.
+    expect(withPlaylistTrackResume(back, null)).toBe(back);
+    const again = { climbUuid: 'c', queueItemUuid: 'item-c' };
+    const intoUpNext = withPlaylistTrackResume(back, again);
+    expect(intoUpNext).toEqual({ ...track, resume: again });
+    expect('detour' in intoUpNext).toBe(false);
   });
 
   it('returns the same track when nothing changes', () => {
@@ -386,6 +398,21 @@ describe('withPlaylistTrackResume', () => {
     expect(samePlaylistTrackResume(resume, { ...resume })).toBe(true);
     expect(samePlaylistTrackResume(resume, { ...resume, queueItemUuid: 'repeat-b' })).toBe(false);
     expect(samePlaylistTrackResume(resume, null)).toBe(false);
+  });
+
+  it('carries the walk place onto a fresh copy of the list', () => {
+    const fresh = createPlaylistSuggestionSource({
+      playlistUuid: 'p',
+      activatedClimb: climbs[0],
+      climbs,
+      boardKey: 'k',
+    });
+    const walking = withPlaylistTrackResume(track, resume);
+    expect(withPlaylistTrackPlace(fresh, walking)).toEqual({ ...fresh, resume });
+    const back = withPlaylistTrackResume(walking, null);
+    expect(withPlaylistTrackPlace(fresh, back)).toEqual({ ...fresh, detour: resume });
+    // Nothing to carry: the fresh copy itself.
+    expect(withPlaylistTrackPlace(fresh, track)).toBe(fresh);
   });
 });
 
