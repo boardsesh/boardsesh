@@ -10,7 +10,7 @@ import { getSessionOgSummary } from '@/app/lib/seo/dynamic-og-data';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 import I18nProvider from '@/app/components/providers/i18n-provider';
-import { SSR_BACKEND_FETCH_TIMEOUT_MS } from '@/app/lib/ssr-fetch-deadline';
+import { SSR_AUTHENTICATED_FETCH_TIMEOUT_MS, isDeadlineError } from '@/app/lib/ssr-fetch-deadline';
 import { webClientIdentityHeaders } from '@/app/lib/client-identity';
 
 type Props = {
@@ -21,7 +21,7 @@ const fetchSessionDetail = React.cache(async (sessionId: string) => {
   const url = getGraphQLHttpUrl();
   const client = new GraphQLClient(url, {
     headers: webClientIdentityHeaders(),
-    signal: AbortSignal.timeout(SSR_BACKEND_FETCH_TIMEOUT_MS),
+    signal: AbortSignal.timeout(SSR_AUTHENTICATED_FETCH_TIMEOUT_MS),
   });
   try {
     const data = await client.request<GetSessionDetailQueryResponse>(GET_SESSION_DETAIL, {
@@ -29,6 +29,8 @@ const fetchSessionDetail = React.cache(async (sessionId: string) => {
     });
     return data.sessionDetail;
   } catch (err) {
+    // A slow backend must not render the indexable share page as "not found".
+    if (isDeadlineError(err)) throw err;
     console.error('[SessionDetailPage] Failed to fetch session:', sessionId, err);
     return null;
   }
@@ -37,11 +39,16 @@ const fetchSessionDetail = React.cache(async (sessionId: string) => {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { sessionId: rawSessionId } = await params;
   const sessionId = decodeURIComponent(rawSessionId);
-  const summary = await getSessionOgSummary(sessionId);
+  const summary = await getSessionOgSummary(sessionId).catch((err: unknown) => {
+    // Metadata is best effort: a slow summary read falls back to the not-found
+    // metadata instead of failing the whole render.
+    console.error('[SessionDetailPage] Failed to build metadata:', sessionId, err);
+    return null;
+  });
   const { t, locale } = await getServerTranslation('session');
   const path = `/session/${encodeURIComponent(sessionId)}`;
 
-  if (!summary.found) {
+  if (!summary?.found) {
     return createNoIndexMetadata({
       title: t('metadata.detail.notFoundTitle'),
       description: t('metadata.detail.notFoundDescription'),

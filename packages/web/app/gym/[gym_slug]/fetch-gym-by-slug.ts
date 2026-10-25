@@ -11,6 +11,7 @@ import { cache } from 'react';
 import type { Gym } from '@boardsesh/shared-schema';
 import { GET_GYM_BY_SLUG, type GetGymBySlugQueryResponse } from '@boardsesh/graphql/operations';
 import { executeAuthenticatedGraphQL } from '@/app/lib/graphql/server-graphql';
+import { isDeadlineError } from '@/app/lib/ssr-fetch-deadline';
 
 /**
  * Request-deduped: `generateMetadata` and the page body of the same route each
@@ -21,6 +22,9 @@ export const fetchGymBySlug = cache(async (slug: string, token: string | undefin
     const response = await executeAuthenticatedGraphQL<GetGymBySlugQueryResponse>(GET_GYM_BY_SLUG, { slug }, token);
     return response.gymBySlug ?? null;
   } catch (error) {
+    // A deadline is not a miss: null becomes notFound(), which would serve a
+    // public, indexable gym page as a 404. Let it surface as a 5xx instead.
+    if (isDeadlineError(error)) throw error;
     console.error('fetchGymBySlug failed:', error);
     return null;
   }

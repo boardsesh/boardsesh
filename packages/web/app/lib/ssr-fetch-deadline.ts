@@ -37,5 +37,22 @@ export const SSR_BACKEND_FETCH_TIMEOUT_MS = 3000;
  * that needs another number passes its own signal.
  *
  * `executeGraphQLInternal` defaults to {@link SSR_BACKEND_FETCH_TIMEOUT_MS}.
+ *
+ * A timeout rejects the read. Not every caller degrades: `getProfileData` and
+ * the profile page let it reach the error boundary (a 5xx), and callers that
+ * map "no row" to a 404 (`fetchGymBySlug`, the session detail read) rethrow it
+ * via {@link isDeadlineError} so a slow backend is never served as "not found".
  */
 export const SSR_AUTHENTICATED_FETCH_TIMEOUT_MS = 5000;
+
+/**
+ * True when `error` is the rejection an expired `AbortSignal.timeout` (or an
+ * aborted fetch) produces, including when a client wraps it in `cause`.
+ */
+export function isDeadlineError(error: unknown): boolean {
+  // Structural, not `instanceof Error`: a DOMException is not an Error in every runtime.
+  if (typeof error !== 'object' || error === null) return false;
+  const { name, cause } = error as { name?: unknown; cause?: unknown };
+  if (name === 'TimeoutError' || name === 'AbortError') return true;
+  return isDeadlineError(cause);
+}

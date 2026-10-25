@@ -157,4 +157,23 @@ describe('session page metadata', () => {
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
   });
+
+  it('rethrows a deadline on the detail fetch instead of rendering not-found', async () => {
+    vi.mocked(GraphQLClient).mockImplementationOnce(function () {
+      return { request: vi.fn().mockRejectedValue(new DOMException('timed out', 'TimeoutError')) };
+    } as never);
+
+    await expect(pageModule.default({ params: Promise.resolve({ sessionId: 'session-slow' }) })).rejects.toMatchObject({
+      name: 'TimeoutError',
+    });
+  });
+
+  it('falls back to not-found metadata when the summary read fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    getSessionOgSummaryMock.mockRejectedValue(new DOMException('timed out', 'TimeoutError'));
+
+    const metadata = await pageModule.generateMetadata({ params: Promise.resolve({ sessionId: 'session-meta-slow' }) });
+
+    expect(metadata.robots).toMatchObject({ index: false });
+  });
 });

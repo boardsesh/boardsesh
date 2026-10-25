@@ -18,6 +18,8 @@ export async function getRecentBetaLinks(limit = 20): Promise<RecentBetaLinkRow[
       GET_RECENT_BETA_LINKS,
       { limit },
       await getServerAuthToken(),
+      // Stricter than the 5 s authenticated default on purpose: the homepage
+      // must render within its page-load budget (#4461, #6254).
       AbortSignal.timeout(SSR_BACKEND_FETCH_TIMEOUT_MS),
     );
     return result.recentBetaLinks;
