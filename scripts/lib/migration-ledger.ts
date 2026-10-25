@@ -50,8 +50,9 @@ export const VERIFY_MIGRATION_JOURNAL_OFF = '0';
  * with its ledger row, and its build fails unless the ledger row count equals
  * the journal entry count. `vp run db:up` applies only a verified contiguous
  * suffix before `db:migrate` runs, and stops on any gap with no SQL run (#3979).
- * So the condition that justified the opt-in is gone. Leaving it opt-in means the check is off in exactly the place a gap is
- * created: a developer's machine, on the branch that creates it.
+ * So the condition that justified the opt-in is gone. Leaving it opt-in means
+ * the check is off in exactly the place a gap is created: a developer's machine,
+ * on the branch that creates it.
  *
  * `0` remains an escape hatch for the one shape this cannot help — a database
  * with a gap nobody can repair right now, where the operator needs `db:migrate`
