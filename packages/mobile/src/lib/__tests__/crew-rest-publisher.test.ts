@@ -265,6 +265,40 @@ describe('pause, resume, reset, restarts', () => {
     expect(sent).toEqual([{ action: 'RESET', isRunning: true }]);
   });
 
+  it('restarts a crew rest under a tick rule with CONFIGURE anchor NOW on the crew’s config, keeping its tick', async () => {
+    adoptCrewCadence({
+      sessionId: SESSION,
+      revision: 3,
+      config: {
+        mode: 'afterTick',
+        targetSeconds: 180,
+        autoAdvance: true,
+        advanceOn: 'send',
+        source: 'stage',
+        setByParticipantId: 'participant-sam',
+      },
+      isRunning: true,
+      anchorMs: T0,
+      pausedElapsedSeconds: 0,
+      lastFiredBeatMs: null,
+      lastTick: { status: 'send', queueItemUuid: 'item-wall' },
+      anchorServerMs: T0,
+      lastFiredBeatServerMs: null,
+    });
+    sent.length = 0;
+    currentNowMs = T0 + 200_000;
+    reanchorRestTimerAfterBackground(currentNowMs, T0 + 180_000);
+    await flush();
+    expect(sent).toEqual([
+      {
+        action: 'CONFIGURE',
+        config: { mode: 'afterTick', targetSeconds: 180, autoAdvance: true, advanceOn: 'send', source: 'stage' },
+        anchor: 'NOW',
+        elapsedMs: 0,
+      },
+    ]);
+  });
+
   it('keeps the server’s rest in step when this phone moved the wall itself', async () => {
     noteRestTimerAutoAdvanceFired(getRestTimerState().cycleId, 'afterTick', T0 + 90_000, T0 + 90_000);
     await flush();

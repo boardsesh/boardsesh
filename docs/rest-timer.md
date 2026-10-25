@@ -22,8 +22,8 @@ and which phone may move the wall. The workout stages that pace it are in
 | Wall-driver rule | `packages/mobile/src/lib/session-timer/driver-rule.ts`, `src/hooks/use-session-timer-driver.ts` |
 
 The durable preferences (rest length, cadence, auto-advance, sound, countdown cues) live in
-`packages/mobile/src/settings`. Arming never survives a cold start, with one exception: a crew
-clock another member set comes back from the session's seed (see "The crew's clock" under "Which phone moves the wall").
+`packages/mobile/src/settings`. Arming never survives a cold start, with one exception: a live crew
+clock comes back from the session's seed, whoever set it (see "The crew's clock" under "Which phone moves the wall").
 
 ## Effective pacing
 
@@ -180,17 +180,32 @@ in the crew.
   After a tick, a deadline nobody can claim any more (more than 5 s gone) is restarted by the
   phone pacing it: back from the background, after a FIRE that failed or came back refused or
   late, and when a phone takes the board over with the deadline already past.
-- **Who changes it.** Anyone in the session. While a crew clock runs, the sheet's and the Record
-  tab's length, cadence and auto-advance controls show the crew's values, not the climber's own.
-  An edit copies the crew's other two values into the climber's settings and then writes the one
-  changed, so the crew gets its own clock with that one change; the sheet says so ("Changes here
-  go to everyone"). A cadence change there still goes through `changeRestTimerMode`, which does
-  not re-arm under a crew clock: the CONFIGURE moves the anchor. Settings › Timers keeps showing
-  the climber's own saved defaults, and an edit there hands the crew this phone's pacing.
-  Auto-advance becomes the crew's setting: a passenger can switch it, and its line names whose
-  phone moves the wall.
+- **A beat the server would never take.** The server refuses a beat too close to the last one it
+  took (#6754): after a tick, closer than one rest less 3 s; on the minute, closer than 12 s. The
+  phone checks that against the crew clock before it sends a FIRE, and lets such a beat go as a
+  refused one, with no FIRE and no retry (`crewBeatFenced`).
+- **Who changes it.** Anyone in the session (Marco, 2026-10-25). While a crew clock runs, the
+  sheet's and the Record tab's length, cadence and auto-advance controls show the crew's values,
+  not the climber's own, and an edit changes the crew clock: `editCrewRestPacing` sends a
+  CONFIGURE with the crew's config and only that change, at once. Its advance rule stays; its
+  source becomes `settings`. A change of cadence starts the beat now on the minute and waits for
+  the next tick after a tick, as a stage boundary does. The controls show the edit
+  (`crewPacingDraft`) until the server answers, so a second tap steps on from the first; the
+  timer keeps running on the crew's config meanwhile. The climber's settings take the crew's
+  values with the change too, so the length they picked is theirs after the session. The sheet
+  says so ("Changes here go to everyone"). "Set by your workout" stays only while the crew clock
+  runs a workout's pacing. In a crew, a settings edit pushes nothing: Settings › Timers changes
+  the climber's own defaults only. Alone in a session, a Settings › Timers edit still moves the
+  running timer. Auto-advance becomes the crew's setting: a passenger can switch it, and its
+  line names whose phone moves the wall.
+- **A workout started over a crewmate's clock.** Start and "Add a block" arm nothing when the
+  timer is on. They mark the workout's paced climbs instead, and the first of them to reach the
+  wall is a stage boundary: on the minute the beat starts then, a tick or send rule waits for
+  that climb's tick. Stage changes under a crewmate's clock are planned from that clock, so the
+  workout's pacing wins from its first climb (`rest-timer-effective.ts`).
 - **What a passenger sees.** The crew's rest, counted from the crew's anchor, with "Sam is
-  pacing the wall" under the digits. If the holder's phone sleeps the rest runs past zero and
+  pacing the wall" under the digits (one capped line on the pill; under the sheet's clock it
+  grows with Dynamic Type and wraps). If the holder's phone sleeps the rest runs past zero and
   nothing moves; the holder's phone restarts it when it comes back.
 - **The clock offset.** Every crew instant is converted to the phone's clock when the change is
   taken. A later sample, even one on a change too old to take (a FIRE's reply), that moves the
@@ -199,8 +214,10 @@ in the crew.
 - **A tick under a tick or send rule** counts only on the climb on the wall, on every phone: a
   late tick on the previous climb, or one from a list, neither replaces the wall climb's tick nor
   moves the rest, and never reaches the server.
-- **A cold start** takes the crew's clock back only if another member set it, or this phone was
-  already armed for that session.
+- **A cold start** takes the crew's live clock back from the session's seed (Marco,
+  2026-10-25): one another member set, and one this phone set, so the setter keeps pacing the
+  wall. Not a clock the climber turned off on this phone since launch, and never from an echo of
+  this phone's own ARM, so turning the timer off sticks.
 - **An unknown mode or rule** (a newer app set it) is held but never fired on, and the sheet asks
   for an update. The hold goes with the session.
 

@@ -218,7 +218,8 @@ stage, leaves the climber's own rest settings in charge, exactly as before. The 
   The builder's phone hands each stage's pacing to the session's shared rest clock (#5382) as
   the climb on the wall changes, so every phone, the holder's included, counts that stage's
   rest and waits on its rule; if the builder's phone sleeps, the crew keeps the last pacing it
-  sent.
+  sent. A workout started over a crewmate's running clock takes it over on its first paced
+  climb: on the minute the beat starts then, a tick or send rule waits for the climb's tick.
 
 ## Building a workout
 

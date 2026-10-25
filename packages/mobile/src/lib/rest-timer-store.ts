@@ -13,8 +13,8 @@
 // cadence mode. Those are durable preferences and live in `../settings`. This
 // store is purely "what is the timer doing right now", and none of it is
 // persisted — see `armed` below. The one way an arm comes back after a cold
-// start is the crew's: a crew clock another member set is taken from the
-// session's seed (`crew`, below), bounded by the live session.
+// start is the crew's: a live crew clock is taken from the session's seed
+// (`crew`, below), whoever set it, bounded by the live session.
 //
 // Two fields are context the timer runs in rather than its own state (#5380):
 // `stagePacing`, the workout stage pacing of the climb on the wall, and
