@@ -467,7 +467,7 @@ describe('useTickSaver after a save', () => {
       climbedAt: '2026-10-24T09:32:00.000Z',
       tickUuid: 'tick-9',
     });
-    expect(callLog).toEqual(['track:Tick Logged', 'restTimer', 'workoutRun', 'saved']);
+    expect(callLog).toEqual(['track:Tick Logged', 'sessionTimer', 'restTimer', 'workoutRun', 'saved']);
   });
 
   it('keeps the climb that was up when the save started, even if the wall moves before it lands', () => {
