@@ -211,7 +211,7 @@ describe('summarizeStartQueue', () => {
   it('gives a limit block its time', () => {
     const plan = planOf(['limit'], [workout({ ...DEFAULT_LIMIT_BOULDERING_OPTIONS, targetGrade: 22 })]);
 
-    expect(summarizeStartQueue(rowsFor('limit', 3), plan.stages)).toEqual({ climbCount: 3, estimatedMinutes: 15 });
+    expect(summarizeStartQueue(rowsFor('limit', 3), plan.stages)).toEqual({ climbCount: 3, estimatedMinutes: 30 });
   });
 
   it('counts the rows of an untimed workout and gives no time', () => {
