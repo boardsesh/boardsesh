@@ -835,7 +835,7 @@ export function PlaylistDetailView({
           <Appbar.Header
             statusBarHeight={0}
             mode="small"
-            style={[styles.materialAppbar, { backgroundColor: systemColors.secondaryBackground }]}
+            style={{ height: NAV_BAR_HEIGHT, backgroundColor: systemColors.secondaryBackground }}
           >
             <Appbar.BackAction
               onPress={() => router.back()}
@@ -1289,11 +1289,6 @@ const createStyles = (textStyles: TypographyScale) =>
       left: 0,
       right: 0,
       zIndex: 2,
-      elevation: 0,
-    },
-    materialAppbar: {
-      elevation: 0,
-      shadowOpacity: 0,
     },
     // Wraps Appbar.Content so the title can fade in (opacity-animated) as the hero
     // band scrolls under the bar, without animating the back / play actions.

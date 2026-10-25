@@ -325,9 +325,13 @@ vi.mock('react-native-paper', () => {
     style?: unknown;
     statusBarHeight?: number;
   }) => {
-    const { position } = Object.assign({}, ...[style].flat(10).filter(Boolean)) as { position?: string };
+    const { position, height } = Object.assign({}, ...[style].flat(10).filter(Boolean)) as {
+      position?: string;
+      height?: number;
+    };
     const attrs: Record<string, unknown> = { 'data-appbar': 'true' };
     if (position !== undefined) attrs['data-appbar-style-position'] = position;
+    if (height !== undefined) attrs['data-appbar-height'] = height;
     if (statusBarHeight !== undefined) attrs['data-status-bar-height'] = statusBarHeight;
     return createElement('div', attrs, children);
   };
@@ -1055,6 +1059,12 @@ describe('PlaylistDetailView', () => {
       const wrapper = appbar.parentElement as HTMLElement;
       expect(wrapper.getAttribute('data-position')).toBe('absolute');
       expect(wrapper.getAttribute('data-top')).toBe('0');
+    });
+
+    it("sizes the app bar to the scroll-math bar height, not Paper's 64px default", () => {
+      const { container } = render(<PlaylistDetailView {...makeProps({ climbs: [CLIMB] })} />);
+      const appbar = container.querySelector('[data-appbar]') as HTMLElement;
+      expect(appbar.getAttribute('data-appbar-height')).toBe('56');
     });
 
     it('keeps its in-body app bar and hides the native header (header XOR in-body Appbar)', () => {
