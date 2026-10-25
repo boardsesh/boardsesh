@@ -129,34 +129,54 @@ class FakeIndexedDb {
   readonly createdStores: string[] = [];
   injectedFailures: InjectedFailure[] = [];
   failNextOpen: DOMException | null = null;
+  /** Opens that never fire success or error until `releaseHungOpens()`. */
+  hangNextOpens = 0;
+  /** Connections handed out already closing, with no `close` event. */
+  closingNextConnections = 0;
   transactionAttempts = 0;
+  private readonly hungOpens: Array<() => void> = [];
 
   open(name: string, version: number): FakeRequest {
     this.openCalls.push([name, version]);
     const request = new FakeRequest();
-    queueMicrotask(() => {
-      if (this.failNextOpen) {
-        request.error = this.failNextOpen;
-        this.failNextOpen = null;
-        request.onerror?.();
-        return;
-      }
-      let stored = this.databases.get(name);
-      const needsUpgrade = !stored || stored.version < version;
-      if (!stored) {
-        stored = { version, stores: new Map() };
-        this.databases.set(name, stored);
-      }
-      const database = new FakeDatabase(stored, this);
-      this.connections.push(database);
-      request.result = database;
-      if (needsUpgrade) {
-        stored.version = version;
-        request.onupgradeneeded?.();
-      }
-      request.onsuccess?.();
-    });
+    if (this.hangNextOpens > 0) {
+      this.hangNextOpens -= 1;
+      this.hungOpens.push(() => this.settleOpen(request, name, version));
+      return request;
+    }
+    queueMicrotask(() => this.settleOpen(request, name, version));
     return request;
+  }
+
+  releaseHungOpens(): void {
+    for (const settle of this.hungOpens.splice(0)) settle();
+  }
+
+  private settleOpen(request: FakeRequest, name: string, version: number): void {
+    if (this.failNextOpen) {
+      request.error = this.failNextOpen;
+      this.failNextOpen = null;
+      request.onerror?.();
+      return;
+    }
+    let stored = this.databases.get(name);
+    const needsUpgrade = !stored || stored.version < version;
+    if (!stored) {
+      stored = { version, stores: new Map() };
+      this.databases.set(name, stored);
+    }
+    const database = new FakeDatabase(stored, this);
+    if (this.closingNextConnections > 0) {
+      this.closingNextConnections -= 1;
+      database.closed = true;
+    }
+    this.connections.push(database);
+    request.result = database;
+    if (needsUpgrade) {
+      stored.version = version;
+      request.onupgradeneeded?.();
+    }
+    request.onsuccess?.();
   }
 
   /** Rows exactly as the package's v3 adapter left them on disk. */
@@ -165,11 +185,12 @@ class FakeIndexedDb {
   }
 }
 
-function setup(maxAttempts?: number) {
+function setup(maxAttempts?: number, openTimeoutMs?: number) {
   const fakeIndexedDb = new FakeIndexedDb();
   const storage = createIndexedDbAsyncStorage(DATABASE_NAME, {
     getFactory: () => fakeIndexedDb as unknown as IDBFactory,
     maxAttempts,
+    openTimeoutMs,
   });
   return { fakeIndexedDb, storage };
 }
@@ -244,6 +265,47 @@ describe('createIndexedDbAsyncStorage', () => {
     await expect(storage.getItem('theme')).resolves.toBe('dark');
   });
 
+  it('drops a connection that is still closing after the last attempt', async () => {
+    const { fakeIndexedDb, storage } = setup();
+    await storage.setItem('theme', 'dark');
+    // The cached connection dies silently and the retry's fresh one is closing too.
+    if (fakeIndexedDb.connections[0]) fakeIndexedDb.connections[0].closed = true;
+    fakeIndexedDb.closingNextConnections = 1;
+
+    await expect(storage.getItem('theme')).rejects.toThrow(/connection is closing/);
+    expect(fakeIndexedDb.openCalls).toHaveLength(2);
+    // The next call opens a third connection on its first attempt instead of
+    // spending that attempt on the dead retry connection.
+    const attemptsBefore = fakeIndexedDb.transactionAttempts;
+    await expect(storage.getItem('theme')).resolves.toBe('dark');
+    expect(fakeIndexedDb.transactionAttempts - attemptsBefore).toBe(1);
+    expect(fakeIndexedDb.openCalls).toHaveLength(3);
+  });
+
+  it('gives up on an open that never settles and retries on a fresh request', async () => {
+    const { fakeIndexedDb, storage } = setup(undefined, 10);
+    fakeIndexedDb.hangNextOpens = 1;
+
+    await expect(storage.getItem('theme')).resolves.toBeNull();
+    expect(fakeIndexedDb.openCalls).toHaveLength(2);
+
+    // The hung request finally succeeds; its connection is closed, not cached.
+    fakeIndexedDb.releaseHungOpens();
+    const lateConnection = fakeIndexedDb.connections.at(-1);
+    expect(lateConnection?.closed).toBe(true);
+    await storage.setItem('theme', 'dark');
+    await expect(storage.getItem('theme')).resolves.toBe('dark');
+    expect(fakeIndexedDb.openCalls).toHaveLength(2);
+  });
+
+  it('rejects when every open hangs, instead of waiting forever', async () => {
+    const { fakeIndexedDb, storage } = setup(undefined, 10);
+    fakeIndexedDb.hangNextOpens = 2;
+
+    await expect(storage.getItem('theme')).rejects.toThrow(/timed out/);
+    expect(fakeIndexedDb.openCalls).toHaveLength(2);
+  });
+
   it('reopens after the browser closes the connection, without spending a retry', async () => {
     const { fakeIndexedDb, storage } = setup(1);
     await storage.setItem('theme', 'dark');
@@ -289,6 +351,6 @@ describe('createIndexedDbAsyncStorage', () => {
 
   it('rejects every call when the browser has no IndexedDB', async () => {
     const storage = createIndexedDbAsyncStorage(DATABASE_NAME, { getFactory: () => undefined });
-    await expect(storage.getItem('theme')).rejects.toThrow(/IndexedDB is not available/);
+    await expect(storage.getItem('theme')).rejects.toThrow('IndexedDB storage error: IndexedDB is not available');
   });
 });

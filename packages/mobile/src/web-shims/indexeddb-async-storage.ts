@@ -17,6 +17,10 @@ const DATABASE_VERSION = 1;
 // One first try plus one retry on a fresh connection. Every operation here is
 // idempotent (get, put, delete, getAllKeys, clear), so repeating one is safe.
 const DEFAULT_MAX_ATTEMPTS = 2;
+// An open normally settles in milliseconds. WebKit can leave one pending with
+// neither success nor error after the page resumes; without a bound, every
+// caller would await that one request forever.
+const DEFAULT_OPEN_TIMEOUT_MS = 5_000;
 
 // What WebKit and Chromium raise when the connection or transaction died under
 // us, rather than when the request itself is wrong. QuotaExceededError,
@@ -27,6 +31,8 @@ const RECOVERABLE_ERROR_NAMES = new Set([
   'UnknownError',
   'TransactionInactiveError',
   'AbortError',
+  // Our own open timeout; a fresh open request may still succeed.
+  'TimeoutError',
 ]);
 
 export type IndexedDbAsyncStorageOptions = {
@@ -34,6 +40,8 @@ export type IndexedDbAsyncStorageOptions = {
   getFactory?: () => IDBFactory | undefined;
   /** Total attempts per operation, including the first. Defaults to 2. */
   maxAttempts?: number;
+  /** How long one open may stay pending before it counts as failed. Defaults to 5 s. */
+  openTimeoutMs?: number;
 };
 
 function defaultFactory(): IDBFactory | undefined {
@@ -64,6 +72,7 @@ export function createIndexedDbAsyncStorage(
 ): AsyncStorage {
   const getFactory = options.getFactory ?? defaultFactory;
   const maxAttempts = Math.max(1, options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS);
+  const openTimeoutMs = options.openTimeoutMs ?? DEFAULT_OPEN_TIMEOUT_MS;
 
   let pendingConnection: Promise<IDBDatabase> | null = null;
   let openConnection: IDBDatabase | null = null;
@@ -88,7 +97,7 @@ export function createIndexedDbAsyncStorage(
   function connect(): Promise<IDBDatabase> {
     if (pendingConnection) return pendingConnection;
     const factory = getFactory();
-    if (!factory) return Promise.reject(new Error('IndexedDB storage error: IndexedDB is not available'));
+    if (!factory) return Promise.reject(new Error('IndexedDB is not available'));
 
     const opening = new Promise<IDBDatabase>((resolve, reject) => {
       let request: IDBOpenDBRequest;
@@ -98,6 +107,11 @@ export function createIndexedDbAsyncStorage(
         reject(error);
         return;
       }
+      let timedOut = false;
+      const timeout = setTimeout(() => {
+        timedOut = true;
+        reject(new DOMException('Opening the IndexedDB database timed out.', 'TimeoutError'));
+      }, openTimeoutMs);
       request.onupgradeneeded = () => {
         const database = request.result;
         if (!database.objectStoreNames.contains(ENTRIES_STORE)) {
@@ -105,7 +119,14 @@ export function createIndexedDbAsyncStorage(
         }
       };
       request.onsuccess = () => {
+        clearTimeout(timeout);
         const database = request.result;
+        if (timedOut) {
+          // Nobody is waiting for this one any more; release it so it cannot
+          // block another tab's upgrade.
+          database.close();
+          return;
+        }
         // `close` fires when the browser closes the connection abnormally (the
         // iOS Safari suspension case). `versionchange` means another tab wants
         // to upgrade; step aside so it is not blocked, and reopen on next use.
@@ -114,7 +135,10 @@ export function createIndexedDbAsyncStorage(
         if (pendingConnection === opening) openConnection = database;
         resolve(database);
       };
-      request.onerror = () => reject(request.error ?? new Error('IndexedDB open failed'));
+      request.onerror = () => {
+        clearTimeout(timeout);
+        reject(request.error ?? new Error('IndexedDB open failed'));
+      };
     });
 
     pendingConnection = opening;
@@ -172,8 +196,11 @@ export function createIndexedDbAsyncStorage(
         database = await connect();
         return await runTransaction(database, mode, issueRequests);
       } catch (error) {
-        if (attempt >= maxAttempts || !isRecoverable(error)) throw toStorageError(error);
-        if (database) discardConnection(database);
+        const recoverable = isRecoverable(error);
+        // Drop a dead connection even on the last attempt, so the next call
+        // opens a fresh one instead of failing on the same handle.
+        if (database && recoverable) discardConnection(database);
+        if (attempt >= maxAttempts || !recoverable) throw toStorageError(error);
       }
     }
   }
