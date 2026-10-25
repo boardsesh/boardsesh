@@ -1256,15 +1256,32 @@ export function PlayCore({
     );
   }, [displayedClimb, boardName, layoutId, showToast, tClimbs]);
 
-  // The similar-climbs strip plays as a list (#6665), on the board the player
-  // draws the climb on, which is the board its similar climbs come from.
-  const similarTrack = useMemo(
-    () => ({
-      boardKey: getQueueBoardKey({ board_name: boardName, layout_id: layoutId, size_id: sizeId, set_ids: setIds }),
+  // The similar-climbs strip plays as a list (#6665). A preview walks it on the
+  // board the player draws the climb on, which is the board its similar climbs
+  // come from. A committed tap keys it to the stored active board, the board
+  // the queue checks a track against: an upsized climb or a tick from another
+  // size is drawn on a bigger board, and a track keyed there would go dormant
+  // the moment it was set, leaving swipes to walk the queue.
+  const similarTrack = useMemo(() => {
+    const renderBoardKey = getQueueBoardKey({
+      board_name: boardName,
+      layout_id: layoutId,
+      size_id: sizeId,
+      set_ids: setIds,
+    });
+    return {
+      boardKey: renderBoardKey,
+      committedBoardKey: activeBoardForNavigation
+        ? getQueueBoardKey({
+            board_name: activeBoardForNavigation.boardType,
+            layout_id: activeBoardForNavigation.layoutId,
+            size_id: activeBoardForNavigation.sizeId,
+            set_ids: activeBoardForNavigation.setIds,
+          })
+        : renderBoardKey,
       label: t('playView.track.similarClimbs'),
-    }),
-    [boardName, layoutId, sizeId, setIds, t],
-  );
+    };
+  }, [boardName, layoutId, sizeId, setIds, activeBoardForNavigation, t]);
 
   const { handlePrev, handleNext, handleSetActive, handleSimilarClimbPress, commitDisplayedToWall, continueIntoQueue } =
     usePlaySelectionController({

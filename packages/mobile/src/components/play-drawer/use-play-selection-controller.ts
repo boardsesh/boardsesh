@@ -43,9 +43,18 @@ type CommitConfirmation = {
   setBusyWallConfirmArmed: Dispatch<SetStateAction<boolean>>;
   markLatchExit: (exit: WallLatchExit) => void;
 };
-/** The similar-climbs strip as a track: the board its climbs are drawn on, and its name. */
+/** The similar-climbs strip as a track: the boards it is keyed to, and its name. */
 type SimilarClimbsTrack = {
+  /** The board the shown climb is drawn on. A preview walks the strip on this board. */
   boardKey: string;
+  /**
+   * The climber's stored active board. A committed tap keys the track here,
+   * the board the queue checks a track against: an upsized climb, or a tick
+   * from another size of the layout, is drawn on a board that is not the
+   * active one, and a track keyed to that board would go dormant at once.
+   * The queue drops strip climbs that do not fit the active board.
+   */
+  committedBoardKey: string;
   label: string;
 };
 type PlaySelectionInputs = {
@@ -378,17 +387,17 @@ export function usePlaySelectionController({
   displayedClimbUuidRef.current = displayedClimbUuid;
   const handleSimilarClimbPress = useCallback(
     (similarClimb: Climb, similarClimbs: Climb[] = []) => {
-      const track = createPlaylistSuggestionSource({
-        playlistUuid: `similar:${displayedClimbUuidRef.current ?? similarClimb.uuid}`,
-        activatedClimb: toQueueClimb(similarClimb),
-        climbs: toQueueClimbs(similarClimbs),
-        boardKey: similarTrack.boardKey,
-        label: similarTrack.label,
-      });
       const previewOnly =
         getSimilarClimbTapMode(viewer, { inSharedSession: browseByDefault }) === 'preview' ||
         showBoardMismatch ||
         !getSetting('lightOnClimbTap');
+      const track = createPlaylistSuggestionSource({
+        playlistUuid: `similar:${displayedClimbUuidRef.current ?? similarClimb.uuid}`,
+        activatedClimb: toQueueClimb(similarClimb),
+        climbs: toQueueClimbs(similarClimbs),
+        boardKey: previewOnly ? similarTrack.boardKey : similarTrack.committedBoardKey,
+        label: similarTrack.label,
+      });
       clearMirror();
       setIsTickBarActive(false);
       if (previewOnly) {

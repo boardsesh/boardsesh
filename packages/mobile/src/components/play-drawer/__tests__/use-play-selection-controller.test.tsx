@@ -65,7 +65,7 @@ function inputs(): SelectionInputs {
       previousClimb: vi.fn(),
       nextClimb: vi.fn(),
     },
-    similarTrack: { boardKey: 'kilter:1:10:1,2', label: 'Similar climbs' },
+    similarTrack: { boardKey: 'kilter:1:10:1,2', committedBoardKey: 'kilter:1:10:1,2', label: 'Similar climbs' },
     navigation: {
       navigationState: { prevItem: item('previous'), nextItem: item('next') },
       lightOnSwipe: true,
@@ -377,6 +377,37 @@ describe('similar-climb selection', () => {
     expect(initialProps.preview.setDrawerPreviewItem).toHaveBeenCalledWith(null);
     expect(initialProps.preview.setDrawerPreviewSuggestionSource).toHaveBeenCalledWith(null);
     expect(initialProps.chrome.setIsTickBarActive).toHaveBeenCalledWith(false);
+  });
+
+  // An upsized climb, or a tick from another size of the layout, is drawn on a
+  // board that is not the stored active one. The queue masks a track whose key
+  // is not the active board's, so a commit keyed to the drawn board would go
+  // dormant at once and swipes would walk the queue.
+  it('keys a committed strip to the active board, and a preview to the board the climb is drawn on', () => {
+    const committedProps = inputs();
+    committedProps.similarTrack = {
+      boardKey: 'kilter:1:14:1,2',
+      committedBoardKey: 'kilter:1:10:1,2',
+      label: 'Similar climbs',
+    };
+    const committed = renderHook(usePlaySelectionController, { initialProps: committedProps });
+
+    act(() => committed.result.current.handleSimilarClimbPress(item('similar').climb as Climb, strip()));
+
+    expect(committedProps.queue.setCurrentClimb).toHaveBeenCalledWith(expect.anything(), {
+      playlistSuggestionSource: expect.objectContaining({ boardKey: 'kilter:1:10:1,2' }),
+    });
+
+    const previewProps = inputs();
+    previewProps.navigation.browseByDefault = true;
+    previewProps.similarTrack = committedProps.similarTrack;
+    const preview = renderHook(usePlaySelectionController, { initialProps: previewProps });
+
+    act(() => preview.result.current.handleSimilarClimbPress(item('similar').climb as Climb, strip()));
+
+    expect(previewProps.preview.setDrawerPreviewSuggestionSource).toHaveBeenCalledWith(
+      expect.objectContaining({ boardKey: 'kilter:1:14:1,2' }),
+    );
   });
 
   it('keeps one handler across player moves and keys the track on the climb shown at tap time', () => {
