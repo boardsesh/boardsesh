@@ -59,10 +59,20 @@ const EXTRA_SPRAY_KEYS = new Set([
 // It is the gym-wall sense, not the spray wall.
 const NOT_A_WALL_KEYS = ['boards.json:sprayModeration.reasons.notAWall', 'admin.json:sprayTraining.reason.NOT_A_WALL'];
 
+// Strings that say "Spray" but mean the Tension Board 2 Spray layout, a product
+// name like Mirror, never a spray wall. They are not spray-wall strings at all.
+const TB2_SPRAY_LAYOUT_KEYS = new Set([
+  'cnc.json:hero.firstBoard',
+  'cnc.json:configurator.options.tb2Engraving.values.spray',
+  'cnc.json:configurator.options.tb2Engraving.values.both',
+  'cnc.json:configurator.tb2.engraveHelp',
+  'cnc.json:configurator.tb2.engraveNote',
+]);
+
 function isSprayString(entry: CatalogEntry): boolean {
-  return (
-    /spray/i.test(entry.keyPath) || /spray/i.test(entry.value) || EXTRA_SPRAY_KEYS.has(`${entry.file}:${entry.keyPath}`)
-  );
+  const key = `${entry.file}:${entry.keyPath}`;
+  if (TB2_SPRAY_LAYOUT_KEYS.has(key)) return false;
+  return /spray/i.test(entry.keyPath) || /spray/i.test(entry.value) || EXTRA_SPRAY_KEYS.has(key);
 }
 
 // Store listing folders per locale. `keywords.txt` is skipped on purpose: it

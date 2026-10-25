@@ -1,5 +1,6 @@
 import type { CncOrder, CncOrderOptions } from '@boardsesh/db/schema';
-import { parseSetIds } from './catalog';
+import { isTensionBoard2, parseSetIds } from './catalog';
+import type { CncTb2Engraving } from '@boardsesh/shared-schema';
 import { deliverableForStatus, type CncDeliverable } from './order-state';
 import { toLayoutRequest, type CncWorkerLayoutRequest } from './worker-client';
 
@@ -118,6 +119,7 @@ export type CncWorkerJob = {
   layoutRequest: CncWorkerLayoutRequest;
   output: {
     engrave: {
+      layoutMode?: CncTb2Engraving;
       holdIds: boolean;
       angleTicks: boolean;
     };
@@ -177,6 +179,12 @@ export function cncPreviewOutputKey(order: Pick<CncOrder, 'userId' | 'licenceId'
  */
 export function cncPreviewPrefix(order: Pick<CncOrder, 'userId' | 'licenceId'>): string {
   return `cnc-packs/${order.userId ?? 'anon'}/${order.licenceId}/preview/`;
+}
+
+function tb2EngravingMode(options: CncOrderOptions): CncTb2Engraving {
+  const mode = options.tb2Engraving;
+  if (mode === 'none' || mode === 'mirror' || mode === 'spray' || mode === 'both') return mode;
+  throw new CncJobPayloadError('TB2 engraving mode is missing or invalid');
 }
 
 /** Read a boolean option. Anything that is not an explicit `true` is off — the engrave gates fail closed. */
@@ -331,6 +339,7 @@ export function buildWorkerJob(order: CncOrder, { bucket, issuedAt }: BuildWorke
     layoutRequest,
     output: {
       engrave: {
+        ...(isTensionBoard2(order) ? { layoutMode: tb2EngravingMode(order.options) } : {}),
         holdIds: optionFlag(order.options, 'engraveHoldIds'),
         angleTicks: optionFlag(order.options, 'engraveAngleTicks'),
       },

@@ -1,3 +1,4 @@
+import { tb2LayoutIdForEngraving } from '@boardsesh/shared-schema';
 import type {
   CncArtworkInput,
   CncArtworkKind,
@@ -31,15 +32,13 @@ import type {
 export const CNC_KICKER_SET_IDS: readonly number[] = [28, 29];
 
 /**
- * The two manufacturing options that are engraving decisions rather than
- * machining ones.
+ * Manufacturing options that choose installation engravings.
  *
- * They live in the catalogue's `manufacturingOptions` like everything else, but
- * they get their own step in the UI: both are Kilter-specific, both are off
- * pending the IP review, and burying them among sheet sizes and hole diameters
- * would have people flipping them without reading why they are off.
+ * They live in the catalogue's `manufacturingOptions`, but have their own UI
+ * step: Kilter offers hold IDs and angle ticks; TB2 selects Mirror, Spray,
+ * both layouts, or neither.
  */
-export const CNC_ENGRAVE_OPTION_KEYS: readonly string[] = ['engraveHoldIds', 'engraveAngleTicks'];
+export const CNC_ENGRAVE_OPTION_KEYS: readonly string[] = ['engraveHoldIds', 'engraveAngleTicks', 'tb2Engraving'];
 
 /** IndexedDB key the in-progress configuration is parked under across a sign-in round trip. */
 export const CNC_CONFIGURATOR_DRAFT_KEY = 'cnc:configurator-draft';
@@ -215,6 +214,17 @@ export function initialConfiguratorState(entry: CncCatalogEntry): CncConfigurato
   };
 }
 
+/** TB2 installation layouts share one physical board choice. */
+export function boardFamilyKey(entry: Pick<CncCatalogEntry, 'boardName' | 'layoutId'>): string {
+  return entry.boardName === 'tension' && (entry.layoutId === 10 || entry.layoutId === 11)
+    ? 'tension:tb2'
+    : `${entry.boardName}:${entry.layoutId}`;
+}
+
+export function catalogEntryKey(entry: Pick<CncCatalogEntry, 'boardName' | 'layoutId' | 'sizeId'>): string {
+  return `${entry.boardName}:${entry.layoutId}:${entry.sizeId}`;
+}
+
 export function findEntry(entries: readonly CncCatalogEntry[], state: CncConfiguratorState): CncCatalogEntry | null {
   return (
     entries.find(
@@ -250,7 +260,17 @@ export function configuratorReducer(state: CncConfiguratorState, action: CncConf
     case 'setKicker':
       return { ...state, includeKicker: action.includeKicker };
     case 'setOption':
-      return { ...state, options: { ...state.options, [action.key]: action.value } };
+      return {
+        ...state,
+        ...(action.key === 'tb2Engraving' && state.boardName === 'tension'
+          ? { layoutId: tb2LayoutIdForEngraving(action.value) }
+          : {}),
+        // A dimension standard changes every placement coordinate.
+        ...(action.key === 'tb2DimensionStandard' && action.value !== state.options.tb2DimensionStandard
+          ? { artwork: [] }
+          : {}),
+        options: { ...state.options, [action.key]: action.value },
+      };
     case 'addArtwork':
       return { ...state, artwork: [...state.artwork, action.item] };
     case 'updateArtwork':
@@ -724,6 +744,15 @@ export function fromDraft(raw: unknown, entries: readonly CncCatalogEntry[]): Cn
     const stored = draft.options[option.key];
     options[option.key] = stored !== undefined && option.values.includes(stored) ? stored : option.defaultValue;
   }
+
+  // A stale TB2 draft cannot silently change dimensions or installation layout.
+  if (
+    boardFamilyKey(entry) === 'tension:tb2' &&
+    (options.tb2DimensionStandard !== draft.options.tb2DimensionStandard ||
+      options.tb2Engraving !== draft.options.tb2Engraving ||
+      entry.layoutId !== tb2LayoutIdForEngraving(options.tb2Engraving))
+  )
+    return null;
 
   // All three or none. A licence id with no config key behind it would restore
   // a gallery the buyer cannot tell is stale, and an order id with no licence id

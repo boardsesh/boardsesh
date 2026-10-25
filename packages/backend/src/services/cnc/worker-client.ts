@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { logger } from '../../utils/logger';
-import { CNC_KICKER_SET_IDS, type CncBoardTuple } from './catalog';
+import { CNC_KICKER_SET_IDS, isTensionBoard2, type CncBoardTuple } from './catalog';
 import type { CncOrderOptions } from '@boardsesh/db/schema';
 
 /**
@@ -184,15 +184,27 @@ export type CncWorkerKicker = {
 
 export type CncWorkerManufacturing = {
   sheet: CncWorkerSheet;
-  grid_pitch_mm: number;
-  tnut_hole_diameter_mm: number;
-  led_hole_diameter_mm: number;
-  stud_clearance_offset_mm: number;
   /** Cut the seam backing strips. Changes the sheet count, so it is geometry. */
   support_strips: boolean;
-  /** Present only when the configuration includes kicker sets. */
-  kicker?: CncWorkerKicker;
-};
+} & (
+  | {
+      dimension_standard: 'metric' | 'imperial';
+      grid_pitch_mm?: never;
+      tnut_hole_diameter_mm?: never;
+      led_hole_diameter_mm?: never;
+      stud_clearance_offset_mm?: never;
+      kicker?: never;
+    }
+  | {
+      dimension_standard?: never;
+      grid_pitch_mm: number;
+      tnut_hole_diameter_mm: number;
+      led_hole_diameter_mm: number;
+      stud_clearance_offset_mm: number;
+      /** Present only when the configuration includes kicker sets. */
+      kicker?: CncWorkerKicker;
+    }
+);
 
 export type CncWorkerLayoutRequest = {
   board: CncWorkerBoardRef;
@@ -306,6 +318,20 @@ export type ToLayoutRequestInput = {
  */
 export function toLayoutRequest({ entry, options, setIds }: ToLayoutRequestInput): CncWorkerLayoutRequest {
   const { lengthMm, widthMm } = parseSheetStock(options.sheetStock);
+  if (isTensionBoard2(entry)) {
+    const standard = options.tb2DimensionStandard;
+    if (standard !== 'metric' && standard !== 'imperial') {
+      throw new CncConfigMappingError('TB2 dimension standard must be metric or imperial');
+    }
+    return {
+      board: { board_name: entry.boardName, layout_id: entry.layoutId, size_id: entry.sizeId, set_ids: setIds },
+      manufacturing: {
+        sheet: { length_mm: lengthMm, width_mm: widthMm },
+        dimension_standard: standard,
+        support_strips: booleanOption(options, 'supportStrips', true),
+      },
+    };
+  }
   // Including either kicker set is what tells the generator to emit the two
   // extra panels. `validateSetIds` has already ruled out the half-kicker case.
   const hasKicker = setIds.some((setId) => CNC_KICKER_SET_IDS.includes(setId));
