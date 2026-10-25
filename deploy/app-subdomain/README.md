@@ -81,6 +81,48 @@ export, not in it — and publishes with `--cwd "$RUNNER_TEMP"`.
 `__tests__/asset-404-deploy-wiring.test.ts` guards that wiring; delete the
 `--cwd` and the Function silently stops shipping.
 
+## Chunk carry-over — old tabs keep loading their routes
+
+Pages serves only the files in the current deployment, and every chunk name is
+content-hashed, so each deploy used to delete the previous deploy's route
+chunks. A tab opened before the deploy still runs the old entry and asks for
+old chunk names; its next lazy route got the 404 above and had to reload
+(#5780).
+
+`scripts/lib/carry-over-expo-web-chunks.mjs` runs in `deploy-app-web` after the
+export checks and before the publish. It reads the live site:
+
+1. The live shell's eager scripts and every chunk they name, which is the live
+   deploy's JS set. On the first run this is all there is.
+2. `/chunk-carryover.json`, which the live deploy published. It lists that
+   deploy's own chunks and every older chunk it carried, each with the last
+   time it was live.
+
+Each file goes into the export unless the fresh build already has a file of
+that name (same hash, same bytes). The script then writes the new
+`/chunk-carryover.json`. `_headers` marks it `no-store` so the next deploy reads
+the real one.
+
+- **Caps:** a chunk is kept for 3 days after it was last live, and at most 4000
+  carried files per deploy, newest first. Both are flags on the step.
+- **Fails open:** a down site, a bad manifest, a chunk answered with HTML or a
+  60 s budget running out each log a `::warning::` and publish what was carried
+  so far. The step also has `continue-on-error`. The worst case is a deploy with
+  the fresh export alone, which is what every deploy did before this.
+- **Smoke:** the post-deploy smoke checks that the previous deploy's entry chunk
+  still serves as JavaScript, whenever the carry-over put it in the export.
+- **JS only:** `/assets/*` images an old chunk names are not carried. A changed
+  image 404s in a stale tab, which is cosmetic.
+- **Rollback:** a Pages dashboard rollback serves an older deployment with its
+  own manifest. The next deploy carries forward from that one.
+- **Backend:** a carried chunk is at most 3 days old and talks to the current
+  backend. Store builds older than that are still in use, so the backend already
+  has to accept older clients.
+
+`__tests__/asset-404-deploy-wiring.test.ts` guards the step's place, caps and
+fail-open settings; `scripts/__tests__/carry-over-expo-web-chunks.test.ts`
+covers the script.
+
 ## The one hard rule: no CSP `script-src`
 
 **Never add a `Content-Security-Policy` with a `script-src` to `_headers`.** The

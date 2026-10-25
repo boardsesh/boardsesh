@@ -1300,6 +1300,25 @@ jobs:
           fi
           echo "ok: found the production-web environment tag in the emitted bundles"
 
+      - name: Carry the previous deploys' chunks forward
+        id: carryover
+        # Pages serves only the current deployment's files, so without this a
+        # tab opened before the deploy 404s on its next lazy route (#5780). The
+        # script reads the live site (its shell and /chunk-carryover.json) and
+        # copies up to 3 days / 4000 files of older chunks into the export. It
+        # runs after the export checks above, so carried files never count
+        # toward the eager budget or the baked-env grep. Best effort: the script
+        # exits 0 on any error with a ::warning::, stops after 60 s, and this
+        # step may not fail or hold the deploy either way.
+        continue-on-error: true
+        timeout-minutes: 3
+        run: |
+          node scripts/lib/carry-over-expo-web-chunks.mjs "$RUNNER_TEMP/app-standalone" \
+            --live https://app.boardsesh.com \
+            --max-age-days 3 \
+            --max-files 4000 \
+            --budget-ms 60000
+
       - name: Add Cloudflare Pages host config to the export
         # _redirects (SPA fallback) + _headers (noindex/caching/no-CSP) are host
         # config, not part of the export. Copy them into the publish dir.
@@ -1339,7 +1358,10 @@ jobs:
         # check retries a short propagation loop. Verifies: root serves the HTML
         # shell, a deep route SPA-falls back to the shell, a content-hashed asset
         # is immutable-cached, index.html is NOT immutable, noindex is present,
-        # and the WASM binary serves with a wasm/octet content type.
+        # the WASM binary serves with a wasm/octet content type, and the previous
+        # deploy's entry chunk still serves after carry-over.
+        env:
+          PREVIOUS_ENTRY: ${{ steps.carryover.outputs.previous_entry }}
         run: |
           set -uo pipefail
           base=https://app.boardsesh.com
@@ -1401,18 +1423,17 @@ jobs:
           # mounts, and #root stays empty with no console error to explain it.
           # That is the exact silent failure this now catches, one step earlier
           # and with a message that says which part was wrong.
-          check_entry_chunk_is_js() {
-            local asset_path
-            asset_path=$(curl -sS --max-time 20 "$base/" \
-              | grep -oE '/_expo/static/[^"'"'"']+\.js' | head -n1)
-            [ -n "$asset_path" ] || { echo "  no /_expo asset found in index.html"; return 1; }
-
+          #
+          # check_chunk_is_js takes the chunk path, so the previous deploy's
+          # entry (carried forward, #5780) gets the same three checks.
+          check_chunk_is_js() {
+            local asset_path="$1"
             local head; head=$(curl -sSI --max-time 20 "$base$asset_path" | tr -d '\r')
             echo "$head" | grep -qiE '^content-type:.*javascript' || {
               echo "  $asset_path"
               echo "    status:       $(echo "$head" | head -n1 || echo '(none)')"
               echo "    content-type: $(echo "$head" | grep -i '^content-type:' || echo '(none)')"
-              echo "  the entry chunk index.html names is not being served as JavaScript."
+              echo "  this chunk is not being served as JavaScript."
               echo "  404 → the chunk is missing from the deployment (or has not propagated yet)."
               echo "  text/html → the SPA fallback answered it, which also means the asset-404"
               echo "    Function is not in the path; see deploy/app-subdomain/functions/_middleware.ts."
@@ -1442,6 +1463,21 @@ jobs:
               '<!doctype'*|'<!DOCTYPE'*|'<html'*)
                 echo "  $asset_path served the HTML shell, not JavaScript"; return 1 ;;
             esac
+          }
+
+          check_entry_chunk_is_js() {
+            local asset_path
+            asset_path=$(curl -sS --max-time 20 "$base/" \
+              | grep -oE '/_expo/static/[^"'"'"']+\.js' | head -n1)
+            [ -n "$asset_path" ] || { echo "  no /_expo asset found in index.html"; return 1; }
+            check_chunk_is_js "$asset_path"
+          }
+
+          # The carry-over step names the entry the live shell loaded before this
+          # deploy, and only when it put that file in the export. A failure here
+          # means a tab opened before the deploy can no longer load its routes.
+          check_previous_entry_chunk() {
+            check_chunk_is_js "$PREVIOUS_ENTRY"
           }
 
           check_manifest_link() {
@@ -1488,6 +1524,11 @@ jobs:
           retry "wasm binary → 200 wasm/octet-stream"     check_wasm
           retry "index.html is NOT immutable-cached"      check_index_not_immutable
           retry "entry chunk serves as immutable JavaScript"  check_entry_chunk_is_js
+          if [ -n "${PREVIOUS_ENTRY:-}" ]; then
+            retry "previous deploy's entry chunk still serves as JavaScript"  check_previous_entry_chunk
+          else
+            echo "skip: no previous entry was carried (first deploy, or carry-over failed open)"
+          fi
           retry "PWA manifest → JSON with start_url/scope /"  check_manifest_link
 
       - name: Install Playwright chromium

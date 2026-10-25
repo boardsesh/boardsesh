@@ -18,6 +18,11 @@
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
 
+# The chunk carry-over manifest (#5780) has a fixed name and changes on every
+# deploy. The next deploy reads it from the live site, so it must never be cached.
+/chunk-carryover.json
+  Cache-Control: no-store
+
 # index.html and wasm/* keep fixed filenames, so they deliberately get NO cache
 # override here — they must revalidate, or a deploy would be masked by a stale
 # cached shell / stale WASM binary. (Left to Pages' default caching.)
