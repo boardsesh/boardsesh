@@ -285,8 +285,9 @@ a Followers or Invite-only board gets no poster. The page opens in the in-app
 browser, never through `Linking`, because a phone that still holds an
 association file claiming `/poster` would hand it straight back to the app.
 For a `/poster` link tapped outside a browser while that older file is still on
-the phone, `app/poster/[...rest].tsx` re-opens the same URL in the in-app
-browser and puts Home underneath.
+the phone, `app/poster/[...rest].tsx` re-opens the same page in the in-app
+browser and puts Home underneath. Only `wall` (a uuid) and `layout` (`photo`,
+`plain`, `cards`) are carried over (`posterPageUrlFromRoute`).
 
 `/b/...` is itself a www climbing surface that #4358 is deleting. When it goes,
 the kiosk and board codes need a new target; the params and the builders in

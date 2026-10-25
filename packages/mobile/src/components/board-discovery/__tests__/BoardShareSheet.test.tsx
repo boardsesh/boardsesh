@@ -259,8 +259,8 @@ describe('BoardShareSheet poster', () => {
         posterUrl={POSTER_URL}
       />,
     );
-    expect(getByText('mobile.sprayShare.posterHint')).toBeTruthy();
-    act(() => getByText('mobile.sprayShare.printPoster').click());
+    expect(getByText('mobile.wallPoster.sprayHint')).toBeTruthy();
+    act(() => getByText('mobile.wallPoster.print').click());
     expect(openExternalUrl).toHaveBeenCalledWith(POSTER_URL, 'board-share-poster');
   });
 
@@ -276,8 +276,8 @@ describe('BoardShareSheet poster', () => {
         posterUrl="https://www.boardsesh.com/poster/b/garage"
       />,
     );
-    expect(getByText('mobile.boardShare.posterHint')).toBeTruthy();
-    expect(queryByText('mobile.sprayShare.posterHint')).toBeNull();
+    expect(getByText('mobile.wallPoster.boardHint')).toBeTruthy();
+    expect(queryByText('mobile.wallPoster.sprayHint')).toBeNull();
   });
 
   it.each([
@@ -294,8 +294,8 @@ describe('BoardShareSheet poster', () => {
         posterUrl={posterUrl}
       />,
     );
-    expect(queryByText('mobile.sprayShare.printPoster')).toBeNull();
-    expect(queryByText('mobile.sprayShare.posterHint')).toBeNull();
+    expect(queryByText('mobile.wallPoster.print')).toBeNull();
+    expect(queryByText('mobile.wallPoster.sprayHint')).toBeNull();
   });
 
   // An invite token taped to a wall is no longer an invite.
@@ -311,7 +311,7 @@ describe('BoardShareSheet poster', () => {
         posterUrl="https://www.boardsesh.com/poster/b/the-garage"
       />,
     );
-    expect(queryByText('mobile.sprayShare.printPoster')).toBeNull();
+    expect(queryByText('mobile.wallPoster.print')).toBeNull();
     expect(openExternalUrl).not.toHaveBeenCalled();
   });
 });

@@ -10,20 +10,35 @@ describe('posterPageUrlFromRoute', () => {
   });
 
   it("keeps an unlisted wall's capability and the layout choice", () => {
-    expect(posterPageUrlFromRoute({ rest: ['b', 'the-garage'], wall: WALL_UUID, layout: 'photo' })).toBe(
+    expect(posterPageUrlFromRoute({ rest: ['b', 'the-garage'], layout: 'photo', wall: WALL_UUID })).toBe(
       `${WEB_BASE_URL}/poster/b/the-garage?wall=${WALL_UUID}&layout=photo`,
     );
   });
 
-  it('encodes what the router decoded', () => {
-    expect(posterPageUrlFromRoute({ rest: ['b', 'marco/spray wall'], note: 'a&b=c' })).toBe(
-      `${WEB_BASE_URL}/poster/b/marco%2Fspray%20wall?note=a%26b%3Dc`,
+  it.each(['photo', 'plain', 'cards'])('keeps the %s layout', (layout) => {
+    expect(posterPageUrlFromRoute({ rest: ['b', 'x'], layout })).toBe(`${WEB_BASE_URL}/poster/b/x?layout=${layout}`);
+  });
+
+  it('writes an upper-case wall uuid in lower case', () => {
+    expect(posterPageUrlFromRoute({ rest: ['b', 'x'], wall: WALL_UUID.toUpperCase() })).toBe(
+      `${WEB_BASE_URL}/poster/b/x?wall=${WALL_UUID}`,
     );
   });
 
-  it('keeps a repeated param as two', () => {
-    expect(posterPageUrlFromRoute({ rest: ['b', 'x'], layout: ['photo', 'plain'] })).toBe(
-      `${WEB_BASE_URL}/poster/b/x?layout=photo&layout=plain`,
+  // Only the two params the page reads, in their known shapes.
+  it.each([
+    ['any other param', { utm_source: 'mail', invite: 'Ab3_dE-fGhIjKlMnOpQrSt', src: 'qr' }],
+    ['a wall that is not a uuid', { wall: '../../auth/login' }],
+    ['an unknown layout', { layout: 'giant' }],
+    ['a repeated wall', { wall: [WALL_UUID, WALL_UUID] }],
+    ['a repeated layout', { layout: ['photo', 'plain'] }],
+  ])('drops %s', (_label, query) => {
+    expect(posterPageUrlFromRoute({ rest: ['b', 'x'], ...query })).toBe(`${WEB_BASE_URL}/poster/b/x`);
+  });
+
+  it('encodes the segments the router decoded', () => {
+    expect(posterPageUrlFromRoute({ rest: ['b', 'marco/spray wall'] })).toBe(
+      `${WEB_BASE_URL}/poster/b/marco%2Fspray%20wall`,
     );
   });
 

@@ -185,14 +185,14 @@ export function BoardShareSheet({
       {printableUrl ? (
         <View style={styles.poster}>
           <Button
-            title={t('mobile.sprayShare.printPoster')}
+            title={t('mobile.wallPoster.print')}
             icon="print"
             variant="outlined"
             onPress={handlePrintPoster}
             style={styles.posterButton}
           />
           <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.subtitle}>
-            {subject === 'board' ? t('mobile.boardShare.posterHint') : t('mobile.sprayShare.posterHint')}
+            {subject === 'board' ? t('mobile.wallPoster.boardHint') : t('mobile.wallPoster.sprayHint')}
           </Text>
         </View>
       ) : null}
