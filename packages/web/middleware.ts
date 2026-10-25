@@ -325,7 +325,8 @@ function routeRequest(request: NextRequest) {
     }
   } else if (cacheTTL !== null) {
     // The 15 minute live-data TTL keeps its stale window equal to the TTL: x7
-    // would let a quiet page serve a copy up to ~2 h old after expiry.
+    // would let a quiet page serve a copy up to ~2 h old after expiry. This
+    // matches on the TTL value, so any future 900 s tier inherits it too.
     const staleWhileRevalidate = cacheTTL === LIVE_SEARCH_DATA_TTL_SECONDS ? cacheTTL : cacheTTL * 7;
     const cdnCacheValue = `s-maxage=${cacheTTL}, stale-while-revalidate=${staleWhileRevalidate}`;
     response.headers.set('Vercel-CDN-Cache-Control', cdnCacheValue);

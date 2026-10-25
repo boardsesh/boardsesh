@@ -279,15 +279,18 @@ describe.each([
     expectNoRedirect(response);
   });
 
-  it.each(['/kilter/original/12x12-square/screw_bolt/40/list', '/b/kilter-original-12x12/40/list'])(
-    '?classic=1 is inert on %s: the page renders, no 307, no cookie set',
-    (listPath) => {
-      const response = middleware(makeRequest(`${listPath}?classic=1`));
-      expectNoRedirect(response);
-      expect(response.headers.has('set-cookie')).toBe(false);
-      expect(response.headers.get('Vercel-CDN-Cache-Control')).toBe('s-maxage=86400, stale-while-revalidate=604800');
-    },
-  );
+  // Middleware cannot tell a `/b/{slug}` list's board without a backend call, so
+  // the slug tree takes the 15 minute live-data TTL; config-tuple Kilter pages
+  // keep 24 h (#6803).
+  it.each([
+    ['/kilter/original/12x12-square/screw_bolt/40/list', 's-maxage=86400, stale-while-revalidate=604800'],
+    ['/b/kilter-original-12x12/40/list', 's-maxage=900, stale-while-revalidate=900'],
+  ])('?classic=1 is inert on %s: the page renders, no 307, no cookie set', (listPath, expectedCdnCacheControl) => {
+    const response = middleware(makeRequest(`${listPath}?classic=1`));
+    expectNoRedirect(response);
+    expect(response.headers.has('set-cookie')).toBe(false);
+    expect(response.headers.get('Vercel-CDN-Cache-Control')).toBe(expectedCdnCacheControl);
+  });
 });
 
 describe('the three legitimate redirect classes stay on www.boardsesh.com', () => {

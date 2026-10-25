@@ -769,6 +769,9 @@ describe('middleware cache headers on list pages', () => {
 
   it('sets a 15 minute CDN cache on Woods list pages', () => {
     const response = middleware(makeRequest('/woods/1/2/3,4/40/list'));
+    expect(response.headers.get('Vercel-CDN-Cache-Control')).toBe(
+      `s-maxage=${TTL_15M}, stale-while-revalidate=${TTL_15M}`,
+    );
     expect(response.headers.get('CDN-Cache-Control')).toBe(`s-maxage=${TTL_15M}, stale-while-revalidate=${TTL_15M}`);
   });
 
