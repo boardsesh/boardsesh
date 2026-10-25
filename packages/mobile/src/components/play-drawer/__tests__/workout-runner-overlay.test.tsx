@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 // The workout runner over the player's board (#6291): the rest card while a
 // timed block rests, Skip rest moving the wall once and only for the phone that
-// moves it, Go now, and the modal "Workout done" card. Real runner hook, real
-// rest-timer and workout-run stores; the queue and the chrome are stand-ins.
+// moves it, Go now, and the modal "Workout done" card, one card for every
+// player that shows it. Real runner hook, real rest-timer, workout-run and
+// done-card stores; the queue and the chrome are stand-ins.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { createElement, forwardRef, type ReactNode } from 'react';
+import { createElement, forwardRef, Fragment, type ReactNode } from 'react';
 import { locateInRun, type WorkoutRun } from '@boardsesh/playlist-generator';
 
 type TestQueueItem = { uuid: string; climb: { uuid: string; name: string } };
@@ -55,23 +56,50 @@ const timerDriver = vi.hoisted(() => ({
   pacerDisplayName: null as string | null,
 }));
 vi.mock('../../../hooks/use-session-timer-driver', () => ({ useSessionTimerDriver: () => timerDriver }));
-// No crew clock: the effective pacing is the stage's, as `resolveEffectiveRestPacing` gives it.
+// No crew clock by default: the effective pacing is the stage's, as
+// `resolveEffectiveRestPacing` gives it. A test sets `crewPacing` for a crew
+// clock, which wins over the stage there too. The overlay re-renders on every
+// rest-timer store change, so a plain read at render is enough here.
+const crewClock = vi.hoisted(() => ({
+  pacing: null as { mode: 'afterTick' | 'onTheMinute'; advanceOn: 'deadline' | 'tick' | 'send' } | null,
+}));
 vi.mock('../../../hooks/use-effective-rest-pacing', async () => {
   const store = await import('../../../lib/rest-timer-store');
+  const effectivePacing = () => {
+    if (crewClock.pacing) return crewClock.pacing;
+    const stagePacing = store.getRestTimerState().stagePacing;
+    return { mode: stagePacing?.mode ?? 'afterTick', advanceOn: stagePacing?.advanceOn ?? 'deadline' };
+  };
+  return { useEffectiveRestPacing: effectivePacing, getEffectiveRestPacing: effectivePacing };
+});
+// The live clock is its own leaf; here it only has to show where it sits. A
+// test runs the rest out with `setRestDisplayPhase`, which re-renders the
+// display's readers as the real 1 Hz ticker would.
+const restDisplay = vi.hoisted(() => ({
+  phase: 'running' as 'running' | 'exceeded',
+  listeners: new Set<() => void>(),
+}));
+function setRestDisplayPhase(phase: 'running' | 'exceeded'): void {
+  restDisplay.phase = phase;
+  for (const listener of restDisplay.listeners) listener();
+}
+vi.mock('../../queue-control/RestTimerPill', async () => {
+  const { useSyncExternalStore } = await import('react');
+  const subscribe = (listener: () => void) => {
+    restDisplay.listeners.add(listener);
+    return () => restDisplay.listeners.delete(listener);
+  };
   return {
-    useCrewRestStatus: () => 'none',
-    getEffectiveRestPacing: () => {
-      const stagePacing = store.getRestTimerState().stagePacing;
-      return { mode: stagePacing?.mode ?? 'afterTick', advanceOn: stagePacing?.advanceOn ?? 'deadline' };
-    },
+    RestTimerClock: () => createElement('span', { 'data-testid': 'rest-clock' }, 'clock'),
+    useRestTimerDisplay: () => ({
+      phase: useSyncExternalStore(subscribe, () => restDisplay.phase),
+      displayLabel: '2:58',
+      targetLabel: '3m',
+      remainingSeconds: 178,
+    }),
+    restTimerClockAccessibilityLabel: () => 'countdownAria',
   };
 });
-// The live clock is its own leaf; here it only has to show where it sits.
-vi.mock('../../queue-control/RestTimerPill', () => ({
-  RestTimerClock: () => createElement('span', { 'data-testid': 'rest-clock' }, 'clock'),
-  useRestTimerDisplay: () => ({ phase: 'running', displayLabel: '2:58', targetLabel: '3m', remainingSeconds: 178 }),
-  restTimerClockAccessibilityLabel: () => 'countdownAria',
-}));
 
 const storage = vi.hoisted(() => ({
   getItem: vi.fn(async () => null),
@@ -170,6 +198,7 @@ import {
   resetRestTimerStoreForTests,
 } from '../../../lib/rest-timer-store';
 import { resolveStageRestPacing, type RestTimerTickStatus } from '../../../lib/rest-timer-pacing';
+import { resetWorkoutDoneCardStoreForTests } from '../../../lib/workout-done-card-store';
 import { WorkoutRunnerOverlay } from '../WorkoutRunnerOverlay';
 
 // A 4x4 of two sets (2 reps each, 0:45 between reps, 3:00 between sets), then
@@ -261,10 +290,14 @@ const summaryLabel = () => screen.getByTestId('workout-rest-card-summary').getAt
 beforeEach(() => {
   resetWorkoutRunStoreForTests();
   resetRestTimerStoreForTests();
+  resetWorkoutDoneCardStoreForTests();
   queueListeners.clear();
   nextClimb.mockClear();
   backHandlers.clear();
   queueState.dataReads = 0;
+  crewClock.pacing = null;
+  restDisplay.phase = 'running';
+  restDisplay.listeners.clear();
   Object.assign(timerDriver, { canAdvanceQueue: true, role: 'solo', pacerDisplayName: null });
   setWorkoutRun('session-1', run);
   armRestTimer('afterTick', Date.now(), 'session-1');
@@ -289,6 +322,7 @@ describe('WorkoutRunnerOverlay', () => {
 
     act(() => logGo('a', 'attempt'));
     expect(caption()).toBe('restCardThenRep(2,2,1,2)');
+    expect(summaryLabel()).toBe('restLabel. countdownAria. restCardThenRepAccessibilityLabel(2,2,1,2)');
     expect(screen.queryByTestId('workout-rest-card-skip')).toBeNull();
     // Non-modal: the region around the card lets every touch through to the board.
     expect(screen.getByTestId('workout-rest-card').getAttribute('data-pointer-events')).toBe('box-none');
@@ -310,8 +344,9 @@ describe('WorkoutRunnerOverlay', () => {
 
     expect(screen.getByText('restCardSetDone(1)')).toBeTruthy();
     expect(caption()).toBe('restCardNextClimb(Climb b,V5)');
-    // One sentence to a screen reader: what this rest is, the clock, what comes next.
-    expect(summaryLabel()).toBe('restCardSetDone(1). countdownAria. restCardNextClimb(Climb b,V5)');
+    // One sentence to a screen reader: what this rest is, the clock, what comes
+    // next, in the spoken line (a comma, not the visible "·").
+    expect(summaryLabel()).toBe('restCardSetDone(1). countdownAria. restCardNextClimbAccessibilityLabel(Climb b,V5)');
 
     const skip = screen.getByTestId('workout-rest-card-skip');
     act(() => {
@@ -335,6 +370,33 @@ describe('WorkoutRunnerOverlay', () => {
     expect(screen.getByText('restCardStageDone(preGeneratorFourByFour)')).toBeTruthy();
     expect(caption()).toBe('restCardNextStage(preGeneratorLimitBouldering)');
     expect(screen.getByTestId('workout-rest-card-skip')).toBeTruthy();
+    expect(summaryLabel()).toBe(
+      'restCardStageDoneAccessibilityLabel(preGeneratorFourByFour). countdownAria. restCardNextStage(preGeneratorLimitBouldering)',
+    );
+  });
+
+  it('offers no Skip rest under a crew clock on the minute, where a tap would move nothing', () => {
+    // The stage rests after the tick, but this phone follows the crew's clock.
+    crewClock.pacing = { mode: 'onTheMinute', advanceOn: 'deadline' };
+    renderOverlay();
+    act(() => logGo('a', 'attempt'));
+    act(() => logGo('a', 'send'));
+
+    expect(screen.getByText('restCardSetDone(1)')).toBeTruthy();
+    expect(caption()).toBe('restCardNextClimb(Climb b,V5)');
+    expect(screen.queryByTestId('workout-rest-card-skip')).toBeNull();
+  });
+
+  it('offers no Skip rest under a crew clock whose rule would not move the wall on this go', () => {
+    // Sent once on the set: the stage moves on after the set, but the crew's
+    // clock waits for a send and the last go was a fall.
+    crewClock.pacing = { mode: 'afterTick', advanceOn: 'send' };
+    renderOverlay();
+    act(() => logGo('a', 'send'));
+    act(() => logGo('a', 'attempt'));
+
+    expect(screen.getByText('restCardSetDone(1)')).toBeTruthy();
+    expect(screen.queryByTestId('workout-rest-card-skip')).toBeNull();
   });
 
   it('after a fall on a limit climb says the next try comes back to it, with no Skip rest', () => {
@@ -343,8 +405,36 @@ describe('WorkoutRunnerOverlay', () => {
     act(() => logGo('l1', 'attempt'));
 
     expect(caption()).toBe('restCardThenTryAgain(2)');
+    expect(summaryLabel()).toBe('restLabel. countdownAria. restCardThenTryAgainAccessibilityLabel(2)');
     expect(screen.queryByTestId('workout-rest-card-skip')).toBeNull();
     expect(screen.getByTestId('workout-rest-card-go-now')).toBeTruthy();
+  });
+
+  it('takes a Go now card away once its rest has run out, and the next go brings the next one', () => {
+    onTheWall('l1');
+    renderOverlay();
+    act(() => logGo('l1', 'attempt'));
+    expect(screen.getByTestId('workout-rest-card-go-now')).toBeTruthy();
+
+    // The rest ran out and the climb stays up: the climber is on the next try.
+    act(() => setRestDisplayPhase('exceeded'));
+    expect(screen.queryByTestId('workout-rest-card')).toBeNull();
+
+    act(() => {
+      setRestDisplayPhase('running');
+      logGo('l1', 'attempt');
+    });
+    expect(caption()).toBe('restCardThenTryAgain(3)');
+  });
+
+  it('keeps a card that leads off the climb past its rest, until the wall moves', () => {
+    Object.assign(timerDriver, { canAdvanceQueue: false, role: 'passenger', pacerDisplayName: 'Sam' });
+    onTheWall('l1');
+    renderOverlay();
+    act(() => logGo('l1', 'send'));
+
+    act(() => setRestDisplayPhase('exceeded'));
+    expect(caption()).toBe('autoAdvanceByName(Sam)');
   });
 
   it('never offers Skip rest on the minute', () => {
@@ -412,10 +502,62 @@ describe('WorkoutRunnerOverlay', () => {
       );
       expect(screen.queryByTestId('workout-rest-card')).toBeNull();
 
-      fireEvent.click(screen.getByTestId('workout-done-card-see-workout'));
-      expect(onSeeWorkout).toHaveBeenCalledTimes(1);
-
       fireEvent.click(screen.getByTestId('workout-done-card-done'));
+      expect(screen.queryByTestId('workout-done-card')).toBeNull();
+      expect(onSeeWorkout).not.toHaveBeenCalled();
+    });
+
+    it('closes on See your workout before leaving, so a pane that stays up has no card left', () => {
+      onTheLastSet();
+      // The tablet pane: nothing to dismiss, so the push runs at once and the
+      // overlay stays mounted beside the Record tab.
+      const { onSeeWorkout } = renderOverlay({ run: lastBlockRun });
+      act(() => logGo('b', 'send'));
+      act(() => logGo('b', 'send'));
+
+      fireEvent.click(screen.getByTestId('workout-done-card-see-workout'));
+
+      expect(onSeeWorkout).toHaveBeenCalledTimes(1);
+      expect(screen.queryByTestId('workout-done-card')).toBeNull();
+      expect(backHandlers.size).toBe(0);
+    });
+
+    it('is one card for every player that shows it: closed on one, closed on all, and never reopened', () => {
+      onTheLastSet();
+      // Two tablet panes (two tabs), each with its own overlay on the same wall.
+      const pane = (key: string) =>
+        createElement(WorkoutRunnerOverlay, {
+          key,
+          sessionId: 'session-1',
+          run: lastBlockRun,
+          displayedQueueItemUuid: 'b',
+          boardName: 'kilter',
+          suppressed: false,
+          onSeeWorkout: () => {},
+        });
+      render(createElement(Fragment, null, pane('climbs'), pane('record')));
+      act(() => logGo('b', 'send'));
+      act(() => logGo('b', 'send'));
+      expect(screen.getAllByTestId('workout-done-card')).toHaveLength(2);
+
+      fireEvent.click(screen.getAllByTestId('workout-done-card-done')[0]);
+      expect(screen.queryAllByTestId('workout-done-card')).toHaveLength(0);
+
+      // A later go on the finished climb, seen by either pane, does not bring it back.
+      act(() => logGo('b', 'send'));
+      expect(screen.queryAllByTestId('workout-done-card')).toHaveLength(0);
+    });
+
+    it('closes with the player: a player opened again on the finished workout shows no card', () => {
+      onTheLastSet();
+      const { unmount } = renderOverlay({ run: lastBlockRun });
+      act(() => logGo('b', 'send'));
+      act(() => logGo('b', 'send'));
+      expect(screen.getByTestId('workout-done-card')).toBeTruthy();
+
+      // Swiped the player away without Done.
+      unmount();
+      renderOverlay({ run: lastBlockRun });
       expect(screen.queryByTestId('workout-done-card')).toBeNull();
     });
 

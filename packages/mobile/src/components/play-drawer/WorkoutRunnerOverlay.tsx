@@ -17,16 +17,26 @@
 // "Workout done" opens when the workout finishes while the player is up, never
 // because the player opened on a workout that was already done (the Record
 // tab's card says so there), and once per run: adding a block makes a new run,
-// whose end gets its own.
+// whose end gets its own. Whether it is up lives in `workout-done-card-store`,
+// not here: a tablet keeps a play pane per tab, and all of them show the one
+// card, so closing it on one closes it on every pane. See your workout closes
+// it too, since the pane stays up beside the Record tab.
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { WorkoutRun } from '@boardsesh/playlist-generator';
 import { useQueueActions } from '../../providers/queue-provider';
 import { useWorkoutRunner } from '../../hooks/use-workout-runner';
+import { useRestTimerState } from '../../hooks/use-rest-timer';
 import { useSessionTimerDriver } from '../../hooks/use-session-timer-driver';
-import { getEffectiveRestPacing, useCrewRestStatus } from '../../hooks/use-effective-rest-pacing';
+import { getEffectiveRestPacing, useEffectiveRestPacing } from '../../hooks/use-effective-rest-pacing';
 import { nowMs } from '../../lib/clock';
-import { skipRestOnWall } from '../../lib/rest-timer-skip';
+import { restSkipAllowed, skipRestOnWall } from '../../lib/rest-timer-skip';
+import {
+  announceWorkoutDone,
+  closeWorkoutDoneCard,
+  holdWorkoutDoneCard,
+  useWorkoutDoneCardOpen,
+} from '../../lib/workout-done-card-store';
 import type { WorkoutRunnerPhase } from '../../lib/workout-runner-readout';
 import { resolveWorkoutRestCard } from './workout-runner-cards';
 import { WorkoutRestCard } from './WorkoutRestCard';
@@ -69,17 +79,27 @@ function WorkoutRunnerOverlayContent({
 }: WorkoutRunnerOverlayContentProps) {
   const { readout, currentItem, nextItem } = useWorkoutRunner(sessionId, run);
   const { role, pacerDisplayName } = useSessionTimerDriver();
-  const crewClockUnsupported = useCrewRestStatus() === 'unsupported';
+  // What the timer really runs on (a crew clock wins over the stage), so Skip
+  // rest shows only where the tap, which reads the same, would move the wall.
+  const effectivePacing = useEffectiveRestPacing();
+  const restState = useRestTimerState();
   const { nextClimb, getQueueSnapshot } = useQueueActions();
   const phase = readout?.phase ?? null;
-  const doneCard = useWorkoutDoneCard(run, phase);
+  const doneCardOpen = useWorkoutDoneCard(run, phase);
 
   // Go now hides this rest's card; the next go on the climb is a new rest.
   const [hiddenRestKey, setHiddenRestKey] = useState<string | null>(null);
-  const restCard = useMemo(
-    () => (readout ? resolveWorkoutRestCard({ readout, nextItem, crewClockUnsupported }) : null),
-    [readout, nextItem, crewClockUnsupported],
-  );
+  const wallQueueItemUuid = currentItem?.uuid ?? null;
+  const restCard = useMemo(() => {
+    if (!readout) return null;
+    const skipAllowed =
+      readout.current !== null &&
+      restSkipAllowed(
+        { queueItemUuid: readout.current.queueItemUuid, wallQueueItemUuid, pacing: effectivePacing },
+        restState,
+      );
+    return resolveWorkoutRestCard({ readout, nextItem, skipAllowed });
+  }, [readout, nextItem, wallQueueItemUuid, effectivePacing, restState]);
   const restCardQueueItemUuid = restCard?.queueItemUuid ?? null;
   const restCardKey = restCard?.key ?? null;
 
@@ -94,12 +114,18 @@ function WorkoutRunnerOverlayContent({
     });
   }, [restCardQueueItemUuid, getQueueSnapshot, nextClimb]);
   const handleGoNow = useCallback(() => setHiddenRestKey(restCardKey), [restCardKey]);
+  // Closed before leaving: the tablet's pane stays up beside the Record tab, and
+  // would keep the modal card (and its Android back handler) over its board.
+  const handleSeeWorkout = useCallback(() => {
+    closeWorkoutDoneCard();
+    onSeeWorkout();
+  }, [onSeeWorkout]);
 
   const onTheWall = currentItem !== null && currentItem.uuid === displayedQueueItemUuid;
   if (readout === null || !onTheWall || suppressed) return null;
 
-  if (doneCard.open && phase === 'done') {
-    return <WorkoutDoneCard totals={readout.totals} onSeeWorkout={onSeeWorkout} onDismiss={doneCard.close} />;
+  if (doneCardOpen && phase === 'done') {
+    return <WorkoutDoneCard totals={readout.totals} onSeeWorkout={handleSeeWorkout} onDismiss={closeWorkoutDoneCard} />;
   }
   if (restCard === null || restCard.key === hiddenRestKey) return null;
   return (
@@ -115,14 +141,17 @@ function WorkoutRunnerOverlayContent({
 }
 
 /**
- * Whether "Workout done" is up: opened when the runner's phase turns `done`
- * while this is mounted (never on a mount that finds it done already), at most
- * once per run, and closed by the climber.
+ * Whether "Workout done" is up for `run`: opened when the runner's phase turns
+ * `done` while this is mounted (never on a mount that finds it done already),
+ * at most once per run across every player, and closed by the climber
+ * (`closeWorkoutDoneCard`) or by the last player unmounting.
  */
-function useWorkoutDoneCard(run: WorkoutRun, phase: WorkoutRunnerPhase | null): { open: boolean; close: () => void } {
-  const [openForRun, setOpenForRun] = useState<WorkoutRun | null>(null);
+function useWorkoutDoneCard(run: WorkoutRun, phase: WorkoutRunnerPhase | null): boolean {
+  const open = useWorkoutDoneCardOpen(run);
   const previousPhaseRef = useRef(phase);
-  const announcedRunRef = useRef<WorkoutRun | null>(null);
+
+  // Declared first, so the hold is in place before this mount can announce.
+  useEffect(() => holdWorkoutDoneCard(), []);
 
   useEffect(() => {
     const previousPhase = previousPhaseRef.current;
@@ -130,11 +159,8 @@ function useWorkoutDoneCard(run: WorkoutRun, phase: WorkoutRunnerPhase | null): 
     // A readout that appeared already done (null before: no staged climb was
     // queued) is not the workout finishing.
     if (phase !== 'done' || previousPhase === 'done' || previousPhase === null) return;
-    if (announcedRunRef.current === run) return;
-    announcedRunRef.current = run;
-    setOpenForRun(run);
+    announceWorkoutDone(run);
   }, [run, phase]);
 
-  const close = useCallback(() => setOpenForRun(null), []);
-  return { open: openForRun === run, close };
+  return open;
 }

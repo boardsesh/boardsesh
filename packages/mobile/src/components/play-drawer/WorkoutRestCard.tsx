@@ -6,12 +6,17 @@
 //
 // NOT modal, unlike the end-of-list and workout-done cards: the climber rests
 // with the player open, and the board, its swipes, the header and the Fell /
-// Sent row all stay live under and around it. The card takes the board's bottom
-// edge only, the region around it lets every touch through, and it never moves
-// screen-reader focus.
+// Sent row all stay live under and around it. The card sits low on the board,
+// just above its Reset zoom corner, the region around it lets every touch
+// through, and it never moves screen-reader focus.
+//
+// A rest that keeps the climb up (Go now) ends with the climber going again,
+// not with the wall moving, so nothing else would take the card away: it goes
+// once the rest has run out, out of the way of that go.
 //
 // The summary is one element to a screen reader ("Set 2 done. Rest timer, 2:58
-// left. Next: Crimp City, V5"), so it is a leaf that reads the live display
+// left. Next: Crimp City, V5"), with spoken lines of its own where the visible
+// ones lean on "·" or a short form, so it is a leaf that reads the live display
 // for that sentence and re-renders once a second; nothing above it does. The
 // digits are the `RestTimerClock` leaf, the same clock as the pill.
 
@@ -28,6 +33,7 @@ import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { workoutStageName } from '../../lib/workout-run-readout';
 import type { WallDriverRole } from '../../lib/session-timer/driver-rule';
 import { borderRadius, shadows, spacing } from '../../theme/tokens';
+import { glassSize } from '../../theme/layout';
 import { selectByVariant } from '../../theme/variants/select-by-variant';
 import type { WorkoutRestCardCaption, WorkoutRestCardHeading, WorkoutRestCardModel } from './workout-runner-cards';
 
@@ -38,6 +44,17 @@ const CARD_Z = 20;
 const CARD_FADE_MS = 150;
 /** Between the parts of the spoken sentence, as the Record tab's rest line joins its own. */
 const SPOKEN_SEPARATOR = '. ';
+/**
+ * The card's bottom, clear of the board's Reset zoom control: that sits in the
+ * board's bottom-right corner, 12 up (SwipeBoardCarousel's `resetZoomWrapper`)
+ * and `glassSize.mini` tall, and on a phone the card spans the board's width.
+ * Above it, the control stays in view and tappable while a rest runs.
+ */
+const RESET_ZOOM_BOTTOM_INSET = 12;
+const CARD_BOTTOM = RESET_ZOOM_BOTTOM_INSET + glassSize.mini + spacing[2];
+
+/** A line on the card, and how a screen reader says it. */
+export type RestCardLine = { text: string; spoken: string };
 
 type WorkoutRestCardProps = {
   model: WorkoutRestCardModel;
@@ -50,7 +67,30 @@ type WorkoutRestCardProps = {
   onGoNow: () => void;
 };
 
-function WorkoutRestCardImpl({ model, boardName, role, pacerDisplayName, onSkipRest, onGoNow }: WorkoutRestCardProps) {
+function WorkoutRestCardImpl(props: WorkoutRestCardProps) {
+  return props.model.action === 'goNow' ? <RestCardUntilRestRunsOut {...props} /> : <RestCardBody {...props} />;
+}
+
+export const WorkoutRestCard = memo(WorkoutRestCardImpl);
+
+/**
+ * A Go now card, until its rest has run out. Reads the live display, so it
+ * re-renders once a second; the memoised body under it does not.
+ */
+function RestCardUntilRestRunsOut(props: WorkoutRestCardProps) {
+  const { phase } = useRestTimerDisplay();
+  if (phase === 'exceeded') return null;
+  return <RestCardBody {...props} />;
+}
+
+const RestCardBody = memo(function RestCardBody({
+  model,
+  boardName,
+  role,
+  pacerDisplayName,
+  onSkipRest,
+  onGoNow,
+}: WorkoutRestCardProps) {
   const { t } = useTranslation('session');
   const { variant, systemColors, m3SurfaceContainers, materialElevation } = useTheme();
   const reduceMotion = useReducedMotion();
@@ -117,20 +157,18 @@ function WorkoutRestCardImpl({ model, boardName, role, pacerDisplayName, onSkipR
       </Animated.View>
     </View>
   );
-}
-
-export const WorkoutRestCard = memo(WorkoutRestCardImpl);
+});
 
 /**
  * The heading, the clock and the caption, as one sentence to a screen reader.
  * A leaf: it reads the live display, so only it re-renders per second.
  */
-function RestCardSummary({ heading, caption }: { heading: string; caption: string | null }) {
+function RestCardSummary({ heading, caption }: { heading: RestCardLine; caption: RestCardLine | null }) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
   const display = useRestTimerDisplay();
-  const spokenParts = [heading, restTimerClockAccessibilityLabel(display, t)];
-  if (caption) spokenParts.push(caption);
+  const spokenParts = [heading.spoken, restTimerClockAccessibilityLabel(display, t)];
+  if (caption) spokenParts.push(caption.spoken);
   return (
     <View
       accessible
@@ -141,7 +179,7 @@ function RestCardSummary({ heading, caption }: { heading: string; caption: strin
     >
       <View style={styles.headingRow}>
         <Text variant="headline" color={systemColors.label} style={styles.heading} numberOfLines={2}>
-          {heading}
+          {heading.text}
         </Text>
         <RestTimerClock variant="title2" />
       </View>
@@ -152,28 +190,36 @@ function RestCardSummary({ heading, caption }: { heading: string; caption: strin
           numberOfLines={2}
           testID="workout-rest-card-caption"
         >
-          {caption}
+          {caption.text}
         </Text>
       ) : null}
     </View>
   );
 }
 
+/** The same words to see and to hear. */
+function sameLine(text: string): RestCardLine {
+  return { text, spoken: text };
+}
+
 /** Literal keys, so the i18n analyser sees each one. */
-export function restCardHeadingText(heading: WorkoutRestCardHeading, t: TFunction<'session'>): string {
+export function restCardHeadingText(heading: WorkoutRestCardHeading, t: TFunction<'session'>): RestCardLine {
   switch (heading.kind) {
     case 'rest':
-      return t('mobile.workoutRunner.restLabel');
+      return sameLine(t('mobile.workoutRunner.restLabel'));
     case 'nextBeat':
-      return t('mobile.workoutRunner.nextBeatLabel');
+      return sameLine(t('mobile.workoutRunner.nextBeatLabel'));
     case 'paused':
-      return t('mobile.workoutRunner.timerPausedLabel');
+      return sameLine(t('mobile.workoutRunner.timerPausedLabel'));
     case 'setDone':
-      return t('mobile.workoutRunner.restCardSetDone', { set: heading.set });
-    case 'stageDone':
-      return t('mobile.workoutRunner.restCardStageDone', {
-        stage: workoutStageName(heading.stage, t, heading.isCoolDown),
-      });
+      return sameLine(t('mobile.workoutRunner.restCardSetDone', { set: heading.set }));
+    case 'stageDone': {
+      const stage = workoutStageName(heading.stage, t, heading.isCoolDown);
+      return {
+        text: t('mobile.workoutRunner.restCardStageDone', { stage }),
+        spoken: t('mobile.workoutRunner.restCardStageDoneAccessibilityLabel', { stage }),
+      };
+    }
   }
 }
 
@@ -183,49 +229,63 @@ type CaptionContext = {
   pacerDisplayName: string | null;
 };
 
+/**
+ * What follows the rest. The lines that join two facts with "·", or shorten
+ * "rep", have spoken forms with a comma and the full word, as the runner's
+ * other spoken lines do.
+ */
 export function restCardCaptionText(
   caption: WorkoutRestCardCaption,
   t: TFunction<'session'>,
   { gradeOf, role, pacerDisplayName }: CaptionContext,
-): string {
+): RestCardLine {
   switch (caption.kind) {
-    case 'nextRep':
-      return t('mobile.workoutRunner.restCardThenRep', {
-        rep: caption.rep,
-        reps: caption.reps,
-        set: caption.set,
-        sets: caption.sets,
-      });
+    case 'nextRep': {
+      const values = { rep: caption.rep, reps: caption.reps, set: caption.set, sets: caption.sets };
+      return {
+        text: t('mobile.workoutRunner.restCardThenRep', values),
+        spoken: t('mobile.workoutRunner.restCardThenRepAccessibilityLabel', values),
+      };
+    }
     case 'tryAgain':
-      return t('mobile.workoutRunner.restCardThenTryAgain', { number: caption.tryNumber });
+      return {
+        text: t('mobile.workoutRunner.restCardThenTryAgain', { number: caption.tryNumber }),
+        spoken: t('mobile.workoutRunner.restCardThenTryAgainAccessibilityLabel', { number: caption.tryNumber }),
+      };
     case 'nextClimb': {
       const name = caption.item.climb.name;
       const grade = gradeOf(caption);
-      return grade
-        ? t('mobile.workoutRunner.restCardNextClimb', { name, grade })
-        : t('mobile.workoutRunner.restCardNextClimbName', { name });
+      if (!grade) return sameLine(t('mobile.workoutRunner.restCardNextClimbName', { name }));
+      return {
+        text: t('mobile.workoutRunner.restCardNextClimb', { name, grade }),
+        spoken: t('mobile.workoutRunner.restCardNextClimbAccessibilityLabel', { name, grade }),
+      };
     }
     case 'nextStage':
-      return t('mobile.workoutRunner.restCardNextStage', {
-        stage: workoutStageName(caption.stage, t, caption.isCoolDown),
-      });
+      return sameLine(
+        t('mobile.workoutRunner.restCardNextStage', {
+          stage: workoutStageName(caption.stage, t, caption.isCoolDown),
+        }),
+      );
     case 'movedByHolder':
       // The crew's own lines, so the card and the rest timer sheet agree.
-      if (role === 'unheld') return t('mobile.restTimer.crew.autoAdvanceUnheld');
-      return pacerDisplayName
-        ? t('mobile.restTimer.crew.autoAdvanceByName', { name: pacerDisplayName })
-        : t('mobile.restTimer.crew.autoAdvanceByCrewmate');
+      if (role === 'unheld') return sameLine(t('mobile.restTimer.crew.autoAdvanceUnheld'));
+      return sameLine(
+        pacerDisplayName
+          ? t('mobile.restTimer.crew.autoAdvanceByName', { name: pacerDisplayName })
+          : t('mobile.restTimer.crew.autoAdvanceByCrewmate'),
+      );
   }
 }
 
 const styles = StyleSheet.create({
-  // The board's bottom edge. Lets every touch beside the card through to the
-  // board, so swipes and pinches keep working around it.
+  // Low on the board, above its Reset zoom corner. Lets every touch beside the
+  // card through to the board, so swipes and pinches keep working around it.
   region: {
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: spacing[2],
+    bottom: CARD_BOTTOM,
     zIndex: CARD_Z,
     alignItems: 'center',
   },

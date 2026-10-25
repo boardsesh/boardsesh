@@ -75,7 +75,7 @@ function cardFor({
   log,
   paused = false,
   canAdvanceQueue = true,
-  crewClockUnsupported = false,
+  skipAllowed = true,
   rest,
 }: {
   currentUuid: string;
@@ -83,7 +83,7 @@ function cardFor({
   log: WorkoutTickLogEntry[];
   paused?: boolean;
   canAdvanceQueue?: boolean;
-  crewClockUnsupported?: boolean;
+  skipAllowed?: boolean;
   rest?: Partial<WorkoutRunnerInput['rest']>;
 }) {
   const readout = describeWorkoutRunner({
@@ -99,7 +99,7 @@ function cardFor({
   return resolveWorkoutRestCard({
     readout,
     nextItem: nextUuid === null ? null : item(nextUuid),
-    crewClockUnsupported,
+    skipAllowed,
   });
 }
 
@@ -190,14 +190,16 @@ describe('resolveWorkoutRestCard', () => {
     });
   });
 
-  it('offers no Skip rest under a crew clock this app cannot run', () => {
+  it('offers no Skip rest where the tap would not move the wall (a crew clock on the minute, or one this app cannot run)', () => {
     const card = cardFor({
       currentUuid: 'l1',
       nextUuid: 'l2',
       log: ticks('l1', 'send'),
-      crewClockUnsupported: true,
+      skipAllowed: false,
     });
 
+    // Still says where the rest leads: the scheduler decides when, not the card.
+    expect(card?.caption).toEqual({ kind: 'nextClimb', item: item('l2') });
     expect(card?.action).toBeNull();
   });
 
@@ -234,6 +236,6 @@ describe('resolveWorkoutRestCard', () => {
     if (!readout) throw new Error('expected a readout');
 
     expect(readout.phase).toBe('done');
-    expect(resolveWorkoutRestCard({ readout, nextItem: null, crewClockUnsupported: false })).toBeNull();
+    expect(resolveWorkoutRestCard({ readout, nextItem: null, skipAllowed: true })).toBeNull();
   });
 });

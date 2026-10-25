@@ -13,9 +13,11 @@
 //
 // A rest that keeps the climb on the wall offers Go now, which only hides the
 // card. A rest that moves the wall offers Skip rest, which moves it now, but
-// only on an after-tick stage and only on a phone that may move the wall: on
-// the minute the beat is the workout, and a crew phone that does not hold the
-// wall never moves it (it says who does instead).
+// only on an after-tick stage, only on a phone that may move the wall, and only
+// where the tap would move it (`restSkipAllowed`, on the pacing the timer
+// really runs: a crew clock wins over the stage). On the minute the beat is the
+// workout, and a crew phone that does not hold the wall never moves it (it says
+// who does instead).
 
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { WorkoutStageKind } from '@boardsesh/playlist-generator';
@@ -66,10 +68,12 @@ export type WorkoutRestCardInput = {
   /** What Next lands on (`useWorkoutRunner().nextItem`), the climb the rest moves to. */
   nextItem: ClimbQueueItem | null;
   /**
-   * The crew follows a rest clock this app cannot run: the scheduler moves
-   * nothing on it, so Skip rest must not either.
+   * A tap on Skip rest would move the wall now (`restSkipAllowed`): the same
+   * check the tap makes, on the effective pacing. False under a crew clock on
+   * the minute or one this app cannot run, where the scheduler would not move
+   * the wall either.
    */
-  crewClockUnsupported: boolean;
+  skipAllowed: boolean;
 };
 
 /** The key a rest card is hidden under: one per climb and go count. */
@@ -85,7 +89,7 @@ export function workoutRestCardKey(queueItemUuid: string, attempts: number): str
 export function resolveWorkoutRestCard({
   readout,
   nextItem,
-  crewClockUnsupported,
+  skipAllowed,
 }: WorkoutRestCardInput): WorkoutRestCardModel | null {
   const { phase, rest, current, position, next } = readout;
   if (phase !== 'resting' || rest === null || current === null || position === null) return null;
@@ -129,7 +133,8 @@ export function resolveWorkoutRestCard({
     if (rest.staysOnClimb) return 'goNow';
     // `advances` already holds the crew rule (`canAdvanceQueue`) and the
     // stage's own. On the minute the beat is the block's clock: no skipping it.
-    if (!rest.advances || rest.mode !== 'afterTick' || nextItem === null || crewClockUnsupported) return null;
+    // `skipAllowed` is the tap's own answer, so the button never does nothing.
+    if (!rest.advances || rest.mode !== 'afterTick' || nextItem === null || !skipAllowed) return null;
     return 'skipRest';
   })();
 

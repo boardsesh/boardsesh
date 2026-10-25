@@ -16,7 +16,7 @@ import {
   subscribeLocalRestTimerActions,
   type LocalRestTimerAction,
 } from '../rest-timer-store';
-import { skipRestOnWall } from '../rest-timer-skip';
+import { restSkipAllowed, skipRestOnWall } from '../rest-timer-skip';
 
 const SESSION = 'session-1';
 const T0 = Date.parse('2026-10-25T10:00:00.000Z');
@@ -206,5 +206,33 @@ describe('skipRestOnWall', () => {
 
     expect(getRestTimerState().lastTick).toEqual({ status: 'send', queueItemUuid: 'l1' });
     expect(skip('l1').moved).toBe(false);
+  });
+});
+
+describe('restSkipAllowed', () => {
+  it('answers what a tap would do, from the state the card already reads, and claims nothing', () => {
+    onTheWall('l1');
+    logGo('l1', 'send');
+    const before = getRestTimerState();
+    const query = { queueItemUuid: 'l1', wallQueueItemUuid: 'l1' };
+
+    expect(restSkipAllowed({ ...query, pacing: { mode: 'afterTick', advanceOn: 'send' } }, before)).toBe(true);
+    // A crew clock on the minute, or one whose rule this go does not meet, wins
+    // over the stage: the tap would move nothing, so the card must not offer it.
+    expect(restSkipAllowed({ ...query, pacing: { mode: 'onTheMinute', advanceOn: 'deadline' } }, before)).toBe(false);
+    expect(getRestTimerState()).toBe(before);
+  });
+
+  it('says no once the tap moved the wall off the climb', () => {
+    onTheWall('l1');
+    logGo('l1', 'send');
+    skip('l1');
+
+    expect(
+      restSkipAllowed(
+        { queueItemUuid: 'l1', wallQueueItemUuid: 'l1', pacing: { mode: 'afterTick', advanceOn: 'send' } },
+        getRestTimerState(),
+      ),
+    ).toBe(false);
   });
 });
