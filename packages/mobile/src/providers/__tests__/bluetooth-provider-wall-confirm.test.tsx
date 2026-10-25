@@ -2225,6 +2225,33 @@ describe('BluetoothProvider wall-confirm integration', () => {
       );
     });
 
+    it("undo falls back to this phone's flip when an older reporter left the orientation out", async () => {
+      queue.sessionId = null;
+      presence.enabled = true;
+      presence.boardId = 99;
+      // No `mirrored` on the feed climb: an older build reported it.
+      presence.currentClimb = makePresenceClimb();
+
+      renderProvider(createElement(BluetoothProbe));
+      await waitFor(() => {
+        expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
+      });
+
+      act(() => {
+        capturedBluetooth?.setMirrorIntent('previous-climb', true);
+      });
+
+      const undoResult = await capturedBluetooth?.undoWallChange();
+
+      expect(undoResult).toBe(true);
+      expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
+        'previous-frames',
+        true,
+        undefined,
+        expect.objectContaining({ sendSource: 'undo' }),
+      );
+    });
+
     it('relights a feed climb mirrored when it was lit mirrored and this phone holds no flip for it', async () => {
       queue.sessionId = null;
       presence.enabled = true;
