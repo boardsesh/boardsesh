@@ -262,6 +262,24 @@ describe('removeClimbFromLikedList', () => {
     expect(logbook?.pages[0].climbs).toHaveLength(1);
   });
 
+  it('drops the list-wide total on every page when the climb sat on a later page', () => {
+    const client = new QueryClient();
+    const likedKey = smartPlaylistQueryKey({ smartPlaylistType: 'LIKED_CLIMBS', userId: 'u' });
+    client.setQueryData(likedKey, {
+      pages: [
+        { ...smartPage(['a', 'b']).smartPlaylist, totalCount: 3, hasMore: true },
+        { ...smartPage(['c']).smartPlaylist, totalCount: 3 },
+      ],
+      pageParams: [0, 1],
+    });
+
+    removeClimbFromLikedList(client, 'c');
+
+    const liked = client.getQueryData<{ pages: { climbs: { uuid: string }[]; totalCount: number }[] }>(likedKey);
+    expect(liked?.pages.map((page) => page.climbs.map((climb) => climb.uuid))).toEqual([['a', 'b'], []]);
+    expect(liked?.pages.map((page) => page.totalCount)).toEqual([2, 2]);
+  });
+
   it('keeps the Liked key layout the offline-sync invalidation map matches on', () => {
     expect(smartPlaylistQueryKey({ smartPlaylistType: 'LIKED_CLIMBS', userId: 'u' }).slice(0, 2)).toEqual(
       LIKED_LIST_QUERY_KEY_PREFIX,

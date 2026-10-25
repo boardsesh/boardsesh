@@ -230,13 +230,15 @@ export const LIKED_LIST_QUERY_KEY_PREFIX: QueryKey = ['smartPlaylist', 'LIKED_CL
 export function removeClimbFromLikedList(queryClient: QueryClient, climbUuid: string): void {
   queryClient.setQueriesData<InfiniteData<SmartPlaylistResult>>({ queryKey: LIKED_LIST_QUERY_KEY_PREFIX }, (cached) => {
     if (!cached?.pages.some((page) => page.climbs.some((climb) => climb.uuid === climbUuid))) return cached;
+    // Every page carries the list-wide total, and the screen reads it off page one,
+    // so each page's total drops once even when the climb sat on a later page.
     return {
       ...cached,
-      pages: cached.pages.map((page) => {
-        const climbs = page.climbs.filter((climb) => climb.uuid !== climbUuid);
-        if (climbs.length === page.climbs.length) return page;
-        return { ...page, climbs, totalCount: Math.max(0, page.totalCount - 1) };
-      }),
+      pages: cached.pages.map((page) => ({
+        ...page,
+        climbs: page.climbs.filter((climb) => climb.uuid !== climbUuid),
+        totalCount: Math.max(0, page.totalCount - 1),
+      })),
     };
   });
 }
