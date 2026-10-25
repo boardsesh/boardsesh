@@ -782,12 +782,20 @@ private struct DisconnectedFooter: View {
     }
 }
 
+/// Climb content (thumbnail, name, grade, metadata) fades to this on a stale
+/// card, Lock Screen and Dynamic Island alike: it is the last climb the card
+/// heard about, which may no longer be current. The rest clock is exempt.
+private let staleContentOpacity: Double = 0.5
+
 /// Footer for a stale card: ActivityKit marks it stale after
 /// `SharedConstants.liveActivityStaleInterval` with no update (no signal, or a
-/// push token that never registered). The session is still on, so this asks
-/// for a refresh instead of claiming it ended. No intent button: Prev/Next on a
-/// card that can't reach the backend would fail silently, and tapping the card
-/// already opens the app.
+/// push token that never registered). The card can't tell why it went quiet,
+/// so this asks for a refresh instead of claiming the session ended. Usually
+/// the session is still on, but not always: the backend's "end" push expires
+/// after 60 s and is skipped when no push token is registered, so a session
+/// the inactivity sweep ended while the phone was offline leaves a stale card
+/// too. No intent button: Prev/Next on a card that can't reach the backend
+/// would fail silently, and tapping the card already opens the app.
 @available(iOS 17.0, *)
 private struct StaleFooter: View {
     @Environment(\.colorScheme) private var colorScheme
@@ -875,15 +883,20 @@ struct ClimbSessionLiveActivity: Widget {
                         width: 48,
                         height: 60
                     )
+                    .opacity(context.isStale ? staleContentOpacity : 1)
                     .padding(.leading, VelvetSend.Spacing.xs)
                 }
 
                 DynamicIslandExpandedRegion(.center) {
                     ExpandedCenterView(context: context, showsGrade: rest != nil)
+                        .opacity(context.isStale ? staleContentOpacity : 1)
                 }
 
                 DynamicIslandExpandedRegion(.trailing) {
+                    // Dim the grade, not the rest clock: like the Lock Screen,
+                    // the clock counts on the phone and stays right.
                     ExpandedTrailingView(grade: context.state.climbDifficulty, rest: rest)
+                        .opacity(context.isStale && rest == nil ? staleContentOpacity : 1)
                 }
 
                 DynamicIslandExpandedRegion(.bottom) {
@@ -1065,20 +1078,19 @@ private struct LockScreenView: View {
     @Environment(\.colorScheme) private var colorScheme
     let context: ActivityViewContext<ClimbSessionAttributes>
 
-    /// Climb content fades to this while the card is stale: it is the last
-    /// climb the card heard about, which may no longer be current.
-    private static let staleContentOpacity: Double = 0.5
-
     /// A stale card keeps the last climb rather than claiming the session
-    /// ended (#6529). Every real end dismisses the activity at once, so
-    /// staleness only ever means "no update for 10 minutes".
+    /// ended (#6529). Staleness only means "no update for 10 minutes". Most
+    /// often the session is still on and the phone lost signal, but a session
+    /// the backend ended while the phone was offline or had no push token
+    /// also lands here (the "end" push expires after 60 s), so the card asks
+    /// for a refresh and makes no claim either way.
     var body: some View {
         activeView(isStale: context.isStale)
     }
 
     private func activeView(isStale: Bool) -> some View {
         let palette = VelvetSend.Palette.resolve(colorScheme)
-        let contentOpacity = isStale ? Self.staleContentOpacity : 1
+        let contentOpacity = isStale ? staleContentOpacity : 1
         let state = resolveBoardState(context: context)
         let mirrorState = resolveMirrorState(context: context)
         let rest = resolveRestTimer(context: context)
