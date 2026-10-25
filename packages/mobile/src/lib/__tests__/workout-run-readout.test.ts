@@ -149,6 +149,27 @@ describe('workout stage labels', () => {
     );
   });
 
+  it('leaves the round out of a 4x4 with one round', () => {
+    const oneRound: WorkoutRun = {
+      stages: [
+        {
+          id: 'four',
+          kind: 'fourByFour',
+          itemUuids: ['a', 'b', 'c', 'd'],
+          rounds: 1,
+          roundByUuid: { a: 1, b: 1, c: 1, d: 1 },
+        },
+      ],
+    };
+    const position = describeWorkoutRun(oneRound, ['a', 'b', 'c', 'd'], 'b')?.current;
+    expect(position?.round?.roundCount).toBe(1);
+    if (!position) return;
+    // "4x4 · 2 of 4", not "4x4 · Round 1 of 1 · 2 of 4".
+    expect(formatWorkoutStagePosition(position, t)).toBe(
+      'mobile.session.workoutStagePosition(stage=mobile.session.preGeneratorFourByFour,position=2,total=4)',
+    );
+  });
+
   it('formats the player subtitle part', () => {
     const position = describeWorkoutRun(run, ['w1', 'w2', 'm1'], 'w2')?.current;
     expect(position).toBeTruthy();

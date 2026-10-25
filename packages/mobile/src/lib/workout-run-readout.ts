@@ -103,11 +103,13 @@ export function workoutStageName(kind: WorkoutStageKind, t: TranslateWorkoutStag
 /**
  * "Warm-up · 2 of 5", the player's subtitle part for a workout climb, or
  * "Cool-down · 2 of 5" after the last block. A climb with a round counts within
- * its round instead: "4x4 · Round 2 of 4 · 3 of 4".
+ * its round instead: "4x4 · Round 2 of 4 · 3 of 4". A stage with one round in
+ * the queue (a 1-round 4x4, or one whose other rounds are gone) leaves the round
+ * out: "4x4 · 2 of 4", never "Round 1 of 1".
  */
 export function formatWorkoutStagePosition(position: WorkoutRunPosition, t: TranslateWorkoutStage): string {
   const stage = workoutStageName(position.kind, t, position.isCoolDown === true);
-  if (position.round) {
+  if (position.round && position.round.roundCount > 1) {
     return t('mobile.session.workoutStageRoundPosition', {
       stage,
       round: position.round.round,

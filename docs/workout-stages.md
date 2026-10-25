@@ -63,11 +63,13 @@ wide only). Each block becomes one **stage**. The code lives in
   For a climb with a round it also gives `round`: the round's rank among the stage's
   rounds with queued climbs (ranked by the stored number, so a reordered queue still
   says round 2 for a round-2 climb) and the climb's place in it, so the player reads
-  "4x4 · Round 2 of 4 · 3 of 4". A climb of a stage marked `coolDown` gets `isCoolDown`,
-  and the card and the player name the stage "Cool-down". The mark comes from the plan,
-  not the queue order, because the stage's climbs step down wherever they sit: a
-  cool-down the climber moves in front of the workout, or one a mid-session block lands
-  after, still reads "Cool-down". A warm-up that ramps up (one the climber drags behind
+  "4x4 · Round 2 of 4 · 3 of 4". With one round left in the queue (a 1-round 4x4, say)
+  the player leaves the round out and reads "4x4 · 2 of 4" (`formatWorkoutStagePosition`);
+  the run still stores round 1, so the rest after the round's last climb is the round rest.
+  A climb of a stage marked `coolDown` gets `isCoolDown`, and the card and the player name
+  the stage "Cool-down". The mark comes from the plan, not the queue order, because the
+  stage's climbs step down wherever they sit: a cool-down the climber moves in front of the
+  workout, or one a mid-session block lands after, still reads "Cool-down". A warm-up that ramps up (one the climber drags behind
   the workout, or a partner warm-up with its own `targetGrade`) never does.
 
 Stage kinds use the partner API block names (`warmUp`, `volume`, `pyramid`, `ladder`,
