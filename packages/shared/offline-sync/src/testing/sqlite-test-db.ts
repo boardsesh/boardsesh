@@ -7,8 +7,14 @@
 // Only the methods our code under test uses are implemented:
 //   execAsync, runAsync, getFirstAsync, getAllAsync, withExclusiveTransactionAsync.
 
-import { DatabaseSync } from 'node:sqlite';
 import type { OfflineDatabase } from '../database';
+
+// Loaded through `process.getBuiltinModule`, not a static import. Vite refuses
+// to bundle a Node built-in for a jsdom suite ("Cannot bundle Node.js built-in
+// node:sqlite"), which kept every React render test off the real database. The
+// jsdom environment still runs inside Node, so the built-in is there to ask for.
+const { DatabaseSync } = process.getBuiltinModule('node:sqlite');
+type DatabaseSync = InstanceType<typeof DatabaseSync>;
 
 type SqlBindValue = string | number | null | Uint8Array;
 
