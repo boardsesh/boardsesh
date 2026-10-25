@@ -59,9 +59,33 @@ export function metroDevClientUrl(metroPort = METRO_PORT, scheme = DEV_CLIENT_UR
   return `${scheme}://expo-development-client/?url=${encodeURIComponent(`http://localhost:${metroPort}`)}`;
 }
 
+/** Unique pids from `ss -p` output (`users:(("node",pid=1234,fd=23))`). */
+export function parseSsListenerPids(output: string): number[] {
+  const pids = new Set<number>();
+  for (const match of output.matchAll(/pid=(\d+)/g)) pids.add(Number.parseInt(match[1], 10));
+  return [...pids];
+}
+
+/** Pids listening on a TCP port. Tries lsof, then `ss` for boxes without lsof (Fedora). */
+export function listeningPids(port: number): number[] {
+  const lsof = spawnSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t'], { encoding: 'utf8' });
+  if (!lsof.error) {
+    return (lsof.stdout ?? '')
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((pid) => Number.parseInt(pid, 10));
+  }
+  const ss = spawnSync('ss', ['-Hltnp', 'sport', '=', `:${port}`], { encoding: 'utf8' });
+  return ss.error ? [] : parseSsListenerPids(ss.stdout ?? '');
+}
+
 /** True if anything is already listening on the port (a foreign Metro). */
 export function portInUse(port: number): boolean {
-  return spawnSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t']).status === 0;
+  const lsof = spawnSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t']);
+  if (!lsof.error) return lsof.status === 0;
+  // Without -p, so another user's listener still counts.
+  const ss = spawnSync('ss', ['-Hltn', 'sport', '=', `:${port}`], { encoding: 'utf8' });
+  return !ss.error && (ss.stdout ?? '').trim().length > 0;
 }
 
 /**

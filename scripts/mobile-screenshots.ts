@@ -249,7 +249,7 @@ const LOCAL_WEB_URL = 'http://localhost:3000';
 // An emulator's localhost is its OWN loopback, so --backend local additionally
 // needs these two reversed onto the host. Derived from the URLs above so a port
 // move there can't leave the reverse behind.
-const LOCAL_BACKEND_REVERSE_PORTS: readonly number[] = [LOCAL_BACKEND_URL, LOCAL_WEB_URL].map((url) =>
+export const LOCAL_BACKEND_REVERSE_PORTS: readonly number[] = [LOCAL_BACKEND_URL, LOCAL_WEB_URL].map((url) =>
   Number.parseInt(new URL(url).port, 10),
 );
 export const DEFAULT_USER_EMAIL = 'test@boardsesh.com';
