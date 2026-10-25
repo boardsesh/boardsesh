@@ -250,6 +250,12 @@ export type UnconfirmedQueueMove = {
    */
   movedOff: Array<string | null>;
   /**
+   * The chain moved off more climbs than `movedOff` keeps, so the list may lack
+   * the one the session still holds. Every snapshot then wins, as before the
+   * record existed, and a send that missed the session is given up at once.
+   */
+  movedOffTruncated: boolean;
+  /**
    * Re-send state for a send that never reached the session (the connection
    * had not re-joined yet, or the socket closed for good):
    *   - `none`:              no re-send wanted.

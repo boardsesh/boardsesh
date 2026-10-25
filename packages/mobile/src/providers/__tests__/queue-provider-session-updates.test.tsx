@@ -4429,6 +4429,110 @@ describe('QueueProvider mutation-failure resync', () => {
     expect(snapshots.at(-1)?.state.unconfirmedMove).toBeNull();
   });
 
+  // Nothing is left pending once a re-send is out: no fallback fires for it
+  // later, and the next move that misses the session waits for its own
+  // snapshot instead of meeting the last one's leftovers.
+  it('leaves nothing pending once a re-send is out', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const snapshots: Snapshot[] = [];
+      const wallClimb = makeQueueItem('wall-climb');
+      const nextUp = makeQueueItem('next-up');
+      const lastOne = makeQueueItem('last-one');
+      let queueStateCalls = 0;
+      routeHttpRequest(queueStateResponse([wallClimb, nextUp, lastOne], wallClimb), {
+        onQueueStateCall: () => (queueStateCalls += 1),
+      });
+      // Live, so the first lost move is re-sent at once.
+      await renderWallSession(snapshots, [wallClimb, nextUp, lastOne]);
+      queueMutations.setCurrentClimb.mockRejectedValueOnce(makeNotInSessionError());
+      act(() => {
+        snapshots.at(-1)?.setCurrentClimb(nextUp);
+      });
+      await waitFor(() => {
+        expect(setCurrentCorrelationIdsFor('next-up')).toHaveLength(2);
+      });
+      const [firstCorrelationId] = setCurrentCorrelationIdsFor('next-up');
+      act(() => {
+        pushCurrentClimbChanged(nextUp, 2, firstCorrelationId);
+      });
+      await waitFor(() => {
+        expect(snapshots.at(-1)?.state.unconfirmedMove).toBeNull();
+      });
+
+      // Well past the 20 s wait: nothing is left to give up.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(25_000);
+      });
+      expect(queueStateCalls).toBe(0);
+      expect(toast.showToast).not.toHaveBeenCalled();
+      expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('next-up');
+
+      // The next lost move, after a drop, waits for its own live snapshot.
+      await dropAndRejoinSocket();
+      queueMutations.setCurrentClimb.mockRejectedValueOnce(makeNotInSessionError());
+      act(() => {
+        snapshots.at(-1)?.setCurrentClimb(lastOne);
+      });
+      await waitFor(() => {
+        expect(snapshots.at(-1)?.state.unconfirmedMove?.resend).toBe('awaiting-snapshot');
+      });
+      expect(setCurrentCorrelationIdsFor('last-one')).toHaveLength(1);
+      act(() => {
+        pushFullSync([wallClimb, nextUp, lastOne], nextUp, 2);
+      });
+      await waitFor(() => {
+        expect(setCurrentCorrelationIdsFor('last-one')).toHaveLength(2);
+      });
+      expect(new Set(setCurrentCorrelationIdsFor('last-one')).size).toBe(1);
+      expect(setCurrentCorrelationIdsFor('next-up')).toHaveLength(2);
+      expect(queueStateCalls).toBe(0);
+      expect(toast.showToast).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // A chain of more unconfirmed moves than the record keeps cannot be compared
+  // with a snapshot (every snapshot wins), so waiting for one would only undo
+  // the move without a word. It is given up the old way at once.
+  it('gives a lost move up at once when its chain is too long to compare', async () => {
+    const snapshots: Snapshot[] = [];
+    const climbs = Array.from({ length: 23 }, (_, index) => makeQueueItem(`climb-${index}`));
+    let queueStateCalls = 0;
+    routeHttpRequest(queueStateResponse(climbs, climbs[0]), {
+      onQueueStateCall: () => (queueStateCalls += 1),
+    });
+    await renderWallSession(snapshots, climbs);
+    // Twenty-one moves the session never confirms: climb-0 falls off the list.
+    for (const climb of climbs.slice(1, 22)) {
+      act(() => {
+        snapshots.at(-1)?.setCurrentClimb(climb);
+      });
+    }
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.unconfirmedMove).toMatchObject({
+        itemUuid: 'climb-21',
+        movedOffTruncated: true,
+      });
+    });
+    await dropAndRejoinSocket();
+    queueMutations.setCurrentClimb.mockRejectedValueOnce(makeNotInSessionError());
+
+    act(() => {
+      snapshots.at(-1)?.setCurrentClimb(climbs[22]);
+    });
+    await waitFor(() => {
+      expect(queueStateCalls).toBe(1);
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('climb-0');
+    });
+    expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.outOfSyncRefreshed', 'error');
+    expect(snapshots.at(-1)?.state.unconfirmedMove).toBeNull();
+    expect(setCurrentCorrelationIdsFor('climb-22')).toHaveLength(1);
+  });
+
   it('gives a move that missed the session up the old way when the session never comes back', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {

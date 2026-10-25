@@ -148,14 +148,28 @@ describe('isNotSessionMemberError', () => {
 describe('isNotInSessionError', () => {
   const message = 'Must be in a session to perform this operation (connectionId: conn-2)';
 
-  it('is true for the backend\u2019s not-joined refusal, boxed or raw', () => {
+  // A server from before the code: the message prefix alone.
+  it('is true for the backend\u2019s uncoded not-joined refusal, boxed or raw', () => {
     expect(isNotInSessionError(new GraphQLOperationError([{ message }]))).toBe(true);
     expect(isNotInSessionError([{ message }])).toBe(true);
     expect(isNotInSessionError(new GraphQLOperationError([{ message: 'other' }, { message }]))).toBe(true);
   });
 
+  it('is true for the SESSION_REQUIRED code whatever the message, boxed or raw', () => {
+    const coded = { message: 'Not joined', extensions: { code: 'SESSION_REQUIRED' } };
+    expect(isNotInSessionError(new GraphQLOperationError([coded]))).toBe(true);
+    expect(isNotInSessionError([coded])).toBe(true);
+    expect(
+      isNotInSessionError(new GraphQLOperationError([{ message, extensions: { code: 'SESSION_REQUIRED' } }])),
+    ).toBe(true);
+  });
+
   it('is false for other errors, a plain Error with that text, and non-errors', () => {
     expect(isNotInSessionError(new GraphQLOperationError([{ message: 'Session not found' }]))).toBe(false);
+    expect(
+      isNotInSessionError(new GraphQLOperationError([{ message: 'x', extensions: { code: 'NOT_SESSION_MEMBER' } }])),
+    ).toBe(false);
+    expect(isNotInSessionError([{ message: 'x', extensions: { code: 'RATE_LIMITED' } }])).toBe(false);
     expect(isNotInSessionError(new GraphQLOperationError([{ message: `Oops: ${message}` }]))).toBe(false);
     expect(isNotInSessionError(new Error(message))).toBe(false);
     expect(isNotInSessionError([{ nope: true }, null])).toBe(false);

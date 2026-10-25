@@ -21,7 +21,12 @@ vi.mock('../services/distributed-state', async (importOriginal) => ({
   getDistributedState: getDistributedStateMock,
 }));
 
-import { requireSessionWithReconnectGrace } from '../graphql/resolvers/shared/helpers';
+import { GraphQLError } from 'graphql';
+import {
+  requireSession,
+  requireSessionWithReconnectGrace,
+  SESSION_REQUIRED_CODE,
+} from '../graphql/resolvers/shared/helpers';
 
 const makeCtx = (sessionId: string | null): ConnectionContext =>
   ({ connectionId: 'conn-test', sessionId }) as unknown as ConnectionContext;
@@ -66,6 +71,29 @@ describe('requireSessionWithReconnectGrace (#2397)', () => {
     await expect(requireSessionWithReconnectGrace(makeCtx(null), 3, 1)).rejects.toThrow(
       /Must be in a session to perform this operation/,
     );
+  });
+
+  // Clients tell this refusal apart by its code (isNotInSessionError); the
+  // message stays the same for clients that still match its prefix.
+  it('refuses with SESSION_REQUIRED and the unchanged message, with or without the grace', async () => {
+    getContextMock.mockReturnValue(undefined);
+    const message = 'Must be in a session to perform this operation (connectionId: conn-test)';
+
+    const graceError: unknown = await requireSessionWithReconnectGrace(makeCtx(null), 1, 1).catch(
+      (error: unknown) => error,
+    );
+    let plainError: unknown = null;
+    try {
+      requireSession(makeCtx(null));
+    } catch (error) {
+      plainError = error;
+    }
+
+    for (const error of [graceError, plainError]) {
+      expect(error).toBeInstanceOf(GraphQLError);
+      expect(error).toMatchObject({ message, extensions: { code: SESSION_REQUIRED_CODE } });
+    }
+    expect(SESSION_REQUIRED_CODE).toBe('SESSION_REQUIRED');
   });
 
   it('keeps waiting through a transient distributed-state error rather than failing early', async () => {

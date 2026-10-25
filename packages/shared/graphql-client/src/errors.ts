@@ -115,13 +115,24 @@ export class GraphQLOperationError extends Error {
 
 /**
  * What the backend's `requireSession` / `requireSessionWithReconnectGrace`
- * throw (packages/backend/src/graphql/resolvers/shared/helpers.ts). The error
- * carries no code, so the message prefix is the contract. The resolver refused
- * before doing anything: the connection the operation arrived on was not bound
- * to a session. After a socket drop that is a mutation graphql-ws re-sent on the
- * fresh socket before its JOIN_SESSION landed.
+ * throw (packages/backend/src/graphql/resolvers/shared/helpers.ts). The
+ * resolver refused before doing anything: the connection the operation arrived
+ * on was not bound to a session. After a socket drop that is a mutation
+ * graphql-ws re-sent on the fresh socket before its JOIN_SESSION landed.
+ *
+ * The code is the contract. A server from before the code sends the same
+ * message with no code, so its prefix is the fallback while a deploy rolls.
  */
+const SESSION_REQUIRED_CODE = 'SESSION_REQUIRED';
 const NOT_IN_SESSION_MESSAGE_RE = /^Must be in a session to perform this operation\b/;
+
+function isNotInSessionGraphqlError(graphqlError: { message?: unknown; extensions?: unknown }): boolean {
+  const { extensions } = graphqlError;
+  const code =
+    typeof extensions === 'object' && extensions !== null ? (extensions as { code?: unknown }).code : undefined;
+  if (code === SESSION_REQUIRED_CODE) return true;
+  return typeof graphqlError.message === 'string' && NOT_IN_SESSION_MESSAGE_RE.test(graphqlError.message);
+}
 
 /**
  * Did the server refuse this operation because its connection had not
@@ -130,14 +141,12 @@ const NOT_IN_SESSION_MESSAGE_RE = /^Must be in a session to perform this operati
  */
 export function isNotInSessionError(error: unknown): boolean {
   if (error instanceof GraphQLOperationError) {
-    return error.graphqlErrors.some((graphqlError) => NOT_IN_SESSION_MESSAGE_RE.test(graphqlError.message));
+    return error.graphqlErrors.some(isNotInSessionGraphqlError);
   }
   if (Array.isArray(error)) {
-    return error.some((item: unknown): boolean => {
-      if (typeof item !== 'object' || item === null) return false;
-      const { message } = item as { message?: unknown };
-      return typeof message === 'string' && NOT_IN_SESSION_MESSAGE_RE.test(message);
-    });
+    return error.some(
+      (item: unknown): boolean => typeof item === 'object' && item !== null && isNotInSessionGraphqlError(item),
+    );
   }
   return false;
 }

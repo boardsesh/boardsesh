@@ -212,7 +212,10 @@ export function createFakeGraphqlWsServer() {
             id,
             type: 'error',
             payload: [
-              { message: `Must be in a session to perform this operation (connectionId: ${this.connectionId})` },
+              {
+                message: `Must be in a session to perform this operation (connectionId: ${this.connectionId})`,
+                extensions: { code: 'SESSION_REQUIRED' },
+              },
             ],
           },
         ]);

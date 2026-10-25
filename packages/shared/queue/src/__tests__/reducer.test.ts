@@ -1161,6 +1161,7 @@ describe('unconfirmed moves', () => {
       shouldAddToQueue: false,
       insertAfterCurrent: true,
       movedOff: ['wall'],
+      movedOffTruncated: false,
       resend: 'none',
     });
   });
@@ -1271,6 +1272,44 @@ describe('unconfirmed moves', () => {
       'wall',
     );
     expect(serverMove(firstEcho, later, SEEN + 2, 'corr-2').unconfirmedMove).toBeNull();
+  });
+
+  // `movedOff` keeps the last 20 climbs. Past that the record cannot prove the
+  // session still holds one of them, so it protects nothing, as before it existed.
+  it('lets every snapshot win once a chain outgrows the climbs it keeps', () => {
+    const climbs = Array.from({ length: 22 }, (_, index) => makeClimbQueueItem({ uuid: `climb-${index}` }));
+    const start = makeState({
+      queue: climbs,
+      currentClimbQueueItem: climbs[0],
+      serverSequence: SEEN,
+      serverSequenceSessionId: 'session-1',
+    });
+    // Twenty moves: climb-0 to climb-19 moved off, every one kept.
+    const atCap = climbs.slice(1, 21).reduce((state, climb, index) => moveTo(state, climb, `corr-${index + 1}`), start);
+    expect(atCap.unconfirmedMove).toMatchObject({ itemUuid: 'climb-20', movedOffTruncated: false });
+    expect(atCap.unconfirmedMove?.movedOff).toHaveLength(20);
+    expect(snapshot(atCap, climbs, climbs[0]).currentClimbQueueItem?.uuid).toBe('climb-20');
+
+    // One more, and climb-0 falls off the list.
+    const pastCap = moveTo(atCap, climbs[21], 'corr-21');
+    expect(pastCap.unconfirmedMove).toMatchObject({ itemUuid: 'climb-21', movedOffTruncated: true });
+    expect(pastCap.unconfirmedMove?.movedOff).toHaveLength(20);
+    expect(pastCap.unconfirmedMove?.movedOff).not.toContain('climb-0');
+    // The session still on the chain's first climb: the snapshot wins and retires it.
+    const synced = snapshot(pastCap, climbs, climbs[0]);
+    expect(synced.currentClimbQueueItem?.uuid).toBe('climb-0');
+    expect(synced.unconfirmedMove).toBeNull();
+    // A climb the list still holds proves nothing either.
+    expect(snapshot(pastCap, climbs, climbs[10]).currentClimbQueueItem?.uuid).toBe('climb-10');
+
+    // It stays that way down the chain; a chain after a confirmed move starts clean.
+    expect(moveTo(pastCap, climbs[0], 'corr-22').unconfirmedMove?.movedOffTruncated).toBe(true);
+    const confirmed = serverMove(pastCap, climbs[21], SEEN + 1, 'corr-21');
+    expect(confirmed.unconfirmedMove).toBeNull();
+    expect(moveTo(confirmed, climbs[1], 'corr-23').unconfirmedMove).toMatchObject({
+      movedOff: ['climb-21'],
+      movedOffTruncated: false,
+    });
   });
 
   it('retires the move when a peer moves the wall, even back to the climb it moved off', () => {

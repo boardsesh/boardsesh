@@ -430,11 +430,14 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     origin: QueueMutationOrigin;
     /** The last sequence applied when it was parked: did the session move it since? */
     parkedAtSequence: number | undefined;
-    sent: boolean;
     queueAdds: ClimbQueueItem[];
   } | null>(null);
   // Gives up a move still waiting for its re-send after MOVE_RESEND_WAIT_MS.
+  // Set only while moveResendRef holds that move.
   const moveResendFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The correlation id of the last move re-sent. moveResendRef is empty once
+  // the re-send is out, so this is what stops a second send of it.
+  const resentMoveCorrelationIdRef = useRef<string | null>(null);
   useEffect(
     () => () => {
       if (moveResendFallbackTimerRef.current) clearTimeout(moveResendFallbackTimerRef.current);
@@ -2187,6 +2190,15 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     [isQueueMutationOriginCurrent, mutations, resyncQueueAfterMutationFailure],
   );
 
+  // Forget the pending re-send and its fallback timer: both are empty from here.
+  const forgetPendingResend = useCallback(() => {
+    moveResendRef.current = null;
+    if (moveResendFallbackTimerRef.current) {
+      clearTimeout(moveResendFallbackTimerRef.current);
+      moveResendFallbackTimerRef.current = null;
+    }
+  }, []);
+
   // Hand the queue slots a pending re-send was holding back to their own
   // recovery, and forget it. Called when the move is given up before its
   // re-send (a newer move, a crewmate's move, the TTL, a room change) and right
@@ -2194,24 +2206,16 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   const releasePendingResend = useCallback(() => {
     const pending = moveResendRef.current;
     if (!pending) return;
-    if (!pending.sent) {
-      moveResendRef.current = null;
-      if (moveResendFallbackTimerRef.current) {
-        clearTimeout(moveResendFallbackTimerRef.current);
-        moveResendFallbackTimerRef.current = null;
-      }
-    }
-    const queueAdds = pending.queueAdds;
-    pending.queueAdds = [];
-    for (const queueAdd of queueAdds) void recoverThrottledQueueAdd(queueAdd, pending.origin);
-  }, [recoverThrottledQueueAdd]);
+    forgetPendingResend();
+    for (const queueAdd of pending.queueAdds) void recoverThrottledQueueAdd(queueAdd, pending.origin);
+  }, [forgetPendingResend, recoverThrottledQueueAdd]);
 
   // Re-send a slot a lost send added, unless a move's re-send is still pending:
   // then it waits with that move (see moveResendRef).
   const queueOrRecoverMoveAdd = useCallback(
     (item: ClimbQueueItem, origin: QueueMutationOrigin) => {
       const pending = moveResendRef.current;
-      if (pending && !pending.sent) {
+      if (pending) {
         pending.queueAdds.push(item);
         return;
       }
@@ -2248,7 +2252,15 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       const isLatestSend = unconfirmedMove?.correlationId === correlationId;
       const missedTheSession = origin.sessionId !== null && moveMissedTheSession(error);
       if (missedTheSession) {
-        if (unconfirmedMove && isLatestSend && unconfirmedMove.resend === 'none') {
+        // A chain too long to compare with a snapshot (movedOffTruncated) has
+        // nothing to wait for: every snapshot wins, so it is given up the old
+        // way below rather than undone without a word.
+        if (
+          unconfirmedMove &&
+          isLatestSend &&
+          unconfirmedMove.resend === 'none' &&
+          !unconfirmedMove.movedOffTruncated
+        ) {
           // A move still waiting for its own re-send is history now; its slots
           // go out on their own.
           releasePendingResend();
@@ -2257,7 +2269,6 @@ export function QueueProvider({ children }: { children: ReactNode }) {
             itemUuid: item.uuid,
             origin,
             parkedAtSequence: serverSequence,
-            sent: false,
             // The re-send carries the add itself; this is in case it never goes.
             // A drained one's too: the coalescer leaves it to us (see the
             // return below), because its own re-send would land before the
@@ -2470,7 +2481,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     // The move a re-send was waiting for is gone (a newer move, a crewmate's
     // move, the TTL, the fallback): it will not be re-sent, so its slots go out
     // on their own now.
-    if (pending && !pending.sent && moveAwaitingResend?.correlationId !== pending.correlationId) {
+    if (pending && moveAwaitingResend?.correlationId !== pending.correlationId) {
       // Was it the session that undid it (a snapshot taken over it, a
       // crewmate's move), rather than this climber's own next move or edit?
       // Then the wall just went back without a tap: say so, as the resync this
@@ -2489,7 +2500,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     const { correlationId } = moveAwaitingResend;
     // Already on its way: this run only saw a commit that predates the
     // reducer's `resent`. Never a second send.
-    if (pending?.correlationId === correlationId && pending.sent) return;
+    if (resentMoveCorrelationIdRef.current === correlationId) return;
     // The wall's own copy of the climb: anything done to it locally since the
     // first send (a mirror, a hydrate) goes with it. The record only lives
     // while that climb is current, so this is always the move's climb.
@@ -2504,23 +2515,20 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     ) {
       // The room, account or queue intent changed while it waited. The move
       // belongs to that origin; let the next snapshot decide.
-      moveResendRef.current = null;
+      forgetPendingResend();
       dispatch({ type: 'UNCONFIRMED_MOVE_DROPPED', payload: { correlationId } });
       return;
     }
-    pending.sent = true;
-    if (moveResendFallbackTimerRef.current) {
-      clearTimeout(moveResendFallbackTimerRef.current);
-      moveResendFallbackTimerRef.current = null;
-    }
+    resentMoveCorrelationIdRef.current = correlationId;
     dispatch({ type: 'UNCONFIRMED_MOVE_RESENT', payload: { correlationId } });
     sendCurrentClimb(current, moveAwaitingResend.shouldAddToQueue, correlationId, pending.origin);
     // The re-send carries the move's own add; anything a superseded lost send
-    // added goes now.
+    // added goes now. From here nothing is pending: the ref and timer are empty.
     pending.queueAdds = pending.queueAdds.filter((queueAdd) => queueAdd.uuid !== current.uuid);
     releasePendingResend();
   }, [
     moveAwaitingResend,
+    forgetPendingResend,
     isQueueMutationOriginCurrent,
     privacyRevocationGeneration,
     releasePendingResend,

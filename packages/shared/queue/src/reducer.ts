@@ -31,7 +31,10 @@ function isReadTargetCurrent(item: ClimbQueueItem, target: QueueClimbReadTarget 
   return !!target && target.expectedClimb === item.climb && target.angle === angle;
 }
 
-/** Bound on `UnconfirmedQueueMove.movedOff`: a chain of moves the session never confirms. */
+/**
+ * Bound on `UnconfirmedQueueMove.movedOff`: a chain of moves the session never
+ * confirms. Past it the record is marked `movedOffTruncated` and protects nothing.
+ */
 const MAX_UNCONFIRMED_MOVED_OFF = 20;
 
 /**
@@ -176,9 +179,12 @@ function reduceQueue<TSearchParams extends QueueSearchParams>(
         action.serverSequence !== undefined &&
         state.serverSequenceSessionId === move.sessionId &&
         action.serverSequence === state.serverSequence;
+      // A chain longer than `movedOff` keeps may have dropped the climb the
+      // session still holds: no proof either way, so the snapshot wins.
       if (
         snapshotCurrentUuid === move.itemUuid ||
         !nothingHappenedSince ||
+        move.movedOffTruncated ||
         !move.movedOff.includes(snapshotCurrentUuid)
       ) {
         return snapshotState;
@@ -422,17 +428,19 @@ function reduceQueue<TSearchParams extends QueueSearchParams>(
       // current climb, which retires the record (retireStaleUnconfirmedMove).
       let unconfirmedMove = isServerEvent ? null : state.unconfirmedMove;
       if (!isServerEvent && item && correlationId && sessionId) {
-        const chained = state.unconfirmedMove?.sessionId === sessionId ? state.unconfirmedMove.movedOff : [];
+        const chainedMove = state.unconfirmedMove?.sessionId === sessionId ? state.unconfirmedMove : null;
         const movedOffUuid = state.currentClimbQueueItem?.uuid ?? null;
+        const movedOff = [...(chainedMove?.movedOff ?? []), movedOffUuid].filter(
+          (uuid, index, all) => uuid !== item.uuid && all.lastIndexOf(uuid) === index,
+        );
         unconfirmedMove = {
           sessionId,
           correlationId,
           itemUuid: item.uuid,
           shouldAddToQueue: !!shouldAddToQueue,
           insertAfterCurrent: !!insertAfterCurrent,
-          movedOff: [...chained, movedOffUuid]
-            .filter((uuid, index, all) => uuid !== item.uuid && all.lastIndexOf(uuid) === index)
-            .slice(-MAX_UNCONFIRMED_MOVED_OFF),
+          movedOff: movedOff.slice(-MAX_UNCONFIRMED_MOVED_OFF),
+          movedOffTruncated: (chainedMove?.movedOffTruncated ?? false) || movedOff.length > MAX_UNCONFIRMED_MOVED_OFF,
           resend: 'none',
         };
       }
