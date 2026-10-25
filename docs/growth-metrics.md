@@ -708,6 +708,12 @@ store links only, which carry `utm_source=boardsesh`, `utm_medium=browser-app`,
 Store campaign token `ct=browser-app-<surface>`, which App Analytics only shows
 once the link also carries the provider token (`pt`, not set yet).
 
+The About screen's **Share Boardsesh** sheet (#6823) hands a climber's friend a
+store link by QR code, copy or share, tagged `utm_source=boardsesh`,
+`utm_medium=app-share`, `utm_campaign=about`. On Android that arrives as
+`install_medium = app-share`; on iOS it is `ct=app-share-about`. The browser
+build's About screen uses the same tags, so the two are counted together.
+
 On Android, `Install Attributed` fires whenever the Play referrer has any `utm_*` param.
 Play stamps organic installs too (`utm_source=google-play&utm_medium=organic`),
 so 584 of the 663 people who fired it from 2026-08-23 to 2026-09-19 were

@@ -48,10 +48,13 @@ export function ShareAppSheet({ onDismiss }: ShareAppSheetProps) {
   const [store, setStore] = useState<StorePlatform>(initialStore);
   const storeUrl = storeUrlForAppShare(store);
 
+  // `successMessage` is already translated: a link copy and a message copy say different things.
+  // On web expo-clipboard resolves `false` rather than rejecting when the copy is blocked.
   const copyToClipboard = useCallback(
-    (text: string) =>
+    (text: string, successMessage: string) =>
       Clipboard.setStringAsync(text).then(
-        () => showToast(t('mobile.about.shareApp.copied'), 'success'),
+        (copied) =>
+          copied ? showToast(successMessage, 'success') : showToast(t('mobile.about.shareApp.copyFailed'), 'error'),
         () => showToast(t('mobile.about.shareApp.copyFailed'), 'error'),
       ),
     [showToast, t],
@@ -59,8 +62,8 @@ export function ShareAppSheet({ onDismiss }: ShareAppSheetProps) {
 
   const handleCopyLink = useCallback(() => {
     hapticSelection();
-    void copyToClipboard(storeUrl);
-  }, [copyToClipboard, storeUrl]);
+    void copyToClipboard(storeUrl, t('mobile.about.shareApp.copied'));
+  }, [copyToClipboard, storeUrl, t]);
 
   const handleShare = useCallback(() => {
     hapticSelection();
@@ -69,8 +72,18 @@ export function ShareAppSheet({ onDismiss }: ShareAppSheetProps) {
       iosUrl: storeUrlForAppShare('ios'),
       androidUrl: storeUrlForAppShare('android'),
     });
-    // A desktop browser has no share menu and rejects: copy the message instead.
-    void Share.share({ message }).catch(() => copyToClipboard(message));
+    const messageCopied = t('mobile.about.shareApp.messageCopied');
+    // A desktop browser has no share menu: copy the message straight away, while
+    // the tap still allows a clipboard write.
+    if (Platform.OS === 'web' && (typeof navigator === 'undefined' || typeof navigator.share !== 'function')) {
+      void copyToClipboard(message, messageCopied);
+      return;
+    }
+    void Share.share({ message }).catch((error: unknown) => {
+      // Backing out of the browser's share menu rejects with AbortError: not a failure.
+      if (error instanceof Error && error.name === 'AbortError') return;
+      void copyToClipboard(message, messageCopied);
+    });
   }, [copyToClipboard, t]);
 
   return (
@@ -100,6 +113,7 @@ export function ShareAppSheet({ onDismiss }: ShareAppSheetProps) {
 
       <View
         style={styles.qrTile}
+        accessible
         accessibilityRole="image"
         accessibilityLabel={
           store === 'android' ? t('mobile.about.shareApp.qrLabelAndroid') : t('mobile.about.shareApp.qrLabelIos')

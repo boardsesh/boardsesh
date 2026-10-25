@@ -21,8 +21,9 @@
 // this repo yet. `storeUrlForBrowserApp` takes it as an optional argument so
 // adding it later is a one-line change with no new link format.
 //
-// The native About screen's share sheet uses the same builders with its own
-// medium (`app-share`), so a climber-to-climber install reads apart from both.
+// The About screen's share sheet (native, and the browser build's copy of the
+// screen) uses the same builders with its own medium (`app-share`), so a
+// climber-to-climber install reads apart from both.
 //
 // Pure TS, no platform imports, so the browser prompt and native code share it.
 
@@ -33,7 +34,7 @@ export const ANDROID_PLAY_STORE_URL = 'https://play.google.com/store/apps/detail
 
 export const BROWSER_APP_UTM_SOURCE = 'boardsesh';
 export const BROWSER_APP_UTM_MEDIUM = 'browser-app';
-/** `utm_medium` of a link a climber handed on from the native app's share sheet. */
+/** `utm_medium` of a link a climber handed on from the About share sheet, native or browser. */
 export const APP_SHARE_UTM_MEDIUM = 'app-share';
 /** `utm_campaign` of that link: the screen the share sheet opens from. Do not rename. */
 export const APP_SHARE_CAMPAIGN = 'about';
@@ -113,7 +114,7 @@ export function storeUrlForBrowserApp(platform: StorePlatform, surface: StorePro
   return platform === 'android' ? playStoreUrlForBrowserApp(surface) : appStoreUrlForBrowserApp(surface);
 }
 
-/** The store link the native app's share sheet hands on, tagged `app-share` / `about`. */
+/** The store link the About share sheet hands on, tagged `app-share` / `about`. */
 export function storeUrlForAppShare(platform: StorePlatform): string {
   if (platform === 'android') return playStoreUrl(APP_SHARE_UTM_MEDIUM, APP_SHARE_CAMPAIGN);
   return appStoreUrl(`${APP_SHARE_UTM_MEDIUM}-${APP_SHARE_CAMPAIGN}`);

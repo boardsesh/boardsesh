@@ -924,6 +924,7 @@
         "share": "Compartir",
         "copied": "Enlace copiado",
         "copyFailed": "No se ha podido copiar el enlace",
+        "messageCopied": "Mensaje copiado",
         "message": "Bájate Boardsesh para tus sesiones de plafón.\niPhone: {{iosUrl}}\nAndroid: {{androidUrl}}"
       }
     },
