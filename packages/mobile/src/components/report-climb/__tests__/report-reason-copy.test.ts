@@ -3,10 +3,10 @@
 // say it is waiting on Send, in every shipped locale.
 import i18next from 'i18next';
 import { describe, expect, it } from 'vitest';
-import deClimbs from '../../../../../shared/i18n/locales/de/climbs.json';
-import enClimbs from '../../../../../shared/i18n/locales/en-US/climbs.json';
-import esClimbs from '../../../../../shared/i18n/locales/es/climbs.json';
-import frClimbs from '../../../../../shared/i18n/locales/fr/climbs.json';
+import deClimbs from '@boardsesh/i18n/locales/de/climbs.json';
+import enClimbs from '@boardsesh/i18n/locales/en-US/climbs.json';
+import esClimbs from '@boardsesh/i18n/locales/es/climbs.json';
+import frClimbs from '@boardsesh/i18n/locales/fr/climbs.json';
 
 const KEY = 'mobile.report.reasonRemaining';
 
@@ -30,6 +30,13 @@ async function translatorFor(lng: string, climbs: object) {
 }
 
 describe('report reason counter copy', () => {
+  it.each(locales)('$lng ships _one and _other keys and no bare base key', ({ climbs }) => {
+    const report = (climbs as unknown as { mobile: { report: Record<string, string> } }).mobile.report;
+    expect(report.reasonRemaining_one).toBeTruthy();
+    expect(report.reasonRemaining_other).toContain('{{count}}');
+    expect(report.reasonRemaining).toBeUndefined();
+  });
+
   it.each(locales)('$lng has distinct singular and plural forms', async ({ lng, climbs }) => {
     const t = await translatorFor(lng, climbs);
     const one = t(KEY, { count: 1 });
