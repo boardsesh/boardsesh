@@ -154,7 +154,7 @@ describe('Discover setter route', () => {
       expect.objectContaining({ setter: ['accountless setter'] }),
       true,
     ]);
-    expect(mocks.activation).toMatchObject({ allClimbs: [climb], replaceQueueOnActivate: true });
+    expect(mocks.activation).toMatchObject({ allClimbs: [climb], honorPlaylistLoadSetting: true });
     fireEvent.click(screen.getByRole('button', { name: 'Activate climb' }));
     expect(mocks.activate).toHaveBeenCalledWith(climb);
   });

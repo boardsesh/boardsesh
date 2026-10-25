@@ -1016,7 +1016,7 @@ describe('QueueProvider list tracks and climbs this board cannot draw (#6664)', 
         fetchPage,
         label: 'Projects',
         refreshErrorMessage: 'refresh failed',
-        replaceQueueOnActivate: true,
+        honorPlaylistLoadSetting: true,
       });
       return null;
     }

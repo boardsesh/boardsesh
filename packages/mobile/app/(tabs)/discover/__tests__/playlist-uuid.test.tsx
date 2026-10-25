@@ -685,7 +685,7 @@ describe('PlaylistDetail metadata error handling', () => {
     });
   });
 
-  // A row tap on this screen activates with `replaceQueueOnActivate`. With
+  // A row tap on this screen activates with `honorPlaylistLoadSetting`. With
   // "Tapping a playlist loads it into my queue" on (F4, #6667) that is the
   // loudest write in the app, since it swaps everyone's queue for the playlist
   // order and takes the wall. In a crew that cannot be what tapping a row to look

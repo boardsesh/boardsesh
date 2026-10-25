@@ -239,7 +239,7 @@ describe('setter smart playlist route', () => {
     expect(mocks.detail).toMatchObject({ hero: { name: 'accountless-setter', climbCount: 8 }, renderBoard: board });
     expect(mocks.detail).toMatchObject({ onAddAllToQueue: mocks.append, isAddingAllToQueue: false });
     expect(screen.getByText('follow:accountless-setter')).not.toBeNull();
-    expect(mocks.activation).toMatchObject({ allClimbs: [climb], previewOnly: shared, replaceQueueOnActivate: true });
+    expect(mocks.activation).toMatchObject({ allClimbs: [climb], previewOnly: shared, honorPlaylistLoadSetting: true });
     expect(mocks.search).toHaveBeenCalledWith(expect.objectContaining({ setter: ['accountless-setter'] }), true, {
       keepPreviousResults: true,
     });

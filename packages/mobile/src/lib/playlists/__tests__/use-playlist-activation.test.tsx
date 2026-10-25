@@ -187,7 +187,7 @@ function renderActivation(
     sourceId?: string;
     viewOnlyBoard?: typeof VIEW_ONLY_BOARD | ((climb: Climb) => typeof VIEW_ONLY_BOARD | null) | null;
     previewOnly?: boolean;
-    replaceQueueOnActivate?: boolean;
+    honorPlaylistLoadSetting?: boolean;
     label?: string;
     fetchTotal?: UsePlaylistActivationOptions['fetchTotal'];
     snapshotFetchPage?: UsePlaylistActivationOptions['snapshotFetchPage'];
@@ -212,7 +212,7 @@ function renderActivation(
       viewOnlyBoard: options.viewOnlyBoard,
       previewOnly: options.previewOnly,
       refreshErrorMessage: 'refresh failed:',
-      replaceQueueOnActivate: options.replaceQueueOnActivate,
+      honorPlaylistLoadSetting: options.honorPlaylistLoadSetting,
     }),
   );
 }
@@ -706,7 +706,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const { result } = renderActivation(vi.fn(), {
         allClimbs: [climb],
         previewOnly: true,
-        replaceQueueOnActivate: true,
+        honorPlaylistLoadSetting: true,
       });
 
       await result.current.activate(climb);
@@ -766,7 +766,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     it('previews a playlist, For You or setter tap like every other list (#6667)', async () => {
       setSetting('lightOnClimbTap', false);
       const climb = makeClimb('a');
-      const { result } = renderActivation(vi.fn(), { allClimbs: [climb], replaceQueueOnActivate: true });
+      const { result } = renderActivation(vi.fn(), { allClimbs: [climb], honorPlaylistLoadSetting: true });
 
       await result.current.activate(climb);
 
@@ -782,7 +782,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       setSetting('lightOnClimbTap', false);
       mocks.activeBoard = null;
       const climb = makeClimb('a');
-      const { result } = renderActivation(vi.fn(), { allClimbs: [climb], replaceQueueOnActivate: true });
+      const { result } = renderActivation(vi.fn(), { allClimbs: [climb], honorPlaylistLoadSetting: true });
 
       await result.current.activate(climb);
 
@@ -797,7 +797,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     it('leaves the Play button (a deliberate play) playing from the list', async () => {
       setSetting('lightOnClimbTap', false);
       const climb = makeClimb('a');
-      const { result } = renderActivation(vi.fn(), { allClimbs: [climb], replaceQueueOnActivate: true });
+      const { result } = renderActivation(vi.fn(), { allClimbs: [climb], honorPlaylistLoadSetting: true });
 
       await result.current.activate(climb, undefined, { deliberate: true });
 
@@ -820,7 +820,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       setSetting('playlistTapLoadsQueue', true);
       const climb = makeClimb('a');
       const fetchPage = vi.fn().mockResolvedValue({ climbs: [climb], hasMore: false });
-      const { result } = renderActivation(fetchPage, { allClimbs: [climb], replaceQueueOnActivate: true });
+      const { result } = renderActivation(fetchPage, { allClimbs: [climb], honorPlaylistLoadSetting: true });
 
       await act(async () => {
         await result.current.activate(climb);
@@ -836,7 +836,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       setSetting('playlistTapLoadsQueue', true);
       const climb = makeClimb('a');
       const fetchPage = vi.fn().mockResolvedValue({ climbs: [climb], hasMore: false });
-      const { result } = renderActivation(fetchPage, { allClimbs: [climb], replaceQueueOnActivate: true });
+      const { result } = renderActivation(fetchPage, { allClimbs: [climb], honorPlaylistLoadSetting: true });
 
       await act(async () => {
         await result.current.activate(climb, undefined, { deliberate: true });
@@ -1084,7 +1084,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const fetchPage = vi.fn();
       const { result } = renderActivation(fetchPage, {
         allClimbs: [makeClimb('a'), tapped],
-        replaceQueueOnActivate: true,
+        honorPlaylistLoadSetting: true,
       });
 
       await act(async () => {
@@ -1107,7 +1107,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     it('reads the switch at the tap, so turning it on replaces the next tap', async () => {
       const climb = makeClimb('a');
       const fetchPage = vi.fn().mockResolvedValue({ climbs: [climb], hasMore: false });
-      const { result } = renderActivation(fetchPage, { allClimbs: [climb], replaceQueueOnActivate: true });
+      const { result } = renderActivation(fetchPage, { allClimbs: [climb], honorPlaylistLoadSetting: true });
       const activateBefore = result.current.activate;
 
       setSetting('playlistTapLoadsQueue', true);
@@ -1135,7 +1135,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
 
     it('still lets Add to queue copy the list in', async () => {
       const fetchPage = vi.fn().mockResolvedValue({ climbs: [makeClimb('a'), makeClimb('b')], hasMore: false });
-      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       await act(async () => {
         result.current.addToQueue.append?.();
@@ -1147,7 +1147,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     });
   });
 
-  describe('queue replacement (replaceQueueOnActivate)', () => {
+  describe('queue replacement (honorPlaylistLoadSetting)', () => {
     beforeEach(() => {
       setSetting('playlistTapLoadsQueue', true);
     });
@@ -1156,7 +1156,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const tapped = makeClimb('b');
       const fetchPage = vi.fn().mockResolvedValue({ climbs: [makeClimb('a'), tapped, makeClimb('c')], hasMore: false });
       const { result } = renderActivation(fetchPage, {
-        replaceQueueOnActivate: true,
+        honorPlaylistLoadSetting: true,
         allClimbs: [makeClimb('a'), tapped, makeClimb('c')],
       });
 
@@ -1200,7 +1200,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
         totalCount: 3,
       });
       const { result } = renderActivation(fetchPage, {
-        replaceQueueOnActivate: true,
+        honorPlaylistLoadSetting: true,
         allClimbs: [makeClimb('a'), tapped, makeClimb('c')],
         label: 'Tuesday circuit',
       });
@@ -1235,7 +1235,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
         totalCount: 4,
       });
       const { result } = renderActivation(fetchPage, {
-        replaceQueueOnActivate: true,
+        honorPlaylistLoadSetting: true,
         allClimbs: [tapped, otherLayout, biggerWall, second],
         label: 'Projects',
       });
@@ -1261,7 +1261,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const tapped = makeClimb('homewall', { boardType: 'kilter', layoutId: 8 });
       const listClimbs = [makeClimb('a', { boardType: 'kilter', layoutId: 1 }), tapped, makeClimb('b')];
       const fetchPage = vi.fn().mockResolvedValue({ climbs: listClimbs, hasMore: false });
-      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true, allClimbs: listClimbs });
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true, allClimbs: listClimbs });
 
       await act(async () => {
         await result.current.activate(tapped);
@@ -1289,7 +1289,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
             }),
         );
         const { result } = renderActivation(fetchPage, {
-          replaceQueueOnActivate: true,
+          honorPlaylistLoadSetting: true,
           allClimbs: listClimbs.slice(0, 3),
         });
         let activation: Promise<void> = Promise.resolve();
@@ -1397,7 +1397,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       vi.spyOn(console, 'error').mockImplementation(() => {});
       const fetchPage = vi.fn().mockRejectedValue(new Error('network'));
       const { result } = renderActivation(fetchPage, {
-        replaceQueueOnActivate: true,
+        honorPlaylistLoadSetting: true,
         allClimbs: [makeClimb('a'), makeClimb('b')],
       });
 
@@ -1413,7 +1413,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const tapped = makeClimb('b');
       const fetchPage = vi.fn(() => new Promise<{ climbs: Climb[]; hasMore: boolean }>(() => {}));
       const { result } = renderActivation(fetchPage, {
-        replaceQueueOnActivate: true,
+        honorPlaylistLoadSetting: true,
         allClimbs: [makeClimb('a'), tapped, makeClimb('c')],
       });
 
@@ -1442,7 +1442,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const future = makeQueueItem('q-future', 'future');
       mocks.queueState = { queue: [current, future], currentClimbQueueItem: current };
       const fetchPage = vi.fn();
-      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       await act(async () => {
         await result.current.activate(makeClimb('b'));
@@ -1462,7 +1462,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const current = makeQueueItem('q-current', 'current');
       const suggestedFuture = makeQueueItem('q-suggested', 'suggested', true);
       mocks.queueState = { queue: [current, suggestedFuture], currentClimbQueueItem: current };
-      const { result } = renderActivation(vi.fn(), { replaceQueueOnActivate: true });
+      const { result } = renderActivation(vi.fn(), { honorPlaylistLoadSetting: true });
 
       await act(async () => {
         await result.current.activate(makeClimb('b'));
@@ -1479,7 +1479,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const tapped = makeClimb('b');
       const fetchPage = vi.fn().mockResolvedValue({ climbs: [tapped, makeClimb('c')], hasMore: false });
       mocks.choose.mockResolvedValue('replace');
-      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       await act(async () => {
         await result.current.activate(tapped);
@@ -1500,7 +1500,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const tapped = makeClimb('b');
       const fetchPage = vi.fn().mockResolvedValue({ climbs: [tapped, makeClimb('c')], hasMore: false });
       mocks.choose.mockResolvedValue('append');
-      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       await act(async () => {
         await result.current.activate(tapped);
@@ -1608,7 +1608,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
         const list = ['a', 'b', 'c', 'd'].map((uuid) => makeClimb(uuid));
         mocks.choose.mockResolvedValue('append');
         const { result } = renderActivation(vi.fn().mockResolvedValue({ climbs: list, hasMore: false }), {
-          replaceQueueOnActivate: true,
+          honorPlaylistLoadSetting: true,
           allClimbs: list,
         });
 
@@ -1636,7 +1636,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
             }),
         );
         mocks.choose.mockResolvedValue('append');
-        const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true, allClimbs: list });
+        const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true, allClimbs: list });
         let activation: Promise<void> = Promise.resolve();
         act(() => {
           activation = result.current.activate(list[1]);
@@ -1669,7 +1669,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
             }),
         );
         mocks.choose.mockResolvedValue('append');
-        const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true, allClimbs: list });
+        const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true, allClimbs: list });
         let activation: Promise<void> = Promise.resolve();
         act(() => {
           activation = result.current.activate(list[1]);
@@ -1697,7 +1697,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const tapped = makeClimb('b');
       mocks.choose.mockResolvedValue('append');
       const { result } = renderActivation(vi.fn().mockResolvedValue({ climbs: [tapped], hasMore: false }), {
-        replaceQueueOnActivate: true,
+        honorPlaylistLoadSetting: true,
       });
 
       await act(async () => {
@@ -1720,7 +1720,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       mocks.choose.mockResolvedValue('append');
       mocks.appendQueueItems.mockImplementation(() => 0);
       const { result } = renderActivation(vi.fn().mockResolvedValue({ climbs: [makeClimb('c')], hasMore: false }), {
-        replaceQueueOnActivate: true,
+        honorPlaylistLoadSetting: true,
       });
 
       await act(async () => {
@@ -1745,7 +1745,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const tapped = makeClimb('b');
       mocks.choose.mockResolvedValue('append');
       const { result } = renderActivation(vi.fn().mockResolvedValue({ climbs: [], hasMore: false }), {
-        replaceQueueOnActivate: true,
+        honorPlaylistLoadSetting: true,
       });
 
       await act(async () => {
@@ -1772,7 +1772,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       );
       mocks.choose.mockResolvedValue('append');
       const { result } = renderActivation(fetchPage, {
-        replaceQueueOnActivate: true,
+        honorPlaylistLoadSetting: true,
         allClimbs: [makeClimb('a'), tapped, makeClimb('c')],
       });
       let activation: Promise<void> = Promise.resolve();
@@ -1819,7 +1819,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
           }),
       );
       mocks.choose.mockResolvedValue('append');
-      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       // Row append starts and is still paging...
       act(() => {
@@ -1854,7 +1854,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
         return 'replace';
       });
       mocks.choose.mockResolvedValue('replace');
-      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       await act(async () => {
         await result.current.activate(tapped);
@@ -1876,7 +1876,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const tapped = makeClimb('b');
       const { result } = renderActivation(vi.fn(), {
         allClimbs: [makeClimb('a'), tapped],
-        replaceQueueOnActivate: true,
+        honorPlaylistLoadSetting: true,
         label: 'Projects',
       });
 
@@ -1909,7 +1909,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const tapped = makeClimb('b');
       const fetchPage = vi.fn().mockResolvedValue({ climbs: [], hasMore: false });
       const { result } = renderActivation(fetchPage, {
-        replaceQueueOnActivate: true,
+        honorPlaylistLoadSetting: true,
         sourceId: 'playlist:empty-fetch-1',
         allClimbs: [makeClimb('a'), tapped, makeClimb('c')],
       });
@@ -1934,7 +1934,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const tapped = makeClimb('b');
       const fetchPage = vi.fn().mockResolvedValue({ climbs: [tapped], hasMore: false });
       const { result } = renderActivation(fetchPage, {
-        replaceQueueOnActivate: true,
+        honorPlaylistLoadSetting: true,
         allClimbs: [makeClimb('a'), tapped, makeClimb('c')],
       });
 
@@ -1952,7 +1952,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const tapped = makeClimb('b');
       const fetchPage = vi.fn().mockResolvedValue({ climbs: [], hasMore: false });
       const { result } = renderActivation(fetchPage, {
-        replaceQueueOnActivate: true,
+        honorPlaylistLoadSetting: true,
         sourceId: 'playlist:empty-fetch-2',
         allClimbs: [makeClimb('a'), tapped],
       });
@@ -1977,7 +1977,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       // fetches nothing, and a false positive here would be permanent noise.
       const fetchPage = vi.fn().mockResolvedValue({ climbs: [], hasMore: false });
       const { result } = renderActivation(fetchPage, {
-        replaceQueueOnActivate: true,
+        honorPlaylistLoadSetting: true,
         sourceId: 'playlist:empty-fetch-3',
         allClimbs: [],
       });
@@ -1999,7 +1999,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const tapped = makeClimb('b');
       const fetchPage = vi.fn().mockResolvedValue({ climbs: [], hasMore: false });
       const { result } = renderActivation(fetchPage, {
-        replaceQueueOnActivate: true,
+        honorPlaylistLoadSetting: true,
         sourceId: 'playlist:empty-fetch-4',
         allClimbs: [
           makeClimb('a', { boardType: 'tension', layoutId: 9 }),
@@ -2021,7 +2021,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const tapped = makeClimb('b');
       const fetchPage = vi.fn().mockResolvedValue({ climbs: [], hasMore: false });
       const { result } = renderActivation(fetchPage, {
-        replaceQueueOnActivate: true,
+        honorPlaylistLoadSetting: true,
         sourceId: 'playlist:empty-fetch-5',
         allClimbs: [makeClimb('a', { boardType: 'tension', layoutId: 9 }), tapped],
       });
@@ -2056,7 +2056,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const tapped = makeClimb('b', { boardType: 'moonboard', layoutId: 3, frames: 'p1r42p2r43' });
       const fetchPage = vi.fn().mockResolvedValue({ climbs: [], hasMore: false });
       const { result } = renderActivation(fetchPage, {
-        replaceQueueOnActivate: true,
+        honorPlaylistLoadSetting: true,
         sourceId: 'playlist:empty-fetch-6',
         allClimbs: [makeClimb('a', { boardType: 'moonboard', layoutId: 3, frames: 'p2r42p17r43' }), tapped],
       });
@@ -2082,7 +2082,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const tapped = makeClimb('b', { boardType: 'moonboard', layoutId: 3, frames: 'p1r42p2r43' });
       const fetchPage = vi.fn().mockResolvedValue({ climbs: [], hasMore: false });
       const { result } = renderActivation(fetchPage, {
-        replaceQueueOnActivate: true,
+        honorPlaylistLoadSetting: true,
         sourceId: 'playlist:empty-fetch-7',
         allClimbs: [tapped],
       });
@@ -2110,7 +2110,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const tapped = makeClimb('b', eightByTen);
       const fetchPage = vi.fn().mockResolvedValue({ climbs: [], hasMore: false });
       const { result } = renderActivation(fetchPage, {
-        replaceQueueOnActivate: true,
+        honorPlaylistLoadSetting: true,
         sourceId: 'playlist:empty-fetch-woods-1',
         allClimbs: [makeClimb('a', eightByTen), tapped],
       });
@@ -2130,7 +2130,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const tapped = makeClimb('b', { boardType: 'woods', layoutId: 1, frames: 'p12r4p207r2', compatibleSizeIds: [1] });
       const fetchPage = vi.fn().mockResolvedValue({ climbs: [], hasMore: false });
       const { result } = renderActivation(fetchPage, {
-        replaceQueueOnActivate: true,
+        honorPlaylistLoadSetting: true,
         sourceId: 'playlist:empty-fetch-woods-2',
         allClimbs: [tapped],
       });
@@ -2150,7 +2150,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     it('keeps the queue unchanged and shows a toast when the full playlist fetch fails', async () => {
       const fetchPage = vi.fn().mockRejectedValue(new Error('network'));
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       await act(async () => {
         await result.current.activate(makeClimb('b'));
@@ -2167,7 +2167,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     it('does not retry a non-transport failure', async () => {
       const fetchPage = vi.fn().mockRejectedValue(new Error('User not found'));
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       await act(async () => {
         await result.current.activate(makeClimb('b'));
@@ -2189,7 +2189,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
         .fn()
         .mockRejectedValueOnce(new TypeError('Network request failed'))
         .mockResolvedValue({ climbs: [makeClimb('a'), tapped, makeClimb('c')], hasMore: false });
-      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       await act(async () => {
         await result.current.activate(tapped);
@@ -2210,7 +2210,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       let pageCounter = 0;
       const fetchPage = vi.fn(async () => ({ climbs: [makeClimb(`cap-${pageCounter++}`)], hasMore: true }));
       const { result } = renderActivation(fetchPage, {
-        replaceQueueOnActivate: true,
+        honorPlaylistLoadSetting: true,
         sourceId: 'playlist:capped-1',
       });
 
@@ -2251,7 +2251,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       it('starts a 600-climb playlist with 500 queued, the tapped row 550 among them, and says so', async () => {
         const tapped = makeClimb('row-550');
         const fetchPage = pagedList(600);
-        const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true, allClimbs: [tapped] });
+        const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true, allClimbs: [tapped] });
 
         await act(async () => {
           await result.current.activate(tapped);
@@ -2278,7 +2278,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       it('queues 500 from the tapped climb and keeps the whole drained list as the track', async () => {
         const tapped = makeClimb('row-10');
         const fetchPage = pagedList(2000);
-        const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true, allClimbs: [tapped] });
+        const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true, allClimbs: [tapped] });
 
         await act(async () => {
           await result.current.activate(tapped);
@@ -2305,7 +2305,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       it('keeps the track and its count to the list end when tapped deep in a long list', async () => {
         const tapped = makeClimb('row-950');
         const fetchPage = pagedList(2000);
-        const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true, allClimbs: [tapped] });
+        const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true, allClimbs: [tapped] });
 
         await act(async () => {
           await result.current.activate(tapped);
@@ -2330,7 +2330,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
         const tapped = makeClimb('row-0');
         // Longer than the 20-page drain, so the drain cannot count it either.
         const fetchPage = pagedList(2500, { reportsTotal: false });
-        const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true, allClimbs: [tapped] });
+        const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true, allClimbs: [tapped] });
 
         await act(async () => {
           await result.current.activate(tapped);
@@ -2344,7 +2344,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       it('leaves a playlist that fits whole and quiet', async () => {
         const tapped = makeClimb('row-450');
         const fetchPage = pagedList(500);
-        const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true, allClimbs: [tapped] });
+        const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true, allClimbs: [tapped] });
 
         await act(async () => {
           await result.current.activate(tapped);
@@ -2363,7 +2363,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       // Empty page that still claims there is more — the shape `52d9a631f` fixed.
       const fetchPage = vi.fn().mockResolvedValue({ climbs: [], hasMore: true });
       const { result } = renderActivation(fetchPage, {
-        replaceQueueOnActivate: true,
+        honorPlaylistLoadSetting: true,
         sourceId: 'playlist:no-progress-1',
         allClimbs: [makeClimb('a'), tapped, makeClimb('c')],
       });
@@ -2388,7 +2388,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     it('reports a no-progress stop under its own op so triage can tell it from the page cap', async () => {
       const fetchPage = vi.fn().mockResolvedValue({ climbs: [], hasMore: true });
       const { result } = renderActivation(fetchPage, {
-        replaceQueueOnActivate: true,
+        honorPlaylistLoadSetting: true,
         sourceId: 'playlist:no-progress-2',
         allClimbs: [makeClimb('a'), makeClimb('b')],
       });
@@ -2420,7 +2420,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
         .fn()
         .mockRejectedValueOnce(makeRateLimitClientError(1))
         .mockResolvedValue({ climbs: [makeClimb('a'), tapped], hasMore: false });
-      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       await act(async () => {
         await result.current.activate(tapped);
@@ -2435,7 +2435,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     it('fails fast on a long rate limit and hands the original error to Sentry', async () => {
       const fetchPage = vi.fn().mockRejectedValue(makeRateLimitClientError(46));
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       await act(async () => {
         await result.current.activate(makeClimb('b'));
@@ -2463,7 +2463,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       mocks.choose.mockResolvedValue('replace');
       const fetchPage = vi.fn().mockRejectedValue(new Error('boom'));
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       await act(async () => {
         await result.current.activate(makeClimb('b'));
@@ -2488,7 +2488,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
         .fn()
         .mockResolvedValueOnce({ climbs: [makeClimb('a'), makeClimb('b')], hasMore: true })
         .mockResolvedValueOnce({ climbs: [makeClimb('c')], hasMore: false });
-      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       await act(async () => {
         result.current.addToQueue.append?.();
@@ -2504,7 +2504,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
 
     it('never asks the provider to move the current climb', async () => {
       const fetchPage = vi.fn().mockResolvedValue({ climbs: [makeClimb('a')], hasMore: false });
-      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       await act(async () => {
         result.current.addToQueue.append?.();
@@ -2523,7 +2523,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
         .fn()
         .mockResolvedValueOnce({ climbs: [makeClimb('a'), makeClimb('b')], hasMore: true })
         .mockResolvedValueOnce({ climbs: [makeClimb('b'), makeClimb('c')], hasMore: false });
-      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       await act(async () => {
         result.current.addToQueue.append?.();
@@ -2535,7 +2535,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
 
     it('confirms through the queue-added snackbar exactly once for the whole batch', async () => {
       const fetchPage = vi.fn().mockResolvedValue({ climbs: [makeClimb('a'), makeClimb('b')], hasMore: false });
-      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       await act(async () => {
         result.current.addToQueue.append?.();
@@ -2553,7 +2553,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const fetchPage = vi.fn().mockResolvedValue({ climbs: [makeClimb('a'), makeClimb('b')], hasMore: false });
       // The provider clamped the batch at the wire cap.
       mocks.appendQueueItems.mockReturnValue(1);
-      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       await act(async () => {
         result.current.addToQueue.append?.();
@@ -2580,7 +2580,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     it('shows the queue-full error and adds nothing when the provider takes none of the batch', async () => {
       const fetchPage = vi.fn().mockResolvedValue({ climbs: [makeClimb('a')], hasMore: false });
       mocks.appendQueueItems.mockReturnValue(0);
-      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       await act(async () => {
         result.current.addToQueue.append?.();
@@ -2600,7 +2600,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
         queue: Array.from({ length: 500 }, (_unused, index) => makeQueueItem(`q-${index}`, `c-${index}`)),
         currentClimbQueueItem: null,
       };
-      const { result: full } = renderActivation(vi.fn(), { replaceQueueOnActivate: true });
+      const { result: full } = renderActivation(vi.fn(), { honorPlaylistLoadSetting: true });
       await act(async () => {
         full.current.addToQueue.append?.();
       });
@@ -2610,7 +2610,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       mocks.track.mockClear();
       mocks.queueState = { queue: [], currentClimbQueueItem: null };
       const emptyFetch = vi.fn().mockResolvedValue({ climbs: [], hasMore: false });
-      const { result: empty } = renderActivation(emptyFetch, { replaceQueueOnActivate: true });
+      const { result: empty } = renderActivation(emptyFetch, { honorPlaylistLoadSetting: true });
       await act(async () => {
         empty.current.addToQueue.append?.();
       });
@@ -2625,7 +2625,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     it('reports the failed outcome on a non-abort throw', async () => {
       const fetchPage = vi.fn().mockRejectedValue(new Error('network'));
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       await act(async () => {
         result.current.addToQueue.append?.();
@@ -2642,7 +2642,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
         currentClimbQueueItem: null,
       };
       const fetchPage = vi.fn();
-      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       await act(async () => {
         result.current.addToQueue.append?.();
@@ -2661,7 +2661,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
         currentClimbQueueItem: null,
       };
       const fetchPage = vi.fn().mockResolvedValue({ climbs: [makeClimb('a'), makeClimb('b')], hasMore: true });
-      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       await act(async () => {
         result.current.addToQueue.append?.();
@@ -2677,7 +2677,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     it('toasts nothingToAdd and fires its own canary on an empty board-scoped fetch', async () => {
       const fetchPage = vi.fn().mockResolvedValue({ climbs: [], hasMore: false });
       const { result } = renderActivation(fetchPage, {
-        replaceQueueOnActivate: true,
+        honorPlaylistLoadSetting: true,
         sourceId: 'playlist:append-empty-1',
         allClimbs: [makeClimb('a'), makeClimb('b')],
       });
@@ -2699,7 +2699,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     it('keeps an append no-progress report separate from the empty-board canary', async () => {
       const fetchPage = vi.fn().mockResolvedValue({ climbs: [], hasMore: true });
       const { result } = renderActivation(fetchPage, {
-        replaceQueueOnActivate: true,
+        honorPlaylistLoadSetting: true,
         sourceId: 'playlist:append-no-progress-1',
         allClimbs: [makeClimb('a'), makeClimb('b')],
       });
@@ -2723,7 +2723,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     it('reports a page-cap append under its own op while appending the bounded result', async () => {
       let pageCounter = 0;
       const fetchPage = vi.fn(async () => ({ climbs: [makeClimb(`append-cap-${pageCounter++}`)], hasMore: true }));
-      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       await act(async () => {
         result.current.addToQueue.append?.();
@@ -2747,7 +2747,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const tapped = makeClimb('b');
       const fetchPage = vi.fn().mockResolvedValue({ climbs: [], hasMore: false });
       const { result } = renderActivation(fetchPage, {
-        replaceQueueOnActivate: true,
+        honorPlaylistLoadSetting: true,
         sourceId: 'playlist:shared-canary-1',
         allClimbs: [makeClimb('a'), tapped],
       });
@@ -2774,7 +2774,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
             releaseFetch = resolve;
           }),
       );
-      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       act(() => {
         result.current.addToQueue.append?.();
@@ -2791,7 +2791,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     it('surfaces an error toast and reports on a non-abort failure', async () => {
       const fetchPage = vi.fn().mockRejectedValue(new Error('network'));
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       await act(async () => {
         result.current.addToQueue.append?.();
@@ -2809,7 +2809,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     it('tags a smart playlist as sourceKind "smart" without shipping its user id', async () => {
       const fetchPage = vi.fn().mockResolvedValue({ climbs: [makeClimb('a')], hasMore: false });
       const { result } = renderActivation(fetchPage, {
-        replaceQueueOnActivate: true,
+        honorPlaylistLoadSetting: true,
         sourceId: 'smart:LIKED_CLIMBS:u-1',
       });
 
@@ -2828,7 +2828,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       // to someone who simply hasn't picked one. Absent instead, so the detail
       // view's render gate hides the row.
       mocks.activeBoard = null;
-      const { result } = renderActivation(vi.fn(), { replaceQueueOnActivate: true });
+      const { result } = renderActivation(vi.fn(), { honorPlaylistLoadSetting: true });
       expect(result.current.addToQueue.append).toBeUndefined();
       expect(result.current.addToQueue.isAppending).toBe(false);
     });
@@ -2844,7 +2844,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
             }),
         )
         .mockResolvedValue({ climbs: [makeClimb('z')], hasMore: false });
-      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       act(() => {
         result.current.addToQueue.append?.();
@@ -2943,7 +2943,7 @@ describe('account change during playlist activation', () => {
           releaseFetch = resolve;
         }),
     );
-    const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+    const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
     let activation: Promise<void> = Promise.resolve();
     act(() => {
       activation = result.current.activate(makeClimb('withdrawn'));
@@ -2974,7 +2974,7 @@ describe('account change during playlist activation', () => {
         }),
     );
     const fetchPage = vi.fn();
-    const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+    const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
     let activation: Promise<void> = Promise.resolve();
     act(() => {
       activation = result.current.activate(makeClimb('withdrawn'));

@@ -269,7 +269,7 @@ export function SetterPlaylistScreen({ tab }: { tab: SetterPlaylistTab }) {
     previewOnly: isSharedSession,
     // A tap plays from the setter's list; with "Tapping a playlist loads it into
     // my queue" on, it replaces the queue with it instead (F4, #6667).
-    replaceQueueOnActivate: true,
+    honorPlaylistLoadSetting: true,
     refreshErrorMessage: 'Failed to refresh setter playlist',
   });
 

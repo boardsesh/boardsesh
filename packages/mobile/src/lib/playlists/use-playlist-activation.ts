@@ -11,7 +11,7 @@
 // the play drawer walks the whole playlist. Wrong-board playlists use a
 // view-only drawer path so they can be inspected without mutating the queue.
 //
-// Playlists, For You lists and setter pages pass `replaceQueueOnActivate`. A tap
+// Playlists, For You lists and setter pages pass `honorPlaylistLoadSetting`. A tap
 // on them plays from the list like any other list tap, unless the climber turned
 // on "Tapping a playlist loads it into my queue" (F4, #6667). Then the tap (or
 // the Play button) replaces the whole queue with the list (tapped climb active)
@@ -258,7 +258,7 @@ export type UsePlaylistActivationOptions = {
    * "Light the board when I tap a climb" off makes a row tap a preview; the
    * Play button (`deliberate`) still plays or loads the list.
    */
-  replaceQueueOnActivate?: boolean;
+  honorPlaylistLoadSetting?: boolean;
 };
 
 export type PlaylistAddToQueueState = {
@@ -351,7 +351,7 @@ export function usePlaylistActivation({
   hasMoreRows = false,
   loadedRowsArePages = false,
   refreshErrorMessage,
-  replaceQueueOnActivate = false,
+  honorPlaylistLoadSetting = false,
 }: UsePlaylistActivationOptions): PlaylistActivationResult {
   const {
     setCurrentClimb,
@@ -1368,7 +1368,7 @@ export function usePlaylistActivation({
 
       // Read at the tap, so the callback does not change identity when the
       // climber flips it. Only lists that opted in can load into the queue.
-      const tapLoadsQueue = replaceQueueOnActivate && getSetting('playlistTapLoadsQueue');
+      const tapLoadsQueue = honorPlaylistLoadSetting && getSetting('playlistTapLoadsQueue');
 
       // Two reasons to preview, either one enough: there are other climbers in
       // the session (`previewOnly`), so a tap must not take their wall; or the
@@ -1478,7 +1478,7 @@ export function usePlaylistActivation({
       openPlayDrawer,
       promptQueueFork,
       queueApi,
-      replaceQueueOnActivate,
+      honorPlaylistLoadSetting,
       replaceQueueWithPlaylist,
       resolveTarget,
       setQueue,

@@ -328,7 +328,7 @@ function SmartPlaylistBody({
     refreshErrorMessage: 'Failed to refresh smart playlist suggestions:',
     // A tap plays from the list; with "Tapping a playlist loads it into my
     // queue" on, it replaces the queue with it instead (F4, #6667).
-    replaceQueueOnActivate: true,
+    honorPlaylistLoadSetting: true,
   });
 
   // Smart playlists are computed relative to the active board, so they always

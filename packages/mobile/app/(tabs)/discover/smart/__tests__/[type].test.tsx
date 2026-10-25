@@ -7,13 +7,13 @@ import type { PlaylistClimbViewInput } from '@boardsesh/shared-schema';
 import type { SmartListSelection } from '../../../../../src/lib/playlists/smart-list-view';
 
 // Parity guard for the smart-playlist detail screen: it must mark itself as a
-// list a tap can load into the queue (replaceQueueOnActivate, honoured only with
+// list a tap can load into the queue (honorPlaylistLoadSetting, honoured only with
 // "Tapping a playlist loads it into my queue" on, F4 #6667) exactly like the
 // regular playlist detail screen. The hook itself is unit-tested elsewhere; here
 // we only assert the wiring.
 type CapturedOptions = {
   sourceId: string;
-  replaceQueueOnActivate?: boolean;
+  honorPlaylistLoadSetting?: boolean;
   previewOnly?: boolean;
   fetchPage: (args: {
     page: number;
@@ -260,10 +260,10 @@ afterEach(() => {
 });
 
 describe('SmartPlaylistDetail queue replacement wiring', () => {
-  it('marks the list as one a tap can load into the queue (replaceQueueOnActivate)', () => {
+  it('marks the list as one a tap can load into the queue (honorPlaylistLoadSetting)', () => {
     const { container } = render(<SmartPlaylistDetail />);
 
-    expect(smartMocks.activationOptions?.replaceQueueOnActivate).toBe(true);
+    expect(smartMocks.activationOptions?.honorPlaylistLoadSetting).toBe(true);
     expect(smartMocks.activationOptions?.sourceId).toBe('smart:LIKED_CLIMBS:u-1');
 
     fireEvent.click(container.querySelector('[data-activate]')!);
@@ -298,7 +298,7 @@ describe('SmartPlaylistDetail queue replacement wiring', () => {
     render(<SmartPlaylistDetail />);
 
     expect(smartMocks.activationOptions?.previewOnly).toBe(false);
-    expect(smartMocks.activationOptions?.replaceQueueOnActivate).toBe(true);
+    expect(smartMocks.activationOptions?.honorPlaylistLoadSetting).toBe(true);
   });
   it('scopes CPP smart-playlist requests to the active wall and keeps ordinary requests unchanged', () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
