@@ -175,7 +175,7 @@ describe('QueueAddedSnackbar', () => {
     ctrl.variant = 'material';
     const { container } = render(<QueueAddedSnackbar {...base} queueAdded={{ kind: 'playNext' }} />);
     const snackbar = container.querySelector('[data-paper-snackbar]');
-    expect(snackbar?.textContent).toContain('mobile.queueSnackbar.playingNext');
+    expect(snackbar?.textContent).toContain('mobile.queueSnackbar.playingNext_one');
     expect(snackbar?.textContent).not.toContain('mobile.queueSnackbar.added_one');
     // The Open affordance is unchanged by the copy swap.
     expect(container.querySelector('[data-action]')?.textContent).toBe('mobile.queueSnackbar.open');
@@ -184,7 +184,7 @@ describe('QueueAddedSnackbar', () => {
   it('shows the Play next copy on Liquid Glass when kind is playNext', () => {
     ctrl.variant = 'liquidGlass';
     const { container } = render(<QueueAddedSnackbar {...base} queueAdded={{ kind: 'playNext' }} />);
-    expect(container.textContent).toContain('mobile.queueSnackbar.playingNext');
+    expect(container.textContent).toContain('mobile.queueSnackbar.playingNext_one');
     expect(container.textContent).not.toContain('mobile.queueSnackbar.added_one');
     expect(container.querySelector('[data-label="mobile.queueSnackbar.openAria"]')).not.toBeNull();
   });
@@ -196,14 +196,15 @@ describe('QueueAddedSnackbar', () => {
     expect(container.textContent).not.toContain('mobile.queueSnackbar.playingNext');
   });
 
-  // A Play next is always exactly one climb, so a count must never reach its copy.
-  it.each(['material', 'liquidGlass'] as const)('ignores an unused count on %s', (variant) => {
+  // A whole playlist's Play next (#6772) says how many climbs are now up next.
+  it.each(['material', 'liquidGlass'] as const)('pluralises the Play next copy on a bulk count on %s', (variant) => {
     ctrl.variant = variant;
     const { container } = render(<QueueAddedSnackbar {...base} queueAdded={{ kind: 'playNext', count: 3 }} />);
-    expect(container.textContent).toContain('mobile.queueSnackbar.playingNext');
+    expect(container.textContent).toContain('mobile.queueSnackbar.playingNext_other');
+    expect(container.textContent).not.toContain('mobile.queueSnackbar.playingNext_one');
   });
 
-  // The bulk playlist append (#4673) is the only caller that passes a count.
+  // A whole playlist's Play last passes a count too.
   it.each(['material', 'liquidGlass'] as const)('pluralises the added copy on a bulk count on %s', (variant) => {
     ctrl.variant = variant;
     const { container } = render(<QueueAddedSnackbar {...base} queueAdded={{ kind: 'added', count: 12 }} />);

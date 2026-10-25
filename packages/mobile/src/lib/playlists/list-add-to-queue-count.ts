@@ -1,4 +1,4 @@
-// The "Add 12 to queue" count of a list with views (a playlist, a smart list, a
+// The "Play 12 next" / "Play 12 last" count of a list with views (a playlist, a smart list, a
 // setter page). Its own module: it reads every row's render board, which pulls
 // in the board catalogue, and playlist-view.ts stays free of that.
 
@@ -20,11 +20,11 @@ export type ListAddToQueueCountInput = {
 };
 
 /**
- * "Add 12 to queue" while the rows on screen are filtered, and only when the
+ * "Play 12 next" / "Play 12 last" while the rows on screen are filtered, and only when the
  * number is exactly what the board-scoped add takes: with "Fits my board" on,
  * every counted climb is on this board; otherwise only once every row is
  * loaded, counting the ones this board can show (the rest are dimmed and left
- * out by the add). Undefined keeps the plain "Add to queue", and so does a list
+ * out by the add). Undefined keeps the plain "Play next" / "Play last", and so does a list
  * with nothing addable: the tap then says there is nothing for this board.
  */
 export function listAddToQueueCount({

@@ -89,7 +89,7 @@ type ClimbListRowMockProps = {
     angle?: number;
   }) => ReactNode;
   onPress?: (climb?: { uuid?: string; name?: string }) => void;
-  onAddToQueue?: (climb?: { uuid?: string; name?: string }) => void;
+  onPlayNext?: (climb?: { uuid?: string; name?: string }) => void;
   onOpenPlaylist?: (climb?: { uuid?: string; name?: string }) => void;
   onOpenActions?: (climb?: { uuid?: string; name?: string }) => void;
   [key: string]: unknown;
@@ -323,7 +323,7 @@ vi.mock('../../ClimbListRow', () => ({
       ),
       createElement(
         'button',
-        { 'aria-label': `queue ${climbUuid}`, onClick: () => props.onAddToQueue?.(props.climb) },
+        { 'aria-label': `queue ${climbUuid}`, onClick: () => props.onPlayNext?.(props.climb) },
         'queue',
       ),
       createElement(
@@ -886,7 +886,7 @@ describe('BoardSheet', () => {
     ];
     const onClose = vi.fn();
     const onClimbPress = vi.fn();
-    const onAddToQueue = vi.fn();
+    const onPlayNext = vi.fn();
     const onOpenPlaylist = vi.fn();
     const onOpenActions = vi.fn();
     const heroDetail = makeFullClimb('hero-climb', {
@@ -915,7 +915,7 @@ describe('BoardSheet', () => {
         boardConfig,
         onSwitchBoard: noop,
         onClimbPress,
-        onAddToQueue,
+        onPlayNext,
         onOpenPlaylist,
         onOpenActions,
       }),
@@ -945,13 +945,13 @@ describe('BoardSheet', () => {
 
     fireEvent.click(getByLabelText('queue old-climb'));
     await waitFor(() =>
-      expect(onAddToQueue).toHaveBeenCalledWith({
+      expect(onPlayNext).toHaveBeenCalledWith({
         climb: oldDetail,
         queueItemUuid: 'queue-old',
         boardConfig: { ...boardConfig, angle: 30 },
       }),
     );
-    expect(onAddToQueue).toHaveBeenCalledTimes(1);
+    expect(onPlayNext).toHaveBeenCalledTimes(1);
     expect(graphql.request).toHaveBeenCalledWith(GET_CLIMB, {
       boardName: 'kilter',
       layoutId: 1,

@@ -119,8 +119,8 @@ const detailViewProps = vi.hoisted(() => ({
     emptyMessage?: string;
     emptyIcon?: string;
     emptyState?: { icon: string; title: string };
-    onAddAllToQueue?: () => void;
-    isAddingAllToQueue?: boolean;
+    onQueueAll?: (placement: 'next' | 'end') => void;
+    pendingQueueAll?: 'next' | 'end' | null;
     addToQueueCount?: number;
     onRefresh?: () => unknown;
     climbs: Climb[];
@@ -258,7 +258,7 @@ vi.mock('../../../../src/lib/playlists/use-playlist-activation', () => ({
     playlistMocks.activationOptions = options;
     return {
       activate: vi.fn(),
-      addToQueue: { append: playlistMocks.appendToQueue, isAppending: false },
+      addToQueue: { queue: playlistMocks.appendToQueue, pendingPlacement: null },
     };
   },
 }));
@@ -375,8 +375,8 @@ vi.mock('../../../../src/components/playlist', () => ({
     unavailableContent,
     emptyIcon,
     emptyState,
-    onAddAllToQueue,
-    isAddingAllToQueue,
+    onQueueAll,
+    pendingQueueAll,
     addToQueueCount,
     onRefresh,
     climbs,
@@ -395,8 +395,8 @@ vi.mock('../../../../src/components/playlist', () => ({
     unavailableContent?: ReactNode;
     emptyIcon?: string;
     emptyState?: { icon: string; title: string };
-    onAddAllToQueue?: () => void;
-    isAddingAllToQueue?: boolean;
+    onQueueAll?: (placement: 'next' | 'end') => void;
+    pendingQueueAll?: 'next' | 'end' | null;
     addToQueueCount?: number;
     onRefresh?: () => unknown;
     climbs: Climb[];
@@ -412,8 +412,8 @@ vi.mock('../../../../src/components/playlist', () => ({
       emptyMessage,
       emptyIcon,
       emptyState,
-      onAddAllToQueue,
-      isAddingAllToQueue,
+      onQueueAll,
+      pendingQueueAll,
       addToQueueCount,
       onRefresh,
       climbs,
@@ -921,8 +921,8 @@ describe('PlaylistDetail owner overflow menu', () => {
     const { container } = renderDetail();
 
     await waitFor(() => expect(container.querySelector('[data-detail-view="true"]')).not.toBeNull());
-    expect(detailViewProps.current?.onAddAllToQueue).toBe(playlistMocks.appendToQueue);
-    expect(detailViewProps.current?.isAddingAllToQueue).toBe(false);
+    expect(detailViewProps.current?.onQueueAll).toBe(playlistMocks.appendToQueue);
+    expect(detailViewProps.current?.pendingQueueAll).toBeNull();
   });
 });
 

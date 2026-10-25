@@ -237,7 +237,7 @@ describe('PlayDrawerActionsMenu', () => {
     tap(container, 'mobile.climbActions.addBetaVideo');
     tap(container, 'mobile.climbActions.report');
     tap(container, 'actions.playlist.popover.title');
-    tap(container, 'mobile.climbRow.addToQueue');
+    tap(container, 'mobile.climbActions.playLast');
     tap(container, 'session:playView.actionBar.addFavoriteAria');
     expect(props.onAddBetaVideo).not.toHaveBeenCalled();
     expect(props.onReportClimb).not.toHaveBeenCalled();

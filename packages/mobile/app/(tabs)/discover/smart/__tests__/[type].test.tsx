@@ -176,8 +176,8 @@ vi.mock('../../../../../src/components/ClimbListRowSkeleton', () => ({ ClimbList
 
 type DetailViewProps = {
   onActivateClimb?: (climb: Climb) => void;
-  onAddAllToQueue?: () => void;
-  isAddingAllToQueue?: boolean;
+  onQueueAll?: (placement: 'next' | 'end') => void;
+  pendingQueueAll?: 'next' | 'end' | null;
   filterBar?: ReactNode;
   filterAction?: { activeCount: number; onPress: () => void } | null;
   emptyMessage?: string;
@@ -194,7 +194,7 @@ vi.mock('../../../../../src/components/playlist', () => ({
   PlaylistFilterBar: () => null,
   PlaylistDetailView: (props: DetailViewProps) => {
     detailViewProps.current = props;
-    const { onActivateClimb, onAddAllToQueue, isAddingAllToQueue } = props;
+    const { onActivateClimb, onQueueAll, pendingQueueAll } = props;
     return createElement(
       'div',
       null,
@@ -203,9 +203,9 @@ vi.mock('../../../../../src/components/playlist', () => ({
         onClick: () => onActivateClimb?.({ uuid: 'c-1' } as unknown as Climb),
       }),
       createElement('button', {
-        'data-add-all': onAddAllToQueue ? 'true' : 'false',
-        'data-appending': String(!!isAddingAllToQueue),
-        onClick: onAddAllToQueue,
+        'data-add-all': onQueueAll ? 'true' : 'false',
+        'data-pending': String(pendingQueueAll ?? null),
+        onClick: () => onQueueAll?.('end'),
       }),
     );
   },
@@ -215,7 +215,7 @@ vi.mock('../../../../../src/lib/graphql/client', () => ({ getHttpClient: () => (
 vi.mock('../../../../../src/lib/playlists/use-playlist-activation', () => ({
   usePlaylistActivation: (options: CapturedOptions) => {
     smartMocks.activationOptions = options;
-    return { activate: smartMocks.activate, addToQueue: { append: smartMocks.appendToQueue, isAppending: false } };
+    return { activate: smartMocks.activate, addToQueue: { queue: smartMocks.appendToQueue, pendingPlacement: null } };
   },
 }));
 vi.mock('../../../../../src/lib/playlists/use-playlist-render-board', () => ({
@@ -278,10 +278,10 @@ describe('SmartPlaylistDetail queue replacement wiring', () => {
 
     const addAll = container.querySelector('[data-add-all]');
     expect(addAll?.getAttribute('data-add-all')).toBe('true');
-    expect(addAll?.getAttribute('data-appending')).toBe('false');
+    expect(addAll?.getAttribute('data-pending')).toBe('null');
 
     fireEvent.click(addAll as HTMLButtonElement);
-    expect(smartMocks.appendToQueue).toHaveBeenCalledTimes(1);
+    expect(smartMocks.appendToQueue).toHaveBeenCalledExactlyOnceWith('end');
   });
 
   // Same rule as the playlist detail screen: with a crew present, a row tap is a

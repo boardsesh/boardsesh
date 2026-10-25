@@ -11,7 +11,7 @@ const queue = vi.hoisted(() => ({
   activeClimbUuid: null as string | null,
   isSharedSession: false,
   setCurrentClimb: vi.fn(),
-  addToQueue: vi.fn(),
+  playNext: vi.fn(),
   setSessionBoardPath: vi.fn(async () => {}),
 }));
 
@@ -286,7 +286,7 @@ vi.mock('../queue-provider', () => ({
   useIsSharedSession: () => queue.isSharedSession,
   useActiveClimbUuid: () => queue.activeClimbUuid,
   useQueueActions: () => ({
-    addToQueue: queue.addToQueue,
+    playNext: queue.playNext,
     setSessionBoardPath: queue.setSessionBoardPath,
     setCurrentClimb: queue.setCurrentClimb,
   }),
@@ -608,7 +608,7 @@ describe('DrawerHostProvider board presence binding', () => {
 type BoardSheetTestProps = {
   activeBoard: UserBoard | null;
   onClimbPress: (action: BoardSheetClimbAction) => void;
-  onAddToQueue: (action: BoardSheetClimbAction) => void;
+  onPlayNext: (action: BoardSheetClimbAction) => void;
   onOpenPlaylist: (action: BoardSheetClimbAction) => void;
   onOpenActions: (action: BoardSheetClimbAction) => void;
   onOpenSprayMaintenance: (wallUuid: string, action: 'editHolds' | 'resetWall') => void;
@@ -641,7 +641,7 @@ describe('DrawerHostProvider queue sheet (always-live, no driver gate)', () => {
     queue.sessionId = 'session-1';
     queue.participantId = 'participant-self';
     queue.setCurrentClimb.mockClear();
-    queue.addToQueue.mockClear();
+    queue.playNext.mockClear();
     queue.setSessionBoardPath.mockClear();
     activeBoard.setActiveBoard.mockClear();
     queueSheet.props = null;
@@ -752,7 +752,7 @@ describe('DrawerHostProvider board sheet climb actions', () => {
     queue.sessionId = 'session-1';
     queue.participantId = 'participant-self';
     queue.setCurrentClimb.mockClear();
-    queue.addToQueue.mockClear();
+    queue.playNext.mockClear();
     climbActions.props = null;
     playlistSheet.props = null;
     boardSheet.props = null;
@@ -872,9 +872,10 @@ describe('DrawerHostProvider board sheet climb actions', () => {
     const climb = makeQueueItem('queue-x', 'climb-x').climb as unknown as Climb;
     const action = makeBoardSheetAction(climb);
     act(() => {
-      getBoardSheetProps().onAddToQueue(action);
+      getBoardSheetProps().onPlayNext(action);
     });
-    expect(queue.addToQueue).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'queue-climb-x', climb }));
+    // The row's right swipe is Play next, as in every other climb list (#6772).
+    expect(queue.playNext).toHaveBeenCalledWith({ item: expect.objectContaining({ uuid: 'queue-climb-x', climb }) });
 
     act(() => {
       getBoardSheetProps().onOpenPlaylist(action);

@@ -652,7 +652,6 @@
       "rangeHoldHint": "Gedrückt halten, um mit dem gewählten Winkel einen Bereich zu bilden"
     },
     "climbRow": {
-      "addToQueue": "Zur Warteschlange hinzufügen",
       "toggleFavorite": "Favorit umschalten",
       "favorited": "Favorit",
       "share": "Boulder teilen",
@@ -740,6 +739,7 @@
     "climbActions": {
       "preview": "Vorschau",
       "playNext": "Als Nächstes dran",
+      "playLast": "Als Letztes dran",
       "nameCopied": "Name kopiert",
       "copyNameError": "Name konnte nicht kopiert werden",
       "copyNameHint": "Lang drücken, um den Namen zu kopieren",

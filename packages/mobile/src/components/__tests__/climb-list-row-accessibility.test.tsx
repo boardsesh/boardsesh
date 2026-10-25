@@ -224,12 +224,12 @@ describe('ClimbListRow swipe feedback lifetime', () => {
   });
 
   it('keeps identical labelled panels through first drag, close and recycling', () => {
-    const onAddToQueue = vi.fn();
+    const onPlayNext = vi.fn();
     const onOpenPlaylist = vi.fn();
-    const props = { ...boardProps, onAddToQueue, onOpenPlaylist };
+    const props = { ...boardProps, onPlayNext, onOpenPlaylist };
     const screen = render(<ClimbListRow climb={climb} {...props} />);
     const readPanels = () =>
-      ['mobile.climbRow.addToQueue', 'actions.playlist.popover.title'].map((label) => {
+      ['mobile.climbActions.playNext', 'actions.playlist.popover.title'].map((label) => {
         const button = screen.getByRole('button', { name: label });
         return { label, style: button.getAttribute('data-style'), feedback: button.getAttribute('data-feedback') };
       });
@@ -237,19 +237,19 @@ describe('ClimbListRow swipe feedback lifetime', () => {
     expect(idlePanels.map((panel) => panel.feedback)).toEqual(['static', 'static']);
     act(() => (panels.props?.onSwipeableOpenStartDrag as () => void)());
     expect(readPanels()).toEqual(idlePanels.map((panel) => ({ ...panel, feedback: 'animated' })));
-    expect(onAddToQueue).not.toHaveBeenCalled();
+    expect(onPlayNext).not.toHaveBeenCalled();
     expect(onOpenPlaylist).not.toHaveBeenCalled();
     act(() => (panels.props?.onSwipeableClose as () => void)());
     expect(readPanels()).toEqual(idlePanels);
     act(() => (panels.props?.onSwipeableOpenStartDrag as () => void)());
     screen.rerender(<ClimbListRow climb={{ ...climb, uuid: 'climb-2' }} {...props} />);
     expect(readPanels()).toEqual(idlePanels);
-    fireEvent.click(screen.getByRole('button', { name: 'mobile.climbRow.addToQueue' }));
-    expect(onAddToQueue).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'climb-2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'mobile.climbActions.playNext' }));
+    expect(onPlayNext).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'climb-2' }));
   });
 
   it('keeps render callbacks for unchanged labels and refreshes translated panels', () => {
-    const props = { ...boardProps, onAddToQueue: vi.fn(), onOpenPlaylist: vi.fn() };
+    const props = { ...boardProps, onPlayNext: vi.fn(), onOpenPlaylist: vi.fn() };
     const screen = render(<ClimbListRow climb={climb} {...props} />);
     const left = panels.props?.renderLeftActions;
     const right = panels.props?.renderRightActions;
@@ -260,7 +260,7 @@ describe('ClimbListRow swipe feedback lifetime', () => {
     screen.rerender(<ClimbListRow climb={{ ...climb }} {...props} />);
     expect(panels.props?.renderLeftActions).not.toBe(left);
     expect(panels.props?.renderRightActions).not.toBe(right);
-    expect(screen.getByRole('button', { name: 'mobile.climbRow.addToQueue:es' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'mobile.climbActions.playNext:es' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'actions.playlist.popover.title:es' })).toBeTruthy();
   });
 });

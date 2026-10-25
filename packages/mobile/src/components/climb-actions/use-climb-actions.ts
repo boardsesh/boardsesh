@@ -333,14 +333,32 @@ export function useClimbActions({
       },
     });
 
+    // "Play next" is meaningless on the climb already on the wall, so it is hidden
+    // there rather than shown as a no-op. It sits right above Play last: the two
+    // placements read as a pair, the way a music app offers them (#6772).
+    if (climb.uuid !== activeClimbUuid) {
+      items.push({
+        id: 'playNext',
+        title: t('mobile.climbActions.playNext'),
+        icon: 'queue.next',
+        color: accentColor,
+        run: () => {
+          // Fire-and-forget: the cross-board prompt (when it fires) sits above
+          // the dismissed sheet, so `after()` must not wait on it.
+          void playNext({ item: { uuid: randomUUID(), climb }, queueItemUuid });
+          after();
+        },
+      });
+    }
+
+    // Play last: the bottom of Up next, today's plain add.
     items.push({
       id: 'queue',
-      title: t('mobile.climbRow.addToQueue'),
-      icon: 'add',
+      title: t('mobile.climbActions.playLast'),
+      icon: 'queue.last',
       color: successColor,
       run: () => {
-        // Fire-and-forget: the cross-board prompt (when it fires) sits above
-        // the dismissed sheet, so `after()` must not wait on it.
+        // Same fire-and-forget shape as Play next above.
         void addToQueue({ uuid: randomUUID(), climb });
         after();
       },
@@ -357,23 +375,6 @@ export function useClimbActions({
           // play route, under an overlay that is already on its way out.
           after();
           onOpenQueue();
-        },
-      });
-    }
-
-    // "Play next" is meaningless on the climb already on the wall, so it is hidden
-    // there rather than shown as a no-op.
-    if (climb.uuid !== activeClimbUuid) {
-      items.push({
-        id: 'playNext',
-        title: t('mobile.climbActions.playNext'),
-        icon: 'queue.next',
-        color: accentColor,
-        run: () => {
-          // Same fire-and-forget shape as the queue row above: the cross-board
-          // prompt sits above the dismissed sheet, so `after()` must not wait on it.
-          void playNext({ item: { uuid: randomUUID(), climb }, queueItemUuid });
-          after();
         },
       });
     }

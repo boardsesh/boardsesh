@@ -389,7 +389,7 @@ name: help screenshots
 - takeScreenshot: 12-preview
 
 # Climb actions — the long-press reaction menu over the first climb row: preview,
-# add to queue, add to playlist, favourite, log a tick, share, and the rest. The
+# Play next, Play last, add to playlist, favourite, log a tick, share, and the rest. The
 # most-missed interaction in the app, which is why the help pages teach it and why
 # it needed the param above. Two settles: the list has to have real rows before
 # the menu opens over them, and the menu animates in.

@@ -21,8 +21,8 @@ type QueueAddedSnackbarProps = {
   onDismiss: () => void;
   onOpen: () => void;
   duration?: number;
-  /** `kind: 'playNext'` swaps the message to the Play next confirmation.
-   *  Defaults to the plain "added to queue" copy. */
+  /** `kind: 'playNext'` confirms a Play next ("Playing next"). Defaults to the
+   *  Play last confirmation ("Playing last"). */
   queueAdded?: QueueAddedSnackbarOptions;
 };
 
@@ -30,17 +30,19 @@ type QueueAddedSnackbarProps = {
  *  Liquid Glass implementations can't drift apart. Literal keys (never
  *  `t(variable)`) so the i18n orphan scanner can see both.
  *
- *  `count` resolves the plural for the bulk playlist append (#4673). It defaults
- *  to 1, so every single-add path keeps the exact `added_one` wording it always
- *  had. A Play next is always one climb, so that branch takes no count. */
+ *  Both name where the climbs went, so a climber with a long queue knows whether
+ *  they will reach them soon (#6772). `count` resolves the plural for a whole
+ *  playlist going in (#4673). It defaults to 1, which every single-climb path
+ *  relies on. */
 function snackbarMessage(t: TFunction<'session'>, queueAdded: QueueAddedSnackbarOptions): string {
+  const count = queueAdded.count ?? 1;
   return queueAdded.kind === 'playNext'
-    ? t('mobile.queueSnackbar.playingNext')
-    : t('mobile.queueSnackbar.added', { count: queueAdded.count ?? 1 });
+    ? t('mobile.queueSnackbar.playingNext', { count })
+    : t('mobile.queueSnackbar.added', { count });
 }
 
 /**
- * Bottom-anchored "Climb added to queue · Open" snackbar that floats just above
+ * Bottom-anchored "Playing next · Open" / "Playing last · Open" snackbar that floats just above
  * the persistent queue bar. Rendered inside DrawerHostProvider so it can read
  * the queue state (to drop lower when the bar is hidden) and bind "Open" to the
  * host's `openQueueSheet`. Routes to a Material 3 Paper Snackbar on the Material

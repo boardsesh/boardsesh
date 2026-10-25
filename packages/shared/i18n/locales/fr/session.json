@@ -504,9 +504,10 @@
       "undoAria": "Remettre les blocs dans la file"
     },
     "queueSnackbar": {
-      "added_one": "Bloc ajouté à la file",
-      "added_other": "{{count}} blocs ajoutés à la file",
-      "playingNext": "Le bloc passe juste après",
+      "added_one": "Le bloc passe en dernier",
+      "added_other": "{{count}} blocs passent en dernier",
+      "playingNext_one": "Le bloc passe juste après",
+      "playingNext_other": "{{count}} blocs passent juste après",
       "open": "Ouvrir",
       "openAria": "Ouvrir la file"
     },

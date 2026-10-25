@@ -20,7 +20,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../use-playlist-activation', () => ({
   usePlaylistActivation: (options: UsePlaylistActivationOptions) => {
     mocks.options = options;
-    return { activate: mocks.activate, addToQueue: { isAppending: false } };
+    return { activate: mocks.activate, addToQueue: { pendingPlacement: null } };
   },
 }));
 vi.mock('../../../providers/queue-provider', () => ({ useIsSharedSession: () => mocks.isSharedSession }));

@@ -504,9 +504,10 @@
       "undoAria": "Devolver los bloques a la cola"
     },
     "queueSnackbar": {
-      "added_one": "Bloque añadido a la cola",
-      "added_other": "{{count}} bloques añadidos a la cola",
-      "playingNext": "El bloque va a continuación",
+      "added_one": "El bloque va al final de la cola",
+      "added_other": "{{count}} bloques van al final de la cola",
+      "playingNext_one": "El bloque va a continuación",
+      "playingNext_other": "{{count}} bloques van a continuación",
       "open": "Abrir",
       "openAria": "Abrir cola"
     },

@@ -28,7 +28,7 @@ import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { Appbar } from 'react-native-paper';
 import { useTranslation } from 'react-i18next';
 import type { BoardName, Climb as SchemaClimb } from '@boardsesh/shared-schema';
-import type { Climb } from '@boardsesh/queue';
+import type { Climb, QueueAddPlacement } from '@boardsesh/queue';
 import type { ReadyBoardArtSnapshot } from '../../lib/board-render/ready-board-art';
 import type { PlaylistActivationOptions } from '../../lib/playlists/use-playlist-activation';
 import { Text } from '../Text';
@@ -198,14 +198,15 @@ export type PlaylistDetailViewProps = {
    *  board-mismatch banner. Stays inside the existing FlashList header so no
    *  second scroll container is introduced. */
   headerSlot?: ReactNode;
-  /** Append every climb in this playlist behind the live queue, without clearing
-   *  anything or moving the current climb. Omit to hide the row — the callers
-   *  withhold it when there is no active board, so "no board picked" collapses
-   *  into "no row" instead of a control that can only report an empty fetch. */
-  onAddAllToQueue?: () => void;
-  /** True while that append is in flight (spinner in the row's trailing slot). */
-  isAddingAllToQueue?: boolean;
-  /** "Add 12 to queue": how many a filtered playlist would add. Omit for the plain label. */
+  /** Play next / Play last for the whole playlist: put every climb in it at the
+   *  top or the bottom of Up next, without clearing anything or moving the
+   *  current climb. Omit to hide the rows — the callers withhold it when there is
+   *  no active board, so "no board picked" collapses into "no rows" instead of
+   *  controls that can only report an empty fetch. */
+  onQueueAll?: (placement: QueueAddPlacement) => void;
+  /** Which of the two is in flight (spinner in that row's trailing slot), or null. */
+  pendingQueueAll?: QueueAddPlacement | null;
+  /** "Play 12 next": how many a filtered playlist would add. Omit for the plain labels. */
   addToQueueCount?: number;
   /**
    * The playlist's filter chrome (chip row, tokens, status line), placed right
@@ -286,8 +287,8 @@ export function PlaylistDetailView({
   onRemoveClimb,
   onEditDetails,
   headerSlot,
-  onAddAllToQueue,
-  isAddingAllToQueue = false,
+  onQueueAll,
+  pendingQueueAll = null,
   addToQueueCount,
   onRefresh,
   filterBar,
@@ -492,13 +493,14 @@ export function PlaylistDetailView({
   // a fresh closure each render — every renderItem rebuild (e.g. when the sticky
   // header `collapsed` flips during scroll) would otherwise re-render every row.
   const { openClimbActions, openAddToPlaylist } = useDrawerHost();
-  const { addToQueue } = useQueueActions();
+  const { playNext } = useQueueActions();
   const handleActivate = useCallback((tapped: SchemaClimb) => onActivateClimb(toQueueClimb(tapped)), [onActivateClimb]);
-  const handleAddToQueue = useCallback(
+  // A row's right swipe is Play next, the same as in search (#6772).
+  const handlePlayNext = useCallback(
     (climb: SchemaClimb) => {
-      void addToQueue(climbToQueueItem(climb));
+      void playNext({ item: climbToQueueItem(climb) });
     },
-    [addToQueue],
+    [playNext],
   );
 
   // List-level drag-to-reorder for edit mode. Always instantiated (hooks can't be
@@ -631,7 +633,7 @@ export function PlaylistDetailView({
           angle={resolvedRow.renderBoard.angle}
           onPress={handleActivate}
           onOpenActions={handleOpenActions}
-          onAddToQueue={handleAddToQueue}
+          onPlayNext={handlePlayNext}
           onOpenPlaylist={handleOpenPlaylist}
           unsupported={resolvedRow.incompatible}
           showProgress
@@ -647,7 +649,7 @@ export function PlaylistDetailView({
       onReorderClimb,
       handleActivate,
       handleOpenActions,
-      handleAddToQueue,
+      handlePlayNext,
       handleOpenPlaylist,
     ],
   );
@@ -728,8 +730,8 @@ export function PlaylistDetailView({
   // bulk control uses, plus "the host actually handed us a handler" (withheld
   // when there is no active board, since the board-scoped fetch would be empty).
   const addToQueueNode =
-    onAddAllToQueue && climbs.length > 0 && !boardBanner && !editMode ? (
-      <PlaylistAddToQueueRow onPress={onAddAllToQueue} isAppending={isAddingAllToQueue} count={addToQueueCount} />
+    onQueueAll && climbs.length > 0 && !boardBanner && !editMode ? (
+      <PlaylistAddToQueueRow onQueue={onQueueAll} pendingPlacement={pendingQueueAll} count={addToQueueCount} />
     ) : null;
 
   // ── Material 3 branch ───────────────────────────────────────────────────────

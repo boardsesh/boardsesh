@@ -78,7 +78,7 @@ type SmartParams = {
 };
 
 /**
- * The view whose rows are on screen: what the play drawer, Add to queue and the
+ * The view whose rows are on screen: what the play drawer, Play next / Play last and the
  * empty state use (the playlist screen's rule). `selection` is what was asked
  * for (null for the list's own order) and `activeBoardInput` the board the view
  * read, so the drawer's pages ask exactly what the rows on screen asked.
@@ -243,7 +243,7 @@ function SmartPlaylistBody({
   // While a new sort or filter loads, the previous view's rows stay up. The
   // settled view is the one those rows belong to, updated during render in the
   // same pass that shows the new rows (see the playlist screen), so the drawer's
-  // track, the activation source and Add to queue always follow what is on
+  // track, the activation source and Play next / Play last always follow what is on
   // screen. The guard compares keys, so it cannot loop. Rows a failed refetch
   // kept count as on screen too: they are what the climber sees.
   const [settledView, setSettledView] = useState<SettledSmartView>(PLAIN_SMART_VIEW);
@@ -293,7 +293,7 @@ function SmartPlaylistBody({
         boardName: settledBoardInput?.activeBoardName ?? board.boardName,
         page,
         pageSize,
-        // The view on screen, so the drawer swipes and Add to queue walk the
+        // The view on screen, so the drawer swipes and Play next / Play last walk the
         // same sorted, filtered rows the climber sees.
         ...(settledView.view ? { ...settledBoardInput, view: settledView.view } : {}),
       };
@@ -422,7 +422,7 @@ function SmartPlaylistBody({
     () => (showFilterControls ? { activeCount: activeFilterCount, onPress: openFilters } : null),
     [showFilterControls, activeFilterCount, openFilters],
   );
-  // "Add 12 to queue" while the rows on screen are filtered (`listAddToQueueCount`).
+  // "Play 12 next" and "Play 12 last" while the rows on screen are filtered (`listAddToQueueCount`).
   const settledFitsBoard = !!settledView.view?.onlyActiveBoard;
   const { hasNextPage } = query;
   const addToQueueCount = useMemo(
@@ -481,8 +481,8 @@ function SmartPlaylistBody({
         emptyIcon={emptyIcon}
         emptyState={emptyState}
         emptyAction={emptyAction}
-        onAddAllToQueue={playlistActivation.addToQueue.append}
-        isAddingAllToQueue={playlistActivation.addToQueue.isAppending}
+        onQueueAll={playlistActivation.addToQueue.queue}
+        pendingQueueAll={playlistActivation.addToQueue.pendingPlacement}
         addToQueueCount={addToQueueCount}
         onRefresh={query.refetch}
         filterBar={filterBar}

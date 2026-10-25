@@ -92,7 +92,7 @@ vi.mock('../../../lib/playlists/use-board-list-activation', async (importOrigina
 vi.mock('../../../lib/playlists/use-playlist-activation', () => ({
   usePlaylistActivation: (options: PlaylistActivationOptions) => {
     playlistActivation.options = options;
-    return { activate: playlistActivation.activate, addToQueue: { isAppending: false } };
+    return { activate: playlistActivation.activate, addToQueue: { pendingPlacement: null } };
   },
 }));
 vi.mock('../../../providers/queue-provider', () => ({ useIsSharedSession: () => false }));

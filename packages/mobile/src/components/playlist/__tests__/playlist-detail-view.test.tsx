@@ -27,7 +27,7 @@ const ctrl = vi.hoisted(() => ({
   navigation: null as unknown as { setOptions: (options: Record<string, unknown>) => void },
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
   fontScale: 1,
-  addToQueue: vi.fn(),
+  playNext: vi.fn(),
   openAddToPlaylist: vi.fn(),
   openClimbActions: vi.fn(),
   // The scroll-stage reaction (0 hero in view, 1 hero gone, 2 filter bar gone),
@@ -47,7 +47,7 @@ type CapturedClimbListRowProps = {
   unsupported?: boolean;
   showProgress?: boolean;
   onPress?: (climb: { uuid: string; name: string }) => void;
-  onAddToQueue?: (climb: SchemaClimb) => void;
+  onPlayNext?: (climb: SchemaClimb) => void;
   onOpenPlaylist?: (climb: SchemaClimb) => void;
   selected?: boolean;
 };
@@ -238,7 +238,7 @@ vi.mock('../../../providers/drawer-host-provider', () => ({
   }),
 }));
 vi.mock('../../../providers/queue-provider', () => ({
-  useQueueActions: () => ({ addToQueue: ctrl.addToQueue }),
+  useQueueActions: () => ({ playNext: ctrl.playNext }),
   useActiveClimbUuid: () => ctrl.activeClimbUuid,
 }));
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'queued-climb-uuid' }));
@@ -350,19 +350,19 @@ vi.mock('../../GlassSurface', () => ({
 
 vi.mock('../PlaylistAddToQueueRow', () => ({
   PlaylistAddToQueueRow: ({
-    onPress,
-    isAppending,
+    onQueue,
+    pendingPlacement,
     count,
   }: {
-    onPress: () => void;
-    isAppending: boolean;
+    onQueue: (placement: 'next' | 'end') => void;
+    pendingPlacement: 'next' | 'end' | null;
     count?: number;
   }) =>
     createElement('button', {
       'data-add-to-queue-row': 'true',
-      'data-appending': String(isAppending),
+      'data-pending': String(pendingPlacement),
       'data-count': count === undefined ? 'none' : String(count),
-      onClick: onPress,
+      onClick: () => onQueue('next'),
     }),
 }));
 
@@ -467,7 +467,7 @@ describe('PlaylistDetailView', () => {
   beforeEach(() => {
     ctrl.back.mockClear();
     ctrl.setOptions.mockClear();
-    ctrl.addToQueue.mockClear();
+    ctrl.playNext.mockClear();
     ctrl.openAddToPlaylist.mockClear();
     ctrl.openClimbActions.mockClear();
     ctrl.variant = 'liquidGlass';
@@ -820,18 +820,21 @@ describe('PlaylistDetailView', () => {
     });
   });
 
-  it('queues only the swiped climb without activating the playlist', () => {
+  it('plays only the swiped climb next, without activating the playlist', () => {
     const onActivateClimb = vi.fn();
     render(<PlaylistDetailView {...makeProps({ climbs: [KILTER_CLIMB, TENSION_CLIMB], onActivateClimb })} />);
 
     const tensionRow = capturedClimbRows[1]!;
-    expect(tensionRow.onAddToQueue).toBeTypeOf('function');
-    tensionRow.onAddToQueue?.(tensionRow.climb);
+    expect(tensionRow.onPlayNext).toBeTypeOf('function');
+    tensionRow.onPlayNext?.(tensionRow.climb);
 
-    expect(ctrl.addToQueue).toHaveBeenCalledExactlyOnceWith({
-      uuid: 'queued-climb-uuid',
-      suggested: undefined,
-      climb: expect.objectContaining({ uuid: 'tension-row', boardType: 'tension', layoutId: 9, angle: 35 }),
+    // The right swipe is Play next (#6772): the top of Up next, not the bottom.
+    expect(ctrl.playNext).toHaveBeenCalledExactlyOnceWith({
+      item: {
+        uuid: 'queued-climb-uuid',
+        suggested: undefined,
+        climb: expect.objectContaining({ uuid: 'tension-row', boardType: 'tension', layoutId: 9, angle: 35 }),
+      },
     });
     expect(onActivateClimb).not.toHaveBeenCalled();
   });
@@ -862,7 +865,7 @@ describe('PlaylistDetailView', () => {
       );
     }
     expect(ctrl.openAddToPlaylist).toHaveBeenCalledTimes(2);
-    expect(ctrl.addToQueue).not.toHaveBeenCalled();
+    expect(ctrl.playNext).not.toHaveBeenCalled();
   });
 
   it('keeps edit mode on reorder/remove rows without swipe actions', () => {
@@ -870,7 +873,7 @@ describe('PlaylistDetailView', () => {
 
     expect(capturedClimbRows).toHaveLength(0);
     expect(capturedEditRows).toHaveLength(1);
-    expect(ctrl.addToQueue).not.toHaveBeenCalled();
+    expect(ctrl.playNext).not.toHaveBeenCalled();
     expect(ctrl.openAddToPlaylist).not.toHaveBeenCalled();
   });
 
@@ -1155,7 +1158,7 @@ describe('PlaylistDetailView', () => {
     const CLIMBS = [CLIMB];
 
     function renderRow(overrides: Partial<PlaylistDetailViewProps> = {}) {
-      return render(<PlaylistDetailView {...makeProps({ climbs: CLIMBS, onAddAllToQueue: vi.fn(), ...overrides })} />);
+      return render(<PlaylistDetailView {...makeProps({ climbs: CLIMBS, onQueueAll: vi.fn(), ...overrides })} />);
     }
 
     it('renders in the list header on the glass variant', () => {
@@ -1182,13 +1185,18 @@ describe('PlaylistDetailView', () => {
       ]);
     });
 
-    it('forwards the press and the in-flight flag', () => {
-      const onAddAllToQueue = vi.fn();
-      const { container } = renderRow({ onAddAllToQueue, isAddingAllToQueue: true });
+    it('forwards the placement and which one is in flight', () => {
+      const onQueueAll = vi.fn();
+      const { container } = renderRow({ onQueueAll, pendingQueueAll: 'end' });
       const row = container.querySelector('[data-add-to-queue-row]') as HTMLButtonElement;
-      expect(row.getAttribute('data-appending')).toBe('true');
+      expect(row.getAttribute('data-pending')).toBe('end');
       fireEvent.click(row);
-      expect(onAddAllToQueue).toHaveBeenCalledTimes(1);
+      expect(onQueueAll).toHaveBeenCalledExactlyOnceWith('next');
+    });
+
+    it('passes no placement in flight by default', () => {
+      const { container } = renderRow();
+      expect(container.querySelector('[data-add-to-queue-row]')?.getAttribute('data-pending')).toBe('null');
     });
 
     it('is absent when the host withholds the handler (no active board)', () => {
@@ -1232,12 +1240,12 @@ describe('PlaylistDetailView', () => {
       act(() => ctrl.scrollStageReaction?.(stage, null));
     }
 
-    it('puts the filter bar under the hero, above the banner, Add to queue and discussion', () => {
+    it('puts the filter bar under the hero, above the banner, Play next / Play last and discussion', () => {
       const { container } = render(
         <PlaylistDetailView
           {...makeProps({
             climbs: [CLIMB],
-            onAddAllToQueue: vi.fn(),
+            onQueueAll: vi.fn(),
             filterBar: FILTER_BAR,
             headerSlot: <div data-discussion-slot="true" />,
           })}
@@ -1348,9 +1356,9 @@ describe('PlaylistDetailView', () => {
       expect(container.querySelector('[data-icon="playlist"]')).toBeNull();
     });
 
-    it('labels Add to queue with the filtered count', () => {
+    it('labels Play next / Play last with the filtered count', () => {
       const { container } = render(
-        <PlaylistDetailView {...makeProps({ climbs: [CLIMB], onAddAllToQueue: vi.fn(), addToQueueCount: 12 })} />,
+        <PlaylistDetailView {...makeProps({ climbs: [CLIMB], onQueueAll: vi.fn(), addToQueueCount: 12 })} />,
       );
       expect(container.querySelector('[data-add-to-queue-row]')?.getAttribute('data-count')).toBe('12');
     });

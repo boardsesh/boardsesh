@@ -21,12 +21,12 @@ import type { Climb as SchemaClimb } from '@boardsesh/shared-schema';
 const ctrl = vi.hoisted(() => ({
   back: vi.fn(),
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
-  addToQueue: vi.fn(),
+  playNext: vi.fn(),
   openAddToPlaylist: vi.fn(),
   openClimbActions: vi.fn(),
-  append: vi.fn(),
+  queueAll: vi.fn(),
   activate: vi.fn(),
-  busy: false,
+  pending: null as 'next' | 'end' | null,
   shared: false,
   boardMissing: false,
   empty: false,
@@ -41,7 +41,7 @@ type CapturedClimbListRowProps = {
   angle: number;
   unsupported?: boolean;
   onPress?: (climb: { uuid: string; name: string }) => void;
-  onAddToQueue?: (climb: SchemaClimb) => void;
+  onPlayNext?: (climb: SchemaClimb) => void;
   onOpenPlaylist?: (climb: SchemaClimb) => void;
 };
 
@@ -208,7 +208,7 @@ vi.mock('../../../../src/providers/drawer-host-provider', () => ({
   }),
 }));
 vi.mock('../../../../src/providers/queue-provider', () => ({
-  useQueueActions: () => ({ addToQueue: ctrl.addToQueue }),
+  useQueueActions: () => ({ playNext: ctrl.playNext }),
   useIsSharedSession: () => ctrl.shared,
   useActiveClimbUuid: () => null,
 }));
@@ -323,11 +323,17 @@ vi.mock('../../../../src/components/ProgressiveBlur', () => ({
 }));
 
 vi.mock('../../../../src/components/playlist/PlaylistAddToQueueRow', () => ({
-  PlaylistAddToQueueRow: ({ onPress, isAppending }: { onPress: () => void; isAppending: boolean }) =>
+  PlaylistAddToQueueRow: ({
+    onQueue,
+    pendingPlacement,
+  }: {
+    onQueue: (placement: 'next' | 'end') => void;
+    pendingPlacement: 'next' | 'end' | null;
+  }) =>
     createElement('button', {
       'data-add-to-queue-row': 'true',
-      'data-appending': String(isAppending),
-      onClick: onPress,
+      'data-pending': String(pendingPlacement),
+      onClick: () => onQueue('next'),
     }),
 }));
 
@@ -455,7 +461,7 @@ vi.mock('../../../../src/lib/playlists/use-playlist-render-board', () => ({
 vi.mock('../../../../src/lib/playlists/use-playlist-activation', () => ({
   usePlaylistActivation: () => ({
     activate: ctrl.activate,
-    addToQueue: { append: ctrl.append, isAppending: ctrl.busy },
+    addToQueue: { queue: ctrl.queueAll, pendingPlacement: ctrl.pending },
   }),
 }));
 vi.mock('../../../../src/lib/graphql/hooks/use-infinite-search-climbs', () => ({
@@ -481,7 +487,7 @@ afterEach(cleanup);
 beforeEach(() => {
   vi.clearAllMocks();
   ctrl.variant = 'liquidGlass';
-  ctrl.busy = false;
+  ctrl.pending = null;
   ctrl.shared = false;
   ctrl.boardMissing = false;
   ctrl.empty = false;
@@ -489,31 +495,31 @@ beforeEach(() => {
 describe('setter route with the real PlaylistDetailView', () => {
   it.each(['liquidGlass', 'material'] as const)('shows the append row on the %s route', (variant) => {
     ctrl.variant = variant;
-    ctrl.busy = true;
+    ctrl.pending = 'next';
     const screen = render(createElement(SetterPlaylist));
     expect(screen.container.querySelector('[data-climb-row]')).not.toBeNull();
     const row = screen.container.querySelector('[data-add-to-queue-row]');
     expect(row).not.toBeNull();
-    expect(row?.getAttribute('data-appending')).toBe('true');
+    expect(row?.getAttribute('data-pending')).toBe('next');
     fireEvent.click(row!);
-    expect(ctrl.append).toHaveBeenCalledOnce();
+    expect(ctrl.queueAll).toHaveBeenCalledExactlyOnceWith('next');
     expect(ctrl.activate).not.toHaveBeenCalled();
   });
   it.each(['liquidGlass', 'material'] as const)(
-    'real %s detail control forwards append and busy without activating',
+    'real %s detail control forwards the placement and the pending one without activating',
     (variant) => {
       ctrl.variant = variant;
       const screen = render(
         createElement(
           PlaylistDetailView,
-          makeProps({ climbs: [CLIMB], onAddAllToQueue: ctrl.append, isAddingAllToQueue: true }),
+          makeProps({ climbs: [CLIMB], onQueueAll: ctrl.queueAll, pendingQueueAll: 'end' }),
         ),
       );
       const row = screen.container.querySelector('[data-add-to-queue-row]');
       expect(row).not.toBeNull();
-      expect(row?.getAttribute('data-appending')).toBe('true');
+      expect(row?.getAttribute('data-pending')).toBe('end');
       fireEvent.click(row!);
-      expect(ctrl.append).toHaveBeenCalledOnce();
+      expect(ctrl.queueAll).toHaveBeenCalledExactlyOnceWith('next');
       expect(ctrl.activate).not.toHaveBeenCalled();
     },
   );

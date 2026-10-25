@@ -5,7 +5,7 @@ import { useMemo, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ClimbSearchInput } from '@boardsesh/shared-schema';
 import type { ReadyBoardArtSnapshot } from '../../board-render/ready-board-art';
-import { createPlaylistSuggestionSource } from '@boardsesh/queue';
+import { createPlaylistSuggestionSource, MAX_SYNCED_QUEUE_ITEMS } from '@boardsesh/queue';
 import type { Climb, ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { computeNavigationStateWithSuggestions, findNextQueueItemWithSuggestions } from '@boardsesh/play-view';
 import type { UsePlaylistClimbActivationOptions } from '@boardsesh/playlists-react';
@@ -1207,12 +1207,12 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       expect(mocks.activate).toHaveBeenCalledWith(climb);
     });
 
-    it('still lets Add to queue copy the list in', async () => {
+    it('still lets Play last copy the list in', async () => {
       const fetchPage = vi.fn().mockResolvedValue({ climbs: [makeClimb('a'), makeClimb('b')], hasMore: false });
       const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       await act(async () => {
-        result.current.addToQueue.append?.();
+        result.current.addToQueue.queue?.('end');
       });
 
       await waitFor(() => expect(mocks.appendQueueItems).toHaveBeenCalledTimes(1));
@@ -1567,7 +1567,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       expect(mocks.appendQueueItems).not.toHaveBeenCalled();
     });
 
-    it('appends instead of clearing when the climber picks "Add to queue"', async () => {
+    it('appends instead of clearing when the climber picks "Play last"', async () => {
       const current = makeQueueItem('q-current', 'current');
       const future = makeQueueItem('q-future', 'future');
       mocks.queueState = { queue: [current, future], currentClimbQueueItem: current };
@@ -1615,7 +1615,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       expect(commitOptions).toEqual({ playlistSuggestionSource: null });
     });
 
-    describe('swiping on after "Add to queue"', () => {
+    describe('swiping on after the prompt picks "Play last"', () => {
       // A queue that behaves like the provider's: a commit slots its climb in
       // after the current one (or moves to it when it is already queued), a
       // batch lands at the tail, and a track is kept when one is handed over.
@@ -1832,7 +1832,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       expect(mocks.showToast).not.toHaveBeenCalled();
     });
 
-    it('queues the tapped climb once when climbs land while the list loads and the climber picks "Add to queue"', async () => {
+    it('queues the tapped climb once when climbs land while the list loads and the climber picks "Play last"', async () => {
       // Nothing queued at the tap, so the queue is seeded with the tapped climb
       // and the list loads behind it. A climb queued during the load raises the
       // prompt again once the list is in hand.
@@ -1897,10 +1897,10 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
 
       // Row append starts and is still paging...
       act(() => {
-        result.current.addToQueue.append?.();
+        result.current.addToQueue.queue?.('end');
       });
       // ...then a row tap raises the fork and the climber deliberately picks
-      // "Add to queue". The re-entrancy guard swallows it, so it has to say so —
+      // "Play last". The re-entrancy guard swallows it, so it has to say so —
       // an explicit pick that does nothing at all is the bug.
       await act(async () => {
         await result.current.activate(makeClimb('b'));
@@ -2565,7 +2565,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       await act(async () => {
-        result.current.addToQueue.append?.();
+        result.current.addToQueue.queue?.('end');
       });
 
       await waitFor(() => expect(mocks.appendQueueItems).toHaveBeenCalledTimes(1));
@@ -2581,7 +2581,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       await act(async () => {
-        result.current.addToQueue.append?.();
+        result.current.addToQueue.queue?.('end');
       });
 
       await waitFor(() => expect(mocks.appendQueueItems).toHaveBeenCalled());
@@ -2600,7 +2600,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       await act(async () => {
-        result.current.addToQueue.append?.();
+        result.current.addToQueue.queue?.('end');
       });
 
       await waitFor(() => expect(mocks.appendQueueItems).toHaveBeenCalled());
@@ -2612,7 +2612,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       await act(async () => {
-        result.current.addToQueue.append?.();
+        result.current.addToQueue.queue?.('end');
       });
 
       // The bulk append bypasses `commitQueueAdd`, which is what fires this for a
@@ -2630,7 +2630,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       await act(async () => {
-        result.current.addToQueue.append?.();
+        result.current.addToQueue.queue?.('end');
       });
 
       await waitFor(() => expect(mocks.track).toHaveBeenCalled());
@@ -2657,7 +2657,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       await act(async () => {
-        result.current.addToQueue.append?.();
+        result.current.addToQueue.queue?.('end');
       });
 
       await waitFor(() => {
@@ -2676,7 +2676,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       };
       const { result: full } = renderActivation(vi.fn(), { honorPlaylistLoadSetting: true });
       await act(async () => {
-        full.current.addToQueue.append?.();
+        full.current.addToQueue.queue?.('end');
       });
       await waitFor(() => expect(mocks.track).toHaveBeenCalledTimes(1));
       expect(mocks.track.mock.calls[0][1]).toMatchObject({ outcome: 'queueFull', fetchedCount: 0, appendedCount: 0 });
@@ -2686,7 +2686,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const emptyFetch = vi.fn().mockResolvedValue({ climbs: [], hasMore: false });
       const { result: empty } = renderActivation(emptyFetch, { honorPlaylistLoadSetting: true });
       await act(async () => {
-        empty.current.addToQueue.append?.();
+        empty.current.addToQueue.queue?.('end');
       });
       await waitFor(() => expect(mocks.track).toHaveBeenCalledTimes(1));
       expect(mocks.track.mock.calls[0][1]).toMatchObject({
@@ -2702,7 +2702,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       await act(async () => {
-        result.current.addToQueue.append?.();
+        result.current.addToQueue.queue?.('end');
       });
 
       await waitFor(() => expect(mocks.track).toHaveBeenCalled());
@@ -2719,7 +2719,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       await act(async () => {
-        result.current.addToQueue.append?.();
+        result.current.addToQueue.queue?.('end');
       });
 
       await waitFor(() => {
@@ -2738,7 +2738,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       await act(async () => {
-        result.current.addToQueue.append?.();
+        result.current.addToQueue.queue?.('end');
       });
 
       await waitFor(() => expect(mocks.appendQueueItems).toHaveBeenCalled());
@@ -2757,7 +2757,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       });
 
       await act(async () => {
-        result.current.addToQueue.append?.();
+        result.current.addToQueue.queue?.('end');
       });
 
       await waitFor(() => {
@@ -2779,7 +2779,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       });
 
       await act(async () => {
-        result.current.addToQueue.append?.();
+        result.current.addToQueue.queue?.('end');
       });
 
       expect(fetchPage).toHaveBeenCalledTimes(1);
@@ -2800,7 +2800,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       await act(async () => {
-        result.current.addToQueue.append?.();
+        result.current.addToQueue.queue?.('end');
       });
 
       await waitFor(() => {
@@ -2827,7 +2827,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       });
 
       await act(async () => {
-        result.current.addToQueue.append?.();
+        result.current.addToQueue.queue?.('end');
       });
       await waitFor(() => expect(mocks.reportHandledError).toHaveBeenCalledTimes(1));
 
@@ -2851,8 +2851,8 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       act(() => {
-        result.current.addToQueue.append?.();
-        result.current.addToQueue.append?.();
+        result.current.addToQueue.queue?.('end');
+        result.current.addToQueue.queue?.('end');
       });
 
       expect(fetchPage).toHaveBeenCalledTimes(1);
@@ -2868,7 +2868,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       await act(async () => {
-        result.current.addToQueue.append?.();
+        result.current.addToQueue.queue?.('end');
       });
 
       await waitFor(() => {
@@ -2888,7 +2888,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       });
 
       await act(async () => {
-        result.current.addToQueue.append?.();
+        result.current.addToQueue.queue?.('end');
       });
 
       await waitFor(() => expect(mocks.track).toHaveBeenCalled());
@@ -2903,8 +2903,8 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       // view's render gate hides the row.
       mocks.activeBoard = null;
       const { result } = renderActivation(vi.fn(), { honorPlaylistLoadSetting: true });
-      expect(result.current.addToQueue.append).toBeUndefined();
-      expect(result.current.addToQueue.isAppending).toBe(false);
+      expect(result.current.addToQueue.queue).toBeUndefined();
+      expect(result.current.addToQueue.pendingPlacement).toBeNull();
     });
 
     it('a row tap mid-append does not abort the append', async () => {
@@ -2921,7 +2921,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
 
       act(() => {
-        result.current.addToQueue.append?.();
+        result.current.addToQueue.queue?.('end');
       });
       // Separate AbortController refs, so the tap's replacement can't cancel the
       // append that is already paging.
@@ -2934,6 +2934,160 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
 
       await waitFor(() => expect(mocks.appendQueueItems).toHaveBeenCalledTimes(1));
       expect(mocks.appendQueueItems.mock.calls[0][0].map((item) => item.climb.uuid)).toEqual(['a']);
+    });
+
+    it('tells analytics a Play last went to the end', async () => {
+      const fetchPage = vi.fn().mockResolvedValue({ climbs: [makeClimb('a')], hasMore: false });
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
+
+      await act(async () => {
+        result.current.addToQueue.queue?.('end');
+      });
+
+      await waitFor(() => expect(mocks.track).toHaveBeenCalled());
+      expect(mocks.track.mock.calls[0][1]).toMatchObject({ placement: 'end', outcome: 'added' });
+    });
+  });
+
+  // #6772: a playlist offers Play next as well as Play last. Play next puts the
+  // whole list at the top of Up next, in list order, through the same provider
+  // batch as the append, so the cap and every outcome toast are shared.
+  describe('Play next for the whole list', () => {
+    it('hands the provider the list in order, for the top of Up next', async () => {
+      const fetchPage = vi
+        .fn()
+        .mockResolvedValueOnce({ climbs: [makeClimb('a'), makeClimb('b')], hasMore: true })
+        .mockResolvedValueOnce({ climbs: [makeClimb('c')], hasMore: false });
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
+
+      await act(async () => {
+        result.current.addToQueue.queue?.('next');
+      });
+
+      await waitFor(() => expect(mocks.appendQueueItems).toHaveBeenCalledTimes(1));
+      expect(mocks.appendQueueItems.mock.calls[0][0].map((item) => item.climb.uuid)).toEqual(['a', 'b', 'c']);
+      // A placement, never `activateFirstWhenIdle`: a Play next must not take the wall.
+      expect(mocks.appendQueueItems.mock.calls[0][1]).toEqual({ placement: 'next' });
+      expect(mocks.setQueue).not.toHaveBeenCalled();
+      expect(mocks.choose).not.toHaveBeenCalled();
+    });
+
+    it('confirms "Playing next" once, with the count that landed', async () => {
+      const fetchPage = vi.fn().mockResolvedValue({ climbs: [makeClimb('a'), makeClimb('b')], hasMore: false });
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
+
+      await act(async () => {
+        result.current.addToQueue.queue?.('next');
+      });
+
+      await waitFor(() => expect(mocks.showQueueAddedSnackbar).toHaveBeenCalledTimes(1));
+      expect(mocks.showQueueAddedSnackbar).toHaveBeenCalledWith({ kind: 'playNext', count: 2 });
+      expect(mocks.showToast).not.toHaveBeenCalled();
+      expect(mocks.track.mock.calls[0][1]).toMatchObject({
+        entryPoint: 'listHeader',
+        placement: 'next',
+        outcome: 'added',
+        fetchedCount: 2,
+        appendedCount: 2,
+      });
+    });
+
+    it('says the queue is full, and fetches nothing, when it is already at the cap', async () => {
+      mocks.queueState = {
+        queue: Array.from({ length: MAX_SYNCED_QUEUE_ITEMS }, (_unused, index) =>
+          makeQueueItem(`q-${index}`, `c-${index}`),
+        ),
+        currentClimbQueueItem: null,
+      };
+      const fetchPage = vi.fn();
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
+
+      await act(async () => {
+        result.current.addToQueue.queue?.('next');
+      });
+
+      await waitFor(() => {
+        expect(mocks.showToast).toHaveBeenCalledWith('detail.addToQueue.queueFull', 'error');
+      });
+      expect(fetchPage).not.toHaveBeenCalled();
+      expect(mocks.appendQueueItems).not.toHaveBeenCalled();
+      expect(mocks.showQueueAddedSnackbar).not.toHaveBeenCalled();
+      expect(mocks.track.mock.calls[0][1]).toMatchObject({ placement: 'next', outcome: 'queueFull' });
+    });
+
+    it('fetches only what still fits under the cap, and confirms that count', async () => {
+      mocks.queueState = {
+        queue: Array.from({ length: MAX_SYNCED_QUEUE_ITEMS - 1 }, (_unused, index) =>
+          makeQueueItem(`q-${index}`, `c-${index}`),
+        ),
+        currentClimbQueueItem: null,
+      };
+      const fetchPage = vi.fn().mockResolvedValue({ climbs: [makeClimb('a'), makeClimb('b')], hasMore: false });
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
+
+      await act(async () => {
+        result.current.addToQueue.queue?.('next');
+      });
+
+      await waitFor(() => expect(mocks.showQueueAddedSnackbar).toHaveBeenCalledTimes(1));
+      // One slot left: the drain stops at it, so only the list's first climb goes in.
+      expect(mocks.appendQueueItems.mock.calls[0][0].map((item) => item.climb.uuid)).toEqual(['a']);
+      expect(mocks.showQueueAddedSnackbar).toHaveBeenCalledWith({ kind: 'playNext', count: 1 });
+      expect(mocks.track.mock.calls[0][1]).toMatchObject({ placement: 'next', fetchedCount: 1, appendedCount: 1 });
+    });
+
+    it('confirms the count the provider clamped, not what was fetched', async () => {
+      const fetchPage = vi.fn().mockResolvedValue({ climbs: [makeClimb('a'), makeClimb('b')], hasMore: false });
+      mocks.appendQueueItems.mockReturnValue(1);
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
+
+      await act(async () => {
+        result.current.addToQueue.queue?.('next');
+      });
+
+      await waitFor(() => expect(mocks.showQueueAddedSnackbar).toHaveBeenCalledTimes(1));
+      expect(mocks.showQueueAddedSnackbar).toHaveBeenCalledWith({ kind: 'playNext', count: 1 });
+      expect(mocks.track.mock.calls[0][1]).toMatchObject({ placement: 'next', outcome: 'addedPartial' });
+    });
+
+    it('shows the queue-full error when the provider takes none of the batch', async () => {
+      const fetchPage = vi.fn().mockResolvedValue({ climbs: [makeClimb('a')], hasMore: false });
+      mocks.appendQueueItems.mockReturnValue(0);
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
+
+      await act(async () => {
+        result.current.addToQueue.queue?.('next');
+      });
+
+      await waitFor(() => {
+        expect(mocks.showToast).toHaveBeenCalledWith('detail.addToQueue.queueFull', 'error');
+      });
+      expect(mocks.showQueueAddedSnackbar).not.toHaveBeenCalled();
+    });
+
+    it('marks which placement is in flight, and lands one list at a time', async () => {
+      let releaseFetch: (page: { climbs: Climb[]; hasMore: boolean }) => void = () => {};
+      const fetchPage = vi.fn(
+        () =>
+          new Promise<{ climbs: Climb[]; hasMore: boolean }>((resolve) => {
+            releaseFetch = resolve;
+          }),
+      );
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
+
+      act(() => result.current.addToQueue.queue?.('next'));
+      await waitFor(() => expect(result.current.addToQueue.pendingPlacement).toBe('next'));
+      // A Play last tapped while the Play next is still loading does nothing.
+      act(() => result.current.addToQueue.queue?.('end'));
+      expect(fetchPage).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        releaseFetch({ climbs: [makeClimb('a')], hasMore: false });
+      });
+
+      await waitFor(() => expect(result.current.addToQueue.pendingPlacement).toBeNull());
+      expect(mocks.appendQueueItems).toHaveBeenCalledTimes(1);
+      expect(mocks.appendQueueItems.mock.calls[0][1]).toEqual({ placement: 'next' });
     });
   });
 });
@@ -2994,7 +3148,7 @@ describe('account change during playlist activation', () => {
         }),
     );
     const { result } = renderActivation(fetchPage);
-    act(() => result.current.addToQueue.append?.());
+    act(() => result.current.addToQueue.queue?.('end'));
     expect(fetchPage).toHaveBeenCalledTimes(1);
 
     await act(async () => {
@@ -3002,7 +3156,7 @@ describe('account change during playlist activation', () => {
       releaseFetch({ climbs: [makeClimb('withdrawn')], hasMore: false });
     });
 
-    await waitFor(() => expect(result.current.addToQueue.isAppending).toBe(false));
+    await waitFor(() => expect(result.current.addToQueue.pendingPlacement).toBeNull());
     expect(mocks.appendQueueItems).not.toHaveBeenCalled();
     expect(mocks.showQueueAddedSnackbar).not.toHaveBeenCalled();
     expect(mocks.showToast).not.toHaveBeenCalled();

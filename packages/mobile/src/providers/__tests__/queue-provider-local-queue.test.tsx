@@ -1555,6 +1555,196 @@ describe('QueueProvider local solo queue', () => {
     expect(snapshots.at(-1)?.state.queue.map((entry) => entry.uuid)).toEqual(['gen-1', 'gen-2', 'gen-3']);
   });
 
+  // #6772: a playlist's Play next puts the whole list at the top of Up next, in
+  // list order, through the same batch as the append.
+  describe("appendQueueItems with placement 'next'", () => {
+    it('slots the batch, in order, right behind the current climb and keeps the climbs after it', async () => {
+      const itemA = makeQueueItem('item-a');
+      const itemB = makeQueueItem('item-b');
+      const itemC = makeQueueItem('item-c');
+      queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(storedSnapshot([itemA, itemB, itemC], itemB));
+
+      const snapshots: Snapshot[] = [];
+      renderProvider((snapshot) => snapshots.push(snapshot));
+      await waitFor(() => {
+        expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('item-b');
+      });
+
+      let landedCount = -1;
+      act(() => {
+        landedCount =
+          snapshots
+            .at(-1)
+            ?.appendQueueItems([makeQueueItem('list-1'), makeQueueItem('list-2')], { placement: 'next' }) ?? -1;
+      });
+
+      expect(landedCount).toBe(2);
+      await waitFor(() => {
+        expect(snapshots.at(-1)?.state.queue.map((entry) => entry.uuid)).toEqual([
+          'item-a',
+          'item-b',
+          'list-1',
+          'list-2',
+          'item-c',
+        ]);
+      });
+      expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('item-b');
+    });
+
+    it('starts at the head when nothing is current, and still activates nothing', async () => {
+      const itemA = makeQueueItem('item-a');
+      queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(storedSnapshot([itemA], null));
+
+      const snapshots: Snapshot[] = [];
+      renderProvider((snapshot) => snapshots.push(snapshot));
+      await waitFor(() => {
+        expect(snapshots.at(-1)?.state.queue.map((entry) => entry.uuid)).toEqual(['item-a']);
+      });
+
+      queueMutations.setQueue.mockClear();
+      act(() => {
+        snapshots.at(-1)?.appendQueueItems([makeQueueItem('list-1'), makeQueueItem('list-2')], { placement: 'next' });
+      });
+
+      await waitFor(() => {
+        expect(snapshots.at(-1)?.state.queue.map((entry) => entry.uuid)).toEqual(['list-1', 'list-2', 'item-a']);
+      });
+      expect(snapshots.at(-1)?.state.currentClimbQueueItem).toBeNull();
+      expect(queueMutations.setQueue).not.toHaveBeenCalled();
+    });
+
+    it('sends per-item adds at consecutive positions, in list order, when nothing is current', async () => {
+      // No pointer: the batch goes out as ADD_QUEUE_ITEMs (never a pointer-
+      // clearing setQueue), each with the position it took locally, so peers
+      // see the list at the head in the same order.
+      sessionStore.getStoredSessionId.mockResolvedValue('session-1');
+      http.request.mockImplementation((operation: string) =>
+        operation.includes('SessionStatus')
+          ? Promise.resolve({ sessionStatus: 'active' })
+          : Promise.resolve({ createSession: { id: 'session-new' } }),
+      );
+      queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(null);
+
+      const snapshots: Snapshot[] = [];
+      renderProvider((snapshot) => snapshots.push(snapshot));
+      await waitFor(() => {
+        expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+      });
+
+      queueMutations.setQueue.mockClear();
+      queueMutations.addQueueItem.mockClear();
+      act(() => {
+        snapshots
+          .at(-1)
+          ?.appendQueueItems([makeQueueItem('list-1'), makeQueueItem('list-2'), makeQueueItem('list-3')], {
+            placement: 'next',
+          });
+      });
+
+      await waitFor(() => expect(queueMutations.addQueueItem).toHaveBeenCalledTimes(3));
+      expect(queueMutations.setQueue).not.toHaveBeenCalled();
+      expect(queueMutations.addQueueItem.mock.calls.map(([item, position]) => [item.uuid, position])).toEqual([
+        ['list-1', 0],
+        ['list-2', 1],
+        ['list-3', 2],
+      ]);
+    });
+
+    it('broadcasts the merged queue with the list behind the carried current to party peers', async () => {
+      sessionStore.getStoredSessionId.mockResolvedValue('session-1');
+      http.request.mockImplementation((operation: string) =>
+        operation.includes('SessionStatus')
+          ? Promise.resolve({ sessionStatus: 'active' })
+          : Promise.resolve({ createSession: { id: 'session-new' } }),
+      );
+      queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(null);
+
+      const snapshots: Snapshot[] = [];
+      renderProvider((snapshot) => snapshots.push(snapshot));
+      await waitFor(() => {
+        expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+      });
+
+      const itemA = makeQueueItem('item-a');
+      act(() => {
+        snapshots.at(-1)?.setCurrentClimb(itemA);
+      });
+      await waitFor(() => {
+        expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('item-a');
+      });
+      act(() => {
+        snapshots.at(-1)?.appendQueueItems([makeQueueItem('later')]);
+      });
+      await waitFor(() => expect(snapshots.at(-1)?.state.queue.map((entry) => entry.uuid)).toContain('later'));
+
+      queueMutations.setQueue.mockClear();
+      act(() => {
+        snapshots.at(-1)?.appendQueueItems([makeQueueItem('list-1'), makeQueueItem('list-2')], { placement: 'next' });
+      });
+
+      await waitFor(() => expect(queueMutations.setQueue).toHaveBeenCalled());
+      const [wireQueue = [], wireCurrent] = queueMutations.setQueue.mock.calls.at(-1) ?? [];
+      expect(wireQueue.map((entry: { uuid: string }) => entry.uuid)).toEqual(['item-a', 'list-1', 'list-2', 'later']);
+      expect(wireCurrent?.uuid).toBe('item-a');
+    });
+
+    it('clamps to MAX_SYNCED_QUEUE_ITEMS, keeping the head of the list', async () => {
+      const seeded = Array.from({ length: MAX_SYNCED_QUEUE_ITEMS - 2 }, (_unused, index) =>
+        makeQueueItem(`seed-${index}`),
+      );
+      queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(storedSnapshot(seeded, seeded[0]));
+
+      const snapshots: Snapshot[] = [];
+      renderProvider((snapshot) => snapshots.push(snapshot));
+      await waitFor(() => {
+        expect(snapshots.at(-1)?.state.queue.length).toBe(MAX_SYNCED_QUEUE_ITEMS - 2);
+      });
+
+      let landedCount = -1;
+      act(() => {
+        landedCount =
+          snapshots.at(-1)?.appendQueueItems(
+            Array.from({ length: 5 }, (_unused, index) => makeQueueItem(`list-${index}`)),
+            { placement: 'next' },
+          ) ?? -1;
+      });
+
+      expect(landedCount).toBe(2);
+      await waitFor(() => {
+        expect(snapshots.at(-1)?.state.queue.length).toBe(MAX_SYNCED_QUEUE_ITEMS);
+      });
+      expect(
+        snapshots
+          .at(-1)
+          ?.state.queue.slice(0, 4)
+          .map((entry) => entry.uuid),
+      ).toEqual(['seed-0', 'list-0', 'list-1', 'seed-1']);
+    });
+
+    it('returns 0 and changes nothing when the queue is already at the cap', async () => {
+      const seeded = Array.from({ length: MAX_SYNCED_QUEUE_ITEMS }, (_unused, index) => makeQueueItem(`seed-${index}`));
+      queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(storedSnapshot(seeded, seeded[0]));
+
+      const snapshots: Snapshot[] = [];
+      renderProvider((snapshot) => snapshots.push(snapshot));
+      await waitFor(() => {
+        expect(snapshots.at(-1)?.state.queue.length).toBe(MAX_SYNCED_QUEUE_ITEMS);
+      });
+
+      queueMutations.setQueue.mockClear();
+      queueMutations.addQueueItem.mockClear();
+      let landedCount = -1;
+      act(() => {
+        landedCount = snapshots.at(-1)?.appendQueueItems([makeQueueItem('overflow')], { placement: 'next' }) ?? -1;
+      });
+
+      expect(landedCount).toBe(0);
+      expect(snapshots.at(-1)?.state.queue[1]?.uuid).toBe('seed-1');
+      expect(queueMutations.setQueue).not.toHaveBeenCalled();
+      expect(queueMutations.addQueueItem).not.toHaveBeenCalled();
+    });
+  });
+
   it('appendQueueItems clamps the batch to MAX_SYNCED_QUEUE_ITEMS and returns what landed', async () => {
     const seeded = Array.from({ length: MAX_SYNCED_QUEUE_ITEMS - 5 }, (_unused, index) =>
       makeQueueItem(`seed-${index}`),

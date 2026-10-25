@@ -225,7 +225,7 @@ export type NowOnTheWallPanelProps = {
   /** Activate/open a climb from the wall feed. The panel closes itself after this (sheet). */
   onClimbPress?: (action: BoardSheetClimbAction) => void;
   /** Swipe action: append this wall-feed climb to the queue. */
-  onAddToQueue?: (action: BoardSheetClimbAction) => void;
+  onPlayNext?: (action: BoardSheetClimbAction) => void;
   /** Swipe action: open the add-to-playlist sheet for this climb. */
   onOpenPlaylist?: (action: BoardSheetClimbAction) => void;
   /** Long press action: open the existing climb actions sheet. */
@@ -246,7 +246,7 @@ function NowOnTheWallPanelComponent(
     viewerUserId,
     onSelectGymWall,
     onClimbPress,
-    onAddToQueue,
+    onPlayNext,
     onOpenPlaylist,
     onOpenActions,
   }: NowOnTheWallPanelProps,
@@ -389,7 +389,7 @@ function NowOnTheWallPanelComponent(
     () => (boardConfig ? rowBoardForBoardConfig(boardConfig) : null),
     [boardConfig],
   );
-  const canUseInteractiveRows = !!rowBoard && (!!onClimbPress || !!onAddToQueue || !!onOpenPlaylist || !!onOpenActions);
+  const canUseInteractiveRows = !!rowBoard && (!!onClimbPress || !!onPlayNext || !!onOpenPlaylist || !!onOpenActions);
 
   const getActionContext = useCallback((presenceClimb: BoardPresenceClimb) => {
     return actionContextForPresenceClimb(boardConfigRef.current, presenceClimb);
@@ -586,12 +586,12 @@ function NowOnTheWallPanelComponent(
     [onClimbPress, runInteractiveAction, wallTrackLabel],
   );
 
-  const handleInteractiveAddToQueue = useCallback(
+  const handleInteractivePlayNext = useCallback(
     (presenceClimb: BoardPresenceClimb) => {
-      if (!onAddToQueue) return;
-      runInteractiveAction(presenceClimb, onAddToQueue);
+      if (!onPlayNext) return;
+      runInteractiveAction(presenceClimb, onPlayNext);
     },
-    [onAddToQueue, runInteractiveAction],
+    [onPlayNext, runInteractiveAction],
   );
 
   const handleInteractiveOpenPlaylist = useCallback(
@@ -661,7 +661,7 @@ function NowOnTheWallPanelComponent(
             gradeColor={gradeColor}
             isActionLoading={isActionLoading(item)}
             onPress={onClimbPress ? handleInteractiveClimbPress : undefined}
-            onAddToQueue={handleInteractiveAddToQueue}
+            onPlayNext={handleInteractivePlayNext}
             onOpenPlaylist={handleInteractiveOpenPlaylist}
             onOpenActions={handleInteractiveOpenActions}
           />
@@ -687,7 +687,7 @@ function NowOnTheWallPanelComponent(
       systemColors.secondaryLabel,
       resolveGrade,
       handleInteractiveClimbPress,
-      handleInteractiveAddToQueue,
+      handleInteractivePlayNext,
       handleInteractiveOpenPlaylist,
       handleInteractiveOpenActions,
       isActionLoading,
@@ -745,7 +745,7 @@ function NowOnTheWallPanelComponent(
               gradeColor={heroGrade.color}
               isActionLoading={heroActionLoading}
               onPress={onClimbPress ? handleInteractiveClimbPress : undefined}
-              onAddToQueue={handleInteractiveAddToQueue}
+              onPlayNext={handleInteractivePlayNext}
               onOpenPlaylist={handleInteractiveOpenPlaylist}
               onOpenActions={handleInteractiveOpenActions}
             />
@@ -848,7 +848,7 @@ function NowOnTheWallPanelComponent(
     canUseInteractiveRows,
     rowBoard,
     handleInteractiveClimbPress,
-    handleInteractiveAddToQueue,
+    handleInteractivePlayNext,
     handleInteractiveOpenPlaylist,
     handleInteractiveOpenActions,
     heroActionLoading,
@@ -1066,7 +1066,7 @@ type HeroProps = {
 
 type InteractiveRowActionProps = {
   onPress?: (climb: BoardPresenceClimb) => void;
-  onAddToQueue?: (climb: BoardPresenceClimb) => void;
+  onPlayNext?: (climb: BoardPresenceClimb) => void;
   onOpenPlaylist?: (climb: BoardPresenceClimb) => void;
   onOpenActions?: (climb: BoardPresenceClimb) => void;
 };
@@ -1167,7 +1167,7 @@ const InteractiveHeroRow = memo(function InteractiveHeroRowInner({
   gradeColor,
   isActionLoading,
   onPress,
-  onAddToQueue,
+  onPlayNext,
   onOpenPlaylist,
   onOpenActions,
 }: InteractiveHeroRowProps) {
@@ -1184,9 +1184,9 @@ const InteractiveHeroRow = memo(function InteractiveHeroRowInner({
   const handlePress = useCallback(() => {
     onPress?.(climb);
   }, [climb, onPress]);
-  const handleAddToQueue = useCallback(() => {
-    onAddToQueue?.(climb);
-  }, [climb, onAddToQueue]);
+  const handlePlayNext = useCallback(() => {
+    onPlayNext?.(climb);
+  }, [climb, onPlayNext]);
   const handleOpenPlaylist = useCallback(() => {
     onOpenPlaylist?.(climb);
   }, [climb, onOpenPlaylist]);
@@ -1222,7 +1222,7 @@ const InteractiveHeroRow = memo(function InteractiveHeroRowInner({
       setIds={climbRowBoard.setIds}
       angle={climbRowBoard.angle}
       onPress={onPress ? handlePress : undefined}
-      onAddToQueue={onAddToQueue ? handleAddToQueue : undefined}
+      onPlayNext={onPlayNext ? handlePlayNext : undefined}
       onOpenPlaylist={onOpenPlaylist ? handleOpenPlaylist : undefined}
       onOpenActions={onOpenActions ? handleOpenActions : undefined}
       containerStyle={styles.heroInteractiveContainer}
@@ -1377,7 +1377,7 @@ const InteractiveHistoryRow = memo(function InteractiveHistoryRowInner({
   gradeColor,
   isActionLoading,
   onPress,
-  onAddToQueue,
+  onPlayNext,
   onOpenPlaylist,
   onOpenActions,
 }: InteractiveHistoryRowProps) {
@@ -1393,9 +1393,9 @@ const InteractiveHistoryRow = memo(function InteractiveHistoryRowInner({
   const handlePress = useCallback(() => {
     onPress?.(climb);
   }, [climb, onPress]);
-  const handleAddToQueue = useCallback(() => {
-    onAddToQueue?.(climb);
-  }, [climb, onAddToQueue]);
+  const handlePlayNext = useCallback(() => {
+    onPlayNext?.(climb);
+  }, [climb, onPlayNext]);
   const handleOpenPlaylist = useCallback(() => {
     onOpenPlaylist?.(climb);
   }, [climb, onOpenPlaylist]);
@@ -1429,7 +1429,7 @@ const InteractiveHistoryRow = memo(function InteractiveHistoryRowInner({
       setIds={climbRowBoard.setIds}
       angle={climbRowBoard.angle}
       onPress={onPress ? handlePress : undefined}
-      onAddToQueue={onAddToQueue ? handleAddToQueue : undefined}
+      onPlayNext={onPlayNext ? handlePlayNext : undefined}
       onOpenPlaylist={onOpenPlaylist ? handleOpenPlaylist : undefined}
       onOpenActions={onOpenActions ? handleOpenActions : undefined}
       contentRowStyle={styles.historyInteractiveRow}

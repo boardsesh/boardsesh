@@ -504,9 +504,10 @@
       "undoAria": "Boulder zurück in die Warteschlange"
     },
     "queueSnackbar": {
-      "added_one": "Boulder in die Warteschlange gelegt",
-      "added_other": "{{count}} Boulder in die Warteschlange gelegt",
-      "playingNext": "Boulder kommt als Nächstes dran",
+      "added_one": "Boulder kommt als Letztes dran",
+      "added_other": "{{count}} Boulder kommen als Letztes dran",
+      "playingNext_one": "Boulder kommt als Nächstes dran",
+      "playingNext_other": "{{count}} Boulder kommen als Nächstes dran",
       "open": "Öffnen",
       "openAria": "Warteschlange öffnen"
     },

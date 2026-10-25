@@ -65,6 +65,7 @@ vi.mock('../../ListRow', () => ({
         'data-chevron': String(!!showChevron),
         'data-separator': String(!!showSeparator),
         'data-busy': String(!!accessibilityState?.busy),
+        'data-disabled': String(!!accessibilityState?.disabled),
       },
       leading,
       createElement('span', { 'data-title': 'true' }, title),
@@ -75,61 +76,84 @@ vi.mock('../../ListRow', () => ({
 
 import { PlaylistAddToQueueRow } from '../PlaylistAddToQueueRow';
 
+function rows(container: HTMLElement): HTMLButtonElement[] {
+  return Array.from(container.querySelectorAll<HTMLButtonElement>('[data-list-row]'));
+}
+
 describe('PlaylistAddToQueueRow', () => {
-  it('renders the action title, the reassurance subtitle and the success add glyph', () => {
-    const { container } = render(<PlaylistAddToQueueRow onPress={vi.fn()} isAppending={false} />);
+  it('offers Play next above Play last, each with its menu glyph and where it lands', () => {
+    const { container } = render(<PlaylistAddToQueueRow onQueue={vi.fn()} pendingPlacement={null} />);
 
-    expect(container.querySelector('[data-title]')?.textContent).toBe('detail.addToQueue.action');
-    expect(container.querySelector('[data-subtitle]')?.textContent).toBe('detail.addToQueue.subtitle');
-    // Same glyph + token as the climb long-press sheet's "Add to queue" row, so
-    // the additive action reads identically wherever it appears.
-    const icon = container.querySelector('[data-icon="add"]');
-    expect(icon).not.toBeNull();
-    expect(icon?.getAttribute('data-icon-color')).toBe('#34D399');
+    const [playNextRow, playLastRow] = rows(container);
+    expect(rows(container)).toHaveLength(2);
+    expect(playNextRow.querySelector('[data-title]')?.textContent).toBe('detail.addToQueue.playNextAction');
+    expect(playNextRow.querySelector('[data-subtitle]')?.textContent).toBe('detail.addToQueue.playNextSubtitle');
+    expect(playLastRow.querySelector('[data-title]')?.textContent).toBe('detail.addToQueue.action');
+    expect(playLastRow.querySelector('[data-subtitle]')?.textContent).toBe('detail.addToQueue.subtitle');
+    // The climb menu's own Play next / Play last glyphs and tokens.
+    expect(playNextRow.querySelector('[data-icon]')?.getAttribute('data-icon')).toBe('queue.next');
+    expect(playNextRow.querySelector('[data-icon]')?.getAttribute('data-icon-color')).toBe('#A78BFA');
+    expect(playLastRow.querySelector('[data-icon]')?.getAttribute('data-icon')).toBe('queue.last');
+    expect(playLastRow.querySelector('[data-icon]')?.getAttribute('data-icon-color')).toBe('#34D399');
   });
 
-  it('acts rather than navigates, and draws no separator of its own', () => {
-    const { container } = render(<PlaylistAddToQueueRow onPress={vi.fn()} isAppending={false} />);
-    const row = container.querySelector('[data-list-row]');
-    expect(row?.getAttribute('data-chevron')).toBe('false');
-    expect(row?.getAttribute('data-separator')).toBe('false');
+  it('acts rather than navigates, with one divider between the two rows', () => {
+    const { container } = render(<PlaylistAddToQueueRow onQueue={vi.fn()} pendingPlacement={null} />);
+    const [playNextRow, playLastRow] = rows(container);
+    expect(playNextRow.getAttribute('data-chevron')).toBe('false');
+    expect(playLastRow.getAttribute('data-chevron')).toBe('false');
+    expect(playNextRow.getAttribute('data-separator')).toBe('true');
+    expect(playLastRow.getAttribute('data-separator')).toBe('false');
   });
 
-  it('fires onPress and exposes the subtitle as the screen-reader hint', () => {
-    const onPress = vi.fn();
-    const { container } = render(<PlaylistAddToQueueRow onPress={onPress} isAppending={false} />);
+  it('passes the placement each row stands for, and reads its subtitle as the hint', () => {
+    const onQueue = vi.fn();
+    const { container } = render(<PlaylistAddToQueueRow onQueue={onQueue} pendingPlacement={null} />);
+    const [playNextRow, playLastRow] = rows(container);
 
-    const row = container.querySelector('[data-list-row]') as HTMLButtonElement;
-    expect(row.getAttribute('aria-label')).toBe('detail.addToQueue.action');
-    expect(row.getAttribute('data-hint')).toBe('detail.addToQueue.subtitle');
-    fireEvent.click(row);
-    expect(onPress).toHaveBeenCalledTimes(1);
+    expect(playNextRow.getAttribute('aria-label')).toBe('detail.addToQueue.playNextAction');
+    expect(playNextRow.getAttribute('data-hint')).toBe('detail.addToQueue.playNextSubtitle');
+    expect(playLastRow.getAttribute('aria-label')).toBe('detail.addToQueue.action');
+    expect(playLastRow.getAttribute('data-hint')).toBe('detail.addToQueue.subtitle');
+
+    fireEvent.click(playNextRow);
+    fireEvent.click(playLastRow);
+    expect(onQueue.mock.calls).toEqual([['next'], ['end']]);
   });
 
   it('shows no spinner and no busy state when idle', () => {
-    const { container } = render(<PlaylistAddToQueueRow onPress={vi.fn()} isAppending={false} />);
+    const { container } = render(<PlaylistAddToQueueRow onQueue={vi.fn()} pendingPlacement={null} />);
     expect(container.querySelector('[data-spinner]')).toBeNull();
-    expect(container.querySelector('[data-list-row]')?.getAttribute('data-busy')).toBe('false');
+    for (const row of rows(container)) {
+      expect(row.getAttribute('data-busy')).toBe('false');
+      expect(row.getAttribute('data-disabled')).toBe('false');
+    }
   });
 
-  it('swallows the press, the haptic and announces busy while appending', () => {
-    const onPress = vi.fn();
-    const { container } = render(<PlaylistAddToQueueRow onPress={onPress} isAppending />);
+  it('spins the row in flight, and swallows taps and haptics on both rows meanwhile', () => {
+    const onQueue = vi.fn();
+    const { container } = render(<PlaylistAddToQueueRow onQueue={onQueue} pendingPlacement="next" />);
+    const [playNextRow, playLastRow] = rows(container);
 
-    const row = container.querySelector('[data-list-row]') as HTMLButtonElement;
-    expect(container.querySelector('[data-spinner]')).not.toBeNull();
-    expect(row.getAttribute('data-busy')).toBe('true');
+    expect(playNextRow.querySelector('[data-spinner]')).not.toBeNull();
+    expect(playLastRow.querySelector('[data-spinner]')).toBeNull();
+    expect(playNextRow.getAttribute('data-busy')).toBe('true');
+    expect(playLastRow.getAttribute('data-busy')).toBe('false');
+    expect(playLastRow.getAttribute('data-disabled')).toBe('true');
     // No haptic on a tap that does nothing.
-    expect(row.getAttribute('data-haptic')).toBe('false');
-    fireEvent.click(row);
-    expect(onPress).not.toHaveBeenCalled();
+    expect(playNextRow.getAttribute('data-haptic')).toBe('false');
+    expect(playLastRow.getAttribute('data-haptic')).toBe('false');
+    fireEvent.click(playNextRow);
+    fireEvent.click(playLastRow);
+    expect(onQueue).not.toHaveBeenCalled();
   });
 
   it('says how many a filtered playlist adds, and reads it out the same', () => {
-    const { container } = render(<PlaylistAddToQueueRow onPress={vi.fn()} isAppending={false} count={12} />);
-    expect(container.querySelector('[data-title]')?.textContent).toBe('detail.addToQueue.actionCount(12)');
-    expect(container.querySelector('[data-list-row]')?.getAttribute('aria-label')).toBe(
-      'detail.addToQueue.actionCount(12)',
-    );
+    const { container } = render(<PlaylistAddToQueueRow onQueue={vi.fn()} pendingPlacement={null} count={12} />);
+    const [playNextRow, playLastRow] = rows(container);
+    expect(playNextRow.querySelector('[data-title]')?.textContent).toBe('detail.addToQueue.playNextActionCount(12)');
+    expect(playNextRow.getAttribute('aria-label')).toBe('detail.addToQueue.playNextActionCount(12)');
+    expect(playLastRow.querySelector('[data-title]')?.textContent).toBe('detail.addToQueue.actionCount(12)');
+    expect(playLastRow.getAttribute('aria-label')).toBe('detail.addToQueue.actionCount(12)');
   });
 });

@@ -78,7 +78,7 @@ type ClimbListRowMockProps = {
     angle?: number;
   }) => ReactNode;
   onPress?: () => void;
-  onAddToQueue?: () => void;
+  onPlayNext?: () => void;
   onOpenPlaylist?: () => void;
   onOpenActions?: () => void;
 };
@@ -254,7 +254,7 @@ vi.mock('../../ClimbListRow', () => ({
       'div',
       { 'data-climb-row': climbUuid },
       createElement('button', { 'aria-label': `press ${climbUuid}`, onClick: props.onPress }, content),
-      createElement('button', { 'aria-label': `queue ${climbUuid}`, onClick: props.onAddToQueue }, 'queue'),
+      createElement('button', { 'aria-label': `queue ${climbUuid}`, onClick: props.onPlayNext }, 'queue'),
       createElement('button', { 'aria-label': `playlist ${climbUuid}`, onClick: props.onOpenPlaylist }, 'playlist'),
       createElement('button', { 'aria-label': `actions ${climbUuid}`, onClick: props.onOpenActions }, 'actions'),
     );
@@ -635,15 +635,15 @@ describe('NowOnTheWallPanel', () => {
     presence.currentClimb = makeClimb('hero-climb', 3, { queueItemUuid: 'queue-hero' });
     const onClose = vi.fn();
     const onClimbPress = vi.fn();
-    const onAddToQueue = vi.fn();
+    const onPlayNext = vi.fn();
     const heroDetail = makeFullClimb('hero-climb', { name: 'Hydrated Hero' });
     graphql.request.mockResolvedValueOnce({ climb: heroDetail });
 
-    const { getByLabelText } = render(panelElement({ onClose, onClimbPress, onAddToQueue }));
+    const { getByLabelText } = render(panelElement({ onClose, onClimbPress, onPlayNext }));
 
     fireEvent.click(getByLabelText('queue hero-climb'));
     await waitFor(() =>
-      expect(onAddToQueue).toHaveBeenCalledWith({
+      expect(onPlayNext).toHaveBeenCalledWith({
         climb: heroDetail,
         queueItemUuid: 'queue-hero',
         boardConfig,

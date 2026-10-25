@@ -22,7 +22,7 @@ name: help clip - swipe a climb row
     timeout: 900
     optional: true
 
-# Swipe right on the first row -> add to queue.
+# Swipe right on the first row -> Play next.
 - swipe:
     start: '15%,23%'
     end: '85%,23%'

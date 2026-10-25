@@ -154,10 +154,14 @@
     "actions": "Actions de la playlist",
     "activateAll": "Lecture",
     "addToQueue": {
-      "action": "Ajouter à la file",
-      "actionCount_one": "Ajouter {{count}} à la file",
-      "actionCount_other": "Ajouter {{count}} à la file",
-      "subtitle": "Votre file actuelle reste intacte",
+      "action": "Mettre à la fin",
+      "actionCount_one": "Mettre {{count}} à la fin",
+      "actionCount_other": "Mettre {{count}} à la fin",
+      "subtitle": "Passent après le reste de votre file",
+      "playNextAction": "Mettre juste après",
+      "playNextActionCount_one": "Mettre {{count}} juste après",
+      "playNextActionCount_other": "Mettre {{count}} juste après",
+      "playNextSubtitle": "Passent avant le reste de votre file",
       "queueFull": "Votre file est déjà pleine avec {{max}} blocs",
       "nothingToAdd": "Rien ici pour votre board pour l'instant",
       "alreadyAdding": "Cette playlist est déjà en cours d'ajout",
@@ -196,7 +200,7 @@
       "loadFailed": "Impossible de lancer la playlist. Réessayez.",
       "trimmed": "{{loaded}} blocs sur {{total}} chargés. Votre file en contient {{max}} au maximum.",
       "trimmedUnknownTotal": "{{loaded}} blocs chargés. Votre file en contient {{max}} au maximum.",
-      "addInstead": "Ajouter à la file"
+      "addInstead": "Mettre à la fin"
     },
     "deleteConfirm": {
       "title": "Supprimer la playlist ?",

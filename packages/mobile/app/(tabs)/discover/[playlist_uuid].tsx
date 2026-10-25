@@ -91,7 +91,7 @@ const EMPTY_CLIMBS: Climb[] = [];
 const MAX_EDIT_ROWS = 200;
 
 /**
- * The view whose rows are on screen: what the play drawer, Add to queue and the
+ * The view whose rows are on screen: what the play drawer, Play next / Play last and the
  * empty state use. `selection` is what was asked for (null for the plain order).
  */
 type SettledPlaylistView = {
@@ -245,7 +245,7 @@ export default function PlaylistDetail() {
 
   // While a new sort or filter loads, the previous view's rows stay up
   // (placeholder data). The settled view is the one those rows belong to, so the
-  // play drawer's track, the activation source and Add to queue always follow
+  // play drawer's track, the activation source and Play next / Play last always follow
   // what is on screen. Updated during render, in the same pass that shows the
   // new rows: React's "adjust state while rendering" pattern. An effect would
   // leave one committed frame where the new rows show under the old view, and a
@@ -290,7 +290,7 @@ export default function PlaylistDetail() {
         angle: board.angle,
         page,
         pageSize,
-        // The view on screen, so the drawer swipes and Add to queue walk the
+        // The view on screen, so the drawer swipes and Play next / Play last walk the
         // same sorted, filtered rows the climber sees.
         ...(settledView.view ? { view: settledView.view } : {}),
       };
@@ -843,7 +843,7 @@ export default function PlaylistDetail() {
     () => (showFilterControls && !filterEditing ? { activeCount: activeFilterCount, onPress: openFilters } : null),
     [showFilterControls, filterEditing, activeFilterCount, openFilters],
   );
-  // "Add 12 to queue" while the rows on screen are filtered (`listAddToQueueCount`).
+  // "Play 12 next" and "Play 12 last" while the rows on screen are filtered (`listAddToQueueCount`).
   // `totalCount` comes from the live query and `settledFitsBoard` from the
   // settled view. They agree: while a new view loads, the query's data IS the
   // settled view's placeholder rows, so both describe the same list.
@@ -1071,8 +1071,8 @@ export default function PlaylistDetail() {
         onReorderClimb={viewActive ? undefined : handleReorderClimb}
         onRemoveClimb={handleRemoveClimb}
         onEditDetails={openEditDetails}
-        onAddAllToQueue={playlistActivation.addToQueue.append}
-        isAddingAllToQueue={playlistActivation.addToQueue.isAppending}
+        onQueueAll={playlistActivation.addToQueue.queue}
+        pendingQueueAll={playlistActivation.addToQueue.pendingPlacement}
         addToQueueCount={addToQueueCount}
         onRefresh={handleRefresh}
         filterBar={filterBar}

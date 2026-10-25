@@ -21,14 +21,13 @@ const mocks = vi.hoisted(() => ({
   fetchNext: vi.fn(),
   request: vi.fn(),
   activate: vi.fn(),
-  append: vi.fn(),
-  isAppending: false,
+  queueAll: vi.fn(),
   activation: null as UsePlaylistActivationOptions | null,
   detail: null as {
     hero: { name: string; climbCount: number; subtitle?: string };
     renderBoard: typeof board;
-    onAddAllToQueue?: () => void;
-    isAddingAllToQueue?: boolean;
+    onQueueAll?: (placement: 'next' | 'end') => void;
+    pendingQueueAll?: 'next' | 'end' | null;
     addToQueueCount?: number;
     filterBar?: ReactNode;
     filterAction?: { activeCount: number; onPress: () => void } | null;
@@ -147,8 +146,8 @@ vi.mock('../../../../src/components/playlist', () => ({
     actions: () => ReactNode;
     headerSlot?: ReactNode;
     onActivateClimb: (climb: Climb) => void;
-    onAddAllToQueue?: () => void;
-    isAddingAllToQueue?: boolean;
+    onQueueAll?: (placement: 'next' | 'end') => void;
+    pendingQueueAll?: 'next' | 'end' | null;
   }) => {
     mocks.detail = props;
     return (
@@ -173,7 +172,7 @@ vi.mock('../../../../src/lib/playlists/use-playlist-activation', () => ({
     mocks.activation = options;
     return {
       activate: mocks.activate,
-      addToQueue: { append: mocks.append, isAppending: mocks.isAppending },
+      addToQueue: { queue: mocks.queueAll, pendingPlacement: null },
     };
   },
 }));
@@ -237,7 +236,7 @@ describe('setter smart playlist route', () => {
     mocks.shared = shared;
     const screen = render(<SetterPlaylist />);
     expect(mocks.detail).toMatchObject({ hero: { name: 'accountless-setter', climbCount: 8 }, renderBoard: board });
-    expect(mocks.detail).toMatchObject({ onAddAllToQueue: mocks.append, isAddingAllToQueue: false });
+    expect(mocks.detail).toMatchObject({ onQueueAll: mocks.queueAll, pendingQueueAll: null });
     expect(screen.getByText('follow:accountless-setter')).not.toBeNull();
     expect(mocks.activation).toMatchObject({ allClimbs: [climb], previewOnly: shared, honorPlaylistLoadSetting: true });
     expect(mocks.search).toHaveBeenCalledWith(expect.objectContaining({ setter: ['accountless-setter'] }), true, {

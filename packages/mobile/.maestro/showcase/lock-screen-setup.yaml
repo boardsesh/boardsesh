@@ -14,8 +14,8 @@ name: showcase setup - lock-screen, a session on the wall
 #
 # Coordinates (iPhone 16 Pro Max portrait):
 #   84%,82%             Start (pre-session Record tab, now-playing bar up); lands on Climbs
-#   15%,35% -> 85%,35%  swipe the 2nd climb row right: add to queue
-#   15%,47% -> 85%,47%  swipe the 3rd climb row right: add to queue
+#   15%,35% -> 85%,35%  swipe the 2nd climb row right: Play next
+#   15%,47% -> 85%,47%  swipe the 3rd climb row right: Play next (lands ahead of the 2nd)
 
 - tapOn:
     point: '84%,82%'

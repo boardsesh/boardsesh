@@ -154,10 +154,14 @@
     "actions": "Acciones de la playlist",
     "activateAll": "Reproducir",
     "addToQueue": {
-      "action": "Añadir a la cola",
-      "actionCount_one": "Añadir {{count}} a la cola",
-      "actionCount_other": "Añadir {{count}} a la cola",
-      "subtitle": "No se pierde nada de tu cola",
+      "action": "Poner al final",
+      "actionCount_one": "Poner {{count}} al final",
+      "actionCount_other": "Poner {{count}} al final",
+      "subtitle": "Van después del resto de tu cola",
+      "playNextAction": "Poner a continuación",
+      "playNextActionCount_one": "Poner {{count}} a continuación",
+      "playNextActionCount_other": "Poner {{count}} a continuación",
+      "playNextSubtitle": "Van antes del resto de tu cola",
       "queueFull": "Tu cola ya está llena con {{max}} bloques",
       "nothingToAdd": "Aquí no hay nada para tu plafón todavía",
       "alreadyAdding": "Ya se está añadiendo esta playlist",
@@ -196,7 +200,7 @@
       "loadFailed": "No se pudo iniciar la playlist. Inténtalo de nuevo.",
       "trimmed": "Se cargaron {{loaded}} de {{total}} bloques. Tu cola admite {{max}}.",
       "trimmedUnknownTotal": "Se cargaron {{loaded}} bloques. Tu cola admite {{max}}.",
-      "addInstead": "Añadir a la cola"
+      "addInstead": "Poner al final"
     },
     "deleteConfirm": {
       "title": "¿Eliminar playlist?",

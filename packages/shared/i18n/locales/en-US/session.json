@@ -504,9 +504,10 @@
       "undoAria": "Put the climbs back in the queue"
     },
     "queueSnackbar": {
-      "added_one": "Climb added to queue",
-      "added_other": "{{count}} climbs added to queue",
-      "playingNext": "Climb is up next",
+      "added_one": "Playing last",
+      "added_other": "{{count}} climbs playing last",
+      "playingNext_one": "Playing next",
+      "playingNext_other": "{{count}} climbs playing next",
       "open": "Open",
       "openAria": "Open queue"
     },

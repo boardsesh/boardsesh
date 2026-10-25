@@ -353,7 +353,7 @@ function ClimbListInner() {
   }, [openBoardSheet]);
   const { systemColors, variant, brandColors, features } = useTheme();
   const colorScheme = useAppColorScheme();
-  const { addToQueue } = useQueueActions();
+  const { playNext } = useQueueActions();
   const { filters, boardFilters, name, setGrade, setName, replaceSearch, patchFilters, patchBoardFilters } =
     useClimbSearch();
   // The user's pinned chips: which filter controls appear in the persistent chip
@@ -1601,13 +1601,15 @@ function ClimbListInner() {
     openClimbActions(firstClimb);
   }, [screenshotOpenClimbActions, screenshotTargetBoard, activeBoard, searchReady, visibleClimbs, openClimbActions]);
 
-  // Row actions ignore stale placeholder rows, same as handleClimbPress.
-  const handleAddToQueue = useCallback(
+  // Row actions ignore stale placeholder rows, same as handleClimbPress. The
+  // right swipe is Play next: the top of Up next, so a climber with a long queue
+  // still reaches what they swiped (#6772).
+  const handlePlayNext = useCallback(
     (climb: Climb) => {
       if (isPlaceholderDataRef.current) return;
-      void addToQueue({ uuid: randomUUID(), climb });
+      void playNext({ item: { uuid: randomUUID(), climb } });
     },
-    [addToQueue],
+    [playNext],
   );
 
   const handleOpenClimbActions = useCallback(
@@ -2236,7 +2238,7 @@ function ClimbListInner() {
         onPress={handleClimbPress}
         onOpenActions={handleOpenClimbActions}
         onOpenPlaylist={handleOpenAddToPlaylist}
-        onAddToQueue={handleAddToQueue}
+        onPlayNext={handlePlayNext}
         showPlaylistChips
         showProgress
         showFavorite
@@ -2254,7 +2256,7 @@ function ClimbListInner() {
       handleClimbPress,
       handleOpenClimbActions,
       handleOpenAddToPlaylist,
-      handleAddToQueue,
+      handlePlayNext,
     ],
   );
 

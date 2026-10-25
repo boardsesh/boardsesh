@@ -87,7 +87,7 @@ const SETTER_PICKERS: Record<SetterPlaylistTab, ClimbFilterSheetPickers> = {
 
 /**
  * The view whose rows are on screen (the playlist screen's rule): what the play
- * drawer's pages, Add to queue, the status line and the empty state follow.
+ * drawer's pages, Play next / Play last, the status line and the empty state follow.
  */
 type SettledSetterView = {
   view: SetterPlaylistView | null;
@@ -183,7 +183,7 @@ export function SetterPlaylistScreen({ tab }: { tab: SetterPlaylistTab }) {
 
   const query = useInfiniteSearchClimbs(viewInput, enabled, { keepPreviousResults: true });
   // The hero counts the setter's climbs; the view's count drives the sheet, the
-  // status line and Add to queue.
+  // status line and Play next / Play last.
   const plainCount = useSearchClimbsCount(plainInput, enabled);
   const viewCount = useSearchClimbsCount(countInput, enabled);
   const allClimbs = useMemo(() => toQueueClimbs(query.data?.pages.flatMap((page) => page.climbs) ?? []), [query.data]);
@@ -191,7 +191,7 @@ export function SetterPlaylistScreen({ tab }: { tab: SetterPlaylistTab }) {
   // While a new sort or filter loads, the previous view's rows stay up. The
   // settled view is the one those rows belong to, updated during render in the
   // same pass that shows the new rows (see the playlist screen), so the drawer's
-  // track, the activation source and Add to queue follow what is on screen.
+  // track, the activation source and Play next / Play last follow what is on screen.
   // Rows a failed refetch kept count as on screen too: they are what the climber sees.
   const [settledView, setSettledView] = useState<SettledSetterView>(PLAIN_SETTER_VIEW);
   const viewRowsOnScreen = query.data !== undefined && !query.isPlaceholderData;
@@ -216,7 +216,7 @@ export function SetterPlaylistScreen({ tab }: { tab: SetterPlaylistTab }) {
     async ({ page, pageSize, board: activatedBoard, signal }) => {
       if (signal.aborted) throw createAbortError('Setter playlist navigation was cancelled');
       // The view on screen, with the grade source and cross-angle stats the
-      // list sends, so the drawer swipes and Add to queue walk the same rows in
+      // list sends, so the drawer swipes and Play next / Play last walk the same rows in
       // the same order.
       const listInput = setterPlaylistInput(username, activatedBoard, settledView.view ?? undefined);
       const input = withGradeSource(
@@ -395,8 +395,8 @@ export function SetterPlaylistScreen({ tab }: { tab: SetterPlaylistTab }) {
           hasNextPage={query.hasNextPage ?? false}
           fetchNextPage={query.fetchNextPage}
           onActivateClimb={activation.activate}
-          onAddAllToQueue={activation.addToQueue.append}
-          isAddingAllToQueue={activation.addToQueue.isAppending}
+          onQueueAll={activation.addToQueue.queue}
+          pendingQueueAll={activation.addToQueue.pendingPlacement}
           addToQueueCount={addToQueueCount}
           onRefresh={handleRefresh}
           emptyMessage={emptyMessage}

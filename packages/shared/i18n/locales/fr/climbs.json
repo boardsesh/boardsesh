@@ -652,7 +652,6 @@
       "rangeHoldHint": "Appuie longuement pour créer une plage avec l'inclinaison sélectionnée"
     },
     "climbRow": {
-      "addToQueue": "Ajouter à la file",
       "toggleFavorite": "Basculer favori",
       "favorited": "Favori",
       "share": "Partager le bloc",
@@ -740,6 +739,7 @@
     "climbActions": {
       "preview": "Aperçu",
       "playNext": "Mettre juste après",
+      "playLast": "Mettre à la fin",
       "nameCopied": "Nom copié",
       "copyNameError": "Impossible de copier le nom",
       "copyNameHint": "Appuie longuement pour copier le nom",

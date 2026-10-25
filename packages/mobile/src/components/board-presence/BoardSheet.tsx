@@ -85,7 +85,7 @@ type BoardSheetProps = {
   /** Activate/open a climb from the wall feed. BoardSheet closes itself after this. */
   onClimbPress?: (action: BoardSheetClimbAction) => void;
   /** Swipe action: append this wall-feed climb to the queue. */
-  onAddToQueue?: (action: BoardSheetClimbAction) => void;
+  onPlayNext?: (action: BoardSheetClimbAction) => void;
   /** Swipe action: open the add-to-playlist sheet for this climb. */
   onOpenPlaylist?: (action: BoardSheetClimbAction) => void;
   /** Long press action: open the existing climb actions sheet. */
@@ -105,7 +105,7 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
     viewerUserId,
     onSelectGymWall,
     onClimbPress,
-    onAddToQueue,
+    onPlayNext,
     onOpenPlaylist,
     onOpenActions,
   },
@@ -270,7 +270,7 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
           viewerUserId={viewerUserId}
           onSelectGymWall={onSelectGymWall}
           onClimbPress={onClimbPress}
-          onAddToQueue={onAddToQueue}
+          onPlayNext={onPlayNext}
           onOpenPlaylist={onOpenPlaylist}
           onOpenActions={onOpenActions}
         />

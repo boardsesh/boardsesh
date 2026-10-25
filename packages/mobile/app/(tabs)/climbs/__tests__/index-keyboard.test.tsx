@@ -96,7 +96,7 @@ const mocks = vi.hoisted(() => ({
   activationOptions: undefined as { previewOnly?: boolean } | undefined,
   openPlayDrawer: vi.fn(),
   // Row actions, hoisted so tests can assert a stale row never reaches them.
-  addToQueue: vi.fn(),
+  playNext: vi.fn(),
   openClimbActions: vi.fn(),
   openAddToPlaylist: vi.fn(),
   // Mutable per-test: whether another climber is in the session.
@@ -435,14 +435,14 @@ vi.mock('../../../../src/components/ClimbListRow', () => ({
   ClimbListRow: ({
     climb: rowClimb,
     onPress,
-    onAddToQueue,
+    onPlayNext,
     onOpenActions,
     onOpenPlaylist,
     selected,
   }: {
     climb: Climb;
     onPress?: (pressedClimb: Climb) => void;
-    onAddToQueue?: (queuedClimb: Climb) => void;
+    onPlayNext?: (queuedClimb: Climb) => void;
     onOpenActions?: (actionsClimb: Climb) => void;
     onOpenPlaylist?: (playlistClimb: Climb) => void;
     selected?: boolean;
@@ -452,7 +452,7 @@ vi.mock('../../../../src/components/ClimbListRow', () => ({
       { key: 'row', onClick: () => onPress?.(rowClimb), 'data-selected': selected ? 'true' : 'false' },
       rowClimb.name,
     ),
-    createElement('button', { key: 'queue', onClick: () => onAddToQueue?.(rowClimb) }, `queue:${rowClimb.name}`),
+    createElement('button', { key: 'queue', onClick: () => onPlayNext?.(rowClimb) }, `queue:${rowClimb.name}`),
     createElement('button', { key: 'actions', onClick: () => onOpenActions?.(rowClimb) }, `actions:${rowClimb.name}`),
     createElement(
       'button',
@@ -666,7 +666,7 @@ vi.mock('../../../../src/theme/variants', () => ({
 vi.mock('../../../../src/providers/queue-provider', () => ({
   useActiveClimbUuid: () => mocks.activeClimbUuid(),
   useIsSharedSession: () => mocks.isSharedSession,
-  useQueueActions: () => ({ addToQueue: mocks.addToQueue }),
+  useQueueActions: () => ({ playNext: mocks.playNext }),
 }));
 
 vi.mock('../../../../src/settings', async () => {
@@ -775,7 +775,7 @@ vi.mock('../../../../src/lib/playlists/use-playlist-activation', () => ({
       mocks.activationOptions = options;
       return mocks.activateClimb(...args);
     },
-    addToQueue: { append: undefined, isAppending: false },
+    addToQueue: { queue: undefined, pendingPlacement: null },
   }),
 }));
 
@@ -1376,7 +1376,7 @@ describe('ClimbList previous results standing in for a loading search', () => {
 
   it('ignores queue, actions and playlist on a stale row', async () => {
     mocks.isPlaceholderData = true;
-    mocks.addToQueue.mockClear();
+    mocks.playNext.mockClear();
     mocks.openClimbActions.mockClear();
     mocks.openAddToPlaylist.mockClear();
     const { findByText, getByText } = render(<ClimbList />);
@@ -1385,13 +1385,13 @@ describe('ClimbList previous results standing in for a loading search', () => {
     fireEvent.click(getByText('actions:Moonage'));
     fireEvent.click(getByText('playlist:Moonage'));
 
-    expect(mocks.addToQueue).not.toHaveBeenCalled();
+    expect(mocks.playNext).not.toHaveBeenCalled();
     expect(mocks.openClimbActions).not.toHaveBeenCalled();
     expect(mocks.openAddToPlaylist).not.toHaveBeenCalled();
   });
 
   it('runs queue, actions and playlist on a fresh row', async () => {
-    mocks.addToQueue.mockClear();
+    mocks.playNext.mockClear();
     mocks.openClimbActions.mockClear();
     mocks.openAddToPlaylist.mockClear();
     const { findByText, getByText } = render(<ClimbList />);
@@ -1400,9 +1400,10 @@ describe('ClimbList previous results standing in for a loading search', () => {
     fireEvent.click(getByText('actions:Moonage'));
     fireEvent.click(getByText('playlist:Moonage'));
 
-    expect(mocks.addToQueue).toHaveBeenCalledWith(
-      expect.objectContaining({ climb: expect.objectContaining({ uuid: 'climb-1' }) }),
-    );
+    // The right swipe is Play next (#6772).
+    expect(mocks.playNext).toHaveBeenCalledWith({
+      item: expect.objectContaining({ climb: expect.objectContaining({ uuid: 'climb-1' }) }),
+    });
     expect(mocks.openClimbActions).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'climb-1' }));
     expect(mocks.openAddToPlaylist).toHaveBeenCalledWith(
       expect.objectContaining({ uuid: 'climb-1' }),

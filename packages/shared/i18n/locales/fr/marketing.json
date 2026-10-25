@@ -472,7 +472,7 @@
         "p1": "Pour ajouter un bloc, fais glisser sa ligne vers la gauche, ou garde-la appuyée et touche Ajouter à la playlist.",
         "p2": "Le sélecteur n'affiche que les playlists de la board et du layout du bloc.",
         "clipAlt": "Faire glisser la ligne d'un bloc vers la gauche pour l'ajouter à une playlist",
-        "clipCaption": "Glisse à gauche pour le ranger dans une playlist. À droite, tu le mets en file.",
+        "clipCaption": "Glisse à gauche pour le ranger dans une playlist. À droite, tu le mets juste après.",
         "shotAlt": "L'onglet Découvrir",
         "shotCaption": "Épinglée, puis Mes playlists, puis Pour vous.",
         "playlistShotAlt": "Ta propre playlist",
@@ -489,7 +489,7 @@
       "queue": {
         "title": "Grimper toute la liste",
         "intro": "Touche un bloc dans une playlist et tu parcours cette playlist. Ta file reste telle quelle.",
-        "p1": "Fais défiler pour parcourir la liste dans l'ordre à partir du bloc touché. Le bouton lecture de l'en-tête part du début. Ajouter à la file copie toute la liste dans ta file. Pour qu'un toucher charge plutôt la playlist dans ta file, active Toucher une playlist la charge dans ma file dans Paramètres, puis Board.",
+        "p1": "Fais défiler pour parcourir la liste dans l'ordre à partir du bloc touché. Le bouton lecture de l'en-tête part du début. Mettre juste après place toute la liste en tête de ta file, Mettre à la fin la place en bas. Pour qu'un toucher charge plutôt la playlist dans ta file, active Toucher une playlist la charge dans ma file dans Paramètres, puis Board.",
         "p2": "En session, toucher n'ouvre le bloc que pour toi. La file partagée ne bouge pas.",
         "sessionsLink": "Comment une session partage une seule file",
         "clipAlt": "La fiche Lancer la playlist ?",
@@ -613,12 +613,12 @@
       },
       "rows": {
         "title": "Ce que fait une ligne de bloc",
-        "p1": "Fais glisser vers la droite pour mettre le bloc en file. Vers la gauche pour le sélecteur de playlist. Ni l'un ni l'autre n'allume la board.",
+        "p1": "Fais glisser vers la droite pour mettre le bloc juste après, en tête de ta file. Vers la gauche pour le sélecteur de playlist. Ni l'un ni l'autre n'allume la board.",
         "p2": "Le petit symbole, c'est ton historique. Un éclair veut dire flashé, une coche cerclée enchaîné, une croix cerclée essayé, un C cerclé référence.",
         "actionsLink": "Tout le menu d'appui long",
         "p3": "Garde une ligne appuyée pour le menu d'actions complet.",
         "clipAlt": "Faire glisser une ligne dans les deux sens",
-        "clipCaption": "À droite ça met en file, à gauche ça ouvre le sélecteur de playlist."
+        "clipCaption": "À droite ça le met juste après, à gauche ça ouvre le sélecteur de playlist."
       },
       "keep": {
         "title": "Garde les filtres que tu utilises",
@@ -783,7 +783,7 @@
       },
       "rest": {
         "title": "Le reste de la liste",
-        "queue": "Ajouter à la file place le bloc après celui en cours.",
+        "queue": "Mettre juste après place le bloc en tête de ta file. Mettre à la fin le place en bas.",
         "favorite": "Basculer favori, c'est le cœur. Les blocs avec un cœur remplissent Voies aimées.",
         "editEntry": "Modifier l'entrée du carnet, quand tu viens de ton carnet.",
         "betaVideo": "Ajouter une vidéo beta, quand tu es connecté.",

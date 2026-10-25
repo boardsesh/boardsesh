@@ -652,7 +652,6 @@
       "rangeHoldHint": "Mantén pulsado para crear un rango con el ángulo seleccionado"
     },
     "climbRow": {
-      "addToQueue": "Añadir a la cola",
       "toggleFavorite": "Alternar favorito",
       "favorited": "Favorito",
       "share": "Compartir bloque",
@@ -740,6 +739,7 @@
     "climbActions": {
       "preview": "Vista previa",
       "playNext": "Poner a continuación",
+      "playLast": "Poner al final",
       "nameCopied": "Nombre copiado",
       "copyNameError": "No se pudo copiar el nombre",
       "copyNameHint": "Mantén pulsado para copiar el nombre",

@@ -472,7 +472,7 @@
         "p1": "To add a climb, swipe its row left, or press and hold it and tap Add to Playlist.",
         "p2": "The picker only shows playlists for the climb's board and layout.",
         "clipAlt": "Swiping a climb row left to add it to a playlist",
-        "clipCaption": "Swipe left to file it in a playlist. Swipe right to queue it.",
+        "clipCaption": "Swipe left to file it in a playlist. Swipe right to play it next.",
         "shotAlt": "The Discover tab",
         "shotCaption": "Pinned, then My Playlists, then For You.",
         "playlistShotAlt": "Your own playlist",
@@ -489,7 +489,7 @@
       "queue": {
         "title": "Climb the whole list",
         "intro": "Tap a climb in a playlist and you play from that playlist. Your queue stays as it is.",
-        "p1": "Swipe to walk the list in order from the climb you tapped. The header's play button starts from the top. Add to queue copies the whole list into your queue. To have a tap load the playlist into your queue instead, turn on Tapping a playlist loads it into my queue under Settings, then Board.",
+        "p1": "Swipe to walk the list in order from the climb you tapped. The header's play button starts from the top. Play next puts the whole list at the top of Up next, Play last at the bottom. To have a tap load the playlist into your queue instead, turn on Tapping a playlist loads it into my queue under Settings, then Board.",
         "p2": "In a session, tapping only opens the climb for you. The shared queue stays put.",
         "sessionsLink": "How a session shares one queue",
         "clipAlt": "The Start playlist? sheet",
@@ -613,12 +613,12 @@
       },
       "rows": {
         "title": "What a climb row can do",
-        "p1": "Swipe right to queue the climb. Swipe left for the playlist picker. Neither lights the board.",
+        "p1": "Swipe right to play the climb next, at the top of Up next. Swipe left for the playlist picker. Neither lights the board.",
         "p2": "The small glyph is your history. A bolt means flashed, a circled tick sent, a circled cross tried, a circled C benchmark.",
         "actionsLink": "Everything in the long-press menu",
         "p3": "Press and hold a row for the full action menu.",
         "clipAlt": "Swiping a row both ways",
-        "clipCaption": "Right queues it, left opens the playlist picker."
+        "clipCaption": "Right plays it next, left opens the playlist picker."
       },
       "keep": {
         "title": "Keep the filters you use",
@@ -783,7 +783,7 @@
       },
       "rest": {
         "title": "The rest of the list",
-        "queue": "Add to queue puts the climb after your current one.",
+        "queue": "Play next puts the climb at the top of Up next. Play last puts it at the bottom.",
         "favorite": "Toggle favorite is the heart. Hearted climbs fill Liked Climbs.",
         "editEntry": "Edit logbook entry, when you came from your logbook.",
         "betaVideo": "Add beta video, when signed in.",

@@ -36,8 +36,9 @@ export const iconMap = {
   'boards.fill': { ios: 'square.grid.2x2.fill', android: 'view-dashboard' },
   search: { ios: 'magnifyingglass', android: 'magnify' },
   queue: { ios: 'list.bullet', android: 'playlist-play' },
-  // Apple Music's own "Play Next" glyph.
+  // Apple Music's own "Play Next" and "Play Last" glyphs.
   'queue.next': { ios: 'text.insert', android: 'playlist-play' },
+  'queue.last': { ios: 'text.append', android: 'playlist-plus' },
   profile: { ios: 'person.crop.circle', android: 'account-circle-outline' },
   'profile.fill': { ios: 'person.crop.circle.fill', android: 'account-circle' },
   more: { ios: 'ellipsis', android: 'dots-horizontal' },

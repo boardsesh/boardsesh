@@ -154,10 +154,14 @@
     "actions": "Playlist-Aktionen",
     "activateAll": "Abspielen",
     "addToQueue": {
-      "action": "Zur Warteschlange hinzufügen",
-      "actionCount_one": "{{count}} zur Warteschlange hinzufügen",
-      "actionCount_other": "{{count}} zur Warteschlange hinzufügen",
-      "subtitle": "Deine Warteschlange bleibt",
+      "action": "Als Letztes dran",
+      "actionCount_one": "{{count}} als Letztes dran",
+      "actionCount_other": "{{count}} als Letztes dran",
+      "subtitle": "Kommen nach dem Rest deiner Warteschlange",
+      "playNextAction": "Als Nächstes dran",
+      "playNextActionCount_one": "{{count}} als Nächstes dran",
+      "playNextActionCount_other": "{{count}} als Nächstes dran",
+      "playNextSubtitle": "Kommen vor dem Rest deiner Warteschlange",
       "queueFull": "Deine Warteschlange ist mit {{max}} Bouldern voll",
       "nothingToAdd": "Hier ist noch nichts für dein Board",
       "alreadyAdding": "Diese Playlist wird schon hinzugefügt",
@@ -196,7 +200,7 @@
       "loadFailed": "Die Playlist ließ sich nicht starten. Versuch's nochmal.",
       "trimmed": "{{loaded}} von {{total}} Bouldern geladen. Deine Warteschlange fasst {{max}}.",
       "trimmedUnknownTotal": "{{loaded}} Boulder geladen. Deine Warteschlange fasst {{max}}.",
-      "addInstead": "Zur Warteschlange hinzufügen"
+      "addInstead": "Als Letztes dran"
     },
     "deleteConfirm": {
       "title": "Playlist löschen?",

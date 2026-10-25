@@ -165,7 +165,7 @@ export type NowOnTheWallColumnProps = {
   boardConfig: BoardConfig | null;
   onSwitchBoard: () => void;
   onClimbPress: (action: BoardSheetClimbAction) => void;
-  onAddToQueue: (action: BoardSheetClimbAction) => void;
+  onPlayNext: (action: BoardSheetClimbAction) => void;
   onOpenPlaylist: (action: BoardSheetClimbAction) => void;
   onOpenActions: (action: BoardSheetClimbAction) => void;
 };
@@ -479,7 +479,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     dismissSourceSheet?: () => Promise<DismissAndWaitResult>;
     dismissPlayerAndWait?: () => Promise<DismissAndWaitResult>;
   } | null>(null);
-  const { addToQueue, setSessionBoardPath, setCurrentClimb } = useQueueActions();
+  const { playNext, setSessionBoardPath, setCurrentClimb } = useQueueActions();
   // Read at a board-sheet tap, which must not take a crewmate's wall (#6665).
   const isSharedSession = useIsSharedSession();
   const isSharedSessionRef = useRef(isSharedSession);
@@ -1092,11 +1092,12 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     [openPlayDrawer, setCurrentClimb],
   );
 
-  const handleBoardSheetAddToQueue = useCallback(
+  // A row's right swipe: the top of Up next, like every other climb list (#6772).
+  const handleBoardSheetPlayNext = useCallback(
     (action: BoardSheetClimbAction) => {
-      void addToQueue(climbToQueueItem(action.climb));
+      void playNext({ item: climbToQueueItem(action.climb) });
     },
-    [addToQueue],
+    [playNext],
   );
 
   const handleBoardSheetOpenPlaylist = useCallback(
@@ -1183,7 +1184,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
             boardConfig: storedActiveBoardConfig,
             onSwitchBoard: handleSwitchBoardFromSheet,
             onClimbPress: handleBoardSheetClimbPress,
-            onAddToQueue: handleBoardSheetAddToQueue,
+            onPlayNext: handleBoardSheetPlayNext,
             onOpenPlaylist: handleBoardSheetOpenPlaylist,
             onOpenActions: handleBoardPanelOpenActions,
           }
@@ -1193,7 +1194,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       boardSheetLabel,
       handleSwitchBoardFromSheet,
       handleBoardSheetClimbPress,
-      handleBoardSheetAddToQueue,
+      handleBoardSheetPlayNext,
       handleBoardSheetOpenPlaylist,
       handleBoardPanelOpenActions,
     ],
@@ -1353,7 +1354,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
             viewerUserId={sprayViewerUserId}
             onSelectGymWall={handleSelectGymWall}
             onClimbPress={handleBoardSheetClimbPress}
-            onAddToQueue={handleBoardSheetAddToQueue}
+            onPlayNext={handleBoardSheetPlayNext}
             onOpenPlaylist={handleBoardSheetOpenPlaylist}
             onOpenActions={handleBoardSheetModalOpenActions}
           />

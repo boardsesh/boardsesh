@@ -65,7 +65,7 @@ vi.mock('../../../../src/providers/queue-provider', () => ({ useIsSharedSession:
 vi.mock('../../../../src/lib/playlists/use-playlist-activation', () => ({
   usePlaylistActivation: (options: UsePlaylistActivationOptions) => {
     mocks.activation = options;
-    return { activate: mocks.activate, addToQueue: { append: vi.fn(), isAppending: false } };
+    return { activate: mocks.activate, addToQueue: { queue: vi.fn(), pendingPlacement: null } };
   },
 }));
 vi.mock('../../../../src/lib/graphql/hooks/use-infinite-search-climbs', () => ({

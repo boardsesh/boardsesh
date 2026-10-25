@@ -472,7 +472,7 @@
         "p1": "Wisch die Zeile eines Boulders nach links, oder halt sie gedrückt und tipp auf Zur Playlist hinzufügen.",
         "p2": "Die Auswahl zeigt nur Playlists für Board und Layout des Boulders.",
         "clipAlt": "Die Zeile eines Boulders nach links wischen, um ihn in eine Playlist zu legen",
-        "clipCaption": "Nach links wischen legt ihn in eine Playlist. Nach rechts in die Warteschlange.",
+        "clipCaption": "Nach links wischen legt ihn in eine Playlist. Nach rechts ist er als Nächstes dran.",
         "shotAlt": "Der Tab Entdecken",
         "shotCaption": "Angepinnt, dann Meine Playlists, dann Für dich.",
         "playlistShotAlt": "Deine eigene Playlist",
@@ -489,7 +489,7 @@
       "queue": {
         "title": "Die ganze Liste klettern",
         "intro": "Tipp einen Boulder in einer Playlist an, und du kletterst diese Playlist durch. Deine Warteschlange bleibt, wie sie ist.",
-        "p1": "Wisch, um die Liste ab dem angetippten Boulder der Reihe nach durchzugehen. Der Play-Button oben startet von vorn. Zur Warteschlange hinzufügen kopiert die ganze Liste in deine Warteschlange. Soll ein Antippen die Playlist stattdessen in deine Warteschlange laden, schalte Antippen einer Playlist lädt sie in meine Warteschlange unter Einstellungen, dann Board ein.",
+        "p1": "Wisch, um die Liste ab dem angetippten Boulder der Reihe nach durchzugehen. Der Play-Button oben startet von vorn. Als Nächstes dran setzt die ganze Liste an den Anfang deiner Warteschlange, Als Letztes dran ans Ende. Soll ein Antippen die Playlist stattdessen in deine Warteschlange laden, schalte Antippen einer Playlist lädt sie in meine Warteschlange unter Einstellungen, dann Board ein.",
         "p2": "In einer Session öffnet das Antippen den Boulder nur für dich. Die geteilte Warteschlange bleibt, wie sie ist.",
         "sessionsLink": "Wie eine Session eine Warteschlange teilt",
         "clipAlt": "Das Sheet Playlist starten?",
@@ -613,12 +613,12 @@
       },
       "rows": {
         "title": "Was eine Boulder-Zeile kann",
-        "p1": "Nach rechts wischen legt den Boulder in die Warteschlange. Nach links wischen öffnet die Playlist-Auswahl. Beides beleuchtet das Board nicht.",
+        "p1": "Nach rechts wischen setzt den Boulder an den Anfang deiner Warteschlange, er ist als Nächstes dran. Nach links wischen öffnet die Playlist-Auswahl. Beides beleuchtet das Board nicht.",
         "p2": "Das kleine Zeichen ist deine Historie. Ein Blitz heißt geflasht, ein Haken im Kreis getoppt, ein Kreuz im Kreis versucht, ein C im Kreis Benchmark.",
         "actionsLink": "Alles im Menü hinter dem langen Druck",
         "p3": "Halt eine Zeile gedrückt für das volle Aktionsmenü.",
         "clipAlt": "Eine Zeile in beide Richtungen wischen",
-        "clipCaption": "Rechts legt ihn in die Warteschlange, links öffnet die Playlist-Auswahl."
+        "clipCaption": "Rechts ist er als Nächstes dran, links öffnet die Playlist-Auswahl."
       },
       "keep": {
         "title": "Behalte die Filter, die du nutzt",
@@ -783,7 +783,7 @@
       },
       "rest": {
         "title": "Der Rest der Liste",
-        "queue": "Zur Warteschlange hinzufügen setzt den Boulder hinter deinen aktuellen.",
+        "queue": "Als Nächstes dran setzt den Boulder an den Anfang deiner Warteschlange. Als Letztes dran setzt ihn ans Ende.",
         "favorite": "Favorit umschalten ist das Herz. Boulder mit Herz landen in Gelikte Boulder.",
         "editEntry": "Routenbuch-Eintrag bearbeiten, wenn du aus deinem Routenbuch kommst.",
         "betaVideo": "Beta-Video hinzufügen, wenn du angemeldet bist.",

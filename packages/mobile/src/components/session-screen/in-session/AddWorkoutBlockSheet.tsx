@@ -1,6 +1,6 @@
 // "Add a block" during a session (#5379): pick a workout type, a grade and the
 // counts, see the climbs it will add, and queue them behind the live queue
-// the way Add to queue does, without moving the wall on this phone.
+// the way Play last does, without moving the wall on this phone.
 //
 // A ModalSheet, not a route (docs/mobile-sheets-vs-routes.md): it is a short
 // task over the session screen, opened by a button, and it opens no sheet of

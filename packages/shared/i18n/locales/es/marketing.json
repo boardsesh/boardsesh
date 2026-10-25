@@ -472,7 +472,7 @@
         "p1": "Para añadir un bloque, desliza su fila a la izquierda, o mantenla pulsada y toca Añadir a la playlist.",
         "p2": "El selector solo enseña playlists del plafón y el layout del bloque.",
         "clipAlt": "Deslizar la fila de un bloque a la izquierda para añadirlo a una playlist",
-        "clipCaption": "Desliza a la izquierda para guardarlo en una playlist. A la derecha, lo pones en cola.",
+        "clipCaption": "Desliza a la izquierda para guardarlo en una playlist. A la derecha, lo pones a continuación.",
         "shotAlt": "La pestaña Descubre",
         "shotCaption": "Fijado, luego Mis listas, luego Para ti.",
         "playlistShotAlt": "Tu propia playlist",
@@ -489,7 +489,7 @@
       "queue": {
         "title": "Escalar la lista entera",
         "intro": "Toca un bloque de una playlist y recorres esa playlist. Tu cola se queda como está.",
-        "p1": "Desliza para recorrer la lista en orden desde el bloque que tocaste. El botón de play de la cabecera empieza desde arriba. Añadir a la cola copia la lista entera en tu cola. Si prefieres que un toque cargue la playlist en tu cola, activa Al tocar una playlist, cargarla en mi cola en Ajustes, en Plafón.",
+        "p1": "Desliza para recorrer la lista en orden desde el bloque que tocaste. El botón de play de la cabecera empieza desde arriba. Poner a continuación pone la lista entera al principio de tu cola, y Poner al final, al final. Si prefieres que un toque cargue la playlist en tu cola, activa Al tocar una playlist, cargarla en mi cola en Ajustes, en Plafón.",
         "p2": "En una sesión, tocar solo abre el bloque para ti. La cola compartida no se mueve.",
         "sessionsLink": "Cómo una sesión comparte una sola cola",
         "clipAlt": "La hoja ¿Iniciar playlist?",
@@ -613,12 +613,12 @@
       },
       "rows": {
         "title": "Lo que hace una fila de bloque",
-        "p1": "Desliza a la derecha para poner el bloque en cola. A la izquierda para el selector de playlists. Ninguno enciende el plafón.",
+        "p1": "Desliza a la derecha para poner el bloque a continuación, al principio de tu cola. A la izquierda para el selector de playlists. Ninguno enciende el plafón.",
         "p2": "El icono pequeño es tu historial. Un rayo es flash, un tick en círculo encadenado, una cruz en círculo intentado y una C en círculo referencia.",
         "actionsLink": "Todo el menú de pulsado largo",
         "p3": "Mantén pulsada una fila para el menú de acciones completo.",
         "clipAlt": "Deslizar una fila a los dos lados",
-        "clipCaption": "Derecha lo pone en cola, izquierda abre el selector de playlists."
+        "clipCaption": "Derecha lo pone a continuación, izquierda abre el selector de playlists."
       },
       "keep": {
         "title": "Guarda los filtros que usas",
@@ -783,7 +783,7 @@
       },
       "rest": {
         "title": "El resto de la lista",
-        "queue": "Añadir a la cola pone el bloque después del actual.",
+        "queue": "Poner a continuación pone el bloque al principio de tu cola. Poner al final lo pone al final.",
         "favorite": "Alternar favorito es el corazón. Los bloques con corazón llenan Bloques favoritos.",
         "editEntry": "Editar registro, cuando vienes de tu logbook.",
         "betaVideo": "Añadir vídeo de beta, con la sesión iniciada.",

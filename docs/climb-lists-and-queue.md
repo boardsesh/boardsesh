@@ -95,8 +95,8 @@ drives the wall, and the "flag on" behaviour below is built but nobody has it ye
 | Surface | How you get there | Tap (solo) | Next after the tap | End of the list |
 | --- | --- | --- | --- | --- |
 | Search results | Climbs tab | Commits, flagged `suggested`, with the results as the track (`app/(tabs)/climbs/index.tsx:1302-1329`). Since F2, with Light on tap off: a preview with the results as its track (`src/lib/playlists/use-playlist-activation.ts:1350`). | Walks the results | Track end. The first load holds about 250 climbs after the tapped one (rounded up to a page of 100); since F1 one more page loads as the climber nears its end, up to the first 1,000 results. |
-| Setter page | For You setter card, the setter's name in the player, Home's "See all" | Since F4: commits, flagged `suggested`, with the setter's climbs as the track, named after the setter, and leaves the rest of the queue alone (`src/components/SetterPlaylistScreen.tsx`, behind both setter routes). With Light on tap off: a preview with the same track. With the playlist switch on: replaces the queue with the setter's climbs this board can draw, after "Start playlist?" if anything is queued after the current climb; there, Cancel previews the tapped climb and Add to queue appends the list and plays the tapped climb next, keeping everything already queued and queuing the tapped climb once. That climb plays from the queue, with no track: the list now sits behind what was queued, so a swipe walks what was queued and then the list, and never queues a second copy of a list climb. The same holds when the prompt comes up a second time, because climbs were queued while the list loaded. A replace longer than the 500-climb queue cap queues the tapped climb, the climbs after it and, near the end, the ones before it, 500 in all, and a toast says how many fit (#6673). | Walks the list, under the setter's name | Track end |
-| Playlist | Discover › a playlist | As the setter page (`usePlaylistActivation` in `app/(tabs)/discover/[playlist_uuid].tsx`). The header's **Play** button (both looks since F4) does the same with the first climb, and ignores Light on tap. The **Add to queue** row appends the whole list, with or without the switch. With a sort or filter on, all three use the sorted, filtered list on screen (see [Sorting and filtering a playlist](#sorting-and-filtering-a-playlist)). | As the setter page | As the setter page |
+| Setter page | For You setter card, the setter's name in the player, Home's "See all" | Since F4: commits, flagged `suggested`, with the setter's climbs as the track, named after the setter, and leaves the rest of the queue alone (`src/components/SetterPlaylistScreen.tsx`, behind both setter routes). With Light on tap off: a preview with the same track. With the playlist switch on: replaces the queue with the setter's climbs this board can draw, after "Start playlist?" if anything is queued after the current climb; there, Cancel previews the tapped climb and Play last appends the list and plays the tapped climb next, keeping everything already queued and queuing the tapped climb once. That climb plays from the queue, with no track: the list now sits behind what was queued, so a swipe walks what was queued and then the list, and never queues a second copy of a list climb. The same holds when the prompt comes up a second time, because climbs were queued while the list loaded. A replace longer than the 500-climb queue cap queues the tapped climb, the climbs after it and, near the end, the ones before it, 500 in all, and a toast says how many fit (#6673). | Walks the list, under the setter's name | Track end |
+| Playlist | Discover › a playlist | As the setter page (`usePlaylistActivation` in `app/(tabs)/discover/[playlist_uuid].tsx`). The header's **Play** button (both looks since F4) does the same with the first climb, and ignores Light on tap. The **Play next** and **Play last** rows put the whole list at the top or the bottom of Up next, in list order, with or without the switch (#6772). With a sort or filter on, all of them use the sorted, filtered list on screen (see [Sorting and filtering a playlist](#sorting-and-filtering-a-playlist)). | As the setter page | As the setter page |
 | For You and smart lists (Projects, Liked Climbs and the rest) | Discover › For You | As the setter page (`app/(tabs)/discover/smart/[type].tsx:119-128`) | As the setter page | As the setter page |
 | Logbook | You › Logbook, someone's logbook | Since F2: commits, flagged `suggested`, with the logbook's rows as the track, named "Logbook" (`src/components/you/LogbookTab.tsx:574`, through `src/lib/playlists/use-tick-list-activation.ts`). A tick on another board model opens as a preview on its own board. The tapped tick is drawn at the size and angle it was climbed at. With Light on tap off: a preview with the same track. | Walks the rows on screen, in their order (one entry per climb) | Track end. The track pages on through the logbook's own feed as the climber nears its end, from the first climb not yet in the track and at most 5 of the feed's pages per request, so a logbook of repeats is never loaded in one go (`src/lib/playlists/loaded-list-pages.ts`). |
 | Session detail | Home session card, You › Sessions | As the logbook, named "Session climbs" (`src/components/session/SessionDetailScreen.tsx:91`) | Walks the session's ticks | Track end |
@@ -113,7 +113,7 @@ drives the wall, and the "flag on" behaviour below is built but nobody has it ye
 
 | Surface | In a crew today (flag off) | In a crew, flag on | Row swipes | Long-press |
 | --- | --- | --- | --- | --- |
-| Search results | Commits for the whole room; with Light on tap off, a preview with the results as the track | Preview with the loaded rows as the track, paging on past them | Right: add to queue. Left: add to playlist. | Climb menu, plus a ⋮ button (the only list with one) |
+| Search results | Commits for the whole room; with Light on tap off, a preview with the results as the track | Preview with the loaded rows as the track, paging on past them | Right: Play next (top of Up next, #6772). Left: add to playlist. | Climb menu, plus a ⋮ button (the only list with one) |
 | Setter page, playlist, For You | Commits for the whole room (F4); with Light on tap off, a preview. With the playlist switch on, replaces the whole room's queue | Preview with the loaded rows as the track; Next stops at the last loaded row | As search; rows the board can't show still swipe | Climb menu |
 | Logbook | Commits for the whole room | Preview with the logbook as the track (F2) | Right: edit the tick. Left: delete it. Your own ticks only. | Climb menu, plus Edit |
 | Session detail, profile climbs, Home session card | Commits for the whole room | Preview with that list as the track (F2) | None | Climb menu |
@@ -138,15 +138,16 @@ Smart lists and setter pages have the same chip row, sheet and ≡ button; see
   own order or a filter is on. With neither, the request is the one sent before views existed.
 - **The rows on screen decide.** While a new sort or filter loads, the previous rows stay up.
   The screen tracks the view those rows belong to (the settled view), and the play drawer's
-  track, the queue replace and Add to queue all use that view, so a swipe walks the order on
+  track, the queue replace and Play next / Play last all use that view, so a swipe walks the order on
   screen and skips filtered-out climbs.
 - **The source id carries the view.** It is `playlist:<uuid>` with no view and
   `playlist:<uuid>|<view as JSON>` with one, so a sorted track is a different source from the
   plain one and re-tapping after a change builds a fresh track.
-- **Add N to queue.** With a filter on, the row reads "Add 12 to queue" and appends those climbs
-  in the order shown, but only when the number is exact: with "Fits my board" on (the server's
+- **Play N next / Play N last.** With a filter on, the rows read "Play 12 next" and "Play 12 last"
+  and queue those climbs in the order shown, but only when the number is exact: with "Fits my board" on (the server's
   count is then all on this board), or once every row is loaded (the climbs this board can show,
-  leaving out the dimmed ones the board-scoped add skips). Otherwise it stays "Add to queue".
+  leaving out the dimmed ones the board-scoped add skips). Otherwise they stay "Play next" and
+  "Play last".
 - **Edit mode always shows the playlist's own order.** A reorder index is a place in that order
   (#4012). Tapping Edit sets the sort aside and clears the filters. The plain order's cached
   pages can be stale (an add or remove refetches only the view on screen), so they are marked
@@ -182,15 +183,35 @@ filter) is byte-identical to before.
   The subtitle names the sort in force ("All climbs on this board · Hardest first"). Setters,
   Following, Other angles and "Fits my board" are not offered; Hold types and Board region are.
 - **What you see is what you swipe and queue**, on all three surfaces. The play drawer's
-  `fetchPage`, the activation `sourceId` and Add to queue follow the settled view (the view whose
+  `fetchPage`, the activation `sourceId` and Play next / Play last follow the settled view (the view whose
   rows are on screen). Source ids are `playlist:<uuid>`, `smart:<TYPE>:<userId>` and
   `setter:<username>:<board JSON>`, each followed by `|<view key>` while a sort or filter is on
   (`listSourceId` in `src/lib/playlists/playlist-view.ts`).
 
-The climb menu is the same everywhere (`src/components/climb-actions/use-climb-actions.ts:299-372`):
-Preview, Add to queue, Open queue, Play next, Add to playlist, Favorite and the rest. In a
-crew, swiping right, Add to queue and Play next all write to the room's queue, with or without
+The climb menu is the same everywhere (`src/components/climb-actions/use-climb-actions.ts`):
+Preview, Play next, Play last, Open queue, Add to playlist, Favorite and the rest. In a
+crew, swiping right, Play next and Play last all write to the room's queue, with or without
 the flag.
+
+### Play next and Play last (#6772)
+
+The two placements are named the way a music app names them, so a climber knows where a climb
+lands. Before, "Add to queue" put it at the bottom of Up next, behind everything already queued,
+and with a long queue the climber never reached it.
+
+- **Play next** puts the climb at the top of Up next, right behind the climb on the wall
+  (`playNext` in `src/providers/queue-provider.tsx`). A climb already queued moves there instead
+  of being copied. The menu hides it on the climb that is on the wall.
+- **Play last** puts it at the bottom of Up next (`addToQueue`), what "Add to queue" did.
+- **The row swipe right is Play next**, on every climb list that shares `ClimbListRow`: search,
+  playlists, For You and the smart lists, setter pages and the board sheet. Logbook rows keep
+  their own swipes.
+- **A playlist offers both for the whole list.** Play next inserts the list at the top of Up next
+  in list order, Play last appends it (`appendQueueItems` with `placement`). Both share the
+  500-climb cap and the queue-full toast. Unlike a single Play next, a list never moves climbs
+  that are already queued. The "Start playlist?" prompt keeps its three answers; its middle one is
+  now called Play last.
+- **The snackbar names where it went**: "Playing next" or "Playing last", with a count for a list.
 
 ### Where it's saved
 
@@ -342,7 +363,7 @@ Two smaller gaps: list screens read the crew state at the moment of the tap, whi
 logbook, sessions, profile and similar climbs read the player's browse latch. The latch arms
 only when a preview was open while the crew was there (`PlayCore.tsx:750-752`), stays up for
 10 s after the crew leaves, and clears as soon as a committed climb opens
-(`use-play-selection-controller.ts:177`). And swiping right to queue, Add to queue and Play next write
+(`use-play-selection-controller.ts:177`). And the right swipe, Play next and Play last write
 to the room's queue with no gate at all, flag or not.
 
 ### 5. Previews you can't swipe
@@ -375,7 +396,7 @@ opener reaches that state today, because the swipe is disabled first.
 
 | Row                                    | Swipe right       | Swipe left                                 |
 | -------------------------------------- | ----------------- | ------------------------------------------ |
-| Climb rows (search, playlists, setter) | Add to queue      | Add to playlist                            |
+| Climb rows (search, playlists, setter) | Play next         | Add to playlist                            |
 | Logbook rows                           | Edit the tick     | Delete the tick (after a confirm)          |
 | Queue rows                             | Nothing           | Delete from the queue (a full swipe skips the button) |
 
@@ -385,7 +406,7 @@ long-press (`ClimbListRow.tsx:359,367`) but still swipes (`:471`).
 
 ![A climb row swiped right and left, next to a logbook row swiped right](images/list-model/climbs-row-swipe.png)
 
-_Left and middle: a Climbs row half-swiped right (1, Add to queue) and left (2, Add to Playlist). Right: a logbook row half-swiped right (3, Edit entry). A half swipe leaves the button showing; a full swipe runs it. A full left swipe on the logbook row deletes the tick after a confirm (`src/components/you/LogbookTab.tsx:564-568`)._
+_Left and middle: a Climbs row half-swiped right (1, Add to queue, since renamed Play next by #6772) and left (2, Add to Playlist). Right: a logbook row half-swiped right (3, Edit entry). A half swipe leaves the button showing; a full swipe runs it. A full left swipe on the logbook row deletes the tick after a confirm (`src/components/you/LogbookTab.tsx:564-568`)._
 
 ### 7. Playlists differ by platform
 
@@ -396,7 +417,7 @@ follows is how it was.
 
 Only the Material look (Android's default) has a play-all button, in its app bar:
 `PlaylistDetailView.tsx:708-716`. The Liquid Glass header (iOS) carries only the follow, pin
-and owner controls (`:324-326`), and its list header has the Add to queue row but no play
+and owner controls (`:324-326`), and its list header has the Add to queue row (now Play next and Play last) but no play
 button (`:836-843`). The /help page promises both platforms "The header's play button starts
 from the top" (`marketing.json` `help.playlists.queue.p1`).
 
@@ -472,19 +493,19 @@ _The queue sheet. (1) History. (2) The current climb. (3) Up next. (4) Suggestio
 ## The model: play from a list, queue on purpose
 
 Seven rules. Each one reuses a part that already exists in the code: the list track from
-#4829, the browse preview and Put on the wall from #4281, and Add to queue from #4731.
+#4829, the browse preview and Put on the wall from #4281, and a list's Play last (once Add to queue) from #4731.
 
 1. **Tap a climb in any list and the player plays from that list**, and says so in its top bar:
    "Projects · 4 of 23".
 2. **Swipes walk that list and stop at its ends.** The last swipe shows an end card, "Keep going
    with your queue (3)" with "First up: Crimp Ladder" under it, instead of dropping silently into
    older queue climbs. On the way there, the queue button's badge counts Up next.
-3. **The queue holds only what you or your crew add**: swipe to queue, Play next, Add to queue,
-   a workout. Looking at a climb never adds it to Up next. Climbs that were on the wall show
+3. **The queue holds only what you or your crew add**: the right swipe (Play next), Play next,
+   Play last, a workout. Looking at a climb never adds it to Up next. Climbs that were on the wall show
    under History.
 4. **The queue is a list too.** Tap a queue row and you play from the queue. In a crew it is
    the room's list.
-5. **Playing a playlist never wipes your queue.** Add to queue copies the playlist in. The
+5. **Playing a playlist never wipes your queue.** Play next and Play last copy the playlist in. The
    "Start playlist?" prompt goes away.
 6. **Looking never takes a crewmate's wall**, from any list. Solo, Light on tap and Light on
    swipe decide whether looking also lights the board, as they do today. This needs the
@@ -521,7 +542,7 @@ player names that list, walks it, and stops at its end card.
 | Surface                                  | Today                                                                                     | After                                                                                              |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
 | Search results | Inserts the climb into the queue (a second copy if it was already queued) and walks the results, named "Search results" in the top bar, to the end card (F1). With Light on tap off or in a crew, a preview that walks the results (F2). | Plays from the results. Nothing is added to Up next (F1, F3). |
-| Playlist                                 | Plays from the playlist: inserts the climb and walks the named playlist to the end card, queue and History untouched; a preview with Light on tap off or in a crew. Play button in both looks. Add to queue copies it in. The playlist switch keeps the old replace, and its prompt's Cancel and Add to queue now open the tapped climb (F4). | Plays from the playlist. Nothing is added to Up next (F3). |
+| Playlist                                 | Plays from the playlist: inserts the climb and walks the named playlist to the end card, queue and History untouched; a preview with Light on tap off or in a crew. Play button in both looks. Play next and Play last copy it in, at the top or the bottom of Up next (#6772). The playlist switch keeps the old replace, and its prompt's Cancel and Play last now open the tapped climb (F4). | Plays from the playlist. Nothing is added to Up next (F3). |
 | For You and smart lists                  | As the playlist (F4); the track pages the board the rows on screen were read on.           | Plays from the list (F3).                                                                          |
 | Setter page                              | As the playlist (F4); the track pages with the same cross-angle stats as the list.         | Plays from the setter's list (F3).                                                                 |
 | Logbook | Inserts the climb and plays from the logbook, named "Logbook", to the end card; a preview with the same track with Light on tap off or in a crew (F2). | Plays from the logbook. Nothing is added to Up next (F2, F3). |
@@ -561,8 +582,8 @@ Post this page in Discord before filing F1 to F6, and ask @brownbeagle whether i
 "I get lost". Three things we would like climbers to answer:
 
 1. At the end of a list, should swipes wrap back to the first climb, or stop on the end card?
-2. Logbook rows swipe right to edit and left to delete, while climb rows swipe right to queue
-   and left to add to a playlist. Should the logbook follow the climb rows, or is it fine
+2. Logbook rows swipe right to edit and left to delete, while climb rows swipe right to play
+   next and left to add to a playlist. Should the logbook follow the climb rows, or is it fine
    because a logbook row is a tick, not a climb?
 3. After a day away, what should the board show when you connect: nothing, the last climb you
    had up, or the top of your Up next?

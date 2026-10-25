@@ -8,27 +8,23 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
  * their actions. This split avoids a circular provider dependency.
  *
  * It drives two independent snackbars:
- *   - "Climb added to queue" (Open → opens the queue sheet)
+ *   - "Playing next" / "Playing last" (Open → opens the queue sheet)
  *   - "Wall changed · Undo"  (Undo → re-lights the previous wall climb)
  * Each has its own visible/nonce pair so showing one doesn't disturb the other.
  */
 /**
- * Which copy the queue snackbar shows. `'added'` is the plain append;
- * `'playNext'` confirms a Play next — the climb jumped to the slot right behind
- * the one on the wall, which reads as a broken button if the snackbar still says
- * "added to queue".
+ * Which copy the queue snackbar shows. `'added'` confirms a Play last (the
+ * bottom of Up next); `'playNext'` confirms a Play next (the top of Up next).
+ * Each names where the climb went, so a climber with a long queue isn't left
+ * guessing whether they'll ever reach it (#6772).
  */
 export type QueueAddedSnackbarKind = 'added' | 'playNext';
 
 export type QueueAddedSnackbarOptions = {
   kind: QueueAddedSnackbarKind;
   /**
-   * How many climbs the confirmation covers, for a plural.
-   *
-   * Deliberately unused by this feature — a Play next is always exactly one
-   * climb. It exists so the bulk playlist append (#4673) resolves its plural
-   * against this same confirmation vocabulary instead of standing up a second,
-   * near-identical snackbar. Not dead API: an in-flight sibling PR consumes it.
+   * How many climbs the confirmation covers, for a plural. Defaults to 1; a
+   * whole playlist going in (Play next or Play last, #4673) passes what landed.
    */
   count?: number;
 };

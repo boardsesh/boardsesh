@@ -79,10 +79,12 @@ export const SHARED_EVENTS = {
   // signal: mostly `switch` means people keep landing on the wrong board first;
   // mostly `cancel` means the prompt is firing where it isn't wanted.
   CrossBoardQueueAddPrompted: 'Cross Board Queue Add Prompted',
-  // A whole playlist (or smart playlist) was appended behind the live queue via
-  // the playlist-detail "Add to queue" row, or via the "add instead" branch of
-  // the replace prompt. Props: { sourceKind: 'playlist' | 'smart', entryPoint:
-  // 'listHeader' | 'replacePrompt', outcome: 'added' | 'addedPartial' |
+  // A whole playlist (or smart playlist) was queued via the playlist-detail
+  // Play next / Play last rows, or via the Play last branch of the replace
+  // prompt. Props: { sourceKind: 'playlist' | 'smart', entryPoint:
+  // 'listHeader' | 'replacePrompt', placement: 'next' | 'end' (top or bottom of
+  // Up next; absent before #6772, when every list went to the end), outcome:
+  // 'added' | 'addedPartial' |
   // 'queueFull' | 'nothingToAdd' | 'failed', fetchedCount, appendedCount,
   // boardName, layoutId, angle }.
   //

@@ -134,8 +134,8 @@ describe('useClimbActions gating', () => {
   it('returns the universal actions for a plain Kilter climb (no edit/beta/openInApp/editEntry)', () => {
     expect(ids({ climb, boardConfig: kilterBoard, isAuthenticated: false })).toEqual([
       'preview',
-      'queue',
       'playNext',
+      'queue',
       'playlist',
       'favorite',
       'tick',
@@ -146,7 +146,7 @@ describe('useClimbActions gating', () => {
 
   // The player's ⋯ passes this (and shows the row while its bar has put the
   // queue button away); everywhere else the queue has its own button.
-  it('adds "Open the queue" right after "Add to queue" only when onOpenQueue is provided', () => {
+  it('adds "Open the queue" right after "Play last" only when onOpenQueue is provided', () => {
     expect(ids({ climb, boardConfig: kilterBoard, isAuthenticated: false })).not.toContain('openQueue');
 
     const withQueue = ids({ climb, boardConfig: kilterBoard, isAuthenticated: false, onOpenQueue: () => {} });
@@ -492,7 +492,18 @@ describe('useClimbActions colours and dispatch', () => {
     expect(byId.playlist).toBe('#00f');
   });
 
-  it('queue.run enqueues the climb and fires onAfterAction', () => {
+  // #6772: the two placements sit together, Play next first, the way a music
+  // app lists them, and each says where the climb goes.
+  it('offers Play next right above Play last, labelled and drawn as the pair', () => {
+    const { result } = renderActions({ climb, boardConfig: kilterBoard, isAuthenticated: false });
+    const actionIds = result.current.map((action) => action.id);
+    expect(actionIds.indexOf('queue')).toBe(actionIds.indexOf('playNext') + 1);
+    const byId = Object.fromEntries(result.current.map((action) => [action.id, action]));
+    expect(byId.playNext).toMatchObject({ title: 'mobile.climbActions.playNext', icon: 'queue.next' });
+    expect(byId.queue).toMatchObject({ title: 'mobile.climbActions.playLast', icon: 'queue.last' });
+  });
+
+  it('queue.run (Play last) enqueues the climb at the end and fires onAfterAction', () => {
     const onAfterAction = vi.fn();
     const { result } = renderActions({ climb, boardConfig: kilterBoard, isAuthenticated: false, onAfterAction });
     result.current.find((action) => action.id === 'queue')?.run();

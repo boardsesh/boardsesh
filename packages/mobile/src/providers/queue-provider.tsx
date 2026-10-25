@@ -1734,22 +1734,28 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  // Append a batch behind whatever the climber already has going, instead of
+  // Add a batch next to whatever the climber already has going, instead of
   // replacing it. Leaving the current pointer alone is what keeps the BLE
   // auto-sender (it writes state.currentClimbQueueItem) from repainting the wall
-  // out from under someone mid-project, and appending rather than replacing keeps
+  // out from under someone mid-project, and adding rather than replacing keeps
   // their hand-queued climbs. Mirrors web's start-sesh-drawer.
+  //
+  // `placement` picks where the batch lands, in batch order: `'end'` (the
+  // default) at the bottom of Up next, `'next'` at the top of it, in the slot a
+  // single Play next takes (`playNextInsertPosition`), derived once here from
+  // live state. Unlike a single Play next, a batch never MOVES a climb that is
+  // already queued: it is a list going in as copies, the same as the append.
   //
   // `activateFirstWhenIdle` is the workout generator's contract — "start me on
   // the first climb of the session I just generated" — and defaults OFF, because
-  // the other caller is the playlist "Add to queue" row, where taking the wall is
-  // exactly what the climber asked us not to do. It can only FILL an empty
-  // pointer; it never moves one that is already set.
+  // the other caller is the playlist Play next / Play last rows, where taking the
+  // wall is exactly what the climber asked us not to do. It can only FILL an
+  // empty pointer; it never moves one that is already set.
   //
   // Returns how many items actually landed, after the clamp below, so the caller
   // can confirm an honest count.
   const appendQueueItems = useCallback(
-    (items: ClimbQueueItem[], options?: { activateFirstWhenIdle?: boolean }): number => {
+    (items: ClimbQueueItem[], options?: { activateFirstWhenIdle?: boolean; placement?: QueueAddPlacement }): number => {
       if (privacyRevocationGeneration !== getPrivacyRevocationGeneration()) return 0;
       // Nothing to append: don't broadcast a SET_QUEUE that changes nothing.
       if (items.length === 0) return 0;
@@ -1765,9 +1771,19 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       const appended = items.length > remainingCapacity ? items.slice(0, remainingCapacity) : items;
 
       const nextCurrent = currentClimbQueueItem ?? (options?.activateFirstWhenIdle ? appended[0] : null);
+      // The first landing slot, or undefined for an append. Read against the
+      // pointer as it stands before this call: an idle queue that the batch's
+      // own first climb is about to take is still "nothing current", so a
+      // Play next batch starts at the head either way.
+      const insertPosition =
+        options?.placement === 'next' ? playNextInsertPosition(queue, currentClimbQueueItem) : undefined;
       const origin = captureQueueMutationOrigin();
       if (nextCurrent) {
-        applyQueueSnapshot([...queue, ...appended], nextCurrent, origin);
+        const nextQueue =
+          insertPosition === undefined
+            ? [...queue, ...appended]
+            : [...queue.slice(0, insertPosition), ...appended, ...queue.slice(insertPosition)];
+        applyQueueSnapshot(nextQueue, nextCurrent, origin);
         return appended.length;
       }
 
@@ -1788,9 +1804,14 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // list.
       const existingUuids = new Set(queue.map((queueItem) => queueItem.uuid));
       const attributedItems = appended.map((item) => attributeNewItem(item, existingUuids));
-      for (const item of attributedItems) {
-        dispatch({ type: 'DELTA_ADD_QUEUE_ITEM', payload: { item } });
-      }
+      // A Play next batch takes consecutive slots from `insertPosition`, so it
+      // keeps the list's order at the head of Up next. The same index goes to
+      // the local dispatch and the wire, as in `commitQueueAdd`, so this phone
+      // and its peers agree on where each climb landed.
+      const positionAt = (index: number) => (insertPosition === undefined ? undefined : insertPosition + index);
+      attributedItems.forEach((item, index) => {
+        dispatch({ type: 'DELTA_ADD_QUEUE_ITEM', payload: { item, position: positionAt(index) } });
+      });
       // Drain the wire sends ONE AT A TIME. Every addQueueItem lands in the
       // backend's `withQueueVersionRetry` around a single-key Redis CAS, with a
       // 3-attempt ceiling and no backoff or jitter — so firing N of them at once
@@ -1804,13 +1825,18 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // so the latency is invisible.
       void enqueueQueueMutation(async () => {
         const failures: unknown[] = [];
+        // Counts the climbs already sent at the head, so a skipped (removed)
+        // climb doesn't leave a gap in the positions of the ones after it.
+        let sentCount = 0;
         for (const item of attributedItems) {
           if (!isQueueMutationOriginCurrent(origin)) return;
           // A later per-item removal is an explicit user choice even if it
           // landed while this item was waiting behind an earlier append.
           if (mutations.wasUuidExplicitlyRemoved(item.uuid)) continue;
+          const position = positionAt(sentCount);
+          sentCount += 1;
           try {
-            await mutations.addQueueItem(item);
+            await mutations.addQueueItem(item, position);
           } catch (error) {
             if (!isQueueMutationOriginCurrent(origin)) return;
             if (__DEV__) console.warn('[queue] appendQueueItems addQueueItem sync failed', error);
