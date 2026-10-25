@@ -70,9 +70,11 @@ type QueueContextValue = {
    * `queueItemUuid` when the action came from a queue row — it names the exact
    * slot, which matters when the same climb is queued twice.
    *
-   * - `'added'` — it wasn't queued, so it was inserted
+   * - `'added'` — it wasn't queued, so it was inserted; a climb on the wall
+   *   named without its `queueItemUuid` gets a repeat copy right behind it
    * - `'moved'` — it was queued elsewhere and jumped the line
-   * - `'unchanged'` — it was already up next (or is the climb on the wall)
+   * - `'unchanged'` — it was already up next, or `queueItemUuid` named the slot
+   *   on the wall
    * - `'cancelled'` — the climber backed out of the cross-board prompt
    */
   playNext: (target: {

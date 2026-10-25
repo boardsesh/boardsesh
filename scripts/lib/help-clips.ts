@@ -84,7 +84,8 @@ export const HELP_CLIPS = [
     name: 'swipe-row-queue-playlist',
     source: 'swipe-row-queue-playlist',
     // The first frame is the same climbs list the long-press clip opens on; 3 s
-    // in, the first swipe has landed and the "Playing next" toast is up.
+    // in, the first swipe has landed and its toast is up. The take predates
+    // #6772 (it still shows "Climb added to queue") and needs a macOS re-record.
     poster: 3,
     description: 'Swipe a climb row to reveal queue and playlist actions.',
   },

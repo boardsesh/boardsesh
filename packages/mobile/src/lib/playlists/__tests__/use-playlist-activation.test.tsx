@@ -2992,6 +2992,45 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       });
     });
 
+    it("leaves the climb on the wall out and drops this list's track while walking it", async () => {
+      // Walking this list from `b`: a copy of `b` would be first up next, and
+      // the track would keep swipes peeking the list past the copies.
+      const wallItem = makeQueueItem('q-b', 'b');
+      mocks.queueState = { queue: [wallItem], currentClimbQueueItem: wallItem };
+      mocks.suggestionSource = { playlistUuid: 'playlist:pl-1', activatedClimbUuid: 'b', boardKey: 'kilter:1:2:3' };
+      const fetchPage = vi
+        .fn()
+        .mockResolvedValue({ climbs: [makeClimb('a'), makeClimb('b'), makeClimb('c')], hasMore: false });
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
+
+      await act(async () => {
+        result.current.addToQueue.queue?.('next');
+      });
+
+      await waitFor(() => expect(mocks.showQueueAddedSnackbar).toHaveBeenCalledTimes(1));
+      expect(mocks.appendQueueItems.mock.calls[0][0].map((item) => item.climb.uuid)).toEqual(['a', 'c']);
+      expect(mocks.setPlaylistSuggestionSource).toHaveBeenCalledExactlyOnceWith(null);
+      // The wall climb counts as landed: the whole list is in play.
+      expect(mocks.showQueueAddedSnackbar).toHaveBeenCalledWith({ kind: 'playNext', count: 3 });
+    });
+
+    it("keeps the whole batch and another list's track when the wall climb is not on this list", async () => {
+      const wallItem = makeQueueItem('q-z', 'z');
+      mocks.queueState = { queue: [wallItem], currentClimbQueueItem: wallItem };
+      mocks.suggestionSource = { playlistUuid: 'playlist:other', activatedClimbUuid: 'z', boardKey: 'kilter:1:2:3' };
+      const fetchPage = vi.fn().mockResolvedValue({ climbs: [makeClimb('a'), makeClimb('b')], hasMore: false });
+      const { result } = renderActivation(fetchPage, { honorPlaylistLoadSetting: true });
+
+      await act(async () => {
+        result.current.addToQueue.queue?.('next');
+      });
+
+      await waitFor(() => expect(mocks.showQueueAddedSnackbar).toHaveBeenCalledTimes(1));
+      expect(mocks.appendQueueItems.mock.calls[0][0].map((item) => item.climb.uuid)).toEqual(['a', 'b']);
+      expect(mocks.setPlaylistSuggestionSource).not.toHaveBeenCalled();
+      expect(mocks.showQueueAddedSnackbar).toHaveBeenCalledWith({ kind: 'playNext', count: 2 });
+    });
+
     it('says the queue is full, and fetches nothing, when it is already at the cap', async () => {
       mocks.queueState = {
         queue: Array.from({ length: MAX_SYNCED_QUEUE_ITEMS }, (_unused, index) =>

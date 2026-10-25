@@ -1650,6 +1650,113 @@ describe('QueueProvider local solo queue', () => {
       ]);
     });
 
+    async function renderInSessionWithNothingCurrent() {
+      sessionStore.getStoredSessionId.mockResolvedValue('session-1');
+      http.request.mockImplementation((operation: string) =>
+        operation.includes('SessionStatus')
+          ? Promise.resolve({ sessionStatus: 'active' })
+          : Promise.resolve({ createSession: { id: 'session-new' } }),
+      );
+      queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(null);
+
+      const snapshots: Snapshot[] = [];
+      renderProvider((snapshot) => snapshots.push(snapshot));
+      await waitFor(() => {
+        expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+      });
+      queueMutations.setQueue.mockClear();
+      queueMutations.addQueueItem.mockClear();
+      return snapshots;
+    }
+
+    const sentPositions = () => queueMutations.addQueueItem.mock.calls.map(([item, position]) => [item.uuid, position]);
+
+    it('gives a climb removed before it is sent no slot, so the next climb takes it', async () => {
+      const snapshots = await renderInSessionWithNothingCurrent();
+      queueMutations.wasUuidExplicitlyRemoved.mockImplementation((uuid: string) => uuid === 'list-2');
+
+      act(() => {
+        snapshots
+          .at(-1)
+          ?.appendQueueItems([makeQueueItem('list-1'), makeQueueItem('list-2'), makeQueueItem('list-3')], {
+            placement: 'next',
+          });
+      });
+
+      await waitFor(() => expect(queueMutations.addQueueItem).toHaveBeenCalledTimes(2));
+      expect(sentPositions()).toEqual([
+        ['list-1', 0],
+        ['list-3', 1],
+      ]);
+    });
+
+    it('gives a climb whose send failed no slot, so the next climb takes it', async () => {
+      const snapshots = await renderInSessionWithNothingCurrent();
+      queueMutations.addQueueItem.mockImplementation(async (item: ClimbQueueItem) => {
+        if (item.uuid === 'list-1') throw new Error('network down');
+      });
+
+      act(() => {
+        snapshots
+          .at(-1)
+          ?.appendQueueItems([makeQueueItem('list-1'), makeQueueItem('list-2'), makeQueueItem('list-3')], {
+            placement: 'next',
+          });
+      });
+
+      await waitFor(() => expect(queueMutations.addQueueItem).toHaveBeenCalledTimes(3));
+      expect(sentPositions()).toEqual([
+        ['list-1', 0],
+        ['list-2', 0],
+        ['list-3', 1],
+      ]);
+    });
+
+    it("sends a single Play next after a draining list, so the server keeps this phone's order", async () => {
+      // Server queue [X]; the list goes to 0,1,2 and the single to 0. Sent in
+      // the middle of the drain, the single would land among the list's climbs.
+      const snapshots = await renderInSessionWithNothingCurrent();
+      let releaseFirstSend: () => void = () => {};
+      queueMutations.addQueueItem.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            releaseFirstSend = resolve;
+          }),
+      );
+
+      act(() => {
+        snapshots
+          .at(-1)
+          ?.appendQueueItems([makeQueueItem('list-1'), makeQueueItem('list-2'), makeQueueItem('list-3')], {
+            placement: 'next',
+          });
+      });
+      await waitFor(() => expect(queueMutations.addQueueItem).toHaveBeenCalledTimes(1));
+
+      await act(async () => {
+        await snapshots.at(-1)?.addToQueue(makeQueueItem('swiped'), { placement: 'next' });
+      });
+      expect(snapshots.at(-1)?.state.queue.map((entry) => entry.uuid)).toEqual([
+        'swiped',
+        'list-1',
+        'list-2',
+        'list-3',
+      ]);
+      // Still waiting on the list's first climb: the single has not gone out.
+      expect(queueMutations.addQueueItem).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        releaseFirstSend();
+      });
+      await waitFor(() => expect(queueMutations.addQueueItem).toHaveBeenCalledTimes(4));
+      expect(sentPositions()).toEqual([
+        ['list-1', 0],
+        ['list-2', 1],
+        ['list-3', 2],
+        ['swiped', 0],
+      ]);
+    });
+
     it('broadcasts the merged queue with the list behind the carried current to party peers', async () => {
       sessionStore.getStoredSessionId.mockResolvedValue('session-1');
       http.request.mockImplementation((operation: string) =>

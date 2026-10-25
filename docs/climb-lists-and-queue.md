@@ -205,12 +205,20 @@ and with a long queue the climber never reached it.
 - **Play last** puts it at the bottom of Up next (`addToQueue`), what "Add to queue" did.
 - **The row swipe right is Play next**, on every climb list that shares `ClimbListRow`: search,
   playlists, For You and the smart lists, setter pages and the board sheet. Logbook rows keep
-  their own swipes.
+  their own swipes. Swiping the climb that is on the wall queues it again, right behind itself:
+  a row names the climb, not its queue slot, so "next" can only mean a repeat.
+- **While a list is playing, the list comes first.** A Play next lands at the top of Up next, and
+  the player reaches it after the list's end card, as rule 2 below says.
+- **In a crew, a single Play next waits for a list still being sent.** A list's climbs go to the
+  server one at a time, and a positional add sent among them would land in the wrong slot, so it
+  queues behind them on the same serial lane. An append still goes at once.
 - **A playlist offers both for the whole list.** Play next inserts the list at the top of Up next
   in list order, Play last appends it (`appendQueueItems` with `placement`). Both share the
   500-climb cap and the queue-full toast. Unlike a single Play next, a list never moves climbs
-  that are already queued. The "Start playlist?" prompt keeps its three answers; its middle one is
-  now called Play last.
+  that are already queued. A list Play next while you are walking that same list leaves the climb
+  on the wall out (no second copy right behind it) and drops the list's track, so swipes walk the
+  copies in Up next instead of peeking the list past them. The "Start playlist?" prompt keeps its
+  three answers; its middle one is now called Play last.
 - **The snackbar names where it went**: "Playing next" or "Playing last", with a count for a list.
 
 ### Where it's saved

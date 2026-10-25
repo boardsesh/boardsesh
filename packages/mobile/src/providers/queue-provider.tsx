@@ -1352,19 +1352,37 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // never a peer placeholder. The re-broadcast vectors that need guarding are
       // setCurrentClimb (next/previousClimb can land on an unhydrated peer item)
       // and setQueue (whole-queue replace) — see #2527.
-      mutations.addQueueItem(item, position).catch((error) => {
+      const reconcileFailedAdd = (error: unknown) => {
         if (!isQueueMutationOriginCurrent(origin)) return;
         if (__DEV__) console.warn('[queue] addQueueItem sync failed', error);
         // In a party session the add never reached peers — reconcile against the
         // server so this client doesn't silently diverge. Solo is a true no-op.
         reconcileFailedContentMutation(error, origin);
-      });
+      };
+      if (position === undefined) {
+        // An append commutes with every other queued write, so it goes now.
+        mutations.addQueueItem(item, position).catch(reconcileFailedAdd);
+      } else {
+        // A positional add does not: its index counts climbs this phone has
+        // queued but may not have sent yet. A Play next swiped while a
+        // whole-list Play next is still draining would otherwise land among the
+        // list's climbs on the server, and the hash watchdog would then copy
+        // that order back here. Waiting on the serial lane sends it after them,
+        // when the server holds exactly what this index was read against.
+        void enqueueQueueMutation(async () => {
+          if (!isQueueMutationOriginCurrent(origin)) return;
+          // Removed while it waited: sending now would bring it back for the crew.
+          if (mutations.wasUuidExplicitlyRemoved(item.uuid)) return;
+          await mutations.addQueueItem(item, position).catch(reconcileFailedAdd);
+        });
+      }
       // Surface the "Climb added to queue · Open" snackbar for every add path.
       showQueueAddedSnackbar({ kind: placement === 'next' ? 'playNext' : 'added' });
     },
     [
       attributeNewItem,
       captureQueueMutationOrigin,
+      enqueueQueueMutation,
       isQueueMutationOriginCurrent,
       mutations,
       reconcileFailedContentMutation,
@@ -1506,8 +1524,10 @@ export function QueueProvider({ children }: { children: ReactNode }) {
    *   open while the queue moved can't land the climb in a stale slot)
    * - queued elsewhere → a MOVE, never a duplicate: a second copy would leave
    *   the crew deleting the stale one by hand
-   * - already up next (or already on the wall) → no mutation, but still confirm.
-   *   Silence would read as a dead button.
+   * - already up next (or its own queue slot is on the wall) → no mutation,
+   *   but still confirm. Silence would read as a dead button.
+   * - the climb on the wall, named by climb only (a list row's swipe) → a
+   *   repeat copy right behind it.
    */
   const playNext = useCallback(
     async ({
@@ -1528,7 +1548,11 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         return 'moved';
       }
 
-      if (plan.kind === 'unchanged') {
+      // The climb on the wall, asked for by climb rather than by its queue slot
+      // (a list row's swipe): "play this next" can only mean "again", so a
+      // fresh copy goes right behind it and the toast tells the truth. From its
+      // own queue slot there is nothing to do, and the menus hide the action.
+      if (plan.kind === 'unchanged' && !(plan.reason === 'is-current' && queueItemUuid === undefined)) {
         showQueueAddedSnackbar({ kind: 'playNext' });
         return 'unchanged';
       }
@@ -1825,18 +1849,22 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // so the latency is invisible.
       void enqueueQueueMutation(async () => {
         const failures: unknown[] = [];
-        // Counts the climbs already sent at the head, so a skipped (removed)
-        // climb doesn't leave a gap in the positions of the ones after it.
+        // Counts the climbs the server has taken at the head, so a skipped
+        // (removed) or failed climb doesn't leave a gap in the positions of the
+        // ones after it. A single positional add waits behind this drain on the
+        // same lane (`commitQueueAdd`), so nothing else from this phone lands
+        // among these slots while it runs.
         let sentCount = 0;
         for (const item of attributedItems) {
           if (!isQueueMutationOriginCurrent(origin)) return;
           // A later per-item removal is an explicit user choice even if it
           // landed while this item was waiting behind an earlier append.
           if (mutations.wasUuidExplicitlyRemoved(item.uuid)) continue;
-          const position = positionAt(sentCount);
-          sentCount += 1;
           try {
-            await mutations.addQueueItem(item, position);
+            await mutations.addQueueItem(item, positionAt(sentCount));
+            // Only a climb the server took moves the next one along. A failed
+            // send leaves its slot empty on the server, so the next climb takes it.
+            sentCount += 1;
           } catch (error) {
             if (!isQueueMutationOriginCurrent(origin)) return;
             if (__DEV__) console.warn('[queue] appendQueueItems addQueueItem sync failed', error);

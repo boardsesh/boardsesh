@@ -913,6 +913,16 @@ export function usePlaylistActivation({
           return;
         }
 
+        // A whole-list Play next from the header puts the list right behind the
+        // climb on the wall. When that climb is on the list, a second copy of it
+        // would be the first thing up next, so it stays out and counts as
+        // landed, the same as the prompt's excluded climb.
+        const isHeaderPlayNext = entryPoint === 'listHeader' && placement === 'next';
+        const wallClimbUuid = isHeaderPlayNext ? getQueueSnapshot().currentClimbQueueItem?.climb?.uuid : undefined;
+        const skippedClimbUuid =
+          excludeClimbUuid ??
+          (wallClimbUuid && fetchedClimbs.some((climb) => climb.uuid === wallClimbUuid) ? wallClimbUuid : undefined);
+
         // Dedupe by uuid before building queue items: paging an ordered list that
         // is being edited underneath can hand the same climb back on two pages.
         // Same rule `buildPlaylistQueue` applies to the replace path.
@@ -921,14 +931,14 @@ export function usePlaylistActivation({
         for (const climb of fetchedClimbs) {
           if (seenClimbUuids.has(climb.uuid)) continue;
           seenClimbUuids.add(climb.uuid);
-          if (climb.uuid === excludeClimbUuid) continue;
+          if (climb.uuid === skippedClimbUuid) continue;
           queueItems.push(climbToQueueItem(toSchemaClimb(climb)));
         }
 
-        // The excluded climb is in the queue already, so it counts as landed,
+        // The skipped climb is in the queue already, so it counts as landed,
         // even when the list no longer holds it (it was removed between the tap
         // and the fetch). Otherwise a full batch would read as `queueFull`.
-        const excludedCount = excludeClimbUuid ? 1 : 0;
+        const excludedCount = skippedClimbUuid ? 1 : 0;
         // The append keeps the bare call: `'end'` is the provider's default.
         const batchAppendedCount =
           queueItems.length === 0
@@ -936,6 +946,18 @@ export function usePlaylistActivation({
             : placement === 'next'
               ? appendQueueItems(queueItems, { placement: 'next' })
               : appendQueueItems(queueItems);
+        // Walking this list's track, swipes would keep peeking the list from the
+        // wall climb on, and the copies just placed at the head of Up next would
+        // only play after the end card. Drop the track so swipes walk the queue,
+        // which now holds the list in order. The prompt's Play last does the
+        // same. Only this list's track: a climber on another list keeps theirs.
+        if (
+          isHeaderPlayNext &&
+          batchAppendedCount > 0 &&
+          getQueueSnapshot().playlistSuggestionSource?.playlistUuid === sourceId
+        ) {
+          setPlaylistSuggestionSource(null);
+        }
         const listCount = queueItems.length + excludedCount;
         const appendedCount = batchAppendedCount + excludedCount;
         trackQueued(
@@ -985,6 +1007,7 @@ export function usePlaylistActivation({
       fetchAllClimbsForBoard,
       getQueueSnapshot,
       reportEmptyBoardFetchOnce,
+      setPlaylistSuggestionSource,
       showQueueAddedSnackbar,
       showToast,
       sourceId,

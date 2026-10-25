@@ -84,7 +84,7 @@ type BoardSheetProps = {
   onSelectGymWall?: (board: UserBoard) => void;
   /** Activate/open a climb from the wall feed. BoardSheet closes itself after this. */
   onClimbPress?: (action: BoardSheetClimbAction) => void;
-  /** Swipe action: append this wall-feed climb to the queue. */
+  /** Swipe action: play this wall-feed climb next. */
   onPlayNext?: (action: BoardSheetClimbAction) => void;
   /** Swipe action: open the add-to-playlist sheet for this climb. */
   onOpenPlaylist?: (action: BoardSheetClimbAction) => void;

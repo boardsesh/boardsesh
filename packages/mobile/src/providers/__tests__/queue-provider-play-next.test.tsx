@@ -333,6 +333,22 @@ describe('QueueProvider play next', () => {
     expect(latest().queueUuids).toEqual(['a', 'b']);
   });
 
+  // A list row's swipe names the climb, not its queue slot. On the climb on the
+  // wall that is a request to play it again, so a copy goes right behind it.
+  it('queues a repeat right behind the climb on the wall when a list row names it', async () => {
+    const queued = [makeQueueItem('a'), makeQueueItem('b'), makeQueueItem('c')];
+    const latest = await renderWithQueue(queued, queued[1]);
+
+    await act(async () => {
+      const outcome = await latest().playNext({ item: makeQueueItem('fresh', 'climb-b') });
+      expect(outcome).toBe('added');
+    });
+
+    expect(queueMutations.reorderQueueItem).not.toHaveBeenCalled();
+    expect(latest().queueUuids).toEqual(['a', 'b', 'fresh', 'c']);
+    expect(snackbar.showQueueAddedSnackbar).toHaveBeenCalledWith({ kind: 'playNext' });
+  });
+
   it('tags the add event with the placement', async () => {
     const queued = [makeQueueItem('a'), makeQueueItem('b')];
     const latest = await renderWithQueue(queued, queued[0]);
