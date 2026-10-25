@@ -607,6 +607,8 @@ describe('BluetoothProvider wall-confirm integration', () => {
       expect(capturedBluetooth?.staleCurrentHold).toBeNull();
 
       // connect() replaced the live adapter, so isConnected never went false.
+      // The mount above fired no onConnectSuccess, so the sender started on the
+      // provider's generation 0; handle 2 is therefore a new link.
       await act(async () => {
         bluetooth.options?.onConnectSuccess?.(null, makeConnectionHandle(2));
       });
@@ -1237,6 +1239,8 @@ describe('BluetoothProvider wall-confirm integration', () => {
       expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
     });
 
+    // beforeEach renders connected with no onConnectSuccess, so the sender is on
+    // the provider's generation 0 here and handle 2 reads as a new link.
     await act(async () => {
       bluetooth.options?.onConnectSuccess?.(null, makeConnectionHandle(2));
     });
