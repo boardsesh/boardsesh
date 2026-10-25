@@ -123,7 +123,7 @@ export default async function ClimbViewPage(props: { params: Promise<BoardRouteP
         climbLayoutId: currentClimb.layoutId,
         compatibleSizeIds,
       });
-      if (!target || compatibleSizeIds.indexOf(target.sizeId) === -1) notFound();
+      if (!target || !compatibleSizeIds.includes(target.sizeId)) notFound();
       const targetUrl = tryConstructSlugViewUrl(
         'woods',
         target.layoutId,

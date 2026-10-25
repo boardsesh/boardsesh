@@ -15,6 +15,7 @@ import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { formatSends, type TranslateSends } from '@/app/lib/format-climb-stats';
 import { useGradeFormat } from '@/app/hooks/use-grade-format';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
+import { resolveRenderBoard } from '@boardsesh/board-config';
 import { getDefaultBoardConfig, getDefaultClimbViewPath } from '@/app/lib/default-board-configs';
 import {
   SIMILAR_CLIMBS_QUERY,
@@ -235,7 +236,16 @@ function SimilarClimbCard({ climb, boardType, boardSlug, viewerBoardDetails, com
     if (viewerBoardDetails && viewerBoardDetails.layout_id === climb.layoutId) {
       return viewerBoardDetails;
     }
-    const config = getDefaultBoardConfig(boardType, climb.layoutId);
+    // Woods sizes number holds from different origins, so the default (12x12)
+    // would draw an 8x10-only climb on the wrong holds: pick a size it fits.
+    const config =
+      boardType === 'woods' && climb.compatibleSizeIds.length > 0
+        ? resolveRenderBoard({
+            boardType,
+            climbLayoutId: climb.layoutId,
+            compatibleSizeIds: climb.compatibleSizeIds,
+          })
+        : getDefaultBoardConfig(boardType, climb.layoutId);
     if (!config) return null;
     try {
       return getBoardDetailsForBoard({
@@ -247,7 +257,7 @@ function SimilarClimbCard({ climb, boardType, boardSlug, viewerBoardDetails, com
     } catch {
       return null;
     }
-  }, [boardType, climb.layoutId, viewerBoardDetails]);
+  }, [boardType, climb.layoutId, climb.compatibleSizeIds, viewerBoardDetails]);
 
   // Fallback link path for when the queue isn't available — preserves the
   // original navigation behaviour for the duplicate-resolution drawer.

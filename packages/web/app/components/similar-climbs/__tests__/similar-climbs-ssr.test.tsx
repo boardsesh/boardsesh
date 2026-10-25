@@ -134,6 +134,26 @@ describe('SimilarClimbsList server render', () => {
     expect(html.match(/href="\/b\/gym-wall\//g)).toHaveLength(seededClimbs.length);
   });
 
+  it('draws and links a Woods 8x10-only climb on the 8x10, not the 12x12 default', () => {
+    const woods12x12 = { ...makeBoardDetails(), board_name: 'woods', layout_id: 1, size_id: 2 } as BoardDetails;
+    const eightByTenOnly = { ...makeSimilarClimb(0), compatibleSizeIds: [1] } as SimilarClimb;
+    const html = renderToString(
+      <QueryClientProvider client={makeQueryClient()}>
+        <SimilarClimbsList
+          boardType="woods"
+          layoutId={1}
+          viewerBoardDetails={woods12x12}
+          climbUuid="ORIGIN-CLIMB"
+          angle={40}
+          initialClimbs={[eightByTenOnly]}
+        />
+      </QueryClientProvider>,
+    );
+    const href = html.match(/href="(\/woods\/[^"]*)"/)?.[1] ?? '';
+    expect(href).toContain('8x10');
+    expect(href).not.toContain('12x12');
+  });
+
   it('emits one crawlable anchor per seeded climb, not a spinner', () => {
     const html = renderSeededList();
 
