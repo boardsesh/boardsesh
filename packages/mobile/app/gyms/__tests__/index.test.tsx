@@ -474,14 +474,14 @@ describe('discovery search integration', () => {
     screen.unmount();
   });
 
-  it('marks the roster pending while loading or failed, not once it has settled', () => {
+  it('marks the roster pending while loading, not once it has settled or failed', () => {
     captured.rosterQuery = { data: undefined, isPending: true, isError: false };
     render(createElement(GymDiscovery));
     act(() => captured.onPressGym?.({ uuid: 'gym-1', name: 'Crux' } as unknown as Gym));
     expect(captured.rowArgs?.expandedGymRosterPending).toBe(true);
     captured.rosterQuery = { data: undefined, isPending: false, isError: true };
     act(() => captured.onPressGym?.({ uuid: 'gym-2', name: 'Other' } as unknown as Gym));
-    expect(captured.rowArgs?.expandedGymRosterPending).toBe(true);
+    expect(captured.rowArgs?.expandedGymRosterPending).toBe(false);
     captured.rosterQuery = { data: [], isPending: false, isError: false };
     act(() => captured.onPressGym?.({ uuid: 'gym-3', name: 'Third' } as unknown as Gym));
     expect(captured.rowArgs?.expandedGymRosterPending).toBe(false);

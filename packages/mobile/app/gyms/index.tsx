@@ -257,8 +257,10 @@ export default function GymDiscovery() {
   // The expanded gym's own linked boards. The nearby search above only returns
   // boards with a visible pin near the map centre, so a gym can list a board it
   // never returns.
-  const { data: gymRoster, isPending: gymRosterPending, isError: gymRosterError } = useGymBoards(expandedGymUuid);
-  const expandedGymRosterPending = expandedGymUuid != null && (gymRosterPending || gymRosterError);
+  // A failed roster counts as settled: the row falls back to the nearby boards
+  // instead of showing a spinner that never resolves.
+  const { data: gymRoster, isPending: gymRosterPending } = useGymBoards(expandedGymUuid);
+  const expandedGymRosterPending = expandedGymUuid != null && gymRosterPending;
   const expandedGymRoster = useMemo(
     () => (gymRoster ? filterBoardsByChips(gymRoster, search.filter) : undefined),
     [gymRoster, search.filter],
