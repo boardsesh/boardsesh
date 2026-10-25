@@ -675,6 +675,71 @@ jobs:
         run: |
           vp exec node --import tsx --input-type=module --eval 'import * as sourceMapTools from "./scripts/mobile-upload-sourcemaps.ts"; console.log((sourceMapTools.default ?? sourceMapTools).resolveInstalledSentryUploader("packages/mobile"));'
 
+      # Metro's transform cache for the two exports below (docs/mobile-ota-updates.md,
+      # "Metro transform cache"). Without it every publish transforms all ~6,500
+      # modules from scratch: 142 s of a ~3 min 15 s publish step, per platform.
+      # eoas 3.2.6 runs `expo export` without --clear, so a restored store is
+      # reused. @expo/metro-config hard-codes the store to os.tmpdir()/metro-cache,
+      # so the publish steps set TMPDIR (on the step only: a workflow-level var
+      # would break the env parity with the native builds) to a dir under
+      # runner.temp. It must stay outside the workspace, because metro.config.js
+      # watches the whole monorepo.
+      #
+      # The key carries a hash of every EXPO_PUBLIC_* value. babel-preset-expo
+      # writes those values into the transformed code (inline-env-vars), and
+      # Metro's own cache key never sees them, so a transform cached under an old
+      # backend URL, Sentry DSN or PostHog key would be reused and shipped to
+      # every user. The written .env is hashed too, as a second guard: eoas
+      # exports with EXPO_NO_DOTENV=1, so today only process.env is inlined.
+      # GOOGLE_MAPS_API_KEY (Android step only) is left out on purpose: it is not
+      # EXPO_PUBLIC_, and the one plugin that inlines the app config
+      # (expo-inline-manifest) runs for web bundles only.
+      #
+      # Own prefix, metro-ota-. Never restore ci.yml's native bundle-check
+      # entries, which are built under a different env. No cross-lockfile restore key, as
+      # in ci.yml: a dependency bump falls back to a fully cold Metro.
+      #
+      # A cache failure must never block a publish: each cache step may fail
+      # without failing the job, and the publish steps don't depend on them.
+      - name: Key the Metro transform cache on the inlined build env
+        id: metro_cache
+        if: steps.sentry_uploader.outcome == 'success'
+        continue-on-error: true
+        env:
+          METRO_INPUTS_HASH: ${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/mobile/metro.config.js', 'packages/mobile/metro-web-runtime-resolution.cjs', 'packages/mobile/expo-web-response-headers.cjs', 'packages/mobile/babel.config.js', 'packages/mobile/app.config.ts', 'patches/**') }}
+        run: |
+          set -euo pipefail
+          # First, so TMPDIR on the publish steps always names a real directory.
+          mkdir -p "$RUNNER_TEMP/metro-ota/metro-cache"
+          # NUL-separated so no value can run into the next one's name.
+          inlined_env_hash="$(
+            {
+              env -0 | grep -z '^EXPO_PUBLIC_' | LC_ALL=C sort -z
+              printf '\0packages/mobile/.env\0'
+              cat packages/mobile/.env
+            } | sha256sum | cut -d' ' -f1
+          )"
+          echo "prefix=metro-ota-${RUNNER_OS}-${METRO_INPUTS_HASH}-${inlined_env_hash}-" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Metro's OTA transform cache
+        id: metro_restore
+        if: steps.metro_cache.outcome == 'success'
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/metro-ota/metro-cache
+          key: ${{ steps.metro_cache.outputs.prefix }}${{ github.sha }}
+          restore-keys: |
+            ${{ steps.metro_cache.outputs.prefix }}
+
+      # A restore that died mid-extract can leave truncated store files. Start
+      # cold instead of handing those to Metro.
+      - name: Discard a half-restored Metro cache
+        if: steps.metro_restore.outcome == 'failure'
+        run: |
+          rm -rf "$RUNNER_TEMP/metro-ota/metro-cache"
+          mkdir -p "$RUNNER_TEMP/metro-ota/metro-cache"
+
       # iOS and Android are published in SEPARATE steps with platform-specific env.
       # GOOGLE_MAPS_API_KEY is set only on the Android native prebuild (iOS uses
       # Apple Maps), and it changes the resolved config — hence the fingerprint —
@@ -694,6 +759,8 @@ jobs:
           OTA_EXPECT_MAIN_SHA: ${{ steps.train_baselines.outputs.main_sha }}
           OTA_EXPECT_TRAIN_SHA: ${{ steps.train_baselines.outputs.train_sha }}
           OTA_LIVE_STORE_RUNTIMES: ${{ steps.live_store.outputs.live_runtimes }}
+          # Metro's store lives at $TMPDIR/metro-cache; see the cache-key step.
+          TMPDIR: ${{ runner.temp }}/metro-ota
         # The publisher independently confirms a train guard's exact runtime,
         # then freezes it through export/retries. Other publishes resolve the
         # current commit's fingerprint directly. That matches the shipped binary — which embeds the same Linux gate
@@ -741,6 +808,8 @@ jobs:
           # fingerprint — agree with the binary. (No fingerprint override: see the
           # iOS publish step; the publish resolves the current commit's fingerprint.)
           GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+          # Metro's store lives at $TMPDIR/metro-cache; see the cache-key step.
+          TMPDIR: ${{ runner.temp }}/metro-ota
         run: |
           args=(--channel "$OTA_BRANCH" --platform android)
           if [ -n "$INPUT_MESSAGE" ]; then args+=(--message "$INPUT_MESSAGE"); fi
@@ -758,6 +827,25 @@ jobs:
       - name: Archive staged Android export
         if: inputs.stage_for_production_deploy && steps.publish_android.outcome == 'success'
         run: cp -a packages/mobile/dist ota-stage/android
+
+      # Only main and release/next write the cache. Every event that reaches those
+      # refs is trusted: a push to the protected train, main's staging call from
+      # production-deploy.yml, or a dispatch, which needs write access. A dispatch
+      # from any other branch restores but never saves (GitHub would scope its
+      # entry to that branch anyway). The train restores main's staging entries,
+      # since a branch may read the default branch's caches. Saved only once at
+      # least one platform published, and never from a cancelled run.
+      - name: Save Metro's OTA transform cache
+        if: >-
+          !cancelled()
+          && steps.metro_cache.outcome == 'success'
+          && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release/next')
+          && (steps.publish_ios.outcome == 'success' || steps.publish_android.outcome == 'success')
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/metro-ota/metro-cache
+          key: ${{ steps.metro_cache.outputs.prefix }}${{ github.sha }}
 
       - name: Record staged export fingerprints and hashes
         if: inputs.stage_for_production_deploy && steps.publish_ios.outcome == 'success' && steps.publish_android.outcome == 'success'

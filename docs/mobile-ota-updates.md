@@ -577,6 +577,40 @@ roll back a platform that already published. A single eoas invocation can still 
 before its server-row write fails; making that internal PUT/database operation atomic requires an
 upstream expo-open-ota change.
 
+### Metro transform cache
+
+Before this cache, every OTA export started cold. The iOS export alone logged `Bundled 141682ms`
+for 6,545 modules, about 142 s of a 3 min 15 s publish step, and Android paid the same again.
+`mobile-ota-production.yml` now restores Metro's transform store before the two publish steps and
+saves it afterwards, the same way `ci.yml`'s `mobile-bundle` job does (178 s cold, 90 s warm
+there). Expect each publish step to lose roughly half its bundle time once warm; the first warm
+staging run is the measurement to check.
+
+- **Where it lives.** `@expo/metro-config` hard-codes the store to `os.tmpdir()/metro-cache`, so
+  both publish steps set `TMPDIR` to `$RUNNER_TEMP/metro-ota`. Only the `metro-cache` folder
+  inside it is cached. It sits outside the workspace because `metro.config.js` watches the whole
+  monorepo. `TMPDIR` is set on the steps, never at the workflow level, which
+  `scripts/mobile-ci-env-parity.test.ts` keeps byte-identical to the native builds.
+- **Why the key hashes `EXPO_PUBLIC_*`.** `babel-preset-expo`'s `inline-env-vars` plugin writes
+  every `process.env.EXPO_PUBLIC_*` value into the transformed code. Metro's own cache key hashes
+  the babel config files and never these values. Without them in our key, changing the backend URL,
+  Sentry DSN or PostHog key would reuse transforms built with the old value and ship it to every
+  user. The key step hashes all `EXPO_PUBLIC_*` variables (sorted, NUL-separated) plus the written
+  `packages/mobile/.env`, on top of the lockfile, workspace, Metro config, babel config,
+  `app.config.ts` and `patches/**`. The publish steps must not set an `EXPO_PUBLIC_*` of their own,
+  because the key step would not see it.
+- **Key shape.** `metro-ota-<os>-<inputs hash>-<inlined env hash>-<sha>`, with the same string
+  minus the sha as the only restore key. It never restores `ci.yml`'s `metro-native-*` entries,
+  which are built under a different env. A dependency bump starts cold.
+- **Who writes it.** Only runs on `main` (the staging call from `production-deploy.yml`, or a
+  dispatch) and `release/next` (the train push, or a dispatch) save, and only after at least one
+  platform published. The train restores main's entries, because a branch can read the default
+  branch's caches.
+- **Never blocks a publish.** The cache steps are `continue-on-error`, and a restore that fails
+  mid-extract is deleted so Metro starts cold. eoas 3.2.6 runs `expo export` without `--clear`, so
+  a restored store is reused. Bundle bytes are unchanged: Metro checks each entry against the
+  file's content hash, and the staged receipt hashes the exported bundle itself.
+
 ### OTA source maps and Sentry
 
 Production and approved-release backport workflows publish and upload in this order: iOS OTA → iOS

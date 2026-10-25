@@ -1,7 +1,9 @@
 /// <reference types="node" />
 
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
@@ -594,4 +596,141 @@ describe('publisher helper preview routing', () => {
       expect(affectsPreview('docs/unrelated.md')).toBe(false);
     },
   );
+});
+
+// babel-preset-expo inlines every EXPO_PUBLIC_* value into the transformed code,
+// and Metro's own cache key never sees those values. A Metro store restored
+// under a different EXPO_PUBLIC_* set would ship the old backend URL, Sentry DSN
+// or PostHog key to every user, so the cache key must carry them.
+describe('production OTA Metro transform cache', () => {
+  type WorkflowStep = {
+    id?: string;
+    name?: string;
+    if?: string;
+    uses?: string;
+    run?: string;
+    env?: Record<string, string>;
+    with?: Record<string, string>;
+    'continue-on-error'?: boolean;
+  };
+  const parsedProduction = parse(production) as {
+    env: Record<string, string>;
+    jobs: { publish: { steps: WorkflowStep[] } };
+  };
+  const publishSteps = parsedProduction.jobs.publish.steps;
+  const stepNamed = (name: string): WorkflowStep => {
+    const step = publishSteps.find((candidate) => candidate.name === name);
+    if (!step) throw new Error(`publish job has no step named ${name}`);
+    return step;
+  };
+  const keyStep = stepNamed('Key the Metro transform cache on the inlined build env');
+  const restoreStep = stepNamed("Restore Metro's OTA transform cache");
+  const saveStep = stepNamed("Save Metro's OTA transform cache");
+  const cachePath = '${{ runner.temp }}/metro-ota/metro-cache';
+  const exactKey = '${{ steps.metro_cache.outputs.prefix }}${{ github.sha }}';
+
+  function runKeyStep(env: Record<string, string>): string {
+    const workspace = mkdtempSync(join(tmpdir(), 'metro-ota-key-'));
+    try {
+      mkdirSync(join(workspace, 'packages', 'mobile'), { recursive: true });
+      writeFileSync(join(workspace, 'packages', 'mobile', '.env'), 'EXPO_PUBLIC_BACKEND_URL=https://ws.example\n');
+      const outputPath = join(workspace, 'github-output');
+      const result = spawnSync('bash', ['-c', keyStep.run ?? ''], {
+        cwd: workspace,
+        encoding: 'utf8',
+        env: {
+          NODE_ENV: 'test',
+          PATH: process.env.PATH ?? '',
+          RUNNER_OS: 'Linux',
+          RUNNER_TEMP: join(workspace, 'runner-temp'),
+          GITHUB_OUTPUT: outputPath,
+          METRO_INPUTS_HASH: 'inputs',
+          ...env,
+        },
+      });
+      expect(result.status, result.stderr).toBe(0);
+      const prefix = /^prefix=(.*)$/m.exec(readFileSync(outputPath, 'utf8'))?.[1];
+      if (!prefix) throw new Error('key step wrote no prefix output');
+      return prefix;
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  }
+
+  it('keys the store on every inlined EXPO_PUBLIC_* value, and nothing unrelated', () => {
+    const base = { EXPO_PUBLIC_BACKEND_URL: 'https://ws.boardsesh.com', EXPO_PUBLIC_SENTRY_DSN: 'dsn-a' };
+    const prefix = runKeyStep(base);
+    expect(prefix).toMatch(/^metro-ota-Linux-inputs-[0-9a-f]{64}-$/);
+    expect(runKeyStep({ ...base, EXPO_PUBLIC_BACKEND_URL: 'https://staging.example' })).not.toBe(prefix);
+    expect(runKeyStep({ ...base, EXPO_PUBLIC_SENTRY_DSN: 'dsn-b' })).not.toBe(prefix);
+    expect(runKeyStep({ ...base, EXPO_PUBLIC_NEW_FLAG: '1' })).not.toBe(prefix);
+    expect(runKeyStep({ ...base, UNRELATED_TOKEN: 'secret' })).toBe(prefix);
+    expect(runKeyStep({ ...base, METRO_INPUTS_HASH: 'bumped-lockfile' })).not.toBe(prefix);
+  });
+
+  it('hashes the same Metro inputs as ci.yml and never restores its metro-native entries', () => {
+    for (const input of [
+      'pnpm-lock.yaml',
+      'pnpm-workspace.yaml',
+      'packages/mobile/metro.config.js',
+      'packages/mobile/babel.config.js',
+      'packages/mobile/app.config.ts',
+      'patches/**',
+    ]) {
+      expect(keyStep.env?.METRO_INPUTS_HASH).toContain(`'${input}'`);
+    }
+    for (const step of publishSteps.filter((candidate) => candidate.uses?.startsWith('actions/cache'))) {
+      expect(`${step.with?.key} ${step.with?.['restore-keys'] ?? ''}`, step.name).not.toContain('metro-native');
+    }
+    expect(keyStep.run).toContain('prefix=metro-ota-');
+    expect(restoreStep.uses).toBe('actions/cache/restore@v4');
+    expect(restoreStep.with?.path).toBe(cachePath);
+    expect(restoreStep.with?.key).toBe(exactKey);
+    // The only fallback still pins the inputs and the inlined-env hash.
+    expect(restoreStep.with?.['restore-keys']?.trim()).toBe('${{ steps.metro_cache.outputs.prefix }}');
+    expect(saveStep.with?.path).toBe(cachePath);
+    expect(saveStep.with?.key).toBe(exactKey);
+  });
+
+  it('saves only from main and release/next, after a platform published', () => {
+    expect(saveStep.uses).toBe('actions/cache/save@v4');
+    expect(saveStep.if).toContain("(github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release/next')");
+    expect(saveStep.if).toContain(
+      "(steps.publish_ios.outcome == 'success' || steps.publish_android.outcome == 'success')",
+    );
+    expect(saveStep.if).toContain('!cancelled()');
+    const saves = publishSteps.filter((step) => step.uses?.startsWith('actions/cache/save'));
+    expect(saves).toEqual([saveStep]);
+  });
+
+  it('points both exports at the restored store without touching fingerprint env', () => {
+    for (const name of ['Publish iOS OTA', 'Publish Android OTA']) {
+      const env = stepNamed(name).env ?? {};
+      expect(env.TMPDIR, name).toBe('${{ runner.temp }}/metro-ota');
+      // The key step reads EXPO_PUBLIC_* from the shared env; one set only on a
+      // publish step would be inlined without ever reaching the key.
+      expect(
+        Object.keys(env).filter((key) => key.startsWith('EXPO_PUBLIC_')),
+        name,
+      ).toEqual([]);
+    }
+    expect(parsedProduction.env.TMPDIR).toBeUndefined();
+    // A cache problem must never block a publish.
+    for (const step of [keyStep, restoreStep, saveStep]) expect(step['continue-on-error']).toBe(true);
+  });
+
+  it('restores before the first export and saves after the last', () => {
+    const position = (name: string) => publishSteps.findIndex((step) => step.name === name);
+    const order = [
+      'Validate Sentry uploader support before publishing',
+      'Key the Metro transform cache on the inlined build env',
+      "Restore Metro's OTA transform cache",
+      'Discard a half-restored Metro cache',
+      'Publish iOS OTA',
+      'Publish Android OTA',
+      "Save Metro's OTA transform cache",
+    ].map(position);
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((left, right) => left - right));
+  });
 });
