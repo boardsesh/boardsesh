@@ -200,6 +200,8 @@ describe('useToggleFavorite onSuccess invalidation', () => {
     expect(invalidateQueries).toHaveBeenCalledWith({
       queryKey: ['favoriteStatus', 'kilter', 'climb-online-fav', 40],
     });
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['smartPlaylist', 'LIKED_CLIMBS'] });
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['mySmartPlaylistCounts'] });
   });
 
   it('local-queue path: invalidates searchClimbs + infiniteSearchClimbs, skips favoriteStatus', async () => {
@@ -220,6 +222,7 @@ describe('useToggleFavorite onSuccess invalidation', () => {
     expect(invalidateQueries).not.toHaveBeenCalledWith({
       queryKey: ['favoriteStatus', 'kilter', 'climb-fav-queued', 40],
     });
+    expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: ['smartPlaylist', 'LIKED_CLIMBS'] });
   });
 });
 

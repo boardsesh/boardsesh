@@ -578,9 +578,14 @@ describe('drainMutationQueue', () => {
 
     function expectFavoriteBatch(queryClient: ReturnType<typeof recordingQueryClient>, staleOnly = false) {
       expect(queryClient.invalidateQueries.mock.calls.map(([filters]) => filters)).toEqual(
-        ['searchClimbs', 'infiniteSearchClimbs', 'searchClimbsCount', 'favoriteStatus'].map((head) =>
-          staleOnly ? { queryKey: [head], refetchType: 'none' } : { queryKey: [head] },
-        ),
+        [
+          ['searchClimbs'],
+          ['infiniteSearchClimbs'],
+          ['searchClimbsCount'],
+          ['favoriteStatus'],
+          ['smartPlaylist', 'LIKED_CLIMBS'],
+          ['mySmartPlaylistCounts'],
+        ].map((queryKey) => (staleOnly ? { queryKey, refetchType: 'none' } : { queryKey })),
       );
     }
 
@@ -627,8 +632,8 @@ describe('drainMutationQueue', () => {
 
       const filters = queryClient.invalidateQueries.mock.calls.map(([filter]) => filter);
       const heads = filters.map((filter) => filter.queryKey[0]);
-      expect(heads).toHaveLength(13);
-      expect(new Set(heads).size).toBe(13);
+      expect(heads).toHaveLength(15);
+      expect(new Set(heads).size).toBe(15);
       expect(heads).toContain('localTicks');
       expect(heads).toContain('favoriteStatus');
       expect(heads).toContain('playlistClimbs');
@@ -672,8 +677,8 @@ describe('drainMutationQueue', () => {
         // from any outcome branch must lose localTicks and fail this guard.
         expect(heads).toContain('localTicks');
         expect(heads).toContain('favoriteStatus');
-        expect(heads).toHaveLength(10);
-        expect(new Set(heads).size).toBe(10);
+        expect(heads).toHaveLength(12);
+        expect(new Set(heads).size).toBe(12);
         expect(heads.filter((head) => head === 'searchClimbs')).toHaveLength(1);
         expect(heads.filter((head) => head === 'infiniteSearchClimbs')).toHaveLength(1);
         expect(invalidationCountsAtDelivery.every((count) => count === 0)).toBe(true);
@@ -757,6 +762,8 @@ describe('drainMutationQueue', () => {
         { queryKey: ['infiniteSearchClimbs'], refetchType: 'none' },
         { queryKey: ['searchClimbsCount'], refetchType: 'none' },
         { queryKey: ['favoriteStatus'], refetchType: 'none' },
+        { queryKey: ['smartPlaylist', 'LIKED_CLIMBS'], refetchType: 'none' },
+        { queryKey: ['mySmartPlaylistCounts'], refetchType: 'none' },
       ]);
     });
 
@@ -778,7 +785,7 @@ describe('drainMutationQueue', () => {
       await expect(drainMutationQueue(mockDb, queryClient, mockGraphqlFetch, ONLINE)).rejects.toThrow(failure);
       await Promise.all(nestedDrains);
 
-      expect(drainingSnapshots).toEqual([true, true, true, true]);
+      expect(drainingSnapshots).toEqual(Array.from({ length: 6 }, () => true));
       expectFavoriteBatch(queryClient);
       expect(mockPeekPending).toHaveBeenCalledTimes(2);
       expect(mockMarkCompleted).toHaveBeenCalledTimes(1);

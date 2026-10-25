@@ -1185,6 +1185,10 @@ export function useToggleFavorite() {
         void queryClient.invalidateQueries({
           queryKey: ['favoriteStatus', variables.input.boardName, variables.input.climbUuid, variables.input.angle],
         });
+        // The Liked smart list (and its library count) would otherwise keep an
+        // un-liked climb on screen for its 5-minute staleTime (#5304).
+        void queryClient.invalidateQueries({ queryKey: ['smartPlaylist', 'LIKED_CLIMBS'] });
+        void queryClient.invalidateQueries({ queryKey: ['mySmartPlaylistCounts'] });
       }
     },
   });

@@ -66,7 +66,18 @@ export const TABLE_INVALIDATE_KEYS: Record<string, InvalidateKeys> = {
   // ['favoriteStatus'] — the per-climb heart, which must refetch AFTER a queued
   //   favorite lands: the optimistic write at enqueue time can otherwise be
   //   overwritten by a network refetch that raced the drain.
-  user_favorites: [['searchClimbs'], ['infiniteSearchClimbs'], ['searchClimbsCount'], ['favoriteStatus']],
+  // ['smartPlaylist', 'LIKED_CLIMBS'] / ['mySmartPlaylistCounts'] — the Liked
+  //   smart list and its library-card count, which must drop an un-liked climb
+  //   once the toggle lands (otherwise Play drains a fresh list that no longer
+  //   holds the rows on screen, #5304).
+  user_favorites: [
+    ['searchClimbs'],
+    ['infiniteSearchClimbs'],
+    ['searchClimbsCount'],
+    ['favoriteStatus'],
+    ['smartPlaylist', 'LIKED_CLIMBS'],
+    ['mySmartPlaylistCounts'],
+  ],
 
   // Follow changes affect Following searches on every board. This platform-neutral
   // table map knows query prefixes, not each client's filter-bearing key shape,
