@@ -51,7 +51,7 @@ const activeBoard = vi.hoisted(() => ({
 const queueMutations = vi.hoisted(() => ({
   addQueueItem: vi.fn(async (_item: ClimbQueueItem, _position?: number) => {}),
   removeQueueItem: vi.fn(async (_uuid: string) => {}),
-  reorderQueueItem: vi.fn(async () => {}),
+  reorderQueueItem: vi.fn(async (_uuid: string, _oldIndex: number, _newIndex: number) => {}),
   setCurrentClimb: vi.fn(async () => {}),
   mirrorCurrentClimb: vi.fn(async () => {}),
   publishPlaybackState: vi.fn(async () => {}),
@@ -195,6 +195,7 @@ type Snapshot = {
   undoScope: string;
   setQueue: ReturnType<typeof useQueue>['setQueue'];
   removeFromQueue: ReturnType<typeof useQueue>['removeFromQueue'];
+  playNext: ReturnType<typeof useQueue>['playNext'];
   startSession: ReturnType<typeof useQueue>['startSession'];
   joinSession: ReturnType<typeof useQueue>['joinSession'];
 };
@@ -218,6 +219,7 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
       undoScope,
       setQueue: queue.setQueue,
       removeFromQueue: queue.removeFromQueue,
+      playNext: queue.playNext,
       startSession: queue.startSession,
       joinSession: queue.joinSession,
     });
@@ -235,6 +237,7 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
     undoScope,
     queue.setQueue,
     queue.removeFromQueue,
+    queue.playNext,
     queue.startSession,
     queue.joinSession,
     onSnapshot,
@@ -1755,6 +1758,203 @@ describe('QueueProvider local solo queue', () => {
         ['list-3', 2],
         ['swiped', 0],
       ]);
+    });
+
+    // #6776 review: a move carries indexes, and the backend's reorderQueueItem
+    // splices by index after only a range check. While a whole-list Play next
+    // drains, this phone already shows every climb and the server does not, so
+    // the move must wait on the same lane and read its indexes against the
+    // queue the server holds when it goes.
+    describe('moves and removals while a list drains', () => {
+      // The backend's queue rules, so each test can assert the crew ends where
+      // this phone does: an add clamps a missing or out-of-range position to an
+      // append, a reorder rejects an out-of-range index, a remove filters.
+      function installServerModel(seed: ClimbQueueItem[]) {
+        const server = { queue: [...seed] };
+        let releaseFirstSend: () => void = () => {};
+        let firstSendHeld = false;
+        queueMutations.addQueueItem.mockImplementation(async (item: ClimbQueueItem, position?: number) => {
+          const slot = position === undefined || position > server.queue.length ? server.queue.length : position;
+          server.queue.splice(slot, 0, item);
+          if (!firstSendHeld) {
+            firstSendHeld = true;
+            await new Promise<void>((resolve) => {
+              releaseFirstSend = resolve;
+            });
+          }
+        });
+        queueMutations.reorderQueueItem.mockImplementation(
+          async (_uuid: string, oldIndex: number, newIndex: number) => {
+            if (oldIndex >= server.queue.length || newIndex >= server.queue.length) {
+              throw new Error(`Invalid index: queue has ${server.queue.length} items`);
+            }
+            const [moved] = server.queue.splice(oldIndex, 1);
+            server.queue.splice(newIndex, 0, moved);
+          },
+        );
+        queueMutations.removeQueueItem.mockImplementation(async (uuid: string) => {
+          server.queue = server.queue.filter((entry) => entry.uuid !== uuid);
+        });
+        return {
+          serverUuids: () => server.queue.map((entry) => entry.uuid),
+          releaseFirstSend: () => releaseFirstSend(),
+        };
+      }
+
+      const localUuids = (snapshots: Snapshot[]) => snapshots.at(-1)?.state.queue.map((entry) => entry.uuid);
+      const listItems = () => [makeQueueItem('list-1'), makeQueueItem('list-2'), makeQueueItem('list-3')];
+
+      // [X, Y] on both sides with nothing current, then the list's Play next,
+      // held on its first send so everything after it happens mid-drain.
+      async function startDrainingOverXY() {
+        const snapshots = await renderInSessionWithNothingCurrent();
+        const itemX = makeQueueItem('item-x');
+        const itemY = makeQueueItem('item-y');
+        act(() => {
+          snapshots
+            .at(-1)
+            ?.dispatch({ type: 'UPDATE_QUEUE', payload: { queue: [itemX, itemY], currentClimbQueueItem: null } });
+        });
+        await waitFor(() => expect(localUuids(snapshots)).toEqual(['item-x', 'item-y']));
+        const server = installServerModel([itemX, itemY]);
+        act(() => {
+          snapshots.at(-1)?.appendQueueItems(listItems(), { placement: 'next' });
+        });
+        await waitFor(() => expect(queueMutations.addQueueItem).toHaveBeenCalledTimes(1));
+        return { snapshots, server, itemY };
+      }
+
+      it('sends a Play next move of a queued climb after the drain, with indexes the server accepts', async () => {
+        const { snapshots, server, itemY } = await startDrainingOverXY();
+
+        await act(async () => {
+          const outcome = await snapshots.at(-1)?.playNext({ item: itemY, queueItemUuid: 'item-y' });
+          expect(outcome).toBe('moved');
+        });
+        expect(localUuids(snapshots)).toEqual(['item-y', 'list-1', 'list-2', 'list-3', 'item-x']);
+        // The server holds three climbs here; oldIndex 4 would be refused.
+        expect(queueMutations.reorderQueueItem).not.toHaveBeenCalled();
+
+        await act(async () => {
+          server.releaseFirstSend();
+        });
+        await waitFor(() => expect(queueMutations.reorderQueueItem).toHaveBeenCalledTimes(1));
+        expect(queueMutations.reorderQueueItem).toHaveBeenCalledWith('item-y', 4, 0);
+        expect(server.serverUuids()).toEqual(['item-y', 'list-1', 'list-2', 'list-3', 'item-x']);
+        expect(localUuids(snapshots)).toEqual(server.serverUuids());
+        expect(toast.showToast).not.toHaveBeenCalled();
+      });
+
+      it('counts a climb removed straight away as gone from the server when the move goes', async () => {
+        const { snapshots, server, itemY } = await startDrainingOverXY();
+
+        await act(async () => {
+          await snapshots.at(-1)?.playNext({ item: itemY, queueItemUuid: 'item-y' });
+        });
+        act(() => {
+          snapshots.at(-1)?.removeFromQueue('item-x');
+        });
+        await act(async () => {
+          server.releaseFirstSend();
+        });
+
+        await waitFor(() => expect(queueMutations.reorderQueueItem).toHaveBeenCalledTimes(1));
+        expect(queueMutations.reorderQueueItem).toHaveBeenCalledWith('item-y', 3, 0);
+        expect(server.serverUuids()).toEqual(['item-y', 'list-1', 'list-2', 'list-3']);
+        expect(localUuids(snapshots)).toEqual(server.serverUuids());
+        expect(toast.showToast).not.toHaveBeenCalled();
+      });
+
+      it('still counts a climb whose bulk removal waits behind the move', async () => {
+        const { snapshots, server, itemY } = await startDrainingOverXY();
+
+        await act(async () => {
+          await snapshots.at(-1)?.playNext({ item: itemY, queueItemUuid: 'item-y' });
+        });
+        act(() => {
+          snapshots.at(-1)?.removeQueueItems(['item-x']);
+        });
+        await act(async () => {
+          server.releaseFirstSend();
+        });
+
+        await waitFor(() => expect(queueMutations.removeQueueItem).toHaveBeenCalledWith('item-x'));
+        expect(queueMutations.reorderQueueItem).toHaveBeenCalledWith('item-y', 4, 0);
+        expect(server.serverUuids()).toEqual(['item-y', 'list-1', 'list-2', 'list-3']);
+        expect(localUuids(snapshots)).toEqual(server.serverUuids());
+      });
+
+      it('does not count a list climb the server never took', async () => {
+        const snapshots = await renderInSessionWithNothingCurrent();
+        const itemX = makeQueueItem('item-x');
+        const itemY = makeQueueItem('item-y');
+        act(() => {
+          snapshots
+            .at(-1)
+            ?.dispatch({ type: 'UPDATE_QUEUE', payload: { queue: [itemX, itemY], currentClimbQueueItem: null } });
+        });
+        await waitFor(() => expect(localUuids(snapshots)).toEqual(['item-x', 'item-y']));
+        const server = installServerModel([itemX, itemY]);
+        const modelAdd = queueMutations.addQueueItem.getMockImplementation();
+        queueMutations.addQueueItem.mockImplementation(async (item: ClimbQueueItem, position?: number) => {
+          if (item.uuid === 'list-2') throw new Error('network down');
+          await modelAdd?.(item, position);
+        });
+
+        act(() => {
+          snapshots.at(-1)?.appendQueueItems(listItems(), { placement: 'next' });
+        });
+        await waitFor(() => expect(queueMutations.addQueueItem).toHaveBeenCalledTimes(1));
+        await act(async () => {
+          await snapshots.at(-1)?.playNext({ item: itemY, queueItemUuid: 'item-y' });
+        });
+        await act(async () => {
+          server.releaseFirstSend();
+        });
+
+        await waitFor(() => expect(queueMutations.reorderQueueItem).toHaveBeenCalledTimes(1));
+        expect(queueMutations.reorderQueueItem).toHaveBeenCalledWith('item-y', 3, 0);
+        expect(server.serverUuids()).toEqual(['item-y', 'list-1', 'list-3', 'item-x']);
+      });
+
+      it('re-reads a waiting single Play next slot after a climb ahead of it is removed', async () => {
+        // Current climb C at index 1. The first Play next is held on the wire;
+        // the second waits on the lane for slot 2, then A (ahead of C) goes.
+        const snapshots = await renderInSessionWithNothingCurrent();
+        const itemA = makeQueueItem('item-a');
+        const itemC = makeQueueItem('item-c');
+        const itemB = makeQueueItem('item-b');
+        act(() => {
+          snapshots.at(-1)?.dispatch({
+            type: 'UPDATE_QUEUE',
+            payload: { queue: [itemA, itemC, itemB], currentClimbQueueItem: itemC },
+          });
+        });
+        await waitFor(() => expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('item-c'));
+        const server = installServerModel([itemA, itemC, itemB]);
+
+        await act(async () => {
+          await snapshots.at(-1)?.playNext({ item: makeQueueItem('next-1') });
+        });
+        await waitFor(() => expect(queueMutations.addQueueItem).toHaveBeenCalledTimes(1));
+        await act(async () => {
+          await snapshots.at(-1)?.playNext({ item: makeQueueItem('next-2') });
+        });
+        act(() => {
+          snapshots.at(-1)?.removeFromQueue('item-a');
+        });
+        await act(async () => {
+          server.releaseFirstSend();
+        });
+
+        await waitFor(() => expect(queueMutations.addQueueItem).toHaveBeenCalledTimes(2));
+        expect(sentPositions()).toEqual([
+          ['next-1', 2],
+          ['next-2', 1],
+        ]);
+        expect(server.serverUuids()).toEqual(['item-c', 'next-2', 'next-1', 'item-b']);
+        expect(localUuids(snapshots)).toEqual(server.serverUuids());
+      });
     });
 
     it('broadcasts the merged queue with the list behind the carried current to party peers', async () => {

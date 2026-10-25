@@ -237,12 +237,21 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   const queueMutationGenerationRef = useRef(0);
   const queueMutationTailRef = useRef<Promise<void>>(Promise.resolve());
   const resyncFlightsByOriginRef = useRef(new Map<string, QueueResyncFlight>());
+  // What the server holds differs from this phone's queue in two ways the lane
+  // knows about, and every positional send waiting on it is re-read against
+  // both before it goes (`serverIndexIn`):
+  // - a lane add that failed: the climb is still here, the server never took it
+  // - a lane removal not yet sent: the climb is gone here, the server still has it
+  const laneFailedAddUuidsRef = useRef(new Set<string>());
+  const laneUnsentRemovalUuidsRef = useRef(new Set<string>());
   const authenticatedUserIdRef = useRef<string | null>(null);
   const lastKnownAuthenticatedUserIdRef = useRef<string | null>(null);
   const lastObservedAuthenticationRef = useRef<boolean | null>(null);
   const invalidateQueuedQueueMutations = useCallback(() => {
     queueMutationGenerationRef.current += 1;
     resyncFlightsByOriginRef.current.clear();
+    laneFailedAddUuidsRef.current.clear();
+    laneUnsentRemovalUuidsRef.current.clear();
   }, []);
   // A real origin switch gets an independent lane. A request already on the
   // old lane may still settle, but its generation fence prevents it from sending
@@ -252,6 +261,8 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     queueMutationGenerationRef.current += 1;
     queueMutationTailRef.current = Promise.resolve();
     resyncFlightsByOriginRef.current.clear();
+    laneFailedAddUuidsRef.current.clear();
+    laneUnsentRemovalUuidsRef.current.clear();
   }, []);
   // The transport owns bounded attempts and rate-limit retries. Keep the lane
   // waiting for that promise; racing it against another deadline would let its
@@ -367,6 +378,31 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   setActiveBoardRef.current = setActiveBoard;
   const stateRef = useRef(state);
   stateRef.current = state;
+  // Does the server hold this climb, as far as the lane knows? Called from a
+  // lane send, once every earlier send on the lane has landed: a climb here is
+  // there unless its lane add failed, and a climb gone from here is still there
+  // while its lane removal waits. Peers' changes are not seen, as with every
+  // send.
+  const isOnServer = useCallback((queueItemUuid: string, liveUuids: ReadonlySet<string>) => {
+    if (laneFailedAddUuidsRef.current.has(queueItemUuid)) return false;
+    return liveUuids.has(queueItemUuid) || laneUnsentRemovalUuidsRef.current.has(queueItemUuid);
+  }, []);
+  // Where `uuid` sits on the SERVER, read off `order`, an order this phone had
+  // when the climber acted: the climbs ahead of it that the server holds now.
+  // A climb removed since went straight out, so the server has dropped it too.
+  // -1 when `uuid` is not in `order`.
+  const serverIndexIn = useCallback(
+    (order: readonly ClimbQueueItem[], uuid: string): number => {
+      const liveUuids = new Set(stateRef.current.queue.map((queueItem) => queueItem.uuid));
+      let index = 0;
+      for (const queueItem of order) {
+        if (queueItem.uuid === uuid) return index;
+        if (isOnServer(queueItem.uuid, liveUuids)) index += 1;
+      }
+      return -1;
+    },
+    [isOnServer],
+  );
   // Playlist suggestion source lives in provider state, NOT the reducer: the
   // reducer clears its suggestion field on full server syncs (INITIAL_QUEUE_DATA
   // / UPDATE_QUEUE), which would wipe the source the moment activation
@@ -1130,6 +1166,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         // no longer has as current.
         if (!mayApplyResult()) return false;
         pendingUnsyncedCurrentRef.current = null;
+        // The server's own queue replaces ours, so a failed add it is missing
+        // is missing here too, and one it did take is no longer a gap.
+        laneFailedAddUuidsRef.current.clear();
         dispatch({
           type: 'INITIAL_QUEUE_DATA',
           serverSequence: queueState.sequence,
@@ -1230,8 +1269,8 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // only yanked the climber off the boulder they just picked. When that
   // throttled call also carried a queue-add it recovers the content half
   // through recoverThrottledQueueAdd below — and falls back here if even that
-  // re-send fails. `reorderQueue` never reaches this path at all — it rolls
-  // back locally instead.
+  // re-send fails. `reorderQueue` rolls back locally instead, and lands here
+  // only when the queue changed while its move waited on the lane.
   const resyncQueueAfterMutationFailure = useCallback(
     async (origin: QueueMutationOrigin) => {
       if (!origin.sessionId || !isQueueMutationOriginCurrent(origin)) return;
@@ -1322,9 +1361,10 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // can't leave the position stale. The same number then goes to the local
       // dispatch AND the broadcast, so this client and its peers can't disagree
       // about where the climb landed. `undefined` means append.
+      const queueBeforeAdd = stateRef.current.queue;
       const position =
         placement === 'next'
-          ? playNextInsertPosition(stateRef.current.queue, stateRef.current.currentClimbQueueItem)
+          ? playNextInsertPosition(queueBeforeAdd, stateRef.current.currentClimbQueueItem)
           : undefined;
       // Optimistic local dispatch is the source of truth for the user's queue.
       // The server echoes this item via the WS subscription, but
@@ -1367,13 +1407,21 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         // queued but may not have sent yet. A Play next swiped while a
         // whole-list Play next is still draining would otherwise land among the
         // list's climbs on the server, and the hash watchdog would then copy
-        // that order back here. Waiting on the serial lane sends it after them,
-        // when the server holds exactly what this index was read against.
+        // that order back here. Waiting on the serial lane sends it after them.
+        // Its slot is re-read at send time too: a climb ahead of it that the
+        // climber removed while it waited is already gone from the server.
+        const queueWithAdd = [...queueBeforeAdd.slice(0, position), item, ...queueBeforeAdd.slice(position)];
         void enqueueQueueMutation(async () => {
           if (!isQueueMutationOriginCurrent(origin)) return;
           // Removed while it waited: sending now would bring it back for the crew.
           if (mutations.wasUuidExplicitlyRemoved(item.uuid)) return;
-          await mutations.addQueueItem(item, position).catch(reconcileFailedAdd);
+          try {
+            await mutations.addQueueItem(item, serverIndexIn(queueWithAdd, item.uuid));
+            laneFailedAddUuidsRef.current.delete(item.uuid);
+          } catch (error) {
+            if (isQueueMutationOriginCurrent(origin)) laneFailedAddUuidsRef.current.add(item.uuid);
+            reconcileFailedAdd(error);
+          }
         });
       }
       // Surface the "Climb added to queue · Open" snackbar for every add path.
@@ -1386,6 +1434,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       isQueueMutationOriginCurrent,
       mutations,
       reconcileFailedContentMutation,
+      serverIndexIn,
       showQueueAddedSnackbar,
     ],
   );
@@ -1487,10 +1536,23 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   const reorderQueue = useCallback(
     (uuid: string, oldIndex: number, newIndex: number, options?: { source?: QueueReorderSource }) => {
       const origin = captureQueueMutationOrigin();
-      // Optimistic local reorder; the reducer re-validates uuid-at-oldIndex so
-      // the server's QueueReordered echo is a safe no-op.
       const previousQueue = stateRef.current.queue;
-      const previousCurrent = stateRef.current.currentClimbQueueItem;
+      // The reducer re-validates uuid-at-oldIndex and ignores a move that fails
+      // it. Nothing moved here then, so nothing goes to the crew either.
+      if (
+        oldIndex < 0 ||
+        newIndex < 0 ||
+        oldIndex >= previousQueue.length ||
+        newIndex >= previousQueue.length ||
+        previousQueue[oldIndex].uuid !== uuid
+      ) {
+        return;
+      }
+      const reorderedQueue = [...previousQueue];
+      const [movedItem] = reorderedQueue.splice(oldIndex, 1);
+      reorderedQueue.splice(newIndex, 0, movedItem);
+      // Optimistic local reorder; the server's QueueReordered echo is a safe
+      // no-op thanks to the same uuid-at-oldIndex check.
       dispatch({ type: 'DELTA_REORDER_QUEUE_ITEM', payload: { uuid, oldIndex, newIndex } });
       track(SHARED_EVENTS.QueueReordered, {
         boardName: activeBoardRef.current?.boardType,
@@ -1501,18 +1563,58 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         reorderedBy: 'self',
         source: options?.source ?? 'drag',
       });
-      mutations.reorderQueueItem(uuid, oldIndex, newIndex).catch((error) => {
+      // The wire move carries indexes, and the server splices by index without
+      // checking the uuid, so the indexes must describe the server's queue, not
+      // this phone's. They differ while the lane drains: a whole-list Play next
+      // puts every climb here at once but on the server one send at a time. So
+      // the move waits its turn on the lane and reads both indexes at send time
+      // (`serverIndexIn`), when every earlier send from this phone has landed.
+      void enqueueQueueMutation(async () => {
         if (!isQueueMutationOriginCurrent(origin)) return;
-        if (__DEV__) console.warn('[queue] reorderQueueItem sync failed; rolling back', error);
-        // Unlike add/remove (idempotent, converge on next sync), a failed reorder
-        // would leave this client's order silently diverged from peers. Roll back
-        // to the pre-reorder order — that matches the server, which never applied
-        // the move — and surface the failure.
-        dispatch({ type: 'UPDATE_QUEUE', payload: { queue: previousQueue, currentClimbQueueItem: previousCurrent } });
-        showQueueMutationErrorToast(error, t, showToast);
+        // Gone, or never reached the server: there is nothing there to move.
+        const liveUuids = new Set(stateRef.current.queue.map((queueItem) => queueItem.uuid));
+        if (!isOnServer(uuid, liveUuids)) return;
+        const wireOldIndex = serverIndexIn(previousQueue, uuid);
+        const wireNewIndex = serverIndexIn(reorderedQueue, uuid);
+        if (wireOldIndex === wireNewIndex) return;
+        try {
+          await mutations.reorderQueueItem(uuid, wireOldIndex, wireNewIndex);
+        } catch (error) {
+          if (!isQueueMutationOriginCurrent(origin)) return;
+          if (__DEV__) console.warn('[queue] reorderQueueItem sync failed; rolling back', error);
+          // Unlike add/remove (idempotent, converge on next sync), a failed reorder
+          // would leave this client's order silently diverged from peers. Roll back
+          // to the pre-reorder order — that matches the server, which never applied
+          // the move — and surface the failure. Only while the queue is still
+          // exactly what this move left: anything the climber did since would be
+          // lost, so then the server's queue is fetched instead.
+          showQueueMutationErrorToast(error, t, showToast);
+          const live = stateRef.current;
+          const untouchedSince =
+            live.queue.length === reorderedQueue.length &&
+            live.queue.every((queueItem, index) => queueItem.uuid === reorderedQueue[index].uuid);
+          if (untouchedSince) {
+            dispatch({
+              type: 'UPDATE_QUEUE',
+              payload: { queue: previousQueue, currentClimbQueueItem: live.currentClimbQueueItem },
+            });
+          } else {
+            void resyncQueueAfterMutationFailure(origin);
+          }
+        }
       });
     },
-    [mutations, showToast, t, captureQueueMutationOrigin, isQueueMutationOriginCurrent],
+    [
+      mutations,
+      showToast,
+      t,
+      captureQueueMutationOrigin,
+      enqueueQueueMutation,
+      isQueueMutationOriginCurrent,
+      isOnServer,
+      resyncQueueAfterMutationFailure,
+      serverIndexIn,
+    ],
   );
 
   /**
@@ -1626,6 +1728,10 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // local removal is authoritative, so resync no-ops and no toast fires.
   const sendRemovalsOnLane = useCallback(
     (itemsToRemove: readonly ClimbQueueItem[], origin: QueueMutationOrigin) => {
+      // Still on the server until each remove goes, which a move or Play next
+      // queued ahead of them must count (`serverIndexIn`).
+      const unsentRemovals = laneUnsentRemovalUuidsRef.current;
+      for (const item of itemsToRemove) unsentRemovals.add(item.uuid);
       void enqueueQueueMutation(async () => {
         const failures: unknown[] = [];
         for (const item of itemsToRemove) {
@@ -1636,6 +1742,8 @@ export function QueueProvider({ children }: { children: ReactNode }) {
             if (!isQueueMutationOriginCurrent(origin)) return;
             if (__DEV__) console.warn('[queue] removeQueueItem sync failed', error);
             failures.push(error);
+          } finally {
+            unsentRemovals.delete(item.uuid);
           }
         }
         if (!isQueueMutationOriginCurrent(origin)) return;
@@ -1851,9 +1959,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         const failures: unknown[] = [];
         // Counts the climbs the server has taken at the head, so a skipped
         // (removed) or failed climb doesn't leave a gap in the positions of the
-        // ones after it. A single positional add waits behind this drain on the
-        // same lane (`commitQueueAdd`), so nothing else from this phone lands
-        // among these slots while it runs.
+        // ones after it. A single positional add or a move waits behind this
+        // drain on the same lane (`commitQueueAdd`, `reorderQueue`), so nothing
+        // else from this phone lands among these slots while it runs.
         let sentCount = 0;
         for (const item of attributedItems) {
           if (!isQueueMutationOriginCurrent(origin)) return;
@@ -1865,8 +1973,12 @@ export function QueueProvider({ children }: { children: ReactNode }) {
             // Only a climb the server took moves the next one along. A failed
             // send leaves its slot empty on the server, so the next climb takes it.
             sentCount += 1;
+            laneFailedAddUuidsRef.current.delete(item.uuid);
           } catch (error) {
             if (!isQueueMutationOriginCurrent(origin)) return;
+            // Still in this phone's queue but not the server's: a move queued
+            // behind this drain must not count it (`serverIndexIn`).
+            laneFailedAddUuidsRef.current.add(item.uuid);
             if (__DEV__) console.warn('[queue] appendQueueItems addQueueItem sync failed', error);
             failures.push(error);
           }
