@@ -73,6 +73,8 @@ export async function generateUniqueGymSlug(name: string): Promise<string> {
   return `${baseSlug}-${uuidv4().slice(0, 8)}`;
 }
 
+// Non-string, non-Date inputs map to null on purpose: the driver only returns
+// offset-less strings (or Date) for these columns.
 function rawUtcTimestamp(value: unknown): Date | null {
   const iso = parsePostgresUtcTimestamp(value instanceof Date || typeof value === 'string' ? value : null);
   return iso ? new Date(iso) : null;

@@ -43,6 +43,12 @@ describe('mapRawGymRow timestamps', () => {
     }
   });
 
+  it('reads fractional-second naive strings as UTC', () => {
+    const naive = '2026-02-03 10:30:00.123456';
+    const mapped = mapRawGymRow({ ...baseRow, hours_updated_at: naive, created_at: naive, updated_at: naive });
+    expect(mapped.hoursUpdatedAt?.toISOString()).toBe('2026-02-03T10:30:00.123Z');
+  });
+
   it('passes Date through and keeps null as null', () => {
     const instant = new Date('2026-02-03T10:30:00.000Z');
     const mapped = mapRawGymRow({
