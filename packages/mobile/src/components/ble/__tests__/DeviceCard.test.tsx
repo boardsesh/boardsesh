@@ -111,6 +111,8 @@ vi.mock('../../../lib/board-details', () => ({
 }));
 
 import { DeviceCard, describeSavedBoard, getPreviewImageStyle } from '../DeviceCard';
+import { upsertDiscoveredDevice } from '../../../lib/ble/scan-device-cache';
+import type { DiscoveredDevice } from '../../../lib/ble/types';
 
 function makeBoard(overrides: Partial<UserBoard> = {}): UserBoard {
   return {
@@ -263,6 +265,18 @@ describe('getPreviewImageStyle', () => {
 
     expect(container.querySelectorAll('[data-bg="#34c759"]')).toHaveLength(3);
     expect(container.querySelector('[data-bg="theme-error"]')).toBeNull();
+  });
+
+  it('draws the bars the scan last pushed, not a reading still inside the hysteresis', () => {
+    const devices = new Map<string, DiscoveredDevice>();
+    upsertDiscoveredDevice(devices, { deviceId: 'device-edge', name: 'Kilter Board#SN-7@3', rssi: -58 });
+    upsertDiscoveredDevice(devices, { deviceId: 'device-edge', name: 'Kilter Board#SN-7@3', rssi: -62 });
+    const [device] = [...devices.values()];
+
+    const { container } = render(<DeviceCard device={device} onSelect={vi.fn()} />);
+
+    expect(device.rssi).toBe(-62);
+    expect(container.querySelectorAll('[data-bg="#34c759"]')).toHaveLength(3);
   });
 
   it('keeps a square board at the full thumbnail size', () => {

@@ -27,12 +27,23 @@ const pushedBucketByDevice = new WeakMap<DiscoveredDevice, RssiStrength>();
 
 const BUCKET_RANK: Record<RssiStrength, number> = { weak: 0, good: 1, strong: 2 };
 
+// The bars the picker shows for a scanned board: the bucket it was last pushed
+// with, not its raw reading. In-bucket readings update `rssi` in place for the
+// sort, so classifying `rssi` on an unrelated re-render would skip the
+// hysteresis and leave the bars out of step with what the cache will push next.
+export function signalStrengthOf(device: DiscoveredDevice): RssiStrength {
+  return pushedBucketByDevice.get(device) ?? classifyRssiStrength(device.rssi);
+}
+
 function nextBucket(pushedBucket: RssiStrength, rssi: number): RssiStrength {
   const candidate = classifyRssiStrength(rssi);
   if (candidate === pushedBucket) return pushedBucket;
+  // Move as far toward the reading as it clears with the margin: a jump from
+  // -85 to -58 lands on good (it cleared -80 by 22 dB), not stuck on weak. The
+  // margin is smaller than a bucket, so this never lands past the pushed bucket
+  // the wrong way.
   const movingUp = BUCKET_RANK[candidate] > BUCKET_RANK[pushedBucket];
-  const shiftedBucket = classifyRssiStrength(movingUp ? rssi - BUCKET_HYSTERESIS_DB : rssi + BUCKET_HYSTERESIS_DB);
-  return shiftedBucket === candidate ? candidate : pushedBucket;
+  return classifyRssiStrength(movingUp ? rssi - BUCKET_HYSTERESIS_DB : rssi + BUCKET_HYSTERESIS_DB);
 }
 
 function storeNewDevice(devices: Map<string, DiscoveredDevice>, deviceKey: string, device: DiscoveredDevice): void {
@@ -61,7 +72,7 @@ export function upsertDiscoveredDevice(devices: Map<string, DiscoveredDevice>, d
     // is stored then, because the memoized DeviceCard compares the device by
     // reference.
     if (isUsableRssi(device.rssi) && device.rssi !== existingDevice.rssi) {
-      const pushedBucket = pushedBucketByDevice.get(existingDevice) ?? classifyRssiStrength(existingDevice.rssi);
+      const pushedBucket = signalStrengthOf(existingDevice);
       const bucket = nextBucket(pushedBucket, device.rssi);
       if (bucket !== pushedBucket) {
         const refreshedDevice = { ...existingDevice, rssi: device.rssi };
