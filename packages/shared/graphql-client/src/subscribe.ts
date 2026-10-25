@@ -1,5 +1,5 @@
 import type { Client, Sink } from 'graphql-ws';
-import { GraphQLOperationError } from './errors';
+import { GraphQLOperationError, GraphQLTransportClosedError, isLikeCloseEvent } from './errors';
 
 /** True for a graphql-ws error payload shaped like `GraphQLError[]`. */
 function isGraphQLErrorArray(
@@ -41,6 +41,11 @@ export function subscribe<TData = unknown, TVariables = Record<string, unknown>>
         // never receive "Event `Event` (type=error) captured as promise rejection".
         if (isGraphQLErrorArray(error)) {
           sink.error?.(new GraphQLOperationError(error));
+        } else if (isLikeCloseEvent(error)) {
+          // Checked before `instanceof Error`: graphql-ws's TerminatedCloseEvent is an
+          // Error subclass that also carries the close code. Keep the code so callers
+          // and Sentry can tell a lost connection from a server fault.
+          sink.error?.(new GraphQLTransportClosedError(error.code, error.reason));
         } else {
           sink.error?.(error instanceof Error ? error : new Error(String(error)));
         }

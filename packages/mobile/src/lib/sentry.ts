@@ -97,6 +97,29 @@ export function applyChunkLoadFingerprint<T extends FingerprintableEvent>(
   return event;
 }
 
+type NormalizableEvent = {
+  extra?: Record<string, unknown> | undefined;
+  exception?: { values?: Array<{ value?: string | undefined }> };
+};
+
+/**
+ * `captureToSentry` normalizes an opaque close/error event before sending, but a
+ * rejection that reaches the SDK through its global onunhandledrejection hook skips
+ * that path and arrives as `Event captured as promise rejection`. Apply the same
+ * normalization in `beforeSend`: when the original exception is not an `Error`, put
+ * the close code/reason into `extra` and replace the exception message. Pure and
+ * ungated so it is unit-testable.
+ */
+export function applyCapturedValueNormalization<T extends NormalizableEvent>(event: T, originalException?: unknown): T {
+  if (originalException instanceof Error) return event;
+  const { error, extra } = normalizeCapturedValueForSentry(originalException);
+  if (!extra) return event;
+  event.extra = { ...event.extra, ...extra };
+  const firstValue = event.exception?.values?.[0];
+  if (firstValue) firstValue.value = error.message;
+  return event;
+}
+
 if (isSentryEnabled) {
   Sentry.init({
     dsn: sentryDsn,
@@ -118,7 +141,10 @@ if (isSentryEnabled) {
       if (isExpoUiSheetNoHandlerRejection(event, hint?.originalException)) return null;
       delete event.user;
       if (event.contexts?.device) delete event.contexts.device.id;
-      return applyChunkLoadFingerprint(event, hint?.originalException);
+      return applyChunkLoadFingerprint(
+        applyCapturedValueNormalization(event, hint?.originalException),
+        hint?.originalException,
+      );
     },
     beforeSendTransaction(event) {
       delete event.user;

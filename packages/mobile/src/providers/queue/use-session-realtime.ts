@@ -1017,7 +1017,7 @@ export function useSessionRealtime({
             if (!isCurrent()) return;
             // Session-update stream errors were swallowed. Surface them for
             // triage (the retained subscription still drives its own reconnect).
-            reportHandledError(sessionSubscriptionError);
+            reportHandledError(sessionSubscriptionError, { tags: { source: 'queue-sync', op: 'sessionUpdates' } });
           },
           complete: () => {},
         },

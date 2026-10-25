@@ -9,6 +9,7 @@ import {
   isNotSessionMemberExtension,
   isNotSessionMemberError,
   isTransportClosedError,
+  isTransientTransportClose,
 } from '../errors';
 
 describe('parseRateLimitError', () => {
@@ -185,5 +186,19 @@ describe('isTransportClosedError', () => {
     expect(closed.message).toContain('4500');
     expect(isTransportClosedError(new Error('closed'))).toBe(false);
     expect(isTransportClosedError({ code: 1006, reason: '' })).toBe(false);
+  });
+});
+
+describe('isTransientTransportClose', () => {
+  it.each([1000, 1006, 4499])('is true for retryable close code %i', (code) => {
+    expect(isTransientTransportClose(new GraphQLTransportClosedError(code, ''))).toBe(true);
+  });
+
+  it.each([1011, 4400, 4401, 4500])('is false for fatal close code %i', (code) => {
+    expect(isTransientTransportClose(new GraphQLTransportClosedError(code, ''))).toBe(false);
+  });
+
+  it('is false for a plain Error', () => {
+    expect(isTransientTransportClose(new Error('x'))).toBe(false);
   });
 });

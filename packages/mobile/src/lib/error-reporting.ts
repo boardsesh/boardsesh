@@ -1,3 +1,4 @@
+import { GraphQLTransportClosedError, isTransientTransportClose } from '@boardsesh/graphql-client';
 import { isBleWriteTimeoutError } from '@boardsesh/ble-protocol/connection-error';
 import { getErrorStatus, isNetworkError as isSharedNetworkError } from '@boardsesh/offline-sync/error-classification';
 import { isDeadDatabaseHandleError, SchemaNewerThanAppError } from '@boardsesh/offline-sync';
@@ -102,6 +103,9 @@ function isNetworkError(error: unknown): boolean {
   // Preserve statusless ClientError as a transport signal while allowing a
   // status nested in response.errors[].extensions to win over message prose.
   if (response !== undefined && getErrorStatus(error) === null) return true;
+  // A subscription that ran out of reconnect attempts: the socket is gone, which is
+  // a connectivity fact like the fetch failures above.
+  if (isTransientTransportClose(error)) return true;
   return isSharedNetworkError(error);
 }
 
@@ -258,6 +262,17 @@ export function reportHandledError(error: unknown, context?: ErrorReportContext)
       message: 'transport failure',
       level: 'warning',
       ...(context?.tags?.source !== undefined ? { data: { source: context.tags.source } } : {}),
+    });
+    return;
+  }
+  // A close with a fatal code (server error, auth, protocol). Kept at warning and
+  // fingerprinted by code so each one is its own issue and keeps the code.
+  if (error instanceof GraphQLTransportClosedError) {
+    reportError(error, {
+      ...context,
+      level: 'warning',
+      tags: { ...context?.tags, ws_close_code: error.code },
+      fingerprint: ['ws-transport-closed', String(error.code)],
     });
     return;
   }

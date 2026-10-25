@@ -182,6 +182,15 @@ export function isTransportClosedError(error: unknown): boolean {
   return error instanceof GraphQLTransportClosedError;
 }
 
+// Close codes graphql-ws retries on its own. A subscription only sees one of them
+// after the retry budget is spent, so the cause is a lost connection, not a fault.
+const TRANSIENT_CLOSE_CODES = new Set([1000, 1001, 1005, 1006, 1012, 1013, 1014, 4403, 4408, 4499, 4504]);
+
+/** True for a transport close whose code means "connection lost", not a server or protocol fault. */
+export function isTransientTransportClose(error: unknown): boolean {
+  return error instanceof GraphQLTransportClosedError && TRANSIENT_CLOSE_CODES.has(error.code);
+}
+
 /**
  * Legacy message shape the backend emits alongside the `RATE_LIMITED` code —
  * kept as a fallback so a pre-#2763 server (code-less throw) or a subscription
