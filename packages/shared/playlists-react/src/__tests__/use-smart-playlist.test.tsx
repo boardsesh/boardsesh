@@ -7,6 +7,8 @@ import { PlaylistsAdapterProvider, type ExecutePlaylistsGraphQL, type PlaylistsA
 import { noopRecentsAdapter } from '../recents-adapter';
 import type { PlaylistClimbsView } from '../use-playlist-climbs';
 import {
+  LIKED_LIST_QUERY_KEY_PREFIX,
+  removeClimbFromLikedList,
   smartPlaylistGeometryKey,
   smartPlaylistQueryKey,
   useSmartPlaylist,
@@ -229,5 +231,40 @@ describe('smart playlist views (#6651)', () => {
     await waitFor(() => expect(execute).toHaveBeenCalledTimes(3));
     expect(result.current.allClimbs).toEqual([]);
     client.clear();
+  });
+});
+
+describe('removeClimbFromLikedList', () => {
+  function seed(client: QueryClient, key: readonly unknown[], pages: string[][]) {
+    client.setQueryData(key, {
+      pages: pages.map((uuids) => smartPage(uuids).smartPlaylist),
+      pageParams: pages.map((_, index) => index),
+    });
+  }
+
+  it('drops the climb from every cached page of every Liked view and leaves other lists alone', () => {
+    const client = new QueryClient();
+    const likedKey = smartPlaylistQueryKey({ smartPlaylistType: 'LIKED_CLIMBS', userId: 'u' });
+    const otherBoardKey = smartPlaylistQueryKey({ smartPlaylistType: 'LIKED_CLIMBS', userId: 'u', boardUuid: 'b' });
+    const logbookKey = smartPlaylistQueryKey({ smartPlaylistType: 'LOGBOOK', userId: 'u' } as never);
+    seed(client, likedKey, [['a', 'b'], ['c']]);
+    seed(client, otherBoardKey, [['b']]);
+    seed(client, logbookKey, [['b']]);
+
+    removeClimbFromLikedList(client, 'b');
+
+    const liked = client.getQueryData<{ pages: { climbs: { uuid: string }[]; totalCount: number }[] }>(likedKey);
+    expect(liked?.pages.map((page) => page.climbs.map((climb) => climb.uuid))).toEqual([['a'], ['c']]);
+    expect(liked?.pages[0].totalCount).toBe(1);
+    const other = client.getQueryData<{ pages: { climbs: unknown[] }[] }>(otherBoardKey);
+    expect(other?.pages[0].climbs).toEqual([]);
+    const logbook = client.getQueryData<{ pages: { climbs: unknown[] }[] }>(logbookKey);
+    expect(logbook?.pages[0].climbs).toHaveLength(1);
+  });
+
+  it('keeps the Liked key layout the offline-sync invalidation map matches on', () => {
+    expect(smartPlaylistQueryKey({ smartPlaylistType: 'LIKED_CLIMBS', userId: 'u' }).slice(0, 2)).toEqual(
+      LIKED_LIST_QUERY_KEY_PREFIX,
+    );
   });
 });

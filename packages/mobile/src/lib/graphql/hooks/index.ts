@@ -51,6 +51,11 @@ import { favoritesStore } from '@boardsesh/climb-actions';
 import { favoriteToggleOrder, ownsFavoriteWrite } from './favorite-toggle-order';
 import { addFavoriteLocal, removeFavoriteLocal } from '../../../hooks/use-offline-mutations';
 import type { GraphQLFetch } from '@boardsesh/offline-sync';
+import {
+  LIKED_LIST_QUERY_KEY_PREFIX,
+  SMART_PLAYLIST_COUNTS_QUERY_KEY,
+  removeClimbFromLikedList,
+} from '@boardsesh/playlists-react';
 import { drainMutationQueue } from '../../../offline/offline-sync-adapter';
 import {
   DELETE_DRAFT_CLIMB_MUTATION,
@@ -1155,6 +1160,11 @@ export function useToggleFavorite() {
       if (typeof variables.currentlyFavorited === 'boolean') {
         favoritesStore.setIsFavorited(variables.input.climbUuid, !variables.currentlyFavorited);
       }
+      // Un-liking drops the climb from the cached Liked list now, on both the
+      // queued and the online path (#5304).
+      if (variables.currentlyFavorited === true) {
+        removeClimbFromLikedList(queryClient, variables.input.climbUuid);
+      }
       return { token, contextEpoch };
     },
     onError: (_error, variables, context) => {
@@ -1187,8 +1197,11 @@ export function useToggleFavorite() {
         });
         // The Liked smart list (and its library count) would otherwise keep an
         // un-liked climb on screen for its 5-minute staleTime (#5304).
-        void queryClient.invalidateQueries({ queryKey: ['smartPlaylist', 'LIKED_CLIMBS'] });
-        void queryClient.invalidateQueries({ queryKey: ['mySmartPlaylistCounts'] });
+        // The cached pages already lost the climb in onMutate, so the list only
+        // needs marking stale (no refetch of every loaded page, which would eat
+        // the shared smartPlaylist rate limit Play's drain uses).
+        void queryClient.invalidateQueries({ queryKey: LIKED_LIST_QUERY_KEY_PREFIX, refetchType: 'none' });
+        void queryClient.invalidateQueries({ queryKey: [SMART_PLAYLIST_COUNTS_QUERY_KEY] });
       }
     },
   });

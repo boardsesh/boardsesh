@@ -1,5 +1,11 @@
 import { useMemo } from 'react';
-import { useInfiniteQuery, type InfiniteData, type QueryKey, type UseInfiniteQueryResult } from '@tanstack/react-query';
+import {
+  useInfiniteQuery,
+  type InfiniteData,
+  type QueryClient,
+  type QueryKey,
+  type UseInfiniteQueryResult,
+} from '@tanstack/react-query';
 import {
   GET_SMART_PLAYLIST,
   type GetSmartPlaylistInput,
@@ -211,4 +217,26 @@ export function useSmartPlaylist({
   const meta: SmartPlaylistMeta | undefined = query.data?.pages[0]?.meta ?? initialData?.meta;
 
   return { query, allClimbs, meta };
+}
+
+/** The key prefix every view of the signed-in climber's Liked list is cached under (any user, board, view). */
+export const LIKED_LIST_QUERY_KEY_PREFIX: QueryKey = ['smartPlaylist', 'LIKED_CLIMBS'];
+
+/**
+ * Drops one climb from every cached page of the Liked list, so an un-like shows
+ * the moment it is tapped and a Play started right after drains a list without
+ * it. No request: the cached pages are edited in place (#5304).
+ */
+export function removeClimbFromLikedList(queryClient: QueryClient, climbUuid: string): void {
+  queryClient.setQueriesData<InfiniteData<SmartPlaylistResult>>({ queryKey: LIKED_LIST_QUERY_KEY_PREFIX }, (cached) => {
+    if (!cached?.pages.some((page) => page.climbs.some((climb) => climb.uuid === climbUuid))) return cached;
+    return {
+      ...cached,
+      pages: cached.pages.map((page) => {
+        const climbs = page.climbs.filter((climb) => climb.uuid !== climbUuid);
+        if (climbs.length === page.climbs.length) return page;
+        return { ...page, climbs, totalCount: Math.max(0, page.totalCount - 1) };
+      }),
+    };
+  });
 }
