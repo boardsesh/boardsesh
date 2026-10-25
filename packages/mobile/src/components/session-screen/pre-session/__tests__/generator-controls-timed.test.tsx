@@ -102,27 +102,27 @@ describe('workoutStepperRows for a ladder', () => {
 });
 
 describe('workoutStepperRows for timed blocks', () => {
-  it('gives a 4x4 its climbs per round (2 to 10), rounds (1 to 10) and both rests', () => {
+  it('gives a 4x4 its reps per set (2 to 10) above its sets (1 to 10), then both rests', () => {
     const rows = rowsFor({ ...DEFAULT_FOUR_BY_FOUR_OPTIONS, targetGrade: 18 });
 
     expect(rows.map((row) => row.key)).toEqual([
-      'climbsPerRound',
-      'rounds',
-      'restBetweenClimbsSeconds',
-      'restBetweenRoundsSeconds',
+      'repsPerSet',
+      'sets',
+      'restBetweenRepsSeconds',
+      'restBetweenSetsSeconds',
     ]);
     expect(rows[0].element.props).toMatchObject({
-      label: 'mobile.session.preGeneratorClimbsPerRound',
+      label: 'mobile.session.preGeneratorRepsPerSet',
       min: 2,
       max: 10,
     });
-    expect(rows[1].element.props).toMatchObject({ label: 'mobile.session.preGeneratorRounds', min: 1, max: 10 });
+    expect(rows[1].element.props).toMatchObject({ label: 'mobile.session.preGeneratorSets', min: 1, max: 10 });
     expect(rows[2].element.props).toMatchObject({
-      label: 'mobile.session.preGeneratorRestBetweenClimbs',
+      label: 'mobile.session.preGeneratorRestBetweenReps',
       allowOff: true,
     });
     expect(rows[3].element.props).toMatchObject({
-      label: 'mobile.session.preGeneratorRestBetweenRounds',
+      label: 'mobile.session.preGeneratorRestBetweenSets',
       allowOff: true,
     });
   });
@@ -148,19 +148,19 @@ describe('workoutStepperRows for timed blocks', () => {
     const fourByFour = { ...DEFAULT_FOUR_BY_FOUR_OPTIONS, targetGrade: 18 };
     const rows = rowsFor(fourByFour, onOptionsChange);
 
-    const climbRest = pickerFor(rows[2].element);
-    expect(climbRest).toMatchObject({
+    const repRest = pickerFor(rows[2].element);
+    expect(repRest).toMatchObject({
       value: null,
       allowOff: true,
-      accessibilityName: 'mobile.session.preGeneratorRestBetweenClimbs',
+      accessibilityName: 'mobile.session.preGeneratorRestBetweenReps',
     });
-    climbRest.onChange(90);
-    expect(onOptionsChange).toHaveBeenLastCalledWith({ ...fourByFour, restBetweenClimbsSeconds: 90 });
+    repRest.onChange(90);
+    expect(onOptionsChange).toHaveBeenLastCalledWith({ ...fourByFour, restBetweenRepsSeconds: 90 });
 
-    const roundRest = pickerFor(rows[3].element);
-    expect(roundRest.value).toBe(180);
-    roundRest.onChange(null);
-    expect(onOptionsChange).toHaveBeenLastCalledWith({ ...fourByFour, restBetweenRoundsSeconds: 0 });
+    const setRest = pickerFor(rows[3].element);
+    expect(setRest.value).toBe(180);
+    setRest.onChange(null);
+    expect(onOptionsChange).toHaveBeenLastCalledWith({ ...fourByFour, restBetweenSetsSeconds: 0 });
   });
 
   it('always shows the interval as a length', () => {

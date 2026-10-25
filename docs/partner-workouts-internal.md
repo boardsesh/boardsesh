@@ -16,7 +16,7 @@ undone the day Crimpd or Lattice asks.
 Status: design, nothing merged. The workout runner it leans on is
 [epic #5399](https://github.com/boardsesh/boardsesh/issues/5399); the stage
 model is [#5379](https://github.com/boardsesh/boardsesh/issues/5379), which
-now exists on the phone (`docs/workout-stages.md`), and 4x4 rounds are
+now exists on the phone (`docs/workout-stages.md`), and 4x4 reps and sets are
 [#5380](https://github.com/boardsesh/boardsesh/issues/5380). This integration
 does not wait for #5380 and degrades honestly until it lands (see "What waits
 on the workouts epic").
@@ -246,7 +246,10 @@ returns the existing row so the partner can decide.
 
 `support` per block is computed server-side from a static map, so the
 response is stable regardless of which app build the climber has. That map
-is the one place to flip `fourByFour` to `native` when #5380 ships.
+is the one place to flip `fourByFour` to `native` when #5380 ships. The phone's 4x4 is
+reps × sets on one climb (a set is one climb done for every rep, then the rest between
+sets), so flipping it also decides how the block's `climbCount`, `rounds` and two rests map
+onto `sets`, `repsPerSet`, `restBetweenRepsSeconds` and `restBetweenSetsSeconds`.
 
 ---
 

@@ -153,8 +153,9 @@ import {
   resetRestTimerStoreForTests,
   resumeRestTimer,
 } from '../../../lib/rest-timer-store';
+import { isTickFreshEnoughToArm } from '../../../lib/rest-timer-auto-advance';
 import type { RestTimerTickStatus } from '../../../lib/rest-timer-pacing';
-import { resetWorkoutRunStoreForTests, setWorkoutRun } from '../../../lib/workout-run-store';
+import { noteWorkoutRunTick, resetWorkoutRunStoreForTests, setWorkoutRun } from '../../../lib/workout-run-store';
 import { RestTimerAutoAdvanceScheduler } from '../RestTimerAutoAdvanceScheduler';
 import { RestTimerPacingSync } from '../RestTimerPacingSync';
 import { RestTimerPill } from '../RestTimerPill';
@@ -163,16 +164,36 @@ const T0 = Date.parse('2026-09-11T10:00:00.000Z');
 
 const queueItem = (uuid: string): QueueItemStub => ({ uuid, climb: { uuid: `climb-${uuid}` } });
 
-/** 4x4: 2 climbs x 2 rounds, the 10 s changeover between climbs, 30 s between rounds. */
+/** 4x4: 2 sets of 2 reps, no rest between reps, 30 s between sets. */
 const FOUR_BY_FOUR: WorkoutRun = {
   stages: [
     {
       id: 'stage-4x4',
       kind: 'fourByFour',
-      itemUuids: ['a1', 'b1', 'a2', 'b2'],
-      pacing: { mode: 'afterTick', restSeconds: 0, restBetweenRoundsSeconds: 30, advanceOn: 'tick' },
-      rounds: 2,
-      roundByUuid: { a1: 1, b1: 1, a2: 2, b2: 2 },
+      itemUuids: ['a', 'b'],
+      pacing: {
+        mode: 'afterTick',
+        restSeconds: 0,
+        advanceOn: 'set',
+        sets: { repsPerSet: 2, restBetweenSetsSeconds: 30 },
+      },
+    },
+  ],
+};
+
+/** 4x4: 3 sets of 2 reps with no rest between sets, so the 10 s changeover. */
+const FOUR_BY_FOUR_CHANGEOVER: WorkoutRun = {
+  stages: [
+    {
+      id: 'stage-4x4',
+      kind: 'fourByFour',
+      itemUuids: ['a', 'b', 'c'],
+      pacing: {
+        mode: 'afterTick',
+        restSeconds: 0,
+        advanceOn: 'set',
+        sets: { repsPerSet: 2, restBetweenSetsSeconds: 0 },
+      },
     },
   ],
 };
@@ -213,15 +234,22 @@ function current(): string | null {
   return harness.getQueueData().currentClimbQueueItem?.uuid ?? null;
 }
 
-/** The tick path: a tick on `queueItemUuid` (or on whatever is up), climbed `agoMs` before it lands. */
+/**
+ * The tick path, as use-tick-saver runs it: a tick on `queueItemUuid` (or on
+ * whatever is up), climbed `agoMs` before it lands. The rest timer first, then
+ * the workout's tick log, which a 4x4 counts its reps from. A tick dated more
+ * than a minute back is history and stays out of the log.
+ */
 function logTick(status: RestTimerTickStatus, queueItemUuid: string | null = current(), agoMs = 0) {
   act(() => {
-    noteRestTimerTick(
-      new Date(harness.nowMs - agoMs).toISOString(),
-      getRestTimerState().stagePacing?.mode ?? 'afterTick',
-      harness.nowMs,
-      { status, queueItemUuid },
-    );
+    const climbedAt = new Date(harness.nowMs - agoMs).toISOString();
+    noteRestTimerTick(climbedAt, getRestTimerState().stagePacing?.mode ?? 'afterTick', harness.nowMs, {
+      status,
+      queueItemUuid,
+    });
+    if (queueItemUuid !== null && isTickFreshEnoughToArm(Date.parse(climbedAt), harness.nowMs)) {
+      noteWorkoutRunTick('session-1', { queueItemUuid, status, climbedAt });
+    }
   });
 }
 
@@ -245,18 +273,19 @@ function setRestSeconds(seconds: number, rerender: (ui: ReactNode) => void) {
 }
 
 /**
- * The 4x4's last climb moves on after its 30 s round rest onto a climb outside
- * the workout, which runs on the climber's own 1:30 with auto-advance on. The
- * tick rule's fire leaves no anchor and the stage change keeps it that way, so
- * the hand climb waits for a tick. Returns the advance instant, B.
+ * The 4x4's last set moves on after its 30 s set rest onto a climb outside the
+ * workout, which runs on the climber's own 1:30 with auto-advance on. The tick
+ * rule's fire leaves no anchor and the stage change keeps it that way, so the
+ * hand climb waits for a tick. Returns the advance instant, B.
  */
 function advanceOffTheWorkout(): { advancedAtMs: number; rerender: (ui: ReactNode) => void; container: HTMLElement } {
-  const queue = ['a1', 'b1', 'a2', 'b2', 'hand-1', 'hand-2', 'hand-3'].map(queueItem);
-  harness.setQueueData({ queue, currentClimbQueueItem: queue[3] });
+  const queue = ['a', 'b', 'hand-1', 'hand-2', 'hand-3'].map(queueItem);
+  harness.setQueueData({ queue, currentClimbQueueItem: queue[1] });
   setWorkoutRun('session-1', FOUR_BY_FOUR);
   const { rerender, container } = render(runtime());
   act(() => armRestTimer('afterTick', harness.nowMs, 'session-1'));
   logTick('attempt');
+  logTick('send');
   advance(30_000);
   expect(current()).toBe('hand-1');
   expect(nextClimb).toHaveBeenCalledTimes(1);
@@ -430,46 +459,56 @@ describe('what the floor leaves alone', () => {
     expect(current()).toBe('x3');
   });
 
-  it('the 4x4 changeover: 10 s after the next climb’s tick, right after the round rest moved the wall', () => {
-    const queue = ['a1', 'b1', 'a2', 'b2'].map(queueItem);
-    harness.setQueueData({ queue, currentClimbQueueItem: queue[1] });
-    setWorkoutRun('session-1', FOUR_BY_FOUR);
+  it('the 4x4 changeover: 10 s after a set’s last rep, right after the set before it moved the wall', () => {
+    const queue = ['a', 'b', 'c'].map(queueItem);
+    harness.setQueueData({ queue, currentClimbQueueItem: queue[0] });
+    setWorkoutRun('session-1', FOUR_BY_FOUR_CHANGEOVER);
     render(runtime());
     act(() => armRestTimer('afterTick', harness.nowMs, 'session-1'));
     logTick('attempt');
-    advance(30_000);
-    expect(current()).toBe('a2');
-    expect(getRestTimerState().stagePacing).toMatchObject({ queueItemUuid: 'a2', targetSeconds: 10 });
+    logTick('send');
+    advance(10_000);
+    expect(current()).toBe('b');
+    expect(getRestTimerState().stagePacing).toMatchObject({
+      queueItemUuid: 'b',
+      targetSeconds: null,
+      reps: { logged: 0, perSet: 2 },
+    });
 
-    // a2 done and logged a second after it came up.
-    advance(1_000);
+    // b's first rep as it came up, its last a second later.
     logTick('attempt');
+    advance(1_000);
+    logTick('send');
+    expect(getRestTimerState().stagePacing).toMatchObject({ queueItemUuid: 'b', targetSeconds: 10, closesSet: true });
     advance(9_000);
     expect(nextClimb).toHaveBeenCalledTimes(1);
     advance(1_000);
     expect(nextClimb).toHaveBeenCalledTimes(2);
-    expect(current()).toBe('b2');
+    expect(current()).toBe('c');
   });
 
-  it('the 4x4 changeover for a tick dated before the advance: 10 s from the advance', () => {
-    const queue = ['a1', 'b1', 'a2', 'b2'].map(queueItem);
-    harness.setQueueData({ queue, currentClimbQueueItem: queue[1] });
-    setWorkoutRun('session-1', FOUR_BY_FOUR);
+  it('the 4x4 changeover for reps dated before the advance: 10 s from the advance', () => {
+    const queue = ['a', 'b', 'c'].map(queueItem);
+    harness.setQueueData({ queue, currentClimbQueueItem: queue[0] });
+    setWorkoutRun('session-1', FOUR_BY_FOUR_CHANGEOVER);
     render(runtime());
     act(() => armRestTimer('afterTick', harness.nowMs, 'session-1'));
     logTick('attempt');
-    advance(30_000);
-    expect(current()).toBe('a2');
+    logTick('send');
+    advance(10_000);
+    expect(current()).toBe('b');
     const advancedAtMs = harness.nowMs;
 
-    // Saved 1 s after the advance, dated 20 s back: the tick floor starts it at the advance.
+    // Both of b's reps saved 1 s after the advance, dated 20 and 19 s back: the
+    // tick floor starts the set rest at the advance.
     advance(1_000);
-    logTick('attempt', 'a2', 20_000);
+    logTick('attempt', 'b', 20_000);
+    logTick('send', 'b', 19_000);
     advanceTo(advancedAtMs + 9_000);
     expect(nextClimb).toHaveBeenCalledTimes(1);
     advance(1_000);
     expect(nextClimb).toHaveBeenCalledTimes(2);
-    expect(current()).toBe('b2');
+    expect(current()).toBe('c');
   });
 });
 

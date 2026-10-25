@@ -138,6 +138,18 @@ export type RestTimerState = {
    * dated more than a minute before it landed never replaces any.
    */
   lastTick: RestTimerLastTick | null;
+  /**
+   * The queue item the timer last moved the wall off, by this phone's own
+   * advance (`noteRestTimerAdvancedFrom`). The tick that earned that move is
+   * spent: should the wall come back to this climb with no new tick on it, the
+   * scheduler never moves it on again (`restAdvanceAllowed`). Seen after a
+   * backend deploy (#5380 QA): the local move never reached the server, the
+   * rejoin put the old climb back, and the crew clock's seed brought back the
+   * last tick on it, so the finished 4x4 set ran its rest again and moved on a
+   * second time. A fresh tick logged here on that climb clears it: the climber
+   * went again, and that go earns its own rest. Cleared on arm and disarm.
+   */
+  advancedFromQueueItemUuid: string | null;
 };
 
 const INITIAL_STATE: RestTimerState = {
@@ -156,6 +168,7 @@ const INITIAL_STATE: RestTimerState = {
   crewBeatSkippedMs: null,
   stagePacing: null,
   lastTick: null,
+  advancedFromQueueItemUuid: null,
 };
 
 let state: RestTimerState = INITIAL_STATE;
@@ -311,9 +324,9 @@ function lastTickAfter(tick: RestTimerLastTick | undefined): RestTimerLastTick |
 }
 
 /**
- * Where a tick dated more than `AUTO_ADVANCE_MAX_BACKDATE_MS` before it landed
- * starts a rest: yesterday's session logged with the date picker, not a climb
- * just done. On a running rest it goes through the floor, so it never rewinds
+ * Where a tick dated more than `AUTO_ADVANCE_MAX_BACKDATE_MS` before it was
+ * logged starts a rest: yesterday's session logged with the date picker, not a
+ * climb just done. On a running rest it goes through the floor, so it never rewinds
  * that rest. With none running (no anchor, or paused) it anchors at its own time,
  * as a tick always did before the floor: that rest ran out long ago, so the
  * scheduler reads its deadline as stale and schedules nothing. Floored instead,
@@ -339,23 +352,40 @@ function historicalTickAnchorMs(tickStartMs: number, nowMs: number): number {
  * never takes the place of one the climb on the wall already earned either
  * (`lastTickAfter`); it still goes through the anchor floor.
  *
- * A tick dated more than `AUTO_ADVANCE_MAX_BACKDATE_MS` before it landed is
+ * A tick dated more than `AUTO_ADVANCE_MAX_BACKDATE_MS` before it was logged is
  * history, judged on its own `climbedAt`, never the floored anchor: it never
  * earns an advance under a tick or send rule (`lastTick` stands), and it anchors
  * as `historicalTickAnchorMs` says. Without that, yesterday's send logged on a
  * workout climb just lit would be floored onto the advance, read as fresh, and
  * walk the wall on after the rest with the climb never climbed.
+ *
+ * `loggedAtMs` is when the climber logged it, which the tick path also judges a
+ * workout go by (a 4x4 rep, `use-tick-saver.ts`), so one go is fresh for both:
+ * a rep whose save lands 90 s late (an offline queue, gym wifi) still closes
+ * the set AND earns the set rest's advance. Left out, it is `nowMs` (a tick read
+ * back from the session, with no log instant to go by). `nowMs` stays the cap on
+ * the anchor. Under a crew clock's tick or send rule the tick is judged on
+ * landing instead, as the server judges its TICK (`elapsedMs` past 60 s is
+ * history there): recorded here but not there, the phone would fire beats the
+ * server refuses, one every rest.
  */
 export function noteRestTimerTick(
   climbedAt: string,
   mode: RestTimerMode,
   nowMs: number,
   tick?: RestTimerLastTick,
+  loggedAtMs: number = nowMs,
 ): void {
   if (!state.armed) return;
   const tickStartMs = getRestTimerStartMs(climbedAt) ?? nowMs;
-  const isFresh = isTickFreshEnoughToArm(tickStartMs, nowMs);
+  const isFresh = isTickFreshEnoughToArm(tickStartMs, followsCrewTickRule() ? nowMs : loggedAtMs);
   const lastTick = isFresh ? lastTickAfter(tick) : state.lastTick;
+  // A fresh go on the climb the timer last moved the wall off: the climber came
+  // back to it and climbed it again, so this tick earns a move of its own.
+  const advancedFromQueueItemUuid =
+    lastTick !== state.lastTick && lastTick?.queueItemUuid === state.advancedFromQueueItemUuid
+      ? null
+      : state.advancedFromQueueItemUuid;
   const tickAction: LocalRestTimerAction = {
     type: 'tick',
     sessionId: state.armedForSessionId,
@@ -381,6 +411,7 @@ export function noteRestTimerTick(
       ...state,
       lastTickAt: climbedAt,
       lastTick,
+      advancedFromQueueItemUuid,
       anchorMs: state.anchorMs ?? anchorFromTick,
       // A tick means the climber is still going, so give the queue another look.
       // Deliberately NOT re-anchored — holding the beat is the whole mode — but
@@ -408,6 +439,7 @@ export function noteRestTimerTick(
     ...state,
     lastTickAt: climbedAt,
     lastTick,
+    advancedFromQueueItemUuid,
     anchorMs: anchorFromTick,
     isRunning: true,
     pausedElapsedSeconds: 0,
@@ -508,6 +540,17 @@ export function noteRestTimerAutoAdvanceFired(
   });
   announce({ type: 'fired', sessionId: state.armedForSessionId, anchorAfter });
   return true;
+}
+
+/**
+ * The scheduler is moving the wall off `queueItemUuid` (its own advance, with
+ * or without a crew clock). Remembered so the tick that earned the move never
+ * earns another one off the same climb (`advancedFromQueueItemUuid`).
+ * Announces nothing: the move itself is the advance the crew clock hears about.
+ */
+export function noteRestTimerAdvancedFrom(queueItemUuid: string | null): void {
+  if (!state.armed || state.advancedFromQueueItemUuid === queueItemUuid) return;
+  setState({ ...state, advancedFromQueueItemUuid: queueItemUuid });
 }
 
 /**

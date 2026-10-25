@@ -30,6 +30,7 @@ const armedState = (overrides: Partial<RestTimerState> = {}): RestTimerState => 
   crewBeatSkippedMs: null,
   stagePacing: null,
   lastTick: null,
+  advancedFromQueueItemUuid: null,
   ...overrides,
 });
 

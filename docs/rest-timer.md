@@ -34,8 +34,9 @@ The timer runs on an `EffectiveRestPacing`: a rest length, a cadence (`afterTick
 `resolveEffectiveRestPacing` picks the source, highest first:
 
 1. `crew`: the session's shared clock (#5382).
-2. `stage`: the workout stage the current climb belongs to (#5380, #6231). A stage always
-   auto-advances.
+2. `stage`: the workout stage the current climb belongs to (#5380, #6231). A stage
+   auto-advances, except a 4x4 set with reps still to log: its rests never move the wall, and
+   saying so is also what keeps the crew clock, which counts no reps, from firing mid-set.
 3. `settings`: the climber's own preferences. These never carry an advance rule, so they run on
    the deadline, as the timer always has.
 
@@ -62,7 +63,11 @@ The advance rule:
 
 `onTheMinute` keeps its beat whatever the rule (`anchorAfterFire`). `restAdvanceAllowed` is the
 pure check; it only lets a tick count when it was logged against the queue item on the wall, so a
-tick on the previous climb, or one from a list, never lights the next.
+tick on the previous climb, or one from a list, never lights the next. A 4x4 set adds one more
+condition to `tick`: every rep of the set is logged on the climb on the wall (the stage pacing's
+`reps`, counted from the run's tick log). Until then a rest between reps runs out with the
+reached cue and the climb stays up for the next rep; with no rest between reps nothing counts
+down at all.
 
 The scheduler asks `restAdvanceAllowed` when it schedules and again when the timeout fires, with the
 store's `lastTick`. A tick that counts for no queue item leaves `lastTick` as it was, so it never
@@ -71,6 +76,16 @@ a save started on the previous climb that finishes after the advance never repla
 on the wall (`stagePacing.queueItemUuid`) already has. A refilled queue under a tick rule also waits
 for the next tick and forgets the last one, as the fire does (`clearRestTimerQueueEnded` with
 `anchorAfterFire`): that tick's rest already ran out at the dead end.
+
+The tick that moved the wall is spent. The store remembers the climb the timer last moved the wall
+off (`advancedFromQueueItemUuid`, set by `noteRestTimerAdvancedFrom` just before `nextClimb`, on
+the local path and on an applied crew FIRE), and `restAdvanceAllowed` never lets a last tick on
+that climb move the wall again. A fresh tick logged on this phone on that climb clears it: the
+climber went again, and that go earns its own rest. Found in simulator QA during a backend deploy
+(#5380): the set rest's FIRE got no answer, so the solo phone moved the wall itself; that move
+never reached the server, the rejoin put the old climb back, and the session seed brought back
+the crew clock with the set's last rep on that climb. Without the guard the scheduler restarted
+the rest that had run out and moved the wall a second time. Arm and disarm forget it.
 
 A tick never starts a rest earlier than the rest already running or the last advance, and never
 in the future (`noteRestTimerTick`'s floor:
@@ -82,9 +97,18 @@ previous climb) can no longer shorten a running rest. It still shows as the last
 minute keeps its beat; a tick only fills a missing anchor, with the same floor.
 
 The floor is for a slow save, not for history. A tick dated more than
-`AUTO_ADVANCE_MAX_BACKDATE_MS` (60 s) before it lands, judged on its own `climbedAt`
+`AUTO_ADVANCE_MAX_BACKDATE_MS` (60 s) before it was logged, judged on its own `climbedAt`
 (`isTickFreshEnoughToArm`), is history: yesterday's session logged with the date picker. It
-never replaces `lastTick`, so it never moves the wall under a tick or send rule. On a running
+never replaces `lastTick`, so it never moves the wall under a tick or send rule, and the tick
+path keeps it out of the workout's tick log by the same test, so it is never a 4x4 rep either
+(`use-tick-saver.ts`). Both tests are made at the instant the climber logged the tick, which the
+tick path hands `noteRestTimerTick` as `loggedAtMs`, so one go is judged the same way twice: a
+rep whose save lands 90 s later (an offline queue, the gym's wifi) still counts, still becomes
+`lastTick`, and the set rest after it still moves the wall. The landing time only caps the
+anchor. A tick with no log instant (one read back from the session) is judged on landing. Under a
+crew clock's tick or send rule the phone judges on landing too, because the server judges the
+TICK by its `elapsedMs` and would refuse every beat the phone fired for a tick it read as
+history. On a running
 rest it goes through the floor, so it never rewinds it. A paused rest stays paused. With no
 anchor it anchors at its own time, as every tick did before the floor, so its deadline is
 usually long gone and nothing is scheduled. Floored there instead, it would start a rest at the

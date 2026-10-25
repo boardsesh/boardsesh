@@ -4,6 +4,7 @@ import {
   describeWorkoutRun,
   formatWorkoutStageParts,
   formatWorkoutStagePosition,
+  formatWorkoutStagePositionWithGo,
   workoutStageName,
 } from '../workout-run-readout';
 
@@ -135,43 +136,24 @@ describe('workout stage labels', () => {
     for (const kind of WORKOUT_STAGE_KINDS) expect(workoutStageName(kind, t)).toMatch(/^mobile\.session\./);
   });
 
-  it('counts a 4x4 climb within its round', () => {
-    const fourByFour: WorkoutRun = {
-      stages: [
-        {
-          id: 'four',
-          kind: 'fourByFour',
-          itemUuids: ['a', 'b', 'a2', 'b2'],
-          roundByUuid: { a: 1, b: 1, a2: 2, b2: 2 },
-        },
-      ],
-    };
-    const position = describeWorkoutRun(fourByFour, ['a', 'b', 'a2', 'b2'], 'b2')?.current;
-    expect(position).toBeTruthy();
-    if (!position) return;
-    expect(formatWorkoutStagePosition(position, t)).toBe(
-      'mobile.session.workoutStageRoundPosition(stage=mobile.session.preGeneratorFourByFour,round=2,rounds=2,position=2,total=2)',
+  it('counts a 4x4 climb as a set, and the rep the climber is on with it', () => {
+    const fourByFour: WorkoutRun = { stages: [{ id: 'four', kind: 'fourByFour', itemUuids: ['a', 'b', 'c', 'd'] }] };
+    const position = describeWorkoutRun(fourByFour, ['a', 'b', 'c', 'd'], 'b')?.current;
+    if (!position) throw new Error('expected a current climb');
+    expect(formatWorkoutStagePositionWithGo(position, { kind: 'rep', number: 3, total: 4 }, t)).toBe(
+      'mobile.session.workoutStageSetPosition(stage=mobile.session.preGeneratorFourByFour,rep=3,reps=4,set=2,sets=4)',
+    );
+    // With no go to say (a stored 4x4 from before sets, unpaced), it reads like any stage.
+    expect(formatWorkoutStagePositionWithGo(position, null, t)).toBe(
+      'mobile.session.workoutStagePosition(stage=mobile.session.preGeneratorFourByFour,position=2,total=4)',
     );
   });
 
-  it('leaves the round out of a 4x4 with one round', () => {
-    const oneRound: WorkoutRun = {
-      stages: [
-        {
-          id: 'four',
-          kind: 'fourByFour',
-          itemUuids: ['a', 'b', 'c', 'd'],
-          rounds: 1,
-          roundByUuid: { a: 1, b: 1, c: 1, d: 1 },
-        },
-      ],
-    };
-    const position = describeWorkoutRun(oneRound, ['a', 'b', 'c', 'd'], 'b')?.current;
-    expect(position?.round?.roundCount).toBe(1);
-    if (!position) return;
-    // "4x4 · 2 of 4", not "4x4 · Round 1 of 1 · 2 of 4".
-    expect(formatWorkoutStagePosition(position, t)).toBe(
-      'mobile.session.workoutStagePosition(stage=mobile.session.preGeneratorFourByFour,position=2,total=4)',
+  it('adds the try to a limit climb', () => {
+    const position = describeWorkoutRun(run, ['w1', 'w2', 'm1'], 'm1')?.current;
+    if (!position) throw new Error('expected a current climb');
+    expect(formatWorkoutStagePositionWithGo(position, { kind: 'try', number: 3 }, t)).toBe(
+      'mobile.workoutRunner.positionWithTry(position=mobile.session.workoutStagePosition(stage=mobile.session.preGeneratorPyramid,position=1,total=1),number=3)',
     );
   });
 
@@ -199,31 +181,22 @@ describe('formatWorkoutStageParts', () => {
     });
   });
 
-  it('counts a climb with a round within its round', () => {
-    const fourByFour: WorkoutRun = {
-      stages: [
-        {
-          id: 'four',
-          kind: 'fourByFour',
-          itemUuids: ['a', 'b', 'a2', 'b2'],
-          roundByUuid: { a: 1, b: 1, a2: 2, b2: 2 },
-        },
-      ],
-    };
-    const position = describeWorkoutRun(fourByFour, ['a', 'b', 'a2', 'b2'], 'b2')?.current;
+  it('counts a 4x4 climb as a set, with the rep the climber is on', () => {
+    const fourByFour: WorkoutRun = { stages: [{ id: 'four', kind: 'fourByFour', itemUuids: ['a', 'b'] }] };
+    const position = describeWorkoutRun(fourByFour, ['a', 'b'], 'b')?.current;
     if (!position) throw new Error('expected a current climb');
-    expect(formatWorkoutStageParts(position, null, t)).toEqual({
+    expect(formatWorkoutStageParts(position, { kind: 'rep', number: 1, total: 4 }, t)).toEqual({
       stage: 'mobile.session.preGeneratorFourByFour',
-      count: 'mobile.session.workoutStageRoundCount(round=2,rounds=2,position=2,total=2)',
+      count: 'mobile.session.workoutStageSetCount(rep=1,reps=4,set=2,sets=2)',
       accessibilityLabel:
-        'mobile.session.workoutStageTopBarRoundAria(stage=mobile.session.preGeneratorFourByFour,round=2,rounds=2,position=2,total=2)',
+        'mobile.session.workoutStageTopBarSetAria(stage=mobile.session.preGeneratorFourByFour,rep=1,reps=4,set=2,sets=2)',
     });
   });
 
   it("carries a limit climb's try with the numbers, never with the name", () => {
     const position = describeWorkoutRun(run, ['w1', 'w2', 'm1'], 'm1')?.current;
     if (!position) throw new Error('expected a current climb');
-    const parts = formatWorkoutStageParts(position, 3, t);
+    const parts = formatWorkoutStageParts(position, { kind: 'try', number: 3 }, t);
     expect(parts.stage).toBe('mobile.session.preGeneratorPyramid');
     expect(parts.count).toBe(
       'mobile.workoutRunner.positionWithTry(position=playView.track.position(position=1,total=1),number=3)',

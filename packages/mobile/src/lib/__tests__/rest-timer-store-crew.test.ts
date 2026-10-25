@@ -214,7 +214,7 @@ describe('local actions', () => {
       mode: 'onTheMinute' as const,
       targetSeconds: 60,
       advanceOn: 'deadline' as const,
-      closesRound: false,
+      closesSet: false,
       stagePacing: { mode: 'onTheMinute' as const, restSeconds: 60 },
     };
     applyRestTimerStagePacing(stage, T0, 'anchorNow');
@@ -293,6 +293,40 @@ describe('a late tick under a crew clock’s tick rule (the wall climb keeps its
     });
     expect(getRestTimerState().lastTick).toEqual({ status: 'send', queueItemUuid: 'item-wall' });
     expect(getRestTimerState().anchorMs).toBe(T0 + 5_000);
+  });
+
+  it('judges a go whose save lands 90 s late on landing, as the server judges its TICK: not recorded', () => {
+    setRestTimerWallQueueItemReader(() => 'item-wall');
+    adoptCrewCadence({ ...sendRule, lastTick: null });
+    const actions = recordActions();
+    // Logged at T0 + 5 s, climbed then; the save lands at T0 + 95 s.
+    noteRestTimerTick(
+      new Date(T0 + 5_000).toISOString(),
+      'afterTick',
+      T0 + 95_000,
+      { status: 'send', queueItemUuid: 'item-wall' },
+      T0 + 5_000,
+    );
+    // The server reads its TICK (elapsedMs 90 s) as history, so the phone must
+    // too, or it would fire beats the server refuses, one every rest.
+    expect(getRestTimerState()).toMatchObject({ lastTick: null, anchorMs: T0 });
+    expect(actions).toEqual([expect.objectContaining({ type: 'tick', tickRecorded: false })]);
+  });
+
+  it('takes the same late go when it lands inside a minute of its climb', () => {
+    setRestTimerWallQueueItemReader(() => 'item-wall');
+    adoptCrewCadence({ ...sendRule, lastTick: null });
+    noteRestTimerTick(
+      new Date(T0 + 5_000).toISOString(),
+      'afterTick',
+      T0 + 65_000,
+      { status: 'send', queueItemUuid: 'item-wall' },
+      T0 + 5_000,
+    );
+    expect(getRestTimerState()).toMatchObject({
+      lastTick: { status: 'send', queueItemUuid: 'item-wall' },
+      anchorMs: T0 + 5_000,
+    });
   });
 
   it('takes every tick under the deadline rule, as before', () => {

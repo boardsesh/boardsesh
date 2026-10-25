@@ -39,7 +39,7 @@ export function WorkoutPreviewListRow({
         stageKind={row.stageKind}
         count={row.count}
         isCoolDown={row.isCoolDown}
-        rounds={row.rounds}
+        repsPerSet={row.repsPerSet}
       />
     );
   }

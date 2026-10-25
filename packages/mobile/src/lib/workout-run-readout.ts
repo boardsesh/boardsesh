@@ -26,6 +26,15 @@ export type WorkoutStageReadout = {
   isCoolDown: boolean;
 };
 
+/**
+ * Which go on a climb the climber is on, where the stage keeps them on it for
+ * more than one (`workoutClimbGo` in workout-runner-readout.ts). `try`: a stage
+ * that stays until the climb is sent (limit bouldering), attempts so far plus
+ * one. `rep`: a 4x4 set, reps logged so far plus one, never past the set's
+ * last.
+ */
+export type WorkoutClimbGo = { kind: 'try'; number: number } | { kind: 'rep'; number: number; total: number };
+
 export type WorkoutRunReadout = {
   /** Stages with queued climbs, in the order the climber will reach them. */
   stages: WorkoutStageReadout[];
@@ -102,22 +111,11 @@ export function workoutStageName(kind: WorkoutStageKind, t: TranslateWorkoutStag
 
 /**
  * "Warm-up · 2 of 5", the player's subtitle part for a workout climb, or
- * "Cool-down · 2 of 5" after the last block. A climb with a round counts within
- * its round instead: "4x4 · Round 2 of 4 · 3 of 4". A stage with one round in
- * the queue (a 1-round 4x4, or one whose other rounds are gone) leaves the round
- * out: "4x4 · 2 of 4", never "Round 1 of 1".
+ * "Cool-down · 2 of 5" after the last block. On a 4x4 each climb is a set; with
+ * no go to show (`formatWorkoutStagePositionWithGo`) it reads like any stage.
  */
 export function formatWorkoutStagePosition(position: WorkoutRunPosition, t: TranslateWorkoutStage): string {
   const stage = workoutStageName(position.kind, t, position.isCoolDown === true);
-  if (position.round && position.round.roundCount > 1) {
-    return t('mobile.session.workoutStageRoundPosition', {
-      stage,
-      round: position.round.round,
-      rounds: position.round.roundCount,
-      position: position.round.positionInRound,
-      total: position.round.roundSize,
-    });
-  }
   return t('mobile.session.workoutStagePosition', {
     stage,
     position: position.positionInStage,
@@ -126,69 +124,68 @@ export function formatWorkoutStagePosition(position: WorkoutRunPosition, t: Tran
 }
 
 /**
- * The player's subtitle part with the try the climber is on, for a stage that
- * stays on a climb until it is sent: "Limit Bouldering · 2 of 3 · Try 3". With
- * no try number (every other stage, or the climb is sent) it is
+ * The player's subtitle part with the go the climber is on (`workoutClimbGo`):
+ * the try on a stage that stays on a climb until it is sent, "Limit Bouldering
+ * · 2 of 3 · Try 3", or the rep and set on a 4x4, "4x4 · Rep 3 of 4 · Set 2 of
+ * 4" (reps first, sets second). With no go (every other stage, or the climb is sent) it is
  * `formatWorkoutStagePosition` alone.
  */
-export function formatWorkoutStagePositionWithTry(
+export function formatWorkoutStagePositionWithGo(
   position: WorkoutRunPosition,
-  tryNumber: number | null,
+  go: WorkoutClimbGo | null,
   t: TranslateWorkoutStage,
 ): string {
+  if (go?.kind === 'rep') {
+    return t('mobile.session.workoutStageSetPosition', {
+      stage: workoutStageName(position.kind, t, position.isCoolDown === true),
+      ...repAndSet(position, go),
+    });
+  }
   const stagePosition = formatWorkoutStagePosition(position, t);
-  if (tryNumber === null) return stagePosition;
-  return t('mobile.workoutRunner.positionWithTry', { position: stagePosition, number: tryNumber });
+  if (go === null) return stagePosition;
+  return t('mobile.workoutRunner.positionWithTry', { position: stagePosition, number: go.number });
 }
 
-/** The numbers of a workout climb's place, as the top bar prints them and VoiceOver reads them. */
-function placeInStage(
+/** A 4x4 climb's numbers: which rep, and which set (one climb each) it is of. */
+function repAndSet(
   position: WorkoutRunPosition,
-  stage: string,
-  t: TranslateWorkoutStage,
-): { count: string; accessibilityLabel: string } {
-  if (position.round) {
-    const numbers = {
-      round: position.round.round,
-      rounds: position.round.roundCount,
-      position: position.round.positionInRound,
-      total: position.round.roundSize,
-    };
-    return {
-      count: t('mobile.session.workoutStageRoundCount', numbers),
-      accessibilityLabel: t('mobile.session.workoutStageTopBarRoundAria', { stage, ...numbers }),
-    };
-  }
-  const numbers = { position: position.positionInStage, total: position.stageSize };
-  return {
-    // The list's "2 of 5", so a workout and a list read alike.
-    count: t('playView.track.position', numbers),
-    accessibilityLabel: t('mobile.session.workoutStageTopBarAria', { stage, ...numbers }),
-  };
+  go: Extract<WorkoutClimbGo, { kind: 'rep' }>,
+): { rep: number; reps: number; set: number; sets: number } {
+  return { rep: go.number, reps: go.total, set: position.positionInStage, sets: position.stageSize };
 }
 
 /**
  * Where a workout climb sits, as the two pieces the player's top bar lays out:
  * the stage's name, which may be cut, and its numbers, which never are (#6745).
- * "Warm-up" and "2 of 5" ("Cool-down" after the last block), or for a climb
- * with a round "4x4" and "Round 2 of 4 · 3 of 4", which counts within the
- * round. A limit climb's try rides with the numbers: "2 of 3 · Try 3".
- * VoiceOver gets the numbers in words, not "·".
+ * "Warm-up" and "2 of 5" ("Cool-down" after the last block), or on a 4x4 "4x4"
+ * and "Rep 3 of 4 · Set 2 of 4". A limit climb's try rides with the numbers:
+ * "2 of 3 · Try 3". VoiceOver gets the numbers in words, not "·".
  */
 export function formatWorkoutStageParts(
   position: WorkoutRunPosition,
-  tryNumber: number | null,
+  go: WorkoutClimbGo | null,
   t: TranslateWorkoutStage,
 ): { stage: string; count: string; accessibilityLabel: string } {
   const stage = workoutStageName(position.kind, t, position.isCoolDown === true);
-  const place = placeInStage(position, stage, t);
-  if (tryNumber === null) return { stage, ...place };
+  if (go?.kind === 'rep') {
+    const numbers = repAndSet(position, go);
+    return {
+      stage,
+      count: t('mobile.session.workoutStageSetCount', numbers),
+      accessibilityLabel: t('mobile.session.workoutStageTopBarSetAria', { stage, ...numbers }),
+    };
+  }
+  const numbers = { position: position.positionInStage, total: position.stageSize };
+  // The list's "2 of 5", so a workout and a list read alike.
+  const count = t('playView.track.position', numbers);
+  const accessibilityLabel = t('mobile.session.workoutStageTopBarAria', { stage, ...numbers });
+  if (go === null) return { stage, count, accessibilityLabel };
   return {
     stage,
-    count: t('mobile.workoutRunner.positionWithTry', { position: place.count, number: tryNumber }),
+    count: t('mobile.workoutRunner.positionWithTry', { position: count, number: go.number }),
     accessibilityLabel: t('mobile.session.workoutStageTopBarTryAria', {
-      position: place.accessibilityLabel,
-      number: tryNumber,
+      position: accessibilityLabel,
+      number: go.number,
     }),
   };
 }

@@ -348,7 +348,7 @@ describe('useWorkoutPreview stages', () => {
 
     // The rows on screen belong to the old blocks: Start must not queue them.
     expect(result.current.status).toBe('loading');
-    expect(result.current.toStagedQueueItems()).toMatchObject({ items: [], run: null, filledSlotCount: 0 });
+    expect(result.current.toStagedQueueItems()).toEqual({ items: [], run: null });
 
     await waitFor(() => expect(result.current.status).toBe('ready'));
     expect(result.current.toStagedQueueItems().items.length).toBeGreaterThan(0);
@@ -401,7 +401,7 @@ describe('useWorkoutPreview stages', () => {
 
     expect(result.current.plannedCount).toBe(0);
     expect(result.current.items).toEqual([]);
-    expect(result.current.toStagedQueueItems()).toMatchObject({ items: [], run: null, filledSlotCount: 0 });
+    expect(result.current.toStagedQueueItems()).toEqual({ items: [], run: null });
     expect(countingFetchPool).not.toHaveBeenCalled();
   });
 

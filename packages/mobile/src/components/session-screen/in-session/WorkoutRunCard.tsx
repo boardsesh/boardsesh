@@ -1,5 +1,5 @@
 // The workout you generated, on the session screen (#5379, #6291): where you
-// are in it ("4x4 · Round 2 of 4 · 3 of 4") and the climb on the wall, which
+// are in it ("4x4 · Rep 3 of 4 · Set 2 of 4") and the climb on the wall, which
 // opens the player; the rest a timed block gives you, counting down, and what
 // comes after it; its stages in the order you will reach them, with what each
 // finished one came to (sent, tried, skipped); and "Add a block" under them. A
@@ -36,7 +36,7 @@ import { useDisplayGrade } from '../../../hooks/use-display-grade';
 import { useWorkoutRunner } from '../../../hooks/use-workout-runner';
 import { useWorkoutRun } from '../../../lib/workout-run-store';
 import {
-  formatWorkoutStagePositionWithTry,
+  formatWorkoutStagePositionWithGo,
   workoutStageName,
   type TranslateWorkoutStage,
 } from '../../../lib/workout-run-readout';
@@ -247,8 +247,8 @@ function WorkoutDoneLine({ totals }: { totals: WorkoutClimbTally }) {
 }
 
 /**
- * The climb on the wall, under where it sits in the workout ("4x4 · Round 2 of
- * 4 · 3 of 4", and "· Try 3" on a limit climb). Tap it to open the player.
+ * The climb on the wall, under where it sits in the workout ("4x4 · Rep 3 of 4
+ * · Set 2 of 4", and "· Try 3" on a limit climb). Tap it to open the player.
  */
 function CurrentClimbRow({ readout, item }: { readout: WorkoutRunnerReadout; item: ClimbQueueItem }) {
   const { t } = useTranslation('session');
@@ -260,7 +260,7 @@ function CurrentClimbRow({ readout, item }: { readout: WorkoutRunnerReadout; ite
 
   const climb = item.climb;
   const grade = resolveGrade(climb, boardConfig?.boardName).label;
-  const positionLabel = formatWorkoutStagePositionWithTry(position, current?.tryNumber ?? null, t);
+  const positionLabel = formatWorkoutStagePositionWithGo(position, current?.go ?? null, t);
   const name = climb.name;
   return (
     <PressableSurface
@@ -350,16 +350,17 @@ function restLabel(rest: WorkoutRunnerRest, t: TranslateWorkoutStage): string {
   if (rest.mode === 'onTheMinute') {
     return rest.endsWorkout ? t('mobile.workoutRunner.workoutEndsLabel') : t('mobile.workoutRunner.nextBeatLabel');
   }
-  return rest.closesRound ? t('mobile.workoutRunner.roundRestLabel') : t('mobile.workoutRunner.restLabel');
+  return rest.closesSet ? t('mobile.workoutRunner.setRestLabel') : t('mobile.workoutRunner.restLabel');
 }
 
 /**
  * "Rest 1:42 / Then Crimp City". After a fall on a limit climb the rest leads
- * back to the same climb: "Then try again". On a crew phone that does not hold
+ * back to the same climb: "Then try again"; between two reps of a 4x4 set it
+ * leads to the next rep: "Then rep 3 of 4". On a crew phone that does not hold
  * the wall, the rest moves nothing, so it says who moves the queue instead.
  *
  * A leaf: it reads the live display (`useRestTimerDisplay`) so a screen reader
- * hears one sentence ("Round rest. Rest timer, 2:58 left. Then Crimp City"),
+ * hears one sentence ("Set rest. Rest timer, 2:58 left. Then Crimp City"),
  * with the overrun spoken as words rather than "minus zero twelve", so it
  * re-renders once a second and nothing above it does. The digits are the
  * `RestTimerClock` leaf.
@@ -369,13 +370,15 @@ function RestLine({ rest, nextItem }: { rest: WorkoutRunnerRest; nextItem: Climb
   const { systemColors } = useTheme();
   const display = useRestTimerDisplay();
   const nextName = nextItem?.climb.name ?? null;
-  const caption = rest.staysOnClimb
-    ? t('mobile.workoutRunner.thenTryAgain')
-    : !rest.drivesWall
-      ? t('mobile.restTimer.autoAdvanceBlocked')
-      : nextName
-        ? t('mobile.workoutRunner.thenNext', { name: nextName })
-        : null;
+  const caption = rest.nextRep
+    ? t('mobile.workoutRunner.thenRep', { number: rest.nextRep.number, total: rest.nextRep.total })
+    : rest.staysOnClimb
+      ? t('mobile.workoutRunner.thenTryAgain')
+      : !rest.drivesWall
+        ? t('mobile.restTimer.autoAdvanceBlocked')
+        : nextName
+          ? t('mobile.workoutRunner.thenNext', { name: nextName })
+          : null;
   const label = restLabel(rest, t);
   const spokenParts = [label, restTimerClockAccessibilityLabel(display, t)];
   if (caption) spokenParts.push(caption);

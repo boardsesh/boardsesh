@@ -1,18 +1,19 @@
 import {
   groupSlotsBySection,
   isWarmUpStage,
+  pacingForOptions,
   type PlannedClimbSlot,
   type WorkoutStage,
   type WorkoutStageKind,
 } from '@boardsesh/playlist-generator';
 import type { PreviewItem } from './workout-preview-pool';
-import { plannedStageRounds } from './workout-start-queue';
 
 export type PreviewSection = PlannedClimbSlot['section'];
 
 /**
  * One FlashList row of the workout preview: a stage heading, a section heading
- * or a climb. A stage heading's `rounds` is set when its rows repeat (a 4x4).
+ * or a climb. A stage heading's `repsPerSet` is set on a 4x4, whose every row
+ * is a set done that many times.
  */
 export type PreviewListRow =
   | {
@@ -22,11 +23,18 @@ export type PreviewListRow =
       count: number;
       /** Set only on a warm-up stage planned after the last workout block, which steps back down. */
       isCoolDown?: true;
-      /** Set when the stage's rows repeat (a 4x4 of more than one round): how many rounds the queue runs them. */
-      rounds?: number;
+      /** Set on a 4x4: how many reps each of its climbs (one per set) takes. */
+      repsPerSet?: number;
     }
   | { kind: 'section'; key: string; section: PreviewSection; count: number }
   | { kind: 'climb'; key: string; preview: PreviewItem };
+
+/** The reps each climb of a planned 4x4 stage takes, as its pacing runs them. Undefined for every other stage. */
+function plannedRepsPerSet(stage: WorkoutStage): number | undefined {
+  if (isWarmUpStage(stage)) return undefined;
+  const pacing = pacingForOptions(stage.options);
+  return pacing?.mode === 'afterTick' ? pacing.sets?.repsPerSet : undefined;
+}
 
 /**
  * Interleave headings with the preview's climbs, so the list reads in the order
@@ -45,21 +53,21 @@ export type PreviewListRow =
  * Sections are consecutive runs (`groupSlotsBySection`), so a pyramid's
  * "increasing" and "decreasing" halves stay apart around the peak.
  *
- * A stage whose rows run more than one round always gets its heading, alone or
- * not ("4x4 · 4 climbs × 4 rounds"): the rows show one round, and the heading is
- * where the preview says the queue repeats them.
+ * A 4x4 always gets its heading, alone or not ("4x4 · 4 reps × 4 sets"): each
+ * row is one climb, and the heading is where the preview says it is done for
+ * every rep of its set.
  */
 export function buildPreviewListRows(
   items: readonly PreviewItem[],
   stages: readonly WorkoutStage[] = [],
 ): PreviewListRow[] {
   const workoutBlockCount = stages.filter((stage) => !isWarmUpStage(stage)).length;
-  const roundsByStageId = new Map<string, number>();
+  const repsPerSetByStageId = new Map<string, number>();
   for (const stage of stages) {
-    const rounds = plannedStageRounds(stage);
-    if (rounds !== undefined && rounds > 1) roundsByStageId.set(stage.id, rounds);
+    const repsPerSet = plannedRepsPerSet(stage);
+    if (repsPerSet !== undefined) repsPerSetByStageId.set(stage.id, repsPerSet);
   }
-  if (workoutBlockCount < 2 && roundsByStageId.size === 0) return buildSectionRows(items, 'section');
+  if (workoutBlockCount < 2 && repsPerSetByStageId.size === 0) return buildSectionRows(items, 'section');
 
   const kindByStageId = new Map(stages.map((stage) => [stage.id, stage.kind]));
   const rows: PreviewListRow[] = [];
@@ -71,7 +79,7 @@ export function buildPreviewListRows(
     while (groupEnd < items.length && items[groupEnd].slot.stageId === stageId) groupEnd++;
     const stageItems = items.slice(groupStart, groupEnd);
     const stageKind = stageId === undefined ? undefined : kindByStageId.get(stageId);
-    const rounds = stageId === undefined ? undefined : roundsByStageId.get(stageId);
+    const repsPerSet = stageId === undefined ? undefined : repsPerSetByStageId.get(stageId);
     if (stageKind !== undefined) {
       const stageRow: Extract<PreviewListRow, { kind: 'stage' }> = {
         kind: 'stage',
@@ -80,7 +88,7 @@ export function buildPreviewListRows(
         count: stageItems.length,
       };
       if (stageItems[0].slot.section === 'coolDown') stageRow.isCoolDown = true;
-      if (rounds !== undefined) stageRow.rounds = rounds;
+      if (repsPerSet !== undefined) stageRow.repsPerSet = repsPerSet;
       rows.push(stageRow);
     }
     rows.push(...buildSectionRows(stageItems, `section-${stageId ?? groupStart}`));

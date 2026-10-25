@@ -18,7 +18,12 @@ vi.mock('../../settings', () => ({
   getSetting: (key: string) => settingsValues.current[key],
 }));
 
-import { getEffectiveRestPacing, useEffectiveRestPacing, useRestTimerStagePacing } from '../use-effective-rest-pacing';
+import {
+  getEffectiveRestPacing,
+  getOwnRestPacing,
+  useEffectiveRestPacing,
+  useRestTimerStagePacing,
+} from '../use-effective-rest-pacing';
 import {
   applyRestTimerStagePacing,
   armRestTimer,
@@ -35,7 +40,7 @@ const LIMIT: RestTimerStagePacing = {
   mode: 'afterTick',
   targetSeconds: 180,
   advanceOn: 'send',
-  closesRound: false,
+  closesSet: false,
   stagePacing: { mode: 'afterTick', restSeconds: 180, advanceOn: 'send' },
 };
 
@@ -74,6 +79,62 @@ describe('useEffectiveRestPacing with a workout stage', () => {
     );
 
     expect(result.current).toBe(first);
+  });
+});
+
+/** A 4x4 set of 4 reps on the wall with `logged` of them logged: no rest between reps, 3:00 after the set. */
+const fourByFourSet = (logged: number): RestTimerStagePacing => ({
+  sessionId: 'session-1',
+  stageId: 'stage-4x4',
+  kind: 'fourByFour',
+  queueItemUuid: 'a',
+  mode: 'afterTick',
+  targetSeconds: logged >= 4 ? 180 : null,
+  advanceOn: 'tick',
+  closesSet: logged >= 4,
+  reps: { logged, perSet: 4 },
+  stagePacing: {
+    mode: 'afterTick',
+    restSeconds: 0,
+    advanceOn: 'set',
+    sets: { repsPerSet: 4, restBetweenSetsSeconds: 180 },
+  },
+});
+
+describe('a 4x4 set on the wall', () => {
+  it('moves nothing until its last rep, then rests the set rest hands-free', () => {
+    act(() => applyRestTimerStagePacing(fourByFourSet(1), 0, 'none'));
+    expect(getEffectiveRestPacing()).toMatchObject({
+      source: 'stage',
+      targetSeconds: null,
+      autoAdvance: false,
+      advanceOn: 'tick',
+    });
+
+    act(() => applyRestTimerStagePacing(fourByFourSet(4), 0, 'none'));
+    expect(getEffectiveRestPacing()).toMatchObject({ targetSeconds: 180, autoAdvance: true, advanceOn: 'tick' });
+  });
+
+  it('hands the crew clock a rule the server knows, with auto-advance off until the set is done', () => {
+    // The crew clock counts no reps: what keeps it from moving the wall after
+    // the first rep is this phone's own pacing saying so.
+    act(() => applyRestTimerStagePacing(fourByFourSet(3), 0, 'none'));
+    expect(getOwnRestPacing()).toEqual({
+      mode: 'afterTick',
+      targetSeconds: null,
+      autoAdvance: false,
+      advanceOn: 'tick',
+      source: 'stage',
+    });
+
+    act(() => applyRestTimerStagePacing(fourByFourSet(4), 0, 'none'));
+    expect(getOwnRestPacing()).toEqual({
+      mode: 'afterTick',
+      targetSeconds: 180,
+      autoAdvance: true,
+      advanceOn: 'tick',
+      source: 'stage',
+    });
   });
 });
 

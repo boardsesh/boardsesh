@@ -7,7 +7,7 @@ import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import type { TrackLabelParts } from './track-label-text';
 
 type PlayListContextProps = {
-  /** Where the player is: a list ("Projects · 4 of 23") or a workout stage ("4x4 · Round 2 of 4 · 3 of 4"). */
+  /** Where the player is: a list ("Projects · 4 of 23") or a workout stage ("4x4 · Rep 3 of 4 · Set 2 of 4"). */
   parts: TrackLabelParts | null;
   /**
    * A second, smaller line about the wall rather than the list, such as

@@ -24,7 +24,7 @@ Fixed, and why:
 | Board light                              | Wall control must not move under a climber's thumb. Always the right slot.  |
 | Put on the wall, busy-wall question, connect pill, Fell / Sent | Session states, not preferences. They show up in the small row when they need it. |
 | Playback slider                          | Belongs to the board, so it always sits next to it.                         |
-| Top row ⌄ · list · rest timer · ⋯        | ⋯ is how a hidden button comes back. Where you are (the list, "Projects · 4 of 23", or the workout stage, "4x4 · Round 2 of 4 · 3 of 4") sits between ⌄ and the timer and costs the board nothing. A second, smaller line there is for what the wall is doing. |
+| Top row ⌄ · list · rest timer · ⋯        | ⋯ is how a hidden button comes back. Where you are (the list, "Projects · 4 of 23", or the workout stage, "4x4 · Rep 3 of 4 · Set 2 of 4") sits between ⌄ and the timer and costs the board nothing. A second, smaller line there is for what the wall is doing. |
 
 ## Layout rules
 
@@ -98,6 +98,9 @@ tick's status and queue item exactly as from the sheet (`docs/workout-stages.md`
   one tap again.
 - **One tap at a time.** A second tap within 700 ms (`ONE_TAP_GUARD_MS`), on either button, is dropped, and so is a
   tap while a save is still in flight. A fumbled double tap logs one go, never a fall and a send.
+- **A 4x4 set is one climb, every rep.** Each Fell or Sent is one rep on the climb on the wall, and the climb stays up
+  (with the row) until the set's last rep is logged, then the set rest runs and the wall moves on. A Sent after the
+  set's first rep logs a send, never a flash: the first rep is already in the block's tick log for this queue item.
 - **Just after the wall moves on.** An on-the-minute beat advances whether the climber logged or not, so a tap within
   2 s (`WALL_MOVED_GRACE_MS`) of the climb on the wall changing logs for the climb it left, against that queue item
   (`TickSaveFields.queueItem`), with that climb's own flash rule. Every one-tap names its queue item this way, and

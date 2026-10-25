@@ -175,13 +175,13 @@ describe('WorkoutPreviewSummary', () => {
         }),
       );
 
-    it("counts a 4x4's rounds and says about how long it takes", () => {
+    it('counts the queue Start hands over and says about how long it takes', () => {
       const { getByText } = renderWithQueue(makeSummary({ planned: 4, filled: 4, lowestGrade: 18, highestGrade: 18 }), {
-        climbCount: 16,
-        estimatedMinutes: 25,
+        climbCount: 4,
+        estimatedMinutes: 20,
       });
 
-      getByText('mobile.session.preWorkoutPreviewSummaryTimed {"count":16,"grades":"G18","minutes":25}');
+      getByText('mobile.session.preWorkoutPreviewSummaryTimed {"count":4,"grades":"G18","minutes":20}');
     });
 
     it('gives no time for an untimed workout', () => {
@@ -194,10 +194,10 @@ describe('WorkoutPreviewSummary', () => {
       expect(queryByText(/preWorkoutPreviewSummaryTimed/)).toBeNull();
     });
 
-    it('still names the shortfall in planned slots, not queued climbs', () => {
+    it('still names the shortfall in planned slots', () => {
       const { getByText } = renderWithQueue(makeSummary({ planned: 4, filled: 3, missing: 1 }), {
-        climbCount: 12,
-        estimatedMinutes: 20,
+        climbCount: 3,
+        estimatedMinutes: 15,
       });
 
       getByText('mobile.session.preWorkoutPreviewShortfall {"filled":3,"planned":4}');

@@ -222,7 +222,7 @@ describe('ticks', () => {
         mode: 'afterTick',
         targetSeconds: 180,
         advanceOn: 'send',
-        closesRound: false,
+        closesSet: false,
         stagePacing: { mode: 'afterTick', restSeconds: 180, advanceOn: 'send' },
       },
       currentNowMs,
@@ -390,7 +390,7 @@ describe('CONFIGURE', () => {
         mode: 'onTheMinute',
         targetSeconds: 60,
         advanceOn: 'deadline',
-        closesRound: false,
+        closesSet: false,
         stagePacing: { mode: 'onTheMinute', restSeconds: 60 },
       },
       currentNowMs,
@@ -413,10 +413,16 @@ describe('CONFIGURE', () => {
         kind: 'fourByFour',
         queueItemUuid: 'item-1',
         mode: 'afterTick',
-        targetSeconds: 10,
+        targetSeconds: null,
         advanceOn: 'tick',
-        closesRound: false,
-        stagePacing: { mode: 'afterTick', restSeconds: 0, restBetweenRoundsSeconds: 180, advanceOn: 'tick' },
+        closesSet: false,
+        reps: { logged: 0, perSet: 4 },
+        stagePacing: {
+          mode: 'afterTick',
+          restSeconds: 0,
+          advanceOn: 'set',
+          sets: { repsPerSet: 4, restBetweenSetsSeconds: 180 },
+        },
       },
       currentNowMs,
       'waitForTick',
@@ -425,6 +431,67 @@ describe('CONFIGURE', () => {
     vi.advanceTimersByTime(CREW_CONFIGURE_DEBOUNCE_MS);
     await flush();
     expect(sent).toEqual([{ action: 'CONFIGURE', config: toCrewConfigInput(own), anchor: 'CLEAR' }]);
+  });
+
+  it('keeps a 4x4 set’s crew clock from moving the wall until the set’s last rep, then sends the set rest', async () => {
+    // The crew clock counts no reps, so the set's own pacing carries it: no
+    // auto-advance while reps are left, the set rest and auto-advance once the
+    // last one is logged. The advance rule stays one the server knows.
+    const setOnTheWall = (logged: number) => ({
+      sessionId: SESSION,
+      stageId: 'four',
+      kind: 'fourByFour' as const,
+      queueItemUuid: 'item-1',
+      mode: 'afterTick' as const,
+      targetSeconds: logged >= 2 ? 180 : null,
+      advanceOn: 'tick' as const,
+      closesSet: logged >= 2,
+      reps: { logged, perSet: 2 },
+      stagePacing: {
+        mode: 'afterTick' as const,
+        restSeconds: 0,
+        advanceOn: 'set' as const,
+        sets: { repsPerSet: 2, restBetweenSetsSeconds: 180 },
+      },
+    });
+    const midSet: OwnRestPacing = {
+      mode: 'afterTick',
+      targetSeconds: null,
+      autoAdvance: false,
+      advanceOn: 'tick',
+      source: 'stage',
+    };
+    const setDone: OwnRestPacing = { ...midSet, targetSeconds: 180, autoAdvance: true };
+
+    own = midSet;
+    applyRestTimerStagePacing(setOnTheWall(0), currentNowMs, 'waitForTick');
+    vi.advanceTimersByTime(CREW_CONFIGURE_DEBOUNCE_MS);
+    await flush();
+    expect(sent).toEqual([{ action: 'CONFIGURE', config: toCrewConfigInput(midSet), anchor: 'CLEAR' }]);
+    sent.length = 0;
+
+    // The first rep: its TICK, and nothing new for the clock's config.
+    noteRestTimerTick(new Date(currentNowMs).toISOString(), 'afterTick', currentNowMs, {
+      status: 'attempt',
+      queueItemUuid: 'item-1',
+    });
+    applyRestTimerStagePacing(setOnTheWall(1), currentNowMs, 'none');
+    vi.advanceTimersByTime(CREW_CONFIGURE_DEBOUNCE_MS);
+    await flush();
+    expect(sent.map((input) => input.action)).toEqual(['TICK']);
+    sent.length = 0;
+
+    // The last rep: its TICK, then the set rest with auto-advance on, keeping the anchor the TICK set.
+    own = setDone;
+    noteRestTimerTick(new Date(currentNowMs).toISOString(), 'afterTick', currentNowMs, {
+      status: 'send',
+      queueItemUuid: 'item-1',
+    });
+    applyRestTimerStagePacing(setOnTheWall(2), currentNowMs, 'none');
+    vi.advanceTimersByTime(CREW_CONFIGURE_DEBOUNCE_MS);
+    await flush();
+    expect(sent.map((input) => input.action)).toEqual(['TICK', 'CONFIGURE']);
+    expect(sent[1]).toEqual({ action: 'CONFIGURE', config: toCrewConfigInput(setDone), anchor: 'KEEP' });
   });
 
   it('drops a pending CONFIGURE when the timer is turned off', async () => {

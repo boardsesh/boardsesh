@@ -1,41 +1,36 @@
 import { describe, expect, it } from 'vitest';
 import { locateInRun, type WorkoutRun, type WorkoutStagePacing } from '@boardsesh/playlist-generator';
 import { resolveStageRestPacing, type RestTimerLastTick } from '../rest-timer-pacing';
-import type { WorkoutTickLogEntry, WorkoutTickStatus } from '../workout-run-store';
+import { countWorkoutRunTicks, type WorkoutTickLogEntry, type WorkoutTickStatus } from '../workout-run-store';
 import {
   describeWorkoutRunner,
   stageHoldsUntilSent,
-  workoutTryNumber,
+  stageRepsPerSet,
+  workoutClimbGo,
   type WorkoutRunnerInput,
   type WorkoutRunnerRestSnapshot,
 } from '../workout-runner-readout';
-import { formatWorkoutStagePositionWithTry } from '../workout-run-readout';
+import { formatWorkoutStagePositionWithGo } from '../workout-run-readout';
 
+/** Two reps a set, no rest between them, 3:00 between sets. */
 const FOUR_BY_FOUR: WorkoutStagePacing = {
   mode: 'afterTick',
   restSeconds: 0,
-  restBetweenRoundsSeconds: 180,
-  advanceOn: 'tick',
+  advanceOn: 'set',
+  sets: { repsPerSet: 2, restBetweenSetsSeconds: 180 },
 };
 const LIMIT: WorkoutStagePacing = { mode: 'afterTick', restSeconds: 180, advanceOn: 'send' };
 const ON_THE_MINUTE: WorkoutStagePacing = { mode: 'onTheMinute', restSeconds: 60 };
 
-// Warm-up, a 2-climb 4x4 over 2 rounds, then 2 limit climbs.
+// Warm-up, a 4x4 of four sets (one climb each), then 2 limit climbs.
 const run: WorkoutRun = {
   stages: [
     { id: 'warm', kind: 'warmUp', itemUuids: ['w1', 'w2'] },
-    {
-      id: 'four',
-      kind: 'fourByFour',
-      itemUuids: ['a', 'b', 'a2', 'b2'],
-      pacing: FOUR_BY_FOUR,
-      rounds: 2,
-      roundByUuid: { a: 1, b: 1, a2: 2, b2: 2 },
-    },
+    { id: 'four', kind: 'fourByFour', itemUuids: ['a', 'b', 'c', 'd'], pacing: FOUR_BY_FOUR },
     { id: 'limit', kind: 'limitBouldering', itemUuids: ['l1', 'l2'], pacing: LIMIT },
   ],
 };
-const queue = ['w1', 'w2', 'a', 'b', 'a2', 'b2', 'l1', 'l2'];
+const queue = ['w1', 'w2', 'a', 'b', 'c', 'd', 'l1', 'l2'];
 
 const IDLE: WorkoutRunnerRestSnapshot = {
   armed: false,
@@ -46,23 +41,37 @@ const IDLE: WorkoutRunnerRestSnapshot = {
   queueEnded: false,
 };
 
-/** The stage pacing RestTimerPacingSync would have stored for `uuid`. */
-function stagePacingFor(uuid: string, workoutRun: WorkoutRun = run, queueUuids: readonly string[] = queue) {
+/** The stage pacing RestTimerPacingSync would have stored for `uuid`, with `log` on this phone. */
+function stagePacingFor(
+  uuid: string,
+  workoutRun: WorkoutRun = run,
+  queueUuids: readonly string[] = queue,
+  log: readonly WorkoutTickLogEntry[] = [],
+) {
   return resolveStageRestPacing({
     sessionId: 'session-1',
     run: workoutRun,
     position: locateInRun(workoutRun, uuid, queueUuids),
     queueItemUuid: uuid,
+    repsLogged: countWorkoutRunTicks(log, uuid),
   });
 }
 
-/** Armed and running, with the store's stage pacing for `uuid` and the given last tick. */
+/** Armed and running, with the store's stage pacing for `uuid` (counting `log`) and the given last tick. */
 function armedOn(
   uuid: string,
   lastTick: RestTimerLastTick | null,
   anchorMs: number | null = 1000,
+  log: readonly WorkoutTickLogEntry[] = [],
 ): WorkoutRunnerRestSnapshot {
-  return { armed: true, isRunning: true, anchorMs, lastTick, stagePacing: stagePacingFor(uuid), queueEnded: false };
+  return {
+    armed: true,
+    isRunning: true,
+    anchorMs,
+    lastTick,
+    stagePacing: stagePacingFor(uuid, run, queue, log),
+    queueEnded: false,
+  };
 }
 
 let tickSecond = 0;
@@ -101,39 +110,34 @@ describe('describeWorkoutRunner', () => {
   });
 
   describe('positions', () => {
-    it('places the current climb in its round and in the whole workout', () => {
-      const readout = readoutFor({ currentUuid: 'b' });
+    it('places the current climb among the sets and in the whole workout, with the rep it is on', () => {
+      const readout = readoutFor({ currentUuid: 'b', log: [tick('b', 'attempt')] });
 
-      expect(readout.position).toMatchObject({
-        stageId: 'four',
-        kind: 'fourByFour',
-        round: { round: 1, roundCount: 2, positionInRound: 2, roundSize: 2 },
-      });
+      expect(readout.position).toMatchObject({ stageId: 'four', kind: 'fourByFour', positionInStage: 2, stageSize: 4 });
       expect(readout.overall).toEqual({ position: 4, total: 8 });
-      expect(readout.current).toEqual({ queueItemUuid: 'b', attempts: 0, sent: false, tryNumber: null });
+      expect(readout.current).toEqual({
+        queueItemUuid: 'b',
+        attempts: 1,
+        sent: false,
+        go: { kind: 'rep', number: 2, total: 2 },
+      });
     });
 
-    it('marks the next climb as the start of the next round at a round boundary', () => {
-      expect(readoutFor({ currentUuid: 'b', nextUuid: 'a2' }).next).toEqual({
-        queueItemUuid: 'a2',
+    it('marks the next climb of the same 4x4 as no new stage', () => {
+      expect(readoutFor({ currentUuid: 'b', nextUuid: 'c' }).next).toEqual({
+        queueItemUuid: 'c',
         stageId: 'four',
         kind: 'fourByFour',
         startsStage: false,
-        startsRound: true,
-      });
-      expect(readoutFor({ currentUuid: 'a', nextUuid: 'b' }).next).toMatchObject({
-        startsStage: false,
-        startsRound: false,
       });
     });
 
     it('marks the next climb as the start of the next block at a block boundary', () => {
-      expect(readoutFor({ currentUuid: 'b2', nextUuid: 'l1' }).next).toEqual({
+      expect(readoutFor({ currentUuid: 'd', nextUuid: 'l1' }).next).toEqual({
         queueItemUuid: 'l1',
         stageId: 'limit',
         kind: 'limitBouldering',
         startsStage: true,
-        startsRound: false,
       });
     });
 
@@ -143,19 +147,18 @@ describe('describeWorkoutRunner', () => {
         stageId: null,
         kind: null,
         startsStage: false,
-        startsRound: false,
       });
     });
 
     it('counts only queued climbs, in queue order, after a removal and a reorder', () => {
-      const reordered = ['w1', 'a', 'b', 'w2', 'a2', 'l1', 'l2'];
+      const reordered = ['w1', 'a', 'b', 'w2', 'c', 'l1', 'l2'];
       const readout = readoutFor({ queueUuids: reordered, currentUuid: 'w2' });
 
       expect(readout.overall).toEqual({ position: 4, total: 7 });
       expect(readout.stages.find((stage) => stage.id === 'four')?.climbs.map((climb) => climb.queueItemUuid)).toEqual([
         'a',
         'b',
-        'a2',
+        'c',
       ]);
     });
   });
@@ -165,12 +168,13 @@ describe('describeWorkoutRunner', () => {
       expect(readoutFor({ currentUuid: 'a', rest: armedOn('a', null, null) }).phase).toBe('climbing');
     });
 
-    it('rests after a tick on the climb on the wall, and the rest moves the wall on', () => {
+    it('rests the set rest after a set’s last rep, and the rest moves the wall on', () => {
+      const log = [tick('b', 'attempt'), tick('b', 'send')];
       const readout = readoutFor({
         currentUuid: 'b',
-        nextUuid: 'a2',
-        log: [tick('b', 'send')],
-        rest: armedOn('b', { status: 'send', queueItemUuid: 'b' }),
+        nextUuid: 'c',
+        log,
+        rest: armedOn('b', { status: 'send', queueItemUuid: 'b' }, 1000, log),
       });
 
       expect(readout.phase).toBe('resting');
@@ -180,23 +184,87 @@ describe('describeWorkoutRunner', () => {
         advanceOn: 'tick',
         advances: true,
         staysOnClimb: false,
+        nextRep: null,
         drivesWall: true,
         endsWorkout: false,
-        closesRound: true,
+        closesSet: true,
         armed: true,
         paused: false,
         timing: true,
       });
     });
 
+    it('keeps climbing between reps with no rest between them: no clock, and the climb stays up', () => {
+      const log = [tick('b', 'attempt')];
+      const readout = readoutFor({
+        currentUuid: 'b',
+        nextUuid: 'c',
+        log,
+        rest: armedOn('b', { status: 'attempt', queueItemUuid: 'b' }, 1000, log),
+      });
+
+      expect(readout.phase).toBe('climbing');
+      expect(readout.rest).toMatchObject({
+        targetSeconds: null,
+        advances: false,
+        staysOnClimb: true,
+        nextRep: { number: 2, total: 2 },
+        closesSet: false,
+        timing: false,
+      });
+    });
+
+    it('rests between reps when the set has a rest between them, and leads back to the same climb', () => {
+      const triples: WorkoutRun = {
+        stages: [
+          {
+            id: 'four',
+            kind: 'fourByFour',
+            itemUuids: ['t1', 't2'],
+            pacing: { ...FOUR_BY_FOUR, restSeconds: 45, sets: { repsPerSet: 3, restBetweenSetsSeconds: 300 } },
+          },
+        ],
+      };
+      const triplesQueue = ['t1', 't2'];
+      const log = [tick('t1', 'send')];
+      const readout = describeWorkoutRunner({
+        run: triples,
+        queueUuids: triplesQueue,
+        currentUuid: 't1',
+        nextUuid: 't2',
+        log,
+        rest: {
+          armed: true,
+          isRunning: true,
+          anchorMs: 1000,
+          lastTick: { status: 'send', queueItemUuid: 't1' },
+          stagePacing: stagePacingFor('t1', triples, triplesQueue, log),
+          queueEnded: false,
+        },
+        canAdvanceQueue: true,
+      });
+
+      expect(readout?.phase).toBe('resting');
+      expect(readout?.rest).toMatchObject({
+        targetSeconds: 45,
+        advances: false,
+        staysOnClimb: true,
+        nextRep: { number: 2, total: 3 },
+        closesSet: false,
+        timing: true,
+      });
+      expect(readout?.current?.go).toEqual({ kind: 'rep', number: 2, total: 3 });
+    });
+
     it('never says the rest moves the wall on a crew phone that does not hold it', () => {
       // A passenger (or nobody holding the wall): the scheduler never calls
       // nextClimb from this phone, so the rest still times, but moves nothing.
+      const log = [tick('b', 'attempt'), tick('b', 'send')];
       const readout = readoutFor({
         currentUuid: 'b',
-        nextUuid: 'a2',
-        log: [tick('b', 'send')],
-        rest: armedOn('b', { status: 'send', queueItemUuid: 'b' }),
+        nextUuid: 'c',
+        log,
+        rest: armedOn('b', { status: 'send', queueItemUuid: 'b' }, 1000, log),
         canAdvanceQueue: false,
       });
 
@@ -206,8 +274,8 @@ describe('describeWorkoutRunner', () => {
 
     it('is not resting on a tick logged on the previous climb', () => {
       const readout = readoutFor({
-        currentUuid: 'a2',
-        rest: armedOn('a2', { status: 'send', queueItemUuid: 'b' }),
+        currentUuid: 'c',
+        rest: armedOn('c', { status: 'send', queueItemUuid: 'b' }),
       });
 
       expect(readout.phase).toBe('climbing');
@@ -229,14 +297,20 @@ describe('describeWorkoutRunner', () => {
         drivesWall: true,
         targetSeconds: 180,
       });
-      expect(readout.current).toEqual({ queueItemUuid: 'l1', attempts: 1, sent: false, tryNumber: 2 });
+      expect(readout.current).toEqual({
+        queueItemUuid: 'l1',
+        attempts: 1,
+        sent: false,
+        go: { kind: 'try', number: 2 },
+      });
     });
 
     it('keeps resting while the rest is paused', () => {
+      const log = [tick('a', 'send'), tick('a', 'send')];
       const readout = readoutFor({
         currentUuid: 'a',
-        log: [tick('a', 'send')],
-        rest: { ...armedOn('a', { status: 'send', queueItemUuid: 'a' }), isRunning: false },
+        log,
+        rest: { ...armedOn('a', { status: 'send', queueItemUuid: 'a' }, 1000, log), isRunning: false },
       });
 
       expect(readout.phase).toBe('resting');
@@ -349,22 +423,30 @@ describe('describeWorkoutRunner', () => {
     });
 
     it('describes no rest until the store has the climb on the wall’s stage pacing', () => {
-      expect(readoutFor({ currentUuid: 'a2', rest: armedOn('b', null) }).rest).toBeNull();
+      expect(readoutFor({ currentUuid: 'c', rest: armedOn('b', null) }).rest).toBeNull();
     });
 
-    it('is done once the last climb meets its stage’s rule', () => {
-      const lastQueue = ['a', 'b', 'a2', 'b2'];
+    it('is done once the last climb meets its stage’s rule: on a 4x4, every rep of the last set', () => {
+      const lastQueue = ['a', 'b', 'c', 'd'];
       const fourOnly: WorkoutRun = { stages: [run.stages[1]] };
-      const done = describeWorkoutRunner({
-        run: fourOnly,
-        queueUuids: lastQueue,
-        currentUuid: 'b2',
-        nextUuid: null,
-        log: [tick('b2', 'attempt')],
-        rest: armedOn('b2', { status: 'attempt', queueItemUuid: 'b2' }),
-        canAdvanceQueue: true,
-      });
+      const lastSet = (log: WorkoutTickLogEntry[]) =>
+        describeWorkoutRunner({
+          run: fourOnly,
+          queueUuids: lastQueue,
+          currentUuid: 'd',
+          nextUuid: null,
+          log,
+          rest: {
+            ...armedOn('d', { status: 'attempt', queueItemUuid: 'd' }, 1000, log),
+            stagePacing: stagePacingFor('d', fourOnly, lastQueue, log),
+          },
+          canAdvanceQueue: true,
+        });
 
+      const oneRep = lastSet([tick('d', 'attempt')]);
+      expect(oneRep?.phase).toBe('climbing');
+
+      const done = lastSet([tick('d', 'attempt'), tick('d', 'attempt')]);
       expect(done?.phase).toBe('done');
       expect(done?.rest?.timing).toBe(false);
     });
@@ -383,7 +465,7 @@ describe('describeWorkoutRunner', () => {
         rest: armedOn('l2', { status: 'send', queueItemUuid: 'l2' }),
       });
       expect(sent.phase).toBe('done');
-      expect(sent.current).toMatchObject({ attempts: 2, sent: true, tryNumber: null });
+      expect(sent.current).toMatchObject({ attempts: 2, sent: true, go: null });
     });
 
     it('is done once the climber is past every workout climb', () => {
@@ -412,7 +494,7 @@ describe('describeWorkoutRunner', () => {
   describe('tallies', () => {
     it('counts sent, tried and skipped per stage, and totals the stages logged on this phone', () => {
       const readout = readoutFor({
-        currentUuid: 'a2',
+        currentUuid: 'c',
         log: [
           tick('w1', 'flash'),
           tick('a', 'attempt'),
@@ -430,8 +512,8 @@ describe('describeWorkoutRunner', () => {
       expect(byStage.four.climbs).toEqual([
         { queueItemUuid: 'a', attempts: 2, sent: false, outcome: 'tried' },
         { queueItemUuid: 'b', attempts: 0, sent: false, outcome: 'skipped' },
-        { queueItemUuid: 'a2', attempts: 0, sent: false, outcome: 'upcoming' },
-        { queueItemUuid: 'b2', attempts: 0, sent: false, outcome: 'upcoming' },
+        { queueItemUuid: 'c', attempts: 0, sent: false, outcome: 'upcoming' },
+        { queueItemUuid: 'd', attempts: 0, sent: false, outcome: 'upcoming' },
       ]);
       expect(byStage.limit.tally).toEqual({ sent: 0, tried: 0, skipped: 0, total: 2 });
       expect([byStage.warm.logged, byStage.four.logged, byStage.limit.logged]).toEqual([true, true, false]);
@@ -492,7 +574,7 @@ describe('describeWorkoutRunner', () => {
 
     it('points back at the first workout climb not reached yet', () => {
       const readout = readoutFor({
-        queueUuids: ['w1', 'w2', 'a', 'detour', 'b', 'a2', 'b2', 'l1', 'l2'],
+        queueUuids: ['w1', 'w2', 'a', 'detour', 'b', 'c', 'd', 'l1', 'l2'],
         currentUuid: 'detour',
         log: [tick('w1', 'send'), tick('w2', 'send'), tick('a', 'send')],
       });
@@ -504,7 +586,7 @@ describe('describeWorkoutRunner', () => {
       // On 'a', nothing logged, the climber opens a climb from search: it goes in
       // right after 'a' and onto the wall.
       const readout = readoutFor({
-        queueUuids: ['w1', 'w2', 'a', 'from-search', 'b', 'a2', 'b2', 'l1', 'l2'],
+        queueUuids: ['w1', 'w2', 'a', 'from-search', 'b', 'c', 'd', 'l1', 'l2'],
         currentUuid: 'from-search',
         log: [tick('w1', 'send'), tick('w2', 'send')],
       });
@@ -519,7 +601,7 @@ describe('describeWorkoutRunner', () => {
 
     it('still counts the workout climbs before the one left as skipped', () => {
       const readout = readoutFor({
-        queueUuids: ['w1', 'w2', 'a', 'from-search', 'b', 'a2', 'b2', 'l1', 'l2'],
+        queueUuids: ['w1', 'w2', 'a', 'from-search', 'b', 'c', 'd', 'l1', 'l2'],
         currentUuid: 'from-search',
         log: [tick('w1', 'send')],
       });
@@ -532,7 +614,7 @@ describe('describeWorkoutRunner', () => {
 
     it('counts a left climb as skipped once the climber moves on in the workout', () => {
       const readout = readoutFor({
-        queueUuids: ['w1', 'w2', 'a', 'from-search', 'b', 'a2', 'b2', 'l1', 'l2'],
+        queueUuids: ['w1', 'w2', 'a', 'from-search', 'b', 'c', 'd', 'l1', 'l2'],
         currentUuid: 'b',
         log: [tick('w1', 'send'), tick('w2', 'send')],
       });
@@ -553,29 +635,49 @@ describe('describeWorkoutRunner', () => {
   });
 });
 
-describe('workoutTryNumber', () => {
+describe('workoutClimbGo', () => {
   it('counts the try a limit climber is on, and stops once the climb is sent', () => {
-    expect(workoutTryNumber(run, 'limit', 'l1', [])).toBe(1);
-    expect(workoutTryNumber(run, 'limit', 'l1', [tick('l1', 'attempt'), tick('l2', 'attempt')])).toBe(2);
-    expect(workoutTryNumber(run, 'limit', 'l1', [tick('l1', 'attempt'), tick('l1', 'send')])).toBeNull();
-    expect(workoutTryNumber(run, 'limit', 'l1', [tick('l1', 'flash')])).toBeNull();
+    expect(workoutClimbGo(run, 'limit', 'l1', [])).toEqual({ kind: 'try', number: 1 });
+    expect(workoutClimbGo(run, 'limit', 'l1', [tick('l1', 'attempt'), tick('l2', 'attempt')])).toEqual({
+      kind: 'try',
+      number: 2,
+    });
+    expect(workoutClimbGo(run, 'limit', 'l1', [tick('l1', 'attempt'), tick('l1', 'send')])).toBeNull();
+    expect(workoutClimbGo(run, 'limit', 'l1', [tick('l1', 'flash')])).toBeNull();
   });
 
-  it('is null on a stage that moves on after any tick', () => {
-    expect(workoutTryNumber(run, 'four', 'a', [tick('a', 'attempt')])).toBeNull();
-    expect(workoutTryNumber(run, 'warm', 'w1', [])).toBeNull();
+  it('counts the rep a 4x4 climber is on, falls and sends alike, and stays on the set’s last', () => {
+    expect(workoutClimbGo(run, 'four', 'a', [])).toEqual({ kind: 'rep', number: 1, total: 2 });
+    expect(workoutClimbGo(run, 'four', 'a', [tick('a', 'send'), tick('b', 'attempt')])).toEqual({
+      kind: 'rep',
+      number: 2,
+      total: 2,
+    });
+    expect(workoutClimbGo(run, 'four', 'a', [tick('a', 'attempt'), tick('a', 'send'), tick('a', 'send')])).toEqual({
+      kind: 'rep',
+      number: 2,
+      total: 2,
+    });
   });
 
-  it('follows the stage’s advance rule, not its name', () => {
+  it('is null on a stage with no try or rep to count', () => {
+    expect(workoutClimbGo(run, 'warm', 'w1', [])).toBeNull();
+  });
+
+  it('follows the stage’s pacing, not its name', () => {
     expect(stageHoldsUntilSent({ pacing: LIMIT })).toBe(true);
     expect(stageHoldsUntilSent({ pacing: FOUR_BY_FOUR })).toBe(false);
     expect(stageHoldsUntilSent({ pacing: ON_THE_MINUTE })).toBe(false);
     expect(stageHoldsUntilSent({})).toBe(false);
     expect(stageHoldsUntilSent(undefined)).toBe(false);
+    expect(stageRepsPerSet({ pacing: FOUR_BY_FOUR })).toBe(2);
+    expect(stageRepsPerSet({ pacing: LIMIT })).toBeNull();
+    expect(stageRepsPerSet({ pacing: ON_THE_MINUTE })).toBeNull();
+    expect(stageRepsPerSet(undefined)).toBeNull();
   });
 });
 
-describe('formatWorkoutStagePositionWithTry', () => {
+describe('formatWorkoutStagePositionWithGo', () => {
   const t = (key: string, options?: Record<string, string | number>) =>
     options
       ? `${key}(${Object.entries(options)
@@ -587,11 +689,20 @@ describe('formatWorkoutStagePositionWithTry', () => {
     const position = locateInRun(run, 'l1', queue);
     if (!position) throw new Error('expected a position');
 
-    expect(formatWorkoutStagePositionWithTry(position, 3, t)).toBe(
+    expect(formatWorkoutStagePositionWithGo(position, { kind: 'try', number: 3 }, t)).toBe(
       'mobile.workoutRunner.positionWithTry(position=mobile.session.workoutStagePosition(stage=mobile.session.preGeneratorLimitBouldering,position=1,total=2),number=3)',
     );
-    expect(formatWorkoutStagePositionWithTry(position, null, t)).toBe(
+    expect(formatWorkoutStagePositionWithGo(position, null, t)).toBe(
       'mobile.session.workoutStagePosition(stage=mobile.session.preGeneratorLimitBouldering,position=1,total=2)',
+    );
+  });
+
+  it('says the set and the rep on a 4x4', () => {
+    const position = locateInRun(run, 'c', queue);
+    if (!position) throw new Error('expected a position');
+
+    expect(formatWorkoutStagePositionWithGo(position, { kind: 'rep', number: 2, total: 2 }, t)).toBe(
+      'mobile.session.workoutStageSetPosition(stage=mobile.session.preGeneratorFourByFour,rep=2,reps=2,set=3,sets=4)',
     );
   });
 });

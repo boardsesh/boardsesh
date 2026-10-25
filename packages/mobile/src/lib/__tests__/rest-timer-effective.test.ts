@@ -31,16 +31,25 @@ import { resetServerClock } from '../server-clock';
 
 const T0 = Date.parse('2026-09-11T10:00:00.000Z');
 
-const fourByFourClimb = (queueItemUuid: string, closesRound = false): RestTimerStagePacing => ({
+const FOUR_BY_FOUR_PACING = {
+  mode: 'afterTick',
+  restSeconds: 0,
+  advanceOn: 'set',
+  sets: { repsPerSet: 4, restBetweenSetsSeconds: 180 },
+} as const;
+
+/** A 4x4 set on the wall with `repsLogged` of its 4 reps logged. */
+const fourByFourClimb = (queueItemUuid: string, repsLogged = 0): RestTimerStagePacing => ({
   sessionId: 'session-1',
   stageId: 'stage-4x4',
   kind: 'fourByFour',
   queueItemUuid,
   mode: 'afterTick',
-  targetSeconds: closesRound ? 180 : 10,
+  targetSeconds: repsLogged >= 4 ? 180 : null,
   advanceOn: 'tick',
-  closesRound,
-  stagePacing: { mode: 'afterTick', restSeconds: 0, restBetweenRoundsSeconds: 180, advanceOn: 'tick' },
+  closesSet: repsLogged >= 4,
+  reps: { logged: repsLogged, perSet: 4 },
+  stagePacing: FOUR_BY_FOUR_PACING,
 });
 
 const onTheMinuteClimb = (queueItemUuid: string, intervalSeconds = 60): RestTimerStagePacing => ({
@@ -51,7 +60,7 @@ const onTheMinuteClimb = (queueItemUuid: string, intervalSeconds = 60): RestTime
   mode: 'onTheMinute',
   targetSeconds: intervalSeconds,
   advanceOn: 'deadline',
-  closesRound: false,
+  closesSet: false,
   stagePacing: { mode: 'onTheMinute', restSeconds: intervalSeconds },
 });
 
@@ -109,9 +118,29 @@ describe('syncRestTimerStagePacing', () => {
     expect(getRestTimerState().anchorMs).toBe(T0 + 30_000);
 
     // A manual Next mid-rest: the next climb did nothing yet, so no rest runs.
-    syncRestTimerStagePacing(fourByFourClimb('b1', true), T0 + 35_000);
+    syncRestTimerStagePacing(fourByFourClimb('b1'), T0 + 35_000);
 
-    expect(getRestTimerState()).toMatchObject({ anchorMs: null, stagePacing: fourByFourClimb('b1', true) });
+    expect(getRestTimerState()).toMatchObject({ anchorMs: null, stagePacing: fourByFourClimb('b1') });
+  });
+
+  it('keeps the rest from each rep running as the set’s count moves on, the set rest included', () => {
+    armRestTimer('afterTick', T0, 'session-1');
+    const transitions: string[] = [];
+    subscribeLocalRestTimerActions((action) => {
+      if (action.type === 'stagePacing') transitions.push(action.transition);
+    });
+    syncRestTimerStagePacing(fourByFourClimb('a1'), T0);
+    for (let rep = 1; rep <= 4; rep++) {
+      const tickedAtMs = T0 + rep * 50_000;
+      noteRestTimerTick(new Date(tickedAtMs).toISOString(), 'afterTick', tickedAtMs, {
+        status: rep === 4 ? 'send' : 'attempt',
+        queueItemUuid: 'a1',
+      });
+      // The tick log's count reaches the store one effect after the tick.
+      syncRestTimerStagePacing(fourByFourClimb('a1', rep), tickedAtMs + 50);
+      expect(getRestTimerState()).toMatchObject({ anchorMs: tickedAtMs, stagePacing: fourByFourClimb('a1', rep) });
+    }
+    expect(transitions).toEqual(['waitForTick', 'none', 'none', 'none', 'none']);
   });
 
   it('waits for a tick when on the minute ends into an after-tick rest', () => {
@@ -279,7 +308,7 @@ describe('a workout started over a crewmate’s crew clock (#5382)', () => {
           id: 'stage-4x4',
           kind: 'fourByFour',
           itemUuids: ['f1', 'f2'],
-          pacing: { mode: 'afterTick', restSeconds: 0, restBetweenRoundsSeconds: 180, advanceOn: 'tick' },
+          pacing: FOUR_BY_FOUR_PACING,
         },
       ],
     };

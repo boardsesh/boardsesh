@@ -124,7 +124,13 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-import { noteWorkoutRunTick, resetWorkoutRunStoreForTests, setWorkoutRun } from '../../../../lib/workout-run-store';
+import {
+  countWorkoutRunTicks,
+  getWorkoutRunLog,
+  noteWorkoutRunTick,
+  resetWorkoutRunStoreForTests,
+  setWorkoutRun,
+} from '../../../../lib/workout-run-store';
 import {
   applyRestTimerStagePacing,
   armRestTimer,
@@ -199,16 +205,20 @@ describe('WorkoutRunCard', () => {
   });
 
   describe('the runner', () => {
-    // A 2-climb 4x4 over 2 rounds, then one limit climb.
+    // A 4x4 of two sets (2 reps each, no rest between reps, 3:00 between sets),
+    // then one limit climb.
     const timedRun: WorkoutRun = {
       stages: [
         {
           id: 'four',
           kind: 'fourByFour',
-          itemUuids: ['a', 'b', 'a2', 'b2'],
-          pacing: { mode: 'afterTick', restSeconds: 0, restBetweenRoundsSeconds: 180, advanceOn: 'tick' },
-          rounds: 2,
-          roundByUuid: { a: 1, b: 1, a2: 2, b2: 2 },
+          itemUuids: ['a', 'b'],
+          pacing: {
+            mode: 'afterTick',
+            restSeconds: 0,
+            advanceOn: 'set',
+            sets: { repsPerSet: 2, restBetweenSetsSeconds: 180 },
+          },
         },
         {
           id: 'limit',
@@ -218,34 +228,41 @@ describe('WorkoutRunCard', () => {
         },
       ],
     };
-    const timedQueue = ['a', 'b', 'a2', 'b2', 'l1'];
+    const timedQueue = ['a', 'b', 'l1'];
 
-    /** Put `uuid` on the wall, with the stage pacing RestTimerPacingSync would store for it. */
-    function onTheWall(uuid: string): void {
-      queueState.queue = queued(timedQueue);
-      queueState.currentClimbQueueItem = { uuid };
-      const position = locateInRun(timedRun, uuid, timedQueue);
+    /** The stage pacing RestTimerPacingSync would store for `uuid`, counting its reps from the tick log. */
+    function syncStagePacing(uuid: string, workoutRun: WorkoutRun = timedRun): void {
+      const position = locateInRun(workoutRun, uuid, timedQueue);
+      const repsLogged = countWorkoutRunTicks(getWorkoutRunLog('session-1'), uuid);
       applyRestTimerStagePacing(
-        resolveStageRestPacing({ sessionId: 'session-1', run: timedRun, position, queueItemUuid: uuid }),
+        resolveStageRestPacing({ sessionId: 'session-1', run: workoutRun, position, queueItemUuid: uuid, repsLogged }),
         1000,
         'none',
       );
     }
 
-    /** A tick on the climb on the wall, as the tick path records it. */
-    function logTick(uuid: string, status: 'flash' | 'send' | 'attempt'): void {
+    /** Put `uuid` on the wall, with the stage pacing RestTimerPacingSync would store for it. */
+    function onTheWall(uuid: string, workoutRun: WorkoutRun = timedRun): void {
+      queueState.queue = queued(timedQueue);
+      queueState.currentClimbQueueItem = { uuid };
+      syncStagePacing(uuid, workoutRun);
+    }
+
+    /** A tick on the climb on the wall, as the tick path records it, and the sync after it. */
+    function logTick(uuid: string, status: 'flash' | 'send' | 'attempt', workoutRun: WorkoutRun = timedRun): void {
       const climbedAt = new Date(5000).toISOString();
       noteRestTimerTick(climbedAt, 'afterTick', 5000, { status, queueItemUuid: uuid });
       noteWorkoutRunTick('session-1', { queueItemUuid: uuid, status, climbedAt });
+      syncStagePacing(uuid, workoutRun);
     }
 
-    it('shows where you are in the round and the climb on the wall, which opens the player', () => {
+    it('shows the set and rep you are on and the climb on the wall, which opens the player', () => {
       setWorkoutRun('session-1', timedRun);
       onTheWall('b');
       render(createElement(WorkoutRunCard));
 
       expect(screen.getByText('overallPosition')).toBeTruthy();
-      expect(screen.getByTestId('workout-runner-current').textContent).toContain('workoutStageRoundPosition');
+      expect(screen.getByTestId('workout-runner-current').textContent).toContain('workoutStageSetPosition');
       expect(screen.getByTestId('workout-runner-current').textContent).toContain('Climb b');
       fireEvent.click(screen.getByTestId('workout-runner-current'));
       expect(drawerHost.openPlayDrawer).toHaveBeenCalledWith({ uuid: 'climb-b', name: 'Climb b' }, {});
@@ -262,25 +279,55 @@ describe('WorkoutRunCard', () => {
       expect(screen.queryByTestId('workout-runner-rest')).toBeNull();
     });
 
-    it('counts the round rest down after a tick, then names the next climb', () => {
+    it('shows no rest between reps with no rest between them, then counts the set rest down and names the next climb', () => {
       setWorkoutRun('session-1', timedRun);
       armRestTimer('afterTick', 1000, 'session-1');
-      onTheWall('b');
+      onTheWall('a');
       queueState.queue = queued(timedQueue);
       render(createElement(WorkoutRunCard));
       expect(screen.queryByTestId('workout-runner-rest')).toBeNull();
 
-      act(() => logTick('b', 'send'));
+      // The first rep: the climber goes again at once, so no clock.
+      act(() => logTick('a', 'attempt'));
+      expect(screen.queryByTestId('workout-runner-rest')).toBeNull();
+
+      // The set's last rep: the set rest, then the next climb.
+      act(() => logTick('a', 'send'));
       const restLine = screen.getByTestId('workout-runner-rest');
-      expect(restLine.textContent).toBe('roundRestLabelclockthenNext');
+      expect(restLine.textContent).toBe('setRestLabelclockthenNext');
       // One sentence to a screen reader, the overrun in words rather than signed digits.
-      expect(restLine.getAttribute('aria-label')).toBe('roundRestLabel. overrunAria:-12. thenNext');
+      expect(restLine.getAttribute('aria-label')).toBe('setRestLabel. overrunAria:-12. thenNext');
       expect(screen.queryByTestId('workout-runner-turn-on')).toBeNull();
 
       // Turning the timer off brings the offer back and stops the clock.
       act(() => disarmRestTimer());
       expect(screen.queryByTestId('workout-runner-rest')).toBeNull();
       expect(screen.getByTestId('workout-runner-turn-on')).toBeTruthy();
+    });
+
+    it('rests between reps when the set has a rest between them, and says the next rep comes back to the climb', () => {
+      const repRestRun: WorkoutRun = {
+        stages: [
+          {
+            id: 'four',
+            kind: 'fourByFour',
+            itemUuids: ['a', 'b'],
+            pacing: {
+              mode: 'afterTick',
+              restSeconds: 45,
+              advanceOn: 'set',
+              sets: { repsPerSet: 3, restBetweenSetsSeconds: 180 },
+            },
+          },
+        ],
+      };
+      setWorkoutRun('session-1', repRestRun);
+      armRestTimer('afterTick', 1000, 'session-1');
+      onTheWall('a', repRestRun);
+      render(createElement(WorkoutRunCard));
+
+      act(() => logTick('a', 'send', repRestRun));
+      expect(screen.getByTestId('workout-runner-rest').textContent).toBe('restLabelclockthenRep');
     });
 
     it('rests a limit climb after a fall and says the next try comes back to it', () => {
@@ -302,8 +349,9 @@ describe('WorkoutRunCard', () => {
       expect(screen.getByTestId('workout-runner-turn-on').getAttribute('data-hint')).toBe('turnOnPassengerHint');
 
       act(() => armRestTimer('afterTick', 1000, 'session-1'));
+      act(() => logTick('b', 'attempt'));
       act(() => logTick('b', 'send'));
-      expect(screen.getByTestId('workout-runner-rest').textContent).toBe('roundRestLabelclockautoAdvanceBlocked');
+      expect(screen.getByTestId('workout-runner-rest').textContent).toBe('setRestLabelclockautoAdvanceBlocked');
     });
 
     it('says what each finished block came to, and keeps the climb count for one with nothing logged', () => {

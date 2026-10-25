@@ -8,7 +8,13 @@ import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-na
 import { Chip as PaperChip } from 'react-native-paper';
 import type { BoardName, Grade } from '@boardsesh/shared-schema';
 import { getGradesForBoard } from '@boardsesh/board-config';
-import { MAX_STAGE_ROUNDS, MIN_STAGE_INTERVAL_SECONDS, type GeneratorOptions } from '@boardsesh/playlist-generator';
+import {
+  MAX_STAGE_REPS_PER_SET,
+  MAX_STAGE_SETS,
+  MIN_STAGE_INTERVAL_SECONDS,
+  MIN_STAGE_REPS_PER_SET,
+  type GeneratorOptions,
+} from '@boardsesh/playlist-generator';
 import { Stepper } from '../../Stepper';
 import { SwitchRow } from '../../SwitchRow';
 import { RestLengthPicker } from '../../queue-control/RestLengthPicker';
@@ -225,8 +231,8 @@ function intervalRow(label: string, fieldKey: string, seconds: number, onSeconds
  * The timed types follow their counts with their rest rows.
  * Labels are literal `t()` keys so the i18n key analyser sees each one.
  *
- * A 4x4 round holds at least 2 climbs: the player keys its swipe pages by climb,
- * so one climb per round would put the same climb on three pages at once.
+ * A 4x4 set is one climb done for every rep, so its sets are its climbs: one
+ * queue item each, and never the same climb on two of the player's pages.
  */
 export function workoutStepperRows(
   options: GeneratorOptions,
@@ -330,30 +336,32 @@ export function workoutStepperRows(
           (intervalSeconds) => onOptionsChange({ ...options, intervalSeconds }),
         ),
       ];
+    // A set is one climb done for every rep, so the sets are the climbs. Reps
+    // come first, sets second, as everywhere a 4x4 is described.
     case 'fourByFour':
       return [
         stepperRow(
-          t('mobile.session.preGeneratorClimbsPerRound'),
-          'climbsPerRound',
-          options.climbsPerRound,
-          2,
-          10,
-          (climbsPerRound) => onOptionsChange({ ...options, climbsPerRound }),
+          t('mobile.session.preGeneratorRepsPerSet'),
+          'repsPerSet',
+          options.repsPerSet,
+          MIN_STAGE_REPS_PER_SET,
+          MAX_STAGE_REPS_PER_SET,
+          (repsPerSet) => onOptionsChange({ ...options, repsPerSet }),
         ),
-        stepperRow(t('mobile.session.preGeneratorRounds'), 'rounds', options.rounds, 1, MAX_STAGE_ROUNDS, (rounds) =>
-          onOptionsChange({ ...options, rounds }),
-        ),
-        restRow(
-          t('mobile.session.preGeneratorRestBetweenClimbs'),
-          'restBetweenClimbsSeconds',
-          options.restBetweenClimbsSeconds,
-          (restBetweenClimbsSeconds) => onOptionsChange({ ...options, restBetweenClimbsSeconds }),
+        stepperRow(t('mobile.session.preGeneratorSets'), 'sets', options.sets, 1, MAX_STAGE_SETS, (sets) =>
+          onOptionsChange({ ...options, sets }),
         ),
         restRow(
-          t('mobile.session.preGeneratorRestBetweenRounds'),
-          'restBetweenRoundsSeconds',
-          options.restBetweenRoundsSeconds,
-          (restBetweenRoundsSeconds) => onOptionsChange({ ...options, restBetweenRoundsSeconds }),
+          t('mobile.session.preGeneratorRestBetweenReps'),
+          'restBetweenRepsSeconds',
+          options.restBetweenRepsSeconds,
+          (restBetweenRepsSeconds) => onOptionsChange({ ...options, restBetweenRepsSeconds }),
+        ),
+        restRow(
+          t('mobile.session.preGeneratorRestBetweenSets'),
+          'restBetweenSetsSeconds',
+          options.restBetweenSetsSeconds,
+          (restBetweenSetsSeconds) => onOptionsChange({ ...options, restBetweenSetsSeconds }),
         ),
       ];
     case 'limitBouldering':

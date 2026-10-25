@@ -7,7 +7,6 @@ import {
   type WorkoutStagePacing,
   buildWorkoutRun,
   estimateWorkoutMinutes,
-  expandRounds,
   generatePyramidPlan,
   planFromBlocks,
   summarizePlanFill,
@@ -111,23 +110,9 @@ describe('estimateWorkoutMinutes', () => {
   const FOUR_BY_FOUR_PACING: WorkoutStagePacing = {
     mode: 'afterTick',
     restSeconds: 0,
-    restBetweenRoundsSeconds: 180,
-    advanceOn: 'tick',
+    advanceOn: 'set',
+    sets: { repsPerSet: 4, restBetweenSetsSeconds: 180 },
   };
-
-  /** A stage of `rounds` rounds of `climbsPerRound` climbs, queued round-major like Start queues a 4x4. */
-  function roundsStage(climbsPerRound: number, rounds: number, pacing: WorkoutStagePacing): WorkoutRunStage {
-    const itemUuids: string[] = [];
-    const roundByUuid: Record<string, number> = {};
-    for (let round = 1; round <= rounds; round++) {
-      for (let climb = 0; climb < climbsPerRound; climb++) {
-        const uuid = `r${round}-c${climb}`;
-        itemUuids.push(uuid);
-        roundByUuid[uuid] = round;
-      }
-    }
-    return { id: 'four', kind: 'fourByFour', itemUuids, pacing, rounds, roundByUuid };
-  }
 
   const flatStage = (id: string, kind: WorkoutRunStage['kind'], count: number, pacing?: WorkoutStagePacing) => ({
     id,
@@ -136,10 +121,36 @@ describe('estimateWorkoutMinutes', () => {
     ...(pacing ? { pacing } : {}),
   });
 
-  it('counts a 4x4 as 16 tries with the changeover between climbs and the long rest between rounds', () => {
-    // Per round: three climbs of 45 s + the 10 s changeover, one of 45 s + 180 s.
-    // Four rounds is 1560 s, less the last round's rest: 1380 s, 23 min.
-    expect(estimateWorkoutMinutes({ stages: [roundsStage(4, 4, FOUR_BY_FOUR_PACING)] })).toBe(25);
+  it('counts every rep of a 4x4 set back to back, then the set rest', () => {
+    // Per set: four reps of 45 s with no rest between them, then 180 s. Four
+    // sets is 1440 s, less the last set's rest: 1260 s, 21 min.
+    expect(estimateWorkoutMinutes({ stages: [flatStage('four', 'fourByFour', 4, FOUR_BY_FOUR_PACING)] })).toBe(20);
+  });
+
+  it('counts the rest between reps, but not after a set’s last rep', () => {
+    // Triples: per set three reps of 45 s, two rests of 60 s between them, then
+    // 300 s. Five sets is 2775 s, less the last set's rest: 2475 s, 41.25 min.
+    const triples: WorkoutStagePacing = {
+      mode: 'afterTick',
+      restSeconds: 60,
+      advanceOn: 'set',
+      sets: { repsPerSet: 3, restBetweenSetsSeconds: 300 },
+    };
+
+    expect(estimateWorkoutMinutes({ stages: [flatStage('four', 'fourByFour', 5, triples)] })).toBe(40);
+  });
+
+  it('counts the changeover after a set rest of 0', () => {
+    // One set of two reps: 90 s, then the 10 s changeover before the next set.
+    // Two sets is 200 s, less the last changeover: 190 s, 3 min.
+    const noSetRest: WorkoutStagePacing = {
+      mode: 'afterTick',
+      restSeconds: 0,
+      advanceOn: 'set',
+      sets: { repsPerSet: 2, restBetweenSetsSeconds: 0 },
+    };
+
+    expect(estimateWorkoutMinutes({ stages: [flatStage('four', 'fourByFour', 2, noSetRest)] })).toBe(3);
   });
 
   it('counts one interval per climb on the minute', () => {
@@ -185,17 +196,13 @@ describe('estimateWorkoutMinutes', () => {
     expect(estimateWorkoutMinutes({ stages: [] })).toBe(null);
   });
 
-  it('reads the rounds from the run, so a run built at Start gets the same figure', () => {
+  it('reads the sets from the run, so a run built at Start gets the same figure', () => {
     const plan = planFromBlocks(
       [{ kind: 'workout', options: { ...DEFAULT_FOUR_BY_FOUR_OPTIONS, targetGrade: 20 } }],
       () => 'four',
     );
-    const entries = expandRounds(
-      ['a', 'b', 'c', 'd'].map((uuid) => ({ uuid })),
-      4,
-      (item, round) => ({ uuid: `${item.uuid}${round}` }),
-    ).map(({ item, round }) => ({ uuid: item.uuid, stageId: 'four', round }));
+    const entries = ['a', 'b', 'c', 'd'].map((uuid) => ({ uuid, stageId: 'four' }));
 
-    expect(estimateWorkoutMinutes(buildWorkoutRun(entries, plan))).toBe(25);
+    expect(estimateWorkoutMinutes(buildWorkoutRun(entries, plan))).toBe(20);
   });
 });

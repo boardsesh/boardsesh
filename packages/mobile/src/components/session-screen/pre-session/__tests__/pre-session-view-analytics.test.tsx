@@ -59,15 +59,7 @@ const preview = vi.hoisted(() => ({
     regenerate: vi.fn(),
     shuffle: vi.fn(),
     refreshSlot: vi.fn(),
-    toStagedQueueItems: () => ({
-      items: previewItems,
-      run: previewRun,
-      slotIndexByUuid: new Map([
-        ['c1', 0],
-        ['c2', 1],
-      ]),
-      filledSlotCount: 2,
-    }),
+    toStagedQueueItems: () => ({ items: previewItems, run: previewRun }),
   },
 }));
 
@@ -457,15 +449,7 @@ describe('PreSessionView analytics', () => {
       ],
     };
     const singleStageQueueItems = preview.result.toStagedQueueItems;
-    preview.result.toStagedQueueItems = () => ({
-      items: previewItems,
-      run: multiStageRun,
-      slotIndexByUuid: new Map([
-        ['c1', 0],
-        ['c2', 1],
-      ]),
-      filledSlotCount: 2,
-    });
+    preview.result.toStagedQueueItems = () => ({ items: previewItems, run: multiStageRun });
     try {
       render(createElement(PreSessionView));
       act(() =>
@@ -515,49 +499,45 @@ describe('PreSessionView analytics', () => {
     }
   });
 
-  // A 4x4 queues each of its planned slots once per round: the queue is bigger
-  // than the plan, and only a slot with no climb at all counts as failed.
+  // A 4x4 queues each set once, however many reps it takes: every queued climb
+  // is one planned slot, and a slot with no climb counts as failed.
   it.each([
-    { plannedCount: 3, filledSlotCount: 2, failedCount: 1 },
-    { plannedCount: 2, filledSlotCount: 2, failedCount: 0 },
+    { plannedCount: 3, failedCount: 1 },
+    { plannedCount: 2, failedCount: 0 },
     // Never below zero, whatever the counts say.
-    { plannedCount: 1, filledSlotCount: 2, failedCount: 0 },
+    { plannedCount: 1, failedCount: 0 },
   ])(
-    'reports the queued rounds as saved and $failedCount of $plannedCount planned slots as failed',
-    async ({ plannedCount, filledSlotCount, failedCount }) => {
-      const roundItems = [0, 1, 2, 3].flatMap((round) =>
-        previewItems.map((item) => ({ ...item, uuid: round === 0 ? item.uuid : `${item.uuid}-r${round + 1}` })),
-      );
+    'reports the queued sets as saved and $failedCount of $plannedCount planned slots as failed',
+    async ({ plannedCount, failedCount }) => {
       const fourByFourRun: WorkoutRun = {
         stages: [
           {
             id: 'stage-four',
             kind: 'fourByFour',
-            itemUuids: roundItems.map((item) => item.uuid),
-            rounds: 4,
-            roundByUuid: Object.fromEntries(roundItems.map((item, index) => [item.uuid, Math.floor(index / 2) + 1])),
+            itemUuids: previewItems.map((item) => item.uuid),
+            pacing: {
+              mode: 'afterTick',
+              restSeconds: 0,
+              advanceOn: 'set',
+              sets: { repsPerSet: 4, restBetweenSetsSeconds: 180 },
+            },
           },
         ],
       };
       const singleStageQueueItems = preview.result.toStagedQueueItems;
       const singleStagePlannedCount = preview.result.plannedCount;
       preview.result.plannedCount = plannedCount;
-      preview.result.toStagedQueueItems = () => ({
-        items: roundItems,
-        run: fourByFourRun,
-        slotIndexByUuid: new Map(roundItems.map((item, index) => [item.uuid, index % 2])),
-        filledSlotCount,
-      });
+      preview.result.toStagedQueueItems = () => ({ items: previewItems, run: fourByFourRun });
       try {
         render(createElement(PreSessionView));
         act(() => picker.onChange?.(singleBlockSelection({ ...DEFAULT_PYRAMID_OPTIONS, targetGrade: 10 }, 'b')));
 
         await act(async () => startButton.onPress?.());
 
-        expect(queue.appendQueueItems).toHaveBeenCalledExactlyOnceWith(roundItems, { activateFirstWhenIdle: true });
+        expect(queue.appendQueueItems).toHaveBeenCalledExactlyOnceWith(previewItems, { activateFirstWhenIdle: true });
         expect(analytics.track).toHaveBeenCalledWith(
           'Session Queue Generated',
-          expect.objectContaining({ savedCount: 8, failedCount, stageCount: 1 }),
+          expect.objectContaining({ savedCount: 2, failedCount, stageCount: 1 }),
         );
       } finally {
         preview.result.toStagedQueueItems = singleStageQueueItems;

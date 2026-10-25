@@ -23,23 +23,31 @@ import { RestTimerWorkoutPacingRow } from './RestTimerWorkoutPacingRow';
 
 const STORY_SESSION_ID = 'story-workout-session';
 
+// Triples with 0:45 between reps, after rep 2 of 3.
 const FOUR_BY_FOUR: RestTimerStagePacing = {
   sessionId: STORY_SESSION_ID,
   stageId: 'story-4x4',
   kind: 'fourByFour',
   queueItemUuid: 'story-climb-a1',
   mode: 'afterTick',
-  targetSeconds: 10,
+  targetSeconds: 45,
   advanceOn: 'tick',
-  closesRound: false,
-  stagePacing: { mode: 'afterTick', restSeconds: 0, restBetweenRoundsSeconds: 30, advanceOn: 'tick' },
+  closesSet: false,
+  reps: { logged: 2, perSet: 3 },
+  stagePacing: {
+    mode: 'afterTick',
+    restSeconds: 45,
+    advanceOn: 'set',
+    sets: { repsPerSet: 3, restBetweenSetsSeconds: 30 },
+  },
 };
 
-const FOUR_BY_FOUR_ROUND_END: RestTimerStagePacing = {
+// The same set with its last rep logged: the set rest.
+const FOUR_BY_FOUR_SET_END: RestTimerStagePacing = {
   ...FOUR_BY_FOUR,
-  queueItemUuid: 'story-climb-b1',
   targetSeconds: 30,
-  closesRound: true,
+  closesSet: true,
+  reps: { logged: 3, perSet: 3 },
 };
 
 const LIMIT: RestTimerStagePacing = {
@@ -50,7 +58,7 @@ const LIMIT: RestTimerStagePacing = {
   mode: 'afterTick',
   targetSeconds: 180,
   advanceOn: 'send',
-  closesRound: false,
+  closesSet: false,
   stagePacing: { mode: 'afterTick', restSeconds: 180, advanceOn: 'send' },
 };
 
@@ -62,7 +70,7 @@ const ON_THE_MINUTE: RestTimerStagePacing = {
   mode: 'onTheMinute',
   targetSeconds: 15,
   advanceOn: 'deadline',
-  closesRound: false,
+  closesSet: false,
   stagePacing: { mode: 'onTheMinute', restSeconds: 15 },
 };
 
@@ -74,7 +82,7 @@ const COOL_DOWN: RestTimerStagePacing = {
   mode: 'afterTick',
   targetSeconds: 30,
   advanceOn: 'tick',
-  closesRound: false,
+  closesSet: false,
   isCoolDown: true,
   stagePacing: { mode: 'afterTick', restSeconds: 30, advanceOn: 'tick' },
 };
@@ -115,12 +123,12 @@ const stories: StoryModule = {
   title: 'Rest timer / Set by your workout',
   stories: {
     sheetFourByFour: {
-      name: 'Rest timer sheet, 4x4 climb (0:10 changeover)',
+      name: 'Rest timer sheet, 4x4 between reps (0:45)',
       render: () => <StagePacedSheet stage={FOUR_BY_FOUR} />,
     },
-    sheetFourByFourRoundEnd: {
-      name: 'Rest timer sheet, last climb of a 4x4 round (0:30 round rest)',
-      render: () => <StagePacedSheet stage={FOUR_BY_FOUR_ROUND_END} />,
+    sheetFourByFourSetEnd: {
+      name: 'Rest timer sheet, 4x4 after a set’s last rep (0:30 set rest)',
+      render: () => <StagePacedSheet stage={FOUR_BY_FOUR_SET_END} />,
     },
     sheetLimit: {
       name: 'Rest timer sheet, limit bouldering',

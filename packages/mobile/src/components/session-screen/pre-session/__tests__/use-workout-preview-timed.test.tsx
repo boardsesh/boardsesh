@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 // The timed blocks (on the minute, 4x4, limit) through the preview: a 4x4
-// previews one row per climb of a round and Start queues the rows once per
-// round, and changing its rounds or a rest rebuilds the run Start hands over
-// without re-picking the climbs the climber already sees.
+// previews one row per set and Start queues each once, and changing its reps
+// or a rest rebuilds the run Start hands over without re-picking the climbs the
+// climber already sees.
 import { renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { Climb, UserBoard } from '@boardsesh/shared-schema';
@@ -66,21 +66,27 @@ const rowsOf = (items: ReadonlyArray<{ item: { uuid: string; climb: { uuid: stri
   items.map(({ item }) => [item.uuid, item.climb.uuid]);
 
 describe('useWorkoutPreview with timed blocks', () => {
-  it('previews a 4x4 as one row per climb of a round, and hands Start its pacing and rounds', async () => {
+  it('previews a 4x4 as one row per set, and hands Start one queue item per set and its pacing', async () => {
     const { result } = renderPreview(fourByFour);
     await waitFor(() => expect(result.current.status).toBe('ready'));
 
     expect(result.current.items).toHaveLength(4);
     const { items, run } = result.current.toStagedQueueItems();
-    expect(items).toHaveLength(16);
+    expect(items).toEqual(result.current.items.map(({ item }) => item));
     expect(run?.stages).toEqual([
       expect.objectContaining({
         kind: 'fourByFour',
         targetGrade: 18,
-        rounds: 4,
-        pacing: { mode: 'afterTick', restSeconds: 0, restBetweenRoundsSeconds: 180, advanceOn: 'tick' },
+        itemUuids: items.map((item) => item.uuid),
+        pacing: {
+          mode: 'afterTick',
+          restSeconds: 0,
+          advanceOn: 'set',
+          sets: { repsPerSet: 4, restBetweenSetsSeconds: 180 },
+        },
       }),
     ]);
+    expect(result.current.plannedCount).toBe(4);
   });
 
   it.each([
@@ -104,71 +110,62 @@ describe('useWorkoutPreview with timed blocks', () => {
     expect(result.current.toStagedQueueItems().run?.stages[0].pacing).toEqual(pacing);
   });
 
-  it('queues the rows A B C D once per round, round 1 under the rows own uuids', async () => {
-    const { result } = renderPreview(fourByFour);
-    await waitFor(() => expect(result.current.status).toBe('ready'));
-    const rows = result.current.items.map(({ item }) => item);
-
-    const { items, run, filledSlotCount } = result.current.toStagedQueueItems();
-
-    const rowClimbs = rows.map((row) => row.climb.uuid);
-    expect(items.map((item) => item.climb.uuid)).toEqual([...rowClimbs, ...rowClimbs, ...rowClimbs, ...rowClimbs]);
-    expect(items.slice(0, 4)).toEqual(rows);
-    expect(new Set(items.map((item) => item.uuid)).size).toBe(16);
-    expect(items.map((item) => run?.stages[0].roundByUuid?.[item.uuid])).toEqual([
-      1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4,
-    ]);
-    expect(run?.stages[0].itemUuids).toEqual(items.map((item) => item.uuid));
-    // Four planned slots, all found: the copies are not more slots.
-    expect(filledSlotCount).toBe(4);
-    expect(result.current.plannedCount).toBe(4);
-  });
-
-  it('mints new copies on every hand-over, so two Starts never share a queue item', async () => {
+  it('hands the same queue items over on every Start, one per set', async () => {
     const { result } = renderPreview(fourByFour);
     await waitFor(() => expect(result.current.status).toBe('ready'));
 
     const first = result.current.toStagedQueueItems().items.map((item) => item.uuid);
     const second = result.current.toStagedQueueItems().items.map((item) => item.uuid);
 
-    expect(second.slice(0, 4)).toEqual(first.slice(0, 4));
-    expect(second.slice(4).some((uuid) => first.includes(uuid))).toBe(false);
+    expect(first).toHaveLength(4);
+    expect(second).toEqual(first);
   });
 
   it('counts the queued climbs and gives the time for the summary line', async () => {
     const { result } = renderPreview(fourByFour);
     await waitFor(() => expect(result.current.status).toBe('ready'));
 
-    expect(result.current.startQueue).toEqual({ climbCount: 16, estimatedMinutes: 25 });
+    expect(result.current.startQueue).toEqual({ climbCount: 4, estimatedMinutes: 20 });
   });
 
-  it('rebuilds on a rounds or rest change and keeps the climbs on screen', async () => {
+  it('rebuilds on a reps or rest change and keeps the climbs on screen', async () => {
     const { result, rerender, countingFetchPool } = renderPreview(fourByFour);
     await waitFor(() => expect(result.current.status).toBe('ready'));
     const rows = rowsOf(result.current.items);
     const fetchCount = countingFetchPool.mock.calls.length;
 
-    rerender({ selection: selectionWith({ ...fourByFour, rounds: 6, restBetweenRoundsSeconds: 240 }) });
+    rerender({
+      selection: selectionWith({
+        ...fourByFour,
+        repsPerSet: 6,
+        restBetweenRepsSeconds: 30,
+        restBetweenSetsSeconds: 240,
+      }),
+    });
     // toStagedQueueItems reads refs that update before React commits the rebuild,
     // so wait for the committed 'ready' render too, not only the new run.
     await waitFor(() => {
-      expect(result.current.toStagedQueueItems().run?.stages[0].rounds).toBe(6);
+      expect(result.current.toStagedQueueItems().run?.stages[0].pacing).toEqual({
+        mode: 'afterTick',
+        restSeconds: 30,
+        advanceOn: 'set',
+        sets: { repsPerSet: 6, restBetweenSetsSeconds: 240 },
+      });
       expect(result.current.status).toBe('ready');
     });
 
     expect(rowsOf(result.current.items)).toEqual(rows);
-    expect(result.current.toStagedQueueItems().run?.stages[0].pacing).toMatchObject({ restBetweenRoundsSeconds: 240 });
-    expect(result.current.toStagedQueueItems().items).toHaveLength(24);
-    expect(result.current.startQueue.climbCount).toBe(24);
+    expect(result.current.toStagedQueueItems().items).toHaveLength(4);
+    expect(result.current.startQueue.climbCount).toBe(4);
     expect(countingFetchPool).toHaveBeenCalledTimes(fetchCount);
   });
 
-  it('re-picks the rows when the climbs per round change', async () => {
+  it('re-picks the rows when the sets change', async () => {
     const { result, rerender } = renderPreview(fourByFour);
     await waitFor(() => expect(result.current.status).toBe('ready'));
     const rowUuids = result.current.items.map(({ item }) => item.uuid);
 
-    rerender({ selection: selectionWith({ ...fourByFour, climbsPerRound: 5 }) });
+    rerender({ selection: selectionWith({ ...fourByFour, sets: 5 }) });
     await waitFor(() => expect(result.current.items).toHaveLength(5));
 
     expect(result.current.items.map(({ item }) => item.uuid)).not.toEqual(expect.arrayContaining(rowUuids));

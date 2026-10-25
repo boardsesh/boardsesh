@@ -9,6 +9,7 @@ import {
   clearRestTimerQueueEnded,
   disarmRestTimer,
   getRestTimerState,
+  noteRestTimerAdvancedFrom,
   noteRestTimerAutoAdvanceFired,
   noteRestTimerQueueEnded,
   noteRestTimerTick,
@@ -17,7 +18,8 @@ import {
   resumeRestTimer,
   subscribeRestTimer,
 } from '../rest-timer-store';
-import type { RestTimerStagePacing } from '../rest-timer-pacing';
+import { restAdvanceAllowed, type RestTimerStagePacing } from '../rest-timer-pacing';
+import { getAutoAdvanceDeadlineMs } from '../rest-timer-auto-advance';
 
 const T0 = Date.parse('2026-09-11T10:00:00.000Z');
 const tickAt = (offsetSeconds: number) => new Date(T0 + offsetSeconds * 1000).toISOString();
@@ -30,7 +32,7 @@ const LIMIT_STAGE: RestTimerStagePacing = {
   mode: 'afterTick',
   targetSeconds: 180,
   advanceOn: 'send',
-  closesRound: false,
+  closesSet: false,
   stagePacing: { mode: 'afterTick', restSeconds: 180, advanceOn: 'send' },
 };
 
@@ -42,9 +44,49 @@ const EMOM_STAGE: RestTimerStagePacing = {
   mode: 'onTheMinute',
   targetSeconds: 60,
   advanceOn: 'deadline',
-  closesRound: false,
+  closesSet: false,
   stagePacing: { mode: 'onTheMinute', restSeconds: 60 },
 };
+
+/** A 4x4 on queue-1 with every rep of its set logged: the 3:00 set rest, then the wall moves. */
+const CLOSED_SET_STAGE: RestTimerStagePacing = {
+  sessionId: 'session-1',
+  stageId: 'stage-4x4',
+  kind: 'fourByFour',
+  queueItemUuid: 'queue-1',
+  mode: 'afterTick',
+  targetSeconds: 180,
+  advanceOn: 'tick',
+  closesSet: true,
+  reps: { logged: 4, perSet: 4 },
+  stagePacing: {
+    mode: 'afterTick',
+    restSeconds: 0,
+    advanceOn: 'set',
+    sets: { repsPerSet: 4, restBetweenSetsSeconds: 180 },
+  },
+};
+
+/** Whether the scheduler would move the wall off queue-1 under the closed set, and when. */
+function setAdvance(nowMs: number): { allowed: boolean; deadlineMs: number | null } {
+  const { lastTick, anchorMs, lastFiredDeadlineMs, advancedFromQueueItemUuid, stagePacing } = getRestTimerState();
+  return {
+    allowed: restAdvanceAllowed({
+      advanceOn: 'tick',
+      currentQueueItemUuid: 'queue-1',
+      lastTick,
+      stage: stagePacing,
+      advancedFromQueueItemUuid,
+    }),
+    deadlineMs: getAutoAdvanceDeadlineMs({
+      mode: 'afterTick',
+      anchorMs,
+      targetSeconds: 180,
+      nowMs,
+      lastFiredDeadlineMs,
+    }),
+  };
+}
 
 beforeEach(() => {
   resetRestTimerStoreForTests();
@@ -148,6 +190,45 @@ describe('the last tick', () => {
   });
 });
 
+describe('a go whose save lands more than a minute after it was logged', () => {
+  it('is fresh by when it was logged: the last tick, its rest anchored at the go', () => {
+    armRestTimer('afterTick', T0, 'session-1');
+    applyRestTimerStagePacing(CLOSED_SET_STAGE, T0, 'none');
+    // Logged at 10 s, climbed then; the save lands at 100 s.
+    noteRestTimerTick(tickAt(10), 'afterTick', T0 + 100_000, { status: 'send', queueItemUuid: 'queue-1' }, T0 + 10_000);
+
+    expect(getRestTimerState()).toMatchObject({
+      lastTick: { status: 'send', queueItemUuid: 'queue-1' },
+      anchorMs: T0 + 10_000,
+      lastTickAt: tickAt(10),
+    });
+    expect(setAdvance(T0 + 100_000)).toEqual({ allowed: true, deadlineMs: T0 + 190_000 });
+  });
+
+  it('is history when dated 2 min before it was logged, however soon or late it lands', () => {
+    for (const landedAtMs of [T0 + 10_000, T0 + 100_000]) {
+      armRestTimer('afterTick', T0, 'session-1');
+      applyRestTimerStagePacing(CLOSED_SET_STAGE, T0, 'none');
+      noteRestTimerTick(
+        tickAt(-110),
+        'afterTick',
+        landedAtMs,
+        { status: 'send', queueItemUuid: 'queue-1' },
+        T0 + 10_000,
+      );
+
+      expect(getRestTimerState().lastTick).toBeNull();
+      expect(setAdvance(landedAtMs).allowed).toBe(false);
+    }
+  });
+
+  it('with no log instant (a tick read back from the session) is judged on landing, as before', () => {
+    armRestTimer('afterTick', T0, 'session-1');
+    noteRestTimerTick(tickAt(10), 'afterTick', T0 + 100_000, { status: 'send', queueItemUuid: 'queue-1' });
+    expect(getRestTimerState().lastTick).toBeNull();
+  });
+});
+
 describe('the fire', () => {
   function armWithSend(): number {
     armRestTimer('afterTick', T0, 'session-1');
@@ -188,6 +269,64 @@ describe('the fire', () => {
     const cycleId = armWithSend();
     expect(noteRestTimerAutoAdvanceFired(cycleId - 1, 'afterTick', T0 + 180_000, T0 + 180_000, 'clear')).toBe(false);
     expect(getRestTimerState()).toMatchObject({ anchorMs: T0, lastTick: { status: 'send' } });
+  });
+});
+
+describe('the climb the timer last moved the wall off', () => {
+  function moveOnFrom(queueItemUuid: string) {
+    armRestTimer('afterTick', T0, 'session-1');
+    noteRestTimerTick(tickAt(0), 'afterTick', T0, { status: 'send', queueItemUuid });
+    noteRestTimerAutoAdvanceFired(getRestTimerState().cycleId, 'afterTick', T0 + 20_000, T0 + 20_000, 'clear');
+    noteRestTimerAdvancedFrom(queueItemUuid);
+  }
+
+  it('is remembered by the advance, and only while the timer is on', () => {
+    noteRestTimerAdvancedFrom('queue-1');
+    expect(getRestTimerState().advancedFromQueueItemUuid).toBeNull();
+    moveOnFrom('queue-1');
+    expect(getRestTimerState().advancedFromQueueItemUuid).toBe('queue-1');
+  });
+
+  it('is cleared by a fresh tick on that climb: the climber went again', () => {
+    moveOnFrom('queue-1');
+    noteRestTimerTick(tickAt(40), 'afterTick', T0 + 40_000, { status: 'attempt', queueItemUuid: 'queue-1' });
+    expect(getRestTimerState()).toMatchObject({
+      advancedFromQueueItemUuid: null,
+      lastTick: { status: 'attempt', queueItemUuid: 'queue-1' },
+    });
+  });
+
+  it('stays through a tick on another climb, a tick from a list, and yesterday’s send on that climb', () => {
+    moveOnFrom('queue-1');
+    noteRestTimerTick(tickAt(30), 'afterTick', T0 + 30_000, { status: 'send', queueItemUuid: 'queue-2' });
+    noteRestTimerTick(tickAt(31), 'afterTick', T0 + 31_000, { status: 'send', queueItemUuid: null });
+    noteRestTimerTick(tickAt(-86_400), 'afterTick', T0 + 32_000, { status: 'send', queueItemUuid: 'queue-1' });
+    expect(getRestTimerState().advancedFromQueueItemUuid).toBe('queue-1');
+  });
+
+  it('is forgotten on arm and on disarm', () => {
+    moveOnFrom('queue-1');
+    armRestTimer('afterTick', T0 + 60_000, 'session-1');
+    expect(getRestTimerState().advancedFromQueueItemUuid).toBeNull();
+    moveOnFrom('queue-1');
+    disarmRestTimer();
+    expect(getRestTimerState().advancedFromQueueItemUuid).toBeNull();
+  });
+
+  it('never blocks a rep after a disarm and re-arm: that rep earns the set rest and one advance', () => {
+    applyRestTimerStagePacing(CLOSED_SET_STAGE, T0, 'none');
+    moveOnFrom('queue-1');
+    expect(setAdvance(T0 + 20_000).allowed).toBe(false);
+
+    disarmRestTimer();
+    armRestTimer('afterTick', T0 + 30_000, 'session-1');
+    noteRestTimerTick(tickAt(40), 'afterTick', T0 + 40_000, { status: 'attempt', queueItemUuid: 'queue-1' });
+    expect(setAdvance(T0 + 40_000)).toEqual({ allowed: true, deadlineMs: T0 + 220_000 });
+
+    // The advance spends it: the climb never moves on again from that rep.
+    noteRestTimerAutoAdvanceFired(getRestTimerState().cycleId, 'afterTick', T0 + 220_000, T0 + 220_000, 'clear');
+    noteRestTimerAdvancedFrom('queue-1');
+    expect(setAdvance(T0 + 220_000).allowed).toBe(false);
   });
 });
 

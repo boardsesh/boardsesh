@@ -41,7 +41,7 @@ const preview = vi.hoisted(() => ({
   refreshingUuids: new Set<string>(),
   refreshSlot: vi.fn(),
   plannedCount: 0,
-  staged: { items: [], run: null, slotIndexByUuid: new Map(), filledSlotCount: 0 } as StagedQueueItems,
+  staged: { items: [], run: null } as StagedQueueItems,
   startQueue: { climbCount: 0, estimatedMinutes: null } as StartQueueSummary,
 }));
 vi.mock('../../pre-session/use-workout-preview', () => ({
@@ -248,39 +248,31 @@ function readyPreview(uuids: string[], stageId = 'new-stage-uuid', sections?: st
   preview.staged = {
     items,
     run: { stages: [{ id: stageId, kind: 'pyramid', itemUuids: uuids, targetGrade: 20 }] },
-    slotIndexByUuid: new Map(uuids.map((uuid, index) => [uuid, index])),
-    filledSlotCount: uuids.length,
   };
 }
 
-/**
- * A 4x4 block of `rowUuids` rows, staged for `rounds` rounds: the rows, then a
- * copy of each per later round, every copy on its row's slot.
- */
-function readyFourByFourPreview(rowUuids: string[], rounds: number): void {
-  readyPreview(rowUuids);
-  preview.plannedCount = rowUuids.length;
-  const staged = Array.from({ length: rounds }, (_, roundIndex) =>
-    rowUuids.map((uuid, slotIndex) => ({ uuid: roundIndex === 0 ? uuid : `${uuid}-r${roundIndex + 1}`, slotIndex })),
-  ).flat();
+/** A 4x4 block of `setUuids` rows, one per set: each queued once, its reps all logged on it. */
+function readyFourByFourPreview(setUuids: string[]): void {
+  readyPreview(setUuids);
+  preview.plannedCount = setUuids.length;
   preview.staged = {
-    items: staged.map(({ uuid }) => climbItem(uuid)),
+    items: setUuids.map(climbItem),
     run: {
       stages: [
         {
           id: 'four-stage',
           kind: 'fourByFour',
-          itemUuids: staged.map(({ uuid }) => uuid),
+          itemUuids: setUuids,
           targetGrade: 20,
-          rounds,
-          roundByUuid: Object.fromEntries(
-            staged.map(({ uuid }, index) => [uuid, Math.floor(index / rowUuids.length) + 1]),
-          ),
+          pacing: {
+            mode: 'afterTick',
+            restSeconds: 0,
+            advanceOn: 'set',
+            sets: { repsPerSet: 4, restBetweenSetsSeconds: 180 },
+          },
         },
       ],
     },
-    slotIndexByUuid: new Map(staged.map(({ uuid, slotIndex }) => [uuid, slotIndex])),
-    filledSlotCount: rowUuids.length,
   };
 }
 
@@ -315,7 +307,7 @@ beforeEach(() => {
   rows.rendered = [];
   summary.shuffleDisabled = null;
   preview.plannedCount = 0;
-  preview.staged = { items: [], run: null, slotIndexByUuid: new Map(), filledSlotCount: 0 };
+  preview.staged = { items: [], run: null };
   preview.startQueue = { climbCount: 0, estimatedMinutes: null };
   summary.startQueue = undefined;
   sheet.modal = null;
@@ -419,7 +411,7 @@ describe('AddWorkoutBlockSheet', () => {
     const WITH_TIMED = ['volume', 'pyramid', 'ladder', 'gradeFocus', 'onTheMinute', 'fourByFour', 'limitBouldering'];
     const afterFourByFour = () =>
       setWorkoutRun('session-1', {
-        stages: [{ id: 'stage-4x4', kind: 'fourByFour', itemUuids: ['f1'], targetGrade: 18, rounds: 4 }],
+        stages: [{ id: 'stage-4x4', kind: 'fourByFour', itemUuids: ['f1'], targetGrade: 18 }],
       });
 
     it('offers the workout types only, never a warm-up', () => {
@@ -451,15 +443,15 @@ describe('AddWorkoutBlockSheet', () => {
   });
 
   it('hands the summary line the queue the block adds', () => {
-    preview.startQueue = { climbCount: 16, estimatedMinutes: 25 };
-    readyFourByFourPreview(['f1', 'f2', 'f3', 'f4'], 4);
+    preview.startQueue = { climbCount: 4, estimatedMinutes: 20 };
+    readyFourByFourPreview(['f1', 'f2', 'f3', 'f4']);
     renderSheet(true);
 
-    expect(summary.startQueue).toEqual({ climbCount: 16, estimatedMinutes: 25 });
+    expect(summary.startQueue).toEqual({ climbCount: 4, estimatedMinutes: 20 });
   });
 
-  it("counts a 4x4's rounds as saved climbs and its slots once for what failed", async () => {
-    readyFourByFourPreview(['f1', 'f2', 'f3', 'f4'], 4);
+  it("queues a 4x4's sets once each and counts them as saved climbs", async () => {
+    readyFourByFourPreview(['f1', 'f2', 'f3', 'f4']);
     renderSheet(true);
 
     await press();
@@ -468,25 +460,12 @@ describe('AddWorkoutBlockSheet', () => {
     expect(getWorkoutRunForSession('session-1')).toEqual(preview.staged.run);
     expect(analytics.track).toHaveBeenCalledWith(
       'Session Queue Generated',
-      expect.objectContaining({ savedCount: 16, failedCount: 0 }),
+      expect.objectContaining({ savedCount: 4, failedCount: 0 }),
     );
   });
 
-  it('counts the slots a nearly full queue left out as failed, never below zero', async () => {
-    readyFourByFourPreview(['f1', 'f2', 'f3', 'f4'], 4);
-    // Room for 6: round 1 lands whole and two of round 2's copies follow it.
-    queue.appendQueueItems.mockImplementation((items: unknown[]) => Math.min(items.length, 6));
-    renderSheet(true);
-
-    await press();
-    expect(analytics.track).toHaveBeenLastCalledWith(
-      'Session Queue Generated',
-      expect.objectContaining({ savedCount: 6, failedCount: 0 }),
-    );
-  });
-
-  it('counts a slot as failed when not even its first round landed', async () => {
-    readyFourByFourPreview(['f1', 'f2', 'f3', 'f4'], 4);
+  it('counts the sets a nearly full queue left out as failed', async () => {
+    readyFourByFourPreview(['f1', 'f2', 'f3', 'f4']);
     queue.appendQueueItems.mockImplementation((items: unknown[]) => Math.min(items.length, 3));
     renderSheet(true);
 
@@ -633,10 +612,10 @@ describe('AddWorkoutBlockSheet', () => {
     expect(getWorkoutRunForSession('session-1')?.stages[0].itemUuids).toEqual(['v2']);
   });
 
-  it('closes without queueing a 4x4 whose first round is already queued', async () => {
-    // The preview a reopen kept after the same block was added: round 1 under
-    // the rows' uuids, which the queue holds, and every later round under fresh ones.
-    readyFourByFourPreview(['f1', 'f2', 'f3', 'f4'], 4);
+  it('closes without queueing a 4x4 that is already queued', async () => {
+    // The preview a reopen kept after the same block was added: its sets under
+    // the rows' uuids, which the queue holds.
+    readyFourByFourPreview(['f1', 'f2', 'f3', 'f4']);
     queue.queued = ['f1', 'f2', 'f3', 'f4'].map((uuid) => ({ uuid, climb: { uuid: `climb-${uuid}` } }));
     const { onClose } = renderSheet(true);
 
@@ -645,18 +624,6 @@ describe('AddWorkoutBlockSheet', () => {
     expect(queue.appendQueueItems).not.toHaveBeenCalled();
     expect(analytics.track).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalledTimes(1);
-  });
-
-  it('leaves out every round of a 4x4 row whose first round is queued', async () => {
-    readyFourByFourPreview(['f1', 'f2', 'f3', 'f4'], 4);
-    queue.queued = [{ uuid: 'f1', climb: { uuid: 'climb-f1' } }];
-    renderSheet(true);
-
-    await press();
-
-    const appended = (queue.appendQueueItems.mock.calls[0][0] as ClimbQueueItem[]).map((item) => item.uuid);
-    expect(appended).toHaveLength(12);
-    expect(appended.filter((uuid) => uuid.startsWith('f1'))).toEqual([]);
   });
 
   it('closes without queueing when the session switches during the confirm', async () => {

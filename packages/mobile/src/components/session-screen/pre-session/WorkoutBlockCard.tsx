@@ -42,7 +42,7 @@ export type WarmUpRamp = { direction: 'up' | 'down'; grade: number };
 
 /**
  * The one-line summary under a closed card's type: `V6 · 20 climbs · spread 0`
- * for a workout, `V6 · 4 climbs · 4 rounds · 3:00 between rounds` for a 4x4,
+ * for a workout, `V6 · 4 reps × 4 sets · 3:00 between sets` for a 4x4 (reps first, sets second),
  * `Standard · ramps to V6` for a warm-up, `Standard · eases off from V6` for one
  * after the last workout block. `filtered` adds a `· filtered` marker, for a
  * block whose climb filters are not the defaults.
@@ -110,21 +110,20 @@ function blockSettingsSummary(
       break;
     case 'fourByFour':
       parts.push(
-        t('mobile.session.preGeneratorBlockSummaryClimbs', { count: options.climbsPerRound }),
-        t('mobile.session.preGeneratorBlockSummaryRounds', { count: options.rounds }),
+        t('mobile.session.preGeneratorBlockSummaryRepsBySets', { reps: options.repsPerSet, count: options.sets }),
       );
-      // No rest between climbs is the default, and says nothing worth a part.
-      if (options.restBetweenClimbsSeconds > 0) {
+      // No rest between reps is the default, and says nothing worth a part.
+      if (options.restBetweenRepsSeconds > 0) {
         parts.push(
-          t('mobile.session.preGeneratorBlockSummaryClimbRest', {
-            value: formatRestLength(options.restBetweenClimbsSeconds),
+          t('mobile.session.preGeneratorBlockSummaryRepRest', {
+            value: formatRestLength(options.restBetweenRepsSeconds),
           }),
         );
       }
-      if (options.restBetweenRoundsSeconds > 0) {
+      if (options.restBetweenSetsSeconds > 0) {
         parts.push(
-          t('mobile.session.preGeneratorBlockSummaryRoundRest', {
-            value: formatRestLength(options.restBetweenRoundsSeconds),
+          t('mobile.session.preGeneratorBlockSummarySetRest', {
+            value: formatRestLength(options.restBetweenSetsSeconds),
           }),
         );
       }
@@ -331,8 +330,10 @@ export const WorkoutBlockCard = memo(function WorkoutBlockCard({
               <Text variant="headline" numberOfLines={1}>
                 {typeName}
               </Text>
+              {/* Two lines: a 4x4 with both rests ("V2 · 3 reps × 2 sets · 0:20
+                  between sets") is longer than one line on a 6.3-inch phone. */}
               {expanded ? null : (
-                <Text variant="footnote" color={systemColors.secondaryLabel} numberOfLines={1}>
+                <Text variant="footnote" color={systemColors.secondaryLabel} numberOfLines={2}>
                   {summary}
                 </Text>
               )}

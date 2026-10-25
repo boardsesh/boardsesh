@@ -18,7 +18,8 @@
 //
 // The record also keeps a tick log: the ticks logged on this phone on the run's
 // climbs, by queue item (#5380, #6231). Ticks carry no queue item on the server,
-// so this is the only place a 4x4 round or a limit climb's falls are counted.
+// so this is the only place a 4x4 set's reps or a limit climb's falls are
+// counted.
 //
 // Schema note. An added OPTIONAL field needs no new key: a stored run without it
 // still reads, and a field this bundle cannot read is dropped on its own (see
@@ -34,7 +35,6 @@ import { useCallback, useSyncExternalStore } from 'react';
 import {
   CLIMB_BIAS_OPTIONS,
   appendStageToRun,
-  isRoundNumber,
   isWorkoutStageKind,
   isWorkoutStagePacing,
   type WorkoutRun,
@@ -144,11 +144,6 @@ function isStageFilters(candidate: unknown): candidate is WorkoutStageFilters {
   );
 }
 
-function isRoundByUuid(candidate: unknown): candidate is Record<string, number> {
-  if (typeof candidate !== 'object' || candidate === null || Array.isArray(candidate)) return false;
-  return Object.values(candidate).every(isRoundNumber);
-}
-
 /** A stored stage whose kind this bundle does not know, most likely written by a newer bundle. */
 function hasUnknownKind(candidate: unknown): boolean {
   if (typeof candidate !== 'object' || candidate === null) return false;
@@ -156,12 +151,20 @@ function hasUnknownKind(candidate: unknown): boolean {
 }
 
 /**
+ * The two fields a 4x4 stage stored before sets (Marco, 2026-10-25) carried:
+ * its rounds, and each queue item's round. Nothing reads them any more, so they
+ * are dropped on read and never written back.
+ */
+type LegacyRoundFields = { rounds?: unknown; roundByUuid?: unknown };
+
+/**
  * One stored stage, or null when a field the readout needs is wrong. Each
- * unreadable optional field (`filters`, `pacing`, `rounds`, `roundByUuid`) is
- * dropped on its own rather than failing the stage: losing one costs a
- * mid-session block its starting filters, or a timed stage its own pacing or
- * round readout, while dropping the run would let the next "Add a block"
- * overwrite the stages queued at Start.
+ * unreadable optional field (`filters`, `pacing`) is dropped on its own rather
+ * than failing the stage: losing one costs a mid-session block its starting
+ * filters, or a timed stage its own pacing, while dropping the run would let
+ * the next "Add a block" overwrite the stages queued at Start. A tester's 4x4
+ * from before sets loses its pacing that way (`isWorkoutStagePacing`), and its
+ * round fields with it, so its climbs read as an ordinary block.
  */
 function readStage(candidate: unknown): WorkoutRunStage | null {
   if (typeof candidate !== 'object' || candidate === null) return null;
@@ -176,11 +179,11 @@ function readStage(candidate: unknown): WorkoutRunStage | null {
   ) {
     return null;
   }
-  const readable: WorkoutRunStage = { ...(candidate as WorkoutRunStage) };
+  const readable: WorkoutRunStage & LegacyRoundFields = { ...(candidate as WorkoutRunStage) };
+  delete readable.rounds;
+  delete readable.roundByUuid;
   if (stage.filters !== undefined && !isStageFilters(stage.filters)) delete readable.filters;
   if (stage.pacing !== undefined && !isWorkoutStagePacing(stage.pacing)) delete readable.pacing;
-  if (stage.rounds !== undefined && !isRoundNumber(stage.rounds)) delete readable.rounds;
-  if (stage.roundByUuid !== undefined && !isRoundByUuid(stage.roundByUuid)) delete readable.roundByUuid;
   return readable;
 }
 
@@ -330,6 +333,14 @@ export function noteWorkoutRunTick(sessionId: string, entry: WorkoutTickLogEntry
 export function getWorkoutRunLog(sessionId: string | null): readonly WorkoutTickLogEntry[] {
   if (sessionId === null || state?.sessionId !== sessionId) return EMPTY_LOG;
   return state.log ?? EMPTY_LOG;
+}
+
+/** The ticks a log holds for one queue item, falls and sends alike: a 4x4 set's reps so far. */
+export function countWorkoutRunTicks(log: readonly WorkoutTickLogEntry[], queueItemUuid: string | null): number {
+  if (queueItemUuid === null) return 0;
+  let count = 0;
+  for (const entry of log) if (entry.queueItemUuid === queueItemUuid) count += 1;
+  return count;
 }
 
 /**

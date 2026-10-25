@@ -25,6 +25,7 @@ import {
   WORKOUT_RUN_V2_STORAGE_KEY,
   clearWorkoutRun,
   clearWorkoutRunForSession,
+  countWorkoutRunTicks,
   getWorkoutRunForSession,
   getWorkoutRunLog,
   getWorkoutRunState,
@@ -54,18 +55,21 @@ function storedRecord(key: string = WORKOUT_RUN_STORAGE_KEY): unknown {
   return raw === null ? null : JSON.parse(raw);
 }
 
-// A 4x4 behind a warm-up, as Start would store it: two climbs, two rounds.
+// A 4x4 behind a warm-up, as Start would store it: four sets, one climb each.
 const timedRun: WorkoutRun = {
   stages: [
     { id: 'warm', kind: 'warmUp', itemUuids: ['w1'] },
     {
       id: 'four',
       kind: 'fourByFour',
-      itemUuids: ['a', 'b', 'a2', 'b2'],
+      itemUuids: ['a', 'b', 'c', 'd'],
       targetGrade: 18,
-      pacing: { mode: 'afterTick', restSeconds: 0, restBetweenRoundsSeconds: 180, advanceOn: 'tick' },
-      rounds: 2,
-      roundByUuid: { a: 1, b: 1, a2: 2, b2: 2 },
+      pacing: {
+        mode: 'afterTick',
+        restSeconds: 0,
+        advanceOn: 'set',
+        sets: { repsPerSet: 4, restBetweenSetsSeconds: 180 },
+      },
     },
   ],
 };
@@ -354,7 +358,7 @@ describe('workout-run-store: timed stages and the storage slot', () => {
     expect(storedRecord(WORKOUT_RUN_V2_STORAGE_KEY)).toBeNull();
   });
 
-  it('hydrates a timed run with its pacing and rounds', async () => {
+  it('hydrates a timed run with its pacing, a 4x4’s sets included', async () => {
     setWorkoutRun('session-1', timedRun);
     await flushStorageWrites();
     resetWorkoutRunStoreForTests();
@@ -629,7 +633,7 @@ describe('workout-run-store: timed stages and the storage slot', () => {
     expect(getWorkoutRunState()).toBeNull();
   });
 
-  it('drops an unreadable pacing, rounds or round map on its own and keeps the stage', async () => {
+  it('drops an unreadable pacing on its own and keeps the stage', async () => {
     const fourByFour = timedRun.stages[1];
     await storage.setItem(
       WORKOUT_RUN_V2_STORAGE_KEY,
@@ -638,9 +642,12 @@ describe('workout-run-store: timed stages and the storage slot', () => {
         run: {
           stages: [
             { ...fourByFour, id: 'bad-pacing', pacing: { mode: 'afterTick', restSeconds: 30, advanceOn: 'beat' } },
-            { ...fourByFour, id: 'bad-rounds', itemUuids: ['r1'], rounds: 0 },
-            { ...fourByFour, id: 'bad-map', itemUuids: ['m1'], roundByUuid: { m1: 'two' } },
-            { ...fourByFour, id: 'list-map', itemUuids: ['m2'], roundByUuid: [1, 2] },
+            {
+              ...fourByFour,
+              id: 'bad-sets',
+              itemUuids: ['s1'],
+              pacing: { mode: 'afterTick', restSeconds: 0, advanceOn: 'set', sets: { repsPerSet: 'four' } },
+            },
           ],
         },
       }),
@@ -649,13 +656,41 @@ describe('workout-run-store: timed stages and the storage slot', () => {
     await hydrateWorkoutRun('session-1');
 
     const stages = getWorkoutRunForSession('session-1')?.stages ?? [];
-    expect(stages.map((stage) => stage.id)).toEqual(['bad-pacing', 'bad-rounds', 'bad-map', 'list-map']);
-    expect('pacing' in stages[0]).toBe(false);
-    expect(stages[0]).toMatchObject({ rounds: 2, roundByUuid: fourByFour.roundByUuid });
-    expect('rounds' in stages[1]).toBe(false);
-    expect(stages[1].pacing).toEqual(fourByFour.pacing);
-    expect('roundByUuid' in stages[2]).toBe(false);
-    expect('roundByUuid' in stages[3]).toBe(false);
+    expect(stages.map((stage) => stage.id)).toEqual(['bad-pacing', 'bad-sets']);
+    expect(stages.map((stage) => 'pacing' in stage)).toEqual([false, false]);
+    expect(stages[1]).toMatchObject({ kind: 'fourByFour', itemUuids: ['s1'], targetGrade: 18 });
+  });
+
+  it('reads a tester’s 4x4 from before sets as an unpaced block, and drops its rounds', async () => {
+    // Stored by the round model: every climb queued once per round, the round
+    // rest in the pacing and each copy's round beside it.
+    await storage.setItem(
+      WORKOUT_RUN_V2_STORAGE_KEY,
+      JSON.stringify({
+        sessionId: 'session-1',
+        run: {
+          stages: [
+            {
+              id: 'four',
+              kind: 'fourByFour',
+              itemUuids: ['a', 'b', 'a2', 'b2'],
+              targetGrade: 18,
+              pacing: { mode: 'afterTick', restSeconds: 0, restBetweenRoundsSeconds: 180, advanceOn: 'tick' },
+              rounds: 2,
+              roundByUuid: { a: 1, b: 1, a2: 2, b2: 2 },
+            },
+          ],
+        },
+        log: [tick('a')],
+      }),
+    );
+
+    await hydrateWorkoutRun('session-1');
+
+    expect(getWorkoutRunForSession('session-1')).toEqual({
+      stages: [{ id: 'four', kind: 'fourByFour', itemUuids: ['a', 'b', 'a2', 'b2'], targetGrade: 18 }],
+    });
+    expect(getWorkoutRunLog('session-1')).toEqual([tick('a')]);
   });
 
   it('forgets both slots at sign-out', async () => {
@@ -794,5 +829,17 @@ describe('workout-run-store: tick log', () => {
     await hydrateWorkoutRun('session-1');
 
     expect(getWorkoutRunState()).toEqual({ sessionId: 'session-1', run });
+  });
+});
+
+describe('countWorkoutRunTicks', () => {
+  it('counts every tick on one queue item, falls and sends alike: a 4x4 set’s reps so far', () => {
+    const log = [tick('a'), tick('b', 'send'), tick('a', 'send'), tick('a', 'flash')];
+
+    expect(countWorkoutRunTicks(log, 'a')).toBe(3);
+    expect(countWorkoutRunTicks(log, 'b')).toBe(1);
+    expect(countWorkoutRunTicks(log, 'c')).toBe(0);
+    expect(countWorkoutRunTicks(log, null)).toBe(0);
+    expect(countWorkoutRunTicks([], 'a')).toBe(0);
   });
 });

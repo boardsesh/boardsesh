@@ -102,7 +102,9 @@ vi.mock('../../../lib/analytics', () => ({
   }),
 }));
 vi.mock('../../../lib/haptics', () => ({ hapticSuccess: vi.fn(), hapticError: vi.fn() }));
-vi.mock('../../../lib/clock', () => ({ nowMs: () => NOW_MS }));
+// Moved on by a save that lands late (`saveMock.state.whileSaving`); back to NOW_MS before each test.
+const clockState = vi.hoisted(() => ({ nowMs: 0 }));
+vi.mock('../../../lib/clock', () => ({ nowMs: () => clockState.nowMs }));
 vi.mock('../../../settings', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../settings')>();
   return {
@@ -213,6 +215,7 @@ function sentInput(callIndex = 0): SaveTickOptions {
 }
 
 beforeEach(() => {
+  clockState.nowMs = NOW_MS;
   callLog.length = 0;
   saveMock.mutateAsync.mockClear();
   saveMock.state.failure = null;
@@ -401,10 +404,13 @@ describe('useTickSaver after a save', () => {
     result.current.save(fields({ climbedAtIso: '2026-10-24T09:31:15.000Z' }));
 
     expect(sentInput().climbedAt).toBe('2026-10-24T09:31:15.000Z');
-    expect(noteRestTimerTick).toHaveBeenCalledWith('2026-10-24T09:31:15.000Z', 'onTheMinute', NOW_MS, {
-      status: 'send',
-      queueItemUuid: null,
-    });
+    expect(noteRestTimerTick).toHaveBeenCalledWith(
+      '2026-10-24T09:31:15.000Z',
+      'onTheMinute',
+      NOW_MS,
+      { status: 'send', queueItemUuid: null },
+      NOW_MS,
+    );
   });
 
   it('anchors in the workout stage’s cadence while one paces the timer', () => {
@@ -417,7 +423,7 @@ describe('useTickSaver after a save', () => {
       mode: 'onTheMinute',
       targetSeconds: 60,
       advanceOn: 'deadline',
-      closesRound: false,
+      closesSet: false,
       stagePacing: { mode: 'onTheMinute', restSeconds: 60 },
     };
     applyRestTimerStagePacing(onTheMinuteStage, NOW_MS, 'none');
@@ -464,10 +470,13 @@ describe('useTickSaver after a save', () => {
 
     result.current.save(fields({ status: 'attempt', climbedAtIso: '2026-10-24T09:32:00.000Z' }), { onSaved });
 
-    expect(noteRestTimerTick).toHaveBeenCalledWith('2026-10-24T09:32:00.000Z', 'afterTick', NOW_MS, {
-      status: 'attempt',
-      queueItemUuid: 'queue-7',
-    });
+    expect(noteRestTimerTick).toHaveBeenCalledWith(
+      '2026-10-24T09:32:00.000Z',
+      'afterTick',
+      NOW_MS,
+      { status: 'attempt', queueItemUuid: 'queue-7' },
+      NOW_MS,
+    );
     expect(noteWorkoutRunTick).toHaveBeenCalledExactlyOnceWith('session-1', {
       queueItemUuid: 'queue-7',
       status: 'attempt',
@@ -501,6 +510,52 @@ describe('useTickSaver after a save', () => {
     expect(noteWorkoutRunTick).not.toHaveBeenCalled();
   });
 
+  it('keeps a tick dated more than a minute back out of the workout log, and still tells the rest timer', () => {
+    queueSnapshot.current = { uuid: 'queue-7', climb: { uuid: CLIMB_UUID, angle: ANGLE } };
+    const { result } = renderSaver({}, { withQueue: true });
+
+    // Yesterday's send of the climb on the wall, logged with the date picker:
+    // no rep and no try of this workout. The rest timer judges it itself.
+    result.current.save(fields({ climbedAtIso: new Date(NOW_MS - 24 * 60 * 60 * 1000).toISOString() }));
+
+    expect(vi.mocked(noteRestTimerTick).mock.calls[0]?.[3]).toEqual({ status: 'send', queueItemUuid: 'queue-7' });
+    expect(noteWorkoutRunTick).not.toHaveBeenCalled();
+  });
+
+  it('logs a go whose save lands more than a minute after it was logged: it is judged when logged', () => {
+    queueSnapshot.current = { uuid: 'queue-7', climb: { uuid: CLIMB_UUID, angle: ANGLE } };
+    const { result } = renderSaver({}, { withQueue: true });
+    // The one-tap Fell, climbed now; the save retries for 90 s before it lands.
+    saveMock.state.whileSaving = () => {
+      clockState.nowMs += 90_000;
+    };
+
+    result.current.save(fields({ status: 'attempt', climbedAtIso: new Date(NOW_MS).toISOString() }));
+
+    expect(vi.mocked(noteWorkoutRunTick).mock.calls[0]?.[1]).toMatchObject({
+      queueItemUuid: 'queue-7',
+      status: 'attempt',
+    });
+  });
+
+  it('keeps yesterday’s send out of the workout log however fast its save lands', () => {
+    queueSnapshot.current = { uuid: 'queue-7', climb: { uuid: CLIMB_UUID, angle: ANGLE } };
+    const { result } = renderSaver({}, { withQueue: true });
+
+    result.current.save(fields({ climbedAtIso: new Date(NOW_MS - 61_000).toISOString() }));
+
+    expect(noteWorkoutRunTick).not.toHaveBeenCalled();
+  });
+
+  it('still logs a tick that lands a whole minute after it was dated', () => {
+    queueSnapshot.current = { uuid: 'queue-7', climb: { uuid: CLIMB_UUID, angle: ANGLE } };
+    const { result } = renderSaver({}, { withQueue: true });
+
+    result.current.save(fields({ climbedAtIso: new Date(NOW_MS - 60_000).toISOString() }));
+
+    expect(vi.mocked(noteWorkoutRunTick).mock.calls[0]?.[1]).toMatchObject({ queueItemUuid: 'queue-7' });
+  });
+
   it('writes no workout log for a tick outside a session', () => {
     queueSnapshot.current = { uuid: 'queue-7', climb: { uuid: CLIMB_UUID, angle: ANGLE } };
     const { result } = renderSaver({ sessionId: null }, { withQueue: true });
@@ -531,7 +586,7 @@ describe('useTickSaver at another angle than the climb is up at', () => {
     mode: 'afterTick',
     targetSeconds: 180,
     advanceOn: 'send',
-    closesRound: false,
+    closesSet: false,
     stagePacing: { mode: 'afterTick', restSeconds: 180, advanceOn: 'send' },
   };
   const SENT_NOW = new Date(NOW_MS).toISOString();
@@ -591,6 +646,70 @@ describe('useTickSaver at another angle than the climb is up at', () => {
     expect(vi.mocked(noteRestTimerTick).mock.calls[0]?.[3]).toEqual({ status: 'send', queueItemUuid: null });
     expect(noteWorkoutRunTick).not.toHaveBeenCalled();
     expect(advance().allowed).toBe(false);
+  });
+});
+
+describe('useTickSaver when the save lands more than a minute after the go', () => {
+  /** Limit bouldering on queue-7: a 3:00 rest that moves the wall only after a send. */
+  const LIMIT_STAGE: RestTimerStagePacing = {
+    sessionId: 'session-1',
+    stageId: 'stage-limit',
+    kind: 'limitBouldering',
+    queueItemUuid: 'queue-7',
+    mode: 'afterTick',
+    targetSeconds: 180,
+    advanceOn: 'send',
+    closesSet: false,
+    stagePacing: { mode: 'afterTick', restSeconds: 180, advanceOn: 'send' },
+  };
+  const SAVE_LATENCY_MS = 90_000;
+
+  function limitClimbOnTheWall() {
+    queueSnapshot.current = { uuid: 'queue-7', climb: { uuid: CLIMB_UUID, angle: ANGLE } };
+    armRestTimer('afterTick', NOW_MS, 'session-1');
+    applyRestTimerStagePacing(LIMIT_STAGE, NOW_MS, 'none');
+    // The save retries for 90 s (an offline queue, the gym's wifi) before it lands.
+    saveMock.state.whileSaving = () => {
+      clockState.nowMs += SAVE_LATENCY_MS;
+    };
+  }
+
+  function wallMoveAllowed(): boolean {
+    const { lastTick } = getRestTimerState();
+    return restAdvanceAllowed({ advanceOn: 'send', currentQueueItemUuid: 'queue-7', lastTick });
+  }
+
+  it('judges the go when it was logged: it earns the advance, its rest running from the go itself', () => {
+    limitClimbOnTheWall();
+    const { result } = renderSaver({}, { withQueue: true });
+
+    result.current.save(fields({ climbedAtIso: new Date(NOW_MS).toISOString() }));
+
+    expect(noteRestTimerTick).toHaveBeenCalledWith(
+      new Date(NOW_MS).toISOString(),
+      'afterTick',
+      NOW_MS + SAVE_LATENCY_MS,
+      { status: 'send', queueItemUuid: 'queue-7' },
+      NOW_MS,
+    );
+    expect(getRestTimerState()).toMatchObject({
+      lastTick: { status: 'send', queueItemUuid: 'queue-7' },
+      anchorMs: NOW_MS,
+    });
+    expect(wallMoveAllowed()).toBe(true);
+    expect(vi.mocked(noteWorkoutRunTick).mock.calls[0]?.[1]).toMatchObject({ queueItemUuid: 'queue-7' });
+  });
+
+  it('never lets a send dated 2 min before it was logged move the wall, however late its save lands', () => {
+    limitClimbOnTheWall();
+    const { result } = renderSaver({}, { withQueue: true });
+
+    result.current.save(fields({ climbedAtIso: new Date(NOW_MS - 120_000).toISOString() }));
+
+    expect(vi.mocked(noteRestTimerTick).mock.calls[0]?.[4]).toBe(NOW_MS);
+    expect(getRestTimerState().lastTick).toBeNull();
+    expect(wallMoveAllowed()).toBe(false);
+    expect(noteWorkoutRunTick).not.toHaveBeenCalled();
   });
 });
 

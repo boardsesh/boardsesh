@@ -3,8 +3,7 @@
 // Pure TS and JSON-serialisable: plans and runs are persisted by the apps.
 
 import { generateWarmUp, generateWorkoutPlan } from './generate';
-import { pacingForOptions, roundsForOptions, type WorkoutStagePacing } from './pacing';
-import { isRoundNumber, locateRound, type WorkoutRunRoundPosition } from './rounds';
+import { pacingForOptions, type WorkoutStagePacing } from './pacing';
 import type { GeneratorGradeScale, GeneratorOptions, PlannedClimbSlot, WarmUpType, WorkoutType } from './types';
 
 // Stage kinds use the partner API block type names (docs/partner-api.md, "Blocks"),
@@ -265,18 +264,10 @@ export type WorkoutRunStage = {
   filters?: WorkoutStageFilters;
   /**
    * How the rest timer runs during this stage, from its block's options
-   * (`pacingForOptions`). Absent on every untimed stage: the climber's own rest
-   * settings apply.
+   * (`pacingForOptions`), a 4x4's reps per set included. Absent on every untimed
+   * stage: the climber's own rest settings apply.
    */
   pacing?: WorkoutStagePacing;
-  /** The rounds the stage was planned with (a 4x4). */
-  rounds?: number;
-  /**
-   * The 1-based round of each of the stage's queue items. Stored, never worked
-   * out from positions: removals and reorders shift positions. An item with no
-   * entry has no round.
-   */
-  roundByUuid?: Record<string, number>;
   /**
    * Set on a warm-up stage planned as a cool-down (`generateStagedPlan`), so it
    * reads "Cool-down" however the queue is reordered or extended later.
@@ -287,37 +278,21 @@ export type WorkoutRunStage = {
 /** What a run stage says about itself, without its climbs. */
 export type WorkoutRunStageIdentity = Pick<
   WorkoutRunStage,
-  'id' | 'kind' | 'targetGrade' | 'filters' | 'pacing' | 'rounds' | 'roundByUuid' | 'coolDown'
+  'id' | 'kind' | 'targetGrade' | 'filters' | 'pacing' | 'coolDown'
 >;
 
 /** Stages in workout order. A stage with no items is never kept. */
 export type WorkoutRun = { stages: WorkoutRunStage[] };
 
-/** One queued climb of a plan: its queue-item uuid, its stage, and its round when the stage has rounds. */
-export type WorkoutRunEntry = { uuid: string; stageId: string; round?: number };
-
-/** `roundByUuid` cut down to `uuids`. Undefined when none of them has a round. */
-const roundsFor = (
-  roundByUuid: Readonly<Record<string, number>> | undefined,
-  uuids: readonly string[],
-): Record<string, number> | undefined => {
-  if (!roundByUuid) return undefined;
-  const kept: Record<string, number> = {};
-  let keptAny = false;
-  for (const uuid of uuids) {
-    if (!Object.hasOwn(roundByUuid, uuid)) continue;
-    kept[uuid] = roundByUuid[uuid];
-    keptAny = true;
-  }
-  return keptAny ? kept : undefined;
-};
+/** One queued climb of a plan: its queue-item uuid and its stage. */
+export type WorkoutRunEntry = { uuid: string; stageId: string };
 
 /**
  * Groups queue-item uuids by stage, in plan order. Entries for unknown stages
  * are dropped, and a stage id repeated in the plan is emitted once, so no two
  * run stages ever share an `itemUuids` list. A workout stage keeps the pacing
- * and rounds its options give, and every stage keeps the rounds its entries name.
- * A warm-up the plan steps back down (a cool-down) is marked `coolDown`.
+ * its options give. A warm-up the plan steps back down (a cool-down) is marked
+ * `coolDown`.
  */
 export const buildWorkoutRun = (entries: ReadonlyArray<WorkoutRunEntry>, plan: WorkoutPlan): WorkoutRun => {
   // Each uuid belongs to one stage: the first entry naming a stage in the plan
@@ -325,12 +300,10 @@ export const buildWorkoutRun = (entries: ReadonlyArray<WorkoutRunEntry>, plan: W
   // stages, and an entry for an unknown stage can't hide a valid one.
   const planStageIds = new Set(plan.stages.map((stage) => stage.id));
   const uuidsByStageId = new Map<string, string[]>();
-  const roundByUuid: Record<string, number> = {};
   const claimedUuids = new Set<string>();
-  for (const { uuid, stageId, round } of entries) {
+  for (const { uuid, stageId } of entries) {
     if (!planStageIds.has(stageId) || claimedUuids.has(uuid)) continue;
     claimedUuids.add(uuid);
-    if (isRoundNumber(round)) roundByUuid[uuid] = round;
     const stageUuids = uuidsByStageId.get(stageId);
     if (stageUuids) {
       stageUuids.push(uuid);
@@ -353,14 +326,10 @@ export const buildWorkoutRun = (entries: ReadonlyArray<WorkoutRunEntry>, plan: W
       runStage.targetGrade = stage.options.targetGrade;
       const pacing = pacingForOptions(stage.options);
       if (pacing) runStage.pacing = pacing;
-      const rounds = roundsForOptions(stage.options);
-      if (rounds !== undefined) runStage.rounds = rounds;
     } else if (coolDownSourcePosition(plan.stages, stage, stagePosition) >= 0) {
       runStage.coolDown = true;
     }
     if (stage.filters) runStage.filters = stage.filters;
-    const stageRounds = roundsFor(roundByUuid, itemUuids);
-    if (stageRounds) runStage.roundByUuid = stageRounds;
     stages.push(runStage);
   }
   return { stages };
@@ -371,10 +340,8 @@ export const buildWorkoutRun = (entries: ReadonlyArray<WorkoutRunEntry>, plan: W
  * with the same kind gets the items appended to it instead; the same id with a
  * different kind is a caller bug and throws. Uuids already in the run are
  * skipped, and when nothing is left to add the same run object comes back. A
- * new stage keeps the `targetGrade`, `filters`, `pacing`, `rounds` and
- * `coolDown` it was given. Rounds in `stage.roundByUuid` are kept for the uuids
- * added, on a new stage and an existing one alike; an existing stage keeps its
- * own pacing.
+ * new stage keeps the `targetGrade`, `filters`, `pacing` and `coolDown` it was
+ * given; an existing stage keeps its own pacing.
  */
 export const appendStageToRun = (
   run: WorkoutRun,
@@ -396,25 +363,19 @@ export const appendStageToRun = (
     return true;
   });
   if (newUuids.length === 0) return run;
-  const addedRounds = roundsFor(stage.roundByUuid, newUuids);
 
   if (existingPosition < 0) {
     const newStage: WorkoutRunStage = { id: stage.id, kind: stage.kind, itemUuids: newUuids };
     if (stage.targetGrade !== undefined) newStage.targetGrade = stage.targetGrade;
     if (stage.filters !== undefined) newStage.filters = stage.filters;
     if (stage.pacing !== undefined) newStage.pacing = stage.pacing;
-    if (stage.rounds !== undefined) newStage.rounds = stage.rounds;
     if (stage.coolDown === true) newStage.coolDown = true;
-    if (addedRounds) newStage.roundByUuid = addedRounds;
     return { stages: [...run.stages, newStage] };
   }
   return {
-    stages: run.stages.map((runStage, position) => {
-      if (position !== existingPosition) return runStage;
-      const appended: WorkoutRunStage = { ...runStage, itemUuids: [...runStage.itemUuids, ...newUuids] };
-      if (addedRounds) appended.roundByUuid = { ...runStage.roundByUuid, ...addedRounds };
-      return appended;
-    }),
+    stages: run.stages.map((runStage, position) =>
+      position === existingPosition ? { ...runStage, itemUuids: [...runStage.itemUuids, ...newUuids] } : runStage,
+    ),
   };
 };
 
@@ -440,13 +401,7 @@ export const pruneRun = (run: WorkoutRun, queueUuids: readonly string[]): Workou
     }
     changed = true;
     if (keptUuids.length === 0) continue;
-    const { roundByUuid, ...keptStage } = runStage;
-    const keptRounds = roundsFor(roundByUuid, keptUuids);
-    stages.push(
-      keptRounds
-        ? { ...keptStage, itemUuids: keptUuids, roundByUuid: keptRounds }
-        : { ...keptStage, itemUuids: keptUuids },
-    );
+    stages.push({ ...runStage, itemUuids: keptUuids });
   }
 
   return changed ? { stages } : run;
@@ -464,10 +419,8 @@ export type WorkoutRunPosition = {
   /** 1-based position of the current climb in its stage. */
   positionInStage: number;
   stageSize: number;
-  /** Climbs after the current one in the same stage. */
+  /** Climbs after the current one in the same stage. On a 4x4, a climb is a set. */
   remainingInStage: number;
-  /** Set only when the current climb has a round (a 4x4): where it sits among the stage's rounds. */
-  round?: WorkoutRunRoundPosition;
   /**
    * Set only on a stage planned as a cool-down (`WorkoutRunStage.coolDown`). It
    * follows the plan, not the queue order: its climbs step down wherever they sit.
@@ -520,10 +473,7 @@ export const locateInRun = (
       remainingInStage: queuedStage.itemUuids.length - positionInStage - 1,
     };
     if (queuedStage.kind === 'warmUp' && queuedStage.coolDown === true) position.isCoolDown = true;
-    const round = queuedStage.roundByUuid
-      ? locateRound(queuedStage.itemUuids, queuedStage.roundByUuid, currentUuid)
-      : null;
-    return round ? { ...position, round } : position;
+    return position;
   }
   return null;
 };

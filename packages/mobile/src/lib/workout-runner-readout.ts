@@ -1,7 +1,7 @@
 // The workout runner's view of a session in progress (#6291, #5380, #6231): which
-// phase the climber is in (climbing, resting, done), where the current climb sits,
-// what Next lands on, the rest the climb on the wall gets, and what every staged
-// climb came to (sent, tried, skipped).
+// phase the climber is in (climbing, resting, done), where the current climb sits
+// (and which try or rep the climber is on), what Next lands on, the rest the climb
+// on the wall gets, and what every staged climb came to (sent, tried, skipped).
 //
 // Pure, and built on `describeWorkoutRun` and `locateInRun`, so the runner, the
 // card and the player subtitle never disagree about positions. The rest comes
@@ -22,16 +22,17 @@ import {
   type WorkoutStageKind,
 } from '@boardsesh/playlist-generator';
 import type { RestTimerMode } from './rest-timer';
-import { restAdvanceAllowed, type RestAdvanceRule } from './rest-timer-pacing';
+import { restAdvanceAllowed, stageHasRepsLeft, type RestAdvanceRule } from './rest-timer-pacing';
 import type { RestTimerState } from './rest-timer-store';
-import type { WorkoutTickLogEntry } from './workout-run-store';
-import { describeWorkoutRun, type WorkoutStageReadout } from './workout-run-readout';
+import { countWorkoutRunTicks, type WorkoutTickLogEntry } from './workout-run-store';
+import { describeWorkoutRun, type WorkoutClimbGo, type WorkoutStageReadout } from './workout-run-readout';
 
 /** The rest-timer fields the runner reads. `RestTimerState` itself satisfies it. */
 export type WorkoutRunnerRestSnapshot = Pick<
   RestTimerState,
   'armed' | 'isRunning' | 'anchorMs' | 'lastTick' | 'stagePacing' | 'queueEnded'
->;
+> &
+  Partial<Pick<RestTimerState, 'advancedFromQueueItemUuid'>>;
 
 export type WorkoutRunnerInput = {
   run: WorkoutRun;
@@ -89,12 +90,8 @@ export type WorkoutRunnerCurrent = {
   queueItemUuid: string;
   attempts: number;
   sent: boolean;
-  /**
-   * The try the climber is on, for a stage that stays on a climb until it is
-   * sent (limit bouldering): attempts so far plus one. Null on every other stage,
-   * and once the climb is sent.
-   */
-  tryNumber: number | null;
+  /** The try or rep the climber is on (`workoutClimbGo`). Null on every other stage, and once a limit climb is sent. */
+  go: WorkoutClimbGo | null;
 };
 
 export type WorkoutRunnerNext = {
@@ -104,14 +101,16 @@ export type WorkoutRunnerNext = {
   kind: WorkoutStageKind | null;
   /** Next is the first climb of another stage than the current one. */
   startsStage: boolean;
-  /** Next is in the current climb's stage, in another round of it (a 4x4). */
-  startsRound: boolean;
 };
 
 export type WorkoutRunnerRest = {
   mode: RestTimerMode;
-  /** The rest after the current climb: a 4x4's round rest, the changeover, the interval. */
-  targetSeconds: number;
+  /**
+   * The rest after the current climb's latest tick: the changeover, the
+   * interval, a 4x4's rest between reps or its set rest. Null between reps
+   * with no rest between them.
+   */
+  targetSeconds: number | null;
   advanceOn: RestAdvanceRule;
   /**
    * When this rest runs out, this phone moves the wall on: `drivesWall` and not
@@ -121,15 +120,18 @@ export type WorkoutRunnerRest = {
   /**
    * The stage's rule keeps the climb on the wall when the rest runs out
    * (`restAdvanceAllowed` says no): after a fall on a limit climb, the next try
-   * is on it. Whichever phone holds the wall.
+   * is on it, and on a 4x4 the next rep until the set is done. Whichever phone
+   * holds the wall.
    */
   staysOnClimb: boolean;
+  /** A 4x4 set with reps left: the rep this rest leads to. Null everywhere else. */
+  nextRep: { number: number; total: number } | null;
   /** This phone may move the wall (`canAdvanceQueue`). In a crew, only the phone holding it does. */
   drivesWall: boolean;
   /** On the minute, on the last staged climb: its beat ends the workout. */
   endsWorkout: boolean;
-  /** The current climb ends its round, so this is the longer round rest. */
-  closesRound: boolean;
+  /** Every rep of the current 4x4 set is logged, so this is the set rest. */
+  closesSet: boolean;
   armed: boolean;
   /** Armed and frozen. */
   paused: boolean;
@@ -176,6 +178,11 @@ export function stageHoldsUntilSent(stage: Pick<WorkoutRunStage, 'pacing'> | und
   return stage?.pacing?.mode === 'afterTick' && stage.pacing.advanceOn === 'send';
 }
 
+/** The reps each climb of a 4x4 stage takes. Null for every other stage. */
+export function stageRepsPerSet(stage: Pick<WorkoutRunStage, 'pacing'> | undefined): number | null {
+  return stage?.pacing?.mode === 'afterTick' ? (stage.pacing.sets?.repsPerSet ?? null) : null;
+}
+
 function logByQueueItem(log: readonly WorkoutTickLogEntry[]): Map<string, ClimbLog> {
   const byUuid = new Map<string, ClimbLog>();
   for (const { queueItemUuid, status } of log) {
@@ -189,17 +196,24 @@ function logByQueueItem(log: readonly WorkoutTickLogEntry[]): Map<string, ClimbL
 }
 
 /**
- * The try a climber is on for one queue item of the run, or null when its stage
- * does not stay on a climb until it is sent, or it is sent. The player subtitle's
- * "· Try 3" and the runner read it the same way.
+ * The try or rep a climber is on for one queue item of the run: on a limit
+ * climb the try (null once it is sent), on a 4x4 the rep, counting every tick
+ * as one, a fall included, and staying on the set's last rep once it is
+ * logged. Null on every other stage. The player subtitle's "· Try 3" or
+ * "Rep 3 of 4 · Set 2 of 4" and the runner read it the same way.
  */
-export function workoutTryNumber(
+export function workoutClimbGo(
   run: WorkoutRun,
   stageId: string,
   queueItemUuid: string,
   log: readonly WorkoutTickLogEntry[],
-): number | null {
+): WorkoutClimbGo | null {
   const stage = run.stages.find((runStage) => runStage.id === stageId);
+  const repsPerSet = stageRepsPerSet(stage);
+  if (repsPerSet !== null) {
+    const repsLogged = countWorkoutRunTicks(log, queueItemUuid);
+    return { kind: 'rep', number: Math.min(repsLogged + 1, repsPerSet), total: repsPerSet };
+  }
   if (!stageHoldsUntilSent(stage)) return null;
   let attempts = 0;
   for (const entry of log) {
@@ -207,7 +221,7 @@ export function workoutTryNumber(
     if (entry.status === 'flash' || entry.status === 'send') return null;
     attempts += 1;
   }
-  return attempts + 1;
+  return { kind: 'try', number: attempts + 1 };
 }
 
 function emptyTally(): WorkoutClimbTally {
@@ -226,11 +240,13 @@ function addToTally(tally: WorkoutClimbTally, outcome: WorkoutClimbOutcomeKind):
  * like `describeWorkoutRun`, so the card falls back to offering a fresh block.
  *
  * - `done`: the climber is past every staged climb, or on the last one and it met
- *   its stage's rule (sent, on a stage that stays until sent; on the minute, its
- *   beat ran out with nothing after it, or it was logged; logged, on any other).
+ *   its stage's rule (sent, on a stage that stays until sent; every rep logged,
+ *   on a 4x4; on the minute, its beat ran out with nothing after it, or it was
+ *   logged; logged, on any other).
  * - `resting`: the current climb's stage paces the timer, the timer is armed with
  *   a rest to count from, and the last tick it took was on the current climb.
- *   Paused counts: the rest is still the rest, frozen.
+ *   Paused counts: the rest is still the rest, frozen. Between two reps of a 4x4
+ *   set with no rest between them there is no rest to count: still climbing.
  * - `climbing`: everything else, an off-plan current climb included.
  *
  * A staged climb is `skipped` once the current climb sits after it in the queue
@@ -298,15 +314,17 @@ export function describeWorkoutRunner({
     if (lastStagedUuid === undefined || !onLastStaged) return false;
     const logged = climbLog(lastStagedUuid);
     const stageId = stageIdByUuid.get(lastStagedUuid);
-    return stageHoldsUntilSent(stageId === undefined ? undefined : runStageById.get(stageId))
-      ? logged.sent
-      : logged.attempts > 0;
+    const lastStage = stageId === undefined ? undefined : runStageById.get(stageId);
+    const repsPerSet = stageRepsPerSet(lastStage);
+    if (repsPerSet !== null) return logged.attempts >= repsPerSet;
+    return stageHoldsUntilSent(lastStage) ? logged.sent : logged.attempts > 0;
   })();
   const done = lastStagedUuid !== undefined && (isPassed(lastStagedUuid) || lastStagedMetItsRule);
 
   const resting =
     !done &&
     stagePacing !== null &&
+    stagePacing.targetSeconds !== null &&
     rest.armed &&
     rest.anchorMs !== null &&
     rest.lastTick !== null &&
@@ -345,7 +363,7 @@ export function describeWorkoutRunner({
       ? {
           queueItemUuid: currentUuid,
           ...climbLog(currentUuid),
-          tryNumber: workoutTryNumber(run, position.stageId, currentUuid, log),
+          go: workoutClimbGo(run, position.stageId, currentUuid, log),
         }
       : null;
 
@@ -354,10 +372,6 @@ export function describeWorkoutRunner({
       ? { position: stagedInQueueOrder.indexOf(currentUuid) + 1, total: stagedInQueueOrder.length }
       : null;
 
-  const roundOf = (stageId: string, uuid: string): number | undefined => {
-    const roundByUuid = runStageById.get(stageId)?.roundByUuid;
-    return roundByUuid && Object.hasOwn(roundByUuid, uuid) ? roundByUuid[uuid] : undefined;
-  };
   const nextStageId = nextUuid === null ? undefined : stageIdByUuid.get(nextUuid);
   const next: WorkoutRunnerNext | null =
     nextUuid === null
@@ -367,12 +381,6 @@ export function describeWorkoutRunner({
           stageId: nextStageId ?? null,
           kind: nextStageId === undefined ? null : (runStageById.get(nextStageId)?.kind ?? null),
           startsStage: nextStageId !== undefined && nextStageId !== position?.stageId,
-          startsRound:
-            nextStageId !== undefined &&
-            currentUuid !== null &&
-            nextStageId === position?.stageId &&
-            roundOf(nextStageId, nextUuid) !== undefined &&
-            roundOf(nextStageId, nextUuid) !== roundOf(nextStageId, currentUuid),
         };
 
   // The scheduler's rule, both halves: the stage's rule is met, and this phone
@@ -383,7 +391,10 @@ export function describeWorkoutRunner({
       advanceOn: stagePacing.advanceOn,
       currentQueueItemUuid: currentUuid,
       lastTick: rest.lastTick,
+      stage: stagePacing,
+      advancedFromQueueItemUuid: rest.advancedFromQueueItemUuid ?? null,
     });
+  const repsLeft = stagePacing?.reps !== undefined && stageHasRepsLeft(stagePacing) ? stagePacing.reps : null;
   const onTheMinute = stagePacing?.mode === 'onTheMinute';
   const restReadout: WorkoutRunnerRest | null = stagePacing
     ? {
@@ -392,9 +403,10 @@ export function describeWorkoutRunner({
         advanceOn: stagePacing.advanceOn,
         advances: canAdvanceQueue && !staysOnClimb,
         staysOnClimb,
+        nextRep: repsLeft === null ? null : { number: repsLeft.logged + 1, total: repsLeft.perSet },
         drivesWall: canAdvanceQueue,
         endsWorkout: onTheMinute && onLastStaged,
-        closesRound: stagePacing.closesRound,
+        closesSet: stagePacing.closesSet,
         armed: rest.armed,
         paused: rest.armed && !rest.isRunning,
         timing: rest.armed && rest.anchorMs !== null && (resting || (!done && onTheMinute && !rest.queueEnded)),
