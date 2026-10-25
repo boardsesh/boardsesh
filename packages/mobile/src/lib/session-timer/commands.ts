@@ -12,6 +12,9 @@
 //   - a pause, or a resume that carries its time  nothing (on the Rogue OK is a
 //                                                 start/stop toggle, so pausing it
 //                                                 would be a guess)
+//   - a tick this phone did not just save         nothing (the session's last
+//                                                 tick read back on arming or a
+//                                                 cold start)
 //
 // "A new rest started" is one instant moving forward: the live clock's cycle
 // start, or the last auto-advance. That one rule covers a tick, a Reset, an
@@ -19,8 +22,8 @@
 // beat and a refilled queue.
 //
 // "Fresh" depends on what moved it, because the Rogue can only count from 0 now:
-//   - a logged climb or an auto-advance (the store records both): up to a minute
-//     old. A tick dates from when it was submitted and lands when the save
+//   - a climb this phone just saved or an auto-advance (the store records both):
+//     up to a minute old. A tick dates from when it was submitted and lands when the save
 //     returns; an advance's deadline was already checked by the scheduler. A
 //     tick backdated further, from an old session, never restarts the clock. In
 //     a fixed window only the tick that started it counts, when the timer was
@@ -84,27 +87,47 @@ function tickStartedFixedWindow(
 }
 
 /**
- * Whether a logged climb or an auto-advance landed between the two snapshots and
- * can account for the new rest. In a fixed window a tick only does when it
- * started the window; any other new window start is the clock's, even with a
- * tick in the same snapshot.
+ * What moved the rest forward between the two snapshots:
+ *   advance       an auto-advance fired
+ *   savedTick     the climb this phone just saved started it (the tick bus
+ *                 stamped it, see `savedTickAt`)
+ *   restoredTick  a tick this phone did not just save started it: the session's
+ *                 last tick, read back when the timer is armed or after a cold
+ *                 start
+ *   clock         anything else: a Reset, arming, a refilled queue, a beat
+ * In a fixed window a tick only starts the rest when it started the window; any
+ * other new window start is the clock's, even with a tick in the same snapshot.
  */
-function startedByRecordedEvent(prev: SessionTimerSnapshot, next: SessionTimerSnapshot): boolean {
-  if (next.status === 'off') return false;
+type NewRestCause = 'advance' | 'savedTick' | 'restoredTick' | 'clock';
+
+function newRestCause(
+  prev: SessionTimerSnapshot,
+  next: Exclude<SessionTimerSnapshot, { status: 'off' }>,
+  savedTickAt: string | null,
+): NewRestCause {
   const prevTickAt = prev.status === 'off' ? null : prev.lastTickAt;
   const prevAdvanceMs = prev.status === 'off' ? null : prev.lastAdvanceMs;
-  const advanceFired = next.lastAdvanceMs !== null && next.lastAdvanceMs !== prevAdvanceMs;
-  if (advanceFired) return true;
-  const tickLanded = next.lastTickAt !== null && next.lastTickAt !== prevTickAt;
-  if (!tickLanded) return false;
-  if (!isLiveSessionTimerSnapshot(next) || next.periodSeconds === null) return true;
-  return tickStartedFixedWindow(prev, next, next.periodSeconds);
+  if (next.lastAdvanceMs !== null && next.lastAdvanceMs !== prevAdvanceMs) return 'advance';
+  if (next.lastTickAt === null || next.lastTickAt === prevTickAt) return 'clock';
+  const tickStartedRest =
+    !isLiveSessionTimerSnapshot(next) ||
+    next.periodSeconds === null ||
+    tickStartedFixedWindow(prev, next, next.periodSeconds);
+  if (!tickStartedRest) return 'clock';
+  return next.lastTickAt === savedTickAt ? 'savedTick' : 'restoredTick';
 }
 
+/**
+ * The commands for the change from `prev` to `next`. `savedTickAt` is the
+ * `lastTickAt` of the climb this phone just saved: the tick bus hands it to the
+ * sink just before the rest timer hears of the climb. Null when none is waiting.
+ * A new `lastTickAt` without it was read back, not logged now.
+ */
 export function deriveSessionTimerCommands(
   prev: SessionTimerSnapshot | null,
   next: SessionTimerSnapshot,
   nowMs: number,
+  savedTickAt: string | null,
 ): SessionTimerCommand[] {
   if (prev === null) return [];
 
@@ -116,7 +139,12 @@ export function deriveSessionTimerCommands(
   const prevMarkMs = restartMarkMs(prev);
   if (prevMarkMs !== null && nextMarkMs <= prevMarkMs) return [];
 
-  if (startedByRecordedEvent(prev, next)) {
+  const cause = newRestCause(prev, next, savedTickAt);
+  // No climb was logged on this phone just now. The gym clock already counted
+  // that one (its own tick restarted it then, with the rest timer off), or never
+  // heard of it (logged elsewhere), so zeroing it now would cut a running rest.
+  if (cause === 'restoredTick') return [];
+  if (cause !== 'clock') {
     return isFresh(nextMarkMs, nowMs) ? [{ kind: 'restartCountUp', cycleStartMs: nextMarkMs }] : [];
   }
 

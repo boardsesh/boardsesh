@@ -277,7 +277,7 @@ agree. The root row shows the rest length (or Off).
 | `snapshot.ts` | `buildSessionTimerSnapshot`: `off`, `waiting`, `paused`, or a live clock (`running`, `countUp`, `queueEnded`) with its cycle start, deadline and fixed-window period, plus `lastAdvanceMs` and `lastTickAt`. Same phase order as the pill and the Lock Screen payload. `getSessionTimerWakeMs` is the one moment it changes with no store write: a fixed window's end |
 | `commands.ts` | `deriveSessionTimerCommands(prev, next, nowMs)` diffs two snapshots into `restartCountUp` or `reset`; `deriveSessionTimerTickCommand` covers a tick with the rest timer off |
 | `command-queue.ts` | `createLatestWinsQueue`: one command at a time, the newest waiting one wins, and a command the one in flight already delivers is dropped |
-| `tick-events.ts` | `noteSessionTimerTick`: the tick saver tells the sinks about a committed tick, just before the rest timer hears of it. Never from outbox replay |
+| `tick-events.ts` | `noteSessionTimerTick`: the tick saver tells the sinks about a committed tick, just before the rest timer hears of it, with the timestamp the rest timer stores as `lastTickAt`. Never from outbox replay |
 
 The command rules:
 
@@ -287,9 +287,10 @@ The command rules:
   forward, and that instant is fresh. One rule covers a tick, Reset, an auto-advance (also when a
   tick or send rule clears the anchor), a fixed-window beat, a refilled queue and a rest restarted
   after the background.
-- Fresh depends on what moved it, because the gym timer can only count from 0 now. A logged climb
-  (a new `lastTickAt`) or an auto-advance (a new `lastAdvanceMs`) may be up to 60 s old: a tick is
-  dated when it was submitted and lands when the save returns. Anything else (Reset, arming, a
+- Fresh depends on what moved it, because the gym timer can only count from 0 now. A climb this
+  phone just saved (a new `lastTickAt` the tick bus stamped) or an auto-advance (a new
+  `lastAdvanceMs`) may be up to 60 s old: a tick is dated when it was submitted and lands when the
+  save returns. Anything else (Reset, arming, a
   refilled queue, a fixed-window beat) must be at most 5 s old (`AUTO_ADVANCE_OVERDUE_GRACE_MS`). An
   older one was seen late, like a beat whose wake was held while the phone was locked or a window
   re-cut by a new rest length, so the clock waits for the next beat instead of starting off the
@@ -298,6 +299,12 @@ The command rules:
   stage change, or a tick or send rule's advance, left no anchor) the store anchors the window on
   it, so it gets the 60 s allowance while that is still the current window. One backdated past the
   window it would have started waits for the next beat.
+- A new `lastTickAt` the tick bus did not stamp was read back, not logged now: the session's last
+  tick that `RestTimerSessionSync` hands the rest timer when it is switched on or after a cold
+  start. It restarts nothing, however fresh. The gym clock already counted that climb (with the
+  rest timer off its own tick restarted it) or never heard of it (logged on another device). The
+  sink stamps a tick only when the rest timer is on for it, and keeps the stamp until a snapshot
+  shows the rest timer storing it, or off.
 - Pause and resume send nothing. A resume carries at least a second of rest already counted. A tick
   logged while paused is told apart by its new `lastTickAt`, however long its save took, and starts
   a new rest.
@@ -310,7 +317,8 @@ What changed for the gym timer, which used to restart on every logged climb:
 
 - An auto-advance and every fixed-window beat restart it.
 - In a fixed window a logged climb no longer restarts it: the window holds, as the pill does.
-- A climb backdated by more than a minute, or a tick replayed on a cold start, no longer restarts it.
+- A climb backdated by more than a minute, or a tick read back from the session on a cold start or
+  when the rest timer is switched on, no longer restarts it.
 
 The pill stays on `useRestTimerDisplay`. The Lock Screen countdown moves onto the snapshot after
 the release train's merge-back.

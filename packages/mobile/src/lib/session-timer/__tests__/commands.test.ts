@@ -28,11 +28,19 @@ type Pacing = { targetSeconds: number | null; mode: RestTimerMode };
 
 /**
  * Plays the store the way the sink sees it: a snapshot after each write, diffed
- * against the one before. The first snapshot is the sink mounting.
+ * against the one before. The first snapshot is the sink mounting. A climb saved
+ * on this phone goes through `logTick`, which stamps it the way the tick bus
+ * does; a bare `noteRestTimerTick` is a tick read back from the session.
  */
 function follow(pacing: Pacing = { targetSeconds: 60, mode: 'afterTick' }) {
   let previous: SessionTimerSnapshot | null = null;
+  let savedTickAt: string | null = null;
   return {
+    /** A climb saved on this phone: the tick bus hears of it, then the rest timer. */
+    logTick(climbedAt: string, mode: RestTimerMode, nowMs: number): void {
+      savedTickAt = climbedAt;
+      noteRestTimerTick(climbedAt, mode, nowMs);
+    },
     /** The commands for the state as it is now, seen at `seconds`. */
     at(seconds: number, nextPacing: Pacing = pacing): SessionTimerCommand[] {
       const nowMs = at(seconds);
@@ -42,7 +50,8 @@ function follow(pacing: Pacing = { targetSeconds: 60, mode: 'afterTick' }) {
         sessionId: null,
         nowMs,
       });
-      const commands = deriveSessionTimerCommands(previous, next, nowMs);
+      const commands = deriveSessionTimerCommands(previous, next, nowMs, savedTickAt);
+      if (next.status === 'off' || next.lastTickAt === savedTickAt) savedTickAt = null;
       previous = next;
       return commands;
     },
@@ -58,7 +67,7 @@ beforeEach(() => {
 describe('connecting', () => {
   it('never restarts the clock when the sink mounts, whatever the timer is doing', () => {
     armRestTimer('onTheMinute', at(0), null);
-    expect(deriveSessionTimerCommands(null, buildSnapshot(1, 'onTheMinute'), at(1))).toEqual([]);
+    expect(deriveSessionTimerCommands(null, buildSnapshot(1, 'onTheMinute'), at(1), null)).toEqual([]);
   });
 });
 
@@ -67,14 +76,14 @@ describe('afterTick restarts', () => {
     const sink = follow();
     armRestTimer('afterTick', at(0), null);
     sink.at(0);
-    noteRestTimerTick(iso(10), 'afterTick', at(10));
+    sink.logTick(iso(10), 'afterTick', at(10));
     expect(sink.at(10)).toEqual(restartFrom(10));
   });
 
   it('restarts on an auto-advance', () => {
     const sink = follow();
     armRestTimer('afterTick', at(0), null);
-    noteRestTimerTick(iso(10), 'afterTick', at(10));
+    sink.logTick(iso(10), 'afterTick', at(10));
     sink.at(10);
     noteRestTimerAutoAdvanceFired(getRestTimerState().cycleId, 'afterTick', at(70.02), at(70));
     expect(sink.at(70.02)).toEqual(restartFrom(70.02));
@@ -92,13 +101,13 @@ describe('afterTick restarts', () => {
       lastAdvanceMs: at(70),
       lastTickAt: iso(10),
     };
-    expect(deriveSessionTimerCommands(prev, next, at(70.01))).toEqual(restartFrom(70));
+    expect(deriveSessionTimerCommands(prev, next, at(70.01), null)).toEqual(restartFrom(70));
   });
 
   it('restarts on Reset', () => {
     const sink = follow();
     armRestTimer('afterTick', at(0), null);
-    noteRestTimerTick(iso(10), 'afterTick', at(10));
+    sink.logTick(iso(10), 'afterTick', at(10));
     sink.at(10);
     resetRestTimer(at(30));
     expect(sink.at(30)).toEqual(restartFrom(30));
@@ -107,7 +116,7 @@ describe('afterTick restarts', () => {
   it('restarts when a refilled queue picks the rest back up', () => {
     const sink = follow();
     armRestTimer('afterTick', at(0), null);
-    noteRestTimerTick(iso(10), 'afterTick', at(10));
+    sink.logTick(iso(10), 'afterTick', at(10));
     noteRestTimerQueueEnded();
     sink.at(70);
     clearRestTimerQueueEnded(at(200), 'afterTick');
@@ -117,7 +126,7 @@ describe('afterTick restarts', () => {
   it('restarts when a rest that ran out in the background starts again', () => {
     const sink = follow();
     armRestTimer('afterTick', at(0), null);
-    noteRestTimerTick(iso(10), 'afterTick', at(10));
+    sink.logTick(iso(10), 'afterTick', at(10));
     sink.at(10);
     reanchorRestTimerAfterBackground(at(300), at(70));
     expect(sink.at(300)).toEqual(restartFrom(300));
@@ -126,10 +135,10 @@ describe('afterTick restarts', () => {
   it('restarts on a tick logged while paused, which resumes the rest', () => {
     const sink = follow();
     armRestTimer('afterTick', at(0), null);
-    noteRestTimerTick(iso(10), 'afterTick', at(10));
+    sink.logTick(iso(10), 'afterTick', at(10));
     pauseRestTimer(at(25));
     sink.at(25);
-    noteRestTimerTick(iso(40), 'afterTick', at(40));
+    sink.logTick(iso(40), 'afterTick', at(40));
     expect(sink.at(40)).toEqual(restartFrom(40));
   });
 
@@ -137,19 +146,19 @@ describe('afterTick restarts', () => {
     // The tick is dated at submit and lands when the save returns, 1.5 s later.
     const sink = follow();
     armRestTimer('afterTick', at(0), null);
-    noteRestTimerTick(iso(10), 'afterTick', at(10));
+    sink.logTick(iso(10), 'afterTick', at(10));
     pauseRestTimer(at(25));
     sink.at(25);
-    noteRestTimerTick(iso(40), 'afterTick', at(41.5));
+    sink.logTick(iso(40), 'afterTick', at(41.5));
     expect(sink.at(41.5)).toEqual(restartFrom(40));
   });
 
   it('restarts on a tick that took several seconds to save on gym wifi', () => {
     const sink = follow();
     armRestTimer('afterTick', at(0), null);
-    noteRestTimerTick(iso(10), 'afterTick', at(10));
+    sink.logTick(iso(10), 'afterTick', at(10));
     sink.at(10);
-    noteRestTimerTick(iso(30), 'afterTick', at(38));
+    sink.logTick(iso(30), 'afterTick', at(38));
     expect(sink.at(38)).toEqual(restartFrom(30));
   });
 });
@@ -159,7 +168,7 @@ describe('afterTick does not restart', () => {
     const sink = follow();
     armRestTimer('afterTick', at(0), null);
     sink.at(0);
-    noteRestTimerTick(iso(100), 'afterTick', at(200));
+    sink.logTick(iso(100), 'afterTick', at(200));
     expect(sink.at(200)).toEqual([]);
   });
 
@@ -174,7 +183,7 @@ describe('afterTick does not restart', () => {
   it('on a pause', () => {
     const sink = follow();
     armRestTimer('afterTick', at(0), null);
-    noteRestTimerTick(iso(10), 'afterTick', at(10));
+    sink.logTick(iso(10), 'afterTick', at(10));
     sink.at(10);
     pauseRestTimer(at(25));
     expect(sink.at(25)).toEqual([]);
@@ -183,7 +192,7 @@ describe('afterTick does not restart', () => {
   it('on a resume that carries the rest already counted', () => {
     const sink = follow();
     armRestTimer('afterTick', at(0), null);
-    noteRestTimerTick(iso(10), 'afterTick', at(10));
+    sink.logTick(iso(10), 'afterTick', at(10));
     sink.at(10);
     pauseRestTimer(at(25));
     sink.at(25);
@@ -194,7 +203,7 @@ describe('afterTick does not restart', () => {
   it('on a store write that changes nothing it shows (the queue ending)', () => {
     const sink = follow();
     armRestTimer('afterTick', at(0), null);
-    noteRestTimerTick(iso(10), 'afterTick', at(10));
+    sink.logTick(iso(10), 'afterTick', at(10));
     sink.at(10);
     noteRestTimerQueueEnded();
     expect(sink.at(70)).toEqual([]);
@@ -203,7 +212,7 @@ describe('afterTick does not restart', () => {
   it('on a new rest length mid-rest', () => {
     const sink = follow();
     armRestTimer('afterTick', at(0), null);
-    noteRestTimerTick(iso(10), 'afterTick', at(10));
+    sink.logTick(iso(10), 'afterTick', at(10));
     sink.at(10);
     expect(sink.at(20, { targetSeconds: 120, mode: 'afterTick' })).toEqual([]);
   });
@@ -211,7 +220,7 @@ describe('afterTick does not restart', () => {
   it('on the same state seen twice', () => {
     const sink = follow();
     armRestTimer('afterTick', at(0), null);
-    noteRestTimerTick(iso(10), 'afterTick', at(10));
+    sink.logTick(iso(10), 'afterTick', at(10));
     expect(sink.at(10)).toEqual([]);
     expect(sink.at(11)).toEqual([]);
   });
@@ -228,7 +237,7 @@ describe('resume after a reset while paused', () => {
   it('restarts: the reset dropped the rest, so the resume starts a new one', () => {
     const sink = follow();
     armRestTimer('afterTick', at(0), null);
-    noteRestTimerTick(iso(10), 'afterTick', at(10));
+    sink.logTick(iso(10), 'afterTick', at(10));
     sink.at(10);
     pauseRestTimer(at(25));
     sink.at(25);
@@ -276,7 +285,7 @@ describe('onTheMinute', () => {
     const sink = follow(fixed);
     armRestTimer('onTheMinute', at(0), null);
     sink.at(1);
-    noteRestTimerTick(iso(20), 'onTheMinute', at(20));
+    sink.logTick(iso(20), 'onTheMinute', at(20));
     expect(sink.at(20)).toEqual([]);
   });
 
@@ -292,17 +301,17 @@ describe('onTheMinute', () => {
 
   it('a tick that starts the window after a cleared anchor restarts it, even saved 8 s late on gym wifi', () => {
     const sink = waitingAfterClearAdvance();
-    noteRestTimerTick(iso(80), 'onTheMinute', at(88));
+    sink.logTick(iso(80), 'onTheMinute', at(88));
     expect(sink.at(88)).toEqual(restartFrom(80));
     // The next tick lands inside the window the first one started: it holds.
-    noteRestTimerTick(iso(100), 'onTheMinute', at(100));
+    sink.logTick(iso(100), 'onTheMinute', at(100));
     expect(sink.at(100)).toEqual([]);
   });
 
   it('a tick backdated more than a minute after a cleared anchor restarts nothing', () => {
     // Anchored at 100 s, the window seen at 200 s started at 160 s: the tick did not start it.
     const sink = waitingAfterClearAdvance();
-    noteRestTimerTick(iso(100), 'onTheMinute', at(200));
+    sink.logTick(iso(100), 'onTheMinute', at(200));
     expect(sink.at(200)).toEqual([]);
   });
 
@@ -313,7 +322,7 @@ describe('onTheMinute', () => {
     sink.at(1);
     noteRestTimerAutoAdvanceFired(getRestTimerState().cycleId, 'onTheMinute', at(120), at(120), 'clear');
     expect(sink.at(120)).toEqual(restartFrom(120));
-    noteRestTimerTick(iso(130), 'onTheMinute', at(200));
+    sink.logTick(iso(130), 'onTheMinute', at(200));
     expect(sink.at(200)).toEqual([]);
   });
 
@@ -348,7 +357,7 @@ describe('onTheMinute', () => {
     const sink = follow(fixed);
     armRestTimer('onTheMinute', at(0), null);
     sink.at(1);
-    noteRestTimerTick(iso(96), 'onTheMinute', at(96));
+    sink.logTick(iso(96), 'onTheMinute', at(96));
     expect(sink.at(97)).toEqual([]);
   });
 
@@ -370,11 +379,71 @@ describe('onTheMinute', () => {
   });
 });
 
+describe('a tick this phone did not just save (read back from the session)', () => {
+  it('a 30 s-old session tick read back on arming leaves the clock running', () => {
+    const sink = follow();
+    armRestTimer('afterTick', at(30), null);
+    sink.at(30);
+    noteRestTimerTick(iso(0), 'afterTick', at(30));
+    expect(sink.at(30)).toEqual([]);
+  });
+
+  it('the same climb saved on this phone just now restarts it, once', () => {
+    const sink = follow();
+    armRestTimer('afterTick', at(30), null);
+    sink.at(30);
+    sink.logTick(iso(28), 'afterTick', at(30));
+    expect(sink.at(30)).toEqual(restartFrom(28));
+    expect(sink.at(31)).toEqual([]);
+  });
+
+  it('a tick restored on a cold start, seconds old, leaves the clock running', () => {
+    // Inside the 5 s grace a Reset or a beat gets: only a saved climb restarts it.
+    const sink = follow();
+    armRestTimer('afterTick', at(0), null);
+    sink.at(10);
+    noteRestTimerTick(iso(8), 'afterTick', at(10));
+    expect(sink.at(10)).toEqual([]);
+  });
+
+  it('a read-back tick that resumes a paused rest leaves the clock running', () => {
+    const sink = follow();
+    armRestTimer('afterTick', at(0), null);
+    sink.logTick(iso(10), 'afterTick', at(10));
+    sink.at(10);
+    pauseRestTimer(at(25));
+    sink.at(25);
+    noteRestTimerTick(iso(40), 'afterTick', at(40));
+    expect(sink.at(40)).toEqual([]);
+  });
+
+  it('a read-back tick that starts a waiting fixed window waits for the next beat', () => {
+    const sink = follow({ targetSeconds: 60, mode: 'onTheMinute' });
+    armRestTimer('onTheMinute', at(0), null);
+    sink.at(1);
+    noteRestTimerAutoAdvanceFired(getRestTimerState().cycleId, 'onTheMinute', at(60), at(60), 'clear');
+    sink.at(60);
+    noteRestTimerTick(iso(80), 'onTheMinute', at(81));
+    expect(sink.at(81)).toEqual([]);
+    expect(sink.at(140.025)).toEqual(restartFrom(140));
+  });
+
+  it('a read-back tick never hides an auto-advance in the same snapshot', () => {
+    const sink = follow();
+    armRestTimer('afterTick', at(0), null);
+    sink.logTick(iso(10), 'afterTick', at(10));
+    sink.at(10);
+    noteRestTimerAutoAdvanceFired(getRestTimerState().cycleId, 'afterTick', at(70), at(70));
+    noteRestTimerTick(iso(71), 'afterTick', at(72));
+    expect(sink.at(72)).toEqual(restartFrom(71));
+  });
+});
+
 describe('switching off', () => {
   it('resets the clock when the timer is disarmed', () => {
     const sink = follow();
     armRestTimer('afterTick', at(0), null);
-    noteRestTimerTick(iso(10), 'afterTick', at(10));
+    sink.logTick(iso(10), 'afterTick', at(10));
     sink.at(10);
     disarmRestTimer();
     expect(sink.at(20)).toEqual([{ kind: 'reset' }]);

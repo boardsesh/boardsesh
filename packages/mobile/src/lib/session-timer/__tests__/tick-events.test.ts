@@ -4,7 +4,7 @@ import { noteSessionTimerTick, subscribeSessionTimerTicks } from '../tick-events
 const NOW_MS = Date.parse('2026-10-24T10:00:30.000Z');
 
 describe('session timer ticks', () => {
-  it('hands every subscriber the tick time and now', () => {
+  it('hands every subscriber the tick as stored, its time and now', () => {
     const first = vi.fn();
     const second = vi.fn();
     const unsubscribeFirst = subscribeSessionTimerTicks(first);
@@ -12,7 +12,11 @@ describe('session timer ticks', () => {
 
     noteSessionTimerTick('2026-10-24T10:00:25.000Z', NOW_MS);
 
-    const tick = { climbedAtMs: Date.parse('2026-10-24T10:00:25.000Z'), nowMs: NOW_MS };
+    const tick = {
+      climbedAt: '2026-10-24T10:00:25.000Z',
+      climbedAtMs: Date.parse('2026-10-24T10:00:25.000Z'),
+      nowMs: NOW_MS,
+    };
     expect(first).toHaveBeenCalledWith(tick);
     expect(second).toHaveBeenCalledWith(tick);
     unsubscribeFirst();
@@ -23,7 +27,7 @@ describe('session timer ticks', () => {
     const listener = vi.fn();
     const unsubscribe = subscribeSessionTimerTicks(listener);
     noteSessionTimerTick('not a date', NOW_MS);
-    expect(listener).toHaveBeenCalledWith({ climbedAtMs: null, nowMs: NOW_MS });
+    expect(listener).toHaveBeenCalledWith({ climbedAt: 'not a date', climbedAtMs: null, nowMs: NOW_MS });
     unsubscribe();
   });
 

@@ -79,6 +79,12 @@ const T0 = scenario.nowMs;
 const RESTART = [RogueTimerCommand.STOPWATCH, RogueTimerCommand.RESET, RogueTimerCommand.OK];
 const nowIso = () => new Date(scenario.nowMs).toISOString();
 
+/** A climb saved on this phone, in the tick saver's order: the session timer hears first, then the rest timer. */
+function logClimb(climbedAt = nowIso()) {
+  noteSessionTimerTick(climbedAt, scenario.nowMs);
+  noteRestTimerTick(climbedAt, 'afterTick', scenario.nowMs);
+}
+
 function pressed(): number[] {
   return controllerMock.pressButton.mock.calls.map((call) => call[0]);
 }
@@ -354,7 +360,7 @@ describe('RogueTimerProvider driven by the session timer', () => {
     await renderConnected();
     act(() => {
       armRestTimer('afterTick', scenario.nowMs, null);
-      noteRestTimerTick(nowIso(), 'afterTick', scenario.nowMs);
+      logClimb();
     });
     expect(pressed()).toEqual([RogueTimerCommand.STOPWATCH]);
     await advance(180);
@@ -387,7 +393,7 @@ describe('RogueTimerProvider driven by the session timer', () => {
     await renderConnected();
     act(() => {
       armRestTimer('afterTick', scenario.nowMs, null);
-      noteRestTimerTick(nowIso(), 'afterTick', scenario.nowMs);
+      logClimb();
     });
     await advance(100);
     act(() => {
@@ -401,7 +407,7 @@ describe('RogueTimerProvider driven by the session timer', () => {
     await renderConnected();
     act(() => {
       armRestTimer('afterTick', scenario.nowMs, null);
-      noteRestTimerTick(nowIso(), 'afterTick', scenario.nowMs);
+      logClimb();
     });
     expect(pressed()).toEqual([RogueTimerCommand.STOPWATCH]);
     // Switched off 100 ms into the restart: the reset waits its turn.
@@ -445,11 +451,11 @@ describe('RogueTimerProvider driven by the session timer', () => {
     await renderConnected();
     act(() => {
       armRestTimer('afterTick', scenario.nowMs, null);
-      noteRestTimerTick(nowIso(), 'afterTick', scenario.nowMs);
+      logClimb();
     });
     await advance(250);
     act(() => {
-      noteRestTimerTick(nowIso(), 'afterTick', scenario.nowMs);
+      logClimb();
     });
     await advance(2000);
     expect(pressed()).toEqual(RESTART);
@@ -459,11 +465,11 @@ describe('RogueTimerProvider driven by the session timer', () => {
     await renderConnected();
     act(() => {
       armRestTimer('afterTick', scenario.nowMs, null);
-      noteRestTimerTick(nowIso(), 'afterTick', scenario.nowMs);
+      logClimb();
     });
     await advance(5000);
     act(() => {
-      noteRestTimerTick(nowIso(), 'afterTick', scenario.nowMs);
+      logClimb();
     });
     await advance(1000);
     expect(pressed()).toEqual([...RESTART, ...RESTART]);
@@ -569,6 +575,51 @@ describe('RogueTimerProvider driven by the session timer', () => {
       armRestTimer('afterTick', scenario.nowMs, null);
       noteRestTimerTick(nowIso(), 'afterTick', scenario.nowMs);
       noteSessionTimerTick(nowIso(), scenario.nowMs);
+    });
+    await advance(2000);
+    expect(pressed()).toEqual([]);
+  });
+});
+
+describe('RogueTimerProvider and ticks read back from the session', () => {
+  it('a climb read back when the rest timer is switched on leaves the running clock alone', async () => {
+    await renderConnected();
+    // Rest timer off: the saved climb restarts the clock from the tick bus.
+    const climbedAt = nowIso();
+    act(() => {
+      logClimb(climbedAt);
+    });
+    await advance(30_000);
+    expect(pressed()).toEqual(RESTART);
+    // 30 s on the climber switches the rest timer on, and the session sync reads that climb back.
+    act(() => {
+      armRestTimer('afterTick', scenario.nowMs, null);
+    });
+    act(() => {
+      noteRestTimerTick(climbedAt, 'afterTick', scenario.nowMs);
+    });
+    await advance(2000);
+    expect(pressed()).toEqual(RESTART);
+  });
+
+  it('a climb saved after switching the rest timer on restarts the clock once', async () => {
+    await renderConnected();
+    act(() => {
+      armRestTimer('afterTick', scenario.nowMs, null);
+    });
+    await advance(30_000);
+    act(() => {
+      logClimb();
+    });
+    await advance(2000);
+    expect(pressed()).toEqual(RESTART);
+  });
+
+  it('a tick restored on a cold start leaves the clock alone, even seconds old', async () => {
+    armRestTimer('afterTick', scenario.nowMs, null);
+    await renderConnected();
+    act(() => {
+      noteRestTimerTick(new Date(scenario.nowMs - 3000).toISOString(), 'afterTick', scenario.nowMs);
     });
     await advance(2000);
     expect(pressed()).toEqual([]);

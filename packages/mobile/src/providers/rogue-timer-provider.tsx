@@ -22,9 +22,9 @@
 //
 // What the timer shows follows the session timer (#5397): RogueSessionTimerSink
 // diffs the rest timer's snapshot and restarts the stopwatch when a new rest
-// starts (a tick, an auto-advance, a fixed-window beat, a Reset), resets it when
-// the rest timer is switched off, and restarts it on a fresh tick while the rest
-// timer is off. See docs/rest-timer.md.
+// starts (a climb saved on this phone, an auto-advance, a fixed-window beat, a
+// Reset), resets it when the rest timer is switched off, and restarts it on a
+// fresh tick while the rest timer is off. See docs/rest-timer.md.
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { RogueTimerCommand, type RogueTimerCommandCode } from '@boardsesh/ble-protocol/rogue-timer';
@@ -368,6 +368,13 @@ function RogueSessionTimerSink({ controller }: { controller: RogueTimerControlle
   // The last snapshot, null until the first: connecting is never a reason to
   // restart the clock on the wall.
   const snapshotRef = useRef<SessionTimerSnapshot | null>(null);
+  // The climb the tick bus just delivered with the rest timer on, until a
+  // snapshot shows the rest timer storing it, or off. Only that climb restarts
+  // the clock through the snapshot: a `lastTickAt` without it (the session's
+  // last tick read back on arming or a cold start) was not logged now. Dropping
+  // the stamp on 'off' means a re-arm can never mistake that climb, read back
+  // later, for one saved now.
+  const savedTickAtRef = useRef<string | null>(null);
   useEffect(() => {
     const now = nowMs();
     const next = buildSessionTimerSnapshot({
@@ -376,9 +383,11 @@ function RogueSessionTimerSink({ controller }: { controller: RogueTimerControlle
       sessionId,
       nowMs: now,
     });
-    for (const command of deriveSessionTimerCommands(snapshotRef.current, next, now)) {
+    const savedTickAt = savedTickAtRef.current;
+    for (const command of deriveSessionTimerCommands(snapshotRef.current, next, now, savedTickAt)) {
       queueRef.current?.push(command);
     }
+    if (next.status === 'off' || next.lastTickAt === savedTickAt) savedTickAtRef.current = null;
     snapshotRef.current = next;
 
     const wakeMs = getSessionTimerWakeMs(next);
@@ -391,18 +400,17 @@ function RogueSessionTimerSink({ controller }: { controller: RogueTimerControlle
   }, [restTimerState, targetSeconds, mode, sessionId, windowWakes]);
 
   // With the rest timer off, a fresh logged climb restarts the clock, as every
-  // tick did before the session timer existed. It reads the store, not the last
-  // snapshot: that one is rebuilt in an effect after React renders a store
-  // write, so a tick landing just after the timer was switched on would still
-  // read 'off' there and restart the clock the snapshot then restarts again.
+  // tick did before the session timer existed. With it on, the climb is stamped
+  // for the snapshot, which restarts the clock once the rest timer stores it.
+  // Either way it reads the store, not the last snapshot: that one is rebuilt in
+  // an effect after React renders a store write, so a tick landing just after
+  // the timer was switched on would still read 'off' there.
   useEffect(
     () =>
-      subscribeSessionTimerTicks(({ climbedAtMs, nowMs: tickNowMs }) => {
-        const command = deriveSessionTimerTickCommand({
-          restTimerArmed: isArmedForThisPhone(getRestTimerState(), sessionIdRef.current),
-          climbedAtMs,
-          nowMs: tickNowMs,
-        });
+      subscribeSessionTimerTicks(({ climbedAt, climbedAtMs, nowMs: tickNowMs }) => {
+        const restTimerArmed = isArmedForThisPhone(getRestTimerState(), sessionIdRef.current);
+        savedTickAtRef.current = restTimerArmed ? climbedAt : null;
+        const command = deriveSessionTimerTickCommand({ restTimerArmed, climbedAtMs, nowMs: tickNowMs });
         if (command) queueRef.current?.push(command);
       }),
     [],
