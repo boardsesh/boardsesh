@@ -167,6 +167,9 @@ export function sameCrewConfig(left: CrewConfigFields | null, right: CrewConfigF
 
 let revisionFloor: { sessionId: string; revision: number } | null = null;
 
+/** This phone's participant id in a session, as the last change for it said. */
+let ownParticipant: { sessionId: string; participantId: string } | null = null;
+
 /**
  * Sessions whose rest timer the climber turned off on this phone since launch.
  * A seed carrying a clock this phone set is not taken for these: the off was
@@ -226,6 +229,7 @@ export function handleCrewCadenceChange(
   if (sentAtMs === undefined) noteServerTimeFromEvent({ serverNowMs, receivedAtMs });
   else noteServerTimeFromMutation({ serverNowMs, sentAtMs, receivedAtMs });
 
+  if (ownParticipantId !== null) ownParticipant = { sessionId, participantId: ownParticipantId };
   if (revisionFloor?.sessionId !== sessionId) revisionFloor = null;
   if (!change.isSnapshot && revisionFloor !== null && change.revision <= revisionFloor.revision) {
     // Too old to take, but its clock sample still counts: a FIRE that came back
@@ -286,6 +290,19 @@ function reconvertHeldCrewCadence(sessionId: string): void {
   adoptCrewCadence({ ...crew, anchorMs, lastFiredBeatMs });
 }
 
+/**
+ * Whether the crew clock this phone follows was set by someone else: another
+ * member's pacing, which a workout started here must override (Start and "Add
+ * a block", rest-timer-effective.ts). True when this phone cannot tell, since
+ * overriding its own clock's beat at a workout's start costs little.
+ */
+export function followsAnotherMembersCrewClock(): boolean {
+  const { crew } = getRestTimerState();
+  if (crew === null || crew.config === null) return false;
+  const own = ownParticipant?.sessionId === crew.sessionId ? ownParticipant.participantId : null;
+  return own === null || crew.config.setByParticipantId !== own;
+}
+
 /** The last subscribe seed seen, so a publisher that mounts after it still knows. */
 export function getLastCrewCadenceSnapshot(): CrewCadenceSnapshot | null {
   return lastSnapshot;
@@ -303,6 +320,7 @@ export function subscribeCrewCadenceSnapshots(listener: (snapshot: CrewCadenceSn
 export function resetCrewCadenceLink(): void {
   revisionFloor = null;
   lastSnapshot = null;
+  ownParticipant = null;
 }
 
 /** Test-only. */
