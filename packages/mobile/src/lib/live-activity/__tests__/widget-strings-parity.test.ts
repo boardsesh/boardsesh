@@ -29,7 +29,7 @@ const REQUIRED_KEYS = [
   '%@ is on the wall',
   '%lld of %lld',
   'Grade %@',
-  'Session ended',
+  'Open Boardsesh to refresh',
   'Rest timer',
   'Rest',
   'Over your rest',

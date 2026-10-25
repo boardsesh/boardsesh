@@ -13,10 +13,12 @@
 "%@ is on the wall" = "%@ ist an der Wand";
 "Wall held by another climber" = "Wand wird von jemand anderem gesteuert";
 
+/* Shown when the card has had no update for 10 minutes */
+"Open Boardsesh to refresh" = "Öffne Boardsesh zum Aktualisieren";
+
 /* Climb details: "3 of 12" is the queue position */
 "%lld of %lld" = "%lld von %lld";
 "Grade %@" = "Grad %@";
-"Session ended" = "Session beendet";
 
 /* Rest timer (#6513) */
 "Rest timer" = "Pausen-Timer";

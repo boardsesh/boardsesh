@@ -782,6 +782,38 @@ private struct DisconnectedFooter: View {
     }
 }
 
+/// Footer for a stale card: ActivityKit marks it stale after
+/// `SharedConstants.liveActivityStaleInterval` with no update (no signal, or a
+/// push token that never registered). The session is still on, so this asks
+/// for a refresh instead of claiming it ended. No intent button: Prev/Next on a
+/// card that can't reach the backend would fail silently, and tapping the card
+/// already opens the app.
+@available(iOS 17.0, *)
+private struct StaleFooter: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let palette = VelvetSend.Palette.resolve(colorScheme)
+        HStack(spacing: VelvetSend.Spacing.sm) {
+            Image(systemName: "arrow.clockwise")
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(palette.secondaryLabel)
+                .accessibilityHidden(true)
+
+            Text("Open Boardsesh to refresh")
+                .font(.subheadline.weight(.medium))
+                .foregroundColor(palette.secondaryLabel)
+                .lineLimit(1)
+                .minimumScaleFactor(0.9)
+
+            Spacer(minLength: 0)
+        }
+        .frame(minHeight: 44)
+        .dynamicTypeSize(...DynamicTypeSize.xLarge)
+        .accessibilityElement(children: .combine)
+    }
+}
+
 /// Picks the right footer for the resolved state. connectedByMe is the only
 /// state that instantiates NavigationControlsView.
 @available(iOS 17.0, *)
@@ -855,15 +887,22 @@ struct ClimbSessionLiveActivity: Widget {
                 }
 
                 DynamicIslandExpandedRegion(.bottom) {
-                    SessionFooter(
-                        sessionId: context.attributes.sessionId,
-                        queueItemUuid: mirrorState.queueItemUuid,
-                        mirrored: mirrorState.mirrored,
-                        supportsMirroring: context.state.supportsMirroring ?? (SharedConstants.sharedDefaults?.bool(forKey: SharedConstants.supportsMirroringKey) ?? false),
-                        state: state,
-                        hasPrevious: context.state.hasPrevious,
-                        hasNext: context.state.hasNext
-                    )
+                    // Same footer swap as the Lock Screen card, so the two agree.
+                    Group {
+                        if context.isStale {
+                            StaleFooter()
+                        } else {
+                            SessionFooter(
+                                sessionId: context.attributes.sessionId,
+                                queueItemUuid: mirrorState.queueItemUuid,
+                                mirrored: mirrorState.mirrored,
+                                supportsMirroring: context.state.supportsMirroring ?? (SharedConstants.sharedDefaults?.bool(forKey: SharedConstants.supportsMirroringKey) ?? false),
+                                state: state,
+                                hasPrevious: context.state.hasPrevious,
+                                hasNext: context.state.hasNext
+                            )
+                        }
+                    }
                     .padding(.horizontal, VelvetSend.Spacing.xs)
                 }
             } compactLeading: {
@@ -1026,16 +1065,20 @@ private struct LockScreenView: View {
     @Environment(\.colorScheme) private var colorScheme
     let context: ActivityViewContext<ClimbSessionAttributes>
 
+    /// Climb content fades to this while the card is stale: it is the last
+    /// climb the card heard about, which may no longer be current.
+    private static let staleContentOpacity: Double = 0.5
+
+    /// A stale card keeps the last climb rather than claiming the session
+    /// ended (#6529). Every real end dismisses the activity at once, so
+    /// staleness only ever means "no update for 10 minutes".
     var body: some View {
-        if context.isStale {
-            staleView
-        } else {
-            activeView
-        }
+        activeView(isStale: context.isStale)
     }
 
-    private var activeView: some View {
+    private func activeView(isStale: Bool) -> some View {
         let palette = VelvetSend.Palette.resolve(colorScheme)
+        let contentOpacity = isStale ? Self.staleContentOpacity : 1
         let state = resolveBoardState(context: context)
         let mirrorState = resolveMirrorState(context: context)
         let rest = resolveRestTimer(context: context)
@@ -1047,6 +1090,7 @@ private struct LockScreenView: View {
                 width: 76,
                 height: 96
             )
+            .opacity(contentOpacity)
 
             // Content: a title block (name + top-right grade or rest clock +
             // metadata) and a control strip. One leading edge. The gap between
@@ -1064,13 +1108,18 @@ private struct LockScreenView: View {
                             .foregroundColor(palette.label)
                             .lineLimit(2)
                             .minimumScaleFactor(0.85)
+                            .opacity(contentOpacity)
 
                         Spacer(minLength: VelvetSend.Spacing.sm)
 
+                        // The rest clock stays at full strength when stale:
+                        // it counts on the phone from the App Group, so it is
+                        // still right.
                         if let rest {
                             RestTimerBlock(rest: rest)
                         } else {
                             GradeText(text: context.state.climbDifficulty)
+                                .opacity(contentOpacity)
                         }
                     }
 
@@ -1080,42 +1129,29 @@ private struct LockScreenView: View {
                         angle: context.state.angle,
                         grade: rest == nil ? nil : context.state.climbDifficulty
                     )
+                    .opacity(contentOpacity)
                 }
 
                 // Bottom row reflows per resolved board state. heldByPeer /
                 // disconnected hide the nav controls entirely so the card
-                // shrinks instead of leaving an empty gap.
-                SessionFooter(
-                    sessionId: context.attributes.sessionId,
-                    queueItemUuid: mirrorState.queueItemUuid,
-                    mirrored: mirrorState.mirrored,
-                    supportsMirroring: context.state.supportsMirroring ?? (SharedConstants.sharedDefaults?.bool(forKey: SharedConstants.supportsMirroringKey) ?? false),
-                    state: state,
-                    hasPrevious: context.state.hasPrevious,
-                    hasNext: context.state.hasNext
-                )
+                // shrinks instead of leaving an empty gap. A stale card hides
+                // them too, behind the refresh prompt.
+                if isStale {
+                    StaleFooter()
+                } else {
+                    SessionFooter(
+                        sessionId: context.attributes.sessionId,
+                        queueItemUuid: mirrorState.queueItemUuid,
+                        mirrored: mirrorState.mirrored,
+                        supportsMirroring: context.state.supportsMirroring ?? (SharedConstants.sharedDefaults?.bool(forKey: SharedConstants.supportsMirroringKey) ?? false),
+                        state: state,
+                        hasPrevious: context.state.hasPrevious,
+                        hasNext: context.state.hasNext
+                    )
+                }
             }
         }
         .padding(.vertical, VelvetSend.Spacing.lg)
         .padding(.horizontal, VelvetSend.Spacing.lockScreenMargin)
-    }
-
-    private var staleView: some View {
-        let palette = VelvetSend.Palette.resolve(colorScheme)
-        return VStack(spacing: VelvetSend.Spacing.sm) {
-            Image(systemName: "checkmark.seal.fill")
-                .font(.title2)
-                .foregroundColor(palette.tint)
-
-            Text("Session ended")
-                .font(.headline)
-                .foregroundColor(palette.label)
-
-            Text(verbatim: context.attributes.boardName)
-                .font(.subheadline)
-                .foregroundColor(palette.secondaryLabel)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(VelvetSend.Spacing.lg)
     }
 }

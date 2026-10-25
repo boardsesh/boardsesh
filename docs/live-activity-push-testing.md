@@ -584,6 +584,8 @@ The .p8 key JWT has expired (tokens are valid for 1 hour). The `@parse/node-apn`
 
 ### Live Activity goes stale after 10 minutes
 
+A stale card keeps the last climb, dimmed, and swaps the Prev/Next/Mirror row for "Open Boardsesh to refresh". The rest clock keeps counting at full strength because the phone computes it. It never says the session ended: every real end dismisses the card at once (#6529).
+
 - APNs pushes are not reaching the device. Check backend logs for send failures.
 - The APNs rate limit may be exceeded (~4/hr for non-prominent activities). When the activity is on the lock screen, the limit is much higher.
 - Verify `APNS_PRODUCTION=true` — all builds (Debug + TestFlight + App Store) use `aps-environment=production`.
