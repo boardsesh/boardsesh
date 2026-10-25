@@ -14,6 +14,10 @@ const mocks = vi.hoisted(() => ({
   options: undefined as TickListOptions | undefined,
   rowProps: [] as { tick: { uuid: string }; onPress: unknown }[],
   session: null as null | Record<string, unknown>,
+  routeId: 'session-1',
+  cardProps: undefined as undefined | { onEditSession?: unknown; onOpenComments?: unknown },
+  editSheetRendered: false,
+  voteArgs: undefined as undefined | unknown[],
 }));
 
 vi.mock('../../../lib/playlists/use-tick-list-activation', () => ({
@@ -27,18 +31,21 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles },
 }));
 vi.mock('expo-router', () => ({
-  useLocalSearchParams: () => ({ sessionId: 'session-1' }),
+  useLocalSearchParams: () => ({ sessionId: mocks.routeId }),
   useNavigation: () => ({ setOptions: vi.fn() }),
 }));
 vi.mock('@shopify/flash-list', () => ({
   FlashList: ({
     data,
     renderItem,
+    ListHeaderComponent,
   }: {
     data: unknown[];
     renderItem: (info: { item: unknown; index: number }) => ReactNode;
-  }) => createElement('div', null, ...data.map((item, index) => renderItem({ item, index }))),
+    ListHeaderComponent?: ReactNode;
+  }) => createElement('div', null, ListHeaderComponent, ...data.map((item, index) => renderItem({ item, index }))),
 }));
+
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('@boardsesh/profile-stats', () => ({ formatTickAbsoluteTime: () => 'Oct 1, 2026' }));
 vi.mock('../../Text', () => ({ Text: () => null }));
@@ -46,8 +53,19 @@ vi.mock('../../Icon', () => ({ Icon: () => null }));
 vi.mock('../../ActivityIndicator', () => ({ ActivityIndicator: () => null }));
 vi.mock('../../SectionHeader', () => ({ SectionHeader: () => null }));
 vi.mock('../../you/CommentSheet', () => ({ CommentSheet: () => null }));
-vi.mock('../SessionSummaryCard', () => ({ SessionSummaryCard: () => null, SessionNotesCard: () => null }));
-vi.mock('../SessionEditSheet', () => ({ SessionEditSheet: () => null }));
+vi.mock('../SessionSummaryCard', () => ({
+  SessionSummaryCard: (props: { onEditSession?: unknown; onOpenComments?: unknown }) => {
+    mocks.cardProps = props;
+    return null;
+  },
+  SessionNotesCard: () => null,
+}));
+vi.mock('../SessionEditSheet', () => ({
+  SessionEditSheet: () => {
+    mocks.editSheetRendered = true;
+    return null;
+  },
+}));
 vi.mock('../SessionAnalyticsSection', () => ({ SessionAnalyticsSection: () => null }));
 vi.mock('../SessionBetaCarousel', () => ({ SessionBetaCarousel: () => null }));
 vi.mock('../SessionLeaderboard', () => ({ SessionLeaderboard: () => null }));
@@ -59,8 +77,11 @@ vi.mock('../SessionTickRow', () => ({
 }));
 vi.mock('../../../lib/graphql/hooks', () => ({
   useSessionDetail: () => ({ data: mocks.session, isPending: false }),
-  useBulkVoteSummaries: () => ({ data: [] }),
-  useProfile: () => ({ data: null }),
+  useBulkVoteSummaries: (...args: unknown[]) => {
+    mocks.voteArgs = args;
+    return { data: [] };
+  },
+  useProfile: () => ({ data: { id: 'user-1' } }),
 }));
 vi.mock('../../../hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({ floatingControlBottom: 0 }),
@@ -75,8 +96,14 @@ beforeEach(() => {
   mocks.open.mockReset();
   mocks.options = undefined;
   mocks.rowProps = [];
+  mocks.routeId = 'session-1';
+  mocks.cardProps = undefined;
+  mocks.editSheetRendered = false;
+  mocks.voteArgs = undefined;
   mocks.session = {
     sessionId: 'session-1',
+    sessionType: 'party',
+    ownerUserId: 'user-1',
     sessionName: 'Tuesday',
     lastTickAt: '2026-10-01T10:00:00.000Z',
     participants: [{ userId: 'user-1' }],
@@ -102,5 +129,27 @@ describe('SessionDetailScreen tick taps', () => {
 
     expect(mocks.rowProps.map(({ tick }) => tick.uuid)).toEqual(['tick-1', 'tick-2']);
     for (const props of mocks.rowProps) expect(props.onPress).toBe(mocks.open);
+  });
+});
+
+describe('SessionDetailScreen social and edit actions (#5290)', () => {
+  it('offers edit, likes and comments on a real session the viewer owns', () => {
+    render(createElement(SessionDetailScreen));
+
+    expect(mocks.cardProps?.onEditSession).toBeTypeOf('function');
+    expect(mocks.cardProps?.onOpenComments).toBeTypeOf('function');
+    expect(mocks.editSheetRendered).toBe(true);
+    expect(mocks.voteArgs).toEqual(['session', ['session-1'], true]);
+  });
+
+  it('hides edit, likes and comments on a daily group', () => {
+    mocks.routeId = 'daily:user-1:2026-09-06';
+    mocks.session = { ...mocks.session, sessionId: 'daily:user-1:2026-09-06', sessionType: 'daily_highlight' };
+    render(createElement(SessionDetailScreen));
+
+    expect(mocks.cardProps?.onEditSession).toBeUndefined();
+    expect(mocks.cardProps?.onOpenComments).toBeUndefined();
+    expect(mocks.editSheetRendered).toBe(false);
+    expect(mocks.voteArgs).toEqual(['session', [], false]);
   });
 });

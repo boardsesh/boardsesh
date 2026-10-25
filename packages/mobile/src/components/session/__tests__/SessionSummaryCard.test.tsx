@@ -123,6 +123,14 @@ function render_(sess: SessionDetail, title: string, titleIsDate: boolean) {
 }
 
 describe('SessionSummaryCard', () => {
+  it('hides the like/comment row when onOpenComments is omitted (daily group)', () => {
+    const { queryByTestId } = render(
+      createElement(SessionSummaryCard, { session: session(), title: 'Day', titleIsDate: true }),
+    );
+    expect(queryByTestId('social-row')).toBeNull();
+    expect(mockFeedSocialRow).not.toHaveBeenCalled();
+  });
+
   it('displays the title', () => {
     const { container } = render_(session(), 'Morning Sesh', false);
     expect(container.textContent).toContain('Morning Sesh');

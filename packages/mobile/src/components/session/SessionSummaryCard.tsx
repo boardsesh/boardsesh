@@ -30,7 +30,8 @@ type SessionSummaryCardProps = {
   /** True when the title IS the date (unnamed session) — line 2 then shows a
    *  human "Sunday morning" instead of repeating the date. */
   titleIsDate: boolean;
-  onOpenComments: (entityId: string) => void;
+  /** Absent for a daily group, which has no session row to like or comment on. */
+  onOpenComments?: (entityId: string) => void;
   voteSummary?: { upvotes: number; userVote: number | null };
   /** Owner-only: open the edit sheet (name + recap). Absent for non-owners. */
   onEditSession?: () => void;
@@ -162,15 +163,17 @@ export function SessionSummaryCard({
         </View>
       </View>
 
-      <View style={styles.social}>
-        <FeedSocialRow
-          entityId={session.sessionId}
-          upvotes={voteSummary?.upvotes ?? session.upvotes}
-          userVote={voteSummary?.userVote ?? null}
-          commentCount={session.commentCount}
-          onOpenComments={onOpenComments}
-        />
-      </View>
+      {onOpenComments ? (
+        <View style={styles.social}>
+          <FeedSocialRow
+            entityId={session.sessionId}
+            upvotes={voteSummary?.upvotes ?? session.upvotes}
+            userVote={voteSummary?.userVote ?? null}
+            commentCount={session.commentCount}
+            onOpenComments={onOpenComments}
+          />
+        </View>
+      ) : null}
     </Card>
   );
 }

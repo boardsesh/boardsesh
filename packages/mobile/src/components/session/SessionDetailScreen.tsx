@@ -23,6 +23,7 @@ import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { spacing } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { getSoleBoardType } from '../../lib/grade-label';
+import { canEditSessionDetail, isDailySessionId } from '../../lib/session-edit-permissions';
 
 const EMPTY_TICKS: SessionDetailTick[] = [];
 
@@ -48,16 +49,23 @@ export default function SessionDetailScreen() {
   const paddingBottom = bottomChrome.floatingControlBottom + spacing[6];
 
   const { data: session, isPending } = useSessionDetail(sessionId);
-  const { data: voteSummaries } = useBulkVoteSummaries('session', sessionId ? [sessionId] : [], !!sessionId);
+  // A daily group is a synthesised feed key with no session row, so votes and
+  // comments on it as a 'session' would be rejected (#5290). They live on the feed card.
+  const isDaily = isDailySessionId(sessionId) || session?.sessionType === 'daily_highlight';
+  const { data: voteSummaries } = useBulkVoteSummaries(
+    'session',
+    sessionId && !isDaily ? [sessionId] : [],
+    !!sessionId && !isDaily,
+  );
   // `.at(0)`, not `[0]`: the list is empty until the chunk resolves, and `.at`
   // is the indexed read typed `VoteSummary | undefined` without
   // `noUncheckedIndexedAccess`.
   const sessionVoteSummary = voteSummaries.at(0);
   const { data: profile } = useProfile();
 
-  // Only the session's creator can rename it / edit the recap (the server enforces
-  // this too; gating the affordance keeps non-owners from hitting a rejection).
-  const canEdit = !!session?.ownerUserId && !!profile?.id && session.ownerUserId === profile.id;
+  // Only the creator of a real session can rename it / edit the recap (the server
+  // enforces this too; gating the affordance keeps the rejection from surfacing).
+  const canEdit = canEditSessionDetail(session, profile?.id);
 
   const commentSheetRef = useRef<BottomSheet | null>(null);
   const [commentTarget, setCommentTarget] = useState<{ entityId: string; entityType: SocialEntityType } | null>(null);
@@ -142,7 +150,7 @@ export default function SessionDetailScreen() {
         session={session}
         title={title}
         titleIsDate={!session.sessionName}
-        onOpenComments={handleOpenSessionComments}
+        onOpenComments={isDaily ? undefined : handleOpenSessionComments}
         voteSummary={sessionVoteSummary}
         onEditSession={canEdit ? openEdit : undefined}
       />
