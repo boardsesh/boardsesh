@@ -1,7 +1,7 @@
 import type postgres from 'postgres';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { decideMigrationTarget, prepareMigrations } from '../dev-db-discover';
+import { decideMigrationTarget, loadMigrationJournal, prepareMigrations } from '../dev-db-discover';
 
 // Regression coverage for https://github.com/boardsesh/boardsesh/issues/6497:
 // the discover script migrated a Tailscale peer's database, then failed at
@@ -92,7 +92,11 @@ describe('prepareMigrations', () => {
   });
 
   it('installs the cutoff helper before the first migration on a local database', async () => {
-    const { client, statements } = createStubClient(behind);
+    // Start just below the cutoff migration so only the last few .sql files are read.
+    const journal = loadMigrationJournal();
+    const cutoffEntry = journal.entries.find((entry) => entry.tag.includes('sync_deletions_cutoff'));
+    if (!cutoffEntry) throw new Error('cutoff migration missing from journal');
+    const { client, statements } = createStubClient({ ...behind, drizzleLast: cutoffEntry.when - 1 });
     const order: string[] = [];
     const installCutoffHelper = vi.fn(() => {
       order.push(`helper after ${statements.filter(isWrite).length} writes`);

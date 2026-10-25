@@ -328,7 +328,7 @@ async function ensureMigrationTracker(client: postgres.Sql): Promise<void> {
   `;
 }
 
-function loadMigrationJournal(): MigrationJournal {
+export function loadMigrationJournal(): MigrationJournal {
   const journalPath = join(drizzleDirectory, 'meta', '_journal.json');
   const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as MigrationJournal;
   return {
@@ -439,7 +439,7 @@ async function applyPendingMigrations(client: postgres.Sql, pendingMigrations: M
 // 0272 reads a cutoff helper that only exists once the bootstrap script has
 // run. Docker installs it in dev-db-up.sh; a standalone local Postgres has to
 // get it here, before any migration commits, or 0265-0271 land and 0272 fails.
-const cutoffGuardMigrationNumber = 272;
+const cutoffGuardMigrationTag = 'sync_deletions_cutoff';
 
 function installSyncDeletionsCutoffHelper(): void {
   const databaseDirectory = join(repoRoot, 'packages/db');
@@ -489,9 +489,8 @@ export async function prepareMigrations(
       console.info('  No pending migrations.');
       return true;
     }
-    const needsCutoffHelper = pendingMigrations.some(
-      (migration) => Number.parseInt(migration.tag, 10) >= cutoffGuardMigrationNumber,
-    );
+    // Match on the tag, not the number: the renumber bot may move 0272.
+    const needsCutoffHelper = pendingMigrations.some((migration) => migration.tag.includes(cutoffGuardMigrationTag));
     if (needsCutoffHelper) installCutoffHelper();
     await applyPendingMigrations(client, pendingMigrations);
     return true;
