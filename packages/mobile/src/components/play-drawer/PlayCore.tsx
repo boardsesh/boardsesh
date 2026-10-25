@@ -1026,6 +1026,14 @@ export function PlayCore({
     !isAnonymous &&
     !showBoardMismatch &&
     currentClimbQueueItem?.uuid === staleCurrentHold.queueItemUuid;
+  // The held climb's Put on the wall: a reassert, which releases the hold. Never
+  // a preview's (a pinned preview is never the held climb, see above), so the
+  // preview commit keeps `handleSetActive`. A list pick of the held climb takes
+  // the same path (the selection controller, section 6 decision A).
+  const handlePutHeldClimbOnWall = useCallback(() => {
+    bluetooth?.armUndoWallChangeToast();
+    bluetooth?.reassertWall();
+  }, [bluetooth]);
   // What the browse latch puts in the second row: one button in the middle of
   // the usual row, or the busy-wall question in place of it.
   const commitButton: ActionBarCommitButton = commitBarModel.showConfirm
@@ -1392,6 +1400,10 @@ export function PlayCore({
         wallUuidAtLatchStartRef,
         setBusyWallConfirmArmed,
         markLatchExit,
+      },
+      hold: {
+        heldQueueItemUuid: staleCurrentHold?.queueItemUuid ?? null,
+        putHeldClimbOnWall: handlePutHeldClimbOnWall,
       },
     });
 
@@ -1814,13 +1826,6 @@ export function PlayCore({
   // sits over its later siblings, in case a font change outgrows the last
   // measurement for a frame.
   const showSwitchBoardCard = showBoardMismatch && onSwitchBoard != null;
-  // The held climb's Put on the wall: a reassert, which releases the hold. Never
-  // a preview's (a pinned preview is never the held climb, see above), so the
-  // preview commit keeps `handleSetActive`.
-  const handlePutHeldClimbOnWall = useCallback(() => {
-    bluetooth?.armUndoWallChangeToast();
-    bluetooth?.reassertWall();
-  }, [bluetooth]);
   const playbackControls = playback.isAnimatable ? (
     <PlaybackControls
       frameIndex={playback.frameIndex}

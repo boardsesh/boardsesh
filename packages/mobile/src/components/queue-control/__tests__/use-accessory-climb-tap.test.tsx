@@ -75,7 +75,10 @@ describe('useAccessoryClimbTap', () => {
   it('opens the local queue head active on tap (it already is current — never the wall climb)', () => {
     renderHook(() => useAccessoryClimbTap());
     tap.onEnd?.();
-    expect(drawer.openPlayDrawer).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'climb-head' }), {});
+    // A reopen, not a pick: a #4979 hold on the head stays standing.
+    expect(drawer.openPlayDrawer).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'climb-head' }), {
+      reopensCurrent: true,
+    });
   });
 
   it('does nothing on tap when there is no queue head to open', () => {
@@ -90,6 +93,7 @@ describe('useAccessoryClimbTap', () => {
     result.current.preparePlay();
     expect(drawer.openPlayDrawer).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'climb-head' }), {
       navigate: false,
+      reopensCurrent: true,
     });
   });
 });

@@ -86,6 +86,10 @@ function inputs(): SelectionInputs {
       setBusyWallConfirmArmed: vi.fn(),
       markLatchExit: vi.fn(),
     },
+    hold: {
+      heldQueueItemUuid: null,
+      putHeldClimbOnWall: vi.fn(),
+    },
   };
 }
 function open(selected: ClimbQueueItem, options?: PlayDrawerOpenOptions) {
@@ -98,6 +102,69 @@ beforeEach(() => {
   authority.platform = 'ios';
   authority.announce.mockClear();
   setSetting('lightOnClimbTap', true);
+});
+
+describe('the #4979 hold (section 6, decision A)', () => {
+  function heldInputs(): SelectionInputs {
+    const held = inputs();
+    held.hold.heldQueueItemUuid = held.queue.currentClimbQueueItem!.uuid;
+    return held;
+  }
+
+  it.each([
+    ['a list row (the activation already settled the queue)', { committedExternally: true }],
+    ['a logbook or feed row', undefined],
+  ] as const)('a pick of the held climb from %s lights it', (_label, options) => {
+    const initialProps = heldInputs();
+    initialProps.openTarget = open(initialProps.queue.currentClimbQueueItem!, options);
+    renderHook(usePlaySelectionController, { initialProps });
+    expect(initialProps.hold.putHeldClimbOnWall).toHaveBeenCalledOnce();
+    // Lighting it is not a new pass: the queue is not written.
+    expect(initialProps.queue.setCurrentClimb).not.toHaveBeenCalled();
+  });
+
+  it('the accessory bar or mini player reopening the held climb keeps it dark', () => {
+    const initialProps = heldInputs();
+    initialProps.openTarget = open(initialProps.queue.currentClimbQueueItem!, { reopensCurrent: true });
+    renderHook(usePlaySelectionController, { initialProps });
+    expect(initialProps.hold.putHeldClimbOnWall).not.toHaveBeenCalled();
+    expect(initialProps.queue.setCurrentClimb).not.toHaveBeenCalled();
+  });
+
+  it('a preview of the held climb never lights it', () => {
+    const initialProps = heldInputs();
+    const current = initialProps.queue.currentClimbQueueItem!;
+    initialProps.openTarget = open(current, { previewQueueItem: item(current.climb.uuid) });
+    renderHook(usePlaySelectionController, { initialProps });
+    expect(initialProps.hold.putHeldClimbOnWall).not.toHaveBeenCalled();
+  });
+
+  it('leaves the board alone for an anonymous reader or a board mismatch', () => {
+    for (const patch of [{ viewer: 'anonymous' as const }, { showBoardMismatch: true }]) {
+      const initialProps = { ...heldInputs(), ...patch };
+      initialProps.openTarget = open(initialProps.queue.currentClimbQueueItem!, { committedExternally: true });
+      renderHook(usePlaySelectionController, { initialProps });
+      expect(initialProps.hold.putHeldClimbOnWall).not.toHaveBeenCalled();
+    }
+  });
+
+  it('does nothing with no hold, or a hold on another queue item', () => {
+    for (const heldQueueItemUuid of [null, 'queue-other']) {
+      const initialProps = inputs();
+      initialProps.hold.heldQueueItemUuid = heldQueueItemUuid;
+      initialProps.openTarget = open(initialProps.queue.currentClimbQueueItem!, { committedExternally: true });
+      renderHook(usePlaySelectionController, { initialProps });
+      expect(initialProps.hold.putHeldClimbOnWall).not.toHaveBeenCalled();
+    }
+  });
+
+  it('a pick of another climb is a new current climb, not a relight', () => {
+    const initialProps = heldInputs();
+    initialProps.openTarget = open(item('new'));
+    renderHook(usePlaySelectionController, { initialProps });
+    expect(initialProps.hold.putHeldClimbOnWall).not.toHaveBeenCalled();
+    expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledOnce();
+  });
 });
 
 describe('host target application', () => {

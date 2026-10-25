@@ -32,7 +32,8 @@ export type StaleCurrentHold = {
 /**
  * Why a hold ended, for `Board Stale Current Released`:
  * - `new-current`: the current climb changed (a tap, Next, a crewmate's pick);
- * - `relight`: the climber asked (Put on the wall, the lightbulb's Re-light);
+ * - `relight`: the climber asked (Put on the wall, the lightbulb's Re-light, a
+ *   list pick of the held climb);
  * - `reopen`: the climber opened the held climb again (a re-tap of the current
  *   climb), which restarts its clock. A FullSync never does this: for the same
  *   climb it keeps the older time;

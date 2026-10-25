@@ -1459,6 +1459,28 @@ describe('PlayDrawer stale-climb hold', () => {
     expect(recorded.actionBar.at(-1)?.commitButton).toBeNull();
   });
 
+  // Decision A: only the automatic send on connect is held. A pick of the held
+  // climb from a list lights it; the accessory bar reopening it does not.
+  it.each([
+    { label: 'a list pick', options: { committedExternally: true }, lights: true },
+    { label: 'an accessory bar reopen', options: { reopensCurrent: true }, lights: false },
+  ])('$label of the held climb lights=$lights', ({ options, lights }) => {
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    const bluetooth = connectedBluetooth({ queueItemUuid: 'queue-twelve', lastCurrentChangeAt: LAST_ON_WALL_AT });
+    bluetoothContext.value = bluetooth;
+    render(
+      createElement(PlayDrawer, {
+        presentation: 'pane' as const,
+        boardConfig: TWELVE_BY_TWELVE,
+        openTarget: { climb: TWELVE_CLIMB, options, nonce: 1 },
+        onOpenQueue: vi.fn(),
+      }),
+    );
+    expect(bluetooth.reassertWall).toHaveBeenCalledTimes(lights ? 1 : 0);
+    expect(bluetooth.armUndoWallChangeToast).toHaveBeenCalledTimes(lights ? 1 : 0);
+    expect(setCurrentClimb).not.toHaveBeenCalled();
+  });
+
   it('shows nothing for a hold that names another climb, or with no hold at all (the kill switch)', () => {
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
     bluetoothContext.value = connectedBluetooth({ queueItemUuid: 'queue-other', lastCurrentChangeAt: LAST_ON_WALL_AT });
