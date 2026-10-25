@@ -10,6 +10,7 @@ import {
   buildBrowserAppInstallClickProperties,
   detectStorePlatform,
   playStoreUrlForBrowserApp,
+  storeUrlForAppShare,
   storeUrlForBrowserApp,
   type StorePromptSurface,
 } from '../store-links';
@@ -113,6 +114,27 @@ describe('storeUrlForBrowserApp', () => {
   it('picks the store that matches the platform', () => {
     expect(storeUrlForBrowserApp('android', 'home')).toBe(playStoreUrlForBrowserApp('home'));
     expect(storeUrlForBrowserApp('ios', 'home')).toBe(appStoreUrlForBrowserApp('home'));
+  });
+});
+
+describe('storeUrlForAppShare', () => {
+  it('tags the Play link app-share / about, in the referrer and as bare params', () => {
+    const url = new URL(storeUrlForAppShare('android'));
+    expect(url.origin + url.pathname).toBe('https://play.google.com/store/apps/details');
+    expect(url.searchParams.get('id')).toBe('com.boardsesh.app');
+    expect(url.searchParams.get('utm_medium')).toBe('app-share');
+    expect(url.searchParams.get('utm_campaign')).toBe('about');
+    const referrer = new URLSearchParams(url.searchParams.get('referrer') ?? '');
+    expect(referrer.get('utm_source')).toBe('boardsesh');
+    expect(referrer.get('utm_medium')).toBe('app-share');
+    expect(referrer.get('utm_campaign')).toBe('about');
+  });
+
+  it('puts the same tags in the App Store campaign token', () => {
+    const url = new URL(storeUrlForAppShare('ios'));
+    expect(url.origin + url.pathname).toBe('https://apps.apple.com/app/boardsesh/id6761350784');
+    expect(url.searchParams.get('ct')).toBe('app-share-about');
+    expect(url.searchParams.get('mt')).toBe('8');
   });
 });
 

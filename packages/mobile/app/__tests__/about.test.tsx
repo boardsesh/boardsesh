@@ -35,6 +35,7 @@ vi.mock('react-i18next', () => ({
         'mobile.about.changelogLink': "What's New",
         'mobile.about.viewOnGithub': 'View on GitHub',
         'mobile.about.emailPartners': 'Email us',
+        'mobile.about.shareApp.link': 'Share Boardsesh',
       })[key] ?? key,
   }),
 }));
@@ -64,6 +65,14 @@ vi.mock('../../src/components/PressableSurface', () => ({
 }));
 vi.mock('../../src/components/SectionHeader', () => ({
   SectionHeader: ({ title }: { title: string }) => createElement('h2', null, title),
+}));
+vi.mock('../../src/components/ShareAppSheet', () => ({
+  ShareAppSheet: ({ onDismiss }: { onDismiss: () => void }) =>
+    createElement(
+      'div',
+      { 'data-testid': 'share-app-sheet' },
+      createElement('button', { onClick: onDismiss }, 'close'),
+    ),
 }));
 vi.mock('../../src/components/Text', () => ({
   Text: ({ children, selectable }: { children?: ReactNode; selectable?: boolean }) =>
@@ -161,5 +170,18 @@ describe('AboutScreen partnerships + acknowledgements', () => {
     fireEvent.click(screen.getByRole('button', { name: 'View on GitHub' }));
 
     expect(browser.openBrowserAsync).toHaveBeenCalledWith('https://github.com/boardsesh/boardsesh');
+  });
+});
+
+describe('AboutScreen share the app', () => {
+  it('opens the share sheet from its row and closes it again', () => {
+    render(<AboutScreen />);
+
+    expect(screen.queryByTestId('share-app-sheet')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Share Boardsesh' }));
+    expect(screen.getByTestId('share-app-sheet')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'close' }));
+    expect(screen.queryByTestId('share-app-sheet')).toBeNull();
   });
 });
