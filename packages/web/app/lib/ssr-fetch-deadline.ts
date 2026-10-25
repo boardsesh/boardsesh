@@ -49,10 +49,12 @@ export const SSR_AUTHENTICATED_FETCH_TIMEOUT_MS = 5000;
  * True when `error` is the rejection an expired `AbortSignal.timeout` (or an
  * aborted fetch) produces, including when a client wraps it in `cause`.
  */
-export function isDeadlineError(error: unknown): boolean {
+export function isDeadlineError(error: unknown, depth = 0): boolean {
+  // Cause chains are short; the cap stops a circular `cause` from recursing forever.
+  if (depth > 5) return false;
   // Structural, not `instanceof Error`: a DOMException is not an Error in every runtime.
   if (typeof error !== 'object' || error === null) return false;
   const { name, cause } = error as { name?: unknown; cause?: unknown };
   if (name === 'TimeoutError' || name === 'AbortError') return true;
-  return isDeadlineError(cause);
+  return isDeadlineError(cause, depth + 1);
 }
