@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { once } from 'node:events';
@@ -72,10 +72,6 @@ beforeEach(() => {
   isS3ConfiguredMock.mockReturnValue(true);
   uploadToS3Mock.mockResolvedValue(undefined);
   validateTokenMock.mockResolvedValue({ userId: 'ocr-uploader' });
-});
-
-afterEach(() => {
-  vi.clearAllMocks();
 });
 
 describe('POST /api/ocr-test-data', () => {
