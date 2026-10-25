@@ -193,8 +193,9 @@ export async function setCurrentClimbAndPublish(
   }
 
   const current = plan.currentClimbQueueItem;
-  // A clear has no climb to repaint, so its FullSync goes alone.
-  const event: NowSlotQueueEvent = current === null && plan.event === 'fullsync+trailing' ? 'fullsync' : plan.event;
+  // A clear never gets the trailing event: `chooseQueueEvent` and the legacy
+  // plan both send a clear that reshapes the array as a lone FullSync.
+  const { event } = plan;
 
   if (current) {
     // Record the climb as the latest authoritative wall climb so the next

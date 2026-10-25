@@ -523,6 +523,25 @@ describe('setCurrentClimbAndPublish — F3 Now slot', () => {
       expect(events[0].event).toMatchObject({ __typename: 'CurrentClimbChanged', item: null });
     });
 
+    it.each([
+      ['a new phone (placement NOW)', { placement: 'NOW' as const }],
+      ['the native socket or an old phone (no placement)', {}],
+    ])('a clear that drops the cleared climb is a lone FullSync for %s', async (_label, request) => {
+      // One climb on the wall and 500 Up next: the cleared climb would be
+      // History's only entry at 501, so the cap removes it.
+      const current = wallItem('now');
+      const upNext = Array.from({ length: 500 }, (_, index) => wallItem(`u${index}`));
+      const room = makeRoom({ queue: [current, ...upNext], current, historyCount: 0 });
+      const { outcome, events } = await placeClimb(room, null, request);
+      expect(outcome.rewrite).toBe('clear');
+      expect(outcome.trimmedCount).toBe(1);
+      expect(outcome.event).toBe('fullsync');
+      expect(uuidsOf(room.room.queue)).toEqual(uuidsOf(upNext));
+      expect(room.room.currentClimbQueueItem).toBeNull();
+      expect(room.room.historyCount).toBe(0);
+      expect(events.map(({ event }) => event.__typename)).toEqual(['FullSync']);
+    });
+
     it('the History cap trims to 100 at 125 and publishes FullSync + trailing', async () => {
       const history = Array.from({ length: 124 }, (_, index) => wallItem(`h${index + 1}`));
       const current = wallItem('now');
@@ -613,6 +632,16 @@ describe('setCurrentClimbAndPublish — F3 Now slot', () => {
       expect(room.room.queue.some((queueItem) => queueItem.uuid === 'orphan')).toBe(true);
       expect(room.room.queue.some((queueItem) => queueItem.uuid === room.room.currentClimbQueueItem?.uuid)).toBe(true);
       expect(events[0].event.__typename).toBe('FullSync');
+    });
+
+    it('a clear in a room holding a pre-F3 orphan is a lone FullSync', async () => {
+      const orphan = wallItem('orphan');
+      const room = makeRoom({ queue: [itemA, itemC, itemD], current: orphan, historyCount: 0 });
+      const { outcome, events } = await placeClimb(room, null);
+      expect(outcome.event).toBe('fullsync');
+      expect(room.room.currentClimbQueueItem).toBeNull();
+      expect(room.room.queue.some((queueItem) => queueItem.uuid === 'orphan')).toBe(true);
+      expect(events.map(({ event }) => event.__typename)).toEqual(['FullSync']);
     });
 
     it('keeps the line through a clear (historyCount = cleared index + 1)', async () => {
