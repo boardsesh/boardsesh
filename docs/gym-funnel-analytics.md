@@ -213,10 +213,12 @@ someone pointed a new code at a gym page.
 | `surface` | `web` for the www page. `app` is reserved for the app's own landing, which is not built yet |
 | `boardType` | One of the nine board types (`kilter`, `spray`, …) or null, from `boardTypeProperty` |
 
-Nothing on it names the board: no slug, no name, no uuid, no gym. A Spraywall's
+Its properties name no board: no slug, no name, no uuid, no gym. A Spraywall's
 slug is made from its name, and its uuid opens an unlisted one, so the
 Spraywall telemetry rule applies (`docs/spray-walls.md`, "Telemetry"), and the
-payload is checked by the same test.
+payload is checked by the same test. The web SDK still stamps the page URL
+(`$current_url`, `$pathname`) on this event as on every other one, so the
+`?wall=` capability has to be scrubbed from it there, as it is for `$pageview`.
 
 `BoardQrLandingTracker` (`app/b/[board_slug]/[angle]/list/board-qr-landing-tracker.tsx`)
 fires it, on both branches of the list page: the Spraywall front door and the
@@ -234,6 +236,13 @@ catalogue board list. Three ways it differs from the gym tracker:
 - **It strips one task later**, like `useClaimParamStrip`. On the hydration
   commit its effect runs before Next has patched `history.replaceState`, and a
   native call then leaves the router's own URL holding the pair.
+
+Both trackers count only once consent has settled (`useConsent().granted`).
+Consent resolves after the hydration commit, because the session and the
+region lookup are async, and `track()` drops anything sent before that. The
+gym tracker counted on mount until #4415, so it lost nearly every cold scan:
+read `Gym QR Scanned` from before that deploy as broken, not as zero scans. The
+address-bar cleanup does not wait for consent.
 
 Kiosk scans start counting with this event. There is no kiosk scan count before
 its deploy, so annotate the date and do not read the first week as growth.

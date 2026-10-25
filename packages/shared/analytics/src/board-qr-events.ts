@@ -14,7 +14,9 @@
 //    PostHog. Every property is a closed union, and `boardType` comes through
 //    `boardTypeProperty`, so a slug handed over by mistake arrives as null.
 //    The spray payload check in `__tests__/spray-wall-events.test.ts` reads this
-//    payload back field by field.
+//    payload back field by field. That covers the PROPERTIES only: the web SDK
+//    also stamps the page URL (`$current_url`, `$pathname`) on every event,
+//    and keeping a wall's `?wall=` capability out of it is web's URL scrub.
 //  * The medium vocabulary is the gym funnel's (`GYM_QR_MEDIUMS`), parsed by the
 //    same strict `parseGymQrLanding`: one printed-code param contract for every
 //    poster, whichever page it lands on.

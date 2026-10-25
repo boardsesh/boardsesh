@@ -6,6 +6,12 @@ import { __resetBoardQrLandingForTests, readBoardQrLandingMedium } from '@/app/l
 const track = vi.hoisted(() => vi.fn());
 vi.mock('@/app/lib/analytics', () => ({ track }));
 
+// The real provider settles after hydration; each test says where consent stands.
+const consentState = vi.hoisted(() => ({ granted: true }));
+vi.mock('@/app/components/consent/consent-provider', () => ({
+  useConsent: () => ({ granted: consentState.granted }),
+}));
+
 const trackerModule = await import('../board-qr-landing-tracker');
 const BoardQrLandingTracker = trackerModule.default;
 const { __resetReportedBoardQrLandingsForTests } = trackerModule;
@@ -21,6 +27,7 @@ function flushStrip(): void {
 beforeEach(() => {
   vi.useFakeTimers();
   track.mockReset();
+  consentState.granted = true;
   // Both the dedupe Set and the remembered landing are module-level and outlive
   // unmounts on purpose; without this a later test reusing a path would assert
   // nothing and still pass.
@@ -117,7 +124,7 @@ describe('BoardQrLandingTracker', () => {
     expect(window.location.hash).toBe('#climbs');
   });
 
-  it('waits a task before it strips, so the router has patched replaceState by then', () => {
+  it('counts at once but leaves the address bar until the next task', () => {
     window.history.replaceState(null, '', `${WALL_PATH}?src=qr&medium=board`);
 
     render(<BoardQrLandingTracker boardType="spray" />);
@@ -139,6 +146,36 @@ describe('BoardQrLandingTracker', () => {
 
     expect(window.location.search).toBe('');
     expect(track).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for consent to settle, then counts the scan even though the strip already ran', () => {
+    // A cold scan hydrates before the session and the region lookup answer, and
+    // `track()` drops anything sent before then. Counting on mount lost them all.
+    consentState.granted = false;
+    window.history.replaceState(null, '', `${WALL_PATH}?src=qr&medium=board&wall=${WALL_UUID}`);
+
+    const { rerender } = render(<BoardQrLandingTracker boardType="spray" />);
+    flushStrip();
+
+    expect(track).not.toHaveBeenCalled();
+    expect(window.location.search).toBe(`?wall=${WALL_UUID}`);
+
+    consentState.granted = true;
+    rerender(<BoardQrLandingTracker boardType="spray" />);
+
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith('Board QR Scanned', { medium: 'board', surface: 'web', boardType: 'spray' });
+  });
+
+  it('counts nothing without consent, and still cleans the address bar', () => {
+    consentState.granted = false;
+    window.history.replaceState(null, '', `${WALL_PATH}?src=qr&medium=board`);
+
+    render(<BoardQrLandingTracker boardType="spray" />);
+    flushStrip();
+
+    expect(track).not.toHaveBeenCalled();
+    expect(window.location.search).toBe('');
   });
 
   it('leaves the medium readable after the strip, for the store buttons that render after it', () => {

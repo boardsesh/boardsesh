@@ -5,12 +5,19 @@ import React from 'react';
 const trackGymFunnelEvent = vi.hoisted(() => vi.fn());
 vi.mock('@/app/lib/gym-funnel-analytics', () => ({ trackGymFunnelEvent }));
 
+// The real provider settles after hydration; each test says where consent stands.
+const consentState = vi.hoisted(() => ({ granted: true }));
+vi.mock('@/app/components/consent/consent-provider', () => ({
+  useConsent: () => ({ granted: consentState.granted }),
+}));
+
 const trackerModule = await import('../gym-qr-landing-tracker');
 const GymQrLandingTracker = trackerModule.default;
 const { __resetReportedScansForTests } = trackerModule;
 
 beforeEach(() => {
   trackGymFunnelEvent.mockReset();
+  consentState.granted = true;
   // The dedupe Set is module-level and outlives unmounts on purpose; without
   // this a later test reusing a slug would assert nothing and still pass.
   __resetReportedScansForTests();
@@ -72,6 +79,28 @@ describe('GymQrLandingTracker', () => {
 
     expect(window.location.search).toBe('');
     expect(trackGymFunnelEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for consent to settle, then reports the scan once', () => {
+    // A poster scan hydrates before the session and the region lookup answer,
+    // and `track()` drops anything sent before then. Counting on mount lost it.
+    consentState.granted = false;
+    window.history.replaceState(null, '', '/gym/boulderwelt?src=qr&medium=poster');
+
+    const { rerender } = render(<GymQrLandingTracker gymSlug="boulderwelt" medium="poster" />);
+
+    expect(trackGymFunnelEvent).not.toHaveBeenCalled();
+    expect(window.location.search).toBe('');
+
+    consentState.granted = true;
+    rerender(<GymQrLandingTracker gymSlug="boulderwelt" medium="poster" />);
+    rerender(<GymQrLandingTracker gymSlug="boulderwelt" medium="poster" />);
+
+    expect(trackGymFunnelEvent).toHaveBeenCalledTimes(1);
+    expect(trackGymFunnelEvent).toHaveBeenCalledWith({
+      name: 'Gym QR Scanned',
+      properties: { medium: 'poster', gymSlug: 'boulderwelt' },
+    });
   });
 
   it('leaves a URL that carries no attribution params alone', () => {
