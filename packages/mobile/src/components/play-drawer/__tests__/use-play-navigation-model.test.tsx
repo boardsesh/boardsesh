@@ -222,4 +222,108 @@ describe('usePlayNavigationModel', () => {
       expect(result.current.listWalkUpNextCount).toBe(3);
     });
   });
+
+  // #6777: what you queue plays before the list continues.
+  describe('Up next in the middle of a list', () => {
+    const onList = item('a');
+    const queuedFirst = item('q1');
+    const queuedSecond = item('q2');
+    const queue = [onList, queuedFirst, queuedSecond];
+    const results: PlaylistSuggestionSource = {
+      playlistUuid: 'search',
+      activatedClimbUuid: 'a',
+      boardKey: 'kilter:1',
+      climbs: [onList.climb, item('b').climb, item('c').climb],
+      label: 'Search results',
+      total: 3,
+    };
+    const walking: PlaylistSuggestionSource = {
+      ...results,
+      resume: { climbUuid: 'a', queueItemUuid: onList.uuid },
+    };
+    /** The model with `displayed` committed and the walk in Up next. */
+    function playingUpNext(displayed: ClimbQueueItem, source: PlaylistSuggestionSource = walking) {
+      return {
+        ...inputs(queue),
+        displayedQueueItem: displayed,
+        displayedClimb: displayed.climb,
+        currentClimbQueueItem: displayed,
+        playlistSuggestionSource: source,
+      };
+    }
+
+    it('swipes from a list climb into Up next first', () => {
+      const { result } = renderHook(() =>
+        usePlayNavigationModel({ ...inputs(queue), playlistSuggestionSource: results }),
+      );
+      expect(result.current.navigationState.nextItem).toBe(queuedFirst);
+      // Up next, then the rest of the list.
+      expect(result.current.navigationState.remainingCount).toBe(4);
+    });
+
+    it('says "Up next · 1 of 2" while a queued climb plays, and comes back to the list after', () => {
+      const { result, rerender } = renderHook(usePlayNavigationModel, { initialProps: playingUpNext(queuedFirst) });
+      expect(result.current.currentTrackLabel).toEqual({
+        kind: 'upNext',
+        listName: 'Search results',
+        count: { position: 1, total: 2 },
+      });
+      // The list keeps its place: Previous goes back to the list climb, the
+      // last queued climb leads back onto the list.
+      expect(result.current.navigationState.prevItem).toBe(onList);
+      rerender(playingUpNext(queuedSecond));
+      expect(result.current.currentTrackLabel).toMatchObject({ kind: 'upNext', count: { position: 2, total: 2 } });
+      expect(result.current.navigationState.nextItem?.climb.uuid).toBe('b');
+      rerender(playingUpNext(onList, results));
+      expect(result.current.currentTrackLabel).toEqual({
+        kind: 'counted',
+        name: 'Search results',
+        position: 1,
+        total: 3,
+      });
+    });
+
+    it('pages the list from where it picks up, not from the queued climb', () => {
+      const { result } = renderHook(() => usePlayNavigationModel(playingUpNext(queuedSecond)));
+      expect(result.current.trackListClimbUuid).toBe('a');
+      const { result: onTheList } = renderHook(() =>
+        usePlayNavigationModel({ ...inputs(queue), playlistSuggestionSource: results }),
+      );
+      expect(onTheList.current.trackListClimbUuid).toBe('a');
+    });
+
+    it('prefetches Up next, then the list', () => {
+      const { result } = renderHook(() =>
+        usePlayNavigationModel({ ...inputs(queue), playlistSuggestionSource: results }),
+      );
+      expect(result.current.upcomingPrefetchFrames).toEqual(['pq1r12', 'pq2r12', 'pbr12']);
+    });
+
+    it('shows the end card only once both the list and Up next are done', () => {
+      const lastOnList = item('c');
+      const endQueue = [lastOnList, queuedFirst];
+      const endOfResults: PlaylistSuggestionSource = { ...results, activatedClimbUuid: 'c' };
+      const { result: atListEnd } = renderHook(() =>
+        usePlayNavigationModel({ ...inputs(endQueue), playlistSuggestionSource: endOfResults }),
+      );
+      expect(atListEnd.current.trackEndCard).toBeNull();
+      expect(atListEnd.current.navigationState.nextItem).toBe(queuedFirst);
+
+      const { result: bothDone } = renderHook(() =>
+        usePlayNavigationModel({
+          ...inputs(endQueue),
+          displayedQueueItem: queuedFirst,
+          displayedClimb: queuedFirst.climb,
+          currentClimbQueueItem: queuedFirst,
+          playlistSuggestionSource: { ...endOfResults, resume: { climbUuid: 'c', queueItemUuid: lastOnList.uuid } },
+        }),
+      );
+      expect(bothDone.current.trackEndCard).toEqual({
+        listName: 'Search results',
+        upNextCount: 0,
+        firstUpNextName: null,
+        action: null,
+      });
+    });
+  });
 });

@@ -7,6 +7,8 @@ const STRINGS: Record<string, string> = {
   'playView.track.position': '{{position}} of {{total}}',
   'playView.track.playingFromAria': 'Playing from {{name}}',
   'playView.track.playingFromPositionAria': 'Playing from {{name}}, {{position}} of {{total}}',
+  'playView.track.upNext': 'Up next',
+  'playView.track.upNextPositionAria': 'Up next, {{position}} of {{total}}',
   'playView.wallState.previewNotLit': 'Preview, not lit',
   'playView.wallState.onlyYouSeeThis': 'Only you see this',
   'playView.wallState.onlyYouSeeThisWallOn': 'Only you see this · the wall is on {{name}}',
@@ -35,6 +37,26 @@ describe('formatTrackLabelParts', () => {
       name: 'Projects',
       count: '4 of 1,234',
       accessibilityLabel: 'Playing from Projects, 4 of 1,234',
+    });
+  });
+
+  // A queued climb playing in the middle of a list (#6777): the queue's name,
+  // never the list's, and its place in the stretch of Up next.
+  it('says Up next and where the climb sits in it', () => {
+    expect(
+      formatTrackLabelParts(
+        { kind: 'upNext', listName: 'Search results', count: { position: 1, total: 3 } },
+        t,
+        'en-US',
+      ),
+    ).toEqual({ name: 'Up next', count: '1 of 3', accessibilityLabel: 'Up next, 1 of 3' });
+  });
+
+  it('says Up next alone when the stretch cannot be counted', () => {
+    expect(formatTrackLabelParts({ kind: 'upNext', listName: null, count: null }, t, 'en-US')).toEqual({
+      name: 'Up next',
+      count: null,
+      accessibilityLabel: 'Up next',
     });
   });
 

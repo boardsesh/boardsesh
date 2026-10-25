@@ -911,6 +911,8 @@
       "position": "{{position}} von {{total}}",
       "playingFromAria": "Liste: {{name}}",
       "playingFromPositionAria": "Liste: {{name}}, {{position}} von {{total}}",
+      "upNext": "Als Nächstes",
+      "upNextPositionAria": "Als Nächstes, {{position}} von {{total}}",
       "searchResults": "Suchergebnisse",
       "setterClimbs": "Boulder von {{name}}",
       "logbook": "Routenbuch",

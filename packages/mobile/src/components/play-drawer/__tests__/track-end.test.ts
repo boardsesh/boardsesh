@@ -99,6 +99,20 @@ describe('resolveTrackEndCard (#6664)', () => {
     expect(card({ trackLabel: { kind: 'hidden' } })?.listName).toBeNull();
   });
 
+  // #6777: Up next plays before the list goes on, so the list can end on a
+  // queued climb. The card still names the list that ended.
+  it('names the list when Up next ran out at its end', () => {
+    const upNextLabel = { kind: 'upNext', listName: 'Projects', count: { position: 2, total: 2 } } as const;
+    const doneQueue = [item('history'), item('last-on-list'), item('queued')];
+    expect(card({ trackLabel: upNextLabel, queue: doneQueue, committedQueueIndex: 2, queueSuccessor: null })).toEqual({
+      listName: 'Projects',
+      upNextCount: 0,
+      firstUpNextName: null,
+      action: null,
+    });
+    expect(card({ trackLabel: { kind: 'upNext', listName: null, count: null } })?.listName).toBeNull();
+  });
+
   // #6238: the card says which climb "Keep going" opens.
   it('names the climb the action opens, which is where the queue walk lands', () => {
     expect(card({ queueSuccessor: queue[3] })?.firstUpNextName).toBe('next-2');
@@ -161,5 +175,7 @@ describe('Up next count and the queue badge (#6238)', () => {
     expect(resolveListWalkUpNextBadge({ kind: 'named', name: 'Projects' }, 3)).toBe(3);
     expect(resolveListWalkUpNextBadge({ kind: 'hidden' }, 3)).toBeNull();
     expect(resolveListWalkUpNextBadge(named, 0)).toBe(0);
+    // Playing Up next in the middle of a list still walks it (#6777).
+    expect(resolveListWalkUpNextBadge({ kind: 'upNext', listName: 'Projects', count: null }, 2)).toBe(2);
   });
 });

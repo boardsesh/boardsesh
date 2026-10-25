@@ -15,6 +15,7 @@ export type {
   ClimbQueue,
   PlaylistSuggestionSource,
   PlaylistTrackContinuation,
+  PlaylistTrackResume,
   PlaylistTrackPage,
   SetCurrentClimbOptions,
   SetCurrentClimbTrigger,
@@ -92,6 +93,8 @@ export {
   findPlaylistClimbIndex,
   appendPlaylistTrackPage,
   withPlaylistTrackClimbs,
+  withPlaylistTrackResume,
+  samePlaylistTrackResume,
 } from './playlist-suggestions';
 export type { QueueBoardKeyTarget, PreparedPlaylistClimbs } from './playlist-suggestions';
 

@@ -911,6 +911,8 @@
       "position": "{{position}} sur {{total}}",
       "playingFromAria": "Liste : {{name}}",
       "playingFromPositionAria": "Liste : {{name}}, {{position}} sur {{total}}",
+      "upNext": "À suivre",
+      "upNextPositionAria": "À suivre, {{position}} sur {{total}}",
       "searchResults": "Résultats de recherche",
       "setterClimbs": "Blocs de {{name}}",
       "logbook": "Carnet",

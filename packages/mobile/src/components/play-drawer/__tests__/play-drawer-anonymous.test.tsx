@@ -41,7 +41,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render as renderInitial, act } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { Climb } from '@boardsesh/shared-schema';
-import type { PlaylistSuggestionSource } from '@boardsesh/queue';
+import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 
 type Props = Record<string, unknown>;
 const toggleFavorite = vi.hoisted(() => vi.fn());
@@ -2090,21 +2090,27 @@ describe('PlayDrawer — the list it walks, and its end (#6664)', () => {
   const first = climb('climb-first', 'First');
   const last = climb('climb-last', 'Last');
   const queued = climb('climb-queued', 'Queued');
+  // The climber stands at a Tension wall (`activeBoard`): a Kilter climb is
+  // still queued, and the walk passes over it.
+  const offBoard = { ...climb('climb-off-board', 'Queued'), boardType: 'kilter', layoutId: 1 } as unknown as Climb;
   const itemFirst = { uuid: 'queue-first', climb: first };
   const itemLast = { uuid: 'queue-last', climb: last };
   const itemQueued = { uuid: 'queue-queued', climb: queued };
+  const itemOffBoard = { uuid: 'queue-off-board', climb: offBoard };
+  const projects = {
+    playlistUuid: 'smart:projects:user',
+    activatedClimbUuid: first.uuid,
+    boardKey: 'kilter:1:10:1,20',
+    climbs: [first, last],
+    label: 'Projects',
+    total: 2,
+  } as unknown as PlaylistSuggestionSource;
 
-  function onTheLastClimbOfProjects() {
+  /** On the list's last climb with `upNext` queued after it (#6777: Next plays it first). */
+  function onTheLastClimbOfProjects(upNext: ClimbQueueItem = itemQueued) {
     session.useRealNavigation = true;
-    session.suggestionSource = {
-      playlistUuid: 'smart:projects:user',
-      activatedClimbUuid: first.uuid,
-      boardKey: 'kilter:1:10:1,20',
-      climbs: [first, last],
-      label: 'Projects',
-      total: 2,
-    } as unknown as PlaylistSuggestionSource;
-    session.queue = [itemFirst, itemLast, itemQueued];
+    session.suggestionSource = projects;
+    session.queue = [itemFirst, itemLast, upNext];
     session.currentItem = itemLast;
     render(drawerElement('member', committedTargetFor(last)));
   }
@@ -2183,8 +2189,34 @@ describe('PlayDrawer — the list it walks, and its end (#6664)', () => {
     expect(lastActionBarProps().upNextBadgeCount).toBeNull();
   });
 
-  it('keeps Next live at the end of the list, and opens the end card instead of the queue', () => {
+  // #6777: what you queue plays before the list continues, so the last list
+  // climb's Next goes into Up next, not to the end card.
+  it('plays Up next from the last climb of the list before any end card', () => {
     onTheLastClimbOfProjects();
+    expect(lastActionBarProps().canSwipeNext).toBe(true);
+
+    pressNext();
+
+    expect(queueActions.nextClimb).toHaveBeenCalledTimes(1);
+    expect(recorded.trackEndCard).toHaveLength(0);
+  });
+
+  it('says Up next in the top bar while a queued climb plays in the middle of the list', () => {
+    session.useRealNavigation = true;
+    session.suggestionSource = { ...projects, resume: { climbUuid: first.uuid, queueItemUuid: itemFirst.uuid } };
+    session.queue = [itemFirst, itemQueued, itemLast];
+    session.currentItem = itemQueued;
+    render(drawerElement('member', committedTargetFor(queued)));
+
+    expect(lastListParts()).toEqual({
+      name: 'playView.track.upNext',
+      count: 'playView.track.position',
+      accessibilityLabel: 'playView.track.upNextPositionAria',
+    });
+  });
+
+  it('keeps Next live at the end of the list, and opens the end card once Up next is done', () => {
+    onTheLastClimbOfProjects(itemOffBoard);
     expect(lastActionBarProps().canSwipeNext).toBe(true);
     expect(recorded.trackEndCard).toHaveLength(0);
 
@@ -2192,11 +2224,12 @@ describe('PlayDrawer — the list it walks, and its end (#6664)', () => {
 
     expect(queueActions.nextClimb).not.toHaveBeenCalled();
     expect(queueActions.setCurrentClimb).not.toHaveBeenCalled();
+    // The Kilter climb is all that is left queued: the card still offers it.
     expect(lastTrackEndCardProps().model).toMatchObject({
       listName: 'Projects',
       upNextCount: 1,
       firstUpNextName: 'Queued',
-      action: { kind: 'nextInQueue', target: itemQueued },
+      action: { kind: 'nextInQueue', target: itemOffBoard },
     });
   });
 
@@ -2207,20 +2240,20 @@ describe('PlayDrawer — the list it walks, and its end (#6664)', () => {
   });
 
   it('carries on with the queue solo, leaving the list behind', () => {
-    onTheLastClimbOfProjects();
+    onTheLastClimbOfProjects(itemOffBoard);
     pressNext();
 
     act(() => {
       (lastTrackEndCardProps().onKeepGoing as () => void)();
     });
 
-    expect(queueActions.setCurrentClimb).toHaveBeenCalledWith(itemQueued, { playlistSuggestionSource: null });
+    expect(queueActions.setCurrentClimb).toHaveBeenCalledWith(itemOffBoard, { playlistSuggestionSource: null });
   });
 
   it('only previews the queued climb with a crew here, so the wall stays put', () => {
     session.isShared = true;
     session.sessionId = 'session-1';
-    onTheLastClimbOfProjects();
+    onTheLastClimbOfProjects(itemOffBoard);
     pressNext();
 
     act(() => {
@@ -2228,7 +2261,7 @@ describe('PlayDrawer — the list it walks, and its end (#6664)', () => {
     });
 
     expect(queueActions.setCurrentClimb).not.toHaveBeenCalled();
-    expect(lastDisplayedClimbUuid()).toBe(queued.uuid);
+    expect(lastDisplayedClimbUuid()).toBe(offBoard.uuid);
   });
 });
 

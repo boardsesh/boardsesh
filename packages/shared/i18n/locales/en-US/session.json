@@ -911,6 +911,8 @@
       "position": "{{position}} of {{total}}",
       "playingFromAria": "Playing from {{name}}",
       "playingFromPositionAria": "Playing from {{name}}, {{position}} of {{total}}",
+      "upNext": "Up next",
+      "upNextPositionAria": "Up next, {{position}} of {{total}}",
       "searchResults": "Search results",
       "setterClimbs": "{{name}}'s climbs",
       "logbook": "Logbook",

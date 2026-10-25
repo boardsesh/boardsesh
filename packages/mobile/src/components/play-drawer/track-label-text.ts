@@ -28,6 +28,7 @@ export function formatTrackLabelParts(
   locale: string,
 ): TrackLabelParts | null {
   if (model.kind === 'hidden') return null;
+  if (model.kind === 'upNext') return formatUpNextLabelParts(model.count, t, locale);
   const { name } = model;
   if (model.kind === 'named') {
     return { name, count: null, accessibilityLabel: t('playView.track.playingFromAria', { name }) };
@@ -39,6 +40,28 @@ export function formatTrackLabelParts(
     name,
     count: t('playView.track.position', { position, total }),
     accessibilityLabel: t('playView.track.playingFromPositionAria', { name, position, total }),
+  };
+}
+
+/**
+ * "Up next · 1 of 3" while a queued climb plays in the middle of a list
+ * (#6777). The name is the queue's own section name, so the top bar reads the
+ * way the queue sheet does.
+ */
+function formatUpNextLabelParts(
+  count: { position: number; total: number } | null,
+  t: TFunction<'session'>,
+  locale: string,
+): TrackLabelParts {
+  const name = t('playView.track.upNext');
+  if (!count) return { name, count: null, accessibilityLabel: name };
+  const numbers = getCachedNumberFormat(locale);
+  const position = numbers.format(count.position);
+  const total = numbers.format(count.total);
+  return {
+    name,
+    count: t('playView.track.position', { position, total }),
+    accessibilityLabel: t('playView.track.upNextPositionAria', { position, total }),
   };
 }
 

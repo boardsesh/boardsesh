@@ -19,7 +19,11 @@ import {
 } from 'react';
 import { AppState } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { computeNavigationStateWithSuggestions } from '@boardsesh/play-view';
+import {
+  computeNavigationStateWithSuggestions,
+  resolveTrackListClimbUuid,
+  resolveTrackPosition,
+} from '@boardsesh/play-view';
 import { isClimbOnReachableBoard, type PlaylistSuggestionSource } from '@boardsesh/queue';
 import { useReachableBoardKeys } from '../../providers/queue/use-reachable-board-keys';
 import { toBoardName } from '@boardsesh/board-config';
@@ -130,9 +134,19 @@ export function RestTimerAutoAdvanceScheduler() {
     () => getQueueSnapshot().playlistSuggestionSource,
     [getQueueSnapshot],
   );
+  // Measured from the list climb the walk is at, so a list keeps paging while
+  // a queued climb plays Up next in the middle of it (#6777).
+  const trackListClimbUuid = useMemo(
+    () =>
+      resolveTrackListClimbUuid(
+        resolveTrackPosition(queue, currentClimbQueueItem, playlistSuggestionSource),
+        playlistSuggestionSource,
+      ),
+    [queue, currentClimbQueueItem, playlistSuggestionSource],
+  );
   useTrackPaging({
     source: playlistSuggestionSource,
-    displayedClimbUuid: currentClimbQueueItem?.climb?.uuid,
+    listClimbUuid: trackListClimbUuid,
     previewTrack: false,
     setPreviewSource: keepPreviewSource,
     getCommittedSource: getCommittedSuggestionSource,

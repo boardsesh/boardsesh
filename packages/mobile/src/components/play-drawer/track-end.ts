@@ -1,5 +1,5 @@
 import type { ClimbQueueItem } from '@boardsesh/queue';
-import type { NavigationState, TrackLabelModel } from '@boardsesh/play-view';
+import { trackLabelListName, type NavigationState, type TrackLabelModel } from '@boardsesh/play-view';
 
 /**
  * What the end card's one action does (issue #6664). It always leaves the list:
@@ -44,8 +44,9 @@ export function countUpNext(queueLength: number, committedQueueIndex: number): n
 }
 
 /**
- * The queue button's Up next count while the player walks a list (#6238): Up
- * next is not what Next plays then, so the button keeps it in sight. Null
+ * The queue button's Up next count while the player walks a list (#6238): Next
+ * plays Up next before the list goes on (#6777), so the button says how much
+ * of it is coming. Null
  * whenever the header names no list: the button then counts what a swipe
  * reaches, as it always has. Zero is a walked list with nothing Up next: no
  * badge, but the button still speaks Up next.
@@ -81,7 +82,10 @@ function firstUpNextNameOf(target: ClimbQueueItem): string | null {
  *
  * Only the end of a list the player is walking gets one (`atTrackEnd`), and not
  * while more of it is still on its way: a track that pages in more climbs ends
- * where the list ends, not where the first load stopped.
+ * where the list ends, not where the first load stopped. Next plays Up next
+ * before the list goes on (#6777), so `atTrackEnd` only comes once both are
+ * done; anything still queued after Now then is what the walk passed over (a
+ * climb this wall can't draw), and the card's action offers it.
  *
  * `committedQueueIndex` is where the queue's Now sits (-1 when Now is not in
  * the queue); the caller already has the queue indexed. `queueSuccessor` is
@@ -113,7 +117,8 @@ export function resolveTrackEndCard({
   previewOverNow: boolean;
 }): TrackEndCardModel | null {
   if (!navigationState.atTrackEnd || moreToLoad) return null;
-  const listName = trackLabel.kind === 'hidden' ? null : trackLabel.name;
+  // Up next can run out at the list's end too (#6777): the card still names the list.
+  const listName = trackLabelListName(trackLabel);
   const upNextCount = countUpNext(queue.length, committedQueueIndex);
   if (upNextCount <= 0) return { listName, upNextCount: 0, firstUpNextName: null, action: null };
   // A preview's action goes back to Now, which is not Up next: no name to promise.

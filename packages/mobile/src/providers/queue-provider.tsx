@@ -16,6 +16,8 @@ import {
   createQueueSyncCoordinator,
   generateClientId,
   playlistSuggestionSourceMatches,
+  samePlaylistTrackResume,
+  withPlaylistTrackResume,
   getQueueBoardKey,
   isPlaylistPeekQueueItemUuid,
   decideAdd,
@@ -32,6 +34,7 @@ import type {
   QueueSearchParams,
   ClimbQueueItem,
   PlaylistSuggestionSource,
+  PlaylistTrackResume,
   QueueAddPlacement,
   SetCurrentClimbOptions,
 } from '@boardsesh/queue';
@@ -73,7 +76,7 @@ import { getStoredActiveBoard } from '../lib/active-board-store';
 import { useActiveBoard, useSetActiveBoard } from '../lib/graphql/use-active-board';
 import {
   anchoredSuggestionSource,
-  findPreviousQueueItemWithSuggestions,
+  selectPreviousQueueItemWithSuggestions,
   selectNextQueueItemWithSuggestions,
   shouldDefaultToBrowse,
 } from '@boardsesh/play-view';
@@ -2760,13 +2763,44 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     );
   }, [forwardSelection, activeBoardKey, showToast, tSettings, trackClimbsSkippedOnBoard]);
 
+  /**
+   * Store where the list picks up after a step into or out of Up next (#6777).
+   * A walk that steps from a list climb into the queue records that list climb
+   * on the track, and stepping back onto the list clears it: that is what keeps
+   * the list's place while queued climbs play, and what tells the player to
+   * say "Up next · 1 of 3" instead of the list's name.
+   *
+   * Written onto the held track only while it is still the one the step walked
+   * (same list, tap and board), so a track replaced meanwhile is left alone.
+   * The same render batch commits it with the current climb, so there is no
+   * render in which the queued climb is current and the track has gone dormant.
+   */
+  const storeTrackResume = useCallback(
+    (walkedSource: PlaylistSuggestionSource | null, trackResume: PlaylistTrackResume | null | undefined) => {
+      if (trackResume === undefined || !walkedSource) return;
+      if (samePlaylistTrackResume(walkedSource.resume, trackResume)) return;
+      if (privacyRevocationGeneration !== getPrivacyRevocationGeneration()) return;
+      setPlaylistSuggestionSourceState((held) =>
+        held && playlistSuggestionSourceMatches(held, walkedSource) ? withPlaylistTrackResume(held, trackResume) : held,
+      );
+    },
+    [privacyRevocationGeneration],
+  );
+
   const nextClimb = useCallback(() => {
     const { queue, currentClimbQueueItem } = stateRef.current;
     const activeConfig = toActiveBoardCompatibilityConfig(activeBoardRef.current);
-    const { item: nextItem, skippedItems } = selectNextQueueItemWithSuggestions(
+    const walkedSource = playlistSuggestionSourceRef.current;
+    // Up next first, then the list (#6777): the same selection the drawer, the
+    // rest timer and the workout runner make, so all of them land here.
+    const {
+      item: nextItem,
+      skippedItems,
+      trackResume,
+    } = selectNextQueueItemWithSuggestions(
       queue,
       currentClimbQueueItem,
-      playlistSuggestionSourceRef.current,
+      walkedSource,
       activeConfig,
       isReachableClimbRef.current,
     );
@@ -2783,36 +2817,69 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     // the same rule. A converted peek was never in the queue, so it has to be
     // added; a real item is already there.
     const { item, converted } = resolveCommittableQueueItem(nextItem);
+    storeTrackResume(walkedSource, trackResume);
     // New suggestions must match the server's insertion immediately after current.
     dispatchSetCurrent(item, converted, undefined, converted);
-  }, [dispatchSetCurrent, reportClimbsSkippedOnBoardSwitch]);
+  }, [dispatchSetCurrent, reportClimbsSkippedOnBoardSwitch, storeTrackResume]);
 
   const previousClimb = useCallback(() => {
     const { queue, currentClimbQueueItem } = stateRef.current;
-    // Mirrors nextClimb: swipes are list-first (issue #4829), so backward
-    // navigation can land on a playlist peek too — mint it into a real queue
-    // item before it reaches the WS mutation.
+    // Mirrors nextClimb: on a list (issue #4829) backward navigation can land on
+    // a playlist peek too — mint it into a real queue item before it reaches the
+    // WS mutation. It retraces the walk (#6777): back through the Up next climbs
+    // played, then onto the list climb they were played from.
     // The board only decides which queue entry stands for the list's previous
     // climb, so a climb from another layout between two of the list's climbs
     // can't make the swipe add a copy (#6664). Same inputs as nextClimb.
-    const prevItem = findPreviousQueueItemWithSuggestions(
+    const walkedSource = playlistSuggestionSourceRef.current;
+    const { item: prevItem, trackResume } = selectPreviousQueueItemWithSuggestions(
       queue,
       currentClimbQueueItem,
-      playlistSuggestionSourceRef.current,
+      walkedSource,
       undefined,
       toActiveBoardCompatibilityConfig(activeBoardRef.current),
       isReachableClimbRef.current,
     );
     if (!prevItem) return;
     const { item, converted } = resolveCommittableQueueItem(prevItem);
+    storeTrackResume(walkedSource, trackResume);
     // Match nextClimb and the server: suggestions insert immediately after current.
     dispatchSetCurrent(item, converted, undefined, converted);
-  }, [dispatchSetCurrent]);
+  }, [dispatchSetCurrent, storeTrackResume]);
 
   // Select the absolute native target so a racing server echo cannot double-step.
   // iOS publishes natively; Android forwards the event for JS to publish.
   const dispatchWidgetNavigation = useCallback(
     (item: ClimbQueueItem, correlationId: string, options?: WidgetNavigationOptions) => {
+      // The widget steps the queue by index. Where that is the step Next or
+      // Previous would take on a list (into Up next, or back onto the list), the
+      // track keeps its place the same way (#6777), so the player still knows
+      // where the list picks up once the phone is back in hand.
+      const { queue, currentClimbQueueItem } = stateRef.current;
+      const walkedSource = playlistSuggestionSourceRef.current;
+      if (walkedSource && currentClimbQueueItem) {
+        const activeConfig = toActiveBoardCompatibilityConfig(activeBoardRef.current);
+        const forward = selectNextQueueItemWithSuggestions(
+          queue,
+          currentClimbQueueItem,
+          walkedSource,
+          activeConfig,
+          isReachableClimbRef.current,
+        );
+        const backward =
+          forward.item?.uuid === item.uuid
+            ? null
+            : selectPreviousQueueItemWithSuggestions(
+                queue,
+                currentClimbQueueItem,
+                walkedSource,
+                undefined,
+                activeConfig,
+                isReachableClimbRef.current,
+              );
+        if (forward.item?.uuid === item.uuid) storeTrackResume(walkedSource, forward.trackResume);
+        else if (backward?.item?.uuid === item.uuid) storeTrackResume(walkedSource, backward.trackResume);
+      }
       if (options?.sendMutation) {
         dispatchSetCurrent(item, false, undefined, undefined, correlationId);
         return;
@@ -2822,7 +2889,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         payload: { item, shouldAddToQueue: false, correlationId },
       });
     },
-    [dispatchSetCurrent],
+    [dispatchSetCurrent, storeTrackResume],
   );
 
   const mirrorRequestRef = useRef(false);
@@ -2900,17 +2967,23 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   const refreshPlaylistSuggestionSource = useCallback(
     (source: PlaylistSuggestionSource): boolean => {
       const sameAccount = privacyRevocationGeneration === getPrivacyRevocationGeneration();
+      // The refresh is built from the list, not from the walk: it keeps the
+      // held track's place in Up next (#6777), or the list would forget where
+      // to pick up while a queued climb plays.
       setPlaylistSuggestionSourceState((current) =>
-        sameAccount && playlistSuggestionSourceMatches(current, source) ? source : current,
+        sameAccount && current && playlistSuggestionSourceMatches(current, source)
+          ? withPlaylistTrackResume(source, current.resume ?? null)
+          : current,
       );
       return sameAccount && playlistSuggestionSourceMatches(playlistSuggestionSourceRef.current, source);
     },
     [privacyRevocationGeneration],
   );
 
-  // Moving off the list hands swipes back to the queue. Swipes are list-first
-  // (issue #4829): while the current climb is in `playlistSuggestionSource.climbs`
-  // next/previous walk that ordered list. Plenty of things move the current climb
+  // Moving off the list hands swipes back to the queue. While the current climb
+  // is in `playlistSuggestionSource.climbs` (issue #4829), or a queued climb plays
+  // Up next in the middle of the list (#6777, the track's `resume`), next/previous
+  // walk Up next and then that ordered list. Plenty of things move the current climb
   // without going through `setCurrentClimb` — a crew member's CurrentClimbChanged,
   // a widget Next/Previous tap, or joining a session already parked on a climb.
   //

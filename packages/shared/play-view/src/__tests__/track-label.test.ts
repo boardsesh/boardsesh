@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createPlaylistSuggestionSource, type Climb, type PlaylistSuggestionSource } from '@boardsesh/queue';
-import { resolveTrackLabel } from '../track-label';
+import { resolveTrackLabel, resolveUpNextTrackLabel, trackLabelListName } from '../track-label';
 
 function makeClimb(uuid: string): Climb {
   return {
@@ -90,5 +90,46 @@ describe('resolveTrackLabel', () => {
       total: 4,
     });
     expect(resolveTrackLabel(exact, 'c')).toEqual({ kind: 'counted', name: 'Projects', position: 3, total: 4 });
+  });
+});
+
+// Issue #6777: while a queued climb plays in the middle of a list, the top bar
+// says "Up next · 1 of 3" and the list's own label comes back after.
+describe('resolveUpNextTrackLabel', () => {
+  const climbs = [makeClimb('a'), makeClimb('b')];
+  const named = createPlaylistSuggestionSource({
+    playlistUuid: 'search',
+    activatedClimb: climbs[0],
+    climbs,
+    boardKey: 'k',
+    label: '  Search results ',
+  });
+
+  it('carries the stretch of Up next and the list it returns to', () => {
+    expect(resolveUpNextTrackLabel(named, { position: 1, total: 3 })).toEqual({
+      kind: 'upNext',
+      listName: 'Search results',
+      count: { position: 1, total: 3 },
+    });
+  });
+
+  it('still says Up next for a list nobody named, and without a count', () => {
+    const unnamed = createPlaylistSuggestionSource({
+      playlistUuid: 'feed',
+      activatedClimb: climbs[0],
+      climbs,
+      boardKey: 'k',
+    });
+    expect(resolveUpNextTrackLabel(unnamed, null)).toEqual({ kind: 'upNext', listName: null, count: null });
+  });
+});
+
+describe('trackLabelListName', () => {
+  it('names the list whichever way the label reads', () => {
+    expect(trackLabelListName({ kind: 'hidden' })).toBeNull();
+    expect(trackLabelListName({ kind: 'named', name: 'Projects' })).toBe('Projects');
+    expect(trackLabelListName({ kind: 'counted', name: 'Projects', position: 1, total: 2 })).toBe('Projects');
+    expect(trackLabelListName({ kind: 'upNext', listName: 'Projects', count: null })).toBe('Projects');
+    expect(trackLabelListName({ kind: 'upNext', listName: null, count: null })).toBeNull();
   });
 });

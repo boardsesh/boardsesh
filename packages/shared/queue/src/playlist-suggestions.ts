@@ -6,7 +6,14 @@
  * stays dependency-free.
  */
 
-import type { Climb, ClimbQueue, ClimbQueueItem, PlaylistSuggestionSource, PlaylistTrackPage } from './types';
+import type {
+  Climb,
+  ClimbQueue,
+  ClimbQueueItem,
+  PlaylistSuggestionSource,
+  PlaylistTrackPage,
+  PlaylistTrackResume,
+} from './types';
 
 const acceptEveryClimb = () => true;
 
@@ -51,12 +58,23 @@ export function preparePlaylistClimbs(
   return { inputClimbs: climbs, isClimbable, climbs: compatibleClimbs, firstIndexByUuid };
 }
 
-/** Sources created elsewhere keep the original scan behavior. No serialized metadata. */
+// Sources built without `createPlaylistSuggestionSource` (a restored snapshot, a
+// board-filtered copy) get their index on first use, keyed by the climbs array,
+// which every track treats as immutable. Navigation asks about one queue entry at
+// a time (issue #6777: is this queued climb one the list walk put there?), so a
+// scan per question would cost the length of the list for every queued climb.
+const lazyClimbIndices = new WeakMap<Climb[], ReadonlyMap<string, number>>();
+
+/** Where `climbUuid` first sits on the track, or -1. No serialized metadata. */
 export function findPlaylistClimbIndex(source: PlaylistSuggestionSource, climbUuid: string): number {
   const prepared = sourceIndices.get(source);
-  return prepared?.climbs === source.climbs
-    ? (prepared.firstIndexByUuid.get(climbUuid) ?? -1)
-    : source.climbs.findIndex(({ uuid }) => uuid === climbUuid);
+  if (prepared?.climbs === source.climbs) return prepared.firstIndexByUuid.get(climbUuid) ?? -1;
+  let lazyIndex = lazyClimbIndices.get(source.climbs);
+  if (!lazyIndex) {
+    lazyIndex = indexClimbs(source.climbs);
+    lazyClimbIndices.set(source.climbs, lazyIndex);
+  }
+  return lazyIndex.get(climbUuid) ?? -1;
 }
 
 /**
@@ -335,5 +353,32 @@ export function appendPlaylistTrackPage(
 export function withPlaylistTrackClimbs(source: PlaylistSuggestionSource, climbs: Climb[]): PlaylistSuggestionSource {
   const next: PlaylistSuggestionSource = { ...source, climbs };
   if (climbs.length !== source.climbs.length) delete next.total;
+  return next;
+}
+
+/** Whether two resume anchors name the same list climb and queue entry; absent and null are the same. */
+export function samePlaylistTrackResume(
+  first: PlaylistTrackResume | null | undefined,
+  second: PlaylistTrackResume | null | undefined,
+): boolean {
+  if (!first || !second) return !first && !second;
+  return first.climbUuid === second.climbUuid && first.queueItemUuid === second.queueItemUuid;
+}
+
+/**
+ * A copy of `source` with its Up next resume point set, or cleared with null
+ * (issue #6777). `source` itself when nothing changes, so a step that stays on
+ * the list costs no new track. The copy keeps the source's prepared index.
+ */
+export function withPlaylistTrackResume(
+  source: PlaylistSuggestionSource,
+  resume: PlaylistTrackResume | null,
+): PlaylistSuggestionSource {
+  if (samePlaylistTrackResume(source.resume, resume)) return source;
+  const next: PlaylistSuggestionSource = { ...source };
+  if (resume) next.resume = resume;
+  else delete next.resume;
+  const preparedIndex = sourceIndices.get(source);
+  if (preparedIndex?.climbs === source.climbs) sourceIndices.set(next, preparedIndex);
   return next;
 }

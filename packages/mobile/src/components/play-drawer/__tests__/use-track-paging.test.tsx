@@ -48,7 +48,7 @@ beforeEach(() => {
 
 function render(
   source: PlaylistSuggestionSource,
-  displayedClimbUuid: string,
+  listClimbUuid: string,
   previewTrack = false,
   committedSource: PlaylistSuggestionSource = source,
 ) {
@@ -58,13 +58,13 @@ function render(
     (props: { displayed: string }) =>
       useTrackPaging({
         source,
-        displayedClimbUuid: props.displayed,
+        listClimbUuid: props.displayed,
         previewTrack,
         setPreviewSource,
         getCommittedSource: () => committedSource,
         refreshCommittedSource,
       }),
-    { initialProps: { displayed: displayedClimbUuid } },
+    { initialProps: { displayed: listClimbUuid } },
   );
   return { ...view, setPreviewSource, refreshCommittedSource };
 }

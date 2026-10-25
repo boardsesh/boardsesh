@@ -717,6 +717,7 @@ export function PlayCore({
     navigationSuggestionSource,
     navigationState,
     currentTrackLabel,
+    trackListClimbUuid,
     trackEndCard,
     listWalkUpNextCount,
     nextHeaderClimb,
@@ -774,7 +775,7 @@ export function PlayCore({
   );
   useTrackPaging({
     source: navigationSuggestionSource,
-    displayedClimbUuid: displayedQueueItem?.climb?.uuid,
+    listClimbUuid: trackListClimbUuid,
     previewTrack: drawerPreviewItem != null,
     setPreviewSource: setDrawerPreviewSuggestionSource,
     getCommittedSource: getCommittedSuggestionSource,
