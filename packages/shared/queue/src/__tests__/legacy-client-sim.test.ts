@@ -32,6 +32,7 @@ import {
   capHistory,
   chooseQueueEvent,
   clampInsertPosition,
+  historyAndUpNextCount,
   historyLine,
   historyOf,
   isUpNextFull,
@@ -450,6 +451,8 @@ type SimStats = {
   clampedReorders: number;
   orphansNormalised: number;
   maxQueueLength: number;
+  /** `addQueueItem` calls the server refused with `QUEUE_FULL`. */
+  queueFullRejections: number;
 };
 
 function bump<TKey>(counts: Map<TKey, number>, key: TKey) {
@@ -474,8 +477,12 @@ class SimServer {
     return { ...this.state, sequence: this.sequence };
   }
 
-  /** Store a write under the next sequence. Returns what was stored. */
-  private commit(next: ServerState): ServerView {
+  /**
+   * Store a write under the next sequence. Returns what was stored.
+   * `trimFollows` is `addQueueItem`'s write 1, which may pass the cap by one
+   * because its write 2 (the trim `FullSync`) comes straight after it.
+   */
+  private commit(next: ServerState, trimFollows = false): ServerView {
     if (hasOrphan(next)) throw new Error(`${this.context}: the server stored an orphan current climb`);
     if (next.historyCount === null) throw new Error(`${this.context}: a write left historyCount to a default`);
     const resolvedLine = historyLine(next);
@@ -487,8 +494,15 @@ class SimServer {
       currentClimbQueueItem: next.currentClimbQueueItem,
       historyCount: next.historyCount,
     };
+    if (this.percent === 100 && !trimFollows) {
+      // Section 5: History + Up next <= 500, and the climb on the wall is extra.
+      const limit = MAX_SYNCED_QUEUE_ITEMS + (next.currentClimbQueueItem ? 1 : 0);
+      if (next.queue.length > limit) {
+        throw new Error(`${this.context}: stored ${next.queue.length} entries, over ${limit}`);
+      }
+    }
     this.sequence += 1;
-    this.stats.maxQueueLength = Math.max(this.stats.maxQueueLength, next.queue.length);
+    if (!trimFollows) this.stats.maxQueueLength = Math.max(this.stats.maxQueueLength, next.queue.length);
     return this.view();
   }
 
@@ -680,7 +694,10 @@ class SimServer {
   addQueueItem(item: ClimbQueueItem, position: number | undefined, originId: string): boolean {
     this.normaliseStoredOrphan();
     const before = this.begin();
-    if (this.percent === 100 && isUpNextFull(before)) return false;
+    if (this.percent === 100 && isUpNextFull(before)) {
+      this.stats.queueFullRejections += 1;
+      return false;
+    }
 
     const { index, clamped } =
       this.percent === 100
@@ -693,11 +710,14 @@ class SimServer {
             clamped: false,
           };
     if (clamped) this.stats.clampedAdds += 1;
-    const added = this.commit({
-      queue: [...before.queue.slice(0, index), item, ...before.queue.slice(index)],
-      currentClimbQueueItem: before.currentClimbQueueItem,
-      historyCount: lineAfterDelta(before, { kind: 'add', index }),
-    });
+    const added = this.commit(
+      {
+        queue: [...before.queue.slice(0, index), item, ...before.queue.slice(index)],
+        currentClimbQueueItem: before.currentClimbQueueItem,
+        historyCount: lineAfterDelta(before, { kind: 'add', index }),
+      },
+      this.percent === 100,
+    );
     const publications: Publication[] = [
       { event: { type: 'QueueItemAdded', sequence: added.sequence, item, position: index }, stored: added },
     ];
@@ -767,14 +787,16 @@ class SimServer {
       const capped = capHistory(normalised);
       if (capped.currentClimbQueueItem && isUpNextFull(capped, 0)) return false;
       // With nothing current the excess comes off the head instead of throwing.
-      const excess = Math.max(capped.queue.length - MAX_SYNCED_QUEUE_ITEMS, 0);
+      // The climb on the wall doesn't count toward the cap.
+      const excess = Math.max(historyAndUpNextCount(capped) - MAX_SYNCED_QUEUE_ITEMS, 0);
       next = {
         queue: capped.queue.slice(excess),
         currentClimbQueueItem: capped.currentClimbQueueItem,
         historyCount: lineAfterDelta(capped, { kind: 'trim', count: excess }),
       };
       if (capped.trimmedCount + excess > 0) this.stats.trims += 1;
-    } else if (normalised.queue.length > MAX_SYNCED_QUEUE_ITEMS) {
+    } else if (queue.length > MAX_SYNCED_QUEUE_ITEMS + (queue.some(({ uuid }) => uuid === current?.uuid) ? 1 : 0)) {
+      // The raw guard: 501 entries when the payload's current climb is in it, else 500.
       return false;
     }
     const stored = this.commit(next);
@@ -846,7 +868,14 @@ type Crew = {
   randomClimb: () => Climb;
 };
 
-function createCrew(seed: number, percent: 0 | 100, orphanStart: boolean, stats: SimStats): Crew {
+/**
+ * The room the crew joins: empty, one a pre-PR-2 native path left with an
+ * orphan current climb, or one whose Up next already holds 500 climbs with
+ * nothing current (the cap edge of section 5).
+ */
+type RoomStart = 'empty' | 'orphan' | 'full-up-next';
+
+function createCrew(seed: number, percent: 0 | 100, start: RoomStart, stats: SimStats): Crew {
   const oldPhones = [new LegacyJsClient('old-1'), new LegacyJsClient('old-2')];
   const swift = new SwiftClient('swift');
   const newPhones = [new NowSlotClient('new-1'), new NowSlotClient('new-2')];
@@ -868,13 +897,20 @@ function createCrew(seed: number, percent: 0 | 100, orphanStart: boolean, stats:
     randomClimb: () =>
       makeClimb(random.int(CLIMB_POOL_SIZE), random.pick(ANGLES), random.pick(['kilter', undefined] as const)),
   };
-  if (orphanStart) {
+  if (start === 'orphan') {
     // A room the shipped native stale-item path wrote before PR 2: [A B C]
     // with an orphan current climb and no historyCount.
     server.state = {
       queue: [0, 1, 2].map(() => freshItem(crew, crew.randomClimb())),
       currentClimbQueueItem: freshItem(crew, crew.randomClimb()),
       historyCount: null,
+    };
+  }
+  if (start === 'full-up-next') {
+    server.state = {
+      queue: Array.from({ length: MAX_SYNCED_QUEUE_ITEMS }, () => freshItem(crew, crew.randomClimb())),
+      currentClimbQueueItem: null,
+      historyCount: 0,
     };
   }
   server.context = `seed ${seed} percent ${percent}`;
@@ -1285,8 +1321,8 @@ function pickActor(actors: Actor[], random: Random): Actor {
   return actors[actors.length - 1];
 }
 
-function runSimulation(seed: number, percent: 0 | 100, orphanStart: boolean, operationCount: number, stats: SimStats) {
-  const crew = createCrew(seed, percent, orphanStart, stats);
+function runSimulation(seed: number, percent: 0 | 100, start: RoomStart, operationCount: number, stats: SimStats) {
+  const crew = createCrew(seed, percent, start, stats);
   const actors = buildActors(crew);
   let performed = 0;
   let attempts = 0;
@@ -1310,6 +1346,7 @@ function emptyStats(): SimStats {
     clampedReorders: 0,
     orphansNormalised: 0,
     maxQueueLength: 0,
+    queueFullRejections: 0,
   };
 }
 
@@ -1323,11 +1360,11 @@ describe.each(PERCENTS)('legacy client simulation at QUEUE_NOW_SLOT_PERCENT=%i',
   const stats = emptyStats();
 
   it.each(SEEDS)('keeps every client in step with the server over 1,000 operations (seed %i)', (seed) => {
-    expect(() => runSimulation(seed, percent, false, OPERATIONS_PER_RUN, stats)).not.toThrow();
+    expect(() => runSimulation(seed, percent, 'empty', OPERATIONS_PER_RUN, stats)).not.toThrow();
   });
 
   it.each(SEEDS)('normalises a room written before PR 2 that holds an orphan (seed %i)', (seed) => {
-    expect(() => runSimulation(seed + 1, percent, true, OPERATIONS_PER_RUN, stats)).not.toThrow();
+    expect(() => runSimulation(seed + 1, percent, 'orphan', OPERATIONS_PER_RUN, stats)).not.toThrow();
   });
 
   it('exercised the rows and events it is meant to cover', () => {
@@ -1366,6 +1403,43 @@ describe.each(PERCENTS)('legacy client simulation at QUEUE_NOW_SLOT_PERCENT=%i',
       expect(stats.clampedAdds).toBeGreaterThan(0);
       expect(stats.clampedReorders).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('legacy client simulation from a room whose Up next is full', () => {
+  // Section 5: the climb on the wall doesn't count toward the 500 cap. With
+  // nothing current and 500 climbs in Up next, an open stores 501 entries and
+  // is never refused; adds are refused with QUEUE_FULL; a clear drops the
+  // cleared climb when there is no other History to trim. Every commit at 100
+  // asserts at most 501 entries with a climb current and 500 without.
+  const stats = emptyStats();
+
+  it.each(SEEDS)('keeps every client in step at the cap (seed %i)', (seed) => {
+    expect(() => runSimulation(seed + 2, 100, 'full-up-next', OPERATIONS_PER_RUN / 2, stats)).not.toThrow();
+  });
+
+  it('reached the 501-entry array and trimmed History to stay there', () => {
+    expect(stats.maxQueueLength).toBe(MAX_SYNCED_QUEUE_ITEMS + 1);
+    expect(stats.trims).toBeGreaterThan(0);
+  });
+
+  it('refuses an old phone’s add with QUEUE_FULL, then takes its open as the 501st entry', () => {
+    const localStats = emptyStats();
+    const crew = createCrew(1, 100, 'full-up-next', localStats);
+    const [phone] = crew.oldPhones;
+    const added = freshItem(crew, crew.randomClimb());
+    phone.dispatchLocal({ type: 'DELTA_ADD_QUEUE_ITEM', payload: { item: added, position: undefined } });
+    expect(crew.server.addQueueItem(added, undefined, phone.clientId)).toBe(false);
+    phone.resync(crew.server.view());
+    phone.assertMatches(crew.server.view(), 'after QUEUE_FULL');
+    expect(localStats.queueFullRejections).toBe(1);
+
+    const opened = freshItem(crew, crew.randomClimb());
+    oldPhoneSetCurrent(crew, phone, opened, true);
+    const stored = crew.server.view();
+    expect(stored.queue).toHaveLength(MAX_SYNCED_QUEUE_ITEMS + 1);
+    expect(stored.currentClimbQueueItem?.uuid).toBe(opened.uuid);
+    expect(stored.historyCount).toBe(0);
   });
 });
 

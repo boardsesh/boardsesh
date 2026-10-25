@@ -38,6 +38,7 @@ export {
   upNextStart,
   historyOf,
   upNextOf,
+  historyAndUpNextCount,
   isUpNextFull,
   isSameWallClimb,
   normaliseOrphanCurrent,

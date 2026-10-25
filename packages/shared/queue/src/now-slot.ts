@@ -80,8 +80,8 @@ export const HISTORY_TRIM_AT = 125;
 export const HISTORY_KEEP_COUNT = 100;
 
 /**
- * `extensions.code` of the GraphQL error `addQueueItem` returns when Now + Up
- * next already fill `MAX_SYNCED_QUEUE_ITEMS` (section 5).
+ * `extensions.code` of the GraphQL error `addQueueItem` returns when Up next
+ * already fills `MAX_SYNCED_QUEUE_ITEMS` (section 5).
  */
 export const QUEUE_FULL = 'QUEUE_FULL';
 
@@ -136,17 +136,35 @@ export function upNextOf<TItem extends NowSlotQueueItem>(state: NowSlotState<TIt
 }
 
 /**
- * True when Now + Up next plus `adding` more entries would pass
- * `MAX_SYNCED_QUEUE_ITEMS`. `addQueueItem` rejects with {@link QUEUE_FULL} at
- * `adding = 1`; a `setQueue` or `joinSession` seed with a climb current throws
- * at `adding = 0`.
+ * The entries that count toward `MAX_SYNCED_QUEUE_ITEMS`: History + Up next.
+ * The climb on the wall is extra (section 5, owner decision 2026-10-24), so a
+ * stored array holds at most 501 entries with a climb current and at most 500
+ * with nothing current. Opening a climb therefore never has to drop a queued
+ * one: with nothing current and Up next at 500, the open stores 501.
+ *
+ * An orphan current climb isn't in `queue`, so it isn't subtracted; call
+ * {@link normaliseOrphanCurrent} first and it is counted as the Now slot.
+ */
+export function historyAndUpNextCount<TItem extends NowSlotQueueItem>(state: NowSlotState<TItem>): number {
+  const hasCurrent = currentIndexOf(state.queue, state.currentClimbQueueItem) >= 0;
+  return state.queue.length - (hasCurrent ? 1 : 0);
+}
+
+/**
+ * True when Up next plus `adding` more entries would pass
+ * `MAX_SYNCED_QUEUE_ITEMS`. The climb on the wall doesn't count, and History
+ * doesn't either: {@link capHistory} trims all of it before an Up next entry
+ * would have to go. So this is the same answer as "History + Up next is still
+ * at the cap after `capHistory`". `addQueueItem` (and Play next) rejects with
+ * {@link QUEUE_FULL} at `adding = 1`; a `setQueue` or `joinSession` payload
+ * throws at `adding = 0`.
  *
  * Call {@link normaliseOrphanCurrent} first: an orphan current climb counts as
- * nothing current, so it is left out of the Now + Up next count.
+ * nothing current until it is inserted, and then it is the Now slot.
  */
 export function isUpNextFull<TItem extends NowSlotQueueItem>(state: NowSlotState<TItem>, adding = 1): boolean {
-  const nowAndUpNextCount = state.queue.length - historyLine(state);
-  return nowAndUpNextCount + adding > MAX_SYNCED_QUEUE_ITEMS;
+  const upNextCount = state.queue.length - upNextStart(state.queue, state.currentClimbQueueItem, state.historyCount);
+  return upNextCount + adding > MAX_SYNCED_QUEUE_ITEMS;
 }
 
 /**
@@ -345,10 +363,17 @@ export type CappedHistory<TItem extends NowSlotQueueItem> = NowSlotResolvedState
 /**
  * Trim History, oldest first (section 5). When History has reached
  * {@link HISTORY_TRIM_AT} entries it is cut to the newest
- * {@link HISTORY_KEEP_COUNT}. Then, when the array plus `headroom` more entries
- * would pass `MAX_SYNCED_QUEUE_ITEMS`, more History goes. The current climb and
- * Up next are never trimmed, so the result can still be over the cap: check
- * {@link isUpNextFull}.
+ * {@link HISTORY_KEEP_COUNT}. Then, when History + Up next plus `headroom`
+ * more entries would pass `MAX_SYNCED_QUEUE_ITEMS`, more History goes. The
+ * climb on the wall is not counted ({@link historyAndUpNextCount}), so the
+ * array can hold `MAX_SYNCED_QUEUE_ITEMS + 1` entries while a climb is current.
+ * The current climb and Up next are never trimmed, so the result can still be
+ * over the cap: check {@link isUpNextFull}.
+ *
+ * After `setCurrentClimb(null)` the cleared climb is History's newest entry,
+ * so it is the last History entry to go: with History otherwise empty and Up
+ * next at 500, the clear drops the cleared climb itself rather than storing
+ * 501 entries with nothing current.
  *
  * `headroom` is the number of entries about to be added (1 before
  * `addQueueItem`); 0 after a placement that already added its entry.
@@ -363,7 +388,7 @@ export function capHistory<TItem extends NowSlotQueueItem>(
 ): CappedHistory<TItem> {
   const line = historyLine(state);
   let trimmedCount = line >= HISTORY_TRIM_AT ? line - HISTORY_KEEP_COUNT : 0;
-  const overflow = state.queue.length - trimmedCount + headroom - MAX_SYNCED_QUEUE_ITEMS;
+  const overflow = historyAndUpNextCount(state) - trimmedCount + headroom - MAX_SYNCED_QUEUE_ITEMS;
   if (overflow > 0) trimmedCount = Math.min(line, trimmedCount + overflow);
 
   return {

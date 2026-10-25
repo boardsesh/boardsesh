@@ -6,6 +6,7 @@ import {
   capHistory,
   chooseQueueEvent,
   clampInsertPosition,
+  historyAndUpNextCount,
   historyLine,
   historyOf,
   isSameWallClimb,
@@ -566,21 +567,38 @@ describe('capHistory', () => {
     expect(capped.queue.at(-1)?.uuid).toBe('U0');
   });
 
-  it('drops more History when the array would pass 500', () => {
+  it('does not count the climb on the wall toward the cap', () => {
     const { queue, current } = longHistory(50, MAX_SYNCED_QUEUE_ITEMS - 50);
-    // 50 + 1 + 450 = 501 entries.
+    // 50 + 1 + 450 = 501 entries; History + Up next is exactly 500.
+    expect(historyAndUpNextCount(state(queue, current))).toBe(MAX_SYNCED_QUEUE_ITEMS);
+    const capped = capHistory(state(queue, current));
+    expect(capped.trimmedCount).toBe(0);
+    expect(capped.queue).toHaveLength(MAX_SYNCED_QUEUE_ITEMS + 1);
+  });
+
+  it('drops more History when History + Up next would pass 500', () => {
+    const { queue, current } = longHistory(50, MAX_SYNCED_QUEUE_ITEMS - 49);
+    // 50 + 1 + 451 = 502 entries, 501 of them History + Up next.
     const capped = capHistory(state(queue, current));
     expect(capped.trimmedCount).toBe(1);
-    expect(capped.queue).toHaveLength(MAX_SYNCED_QUEUE_ITEMS);
+    expect(capped.queue).toHaveLength(MAX_SYNCED_QUEUE_ITEMS + 1);
     expect(capped.queue[0].uuid).toBe('H1');
   });
 
+  it('caps the whole array at 500 with nothing current', () => {
+    const upNext = Array.from({ length: MAX_SYNCED_QUEUE_ITEMS - 1 }, (_, index) => makeItem(`U${index}`));
+    const capped = capHistory(state([...historyItems(2), ...upNext], null, 2));
+    expect(capped.trimmedCount).toBe(1);
+    expect(capped.queue).toHaveLength(MAX_SYNCED_QUEUE_ITEMS);
+    expect(capped.historyCount).toBe(1);
+  });
+
   it('makes room for the entries about to be added', () => {
-    const { queue, current } = longHistory(10, MAX_SYNCED_QUEUE_ITEMS - 11);
-    // Exactly 500 entries; one more is about to come.
+    const { queue, current } = longHistory(10, MAX_SYNCED_QUEUE_ITEMS - 10);
+    // 501 entries, History + Up next at 500; one more is about to come.
     const capped = capHistory(state(queue, current), 1);
     expect(capped.trimmedCount).toBe(1);
-    expect(capped.queue).toHaveLength(MAX_SYNCED_QUEUE_ITEMS - 1);
+    expect(capped.queue).toHaveLength(MAX_SYNCED_QUEUE_ITEMS);
   });
 
   it('never trims the current climb or Up next', () => {
@@ -597,23 +615,102 @@ describe('capHistory', () => {
       expect(QUEUE_FULL).toBe('QUEUE_FULL');
     });
 
-    it('rejects an add only when Now + Up next already fill the cap', () => {
-      const full = longHistory(30, MAX_SYNCED_QUEUE_ITEMS - 1);
+    it('rejects an add only when Up next alone fills the cap', () => {
+      const full = longHistory(30, MAX_SYNCED_QUEUE_ITEMS);
+      // History goes first, all of it, and Up next is still 500.
+      expect(isUpNextFull(state(full.queue, full.current))).toBe(true);
       const fullState = capHistory(state(full.queue, full.current), 1);
-      expect(fullState.queue).toHaveLength(MAX_SYNCED_QUEUE_ITEMS);
+      expect(fullState.trimmedCount).toBe(30);
+      expect(fullState.queue).toHaveLength(MAX_SYNCED_QUEUE_ITEMS + 1);
       expect(isUpNextFull(fullState)).toBe(true);
 
-      const roomy = longHistory(30, MAX_SYNCED_QUEUE_ITEMS - 2);
+      const roomy = longHistory(30, MAX_SYNCED_QUEUE_ITEMS - 1);
+      expect(isUpNextFull(state(roomy.queue, roomy.current))).toBe(false);
       const roomyState = capHistory(state(roomy.queue, roomy.current), 1);
-      expect(isUpNextFull(roomyState)).toBe(false);
-      expect(roomyState.queue.length + 1).toBeLessThanOrEqual(MAX_SYNCED_QUEUE_ITEMS);
+      // After the add: the climb on the wall plus 500 History + Up next.
+      expect(roomyState.queue.length + 1).toBe(MAX_SYNCED_QUEUE_ITEMS + 1);
     });
 
-    it('lets a setQueue through up to exactly 500 Now + Up next', () => {
-      const exact = longHistory(0, MAX_SYNCED_QUEUE_ITEMS - 1);
+    it('rejects an add with nothing current and 500 in Up next', () => {
+      const upNext = Array.from({ length: MAX_SYNCED_QUEUE_ITEMS }, (_, index) => makeItem(`U${index}`));
+      expect(isUpNextFull(state(upNext, null, 0))).toBe(true);
+      expect(isUpNextFull(state(upNext.slice(1), null, 0))).toBe(false);
+    });
+
+    it('lets a setQueue through up to exactly 500 in Up next', () => {
+      const exact = longHistory(0, MAX_SYNCED_QUEUE_ITEMS);
+      expect(exact.queue).toHaveLength(MAX_SYNCED_QUEUE_ITEMS + 1);
       expect(isUpNextFull(state(exact.queue, exact.current), 0)).toBe(false);
-      const over = longHistory(0, MAX_SYNCED_QUEUE_ITEMS);
+      const over = longHistory(0, MAX_SYNCED_QUEUE_ITEMS + 1);
       expect(isUpNextFull(state(over.queue, over.current), 0)).toBe(true);
+    });
+  });
+
+  describe('at the cap: the climb on the wall is extra', () => {
+    const fullUpNext = () => Array.from({ length: MAX_SYNCED_QUEUE_ITEMS }, (_, index) => makeItem(`U${index}`));
+
+    it('opens a new climb with nothing current and Up next at 500: 501 entries, nothing refused', () => {
+      const upNext = fullUpNext();
+      const opened = makeItem('X');
+      const placed = placeOnWall(state(upNext, null, 0), opened, 'NOW');
+      expect(placed.rewrite).toBe('insert');
+      const capped = capHistory(placed);
+      expect(capped.trimmedCount).toBe(0);
+      expect(capped.queue).toHaveLength(MAX_SYNCED_QUEUE_ITEMS + 1);
+      expect(capped.currentClimbQueueItem).toBe(opened);
+      expect(uuids(upNextOf(capped))).toEqual(uuids(upNext));
+      expect(historyAndUpNextCount(capped)).toBe(MAX_SYNCED_QUEUE_ITEMS);
+    });
+
+    it('the same open from an old phone (no placement) is not refused either', () => {
+      const placed = placeOnWall(state(fullUpNext(), null, 0), makeItem('X'), undefined, true);
+      expect(capHistory(placed).queue).toHaveLength(MAX_SYNCED_QUEUE_ITEMS + 1);
+    });
+
+    it('Next from there moves the opened climb to History and trims nothing', () => {
+      const upNext = fullUpNext();
+      const opened = makeItem('X');
+      const atCap = capHistory(placeOnWall(state(upNext, null, 0), opened, 'NOW'));
+      const next = capHistory(placeOnWall(atCap, upNext[0], 'NOW'));
+      expect(next.trimmedCount).toBe(0);
+      expect(next.queue).toHaveLength(MAX_SYNCED_QUEUE_ITEMS + 1);
+      expect(uuids(historyOf(next))).toEqual(['X']);
+      expect(next.currentClimbQueueItem?.uuid).toBe('U0');
+      expect(upNextOf(next)).toHaveLength(MAX_SYNCED_QUEUE_ITEMS - 1);
+    });
+
+    it('a clear with no other History drops the cleared climb instead of storing 501 with nothing current', () => {
+      const upNext = fullUpNext();
+      const opened = makeItem('X');
+      const atCap = capHistory(placeOnWall(state(upNext, null, 0), opened, 'NOW'));
+      const cleared = capHistory(placeOnWall(atCap, null));
+      expect(cleared.trimmedCount).toBe(1);
+      expect(cleared.currentClimbQueueItem).toBeNull();
+      expect(cleared.historyCount).toBe(0);
+      expect(uuids(cleared.queue)).toEqual(uuids(upNext));
+    });
+
+    it('a clear with older History trims that first, and the cleared climb joins History', () => {
+      const upNext = fullUpNext().slice(1);
+      const current = makeItem('X');
+      // [H0 | X | U0..U498]: 501 entries, History + Up next at 500.
+      const before = state([makeItem('H0'), current, ...upNext], current);
+      const cleared = capHistory(placeOnWall(before, null));
+      expect(cleared.trimmedCount).toBe(1);
+      expect(uuids(historyOf(cleared))).toEqual(['X']);
+      expect(cleared.queue).toHaveLength(MAX_SYNCED_QUEUE_ITEMS);
+      expect(uuids(upNextOf(cleared))).toEqual(uuids(upNext));
+    });
+
+    it('opening a new climb while one is current at the cap drops the oldest History, here the old current', () => {
+      const upNext = fullUpNext();
+      const current = makeItem('X');
+      const opened = makeItem('Y');
+      const placed = capHistory(placeOnWall(state([current, ...upNext], current), opened, 'NOW'));
+      expect(placed.trimmedCount).toBe(1);
+      expect(placed.queue).toHaveLength(MAX_SYNCED_QUEUE_ITEMS + 1);
+      expect(placed.currentClimbQueueItem).toBe(opened);
+      expect(uuids(upNextOf(placed))).toEqual(uuids(upNext));
     });
   });
 });
@@ -916,6 +1013,8 @@ describe('package exports', () => {
     expect(queuePackage.placeOnWall).toBe(placeOnWall);
     expect(queuePackage.upNextStart).toBe(upNextStart);
     expect(queuePackage.capHistory).toBe(capHistory);
+    expect(queuePackage.historyAndUpNextCount).toBe(historyAndUpNextCount);
+    expect(queuePackage.isUpNextFull).toBe(isUpNextFull);
     expect(queuePackage.lineAfterDelta).toBe(lineAfterDelta);
     expect(queuePackage.normaliseHistoryCount).toBe(normaliseHistoryCount);
     expect(queuePackage.normaliseOrphanCurrent).toBe(normaliseOrphanCurrent);
