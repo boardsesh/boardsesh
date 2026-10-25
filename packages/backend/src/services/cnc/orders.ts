@@ -271,10 +271,11 @@ export type ListOrdersForAdminOptions = {
  * One row past `limit` is fetched and dropped, which is how `hasMore` is
  * answered without a second `COUNT(*)` over the whole table.
  *
- * No index backs this ordering today, deliberately: `cnc_orders` holds one row
- * per sale, the sort is over the whole (small) table, and an index added before
- * there is a volume to justify it is a write cost paid for a guess. Revisit
- * when the table passes a few thousand rows.
+ * No index backs this ordering today, deliberately. `cnc_orders_status_queued_idx`
+ * exists, but it serves the worker's claim, not this `(created_at, id)` sort.
+ * `cnc_orders` holds one row per sale, the sort is over the whole (small) table,
+ * and an index added before there is a volume to justify it is a write cost
+ * paid for a guess. Revisit when the table passes a few thousand rows.
  */
 export async function listOrdersForAdmin({
   status,
