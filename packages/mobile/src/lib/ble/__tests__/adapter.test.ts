@@ -1501,9 +1501,13 @@ describe('RNBleAdapter', () => {
         try {
           const firstError = androidConnectError(201, 133);
           const { devicePicker } = setupSelectedDevice();
-          mockBleManager.connectToDevice.mockImplementationOnce(
-            () => new Promise((_resolve, reject) => setTimeout(() => reject(firstError), firstFailureDelayMs)),
-          );
+          mockBleManager.connectToDevice
+            .mockImplementationOnce(
+              () => new Promise((_resolve, reject) => setTimeout(() => reject(firstError), firstFailureDelayMs)),
+            )
+            // A squeezed-in attempt two would still be connecting at the
+            // deadline, so the plain timeout would replace firstError.
+            .mockImplementationOnce(() => new Promise(() => {}));
           mockBleManager.cancelDeviceConnection.mockResolvedValue(undefined);
 
           const adapter = new RNBleAdapter(devicePicker, 'aurora', { enableAndroidConnectRetry: true });
@@ -1515,6 +1519,9 @@ describe('RNBleAdapter', () => {
           expect(adapter.getLastConnectAttemptCount()).toBe(1);
           expect(vi.getTimerCount()).toBe(0);
         } finally {
+          // clearAllMocks keeps queued once-implementations, and the unused
+          // hanging attempt two would otherwise hang the next test's connect.
+          mockBleManager.connectToDevice.mockReset();
           vi.useRealTimers();
         }
       },
