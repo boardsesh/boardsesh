@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { CONFIDENCE, MAX_SEARCH_PAGE } from '@boardsesh/db/queries/constants';
+
+type ConfidenceTier = (typeof CONFIDENCE)[keyof typeof CONFIDENCE];
 import { CLIMB_CHARACTERISTICS, TOGGLEABLE_CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
 import { ClimbUuidSchema, ExternalUUIDSchema, BoardNameSchema, UUIDSchema } from './primitives';
 import { BOARD_ANGLE_VALIDATION_MESSAGE, isBoardAngleSupported } from './board-angles';
@@ -116,16 +118,7 @@ export const ClimbInputSchema = z.object({
   boardseshDifficulty: z.number().nullish(),
   // Source of truth for the tier set: CONFIDENCE / ConfidenceTier in
   // packages/db/src/queries/grade-model/constants.ts.
-  boardseshConfidence: z
-    .enum([
-      CONFIDENCE.confirmed,
-      CONFIDENCE.provisional,
-      CONFIDENCE.setterOnly,
-      CONFIDENCE.crossAngleEstimate,
-      CONFIDENCE.moonboardAngleEstimate,
-      CONFIDENCE.moonboardWideAngleEstimate,
-    ])
-    .nullish(),
+  boardseshConfidence: z.enum(Object.values(CONFIDENCE) as [ConfidenceTier, ...ConfidenceTier[]]).nullish(),
   // The sizes the climb fits on, round-tripped through the queue so a peer on a
   // different-sized wall keeps the one signal that separates Woods' two boards
   // (their hold ids overlap as different holds). Bounded: a board type has a
