@@ -1848,8 +1848,8 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         source: options?.source ?? 'drag',
       });
       // The wire move carries indexes. The server finds the climb by uuid
-      // (#6792), but it still places it at `newIndex`, so the indexes must
-      // describe the server's queue, not this phone's. They differ while the
+      // (#6792), but it still places it at `newIndex` (clamped to the tail),
+      // so the indexes must describe the server's queue, not this phone's. They differ while the
       // lane drains: a whole-list Play next puts every climb here at once but
       // on the server one send at a time. So the move waits its turn on the
       // lane and reads both indexes at send time (`serverIndexIn`), when every
