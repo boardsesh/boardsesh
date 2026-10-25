@@ -1,5 +1,5 @@
 import type postgres from 'postgres';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { decideMigrationTarget, prepareMigrations } from '../dev-db-discover';
 
@@ -74,6 +74,14 @@ const behind: TrackerState = { hasDrizzle: true, hasPublic: false, drizzleLast: 
 const remote = { host: '100.64.0.7', label: 'peer', connectionString: 'postgres://unused' };
 
 describe('prepareMigrations', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it.each(['tailscale', 'env'] as const)('issues no DDL or INSERT against a behind %s database', async (source) => {
     const { client, statements } = createStubClient(behind);
     const installCutoffHelper = vi.fn();
