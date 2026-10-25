@@ -46,6 +46,7 @@ vi.mock('react-native', () => ({
 vi.mock('expo-router', () => ({
   useRouter: () => router,
   useNavigation: () => navigation,
+  unstable_useIsNavigating: () => false,
   usePreventRemove: (enabled: boolean, callback: NonNullable<typeof guard.callback>) => {
     guard.enabled = enabled;
     guard.callback = callback;
@@ -340,6 +341,20 @@ describe('SprayWallHoldsScreen', () => {
     act(() => editorProps().onHandoverChange(false));
     act(() => guard.confirm?.());
     expect(navigation.dispatch).toHaveBeenCalledExactlyOnceWith({ type: 'GO_BACK' });
+  });
+
+  it('asks again if a confirmed removal leaves the dirty editor mounted', async () => {
+    render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+    await screen.findByTestId('editor');
+    act(() => editorProps().onDirtyChange(true));
+    act(tryRemove);
+    act(() => guard.confirm?.());
+    expect(navigation.dispatch).toHaveBeenCalledOnce();
+    expect(guard.ask).toHaveBeenCalledOnce();
+    expect(guard.enabled).toBe(true);
+    act(tryRemove);
+    expect(guard.ask).toHaveBeenCalledTimes(2);
+    expect(navigation.dispatch).toHaveBeenCalledOnce();
   });
 
   it('blocks removal during preparation and publication without asking', async () => {

@@ -31,7 +31,7 @@ export function usePlaySwipeDismiss(openTargetNonce?: number | null) {
   const removalRequestedRef = useRef(false);
   const nativeRemovalRevisionRef = useRef<number | null>(null);
   const nativeRemovalAttemptRef = useRef(0);
-  const requestedRemovalRef = useRef<{ attempt: number; beforeRemoveSeen: boolean } | null>(null);
+  const requestedRemovalRef = useRef<{ attempt: number; removalEventSeen: boolean } | null>(null);
   const [offscreenRevision, setOffscreenRevision] = useState<number | null>(null);
   const [restorationVersion, setRestorationVersion] = useState(0);
   const appliedRestorationRef = useRef(0);
@@ -50,10 +50,10 @@ export function usePlaySwipeDismiss(openTargetNonce?: number | null) {
       nativeRemovalRevisionRef.current = removingRevision;
       const requestedRemoval = requestedRemovalRef.current;
       let removingAttempt: number;
-      if (requestedRemoval?.attempt === nativeRemovalAttemptRef.current && !requestedRemoval.beforeRemoveSeen) {
+      if (requestedRemoval?.attempt === nativeRemovalAttemptRef.current && !requestedRemoval.removalEventSeen) {
         // The first native event belongs to the close we just requested. Keep
         // its waiter able to restore an aborted request after this event.
-        requestedRemoval.beforeRemoveSeen = true;
+        requestedRemoval.removalEventSeen = true;
         removingAttempt = requestedRemoval.attempt;
       } else {
         // Another event is a distinct removal, even for the same opener.
@@ -148,7 +148,7 @@ export function usePlaySwipeDismiss(openTargetNonce?: number | null) {
           return;
         if (navigation.isFocused()) {
           nativeRemovalRevisionRef.current = offscreenRevision;
-          requestedRemovalRef.current = { attempt: ++nativeRemovalAttemptRef.current, beforeRemoveSeen: false };
+          requestedRemovalRef.current = { attempt: ++nativeRemovalAttemptRef.current, removalEventSeen: false };
           router.dismiss();
         } else {
           // A different modal covered /play while JS was busy. Restore this
@@ -174,7 +174,7 @@ export function usePlaySwipeDismiss(openTargetNonce?: number | null) {
         return;
       if (navigation.isFocused()) {
         nativeRemovalRevisionRef.current = requestedRevision;
-        requestedRemovalRef.current = { attempt: ++nativeRemovalAttemptRef.current, beforeRemoveSeen: false };
+        requestedRemovalRef.current = { attempt: ++nativeRemovalAttemptRef.current, removalEventSeen: false };
         router.dismiss();
       } else isDismissing.value = false;
     },
@@ -207,7 +207,7 @@ export function usePlaySwipeDismiss(openTargetNonce?: number | null) {
         return { status: 'aborted' };
       nativeRemovalRevisionRef.current = openingRevision;
       const removingAttempt = ++nativeRemovalAttemptRef.current;
-      requestedRemovalRef.current = { attempt: removingAttempt, beforeRemoveSeen: false };
+      requestedRemovalRef.current = { attempt: removingAttempt, removalEventSeen: false };
       const restoreAbortedClose = () => {
         if (
           !mountedRef.current ||

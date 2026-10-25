@@ -308,6 +308,7 @@ type RecoveryState =
   | { kind: 'no-fix-available' }
   | { kind: 'failed' };
 
+// Router 58 anchors external modal links over index so Back has a home route.
 export const unstable_settings = { anchor: 'index' };
 
 export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {

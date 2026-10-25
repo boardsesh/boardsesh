@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { useRouter, usePreventRemove } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { CREATE_SPRAY_WALL_VERSION, PUBLISH_SPRAY_WALL_VERSION } from '@boardsesh/graphql/operations/spray-walls';
 import type { SprayWallVersion } from '@boardsesh/graphql/generated/graphql';
 import { Text } from '../Text';
+import { useSprayWizardLeaveGuard } from './use-spray-wizard-leave-guard';
 import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { SprayHoldEditorScreen, confirmDiscardSprayEdits } from '../outline-editor/SprayHoldEditorScreen';
@@ -276,24 +277,15 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
     void finish();
   }, [finish]);
 
-  const [leaving, setLeaving] = useState(false);
-  usePreventRemove(
-    !leaving &&
-      !finished &&
-      (status === 'preparing' ||
-        status === 'publishing' ||
-        status === 'refreshing' ||
-        editorDirty ||
-        editorHandingOver),
-    ({ repeat }) => {
+  useSprayWizardLeaveGuard(
+    (continueLeaving) => {
       if (busyRef.current || editorHandingOverRef.current) return;
       confirmDiscardSprayEdits(
         editorDirtyRef.current,
         () => {
           // A Save started while the dialog was up still owns the screen.
           if (busyRef.current || editorHandingOverRef.current) return;
-          setLeaving(true);
-          repeat();
+          continueLeaving();
         },
         {
           title: t('sprayMaintenance.leave.title'),
@@ -303,6 +295,12 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
         },
       );
     },
+    !finished &&
+      (status === 'preparing' ||
+        status === 'publishing' ||
+        status === 'refreshing' ||
+        editorDirty ||
+        editorHandingOver),
   );
 
   useEffect(() => {
