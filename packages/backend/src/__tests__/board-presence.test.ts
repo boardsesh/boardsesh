@@ -4331,6 +4331,24 @@ describe('board-presence write-side idempotency (Redis)', () => {
     expect(oldest.mirrored).toBe(false);
   });
 
+  it('accepts a flip back to the first orientation inside the dedup window (#5238)', async () => {
+    if (!redisOn || !testRedis) return;
+    const boardId = await makeIdemBoard();
+
+    // Each accepted send overwrites the dedup marker, so flipping back to the
+    // first orientation is compared against the flipped send, not the first one.
+    for (const mirrored of [false, true, false]) {
+      await boardPresenceMutations.reportBoardClimb(
+        undefined,
+        { boardId, climb: makeQueueItemInput({ mirrored }), angle: 40 },
+        authCtx(),
+      );
+    }
+
+    const history = await testRedis.lrange(`board:${boardId}:history`, 0, -1);
+    expect(history.map((entry) => (JSON.parse(entry) as BoardPresenceClimb).mirrored)).toEqual([false, true, false]);
+  });
+
   it('stores an unknown orientation as null when an older reporter leaves mirrored out', async () => {
     if (!redisOn || !testRedis) return;
     const boardId = await makeIdemBoard();

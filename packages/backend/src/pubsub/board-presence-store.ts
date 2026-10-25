@@ -37,6 +37,9 @@ export type CommitBoardClimbInput = {
  * The A2 dedup marker stored in `board:{id}:lastReport`. Orientation is part of
  * it: flipping the climb on the wall is a real wall change, not a retry (#5238).
  * The resolver compares against this same builder, so the two never drift.
+ * The pre-#5238 marker had no orientation suffix, so during a rolling deploy a
+ * key written by an old instance never matches a new one: at most one retry
+ * inside the 10 s TTL is accepted as a duplicate send, then the key expires.
  */
 export function boardReportDedupMarker(input: {
   emitterId: string;
