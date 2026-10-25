@@ -21,6 +21,9 @@ const queue = vi.hoisted(() => ({
   activeClimbUuid: null as string | null,
   addToQueue: vi.fn(),
   playNext: vi.fn(),
+  setCurrentClimb: vi.fn(),
+  // The real one answers null outside now-slot mode; a played slot is not History.
+  findReplayFromHereItem: vi.fn((_queueItemUuid: string): unknown => null),
 }));
 const toggleFavoriteMutate = vi.hoisted(() => vi.fn());
 // The app-wide profile cache: who is looking.
@@ -61,7 +64,12 @@ vi.mock('../../../providers/drawer-host-provider', () => ({
 }));
 vi.mock('../../../providers/feature-flags-provider', () => ({ useClimbModerationEnabled: () => true }));
 vi.mock('../../../providers/queue-provider', () => ({
-  useQueueActions: () => ({ addToQueue: queue.addToQueue, playNext: queue.playNext }),
+  useQueueActions: () => ({
+    addToQueue: queue.addToQueue,
+    playNext: queue.playNext,
+    setCurrentClimb: queue.setCurrentClimb,
+    findReplayFromHereItem: queue.findReplayFromHereItem,
+  }),
   useQueueSessionId: () => ({ sessionId: null }),
   useActiveClimbUuid: () => queue.activeClimbUuid,
 }));
@@ -138,8 +146,13 @@ beforeEach(() => {
 describe('PlayDrawerActionsMenu', () => {
   it('moves the displayed queue slot on Play next, not the first copy of the climb', () => {
     const { container } = render(createElement(PlayDrawerActionsMenu, makeProps({ queueItemUuid: 'slot-2' })));
+    // The slot is not History, so ⋯ offers no Replay from here beside Play next.
+    expect(queue.findReplayFromHereItem).toHaveBeenCalledWith('slot-2');
+    expect(container.textContent).not.toContain('mobile.climbActions.replayFromHere');
     tap(container, 'mobile.climbActions.playNext');
+    expect(queue.playNext).toHaveBeenCalledTimes(1);
     expect(queue.playNext).toHaveBeenCalledWith(expect.objectContaining({ queueItemUuid: 'slot-2' }));
+    expect(queue.setCurrentClimb).not.toHaveBeenCalled();
   });
 
   it('lets Play next match by climb when the displayed climb has no queued slot', () => {
