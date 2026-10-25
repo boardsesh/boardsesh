@@ -209,6 +209,13 @@ function reduceQueue<TSearchParams extends QueueSearchParams>(
     }
 
     case 'UPDATE_QUEUE': {
+      // A local replacement, never a server snapshot: the climber's own queue
+      // replace, a reorder rolled back, a privacy scrub, a cold-start restore.
+      // When it changes the current climb, retireStaleUnconfirmedMove retires
+      // the move without a word, as for any local move that is not sent; the
+      // last two keep the current climb. Server state reaches the reducer as
+      // INITIAL_QUEUE_DATA tagged with its session (the stream's FullSync and
+      // the HTTP resync both), which is where a move is weighed against it.
       // Filter out any undefined/null items that could corrupt queue operations
       const filteredQueue = action.payload.queue.filter(
         (item): item is NonNullable<typeof item> => item != null && item.climb != null,

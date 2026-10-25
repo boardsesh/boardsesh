@@ -245,8 +245,14 @@ export type UnconfirmedQueueMove = {
   insertAfterCurrent: boolean;
   /**
    * Uuids of the current climbs this client moved the wall off since the
-   * session last confirmed one of its moves, oldest first (null: nothing was
-   * current).
+   * session last confirmed one of its moves, oldest first.
+   *
+   * `null` means the wall had no current climb before a move (the first pick
+   * of a session, or after a clear). It is kept on purpose: the reducer's
+   * `movedOff.includes(snapshotCurrentUuid)` reads a snapshot with no current
+   * climb as `null`, so one at an unchanged sequence counts as predating the
+   * move (the session has not seen it yet) and the move is kept, exactly as for
+   * a climb it moved off. At a later sequence the snapshot wins as usual.
    */
   movedOff: Array<string | null>;
   /**

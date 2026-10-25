@@ -4429,6 +4429,151 @@ describe('QueueProvider mutation-failure resync', () => {
     expect(snapshots.at(-1)?.state.unconfirmedMove).toBeNull();
   });
 
+  // An HTTP resync can land while a re-send is out (`resent`). It is weighed
+  // like any snapshot, and the move is never lost without a word: kept while
+  // nothing happened since, retired quietly when the read shows it, and when
+  // the read moved on, the re-send's own outcome speaks (its echo brings the
+  // wall forward, or its failure says "out of sync").
+
+  /** The server's queue state over HTTP, at `sequence`. */
+  function queueStateAt(items: ClimbQueueItem[], current: ClimbQueueItem | null, sequence: number) {
+    const { queueState } = queueStateResponse(items, current).session;
+    return { session: { queueState: { ...queueState, sequence, stateHash: `hash-${sequence}` } } };
+  }
+
+  /** Live session on `wallClimb`; a lost move to `nextUp` is re-sent at once and stays in flight. */
+  async function renderResentMove(snapshots: Snapshot[], wallClimb: ClimbQueueItem, nextUp: ClimbQueueItem) {
+    await renderWallSession(snapshots, [wallClimb, nextUp]);
+    const resendInFlight = createDeferred<void>();
+    queueMutations.setCurrentClimb.mockRejectedValueOnce(makeNotInSessionError());
+    queueMutations.setCurrentClimb.mockReturnValueOnce(resendInFlight.promise);
+    act(() => {
+      snapshots.at(-1)?.setCurrentClimb(nextUp);
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.unconfirmedMove?.resend).toBe('resent');
+    });
+    const [correlationId] = setCurrentCorrelationIdsFor(nextUp.uuid);
+    return { resendInFlight, correlationId };
+  }
+
+  it('keeps a re-sent move through an HTTP resync that predates it', async () => {
+    const snapshots: Snapshot[] = [];
+    const wallClimb = makeQueueItem('wall-climb');
+    const nextUp = makeQueueItem('next-up');
+    routeHttpRequest(queueStateAt([wallClimb, nextUp], wallClimb, 1));
+    const { resendInFlight, correlationId } = await renderResentMove(snapshots, wallClimb, nextUp);
+
+    // An unrelated add fails, so its resync reads the session before the
+    // re-send lands: nothing happened there since sequence 1.
+    queueMutations.addQueueItem.mockRejectedValueOnce(new Error('add failed'));
+    act(() => {
+      void snapshots.at(-1)?.addToQueue(makeQueueItem('extra'));
+    });
+    await waitFor(() => {
+      expect(toast.showToast.mock.calls.map(([message]) => message)).toEqual(['mobile.queue.outOfSyncRefreshed']);
+    });
+    // The read replaced the queue (the failed add's slot is gone) and kept the move.
+    expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['wall-climb', 'next-up']);
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('next-up');
+    expect(snapshots.at(-1)?.state.unconfirmedMove?.resend).toBe('resent');
+
+    await act(async () => {
+      resendInFlight.resolve();
+      await resendInFlight.promise;
+    });
+    act(() => {
+      pushCurrentClimbChanged(nextUp, 2, correlationId);
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.unconfirmedMove).toBeNull();
+    });
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('next-up');
+    // Only the add's own notice.
+    expect(toast.showToast).toHaveBeenCalledTimes(1);
+  });
+
+  it('takes an HTTP resync that shows the re-sent move without a word', async () => {
+    const snapshots: Snapshot[] = [];
+    const wallClimb = makeQueueItem('wall-climb');
+    const nextUp = makeQueueItem('next-up');
+    routeHttpRequest(queueStateAt([wallClimb, nextUp], nextUp, 3));
+    const { resendInFlight, correlationId } = await renderResentMove(snapshots, wallClimb, nextUp);
+
+    // The re-send landed (2) and something else happened (3); this phone
+    // missed both, so the next event it hears is a gap and it reads the session.
+    act(() => {
+      pushCurrentClimbChanged(nextUp, 4, correlationId);
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.serverSequence).toBe(3);
+    });
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('next-up');
+    expect(snapshots.at(-1)?.state.unconfirmedMove).toBeNull();
+    await act(async () => {
+      resendInFlight.resolve();
+      await resendInFlight.promise;
+    });
+    expect(toast.showToast).not.toHaveBeenCalled();
+  });
+
+  it('says the wall went back when an HTTP resync moved on and the re-send then misses', async () => {
+    const snapshots: Snapshot[] = [];
+    const wallClimb = makeQueueItem('wall-climb');
+    const nextUp = makeQueueItem('next-up');
+    const crewPick = makeQueueItem('crew-pick');
+    routeHttpRequest(queueStateAt([wallClimb, nextUp, crewPick], crewPick, 3));
+    const { resendInFlight } = await renderResentMove(snapshots, wallClimb, nextUp);
+
+    // A crewmate's move this phone hears out of order: it reads the session.
+    act(() => {
+      pushCurrentClimbChanged(crewPick, 3, null);
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('crew-pick');
+    });
+    expect(snapshots.at(-1)?.state.unconfirmedMove).toBeNull();
+    expect(toast.showToast).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resendInFlight.reject(makeNotInSessionError());
+      await resendInFlight.promise.catch(() => {});
+    });
+    expect(toast.showToast.mock.calls.map(([message]) => message)).toEqual(['mobile.queue.outOfSyncRefreshed']);
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('crew-pick');
+  });
+
+  it('follows the re-send’s echo forward after an HTTP resync that moved on', async () => {
+    const snapshots: Snapshot[] = [];
+    const wallClimb = makeQueueItem('wall-climb');
+    const nextUp = makeQueueItem('next-up');
+    // Something else happened before the re-send landed (a crewmate queued a
+    // climb, say): the read is newer and still on the climb it moved off.
+    routeHttpRequest(queueStateAt([wallClimb, nextUp], wallClimb, 3));
+    const { resendInFlight, correlationId } = await renderResentMove(snapshots, wallClimb, nextUp);
+
+    act(() => {
+      pushCurrentClimbChanged(wallClimb, 3, null);
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('wall-climb');
+    });
+    expect(snapshots.at(-1)?.state.unconfirmedMove).toBeNull();
+
+    // The re-send lands after it: its echo moves the wall forward again.
+    await act(async () => {
+      resendInFlight.resolve();
+      await resendInFlight.promise;
+    });
+    act(() => {
+      pushCurrentClimbChanged(nextUp, 4, correlationId);
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('next-up');
+    });
+    expect(toast.showToast).not.toHaveBeenCalled();
+  });
+
   // Nothing is left pending once a re-send is out: no fallback fires for it
   // later, and the next move that misses the session waits for its own
   // snapshot instead of meeting the last one's leftovers.

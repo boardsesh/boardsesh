@@ -1329,6 +1329,47 @@ describe('unconfirmed moves', () => {
     expect(queueReducer(moved, { type: 'CLEAR_QUEUE' }).unconfirmedMove).toBeNull();
   });
 
+  // A local replacement (the climber's own queue replace, a rolled-back
+  // reorder, a privacy scrub) is never a server snapshot. One that moves the
+  // wall retires the move like any local move that is not sent; one that keeps
+  // the current climb keeps it.
+  it('retires the move on a local queue replacement only when it moves the wall', () => {
+    const moved = moveTo(onWall(), next, 'corr-1');
+    const kept = queueReducer(moved, {
+      type: 'UPDATE_QUEUE',
+      payload: { queue: [next, wall], currentClimbQueueItem: moved.currentClimbQueueItem },
+    });
+    expect(kept.unconfirmedMove?.correlationId).toBe('corr-1');
+    const replaced = queueReducer(moved, {
+      type: 'UPDATE_QUEUE',
+      payload: { queue: [later], currentClimbQueueItem: later },
+    });
+    expect(replaced.currentClimbQueueItem?.uuid).toBe('later');
+    expect(replaced.unconfirmedMove).toBeNull();
+  });
+
+  // null in movedOff: the wall had no current climb before the move.
+  it('reads a snapshot with no current climb as predating a move made from an empty wall', () => {
+    const emptyWall = makeState({
+      queue: [wall, next],
+      currentClimbQueueItem: null,
+      serverSequence: SEEN,
+      serverSequenceSessionId: 'session-1',
+    });
+    const moved = moveTo(emptyWall, next, 'corr-1');
+    expect(moved.unconfirmedMove?.movedOff).toEqual([null]);
+    // Nothing happened since: the session simply has not seen the move.
+    const predates = snapshot(moved, [wall, next], null);
+    expect(predates.currentClimbQueueItem?.uuid).toBe('next');
+    expect(predates.unconfirmedMove?.correlationId).toBe('corr-1');
+    // Something happened that this client never saw: the snapshot wins.
+    const movedOn = snapshot(moved, [wall, next], null, { sequence: SEEN + 1 });
+    expect(movedOn.currentClimbQueueItem).toBeNull();
+    expect(movedOn.unconfirmedMove).toBeNull();
+    // An empty snapshot proves nothing for a move made from a climb.
+    expect(snapshot(moveTo(onWall(), next, 'corr-2'), [wall, next], null).currentClimbQueueItem).toBeNull();
+  });
+
   it('retires the move when its echo times out', () => {
     const moved = moveTo(onWall(), next, 'corr-1');
     expect(
@@ -1369,6 +1410,29 @@ describe('unconfirmed moves', () => {
       const read = snapshot(waiting, [wall, next], wall, { live: false });
       expect(read.currentClimbQueueItem?.uuid).toBe('next');
       expect(read.unconfirmedMove?.resend).toBe('awaiting-snapshot');
+    });
+
+    // An HTTP resync can land while a re-send is due or already out. It follows
+    // the rule any snapshot does: the move is kept while nothing happened
+    // since, retired when the read shows it or moved on. The provider surfaces
+    // a retirement it did not cause (the re-send's echo or its failure).
+    it('weighs a point read during a due or sent re-send like any snapshot', () => {
+      const ready = notSent(moveTo(onWall(), next, 'corr-1'), 'corr-1', true);
+      const resent = queueReducer(ready, { type: 'UNCONFIRMED_MOVE_RESENT', payload: { correlationId: 'corr-1' } });
+      for (const [state, resend] of [
+        [ready, 'ready'],
+        [resent, 'resent'],
+      ] as const) {
+        const predates = snapshot(state, [wall, next], wall, { live: false });
+        expect(predates.currentClimbQueueItem?.uuid).toBe('next');
+        expect(predates.unconfirmedMove?.resend).toBe(resend);
+        const showsMove = snapshot(state, [wall, next], next, { sequence: SEEN + 1, live: false });
+        expect(showsMove.currentClimbQueueItem?.uuid).toBe('next');
+        expect(showsMove.unconfirmedMove).toBeNull();
+        const movedOn = snapshot(state, [wall, next, crewPick], crewPick, { sequence: SEEN + 2, live: false });
+        expect(movedOn.currentClimbQueueItem?.uuid).toBe('crew-pick');
+        expect(movedOn.unconfirmedMove).toBeNull();
+      }
     });
 
     it('is ready at once when the server view is already live', () => {

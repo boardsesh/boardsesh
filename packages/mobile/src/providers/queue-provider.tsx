@@ -2288,6 +2288,12 @@ export function QueueProvider({ children }: { children: ReactNode }) {
             },
           });
           if (moveResendFallbackTimerRef.current) clearTimeout(moveResendFallbackTimerRef.current);
+          // Only a move that can wait gets here: the branch above leaves out a
+          // truncated chain (movedOffTruncated). Every snapshot wins against
+          // one, so it would be retired before this fires, and this fallback,
+          // the only resync on this path, would then never run. Keep that rule
+          // in the branch condition; "gives a lost move up at once when its
+          // chain is too long to compare" pins it.
           moveResendFallbackTimerRef.current = setTimeout(() => {
             moveResendFallbackTimerRef.current = null;
             const waiting = stateRef.current.unconfirmedMove;
