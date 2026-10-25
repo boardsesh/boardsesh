@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { GymQrMedium } from '@boardsesh/analytics';
+import { usePathname } from 'next/navigation';
+import type { BoardQrMedium } from '@boardsesh/analytics';
 import { captureBoardQrLandingMedium } from '@/app/lib/board-qr-landing';
 
 /**
@@ -14,12 +15,18 @@ import { captureBoardQrLandingMedium } from '@/app/lib/board-qr-landing';
  * the address bar to a new page in an insertion effect, after render, so only
  * an effect is sure to see this page's URL.
  *
+ * Read again on every pathname change. A component that outlives a
+ * client-side navigation (one board list to another) must not keep the last
+ * page's medium, or a "Scan again" line and a `.board` link id would show on a
+ * page nobody scanned; `captureBoardQrLandingMedium` answers null there.
+ *
  * Pass `false` on a page no code points at; the hook then never reads the URL.
  */
-export function useBoardQrLandingMedium(enabled = true): GymQrMedium | null {
-  const [landingMedium, setLandingMedium] = useState<GymQrMedium | null>(null);
+export function useBoardQrLandingMedium(enabled = true): BoardQrMedium | null {
+  const pathname = usePathname();
+  const [landingMedium, setLandingMedium] = useState<BoardQrMedium | null>(null);
   useEffect(() => {
     if (enabled) setLandingMedium(captureBoardQrLandingMedium());
-  }, [enabled]);
+  }, [enabled, pathname]);
   return enabled ? landingMedium : null;
 }

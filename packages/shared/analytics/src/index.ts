@@ -102,6 +102,10 @@ export {
 // events above.
 export {
   boardQrScanned,
+  parseBoardQrLanding,
+  BOARD_QR_MEDIUMS,
+  type BoardQrMedium,
+  type BoardQrLanding,
   type BoardQrSurface,
   type BoardQrScannedInput,
   type BoardQrScannedProps,

@@ -10,13 +10,14 @@
 // tracker, which counts the scan and then strips the pair from the address bar,
 // and the store buttons, whose link id says `.board` after a scan. So the first
 // read REMEMBERS the landing for the page it was made on, and every later read
-// on that page gets the same answer after the strip. The vocabulary and the
-// strict parser are the gym funnel's (`@boardsesh/analytics`); nothing here
-// restates them.
+// on that page gets the same answer after the strip. The parser is
+// `parseBoardQrLanding` (`@boardsesh/analytics`): the gym funnel's strict one,
+// narrowed to the two mediums a board code prints, so `medium=poster` on a
+// board page is not a scan. Nothing here restates the vocabulary.
 
-import { parseGymQrLanding, type GymQrMedium, type GymQrSearchParams } from '@boardsesh/analytics';
+import { parseBoardQrLanding, type BoardQrMedium, type GymQrSearchParams } from '@boardsesh/analytics';
 
-type RememberedLanding = { pathname: string; medium: GymQrMedium };
+type RememberedLanding = { pathname: string; medium: BoardQrMedium };
 
 // Memory, not storage, like `getSessionInboundCampaign`: a reload of the
 // stripped URL is a new document with nothing to read, which is right, because
@@ -51,10 +52,10 @@ export function searchToGymQrParams(search: string): GymQrSearchParams {
  * another page reads `null` there, and coming back to the scanned page reads
  * the medium again, which the tracker's own dedupe keeps from counting twice.
  */
-export function captureBoardQrLandingMedium(): GymQrMedium | null {
+export function captureBoardQrLandingMedium(): BoardQrMedium | null {
   if (typeof window === 'undefined') return null;
   const { pathname, search } = window.location;
-  const landing = parseGymQrLanding(searchToGymQrParams(search));
+  const landing = parseBoardQrLanding(searchToGymQrParams(search));
   if (landing) rememberedLanding = { pathname, medium: landing.medium };
   return rememberedLanding?.pathname === pathname ? rememberedLanding.medium : null;
 }

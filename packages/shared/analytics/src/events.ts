@@ -819,7 +819,7 @@ export const SHARED_EVENTS = {
   // A printed board QR was scanned and its landing loaded (#4415). The code
   // encodes `/b/{slug}?src=qr&medium=<poster|kiosk|board>`; the landing reads
   // the pair, fires this once, and drops it from the address bar. Props:
-  // { medium: 'poster' | 'kiosk' | 'board', surface: 'web' | 'app', boardType }
+  // { medium: 'kiosk' | 'board', surface: 'web' | 'app', boardType }
   // (`boardType` from `boardTypeProperty`). Built by `boardQrScanned`
   // (board-qr-events.ts). Nothing names the board: no slug, no name, no uuid,
   // no gym, because a Spraywall's slug is derived from its name. Only www fires

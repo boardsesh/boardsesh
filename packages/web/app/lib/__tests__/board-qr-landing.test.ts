@@ -34,6 +34,8 @@ describe('captureBoardQrLandingMedium', () => {
       '?src=qr&medium=flyer',
       '?src=qr&medium=board&medium=kiosk',
       '?src=QR&medium=board',
+      // The gym poster's medium: no board code prints it.
+      '?src=qr&medium=poster',
     ]) {
       __resetBoardQrLandingForTests();
       window.history.replaceState(null, '', `/b/garage-wall/40/list${search}`);

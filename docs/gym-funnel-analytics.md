@@ -209,7 +209,7 @@ someone pointed a new code at a gym page.
 
 | Property | Values |
 | --- | --- |
-| `medium` | `kiosk`, `board` (`poster` parses too, but no gym poster points at `/b`) |
+| `medium` | `kiosk`, `board`. A `/b` landing with `medium=poster` counts nothing: no board code prints it, so `parseBoardQrLanding` (the strict parser, narrowed to `BOARD_QR_MEDIUMS`) refuses it |
 | `surface` | `web` for the www page. `app` is reserved for the app's own landing, which is not built yet |
 | `boardType` | One of the nine board types (`kilter`, `spray`, …) or null, from `boardTypeProperty` |
 
@@ -222,22 +222,22 @@ payload is checked by the same test. The web SDK still stamps the page URL
 
 `BoardQrLandingTracker` (`app/b/[board_slug]/[angle]/list/board-qr-landing-tracker.tsx`)
 fires it, on both branches of the list page: the Spraywall front door and the
-catalogue board list. Three ways it differs from the gym tracker:
+catalogue board list. Two ways it differs from the gym tracker:
 
 - **It reads the pair in the browser.** The list page's HTML is stored at the
   edge with a shared `s-maxage`, so the server cannot say whether this visit came
   off a code. `captureBoardQrLandingMedium` (`app/lib/board-qr-landing.ts`) parses
-  `window.location.search` with the same strict `parseGymQrLanding` and
-  remembers the answer for that page, so the store buttons can still read it
-  after the strip.
+  `window.location.search` with `parseBoardQrLanding`, the strict
+  `parseGymQrLanding` narrowed to the board mediums, and remembers the answer
+  for that page, so the store buttons can still read it after the strip.
 - **It keeps `?wall=`.** Only `src` and `medium` leave the address bar. The
   `wall` param is what opens an unlisted Spraywall, and a reload without it is a
   404.
-- **It strips one task later**, like `useClaimParamStrip`. On the hydration
-  commit its effect runs before Next has patched `history.replaceState`, and a
-  native call then leaves the router's own URL holding the pair.
 
-Both trackers count only once consent has settled (`useConsent().granted`).
+Both trackers strip one task later, like `useClaimParamStrip`: on the hydration
+commit their effect runs before Next has patched `history.replaceState`, and a
+native call then leaves the router's own URL holding the pair. Both count only
+once consent has settled (`useConsent().granted`).
 Consent resolves after the hydration commit, because the session and the
 region lookup are async, and `track()` drops anything sent before that. The
 gym tracker counted on mount until #4415, so it lost nearly every cold scan:

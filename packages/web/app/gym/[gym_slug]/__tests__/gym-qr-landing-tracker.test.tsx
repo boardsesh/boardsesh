@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
 import { render } from '@testing-library/react';
 import React from 'react';
 
@@ -15,13 +15,23 @@ const trackerModule = await import('../gym-qr-landing-tracker');
 const GymQrLandingTracker = trackerModule.default;
 const { __resetReportedScansForTests } = trackerModule;
 
+/** The address-bar cleanup waits one task (see the component), so tests run the timers. */
+function flushStrip(): void {
+  vi.runOnlyPendingTimers();
+}
+
 beforeEach(() => {
+  vi.useFakeTimers();
   trackGymFunnelEvent.mockReset();
   consentState.granted = true;
   // The dedupe Set is module-level and outlives unmounts on purpose; without
   // this a later test reusing a slug would assert nothing and still pass.
   __resetReportedScansForTests();
   window.history.replaceState(null, '', '/gym/test');
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('GymQrLandingTracker', () => {
@@ -62,6 +72,7 @@ describe('GymQrLandingTracker', () => {
     window.history.replaceState(null, '', '/gym/boulderwelt?src=qr&medium=poster&tab=boards');
 
     render(<GymQrLandingTracker gymSlug="boulderwelt" medium="poster" />);
+    flushStrip();
 
     expect(window.location.search).toBe('?tab=boards');
     expect(window.location.pathname).toBe('/gym/boulderwelt');
@@ -76,6 +87,7 @@ describe('GymQrLandingTracker', () => {
 
     window.history.replaceState(null, '', '/gym/boulderwelt?src=qr&medium=poster');
     render(<GymQrLandingTracker gymSlug="boulderwelt" medium="poster" />);
+    flushStrip();
 
     expect(window.location.search).toBe('');
     expect(trackGymFunnelEvent).toHaveBeenCalledTimes(1);
@@ -88,6 +100,7 @@ describe('GymQrLandingTracker', () => {
     window.history.replaceState(null, '', '/gym/boulderwelt?src=qr&medium=poster');
 
     const { rerender } = render(<GymQrLandingTracker gymSlug="boulderwelt" medium="poster" />);
+    flushStrip();
 
     expect(trackGymFunnelEvent).not.toHaveBeenCalled();
     expect(window.location.search).toBe('');
@@ -126,7 +139,33 @@ describe('GymQrLandingTracker', () => {
     window.history.replaceState(null, '', '/gym/boulderwelt?tab=boards');
 
     render(<GymQrLandingTracker gymSlug="boulderwelt" medium="poster" />);
+    flushStrip();
 
     expect(window.location.search).toBe('?tab=boards');
+  });
+
+  it('counts at once but leaves the address bar until the next task', () => {
+    // Next patches `history.replaceState` in the root router's own mount effect,
+    // which runs after this one on the hydration commit; a native call made here
+    // would leave the router holding the pair. So the strip waits a task.
+    window.history.replaceState(null, '', '/gym/boulderwelt?src=qr&medium=poster&tab=boards');
+
+    render(<GymQrLandingTracker gymSlug="boulderwelt" medium="poster" />);
+
+    expect(trackGymFunnelEvent).toHaveBeenCalledTimes(1);
+    expect(window.location.search).toBe('?src=qr&medium=poster&tab=boards');
+    flushStrip();
+    expect(window.location.search).toBe('?tab=boards');
+  });
+
+  it('drops the pending strip when it unmounts first', () => {
+    window.history.replaceState(null, '', '/gym/boulderwelt?src=qr&medium=poster');
+
+    render(<GymQrLandingTracker gymSlug="boulderwelt" medium="poster" />).unmount();
+    window.history.replaceState(null, '', '/gyms?src=qr&medium=poster');
+    flushStrip();
+
+    // The next page's URL is not this tracker's to rewrite.
+    expect(window.location.search).toBe('?src=qr&medium=poster');
   });
 });

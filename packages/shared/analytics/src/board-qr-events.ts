@@ -19,14 +19,42 @@
 //    and keeping a wall's `?wall=` capability out of it is web's URL scrub.
 //  * The medium vocabulary is the gym funnel's (`GYM_QR_MEDIUMS`), parsed by the
 //    same strict `parseGymQrLanding`: one printed-code param contract for every
-//    poster, whichever page it lands on.
+//    poster, whichever page it lands on. A board landing accepts only the two
+//    mediums a board code prints (`BOARD_QR_MEDIUMS`); `poster` is the gym
+//    poster's, which never points at a board, so `parseBoardQrLanding` refuses it.
 //
 // Which code fires which scan event: docs/gym-funnel-analytics.md ("Which code
 // fires which event").
 
 import { boardTypeProperty, type BoardTypeProperty } from './board-type-property';
 import { SHARED_EVENTS } from './events';
-import type { GymQrMedium } from './gym-funnel';
+import { parseGymQrLanding, type GymQrMedium, type GymQrSearchParams } from './gym-funnel';
+
+/**
+ * The mediums a board code prints: `kiosk` (the kiosk screen's install code) and
+ * `board` (the per-board poster). A subset of `GYM_QR_MEDIUMS`, so a board code
+ * still parses with the one strict parser.
+ */
+export const BOARD_QR_MEDIUMS = ['kiosk', 'board'] as const satisfies readonly GymQrMedium[];
+export type BoardQrMedium = (typeof BOARD_QR_MEDIUMS)[number];
+
+export type BoardQrLanding = { medium: BoardQrMedium };
+
+function isBoardQrMedium(medium: GymQrMedium): medium is BoardQrMedium {
+  return (BOARD_QR_MEDIUMS as readonly GymQrMedium[]).includes(medium);
+}
+
+/**
+ * Recognise a scan of a BOARD code, or return `null`. `parseGymQrLanding`'s
+ * strict rules, then one more: the medium must be one a board code prints.
+ * `?src=qr&medium=poster` on a board page is a hand-edited or misprinted link,
+ * not a scan of anything we made, so it is not counted.
+ */
+export function parseBoardQrLanding(searchParams: GymQrSearchParams): BoardQrLanding | null {
+  const landing = parseGymQrLanding(searchParams);
+  if (!landing || !isBoardQrMedium(landing.medium)) return null;
+  return { medium: landing.medium };
+}
 
 /**
  * Where the scan landed. `web` is the www board page a browser opens; `app` is
@@ -35,14 +63,14 @@ import type { GymQrMedium } from './gym-funnel';
 export type BoardQrSurface = 'web' | 'app';
 
 export type BoardQrScannedInput = {
-  medium: GymQrMedium;
+  medium: BoardQrMedium;
   surface: BoardQrSurface;
   /** The board's type (`kilter`, `spray`, …). Anything outside the nine is sent as null. */
   boardType: string | null | undefined;
 };
 
 export type BoardQrScannedProps = BoardTypeProperty & {
-  medium: GymQrMedium;
+  medium: BoardQrMedium;
   surface: BoardQrSurface;
 };
 

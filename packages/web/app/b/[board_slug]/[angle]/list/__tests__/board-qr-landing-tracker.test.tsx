@@ -74,6 +74,8 @@ describe('BoardQrLandingTracker', () => {
     ['a source that is not qr', '?src=email&medium=board'],
     ['a repeated medium', '?src=qr&medium=board&medium=kiosk'],
     ['a medium with no source', '?medium=board'],
+    // The gym poster's medium: no board code prints it, so it is not a board scan.
+    ['the gym poster medium', '?src=qr&medium=poster'],
   ])('reports nothing for %s, and leaves the URL as it came', (_case, search) => {
     window.history.replaceState(null, '', `${WALL_PATH}${search}`);
 

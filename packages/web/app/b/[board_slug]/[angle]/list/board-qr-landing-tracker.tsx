@@ -39,7 +39,9 @@ export function __resetReportedBoardQrLandingsForTests(): void {
  * Unlike `GymQrLandingTracker`, the medium is read here in the browser and not
  * passed by the server: this page's HTML is shared at the edge, so it cannot
  * know whether this visit came off a code. `captureBoardQrLandingMedium` applies
- * the same strict `parseGymQrLanding` and remembers the answer for this page.
+ * `parseBoardQrLanding` (the strict gym parser, narrowed to `kiosk` and
+ * `board`, so a gym poster's `medium=poster` on a board page counts nothing)
+ * and remembers the answer for this page.
  *
  * Two effects, because the two jobs wait for different things:
  *

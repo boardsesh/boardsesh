@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { boardQrScanned } from '../board-qr-events';
+import { BOARD_QR_MEDIUMS, boardQrScanned, parseBoardQrLanding } from '../board-qr-events';
 import { SHARED_EVENTS } from '../events';
-import { GYM_QR_MEDIUMS } from '../gym-funnel';
+import { GYM_QR_MEDIUMS, parseGymQrLanding } from '../gym-funnel';
 
 /**
  * Shape tests for `Board QR Scanned`. The rule that nothing identifies the board
@@ -17,7 +17,7 @@ describe('boardQrScanned', () => {
     expect(SHARED_EVENTS.BoardQrScanned).toBe('Board QR Scanned');
   });
 
-  it.each(GYM_QR_MEDIUMS)('carries the %s medium through unchanged', (medium) => {
+  it.each(BOARD_QR_MEDIUMS)('carries the %s medium through unchanged', (medium) => {
     expect(boardQrScanned({ medium, surface: 'app', boardType: 'kilter' }).properties.medium).toBe(medium);
   });
 
@@ -40,8 +40,31 @@ describe('boardQrScanned', () => {
   );
 
   it('carries exactly three properties, so nothing else can ride along', () => {
-    const { properties } = boardQrScanned({ medium: 'poster', surface: 'web', boardType: 'tension' });
+    const { properties } = boardQrScanned({ medium: 'board', surface: 'web', boardType: 'tension' });
 
     expect(Object.keys(properties).sort()).toEqual(['boardType', 'medium', 'surface']);
+  });
+});
+
+describe('parseBoardQrLanding', () => {
+  it.each(BOARD_QR_MEDIUMS)('accepts a %s scan, the two mediums a board code prints', (medium) => {
+    expect(parseBoardQrLanding({ src: 'qr', medium })).toEqual({ medium });
+  });
+
+  it('refuses the gym poster medium, which no board code prints', () => {
+    // The gym parser still accepts it: only the board landing narrows.
+    expect(parseGymQrLanding({ src: 'qr', medium: 'poster' })).toEqual({ medium: 'poster' });
+    expect(parseBoardQrLanding({ src: 'qr', medium: 'poster' })).toBeNull();
+  });
+
+  it("keeps the strict parser's refusals", () => {
+    expect(parseBoardQrLanding({})).toBeNull();
+    expect(parseBoardQrLanding({ src: 'QR', medium: 'board' })).toBeNull();
+    expect(parseBoardQrLanding({ src: 'qr', medium: ['board', 'kiosk'] })).toBeNull();
+    expect(parseBoardQrLanding({ src: 'qr', medium: 'flyer' })).toBeNull();
+  });
+
+  it('is a subset of the gym vocabulary, so a board code always parses with the shared parser', () => {
+    for (const medium of BOARD_QR_MEDIUMS) expect(GYM_QR_MEDIUMS).toContain(medium);
   });
 });

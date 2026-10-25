@@ -60,10 +60,18 @@ export default function GymQrLandingTracker({ gymSlug, medium }: GymQrLandingTra
     // cleanup to the count left the params sitting there, defeating the reason
     // to strip them. replaceState (not router.replace) keeps it a URL rewrite
     // with no re-render and no server round-trip.
-    const cleanedSearch = stripGymQrParams(window.location.search);
-    if (cleanedSearch !== window.location.search) {
-      window.history.replaceState(null, '', `${window.location.pathname}${cleanedSearch}${window.location.hash}`);
-    }
+    //
+    // One task later, like `useClaimParamStrip` and `BoardQrLandingTracker`: on
+    // the hydration commit this effect runs before Next has patched
+    // `history.replaceState`, and a native call then leaves the router's own URL
+    // holding the pair, to be written back by its next history update.
+    const stripTimer = setTimeout(() => {
+      const cleanedSearch = stripGymQrParams(window.location.search);
+      if (cleanedSearch !== window.location.search) {
+        window.history.replaceState(null, '', `${window.location.pathname}${cleanedSearch}${window.location.hash}`);
+      }
+    }, 0);
+    return () => clearTimeout(stripTimer);
   }, [gymSlug, medium]);
 
   useEffect(() => {
