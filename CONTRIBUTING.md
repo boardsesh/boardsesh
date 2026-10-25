@@ -165,7 +165,7 @@ If one machine already runs the dev database, other machines can reuse it instea
 2. On the client, sign into the same tailnet and run `vp run dev` or `vp run db:up`. With no local Boardsesh Postgres running, the bootstrap scans online Tailscale peers for a dev database and writes the connection to `.boardsesh/dev-db.env`.
 3. Backend and web startup read `.boardsesh/dev-db.env` automatically, so the checked-in `localhost` defaults don't mask the tailnet host.
 
-Local Docker wins when it is already running. To force a specific peer, set `BOARDSESH_DEV_DB_HOST=<tailscale-host-or-ip>` before `vp run db:up`. This is development data on a shared local password, so keep port 5432 behind your firewall and Tailscale access controls.
+The client never migrates a peer's database. If the peer is behind your checkout, the client skips it and starts local Docker; run `vp run db:up` on the host after pulling to keep it current. Local Docker wins when it is already running. To force a specific peer, set `BOARDSESH_DEV_DB_HOST=<tailscale-host-or-ip>` before `vp run db:up`. This is development data on a shared local password, so keep port 5432 behind your firewall and Tailscale access controls.
 
 ## Working across git worktrees
 

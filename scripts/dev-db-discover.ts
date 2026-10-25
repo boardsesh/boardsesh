@@ -333,51 +333,117 @@ function loadMigrationJournal(): MigrationJournal {
   };
 }
 
-async function runPendingMigrations(connectionString: string): Promise<void> {
-  const client = postgres(connectionString, {
+export type MigrationTargetDecision =
+  | { action: 'use' }
+  | { action: 'migrate' }
+  | { action: 'skip-remote'; message: string };
+
+// Only a database on this machine may be migrated. A Tailscale peer or an
+// env-provided host belongs to someone else: each migration commits on its
+// own, so a failure partway (0272 needs a cutoff helper that only installs on
+// a local host) would leave their database half-migrated. See #6497.
+export function decideMigrationTarget(
+  selection: Pick<DatabaseCandidate, 'source' | 'host' | 'label'>,
+  pendingTags: string[],
+): MigrationTargetDecision {
+  if (pendingTags.length === 0) return { action: 'use' };
+  if (selection.source === 'local-standalone') return { action: 'migrate' };
+
+  const firstTag = pendingTags[0];
+  const lastTag = pendingTags[pendingTags.length - 1];
+  return {
+    action: 'skip-remote',
+    message:
+      `[dev-db] ${selection.label} (${selection.host}:${postgresPort}) is behind this checkout by ` +
+      `${pendingTags.length} migration(s) (${firstTag} to ${lastTag}). Not migrating another machine's database. ` +
+      'Run `vp run db:up` on that machine to bring it up to date, or start local Docker.',
+  };
+}
+
+function createMigrationClient(connectionString: string): postgres.Sql {
+  return postgres(connectionString, {
     max: 1,
     idle_timeout: 1,
     connect_timeout: 5,
     prepare: false,
     onnotice: () => undefined,
   });
+}
+
+// Read-only: unlike ensureMigrationTracker this never creates the tracker, so
+// it is safe to point at a database that is not ours.
+async function readLastMigrationCreatedAt(client: postgres.Sql): Promise<number> {
+  const trackerRows = await client<{ tracker_schema: string | null }[]>`
+    SELECT CASE
+      WHEN to_regclass('drizzle.__drizzle_migrations') IS NOT NULL THEN 'drizzle'
+      WHEN to_regclass('public.__drizzle_migrations') IS NOT NULL THEN 'public'
+      ELSE NULL
+    END AS tracker_schema
+  `;
+  const trackerSchema = trackerRows[0]?.tracker_schema;
+  if (!trackerSchema) return 0;
+
+  const migrationTrackerRows = await client<MigrationTrackerRow[]>`
+    SELECT COALESCE(
+      (SELECT created_at FROM ${client(trackerSchema)}."__drizzle_migrations" ORDER BY created_at DESC LIMIT 1),
+      0
+    ) AS created_at
+  `;
+  return Number(migrationTrackerRows[0]?.created_at ?? 0);
+}
+
+async function listPendingMigrations(client: postgres.Sql): Promise<MigrationJournalEntry[]> {
+  const lastMigrationCreatedAt = await readLastMigrationCreatedAt(client);
+  return loadMigrationJournal().entries.filter((entry) => entry.when > lastMigrationCreatedAt);
+}
+
+async function applyPendingMigrations(client: postgres.Sql, pendingMigrations: MigrationJournalEntry[]): Promise<void> {
+  await ensureMigrationTracker(client);
+
+  console.info(`  Applying ${pendingMigrations.length} pending migration(s) from ${drizzleDirectory}...`);
+  for (const migration of pendingMigrations) {
+    const migrationFile = join(drizzleDirectory, `${migration.tag}.sql`);
+    const migrationSql = readFileSync(migrationFile, 'utf8');
+    const migrationHash = createHash('sha256').update(migrationSql).digest('hex');
+    console.info(`    -> ${migration.tag}`);
+
+    await client.unsafe('BEGIN');
+    try {
+      await client.unsafe(migrationSql);
+      await client`
+        INSERT INTO drizzle."__drizzle_migrations" (hash, created_at)
+        VALUES (${migrationHash}, ${migration.when})
+      `;
+      await client.unsafe('COMMIT');
+    } catch (migrationError) {
+      await client.unsafe('ROLLBACK').catch(() => undefined);
+      throw migrationError;
+    }
+  }
+}
+
+// Returns false when the database is another machine's and is behind: the
+// caller must not use it.
+async function prepareMigrations(selection: DatabaseSelection): Promise<boolean> {
+  const client = createMigrationClient(selection.connectionString);
 
   try {
-    await ensureMigrationTracker(client);
-    const migrationTrackerRows = await client<MigrationTrackerRow[]>`
-      SELECT COALESCE(
-        (SELECT created_at FROM drizzle."__drizzle_migrations" ORDER BY created_at DESC LIMIT 1),
-        0
-      ) AS created_at
-    `;
-    const lastMigrationCreatedAt = Number(migrationTrackerRows[0]?.created_at ?? 0);
-    const pendingMigrations = loadMigrationJournal().entries.filter((entry) => entry.when > lastMigrationCreatedAt);
+    const pendingMigrations = await listPendingMigrations(client);
+    const decision = decideMigrationTarget(
+      selection,
+      pendingMigrations.map((migration) => migration.tag),
+    );
 
-    if (pendingMigrations.length === 0) {
+    if (decision.action === 'skip-remote') {
+      console.warn(decision.message);
+      return false;
+    }
+    if (decision.action === 'use') {
       console.info('  No pending migrations.');
-      return;
+      return true;
     }
-
-    console.info(`  Applying ${pendingMigrations.length} pending migration(s) from ${drizzleDirectory}...`);
-    for (const migration of pendingMigrations) {
-      const migrationFile = join(drizzleDirectory, `${migration.tag}.sql`);
-      const migrationSql = readFileSync(migrationFile, 'utf8');
-      const migrationHash = createHash('sha256').update(migrationSql).digest('hex');
-      console.info(`    -> ${migration.tag}`);
-
-      await client.unsafe('BEGIN');
-      try {
-        await client.unsafe(migrationSql);
-        await client`
-          INSERT INTO drizzle."__drizzle_migrations" (hash, created_at)
-          VALUES (${migrationHash}, ${migration.when})
-        `;
-        await client.unsafe('COMMIT');
-      } catch (migrationError) {
-        await client.unsafe('ROLLBACK').catch(() => undefined);
-        throw migrationError;
-      }
-    }
+    await applyPendingMigrations(client, pendingMigrations);
+    return true;
   } finally {
     // Bound teardown for the same reason as probeDatabaseCandidateUnbounded
     // above -- see the module-level comment on discoveryWatchdogTimeoutMs.
@@ -442,7 +508,10 @@ async function main(): Promise<void> {
   }
 
   console.info('[dev-db] Checking for pending migrations...');
-  await runPendingMigrations(selection.connectionString);
+  if (!(await prepareMigrations(selection))) {
+    clearGeneratedEnv();
+    process.exit(2);
+  }
   writeGeneratedEnv(selection);
 
   console.info('');
