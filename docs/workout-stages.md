@@ -376,9 +376,9 @@ the fetch, the pools, the preview and Start are unchanged.
   scouted on a spray wall with two ascents still fills the block. The stored values are
   kept, so switching to another bias brings them back. Tall, wide and Benchmarks only
   still apply.
-- **Attempted is unchanged.** It keeps the block's floors and sends the one search it
-  always sent, so a stored run's Attempted stage and the "Add a block" defaults behave as
-  before. Tried but not sent is Attempted with Skip what I've sent (`showOnlyAttempted` +
+- **Attempted is unchanged.** It keeps the block's min ascents and min rating and sends
+  the one search it always sent, byte for byte, so a stored run's Attempted stage and the
+  "Add a block" defaults behave as before. Only Sent and Liked drop the floors. Tried but not sent is Attempted with Skip what I've sent (`showOnlyAttempted` +
   `hideCompleted`), floors and all. A sixth chip for it would send that same request under
   a second name and a second pool.
 - **Skip switches.** Neither fits Sent, so both are disabled there and say why

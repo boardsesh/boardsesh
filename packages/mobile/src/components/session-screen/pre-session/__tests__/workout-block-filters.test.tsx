@@ -144,7 +144,7 @@ describe('WorkoutBlockFilters', () => {
     const header = screen.getByTestId('collapsed-header');
     expect(header.textContent).toBe(
       'mobile.session.preGeneratorClimbFilters' +
-        blockFiltersSummary({ ...DEFAULT_WORKOUT_FILTERS, skipSent: true, onlyBenchmarks: true }, t),
+        blockFiltersSummary({ ...DEFAULT_WORKOUT_FILTERS, skipSent: true, onlyBenchmarks: true }, t, true),
     );
     expect(header.textContent).toContain('mobile.session.preGeneratorSkipSentSummary');
     expect(header.textContent).toContain('mobile.session.preGeneratorOnlyBenchmarksSummary');
@@ -186,10 +186,10 @@ describe('offersBenchmarksOnly', () => {
 
 describe('blockFiltersSummary', () => {
   it('names the switches that are on, after the climb bias', () => {
-    expect(blockFiltersSummary(DEFAULT_WORKOUT_FILTERS, t)).toBe(
+    expect(blockFiltersSummary(DEFAULT_WORKOUT_FILTERS, t, true)).toBe(
       'mobile.session.preGeneratorMinAscentsOption(5) · ★★ · mobile.session.preGeneratorClimbBiasUnfamiliar',
     );
-    expect(blockFiltersSummary({ ...DEFAULT_WORKOUT_FILTERS, skipSent: true, onlyBenchmarks: true }, t)).toBe(
+    expect(blockFiltersSummary({ ...DEFAULT_WORKOUT_FILTERS, skipSent: true, onlyBenchmarks: true }, t, true)).toBe(
       'mobile.session.preGeneratorMinAscentsOption(5) · ★★ · mobile.session.preGeneratorClimbBiasUnfamiliar · ' +
         'mobile.session.preGeneratorSkipSentSummary · mobile.session.preGeneratorOnlyBenchmarksSummary',
     );
@@ -236,12 +236,16 @@ describe("Skip what I've tried", () => {
   });
 
   it('stands in for Skip sent on the closed line, since it leaves sent climbs out too', () => {
-    expect(blockFiltersSummary({ ...DEFAULT_WORKOUT_FILTERS, skipSent: true, skipTried: true }, t)).toBe(
+    expect(blockFiltersSummary({ ...DEFAULT_WORKOUT_FILTERS, skipSent: true, skipTried: true }, t, true)).toBe(
       'mobile.session.preGeneratorMinAscentsOption(5) · ★★ · mobile.session.preGeneratorClimbBiasUnfamiliar · ' +
         'mobile.session.preGeneratorSkipTriedSummary',
     );
     expect(
-      blockFiltersSummary({ ...DEFAULT_WORKOUT_FILTERS, climbBias: 'attempted', skipSent: true, skipTried: true }, t),
+      blockFiltersSummary(
+        { ...DEFAULT_WORKOUT_FILTERS, climbBias: 'attempted', skipSent: true, skipTried: true },
+        t,
+        true,
+      ),
     ).toBe(
       'mobile.session.preGeneratorMinAscentsOption(5) · ★★ · mobile.session.preGeneratorClimbBiasAttempted · ' +
         'mobile.session.preGeneratorSkipSentSummary',

@@ -133,9 +133,10 @@ function skipsSent(filters: WorkoutFilters): boolean {
  * Stars render as filled glyphs (a symbol, not translatable copy); "Any" rating
  * shows nothing so the line stays short. A Sent or Liked block shows no min
  * ascents or stars, which it does not apply. Signed out it names the bias the
- * search applies, Any, with its floors and no skip switch.
+ * search applies, Any, with its floors and no skip switch. `isAuthenticated` has
+ * no default, so no caller can name a bias the search ignores by leaving it out.
  */
-export function blockFiltersSummary(filters: WorkoutFilters, t: Translate, isAuthenticated = true): string {
+export function blockFiltersSummary(filters: WorkoutFilters, t: Translate, isAuthenticated: boolean): string {
   const parts: string[] = [];
   if (blockAppliesFloors(filters, isAuthenticated)) {
     parts.push(

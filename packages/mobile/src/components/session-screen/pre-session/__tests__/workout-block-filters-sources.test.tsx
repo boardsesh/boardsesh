@@ -235,10 +235,10 @@ describe('the skip switches under Sent and Liked', () => {
 
 describe('blockFiltersSummary under Sent and Liked', () => {
   it('leaves out the floors and the skip switches the bias does not apply', () => {
-    expect(blockFiltersSummary(withBias('sent', { skipSent: true, skipTried: true }), t)).toBe(
+    expect(blockFiltersSummary(withBias('sent', { skipSent: true, skipTried: true }), t, true)).toBe(
       'mobile.session.preGeneratorClimbBiasSent',
     );
-    expect(blockFiltersSummary(withBias('liked', { skipSent: true, onlyBenchmarks: true }), t)).toBe(
+    expect(blockFiltersSummary(withBias('liked', { skipSent: true, onlyBenchmarks: true }), t, true)).toBe(
       'mobile.session.preGeneratorClimbBiasLiked · mobile.session.preGeneratorSkipSentSummary · ' +
         'mobile.session.preGeneratorOnlyBenchmarksSummary',
     );
