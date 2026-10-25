@@ -491,6 +491,8 @@ describe('BluetoothAutoSender drain loop', () => {
     });
   });
 
+  // These pin the createDrainLoop model above, not BluetoothAutoSender itself.
+  // The component guard lives in bluetooth-provider-wall-confirm.test.tsx.
   describe('new connection generation (relight after a link change — #4413)', () => {
     it('re-sends the unchanged current climb over a brand-new link', async () => {
       const loop = createDrainLoop('instant');
