@@ -527,6 +527,25 @@ describe('RogueTimerProvider driven by the session timer', () => {
     expect(pressed()).toEqual(RESTART);
   });
 
+  it('a tick landing before React renders the arm reads the store, so the clock restarts once', async () => {
+    await renderConnected();
+    const climbedAt = nowIso();
+    act(() => {
+      armRestTimer('afterTick', scenario.nowMs, null);
+      // The sink's last snapshot is still the one from before the arm: off.
+      noteSessionTimerTick(climbedAt, scenario.nowMs);
+    });
+    await advance(1000);
+    expect(pressed()).toEqual([]);
+    // The rest timer hears of the tick a second later, past the window in which
+    // a restart in flight would fold a second one into itself.
+    act(() => {
+      noteRestTimerTick(climbedAt, 'afterTick', scenario.nowMs);
+    });
+    await advance(1000);
+    expect(pressed()).toEqual(RESTART);
+  });
+
   it('a press that throws (the link going) does not stop the next command', async () => {
     await renderConnected();
     controllerMock.pressButton.mockRejectedValueOnce(new Error('Not connected to a Rogue timer'));

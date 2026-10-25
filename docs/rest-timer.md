@@ -293,12 +293,18 @@ The command rules:
   refilled queue, a fixed-window beat) must be at most 5 s old (`AUTO_ADVANCE_OVERDUE_GRACE_MS`). An
   older one was seen late, like a beat whose wake was held while the phone was locked or a window
   re-cut by a new rest length, so the clock waits for the next beat instead of starting off the
-  window. A tick never moves a fixed window, so it never excuses a late beat.
+  window. A tick never moves a running fixed window, so it never excuses a late beat. The one tick
+  that counts in a fixed window is the one that starts it: with the timer waiting for a tick (a
+  stage change, or a tick or send rule's advance, left no anchor) the store anchors the window on
+  it, so it gets the 60 s allowance while that is still the current window. One backdated past the
+  window it would have started waits for the next beat.
 - Pause and resume send nothing. A resume carries at least a second of rest already counted. A tick
   logged while paused is told apart by its new `lastTickAt`, however long its save took, and starts
   a new rest.
 - A tick with the rest timer off restarts the count-up from now, unless it is backdated by more
-  than a minute.
+  than a minute. "Off" is `isArmedForThisPhone`, the snapshot's own rule, read from the store as
+  the tick lands: the sink's last snapshot is rebuilt in an effect after React renders a store
+  write, so a tick right after arming would still read it as off.
 
 What changed for the gym timer, which used to restart on every logged climb:
 
@@ -350,7 +356,12 @@ the release train's merge-back.
 
 Checks only a phone and a Rogue Echo can do: a tick restarts it, an auto-advance restarts it, a
 fixed-window beat restarts it, switching the rest timer off shows 0:00, pause leaves it running, a
-double tick within 0.3 s still ends counting, and a passenger's phone never touches it.
+double tick within 0.3 s still ends counting, and a passenger's phone never touches it. Also: a
+timer that drops and reconnects is not restarted by the reconnect; the link holds while the pairing
+sheet scans, and a link that dropped meanwhile reconnects when it closes; a phone locked through a
+fixed-window beat does not restart it late on unlock, and the next beat does; a climb dated more
+than a minute back does not restart it; and whether RESET on a running stopwatch stops it as well as
+zeroing it, which decides whether switching off really shows a still 0:00.
 
 ## Who edits what
 

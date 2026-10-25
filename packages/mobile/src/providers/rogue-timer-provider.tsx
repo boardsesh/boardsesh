@@ -34,9 +34,11 @@ import { useSessionTimerDriver } from '../hooks/use-session-timer-driver';
 import { useEffectiveRestPacing } from '../hooks/use-effective-rest-pacing';
 import { useRestTimerState } from '../hooks/use-rest-timer';
 import { nowMs } from '../lib/clock';
+import { getRestTimerState } from '../lib/rest-timer-store';
 import {
   buildSessionTimerSnapshot,
   getSessionTimerWakeMs,
+  isArmedForThisPhone,
   type SessionTimerSnapshot,
 } from '../lib/session-timer/snapshot';
 import {
@@ -324,6 +326,9 @@ function RogueSessionTimerSink({ controller }: { controller: RogueTimerControlle
   const restTimerState = useRestTimerState();
   const { targetSeconds, mode } = useEffectiveRestPacing();
   const { sessionId } = useQueueSessionId();
+  // For the tick bus, which runs outside a render.
+  const sessionIdRef = useRef(sessionId);
+  sessionIdRef.current = sessionId;
   // Bumped at a fixed window's end, the one change no store write announces.
   const [windowWakes, setWindowWakes] = useState(0);
 
@@ -386,12 +391,15 @@ function RogueSessionTimerSink({ controller }: { controller: RogueTimerControlle
   }, [restTimerState, targetSeconds, mode, sessionId, windowWakes]);
 
   // With the rest timer off, a fresh logged climb restarts the clock, as every
-  // tick did before the session timer existed.
+  // tick did before the session timer existed. It reads the store, not the last
+  // snapshot: that one is rebuilt in an effect after React renders a store
+  // write, so a tick landing just after the timer was switched on would still
+  // read 'off' there and restart the clock the snapshot then restarts again.
   useEffect(
     () =>
       subscribeSessionTimerTicks(({ climbedAtMs, nowMs: tickNowMs }) => {
         const command = deriveSessionTimerTickCommand({
-          restTimerArmed: (snapshotRef.current?.status ?? 'off') !== 'off',
+          restTimerArmed: isArmedForThisPhone(getRestTimerState(), sessionIdRef.current),
           climbedAtMs,
           nowMs: tickNowMs,
         });

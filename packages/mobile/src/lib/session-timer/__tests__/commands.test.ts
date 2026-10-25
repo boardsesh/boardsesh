@@ -280,6 +280,43 @@ describe('onTheMinute', () => {
     expect(sink.at(20)).toEqual([]);
   });
 
+  /** Armed at 0, then a tick or send rule's advance on the 60 s beat leaves no anchor. */
+  function waitingAfterClearAdvance() {
+    const sink = follow(fixed);
+    armRestTimer('onTheMinute', at(0), null);
+    sink.at(1);
+    noteRestTimerAutoAdvanceFired(getRestTimerState().cycleId, 'onTheMinute', at(60), at(60), 'clear');
+    expect(sink.at(60)).toEqual(restartFrom(60));
+    return sink;
+  }
+
+  it('a tick that starts the window after a cleared anchor restarts it, even saved 8 s late on gym wifi', () => {
+    const sink = waitingAfterClearAdvance();
+    noteRestTimerTick(iso(80), 'onTheMinute', at(88));
+    expect(sink.at(88)).toEqual(restartFrom(80));
+    // The next tick lands inside the window the first one started: it holds.
+    noteRestTimerTick(iso(100), 'onTheMinute', at(100));
+    expect(sink.at(100)).toEqual([]);
+  });
+
+  it('a tick backdated more than a minute after a cleared anchor restarts nothing', () => {
+    // Anchored at 100 s, the window seen at 200 s started at 160 s: the tick did not start it.
+    const sink = waitingAfterClearAdvance();
+    noteRestTimerTick(iso(100), 'onTheMinute', at(200));
+    expect(sink.at(200)).toEqual([]);
+  });
+
+  it('a backdated tick that still owns its long window restarts nothing once it is over a minute old', () => {
+    const long: Pacing = { targetSeconds: 120, mode: 'onTheMinute' };
+    const sink = follow(long);
+    armRestTimer('onTheMinute', at(0), null);
+    sink.at(1);
+    noteRestTimerAutoAdvanceFired(getRestTimerState().cycleId, 'onTheMinute', at(120), at(120), 'clear');
+    expect(sink.at(120)).toEqual(restartFrom(120));
+    noteRestTimerTick(iso(130), 'onTheMinute', at(200));
+    expect(sink.at(200)).toEqual([]);
+  });
+
   it('a resume keeps the window and restarts nothing', () => {
     const sink = follow(fixed);
     armRestTimer('onTheMinute', at(0), null);

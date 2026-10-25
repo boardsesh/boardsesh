@@ -22,15 +22,18 @@
 //   - a logged climb or an auto-advance (the store records both): up to a minute
 //     old. A tick dates from when it was submitted and lands when the save
 //     returns; an advance's deadline was already checked by the scheduler. A
-//     tick backdated further, from an old session, never restarts the clock.
+//     tick backdated further, from an old session, never restarts the clock. In
+//     a fixed window only the tick that started it counts, when the timer was
+//     waiting for one.
 //   - anything else (a Reset, arming, a refilled queue, a fixed window's beat):
 //     a few seconds. Those start a rest now, so an older one was seen late: a
 //     beat whose wake was held while the phone was locked, or a window re-cut by
 //     a new rest length. Restarting then would put the wall clock off the
 //     window, so it waits for the next beat instead.
 
+import { getRestTimerStartMs } from '../rest-timer';
 import { AUTO_ADVANCE_MAX_BACKDATE_MS, AUTO_ADVANCE_OVERDUE_GRACE_MS } from '../rest-timer-auto-advance';
-import { isLiveSessionTimerSnapshot, type SessionTimerSnapshot } from './snapshot';
+import { isLiveSessionTimerSnapshot, type SessionTimerLiveSnapshot, type SessionTimerSnapshot } from './snapshot';
 
 export type SessionTimerCommand =
   /** Zero the count-up and start it. `cycleStartMs` is the rest it follows. */
@@ -63,18 +66,39 @@ function isFresh(markMs: number, nowMs: number): boolean {
 }
 
 /**
+ * Whether the tick that just landed started the fixed window `next` shows. The
+ * timer was waiting for a tick (a stage change, or a tick or send rule's
+ * advance, left no anchor), so the store anchored the window on it, and this is
+ * still that first window. A tick inside a running window never moves it, and
+ * neither does one backdated past the window it would have started.
+ */
+function tickStartedFixedWindow(
+  prev: SessionTimerSnapshot,
+  next: SessionTimerLiveSnapshot,
+  periodSeconds: number,
+): boolean {
+  if (prev.status !== 'waiting') return false;
+  const tickMs = getRestTimerStartMs(next.lastTickAt);
+  if (tickMs === null) return false;
+  return next.cycleStartMs >= tickMs && next.cycleStartMs < tickMs + periodSeconds * 1000;
+}
+
+/**
  * Whether a logged climb or an auto-advance landed between the two snapshots and
- * can account for the new rest. A tick never moves a fixed window, so there a
- * new window start is the clock's, even with a tick in the same snapshot.
+ * can account for the new rest. In a fixed window a tick only does when it
+ * started the window; any other new window start is the clock's, even with a
+ * tick in the same snapshot.
  */
 function startedByRecordedEvent(prev: SessionTimerSnapshot, next: SessionTimerSnapshot): boolean {
   if (next.status === 'off') return false;
   const prevTickAt = prev.status === 'off' ? null : prev.lastTickAt;
   const prevAdvanceMs = prev.status === 'off' ? null : prev.lastAdvanceMs;
   const advanceFired = next.lastAdvanceMs !== null && next.lastAdvanceMs !== prevAdvanceMs;
+  if (advanceFired) return true;
   const tickLanded = next.lastTickAt !== null && next.lastTickAt !== prevTickAt;
-  const isFixedWindow = isLiveSessionTimerSnapshot(next) && next.periodSeconds !== null;
-  return advanceFired || (tickLanded && !isFixedWindow);
+  if (!tickLanded) return false;
+  if (!isLiveSessionTimerSnapshot(next) || next.periodSeconds === null) return true;
+  return tickStartedFixedWindow(prev, next, next.periodSeconds);
 }
 
 export function deriveSessionTimerCommands(
@@ -112,7 +136,8 @@ export function deriveSessionTimerCommands(
 
 export type SessionTimerTickInput = {
   /**
-   * Whether the session timer follows ticks itself: its snapshot is not 'off'.
+   * Whether the session timer follows ticks itself: `isArmedForThisPhone`, the
+   * rule behind the snapshot's 'off', read from the store as the tick lands.
    * Then a tick reaches the gym timer through the snapshot (or, in a fixed
    * window, deliberately does not), never through here.
    */

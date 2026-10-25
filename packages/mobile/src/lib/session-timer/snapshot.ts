@@ -64,17 +64,26 @@ export function isLiveSessionTimerSnapshot(snapshot: SessionTimerSnapshot): snap
   return snapshot.status === 'running' || snapshot.status === 'countUp' || snapshot.status === 'queueEnded';
 }
 
+/**
+ * Whether the rest timer is on for the session this phone is in: the one rule
+ * behind the snapshot's 'off'. A null arm is a pre-session arm (or a solo
+ * climber's, who never gets a session). Any other id belongs to a session this
+ * phone has left, which RestTimerSessionSync is about to disarm.
+ */
+export function isArmedForThisPhone(
+  state: Pick<RestTimerState, 'armed' | 'armedForSessionId'>,
+  sessionId: string | null,
+): boolean {
+  return state.armed && (state.armedForSessionId === null || state.armedForSessionId === sessionId);
+}
+
 export function buildSessionTimerSnapshot({
   state,
   pacing,
   sessionId,
   nowMs,
 }: SessionTimerSnapshotInput): SessionTimerSnapshot {
-  if (!state.armed) return OFF;
-  // A null arm is a pre-session arm (or a solo climber's, who never gets a
-  // session). Any other id belongs to a session this phone has left, which
-  // RestTimerSessionSync is about to disarm.
-  if (state.armedForSessionId !== null && state.armedForSessionId !== sessionId) return OFF;
+  if (!isArmedForThisPhone(state, sessionId)) return OFF;
 
   const { anchorMs, isRunning, pausedElapsedSeconds, queueEnded, lastFiredDeadlineMs, lastTickAt } = state;
   const { mode } = pacing;

@@ -12,7 +12,12 @@ import {
   pauseRestTimer,
   resetRestTimerStoreForTests,
 } from '../../rest-timer-store';
-import { buildSessionTimerSnapshot, getSessionTimerWakeMs, type SessionTimerSnapshot } from '../snapshot';
+import {
+  buildSessionTimerSnapshot,
+  getSessionTimerWakeMs,
+  isArmedForThisPhone,
+  type SessionTimerSnapshot,
+} from '../snapshot';
 
 const T0 = Date.parse('2026-10-24T10:00:00.000Z');
 const at = (seconds: number) => T0 + seconds * 1000;
@@ -63,6 +68,22 @@ describe('off', () => {
     armRestTimer('afterTick', at(0), null);
     expect(snapshotAt(1, { sessionId: 'session-a' }).status).toBe('waiting');
     expect(snapshotAt(1, { sessionId: null }).status).toBe('waiting');
+  });
+
+  it('answers isArmedForThisPhone exactly when the snapshot is not off', () => {
+    const cases: Array<{ arm: () => void; sessionId: string | null }> = [
+      { arm: () => {}, sessionId: null },
+      { arm: () => armRestTimer('afterTick', at(0), null), sessionId: null },
+      { arm: () => armRestTimer('afterTick', at(0), null), sessionId: 'session-a' },
+      { arm: () => armRestTimer('afterTick', at(0), 'session-a'), sessionId: 'session-a' },
+      { arm: () => armRestTimer('afterTick', at(0), 'session-a'), sessionId: 'session-b' },
+      { arm: () => armRestTimer('afterTick', at(0), 'session-a'), sessionId: null },
+    ];
+    for (const { arm, sessionId } of cases) {
+      resetRestTimerStoreForTests();
+      arm();
+      expect(isArmedForThisPhone(getRestTimerState(), sessionId)).toBe(snapshotAt(1, { sessionId }).status !== 'off');
+    }
   });
 });
 
