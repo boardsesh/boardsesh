@@ -649,7 +649,7 @@ describe('smartPlaylist — views (real DB, #6651)', () => {
 
     it('a tick on a uuid with no board_climbs row takes no page slot and no count, even for the owner (#6661)', async () => {
       const ownersOwn = makeCtx({ isAuthenticated: true, userId: GUARDED_OWNER });
-      for (const type of ['FIVE_STARS', 'MOST_REPEATED'] as const) {
+      for (const type of ['FIVE_STARS', 'MOST_REPEATED', 'PROJECTS'] as const) {
         const paged = await pageThrough({ type, userId: GUARDED_OWNER }, 1, ownersOwn);
         // Neither a deleted climb nor an alias of a published one: the hydrator
         // reads the tick's own uuid and finds no row for either.
