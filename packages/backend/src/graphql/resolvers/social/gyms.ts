@@ -73,6 +73,11 @@ export async function generateUniqueGymSlug(name: string): Promise<string> {
   return `${baseSlug}-${uuidv4().slice(0, 8)}`;
 }
 
+function rawUtcTimestamp(value: unknown): Date | null {
+  const iso = parsePostgresUtcTimestamp(value instanceof Date || typeof value === 'string' ? value : null);
+  return iso ? new Date(iso) : null;
+}
+
 /**
  * Map a raw SQL row (snake_case columns) to the Drizzle gym schema shape.
  * Used for PostGIS proximity queries that bypass the Drizzle query builder.
@@ -81,11 +86,6 @@ export async function generateUniqueGymSlug(name: string): Promise<string> {
  * off a raw `SELECT *`, so a camelCase typo type-checks fine and silently maps
  * to null forever on the proximity path while the Drizzle path looks healthy.
  */
-function rawUtcTimestamp(value: unknown): Date | null {
-  const iso = parsePostgresUtcTimestamp(value instanceof Date || typeof value === 'string' ? value : null);
-  return iso ? new Date(iso) : null;
-}
-
 export function mapRawGymRow(row: Record<string, unknown>): typeof dbSchema.gyms.$inferSelect {
   return {
     id: row.id as number,
