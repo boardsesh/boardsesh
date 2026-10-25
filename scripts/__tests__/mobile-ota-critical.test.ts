@@ -414,6 +414,7 @@ interface WorkflowStep {
   with?: Record<string, unknown>;
 }
 interface WorkflowJob {
+  needs?: string[];
   if?: string;
   permissions?: Record<string, string>;
   outputs?: Record<string, string>;
@@ -513,17 +514,30 @@ describe('critical OTA production workflow', () => {
     expect(legacyPromotion?.if).toBe("needs.detect-changes.outputs.critical_ota != 'true'");
     expect(legacyPromotion?.run).toContain('scripts/mobile-ota-promote.ts');
     expect(legacyPromotion?.env?.OTA_ADMIN_PASSWORD).toBeUndefined();
-    const mintToken = steps.find((step) => step.id === 'push_token');
-    expect(mintToken?.if).toContain("needs.detect-changes.outputs.critical_ota != 'true'");
-    const changelogPush = steps.find((step) => step.name === 'Push promoted changelog to main');
-    expect(changelogPush?.if).toContain("steps.promote.outcome == 'success'");
-    expect(changelogPush?.if).not.toContain('critical-promote');
+    expect(steps.find((step) => step.id === 'push_token')).toBeUndefined();
+    expect(steps.find((step) => step.name === 'Push promoted changelog to main')).toBeUndefined();
     for (const name of ['OTA health check (non-blocking)', 'Report promoted OTA']) {
       const reporting = steps.find((step) => step.name === name);
       expect(reporting?.if).toContain("steps.critical-promote.outcome == 'success'");
       expect(reporting?.if).toContain("steps.promote.outcome == 'success'");
     }
     expect(steps.find((step) => step.id === 'health')?.['continue-on-error']).toBe(true);
+  });
+
+  it('pushes the changelog after any verified non-critical promotion, outside every environment gate', () => {
+    const job = workflow.jobs['push-promoted-changelog'];
+    expect(job?.needs).toContain('verify-mobile-ota');
+    expect(job?.if).toContain("needs.verify-mobile-ota.result == 'success'");
+    expect(job?.if).toContain("needs.detect-changes.outputs.critical_ota != 'true'");
+    // A daily-stable OTA skips promote-mobile-ota, so the push must not hang off it.
+    expect(job?.if).not.toContain('promote-mobile-ota');
+    expect(job?.environment).toBeUndefined();
+    const steps = job?.steps ?? [];
+    const mintIndex = steps.findIndex((step) => step.id === 'push_token');
+    const pushIndex = steps.findIndex((step) => step.name === 'Push promoted changelog to main');
+    expect(mintIndex).toBeGreaterThan(-1);
+    expect(pushIndex).toBeGreaterThan(mintIndex);
+    expect(workflow.jobs['notify-failure']?.needs).toContain('push-promoted-changelog');
   });
 
   it('retains original receipt and critical proof for thirty days after success or partial failure', () => {
