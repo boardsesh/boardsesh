@@ -507,7 +507,10 @@ reference numbers):
 - The accessibility element is one fixed stand-in the size of the board, not a slot. The slots
   change places on every swipe, and focus that sat on one would be left on a hidden view. It takes
   touches, so a screen reader's explore-by-touch finds it, and it is the container's first child, so
-  no board added or dropped after it can change where it sits among its siblings.
+  no board added or dropped after it can change where it sits among its siblings. The header
+  follows the same rule (#6352): `PlayDrawerHeaderAccessibility` is the first child of
+  `SwipeableHeader`, reads the whole header as one label, and carries its controls (copy the name,
+  the setter, the wall pill) as custom actions; every header slot is hidden from assistive tech.
 - The UI thread numbers each step it takes (`uiSteps`); the JS thread writes back the last step it
   has rendered, in one shared value with the page it has in the middle. While they differ the UI
   thread leaves the JS thread alone. When they agree and the pages do not (a Next button, a queue

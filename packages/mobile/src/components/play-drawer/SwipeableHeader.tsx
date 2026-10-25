@@ -18,11 +18,16 @@ type SwipeableHeaderProps = {
    *  swiped towards. Null at a queue boundary. */
   previous: ReactNode;
   next: ReactNode;
+  /** What a screen reader reads for the header: one fixed view, never a slot.
+   *  Every slot is hidden from assistive tech, because the slots change places
+   *  on every climb change and focus on one would be left on a hidden view. */
+  accessibilityStandIn: ReactNode;
 };
 
 type HeaderSlotProps = {
   page: number;
-  /** The JS thread shows this climb as current: this header is in flow and sets the height. */
+  /** The JS thread shows this climb as current: this header is in flow, sets the
+   *  height and takes the sighted taps (copy the name, the setter, the wall pill). */
   isCurrent: boolean;
   anchorPage: SharedValue<number>;
   translateX: SharedValue<number>;
@@ -35,7 +40,8 @@ type HeaderSlotProps = {
 /**
  * One header, keyed by page like the carousel's boards: the neighbour's header
  * becomes the current one by a prop change, never by a remount, and where it
- * sits comes from the pager on the UI thread.
+ * sits comes from the pager on the UI thread. Hidden from assistive tech
+ * whatever its role; the header's stand-in speaks for it.
  */
 const HeaderSlot = memo(function HeaderSlot({
   page,
@@ -63,8 +69,8 @@ const HeaderSlot = memo(function HeaderSlot({
     <Animated.View
       style={[isCurrent ? null : styles.neighbourLayer, slotStyle]}
       pointerEvents={isCurrent ? 'auto' : 'none'}
-      accessibilityElementsHidden={!isCurrent}
-      importantForAccessibility={isCurrent ? 'auto' : 'no-hide-descendants'}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
     >
       {children}
     </Animated.View>
@@ -75,7 +81,8 @@ const HeaderSlot = memo(function HeaderSlot({
  * Wraps the play-drawer's title + grade so they swipe with the board. Three
  * headers stay mounted, the current climb's and its two neighbours', on the same
  * pages as the carousel's boards; the pager's anchor says which is in the middle.
- * At rest only that one is drawn.
+ * At rest only that one is drawn. A screen reader reads `accessibilityStandIn`
+ * instead, the same fixed stand-in rule the board follows.
  */
 export const SwipeableHeader = memo(function SwipeableHeader({
   pager,
@@ -84,6 +91,7 @@ export const SwipeableHeader = memo(function SwipeableHeader({
   current,
   previous,
   next,
+  accessibilityStandIn,
 }: SwipeableHeaderProps) {
   const renderSlot = (page: number, content: ReactNode, isCurrent: boolean) =>
     content ? (
@@ -102,6 +110,11 @@ export const SwipeableHeader = memo(function SwipeableHeader({
 
   return (
     <View style={styles.container}>
+      {/* First, outside the keyed slots: a slot added or dropped after it can
+          never move it among its siblings, and a view put back into its parent
+          cancels the touch that began on it (see SwipeBoardCarousel). It draws
+          nothing and sits under the current header, which takes sighted taps. */}
+      {accessibilityStandIn}
       {[
         renderSlot(centerPage - 1, previous, false),
         renderSlot(centerPage, current, true),

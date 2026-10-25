@@ -26,6 +26,7 @@ import { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, useReducedMotion } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing, borderRadius, androidRipple } from '../../theme/tokens';
 import { withAlpha } from '../../theme/colors';
@@ -86,21 +87,19 @@ type WallStatePillProps = BackChipProps &
     | { state: WallStatePillState; onPress?: never; reserveOnly: true }
   );
 
-function WallStatePillImpl({
-  state,
-  onPress,
-  reserveOnly = false,
-  backTarget = null,
-  latched = true,
-}: WallStatePillProps) {
-  const { t } = useTranslation('session');
-  const { variant, systemColors, brandColors, m3, m3SurfaceContainers } = useTheme();
-  const reduceMotion = useReducedMotion();
-  // Read unconditionally (hook rules); onWall and a back chip to the wall render
-  // the face, and
-  // `useBoardDriver` degrades to null outside a board-presence provider.
-  const { driver, name: driverName, litAgo } = useWallDriver();
+type WallStatePillAccessibility = { label: string; hint?: string };
 
+/** What the pill says to a screen reader, given what the wall-driver hook read. */
+function describeWallStatePill(
+  state: WallStatePillState,
+  {
+    backTarget,
+    latched,
+    driverName,
+    litAgo,
+  }: Required<BackChipProps> & { driverName: string | null; litAgo: string | null },
+  t: TFunction<'session'>,
+): WallStatePillAccessibility {
   const driverLabel = driverName
     ? t('mobile.boardPresence.drivenByA11y', { name: driverName })
     : t('mobile.boardPresence.drivenByAnonA11y');
@@ -109,7 +108,7 @@ function WallStatePillImpl({
   // would permanently crush the climb name in DrawerHeader's mirrored flanks)
   // ride the label instead. Recency joins them here rather than as a corner
   // label: at 24pt that badge renders ~9pt text, below the type floor.
-  const accessibilityLabel =
+  const label =
     state === 'onWall'
       ? [t('playView.wallState.onWall'), driverLabel, litAgo].filter(Boolean).join('. ')
       : state === 'live'
@@ -127,8 +126,47 @@ function WallStatePillImpl({
   // Browsing's tap is the way back, which its label already says; it only adds
   // "the wall stays where it is" while that's true. The other two open the
   // explainer, which the pill hint promises.
-  const accessibilityHint =
+  const hint =
     state === 'browsing' ? (latched ? stateHint : undefined) : `${stateHint} ${t('playView.wallState.pillHint')}`;
+  return { label, hint };
+}
+
+/**
+ * The pill's screen-reader label and hint, outside the pill. The play drawer's
+ * fixed header stand-in names its wall-pill action with these, so the action
+ * says exactly what the pill would. Null when there is no pill.
+ */
+export function useWallStatePillAccessibility({
+  state,
+  backTarget = null,
+  latched = true,
+}: BackChipProps & { state: WallStatePillState | null }): WallStatePillAccessibility | null {
+  const { t } = useTranslation('session');
+  // Read unconditionally (hook rules); `useBoardDriver` degrades to null
+  // outside a board-presence provider.
+  const { name: driverName, litAgo } = useWallDriver();
+  return state === null ? null : describeWallStatePill(state, { backTarget, latched, driverName, litAgo }, t);
+}
+
+function WallStatePillImpl({
+  state,
+  onPress,
+  reserveOnly = false,
+  backTarget = null,
+  latched = true,
+}: WallStatePillProps) {
+  const { t } = useTranslation('session');
+  const { variant, systemColors, brandColors, m3, m3SurfaceContainers } = useTheme();
+  const reduceMotion = useReducedMotion();
+  // Read unconditionally (hook rules); onWall and a back chip to the wall render
+  // the face, and
+  // `useBoardDriver` degrades to null outside a board-presence provider.
+  const { driver, name: driverName, litAgo } = useWallDriver();
+  const { label: accessibilityLabel, hint: accessibilityHint } = describeWallStatePill(
+    state,
+    { backTarget, latched, driverName, litAgo },
+    t,
+  );
 
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
   // Liquid Glass earns its edge from a hairline border, Material from a tonal

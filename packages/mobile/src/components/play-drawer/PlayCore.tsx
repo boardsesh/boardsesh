@@ -64,6 +64,7 @@ import { resolveActionBarLayout, type ActionBarCommitButton } from './action-bar
 import { shouldShowWorkoutOutcome, type WorkoutOutcomeTarget } from './workout-outcome';
 import { useWorkoutOutcomeHold } from './use-workout-outcome-hold';
 import { WallStatePill } from './WallStatePill';
+import { PlayDrawerHeaderAccessibility } from './PlayDrawerHeaderAccessibility';
 import { WallStateCallout } from './WallStateCallout';
 import {
   resolveWallPillState,
@@ -2092,6 +2093,22 @@ export function PlayCore({
                           pager={swipePager}
                           centerPage={swipeCenterPage}
                           viewportWidth={windowWidth}
+                          // The header a screen reader reads, in one place that
+                          // the climb changing never moves: every drawn header
+                          // below is hidden from it.
+                          accessibilityStandIn={
+                            currentHeaderModel ? (
+                              <PlayDrawerHeaderAccessibility
+                                model={currentHeaderModel}
+                                pillState={headerPillState}
+                                pillBackTarget={headerBackTarget}
+                                pillLatched={browseLatchActive}
+                                onPillPress={wallPillPress}
+                                onLongPressName={handleCopyName}
+                                onPressSetter={openSetterPlaylist}
+                              />
+                            ) : null
+                          }
                           current={
                             currentHeaderModel ? (
                               <PreparedPlayDrawerHeader

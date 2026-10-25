@@ -2,6 +2,7 @@ import { PressableSurface } from '../PressableSurface';
 import { memo, useMemo, type ReactNode } from 'react';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { CLIMB_CHARACTERISTICS, type BoardName, type Climb } from '@boardsesh/shared-schema';
 import { useEffectiveClimbStats } from '@boardsesh/board-react';
 import { getBoardCapabilities } from '@boardsesh/board-config';
@@ -87,6 +88,91 @@ type PlayDrawerHeaderProps = {
   angle?: number;
 };
 
+type HeaderFactsInput = Pick<
+  PlayDrawerHeaderProps,
+  | 'ascensionistCount'
+  | 'qualityAverage'
+  | 'boardName'
+  | 'characteristics'
+  | 'difficulty'
+  | 'isDraft'
+  | 'statsAngle'
+  | 'angle'
+>;
+
+/**
+ * The header's derived text, shared by what it draws and what the play drawer's
+ * screen-reader stand-in reads (`describePlayDrawerHeader`), so the two never
+ * say different things about the same climb.
+ */
+function deriveHeaderFacts(
+  {
+    ascensionistCount,
+    qualityAverage,
+    boardName,
+    characteristics,
+    difficulty,
+    isDraft = false,
+    statsAngle,
+    angle,
+  }: HeaderFactsInput,
+  t: TFunction<'climbs'>,
+) {
+  // The climb's own facts and nothing else. Where the player is (a list, a
+  // workout stage) and what the wall is doing live in the top bar
+  // (`PlayListContext`): at the front of this one line they pushed the sends
+  // and stars off the end on a phone (#6664, #6745).
+  const statsParts: string[] = [];
+  if (ascensionistCount > 0) statsParts.push(formatSends(ascensionistCount, t));
+  const qualityNum = qualityAverage == null ? Number.NaN : parseFloat(qualityAverage);
+  if (qualityAverage != null && qualityNum > 0) statsParts.push(`${formatQuality(qualityAverage)}★`);
+
+  // Woods states both rules on every problem, so we do too — see the
+  // `explicitClimbRules` capability. Recomputed per climb, which is also what
+  // makes the swipe peek show the INCOMING climb's rules: both headers are this
+  // component with their own climb's characteristics.
+  const ruleLabels = getBoardCapabilities(boardName).explicitClimbRules
+    ? resolveClimbRuleLabels(characteristics, t)
+    : null;
+
+  // Nobody has graded it yet (#5971).
+  const showsProject = isProjectClimb({
+    gradeLabel: difficulty,
+    isDraft,
+    statsKnown: climbStatsKnown(boardName, statsAngle),
+  });
+  // Same marker, same key and styling as the search-list row (ClimbListItemContent):
+  // this climb's grade/sends came from a different angle than the one on the wall.
+  // It shares the row's narrow lag too: `statsAngle` is fixed at fetch time, so after
+  // the first ever tick at the browsed angle the marker keeps naming the old angle
+  // until the climb is refetched. Self-correcting; see the row's comment.
+  const showsSetAngleMarker = statsAngle != null && statsAngle !== angle;
+  return { statsParts, ruleLabels, showsProject, showsSetAngleMarker };
+}
+
+/**
+ * Everything the header shows, as one sentence for a screen reader: the play
+ * drawer reads the header from one fixed stand-in (see `SwipeableHeader`), so
+ * this is the only way the name, grade and stats reach VoiceOver or TalkBack.
+ */
+export function describePlayDrawerHeader(headerProps: PreparedHeaderProps, t: TFunction<'climbs'>): string {
+  const { name, difficulty, secondaryGrade, setterUsername, isHidden, isDraft, statsAngle } = headerProps;
+  const { statsParts, ruleLabels, showsProject, showsSetAngleMarker } = deriveHeaderFacts(headerProps, t);
+  return [
+    name,
+    isDraft ? t('createClimbForm.draftBadge') : null,
+    showsProject ? t('mobile.project.chip') : difficulty,
+    secondaryGrade,
+    ...statsParts,
+    setterUsername,
+    isHidden ? t('mobile.hidden.banner') : null,
+    ruleLabels?.accessibilityLabel,
+    showsSetAngleMarker ? t('mobile.climbRow.setAngleMarkerAria', { angle: statsAngle }) : null,
+  ]
+    .filter((part): part is string => typeof part === 'string' && part.length > 0)
+    .join(', ');
+}
+
 export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   name,
   difficulty,
@@ -121,30 +207,12 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
     () => gradeColor ?? getGradeColor(rawDifficulty ?? difficulty) ?? DEFAULT_GRADE_COLOR,
     [gradeColor, rawDifficulty, difficulty],
   );
-  // Same marker, same key and styling as the search-list row (ClimbListItemContent):
-  // this climb's grade/sends came from a different angle than the one on the wall.
-  // It shares the row's narrow lag too: `statsAngle` is fixed at fetch time, so after
-  // the first ever tick at the browsed angle the marker keeps naming the old angle
-  // until the climb is refetched. Self-correcting; see the row's comment.
-  const showSetAngleMarker = statsAngle != null && statsAngle !== angle;
 
-  // The climb's own facts and nothing else. Where the player is (a list, a
-  // workout stage) and what the wall is doing live in the top bar
-  // (`PlayListContext`): at the front of this one line they pushed the sends
-  // and stars off the end on a phone (#6664, #6745).
-  const subtitleParts: string[] = [];
-  if (ascensionistCount > 0) subtitleParts.push(formatSends(ascensionistCount, t));
-  const qualityNum = qualityAverage == null ? Number.NaN : parseFloat(qualityAverage);
-  if (qualityAverage != null && qualityNum > 0) subtitleParts.push(`${formatQuality(qualityAverage)}★`);
-  if (setterUsername && !onPressSetter) subtitleParts.push(setterUsername);
-
-  // Woods states both rules on every problem, so we do too — see the
-  // `explicitClimbRules` capability. Recomputed per climb, which is also what
-  // makes the swipe peek show the INCOMING climb's rules: both headers are this
-  // component with their own climb's characteristics.
-  const ruleLabels = getBoardCapabilities(boardName).explicitClimbRules
-    ? resolveClimbRuleLabels(characteristics, t)
-    : null;
+  const { statsParts, ruleLabels, showsProject, showsSetAngleMarker } = deriveHeaderFacts(
+    { ascensionistCount, qualityAverage, boardName, characteristics, difficulty, isDraft, statsAngle, angle },
+    t,
+  );
+  const subtitleParts = setterUsername && !onPressSetter ? [...statsParts, setterUsername] : statsParts;
 
   const residualCharacteristics = ruleLabels
     ? characteristics?.filter(
@@ -246,7 +314,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
             ) : null}
             {/* Nobody has graded it yet (#5971): say so rather than leave the
                 slot blank. */}
-            {isProjectClimb({ gradeLabel: difficulty, isDraft, statsKnown: climbStatsKnown(boardName, statsAngle) }) ? (
+            {showsProject ? (
               <ProjectChip testID="play-drawer-climb-project" />
             ) : (
               <Text variant="headline" style={[styles.gradeText, { color: resolvedGradeColor }]} numberOfLines={1}>
@@ -267,7 +335,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
               </Text>
             </View>
           ) : null}
-          {showSetAngleMarker ? (
+          {showsSetAngleMarker ? (
             <Text
               variant="caption2"
               numberOfLines={1}
@@ -294,7 +362,7 @@ export type LivePlayDrawerHeaderProps = {
   onPressSetter?: () => void;
 };
 
-type PreparedHeaderProps = Omit<PlayDrawerHeaderProps, 'leading' | 'onLongPressName' | 'onPressSetter'>;
+export type PreparedHeaderProps = Omit<PlayDrawerHeaderProps, 'leading' | 'onLongPressName' | 'onPressSetter'>;
 export type LivePlayDrawerHeaderModel = Readonly<{
   headerProps: Readonly<PreparedHeaderProps>;
   layoutFingerprint: string;
