@@ -837,13 +837,6 @@ production on 2026-09-02, a logged-out list page returned the header and
 `us-west2` Railway replica against Postgres. The fourth cache rule,
 `boardsesh:www-html-edge-cache`, is what makes the origin's own TTL take effect.
 
-Exception (#6803): MoonBoard and Woods list pages, and every `/b/{slug}` list page,
-get `s-maxage=900` (15 minutes) to match the 15 minute Next data cache for
-boards with live stats. Middleware cannot tell the board from a `/b/` slug
-without a backend call, so the whole slug tree takes the short TTL; Kilter and
-Tension config-tuple pages keep 24 h. Existing 24 h edge copies age out on
-their own.
-
 Same action as the other three: eligible for cache, edge TTL
 `bypass_by_default`, browser TTL `respect_origin`. `bypass_by_default` is the
 safety model, not a detail — the origin decides, and anything it does not
@@ -856,6 +849,14 @@ sticky-locale 307 (`/kilter/…` → `/es/kilter/…` for a visitor carrying
 carries no cache directive at all, so it bypasses too. **Never switch this rule
 to `override_origin`:** it ignores the origin *and* strips `Set-Cookie` in order
 to cache.
+
+Exception (#6803): MoonBoard and Woods list pages, and every `/b/{slug}` list page,
+get `s-maxage=900` (15 minutes) to match the 15 minute Next data cache for
+boards with live stats. Middleware cannot tell the board from a `/b/` slug
+without a backend call, so the whole slug tree takes the short TTL; every other
+board's config-tuple pages keep 24 h. The stale-while-revalidate window is also 900
+s (not the usual 7x), so a quiet page is at most about 30 minutes old. Existing 24 h edge copies age out on
+their own.
 
 The expression carries three explicit bypasses on top of the host and path
 gates. All three exist because **Cloudflare honours `Vary` only for

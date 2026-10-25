@@ -196,7 +196,7 @@ export async function cachedSearchClimbs(
   // seed, so caching per seed is a 0%-hit-rate entry that only bloats the
   // Next.js data cache.
   const isMoonboard = params.board_name === 'moonboard';
-  const isLiveSearchDataBoard = isMoonboard || hasLiveSearchData(params.board_name);
+  const isLiveSearchDataBoard = hasLiveSearchData(params.board_name);
   const explicitlyCacheable = options?.cacheable === true;
   const cacheable =
     (options?.cacheable ?? !userId) && searchParams.sortBy !== 'random' && (explicitlyCacheable || !isMoonboard);

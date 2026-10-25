@@ -238,6 +238,10 @@ describe('getListPageCacheTTL', () => {
     it('caches with minAscents', () => {
       expect(getListPageCacheTTL(LEGACY_LIST, sp({ minAscents: '5' }))).toBe(TTL_24H);
     });
+
+    it('caches slug-tree filtered searches at the 15 minute TTL', () => {
+      expect(getListPageCacheTTL(SLUG_LIST, sp({ name: 'benchmark', minAscents: '5' }))).toBe(TTL_15M);
+    });
   });
 
   describe('user-specific params skip cache', () => {
@@ -765,9 +769,7 @@ describe('middleware cache headers on list pages', () => {
 
   it('sets a 15 minute CDN cache on Woods list pages', () => {
     const response = middleware(makeRequest('/woods/1/2/3,4/40/list'));
-    expect(response.headers.get('CDN-Cache-Control')).toBe(
-      `s-maxage=${TTL_15M}, stale-while-revalidate=${TTL_15M * 7}`,
-    );
+    expect(response.headers.get('CDN-Cache-Control')).toBe(`s-maxage=${TTL_15M}, stale-while-revalidate=${TTL_15M}`);
   });
 
   it('still sets cache headers when vercel-flag-overrides cookie is present', () => {
