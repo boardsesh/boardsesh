@@ -231,8 +231,13 @@ type RemovedLikedRow = { queryKey: QueryKey; pageIndex: number; climbIndex: numb
  * The rows each un-like took out, per query client and climb. Kept until the
  * climb is put back (a failed un-like, or a like again) so neither needs the
  * network to show it: a refetch can fail for the same reason the un-like did.
+ * A confirmed un-like keeps its entry too, because a queued re-like has no
+ * refetch to bring the row back. Only the most recent climbs are kept.
  */
 const removedLikedRows = new WeakMap<QueryClient, Map<string, RemovedLikedRow[]>>();
+
+/** How many un-liked climbs keep their rows for a re-like; the oldest goes first. */
+export const MAX_REMEMBERED_UNLIKED_CLIMBS = 50;
 
 function removedRowsFor(queryClient: QueryClient): Map<string, RemovedLikedRow[]> {
   let rows = removedLikedRows.get(queryClient);
@@ -261,18 +266,30 @@ export function removeClimbFromLikedList(queryClient: QueryClient, climbUuid: st
       removed.push({ queryKey, pageIndex, climbIndex, climb: page.climbs[climbIndex] });
       // Every page carries the list-wide total, and the screen reads it off page one,
       // so each page's total drops once even when the climb sat on a later page.
-      queryClient.setQueryData<InfiniteData<SmartPlaylistResult>>(queryKey, {
-        ...cached,
-        pages: cached.pages.map((cachedPage) => ({
-          ...cachedPage,
-          climbs: cachedPage.climbs.filter((climb) => climb.uuid !== climbUuid),
-          totalCount: Math.max(0, cachedPage.totalCount - 1),
-        })),
-      });
+      queryClient.setQueryData<InfiniteData<SmartPlaylistResult>>(queryKey, (current) =>
+        current
+          ? {
+              ...current,
+              pages: current.pages.map((cachedPage) => ({
+                ...cachedPage,
+                climbs: cachedPage.climbs.filter((climb) => climb.uuid !== climbUuid),
+                totalCount: Math.max(0, cachedPage.totalCount - 1),
+              })),
+            }
+          : current,
+      );
       break;
     }
   }
-  if (removed.length > 0) removedRowsFor(queryClient).set(climbUuid, removed);
+  if (removed.length === 0) return;
+  const rowsByClimb = removedRowsFor(queryClient);
+  // Re-insert so the Map's order is oldest first, then drop past the cap.
+  rowsByClimb.delete(climbUuid);
+  rowsByClimb.set(climbUuid, removed);
+  for (const oldestUuid of rowsByClimb.keys()) {
+    if (rowsByClimb.size <= MAX_REMEMBERED_UNLIKED_CLIMBS) break;
+    rowsByClimb.delete(oldestUuid);
+  }
 }
 
 /**

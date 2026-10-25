@@ -8,6 +8,7 @@ import { noopRecentsAdapter } from '../recents-adapter';
 import type { PlaylistClimbsView } from '../use-playlist-climbs';
 import {
   LIKED_LIST_QUERY_KEY_PREFIX,
+  MAX_REMEMBERED_UNLIKED_CLIMBS,
   removeClimbFromLikedList,
   restoreClimbToLikedList,
   smartPlaylistGeometryKey,
@@ -299,6 +300,21 @@ describe('removeClimbFromLikedList', () => {
     const liked = client.getQueryData<{ pages: { climbs: { uuid: string }[]; totalCount: number }[] }>(likedKey);
     expect(liked?.pages.map((page) => page.climbs.map((climb) => climb.uuid))).toEqual([['a', 'b'], ['c']]);
     expect(liked?.pages.map((page) => page.totalCount)).toEqual([2, 1]);
+  });
+
+  it('remembers only the most recent un-liked climbs for a re-like', () => {
+    const client = new QueryClient();
+    const likedKey = smartPlaylistQueryKey({ smartPlaylistType: 'LIKED_CLIMBS', userId: 'u' });
+    const uuids = Array.from({ length: MAX_REMEMBERED_UNLIKED_CLIMBS + 1 }, (_, index) => `c${index}`);
+    seed(client, likedKey, [uuids]);
+
+    for (const uuid of uuids) removeClimbFromLikedList(client, uuid);
+    restoreClimbToLikedList(client, 'c0');
+    restoreClimbToLikedList(client, 'c1');
+
+    const liked = client.getQueryData<{ pages: { climbs: { uuid: string }[] }[] }>(likedKey);
+    // c0 was the oldest, so it fell past the cap; c1 is still remembered.
+    expect(liked?.pages[0].climbs.map((climb) => climb.uuid)).toEqual(['c1']);
   });
 
   it('does nothing for a climb it never removed', () => {

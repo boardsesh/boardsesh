@@ -1176,11 +1176,14 @@ export function useToggleFavorite() {
       if (typeof variables.currentlyFavorited !== 'boolean') return;
       if (!context || !ownsFavoriteWrite(variables.input.climbUuid, context)) return;
       favoritesStore.setIsFavorited(variables.input.climbUuid, variables.currentlyFavorited);
-      // A failed un-like already dropped the climb from the cached Liked pages in
-      // onMutate. Put the row back from what onMutate removed: a refetch can fail
-      // for the same lost connection that failed the un-like (#5304).
+      // Undo onMutate's Liked-list edit from the cache, since a refetch can fail
+      // for the same lost connection that failed the toggle (#5304). A failed
+      // un-like puts the row back; a failed like takes out the row onMutate put
+      // back, and keeps it so a later like can restore it again.
       if (variables.currentlyFavorited) {
         restoreClimbToLikedList(queryClient, variables.input.climbUuid);
+      } else {
+        removeClimbFromLikedList(queryClient, variables.input.climbUuid);
       }
     },
     onSettled: (_data, _error, variables, context) => {

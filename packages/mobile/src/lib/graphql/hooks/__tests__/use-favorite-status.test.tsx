@@ -376,6 +376,9 @@ describe('useToggleFavorite', () => {
         pageParams: [0],
       });
     }
+    function likedTotal(queryClient: QueryClient) {
+      return queryClient.getQueryData<{ pages: { totalCount: number }[] }>(likedKey)?.pages[0].totalCount;
+    }
     function likedUuids(queryClient: QueryClient) {
       return queryClient
         .getQueryData<{ pages: { climbs: { uuid: string }[] }[] }>(likedKey)
@@ -412,6 +415,46 @@ describe('useToggleFavorite', () => {
 
       expect(likedUuids(queryClient)).toEqual(['climb-0', 'climb-1', 'climb-2']);
       expect(requestMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('takes the row out again when a re-like fails, and a later like still puts it back', async () => {
+      const { queryClient, Wrapper } = makeWrapper();
+      seedLiked(queryClient);
+      const { result } = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
+      const input = { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 };
+
+      requestMock.mockResolvedValueOnce({ toggleFavorite: { favorited: false } });
+      await result.current.mutateAsync({ input, currentlyFavorited: true });
+
+      requestMock.mockRejectedValueOnce(new Error('offline'));
+      await expect(result.current.mutateAsync({ input, currentlyFavorited: false })).rejects.toThrow('offline');
+      expect(likedUuids(queryClient)).toEqual(['climb-0', 'climb-2']);
+      expect(likedTotal(queryClient)).toBe(2);
+      expect(favoritesStore.getIsFavorited('climb-1')).toBe(false);
+
+      requestMock.mockResolvedValueOnce({ toggleFavorite: { favorited: true } });
+      await result.current.mutateAsync({ input, currentlyFavorited: false });
+      expect(likedUuids(queryClient)).toEqual(['climb-0', 'climb-1', 'climb-2']);
+      expect(likedTotal(queryClient)).toBe(3);
+    });
+
+    it('takes the row out again when a queued re-like fails to write locally', async () => {
+      localQueue.offlineEnabled = true;
+      localQueue.db = { tag: 'db' };
+      localQueue.removeFavoriteLocal.mockResolvedValueOnce(undefined);
+      localQueue.addFavoriteLocal.mockRejectedValueOnce(new Error('disk full'));
+      const { queryClient, Wrapper } = makeWrapper();
+      seedLiked(queryClient);
+      const { result } = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
+      const input = { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 };
+
+      await result.current.mutateAsync({ input, currentlyFavorited: true });
+      expect(likedUuids(queryClient)).toEqual(['climb-0', 'climb-2']);
+
+      await expect(result.current.mutateAsync({ input, currentlyFavorited: false })).rejects.toThrow('disk full');
+      expect(likedUuids(queryClient)).toEqual(['climb-0', 'climb-2']);
+      expect(likedTotal(queryClient)).toBe(2);
+      expect(requestMock).not.toHaveBeenCalled();
     });
 
     it('refetches an on-screen Liked list after a like, but only marks it stale after an un-like', async () => {
