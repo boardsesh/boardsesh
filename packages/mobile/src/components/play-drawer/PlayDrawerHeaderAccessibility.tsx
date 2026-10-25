@@ -26,6 +26,12 @@ const WALL_PILL = 'wallPill';
  * The drawn headers swap places on every climb change (`SwipeableHeader`), so
  * focus that sat on one would be left on a hidden view. Their controls (copy
  * the name, the setter link, the wall pill) are this view's custom actions.
+ *
+ * It sits on top of the drawn header and is `box-none`: a sighted tap is not
+ * its own, so it falls through to the name, the setter link or the pill below,
+ * while Android's explore-by-touch, which walks hover events top down through
+ * every view whose children may take touches, reaches this view before any
+ * hidden one under it.
  */
 export const PlayDrawerHeaderAccessibility = memo(function PlayDrawerHeaderAccessibility({
   model,
@@ -43,7 +49,11 @@ export const PlayDrawerHeaderAccessibility = memo(function PlayDrawerHeaderAcces
     latched: pillLatched,
   });
   const { headerProps } = model;
-  const label = describePlayDrawerHeader(headerProps, t);
+  // What the wall is doing is part of the header a sighted climber sees, so it
+  // is part of what this view reads. Browsing's pill words are an instruction
+  // ("Back to your climb"), not a state: they stay on the action only.
+  const wallStateLabel = pillState && pillState !== 'browsing' ? pillAccessibility?.label : undefined;
+  const label = [describePlayDrawerHeader(headerProps, t), wallStateLabel].filter(Boolean).join(', ');
   const setterUsername = headerProps.setterUsername;
   const canOpenSetter = Boolean(setterUsername) && onPressSetter !== undefined;
   const pillActionLabel = onPillPress ? pillAccessibility?.label : undefined;
@@ -71,6 +81,7 @@ export const PlayDrawerHeaderAccessibility = memo(function PlayDrawerHeaderAcces
     <View
       testID="play-drawer-header-accessibility"
       style={StyleSheet.absoluteFill}
+      pointerEvents="box-none"
       accessible
       accessibilityRole="header"
       accessibilityLabel={label}

@@ -20,7 +20,9 @@ type SwipeableHeaderProps = {
   next: ReactNode;
   /** What a screen reader reads for the header: one fixed view, never a slot.
    *  Every slot is hidden from assistive tech, because the slots change places
-   *  on every climb change and focus on one would be left on a hidden view. */
+   *  on every climb change and focus on one would be left on a hidden view.
+   *  Drawn on top of the slots, so it must let sighted taps through
+   *  (`pointerEvents="box-none"`). */
   accessibilityStandIn: ReactNode;
 };
 
@@ -82,7 +84,8 @@ const HeaderSlot = memo(function HeaderSlot({
  * headers stay mounted, the current climb's and its two neighbours', on the same
  * pages as the carousel's boards; the pager's anchor says which is in the middle.
  * At rest only that one is drawn. A screen reader reads `accessibilityStandIn`
- * instead, the same fixed stand-in rule the board follows.
+ * instead: one fixed stand-in like the board's, but on top of the slots rather
+ * than under them, because the current header takes sighted taps.
  */
 export const SwipeableHeader = memo(function SwipeableHeader({
   pager,
@@ -110,16 +113,19 @@ export const SwipeableHeader = memo(function SwipeableHeader({
 
   return (
     <View style={styles.container}>
-      {/* First, outside the keyed slots: a slot added or dropped after it can
-          never move it among its siblings, and a view put back into its parent
-          cancels the touch that began on it (see SwipeBoardCarousel). It draws
-          nothing and sits under the current header, which takes sighted taps. */}
-      {accessibilityStandIn}
       {[
         renderSlot(centerPage - 1, previous, false),
         renderSlot(centerPage, current, true),
         renderSlot(centerPage + 1, next, false),
       ]}
+      {/* Last, so it is on top: Android's explore-by-touch sends hover events to
+          the topmost view first, and the current slot below holds views that
+          would take them (the setter link) and announce nothing, being hidden.
+          It is `box-none`, so sighted taps still fall through to that slot.
+          Always after every slot, so it never changes order against another
+          view that stays, and the renderer never takes it out to put it back:
+          focus on it outlives the climb change. */}
+      {accessibilityStandIn}
     </View>
   );
 });

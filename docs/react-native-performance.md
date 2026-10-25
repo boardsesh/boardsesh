@@ -507,10 +507,17 @@ reference numbers):
 - The accessibility element is one fixed stand-in the size of the board, not a slot. The slots
   change places on every swipe, and focus that sat on one would be left on a hidden view. It takes
   touches, so a screen reader's explore-by-touch finds it, and it is the container's first child, so
-  no board added or dropped after it can change where it sits among its siblings. The header
-  follows the same rule (#6352): `PlayDrawerHeaderAccessibility` is the first child of
-  `SwipeableHeader`, reads the whole header as one label, and carries its controls (copy the name,
-  the setter, the wall pill) as custom actions; every header slot is hidden from assistive tech.
+  no board added or dropped after it can change where it sits among its siblings. The header has
+  one fixed stand-in too (#6352), `PlayDrawerHeaderAccessibility`: it reads the whole header as one
+  label (name, attribute glyphs, grade, stats, setter, rules, wall state) and carries its controls
+  (copy the name, the setter, the wall pill) as custom actions, and every header slot is hidden
+  from assistive tech. Unlike the board's slots, the current header takes sighted taps, so a
+  stand-in under it could miss Android's explore-by-touch: hover events go to the topmost view
+  first, a hidden view there that takes them (the setter link) stops them reaching anything below,
+  and RN only skips a view for hover when its `pointerEvents` is `none` or `box-only`. So the
+  header's stand-in is the last child of `SwipeableHeader`, on top, with
+  `pointerEvents="box-none"`, which lets taps through and still takes hover. Being last, it never
+  changes order against another view that stays, so Fabric's differ never removes and reinserts it.
 - The UI thread numbers each step it takes (`uiSteps`); the JS thread writes back the last step it
   has rendered, in one shared value with the page it has in the middle. While they differ the UI
   thread leaves the JS thread alone. When they agree and the pages do not (a Next button, a queue

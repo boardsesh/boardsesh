@@ -80,8 +80,9 @@ describe('SwipeableHeader accessibility', () => {
 
     // Same node, so focus that sat on it before the climb changed stays on it.
     expect(getByTestId('stand-in')).toBe(firstStandIn);
-    // Ahead of every slot, so no slot added or dropped can move it.
-    expect(firstStandIn.parentElement?.firstElementChild).toBe(firstStandIn);
+    // After every slot: on top, where Android's explore-by-touch reaches it
+    // before the hidden current header, and never reordered against a slot.
+    expect(firstStandIn.parentElement?.lastElementChild).toBe(firstStandIn);
 
     for (const name of ['A', 'B', 'C']) {
       const slot = getByTestId(`header-${name}`).parentElement!;

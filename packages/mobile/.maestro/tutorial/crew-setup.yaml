@@ -4,7 +4,9 @@ name: Tutorial setup - private crew session
 - runFlow: kilter-ready.yaml
 - openLink: com.boardsesh.app://climbs/00007DA715CE4E7DBF60928D240CE7F2?boardName=kilter&layoutId=1&sizeId=7&setIds=1%2C20&angle=40
 - extendedWaitUntil:
-    visible: NuVu
+    visible:
+      id: play-drawer-header-accessibility
+      text: 'NuVu, .*'
     timeout: 90000
 - extendedWaitUntil:
     visible: '.*Board:.*'
@@ -22,7 +24,9 @@ name: Tutorial setup - private crew session
     commands:
       - tapOn: '.*Connect.*[Bb]oard.*'
 - extendedWaitUntil:
-    visible: 'On the wall.*'
+    visible:
+      id: play-drawer-header-accessibility
+      text: '.*On the wall.*'
     timeout: 15000
 - openLink: com.boardsesh.app://record
 - waitForAnimationToEnd
@@ -33,7 +37,9 @@ name: Tutorial setup - private crew session
 # Sam becomes the first future row rather than an unanchored first item.
 - openLink: com.boardsesh.app://climbs/00007DA715CE4E7DBF60928D240CE7F2?boardName=kilter&layoutId=1&sizeId=7&setIds=1%2C20&angle=40
 - extendedWaitUntil:
-    visible: NuVu
+    visible:
+      id: play-drawer-header-accessibility
+      text: 'NuVu, .*'
     timeout: 90000
 - extendedWaitUntil:
     visible: '.*Board:.*'
@@ -48,10 +54,15 @@ name: Tutorial setup - private crew session
 # rather than assuming the wall banner exists on that underlying list.
 - openLink: com.boardsesh.app://play
 - extendedWaitUntil:
-    visible: NuVu
+    visible:
+      id: play-drawer-header-accessibility
+      text: 'NuVu, .*'
     timeout: 20000
 - extendedWaitUntil:
-    # Player pill names the driver; NuVu is the separate title above. The
-    # recorder additionally verifies its exact UUID as the sole joined row.
-    visible: 'On the wall\. Alex is lighting the wall\..*'
+    # The header's screen-reader stand-in reads the title and then the wall
+    # pill, which names the driver. The recorder additionally verifies its
+    # exact UUID as the sole joined row.
+    visible:
+      id: play-drawer-header-accessibility
+      text: 'NuVu, .*On the wall\. Alex is lighting the wall\..*'
     timeout: 20000

@@ -13,6 +13,7 @@ import type { AccessibilityActionEvent } from 'react-native';
 type StandInProps = {
   children?: ReactNode;
   testID?: string;
+  pointerEvents?: string;
   accessibilityRole?: string;
   accessibilityLabel?: string;
   accessibilityActions?: { name: string; label?: string }[];
@@ -30,6 +31,7 @@ vi.mock('react-native', () => ({
   View: ({
     children,
     testID,
+    pointerEvents,
     accessibilityRole,
     accessibilityLabel,
     accessibilityActions,
@@ -40,6 +42,7 @@ vi.mock('react-native', () => ({
       'div',
       {
         'data-testid': testID,
+        'data-pointer-events': pointerEvents,
         'data-role': accessibilityRole,
         'aria-label': accessibilityLabel,
         'data-actions': accessibilityActions ? JSON.stringify(accessibilityActions) : undefined,
@@ -129,6 +132,78 @@ describe('PlayDrawerHeaderAccessibility', () => {
     const standIn = getByTestId('play-drawer-header-accessibility');
     expect(standIn.dataset.role).toBe('header');
     expect(standIn.getAttribute('aria-label')).toBe('Hueco Madness, V6, 12 sends, 2.5★, jwebxl');
+  });
+
+  it('lets sighted taps through to the drawn header it sits on top of', () => {
+    const { getByTestId } = render(createElement(PlayDrawerHeaderAccessibility, { ...baseProps, model: modelWith() }));
+    expect(getByTestId('play-drawer-header-accessibility').dataset.pointerEvents).toBe('box-none');
+  });
+
+  it('says the benchmark and no-match glyphs the drawn header puts after the name', () => {
+    const { getByTestId, rerender } = render(
+      createElement(PlayDrawerHeaderAccessibility, {
+        ...baseProps,
+        model: modelWith({ benchmarkDifficulty: '18', characteristics: ['no_match', 'method_footless'] }),
+      }),
+    );
+    expect(getByTestId('play-drawer-header-accessibility').getAttribute('aria-label')).toBe(
+      'Hueco Madness, mobile.climbRow.benchmark, mobile.climbRow.noMatch, mobile.climbRow.method.footless, V6, 12 sends, 2.5★, jwebxl',
+    );
+
+    // A climb that carries only the legacy no-match bool, like the glyph does.
+    rerender(
+      createElement(PlayDrawerHeaderAccessibility, {
+        ...baseProps,
+        model: modelWith({ characteristics: null, isNoMatch: true }),
+      }),
+    );
+    expect(getByTestId('play-drawer-header-accessibility').getAttribute('aria-label')).toBe(
+      'Hueco Madness, mobile.climbRow.noMatch, V6, 12 sends, 2.5★, jwebxl',
+    );
+  });
+
+  it('keeps the rules the Woods rules line does not state, and not the ones it does', () => {
+    const { getByTestId } = render(
+      createElement(PlayDrawerHeaderAccessibility, {
+        ...baseProps,
+        model: modelWith({
+          boardName: 'woods',
+          characteristics: ['no_match', 'any_feet', 'no_kickboard'],
+          isNoMatch: true,
+        }),
+      }),
+    );
+    expect(getByTestId('play-drawer-header-accessibility').getAttribute('aria-label')).toBe(
+      'Hueco Madness, mobile.climbRow.noKickboard, V6, 12 sends, 2.5★, jwebxl, mobile.climbRules.spoken',
+    );
+  });
+
+  it('says what the wall is doing, but not the browsing pill, whose words are its action', () => {
+    recorded.pill = { label: 'On the wall. Alex is lighting the wall.', hint: 'hint' };
+    const { getByTestId, rerender } = render(
+      createElement(PlayDrawerHeaderAccessibility, {
+        ...baseProps,
+        model: modelWith(),
+        pillState: 'onWall',
+        onPillPress: () => {},
+      }),
+    );
+    expect(getByTestId('play-drawer-header-accessibility').getAttribute('aria-label')).toBe(
+      'Hueco Madness, V6, 12 sends, 2.5★, jwebxl, On the wall. Alex is lighting the wall.',
+    );
+
+    recorded.pill = { label: 'Back to your climb' };
+    rerender(
+      createElement(PlayDrawerHeaderAccessibility, {
+        ...baseProps,
+        model: modelWith(),
+        pillState: 'browsing',
+        onPillPress: () => {},
+      }),
+    );
+    expect(getByTestId('play-drawer-header-accessibility').getAttribute('aria-label')).toBe(
+      'Hueco Madness, V6, 12 sends, 2.5★, jwebxl',
+    );
   });
 
   it('says draft, hidden and the set angle when the drawn header would', () => {

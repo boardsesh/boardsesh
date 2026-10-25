@@ -13,7 +13,9 @@ name: Tutorial - your crew builds the queue
 - assertNotVisible: Invite to this session
 - openLink: com.boardsesh.app://climbs/00007DA715CE4E7DBF60928D240CE7F2?boardName=kilter&layoutId=1&sizeId=7&setIds=1%2C20&angle=40
 - extendedWaitUntil:
-    visible: NuVu
+    visible:
+      id: play-drawer-header-accessibility
+      text: 'NuVu, .*'
     timeout: 90000
 - extendedWaitUntil:
     visible: 'Queue, [0-9]+ climbs'
@@ -60,7 +62,9 @@ name: Tutorial - your crew builds the queue
     point: 20%,91%
     waitToSettleTimeoutMs: 500
 - extendedWaitUntil:
-    visible: NuVu
+    visible:
+      id: play-drawer-header-accessibility
+      text: 'NuVu, .*'
     timeout: 20000
 - extendedWaitUntil:
     visible: 'Queue, [0-9]+ climbs'

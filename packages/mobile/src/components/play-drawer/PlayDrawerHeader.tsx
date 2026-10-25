@@ -13,6 +13,7 @@ import { Icon } from '../Icon';
 import { MarqueeText } from '../MarqueeText';
 import { DrawerHeader } from '../DrawerHeader';
 import { ClimbAttributeIcons } from '../ClimbAttributeIcons';
+import { describeClimbAttributes, type ClimbAttributeInput } from '../climb-attribute-labels';
 import { DraftChip } from '../DraftChip';
 import { ProjectChip } from '../ProjectChip';
 import { useTheme } from '../../providers/theme-provider';
@@ -93,7 +94,9 @@ type HeaderFactsInput = Pick<
   | 'ascensionistCount'
   | 'qualityAverage'
   | 'boardName'
+  | 'benchmarkDifficulty'
   | 'characteristics'
+  | 'isNoMatch'
   | 'difficulty'
   | 'isDraft'
   | 'statsAngle'
@@ -110,7 +113,9 @@ function deriveHeaderFacts(
     ascensionistCount,
     qualityAverage,
     boardName,
+    benchmarkDifficulty,
     characteristics,
+    isNoMatch,
     difficulty,
     isDraft = false,
     statsAngle,
@@ -134,6 +139,22 @@ function deriveHeaderFacts(
   const ruleLabels = getBoardCapabilities(boardName).explicitClimbRules
     ? resolveClimbRuleLabels(characteristics, t)
     : null;
+  // Woods' rules line states matching and feet in full, so the glyph cluster
+  // beside the name keeps only the rules that line does not (no kickboard among
+  // them), and drops the legacy no-match bool, which would say it twice.
+  const residualCharacteristics = ruleLabels
+    ? characteristics?.filter(
+        (token) =>
+          token !== CLIMB_CHARACTERISTICS.NO_MATCH &&
+          token !== CLIMB_CHARACTERISTICS.ANY_FEET &&
+          token !== CLIMB_CHARACTERISTICS.CAMPUS,
+      )
+    : characteristics;
+  const attributes: ClimbAttributeInput = {
+    benchmarkDifficulty,
+    characteristics: residualCharacteristics?.length ? residualCharacteristics : null,
+    isNoMatch: ruleLabels ? undefined : isNoMatch,
+  };
 
   // Nobody has graded it yet (#5971).
   const showsProject = isProjectClimb({
@@ -147,7 +168,7 @@ function deriveHeaderFacts(
   // the first ever tick at the browsed angle the marker keeps naming the old angle
   // until the climb is refetched. Self-correcting; see the row's comment.
   const showsSetAngleMarker = statsAngle != null && statsAngle !== angle;
-  return { statsParts, ruleLabels, showsProject, showsSetAngleMarker };
+  return { statsParts, ruleLabels, attributes, showsProject, showsSetAngleMarker };
 }
 
 /**
@@ -157,9 +178,11 @@ function deriveHeaderFacts(
  */
 export function describePlayDrawerHeader(headerProps: PreparedHeaderProps, t: TFunction<'climbs'>): string {
   const { name, difficulty, secondaryGrade, setterUsername, isHidden, isDraft, statsAngle } = headerProps;
-  const { statsParts, ruleLabels, showsProject, showsSetAngleMarker } = deriveHeaderFacts(headerProps, t);
+  const { statsParts, ruleLabels, attributes, showsProject, showsSetAngleMarker } = deriveHeaderFacts(headerProps, t);
   return [
     name,
+    // The glyphs and badges drawn right after the name.
+    ...describeClimbAttributes(attributes, t),
     isDraft ? t('createClimbForm.draftBadge') : null,
     showsProject ? t('mobile.project.chip') : difficulty,
     secondaryGrade,
@@ -208,20 +231,22 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
     [gradeColor, rawDifficulty, difficulty],
   );
 
-  const { statsParts, ruleLabels, showsProject, showsSetAngleMarker } = deriveHeaderFacts(
-    { ascensionistCount, qualityAverage, boardName, characteristics, difficulty, isDraft, statsAngle, angle },
+  const { statsParts, ruleLabels, attributes, showsProject, showsSetAngleMarker } = deriveHeaderFacts(
+    {
+      ascensionistCount,
+      qualityAverage,
+      boardName,
+      benchmarkDifficulty,
+      characteristics,
+      isNoMatch,
+      difficulty,
+      isDraft,
+      statsAngle,
+      angle,
+    },
     t,
   );
   const subtitleParts = setterUsername && !onPressSetter ? [...statsParts, setterUsername] : statsParts;
-
-  const residualCharacteristics = ruleLabels
-    ? characteristics?.filter(
-        (token) =>
-          token !== CLIMB_CHARACTERISTICS.NO_MATCH &&
-          token !== CLIMB_CHARACTERISTICS.ANY_FEET &&
-          token !== CLIMB_CHARACTERISTICS.CAMPUS,
-      )
-    : characteristics;
 
   return (
     <DrawerHeader
@@ -252,11 +277,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
               </MarqueeText>
             </PressableSurface>
             {/* Keep rules the matching/feet line does not state, including no kickboard. */}
-            <ClimbAttributeIcons
-              benchmarkDifficulty={benchmarkDifficulty}
-              characteristics={residualCharacteristics?.length ? residualCharacteristics : null}
-              isNoMatch={ruleLabels ? undefined : isNoMatch}
-            />
+            <ClimbAttributeIcons {...attributes} />
             {/* In the name row, not a caption line of its own like Hidden: the
                 chip is one word, and a new line would move the board down for
                 every draft. */}
