@@ -202,8 +202,9 @@ export const boardPresenceQueries = {
    *
    * Ticks can retain an Aurora/Kilter alias UUID after catalog deduplication,
    * so resolve the requested climb to its canonical UUID and include every
-   * known alias. Angle is exact; mirror is intentionally not filtered because
-   * BoardPresenceClimb does not currently carry mirror state.
+   * known alias. Angle is exact; mirror is intentionally not filtered: the
+   * sender list is per climb and angle, so a send on either orientation
+   * counts, and the query takes no mirror argument.
    */
   boardClimbRecentSenders: async (
     _: unknown,
