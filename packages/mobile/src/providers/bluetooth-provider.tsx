@@ -429,6 +429,7 @@ function BluetoothAutoSender({
   sendFramesToBoard,
   onWallConfirmed,
   reassertNonce,
+  connectionGeneration,
   connectInitialSendRef,
   lastPhysicalFramesRef,
   colorSignature,
@@ -453,6 +454,12 @@ function BluetoothAutoSender({
    */
   onWallConfirmed: (item: ClimbQueueItem, mirrored: boolean) => void;
   reassertNonce: number;
+  // The physical BLE connection this sender is writing over. The dedup caches
+  // below describe a specific link's wall, so a new link must retire them: a
+  // connect that lands while the app already believed itself connected renders
+  // no isConnected false→true edge, leaves this component mounted, and would
+  // otherwise keep suppressing writes over a board whose LEDs are no longer ours.
+  connectionGeneration: number;
   // One-shot seed: what connect() already wrote as initialFrames, so the
   // freshly mounted AutoSender doesn't repeat a byte-identical first send.
   connectInitialSendRef: React.MutableRefObject<BleConnectInitialSend | null>;
@@ -592,6 +599,14 @@ function BluetoothAutoSender({
   // signature, and clearing it again at the top of the next loop iteration is
   // what actually forces the re-push.
   const reassertPendingRef = useRef(false);
+  // Last connection generation acted on. Initialised from the prop so a first
+  // mount is NOT treated as a link change — that would clear the connect-initial
+  // -send seed and repeat connect()'s write (plus its success haptic).
+  const lastConnectionGenerationRef = useRef(connectionGeneration);
+  // Set when a new physical link is seen, consumed inside the drain loop (same
+  // shape as reassertPendingRef, for the same reason: a link change landing
+  // *during* an in-flight write must survive that write re-setting the caches).
+  const connectionChangedPendingRef = useRef(false);
 
   // Single AbortController scoped to the AutoSender's lifetime. Aborted
   // exactly once on unmount so the in-flight drain loop cancels the
@@ -632,6 +647,16 @@ function BluetoothAutoSender({
     if (reassertNonce !== lastReassertNonceRef.current) {
       lastReassertNonceRef.current = reassertNonce;
       reassertPendingRef.current = true;
+    }
+
+    // A new physical link means the wall's contents are unknown to us: the box
+    // may have been taken over and re-lit by another climber, and on iOS the
+    // native BoardBleManager relights from App-Group state at connection-ready.
+    // Retire the dedup caches so the current climb is written again rather than
+    // suppressed as "already up there".
+    if (connectionGeneration !== lastConnectionGenerationRef.current) {
+      lastConnectionGenerationRef.current = connectionGeneration;
+      connectionChangedPendingRef.current = true;
     }
 
     const sendRequest: AutoSendRequest = {
@@ -712,6 +737,23 @@ function BluetoothAutoSender({
             continue;
           }
           lastUnresolvedReportedUuidRef.current = null;
+
+          // A link change retires everything we believed about the wall. Placed
+          // BEFORE the seed block on purpose: the seed needs
+          // `lastSentSignatureRef.current === null`, so clearing here keeps a
+          // connect that DID write initialFrames suppressing its own duplicate
+          // (and its second haptic), while a connect that wrote nothing still
+          // gets a real write. lastPhysicalFramesRef goes too — across a new
+          // link the wall's contents are unknown, and the dedup branch below
+          // must not report a phantom climb to board presence over a dark wall.
+          // litQueueItemUuidRef goes for the #4979 hold: "a climb this link
+          // already lit" must mean this link, the same as after a remount.
+          if (connectionChangedPendingRef.current) {
+            connectionChangedPendingRef.current = false;
+            lastSentSignatureRef.current = null;
+            lastPhysicalFramesRef.current = null;
+            litQueueItemUuidRef.current = null;
+          }
 
           // #4499 off-screen-adopt gate. The wall must not light for a
           // connection nobody asked for, and adopting one boots this component
@@ -862,6 +904,9 @@ function BluetoothAutoSender({
     };
 
     void drain();
+    // connectionGeneration is a dep so a NEW physical link re-drives the drain
+    // even when the current climb never changed — the reconnect-without-a-
+    // rendered-disconnect case, where nothing else in this list moves.
   }, [
     currentClimbQueueItem,
     sendFramesToBoard,
@@ -875,6 +920,7 @@ function BluetoothAutoSender({
     lastCurrentChange,
     // Fixed per mount (the mount is keyed on it), so this adds no runs.
     physicalLink,
+    connectionGeneration,
   ]);
 
   return null;
@@ -1112,6 +1158,18 @@ export function BluetoothProvider({
     (climbUuid: string | undefined) => unambiguousQueueMirror(getQueueSnapshot(), climbUuid),
     [getQueueSnapshot],
   );
+  // Monotonic id of the physical BLE link the auto-sender is writing over, fed
+  // from BleConnectionHandle.generation. The auto-sender is mounted on the
+  // rendered `isConnected` flag, which a connect that starts while the app
+  // already believes it is connected never flips — so without this the sender's
+  // "already on the wall" caches would outlive the link they describe.
+  //
+  // 0 is the "no link yet" sentinel and is never a real generation: the hook
+  // hands out `nextConnectionGenerationRef.current + 1`, so the first connect is
+  // 1. That is asserted in use-board-bluetooth.test.ts — were it ever to start
+  // at 0, the first connect would set the same value back and the drain effect
+  // would not re-fire.
+  const [connectionGeneration, setConnectionGeneration] = useState(0);
   const pendingReportSignatureRef = useRef<string | null>(null);
   const pendingWallReportRef = useRef<PendingWallReport | null>(null);
   const pendingPresenceResolveRef = useRef(false);
@@ -1360,6 +1418,12 @@ export function BluetoothProvider({
       wallOperationEpochRef.current += 1;
       // A new link must not wait up to a mutation timeout on the old link's clear.
       clearReportInFlightRef.current = null;
+      // Publish the new physical link to the auto-sender. Called on BOTH
+      // generation-creating paths (connect() and the iOS native adoption), right
+      // after setIsConnected(true) — so it also fires on a connect that produced
+      // no rendered isConnected edge, which is the case the auto-sender's own
+      // mount/unmount cycle cannot see. Monotonic: never reset on disconnect.
+      setConnectionGeneration(connection.generation);
       lastAcceptedReportSignatureRef.current = null;
       lastAcceptedWallSignatureRef.current = null;
       pendingReportSignatureRef.current = null;
@@ -2860,6 +2924,7 @@ export function BluetoothProvider({
             sendFramesToBoard={commitWallFrames}
             onWallConfirmed={handleWallConfirmed}
             reassertNonce={reassertNonce}
+            connectionGeneration={connectionGeneration}
             connectInitialSendRef={connectInitialSendRef}
             lastPhysicalFramesRef={lastPhysicalFramesRef}
             consumeBackgroundAdoptSendGate={consumeBackgroundAdoptSendGate}
