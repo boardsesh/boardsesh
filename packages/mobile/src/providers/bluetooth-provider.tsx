@@ -29,6 +29,13 @@ import {
 import { getBleEncodingSignature } from '../lib/ble/encoding-signature';
 import { resolveMirroredOrientation } from '../lib/ble/mirror-orientation';
 import { hasRenderableFrames } from '../lib/ble/renderable-frames';
+import {
+  holdAgeHours,
+  isStaleCurrentClimb,
+  type StaleCurrentHold,
+  type StaleCurrentHoldReleaseReason,
+} from '../lib/ble/stale-current-hold';
+import { nowMs } from '../lib/clock';
 import { useResolvedBleDeviceBoards } from '../lib/ble/resolve-serials';
 import { classifyBleDisconnect } from '../lib/ble/disconnect-category';
 import {
@@ -62,6 +69,7 @@ import { createBleWriteActivityStore } from '../lib/ble/write-activity-store';
 import { BluetoothWriteActivityProvider } from './bluetooth-write-activity';
 import { useLocalBluetoothHolder } from './use-local-bluetooth-holder';
 import { SHEET_SETTLE_MS } from './sheet-presentation-provider';
+import { useStaleCurrentHoldEnabled } from './feature-flags-provider';
 
 type BluetoothContextValue = {
   isConnected: boolean;
@@ -195,6 +203,14 @@ type BluetoothContextValue = {
   releaseVirtualWall: () => void;
   /** Either transport can put a climb on the wall right now. */
   canDriveWall: boolean;
+  /**
+   * #4979: the auto-sender kept the current climb off the wall on connect
+   * because it hadn't changed for 4 h or more. Null while nothing is held, and
+   * always null with `stale-current-hold-kill` on. The player shows Put on the
+   * wall and when the climb was last on the wall while this names its climb;
+   * `reassertWall()` releases it.
+   */
+  staleCurrentHold: StaleCurrentHold | null;
 };
 
 const BluetoothContext = createContext<BluetoothContextValue | null>(null);
@@ -336,6 +352,9 @@ function BluetoothAutoSender({
   onUnresolvedCurrentClimb,
   consumeBackgroundAdoptSendGate,
   onBackgroundAdoptSendSuppressed,
+  staleCurrentHoldEnabled,
+  onStaleCurrentHeld,
+  onStaleCurrentPassed,
 }: {
   sendFramesToBoard: SendFramesToBoard;
   /**
@@ -391,6 +410,14 @@ function BluetoothAutoSender({
   consumeBackgroundAdoptSendGate: () => boolean;
   // Reports a refused write so the gate is measurable in the field.
   onBackgroundAdoptSendSuppressed: (item: ClimbQueueItem) => void;
+  // #4979 stale-climb hold (docs/current-climb-outside-queue.md, section 6).
+  // False with the kill switch on, and on a virtual hold (taking a wall with no
+  // lights is itself the climber's ask).
+  staleCurrentHoldEnabled: boolean;
+  // A write was skipped because the climb hasn't changed for 4 h or more.
+  onStaleCurrentHeld: (item: ClimbQueueItem, lastCurrentChangeAt: number) => void;
+  // A climb reached the write past the hold, so any hold standing is over.
+  onStaleCurrentPassed: (item: ClimbQueueItem) => void;
 }) {
   type AutoSendRequest = {
     item: ClimbQueueItem;
@@ -399,8 +426,24 @@ function BluetoothAutoSender({
     encodingSignature: string;
   };
 
-  const { state, sessionId } = useQueue();
+  const { state, sessionId, lastCurrentChange } = useQueue();
   const { currentClimbQueueItem } = state;
+  // The #4979 hold's inputs, read live by the drain (it decides per write, not
+  // per effect run). `lastCurrentChange` comes from the same context value as
+  // `currentClimbQueueItem`, so the two always describe the same render.
+  const lastCurrentChangeRef = useRef(lastCurrentChange);
+  lastCurrentChangeRef.current = lastCurrentChange;
+  const staleCurrentHoldEnabledRef = useRef(staleCurrentHoldEnabled);
+  staleCurrentHoldEnabledRef.current = staleCurrentHoldEnabled;
+  const onStaleCurrentHeldRef = useRef(onStaleCurrentHeld);
+  onStaleCurrentHeldRef.current = onStaleCurrentHeld;
+  const onStaleCurrentPassedRef = useRef(onStaleCurrentPassed);
+  onStaleCurrentPassedRef.current = onStaleCurrentPassed;
+  // The queue item this connection last put on the wall. The hold is about what
+  // a CONNECT lights, so a climb this link already lit is never held, even when
+  // it then sits current past 4 h and a colour or mirror change re-pushes it.
+  // Per mount, so a reconnect asks again.
+  const litQueueItemUuidRef = useRef<string | null>(null);
   const onWallConfirmedRef = useRef(onWallConfirmed);
   useEffect(() => {
     onWallConfirmedRef.current = onWallConfirmed;
@@ -614,8 +657,29 @@ function BluetoothAutoSender({
               // the wall — else the dedup-confirm below (which now requires the wall
               // to actually show the climb) would suppress the confirm.
               lastPhysicalFramesRef.current = physicalFramesSignature(item.climb.frames, effectiveMirrored);
+              litQueueItemUuidRef.current = item.uuid;
             }
           }
+
+          // #4979 stale-climb hold. When the current climb hasn't changed for
+          // 4 h or more, connecting must not light it: the climber left it
+          // there days ago, and a lit wall they didn't ask for is the bug. Skip
+          // the write and say so; the player then offers Put on the wall,
+          // whose reassert (pending here) is the one way through for this
+          // climb. Checked per write, after the #4499 gate, and only for a
+          // climb this link hasn't lit yet. Nothing is recorded as sent.
+          if (
+            staleCurrentHoldEnabledRef.current &&
+            !reassertPendingRef.current &&
+            litQueueItemUuidRef.current !== item.uuid &&
+            isStaleCurrentClimb(lastCurrentChangeRef.current, item.uuid, nowMs())
+          ) {
+            onStaleCurrentHeldRef.current(item, lastCurrentChangeRef.current.changedAt);
+            toSend = pendingSendRef.current;
+            pendingSendRef.current = null;
+            continue;
+          }
+          onStaleCurrentPassedRef.current(item);
 
           // Honour a pending reassert exactly when the climb is picked up —
           // clearing the signature here (rather than in the effect) survives an
@@ -660,6 +724,7 @@ function BluetoothAutoSender({
             if (result === true) {
               lastSentSignatureRef.current = sendSignature;
               lastPhysicalFramesRef.current = physicalFramesSignature(item.climb.frames, effectiveMirrored);
+              litQueueItemUuidRef.current = item.uuid;
               onWallConfirmedRef.current(item, effectiveMirrored);
               hapticSuccess();
             }
@@ -2129,6 +2194,61 @@ export function BluetoothProvider({
     });
   }, []);
 
+  // #4979 stale-climb hold (docs/current-climb-outside-queue.md, section 6). The
+  // auto-sender decides; this keeps what it decided, for the player's Put on the
+  // wall and "Last on the wall" line, and for the hold's telemetry. A ref beside
+  // the state so the callbacks stay stable and read the hold synchronously.
+  const staleCurrentHoldFlagEnabled = useStaleCurrentHoldEnabled();
+  const [staleCurrentHold, setStaleCurrentHold] = useState<StaleCurrentHold | null>(null);
+  const staleCurrentHoldRef = useRef<{ hold: StaleCurrentHold; heldAt: number } | null>(null);
+  const releaseStaleCurrentHold = useCallback((reason: StaleCurrentHoldReleaseReason) => {
+    const held = staleCurrentHoldRef.current;
+    if (!held) return;
+    staleCurrentHoldRef.current = null;
+    setStaleCurrentHold(null);
+    track(SHARED_EVENTS.BoardStaleCurrentReleased, {
+      reason,
+      scope: sessionIdRef.current ? 'session' : 'solo',
+      heldMinutes: Math.round((nowMs() - held.heldAt) / 60_000),
+    });
+  }, []);
+  const handleStaleCurrentHeld = useCallback(
+    (item: ClimbQueueItem, lastCurrentChangeAt: number) => {
+      const held = staleCurrentHoldRef.current;
+      if (held?.hold.queueItemUuid === item.uuid && held.hold.lastCurrentChangeAt === lastCurrentChangeAt) return;
+      const sameClimb = held?.hold.queueItemUuid === item.uuid;
+      // Another stale climb replaced the held one (a FullSync swapping in a
+      // climb that is just as old): that hold is over, this one starts.
+      if (held && !sameClimb) releaseStaleCurrentHold('new-current');
+      const hold: StaleCurrentHold = { queueItemUuid: item.uuid, lastCurrentChangeAt };
+      staleCurrentHoldRef.current = { hold, heldAt: sameClimb && held ? held.heldAt : nowMs() };
+      setStaleCurrentHold(hold);
+      if (sameClimb) return;
+      track(SHARED_EVENTS.BoardStaleCurrentHeld, {
+        ageHours: holdAgeHours(lastCurrentChangeAt, nowMs()),
+        scope: sessionIdRef.current ? 'session' : 'solo',
+      });
+    },
+    [releaseStaleCurrentHold],
+  );
+  const handleStaleCurrentPassed = useCallback(
+    (item: ClimbQueueItem) => {
+      const held = staleCurrentHoldRef.current;
+      if (!held) return;
+      // The same climb past the hold without a relight means its clock moved
+      // (a FullSync reseed); anything else is a new current climb.
+      releaseStaleCurrentHold(held.hold.queueItemUuid === item.uuid ? 'reconnect' : 'new-current');
+    },
+    [releaseStaleCurrentHold],
+  );
+  // The board went away, or the kill switch came on: nothing is held any more.
+  useEffect(() => {
+    if (!isConnected) releaseStaleCurrentHold('disconnect');
+  }, [isConnected, releaseStaleCurrentHold]);
+  useEffect(() => {
+    if (!staleCurrentHoldFlagEnabled) releaseStaleCurrentHold('kill-switch');
+  }, [staleCurrentHoldFlagEnabled, releaseStaleCurrentHold]);
+
   // Bumped by `reassertWall()` to force the auto-sender to re-push the current
   // climb once, bypassing the byte-identical dedup.
   const [reassertNonce, setReassertNonce] = useState(0);
@@ -2136,7 +2256,13 @@ export function BluetoothProvider({
   // Unlike `reassertNonce` it does NOT clear the dedup signature: it only gives
   // the drain a chance to notice that `effectiveMirrored` moved.
   const [mirrorNonce, setMirrorNonce] = useState(0);
-  const reassertWall = useCallback(() => setReassertNonce((nonce) => nonce + 1), []);
+  // A reassert is the climber asking for the climb on the wall, so it is also
+  // what releases a #4979 hold: released here, before the nonce reaches the
+  // auto-sender, whose pending reassert then lets the write through.
+  const reassertWall = useCallback(() => {
+    releaseStaleCurrentHold('relight');
+    setReassertNonce((nonce) => nonce + 1);
+  }, [releaseStaleCurrentHold]);
 
   const invalidateWallState = useCallback(() => {
     lastPhysicalFramesRef.current = null;
@@ -2301,6 +2427,7 @@ export function BluetoothProvider({
       takeVirtualWall,
       releaseVirtualWall: releaseVirtualWallForUser,
       canDriveWall: isConnected || virtualWallHeld,
+      staleCurrentHold: staleCurrentHoldFlagEnabled ? staleCurrentHold : null,
     }),
     [
       isConnected,
@@ -2333,6 +2460,8 @@ export function BluetoothProvider({
       wallHeldByOtherUser,
       takeVirtualWall,
       releaseVirtualWallForUser,
+      staleCurrentHoldFlagEnabled,
+      staleCurrentHold,
     ],
   );
 
@@ -2379,6 +2508,9 @@ export function BluetoothProvider({
             mirrorIntentRef={mirrorIntentRef}
             consumeBackgroundAdoptSendGate={consumeBackgroundAdoptSendGate}
             onBackgroundAdoptSendSuppressed={handleBackgroundAdoptSendSuppressed}
+            staleCurrentHoldEnabled={isConnected && staleCurrentHoldFlagEnabled}
+            onStaleCurrentHeld={handleStaleCurrentHeld}
+            onStaleCurrentPassed={handleStaleCurrentPassed}
             colorSignature={holdColorSignature}
             encodingSignature={encodingSignature}
             activeConfig={currentBoardConfig}

@@ -147,6 +147,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
       "F3 (#6666). Opening a climb puts it on the wall without copying it into Up next; History, Now and Up next stay apart, and a History row's long-press offers Replay from here. In a session it also needs the backend to serve the Now slot fields (a probe on every connect); otherwise the phone stays on today's documents and reducer. A POSITIVE flag: off or unresolved is today's behaviour. Takes effect on the next session join or reconnect.",
   },
   {
+    key: 'stale-current-hold-kill',
+    label: 'Disable the stale-climb hold',
+    description:
+      'Emergency kill switch for the #4979 hold (F3, docs/current-climb-outside-queue.md section 6): when the climb on the wall has not changed for 4 hours, connecting a board keeps it dark and the player shows Put on the wall with "Last on the wall …". With it on, connecting lights that climb as before and the line never shows. Unresolved reads as enabled.',
+  },
+  {
     key: 'moonboard-wide-angles',
     label: 'MoonBoard wide angles',
     description:
@@ -625,6 +631,17 @@ export function useWorkoutTimedBlocksFlag(): boolean {
  */
 export function useQueueNowSlotEnabled(): boolean {
   return useFeatureFlag('queue-now-slot') === true;
+}
+
+/**
+ * The #4979 hold (docs/current-climb-outside-queue.md, section 6): after 4 h
+ * with the same climb on the wall, connecting a board does not light it. A KILL
+ * switch read `!== true`, so unresolved means the hold is on: a positive flag
+ * would read off for the first frames of a cold open, which is exactly when the
+ * auto-sender lights the restored climb.
+ */
+export function useStaleCurrentHoldEnabled(): boolean {
+  return useFeatureFlag('stale-current-hold-kill') !== true;
 }
 
 /**

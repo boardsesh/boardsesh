@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ClimbQueueItem, Climb } from '@boardsesh/queue';
 import { hasRenderableFrames } from '../../lib/ble/renderable-frames';
+import {
+  holdAgeHours,
+  isStaleCurrentClimb,
+  parseClockInstant,
+  STALE_CURRENT_HOLD_MS,
+} from '../../lib/ble/stale-current-hold';
 
 // ── Factory helpers ────────────────────────────────────────────────────
 
@@ -727,5 +733,47 @@ describe('BluetoothAutoSender drain loop', () => {
       expect(loop.unresolvedReports()).toEqual([]);
       expect(loop.sendCallCount()).toBe(0);
     });
+  });
+});
+
+// ── #4979 stale-climb hold gate ─────────────────────────────────────────
+// The auto-sender's hold reads `isStaleCurrentClimb` per write (the component
+// itself, with the release paths and telemetry, is exercised through the real
+// BluetoothProvider in bluetooth-provider-wall-confirm.test.tsx, "stale-climb
+// hold"). docs/current-climb-outside-queue.md, section 6.
+describe('stale-climb hold gate (#4979)', () => {
+  const HOUR = 60 * 60 * 1000;
+  const now = Date.parse('2026-10-25T10:00:00.000Z');
+
+  it('holds at 4 h and beyond, lights below it', () => {
+    expect(isStaleCurrentClimb({ queueItemUuid: 'q1', changedAt: now - 5 * HOUR }, 'q1', now)).toBe(true);
+    expect(isStaleCurrentClimb({ queueItemUuid: 'q1', changedAt: now - STALE_CURRENT_HOLD_MS }, 'q1', now)).toBe(true);
+    expect(isStaleCurrentClimb({ queueItemUuid: 'q1', changedAt: now - STALE_CURRENT_HOLD_MS + 1 }, 'q1', now)).toBe(
+      false,
+    );
+    expect(isStaleCurrentClimb({ queueItemUuid: 'q1', changedAt: now - HOUR }, 'q1', now)).toBe(false);
+  });
+
+  it('never holds a climb the clock was not stamped for: it has just become current', () => {
+    expect(isStaleCurrentClimb({ queueItemUuid: 'q-previous', changedAt: now - 5 * HOUR }, 'q1', now)).toBe(false);
+    expect(isStaleCurrentClimb({ queueItemUuid: null, changedAt: now - 5 * HOUR }, 'q1', now)).toBe(false);
+  });
+
+  it('never holds without a clock (an older provider, a test harness)', () => {
+    expect(isStaleCurrentClimb(null, 'q1', now)).toBe(false);
+    expect(isStaleCurrentClimb(undefined, 'q1', now)).toBe(false);
+  });
+
+  it('parses the server and snapshot instants, and nothing else', () => {
+    expect(parseClockInstant('2026-10-20T08:00:00.000Z')).toBe(Date.parse('2026-10-20T08:00:00.000Z'));
+    expect(parseClockInstant(null)).toBeNull();
+    expect(parseClockInstant(undefined)).toBeNull();
+    expect(parseClockInstant('')).toBeNull();
+    expect(parseClockInstant('not a date')).toBeNull();
+  });
+
+  it('reports the hold age in hours to one decimal', () => {
+    expect(holdAgeHours(now - 5 * HOUR, now)).toBe(5);
+    expect(holdAgeHours(now - 4.25 * HOUR, now)).toBe(4.3);
   });
 });
