@@ -58,7 +58,9 @@ export const deleteClimbMutations = {
    * Hard delete. The climb tombstone stays unscoped (`log_deletion_board_climbs`):
    * a published climb was readable by everybody who could open the wall, and gym
    * members or public-wall viewers may have it on their phone. A tombstone scoped
-   * to the setter would leave them a climb they can tick and then lose.
+   * to the setter would leave them a climb they can tick and then lose. A
+   * draft's tombstone is scoped to the setter (migration 0280, #6150): nobody
+   * else could ever read it.
    */
   deleteClimb: async (_: unknown, { uuid, boardType }: DeleteClimbArgs, ctx: ConnectionContext): Promise<boolean> => {
     requireAuthenticated(ctx);

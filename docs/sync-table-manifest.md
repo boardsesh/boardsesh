@@ -283,7 +283,9 @@ composite-keyed sync table must keep this true (or version the encoding).
   Boardsesh owner (imported from a Kilter or Tension account) goes to nobody. Unlisted climbs ship; the device's lists
   hide them. Seq: **`sync_seq`**. Hook: no.
 - Local PK: **`uuid`**. table-config: `['uuid']` ✓.
-- Del: trigger emits `record_id = OLD.uuid` (1 seg), `user_id = NULL` (reference data).
+- Del: trigger emits `record_id = OLD.uuid` (1 seg), `user_id = NULL` (reference data), except a draft with an owner
+  (`is_draft IS TRUE`), which gets `user_id = OLD.user_id`: only the setter can read a draft, so only the setter's
+  devices are told it is gone (0280, #6150).
 - Columns: `uuid` (PK), `board_type`, `layout_id`, `setter_id`, `setter_username`, `name`, `description`, `hsm`,
   `edge_left`, `edge_right`, `edge_bottom`, `edge_top`, `angle`, `frames_count`, `frames_pace`, `frames`,
   `is_draft`, `is_listed`, `is_hidden` (schema v5, community-hidden flag), `created_at`, `published_at`, `user_id`, `required_set_ids` (JSON text),

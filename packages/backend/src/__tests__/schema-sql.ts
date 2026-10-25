@@ -1735,8 +1735,10 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     IF current_setting('boardsesh.suppress_sync_tombstones', true) = 'on' THEN
       RETURN OLD;
     END IF;
+    -- Mirrors 0280 (#6150): a draft reaches only its setter, so its tombstone
+    -- is scoped to them. Published and ownerless climbs stay NULL-scoped.
     INSERT INTO sync_deletions (table_name, record_id, user_id)
-    VALUES (TG_TABLE_NAME, OLD.uuid, NULL);
+    VALUES (TG_TABLE_NAME, OLD.uuid, CASE WHEN OLD.is_draft IS TRUE THEN OLD.user_id ELSE NULL END);
     RETURN OLD;
   END;
   $$ LANGUAGE plpgsql;
