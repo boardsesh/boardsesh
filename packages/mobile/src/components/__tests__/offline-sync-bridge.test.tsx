@@ -149,10 +149,14 @@ vi.mock('../../offline/abandoned-download-terminals', () => ({
 // two writers are the owner-stamp wipe's per-account reset (#6563).
 const setSettingMock = vi.hoisted(() => vi.fn());
 const clearOfflineBoardsMock = vi.hoisted(() => vi.fn());
+// The owned-wall pin record, cleared last so the pin can turn the signed-in
+// account's own walls back on after the reset.
+const clearOwnedSprayWallPinsMock = vi.hoisted(() => vi.fn());
 vi.mock('../../settings', () => ({
   getSetting: vi.fn(() => []),
   setSetting: setSettingMock,
   clearOfflineBoards: clearOfflineBoardsMock,
+  clearOwnedSprayWallPins: clearOwnedSprayWallPinsMock,
 }));
 // "Last synced 5 minutes ago" is the third thing that reset forgets.
 const resetSyncStatusMock = vi.hoisted(() => vi.fn());
@@ -376,6 +380,7 @@ describe('OfflineSyncBridge — the same account keeps its downloads', () => {
     expect(clearOfflineBoardsMock).not.toHaveBeenCalled();
     expect(resetSyncStatusMock).not.toHaveBeenCalled();
     expect(forgetAbandonedDownloadsMock).not.toHaveBeenCalled();
+    expect(clearOwnedSprayWallPinsMock).not.toHaveBeenCalled();
     expect(clearStoredSprayPhotosMock).not.toHaveBeenCalled();
     expect(stampLocalUserIdMock).not.toHaveBeenCalled();
     expect(startSyncSchedulerStop).not.toHaveBeenCalled();
@@ -489,8 +494,14 @@ describe('OfflineSyncBridge — local user-data owner stamp', () => {
       forgetAbandonedDownloadsMock.mock.invocationCallOrder[0],
     );
     expect(setSettingMock.mock.invocationCallOrder[0]).toBeLessThan(clearUserDataMock.mock.invocationCallOrder[0]);
+    // The pin record goes last, after the rows, so the pin re-runs on a list the
+    // wipe has finished with.
+    expect(clearOwnedSprayWallPinsMock).toHaveBeenCalledTimes(1);
+    expect(clearUserDataMock.mock.invocationCallOrder[0]).toBeLessThan(
+      clearOwnedSprayWallPinsMock.mock.invocationCallOrder[0],
+    );
     // Then the device is claimed for the signed-in climber.
-    expect(clearOfflineBoardsMock.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(clearOwnedSprayWallPinsMock.mock.invocationCallOrder[0]).toBeLessThan(
       stampLocalUserIdMock.mock.invocationCallOrder[0],
     );
   });
@@ -504,6 +515,7 @@ describe('OfflineSyncBridge — local user-data owner stamp', () => {
     expect(clearOfflineBoardsMock).not.toHaveBeenCalled();
     expect(resetSyncStatusMock).not.toHaveBeenCalled();
     expect(forgetAbandonedDownloadsMock).not.toHaveBeenCalled();
+    expect(clearOwnedSprayWallPinsMock).not.toHaveBeenCalled();
   });
 
   it('deletes the stored wall photographs on that same recovery', async () => {

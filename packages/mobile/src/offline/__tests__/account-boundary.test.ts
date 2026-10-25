@@ -65,11 +65,20 @@ import {
   stampLocalUserId,
 } from '@boardsesh/offline-sync';
 import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
-import { getOfflineBoards, getSetting, rememberOfflineBoards, resetAllSettings, setSetting } from '../../settings';
+import {
+  getOfflineBoards,
+  getOwnedSprayWallPins,
+  getSetting,
+  rememberOfflineBoards,
+  resetAllSettings,
+  setOwnedSprayWallPins,
+  setSetting,
+} from '../../settings';
 import { getSyncStatusSnapshot, resetSyncStatus, setSyncProgress } from '../../sync/sync-status';
 import { isBoardDownloadedLocally } from '../../db/queries/board-download-status';
 import { sweepDelistedDownloadTerminals } from '../abandoned-download-terminals';
 import { wipePreviousAccountLocalData } from '../account-boundary';
+import { planOwnedSprayWallPins } from '../owned-spray-wall-pins';
 
 const ACCOUNT_A = 'account-a';
 const ACCOUNT_B = 'account-b';
@@ -212,6 +221,29 @@ describe('the owner-stamp recovery when another account signs in', () => {
     expect(reportScopeDownloadAbandonedOnSignOut).not.toHaveBeenCalled();
     expect(reportScopeDownloadAbandonedOnDisable).not.toHaveBeenCalled();
     expect(trackMock).not.toHaveBeenCalled();
+  });
+
+  // `OwnedSprayWallsOfflinePin` does not wait for the owner check. On a contended
+  // launch it can pin B's own wall and record it before the wipe runs; the reset
+  // then empties the list, and a recorded wall is never pinned again.
+  it("lets the pin turn B's own walls back on after the reset", async () => {
+    const wallB = board({ uuid: 'wall-b', name: "B's garage", boardType: 'spray', layoutId: 77, sizeId: 77 });
+    const ownedWall = { ...wallB, ownerId: ACCOUNT_B } as UserBoard;
+    setSetting('syncEnabledBoards', [DOWNLOADED, DOWNLOADING, 'spray:77:77']);
+    setOwnedSprayWallPins({ userId: ACCOUNT_B, wallUuids: ['wall-b'] });
+
+    await ownerStampHandover(ACCOUNT_B);
+
+    expect(getSetting('syncEnabledBoards')).toEqual([]);
+    expect(getOwnedSprayWallPins()).toBeNull();
+    // What the pin plans on its next run: B's wall goes back on.
+    const plan = planOwnedSprayWallPins({
+      boards: [ownedWall],
+      viewerUserId: ACCOUNT_B,
+      ledger: getOwnedSprayWallPins(),
+      enabledScopeKeys: new Set(getSetting('syncEnabledBoards')),
+    });
+    expect(plan.pin.map((wall) => wall.uuid)).toEqual(['wall-b']);
   });
 
   it('leaves everything alone when A signs back in', async () => {

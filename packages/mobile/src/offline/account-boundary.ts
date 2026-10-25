@@ -8,7 +8,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { beginGlobalPurge } from '@boardsesh/offline-sync';
 import { clearUserData } from '../db';
 import { clearStoredSprayPhotos } from '../lib/spray/spray-photo-store';
-import { clearOfflineBoards, setSetting } from '../settings';
+import { clearOfflineBoards, clearOwnedSprayWallPins, setSetting } from '../settings';
 import { resetSyncStatus } from '../sync/sync-status';
 import { forgetAbandonedDownloads } from './abandoned-download-terminals';
 
@@ -52,8 +52,12 @@ export async function wipePreviousAccountLocalData(db: SQLiteDatabase): Promise<
   // The previous account's unfinished downloads, closed without an event, and
   // BEFORE the enabled list is emptied: see `sweepDelistedDownloadTerminals`.
   await forgetAbandonedDownloads(db);
-  // Before the row wipe's await, so a sync cycle that starts during it reads an
-  // empty list instead of the previous account's boards.
+  // Before the row wipe's await, so a sync cycle that starts during clearUserData
+  // reads an empty list. A cycle that starts during the forget await above can
+  // still read the previous account's list, with a purge token taken after the
+  // bump, so this purge does not tear it down. Reordering only moves that window;
+  // holding the scheduler until the owner check settles closes it, and is a
+  // follow-up to #6563.
   resetOfflineAccountSettings();
   await clearUserData(db);
   // The rows named a photograph each, and this recovery exists precisely because
@@ -61,4 +65,11 @@ export async function wipePreviousAccountLocalData(db: SQLiteDatabase): Promise<
   // the files would keep the other account's wall decodable with nothing on disk
   // left to say whose it was.
   clearStoredSprayPhotos();
+  // Which owned spray walls were pinned offline, and for whom. Last, after the
+  // rows are gone. `OwnedSprayWallsOfflinePin` does not wait for the owner check,
+  // so on a contended launch it can pin the signed-in account's own walls before
+  // this wipe and record them. The reset above then empties the list, and a
+  // recorded wall is never pinned again. Clearing the record is itself a
+  // settings write, which re-runs the pin, and the pin turns those walls back on.
+  clearOwnedSprayWallPins();
 }
