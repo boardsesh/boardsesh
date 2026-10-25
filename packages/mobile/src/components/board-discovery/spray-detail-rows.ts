@@ -26,7 +26,12 @@ import { toBoardName } from '@boardsesh/board-config';
 import type { IconName } from '../icon-map';
 import { sprayHoldEditorHref, sprayResetWizardHref } from '../../lib/spray/spray-routes';
 import type { SprayWallArchiveState } from '../../lib/spray/spray-wall-registry';
-import { buildSprayWallShareUrl, sprayWallVisibility, type SprayWallVisibility } from '../../lib/spray/spray-share';
+import {
+  buildSprayWallPosterUrl,
+  buildSprayWallShareUrl,
+  sprayWallVisibility,
+  type SprayWallVisibility,
+} from '../../lib/spray/spray-share';
 
 /** The board fields the gate reads. Structural so a partial board works uncast. */
 export type SprayDetailRowBoard = {
@@ -63,6 +68,8 @@ export type SprayShareTarget = {
   url: string;
   /** What the link grants — the sheet says so in words, and they differ. */
   visibility: Exclude<SprayWallVisibility, 'private'>;
+  /** The print page for the wall's poster, under the same gate as `url`. */
+  posterUrl: string | null;
 };
 
 /**
@@ -84,16 +91,16 @@ export function sprayShareTarget(board: SprayShareBoard | null | undefined): Spr
   const visibility = sprayWallVisibility(board);
   if (visibility === 'private') return null;
 
-  const url = buildSprayWallShareUrl({
+  const wall = {
     slug: board.slug,
-    angle: board.angle,
     // A wall's uuid IS its board uuid (`SprayWall.uuid`), which is what makes the
     // `?wall=` capability resolvable by `sprayWall(uuid:)`.
     wallUuid: board.uuid,
     isPublic: board.isPublic,
     isUnlisted: board.isUnlisted,
-  });
-  return url ? { url, visibility } : null;
+  };
+  const url = buildSprayWallShareUrl({ ...wall, angle: board.angle });
+  return url ? { url, visibility, posterUrl: buildSprayWallPosterUrl(wall) } : null;
 }
 
 /**

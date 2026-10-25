@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { WEB_BASE_URL } from '../../env';
-import { buildSprayClimbSharePath, buildSprayWallShareUrl, sprayWallVisibility } from '../spray-share';
+import {
+  buildSprayClimbSharePath,
+  buildSprayWallPosterUrl,
+  buildSprayWallShareUrl,
+  sprayWallVisibility,
+} from '../spray-share';
 
 const WALL_UUID = '11111111-2222-3333-4444-555555555555';
 
@@ -78,6 +83,48 @@ describe('buildSprayWallShareUrl', () => {
         isUnlisted: true,
       }),
     ).toBe(`${WEB_BASE_URL}/b/marco%2Fspray%20wall/40/list?wall=wall%20uuid%26x`);
+  });
+});
+
+describe('buildSprayWallPosterUrl', () => {
+  const wall = { slug: 'brewery-spray', wallUuid: WALL_UUID };
+
+  it('prints a public wall without a capability param', () => {
+    expect(buildSprayWallPosterUrl({ ...wall, isPublic: true, isUnlisted: false })).toBe(
+      `${WEB_BASE_URL}/poster/b/brewery-spray`,
+    );
+  });
+
+  it('carries the wall uuid for an unlisted wall, so the printed code opens it', () => {
+    expect(buildSprayWallPosterUrl({ ...wall, isPublic: false, isUnlisted: true })).toBe(
+      `${WEB_BASE_URL}/poster/b/brewery-spray?wall=${WALL_UUID}`,
+    );
+  });
+
+  it('drops the capability param once an unlisted wall goes public', () => {
+    expect(buildSprayWallPosterUrl({ ...wall, isPublic: true, isUnlisted: true })).toBe(
+      `${WEB_BASE_URL}/poster/b/brewery-spray`,
+    );
+  });
+
+  it('has no poster for a private wall, or without a slug', () => {
+    expect(buildSprayWallPosterUrl({ ...wall, isPublic: false, isUnlisted: false })).toBeNull();
+    expect(buildSprayWallPosterUrl({ ...wall, slug: '', isPublic: true, isUnlisted: false })).toBeNull();
+  });
+
+  it('never carries an invite token', () => {
+    for (const flags of [
+      { isPublic: true, isUnlisted: false },
+      { isPublic: false, isUnlisted: true },
+    ]) {
+      expect(buildSprayWallPosterUrl({ ...wall, ...flags })).not.toContain('invite');
+    }
+  });
+
+  it('encodes the slug and the uuid', () => {
+    expect(
+      buildSprayWallPosterUrl({ slug: 'marco/spray wall', wallUuid: 'wall uuid&x', isPublic: false, isUnlisted: true }),
+    ).toBe(`${WEB_BASE_URL}/poster/b/marco%2Fspray%20wall?wall=wall%20uuid%26x`);
   });
 });
 

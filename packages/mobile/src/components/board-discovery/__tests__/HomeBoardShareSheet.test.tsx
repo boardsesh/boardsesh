@@ -10,6 +10,7 @@ type SheetProps = {
   linkFailed?: boolean;
   onResetLink?: () => void;
   resettingLink?: boolean;
+  posterUrl?: string | null;
 };
 const captured = vi.hoisted(() => ({ props: undefined as SheetProps | undefined }));
 const linkQuery = vi.hoisted(() => ({
@@ -52,7 +53,12 @@ describe('HomeBoardShareSheet', () => {
   it("hands out a Public or Unlisted board's plain link without asking the server for one", () => {
     render(
       <HomeBoardShareSheet
-        target={{ kind: 'plain', url: 'https://www.boardsesh.com/b/the-garage', visibility: 'unlisted' }}
+        target={{
+          kind: 'plain',
+          url: 'https://www.boardsesh.com/b/the-garage',
+          visibility: 'unlisted',
+          posterUrl: 'https://www.boardsesh.com/poster/b/the-garage',
+        }}
         boardName="Garage"
         onDismiss={vi.fn()}
       />,
@@ -61,6 +67,7 @@ describe('HomeBoardShareSheet', () => {
       shareUrl: 'https://www.boardsesh.com/b/the-garage',
       visibility: 'unlisted',
       subject: 'board',
+      posterUrl: 'https://www.boardsesh.com/poster/b/the-garage',
     });
     // A plain link grants nothing, so there is nothing to reset.
     expect(captured.props?.onResetLink).toBeUndefined();
@@ -78,6 +85,8 @@ describe('HomeBoardShareSheet', () => {
       subject: 'board',
       linkFailed: false,
     });
+    // An invite token taped to a wall stops being an invite: no poster.
+    expect(captured.props?.posterUrl).toBeUndefined();
   });
 
   it('shows the failure when the board stopped being shareable', () => {

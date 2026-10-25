@@ -470,7 +470,9 @@
       "copyLink": "Link kopieren",
       "share": "Teilen",
       "copied": "Link kopiert",
-      "qrLabel": "QR-Code für {{name}}"
+      "qrLabel": "QR-Code für {{name}}",
+      "printPoster": "Poster drucken",
+      "posterHint": "Kleb es neben die Spraywall, damit alle es scannen können."
     },
     "boardShare": {
       "title": "Teil dieses Board",
@@ -485,7 +487,8 @@
       "resetConfirm": "Zurücksetzen",
       "resetCancel": "Abbrechen",
       "resetDone": "Neuer Link ist bereit. Der alte funktioniert nicht mehr.",
-      "resetFailed": "Der Link konnte nicht zurückgesetzt werden. Versuch es noch mal."
+      "resetFailed": "Der Link konnte nicht zurückgesetzt werden. Versuch es noch mal.",
+      "posterHint": "Kleb es neben das Board, damit alle es scannen können."
     },
     "sprayVisibility": {
       "label": "Wer sie sehen kann",

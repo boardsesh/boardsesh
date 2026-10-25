@@ -1366,6 +1366,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
               shareUrl={sprayWallActions.shareSnapshot.url}
               wallName={sprayWallActions.shareSnapshot.wallName}
               visibility={sprayWallActions.shareSnapshot.visibility}
+              posterUrl={sprayWallActions.shareSnapshot.posterUrl}
             />
           ) : null}
           {/* Rendered after the queue/board sheets so its iOS FullWindowOverlay mounts as a

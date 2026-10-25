@@ -1708,6 +1708,27 @@ describe('useBoardRouteTarget hand-off callback', () => {
 
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/(tabs)/climbs'));
     expect(onHandedOff).toHaveBeenCalledTimes(1);
+    // The board type is what a printed-code scan is counted under (#4415).
+    expect(onHandedOff).toHaveBeenCalledWith({ boardType: 'kilter' });
+  });
+
+  it("reports a shared Spraywall's type once its capability resolves", async () => {
+    useRealResolver();
+    fetchSprayWallBoardFromLink.mockResolvedValue(
+      board({ uuid: 'wall-board', slug: 'unlisted-wall', boardType: 'spray' }),
+    );
+    const onHandedOff = vi.fn();
+
+    render(
+      createElement(Harness, {
+        target: { kind: 'slug-list', slug: 'unlisted-wall', angle: null },
+        wallUuid: '11111111-2222-3333-4444-555555555555',
+        onHandedOff,
+      }),
+    );
+
+    await waitFor(() => expect(onHandedOff).toHaveBeenCalledWith({ boardType: 'spray' }));
+    expect(onHandedOff).toHaveBeenCalledTimes(1);
   });
 
   it('reports once a climb URL has opened the drawer', async () => {

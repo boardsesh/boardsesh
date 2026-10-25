@@ -210,7 +210,7 @@ someone pointed a new code at a gym page.
 | Property | Values |
 | --- | --- |
 | `medium` | `kiosk`, `board`. A `/b` landing with `medium=poster` counts nothing: no board code prints it, so `parseBoardQrLanding` (the strict parser, narrowed to `BOARD_QR_MEDIUMS`) refuses it |
-| `surface` | `web` for the www page. `app` is reserved for the app's own landing, which is not built yet |
+| `surface` | `web` for the www page, `app` when the code opened the app (below) |
 | `boardType` | One of the nine board types (`kilter`, `spray`, …) or null, from `boardTypeProperty` |
 
 Its properties name no board: no slug, no name, no uuid, no gym. A Spraywall's
@@ -249,12 +249,41 @@ its deploy, so annotate the date and do not read the first week as growth.
 
 **A board code opens the app when the app is installed.** `/b/` is claimed for
 the app on both platforms (the iOS association file's `/*`, and Android's
-`pathPrefix: '/b/'`), so a phone with Boardsesh skips the web page and nothing
-fires. `Board QR Scanned` with `surface: 'web'` counts phones WITHOUT the app,
-plus scanners that open links in their own browser. That is the population the
-store buttons are for, so read installs against it without the dilution the gym
-page has (below). Scans that open the app need the app to fire
-`surface: 'app'`.
+`pathPrefix: '/b/'`), so a phone with Boardsesh skips the web page. The app
+counts those scans itself: `app/b/[board_slug]/index.tsx` and
+`app/b/[board_slug]/[angle]/list.tsx` read the pair with the same strict
+`parseGymQrLanding`, and `BoardRouteHandoff` fires `Board QR Scanned` with
+`surface: 'app'` once its hand-off has opened the board
+(`packages/mobile/src/lib/board-qr-scan.ts`). A dead slug, a refused wall or a
+bounce to login counts nothing. The capture waits for the SDK when consent is
+already given, and is dropped without consent.
+
+A signed-out scanner is sent to login first. The deep-link provider keeps the
+link through sign-in, and its allowlist (`parseBoardLinkPath` in
+`packages/mobile/src/lib/routing/board-deep-link.ts`) keeps `src` and `medium`
+as a pair `parseGymQrLanding` accepts, rewritten to `src=qr&medium=…`. So the
+scan that brings a new installer into the app is counted when the replayed
+link opens the board, up to a day later.
+
+Read the two surfaces as two populations. `surface: 'web'` counts phones
+WITHOUT the app, plus scanners that open links in their own browser. That is
+the population the store buttons are for, so read installs against it without
+the dilution the gym page has (below). `surface: 'app'` counts climbers who
+already had the app, or installed it and signed in. Scans before the app's
+deploy fired nothing there, so annotate the date.
+
+**Printing the poster from the app.** The app's share sheet
+(`BoardShareSheet`, opened from a Spraywall's Share link and from the board
+detail sheet) offers "Print a poster" for a Public or Unlisted Spraywall or
+board. `buildSprayWallPosterUrl` (`lib/spray/spray-share.ts`) and
+`buildHomeBoardPosterUrl` (`lib/board-share/board-share-link.ts`) build
+`/poster/b/{slug}`, plus `?wall=` for an unlisted Spraywall. Never `?invite=`:
+a Followers or Invite-only board gets no poster. The page opens in the in-app
+browser, never through `Linking`, because a phone that still holds an
+association file claiming `/poster` would hand it straight back to the app.
+For a `/poster` link tapped outside a browser while that older file is still on
+the phone, `app/poster/[...rest].tsx` re-opens the same URL in the in-app
+browser and puts Home underneath.
 
 `/b/...` is itself a www climbing surface that #4358 is deleting. When it goes,
 the kiosk and board codes need a new target; the params and the builders in

@@ -81,6 +81,7 @@ export const iconMap = {
   // ellipsis, so iOS reuses the horizontal one and the call site rotates it 90°.
   'more.vertical': { ios: 'ellipsis', android: 'dots-vertical' },
   copy: { ios: 'doc.on.doc', android: 'content-copy' },
+  print: { ios: 'printer', android: 'printer-outline' },
   'doc.text': { ios: 'doc.text', android: 'file-document-outline' },
   mail: { ios: 'envelope', android: 'email-outline' },
   paw: { ios: 'pawprint.fill', android: 'paw' },
