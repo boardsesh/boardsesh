@@ -13,7 +13,6 @@ import buildExpoConfig, {
 } from '../packages/mobile/app.config';
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES } from '../packages/shared/i18n/src/config';
 import { SUPPORTED_BOARDS } from '../packages/shared-schema/src/types/board-config';
-import { parse } from 'yaml';
 
 // Guards the env the three mobile workflows share, for two reasons:
 //
