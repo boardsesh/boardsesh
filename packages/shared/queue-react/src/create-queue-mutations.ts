@@ -345,6 +345,15 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
     if (addCandidateUuids.length > ADD_CANDIDATE_MEMORY) addCandidateUuids.shift();
   }
 
+  // A rate-limit retry re-reads the live client, so a wait that spans a
+  // dispose (offline mode on) does not resend on the dead one, which would
+  // open a socket no later dispose closes. While offline mode is on the live
+  // client is the inert one, and the retry fails cleanly (#6766). Every send
+  // hands `execute` this getter, never the captured client itself.
+  function liveClient(captured: Client): () => Client {
+    return () => getClient() ?? captured;
+  }
+
   // Every queue mutation goes through here so the shared `execute` retry loop
   // (bounded back-off on RATE_LIMITED) and the `onRateLimited` notifier apply
   // uniformly — no per-call-site wiring.
@@ -352,16 +361,10 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
     client: Client,
     operation: { query: string; variables?: Record<string, unknown> },
   ): Promise<TData> {
-    // A rate-limit retry re-reads the live client, so a wait that spans a
-    // dispose (offline mode on) does not resend on the dead one, which would
-    // open a socket no later dispose closes. While offline mode is on the live
-    // client is the inert one, and the retry fails cleanly (#6766).
-    const currentClient = () => getClient() ?? client;
-    // Only pass options when there's something to inject, so callers/tests that
-    // assert the two-arg `execute(client, op)` shape stay green.
+    // With no notifier, execute's own default timeout and retry options apply.
     return onRateLimited
-      ? execute<TData>(currentClient, operation, { onRateLimited })
-      : execute<TData>(currentClient, operation);
+      ? execute<TData>(liveClient(client), operation, { onRateLimited })
+      : execute<TData>(liveClient(client), operation);
   }
 
   // Mobile's `ensureReady` runs JOIN_SESSION on whichever client is current
@@ -680,7 +683,7 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
       if (!ready) return null;
       const { timeoutMs, retryWhenRateLimited = true } = options;
       const result = await execute<{ setSessionRestCadence: SetSessionRestCadencePayload }>(
-        ready.client,
+        liveClient(ready.client),
         { query: SET_SESSION_REST_CADENCE, variables: { input } },
         {
           ...(timeoutMs === undefined ? {} : { timeoutMs }),

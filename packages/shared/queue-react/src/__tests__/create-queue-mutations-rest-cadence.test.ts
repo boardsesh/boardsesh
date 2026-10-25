@@ -37,10 +37,21 @@ describe('setSessionRestCadence', () => {
   it('sends the input and hands back the server’s answer', async () => {
     await expect(make().setSessionRestCadence({ action: 'DISARM' })).resolves.toEqual(payload);
     expect(executeMock).toHaveBeenCalledWith(
-      client,
+      expect.any(Function),
       { query: SET_SESSION_REST_CADENCE, variables: { input: { action: 'DISARM' } } },
       {},
     );
+    expect(executeMock.mock.calls[0][0]()).toBe(client);
+  });
+
+  it('sends a rate-limit retry on the client that is live when it goes out (#6766)', async () => {
+    const firstClient = { name: 'first' } as never;
+    const nextClient = { name: 'next' } as never;
+    let current: unknown = firstClient;
+    await make({ getClient: () => current as never }).setSessionRestCadence({ action: 'RESUME' });
+    // Offline mode on, then off: the client the send captured is gone.
+    current = nextClient;
+    expect(executeMock.mock.calls[0][0]()).toBe(nextClient);
   });
 
   it('gives a FIRE its own short timeout and no rate-limit retry', async () => {
