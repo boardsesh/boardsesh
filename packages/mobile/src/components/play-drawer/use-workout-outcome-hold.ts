@@ -13,7 +13,7 @@
 // The player reads the held row for everything the row decides (the bar layout,
 // ⋯, the connect pill, the opening layout key), so the swap is one change, at
 // the end of the hold, never one at the beat and another after it.
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { WALL_MOVED_GRACE_MS, type WorkoutOutcomeTarget } from './workout-outcome';
 
 /** What the Fell / Sent row shows, and whether it is held for the climb the wall left. */
@@ -54,12 +54,11 @@ export function useWorkoutOutcomeHold({
   sessionId,
   canLog,
 }: WorkoutOutcomeHoldInput): WorkoutOutcomeShown | null {
-  // The live row as of the last commit. Written after commit, so a render React
-  // throws away can neither start a hold nor lose one.
-  const committedLiveRef = useRef<WorkoutOutcomeTarget | null>(live);
-  useLayoutEffect(() => {
-    committedLiveRef.current = live;
-  }, [live]);
+  // The live row the last render saw, kept in state: React's pattern for
+  // reacting to a prop change in the render that brings it, so the hold starts
+  // before anything commits and the row never unmounts for a frame. React re-runs
+  // the render at once with the new state and throws this pass away.
+  const [previousLive, setPreviousLive] = useState(live);
   const [hold, setHold] = useState<Hold | null>(null);
 
   const isHeldFor = (target: WorkoutOutcomeTarget) =>
@@ -68,15 +67,19 @@ export function useWorkoutOutcomeHold({
     displayedQueueItemUuid === committedQueueItemUuid &&
     committedQueueItemUuid !== target.queueItemUuid;
 
-  // The row the last commit drew is going away this render. Hold it in this same
-  // render when the wall moved off it, so it never unmounts in between.
-  let currentHold = hold;
-  const lastLive = committedLiveRef.current;
-  if (live === null && lastLive !== null && hold?.target !== lastLive && isHeldFor(lastLive)) {
-    currentHold = { target: lastLive, wallLeftAtMs: Date.now() };
-    setHold(currentHold);
+  if (live !== previousLive) {
+    setPreviousLive(live);
+    if (live === null && previousLive !== null && isHeldFor(previousLive)) {
+      const left = previousLive;
+      // Keeps a hold already made for this climb, so Strict Mode's second run
+      // of this render (and of the updater) leaves the same single hold.
+      // Wall-clock, not `nowMs()`: this times the grace against the taps'
+      // `Date.now()` and the swap's timer, and screenshot mode freezes `nowMs()`,
+      // which would end every hold the moment it starts.
+      setHold((current) => (current?.target === left ? current : { target: left, wallLeftAtMs: Date.now() }));
+    }
   }
-  const held = live === null && currentHold !== null && isHeldFor(currentHold.target) ? currentHold : null;
+  const held = live === null && hold !== null && isHeldFor(hold.target) ? hold : null;
 
   // The grace runs out, or something else took the row first.
   useEffect(() => {

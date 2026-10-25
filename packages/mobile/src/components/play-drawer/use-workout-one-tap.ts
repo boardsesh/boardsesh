@@ -29,6 +29,7 @@ import { useToast } from '../../providers/toast-provider';
 import { announceQueued } from '../../lib/announce-queued';
 import { hapticSuccess } from '../../lib/haptics';
 import { getWorkoutRunLog } from '../../lib/workout-run-store';
+import { nowDate } from '../../lib/clock';
 import { isFirstAscentTick, useHasPriorTickHistory, useTickSaver } from './use-tick-saver';
 import { WALL_MOVED_GRACE_MS, type WorkoutOutcomeTarget } from './workout-outcome';
 
@@ -223,7 +224,9 @@ function useOneTapLogger(
           quality: null,
           difficulty: null,
           comment: '',
-          climbedAtIso: new Date().toISOString(),
+          // The app clock, so a screenshot capture dates the go at its frozen now,
+          // the same instant the rest timer reads it against.
+          climbedAtIso: nowDate().toISOString(),
           baseAscensionistCount,
           gradeName: null,
           // The climb this row was showing, even when the wall has since moved on.

@@ -92,7 +92,7 @@ vi.mock('../../../hooks/use-is-offline', () => ({ useIsOffline: () => false }));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 vi.mock('../../../lib/haptics', () => ({ hapticSuccess: vi.fn(), hapticError: vi.fn() }));
 vi.mock('../../../lib/announce-queued', () => ({ announceQueued: vi.fn() }));
-vi.mock('../../../lib/clock', () => ({ nowMs: () => START_MS }));
+vi.mock('../../../lib/clock', () => ({ nowMs: () => START_MS, nowDate: () => new Date(START_MS) }));
 vi.mock('../../../lib/preference-store', () => ({
   getPreference: vi.fn(async () => null),
   setPreference: vi.fn(async () => {}),
@@ -313,6 +313,24 @@ describe('useWorkoutOneTap: Fell', () => {
       queueItemUuid: null,
     });
     expect(getWorkoutRunLog(SESSION_ID)).toEqual([]);
+  });
+
+  it('dates the go by the app clock, which screenshot mode freezes', () => {
+    const { result } = renderOneTap();
+
+    // The wall clock moves on; the app clock (mocked here as frozen) does not.
+    advanceClock(90_000);
+    act(() => result.current.onFell());
+
+    expect(sentInput()).toMatchObject({ climbedAt: new Date(START_MS).toISOString() });
+  });
+
+  it('never sends a climb revision: revisions were retired and the server ignores one', () => {
+    const { result } = renderOneTap(target({ boardName: 'spray', climb: climb({ ascensionist_count: 0 }) }));
+
+    act(() => result.current.onFell());
+
+    expect(sentInput()).not.toHaveProperty('climbRevision');
   });
 
   it('logs each fall as its own tick, so an early end loses none', () => {

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import { useEffect } from 'react';
+import { StrictMode, createElement, useEffect, type ReactNode } from 'react';
 import type { Climb } from '@boardsesh/shared-schema';
 import {
   useWorkoutOutcomeHold,
@@ -53,20 +53,24 @@ const afterTheBeat: WorkoutOutcomeHoldInput = {
   displayedQueueItemUuid: COOL_DOWN_ITEM,
 };
 
+const strictMode = ({ children }: { children: ReactNode }) => createElement(StrictMode, null, children);
+
 /** Every row the player committed, in order, so a frame without one would show. */
-function renderHold(initial: WorkoutOutcomeHoldInput = onTheLimitClimb) {
+function renderHold(initial: WorkoutOutcomeHoldInput = onTheLimitClimb, options: { strict?: boolean } = {}) {
   const committed: (WorkoutOutcomeShown | null)[] = [];
+  const renders = { count: 0 };
   const rendered = renderHook(
     (input: WorkoutOutcomeHoldInput) => {
+      renders.count += 1;
       const shown = useWorkoutOutcomeHold(input);
       useEffect(() => {
         committed.push(shown);
       });
       return shown;
     },
-    { initialProps: initial },
+    { initialProps: initial, ...(options.strict ? { wrapper: strictMode } : {}) },
   );
-  return { ...rendered, committed };
+  return { ...rendered, committed, renders };
 }
 
 beforeEach(() => {
@@ -94,6 +98,31 @@ describe('useWorkoutOutcomeHold', () => {
     // Never a frame without the row: that frame is where the angle button lands
     // under the finger.
     expect(committed.every((shown) => shown?.target === LIMIT_TARGET)).toBe(true);
+  });
+
+  it('starts one hold under Strict Mode’s double render, with no render loop', () => {
+    const { result, rerender, committed, renders } = renderHold(onTheLimitClimb, { strict: true });
+    const rendersBefore = renders.count;
+
+    rerender(afterTheBeat);
+    const held = result.current;
+
+    // Strict Mode runs each render (and each state updater) twice: the beat costs
+    // a handful of renders, never a loop, and leaves one hold.
+    expect(renders.count - rendersBefore).toBeLessThanOrEqual(4);
+    expect(held).toEqual({ target: LIMIT_TARGET, wallLeftAtMs: START_MS });
+    expect(committed.every((shown) => shown?.target === LIMIT_TARGET)).toBe(true);
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    rerender({ ...afterTheBeat });
+    expect(result.current?.wallLeftAtMs).toBe(START_MS);
+
+    act(() => {
+      vi.advanceTimersByTime(WALL_MOVED_GRACE_MS - 1000);
+    });
+    expect(result.current).toBeNull();
   });
 
   it('swaps once the grace runs out, and stays swapped', () => {
