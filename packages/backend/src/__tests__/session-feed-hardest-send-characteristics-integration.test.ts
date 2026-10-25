@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vite-plus/test';
+import { describe, it, expect, beforeEach, afterAll } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import { sessionFeedQueries } from '../graphql/resolvers/social/session-feed';
@@ -12,10 +12,15 @@ import { sessionFeedQueries } from '../graphql/resolvers/social/session-feed';
  * owner boards are inserted for the climber, so `fetchOwnerBoards` returns the
  * same empty result it would in production for an unmapped tick.
  *
- * Before this fix, `isNoMatch` here came from `isNoMatchClimb(description)`
- * alone — a documented no-op on Woods/MoonBoard — so a no-match climb whose
- * state lives only in `characteristics` (empty description) showed no ⊘ and
- * the Woods play drawer showed "Matching rule not recorded".
+ * The `characteristics` assertions are the #5245 guard: before this fix the
+ * hardestSend payload carried no `characteristics`, so a climb opened from it
+ * lost its rules and the Woods play drawer showed "Matching rule not
+ * recorded". `isNoMatch` already came from `resolveClimbNoMatch` on main; it is
+ * asserted only to pin that it still agrees with the array.
+ *
+ * The feed is scoped to the owner so newer sessions in the shared worker DB
+ * can't push these two off the 50-row page, and the fixtures are reseeded per
+ * test because setup.ts truncates board_sessions in its global beforeEach.
  */
 
 const OWNER_USER_ID = 'sf-hardest-chars-owner';
@@ -85,7 +90,10 @@ const cleanup = async () => {
 };
 
 describe('sessionGroupedFeed hardestSend — characteristics (real DB, #5245)', () => {
-  beforeAll(async () => {
+  // beforeEach, not beforeAll: the shared setup.ts truncates board_sessions
+  // before every test, so sessions seeded once would be gone by the first
+  // assertion and the feed would return no session cards at all.
+  beforeEach(async () => {
     await cleanup();
     await insertUser(OWNER_USER_ID);
 
@@ -113,7 +121,7 @@ describe('sessionGroupedFeed hardestSend — characteristics (real DB, #5245)', 
   });
 
   it('carries characteristics onto hardestSend and derives isNoMatch from it, not the (empty) description', async () => {
-    const result = await callFeed({ limit: 50 });
+    const result = await callFeed({ userId: OWNER_USER_ID, limit: 50 });
     const session = result.sessions.find((candidate) => candidate.sessionId === SESSION_NO_MATCH);
 
     expect(session?.hardestSend?.characteristics).toEqual(['no_match']);
@@ -121,7 +129,7 @@ describe('sessionGroupedFeed hardestSend — characteristics (real DB, #5245)', 
   });
 
   it('carries null (not []) when no characteristics are recorded', async () => {
-    const result = await callFeed({ limit: 50 });
+    const result = await callFeed({ userId: OWNER_USER_ID, limit: 50 });
     const session = result.sessions.find((candidate) => candidate.sessionId === SESSION_UNRECORDED);
 
     expect(session?.hardestSend?.characteristics).toBeNull();

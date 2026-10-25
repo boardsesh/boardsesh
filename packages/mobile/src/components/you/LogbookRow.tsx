@@ -527,6 +527,7 @@ export const LogbookRow = memo(function LogbookRow({
                   benchmarkDifficulty={
                     ascent.isBenchmark ? (ascent.consensusDifficultyName ?? ascent.difficultyName ?? '1') : null
                   }
+                  characteristics={ascent.characteristics}
                   isNoMatch={ascent.isNoMatch}
                 />
                 {ascent.isMirror ? (
