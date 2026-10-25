@@ -359,6 +359,64 @@ describe('INITIAL_QUEUE_DATA and UPDATE_QUEUE', () => {
   });
 });
 
+describe('a move the reconnect snapshot predates (#6814)', () => {
+  const SEEN = 5;
+
+  function onWall(): QueueState {
+    // History [A], B on the wall, Up next [C, D], last heard at sequence SEEN.
+    return nowSlotState({
+      queue: [A, B, C, D],
+      currentClimbQueueItem: B,
+      historyCount: 1,
+      serverSequence: SEEN,
+      serverSequenceSessionId: 'session-1',
+    });
+  }
+
+  function staleSnapshot(state: QueueState): QueueState {
+    return queueReducer(state, {
+      type: 'INITIAL_QUEUE_DATA',
+      serverSequence: SEEN,
+      payload: { queue: [A, B, C, D], currentClimbQueueItem: B, historyCount: 1, sessionId: 'session-1', live: true },
+    });
+  }
+
+  it('records the placement with the move', () => {
+    const moved = openLocally(onWall(), D, { correlationId: 'corr-1', sessionId: 'session-1', placement: 'NOW' });
+    expect(moved.unconfirmedMove).toMatchObject({ itemUuid: 'd', placement: 'NOW', movedOff: ['b'] });
+  });
+
+  it('replays the move with placeOnWall, the rule the server runs when it lands', () => {
+    const moved = openLocally(onWall(), D, { correlationId: 'corr-1', sessionId: 'session-1', placement: 'NOW' });
+    const kept = staleSnapshot(moved);
+    const serverAfterLanding = placeOnWall(
+      { queue: [A, B, C, D], currentClimbQueueItem: B, historyCount: 1 },
+      D,
+      'NOW',
+    );
+    expect(kept.currentClimbQueueItem?.uuid).toBe('d');
+    expect(uuids(kept)).toEqual(serverAfterLanding.queue.map(({ uuid }) => uuid));
+    expect(kept.historyCount).toBe(serverAfterLanding.historyCount);
+    // Same shape as this phone had before the snapshot: nothing jumped back.
+    expect(uuids(kept)).toEqual(uuids(moved));
+    expect(kept.historyCount).toBe(moved.historyCount);
+    expect(kept.unconfirmedMove?.correlationId).toBe('corr-1');
+  });
+
+  it('takes the snapshot once the session moved on', () => {
+    const moved = openLocally(onWall(), D, { correlationId: 'corr-1', sessionId: 'session-1', placement: 'NOW' });
+    const taken = queueReducer(moved, {
+      type: 'INITIAL_QUEUE_DATA',
+      serverSequence: SEEN + 1,
+      payload: { queue: [A, B, C, D], currentClimbQueueItem: B, historyCount: 1, sessionId: 'session-1', live: true },
+    });
+    expect(taken.currentClimbQueueItem?.uuid).toBe('b');
+    expect(uuids(taken)).toEqual(['a', 'b', 'c', 'd']);
+    expect(taken.historyCount).toBe(1);
+    expect(taken.unconfirmedMove).toBeNull();
+  });
+});
+
 describe('History trim (section 5)', () => {
   const longHistory = Array.from({ length: 125 }, (_, index) => item(`h${index}`));
 

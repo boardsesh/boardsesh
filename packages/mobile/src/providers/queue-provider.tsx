@@ -977,8 +977,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           // mode for it. The tracker re-runs this on every reconnect (a deploy
           // or rollback drops the socket), so a rolled-back backend is caught
           // there. With the flag off nothing is probed and the mode is legacy.
-          const wsClient = getWsClient();
-          const nowSlotServer = nowSlotFlagRef.current ? await probeNowSlotServer(wsClient) : null;
+          // The probe and the join both read the live client (#6766): one read
+          // before an await can be disposed by the time the send goes out.
+          const nowSlotServer = nowSlotFlagRef.current ? await probeNowSlotServer(getWsClient) : null;
           nowSlotServerRef.current = nowSlotServer;
           if (nowSlotServer !== null) reportQueueServerProbe(nowSlotServer, 'probe');
           setNowSlotMode(nowSlotFlagRef.current && nowSlotServer === true);

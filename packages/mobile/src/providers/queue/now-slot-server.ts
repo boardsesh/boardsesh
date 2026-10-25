@@ -5,7 +5,7 @@
  */
 import { clampNowSlotPayload, clampQueueAroundCurrent, type ClimbQueueItem } from '@boardsesh/queue';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
-import { execute, type Client } from '@boardsesh/graphql-client';
+import { execute, type ClientSource } from '@boardsesh/graphql-client';
 import { QUEUE_STATE_FIELDS_PROBE } from '@boardsesh/graphql/operations/queue-session';
 import { track } from '../../lib/analytics';
 
@@ -22,7 +22,7 @@ type QueueStateFieldsProbeResponse = {
  * join; the caller caches the answer for that connection. Fails closed: any
  * error reads as a backend without F3, so the phone keeps today's documents.
  */
-export async function probeNowSlotServer(client: Client): Promise<boolean> {
+export async function probeNowSlotServer(client: ClientSource): Promise<boolean> {
   try {
     const response = await execute<QueueStateFieldsProbeResponse>(client, { query: QUEUE_STATE_FIELDS_PROBE });
     const fieldNames = new Set((response?.__type?.fields ?? []).map(({ name }) => name));
