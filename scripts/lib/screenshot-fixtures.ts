@@ -160,6 +160,14 @@ export const SESSION_REST_CADENCE_SELECTION =
  */
 const GET_SESSION_PERMANENCE_SELECTION = 'isPermanent';
 
+/**
+ * The selection a pinned GetUserTicks recording predates: the wall's own name
+ * on each tick (#5487), which profile charts use to label a spray wall.
+ * Nullable, so it replays as null: the charts fall back to the label they
+ * rendered when the set was recorded.
+ */
+const USER_TICKS_BOARD_NAME_SELECTION = 'boardDisplayName';
+
 /** Recordings from the same fixture set that a compatibility adapter may cite. */
 export type ReplayCompatibilityEvidence = {
   /**
@@ -199,6 +207,7 @@ const PRESENCE_CAPABILITY_OPERATIONS = new Set([
  *   roster frame never is.
  * - GetSession: the non-null `isPermanent`, taken from what the set recorded
  *   (`replayGetSessionWithPermanence`), never defaulted.
+ * - GetUserTicks: each tick's nullable `boardDisplayName`.
  */
 export function replayCompatibleFixtureResponse(
   requestQuery: string,
@@ -222,6 +231,7 @@ export function replayCompatibleFixtureResponse(
   if (operationName === 'DiscoverPlaylists') return replayDiscoverPlaylistsWithoutGrades(requestQuery, fixture);
   if (operationName === 'GetSmartPlaylist') return replaySmartPlaylistWithoutUnfilteredCount(requestQuery, fixture);
   if (operationName === 'SessionUpdates') return replaySessionUpdatesWithoutRestCadence(requestQuery, fixture);
+  if (operationName === 'GetUserTicks') return replayUserTicksWithoutBoardName(requestQuery, fixture);
   if (!['GetBoard', 'GetMyBoards'].includes(operationName ?? '')) return null;
   const selection = 'sprayImport { wallUuid versionId detectionId stage queuePosition retryAt resetOfWallUuid }';
   if (!matchesWithoutSelection(requestQuery, selection, fixture)) return null;
@@ -372,6 +382,32 @@ function replaySmartPlaylistWithoutUnfilteredCount(
   if (!isRecord(result) || result.unfilteredCount !== undefined) return null;
   return {
     response: { ...response, data: { ...data, smartPlaylist: { ...result, unfilteredCount: null } } },
+  };
+}
+
+function replayUserTicksWithoutBoardName(
+  requestQuery: string,
+  fixture: GraphqlFixtureFile,
+): { response: unknown } | null {
+  // A whole token, exactly once: `matchesWithoutSelection` alone would also
+  // accept the name spliced into another field's.
+  if (normalizeDocument(requestQuery).split(` ${USER_TICKS_BOARD_NAME_SELECTION} `).length !== 2) return null;
+  if (!matchesWithoutSelection(requestQuery, USER_TICKS_BOARD_NAME_SELECTION, fixture)) return null;
+  if (!isRecord(fixture.response) || !isRecord(fixture.response.data)) return null;
+  const response = fixture.response;
+  const data = fixture.response.data;
+  const ticks = data.userTicks;
+  if (!Array.isArray(ticks)) return null;
+  // A recording that already carries a name is not one this shim was written for.
+  if (!ticks.every((tick) => isRecord(tick) && tick.boardDisplayName === undefined)) return null;
+  return {
+    response: {
+      ...response,
+      data: {
+        ...data,
+        userTicks: ticks.map((tick: Record<string, unknown>) => ({ ...tick, boardDisplayName: null })),
+      },
+    },
   };
 }
 

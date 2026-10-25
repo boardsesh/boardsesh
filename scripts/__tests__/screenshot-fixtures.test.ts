@@ -372,6 +372,62 @@ describe('legacy DiscoverPlaylists replay compatibility', () => {
   });
 });
 
+describe('legacy GetUserTicks replay compatibility', () => {
+  const legacy =
+    'query GetUserTicks($userId: ID!, $boardType: String!) { userTicks(userId: $userId, boardType: $boardType) { climbUuid climbedAt layoutId } }';
+  const current = legacy.replace('layoutId }', 'layoutId boardDisplayName }');
+  const fixture = (userTicks: unknown): GraphqlFixtureFile => ({
+    formatVersion: 1,
+    operationName: 'GetUserTicks',
+    documentHash: 'original-hash',
+    variablesHash: 'variables',
+    query: legacy,
+    variables: { userId: 'user', boardType: 'kilter' },
+    response: { data: { userTicks } },
+    status: 200,
+    recordedAt: '2026-01-01T00:00:00Z',
+    upstream: 'https://example.test',
+  });
+
+  it('replays every recorded tick with no wall name, without mutating the recording', () => {
+    const recorded = fixture([
+      { climbUuid: 'a', climbedAt: '2026-01-01', layoutId: 1 },
+      { climbUuid: 'b', climbedAt: '2026-01-02', layoutId: 941 },
+    ]);
+    const bytes = JSON.stringify(recorded);
+    expect(replayCompatibleFixtureResponse(current, recorded)).toEqual({
+      response: {
+        data: {
+          userTicks: [
+            { climbUuid: 'a', climbedAt: '2026-01-01', layoutId: 1, boardDisplayName: null },
+            { climbUuid: 'b', climbedAt: '2026-01-02', layoutId: 941, boardDisplayName: null },
+          ],
+        },
+      },
+    });
+    expect(JSON.stringify(recorded)).toBe(bytes);
+  });
+
+  it('keeps every other document change subject to drift checks', () => {
+    const recorded = fixture([{ climbUuid: 'a', climbedAt: '2026-01-01', layoutId: 1 }]);
+    expect(replayCompatibleFixtureResponse(current.replace('climbedAt', 'climbedAt angle'), recorded)).toBeNull();
+    expect(
+      replayCompatibleFixtureResponse(current.replace('boardDisplayName', 'boardDisplayNames'), recorded),
+    ).toBeNull();
+    expect(replayCompatibleFixtureResponse(legacy, recorded)).toBeNull();
+  });
+
+  it('refuses a recording that already carries a wall name or no tick list', () => {
+    expect(
+      replayCompatibleFixtureResponse(
+        current,
+        fixture([{ climbUuid: 'a', climbedAt: '2026-01-01', layoutId: 1, boardDisplayName: 'Garage' }]),
+      ),
+    ).toBeNull();
+    expect(replayCompatibleFixtureResponse(current, fixture(null))).toBeNull();
+  });
+});
+
 describe('legacy GetSmartPlaylist replay compatibility', () => {
   const legacy =
     'query GetSmartPlaylist($input: GetSmartPlaylistInput!) { smartPlaylist(input: $input) { meta { type } climbs { uuid } totalCount hasMore } }';
