@@ -497,6 +497,41 @@ consumers do it — `use-session-realtime` defers its join, `board-presence-prov
 provider `client={null}` (its documented inert state) — because a parked consumer produces no rejection
 noise and resumes with a catch-up instead of a retry storm.
 
+**A long-lived consumer must not keep the client it got once.** The dispose replaces the client:
+graphql-ws never reconnects a disposed one, and every later `getWsClient()` call talks to its
+replacement. `disposeWsClient()` therefore announces the client it dropped through
+`subscribeWsClientDisposed` (`lib/graphql/ws-client-lifecycle.ts`), synchronously and after the cache is
+cleared. `use-session-realtime` binds its JOIN_SESSION, both streams and its `closed`/`connected`
+listeners to `getWsClient()` at each join attempt, past the offline gates. On the notice it releases
+that client, bumps the join tracker's epoch so no mutation trusts the old connection's join, and parks
+for the connectivity edge. Until that change the engine held the client it read when the effect ran.
+After Offline mode on → off its streams and listeners sat on the dead client, nothing re-joined, and
+every session mutation (`getWsClient()` at send time) went out on a fresh connection that had never
+joined: "Must be in a session to perform this operation", with a new `connectionId` each time.
+
+**The socket outlives its last operation by 3 s** (`WS_LAZY_CLOSE_TIMEOUT_MS`, graphql-ws
+`lazyCloseTimeout`). The lazy default closes the socket as soon as the last operation completes, and
+before that operation's result reaches its caller. JOIN_SESSION is followed by the session streams, and
+`ensureJoined` is followed by the session mutation, both started from the join's result. With nothing
+else holding the socket, that follow-up landed on a closing connection and then on a fresh one that had
+never joined. On a normal launch a signed-in climber's notification stream usually held the socket,
+which hid the race.
+
+graphql-ws 6 has a bug once that timeout is non-zero. It arms one timer per released operation but
+stores only the last handle, so releasing two operations in one tick and subscribing again leaves a
+timer that closes the socket under the new operation 3 s later. A session restart or an A→B switch does
+exactly that with its two streams. `createGraphQLClient` therefore counts live operations whenever
+`lazyCloseTimeoutMs` is set, and its socket subclass refuses a 1000 close while any is live.
+A dispose still goes through.
+
+**A cached join is retired whenever the shared connection ends.** `ws-client-core` reports every
+`closed` of the cached client, and its dispose, through `subscribeWsConnectionEnded`, and the queue
+provider bumps the join tracker's epoch on each. The engine only hears closes of the client it is
+bound to. A queue mutation's `ensureJoined` can join while the engine is parked and bound to nothing,
+during a backend outage for example, and that join would otherwise stay cached after its socket idled
+out. Mobile `@boardsesh/queue-react` sends also read the client again after `ensureReady`, so a
+mutation never goes out on a client that was disposed while its join ran.
+
 ### Board Queue Preview ("Up next" for gym kiosks)
 
 Party queues live in membership-gated sessions keyed by session UUID; a public gym kiosk is anonymous and only knows a boardId. The bridge is a **redacted, board-keyed queue preview**: `boardQueuePreview(boardId)` (query + subscription), implemented in `packages/backend/src/services/board-queue-preview.ts` and `graphql/resolvers/board-presence/queue-preview.ts`.

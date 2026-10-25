@@ -23,7 +23,8 @@ vi.mock('../../error-reporting', () => ({ reportHandledError: vi.fn() }));
 vi.mock('../../env', () => ({ BACKEND_URL: 'https://api.test' }));
 
 import { execute, subscribe } from '@boardsesh/graphql-client';
-import { createWsClientModule } from '../ws-client-core';
+import { createWsClientModule, WS_LAZY_CLOSE_TIMEOUT_MS } from '../ws-client-core';
+import { subscribeWsClientDisposed } from '../ws-client-lifecycle';
 
 const createSocket = vi.fn(() => ({}) as unknown as WebSocket);
 const offlineMode = { on: false };
@@ -187,5 +188,72 @@ describe('ws-client — offline mode gate', () => {
     disposeWsClient();
 
     expect(disposeSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Offline mode on → off replaced the client under the party session (#6757 QA):
+// the dispose has to tell whoever still holds the old one.
+describe('ws-client — disposal notice', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    offlineMode.on = false;
+    createGraphQLClient.mockReturnValue(realClient);
+  });
+
+  it('announces the client it dropped, after the cache is cleared', () => {
+    const { getWsClient, disposeWsClient } = createModule();
+    const nextClient = { dispose: vi.fn() } as unknown as ExtendedClient;
+    getWsClient();
+    createGraphQLClient.mockReturnValue(nextClient);
+    const seen: Array<{ disposed: Client; current: Client }> = [];
+    const unsubscribe = subscribeWsClientDisposed((disposed) => {
+      seen.push({ disposed, current: getWsClient() });
+    });
+
+    disposeWsClient();
+    unsubscribe();
+
+    // A listener asking for a client gets the replacement, never the dead one.
+    expect(seen).toEqual([{ disposed: realClient, current: nextClient }]);
+  });
+
+  it('says nothing when there was no client to drop', () => {
+    const { disposeWsClient } = createModule();
+    const listener = vi.fn();
+    const unsubscribe = subscribeWsClientDisposed(listener);
+
+    disposeWsClient();
+    unsubscribe();
+
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('still notifies every holder and disposes when one listener throws', () => {
+    const { getWsClient, disposeWsClient } = createModule();
+    getWsClient();
+    const second = vi.fn();
+    const unsubscribeFirst = subscribeWsClientDisposed(() => {
+      throw new Error('consumer bug');
+    });
+    const unsubscribeSecond = subscribeWsClientDisposed(second);
+
+    disposeWsClient();
+    unsubscribeFirst();
+    unsubscribeSecond();
+
+    expect(second).toHaveBeenCalledWith(realClient);
+    expect(disposeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  // JOIN_SESSION's result starts the session streams; with an immediate lazy
+  // close they landed on a fresh, never-joined connection.
+  it('keeps an idle socket open long enough for the next operation', () => {
+    const { getWsClient } = createModule();
+    getWsClient();
+
+    expect(createGraphQLClient).toHaveBeenCalledWith(
+      expect.objectContaining({ lazyCloseTimeoutMs: WS_LAZY_CLOSE_TIMEOUT_MS }),
+    );
+    expect(WS_LAZY_CLOSE_TIMEOUT_MS).toBeGreaterThan(0);
   });
 });

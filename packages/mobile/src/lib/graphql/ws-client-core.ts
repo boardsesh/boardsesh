@@ -6,6 +6,7 @@ import { BACKEND_URL } from '../env';
 import { BackendUnavailableError } from '../connectivity/backend-unavailable-error';
 import type { AuthRejectionResult } from '../auth-rejection-result';
 import { AUTH_REFRESH_RETRY_CLOSE_CODE, AUTH_REJECTED_CLOSE_CODE } from './ws-close-codes';
+import { notifyWsClientDisposed, notifyWsConnectionEnded } from './ws-client-lifecycle';
 import { CLIENT_IDENTITY_CONNECTION_PARAM } from '@boardsesh/shared-schema/client-identity';
 
 /**
@@ -55,6 +56,22 @@ const OFFLINE_MODE_CLIENT: Client = {
   terminate: () => {},
   dispose: () => {},
 };
+
+/**
+ * How long an idle socket stays open after its last operation settles.
+ *
+ * graphql-ws's lazy default closes the socket the moment its last operation
+ * completes, and it does so BEFORE that operation's result reaches the caller.
+ * The party session runs JOIN_SESSION and then opens its streams (and a session
+ * mutation runs after `ensureJoined`) from that result, so with nothing else
+ * holding the socket those land on a closing connection, then on a fresh one
+ * that never joined: the server answers "Must be in a session". On a normal
+ * launch a signed-in climber's notification stream usually holds the socket,
+ * which hid this; after offline mode on → off that stream is gone and nothing
+ * does. A few seconds covers the hand-off with room to spare and costs one idle
+ * socket for that long.
+ */
+export const WS_LAZY_CLOSE_TIMEOUT_MS = 3_000;
 
 /**
  * Platform seam for the GraphQL-WS transport. Native and web differ only in how
@@ -265,6 +282,10 @@ export function createWsClientModule(deps: WsClientDeps): WsClientModule {
       wsClient = createGraphQLClient({
         url: getWsUrl(),
         webSocketImpl: AuthAwareWebSocket as unknown as typeof WebSocket,
+        lazyCloseTimeoutMs: WS_LAZY_CLOSE_TIMEOUT_MS,
+        // Removed by the factory's dispose wrapper before the socket goes, so
+        // `disposeWsClient` announces that end itself.
+        onClientCreated: (client) => client.on('closed', notifyWsConnectionEnded),
         connectionParams: async () => {
           const credentialGeneration = captureAuthCredentialGeneration();
           // A retry created by a 4401 can open before the token refresh finishes.
@@ -299,6 +320,11 @@ export function createWsClientModule(deps: WsClientDeps): WsClientModule {
     if (!wsClient) return;
     const client = wsClient;
     wsClient = null;
+    // Before the async teardown, and after the cache is cleared: a consumer
+    // holding `client` must learn it is dead now, and one that asks for a
+    // client from its listener must get the next one, not this one.
+    notifyWsConnectionEnded();
+    notifyWsClientDisposed(client);
     void (async () => {
       try {
         await client.dispose();

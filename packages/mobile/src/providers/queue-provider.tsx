@@ -54,6 +54,7 @@ import { buildSessionBoardPath } from '../lib/boards/session-board-path';
 import { SHARED_EVENTS, boardTypeProperty } from '@boardsesh/analytics';
 import { JOIN_SESSION, UPDATE_USERNAME } from '@boardsesh/graphql/operations/queue-session';
 import { getWsClient } from '../lib/graphql/ws-client';
+import { subscribeWsConnectionEnded } from '../lib/graphql/ws-client-lifecycle';
 import { getHttpClient } from '../lib/graphql/client';
 import { sanitizeQueueSnapshot } from '../lib/queue-privacy';
 import { invalidateStoredQueueSnapshot } from '../lib/queue-snapshot-store';
@@ -837,6 +838,11 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     (sessionIdToJoin: string) => joinTracker.ensureJoined(sessionIdToJoin),
     [joinTracker],
   );
+  // A join belongs to the connection it ran on. The realtime engine bumps the
+  // epoch on closes of the client it is bound to, but a mutation's
+  // `ensureJoined` can run while the engine is parked and bound to nothing.
+  // Every end of the shared connection retires the cached join.
+  useEffect(() => subscribeWsConnectionEnded(() => joinTracker.bumpEpoch()), [joinTracker]);
 
   // Re-announce identity to the session when it changes after we've joined.
   // JOIN_SESSION already carries the profile in the common case; this covers the

@@ -714,7 +714,12 @@ the sync engine — `effectiveOffline` goes true, `reason` reads `offline_mode`,
 and the ConnectivityBridge disposes the graphql-ws client. That dispose is a **cut, not a gate**: the next
 `getWsClient()` opens a fresh socket, so each realtime consumer still owns its own gate —
 `use-session-realtime` parks its join and re-joins on the store edge, and `board-presence-provider` hands
-the shared presence hook a `null` client (its inert state) until offline mode goes back off.
+the shared presence hook a `null` client (its inert state) until offline mode goes back off. The cut also
+replaces the client, so the dispose announces the dropped one (`subscribeWsClientDisposed`) and the
+session engine re-binds its join, streams and listeners to whatever client `getWsClient()` returns when
+it re-joins. Before that, the engine stayed on the dead client, and after offline mode on → off every
+session mutation failed with "Must be in a session" (see `docs/websocket-implementation.md`, "A
+long-lived consumer must not keep the client it got once").
 It does **not** touch analytics, Sentry, OTA updates, the board-snapshot CDN or sign-in. Turning it
 back off resets `backend` to `unknown` and re-asks the server rather than trusting anything concluded
 while nobody was talking to it. Sign-out resets it (`source: 'sign_out'`): a signed-out phone with the

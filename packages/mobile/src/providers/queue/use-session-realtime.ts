@@ -18,8 +18,9 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { parseBoardPath, parseNamedBoardPath } from '@boardsesh/board-config';
 import type { PlaybackStateChangedEvent, SessionUser, UserBoard } from '@boardsesh/shared-schema';
 import { emitWallConfirm } from '@boardsesh/play-view';
-import { GraphQLOperationError, isNotSessionMemberError, subscribe } from '@boardsesh/graphql-client';
+import { GraphQLOperationError, isNotSessionMemberError, subscribe, type Client } from '@boardsesh/graphql-client';
 import { getWsClient } from '../../lib/graphql/ws-client';
+import { subscribeWsClientDisposed } from '../../lib/graphql/ws-client-lifecycle';
 import { AUTH_REFRESH_RETRY_CLOSE_CODE } from '../../lib/graphql/ws-close-codes';
 import {
   QUEUE_UPDATES_SUBSCRIPTION,
@@ -225,11 +226,11 @@ export function useSessionRealtime({
       return;
     }
 
-    const wsClient = getWsClient();
     // One sync gate per session — this effect re-runs (and creates a fresh
-    // gate) on every session change; `unsubClosed` below calls `gate.reset()`
-    // mid-session on a socket drop (same session, but the connection's
-    // ConnectionContext and in-flight sequence tracking are no longer valid).
+    // gate) on every session change; `handleClientClosed` below calls
+    // `gate.reset()` mid-session on a socket drop (same session, but the
+    // connection's ConnectionContext and in-flight sequence tracking are no
+    // longer valid).
     const gate = createQueueSyncGate();
     queueSyncGateRef.current = gate;
     let disposed = false;
@@ -401,6 +402,83 @@ export function useSessionRealtime({
       }, retryDelayMs);
     };
 
+    // graphql-ws auto-reconnects, and every reconnect gives us a fresh
+    // per-connection ConnectionContext on the backend. Ordinary drops retain
+    // the existing join-before-new-subscriptions flow. A rejected-auth retry is
+    // different: cancelling the established operations drops the lazy client's
+    // active-operation count to zero and aborts the retry that ws-client just
+    // initiated. Preserve those operations only for that transport-remapped
+    // close; authenticated durable membership authorizes their resubscription
+    // while JOIN_SESSION rebinds the connection context in parallel.
+    let preserveSubscriptionsOnNextConnect = false;
+    const handleClientClosed = (closeEvent: unknown) => {
+      joinTracker.bumpEpoch();
+      subscriptionStartToken++;
+      joinRetryCount = 0;
+      const hasEstablishedSubscriptions = queueUpdatesCleanup !== null && sessionUpdatesCleanup !== null;
+      if (getCloseEventCode(closeEvent) === AUTH_REFRESH_RETRY_CLOSE_CODE && hasEstablishedSubscriptions) {
+        preserveSubscriptionsOnNextConnect = true;
+        authRefreshRejoinInProgress = true;
+        clearJoinRetryTimer();
+        gate.reset();
+        return;
+      }
+      preserveSubscriptionsOnNextConnect = false;
+      cleanupSubscriptions();
+      // The reconnect's FullSync re-baselines tracking on its own
+      // (evaluateIncoming always applies + resets a FullSync), but reset here
+      // too so a stray in-flight event from the dead connection can't be
+      // sequence-checked against the old connection's tracking in the gap
+      // before that FullSync arrives.
+      gate.reset();
+    };
+    const handleClientConnected = () => {
+      const preserveExistingSubscriptions = preserveSubscriptionsOnNextConnect;
+      preserveSubscriptionsOnNextConnect = false;
+      void startJoinedSubscriptions(preserveExistingSubscriptions);
+    };
+
+    // The client the join, both streams and the two listeners above run on.
+    // Bound per join attempt, never once per effect: `disposeWsClient()`
+    // (offline mode going on) replaces the client, and while offline mode is on
+    // `getWsClient()` hands out an inert one. Holding the effect-time client
+    // left the streams and listeners on a dead client after offline mode
+    // on → off, while every session mutation (`getWsClient()` at send time)
+    // went out on the replacement's fresh, never-joined connection — "Must be
+    // in a session", a new connectionId each time, the wall pulled back.
+    let boundClient: Client | null = null;
+    let unbindClientEvents: (() => void) | null = null;
+
+    // Forget everything that belonged to the bound client's connection: its
+    // listeners, its streams, the join cached for it, the sequence tracking.
+    const releaseBoundClient = () => {
+      unbindClientEvents?.();
+      unbindClientEvents = null;
+      boundClient = null;
+      preserveSubscriptionsOnNextConnect = false;
+      joinTracker.bumpEpoch();
+      cleanupSubscriptions();
+      gate.reset();
+    };
+
+    // Only called past both offline gates, so `getWsClient()` is the real
+    // client here. The same client as last time is the common case and a
+    // no-op; a different one means the old one was replaced without the
+    // disposal notice below (defensive), so its join cannot be trusted either.
+    const bindCurrentClient = (): Client => {
+      const client = getWsClient();
+      if (client === boundClient) return client;
+      if (boundClient !== null) releaseBoundClient();
+      boundClient = client;
+      const unsubscribeClosed = client.on('closed', handleClientClosed);
+      const unsubscribeConnected = client.on('connected', handleClientConnected);
+      unbindClientEvents = () => {
+        unsubscribeClosed();
+        unsubscribeConnected();
+      };
+      return client;
+    };
+
     const startJoinedSubscriptions = async (preserveExistingSubscriptions = false) => {
       if (!isCurrent()) return;
       // While backgrounded the socket is suspended: defer the join instead of
@@ -440,6 +518,10 @@ export function useSessionRealtime({
       joinDeferredForBackground = false;
       joinDeferredForConnectivity = false;
 
+      // Before ensureJoined: its JOIN_SESSION goes out on `getWsClient()` too,
+      // so binding first is what keeps the join, the streams and the
+      // closed/connected listeners on one client.
+      const client = bindCurrentClient();
       const currentStartToken = ++subscriptionStartToken;
       const retainedQueueUpdatesCleanup = preserveExistingSubscriptions ? queueUpdatesCleanup : null;
       const retainedSessionUpdatesCleanup = preserveExistingSubscriptions ? sessionUpdatesCleanup : null;
@@ -507,7 +589,7 @@ export function useSessionRealtime({
       joinRetryCount = 0;
 
       queueUpdatesCleanup = subscribe<{ queueUpdates: QueueUpdateEvent }>(
-        wsClient,
+        client,
         {
           query: QUEUE_UPDATES_SUBSCRIPTION,
           variables: { sessionId },
@@ -723,7 +805,7 @@ export function useSessionRealtime({
       // board's angle (which cascades to the climb list, play drawer, and the
       // re-grade effect). We don't switch the whole board — only the angle.
       sessionUpdatesCleanup = subscribe<{ sessionUpdates: SessionUpdateEvent }>(
-        wsClient,
+        client,
         {
           query: SESSION_UPDATES_SUBSCRIPTION,
           variables: { sessionId },
@@ -872,40 +954,24 @@ export function useSessionRealtime({
       unsubscribeRef.current = cleanupSubscriptions;
     };
 
-    // graphql-ws auto-reconnects, and every reconnect gives us a fresh
-    // per-connection ConnectionContext on the backend. Ordinary drops retain
-    // the existing join-before-new-subscriptions flow. A rejected-auth retry is
-    // different: cancelling the established operations drops the lazy client's
-    // active-operation count to zero and aborts the retry that ws-client just
-    // initiated. Preserve those operations only for that transport-remapped
-    // close; authenticated durable membership authorizes their resubscription
-    // while JOIN_SESSION rebinds the connection context in parallel.
-    let preserveSubscriptionsOnNextConnect = false;
-    const unsubClosed = wsClient.on('closed', (closeEvent) => {
-      joinTracker.bumpEpoch();
+    // A disposed client never reconnects, so its `closed` is the last thing it
+    // says and no `connected` follows. Drop it at once, supersede any join in
+    // flight on it, and park: offline mode is the one caller that disposes
+    // mid-session and comes back, and the connectivity listener below re-joins
+    // on its edge, binding whatever client `getWsClient()` hands out then.
+    // Any other dispose arms nothing: the engine stays dormant until this
+    // effect re-runs or `resyncQueueFromServer` restarts the join, exactly as
+    // when it sat on the dead client. On Expo web the auth transport revision
+    // re-runs the effect after a credential change. A native sign-out stays
+    // dormant: the privacy generation moves before the dispose, so the re-run
+    // effect binds the doomed client and lets go of it here. Re-joining a
+    // session the account just left is not this code's call.
+    const unsubscribeClientDisposed = subscribeWsClientDisposed((disposedClient) => {
+      if (disposedClient !== boundClient) return;
       subscriptionStartToken++;
       joinRetryCount = 0;
-      const hasEstablishedSubscriptions = queueUpdatesCleanup !== null && sessionUpdatesCleanup !== null;
-      if (getCloseEventCode(closeEvent) === AUTH_REFRESH_RETRY_CLOSE_CODE && hasEstablishedSubscriptions) {
-        preserveSubscriptionsOnNextConnect = true;
-        authRefreshRejoinInProgress = true;
-        clearJoinRetryTimer();
-        gate.reset();
-        return;
-      }
-      preserveSubscriptionsOnNextConnect = false;
-      cleanupSubscriptions();
-      // The reconnect's FullSync re-baselines tracking on its own
-      // (evaluateIncoming always applies + resets a FullSync), but reset here
-      // too so a stray in-flight event from the dead connection can't be
-      // sequence-checked against the old connection's tracking in the gap
-      // before that FullSync arrives.
-      gate.reset();
-    });
-    const unsubConnected = wsClient.on('connected', () => {
-      const preserveExistingSubscriptions = preserveSubscriptionsOnNextConnect;
-      preserveSubscriptionsOnNextConnect = false;
-      void startJoinedSubscriptions(preserveExistingSubscriptions);
+      releaseBoundClient();
+      if (getConnectivitySnapshot().effectiveOffline) joinDeferredForConnectivity = true;
     });
 
     // Re-run a join deferred while backgrounded once the app returns to the
@@ -949,8 +1015,10 @@ export function useSessionRealtime({
       subscriptionStartToken++;
       restartJoinedSubscriptionsRef.current = null;
       cleanupSubscriptions();
-      unsubConnected();
-      unsubClosed();
+      unbindClientEvents?.();
+      unbindClientEvents = null;
+      boundClient = null;
+      unsubscribeClientDisposed();
       appStateSub.remove();
       unsubscribeConnectivity();
       // Reset live analytics/presence on EVERY session change (not only on

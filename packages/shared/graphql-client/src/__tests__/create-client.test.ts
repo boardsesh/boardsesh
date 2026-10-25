@@ -51,4 +51,14 @@ describe('createGraphQLClient', () => {
     createGraphQLClient({ url: 'ws://localhost/graphql' });
     expect(mocks.capturedOptions.current.connectionParams).toBeUndefined();
   });
+
+  it('keeps graphql-ws closing an idle socket at once unless asked otherwise', () => {
+    createGraphQLClient({ url: 'ws://localhost/graphql' });
+    expect(mocks.capturedOptions.current).not.toHaveProperty('lazyCloseTimeout');
+  });
+
+  it('passes a lazy close timeout through', () => {
+    createGraphQLClient({ url: 'ws://localhost/graphql', lazyCloseTimeoutMs: 3_000 });
+    expect(mocks.capturedOptions.current.lazyCloseTimeout).toBe(3_000);
+  });
 });

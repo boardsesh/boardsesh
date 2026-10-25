@@ -334,6 +334,13 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
     return onRateLimited ? execute<TData>(client, operation, { onRateLimited }) : execute<TData>(client, operation);
   }
 
+  // Mobile's `ensureReady` runs JOIN_SESSION on whichever client is current
+  // when the join goes out, so every mobile send reads the client again AFTER
+  // it. A client read before the await can have been disposed while the join
+  // ran (offline mode on → off), and graphql-ws opens a fresh, never-joined
+  // socket for an operation started on a disposed client: "Must be in a
+  // session", on a socket the next offline-mode cut does not close either.
+
   // Core mutating actions. Web (no ensureReady) THROWS when disconnected;
   // mobile (ensureReady) silently no-ops by returning null. `allowCreate`
   // historically let mobile lazily create a session on add / setCurrent;
@@ -350,7 +357,8 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
     if (!allowCreate && !captured) return null;
     const sessionId = await ensureReady(captured);
     if (!sessionId) return null;
-    return { client, sessionId };
+    const joinedClient = getClient();
+    return joinedClient ? { client: joinedClient, sessionId } : null;
   }
 
   // Party / best-effort actions: no-op on BOTH platforms when there's no active
@@ -361,7 +369,8 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
     if (!client || !captured) return null;
     if (!ensureReady) return { client, sessionId: captured };
     const sessionId = await ensureReady(captured);
-    return sessionId ? { client, sessionId } : null;
+    const joinedClient = getClient();
+    return sessionId && joinedClient ? { client: joinedClient, sessionId } : null;
   }
 
   // Serialize-and-supersede SET_CURRENT_CLIMB. `getContext` snapshots the
@@ -375,7 +384,7 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
       // mobile never does, and must not lazily create a session just to send a
       // null — so only the ensureReady (mobile) path short-circuits on null.
       if (ensureReady && !args.item) return;
-      const client = getClient();
+      let client = getClient();
       if (!client) {
         if (ensureReady) return;
         throw new Error(NOT_CONNECTED);
@@ -389,6 +398,8 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
         const sessionId = await ensureReady(capturedSessionId);
         if (!sessionId) return;
         if (capturedSessionId !== null && getSessionId() !== capturedSessionId) return;
+        client = getClient();
+        if (!client) return;
       } else if (!capturedSessionId || getSessionId() !== capturedSessionId) {
         // Web: already-joined, never creates — a missing OR flipped captured
         // session is fatal (throws), unlike mobile which lazily creates above.
@@ -404,7 +415,7 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
       });
     },
     sendDeferredQueueAdd: async (item, capturedSessionId) => {
-      const client = getClient();
+      let client = getClient();
       if (!client || !capturedSessionId || getSessionId() !== capturedSessionId) return;
       if (ensureReady) {
         // capturedSessionId is concrete, so this only joins — but honour a null
@@ -412,6 +423,8 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
         // than fire an ADD against a dead session, mirroring the sendArgs path.
         const sessionId = await ensureReady(capturedSessionId);
         if (!sessionId) return;
+        client = getClient();
+        if (!client) return;
       }
       const input = toQueueItemInput(item);
       // Read the position AFTER the session guards (a dead-session bail costs

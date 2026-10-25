@@ -31,7 +31,9 @@ import {
  * so without this a phone in offline mode would keep dialling the party/comment
  * subscriptions forever — the one flavour of traffic "stop talking to the
  * server" would not actually stop. Nothing happens on the way back: the client is lazy,
- * so the next consumer that needs it builds a fresh one.
+ * so the next consumer that needs it builds a fresh one. Consumers still holding
+ * the disposed client hear about it from `subscribeWsClientDisposed`; the party
+ * session uses that to re-join on the fresh client instead of the dead one.
  *
  * The dispose is the CUT; the GATE lives one layer down. `disposeWsClient()`
  * only drops the cached client, so on its own the next `getWsClient()` would
