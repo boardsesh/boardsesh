@@ -63,15 +63,41 @@ describe('createLoadedListFetchPage', () => {
     expect(page.climbs.map(({ uuid }) => uuid)).toEqual(['row-2', 'row-3']);
   });
 
-  it('stops when a load adds no rows, rather than asking forever', async () => {
+  it('ends the track after two loads in a row add no rows, rather than asking forever', async () => {
     const stuck = loaded(makeClimbs('row', 2), true);
     const loadMore = vi.fn(async () => stuck);
     const fetchPage = createLoadedListFetchPage({ read: () => stuck, loadMore });
 
     const page = await fetchPage(pageArgs(1, 2));
 
-    expect(loadMore).toHaveBeenCalledTimes(1);
-    expect(page.climbs).toEqual([]);
+    expect(loadMore).toHaveBeenCalledTimes(2);
+    // No `hasMore`: a short page that said there was more would send the next
+    // track page past every climb it never served.
+    expect(page).toEqual({ climbs: [], hasMore: false });
+  });
+
+  it('loads again after a load that rode an in-flight refetch, so no climbs are skipped', async () => {
+    // Logging a tick refetches the logbook. A load asked for meanwhile
+    // resolves with the refetch's pages, adding nothing; the next one is real.
+    let list = loaded(makeClimbs('row', 60), true, 60);
+    const loadMore = vi
+      .fn()
+      .mockImplementationOnce(async () => list)
+      .mockImplementation(async () => {
+        const grown = list.climbs.length + 20;
+        list = loaded(makeClimbs('row', grown), grown < 300, grown);
+        return list;
+      });
+    const fetchPage = createLoadedListFetchPage({ read: () => list, loadMore });
+
+    const first = await fetchPage(pageArgs(0, 100));
+    const second = await fetchPage(pageArgs(1, 100));
+
+    expect(first.climbs).toHaveLength(100);
+    expect(first.hasMore).toBe(true);
+    expect([...first.climbs, ...second.climbs].map(({ uuid }) => uuid)).toEqual(
+      makeClimbs('row', 200).map(({ uuid }) => uuid),
+    );
   });
 
   it('fills a track page however many repeat-heavy pages it takes, so the next page loses no climbs', async () => {

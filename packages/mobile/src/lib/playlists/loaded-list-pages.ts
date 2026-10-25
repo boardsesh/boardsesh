@@ -58,15 +58,30 @@ export function createLoadedListFetchPage(source: LoadedListSource, isSameList: 
     // boundary, so a page that came back short with more behind it would skip
     // every climb between its end and that boundary. A logbook holds a climb
     // once per day it was climbed, so covering 100 climbs can take more than
-    // five 20-row pages. The loop still ends: at the list's end, on a load that
-    // added no rows, on another list, or on an abort.
+    // five 20-row pages. The loop still ends: at the list's end, on two loads
+    // in a row that added no rows, on another list, or on an abort.
+    let loadsWithoutRows = 0;
     while (list.climbs.length < end && list.hasMore) {
       if (signal.aborted) throw abortError();
       const loadedRows = list.loadedRows;
       list = await source.loadMore();
       if (!isSameList()) return { climbs: [], hasMore: false };
-      // A load that added no rows would only repeat itself.
-      if (list.loadedRows <= loadedRows) break;
+      if (list.loadedRows > loadedRows) {
+        loadsWithoutRows = 0;
+        continue;
+      }
+      // One load that added nothing is usually a refetch in flight: logging a
+      // tick refetches the logbook, and a load asked for meanwhile resolves
+      // with that refetch's pages. Once it settles the next load is real, so
+      // only a second one in a row means the list is stuck.
+      loadsWithoutRows += 1;
+      if (loadsWithoutRows >= 2) {
+        // Give up by ending the track here. A short page that still said
+        // `hasMore` would send the next page to the next boundary and skip
+        // every climb in between.
+        if (signal.aborted) throw abortError();
+        return { climbs: list.climbs.slice(page * pageSize, end), hasMore: false };
+      }
     }
     if (signal.aborted) throw abortError();
     return {
