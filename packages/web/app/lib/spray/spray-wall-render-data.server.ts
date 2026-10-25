@@ -99,8 +99,10 @@ async function readSprayWallQuery<TData>(
     next: { revalidate: 300 },
   });
 
+  // No uuid in either message: a thrown render error reaches Sentry
+  // (`onRequestError`), and an unlisted wall's uuid is its share-link capability.
   if (!response.ok) {
-    throw new Error(`[spray] ${operation} for "${wallUuid}" failed with HTTP ${response.status}`);
+    throw new Error(`[spray] ${operation} failed with HTTP ${response.status}`);
   }
 
   const payload = (await response.json()) as { data?: TData | null; errors?: unknown[] };
@@ -108,7 +110,7 @@ async function readSprayWallQuery<TData>(
   // A 200 carrying `errors` is what a backend read deadline looks like, and
   // `data` is null beside it — indistinguishable from a real miss without this.
   if (Array.isArray(payload.errors) && payload.errors.length > 0) {
-    throw new Error(`[spray] ${operation} for "${wallUuid}" returned GraphQL errors`);
+    throw new Error(`[spray] ${operation} returned GraphQL errors`);
   }
 
   return payload.data ?? null;

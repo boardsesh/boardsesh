@@ -153,4 +153,28 @@ describe('share-link capabilities with the installed PostHog SDK', () => {
     expect(serialized).not.toContain(inviteToken);
     expect(serialized).toContain('https://boardsesh.com/b/garage/40/list?src=qr&medium=board');
   });
+
+  it('keeps them out of the /flags request too, which before_send never sees', async () => {
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: new URL(`https://boardsesh.com/b/garage/40/list?wall=${wallUuid}`),
+    });
+    const analytics = await import('../analytics');
+    // Signed in, so the flags body goes out as the SDK built it (no anonymous-id rewrite).
+    analytics.setAnalyticsFlagAccountId('account-a');
+    analytics.identify('account-a', { email: 'climber@example.com' });
+    // /flags carries every person property, and nothing on it passes before_send.
+    analytics.setPersonProperties({ last_wall_url: window.location.href });
+
+    const flagsBodies = () =>
+      vi
+        .mocked(fetch)
+        .mock.calls.filter(([url]) => typeof url === 'string' && url.includes('/flags'))
+        .map(([, options]) => (typeof options?.body === 'string' ? options.body : ''));
+    await vi.waitFor(() => expect(flagsBodies().some((body) => body.includes('last_wall_url'))).toBe(true));
+    for (const body of flagsBodies()) {
+      expect(body).not.toContain(wallUuid);
+      expect(() => JSON.parse(body)).not.toThrow();
+    }
+  });
 });

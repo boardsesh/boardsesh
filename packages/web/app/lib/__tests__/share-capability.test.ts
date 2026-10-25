@@ -144,6 +144,45 @@ describe('scrubShareCapabilitiesFromEvent', () => {
   });
 });
 
+describe("the wall photo's path", () => {
+  // The wall and climb pages embed `/api/v1/spray-walls/{uuid}/photo` as an image,
+  // and Sentry's page-load trace records it as a `resource.img` span beside the
+  // page path that names the slug: slug plus uuid is the whole share link.
+  const photoPath = `/api/v1/spray-walls/${WALL}/photo`;
+
+  it('redacts the uuid in the path, raw or encoded, and keeps the route template', () => {
+    expect(carriesShareCapability(photoPath)).toBe(true);
+    expect(redactShareCapabilities(`${ORIGIN}${photoPath}?look=wall-crop`)).toBe(
+      `${ORIGIN}/api/v1/spray-walls/[redacted]/photo?look=wall-crop`,
+    );
+    expect(redactShareCapabilities(encodeURIComponent(photoPath))).toBe(
+      encodeURIComponent('/api/v1/spray-walls/[redacted]/photo').replace('%5Bredacted%5D', '[redacted]'),
+    );
+    expect(scrubShareCapabilityParams(`${ORIGIN}${photoPath}`)).toBe(`${ORIGIN}/api/v1/spray-walls/[redacted]/photo`);
+    const template = 'GET /api/v1/spray-walls/[wall_uuid]/photo';
+    expect(redactShareCapabilities(template)).toBe(template);
+  });
+
+  it('scrubs it from a Sentry page-load transaction', () => {
+    const transaction = {
+      type: 'transaction',
+      transaction: '/b/[board_slug]/[angle]/list',
+      request: { url: `${ORIGIN}/b/garage/40/list?wall=${WALL}` },
+      spans: [
+        {
+          op: 'resource.img',
+          description: photoPath,
+          data: { 'url.full': `${ORIGIN}${photoPath}`, 'url.same_origin': true },
+        },
+      ],
+    };
+    const scrubbed = redactShareCapabilitiesFromEvent(transaction);
+    expect(JSON.stringify(scrubbed)).not.toContain(WALL);
+    expect(scrubbed.spans[0].description).toBe('/api/v1/spray-walls/[redacted]/photo');
+    expect(scrubbed.transaction).toBe('/b/[board_slug]/[angle]/list');
+  });
+});
+
 describe('redactShareCapabilities and the Sentry processor', () => {
   it('finds and redacts a wall uuid as its own param and inside an encoded return URL', () => {
     expect(carriesShareCapability(`?wall=${WALL}`)).toBe(true);

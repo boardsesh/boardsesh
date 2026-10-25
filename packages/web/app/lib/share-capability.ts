@@ -7,7 +7,8 @@ import { WALL_CAPABILITY_PARAM } from './spray/spray-visibility';
  *
  *   ?invite=  a home board's share link (`board-invite.ts`): joins the board.
  *   ?wall=    an unlisted Spraywall's share link (`spray/spray-visibility.ts`):
- *             the wall's uuid, which opens the wall and its climbs.
+ *             the wall's uuid, which opens the wall and its climbs. The same
+ *             uuid also rides in the wall photo's path (`WALL_UUID_PATH`).
  *
  * Neither may reach a third party. Sentry and PostHog both copy page URLs onto
  * what they send (`request.url`, breadcrumbs, `$current_url`, `$referrer`), so
@@ -29,15 +30,27 @@ const PARAM_NAMES = SHARE_CAPABILITY_PARAMS.join('|');
 const CAPABILITY_PAIR = new RegExp(`((?:${PARAM_NAMES})(?:=|%(?:25)*3D))[^&#\\s"'\\\\]*`, 'gi');
 const CAPABILITY_NAME = new RegExp(`^(?:${PARAM_NAMES})$`, 'i');
 
-/** Whether the text carries a capability pair anywhere, raw or encoded. */
+/**
+ * The one PATH that carries a wall's uuid: the unlisted wall's photo redirect,
+ * `/api/v1/spray-walls/{uuid}/photo` (`spray-wall-render-data.server.ts`), which
+ * the wall and climb pages embed as an image. Sentry records it as a sampled page
+ * load's `resource.img` span (name and `url.full`) and as that route's
+ * `request.url`, next to the page path that names the slug, and slug plus uuid is
+ * the whole share link. Raw or encoded slashes; the route template Sentry names
+ * the server transaction by (`[wall_uuid]`) is left alone.
+ */
+const WALL_UUID_PATH = /((?:\/|%(?:25)*2F)spray-walls(?:\/|%(?:25)*2F))(?!\[)(?:(?!%(?:25)*2F)[^/?#&\s"'\\])+/gi;
+
+/** Whether the text carries a capability anywhere, raw or encoded. */
 export function carriesShareCapability(text: string): boolean {
   CAPABILITY_PAIR.lastIndex = 0;
-  return CAPABILITY_PAIR.test(text);
+  WALL_UUID_PATH.lastIndex = 0;
+  return CAPABILITY_PAIR.test(text) || WALL_UUID_PATH.test(text);
 }
 
 /** The same text with every capability value replaced, for anything that leaves the app. */
 export function redactShareCapabilities(text: string): string {
-  return text.replace(CAPABILITY_PAIR, '$1[redacted]');
+  return text.replace(CAPABILITY_PAIR, '$1[redacted]').replace(WALL_UUID_PATH, '$1[redacted]');
 }
 
 function decodeParamName(rawName: string): string {

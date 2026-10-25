@@ -3,7 +3,7 @@ import { PostHog } from 'posthog-js-lite';
 import { createAnalytics } from '@boardsesh/analytics';
 import { isAdminAnalyticsUrl, isEmbedAnalyticsUrl, isKioskAnalyticsUrl } from './analytics-paths';
 import { searchCarriesBoardInvite } from './board-invite';
-import { scrubShareCapabilitiesFromEvent } from './share-capability';
+import { redactShareCapabilities, scrubShareCapabilitiesFromEvent } from './share-capability';
 import { getWebConsentRecord, hasAnalyticsConsent, subscribeWebConsent } from './consent';
 import {
   ANALYTICS_CONSENT_HEADER,
@@ -91,6 +91,12 @@ function installConsentTransport(client: PostHog, backendProxyHost: string | nul
     const flagsRequest = /\/(flags|decide)\/?(?:\?|$)/.test(url);
     if (retiredClients.has(client) || suspendedClients.has(client) || (!flagsRequest && !hasAnalyticsConsent())) {
       throw new Error('Analytics consent does not permit this request');
+    }
+    // `/flags` is the one request `before_send` never sees, and it carries every
+    // person property identify() and setPersonProperties() were given. Its body
+    // is plain JSON (only /batch is gzipped), so the same rule runs here.
+    if (flagsRequest && typeof options.body === 'string') {
+      options = { ...options, body: redactShareCapabilities(options.body) };
     }
     if (flagsRequest && flagAccountId === null && typeof options.body === 'string') {
       // Signed out, flags bucket on one id per browser whatever the consent
@@ -258,7 +264,8 @@ function getPosthog(): PostHog | null {
     // capabilities, and the SDK copies `location.href` and `document.referrer`
     // onto every event. The hook runs on every capture path (queued and
     // immediate) after the SDK adds them. The `/flags` request is the one call
-    // that skips it, and it carries no URL. share-capability.ts has the rule.
+    // that skips it; installConsentTransport scrubs its body instead.
+    // share-capability.ts has the rule.
     before_send: scrubShareCapabilitiesFromEvent,
   });
 
