@@ -35,7 +35,9 @@ export function subscribeClimbStatsStream(
   let unbindConnected: (() => void) | null = null;
   // graphql-ws calls `complete` asynchronously after a release. Without this
   // a late callback from the released stream would null out the new stream's
-  // `unsubscribeStats` and schedule a second retry.
+  // `unsubscribeStats` and schedule a second retry. Both a release and a new
+  // subscribe bump it, so a release-then-resubscribe bumps it twice; only
+  // "each stream sees a different number" matters.
   let subscriptionGeneration = 0;
   // Live stats need a reachable backend. While the connectivity store
   // says we're effectively offline, a (re)subscribe can only fail, and

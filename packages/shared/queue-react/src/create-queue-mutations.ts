@@ -349,7 +349,10 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
   // dispose (offline mode on) does not resend on the dead one, which would
   // open a socket no later dispose closes. While offline mode is on the live
   // client is the inert one, and the retry fails cleanly (#6766). Every send
-  // hands `execute` this getter, never the captured client itself.
+  // hands `execute` this getter, never the captured client itself. The
+  // `?? captured` fallback is the signed-out / not-yet-built guard, not the
+  // offline-mode one: with no live client the retry goes to the client the
+  // send started on and fails there as it did before.
   function liveClient(captured: Client): () => Client {
     return () => getClient() ?? captured;
   }

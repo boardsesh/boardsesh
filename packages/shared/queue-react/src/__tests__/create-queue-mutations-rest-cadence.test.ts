@@ -54,6 +54,15 @@ describe('setSessionRestCadence', () => {
     expect(executeMock.mock.calls[0][0]()).toBe(nextClient);
   });
 
+  it('falls back to the captured client when no live client exists', async () => {
+    const firstClient = { name: 'first' } as never;
+    let current: unknown = firstClient;
+    await make({ getClient: () => current as never }).setSessionRestCadence({ action: 'RESUME' });
+    // Signed out mid-wait: there is no live client to switch to.
+    current = null;
+    expect(executeMock.mock.calls[0][0]()).toBe(firstClient);
+  });
+
   it('gives a FIRE its own short timeout and no rate-limit retry', async () => {
     await make().setSessionRestCadence(
       { action: 'FIRE', expectedRevision: 3 },
