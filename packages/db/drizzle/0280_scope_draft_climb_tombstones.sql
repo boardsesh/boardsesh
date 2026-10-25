@@ -64,6 +64,10 @@ BEGIN
     RETURN OLD;
   END IF;
   -- NULL unless the climb is a draft with an owner (no row: NULL as well).
+  -- This relies on the caller deleting stats BEFORE the climb row, which
+  -- deleteClimbDependentRows (climb-cleanup.ts) requires of every caller. There
+  -- is no FK cascade (0031 dropped it); a stats row deleted after its climb
+  -- finds no row here and gets a NULL-scoped tombstone.
   SELECT bc.user_id INTO draft_owner
   FROM board_climbs bc
   WHERE bc.board_type = OLD.board_type
