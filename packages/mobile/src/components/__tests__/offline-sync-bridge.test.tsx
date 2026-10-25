@@ -65,6 +65,12 @@ vi.mock('../../sync', () => ({
 }));
 
 const drainMutationQueueMock = vi.fn(async (..._args: unknown[]) => {});
+// The account in the stored token: what the owner claim reads (#6824), never the
+// cached `useStoredUserId` answer.
+type SignedInAccountStub = { status: 'signed-in'; userId: string } | { status: 'no-user-id' } | { status: 'unsettled' };
+const readSignedInAccountMock = vi.hoisted(() =>
+  vi.fn(async (): Promise<SignedInAccountStub> => ({ status: 'signed-in', userId: 'user-1' })),
+);
 const startBackgroundTrackingStop = vi.fn();
 const startBackgroundTrackingMock = vi.fn(() => startBackgroundTrackingStop);
 // The scheduler + drain bindings live in the adapter (which statically imports
@@ -73,6 +79,7 @@ vi.mock('../../offline/offline-sync-adapter', () => ({
   startSyncScheduler: (...args: unknown[]) => startSyncSchedulerMock(...(args as [])),
   drainMutationQueue: (...args: unknown[]) => drainMutationQueueMock(...args),
   startBackgroundTracking: () => startBackgroundTrackingMock(),
+  readSignedInAccount: () => readSignedInAccountMock(),
 }));
 
 // A stable sentinel so tests can assert the bridge passes THIS reference
@@ -337,6 +344,8 @@ beforeEach(() => {
   assertLocalUserDataOwnerMock.mockClear();
   assertLocalUserDataOwnerMock.mockResolvedValue('ok');
   stampLocalUserIdMock.mockClear();
+  readSignedInAccountMock.mockReset();
+  readSignedInAccountMock.mockResolvedValue({ status: 'signed-in', userId: 'user-1' });
   clearUserDataMock.mockReset();
   clearUserDataMock.mockResolvedValue(undefined);
   reportHandledErrorMock.mockClear();
@@ -486,9 +495,14 @@ describe('OfflineSyncBridge — nothing drains before the owner claim', () => {
     const queryClient = makeQueryClient();
     const view = render(<Harness flags={FLAG_ON} queryClient={queryClient} />);
     await waitFor(() => expect(reportHandledErrorMock).toHaveBeenCalledOnce());
-    // A re-run in the same session (a re-render) fails the same way and stays quiet.
+    // A re-render, or a foreground, does not retry it: the previous account's
+    // rows are still on disk. A second attempt would fail the same way anyway.
     view.rerender(<Harness flags={FLAG_ON} queryClient={queryClient} />);
+    await act(async () => {
+      for (const listener of appState.listeners) listener('active');
+    });
     await act(async () => {});
+    expect(clearUserDataMock).toHaveBeenCalledOnce();
 
     expect(stampLocalUserIdMock).not.toHaveBeenCalled();
     expect(startSyncSchedulerMock).not.toHaveBeenCalled();
@@ -497,12 +511,12 @@ describe('OfflineSyncBridge — nothing drains before the owner claim', () => {
     expect(reportHandledErrorMock).toHaveBeenCalledOnce();
     expect(reportHandledErrorMock.mock.calls[0][1]).toEqual({
       level: 'warning',
-      tags: { source: 'offline-sync', op: 'owner-claim-hold', reason: 'prepare-failed' },
+      tags: { source: 'offline-sync', op: 'owner-claim-hold', reason: 'wipe-failed' },
     });
   });
 
-  it('holds all three when the token has no readable user id', async () => {
-    storedUserId = undefined;
+  it('holds all three when the token names nobody', async () => {
+    readSignedInAccountMock.mockResolvedValue({ status: 'no-user-id' });
     render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
     await waitFor(() => expect(reportHandledErrorMock).toHaveBeenCalledOnce());
     await act(async () => {});
@@ -515,6 +529,38 @@ describe('OfflineSyncBridge — nothing drains before the owner claim', () => {
       level: 'warning',
       tags: { source: 'offline-sync', op: 'owner-claim-hold', reason: 'no-user-id' },
     });
+  });
+
+  it('runs a claim that failed without deciding anything again on the next foreground', async () => {
+    assertLocalUserDataOwnerMock.mockRejectedValueOnce(new Error('disk I/O error'));
+    render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
+    await waitFor(() => expect(assertLocalUserDataOwnerMock).toHaveBeenCalledOnce());
+    await act(async () => {});
+    expect(startSyncSchedulerMock).not.toHaveBeenCalled();
+    expect(reportHandledErrorMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      for (const listener of appState.listeners) listener('active');
+    });
+    await waitFor(() => expect(startSyncSchedulerMock).toHaveBeenCalledOnce());
+    expect(assertLocalUserDataOwnerMock).toHaveBeenCalledTimes(2);
+    expect(reportHandledErrorMock).not.toHaveBeenCalled();
+  });
+
+  it('runs it again when the connection comes back, too', async () => {
+    readSignedInAccountMock.mockResolvedValueOnce({ status: 'unsettled' });
+    render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
+    await waitFor(() => expect(readSignedInAccountMock).toHaveBeenCalledOnce());
+    await act(async () => {});
+    expect(startSyncSchedulerMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      onlineManager.setOnline(false);
+    });
+    await act(async () => {
+      onlineManager.setOnline(true);
+    });
+    await waitFor(() => expect(startSyncSchedulerMock).toHaveBeenCalledOnce());
   });
 
   it('starts over after a sign-out: the next sign-in waits for its own claim', async () => {

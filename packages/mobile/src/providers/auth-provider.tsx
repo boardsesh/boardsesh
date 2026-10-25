@@ -52,6 +52,7 @@ import {
   suspendLinkEmptyDismissalWrites,
 } from '../lib/onboarding/onboarding-storage';
 import { clearUserData, purgeLocalDataForSignOut, getDatabaseHandle } from '../db';
+import { STORED_USER_ID_QUERY_KEY } from '../hooks/use-current-user-id';
 import { clearStoredSprayPhotos } from '../lib/spray/spray-photo-store';
 import { clearSprayWallPrivateCaches } from '../lib/spray/spray-privacy-cleanup';
 import { dropSprayWallViewerAccess, refreshSprayWallViewerAccess } from '../lib/spray/spray-wall-loader';
@@ -610,6 +611,16 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       // climbers who had just signed up). Invalidating before the tree swaps
       // puts the refetch in flight, and the remounted readers wait on it.
       if (!wasAuthenticated) void queryClient.invalidateQueries({ queryKey: ['profile'], exact: true });
+      // The same, and worse, for the user id decoded from the stored token
+      // (#6824). That query never goes stale, and the offline bridge observes it
+      // on the login screen too, so it would keep what it read there for the
+      // whole session: nothing on a fresh install or after a sign-out, or the
+      // previous account's id from the token a lapsed session left behind. Reset,
+      // not invalidate: every mounted reader drops the old answer at once and
+      // the active ones read the new token.
+      if (!wasAuthenticated || authenticatedIdentityChanged) {
+        void queryClient.resetQueries({ queryKey: STORED_USER_ID_QUERY_KEY, exact: true });
+      }
       authStateRef.current = { ...authStateRef.current, isAuthenticated: true };
       setIsSessionUnavailable(false);
       // Rechecking the same credentials preserves pending account conversions.

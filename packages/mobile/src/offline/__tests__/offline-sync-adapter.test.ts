@@ -186,6 +186,7 @@ import {
   __resetCycleErrorDedupeForTests,
   __resetMeteredStateForTests,
   __resetOutboxOwnerReportForTests,
+  readSignedInAccount,
 } from '../offline-sync-adapter';
 import { resetLaunchReloadWindowForTests, setJsRestartCount } from '../../lib/launch-reload-window';
 import type {
@@ -1972,6 +1973,19 @@ describe('outbox owner binding', () => {
     await drainMutationQueue(db, queryClient, graphqlFetch);
     const options = drainMutationQueueCore.mock.calls[0][3] as DrainOptions;
     await expect(options.getSignedInUserId()).resolves.toBe('viewer-6653');
+  });
+
+  it('reads the account the owner claim needs from the token itself', async () => {
+    await expect(readSignedInAccount()).resolves.toEqual({ status: 'signed-in', userId: 'viewer-6653' });
+    // `{"iat":1}`: a well-formed token that names nobody.
+    authToken.token = 'e30.eyJpYXQiOjF9.signature';
+    await expect(readSignedInAccount()).resolves.toEqual({ status: 'no-user-id' });
+    // No token yet is not "names nobody": the claim asks again later.
+    authToken.token = null;
+    await expect(readSignedInAccount()).resolves.toEqual({ status: 'unsettled' });
+    authToken.token = 'e30.eyJzdWIiOiJ2aWV3ZXItNjY1MyJ9.signature';
+    authToken.generationCurrent = false;
+    await expect(readSignedInAccount()).resolves.toEqual({ status: 'unsettled' });
   });
 
   it('answers no account when credentials change while the token is read', async () => {

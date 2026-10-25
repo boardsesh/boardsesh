@@ -912,20 +912,36 @@ export type SyncRunOptions = {
   snapshotSource?: SnapshotSource;
 };
 
+export type SignedInAccount =
+  | { status: 'signed-in'; userId: string }
+  /** A token is stored but names no user: nothing can ever be matched against it. */
+  | { status: 'no-user-id' }
+  /** No token yet, or credentials changed during the read. Ask again later. */
+  | { status: 'unsettled' };
+
 /**
  * The signed-in account, from the token in SecureStore: the same token
  * `authenticatedFetch` attaches to every request the drain and the pull make.
- * Undefined when credentials changed while it was read, so a sign-in landing
+ * Unsettled when credentials changed while it was read, so a sign-in landing
  * mid-read is never mistaken for the account that started it.
  *
- * Deliberately not `useStoredUserId`'s cached answer: that query lives until a
- * cache clear, and the keychain-unavailable branch skips the clear, so it can
- * still name the previous account after a new one signs in.
+ * Deliberately not `useStoredUserId`'s cached answer (#6824). That query never
+ * goes stale, so an observer mounted on the login screen keeps whatever it read
+ * there: nothing on a fresh install, or the previous account's id from an
+ * expired token the light signed-out launch left in place. The owner claim in
+ * `OfflineSyncBridge`, the drainer and every pull ask this instead.
  */
-async function readSignedInUserId(): Promise<string | undefined> {
+export async function readSignedInAccount(): Promise<SignedInAccount> {
   const generation = captureAuthCredentialGeneration();
   const token = await getAuthToken();
-  return isAuthCredentialGenerationCurrent(generation) ? userIdFromJwt(token) : undefined;
+  if (!token || !isAuthCredentialGenerationCurrent(generation)) return { status: 'unsettled' };
+  const userId = userIdFromJwt(token);
+  return userId ? { status: 'signed-in', userId } : { status: 'no-user-id' };
+}
+
+async function readSignedInUserId(): Promise<string | undefined> {
+  const account = await readSignedInAccount();
+  return account.status === 'signed-in' ? account.userId : undefined;
 }
 
 export function startSyncScheduler(

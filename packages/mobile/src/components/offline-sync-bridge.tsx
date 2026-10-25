@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useOfflineDatabase } from '../db/use-offline-database';
-import { useQueryClient } from '@tanstack/react-query';
+import { AppState } from 'react-native';
+import { onlineManager, useQueryClient } from '@tanstack/react-query';
 import { notifyBootstrapMetadataChanged, notifyScopeDownloadComplete, setSyncProgress } from '../sync';
 import { assertLocalUserDataOwner, stampLocalUserId, type GraphQLFetch } from '@boardsesh/offline-sync';
-import { startSyncScheduler, drainMutationQueue, startBackgroundTracking } from '../offline/offline-sync-adapter';
+import {
+  startSyncScheduler,
+  drainMutationQueue,
+  startBackgroundTracking,
+  readSignedInAccount,
+} from '../offline/offline-sync-adapter';
 import { recoverAndReportOutboxOnce } from '../offline/outbox-telemetry';
 import { sweepDelistedDownloadTerminals } from '../offline/abandoned-download-terminals';
 import { wipePreviousAccountLocalData } from '../offline/account-boundary';
@@ -20,6 +26,15 @@ import { useOfflineSchemaReady } from '../db/use-offline-schema-ready';
 import { loadFollowedAuthors, useFollowedAuthors } from '../lib/graphql/hooks/use-followed-authors';
 import { invalidateFollowingCatalogueQueries, isCatalogueQuery } from '../lib/graphql/author-query-invalidation';
 import { useLaunchWritesReady } from '../providers/launch-ready-context';
+
+/** How often one sign-in retries an owner claim that failed without deciding anything. */
+const CLAIM_RETRY_LIMIT = 3;
+
+/**
+ * Why sync is held (#6824). `wipe-failed` and `no-user-id` hold for the session;
+ * `claim-failed` is reported once the retries above are spent.
+ */
+type OwnerClaimHold = 'wipe-failed' | 'no-user-id' | 'claim-failed';
 
 /**
  * Publishes the permanently enabled native offline engine to the module-level
@@ -106,23 +121,38 @@ export function OfflineSyncBridge() {
   // (#6824). The outbox records no owner and the server files a replayed write
   // under the token that sends it, so a scheduler started before this effect
   // settles would drain the previous account's queued writes into this one.
-  // `ownerClaim` records the account and connection the stamp was confirmed
-  // for; the scheduler, the launch sweep and the outbox recovery wait for it.
-  // It fails closed: a wipe that throws, or a token with no readable user id,
-  // holds them for the session. Nothing persists the hold, so the next launch
-  // runs the check from scratch. The drainer and the pull check the stamp
-  // themselves as well, which covers the drains this bridge does not start.
-  const { userId: localUserId, isLoading: isLocalUserIdLoading } = useStoredUserId(isAuthenticated);
-  useNotificationUpdates(isAuthenticated && !isLoading, localUserId);
+  // `ownerClaim` records the connection the stamp was confirmed on for this
+  // sign-in; the scheduler, the launch sweep and the outbox recovery wait for it.
+  //
+  // The account comes from the token itself (`readSignedInAccount`), the one the
+  // drainer checks and the HTTP client attaches. Never from `useStoredUserId`:
+  // that query never goes stale, and an observer mounted on the login screen
+  // keeps what it read there (nothing on a fresh install, or the previous
+  // account's id from the token a lapsed session left behind).
+  //
+  // What a failure does depends on what failed. A wipe of the previous account's
+  // rows that throws holds sync for the session: those rows cannot be told apart
+  // from this account's. A token with no user id holds it too, since nothing can
+  // ever match it. Anything else (a read, the stamp write, credentials still
+  // settling) decided nothing, so the claim runs again on the next foreground or
+  // reconnect, up to CLAIM_RETRY_LIMIT times per sign-in. Nothing persists a
+  // hold, so the next launch starts from scratch. The drainer and the pull check
+  // the stamp themselves as well, which covers the drains this bridge does not
+  // start.
+  const { userId: storedUserId } = useStoredUserId(isAuthenticated);
+  useNotificationUpdates(isAuthenticated && !isLoading, storedUserId);
   const previousDatabase = useRef(db);
   const catalogueRecoveryPending = useRef(!schemaReady);
-  const [ownerClaim, setOwnerClaim] = useState<{ db: typeof db; userId: string } | null>(null);
-  const ownerClaimed =
-    isAuthenticated && localUserId !== undefined && ownerClaim?.db === db && ownerClaim.userId === localUserId;
+  const [ownerClaim, setOwnerClaim] = useState<{ db: typeof db } | null>(null);
+  const ownerClaimed = isAuthenticated && ownerClaim?.db === db;
+  // Bumped by a foreground or a reconnect after a claim that failed without
+  // deciding anything; see the retry effect below.
+  const [claimAttempt, setClaimAttempt] = useState(0);
+  const claimRetry = useRef({ pending: false, left: CLAIM_RETRY_LIMIT });
   // One report per reason per mount: the bridge is mounted once at the root, and
   // a held session would otherwise repeat it on every re-run. No ids.
   const reportedHolds = useRef(new Set<string>());
-  const reportHoldOnce = useCallback((reason: 'prepare-failed' | 'no-user-id', cause?: unknown) => {
+  const reportHoldOnce = useCallback((reason: OwnerClaimHold, cause?: unknown) => {
     if (reportedHolds.current.has(reason)) return;
     reportedHolds.current.add(reason);
     reportHandledError(new Error(`Offline sync held for this session: ${reason}`, { cause }), {
@@ -136,15 +166,31 @@ export function OfflineSyncBridge() {
     // delays and canceled preparations, without refreshing normal ready launches.
     if (!schemaReady || previousDatabase.current !== db) catalogueRecoveryPending.current = true;
     previousDatabase.current = db;
-    // A claim belongs to one session: the next sign-in proves itself again.
-    if (!isAuthenticated) setOwnerClaim(null);
-    if (!isAuthenticated || !localUserId || !schemaReady || !launchWritesReady) return;
+    if (!isAuthenticated) {
+      // A claim belongs to one sign-in: the next one proves itself again.
+      setOwnerClaim(null);
+      claimRetry.current = { pending: false, left: CLAIM_RETRY_LIMIT };
+      return;
+    }
+    if (!schemaReady || !launchWritesReady) return;
     let cancelled = false;
     void (async () => {
+      let localUserId: string;
+      // Which step threw decides the catch below.
+      let step: 'claim' | 'wipe' = 'claim';
       try {
+        const account = await readSignedInAccount();
+        if (cancelled) return;
+        if (account.status === 'no-user-id') {
+          reportHoldOnce('no-user-id');
+          return;
+        }
+        if (account.status === 'unsettled') throw new Error('The signed-in credentials could not be read yet');
+        localUserId = account.userId;
         const ownership = await assertLocalUserDataOwner(db, localUserId);
         if (cancelled) return;
         if (ownership !== 'ok') catalogueRecoveryPending.current = true;
+        step = ownership === 'mismatch' ? 'wipe' : 'claim';
         if (ownership === 'mismatch') {
           reportError(new Error('Local offline user data belonged to a different account'), {
             tags: { source: 'offline-sync', op: 'owner-stamp-mismatch' },
@@ -155,18 +201,25 @@ export function OfflineSyncBridge() {
           await wipePreviousAccountLocalData(db);
           if (cancelled) return;
         }
+        step = 'claim';
         if (ownership !== 'ok') await stampLocalUserId(db, localUserId);
         if (cancelled) return;
         // The device is this account's now: release the scheduler and the
         // launch passes below.
-        setOwnerClaim({ db, userId: localUserId });
+        setOwnerClaim({ db });
       } catch (error) {
+        if (cancelled) return;
         if (__DEV__) {
           console.warn('[OfflineSyncBridge] failed to claim local user data:', error);
         }
-        // Fail closed (#6824): the previous account's rows may still be on disk,
-        // so nothing drains or pulls this session.
-        if (!cancelled) reportHoldOnce('prepare-failed', error);
+        if (step === 'wipe') {
+          // Fail closed: the previous account's rows are still on disk.
+          reportHoldOnce('wipe-failed', error);
+        } else if (claimRetry.current.left > 0) {
+          claimRetry.current.pending = true;
+        } else {
+          reportHoldOnce('claim-failed', error);
+        }
         return;
       }
       try {
@@ -200,14 +253,32 @@ export function OfflineSyncBridge() {
     return () => {
       cancelled = true;
     };
-  }, [db, isAuthenticated, localUserId, schemaReady, launchWritesReady, queryClient, reportHoldOnce]);
+  }, [db, isAuthenticated, schemaReady, launchWritesReady, queryClient, reportHoldOnce, claimAttempt]);
 
-  // A token with no readable user id can never be matched against the stamp, so
-  // the claim above never runs and sync stays held (#6824). Say so once.
+  // The claim's second chance (#6824): a claim that failed without deciding
+  // anything runs again when the app comes back to the foreground or the
+  // connection returns, which is when a locked database or a keychain that was
+  // unavailable is likely to have recovered.
   useEffect(() => {
-    if (!isAuthenticated || isLoading || isLocalUserIdLoading || localUserId) return;
-    reportHoldOnce('no-user-id');
-  }, [isAuthenticated, isLoading, isLocalUserIdLoading, localUserId, reportHoldOnce]);
+    if (!isAuthenticated) return undefined;
+    const retryClaim = () => {
+      const retry = claimRetry.current;
+      if (!retry.pending || retry.left <= 0) return;
+      retry.pending = false;
+      retry.left -= 1;
+      setClaimAttempt((attempt) => attempt + 1);
+    };
+    const appStateSubscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') retryClaim();
+    });
+    const unsubscribeOnline = onlineManager.subscribe((online) => {
+      if (online) retryClaim();
+    });
+    return () => {
+      appStateSubscription.remove();
+      unsubscribeOnline();
+    };
+  }, [isAuthenticated]);
 
   // The download funnel's launch backstop (issue #4452). Every in-session
   // de-listing path reports its own terminal now — the My Boards toggle-off and
