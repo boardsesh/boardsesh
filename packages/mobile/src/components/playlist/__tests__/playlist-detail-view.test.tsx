@@ -91,7 +91,9 @@ vi.mock('react-native', () => ({
     if (accessibilityLabel) attrs['aria-label'] = accessibilityLabel;
     // Where a view starts and how wide it is: enough to tell a thumbnail-sized
     // frame, and a separator's inset.
-    const { marginStart, width, minHeight } = Object.assign({}, ...[style].flat(10).filter(Boolean)) as {
+    const { marginStart, width, minHeight, position, top } = Object.assign({}, ...[style].flat(10).filter(Boolean)) as {
+      position?: string;
+      top?: number;
       marginStart?: number;
       width?: number | string;
       minHeight?: number;
@@ -99,6 +101,8 @@ vi.mock('react-native', () => ({
     if (marginStart !== undefined) attrs['data-margin-start'] = marginStart;
     if (width !== undefined) attrs['data-width'] = width;
     if (minHeight !== undefined) attrs['data-min-height'] = minHeight;
+    if (position !== undefined) attrs['data-position'] = position;
+    if (top !== undefined) attrs['data-top'] = top;
     return createElement('div', attrs, children);
   },
   Pressable: ({
@@ -312,7 +316,21 @@ vi.mock('../../icon-map', () => ({ iconMap: {} }));
 // react-native-paper drags in expo-modules-core at import time; stub the only
 // pieces the Material branch uses so the suite can load.
 vi.mock('react-native-paper', () => {
-  const Header = ({ children }: { children?: ReactNode }) => createElement('div', { 'data-appbar': 'true' }, children);
+  const Header = ({
+    children,
+    style,
+    statusBarHeight,
+  }: {
+    children?: ReactNode;
+    style?: unknown;
+    statusBarHeight?: number;
+  }) => {
+    const { position } = Object.assign({}, ...[style].flat(10).filter(Boolean)) as { position?: string };
+    const attrs: Record<string, unknown> = { 'data-appbar': 'true' };
+    if (position !== undefined) attrs['data-appbar-style-position'] = position;
+    if (statusBarHeight !== undefined) attrs['data-status-bar-height'] = statusBarHeight;
+    return createElement('div', attrs, children);
+  };
   const BackAction = ({ onPress, accessibilityLabel }: { onPress?: () => void; accessibilityLabel?: string }) =>
     createElement('button', { 'data-icon': 'back', onClick: onPress, 'aria-label': accessibilityLabel });
   const Content = ({ title }: { title?: ReactNode }) => createElement('span', { 'data-appbar-title': 'true' }, title);
@@ -1027,6 +1045,16 @@ describe('PlaylistDetailView', () => {
       expect(container.querySelector('[data-appbar]')).not.toBeNull();
       // No gradient hero in the Material branch.
       expect(container.querySelector('[data-gradient]')).toBeNull();
+    });
+
+    it('pins the app bar wrapper to the top, not the Appbar.Header style (#6568)', () => {
+      const { container } = render(<PlaylistDetailView {...makeProps({ climbs: [CLIMB] })} />);
+      const appbar = container.querySelector('[data-appbar]') as HTMLElement;
+      expect(appbar.getAttribute('data-appbar-style-position')).toBeNull();
+      expect(appbar.getAttribute('data-status-bar-height')).toBe('0');
+      const wrapper = appbar.parentElement as HTMLElement;
+      expect(wrapper.getAttribute('data-position')).toBe('absolute');
+      expect(wrapper.getAttribute('data-top')).toBe('0');
     });
 
     it('keeps its in-body app bar and hides the native header (header XOR in-body Appbar)', () => {

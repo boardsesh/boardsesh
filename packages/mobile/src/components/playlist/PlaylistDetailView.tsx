@@ -823,39 +823,48 @@ export function PlaylistDetailView({
         </ReadableColumn>
 
         {/* Collapsing M3 top app bar — sits over the hero band; its title fades in
-            as the band scrolls under it, then the band's name is hidden behind. */}
-        <Appbar.Header
-          statusBarHeight={insets.top}
-          mode="small"
-          style={[styles.materialAppbar, { backgroundColor: systemColors.secondaryBackground }]}
+            as the band scrolls under it, then the band's name is hidden behind.
+            The wrapper is the absolute layer: Paper sends `style` to the inner bar,
+            not to its in-flow root View, which would land below the list. */}
+        <View
+          style={[
+            styles.materialAppbarContainer,
+            { paddingTop: insets.top, backgroundColor: systemColors.secondaryBackground },
+          ]}
         >
-          <Appbar.BackAction
-            onPress={() => router.back()}
-            color={systemColors.label as string}
-            rippleColor={withAlpha(accent, 0.16)}
-            accessibilityLabel={tCommon('ariaLabels.back')}
-          />
-          <Animated.View style={[styles.materialAppbarTitle, headerBarStyle]}>
-            <Appbar.Content title={hero.name} titleStyle={styles.materialAppbarTitleText} />
-          </Animated.View>
-          {/* The ≡ filter button, then the owner / follow / pin controls. The app bar
+          <Appbar.Header
+            statusBarHeight={0}
+            mode="small"
+            style={[styles.materialAppbar, { backgroundColor: systemColors.secondaryBackground }]}
+          >
+            <Appbar.BackAction
+              onPress={() => router.back()}
+              color={systemColors.label as string}
+              rippleColor={withAlpha(accent, 0.16)}
+              accessibilityLabel={tCommon('ariaLabels.back')}
+            />
+            <Animated.View style={[styles.materialAppbarTitle, headerBarStyle]}>
+              <Appbar.Content title={hero.name} titleStyle={styles.materialAppbarTitleText} />
+            </Animated.View>
+            {/* The ≡ filter button, then the owner / follow / pin controls. The app bar
               is always present on Material, so we ask for the compact icon form
               (`actions(true)`) — `GlassIconButton` routes to a Paper `IconButton`
               here, fitting the bar. */}
-          {filterAction && !editMode ? (
-            <PlaylistFilterHeaderButton activeCount={filterAction.activeCount} onPress={filterAction.onPress} />
-          ) : null}
-          {actions?.(true)}
-          {showPlayAll ? (
-            <Appbar.Action
-              icon="play"
-              color={accent as string}
-              rippleColor={withAlpha(accent, 0.16)}
-              onPress={handleActivateAll}
-              accessibilityLabel={t('detail.activateAll')}
-            />
-          ) : null}
-        </Appbar.Header>
+            {filterAction && !editMode ? (
+              <PlaylistFilterHeaderButton activeCount={filterAction.activeCount} onPress={filterAction.onPress} />
+            ) : null}
+            {actions?.(true)}
+            {showPlayAll ? (
+              <Appbar.Action
+                icon="play"
+                color={accent as string}
+                rippleColor={withAlpha(accent, 0.16)}
+                onPress={handleActivateAll}
+                accessibilityLabel={t('detail.activateAll')}
+              />
+            ) : null}
+          </Appbar.Header>
+        </View>
       </View>
     );
   }
@@ -1274,13 +1283,17 @@ const createStyles = (textStyles: TypographyScale) =>
       opacity: 0.7,
     },
     // ── Material hero ──────────────────────────────────────────────────────────
-    materialAppbar: {
+    materialAppbarContainer: {
       position: 'absolute',
       top: 0,
       left: 0,
       right: 0,
       zIndex: 2,
       elevation: 0,
+    },
+    materialAppbar: {
+      elevation: 0,
+      shadowOpacity: 0,
     },
     // Wraps Appbar.Content so the title can fade in (opacity-animated) as the hero
     // band scrolls under the bar, without animating the back / play actions.
