@@ -24,6 +24,7 @@ import commonEs from '@boardsesh/i18n/locales/es/common.json';
 import consentFr from '@boardsesh/i18n/locales/fr/consent.json';
 import commonFr from '@boardsesh/i18n/locales/fr/common.json';
 import consentDe from '@boardsesh/i18n/locales/de/consent.json';
+import consentZhHans from '@boardsesh/i18n/locales/zh-Hans/consent.json';
 import commonDe from '@boardsesh/i18n/locales/de/common.json';
 import commonZhHans from '@boardsesh/i18n/locales/zh-Hans/common.json';
 
@@ -156,6 +157,7 @@ const resources = {
   },
   'zh-Hans': {
     common: commonZhHans,
+    consent: consentZhHans,
     auth: authZhHans,
     climbs: climbsZhHans,
     session: sessionZhHans,
