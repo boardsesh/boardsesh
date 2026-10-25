@@ -22,7 +22,7 @@
 // client coupling. Callers wire `sendArgs` / `sendDeferredQueueAdd` to
 // their platform-specific transport.
 
-import type { ClimbQueueItem } from '@boardsesh/queue';
+import type { ClimbQueueItem, CurrentClimbPlacement } from '@boardsesh/queue';
 
 // `TItem` is the queue-item type the caller deals in. It defaults to the shared
 // `ClimbQueueItem`, so existing callers (and the queue-runtime tests) need no
@@ -32,6 +32,15 @@ export type SetCurrentClimbArgs<TItem = ClimbQueueItem> = {
   item: TItem | null;
   shouldAddToQueue?: boolean;
   correlationId?: string;
+  /**
+   * F3 now-slot mode: how the server puts the climb on the wall. A request
+   * that carries it never fires a deferred queue-add: the climb goes on the
+   * wall at the Now slot and is History once you move on, so a superseded or
+   * lost open loses nothing worth keeping (the peek never reached the wall),
+   * and re-sending it as an add would put every fast swipe's middle peek into
+   * the crew's Up next.
+   */
+  placement?: CurrentClimbPlacement;
 };
 
 export type SetCurrentClimbCoalescerOptions<TContext = void, TItem = ClimbQueueItem> = {
@@ -101,8 +110,10 @@ export function createSetCurrentClimbCoalescer<TContext = void, TItem = ClimbQue
   // the drain loop would hold `inFlight` true, parking later activations as
   // pending and manufacturing more supersedes.
   function fireDeferredQueueAdd(lost: Pending): void {
-    const { item, shouldAddToQueue } = lost.args;
-    if (!shouldAddToQueue || item === null || options.sendDeferredQueueAdd === undefined) return;
+    const { item, shouldAddToQueue, placement } = lost.args;
+    if (!shouldAddToQueue || placement !== undefined || item === null || options.sendDeferredQueueAdd === undefined) {
+      return;
+    }
     try {
       options.sendDeferredQueueAdd(item, lost.context).catch(onDeferredQueueAddError);
     } catch (error) {

@@ -58,6 +58,25 @@ describe('mapSubscriptionEnvelopeToAction', () => {
     expect(result.action.payload.queue[0].climb.setter_username).toBe('');
   });
 
+  it('passes the F3 historyCount of a FullSync through, and null when the document does not select it', () => {
+    const withLine: SubscriptionWireEnvelope<WireItem> = {
+      __typename: 'FullSync',
+      state: { queue: [wireItem('a'), wireItem('b')], currentClimbQueueItem: null, historyCount: 1 },
+    };
+    const withoutLine: SubscriptionWireEnvelope<WireItem> = {
+      __typename: 'FullSync',
+      state: { queue: [wireItem('a')], currentClimbQueueItem: null },
+    };
+    const lineOf = (envelope: SubscriptionWireEnvelope<WireItem>) => {
+      const result = mapSubscriptionEnvelopeToAction(envelope, { mapItem: liftToClimbItem });
+      return result.kind === 'dispatch' && result.action.type === 'INITIAL_QUEUE_DATA'
+        ? result.action.payload.historyCount
+        : 'not dispatched';
+    };
+    expect(lineOf(withLine)).toBe(1);
+    expect(lineOf(withoutLine)).toBeNull();
+  });
+
   it('handles QueueItemAdded with either addedItem (mobile alias) or item (web)', () => {
     const mobileEnvelope: SubscriptionWireEnvelope<WireItem> = {
       __typename: 'QueueItemAdded',

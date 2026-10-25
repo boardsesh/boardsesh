@@ -40,6 +40,10 @@ export type SubscriptionWireEnvelope<TWireItem> =
         currentClimbQueueItem: TWireItem | null;
         stateHash?: string | null;
         stateHashOrdered?: string | null;
+        /** F3: selected only by the `_NOW_SLOT` subscription document. */
+        historyCount?: number | null;
+        /** F3: when the room's current climb last changed (ISO 8601). Read by the #4979 hold. */
+        currentChangedAt?: string | null;
       };
       sequence?: number | null;
       stateHash?: string | null;
@@ -146,6 +150,7 @@ function liftEnvelopeToSyncEvent<TWireItem>(
           queue: envelope.state.queue.map(lift),
           currentClimbQueueItem:
             envelope.state.currentClimbQueueItem === null ? null : lift(envelope.state.currentClimbQueueItem),
+          historyCount: envelope.state.historyCount ?? null,
         },
       };
     case 'QueueItemAdded': {
