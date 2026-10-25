@@ -28,6 +28,11 @@ export function resetBoardQrScansForTests(): void {
   recentLandings.clear();
 }
 
+/** Tests only: how many landings the dedupe window is holding. */
+export function recentBoardQrScanCountForTests(): number {
+  return recentLandings.size;
+}
+
 /** The route params a QR landing reads. A repeated param arrives as an array. */
 export type BoardQrRouteParams = {
   src?: string | string[];
@@ -49,9 +54,12 @@ export function boardQrScanMedium(params: BoardQrRouteParams): GymQrMedium | nul
  * `landingKey` names the URL that opened it (never sent): the same landing
  * within {@link BOARD_QR_SCAN_DEDUPE_MS} counts once.
  *
- * A cold-start scan can resolve before the analytics SDK is ready. When consent
- * is already given, the capture waits for the SDK (the runner gives up after two
- * minutes); with no consent it is dropped, and a later Allow never replays it.
+ * A cold-start scan can resolve before the analytics SDK is ready.
+ * `isProductAnalyticsGranted` is true only once consent is given AND the SDK is
+ * ready, so that case sends at once. Otherwise, with consent already given, the
+ * consent-bound runner holds the capture until the SDK is ready (it gives up
+ * after two minutes); with no consent it is dropped, and a later Allow never
+ * replays it.
  *
  * The browser app sends nothing: `surface: 'app'` is the store app, and a
  * printed code never points at the browser app.
@@ -63,9 +71,12 @@ export function trackBoardQrScan(
   nowMs: number = Date.now(),
 ): void {
   if (RELAXES_ANONYMOUS_ROUTES) return;
+  // Forget landings outside the window so the map holds only live ones.
+  for (const [key, countedAt] of recentLandings) {
+    if (nowMs - countedAt >= BOARD_QR_SCAN_DEDUPE_MS || nowMs < countedAt) recentLandings.delete(key);
+  }
   const dedupeKey = `${landingKey}#${medium}`;
-  const countedAt = recentLandings.get(dedupeKey);
-  if (countedAt !== undefined && nowMs - countedAt >= 0 && nowMs - countedAt < BOARD_QR_SCAN_DEDUPE_MS) return;
+  if (recentLandings.has(dedupeKey)) return;
   recentLandings.set(dedupeKey, nowMs);
 
   const event = boardQrScanned({ medium, surface: 'app', boardType });

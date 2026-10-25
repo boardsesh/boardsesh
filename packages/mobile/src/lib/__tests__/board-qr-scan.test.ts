@@ -6,8 +6,13 @@ import { updateConsentState } from '../consent-state';
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
 vi.mock('../analytics', () => ({ track: analytics.track }));
 
-const { BOARD_QR_SCAN_DEDUPE_MS, boardQrScanMedium, resetBoardQrScansForTests, trackBoardQrScan } =
-  await import('../board-qr-scan');
+const {
+  BOARD_QR_SCAN_DEDUPE_MS,
+  boardQrScanMedium,
+  recentBoardQrScanCountForTests,
+  resetBoardQrScansForTests,
+  trackBoardQrScan,
+} = await import('../board-qr-scan');
 
 const LANDING = '/b/garage-spray#';
 
@@ -91,6 +96,15 @@ describe('trackBoardQrScan', () => {
     trackBoardQrScan('board', 'spray', LANDING, 1_000 + BOARD_QR_SCAN_DEDUPE_MS);
 
     expect(analytics.track).toHaveBeenCalledTimes(2);
+  });
+
+  it('forgets landings once their window has passed', () => {
+    trackBoardQrScan('board', 'spray', LANDING, 1_000);
+    trackBoardQrScan('board', 'kilter', '/b/the-garage#', 2_000);
+    expect(recentBoardQrScanCountForTests()).toBe(2);
+
+    trackBoardQrScan('kiosk', 'kilter', '/b/another#', 2_000 + BOARD_QR_SCAN_DEDUPE_MS);
+    expect(recentBoardQrScanCountForTests()).toBe(1);
   });
 
   it('counts another board or another medium straight away', () => {

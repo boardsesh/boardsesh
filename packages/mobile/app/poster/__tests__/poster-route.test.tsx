@@ -48,6 +48,14 @@ describe('poster link fallback route', () => {
     expect(router.replace).toHaveBeenCalledWith('/(tabs)/home');
   });
 
+  it('opens the poster root when the link names no page', () => {
+    route.params = {};
+    render(createElement(PosterLinkRoute));
+
+    expect(browser.open).toHaveBeenCalledWith('https://www.boardsesh.com/poster', 'poster-link-fallback');
+    expect(router.replace).toHaveBeenCalledWith('/(tabs)/home');
+  });
+
   it('opens once across re-renders', () => {
     const { rerender } = render(createElement(PosterLinkRoute));
     rerender(createElement(PosterLinkRoute));
