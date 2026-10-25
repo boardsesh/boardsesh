@@ -719,7 +719,9 @@ replaces the client, so the dispose announces the dropped one (`subscribeWsClien
 session engine re-binds its join, streams and listeners to whatever client `getWsClient()` returns when
 it re-joins. Before that, the engine stayed on the dead client, and after offline mode on → off every
 session mutation failed with "Must be in a session" (see `docs/websocket-implementation.md`, "A
-long-lived consumer must not keep the client it got once").
+long-lived consumer must not keep the client it got once"). The spray-wall notification stream and the
+live climb-stats stream re-bind the same way, and `execute` reads a client getter for each rate-limit
+retry (#6766).
 It does **not** touch analytics, Sentry, OTA updates, the board-snapshot CDN or sign-in. Turning it
 back off resets `backend` to `unknown` and re-asks the server rather than trusting anything concluded
 while nobody was talking to it. Sign-out resets it (`source: 'sign_out'`): a signed-out phone with the

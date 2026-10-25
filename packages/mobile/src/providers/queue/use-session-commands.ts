@@ -256,7 +256,7 @@ export function useSessionCommands({
       // sendLeaveOnCleanup in use-session-lifecycle.ts.
       if (options?.notifyServer && sessionIdRef.current) {
         try {
-          await execute(getWsClient(), { query: LEAVE_SESSION }, 5000);
+          await execute(getWsClient, { query: LEAVE_SESSION }, 5000);
         } catch (error) {
           if (__DEV__) console.warn('[queue] leaveSession on switch failed', error);
         }

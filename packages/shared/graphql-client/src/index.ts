@@ -27,7 +27,7 @@ export {
 
 export { getOperationName } from './operation-name';
 
-export type { ExecuteOptions, RateLimitRetryEvent } from './execute';
+export type { ClientSource, ExecuteOptions, RateLimitRetryEvent } from './execute';
 export { execute } from './execute';
 export { subscribe } from './subscribe';
 

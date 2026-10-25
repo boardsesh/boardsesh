@@ -352,9 +352,16 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
     client: Client,
     operation: { query: string; variables?: Record<string, unknown> },
   ): Promise<TData> {
+    // A rate-limit retry re-reads the live client, so a wait that spans a
+    // dispose (offline mode on) does not resend on the dead one, which would
+    // open a socket no later dispose closes. While offline mode is on the live
+    // client is the inert one, and the retry fails cleanly (#6766).
+    const currentClient = () => getClient() ?? client;
     // Only pass options when there's something to inject, so callers/tests that
     // assert the two-arg `execute(client, op)` shape stay green.
-    return onRateLimited ? execute<TData>(client, operation, { onRateLimited }) : execute<TData>(client, operation);
+    return onRateLimited
+      ? execute<TData>(currentClient, operation, { onRateLimited })
+      : execute<TData>(currentClient, operation);
   }
 
   // Mobile's `ensureReady` runs JOIN_SESSION on whichever client is current

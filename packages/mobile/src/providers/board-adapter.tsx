@@ -10,9 +10,7 @@ import { BoardAdapterProvider, type BoardAdapter } from '@boardsesh/board-react'
 import { execute } from '@boardsesh/graphql-client';
 import {
   CLIMB_STATS_FOR_CLIMBS,
-  CLIMB_STATS_UPDATED_SUBSCRIPTION,
   type ClimbStatsForClimbsResponse,
-  type ClimbStatsUpdatedSubscriptionResponse,
   type SaveTickMutationResponse,
   type SaveTickMutationVariables,
 } from '@boardsesh/graphql/operations';
@@ -21,12 +19,12 @@ import { useOfflineDownloadsEnabled } from './feature-flags-provider';
 import { useQueueSessionId } from './queue-provider';
 import { useToast } from './toast-provider';
 import { getDatabaseHandle } from '../db';
-import { getConnectivitySnapshot, subscribeConnectivity } from '../lib/connectivity/connectivity-store';
 import { getHttpClient, getOfflineSyncHttpClient } from '../lib/graphql/client';
 import { offlineAwareRequest } from '../lib/graphql/offline-request';
 import { captureAuthCredentialGeneration, isAuthCredentialGenerationCurrent } from '../lib/auth-store';
 import { reportHandledError } from '../lib/error-reporting';
 import { getWsClient } from '../lib/graphql/ws-client';
+import { subscribeClimbStatsStream } from '../lib/climb-stats/subscribe-climb-stats-stream';
 import { drainMutationQueue, isOnline, subscribeMutationDelivery, triggerSync } from '../offline/offline-sync-adapter';
 import { mirrorWrittenClimb } from '../offline/mirror-written-climb';
 import { useSnapshotSource } from '../offline/use-snapshot-source';
@@ -123,7 +121,7 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
       isAuthenticated,
       isAuthLoading: isLoading,
       executeHttp: (query, variables) => offlineAwareRequest(query, variables),
-      executeWs: ({ query, variables }) => execute(getWsClient(), { query, variables }),
+      executeWs: ({ query, variables }) => execute(getWsClient, { query, variables }),
       afterClimbWrite: mirrorWrittenClimb,
       resolveActiveSessionId: () => sessionIdRef.current,
       captureAuthEpoch: captureAuthCredentialGeneration,
@@ -136,85 +134,7 @@ export function BoardAdapterWrapper({ children }: { children: ReactNode }) {
         });
         return response.climbStatsForClimbs;
       },
-      subscribeClimbStats: (boardType, layoutId, handlers) => {
-        const wsClient = getWsClient();
-        let disposed = false;
-        let retryAttempt = 0;
-        let retryTimer: ReturnType<typeof setTimeout> | null = null;
-        let unsubscribeStats: (() => void) | null = null;
-        // Live stats need a reachable backend. While the connectivity store
-        // says we're effectively offline, a (re)subscribe can only fail, and
-        // the exponential ladder below would keep waking the socket against a
-        // server we know is down (#4862). Park it on this flag instead and let
-        // the store's edge back to reachable restart it.
-        let deferredForConnectivity = false;
-
-        const scheduleRetry = () => {
-          if (disposed || retryTimer) return;
-          // Don't arm a timer during an outage — the connectivity listener
-          // below is a better wake-up than a 30s ladder that can only fail.
-          if (getConnectivitySnapshot().effectiveOffline) {
-            deferredForConnectivity = true;
-            return;
-          }
-          const delayMs = Math.min(30_000, 1_000 * 2 ** retryAttempt);
-          retryAttempt += 1;
-          retryTimer = setTimeout(() => {
-            retryTimer = null;
-            startSubscription();
-          }, delayMs);
-        };
-        const startSubscription = () => {
-          if (disposed) return;
-          if (getConnectivitySnapshot().effectiveOffline) {
-            deferredForConnectivity = true;
-            return;
-          }
-          unsubscribeStats = wsClient.subscribe<ClimbStatsUpdatedSubscriptionResponse>(
-            {
-              query: CLIMB_STATS_UPDATED_SUBSCRIPTION,
-              variables: { boardType, layoutId },
-            },
-            {
-              next: (result) => {
-                retryAttempt = 0;
-                const event = result.data?.climbStatsUpdated;
-                if (event) handlers.next(event);
-              },
-              error: (error) => {
-                unsubscribeStats = null;
-                handlers.error(error);
-                scheduleRetry();
-              },
-              complete: () => {
-                unsubscribeStats = null;
-                scheduleRetry();
-              },
-            },
-          );
-        };
-        const unsubscribeConnected = wsClient.on('connected', handlers.connected);
-        // One resubscribe per outage, on the edge back to reachable: the flag
-        // gates it, so the store's other snapshot changes can't re-enter here.
-        // `retryAttempt` resets so the first post-outage failure retries fast
-        // rather than inheriting the pre-outage ladder position.
-        const unsubscribeConnectivity = subscribeConnectivity(() => {
-          if (deferredForConnectivity && !getConnectivitySnapshot().effectiveOffline) {
-            deferredForConnectivity = false;
-            retryAttempt = 0;
-            startSubscription();
-          }
-        });
-        startSubscription();
-        return () => {
-          disposed = true;
-          if (retryTimer) clearTimeout(retryTimer);
-          retryTimer = null;
-          unsubscribeStats?.();
-          unsubscribeConnected();
-          unsubscribeConnectivity();
-        };
-      },
+      subscribeClimbStats: subscribeClimbStatsStream,
       subscribeOfflineMutationDelivery: subscribeMutationDelivery,
       readLocalTickRevisions,
       scheduleTask: (callback, delayMs) => {

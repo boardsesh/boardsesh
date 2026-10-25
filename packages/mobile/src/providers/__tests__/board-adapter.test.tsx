@@ -164,6 +164,7 @@ vi.mock('../../hooks/use-offline-mutations', () => ({
 }));
 
 import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { notifyWsClientDisposed } from '../../lib/graphql/ws-client-lifecycle';
 import { BoardAdapterWrapper } from '../board-adapter';
 
 beforeEach(() => {
@@ -282,6 +283,77 @@ describe('BoardAdapterWrapper offline gating', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// Issue #6766. Offline mode disposes the client the stream runs on, and
+// graphql-ws opens a fresh socket for any new operation on a disposed client.
+// The stream must let go of it and come back on the replacement.
+describe('BoardAdapterWrapper live stats across a client dispose', () => {
+  type StatsSink = { next: (result: unknown) => void; error: (error: unknown) => void; complete: () => void };
+
+  function makeMockClient() {
+    const release = vi.fn();
+    const unbindConnected = vi.fn();
+    const sinks: StatsSink[] = [];
+    const client = {
+      on: vi.fn(() => unbindConnected),
+      subscribe: vi.fn((_request: unknown, sink: StatsSink) => {
+        sinks.push(sink);
+        return release;
+      }),
+    };
+    return { client, release, unbindConnected, sinks };
+  }
+
+  it('releases the disposed client and resubscribes on the replacement after the outage', () => {
+    const disposedClient = makeMockClient();
+    const replacementClient = makeMockClient();
+    wsMocks.getClient.mockReturnValue(disposedClient.client);
+    try {
+      render(<BoardAdapterWrapper>{null}</BoardAdapterWrapper>);
+      const handlers = { next: vi.fn(), connected: vi.fn(), error: vi.fn() };
+      const unsubscribe = capturedAdapter?.subscribeClimbStats?.('kilter', 1, handlers);
+      expect(disposedClient.client.subscribe).toHaveBeenCalledTimes(1);
+      expect(disposedClient.client.on).toHaveBeenCalledWith('connected', handlers.connected);
+
+      // Offline mode on: the store goes offline, then the bridge disposes.
+      connectivity.setOffline(true);
+      notifyWsClientDisposed(disposedClient.client as never);
+      expect(disposedClient.release).toHaveBeenCalledTimes(1);
+      expect(disposedClient.unbindConnected).toHaveBeenCalledTimes(1);
+
+      // Offline mode off: the next getWsClient() is the replacement.
+      wsMocks.getClient.mockReturnValue(replacementClient.client);
+      connectivity.emit(false);
+      expect(replacementClient.client.subscribe).toHaveBeenCalledTimes(1);
+      expect(replacementClient.client.on).toHaveBeenCalledWith('connected', handlers.connected);
+      expect(disposedClient.client.subscribe).toHaveBeenCalledTimes(1);
+
+      // graphql-ws completes the released stream late. That must not stop the
+      // replacement's stream or arm a retry.
+      disposedClient.sinks[0]?.complete();
+      replacementClient.sinks[0]?.next({ data: { climbStatsUpdated: { climbUuid: 'climb-1' } } });
+      expect(handlers.next).toHaveBeenCalledWith({ climbUuid: 'climb-1' });
+      unsubscribe?.();
+      expect(replacementClient.release).toHaveBeenCalledTimes(1);
+      expect(replacementClient.unbindConnected).toHaveBeenCalledTimes(1);
+    } finally {
+      wsMocks.getClient.mockReturnValue({ on: wsMocks.on, subscribe: wsMocks.subscribe });
+    }
+  });
+
+  it('ignores a dispose of a client the stream is not on', () => {
+    render(<BoardAdapterWrapper>{null}</BoardAdapterWrapper>);
+    const handlers = { next: vi.fn(), connected: vi.fn(), error: vi.fn() };
+    const release = vi.fn();
+    wsMocks.subscribe.mockReturnValueOnce(release);
+    const unsubscribe = capturedAdapter?.subscribeClimbStats?.('kilter', 1, handlers);
+
+    notifyWsClientDisposed({} as never);
+    expect(release).not.toHaveBeenCalled();
+    unsubscribe?.();
+    expect(release).toHaveBeenCalledTimes(1);
   });
 });
 

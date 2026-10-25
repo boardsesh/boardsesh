@@ -371,7 +371,7 @@ describe('clearSession after active board removal', () => {
       await result.current.clearSession({ notifyServer: true });
     });
 
-    expect(mocks.execute).toHaveBeenCalledWith({}, { query: 'LeaveSession' }, 5000);
+    expect(mocks.execute).toHaveBeenCalledWith(expect.any(Function), { query: 'LeaveSession' }, 5000);
     expect(params.sessionIdRef.current).toBeNull();
     expect(params.setSessionId).toHaveBeenCalledWith(null);
     expect(mocks.request).not.toHaveBeenCalled();

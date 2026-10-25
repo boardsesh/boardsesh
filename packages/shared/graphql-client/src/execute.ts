@@ -9,6 +9,14 @@ import {
   RATE_LIMIT_RETRY_JITTER_MS,
 } from './constants';
 
+/**
+ * The client `execute` sends on: either a client, or a getter it calls again
+ * for every attempt. Pass a getter when the client can be replaced while an
+ * attempt waits out a rate limit. A disposed graphql-ws client still opens a
+ * fresh socket for each new operation, and no later dispose owns that socket.
+ */
+export type ClientSource = Client | (() => Client);
+
 /** Payload handed to `onRateLimited` before each rate-limit retry wait. */
 export type RateLimitRetryEvent = {
   /** 1-based retry number (1 = first retry after the initial rejection). */
@@ -69,11 +77,15 @@ function computeRateLimitWait(retryAfterSeconds: number | null, options: Require
  * quiet path for reconnect bursts (e.g. offline-reconciliation replaying
  * buffered adds) — the throttled request did no work, so re-sending is safe.
  *
+ * `client` may be a getter. It is read again for every attempt, including each
+ * attempt after a rate-limit wait, so a retry goes out on the client that is
+ * current then, not on one that was disposed during the wait.
+ *
  * Back-compat: the third arg may be a plain `timeoutMs` number (legacy callers)
  * or an `ExecuteOptions` object.
  */
 export function execute<TData = unknown, TVariables = Record<string, unknown>>(
-  client: Client,
+  client: ClientSource,
   operation: { query: string; variables?: TVariables },
   timeoutOrOptions: number | ExecuteOptions = MUTATION_TIMEOUT_MS,
 ): Promise<TData> {
@@ -98,7 +110,8 @@ export function execute<TData = unknown, TVariables = Record<string, unknown>>(
         fn();
       }
 
-      unsubscribe = client.subscribe<TData>(
+      const attemptClient = typeof client === 'function' ? client() : client;
+      unsubscribe = attemptClient.subscribe<TData>(
         { query: operation.query, variables: operation.variables as Record<string, unknown> },
         {
           next: (data) => {

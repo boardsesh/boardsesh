@@ -794,7 +794,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
               boardPath?: string | null;
               users?: SessionUser[] | null;
             };
-          }>(getWsClient(), {
+          }>(getWsClient, {
             query: JOIN_SESSION,
             variables: {
               sessionId: sid,
@@ -857,7 +857,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     const announced = announcedIdentityRef.current;
     if (announced && announced.username === partyUsername && announced.avatarUrl === partyAvatarUrl) return;
     const pending = { username: partyUsername, avatarUrl: partyAvatarUrl };
-    void execute(getWsClient(), { query: UPDATE_USERNAME, variables: pending })
+    void execute(getWsClient, { query: UPDATE_USERNAME, variables: pending })
       .then(() => {
         announcedIdentityRef.current = pending;
       })

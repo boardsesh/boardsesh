@@ -27,7 +27,7 @@ export type MobileBoardPresenceClient = FullBoardPresenceClient;
 export function createMobileBoardPresenceClient(getClient: () => Client): MobileBoardPresenceClient {
   return createBoardPresenceClient({
     execute<TData>(operation: BoardPresenceOperation) {
-      return execute<TData>(getClient(), operation);
+      return execute<TData>(getClient, operation);
     },
     subscribe<TData>(operation: BoardPresenceOperation, sink: BoardPresenceSink<TData>) {
       return subscribe<TData>(getClient(), operation, sink);

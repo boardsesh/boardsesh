@@ -509,6 +509,18 @@ After Offline mode on → off its streams and listeners sat on the dead client, 
 every session mutation (`getWsClient()` at send time) went out on a fresh connection that had never
 joined: "Must be in a session to perform this operation", with a new `connectionId` each time.
 
+The two other long-lived streams follow the same rule (#6766). The spray-wall notification stream
+(`notifications/use-spray-completion-updates.ts`) parks while Offline mode is on and subscribes on the
+current client when it goes off, including on a launch that starts with it on. Only Offline mode parks
+it: during a backend outage graphql-ws keeps its own reconnect ladder. The climb-stats stream
+(`lib/climb-stats/subscribe-climb-stats-stream.ts`) reads `getWsClient()` on every (re)subscribe and
+moves its `connected` listener with it. A disposed client still opens a new socket for a new
+operation, and no later dispose closes it, so the old stream left a socket open through the next
+Offline mode on. One-shot operations are covered too: `execute` takes a client getter and reads it for
+every attempt, so a rate-limit retry that waits across a dispose sends on the replacement (or fails at
+once on the inert Offline mode client) instead of the dead one. A queue mutation retried on a client that
+has never joined, after an on → off inside the wait, can still get "Must be in a session".
+
 **The socket outlives its last operation by 3 s** (`WS_LAZY_CLOSE_TIMEOUT_MS`, graphql-ws
 `lazyCloseTimeout`). The lazy default closes the socket as soon as the last operation completes, and
 before that operation's result reaches its caller. JOIN_SESSION is followed by the session streams, and

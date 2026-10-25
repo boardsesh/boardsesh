@@ -83,7 +83,8 @@ describe('createMobileBoardPresenceClient', () => {
 
     expect(climbs).toEqual(recent);
     const [passedClient, operation] = transport.execute.mock.calls[0];
-    expect(passedClient).toBe(fakeClient);
+    // The getter itself, so a rate-limit retry re-reads the client (#6766).
+    expect(passedClient).toBe(getClient);
     expect(operation.variables).toEqual({ boardId: 7 });
     expect(operation.query).toContain('boardRecentClimbs');
   });
@@ -105,7 +106,8 @@ describe('createMobileBoardPresenceClient', () => {
 
     expect(climbs).toEqual(history);
     const [passedClient, operation] = transport.execute.mock.calls[0];
-    expect(passedClient).toBe(fakeClient);
+    // The getter itself, so a rate-limit retry re-reads the client (#6766).
+    expect(passedClient).toBe(getClient);
     expect(operation.variables).toEqual({ boardId: 7, limit: 25, before: '900' });
     expect(operation.query).toContain('boardHistory');
   });

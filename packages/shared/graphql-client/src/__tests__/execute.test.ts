@@ -246,3 +246,39 @@ describe('execute — rate-limit retry (#2655)', () => {
     expect(result).toEqual({ ok: true });
   });
 });
+
+describe('execute — client getter (#6766)', () => {
+  it('reads a getter again for the retry after a rate-limit wait', async () => {
+    // Offline mode can dispose the first client while the retry waits. A
+    // disposed graphql-ws client still opens a new socket for a new operation,
+    // so the retry must go out on whichever client is current by then.
+    const first = makeScriptedClient([rateLimited(1)]);
+    const replacement = makeScriptedClient([{ kind: 'data', data: { ok: true } }]);
+    const clientsInOrder = [first.client, replacement.client];
+    const getClient = vi.fn(() => clientsInOrder.shift() ?? replacement.client);
+
+    const result = await execute<{ ok: boolean }>(
+      getClient,
+      { query: 'mutation Foo { ok }' },
+      { sleep: immediateSleep, rateLimitJitterMs: 0 },
+    );
+
+    expect(result).toEqual({ ok: true });
+    expect(getClient).toHaveBeenCalledTimes(2);
+    expect(first.subscribeSpy).toHaveBeenCalledTimes(1);
+    expect(replacement.subscribeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps sending on a plain client for every attempt', async () => {
+    const { client, subscribeSpy } = makeScriptedClient([rateLimited(1), { kind: 'data', data: { ok: true } }]);
+
+    const result = await execute<{ ok: boolean }>(
+      client,
+      { query: 'mutation Foo { ok }' },
+      { sleep: immediateSleep, rateLimitJitterMs: 0 },
+    );
+
+    expect(result).toEqual({ ok: true });
+    expect(subscribeSpy).toHaveBeenCalledTimes(2);
+  });
+});

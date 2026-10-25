@@ -189,10 +189,12 @@ describe('party / best-effort actions', () => {
     executeMock.mockRejectedValueOnce(new Error('socket down'));
     const onBestEffortError = vi.fn();
     await expect(make({ onBestEffortError }).confirmClimbOnWall('climb-1')).resolves.toBeUndefined();
-    expect(executeMock).toHaveBeenCalledWith(client, {
+    expect(executeMock).toHaveBeenCalledWith(expect.any(Function), {
       query: CONFIRM_CLIMB_ON_WALL,
       variables: { climbUuid: 'climb-1' },
     });
+    // The getter resolves to the live client on every attempt (#6766).
+    expect(executeMock.mock.calls[0][0]()).toBe(client);
     expect(onBestEffortError).toHaveBeenCalledWith('confirmClimbOnWall', expect.any(Error));
   });
 
