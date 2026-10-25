@@ -35,13 +35,14 @@ function rowsFor(stageId: string | undefined, count: number, firstIndex = 0): Pr
   });
 }
 
-function stage(previews: readonly PreviewItem[], plan: WorkoutPlan) {
+/** `mintPrefix` names one hand-over's round copies, so two hand-overs of a preview mint different ones, as `randomUUID` does. */
+function stage(previews: readonly PreviewItem[], plan: WorkoutPlan, mintPrefix = 'copy') {
   let minted = 0;
   return stagePreviewQueue({
     previews,
     plan,
     stageIdOf: (preview) => preview.slot.stageId,
-    mintUuid: () => `copy-${minted++}`,
+    mintUuid: () => `${mintPrefix}-${minted++}`,
   });
 }
 
@@ -170,8 +171,8 @@ describe('withoutQueuedSlots', () => {
     const plan = planOf(['four'], [fourByFour()]);
     const previews = rowsFor('four', 4);
     // A second hand-over of the same preview: round 1 again, fresh copies.
-    const firstAdd = stage(previews, plan);
-    const secondAdd = stage(previews, plan);
+    const firstAdd = stage(previews, plan, 'first');
+    const secondAdd = stage(previews, plan, 'second');
     const queued = new Set(firstAdd.items.slice(0, 1).map((item) => item.uuid));
 
     const kept = withoutQueuedSlots(secondAdd.items, secondAdd.slotIndexByUuid, queued);
@@ -183,9 +184,12 @@ describe('withoutQueuedSlots', () => {
   it('keeps nothing when the whole preview is already queued', () => {
     const plan = planOf(['four'], [fourByFour()]);
     const previews = rowsFor('four', 4);
-    const firstAdd = stage(previews, plan);
-    const secondAdd = stage(previews, plan);
+    const firstAdd = stage(previews, plan, 'first');
+    const secondAdd = stage(previews, plan, 'second');
     const queued = new Set(firstAdd.items.map((item) => item.uuid));
+    // Rounds 2 to 4 come back under uuids the queue has never seen, so a uuid
+    // check alone would queue 12 climbs again.
+    expect(secondAdd.items.filter((item) => !queued.has(item.uuid))).toHaveLength(12);
 
     expect(withoutQueuedSlots(secondAdd.items, secondAdd.slotIndexByUuid, queued)).toEqual([]);
   });
