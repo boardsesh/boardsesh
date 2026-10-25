@@ -14,6 +14,7 @@ const captures = vi.hoisted(() => ({
   qrValue: undefined as string | undefined,
   qrLabel: undefined as string | undefined,
   showToast: vi.fn(),
+  track: vi.fn(),
 }));
 vi.mock('react-native', () => ({
   Platform: {
@@ -77,6 +78,7 @@ vi.mock('../SheetTopBar', () => ({
 vi.mock('../../providers/theme-provider', () => ({ useTheme: () => ({ systemColors: { label: '#LABEL' } }) }));
 vi.mock('../../providers/toast-provider', () => ({ useToast: () => ({ showToast: captures.showToast }) }));
 vi.mock('../sheet-snap-points', () => ({ MEDIUM_LARGE_SNAP_POINTS: ['50%', '90%'] }));
+vi.mock('../../lib/analytics', () => ({ track: captures.track }));
 vi.mock('../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../theme/tokens', () => ({ spacing: { 2: 8, 3: 12, 4: 16, 6: 24 }, borderRadius: { lg: 12 } }));
 
@@ -211,6 +213,15 @@ describe('ShareAppSheet', () => {
     const message = vi.mocked(Share.share).mock.calls[0]?.[0]?.message ?? '';
     expect(message).toContain(JSON.stringify(storeUrlForAppShare('ios')).slice(1, -1));
     expect(message).toContain(JSON.stringify(storeUrlForAppShare('android')).slice(1, -1));
+  });
+
+  it('counts copy and share taps with the store the QR code showed', async () => {
+    const { getByText } = render(<ShareAppSheet onDismiss={vi.fn()} />);
+    act(() => getByText('mobile.about.shareApp.googlePlay').click());
+    await act(async () => getByText('mobile.about.shareApp.copyLink').click());
+    await act(async () => getByText('mobile.about.shareApp.share').click());
+    expect(captures.track).toHaveBeenNthCalledWith(1, 'App Share Action', { action: 'copy-link', store: 'android' });
+    expect(captures.track).toHaveBeenNthCalledWith(2, 'App Share Action', { action: 'share', store: 'android' });
   });
 
   it('closes from the top bar', () => {

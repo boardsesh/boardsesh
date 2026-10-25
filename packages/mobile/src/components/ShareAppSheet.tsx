@@ -11,8 +11,15 @@ import { SheetTopBar } from './SheetTopBar';
 import { useTheme } from '../providers/theme-provider';
 import { useToast } from '../providers/toast-provider';
 import { MEDIUM_LARGE_SNAP_POINTS } from './sheet-snap-points';
+import { track } from '../lib/analytics';
 import { hapticSelection } from '../lib/haptics';
-import { detectStorePlatform, storeUrlForAppShare, type StorePlatform } from '../lib/store-links';
+import {
+  APP_SHARE_ACTION_EVENT,
+  detectStorePlatform,
+  storeUrlForAppShare,
+  type AppShareActionProperties,
+  type StorePlatform,
+} from '../lib/store-links';
 import { spacing, borderRadius } from '../theme/tokens';
 
 type ShareAppSheetProps = {
@@ -61,14 +68,16 @@ export function ShareAppSheet({ onDismiss }: ShareAppSheetProps) {
 
   const handleCopyLink = useCallback(() => {
     hapticSelection();
+    track(APP_SHARE_ACTION_EVENT, { action: 'copy-link', store } satisfies AppShareActionProperties);
     void copyToClipboard(storeUrl, {
       copied: t('mobile.about.shareApp.copied'),
       failed: t('mobile.about.shareApp.copyFailed'),
     });
-  }, [copyToClipboard, storeUrl, t]);
+  }, [copyToClipboard, store, storeUrl, t]);
 
   const handleShare = useCallback(() => {
     hapticSelection();
+    track(APP_SHARE_ACTION_EVENT, { action: 'share', store } satisfies AppShareActionProperties);
     // The share message carries both stores: whoever receives it picks theirs.
     const message = t('mobile.about.shareApp.message', {
       iosUrl: storeUrlForAppShare('ios'),
@@ -89,7 +98,7 @@ export function ShareAppSheet({ onDismiss }: ShareAppSheetProps) {
       if (error instanceof Error && error.name === 'AbortError') return;
       void copyToClipboard(message, messageToasts);
     });
-  }, [copyToClipboard, t]);
+  }, [copyToClipboard, store, t]);
 
   return (
     <ModalSheet

@@ -713,6 +713,10 @@ store link by QR code, copy or share, tagged `utm_source=boardsesh`,
 `utm_medium=app-share`, `utm_campaign=about`. On Android that arrives as
 `install_medium = app-share`; on iOS it is `ct=app-share-about`. The browser
 build's About screen uses the same tags, so the two are counted together.
+Use of the sheet itself is the `App Share Action` event: `action` = `open`,
+`copy-link` or `share`, with `store` (`ios` / `android`, the QR code shown) on
+the two button actions. A share that falls back to copying still counts as
+`share`.
 
 On Android, `Install Attributed` fires whenever the Play referrer has any `utm_*` param.
 Play stamps organic installs too (`utm_source=google-play&utm_medium=organic`),

@@ -11,9 +11,11 @@ import { ShareAppSheet } from '../src/components/ShareAppSheet';
 import { Text } from '../src/components/Text';
 import { useBottomChromeMetrics } from '../src/hooks/use-bottom-chrome-metrics';
 import { useStackScreenOptions } from '../src/hooks/use-stack-screen-options';
+import { track } from '../src/lib/analytics';
 import { openDiscordInvite } from '../src/lib/discord';
 import { openExternalUrl } from '../src/lib/open-url';
 import { openPartnershipsEmail, PARTNERSHIPS_EMAIL } from '../src/lib/partnerships';
+import { APP_SHARE_ACTION_EVENT, type AppShareActionProperties } from '../src/lib/store-links';
 import { useTheme } from '../src/providers/theme-provider';
 import { useToast } from '../src/providers/toast-provider';
 import { borderRadius, cardCorners, spacing } from '../src/theme/tokens';
@@ -35,7 +37,10 @@ export default function AboutScreen() {
   const router = useRouter();
   const { showToast } = useToast();
   const [shareAppOpen, setShareAppOpen] = useState(false);
-  const handleOpenShareApp = useCallback(() => setShareAppOpen(true), []);
+  const handleOpenShareApp = useCallback(() => {
+    track(APP_SHARE_ACTION_EVENT, { action: 'open' } satisfies AppShareActionProperties);
+    setShareAppOpen(true);
+  }, []);
   const handleCloseShareApp = useCallback(() => setShareAppOpen(false), []);
   const handleJoinDiscord = useCallback(() => {
     void openDiscordInvite('about');

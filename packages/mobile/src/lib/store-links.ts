@@ -150,3 +150,11 @@ export function buildBrowserAppInstallClickProperties(
     placement: `browser-app-${surface}`,
   };
 }
+
+// `App Share Action` counts use of the About share sheet: `open` when it opens,
+// `copy-link` and `share` per button, with the store the QR code showed. The
+// UTM tags above say which installs it brought; this says how often it is used.
+// Like `App Install Click`, it carries no `utm_*` properties.
+export const APP_SHARE_ACTION_EVENT = 'App Share Action';
+
+export type AppShareActionProperties = { action: 'open' } | { action: 'copy-link' | 'share'; store: StorePlatform };
