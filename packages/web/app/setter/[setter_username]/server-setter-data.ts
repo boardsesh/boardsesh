@@ -10,6 +10,8 @@ import {
   type SerialPlanDb,
 } from '@boardsesh/db/queries';
 import { dbz, executeRows } from '@/app/lib/db/db';
+import { withReadDeadline } from '@/app/lib/db/read-deadline';
+import { remainingReadBudgetMs } from '@/app/lib/db/request-read-budget';
 import { boardClimbs, boardClimbStats } from '@/app/lib/db/schema';
 import { publishableAngleWhere, publishedAngleOrderBy } from '@/app/lib/seo/sitemap/published-angle';
 import { SETTER_PAGE_SIZE } from '@/app/lib/seo/sitemap/setter-page-contract';
@@ -295,7 +297,10 @@ function toClimbRow(row: Awaited<ReturnType<typeof buildSetterClimbsQuery>>[numb
  * Rethrows on query failure rather than degrading to an empty page, the rule
  * `fetchFrontDoorListPage` records: a 200 with no climbs on an indexable URL
  * reads to Google as legitimate thin content and the page gets dropped, where a
- * 5xx makes it retry and keep the URL.
+ * 5xx makes it retry and keep the URL. A blown read deadline is the same: it
+ * throws `DbReadTimeoutError`, never `null`. The two reads share the request's
+ * read budget. A drizzle transaction cannot be cancelled, so a timed-out plan
+ * fails the caller fast and finishes in the background.
  */
 export async function getSetterPageData(username: string, page: number): Promise<SetterPageData | null> {
   const offset = Math.max(0, page - 1) * SETTER_PAGE_SIZE;
@@ -305,17 +310,21 @@ export async function getSetterPageData(username: string, page: number): Promise
   // is a wall rule its owner (or an admin hide) can withdraw at any moment. A
   // replica with no replay barrier could still see the wall as public and hand
   // a stranger its climbs. Same rule as every other spray read: on the primary.
-  const [boardTypeRows, climbRows] = await withSerialPlan(dbz, async (tx) => [
-    await buildSetterProfileQuery(tx, username),
-    await buildSetterClimbsQuery(tx, username, offset, SETTER_PAGE_SIZE),
-  ]);
+  const [boardTypeRows, climbRows] = await withReadDeadline(
+    'setter-climbs',
+    withSerialPlan(dbz, async (tx) => [
+      await buildSetterProfileQuery(tx, username),
+      await buildSetterClimbsQuery(tx, username, offset, SETTER_PAGE_SIZE),
+    ]),
+    remainingReadBudgetMs(),
+  );
 
   const climbCount = boardTypeRows.reduce((total, row) => total + Number(row.climbCount), 0);
   if (climbCount === 0) {
     return null;
   }
 
-  const identity = await fetchSetterIdentity(username);
+  const identity = await withReadDeadline('setter-identity', fetchSetterIdentity(username), remainingReadBudgetMs());
   const hasMore = climbRows.length > SETTER_PAGE_SIZE;
 
   return {

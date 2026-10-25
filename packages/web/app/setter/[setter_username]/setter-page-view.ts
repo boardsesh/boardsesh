@@ -1,6 +1,8 @@
 import 'server-only';
 import { cache } from 'react';
+import { SSR_BACKEND_FETCH_TIMEOUT_MS } from '@/app/lib/ssr-fetch-deadline';
 import { getAllBoardConfigsOrThrow } from '@/app/lib/server-popular-configs';
+import type { PopularBoardConfig } from '@boardsesh/shared-schema';
 import { getSetterPageData, type SetterPageData } from './server-setter-data';
 import { resolveSetterClimbLinks, type SetterClimbLinks } from './setter-climb-links';
 
@@ -25,26 +27,56 @@ export type SetterPageView = {
   links: SetterClimbLinks;
   /** True when at least one row on THIS page renders a real climb anchor. */
   hasCrawlableClimb: boolean;
+  /** True when the board catalogue was unavailable and every climb renders unlinked. */
+  linksDegraded: boolean;
 };
 
+/**
+ * The board catalogue only decides which rows get an anchor here, so a miss
+ * (cold backend cache, 3 s deadline, rate limit) renders the climbs unlinked
+ * instead of failing the page. The sitemap keeps the fail-closed read: there an
+ * empty answer would tell Google the pages were deleted. The underlying fetch is
+ * not cancelled; its single-flight fills the in-process cache for the next request.
+ */
+async function boardConfigsOrNull(): Promise<PopularBoardConfig[] | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), SSR_BACKEND_FETCH_TIMEOUT_MS);
+    timer.unref?.();
+  });
+  const configs = getAllBoardConfigsOrThrow().catch((error: unknown) => {
+    console.warn('[setter] board catalogue unavailable; rendering climbs unlinked', error);
+    return null;
+  });
+  try {
+    return await Promise.race([configs, deadline]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export const getSetterPageView = cache(async (username: string, page: number): Promise<SetterPageView | null> => {
+  // Started first so the two reads run in parallel.
+  const configsPending = boardConfigsOrNull();
   const data = await getSetterPageData(username, page);
   if (!data) return null;
 
-  const links = resolveSetterClimbLinks(data.climbs, await getAllBoardConfigsOrThrow());
+  const configs = await configsPending;
+  const links = resolveSetterClimbLinks(data.climbs, configs ?? []);
 
   return {
     data,
     links,
     hasCrawlableClimb: data.climbs.some((climb) => !links.unlinkedClimbUuids.has(climb.uuid)),
+    linksDegraded: configs === null,
   };
 });
 
 /**
  * The robots half of the question above, made safe to ask from metadata.
  *
- * Answers `true` on every failure on purpose. `getAllBoardConfigsOrThrow`
- * throws rather than degrading, and a catalogue blip is not evidence that a
+ * Answers `true` on every failure on purpose, and when the view rendered with
+ * the catalogue missing (`linksDegraded`). A catalogue blip is not evidence that a
  * setter's climbs stopped being linkable — de-indexing the entire setter tree
  * for the length of one incident is far worse than indexing a few link-less
  * pages for the length of one crawl.
@@ -55,7 +87,7 @@ export const getSetterPageView = cache(async (username: string, page: number): P
 export async function setterPageHasCrawlableClimb(username: string, page: number): Promise<boolean> {
   try {
     const view = await getSetterPageView(username, page);
-    return view === null || view.hasCrawlableClimb;
+    return view === null || view.linksDegraded || view.hasCrawlableClimb;
   } catch {
     return true;
   }
