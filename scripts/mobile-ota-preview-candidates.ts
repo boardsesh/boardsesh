@@ -275,7 +275,7 @@ export async function runPreviewCandidates(
     directory: string,
     platform: 'ios' | 'android',
     env: NodeJS.ProcessEnv,
-  ) => Promise<string | null> | string | null = resolvePreviewRuntime,
+  ) => Promise<string | null> = resolvePreviewRuntime,
 ) {
   const tooling = resolve(import.meta.dirname, '..');
   const planPath = join(scratch, 'candidates.json');
@@ -360,26 +360,42 @@ export async function runPreviewCandidates(
     return;
   }
   failed = candidates.some((candidate) => candidate.status === 'failed');
+  type RuntimeCheck = {
+    result: { status: string; runtimeVersion?: string };
+    trees: [string, string];
+    platform: 'ios' | 'android';
+  };
+  const verdict = ({ result }: RuntimeCheck, runtime: string | null, baseline: string | null) => {
+    if (!runtime || !baseline) {
+      result.status = 'runtime-unresolved';
+      failed = true;
+    } else if (runtime !== baseline) result.status = 'native-change-required';
+    else result.runtimeVersion = runtime;
+  };
+  const checks: RuntimeCheck[] = candidates.flatMap((candidate) => {
+    const { directory, baselineDirectory } = candidate;
+    if (candidate.status !== 'ready' || !directory || !baselineDirectory) return [];
+    return (['ios', 'android'] as const).flatMap((platform) => {
+      const result = candidate.platforms[platform];
+      return result?.status === 'ota-compatible' ? [{ result, trees: [directory, baselineDirectory], platform }] : [];
+    });
+  });
   // Every candidate/baseline tree resolves at once; publishes below stay ordered.
-  await Promise.all(
-    candidates.flatMap((candidate) => {
-      const { directory, baselineDirectory } = candidate;
-      if (candidate.status !== 'ready' || !directory || !baselineDirectory) return [];
-      return (['ios', 'android'] as const).map(async (platform) => {
-        const result = candidate.platforms[platform];
-        if (result?.status !== 'ota-compatible') return;
-        const [runtime, baseline] = await Promise.all([
-          runtimeResolver(directory, platform, process.env),
-          runtimeResolver(baselineDirectory, platform, process.env),
-        ]);
-        if (!runtime || !baseline) {
-          result.status = 'runtime-unresolved';
-          failed = true;
-        } else if (runtime !== baseline) result.status = 'native-change-required';
-        else result.runtimeVersion = runtime;
-      });
-    }),
+  const resolved = await Promise.all(
+    checks.map((check) => Promise.all(check.trees.map((tree) => runtimeResolver(tree, check.platform, process.env)))),
   );
+  for (const [index, check] of checks.entries()) {
+    const [runtime, baseline] = resolved[index]!;
+    if (!runtime || !baseline || runtime === baseline) {
+      verdict(check, runtime, baseline);
+      continue;
+    }
+    // @expo/fingerprint drops a source it fails to read instead of throwing, so
+    // a mismatch under contention is confirmed one tree at a time before skipping.
+    const serialRuntime = await runtimeResolver(check.trees[0], check.platform, process.env);
+    const serialBaseline = await runtimeResolver(check.trees[1], check.platform, process.env);
+    verdict(check, serialRuntime, serialBaseline);
+  }
   const { selections } = choosePreviewCandidates(candidates, source.baseRef);
   for (const { candidate, platform } of selections) {
     const receiptPath = join(scratch, `${candidate.targetRef === 'main' ? 'main' : 'train'}-${platform}.json`);

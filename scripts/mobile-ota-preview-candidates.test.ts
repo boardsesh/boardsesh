@@ -316,7 +316,7 @@ describe('dual-base PR preview replay', { timeout: 30_000 }, () => {
             }),
           );
         },
-        () => fingerprint,
+        async () => fingerprint,
       );
       const receipt = JSON.parse(readFileSync(join(out, 'receipt.json'), 'utf8')) as {
         platforms: { ios?: unknown; android?: unknown };
@@ -368,10 +368,12 @@ describe('dual-base PR preview replay', { timeout: 30_000 }, () => {
     const resolver = async (tree: string, platform: 'ios' | 'android') => {
       called.push(`${tree}:${platform}`);
       if (called.length === expected) release();
+      let fallback: ReturnType<typeof setTimeout> | undefined;
       const ready = await Promise.race([
         everyoneCalled.then(() => true),
-        new Promise<false>((resolve) => setTimeout(() => resolve(false), 2_000)),
+        new Promise<false>((resolve) => (fallback = setTimeout(() => resolve(false), 2_000))),
       ]);
+      clearTimeout(fallback);
       return ready ? runtimes[`${tree}:${platform}`]! : null;
     };
     const published: string[] = [];
@@ -389,7 +391,7 @@ describe('dual-base PR preview replay', { timeout: 30_000 }, () => {
         'publish',
         (tree, _binary, arguments_, environment = process.env) => {
           published.push(`${tree}:${arguments_.at(-1)}`);
-          expect(called).toHaveLength(expected);
+          expect(called).toHaveLength(expected + 2);
           writeFileSync(
             environment.OTA_PREVIEW_RECEIPT_PATH!,
             JSON.stringify({
@@ -404,7 +406,9 @@ describe('dual-base PR preview replay', { timeout: 30_000 }, () => {
         },
         resolver,
       );
-      expect(called.sort()).toEqual(Object.keys(runtimes).sort());
+      expect(called.slice(0, expected).sort()).toEqual(Object.keys(runtimes).sort());
+      // Only the mismatch is re-checked, one tree after the other.
+      expect(called.slice(expected)).toEqual(['main:android', 'baseline-main:android']);
       expect(published).toEqual(['main:ios', 'train:ios']);
       const receipt = JSON.parse(readFileSync(join(out, 'receipt.json'), 'utf8')) as {
         candidates: PreviewCandidate[];
@@ -421,6 +425,82 @@ describe('dual-base PR preview replay', { timeout: 30_000 }, () => {
       process.exitCode = originalExitCode;
     }
   });
+  it.each([
+    { serialCandidate: fingerprint, status: 'published', published: ['candidate:ios'] },
+    { serialCandidate: 'd'.repeat(40), status: 'native-change-required', published: [] },
+  ])(
+    're-checks a contended runtime mismatch serially before skipping ($status)',
+    async ({ serialCandidate, status, published }) => {
+      const directory = mkdtempSync(join(tmpdir(), 'ota-recheck-preview-'));
+      directories.push(directory);
+      const scratch = join(directory, 'scratch');
+      const out = join(directory, 'artifacts');
+      mkdirSync(scratch);
+      const prepared = { ...candidate('main'), directory: 'candidate', baselineDirectory: 'baseline' };
+      delete prepared.platforms.ios!.runtimeVersion;
+      writeFileSync(join(scratch, 'candidates.json'), JSON.stringify([prepared]));
+      // The first, concurrent candidate resolution dropped a source and came back different.
+      const answers: Record<string, string[]> = {
+        candidate: ['d'.repeat(40), serialCandidate],
+        baseline: [fingerprint, fingerprint],
+      };
+      const calls: string[] = [];
+      let inFlight = 0;
+      let serialOverlap = false;
+      const resolver = async (tree: string) => {
+        if (calls.length >= 2) serialOverlap ||= inFlight > 0;
+        calls.push(tree);
+        inFlight += 1;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        inFlight -= 1;
+        return answers[tree]!.shift()!;
+      };
+      const publishedTrees: string[] = [];
+      vi.stubEnv('BRANCH', 'pr-7');
+      vi.stubEnv('GITHUB_RUN_ID', '10');
+      vi.stubEnv('DEPLOYMENT_ID', '20');
+      vi.stubEnv('GITHUB_OUTPUT', join(directory, 'outputs'));
+      const originalExitCode = process.exitCode;
+      try {
+        await runPreviewCandidates(
+          directory,
+          { headSha: 'e'.repeat(40), baseSha: 'b'.repeat(40), baseRef: 'main', mainSha: 'b'.repeat(40) },
+          scratch,
+          out,
+          'publish',
+          (tree, _binary, arguments_, environment = process.env) => {
+            publishedTrees.push(`${tree}:${arguments_.at(-1)}`);
+            writeFileSync(
+              environment.OTA_PREVIEW_RECEIPT_PATH!,
+              JSON.stringify({
+                platform: 'ios',
+                branch: 'pr-7',
+                commitHash: prepared.commitHash,
+                runtimeVersion: environment.OTA_EXPECT_RUNTIME_VERSION,
+                bundleSha256: 'b'.repeat(64),
+                updateId: '12345678-1234-1234-1234-123456789abc',
+              }),
+            );
+          },
+          resolver,
+        );
+        expect(calls).toEqual(['candidate', 'baseline', 'candidate', 'baseline']);
+        expect(serialOverlap).toBe(false);
+        expect(publishedTrees).toEqual(published);
+        const receipt = JSON.parse(readFileSync(join(out, 'receipt.json'), 'utf8')) as {
+          candidates: PreviewCandidate[];
+        };
+        expect(receipt.candidates[0]!.platforms.ios!.status).toBe(status);
+        expect(receipt.candidates[0]!.platforms.ios!.runtimeVersion).toBe(
+          status === 'published' ? fingerprint : undefined,
+        );
+        expect(readFileSync(join(directory, 'outputs'), 'utf8')).toContain('failed=false');
+        expect(process.exitCode).toBe(originalExitCode);
+      } finally {
+        process.exitCode = originalExitCode;
+      }
+    },
+  );
   it('never deduplicates different full runtimes sharing the same display hash', () => {
     const main = candidate('main', 'a'.repeat(12) + 'b'.repeat(28));
     const train = candidate('release/next', 'a'.repeat(12) + 'c'.repeat(28));
