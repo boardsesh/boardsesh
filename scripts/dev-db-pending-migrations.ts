@@ -19,7 +19,7 @@
  *
  * Usage:
  *   psql -t -A -c 'SELECT hash FROM drizzle."__drizzle_migrations"' |
- *     DRIZZLE_DIR=packages/db/drizzle tsx scripts/dev-db-pending-migrations.ts
+ *     DRIZZLE_DIR=packages/db/drizzle vp exec tsx scripts/dev-db-pending-migrations.ts
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';

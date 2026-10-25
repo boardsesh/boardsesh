@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest';
  * other home. Running the script for real needs Docker, the pre-built image, and
  * a few minutes; these assertions cost a file read and catch the two ways the
  * fix could be undone — reintroducing the high-water mark, or dropping the
- * per-hash selector back into an inline `bun --eval`.
+ * per-hash selector back into an inline `node -e`.
  */
 const DEV_DB_UP_PATH = 'scripts/dev-db-up.sh';
 const devDbUpSource = readFileSync(DEV_DB_UP_PATH, 'utf8');

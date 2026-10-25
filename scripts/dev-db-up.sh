@@ -232,7 +232,7 @@ run_pending_drizzle_sql_migrations() {
   # The selector rejects empty or non-prefix history before this function can
   # enter the SQL application loop.
   pending_migrations=$(printf '%s\n' "$ledger_hashes" \
-    | DRIZZLE_DIR="$DRIZZLE_DIR" "$REPO_ROOT/node_modules/.bin/tsx" "$REPO_ROOT/scripts/dev-db-pending-migrations.ts")
+    | (cd "$REPO_ROOT" && DRIZZLE_DIR="$DRIZZLE_DIR" vp exec tsx scripts/dev-db-pending-migrations.ts))
 
   if [ -z "$pending_migrations" ]; then
     echo "  No pending migrations."
