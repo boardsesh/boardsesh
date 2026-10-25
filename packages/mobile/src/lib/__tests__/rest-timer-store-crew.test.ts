@@ -370,13 +370,41 @@ describe('noteRestTimerCrewBeatSkipped', () => {
     const actions = recordActions();
     const { cycleId } = getRestTimerState();
     noteRestTimerCrewBeatSkipped(T0 + 60_000);
-    expect(getRestTimerState().lastFiredDeadlineMs).toBe(T0 + 60_000);
+    expect(getRestTimerState().crewBeatSkippedMs).toBe(T0 + 60_000);
     expect(getRestTimerState().cycleId).toBe(cycleId + 1);
     expect(getRestTimerState().anchorMs).toBe(T0);
     expect(actions).toEqual([]);
     // Never back past a beat already spent.
     noteRestTimerCrewBeatSkipped(T0 + 30_000);
-    expect(getRestTimerState().lastFiredDeadlineMs).toBe(T0 + 60_000);
+    expect(getRestTimerState().crewBeatSkippedMs).toBe(T0 + 60_000);
+  });
+
+  it('never records a beat the server did not take as an advance (Fable, #6757)', () => {
+    // The server's last advance was T0; this phone let the T0 + 60 s beat go.
+    adoptCrewCadence(crewClock({ config: ON_THE_MINUTE, lastFiredBeatMs: T0, lastFiredBeatServerMs: T0 }));
+    noteRestTimerCrewBeatSkipped(T0 + 60_000);
+    expect(getRestTimerState().lastFiredDeadlineMs).toBe(T0);
+
+    // The crew switches to after the tick (anchor CLEAR): the skipped beat goes with on the minute.
+    adoptCrewCadence(
+      crewClock({
+        revision: 6,
+        anchorMs: null,
+        anchorServerMs: null,
+        lastFiredBeatMs: T0,
+        lastFiredBeatServerMs: T0,
+      }),
+    );
+    expect(getRestTimerState().crewBeatSkippedMs).toBeNull();
+
+    // A fresh tick dated between the server's last advance and the skipped beat
+    // starts its rest at its own time, as the server's TICK floor does, never at
+    // the beat nobody took.
+    noteRestTimerTick(new Date(T0 + 50_000).toISOString(), 'afterTick', T0 + 80_000, {
+      status: 'send',
+      queueItemUuid: 'item-1',
+    });
+    expect(getRestTimerState().anchorMs).toBe(T0 + 50_000);
   });
 
   it('leaves a rest after a tick, and a timer with no crew clock, alone', () => {

@@ -109,11 +109,21 @@ export type RestTimerState = {
    * it counts from it instead (`floorRestTimerAnchorAtLastAdvance`). Cleared on
    * arm and disarm, so it only ever speaks for this arm.
    *
-   * On a crew's clock on the minute it is also the last beat this phone let go
-   * without an advance (`noteRestTimerCrewBeatSkipped`), so the scheduler moves
-   * on to the next beat.
+   * Only ever a real advance: the tick floor and the after-tick rest floor read
+   * it as the wall's last move. A crew beat let go without one is
+   * `crewBeatSkippedMs`.
    */
   lastFiredDeadlineMs: number | null;
+  /**
+   * The last beat of a crew's clock on the minute this phone let go without
+   * moving the wall (`noteRestTimerCrewBeatSkipped`): its FIRE failed, came back
+   * refused or too late, or the phone slept through it. The scheduler's
+   * on-the-minute walk and its reached cue count it as handled, so they move on
+   * to the next beat. Kept out of `lastFiredDeadlineMs`, since the server never
+   * took it: read as an advance, a tick after the crew switched to after-tick
+   * would floor its rest there and fall behind the crew's (Fable, #6757).
+   */
+  crewBeatSkippedMs: number | null;
   /**
    * The workout stage pacing of the climb on the wall, or null when no stage
    * paces it. Written ONLY by `RestTimerPacingSync`; arm and disarm keep it,
@@ -143,6 +153,7 @@ const INITIAL_STATE: RestTimerState = {
   queueEnded: false,
   listEnded: false,
   lastFiredDeadlineMs: null,
+  crewBeatSkippedMs: null,
   stagePacing: null,
   lastTick: null,
 };
@@ -560,14 +571,14 @@ export function reanchorRestTimerAfterBackground(nowMs: number, deadlineMs: numb
  * the beat already stale. The crew's beat is never moved here (see above), so
  * nothing else in the store changes, and the scheduler, which works out the
  * next beat when it renders, would sit on the one that went. Marking it spent
- * walks the scheduler on to the next beat. Announces nothing: the crew's clock
- * did not change.
+ * walks the scheduler on to the next beat, never as an advance
+ * (`crewBeatSkippedMs`). Announces nothing: the crew's clock did not change.
  */
 export function noteRestTimerCrewBeatSkipped(beatMs: number): void {
   if (!state.armed || state.crew?.config?.mode !== 'onTheMinute') return;
   setState({
     ...state,
-    lastFiredDeadlineMs: Math.max(state.lastFiredDeadlineMs ?? beatMs, beatMs),
+    crewBeatSkippedMs: Math.max(state.crewBeatSkippedMs ?? beatMs, beatMs),
     cycleId: state.cycleId + 1,
   });
 }
@@ -784,7 +795,7 @@ export function adoptCrewCadence(
     crewLastFiredBeatMs === null
       ? state.lastFiredDeadlineMs
       : lastFiredHeld && state.lastFiredDeadlineMs === previous.lastFiredBeatMs
-        ? // Nothing fired or let go here since: follow the conversion.
+        ? // Nothing fired here since: follow the conversion.
           crewLastFiredBeatMs
         : Math.max(state.lastFiredDeadlineMs ?? crewLastFiredBeatMs, crewLastFiredBeatMs);
   const timerChanged =
@@ -806,6 +817,8 @@ export function adoptCrewCadence(
     pausedElapsedSeconds,
     lastTick,
     lastFiredDeadlineMs,
+    // A beat let go only means something on the minute.
+    crewBeatSkippedMs: config.mode === 'onTheMinute' ? state.crewBeatSkippedMs : null,
     // The crew clock restarting is a reason to look at the queue again, as a tick is.
     queueEnded: anchorMs !== state.anchorMs ? false : state.queueEnded,
     cycleId: timerChanged ? state.cycleId + 1 : state.cycleId,

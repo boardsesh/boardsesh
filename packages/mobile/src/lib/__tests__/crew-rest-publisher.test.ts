@@ -547,6 +547,31 @@ describe('replies', () => {
   });
 });
 
+describe('a crew clock this app cannot run', () => {
+  it('takes no settings edit to the crew, so this phone never replaces a clock it cannot follow', async () => {
+    armRestTimer('afterTick', currentNowMs, SESSION);
+    await flush();
+    adoptCrewCadence({
+      sessionId: SESSION,
+      revision: 3,
+      config: null,
+      isRunning: true,
+      anchorMs: T0,
+      pausedElapsedSeconds: 0,
+      lastFiredBeatMs: null,
+      lastTick: null,
+      anchorServerMs: T0,
+      lastFiredBeatServerMs: null,
+    });
+    sent.length = 0;
+    own = { ...own, targetSeconds: 150 };
+    publisher.noteSettingsEdited();
+    vi.advanceTimersByTime(CREW_CONFIGURE_DEBOUNCE_MS);
+    await flush();
+    expect(sent).toEqual([]);
+  });
+});
+
 describe('crew pacing edits from the timer’s controls', () => {
   function followSamsClock(config: Partial<NonNullable<CrewRestCadence['config']>> = {}) {
     adoptCrewCadence({

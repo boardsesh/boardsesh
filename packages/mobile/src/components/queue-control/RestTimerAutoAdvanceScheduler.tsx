@@ -481,6 +481,13 @@ export function RestTimerAutoAdvanceScheduler() {
       currentQueueItemUuid: currentClimbQueueItem?.uuid ?? null,
       lastTick: timerState.lastTick,
     });
+  // A crew beat on the minute this phone let go is spent for the walk and the
+  // reached cue below, but it never counts as an advance (crewBeatSkippedMs):
+  // the rest floor reads only the real ones.
+  const lastBeatHandledMs =
+    mode === 'onTheMinute' && timerState.crewBeatSkippedMs !== null
+      ? Math.max(timerState.lastFiredDeadlineMs ?? timerState.crewBeatSkippedMs, timerState.crewBeatSkippedMs)
+      : timerState.lastFiredDeadlineMs;
   // One clock read for the three rules below, so the deadline, its staleness
   // and the rest floor always agree within a render.
   const renderNowMs = nowMs();
@@ -490,7 +497,7 @@ export function RestTimerAutoAdvanceScheduler() {
         anchorMs: timerState.anchorMs,
         targetSeconds,
         nowMs: renderNowMs,
-        lastFiredDeadlineMs: timerState.lastFiredDeadlineMs,
+        lastFiredDeadlineMs: lastBeatHandledMs,
       })
     : null;
 
@@ -601,7 +608,7 @@ export function RestTimerAutoAdvanceScheduler() {
   // beat is one. An advance that fired on a beat already had its cue, so that
   // beat counts as cued too. State, not a ref, so the wake lock below lets go
   // once the cue has played.
-  const { anchorMs, armed, isRunning, lastFiredDeadlineMs } = timerState;
+  const { anchorMs, armed, isRunning } = timerState;
   const atDeadEnd = timerState.queueEnded;
   const renderedAtMs = nowMs();
   const [storedReachedLatch, setReachedLatch] = useState<ReachedLatch>(() => ({
@@ -616,9 +623,9 @@ export function RestTimerAutoAdvanceScheduler() {
     setReachedLatch(reachedLatch);
   }
   const handledThroughMs =
-    lastFiredDeadlineMs === null
+    lastBeatHandledMs === null
       ? reachedLatch.handledThroughMs
-      : Math.max(reachedLatch.handledThroughMs, lastFiredDeadlineMs);
+      : Math.max(reachedLatch.handledThroughMs, lastBeatHandledMs);
   const reachedAtMs =
     armed && isRunning && !scheduled
       ? getRestTimerReachedAtMs({ mode, anchorMs, targetSeconds, nowMs: renderedAtMs, handledThroughMs })

@@ -31,8 +31,12 @@ export function changeRestTimerMode(
   setSetting('restTimerMode', nextMode);
   // Only the climber's own cadence is re-armed. While a stage or the crew paces
   // the timer, the saved cadence is not what runs, and re-arming would drop the
-  // stage's anchor mid-block.
+  // stage's anchor mid-block. A crew clock this app cannot run resolves as the
+  // settings, yet re-arming under it would ARM the session and replace the
+  // crew's clock for everyone from a phone that cannot follow it (Fable, #6757).
   const pacing = getEffectiveRestPacing();
-  if (armed && pacing.source === 'settings') armRestTimer(pacing.mode, nowMs(), sessionId);
+  if (armed && pacing.source === 'settings' && getRestTimerState().crew === null) {
+    armRestTimer(pacing.mode, nowMs(), sessionId);
+  }
   return true;
 }

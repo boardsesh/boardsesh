@@ -176,7 +176,9 @@ in the crew.
   wall only when it did, so two phones that both think they hold the board can never both move
   it. A phone alone in its session moves the wall itself only when the server cannot be reached.
 - **A beat nobody claimed.** On the minute, a beat the holder lets go (no answer, refused, too
-  late, or slept through) is marked spent on that phone, so the next beat is claimed as usual.
+  late, or slept through) is marked spent on that phone (`crewBeatSkippedMs`), so the next beat is
+  claimed as usual. It is never recorded as an advance: the tick and rest floors read only the
+  beats the server took, so a rest after a switch to after-tick starts where the crew's does.
   After a tick, a deadline nobody can claim any more (more than 5 s gone) is restarted by the
   phone pacing it: back from the background, after a FIRE that failed or came back refused or
   late, and when a phone takes the board over with the deadline already past.
@@ -219,7 +221,8 @@ in the crew.
   wall. Not a clock the climber turned off on this phone since launch, and never from an echo of
   this phone's own ARM, so turning the timer off sticks.
 - **An unknown mode or rule** (a newer app set it) is held but never fired on, and the sheet asks
-  for an update. The hold goes with the session.
+  for an update. A cadence or settings change on that phone never re-arms or configures the
+  session, so it cannot replace the crew's clock. The hold goes with the session.
 
 Stories: `rest-timer-crew--crew-passenger` (also `--crew-holder`, `--crew-unheld`,
 `--sheet-crew-passenger` and `--sheet-crew-holder`) fake a crew and Sam's clock on one simulator.

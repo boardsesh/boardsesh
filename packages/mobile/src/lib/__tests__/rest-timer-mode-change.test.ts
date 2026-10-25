@@ -21,7 +21,14 @@ vi.mock('../../hooks/use-effective-rest-pacing', async (importOriginal) => {
 });
 
 import { changeRestTimerMode } from '../rest-timer-mode-change';
-import { armRestTimer, getRestTimerState, noteRestTimerTick, resetRestTimerStoreForTests } from '../rest-timer-store';
+import {
+  adoptCrewCadence,
+  armRestTimer,
+  getRestTimerState,
+  noteRestTimerTick,
+  resetRestTimerStoreForTests,
+  subscribeLocalRestTimerActions,
+} from '../rest-timer-store';
 
 beforeEach(() => {
   resetRestTimerStoreForTests();
@@ -62,6 +69,34 @@ describe('changeRestTimerMode', () => {
     const before = getRestTimerState();
     expect(changeRestTimerMode('afterTick', 'session-1')).toBe(true);
     expect(settingsStore.values.get('restTimerMode')).toBe('afterTick');
+    expect(getRestTimerState()).toBe(before);
+  });
+});
+
+describe('changeRestTimerMode under a crew clock this app cannot run (Fable, #6757)', () => {
+  it('saves the cadence but never re-arms, so no ARM replaces the crew’s clock', () => {
+    const now = Date.now();
+    armRestTimer('afterTick', now, 'session-1');
+    // A newer app set the crew clock: held, config null, resolving as the settings.
+    adoptCrewCadence({
+      sessionId: 'session-1',
+      revision: 3,
+      config: null,
+      isRunning: true,
+      anchorMs: now,
+      pausedElapsedSeconds: 0,
+      lastFiredBeatMs: null,
+      lastTick: null,
+      anchorServerMs: now,
+      lastFiredBeatServerMs: null,
+    });
+    const actions: string[] = [];
+    subscribeLocalRestTimerActions((action) => actions.push(action.type));
+    const before = getRestTimerState();
+
+    expect(changeRestTimerMode('onTheMinute', 'session-1')).toBe(true);
+    expect(settingsStore.values.get('restTimerMode')).toBe('onTheMinute');
+    expect(actions).toEqual([]);
     expect(getRestTimerState()).toBe(before);
   });
 });

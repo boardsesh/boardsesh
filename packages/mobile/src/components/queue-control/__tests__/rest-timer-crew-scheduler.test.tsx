@@ -625,6 +625,64 @@ describe('on the minute, a beat this phone lets go', () => {
     expect(nextClimb).toHaveBeenCalledTimes(1);
   });
 
+  it('never floors a later after-tick rest at a beat it let go: no extra rest (Fable, #6757)', async () => {
+    // The server took the beat at T0; the next beat at T0 + 60 s gets no answer here.
+    crewArmed({ mode: 'onTheMinute', anchorAt: String(T0 - 60_000), lastFiredBeatAt: String(T0) });
+    render(<RestTimerAutoAdvanceScheduler />);
+    setSessionRestCadence.mockRejectedValueOnce(new Error('socket closed'));
+    advance(60_000);
+    await settle();
+    expect(fireCalls()).toHaveLength(1);
+
+    // T0 + 70 s: the crew switches to a 1:00 rest after each climb, waiting for a tick.
+    advance(10_000);
+    revision += 1;
+    serverClock = { ...serverClock, mode: 'afterTick', anchorAt: null };
+    act(() => {
+      handleCrewCadenceChange(
+        { restCadence: serverClock, revision, serverNow: String(currentNowMs), isSnapshot: false, action: 'CONFIGURE' },
+        { sessionId: SESSION, ownParticipantId: 'participant-me', receivedAtMs: currentNowMs },
+      );
+    });
+
+    // T0 + 80 s: a send dated T0 + 50 s, after the server's last advance and
+    // before the beat let go. The server's TICK floor starts that rest at T0 + 50 s.
+    advance(10_000);
+    act(() => {
+      noteRestTimerTick(new Date(T0 + 50_000).toISOString(), 'afterTick', currentNowMs, {
+        status: 'send',
+        queueItemUuid: 'queue-current',
+      });
+    });
+    revision += 1;
+    serverClock = {
+      ...serverClock,
+      anchorAt: String(T0 + 50_000),
+      lastTickStatus: 'send',
+      lastTickQueueItemUuid: 'queue-current',
+    };
+    act(() => {
+      handleCrewCadenceChange(
+        { restCadence: serverClock, revision, serverNow: String(currentNowMs), isSnapshot: false, action: 'TICK' },
+        { sessionId: SESSION, ownParticipantId: 'participant-me', receivedAtMs: currentNowMs },
+      );
+    });
+    expect(getRestTimerState().anchorMs).toBe(T0 + 50_000);
+
+    setSessionRestCadence.mockImplementation(async () =>
+      fireReply({ applied: true, clock: { anchorAt: String(currentNowMs), lastFiredBeatAt: String(T0 + 110_000) } }),
+    );
+    // No FIRE before the crew's beat at T0 + 110 s...
+    advance(29_000);
+    await settle();
+    expect(fireCalls()).toHaveLength(1);
+    // ...and the wall moves on it, not 7 s later on a rest floored at the beat let go.
+    advance(1_000);
+    await settle();
+    expect(fireCalls()).toHaveLength(2);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+  });
+
   it('still claims the next beat when the climber locked the phone through one', async () => {
     crewArmed({ mode: 'onTheMinute' });
     render(<RestTimerAutoAdvanceScheduler />);

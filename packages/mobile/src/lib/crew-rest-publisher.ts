@@ -302,7 +302,9 @@ export function createCrewRestPublisher({
       }
     },
     noteSettingsEdited() {
-      if (!armedHere()) return;
+      // Never over a crew clock this app cannot run: it would replace the
+      // crew's clock with this phone's settings.
+      if (!armedHere() || getState().crew?.config === null) return;
       requestConfigure({ anchor: 'KEEP', boundaryAtMs: null });
     },
     handleSnapshot(snapshot) {
