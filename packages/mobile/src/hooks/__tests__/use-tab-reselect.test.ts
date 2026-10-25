@@ -115,6 +115,23 @@ describe('useTabReselect', () => {
     expect(onReselect).not.toHaveBeenCalled();
   });
 
+  it('calls the latest callback without subscribing again', () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    const { rerender } = renderHook(({ onReselect }) => useTabReselect(onReselect), {
+      initialProps: { onReselect: first },
+    });
+    rerender({ onReselect: second });
+
+    pressTab({ isPrevented: false });
+    vi.runAllTimers();
+
+    expect(cfg.tabPressListeners).toHaveLength(1);
+    expect(cfg.unsubscribe).not.toHaveBeenCalled();
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledOnce();
+  });
+
   it('does nothing without a parent navigator', () => {
     cfg.parent = undefined;
     const onReselect = vi.fn();

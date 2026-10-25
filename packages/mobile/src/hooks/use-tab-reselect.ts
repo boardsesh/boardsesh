@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useEffectEvent } from 'react';
 import { useNavigation } from 'expo-router';
 import type { NavigationProp, NavigationState, ParamListBase } from 'expo-router/react-navigation';
 
@@ -26,11 +26,12 @@ type TabNavigation = NavigationProp<
  * navigator. The navigator emits `tabPress` before it acts on the press, so the
  * screen's focus at that moment says whether the tab was already open.
  * `onReselect` runs on the next frame, after the bar's own repeat-tap effects
- * (scroll to top) have started. Pass a stable callback (`useCallback`): a new
- * one re-subscribes the listener.
+ * (scroll to top) have started. The listener always calls the latest
+ * `onReselect`, so a caller need not memoise it.
  */
 export function useTabReselect(onReselect: () => void): void {
   const navigation = useNavigation();
+  const handleReselect = useEffectEvent(onReselect);
 
   useEffect(() => {
     const tabNavigation = navigation.getParent<TabNavigation | undefined>();
@@ -42,7 +43,7 @@ export function useTabReselect(onReselect: () => void): void {
       if (frame !== null) cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
         frame = null;
-        onReselect();
+        handleReselect();
       });
     });
 
@@ -50,5 +51,5 @@ export function useTabReselect(onReselect: () => void): void {
       unsubscribe();
       if (frame !== null) cancelAnimationFrame(frame);
     };
-  }, [navigation, onReselect]);
+  }, [navigation]);
 }
