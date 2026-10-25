@@ -319,6 +319,8 @@ export default function SessionDetailContent({
   // Derive values from session with null-safe defaults so hooks below can run unconditionally.
   // The actual null check / early return happens after all hooks are called.
   const sessionId = session?.sessionId ?? '';
+  // Daily groups are synthetic (daily:<userId>:<date>); no social entity exists behind that id.
+  const isDailyGroup = session?.sessionType === 'daily_highlight' || sessionId.startsWith('daily:');
   const sessionName = session?.sessionName;
   const participants = session?.participants ?? [];
   const totalSends = session?.totalSends ?? 0;
@@ -508,37 +510,39 @@ export default function SessionDetailContent({
         />
 
         {/* Session-level social */}
-        <Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-            <VoteButton
-              entityType="session"
-              entityId={sessionId}
-              initialUpvotes={upvotes}
-              initialDownvotes={downvotes}
-              likeOnly
-            />
-            <IconButton
-              size="small"
-              data-testid="session-comment-toggle"
-              onClick={() => setSessionCommentsOpen((prev) => !prev)}
-              sx={{ color: sessionCommentsOpen ? 'text.primary' : 'text.secondary' }}
-            >
-              <ChatBubbleOutlineOutlined fontSize="small" />
-              {commentCount > 0 && (
-                <Typography
-                  variant="caption"
-                  component="span"
-                  sx={{ ml: 0.5, color: 'inherit', userSelect: 'none', fontSize: 12 }}
-                >
-                  {commentCount}
-                </Typography>
-              )}
-            </IconButton>
+        {!isDailyGroup && (
+          <Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+              <VoteButton
+                entityType="session"
+                entityId={sessionId}
+                initialUpvotes={upvotes}
+                initialDownvotes={downvotes}
+                likeOnly
+              />
+              <IconButton
+                size="small"
+                data-testid="session-comment-toggle"
+                onClick={() => setSessionCommentsOpen((prev) => !prev)}
+                sx={{ color: sessionCommentsOpen ? 'text.primary' : 'text.secondary' }}
+              >
+                <ChatBubbleOutlineOutlined fontSize="small" />
+                {commentCount > 0 && (
+                  <Typography
+                    variant="caption"
+                    component="span"
+                    sx={{ ml: 0.5, color: 'inherit', userSelect: 'none', fontSize: 12 }}
+                  >
+                    {commentCount}
+                  </Typography>
+                )}
+              </IconButton>
+            </Box>
+            <Collapse in={sessionCommentsOpen} unmountOnExit>
+              <CommentSection entityType="session" entityId={sessionId} title={t('detail.comments')} />
+            </Collapse>
           </Box>
-          <Collapse in={sessionCommentsOpen} unmountOnExit>
-            <CommentSection entityType="session" entityId={sessionId} title={t('detail.comments')} />
-          </Collapse>
-        </Box>
+        )}
 
         <Divider />
 
