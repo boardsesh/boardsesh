@@ -98,40 +98,51 @@ function TrackEndCardImpl({ model, onKeepGoing, onDismiss }: TrackEndCardProps) 
             {t('playView.track.end.finished')}
           </Text>
         )}
-        {/* What "Keep going" opens (#6238), on its own line rather than in the
-            button: a native button label does not wrap, and a German label
-            plus a climb name outgrows the card. */}
-        {model.action && model.firstUpNextName ? (
-          <Text
-            variant="subheadline"
-            color={systemColors.secondaryLabel}
-            numberOfLines={2}
-            style={styles.centered}
-            testID="play-drawer-track-end-first-up-next"
-          >
-            {t('playView.track.end.firstUpNext', { name: model.firstUpNextName })}
-          </Text>
-        ) : null}
-        <View style={styles.actions}>
-          {model.action ? (
+        {/* One centred stack: the primary action, what it opens right under it,
+            then Stay here. Both buttons span the card, so the two choices read
+            as a pair rather than a pill and a stray line of text. */}
+        {model.action ? (
+          <View style={styles.primaryGroup}>
             <Button
               title={t('playView.track.end.keepGoing', { upNextCount: model.upNextCount })}
               variant="filled"
               size="medium"
-              over="content"
               onPress={onKeepGoing}
               testID="play-drawer-track-end-keep-going"
+              style={styles.fullWidth}
             />
-          ) : null}
-          <Button
-            title={t('playView.track.end.stay')}
-            variant="text"
-            size="medium"
-            over="content"
-            onPress={onDismiss}
-            testID="play-drawer-track-end-stay"
-          />
-        </View>
+            {/* What "Keep going" opens (#6238), on its own line rather than in
+                the button: a native button label does not wrap, and a German
+                label plus a climb name outgrows the card. */}
+            {model.firstUpNextName ? (
+              <Text
+                variant="footnote"
+                color={systemColors.secondaryLabel}
+                numberOfLines={2}
+                style={styles.centered}
+                testID="play-drawer-track-end-first-up-next"
+              >
+                {t('playView.track.end.firstUpNext', { name: model.firstUpNextName })}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+        {/* Tonal, and on iOS told it sits on glass so it draws the `bordered`
+            capsule: that is the same native button family as the filled one
+            above, so the two measure one height at every text size without a
+            pinned height that would clip a wrapped label. A Liquid Glass
+            capsule lands ~7pt off it (see tick-sheet-metrics). The card is an
+            opaque surface, so the tinted capsule stays legible; Android and web
+            ignore `over` and draw a Material tonal button. */}
+        <Button
+          title={t('playView.track.end.stay')}
+          variant="tonal"
+          size="medium"
+          over="glass"
+          onPress={onDismiss}
+          testID="play-drawer-track-end-stay"
+          style={styles.fullWidth}
+        />
       </Animated.View>
     </View>
   );
@@ -171,8 +182,12 @@ const styles = StyleSheet.create({
   centered: {
     textAlign: 'center',
   },
-  actions: {
+  primaryGroup: {
     alignSelf: 'stretch',
+    alignItems: 'center',
     gap: spacing[2],
+  },
+  fullWidth: {
+    alignSelf: 'stretch',
   },
 });

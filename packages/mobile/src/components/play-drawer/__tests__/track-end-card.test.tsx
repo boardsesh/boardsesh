@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-// The end card's copy (#6664, #6238): what it says for each model, and that it
-// names the climb "Keep going" opens. The model itself is tested in
-// `track-end.test.ts`; this pins the render of it.
+// The end card's copy and layout (#6664, #6238): what it says for each model,
+// that it names the climb "Keep going" opens right under that button, and that
+// both choices are full-width buttons in one centred stack. The model itself is
+// tested in `track-end.test.ts`; this pins the render of it.
 import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, forwardRef, type ReactNode } from 'react';
@@ -36,8 +37,18 @@ vi.mock('../../Text', () => ({
     createElement('span', { 'data-testid': testID, 'data-lines': numberOfLines }, children),
 }));
 vi.mock('../../Button', () => ({
-  Button: ({ title, testID }: { title: string; testID?: string }) =>
-    createElement('button', { 'data-testid': testID }, title),
+  Button: ({
+    title,
+    testID,
+    variant,
+    style,
+  }: {
+    title: string;
+    testID?: string;
+    variant?: string;
+    style?: { alignSelf?: string };
+  }) =>
+    createElement('button', { 'data-testid': testID, 'data-variant': variant, 'data-align': style?.alignSelf }, title),
 }));
 vi.mock('../../PressableSurface', () => ({
   PressableSurface: () => createElement('div', { 'data-scrim': 'true' }),
@@ -81,6 +92,13 @@ function renderCard(model: Partial<TrackEndCardModel> = {}) {
 
 const firstUpNext = (container: HTMLElement) =>
   container.querySelector('[data-testid="play-drawer-track-end-first-up-next"]');
+const keepGoing = (container: HTMLElement) =>
+  container.querySelector('[data-testid="play-drawer-track-end-keep-going"]');
+const stay = (container: HTMLElement) => container.querySelector('[data-testid="play-drawer-track-end-stay"]');
+
+/** True when `first` comes before `second` in document order. */
+const precedes = (first: Element | null, second: Element | null) =>
+  first != null && second != null && (first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
 
 describe('TrackEndCard', () => {
   it('names the first Up next climb beside the count', () => {
@@ -92,6 +110,25 @@ describe('TrackEndCard', () => {
     expect(firstUpNext(container)?.textContent).toBe('playView.track.end.firstUpNext {"name":"Crimp Ladder"}');
     // A long name wraps once and then ellipsizes, so the card never grows tall.
     expect(firstUpNext(container)?.getAttribute('data-lines')).toBe('2');
+  });
+
+  it('stacks title, Keep going, what it opens, then Stay here', () => {
+    const { container, getByText } = renderCard();
+    const title = getByText('playView.track.end.title {"name":"Projects"}');
+
+    expect(precedes(title, keepGoing(container))).toBe(true);
+    expect(precedes(keepGoing(container), firstUpNext(container))).toBe(true);
+    expect(precedes(firstUpNext(container), stay(container))).toBe(true);
+  });
+
+  it('draws both choices as full-width buttons, Stay here included', () => {
+    const { container } = renderCard();
+
+    expect(keepGoing(container)?.getAttribute('data-variant')).toBe('filled');
+    expect(keepGoing(container)?.getAttribute('data-align')).toBe('stretch');
+    // A tonal capsule, not a bare text button, so it reads as tappable.
+    expect(stay(container)?.getAttribute('data-variant')).toBe('tonal');
+    expect(stay(container)?.getAttribute('data-align')).toBe('stretch');
   });
 
   it("keeps today's wording when there is no name to show", () => {
@@ -109,5 +146,8 @@ describe('TrackEndCard', () => {
     expect(firstUpNext(container)).toBeNull();
     expect(container.querySelector('[data-testid="play-drawer-track-end-keep-going"]')).toBeNull();
     expect(container.textContent).toContain('playView.track.end.finished');
+    // Stay here is still a full-width button on its own.
+    expect(stay(container)?.getAttribute('data-variant')).toBe('tonal');
+    expect(stay(container)?.getAttribute('data-align')).toBe('stretch');
   });
 });
