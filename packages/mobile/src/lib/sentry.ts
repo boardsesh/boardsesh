@@ -107,7 +107,7 @@ type NormalizableEvent = {
  * rejection that reaches the SDK through its global onunhandledrejection hook skips
  * that path and arrives as `Event captured as promise rejection`. Apply the same
  * normalization in `beforeSend`: when the original exception is not an `Error`, put
- * the close code/reason into `extra` and replace the exception message. Pure and
+ * the close code/reason into `extra` and replace the exception message. Ungated (it edits the event in place) and
  * ungated so it is unit-testable. Raw close events that used to group under the SDK's
  * `Event captured as promise rejection` title will regroup under the new message.
  */
