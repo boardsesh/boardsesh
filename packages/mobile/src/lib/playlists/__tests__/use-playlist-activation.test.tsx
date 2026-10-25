@@ -444,8 +444,10 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     await result.current.activate(climb);
 
     // Pure reopen — the shared activation does NOT run (re-activating would
-    // duplicate it in the queue / pointlessly rebuild the same source).
-    expect(mocks.openPlayDrawer).toHaveBeenCalledWith(climb, { committedExternally: true });
+    // duplicate it in the queue / pointlessly rebuild the same source). Nothing
+    // dispatched setCurrentClimb, so the open is a plain pick: no
+    // committedExternally, which is what lets it light a #4979-held climb.
+    expect(mocks.openPlayDrawer).toHaveBeenCalledWith(climb, {});
     expect(mocks.activate).not.toHaveBeenCalled();
   });
 
@@ -461,7 +463,7 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     };
     await originalActivate(climb);
     expect(mocks.activate).not.toHaveBeenCalled();
-    expect(mocks.openPlayDrawer).toHaveBeenCalledWith(climb, { committedExternally: true });
+    expect(mocks.openPlayDrawer).toHaveBeenCalledWith(climb, {});
 
     mocks.suggestionSource = { ...mocks.suggestionSource, playlistUuid: 'different-list' };
     await originalActivate(climb);
@@ -498,7 +500,8 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
     await result.current.activate(climb);
 
     expect(mocks.activate).toHaveBeenCalledWith(climb);
-    expect(mocks.openPlayDrawer).toHaveBeenCalledWith(climb, { committedExternally: true });
+    // The already-active climb never reaches setCurrentClimb, so no committedExternally.
+    expect(mocks.openPlayDrawer).toHaveBeenCalledWith(climb, {});
   });
 
   it('queueApi refreshes the source in place for the active climb (no duplicate append)', async () => {

@@ -1411,10 +1411,12 @@ export function usePlaylistActivation({
         // Pure reopen: the tapped climb is already active AND the drawer's
         // next/previous already follow THIS list anchored on it. Re-activating
         // would duplicate it in the queue and pointlessly rebuild the same source,
-        // so just reopen — the drawer renders from currentClimbQueueItem
-        // (committedExternally), which already points at this climb.
+        // so just reopen. No `committedExternally`: nothing dispatched
+        // `setCurrentClimb`, and the drawer already skips its own commit for the
+        // current climb. Left as a plain open, it is a pick, so it lights a climb
+        // the #4979 hold kept dark (docs/current-climb-outside-queue.md, decision 10).
         if (isAlreadyActive && suggestionsAlreadyFollowThisList) {
-          openPlayDrawer(schemaClimb, { ...openingArtOptions, committedExternally: true });
+          openPlayDrawer(schemaClimb, openingArtOptions);
           return Promise.resolve();
         }
 
@@ -1439,7 +1441,12 @@ export function usePlaylistActivation({
         if (!isAlreadyActive) {
           pendingQueueItemRef.current = climbToQueueItem(schemaClimb, { suggested: true });
         }
-        openPlayDrawer(schemaClimb, { ...openingArtOptions, committedExternally: true });
+        // The already-active climb never reaches `setCurrentClimb` (queueApi only
+        // repoints the source), so it opens like the pure reopen above.
+        openPlayDrawer(
+          schemaClimb,
+          isAlreadyActive ? openingArtOptions : { ...openingArtOptions, committedExternally: true },
+        );
         return activate(climb).catch((error: unknown) => {
           console.error('Playlist climb activation failed:', error);
           reportHandledError(error, { tags: { source: 'playlist', op: 'activate-climb' } });

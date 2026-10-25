@@ -1460,10 +1460,12 @@ describe('PlayDrawer stale-climb hold', () => {
   });
 
   // Decision A: only the automatic send on connect is held. A pick of the held
-  // climb from a list lights it; the accessory bar reopening it does not.
+  // climb from a list lights it; the accessory bar reopening it does not, and a
+  // queue-sheet tap leaves it to the clock its own setCurrentClimb restarted.
   it.each([
-    { label: 'a list pick', options: { committedExternally: true }, lights: true },
+    { label: 'a list pick', options: undefined, lights: true },
     { label: 'an accessory bar reopen', options: { reopensCurrent: true }, lights: false },
+    { label: 'a queue-sheet tap', options: { committedExternally: true }, lights: false },
   ])('$label of the held climb lights=$lights', ({ options, lights }) => {
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
     const bluetooth = connectedBluetooth({ queueItemUuid: 'queue-twelve', lastCurrentChangeAt: LAST_ON_WALL_AT });

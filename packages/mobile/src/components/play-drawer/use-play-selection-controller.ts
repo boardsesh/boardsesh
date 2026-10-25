@@ -219,12 +219,16 @@ export function usePlaySelectionController({
       // playlist, the logbook) is the climber asking for it, so it lights the
       // board the way the held climb's Put on the wall does. Those opens never
       // reach `setCurrentClimb` for a climb that is already current, so nothing
-      // else would restart its clock. The accessory bar and the mini player
-      // reopening the current climb (`reopensCurrent`) are not a pick: the drawer
-      // shows the climb as it is, with Put on the wall and the "Last on the wall"
-      // line. Previews never light the wall, held climb or not.
+      // else would restart its clock. A `committedExternally` opener (the queue
+      // sheet, the board sheet) already called `setCurrentClimb`, which restarts
+      // the clock for the held uuid and lights it (`reopen`), so a second
+      // write here would only send the climb twice. The accessory bar and the
+      // mini player reopening the current climb (`reopensCurrent`) are not a
+      // pick: the drawer shows the climb as it is, with Put on the wall and the
+      // "Last on the wall" line. Previews never light the wall, held climb or not.
       if (
         !previewItem &&
+        !options?.committedExternally &&
         !options?.reopensCurrent &&
         viewer !== 'anonymous' &&
         !showBoardMismatch &&
@@ -257,9 +261,19 @@ export function usePlaySelectionController({
   // the latest `openDrawer` without making it a dep (we key only on the target).
   const openDrawerRef = useRef(openDrawer);
   openDrawerRef.current = openDrawer;
+  //
+  // The host keeps the iPad pane's target after it lands, and every tab mounts
+  // its own pane, so a pane that mounts later replays a target another pane
+  // already applied. That replay is a look, not a pick: it must not light a
+  // climb the #4979 hold kept dark hours after the tap, so it opens as
+  // `reopensCurrent`.
   useEffect(() => {
     if (!openTarget) return;
-    openDrawerRef.current(openTarget.climb, openTarget.options);
+    const replay = openTarget.claimFirstApply ? !openTarget.claimFirstApply() : false;
+    openDrawerRef.current(
+      openTarget.climb,
+      replay ? { ...openTarget.options, reopensCurrent: true } : openTarget.options,
+    );
   }, [openTarget]);
 
   const handlePrev = useSwipeSelection({

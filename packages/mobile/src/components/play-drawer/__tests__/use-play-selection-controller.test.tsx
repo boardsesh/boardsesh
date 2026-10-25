@@ -111,16 +111,45 @@ describe('the #4979 hold (section 6, decision A)', () => {
     return held;
   }
 
-  it.each([
-    ['a list row (the activation already settled the queue)', { committedExternally: true }],
-    ['a logbook or feed row', undefined],
-  ] as const)('a pick of the held climb from %s lights it', (_label, options) => {
+  it('a pick of the held climb from a list row (search, playlist, logbook, feed) lights it', () => {
     const initialProps = heldInputs();
-    initialProps.openTarget = open(initialProps.queue.currentClimbQueueItem!, options);
+    initialProps.openTarget = open(initialProps.queue.currentClimbQueueItem!);
     renderHook(usePlaySelectionController, { initialProps });
     expect(initialProps.hold.putHeldClimbOnWall).toHaveBeenCalledOnce();
     // Lighting it is not a new pass: the queue is not written.
     expect(initialProps.queue.setCurrentClimb).not.toHaveBeenCalled();
+  });
+
+  it("a queue-sheet or board-sheet tap leaves the lighting to the caller's setCurrentClimb", () => {
+    // The caller's setCurrentClimb restarted the held climb's clock, which lights
+    // it (`reopen`); a relight here would send the climb twice.
+    const initialProps = heldInputs();
+    initialProps.openTarget = open(initialProps.queue.currentClimbQueueItem!, { committedExternally: true });
+    renderHook(usePlaySelectionController, { initialProps });
+    expect(initialProps.hold.putHeldClimbOnWall).not.toHaveBeenCalled();
+    expect(initialProps.queue.setCurrentClimb).not.toHaveBeenCalled();
+  });
+
+  it('a pane that mounts after the tap replays the target without lighting the held climb', () => {
+    // The iPad host keeps its pane target, and each tab mounts its own pane.
+    const first = heldInputs();
+    let applied = false;
+    const target = {
+      ...open(first.queue.currentClimbQueueItem!),
+      claimFirstApply: () => {
+        if (applied) return false;
+        applied = true;
+        return true;
+      },
+    };
+    first.openTarget = target;
+    renderHook(usePlaySelectionController, { initialProps: first });
+    expect(first.hold.putHeldClimbOnWall).toHaveBeenCalledOnce();
+
+    const later = heldInputs();
+    later.openTarget = target;
+    renderHook(usePlaySelectionController, { initialProps: later });
+    expect(later.hold.putHeldClimbOnWall).not.toHaveBeenCalled();
   });
 
   it('the accessory bar or mini player reopening the held climb keeps it dark', () => {
@@ -142,7 +171,7 @@ describe('the #4979 hold (section 6, decision A)', () => {
   it('leaves the board alone for an anonymous reader or a board mismatch', () => {
     for (const patch of [{ viewer: 'anonymous' as const }, { showBoardMismatch: true }]) {
       const initialProps = { ...heldInputs(), ...patch };
-      initialProps.openTarget = open(initialProps.queue.currentClimbQueueItem!, { committedExternally: true });
+      initialProps.openTarget = open(initialProps.queue.currentClimbQueueItem!);
       renderHook(usePlaySelectionController, { initialProps });
       expect(initialProps.hold.putHeldClimbOnWall).not.toHaveBeenCalled();
     }
@@ -152,7 +181,7 @@ describe('the #4979 hold (section 6, decision A)', () => {
     for (const heldQueueItemUuid of [null, 'queue-other']) {
       const initialProps = inputs();
       initialProps.hold.heldQueueItemUuid = heldQueueItemUuid;
-      initialProps.openTarget = open(initialProps.queue.currentClimbQueueItem!, { committedExternally: true });
+      initialProps.openTarget = open(initialProps.queue.currentClimbQueueItem!);
       renderHook(usePlaySelectionController, { initialProps });
       expect(initialProps.hold.putHeldClimbOnWall).not.toHaveBeenCalled();
     }

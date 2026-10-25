@@ -906,16 +906,22 @@ beside it:
    `FullSync` that rebuilds the same item (every reconnect) doesn't release it. Any
    `reassertWall()` releases it, which includes the MoonBoard adjacent-holds toggle and the Live
    Activity's re-light, both deliberate wall actions. A `setCurrentClimb` that lands on the
-   climb already current (a queue-sheet tap on the current row, a playlist activation that
-   dedupes onto it) restarts the clock, which releases it too (`reopen`). Only the automatic
+   climb already current (a queue-sheet or board-sheet tap on the current row) restarts the clock, which releases it too (`reopen`). Only the automatic
    send on connect is held (decision 10): picking the held climb again from a list (a search
    row, a playlist, the logbook) lights it, even though that open never calls
    `setCurrentClimb`. The play-selection controller
    (`src/components/play-drawer/use-play-selection-controller.ts`) runs the held climb's Put on
-   the wall for it (`relight`). The accessory bar and the mini player reopening the current
-   climb pass `reopensCurrent`, which is a look, not an ask: the player shows the held climb
-   with Put on the wall and the last-on-the-wall line. A preview never lights the wall, held
-   climb or not, so a list tap with Light on tap off still opens dark. The Bluetooth change
+   the wall for it (`relight`). It skips an open marked `committedExternally`: that caller
+   already called `setCurrentClimb`, which lit the climb (`reopen`), and a second write would
+   send it twice. A playlist row for the climb already current calls nothing, so it opens as a
+   plain pick. In a crew, a feed or logbook tap on the held climb lights it too: the tap opens
+   the current climb live, not as a preview, and lighting the crew's own current climb moves no
+   queue. A playlist row in a crew opens a preview and stays dark. The accessory bar and the
+   mini player reopening the current climb pass `reopensCurrent`, which is a look, not an ask:
+   the player shows the held climb with Put on the wall and the last-on-the-wall line. So does
+   an iPad pane that mounts after the tap (another tab's) and replays the host's kept target.
+   A preview never lights the wall, held climb or not, so a list tap with Light on tap off still
+   opens dark. The Bluetooth change
    stays in the send gate. A hold ends once the climb is actually on the wall, so a failed write
    leaves it standing. A disconnect ends the hold too (the next connect evaluates afresh), and
    so does the kill switch coming on, which then lights the climb the hold kept dark.

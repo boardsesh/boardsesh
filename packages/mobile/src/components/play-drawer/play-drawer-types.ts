@@ -68,6 +68,12 @@ export type PlayDrawerOpenTarget = {
   climb: Climb;
   options?: PlayDrawerOpenOptions;
   nonce: number;
+  /**
+   * Set on a target the host keeps after it lands (the iPad pane's). True the
+   * first time a player applies this target, false on every later apply, so a
+   * pane that mounts afterwards (another tab's) replays it as a look.
+   */
+  claimFirstApply?: () => boolean;
 };
 
 export type PlayDrawerProps = {
