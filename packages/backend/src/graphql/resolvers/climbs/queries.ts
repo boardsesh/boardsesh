@@ -795,6 +795,31 @@ export const climbQueries = {
     }
 
     const uniqueClimbUuids = [...new Set(validatedClimbUuids)];
+    // Queue snapshots keep merged-away uuids, but stats rows exist only under the
+    // canonical uuid. Look up each requested uuid's canonical, read those rows,
+    // then hand them back under the uuid the client asked for so its grouping by
+    // `climbUuid` still matches.
+    const aliasRows = await db
+      .select({
+        aliasUuid: dbSchema.boardClimbAliases.aliasUuid,
+        canonicalUuid: dbSchema.boardClimbAliases.canonicalUuid,
+      })
+      .from(dbSchema.boardClimbAliases)
+      .where(
+        and(
+          eq(dbSchema.boardClimbAliases.boardType, boardName),
+          inArray(dbSchema.boardClimbAliases.aliasUuid, uniqueClimbUuids),
+        ),
+      );
+    const canonicalByAlias = new Map(aliasRows.map((row) => [row.aliasUuid, row.canonicalUuid]));
+    const requestedUuidsByCanonical = new Map<string, string[]>();
+    for (const requestedUuid of uniqueClimbUuids) {
+      const canonicalUuid = canonicalByAlias.get(requestedUuid) ?? requestedUuid;
+      const requestedForCanonical = requestedUuidsByCanonical.get(canonicalUuid);
+      if (requestedForCanonical) requestedForCanonical.push(requestedUuid);
+      else requestedUuidsByCanonical.set(canonicalUuid, [requestedUuid]);
+    }
+    const canonicalClimbUuids = [...requestedUuidsByCanonical.keys()];
     // This is one physical primary query for the whole batch. Empty climbs are
     // represented by the absence of rows; the client records cooldowns from
     // the requested UUID list rather than inferring them from this response.
@@ -831,7 +856,7 @@ export const climbQueries = {
       .where(
         and(
           eq(dbSchema.boardClimbStats.boardType, boardName),
-          inArray(dbSchema.boardClimbStats.climbUuid, uniqueClimbUuids),
+          inArray(dbSchema.boardClimbStats.climbUuid, canonicalClimbUuids),
           // Same rule as `climbStatsForAngles`: the row carries the setter grade
           // and `fa_username`, so a retained uuid must not outlive the wall's
           // visibility.
@@ -847,11 +872,14 @@ export const climbQueries = {
       )
       .orderBy(asc(dbSchema.boardClimbStats.climbUuid), asc(dbSchema.boardClimbStats.angle));
 
-    return rows.map((row) => ({
-      ...row,
-      difficulty: row.displayDifficulty == null ? null : getGradeLabel(Math.round(row.displayDifficulty), boardName),
-      syncSeq: row.syncSeq,
-    }));
+    return rows.flatMap((row) =>
+      (requestedUuidsByCanonical.get(row.climbUuid) ?? [row.climbUuid]).map((requestedUuid) => ({
+        ...row,
+        climbUuid: requestedUuid,
+        difficulty: row.displayDifficulty == null ? null : getGradeLabel(Math.round(row.displayDifficulty), boardName),
+        syncSeq: row.syncSeq,
+      })),
+    );
   },
 
   /**

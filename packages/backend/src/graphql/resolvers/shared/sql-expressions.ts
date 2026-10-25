@@ -126,6 +126,8 @@ export function boardseshGradeTickJoin({
  * {@link boardseshGradeTickJoin} and `getClimbByUuid`, for point reads that
  * key `board_climb_grades` / `board_climb_stats` by a single client uuid.
  * Queue snapshots keep retired uuids, so those reads must resolve here.
+ * Same rule as `resolveCanonicalClimbUuid` in `@boardsesh/db/queries` and the
+ * COALESCE in `playlists/grade-summaries.ts`.
  * The (board_type, alias_uuid) primary key makes the scalar subquery safe.
  */
 export function canonicalClimbUuidSql(boardType: string, climbUuid: string): SQL<string> {
