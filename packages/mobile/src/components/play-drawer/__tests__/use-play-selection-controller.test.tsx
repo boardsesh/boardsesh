@@ -285,9 +285,11 @@ describe('explicit wall commitment', () => {
     const { result } = renderHook(usePlaySelectionController, { initialProps });
     act(() => result.current.handleSetActive());
     expect(initialProps.confirmation.setBusyWallConfirmArmed).not.toHaveBeenCalledWith(true);
+    // A trackless look: the provider decides whether the committed list keeps
+    // going after it (#6777), and clears it otherwise.
     expect(initialProps.queue.setCurrentClimb).toHaveBeenCalledWith(
       expect.objectContaining({ climb: expect.objectContaining({ uuid: 'preview' }) }),
-      { playlistSuggestionSource: null, trigger: 'put_on_wall' },
+      { keepTrackIfUpNext: true, trigger: 'put_on_wall' },
     );
     expect(initialProps.preview.setSharedBrowseLatched).toHaveBeenCalledWith(false);
   });

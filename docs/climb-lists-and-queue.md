@@ -525,7 +525,12 @@ Seven rules. Each one reuses a part that already exists in the code: the list tr
    queue button's badge counts Up next all the way. In a crew the room's Up next plays before
    this phone's list goes on. A preview (a crew browse, a wrong-board look, Light on tap off)
    walks only its list, so a look never uses up anybody's Up next; committing it (Put on the
-   wall) starts the walk from there. Owner decision, 2026-10-25 (#6777), reversing the
+   wall) starts the walk from there. With Light on swipe off, or in a crew, a swipe off the
+   climb on the wall is a look that walks the queue with no list of its own (#5403); Put on
+   the wall on a queued climb ahead of it keeps this phone's list and its place, as Next
+   would (`resolveUpNextCommitResume`), and leaves the list for anything else. If the list
+   climb's own queue entry is removed while Up next plays, Previous goes back to that list
+   climb instead of into History. Owner decision, 2026-10-25 (#6777), reversing the
    list-first walk F1 shipped, where the queue waited behind the end card and the persona panel
    in discussion #6708 predicted climbers would get lost.
 3. **The queue holds only what you or your crew add**: the right swipe (Play next), Play next,

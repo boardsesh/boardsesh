@@ -176,7 +176,15 @@ export function usePlayNavigationModel({
       playsUpNext
         ? resolveUpNextTrackLabel(
             labelSource,
-            resolveUpNextProgress(queue, displayedQueueItem, navigationSuggestionSource, preparedQueue),
+            // The same board filter as the walk, so the count is the climbs Next plays.
+            resolveUpNextProgress(
+              queue,
+              displayedQueueItem,
+              navigationSuggestionSource,
+              preparedQueue,
+              navigationBoardConfig,
+              isReachableClimb,
+            ),
           )
         : resolveTrackLabel(labelSource, displayedClimbUuid),
     [
@@ -186,6 +194,8 @@ export function usePlayNavigationModel({
       displayedQueueItem,
       navigationSuggestionSource,
       preparedQueue,
+      navigationBoardConfig,
+      isReachableClimb,
       displayedClimbUuid,
     ],
   );

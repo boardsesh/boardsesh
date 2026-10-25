@@ -1184,6 +1184,30 @@ describe('QueueProvider plays Up next before the list continues (#6777)', () => 
     expect(latest().playlistSuggestionSource?.resume).toBeUndefined();
   });
 
+  // Light on swipe off, or a crew: the swipe into Up next was a look that
+  // walked the queue, and Put on the wall commits the queued entry it reached.
+  it('keeps the list place when a looked-at Up next climb goes up on the wall', async () => {
+    await renderOnTheTappedClimb();
+
+    act(() => latest().setCurrentClimb(queuedSecond, { keepTrackIfUpNext: true, trigger: 'put_on_wall' }));
+    expect(latest().state.currentClimbQueueItem).toBe(queuedSecond);
+    expect(latest().playlistSuggestionSource?.resume).toEqual({ climbUuid: 's2', queueItemUuid: 'item-s2' });
+    // The queued entry went up as it is: nothing was inserted or pruned.
+    expect(latest().state.queue.map(({ uuid }) => uuid)).toEqual(['item-s2', 'item-q1', 'item-q2']);
+
+    act(() => latest().nextClimb());
+    expect(currentClimbUuid()).toBe('s3');
+  });
+
+  it('leaves the list when the looked-at climb is not Up next on it', async () => {
+    await renderOnTheTappedClimb();
+    const elsewhere = makeItem('item-elsewhere', makeClimb('elsewhere', 'kilter', 1));
+
+    act(() => latest().setCurrentClimb(elsewhere, { keepTrackIfUpNext: true, trigger: 'put_on_wall' }));
+    expect(latest().state.currentClimbQueueItem?.uuid).toBe('item-elsewhere');
+    expect(latest().playlistSuggestionSource).toBeNull();
+  });
+
   it('keeps the list place when a fuller copy of the list lands mid-queue', async () => {
     await renderOnTheTappedClimb();
     act(() => latest().nextClimb());

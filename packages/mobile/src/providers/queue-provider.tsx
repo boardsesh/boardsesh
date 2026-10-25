@@ -76,6 +76,7 @@ import { getStoredActiveBoard } from '../lib/active-board-store';
 import { useActiveBoard, useSetActiveBoard } from '../lib/graphql/use-active-board';
 import {
   anchoredSuggestionSource,
+  resolveUpNextCommitResume,
   selectPreviousQueueItemWithSuggestions,
   selectNextQueueItemWithSuggestions,
   shouldDefaultToBrowse,
@@ -2597,6 +2598,30 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     dispatchSetCurrent(current, false);
   }, [state.currentClimbQueueItem, dispatchSetCurrent, pendingUnsyncedCurrent]);
 
+  /**
+   * Store where the list picks up after a step into or out of Up next (#6777).
+   * A walk that steps from a list climb into the queue records that list climb
+   * on the track, and stepping back onto the list clears it: that is what keeps
+   * the list's place while queued climbs play, and what tells the player to
+   * say "Up next · 1 of 3" instead of the list's name.
+   *
+   * Written onto the held track only while it is still the one the step walked
+   * (same list, tap and board), so a track replaced meanwhile is left alone.
+   * The same render batch commits it with the current climb, so there is no
+   * render in which the queued climb is current and the track has gone dormant.
+   */
+  const storeTrackResume = useCallback(
+    (walkedSource: PlaylistSuggestionSource | null, trackResume: PlaylistTrackResume | null | undefined) => {
+      if (trackResume === undefined || !walkedSource) return;
+      if (samePlaylistTrackResume(walkedSource.resume, trackResume)) return;
+      if (privacyRevocationGeneration !== getPrivacyRevocationGeneration()) return;
+      setPlaylistSuggestionSourceState((held) =>
+        held && playlistSuggestionSourceMatches(held, walkedSource) ? withPlaylistTrackResume(held, trackResume) : held,
+      );
+    },
+    [privacyRevocationGeneration],
+  );
+
   const setCurrentClimb = useCallback(
     (item: ClimbQueueItem, options?: SetCurrentClimbOptions) => {
       if (privacyRevocationGeneration !== getPrivacyRevocationGeneration()) return;
@@ -2606,6 +2631,16 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // the current climb passes nothing, leaving the source intact.
       if (options?.playlistSuggestionSource !== undefined) {
         setPlaylistSuggestionSourceState(options.playlistSuggestionSource);
+      }
+      // A look that walked the queue went up on the wall (#6777). Read before the
+      // dispatch, against the climb still current: Up next on the held track
+      // keeps the list's place, as Next stepping into Up next does.
+      if (options?.keepTrackIfUpNext) {
+        const { queue, currentClimbQueueItem } = stateRef.current;
+        const heldTrack = playlistSuggestionSourceRef.current;
+        const trackResume = resolveUpNextCommitResume(queue, currentClimbQueueItem, heldTrack, item);
+        if (trackResume === undefined) setPlaylistSuggestionSourceState(null);
+        else storeTrackResume(heldTrack, trackResume);
       }
       // A spray wall's layout id is minted per wall, so `layoutId` cannot say
       // "spray". The board type can, and it is one of nine values. It is the
@@ -2644,7 +2679,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // climb) is preserved.
       dispatchSetCurrent(item, true, options?.playlistSuggestionSource, true);
     },
-    [dispatchSetCurrent, privacyRevocationGeneration],
+    [dispatchSetCurrent, privacyRevocationGeneration, storeTrackResume],
   );
 
   // The editor saved a climb that is already in the queue. See the reducer's
@@ -2762,30 +2797,6 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       'info',
     );
   }, [forwardSelection, activeBoardKey, showToast, tSettings, trackClimbsSkippedOnBoard]);
-
-  /**
-   * Store where the list picks up after a step into or out of Up next (#6777).
-   * A walk that steps from a list climb into the queue records that list climb
-   * on the track, and stepping back onto the list clears it: that is what keeps
-   * the list's place while queued climbs play, and what tells the player to
-   * say "Up next · 1 of 3" instead of the list's name.
-   *
-   * Written onto the held track only while it is still the one the step walked
-   * (same list, tap and board), so a track replaced meanwhile is left alone.
-   * The same render batch commits it with the current climb, so there is no
-   * render in which the queued climb is current and the track has gone dormant.
-   */
-  const storeTrackResume = useCallback(
-    (walkedSource: PlaylistSuggestionSource | null, trackResume: PlaylistTrackResume | null | undefined) => {
-      if (trackResume === undefined || !walkedSource) return;
-      if (samePlaylistTrackResume(walkedSource.resume, trackResume)) return;
-      if (privacyRevocationGeneration !== getPrivacyRevocationGeneration()) return;
-      setPlaylistSuggestionSourceState((held) =>
-        held && playlistSuggestionSourceMatches(held, walkedSource) ? withPlaylistTrackResume(held, trackResume) : held,
-      );
-    },
-    [privacyRevocationGeneration],
-  );
 
   const nextClimb = useCallback(() => {
     const { queue, currentClimbQueueItem } = stateRef.current;

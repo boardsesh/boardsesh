@@ -184,6 +184,15 @@ export type SetCurrentClimbOptions = {
    * Left out, the context is untouched, the same as passing no options.
    */
   playlistSuggestionSource?: PlaylistSuggestionSource | null;
+  /**
+   * A queued climb a look reached went up on the wall (issue #6777): a preview
+   * that walked the queue from the current climb, then Put on the wall. Where
+   * the climb is Up next on the held track, the track keeps steering and
+   * learns where the list picks up, as Next stepping into Up next does;
+   * otherwise it is cleared, like `playlistSuggestionSource: null`. Passed
+   * instead of `playlistSuggestionSource`.
+   */
+  keepTrackIfUpNext?: boolean;
   trigger?: SetCurrentClimbTrigger;
 };
 
