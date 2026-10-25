@@ -1259,6 +1259,53 @@ describe('BluetoothProvider wall-confirm integration', () => {
     expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2);
   });
 
+  it('re-lights the climb when the new link opened while the queue was empty (#4413)', async () => {
+    // The drain effect returns early on an empty queue, before it reads the
+    // generation, so the link change has to stay pending until a climb comes
+    // back. It is the same climb as before the link change, so only that
+    // pending change stops the old link's dedup signature eating this write.
+    const providerElement = () =>
+      createElement(BluetoothProvider, {
+        boardName: 'kilter',
+        layoutId: 1,
+        sizeId: 10,
+        setIds: '1,20',
+        children: createElement('div', null),
+      });
+    const settle = () =>
+      act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+    const { rerender } = render(providerElement());
+    await waitFor(() => {
+      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
+    });
+
+    queue.currentClimbQueueItem = null;
+    rerender(providerElement());
+    await settle();
+
+    await act(async () => {
+      bluetooth.options?.onConnectSuccess?.(null, makeConnectionHandle(2));
+    });
+    await settle();
+    expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
+
+    queue.currentClimbQueueItem = makeQueueItem('climb-1');
+    rerender(providerElement());
+
+    await waitFor(() => {
+      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2);
+    });
+    expect(bluetooth.state.sendFramesToBoard).toHaveBeenNthCalledWith(
+      2,
+      'p1r12',
+      false,
+      expect.any(AbortSignal),
+      expect.objectContaining({ sendSource: 'auto' }),
+    );
+  });
+
   it('keeps suppressing the duplicate when the new link wrote the climb itself', async () => {
     // A reconnect that DID carry initialFrames already put these frames on the
     // wall, so the link change must not cost a redundant full-frame write plus
