@@ -42,7 +42,12 @@ export function isGoogleSignInConfigured(): boolean {
 
 type ForwardedName = { firstName?: string; lastName?: string };
 
-type NativeAuthFailure = { success: false; status: number | null; error: string };
+// `networkCause` splits the two ways a request ends with error 'network':
+// our 15 s abort ('timeout', the server was slow) and a fetch that never
+// connected ('unreachable'). Only set when error is 'network'.
+export type NetworkCause = 'timeout' | 'unreachable';
+
+type NativeAuthFailure = { success: false; status: number | null; error: string; networkCause?: NetworkCause };
 
 // A native OAuth attempt resolves to one of: success, an explicit user
 // cancellation (no error shown), or a real failure carrying the server's
@@ -64,16 +69,22 @@ export async function oauthNativeSignIn(
   extra?: { nonce?: string; name?: ForwardedName },
 ): Promise<OAuthSignInResult> {
   let response: Response;
+  const timeoutSignal = createTimeoutSignal(15_000);
   try {
     response = await fetch(`${BACKEND_URL}/auth/native/oauth`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...clientIdentityHeaders() },
       body: JSON.stringify({ provider, identityToken, nonce: extra?.nonce, name: extra?.name }),
-      signal: createTimeoutSignal(15_000),
+      signal: timeoutSignal,
     });
   } catch {
     // Network failure / timeout. The caller maps this to a translated message.
-    return { success: false, status: null, error: 'network' };
+    return {
+      success: false,
+      status: null,
+      error: 'network',
+      networkCause: timeoutSignal.aborted ? 'timeout' : 'unreachable',
+    };
   }
 
   if (!response.ok) {
@@ -219,16 +230,22 @@ const NATIVE_OAUTH_REDIRECT = 'com.boardsesh.app://auth/callback';
  */
 async function exchangeTransferToken(transferToken: string): Promise<OAuthSignInResult> {
   let response: Response;
+  const timeoutSignal = createTimeoutSignal(15_000);
   try {
     response = await fetch(`${BACKEND_URL}/auth/native/exchange`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...clientIdentityHeaders() },
       body: JSON.stringify({ transferToken }),
-      signal: createTimeoutSignal(15_000),
+      signal: timeoutSignal,
     });
   } catch {
     // Network failure / timeout. The caller maps this to a translated message.
-    return { success: false, status: null, error: 'network' };
+    return {
+      success: false,
+      status: null,
+      error: 'network',
+      networkCause: timeoutSignal.aborted ? 'timeout' : 'unreachable',
+    };
   }
 
   if (!response.ok) {

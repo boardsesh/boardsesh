@@ -571,6 +571,45 @@ describe('useNativeOAuthSignIn — Android Google config-class fallback (#3100)'
   });
 });
 
+describe('useNativeOAuthSignIn — Android backend exchange network failures (#5852)', () => {
+  beforeEach(() => {
+    platform.OS = 'android';
+    trackMock.mockReset();
+    reportErrorMock.mockReset();
+    signInWithGoogleMock.mockReset();
+  });
+
+  it('tells the climber the server is slow when the exchange timed out', async () => {
+    signInWithGoogleMock.mockResolvedValue({ success: false, status: null, error: 'network', networkCause: 'timeout' });
+
+    const setError = await runSignIn('google');
+
+    expect(setError).toHaveBeenLastCalledWith('nativeStart.slowServerError');
+    expect(trackMock).toHaveBeenCalledWith(
+      'Login Failed',
+      expect.objectContaining({ failure_detail: 'network', network_cause: 'timeout' }),
+    );
+    expect(reportErrorMock).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({ extra: expect.objectContaining({ network_cause: 'timeout' }) }),
+    );
+  });
+
+  it('keeps the connection copy when the request never connected', async () => {
+    signInWithGoogleMock.mockResolvedValue({
+      success: false,
+      status: null,
+      error: 'network',
+      networkCause: 'unreachable',
+    });
+
+    const setError = await runSignIn('google');
+
+    expect(setError).toHaveBeenLastCalledWith('nativeStart.networkError');
+    expect(trackMock).toHaveBeenCalledWith('Login Failed', expect.objectContaining({ network_cause: 'unreachable' }));
+  });
+});
+
 describe('useNativeOAuthSignIn — Login Succeeded names its screen', () => {
   // Login Succeeded fires after a wait for the profile, by which time PostHog's
   // session `$screen_name` has usually moved on, so the screen rides as a prop.

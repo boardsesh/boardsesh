@@ -13,7 +13,7 @@ import {
 import { consumeFreshOAuthPending, setOAuthPending } from '../lib/oauth-pending-store';
 import { consumeWebOAuthErrorReturn } from '../lib/oauth-return';
 import { createWebOAuthAttemptId } from '../lib/oauth-return-marker';
-import type { OAuthSignInResult } from '../lib/auth';
+import type { NetworkCause, OAuthSignInResult } from '../lib/auth';
 import { useTranslation } from 'react-i18next';
 
 type Provider = 'apple' | 'google';
@@ -36,6 +36,13 @@ type Options = {
 export function useNativeOAuthSignIn({ isRegistration = false, setError }: Options) {
   const { signInWithApple, signInWithGoogle, signInWithGoogleWeb, signInWithAppleWeb } = useAuth();
   const { t } = useTranslation('auth');
+
+  // A timeout means Google worked and our server was slow, so don't blame the
+  // climber's connection.
+  const oauthFailureMessage = (failure: { error: string; networkCause?: NetworkCause }): string => {
+    if (failure.error !== 'network') return t('nativeStart.oauthError');
+    return failure.networkCause === 'timeout' ? t('nativeStart.slowServerError') : t('nativeStart.networkError');
+  };
   const trackLoginSucceeded = useTrackLoginSucceeded();
   const [inProgress, setInProgress] = useState(false);
   const inProgressRef = useRef(false);
@@ -160,15 +167,16 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
           fallback_mechanism: 'browser_deeplink',
           failure_reason: fallbackReason,
           failure_detail: fallback.error,
+          ...(fallback.networkCause ? { network_cause: fallback.networkCause } : {}),
           duration_ms: Date.now() - fallbackStartedAt,
           ...registrationProps,
         });
         reportError(new Error(`Web-fallback ${provider} sign-in failed: ${fallback.error}`), {
           level: fallback.error === 'network' || fallback.error === 'browser_timeout' ? 'warning' : 'error',
           tags: { source: 'native-auth', provider, flow: 'web_fallback', failure_reason: fallbackReason },
-          extra: { status: fallback.status, server_error: fallback.error },
+          extra: { status: fallback.status, server_error: fallback.error, network_cause: fallback.networkCause },
         });
-        setError(fallback.error === 'network' ? t('nativeStart.networkError') : t('nativeStart.oauthError'));
+        setError(oauthFailureMessage(fallback));
       };
 
       try {
@@ -221,6 +229,7 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
           flow: primaryFlow,
           failure_reason: oauthFailureReason,
           failure_detail: result.error,
+          ...(result.networkCause ? { network_cause: result.networkCause } : {}),
           recoverable: Platform.OS === 'ios',
           duration_ms: Date.now() - attemptStartedAt,
           ...registrationProps,
@@ -239,9 +248,9 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
         reportError(new Error(`${primaryFlow} ${provider} sign-in failed: ${result.error}`), {
           level: result.error === 'network' ? 'warning' : 'error',
           tags: { source: 'native-auth', provider, flow: primaryFlow, failure_reason: oauthFailureReason },
-          extra: { status: result.status, server_error: result.error },
+          extra: { status: result.status, server_error: result.error, network_cause: result.networkCause },
         });
-        setError(result.error === 'network' ? t('nativeStart.networkError') : t('nativeStart.oauthError'));
+        setError(oauthFailureMessage(result));
       } catch (oauthError) {
         // The native module threw (Play Services missing, no presenter, a
         // signing/client-id mismatch, …). Prefer the native `.code` for
