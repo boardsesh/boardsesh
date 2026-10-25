@@ -286,8 +286,11 @@ describe('smartPlaylist resolver', () => {
       expect(calls.having).toHaveLength(1);
       expect(sqlText(calls.having[0][0])).toMatch(/NOT bool_or\(\s*IN \('flash', 'send'\)\)/);
       expect(calls.as[0]).toEqual(['projects']);
-      // The climb row is not read at all.
+      // The climb row is not joined, only probed for the hydrator's readable
+      // rule (it exists, and a draft is the viewer's own), so the page and the
+      // count skip a tick the hydrator would drop (#6661).
       expect(calls.leftJoin).toHaveLength(0);
+      expect(sqlText(calls.where[0][0])).toContain('privacy_reference_climb.is_draft IS NOT TRUE');
     }
     expect(pageCalls.leftJoin).toHaveLength(0);
     expect(pageCalls.limit[0]).toEqual([20]);

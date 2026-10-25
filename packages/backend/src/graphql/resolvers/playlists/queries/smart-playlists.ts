@@ -116,6 +116,29 @@ function smartBaseConditions(
 }
 
 /**
+ * `smartBaseConditions` plus the hydrator's readable-climb rule, for the paged
+ * query and its count when there is no view: a `board_climbs` row under the
+ * tick's own uuid, published or the viewer's draft. `tickPrivacyCondition`
+ * checks the climb through its catalog alias, so a tick on a deduped-away alias
+ * uuid passed it, while the hydrator, which reads the raw uuid, found no row and
+ * dropped it after the page was taken: a lost page slot and one too many in
+ * `totalCount` (#6661). A view joins `board_climbs` on the raw uuid, the same rule.
+ */
+function pagedSmartConditions(
+  userId: string,
+  boardName: string | undefined,
+  viewerUserId: string | null | undefined,
+): SQL[] {
+  return [
+    ...smartBaseConditions(userId, boardName, viewerUserId),
+    climbReferenceReadableCondition(
+      { boardType: dbSchema.boardseshTicks.boardType, climbUuid: dbSchema.boardseshTicks.climbUuid },
+      viewerUserId,
+    ),
+  ];
+}
+
+/**
  * The LIKED_CLIMBS rows: `userId`'s hearts on climbs the viewer may read, on
  * `boardName` when scoped. Favourites are the other reference source, so they
  * carry the spray-wall rules `smartBaseConditions` gives the logbook, for the
@@ -175,6 +198,8 @@ function projectClimbsSubquery(conditions: SQL[]) {
  * Page of (climbUuid, boardType) pairs for the smart playlist, ordered by the
  * type's natural ranking (latest 5-star, most attempts, etc.). Pagination is
  * pushed into the database — we never materialize the full list in memory.
+ * Ties break on (board_type, climb_uuid), the view's `natural_rank` order, so
+ * OFFSET paging over equal totals neither repeats nor skips a climb (#6659).
  */
 async function selectSmartClimbRefs(
   type: LogbookPlaylistType,
@@ -184,7 +209,7 @@ async function selectSmartClimbRefs(
   pageSize: number,
   viewerUserId: string | null | undefined,
 ): Promise<SmartClimbRef[]> {
-  const conditions = smartBaseConditions(userId, boardName, viewerUserId);
+  const conditions = pagedSmartConditions(userId, boardName, viewerUserId);
   const offset = page * pageSize;
 
   if (type === 'FIVE_STARS') {
@@ -197,7 +222,11 @@ async function selectSmartClimbRefs(
       .from(dbSchema.boardseshTicks)
       .where(and(...conditions, eq(dbSchema.boardseshTicks.quality, 5)))
       .groupBy(dbSchema.boardseshTicks.climbUuid, dbSchema.boardseshTicks.boardType)
-      .orderBy(desc(max(dbSchema.boardseshTicks.climbedAt)))
+      .orderBy(
+        desc(max(dbSchema.boardseshTicks.climbedAt)),
+        dbSchema.boardseshTicks.boardType,
+        dbSchema.boardseshTicks.climbUuid,
+      )
       .limit(pageSize)
       .offset(offset);
     return rows.map((row) => ({ climbUuid: row.climbUuid, boardType: row.boardType }));
@@ -214,7 +243,11 @@ async function selectSmartClimbRefs(
       .where(and(...conditions))
       .groupBy(dbSchema.boardseshTicks.climbUuid, dbSchema.boardseshTicks.boardType)
       .having(sql`SUM(${dbSchema.boardseshTicks.attemptCount}) > 1`)
-      .orderBy(desc(sql`SUM(${dbSchema.boardseshTicks.attemptCount})`))
+      .orderBy(
+        desc(sql`SUM(${dbSchema.boardseshTicks.attemptCount})`),
+        dbSchema.boardseshTicks.boardType,
+        dbSchema.boardseshTicks.climbUuid,
+      )
       .limit(pageSize)
       .offset(offset);
     return rows.map((row) => ({ climbUuid: row.climbUuid, boardType: row.boardType }));
@@ -230,7 +263,11 @@ async function selectSmartClimbRefs(
       .from(dbSchema.userFavorites)
       .where(and(...favConditions))
       .groupBy(dbSchema.userFavorites.climbUuid, dbSchema.userFavorites.boardName)
-      .orderBy(desc(max(dbSchema.userFavorites.createdAt)))
+      .orderBy(
+        desc(max(dbSchema.userFavorites.createdAt)),
+        dbSchema.userFavorites.boardName,
+        dbSchema.userFavorites.climbUuid,
+      )
       .limit(pageSize)
       .offset(offset);
     return rows.map((row) => ({ climbUuid: row.climbUuid, boardType: row.boardType }));
@@ -241,7 +278,7 @@ async function selectSmartClimbRefs(
   const rows = await db
     .select({ climbUuid: projects.climbUuid, boardType: projects.boardType })
     .from(projects)
-    .orderBy(desc(projects.total))
+    .orderBy(desc(projects.total), projects.boardType, projects.climbUuid)
     .limit(pageSize)
     .offset(offset);
   return rows.map((row) => ({ climbUuid: row.climbUuid, boardType: row.boardType }));
@@ -257,7 +294,7 @@ async function countSmartClimbRefs(
   boardName: string | undefined,
   viewerUserId: string | null | undefined,
 ): Promise<number> {
-  const conditions = smartBaseConditions(userId, boardName, viewerUserId);
+  const conditions = pagedSmartConditions(userId, boardName, viewerUserId);
 
   if (type === 'FIVE_STARS') {
     const [row] = await db
@@ -320,10 +357,9 @@ function smartRowsColumn(column: 'climb_uuid' | 'board_type' | 'natural_rank'): 
 }
 
 /**
- * The list's own order as a 1-based rank over every row. The paged queries
- * above order on the key alone; ties there come back in whatever order Postgres
- * picks, so the rank breaks them on the row key, which a view must have for
- * OFFSET paging to neither repeat nor skip a row.
+ * The list's own order as a 1-based rank over every row, with ties broken on
+ * the row key like the paged queries above, which a view must have for OFFSET
+ * paging to neither repeat nor skip a row.
  */
 function naturalRankSql(order: SQL) {
   return sql<number>`ROW_NUMBER() OVER (ORDER BY ${order})`.as('natural_rank');
@@ -332,7 +368,8 @@ function naturalRankSql(order: SQL) {
 /**
  * A logbook type's rows as `(climb_uuid, board_type, natural_rank)`: the same
  * WHERE, GROUP BY and HAVING as `selectSmartClimbRefs`, unpaged, ranked by the
- * order that query pages in.
+ * order that query pages in. The readable-climb rule `pagedSmartConditions`
+ * adds there comes from the view's `board_climbs` join instead.
  */
 function logbookRowsSql(
   type: LogbookPlaylistType,
