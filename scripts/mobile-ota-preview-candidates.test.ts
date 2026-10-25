@@ -11,6 +11,7 @@ import {
   runPreviewCandidates,
   resolvePreviewRuntime,
   type PreviewCandidate,
+  type RuntimeRunner,
 } from './mobile-ota-preview-candidates';
 import { restorePreviewSource } from './mobile-ota-preview-source';
 import { validatePreviewReceipt } from './mobile-ota-boot-preview';
@@ -138,35 +139,57 @@ describe('dual-base PR preview replay', { timeout: 30_000 }, () => {
     );
     expect(readFileSync(join(results[0]!.directory!, 'base-added.txt'), 'utf8')).toBe('keep this file');
   });
-  it('resolves stable full runtime hashes under platform publish env without exposing the publish key', () => {
-    const runner = vi.fn(() => fingerprint);
+  it('resolves stable full runtime hashes under platform publish env without exposing the publish key', async () => {
+    const runner = vi.fn<RuntimeRunner>(async () => ({ stdout: fingerprint }));
     const environment: NodeJS.ProcessEnv = {
       ...process.env,
       EOO_TOKEN: 'publish-key',
       GOOGLE_MAPS_API_KEY: 'maps-key',
       EXPO_UPDATES_FINGERPRINT_OVERRIDE: 'wrong',
     };
-    expect(resolvePreviewRuntime('/candidate', 'android', environment, runner as unknown as typeof execFileSync)).toBe(
-      fingerprint,
-    );
+    expect(await resolvePreviewRuntime('/candidate', 'android', environment, runner)).toBe(fingerprint);
     expect(runner).toHaveBeenCalledTimes(2);
-    const options = runner.mock.calls[0] as unknown as [string, string[], { env: NodeJS.ProcessEnv }];
-    expect(options[2].env.GOOGLE_MAPS_API_KEY).toBe('maps-key');
-    expect(options[2].env.EOO_TOKEN).toBeUndefined();
-    expect(options[2].env.EXPO_UPDATES_FINGERPRINT_OVERRIDE).toBeUndefined();
+    const options = runner.mock.calls[0]![2];
+    expect(options.cwd).toBe('/candidate/packages/mobile');
+    expect(options.env.GOOGLE_MAPS_API_KEY).toBe('maps-key');
+    expect(options.env.EOO_TOKEN).toBeUndefined();
+    expect(options.env.EXPO_UPDATES_FINGERPRINT_OVERRIDE).toBeUndefined();
     runner.mockClear();
-    resolvePreviewRuntime('/candidate', 'ios', environment, runner as unknown as typeof execFileSync);
+    await resolvePreviewRuntime('/candidate', 'ios', environment, runner);
+    expect(runner.mock.calls[0]![2].env.GOOGLE_MAPS_API_KEY).toBeUndefined();
     expect(
-      (runner.mock.calls[0] as unknown as [string, string[], { env: NodeJS.ProcessEnv }])[2].env.GOOGLE_MAPS_API_KEY,
-    ).toBeUndefined();
-    expect(
-      resolvePreviewRuntime(
+      await resolvePreviewRuntime(
         '/candidate',
         'ios',
         environment,
-        vi.fn().mockReturnValueOnce(fingerprint).mockReturnValueOnce('d'.repeat(40)) as unknown as typeof execFileSync,
+        vi
+          .fn<RuntimeRunner>()
+          .mockResolvedValueOnce({ stdout: fingerprint })
+          .mockResolvedValueOnce({ stdout: 'd'.repeat(40) }),
       ),
     ).toBeNull();
+    expect(
+      await resolvePreviewRuntime(
+        '/candidate',
+        'ios',
+        environment,
+        vi.fn<RuntimeRunner>().mockRejectedValue(new Error('timed out')),
+      ),
+    ).toBeNull();
+  });
+  it('confirms one tree twice in sequence rather than racing its own stability check', async () => {
+    let inFlight = 0;
+    let overlapped = false;
+    const runner = vi.fn<RuntimeRunner>(async () => {
+      overlapped ||= inFlight > 0;
+      inFlight += 1;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight -= 1;
+      return { stdout: fingerprint };
+    });
+    expect(await resolvePreviewRuntime('/candidate', 'ios', process.env, runner)).toBe(fingerprint);
+    expect(runner).toHaveBeenCalledTimes(2);
+    expect(overlapped).toBe(false);
   });
   it('prepares only main when marketing versions match', () => {
     const fixture = graph();
@@ -203,7 +226,7 @@ describe('dual-base PR preview replay', { timeout: 30_000 }, () => {
     expect(candidates[1]).toMatchObject({ status: 'conflict', platforms: {} });
     expect(candidates[1]!.commitHash).toBeUndefined();
   });
-  it('continues independent target preparation after install failure and retains empty replay sources', () => {
+  it('continues independent target preparation after install failure and retains empty replay sources', async () => {
     const fixture = graph();
     const headSha = commitPr(fixture, fixture.main);
     const source = { headSha, baseSha: fixture.main, baseRef: 'main', mainSha: fixture.main, trainSha: fixture.train };
@@ -220,14 +243,14 @@ describe('dual-base PR preview replay', { timeout: 30_000 }, () => {
           );
       },
     );
-    runPreviewCandidates(fixture.repository, source, scratch, out, 'prepare', fakeCommand);
+    await runPreviewCandidates(fixture.repository, source, scratch, out, 'prepare', fakeCommand);
     const results = JSON.parse(readFileSync(join(scratch, 'candidates.json'), 'utf8')) as PreviewCandidate[];
     expect(results[0]!.status).toBe('failed');
     expect(results[1]!.status).toBe('ready');
     expect(results[1]!.sourceBundleSha256).toMatch(/^[a-f0-9]{64}$/);
     // A target containing all PR commits creates an empty replay, which still
     // has a compact retained source instead of an empty-bundle failure.
-    runPreviewCandidates(
+    await runPreviewCandidates(
       fixture.repository,
       { ...source, mainSha: headSha, trainSha: undefined },
       join(fixture.directory, 'empty-scratch'),
@@ -253,7 +276,7 @@ describe('dual-base PR preview replay', { timeout: 30_000 }, () => {
     expect(result.selections[0]!.candidate.targetRef).toBe(baseRef);
     expect(result.selections[0]!.platform).toBe('ios');
   });
-  it('retains the successful platform receipt when its sibling publish fails', () => {
+  it('retains the successful platform receipt when its sibling publish fails', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'ota-partial-preview-'));
     directories.push(directory);
     const scratch = join(directory, 'scratch');
@@ -268,7 +291,7 @@ describe('dual-base PR preview replay', { timeout: 30_000 }, () => {
     vi.stubEnv('GITHUB_OUTPUT', join(directory, 'outputs'));
     const originalExitCode = process.exitCode;
     try {
-      runPreviewCandidates(
+      await runPreviewCandidates(
         directory,
         {
           headSha: 'e'.repeat(40),
@@ -302,6 +325,96 @@ describe('dual-base PR preview replay', { timeout: 30_000 }, () => {
       expect(receipt.platforms.ios).toBeDefined();
       expect(receipt.platforms.android).toBeUndefined();
       expect(receipt.candidates[0]!.platforms.android!.status).toBe('failed');
+      expect(readFileSync(join(directory, 'outputs'), 'utf8')).toContain('published=true\nfailed=true');
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = originalExitCode;
+    }
+  });
+  it('resolves every candidate and baseline runtime at once, then publishes in order', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'ota-concurrent-preview-'));
+    directories.push(directory);
+    const scratch = join(directory, 'scratch');
+    const out = join(directory, 'artifacts');
+    mkdirSync(scratch);
+    const main = { ...candidate('main'), directory: 'main', baselineDirectory: 'baseline-main' };
+    main.platforms.android = { status: 'ota-compatible' };
+    const train = {
+      ...candidate('release/next'),
+      targetSha: 'c'.repeat(40),
+      directory: 'train',
+      baselineDirectory: 'baseline-train',
+    };
+    train.platforms.android = { status: 'ota-compatible' };
+    const skipped = { ...candidate('main'), status: 'conflict' as const, directory: 'conflict' };
+    for (const prepared of [main, train]) delete prepared.platforms.ios!.runtimeVersion;
+    writeFileSync(join(scratch, 'candidates.json'), JSON.stringify([main, train, skipped]));
+    const runtimes: Record<string, string | null> = {
+      'main:ios': fingerprint,
+      'baseline-main:ios': fingerprint,
+      'main:android': fingerprint,
+      'baseline-main:android': 'd'.repeat(40),
+      'train:ios': 'e'.repeat(40),
+      'baseline-train:ios': 'e'.repeat(40),
+      'train:android': null,
+      'baseline-train:android': fingerprint,
+    };
+    const expected = Object.keys(runtimes).length;
+    const called: string[] = [];
+    let release: () => void = () => {};
+    const everyoneCalled = new Promise<void>((resolve) => (release = resolve));
+    // A serial loop would park on its first call; the fallback turns that into a
+    // runtime-unresolved status instead of a hung test.
+    const resolver = async (tree: string, platform: 'ios' | 'android') => {
+      called.push(`${tree}:${platform}`);
+      if (called.length === expected) release();
+      const ready = await Promise.race([
+        everyoneCalled.then(() => true),
+        new Promise<false>((resolve) => setTimeout(() => resolve(false), 2_000)),
+      ]);
+      return ready ? runtimes[`${tree}:${platform}`]! : null;
+    };
+    const published: string[] = [];
+    vi.stubEnv('BRANCH', 'pr-7');
+    vi.stubEnv('GITHUB_RUN_ID', '10');
+    vi.stubEnv('DEPLOYMENT_ID', '20');
+    vi.stubEnv('GITHUB_OUTPUT', join(directory, 'outputs'));
+    const originalExitCode = process.exitCode;
+    try {
+      await runPreviewCandidates(
+        directory,
+        { headSha: 'e'.repeat(40), baseSha: 'b'.repeat(40), baseRef: 'main', mainSha: 'b'.repeat(40) },
+        scratch,
+        out,
+        'publish',
+        (tree, _binary, arguments_, environment = process.env) => {
+          published.push(`${tree}:${arguments_.at(-1)}`);
+          expect(called).toHaveLength(expected);
+          writeFileSync(
+            environment.OTA_PREVIEW_RECEIPT_PATH!,
+            JSON.stringify({
+              platform: arguments_.at(-1),
+              branch: 'pr-7',
+              commitHash: 'a'.repeat(40),
+              runtimeVersion: environment.OTA_EXPECT_RUNTIME_VERSION,
+              bundleSha256: 'b'.repeat(64),
+              updateId: '12345678-1234-1234-1234-123456789abc',
+            }),
+          );
+        },
+        resolver,
+      );
+      expect(called.sort()).toEqual(Object.keys(runtimes).sort());
+      expect(published).toEqual(['main:ios', 'train:ios']);
+      const receipt = JSON.parse(readFileSync(join(out, 'receipt.json'), 'utf8')) as {
+        candidates: PreviewCandidate[];
+      };
+      const [mainResult, trainResult] = receipt.candidates;
+      expect(mainResult!.platforms.ios).toMatchObject({ status: 'published', runtimeVersion: fingerprint });
+      expect(mainResult!.platforms.android!.status).toBe('native-change-required');
+      expect(mainResult!.platforms.android!.runtimeVersion).toBeUndefined();
+      expect(trainResult!.platforms.ios).toMatchObject({ status: 'published', runtimeVersion: 'e'.repeat(40) });
+      expect(trainResult!.platforms.android!.status).toBe('runtime-unresolved');
       expect(readFileSync(join(directory, 'outputs'), 'utf8')).toContain('published=true\nfailed=true');
       expect(process.exitCode).toBe(1);
     } finally {
