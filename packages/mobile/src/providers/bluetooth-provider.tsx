@@ -268,6 +268,9 @@ function queueItemReportSignature(item: ClimbQueueItem, mirrored: boolean): stri
   return `${item.climb.uuid}:${item.climb.frames}:${item.climb.angle ?? ''}:${mirrored ? 1 : 0}`;
 }
 
+/** Signs a feed climb in the shape `queueItemReportSignature` produces. Pass
+ *  `mirrored` only when this phone wrote the climb in a known orientation (undo,
+ *  relight); otherwise it signs with the orientation the feed recorded. */
 function presenceClimbReportSignature(
   climb: BoardPresenceClimb | null,
   mirrored: boolean | null = climb?.mirrored ?? null,
