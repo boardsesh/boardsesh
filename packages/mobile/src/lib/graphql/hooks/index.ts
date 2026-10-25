@@ -1469,7 +1469,7 @@ export function useBoardseshGradesForAngles(
 ) {
   return useQuery({
     // Local-first via offlineAwareRequest (reads all synced angles from
-    // board_climb_grades when the board type is downloaded).
+    // board_climb_grades when the climb's own layout is downloaded).
     queryKey: ['boardseshGradesForAngles', boardName, climbUuid],
     queryFn: () =>
       offlineAwareRequest<BoardseshGradesForAnglesResponse>(BOARDSESH_GRADES_FOR_ANGLES, {

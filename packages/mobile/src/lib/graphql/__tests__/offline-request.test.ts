@@ -840,7 +840,7 @@ describe('offlineAwareRequest — BOARDSESH_GRADES_FOR_ANGLES', () => {
   });
 
   // Unlike BOARDSESH_GRADE, a null single grade is retried but an empty by-angle
-  // list is not: empty is often correct (MoonBoard / too-few-ascents climbs).
+  // list is not: empty is often correct (too-few-ascents climbs).
   // The layout gate is what sends unknown uuids to the server.
   it('does not retry an empty local list over the network — an empty result is an answer (no grades)', async () => {
     setOnline(true);
@@ -867,20 +867,6 @@ describe('offlineAwareRequest — BOARDSESH_GRADES_FOR_ANGLES', () => {
   it("falls back to the network when the climb's layout is not downloaded (online)", async () => {
     setOnline(true);
     isClimbLayoutDownloadedLocally.mockResolvedValue(false);
-    const result = await offlineAwareRequest<BoardseshGradesForAnglesResponse>(
-      BOARDSESH_GRADES_FOR_ANGLES,
-      gradesForAnglesVars,
-    );
-    expect(result.boardseshGradesForAngles[0].modelVersion).toBe('v1');
-    expect(getBoardseshGradesForAnglesLocal).not.toHaveBeenCalled();
-    expect(request).toHaveBeenCalledWith(BOARDSESH_GRADES_FOR_ANGLES, gradesForAnglesVars);
-  });
-
-  it('asks the server for a uuid the phone has no row for (merged-away climb) on a downloaded board', async () => {
-    setOnline(true);
-    isBoardTypeDownloadedLocally.mockResolvedValue(true);
-    isClimbLayoutDownloadedLocally.mockResolvedValue(false);
-    getBoardseshGradesForAnglesLocal.mockResolvedValue([]);
     const result = await offlineAwareRequest<BoardseshGradesForAnglesResponse>(
       BOARDSESH_GRADES_FOR_ANGLES,
       gradesForAnglesVars,

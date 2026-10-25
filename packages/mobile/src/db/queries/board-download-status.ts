@@ -45,12 +45,13 @@ export async function isBoardDownloadedLocally(db: OfflineDatabase, scope: Offli
 
 /**
  * Whether ANY (layout, size) scope of a board TYPE has a completed download.
- * The Boardsesh-grade queries (`boardseshGrade` / `boardseshGradesForAngles`)
- * carry only `boardName` + `climbUuid` (+ angle) — no layout/size — so they gate
- * on the board type, then read `board_climb_grades` by the exact (board_type,
- * climb_uuid, angle) key. A viewed climb from a non-downloaded scope of the same
- * board type simply misses (null row), and the single-row miss retries over the
- * network while online (see offline-request's isLocalMiss).
+ * The single Boardsesh-grade query (`boardseshGrade`) carries only `boardName`
+ * + `climbUuid` + angle — no layout/size — so it gates on the board type, then
+ * reads `board_climb_grades` by the exact (board_type, climb_uuid, angle) key.
+ * A viewed climb from a non-downloaded scope of the same board type simply
+ * misses (null row), and the miss retries over the network while online (see
+ * offline-request's isLocalMiss). `boardseshGradesForAngles` gates on the
+ * climb's own layout instead (`isClimbLayoutDownloadedLocally`).
  *
  * `getSetting` (react-native-mmkv) is imported lazily for the same reason as
  * `isBoardDownloadedLocally` above — keep the MMKV/Flow entry out of the test
@@ -98,6 +99,10 @@ export async function hasDownloadedBoardData(db: OfflineDatabase): Promise<boole
  * does not fit never pulled its stats rows — even when the climb row itself is
  * on the device (a second size of the layout still downloading, say).
  *
+ * A climb whose local row is delisted (`is_listed = 0`) is NOT covered: that
+ * is how a merged-away alias looks on the phone, and its grade and stats rows
+ * live under the canonical uuid, so the read goes to the server.
+ *
  * Short-circuits on the in-memory setting before touching SQLite, so a device
  * with nothing downloaded for this board type pays no probe. `getSetting` is
  * imported lazily for the same reason as `isBoardDownloadedLocally` above.
@@ -113,11 +118,19 @@ export async function isClimbLayoutDownloadedLocally(
   );
   if (scopeKeysForType.length === 0) return false;
 
-  const climb = await db.getFirstAsync<{ layout_id: number | null; compatible_size_ids: string | null }>(
-    'SELECT layout_id, compatible_size_ids FROM board_climbs WHERE uuid = ? AND board_type = ? LIMIT 1',
-    [climbUuid, boardType],
-  );
+  const climb = await db.getFirstAsync<{
+    layout_id: number | null;
+    compatible_size_ids: string | null;
+    is_listed: number | null;
+  }>('SELECT layout_id, compatible_size_ids, is_listed FROM board_climbs WHERE uuid = ? AND board_type = ? LIMIT 1', [
+    climbUuid,
+    boardType,
+  ]);
   if (climb?.layout_id == null) return false;
+  // A delisted row may be a merged-away alias (the catalog dedups keep it and
+  // unlist it) whose stats and grades moved to the canonical uuid. Its own
+  // local rows are empty, so the server, which resolves aliases, must answer.
+  if (climb.is_listed === 0) return false;
 
   const sizeScoped = isSizeScopedBoard(boardType);
   const climbSizeIds = sizeScoped ? parseSizeIds(climb.compatible_size_ids) : null;

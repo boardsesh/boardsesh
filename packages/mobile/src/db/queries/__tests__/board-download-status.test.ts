@@ -23,13 +23,13 @@ import { setSetting, resetAllSettings } from '../../../settings/hooks';
 
 async function insertClimb(
   db: TestSqliteDb,
-  opts: { uuid: string; boardType?: string; layoutId?: number; compatibleSizeIds?: number[] | null },
+  opts: { uuid: string; boardType?: string; layoutId?: number; compatibleSizeIds?: number[] | null; listed?: 0 | 1 },
 ): Promise<void> {
   const sizes = opts.compatibleSizeIds === null ? null : JSON.stringify(opts.compatibleSizeIds ?? [5]);
   await db.runAsync(
     `INSERT INTO board_climbs (uuid, board_type, layout_id, is_listed, is_draft, compatible_size_ids, updated_at)
-     VALUES (?, ?, ?, 1, 0, ?, ?)`,
-    [opts.uuid, opts.boardType ?? 'kilter', opts.layoutId ?? 1, sizes, '2026-01-01T00:00:00Z'],
+     VALUES (?, ?, ?, ?, 0, ?, ?)`,
+    [opts.uuid, opts.boardType ?? 'kilter', opts.layoutId ?? 1, opts.listed ?? 1, sizes, '2026-01-01T00:00:00Z'],
   );
 }
 
@@ -156,6 +156,13 @@ describe('isClimbLayoutDownloadedLocally', () => {
     setSetting('syncEnabledBoards', ['moonboard:2:1']);
     await markScopeDownloadComplete(db, 'moonboard:2:1');
     expect(await isClimbLayoutDownloadedLocally(db, 'moonboard', 'm')).toBe(true);
+  });
+
+  it('is false for a delisted row, how a merged-away alias looks on the phone (MoonBoard dedups keep and unlist it)', async () => {
+    await insertClimb(db, { uuid: 'alias', boardType: 'moonboard', layoutId: 2, compatibleSizeIds: null, listed: 0 });
+    setSetting('syncEnabledBoards', ['moonboard:2:1']);
+    await markScopeDownloadComplete(db, 'moonboard:2:1');
+    expect(await isClimbLayoutDownloadedLocally(db, 'moonboard', 'alias')).toBe(false);
   });
 
   it('is false when only a different layout of the board type is downloaded', async () => {
