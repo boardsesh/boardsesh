@@ -717,6 +717,8 @@ Use of the sheet itself is the `App Share Action` event: `action` = `open`,
 `copy-link` or `share`, with `store` (`ios` / `android`, the QR code shown) on
 the two button actions. A share that falls back to copying still counts as
 `share`.
+`share` counts the tap, so a share menu the climber backs out of still counts;
+it is not a completed share.
 
 On Android, `Install Attributed` fires whenever the Play referrer has any `utm_*` param.
 Play stamps organic installs too (`utm_source=google-play&utm_medium=organic`),
