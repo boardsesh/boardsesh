@@ -17,7 +17,10 @@ const CACHE_DURATION_FILTERED_SEARCH = 60 * 60; // 1 hour for filtered searches
  * MoonBoard and Woods front doors only: boards whose search data Boardsesh
  * changes under the cache. MoonBoard has an import in progress; Woods gets new
  * climbs from setter publishes (#4750) and tick-derived per-angle grades
- * (#5212). Short enough that those show up within a quarter hour — the
+ * (#5212). Woods is singled out because Boardsesh is its only source of stats,
+ * so nothing upstream refreshes them; the Aurora boards (Kilter, Tension,
+ * Touchstone, Grasshopper) also get #5212 grades but keep the 24 h TTL, so do
+ * not extend this to them. Short enough that those show up within a quarter hour — the
  * freshness the MoonBoard bypass below was protecting — but not so short that a
  * crawler pays a live search per page view. MoonBoard is the largest board in
  * the catalogue, so it is also the biggest single contributor to the crawl
@@ -184,6 +187,9 @@ export async function cachedSearchClimbs(
   // on the biggest board in the catalogue; a 15-minute entry keeps the import
   // freshness the bypass was protecting, and `revalidateClimbSearchTags` still
   // clears it on demand via the board-level tag.
+  //
+  // Woods gets the same short TTL but never bypasses (see
+  // CACHE_DURATION_LIVE_DATA_FRONT_DOOR above).
   //
   // Random sort bypasses unconditionally: each shuffle carries a unique ~31-bit
   // seed, so caching per seed is a 0%-hit-rate entry that only bloats the
