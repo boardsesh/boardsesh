@@ -113,16 +113,17 @@ function useBoardRouteHandoffReporter(target: BoardRouteTarget | null, mode: Boa
  */
 function useBoardQrScanReporter(target: BoardRouteTarget | null, qrMedium: GymQrMedium | null | undefined) {
   const reportedRef = useRef<string | null>(null);
-  const identity = targetIdentity(target);
+  // A printed code names a board, never a climb, so the board path is the landing.
+  const landing = target ? toBoardPath(target) : 'unparsed';
   return useCallback(
     (boardType: string | null) => {
       if (!qrMedium) return;
-      const reportKey = `${identity}#${qrMedium}`;
+      const reportKey = `${landing}#${qrMedium}`;
       if (reportedRef.current === reportKey) return;
       reportedRef.current = reportKey;
-      trackBoardQrScan(qrMedium, boardType, identity);
+      trackBoardQrScan(qrMedium, boardType, landing);
     },
-    [identity, qrMedium],
+    [landing, qrMedium],
   );
 }
 

@@ -411,7 +411,7 @@ describe('Board QR Scanned', () => {
 
     expect(qrScans.track).toHaveBeenCalledTimes(1);
     // The URL is the dedupe key and never leaves the phone.
-    expect(qrScans.track).toHaveBeenCalledWith('board', 'spray', '/b/garage#');
+    expect(qrScans.track).toHaveBeenCalledWith('board', 'spray', '/b/garage');
     // The route's own funnel event still fires alongside it.
     expect(analytics.track).toHaveBeenCalledWith(SHARED_EVENTS.BoardRouteHandoff, {
       kind: 'slug-list',

@@ -46,6 +46,8 @@ describe('poster link fallback route', () => {
       'poster-link-fallback',
     );
     expect(router.replace).toHaveBeenCalledWith('/(tabs)/home');
+    // Android presents the browser unreliably once a replace has started.
+    expect(browser.open.mock.invocationCallOrder[0]).toBeLessThan(router.replace.mock.invocationCallOrder[0]);
   });
 
   it('opens the poster root when the link names no page', () => {

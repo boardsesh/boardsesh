@@ -9,9 +9,10 @@
 // through `boardTypeProperty` (`docs/spray-walls.md`, "Telemetry").
 
 import { boardQrScanned, parseGymQrLanding, type GymQrMedium } from '@boardsesh/analytics';
+import { isAnalyticsGranted } from '@boardsesh/consent';
 import { track } from './analytics';
-import { createConsentBoundAnalyticsRunner } from './consent-bound-analytics';
-import { isProductAnalyticsGranted } from './consent-state';
+import { AUTH_CONVERSION_WAIT_MS, createConsentBoundAnalyticsRunner } from './consent-bound-analytics';
+import { getConsentSnapshot, isProductAnalyticsGranted } from './consent-state';
 import { RELAXES_ANONYMOUS_ROUTES } from './routing/anonymous-auth-gate';
 
 /**
@@ -23,9 +24,34 @@ import { RELAXES_ANONYMOUS_ROUTES } from './routing/anonymous-auth-gate';
 export const BOARD_QR_SCAN_DEDUPE_MS = 60_000;
 const recentLandings = new Map<string, number>();
 
-/** Tests only: forget recent landings, as a new process would. */
+/**
+ * The one consent-bound runner holding scans until the SDK is ready. Each runner
+ * subscribes to consent for up to `AUTH_CONVERSION_WAIT_MS`, so scans made while
+ * the SDK is not ready share one instead of opening a subscription each. A new
+ * one replaces it once its time is up or the signed-in account changes.
+ */
+type HeldRunner = { run: (capture: () => void) => void; authEpoch: number; expiresAt: number };
+let heldRunner: HeldRunner | null = null;
+
+function captureWhenSdkReady(capture: () => void): void {
+  const snapshot = getConsentSnapshot();
+  // No consent: dropped, and a later Allow never replays it.
+  if (!snapshot.loaded || snapshot.killed || !isAnalyticsGranted(snapshot.record)) return;
+  const nowMs = Date.now();
+  if (!heldRunner || nowMs >= heldRunner.expiresAt || heldRunner.authEpoch !== snapshot.authEpoch) {
+    heldRunner = {
+      run: createConsentBoundAnalyticsRunner(),
+      authEpoch: snapshot.authEpoch,
+      expiresAt: nowMs + AUTH_CONVERSION_WAIT_MS,
+    };
+  }
+  heldRunner.run(capture);
+}
+
+/** Tests only: forget recent landings and the held runner, as a new process would. */
 export function resetBoardQrScansForTests(): void {
   recentLandings.clear();
+  heldRunner = null;
 }
 
 /** Tests only: how many landings the dedupe window is holding. */
@@ -56,9 +82,9 @@ export function boardQrScanMedium(params: BoardQrRouteParams): GymQrMedium | nul
  *
  * A cold-start scan can resolve before the analytics SDK is ready.
  * `isProductAnalyticsGranted` is true only once consent is given AND the SDK is
- * ready, so that case sends at once. Otherwise, with consent already given, the
- * consent-bound runner holds the capture until the SDK is ready (it gives up
- * after two minutes); with no consent it is dropped, and a later Allow never
+ * ready, so that case sends at once. Otherwise, with consent already given, one
+ * shared consent-bound runner holds the capture until the SDK is ready (it gives
+ * up after two minutes); with no consent it is dropped, and a later Allow never
  * replays it.
  *
  * The browser app sends nothing: `surface: 'app'` is the store app, and a
@@ -85,5 +111,5 @@ export function trackBoardQrScan(
     capture();
     return;
   }
-  createConsentBoundAnalyticsRunner()(capture);
+  captureWhenSdkReady(capture);
 }

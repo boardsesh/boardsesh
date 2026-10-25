@@ -108,6 +108,8 @@ describe('parseBoardLinkPath', () => {
     ['a repeated medium', '?src=qr&medium=board&medium=kiosk'],
     ['a repeated src', '?src=qr&src=qr&medium=board'],
     ['a malformed escape', '?src=qr&medium=%E0%A4%A'],
+    ['a plus that decodes to a space', '?src=qr&medium=board+'],
+    ['a repeated pair', '?src=qr&medium=board&src=qr&medium=board'],
   ])('drops the pair with %s', (_label, query) => {
     expect(parseBoardLinkPath(`https://www.boardsesh.com/b/the-garage${query}`)).toBe('/b/the-garage');
   });

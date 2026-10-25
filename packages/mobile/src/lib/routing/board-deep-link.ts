@@ -32,7 +32,7 @@ import {
   type GymQrSearchParams,
 } from '@boardsesh/analytics';
 import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
-import { parseDeepLinkQueryParams } from '../deep-link-query';
+import { parseDeepLinkQueryEntries } from '../deep-link-query';
 import { isReadOnlyAnonymousPath, isSafeReturnPath } from './read-only-routes';
 import { stripLocalePrefix } from './strip-locale-prefix';
 import { BOARD_INVITE_PARAM, isBoardInviteToken } from '../board-share/board-share-link';
@@ -46,24 +46,13 @@ const WALL_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
 const boardNames: ReadonlySet<string> = new Set<string>(SUPPORTED_BOARDS);
 
 /**
- * `src` and `medium` as `parseGymQrLanding` expects them. A name that appears
- * twice becomes an array, which the parser refuses: `parseDeepLinkQueryParams`
- * keeps only the last copy, and a duplicated param is a hand-edited URL, not a scan.
+ * `src` and `medium` as `parseGymQrLanding` expects them, from the query's
+ * decoded pairs. A name that appears twice becomes an array, which the parser
+ * refuses: a duplicated param is a hand-edited URL, not a scan.
  */
-function qrLandingParams(queryString: string): GymQrSearchParams {
+function qrLandingParams(entries: ReadonlyArray<readonly [string, string]>): GymQrSearchParams {
   const params: GymQrSearchParams = {};
-  for (const pair of queryString.split('&')) {
-    const equalsIndex = pair.indexOf('=');
-    const rawName = equalsIndex === -1 ? pair : pair.slice(0, equalsIndex);
-    const rawValue = equalsIndex === -1 ? '' : pair.slice(equalsIndex + 1);
-    let name: string;
-    let value: string;
-    try {
-      name = decodeURIComponent(rawName.replace(/\+/g, ' '));
-      value = decodeURIComponent(rawValue.replace(/\+/g, ' '));
-    } catch {
-      continue;
-    }
+  for (const [name, value] of entries) {
     if (name !== GYM_QR_SRC_PARAM && name !== GYM_QR_MEDIUM_PARAM) continue;
     const earlier = params[name];
     params[name] = earlier === undefined ? value : [...(Array.isArray(earlier) ? earlier : [earlier]), value];
@@ -93,10 +82,13 @@ export function parseBoardLinkPath(url: string | null | undefined): string | nul
   if (firstSegment === undefined || (firstSegment !== 'b' && !boardNames.has(firstSegment))) return null;
   if (!isReadOnlyAnonymousPath(path)) return null;
 
-  const query = queryIndex === -1 ? undefined : parseDeepLinkQueryParams(afterHost);
-  const wallUuid = query?.get('wall');
-  const inviteToken = query?.get(BOARD_INVITE_PARAM);
-  const qrLanding = queryIndex === -1 ? null : parseGymQrLanding(qrLandingParams(afterHost.slice(queryIndex + 1)));
+  // One decode of the query for every param read below. A repeated `wall` or
+  // `invite` keeps its last copy; a repeated QR param is refused.
+  const entries = queryIndex === -1 ? [] : parseDeepLinkQueryEntries(afterHost);
+  const query = new Map(entries);
+  const wallUuid = query.get('wall');
+  const inviteToken = query.get(BOARD_INVITE_PARAM);
+  const qrLanding = parseGymQrLanding(qrLandingParams(entries));
   const kept = [
     wallUuid !== undefined && WALL_UUID.test(wallUuid) ? `wall=${wallUuid}` : null,
     isBoardInviteToken(inviteToken) ? `${BOARD_INVITE_PARAM}=${inviteToken}` : null,

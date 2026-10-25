@@ -30,8 +30,10 @@ export default function PosterLinkRoute() {
   useEffect(() => {
     if (!launchHoldReleased || openedUrlRef.current === posterUrl) return;
     openedUrlRef.current = posterUrl;
-    router.replace(HOME_TAB);
+    // Browser first: Android does not reliably present it after a replace has
+    // started moving the stack.
     void openExternalUrl(posterUrl, 'poster-link-fallback');
+    router.replace(HOME_TAB);
   }, [launchHoldReleased, posterUrl, router]);
 
   return (

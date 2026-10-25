@@ -1,10 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ANALYTICS_BOARD_TYPES, SHARED_EVENTS } from '@boardsesh/analytics';
 import { grantAnalyticsForTest, grantedConsent } from '../../../test/consent-fixture';
+import { AUTH_CONVERSION_WAIT_MS } from '../consent-bound-analytics';
 import { updateConsentState } from '../consent-state';
 
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
 vi.mock('../analytics', () => ({ track: analytics.track }));
+// The real runner, counted: each one opens its own consent subscription.
+const runners = vi.hoisted(() => ({ created: 0 }));
+vi.mock('../consent-bound-analytics', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../consent-bound-analytics')>();
+  return {
+    ...actual,
+    createConsentBoundAnalyticsRunner: (...args: Parameters<typeof actual.createConsentBoundAnalyticsRunner>) => {
+      runners.created += 1;
+      return actual.createConsentBoundAnalyticsRunner(...args);
+    },
+  };
+});
 
 const {
   BOARD_QR_SCAN_DEDUPE_MS,
@@ -14,7 +27,7 @@ const {
   trackBoardQrScan,
 } = await import('../board-qr-scan');
 
-const LANDING = '/b/garage-spray#';
+const LANDING = '/b/garage-spray';
 
 describe('boardQrScanMedium', () => {
   it.each(['board', 'kiosk', 'poster'] as const)('reads a %s scan', (medium) => {
@@ -40,6 +53,7 @@ describe('trackBoardQrScan', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     analytics.track.mockClear();
+    runners.created = 0;
     resetBoardQrScansForTests();
     grantAnalyticsForTest();
   });
@@ -77,7 +91,7 @@ describe('trackBoardQrScan', () => {
   it('keeps every board type it knows', () => {
     for (const boardType of ANALYTICS_BOARD_TYPES) {
       analytics.track.mockClear();
-      trackBoardQrScan('board', boardType, `/b/${boardType}#`);
+      trackBoardQrScan('board', boardType, `/b/${boardType}`);
       expect(analytics.track.mock.calls[0]?.[1]).toMatchObject({ boardType });
     }
   });
@@ -100,17 +114,17 @@ describe('trackBoardQrScan', () => {
 
   it('forgets landings once their window has passed', () => {
     trackBoardQrScan('board', 'spray', LANDING, 1_000);
-    trackBoardQrScan('board', 'kilter', '/b/the-garage#', 2_000);
+    trackBoardQrScan('board', 'kilter', '/b/the-garage', 2_000);
     expect(recentBoardQrScanCountForTests()).toBe(2);
 
-    trackBoardQrScan('kiosk', 'kilter', '/b/another#', 2_000 + BOARD_QR_SCAN_DEDUPE_MS);
+    trackBoardQrScan('kiosk', 'kilter', '/b/another', 2_000 + BOARD_QR_SCAN_DEDUPE_MS);
     expect(recentBoardQrScanCountForTests()).toBe(1);
   });
 
   it('counts another board or another medium straight away', () => {
     trackBoardQrScan('board', 'spray', LANDING, 1_000);
     trackBoardQrScan('kiosk', 'spray', LANDING, 1_001);
-    trackBoardQrScan('board', 'kilter', '/b/the-garage#', 1_002);
+    trackBoardQrScan('board', 'kilter', '/b/the-garage', 1_002);
 
     expect(analytics.track).toHaveBeenCalledTimes(3);
   });
@@ -124,6 +138,41 @@ describe('trackBoardQrScan', () => {
 
     updateConsentState({ sdkReady: true });
     expect(analytics.track).toHaveBeenCalledTimes(1);
+  });
+
+  // Each runner holds a consent subscription for up to two minutes; scans that
+  // wait for the SDK share one rather than piling up.
+  it('shares one waiting runner across scans while the SDK is not ready', () => {
+    updateConsentState({ sdkReady: false });
+
+    trackBoardQrScan('board', 'kilter', '/b/one');
+    trackBoardQrScan('kiosk', 'kilter', '/b/two');
+    trackBoardQrScan('board', 'spray', '/b/three');
+    expect(runners.created).toBe(1);
+    expect(analytics.track).not.toHaveBeenCalled();
+
+    updateConsentState({ sdkReady: true });
+    expect(analytics.track).toHaveBeenCalledTimes(3);
+  });
+
+  it('opens a new runner once the held one has timed out', () => {
+    updateConsentState({ sdkReady: false });
+    trackBoardQrScan('board', 'kilter', '/b/one');
+    vi.advanceTimersByTime(AUTH_CONVERSION_WAIT_MS);
+
+    trackBoardQrScan('board', 'kilter', '/b/two');
+    expect(runners.created).toBe(2);
+    updateConsentState({ sdkReady: true });
+    // The first scan timed out with its runner; the second still lands.
+    expect(analytics.track).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens no runner at all without consent', () => {
+    updateConsentState({ record: { ...grantedConsent, analytics: 'denied' }, sdkReady: false });
+
+    trackBoardQrScan('board', 'kilter', '/b/one');
+    trackBoardQrScan('board', 'kilter', '/b/two');
+    expect(runners.created).toBe(0);
   });
 
   // A later Allow must never replay a scan made before consent.
