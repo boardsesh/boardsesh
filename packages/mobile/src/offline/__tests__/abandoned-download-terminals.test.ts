@@ -30,6 +30,10 @@ import {
   markScopeDownloadComplete,
   isScopeDownloadStarted,
   getUnfinishedDownloadScopeKeys,
+  BOARD_DATA_TABLES,
+  getCheckpoint,
+  getCheckpointKey,
+  setCheckpoint,
 } from '@boardsesh/offline-sync';
 import {
   createTestDatabase,
@@ -37,6 +41,7 @@ import {
   type TestSqliteDb,
 } from '@boardsesh/offline-sync/testing';
 import {
+  forgetAbandonedDownloads,
   reportAbandonedDownloadsOnSignOut,
   reportAbandonedDownloadOnDisable,
   sweepDelistedDownloadTerminals,
@@ -219,5 +224,64 @@ describe('sweepDelistedDownloadTerminals', () => {
     await sweepDelistedDownloadTerminals(db);
 
     expect(reportScopeDownloadAbandonedOnDisable).not.toHaveBeenCalled();
+  });
+
+  // #6563. At sign-in this sweep runs alongside the owner-stamp wipe, which
+  // empties the enabled list. A list read AFTER the marker read could pair the
+  // previous account's marker with the emptied list and report its download on
+  // the account that just signed in.
+  it('reads the enabled list before the markers, so a list emptied mid-sweep reports nothing', async () => {
+    await announceDownload(DOWNLOADING);
+    enabledScopeKeys.current = [DOWNLOADING];
+
+    const sweep = sweepDelistedDownloadTerminals(db);
+    // The wipe empties the list while the sweep's marker read is in flight.
+    enabledScopeKeys.current = [];
+    await sweep;
+
+    expect(reportScopeDownloadAbandonedOnDisable).not.toHaveBeenCalled();
+  });
+});
+
+describe('forgetAbandonedDownloads', () => {
+  it('closes every open funnel without an event and leaves the finished ones alone', async () => {
+    await announceDownload(DOWNLOADING);
+    await announceDownload(DOWNLOADED);
+    await markScopeDownloadComplete(db, DOWNLOADED);
+    await setCheckpoint(db, getCheckpointKey(BOARD_DATA_TABLES[0], DOWNLOADING), {
+      updatedAt: '2026-10-01T00:00:00Z',
+      syncSeq: '3',
+    });
+
+    await forgetAbandonedDownloads(db);
+
+    expect(await isScopeDownloadStarted(db, DOWNLOADING)).toBe(false);
+    expect(await isScopeDownloadStarted(db, DOWNLOADED)).toBe(true);
+    expect(reportScopeDownloadAbandonedOnSignOut).not.toHaveBeenCalled();
+    expect(reportScopeDownloadAbandonedOnDisable).not.toHaveBeenCalled();
+    // Only the funnel's markers: the rows' checkpoint stays, so the download
+    // resumes if the next account enables the board.
+    expect(await getCheckpoint(db, getCheckpointKey(BOARD_DATA_TABLES[0], DOWNLOADING))).not.toBeNull();
+  });
+
+  it('leaves the next launch sweep nothing to report', async () => {
+    await announceDownload(DOWNLOADING);
+
+    await forgetAbandonedDownloads(db);
+    enabledScopeKeys.current = [];
+    await sweepDelistedDownloadTerminals(db);
+
+    expect(reportScopeDownloadAbandonedOnDisable).not.toHaveBeenCalled();
+  });
+
+  it('never fails the wipe over a database it cannot read', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const brokenDb = {
+      getAllAsync: async () => {
+        throw new Error('database is locked');
+      },
+    } as unknown as SQLiteDatabase;
+
+    await expect(forgetAbandonedDownloads(brokenDb)).resolves.toBeUndefined();
   });
 });

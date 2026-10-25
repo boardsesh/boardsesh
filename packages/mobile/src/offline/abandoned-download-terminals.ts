@@ -117,6 +117,31 @@ export async function reportAbandonedDownloadsOnSignOut(db: SQLiteDatabase): Pro
 }
 
 /**
+ * The owner-stamp wipe (#6563): another account's unfinished downloads, found
+ * when this account signs in. The wipe empties `syncEnabledBoards` right after
+ * this, so they end here. Their Started events were sent for an account that is
+ * no longer signed in, though, and every event from now on lands on the one
+ * that is. Reporting them, here or from the launch sweep once the list is
+ * empty, would put the previous climber's downloads on this climber's
+ * analytics. So the markers go without an event, and that funnel stays open on
+ * the account that left.
+ *
+ * Only the funnel markers go. The rows, their checkpoints and `scope-complete:`
+ * stay, so a board this account enables again resumes where it was.
+ */
+export async function forgetAbandonedDownloads(db: SQLiteDatabase): Promise<void> {
+  try {
+    for (const scopeKey of await getUnfinishedDownloadScopeKeys(db)) {
+      await closeScopeFunnelQuietly(scopeKey, () => clearScopeDownloadFunnelMarkers(db, scopeKey));
+    }
+  } catch (error) {
+    if (__DEV__) {
+      console.warn('[offline] failed to forget the previous account’s download funnels:', error);
+    }
+  }
+}
+
+/**
  * The My Boards toggle-off — the highest-volume de-list the code can still be
  * responsible for. Nothing is deleted (the rows and checkpoints stay so a
  * re-enable resumes instantly), which is exactly why nothing reported before:
@@ -157,9 +182,15 @@ export async function reportAbandonedDownloadOnDisable(db: SQLiteDatabase, scope
  */
 export async function sweepDelistedDownloadTerminals(db: SQLiteDatabase): Promise<void> {
   try {
+    // The enabled list is read BEFORE the markers. At sign-in this sweep runs
+    // alongside the owner-stamp wipe, which clears the previous account's
+    // markers and only then empties the list. In this order, a sweep that sees
+    // the emptied list reads the markers after they were cleared. The other way
+    // round, it could pair the old markers with the empty list and report the
+    // previous account's downloads as this account's (#6563).
+    const enabledScopeKeys = new Set(getSetting('syncEnabledBoards'));
     const unfinished = await getUnfinishedDownloadScopeKeys(db);
     if (unfinished.length === 0) return;
-    const enabledScopeKeys = new Set(getSetting('syncEnabledBoards'));
     for (const scopeKey of unfinished) {
       // Still enabled means still downloading — a board-data crawl legitimately
       // spans launches, and its Started is meant to stay open across all of them.

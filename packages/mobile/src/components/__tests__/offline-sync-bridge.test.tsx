@@ -135,21 +135,40 @@ vi.mock('../../offline/outbox-telemetry', () => ({
 // Another launch-time writer (it clears the markers it reports). Stubbed so the
 // launch-gate case can see when it runs.
 const sweepDelistedDownloadTerminalsMock = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => {}));
+// The owner-stamp wipe closes the previous account's download funnels without
+// an event (#6563). Its own behaviour is pinned against the real DDL in
+// abandoned-download-terminals.test.ts; here, only when the bridge reaches it.
+const forgetAbandonedDownloadsMock = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => {}));
 vi.mock('../../offline/abandoned-download-terminals', () => ({
   sweepDelistedDownloadTerminals: sweepDelistedDownloadTerminalsMock,
+  forgetAbandonedDownloads: forgetAbandonedDownloadsMock,
 }));
 
 // Stub the settings barrel so the static import graph never pulls
-// react-native-mmkv (its react-native Flow entry breaks Rolldown's scan).
+// react-native-mmkv (its react-native Flow entry breaks Rolldown's scan). The
+// two writers are the owner-stamp wipe's per-account reset (#6563).
+const setSettingMock = vi.hoisted(() => vi.fn());
+const clearOfflineBoardsMock = vi.hoisted(() => vi.fn());
 vi.mock('../../settings', () => ({
   getSetting: vi.fn(() => []),
+  setSetting: setSettingMock,
+  clearOfflineBoards: clearOfflineBoardsMock,
+}));
+// "Last synced 5 minutes ago" is the third thing that reset forgets.
+const resetSyncStatusMock = vi.hoisted(() => vi.fn());
+vi.mock('../../sync/sync-status', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../sync/sync-status')>()),
+  resetSyncStatus: resetSyncStatusMock,
 }));
 
 vi.mock('../../lib/graphql/client', () => ({
   getOfflineSyncHttpClient: () => ({ request: vi.fn() }),
   getHttpClient: () => ({ request: vi.fn() }),
 }));
-vi.mock('../../db', () => ({ getDatabaseHandle: () => null }));
+vi.mock('../../db', () => ({
+  getDatabaseHandle: () => null,
+  clearUserData: (...args: unknown[]) => clearUserDataMock(...args),
+}));
 
 const snapshotBaseUrlConfigured = vi.hoisted(() => ({ value: true }));
 vi.mock('../../lib/env', () => ({
@@ -351,6 +370,12 @@ describe('OfflineSyncBridge — the same account keeps its downloads', () => {
   function expectNoCull() {
     expect(beginGlobalPurgeMock).not.toHaveBeenCalled();
     expect(clearUserDataMock).not.toHaveBeenCalled();
+    // The same account keeps its offline selection, its board names and its
+    // sync status (#6563): only another account's data is reset.
+    expect(setSettingMock).not.toHaveBeenCalled();
+    expect(clearOfflineBoardsMock).not.toHaveBeenCalled();
+    expect(resetSyncStatusMock).not.toHaveBeenCalled();
+    expect(forgetAbandonedDownloadsMock).not.toHaveBeenCalled();
     expect(clearStoredSprayPhotosMock).not.toHaveBeenCalled();
     expect(stampLocalUserIdMock).not.toHaveBeenCalled();
     expect(startSyncSchedulerStop).not.toHaveBeenCalled();
@@ -438,6 +463,47 @@ describe('OfflineSyncBridge — local user-data owner stamp', () => {
     expect(beginGlobalPurgeMock.mock.invocationCallOrder[0]).toBeLessThan(
       clearUserDataMock.mock.invocationCallOrder[0],
     );
+  });
+
+  // #6563. No sign-out ran for the previous account (its session expired while
+  // the app was closed, or the keychain read failed), so this recovery is the
+  // only place its offline selection, board names and sync status can be reset.
+  it("resets the previous account's downloaded boards, board names and sync status on that recovery", async () => {
+    assertLocalUserDataOwnerMock.mockResolvedValue('mismatch');
+    render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
+    await waitFor(() => expect(stampLocalUserIdMock).toHaveBeenCalledTimes(1));
+
+    expect(setSettingMock).toHaveBeenCalledTimes(1);
+    expect(setSettingMock).toHaveBeenCalledWith('syncEnabledBoards', []);
+    expect(clearOfflineBoardsMock).toHaveBeenCalledTimes(1);
+    expect(resetSyncStatusMock).toHaveBeenCalledTimes(1);
+    // Its unfinished downloads are closed silently, BEFORE the list empties, so
+    // the launch sweep cannot report them on this account.
+    expect(forgetAbandonedDownloadsMock).toHaveBeenCalledTimes(1);
+    expect(forgetAbandonedDownloadsMock.mock.invocationCallOrder[0]).toBeLessThan(
+      setSettingMock.mock.invocationCallOrder[0],
+    );
+    // After the purge epoch, and before the row wipe's await, so a sync cycle
+    // starting during the wipe reads an empty list.
+    expect(beginGlobalPurgeMock.mock.invocationCallOrder[0]).toBeLessThan(
+      forgetAbandonedDownloadsMock.mock.invocationCallOrder[0],
+    );
+    expect(setSettingMock.mock.invocationCallOrder[0]).toBeLessThan(clearUserDataMock.mock.invocationCallOrder[0]);
+    // Then the device is claimed for the signed-in climber.
+    expect(clearOfflineBoardsMock.mock.invocationCallOrder[0]).toBeLessThan(
+      stampLocalUserIdMock.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('resets no offline settings when it claims a never-stamped device', async () => {
+    assertLocalUserDataOwnerMock.mockResolvedValue('unstamped');
+    render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
+    await waitFor(() => expect(stampLocalUserIdMock).toHaveBeenCalledTimes(1));
+
+    expect(setSettingMock).not.toHaveBeenCalled();
+    expect(clearOfflineBoardsMock).not.toHaveBeenCalled();
+    expect(resetSyncStatusMock).not.toHaveBeenCalled();
+    expect(forgetAbandonedDownloadsMock).not.toHaveBeenCalled();
   });
 
   it('deletes the stored wall photographs on that same recovery', async () => {

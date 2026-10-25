@@ -2,15 +2,11 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useOfflineDatabase } from '../db/use-offline-database';
 import { useQueryClient } from '@tanstack/react-query';
 import { notifyBootstrapMetadataChanged, notifyScopeDownloadComplete, setSyncProgress } from '../sync';
-import {
-  assertLocalUserDataOwner,
-  beginGlobalPurge,
-  stampLocalUserId,
-  type GraphQLFetch,
-} from '@boardsesh/offline-sync';
+import { assertLocalUserDataOwner, stampLocalUserId, type GraphQLFetch } from '@boardsesh/offline-sync';
 import { startSyncScheduler, drainMutationQueue, startBackgroundTracking } from '../offline/offline-sync-adapter';
 import { recoverAndReportOutboxOnce } from '../offline/outbox-telemetry';
 import { sweepDelistedDownloadTerminals } from '../offline/abandoned-download-terminals';
+import { wipePreviousAccountLocalData } from '../offline/account-boundary';
 import { getSetting } from '../settings';
 import { useNotificationUpdates } from '../notifications/use-notification-updates';
 import { getOfflineSyncHttpClient } from '../lib/graphql/client';
@@ -19,8 +15,6 @@ import { registerOfflineEngineState } from '../lib/analytics-offline-engine-stat
 import { useAuth } from '../providers/auth-provider';
 import { useSnapshotSource } from '../offline/use-snapshot-source';
 import { useStoredUserId } from '../hooks/use-current-user-id';
-import { clearUserData } from '../db/connection';
-import { clearStoredSprayPhotos } from '../lib/spray/spray-photo-store';
 import { reportError } from '../lib/error-reporting';
 import { useOfflineSchemaReady } from '../db/use-offline-schema-ready';
 import { loadFollowedAuthors, useFollowedAuthors } from '../lib/graphql/hooks/use-followed-authors';
@@ -95,8 +89,10 @@ export function OfflineSyncBridge() {
   // A stamp naming somebody else means the sign-out wipe did not finish — a
   // locked database (#4314), a crash mid-sign-out, or the logged-out cold-start
   // path that skips cleanup entirely. Re-run the wipe, report it, and only then
-  // claim the device for this account. Until the stamp matches, every
-  // user-scoped local read declines and falls through to the network.
+  // claim the device for this account. The wipe resets the previous account's
+  // downloaded-board list, board names and sync status too, as sign-out does
+  // (#6563). Until the stamp matches, every user-scoped local read declines and
+  // falls through to the network.
   //
   // Waits for a stamped schema like every other db effect here: the stamp is a
   // write, and on a contended launch there is no sync_meta table to write it
@@ -126,25 +122,10 @@ export function OfflineSyncBridge() {
           reportError(new Error('Local offline user data belonged to a different account'), {
             tags: { source: 'offline-sync', op: 'owner-stamp-mismatch' },
           });
-          // Same hazard every other wipe path guards against (sign-out uses
-          // setSigningOut, a board removal uses beginScopePurge): the scheduler
-          // effect below may already have a pull cycle mid-table, and a page
-          // that was on the wire when clearUserData ran would land AFTER the
-          // wipe — resurrecting rows with a checkpoint past them, which the
-          // strict `>` delta pull never revisits and `user_data_complete` would
-          // then vouch for. Bumping the epoch makes syncTable's post-await
-          // re-check discard that page; the next cycle restarts from the
-          // now-empty checkpoints.
-          // GLOBAL, unlike a board removal: clearUserData DELETEs every user
-          // table plus deleteUserCheckpoints, so there is nothing scope-shaped to
-          // narrow it to.
-          beginGlobalPurge();
-          await clearUserData(db);
-          // The rows named a photograph each, and this recovery exists precisely
-          // because the sign-out that should have run did not (#5448). Wiping the
-          // rows and leaving the files would keep the other account's wall
-          // decodable with nothing on disk left to say whose it was.
-          clearStoredSprayPhotos();
+          // The scheduler effect below may already have a pull cycle mid-table;
+          // the wipe bumps the global purge epoch first, so the next cycle
+          // restarts from the now-empty checkpoints.
+          await wipePreviousAccountLocalData(db);
           if (cancelled) return;
         }
         if (ownership !== 'ok') await stampLocalUserId(db, localUserId);
@@ -190,10 +171,13 @@ export function OfflineSyncBridge() {
   // launch makes the invariant structural rather than a list of remembered call
   // sites (the lesson #4391 wrote down).
   //
-  // Declared AFTER the owner-stamp effect so a mismatch wipe runs first, and
-  // gated on `isAuthenticated` so a signed-out cold start cannot re-report what
-  // sign-out already reported and cleared. Self-limiting across re-runs: it
-  // clears the markers it reports, so a second pass finds nothing.
+  // Runs alongside the owner-stamp effect, not after it: that effect is async.
+  // A mismatch wipe clears the previous account's markers before it empties
+  // `syncEnabledBoards`, and the sweep reads the list before the markers, so it
+  // cannot report them on this account (#6563). Gated on `isAuthenticated` so a
+  // signed-out cold start cannot re-report what sign-out already reported and
+  // cleared. Self-limiting across re-runs: it clears the markers it reports, so
+  // a second pass finds nothing.
   useEffect(() => {
     if (!isAuthenticated || !schemaReady || !launchWritesReady) return;
     void sweepDelistedDownloadTerminals(db);

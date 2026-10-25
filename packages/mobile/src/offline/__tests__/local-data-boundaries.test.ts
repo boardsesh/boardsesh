@@ -16,10 +16,11 @@ const PURGE_CALL =
   /\b(beginGlobalPurge|beginScopePurge|setSigningOut|clearUserData|purgeLocalDataForSignOut|removeBoardScopeData)\(/g;
 
 const EXPECTED: Record<string, number> = {
-  // The owner-stamp wipe: rows stamped for another account (beginGlobalPurge + clearUserData).
-  'packages/mobile/src/components/offline-sync-bridge.tsx': 2,
   // The two wipes' definitions.
   'packages/mobile/src/db/connection.ts': 2,
+  // The owner-stamp wipe, which OfflineSyncBridge runs on rows stamped for
+  // another account (beginGlobalPurge + clearUserData).
+  'packages/mobile/src/offline/account-boundary.ts': 2,
   // The climber removes a board (scope purge + teardown) or taps Compact (global epoch).
   'packages/mobile/src/offline/remove-offline-board.ts': 3,
   // Sign-out: setSigningOut on/off around the explicit purge or the selective wipe.
