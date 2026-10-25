@@ -40,7 +40,7 @@ const preview = vi.hoisted(() => ({
     id: 'session-42',
     boardPath: 'kilter/8/17/27,28/40',
     endedAt: null as string | null,
-    isPermanent: false,
+    isPermanent: false as boolean | undefined,
     users: [{ id: 'u1', username: 'host', avatarUrl: null, isLeader: true }],
   },
   isLoading: false,
@@ -195,6 +195,12 @@ describe('JoinSessionScreen board resolution', () => {
     const rendered = render(createElement(JoinSessionScreen));
     expect(rendered.queryByText('mobileJoin.namesVisible')).toBeNull();
     expect(rendered.getByRole('button', { name: 'mobileJoin.join' })).toBeDefined();
+  });
+
+  it('keeps the names line when the reply says nothing about permanence, so it fails towards telling', () => {
+    preview.data.isPermanent = undefined;
+    const rendered = render(createElement(JoinSessionScreen));
+    expect(rendered.getByText('mobileJoin.namesVisible')).toBeDefined();
   });
 
   it('reuses the current viewer board when a followed physical wall sorts first', async () => {

@@ -272,13 +272,24 @@ describe('legacy GetSession replay compatibility (#6591)', () => {
     ['a JoinSession reply with a null isPermanent', [joinSession({ id: SESSION_ID, isPermanent: null })]],
     ['a JoinSession reply naming another session', [joinSession({ id: 'session-2', isPermanent: true })]],
     ['a null JoinSession reply', [joinSession(null)]],
+    [
+      'a JoinSession reply with no data (errors only)',
+      [{ ...joinSession(null), response: { errors: [{ message: 'Session not found' }] } }],
+    ],
     ['another operation’s reply', [joinSession({ id: SESSION_ID, isPermanent: true }, SESSION_ID, 'LeaveSession')]],
     ['JoinSession replies that disagree', [permanentJoin, joinSession({ id: SESSION_ID, isPermanent: false })]],
   ])('refuses to fill isPermanent from %s', (_label, fixtures) => {
     expect(replayCompatibleFixtureResponse(current, getSession(unrecorded), evidence(...fixtures))).toBeNull();
   });
 
-  it('refuses a recording with no session, a non-boolean isPermanent, or a session its variables do not name', () => {
+  it('refuses a recording with no data, no session, a non-boolean isPermanent, or a session its variables do not name', () => {
+    expect(
+      replayCompatibleFixtureResponse(
+        current,
+        { ...getSession(unrecorded), response: { errors: [{ message: 'Session not found' }] } },
+        evidence(permanentJoin),
+      ),
+    ).toBeNull();
     expect(replayCompatibleFixtureResponse(current, getSession(null), evidence(permanentJoin))).toBeNull();
     expect(
       replayCompatibleFixtureResponse(

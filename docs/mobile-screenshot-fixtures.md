@@ -189,8 +189,8 @@ cannot reuse a recorded numeric-only read. Other document changes remain drift e
 `GetSession` accepts the exact addition of `isPermanent` (#6591), which decides
 whether the join screen says everyone in the session sees your name. The field is
 non-null, so replay never makes up a value. A recorded session that already holds
-a boolean `isPermanent` replays unchanged; the shared and Apple campaign sets
-recorded `false`. A recorded session with no `isPermanent` takes the one value the
+a boolean `isPermanent` replays unchanged; the shared and Apple campaign sets'
+hand-curated session recording holds `false`. A recorded session with no `isPermanent` takes the one value the
 same set's `JoinSession` replies recorded for that session id; the CPP sets
 recorded `true`, because their sessions are permanent. A null session, a
 non-boolean value, no `JoinSession` evidence, evidence that disagrees, and every

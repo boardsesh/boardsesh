@@ -185,9 +185,11 @@ const PRESENCE_CAPABILITY_OPERATIONS = new Set([
 ]);
 
 /**
- * Pinned recordings that predate a nullable field the current document now
- * selects. Adapt those responses in memory; never rewrite their bytes or hashes.
- * An exact selection match keeps every other document/schema change detectable.
+ * Pinned recordings that predate a field the current document now selects.
+ * Adapt those responses in memory; never rewrite their bytes or hashes. A
+ * nullable field may replay as null; a non-null one only as a value the same
+ * set recorded. An exact selection match keeps every other document/schema
+ * change detectable.
  *
  * - GetBoard / GetMyBoards: the spray-only `sprayImport`, null on every
  *   manufacturer board.
@@ -262,8 +264,10 @@ function matchesWithoutSelection(requestQuery: string, selection: string, fixtur
  * The field is non-null and decides what the screen tells the climber, so this
  * only replays a value the same set recorded:
  *
- * - the recorded session already carries a boolean `isPermanent` (the recorder
- *   kept the server's whole reply), which replays unchanged;
+ * - the recorded session already carries a boolean `isPermanent`, which
+ *   replays unchanged. The shared and Apple campaign sets' GetSession is a
+ *   hand-curated recording (`upstream: local:curated-shared-session`) that
+ *   holds `false`;
  * - or it carries none, and the set's JoinSession replies recorded one for the
  *   same session id (`recordedJoinSessionPermanence`). The CPP sets are this
  *   case: their sessions are permanent by design.
