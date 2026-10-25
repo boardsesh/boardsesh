@@ -154,7 +154,7 @@ describe('smartPlaylist — views (real DB, #6651)', () => {
       )
       .onConflictDoNothing();
     await db.execute(sql`INSERT INTO user_profiles (user_id, is_private) VALUES (${PRIVATE_OWNER}, true)`);
-    await db.execute(sql`DELETE FROM user_favorites WHERE user_id IN (${OWNER}, ${PRIVATE_OWNER})`);
+    await db.execute(sql`DELETE FROM user_favorites WHERE user_id IN (${OWNER}, ${PRIVATE_OWNER}, ${BOARD_TIE_OWNER})`);
 
     // Kilter layout 1 (size 10, set 1) and one Tension climb. The grade each
     // logbook row shows is its most-ascended angle's: k-4 shows 20 (at 50°).
@@ -311,7 +311,8 @@ describe('smartPlaylist — views (real DB, #6651)', () => {
       });
     }
 
-    // BOARD_TIE_OWNER: three attempts each on Kilter k-2 and z-tie and Tension t-1.
+    // BOARD_TIE_OWNER: three attempts each on Kilter k-2 and z-tie and Tension t-1,
+    // all five-star and climbed at the same moment, and all three liked at once.
     await seedClimb('z-tie', 'kilter', 1, 'Juliet');
     for (const [index, [climbUuid, boardType]] of (
       [
@@ -328,9 +329,16 @@ describe('smartPlaylist — views (real DB, #6651)', () => {
         angle: boardType === 'tension' ? 30 : 40,
         status: 'attempt',
         attempts: 3,
-        climbedAt: `2026-06-0${index + 1} 10:00`,
+        quality: 5,
+        climbedAt: '2026-06-01 10:00',
       });
     }
+    await db.execute(sql`
+      INSERT INTO user_favorites (user_id, board_name, climb_uuid, angle, created_at) VALUES
+        (${BOARD_TIE_OWNER}, 'kilter', 'k-2', 40, '2026-06-01 10:00'),
+        (${BOARD_TIE_OWNER}, 'tension', 't-1', 30, '2026-06-01 10:00'),
+        (${BOARD_TIE_OWNER}, 'kilter', 'z-tie', 40, '2026-06-01 10:00')
+    `);
 
     // ANGLE_OWNER: k-tie has 8 ascents at both 15° (a 10) and 30° (a 16), and is
     // a 20 at 40°; beside it k-1 (12 at 40°) and k-2 (18 at 40°).
@@ -368,7 +376,7 @@ describe('smartPlaylist — views (real DB, #6651)', () => {
 
   afterAll(async () => {
     // Neither table is in setup.ts's per-file reset list.
-    await db.execute(sql`DELETE FROM user_favorites WHERE user_id IN (${OWNER}, ${PRIVATE_OWNER})`);
+    await db.execute(sql`DELETE FROM user_favorites WHERE user_id IN (${OWNER}, ${PRIVATE_OWNER}, ${BOARD_TIE_OWNER})`);
     await db.execute(sql`DELETE FROM user_boards WHERE uuid = 'smart-view-board'`);
     await db.execute(sql`DELETE FROM user_profiles WHERE user_id = ${PRIVATE_OWNER}`);
     await db.execute(sql`DELETE FROM content_privacy WHERE entity_id = 'sv-g2'`);
@@ -435,10 +443,13 @@ describe('smartPlaylist — views (real DB, #6651)', () => {
         // The same order as the position view above.
         expect(paged.collected, type).toEqual(['k-4', 'k-2', 'k-5', 'k-6']);
         expect(paged.totalCount).toBe(4);
-
-        // Kilter before Tension, then the climb: z-tie comes before t-1.
+      }
+      // Tied attempt totals, five-star dates and like dates: Kilter before
+      // Tension, then the climb, so z-tie comes before t-1.
+      for (const type of SMART_TYPES) {
         const acrossBoards = await pageThrough({ type, userId: BOARD_TIE_OWNER }, 1);
         expect(acrossBoards.collected, type).toEqual(['k-2', 'z-tie', 't-1']);
+        expect(acrossBoards.totalCount, type).toBe(3);
         const viewed = await pageThrough({ type, userId: BOARD_TIE_OWNER, view: { sortBy: 'position' } }, 1);
         expect(viewed.collected, type).toEqual(acrossBoards.collected);
       }
