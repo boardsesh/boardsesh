@@ -83,8 +83,9 @@ export const ClimbInputSchema = z.object({
     .transform((v) => v ?? ''),
   mirrored: z.boolean().nullish(),
   benchmark_difficulty: z.string().max(50).nullish(),
-  // `is_no_match` / `characteristics` must be declared here even though nothing
-  // server-side reads them: `z.object()` STRIPS undeclared keys, and `setQueue`
+  // `is_no_match` / `characteristics` must be declared here (`Climb.is_no_match`
+  // reads `is_no_match` back when a queued stub has neither characteristics nor
+  // description, #6681): `z.object()` STRIPS undeclared keys, and `setQueue`
   // / `joinSession` persist the PARSED item (unlike the single-item mutations,
   // which discard the parse result and store the GraphQL-coerced input). Both
   // fields ride every client's selection set already, so omitting them here made
@@ -122,6 +123,7 @@ export const ClimbInputSchema = z.object({
       CONFIDENCE.setterOnly,
       CONFIDENCE.crossAngleEstimate,
       CONFIDENCE.moonboardAngleEstimate,
+      CONFIDENCE.moonboardWideAngleEstimate,
     ])
     .nullish(),
   // The sizes the climb fits on, round-tripped through the queue so a peer on a

@@ -100,7 +100,7 @@ import { integrationMutations } from './integrations/mutations';
 import { betaLinkQueries } from './beta-videos/queries';
 import { instagramBetaImportQueries } from './beta-videos/instagram-beta-import';
 import { syncQueries } from './sync/queries';
-import { resolveClimbNoMatch } from './shared/helpers';
+import { resolveClimbNoMatchField } from './climbs/climb-no-match-field';
 import { resolveClimbLostHolds, type ClimbLostHoldsParent } from './climbs/lost-holds';
 import { resolveClimbAuthorId } from './climbs/climb-author';
 
@@ -244,16 +244,14 @@ export const resolvers = {
 
   // Climb type resolvers (derived fields)
   Climb: {
-    // One definition for every surface — see resolveClimbNoMatch.
+    // One definition for every surface — see resolveClimbNoMatchField. The
+    // parent's own `is_no_match` is kept only when characteristics and
+    // description are both absent (a queued tick/proposal stub, #6681).
     // A parent that doesn't select `characteristics` silently falls back to the
-    // description, so every Climb producer must project the column. The parent
-    // type below checks nothing (this map is untyped): resolver-climb-fields.test.ts
-    // is the guard, and it fails when a new query returns Climb without a row there.
-    is_no_match: (climb: {
-      characteristics?: string[] | null;
-      description?: string | null;
-      boardType?: string | null;
-    }) => resolveClimbNoMatch(climb.boardType, climb.characteristics, climb.description),
+    // description, so every Climb producer must project the column. The map is
+    // untyped: resolver-climb-fields.test.ts is the guard, and it fails when a
+    // new query returns Climb without a row there.
+    is_no_match: resolveClimbNoMatchField,
 
     // Spray only, and only for a climb whose materialised `missingHoldCount`
     // says it lost something — see resolveClimbLostHolds. Per-climb by design:
