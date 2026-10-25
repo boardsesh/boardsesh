@@ -1,4 +1,4 @@
-import type { ClimbQueue, ClimbQueueItem } from '@boardsesh/queue';
+import { upNextStart, type ClimbQueue, type ClimbQueueItem } from '@boardsesh/queue';
 
 // The last 2 climbed. The mobile queue sheet (the only consumer) trialled 5 and
 // cut it to 2 in its QA pass so Up next stays on screen at the 70% detent;
@@ -24,6 +24,11 @@ export function buildQueueListModel(
     showHistory: boolean;
     showFullHistory: boolean;
     historyDisplayLimit?: number;
+    /**
+     * The History / Up next line while nothing is current (F3, now-slot mode).
+     * Absent or null (legacy): with nothing current the whole queue is Up next.
+     */
+    historyCount?: number | null;
   },
 ): QueueListModel {
   const limit = options.historyDisplayLimit ?? DEFAULT_HISTORY_DISPLAY_LIMIT;
@@ -31,10 +36,14 @@ export function buildQueueListModel(
   let currentItemFlatIndex = -1;
 
   const currentIndex = currentItemUuid ? queue.findIndex((item) => item.uuid === currentItemUuid) : -1;
-
-  const historyItems = currentIndex > 0 ? queue.slice(0, currentIndex) : [];
   const currentItem = currentIndex >= 0 ? queue[currentIndex] : null;
-  const futureItems = currentIndex >= 0 ? queue.slice(currentIndex + 1) : queue;
+  // History = queue[0, line), Now at the line when a climb is current, then Up
+  // next. With nothing current (or an orphan) the line is `historyCount`.
+  const firstUpNextIndex = upNextStart(queue, currentItem, options.historyCount);
+  const historyEnd = currentIndex >= 0 ? currentIndex : firstUpNextIndex;
+
+  const historyItems = queue.slice(0, historyEnd);
+  const futureItems = queue.slice(firstUpNextIndex);
 
   if (options.showHistory && historyItems.length > 0) {
     const hiddenCount = options.showFullHistory ? 0 : Math.max(0, historyItems.length - limit);
@@ -54,7 +63,7 @@ export function buildQueueListModel(
   }
 
   for (let i = 0; i < futureItems.length; i++) {
-    const originalIndex = currentIndex >= 0 ? currentIndex + 1 + i : i;
+    const originalIndex = firstUpNextIndex + i;
     if (i === 0 && !currentItem) {
       currentItemFlatIndex = rows.length;
     }

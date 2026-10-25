@@ -1712,3 +1712,64 @@ describe('Up next plays before the list continues (#6777)', () => {
     });
   });
 });
+
+describe('nothing current with History (F3 now-slot mode)', () => {
+  // History [h1 h2], nothing current, Up next [u1 u2]: the current climb was
+  // removed or cleared.
+  const queue = [makeItem('h1'), makeItem('h2'), makeItem('u1'), makeItem('u2')];
+
+  it('Next starts at the line, not at queue[0]', () => {
+    expect(findNextQueueItem(queue, null, 2)?.uuid).toBe('u1');
+    expect(findNextQueueItemWithSuggestions(queue, null, null, undefined, undefined, undefined, 2)?.uuid).toBe('u1');
+    expect(selectNextQueueItemWithSuggestions(queue, null, null, undefined, undefined, undefined, 2).item?.uuid).toBe(
+      'u1',
+    );
+  });
+
+  it("Previous steps back to History's last entry", () => {
+    expect(findPreviousQueueItem(queue, null, 2)?.uuid).toBe('h2');
+    expect(findPreviousQueueItemWithSuggestions(queue, null, null, undefined, undefined, undefined, 2)?.uuid).toBe(
+      'h2',
+    );
+  });
+
+  it('counts only Up next as remaining', () => {
+    expect(computeNavigationState(queue, null, 2).remainingCount).toBe(2);
+    expect(computeNavigationStateWithSuggestions(queue, null, null, undefined, undefined, undefined, 2)).toMatchObject({
+      canNext: true,
+      canPrevious: true,
+      remainingCount: 2,
+    });
+  });
+
+  it('with an empty Up next there is nothing next, and Previous still reaches History', () => {
+    const historyOnly = [makeItem('h1'), makeItem('h2')];
+    expect(findNextQueueItem(historyOnly, null, 2)).toBeNull();
+    expect(
+      selectNextQueueItemWithSuggestions(historyOnly, null, null, undefined, undefined, undefined, 2).item,
+    ).toBeNull();
+    expect(findPreviousQueueItem(historyOnly, null, 2)?.uuid).toBe('h2');
+  });
+
+  it('legacy callers (no historyCount) keep queue[0] and no Previous', () => {
+    expect(findNextQueueItem(queue, null)?.uuid).toBe('h1');
+    expect(findPreviousQueueItem(queue, null)).toBeNull();
+    expect(findPreviousQueueItemWithSuggestions(queue, null, null)).toBeNull();
+    expect(computeNavigationState(queue, null).remainingCount).toBe(4);
+  });
+
+  it('a climb current ignores historyCount', () => {
+    expect(findNextQueueItem(queue, queue[1], 0)?.uuid).toBe('u1');
+    expect(findPreviousQueueItemWithSuggestions(queue, queue[1], null, undefined, undefined, undefined, 0)?.uuid).toBe(
+      'h1',
+    );
+  });
+
+  it('the upcoming walk starts at the line', () => {
+    expect(
+      findUpcomingQueueItemsWithSuggestions(queue, null, null, 5, undefined, undefined, undefined, 2).map(
+        ({ uuid }) => uuid,
+      ),
+    ).toEqual(['u1', 'u2']);
+  });
+});

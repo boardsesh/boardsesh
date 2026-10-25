@@ -9,6 +9,7 @@ import {
   getPlaylistSuggestedClimbs,
   getPlaylistPeekQueueItemUuid,
   findPlaylistClimbIndex,
+  upNextStart,
   withPlaylistTrackResume,
 } from '@boardsesh/queue';
 import {
@@ -59,13 +60,17 @@ function findCurrentQueueIndex(
 /**
  * Find the next item in the queue relative to the current climb.
  * Returns null if there is no next item.
+ *
+ * With nothing current it is the head of Up next, `queue[historyCount]` (F3,
+ * now-slot mode). Legacy callers pass no `historyCount`, which is `queue[0]`.
  */
 export function findNextQueueItem(
   queue: ClimbQueue,
   currentClimbQueueItem: ClimbQueueItem | null,
+  historyCount?: number | null,
 ): ClimbQueueItem | null {
   if (queue.length === 0) return null;
-  if (!currentClimbQueueItem) return queue[0];
+  if (!currentClimbQueueItem) return queue[upNextStart(queue, null, historyCount)] ?? null;
 
   const currentIndex = queue.findIndex(({ uuid }) => uuid === currentClimbQueueItem.uuid);
   const nextIndex = currentIndex + 1;
@@ -80,12 +85,17 @@ export function findNextQueueItem(
 /**
  * Find the previous item in the queue relative to the current climb.
  * Returns null if there is no previous item.
+ *
+ * With nothing current it is History's last entry, `queue[historyCount - 1]`
+ * (F3, now-slot mode); without a `historyCount` (legacy) there is none.
  */
 export function findPreviousQueueItem(
   queue: ClimbQueue,
   currentClimbQueueItem: ClimbQueueItem | null,
+  historyCount?: number | null,
 ): ClimbQueueItem | null {
-  if (queue.length === 0 || !currentClimbQueueItem) return null;
+  if (queue.length === 0) return null;
+  if (!currentClimbQueueItem) return lastHistoryEntry(queue, historyCount);
 
   const currentIndex = queue.findIndex(({ uuid }) => uuid === currentClimbQueueItem.uuid);
   const prevIndex = currentIndex - 1;
@@ -104,13 +114,14 @@ export function findPreviousQueueItem(
 export function computeNavigationState(
   queue: ClimbQueue,
   currentClimbQueueItem: ClimbQueueItem | null,
+  historyCount?: number | null,
 ): NavigationState {
-  const nextItem = findNextQueueItem(queue, currentClimbQueueItem);
-  const prevItem = findPreviousQueueItem(queue, currentClimbQueueItem);
+  const nextItem = findNextQueueItem(queue, currentClimbQueueItem, historyCount);
+  const prevItem = findPreviousQueueItem(queue, currentClimbQueueItem, historyCount);
 
-  const currentIndex = currentClimbQueueItem ? queue.findIndex(({ uuid }) => uuid === currentClimbQueueItem.uuid) : -1;
-
-  const remainingCount = currentIndex >= 0 ? queue.length - currentIndex - 1 : queue.length;
+  // Counts Up next. Without a `historyCount` (legacy) a queue with nothing
+  // current is all Up next, as before.
+  const remainingCount = queue.length - upNextStart(queue, currentClimbQueueItem, historyCount);
 
   return {
     canNext: nextItem !== null,
@@ -120,6 +131,15 @@ export function computeNavigationState(
     remainingCount,
     atTrackEnd: false,
   };
+}
+
+/**
+ * History's last entry with nothing current: the climb Previous steps back to.
+ * Legacy mode passes no `historyCount`, so there is none, as before.
+ */
+function lastHistoryEntry(queue: ClimbQueue, historyCount: number | null | undefined): ClimbQueueItem | null {
+  const line = upNextStart(queue, null, historyCount);
+  return line > 0 ? queue[line - 1] : null;
 }
 
 /** Where `climbUuid` sits on the track, or -1 with no track or off it. */
@@ -488,6 +508,7 @@ export function selectNextQueueItemWithSuggestions(
   activeConfig?: ActiveBoardForCompatibility,
   isReachable?: ReachableClimbPredicate,
   prepared?: PreparedQueueNavigation,
+  historyCount?: number | null,
 ): NextQueueItemSelection {
   if (currentClimbQueueItem) {
     const currentIndex = findCurrentQueueIndex(queue, currentClimbQueueItem, prepared);
@@ -515,8 +536,14 @@ export function selectNextQueueItemWithSuggestions(
       : NOTHING_NEXT;
   }
 
+  // Nothing current: walk Up next from the line (F3). Without a `historyCount`
+  // (legacy) the line is 0 and the whole queue is walked, as before.
   if (queue.length > 0) {
-    const scanned = scanForFirstCompatible(queue, activeConfig, isReachable);
+    const scanned = scanForFirstCompatible(
+      queue.slice(upNextStart(queue, null, historyCount)),
+      activeConfig,
+      isReachable,
+    );
     if (scanned.item) return scanned;
     const firstSuggestionAfterQueue = getPlaylistSuggestedClimbs(source, queue)[0];
     return {
@@ -583,9 +610,17 @@ export function findNextQueueItemWithSuggestions(
   activeConfig?: ActiveBoardForCompatibility,
   isReachable?: ReachableClimbPredicate,
   prepared?: PreparedQueueNavigation,
+  historyCount?: number | null,
 ): ClimbQueueItem | null {
-  return selectNextQueueItemWithSuggestions(queue, currentClimbQueueItem, source, activeConfig, isReachable, prepared)
-    .item;
+  return selectNextQueueItemWithSuggestions(
+    queue,
+    currentClimbQueueItem,
+    source,
+    activeConfig,
+    isReachable,
+    prepared,
+    historyCount,
+  ).item;
 }
 
 /** What a backward step resolved to. See {@link NextQueueItemSelection.trackResume} for `trackResume`. */
@@ -639,8 +674,10 @@ export function selectPreviousQueueItemWithSuggestions(
   prepared?: PreparedQueueNavigation,
   activeConfig?: ActiveBoardForCompatibility,
   isReachable?: ReachableClimbPredicate,
+  historyCount?: number | null,
 ): PreviousQueueItemSelection {
-  if (!currentClimbQueueItem) return NOTHING_PREVIOUS;
+  // Nothing current: History's last entry (F3), or nothing in legacy mode.
+  if (!currentClimbQueueItem) return { item: lastHistoryEntry(queue, historyCount) };
 
   const currentIndex = findCurrentQueueIndex(queue, currentClimbQueueItem, prepared);
   const position = resolveTrackPosition(queue, currentClimbQueueItem, source, prepared);
@@ -818,6 +855,7 @@ export function findPreviousQueueItemWithSuggestions(
   prepared?: PreparedQueueNavigation,
   activeConfig?: ActiveBoardForCompatibility,
   isReachable?: ReachableClimbPredicate,
+  historyCount?: number | null,
 ): ClimbQueueItem | null {
   return selectPreviousQueueItemWithSuggestions(
     queue,
@@ -826,6 +864,7 @@ export function findPreviousQueueItemWithSuggestions(
     prepared,
     activeConfig,
     isReachable,
+    historyCount,
   ).item;
 }
 
@@ -931,6 +970,7 @@ export function computeNavigationTargetsWithSuggestions(
   activeConfig?: ActiveBoardForCompatibility,
   isReachable?: ReachableClimbPredicate,
   prepared?: PreparedQueueNavigation,
+  historyCount?: number | null,
 ): Omit<NavigationState, 'remainingCount'> {
   const { item: nextItem, atTrackEnd } = selectNextQueueItemWithSuggestions(
     queue,
@@ -939,6 +979,7 @@ export function computeNavigationTargetsWithSuggestions(
     activeConfig,
     isReachable,
     prepared,
+    historyCount,
   );
   const prevItem = findPreviousQueueItemWithSuggestions(
     queue,
@@ -947,6 +988,7 @@ export function computeNavigationTargetsWithSuggestions(
     prepared,
     activeConfig,
     isReachable,
+    historyCount,
   );
   return { canNext: nextItem !== null, canPrevious: prevItem !== null, nextItem, prevItem, atTrackEnd };
 }
@@ -958,6 +1000,7 @@ export function countRemainingQueueItemsWithSuggestions(
   activeConfig?: ActiveBoardForCompatibility,
   isReachable?: ReachableClimbPredicate,
   prepared?: PreparedQueueNavigation,
+  historyCount?: number | null,
 ): number {
   return findUpcomingQueueItemsWithSuggestions(
     queue,
@@ -967,6 +1010,7 @@ export function countRemainingQueueItemsWithSuggestions(
     activeConfig,
     isReachable,
     prepared,
+    historyCount,
   ).length;
 }
 
@@ -977,6 +1021,7 @@ export function computeNavigationStateWithSuggestions(
   activeConfig?: ActiveBoardForCompatibility,
   isReachable?: ReachableClimbPredicate,
   prepared?: PreparedQueueNavigation,
+  historyCount?: number | null,
 ): NavigationState {
   return {
     ...computeNavigationTargetsWithSuggestions(
@@ -986,6 +1031,7 @@ export function computeNavigationStateWithSuggestions(
       activeConfig,
       isReachable,
       prepared,
+      historyCount,
     ),
     remainingCount: countRemainingQueueItemsWithSuggestions(
       queue,
@@ -994,6 +1040,7 @@ export function computeNavigationStateWithSuggestions(
       activeConfig,
       isReachable,
       prepared,
+      historyCount,
     ),
   };
 }
@@ -1027,6 +1074,7 @@ export function findUpcomingQueueItemsWithSuggestions(
   activeConfig?: ActiveBoardForCompatibility,
   isReachable?: ReachableClimbPredicate,
   prepared?: PreparedQueueNavigation,
+  historyCount?: number | null,
 ): ClimbQueueItem[] {
   const upcomingItems: ClimbQueueItem[] = [];
   if (count <= 0) return upcomingItems;
@@ -1046,6 +1094,7 @@ export function findUpcomingQueueItemsWithSuggestions(
   let stepsLeft = count + queue.length;
   while (upcomingItems.length < count && stepsLeft > 0) {
     stepsLeft -= 1;
+    // `historyCount` only matters for the first step, with nothing current.
     const { item: nextItem, trackResume } = selectNextQueueItemWithSuggestions(
       queue,
       walkFrom,
@@ -1053,6 +1102,7 @@ export function findUpcomingQueueItemsWithSuggestions(
       activeConfig,
       isReachable,
       prepared,
+      historyCount,
     );
     if (!nextItem) break;
     if (seenItemUuids.has(nextItem.uuid)) break;
