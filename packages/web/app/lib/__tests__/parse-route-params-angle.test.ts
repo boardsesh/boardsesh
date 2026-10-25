@@ -24,12 +24,21 @@ const { parseRouteParams } = await import('../url-utils.server');
 
 const CLIMB_UUID = 'abcdef1234567890abcdef1234567890';
 
-function params(boardName: string, angle: string) {
-  return {
-    board_name: boardName,
+// Defaults to a real Kilter config (Original, 12x12 with kickboard, both sets).
+// A board whose catalogue lacks those ids passes its own: numeric routes 404 a
+// config the static catalogue cannot build.
+function params(
+  boardName: string,
+  angle: string,
+  config: { layout_id: string; size_id: string; set_ids: string } = {
     layout_id: '1',
     size_id: '10',
     set_ids: '1,20',
+  },
+) {
+  return {
+    board_name: boardName,
+    ...config,
     angle,
     climb_uuid: CLIMB_UUID,
   };
@@ -65,7 +74,9 @@ describe('parseRouteParams angle validation', () => {
   });
 
   it('accepts the real Grasshopper -5 degree setting', async () => {
-    const { parsedParams } = await parseRouteParams(params('grasshopper', '-5'));
+    const { parsedParams } = await parseRouteParams(
+      params('grasshopper', '-5', { layout_id: '1', size_id: '1', set_ids: '1,2,3' }),
+    );
     expect(parsedParams.angle).toBe(-5);
     expect(notFound).not.toHaveBeenCalled();
   });
