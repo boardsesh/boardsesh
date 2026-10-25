@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   RULES as REAL_RULES,
   UNGUARDED_PATCHES,
+  WEB_RULES,
   checkIosPatchesBuildFromSource,
   checkPatchInventory,
   checkPatchesApplied,
@@ -1132,36 +1133,52 @@ describe('checkPatchInventory', () => {
     expect(errors[0]).toContain('4.25.2');
   });
 
-  const serverKey = 'postgres@3.4.9';
-  const serverPath = 'packages/db/patches/postgres@3.4.9.patch';
+  describe.each([
+    ['postgres@3.4.9', 'packages/db/patches/postgres@3.4.9.patch'],
+    ['@mui/material@7.3.11', 'packages/web/patches/@mui__material@7.3.11.patch'],
+  ])('non-native patch %s', (patchKey, patchPath) => {
+    it('accepts the explicitly registered non-native patch outside native fingerprint inputs', () => {
+      expect(
+        checkPatchInventory({
+          ...base,
+          patchedDependencies: { ...base.patchedDependencies, [patchKey]: patchPath },
+          nonNativePatchPaths: [patchPath],
+        }),
+      ).toEqual([]);
+    });
 
-  it('accepts the explicitly registered server patch outside native fingerprint inputs', () => {
-    expect(
-      checkPatchInventory({
-        ...base,
-        patchedDependencies: { ...base.patchedDependencies, [serverKey]: serverPath },
-        serverPatchPaths: [serverPath],
-      }),
-    ).toEqual([]);
-  });
+    it('rejects a missing non-native patch', () => {
+      expect(
+        checkPatchInventory({
+          ...base,
+          patchedDependencies: { ...base.patchedDependencies, [patchKey]: patchPath },
+        }),
+      ).toEqual([expect.stringContaining('non-native patch ' + patchPath + ' is missing')]);
+    });
 
-  it('rejects a missing server patch', () => {
-    expect(
-      checkPatchInventory({
-        ...base,
-        patchedDependencies: { ...base.patchedDependencies, [serverKey]: serverPath },
-      }),
-    ).toEqual([expect.stringContaining('server patch ' + serverPath + ' is missing')]);
-  });
+    it('rejects a different path even when its file exists', () => {
+      const movedPath = `packages/other/patches/${patchKey.replaceAll('/', '__')}.patch`;
+      expect(
+        checkPatchInventory({
+          ...base,
+          patchedDependencies: { ...base.patchedDependencies, [patchKey]: movedPath },
+          nonNativePatchPaths: [movedPath],
+        }),
+      ).toEqual([expect.stringContaining('non-native patch must stay at')]);
+    });
 
-  it('rejects moving a server patch into native fingerprint inputs', () => {
-    expect(
-      checkPatchInventory({
-        ...base,
-        patchedDependencies: { ...base.patchedDependencies, [serverKey]: `patches/${serverKey}.patch` },
-        patchFilenames: [...base.patchFilenames, `${serverKey}.patch`],
-      }),
-    ).toEqual([expect.stringContaining('server patch must stay at'), expect.stringContaining('orphaned')]);
+    it('rejects moving a non-native patch into native fingerprint inputs', () => {
+      expect(
+        checkPatchInventory({
+          ...base,
+          patchedDependencies: {
+            ...base.patchedDependencies,
+            [patchKey]: `patches/${patchKey.replaceAll('/', '__')}.patch`,
+          },
+          patchFilenames: [...base.patchFilenames, `${patchKey.replaceAll('/', '__')}.patch`],
+        }),
+      ).toEqual([expect.stringContaining('non-native patch must stay at'), expect.stringContaining('orphaned')]);
+    });
   });
 
   it('rejects moving a native patch outside the fingerprinted directory', () => {
@@ -1169,7 +1186,7 @@ describe('checkPatchInventory', () => {
       checkPatchInventory({
         ...base,
         patchedDependencies: { [TABS_KEY]: `packages/db/patches/${TABS_KEY}.patch` },
-        serverPatchPaths: [`packages/db/patches/${TABS_KEY}.patch`],
+        nonNativePatchPaths: [`packages/db/patches/${TABS_KEY}.patch`],
       }),
     ).toEqual([expect.stringContaining('not in patches/')]);
   });
@@ -1629,5 +1646,30 @@ describe('the shipped native privacy patches', () => {
     });
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]).toContain('patch NOT applied');
+  });
+});
+
+describe('the installed web declaration patch', () => {
+  const patchedDependencies = {
+    '@mui/material@7.3.11': 'packages/web/patches/@mui__material@7.3.11.patch',
+  };
+  const installed = createNodeEnv(
+    resolve(import.meta.dirname, '../../packages/web/package.json'),
+    patchedDependencies,
+    'packages/web',
+  );
+
+  it('guards both declaration variants resolved by the web workspace', () => {
+    expect(checkPatchesApplied(WEB_RULES, installed)).toEqual({ checked: 2, errors: [] });
+  });
+
+  it.each(WEB_RULES)('rejects a dropped React import in $file', (rule) => {
+    const result = checkPatchesApplied([rule], {
+      ...installed,
+      readInstalledFile(pkg, file) {
+        return installed.readInstalledFile(pkg, file).replace(/^import type \* as React from 'react';\r?\n/m, '');
+      },
+    });
+    expect(result.errors).toEqual([expect.stringContaining(`${rule.file} is missing`)]);
   });
 });

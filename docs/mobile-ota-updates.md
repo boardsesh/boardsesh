@@ -259,6 +259,12 @@ supports its builder API and ref-based relations. Existing editor and drawer
 graphs keep that compatibility path; rows interacting with the new Swipeable
 use the hook API so a gesture relation never crosses between the two APIs.
 
+`expo-share-intent` 9 updates Expo compatibility without changing the share API
+([upstream migration](https://github.com/achorein/expo-share-intent/pull/241/files)).
+Existing cold/warm link handling, shared-beta routing and App Group deduplication
+stay covered by their integration tests. On a new native build, share a beta link
+from another app with Boardsesh both closed and already open; each opens the beta form.
+
 Web remains on React 19.2. Next, MUI's styled engine and react-i18next import
 React declarations without declaring their types peer, so pnpm otherwise gives
 them the hoisted mobile 19.3 declarations. The precise optional peer extensions

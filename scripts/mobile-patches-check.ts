@@ -89,7 +89,7 @@ export interface ForbiddenInMethod {
 }
 
 export interface PatchRule {
-  /** The patched package — must be a direct dependency of packages/mobile. */
+  /** The patched package — must be resolvable from the owning workspace. */
   package: string;
   /** Path, within the installed package, to the source file the patch edits. */
   file: string;
@@ -588,12 +588,24 @@ export const UNGUARDED_PATCHES: Readonly<Record<string, string>> = {
     'dev-client-only — it never ships in a store binary.',
 };
 
-/** Server-only patches stay outside patches/, which is a native fingerprint input.
- * Postgres is guarded by the backend's ESM/CJS disconnect regression tests.
+/**
+ * Server and web patches stay outside patches/, which is a native fingerprint input.
+ * Postgres is guarded by the backend's ESM/CJS disconnect regression tests;
+ * MUI is checked below and by the mixed-React compiler regression fixture.
+ * Only these exact keys and paths may bypass the native patch directory.
  */
-export const SERVER_PATCHES: Readonly<Record<string, string>> = {
+export const NON_NATIVE_PATCHES: Readonly<Record<string, string>> = {
   'postgres@3.4.9': 'packages/db/patches/postgres@3.4.9.patch',
+  '@mui/material@7.3.11': 'packages/web/patches/@mui__material@7.3.11.patch',
 };
+
+/** Resolve these files from web, whose React declarations the patch must use. */
+export const WEB_RULES: readonly PatchRule[] = ['internal/index.d.ts', 'esm/internal/index.d.ts'].map((file) => ({
+  package: '@mui/material',
+  file,
+  sentinels: ["import type * as React from 'react';"],
+  patchedKey: '@mui/material@7.3.11',
+}));
 
 /**
  * Strip `//` line comments and block comments from Objective-C++ source.
@@ -669,8 +681,8 @@ export interface PatchInventoryInput {
   patchedDependencies: Record<string, string>;
   /** Filenames present in patches/ (basenames, not paths). */
   patchFilenames: readonly string[];
-  /** Existing repo-relative server patch paths; only SERVER_PATCHES may use these. */
-  serverPatchPaths?: readonly string[];
+  /** Existing repo-relative non-native patch paths; only NON_NATIVE_PATCHES may use these. */
+  nonNativePatchPaths?: readonly string[];
   /** `patchedKey` of every entry in {@link RULES}. */
   guardedKeys: readonly string[];
   /** Keys deliberately left unguarded, mapped to the reason. */
@@ -692,12 +704,12 @@ export function checkPatchInventory(input: PatchInventoryInput): string[] {
   const guarded = new Set(input.guardedKeys);
 
   for (const [patchedKey, patchPath] of Object.entries(input.patchedDependencies)) {
-    if (Object.prototype.hasOwnProperty.call(SERVER_PATCHES, patchedKey)) {
-      const expectedPath = SERVER_PATCHES[patchedKey];
+    if (Object.prototype.hasOwnProperty.call(NON_NATIVE_PATCHES, patchedKey)) {
+      const expectedPath = NON_NATIVE_PATCHES[patchedKey];
       if (patchPath !== expectedPath) {
-        errors.push(`${patchedKey}: server patch must stay at ${expectedPath}, outside native fingerprint inputs.`);
-      } else if (!input.serverPatchPaths?.includes(patchPath)) {
-        errors.push(`${patchedKey}: server patch ${patchPath} is missing.`);
+        errors.push(`${patchedKey}: non-native patch must stay at ${expectedPath}, outside native fingerprint inputs.`);
+      } else if (!input.nonNativePatchPaths?.includes(patchPath)) {
+        errors.push(`${patchedKey}: non-native patch ${patchPath} is missing.`);
       }
       continue;
     }
@@ -821,9 +833,11 @@ export function checkIosPatchesBuildFromSource(input: BuildFromSourceInput): str
 export interface PatchCheckEnv {
   /** The pnpm-workspace.yaml `patchedDependencies` map. */
   patchedDependencies: Record<string, string>;
-  /** Installed `version` of `pkg` as resolved from packages/mobile. Throws if unresolvable. */
+  /** Owning workspace, used in resolution failure diagnostics; defaults to mobile. */
+  workspace?: string;
+  /** Installed `version` of `pkg` as resolved from the owning workspace. Throws if unresolvable. */
   readInstalledVersion(pkg: string): string;
-  /** Read `fileSubpath` from the installed `pkg` (resolved from packages/mobile). Throws if pkg unresolvable or file absent. */
+  /** Read `fileSubpath` from the installed `pkg` (resolved from the owning workspace). Throws if pkg unresolvable or file absent. */
   readInstalledFile(pkg: string, fileSubpath: string): string;
 }
 
@@ -850,13 +864,14 @@ export function checkPatchesApplied(rules: readonly PatchRule[], env: PatchCheck
 
   for (const rule of rules) {
     checked += 1;
+    const patchPath = env.patchedDependencies[rule.patchedKey] ?? `patches/${rule.patchedKey}.patch`;
 
     // (1) The patch must still be configured at all.
     if (!Object.prototype.hasOwnProperty.call(env.patchedDependencies, rule.patchedKey)) {
       errors.push(
         `${rule.package}: patch no longer configured — expected key "${rule.patchedKey}" in ` +
           `pnpm-workspace.yaml "patchedDependencies". If you intentionally removed it, also delete the rule in ` +
-          `scripts/mobile-patches-check.ts and patches/${rule.patchedKey}.patch.`,
+          `scripts/mobile-patches-check.ts and its patch file.`,
       );
       continue;
     }
@@ -868,7 +883,9 @@ export function checkPatchesApplied(rules: readonly PatchRule[], env: PatchCheck
     try {
       installedVersion = env.readInstalledVersion(rule.package);
     } catch (error) {
-      errors.push(`${rule.package}: not resolvable from packages/mobile (${(error as Error).message}).`);
+      errors.push(
+        `${rule.package}: not resolvable from ${env.workspace ?? 'packages/mobile'} (${(error as Error).message}).`,
+      );
       continue;
     }
     if (expectedVersion && installedVersion !== expectedVersion) {
@@ -876,7 +893,7 @@ export function checkPatchesApplied(rules: readonly PatchRule[], env: PatchCheck
         `${rule.package}: version drift — installed ${installedVersion}, but "patchedDependencies" targets ` +
           `${expectedVersion}. pnpm keys patches by exact version, so this install is UNPATCHED. Regenerate the ` +
           `patch for ${installedVersion} (\`pnpm patch ${rule.package}@${installedVersion}\`, edit, then ` +
-          `\`pnpm patch-commit <dir>\`), update the key + patches/ filename, ` +
+          `\`pnpm patch-commit <dir>\`), update the key + patch filename, ` +
           `then re-run this check.`,
       );
       continue;
@@ -894,7 +911,7 @@ export function checkPatchesApplied(rules: readonly PatchRule[], env: PatchCheck
     if (missing.length > 0) {
       errors.push(
         `${rule.package}: patch NOT applied — ${rule.file} is missing ${missing.map((s) => `"${s}"`).join(', ')}. ` +
-          `Run \`vp install\` to re-apply patches/${rule.patchedKey}.patch; if it no longer applies cleanly, ` +
+          `Run \`vp install\` to re-apply ${patchPath}; if it no longer applies cleanly, ` +
           `regenerate it with \`pnpm patch ${rule.package}\`.`,
       );
     }
@@ -955,20 +972,24 @@ export function checkPatchesApplied(rules: readonly PatchRule[], env: PatchCheck
 }
 
 /** Real-filesystem env used when the script runs for real. */
-export function createNodeEnv(mobilePackageJson: string, patchedDependencies: Record<string, string>): PatchCheckEnv {
-  const requireFromMobile = createRequire(mobilePackageJson);
+export function createNodeEnv(
+  workspacePackageJson: string,
+  patchedDependencies: Record<string, string>,
+  workspace = 'packages/mobile',
+): PatchCheckEnv {
+  const requireFromWorkspace = createRequire(workspacePackageJson);
   const packageManifests = new Map<string, string>();
   const resolvePackageJson = (pkg: string): string => {
     const cached = packageManifests.get(pkg);
     if (cached) return cached;
     let manifest: string;
     try {
-      manifest = requireFromMobile.resolve(`${pkg}/package.json`);
+      manifest = requireFromWorkspace.resolve(`${pkg}/package.json`);
     } catch {
       // Some native packages hide package.json through their exports map.
-      // Resolve the same entry mobile uses, then verify the containing package
+      // Resolve the owning workspace entry, then verify the containing package
       // name rather than guessing a workspace/store node_modules path.
-      let directory = dirname(requireFromMobile.resolve(pkg));
+      let directory = dirname(requireFromWorkspace.resolve(pkg));
       while (true) {
         const candidate = resolve(directory, 'package.json');
         if (existsSync(candidate)) {
@@ -988,6 +1009,7 @@ export function createNodeEnv(mobilePackageJson: string, patchedDependencies: Re
   };
   return {
     patchedDependencies,
+    workspace,
     readInstalledVersion(pkg) {
       const { version } = JSON.parse(readFileSync(resolvePackageJson(pkg), 'utf8')) as { version?: string };
       if (!version) throw new Error(`no "version" field in ${pkg}/package.json`);
@@ -1036,10 +1058,14 @@ export function main(): number {
 
   const env = createNodeEnv(mobilePackageJson, patchedDependencies);
   const { checked, errors } = checkPatchesApplied(RULES, env);
+  const webEnv = createNodeEnv(resolve(repoRoot, 'packages/web/package.json'), patchedDependencies, 'packages/web');
+  const webResult = checkPatchesApplied(WEB_RULES, webEnv);
   const inventoryErrors = checkPatchInventory({
     patchedDependencies,
     patchFilenames,
-    serverPatchPaths: Object.values(SERVER_PATCHES).filter((patchPath) => existsSync(resolve(repoRoot, patchPath))),
+    nonNativePatchPaths: Object.values(NON_NATIVE_PATCHES).filter((patchPath) =>
+      existsSync(resolve(repoRoot, patchPath)),
+    ),
     guardedKeys: RULES.map((rule) => rule.patchedKey),
     allowUnguarded: UNGUARDED_PATCHES,
   });
@@ -1059,16 +1085,16 @@ export function main(): number {
     readSpmConfig: (pkg) => readSpmConfigFrom(env, pkg),
   });
 
-  const allErrors = [...errors, ...inventoryErrors, ...buildFromSourceErrors];
+  const allErrors = [...errors, ...webResult.errors, ...inventoryErrors, ...buildFromSourceErrors];
 
   if (allErrors.length > 0) {
-    console.error('[mobile-patches] FAILED — native patch(es) not applied:');
+    console.error('[mobile-patches] FAILED — patch(es) not applied:');
     for (const error of allErrors) console.error(`  ✗ ${error}`);
     return 1;
   }
 
   console.log(
-    `[mobile-patches] OK — ${checked} native patch(es) applied, ${patchFilenames.length} patch file(s) accounted for.`,
+    `[mobile-patches] OK — ${checked} native and ${webResult.checked} web patch rule(s) applied, ${patchFilenames.length} native patch file(s) accounted for.`,
   );
   return 0;
 }

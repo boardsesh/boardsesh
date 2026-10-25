@@ -28,6 +28,9 @@ wrapper's download URL, timeout, validation, and cache paths.
 Local Expo modules inherit the app's compile SDK through
 `expo-module-gradle-plugin`. SDK 58 needs compile SDK 37 and build tools 37.0.0;
 older module-level compile SDK overrides fail native dependency metadata checks.
+Google publishes that platform as `platforms;android-37.0`. CI and the local SDK
+bootstrap pin command-line tools 23 (build `16111833`) to read its repository
+schema; older `sdkmanager` versions cannot find the package.
 
 ## How it runs
 
