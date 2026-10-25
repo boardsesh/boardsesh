@@ -1734,6 +1734,393 @@ export type ClimbStatsHistoryEntry = {
   qualityAverage?: Maybe<Scalars['Float']['output']>;
 };
 
+/**
+ * One order as an administrator sees it: the buyer's own view, plus the three
+ * fields that view deliberately withholds.
+ *
+ * A wrapper rather than a flattened copy of `CncOrder`. The buyer's shape is
+ * built by exactly one mapper, and re-listing its twenty-odd fields here is how
+ * a field redacted on one path ends up published on the other. Nesting keeps
+ * this type down to what is genuinely admin-only.
+ */
+export type CncAdminOrder = {
+  __typename?: 'CncAdminOrder';
+  /** Generation attempts spent. Three is the budget; a `failed` row sitting at three has run out of them. */
+  attempts: Scalars['Int']['output'];
+  /** The generator's real error, verbatim. The buyer only ever sees a fixed public message. */
+  lastError?: Maybe<Scalars['String']['output']>;
+  /**
+   * Where the licence and the download link were sent.
+   *
+   * Buyer-typed free text rather than the account email — a pack is often bought
+   * for a client or a teammate — so this is the address support has to reply to,
+   * and it is a large part of why this query exists at all.
+   */
+  licenseeEmail?: Maybe<Scalars['String']['output']>;
+  /** Exactly what the buyer sees, from the same mapper, so the two cannot drift. */
+  order: CncOrder;
+};
+
+/**
+ * One piece of custom artwork. Exactly one of `assetId` (an uploaded SVG) or
+ * `text` (a routed label) must be set.
+ */
+export type CncArtworkInput = {
+  /** An uploaded SVG asset. Mutually exclusive with `text`; at most 128 characters. */
+  assetId?: InputMaybe<Scalars['ID']['input']>;
+  /**
+   * Which bundled typeface to outline `text` with, from `CncCatalog.artworkFonts`.
+   *
+   * Null takes the generator's own default. A face that is not bundled is
+   * rejected, never substituted — a substituted font would quietly change the
+   * shape the buyer approved. Meaningless for an `assetId` item, which carries
+   * its own geometry.
+   */
+  font?: InputMaybe<Scalars['String']['input']>;
+  mode: CncArtworkMode;
+  placement: CncPlacementInput;
+  /** A routed label, at most 40 characters — past that it stops fitting on a panel at a legible height. Trimmed, and it may not be empty. Mutually exclusive with `assetId`. */
+  text?: InputMaybe<Scalars['String']['input']>;
+};
+
+/**
+ * What a piece of artwork IS. `text` is a routed label, `svg` an uploaded
+ * drawing, `png` an uploaded raster the generator has to trace first.
+ *
+ * Which of them a buyer may actually use is
+ * `CncArtworkRules.allowedKinds`, not this list: the enum is the vocabulary,
+ * the rules field is today's menu. `png` uploads are accepted by
+ * `POST /api/cnc/art` while tracing is still v2, so an asset can exist in a
+ * kind checkout refuses.
+ */
+export type CncArtworkKind = 'png' | 'svg' | 'text';
+
+/**
+ * How a piece of custom artwork is cut. `engrave` scores the surface,
+ * `pocket` clears it to a depth, `cut_through` goes all the way and is held
+ * to a wider keep-out because it weakens the panel.
+ */
+export type CncArtworkMode = 'cut_through' | 'engrave' | 'pocket';
+
+/**
+ * The limits every piece of artwork is held to, so a configurator can enforce
+ * them before a round trip rather than discovering them from a rejection.
+ *
+ * Advisory to a client and binding on the server: the same numbers gate
+ * checkout, and a client that ignores them gets a `CNC_INVALID_CONFIG`.
+ */
+export type CncArtworkRules = {
+  __typename?: 'CncArtworkRules';
+  /**
+   * The artwork kinds checkout will accept today, in the order a picker should
+   * offer them.
+   *
+   * Separate from the `CncArtworkKind` enum because the menu shrinks and grows
+   * without the vocabulary changing: the upload route takes a PNG so the whole
+   * storage and cleanup path stays exercised, while the generator's tracer is
+   * still v2 — so `png` is absent here and an order naming a PNG asset is
+   * refused with `CNC_INVALID_CONFIG`. A client hides what is not listed.
+   */
+  allowedKinds: Array<CncArtworkKind>;
+  /** The most artwork items one pack may carry. */
+  maxItems: Scalars['Int']['output'];
+  /** Longest a routed text label may be. Past this it stops fitting on a panel at a legible height. */
+  maxTextChars: Scalars['Int']['output'];
+  /** Widest an item may be, in mm. Just under the widest panel the sheet stock can produce. */
+  maxWidthMm: Scalars['Float']['output'];
+  /** Narrowest an item may be, in mm. Below this a router bit stops resolving the shape. */
+  minWidthMm: Scalars['Float']['output'];
+};
+
+/**
+ * Verdict on a configuration's artwork, from the generator itself rather than
+ * the browser's live-feedback maths. `collisions` carries one entry per
+ * offending item with the panel and the reason.
+ */
+export type CncArtworkValidation = {
+  __typename?: 'CncArtworkValidation';
+  collisions: Scalars['JSON']['output'];
+  ok: Scalars['Boolean']['output'];
+};
+
+/**
+ * A board tuple plus the manufacturing choices made against it. The same input
+ * drives the layout preview, artwork validation and checkout, so a preview can
+ * never disagree with what is bought.
+ */
+export type CncBoardConfigInput = {
+  /** At most 4 items. Every item costs a rotated-bbox check against every hole on its panel, and four is already more than a wall has room for at the 40 mm minimum width. */
+  artwork?: InputMaybe<Array<CncArtworkInput>>;
+  boardName: Scalars['String']['input'];
+  layoutId: Scalars['Int']['input'];
+  /** Manufacturing options keyed by `CncManufacturingOption.key`. Missing keys take their default. */
+  options: Scalars['JSON']['input'];
+  /** Comma-joined set ids, same shape as the `[set_ids]` URL segment. */
+  setIds: Scalars['String']['input'];
+  sizeId: Scalars['Int']['input'];
+};
+
+/**
+ * Everything on sale, plus the catalogue version it was read at. Every order
+ * stores that version so a regenerate months later rebuilds the pack the buyer
+ * paid for rather than today's defaults.
+ */
+export type CncCatalog = {
+  __typename?: 'CncCatalog';
+  /**
+   * Typeface keys a text label may be routed in, first one being the default.
+   *
+   * Only faces the generator actually bundles: every character is outlined
+   * against a real font file, and an unknown font is rejected rather than
+   * substituted, so the shape approved in the editor is the shape that gets cut.
+   */
+  artworkFonts: Array<Scalars['String']['output']>;
+  artworkRules: CncArtworkRules;
+  entries: Array<CncCatalogEntry>;
+  version: Scalars['String']['output'];
+};
+
+/**
+ * One sellable board tuple. A board/size that is not listed here cannot be
+ * configured, priced or generated.
+ *
+ * The LED-kit size aliases that resolve onto `sizeId` are deliberately not
+ * exposed: a client picks the canonical size, and alias resolution happens
+ * server-side so the catalogue never has to explain Aurora's kit numbering.
+ */
+export type CncCatalogEntry = {
+  __typename?: 'CncCatalogEntry';
+  boardName: Scalars['String']['output'];
+  /** True when this size has kicker sets the buyer can include or leave off. */
+  kickerOptional: Scalars['Boolean']['output'];
+  /** Human label for the wall, e.g. "10x12". */
+  label: Scalars['String']['output'];
+  layoutId: Scalars['Int']['output'];
+  manufacturingOptions: Array<CncManufacturingOption>;
+  /** Comma-joined set ids, same shape as the `[set_ids]` URL segment. */
+  setIds: Scalars['String']['output'];
+  /** The canonical size id. Aliases resolve to this one before anything runs. */
+  sizeId: Scalars['Int']['output'];
+  tiers: Array<CncTierPrice>;
+};
+
+/**
+ * An opened Stripe Checkout Session and the order it will pay for.
+ *
+ * The order already exists in `pending_payment` by the time this comes back —
+ * creating a session is not a payment, and nothing is queued for generation
+ * until the Stripe webhook confirms the charge. Send the buyer to
+ * `checkoutUrl`; they land back on the order page either way.
+ */
+export type CncCheckoutSession = {
+  __typename?: 'CncCheckoutSession';
+  /** Stripe's hosted checkout page. Expires 31 minutes after it is created. */
+  checkoutUrl: Scalars['String']['output'];
+  /** The licence this order will carry, reserved now so the order page works before payment lands. */
+  licenceId: Scalars['String']['output'];
+  orderId: Scalars['ID']['output'];
+};
+
+/**
+ * A short-lived link to one pack or preview.
+ *
+ * It exists because a browser navigation cannot carry an Authorization header,
+ * and a session token in a URL would land in history, in a referrer and in every
+ * proxy log. So the grant is the weakest thing that works: one order, one user,
+ * five minutes, no revocation — and the download route re-checks ownership and
+ * refund status when it is redeemed anyway. Treat it as a click target, not as a
+ * credential to store.
+ */
+export type CncDownloadGrant = {
+  __typename?: 'CncDownloadGrant';
+  /** ISO 8601. Ask for another one after this; nothing is lost by doing so. */
+  expiresAt: Scalars['String']['output'];
+  /** Fetch or navigate to this. Streams the zip as an attachment. */
+  url: Scalars['String']['output'];
+};
+
+/**
+ * Which artifact a download link is for.
+ *
+ * `PREVIEW` is the free watermarked, rasterised pack — available from
+ * `preview_ready` onward, including after the order is bought. `FULL` is the
+ * licensed pack with the DXFs and is only ever available at `ready`.
+ */
+export type CncDownloadKind = 'FULL' | 'PREVIEW';
+
+/**
+ * What the buyer is allowed to build with a pack.
+ * `personal` is one wall for their own non-commercial use; `commercial_single`
+ * is one identified customer installation, which is why those orders also carry
+ * a site name.
+ */
+export type CncLicenceTier = 'commercial_single' | 'personal';
+
+/**
+ * One manufacturing choice the buyer may make, with its complete allowed set.
+ *
+ * Values are carried as strings with a `valueType` tag rather than as a JSON
+ * blob: the catalogue mixes strings ("2440x1220"), numbers (12.5) and booleans
+ * in one list, and a typed field is what lets a client build the select and
+ * round-trip the answer without guessing. Coerce with `valueType` before
+ * comparing — the backend matches submitted values by their string form and
+ * stores the catalogue's own typed value.
+ */
+export type CncManufacturingOption = {
+  __typename?: 'CncManufacturingOption';
+  /** The value applied when the buyer does not choose. Always a member of `values`. */
+  defaultValue: Scalars['String']['output'];
+  /** Camel-case option key, e.g. `sheetStock` or `tnutHoleDiameterMm`. */
+  key: Scalars['String']['output'];
+  /** True when this option only matters on a wall that is building a kicker. A kickerless wall (or one where the buyer left the kicker off) can hide it. */
+  kickerOnly: Scalars['Boolean']['output'];
+  /** How to read `values` and `defaultValue`: string, number or boolean. */
+  valueType: Scalars['String']['output'];
+  /** The complete allowed set. Anything outside it is rejected, not clamped. */
+  values: Array<Scalars['String']['output']>;
+};
+
+export type CncOrder = {
+  __typename?: 'CncOrder';
+  amountCents?: Maybe<Scalars['Int']['output']>;
+  /** Artwork placements carried through to the generator. Empty list when there is none. */
+  artwork: Scalars['JSON']['output'];
+  boardName: Scalars['String']['output'];
+  /**
+   * sha256 of the configuration this order previewed and will build.
+   *
+   * Two uses: telling whether the configuration on screen still matches the
+   * preview being shown (if it does not, the buyer needs a new preview), and
+   * letting the server hand back an existing preview instead of generating the
+   * same one twice.
+   */
+  configHash: Scalars['String']['output'];
+  createdAt: Scalars['String']['output'];
+  currency?: Maybe<Scalars['String']['output']>;
+  /** Set only for commercial_single orders: the installation the licence names. */
+  customerSiteName?: Maybe<Scalars['String']['output']>;
+  downloadCount: Scalars['Int']['output'];
+  /** A fixed public message when the order failed, null otherwise. Never generator internals. */
+  errorMessage?: Maybe<Scalars['String']['output']>;
+  generatedAt?: Maybe<Scalars['String']['output']>;
+  /** True once the free preview has been generated. Stays true after the pack is bought. */
+  hasPreview: Scalars['Boolean']['output'];
+  id: Scalars['ID']['output'];
+  lastDownloadedAt?: Maybe<Scalars['String']['output']>;
+  layoutId: Scalars['Int']['output'];
+  /** The licence printed on every file in the pack. The id support and leak investigations start from. */
+  licenceId: Scalars['String']['output'];
+  licenseeName?: Maybe<Scalars['String']['output']>;
+  /** The normalised manufacturing options this pack was priced and built with. */
+  options: Scalars['JSON']['output'];
+  paidAt?: Maybe<Scalars['String']['output']>;
+  previewGeneratedAt?: Maybe<Scalars['String']['output']>;
+  /**
+   * The watermarked sheets, in sheet order. Empty until `preview_ready`.
+   *
+   * Each URL carries its own one-hour grant, so they are usable straight from an
+   * `<img>` and worthless to anyone the order does not belong to.
+   */
+  previewImages: Array<CncPreviewImage>;
+  setIds: Scalars['String']['output'];
+  sizeId: Scalars['Int']['output'];
+  status: CncOrderStatus;
+  /** Null until the order is finalised: a preview is not a sale, so nothing has been licensed yet. */
+  tier?: Maybe<CncLicenceTier>;
+  zipSizeBytes?: Maybe<Scalars['Int']['output']>;
+};
+
+/**
+ * A page of orders for the admin list, newest first.
+ *
+ * Keyset paginated rather than offset paginated: orders arrive at the front of
+ * this list while an administrator is reading it, and an offset would show a row
+ * twice or skip one.
+ */
+export type CncOrderConnection = {
+  __typename?: 'CncOrderConnection';
+  /** Opaque cursor for the next page, or null at the end of the list. */
+  cursor?: Maybe<Scalars['String']['output']>;
+  /** True when there is another page. Pass `cursor` to fetch it. */
+  hasMore: Scalars['Boolean']['output'];
+  orders: Array<CncAdminOrder>;
+};
+
+/**
+ * Lifecycle of one order.
+ *
+ * An order starts as a FREE PREVIEW: `preview_queued -> preview_generating ->
+ * preview_ready`, repeatable and never charged. Finalising it moves it to
+ * `pending_payment`, and everything after that is driven by a Stripe webhook or
+ * by the pack generator. `refunded` is terminal for downloads and is
+ * deliberately distinct from `cancelled`, which only ever means the checkout
+ * session expired before payment.
+ *
+ * A `preview_failed` order can be previewed again; so can a `preview_ready` one
+ * whose configuration changed — both write a NEW order, because a preview is an
+ * immutable snapshot of one configuration.
+ */
+export type CncOrderStatus =
+  | 'cancelled'
+  | 'failed'
+  | 'generating'
+  | 'pending_payment'
+  | 'preview_failed'
+  | 'preview_generating'
+  | 'preview_queued'
+  | 'preview_ready'
+  | 'queued'
+  | 'ready'
+  | 'refunded';
+
+/**
+ * Where one piece of artwork sits, in wall millimetres.
+ *
+ * `xMm`/`yMm` are the centre of the item, not a corner, so a rotation is
+ * about the item's own middle and a resize keeps it put.
+ */
+export type CncPlacementInput = {
+  /** Index of the panel the item is routed on, from the layout response. Zero or greater. */
+  panelIndex: Scalars['Int']['input'];
+  /** Rotation in degrees, -180 to 180, counter-clockwise. Signed rather than 0..360 so the value comes back the way the editor's rotate handle produced it. Out of range is rejected, not normalised. */
+  rotationDeg: Scalars['Float']['input'];
+  /** Item width in mm; height follows from the aspect ratio. 40 to 1200 — the floor is what a router bit still resolves, the ceiling is just under the widest panel the sheet stock can produce. Out of range is rejected, not clamped. */
+  widthMm: Scalars['Float']['input'];
+  /** Centre X in wall millimetres. Must be finite; the generator does the panel-bounds check itself. */
+  xMm: Scalars['Float']['input'];
+  /** Centre Y in wall millimetres. Must be finite; the generator does the panel-bounds check itself. */
+  yMm: Scalars['Float']['input'];
+};
+
+/**
+ * One order as its buyer may see it.
+ *
+ * The fingerprint manifest, the worker's claim token and the raw generator
+ * error never appear here — a failed order reports a fixed public message
+ * instead.
+ */
+export type CncPreviewImage = {
+  __typename?: 'CncPreviewImage';
+  /** Filename of the watermarked sheet, e.g. `panel1.png` or `assembly.png`. Stable for one order. */
+  name: Scalars['String']['output'];
+  /**
+   * A ready-to-use `<img src>`: the backend preview route with a one-hour grant
+   * token already on it. Re-read the order for fresh URLs rather than caching
+   * these; nothing is lost by asking again.
+   */
+  url: Scalars['String']['output'];
+};
+
+/** One purchasable licence tier and its price, in the smallest currency unit. */
+export type CncTierPrice = {
+  __typename?: 'CncTierPrice';
+  /** Price in cents. Prices live in Stripe; this is the display copy of them. */
+  amountCents: Scalars['Int']['output'];
+  /** ISO 4217 code. AUD for every v1 tier. */
+  currency: Scalars['String']['output'];
+  tier: CncLicenceTier;
+};
+
 /** A comment on a social entity (climb, tick, playlist_climb, etc). */
 export type Comment = {
   __typename?: 'Comment';
@@ -2597,6 +2984,30 @@ export type FeedbackContextInput = {
   sessionName?: InputMaybe<Scalars['String']['input']>;
   url?: InputMaybe<Scalars['String']['input']>;
   userAgent?: InputMaybe<Scalars['String']['input']>;
+};
+
+/**
+ * Everything buying a previewed order needs: who the licence names, how to reach
+ * them, and their acceptance of it.
+ *
+ * No configuration. The order already carries the exact wall the buyer
+ * previewed and approved — re-submitting it here would let a client buy
+ * something other than what it was shown.
+ *
+ * `acceptLicence` must be `true`. The licence is the product, so there is no
+ * such thing as a checkout that proceeds without it.
+ */
+export type FinaliseCncOrderInput = {
+  acceptLicence: Scalars['Boolean']['input'];
+  /** The installation the licence names. Required for `commercial_single`, rejected for `personal`. */
+  customerSiteName?: InputMaybe<Scalars['String']['input']>;
+  /** Where the licence and the download link are sent. Not taken from the account. */
+  licenseeEmail: Scalars['String']['input'];
+  /** The name printed on every file in the pack. */
+  licenseeName: Scalars['String']['input'];
+  /** The preview order being bought. It must be the caller's own and it must be `preview_ready`. */
+  orderId: Scalars['ID']['input'];
+  tier: CncLicenceTier;
 };
 
 /**
@@ -4241,6 +4652,35 @@ export type Mutation = {
   controllerHeartbeat: Scalars['Boolean']['output'];
   /** Create a new board. */
   createBoard: UserBoard;
+  /**
+   * Mint a five-minute link to your own build pack, or to its free preview.
+   *
+   * Throws `NOT_FOUND` for a licence that does not exist and for one belonging
+   * to someone else, identically — a licence id identifies an order, it never
+   * grants access to one. Throws `CNC_PACK_NOT_DOWNLOADABLE` when that
+   * deliverable is not available yet or the order was refunded: `FULL` needs
+   * `ready`, `PREVIEW` needs `preview_ready` or anything after it.
+   *
+   * Requires authentication.
+   */
+  createCncDownloadGrant: CncDownloadGrant;
+  /**
+   * Generate a free, watermarked preview of a configuration.
+   *
+   * Nothing is charged and nothing is licensed: the order comes back in
+   * `preview_queued`, and its `previewImages` fill in once the generator is
+   * done. Asking again for a configuration this buyer has already previewed
+   * returns THAT order rather than queueing a second job — the configuration's
+   * `configHash` is the identity. Change anything and this writes a new order;
+   * a preview is an immutable snapshot of one configuration.
+   *
+   * Four previews per hour per buyer. Throws `RATE_LIMITED` past that, and
+   * `CNC_INVALID_CONFIG` for a wall that is not on sale, an option out of
+   * range or artwork that will not fit.
+   *
+   * Requires authentication.
+   */
+  createCncPreview: CncOrder;
   /** Create a new gym. */
   createGym: Gym;
   /**
@@ -4381,6 +4821,21 @@ export type Mutation = {
    * `export-spray-training` job is the only caller.
    */
   exportSprayTrainingDataset: SprayTrainingExportResult;
+  /**
+   * Buy a previewed order: attach the licence and open Stripe Checkout for it.
+   *
+   * The order must be the caller's own and in `preview_ready` — this is the
+   * only way a build pack is ever paid for, so nothing can be bought that was
+   * not previewed first. It takes the tier, the licensee and the acceptance,
+   * moves to `pending_payment` and returns the hosted page to send the buyer
+   * to; nothing is queued for generation until Stripe confirms the charge. If
+   * Stripe will not open a session the order goes back to `preview_ready` and
+   * this throws `CNC_CHECKOUT_UNAVAILABLE`. The returned session expires 31
+   * minutes after it is created.
+   *
+   * Requires authentication.
+   */
+  finaliseCncOrder: CncCheckoutSession;
   /** Follow a board. */
   followBoard: Scalars['Boolean']['output'];
   /** Follow a gym. */
@@ -4516,6 +4971,14 @@ export type Mutation = {
   redeemBoardShareLink: BoardShareLinkRedemption;
   /** HTTP cron credentials only. Refused refreshes report HTTP 409 and a CONFLICT error. */
   refreshGymActivityStats: GymActivityStatsRefreshResult;
+  /**
+   * Rebuild a pack from scratch: back to `queued` with the generation counter
+   * bumped, the same licence id and the same output key, so the new zip replaces
+   * the old one instead of issuing a second licensed copy.
+   *
+   * Allowed from `ready` and `failed` only. Requires an admin.
+   */
+  regenerateCncPack: CncOrder;
   /**
    * Register an APNs device token for Live Activity push updates in a session.
    * Caller must be authenticated and be a participant in the session.
@@ -4936,6 +5399,15 @@ export type Mutation = {
    * version. Owner only, and never on a published version.
    */
   upsertSprayWallHolds: Array<SprayWallHold>;
+  /**
+   * Ask the pack generator whether a configuration's artwork actually fits:
+   * inside its panel, clear of every hole keep-out, not crossing a seam.
+   *
+   * A mutation rather than a query because it is the authoritative verdict the
+   * placement editor debounces against while the buyer drags — it is a call
+   * out to the generator, not a cacheable read. Requires authentication.
+   */
+  validateCncArtwork: CncArtworkValidation;
   /** Vote on an entity. Same value toggles (removes vote). */
   vote: VoteSummary;
   /** Vote on an open proposal. */
@@ -5031,6 +5503,17 @@ export type MutationControllerHeartbeatArgs = {
 /** Root mutation type for all write operations. */
 export type MutationCreateBoardArgs = {
   input: CreateBoardInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationCreateCncDownloadGrantArgs = {
+  kind?: InputMaybe<CncDownloadKind>;
+  licenceId: Scalars['String']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationCreateCncPreviewArgs = {
+  config: CncBoardConfigInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -5181,6 +5664,11 @@ export type MutationEndSessionArgs = {
 export type MutationExchangeAppleAdsAttributionArgs = {
   consent: AppleAdsConsentInput;
   token: Scalars['String']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationFinaliseCncOrderArgs = {
+  input: FinaliseCncOrderInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -5337,6 +5825,11 @@ export type MutationRedeemBoardShareLinkArgs = {
 /** Root mutation type for all write operations. */
 export type MutationRefreshGymActivityStatsArgs = {
   force?: InputMaybe<Scalars['Boolean']['input']>;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationRegenerateCncPackArgs = {
+  licenceId: Scalars['String']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -5820,6 +6313,11 @@ export type MutationUpsertHoldOutlineOverrideArgs = {
 /** Root mutation type for all write operations. */
 export type MutationUpsertSprayWallHoldsArgs = {
   input: UpsertSprayWallHoldsInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationValidateCncArtworkArgs = {
+  config: CncBoardConfigInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -6785,6 +7283,17 @@ export type Query = {
    */
   adminAppFeedback: AdminAppFeedbackResult;
   /**
+   * Every buyer's orders, newest first — the list behind `/admin/build-plans`.
+   * Admin only.
+   *
+   * Carries the three fields `CncOrder` withholds (licensee email, attempts,
+   * the generator's real error), because those are what an operator needs to
+   * answer "whose pack is this, why did it fail, and who do I write to". Filter
+   * with `status` to work one bucket at a time; `limit` defaults to 25 and
+   * is capped at 100, and `cursor` comes from the previous page.
+   */
+  adminCncOrders: CncOrderConnection;
+  /**
    * Get all current user's playlists across boards/layouts, paginated.
    * Optional boardType/layoutId filter. Requires authentication.
    */
@@ -6995,6 +7504,30 @@ export type Query = {
    * Despite the name this is no longer a time series; prefer climbStatsForAngles.
    */
   climbStatsHistory: Array<ClimbStatsHistoryEntry>;
+  /**
+   * Everything Boardsesh sells a CNC build pack for, with prices and the
+   * manufacturing choices each wall allows. Public: the configurator renders
+   * this before anyone signs in.
+   */
+  cncCatalog: CncCatalog;
+  /**
+   * Panel layout for a configuration: panels, seams, keep-outs and a BOM
+   * preview, straight from the pack generator. Public, rate-limited, and
+   * validated against the catalogue before the generator is touched.
+   *
+   * Set `includeHoles` to draw the drill pattern; it adds roughly 40 KB of
+   * hole positions and is left off for a plain panel outline. Requesting the
+   * hole list requires a signed-in user and is held to a tighter rate limit
+   * than the hole-free preview. Hold ids and set-screw angles are never
+   * returned.
+   */
+  cncLayout: Scalars['JSON']['output'];
+  /**
+   * One order by its licence id. Returns null for a licence that does not
+   * exist and for one belonging to someone else — a licence id identifies an
+   * order, it never grants access to it. Requires authentication.
+   */
+  cncOrder?: Maybe<CncOrder>;
   /** Get comments for an entity. */
   comments: CommentConnection;
   /** Get all community role assignments. */
@@ -7201,6 +7734,8 @@ export type Query = {
    * Requires authentication.
    */
   myBoards: UserBoardConnection;
+  /** The signed-in buyer's own orders, newest first. Requires authentication. */
+  myCncOrders: Array<CncOrder>;
   myControllers: Array<ControllerInfo>;
   /**
    * Get current user's gyms (owned + optionally followed).
@@ -7654,6 +8189,13 @@ export type QueryAdminAppFeedbackArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryAdminCncOrdersArgs = {
+  cursor?: InputMaybe<Scalars['String']['input']>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  status?: InputMaybe<CncOrderStatus>;
+};
+
+/** Root query type for all read operations. */
 export type QueryAllUserPlaylistsArgs = {
   input: GetAllUserPlaylistsInput;
 };
@@ -7867,6 +8409,17 @@ export type QueryClimbStatsForClimbsArgs = {
 export type QueryClimbStatsHistoryArgs = {
   boardName: Scalars['String']['input'];
   climbUuid: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryCncLayoutArgs = {
+  config: CncBoardConfigInput;
+  includeHoles?: InputMaybe<Scalars['Boolean']['input']>;
+};
+
+/** Root query type for all read operations. */
+export type QueryCncOrderArgs = {
+  licenceId: Scalars['String']['input'];
 };
 
 /** Root query type for all read operations. */
