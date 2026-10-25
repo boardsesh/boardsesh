@@ -122,34 +122,13 @@ describe('PlayDrawerHeader set-angle marker', () => {
   });
 });
 
-describe('PlayDrawerHeader workout stage subtitle', () => {
-  // #5379: a climb from the generated workout says where it sits, first, so a
-  // long setter name truncates instead of the position.
-  it('leads the subtitle with the workout position', () => {
-    const { container } = render(
-      createElement(PlayDrawerHeader, {
-        ...baseProps,
-        ascensionistCount: 12,
-        workoutStageLabel: 'Warm-up · 2 of 5',
-      }),
-    );
-    expect(container.querySelector('[data-variant="caption1"]')?.textContent).toBe('Warm-up · 2 of 5 · 12 sends');
-  });
-
-  it('leaves the subtitle alone for a climb outside the workout', () => {
-    const { container } = render(
-      createElement(PlayDrawerHeader, { ...baseProps, ascensionistCount: 12, workoutStageLabel: null }),
-    );
-    expect(container.querySelector('[data-variant="caption1"]')?.textContent).toBe('12 sends');
-  });
-});
-
 describe('PlayDrawerHeader stats line', () => {
   const subtitle = (container: HTMLElement) => container.querySelector('[data-variant="caption1"]')?.textContent;
 
-  // #6664 put the list the player walks at the front of this line, and on a
-  // phone the sends and stars at its tail were cut off. The list now lives in
-  // the top bar, so this line is the climb's own facts.
+  // #6664 put the list the player walks at the front of this line, and a
+  // workout stage led it too: on a phone the sends and stars at its tail were
+  // cut off. Both now live in the top bar (#6745), so this line is the climb's
+  // own facts.
   it('prints the sends and stars first', () => {
     const { container } = render(
       createElement(PlayDrawerHeader, {
@@ -159,18 +138,6 @@ describe('PlayDrawerHeader stats line', () => {
       }),
     );
     expect(subtitle(container)).toBe('12 sends · 3.2★');
-  });
-
-  // The workout stage leads so truncation never hides it (#5379).
-  it('puts a workout position ahead of the stats', () => {
-    const { container } = render(
-      createElement(PlayDrawerHeader, {
-        ...baseProps,
-        ascensionistCount: 12,
-        workoutStageLabel: 'Warm-up · 2 of 5',
-      }),
-    );
-    expect(subtitle(container)).toBe('Warm-up · 2 of 5 · 12 sends');
   });
 
   it('keeps the stats line when there is nothing to print on it', () => {

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { WORKOUT_STAGE_KINDS, type WorkoutRun } from '@boardsesh/playlist-generator';
-import { describeWorkoutRun, formatWorkoutStagePosition, workoutStageName } from '../workout-run-readout';
+import {
+  describeWorkoutRun,
+  formatWorkoutStageParts,
+  formatWorkoutStagePosition,
+  workoutStageName,
+} from '../workout-run-readout';
 
 const run: WorkoutRun = {
   stages: [
@@ -176,6 +181,55 @@ describe('workout stage labels', () => {
     if (!position) return;
     expect(formatWorkoutStagePosition(position, t)).toBe(
       'mobile.session.workoutStagePosition(stage=mobile.session.preWorkoutSectionWarmUp,position=2,total=2)',
+    );
+  });
+});
+
+// The player's top bar (#6745): the stage name and its numbers apart, so a
+// cut name never takes the numbers with it.
+describe('formatWorkoutStageParts', () => {
+  it('splits a stage climb into its name and the list-style count', () => {
+    const position = describeWorkoutRun(run, ['w1', 'w2', 'm1'], 'w2')?.current;
+    if (!position) throw new Error('expected a current climb');
+    expect(formatWorkoutStageParts(position, null, t)).toEqual({
+      stage: 'mobile.session.preWorkoutSectionWarmUp',
+      count: 'playView.track.position(position=2,total=2)',
+      accessibilityLabel:
+        'mobile.session.workoutStageTopBarAria(stage=mobile.session.preWorkoutSectionWarmUp,position=2,total=2)',
+    });
+  });
+
+  it('counts a climb with a round within its round', () => {
+    const fourByFour: WorkoutRun = {
+      stages: [
+        {
+          id: 'four',
+          kind: 'fourByFour',
+          itemUuids: ['a', 'b', 'a2', 'b2'],
+          roundByUuid: { a: 1, b: 1, a2: 2, b2: 2 },
+        },
+      ],
+    };
+    const position = describeWorkoutRun(fourByFour, ['a', 'b', 'a2', 'b2'], 'b2')?.current;
+    if (!position) throw new Error('expected a current climb');
+    expect(formatWorkoutStageParts(position, null, t)).toEqual({
+      stage: 'mobile.session.preGeneratorFourByFour',
+      count: 'mobile.session.workoutStageRoundCount(round=2,rounds=2,position=2,total=2)',
+      accessibilityLabel:
+        'mobile.session.workoutStageTopBarRoundAria(stage=mobile.session.preGeneratorFourByFour,round=2,rounds=2,position=2,total=2)',
+    });
+  });
+
+  it('carries a limit climb\'s try with the numbers, never with the name', () => {
+    const position = describeWorkoutRun(run, ['w1', 'w2', 'm1'], 'm1')?.current;
+    if (!position) throw new Error('expected a current climb');
+    const parts = formatWorkoutStageParts(position, 3, t);
+    expect(parts.stage).toBe('mobile.session.preGeneratorPyramid');
+    expect(parts.count).toBe(
+      'mobile.workoutRunner.positionWithTry(position=playView.track.position(position=1,total=1),number=3)',
+    );
+    expect(parts.accessibilityLabel).toBe(
+      'mobile.session.workoutStageTopBarTryAria(position=mobile.session.workoutStageTopBarAria(stage=mobile.session.preGeneratorPyramid,position=1,total=1),number=3)',
     );
   });
 });

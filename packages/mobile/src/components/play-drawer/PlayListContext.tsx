@@ -6,44 +6,76 @@ import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import type { TrackLabelParts } from './track-label-text';
 
 type PlayListContextProps = {
-  parts: TrackLabelParts;
+  /** Where the player is: a list ("Projects · 4 of 23") or a workout stage ("4x4 · Round 2 of 4 · 3 of 4"). */
+  parts: TrackLabelParts | null;
+  /**
+   * A second, smaller line about the wall rather than the list, such as
+   * "Preview, not lit" (#6745). Here and not at the front of the header's stats
+   * line, where it pushed the sends and stars off the end.
+   */
+  caption?: string | null;
   style?: StyleProp<ViewStyle>;
   testID?: string;
 };
 
 /**
- * "Projects · 4 of 23": the list the player walks. Two texts on one row so a
- * long name is cut at its end and the count after it always shows whole.
+ * The player's top bar context, under the grabber. The name and the count are
+ * two texts on one row, so a long name is cut at its end and the count after it
+ * always shows whole. One element for VoiceOver, with the whole name.
  */
-export const PlayListContext = memo(function PlayListContext({ parts, style, testID }: PlayListContextProps) {
+export const PlayListContext = memo(function PlayListContext({
+  parts,
+  caption = null,
+  style,
+  testID,
+}: PlayListContextProps) {
   const { systemColors } = useTheme();
+  if (!parts && !caption) return null;
+  // Two sentences: where the player is, then what the wall is doing.
+  const accessibilityLabel = [parts?.accessibilityLabel, caption].filter(Boolean).join('. ');
   return (
     <View
-      style={[styles.row, style]}
+      // Two lines start below the grabber; one sits on the buttons' centre line.
+      style={[styles.column, parts && caption ? styles.twoLines : null, style]}
       accessible
       accessibilityRole="text"
-      accessibilityLabel={parts.accessibilityLabel}
+      accessibilityLabel={accessibilityLabel}
       testID={testID}
     >
-      <Text
-        variant="caption1"
-        color={systemColors.secondaryLabel}
-        numberOfLines={1}
-        maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-        style={styles.name}
-      >
-        {parts.name}
-      </Text>
-      {parts.count ? (
+      {parts ? (
+        <View style={styles.row}>
+          <Text
+            variant="caption1"
+            color={systemColors.secondaryLabel}
+            numberOfLines={1}
+            maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+            style={styles.name}
+          >
+            {parts.name}
+          </Text>
+          {parts.count ? (
+            <Text
+              variant="caption1"
+              color={systemColors.secondaryLabel}
+              numberOfLines={1}
+              maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+              numeric
+              style={styles.count}
+            >
+              {` · ${parts.count}`}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
+      {caption ? (
         <Text
-          variant="caption1"
+          variant="caption2"
           color={systemColors.secondaryLabel}
           numberOfLines={1}
           maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-          numeric
-          style={styles.count}
+          style={styles.caption}
         >
-          {` · ${parts.count}`}
+          {caption}
         </Text>
       ) : null}
     </View>
@@ -51,6 +83,15 @@ export const PlayListContext = memo(function PlayListContext({ parts, style, tes
 });
 
 const styles = StyleSheet.create({
+  column: {
+    alignItems: 'stretch',
+    minWidth: 0,
+  },
+  // The 5pt grabber ends 10pt down the 44pt row; the pair centres in what is
+  // left below it.
+  twoLines: {
+    paddingTop: 10,
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -64,7 +105,14 @@ const styles = StyleSheet.create({
     minWidth: 0,
     textAlign: 'right',
   },
+  // Never shrinks for the name, but is cut itself if it alone is wider than the
+  // room (a long round count beside the rest timer on a small phone).
   count: {
     flexShrink: 0,
+    maxWidth: '100%',
+  },
+  caption: {
+    marginTop: 1,
+    textAlign: 'center',
   },
 });

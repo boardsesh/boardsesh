@@ -140,3 +140,55 @@ export function formatWorkoutStagePositionWithTry(
   if (tryNumber === null) return stagePosition;
   return t('mobile.workoutRunner.positionWithTry', { position: stagePosition, number: tryNumber });
 }
+
+/** The numbers of a workout climb's place, as the top bar prints them and VoiceOver reads them. */
+function placeInStage(
+  position: WorkoutRunPosition,
+  stage: string,
+  t: TranslateWorkoutStage,
+): { count: string; accessibilityLabel: string } {
+  if (position.round) {
+    const numbers = {
+      round: position.round.round,
+      rounds: position.round.roundCount,
+      position: position.round.positionInRound,
+      total: position.round.roundSize,
+    };
+    return {
+      count: t('mobile.session.workoutStageRoundCount', numbers),
+      accessibilityLabel: t('mobile.session.workoutStageTopBarRoundAria', { stage, ...numbers }),
+    };
+  }
+  const numbers = { position: position.positionInStage, total: position.stageSize };
+  return {
+    // The list's "2 of 5", so a workout and a list read alike.
+    count: t('playView.track.position', numbers),
+    accessibilityLabel: t('mobile.session.workoutStageTopBarAria', { stage, ...numbers }),
+  };
+}
+
+/**
+ * Where a workout climb sits, as the two pieces the player's top bar lays out:
+ * the stage's name, which may be cut, and its numbers, which never are (#6745).
+ * "Warm-up" and "2 of 5" ("Cool-down" after the last block), or for a climb
+ * with a round "4x4" and "Round 2 of 4 · 3 of 4", which counts within the
+ * round. A limit climb's try rides with the numbers: "2 of 3 · Try 3".
+ * VoiceOver gets the numbers in words, not "·".
+ */
+export function formatWorkoutStageParts(
+  position: WorkoutRunPosition,
+  tryNumber: number | null,
+  t: TranslateWorkoutStage,
+): { stage: string; count: string; accessibilityLabel: string } {
+  const stage = workoutStageName(position.kind, t, position.isCoolDown === true);
+  const place = placeInStage(position, stage, t);
+  if (tryNumber === null) return { stage, ...place };
+  return {
+    stage,
+    count: t('mobile.workoutRunner.positionWithTry', { position: place.count, number: tryNumber }),
+    accessibilityLabel: t('mobile.session.workoutStageTopBarTryAria', {
+      position: place.accessibilityLabel,
+      number: tryNumber,
+    }),
+  };
+}

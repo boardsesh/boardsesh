@@ -30,6 +30,7 @@ const recorded = vi.hoisted(() => ({
   boardMounts: 0,
   boardUnmounts: 0,
   headers: [] as Props[],
+  topBar: [] as Props[],
   switchOverlay: [] as Props[],
   actionBar: [] as Props[],
   deferredSections: [] as Props[],
@@ -316,12 +317,20 @@ vi.mock('../PlayDrawerHeader', () => ({
     return null;
   },
 }));
-// The workout position (#5379) has its own suites; here only that each header
-// is handed the label for ITS queue item.
+// The workout position (#5379) has its own suites; here only that the top bar
+// is handed the position of the climb on screen.
 vi.mock('../use-workout-stage-label', () => ({
   useWorkoutQueueUuids: () => [],
-  useWorkoutStageLabel: (_run: unknown, _queueUuids: unknown, queueItemUuid: string | null | undefined) =>
-    queueItemUuid ? `stage:${queueItemUuid}` : null,
+  useWorkoutStageParts: (_run: unknown, _queueUuids: unknown, queueItemUuid: string | null | undefined) =>
+    queueItemUuid
+      ? { name: `stage:${queueItemUuid}`, count: '2 of 5', accessibilityLabel: `stage:${queueItemUuid}, 2 of 5` }
+      : null,
+}));
+vi.mock('../PlayListContext', () => ({
+  PlayListContext: (props: Props) => {
+    recorded.topBar.push(props);
+    return null;
+  },
 }));
 vi.mock('../SwipeableHeader', () => ({
   SwipeableHeader: ({ current, previous, next }: { current?: ReactNode; previous?: ReactNode; next?: ReactNode }) =>
@@ -517,6 +526,7 @@ beforeEach(() => {
   recorded.boardMounts = 0;
   recorded.boardUnmounts = 0;
   recorded.headers = [];
+  recorded.topBar = [];
   recorded.switchOverlay = [];
   recorded.actionBar = [];
   recorded.deferredSections = [];
@@ -810,7 +820,10 @@ describe('PlayDrawer draws the climb on its own board (#5099)', () => {
     expect(header).toMatchObject({ boardName: 'woods', layoutId: 1 });
   });
 
-  it('hands the current and neighbour headers their own workout position', () => {
+  // #6745: at the front of the header's stats line the stage pushed the sends
+  // and stars off a phone. It lives in the top bar, which doesn't swipe, so it
+  // names the climb on screen.
+  it('puts the workout position of the climb on screen in the top bar', () => {
     const woods = { ...TWELVE_CLIMB, uuid: 'woods-peek', boardType: 'woods', layoutId: 1, characteristics: [] };
     const previous = { ...TWELVE_CLIMB, uuid: 'twelve-prev' };
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
@@ -822,11 +835,7 @@ describe('PlayDrawer draws the climb on its own board (#5099)', () => {
     };
     renderDrawer(vi.fn());
 
-    const labelFor = (climbUuid: string) =>
-      recorded.headers.find((props) => (props.climb as Climb).uuid === climbUuid)?.workoutStageLabel;
-    expect(labelFor(TWELVE_CLIMB.uuid)).toBe('stage:queue-twelve');
-    expect(labelFor('woods-peek')).toBe('stage:queue-woods');
-    expect(labelFor('twelve-prev')).toBe('stage:queue-prev');
+    expect(recorded.topBar.at(-1)?.parts).toMatchObject({ name: 'stage:queue-twelve', count: '2 of 5' });
   });
 
   it('withholds a peek whose climb lives on another board', () => {

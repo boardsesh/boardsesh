@@ -28,7 +28,7 @@ vi.mock('react-i18next', () => ({
 }));
 
 import { noteWorkoutRunTick, resetWorkoutRunStoreForTests, setWorkoutRun } from '../../../lib/workout-run-store';
-import { useWorkoutStageLabel } from '../use-workout-stage-label';
+import { useWorkoutStageParts } from '../use-workout-stage-label';
 
 const run: WorkoutRun = {
   stages: [
@@ -53,30 +53,39 @@ beforeEach(() => {
   setWorkoutRun('session-1', run);
 });
 
-describe('useWorkoutStageLabel', () => {
+// The player's top bar (#6745): the stage name and its numbers apart, with a
+// limit climb's try counted among the numbers so a cut name never hides it.
+describe('useWorkoutStageParts', () => {
   it('counts the try a limit climb is on, from the ticks logged on it', () => {
-    const { result } = renderHook(() => useWorkoutStageLabel(run, queueUuids, 'l1'));
-    expect(result.current).toBe(
-      'positionWithTry(position=workoutStagePosition(stage=preGeneratorLimitBouldering,position=1,total=2),number=1)',
-    );
+    const { result } = renderHook(() => useWorkoutStageParts(run, queueUuids, 'l1'));
+    expect(result.current).toMatchObject({
+      name: 'preGeneratorLimitBouldering',
+      count: 'positionWithTry(position=position(position=1,total=2),number=1)',
+    });
 
     act(() => logTick('l1', 'attempt', 1));
     act(() => logTick('l1', 'attempt', 2));
-    expect(result.current).toContain('number=3');
+    expect(result.current?.count).toContain('number=3');
+    expect(result.current?.accessibilityLabel).toContain('number=3');
 
     // Sent: no try left to count.
     act(() => logTick('l1', 'send', 3));
-    expect(result.current).toBe('workoutStagePosition(stage=preGeneratorLimitBouldering,position=1,total=2)');
+    expect(result.current?.count).toBe('position(position=1,total=2)');
   });
 
   it('keeps a stage that moves on after any tick to its position alone', () => {
-    const { result } = renderHook(() => useWorkoutStageLabel(run, queueUuids, 'w1'));
+    const { result } = renderHook(() => useWorkoutStageParts(run, queueUuids, 'w1'));
     act(() => logTick('w1', 'attempt', 1));
-    expect(result.current).toBe('workoutStagePosition(stage=preWorkoutSectionWarmUp,position=1,total=1)');
+    expect(result.current).toEqual({
+      name: 'preWorkoutSectionWarmUp',
+      count: 'position(position=1,total=1)',
+      accessibilityLabel: 'workoutStageTopBarAria(stage=preWorkoutSectionWarmUp,position=1,total=1)',
+    });
   });
 
-  it('is null without a run or for a climb in no stage', () => {
-    expect(renderHook(() => useWorkoutStageLabel(null, queueUuids, 'l1')).result.current).toBeNull();
-    expect(renderHook(() => useWorkoutStageLabel(run, [...queueUuids, 'x'], 'x')).result.current).toBeNull();
+  it('is null without a run, for a climb in no stage, or with nothing on screen', () => {
+    expect(renderHook(() => useWorkoutStageParts(null, queueUuids, 'l1')).result.current).toBeNull();
+    expect(renderHook(() => useWorkoutStageParts(run, [...queueUuids, 'x'], 'x')).result.current).toBeNull();
+    expect(renderHook(() => useWorkoutStageParts(run, queueUuids, null)).result.current).toBeNull();
   });
 });

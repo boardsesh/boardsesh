@@ -103,7 +103,7 @@ import { useFullLogbookSheet } from './logbook/use-full-logbook-sheet';
 import { usePushAfterPlayerDismiss } from './use-push-after-player-dismiss';
 import { RestTimerPillHost } from '../queue-control/RestTimerPillHost';
 import { useWorkoutRun } from '../../lib/workout-run-store';
-import { useWorkoutQueueUuids, useWorkoutStageLabel } from './use-workout-stage-label';
+import { useWorkoutQueueUuids, useWorkoutStageParts } from './use-workout-stage-label';
 import { ChromeIconButton, useChromeIconButtonSize } from '../ChromeIconButton';
 import { topBarByVariant } from '../../theme/top-bar';
 import {
@@ -450,7 +450,7 @@ export function PlayCore({
   // session without one, a crew member's phone, and a climb outside the workout.
   const workoutRun = useWorkoutRun(sessionId);
   const workoutQueueUuids = useWorkoutQueueUuids(workoutRun, queue);
-  const workoutStageLabel = useWorkoutStageLabel(workoutRun, workoutQueueUuids, displayedQueueItemUuid);
+  const workoutStageParts = useWorkoutStageParts(workoutRun, workoutQueueUuids, displayedQueueItemUuid);
   // A view-only preview is showing (not the active/wall climb). Commit paths
   // never set `drawerPreviewItem`, so this is true only for genuine previews
   // (workout builder, logbook/cross-board, the peer-driven accessory wall climb).
@@ -739,14 +739,17 @@ export function PlayCore({
     enhancementsReady,
   });
 
-  // The top bar names the list the player is walking (#6664): "Projects · 4 of
-  // 23". Not the header's stats line, where it pushed the sends and stars off
-  // the end.
+  // The top bar says where the player is: the workout stage (#5379) or the list
+  // it walks (#6664), "Projects · 4 of 23". Not the header's stats line, where
+  // either pushed the sends and stars off the end (#6745). A climb outside the
+  // workout has no stage, so a list tapped mid-workout still names itself; a
+  // climb in both says its stage, the frame the climber planned around.
   const trackLocale = i18n.language;
   const currentTrackParts = useMemo(
     () => formatTrackLabelParts(currentTrackLabel, t, trackLocale),
     [currentTrackLabel, t, trackLocale],
   );
+  const topBarParts = workoutStageParts ?? currentTrackParts;
   // The list label sits between ⌄ and the timer + ⋯ cluster, so it needs the
   // cluster's width, which grows when the rest timer comes up. Null until the
   // cluster has laid out (see `resolveTopListContextFrame`).
@@ -775,19 +778,6 @@ export function PlayCore({
     getCommittedSource: getCommittedSuggestionSource,
     refreshCommittedSource: refreshPlaylistSuggestionSource,
   });
-
-  // The neighbours' headers carry their own workout position, so a swipe slides
-  // the right "2 of 5" in rather than popping it on landing.
-  const previousWorkoutStageLabel = useWorkoutStageLabel(
-    workoutRun,
-    workoutQueueUuids,
-    navigationState.canPrevious ? navigationState.prevItem?.uuid : null,
-  );
-  const nextWorkoutStageLabel = useWorkoutStageLabel(
-    workoutRun,
-    workoutQueueUuids,
-    navigationState.canNext ? navigationState.nextItem?.uuid : null,
-  );
 
   // The page each of the three climbs is on. Keyed on the CLIMB, which a
   // suggestion keeps when a swipe turns it into a queue item, so the board that
@@ -1618,7 +1608,6 @@ export function PlayCore({
     ) : undefined,
     onLongPressName: handleCopyName,
     onPressSetter: openSetterPlaylist,
-    workoutStageLabel,
   });
   const supportsMirroring = boardSupportsMirroring(boardName, layoutId);
   // The same layout the action bar resolves from the same inputs, read here for
@@ -1968,10 +1957,10 @@ export function PlayCore({
                             />
                           </>
                         ) : null}
-                        {/* The list the player walks (#6664), under the grabber. Takes no
+                        {/* The workout stage or the list the player walks, under the grabber. Takes no
                           touches of its own, but keeps them (no pointerEvents="none"),
                           which on Android would hide it from TalkBack's explore by touch. */}
-                        {currentTrackParts ? (
+                        {topBarParts ? (
                           <View
                             style={[
                               styles.topListContext,
@@ -1983,7 +1972,7 @@ export function PlayCore({
                               topListContextFrame.measured ? null : styles.topListContextUnmeasured,
                             ]}
                           >
-                            <PlayListContext parts={currentTrackParts} testID="play-drawer-track-label" />
+                            <PlayListContext parts={topBarParts} testID="play-drawer-track-label" />
                           </View>
                         ) : null}
                         {/* Mirrored across the grabber from the close chevron: the rest
@@ -2079,7 +2068,6 @@ export function PlayCore({
                                 boardName={previousHeaderBoard.boardName as BoardName}
                                 layoutId={previousHeaderBoard.layoutId}
                                 angle={previousHeaderBoard.angle}
-                                workoutStageLabel={previousWorkoutStageLabel}
                                 leading={
                                   headerPillState ? (
                                     <WallStatePill state={headerPillState} backTarget={headerBackTarget} reserveOnly />
@@ -2095,7 +2083,6 @@ export function PlayCore({
                                 boardName={nextHeaderBoard.boardName as BoardName}
                                 layoutId={nextHeaderBoard.layoutId}
                                 angle={nextHeaderBoard.angle}
-                                workoutStageLabel={nextWorkoutStageLabel}
                                 leading={
                                   headerPillState ? (
                                     <WallStatePill state={headerPillState} backTarget={headerBackTarget} reserveOnly />

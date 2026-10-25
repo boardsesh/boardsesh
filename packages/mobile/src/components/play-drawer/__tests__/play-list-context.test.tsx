@@ -109,4 +109,30 @@ describe('PlayListContext', () => {
       'Playing from Winter crimp ladder, 40° only, no dynos please, 4 of 23',
     );
   });
+
+  // #6745: "Preview, not lit" rides a second line here instead of leading the
+  // header's stats line, where it pushed the sends and stars off.
+  it('adds the wall caption as a second line, read with the list', () => {
+    const { container } = render(
+      createElement(PlayListContext, {
+        parts: { name: 'Projects', count: '4 of 23', accessibilityLabel: 'Playing from Projects, 4 of 23' },
+        caption: 'Preview, not lit',
+        testID: 'play-drawer-track-label',
+      }),
+    );
+    expect(texts(container).map((text) => text.textContent)).toEqual(['Projects', ' · 4 of 23', 'Preview, not lit']);
+    expect(container.querySelector('[data-testid="play-drawer-track-label"]')?.getAttribute('aria-label')).toBe(
+      'Playing from Projects, 4 of 23. Preview, not lit',
+    );
+  });
+
+  it('shows the caption alone when there is no list', () => {
+    const { container } = render(createElement(PlayListContext, { parts: null, caption: 'Preview, not lit' }));
+    expect(texts(container).map((text) => text.textContent)).toEqual(['Preview, not lit']);
+  });
+
+  it('renders nothing with neither', () => {
+    const { container } = render(createElement(PlayListContext, { parts: null }));
+    expect(container.innerHTML).toBe('');
+  });
 });

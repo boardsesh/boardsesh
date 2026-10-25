@@ -1,7 +1,7 @@
 # Workout stages
 
 How the mobile app knows that a queued climb is part of a workout, and which part:
-"Warm-up · 2 of 5" in the player, and the "Your workout" card on the session screen.
+"Warm-up · 2 of 5" in the player's top bar, and the "Your workout" card on the session screen.
 Issue [#5379](https://github.com/boardsesh/boardsesh/issues/5379), part of epic
 [#5399](https://github.com/boardsesh/boardsesh/issues/5399).
 
@@ -71,6 +71,11 @@ wide only). Each block becomes one **stage**. The code lives in
   stage's climbs step down wherever they sit: a cool-down the climber moves in front of the
   workout, or one a mid-session block lands after, still reads "Cool-down". A warm-up that ramps up (one the climber drags behind
   the workout, or a partner warm-up with its own `targetGrade`) never does.
+- The player shows it in its top bar, between ⌄ and the rest timer + ⋯, in the spot a
+  list's "Projects · 4 of 23" uses (a climb in the workout shows its stage). The stage
+  name and the numbers are two texts (`formatWorkoutStageParts`): with the timer up the
+  name is cut, the numbers never are. It used to lead the header's stats line, where it
+  pushed the sends and stars off a phone in German and Spanish (#6745).
 
 Stage kinds use the partner API block names (`warmUp`, `volume`, `pyramid`, `ladder`,
 `gradeFocus`, `onTheMinute`, `fourByFour`, `limitBouldering`; see `docs/partner-api.md`,

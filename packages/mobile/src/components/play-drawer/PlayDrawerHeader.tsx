@@ -85,11 +85,6 @@ type PlayDrawerHeaderProps = {
   /** The angle currently being viewed. Compared against `statsAngle` to decide
    *  whether to show the "set at N°" marker under the grade. */
   angle?: number;
-  /** Where this climb sits in the workout generated at Start ("Warm-up · 2 of
-   *  5", #5379). Leads the subtitle so truncation never hides it. The list the
-   *  player walks is not on this line: it is in the top bar (`PlayListContext`),
-   *  because here it pushed the sends and stars off the end. */
-  workoutStageLabel?: string | null;
 };
 
 export const PlayDrawerHeader = memo(function PlayDrawerHeader({
@@ -113,7 +108,6 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   onPressSetter,
   statsAngle,
   angle,
-  workoutStageLabel,
 }: PlayDrawerHeaderProps) {
   const { t } = useTranslation('climbs');
   const { systemColors } = useTheme();
@@ -134,9 +128,11 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   // until the climb is refetched. Self-correcting; see the row's comment.
   const showSetAngleMarker = statsAngle != null && statsAngle !== angle;
 
+  // The climb's own facts and nothing else. Where the player is (a list, a
+  // workout stage) and what the wall is doing live in the top bar
+  // (`PlayListContext`): at the front of this one line they pushed the sends
+  // and stars off the end on a phone (#6664, #6745).
   const subtitleParts: string[] = [];
-  // The workout stage leads: truncation takes the stats from the end, never it.
-  if (workoutStageLabel) subtitleParts.push(workoutStageLabel);
   if (ascensionistCount > 0) subtitleParts.push(formatSends(ascensionistCount, t));
   const qualityNum = qualityAverage == null ? Number.NaN : parseFloat(qualityAverage);
   if (qualityAverage != null && qualityNum > 0) subtitleParts.push(`${formatQuality(qualityAverage)}★`);
@@ -296,7 +292,6 @@ export type LivePlayDrawerHeaderProps = {
   leading?: ReactNode;
   onLongPressName?: () => void;
   onPressSetter?: () => void;
-  workoutStageLabel?: string | null;
 };
 
 type PreparedHeaderProps = Omit<PlayDrawerHeaderProps, 'leading' | 'onLongPressName' | 'onPressSetter'>;
@@ -315,7 +310,6 @@ export function useLivePlayDrawerHeaderModel({
   leading,
   onLongPressName,
   onPressSetter,
-  workoutStageLabel = null,
 }: LivePlayDrawerHeaderProps): LivePlayDrawerHeaderModel | null {
   const { resolveGrade } = useDisplayGrade();
   const { gradeFormat } = useGradeFormat();
@@ -380,7 +374,6 @@ export function useLivePlayDrawerHeaderModel({
       isDraft: climb.is_draft === true,
       statsAngle: climb.statsAngle,
       angle,
-      workoutStageLabel,
     };
     return Object.freeze({
       headerProps: Object.freeze(headerProps),
@@ -414,7 +407,6 @@ export function useLivePlayDrawerHeaderModel({
     climb?.is_draft,
     climb?.statsAngle,
     angle,
-    workoutStageLabel,
     hasLeading,
     hasLongPressName,
     hasSetterAction,

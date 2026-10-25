@@ -2,9 +2,10 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { locateInRun, type WorkoutRun } from '@boardsesh/playlist-generator';
 import { useQueueSessionId } from '../../providers/queue-provider';
-import { formatWorkoutStagePositionWithTry } from '../../lib/workout-run-readout';
+import { formatWorkoutStageParts } from '../../lib/workout-run-readout';
 import { workoutTryNumber } from '../../lib/workout-runner-readout';
 import { useWorkoutRunLog } from '../../lib/workout-run-store';
+import type { TrackLabelParts } from './track-label-text';
 
 const NO_QUEUE_UUIDS: readonly string[] = [];
 
@@ -20,15 +21,17 @@ export function useWorkoutQueueUuids(
 }
 
 /**
- * "Warm-up · 2 of 5" for a queue item in the workout, else null. A limit climb
- * also says which try the climber is on, from the ticks logged on it on this
- * phone: "Limit Bouldering · 2 of 3 · Try 3".
+ * Where a queue item sits in the workout, for the player's top bar: "Warm-up"
+ * and "2 of 5", in the same two pieces as a list's name and count. A limit
+ * climb also says which try the climber is on, from the ticks logged on it on
+ * this phone: "Limit Bouldering" and "2 of 3 · Try 3". Null for a climb outside
+ * the workout.
  */
-export function useWorkoutStageLabel(
+export function useWorkoutStageParts(
   run: WorkoutRun | null,
   queueUuids: readonly string[],
   queueItemUuid: string | null | undefined,
-): string | null {
+): TrackLabelParts | null {
   const { t } = useTranslation('session');
   const { sessionId } = useQueueSessionId();
   // Without a run the log is never read: a session with no workout pays nothing.
@@ -37,6 +40,8 @@ export function useWorkoutStageLabel(
     if (!run || !queueItemUuid) return null;
     const position = locateInRun(run, queueItemUuid, queueUuids);
     if (!position) return null;
-    return formatWorkoutStagePositionWithTry(position, workoutTryNumber(run, position.stageId, queueItemUuid, log), t);
+    const tryNumber = workoutTryNumber(run, position.stageId, queueItemUuid, log);
+    const { stage, count, accessibilityLabel } = formatWorkoutStageParts(position, tryNumber, t);
+    return { name: stage, count, accessibilityLabel };
   }, [run, queueUuids, queueItemUuid, log, t]);
 }
