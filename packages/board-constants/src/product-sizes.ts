@@ -53,6 +53,10 @@ export const PRODUCT_SIZES: Record<BoardName, Record<number, ProductSizeData>> =
 
 export { LAYOUTS, SETS, IMAGE_FILENAMES, HOLE_PLACEMENTS, getBoardHolePlacements };
 
+// The Kilter Original layout in Aurora's catalogue. Shared by build plans and
+// other consumers that distinguish Original from Homewall.
+export const KILTER_ORIGINAL_LAYOUT_ID = 1;
+
 // The Kilter Homewall is layout 8 / product 7 in Aurora's data. These gate the
 // tall/wide climb filters and the expansion-aware hold filtering, so web,
 // mobile, and the db query layer all read the same value from here rather than

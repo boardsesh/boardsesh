@@ -346,15 +346,28 @@ export default function WallSvg({
         ))}
 
         {holes.map((hole) => (
-          <circle
-            key={hole.id}
-            data-testid="cnc-hole"
-            cx={hole.xMm}
-            cy={hole.yMm}
-            r={hole.keepoutRadiusMm}
-            fill={collidingHoles.has(hole.id) ? theme.palette.error.main : theme.palette.action.disabledBackground}
-            fillOpacity={collidingHoles.has(hole.id) ? 0.55 : 0.35}
-          />
+          <g key={hole.id}>
+            <circle
+              data-testid="cnc-hole"
+              cx={hole.xMm}
+              cy={hole.yMm}
+              r={hole.keepoutRadiusMm}
+              fill={collidingHoles.has(hole.id) ? theme.palette.error.main : theme.palette.action.disabledBackground}
+              fillOpacity={collidingHoles.has(hole.id) ? 0.55 : 0.35}
+            />
+            {hole.diameterMm !== undefined && (
+              <circle
+                data-testid="cnc-bore"
+                data-kind={hole.kind}
+                cx={hole.xMm}
+                cy={hole.yMm}
+                r={hole.diameterMm / 2}
+                fill={theme.palette.background.paper}
+                stroke={theme.palette.text.secondary}
+                strokeWidth={1}
+              />
+            )}
+          </g>
         ))}
       </g>
 

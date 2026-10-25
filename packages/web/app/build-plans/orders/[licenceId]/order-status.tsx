@@ -7,7 +7,7 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import MuiLink from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
-import { getBoardDisplayName } from '@boardsesh/climb-actions';
+import { KILTER_ORIGINAL_LAYOUT_ID } from '@boardsesh/board-constants';
 import type { CncDownloadKind, CncOrder, CncOrderStatus } from '@boardsesh/shared-schema';
 import {
   CREATE_CNC_DOWNLOAD_GRANT,
@@ -20,7 +20,7 @@ import { createGraphQLHttpClient, getGraphQLHttpUrl } from '@/app/lib/graphql/cl
 import { useLocaleRouter, usePathnameWithoutLocale } from '@/app/lib/i18n/use-locale-router';
 import { cncErrorKey, type CncErrorKey } from '../../cnc-error';
 import { createOrderDateFormatter } from '../../format-date';
-import { finaliseHref, previewImageLabel, tierLabel } from '../../order-display';
+import { boardLayoutLabel, finaliseHref, previewImageLabel, tierLabel } from '../../order-display';
 import { KeyValueList, PageFrame, PreviewGallery, SectionCard, StatusChip, type KeyValueItem } from '../../ui';
 import { orderRefetchInterval, useCncOrderPoll } from '../../use-cnc-order-poll';
 import styles from '../orders.module.css';
@@ -178,7 +178,7 @@ export default function OrderStatus({ initialOrder, wallLabel, checkoutOutcome, 
   const previewFailedSubject = encodeURIComponent(t('order.previewFailed.subject', { licenceId }));
 
   const facts: KeyValueItem[] = [
-    { key: 'board', label: t('order.board'), value: `${getBoardDisplayName(order.boardName)} ${wallLabel}` },
+    { key: 'board', label: t('order.board'), value: `${boardLayoutLabel(order, t)} ${wallLabel}` },
     { key: 'tier', label: t('order.tier'), value: tierLabel(order.tier, t) },
   ];
   // Chronological, because these are two moments in one order's life and a
@@ -239,6 +239,11 @@ export default function OrderStatus({ initialOrder, wallLabel, checkoutOutcome, 
 
       <SectionCard title={t('order.facts.heading')} headingLevel="h2">
         <KeyValueList items={facts} aria-label={t('order.facts.heading')} />
+        {order.boardName === 'kilter' && order.layoutId === KILTER_ORIGINAL_LAYOUT_ID && (
+          <Typography variant="body2" component="p" className={styles.timelineNote}>
+            {t('configurator.original.drilling')} {t('configurator.original.compatibility')}
+          </Typography>
+        )}
       </SectionCard>
 
       <SectionCard title={t('order.timeline.heading')} headingLevel="h2">
