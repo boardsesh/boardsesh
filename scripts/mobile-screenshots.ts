@@ -252,6 +252,11 @@ const LOCAL_WEB_URL = 'http://localhost:3000';
 export const LOCAL_BACKEND_REVERSE_PORTS: readonly number[] = [LOCAL_BACKEND_URL, LOCAL_WEB_URL].map((url) =>
   Number.parseInt(new URL(url).port, 10),
 );
+
+/** Ports an emulator must reverse to the host: the local backend and web, none for prod. */
+export function androidShotsReversePorts(backend: 'prod' | 'local'): readonly number[] {
+  return backend === 'local' ? LOCAL_BACKEND_REVERSE_PORTS : [];
+}
 export const DEFAULT_USER_EMAIL = 'test@boardsesh.com';
 export const DEFAULT_USER_PASSWORD = 'test';
 const MAESTRO_INSTALL_HINT = 'Install Maestro: curl -Ls "https://get.maestro.mobile.dev" | bash';
@@ -3402,7 +3407,7 @@ function runAndroid(options: ScreenshotOptions): number {
       // The emulator's localhost is its own loopback, so the fixtures backend
       // needs reversing onto the host exactly like the local dev backend does.
       const reversePorts = [
-        ...(options.backend === 'local' ? LOCAL_BACKEND_REVERSE_PORTS : []),
+        ...androidShotsReversePorts(options.backend),
         ...(backendSession ? [backendSession.port] : []),
       ];
       connectDevClient('adb', deviceId, reversePorts);

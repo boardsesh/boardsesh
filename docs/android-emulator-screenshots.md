@@ -41,7 +41,7 @@ vp run mobile:android-shots                                  # background this; 
 vp run mobile:android-shots -- screenshot --to board-view --label board
 vp run mobile:android-shots -- screenshot --to profile --label profile
 vp run mobile:android-shots -- navigate --to discover        # deep-link only, no capture
-vp run mobile:android-shots -- shutdown                       # stop emulator + Metro
+vp run mobile:android-shots -- shutdown                       # stop emulator, Metro, readiness server
 ```
 
 PNGs land in `.boardsesh/android-screenshots/NN-<label>.png` (gitignored); the absolute
