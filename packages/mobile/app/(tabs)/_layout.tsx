@@ -348,7 +348,7 @@ export default function TabLayout() {
   return (
     // `minimizeBehavior="onScrollDown"` relies on UIKit finding the climbs
     // FlashList's nested scroll view, which it can't by default — that fallback
-    // lives in patches/react-native-screens@4.26.2.patch, alongside the
+    // lives in patches/react-native-screens@4.30.0.patch, alongside the
     // bottom-accessory relayout fix. `vp run check:mobile-patches` (CI) fails the
     // build if either hunk ever stops applying after a dep bump. Minimizing is an
     // iOS 26 UIKit feature (react-native-screens logs a warning for any other
@@ -396,8 +396,17 @@ export default function TabLayout() {
         <NativeTabs.Trigger.Label>{t('mobile.nav.home')}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
 
-      {/* Only the iOS 26 bar has a separated search slot. */}
-      <NativeTabs.Trigger name="climbs" role={liquidGlassTabBar ? 'search' : undefined}>
+      {/* Only the iOS 26 bar has a separated search slot. Since SDK 58 the search
+          role is a UISearchTab that focuses its search field on the first tap; turn
+          that off so the first tap shows the list and a second tap focuses the field
+          (`useTabRepress` in climbs/index.tsx), like Apple Music. Without activation
+          iOS 27 puts the tab back inline, so `prominent` keeps it on its own surface. */}
+      <NativeTabs.Trigger
+        name="climbs"
+        role={liquidGlassTabBar ? 'search' : undefined}
+        disableAutomaticSearchActivation
+        prominent={liquidGlassTabBar}
+      >
         <NativeTabs.Trigger.Icon sf={TAB_SF_SYMBOLS.climbs} md="search" />
         <NativeTabs.Trigger.Label>{t('mobile.nav.climbs')}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>

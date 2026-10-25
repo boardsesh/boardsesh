@@ -177,6 +177,8 @@ const mocks = vi.hoisted(() => ({
   setGrade: vi.fn(),
   // How many times the screen has come back into focus.
   refocusCount: 0,
+  // What the screen asks to run when its tab is tapped again while it is showing.
+  tabRepress: undefined as (() => void) | undefined,
   scrollToOffset: vi.fn(),
   stackOptions: [] as NativeStackNavigationOptions[],
   // The system text size, and whether the list is fetching another page: the
@@ -648,6 +650,11 @@ vi.mock('../../../../src/lib/grade-stops', async (importOriginal) => {
   };
 });
 vi.mock('../../../../src/hooks/use-refocus-count', () => ({ useRefocusCount: () => mocks.refocusCount }));
+vi.mock('../../../../src/hooks/use-tab-repress', () => ({
+  useTabRepress: (onRepress: () => void) => {
+    mocks.tabRepress = onRepress;
+  },
+}));
 
 vi.mock('../../../../src/providers/drawer-host-provider', () => ({
   useDrawerHost: () => ({
@@ -984,11 +991,39 @@ beforeEach(() => {
   mocks.changeGrade = undefined;
   mocks.setGrade.mockClear();
   mocks.refocusCount = 0;
+  mocks.tabRepress = undefined;
   mocks.scrollToOffset.mockClear();
   mocks.stackOptions.length = 0;
   mocks.fontScale = 1;
   mocks.isFetchingNextPage = false;
   resetClimbRowDisplayForTests();
+});
+
+// SDK 58's search tab focused the field on the tap that opened Climbs. The tab
+// layout turns that off; a second tap on the tab, with the list open, focuses
+// the native search field instead (like Apple Music).
+describe('ClimbList second tap on the Climbs tab', () => {
+  it('focuses the native search field', () => {
+    mocks.nativeSearch = true;
+    render(<ClimbList />);
+    const searchBar = { focus: vi.fn(), blur: vi.fn(), setText: vi.fn(), clearText: vi.fn(), cancelSearch: vi.fn() };
+    const searchOptions = mocks.stackOptions.find((options) => options.headerSearchBarOptions)?.headerSearchBarOptions;
+    expect(searchOptions?.ref).toBeDefined();
+    Object.assign(searchOptions!.ref!, { current: searchBar });
+
+    act(() => mocks.tabRepress?.());
+
+    expect(searchBar.focus).toHaveBeenCalledOnce();
+  });
+
+  it('leaves the in-screen search field alone without the native search tab', () => {
+    mocks.nativeSearch = false;
+    render(<ClimbList />);
+
+    expect(mocks.tabRepress).toBeDefined();
+    expect(() => act(() => mocks.tabRepress?.())).not.toThrow();
+    expect(mocks.stackOptions.some((options) => options.headerSearchBarOptions)).toBe(false);
+  });
 });
 
 describe('ClimbList native header ownership', () => {

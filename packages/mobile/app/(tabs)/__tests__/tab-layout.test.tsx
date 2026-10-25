@@ -220,9 +220,34 @@ vi.mock('expo-keep-awake', () => ({
 
 vi.mock('expo-router/unstable-native-tabs', () => {
   const Trigger = Object.assign(
-    ({ name, hidden, role, children }: { name: string; hidden?: boolean; role?: string; children?: ReactNode }) =>
+    ({
+      name,
+      hidden,
+      role,
+      disableAutomaticSearchActivation,
+      prominent,
+      children,
+    }: {
+      name: string;
+      hidden?: boolean;
+      role?: string;
+      disableAutomaticSearchActivation?: boolean;
+      prominent?: boolean;
+      children?: ReactNode;
+    }) =>
       // Model NativeTabs: a `hidden` trigger declares the route but is not a tab.
-      hidden ? null : createElement('section', { 'data-trigger': name, 'data-tab-role': role }, children),
+      hidden
+        ? null
+        : createElement(
+            'section',
+            {
+              'data-trigger': name,
+              'data-tab-role': role,
+              'data-search-activation-disabled': String(disableAutomaticSearchActivation ?? false),
+              'data-prominent': String(prominent ?? false),
+            },
+            children,
+          ),
     {
       Icon: ({ sf }: { sf?: unknown }) => createElement('span', { 'data-icon': 'true', 'data-sf': JSON.stringify(sf) }),
       Label: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
@@ -376,6 +401,19 @@ describe('TabLayout', () => {
     expect(container.querySelectorAll('[data-tab-role="search"]')).toHaveLength(1);
   });
 
+  it('opens Climbs without focusing search and keeps it on its own surface', () => {
+    // SDK 58 makes role="search" a UISearchTab that focuses its field on the first
+    // tap. Climbs turns that off (a second tap focuses instead, see useTabRepress),
+    // and `prominent` keeps the tab separate on iOS 27, where turning activation
+    // off would otherwise put it back inline.
+    const { container } = render(<TabLayout />);
+    const climbs = container.querySelector('[data-trigger="climbs"]');
+
+    expect(climbs?.getAttribute('data-search-activation-disabled')).toBe('true');
+    expect(climbs?.getAttribute('data-prominent')).toBe('true');
+    expect(container.querySelectorAll('[data-prominent="true"]')).toHaveLength(1);
+  });
+
   it('registers Home as the leftmost material tab', () => {
     cfg.variant = 'material';
 
@@ -421,6 +459,7 @@ describe('TabLayout', () => {
 
     expect(tabs?.getAttribute('data-minimize-behavior')).toBe('');
     expect(container.querySelector('[data-tab-role="search"]')).toBeNull();
+    expect(container.querySelector('[data-prominent="true"]')).toBeNull();
     expect(container.querySelector('[data-trigger="climbs"]')).not.toBeNull();
     expect(container.querySelector('[data-bottom-accessory="true"]')).toBeNull();
     expect(accessoryMounts.count).toBe(0);

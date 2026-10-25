@@ -77,7 +77,10 @@ The bar itself depends on the device:
 - **Native iPhone:** Liquid Glass uses `NativeTabs` (the system UIKit tab bar) on
   every iPhone, iOS 18 included. On iOS 26 Climbs keeps `role="search"` and its
   native bottom search field, and the queue accessory and scroll minimization
-  ride the bar. On iOS 18 the bar has none of those: Climbs is an ordinary
+  ride the bar. Like Apple Music, the tap that opens Climbs shows the list and a
+  second tap focuses the search field: SDK 58 focuses it on the first tap unless
+  the trigger sets `disableAutomaticSearchActivation`, and `prominent` keeps the
+  tab on its own surface on iOS 27 (`useTabRepress` handles the second tap). On iOS 18 the bar has none of those: Climbs is an ordinary
   labelled tab with its own search field, and the current climb rides the
   floating JS queue bar just above the native bar.
 - **Other phones:** Material, and Liquid Glass forced on Android, use JS `Tabs`
