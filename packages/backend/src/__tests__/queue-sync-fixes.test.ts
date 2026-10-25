@@ -1322,7 +1322,8 @@ describe('F3: setQueue, joinSession and addQueueItem around the History / Up nex
         const typenames = publishSpy.mock.calls.map(
           (call: unknown[]) => (call[1] as { __typename: string }).__typename,
         );
-        expect(typenames[0]).toBe('FullSync');
+        // A clear has no climb to repaint, so its FullSync goes alone.
+        expect(typenames).toEqual(['FullSync']);
       });
 
       it('refuses an add from there with QUEUE_FULL', async () => {

@@ -1,5 +1,18 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vite-plus/test';
+
+// Pass-through by default; the F3 LED-path test stubs one match.
+vi.mock('../db/queries/climbs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../db/queries/climbs')>();
+  return {
+    ...actual,
+    matchClimbByFrames: vi.fn(actual.matchClimbByFrames),
+    getClimbByUuid: vi.fn(actual.getClimbByUuid),
+  };
+});
+
 import { db } from '../db/client';
+import { matchClimbByFrames, getClimbByUuid } from '../db/queries/climbs';
+import { createMockRedis } from './helpers/mock-redis';
 import { esp32Controllers } from '@boardsesh/db/schema/app';
 import { eq, sql } from 'drizzle-orm';
 import { controllerMutations } from '../graphql/resolvers/controller/mutations';
@@ -379,6 +392,78 @@ describe('Controller Mutations', () => {
           clientId: 'AA:BB:CC:DD:EE:FF',
         }),
       );
+    });
+
+    // F3 (#6666, docs/current-climb-outside-queue.md section 5): the climb on
+    // the wall doesn't count toward the 500 cap, so an LED read with nothing
+    // current and Up next full stores 501 entries and drops nothing.
+    it('stores 501 entries when nothing is current and Up next holds 500 (inside the percent)', async () => {
+      const previousPercent = process.env.QUEUE_NOW_SLOT_PERCENT;
+      process.env.QUEUE_NOW_SLOT_PERCENT = '100';
+      try {
+        await roomManager.initialize(createMockRedis());
+        const sessionId = `f3-led-${Date.now()}`;
+        await roomManager.registerClient('f3-led-client');
+        await roomManager.joinSession('f3-led-client', sessionId, '/kilter/1/10/1,2,3/40', 'User1');
+        const makeItem = (index: number): ClimbQueueItem => ({
+          uuid: `f3-led-item-${index}`,
+          climb: {
+            uuid: `f3-led-climb-${index}`,
+            setter_username: 'Setter',
+            name: `Climb ${index}`,
+            frames: `p${index}r12`,
+            angle: 40,
+            ascensionist_count: 0,
+            difficulty: 'V5',
+            quality_average: '3',
+            stars: 3,
+            difficulty_error: '0',
+            mirrored: false,
+            benchmark_difficulty: null,
+          },
+          addedBy: TEST_USER_ID,
+          tickedBy: [],
+          suggested: false,
+        });
+        const upNext = Array.from({ length: 500 }, (_, index) => makeItem(index));
+        await roomManager.updateQueueState(sessionId, upNext, null, undefined, 0);
+
+        const registered = await controllerMutations.registerController(
+          undefined,
+          { input: { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2,3' } },
+          createMockContext(),
+        );
+        await controllerMutations.authorizeControllerForSession(
+          undefined,
+          { controllerId: registered.controllerId, sessionId },
+          createMockContext(),
+        );
+        const readClimb = makeItem(9999).climb;
+        vi.mocked(matchClimbByFrames).mockResolvedValueOnce({ uuid: readClimb.uuid, name: readClimb.name } as Awaited<
+          ReturnType<typeof matchClimbByFrames>
+        >);
+        vi.mocked(getClimbByUuid).mockResolvedValueOnce(readClimb as Awaited<ReturnType<typeof getClimbByUuid>>);
+        const publishSpy = vi.spyOn(pubsub, 'publishQueueEvent').mockImplementation(() => {});
+
+        const result = await controllerMutations.setClimbFromLedPositions(
+          undefined,
+          { sessionId, frames: readClimb.frames },
+          createControllerContext(registered.controllerId, registered.apiKey, { controllerMac: 'AA:BB:CC:DD:EE:FF' }),
+        );
+
+        expect(result.matched).toBe(true);
+        const state = await roomManager.getQueueState(sessionId);
+        expect(state.queue).toHaveLength(501);
+        expect(state.currentClimbQueueItem?.climb.uuid).toBe(readClimb.uuid);
+        expect(state.queue[0].uuid).toBe(state.currentClimbQueueItem?.uuid);
+        expect(state.queue.slice(1).map((item) => item.uuid)).toEqual(upNext.map((item) => item.uuid));
+        expect(state.historyCount).toBe(0);
+        const typenames = publishSpy.mock.calls.map((call) => (call[1] as { __typename: string }).__typename);
+        expect(typenames).toEqual(['FullSync', 'CurrentClimbChanged']);
+      } finally {
+        if (previousPercent === undefined) delete process.env.QUEUE_NOW_SLOT_PERCENT;
+        else process.env.QUEUE_NOW_SLOT_PERCENT = previousPercent;
+      }
     });
   });
 
