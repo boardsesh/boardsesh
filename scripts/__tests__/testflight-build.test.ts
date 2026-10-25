@@ -286,3 +286,101 @@ process.stdout.write(JSON.stringify(responses[endpoint]));
     expect(resolved.outputs()).toBe('');
   });
 });
+
+describe('validate CLI against git tags', () => {
+  const directories: string[] = [];
+  afterEach(() => {
+    for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
+  });
+
+  function validationFixture() {
+    const directory = mkdtempSync(join(tmpdir(), 'testflight-validate-'));
+    directories.push(directory);
+    const git = (...argumentsList: string[]) =>
+      execFileSync('git', argumentsList, { cwd: directory, encoding: 'utf8' }).trim();
+    const commit = (message: string) =>
+      git('-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '--allow-empty', '-m', message);
+    git('init', '--quiet');
+    commit('baseline');
+    const baselineSha = git('rev-parse', 'HEAD');
+    git('tag', tag('2.7.0', 1));
+    commit('uploaded native build');
+    const uploadedSha = git('rev-parse', 'HEAD');
+    git('tag', tag('2.7.0', 2));
+    const receiptPath = join(directory, 'receipt.json');
+    const outputPath = join(directory, 'outputs');
+    const buildReceipt = { ...receipt(), sourceSha: uploadedSha, previousBuildSha: baselineSha };
+    writeFileSync(receiptPath, JSON.stringify(buildReceipt));
+    writeFileSync(outputPath, '');
+    writeFileSync(
+      join(directory, 'gh'),
+      `#!/usr/bin/env node
+if (process.argv.at(-1) !== '/repos/boardsesh/boardsesh/actions/runs/123/attempts/2') process.exit(1);
+process.stdout.write(process.env.TESTFLIGHT_GH_FIXTURE);
+`,
+    );
+    chmodSync(join(directory, 'gh'), 0o755);
+    const execute = () =>
+      execFileSync(
+        process.execPath,
+        [
+          '--import',
+          resolve('node_modules/tsx/dist/loader.mjs'),
+          resolve('scripts/testflight-build.ts'),
+          'validate',
+          '--run-id',
+          '123',
+          '--receipt',
+          receiptPath,
+        ],
+        {
+          cwd: directory,
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+          env: {
+            ...process.env,
+            PATH: `${directory}:${process.env.PATH}`,
+            GITHUB_REPOSITORY: 'boardsesh/boardsesh',
+            GITHUB_OUTPUT: outputPath,
+            SOURCE_RUN_ATTEMPT: '2',
+            TESTFLIGHT_GH_FIXTURE: JSON.stringify({ ...sourceRun(), head_sha: uploadedSha }),
+          },
+        },
+      );
+    return {
+      git,
+      commit,
+      buildReceipt,
+      receiptPath,
+      baselineSha,
+      uploadedSha,
+      execute,
+      outputs: () => readFileSync(outputPath, 'utf8'),
+    };
+  }
+
+  it('emits the exact uploaded version and build only after verifying both tags', () => {
+    const fixture = validationFixture();
+    fixture.execute();
+    expect(fixture.outputs()).toBe('version=2.7.0\nbuild_number=2\n');
+  });
+
+  it.each(['moved uploaded tag', 'deleted uploaded tag', 'moved baseline tag', 'non-ancestor baseline'])(
+    'refuses a %s without emitting build outputs',
+    (mutation) => {
+      const fixture = validationFixture();
+      if (mutation === 'moved uploaded tag') fixture.git('tag', '--force', tag('2.7.0', 2), fixture.baselineSha);
+      if (mutation === 'deleted uploaded tag') fixture.git('tag', '--delete', tag('2.7.0', 2));
+      if (mutation === 'moved baseline tag') fixture.git('tag', '--force', tag('2.7.0', 1), fixture.uploadedSha);
+      if (mutation === 'non-ancestor baseline') {
+        fixture.git('checkout', '--quiet', '--orphan', 'unrelated-native');
+        fixture.commit('unrelated baseline');
+        const unrelatedSha = fixture.git('rev-parse', 'HEAD');
+        fixture.git('tag', '--force', tag('2.7.0', 1), unrelatedSha);
+        writeFileSync(fixture.receiptPath, JSON.stringify({ ...fixture.buildReceipt, previousBuildSha: unrelatedSha }));
+      }
+      expect(fixture.execute).toThrow();
+      expect(fixture.outputs()).toBe('');
+    },
+  );
+});

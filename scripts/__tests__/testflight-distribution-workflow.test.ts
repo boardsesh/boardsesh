@@ -37,7 +37,7 @@ describe('external TestFlight distribution workflow', () => {
     expect(followup.concurrency).toMatchObject({ 'cancel-in-progress': false, queue: 'max' });
     expect(followup.concurrency.group).not.toBe(native.concurrency.group);
     expect(followup.jobs.distribute['runs-on']).toBe('ubuntu-latest');
-    expect(followup.jobs.distribute['timeout-minutes']).toBeGreaterThan(45);
+    expect(followup.jobs.distribute['timeout-minutes']).toBeGreaterThanOrEqual(75);
     expect(followup.jobs.distribute.if).toContain("github.event.workflow_run.conclusion == 'success'");
     expect(followup.jobs.distribute.if).toContain("github.ref == 'refs/heads/main'");
     expect(nativeSteps.some((step) => step.run?.includes('distribute_testflight'))).toBe(false);

@@ -29,6 +29,8 @@ function github(path: string): unknown {
 }
 
 function emit(outputs: Record<string, string>): void {
+  if (Object.values(outputs).some((contents) => /[\r\n]/.test(contents)))
+    throw new Error('GitHub outputs must be single-line strings.');
   const outputPath = requiredEnvironment('GITHUB_OUTPUT');
   appendFileSync(
     outputPath,
