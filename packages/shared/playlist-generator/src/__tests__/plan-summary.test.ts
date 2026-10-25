@@ -123,27 +123,27 @@ describe('estimateWorkoutMinutes', () => {
     ).toBe(3);
   });
 
-  it('counts a few tries per climb and one rest after its send when the stage moves on only after a send', () => {
-    // Three climbs of three 45 s tries + one 180 s rest, less the last rest: 765 s, 12.75 min.
+  it('counts a rest after every try when the stage moves on only after a send', () => {
+    // The rest timer starts after every logged try, falls included. Three climbs of
+    // three tries of 45 s + 180 s, less the last rest: 1845 s, 30.75 min.
     const limit = flatStage('limit', 'limitBouldering', 3, { mode: 'afterTick', restSeconds: 180, advanceOn: 'send' });
 
-    expect(estimateWorkoutMinutes({ stages: [limit] })).toBe(15);
+    expect(estimateWorkoutMinutes({ stages: [limit] })).toBe(30);
   });
 
-  it('never counts the rest after a try that is not the send', () => {
-    // Two climbs of 135 s + one 120 s rest, less the last rest: 390 s, 6.5 min.
-    // A rest after every try would make it 870 s, 15 min.
+  it('leaves off only the rest after the last try of a limit block', () => {
+    // Two climbs of three tries of 45 s + 120 s, less the last rest: 870 s, 14.5 min.
     const limit = flatStage('limit', 'limitBouldering', 2, { mode: 'afterTick', restSeconds: 120, advanceOn: 'send' });
 
-    expect(estimateWorkoutMinutes({ stages: [limit] })).toBe(7);
+    expect(estimateWorkoutMinutes({ stages: [limit] })).toBe(15);
   });
 
   it('counts a stage with no pacing of its own at a two-minute rest per climb', () => {
     const warmUp = flatStage('warm', 'warmUp', 4);
     const limit = flatStage('limit', 'limitBouldering', 3, { mode: 'afterTick', restSeconds: 180, advanceOn: 'send' });
 
-    // 4 × 165 s of warm-up, then the 945 s limit block, less its last rest: 1425 s, 23.75 min.
-    expect(estimateWorkoutMinutes({ stages: [warmUp, limit] })).toBe(25);
+    // 4 × 165 s of warm-up, then the 2025 s limit block, less its last rest: 2505 s, 41.75 min.
+    expect(estimateWorkoutMinutes({ stages: [warmUp, limit] })).toBe(40);
   });
 
   it('leaves an untimed workout without a figure', () => {

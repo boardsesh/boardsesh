@@ -51,8 +51,8 @@ export const ESTIMATE_SECONDS_PER_TRY = 45;
 /**
  * Tries a climb takes where the stage moves on only after a send (limit
  * bouldering). The real count is the climber's; this is a typical limit climb.
- * The stage's rest is counted once per climb, after the send that moves the
- * wall on, not after every try.
+ * The rest timer starts after every logged try, falls included, so the
+ * stage's rest is counted after each try.
  */
 export const ESTIMATE_TRIES_UNTIL_SEND = 3;
 
@@ -74,7 +74,7 @@ function climbTime(
   if (pacing.mode === 'onTheMinute') return { seconds: stageRestSeconds(pacing, false), restAfter: 0 };
   const restSeconds = stageRestSeconds(pacing, closesRound);
   const tries = pacing.advanceOn === 'send' ? ESTIMATE_TRIES_UNTIL_SEND : 1;
-  return { seconds: tries * ESTIMATE_SECONDS_PER_TRY + restSeconds, restAfter: restSeconds };
+  return { seconds: tries * (ESTIMATE_SECONDS_PER_TRY + restSeconds), restAfter: restSeconds };
 }
 
 /** True for each of the stage's climbs that is the last of its round in the stage's order. */
@@ -94,9 +94,9 @@ function closesRoundFlags(stage: WorkoutRunStage): boolean[] {
  * every queued climb (a 4x4's round copies included) with the rest the stage
  * paces after it (`stageRestSeconds`, so a 4x4's round rests and the 10 s
  * changeover count), one interval per climb on the minute, and a few tries per
- * climb, with the one rest after its send, where the stage moves on only after
- * a send. A stage with no pacing of
- * its own (a warm-up before a 4x4) counts a two-minute rest per climb. No rest
+ * climb, each followed by the rest (the timer starts after every logged try,
+ * falls included), where the stage moves on only after a send. A stage with no
+ * pacing of its own (a warm-up before a 4x4) counts a two-minute rest per climb. No rest
  * is counted after the workout's last climb. Whole minutes under 10, then
  * rounded to fives.
  *

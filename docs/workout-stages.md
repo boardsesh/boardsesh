@@ -388,8 +388,9 @@ offers it, and on volume at the stage's grade where it does not (`defaultMidSess
   block adds "about N min" (`estimateWorkoutMinutes` in `plan-summary.ts`): 45 s a try plus
   the rest the stage paces after it (`stageRestSeconds`, so round rests and the 10 s
   changeover count), one interval a climb on the minute, three tries a climb where the
-  stage moves on only after a send (3 × 45 s, then one rest after the send, so the default
-  limit block of 3 climbs at 3:00 reads "about 15 min"), and two minutes a climb for a stage
+  stage moves on only after a send (3 × (45 s + rest), since the rest timer starts after
+  every logged try, falls included, so the default limit block of 3 climbs at 3:00 reads
+  "about 30 min"), and two minutes a climb for a stage
   with no pacing of its own; no rest after the last climb; whole minutes under 10, then
   fives. An untimed workout gets no figure, since its length is the climber's own rests.
 - **Start.** `toStagedQueueItems` (`stagePreviewQueue` in `workout-start-queue.ts`) queues
