@@ -3113,32 +3113,125 @@ describe('board-presence resolvers', () => {
       }
     });
 
+    type ExplainPlanNode = {
+      'Relation Name'?: string;
+      Alias?: string;
+      'Index Name'?: string;
+      Filter?: string;
+      'Index Cond'?: string;
+      'Recheck Cond'?: string;
+      Plans?: ExplainPlanNode[];
+    };
+
+    const ACTIVE_ROW_PARTIAL_INDEXES = new Set([
+      'user_boards_serial_idx',
+      'user_boards_owner_config_idx',
+      'user_boards_unique_owner_serial',
+    ]);
+
+    const flattenPlan = (node: ExplainPlanNode): ExplainPlanNode[] => [
+      node,
+      ...(node.Plans ?? []).flatMap(flattenPlan),
+    ];
+
+    // True when every scan of the candidate `active_board` side keeps the
+    // active-row predicate, either through a partial index that requires
+    // `deleted_at IS NULL` or through a scan-level condition that carries it.
+    const activeBoardScansKeepActiveRowPredicate = (root: ExplainPlanNode): boolean => {
+      const nodes = flattenPlan(root);
+      const activeBoardScans = nodes.filter(
+        (node) => node['Relation Name'] === 'user_boards' && node.Alias === 'active_board',
+      );
+      if (activeBoardScans.length === 0) return false;
+      return activeBoardScans.every((scan) => {
+        const usesPartialIndex = scan['Index Name'] !== undefined && ACTIVE_ROW_PARTIAL_INDEXES.has(scan['Index Name']);
+        const childUsesPartialIndex = flattenPlan(scan).some(
+          (node) => node['Index Name'] !== undefined && ACTIVE_ROW_PARTIAL_INDEXES.has(node['Index Name']),
+        );
+        const carriesPredicate = [scan.Filter, scan['Index Cond'], scan['Recheck Cond']].some((condition) =>
+          condition?.includes('deleted_at IS NULL'),
+        );
+        return usesPartialIndex || childUsesPartialIndex || carriesPredicate;
+      });
+    };
+
     it('keeps the serial-cluster lock lookup eligible for the active-row partial indexes', async () => {
       const sharedBoardId = await createSecondUserSharedBoard();
       const planRows = await db.transaction(async (transaction) => {
         // Tiny test tables naturally favor a sequential scan. Disabling it
-        // makes this a predicate-eligibility assertion: PostgreSQL can only use
-        // a partial index when the production query explicitly preserves that
-        // index's conditions.
+        // keeps the plan on index paths so the active-row predicate shows up.
         await transaction.execute(sql`SET LOCAL enable_seqscan = off`);
-        return transaction.execute(sql`EXPLAIN (FORMAT TEXT, COSTS OFF) ${buildTickBoardLockQuery(sharedBoardId)}`);
+        return transaction.execute(sql`EXPLAIN (FORMAT JSON, COSTS OFF) ${buildTickBoardLockQuery(sharedBoardId)}`);
       });
-      const plan = planRows.map((row) => String((row as { 'QUERY PLAN': string })['QUERY PLAN'])).join('\n');
+      const rawPlan = (planRows[0] as { 'QUERY PLAN': unknown })['QUERY PLAN'];
+      const parsedPlan = (typeof rawPlan === 'string' ? JSON.parse(rawPlan) : rawPlan) as Array<{
+        Plan: ExplainPlanNode;
+      }>;
 
-      // Deliberately NOT pinned to one index name. #4166 added
-      // user_boards_owner_config_idx, and on tables this small the planner picks
-      // between it and user_boards_serial_idx on costs that move with whatever
-      // rows the rest of the suite has inserted — naming one made this flaky.
-      // Every candidate is partial on `deleted_at IS NULL`, so the cluster join
-      // can only reach any of them while the query keeps that condition. Drop it
-      // and the scan falls back to the primary key and this goes red.
+      // Asserts what the query does, not which index the planner picks (#6704).
+      // With seq scans off, a full user_boards_pkey scan with a Filter costs
+      // about the same as a partial-index probe on tables this small, so the
+      // choice flips between runs (#4166 hit the same thing). Either plan keeps
+      // `active_board.deleted_at IS NULL` as a restriction on the candidate
+      // scan. Drop that condition from the query and neither path carries it.
       //
       // The serial nonblank conditions deliberately have no assertion of their
       // own: the same two strings appear in the plan for the `requested_board`
       // side of the join, so a `toContain` on them passes even with the
-      // candidate side's copy removed — it would read like coverage and prove
-      // nothing.
-      expect(plan).toMatch(/Index (Only )?Scan using user_boards_(serial_idx|owner_config_idx|unique_owner_serial)/);
+      // candidate side's copy removed.
+      expect(activeBoardScansKeepActiveRowPredicate(parsedPlan[0].Plan)).toBe(true);
+    });
+
+    it('recognises the active-row predicate in the plan shapes the planner flips between', () => {
+      const activeBoardScan = (fields: ExplainPlanNode): ExplainPlanNode => ({
+        'Relation Name': 'user_boards',
+        Alias: 'active_board',
+        ...fields,
+      });
+      const underNestedLoop = (scan: ExplainPlanNode): ExplainPlanNode => ({ Plans: [{ Plans: [scan] }] });
+
+      // The plan that failed CI in #6704: full pkey scan carrying a Filter.
+      expect(
+        activeBoardScansKeepActiveRowPredicate(
+          underNestedLoop(
+            activeBoardScan({
+              'Index Name': 'user_boards_pkey',
+              Filter: "((serial_number IS NOT NULL) AND (deleted_at IS NULL) AND (serial_number <> ''::text))",
+            }),
+          ),
+        ),
+      ).toBe(true);
+      expect(
+        activeBoardScansKeepActiveRowPredicate(
+          underNestedLoop(
+            activeBoardScan({
+              'Index Name': 'user_boards_serial_idx',
+              'Index Cond': '(serial_number = requested_board.serial_number)',
+            }),
+          ),
+        ),
+      ).toBe(true);
+      expect(
+        activeBoardScansKeepActiveRowPredicate(
+          underNestedLoop(
+            activeBoardScan({
+              Plans: [{ 'Index Name': 'user_boards_owner_config_idx' }],
+            }),
+          ),
+        ),
+      ).toBe(true);
+      // Predicate dropped: a pkey scan whose Filter lacks deleted_at.
+      expect(
+        activeBoardScansKeepActiveRowPredicate(
+          underNestedLoop(
+            activeBoardScan({
+              'Index Name': 'user_boards_pkey',
+              Filter: "((serial_number IS NOT NULL) AND (serial_number <> ''::text))",
+            }),
+          ),
+        ),
+      ).toBe(false);
+      expect(activeBoardScansKeepActiveRowPredicate(underNestedLoop({ 'Relation Name': 'climbs' }))).toBe(false);
     });
 
     it('pushes a BoardStatsUpdated event that excludes attempts, resolves grades, and equals the cold fetch', async () => {
