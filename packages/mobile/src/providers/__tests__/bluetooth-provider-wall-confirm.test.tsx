@@ -596,6 +596,26 @@ describe('BluetoothProvider wall-confirm integration', () => {
       ]);
     });
 
+    it('asks again over a new link with no rendered disconnect, the same as a remount (#4413)', async () => {
+      queue.lastCurrentChange = { queueItemUuid: 'queue-climb-1', changedAt: Date.now() - 5 * HOUR };
+      renderProvider(createElement(BluetoothProbe));
+      await settle();
+      act(() => {
+        capturedBluetooth?.reassertWall();
+      });
+      await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
+      expect(capturedBluetooth?.staleCurrentHold).toBeNull();
+
+      // connect() replaced the live adapter, so isConnected never went false.
+      await act(async () => {
+        bluetooth.options?.onConnectSuccess?.(null, makeConnectionHandle(2));
+      });
+      await settle();
+
+      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
+      expect(capturedBluetooth?.staleCurrentHold?.queueItemUuid).toBe('queue-climb-1');
+    });
+
     it('releases when the current climb changes (a tap, Next or a crewmate pick)', async () => {
       queue.lastCurrentChange = { queueItemUuid: 'queue-climb-1', changedAt: Date.now() - 5 * HOUR };
       const { rerender } = renderProvider(createElement(BluetoothProbe));
@@ -1204,6 +1224,66 @@ describe('BluetoothProvider wall-confirm integration', () => {
       );
     });
     expect(bluetooth.state.connectInitialSendRef.current).toBeNull();
+  });
+
+  it('re-lights the unchanged climb when a new link opens with no rendered disconnect (#4413)', async () => {
+    // The reported shape: the app already renders `isConnected`, so a connect
+    // that completes flips nothing, the AutoSender is never remounted, and its
+    // dedup still claims this climb is up there. Over a new link the wall may
+    // show another climber's climb, so JS has to write again.
+    renderProvider();
+
+    await waitFor(() => {
+      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
+    });
+
+    await act(async () => {
+      bluetooth.options?.onConnectSuccess?.(null, makeConnectionHandle(2));
+    });
+
+    await waitFor(() => {
+      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2);
+    });
+    expect(bluetooth.state.sendFramesToBoard).toHaveBeenNthCalledWith(
+      2,
+      'p1r12',
+      false,
+      expect.any(AbortSignal),
+      expect.objectContaining({ sendSource: 'auto' }),
+    );
+
+    // Still the same link, so the sender settles back into dedup.
+    await act(async () => {
+      bluetooth.options?.onConnectSuccess?.(null, makeConnectionHandle(2));
+    });
+    expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps suppressing the duplicate when the new link wrote the climb itself', async () => {
+    // A reconnect that DID carry initialFrames already put these frames on the
+    // wall, so the link change must not cost a redundant full-frame write plus
+    // a second success haptic. The seed block runs after the link-change reset,
+    // which is why that reset clears the signature rather than forcing a write.
+    renderProvider();
+
+    await waitFor(() => {
+      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
+    });
+
+    bluetooth.state.connectInitialSendRef.current = {
+      frames: 'p1r12',
+      mirrored: false,
+      colorSignature: 'default',
+      encodingSignature: 'default',
+    };
+    await act(async () => {
+      bluetooth.options?.onConnectSuccess?.(null, makeConnectionHandle(2));
+    });
+
+    await waitFor(() => {
+      expect(bluetooth.state.connectInitialSendRef.current).toBeNull();
+    });
+    expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the local wall confirm in solo mode without sending a session mutation', async () => {
