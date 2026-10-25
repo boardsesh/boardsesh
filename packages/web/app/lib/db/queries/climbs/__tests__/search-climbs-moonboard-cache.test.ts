@@ -64,7 +64,7 @@ const moonboardParams: ParsedBoardRouteParameters = {
 
 const searchParams = { page: 0, pageSize: 50 } as SearchRequestPagination;
 
-/** 15 minutes — see `CACHE_DURATION_MOONBOARD_FRONT_DOOR` in the module under test. */
+/** 15 minutes — see `CACHE_DURATION_LIVE_DATA_FRONT_DOOR` in the module under test. */
 const MOONBOARD_FRONT_DOOR_TTL_SECONDS = 900;
 /** 24 hours — the default-search TTL every other board keeps. */
 const DEFAULT_SEARCH_TTL_SECONDS = 86400;
@@ -126,6 +126,16 @@ describe('cachedSearchClimbs — MoonBoard front-door caching', () => {
     await cachedSearchClimbs(moonboardParams, randomParams, false, undefined, { cacheable: true });
 
     expect(searchExecutions.count).toBe(2);
+  });
+
+  it('holds a Woods front-door entry for 15 minutes, like MoonBoard', async () => {
+    const woodsParams: ParsedBoardRouteParameters = { ...moonboardParams, board_name: 'woods' };
+
+    await cachedSearchClimbs(woodsParams, searchParams, true, undefined, { cacheable: true });
+    await cachedSearchClimbs(woodsParams, searchParams, true, undefined, { cacheable: true });
+
+    expect(searchExecutions.count).toBe(1);
+    expect(onlyRevalidate()).toBe(MOONBOARD_FRONT_DOOR_TTL_SECONDS);
   });
 
   it('leaves the non-MoonBoard front door caching as it was', async () => {
