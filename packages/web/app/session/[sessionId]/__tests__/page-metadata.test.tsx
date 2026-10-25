@@ -29,9 +29,9 @@ vi.mock('react-i18next', () => ({
 vi.mock('graphql-request', () => ({
   gql: (strings: TemplateStringsArray, ...values: unknown[]) =>
     strings.reduce((result, chunk, index) => result + chunk + (values[index] ?? ''), ''),
-  GraphQLClient: vi.fn(() => ({
-    request: vi.fn(),
-  })),
+  GraphQLClient: vi.fn(function () {
+    return { request: vi.fn() };
+  }),
 }));
 
 vi.mock('@/app/lib/graphql/client', () => ({
