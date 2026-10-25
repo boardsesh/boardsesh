@@ -209,13 +209,47 @@ describe('Play next with nothing current (F3 now-slot mode)', () => {
     expect(planPlayNext(queue, null, { climbUuid: 'c-u1' }, 1)).toEqual({ kind: 'unchanged', reason: 'already-next' });
   });
 
-  it('a History entry is moved to the line, joining Up next', () => {
+  it('a History entry becomes the head of Up next, in one whole-queue write', () => {
     const queue = buildQueue('h1', 'h2', 'u1');
     expect(planPlayNext(queue, null, { queueItemUuid: 'q-h1', climbUuid: 'c-h1' }, 2)).toEqual({
+      kind: 'replace',
+      uuid: 'q-h1',
+      oldIndex: 0,
+      queue: [queue[1], queue[0], queue[2]],
+      historyCount: 1,
+    });
+  });
+
+  it('a History entry with Up next empty lands at the end, never at an out-of-range index', () => {
+    const queue = buildQueue('h1', 'h2');
+    const plan = planPlayNext(queue, null, { queueItemUuid: 'q-h1', climbUuid: 'c-h1' }, 2);
+    expect(plan).toEqual({
+      kind: 'replace',
+      uuid: 'q-h1',
+      oldIndex: 0,
+      queue: [queue[1], queue[0]],
+      historyCount: 1,
+    });
+  });
+
+  it('the last History entry also moves across the line', () => {
+    const queue = buildQueue('h1', 'h2', 'u1');
+    expect(planPlayNext(queue, null, { climbUuid: 'c-h2' }, 2)).toEqual({
+      kind: 'replace',
+      uuid: 'q-h2',
+      oldIndex: 1,
+      queue: [queue[0], queue[1], queue[2]],
+      historyCount: 1,
+    });
+  });
+
+  it('a History entry with a climb current still moves with one reorder', () => {
+    const queue = buildQueue('h1', 'now', 'u1');
+    expect(planPlayNext(queue, queue[1], { climbUuid: 'c-h1' }, 1)).toEqual({
       kind: 'move',
       uuid: 'q-h1',
       oldIndex: 0,
-      newIndex: 2,
+      newIndex: 1,
     });
   });
 });

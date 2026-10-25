@@ -30,6 +30,14 @@ export type PlayNextPlan =
   | { kind: 'insert'; position: number }
   /** The climb is already queued elsewhere: move that slot, never duplicate it. */
   | { kind: 'move'; uuid: string; oldIndex: number; newIndex: number }
+  /**
+   * F3, nothing current, the climb is in History: no single reorder can make it
+   * the head of Up next (see {@link planPlayNext}), so the caller replaces the
+   * whole queue in one write (`setQueue` with `historyCount`). `queue` has the
+   * entry pulled out of History and put at the head of Up next; `historyCount`
+   * is the new line, one lower, which is also the index the entry lands at.
+   */
+  | { kind: 'replace'; uuid: string; oldIndex: number; queue: ClimbQueue; historyCount: number }
   /** Nothing to do — but the caller still confirms to the climber. */
   | { kind: 'unchanged'; reason: 'already-next' | 'is-current' };
 
@@ -114,9 +122,12 @@ export function playNextInsertPosition(
  *
  * With nothing current the target index is the line, `historyCount` (0 in
  * legacy mode). An Up next entry moves to the head of Up next. A History entry
- * moved to index `historyCount` joins Up next as its SECOND entry: the shared
- * line rule (`lineAfterDelta`) files an entry that lands one slot earlier under
- * History, so no single reorder can make it Up next's first climb.
+ * can't get there with one reorder: the shared line rule (`lineAfterDelta`)
+ * files an entry that lands at `historyCount - 1` under History, and one that
+ * lands at `historyCount` as Up next's SECOND entry (with Up next empty that
+ * index is past the end, and the resolver rejects it). So a History entry gets
+ * a `replace` plan instead: the queue with that entry at the head of Up next and
+ * the line one lower, sent as one `setQueue`.
  */
 export function planPlayNext(
   queue: ClimbQueue,
@@ -137,6 +148,14 @@ export function planPlayNext(
 
   if (existingIndex === currentIndex) {
     return { kind: 'unchanged', reason: 'is-current' };
+  }
+
+  if (currentIndex === -1 && existingIndex < firstUpNextIndex) {
+    const nextQueue = [...queue];
+    const [movedItem] = nextQueue.splice(existingIndex, 1);
+    const nextLine = firstUpNextIndex - 1;
+    nextQueue.splice(nextLine, 0, movedItem);
+    return { kind: 'replace', uuid: movedItem.uuid, oldIndex: existingIndex, queue: nextQueue, historyCount: nextLine };
   }
 
   // With a climb current, both arms are `playNextInsertPosition` by
