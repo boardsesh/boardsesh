@@ -31,7 +31,20 @@ export type LocalQueueSnapshot = {
    * legacy mode); the reducer then derives the line. Optional, so no key bump.
    */
   historyCount?: number | null;
-  /** ISO 8601 write timestamp, for debugging stale restores. */
+  /**
+   * #4979 (F3 section 6): when the current climb last became a different climb
+   * (ISO 8601). Owned by the queue provider and written through the save effect
+   * unchanged, so a relaunch that touches nothing keeps it while `savedAt`
+   * moves on every write. Absent from an older snapshot, which the restore then
+   * seeds from `savedAt` once. Optional, so no key bump.
+   */
+  lastCurrentChangeAt?: string | null;
+  /**
+   * ISO 8601 write timestamp, for debugging stale restores. Stamped on EVERY
+   * write (the save effect also runs after a restore, a hydrate, a regrade and
+   * the board settling), so it says nothing about how long a climb has been on
+   * the wall: that is `lastCurrentChangeAt`.
+   */
   savedAt: string;
   /** Native snapshots predate account scoping; legacy references can be adopted. */
   ownerUserId?: string | null;
