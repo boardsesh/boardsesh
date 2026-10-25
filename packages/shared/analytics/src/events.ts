@@ -193,6 +193,21 @@ export const SHARED_EVENTS = {
   // backend is live, outside a deploy window, means a rollback or a probe that
   // broke. See docs/current-climb-outside-queue.md, section 8 (telemetry).
   QueueServerProbe: 'Queue Server Probe',
+  // F3 (#6666): the solo queue snapshot a cold start restored, once per launch.
+  // Props: { historyCount, upNextCount, upNextDuplicates (climbs appearing more
+  // than once in Up next), hasCurrent, lastCurrentChangeAgeHours,
+  // lastCurrentChangeSource: 'snapshot' | 'savedAt' }. `upNextDuplicates`
+  // should fall on new builds as old solo snapshots age out.
+  QueueSnapshotRestored: 'Queue Snapshot Restored',
+  // #4979 (F3 section 6): the auto-sender kept the board dark on connect because
+  // the current climb had not changed for 4 h or more. Props: { ageHours,
+  // scope: 'solo' | 'session' }. Fired once per held queue item per connection.
+  BoardStaleCurrentHeld: 'Board Stale Current Held',
+  // The end of that hold. Props: { reason: 'new-current' | 'relight' |
+  // 'reconnect' | 'disconnect' | 'kill-switch', scope, heldMinutes }. A session
+  // hold released by `reconnect` means a FullSync reseed moved the clock (it
+  // should not); holds with no release at all mean a stuck gate.
+  BoardStaleCurrentReleased: 'Board Stale Current Released',
   // Props: { kind: 'field' | 'preset', field?, value?, preset? }. Controller interactions only.
   ClimbRowDisplayChanged: 'Climb Row Display Changed',
   // A climber changed a toggle, select or segmented control on a Settings page.

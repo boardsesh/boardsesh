@@ -151,6 +151,7 @@ function liftEnvelopeToSyncEvent<TWireItem>(
           currentClimbQueueItem:
             envelope.state.currentClimbQueueItem === null ? null : lift(envelope.state.currentClimbQueueItem),
           historyCount: envelope.state.historyCount ?? null,
+          currentChangedAt: envelope.state.currentChangedAt ?? null,
         },
       };
     case 'QueueItemAdded': {

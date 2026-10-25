@@ -419,6 +419,12 @@ type QueueActionPayload<TSearchParams extends QueueSearchParams> =
          * HTTP resync is a point read and leaves it unset.
          */
         live?: boolean;
+        /**
+         * When the room's current climb last changed (ISO 8601), from a `_NOW_SLOT`
+         * FullSync or snapshot. The reducer ignores it; the mobile provider seeds
+         * the #4979 hold's clock from it (docs/current-climb-outside-queue.md, section 6).
+         */
+        currentChangedAt?: string | null;
       };
     }
   /** Turn now-slot mode on or off (section 7). Legacy mode stores `historyCount: null`. */
