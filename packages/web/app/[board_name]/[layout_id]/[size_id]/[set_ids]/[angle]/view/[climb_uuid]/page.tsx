@@ -1,8 +1,9 @@
 import React from 'react';
-import { notFound, permanentRedirect } from 'next/navigation';
+import { notFound, permanentRedirect, redirect } from 'next/navigation';
 import type { BoardRouteParametersWithUuid } from '@/app/lib/types';
 import { getClimb, getClimbStatsForAllAngles } from '@/app/lib/data/queries';
 import { getFrontDoorBetaLinks, getFrontDoorSimilarClimbs } from '@/app/lib/data/front-door-data.server';
+import { resolveRenderBoard } from '@boardsesh/board-config';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import {
   buildCanonicalClimbViewUrl,
@@ -105,6 +106,36 @@ export default async function ClimbViewPage(props: { params: Promise<BoardRouteP
     // the drawer.
     const currentClimb = await getClimb(parsedParams);
     if (!currentClimb) notFound();
+
+    // Woods' two sizes number holds from different origins, and the 8x10 ids are
+    // a numeric subset of the 12x12 ids, so a climb drawn on a size it does not
+    // fit renders the wrong holds without failing. Send it to a size it fits.
+    // 307, not 308: the target comes from climb data, which a re-measure can change.
+    const compatibleSizeIds = currentClimb.compatibleSizeIds;
+    if (
+      parsedParams.board_name === 'woods' &&
+      compatibleSizeIds &&
+      compatibleSizeIds.length > 0 &&
+      !compatibleSizeIds.includes(parsedParams.size_id)
+    ) {
+      const target = resolveRenderBoard({
+        boardType: 'woods',
+        climbLayoutId: currentClimb.layoutId,
+        compatibleSizeIds,
+      });
+      if (!target || compatibleSizeIds.indexOf(target.sizeId) === -1) notFound();
+      const targetUrl = tryConstructSlugViewUrl(
+        'woods',
+        target.layoutId,
+        target.sizeId,
+        target.setIds,
+        parsedParams.angle,
+        parsedParams.climb_uuid,
+        currentClimb.name,
+      );
+      if (!targetUrl) notFound();
+      redirect(targetUrl);
+    }
 
     if (needsSlugRedirect) {
       const queries = await import('@/app/lib/data/queries');
