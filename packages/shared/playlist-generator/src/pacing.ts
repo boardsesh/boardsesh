@@ -20,21 +20,34 @@ export type StagePacingMode = 'afterTick' | 'onTheMinute';
 
 /**
  * When an `afterTick` stage lets the wall move on once the rest is over: after
- * any tick on the current climb (`tick`), or only after a flash or a send on it
- * (`send`, so a fall rests and stays on the same climb).
+ * any tick on the current climb (`tick`; with `sets`, once it was logged for
+ * every rep of the set), or only after a flash or a send on it (`send`, so a
+ * fall rests and stays on the same climb).
  */
 export type StageAdvanceOn = 'tick' | 'send';
+
+/**
+ * A 4x4's sets: the climb on the wall stays up until it was logged
+ * `repsPerSet` times (a fall or a send, each one rep), then rests
+ * `restBetweenSetsSeconds` and moves on.
+ */
+export type StageSetPacing = { repsPerSet: number; restBetweenSetsSeconds: number };
 
 export type WorkoutStagePacing =
   /** One climb per interval: `restSeconds` is the interval, the wall moves on every beat. */
   | { mode: 'onTheMinute'; restSeconds: number }
   | {
       mode: 'afterTick';
-      /** The rest after each logged climb. 0 means no rest (the changeover still applies). */
+      /**
+       * The rest after each logged climb (limit bouldering: after each try). 0
+       * means no rest; the changeover still applies wherever the rest moves the
+       * wall. With `sets`, the rest between two reps of a set, where 0 runs no
+       * rest at all, since that rest never moves the wall.
+       */
       restSeconds: number;
-      /** With rounds only: the rest after a round's last climb, in place of `restSeconds`. */
-      restBetweenRoundsSeconds?: number;
       advanceOn: StageAdvanceOn;
+      /** A 4x4 only: reps per climb, and the rest after a set's last rep. */
+      sets?: StageSetPacing;
     };
 
 /**
@@ -51,18 +64,24 @@ export const MIN_STAGE_INTERVAL_SECONDS = 15;
 /** The longest rest or interval a stage can carry (the partner API's ceiling). */
 export const MAX_STAGE_REST_SECONDS = 3600;
 
-/** The most rounds a 4x4 runs (the partner API's `rounds` ceiling). */
-export const MAX_STAGE_ROUNDS = 10;
+/** The fewest reps a 4x4 set takes: one climb once is just a climb. */
+export const MIN_STAGE_REPS_PER_SET = 2;
 
-const isWholeSecondsIn = (candidate: unknown, min: number, max: number): candidate is number =>
+/** The most reps a 4x4 set takes. */
+export const MAX_STAGE_REPS_PER_SET = 10;
+
+/** The most sets (climbs) a 4x4 runs. */
+export const MAX_STAGE_SETS = 10;
+
+const isWholeNumberIn = (candidate: unknown, min: number, max: number): candidate is number =>
   typeof candidate === 'number' && Number.isInteger(candidate) && candidate >= min && candidate <= max;
 
 // Options come from steppers, a partner payload or persisted state. Rounding and
 // clamping here means the pacing a run stores always passes `isWorkoutStagePacing`.
-const wholeSecondsIn = (seconds: number, min: number, max: number): number =>
-  Number.isFinite(seconds) ? Math.min(max, Math.max(min, Math.round(seconds))) : min;
+const wholeNumberIn = (candidate: number, min: number, max: number): number =>
+  Number.isFinite(candidate) ? Math.min(max, Math.max(min, Math.round(candidate))) : min;
 
-const stageRest = (seconds: number): number => wholeSecondsIn(seconds, 0, MAX_STAGE_REST_SECONDS);
+const stageRest = (seconds: number): number => wholeNumberIn(seconds, 0, MAX_STAGE_REST_SECONDS);
 
 /** The pacing a block's stage runs with. Undefined for every untimed type: the global rest settings apply. */
 export function pacingForOptions(options: GeneratorOptions): WorkoutStagePacing | undefined {
@@ -70,14 +89,18 @@ export function pacingForOptions(options: GeneratorOptions): WorkoutStagePacing 
     case 'onTheMinute':
       return {
         mode: 'onTheMinute',
-        restSeconds: wholeSecondsIn(options.intervalSeconds, MIN_STAGE_INTERVAL_SECONDS, MAX_STAGE_REST_SECONDS),
+        restSeconds: wholeNumberIn(options.intervalSeconds, MIN_STAGE_INTERVAL_SECONDS, MAX_STAGE_REST_SECONDS),
       };
     case 'fourByFour':
+      // Every rep is a tick, a fall included, so the set counts ticks.
       return {
         mode: 'afterTick',
-        restSeconds: stageRest(options.restBetweenClimbsSeconds),
-        restBetweenRoundsSeconds: stageRest(options.restBetweenRoundsSeconds),
+        restSeconds: stageRest(options.restBetweenRepsSeconds),
         advanceOn: 'tick',
+        sets: {
+          repsPerSet: wholeNumberIn(options.repsPerSet, MIN_STAGE_REPS_PER_SET, MAX_STAGE_REPS_PER_SET),
+          restBetweenSetsSeconds: stageRest(options.restBetweenSetsSeconds),
+        },
       };
     case 'limitBouldering':
       return { mode: 'afterTick', restSeconds: stageRest(options.restSeconds), advanceOn: 'send' };
@@ -94,54 +117,49 @@ export function pacingForOptions(options: GeneratorOptions): WorkoutStagePacing 
   }
 }
 
-/** How many rounds a block's stage runs. Only a 4x4 has rounds. */
-export function roundsForOptions(options: GeneratorOptions): number | undefined {
-  switch (options.type) {
-    case 'fourByFour':
-      return Number.isFinite(options.rounds) ? Math.min(MAX_STAGE_ROUNDS, Math.max(1, Math.floor(options.rounds))) : 1;
-    case 'volume':
-    case 'pyramid':
-    case 'ladder':
-    case 'gradeFocus':
-    case 'onTheMinute':
-    case 'limitBouldering':
-      return undefined;
-    default: {
-      const exhaustiveOptions: never = options;
-      void exhaustiveOptions;
-      return undefined;
-    }
-  }
+/**
+ * The rest after one logged climb of the stage, in seconds. `closesSet`: on a
+ * 4x4, the tick was the set's last rep, so the set rest follows and then the
+ * wall moves on. A rest that moves the wall never drops below the changeover,
+ * and an interval never below 15 s. A 4x4's rest between reps never moves the
+ * wall, so it runs as set, and 0 is no rest at all.
+ */
+export function stageRestSeconds(pacing: WorkoutStagePacing, closesSet: boolean): number {
+  if (pacing.mode === 'onTheMinute') return Math.max(MIN_STAGE_INTERVAL_SECONDS, pacing.restSeconds);
+  if (pacing.sets === undefined) return Math.max(STAGE_CHANGEOVER_SECONDS, pacing.restSeconds);
+  return closesSet ? Math.max(STAGE_CHANGEOVER_SECONDS, pacing.sets.restBetweenSetsSeconds) : pacing.restSeconds;
 }
 
-/**
- * The rest after one climb of the stage, in seconds. `closesRound`: the climb
- * is its round's last, so a 4x4 takes its between-rounds rest. An `afterTick`
- * rest never drops below the changeover, and an interval never below 15 s.
- */
-export function stageRestSeconds(pacing: WorkoutStagePacing, closesRound: boolean): number {
-  if (pacing.mode === 'onTheMinute') return Math.max(MIN_STAGE_INTERVAL_SECONDS, pacing.restSeconds);
-  const restSeconds =
-    closesRound && pacing.restBetweenRoundsSeconds !== undefined ? pacing.restBetweenRoundsSeconds : pacing.restSeconds;
-  return Math.max(STAGE_CHANGEOVER_SECONDS, restSeconds);
+function isStageSetPacing(candidate: unknown): candidate is StageSetPacing {
+  if (typeof candidate !== 'object' || candidate === null) return false;
+  const sets = candidate as Record<string, unknown>;
+  return (
+    isWholeNumberIn(sets.repsPerSet, MIN_STAGE_REPS_PER_SET, MAX_STAGE_REPS_PER_SET) &&
+    isWholeNumberIn(sets.restBetweenSetsSeconds, 0, MAX_STAGE_REST_SECONDS)
+  );
 }
 
 /**
  * True when stored data is pacing this bundle can run. Rejects an unknown mode
  * or advance rule, and seconds that are not whole or out of range, so a run
  * written by a newer bundle loses just its pacing rather than misreading it.
+ *
+ * Also rejects the round 4x4 a tester's run may still hold from before sets
+ * (`restBetweenRoundsSeconds`): its queue holds every climb once per round, so
+ * read as sets it would ask for four reps on each of sixteen climbs. Unpaced,
+ * its climbs read as an ordinary block on the climber's own rest settings.
  */
 export function isWorkoutStagePacing(candidate: unknown): candidate is WorkoutStagePacing {
   if (typeof candidate !== 'object' || candidate === null) return false;
   const pacing = candidate as Record<string, unknown>;
   if (pacing.mode === 'onTheMinute') {
-    return isWholeSecondsIn(pacing.restSeconds, MIN_STAGE_INTERVAL_SECONDS, MAX_STAGE_REST_SECONDS);
+    return isWholeNumberIn(pacing.restSeconds, MIN_STAGE_INTERVAL_SECONDS, MAX_STAGE_REST_SECONDS);
   }
   if (pacing.mode !== 'afterTick') return false;
   return (
-    isWholeSecondsIn(pacing.restSeconds, 0, MAX_STAGE_REST_SECONDS) &&
-    (pacing.restBetweenRoundsSeconds === undefined ||
-      isWholeSecondsIn(pacing.restBetweenRoundsSeconds, 0, MAX_STAGE_REST_SECONDS)) &&
+    isWholeNumberIn(pacing.restSeconds, 0, MAX_STAGE_REST_SECONDS) &&
+    pacing.restBetweenRoundsSeconds === undefined &&
+    (pacing.sets === undefined || isStageSetPacing(pacing.sets)) &&
     (pacing.advanceOn === 'tick' || pacing.advanceOn === 'send')
   );
 }

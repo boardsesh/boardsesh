@@ -417,7 +417,7 @@ describe('useTickSaver after a save', () => {
       mode: 'onTheMinute',
       targetSeconds: 60,
       advanceOn: 'deadline',
-      closesRound: false,
+      closesSet: false,
       stagePacing: { mode: 'onTheMinute', restSeconds: 60 },
     };
     applyRestTimerStagePacing(onTheMinuteStage, NOW_MS, 'none');
@@ -531,7 +531,7 @@ describe('useTickSaver at another angle than the climb is up at', () => {
     mode: 'afterTick',
     targetSeconds: 180,
     advanceOn: 'send',
-    closesRound: false,
+    closesSet: false,
     stagePacing: { mode: 'afterTick', restSeconds: 180, advanceOn: 'send' },
   };
   const SENT_NOW = new Date(NOW_MS).toISOString();

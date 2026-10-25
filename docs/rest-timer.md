@@ -34,8 +34,9 @@ The timer runs on an `EffectiveRestPacing`: a rest length, a cadence (`afterTick
 `resolveEffectiveRestPacing` picks the source, highest first:
 
 1. `crew`: the session's shared clock (#5382).
-2. `stage`: the workout stage the current climb belongs to (#5380, #6231). A stage always
-   auto-advances.
+2. `stage`: the workout stage the current climb belongs to (#5380, #6231). A stage
+   auto-advances, except a 4x4 set with reps still to log: its rests never move the wall, and
+   saying so is also what keeps the crew clock, which counts no reps, from firing mid-set.
 3. `settings`: the climber's own preferences. These never carry an advance rule, so they run on
    the deadline, as the timer always has.
 
@@ -62,7 +63,11 @@ The advance rule:
 
 `onTheMinute` keeps its beat whatever the rule (`anchorAfterFire`). `restAdvanceAllowed` is the
 pure check; it only lets a tick count when it was logged against the queue item on the wall, so a
-tick on the previous climb, or one from a list, never lights the next.
+tick on the previous climb, or one from a list, never lights the next. A 4x4 set adds one more
+condition to `tick`: every rep of the set is logged on the climb on the wall (the stage pacing's
+`reps`, counted from the run's tick log). Until then a rest between reps runs out with the
+reached cue and the climb stays up for the next rep; with no rest between reps nothing counts
+down at all.
 
 The scheduler asks `restAdvanceAllowed` when it schedules and again when the timeout fires, with the
 store's `lastTick`. A tick that counts for no queue item leaves `lastTick` as it was, so it never

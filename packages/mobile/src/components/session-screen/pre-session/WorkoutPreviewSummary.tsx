@@ -32,19 +32,19 @@ type WorkoutPreviewSummaryProps = {
   shuffleDisabled: boolean;
   /**
    * The queue Start hands over (`useWorkoutPreview().startQueue`): its climb
-   * count, a 4x4's rounds included, and about how long it takes. Without it the
-   * line counts the rows and gives no time.
+   * count and about how long it takes. Without it the line counts the rows and
+   * gives no time.
    */
   startQueue?: StartQueueSummary;
 };
 
 /**
  * The line above the preview rows that says what Start will queue: how many
- * climbs (a 4x4's four rows run four rounds, so 16), over which grades, and for
- * a timed workout about how long it takes, plus a Shuffle that re-picks every
- * climb at the same grades. When a thin catalogue left slots empty, a note says
- * how many of the planned climbs were found: Start queues only those, each once,
- * or once per round in a 4x4 (one found climb of a 4-round 4x4 queues 4).
+ * climbs (a 4x4 queues one per set, so 4), over which grades, and for a timed
+ * workout about how long it takes, every rep of a 4x4 included, plus a Shuffle
+ * that re-picks every climb at the same grades. When a thin catalogue left
+ * slots empty, a note says how many of the planned climbs were found: Start
+ * queues only those, each once.
  */
 export function WorkoutPreviewSummary({
   summary,

@@ -30,7 +30,7 @@ const LIMIT_STAGE: RestTimerStagePacing = {
   mode: 'afterTick',
   targetSeconds: 180,
   advanceOn: 'send',
-  closesRound: false,
+  closesSet: false,
   stagePacing: { mode: 'afterTick', restSeconds: 180, advanceOn: 'send' },
 };
 
@@ -42,7 +42,7 @@ const EMOM_STAGE: RestTimerStagePacing = {
   mode: 'onTheMinute',
   targetSeconds: 60,
   advanceOn: 'deadline',
-  closesRound: false,
+  closesSet: false,
   stagePacing: { mode: 'onTheMinute', restSeconds: 60 },
 };
 

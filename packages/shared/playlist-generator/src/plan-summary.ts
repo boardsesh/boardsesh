@@ -1,6 +1,6 @@
 import { groupSlotsBySection } from './generate';
 import { stageRestSeconds, type WorkoutStagePacing } from './pacing';
-import { workoutRunHasPacing, type WorkoutRun, type WorkoutRunStage } from './stages';
+import { workoutRunHasPacing, type WorkoutRun } from './stages';
 import type { PlannedClimbSlot } from './types';
 
 export type PlanSectionCount = {
@@ -73,11 +73,12 @@ export const ESTIMATE_TRIES_UNTIL_SEND = 3;
 /** The rest after each climb of a stage with no pacing of its own, which runs on the climber's own rests. */
 export const ESTIMATE_UNPACED_REST_SECONDS = 120;
 
-/** The time one climb takes, and the rest at its end (left off after the workout's last climb). */
-function climbTime(
-  pacing: WorkoutStagePacing | undefined,
-  closesRound: boolean,
-): { seconds: number; restAfter: number } {
+/**
+ * The time one queued climb takes, and the rest at its end (left off after the
+ * workout's last climb). A 4x4 set is its reps back to back with the rest
+ * between reps, then the set rest.
+ */
+function climbTime(pacing: WorkoutStagePacing | undefined): { seconds: number; restAfter: number } {
   if (!pacing) {
     return {
       seconds: ESTIMATE_SECONDS_PER_TRY + ESTIMATE_UNPACED_REST_SECONDS,
@@ -86,33 +87,30 @@ function climbTime(
   }
   // One climb per interval: the beat moves the wall whatever happened on it.
   if (pacing.mode === 'onTheMinute') return { seconds: stageRestSeconds(pacing, false), restAfter: 0 };
-  const restSeconds = stageRestSeconds(pacing, closesRound);
+  if (pacing.sets !== undefined) {
+    const { repsPerSet } = pacing.sets;
+    const setRestSeconds = stageRestSeconds(pacing, true);
+    return {
+      seconds:
+        repsPerSet * ESTIMATE_SECONDS_PER_TRY + (repsPerSet - 1) * stageRestSeconds(pacing, false) + setRestSeconds,
+      restAfter: setRestSeconds,
+    };
+  }
+  const restSeconds = stageRestSeconds(pacing, false);
   const tries = pacing.advanceOn === 'send' ? ESTIMATE_TRIES_UNTIL_SEND : 1;
   return { seconds: tries * (ESTIMATE_SECONDS_PER_TRY + restSeconds), restAfter: restSeconds };
 }
 
-/** True for each of the stage's climbs that is the last of its round in the stage's order. */
-function closesRoundFlags(stage: WorkoutRunStage): boolean[] {
-  const roundOf = (uuid: string | undefined): number | undefined =>
-    uuid !== undefined && stage.roundByUuid && Object.hasOwn(stage.roundByUuid, uuid)
-      ? stage.roundByUuid[uuid]
-      : undefined;
-  return stage.itemUuids.map((uuid, position) => {
-    const round = roundOf(uuid);
-    return round !== undefined && roundOf(stage.itemUuids[position + 1]) !== round;
-  });
-}
-
 /**
  * About how long a workout takes, in minutes, from the run Start hands over:
- * every queued climb (a 4x4's round copies included) with the rest the stage
- * paces after it (`stageRestSeconds`, so a 4x4's round rests and the 10 s
- * changeover count), one interval per climb on the minute, and a few tries per
- * climb, each followed by the rest (the timer starts after every logged try,
- * falls included), where the stage moves on only after a send. A stage with no
- * pacing of its own (a warm-up before a 4x4) counts a two-minute rest per climb. No rest
- * is counted after the workout's last climb. Whole minutes under 10, then
- * rounded to fives.
+ * every queued climb with the rest the stage paces after it
+ * (`stageRestSeconds`, so the 10 s changeover counts), one interval per climb
+ * on the minute, every rep of a 4x4 set with the rests between them and the set
+ * rest, and a few tries per climb, each followed by the rest (the timer starts
+ * after every logged try, falls included), where the stage moves on only after
+ * a send. A stage with no pacing of its own (a warm-up before a 4x4) counts a
+ * two-minute rest per climb. No rest is counted after the workout's last
+ * climb. Whole minutes under 10, then rounded to fives.
  *
  * Null when no stage paces the timer: an untimed workout runs entirely on the
  * climber's own rests, so a figure would only be a guess.
@@ -122,12 +120,9 @@ export function estimateWorkoutMinutes(run: WorkoutRun): number | null {
   let totalSeconds = 0;
   let lastRestSeconds = 0;
   for (const stage of run.stages) {
-    const closesRound = closesRoundFlags(stage);
-    for (const flag of closesRound) {
-      const { seconds, restAfter } = climbTime(stage.pacing, flag);
-      totalSeconds += seconds;
-      lastRestSeconds = restAfter;
-    }
+    const { seconds, restAfter } = climbTime(stage.pacing);
+    totalSeconds += seconds * stage.itemUuids.length;
+    if (stage.itemUuids.length > 0) lastRestSeconds = restAfter;
   }
   totalSeconds -= lastRestSeconds;
   if (totalSeconds <= 0) return null;

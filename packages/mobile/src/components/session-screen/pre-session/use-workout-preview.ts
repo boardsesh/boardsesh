@@ -55,9 +55,8 @@ export type UseWorkoutPreviewResult = {
   /** Slots the generator planned — for the `SessionQueueGenerated.failedCount` delta. */
   plannedCount: number;
   /**
-   * What Start would queue from the rows on screen: the climb count, a 4x4's
-   * round copies included, and about how long it takes. Kept while a rebuild
-   * runs, like `items`.
+   * What Start would queue from the rows on screen: the climb count and about
+   * how long it takes. Kept while a rebuild runs, like `items`.
    */
   startQueue: StartQueueSummary;
   /** Actual generated slot plan, before climb-pool shortfalls remove rows from the preview. Each slot names its stage. */
@@ -69,11 +68,9 @@ export type UseWorkoutPreviewResult = {
   shuffle: () => void;
   refreshSlot: (itemUuid: string) => void;
   /**
-   * The current preview as a queue, plus which workout stage, and round, each
-   * item belongs to (the hand-off on Start). A 4x4's rows are queued once per
-   * round, each copy under a fresh queue-item uuid (`stagePreviewQueue`). Empty
-   * items and a null run while the preview on screen is not the one the current
-   * settings describe.
+   * The current preview as a queue, plus which workout stage each item belongs
+   * to (the hand-off on Start, `stagePreviewQueue`). Empty items and a null run
+   * while the preview on screen is not the one the current settings describe.
    */
   toStagedQueueItems: () => StagedQueueItems;
 };
@@ -115,8 +112,8 @@ function positionsInStage(slots: readonly StagedSlot[]): Map<number, number> {
 
 /**
  * Names a block with the settings that shape its slots, and its filters: equal
- * names plan the same climbs, so a rebuild keeps their rows. A 4x4's rounds or
- * a rest length are not in it, so changing one keeps the climbs.
+ * names plan the same climbs, so a rebuild keeps their rows. A 4x4's reps per
+ * set or a rest length are not in it, so changing one keeps the climbs.
  */
 function blockRowKey(block: WorkoutBlock): string {
   return `${block.id}|${getBlockSlotKey(block)}`;
@@ -190,13 +187,13 @@ function getBlockSlotSettingsKey(block: WorkoutBlockSpec): string {
     case 'limitBouldering':
       return `${commonKey}:${options.numberOfClimbs}`;
     case 'fourByFour':
-      return `${commonKey}:${options.climbsPerRound}`;
+      return `${commonKey}:${options.sets}`;
   }
 }
 
-// Every setting of a block. Past the slot settings, a timed block's rounds and
-// rests shape the queue and the run Start hands over, so they rebuild the
-// preview too; `blockRowKey` leaves them out, so its rows survive the rebuild.
+// Every setting of a block. Past the slot settings, a timed block's reps and
+// rests shape the run Start hands over, so they rebuild the preview too;
+// `blockRowKey` leaves them out, so its rows survive the rebuild.
 function getBlockSettingsKey(block: WorkoutBlockSpec): string {
   const slotKey = getBlockSlotSettingsKey(block);
   if (block.kind === 'warmUp') return slotKey;
@@ -211,7 +208,7 @@ function getBlockSettingsKey(block: WorkoutBlockSpec): string {
     case 'onTheMinute':
       return `${slotKey}:${options.intervalSeconds}`;
     case 'fourByFour':
-      return `${slotKey}:${options.rounds}:${options.restBetweenClimbsSeconds}:${options.restBetweenRoundsSeconds}`;
+      return `${slotKey}:${options.repsPerSet}:${options.restBetweenRepsSeconds}:${options.restBetweenSetsSeconds}`;
     case 'limitBouldering':
       return `${slotKey}:${options.restSeconds}`;
   }
@@ -574,8 +571,6 @@ export function useWorkoutPreview(
       previews,
       plan: workoutPlan,
       stageIdOf: (preview) => stageIdBySlotIndex.get(preview.slot.index),
-      // Every call mints new copies: each Start queues its own queue items.
-      mintUuid: randomUUID,
     });
   }, []);
 
@@ -600,8 +595,8 @@ export function useWorkoutPreview(
     return () => clearTimeout(handle);
   }, [generationKey, boardKey, authKey, boardseshGrades, rebuildForEdit]);
 
-  // Over the committed rows and stages, which change together, so a rounds edit
-  // updates the count as soon as its rebuild lands.
+  // Over the committed rows and stages, which change together, so a reps or
+  // rest edit updates the time as soon as its rebuild lands.
   const startQueue = useMemo(() => summarizeStartQueue(items, plannedStages), [items, plannedStages]);
 
   const regenerateVoid = useCallback(() => void regenerate(), [regenerate]);

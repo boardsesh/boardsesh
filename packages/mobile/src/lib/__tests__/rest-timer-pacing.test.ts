@@ -18,7 +18,7 @@ const STAGE: RestTimerStagePacing = {
   mode: 'afterTick',
   targetSeconds: 180,
   advanceOn: 'send',
-  closesRound: false,
+  closesSet: false,
   stagePacing: { mode: 'afterTick', restSeconds: 180, advanceOn: 'send' },
 };
 

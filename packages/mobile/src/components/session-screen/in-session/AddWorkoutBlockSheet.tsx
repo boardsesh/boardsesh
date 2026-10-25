@@ -50,7 +50,6 @@ import { sizeFilterAvailability } from '../pre-session/WorkoutBlockFilters';
 import { WorkoutPreviewListRow } from '../pre-session/WorkoutPreviewListRow';
 import { WorkoutPreviewSummary } from '../pre-session/WorkoutPreviewSummary';
 import { useWorkoutPreview } from '../pre-session/use-workout-preview';
-import { countFilledSlots, withoutQueuedSlots } from '../pre-session/workout-start-queue';
 import {
   DEFAULT_WORKOUT_FILTERS,
   NO_WORKOUT,
@@ -212,7 +211,7 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
 
   const handleAdd = useCallback(async () => {
     if (submittedRef.current || !canAdd || !options || !activeBoard || sessionId === null) return;
-    const { items: stagedItems, run: blockRun, slotIndexByUuid } = toStagedQueueItems();
+    const { items: stagedItems, run: blockRun } = toStagedQueueItems();
     if (stagedItems.length === 0 || !blockRun) return;
     submittedRef.current = true;
     setIsSubmitting(true);
@@ -236,11 +235,10 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
       setIsSubmitting(false);
       return;
     }
-    // Belt and braces for this path: never queue a slot twice. A reopen during
-    // the slide-down can keep a preview that is already queued, and its 4x4
-    // copies come back under fresh uuids, so the check is by slot, not by uuid.
+    // Belt and braces for this path: never queue a uuid twice. A reopen during
+    // the slide-down can keep a preview that is already queued.
     const queuedUuids = new Set(getQueueSnapshot().queue.map((queueItem) => queueItem.uuid));
-    const blockItems = withoutQueuedSlots(stagedItems, slotIndexByUuid, queuedUuids);
+    const blockItems = stagedItems.filter((item) => !queuedUuids.has(item.uuid));
     if (blockItems.length === 0) {
       onClose();
       return;
@@ -271,16 +269,8 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
       boardName: activeBoard.boardType,
       angle: activeBoard.angle,
       savedCount: result.landedCount,
-      // Planned slots with no climb in the queue: the queue keeps the first
-      // `landedCount`, and a 4x4's rounds queue each slot more than once.
-      failedCount: Math.max(
-        0,
-        plannedCount -
-          countFilledSlots(
-            slotIndexByUuid,
-            blockItems.slice(0, result.landedCount).map((item) => item.uuid),
-          ),
-      ),
+      // Planned slots with no climb in the queue: one queued climb per slot.
+      failedCount: Math.max(0, plannedCount - result.landedCount),
       stageCount: result.addedStageCount,
       phase: 'in_session',
       // Rows that came from a nearby grade because theirs ran short.

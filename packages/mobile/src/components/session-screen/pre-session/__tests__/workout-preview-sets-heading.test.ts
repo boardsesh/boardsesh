@@ -1,5 +1,5 @@
-// The preview heading of a stage whose rows repeat (#5380): a 4x4 shows one
-// round of rows, so its heading says how many rounds the queue runs them.
+// The preview heading of a 4x4 (#5380): each row is one set, a climb done for
+// every rep, so its heading says how many reps each row takes.
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_FOUR_BY_FOUR_OPTIONS,
@@ -21,9 +21,9 @@ function makePreview(uuid: string, section: PlannedClimbSlot['section'], index: 
 function describeRows(items: PreviewItem[], stages: WorkoutStage[]): string[] {
   return buildPreviewListRows(items, stages).map((row) => {
     if (row.kind === 'stage') {
-      return row.rounds === undefined
+      return row.repsPerSet === undefined
         ? `STAGE ${row.stageKind}:${row.count}`
-        : `STAGE ${row.stageKind}:${row.count} x${row.rounds} rounds`;
+        : `STAGE ${row.stageKind}:${row.count} x${row.repsPerSet} reps`;
     }
     if (row.kind === 'section') return `${row.section}:${row.count}`;
     return row.preview.item.uuid;
@@ -36,18 +36,18 @@ const VOLUME_STAGE: WorkoutStage = {
   kind: 'volume',
   options: { ...DEFAULT_VOLUME_OPTIONS, targetGrade: 8, warmUp: 'none' },
 };
-const fourByFourStage = (rounds: number): WorkoutStage => ({
+const fourByFourStage = (repsPerSet: number): WorkoutStage => ({
   id: 'four',
   kind: 'fourByFour',
-  options: { ...DEFAULT_FOUR_BY_FOUR_OPTIONS, targetGrade: 12, rounds, warmUp: 'none' },
+  options: { ...DEFAULT_FOUR_BY_FOUR_OPTIONS, targetGrade: 12, repsPerSet, warmUp: 'none' },
 });
 const fourByFourRows = (firstIndex = 0) =>
   ['f1', 'f2', 'f3', 'f4'].map((uuid, offset) => makePreview(uuid, 'main', firstIndex + offset, 'four'));
 
-describe('buildPreviewListRows for a stage that runs rounds', () => {
-  it('heads it with its rounds even as the only block', () => {
+describe('buildPreviewListRows for a 4x4', () => {
+  it('heads it with its reps per set even as the only block', () => {
     expect(describeRows(fourByFourRows(), [fourByFourStage(4)])).toEqual([
-      'STAGE fourByFour:4 x4 rounds',
+      'STAGE fourByFour:4 x4 reps',
       'f1',
       'f2',
       'f3',
@@ -66,7 +66,7 @@ describe('buildPreviewListRows for a stage that runs rounds', () => {
       'STAGE warmUp:2',
       'w1',
       'w2',
-      'STAGE fourByFour:4 x4 rounds',
+      'STAGE fourByFour:4 x4 reps',
       'f1',
       'f2',
       'f3',
@@ -74,11 +74,11 @@ describe('buildPreviewListRows for a stage that runs rounds', () => {
     ]);
   });
 
-  it('names the rounds on its own heading only among several blocks', () => {
+  it('names the reps on its own heading only among several blocks', () => {
     const items = [...fourByFourRows(), makePreview('v1', 'main', 4, 'volume')];
 
     expect(describeRows(items, [fourByFourStage(3), VOLUME_STAGE])).toEqual([
-      'STAGE fourByFour:4 x3 rounds',
+      'STAGE fourByFour:4 x3 reps',
       'f1',
       'f2',
       'f3',
@@ -88,13 +88,13 @@ describe('buildPreviewListRows for a stage that runs rounds', () => {
     ]);
   });
 
-  it('gives a single round no heading, since nothing repeats', () => {
-    expect(describeRows(fourByFourRows(), [fourByFourStage(1)])).toEqual(['f1', 'f2', 'f3', 'f4']);
+  it('heads it with the reps its pacing runs, never fewer than two', () => {
+    expect(describeRows(fourByFourRows(), [fourByFourStage(1)])[0]).toBe('STAGE fourByFour:4 x2 reps');
   });
 
   it('counts only the rows a short pool filled', () => {
     const items = fourByFourRows().filter((preview) => preview.item.uuid !== 'f3');
 
-    expect(describeRows(items, [fourByFourStage(4)])[0]).toBe('STAGE fourByFour:3 x4 rounds');
+    expect(describeRows(items, [fourByFourStage(4)])[0]).toBe('STAGE fourByFour:3 x4 reps');
   });
 });

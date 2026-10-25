@@ -196,12 +196,11 @@ export const generateOnTheMinutePlan = (options: OnTheMinuteOptions, grades: Gen
   generateFlatPlan(options.targetGrade, options.warmUp, options.numberOfClimbs, grades);
 
 /**
- * One slot per climb of a round, at the target grade. Rounds are not slots: one
- * climb fills each slot, and Start queues the round's climbs `rounds` times
- * (`expandRounds`), so every round repeats the same climbs.
+ * One slot per set at the target grade: a set is one climb. Reps are not slots
+ * either: they are the ticks logged on that climb's one queue item.
  */
 export const generateFourByFourPlan = (options: FourByFourOptions, grades: GeneratorGradeScale): PlannedClimbSlot[] =>
-  generateFlatPlan(options.targetGrade, options.warmUp, options.climbsPerRound, grades);
+  generateFlatPlan(options.targetGrade, options.warmUp, options.sets, grades);
 
 /** One slot per climb at the target grade. Attempts stay on one queued climb, so they are not slots either. */
 export const generateLimitBoulderingPlan = (

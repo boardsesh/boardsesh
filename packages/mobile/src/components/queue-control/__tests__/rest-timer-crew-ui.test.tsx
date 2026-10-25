@@ -699,7 +699,7 @@ describe('the sheet’s rest controls follow the crew clock', () => {
       mode: 'afterTick' as const,
       targetSeconds: 180,
       advanceOn: 'send' as const,
-      closesRound: false,
+      closesSet: false,
       stagePacing: { mode: 'afterTick' as const, restSeconds: 180, advanceOn: 'send' as const },
     };
 

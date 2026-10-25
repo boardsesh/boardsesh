@@ -116,7 +116,7 @@ const keepPreviewSource: Dispatch<SetStateAction<PlaylistSuggestionSource | null
 export function RestTimerAutoAdvanceScheduler() {
   const { t } = useTranslation('session');
   const timerState = useRestTimerState();
-  const { targetSeconds, autoAdvance, mode, advanceOn } = useEffectiveRestPacing();
+  const { targetSeconds, autoAdvance, mode, advanceOn, stage } = useEffectiveRestPacing();
 
   const { nextClimb, getQueueSnapshot, refreshPlaylistSuggestionSource, setSessionRestCadence } = useQueueActions();
   const { queue, currentClimbQueueItem } = useQueueData();
@@ -452,10 +452,11 @@ export function RestTimerAutoAdvanceScheduler() {
 
       // A tick or send rule asks again at the fire, against the climb on the
       // wall NOW: a manual Next that lands just before the timeout leaves the new
-      // climb without its tick, and walking on from it would skip a climb.
-      const { lastTick, crew } = getRestTimerState();
+      // climb without its tick, and walking on from it would skip a climb. A 4x4
+      // set asks for its reps the same way.
+      const { lastTick, crew, stagePacing } = getRestTimerState();
       const currentQueueItemUuid = inputs.currentClimbQueueItem?.uuid ?? null;
-      if (!restAdvanceAllowed({ advanceOn, currentQueueItemUuid, lastTick })) return;
+      if (!restAdvanceAllowed({ advanceOn, currentQueueItemUuid, lastTick, stage: stagePacing })) return;
 
       if (crew !== null) {
         // The server claims the beat (see fireCrewBeat). A clock this app
@@ -472,14 +473,15 @@ export function RestTimerAutoAdvanceScheduler() {
   fireAdvanceRef.current = fireAdvance;
 
   // A workout stage's tick or send rule: the rest only moves the wall once the
-  // climb on it was logged (limit: sent). Otherwise the rest runs out with the
-  // reached cue below and the climb stays up.
+  // climb on it was logged (limit: sent; a 4x4: every rep of the set).
+  // Otherwise the rest runs out with the reached cue below and the climb stays up.
   const wantsAdvance =
     shouldScheduleAutoAdvance({ state: timerState, targetSeconds, autoAdvance, canDriveWall }) &&
     restAdvanceAllowed({
       advanceOn,
       currentQueueItemUuid: currentClimbQueueItem?.uuid ?? null,
       lastTick: timerState.lastTick,
+      stage,
     });
   // A crew beat on the minute this phone let go is spent for the walk and the
   // reached cue below, but it never counts as an advance (crewBeatSkippedMs):

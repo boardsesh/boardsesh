@@ -24,18 +24,17 @@ export {
 } from './plan-summary';
 export type { PlanFillSummary, PlanSectionCount } from './plan-summary';
 export {
+  MAX_STAGE_REPS_PER_SET,
   MAX_STAGE_REST_SECONDS,
-  MAX_STAGE_ROUNDS,
+  MAX_STAGE_SETS,
   MIN_STAGE_INTERVAL_SECONDS,
+  MIN_STAGE_REPS_PER_SET,
   STAGE_CHANGEOVER_SECONDS,
   isWorkoutStagePacing,
   pacingForOptions,
-  roundsForOptions,
   stageRestSeconds,
 } from './pacing';
-export type { StageAdvanceOn, StagePacingMode, WorkoutStagePacing } from './pacing';
-export { expandRounds, isRoundNumber, locateRound } from './rounds';
-export type { WorkoutRunRoundPosition } from './rounds';
+export type { StageAdvanceOn, StagePacingMode, StageSetPacing, WorkoutStagePacing } from './pacing';
 export {
   WORKOUT_STAGE_KINDS,
   isWorkoutStageKind,

@@ -214,7 +214,7 @@ describe('local actions', () => {
       mode: 'onTheMinute' as const,
       targetSeconds: 60,
       advanceOn: 'deadline' as const,
-      closesRound: false,
+      closesSet: false,
       stagePacing: { mode: 'onTheMinute' as const, restSeconds: 60 },
     };
     applyRestTimerStagePacing(stage, T0, 'anchorNow');

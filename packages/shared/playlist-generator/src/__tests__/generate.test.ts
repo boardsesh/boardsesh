@@ -355,14 +355,17 @@ describe('timed workout plans', () => {
     expect(slots).toEqual(Array.from({ length: 12 }, (_, index) => ({ grade: 15, section: 'main', index })));
   });
 
-  it('plans one 4x4 slot per climb of a round, whatever the rounds', () => {
-    for (const rounds of [1, 4, 10]) {
+  it('plans one 4x4 slot per set, whatever the reps per set', () => {
+    for (const repsPerSet of [2, 4, 10]) {
       const slots = generateFourByFourPlan(
-        { ...DEFAULT_FOUR_BY_FOUR_OPTIONS, climbsPerRound: 4, rounds, targetGrade: 20 },
+        { ...DEFAULT_FOUR_BY_FOUR_OPTIONS, sets: 4, repsPerSet, targetGrade: 20 },
         GRADES,
       );
       expect(slots).toEqual(Array.from({ length: 4 }, (_, index) => ({ grade: 20, section: 'main', index })));
     }
+    expect(generateFourByFourPlan({ ...DEFAULT_FOUR_BY_FOUR_OPTIONS, sets: 1, targetGrade: 20 }, GRADES)).toEqual([
+      { grade: 20, section: 'main', index: 0 },
+    ]);
   });
 
   it('plans one limit-bouldering slot per climb at the target grade', () => {
@@ -377,7 +380,7 @@ describe('timed workout plans', () => {
       GRADES,
     );
     const slots = generateFourByFourPlan(
-      { ...DEFAULT_FOUR_BY_FOUR_OPTIONS, warmUp: 'standard', climbsPerRound: 2, targetGrade: 20 },
+      { ...DEFAULT_FOUR_BY_FOUR_OPTIONS, warmUp: 'standard', sets: 2, targetGrade: 20 },
       GRADES,
     );
 
@@ -416,13 +419,13 @@ describe('timed workout plans', () => {
     }
   });
 
-  it('defaults to 10 climbs every minute, 4 climbs for 4 rounds and 3 limit climbs with 3-minute rests', () => {
+  it('defaults to 10 climbs every minute, 4 sets of 4 reps and 3 limit climbs with 3-minute rests', () => {
     expect(DEFAULT_ON_THE_MINUTE_OPTIONS).toMatchObject({ numberOfClimbs: 10, intervalSeconds: 60 });
     expect(DEFAULT_FOUR_BY_FOUR_OPTIONS).toMatchObject({
-      climbsPerRound: 4,
-      rounds: 4,
-      restBetweenClimbsSeconds: 0,
-      restBetweenRoundsSeconds: 180,
+      sets: 4,
+      repsPerSet: 4,
+      restBetweenRepsSeconds: 0,
+      restBetweenSetsSeconds: 180,
     });
     expect(DEFAULT_LIMIT_BOULDERING_OPTIONS).toMatchObject({ numberOfClimbs: 3, restSeconds: 180 });
   });

@@ -12,7 +12,7 @@ import { SectionHeader } from '../SectionHeader';
 import { TICK_GUTTER } from '../tick/tick-sheet-metrics';
 import { useTheme } from '../../providers/theme-provider';
 import { useSessionTimerDriver } from '../../hooks/use-session-timer-driver';
-import { workoutStageName } from '../../lib/workout-run-readout';
+import { workoutStageName, type TranslateWorkoutStage } from '../../lib/workout-run-readout';
 import type { RestTimerStagePacing } from '../../lib/rest-timer-pacing';
 import { spacing } from '../../theme/tokens';
 import { formatRestLength } from './rest-length.logic';
@@ -31,32 +31,18 @@ export function RestTimerWorkoutPacingRow({ stage, inset = true }: RestTimerWork
   const { blockedReason: driverBlockedReason } = useSessionTimerDriver();
 
   const stageName = workoutStageName(stage.kind, t, stage.isCoolDown === true);
-  const { stagePacing } = stage;
-  const summary =
-    stagePacing.mode === 'onTheMinute'
-      ? t('mobile.restTimer.workoutPacingInterval', {
-          stage: stageName,
-          interval: formatRestLength(stageRestSeconds(stagePacing, false)),
-        })
-      : stagePacing.restBetweenRoundsSeconds !== undefined
-        ? t('mobile.restTimer.workoutPacingRounds', {
-            stage: stageName,
-            rest: formatRestLength(stageRestSeconds(stagePacing, false)),
-            roundRest: formatRestLength(stageRestSeconds(stagePacing, true)),
-          })
-        : t('mobile.restTimer.workoutPacingRest', {
-            stage: stageName,
-            rest: formatRestLength(stageRestSeconds(stagePacing, false)),
-          });
+  const summary = pacingSummary(stage, stageName, t);
 
   const advance =
     driverBlockedReason !== null
       ? t('mobile.restTimer.autoAdvanceBlocked')
-      : stage.advanceOn === 'send'
-        ? t('mobile.restTimer.workoutPacingAdvanceSend')
-        : stage.advanceOn === 'tick'
-          ? t('mobile.restTimer.workoutPacingAdvanceTick')
-          : t('mobile.restTimer.workoutPacingAdvanceBeat');
+      : stage.reps !== undefined
+        ? t('mobile.restTimer.workoutPacingAdvanceSet')
+        : stage.advanceOn === 'send'
+          ? t('mobile.restTimer.workoutPacingAdvanceSend')
+          : stage.advanceOn === 'tick'
+            ? t('mobile.restTimer.workoutPacingAdvanceTick')
+            : t('mobile.restTimer.workoutPacingAdvanceBeat');
 
   return (
     <View style={inset ? null : styles.cardBleed}>
@@ -71,6 +57,38 @@ export function RestTimerWorkoutPacingRow({ stage, inset = true }: RestTimerWork
       </View>
     </View>
   );
+}
+
+/**
+ * "4x4 · 4 reps a set, 3:00 between sets" (with the rest between reps when
+ * there is one), "Limit Bouldering · 3:00 rest after each climb", or "On the
+ * Minute · A new climb every 1:00".
+ */
+function pacingSummary(stage: RestTimerStagePacing, stageName: string, t: TranslateWorkoutStage): string {
+  const { stagePacing } = stage;
+  if (stagePacing.mode === 'onTheMinute') {
+    return t('mobile.restTimer.workoutPacingInterval', {
+      stage: stageName,
+      interval: formatRestLength(stageRestSeconds(stagePacing, false)),
+    });
+  }
+  if (stagePacing.sets !== undefined) {
+    const reps = stagePacing.sets.repsPerSet;
+    const setRest = formatRestLength(stageRestSeconds(stagePacing, true));
+    const repRestSeconds = stageRestSeconds(stagePacing, false);
+    return repRestSeconds > 0
+      ? t('mobile.restTimer.workoutPacingSetsWithRepRest', {
+          stage: stageName,
+          reps,
+          repRest: formatRestLength(repRestSeconds),
+          setRest,
+        })
+      : t('mobile.restTimer.workoutPacingSets', { stage: stageName, reps, setRest });
+  }
+  return t('mobile.restTimer.workoutPacingRest', {
+    stage: stageName,
+    rest: formatRestLength(stageRestSeconds(stagePacing, false)),
+  });
 }
 
 const styles = StyleSheet.create({

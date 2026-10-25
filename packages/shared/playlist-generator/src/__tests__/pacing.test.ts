@@ -8,14 +8,15 @@ import {
   DEFAULT_PYRAMID_OPTIONS,
   DEFAULT_VOLUME_OPTIONS,
   type GeneratorOptions,
+  MAX_STAGE_REPS_PER_SET,
   MAX_STAGE_REST_SECONDS,
   MIN_STAGE_INTERVAL_SECONDS,
+  MIN_STAGE_REPS_PER_SET,
   STAGE_CHANGEOVER_SECONDS,
   TIMED_WORKOUT_TYPES,
   type WorkoutStagePacing,
   isWorkoutStagePacing,
   pacingForOptions,
-  roundsForOptions,
   stageRestSeconds,
 } from '../index';
 
@@ -34,12 +35,20 @@ describe('pacingForOptions', () => {
     expect(pacingForOptions(onTheMinute)).toEqual({ mode: 'onTheMinute', restSeconds: 60 });
   });
 
-  it('paces a 4x4 after each tick, with the round rest for a round’s last climb', () => {
+  it('paces a 4x4 by its sets: reps per climb, the rest between reps and the rest between sets', () => {
     expect(pacingForOptions(fourByFour)).toEqual({
       mode: 'afterTick',
       restSeconds: 0,
-      restBetweenRoundsSeconds: 180,
       advanceOn: 'tick',
+      sets: { repsPerSet: 4, restBetweenSetsSeconds: 180 },
+    });
+    expect(
+      pacingForOptions({ ...fourByFour, repsPerSet: 3, restBetweenRepsSeconds: 45, restBetweenSetsSeconds: 300 }),
+    ).toEqual({
+      mode: 'afterTick',
+      restSeconds: 45,
+      advanceOn: 'tick',
+      sets: { repsPerSet: 3, restBetweenSetsSeconds: 300 },
     });
   });
 
@@ -68,33 +77,34 @@ describe('pacingForOptions', () => {
     expect(pacingForOptions({ ...onTheMinute, intervalSeconds: 9000 })).toMatchObject({
       restSeconds: MAX_STAGE_REST_SECONDS,
     });
-    expect(
-      pacingForOptions({ ...fourByFour, restBetweenClimbsSeconds: -4, restBetweenRoundsSeconds: 90.6 }),
-    ).toMatchObject({ restSeconds: 0, restBetweenRoundsSeconds: 91 });
+    expect(pacingForOptions({ ...fourByFour, restBetweenRepsSeconds: -4, restBetweenSetsSeconds: 90.6 })).toMatchObject(
+      { restSeconds: 0, sets: { restBetweenSetsSeconds: 91 } },
+    );
     expect(pacingForOptions({ ...limitBouldering, restSeconds: Number.NaN })).toMatchObject({ restSeconds: 0 });
 
     const odd: GeneratorOptions[] = [
       { ...onTheMinute, intervalSeconds: Number.POSITIVE_INFINITY },
-      { ...fourByFour, restBetweenRoundsSeconds: 4000.2 },
+      { ...fourByFour, restBetweenSetsSeconds: 4000.2 },
+      { ...fourByFour, repsPerSet: 0 },
+      { ...fourByFour, repsPerSet: 2.6 },
+      { ...fourByFour, repsPerSet: 40 },
+      { ...fourByFour, repsPerSet: Number.NaN },
       { ...limitBouldering, restSeconds: -1 },
     ];
     for (const options of odd) expect(isWorkoutStagePacing(pacingForOptions(options))).toBe(true);
   });
-});
 
-describe('roundsForOptions', () => {
-  it('gives a 4x4 its rounds and every other type none', () => {
-    expect(roundsForOptions(fourByFour)).toBe(4);
-    expect(roundsForOptions(onTheMinute)).toBeUndefined();
-    expect(roundsForOptions(limitBouldering)).toBeUndefined();
-    for (const options of UNTIMED_OPTIONS) expect(roundsForOptions(options)).toBeUndefined();
-  });
-
-  it('keeps the rounds between 1 and 10 and whole', () => {
-    expect(roundsForOptions({ ...fourByFour, rounds: 0 })).toBe(1);
-    expect(roundsForOptions({ ...fourByFour, rounds: 2.7 })).toBe(2);
-    expect(roundsForOptions({ ...fourByFour, rounds: 40 })).toBe(10);
-    expect(roundsForOptions({ ...fourByFour, rounds: Number.NaN })).toBe(1);
+  it('keeps a 4x4’s reps per set whole and between 2 and 10', () => {
+    const repsPerSet = (candidate: number) => {
+      const pacing = pacingForOptions({ ...fourByFour, repsPerSet: candidate });
+      return pacing?.mode === 'afterTick' ? pacing.sets?.repsPerSet : undefined;
+    };
+    expect(MIN_STAGE_REPS_PER_SET).toBe(2);
+    expect(MAX_STAGE_REPS_PER_SET).toBe(10);
+    expect(repsPerSet(1)).toBe(MIN_STAGE_REPS_PER_SET);
+    expect(repsPerSet(2.6)).toBe(3);
+    expect(repsPerSet(40)).toBe(MAX_STAGE_REPS_PER_SET);
+    expect(repsPerSet(Number.NaN)).toBe(MIN_STAGE_REPS_PER_SET);
   });
 });
 
@@ -102,23 +112,36 @@ describe('stageRestSeconds', () => {
   const fourByFourPacing: WorkoutStagePacing = {
     mode: 'afterTick',
     restSeconds: 30,
-    restBetweenRoundsSeconds: 180,
     advanceOn: 'tick',
+    sets: { repsPerSet: 4, restBetweenSetsSeconds: 180 },
   };
 
-  it('rests between climbs, and between rounds after a round’s last climb', () => {
+  it('rests between reps, and between sets after a set’s last rep', () => {
     expect(stageRestSeconds(fourByFourPacing, false)).toBe(30);
     expect(stageRestSeconds(fourByFourPacing, true)).toBe(180);
   });
 
-  it('uses the climb rest at a round’s end when the stage has no round rest', () => {
-    expect(stageRestSeconds({ mode: 'afterTick', restSeconds: 180, advanceOn: 'send' }, true)).toBe(180);
+  it('runs no rest between reps for a rest of 0, since that rest never moves the wall', () => {
+    expect(stageRestSeconds({ ...fourByFourPacing, restSeconds: 0 }, false)).toBe(0);
+    expect(stageRestSeconds({ ...fourByFourPacing, restSeconds: 4 }, false)).toBe(4);
   });
 
-  it('never rests less than the changeover, a rest of 0 included', () => {
+  it('uses the climb rest whatever `closesSet` says on a stage with no sets', () => {
+    expect(stageRestSeconds({ mode: 'afterTick', restSeconds: 180, advanceOn: 'send' }, true)).toBe(180);
+    expect(stageRestSeconds({ mode: 'afterTick', restSeconds: 180, advanceOn: 'send' }, false)).toBe(180);
+  });
+
+  it('never runs a rest that moves the wall under the changeover, a rest of 0 included', () => {
     expect(STAGE_CHANGEOVER_SECONDS).toBe(10);
-    expect(stageRestSeconds({ ...fourByFourPacing, restSeconds: 0 }, false)).toBe(STAGE_CHANGEOVER_SECONDS);
-    expect(stageRestSeconds({ ...fourByFourPacing, restBetweenRoundsSeconds: 4 }, true)).toBe(STAGE_CHANGEOVER_SECONDS);
+    expect(stageRestSeconds({ mode: 'afterTick', restSeconds: 0, advanceOn: 'send' }, false)).toBe(
+      STAGE_CHANGEOVER_SECONDS,
+    );
+    expect(stageRestSeconds({ ...fourByFourPacing, sets: { repsPerSet: 4, restBetweenSetsSeconds: 4 } }, true)).toBe(
+      STAGE_CHANGEOVER_SECONDS,
+    );
+    expect(stageRestSeconds({ ...fourByFourPacing, sets: { repsPerSet: 4, restBetweenSetsSeconds: 0 } }, true)).toBe(
+      STAGE_CHANGEOVER_SECONDS,
+    );
   });
 
   it('runs an interval as it is, and never under 15 s', () => {
@@ -149,7 +172,24 @@ describe('isWorkoutStagePacing', () => {
     ['seconds as a string', { mode: 'afterTick', restSeconds: '60', advanceOn: 'tick' }],
     ['an unknown advance rule', { mode: 'afterTick', restSeconds: 60, advanceOn: 'beat' }],
     ['no advance rule', { mode: 'afterTick', restSeconds: 60 }],
-    ['a bad round rest', { mode: 'afterTick', restSeconds: 0, restBetweenRoundsSeconds: 'long', advanceOn: 'tick' }],
+    [
+      'a 4x4 from before sets, with its round rest',
+      { mode: 'afterTick', restSeconds: 0, restBetweenRoundsSeconds: 180, advanceOn: 'tick' },
+    ],
+    ['sets that are not an object', { mode: 'afterTick', restSeconds: 0, advanceOn: 'tick', sets: 4 }],
+    [
+      'one rep a set',
+      { mode: 'afterTick', restSeconds: 0, advanceOn: 'tick', sets: { repsPerSet: 1, restBetweenSetsSeconds: 180 } },
+    ],
+    [
+      'eleven reps a set',
+      { mode: 'afterTick', restSeconds: 0, advanceOn: 'tick', sets: { repsPerSet: 11, restBetweenSetsSeconds: 180 } },
+    ],
+    [
+      'a set rest over an hour',
+      { mode: 'afterTick', restSeconds: 0, advanceOn: 'tick', sets: { repsPerSet: 4, restBetweenSetsSeconds: 3601 } },
+    ],
+    ['sets with no set rest', { mode: 'afterTick', restSeconds: 0, advanceOn: 'tick', sets: { repsPerSet: 4 } }],
   ])('rejects %s', (_label, candidate) => {
     expect(isWorkoutStagePacing(candidate)).toBe(false);
   });
@@ -159,5 +199,17 @@ describe('isWorkoutStagePacing', () => {
     expect(isWorkoutStagePacing({ mode: 'afterTick', restSeconds: 3600, advanceOn: 'tick' })).toBe(true);
     expect(isWorkoutStagePacing({ mode: 'onTheMinute', restSeconds: 15 })).toBe(true);
     expect(isWorkoutStagePacing({ mode: 'onTheMinute', restSeconds: 3600 })).toBe(true);
+    for (const repsPerSet of [2, 10]) {
+      for (const restBetweenSetsSeconds of [0, 3600]) {
+        expect(
+          isWorkoutStagePacing({
+            mode: 'afterTick',
+            restSeconds: 0,
+            advanceOn: 'tick',
+            sets: { repsPerSet, restBetweenSetsSeconds },
+          }),
+        ).toBe(true);
+      }
+    }
   });
 });

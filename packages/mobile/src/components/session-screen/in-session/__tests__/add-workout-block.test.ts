@@ -181,7 +181,7 @@ describe('defaultMidSessionBlock', () => {
 
   describe('after a timed stage', () => {
     const runEndingWith = (kind: 'fourByFour' | 'limitBouldering' | 'onTheMinute'): WorkoutRun => ({
-      stages: [...existingRun.stages, { id: 'timed', kind, itemUuids: ['t1', 't2'], targetGrade: 22, rounds: 4 }],
+      stages: [...existingRun.stages, { id: 'timed', kind, itemUuids: ['t1', 't2'], targetGrade: 22 }],
     });
 
     // A store build with the flag off offers no timed chip, and a timed stage can
@@ -191,7 +191,7 @@ describe('defaultMidSessionBlock', () => {
       (kind) => {
         const options = defaultMidSessionBlock(runEndingWith(kind), 12, false);
 
-        // The same as a volume block opened at that grade: no round or rest fields carried over.
+        // The same as a volume block opened at that grade: no reps or rest fields carried over.
         expect(options).toEqual(defaultMidSessionBlock(null, 22, false));
         expect(options.type).toBe('volume');
       },

@@ -72,9 +72,10 @@ export type GradeFocusOptions = {
   numberOfClimbs: number;
 } & BaseGeneratorOptions;
 
-// The three timed types. Field names follow the partner API's block fields
-// (docs/partner-api.md, "Blocks"); its `climbCount` is `numberOfClimbs`, or
-// `climbsPerRound` on a 4x4. Their rests and intervals are whole seconds, read by
+// The three timed types. On the minute and limit bouldering name their fields
+// after the partner API's block fields (docs/partner-api.md, "Blocks"); its
+// `climbCount` is `numberOfClimbs`. A 4x4 counts sets and reps (Marco,
+// 2026-10-25). Their rests and intervals are whole seconds, read by
 // `pacingForOptions` (pacing.ts).
 
 /** One climb per interval at the target grade; the wall moves on every `intervalSeconds`. */
@@ -85,15 +86,19 @@ export type OnTheMinuteOptions = {
 } & BaseGeneratorOptions;
 
 /**
- * `climbsPerRound` climbs at the target grade, climbed `rounds` times. The plan
- * holds one slot per climb of a round; the rounds are queue copies made at Start.
+ * `sets` climbs at the target grade, each climbed `repsPerSet` times in a row:
+ * a set is one climb done for every rep, then the rest between sets, then the
+ * next climb. The plan holds one slot per set, Start queues each climb once,
+ * and the reps are the ticks logged on that one queued climb.
  */
 export type FourByFourOptions = {
   type: 'fourByFour';
-  climbsPerRound: number;
-  rounds: number;
-  restBetweenClimbsSeconds: number;
-  restBetweenRoundsSeconds: number;
+  sets: number;
+  repsPerSet: number;
+  /** The rest after each rep but the set's last. 0 means none: the climber goes again at once. */
+  restBetweenRepsSeconds: number;
+  /** The rest after a set's last rep, before the wall moves to the next climb. */
+  restBetweenSetsSeconds: number;
 } & BaseGeneratorOptions;
 
 /** A few climbs at the target grade, a long rest after every attempt, and on to the next climb after a send. */
@@ -206,10 +211,10 @@ export const DEFAULT_ON_THE_MINUTE_OPTIONS: Omit<OnTheMinuteOptions, 'targetGrad
 export const DEFAULT_FOUR_BY_FOUR_OPTIONS: Omit<FourByFourOptions, 'targetGrade'> = {
   type: 'fourByFour',
   warmUp: 'none',
-  climbsPerRound: 4,
-  rounds: 4,
-  restBetweenClimbsSeconds: 0,
-  restBetweenRoundsSeconds: 180,
+  sets: 4,
+  repsPerSet: 4,
+  restBetweenRepsSeconds: 0,
+  restBetweenSetsSeconds: 180,
   climbBias: DEFAULT_VOLUME_OPTIONS.climbBias,
   minAscents: DEFAULT_VOLUME_OPTIONS.minAscents,
   minRating: DEFAULT_VOLUME_OPTIONS.minRating,
