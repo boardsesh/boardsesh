@@ -50,12 +50,14 @@ test('--only-email without a value exits', () => assertExits(['--only-email']));
 test('current unhandled ownership, privacy and consent foreign keys reject account merging', async () => {
   const unhandledColumns = [
     'board_climb_revisions.edited_by',
+    'board_share_links.created_by',
     'content_privacy.owner_id',
     'notification_deliveries.recipient_id',
     'notification_devices.user_id',
     'resource_grants.invited_by',
     'resource_grants.user_id',
     'resource_privacy.owner_id',
+    'spray_wall_training_reviews.reviewed_by',
     'user_activity_days.user_id',
     'user_analytics_consent_events.user_id',
     'user_follow_requests.recipient_id',
@@ -74,7 +76,7 @@ test('current unhandled ownership, privacy and consent foreign keys reject accou
 
   await assert.rejects(assertAllUserFksHandled(commandDb), (error: unknown) => {
     assert.ok(error instanceof Error);
-    assert.match(error.message, /11 foreign key\(s\).*not handled/);
+    assert.match(error.message, /13 foreign key\(s\).*not handled/);
     for (const qualifiedColumn of unhandledColumns) {
       assert.ok(error.message.includes(qualifiedColumn));
     }

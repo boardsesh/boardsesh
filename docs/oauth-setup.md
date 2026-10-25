@@ -4,7 +4,7 @@ This guide covers setting up OAuth authentication providers (Google, Apple, Face
 
 ## Duplicate-account merge hold
 
-Case-insensitive sign-in and account-bound verification/reset tokens work independently of the duplicate-account merge tool. The merge tool deliberately rejects the current schema before generating a dry-run report or writing account data: its foreign-key audit identifies 11 new ownership, notification, privacy, access-grant, activity, consent, and follow-request references without reviewed merge policies.
+Case-insensitive sign-in and account-bound verification/reset tokens work independently of the duplicate-account merge tool. The merge tool deliberately rejects the current schema before generating a dry-run report or writing account data: its foreign-key audit finds 13 references to `users(id)` without reviewed merge policies, as of migration 0279. They cover ownership, notifications, privacy, access grants, activity, consent and follow requests, plus two added after the tool was written: `board_share_links.created_by` (migration 0267) and `spray_wall_training_reviews.reviewed_by` (migration 0278). The tool prints the current list each time it refuses, so trust that output over this count when the schema moves again.
 
 Do not run an account merge until each reference has a tested policy. Profile reconciliation must preserve the stricter `is_private`, `privacy_revision`, and `default_session_audience` settings, and access grants and analytics consent require explicit decisions. The existing apply-path integration suite is not verified against the current schema. Account deletion or production merge execution requires separate approval and a reviewed backup/restore plan.
 
