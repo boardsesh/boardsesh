@@ -675,6 +675,26 @@ describe('reorderQueueItem - moves the climb named by uuid when the index is sta
     expect(uuidsOf(stored.queue)).toEqual([climbA.uuid, climbC.uuid, climbB.uuid]);
     await expectFullSyncOfStoredQueue(sessionId);
   });
+
+  it('holds a stale drag above the line at the head of Up next with nothing current', async () => {
+    process.env.QUEUE_NOW_SLOT_PERCENT = '100';
+    const [historyClimb, climbA, climbB] = [createTestClimb(), createTestClimb(), createTestClimb()];
+    const sessionId = await roomWith([historyClimb, climbA, climbB]);
+    // One History entry, nothing current: the line sits at 1.
+    await roomManager.updateQueueState(sessionId, [historyClimb, climbA, climbB], null, undefined, 1);
+    publishSpy.mockClear();
+
+    // The phone thinks B is at 1 and drags it to 0, above the line. The server
+    // finds B at 2 and clamps the move to the head of Up next.
+    await queueMutations.reorderQueueItem({}, { uuid: climbB.uuid, oldIndex: 1, newIndex: 0 }, ctxFor(sessionId));
+
+    const stored = await roomManager.getQueueState(sessionId);
+    expect(uuidsOf(stored.queue)).toEqual([historyClimb.uuid, climbB.uuid, climbA.uuid]);
+    expect(stored.historyCount).toBe(1);
+    await expectFullSyncOfStoredQueue(sessionId);
+    expect(staleIndexLogs()).toHaveLength(1);
+    expect(staleIndexLogs()[0][1]).toMatchObject({ uuid: climbB.uuid, oldIndex: 1, resolvedOldIndex: 2 });
+  });
 });
 
 describe('order-sensitive dual-hash (stateHashOrdered)', () => {
