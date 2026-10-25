@@ -845,7 +845,8 @@ export const socialGymQueries = {
       .select()
       .from(dbSchema.gyms)
       .where(whereClause)
-      .orderBy(desc(dbSchema.gyms.createdAt))
+      // id breaks created_at ties (bulk sync imports share one) so OFFSET pages stay a total order.
+      .orderBy(desc(dbSchema.gyms.createdAt), dbSchema.gyms.id)
       .limit(limit)
       .offset(offset);
 
@@ -1090,7 +1091,7 @@ export const socialGymQueries = {
       .leftJoin(dbSchema.users, eq(dbSchema.gymMembers.userId, dbSchema.users.id))
       .leftJoin(dbSchema.userProfiles, eq(dbSchema.gymMembers.userId, dbSchema.userProfiles.userId))
       .where(eq(dbSchema.gymMembers.gymId, gym.id))
-      .orderBy(desc(dbSchema.gymMembers.createdAt))
+      .orderBy(desc(dbSchema.gymMembers.createdAt), dbSchema.gymMembers.id)
       .limit(limit)
       .offset(offset);
 

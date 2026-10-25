@@ -1405,7 +1405,7 @@ export const socialBoardQueries = {
         })
         .from(dbSchema.userBoards)
         .where(whereClause)
-        .orderBy(sql`distance_meters ASC`)
+        .orderBy(sql`distance_meters ASC`, asc(dbSchema.userBoards.id))
         .limit(limit)
         .offset(offset);
 
@@ -1472,7 +1472,7 @@ export const socialBoardQueries = {
       .select()
       .from(dbSchema.userBoards)
       .where(whereClause)
-      .orderBy(desc(dbSchema.userBoards.createdAt))
+      .orderBy(desc(dbSchema.userBoards.createdAt), asc(dbSchema.userBoards.id))
       .limit(limit)
       .offset(offset);
 
