@@ -939,8 +939,43 @@ describe('chooseQueueEvent', () => {
     expect(eventFor(a, { placement: 'STEP' }, raced)).toBe('pointer');
   });
 
-  it('keeps CurrentClimbChanged(null) for a clear', () => {
+  it('keeps CurrentClimbChanged(null) for a clear that does not reshape the array', () => {
     expect(eventFor(null)).toBe('pointer');
+    // Nothing current already, a clear changes nothing.
+    expect(eventFor(null, {}, state([a, b, c, d], null, 2))).toBe('pointer');
+  });
+
+  it('a clear that trims is a plain FullSync, with no trailing CurrentClimbChanged(null) (section 5)', () => {
+    // One current climb and 500 Up next: the cleared climb becomes History's
+    // only entry, History + Up next is 501, and the trim removes it.
+    const current = makeItem('NOW');
+    const upNext = Array.from({ length: MAX_SYNCED_QUEUE_ITEMS }, (_, index) => makeItem(`U${index}`));
+    const full = state([current, ...upNext], current, 0);
+    const placed = capHistory(placeOnWall(full, null));
+    expect(placed.trimmedCount).toBe(1);
+    expect(uuids(placed.queue)).toEqual(uuids(upNext));
+    expect(placed.currentClimbQueueItem).toBeNull();
+    expect(chooseQueueEvent(full, { item: null }, placed)).toBe('fullsync');
+  });
+
+  it('a clear that trims old History is a plain FullSync', () => {
+    const history = historyItems(10);
+    const current = makeItem('NOW');
+    const upNext = Array.from({ length: MAX_SYNCED_QUEUE_ITEMS - 10 }, (_, index) => makeItem(`U${index}`));
+    const full = state([...history, current, ...upNext], current);
+    const placed = capHistory(placeOnWall(full, null));
+    expect(placed.trimmedCount).toBe(1);
+    expect(placed.queue[0].uuid).toBe('H1');
+    expect(eventFor(null, {}, full)).toBe('fullsync');
+    expect(eventFor(null, { placement: 'NOW' }, full)).toBe('fullsync');
+  });
+
+  it('a clear at 125 History entries trims to 100 with a plain FullSync', () => {
+    const history = historyItems(HISTORY_TRIM_AT - 1);
+    const current = makeItem('NOW');
+    const longState = state([...history, current, makeItem('U0')], current);
+    expect(capHistory(placeOnWall(longState, null)).trimmedCount).toBeGreaterThan(0);
+    expect(eventFor(null, {}, longState)).toBe('fullsync');
   });
 
   it('sends a plain FullSync for an insert that asked to add or carried placement', () => {
@@ -990,11 +1025,12 @@ describe('chooseQueueEvent', () => {
     }
   });
 
-  it('a stored orphan makes any write a FullSync + trailing', () => {
+  it('a stored orphan makes any write a FullSync, + trailing when it names a climb', () => {
     const orphanRoom = state([a, b, c], makeItem('O'));
     expect(eventFor(a, { shouldAddToQueue: false }, orphanRoom)).toBe('fullsync+trailing');
     expect(eventFor(makeItem('X'), { shouldAddToQueue: true }, orphanRoom)).toBe('fullsync+trailing');
-    expect(eventFor(null, {}, orphanRoom)).toBe('fullsync+trailing');
+    // A clear normalises the orphan too, but has no climb to repaint.
+    expect(eventFor(null, {}, orphanRoom)).toBe('fullsync');
   });
 
   it('adds the trailing event when a placement trims History, even a pointer move', () => {

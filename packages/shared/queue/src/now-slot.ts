@@ -573,7 +573,8 @@ export type NowSlotRequest = {
 /**
  * - `pointer`: one `CurrentClimbChanged` with the origin's `clientId` and
  *   `correlationId`, as today.
- * - `fullsync`: one `FullSync`, as today for an insert.
+ * - `fullsync`: one `FullSync`, as today for an insert. Also every clear that
+ *   reshapes the array: with nothing current there is no climb to repaint.
  * - `fullsync+trailing`: a `FullSync`, then a `CurrentClimbChanged` for the new
  *   current climb under the same sequence, with the origin's `clientId`,
  *   `correlationId: null` and outside the replay buffer, so the native socket
@@ -596,6 +597,7 @@ function sameUuids(left: readonly NowSlotQueueItem[], right: readonly NowSlotQue
  * | -------------------------------------------------------------------------- | ------------------- |
  * | uuid already queued, array unchanged, the new current is the request's item | `pointer`          |
  * | `item: null`, array unchanged (a shipped reducer clears and keeps it)      | `pointer`           |
+ * | `item: null` that reshapes (a trim, an orphan normalised): nothing to repaint | `fullsync`       |
  * | the request's item inserted at the Now slot, `shouldAddToQueue` or placement | `fullsync`        |
  * | the same insert without either (the native socket's stale item)            | `fullsync+trailing` |
  * | anything else (`move-*`, `dedupe-*`, `next-from-line`, a trim, an orphan)  | `fullsync+trailing` |
@@ -605,19 +607,31 @@ export function chooseQueueEvent<TItem extends NowSlotQueueItem>(
   request: NowSlotRequest,
   after: NowSlotState<TItem>,
 ): NowSlotQueueEvent {
+  const requestUuid = request.item?.uuid ?? null;
+
+  // A clear has no climb to repaint (section 5). When it reshapes the array (a
+  // trim, an orphan normalised) it is a plain FullSync: the native socket sets
+  // its index to 0 on a FullSync with nothing current, and a trailing
+  // CurrentClimbChanged(null) would repaint the wall from that index, lighting
+  // an unrelated climb (SessionWebSocketManager.swift persistAndNotify).
+  if (requestUuid === null) {
+    return !isOrphanCurrent(before) && after.currentClimbQueueItem === null && sameUuids(before.queue, after.queue)
+      ? 'pointer'
+      : 'fullsync';
+  }
+
   // A stored orphan is normalised by this write, so the array changes in a way
   // no shipped reducer predicts.
   if (isOrphanCurrent(before)) return 'fullsync+trailing';
 
-  const requestUuid = request.item?.uuid ?? null;
   const afterCurrentUuid = after.currentClimbQueueItem?.uuid ?? null;
   const lightsRequest = afterCurrentUuid === requestUuid;
 
   if (lightsRequest && sameUuids(before.queue, after.queue)) {
-    if (requestUuid === null || before.queue.some((queueItem) => queueItem.uuid === requestUuid)) return 'pointer';
+    if (before.queue.some((queueItem) => queueItem.uuid === requestUuid)) return 'pointer';
   }
 
-  if (requestUuid !== null && lightsRequest && after.queue.length === before.queue.length + 1) {
+  if (lightsRequest && after.queue.length === before.queue.length + 1) {
     const insertIndex = upNextStart(before.queue, before.currentClimbQueueItem, before.historyCount);
     const insertedAtNowSlot =
       after.queue[insertIndex]?.uuid === requestUuid && sameUuids(before.queue, withoutIndex(after.queue, insertIndex));

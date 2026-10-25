@@ -13,6 +13,11 @@
  *   one round trip, section 3).
  * - Every new client's `historyCount` equals the server's.
  * - The Swift port's current uuid is in its list, and its list is the server's.
+ *   Every wall repaint it does (`persistAndNotify`) lights the climb an event
+ *   named, or for a `CurrentClimbChanged(null)` the climb it just cleared, and
+ *   never follows a `FullSync` under the same sequence: the `FullSync` resets
+ *   its index to 0, so that repaint would light an unrelated climb.
+ * - A clear never publishes the trailing event.
  * - For every `CurrentClimbChanged` the server publishes, the frozen reducer
  *   applied to the state just before it gives exactly the stored array and
  *   current climb. That keeps `chooseQueueEvent` from sending a pointer event
@@ -52,6 +57,7 @@ import {
   legacyQueueReducer,
   swiftApply,
   swiftSequenceDecision,
+  swiftShouldRepaintBoard,
   toSwiftQueueItem,
 } from '../testing';
 import type {
@@ -285,6 +291,11 @@ class LegacyJsClient implements SimClient {
 class SwiftClient implements SimClient {
   state: SwiftQueueState = { items: [], currentIndex: 0 };
   lastKnown = -1;
+  /** The current climb the last event named (null after a clear or a FullSync with nothing current). */
+  private namedCurrent: string | null = null;
+  private lastFullSyncSequence: number | null = null;
+  /** Every wall repaint: the uuid `displayCurrentItem` lights, or null when it clears the board. */
+  readonly paints: (string | null)[] = [];
 
   constructor(readonly clientId: string) {}
 
@@ -294,6 +305,37 @@ class SwiftClient implements SimClient {
     if (decision.kind === 'resync') throw new Error(`${this.clientId}: unexpected resync at ${event.sequence}`);
     this.lastKnown = decision.newLastSequence;
     this.state = swiftApply(swiftEvent, this.state);
+    if (swiftShouldRepaintBoard(swiftEvent)) this.checkRepaint(swiftEvent);
+    if (swiftEvent.kind === 'fullSync') {
+      this.namedCurrent = swiftEvent.currentItem?.uuid ?? null;
+      this.lastFullSyncSequence = swiftEvent.sequence;
+    } else if (swiftEvent.kind === 'currentClimbChanged') {
+      this.namedCurrent = swiftEvent.item?.uuid ?? null;
+    }
+  }
+
+  /** `BoardBleManager.displayCurrentItem(items:currentIndex:)`: lights items[currentIndex]. */
+  private checkRepaint(event: SwiftQueueEvent) {
+    const { items, currentIndex } = this.state;
+    const painted = items[currentIndex]?.uuid ?? null;
+    this.paints.push(painted);
+    if (event.kind !== 'currentClimbChanged') return;
+    if (event.item) {
+      if (painted !== event.item.uuid) {
+        throw new Error(`${this.clientId}: repaint lit ${painted}, the event named ${event.item.uuid}`);
+      }
+      return;
+    }
+    if (event.sequence === this.lastFullSyncSequence) {
+      throw new Error(
+        `${this.clientId}: CurrentClimbChanged(null) trailed a FullSync at ${event.sequence}; the repaint lit ${painted} from index ${currentIndex}`,
+      );
+    }
+    // A pointer clear keeps the cleared climb's index, so the wall stays on it
+    // (today's behaviour). A clear with nothing current already is today's too.
+    if (this.namedCurrent !== null && painted !== this.namedCurrent) {
+      throw new Error(`${this.clientId}: a clear lit ${painted}, not the cleared climb ${this.namedCurrent}`);
+    }
   }
 
   assertMatches(server: ServerView, context: string) {
@@ -580,6 +622,9 @@ class SimServer {
   }
 
   private publishFor(eventKind: NowSlotQueueEvent, stored: ServerView, request: SetCurrentClimbRequest) {
+    if (request.item === null && eventKind === 'fullsync+trailing') {
+      throw new Error(`${this.context}: a clear published the trailing event (section 5)`);
+    }
     bump(this.stats.events, eventKind);
     const fullSync: Publication = { event: fullSyncOf(stored), stored };
     if (eventKind === 'pointer') {
@@ -630,7 +675,8 @@ class SimServer {
         currentClimbQueueItem: null,
         historyCount: lineAfterDelta(normalised, { kind: 'clear' }),
       });
-      this.publishFor(normalised.normalised ? reshaped : 'pointer', stored, request);
+      // A clear has nothing to repaint: a plain FullSync when it normalised.
+      this.publishFor(normalised.normalised ? 'fullsync' : 'pointer', stored, request);
       return;
     }
     const existingIndex = queue.findIndex(({ uuid }) => uuid === item.uuid);
@@ -1440,6 +1486,38 @@ describe('legacy client simulation from a room whose Up next is full', () => {
     expect(stored.queue).toHaveLength(MAX_SYNCED_QUEUE_ITEMS + 1);
     expect(stored.currentClimbQueueItem?.uuid).toBe(opened.uuid);
     expect(stored.historyCount).toBe(0);
+  });
+
+  it('a clear that drops the cleared climb is one FullSync, and the native socket lights nothing', () => {
+    const crew = createCrew(3, 100, 'full-up-next', emptyStats());
+    const [phone] = crew.oldPhones;
+    const upNext = crew.server.view().queue;
+    // A climb outside the pool, so the open is an insert, never a dedupe.
+    const opened = freshItem(crew, makeClimb(CLIMB_POOL_SIZE, 40, undefined));
+    oldPhoneSetCurrent(crew, phone, opened, true);
+    expect(crew.server.view().queue).toHaveLength(MAX_SYNCED_QUEUE_ITEMS + 1);
+
+    const received: SimEvent['type'][] = [];
+    crew.server.clients.push({
+      clientId: 'recorder',
+      receive: (event) => received.push(event.type),
+      assertMatches: () => {},
+    });
+    const paintsBefore = crew.swift.paints.length;
+    crew.server.setCurrentClimb({ item: null, clientId: phone.clientId, correlationId: 'clear' });
+
+    expect(received).toEqual(['FullSync']);
+    const stored = crew.server.view();
+    expect(uuidsOf(stored.queue)).toEqual(uuidsOf(upNext));
+    expect(stored.currentClimbQueueItem).toBeNull();
+    expect(stored.historyCount).toBe(0);
+    expect(crew.swift.paints.length).toBe(paintsBefore);
+    expect(crew.swift.state.currentIndex).toBe(0);
+
+    // What the trailing event would have done: repaint from the FullSync's index 0.
+    const relit = swiftApply({ kind: 'currentClimbChanged', item: null, sequence: stored.sequence }, crew.swift.state);
+    expect(relit.items[relit.currentIndex].uuid).toBe(upNext[0].uuid);
+    expect(swiftShouldRepaintBoard({ kind: 'currentClimbChanged', item: null, sequence: stored.sequence })).toBe(true);
   });
 });
 
