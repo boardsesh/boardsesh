@@ -131,4 +131,33 @@ describe('createGraphQLClient — lazy close', () => {
     expect(FakeSocket.instances[0].closeCodes).toEqual([1000]);
     expect(FakeSocket.instances[0].readyState).toBe(FakeSocket.CLOSED);
   });
+
+  // graphql-ws opens a new socket for an operation started on a disposed
+  // client, so the dispose exemption must not outlive the dispose itself.
+  it('guards again once a dispose has finished', async () => {
+    const client = createClient();
+    // Released first: graphql-ws never releases the lock of an operation that a
+    // dispose ends, which would keep any later lazy close from arming at all.
+    const before = stream(client, 'Before');
+    await wait(10);
+    before.release();
+    await client.dispose();
+    await wait(5);
+    expect(FakeSocket.instances[0].readyState).toBe(FakeSocket.CLOSED);
+
+    const first = stream(client, 'First');
+    const second = stream(client, 'Second');
+    await wait(10);
+    first.release();
+    second.release();
+    await Promise.resolve();
+    await Promise.resolve();
+    const replacement = stream(client, 'Replacement');
+    await wait(LAZY_CLOSE_MS * 3);
+
+    const reopened = FakeSocket.instances[1];
+    expect(reopened.readyState).toBe(FakeSocket.OPEN);
+    expect(reopened.closeCodes).toEqual([]);
+    replacement.release();
+  });
 });

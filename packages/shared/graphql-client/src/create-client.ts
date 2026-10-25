@@ -202,6 +202,10 @@ export function createGraphQLClient(options: CreateGraphQLClientOptions): Extend
   if (cleanup || guardLazyClose) {
     const originalDispose = client.dispose.bind(client);
     client.dispose = async () => {
+      // Lets dispose's own 1000 close past the stale-timer guard. graphql-ws
+      // issues that close before `originalDispose` resolves, so the flag drops
+      // again afterwards: a caller that still starts an operation on a disposed
+      // client (graphql-ws opens a new socket for it) keeps the guard.
       disposing = true;
       cleanup?.();
       try {
@@ -209,6 +213,8 @@ export function createGraphQLClient(options: CreateGraphQLClientOptions): Extend
       } catch {
         // Suppress: dispose errors are non-fatal. The socket is being torn down
         // and these rejections carry no actionable information.
+      } finally {
+        disposing = false;
       }
     };
   }

@@ -389,6 +389,7 @@ import {
 import { ConnectivityBridge } from '../../components/connectivity-bridge';
 import { disposeWsClient } from '../../lib/graphql/ws-client';
 import { WS_LAZY_CLOSE_TIMEOUT_MS } from '../../lib/graphql/ws-client-core';
+import { __resetWsClientLifecycleForTests } from '../../lib/graphql/ws-client-lifecycle';
 import { QueueProvider, useQueue } from '../queue-provider';
 
 type QueueHandle = ReturnType<typeof useQueue>;
@@ -471,7 +472,11 @@ describe('QueueProvider — crew session after Offline mode on → off', () => {
     // The ws-client module is one per file, like the app's: drop this test's
     // client so the next test cannot inherit a socket the fake server reset.
     disposeWsClient();
+    // A test that failed before its own teardown must not leave listeners on
+    // the module-level buses for the next one.
+    __resetWsClientLifecycleForTests();
     __resetConnectivityStoreForTests();
+    vi.useRealTimers();
   });
 
   // Nothing but the session holds the socket here, so the join's own
@@ -584,6 +589,9 @@ describe('QueueProvider — crew session after Offline mode on → off', () => {
   // never sees that socket close. A tap still joins on its way out; once that
   // socket idles out, the cached join must not be trusted on the next one.
   it('re-joins when a join made while the engine was parked has idled out', async () => {
+    // Fake timers so the 3 s idle hold costs no wall-clock time; they still
+    // advance with real time, which the socket round trips and waitFor need.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     setDevForcedUnreachable(true);
     const queueRef = renderApp();
     await waitFor(() => {
@@ -598,7 +606,7 @@ describe('QueueProvider — crew session after Offline mode on → off', () => {
     const [tapSocket] = server.openSockets();
     expect(tapSocket?.joinedSessionId).toBe('session-1');
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, WS_LAZY_CLOSE_TIMEOUT_MS + 200));
+      await vi.advanceTimersByTimeAsync(WS_LAZY_CLOSE_TIMEOUT_MS + 200);
     });
     expect(server.openSockets()).toHaveLength(0);
 
@@ -615,5 +623,5 @@ describe('QueueProvider — crew session after Offline mode on → off', () => {
     expect(sessionMutationsSince(mark)).toEqual([
       { connectionId: socket.connectionId, operationName: 'ConfirmClimbOnWall', outcome: 'ok' },
     ]);
-  }, 10_000);
+  });
 });

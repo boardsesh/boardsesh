@@ -81,3 +81,9 @@ export function subscribeWsConnectionEnded(listener: ConnectionEndedListener): (
     connectionEndedListeners.delete(listener);
   };
 }
+
+/** Drops every listener on both buses, for test teardown. */
+export function __resetWsClientLifecycleForTests(): void {
+  listeners.clear();
+  connectionEndedListeners.clear();
+}
