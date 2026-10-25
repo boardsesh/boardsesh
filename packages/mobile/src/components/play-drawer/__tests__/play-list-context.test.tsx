@@ -110,8 +110,9 @@ describe('PlayListContext', () => {
     );
   });
 
-  // #6745: "Preview, not lit" rides a second line here instead of leading the
-  // header's stats line, where it pushed the sends and stars off.
+  // The second line #6745 made room for: #6702's "Preview, not lit" rides it
+  // instead of leading the header's stats line, where it pushed the sends and
+  // stars off.
   it('adds the wall caption as a second line, read with the list', () => {
     const { container } = render(
       createElement(PlayListContext, {
