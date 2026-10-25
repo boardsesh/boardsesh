@@ -490,8 +490,9 @@ export type CrewRestPacingEdit = Partial<Pick<CrewConfigFields, 'targetSeconds' 
  * holds it or last edited it, with only that change; the advance rule stays,
  * and the source becomes 'settings', since a workout no longer set it. A 4x4
  * set rest's once-only advance stays too, unless the edit turns auto-advance
- * off: a longer set rest still moves the wall once. The publisher sends it as
- * a CONFIGURE (buildCrewPacingEditInput). False when this phone follows no
+ * off: a longer set rest still moves the wall once, unless the server spent
+ * that move before the edit went out. The publisher sends it as a CONFIGURE
+ * (buildCrewPacingEditInput). False when this phone follows no
  * crew clock it can run, or nothing changed.
  */
 export function editCrewRestPacing(edit: CrewRestPacingEdit): boolean {
@@ -506,11 +507,33 @@ export function editCrewRestPacing(edit: CrewRestPacingEdit): boolean {
 }
 
 /**
- * The CONFIGURE for a crew pacing edit, against the config the server holds. A
- * change of cadence moves the anchor as the server's own rule for a stage
- * boundary does: on the minute starts its beat now, after the tick waits for
- * the next one. The same cadence keeps it, so a new rest length on the minute
- * keeps the crew's beat. Null when the server already holds exactly this.
+ * A crew pacing draft against the clock the server holds when it goes out. An
+ * edit never sets the once-only advance, so a draft carries it only from the
+ * clock it was made on, and its auto-advance with it. When the held clock no
+ * longer has the flag, the server spent it (the holder's FIRE moved the wall)
+ * or a CONFIGURE cleared it (the builder's next set) after the tap: the draft
+ * takes the held auto-advance and leaves the flag off. Otherwise a rest-length
+ * edit that crossed the set rest's beat would turn its move back on, and the
+ * wall would move again after the next set's first rep.
+ */
+export function rebaseCrewPacingDraft(draft: CrewConfigFields, held: CrewConfigFields | null): CrewConfigFields {
+  if (draft.autoAdvanceOnce !== true || held === null || held.autoAdvanceOnce === true) return draft;
+  return {
+    mode: draft.mode,
+    targetSeconds: draft.targetSeconds,
+    autoAdvance: held.autoAdvance,
+    advanceOn: draft.advanceOn,
+    source: draft.source,
+  };
+}
+
+/**
+ * The CONFIGURE for a crew pacing edit, against the config the server holds
+ * (the draft rebased on it first, rebaseCrewPacingDraft), and the config it
+ * sends. A change of cadence moves the anchor as the server's own rule for a
+ * stage boundary does: on the minute starts its beat now, after the tick waits
+ * for the next one. The same cadence keeps it, so a new rest length on the
+ * minute keeps the crew's beat. Null when the server already holds exactly this.
  */
 export function buildCrewPacingEditInput({
   draft,
@@ -518,12 +541,12 @@ export function buildCrewPacingEditInput({
 }: {
   draft: CrewConfigFields;
   held: CrewConfigFields | null;
-}): SessionRestCadenceInput | null {
-  const config = normalizeCrewConfig(draft);
+}): { input: SessionRestCadenceInput; config: CrewConfigFields } | null {
+  const config = normalizeCrewConfig(rebaseCrewPacingDraft(draft, held));
   if (held !== null && sameCrewConfig(held, config)) return null;
   const anchor: SessionRestCadenceAnchor =
     held !== null && held.mode === config.mode ? 'KEEP' : config.mode === 'onTheMinute' ? 'NOW' : 'CLEAR';
-  return { action: 'CONFIGURE', config, anchor, ...(anchor === 'NOW' ? { elapsedMs: 0 } : {}) };
+  return { input: { action: 'CONFIGURE', config, anchor, ...(anchor === 'NOW' ? { elapsedMs: 0 } : {}) }, config };
 }
 
 /** A tick's TICK: how long ago the climb was logged, the queue item and how it went. */

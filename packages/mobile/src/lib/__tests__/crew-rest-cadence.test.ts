@@ -6,6 +6,7 @@ import {
   MAX_CREW_FIRE_RETRIES,
   buildArmInput,
   buildConfigureInput,
+  buildCrewPacingEditInput,
   buildRestartInput,
   buildTickInput,
   crewBeatFenced,
@@ -17,6 +18,7 @@ import {
   noteCrewClockTurnedOffHere,
   parseCrewRestCadence,
   planCrewFireOutcome,
+  rebaseCrewPacingDraft,
   resetCrewCadenceForTests,
   sameCrewConfig,
   spendAdvanceOnce,
@@ -695,5 +697,44 @@ describe('a once-only advance (autoAdvanceOnce)', () => {
     expect(editCrewRestPacing({ autoAdvance: false })).toBe(true);
     expect(getRestTimerState().crewPacingDraft).toMatchObject({ targetSeconds: 240, autoAdvance: false });
     expect(getRestTimerState().crewPacingDraft).not.toHaveProperty('autoAdvanceOnce');
+  });
+
+  it('is not put back by a rest-length edit that goes out after the server spent or cleared it', () => {
+    const editedSetRest = { ...setRest, targetSeconds: 240, source: 'settings' as const };
+    const spent = spendAdvanceOnce(setRest);
+    const { autoAdvanceOnce: _once, ...everyRest } = setRest;
+
+    // The holder's FIRE spent it after the tap: the edit keeps its length, auto-advance stays off.
+    expect(rebaseCrewPacingDraft(editedSetRest, spent)).toEqual({
+      mode: 'afterTick',
+      targetSeconds: 240,
+      autoAdvance: false,
+      advanceOn: 'tick',
+      source: 'settings',
+    });
+    expect(buildCrewPacingEditInput({ draft: editedSetRest, held: spent })).toEqual({
+      input: {
+        action: 'CONFIGURE',
+        config: { mode: 'afterTick', targetSeconds: 240, autoAdvance: false, advanceOn: 'tick', source: 'settings' },
+        anchor: 'KEEP',
+      },
+      config: { mode: 'afterTick', targetSeconds: 240, autoAdvance: false, advanceOn: 'tick', source: 'settings' },
+    });
+    // A CONFIGURE cleared it but left auto-advance on: the edit takes that clock's auto-advance.
+    expect(rebaseCrewPacingDraft(editedSetRest, everyRest)).toEqual({
+      ...everyRest,
+      targetSeconds: 240,
+      source: 'settings',
+    });
+    // The server still holds it: the edit goes out with it, as tapped.
+    expect(rebaseCrewPacingDraft(editedSetRest, setRest)).toBe(editedSetRest);
+    // A draft without it, or no held clock to compare with, goes out as it is.
+    const editedEveryRest = { ...everyRest, targetSeconds: 240 };
+    expect(rebaseCrewPacingDraft(editedEveryRest, spent)).toBe(editedEveryRest);
+    expect(rebaseCrewPacingDraft(editedSetRest, null)).toBe(editedSetRest);
+    // Nothing left to send when the rebased edit is what the server holds.
+    expect(
+      buildCrewPacingEditInput({ draft: { ...setRest, source: 'settings' }, held: { ...spent, source: 'settings' } }),
+    ).toBeNull();
   });
 });

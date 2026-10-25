@@ -1,6 +1,10 @@
 // What this phone sends to the crew's shared clock, and when (#5382).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { SessionRestCadenceInput, SetSessionRestCadencePayload } from '@boardsesh/shared-schema/generated';
+import type {
+  SessionRestCadence,
+  SessionRestCadenceInput,
+  SetSessionRestCadencePayload,
+} from '@boardsesh/shared-schema/generated';
 import {
   editCrewRestPacing,
   handleCrewCadenceChange,
@@ -961,5 +965,78 @@ describe('a crew clock’s once-only advance', () => {
         anchor: 'KEEP',
       },
     ]);
+  });
+
+  it('never turns a spent advance back on with a rest-length edit that goes out after the FIRE', async () => {
+    followCrewClock(setRestConfig);
+    autoReply = false;
+    editCrewRestPacing({ targetSeconds: 240 });
+    await flush();
+    // A second tap waits behind the first send.
+    editCrewRestPacing({ targetSeconds: 270 });
+    await flush();
+    // The server still held the flag when the first one went out.
+    expect(sent).toEqual([
+      {
+        action: 'CONFIGURE',
+        config: expect.objectContaining({ targetSeconds: 240, autoAdvanceOnce: true }),
+        anchor: 'KEEP',
+      },
+    ]);
+
+    const crewChange = (
+      changeRevision: number,
+      clock: Pick<SessionRestCadence, 'autoAdvance' | 'autoAdvanceOnce' | 'anchorAt' | 'lastFiredBeatAt'>,
+    ): SetSessionRestCadencePayload['change'] => ({
+      restCadence: {
+        mode: 'afterTick',
+        targetSeconds: 240,
+        advanceOn: 'tick',
+        source: 'settings',
+        isRunning: true,
+        pausedElapsedSeconds: 0,
+        lastTickQueueItemUuid: 'item-wall',
+        lastTickStatus: 'send',
+        setByParticipantId: ME,
+        ...clock,
+      },
+      revision: changeRevision,
+      serverNow: String(currentNowMs),
+      isSnapshot: false,
+      action: null,
+    });
+    // The server took that CONFIGURE, then the holder's FIRE moved the wall and
+    // spent the flag. Its event reaches this phone before the CONFIGURE's reply.
+    currentNowMs = T0 + 240_000;
+    handleCrewCadenceChange(
+      crewChange(revision + 2, {
+        autoAdvance: false,
+        autoAdvanceOnce: false,
+        anchorAt: null,
+        lastFiredBeatAt: String(T0 + 240_000),
+      }),
+      { sessionId: SESSION, ownParticipantId: ME, receivedAtMs: currentNowMs },
+    );
+    expect(getRestTimerState().crew?.config).toMatchObject({ autoAdvance: false, targetSeconds: 240 });
+    pendingReplies.shift()?.resolve({
+      applied: true,
+      change: crewChange(revision + 1, {
+        autoAdvance: true,
+        autoAdvanceOnce: true,
+        anchorAt: String(T0),
+        lastFiredBeatAt: null,
+      }),
+    });
+    await flush();
+
+    // The second tap keeps its length and leaves the set rest's move spent.
+    expect(sent[1]).toEqual({
+      action: 'CONFIGURE',
+      config: { mode: 'afterTick', targetSeconds: 270, autoAdvance: false, advanceOn: 'tick', source: 'settings' },
+      anchor: 'KEEP',
+    });
+    pendingReplies.shift()?.resolve(null);
+    await flush();
+    expect(getRestTimerState().crewPacingDraft).toBeNull();
   });
 });

@@ -217,8 +217,10 @@ export function createCrewRestPublisher({
 
   /**
    * A crew pacing edit from the timer's controls. Built when it goes out, from
-   * the draft as it is then, so taps that queue up behind one send go out as
-   * one; the draft goes once the server answers the CONFIGURE that carries it.
+   * the draft as it is then and against the clock held then, so taps that queue
+   * up behind one send go out as one, and a set rest's advance the server spent
+   * meanwhile stays spent; the draft goes once the server answers the CONFIGURE
+   * that carries it.
    */
   function enqueueCrewPacingEdit(): void {
     enqueue(() => {
@@ -227,12 +229,12 @@ export function createCrewRestPublisher({
       const draft = state.crewPacingDraft;
       if (draft === null || state.crew?.sessionId !== sessionId) return null;
       const settle = () => settleCrewRestPacingDraft(draft);
-      const input = buildCrewPacingEditInput({ draft, held: state.crew.config });
-      if (input === null) {
+      const edit = buildCrewPacingEditInput({ draft, held: state.crew.config });
+      if (edit === null) {
         settle();
         return null;
       }
-      return { input, config: normalizeCrewConfig(draft), onSettled: settle };
+      return { input: edit.input, config: edit.config, onSettled: settle };
     });
   }
 
