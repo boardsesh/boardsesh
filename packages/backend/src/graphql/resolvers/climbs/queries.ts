@@ -820,9 +820,10 @@ export const climbQueries = {
       else requestedUuidsByCanonical.set(canonicalUuid, [requestedUuid]);
     }
     const canonicalClimbUuids = [...requestedUuidsByCanonical.keys()];
-    // This is one physical primary query for the whole batch. Empty climbs are
-    // represented by the absence of rows; the client records cooldowns from
-    // the requested UUID list rather than inferring them from this response.
+    // One alias lookup plus this one stats query for the whole batch, whatever
+    // its size: never a query per uuid. Empty climbs are represented by the
+    // absence of rows; the client records cooldowns from the requested UUID
+    // list rather than inferring them from this response.
     const rows = await db
       .select({
         climbUuid: dbSchema.boardClimbStats.climbUuid,

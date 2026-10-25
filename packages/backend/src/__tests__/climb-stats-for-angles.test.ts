@@ -4,18 +4,27 @@ import type { SQL } from 'drizzle-orm';
 
 // Mock the live-stats query: capture what the resolver selects and feed it
 // canned rows. The chain mirrors primary db.select().from().where().orderBy().
-const { selectRows, dbMock, dbReadMock, whereMock } = vi.hoisted(() => {
-  const state: { rows: unknown[] } = { rows: [] };
+// The batch resolver's alias lookup (a selection carrying `aliasUuid`) gets its
+// own chain ending at where(), so `whereMock` stays the stats query's filter.
+const { selectRows, dbMock, dbReadMock, whereMock, aliasWhereMock } = vi.hoisted(() => {
+  const state: { rows: unknown[]; aliasRows: unknown[] } = { rows: [], aliasRows: [] };
   const chain = {
     from: vi.fn(() => chain),
     where: vi.fn((_whereClause: unknown) => chain),
     orderBy: vi.fn(async () => state.rows),
   };
+  const aliasChain = {
+    from: vi.fn(() => aliasChain),
+    where: vi.fn(async (_whereClause: unknown) => state.aliasRows),
+  };
+  const isAliasSelection = (selection: unknown) =>
+    typeof selection === 'object' && selection !== null && 'aliasUuid' in selection;
   return {
     selectRows: state,
-    dbMock: { select: vi.fn((_selection: unknown) => chain) },
+    dbMock: { select: vi.fn((selection: unknown) => (isAliasSelection(selection) ? aliasChain : chain)) },
     dbReadMock: { select: vi.fn() },
     whereMock: chain.where,
+    aliasWhereMock: aliasChain.where,
   };
 });
 
@@ -157,6 +166,7 @@ describe('climbStatsForClimbs resolver', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     selectRows.rows = [];
+    selectRows.aliasRows = [];
   });
 
   it('rejects an empty UUID batch', async () => {
@@ -170,12 +180,13 @@ describe('climbStatsForClimbs resolver', () => {
     expect(dbMock.select).not.toHaveBeenCalled();
   });
 
-  it('accepts exactly 50 UUIDs in one primary query', async () => {
+  it('accepts exactly 50 UUIDs in one alias lookup and one stats query', async () => {
     const climbUuids = Array.from({ length: 50 }, (_, index) => `CLIMB-${index}`);
 
     await expect(callBatchResolver('kilter', climbUuids)).resolves.toEqual([]);
 
-    expect(dbMock.select).toHaveBeenCalledTimes(1);
+    expect(dbMock.select).toHaveBeenCalledTimes(2);
+    expect(aliasWhereMock).toHaveBeenCalledTimes(1);
     expect(whereMock).toHaveBeenCalledTimes(1);
     const { params } = new PgDialect().sqlToQuery(whereMock.mock.calls[0]?.[0] as SQL);
     for (const climbUuid of climbUuids) expect(params).toContain(climbUuid);
@@ -190,7 +201,7 @@ describe('climbStatsForClimbs resolver', () => {
   it('dedupes UUIDs into one primary IN query', async () => {
     await callBatchResolver('kilter', ['CLIMB-1', 'CLIMB-1', 'CLIMB-2']);
 
-    expect(dbMock.select).toHaveBeenCalledTimes(1);
+    expect(dbMock.select).toHaveBeenCalledTimes(2);
     expect(dbReadMock.select).not.toHaveBeenCalled();
     expect(whereMock).toHaveBeenCalledTimes(1);
     const { params } = new PgDialect().sqlToQuery(whereMock.mock.calls[0]?.[0] as SQL);
@@ -222,7 +233,8 @@ describe('climbStatsForClimbs resolver', () => {
       }),
     ]);
 
-    const selection = dbMock.select.mock.calls[0]?.[0] as { syncSeq: SQL };
+    // calls[0] is the alias lookup; calls[1] is the stats read.
+    const selection = dbMock.select.mock.calls[1]?.[0] as { syncSeq: SQL };
     const { sql: syncSeqSql } = new PgDialect().sqlToQuery(selection.syncSeq);
     expect(syncSeqSql).toContain('::text');
   });

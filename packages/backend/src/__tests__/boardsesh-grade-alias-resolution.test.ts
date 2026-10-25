@@ -120,4 +120,25 @@ describe('play-drawer grade and stats reads resolve climb aliases', () => {
       [aliasUuid, 45],
     ]);
   });
+
+  it('climbStatsForClimbs answers both an alias and its canonical in one batch', async () => {
+    const authedCtx = { ...ctx, isAuthenticated: true, userId: 'alias-test-user' } as unknown as ConnectionContext;
+    const rows = await climbQueries.climbStatsForClimbs(
+      undefined,
+      { boardName: 'kilter', climbUuids: [aliasUuid, canonicalUuid] },
+      authedCtx,
+    );
+    // Each requested uuid gets the canonical rows once, keyed by itself, so the
+    // client's group-by-climbUuid fills both queue items and never doubles one.
+    const pairs = rows.map((row: { climbUuid: string; angle: number }) => [row.climbUuid, row.angle]);
+    expect(pairs).toHaveLength(4);
+    expect(pairs).toEqual(
+      expect.arrayContaining([
+        [aliasUuid, 40],
+        [aliasUuid, 45],
+        [canonicalUuid, 40],
+        [canonicalUuid, 45],
+      ]),
+    );
+  });
 });
