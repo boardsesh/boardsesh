@@ -173,7 +173,7 @@ The limits that follow:
 - **Tick log.** The record also keeps the ticks logged on this phone on the run's climbs,
   by queue item, with their status (`flash`, `send` or `attempt`; `noteWorkoutRunTick`,
   `useWorkoutRunLog`). A tick on a hand-queued climb or for another session is ignored, and
-  the tick path leaves out one dated more than a minute before it landed (see "Which climb a
+  the tick path leaves out one dated more than a minute before it was logged (see "Which climb a
   tick is for").
   The log keeps the newest 2000 entries, survives "Add a block" (which rewrites the run for
   the same session) and goes with the run. It is how a 4x4 set's reps and a limit climb's
@@ -203,7 +203,7 @@ stage, leaves the climber's own rest settings in charge, exactly as before. The 
   latest tick (`stageRestSeconds`: the 10 s changeover for a rest of 0, the interval on the
   minute, on a 4x4 the rest between reps until the set's last rep and then the set rest,
   `closesSet`) and the advance rule (`tick` for a 4x4, from its stored `set`; `send` for
-  limit; `deadline` on the minute). A 4x4 also carries its rep count (`reps`: logged and per set), and a rest of 0
+  limit; `deadline` on the minute). A 4x4 also carries its rep count (`reps`: logged, capped at the set, and per set), and a rest of 0
   between reps is no rest (`targetSeconds` null): the pill counts up from the rep, and no cue
   plays. It sits in the rest-timer store, never in settings, and is not persisted; the readers
   merge it with the settings through `useEffectiveRestPacing()`. A stage auto-advances, except
@@ -231,7 +231,9 @@ stage, leaves the climber's own rest settings in charge, exactly as before. The 
   (docs/rest-timer.md, "Effective pacing"), and it stays out of the run's tick log, so it is
   never a 4x4 rep or a limit try either: yesterday's send of the climb on the wall, logged with
   the date picker, would otherwise close the set one real rep early. That is judged when the
-  climber logs it, so a go whose save is slow still counts. A save started on the previous climb keeps that
+  climber logs it, so a go whose save is slow still counts, and the rest timer is handed the same
+  instant, so that go also earns the set rest's advance (docs/rest-timer.md has the crew
+  exception). A save started on the previous climb keeps that
   climb's queue item when it finishes after the advance, but it never replaces a tick the new
   climb already has, so the new climb still moves on at its rest.
 - **A stage change on a running timer** (`planRestTimerPacingTransition`). An on-the-minute

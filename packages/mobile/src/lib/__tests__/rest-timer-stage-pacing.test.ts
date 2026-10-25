@@ -112,7 +112,13 @@ describe('resolveStageRestPacing', () => {
       closesSet: true,
       reps: { logged: 2, perSet: 2 },
     });
-    expect(stageFor('b', { repsLogged: 3 })).toMatchObject({ targetSeconds: 30, closesSet: true });
+    expect(stageFor('b', { repsLogged: 3 })).toMatchObject({
+      targetSeconds: 30,
+      closesSet: true,
+      reps: { logged: 2, perSet: 2 },
+    });
+    // Capped at the set, so the extra go changes no pacing either.
+    expect(sameStagePacing(stageFor('a', { repsLogged: 2 }), stageFor('a', { repsLogged: 3 }))).toBe(true);
   });
 
   it('runs the rest between reps when there is one, and the changeover for a set rest of 0', () => {

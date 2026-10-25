@@ -217,7 +217,7 @@ export function anchorAfterFire({
  *
  * `repsLogged` is how many ticks this phone logged on the queue item
  * (`countWorkoutRunTicks`); only a 4x4 reads it. Each tick is one rep, a fall
- * included.
+ * included. `reps.logged` stops at the set's size.
  *
  * `targetSeconds` is the rest after the climb's latest tick
  * (`stageRestSeconds`): the changeover for a rest of 0, the interval on the
@@ -254,7 +254,11 @@ export function resolveStageRestPacing({
     targetSeconds: restSeconds > 0 ? restSeconds : null,
     advanceOn: restAdvanceRuleForStage(stagePacing),
     closesSet,
-    ...(sets !== undefined ? { reps: { logged: Math.max(0, repsLogged), perSet: sets.repsPerSet } } : {}),
+    // Capped at the set: an extra go during the set rest is no rep of a next
+    // set, and the readout never says "4 of 3".
+    ...(sets !== undefined
+      ? { reps: { logged: Math.min(sets.repsPerSet, Math.max(0, repsLogged)), perSet: sets.repsPerSet } }
+      : {}),
     ...(position.isCoolDown === true ? { isCoolDown: true as const } : {}),
     stagePacing,
   };

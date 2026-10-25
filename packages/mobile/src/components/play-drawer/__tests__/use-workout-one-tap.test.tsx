@@ -287,10 +287,13 @@ describe('useWorkoutOneTap: Fell', () => {
 
     act(() => result.current.onFell());
 
-    expect(noteRestTimerTick).toHaveBeenCalledWith(new Date(START_MS).toISOString(), 'afterTick', START_MS, {
-      status: 'attempt',
-      queueItemUuid: QUEUE_ITEM_UUID,
-    });
+    expect(noteRestTimerTick).toHaveBeenCalledWith(
+      new Date(START_MS).toISOString(),
+      'afterTick',
+      START_MS,
+      { status: 'attempt', queueItemUuid: QUEUE_ITEM_UUID },
+      START_MS,
+    );
     expect(getWorkoutRunLog(SESSION_ID)).toEqual([
       {
         queueItemUuid: QUEUE_ITEM_UUID,
@@ -308,10 +311,13 @@ describe('useWorkoutOneTap: Fell', () => {
     act(() => result.current.onFell());
 
     expect(sentInput()).toMatchObject({ climbUuid: CLIMB_UUID, status: 'attempt', angle: 45 });
-    expect(noteRestTimerTick).toHaveBeenCalledWith(expect.any(String), 'afterTick', START_MS, {
-      status: 'attempt',
-      queueItemUuid: null,
-    });
+    expect(noteRestTimerTick).toHaveBeenCalledWith(
+      expect.any(String),
+      'afterTick',
+      START_MS,
+      { status: 'attempt', queueItemUuid: null },
+      START_MS,
+    );
     expect(getWorkoutRunLog(SESSION_ID)).toEqual([]);
   });
 
@@ -365,10 +371,13 @@ describe('useWorkoutOneTap: Sent', () => {
     act(() => result.current.onSent());
 
     expect(sentInput()).toMatchObject({ status: 'flash', attemptCount: 1, sessionId: SESSION_ID });
-    expect(noteRestTimerTick).toHaveBeenCalledWith(expect.any(String), 'afterTick', START_MS, {
-      status: 'flash',
-      queueItemUuid: QUEUE_ITEM_UUID,
-    });
+    expect(noteRestTimerTick).toHaveBeenCalledWith(
+      expect.any(String),
+      'afterTick',
+      START_MS,
+      { status: 'flash', queueItemUuid: QUEUE_ITEM_UUID },
+      START_MS,
+    );
     expect(result.current.notice).toMatchObject({
       kind: 'saved',
       status: 'flash',
@@ -552,10 +561,13 @@ describe('useWorkoutOneTap: the row is gone before the save lands', () => {
     settle.resolve({ savedTick: { uuid: 'tick-7' } });
 
     await vi.waitFor(() => expect(noteRestTimerTick).toHaveBeenCalledTimes(1));
-    expect(noteRestTimerTick).toHaveBeenCalledWith(new Date(START_MS).toISOString(), 'afterTick', START_MS, {
-      status: 'attempt',
-      queueItemUuid: QUEUE_ITEM_UUID,
-    });
+    expect(noteRestTimerTick).toHaveBeenCalledWith(
+      new Date(START_MS).toISOString(),
+      'afterTick',
+      START_MS,
+      { status: 'attempt', queueItemUuid: QUEUE_ITEM_UUID },
+      START_MS,
+    );
     expect(getWorkoutRunLog(SESSION_ID)).toEqual([
       {
         queueItemUuid: QUEUE_ITEM_UUID,
@@ -660,10 +672,13 @@ describe('useWorkoutOneTap: just after the wall moved on', () => {
     act(() => result.current.onSent());
 
     expect(sentInput()).toMatchObject({ climbUuid: CLIMB_UUID, status: 'flash' });
-    expect(noteRestTimerTick).toHaveBeenCalledWith(expect.any(String), 'afterTick', START_MS, {
-      status: 'flash',
-      queueItemUuid: QUEUE_ITEM_UUID,
-    });
+    expect(noteRestTimerTick).toHaveBeenCalledWith(
+      expect.any(String),
+      'afterTick',
+      START_MS,
+      { status: 'flash', queueItemUuid: QUEUE_ITEM_UUID },
+      START_MS,
+    );
     expect(getWorkoutRunLog(SESSION_ID)).toEqual([expect.objectContaining({ queueItemUuid: QUEUE_ITEM_UUID })]);
     // The notice keeps the queue item it logged, so the row can name the climb
     // that is no longer on screen.
@@ -767,10 +782,13 @@ describe('useWorkoutOneTap: held for the climb the wall left', () => {
 
     expect(saveMock.mutateAsync).toHaveBeenCalledTimes(1);
     expect(sentInput()).toMatchObject({ climbUuid: CLIMB_UUID, status: 'attempt', attemptCount: 1 });
-    expect(noteRestTimerTick).toHaveBeenCalledWith(expect.any(String), 'afterTick', START_MS, {
-      status: 'attempt',
-      queueItemUuid: QUEUE_ITEM_UUID,
-    });
+    expect(noteRestTimerTick).toHaveBeenCalledWith(
+      expect.any(String),
+      'afterTick',
+      START_MS,
+      { status: 'attempt', queueItemUuid: QUEUE_ITEM_UUID },
+      START_MS,
+    );
     expect(getWorkoutRunLog(SESSION_ID)).toEqual([expect.objectContaining({ queueItemUuid: QUEUE_ITEM_UUID })]);
     expect(result.current.notice).toMatchObject({ kind: 'saved', status: 'attempt', queueItemUuid: QUEUE_ITEM_UUID });
   });

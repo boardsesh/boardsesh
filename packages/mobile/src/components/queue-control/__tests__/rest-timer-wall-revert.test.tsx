@@ -127,6 +127,7 @@ import { isTickFreshEnoughToArm } from '../../../lib/rest-timer-auto-advance';
 import type { RestTimerTickStatus } from '../../../lib/rest-timer-pacing';
 import {
   armRestTimer,
+  disarmRestTimer,
   getRestTimerState,
   noteRestTimerTick,
   resetRestTimerStoreForTests,
@@ -477,7 +478,15 @@ describe('limit bouldering: a send that already moved the wall on', () => {
 });
 
 describe('with no crew clock', () => {
-  it('a climb put back after the move never moves on again, and moves on after a new rep', async () => {
+  const localGo = (status: RestTimerTickStatus) =>
+    act(() => {
+      const climbedAt = new Date(harness.nowMs).toISOString();
+      noteRestTimerTick(climbedAt, 'afterTick', harness.nowMs, { status, queueItemUuid: current() });
+      noteWorkoutRunTick(SESSION, { queueItemUuid: current() ?? '', status, climbedAt });
+    });
+
+  /** The 4x4 on the wall with the timer on, and no crew clock. Returns the queue. */
+  function startLocalWorkout(): QueueItemStub[] {
     const queue = ['a', 'b', 'c'].map(queueItem);
     harness.setQueueData({ queue, currentClimbQueueItem: queue[0] });
     setWorkoutRun(SESSION, FOUR_BY_FOUR);
@@ -488,12 +497,40 @@ describe('with no crew clock', () => {
       </>,
     );
     act(() => armRestTimer('afterTick', harness.nowMs, SESSION));
-    const localGo = (status: RestTimerTickStatus) =>
-      act(() => {
-        const climbedAt = new Date(harness.nowMs).toISOString();
-        noteRestTimerTick(climbedAt, 'afterTick', harness.nowMs, { status, queueItemUuid: current() });
-        noteWorkoutRunTick(SESSION, { queueItemUuid: current() ?? '', status, climbedAt });
-      });
+    return queue;
+  }
+
+  it('a rep after the timer was turned off and on again earns the set rest and one advance', () => {
+    const queue = startLocalWorkout();
+    localGo('attempt');
+    localGo('send');
+    localGo('attempt');
+    advance(20_000);
+    expect(current()).toBe('b');
+    expect(getRestTimerState().advancedFromQueueItemUuid).toBe('a');
+
+    // a comes back, and the climber turns the timer off and on again: nothing
+    // moves until a rep, and the old mark never holds that rep back.
+    act(() => harness.setQueueData({ queue, currentClimbQueueItem: queue[0] }));
+    act(() => disarmRestTimer());
+    act(() => armRestTimer('afterTick', harness.nowMs, SESSION));
+    expect(getRestTimerState().advancedFromQueueItemUuid).toBeNull();
+    advance(120_000);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+    expect(current()).toBe('a');
+
+    localGo('send');
+    advance(19_000);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+    advance(1_000);
+    expect(nextClimb).toHaveBeenCalledTimes(2);
+    expect(current()).toBe('b');
+    advance(120_000);
+    expect(nextClimb).toHaveBeenCalledTimes(2);
+  });
+
+  it('a climb put back after the move never moves on again, and moves on after a new rep', async () => {
+    const queue = startLocalWorkout();
     localGo('attempt');
     localGo('send');
     localGo('attempt');

@@ -97,12 +97,18 @@ previous climb) can no longer shorten a running rest. It still shows as the last
 minute keeps its beat; a tick only fills a missing anchor, with the same floor.
 
 The floor is for a slow save, not for history. A tick dated more than
-`AUTO_ADVANCE_MAX_BACKDATE_MS` (60 s) before it lands, judged on its own `climbedAt`
+`AUTO_ADVANCE_MAX_BACKDATE_MS` (60 s) before it was logged, judged on its own `climbedAt`
 (`isTickFreshEnoughToArm`), is history: yesterday's session logged with the date picker. It
 never replaces `lastTick`, so it never moves the wall under a tick or send rule, and the tick
 path keeps it out of the workout's tick log by the same test, so it is never a 4x4 rep either
-(`use-tick-saver.ts`). That test is made when the climber logs the tick, so a go whose save lands
-more than a minute later still counts as a rep. On a running
+(`use-tick-saver.ts`). Both tests are made at the instant the climber logged the tick, which the
+tick path hands `noteRestTimerTick` as `loggedAtMs`, so one go is judged the same way twice: a
+rep whose save lands 90 s later (an offline queue, the gym's wifi) still counts, still becomes
+`lastTick`, and the set rest after it still moves the wall. The landing time only caps the
+anchor. A tick with no log instant (one read back from the session) is judged on landing. Under a
+crew clock's tick or send rule the phone judges on landing too, because the server judges the
+TICK by its `elapsedMs` and would refuse every beat the phone fired for a tick it read as
+history. On a running
 rest it goes through the floor, so it never rewinds it. A paused rest stays paused. With no
 anchor it anchors at its own time, as every tick did before the floor, so its deadline is
 usually long gone and nothing is scheduled. Floored there instead, it would start a rest at the

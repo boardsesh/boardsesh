@@ -183,7 +183,8 @@ export function useTickSaver({
       // history (yesterday's send logged with the date picker), by the rest
       // timer's own rule: never a rep, never a try. As a rep it would close the
       // set one real rep early and move the wall. Judged when the climber logs
-      // it, not when the save lands, so a go whose save is slow still counts.
+      // it, not when the save lands, so a go whose save is slow still counts;
+      // the rest timer is handed the same instant below.
       const loggedAtMs = nowMs();
       const isWorkoutGo = isTickFreshEnoughToArm(getRestTimerStartMs(climbedAtIso) ?? loggedAtMs, loggedAtMs);
 
@@ -245,8 +246,17 @@ export function useTickSaver({
             // logged the send, not when the server heard about it. The outbox
             // drainer replays without this hook, so a tick delivered twenty
             // minutes later can never reset a live timer. The status and queue
-            // item are what a workout stage's advance rule reads (#5380).
-            noteRestTimerTick(climbedAtIso, getEffectiveRestPacing().mode, landedAtMs, { status, queueItemUuid });
+            // item are what a workout stage's advance rule reads (#5380). It
+            // judges the tick fresh or history at `loggedAtMs`, as `isWorkoutGo`
+            // does, so a rep whose save is slow still earns the set rest's
+            // advance; `landedAtMs` only caps the anchor.
+            noteRestTimerTick(
+              climbedAtIso,
+              getEffectiveRestPacing().mode,
+              landedAtMs,
+              { status, queueItemUuid },
+              loggedAtMs,
+            );
             const tickUuid = result?.savedTick.uuid ?? null;
             // The workout's own count of tries and sends, by queue item: only a
             // go of the workout (`isWorkoutGo`, above) on a climb of this

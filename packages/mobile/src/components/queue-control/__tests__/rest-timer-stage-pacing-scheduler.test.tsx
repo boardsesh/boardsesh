@@ -158,6 +158,8 @@ const FOUR_BY_FOUR = fourByFour(2, 0, 30);
 const FOUR_BY_FOUR_REP_REST = fourByFour(3, 20, 30);
 /** 2 reps a set, no rest between sets: the 10 s changeover. */
 const FOUR_BY_FOUR_CHANGEOVER = fourByFour(2, 0, 0);
+/** 3 reps a set, 20 s between reps, 3:00 between sets: longer than a slow save. */
+const FOUR_BY_FOUR_LONG_SET_REST = fourByFour(3, 20, 180);
 
 /** Limit bouldering: 3:00 rest, moves on only after a send. */
 const LIMIT: WorkoutRun = {
@@ -224,16 +226,29 @@ function startWorkout(run: WorkoutRun, queueUuids: string[], currentUuid = queue
  * than a minute back is history and stays out of the log.
  */
 function logTick(status: RestTimerTickStatus, queueItemUuid: string | null = current(), lateMs = 0) {
-  act(() => {
-    const climbedAt = new Date(harness.nowMs - lateMs).toISOString();
-    noteRestTimerTick(climbedAt, getRestTimerState().stagePacing?.mode ?? 'afterTick', harness.nowMs, {
-      status,
-      queueItemUuid,
+  logTickSavedLater(status, queueItemUuid, lateMs)();
+}
+
+/**
+ * A tick logged now, dated `lateMs` before that, whose save lands when the
+ * returned function runs. Both the rest timer and the tick log judge it fresh
+ * or history at the moment it was logged, as use-tick-saver does.
+ */
+function logTickSavedLater(
+  status: RestTimerTickStatus,
+  queueItemUuid: string | null = current(),
+  lateMs = 0,
+): () => void {
+  const loggedAtMs = harness.nowMs;
+  const climbedAt = new Date(loggedAtMs - lateMs).toISOString();
+  return () =>
+    act(() => {
+      const mode = getRestTimerState().stagePacing?.mode ?? 'afterTick';
+      noteRestTimerTick(climbedAt, mode, harness.nowMs, { status, queueItemUuid }, loggedAtMs);
+      if (queueItemUuid !== null && isTickFreshEnoughToArm(Date.parse(climbedAt), loggedAtMs)) {
+        noteWorkoutRunTick('session-1', { queueItemUuid, status, climbedAt });
+      }
     });
-    if (queueItemUuid !== null && isTickFreshEnoughToArm(Date.parse(climbedAt), harness.nowMs)) {
-      noteWorkoutRunTick('session-1', { queueItemUuid, status, climbedAt });
-    }
-  });
 }
 
 function renderRuntime() {
@@ -540,6 +555,83 @@ describe('4x4: one climb for every rep of its set, then the set rest', () => {
 
     advance(60_000);
     expect(nextClimb).not.toHaveBeenCalled();
+  });
+});
+
+describe('4x4: a rep whose save lands more than a minute after it was logged', () => {
+  /** Two reps on a, 20 s apart, then the third logged at the returned instant; its save lands later. */
+  function twoRepsThenTheLast(datedBeforeLoggedMs = 0): { loggedAtMs: number; land: () => void } {
+    startWorkout(FOUR_BY_FOUR_LONG_SET_REST, ['a', 'b', 'c']);
+    renderRuntime();
+    armTimer();
+    logTick('attempt');
+    advance(20_000);
+    logTick('attempt');
+    advance(20_000);
+    return { loggedAtMs: harness.nowMs, land: logTickSavedLater('send', 'a', datedBeforeLoggedMs) };
+  }
+
+  it('closes the set AND earns its advance: the set rest runs from the go, and the wall moves once', () => {
+    const { loggedAtMs, land } = twoRepsThenTheLast();
+    // The gym's wifi holds the save for 90 s.
+    advance(90_000);
+    land();
+
+    expect(getRestTimerState()).toMatchObject({
+      lastTick: { status: 'send', queueItemUuid: 'a' },
+      anchorMs: loggedAtMs,
+      stagePacing: { queueItemUuid: 'a', closesSet: true, targetSeconds: 180, reps: { logged: 3, perSet: 3 } },
+    });
+    // 3:00 from the go, not from the save: 90 s after it landed.
+    advance(89_000);
+    expect(nextClimb).not.toHaveBeenCalled();
+    advance(1_000);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+    expect(current()).toBe('b');
+
+    advance(600_000);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+  });
+
+  it('moves on once after a set whose every rep saved 90 s late, though no rep landed fresh', () => {
+    startWorkout(FOUR_BY_FOUR_LONG_SET_REST, ['a', 'b', 'c']);
+    renderRuntime();
+    armTimer();
+    // One save at a time: each rep is logged as the one before it lands.
+    for (const status of ['attempt', 'attempt'] as const) {
+      const landRep = logTickSavedLater(status);
+      advance(90_000);
+      landRep();
+    }
+    const lastLoggedAtMs = harness.nowMs;
+    const landLastRep = logTickSavedLater('send');
+    advance(90_000);
+    landLastRep();
+
+    expect(getRestTimerState()).toMatchObject({
+      lastTick: { status: 'send', queueItemUuid: 'a' },
+      anchorMs: lastLoggedAtMs,
+      stagePacing: { closesSet: true, reps: { logged: 3, perSet: 3 } },
+    });
+    advance(89_000);
+    expect(nextClimb).not.toHaveBeenCalled();
+    advance(1_000);
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+    expect(current()).toBe('b');
+  });
+
+  it('never counts a go dated 2 min before it was logged: no rep, no last tick, the wall stays', () => {
+    const { land } = twoRepsThenTheLast(120_000);
+    advance(90_000);
+    land();
+
+    expect(getRestTimerState()).toMatchObject({
+      lastTick: { status: 'attempt', queueItemUuid: 'a' },
+      stagePacing: { queueItemUuid: 'a', closesSet: false, reps: { logged: 2, perSet: 3 } },
+    });
+    advance(600_000);
+    expect(nextClimb).not.toHaveBeenCalled();
+    expect(current()).toBe('a');
   });
 });
 

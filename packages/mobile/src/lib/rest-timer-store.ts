@@ -324,9 +324,9 @@ function lastTickAfter(tick: RestTimerLastTick | undefined): RestTimerLastTick |
 }
 
 /**
- * Where a tick dated more than `AUTO_ADVANCE_MAX_BACKDATE_MS` before it landed
- * starts a rest: yesterday's session logged with the date picker, not a climb
- * just done. On a running rest it goes through the floor, so it never rewinds
+ * Where a tick dated more than `AUTO_ADVANCE_MAX_BACKDATE_MS` before it was
+ * logged starts a rest: yesterday's session logged with the date picker, not a
+ * climb just done. On a running rest it goes through the floor, so it never rewinds
  * that rest. With none running (no anchor, or paused) it anchors at its own time,
  * as a tick always did before the floor: that rest ran out long ago, so the
  * scheduler reads its deadline as stale and schedules nothing. Floored instead,
@@ -352,22 +352,33 @@ function historicalTickAnchorMs(tickStartMs: number, nowMs: number): number {
  * never takes the place of one the climb on the wall already earned either
  * (`lastTickAfter`); it still goes through the anchor floor.
  *
- * A tick dated more than `AUTO_ADVANCE_MAX_BACKDATE_MS` before it landed is
+ * A tick dated more than `AUTO_ADVANCE_MAX_BACKDATE_MS` before it was logged is
  * history, judged on its own `climbedAt`, never the floored anchor: it never
  * earns an advance under a tick or send rule (`lastTick` stands), and it anchors
  * as `historicalTickAnchorMs` says. Without that, yesterday's send logged on a
  * workout climb just lit would be floored onto the advance, read as fresh, and
  * walk the wall on after the rest with the climb never climbed.
+ *
+ * `loggedAtMs` is when the climber logged it, which the tick path also judges a
+ * workout go by (a 4x4 rep, `use-tick-saver.ts`), so one go is fresh for both:
+ * a rep whose save lands 90 s late (an offline queue, gym wifi) still closes
+ * the set AND earns the set rest's advance. Left out, it is `nowMs` (a tick read
+ * back from the session, with no log instant to go by). `nowMs` stays the cap on
+ * the anchor. Under a crew clock's tick or send rule the tick is judged on
+ * landing instead, as the server judges its TICK (`elapsedMs` past 60 s is
+ * history there): recorded here but not there, the phone would fire beats the
+ * server refuses, one every rest.
  */
 export function noteRestTimerTick(
   climbedAt: string,
   mode: RestTimerMode,
   nowMs: number,
   tick?: RestTimerLastTick,
+  loggedAtMs: number = nowMs,
 ): void {
   if (!state.armed) return;
   const tickStartMs = getRestTimerStartMs(climbedAt) ?? nowMs;
-  const isFresh = isTickFreshEnoughToArm(tickStartMs, nowMs);
+  const isFresh = isTickFreshEnoughToArm(tickStartMs, followsCrewTickRule() ? nowMs : loggedAtMs);
   const lastTick = isFresh ? lastTickAfter(tick) : state.lastTick;
   // A fresh go on the climb the timer last moved the wall off: the climber came
   // back to it and climbed it again, so this tick earns a move of its own.
