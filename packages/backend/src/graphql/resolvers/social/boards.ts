@@ -1405,6 +1405,7 @@ export const socialBoardQueries = {
         })
         .from(dbSchema.userBoards)
         .where(whereClause)
+        // id: total order for OFFSET paging
         .orderBy(sql`distance_meters ASC`, asc(dbSchema.userBoards.id))
         .limit(limit)
         .offset(offset);
@@ -1472,6 +1473,7 @@ export const socialBoardQueries = {
       .select()
       .from(dbSchema.userBoards)
       .where(whereClause)
+      // id: total order for OFFSET paging
       .orderBy(desc(dbSchema.userBoards.createdAt), asc(dbSchema.userBoards.id))
       .limit(limit)
       .offset(offset);
@@ -1625,7 +1627,8 @@ export const socialBoardQueries = {
       )
       .where(whereClause)
       .groupBy(dbSchema.boardseshTicks.userId)
-      .orderBy(sql`COUNT(*) DESC`)
+      // userId: total order for OFFSET paging (send counts tie often)
+      .orderBy(sql`COUNT(*) DESC`, asc(dbSchema.boardseshTicks.userId))
       .limit(limit)
       .offset(offset);
 

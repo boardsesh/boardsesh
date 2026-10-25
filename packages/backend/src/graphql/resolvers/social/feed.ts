@@ -133,7 +133,7 @@ export const socialFeedQueries = {
           sprayTickClimbExistsCondition(myUserId),
         ),
       )
-      .orderBy(desc(dbSchema.boardseshTicks.climbedAt))
+      .orderBy(desc(dbSchema.boardseshTicks.climbedAt), desc(dbSchema.boardseshTicks.id))
       .limit(limit + 1)
       .offset(offset);
 
@@ -260,7 +260,7 @@ export const socialFeedQueries = {
           tickPrivacyCondition(ctx?.isAuthenticated ? ctx.userId : null),
         ),
       )
-      .orderBy(desc(dbSchema.boardseshTicks.climbedAt))
+      .orderBy(desc(dbSchema.boardseshTicks.climbedAt), desc(dbSchema.boardseshTicks.id))
       .limit(limit + 1)
       .offset(offset);
 

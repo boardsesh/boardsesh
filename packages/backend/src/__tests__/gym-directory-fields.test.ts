@@ -298,6 +298,47 @@ describe('OFFSET paging over rows sharing one created_at', () => {
     expect(await walk(fetchPage)).toEqual(boardUuids);
     expect(await walk(fetchPage)).toEqual(boardUuids);
   });
+
+  it('boardLeaderboard returns climbers with equal send counts in user-id order, with no duplicates or skips', async () => {
+    const boardUuid = uuidv4();
+    const inserted = await db.execute(sql`
+      INSERT INTO user_boards
+        (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name, angle, is_public, created_at, updated_at)
+      VALUES (${boardUuid}, ${boardUuid}, ${REAL_OWNER}, 'kilter', 1, 10, '1,2', 'Leaderboard Wall', 40, true,
+              now(), now())
+      RETURNING id
+    `);
+    const boardId = Number(Array.from(inserted as Iterable<{ id: number }>)[0].id);
+    // The tick privacy filter drops ticks whose climb is not a listed catalogue row.
+    const climbUuid = uuidv4();
+    await db.execute(sql`
+      INSERT INTO board_climbs (uuid, board_type, layout_id, name, is_listed, is_draft, frames)
+      VALUES (${climbUuid}, 'kilter', 1, 'Leaderboard Climb', true, false, 'p1r1')
+    `);
+    const climberIds: string[] = [];
+    // Inserted newest-id-first so heap order is the reverse of the expected order.
+    for (let index = 5; index >= 0; index--) {
+      const userId = `dir-lb-climber-${index}`;
+      climberIds.unshift(userId);
+      await insertUser(userId);
+      await db.execute(sql`
+        INSERT INTO boardsesh_ticks
+          (uuid, user_id, board_type, climb_uuid, angle, status, attempt_count, climbed_at, board_id)
+        VALUES (${uuidv4()}, ${userId}, 'kilter', ${climbUuid}, 40, 'send', 1, now(), ${boardId})
+      `);
+    }
+
+    const fetchPage = async (offset: number) => {
+      const page = (await socialBoardQueries.boardLeaderboard(
+        null,
+        { input: { boardUuid, limit: 2, offset } },
+        anonCtx(),
+      )) as { entries: Array<{ userId: string | null; rank: number }> };
+      return page.entries.map((entry) => entry.userId);
+    };
+
+    expect(await walk(fetchPage)).toEqual(climberIds);
+  });
 });
 
 describe('Gym.isClaimed', () => {

@@ -1,4 +1,4 @@
-import { and, eq, desc, sql } from 'drizzle-orm';
+import { and, eq, desc, asc, sql } from 'drizzle-orm';
 import type {
   ConnectionContext,
   NewClimbFeedInput,
@@ -91,7 +91,7 @@ export const newClimbSubscriptionResolvers = {
             eq(dbSchema.boardClimbs.isListed, true),
           ),
         )
-        .orderBy(desc(dbSchema.boardClimbs.createdAt))
+        .orderBy(desc(dbSchema.boardClimbs.createdAt), asc(dbSchema.boardClimbs.uuid))
         .limit(limit)
         .offset(offset);
 
