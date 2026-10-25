@@ -75,7 +75,7 @@ vi.mock('../../lib/local-user-id', () => ({
 // Every request the offline client makes. On a device this client attaches the
 // token, so anything recorded here was sent as that account.
 type SentRequest = { operation: string; variables: Record<string, unknown> | undefined; wipeEpoch: number };
-const network = vi.hoisted(() => ({ sent: [] as SentRequest[], wipeEpoch: (): number => 0 }));
+const network = vi.hoisted(() => ({ sent: [] as SentRequest[], wipeEpoch: (): number => 0, online: true }));
 vi.mock('../../lib/graphql/client', () => ({
   getOfflineSyncHttpClient: () => ({
     request: async (query: string, variables?: Record<string, unknown>) => {
@@ -117,7 +117,7 @@ vi.mock('../../offline/offline-sync-adapter', async () => {
   return {
     readSignedInAccount,
     drainMutationQueue: (...[db, queryClient, graphqlFetch]: Parameters<typeof engine.drainMutationQueue>) =>
-      engine.drainMutationQueue(db, queryClient, graphqlFetch, { isOnline: () => true, getSignedInUserId }),
+      engine.drainMutationQueue(db, queryClient, graphqlFetch, { isOnline: () => network.online, getSignedInUserId }),
     startSyncScheduler: (
       ...[db, queryClient, graphqlFetch, getEnabledBoards, drainQueue]: Parameters<typeof engine.startSyncScheduler>
     ) => {
@@ -325,6 +325,7 @@ beforeEach(() => {
   database.current = db;
   network.sent.length = 0;
   network.wipeEpoch = getWipeEpoch;
+  network.online = true;
   schedulerStarts.length = 0;
   appState.listeners.clear();
   reportHandledErrorMock.mockClear();
@@ -468,6 +469,27 @@ describe('OfflineSyncBridge: every sign-in gets its sync', () => {
     await waitFor(() => expect(schedulerStarts).toHaveLength(1));
     await waitFor(async () => expect(await getPendingCount(db)).toBe(0));
     expect(sentTickUuids()).toEqual([A_TICK_UUID]);
+
+    view.unmount();
+  });
+
+  it('a cold start with no connection still claims and starts the scheduler; the outbox waits', async () => {
+    // Nothing in the claim needs the network: the token is in SecureStore and the
+    // stamp in SQLite. Only the sends wait for a connection.
+    await runMigrations(db);
+    await stampLocalUserId(db, 'user-a');
+    await enqueue(db, 'boardsesh_ticks', 'create', tickInput("A's send"), A_TICK_UUID);
+    network.online = false;
+    auth.token = 'user-a';
+    auth.isAuthenticated = true;
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const view = render(<Harness queryClient={queryClient} />);
+
+    await waitFor(() => expect(schedulerStarts).toHaveLength(1));
+    await settle();
+    expect(network.sent).toEqual([]);
+    expect(await outbox()).toEqual([untouched(A_TICK_UUID)]);
+    expect(reportHandledErrorMock).not.toHaveBeenCalled();
 
     view.unmount();
   });
