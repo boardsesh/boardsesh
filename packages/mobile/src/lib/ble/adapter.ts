@@ -32,6 +32,11 @@ import { SCAN_TIMEOUT_MS, SERIAL_RECONNECT_GRACE_MS } from '@boardsesh/ble-proto
 
 const CONNECTION_TIMEOUT_MS = 12_000;
 const ANDROID_CONNECT_RETRY_BACKOFF_MS = 500;
+// The least connect time attempt two must be left after the backoff. A retry
+// squeezed into the last few hundred milliseconds would lose to the deadline,
+// swap the first attempt's BleError (and its codes) for a plain timeout, and
+// count as a retry that lost without having had a fair try.
+const MIN_RETRY_CONNECT_WINDOW_MS = 2_000;
 
 // The ATT MTU requested after connect. 247 (chunk 244) is the DLE-friendly
 // sweet spot: the iOS-26.5 failure cohort clusters at ATT 512 (#3230), so
@@ -41,35 +46,6 @@ const REQUESTED_ATT_MTU = 247;
 const DEFAULT_ATT_MTU = 23;
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
-/** Wait the full retry backoff only when it fits inside the shared deadline.
- * Whichever timer wins clears the other, so a deadline during backoff cannot
- * leave a 500ms timer alive after the connect sequence has already settled. */
-function waitForRetryBackoffBeforeDeadline(deadlineMs: number): Promise<boolean> {
-  const remainingMs = deadlineMs - performance.now();
-  if (remainingMs <= 0) return Promise.resolve(false);
-
-  return new Promise<boolean>((resolve) => {
-    let deadlineTimer: ReturnType<typeof setTimeout> | null = null;
-    let backoffTimer: ReturnType<typeof setTimeout> | null = null;
-    let settled = false;
-    const settle = (completedFullBackoff: boolean) => {
-      if (settled) return;
-      settled = true;
-      if (deadlineTimer !== null) clearTimeout(deadlineTimer);
-      if (backoffTimer !== null) clearTimeout(backoffTimer);
-      resolve(completedFullBackoff);
-    };
-
-    // Scheduled first, so on an exact-millisecond tie the deadline settles
-    // before the backoff and no second attempt begins on an exhausted budget.
-    // Both real runtimes and Vitest's fake timers run same-expiry timers in
-    // insertion order; `settle` is idempotent either way, so the tie-break is a
-    // preference, not something correctness rests on.
-    deadlineTimer = setTimeout(() => settle(false), remainingMs);
-    backoffTimer = setTimeout(() => settle(true), ANDROID_CONNECT_RETRY_BACKOFF_MS);
-  });
-}
 
 type DeadlineSettlement<T> =
   | { kind: 'fulfilled'; result: T }
@@ -176,8 +152,6 @@ export class RNBleAdapter implements BluetoothAdapter {
     // an explicit `toFake` list that omits `performance` or the boundary tests
     // silently freeze the clock and pass for the wrong reason.
     const deadlineMs = performance.now() + CONNECTION_TIMEOUT_MS;
-    this.lastConnectAttemptCount = 0;
-    this.lastConnectRetrySucceeded = false;
     const attemptConnect = () => {
       this.lastConnectAttemptCount += 1;
       return settleBeforeDeadline(() => bleManager.connectToDevice(selectedDeviceId), deadlineMs);
@@ -206,8 +180,12 @@ export class RNBleAdapter implements BluetoothAdapter {
     const cleanup = await settleBeforeDeadline(() => bleManager.cancelDeviceConnection(selectedDeviceId), deadlineMs);
     if (cleanup.kind === 'deadline') throw firstError;
 
-    const completedBackoff = await waitForRetryBackoffBeforeDeadline(deadlineMs);
-    if (!completedBackoff) throw firstError;
+    // Checked after cleanup, which can eat into the budget. With this much left
+    // the backoff always ends before the deadline, so a plain delay is enough.
+    if (deadlineMs - performance.now() < ANDROID_CONNECT_RETRY_BACKOFF_MS + MIN_RETRY_CONNECT_WINDOW_MS) {
+      throw firstError;
+    }
+    await delay(ANDROID_CONNECT_RETRY_BACKOFF_MS);
 
     const secondAttempt = await attemptConnect();
     if (secondAttempt.kind === 'deadline') {
@@ -246,8 +224,12 @@ export class RNBleAdapter implements BluetoothAdapter {
   // scan stopped so it drops its spinner.
   async requestAndConnect(targetSerial?: string, targetDeviceId?: string): Promise<BleConnection> {
     // Reset up front so a reused adapter whose reconnect fails before MTU
-    // negotiation can't write with the previous connection's stale MTU.
+    // negotiation can't write with the previous connection's stale MTU, and
+    // whose reconnect fails before the GATT connect (scan error, board not
+    // found) reports 0 attempts rather than the previous connect's numbers.
     this.negotiatedMtu = DEFAULT_ATT_MTU;
+    this.lastConnectAttemptCount = 0;
+    this.lastConnectRetrySucceeded = false;
     const devices = new Map<string, DiscoveredDevice>();
     let updateListener: ((devices: DiscoveredDevice[]) => void) | null = null;
     let scanStoppedListener: (() => void) | null = null;

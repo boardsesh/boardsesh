@@ -1362,13 +1362,42 @@ describe('RNBleAdapter', () => {
         expect(adapter.getLastConnectRetrySucceeded()).toBe(true);
 
         // Same adapter, a clean second connect. Both fields are per-connect: drop
-        // the reset in connectSelectedDevice and this reports three attempts and
-        // a retry that never ran on this connect.
+        // the reset in requestAndConnect and this reports three attempts and a
+        // retry that never ran on this connect.
         mockBleManager.connectToDevice.mockResolvedValue(connectedDevice);
         await adapter.requestAndConnect();
 
         expect(mockBleManager.connectToDevice).toHaveBeenCalledTimes(3);
         expect(adapter.getLastConnectAttemptCount()).toBe(1);
+        expect(adapter.getLastConnectRetrySucceeded()).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('reports zero attempts when a reused adapter fails before the GATT connect', async () => {
+      vi.useFakeTimers();
+      try {
+        const { devicePicker, connectedDevice } = setupSelectedDevice();
+        mockBleManager.cancelDeviceConnection.mockResolvedValue(undefined);
+        mockBleManager.connectToDevice
+          .mockRejectedValueOnce(androidConnectError(201, 133))
+          .mockResolvedValueOnce(connectedDevice);
+
+        const adapter = new RNBleAdapter(devicePicker, 'aurora', { enableAndroidConnectRetry: true });
+        const recovered = adapter.requestAndConnect();
+        await vi.advanceTimersByTimeAsync(500);
+        await recovered;
+        expect(adapter.getLastConnectAttemptCount()).toBe(2);
+        expect(adapter.getLastConnectRetrySucceeded()).toBe(true);
+
+        // The next connect on the same adapter never reaches connectToDevice.
+        // The getters describe this connect, not the previous one's 2/true.
+        devicePicker.mockRejectedValueOnce(new Error('Device selection cancelled'));
+        await expect(adapter.requestAndConnect()).rejects.toThrow('Device selection cancelled');
+
+        expect(mockBleManager.connectToDevice).toHaveBeenCalledTimes(2);
+        expect(adapter.getLastConnectAttemptCount()).toBe(0);
         expect(adapter.getLastConnectRetrySucceeded()).toBe(false);
       } finally {
         vi.useRealTimers();
@@ -1462,7 +1491,10 @@ describe('RNBleAdapter', () => {
       }
     });
 
-    it.each([11_500, 11_750, 11_999])(
+    // 9_501 leaves 2_499ms: one short of the 500ms backoff plus the 2_000ms
+    // minimum window attempt two is owed. 11_000 and 11_400 would fit the
+    // backoff alone and hand attempt two a few hundred milliseconds.
+    it.each([9_501, 11_000, 11_400, 11_500, 11_750, 11_999])(
       'does not begin attempt two or leak a timer when attempt one fails after %ims',
       async (firstFailureDelayMs) => {
         vi.useFakeTimers();
@@ -1487,6 +1519,30 @@ describe('RNBleAdapter', () => {
         }
       },
     );
+
+    it('retries when attempt one fails with exactly the backoff plus the minimum window left', async () => {
+      vi.useFakeTimers();
+      try {
+        const { devicePicker, connectedDevice } = setupSelectedDevice();
+        mockBleManager.connectToDevice
+          .mockImplementationOnce(
+            () => new Promise((_resolve, reject) => setTimeout(() => reject(androidConnectError(201, 133)), 9_500)),
+          )
+          .mockImplementationOnce(() => new Promise((resolve) => setTimeout(() => resolve(connectedDevice), 1_999)));
+        mockBleManager.cancelDeviceConnection.mockResolvedValue(undefined);
+
+        const adapter = new RNBleAdapter(devicePicker, 'aurora', { enableAndroidConnectRetry: true });
+        const settled = adapter.requestAndConnect().catch((error: unknown) => error);
+        await vi.advanceTimersByTimeAsync(12_000);
+
+        // Attempt two starts at 10_000ms and connects at 11_999ms, inside the budget.
+        await expect(settled).resolves.toMatchObject({ retrySucceeded: true });
+        expect(mockBleManager.connectToDevice).toHaveBeenCalledTimes(2);
+        expect(adapter.getLastConnectAttemptCount()).toBe(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
 
     it('propagates the exact second error, performs exhausted cleanup, and never makes a third attempt', async () => {
       vi.useFakeTimers();
