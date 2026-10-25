@@ -1335,9 +1335,14 @@ async function processDeletions(
                   [deletion.recordId],
                 );
               }
+              // Older servers and retained deletion history use board:uuid:angle
+              // for favorites. After the local re-key, address the UUID while
+              // keeping the timestamp guard so a later re-add survives.
+              const legacyFavoriteParts = deletion.tableName === 'user_favorites' ? deletion.recordId.split(':') : [];
+              const recordId = legacyFavoriteParts.length === 3 ? legacyFavoriteParts[1] : deletion.recordId;
               const deleteResult = await transaction.runAsync(
                 `DELETE FROM ${deletion.tableName} WHERE ${pkColumns[0]} = ?${guardClause}`,
-                [deletion.recordId, ...guardParams],
+                [recordId, ...guardParams],
               );
               rowsDeleted = deleteResult?.changes ?? 0;
               if (deletedClimb?.board_type && deletedClimb.layout_id !== null) {

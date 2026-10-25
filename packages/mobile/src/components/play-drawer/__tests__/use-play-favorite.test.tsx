@@ -35,7 +35,6 @@ function options() {
     displayedClimb: climb,
     boardName: 'kilter',
     layoutId: 1,
-    angle: 40,
     bluetoothConnected: false,
     serverFavorited: false,
     toggleFavoriteMutate: vi.fn<Mutate>(),
@@ -67,7 +66,7 @@ describe('usePlayFavorite', () => {
     expect(result.current.isFavorited).toBe(false);
     const [variables, callbacks] = initial.toggleFavoriteMutate.mock.calls[0];
     expect(variables).toEqual({
-      input: { boardName: 'kilter', climbUuid: 'climb-a', angle: 40 },
+      input: { climbUuid: 'climb-a' },
       currentlyFavorited: true,
     });
     expect(effects.track).toHaveBeenCalledWith(

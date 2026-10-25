@@ -660,7 +660,6 @@ export function PlayCore({
     displayedClimb,
     boardName,
     layoutId,
-    angle,
     serverFavorited,
     toggleFavoriteMutate,
     bluetoothConnected: bluetooth?.isConnected ?? false,

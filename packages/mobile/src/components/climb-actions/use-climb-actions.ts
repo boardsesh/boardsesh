@@ -282,14 +282,9 @@ export function useClimbActions({
   // climb is already favourited. Only fetched while the menu is open (the hook is
   // mounted only then). useToggleFavorite invalidates this query, so it stays fresh.
   // A caller that owns the favourite (the player) answers it instead.
-  const { data: serverFavorited } = useFavoriteStatus(
-    boardConfig?.boardName ?? '',
-    climb?.uuid ?? null,
-    boardConfig?.angle ?? 0,
-    {
-      enabled: !!climb && !!boardConfig && !favoriteControl,
-    },
-  );
+  const { data: serverFavorited } = useFavoriteStatus(climb?.uuid ?? null, {
+    enabled: !!climb && !!boardConfig && !favoriteControl,
+  });
   const isFavorited = favoriteControl ? favoriteControl.isFavorited : serverFavorited;
   const toggleFavoriteOverride = favoriteControl?.onToggle;
 
@@ -452,9 +447,10 @@ export function useClimbActions({
         // climb list optimistically, and it's what the offline local-first path
         // needs to know which way to write.
         toggleFavoriteMutate({
-          input: { boardName, climbUuid: climb.uuid, angle },
+          input: { climbUuid: climb.uuid },
           currentlyFavorited: isFavorited,
         });
+
         after();
       },
     });

@@ -398,7 +398,7 @@ vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToa
 vi.mock('../../../lib/graphql/hooks', () => ({
   useProfile: () => ({ data: undefined }),
   useToggleFavorite: () => ({ mutate: toggleFavorite }),
-  useFavoriteStatus: (_boardName: string, _uuid: string | null, _angle: number, options?: Props) => {
+  useFavoriteStatus: (_uuid: string | null, options?: Props) => {
     recorded.favoriteStatus.push(options ?? {});
     return { data: undefined };
   },

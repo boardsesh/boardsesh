@@ -23,7 +23,7 @@ vi.mock('../../../lib/graphql/hooks', () => ({
 }));
 
 const target = { boardName: 'kilter', climbUuid: 'climb-a', angle: 40 };
-const variables = { input: target, currentlyFavorited: true };
+const variables = { input: { climbUuid: target.climbUuid }, currentlyFavorited: true };
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -45,7 +45,7 @@ describe('PlayCoreEnhancements', () => {
     });
     rerender(<PlayCoreEnhancements {...target} enabled={false} onSnapshot={onSnapshot} />);
     expect(onSnapshot).toHaveBeenLastCalledWith(null);
-    expect(hooks.favoriteStatus).toHaveBeenLastCalledWith('kilter', 'climb-a', 40, { enabled: false });
+    expect(hooks.favoriteStatus).toHaveBeenLastCalledWith('climb-a', { enabled: false });
   });
 
   it('retires delegates on target change, disable and unmount, including queued mutation callbacks', () => {
@@ -71,7 +71,7 @@ describe('PlayCoreEnhancements', () => {
     updatedSnapshot.toggleFavoriteMutate(variables);
     expect(hooks.mutate).toHaveBeenCalledTimes(1);
     rerender(<PlayCoreEnhancements {...target} climbUuid="climb-b" enabled={false} onSnapshot={onSnapshot} />);
-    updatedSnapshot.toggleFavoriteMutate({ ...variables, input: { ...target, climbUuid: 'climb-b' } });
+    updatedSnapshot.toggleFavoriteMutate({ ...variables, input: { climbUuid: 'climb-b' } });
     expect(hooks.mutate).toHaveBeenCalledTimes(1);
     unmount();
     expect(onSnapshot).toHaveBeenLastCalledWith(null);

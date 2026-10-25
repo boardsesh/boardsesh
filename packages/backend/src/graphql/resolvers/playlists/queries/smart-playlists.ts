@@ -143,6 +143,11 @@ function pagedSmartConditions(
  * `boardName` when scoped. Favourites are the other reference source, so they
  * carry the spray-wall rules `smartBaseConditions` gives the logbook, for the
  * same reason. Shared by the paged query, its count and the view's rows.
+ *
+ * Board identity comes from the joined catalog row, not the favorite's legacy
+ * `board_name`: favorites are keyed by (user_id, climb_uuid), and a stale
+ * legacy name must not bypass private-spray filtering. Every caller must
+ * inner-join `board_climbs` on `climb_uuid`.
  */
 function favoriteConditions(
   userId: string,
@@ -152,20 +157,20 @@ function favoriteConditions(
   const conditions: SQL[] = [
     eq(dbSchema.userFavorites.userId, userId),
     climbReferenceReadableCondition(
-      { boardType: dbSchema.userFavorites.boardName, climbUuid: dbSchema.userFavorites.climbUuid },
+      { boardType: dbSchema.boardClimbs.boardType, climbUuid: dbSchema.userFavorites.climbUuid },
       viewerUserId,
     ),
     sprayReferenceVisibilityCondition(
-      { boardType: dbSchema.userFavorites.boardName, climbUuid: dbSchema.userFavorites.climbUuid },
+      { boardType: dbSchema.boardClimbs.boardType, climbUuid: dbSchema.userFavorites.climbUuid },
       viewerUserId,
     ),
     sprayReferenceClimbExistsCondition(
-      { boardType: dbSchema.userFavorites.boardName, climbUuid: dbSchema.userFavorites.climbUuid },
+      { boardType: dbSchema.boardClimbs.boardType, climbUuid: dbSchema.userFavorites.climbUuid },
       { authorId: dbSchema.userFavorites.userId, viewerUserId },
     ),
   ];
   if (boardName) {
-    conditions.push(eq(dbSchema.userFavorites.boardName, boardName));
+    conditions.push(eq(dbSchema.boardClimbs.boardType, boardName));
   }
   return conditions;
 }
@@ -258,14 +263,15 @@ async function selectSmartClimbRefs(
     const rows = await db
       .select({
         climbUuid: dbSchema.userFavorites.climbUuid,
-        boardType: dbSchema.userFavorites.boardName,
+        boardType: dbSchema.boardClimbs.boardType,
       })
       .from(dbSchema.userFavorites)
+      .innerJoin(dbSchema.boardClimbs, eq(dbSchema.boardClimbs.uuid, dbSchema.userFavorites.climbUuid))
       .where(and(...favConditions))
-      .groupBy(dbSchema.userFavorites.climbUuid, dbSchema.userFavorites.boardName)
+      .groupBy(dbSchema.userFavorites.climbUuid, dbSchema.boardClimbs.boardType)
       .orderBy(
         desc(max(dbSchema.userFavorites.createdAt)),
-        dbSchema.userFavorites.boardName,
+        dbSchema.boardClimbs.boardType,
         dbSchema.userFavorites.climbUuid,
       )
       .limit(pageSize)
@@ -325,9 +331,10 @@ async function countSmartClimbRefs(
     const favConditions = favoriteConditions(userId, boardName, viewerUserId);
     const [row] = await db
       .select({
-        count: sql<number>`COUNT(DISTINCT (${dbSchema.userFavorites.boardName}, ${dbSchema.userFavorites.climbUuid}))::int`,
+        count: sql<number>`COUNT(DISTINCT (${dbSchema.boardClimbs.boardType}, ${dbSchema.userFavorites.climbUuid}))::int`,
       })
       .from(dbSchema.userFavorites)
+      .innerJoin(dbSchema.boardClimbs, eq(dbSchema.boardClimbs.uuid, dbSchema.userFavorites.climbUuid))
       .where(and(...favConditions));
     return row?.count ?? 0;
   }
@@ -386,15 +393,16 @@ function logbookRowsSql(
     return queryBuilder
       .select({
         climbUuid: favorites.climbUuid,
-        boardType: sql<string>`${favorites.boardName}`.as('board_type'),
+        boardType: sql<string>`${dbSchema.boardClimbs.boardType}`.as('board_type'),
         // Most recently liked first: the like is when the climb entered the list.
         naturalRank: naturalRankSql(
-          sql`max(${favorites.createdAt}) DESC, ${favorites.boardName}, ${favorites.climbUuid}`,
+          sql`max(${favorites.createdAt}) DESC, ${dbSchema.boardClimbs.boardType}, ${favorites.climbUuid}`,
         ),
       })
       .from(favorites)
+      .innerJoin(dbSchema.boardClimbs, eq(dbSchema.boardClimbs.uuid, favorites.climbUuid))
       .where(and(...favoriteConditions(userId, boardName, viewerUserId)))
-      .groupBy(favorites.climbUuid, favorites.boardName)
+      .groupBy(favorites.climbUuid, dbSchema.boardClimbs.boardType)
       .getSQL();
   }
 
@@ -744,9 +752,14 @@ export const mySmartPlaylistCounts = async (
         )
       ),
       liked_climbs AS (
-        SELECT COUNT(DISTINCT (board_name, climb_uuid))::int AS count
-        FROM ${dbSchema.userFavorites}
-        WHERE user_id = ${userId}
+        -- Board comes from the catalog join now that favorites are keyed by
+        -- (user_id, climb_uuid); matches countSmartClimbRefs' LIKED_CLIMBS branch
+        -- so the card and the list agree. Orphan favorites (no board_climbs row)
+        -- are excluded from both.
+        SELECT COUNT(DISTINCT (bc.board_type, uf.climb_uuid))::int AS count
+        FROM ${dbSchema.userFavorites} uf
+        JOIN ${dbSchema.boardClimbs} bc ON bc.uuid = uf.climb_uuid
+        WHERE uf.user_id = ${userId}
       )
       SELECT 'FIVE_STARS'::text AS type, count FROM five_stars
       UNION ALL

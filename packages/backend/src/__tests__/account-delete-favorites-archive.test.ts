@@ -5,6 +5,7 @@ import { executeFirstRow } from '@boardsesh/db/client';
 import { db } from '../db/client';
 import { userMutations } from '../graphql/resolvers/users/mutations';
 import { getPostgresErrorCode } from '../utils/postgres-errors';
+import { ensureRekeyedFavoriteSchema, restoreLegacyFavoriteSchema } from './helpers/favorites-rekey-schema';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 
 const OWNER_ID = 'favorites-archive-delete-owner';
@@ -90,8 +91,8 @@ async function createArchiveTable(client: postgres.Sql | postgres.TransactionSql
 }
 
 async function createArchiveFromDuplicateFavorites(client: postgres.TransactionSql): Promise<void> {
-  // This models the archive-table DDL and population inside migration 0250's
-  // transaction. The test intentionally leaves that migration out of this PR.
+  // This models the archive-table DDL and population inside migration 0280's
+  // transaction, against the pre-migration schema the guard first served.
   await createArchiveTable(client);
   await client`
     INSERT INTO public.user_favorites_dedup_backup_0194
@@ -146,6 +147,11 @@ beforeAll(async () => {
   if (!row?.database_name.startsWith('boardsesh_backend_test_w')) {
     throw new Error('Archive-delete integration tests require an isolated backend worker database');
   }
+  // These cases exercise the guard on the schema it shipped against, before
+  // migration 0280: the four-column key (so angle duplicates can exist) and a
+  // deletion trigger that does not read the archive. schema-sql.ts builds the
+  // post-migration schema, and afterAll puts it back by running the migration.
+  await restoreLegacyFavoriteSchema();
 });
 
 beforeEach(async () => {
@@ -164,6 +170,14 @@ afterAll(async () => {
   await db.execute(sql`DROP FUNCTION IF EXISTS public.favorites_archive_guard_reject_account_delete()`);
   await db.execute(sql`DROP TABLE IF EXISTS public.user_favorites_dedup_backup_0194`);
   await db.execute(sql`DELETE FROM public.users WHERE id IN (${OWNER_ID}, ${OTHER_USER_ID})`);
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) throw new Error('The isolated worker DATABASE_URL is required');
+  const migrationClient = postgres(connectionString, { max: 1, onnotice: () => {} });
+  try {
+    await ensureRekeyedFavoriteSchema(migrationClient);
+  } finally {
+    await migrationClient.end();
+  }
 });
 
 describe('account deletion cleans legacy favorite archives safely', () => {
@@ -272,7 +286,7 @@ describe('account deletion cleans legacy favorite archives safely', () => {
       .begin(async (transaction) => {
         try {
           const [backend] = await transaction`SELECT pg_backend_pid() AS pid`;
-          // Migration 0250's ALTER TABLE takes this mode before creating and
+          // Migration 0280's ALTER TABLE takes this mode before creating and
           // populating the archive; use the same relation lock in this fixture.
           await transaction`LOCK TABLE public.user_favorites IN ACCESS EXCLUSIVE MODE`;
           await createArchiveFromDuplicateFavorites(transaction);

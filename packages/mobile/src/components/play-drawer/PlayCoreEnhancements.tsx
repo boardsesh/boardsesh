@@ -48,7 +48,8 @@ export function PlayCoreEnhancements({ boardName, climbUuid, angle, enabled, onS
   const currentScopeRef = useRef(callbackScope);
   currentScopeRef.current = callbackScope;
   const mountedRef = useRef(false);
-  const { data: serverFavorited } = useFavoriteStatus(boardName, climbUuid, angle, { enabled });
+  // Favorites follow the climb alone; board and angle only scope this host.
+  const { data: serverFavorited } = useFavoriteStatus(climbUuid, { enabled });
   const { mutate } = useToggleFavorite();
 
   const toggleFavoriteMutate = useCallback<ToggleFavoriteMutate>(
@@ -67,14 +68,7 @@ export function PlayCoreEnhancements({ boardName, climbUuid, angle, enabled, onS
           getPrivacyCredentialGeneration() === credentialGeneration
         );
       };
-      if (
-        !scopeIsCurrent() ||
-        !climbUuid ||
-        variables.input.boardName !== boardName ||
-        variables.input.climbUuid !== climbUuid ||
-        variables.input.angle !== angle
-      )
-        return;
+      if (!scopeIsCurrent() || !climbUuid || variables.input.climbUuid !== climbUuid) return;
       mutate(
         variables,
         options
@@ -93,7 +87,7 @@ export function PlayCoreEnhancements({ boardName, climbUuid, angle, enabled, onS
           : undefined,
       );
     },
-    [mutate, boardName, climbUuid, angle, targetKey, enabled, privacyGeneration, credentialGeneration, callbackScope],
+    [mutate, climbUuid, targetKey, enabled, privacyGeneration, credentialGeneration, callbackScope],
   );
 
   useEffect(() => {

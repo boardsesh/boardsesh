@@ -15,7 +15,6 @@ type PlayFavoriteOptions = {
   displayedClimb: Climb | null | undefined;
   boardName: string;
   layoutId: number;
-  angle: number;
   bluetoothConnected: boolean;
   serverFavorited: boolean | undefined;
   // Already privacy/credential-scoped by the deferred enhancement host. This
@@ -29,7 +28,6 @@ export function usePlayFavorite({
   displayedClimb,
   boardName,
   layoutId,
-  angle,
   bluetoothConnected,
   serverFavorited,
   toggleFavoriteMutate,
@@ -59,11 +57,9 @@ export function usePlayFavorite({
       });
       toggleFavoriteMutate(
         {
-          input: {
-            boardName,
-            climbUuid: displayedClimb.uuid,
-            angle,
-          },
+          // A favorite is keyed by the climb alone, so a heart survives a board
+          // or angle switch.
+          input: { climbUuid: displayedClimb.uuid },
           currentlyFavorited: isFavorited,
         },
         {
@@ -91,7 +87,6 @@ export function usePlayFavorite({
       favoriteOverride,
       boardName,
       layoutId,
-      angle,
       bluetoothConnected,
       toggleFavoriteMutate,
       showToast,
