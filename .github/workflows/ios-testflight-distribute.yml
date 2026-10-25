@@ -24,6 +24,16 @@ permissions:
   pull-requests: read
 
 jobs:
+  reject-untrusted-dispatch:
+    if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Require trusted distribution tooling
+        run: |
+          echo '::error::Dispatch this workflow from main. source_run_id selects the native build from main or release/next.'
+          exit 1
+
   distribute:
     if: >-
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||

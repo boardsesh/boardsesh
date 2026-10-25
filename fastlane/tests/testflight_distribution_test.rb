@@ -223,6 +223,15 @@ class TestflightDistributionTest < Minitest::Test
     assert_includes error.message, "READY_FOR_BETA_SUBMISSION"
   end
 
+  def test_an_unknown_apple_state_cannot_verify_review_or_testing_availability
+    @group.builds = [@build]
+    @build.build_beta_detail.external_build_state = "NEW_APPLE_EXTERNAL_STATE"
+    @after_distribution = -> { "Pilot reports success but Apple state is still unknown" }
+    error = assert_raises(BoardseshTestflightDistribution::Error) { runner.run }
+    assert_includes error.message, "beta review/testing state"
+    assert_includes error.message, "NEW_APPLE_EXTERNAL_STATE"
+  end
+
   def test_pilot_success_does_not_hide_unfinished_processing
     @after_distribution = -> do
       @group.builds = [@build]

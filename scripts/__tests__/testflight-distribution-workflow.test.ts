@@ -43,6 +43,15 @@ describe('external TestFlight distribution workflow', () => {
     expect(nativeSteps.some((step) => step.run?.includes('distribute_testflight'))).toBe(false);
   });
 
+  it('reports a wrong-branch manual dispatch as an error without exposing store credentials', () => {
+    const rejected = followup.jobs['reject-untrusted-dispatch'];
+    expect(rejected.if).toBe("github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'");
+    expect(rejected.steps[0].run).toContain('::error::Dispatch this workflow from main.');
+    expect(rejected.steps[0].run).toContain('exit 1');
+    expect(rejected).not.toHaveProperty('environment');
+    expect(rejected.steps[0].env).toBeUndefined();
+  });
+
   it('freezes the prior native build before upload and publishes the receipt only after upload', () => {
     const capture = nativeSteps.findIndex((step) => step.id === 'testflight_receipt');
     const upload = nativeSteps.findIndex((step) => step.id === 'testflight_upload');

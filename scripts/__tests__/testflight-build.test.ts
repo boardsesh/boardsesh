@@ -3,6 +3,7 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { main } from '../testflight-build';
 import {
   parseTestflightBuildReceipt,
   previousNativeBuild,
@@ -83,6 +84,12 @@ describe('frozen previous native build', () => {
 });
 
 describe('receipt and source provenance', () => {
+  it('rejects misspelled CLI flags before reading history or GitHub', () => {
+    expect(() => main(['validate', '--run-id', '123', '--reciept', 'receipt.json'])).toThrow(
+      'Invalid argument --reciept',
+    );
+  });
+
   it('binds the exact build and trusted source run', () => {
     const parsed = parseTestflightBuildReceipt(receipt());
     const run = trustedTestflightRun(sourceRun(), 'boardsesh/boardsesh');

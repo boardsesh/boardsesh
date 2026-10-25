@@ -120,6 +120,9 @@ module BoardseshTestflightDistribution
     end
 
     def completed_state?(state)
+      # An assignment alone does not confirm beta review or availability. Keep
+      # this allowlist strict: a new Apple state must fail verification below
+      # until we can describe it accurately, rather than report testers ready.
       READY_STATES.include?(state) || REVIEW_STATES.include?(state) || state == "BETA_APPROVED"
     end
 
