@@ -497,11 +497,11 @@ describe('applyChunkLoadFingerprint (#5611)', () => {
 describe('applyCapturedValueNormalization', () => {
   it('surfaces the close code of a raw close event rejected through onunhandledrejection', () => {
     const event = { exception: { values: [{ value: 'Event `Event` (type=close) captured as promise rejection' }] } };
-    const closeEvent = { type: 'close', code: 1000, reason: 'Server shutting down', wasClean: false };
+    const closeEvent = { type: 'close', code: 1000, reason: 'Server shutting down', wasClean: true };
     const result = applyCapturedValueNormalization(event, closeEvent) as typeof event & {
       extra?: Record<string, unknown>;
     };
-    expect(result.extra).toMatchObject({ code: 1000, reason: 'Server shutting down', wasClean: false });
+    expect(result.extra).toMatchObject({ code: 1000, reason: 'Server shutting down', wasClean: true });
     expect(result.exception.values[0].value).toBe('WebSocket close (code 1000)');
   });
 

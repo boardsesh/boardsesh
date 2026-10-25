@@ -112,6 +112,7 @@ describe('subscribe', () => {
     const forwarded = (sink.error as ReturnType<typeof vi.fn>).mock.calls[0][0];
     expect(forwarded).toBeInstanceOf(GraphQLOperationError);
     expect(isRateLimitedError(forwarded)).toBe(true);
+    expect(sink.error).toHaveBeenCalledTimes(1);
   });
 
   it('coerces a raw DOM error event into a proper Error', () => {
