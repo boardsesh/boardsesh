@@ -115,41 +115,59 @@ describe('timed block types', () => {
     vi.unstubAllEnvs();
   });
 
-  // A release bundle reaches store binaries by OTA: no timed chip until launch.
-  it('are on no chip in a release build', () => {
+  const TIMED_CHIPS = ['onTheMinute', 'fourByFour', 'limitBouldering'];
+
+  // A release bundle reaches store binaries by OTA: no timed chip until launch,
+  // unless the tester's flag is on.
+  it('are on no chip in a release build with the flag off', () => {
     vi.stubGlobal('__DEV__', false);
 
-    expect(timedWorkoutBlocksOffered()).toBe(false);
-    expect(workoutBlockTypes()).toEqual(UNTIMED_CHIPS);
-    expect(addBlockTypes()).toEqual(UNTIMED_CHIPS.slice(1));
+    expect(timedWorkoutBlocksOffered(false)).toBe(false);
+    expect(workoutBlockTypes(timedWorkoutBlocksOffered(false))).toEqual(UNTIMED_CHIPS);
+    expect(addBlockTypes(timedWorkoutBlocksOffered(false))).toEqual(UNTIMED_CHIPS.slice(1));
   });
 
-  it('follow the untimed types on the chips of a dev build', () => {
+  it('follow the untimed chips in a release build with the flag on: 8 chips', () => {
+    vi.stubGlobal('__DEV__', false);
+
+    expect(timedWorkoutBlocksOffered(true)).toBe(true);
+    expect(workoutBlockTypes(timedWorkoutBlocksOffered(true))).toEqual([...UNTIMED_CHIPS, ...TIMED_CHIPS]);
+    expect(workoutBlockTypes(true)).toHaveLength(8);
+    expect(addBlockTypes(true)).toEqual([...UNTIMED_CHIPS.slice(1), ...TIMED_CHIPS]);
+  });
+
+  it('follow the untimed chips in a dev build whatever the flag says', () => {
     vi.stubGlobal('__DEV__', true);
 
-    expect(timedWorkoutBlocksOffered()).toBe(true);
-    expect(workoutBlockTypes()).toEqual([...UNTIMED_CHIPS, 'onTheMinute', 'fourByFour', 'limitBouldering']);
-    expect(addBlockTypes()).toEqual(['volume', 'pyramid', 'ladder', 'gradeFocus', ...TIMED_WORKOUT_TYPES]);
+    expect(timedWorkoutBlocksOffered(false)).toBe(true);
+    expect(timedWorkoutBlocksOffered(true)).toBe(true);
+    expect(workoutBlockTypes(true)).toEqual([...UNTIMED_CHIPS, ...TIMED_CHIPS]);
+    expect(addBlockTypes(true)).toEqual(['volume', 'pyramid', 'ladder', 'gradeFocus', ...TIMED_WORKOUT_TYPES]);
     // The same arrays every call, so a list a component passes on stays put.
-    expect(workoutBlockTypes()).toBe(workoutBlockTypes());
-    expect(addBlockTypes()).toBe(addBlockTypes());
+    expect(workoutBlockTypes(true)).toBe(workoutBlockTypes(true));
+    expect(workoutBlockTypes(false)).toBe(workoutBlockTypes(false));
+    expect(addBlockTypes(true)).toBe(addBlockTypes(true));
+    expect(addBlockTypes(false)).toBe(addBlockTypes(false));
   });
 
-  // The store captures run dev builds in screenshot mode; they keep today's chips.
+  // The store captures run dev builds in screenshot mode; they keep today's
+  // chips, and a tester's flag cannot put the timed ones in.
   it('stay off in screenshot mode unless the capture opens on a timed block', async () => {
     vi.stubGlobal('__DEV__', true);
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
-    expect(timedWorkoutBlocksOffered()).toBe(false);
-    expect(workoutBlockTypes()).toEqual(UNTIMED_CHIPS);
+    expect(timedWorkoutBlocksOffered(false)).toBe(false);
+    expect(timedWorkoutBlocksOffered(true)).toBe(false);
 
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_WORKOUT', 'fourByFour');
     vi.resetModules();
     const reloaded = await import('../workout-blocks');
-    expect(reloaded.timedWorkoutBlocksOffered()).toBe(true);
+    expect(reloaded.timedWorkoutBlocksOffered(false)).toBe(true);
 
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_WORKOUT', 'volume');
     vi.resetModules();
-    expect((await import('../workout-blocks')).timedWorkoutBlocksOffered()).toBe(false);
+    const untimed = await import('../workout-blocks');
+    expect(untimed.timedWorkoutBlocksOffered(false)).toBe(false);
+    expect(untimed.timedWorkoutBlocksOffered(true)).toBe(false);
   });
 
   it('build their defaults at the grade asked for', () => {

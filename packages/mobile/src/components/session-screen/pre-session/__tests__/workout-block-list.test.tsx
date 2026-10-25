@@ -16,6 +16,7 @@ import {
   type WorkoutBlock,
   type WorkoutFilters,
 } from '../workout-blocks';
+import { FeatureFlagsProvider, type FeatureFlags } from '../../../../providers/feature-flags-provider';
 
 const uuids = vi.hoisted(() => {
   let counter = 0;
@@ -184,8 +185,9 @@ function Harness({ initial }: { initial: GeneratorSelection }) {
   });
 }
 
-function renderList(blocks: WorkoutBlock[]) {
-  return render(createElement(Harness, { initial: { ...NO_WORKOUT, blocks } }));
+function renderList(blocks: WorkoutBlock[], flags?: FeatureFlags) {
+  const list = createElement(Harness, { initial: { ...NO_WORKOUT, blocks } });
+  return render(flags ? createElement(FeatureFlagsProvider, { flags, children: list }) : list);
 }
 
 function lastSelection(): GeneratorSelection {
@@ -397,12 +399,19 @@ describe('WorkoutBlockList', () => {
       'Block 1, mobile.session.preGeneratorLimitBouldering',
     ];
 
-    it('are on no card in a release build', () => {
+    it('are on no card in a release build with the flag off', () => {
       vi.stubGlobal('__DEV__', false);
-      const screen = renderList([pyramid('first', 20)]);
+      const screen = renderList([pyramid('first', 20)], { 'workout-timed-blocks': false });
 
       for (const label of TIMED_CHIP_LABELS) expect(screen.queryByLabelText(label)).toBeNull();
       expect(screen.getByLabelText('Block 1, mobile.session.preGeneratorGradeFocus')).toBeTruthy();
+    });
+
+    it('are on every card in a release build with the flag on', () => {
+      vi.stubGlobal('__DEV__', false);
+      const screen = renderList([pyramid('first', 20)], { 'workout-timed-blocks': true });
+
+      for (const label of TIMED_CHIP_LABELS) expect(screen.getByLabelText(label)).toBeTruthy();
     });
 
     it('follow the untimed chips in a dev build, and turn a block into a 4x4 at its grade', () => {

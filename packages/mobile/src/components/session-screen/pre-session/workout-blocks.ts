@@ -2,9 +2,9 @@
 // the same kind of thing, a warm-up or a workout of one type, and any block can
 // sit anywhere, the first one included. Each block, warm-ups included, has its
 // own climb filters. No blocks means no workout: the climber picks every climb.
-// Pure apart from the timed-blocks gate, which reads the build: every helper
-// returns a new selection, so the picker and the preview hook can share them and
-// tests need no React.
+// Pure apart from the timed-blocks gate, which reads the build and is handed the
+// flag: every helper returns a new selection, so the picker and the preview hook
+// can share them and tests need no React.
 
 import {
   DEFAULT_FOUR_BY_FOUR_OPTIONS,
@@ -56,14 +56,17 @@ function isTimedWorkoutType(type: WorkoutBlockType): boolean {
 }
 
 /**
- * Whether the chips offer the timed types (on the minute, 4x4, limit). Dev
- * builds only until they launch (#5380): an OTA that reaches store binaries
- * must not show them. Screenshot mode runs dev builds too (the store captures
- * and the E2E smokes), so there they show only when the capture opens on a
- * timed block, and the store shots keep the chips climbers have today.
+ * Whether the chips offer the timed types (on the minute, 4x4, limit) until they
+ * launch (#5380): in every dev build, and in a store build where the
+ * `workout-timed-blocks` flag is on (testers, through PostHog or the Feature
+ * Flags screen). `flagEnabled` is that flag, read by the component through
+ * `useWorkoutTimedBlocksFlag`; it is off by default, so an OTA that reaches store
+ * binaries shows climbers today's chips. Screenshot mode runs dev builds too
+ * (the store captures and the E2E smokes), so there they show only when the
+ * capture opens on a timed block, and the store shots keep today's chips.
  */
-export function timedWorkoutBlocksOffered(): boolean {
-  if (!__DEV__) return false;
+export function timedWorkoutBlocksOffered(flagEnabled: boolean): boolean {
+  if (!__DEV__ && !flagEnabled) return false;
   if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') {
     return SCREENSHOT_WORKOUT !== null && isTimedWorkoutType(SCREENSHOT_WORKOUT);
   }
@@ -77,14 +80,17 @@ const ALL_BLOCK_TYPES: readonly WorkoutBlockType[] = [...UNTIMED_BLOCK_TYPES, ..
 const UNTIMED_ADD_BLOCK_TYPES = UNTIMED_BLOCK_TYPES.filter((type) => type !== 'warmUp');
 const ALL_ADD_BLOCK_TYPES = ALL_BLOCK_TYPES.filter((type) => type !== 'warmUp');
 
-/** Picker order for a block's type chips: warm-up, the untimed types, then the timed ones when offered. */
-export function workoutBlockTypes(): readonly WorkoutBlockType[] {
-  return timedWorkoutBlocksOffered() ? ALL_BLOCK_TYPES : UNTIMED_BLOCK_TYPES;
+/**
+ * Picker order for a block's type chips: warm-up, the untimed types, then the
+ * timed ones when `timedBlocksOffered` (`timedWorkoutBlocksOffered`).
+ */
+export function workoutBlockTypes(timedBlocksOffered: boolean): readonly WorkoutBlockType[] {
+  return timedBlocksOffered ? ALL_BLOCK_TYPES : UNTIMED_BLOCK_TYPES;
 }
 
 /** The chips of the in-session "Add a block" sheet: the workout types only, since mid-session the climber is warm. */
-export function addBlockTypes(): readonly WorkoutBlockType[] {
-  return timedWorkoutBlocksOffered() ? ALL_ADD_BLOCK_TYPES : UNTIMED_ADD_BLOCK_TYPES;
+export function addBlockTypes(timedBlocksOffered: boolean): readonly WorkoutBlockType[] {
+  return timedBlocksOffered ? ALL_ADD_BLOCK_TYPES : UNTIMED_ADD_BLOCK_TYPES;
 }
 
 /** Just the filter fields, from any object that carries them (a block's options, say). */

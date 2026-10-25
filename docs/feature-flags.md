@@ -274,6 +274,21 @@ diagnostic) applies on native. The whole surface lives in three files:
   `Sheet` / `ModalSheet` read that store instead of `useFeatureFlag`. Dozens of
   suites mock the provider with only the hooks they use, so a flag hook inside
   the shared sheets would throw there.
+  `workout-timed-blocks` is a POSITIVE rollout flag, off by default, for the
+  three timed workout blocks (4x4, Limit Bouldering, On the Minute) before they
+  launch (#5380). The gate is `timedWorkoutBlocksOffered` in
+  `packages/mobile/src/components/session-screen/pre-session/workout-blocks.ts`:
+  every dev build, or a store build with the flag on, gets 8 type chips on the
+  Record tab's block card and 7 in the in-session "Add a block" sheet instead of
+  5 and 4. Screenshot mode ignores the flag and keeps its own rule (the timed
+  chips show only when `EXPO_PUBLIC_SCREENSHOT_WORKOUT` names a timed type), so
+  a tester's override never reaches a store capture. The helpers stay pure and
+  take the flag as an argument; `WorkoutBlockFields` and `AddWorkoutBlockSheet`
+  read it through `useWorkoutTimedBlocksFlag` and pass it down. Unresolved reads
+  as off, which is the 5 chips climbers have today; a tester's chips appear when
+  the value lands, and an open "Add a block" sheet keeps the block it opened on.
+  The launch removes the flag and the gate. See `docs/workout-stages.md` →
+  "Timed blocks".
 - **Live read**: `readPosthogFeatureFlags` in `packages/mobile/src/lib/analytics.ts`.
 - **Dev override**: `packages/mobile/src/lib/feature-flag-overrides.ts` — an
   on-device `Record<string, boolean | string>`, persisted to AsyncStorage,

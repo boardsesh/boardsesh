@@ -227,6 +227,13 @@ export const FEATURE_FLAG_DEFINITIONS = [
       'QA only, iPhone and iPad. Draws a black box of numbers at the top of every sheet with a pinned bar or header, such as Log a tick, to show where the keyboard really sits under a sheet (#5964). Open the sheet and screenshot the box, tap a text field and screenshot it again. It only measures: buttons and padding stay exactly as they are. Off by default.',
     defaultEnabled: false,
   },
+  {
+    key: 'workout-timed-blocks',
+    label: 'Timed workout blocks',
+    description:
+      'Offers the 4x4, Limit Bouldering and On the Minute blocks on the Record tab and in "Add a block" before they launch (#5380): 8 type chips instead of 5. Dev builds always offer them. A POSITIVE rollout flag, off by default: with no value at all a store build shows the 5 chips climbers have today. Screenshot mode ignores it.',
+    defaultEnabled: false,
+  },
 ] as const satisfies readonly FeatureFlagDefinition[];
 
 // The literal key union (e.g. `'strava-integration'`), preserved via the
@@ -587,6 +594,20 @@ export function usePersonalGradesDefault(): boolean {
  */
 export function useSharedSessionBrowseEnabled(): boolean {
   return useFeatureFlag('shared-session-browse') === true;
+}
+
+/**
+ * The flag half of the timed workout blocks gate (#5380): whether
+ * `workout-timed-blocks` is on. `timedWorkoutBlocksOffered` adds every dev build
+ * and the screenshot-mode rule, so read the chips through that, not this alone.
+ *
+ * A POSITIVE rollout flag, read strictly like `useBoardseshGradeEnabled`:
+ * missing/undefined reads as OFF, which is the chips climbers have today. A
+ * tester whose flag lands a moment after the Record tab opens sees the timed
+ * chips appear; nothing is acted on before that.
+ */
+export function useWorkoutTimedBlocksFlag(): boolean {
+  return useFeatureFlag('workout-timed-blocks') === true;
 }
 
 /**

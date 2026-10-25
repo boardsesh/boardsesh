@@ -312,13 +312,18 @@ started without the generator can turn into one. Both open `AddWorkoutBlockSheet
 
 ### Timed blocks
 
-On the minute, 4x4 and limit bouldering are offered in dev builds only until they launch:
-`timedWorkoutBlocksOffered()` in `workout-blocks.ts` is `__DEV__`, so a release bundle, and
-with it every OTA, shows the five chips climbers have today. Screenshot mode runs dev
-builds too (the store captures, the E2E smokes), so there the timed chips show only when
-`EXPO_PUBLIC_SCREENSHOT_WORKOUT` names a timed type, and the store shots keep today's
-chips. `workoutBlockTypes()` is the block card's chip list, `addBlockTypes()` the
-mid-session sheet's. The Record tab's "Add a block" never steps onto a timed type
+On the minute, 4x4 and limit bouldering are offered in dev builds and to testers until
+they launch: `timedWorkoutBlocksOffered(flagEnabled)` in `workout-blocks.ts` is
+`__DEV__ || flag('workout-timed-blocks')`. The flag is a positive rollout flag in the
+mobile catalog, off by default and listed on the tester Feature Flags screen (see
+`docs/feature-flags.md` → "Mobile flags"), so a release bundle, and with it every OTA,
+shows the five chips climbers have today unless PostHog or a tester's override turns it
+on. Screenshot mode runs dev builds too (the store captures, the E2E smokes), so there the
+flag is ignored and the timed chips show only when `EXPO_PUBLIC_SCREENSHOT_WORKOUT` names a
+timed type, and the store shots keep today's chips. `workoutBlockTypes(offered)` is the
+block card's chip list, `addBlockTypes(offered)` the mid-session sheet's; both are pure, and
+`WorkoutBlockFields` and `AddWorkoutBlockSheet` read the flag with
+`useWorkoutTimedBlocksFlag` and hand it in. The launch removes the flag and the gate. The Record tab's "Add a block" never steps onto a timed type
 (`nextBlockType` cycles the four untimed ones), so a timed block is always picked from its
 chip. The mid-session sheet opened after a timed stage opens on that type where the build
 offers it, and on volume at the stage's grade where it does not (`defaultMidSessionBlock`).
