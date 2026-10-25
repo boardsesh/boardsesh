@@ -649,7 +649,10 @@ ships on the `release/next` train because it moves the native fingerprint.
   touch lands on. It is `box-none`, not `none`: on iOS, Fabric turns `none` into
   `userInteractionEnabled = NO`, and UIKit can then refuse it first responder
   and never hit-tests it, which would silence both the key commands and the
-  Pencil interaction. For a climber who can edit, JS hands it the shortcut
+  Pencil interaction. On Android the module's view is an `ExpoView`, which is a
+  `LinearLayout`, so it holds a single JS wrapper child (absolute-fill) that
+  carries the editor's layout; `box-none` only takes effect on that wrapper
+  there. For a climber who can edit, JS hands it the shortcut
   list (`sprayShortcutCommands`: keys, plus the titles the iPad's Cmd-hold
   overlay shows). iOS registers each one as a `UIKeyCommand` on a view that
   makes itself first responder. Android matches key presses on a view that

@@ -1,4 +1,4 @@
-import React, { useCallback, type ReactNode } from 'react';
+import React, { useCallback, useMemo, type ReactNode } from 'react';
 import {
   Platform,
   StyleSheet,
@@ -79,6 +79,8 @@ export const SprayEditorKeyScope = React.memo(function SprayEditorKeyScope({
     [onPencilGesture],
   );
 
+  const wrapperStyle = useMemo(() => [StyleSheet.absoluteFill, contentStyle], [contentStyle]);
+
   if (!NativeSprayEditorKeyScope) {
     return (
       <View style={[style, contentStyle]} onLayout={onLayout}>
@@ -98,7 +100,7 @@ export const SprayEditorKeyScope = React.memo(function SprayEditorKeyScope({
       onPencilSqueeze={handlePencilGesture}
     >
       {wrapChildren ? (
-        <View collapsable={false} pointerEvents="box-none" style={[StyleSheet.absoluteFill, contentStyle]}>
+        <View collapsable={false} pointerEvents="box-none" style={wrapperStyle}>
           {children}
         </View>
       ) : (
