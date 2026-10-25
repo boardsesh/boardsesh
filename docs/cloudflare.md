@@ -837,6 +837,13 @@ production on 2026-09-02, a logged-out list page returned the header and
 `us-west2` Railway replica against Postgres. The fourth cache rule,
 `boardsesh:www-html-edge-cache`, is what makes the origin's own TTL take effect.
 
+Exception (#6803): MoonBoard and Woods list pages, and every `/b/{slug}` list page,
+get `s-maxage=900` (15 minutes) to match the 15 minute Next data cache for
+boards with live stats. Middleware cannot tell the board from a `/b/` slug
+without a backend call, so the whole slug tree takes the short TTL; Kilter and
+Tension config-tuple pages keep 24 h. Existing 24 h edge copies age out on
+their own.
+
 Same action as the other three: eligible for cache, edge TTL
 `bypass_by_default`, browser TTL `respect_origin`. `bypass_by_default` is the
 safety model, not a detail — the origin decides, and anything it does not

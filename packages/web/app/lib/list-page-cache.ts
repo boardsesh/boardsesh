@@ -3,9 +3,13 @@ import { USER_SPECIFIC_SEARCH_PARAMS } from '@boardsesh/shared-schema';
 import type { SearchRequestPagination } from '@/app/lib/types';
 import { WALL_CAPABILITY_PARAM } from '@/app/lib/spray/spray-visibility';
 import { isBoardInviteRequest } from '@/app/lib/board-invite';
+import { hasLiveSearchData, LIVE_SEARCH_DATA_TTL_SECONDS } from '@/app/lib/live-search-data-boards';
 
 // List data tolerates a full day of staleness (a new/edited climb showing up a
-// little late in a list is harmless), so list pages cache for 24h.
+// little late in a list is harmless), so list pages cache for 24h. MoonBoard
+// and Woods lists (and every `/b/{slug}` list, whose board middleware cannot
+// tell without a backend call) use the 15 minute live-data TTL instead, to
+// match their Next data cache (#6803).
 const LIST_PAGE_CACHE_TTL_SECONDS = 86400;
 
 // A climb view page is fully determined by its URL and reads no server-side
@@ -120,6 +124,10 @@ export function getListPageCacheTTL(pathname: string, searchParams: URLSearchPar
     isBoardInviteRequest(pathname, searchParams)
   ) {
     return null;
+  }
+
+  if (isSlugFormat || hasLiveSearchData(pathParts[0])) {
+    return LIVE_SEARCH_DATA_TTL_SECONDS;
   }
 
   return LIST_PAGE_CACHE_TTL_SECONDS;
