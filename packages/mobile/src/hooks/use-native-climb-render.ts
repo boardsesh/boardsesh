@@ -1081,10 +1081,21 @@ export function getOrStartInflightRender(
     const entry = cacheRenderedOverlay(cacheKey, uri);
     if (generationBeforeFirstRender !== null) {
       reconciledAfterNativePrune = true;
-      void reconcileOverlayIndexWithDisk(generationBeforeFirstRender).catch(() => {
-        // Best-effort: an index left unreconciled still recovers each dead key
-        // through the cache_entry_missing re-render, as it did before.
-      });
+      void reconcileOverlayIndexWithDisk(generationBeforeFirstRender)
+        .then((forgottenKeys) => {
+          // Rides along on any later board-render report, so a BOARDSESH-DR event
+          // after release shows whether this launch's prune left dead keys behind.
+          addErrorBreadcrumb({
+            category: 'board-render',
+            message: 'Overlay index checked after native prune',
+            level: 'info',
+            data: { forgottenKeys },
+          });
+        })
+        .catch(() => {
+          // Best-effort: an index left unreconciled still recovers each dead key
+          // through the cache_entry_missing re-render, as it did before.
+        });
     }
     return entry;
   });

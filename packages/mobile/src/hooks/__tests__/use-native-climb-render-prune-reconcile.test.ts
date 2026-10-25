@@ -11,6 +11,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // Imported by path — see cache-dir-io.test.ts for why.
 import { __resetFileSystem, __seedFileSystem } from '../../../test/expo-file-system-stub';
 
+const { addErrorBreadcrumb } = vi.hoisted(() => ({ addErrorBreadcrumb: vi.fn() }));
+vi.mock('../../lib/error-reporting', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/error-reporting')>()),
+  addErrorBreadcrumb,
+}));
 vi.mock('../../providers/theme-provider', () => ({ useAppColorScheme: () => 'light' }));
 vi.mock('../../lib/board-details', () => ({ getBoardRenderData: vi.fn(() => null) }));
 vi.mock('../../lib/background-image-cache', () => ({
@@ -37,6 +42,7 @@ function png(cacheKey: string): string {
 }
 
 beforeEach(() => {
+  addErrorBreadcrumb.mockClear();
   __resetFileSystem();
   _resetWarmupForTests();
 });
@@ -60,6 +66,14 @@ describe('reconciling the overlay index after the native prune', () => {
     await vi.waitFor(() => expect(_getRenderedOverlayForTests(KEY_PRUNED)).toBeUndefined());
     expect(_getRenderedOverlayForTests(KEY_KEPT)?.uri).toBe(`${DIR}/${png(KEY_KEPT)}`);
     expect(_getRenderedOverlayForTests(KEY_FIRST_RENDER)?.uri).toBe(`${DIR}/${png(KEY_FIRST_RENDER)}`);
+    await vi.waitFor(() =>
+      expect(addErrorBreadcrumb).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'Overlay index checked after native prune',
+          data: { forgottenKeys: 1 },
+        }),
+      ),
+    );
   });
 
   it('keeps the first render’s own result even if the walk cannot see its file', async () => {
