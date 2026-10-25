@@ -20,11 +20,11 @@ import type { SitemapItem } from './entries';
  * id in the URL, and listing them would ask Google to crawl a surface it can
  * only ever be redirected away from.
  *
- * `/build-plans/licence` belongs here too and is not listed yet, because the
- * page does not exist yet — the manufacturing licence ships marked DRAFT and
- * its own PR has not landed. Add it in the PR that adds the route; the guard
- * test beside this file fails on any path here without a `page.tsx` behind it,
- * so the list cannot start advertising a 404.
+ * `/build-plans/licence` is not listed yet. The page exists, but the
+ * manufacturing licence ships marked DRAFT and the page answers `noindex` for
+ * as long as it is one. List it when the licence is final; the guard test
+ * beside this file fails on any path here without a `page.tsx` behind it, so
+ * the list cannot start advertising a 404.
  */
 export const BUILD_PLANS_ENTRIES: readonly SitemapItem[] = [
   { path: '/build-plans', changeFrequency: 'monthly', priority: 0.7, lastModified: new Date('2026-09-06') },
