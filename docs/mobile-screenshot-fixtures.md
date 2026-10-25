@@ -181,6 +181,14 @@ or hashes. Spray boards, unknown board types, non-null import state and every
 other document change still fail the drift check; selection coverage checks the
 same adapted response the replay server sends.
 
+The pinned `GetSessionDetail`, `GetSessionGroupedFeed` and
+`GetUserGroupedAscentsFeed` recordings predate each tick's nullable
+`characteristics` (#5245). Replay accepts the current document only when it is the
+recorded one with `characteristics` added straight after every `isNoMatch`, and
+answers `null` on every tick, which is what those screens rendered when recorded.
+A recording that already carries the field, a tick level without it, and every
+other document change still fail the drift check.
+
 Presence recordings also accept the exact addition of the optional `boardUuid`
 declaration and argument, with unchanged response selections. Replay still requires
 an exact variables hash: a request presenting a UUID needs its own recording and
