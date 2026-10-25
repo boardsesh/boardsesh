@@ -25,7 +25,7 @@ vi.mock('@react-native-google-signin/google-signin', () => ({
   GoogleSignin: { configure: vi.fn(), hasPlayServices: vi.fn(), signIn: vi.fn() },
   statusCodes: {},
 }));
-vi.mock('../abort-timeout', () => ({ createTimeoutSignal: () => undefined }));
+vi.mock('../abort-timeout', () => ({ createTimeoutSignal: () => new AbortController().signal }));
 vi.mock('../env', () => ({ BACKEND_URL: 'https://backend.test', WEB_BASE_URL: 'https://web.test' }));
 // auth.ts stamps every request with client-identity headers, which import
 // expo-application — a native module that can't load in node (#6224).

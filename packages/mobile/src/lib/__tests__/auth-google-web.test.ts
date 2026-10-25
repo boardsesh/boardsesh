@@ -61,7 +61,15 @@ vi.mock('@react-native-google-signin/google-signin', () => ({
   GoogleSignin: { configure: vi.fn(), hasPlayServices: vi.fn(), signIn: vi.fn() },
   statusCodes: {},
 }));
-vi.mock('../abort-timeout', () => ({ createTimeoutSignal: () => undefined }));
+// Hand out a real signal and keep its controller, so a test can fire the 15 s
+// abort itself and check the exchange reports it as a timeout (#5852).
+const timeoutSignalState = vi.hoisted(() => ({ controller: null as AbortController | null }));
+vi.mock('../abort-timeout', () => ({
+  createTimeoutSignal: () => {
+    timeoutSignalState.controller = new AbortController();
+    return timeoutSignalState.controller.signal;
+  },
+}));
 vi.mock('../env', () => ({ BACKEND_URL: 'https://backend.test', WEB_BASE_URL: 'https://web.test' }));
 vi.mock('../client-identity', () => ({
   clientIdentityHeaders: () => ({ 'x-boardsesh-client': 'boardsesh-mobile/2.6.0 (ios; build 45)' }),
@@ -319,7 +327,29 @@ describe('signInWithGoogleWeb', () => {
     const racePromise = signInWithGoogleWeb();
     fireDeepLink(`${CALLBACK_SCHEME}?transferToken=tok`);
 
-    expect(await racePromise).toEqual({ success: false, status: null, error: 'network' });
+    expect(await racePromise).toEqual({
+      success: false,
+      status: null,
+      error: 'network',
+      networkCause: 'unreachable',
+    });
+  });
+
+  it('maps an exchange that hits the 15 s abort to a timeout failure', async () => {
+    vi.spyOn(global, 'fetch').mockImplementation(() => {
+      timeoutSignalState.controller?.abort();
+      return Promise.reject(new Error('Aborted'));
+    });
+
+    const racePromise = signInWithGoogleWeb();
+    fireDeepLink(`${CALLBACK_SCHEME}?transferToken=tok`);
+
+    expect(await racePromise).toEqual({
+      success: false,
+      status: null,
+      error: 'network',
+      networkCause: 'timeout',
+    });
   });
 });
 
