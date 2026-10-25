@@ -947,7 +947,7 @@ mapping; the reducer decides what to do with it.
 | Subscription document (mobile) | `QUEUE_UPDATES_SUBSCRIPTION_NOW_SLOT` selects `historyCount` and `currentChangedAt` in `FullSync.state`; today's document stays for legacy mode | `src/lib/graphql/operations.ts:1229` |
 | Server probe | On every socket connect, before the join: the `__type(name: "QueueState")` probe, cached per connection, plus the narrow validation-error fallback (section 2). Injected into `create-queue-mutations.ts` as `useNowSlotDocuments()`. | `src/providers/queue/use-session-realtime.ts:884-908` |
 | Throttled open | A throttled `move-*` or `dedupe-*` reorders the array, so it can't use the "pointer self-heals" skip. It resyncs like any failed write. In now-slot mode a throttled `insert` resyncs too; `recoverThrottledQueueAdd` stays for the legacy branch only. | `queue-provider.tsx:1974-2000`, `:1844` |
-| `nextClimb` on a track | Sends `NOW`. A track peek still becomes a queue item, but at the Now slot, so it is History once you move on. If the list's neighbour is already queued, that entry moves instead of being copied. | `queue-provider.tsx:2234-2258` |
+| `nextClimb` on a track | Sends `NOW`. A track peek still becomes a queue item, but at the Now slot, so it is History once you move on. If the list's neighbour is already queued, that entry moves instead of being copied. Since #6777 Next on a track plays Up next before the list (below), so the peek only comes once Up next is played. | `queue-provider.tsx:2234-2258` |
 | `previousClimb` | On a track: `NOW` (the list's previous climb, from History or new). With no track, walking the queue (rule 4): `STEP`. | `queue-provider.tsx:2261-2281` |
 | BLE board-compatibility skip | Moves the target into Now, so the skipped climbs for a crewmate's other board stay in Up next | `shared/board-config/src/board-compatibility.ts:256-273` |
 | Queue sheet row tap | Up next or History row: `NOW` | `src/components/play-drawer/use-queue-sheet-handlers.ts:65` |
@@ -963,6 +963,17 @@ mapping; the reducer decides what to do with it.
 | Playlist replace | `buildPlaylistQueue` keeps the History prefix (today it drops it) and sends `historyCount` | `use-playlist-activation.ts:268` |
 | Persistence | Snapshot gains `historyCount` and `lastCurrentChangeAt` (section 6). Both optional, so the key `boardsesh_local_queue_snapshot_v1` keeps its suffix. | `src/lib/queue-snapshot-store.ts:22-29`, `use-queue-persistence.ts:121-158` |
 | Dead code | `pruneSuggestedQueueItemsAfterCurrent` (`shared/queue/src/playlist-suggestions.ts`) and the `sessionIdRef.current == null` prune switch (`queue-provider.tsx:1950`). Nothing browse-origin reaches Up next any more. Deleted in the cleanup PR, once the legacy branch goes. | — |
+
+**Next walks Up next before the track (#6777, 2026-10-25).** While a list is walked, Next
+plays Up next first (Play next climbs at the top of it, then Play last ones), and the list picks
+up after the last list climb played, which the track keeps as `PlaylistSuggestionSource.resume`
+(the list climb and its queue entry, `selectNextQueueItemWithSuggestions` in
+`shared/play-view/src/queue-navigation.ts`). PR 3 follows that order: from a list climb, Next
+sends `NOW` for Up next's first climb when there is one, and only peeks the list once Up next is
+played. Today Up next leaves out the climbs a list walk put in the queue itself (`suggested`, and
+on the track); in now-slot mode no list-walk climb reaches Up next, so that filter has nothing
+left to drop and goes in the cleanup PR. The resume entry is History in now-slot mode, and
+Previous from the first queued climb has to land on that entry, not on a copy of it.
 
 ### The other follow-ups
 
