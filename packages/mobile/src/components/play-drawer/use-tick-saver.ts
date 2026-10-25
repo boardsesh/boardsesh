@@ -178,6 +178,14 @@ export function useTickSaver({
         { climbUuid, angle: fields.angle },
         fields.queueItem ?? getQueueSnapshot?.().currentClimbQueueItem ?? null,
       );
+      // Whether this tick is a go of the workout (a 4x4 rep, a limit try), also
+      // decided now. A tick dated more than a minute before it was logged is
+      // history (yesterday's send logged with the date picker), by the rest
+      // timer's own rule: never a rep, never a try. As a rep it would close the
+      // set one real rep early and move the wall. Judged when the climber logs
+      // it, not when the save lands, so a go whose save is slow still counts.
+      const loggedAtMs = nowMs();
+      const isWorkoutGo = isTickFreshEnoughToArm(getRestTimerStartMs(climbedAtIso) ?? loggedAtMs, loggedAtMs);
 
       saveSurvivingUnmount(
         saveTick,
@@ -240,13 +248,9 @@ export function useTickSaver({
             // item are what a workout stage's advance rule reads (#5380).
             noteRestTimerTick(climbedAtIso, getEffectiveRestPacing().mode, landedAtMs, { status, queueItemUuid });
             const tickUuid = result?.savedTick.uuid ?? null;
-            // The workout's own count of tries and sends, by queue item. It
-            // ignores a climb outside this session's run. A tick dated more than
-            // a minute before it landed is history (yesterday's send logged with
-            // the date picker), judged by the rest timer's own rule: it is no
-            // go of this workout, so it is never a 4x4 rep or a limit try. As a
-            // rep it would close the set one real rep early and move the wall.
-            const isWorkoutGo = isTickFreshEnoughToArm(getRestTimerStartMs(climbedAtIso) ?? landedAtMs, landedAtMs);
+            // The workout's own count of tries and sends, by queue item: only a
+            // go of the workout (`isWorkoutGo`, above) on a climb of this
+            // session's run.
             if (queueItemUuid !== null && sessionId && isWorkoutGo) {
               noteWorkoutRunTick(sessionId, {
                 queueItemUuid,

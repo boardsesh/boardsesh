@@ -77,6 +77,16 @@ on the wall (`stagePacing.queueItemUuid`) already has. A refilled queue under a 
 for the next tick and forgets the last one, as the fire does (`clearRestTimerQueueEnded` with
 `anchorAfterFire`): that tick's rest already ran out at the dead end.
 
+The tick that moved the wall is spent. The store remembers the climb the timer last moved the wall
+off (`advancedFromQueueItemUuid`, set by `noteRestTimerAdvancedFrom` just before `nextClimb`, on
+the local path and on an applied crew FIRE), and `restAdvanceAllowed` never lets a last tick on
+that climb move the wall again. A fresh tick logged on this phone on that climb clears it: the
+climber went again, and that go earns its own rest. Found in simulator QA during a backend deploy
+(#5380): the set rest's FIRE got no answer, so the solo phone moved the wall itself; that move
+never reached the server, the rejoin put the old climb back, and the session seed brought back
+the crew clock with the set's last rep on that climb. Without the guard the scheduler restarted
+the rest that had run out and moved the wall a second time. Arm and disarm forget it.
+
 A tick never starts a rest earlier than the rest already running or the last advance, and never
 in the future (`noteRestTimerTick`'s floor:
 `min(now, max(tick, anchor, lastFiredDeadlineMs))`). The `afterTick` deadline is the anchor plus
@@ -91,7 +101,8 @@ The floor is for a slow save, not for history. A tick dated more than
 (`isTickFreshEnoughToArm`), is history: yesterday's session logged with the date picker. It
 never replaces `lastTick`, so it never moves the wall under a tick or send rule, and the tick
 path keeps it out of the workout's tick log by the same test, so it is never a 4x4 rep either
-(`use-tick-saver.ts`). On a running
+(`use-tick-saver.ts`). That test is made when the climber logs the tick, so a go whose save lands
+more than a minute later still counts as a rep. On a running
 rest it goes through the floor, so it never rewinds it. A paused rest stays paused. With no
 anchor it anchors at its own time, as every tick did before the floor, so its deadline is
 usually long gone and nothing is scheduled. Floored there instead, it would start a rest at the

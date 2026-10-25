@@ -31,7 +31,8 @@ import { describeWorkoutRun, type WorkoutClimbGo, type WorkoutStageReadout } fro
 export type WorkoutRunnerRestSnapshot = Pick<
   RestTimerState,
   'armed' | 'isRunning' | 'anchorMs' | 'lastTick' | 'stagePacing' | 'queueEnded'
->;
+> &
+  Partial<Pick<RestTimerState, 'advancedFromQueueItemUuid'>>;
 
 export type WorkoutRunnerInput = {
   run: WorkoutRun;
@@ -391,6 +392,7 @@ export function describeWorkoutRunner({
       currentQueueItemUuid: currentUuid,
       lastTick: rest.lastTick,
       stage: stagePacing,
+      advancedFromQueueItemUuid: rest.advancedFromQueueItemUuid ?? null,
     });
   const repsLeft = stagePacing?.reps !== undefined && stageHasRepsLeft(stagePacing) ? stagePacing.reps : null;
   const onTheMinute = stagePacing?.mode === 'onTheMinute';

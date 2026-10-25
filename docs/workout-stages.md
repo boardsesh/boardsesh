@@ -215,7 +215,10 @@ stage, leaves the climber's own rest settings in charge, exactly as before. The 
   the set rest, and only that one moves the wall (`restAdvanceAllowed` with the stage). A 4x4
   never walks on with nobody climbing, and a fall on a limit climb rests and stays on it, with
   the "rest over" cue. On the minute moves on every beat, logged or not. A rep logged during
-  the set rest restarts it, as any tick restarts an after-tick rest.
+  the set rest restarts it, as any tick restarts an after-tick rest. A climb the timer already
+  moved the wall off never moves it on again on the same tick (`advancedFromQueueItemUuid`,
+  docs/rest-timer.md): when a reconnect puts a finished 4x4 set back on the wall, it stays up
+  until the climber logs another rep on it or taps Next.
 - **Which climb a tick is for.** The tick path (`use-tick-saver.ts`) reads the committed
   current queue item when the save starts (`attributeTickToQueueItem`): a tick counts for it
   only when it is that climb's, at the angle the climb is up at (the queue item's
@@ -227,7 +230,8 @@ stage, leaves the climber's own rest settings in charge, exactly as before. The 
   angle. Nor does a tick dated more than a minute back ever earn an advance, whatever it is on
   (docs/rest-timer.md, "Effective pacing"), and it stays out of the run's tick log, so it is
   never a 4x4 rep or a limit try either: yesterday's send of the climb on the wall, logged with
-  the date picker, would otherwise close the set one real rep early. A save started on the previous climb keeps that
+  the date picker, would otherwise close the set one real rep early. That is judged when the
+  climber logs it, so a go whose save is slow still counts. A save started on the previous climb keeps that
   climb's queue item when it finishes after the advance, but it never replaces a tick the new
   climb already has, so the new climb still moves on at its rest.
 - **A stage change on a running timer** (`planRestTimerPacingTransition`). An on-the-minute

@@ -89,6 +89,42 @@ describe('restAdvanceAllowed', () => {
     expect(restAdvanceAllowed({ advanceOn: 'deadline', currentQueueItemUuid: null, lastTick: null })).toBe(true);
   });
 
+  describe('a climb the timer already moved the wall off', () => {
+    const tickOnTheWall = { status: 'send' as const, queueItemUuid: 'queue-1' };
+
+    it('never moves on again from it on the same tick, under either tick rule', () => {
+      for (const advanceOn of ['tick', 'send'] as const) {
+        expect(
+          restAdvanceAllowed({
+            advanceOn,
+            currentQueueItemUuid: 'queue-1',
+            lastTick: tickOnTheWall,
+            advancedFromQueueItemUuid: 'queue-1',
+          }),
+        ).toBe(false);
+      }
+    });
+
+    it('still moves on from any other climb, and on the deadline', () => {
+      expect(
+        restAdvanceAllowed({
+          advanceOn: 'send',
+          currentQueueItemUuid: 'queue-1',
+          lastTick: tickOnTheWall,
+          advancedFromQueueItemUuid: 'queue-0',
+        }),
+      ).toBe(true);
+      expect(
+        restAdvanceAllowed({
+          advanceOn: 'deadline',
+          currentQueueItemUuid: 'queue-1',
+          lastTick: tickOnTheWall,
+          advancedFromQueueItemUuid: 'queue-1',
+        }),
+      ).toBe(true);
+    });
+  });
+
   describe('tick', () => {
     it('advances after a tick on the climb on the wall', () => {
       expect(

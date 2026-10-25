@@ -9,6 +9,7 @@ import {
   clearRestTimerQueueEnded,
   disarmRestTimer,
   getRestTimerState,
+  noteRestTimerAdvancedFrom,
   noteRestTimerAutoAdvanceFired,
   noteRestTimerQueueEnded,
   noteRestTimerTick,
@@ -188,6 +189,48 @@ describe('the fire', () => {
     const cycleId = armWithSend();
     expect(noteRestTimerAutoAdvanceFired(cycleId - 1, 'afterTick', T0 + 180_000, T0 + 180_000, 'clear')).toBe(false);
     expect(getRestTimerState()).toMatchObject({ anchorMs: T0, lastTick: { status: 'send' } });
+  });
+});
+
+describe('the climb the timer last moved the wall off', () => {
+  function moveOnFrom(queueItemUuid: string) {
+    armRestTimer('afterTick', T0, 'session-1');
+    noteRestTimerTick(tickAt(0), 'afterTick', T0, { status: 'send', queueItemUuid });
+    noteRestTimerAutoAdvanceFired(getRestTimerState().cycleId, 'afterTick', T0 + 20_000, T0 + 20_000, 'clear');
+    noteRestTimerAdvancedFrom(queueItemUuid);
+  }
+
+  it('is remembered by the advance, and only while the timer is on', () => {
+    noteRestTimerAdvancedFrom('queue-1');
+    expect(getRestTimerState().advancedFromQueueItemUuid).toBeNull();
+    moveOnFrom('queue-1');
+    expect(getRestTimerState().advancedFromQueueItemUuid).toBe('queue-1');
+  });
+
+  it('is cleared by a fresh tick on that climb: the climber went again', () => {
+    moveOnFrom('queue-1');
+    noteRestTimerTick(tickAt(40), 'afterTick', T0 + 40_000, { status: 'attempt', queueItemUuid: 'queue-1' });
+    expect(getRestTimerState()).toMatchObject({
+      advancedFromQueueItemUuid: null,
+      lastTick: { status: 'attempt', queueItemUuid: 'queue-1' },
+    });
+  });
+
+  it('stays through a tick on another climb, a tick from a list, and yesterday’s send on that climb', () => {
+    moveOnFrom('queue-1');
+    noteRestTimerTick(tickAt(30), 'afterTick', T0 + 30_000, { status: 'send', queueItemUuid: 'queue-2' });
+    noteRestTimerTick(tickAt(31), 'afterTick', T0 + 31_000, { status: 'send', queueItemUuid: null });
+    noteRestTimerTick(tickAt(-86_400), 'afterTick', T0 + 32_000, { status: 'send', queueItemUuid: 'queue-1' });
+    expect(getRestTimerState().advancedFromQueueItemUuid).toBe('queue-1');
+  });
+
+  it('is forgotten on arm and on disarm', () => {
+    moveOnFrom('queue-1');
+    armRestTimer('afterTick', T0 + 60_000, 'session-1');
+    expect(getRestTimerState().advancedFromQueueItemUuid).toBeNull();
+    moveOnFrom('queue-1');
+    disarmRestTimer();
+    expect(getRestTimerState().advancedFromQueueItemUuid).toBeNull();
   });
 });
 

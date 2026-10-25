@@ -162,21 +162,32 @@ export type RestTimerLastTick = { status: RestTimerTickStatus; queueItemUuid: st
  * the next rep. A 4x4 stage resolved for another queue item than the one on
  * the wall (the store catches up one effect after the wall moves) says nothing
  * about this climb's reps, so it moves nothing either.
+ *
+ * `advancedFromQueueItemUuid` is the climb this timer last moved the wall off
+ * (`RestTimerState.advancedFromQueueItemUuid`). The tick that earned that move
+ * is spent. When the wall comes back to that climb with no new tick on it (the
+ * server's older state restored after a reconnect, and the crew clock's seed
+ * bringing back the tick it never saw spent), the same tick must not move the
+ * wall again. Found on a 4x4 set that had already moved on (#5380 QA): its
+ * reps are all still logged, so nothing else would hold it.
  */
 export function restAdvanceAllowed({
   advanceOn,
   currentQueueItemUuid,
   lastTick,
   stage = null,
+  advancedFromQueueItemUuid = null,
 }: {
   advanceOn: RestAdvanceRule;
   currentQueueItemUuid: string | null;
   lastTick: RestTimerLastTick | null;
   stage?: RestTimerStagePacing | null;
+  advancedFromQueueItemUuid?: string | null;
 }): boolean {
   if (advanceOn === 'deadline') return true;
   if (lastTick === null || currentQueueItemUuid === null) return false;
   if (lastTick.queueItemUuid !== currentQueueItemUuid) return false;
+  if (lastTick.queueItemUuid === advancedFromQueueItemUuid) return false;
   if (stage?.reps !== undefined && (stage.queueItemUuid !== currentQueueItemUuid || stageHasRepsLeft(stage))) {
     return false;
   }

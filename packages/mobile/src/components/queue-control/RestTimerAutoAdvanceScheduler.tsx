@@ -39,6 +39,7 @@ import {
   clearRestTimerQueueEnded,
   floorRestTimerAnchorAtLastAdvance,
   getRestTimerState,
+  noteRestTimerAdvancedFrom,
   noteRestTimerAutoAdvanceFired,
   noteRestTimerCrewBeatSkipped,
   noteRestTimerQueueEnded,
@@ -250,6 +251,9 @@ export function RestTimerAutoAdvanceScheduler() {
       const anchorAfter = anchorAfterFire({ mode, advanceOn });
       if (!noteRestTimerAutoAdvanceFired(expectedCycleId, mode, nowMs(), scheduledDeadlineMs, anchorAfter)) return;
 
+      // The tick that earned this move is spent: should the wall come back to
+      // this climb without a new one, it never moves on again from it.
+      noteRestTimerAdvancedFrom(advanceInputsRef.current.currentClimbQueueItem?.uuid ?? null);
       playRestTimerCue({ kind: 'advance' });
       nextClimb();
     },
@@ -366,6 +370,7 @@ export function RestTimerAutoAdvanceScheduler() {
       switch (outcome.kind) {
         case 'advance':
           if ((advanceInputsRef.current.currentClimbQueueItem?.uuid ?? null) !== wallQueueItemUuid) return;
+          noteRestTimerAdvancedFrom(wallQueueItemUuid);
           playRestTimerCue({ kind: 'advance' });
           nextClimb();
           return;
@@ -453,10 +458,21 @@ export function RestTimerAutoAdvanceScheduler() {
       // A tick or send rule asks again at the fire, against the climb on the
       // wall NOW: a manual Next that lands just before the timeout leaves the new
       // climb without its tick, and walking on from it would skip a climb. A 4x4
-      // set asks for its reps the same way.
-      const { lastTick, crew, stagePacing } = getRestTimerState();
+      // set asks for its reps the same way, and a climb the wall already moved
+      // on from is never moved on from again on the same tick.
+      const { lastTick, crew, stagePacing, advancedFromQueueItemUuid } = getRestTimerState();
       const currentQueueItemUuid = inputs.currentClimbQueueItem?.uuid ?? null;
-      if (!restAdvanceAllowed({ advanceOn, currentQueueItemUuid, lastTick, stage: stagePacing })) return;
+      if (
+        !restAdvanceAllowed({
+          advanceOn,
+          currentQueueItemUuid,
+          lastTick,
+          stage: stagePacing,
+          advancedFromQueueItemUuid,
+        })
+      ) {
+        return;
+      }
 
       if (crew !== null) {
         // The server claims the beat (see fireCrewBeat). A clock this app
@@ -482,6 +498,7 @@ export function RestTimerAutoAdvanceScheduler() {
       currentQueueItemUuid: currentClimbQueueItem?.uuid ?? null,
       lastTick: timerState.lastTick,
       stage,
+      advancedFromQueueItemUuid: timerState.advancedFromQueueItemUuid,
     });
   // A crew beat on the minute this phone let go is spent for the walk and the
   // reached cue below, but it never counts as an advance (crewBeatSkippedMs):

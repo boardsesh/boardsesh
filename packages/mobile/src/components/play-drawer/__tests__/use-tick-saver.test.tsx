@@ -102,7 +102,9 @@ vi.mock('../../../lib/analytics', () => ({
   }),
 }));
 vi.mock('../../../lib/haptics', () => ({ hapticSuccess: vi.fn(), hapticError: vi.fn() }));
-vi.mock('../../../lib/clock', () => ({ nowMs: () => NOW_MS }));
+// Moved on by a save that lands late (`saveMock.state.whileSaving`); back to NOW_MS before each test.
+const clockState = vi.hoisted(() => ({ nowMs: 0 }));
+vi.mock('../../../lib/clock', () => ({ nowMs: () => clockState.nowMs }));
 vi.mock('../../../settings', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../settings')>();
   return {
@@ -213,6 +215,7 @@ function sentInput(callIndex = 0): SaveTickOptions {
 }
 
 beforeEach(() => {
+  clockState.nowMs = NOW_MS;
   callLog.length = 0;
   saveMock.mutateAsync.mockClear();
   saveMock.state.failure = null;
@@ -510,6 +513,31 @@ describe('useTickSaver after a save', () => {
     result.current.save(fields({ climbedAtIso: new Date(NOW_MS - 24 * 60 * 60 * 1000).toISOString() }));
 
     expect(vi.mocked(noteRestTimerTick).mock.calls[0]?.[3]).toEqual({ status: 'send', queueItemUuid: 'queue-7' });
+    expect(noteWorkoutRunTick).not.toHaveBeenCalled();
+  });
+
+  it('logs a go whose save lands more than a minute after it was logged: it is judged when logged', () => {
+    queueSnapshot.current = { uuid: 'queue-7', climb: { uuid: CLIMB_UUID, angle: ANGLE } };
+    const { result } = renderSaver({}, { withQueue: true });
+    // The one-tap Fell, climbed now; the save retries for 90 s before it lands.
+    saveMock.state.whileSaving = () => {
+      clockState.nowMs += 90_000;
+    };
+
+    result.current.save(fields({ status: 'attempt', climbedAtIso: new Date(NOW_MS).toISOString() }));
+
+    expect(vi.mocked(noteWorkoutRunTick).mock.calls[0]?.[1]).toMatchObject({
+      queueItemUuid: 'queue-7',
+      status: 'attempt',
+    });
+  });
+
+  it('keeps yesterday’s send out of the workout log however fast its save lands', () => {
+    queueSnapshot.current = { uuid: 'queue-7', climb: { uuid: CLIMB_UUID, angle: ANGLE } };
+    const { result } = renderSaver({}, { withQueue: true });
+
+    result.current.save(fields({ climbedAtIso: new Date(NOW_MS - 61_000).toISOString() }));
+
     expect(noteWorkoutRunTick).not.toHaveBeenCalled();
   });
 
