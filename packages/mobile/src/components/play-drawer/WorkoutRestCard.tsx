@@ -290,7 +290,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   // The action drops under the summary when the two don't fit side by side
-  // (German, large text), instead of squeezing the climb's name.
+  // (large text, a narrow phone or pane, German), instead of squeezing the
+  // climb's name. The line breaks on the summary's base size, so that is its
+  // own text's width (`summary`), never a fixed one.
   card: {
     width: '100%',
     maxWidth: CARD_MAX_WIDTH,
@@ -303,10 +305,14 @@ const styles = StyleSheet.create({
     columnGap: spacing[3],
     rowGap: spacing[2],
   },
+  // No `flexBasis` (and no `flex`): the base size is the summary's own width,
+  // its longest line unwrapped, capped at the card's. A fixed basis (it was 180)
+  // fit beside the button at 375 pt even at the largest text, so the button
+  // never dropped and the caption broke mid-phrase in half the card. Grows into
+  // the line it gets.
   summary: {
     flexGrow: 1,
     flexShrink: 1,
-    flexBasis: 180,
     gap: 2,
   },
   headingRow: {

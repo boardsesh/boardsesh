@@ -109,16 +109,28 @@ const storage = vi.hoisted(() => ({
 vi.mock('@react-native-async-storage/async-storage', () => ({ default: storage }));
 
 const backHandlers = vi.hoisted(() => new Set<() => boolean>());
+// Yoga does not run here, so a layout test reads the flex contract off the
+// resolved style each view forwards (`data-style`), not measured pixels.
+type StyleProp = Record<string, unknown> | ReadonlyArray<StyleProp> | false | null | undefined;
+const flattenStyle = vi.hoisted(() => {
+  const flatten = (style: unknown): Record<string, unknown> => {
+    if (!style) return {};
+    if (Array.isArray(style)) return Object.assign({}, ...style.map(flatten));
+    return style as Record<string, unknown>;
+  };
+  return flatten;
+});
 type ViewMockProps = {
   children?: ReactNode;
   testID?: string;
   accessibilityLabel?: string;
   accessibilityViewIsModal?: boolean;
   pointerEvents?: string;
+  style?: StyleProp;
 };
 vi.mock('react-native', () => ({
   View: forwardRef<HTMLDivElement, ViewMockProps>(
-    ({ children, testID, accessibilityLabel, accessibilityViewIsModal, pointerEvents }, ref) =>
+    ({ children, testID, accessibilityLabel, accessibilityViewIsModal, pointerEvents, style }, ref) =>
       createElement(
         'div',
         {
@@ -127,6 +139,7 @@ vi.mock('react-native', () => ({
           'aria-label': accessibilityLabel,
           'data-modal': accessibilityViewIsModal ? 'true' : undefined,
           'data-pointer-events': pointerEvents,
+          'data-style': JSON.stringify(flattenStyle(style)),
         },
         children,
       ),
@@ -140,7 +153,10 @@ vi.mock('react-native', () => ({
   },
 }));
 vi.mock('react-native-reanimated', () => ({
-  default: { View: ({ children }: { children?: ReactNode }) => createElement('div', null, children) },
+  default: {
+    View: ({ children, style }: { children?: ReactNode; style?: StyleProp }) =>
+      createElement('div', { 'data-style': JSON.stringify(flattenStyle(style)) }, children),
+  },
   FadeIn: { duration: () => ({}) },
   useReducedMotion: () => true,
 }));
@@ -195,9 +211,14 @@ import {
   getRestTimerState,
   noteRestTimerQueueEnded,
   noteRestTimerTick,
+  pauseRestTimer,
   resetRestTimerStoreForTests,
 } from '../../../lib/rest-timer-store';
-import { resolveStageRestPacing, type RestTimerTickStatus } from '../../../lib/rest-timer-pacing';
+import {
+  resolveStageRestPacing,
+  type RestTimerPacingTransition,
+  type RestTimerTickStatus,
+} from '../../../lib/rest-timer-pacing';
 import { resetWorkoutDoneCardStoreForTests } from '../../../lib/workout-done-card-store';
 import { WorkoutRunnerOverlay } from '../WorkoutRunnerOverlay';
 
@@ -233,7 +254,7 @@ function notifyQueue(): void {
 }
 
 /** The stage pacing RestTimerPacingSync would store for `uuid`, counting its reps from the tick log. */
-function syncStagePacing(uuid: string): void {
+function syncStagePacing(uuid: string, transition: RestTimerPacingTransition = 'none'): void {
   applyRestTimerStagePacing(
     resolveStageRestPacing({
       sessionId: 'session-1',
@@ -243,8 +264,19 @@ function syncStagePacing(uuid: string): void {
       repsLogged: countWorkoutRunTicks(getWorkoutRunLog('session-1'), uuid),
     }),
     1000,
-    'none',
+    transition,
   );
+}
+
+/**
+ * A solo swipe to `uuid`: it goes on the wall, and RestTimerPacingSync plans
+ * `waitForTick` for a tick or send stage's new climb on the wall
+ * (`planRestTimerPacingTransition`), so the rest running goes with the move.
+ */
+function swipeSoloTo(uuid: string): void {
+  queueState.currentClimbQueueItem = queueState.queue.find((queued) => queued.uuid === uuid) ?? null;
+  syncStagePacing(uuid, 'waitForTick');
+  notifyQueue();
 }
 
 /** Put `uuid` on the wall, as the queue and RestTimerPacingSync would. */
@@ -285,6 +317,8 @@ function renderOverlay(overrides: { run?: WorkoutRun | null; displayed?: string 
 }
 
 const caption = () => screen.getByTestId('workout-rest-card-caption').textContent;
+const styleOf = (element: Element | null): Record<string, unknown> =>
+  JSON.parse(element?.getAttribute('data-style') ?? '{}') as Record<string, unknown>;
 const summaryLabel = () => screen.getByTestId('workout-rest-card-summary').getAttribute('aria-label');
 
 beforeEach(() => {
@@ -337,6 +371,23 @@ describe('WorkoutRunnerOverlay', () => {
     expect(screen.getByTestId('workout-rest-card')).toBeTruthy();
   });
 
+  it('sizes the summary by its own text, so the button drops under it rather than squeeze the name', () => {
+    renderOverlay();
+    act(() => logGo('a', 'attempt'));
+
+    const region = screen.getByTestId('workout-rest-card');
+    const card = styleOf(region.firstElementChild);
+    const summary = styleOf(screen.getByTestId('workout-rest-card-summary'));
+    // The row wraps, and a line breaks on each item's base size: with none set,
+    // the summary's is its longest line unwrapped. Large text on a 375 pt phone
+    // makes that too wide to sit beside the button, which then takes a line of
+    // its own. A fixed basis (180) kept it beside, and the caption broke mid-phrase.
+    expect(card).toMatchObject({ flexDirection: 'row', flexWrap: 'wrap' });
+    expect(summary.flexBasis).toBeUndefined();
+    expect(summary.flex).toBeUndefined();
+    expect(summary).toMatchObject({ flexGrow: 1, flexShrink: 1 });
+  });
+
   it("after a set's last rep names the next climb, and Skip rest moves the wall exactly once", () => {
     renderOverlay();
     act(() => logGo('a', 'attempt'));
@@ -359,6 +410,22 @@ describe('WorkoutRunnerOverlay', () => {
     // The rest is over: the card goes, and the next climb rests only once logged.
     expect(screen.queryByTestId('workout-rest-card')).toBeNull();
     expect(getRestTimerState().anchorMs).toBeNull();
+  });
+
+  it('skips a paused rest too: the wall moves once and the timer runs again, nothing frozen from the old rest', () => {
+    renderOverlay();
+    act(() => logGo('a', 'attempt'));
+    act(() => logGo('a', 'send'));
+    act(() => pauseRestTimer(Date.now()));
+    expect(screen.getByText('timerPausedLabel')).toBeTruthy();
+
+    act(() => {
+      fireEvent.click(screen.getByTestId('workout-rest-card-skip'));
+    });
+
+    expect(nextClimb).toHaveBeenCalledTimes(1);
+    // The next climb waits for its first log, as after a rest that ran out.
+    expect(getRestTimerState()).toMatchObject({ isRunning: true, pausedElapsedSeconds: 0, anchorMs: null });
   });
 
   it("at the 4x4's end says the block is done and names the next block", () => {
@@ -470,6 +537,23 @@ describe('WorkoutRunnerOverlay', () => {
 
     rerender({ displayedQueueItemUuid: 'a', suppressed: false });
     expect(screen.getByTestId('workout-rest-card')).toBeTruthy();
+  });
+
+  it('loses the rest when a solo swipe moves the wall, so swiping back shows no card until the next go', () => {
+    renderOverlay();
+    act(() => logGo('a', 'attempt'));
+    expect(screen.getByTestId('workout-rest-card')).toBeTruthy();
+
+    // Solo, a swipe lights the climb (unlike a crew's preview): the rest ends, as on Next.
+    act(() => swipeSoloTo('b'));
+    expect(screen.queryByTestId('workout-rest-card')).toBeNull();
+    act(() => swipeSoloTo('a'));
+    expect(screen.queryByTestId('workout-rest-card')).toBeNull();
+    expect(getRestTimerState().anchorMs).toBeNull();
+
+    // The rep still counts, and the next go on the climb starts a rest of its own.
+    act(() => logGo('a', 'send'));
+    expect(screen.getByText('restCardSetDone(1)')).toBeTruthy();
   });
 
   describe('Workout done', () => {

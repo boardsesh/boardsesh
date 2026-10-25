@@ -10,6 +10,13 @@
 // claim also tells the crew publisher, which puts the shared clock in step
 // (a tick or send rule waits for the next tick, as after a fire).
 //
+// A paused rest skips too, and the pause goes with it: the timer runs again
+// first, then the advance. Without that, a tick or send rule's CLEAR left the
+// crew clock paused, and its echo froze the next climb's pill on the old rest's
+// seconds until its first log. Resumed first, the next climb starts as after a
+// rest that ran out: waiting for its first log, or, under a deadline rule,
+// resting from now.
+//
 // Only after a tick (`afterTick`), on the EFFECTIVE pacing: on the minute the
 // beat is the block's clock, and a crew clock wins over the stage, as it does
 // for the scheduler. The card asks `restSkipAllowed` with the same pacing before
@@ -22,6 +29,7 @@ import {
   getRestTimerState,
   noteRestTimerAdvancedFrom,
   noteRestTimerAutoAdvanceFired,
+  resumeRestTimer,
   type RestTimerState,
 } from './rest-timer-store';
 
@@ -75,9 +83,11 @@ export function restSkipAllowed(
 
 /** True when the rest was cut short and the wall moved on. */
 export function skipRestOnWall({ nowMs, moveWall, ...query }: SkipRestInput): boolean {
-  const state = getRestTimerState();
-  if (!restSkipAllowed(query, state)) return false;
-  if (!noteRestTimerAutoAdvanceFired(state.cycleId, query.pacing.mode, nowMs, nowMs, anchorAfterFire(query.pacing))) {
+  if (!restSkipAllowed(query, getRestTimerState())) return false;
+  // Resumed before the claim, so the crew hears RESUME ahead of the fire's own action.
+  if (!getRestTimerState().isRunning) resumeRestTimer(nowMs);
+  const { cycleId } = getRestTimerState();
+  if (!noteRestTimerAutoAdvanceFired(cycleId, query.pacing.mode, nowMs, nowMs, anchorAfterFire(query.pacing))) {
     return false;
   }
   noteRestTimerAdvancedFrom(query.queueItemUuid);

@@ -12,6 +12,7 @@ import {
   getRestTimerState,
   noteRestTimerAutoAdvanceFired,
   noteRestTimerTick,
+  pauseRestTimer,
   resetRestTimerStoreForTests,
   subscribeLocalRestTimerActions,
   type LocalRestTimerAction,
@@ -126,6 +127,43 @@ describe('skipRestOnWall', () => {
     unsubscribe();
 
     expect(actions).toEqual([{ type: 'fired', sessionId: SESSION, anchorAfter: 'clear' }]);
+  });
+
+  it('ends a paused rest too: the timer runs again, the crew hears RESUME before the fire, and the next climb starts clean', () => {
+    onTheWall('l1');
+    logGo('l1', 'send');
+    pauseRestTimer(T0 + 3000);
+    expect(getRestTimerState()).toMatchObject({ isRunning: false, pausedElapsedSeconds: 2 });
+    const actions: LocalRestTimerAction[] = [];
+    const unsubscribe = subscribeLocalRestTimerActions((action) => actions.push(action));
+
+    const { moved, moveWall } = skip('l1');
+    unsubscribe();
+
+    expect(moved).toBe(true);
+    expect(moveWall).toHaveBeenCalledTimes(1);
+    // Nothing frozen from the old rest: the next climb waits for its first log.
+    expect(getRestTimerState()).toMatchObject({
+      isRunning: true,
+      pausedElapsedSeconds: 0,
+      anchorMs: null,
+      lastTick: null,
+      advancedFromQueueItemUuid: 'l1',
+    });
+    // In this order, so the crew clock is running again before its CLEAR (which keeps a pause).
+    expect(actions).toEqual([
+      { type: 'resume', sessionId: SESSION },
+      { type: 'fired', sessionId: SESSION, anchorAfter: 'clear' },
+    ]);
+  });
+
+  it('leaves a paused timer paused when the tap moves nothing', () => {
+    onTheWall('l1');
+    logGo('l1', 'attempt');
+    pauseRestTimer(T0 + 3000);
+
+    expect(skip('l1').moved).toBe(false);
+    expect(getRestTimerState()).toMatchObject({ isRunning: false, pausedElapsedSeconds: 2 });
   });
 
   it('moves nothing when the wall moved since the card showed', () => {

@@ -9,9 +9,11 @@
 // subscriptions live in the inner one, mounted only while a run exists. A crew
 // phone without the run (only the builder's phone has it) renders nothing.
 //
-// Cards show only for the climb on the wall: a swipe to another climb, or a
-// preview, hides them (the inner part stays mounted, so the workout finishing
-// meanwhile still shows its card on the way back). They also wait while
+// Cards show only for the climb on the wall: a preview of another climb (a
+// crew's swipe) hides them (the inner part stays mounted, so the workout
+// finishing meanwhile still shows its card on the way back). A solo swipe is
+// not a preview: it moves the wall, and the rest ends with the move, as on Next,
+// so swiping back finds no rest card until the next go. They also wait while
 // something else owns the board: the end-of-list card or the switch-board gate.
 //
 // "Workout done" opens when the workout finishes while the player is up, never

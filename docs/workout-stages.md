@@ -298,7 +298,11 @@ agree on these points:
   the live display; nothing above it re-renders per second.
 - **Over the board.** The player reads the same hook for the climb on the wall
   (`WorkoutRunnerOverlay`, mounted only with a run, so a crewmate without it sees nothing; a
-  swipe, a preview, the end-of-list card or the switch-board gate hides it). While a timed
+  preview, the end-of-list card or the switch-board gate hides it until the climber is back on
+  the climb on the wall). A solo swipe is not a preview: it moves the wall, so the rest ends as on
+  Next (a tick or send stage's new climb rests from its own first log), and swiping back finds no
+  rest and no card until the next go. In a crew a swipe is a preview, and the card comes back on
+  the way back. While a timed
   block's rest runs (phase `resting`), a compact rest card sits low on the board, just above the
   Reset zoom corner so that control stays in view and tappable, its wording from the pure
   `resolveWorkoutRestCard`: what the rest is ("Set 2 done", "4x4 done", "Rest", "Next climb
@@ -317,7 +321,10 @@ agree on these points:
   rest is the scheduler's own local advance with now as the deadline (`skipRestOnWall` in
   `lib/rest-timer-skip.ts`): the same check asked again against the climb on the wall at the
   tap, the cycle claimed before `nextClimb`, the climb remembered as moved off, so the wall moves
-  once and the crew clock waits for the next tick. A crew phone that does not hold the wall says
+  once and the crew clock waits for the next tick. A paused rest ("Timer paused") skips too, and
+  the pause goes with it: the timer resumes before the advance, so the next climb starts as after
+  a rest that ran out rather than frozen on the old rest's seconds (a crew clock's CLEAR keeps a
+  pause, so the crew hears RESUME first). A crew phone that does not hold the wall says
   whose phone moves it instead of naming the next climb. Untimed blocks get no rest card,
   whatever the climber's own rest timer does: the readout has no rest for them, and the pill
   already counts it. When the workout turns `done` while the player is up, "Workout done" opens
