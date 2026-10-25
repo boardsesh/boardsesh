@@ -653,6 +653,7 @@
         "copied": "Link kopiert",
         "copyFailed": "Link konnte nicht kopiert werden",
         "messageCopied": "Nachricht kopiert",
+        "messageCopyFailed": "Nachricht konnte nicht kopiert werden",
         "message": "Hol dir Boardsesh für deine Board-Sessions.\niPhone: {{iosUrl}}\nAndroid: {{androidUrl}}"
       }
     },

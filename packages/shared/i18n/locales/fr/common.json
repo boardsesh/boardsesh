@@ -653,6 +653,7 @@
         "copied": "Lien copié",
         "copyFailed": "Impossible de copier le lien",
         "messageCopied": "Message copié",
+        "messageCopyFailed": "Impossible de copier le message",
         "message": "Installe Boardsesh pour tes séances de board.\niPhone : {{iosUrl}}\nAndroid : {{androidUrl}}"
       }
     },

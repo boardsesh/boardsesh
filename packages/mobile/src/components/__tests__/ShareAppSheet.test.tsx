@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
@@ -93,6 +93,10 @@ describe('ShareAppSheet', () => {
     captures.qrLabel = undefined;
   });
 
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('opens on the App Store on an iPhone', () => {
     render(<ShareAppSheet onDismiss={vi.fn()} />);
     expect(captures.qrValue).toBe(storeUrlForAppShare('ios'));
@@ -112,7 +116,6 @@ describe('ShareAppSheet', () => {
       userAgent: 'Mozilla/5.0 (Linux; Android 15; Pixel 9) Chrome/141.0 Mobile Safari/537.36',
     });
     render(<ShareAppSheet onDismiss={vi.fn()} />);
-    vi.unstubAllGlobals();
     expect(captures.qrValue).toBe(storeUrlForAppShare('android'));
   });
 
@@ -127,7 +130,6 @@ describe('ShareAppSheet', () => {
       expect(captures.qrValue).toBe(storeUrlForAppShare('ios'));
       unmount();
     }
-    vi.unstubAllGlobals();
   });
 
   it('confirms a copy, and says so when the copy fails', async () => {
@@ -152,10 +154,21 @@ describe('ShareAppSheet', () => {
     vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 (Macintosh) Safari/605.1.15' });
     const { getByText } = render(<ShareAppSheet onDismiss={vi.fn()} />);
     await act(async () => getByText('mobile.about.shareApp.share').click());
-    vi.unstubAllGlobals();
     expect(Share.share).not.toHaveBeenCalled();
     expect(vi.mocked(Clipboard.setStringAsync).mock.calls[0]?.[0]).toContain('mobile.about.shareApp.message');
     expect(captures.showToast).toHaveBeenCalledWith('mobile.about.shareApp.messageCopied', 'success');
+  });
+
+  it('opens the share menu in a phone browser that has one', async () => {
+    captures.platform = 'web';
+    vi.stubGlobal('navigator', {
+      userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) Version/18.5 Mobile/15E148 Safari/604.1',
+      share: vi.fn(),
+    });
+    const { getByText } = render(<ShareAppSheet onDismiss={vi.fn()} />);
+    await act(async () => getByText('mobile.about.shareApp.share').click());
+    expect(Share.share).toHaveBeenCalledOnce();
+    expect(Clipboard.setStringAsync).not.toHaveBeenCalled();
   });
 
   it('copies the message when sharing fails', async () => {
@@ -163,6 +176,15 @@ describe('ShareAppSheet', () => {
     const { getByText } = render(<ShareAppSheet onDismiss={vi.fn()} />);
     await act(async () => getByText('mobile.about.shareApp.share').click());
     expect(vi.mocked(Clipboard.setStringAsync).mock.calls[0]?.[0]).toContain('mobile.about.shareApp.message');
+    expect(captures.showToast).toHaveBeenCalledWith('mobile.about.shareApp.messageCopied', 'success');
+  });
+
+  it('says the message, not the link, failed to copy', async () => {
+    vi.mocked(Share.share).mockRejectedValueOnce(new Error('share failed'));
+    vi.mocked(Clipboard.setStringAsync).mockResolvedValueOnce(false);
+    const { getByText } = render(<ShareAppSheet onDismiss={vi.fn()} />);
+    await act(async () => getByText('mobile.about.shareApp.share').click());
+    expect(captures.showToast).toHaveBeenCalledWith('mobile.about.shareApp.messageCopyFailed', 'error');
   });
 
   it('does nothing more when the climber backs out of the share menu', async () => {

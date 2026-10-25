@@ -48,21 +48,23 @@ export function ShareAppSheet({ onDismiss }: ShareAppSheetProps) {
   const [store, setStore] = useState<StorePlatform>(initialStore);
   const storeUrl = storeUrlForAppShare(store);
 
-  // `successMessage` is already translated: a link copy and a message copy say different things.
+  // Toast texts come in translated: a link copy and a message copy say different things.
   // On web expo-clipboard resolves `false` rather than rejecting when the copy is blocked.
   const copyToClipboard = useCallback(
-    (text: string, successMessage: string) =>
+    (text: string, toasts: { copied: string; failed: string }) =>
       Clipboard.setStringAsync(text).then(
-        (copied) =>
-          copied ? showToast(successMessage, 'success') : showToast(t('mobile.about.shareApp.copyFailed'), 'error'),
-        () => showToast(t('mobile.about.shareApp.copyFailed'), 'error'),
+        (copied) => (copied ? showToast(toasts.copied, 'success') : showToast(toasts.failed, 'error')),
+        () => showToast(toasts.failed, 'error'),
       ),
-    [showToast, t],
+    [showToast],
   );
 
   const handleCopyLink = useCallback(() => {
     hapticSelection();
-    void copyToClipboard(storeUrl, t('mobile.about.shareApp.copied'));
+    void copyToClipboard(storeUrl, {
+      copied: t('mobile.about.shareApp.copied'),
+      failed: t('mobile.about.shareApp.copyFailed'),
+    });
   }, [copyToClipboard, storeUrl, t]);
 
   const handleShare = useCallback(() => {
@@ -72,17 +74,20 @@ export function ShareAppSheet({ onDismiss }: ShareAppSheetProps) {
       iosUrl: storeUrlForAppShare('ios'),
       androidUrl: storeUrlForAppShare('android'),
     });
-    const messageCopied = t('mobile.about.shareApp.messageCopied');
+    const messageToasts = {
+      copied: t('mobile.about.shareApp.messageCopied'),
+      failed: t('mobile.about.shareApp.messageCopyFailed'),
+    };
     // A desktop browser has no share menu: copy the message straight away, while
     // the tap still allows a clipboard write.
     if (Platform.OS === 'web' && (typeof navigator === 'undefined' || typeof navigator.share !== 'function')) {
-      void copyToClipboard(message, messageCopied);
+      void copyToClipboard(message, messageToasts);
       return;
     }
     void Share.share({ message }).catch((error: unknown) => {
       // Backing out of the browser's share menu rejects with AbortError: not a failure.
       if (error instanceof Error && error.name === 'AbortError') return;
-      void copyToClipboard(message, messageCopied);
+      void copyToClipboard(message, messageToasts);
     });
   }, [copyToClipboard, t]);
 
