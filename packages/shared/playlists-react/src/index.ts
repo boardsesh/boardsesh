@@ -52,6 +52,7 @@ export {
   smartPlaylistQueryKey,
   smartPlaylistGeometryKey,
   removeClimbFromLikedList,
+  restoreClimbToLikedList,
   LIKED_LIST_QUERY_KEY_PREFIX,
 } from './use-smart-playlist';
 export type {

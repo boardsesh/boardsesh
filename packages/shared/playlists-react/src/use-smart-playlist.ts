@@ -222,23 +222,87 @@ export function useSmartPlaylist({
 /** The key prefix every view of the signed-in climber's Liked list is cached under (any user, board, view). */
 export const LIKED_LIST_QUERY_KEY_PREFIX: QueryKey = ['smartPlaylist', 'LIKED_CLIMBS'];
 
+type SmartPlaylistClimb = SmartPlaylistResult['climbs'][number];
+
+/** Where an un-liked climb sat in one cached Liked view, so a rollback or a re-like can put it back. */
+type RemovedLikedRow = { queryKey: QueryKey; pageIndex: number; climbIndex: number; climb: SmartPlaylistClimb };
+
+/**
+ * The rows each un-like took out, per query client and climb. Kept until the
+ * climb is put back (a failed un-like, or a like again) so neither needs the
+ * network to show it: a refetch can fail for the same reason the un-like did.
+ */
+const removedLikedRows = new WeakMap<QueryClient, Map<string, RemovedLikedRow[]>>();
+
+function removedRowsFor(queryClient: QueryClient): Map<string, RemovedLikedRow[]> {
+  let rows = removedLikedRows.get(queryClient);
+  if (!rows) {
+    rows = new Map();
+    removedLikedRows.set(queryClient, rows);
+  }
+  return rows;
+}
+
 /**
  * Drops one climb from every cached page of the Liked list, so an un-like shows
  * the moment it is tapped and a Play started right after drains a list without
- * it. No request: the cached pages are edited in place (#5304).
+ * it. No request: the cached pages are edited in place (#5304). The removed rows
+ * are kept for `restoreClimbToLikedList`.
  */
 export function removeClimbFromLikedList(queryClient: QueryClient, climbUuid: string): void {
-  queryClient.setQueriesData<InfiniteData<SmartPlaylistResult>>({ queryKey: LIKED_LIST_QUERY_KEY_PREFIX }, (cached) => {
-    if (!cached?.pages.some((page) => page.climbs.some((climb) => climb.uuid === climbUuid))) return cached;
-    // Every page carries the list-wide total, and the screen reads it off page one,
-    // so each page's total drops once even when the climb sat on a later page.
-    return {
-      ...cached,
-      pages: cached.pages.map((page) => ({
-        ...page,
-        climbs: page.climbs.filter((climb) => climb.uuid !== climbUuid),
-        totalCount: Math.max(0, page.totalCount - 1),
-      })),
-    };
-  });
+  const removed: RemovedLikedRow[] = [];
+  for (const [queryKey, cached] of queryClient.getQueriesData<InfiniteData<SmartPlaylistResult>>({
+    queryKey: LIKED_LIST_QUERY_KEY_PREFIX,
+  })) {
+    if (!cached) continue;
+    for (const [pageIndex, page] of cached.pages.entries()) {
+      const climbIndex = page.climbs.findIndex((climb) => climb.uuid === climbUuid);
+      if (climbIndex === -1) continue;
+      removed.push({ queryKey, pageIndex, climbIndex, climb: page.climbs[climbIndex] });
+      // Every page carries the list-wide total, and the screen reads it off page one,
+      // so each page's total drops once even when the climb sat on a later page.
+      queryClient.setQueryData<InfiniteData<SmartPlaylistResult>>(queryKey, {
+        ...cached,
+        pages: cached.pages.map((cachedPage) => ({
+          ...cachedPage,
+          climbs: cachedPage.climbs.filter((climb) => climb.uuid !== climbUuid),
+          totalCount: Math.max(0, cachedPage.totalCount - 1),
+        })),
+      });
+      break;
+    }
+  }
+  if (removed.length > 0) removedRowsFor(queryClient).set(climbUuid, removed);
+}
+
+/**
+ * Puts a climb `removeClimbFromLikedList` took out back where it was, in every
+ * cached Liked view that is still there and does not hold it again. Used when
+ * the un-like fails and when the climb is liked again, so the row returns
+ * without a request. A no-op when nothing was removed for the climb.
+ */
+export function restoreClimbToLikedList(queryClient: QueryClient, climbUuid: string): void {
+  const rowsByClimb = removedLikedRows.get(queryClient);
+  const removed = rowsByClimb?.get(climbUuid);
+  if (!rowsByClimb || !removed) return;
+  rowsByClimb.delete(climbUuid);
+  for (const { queryKey, pageIndex, climbIndex, climb } of removed) {
+    queryClient.setQueryData<InfiniteData<SmartPlaylistResult>>(queryKey, (cached) => {
+      if (!cached || cached.pages.length === 0) return cached;
+      if (cached.pages.some((page) => page.climbs.some((cachedClimb) => cachedClimb.uuid === climbUuid))) {
+        return cached;
+      }
+      const targetPage = Math.min(pageIndex, cached.pages.length - 1);
+      return {
+        ...cached,
+        pages: cached.pages.map((page, index) => {
+          const climbs =
+            index === targetPage
+              ? [...page.climbs.slice(0, climbIndex), climb, ...page.climbs.slice(climbIndex)]
+              : page.climbs;
+          return { ...page, climbs, totalCount: page.totalCount + 1 };
+        }),
+      };
+    });
+  }
 }

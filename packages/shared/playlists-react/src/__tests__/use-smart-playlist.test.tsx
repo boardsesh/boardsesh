@@ -9,6 +9,7 @@ import type { PlaylistClimbsView } from '../use-playlist-climbs';
 import {
   LIKED_LIST_QUERY_KEY_PREFIX,
   removeClimbFromLikedList,
+  restoreClimbToLikedList,
   smartPlaylistGeometryKey,
   smartPlaylistQueryKey,
   useSmartPlaylist,
@@ -284,5 +285,30 @@ describe('removeClimbFromLikedList', () => {
     expect(smartPlaylistQueryKey({ smartPlaylistType: 'LIKED_CLIMBS', userId: 'u' }).slice(0, 2)).toEqual(
       LIKED_LIST_QUERY_KEY_PREFIX,
     );
+  });
+
+  it('puts a removed climb back where it was, once, and only in views still missing it', () => {
+    const client = new QueryClient();
+    const likedKey = smartPlaylistQueryKey({ smartPlaylistType: 'LIKED_CLIMBS', userId: 'u' });
+    seed(client, likedKey, [['a', 'b'], ['c']]);
+
+    removeClimbFromLikedList(client, 'b');
+    restoreClimbToLikedList(client, 'b');
+    restoreClimbToLikedList(client, 'b');
+
+    const liked = client.getQueryData<{ pages: { climbs: { uuid: string }[]; totalCount: number }[] }>(likedKey);
+    expect(liked?.pages.map((page) => page.climbs.map((climb) => climb.uuid))).toEqual([['a', 'b'], ['c']]);
+    expect(liked?.pages.map((page) => page.totalCount)).toEqual([2, 1]);
+  });
+
+  it('does nothing for a climb it never removed', () => {
+    const client = new QueryClient();
+    const likedKey = smartPlaylistQueryKey({ smartPlaylistType: 'LIKED_CLIMBS', userId: 'u' });
+    seed(client, likedKey, [['a']]);
+    const before = client.getQueryData(likedKey);
+
+    restoreClimbToLikedList(client, 'z');
+
+    expect(client.getQueryData(likedKey)).toBe(before);
   });
 });

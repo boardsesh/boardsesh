@@ -55,6 +55,7 @@ import {
   LIKED_LIST_QUERY_KEY_PREFIX,
   SMART_PLAYLIST_COUNTS_QUERY_KEY,
   removeClimbFromLikedList,
+  restoreClimbToLikedList,
 } from '@boardsesh/playlists-react';
 import { drainMutationQueue } from '../../../offline/offline-sync-adapter';
 import {
@@ -1161,9 +1162,13 @@ export function useToggleFavorite() {
         favoritesStore.setIsFavorited(variables.input.climbUuid, !variables.currentlyFavorited);
       }
       // Un-liking drops the climb from the cached Liked list now, on both the
-      // queued and the online path (#5304).
+      // queued and the online path (#5304). Liking it again puts back the row an
+      // earlier un-like took out, so a re-like from the play drawer shows on the
+      // Liked list underneath without a refetch (or a signal).
       if (variables.currentlyFavorited === true) {
         removeClimbFromLikedList(queryClient, variables.input.climbUuid);
+      } else if (variables.currentlyFavorited === false) {
+        restoreClimbToLikedList(queryClient, variables.input.climbUuid);
       }
       return { token, contextEpoch };
     },
@@ -1172,9 +1177,10 @@ export function useToggleFavorite() {
       if (!context || !ownsFavoriteWrite(variables.input.climbUuid, context)) return;
       favoritesStore.setIsFavorited(variables.input.climbUuid, variables.currentlyFavorited);
       // A failed un-like already dropped the climb from the cached Liked pages in
-      // onMutate; refetch them so the still-liked climb comes back (#5304).
+      // onMutate. Put the row back from what onMutate removed: a refetch can fail
+      // for the same lost connection that failed the un-like (#5304).
       if (variables.currentlyFavorited) {
-        void queryClient.invalidateQueries({ queryKey: LIKED_LIST_QUERY_KEY_PREFIX });
+        restoreClimbToLikedList(queryClient, variables.input.climbUuid);
       }
     },
     onSettled: (_data, _error, variables, context) => {
@@ -1202,10 +1208,16 @@ export function useToggleFavorite() {
         });
         // The Liked smart list (and its library count) would otherwise keep an
         // un-liked climb on screen for its 5-minute staleTime (#5304).
-        // The cached pages already lost the climb in onMutate, so the list only
-        // needs marking stale (no refetch of every loaded page, which would eat
-        // the shared smartPlaylist rate limit Play's drain uses).
-        void queryClient.invalidateQueries({ queryKey: LIKED_LIST_QUERY_KEY_PREFIX, refetchType: 'none' });
+        // When the server confirms an un-like, the cached pages already lost the
+        // climb in onMutate, so the list only needs marking stale (no refetch of
+        // every loaded page, which would eat the shared smartPlaylist rate limit
+        // Play's drain uses). A like adds a climb the cache may never have held,
+        // so an on-screen Liked list refetches to show it.
+        const unlikeConfirmed = variables.currentlyFavorited === true && !data.toggleFavorite.favorited;
+        void queryClient.invalidateQueries({
+          queryKey: LIKED_LIST_QUERY_KEY_PREFIX,
+          refetchType: unlikeConfirmed ? 'none' : 'active',
+        });
         void queryClient.invalidateQueries({ queryKey: [SMART_PLAYLIST_COUNTS_QUERY_KEY] });
       }
     },
