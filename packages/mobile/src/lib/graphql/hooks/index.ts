@@ -1174,12 +1174,19 @@ export function useToggleFavorite() {
     },
     onError: (_error, variables, context) => {
       if (typeof variables.currentlyFavorited !== 'boolean') return;
-      if (!context || !ownsFavoriteWrite(variables.input.climbUuid, context)) return;
-      favoritesStore.setIsFavorited(variables.input.climbUuid, variables.currentlyFavorited);
+      // A newer toggle for this climb owns both the heart and the Liked rows.
+      if (!context || !favoriteToggleOrder.isLatest(variables.input.climbUuid, context.token)) return;
+      // The heart store is scoped to one board+angle+user, so only roll it back
+      // while it is still scoped to where this toggle started.
+      if (ownsFavoriteWrite(variables.input.climbUuid, context)) {
+        favoritesStore.setIsFavorited(variables.input.climbUuid, variables.currentlyFavorited);
+      }
       // Undo onMutate's Liked-list edit from the cache, since a refetch can fail
       // for the same lost connection that failed the toggle (#5304). A failed
       // un-like puts the row back; a failed like takes out the row onMutate put
-      // back, and keeps it so a later like can restore it again.
+      // back, and keeps it so a later like can restore it again. This runs even
+      // after a board or angle change: onMutate edited every cached Liked view,
+      // the board-independent one included, so the heart's scope doesn't decide it.
       if (variables.currentlyFavorited) {
         restoreClimbToLikedList(queryClient, variables.input.climbUuid);
       } else {

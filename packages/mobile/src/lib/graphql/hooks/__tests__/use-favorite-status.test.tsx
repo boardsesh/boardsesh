@@ -417,6 +417,72 @@ describe('useToggleFavorite', () => {
       expect(requestMock).toHaveBeenCalledTimes(1);
     });
 
+    it('puts the row back when the un-like fails after a board or angle change', async () => {
+      const { queryClient, Wrapper } = makeWrapper();
+      seedLiked(queryClient);
+      favoritesStore.applyContext('kilter|40|u');
+      favoritesStore.setIsFavorited('climb-1', true);
+      const { result } = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
+
+      let rejectUnlike: (error: Error) => void = () => undefined;
+      requestMock.mockReturnValueOnce(
+        new Promise((_resolve, reject) => {
+          rejectUnlike = reject;
+        }),
+      );
+      const unlike = result.current.mutateAsync({
+        input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+        currentlyFavorited: true,
+      });
+      await waitFor(() => expect(likedUuids(queryClient)).toEqual(['climb-0', 'climb-2']));
+
+      // The climber moves the board to 25° while the un-like is in flight.
+      favoritesStore.applyContext('kilter|25|u');
+      rejectUnlike(new Error('offline'));
+      await expect(unlike).rejects.toThrow('offline');
+
+      expect(likedUuids(queryClient)).toEqual(['climb-0', 'climb-1', 'climb-2']);
+      expect(likedTotal(queryClient)).toBe(3);
+      // The 25° heart store never held this climb, so the 40° rollback stays out.
+      expect(favoritesStore.getIsFavorited('climb-1')).toBe(false);
+    });
+
+    it('leaves the Liked rows to a newer toggle when an older one fails after a board change', async () => {
+      const { queryClient, Wrapper } = makeWrapper();
+      seedLiked(queryClient);
+      const { result } = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
+      const input = { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 };
+
+      // Tap 1 un-likes and hangs; tap 2 likes; tap 3 un-likes and hangs.
+      let rejectFirstUnlike: (error: Error) => void = () => undefined;
+      requestMock.mockReturnValueOnce(
+        new Promise((_resolve, reject) => {
+          rejectFirstUnlike = reject;
+        }),
+      );
+      const firstUnlike = result.current.mutateAsync({ input, currentlyFavorited: true });
+      requestMock.mockResolvedValueOnce({ toggleFavorite: { favorited: true } });
+      await result.current.mutateAsync({ input, currentlyFavorited: false });
+      let resolveLastUnlike: (value: unknown) => void = () => undefined;
+      requestMock.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveLastUnlike = resolve;
+        }),
+      );
+      const lastUnlike = result.current.mutateAsync({ input, currentlyFavorited: true });
+      await waitFor(() => expect(likedUuids(queryClient)).toEqual(['climb-0', 'climb-2']));
+
+      // Tap 1's failure must not put the row back over tap 3's un-like.
+      favoritesStore.applyContext('kilter|25|u');
+      rejectFirstUnlike(new Error('offline'));
+      await expect(firstUnlike).rejects.toThrow('offline');
+      expect(likedUuids(queryClient)).toEqual(['climb-0', 'climb-2']);
+      expect(likedTotal(queryClient)).toBe(2);
+
+      resolveLastUnlike({ toggleFavorite: { favorited: false } });
+      await lastUnlike;
+    });
+
     it('takes the row out again when a re-like fails, and a later like still puts it back', async () => {
       const { queryClient, Wrapper } = makeWrapper();
       seedLiked(queryClient);
