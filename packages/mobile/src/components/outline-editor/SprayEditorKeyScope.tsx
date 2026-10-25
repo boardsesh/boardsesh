@@ -1,5 +1,13 @@
 import React, { useCallback, type ReactNode } from 'react';
-import { View, type LayoutChangeEvent, type NativeSyntheticEvent, type StyleProp, type ViewStyle } from 'react-native';
+import {
+  Platform,
+  StyleSheet,
+  View,
+  type LayoutChangeEvent,
+  type NativeSyntheticEvent,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import {
   NativeSprayEditorKeyScope,
   type NativePencilGesture,
@@ -18,6 +26,8 @@ type SprayEditorKeyScopeProps = {
    */
   onPencilGesture: (gesture: NativePencilGesture) => void;
   style?: StyleProp<ViewStyle>;
+  /** How the children are laid out (`alignItems` and the like). */
+  contentStyle?: StyleProp<ViewStyle>;
   onLayout?: (event: LayoutChangeEvent) => void;
   children?: ReactNode;
 };
@@ -36,6 +46,15 @@ type SprayEditorKeyScopeProps = {
  * hands it the keyboard back) and still passes every touch to the editor. A
  * hover point it reports is in the editor's own coordinates.
  *
+ * On Android the native view is an `ExpoView`, which is a horizontal
+ * `LinearLayout`. Whenever Fabric lays it out, LinearLayout lays out its direct
+ * children again in a row: the first one takes the full width and every later
+ * one ends up 0 wide at the right edge, off screen, until Fabric moves it again
+ * (#6498: the bottom bar and the count capsule never showed). So on Android the
+ * children sit in one non-collapsable `View` that fills the scope, which is
+ * exactly where LinearLayout puts a lone child, and Fabric alone places
+ * everything inside it.
+ *
  * On a binary built before the module shipped it is a plain `View`, and every
  * shortcut is simply not there.
  */
@@ -44,6 +63,7 @@ export const SprayEditorKeyScope = React.memo(function SprayEditorKeyScope({
   onShortcut,
   onPencilGesture,
   style,
+  contentStyle,
   onLayout,
   children,
 }: SprayEditorKeyScopeProps) {
@@ -61,22 +81,29 @@ export const SprayEditorKeyScope = React.memo(function SprayEditorKeyScope({
 
   if (!NativeSprayEditorKeyScope) {
     return (
-      <View style={style} onLayout={onLayout}>
+      <View style={[style, contentStyle]} onLayout={onLayout}>
         {children}
       </View>
     );
   }
+  const wrapChildren = Platform.OS === 'android';
   return (
     <NativeSprayEditorKeyScope
       pointerEvents="box-none"
-      style={style}
+      style={wrapChildren ? style : [style, contentStyle]}
       onLayout={onLayout}
       commands={commands}
       onShortcut={handleShortcut}
       onPencilTap={handlePencilGesture}
       onPencilSqueeze={handlePencilGesture}
     >
-      {children}
+      {wrapChildren ? (
+        <View collapsable={false} pointerEvents="box-none" style={[StyleSheet.absoluteFill, contentStyle]}>
+          {children}
+        </View>
+      ) : (
+        children
+      )}
     </NativeSprayEditorKeyScope>
   );
 });

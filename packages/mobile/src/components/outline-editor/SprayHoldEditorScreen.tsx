@@ -3242,6 +3242,7 @@ export function SprayHoldEditorScreen({
   return (
     <SprayEditorKeyScope
       style={[styles.container, { backgroundColor: systemColors.background, marginTop: headerInset }]}
+      contentStyle={styles.content}
       onLayout={handleAreaLayout}
       commands={viewerCanEdit ? shortcutCommands : NO_SHORTCUT_COMMANDS}
       onShortcut={handleShortcut}
@@ -3623,6 +3624,8 @@ export { confirmDiscardSprayEdits, type SprayDiscardStrings } from './spray-disc
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  content: {
     alignItems: 'center',
   },
   boardSlot: {
