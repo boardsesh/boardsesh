@@ -253,10 +253,9 @@ jobs:
       # Actions:write to every token minted from that App, including one live for an
       # hour in this job while third-party actions run.
       actions: write
-    # macos-26 = Xcode 26 + iOS 26 SDK, which App Store Connect now requires
-    # for all uploads. Expo SDK 57 / RN 0.86 ships a fmt that compiles cleanly
-    # under Xcode 26's strict C++20 constexpr evaluator.
-    runs-on: macos-26
+    # Build SDK 58 with Xcode 27 / iOS 27, matching the native PR CI lane.
+    # macos-26 selects Xcode 26 and cannot validate the new SDK's startup.
+    runs-on: xcode-27
     timeout-minutes: 60
     environment: Production
 
@@ -625,6 +624,7 @@ jobs:
           # the upload actually runs.
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: |
+          set -o pipefail
           xcodebuild archive \
             -workspace "$WORKSPACE_PATH" \
             -scheme "$SCHEME" \
@@ -632,7 +632,10 @@ jobs:
             -archivePath "$ARCHIVE_PATH" \
             -destination "generic/platform=iOS" \
             CURRENT_PROJECT_VERSION=${{ steps.build_number.outputs.value }} \
-            DEVELOPMENT_TEAM=9L3HKPZBH3
+            DEVELOPMENT_TEAM=9L3HKPZBH3 2>&1 | tee archive.log
+
+      - name: Assert the SchedulerDelegate lifetime guard compiled (#5293)
+        run: node scripts/assert-ios-scheduler-guard-compiled.mjs archive.log packages/mobile/ios
 
       # The archive just wrote app.manifest, and its commitTime decides whether an
       # OTA can ever reach this binary: expo-updates launches whichever update has

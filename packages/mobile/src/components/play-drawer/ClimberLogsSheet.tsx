@@ -588,9 +588,9 @@ export function ClimberLogsSheet({ visible, climb, boardName, angle, onClose, on
         data={items}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
-        ListHeaderComponent={listHeader}
-        ListEmptyComponent={listEmpty}
-        ListFooterComponent={listFooter}
+        ListHeaderComponent={listHeader ?? undefined}
+        ListEmptyComponent={listEmpty ?? undefined}
+        ListFooterComponent={listFooter ?? undefined}
         onEndReached={handleEndReached}
         onEndReachedThreshold={END_REACHED_THRESHOLD}
         style={styles.list}

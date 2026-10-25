@@ -133,8 +133,9 @@ describe('mobile-e2e-gate.yml jobs', () => {
   });
 
   it('spends exactly one macOS runner', () => {
-    const macJobs = Object.entries(workflow.jobs).filter(([, job]) => (job['runs-on'] ?? '').startsWith('macos'));
+    const macJobs = Object.entries(workflow.jobs).filter(([, job]) => /^(macos|xcode)-/.test(job['runs-on'] ?? ''));
     expect(macJobs.map(([name]) => name)).toEqual(['ios-smoke']);
+    expect(workflow.jobs['ios-smoke']['runs-on']).toBe('xcode-27');
   });
 
   it('pins every checkout to the resolved commit', () => {

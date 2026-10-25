@@ -3,7 +3,7 @@
 // own climb filters while open. Warm-ups and workouts share this card, so every block reads the same.
 
 import { memo, useCallback, useMemo, useRef } from 'react';
-import { StyleSheet, View, type AccessibilityActionEvent } from 'react-native';
+import { StyleSheet, View, type AccessibilityActionEvent, type ViewInstance } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { BoardName, Grade } from '@boardsesh/shared-schema';
 import type { WorkoutBlockSpec } from '@boardsesh/playlist-generator';
@@ -170,7 +170,7 @@ type WorkoutBlockCardProps = {
   onMove: (blockId: string, direction: MoveDirection) => void;
   onRemove: (blockId: string) => void;
   /** Fires on every layout of the card, so the list can scroll a freshly opened card into view. */
-  onCardLayout: (blockId: string, cardView: View) => void;
+  onCardLayout: (blockId: string, cardView: ViewInstance) => void;
 };
 
 export const WorkoutBlockCard = memo(function WorkoutBlockCard({
@@ -197,7 +197,7 @@ export const WorkoutBlockCard = memo(function WorkoutBlockCard({
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
   const { formatGradeByDifficultyId } = useGradeFormat();
-  const cardRef = useRef<View>(null);
+  const cardRef = useRef<ViewInstance>(null);
   const blockId = block.id;
   const title = t('mobile.session.preGeneratorBlockTitle', { position });
   const typeName = workoutStageName(blockType(block), t);

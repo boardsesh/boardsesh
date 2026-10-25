@@ -16,6 +16,7 @@ import {
   type AccessibilityActionEvent,
   type StyleProp,
   type ViewStyle,
+  type ViewInstance,
 } from 'react-native';
 import Animated, {
   useAnimatedStyle,
@@ -25,7 +26,13 @@ import Animated, {
   runOnJS,
   type SharedValue,
 } from 'react-native-reanimated';
-import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
+import {
+  GestureDetector,
+  useTapGesture,
+  useLongPressGesture,
+  useExclusiveGestures,
+  useSimultaneousGestures,
+} from 'react-native-gesture-handler';
 import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { useTranslation } from 'react-i18next';
 import type { Climb, BoardName } from '@boardsesh/shared-schema';
@@ -345,7 +352,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
   onOpenPlaylistRef.current = onOpenPlaylist;
   const onOpenActionsRef = useRef(onOpenActions);
   onOpenActionsRef.current = onOpenActions;
-  const contentViewRef = useRef<View | null>(null);
+  const contentViewRef = useRef<ViewInstance | null>(null);
   const climbRef = useRef(climb);
   climbRef.current = climb;
   const readyBoardArtRef = useRef<ReadyBoardArtSource | null>(null);
@@ -488,65 +495,34 @@ const ClimbListRow = React.memo(function ClimbListRow({
     closeSwipe();
   }, [handleOpenPlaylist, closeSwipe]);
 
-  // Refs so the ⋯ button's tap can `blocksExternalGesture` the row's own tap/long-press
-  // — a tap on the button opens the menu without also firing the row press. The relation
-  // lives only on the button gesture, so when the button isn't shown the row is untouched.
-  const singleTapRef = useRef<GestureType | undefined>(undefined);
-  const longPressRef = useRef<GestureType | undefined>(undefined);
-
-  const singleTapGesture = useMemo(
-    () =>
-      Gesture.Tap()
-        .withRef(singleTapRef)
-        // Cover every release before the long-press threshold, without a dead gap.
-        .maxDuration(400)
-        .maxDistance(15)
-        .onStart(() => {
-          'worklet';
-          runOnJS(handleRowPress)();
-        }),
-    [handleRowPress],
-  );
-
-  const longPressGesture = useMemo(
-    () =>
-      Gesture.LongPress()
-        .withRef(longPressRef)
-        .minDuration(400)
-        .onStart(() => {
-          'worklet';
-          runOnJS(handleLongPress)();
-        }),
-    [handleLongPress],
-  );
-
-  // Long-press wins over tap; a quick tap fires once the long-press fails.
-
-  const tapGesture = useMemo(
-    () => Gesture.Exclusive(longPressGesture, singleTapGesture),
-    [longPressGesture, singleTapGesture],
-  );
-
-  const rowGestures = useMemo(
-    () => Gesture.Simultaneous(tapGesture, fullSwipe.gesture),
-    [tapGesture, fullSwipe.gesture],
-  );
-
-  // The ⋯ button's own tap. It blocks the row gestures so a tap on the button opens the
-  // menu without pressing the row; a tap anywhere else never starts this gesture, so the
-  // row behaves normally. Only mounted while the ⋮ button is.
-  const moreButtonGesture = useMemo(
-    () =>
-      Gesture.Tap()
-        .maxDuration(400)
-        .maxDistance(15)
-        .blocksExternalGesture(singleTapRef, longPressRef)
-        .onStart(() => {
-          'worklet';
-          runOnJS(handleOpenActions)();
-        }),
-    [handleOpenActions],
-  );
+  const singleTapGesture = useTapGesture({
+    // Cover every release before the long-press threshold, without a dead gap.
+    maxDuration: 400,
+    maxDistance: 15,
+    onActivate: () => {
+      'worklet';
+      runOnJS(handleRowPress)();
+    },
+  });
+  const longPressGesture = useLongPressGesture({
+    minDuration: 400,
+    onActivate: () => {
+      'worklet';
+      runOnJS(handleLongPress)();
+    },
+  });
+  const tapGesture = useExclusiveGestures(longPressGesture, singleTapGesture);
+  const rowGestures = useSimultaneousGestures(tapGesture, fullSwipe.gesture);
+  // The menu tap blocks the row so only the menu opens when its button wins.
+  const moreButtonGesture = useTapGesture({
+    maxDuration: 400,
+    maxDistance: 15,
+    block: [singleTapGesture, longPressGesture],
+    onActivate: () => {
+      'worklet';
+      runOnJS(handleOpenActions)();
+    },
+  });
 
   // Left actions (revealed by a left-to-right swipe) = Queue; right actions
   // (right-to-left swipe) = Playlist. These read dragArmedRef.current rather
@@ -600,7 +576,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
       <ReanimatedSwipeable
         ref={swipeableRef}
         friction={SWIPE_FRICTION}
-        simultaneousWithExternalGesture={fullSwipe.gesture}
+        simultaneousWith={fullSwipe.gesture}
         leftThreshold={SWIPE_REVEAL_THRESHOLD}
         rightThreshold={SWIPE_REVEAL_THRESHOLD}
         overshootLeft

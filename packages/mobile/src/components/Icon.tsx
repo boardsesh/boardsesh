@@ -1,13 +1,13 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { SymbolView, type SymbolWeight, type SymbolScale } from 'expo-symbols';
-import { Platform, I18nManager, useWindowDimensions } from 'react-native';
+import { Platform, I18nManager, useWindowDimensions, type ColorValue } from 'react-native';
 import { useBoldText } from '../hooks/use-bold-text';
 import { iconMap, type IconMapping, type IconName } from './icon-map';
 
 type IconProps = {
   name: IconName;
   size?: number;
-  color?: string | import('react-native').OpaqueColorValue;
+  color?: ColorValue;
   /**
    * The SF Symbol's stroke weight (iOS only). Chrome glyphs (close, back, ✓,
    * ellipsis) draw semibold, as iOS 26's own bar buttons do.
@@ -62,6 +62,7 @@ export function Icon({
     );
   }
 
+  // Vector icon declarations still use the pre-strict native color union.
   return (
     <MaterialCommunityIcons
       name={
@@ -74,7 +75,7 @@ export function Icon({
             : mapping.android) as React.ComponentProps<typeof MaterialCommunityIcons>['name']
       }
       size={size}
-      color={color}
+      color={color as React.ComponentProps<typeof MaterialCommunityIcons>['color']}
     />
   );
 }

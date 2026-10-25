@@ -28,6 +28,7 @@ import {
   type KeyboardEvent,
   type KeyboardEventName,
   type LayoutChangeEvent,
+  type ViewInstance,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { textStyles } from '../theme/typography';
@@ -219,7 +220,7 @@ type SheetKeyboardCalibrationProps = {
   /** Which wrapper drew it, so a log line names its sheet family. */
   label: string;
   /** The chrome column `useSheetKeyboardInset` pads. Measured, never written. */
-  columnRef: RefObject<View | null>;
+  columnRef: RefObject<ViewInstance | null>;
   /** What the shipped padding currently applies, for comparison. */
   keyboardOverlap: number;
   bottomInset: number;
@@ -242,7 +243,7 @@ export function SheetKeyboardCalibration({
   const [state, dispatch] = useReducer(reduceCalibration, INITIAL_CALIBRATION_STATE);
   // A new key remounts the probe Host, which makes SwiftUI report its frame again.
   const [probeGeneration, setProbeGeneration] = useState(0);
-  const probeRef = useRef<View>(null);
+  const probeRef = useRef<ViewInstance>(null);
   const mountedAtRef = useRef(Date.now());
   const phaseRef = useRef<CalibrationPhase>('down');
   const windowHeightRef = useRef(windowHeight);

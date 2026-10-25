@@ -63,7 +63,7 @@ export const iosSystemColors: Record<string, OpaqueColorValue> | null =
         // controls use (HIG Color: one tint for every interactive element).
         // DynamicColorIOS so it still follows dark mode AND Increase Contrast,
         // as Apple's link colour did.
-        accent: DynamicColorIOS(brandAccentDynamic),
+        accent: DynamicColorIOS(brandAccentDynamic) as OpaqueColorValue,
       }
     : null;
 

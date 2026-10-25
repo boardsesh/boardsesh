@@ -132,7 +132,7 @@ export const RULES: readonly PatchRule[] = [
       'hasPostedAppContextDestroys = true',
       'moduleRegistry.post(event: .appContextDestroys)',
     ],
-    patchedKey: 'expo-modules-core@57.0.21',
+    patchedKey: 'expo-modules-core@58.0.26',
   },
   // Pin the callable source and both distributed JS entrypoints: exporting a
   // type alone cannot stop recording in a compiled native replay SDK.
@@ -249,20 +249,46 @@ export const RULES: readonly PatchRule[] = [
       'closePromise',
       'finalizeStatementWithErrorPreservation',
     ],
-    patchedKey: 'expo-sqlite@57.0.4',
+    patchedKey: 'expo-sqlite@58.0.14',
   })),
-  // Pin the consecutive finalize/state/error sequence, not a global state
-  // assignment: moving it after the throw leaves the native pointer freed but
-  // still reusable whenever SQLite reports the statement's execution error.
+  // SDK 58 moved statements into their own native classes and fixes finalization
+  // upstream. Keep asserting finalized-before-throw so an upgrade cannot lose it.
   {
     package: 'expo-sqlite',
-    file: 'android/src/main/java/expo/modules/sqlite/SQLiteModule.kt',
+    file: 'android/src/main/java/expo/modules/sqlite/NativeStatement.kt',
     sentinels: [
-      `val result = statement.ref.sqlite3_finalize()
-      statement.isFinalized = true
-      if (result != NativeDatabaseBinding.SQLITE_OK)`,
+      'synchronized(connection.statementLifecycleLock)',
+      `val ret = ref.sqlite3_finalize()
+        val error = if (ret != NativeDatabaseBinding.SQLITE_OK) {
+          ref.getLastErrorMessage()
+        } else {
+          null
+        }
+        // SQLite destroys the statement even when returning an earlier execution error.
+        isFinalized = true
+        connection.statements.removeAll { it === this }
+        if (releasedByJavaScript) {
+          ref.close()
+        }
+        if (error != null) {
+          throw SQLiteErrorException(error)`,
     ],
-    patchedKey: 'expo-sqlite@57.0.4',
+    patchedKey: 'expo-sqlite@58.0.14',
+  },
+  {
+    package: 'expo-sqlite',
+    file: 'ios/NativeStatement.swift',
+    sentinels: [
+      'database.statementLifecycleLock.lock()',
+      `let result = sqliteResult(for: database.pointer) { exsqlite3_finalize(pointer) }
+      // SQLite destroys the statement even when returning an earlier execution error.
+      isFinalized = true
+      pointer = nil
+      database.statements.removeAll { $0 === self }
+      if let message = result.message {
+        throw SQLiteErrorException(message)`,
+    ],
+    patchedKey: 'expo-sqlite@58.0.14',
   },
   {
     package: 'expo-sqlite',
@@ -270,15 +296,53 @@ export const RULES: readonly PatchRule[] = [
     sentinels: [
       'private let moduleQueue: DispatchQueue',
       'OnAppContextDestroys {\n      closeAllDatabases()',
-      'OnDestroy {\n      closeAllDatabases()',
+      'public override func willDestroy() {\n    closeAllDatabases()',
       'DispatchQueue.getSpecific(key: moduleQueueKey)',
       'moduleQueue.async(flags: .barrier, execute: closeDatabases)',
       'moduleQueue.sync(flags: .barrier, execute: closeDatabases)',
-      `let result = exsqlite3_finalize(statement.pointer)
-    statement.isFinalized = true
-    if result != SQLITE_OK`,
+      'UInt(bitPattern: ObjectIdentifier($0)) < UInt(bitPattern: ObjectIdentifier($1))',
+      'databases.reversed().forEach { $0.statementLifecycleLock.unlock() }',
     ],
-    patchedKey: 'expo-sqlite@57.0.4',
+    patchedKey: 'expo-sqlite@58.0.14',
+  },
+  {
+    package: 'expo-sqlite',
+    file: 'ios/NativeDatabase.swift',
+    sentinels: [
+      'private func exec(source: String) throws {\n    // Serialize connection lifetime with close;',
+      'statementLifecycleLock.lock()',
+      'defer { statementLifecycleLock.unlock() }',
+    ],
+    patchedKey: 'expo-sqlite@58.0.14',
+  },
+  {
+    package: 'expo-sqlite',
+    file: 'ios/NativeSession.swift',
+    sentinels: [
+      'private func attach(database: NativeDatabase, table: String?) throws {\n    database.statementLifecycleLock.lock()',
+      'private func close(database: NativeDatabase) throws {\n    database.statementLifecycleLock.lock()',
+      'defer { database.statementLifecycleLock.unlock() }',
+    ],
+    patchedKey: 'expo-sqlite@58.0.14',
+  },
+  {
+    package: 'react-native',
+    file: 'ReactCommon/react/renderer/scheduler/Scheduler.h',
+    sentinels: ['std::shared_ptr<std::atomic<bool>> delegateInvalidated_;'],
+    patchedKey: 'react-native@0.88.0',
+  },
+  {
+    package: 'react-native',
+    file: 'ReactCommon/react/renderer/scheduler/Scheduler.cpp',
+    sentinels: [
+      'Scheduler::~Scheduler() {\n  // Boardsesh #5293:',
+      '*delegateInvalidated_ = true;',
+      'delegateInvalidated_ = std::make_shared<std::atomic<bool>>(false);',
+      'invalidated = delegateInvalidated_',
+      'if (*invalidated) {\n              return;',
+      'if (*invalidated) {\n            return;',
+    ],
+    patchedKey: 'react-native@0.88.0',
   },
   {
     package: 'react-native-ble-plx',
@@ -307,13 +371,13 @@ export const RULES: readonly PatchRule[] = [
     package: '@expo/fingerprint',
     file: 'build/utils/Path.js',
     sentinels: ['normalizeIsolatedStoreModulePath', 'ISOLATED_STORE_MODULE_ROOT_REGEX'],
-    patchedKey: '@expo/fingerprint@0.20.13',
+    patchedKey: '@expo/fingerprint@0.21.6',
   },
   {
     package: '@expo/fingerprint',
     file: 'build/hash/Hash.js',
     sentinels: ['normalizeIsolatedStoreModulePath'],
-    patchedKey: '@expo/fingerprint@0.20.13',
+    patchedKey: '@expo/fingerprint@0.21.6',
   },
   {
     package: 'react-native-screens',
@@ -324,7 +388,7 @@ export const RULES: readonly PatchRule[] = [
       'findContentScrollViewInManagedSubtreeFrom',
       'RNSManagedContentScrollViewSearchMaxDepth',
     ],
-    patchedKey: 'react-native-screens@4.26.2',
+    patchedKey: 'react-native-screens@4.30.0',
   },
   // `scrollEdgeEffects` on a native-stack screen reaches a FlashList only through
   // this fallback: upstream walks first children, which stops at any leading
@@ -338,7 +402,7 @@ export const RULES: readonly PatchRule[] = [
       'scrollView = rnscreens_findOwnEdgeEffectScrollView(self, self, RNSEdgeEffectScrollViewSearchMaxDepth);',
       'if (view != screen && [view isKindOfClass:RNSScreenView.class]) {',
     ],
-    patchedKey: 'react-native-screens@4.26.2',
+    patchedKey: 'react-native-screens@4.30.0',
   },
   // The bottom-accessory relayout nudge. No single sentinel is enough, because
   // this hunk has TWO regressions to guard, in opposite directions.
@@ -377,7 +441,7 @@ export const RULES: readonly PatchRule[] = [
       '[_controller setBottomAccessory:nil animated:YES];',
       '[self rnscreens_scheduleBottomAccessoryRelayoutAfterVisibilityChange];',
     ],
-    patchedKey: 'react-native-screens@4.26.2',
+    patchedKey: 'react-native-screens@4.30.0',
     forbiddenInMethod: [
       {
         method: 'applyBottomAccessoryVisibility',
@@ -430,7 +494,7 @@ export const RULES: readonly PatchRule[] = [
       'hideSwallowingMissingNativeHandler();',
       'const close = hideSwallowingMissingNativeHandler;',
     ],
-    patchedKey: '@expo/ui@57.0.22',
+    patchedKey: '@expo/ui@58.0.23',
   },
   // The iOS half wires the native post-animation dismiss signal through to the
   // `onFullyDismissed` prop. Drop it and the prop still TYPE-checks (the types
@@ -441,7 +505,7 @@ export const RULES: readonly PatchRule[] = [
     file: 'src/community/bottom-sheet/BottomSheet.ios.tsx',
     sentinels: ['onFullyDismissedRef', 'onDismiss={fireCloseCallbacks}', 'coordinator must observe index -1'],
     orderedSentinels: ['onChangeRef.current?.(-1);', 'onFullyDismissedRef.current?.();'],
-    patchedKey: '@expo/ui@57.0.22',
+    patchedKey: '@expo/ui@58.0.23',
   },
   // SwiftUI RNHostView owners can overlap for the same hosted React view.
   // The shared native handler must survive until every owner releases its lease;
@@ -465,7 +529,7 @@ export const RULES: readonly PatchRule[] = [
       'if (leaseCount.unsignedIntegerValue > 1)',
       '[(RCTSurfaceTouchHandler *)touchHandler detachFromView:view];',
     ],
-    patchedKey: '@expo/ui@57.0.22',
+    patchedKey: '@expo/ui@58.0.23',
   },
   // ExpoModulesCore uses relative file URLs for xcasset names, so
   // `localAssetName` must keep those while rejecting absolute/hosted file URLs
@@ -483,7 +547,7 @@ export const RULES: readonly PatchRule[] = [
       'if hasFileHost || hasAbsoluteFilePath',
       'Images/MyIcon',
     ],
-    patchedKey: 'expo-image@57.0.5',
+    patchedKey: 'expo-image@58.0.17',
   },
   // The embedded bundle's commitTime. `expo-updates` launches whichever update
   // has the newest one, and upstream stamps BUILD time — so a long native build
@@ -506,7 +570,7 @@ export const RULES: readonly PatchRule[] = [
       'Math.min(committerTime, now)',
       'commitTime: resolveEmbeddedCommitTime(projectRoot),',
     ],
-    patchedKey: 'expo-updates@57.0.25',
+    patchedKey: 'expo-updates@58.0.18',
   },
 ];
 
@@ -517,7 +581,7 @@ export const RULES: readonly PatchRule[] = [
  * of quietly landing unguarded.
  */
 export const UNGUARDED_PATCHES: Readonly<Record<string, string>> = {
-  'expo-dev-launcher@57.0.20':
+  'expo-dev-launcher@58.0.15':
     'raises the iOS dev-launcher request timeout from 10s to 120s. Under an isolated linker the package is ' +
     'only reachable through expo-dev-client, so createNodeEnv cannot resolve it from packages/mobile — pnpm does ' +
     "put it in node_modules/.pnpm/node_modules, but that directory is not on packages/mobile's resolution path. " +

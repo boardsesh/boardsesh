@@ -23,7 +23,7 @@ const router = vi.hoisted(() => ({ back: vi.fn(), replace: vi.fn(), canGoBack: v
 const navigation = vi.hoisted(() => ({ dispatch: vi.fn() }));
 const guard = vi.hoisted(() => ({
   enabled: false,
-  callback: null as ((event: { data: { action: { type: string } } }) => void) | null,
+  callback: null as ((event: { data: { action: { type: string } }; repeat: () => void }) => void) | null,
   confirm: null as (() => void) | null,
   ask: vi.fn(),
 }));
@@ -43,8 +43,9 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles },
   View: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
 }));
-vi.mock('expo-router', () => ({ useRouter: () => router, useNavigation: () => navigation }));
-vi.mock('expo-router/react-navigation', () => ({
+vi.mock('expo-router', () => ({
+  useRouter: () => router,
+  useNavigation: () => navigation,
   usePreventRemove: (enabled: boolean, callback: NonNullable<typeof guard.callback>) => {
     guard.enabled = enabled;
     guard.callback = callback;
@@ -121,7 +122,7 @@ function editorProps(): EditorProps {
 
 function tryRemove() {
   const action = { type: 'GO_BACK' };
-  if (guard.enabled) guard.callback?.({ data: { action } });
+  if (guard.enabled) guard.callback?.({ data: { action }, repeat: () => navigation.dispatch(action) });
   else navigation.dispatch(action);
 }
 

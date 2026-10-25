@@ -4,11 +4,11 @@
   "private": true,
   "dependencies": {
     "@gorhom/bottom-sheet": "5.2.14",
-    "react": "19.2.3",
-    "react-dom": "19.2.3",
-    "react-native": "0.86.3",
-    "react-native-gesture-handler": "~2.32.0",
-    "react-native-reanimated": "4.5.3",
-    "react-native-web": "~0.21.0"
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-native": "0.88.0",
+    "react-native-gesture-handler": "3.3.0",
+    "react-native-reanimated": "4.7.1",
+    "react-native-web": "~0.21.4"
   }
 }

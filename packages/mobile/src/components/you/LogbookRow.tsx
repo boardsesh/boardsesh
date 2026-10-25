@@ -17,7 +17,13 @@ import Animated, {
   runOnJS,
   type SharedValue,
 } from 'react-native-reanimated';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import {
+  GestureDetector,
+  useTapGesture,
+  useLongPressGesture,
+  useExclusiveGestures,
+  useSimultaneousGestures,
+} from 'react-native-gesture-handler';
 import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import type { AscentFeedItem } from '@boardsesh/graphql/operations';
 import { getLayoutDisplayName, parseTickTime } from '@boardsesh/profile-stats';
@@ -362,39 +368,25 @@ export const LogbookRow = memo(function LogbookRow({
     closeSwipe();
   }, [handleDeleteRequest, closeSwipe]);
 
-  const singleTapGesture = useMemo(
-    () =>
-      Gesture.Tap()
-        .maxDuration(300)
-        .maxDistance(15)
-        .onStart(() => {
-          'worklet';
-          runOnJS(handleRowPress)();
-        }),
-    [handleRowPress],
-  );
-
-  const longPressGesture = useMemo(
-    () =>
-      Gesture.LongPress()
-        .minDuration(400)
-        .onStart(() => {
-          'worklet';
-          runOnJS(handleLongPress)();
-        }),
-    [handleLongPress],
-  );
-
-  // Long-press wins over tap; a quick tap fires once the long-press fails. With
-  // no long-press handler the row is tap-only.
-  const tapGesture = useMemo(
-    () => (onOpenActions ? Gesture.Exclusive(longPressGesture, singleTapGesture) : singleTapGesture),
-    [onOpenActions, longPressGesture, singleTapGesture],
-  );
-
-  const rowGestures = useMemo(
-    () => Gesture.Simultaneous(tapGesture, fullSwipe.gesture),
-    [tapGesture, fullSwipe.gesture],
+  const singleTapGesture = useTapGesture({
+    maxDuration: 300,
+    maxDistance: 15,
+    onActivate: () => {
+      'worklet';
+      runOnJS(handleRowPress)();
+    },
+  });
+  const longPressGesture = useLongPressGesture({
+    minDuration: 400,
+    onActivate: () => {
+      'worklet';
+      runOnJS(handleLongPress)();
+    },
+  });
+  const exclusiveTapGesture = useExclusiveGestures(longPressGesture, singleTapGesture);
+  const rowGestures = useSimultaneousGestures(
+    onOpenActions ? exclusiveTapGesture : singleTapGesture,
+    fullSwipe.gesture,
   );
 
   // Read dragArmedRef.current rather than the armed state directly so these stay
@@ -481,7 +473,7 @@ export const LogbookRow = memo(function LogbookRow({
       <ReanimatedSwipeable
         ref={swipeableRef}
         friction={SWIPE_FRICTION}
-        simultaneousWithExternalGesture={fullSwipe.gesture}
+        simultaneousWith={fullSwipe.gesture}
         leftThreshold={SWIPE_REVEAL_THRESHOLD}
         rightThreshold={SWIPE_REVEAL_THRESHOLD}
         overshootLeft

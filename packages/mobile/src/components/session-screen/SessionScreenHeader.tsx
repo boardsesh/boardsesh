@@ -1,6 +1,6 @@
 import { PressableSurface } from '../PressableSurface';
 import { StyleSheet, View } from 'react-native';
-import { GestureDetector, type PanGesture } from 'react-native-gesture-handler';
+import { GestureDetector, type LegacyPanGesture as PanGesture } from 'react-native-gesture-handler';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { LargeContentViewer } from '../LargeContentViewer';

@@ -220,7 +220,7 @@ jobs:
   # runners (docs/ci-runners.md).
   ios-smoke:
     needs: resolve
-    runs-on: macos-26
+    runs-on: xcode-27
     # Warm cache: about 20 min. A cache miss adds the ~30-min native build.
     timeout-minutes: 90
     outputs:

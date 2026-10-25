@@ -4,7 +4,7 @@ import {
   Gesture,
   GestureDetector,
   PointerType,
-  type GestureStateManager,
+  type LegacyGestureStateManager as GestureStateManager,
   type GestureType,
 } from 'react-native-gesture-handler';
 import { runOnJS, useSharedValue, type DerivedValue, type SharedValue } from 'react-native-reanimated';

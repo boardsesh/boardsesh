@@ -1,3 +1,4 @@
+import { scheduleIdleTask } from '../../../src/lib/schedule-idle-task';
 import { useNativeRootHeader } from '../../../src/hooks/use-native-root-header';
 import { useListTopOffset } from '../../../src/hooks/use-list-top-offset';
 import { useListChromeClearance } from '../../../src/hooks/use-list-chrome-clearance';
@@ -11,7 +12,6 @@ import {
   StyleSheet,
   RefreshControl,
   Keyboard,
-  InteractionManager,
   Platform,
   useWindowDimensions,
   type ColorValue,
@@ -803,9 +803,9 @@ function ClimbListInner() {
 
   useEffect(() => {
     if (!boardConfig || !searchReady) return;
-    let task: ReturnType<typeof InteractionManager.runAfterInteractions> | null = null;
+    let task: ReturnType<typeof scheduleIdleTask> | null = null;
     const timeout = setTimeout(() => {
-      task = InteractionManager.runAfterInteractions(() => {
+      task = scheduleIdleTask(() => {
         prewarmCreateBoardHolds({
           boardName: boardConfig.boardName as BoardName,
           layoutId: boardConfig.layoutId,
@@ -860,7 +860,7 @@ function ClimbListInner() {
   // over HTTP (the production CDN/WAF 403s the app's request).
   useEffect(() => {
     if (!activeBoard) return;
-    const task = InteractionManager.runAfterInteractions(() => {
+    const task = scheduleIdleTask(() => {
       const parsedSetIds = activeBoard.setIds.split(',').map(Number);
       void ensureBackgroundsCached({
         boardName: activeBoard.boardType as BoardName,

@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { act, render } from '@testing-library/react';
 import { createElement, forwardRef, type ReactNode, type Ref, type RefObject } from 'react';
-import type { View as NativeView } from 'react-native';
+import type { ViewInstance as NativeView } from 'react-native';
 
 type KeyboardListener = (event?: { endCoordinates?: { height: number; screenY: number; width: number } }) => void;
 const native = vi.hoisted(() => ({

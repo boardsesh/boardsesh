@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, type ViewInstance } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -21,7 +21,7 @@ type GeneratorPickerCardProps = {
   selection: GeneratorSelection;
   onChange: (selection: GeneratorSelection) => void;
   /** Scrolls a block card that was just added or opened clear of the bottom chrome. */
-  onRevealBlock?: (cardView: View) => void;
+  onRevealBlock?: (cardView: ViewInstance) => void;
 };
 
 /**

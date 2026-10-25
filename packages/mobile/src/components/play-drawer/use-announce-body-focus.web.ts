@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import type { RefObject } from 'react';
-import type { View } from 'react-native';
+import type { ViewInstance } from 'react-native';
 
 /**
  * react-native-web has no node-handle concept — a `ref` on a `View` already
@@ -20,7 +20,7 @@ import type { View } from 'react-native';
  * `enabled` is false for the notice variant, which asked for nothing and so
  * never yanks focus off whatever the climber was already reading.
  */
-export function useAnnounceBodyFocus(bodyRef: RefObject<View | null>, enabled: boolean): void {
+export function useAnnounceBodyFocus(bodyRef: RefObject<ViewInstance | null>, enabled: boolean): void {
   useEffect(() => {
     if (!enabled) return;
     const node = bodyRef.current as unknown as HTMLElement | null;

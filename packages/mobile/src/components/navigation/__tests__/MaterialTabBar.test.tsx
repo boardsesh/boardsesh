@@ -185,7 +185,8 @@ function makeProps(overrides: {
       index: activeIndex,
     },
     descriptors,
-    navigation,
+    emitter: navigation,
+    navigateToTab: navigation.navigate,
     insets: { bottom: 0, top: 0, left: 0, right: 0 },
   };
 }
@@ -290,12 +291,12 @@ describe('MaterialTabBar', () => {
       const tabs = getAllByRole('tab');
       // Press the second tab (index 1, inactive)
       fireEvent.click(tabs[1]);
-      expect(props.navigation.emit).toHaveBeenCalledWith({
+      expect(props.emitter.emit).toHaveBeenCalledWith({
         type: 'tabPress',
         target: 'route-b',
         canPreventDefault: true,
       });
-      expect(props.navigation.navigate).toHaveBeenCalledWith('profile');
+      expect(props.navigateToTab).toHaveBeenCalledWith('route-b');
     });
 
     it('does not navigate when the already-focused tab is pressed', () => {
@@ -306,12 +307,12 @@ describe('MaterialTabBar', () => {
       const tabs = getAllByRole('tab');
       // Press the first tab (already focused)
       fireEvent.click(tabs[0]);
-      expect(props.navigation.emit).toHaveBeenCalledWith({
+      expect(props.emitter.emit).toHaveBeenCalledWith({
         type: 'tabPress',
         target: 'route-a',
         canPreventDefault: true,
       });
-      expect(props.navigation.navigate).not.toHaveBeenCalled();
+      expect(props.navigateToTab).not.toHaveBeenCalled();
     });
 
     it('emits tabLongPress on long press', () => {
@@ -321,7 +322,7 @@ describe('MaterialTabBar', () => {
       );
       const tabs = getAllByRole('tab');
       fireEvent.contextMenu(tabs[1]);
-      expect(props.navigation.emit).toHaveBeenCalledWith({
+      expect(props.emitter.emit).toHaveBeenCalledWith({
         type: 'tabLongPress',
         target: 'route-b',
       });
@@ -345,10 +346,8 @@ describe('MaterialTabBar', () => {
           wall: { options: { title: 'On the Wall', tabBarItemStyle: { display: 'none' } } },
           b: { options: { title: 'Profile' } },
         },
-        navigation: {
-          emit: vi.fn(() => ({ defaultPrevented: false })),
-          navigate: vi.fn(),
-        },
+        emitter: { emit: vi.fn(() => ({ defaultPrevented: false })) },
+        navigateToTab: vi.fn(),
         insets: { bottom: 0, top: 0, left: 0, right: 0 },
       };
       const { getAllByRole, queryByLabelText } = render(
@@ -396,10 +395,8 @@ describe('MaterialTabBar', () => {
         descriptors: {
           'route-a': { options: {} },
         },
-        navigation: {
-          emit: vi.fn(() => ({ defaultPrevented: false })),
-          navigate: vi.fn(),
-        },
+        emitter: { emit: vi.fn(() => ({ defaultPrevented: false })) },
+        navigateToTab: vi.fn(),
         insets: { bottom: 0, top: 0, left: 0, right: 0 },
       };
       const { getByRole } = render(<MaterialTabBar {...(props as unknown as Parameters<typeof MaterialTabBar>[0])} />);

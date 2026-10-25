@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, ScrollView, StyleSheet, ActivityIndicator, Keyboard, Platform } from 'react-native';
+import {
+  View,
+  ScrollView,
+  StyleSheet,
+  ActivityIndicator,
+  Keyboard,
+  Platform,
+  type ScrollViewInstance,
+} from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withDelay, withSpring, withTiming } from 'react-native-reanimated';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -134,7 +142,7 @@ function SessionSummaryContent({
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
   const { formatGrade } = useGradeFormat();
-  const scrollViewRef = useRef<ScrollView>(null);
+  const scrollViewRef = useRef<ScrollViewInstance>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   // This screen is a modal route: on Android the dialog window ignores

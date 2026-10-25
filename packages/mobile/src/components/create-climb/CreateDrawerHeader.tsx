@@ -1,7 +1,7 @@
 import { AccessibleTextInput as TextInput } from '../AccessibleTextInput';
 import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
 import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
-import { StyleSheet, type TextInput as NativeTextInput } from 'react-native';
+import { StyleSheet, type TextInputInstance as NativeTextInput } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { AppMenu } from '../AppMenu';

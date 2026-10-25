@@ -1,6 +1,6 @@
 import type { WindowAnchorPoint } from '../navigation/AnchoredPopover.types';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BackHandler, View, StyleSheet } from 'react-native';
+import { BackHandler, View, StyleSheet, type ViewInstance } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIsFocused, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -96,7 +96,7 @@ export function CreateClimbScreen({
 
   const [longPressHoldId, setLongPressHoldId] = useState<number | null>(null);
   const [holdPopoverPoint, setHoldPopoverPoint] = useState<WindowAnchorPoint | null>(null);
-  const editorRootRef = useRef<View>(null);
+  const editorRootRef = useRef<ViewInstance>(null);
   const holdAnchorRevision = useRef(0);
   useEffect(
     () => () => {

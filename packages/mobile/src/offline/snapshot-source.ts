@@ -213,7 +213,7 @@ function writeCompleteSidecar(artifact: File, builtAt: string): void {
   try {
     const sidecar = sidecarFor(artifact);
     sidecar.create({ overwrite: true, intermediates: true });
-    sidecar.write(builtAt);
+    sidecar.writeSync(builtAt);
   } catch {
     // A missing sidecar only costs a re-download next cycle; never fail the
     // import over it.

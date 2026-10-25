@@ -108,6 +108,21 @@ vi.mock('react-native-gesture-handler', () => {
     return builder;
   };
   return {
+    usePanGesture: (config: {
+      onActivate: () => void;
+      onDeactivate: (event: { translationX: number; canceled?: boolean }) => void;
+    }) => {
+      const builder = gestureChain(true);
+      builder.onStart(config.onActivate);
+      builder.onEnd((event: { translationX: number }, success?: boolean) =>
+        config.onDeactivate({ ...event, canceled: success === false }),
+      );
+      return builder;
+    },
+    useTapGesture: gestureChain,
+    useLongPressGesture: gestureChain,
+    useExclusiveGestures: (...gestures: unknown[]) => gestures[0],
+    useSimultaneousGestures: (...gestures: unknown[]) => gestures[0],
     Gesture: {
       Tap: gestureChain,
       LongPress: gestureChain,

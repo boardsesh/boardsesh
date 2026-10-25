@@ -2,7 +2,7 @@ import { useNativeRootHeader } from '../../../hooks/use-native-root-header';
 import { usePrivacySettings } from '../../../lib/graphql/hooks/use-privacy';
 import { AudiencePicker, SESSION_AUDIENCES } from '../../privacy/AudiencePicker';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, type ViewInstance } from 'react-native';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { ScrollView as GestureScrollView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -381,10 +381,10 @@ export function PreSessionView({
   // Scrolls a block card that was just added or opened until its bottom clears
   // the Start capsule and the tab bar, without pushing its header off the top.
   const listRef = useRef<FlashListRef<PreviewListRow>>(null);
-  const screenRef = useRef<View>(null);
+  const screenRef = useRef<ViewInstance>(null);
   const revealInsetsRef = useRef({ top: 0, bottom: 0 });
   revealInsetsRef.current = { top: listPaddingTop, bottom: footerHeight + footerBottom + spacing[4] };
-  const revealBlock = useCallback((cardView: View) => {
+  const revealBlock = useCallback((cardView: ViewInstance) => {
     const screen = screenRef.current;
     if (!screen) return;
     screen.measureInWindow((_screenX, screenY, _screenWidth, screenHeight) => {

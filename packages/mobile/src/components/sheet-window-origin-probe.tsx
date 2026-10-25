@@ -1,5 +1,5 @@
 import { forwardRef } from 'react';
-import type { View } from 'react-native';
+import type { ViewInstance } from 'react-native';
 import type { SheetWindowOriginProbeProps } from './sheet-window-origin-probe.types';
 
 /**
@@ -7,6 +7,8 @@ import type { SheetWindowOriginProbeProps } from './sheet-window-origin-probe.ty
  * readout is iOS-only anyway (see `SheetKeyboardCalibrationPublisher`). The iOS
  * probe is `sheet-window-origin-probe.ios.tsx`.
  */
-export const SheetWindowOriginProbe = forwardRef<View, SheetWindowOriginProbeProps>(function SheetWindowOriginProbe() {
-  return null;
-});
+export const SheetWindowOriginProbe = forwardRef<ViewInstance, SheetWindowOriginProbeProps>(
+  function SheetWindowOriginProbe() {
+    return null;
+  },
+);

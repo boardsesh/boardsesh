@@ -1,6 +1,6 @@
 import { memo } from 'react';
-import { StyleSheet, View, type ImageSourcePropType } from 'react-native';
-import { Image } from 'expo-image';
+import { StyleSheet, View } from 'react-native';
+import { Image, type ImageProps } from 'expo-image';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { spacing, borderRadius } from '../../theme/tokens';
@@ -14,7 +14,7 @@ type OnboardingCardProps = {
   /** Glyph for this page (resolved from the card data by the carousel). */
   icon: IconName;
   /** Real app-screen illustration; when present it replaces the glyph. */
-  image?: ImageSourcePropType;
+  image?: ImageProps['source'];
   /** Already-translated heading. Resolved at the call site with a static `t()`
    * literal so the i18n orphan checker can see the keys (no `t(variable)`). */
   title: string;

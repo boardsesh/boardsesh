@@ -15,9 +15,16 @@ vi.mock('../../PressableSurface', async () => {
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { createElement, useEffect, type ReactNode } from 'react';
-import { TabRouter } from 'expo-router/build/react-navigation/routers/TabRouter';
-import { StackRouter } from 'expo-router/build/react-navigation/routers/StackRouter';
-import { findDivergentState, getPayloadFromStateRoute } from 'expo-router/build/global-state/stateUtils';
+import { TabRouter, type TabNavigationState } from 'expo-router/build/react-navigation/routers/TabRouter';
+import { StackRouter, type StackNavigationState } from 'expo-router/build/react-navigation/routers/StackRouter';
+import type { RouteNode } from 'expo-router/build/Route';
+import { createInitialState } from 'expo-router/build/react-navigation/core/createInitialState';
+import { isActionHandled } from 'expo-router/build/react-navigation/routers/utils';
+import type { NavigationState, ParamListBase } from 'expo-router/build/react-navigation/routers/types';
+import { ROOT_CHAIN, getChainFromRouteKey } from 'expo-router/build/react-navigation/routers/stateKeys';
+import { resolveNavigationDestination } from 'expo-router/build/global-state/resolveNavigationDestination';
+import { indexNavigationTree, reduceNavigationTree } from 'expo-router/build/global-state/reduceNavigationTree';
+import type { RouterRegistry } from 'expo-router/build/global-state/routerRegistry';
 
 const platform = vi.hoisted(() => ({ OS: 'android' }));
 const browser = vi.hoisted(() => ({ openBrowserAsync: vi.fn().mockResolvedValue(undefined) }));
@@ -372,98 +379,157 @@ function flushDrawerClose() {
   });
 }
 
-// Use the installed routers, rather than treating a call to any navigation
-// method as success. Expo's navigate/dismissTo emit NAVIGATE/POP_TO respectively;
-// stateUtils selects the same deepest divergent navigator as getNavigateAction.
+// Exercise Expo's installed destination resolver, tree reducer, and routers.
+// Complete states carry deterministic keys and routeKeySeq, as SDK 58 requires.
 function playlistNavigationState(initialTab: 'profile' | 'discover') {
   const discoverRouter = StackRouter({ initialRouteName: 'index' });
-  const discoverConfig = { routeNames: ['index', 'all'], routeParamList: {}, routeGetIdList: {} };
-  let discoverState = discoverRouter.getInitialState(discoverConfig);
+  const discoverConfig = { routeNames: ['index', 'all'], routeGetIdList: {} };
   const tabRouter = TabRouter({ initialRouteName: initialTab });
-  const tabConfig = { routeNames: ['discover', 'profile'], routeParamList: {}, routeGetIdList: {} };
-  let tabState = tabRouter.getInitialState(tabConfig);
-  tabState = {
-    ...tabState,
-    routes: tabState.routes.map((route) => (route.name === 'discover' ? { ...route, state: discoverState } : route)),
-  };
+  const tabConfig = { routeNames: ['discover', 'profile'], routeGetIdList: {} };
   const rootRouter = StackRouter({ initialRouteName: '(tabs)' });
-  const rootConfig = {
-    routeNames: ['(tabs)', 'account', 'user-drawer'],
-    routeParamList: {},
-    routeGetIdList: {},
+  const rootConfig = { routeNames: ['(tabs)', 'account', 'user-drawer'], routeGetIdList: {} };
+
+  let rootState: NavigationState = {
+    ...createInitialState({ ...rootConfig, initialRouteName: '(tabs)', parentChain: ROOT_CHAIN }),
+    type: 'stack',
   };
-  let rootState = rootRouter.getInitialState(rootConfig);
+  let tabState: TabNavigationState<ParamListBase> = {
+    ...createInitialState({
+      ...tabConfig,
+      initialRouteName: 'discover',
+      parentChain: getChainFromRouteKey(rootState.routes[0].key),
+    }),
+    type: 'tab',
+  };
+  const discoverState: StackNavigationState<ParamListBase> = {
+    ...createInitialState({
+      ...discoverConfig,
+      initialRouteName: 'index',
+      parentChain: getChainFromRouteKey(tabState.routes[0].key),
+    }),
+    type: 'stack',
+  };
+  tabState = { ...tabState, routes: [{ ...tabState.routes[0], state: discoverState }] };
+  if (initialTab === 'profile') {
+    const result = tabRouter.getStateForAction(tabState, { type: 'NAVIGATE', payload: { name: 'profile' } }, tabConfig);
+    expect(isActionHandled(result)).toBe(true);
+    if (isActionHandled(result)) tabState = result.state;
+  }
   rootState = { ...rootState, routes: [{ ...rootState.routes[0], state: tabState }] };
-  const syncTabs = () => {
-    rootState = {
-      ...rootState,
-      routes: rootState.routes.map((route) => (route.name === '(tabs)' ? { ...route, state: tabState } : route)),
-    };
-  };
+
+  const node = (route: string, children: RouteNode[] = []): RouteNode => ({
+    type: children.length > 0 ? 'layout' : 'route',
+    route,
+    contextKey: `${route || 'root'}/${children.length > 0 ? '_layout' : 'index'}.tsx`,
+    dynamic: null,
+    children,
+    loadRoute: () => ({}),
+  });
+  const discoverNode = node('discover', [node('index'), node('all')]);
+  const tabsNode = node('(tabs)', [discoverNode, node('profile')]);
+  const rootNode = node('', [tabsNode, node('account'), node('user-drawer')]);
+  const registry: RouterRegistry = new Map([
+    [
+      rootState.key,
+      {
+        routeNode: rootNode,
+        reduce: (state, action) =>
+          rootRouter.getStateForAction(
+            state as StackNavigationState<ParamListBase>,
+            action as Parameters<typeof rootRouter.getStateForAction>[1],
+            rootConfig,
+          ),
+        shouldActionChangeFocus: rootRouter.shouldActionChangeFocus,
+        getStateForRouteFocus: (state, key) =>
+          rootRouter.getStateForRouteFocus(state as StackNavigationState<ParamListBase>, key),
+      },
+    ],
+    [
+      tabState.key,
+      {
+        routeNode: tabsNode,
+        reduce: (state, action) =>
+          tabRouter.getStateForAction(
+            state as TabNavigationState<ParamListBase>,
+            action as Parameters<typeof tabRouter.getStateForAction>[1],
+            tabConfig,
+          ),
+        shouldActionChangeFocus: tabRouter.shouldActionChangeFocus,
+        getStateForRouteFocus: (state, key) =>
+          tabRouter.getStateForRouteFocus(state as TabNavigationState<ParamListBase>, key),
+      },
+    ],
+    [
+      discoverState.key,
+      {
+        routeNode: discoverNode,
+        reduce: (state, action) =>
+          discoverRouter.getStateForAction(
+            state as StackNavigationState<ParamListBase>,
+            action as Parameters<typeof discoverRouter.getStateForAction>[1],
+            discoverConfig,
+          ),
+        shouldActionChangeFocus: discoverRouter.shouldActionChangeFocus,
+        getStateForRouteFocus: (state, key) =>
+          discoverRouter.getStateForRouteFocus(state as StackNavigationState<ParamListBase>, key),
+      },
+    ],
+  ]);
   routerMock.push.mockImplementation((name: string) => {
-    const next = rootRouter.getStateForAction(
-      rootState,
+    const result = rootRouter.getStateForAction(
+      rootState as StackNavigationState<ParamListBase>,
       { type: 'PUSH', payload: { name: name.slice(1) } },
       rootConfig,
     );
-    if (next) rootState = rootRouter.getRehydratedState(next, rootConfig);
+    expect(isActionHandled(result)).toBe(true);
+    if (isActionHandled(result)) rootState = result.state;
   });
   routerMock.back.mockImplementation(() => {
-    const next = rootRouter.getStateForAction(rootState, { type: 'POP', payload: { count: 1 } }, rootConfig);
-    if (next) rootState = rootRouter.getRehydratedState(next, rootConfig);
+    const result = rootRouter.getStateForAction(
+      rootState as StackNavigationState<ParamListBase>,
+      { type: 'POP', payload: { count: 1 } },
+      rootConfig,
+    );
+    if (isActionHandled(result)) rootState = result.state;
   });
   const dispatch = (type: 'NAVIGATE' | 'POP_TO', href: string) => {
     expect(href).toBe('/(tabs)/discover/all');
-    const destination = {
-      routes: [{ name: '(tabs)', state: { routes: [{ name: 'discover', state: { routes: [{ name: 'all' }] } }] } }],
-    };
-    const { navigationState, actionStateRoute } = findDivergentState(destination, rootState);
-    const payload = getPayloadFromStateRoute(actionStateRoute ?? {});
-    const action = {
-      type,
-      target: navigationState.key,
-      payload: { name: String(payload.screen), params: payload.params as object },
-    };
-    if (navigationState.key === tabState.key) {
-      const next =
-        type === 'NAVIGATE'
-          ? tabRouter.getStateForAction(tabState, { ...action, type: 'NAVIGATE' }, tabConfig)
-          : tabRouter.getStateForAction(
-              tabState,
-              // @ts-expect-error Deliberately replay the stack-only action that Expo sent to the tab router (#6508).
-              { ...action, type: 'POP_TO' },
-              tabConfig,
-            );
-      // POP_TO is unhandled by native TabRouter: the original bug stayed on Profile.
-      if (!next) return;
-      tabState = tabRouter.getRehydratedState(next, tabConfig);
-      const nestedScreen = (payload.params as { screen?: string }).screen;
-      const nextDiscover = discoverRouter.getStateForAction(
-        discoverState,
-        { type: 'NAVIGATE', payload: { name: nestedScreen ?? 'index' } },
-        discoverConfig,
-      );
-      if (nextDiscover) discoverState = discoverRouter.getRehydratedState(nextDiscover, discoverConfig);
-    } else if (navigationState.key === discoverState.key) {
-      const next = discoverRouter.getStateForAction(discoverState, action, discoverConfig);
-      if (next) discoverState = discoverRouter.getRehydratedState(next, discoverConfig);
-    }
-    tabState = {
-      ...tabState,
-      routes: tabState.routes.map((route) => (route.name === 'discover' ? { ...route, state: discoverState } : route)),
-    };
-    syncTabs();
+    const action = resolveNavigationDestination({
+      targetState: {
+        routes: [{ name: '(tabs)', state: { routes: [{ name: 'discover', state: { routes: [{ name: 'all' }] } }] } }],
+      },
+      navigationState: rootState,
+      routeNode: rootNode,
+      registry,
+      action: { type, payload: {} },
+    });
+    const tree = indexNavigationTree(rootState);
+    const origin = tree.nodes.get(action.target ?? rootState.key);
+    expect(origin).toBeDefined();
+    if (!origin) return;
+    const result = reduceNavigationTree(action, registry, { tree, origin });
+    if (result.handled) rootState = result.nextState;
   };
+  const currentTabs = () => rootState.routes.find((route) => route.name === '(tabs)')!.state as NavigationState;
+  const currentDiscover = () =>
+    currentTabs().routes.find((route) => route.name === 'discover')!.state as NavigationState;
   routerMock.navigate.mockImplementation((href: string) => dispatch('NAVIGATE', href));
   routerMock.dismissTo.mockImplementation((href: string) => dispatch('POP_TO', href));
   return {
     root: () => rootState,
-    tab: () => tabState.routes[tabState.index].name,
-    screen: () => discoverState.routes[discoverState.index].name,
+    tab: () => currentTabs().routes[currentTabs().index].name,
+    screen: () => currentDiscover().routes[currentDiscover().index].name,
   };
 }
 
 describe('My playlists switches to the existing Discover tab', () => {
+  it('keeps Profile selected when the stack-only dismissTo action reaches the tab router', () => {
+    const navigation = playlistNavigationState('profile');
+    routerMock.dismissTo('/(tabs)/discover/all');
+    expect(navigation.tab()).toBe('profile');
+    expect(navigation.screen()).toBe('index');
+  });
+
   it.each(['ios', 'android', 'web'])(
     'opens playlists after the %s menu unmounts, including repeated visits',
     (platformName) => {

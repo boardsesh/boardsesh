@@ -67,6 +67,11 @@ vi.mock('react-native-gesture-handler', () => {
   };
   return {
     GestureDetector: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+    usePanGesture: makeGesture,
+    useTapGesture: makeGesture,
+    useLongPressGesture: makeGesture,
+    useExclusiveGestures: makeGesture,
+    useSimultaneousGestures: makeGesture,
     Gesture: {
       Pan: makeGesture,
       Tap: makeGesture,

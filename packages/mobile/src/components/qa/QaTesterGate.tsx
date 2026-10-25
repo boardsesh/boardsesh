@@ -1,7 +1,7 @@
 import { getConsentSnapshot } from '../../lib/consent-state';
 import { useConsentSettled } from '../../lib/consent-hooks';
 import { useEffect, useRef } from 'react';
-import { InteractionManager } from 'react-native';
+import { scheduleIdleTask } from '../../lib/schedule-idle-task';
 import { router, useSegments } from 'expo-router';
 import * as Linking from 'expo-linking';
 import * as Updates from 'expo-updates';
@@ -138,7 +138,7 @@ export function QaTesterGate() {
     if (preflight === 'none') return;
 
     let cancelled = false;
-    const interaction = InteractionManager.runAfterInteractions(() => {
+    const interaction = scheduleIdleTask(() => {
       void (async () => {
         // A custom-scheme deep link that resolves INTO a tab lands with
         // segments[0] === '(tabs)', so the segment guard alone misses it. The

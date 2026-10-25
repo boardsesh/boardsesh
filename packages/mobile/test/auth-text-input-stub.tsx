@@ -13,7 +13,7 @@
 // takes precedence over this alias.
 
 import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
-import { Pressable, TextInput as RNTextInput, Text, View } from 'react-native';
+import { Pressable, TextInput as RNTextInput, Text, View, type TextInputInstance } from 'react-native';
 // The shared props type has no native imports, so it's safe to pull into the
 // node-env stub — keeps the stub's contract from drifting from the real component.
 import type { AuthTextInputHandle, AuthTextInputProps } from '../src/components/AuthTextInput.types';
@@ -36,7 +36,7 @@ export const AuthTextInput = forwardRef<AuthTextInputHandle, AuthTextInputProps>
   },
   ref,
 ) {
-  const inputRef = useRef<RNTextInput>(null);
+  const inputRef = useRef<TextInputInstance>(null);
   const [revealed, setRevealed] = useState(false);
 
   useImperativeHandle(ref, () => ({ focus: () => inputRef.current?.focus() }), []);

@@ -982,9 +982,9 @@ function NowOnTheWallPanelComponent(
           data={combinedHistory}
           keyExtractor={boardHistoryEntryKey}
           renderItem={renderHistoryItem}
-          ListHeaderComponent={listHeader}
-          ListEmptyComponent={listEmpty}
-          ListFooterComponent={listFooter}
+          ListHeaderComponent={listHeader ?? undefined}
+          ListEmptyComponent={listEmpty ?? undefined}
+          ListFooterComponent={listFooter ?? undefined}
           // `loadOlder` already no-ops once `hasMore` is false, but skipping the
           // prop entirely once there's nothing left avoids FlatList re-evaluating
           // the end-reached threshold on every scroll frame for no reason. The
@@ -1001,9 +1001,9 @@ function NowOnTheWallPanelComponent(
           data={combinedHistory}
           keyExtractor={boardHistoryEntryKey}
           renderItem={renderHistoryItem}
-          ListHeaderComponent={listHeader}
-          ListEmptyComponent={listEmpty}
-          ListFooterComponent={listFooter}
+          ListHeaderComponent={listHeader ?? undefined}
+          ListEmptyComponent={listEmpty ?? undefined}
+          ListFooterComponent={listFooter ?? undefined}
           onEndReached={hasMore ? handleEndReached : undefined}
           onEndReachedThreshold={0.6}
           onScrollBeginDrag={handleScrollBeginDrag}

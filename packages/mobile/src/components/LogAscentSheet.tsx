@@ -10,7 +10,7 @@ import type { TickClimbIdentity } from '@boardsesh/board-config';
 // bar (`footer`), and clamps its single column to the active detent via the
 // same `useSheetColumnStyle` this file used to wire by hand (#3330).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, View, type LayoutChangeEvent } from 'react-native';
+import { Platform, View, type LayoutChangeEvent, type ViewInstance } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { getGradeColor } from '@boardsesh/board-constants/grade-colors';
@@ -93,7 +93,7 @@ function LogAscentSheetContent({
     compactNote,
   );
 
-  const formFieldsRef = useRef<View>(null);
+  const formFieldsRef = useRef<ViewInstance>(null);
   // Include every field, including the audience picker, rather than just the
   // first two rows. Re-measure unchanged intrinsic geometry after cache resets
   // without remounting controls or the pinned note.

@@ -658,11 +658,11 @@ export function InlinePlaylistPicker({
           bounces={false}
           style={[layout === 'fill' && styles.fill, scrollMaxHeight != null ? { maxHeight: scrollMaxHeight } : null]}
           ListHeaderComponent={
-            error ? (
+            (error ? (
               <Text variant="footnote" color={systemColors.error} style={styles.errorText}>
                 {error}
               </Text>
-            ) : null
+            ) : null) ?? undefined
           }
           ListEmptyComponent={
             <View style={styles.message}>

@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import { createElement, createRef, useImperativeHandle, type Ref } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { TextInput as NativeTextInput, TextInputProps } from 'react-native';
+import type { TextInputInstance as NativeTextInput, TextInputProps } from 'react-native';
 const signal = vi.hoisted(() => ({
   bold: false,
   focus: vi.fn(),
@@ -127,18 +127,24 @@ describe('sheet focus reveal', () => {
     const growth = { nativeEvent: { contentSize: { width: 200, height: 100 } } } as Parameters<
       NonNullable<TextInputProps['onContentSizeChange']>
     >[0];
-    act(() => signal.contentSizeChange?.(growth));
+    act(() => {
+      signal.contentSizeChange?.(growth);
+    });
     expect(reveal.follow).not.toHaveBeenCalled();
     expect(onContentSizeChange).toHaveBeenCalledWith(growth);
     fireEvent.focus(host);
     expect(onFocus).toHaveBeenCalledOnce();
     expect(reveal.reveal).toHaveBeenCalledWith(ref.current);
-    act(() => signal.contentSizeChange?.(growth));
+    act(() => {
+      signal.contentSizeChange?.(growth);
+    });
     expect(reveal.follow).toHaveBeenCalledWith(ref.current);
     fireEvent.blur(host);
     expect(onBlur).toHaveBeenCalledOnce();
     expect(reveal.release).toHaveBeenCalledWith(ref.current);
-    act(() => signal.contentSizeChange?.(growth));
+    act(() => {
+      signal.contentSizeChange?.(growth);
+    });
     expect(reveal.follow).toHaveBeenCalledOnce();
   });
 

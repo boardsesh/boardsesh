@@ -12,7 +12,7 @@ import { subscribeToSetterFilterSelection } from '../../../../src/lib/setter-fil
 const params = vi.hoisted(() => ({ current: {} as Record<string, string | undefined> }));
 const navigation = vi.hoisted(() => ({
   goBack: vi.fn(),
-  beforeRemove: null as null | (() => void),
+  removed: null as null | (() => void),
 }));
 const picker = vi.hoisted(() => ({ props: null as SetterPickerListProps | null }));
 const header = vi.hoisted(() => ({ trailing: null as null | { label: string; onPress: () => void } }));
@@ -34,9 +34,9 @@ vi.mock('expo-router', () => ({
   useNavigation: () => ({
     goBack: navigation.goBack,
     addListener: (event: string, listener: () => void) => {
-      if (event === 'beforeRemove') navigation.beforeRemove = listener;
+      if (event === 'removed') navigation.removed = listener;
       return () => {
-        navigation.beforeRemove = null;
+        navigation.removed = null;
       };
     },
   }),
@@ -78,7 +78,7 @@ beforeEach(() => {
     setters: JSON.stringify(['sam']),
   };
   navigation.goBack.mockReset();
-  navigation.beforeRemove = null;
+  navigation.removed = null;
   picker.props = null;
   header.trailing = null;
   settersHook.calls = [];
@@ -146,7 +146,7 @@ describe('PlaylistSettersScreen', () => {
     render(createElement(PlaylistSettersScreen));
     act(() => picker.props?.onToggle('alex'));
     expect(received).toEqual([]);
-    act(() => navigation.beforeRemove?.());
+    act(() => navigation.removed?.());
     expect(received).toEqual([{ setters: ['sam', 'alex'], options: {} }]);
     expect(received[0]?.options).not.toHaveProperty('apply');
   });
@@ -157,7 +157,7 @@ describe('PlaylistSettersScreen', () => {
     act(() => header.trailing?.onPress());
     act(() => header.trailing?.onPress());
     expect(navigation.goBack).toHaveBeenCalledTimes(1);
-    act(() => navigation.beforeRemove?.());
+    act(() => navigation.removed?.());
     expect(received).toEqual([{ setters: ['sam'], options: { apply: true } }]);
   });
 
@@ -165,7 +165,7 @@ describe('PlaylistSettersScreen', () => {
     params.current = { playlistId: 'playlist-1', setters: JSON.stringify(['sam']) };
     render(createElement(PlaylistSettersScreen));
     act(() => header.trailing?.onPress());
-    act(() => navigation.beforeRemove?.());
+    act(() => navigation.removed?.());
     expect(received).toEqual([]);
   });
 

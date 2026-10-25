@@ -295,7 +295,16 @@ async function signInWithProviderWeb(provider: AuthProvider): Promise<OAuthSignI
       platform: Platform.OS === 'android' ? 'android' : 'ios',
       addUrlListener: (listener) => Linking.addEventListener('url', listener),
       addAppStateListener: (listener) => AppState.addEventListener('change', listener),
-      getCurrentAppState: () => AppState.currentState,
+      getCurrentAppState: () => {
+        const currentState = AppState.currentState;
+        return currentState === 'active' ||
+          currentState === 'background' ||
+          currentState === 'inactive' ||
+          currentState === 'unknown' ||
+          currentState === 'extension'
+          ? currentState
+          : null;
+      },
       openBrowser: (url) => WebBrowser.openBrowserAsync(url),
       dismissBrowser: async () => WebBrowser.dismissBrowser(),
       setTimer: (callback, delayMs) => setTimeout(callback, delayMs),

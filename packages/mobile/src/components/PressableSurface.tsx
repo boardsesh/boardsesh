@@ -3,7 +3,7 @@ import {
   Pressable,
   Platform,
   StyleSheet,
-  type View,
+  type ViewInstance,
   type GestureResponderEvent,
   type StyleProp,
   type ViewStyle,
@@ -18,7 +18,7 @@ type RNPressableProps = ComponentProps<typeof Pressable>;
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 export type PressFeedback = 'scale' | 'opacity' | 'none';
 export type PressableSurfaceProps = RNPressableProps & {
-  ref?: Ref<View>;
+  ref?: Ref<ViewInstance>;
   feedback?: PressFeedback;
   scaleTo?: number;
   opacityTo?: number;

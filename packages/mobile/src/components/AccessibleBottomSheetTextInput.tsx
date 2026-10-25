@@ -1,6 +1,6 @@
 import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
 import { useCallback, useEffect, useRef, type ComponentPropsWithRef, type RefObject } from 'react';
-import type { TextInput } from 'react-native';
+import type { TextInputInstance } from 'react-native';
 import { useAccessibleInputStyle } from '../hooks/use-accessible-input-style';
 import { useSheetScrollIntoView, type SheetRevealTarget } from './sheet-scroll-into-view';
 
@@ -20,11 +20,11 @@ export function AccessibleBottomSheetTextInput({
   ...props
 }: AccessibleBottomSheetTextInputProps) {
   const inputStyle = useAccessibleInputStyle(style);
-  const inputRef = useRef<TextInput | null>(null);
+  const inputRef = useRef<TextInputInstance | null>(null);
   const activeTargetRef = useRef<SheetRevealTarget | null>(null);
   const scrollIntoView = useSheetScrollIntoView();
   const setInputRef = useCallback(
-    (input: TextInput | null) => {
+    (input: TextInputInstance | null) => {
       inputRef.current = input;
       if (typeof ref === 'function') return ref(input);
       if (ref) ref.current = input;

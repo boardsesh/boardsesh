@@ -106,16 +106,12 @@ const KEEP_RULES = `
     native <methods>;
 }
 
-# @sentry/react-native compares these two react-native-screens class names as
-# STRINGS to decide when a navigation has drawn --
-# RNSentryReactFragmentLifecycleTracer.java, both
-# \`"...".equals(f.getClass().getCanonicalName())\`. react-native-screens ships no
-# consumer rules, so R8 renames both and Sentry's time-to-initial-display
-# instrumentation silently stops emitting; we run tracesSampleRate 0.1, so that
-# is live telemetry. -keepnames, not -keep: the classes may still be shrunk, only
-# the names are pinned.
+# @sentry/react-native compares this react-native-screens class name as a
+# STRING in RNSentryReactFragmentLifecycleTracer.java to decide when navigation
+# has drawn. R8 may shrink the class, but its name must survive for first-draw
+# telemetry. Sentry 8.32 matches ScreenAppearEvent by its event name (topAppear),
+# so the old keepnames rule for that event class is no longer needed.
 -keepnames class com.swmansion.rnscreens.ScreenStackFragment
--keepnames class com.swmansion.rnscreens.events.ScreenAppearEvent
 # --- end ${KEEP_RULES_MARKER} -----------------------------------------------
 `;
 

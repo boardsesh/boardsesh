@@ -47,7 +47,11 @@ type MaterialIconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
 const materialTabIcon =
   (active: MaterialIconName, inactive: MaterialIconName) =>
   ({ focused, color, size }: TabIconProps) => (
-    <MaterialCommunityIcons name={focused ? active : inactive} color={color} size={size} />
+    <MaterialCommunityIcons
+      name={focused ? active : inactive}
+      color={color as React.ComponentProps<typeof MaterialCommunityIcons>['color']}
+      size={size}
+    />
   );
 
 // HIG Tab bars: a selected tab shows the filled variant of its SF Symbol, an

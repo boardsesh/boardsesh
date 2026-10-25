@@ -1,8 +1,8 @@
 diff --git a/ios/RNSScreen.mm b/ios/RNSScreen.mm
-index 9b66012dc8db1e3af0cb5457f8dad86e7f2fe5e3..e63ce34ad0da635391676d6e89049b1f47addccb 100644
+index 049fd22..9cbb0ca 100644
 --- a/ios/RNSScreen.mm
 +++ b/ios/RNSScreen.mm
-@@ -1105,10 +1105,43 @@ RNS_IGNORE_SUPER_CALL_END
+@@ -1151,10 +1151,43 @@ RNS_IGNORE_SUPER_CALL_END
    }
  }
  
@@ -49,7 +49,7 @@ index 9b66012dc8db1e3af0cb5457f8dad86e7f2fe5e3..e63ce34ad0da635391676d6e89049b1f
  
  #pragma mark - RNSSafeAreaProviding
 diff --git a/ios/helpers/scroll-view/RNSScrollViewFinder.h b/ios/helpers/scroll-view/RNSScrollViewFinder.h
-index 04d40b38bad73bedd79c6aa8b85125dc79093db7..3ae83feb969f4aba8ce05207669998f68b463e9a 100644
+index 04d40b3..3ae83fe 100644
 --- a/ios/helpers/scroll-view/RNSScrollViewFinder.h
 +++ b/ios/helpers/scroll-view/RNSScrollViewFinder.h
 @@ -25,4 +25,15 @@
@@ -69,7 +69,7 @@ index 04d40b38bad73bedd79c6aa8b85125dc79093db7..3ae83feb969f4aba8ce05207669998f6
 +
  @end
 diff --git a/ios/helpers/scroll-view/RNSScrollViewFinder.mm b/ios/helpers/scroll-view/RNSScrollViewFinder.mm
-index 2434c612951a40bd1ecfcc476acebb9a9a6b500e..fb36bbf917abaf3365cd045e5b97ce9b4301f2e9 100644
+index 2434c61..fb36bbf 100644
 --- a/ios/helpers/scroll-view/RNSScrollViewFinder.mm
 +++ b/ios/helpers/scroll-view/RNSScrollViewFinder.mm
 @@ -1,4 +1,6 @@
@@ -200,10 +200,10 @@ index 2434c612951a40bd1ecfcc476acebb9a9a6b500e..fb36bbf917abaf3365cd045e5b97ce9b
 +
  @end
 diff --git a/ios/tabs/host/RNSTabsHostComponentView.mm b/ios/tabs/host/RNSTabsHostComponentView.mm
-index 8b61f5b7d3800bf090ff4a7878ad44676b50bbaf..750a3e7675412e79738bda66cb59582c65246836 100644
+index 69bd2fc..66cd93c 100644
 --- a/ios/tabs/host/RNSTabsHostComponentView.mm
 +++ b/ios/tabs/host/RNSTabsHostComponentView.mm
-@@ -53,6 +53,10 @@ namespace react = facebook::react;
+@@ -54,6 +54,10 @@ namespace react = facebook::react;
  
  #if RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
    UIView *_Nullable _bottomAccessoryWrapperView;
@@ -214,7 +214,7 @@ index 8b61f5b7d3800bf090ff4a7878ad44676b50bbaf..750a3e7675412e79738bda66cb59582c
  #endif // RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
  }
  
-@@ -88,6 +92,13 @@ namespace react = facebook::react;
+@@ -89,6 +93,13 @@ namespace react = facebook::react;
  
  #if RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
    _bottomAccessoryWrapperView = nil;
@@ -228,7 +228,7 @@ index 8b61f5b7d3800bf090ff4a7878ad44676b50bbaf..750a3e7675412e79738bda66cb59582c
  #endif // RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
  }
  
-@@ -408,14 +419,166 @@ namespace react = facebook::react;
+@@ -445,15 +456,167 @@ namespace react = facebook::react;
  #if RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
  - (void)applyBottomAccessoryVisibility API_AVAILABLE(ios(26.0))
  {
@@ -265,9 +265,9 @@ index 8b61f5b7d3800bf090ff4a7878ad44676b50bbaf..750a3e7675412e79738bda66cb59582c
 +    _rnscreens_lastAppliedBottomAccessoryView = accessoryView;
 +    [self rnscreens_scheduleBottomAccessoryRelayoutAfterVisibilityChange];
 +  }
-+}
-+#endif // RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
-+
+ }
+ #endif // RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
+ 
 +// rnscreens_bottomAccessoryDynamicAttachFix
 +// iOS 26's UITabBarController.setBottomAccessory lays the accessory in for free
 +// when it's set during the controller's initial setup, but NOT when it's set
@@ -333,7 +333,7 @@ index 8b61f5b7d3800bf090ff4a7878ad44676b50bbaf..750a3e7675412e79738bda66cb59582c
 +    [weakSelf rnscreens_layoutBottomAccessoryOutsideTransition];
 +  });
 +#endif // RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
- }
++}
 +
 +// rnscreens_bottomAccessoryDynamicAttachFix
 +// Forcing layout while a presentation/dismissal is in flight is the dangerous
@@ -393,8 +393,9 @@ index 8b61f5b7d3800bf090ff4a7878ad44676b50bbaf..750a3e7675412e79738bda66cb59582c
 +    _rnscreens_bottomAccessoryRelayoutNeedsRepeat = NO;
 +    [self rnscreens_scheduleBottomAccessoryRelayoutAfterVisibilityChange];
 +  }
- #endif // RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
++#endif // RNS_TABS_BOTTOM_ACCESSORY_AVAILABLE
 +}
- 
++
  - (void)setLayoutDirection:(UITraitEnvironmentLayoutDirection)layoutDirection
  {
+   _layoutDirection = layoutDirection;

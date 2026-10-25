@@ -5,7 +5,7 @@
 // and DROPS the children, which draws the mask itself as black blobs.
 
 import { memo, useMemo } from 'react';
-import MaskedView from '@react-native-masked-view/masked-view';
+import { MaskedView } from '../MaskedView';
 import Svg, { Path } from 'react-native-svg';
 import type { ReferenceSize } from '@boardsesh/spray-wall-geometry';
 import {

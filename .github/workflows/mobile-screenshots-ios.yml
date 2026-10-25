@@ -561,7 +561,7 @@ jobs:
     # Nothing shipped, nothing to photograph — and this is the expensive one to
     # skip: a cache miss here is a ~30-min native build.
     if: (inputs.cpp_record_run_id || '') == '' && needs.setup.outputs.shipped == 'true' && !((inputs.cpp_target || 'none') != 'none' && (inputs.cpp_action == 'plan' || inputs.cpp_action == 'create'))
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 60
     outputs:
       cache-key: ${{ steps.appkey.outputs.key }}
@@ -633,7 +633,7 @@ jobs:
     # but stated anyway: this `if` has no status function, so the day someone
     # adds one the gate must not quietly disappear with the implicit needs check.
     if: needs.setup.outputs.gate == 'probe' && needs.setup.outputs.shipped == 'true' && (inputs.cpp_target == null || inputs.cpp_target == 'none')
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 60
     outputs:
       changed: ${{ steps.compare.outputs.changed }}
@@ -782,7 +782,7 @@ jobs:
     # `&&`/`||` return the actual operand, not a coerced boolean, and a matrix
     # JSON string is always non-empty (truthy) — so `false && x` short-circuits
     # to `false` without evaluating `x`, and `false || y` then evaluates to `y`.
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 60
     strategy:
       # One shard failing shouldn't abandon the rest — let them all finish so
@@ -1216,7 +1216,7 @@ jobs:
   cpp-capture:
     needs: [setup, ios-build, cpp-bootstrap]
     if: ${{ !cancelled() && needs.setup.result == 'success' && needs.ios-build.result == 'success' && (needs.cpp-bootstrap.result == 'success' || needs.cpp-bootstrap.result == 'skipped') && (inputs.cpp_target || 'none') != 'none' && inputs.cpp_action != 'plan' && inputs.cpp_action != 'create' && (inputs.cpp_record_run_id || '') == '' }}
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 65
     strategy:
       fail-fast: false

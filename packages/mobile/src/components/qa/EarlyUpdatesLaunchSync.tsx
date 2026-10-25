@@ -1,6 +1,6 @@
 import { useConsentSettled } from '../../lib/consent-hooks';
 import { useEffect, useRef } from 'react';
-import { InteractionManager } from 'react-native';
+import { scheduleIdleTask } from '../../lib/schedule-idle-task';
 import { syncEarlyUpdates } from '../../lib/qa/early-updates';
 import { adoptRunningOtaPin } from '../../lib/qa/qa-surf';
 import { useEarlyUpdatesSyncEnvironment } from '../../lib/qa/use-early-updates';
@@ -13,7 +13,7 @@ import { useEarlyUpdatesSyncEnvironment } from '../../lib/qa/use-early-updates';
  * early update for this binary yet), a leave it could not finish, the feature
  * being switched off for a member, a tester's pin whose branch is gone, or a
  * pin to drop after an emergency launch. Each needs the network, so this runs
- * after the first interactions, in the background, and never blocks launch or
+ * after the first frame when idle, and never blocks launch or
  * reloads: whatever it changes takes effect the next time the app opens. A
  * phone whose pin already matches its choice makes no request at all.
  *
@@ -35,7 +35,7 @@ export function EarlyUpdatesLaunchSync() {
     }
     // Re-run when the flag lands or changes. `syncEarlyUpdates` decides from
     // the pin record, so a repeat with nothing left to do is a no-op.
-    const interaction = InteractionManager.runAfterInteractions(() => {
+    const interaction = scheduleIdleTask(() => {
       void syncEarlyUpdates(environment);
     });
     return () => interaction.cancel();

@@ -19,7 +19,7 @@ import { PressableSurface } from '../PressableSurface';
 // host — any state change or navigation.
 
 import { memo, useEffect, useMemo, useRef } from 'react';
-import { BackHandler, StyleSheet, View } from 'react-native';
+import { BackHandler, StyleSheet, View, type ViewInstance } from 'react-native';
 import Animated, { FadeIn, FadeInUp, useReducedMotion } from 'react-native-reanimated';
 import { useScopedRouter as useRouter } from '../../lib/routing/scoped-navigation';
 import { useTranslation } from 'react-i18next';
@@ -61,7 +61,7 @@ function WallStateCalloutImpl({ state, top, onBackToLive, onDismiss }: WallState
   const reduceMotion = useReducedMotion();
   const router = useRouter();
   const { driver, name: driverName, litAgo } = useWallDriver();
-  const bodyRef = useRef<View>(null);
+  const bodyRef = useRef<ViewInstance>(null);
 
   useEffect(() => {
     const handle = setTimeout(onDismiss, CALLOUT_AUTO_DISMISS_MS);

@@ -91,6 +91,7 @@ vi.mock('react-native-reanimated', () => {
     default: { View: passthrough },
     useAnimatedStyle: (fn: () => unknown) => fn(),
     useAnimatedReaction: () => undefined,
+    useSharedValue: (value: string) => ({ value }),
     interpolate: () => 0,
     Extrapolation: { CLAMP: 'clamp' },
     runOnJS:
@@ -135,6 +136,33 @@ vi.mock('react-native-gesture-handler', () => {
   };
   return {
     GestureDetector: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+    usePanGesture: () => makeBuilder('pan'),
+    useTapGesture: (config: { maxDuration?: number; onActivate?: () => void; block?: unknown[] }) => {
+      const gesture = makeBuilder('tap');
+      const capture = rowGestures.captures.get(gesture)!;
+      capture.maxDuration = config.maxDuration;
+      capture.onStart = config.onActivate;
+      capture.reference = gesture;
+      capture.blockedReferences = config.block;
+      return gesture;
+    },
+    useLongPressGesture: (config: { minDuration?: number; onActivate?: () => void }) => {
+      const gesture = makeBuilder('longPress');
+      const capture = rowGestures.captures.get(gesture)!;
+      capture.minDuration = config.minDuration;
+      capture.onStart = config.onActivate;
+      capture.reference = gesture;
+      return gesture;
+    },
+    useExclusiveGestures: (...gestures: unknown[]) => {
+      rowGestures.exclusive = gestures.flatMap((gesture) => {
+        const capture = rowGestures.captures.get(gesture);
+        return capture ? [capture] : [];
+      });
+      return gestures[0];
+    },
+    useSimultaneousGestures: (...gestures: unknown[]) => gestures[0],
+
     Gesture: {
       Pan: () => makeBuilder('pan'),
       Simultaneous: (...gestures: unknown[]) => gestures[0],
@@ -306,10 +334,14 @@ describe('ClimbListRow screen-reader activation', () => {
     );
 
     const [longPress, rowTap] = rowGestures.exclusive;
-    const moreTap = [...rowGestures.captures.values()].find((gesture) => gesture.kind === 'tap' && gesture !== rowTap);
+    const moreTap = [...rowGestures.captures.values()].find(
+      (gesture) => gesture.kind === 'tap' && gesture.blockedReferences?.includes(rowTap.reference),
+    );
     expect(moreTap).toBeDefined();
     expect(moreTap?.maxDuration).toBeGreaterThanOrEqual(rowTap.maxDuration ?? Infinity);
-    expect(moreTap?.blockedReferences).toEqual([rowTap.reference, longPress.reference]);
+    expect(moreTap?.blockedReferences).toHaveLength(2);
+    expect(moreTap?.blockedReferences?.[0]).toBe(rowTap.reference);
+    expect(moreTap?.blockedReferences?.[1]).toBe(longPress.reference);
     act(() => moreTap?.onStart?.());
     expect(onOpenActions).toHaveBeenCalledExactlyOnceWith(climb);
     expect(onPress).not.toHaveBeenCalled();

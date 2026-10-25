@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { useNavigation, useRouter } from 'expo-router';
-import { usePreventRemove } from 'expo-router/react-navigation';
+import { useRouter, usePreventRemove } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { CREATE_SPRAY_WALL_VERSION, PUBLISH_SPRAY_WALL_VERSION } from '@boardsesh/graphql/operations/spray-walls';
@@ -102,7 +101,6 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
   const { systemColors } = useTheme();
   const queryClient = useQueryClient();
   const router = useRouter();
-  const navigation = useNavigation();
   // A param update must not repoint edits already in progress to a different wall.
   const requestedWallUuidRef = useRef(wallUuid);
   const [status, setStatus] = useState<MaintenanceStatus>('preparing');
@@ -278,21 +276,24 @@ export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
     void finish();
   }, [finish]);
 
+  const [leaving, setLeaving] = useState(false);
   usePreventRemove(
-    !finished &&
+    !leaving &&
+      !finished &&
       (status === 'preparing' ||
         status === 'publishing' ||
         status === 'refreshing' ||
         editorDirty ||
         editorHandingOver),
-    ({ data: { action } }) => {
+    ({ repeat }) => {
       if (busyRef.current || editorHandingOverRef.current) return;
       confirmDiscardSprayEdits(
         editorDirtyRef.current,
         () => {
           // A Save started while the dialog was up still owns the screen.
           if (busyRef.current || editorHandingOverRef.current) return;
-          navigation.dispatch(action);
+          setLeaving(true);
+          repeat();
         },
         {
           title: t('sprayMaintenance.leave.title'),

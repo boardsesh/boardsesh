@@ -12,6 +12,7 @@ const router = vi.hoisted(() => ({ dismiss: vi.fn() }));
 const navigation = vi.hoisted(() => ({
   setOptions: vi.fn(),
   isFocused: vi.fn(() => true),
+  removalListeners: new Map<string, () => void>(),
   beforeRemove: null as ((event: { defaultPrevented: boolean }) => void) | null,
   addListener: vi.fn<(event: string, listener: (event: { defaultPrevented: boolean }) => void) => () => void>(),
 }));
@@ -162,10 +163,14 @@ beforeEach(() => {
   vi.clearAllMocks();
   navigation.isFocused.mockReturnValue(true);
   navigation.beforeRemove = null;
-  navigation.addListener.mockImplementation((_event, listener) => {
-    navigation.beforeRemove = listener;
+  navigation.removalListeners.clear();
+  navigation.beforeRemove = (event) =>
+    navigation.removalListeners.get(event.defaultPrevented ? 'removePrevented' : 'removed')?.();
+  navigation.addListener.mockImplementation((event, listener) => {
+    const callback = () => listener({ defaultPrevented: event === 'removePrevented' });
+    navigation.removalListeners.set(event, callback);
     return () => {
-      if (navigation.beforeRemove === listener) navigation.beforeRemove = null;
+      if (navigation.removalListeners.get(event) === callback) navigation.removalListeners.delete(event);
     };
   });
   frames.clear();
@@ -373,9 +378,7 @@ describe('player swipe dismissal', () => {
     routeTarget.current = { nonce: 1, climb: { uuid: 'first' } } as PlayDrawerOpenTarget;
     const { rerender } = renderPlayer();
     act(() => {
-      const event = { defaultPrevented: false };
-      navigation.beforeRemove?.(event);
-      event.defaultPrevented = true;
+      navigation.beforeRemove?.({ defaultPrevented: true });
     });
     routeTarget.current = { nonce: 2, climb: { uuid: 'fresh' } } as PlayDrawerOpenTarget;
     rerender(createElement(PlayScreen));

@@ -6,6 +6,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 const launch = vi.hoisted(() => ({ released: false }));
 const navigation = vi.hoisted(() => ({ replace: vi.fn(), dismiss: vi.fn(), dispatch: vi.fn() }));
 const decisions = vi.hoisted(() => ({ decide: vi.fn() }));
+const preventRemoval = vi.hoisted(() => vi.fn());
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
@@ -20,9 +21,9 @@ vi.mock('react-native', () => ({
 vi.mock('expo-router', () => ({
   useRouter: () => ({ ...navigation, canDismiss: () => false }),
   useNavigation: () => navigation,
+  usePreventRemove: preventRemoval,
   Stack: { Screen: () => null },
 }));
-vi.mock('expo-router/react-navigation', () => ({ usePreventRemove: vi.fn() }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../providers/theme-provider', () => ({ useTheme: () => ({ systemColors: {} }) }));
 vi.mock('../providers/consent-provider', () => ({ decideAnalyticsConsent: decisions.decide }));
@@ -58,10 +59,12 @@ it('holds a direct launch, waits for local consent, then leaves immediately afte
   });
   const view = render(createElement(PrivacyConsentScreen));
   expect(screen.getByText('spinner')).toBeTruthy();
+  expect(preventRemoval).not.toHaveBeenCalled();
   expect(screen.queryByRole('button')).toBeNull();
 
   launch.released = true;
   view.rerender(createElement(PrivacyConsentScreen));
+  expect(preventRemoval).toHaveBeenLastCalledWith(true, expect.any(Function));
   expect((screen.getByRole('button', { name: 'allow' }) as HTMLButtonElement).disabled).toBe(true);
   expect((screen.getByRole('button', { name: 'deny' }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: 'deny' }));
@@ -74,4 +77,5 @@ it('holds a direct launch, waits for local consent, then leaves immediately afte
   expect(decisions.decide).toHaveBeenCalledWith('denied', 'ios');
   expect(navigation.replace).toHaveBeenCalledWith('/');
   expect(getConsentSnapshot().settled).toBe(true);
+  expect(preventRemoval).toHaveBeenLastCalledWith(false, expect.any(Function));
 });

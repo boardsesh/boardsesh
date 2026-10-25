@@ -1,4 +1,11 @@
 // @vitest-environment jsdom
+vi.mock('../../../../src/lib/schedule-idle-task', () => ({
+  scheduleIdleTask: (callback: () => void) => {
+    if (!mocks.holdInteractions) callback();
+    return { cancel: () => undefined };
+  },
+}));
+
 vi.mock('../../../../src/components/AccessibleTextInput', async () => {
   const { TextInput } = await import('react-native');
   return { AccessibleTextInput: TextInput };
@@ -216,13 +223,7 @@ vi.mock('react-native', () => ({
   // fetches). Exposed here so the pre-warm test can assert it stays unused.
   Image: { prefetch: mocks.imagePrefetch },
   // Run deferred work synchronously in tests; the prewarm + background-cache
-  // effects schedule through InteractionManager.runAfterInteractions in the screen.
-  InteractionManager: {
-    runAfterInteractions: (callback: () => void) => {
-      if (!mocks.holdInteractions) callback();
-      return { cancel: () => undefined };
-    },
-  },
+  // effects schedule through scheduleIdleTask in the screen.
 }));
 vi.mock('../../../../src/hooks/use-device-layout', () => ({
   useDeviceLayout: () => mocks.deviceLayout,

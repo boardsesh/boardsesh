@@ -51,7 +51,7 @@ function FreezeDebugOverlayInner() {
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
 
   useEffect(() => {
-    const subscription = Dimensions.addEventListener('change', ({ screen: nextScreen }) => {
+    const subscription = Dimensions.addEventListener('change', ({ screen: nextScreen }: { screen: ScaledSize }) => {
       setScreen(nextScreen);
     });
     return () => subscription.remove();

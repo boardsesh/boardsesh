@@ -2,7 +2,7 @@ import { AccessibleTextInput as TextInput } from './AccessibleTextInput';
 import { useTypographyStyles, type TypographyScale } from '../hooks/use-typography-styles';
 import { PressableSurface } from './PressableSurface';
 import { forwardRef, type ComponentType } from 'react';
-import { StyleSheet, View, type TextInputProps, type TextInput as NativeTextInput } from 'react-native';
+import { StyleSheet, View, type TextInputProps, type TextInputInstance as NativeTextInput } from 'react-native';
 import { Icon } from './Icon';
 import { spacing } from '../theme/tokens';
 import { useTheme } from '../providers/theme-provider';

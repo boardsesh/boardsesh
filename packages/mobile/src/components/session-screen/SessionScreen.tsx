@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useIsFocused, useRouter } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { PanGesture } from 'react-native-gesture-handler';
+import type { LegacyPanGesture as PanGesture } from 'react-native-gesture-handler';
 import type { SharedValue } from 'react-native-reanimated';
 import { countDistinctSessionUsers } from '@boardsesh/queue-runtime';
 import { useQueueSessionId, useQueueLiveStats } from '../../providers/queue-provider';

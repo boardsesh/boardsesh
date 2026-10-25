@@ -1,8 +1,8 @@
 diff --git a/ios/EXDevLauncherController.m b/ios/EXDevLauncherController.m
-index 76fd0f5f15f2ee6beadca5ce3c9828f0427c8896..806afb683501b23236536b8752b1d09f640274e9 100644
+index dfeec1c..46a7fbf 100644
 --- a/ios/EXDevLauncherController.m
 +++ b/ios/EXDevLauncherController.m
-@@ -38,7 +38,7 @@
+@@ -32,7 +32,7 @@
  #define VERSION @ STRINGIZE2(EX_DEV_LAUNCHER_VERSION)
  #endif
  

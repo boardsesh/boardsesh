@@ -43,44 +43,48 @@ export function usePlaySwipeDismiss(openTargetNonce?: number | null) {
     };
   }, []);
 
-  useEffect(
-    () =>
-      navigation.addListener('beforeRemove', (event) => {
-        if (!mountedRef.current) return;
-        const removingRevision = nativeRemovalRevisionRef.current ?? openingRef.current.revision;
-        nativeRemovalRevisionRef.current = removingRevision;
-        const requestedRemoval = requestedRemovalRef.current;
-        let removingAttempt: number;
-        if (requestedRemoval?.attempt === nativeRemovalAttemptRef.current && !requestedRemoval.beforeRemoveSeen) {
-          // The first native event belongs to the close we just requested. Keep
-          // its waiter able to restore an aborted request after this event.
-          requestedRemoval.beforeRemoveSeen = true;
-          removingAttempt = requestedRemoval.attempt;
-        } else {
-          // Another event is a distinct removal, even for the same opener.
-          removingAttempt = ++nativeRemovalAttemptRef.current;
+  useEffect(() => {
+    const onRemoval = (event: { defaultPrevented: boolean }) => {
+      if (!mountedRef.current) return;
+      const removingRevision = nativeRemovalRevisionRef.current ?? openingRef.current.revision;
+      nativeRemovalRevisionRef.current = removingRevision;
+      const requestedRemoval = requestedRemovalRef.current;
+      let removingAttempt: number;
+      if (requestedRemoval?.attempt === nativeRemovalAttemptRef.current && !requestedRemoval.beforeRemoveSeen) {
+        // The first native event belongs to the close we just requested. Keep
+        // its waiter able to restore an aborted request after this event.
+        requestedRemoval.beforeRemoveSeen = true;
+        removingAttempt = requestedRemoval.attempt;
+      } else {
+        // Another event is a distinct removal, even for the same opener.
+        removingAttempt = ++nativeRemovalAttemptRef.current;
+        requestedRemovalRef.current = null;
+      }
+      // A later listener can prevent this action (for example an unsaved draft).
+      // Wait until all synchronous listeners ran before restoring a blocked close.
+      queueMicrotask(() => {
+        if (
+          mountedRef.current &&
+          event.defaultPrevented &&
+          nativeRemovalRevisionRef.current === removingRevision &&
+          nativeRemovalAttemptRef.current === removingAttempt
+        ) {
+          nativeRemovalRevisionRef.current = null;
           requestedRemovalRef.current = null;
+          // Restoring this same opener begins a new motion lifetime too. An old
+          // completion already queued on JS must not close the restored surface.
+          openingRef.current = { ...openingRef.current, revision: openingRef.current.revision + 1 };
+          setRestorationVersion((version) => version + 1);
         }
-        // A later listener can prevent this action (for example an unsaved draft).
-        // Wait until all synchronous listeners ran before restoring a blocked close.
-        queueMicrotask(() => {
-          if (
-            mountedRef.current &&
-            event.defaultPrevented &&
-            nativeRemovalRevisionRef.current === removingRevision &&
-            nativeRemovalAttemptRef.current === removingAttempt
-          ) {
-            nativeRemovalRevisionRef.current = null;
-            requestedRemovalRef.current = null;
-            // Restoring this same opener begins a new motion lifetime too. An old
-            // completion already queued on JS must not close the restored surface.
-            openingRef.current = { ...openingRef.current, revision: openingRef.current.revision + 1 };
-            setRestorationVersion((version) => version + 1);
-          }
-        });
-      }),
-    [navigation],
-  );
+      });
+    };
+    const unsubscribeBlocked = navigation.addListener('removePrevented', () => onRemoval({ defaultPrevented: true }));
+    const unsubscribeRemoved = navigation.addListener('removed', () => onRemoval({ defaultPrevented: false }));
+    return () => {
+      unsubscribeBlocked();
+      queueMicrotask(unsubscribeRemoved);
+    };
+  }, [navigation]);
 
   useLayoutEffect(() => {
     if (appliedRevisionRef.current === openingRevision && appliedRestorationRef.current === restorationVersion) return;

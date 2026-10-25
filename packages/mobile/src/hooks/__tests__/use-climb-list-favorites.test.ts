@@ -3,10 +3,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 
 // Run scheduled interaction callbacks immediately — this hook's deferral is
-// covered by the shared `runAfterInteractions` contract, not by these tests.
-const { runAfterInteractions, request, isAuthenticated, storedUser, refresh, database, pendingOverrides } = vi.hoisted(
+// covered by the shared `scheduleIdleTask` contract, not by these tests.
+const { scheduleIdleTask, request, isAuthenticated, storedUser, refresh, database, pendingOverrides } = vi.hoisted(
   () => ({
-    runAfterInteractions: vi.fn((callback: () => void) => {
+    scheduleIdleTask: vi.fn((callback: () => void) => {
       callback();
       return { cancel: vi.fn() };
     }),
@@ -19,7 +19,7 @@ const { runAfterInteractions, request, isAuthenticated, storedUser, refresh, dat
   }),
 );
 
-vi.mock('react-native', () => ({ InteractionManager: { runAfterInteractions } }));
+vi.mock('../../lib/schedule-idle-task', () => ({ scheduleIdleTask }));
 vi.mock('../../lib/graphql/offline-request', () => ({ offlineAwareRequest: request }));
 vi.mock('../use-user-read-refresh', () => ({ useUserReadRefresh: () => refresh.epoch }));
 vi.mock('../../db', () => ({ getDatabaseHandle: () => database.handle }));
@@ -45,7 +45,7 @@ describe('useClimbListFavorites', () => {
     favoritesStore.reset();
     request.mockReset();
     refresh.epoch = 0;
-    runAfterInteractions.mockClear();
+    scheduleIdleTask.mockClear();
     isAuthenticated.value = true;
     storedUser.userId = 'user-a';
     storedUser.isLoading = false;

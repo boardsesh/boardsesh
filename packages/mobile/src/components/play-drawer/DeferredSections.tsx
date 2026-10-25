@@ -165,8 +165,7 @@ type SimilarClimbsPeek = { climbUuid: string; angle: number; line: string };
 
 /**
  * Below-fold deferred content for the play drawer.
- * Uses InteractionManager.runAfterInteractions() to defer rendering
- * until after the drawer open animation completes, preventing jank.
+ * Defers rendering until a frame paints and the JS thread has idle time.
  */
 export const DeferredSections = memo(function DeferredSections({
   climb,
@@ -222,13 +221,12 @@ export const DeferredSections = memo(function DeferredSections({
     },
     [onFirstSectionLayout],
   );
-  // Defer the JS-heavy below-fold sections until just after the drawer's open
-  // animation and only after the user has started scrolling below the fold.
+  // Defer the JS-heavy below-fold sections until a frame paints and the JS
+  // thread has idle time, after the user starts scrolling below the fold.
   // The first visible header is the scroll hint at the bottom of the first
   // screen and must measure immediately, even when Logbook is hidden.
-  // Re-defers per climb (resetKey = uuid) and — unlike a bare
-  // runAfterInteractions — falls back to a bounded timeout, so a starved
-  // interaction queue can't leave these sections blank until the drawer reopens.
+  // Re-defers per climb (resetKey = uuid) with a bounded fallback, so a busy
+  // JS thread cannot leave these sections blank until the drawer reopens.
   const readyToRender = useDeferredAfterInteractions(enabled && contentEnabled, climb.uuid);
 
   // A section is on screen when it is the peek at the fold, or once the climber

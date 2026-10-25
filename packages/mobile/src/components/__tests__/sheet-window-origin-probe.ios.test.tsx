@@ -6,7 +6,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, createRef, isValidElement, useImperativeHandle, type ReactNode, type Ref } from 'react';
-import type { View } from 'react-native';
+import type { ViewInstance } from 'react-native';
 
 const hostCalls = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
 const nativeView = vi.hoisted(() => ({ measureInWindow: vi.fn() }));
@@ -37,7 +37,7 @@ import { SheetWindowOriginProbe } from '../sheet-window-origin-probe.ios';
 describe('SheetWindowOriginProbe (iOS)', () => {
   it('measures a native View, while the nested SwiftUI Host only reports geometry', () => {
     const onFrame = vi.fn();
-    const ref = createRef<View>();
+    const ref = createRef<ViewInstance>();
     const style = { position: 'absolute' as const, top: 0, left: 0, width: 1, height: 1 };
     render(<SheetWindowOriginProbe ref={ref} onFrame={onFrame} style={style} />);
     expect(ref.current).toBe(nativeView);

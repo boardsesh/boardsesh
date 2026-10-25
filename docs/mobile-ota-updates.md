@@ -234,7 +234,7 @@ install, since the device couldn't verify the manifest came from us.
    [What a launch runs](#what-a-launch-runs)).
 3. **runtimeVersion** uses the **`fingerprint`** policy — a hash of the native project (deps,
    config plugins, entitlements, native dirs), resolved by the exact-pinned, patched
-   `@expo/fingerprint@0.20.13` installation behind Expo's `expo/fingerprint` export. An
+   `@expo/fingerprint@0.21.6` installation behind Expo's `expo/fingerprint` export. An
    update only reaches a binary with the **same** fingerprint, so a JS-only change keeps the same
    fingerprint (the OTA lands) while **any native change yields a new fingerprint** — the OTA is
    intrinsically incompatible with old binaries and isn't delivered (they keep their embedded
@@ -245,6 +245,47 @@ install, since the device couldn't verify the manifest came from us.
    `android.versionCode`, so two marketing versions can share one fingerprint (see
    [Version-only releases](#version-only-releases)). Resolve the current value with
    `vp exec expo-updates runtimeversion:resolve --platform ios|android` (from `packages/mobile/`).
+
+## Expo SDK 58 native upgrade
+
+The release train uses Expo 58.0.19, React Native 0.88.0 and React 19.3.0.
+Build iOS with Xcode 27. Expo prebuild generates the scene delegate and scene
+manifest required by iOS 27; generated native projects must be regenerated after
+this upgrade. Existing Expo app-delegate subscribers receive scene lifecycle events.
+
+Web remains on React 19.2. Next, MUI's styled engine and react-i18next import
+React declarations without declaring their types peer, so pnpm otherwise gives
+them the hoisted mobile 19.3 declarations. The precise optional peer extensions
+in `pnpm-workspace.yaml` bind each package to its consuming app's React types.
+`scripts/__tests__/react-types-resolution.test.ts` checks the installed module
+paths; keep that check when updating or removing these extensions.
+
+`with-react-native-source-builds` forces React Native source builds on iOS so the
+scheduler lifetime fix in `patches/react-native@0.88.0.patch` actually compiles.
+React Native 0.88 removed the runtime flag used by our previous workaround for
+#5293 without retaining its delegate invalidation. The compile gate checks the
+source patch and rejects archives linked against prebuilt React. Expect a slower
+first native build; subsequent builds can reuse the shared local Xcode cache.
+
+The fingerprint explicitly uses the `strict` preset. SDK 58's new `balanced`
+default hashes package versions; we continue hashing native source and config
+plugins, including our patched dependencies. This upgrade creates a new native
+runtime: SDK 58 JavaScript must only reach matching SDK 58 binaries. Build new
+store and development binaries before publishing updates to that runtime.
+
+The SQLite patch retains operation draining before close and runtime-scoped
+cleanup. SDK 58 executes native database methods concurrently, so connection
+lifecycle locks protect operations from close, cache locks precede connection
+locks, and backups acquire both connection locks in a stable order. Native
+statement finalization fixes are now supplied upstream.
+
+Duo-specific navigation rails, horizontal safe areas, resize layouts and device
+QA remain in [#5383](https://github.com/boardsesh/boardsesh/issues/5383). The iOS 27
+scene migration does not establish Duo layout support.
+
+Upgrade references: [Expo SDK 58](https://expo.dev/changelog/sdk-58),
+[scene lifecycle](https://expo.fyi/ios-scene-lifecycle), and
+[Router migration](https://docs.expo.dev/router/migrate/sdk-57-to-58/).
 
 ## What a launch runs
 
@@ -393,7 +434,7 @@ crash-reported unhandled rejection.
 
 Rule: any imperative native call that could be OTA-ahead of the native binary must be guarded (a
 `.catch` / capability probe / `requireOptionalNativeModule` null-check) so it degrades to a no-op
-instead of throwing. For `@expo/ui` sheets the guard lives in `patches/@expo%2Fui@57.0.11.patch`.
+instead of throwing. For `@expo/ui` sheets the guard lives in `patches/@expo__ui@58.0.23.patch`.
 
 ### Invariant: an OTA can't claim a manifest flag the binary lacks
 
@@ -1447,7 +1488,7 @@ leaves the path untouched, over-triggering a build rather than hiding a native c
 
 Expo's default `**/node_modules/**/node_modules/**` ignore also mistakes the isolated-store wrapper
 for a genuine nested dependency. The exact-pinned patch
-`patches/@expo__fingerprint@0.20.13.patch` collapses
+`patches/@expo__fingerprint@0.21.6.patch` collapses
 `node_modules/.<store>/<entry>/node_modules/` wrappers when matching ignores and building
 file/directory hash ids. Its dot-prefixed store match cannot collide with a real npm package name,
 and pnpm's hoisted-compat directory does not have the required `<entry>/node_modules/` shape.
@@ -1687,7 +1728,7 @@ publish step exited 0" is a proxy; the 2026-09-01 stranding had a green publish 
 
 #### The root fix: `commitTime` is the commit's date
 
-The rail above routes around the defect; `patches/expo-updates@57.0.25.patch` removes it (#5021).
+The rail above routes around the defect; `patches/expo-updates@58.0.18.patch` removes it (#5021).
 The patched `resolveEmbeddedCommitTime` in `utils/build/createManifestForBuildAsync.js` embeds
 **HEAD's committer date** instead of the moment the build bundled, so ordering follows commit order
 — the semantics everyone already assumed. It cost one native build train, because `patches/**` is a
@@ -1982,15 +2023,13 @@ produced it — the per-update comparison neither PostHog nor Sentry can express
   fingerprint. Only binaries built after it shipped report at all — an older store build stays
   silent however long it runs.
 
-The `expo-observe` and `expo-app-metrics` entries in `expo.autolinking.buildFromSource`
-bypass their bundled Maven dependencies on the missing `expo-updates-interface` 57.0.2
-artifact, using the autolinked 57.0.1 project instead. Remove each source-build entry only
-when every Maven artifact referenced by that module is available and both native builds
-pass. Observe also references `expo-eas-client` 57.0.4, whose Android Gradle config sets
-`canBePublished false`; publishing the interface artifact alone does not resolve that
-dependency. Recheck the upstream POMs and publication settings before removing either
-entry. The interface pin's separate removal condition remains in `pnpm-workspace.yaml`
-(#5867).
+The `expo-observe` and `expo-app-metrics` source-build entries originated in
+SDK 57's missing `expo-updates-interface` 57.0.2 Maven artifact and unpublished
+`expo-eas-client` dependency (#5867). SDK 58 now pins the native interface to
+58.0.1. Keep these source-build entries through the upgrade's native validation;
+the old missing-artifact diagnosis does not establish that an SDK 58 artifact
+is missing. Before removing an entry, recheck that module's current upstream
+POMs and publication settings, then pass both iOS and Android native builds.
 
 Where the rows land, and what they cost to keep: `docs/railway.md`.
 

@@ -54,7 +54,7 @@ function makeEnv(opts: {
 }
 
 describe('the shipped expo-sqlite lifetime guards', () => {
-  const sqliteKey = 'expo-sqlite@57.0.4';
+  const sqliteKey = 'expo-sqlite@58.0.14';
   const sqliteRules = REAL_RULES.filter((rule) => rule.package === 'expo-sqlite');
   const helperSource = `
 beginAsyncOperation();
@@ -62,46 +62,83 @@ pendingAsyncOperations.add(operation);
 closePromise = closeWhenDrained();
 finalizeStatementWithErrorPreservation(statement, failure);
 `;
-  const nativeFixtures = [
+  const finalizationFixtures = [
     {
-      file: 'android/src/main/java/expo/modules/sqlite/SQLiteModule.kt',
+      file: 'android/src/main/java/expo/modules/sqlite/NativeStatement.kt',
       source: `
-  private fun finalize(statement: NativeStatement, database: NativeDatabase) {
-    synchronized(statement) {
-      val result = statement.ref.sqlite3_finalize()
-      statement.isFinalized = true
-      if (result != NativeDatabaseBinding.SQLITE_OK) {
-        throw SQLiteErrorException(database.ref.convertSqlLiteErrorToString())
-      }
+    synchronized(connection.statementLifecycleLock) {
+        val ret = ref.sqlite3_finalize()
+        val error = if (ret != NativeDatabaseBinding.SQLITE_OK) {
+          ref.getLastErrorMessage()
+        } else {
+          null
+        }
+        // SQLite destroys the statement even when returning an earlier execution error.
+        isFinalized = true
+        connection.statements.removeAll { it === this }
+        if (releasedByJavaScript) {
+          ref.close()
+        }
+        if (error != null) {
+          throw SQLiteErrorException(error)
+        }
     }
-  }
 `,
     },
     {
-      file: 'ios/SQLiteModule.swift',
+      file: 'ios/NativeStatement.swift',
       source: `
-  private let moduleQueue: DispatchQueue
-  OnAppContextDestroys {
-      closeAllDatabases()
-  }
-  OnDestroy {
-      closeAllDatabases()
-  }
-  DispatchQueue.getSpecific(key: moduleQueueKey)
-  moduleQueue.async(flags: .barrier, execute: closeDatabases)
-  moduleQueue.sync(flags: .barrier, execute: closeDatabases)
-  private func finalize(statement: NativeStatement, database: NativeDatabase) throws {
-    let result = exsqlite3_finalize(statement.pointer)
-    statement.isFinalized = true
-    if result != SQLITE_OK {
-      throw SQLiteErrorException(convertSqlLiteErrorToString(database))
-    }
-  }
+    database.statementLifecycleLock.lock()
+      let result = sqliteResult(for: database.pointer) { exsqlite3_finalize(pointer) }
+      // SQLite destroys the statement even when returning an earlier execution error.
+      isFinalized = true
+      pointer = nil
+      database.statements.removeAll { $0 === self }
+      if let message = result.message {
+        throw SQLiteErrorException(message)
+      }
 `,
     },
   ];
+  const lifetimeFixtures = [
+    {
+      file: 'ios/SQLiteModule.swift',
+      source: `
+private let moduleQueue: DispatchQueue
+OnAppContextDestroys {
+      closeAllDatabases()
+}
+public override func willDestroy() {
+    closeAllDatabases()
+}
+DispatchQueue.getSpecific(key: moduleQueueKey)
+moduleQueue.async(flags: .barrier, execute: closeDatabases)
+moduleQueue.sync(flags: .barrier, execute: closeDatabases)
+UInt(bitPattern: ObjectIdentifier($0)) < UInt(bitPattern: ObjectIdentifier($1))
+databases.reversed().forEach { $0.statementLifecycleLock.unlock() }
+`,
+    },
+    {
+      file: 'ios/NativeDatabase.swift',
+      source: `private func exec(source: String) throws {
+    // Serialize connection lifetime with close;
+    statementLifecycleLock.lock()
+    defer { statementLifecycleLock.unlock() }
+}`,
+    },
+    {
+      file: 'ios/NativeSession.swift',
+      source: `private func attach(database: NativeDatabase, table: String?) throws {
+    database.statementLifecycleLock.lock()
+    defer { database.statementLifecycleLock.unlock() }
+}
+private func close(database: NativeDatabase) throws {
+    database.statementLifecycleLock.lock()
+}`,
+    },
+  ];
 
-  function checkSqliteSources(overrides: Record<string, string> = {}, version = '57.0.4') {
+  function checkSqliteSources(overrides: Record<string, string> = {}, version = '58.0.14') {
     return checkPatchesApplied(
       sqliteRules,
       makeEnv({
@@ -110,27 +147,31 @@ finalizeStatementWithErrorPreservation(statement, failure);
         files: {
           'expo-sqlite::src/SQLiteDatabase.ts': helperSource,
           'expo-sqlite::build/SQLiteDatabase.js': helperSource,
-          ...Object.fromEntries(nativeFixtures.map(({ file, source }) => [`expo-sqlite::${file}`, source])),
+          ...Object.fromEntries(
+            [...finalizationFixtures, ...lifetimeFixtures].map(({ file, source }) => [`expo-sqlite::${file}`, source]),
+          ),
           ...overrides,
         },
       }),
     );
   }
 
-  it('guards both JavaScript copies and both native platforms', () => {
+  it('guards both JavaScript copies and native finalization and runtime lifetime', () => {
     expect(sqliteRules.map(({ file }) => file)).toEqual([
       'src/SQLiteDatabase.ts',
       'build/SQLiteDatabase.js',
-      'android/src/main/java/expo/modules/sqlite/SQLiteModule.kt',
+      'android/src/main/java/expo/modules/sqlite/NativeStatement.kt',
+      'ios/NativeStatement.swift',
       'ios/SQLiteModule.swift',
+      'ios/NativeDatabase.swift',
+      'ios/NativeSession.swift',
     ]);
     expect(checkSqliteSources().errors).toEqual([]);
   });
 
   it('rejects a version bump even when the old patch symbols remain', () => {
-    const result = checkSqliteSources({}, '57.0.5');
-
-    expect(result.errors).toHaveLength(4);
+    const result = checkSqliteSources({}, '58.0.15');
+    expect(result.errors).toHaveLength(7);
     expect(result.errors.every((error) => error.includes('version drift'))).toBe(true);
   });
 
@@ -144,32 +185,29 @@ finalizeStatementWithErrorPreservation(statement, failure);
         'finalizeStatementWithErrorPreservation',
       ]) {
         const result = checkSqliteSources({ [`expo-sqlite::${file}`]: helperSource.replace(helper, 'removedHelper') });
-
         expect(result.errors).toEqual([expect.stringContaining(`is missing "${helper}"`)]);
       }
     },
   );
 
-  it.each(nativeFixtures)('rejects finalized state moved after an error in $file', ({ file, source }) => {
+  it.each(finalizationFixtures)('rejects finalized state moved after an error in $file', ({ file, source }) => {
     const lateFinalizedState = source
-      .replace('    statement.isFinalized = true\n', '')
-      .replace('    }\n  }', '    }\n    statement.isFinalized = true\n  }');
-
+      .replace('isFinalized = true', '')
+      .replace('throw SQLiteErrorException(', 'isFinalized = true\nthrow SQLiteErrorException(');
     expect(lateFinalizedState).not.toBe(source);
-    // An unrelated earlier state assignment cannot stand in for the finalize path.
-    const result = checkSqliteSources({
-      [`expo-sqlite::${file}`]: `statement.isFinalized = true\n${lateFinalizedState}`,
-    });
-
+    const result = checkSqliteSources({ [`expo-sqlite::${file}`]: `isFinalized = true\n${lateFinalizedState}` });
     expect(result.errors).toEqual([expect.stringContaining(`${file} is missing`)]);
   });
 
-  it.each(nativeFixtures)('rejects a dropped finalized state in $file', ({ file, source }) => {
-    const result = checkSqliteSources({
-      [`expo-sqlite::${file}`]: source.replace('    statement.isFinalized = true\n', ''),
-    });
-
+  it.each(finalizationFixtures)('rejects a dropped finalized state in $file', ({ file, source }) => {
+    const result = checkSqliteSources({ [`expo-sqlite::${file}`]: source.replace('isFinalized = true', '') });
     expect(result.errors).toEqual([expect.stringContaining(`${file} is missing`)]);
+  });
+
+  it.each(lifetimeFixtures)('rejects a missing runtime lifetime guarantee in $file', ({ file }) => {
+    expect(checkSqliteSources({ [`expo-sqlite::${file}`]: '' }).errors).toEqual([
+      expect.stringContaining(`${file} is missing`),
+    ]);
   });
 });
 
@@ -190,7 +228,7 @@ private func postAppContextDestroysOnce() {
 }
 `;
 
-  function checkSource(installedSource: string, version = '57.0.21') {
+  function checkSource(installedSource: string, version = '58.0.26') {
     return checkPatchesApplied(
       [coreRule],
       makeEnv({
@@ -203,7 +241,7 @@ private func postAppContextDestroysOnce() {
 
   it('pins the core version and delivery before runtime release', () => {
     expect(checkSource(source).errors).toEqual([]);
-    expect(checkSource(source, '57.0.22').errors).toEqual([expect.stringContaining('version drift')]);
+    expect(checkSource(source, '58.0.27').errors).toEqual([expect.stringContaining('version drift')]);
     expect(
       checkSource(source.replace('postAppContextDestroysOnce()\n    _runtime = nil', '_runtime = nil')).errors,
     ).toEqual([expect.stringContaining('is missing')]);
@@ -726,7 +764,7 @@ describe('versionFromKey', () => {
 // ---------------------------------------------------------------------------
 
 const TABS_FILE = 'ios/tabs/host/RNSTabsHostComponentView.mm';
-const TABS_KEY = 'react-native-screens@4.26.2';
+const TABS_KEY = 'react-native-screens@4.30.0';
 const TABS_RULES: PatchRule[] = [
   {
     package: PKG,
@@ -871,7 +909,7 @@ const TABS_SELF_ARMING_SOURCE = TABS_FIXED_SOURCE.replace(
 const tabsEnv = (source: string) =>
   makeEnv({
     patchedDependencies: { [TABS_KEY]: `patches/${TABS_KEY}.patch` },
-    versions: { [PKG]: '4.26.2' },
+    versions: { [PKG]: '4.30.0' },
     files: { [`${PKG}::${TABS_FILE}`]: source },
   });
 
@@ -1055,7 +1093,7 @@ describe('the shipped react-native-screens tab-host rule', () => {
       [shippedRule as PatchRule],
       makeEnv({
         patchedDependencies: { [TABS_KEY]: `patches/${TABS_KEY}.patch` },
-        versions: { [PKG]: '4.26.2' },
+        versions: { [PKG]: '4.30.0' },
         files: { [`${PKG}::ios/tabs/host/RNSTabsHostComponentView.mm`]: TABS_ATTACH_ONLY_SOURCE },
       }),
     );

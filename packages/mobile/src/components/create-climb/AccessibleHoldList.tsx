@@ -1,5 +1,5 @@
 import { memo, useCallback, useMemo, useEffect, useRef } from 'react';
-import { View, StyleSheet, type View as NativeView } from 'react-native';
+import { View, StyleSheet, type ViewInstance as NativeView } from 'react-native';
 import { FlashList, type ListRenderItemInfo } from '@shopify/flash-list';
 import { useTranslation } from 'react-i18next';
 import type { LitUpHoldsMap } from '@boardsesh/shared-schema';

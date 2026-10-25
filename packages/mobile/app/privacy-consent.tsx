@@ -1,7 +1,6 @@
 import { useState, useSyncExternalStore } from 'react';
 import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useRouter, useNavigation } from 'expo-router';
-import { usePreventRemove } from 'expo-router/react-navigation';
+import { useRouter, usePreventRemove } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { Platform } from 'react-native';
 import { useTheme } from '../src/providers/theme-provider';
@@ -22,14 +21,13 @@ function PrivacyConsentScreen() {
   const { systemColors: colors } = useTheme();
   const styles = useTypographyStyles(createStyles);
   const router = useRouter();
-  const navigation = useNavigation();
   const consent = useSyncExternalStore(subscribeConsent, getConsentSnapshot, getConsentSnapshot);
   const [busy, setBusy] = useState(false);
   useBlockBack();
   // This also covers browser history and programmatic navigation. A decision
   // releases the guard synchronously before React has rendered the new choice.
-  usePreventRemove(true, ({ data: { action } }) => {
-    if (getConsentSnapshot().settled) navigation.dispatch(action);
+  usePreventRemove(!consent.settled, ({ repeat }) => {
+    if (getConsentSnapshot().settled) repeat();
   });
   const choose = (analytics: 'granted' | 'denied') => {
     if (busy || !getConsentSnapshot().loaded) return;

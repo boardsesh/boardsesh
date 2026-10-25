@@ -1,12 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import {
-  View,
-  StyleSheet,
-  type NativeScrollEvent,
-  type NativeSyntheticEvent,
-  type ViewStyle,
-  type ViewabilityConfig,
-} from 'react-native';
+import { View, StyleSheet, type NativeScrollEvent, type NativeSyntheticEvent, type ViewStyle } from 'react-native';
 import { FlashList, type FlashListProps, type FlashListRef, type ListRenderItem } from '@shopify/flash-list';
 import { useReduceMotion } from '../hooks/use-reduce-motion';
 import { spacing } from '../theme/tokens';
@@ -77,7 +70,7 @@ type SnapCarouselProps<TItem> = {
   drawDistance?: number;
   contentStyle?: ViewStyle;
   accessibilityLabel?: string;
-  viewabilityConfig?: ViewabilityConfig;
+  viewabilityConfig?: FlashListProps<TItem>['viewabilityConfig'];
   /**
    * Forwarded untouched, identity included — a list's `onViewableItemsChanged`
    * must not change between renders, so hosts hold theirs in a ref-backed stable

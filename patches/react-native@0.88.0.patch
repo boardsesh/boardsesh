@@ -1,0 +1,78 @@
+diff --git a/ReactCommon/react/renderer/scheduler/Scheduler.cpp b/ReactCommon/react/renderer/scheduler/Scheduler.cpp
+index e74e802..68cb9d3 100644
+--- a/ReactCommon/react/renderer/scheduler/Scheduler.cpp
++++ b/ReactCommon/react/renderer/scheduler/Scheduler.cpp
+@@ -31,7 +31,8 @@ Scheduler::Scheduler(
+     const SchedulerToolbox& schedulerToolbox,
+     UIManagerAnimationDelegate* animationDelegate,
+     SchedulerDelegate* delegate)
+-    : runtimeExecutor_(schedulerToolbox.runtimeExecutor),
++    : delegateInvalidated_(std::make_shared<std::atomic<bool>>(false)),
++      runtimeExecutor_(schedulerToolbox.runtimeExecutor),
+       contextContainer_(schedulerToolbox.contextContainer) {
+   // Creating a container for future `EventDispatcher` instance.
+   eventDispatcher_ = std::make_shared<std::optional<const EventDispatcher>>();
+@@ -178,6 +179,10 @@ Scheduler::Scheduler(
+ }
+ 
+ Scheduler::~Scheduler() {
++  // Boardsesh #5293: queued rendering work must not call a retired delegate.
++  // RN 0.88 removed the rollout flag and its token; preserve the enabled guard.
++  *delegateInvalidated_ = true;
++
+   LOG(WARNING) << "Scheduler::~Scheduler() was called (address: " << this
+                << ").";
+ 
+@@ -270,6 +275,12 @@ Scheduler::findComponentDescriptorByHandle_DO_NOT_USE_THIS_IS_BROKEN(
+ #pragma mark - Delegate
+ 
+ void Scheduler::setDelegate(SchedulerDelegate* delegate) {
++  if (delegate_ != delegate) {
++    // Retire the previous generation permanently. Reusing its atomic would
++    // re-arm callbacks that still hold the previous delegate's raw pointer.
++    *delegateInvalidated_ = true;
++    delegateInvalidated_ = std::make_shared<std::atomic<bool>>(false);
++  }
+   delegate_ = delegate;
+ }
+ 
+@@ -304,7 +315,11 @@ void Scheduler::uiManagerDidFinishTransaction(
+       runtimeScheduler_->scheduleRenderingUpdate(
+           surfaceId,
+           [delegate = delegate_,
++           invalidated = delegateInvalidated_,
+            mountingCoordinator = std::move(mountingCoordinator)]() {
++            if (*invalidated) {
++              return;
++            }
+             delegate->schedulerShouldRenderTransactions(mountingCoordinator);
+           });
+     } else {
+@@ -330,9 +345,13 @@ void Scheduler::uiManagerDidDispatchCommand(
+     runtimeScheduler_->scheduleRenderingUpdate(
+         shadowNode->getSurfaceId(),
+         [delegate = delegate_,
++         invalidated = delegateInvalidated_,
+          shadowView = std::move(shadowView),
+          commandName,
+          args]() {
++          if (*invalidated) {
++            return;
++          }
+           delegate->schedulerDidDispatchCommand(shadowView, commandName, args);
+         });
+   }
+diff --git a/ReactCommon/react/renderer/scheduler/Scheduler.h b/ReactCommon/react/renderer/scheduler/Scheduler.h
+index 1f5a59d..d8845c0 100644
+--- a/ReactCommon/react/renderer/scheduler/Scheduler.h
++++ b/ReactCommon/react/renderer/scheduler/Scheduler.h
+@@ -126,6 +126,9 @@ class Scheduler final : public UIManagerDelegate {
+   friend class SurfaceHandler;
+ 
+   SchedulerDelegate *delegate_;
++  // A queued callback owns its generation's token independently of Scheduler.
++  // Set permanently on delegate replacement and Scheduler destruction (#5293).
++  std::shared_ptr<std::atomic<bool>> delegateInvalidated_;
+   SharedComponentDescriptorRegistry componentDescriptorRegistry_;
+   RuntimeExecutor runtimeExecutor_;
+   std::shared_ptr<UIManager> uiManager_;
