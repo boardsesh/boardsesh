@@ -186,6 +186,12 @@ animates, so Reduce Motion has nothing to turn off. Past 0:00 the digits go red 
 readout is never a live region. The 1 Hz ticker waits to the anchor's next whole second, not a
 flat 1000 ms, so the digits flip on the instants the cues land on.
 
+A pause freezes the readout at the pause instant (`getRestTimerCycleElapsedSeconds`). The store
+keeps the seconds since the anchor (`pausedElapsedSeconds`), and so does the crew clock's
+`PAUSE`. On the minute the readout takes that total within its window, as the running clock
+does: paused 3:50 into a 1:00 cadence reads 0:10 left, never -2:50. Resume rebases the anchor on
+the total, so it counts on from the same 0:10 and the next beat is 10 s away.
+
 The cues, from the scheduler:
 
 - `restTimerCountdownCues` on (the default): one `countdownTick` per second of the lead, then

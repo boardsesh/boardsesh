@@ -162,6 +162,44 @@ describe('getRestTimerCycleElapsedSeconds', () => {
     ).toBe(42);
   });
 
+  it('reports a paused rest past its target whole in after-tick mode, so it still reads as over', () => {
+    expect(
+      getRestTimerCycleElapsedSeconds({
+        ...base,
+        isRunning: false,
+        pausedElapsedSeconds: 95,
+        mode: 'afterTick',
+        anchorMs: T0,
+        nowMs: T0 + 999_000,
+      }),
+    ).toBe(95);
+  });
+
+  it('reports a paused on-the-minute rest within its window, never past the target', () => {
+    const paused = { ...base, isRunning: false, mode: 'onTheMinute' as const, anchorMs: T0, nowMs: T0 + 999_000 };
+    expect(getRestTimerCycleElapsedSeconds({ ...paused, pausedElapsedSeconds: 230 })).toBe(50);
+    expect(getRestTimerCycleElapsedSeconds({ ...paused, pausedElapsedSeconds: 42 })).toBe(42);
+    expect(getRestTimerCycleElapsedSeconds({ ...paused, pausedElapsedSeconds: 240 })).toBe(0);
+    // The same number the running clock shows at that instant.
+    expect(getRestTimerCycleElapsedSeconds({ ...base, mode: 'onTheMinute', anchorMs: T0, nowMs: T0 + 230_000 })).toBe(
+      50,
+    );
+  });
+
+  it('reports a paused on-the-minute rest whole when no target is set', () => {
+    expect(
+      getRestTimerCycleElapsedSeconds({
+        ...base,
+        targetSeconds: null,
+        isRunning: false,
+        pausedElapsedSeconds: 230,
+        mode: 'onTheMinute',
+        anchorMs: T0,
+        nowMs: T0 + 999_000,
+      }),
+    ).toBe(230);
+  });
+
   it('reports zero with no anchor', () => {
     expect(getRestTimerCycleElapsedSeconds({ ...base, mode: 'afterTick', anchorMs: null, nowMs: T0 })).toBe(0);
   });

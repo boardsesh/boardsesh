@@ -19,6 +19,7 @@ import {
   AUTO_ADVANCE_MAX_BACKDATE_MS,
   AUTO_ADVANCE_REST_FLOOR_SLACK_MS,
   getAutoAdvanceDeadlineMs,
+  getRestTimerCycleElapsedSeconds,
   isAutoAdvanceDeadlineStale,
 } from '../rest-timer-auto-advance';
 
@@ -335,6 +336,40 @@ describe('pause, resume and reset', () => {
     expect(getRestTimerState()).toMatchObject({ isRunning: true, pausedElapsedSeconds: 0 });
     // Anchor rebased so the 42 frozen seconds are still on the clock.
     expect(getRestTimerState().anchorMs).toBe(T0 + 100_000 - 42_000);
+  });
+
+  it('pauses a fixed window past its first beat on the time left in that window, and resumes on the same grid', () => {
+    const pacing = { mode: 'onTheMinute' as const, targetSeconds: 60 };
+    armRestTimer('onTheMinute', T0, null);
+    pauseRestTimer(T0 + 230_000);
+    // The store keeps the run's total, so Resume (and a crew PAUSE) rebase on it as before.
+    expect(getRestTimerState()).toMatchObject({ isRunning: false, pausedElapsedSeconds: 230 });
+
+    const readout = (nowMs: number) => {
+      const { anchorMs, isRunning, pausedElapsedSeconds } = getRestTimerState();
+      const elapsedSeconds = getRestTimerCycleElapsedSeconds({
+        ...pacing,
+        anchorMs,
+        nowMs,
+        isRunning,
+        pausedElapsedSeconds,
+      });
+      return { elapsedSeconds, remainingSeconds: pacing.targetSeconds - elapsedSeconds };
+    };
+    // 3:50 in: 0:50 into the fourth window, 0:10 left. It read -2:50 before.
+    expect(readout(T0 + 230_000)).toEqual({ elapsedSeconds: 50, remainingSeconds: 10 });
+    expect(readout(T0 + 999_000)).toEqual({ elapsedSeconds: 50, remainingSeconds: 10 });
+
+    const resumedAt = T0 + 517_300;
+    resumeRestTimer(resumedAt);
+    expect(getRestTimerState().anchorMs).toBe(resumedAt - 230_000);
+    // Resume picks up exactly where the paused readout stood, and the next beat is the 10 s it showed.
+    expect(readout(resumedAt)).toEqual({ elapsedSeconds: 50, remainingSeconds: 10 });
+    const deadlineMs = getAutoAdvanceDeadlineMs({ ...pacing, anchorMs: resumedAt - 230_000, nowMs: resumedAt });
+    expect(deadlineMs).toBe(resumedAt + 10_000);
+    expect(getAutoAdvanceDeadlineMs({ ...pacing, anchorMs: resumedAt - 230_000, nowMs: resumedAt + 10_000 })).toBe(
+      resumedAt + 70_000,
+    );
   });
 
   it('restarts from now when reset while running', () => {

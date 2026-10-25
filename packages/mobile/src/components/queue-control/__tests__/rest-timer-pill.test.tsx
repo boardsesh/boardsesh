@@ -125,6 +125,7 @@ import {
   noteRestTimerTick,
   pauseRestTimer,
   resetRestTimerStoreForTests,
+  resumeRestTimer,
   getRestTimerState,
 } from '../../../lib/rest-timer-store';
 import { RestTimerHeroClock, RestTimerPill } from '../RestTimerPill';
@@ -262,6 +263,31 @@ describe('RestTimerPill', () => {
     expect(container.querySelector('[data-testid="rest-timer-pill"]')?.getAttribute('data-label')).toBe(
       'mobile.restTimer.pausedAria:0:40',
     );
+  });
+
+  it('pauses an every-minute rest past its first beat on the time left in that minute, not a negative', () => {
+    harness.settings = { ...harness.settings, restTimerMode: 'onTheMinute' };
+    act(() => armRestTimer('onTheMinute', harness.nowMs, null));
+    const { container } = render(<RestTimerPill onPress={vi.fn()} />);
+
+    advanceSeconds(230);
+    expect(elapsedText(container)).toBe('0:10');
+    act(() => pauseRestTimer(harness.nowMs));
+    // It read -2:50: the frozen 3:50 since the first beat, against a 1:00 rest.
+    expect(elapsedText(container)).toBe('0:10');
+    expect(elapsedColor(container)).toBe('#666666');
+    expect(container.querySelector('[data-testid="rest-timer-pill"]')?.getAttribute('data-label')).toBe(
+      'mobile.restTimer.pausedAria:0:10',
+    );
+
+    advanceSeconds(45);
+    expect(elapsedText(container)).toBe('0:10');
+
+    // Resume counts on from the same 0:10, so the next beat is 10 s away.
+    act(() => resumeRestTimer(harness.nowMs));
+    expect(elapsedText(container)).toBe('0:10');
+    advanceSeconds(10);
+    expect(elapsedText(container)).toBe('1:00');
   });
 
   it.each([false, true])(

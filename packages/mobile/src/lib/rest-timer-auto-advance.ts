@@ -168,6 +168,7 @@ type ElapsedInput = {
   targetSeconds: number | null;
   nowMs: number;
   isRunning: boolean;
+  /** Seconds since the anchor when the pause landed: the run's total, not the window's. */
   pausedElapsedSeconds: number;
 };
 
@@ -175,6 +176,11 @@ type ElapsedInput = {
  * What the pill shows. Both modes count UP, which is why they can share one
  * component: `afterTick` counts from your tick, `onTheMinute` counts from the
  * last beat, so the number always reads as "how long you have been resting".
+ *
+ * Paused, `onTheMinute` shows the frozen total within its window too: paused
+ * 3:50 into a 1:00 cadence reads 0:50 in, 0:10 left, which is where Resume
+ * counts on from (it rebases the anchor on the total). The store and the crew
+ * clock keep the total, so the beat grid Resume restores does not change.
  */
 export function getRestTimerCycleElapsedSeconds({
   mode,
@@ -184,14 +190,16 @@ export function getRestTimerCycleElapsedSeconds({
   isRunning,
   pausedElapsedSeconds,
 }: ElapsedInput): number {
-  if (!isRunning) return Math.max(0, pausedElapsedSeconds);
+  if (!isRunning) return elapsedWithinWindow(mode, targetSeconds, Math.max(0, pausedElapsedSeconds) * 1000);
   if (anchorMs === null) return 0;
+  return elapsedWithinWindow(mode, targetSeconds, Math.max(0, nowMs - anchorMs));
+}
 
-  const elapsedMs = Math.max(0, nowMs - anchorMs);
+/** Whole seconds of `elapsedMs` since the last beat under `onTheMinute`, or all of it otherwise. */
+function elapsedWithinWindow(mode: RestTimerMode, targetSeconds: number | null, elapsedMs: number): number {
   if (mode === 'afterTick' || targetSeconds === null || targetSeconds <= 0) {
     return Math.floor(elapsedMs / 1000);
   }
-
   return Math.floor((elapsedMs % (targetSeconds * 1000)) / 1000);
 }
 
