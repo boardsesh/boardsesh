@@ -604,12 +604,61 @@ staging run is the measurement to check.
   which are built under a different env. A dependency bump starts cold.
 - **Who writes it.** Only runs on `main` (the staging call from `production-deploy.yml`, or a
   dispatch) and `release/next` (the train push, or a dispatch) save, and only after at least one
-  platform published. The train restores main's entries, because a branch can read the default
-  branch's caches.
-- **Never blocks a publish.** The cache steps are `continue-on-error`, and a restore that fails
-  mid-extract is deleted so Metro starts cold. eoas 3.2.6 runs `expo export` without `--clear`, so
-  a restored store is reused. Bundle bytes are unchanged: Metro checks each entry against the
-  file's content hash, and the staged receipt hashes the exported bundle itself.
+  platform published from a verified store. The train restores main's entries, because a branch
+  can read the default branch's caches.
+- **Never blocks a publish.** Every cache step is `continue-on-error`, and the publish steps don't
+  depend on any of them. eoas 3.2.6 runs `expo export` without `--clear`, so a restored store is
+  reused. Bundle bytes are unchanged: Metro keys each entry on the file's content hash, and the
+  staged receipt hashes the exported bundle itself. A download or extract error does not need
+  handling of its own: `@actions/cache` logs it and reports a miss, and Metro's binary file store
+  deletes any entry it cannot decode.
+
+#### Threat model: why the store is sealed
+
+The cache key is not a trust boundary. GitHub lets any workflow run whose ref is `main` write
+main-scope cache entries, and two of ours run code we did not review under that ref:
+`mobile-ota-preview.yml` on an `/ota-preview` comment for a fork PR (it checks out the fork head and
+runs the install and `app.config.ts`), and `db-migration-renumber.yml` (it runs same-repo PR code).
+That code can read the runner's cache token and save an entry named
+`metro-ota-Linux-<inputs hash>-<env hash>-anything`. Both hashes are computable from public files
+and the workflow's public env. The exact key (`prefix` + sha) always misses on a new commit, so
+`restore-keys` would hand the planted store to the production export, Metro would trust every
+transform in it, and the attacker's JS would ship, signed, to every user.
+
+So the store is sealed with an HMAC that only the Production environment can compute
+(`scripts/ci/metro-cache-seal.sh`):
+
+1. **Secret.** `METRO_CACHE_HMAC_KEY` is a secret on the `Production` environment only, which the
+   `publish` job already runs under. Neither the preview nor the renumber workflow can read it. A
+   maintainer sets it once with `gh secret set METRO_CACHE_HMAC_KEY --env Production` (any long
+   random value, for example `openssl rand -hex 32`). Rotating it simply makes the next run cold.
+2. **Seal, before saving.** The manifest is every regular file in the store, as sorted relative
+   paths with each file's sha256 (`LC_ALL=C`). Its HMAC-SHA256 covers a version tag, the cache key
+   prefix and the manifest, and is written to `.metro-ota-seal` inside the saved directory. Node
+   computes it with the key read from its environment, so the key never reaches a command line or
+   a log. The prefix is in the MAC so that a genuine store sealed under old `EXPO_PUBLIC_*` values
+   cannot be replanted under the current prefix.
+3. **Verify, after restoring and before either export.** The script recomputes the manifest from
+   the files on disk (the stored manifest is never read) and compares the MAC. A missing or
+   malformed seal, any changed, added or removed file, a wrong key, a different prefix, or any
+   symlink, fifo or device in the store empties the store, with a `::warning::` and a step summary
+   line, and the export runs cold. Directories are made writable first, because a planted archive
+   can carry read-only ones.
+4. **The exports only read a store the check passed.** The publish steps set
+   `TMPDIR` to `$RUNNER_TEMP/metro-ota` only when the verify step wrote `store_ready=true`. If the
+   check itself crashes, they fall back to `$RUNNER_TEMP`, a fresh store that is never saved.
+5. **No key, no cache.** With the secret unset, nothing is restored, nothing is sealed or saved,
+   and the step summary says the exports ran cold. The job never fails over it.
+
+#### Size budget
+
+The budget is 1 GiB of store on disk (`METRO_CACHE_MAX_BYTES`, default 1073741824). For scale,
+`ci.yml`'s `metro-native` entry holds the same two production exports and is 85.6 MiB compressed
+(`gh cache list --key metro-native`, October 2026). The store only grows because restore-keys carry
+every earlier transform forward until the lockfile changes. Past the budget, the verify step
+drops the store and that run starts fresh, so the next save is one export's worth again. The seal
+step also refuses to save a store over the budget. The size check runs before hashing, so an
+oversized planted store costs no hashing time.
 
 ### OTA source maps and Sentry
 
