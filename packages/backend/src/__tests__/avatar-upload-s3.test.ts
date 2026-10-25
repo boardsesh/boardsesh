@@ -178,6 +178,62 @@ describe('avatar upload S3 path (write-first, clean-after)', () => {
     }
   });
 
+  it('stores a re-encode, not the raw upload, when a payload follows a real JPEG', async () => {
+    validateTokenMock.mockResolvedValue({ userId: USER_ID });
+    isS3ConfiguredMock.mockReturnValue(true);
+    // Real JPEG, then junk after its end marker: right magic bytes, and sharp
+    // decodes it fine because libjpeg stops at the end marker.
+    const payloadMarker = '<script>avatar-payload</script>';
+    const smuggled = Buffer.concat([JPEG_BYTES, Buffer.from(payloadMarker.repeat(2000), 'latin1')]);
+    const { baseUrl, server } = await startAvatarServer();
+    try {
+      const response = await uploadJpegAvatar(baseUrl, smuggled);
+
+      expect(response.status).toBe(200);
+      const storedBodies = uploadToS3Mock.mock.calls.map(([, body]) => body as Buffer);
+      expect(storedBodies).toHaveLength(ALLOWED_IMAGE_SIZES.length + 1);
+      for (const body of storedBodies) {
+        expect(body.includes(payloadMarker)).toBe(false);
+      }
+      const baseCall = uploadToS3Mock.mock.calls.find(([, , key]) => key === `avatars/${USER_ID}.jpg`);
+      const baseBody = baseCall?.[1] as Buffer;
+      expect(baseBody.length).toBeLessThan(smuggled.length);
+      expect((await sharp(baseBody).metadata()).format).toBe('jpeg');
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it.each([
+    ['image/png', 'png', 'png'],
+    ['image/webp', 'webp', 'webp'],
+    ['image/gif', 'gif', 'gif'],
+  ] as const)('re-encodes a %s avatar in its own format', async (mimeType, ext, sharpFormat) => {
+    validateTokenMock.mockResolvedValue({ userId: USER_ID });
+    isS3ConfiguredMock.mockReturnValue(true);
+    const imageBytes = await sharp({ create: { width: 4, height: 4, channels: 4, background: '#7c3aed80' } })
+      .toFormat(sharpFormat)
+      .toBuffer();
+    const { baseUrl, server } = await startAvatarServer();
+    try {
+      const formData = new FormData();
+      formData.set('userId', USER_ID);
+      formData.set('avatar', new Blob([new Uint8Array(imageBytes)], { type: mimeType }), `avatar.${ext}`);
+      const response = await fetch(`${baseUrl}/api/avatars`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer avatar-token' },
+        body: formData,
+      });
+
+      expect(response.status).toBe(200);
+      const baseCall = uploadToS3Mock.mock.calls.find(([, , key]) => key === `avatars/${USER_ID}.${ext}`);
+      expect(baseCall?.[3]).toBe(mimeType);
+      expect((await sharp(baseCall?.[1] as Buffer).metadata()).format).toBe(sharpFormat);
+    } finally {
+      await closeServer(server);
+    }
+  });
+
   it('never deletes the existing avatar when the S3 upload fails', async () => {
     validateTokenMock.mockResolvedValue({ userId: USER_ID });
     isS3ConfiguredMock.mockReturnValue(true);

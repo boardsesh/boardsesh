@@ -153,6 +153,9 @@ The browser adapter reads picker/manipulator `blob:` or `data:` URLs without
 backend credentials and appends a real Blob with an explicit filename. Both
 adapters reject missing or empty images, and leave the multipart boundary to
 fetch. The backend rejects empty avatar and screenshot parts before storage.
+The backend also rejects an avatar whose bytes do not match the declared type,
+or that sharp cannot decode, and stores sharp's re-encode of it in the same
+format, never the uploaded bytes.
 
 ### Spray wall photos
 

@@ -10,7 +10,12 @@ import { isS3Configured, uploadToS3, deleteUserAvatarsFromS3 } from '../storage/
 import { logger } from '../utils/logger';
 import { buildStaticAvatarUrl } from '../lib/avatar-url';
 import { detectImageMimeType } from '../lib/image-mime';
-import { MUTABLE_IMAGE_CACHE_CONTROL, UndecodableImageError, writeImageVariants } from '../lib/image-resize';
+import {
+  MUTABLE_IMAGE_CACHE_CONTROL,
+  UndecodableImageError,
+  reencodeUploadedImage,
+  writeImageVariants,
+} from '../lib/image-resize';
 
 // Avatar upload configuration
 const AVATARS_DIR = './avatars';
@@ -293,6 +298,11 @@ export async function handleAvatarUpload(req: IncomingMessage, res: ServerRespon
       let avatarUrl: string;
 
       try {
+        // Store sharp's re-encode, never the raw upload: a real JPEG with a
+        // payload appended after its end marker passes the magic-byte check
+        // AND decodes, so only re-encoding keeps that payload off our origin.
+        // Runs before the per-user lock, so a rejection writes nothing.
+        const storedBuffer = await reencodeUploadedImage(uploadBuffer, uploadMimeType);
         // Write-first, clean-after: the new avatar must be saved before any
         // stale file is deleted, so a failed upload can never destroy the
         // avatar the user's stored avatarUrl still points at.
@@ -303,7 +313,7 @@ export async function handleAvatarUpload(req: IncomingMessage, res: ServerRespon
             // avatar can always see its sizes. Direct-from-bucket serving has
             // no resizer, so a size that does not exist is a 404.
             await writeImageVariants(
-              uploadBuffer,
+              storedBuffer,
               s3Key,
               (key, body, contentType) =>
                 uploadToS3('media', body, key, contentType, { cacheControl: MUTABLE_IMAGE_CACHE_CONTROL }),
@@ -313,11 +323,11 @@ export async function handleAvatarUpload(req: IncomingMessage, res: ServerRespon
               // the raw bytes at every variant key.
               { rejectUndecodable: true },
             );
-            await uploadToS3('media', uploadBuffer, s3Key, uploadMimeType);
+            await uploadToS3('media', storedBuffer, s3Key, uploadMimeType);
             await deleteUserAvatarsFromS3(uploadUserId, ext);
           } else {
             const filePath = path.join(AVATARS_DIR, avatarFileName);
-            await writeFile(filePath, uploadBuffer);
+            await writeFile(filePath, storedBuffer);
             await deleteExistingAvatars(uploadUserId, ext);
           }
           // Backend-relative URL instead of a direct S3 URL, so the backend
@@ -326,6 +336,9 @@ export async function handleAvatarUpload(req: IncomingMessage, res: ServerRespon
         });
       } catch (saveErr) {
         if (saveErr instanceof UndecodableImageError) {
+          // Also covers sharp's pixel limit and other libvips errors: log the
+          // cause so a real device format that starts failing shows up.
+          logger.warn(`Rejected avatar upload for user ${uploadUserId}: sharp could not decode it:`, saveErr.cause);
           res.writeHead(400, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'File is not a readable image' }));
           resolve();

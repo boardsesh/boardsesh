@@ -70,6 +70,46 @@ export class UndecodableImageError extends Error {
   }
 }
 
+const STORED_FORMAT_BY_MIME_TYPE: Record<string, 'jpeg' | 'png' | 'webp' | 'gif'> = {
+  'image/jpeg': 'jpeg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+};
+
+/**
+ * Re-encode an uploaded image in its own format, so the stored object holds
+ * only the pixels sharp decoded.
+ *
+ * Magic bytes and a successful decode are not enough on their own: libjpeg
+ * stops at the end-of-image marker, so a real JPEG with any payload appended
+ * after it passes both checks, and storing the raw upload would host that
+ * payload on our origin. Re-encoding drops it, and drops EXIF (GPS included)
+ * too, so the EXIF orientation is baked into still images first. sharp can
+ * only turn a multi-page image by 180 degrees, so animated GIF/WebP frames
+ * keep their stored orientation.
+ *
+ * Throws UndecodableImageError for a type it does not store or bytes sharp
+ * cannot decode.
+ */
+export async function reencodeUploadedImage(input: Buffer, mimeType: string): Promise<Buffer> {
+  const format = STORED_FORMAT_BY_MIME_TYPE[mimeType];
+  if (!format) throw new UndecodableImageError(new Error(`Unsupported image type ${mimeType}`));
+  try {
+    const { pages = 1 } = await sharp(input).metadata();
+    const animated = pages > 1;
+    let pipeline = sharp(input, { animated });
+    if (!animated) pipeline = pipeline.autoOrient();
+    if (format === 'jpeg') pipeline = pipeline.jpeg({ quality: 90 });
+    else if (format === 'webp') pipeline = pipeline.webp({ quality: 90 });
+    else if (format === 'png') pipeline = pipeline.png();
+    else pipeline = pipeline.gif();
+    return await pipeline.toBuffer();
+  } catch (decodeError) {
+    throw new UndecodableImageError(decodeError);
+  }
+}
+
 export interface WriteImageVariantsOptions {
   /**
    * Throw UndecodableImageError instead of storing the original bytes at every
