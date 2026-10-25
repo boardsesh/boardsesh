@@ -237,4 +237,34 @@ describe('SessionFeedCard hero board art', () => {
     );
     heroMocks.tickToClimb.mockReturnValue(null);
   });
+
+  it('draws no board art and opens no actions for a Woods send with no renderBoard', () => {
+    heroMocks.tickToClimb.mockReturnValue({ uuid: 'c1' });
+    heroMocks.openClimbActions.mockClear();
+    const hardestSend = {
+      boardType: 'woods',
+      layoutId: 1,
+      angle: 40,
+      frames: 'p1r1',
+      renderBoard: null,
+      status: 'send',
+      attemptCount: 1,
+    } as unknown as SessionFeedItem['hardestSend'];
+    const { container } = render(
+      <SessionFeedCard
+        session={makeSession({ hardestSend, boardTypes: ['woods'] })}
+        onOpenComments={onOpenComments}
+        onPress={onPress}
+        onOpenClimb={onOpenClimb}
+      />,
+    );
+    // No size known, so no 12x12 guess: the card still renders, without the art.
+    expect(container.querySelector('[data-card]')).not.toBeNull();
+    expect(container.querySelector('[data-thumb]')).toBeNull();
+    for (const pressable of Array.from(container.querySelectorAll('[data-pressable]'))) {
+      fireEvent.contextMenu(pressable);
+    }
+    expect(heroMocks.openClimbActions).not.toHaveBeenCalled();
+    heroMocks.tickToClimb.mockReturnValue(null);
+  });
 });
