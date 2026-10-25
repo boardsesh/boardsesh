@@ -10,9 +10,35 @@
       "viewProfile": "查看 {{name}} 的主页",
       "thisClimber": "这位岩友"
     },
+    "a11y": {
+      "clearSearch": "清除搜索",
+      "opensOutsideApp": "在 Boardsesh 之外打开"
+    },
     "settings": {
       "title": "设置",
-      "library": "收藏库",
+      "pages": {
+        "general": {
+          "title": "通用"
+        },
+        "board": {
+          "title": "训练板"
+        },
+        "climbs": {
+          "title": "线路与难度"
+        },
+        "home": {
+          "title": "首页"
+        },
+        "earlyAccess": {
+          "title": "抢先体验"
+        },
+        "developer": {
+          "title": "开发者"
+        },
+        "timers": {
+          "title": "计时器"
+        }
+      },
       "development": "开发",
       "dev": {
         "forceServerUnreachable": "强制服务器不可达",
@@ -22,7 +48,6 @@
       "metroServersSubtitle": "在 Tailnet 打包服务器之间切换",
       "boardLook": {
         "title": "训练板外观",
-        "rowSubtitleShort": "训练板的渲染方式，以及颜色和形状",
         "rendererUnavailable": {
           "title": "更新应用",
           "body": "这个版本还画不出 Aura 外观。更新 Boardsesh 即可解锁，目前你的训练板以经典样式渲染。"
@@ -40,6 +65,7 @@
           "aura": "Aura",
           "auraBold": "Aura 醒目",
           "auraSubtle": "Aura 柔和",
+          "auraOutline": "Aura 描边",
           "modernClassic": "现代经典",
           "maxContrast": "最高对比度",
           "descriptions": {
@@ -48,6 +74,7 @@
             "modernClassic": "你熟悉的圆圈，配上调暗的墙面。",
             "maxContrast": "最强的遮罩和实心岩点。",
             "auraBold": "更宽、更硬朗的光晕，隔着整个房间也看得清。",
+            "auraOutline": "每个岩点一圈实线描边，配上紧凑的光晕。",
             "classic": "Boardsesh 一直使用的圆圈标记。",
             "custom": "自己调整外观的每个部分。"
           },
@@ -103,12 +130,16 @@
             "options": {
               "glow": "光晕",
               "glowFill": "光晕 + 填充",
-              "fill": "填充"
+              "fill": "填充",
+              "outline": "描边"
             }
           },
           "fillOpacity": {
             "title": "填充强度",
             "value": "{{value}}%"
+          },
+          "outlineOpacity": {
+            "title": "描边强度"
           },
           "softDisc": {
             "label": "柔光圆盘",
@@ -132,6 +163,7 @@
         },
         "accessibility": {
           "title": "无障碍",
+          "pageTitle": "岩点颜色与形状",
           "classicOnlyNote": "标记形状、笔刷和大小只对经典渲染生效。在 Boardsesh 里，点亮岩点自身的轮廓就是形状。想用形状来区分的话，请打开下方的角色符号。",
           "roleGlyphs": {
             "label": "角色符号",
@@ -177,8 +209,21 @@
             "body": "角色符号会给每个点亮的岩点加上形状，这样不靠颜色也能分清起步点、手点、结束点和脚点。训练板本身的 LED 不会改变。",
             "apply": "打开角色符号"
           },
+          "differentiateWithoutColor": {
+            "title": "“不以颜色区分”已开启"
+          },
           "dismiss": "以后再说",
           "dismissAccessibility": "忽略这条建议"
+        },
+        "sprayWalls": {
+          "title": "自由墙",
+          "useOwnLook": "在自由墙上使用我的外观",
+          "footer": "自由墙显示的是创建者为照片选的外观。打开这个选项，就会在那里显示你自己的外观。"
+        },
+        "moonboard": {
+          "title": "MoonBoard",
+          "gridLabels": "网格字母和数字",
+          "footer": "在训练板四周显示 A 到 K 和行号，方便你像 F5 这样报岩点。"
         }
       },
       "accessibility": {
@@ -266,7 +311,6 @@
       },
       "storage": {
         "title": "存储",
-        "rowLabel": "管理存储",
         "rowSubtitle": "查看下载内容占了多少空间，清掉不需要的",
         "intro": "下载的训练板会占用这部手机的空间。把不爬的清掉吧。",
         "offNote": "离线下载目前已关闭。你仍然可以清除这部手机上已有的内容。",
@@ -282,7 +326,7 @@
         "keptOffline": "已保留离线",
         "notKeptOffline": "不再保留离线，但仍在占用空间",
         "estimateNote": "训练板大小为估算值。同一布局的两种尺寸共用线路，所以加起来不等于总量。",
-        "remove": "移除",
+        "tapToRemove": "点一块训练板，把它从这部手机上移除。",
         "removeAria": "从这部手机移除 {{name}}",
         "cancel": "取消",
         "removeTitle": "移除 {{name}}？",
@@ -299,6 +343,8 @@
         "errorTitle": "无法统计你的下载内容",
         "errorSubtitle": "读取这部手机上的内容时出了点问题。",
         "errorRetry": "重试",
+        "downgradeTitle": "离线存储已暂停",
+        "downgradeSubtitle": "这部手机上的应用版本比保存你数据的版本旧。你下载的训练板和等待同步的完攀都还留在这部手机上，下次更新后就会回来。",
         "cachedImagesHeader": "缓存的图片",
         "cachedImagesArtLabel": "训练板底图",
         "cachedImagesPhotosLabel": "照片",
@@ -325,11 +371,6 @@
         "both": "两者都显示"
       },
       "displayOptions": {
-        "title": "显示",
-        "playlistTags": "显示线路单标签",
-        "playlistTagsDescription": "直接在列表里看到每条线路属于哪些线路单。",
-        "quickActionsButton": "显示快捷操作按钮",
-        "quickActionsButtonDescription": "给每条线路加一个 ⋮ 按钮，可打开队列、记录、线路单等操作。你也可以随时长按。",
         "boardseshGrades": "显示 Boardsesh 难度",
         "boardseshGradesDescription": "根据各训练板上的真实完攀数据算出的难度。完攀数量足够之前，沿用定线员给的难度。",
         "personalGrades": "使用我的难度",
@@ -355,15 +396,13 @@
         "contributeTitle": "帮忙翻译 Boardsesh",
         "contributeSubtitle": "这些翻译来自社区。在 GitHub 上打开{{language}}文件，就能修正或添加词句。"
       },
-      "diagnostics": {
-        "title": "隐私",
-        "recording": "帮助我们改进",
-        "recordingDescription": "发送匿名且打码的会话录制，帮我们更快修掉 bug。你输入的内容和照片都会被隐藏。随时可以关闭。"
+      "startup": {
+        "title": "打开应用时进入",
+        "footer": "下次打开应用时生效。链接、通知和设置流程仍会打开它们指向的页面。"
       },
-      "integrations": {
-        "title": "已连接的应用",
-        "subtitle": "训练板账号、Apple 健康",
-        "subtitleWithStrava": "训练板账号、Apple 健康、Strava"
+      "diagnostics": {
+        "recording": "分享会话录屏",
+        "recordingDescription": "录下你在应用里的屏幕，让我们看到 bug 是怎么发生的。你输入的内容和照片都会被隐藏。在为客服重现问题时打开，用完就关掉。"
       },
       "syncIssues": {
         "title": "同步问题",
@@ -381,6 +420,9 @@
         "failedMessage_other": "有 {{count}} 项改动没能同步，退出登录会将其删除。想保留的话，请先取消并点“重试同步”。",
         "confirm": "退出登录",
         "cancel": "取消",
+        "downgradeMessage": "这部手机要等应用更新后才能打开你的离线数据。如果在更新前有别人在这里登录，这部手机上还在等待同步的完攀都会丢失。",
+        "downgradeConfirm": "仍然退出登录",
+        "downgradeCancel": "保持登录",
         "failureTitle": "退出登录未确认",
         "failure": "Boardsesh 无法确认是否已退出登录。离开这台设备之前，请重新联网并再次退出登录。"
       },
@@ -392,6 +434,182 @@
         "pickSubtitle": "在改动上线前先试用，并告诉我们效果如何",
         "testPlanTitle": "测试计划 #{{prNumber}}",
         "testPlanSubtitle": "在你运行的预览版上该试些什么"
+      },
+      "earlyUpdates": {
+        "sectionTitle": "应用更新",
+        "title": "抢先获取更新",
+        "offSubtitle": "新功能一上线就能用，比其他人更早",
+        "onSubtitle": "你已加入抢先更新",
+        "waitingSubtitle": "已开启，正在等下一个抢先更新",
+        "leavingSubtitle": "已关闭。等这部手机的下一个更新准备好，就会切回常规更新。",
+        "testingBody": "这部手机上固定了一个预览版。先退出它，再修改这里。",
+        "footer": "抢先更新偶尔会有些小毛病。这里的改动在你下次打开应用时生效。",
+        "joinDeferred": "连不上更新服务器。我们会在你下次打开应用时再试；抢先更新从再下一次开始。",
+        "leaveDeferred": "暂时还切不回去。我们会在你下次打开应用时再试。"
+      },
+      "climbDrawer": {
+        "description": "选择线路下方显示哪些内容，以及它们的顺序。",
+        "settingsFooter": "选择线路下方显示哪些内容。要调整顺序，在线路上打开 ⋯ 菜单，选择“显示选项”。",
+        "loading": "正在加载显示选项…",
+        "hideAll": "全部隐藏",
+        "showAll": "全部显示",
+        "restoreDefaults": "恢复默认",
+        "sections": {
+          "activeHolds": "已点亮的岩点",
+          "logbook": "攀爬记录",
+          "climberLogs": "岩友记录",
+          "setterNotes": "定线员备注",
+          "betaVideos": "Beta 视频",
+          "boardseshGrade": "Boardsesh 难度",
+          "community": "社区",
+          "similarClimbs": "相似线路"
+        },
+        "sheetTitle": "显示选项",
+        "groupTitle": "线路下方",
+        "footer": "改动立即生效。全部隐藏后只显示线路本身，不用上下滚动。",
+        "tabs": {
+          "sections": "线路下方",
+          "buttons": "按钮"
+        }
+      },
+      "sectionLayout": {
+        "moveUp": "把 {{section}} 上移",
+        "moveDown": "把 {{section}} 下移",
+        "moved": "{{section}}，第 {{position}} 个，共 {{count}} 个"
+      },
+      "homeSections": {
+        "groupTitle": "首页内容",
+        "customize": "自定义首页",
+        "description": "选择首页显示哪些内容，以及它们的顺序。“精简”只显示你的训练板、训练和线路单。",
+        "settingsFooter": "选择首页显示哪些内容，以及它们的顺序。首页上的“自定义首页”修改的是同一份列表。",
+        "footer": "改动立即生效，只影响这部手机，不会改变谁能看到你的攀爬。",
+        "showAll": "全部显示",
+        "focused": "精简",
+        "restoreDefaults": "恢复默认",
+        "sections": {
+          "board": "你的训练板",
+          "session": "训练",
+          "playlists": "线路单",
+          "climbingNow": "正在攀爬",
+          "beta": "新鲜 beta",
+          "feed": "动态"
+        },
+        "descriptions": {
+          "board": "浏览线路或更换训练板",
+          "session": "开始训练或查看计时",
+          "playlists": "赞过的线路和项目",
+          "climbingNow": "可以加入的进行中训练",
+          "beta": "你的训练板上的新 beta 视频",
+          "feed": "伙伴们的训练和新线路。始终在最下面。"
+        },
+        "presets": {
+          "default": "默认",
+          "custom": "自定义"
+        }
+      },
+      "climbList": {
+        "title": "线路列表",
+        "picture": "图片",
+        "underName": "名称下方",
+        "yourClimbing": "你的攀爬",
+        "actions": "操作",
+        "gradesTitle": "难度",
+        "previewFooter": "示例。完攀、收藏和标签只在有这些内容的线路上显示。",
+        "gradeFooter": "在“设置 → 线路与难度”里选择哪个难度显示得大。",
+        "personalFooter": "个人标记和线路单需要登录，并在联网时加载。",
+        "presetsLabel": "快速设置",
+        "presets": {
+          "namesOnly": "仅名称",
+          "textOnly": "仅文字",
+          "default": "默认",
+          "everything": "全部",
+          "custom": "自定义"
+        },
+        "fields": {
+          "thumbnail": "训练板图片",
+          "communityGrade": "社区难度",
+          "sends": "完攀",
+          "rating": "评分",
+          "setter": "定线员",
+          "sentMark": "完攀标记",
+          "playlistTags": "显示线路单标签",
+          "quickActions": "显示快捷操作按钮",
+          "progress": "我的进度"
+        },
+        "sampleName": "晚间项目",
+        "sampleSetter": "crewsetter",
+        "samplePlaylistOne": "项目",
+        "samplePlaylistTwo": "热身",
+        "playlistTagsDescription": "直接在列表里看到每条线路属于哪些线路单。",
+        "quickActionsDescription": "给每条线路加一个 ⋮ 按钮，可打开队列、记录、线路单等操作。你也可以随时长按。"
+      },
+      "playerButtons": {
+        "title": "按钮",
+        "description": "选择“记录”周围的按钮、它们的顺序和位置。",
+        "position": {
+          "label": "位置",
+          "below": "训练板下方",
+          "above": "训练板上方",
+          "footer": "“记录”和“训练板灯光”始终保持原位。"
+        },
+        "previousNext": "上一条和下一条",
+        "previousNextDescription": "在训练板上滑动照样能切换线路。",
+        "buttons": {
+          "mirror": "镜像",
+          "favorite": "收藏",
+          "angle": "角度",
+          "share": "分享",
+          "queue": "队列"
+        },
+        "mirrorDescription": "只在支持镜像的训练板上显示",
+        "angleDescription": "只在角度可调的训练板上显示",
+        "fixed": {
+          "previous": "上一条",
+          "next": "下一条",
+          "log": "记录",
+          "boardLight": "训练板灯光"
+        },
+        "footer": "“队列”和“镜像”中排在前面的那个会变成大按钮。隐藏的按钮仍在 ⋯ 菜单里。小按钮全部关闭后，它们那一行会让给训练板。",
+        "settingsFooter": "要调整顺序，在线路上打开 ⋯ 菜单，选择“显示选项”。",
+        "previewLabel": "预览，{{position}}：{{buttons}}"
+      },
+      "climbView": {
+        "title": "线路视图",
+        "valueDefault": "默认",
+        "valueCustom": "自定义"
+      },
+      "timers": {
+        "restTitle": "休息",
+        "restLength": "休息",
+        "restLengthOff": "关闭",
+        "modeLabel": "节奏",
+        "modeAfterTick": "每条线路之后",
+        "modeEvery": "每 {{length}}",
+        "modeOnTheMinute": "固定间隔",
+        "modeAfterTickHint": "每次记录尝试或完攀后，休息时间都会重新开始计时。",
+        "modeOnTheMinuteHint": "从开启的那一刻起按固定间隔计时。记录尝试或完攀不会重置时钟。",
+        "autoAdvance": "切到下一条线路",
+        "autoAdvanceHint": "替你把它点亮到墙上，只在 Boardsesh 打开时有效。",
+        "autoAdvanceBlocked": "只有控制墙面的岩友才能推进队列。",
+        "autoAdvanceNeedsLength": "选择休息时长后才能自动推进队列。",
+        "cuesTitle": "提示",
+        "cuesFooter": "关闭后，墙面自动切换前你仍会收到一次震动提醒。",
+        "countdownCues": "最后几秒倒数",
+        "countdownCuesHint": "最后几秒每秒震动一次，下一条线路亮起时你已经上了岩点。",
+        "sound": "声音",
+        "soundHint": "提示时播放提示音。静音开关打开时也会响，不会打断你的音乐。",
+        "rogueTitle": "岩馆计时器",
+        "rogueFooter": "把 Rogue 计时器和训练板配对后，它的秒表会跟着你的休息重新开始：记录一条线路时、队列往下走时，以及固定间隔的每个节拍。只有连着训练板的那部手机会控制它。",
+        "rogueNotPaired": "未配对",
+        "roguePairHint": "把岩馆计时器和这块训练板配对",
+        "rogueChangeHint": "把另一台岩馆计时器和这块训练板配对",
+        "rogueRemove": "从 {{board}} 移除计时器",
+        "rogueNoBoardsTitle": "你还没有自己的训练板",
+        "rogueNoBoards": "先添加你自己的训练板，才能给它配对岩馆计时器。",
+        "rogueConnected": "已连接",
+        "rogueConnecting": "正在连接…",
+        "rogueUnreachable": "连不上。确认它已打开，并且就在附近。",
+        "rogueSaveFailed": "计时器没保存上。再试一次。"
       }
     },
     "sendRecovery": {
@@ -414,11 +632,30 @@
       "openBody": "这个项目是开源的，岩友们可以反馈不顺手的地方、提出功能需求，并一起决定接下来做什么。",
       "independentBody": "Boardsesh 与 Aurora Climbing、Kilter、Tension、Moon Climbing 或任何训练板制造商均无关联，也未获其背书。",
       "viewOnGithub": "在 GitHub 上查看",
+      "emailPartners": "给我们发邮件",
       "joinDiscord": "加入 Discord",
       "partnerTitle": "与我们正式合作",
       "partnerBody": "Boardsesh 以第三方的身份兼容 Kilter、Tension 和 MoonBoard。如果你是训练板制造商，想一起做点官方的东西，我们很乐意聊聊。",
       "acknowledgementsLink": "致谢",
-      "acknowledgementsLinkBody": "Boardsesh 背后的人"
+      "acknowledgementsLinkBody": "Boardsesh 背后的人",
+      "shareApp": {
+        "link": "分享 Boardsesh",
+        "linkBody": "给伙伴们手机扫的二维码",
+        "title": "分享 Boardsesh",
+        "body": "让伙伴们用手机相机扫一下，就能下载应用。",
+        "appStore": "App Store",
+        "googlePlay": "Google Play",
+        "storeToggleLabel": "应用商店",
+        "qrLabelIos": "App Store 上 Boardsesh 的二维码",
+        "qrLabelAndroid": "Google Play 上 Boardsesh 的二维码",
+        "copyLink": "复制链接",
+        "share": "分享",
+        "copied": "链接已复制",
+        "copyFailed": "链接没复制上",
+        "messageCopied": "消息已复制",
+        "messageCopyFailed": "消息没复制上",
+        "message": "训练板训练就用 Boardsesh。\niPhone：{{iosUrl}}\nAndroid：{{androidUrl}}"
+      }
     },
     "acknowledgements": {
       "title": "致谢",
@@ -452,7 +689,6 @@
     "onboarding": {
       "replaySection": "新手引导",
       "replayTitle": "重看新手引导",
-      "replaySubtitle": "再看一遍新手引导",
       "replayError": "新手引导没能重新打开，再试一次。",
       "prompt": {
         "title": "实时查看墙上点亮了什么",
@@ -469,7 +705,7 @@
         "offlineSkip": "暂时跳过",
         "downloadAria": "把 {{name}} 保存在这部手机上"
       },
-      "boardRevealTip": "点按查看其他 Boardsesh 用户在这面墙上点亮过什么。",
+      "boardRevealTip": "点时钟，看看这面墙上点亮过哪些线路。",
       "quickActionsTip": "长按线路可使用快捷操作，比如队列、记录和线路单。",
       "tips": {
         "workout": "创建训练计划：容量、金字塔、阶梯或难度专项。设定难度，预览每一趟，然后一条一条爬完。",
@@ -499,9 +735,9 @@
     },
     "changelog": {
       "title": "新功能",
-      "intro": "最近的更新和修复，最新的在前。",
-      "currentBuild": "你使用的是 {{date}} 的版本",
-      "currentBuildVersion": "你使用的是 {{version}} 版本",
+      "intro": "最新改动",
+      "currentBuild": "更新于 {{date}}",
+      "currentBuildVersion": "版本 {{version}}",
       "category": {
         "new": "新增",
         "improved": "改进",
@@ -530,7 +766,28 @@
       "checkError": {
         "title": "无法检查更新",
         "message": "获取最新版本时出了点问题。过一会儿再试。"
+      },
+      "updates": {
+        "regular": "正式版",
+        "canary": "Canary 版",
+        "canaryBody": "这次发布自动选中了你。报告里会附上你的版本。",
+        "statusUnknown": "无法确认发布状态。",
+        "early": "抢先更新",
+        "staging": "Staging 版",
+        "preview": "PR #{{prNumber}} 预览",
+        "native": "已安装的版本",
+        "other": "{{channel}} 版",
+        "changeRelease": "版本",
+        "testPreview": "测试 PR 预览",
+        "finishTesting": "结束测试 PR #{{prNumber}}",
+        "options": "更新选项",
+        "earlyUpdatesHelp": "抢先更新可能有些小毛病。改动在下次启动时生效。"
       }
+    },
+    "launchUpdate": {
+      "checking": "正在检查更新",
+      "installing": "正在安装最新更新",
+      "firstLaunchHint": "只在第一次启动时出现，几秒钟就好。"
     },
     "connectivity": {
       "serverDown": {
@@ -584,6 +841,19 @@
       "googlePlay": "在 Google Play 下载",
       "appStore": "在 App Store 下载",
       "dismiss": "以后再说"
+    },
+    "reportRelease": {
+      "title": "版本详情",
+      "channel": "渠道",
+      "branch": "分支",
+      "updateId": "更新 ID",
+      "runtimeVersion": "运行时",
+      "automaticCanary": "自动 Canary",
+      "embedded": "内置包",
+      "checkedAt": "Canary 检查时间",
+      "yes": "是",
+      "no": "否",
+      "unknown": "未知"
     }
   },
   "lightControl": {
@@ -674,12 +944,14 @@
       "finishTesting": "结束测试 #{{prNumber}}",
       "testPlan": "测试计划 #{{prNumber}}",
       "badge": "QA"
-    }
+    },
+    "accountTitle": "账号"
   },
   "qa": {
     "shared": {
       "backOnProduction": "下次更新时回到正式版",
-      "leaveFailed": "无法关闭这个预览，再试一次"
+      "leaveFailed": "无法关闭这个预览，再试一次",
+      "backOnEarlyUpdates": "下次打开应用时恢复抢先更新"
     },
     "pick": {
       "title": "测试 PR",
@@ -696,9 +968,7 @@
       "crashedChip": "启动时崩溃",
       "nothingNewToast": "这个版本上 #{{prNumber}} 没有新内容，它下次发布的内容会在重启后生效",
       "stagingTitle": "预发布版",
-      "stagingBody": "在下一次移动端更新进入正式版之前先试用。",
       "productionTitle": "正式版",
-      "productionBody": "之后使用正式更新；在更新的版本发布之前，当前包可能会保留。",
       "stagingNextLaunch": "已选择预发布版，它的下一次更新会在重启后生效",
       "productionNextLaunch": "已选择正式版；在更新的版本发布之前，当前包可能会保留",
       "buildingChip": "构建中",
@@ -711,7 +981,9 @@
       "noMatchBody": "这个版本已发布的内容里没有与“{{query}}”匹配的。",
       "trySurfAction": "仍然试试 #{{prNumber}}",
       "trySurfHint": "它可能没有这个版本能加载的预览。",
-      "notServableToast": "这个版本没有 #{{prNumber}} 的预览，它可能需要变基到 main"
+      "notServableToast": "这个版本没有 #{{prNumber}} 的预览，它可能需要变基到 main",
+      "earlyUpdatesTitle": "抢先更新",
+      "earlyUpdatesNextLaunch": "下次打开应用时会恢复抢先更新"
     },
     "brief": {
       "screenTitle": "测试内容",
@@ -732,7 +1004,7 @@
       "verdictGroupLabel": "结论",
       "approvePlaceholder": "有什么值得一提的吗？（可选）",
       "declinePlaceholder": "哪里出了问题？写上步骤会很有帮助。",
-      "submitLabel": "提交结论",
+      "submitLabel": "提交",
       "leaveLabel": "不留反馈，直接退出预览",
       "submitError": "结论没提交上，再试一次",
       "notOnPreview": "你在正式版上，没有可提交结论的内容。",
@@ -912,5 +1184,16 @@
       "explore": "探索",
       "smallPrint": "细则"
     }
+  },
+  "unsavedChanges": {
+    "title": "放弃更改？",
+    "message": "你的更改不会被保存。",
+    "discard": "放弃更改",
+    "keepEditing": "继续编辑"
+  },
+  "undoDelete": {
+    "removed": "记录已移除",
+    "undo": "撤销",
+    "cancelled": "已取消删除，记录保留了。"
   }
 }

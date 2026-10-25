@@ -22,6 +22,31 @@
         "everyone": "所有人",
         "findGym": "查找附近的岩馆",
         "hint": "切换你看到谁的线路"
+      },
+      "sections": {
+        "session": {
+          "startTitle": "开始训练",
+          "startBody": "选一个训练计划，或者直接开爬",
+          "running": "训练进行中",
+          "open": "打开训练"
+        },
+        "playlists": {
+          "all": "全部线路单"
+        },
+        "empty": {
+          "title": "你的首页是空的",
+          "body": "重新打开几个版块，就能看到你的训练板、你的训练和你的伙伴。"
+        },
+        "beta": {
+          "title": "新鲜 beta",
+          "titleBoard": "这块板上的新鲜 beta",
+          "empty": "还没有 beta 视频",
+          "error": "beta 视频加载失败。",
+          "offline": "没有信号。联网后新鲜 beta 会重新出现。",
+          "offlineMode": "离线模式已开启。关闭后新鲜 beta 会重新出现。",
+          "unknownClimb": "未知线路",
+          "openClimb": "打开 {{climb}}"
+        }
       }
     },
     "liveSessions": {

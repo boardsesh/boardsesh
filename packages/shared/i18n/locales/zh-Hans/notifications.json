@@ -11,12 +11,25 @@
   },
   "items": {
     "newFollower": "{{actor}} 关注了你",
+    "followRequest": "{{actor}} 想关注你",
     "commentReplyWithBody": "{{actor}} 回复：“{{body}}”",
     "commentReply": "{{actor}} 回复了你的评论",
     "commentOnTickWithBody": "{{actor}} 评论：“{{body}}”",
     "commentOnTick": "{{actor}} 评论了你的完攀",
-    "commentOnClimbWithBody": "{{actor}} 评论：“{{body}}”",
-    "commentOnClimb": "{{actor}} 评论了一条线路",
+    "commentOnClimbWithBody": "{{actor}} 评论了你的线路：“{{body}}”",
+    "commentOnClimb": "{{actor}} 评论了你的线路 {{climb}}",
+    "commentOnClimbGeneric": "{{actor}} 评论了你的线路",
+    "commentOnSessionWithBody": "{{actor}} 评论了你的训练：“{{body}}”",
+    "commentOnSession": "{{actor}} 评论了你的训练",
+    "commentOnPlaylistWithBody": "{{actor}} 评论了你的线路单：“{{body}}”",
+    "commentOnPlaylist": "{{actor}} 评论了你的线路单",
+    "commentOnBoardWithBody": "{{actor}} 评论了你的训练板：“{{body}}”",
+    "commentOnBoard": "{{actor}} 评论了你的训练板",
+    "commentOnSprayWallWithBody": "{{actor}} 评论了你的自由墙：“{{body}}”",
+    "commentOnSprayWall": "{{actor}} 评论了你的自由墙",
+    "commentOnGymWithBody": "{{actor}} 评论了你的岩馆：“{{body}}”",
+    "commentOnGym": "{{actor}} 评论了你的岩馆 {{gym}}",
+    "commentOnGymGeneric": "{{actor}} 评论了你的岩馆",
     "voteOnTick": "{{actor}} 赞了你的完攀",
     "voteOnComment": "{{actor}} 赞了你的评论",
     "proposalCreated": "{{actor}} 发起了一项新提议",
@@ -36,9 +49,22 @@
     "newClimbsSynced": "{{actor}} 定了新线路",
     "gymClaimApproved": "你现在是 {{gym}} 的管理者",
     "gymClaimApprovedGeneric": "岩馆认领已通过，你现在是馆主了",
-    "default": "你有一条新通知"
+    "default": "你有一条新通知",
+    "sprayWallReady": "{{wall}} 可以检查了。",
+    "sprayWallReadyGeneric": "你的自由墙照片可以检查了。"
+  },
+  "followRequest": {
+    "approve": "通过",
+    "decline": "拒绝",
+    "approveLabel": "同意 {{actor}}",
+    "declineLabel": "拒绝 {{actor}}",
+    "failed": "没能处理这个请求。联网后再试一次。"
   },
   "errors": {
     "load": "通知加载失败"
+  },
+  "push": {
+    "sprayWallTitle": "可以检查了",
+    "sprayWallBody": "{{wall}} 的照片处理好了。去检查一下岩点。"
   }
 }

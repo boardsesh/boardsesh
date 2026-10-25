@@ -26,6 +26,7 @@
       "community": "社区线路单"
     },
     "communityByline": "{{creatorName}} - {{climbCount}}",
+    "gradeBand": "难度 {{band}}",
     "allPlaylists": {
       "title": "我的线路单",
       "seeAll": "查看全部",
@@ -33,6 +34,55 @@
       "clearSearch": "清除搜索",
       "loadMoreError": "没能加载你的全部线路单。",
       "noResults": "没有与“{{query}}”匹配的线路单"
+    },
+    "community": {
+      "searchPlaceholder": "搜索线路单",
+      "madeByLabel": "创建者",
+      "madeBy": {
+        "everyone": "所有人",
+        "mine": "我的",
+        "following": "已关注"
+      },
+      "sortLabel": "排序",
+      "sort": {
+        "popular": "热门",
+        "recent": "最新"
+      },
+      "sizeLabel": "长度",
+      "size": {
+        "any": "不限长度",
+        "short": "短",
+        "session": "训练",
+        "big": "长"
+      },
+      "gradeLabel": "难度",
+      "gradeAny": "不限难度",
+      "gradeA11y": "难度范围：{{band}}",
+      "sizeBand": {
+        "upTo": "最多 {{max}} 条线路",
+        "range": "{{min}}–{{max}} 条线路",
+        "atLeast": "{{min}}+ 条线路"
+      },
+      "resultCount_one": "{{count}} 个线路单",
+      "resultCount_other": "{{count}} 个线路单",
+      "loadMoreError": "更多线路单加载失败。",
+      "errors": {
+        "loadTitle": "线路单加载失败",
+        "loadDescription": "检查网络连接后再试一次。"
+      },
+      "empty": {
+        "title": "这里还没有线路单",
+        "description": "把你的一个线路单设为公开，伙伴们就能看到。"
+      },
+      "emptyFollowing": {
+        "title": "你的伙伴还没有线路单",
+        "description": "你关注的岩友还没在这块板上建公开线路单。"
+      },
+      "noMatches": {
+        "title": "没有符合筛选条件的线路单",
+        "description": "放宽一两个筛选条件，就能看到更多。",
+        "clearFilters": "清除筛选"
+      }
     },
     "pin": {
       "pin": "置顶",
@@ -102,10 +152,16 @@
   "detail": {
     "share": "分享线路单",
     "actions": "线路单操作",
-    "activateAll": "开始线路单",
+    "activateAll": "开爬",
     "addToQueue": {
-      "action": "加入队列",
-      "subtitle": "保留队列里已有的线路",
+      "action": "放到最后爬",
+      "actionCount_one": "把 {{count}} 条放到最后爬",
+      "actionCount_other": "把 {{count}} 条放到最后爬",
+      "subtitle": "排在队列其余线路之后",
+      "playNextAction": "下一条播放",
+      "playNextActionCount_one": "接下来爬这 {{count}} 条",
+      "playNextActionCount_other": "接下来爬这 {{count}} 条",
+      "playNextSubtitle": "排在队列其余线路之前",
       "queueFull": "队列已满，最多 {{max}} 条线路",
       "nothingToAdd": "这里暂时没有适合你训练板的线路",
       "alreadyAdding": "正在添加这个线路单",
@@ -142,7 +198,9 @@
       "cancel": "取消",
       "confirm": "开始线路单",
       "loadFailed": "线路单没能开始，再试一次。",
-      "addInstead": "加入队列"
+      "trimmed": "已加载 {{total}} 条中的 {{loaded}} 条。队列最多放 {{max}} 条。",
+      "trimmedUnknownTotal": "已加载 {{loaded}} 条线路。队列最多放 {{max}} 条。",
+      "addInstead": "放到最后爬"
     },
     "deleteConfirm": {
       "title": "删除线路单？",
@@ -152,6 +210,19 @@
     },
     "discussion": "讨论",
     "empty": "这个线路单里还没有线路",
+    "view": {
+      "status_one": "{{count}} 条线路中显示 {{shown}} 条",
+      "status_other": "{{count}} 条线路中显示 {{shown}} 条",
+      "clearFilters": "清除筛选",
+      "editNote": "编辑时按线路单原顺序显示",
+      "namePlaceholder": "线路名称",
+      "empty": {
+        "noMatch": "这里没有符合筛选条件的线路。",
+        "allSent": "这个线路单你已经全部完攀了。厉害。",
+        "noName": "这个线路单里没有叫“{{name}}”的线路。",
+        "noBoardFit": "这些线路都不适合你的训练板。"
+      }
+    },
     "climbCount_one": "{{count}} 条线路",
     "climbCount_other": "{{count}} 条线路",
     "openInApp": "在应用里爬这个线路单",
@@ -164,6 +235,10 @@
       "loadTitle": "线路单加载失败",
       "loadDescription": "加载这个线路单时出错了，请重试。",
       "tryAgain": "重试"
+    },
+    "setterPicker": {
+      "showClimbs": "查看线路",
+      "error": "这个线路单的定线员加载失败。"
     }
   },
   "editClimbs": {
@@ -194,8 +269,7 @@
       "privateHint": "私密线路单：只有你能看到"
     },
     "actions": {
-      "save": "保存",
-      "saving": "保存中…"
+      "save": "保存"
     },
     "validation": {
       "nameRequired": "请输入线路单名称",
@@ -210,7 +284,6 @@
   "create": {
     "drawerTitle": "创建线路单",
     "submit": "创建",
-    "submitting": "创建中…",
     "fields": {
       "name": "名称",
       "namePlaceholder": "例如：小边硬线",
