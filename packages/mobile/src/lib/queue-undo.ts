@@ -1,9 +1,23 @@
-import { MAX_SYNCED_QUEUE_ITEMS, type ClimbQueueItem } from '@boardsesh/queue';
+import { MAX_SYNCED_QUEUE_ITEMS, historyLine, type ClimbQueueItem } from '@boardsesh/queue';
 
 export type QueueContentSnapshot = {
   queue: ClimbQueueItem[];
   currentClimbQueueItem: ClimbQueueItem | null;
+  /**
+   * F3 now-slot mode: the History / Up next line. Null or absent in legacy
+   * mode, where the restore carries no line either.
+   */
+  historyCount?: number | null;
 };
+
+function lineOf(snapshot: QueueContentSnapshot): number | null {
+  if (snapshot.historyCount == null) return null;
+  return historyLine({
+    queue: snapshot.queue,
+    currentClimbQueueItem: snapshot.currentClimbQueueItem,
+    historyCount: snapshot.historyCount,
+  });
+}
 
 /**
  * The queue an Undo of a clear or bulk remove should put back.
@@ -25,7 +39,11 @@ export type QueueContentSnapshot = {
  *   member unset it, and the Undo must not override them;
  * - the result never exceeds `cap` (the party backend's `setQueue` limit, which
  *   throws rather than truncating). Live items always stay; re-added items are
- *   dropped from the end until it fits, and `droppedCount` says how many.
+ *   dropped from the end until it fits, and `droppedCount` says how many;
+ * - in now-slot mode (`live.historyCount` set) the result carries the line: the
+ *   live line, one higher for each climb put back below it. A climb that was in
+ *   History before and lands right on the line goes back under History, so an
+ *   Undo with nothing current can't file History under Up next.
  */
 export function restoreRemovedQueueItems(
   before: QueueContentSnapshot,
@@ -35,6 +53,11 @@ export function restoreRemovedQueueItems(
 ): QueueContentSnapshot & { droppedCount: number } {
   const restored = [...live.queue];
   const readded = new Set<string>();
+  const beforeLine = lineOf(before);
+  const historyUuidsBefore = new Set(
+    beforeLine === null ? [] : before.queue.slice(0, beforeLine).map((queueItem) => queueItem.uuid),
+  );
+  let line = lineOf(live);
   let anchorUuid: string | null = null;
   for (const item of before.queue) {
     if (restored.some((restoredItem) => restoredItem.uuid === item.uuid)) {
@@ -44,7 +67,11 @@ export function restoreRemovedQueueItems(
     if (!removedUuids.has(item.uuid)) continue;
     const anchorIndex =
       anchorUuid === null ? -1 : restored.findIndex((restoredItem) => restoredItem.uuid === anchorUuid);
-    restored.splice(anchorIndex + 1, 0, item);
+    const insertIndex = anchorIndex + 1;
+    if (line !== null && (insertIndex < line || (insertIndex === line && historyUuidsBefore.has(item.uuid)))) {
+      line += 1;
+    }
+    restored.splice(insertIndex, 0, item);
     readded.add(item.uuid);
     anchorUuid = item.uuid;
   }
@@ -54,6 +81,7 @@ export function restoreRemovedQueueItems(
     if (!readded.has(restored[index].uuid)) continue;
     readded.delete(restored[index].uuid);
     restored.splice(index, 1);
+    if (line !== null && index < line) line -= 1;
     droppedCount += 1;
   }
 
@@ -63,5 +91,5 @@ export function restoreRemovedQueueItems(
     (previousCurrentUuid !== undefined && readded.has(previousCurrentUuid)
       ? (restored.find((restoredItem) => restoredItem.uuid === previousCurrentUuid) ?? null)
       : null);
-  return { queue: restored, currentClimbQueueItem, droppedCount };
+  return { queue: restored, currentClimbQueueItem, historyCount: line, droppedCount };
 }

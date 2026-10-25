@@ -97,4 +97,76 @@ describe('restoreRemovedQueueItems', () => {
     expect(restored.droppedCount).toBe(1);
     expect(restored.queue.some((queueItem) => queueItem.uuid === 'peer')).toBe(true);
   });
+
+  describe('the History / Up next line (F3 now-slot mode)', () => {
+    it('carries no line in legacy mode', () => {
+      const restored = restoreRemovedQueueItems(before, new Set(['c']), {
+        queue: [item('a'), item('b'), item('d')],
+        currentClimbQueueItem: item('b'),
+      });
+      expect(restored.historyCount).toBeNull();
+    });
+
+    it('keeps History under the line when an Up next climb comes back with nothing current', () => {
+      // History [a b] | Up next [c d], nothing current; the climber removed c.
+      const lineBefore = {
+        queue: ['a', 'b', 'c', 'd'].map((uuid) => item(uuid)),
+        currentClimbQueueItem: null,
+        historyCount: 2,
+      };
+      const restored = restoreRemovedQueueItems(lineBefore, new Set(['c']), {
+        queue: [item('a'), item('b'), item('d')],
+        currentClimbQueueItem: null,
+        historyCount: 2,
+      });
+      expect(uuidsOf(restored.queue)).toEqual(['a', 'b', 'c', 'd']);
+      expect(restored.historyCount).toBe(2);
+    });
+
+    it('files a History climb that comes back on the line under History', () => {
+      const lineBefore = {
+        queue: ['a', 'b', 'c'].map((uuid) => item(uuid)),
+        currentClimbQueueItem: null,
+        historyCount: 2,
+      };
+      const restored = restoreRemovedQueueItems(lineBefore, new Set(['b']), {
+        queue: [item('a'), item('c')],
+        currentClimbQueueItem: null,
+        historyCount: 1,
+      });
+      expect(uuidsOf(restored.queue)).toEqual(['a', 'b', 'c']);
+      expect(restored.historyCount).toBe(2);
+    });
+
+    it('puts a cleared queue back with its line', () => {
+      const lineBefore = {
+        queue: ['a', 'b', 'c'].map((uuid) => item(uuid)),
+        currentClimbQueueItem: null,
+        historyCount: 2,
+      };
+      const restored = restoreRemovedQueueItems(lineBefore, new Set(['a', 'b', 'c']), {
+        queue: [],
+        currentClimbQueueItem: null,
+        historyCount: 0,
+      });
+      expect(uuidsOf(restored.queue)).toEqual(['a', 'b', 'c']);
+      expect(restored.historyCount).toBe(2);
+    });
+
+    it('lowers the line for a History climb the cap drops', () => {
+      const lineBefore = {
+        queue: ['a', 'b', 'c'].map((uuid) => item(uuid)),
+        currentClimbQueueItem: null,
+        historyCount: 2,
+      };
+      const restored = restoreRemovedQueueItems(
+        lineBefore,
+        new Set(['a', 'b']),
+        { queue: [item('c'), item('peer')], currentClimbQueueItem: null, historyCount: 0 },
+        3,
+      );
+      expect(uuidsOf(restored.queue)).toEqual(['a', 'c', 'peer']);
+      expect(restored.historyCount).toBe(1);
+    });
+  });
 });
