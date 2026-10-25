@@ -2280,6 +2280,15 @@ mobile's `useSprayLabelOptions`): `formatBoardDisplayName` is deliberately Engli
 because it spells brand names, and "Spray wall" is the one value it returns that
 is not a brand. www passes nothing and keeps the English default.
 
+**Profile charts name the wall the same way (#5487).** The bundled catalogue
+cannot name a layout created at runtime, so charts used to read `Spray wall
+(Layout 941)`. `userTicks` returns `Tick.boardDisplayName`, the wall's
+`user_boards.name`, behind the same `boardIdentityVisibleCondition` gate as the
+ascent feeds: the climber always sees it, anyone else only when the board's
+policy names it to them. `getLayoutDisplayName` composes `Spray wall · <name>`
+for spray only and keeps the old label when the name is null. Catalogue boards
+keep their layout names.
+
 **An empty wall is not an empty search.** `shouldShowUnsetWallEmptyState` puts
 "No one's set on this wall yet" and the door to the first climb on the Climbs tab
 — but only with no query and no filters on. A wall with forty climbs, filtered to
