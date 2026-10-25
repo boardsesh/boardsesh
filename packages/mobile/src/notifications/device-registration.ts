@@ -4,7 +4,7 @@ import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
 import { randomUUID } from 'expo-crypto';
 import { Platform } from 'react-native';
-import { isSupportedLocale } from '@boardsesh/i18n';
+import { isWebLocale } from '@boardsesh/i18n';
 import { captureAuthCredentialGeneration, getAuthToken, isAuthCredentialGenerationCurrent } from '../lib/auth-store';
 import { clientIdentityHeaders } from '../lib/client-identity';
 import { getGraphQLHttpUrl } from '../lib/graphql/client';
@@ -86,7 +86,9 @@ export async function registerNotificationDevice(
       (devicePushToken && tokenRevision !== nativeTokenRevision)
     )
       return false;
-    const locale = isSupportedLocale(i18n.language) ? i18n.language : 'en-US';
+    // The backend writes push copy in the web locales only and rejects any other
+    // value, so an app-only language (zh-Hans) registers for the English copy.
+    const locale = isWebLocale(i18n.language) ? i18n.language : 'en-US';
     const requestKey = JSON.stringify([
       generation,
       epoch,
