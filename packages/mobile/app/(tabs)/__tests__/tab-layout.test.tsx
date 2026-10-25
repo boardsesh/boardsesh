@@ -18,6 +18,8 @@ const cfg = vi.hoisted(() => ({
   // the iOS 26 extras (accessory, search role, minimize). false models iOS 18.
   glassCapable: true,
   platformOS: 'ios' as 'ios' | 'android' | 'web',
+  // iOS reports a dotted string. `prominent` (the separated search tab) is iOS 27+.
+  platformVersion: '27.0',
   // 'regular' takes the tablet sidebar shell; 'compact' keeps the phone tab bars.
   widthClass: 'compact' as 'compact' | 'regular',
   // Tablet in a narrow split: compact width but still a tablet, which the shell keeps on
@@ -47,6 +49,9 @@ vi.mock('react-native', () => ({
   Platform: {
     get OS() {
       return cfg.platformOS;
+    },
+    get Version() {
+      return cfg.platformVersion;
     },
   },
   // _layout.tsx wraps the iPad shell in Views + calls StyleSheet.create at module
@@ -326,6 +331,7 @@ describe('TabLayout', () => {
     cfg.variant = 'liquidGlass';
     cfg.glassCapable = true;
     cfg.platformOS = 'ios';
+    cfg.platformVersion = '27.0';
     cfg.widthClass = 'compact';
     cfg.isTablet = false;
     cfg.windowWidth = 1024;
@@ -403,7 +409,7 @@ describe('TabLayout', () => {
 
   it('opens Climbs without focusing search and keeps it on its own surface', () => {
     // SDK 58 makes role="search" a UISearchTab that focuses its field on the first
-    // tap. Climbs turns that off (a second tap focuses instead, see useTabRepress),
+    // tap. Climbs turns that off (a second tap focuses instead, see useTabReselect),
     // and `prominent` keeps the tab separate on iOS 27, where turning activation
     // off would otherwise put it back inline.
     const { container } = render(<TabLayout />);
@@ -412,6 +418,17 @@ describe('TabLayout', () => {
     expect(climbs?.getAttribute('data-search-activation-disabled')).toBe('true');
     expect(climbs?.getAttribute('data-prominent')).toBe('true');
     expect(container.querySelectorAll('[data-prominent="true"]')).toHaveLength(1);
+  });
+
+  it('keeps Climbs off the iOS 27-only prominent surface on iOS 26', () => {
+    cfg.platformVersion = '26.1';
+
+    const { container } = render(<TabLayout />);
+    const climbs = container.querySelector('[data-trigger="climbs"]');
+
+    expect(climbs?.getAttribute('data-tab-role')).toBe('search');
+    expect(climbs?.getAttribute('data-search-activation-disabled')).toBe('true');
+    expect(container.querySelector('[data-prominent="true"]')).toBeNull();
   });
 
   it('registers Home as the leftmost material tab', () => {

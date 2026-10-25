@@ -8,7 +8,7 @@ type TabPressListener = (event: { data?: { isPrevented?: boolean } }) => void;
 const cfg = vi.hoisted(() => {
   const state = {
     isFocused: true,
-    tabPressListeners: [] as Array<(event: { data?: { isPrevented?: boolean } }) => void>,
+    tabPressListeners: [] as TabPressListener[],
     unsubscribe: vi.fn(),
     parent: undefined as { addListener: (type: string, listener: TabPressListener) => () => void } | undefined,
   };
@@ -24,13 +24,13 @@ vi.mock('expo-router', () => ({
   useNavigation: () => cfg.navigation,
 }));
 
-import { useTabRepress } from '../use-tab-repress';
+import { useTabReselect } from '../use-tab-reselect';
 
 function pressTab(data?: { isPrevented?: boolean }) {
   for (const listener of cfg.tabPressListeners) listener({ data });
 }
 
-describe('useTabRepress', () => {
+describe('useTabReselect', () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame'] });
     cfg.isFocused = true;
@@ -49,76 +49,76 @@ describe('useTabRepress', () => {
   });
 
   it('calls back on the next frame when the tab is pressed while this screen is showing', () => {
-    const onRepress = vi.fn();
-    renderHook(() => useTabRepress(onRepress));
+    const onReselect = vi.fn();
+    renderHook(() => useTabReselect(onReselect));
 
     pressTab({ isPrevented: false });
-    expect(onRepress).not.toHaveBeenCalled();
+    expect(onReselect).not.toHaveBeenCalled();
     vi.runAllTimers();
 
-    expect(onRepress).toHaveBeenCalledOnce();
+    expect(onReselect).toHaveBeenCalledOnce();
   });
 
   it('ignores the press that opens the tab from elsewhere', () => {
     // The navigator emits tabPress before switching, so a first tap from another
     // tab (or from a route pushed on top) finds this screen unfocused.
     cfg.isFocused = false;
-    const onRepress = vi.fn();
-    renderHook(() => useTabRepress(onRepress));
+    const onReselect = vi.fn();
+    renderHook(() => useTabReselect(onReselect));
 
     pressTab({ isPrevented: false });
     vi.runAllTimers();
 
-    expect(onRepress).not.toHaveBeenCalled();
+    expect(onReselect).not.toHaveBeenCalled();
   });
 
   it('ignores a press the native bar refused', () => {
-    const onRepress = vi.fn();
-    renderHook(() => useTabRepress(onRepress));
+    const onReselect = vi.fn();
+    renderHook(() => useTabReselect(onReselect));
 
     pressTab({ isPrevented: true });
     vi.runAllTimers();
 
-    expect(onRepress).not.toHaveBeenCalled();
+    expect(onReselect).not.toHaveBeenCalled();
   });
 
   it('accepts the JS tab bar press, which carries no data', () => {
-    const onRepress = vi.fn();
-    renderHook(() => useTabRepress(onRepress));
+    const onReselect = vi.fn();
+    renderHook(() => useTabReselect(onReselect));
 
     pressTab(undefined);
     vi.runAllTimers();
 
-    expect(onRepress).toHaveBeenCalledOnce();
+    expect(onReselect).toHaveBeenCalledOnce();
   });
 
   it('collapses presses inside one frame into one call', () => {
-    const onRepress = vi.fn();
-    renderHook(() => useTabRepress(onRepress));
+    const onReselect = vi.fn();
+    renderHook(() => useTabReselect(onReselect));
 
     pressTab({ isPrevented: false });
     pressTab({ isPrevented: false });
     vi.runAllTimers();
 
-    expect(onRepress).toHaveBeenCalledOnce();
+    expect(onReselect).toHaveBeenCalledOnce();
   });
 
   it('unsubscribes and drops a pending frame on unmount', () => {
-    const onRepress = vi.fn();
-    const { unmount } = renderHook(() => useTabRepress(onRepress));
+    const onReselect = vi.fn();
+    const { unmount } = renderHook(() => useTabReselect(onReselect));
 
     pressTab({ isPrevented: false });
     unmount();
     vi.runAllTimers();
 
     expect(cfg.unsubscribe).toHaveBeenCalledOnce();
-    expect(onRepress).not.toHaveBeenCalled();
+    expect(onReselect).not.toHaveBeenCalled();
   });
 
   it('does nothing without a parent navigator', () => {
     cfg.parent = undefined;
-    const onRepress = vi.fn();
+    const onReselect = vi.fn();
 
-    expect(() => renderHook(() => useTabRepress(onRepress))).not.toThrow();
+    expect(() => renderHook(() => useTabReselect(onReselect))).not.toThrow();
   });
 });

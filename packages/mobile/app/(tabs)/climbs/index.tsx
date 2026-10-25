@@ -4,7 +4,7 @@ import { useListTopOffset } from '../../../src/hooks/use-list-top-offset';
 import { useListChromeClearance } from '../../../src/hooks/use-list-chrome-clearance';
 import { ScrollEdgeListReset, useScrollEdgeBackdrop } from '../../../src/hooks/use-scroll-edge-backdrop';
 import { useRefocusCount } from '../../../src/hooks/use-refocus-count';
-import { useTabRepress } from '../../../src/hooks/use-tab-repress';
+import { useTabReselect } from '../../../src/hooks/use-tab-reselect';
 import { useLiveClimbFilters, type ClimbFilterSelection } from '../../../src/hooks/use-live-climb-filters';
 import type { WindowAnchorPoint } from '../../../src/components/navigation/AnchoredPopover.types';
 import { memo, useState, useCallback, useMemo, useRef, useEffect } from 'react';
@@ -591,10 +591,8 @@ function ClimbListInner() {
   // The search tab no longer focuses the field on the tap that opens Climbs
   // (`disableAutomaticSearchActivation` in the tab layout). A second tap on the
   // tab, with the list already open, focuses it, like Apple Music.
-  const focusNativeSearch = useCallback(() => {
-    if (useNativeSearch) nativeSearchRef.current?.focus();
-  }, [useNativeSearch]);
-  useTabRepress(focusNativeSearch);
+  const focusNativeSearch = useCallback(() => nativeSearchRef.current?.focus(), []);
+  useTabReselect(focusNativeSearch);
 
   useEffect(() => {
     return () => {

@@ -135,6 +135,8 @@ export default function TabLayout() {
   // mount matches the reserved metrics.
   const onAccessoryHostRoute = useAccessoryHostRoute();
   const hasLiveSession = sessionId !== null;
+  // iOS 27 only: react-native-screens warns on every tab bar mount below it.
+  const prominentSearchTab = liquidGlassTabBar && Platform.OS === 'ios' && parseInt(String(Platform.Version), 10) >= 27;
   const showRecordBadge = isBluetoothConnected || hasLiveSession;
   const eagerMountRecord = Platform.OS === 'android';
   // Keep blurred tabs' native (Fabric) trees resident on Android so a tab switch is a
@@ -399,13 +401,13 @@ export default function TabLayout() {
       {/* Only the iOS 26 bar has a separated search slot. Since SDK 58 the search
           role is a UISearchTab that focuses its search field on the first tap; turn
           that off so the first tap shows the list and a second tap focuses the field
-          (`useTabRepress` in climbs/index.tsx), like Apple Music. Without activation
+          (`useTabReselect` in climbs/index.tsx), like Apple Music. Without activation
           iOS 27 puts the tab back inline, so `prominent` keeps it on its own surface. */}
       <NativeTabs.Trigger
         name="climbs"
         role={liquidGlassTabBar ? 'search' : undefined}
         disableAutomaticSearchActivation
-        prominent={liquidGlassTabBar}
+        prominent={prominentSearchTab}
       >
         <NativeTabs.Trigger.Icon sf={TAB_SF_SYMBOLS.climbs} md="search" />
         <NativeTabs.Trigger.Label>{t('mobile.nav.climbs')}</NativeTabs.Trigger.Label>

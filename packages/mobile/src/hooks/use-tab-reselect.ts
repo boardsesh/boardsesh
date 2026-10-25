@@ -17,7 +17,7 @@ type TabNavigation = NavigationProp<
 >;
 
 /**
- * Call `onRepress` when the climber taps this screen's tab while already looking
+ * Call `onReselect` when the climber taps this screen's tab while already looking
  * at this screen: the tab is selected and this screen is the top of its stack.
  * A tap that arrives from another tab, or from a route pushed on top (where the
  * native bar pops back to this screen), does not count.
@@ -25,10 +25,10 @@ type TabNavigation = NavigationProp<
  * Mount from the tab's root screen, where the parent navigator is the tab
  * navigator. The navigator emits `tabPress` before it acts on the press, so the
  * screen's focus at that moment says whether the tab was already open.
- * `onRepress` runs on the next frame, after the bar's own repeat-tap effects
+ * `onReselect` runs on the next frame, after the bar's own repeat-tap effects
  * (scroll to top) have started.
  */
-export function useTabRepress(onRepress: () => void): void {
+export function useTabReselect(onReselect: () => void): void {
   const navigation = useNavigation();
 
   useEffect(() => {
@@ -41,7 +41,7 @@ export function useTabRepress(onRepress: () => void): void {
       if (frame !== null) cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
         frame = null;
-        onRepress();
+        onReselect();
       });
     });
 
@@ -49,5 +49,5 @@ export function useTabRepress(onRepress: () => void): void {
       unsubscribe();
       if (frame !== null) cancelAnimationFrame(frame);
     };
-  }, [navigation, onRepress]);
+  }, [navigation, onReselect]);
 }
