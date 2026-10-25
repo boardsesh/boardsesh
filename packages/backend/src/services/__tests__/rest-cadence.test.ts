@@ -814,6 +814,96 @@ describe('applyRestCadenceAction', () => {
     });
   });
 
+  describe('autoAdvanceOnce: one advance, then the wall waits for a CONFIGURE', () => {
+    const fire = (previous: RestCadenceState, nowMs = NOW) =>
+      applyRestCadenceAction(previous, { action: 'FIRE', expectedRevision: 4 }, nowMs, ME);
+    // The 4x4 set rest: afterTick + tick, 90 s, the last rep ticked 90 s ago.
+    const SET_REST: RestCadenceConfig = { ...AFTER_TICK, advanceOn: 'tick', source: 'stage', autoAdvanceOnce: true };
+    const setRestDue = (overrides: Partial<RestCadenceState> = {}) =>
+      clock({
+        ...SET_REST,
+        anchorMs: NOW - 90_000,
+        lastTick: { queueItemUuid: 'rep-4', status: 'send' },
+        ...overrides,
+      });
+
+    it('ARM stores it from the config, and stores no key for a config without it', () => {
+      expect(next(reduce(null, { action: 'ARM', config: SET_REST }))?.autoAdvanceOnce).toBe(true);
+      expect(next(reduce(null, { action: 'ARM', config: AFTER_TICK }))).not.toHaveProperty('autoAdvanceOnce');
+      expect(
+        next(reduce(null, { action: 'ARM', config: { ...AFTER_TICK, autoAdvanceOnce: false } })),
+      ).not.toHaveProperty('autoAdvanceOnce');
+    });
+
+    it('CONFIGURE sets it from the input, so a CONFIGURE without it clears a stored one', () => {
+      expect(next(reduce(clock(), { action: 'CONFIGURE', config: SET_REST }))?.autoAdvanceOnce).toBe(true);
+      const once = clock({ autoAdvanceOnce: true });
+      expect(next(reduce(once, { action: 'CONFIGURE', config: AFTER_TICK }))).not.toHaveProperty('autoAdvanceOnce');
+      expect(
+        next(reduce(once, { action: 'CONFIGURE', config: { ...AFTER_TICK, autoAdvanceOnce: false } })),
+      ).not.toHaveProperty('autoAdvanceOnce');
+    });
+
+    it.each([
+      ['TICK', { action: 'TICK', tickQueueItemUuid: 'rep-1', tickStatus: 'send' }, clock()],
+      ['PAUSE', { action: 'PAUSE' }, clock()],
+      ['RESUME', { action: 'RESUME' }, clock({ isRunning: false, pausedElapsedSeconds: 20 })],
+      ['RESET', { action: 'RESET' }, clock()],
+    ] as const)('%s keeps it as it is', (_label, input, previous) => {
+      expect(next(reduce({ ...previous, autoAdvanceOnce: true }, input))?.autoAdvanceOnce).toBe(true);
+      expect(next(reduce(previous, input))).not.toHaveProperty('autoAdvanceOnce');
+    });
+
+    it('the FIRE that applies turns auto-advance off and drops the flag, in the same reduction', () => {
+      const fired = next(fire(setRestDue()));
+      expect(fired).toMatchObject({ autoAdvance: false, lastFiredBeatMs: NOW, anchorMs: null, lastTick: null });
+      expect(fired).not.toHaveProperty('autoAdvanceOnce');
+      // Without the flag the same FIRE leaves auto-advance on, as before.
+      expect(next(fire(setRestDue({ autoAdvanceOnce: undefined })))).toMatchObject({
+        autoAdvance: true,
+        lastFiredBeatMs: NOW,
+      });
+    });
+
+    it.each([
+      ['afterTick + deadline', clock({ anchorMs: NOW - 90_000, autoAdvanceOnce: true }), { anchorMs: NOW }],
+      [
+        'onTheMinute',
+        clock({ ...ON_THE_MINUTE, anchorMs: NOW - 60_000, autoAdvanceOnce: true }),
+        { anchorMs: NOW - 60_000 },
+      ],
+    ] as const)('%s: the anchor moves as it always does, and auto-advance goes off', (_label, previous, anchor) => {
+      expect(next(fire(previous))).toMatchObject({ ...anchor, autoAdvance: false, lastFiredBeatMs: NOW });
+    });
+
+    it('after it, a rest that runs out never fires; without the flag the same rest does', () => {
+      const fired = next(fire(setRestDue()))!;
+      // The first rep of the next set: a tick 10 s later starts a rest due at NOW + 100 s.
+      const ticked = next(
+        applyRestCadenceAction(
+          fired,
+          { action: 'TICK', tickQueueItemUuid: 'rep-1', tickStatus: 'send' },
+          NOW + 10_000,
+          PEER,
+        ),
+      )!;
+      expect(ticked).toMatchObject({ anchorMs: NOW + 10_000, autoAdvance: false });
+      expect(fire(ticked, NOW + 100_000)).toEqual({ applicable: false });
+      expect(fire({ ...ticked, autoAdvance: true }, NOW + 100_000).applicable).toBe(true);
+    });
+
+    it.each([
+      ['not due yet', setRestDue({ anchorMs: NOW - 30_000 })],
+      ['waiting for a tick', setRestDue({ anchorMs: null })],
+      ['paused', setRestDue({ isRunning: false })],
+      ['missing its tick', setRestDue({ lastTick: null })],
+      ['on a beat already fired', setRestDue({ lastFiredBeatMs: NOW })],
+    ])('a refused FIRE (%s) changes nothing, so the flag stays for the advance still to come', (_label, previous) => {
+      expect(previous.autoAdvanceOnce).toBe(true);
+      expect(fire(previous)).toEqual({ applicable: false });
+    });
+  });
+
   describe('PAUSE / RESUME / RESET', () => {
     it('PAUSE freezes the elapsed the phone reports, but never more than the shared clock has run', () => {
       // clock() has run 30 s.
@@ -1196,12 +1286,49 @@ describe('stored doc codec and wire projection', () => {
     expect(sameRestCadence(clock(), null)).toBe(false);
   });
 
+  describe('autoAdvanceOnce in the doc', () => {
+    it('round-trips a clock that holds it', () => {
+      const once = clock({ autoAdvanceOnce: true });
+      expect(parseRestCadence(serializeRestCadence(once))).toEqual(once);
+    });
+
+    it('stores a clock without it exactly as before, so a doc written before the flag reads back unchanged', () => {
+      const doc = serializeRestCadence(clock());
+      expect(doc).not.toContain('autoAdvanceOnce');
+      expect(serializeRestCadence(parseRestCadence(doc))).toBe(doc);
+      // A FIRE on a clock without it writes no key either.
+      const fired = applyRestCadenceAction(
+        clock({ anchorMs: NOW - 90_000 }),
+        { action: 'FIRE', expectedRevision: 1 },
+        NOW,
+        ME,
+      );
+      expect(serializeRestCadence(next(fired))).not.toContain('autoAdvanceOnce');
+    });
+
+    it('reads a doc whose flag is not a boolean as off', () => {
+      expect(parseRestCadence(JSON.stringify({ ...clock(), autoAdvanceOnce: 'yes' }))).toBeNull();
+      expect(parseRestCadence(JSON.stringify({ ...clock(), autoAdvanceOnce: null }))).toBeNull();
+    });
+
+    it('counts it in the comparison, with false the same as absent', () => {
+      expect(sameRestCadence(clock(), clock({ autoAdvanceOnce: true }))).toBe(false);
+      expect(sameRestCadence(clock(), clock({ autoAdvanceOnce: false }))).toBe(true);
+    });
+
+    it('goes on the wire as true or false, never missing', () => {
+      expect(toWireRestCadence(clock({ autoAdvanceOnce: true }))?.autoAdvanceOnce).toBe(true);
+      expect(toWireRestCadence(clock())?.autoAdvanceOnce).toBe(false);
+    });
+  });
+
   it('projects server epoch ms as decimal strings and the tick as two fields', () => {
     expect(
       toWireRestCadence(clock({ lastFiredBeatMs: NOW - 1, lastTick: { queueItemUuid: 'item-1', status: 'flash' } })),
     ).toEqual({
       __typename: 'SessionRestCadence',
       ...AFTER_TICK,
+      autoAdvanceOnce: false,
       isRunning: true,
       anchorAt: String(NOW - 30_000),
       pausedElapsedSeconds: 0,
@@ -1471,6 +1598,95 @@ describe('commitRestCadenceAction', () => {
         expect((await fireOnLatest(store, NOW + 100_000)).applied).toBe(true);
       },
     );
+  });
+
+  describe('autoAdvanceOnce: the FIRE that applies turns auto-advance off in its own write', () => {
+    // A 4x4 set rest after the last rep: afterTick + tick, 90 s, due at NOW.
+    const setRest = (autoAdvanceOnce?: boolean) =>
+      clock({
+        advanceOn: 'tick',
+        source: 'stage',
+        anchorMs: NOW - 90_000,
+        lastTick: { queueItemUuid: 'rep-4', status: 'send' },
+        ...(autoAdvanceOnce === undefined ? {} : { autoAdvanceOnce }),
+      });
+    const fireOnLatest = async (store: RestCadenceStore, nowMs: number) =>
+      commitRestCadenceAction(store, { action: 'FIRE', expectedRevision: (await store.read()).revision }, nowMs, PEER);
+    const tick = (store: RestCadenceStore, nowMs: number, queueItemUuid: string) =>
+      commitRestCadenceAction(
+        store,
+        { action: 'TICK', tickQueueItemUuid: queueItemUuid, tickStatus: 'send' },
+        nowMs,
+        ME,
+      );
+
+    it('writes auto-advance off with the beat, so the next set’s rest waits until a CONFIGURE turns it back on', async () => {
+      const { store, writes } = memoryStore({ revision: FLOOR, cadence: setRest(true) });
+      const fired = await fireOnLatest(store, NOW);
+      expect(fired.applied).toBe(true);
+      expect(writes).toHaveLength(1);
+      expect(parseRestCadence(writes[0])).toMatchObject({ autoAdvance: false, lastFiredBeatMs: NOW });
+      expect(writes[0]).not.toContain('autoAdvanceOnce');
+
+      // The builder's phone sleeps through the next set: a crewmate's tick starts a rest that runs out unclaimed.
+      await tick(store, NOW + 10_000, 'rep-1');
+      const unclaimed = await fireOnLatest(store, NOW + 100_000);
+      expect(unclaimed.applied).toBe(false);
+      expect(unclaimed.stored.cadence).toMatchObject({ autoAdvance: false, anchorMs: NOW + 10_000 });
+
+      // The builder's phone wakes and sends the set rest again: the next rest that runs out advances.
+      const configured = await commitRestCadenceAction(
+        store,
+        { action: 'CONFIGURE', config: { ...AFTER_TICK, advanceOn: 'tick', source: 'stage', autoAdvanceOnce: true } },
+        NOW + 101_000,
+        ME,
+      );
+      expect(configured.stored.cadence).toMatchObject({ autoAdvance: true, autoAdvanceOnce: true });
+      const advanced = await fireOnLatest(store, NOW + 102_000);
+      expect(advanced.applied).toBe(true);
+      expect(advanced.stored.cadence).toMatchObject({ autoAdvance: false, lastFiredBeatMs: NOW + 100_000 });
+    });
+
+    it('without the flag the same sequence advances on every rest, as before', async () => {
+      const { store } = memoryStore({ revision: FLOOR, cadence: setRest() });
+      expect((await fireOnLatest(store, NOW)).applied).toBe(true);
+      await tick(store, NOW + 10_000, 'rep-1');
+      const nextRest = await fireOnLatest(store, NOW + 100_000);
+      expect(nextRest.applied).toBe(true);
+      expect(nextRest.stored.cadence).toMatchObject({ autoAdvance: true, lastFiredBeatMs: NOW + 100_000 });
+    });
+
+    it('onTheMinute: the next beat is refused until a CONFIGURE turns auto-advance on, then the one after applies', async () => {
+      const { store } = memoryStore({
+        revision: FLOOR,
+        cadence: clock({ ...ON_THE_MINUTE, anchorMs: NOW - 60_000, autoAdvanceOnce: true }),
+      });
+      expect((await fireOnLatest(store, NOW)).applied).toBe(true);
+      expect((await fireOnLatest(store, NOW + 60_000)).applied).toBe(false);
+      await commitRestCadenceAction(store, { action: 'CONFIGURE', config: ON_THE_MINUTE }, NOW + 61_000, ME);
+      const nextBeat = await fireOnLatest(store, NOW + 120_000);
+      expect(nextBeat.applied).toBe(true);
+      // Configured without the flag: auto-advance stays on.
+      expect(nextBeat.stored.cadence).toMatchObject({ autoAdvance: true, lastFiredBeatMs: NOW + 120_000 });
+    });
+
+    it('a refused FIRE writes nothing and leaves the flag for the advance still to come', async () => {
+      const { store, writes } = memoryStore({ revision: FLOOR, cadence: setRest(true) });
+      const tooEarly = await fireOnLatest(store, NOW - REST_CADENCE_FIRE_EARLY_TOLERANCE_MS - 1);
+      const stale = await commitRestCadenceAction(store, { action: 'FIRE', expectedRevision: FLOOR - 1 }, NOW, PEER);
+      expect([tooEarly.applied, stale.applied]).toEqual([false, false]);
+      expect(writes).toEqual([]);
+      expect((await store.read()).cadence).toMatchObject({ autoAdvance: true, autoAdvanceOnce: true });
+      expect((await fireOnLatest(store, NOW)).applied).toBe(true);
+    });
+
+    it('lets exactly one of a burst of FIREs apply, and every loser sees auto-advance off', async () => {
+      const { store, writes } = memoryStore({ revision: FLOOR, cadence: setRest(true) });
+      const burst = await Promise.all(Array.from({ length: 8 }, (_, index) => fireOnLatest(store, NOW + index * 50)));
+      expect(burst.filter((commit) => commit.applied)).toHaveLength(1);
+      expect(writes).toHaveLength(1);
+      expect(burst.map((commit) => commit.stored.cadence?.autoAdvance)).toEqual(Array(8).fill(false));
+    });
   });
 
   it('gives up after a bounded number of lost races', async () => {

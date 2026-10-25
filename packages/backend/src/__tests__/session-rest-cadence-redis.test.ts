@@ -681,6 +681,150 @@ describe.skipIf(!redisAvailable)('crew rest clock storage on Redis', () => {
     }
   });
 
+  it('spends a once-only advance in the FIRE’s own write, the same on Redis and in memory', async () => {
+    const sessionId = newSessionId();
+    const onRedis = new RoomManager();
+    await onRedis.initialize(instanceOneRedis);
+    const inMemory = new RoomManager();
+    // A 4x4 set rest: afterTick + tick, 90 s; the builder's phone counts the reps.
+    const setRest = {
+      mode: 'afterTick',
+      targetSeconds: 90,
+      autoAdvance: true,
+      autoAdvanceOnce: true,
+      advanceOn: 'tick',
+      source: 'stage',
+    } as const;
+    const midSet = { ...setRest, autoAdvance: false, autoAdvanceOnce: undefined } as const;
+    const steps: Array<{ nowMs: number; input: RestCadenceInput }> = [
+      // Mid-set: auto-advance off. The last rep's send, then the set rest after it.
+      { nowMs: NOW, input: { action: 'ARM', config: midSet } },
+      { nowMs: NOW, input: { action: 'TICK', tickQueueItemUuid: 'rep-4', tickStatus: 'send' } },
+      { nowMs: NOW, input: { action: 'CONFIGURE', config: setRest } },
+      // Too early: refused, and the flag stays.
+      { nowMs: NOW + 60_000, input: { action: 'FIRE' } },
+      // The rest runs out: the advance applies and turns auto-advance off in the same write.
+      { nowMs: NOW + 90_000, input: { action: 'FIRE' } },
+      // The builder's phone sleeps: a crewmate's rep starts the next rest, which runs out unclaimed.
+      { nowMs: NOW + 100_000, input: { action: 'TICK', tickQueueItemUuid: 'rep-1', tickStatus: 'send' } },
+      { nowMs: NOW + 190_000, input: { action: 'FIRE' } },
+      // PAUSE, RESUME and RESET leave auto-advance where it is.
+      { nowMs: NOW + 191_000, input: { action: 'PAUSE' } },
+      { nowMs: NOW + 192_000, input: { action: 'RESUME' } },
+      { nowMs: NOW + 193_000, input: { action: 'RESET' } },
+      { nowMs: NOW + 194_000, input: { action: 'TICK', tickQueueItemUuid: 'rep-2', tickStatus: 'send' } },
+      { nowMs: NOW + 284_000, input: { action: 'FIRE' } },
+      // The builder's phone wakes and sends the set rest again: the next rest that runs out advances, once.
+      { nowMs: NOW + 285_000, input: { action: 'CONFIGURE', config: setRest } },
+      { nowMs: NOW + 286_000, input: { action: 'FIRE' } },
+      { nowMs: NOW + 290_000, input: { action: 'TICK', tickQueueItemUuid: 'rep-3', tickStatus: 'send' } },
+      { nowMs: NOW + 380_000, input: { action: 'FIRE' } },
+      // Without the flag auto-advance stays on, as before.
+      { nowMs: NOW + 381_000, input: { action: 'CONFIGURE', config: { ...setRest, autoAdvanceOnce: false } } },
+      { nowMs: NOW + 382_000, input: { action: 'FIRE' } },
+      { nowMs: NOW + 390_000, input: { action: 'TICK', tickQueueItemUuid: 'rep-4', tickStatus: 'send' } },
+      { nowMs: NOW + 480_000, input: { action: 'FIRE' } },
+    ];
+    const run = async (manager: RoomManager) => {
+      const outcomes = [];
+      for (const { nowMs, input } of steps) {
+        const fenced =
+          input.action === 'FIRE'
+            ? { ...input, expectedRevision: (await manager.getSessionRestCadence(sessionId)).revision }
+            : input;
+        outcomes.push(await manager.updateSessionRestCadence(sessionId, fenced, 'phone', nowMs));
+      }
+      return outcomes;
+    };
+    try {
+      const redisOutcomes = await run(onRedis);
+      const memoryOutcomes = await run(inMemory);
+      expect(redisOutcomes.map((commit) => commit.applied)).toEqual([
+        // ARM, TICK, CONFIGURE, FIRE too early, FIRE on time.
+        true,
+        true,
+        true,
+        false,
+        true,
+        // TICK, FIRE with auto-advance off.
+        true,
+        false,
+        // PAUSE, RESUME, RESET, TICK, FIRE with auto-advance still off.
+        true,
+        true,
+        true,
+        true,
+        false,
+        // CONFIGURE, FIRE (applies, 2 s late), TICK, the next rest's FIRE refused.
+        true,
+        true,
+        true,
+        false,
+        // CONFIGURE without the flag, FIRE, TICK, the next rest's FIRE applies.
+        true,
+        true,
+        true,
+        true,
+      ]);
+      const stored = redisOutcomes.map((commit) => commit.stored.cadence);
+      expect(stored.map((cadence) => cadence?.autoAdvance)).toEqual([
+        false,
+        false,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        true,
+        true,
+        true,
+        true,
+      ]);
+      expect(stored.map((cadence) => cadence?.autoAdvanceOnce === true)).toEqual([
+        false,
+        false,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+      ]);
+      expect(stored[4]).toMatchObject({ lastFiredBeatMs: NOW + 90_000, anchorMs: null, lastTick: null });
+      expect(stored[13]?.lastFiredBeatMs).toBe(NOW + 284_000);
+      expect(stored[19]?.lastFiredBeatMs).toBe(NOW + 480_000);
+      // The doc on Redis holds the flag only while it is true.
+      const raw = await instanceOneRedis.hget(KEYS.sessionRestCadence(sessionId), 'doc');
+      expect(raw).not.toContain('autoAdvanceOnce');
+      expect(memoryOutcomes).toEqual(redisOutcomes);
+    } finally {
+      await onRedis.shutdown();
+      onRedis.reset();
+      inMemory.reset();
+    }
+  });
+
   it('gives racing un-fenced writes from two instances distinct, increasing revisions', async () => {
     const sessionId = newSessionId();
     await instanceOne.casSessionRestCadence(sessionId, 0, serializeRestCadence(CLOCK), NO_FLOOR);

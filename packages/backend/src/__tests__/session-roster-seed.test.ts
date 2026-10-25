@@ -13,8 +13,9 @@
 // The crew rest clock (#5382) rides the same subscription: its seed is ALWAYS
 // the second event, so the last describe block below proves the seed, live
 // delivery between two members, the re-seed on resubscribe, the one-FIRE-per-
-// beat claim over the wire, and that an installed app's document (no fragment
-// for the new type) keeps its subscription working.
+// beat claim over the wire, a once-only clock turning auto-advance off for the
+// crew, and that an installed app's document (no fragment for the new type)
+// keeps its subscription working.
 
 import { describe, it, expect, beforeAll, afterAll } from 'vite-plus/test';
 import { randomUUID } from 'crypto';
@@ -237,6 +238,38 @@ describe('sessionUpdates roster seed ↔ real backend (#2860)', () => {
           label: 'the write after the FIREs',
         });
         expect(alex.restCadenceEvents.filter((event) => event.action === 'FIRE')).toHaveLength(1);
+      } finally {
+        await blake.dispose();
+        await alex.dispose();
+      }
+    }, 30_000);
+
+    it('turns auto-advance off for the whole crew when a once-only clock’s FIRE lands', async () => {
+      const sessionId = `rest-once-${randomUUID().slice(0, 8)}`;
+      const alex = new HeadlessParticipant(backend.url, sessionId, 'Alex');
+      const blake = new HeadlessParticipant(backend.url, sessionId, 'Blake');
+      try {
+        await alex.join();
+        await blake.join();
+        // Alex's phone built the 4x4 and sends the set rest; Blake's phone holds the board.
+        const armed = await alex.setRestCadence({
+          action: 'ARM',
+          config: { ...SETTINGS_CONFIG, autoAdvanceOnce: true },
+          elapsedMs: 90_000,
+        });
+        expect(armed.applied).toBe(true);
+        expect(armed.change.restCadence?.autoAdvance).toBe(true);
+
+        const fired = await blake.setRestCadence({ action: 'FIRE', expectedRevision: armed.change.revision });
+        expect(fired.applied).toBe(true);
+        expect(fired.change.restCadence?.autoAdvance).toBe(false);
+        await waitFor(() => alex.restCadenceEvents.some((event) => event.revision === fired.change.revision), {
+          label: 'Alex hears the advance',
+        });
+        expect(alex.restCadenceEvents.find((event) => event.revision === fired.change.revision)).toMatchObject({
+          action: 'FIRE',
+          restCadence: { autoAdvance: false },
+        });
       } finally {
         await blake.dispose();
         await alex.dispose();

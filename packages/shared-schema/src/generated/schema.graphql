@@ -10237,7 +10237,9 @@ enum SessionRestCadenceAction {
   """
   The board holder's auto-advance fired. Compare-and-set: expectedRevision is
   required. Applies once per beat: only when the stored clock's latest due
-  beat (counted from 2 s before it) is later than lastFiredBeatAt.
+  beat (counted from 2 s before it) is later than lastFiredBeatAt. On a
+  clock with autoAdvanceOnce, the FIRE that applies also turns autoAdvance
+  off.
   """
   FIRE
   "Freeze the clock at pausedElapsedSeconds."
@@ -10277,6 +10279,14 @@ type SessionRestCadence {
   targetSeconds: Int
   "Whether the board holder advances the wall when the rest runs out"
   autoAdvance: Boolean!
+  """
+  True while the clock may advance the wall one more time only: the FIRE that
+  applies turns autoAdvance off and this back to false in the same write, so
+  the wall waits until a CONFIGURE turns auto-advance on again. This backend
+  always sends true or false; treat null (an event from an older instance) as
+  false.
+  """
+  autoAdvanceOnce: Boolean
   "'deadline' (advance when the rest runs out), 'tick' (only after a tick on the current climb) or 'send' (only after a flash or send on it)"
   advanceOn: String!
   "'settings' (someone's rest timer settings) or 'stage' (a workout stage's pacing)"
@@ -10331,6 +10341,13 @@ input SessionRestCadenceConfigInput {
   "Rest length in seconds, or null for Off. afterTick 10..3600, onTheMinute 15..3600."
   targetSeconds: Int
   autoAdvance: Boolean!
+  """
+  True: advance the wall once, then switch auto-advance off until a
+  CONFIGURE turns it back on (a 4x4 set's rest after its last rep). Omitted
+  or null means false: auto-advance stays on after every advance. ARM and
+  CONFIGURE store it as sent, so a CONFIGURE without it clears it.
+  """
+  autoAdvanceOnce: Boolean
   "'deadline', 'tick' or 'send'"
   advanceOn: String!
   "'settings' or 'stage'"
