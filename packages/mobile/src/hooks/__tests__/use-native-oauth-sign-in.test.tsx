@@ -208,6 +208,28 @@ describe('useNativeOAuthSignIn — Google web fallback (iOS)', () => {
     // A browser that never opened is a failure, not the user backing out.
     expect(events).not.toContainEqual(expect.objectContaining({ event: 'Login Cancelled', flow: 'web_fallback' }));
   });
+
+  it('tells the climber the server is slow when the web-fallback exchange timed out (#5852)', async () => {
+    signInWithGoogleMock.mockRejectedValue(new Error('Unable to open Safari'));
+    signInWithGoogleWebMock.mockResolvedValue({
+      success: false,
+      status: null,
+      error: 'network',
+      networkCause: 'timeout',
+    });
+
+    const setError = await runSignIn('google');
+
+    expect(setError).toHaveBeenLastCalledWith('nativeStart.slowServerError');
+    expect(trackMock).toHaveBeenCalledWith(
+      'Login Failed',
+      expect.objectContaining({ flow: 'web_fallback', failure_detail: 'network', network_cause: 'timeout' }),
+    );
+    expect(reportErrorMock).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({ extra: expect.objectContaining({ network_cause: 'timeout' }) }),
+    );
+  });
 });
 
 describe('useNativeOAuthSignIn — Expo web redirect', () => {
