@@ -306,7 +306,8 @@ jitter sideways.
 **Button sizes and weights.** `size="large"` is for the single filled call to action of a
 full-screen form, gate or dead end: auth submits, "Sign in to join", the retry on a full-screen
 error (Join, session unavailable, spray scan), send recovery. The tick action bar and the rest
-timer's transport row are large too. Everything else is `medium`: empty states and retries inside
+timer's transport row are large too; on iOS a `large` button with a numeric pinned `height` draws at
+`.regular` control size (with a `body` label) so the pin sets the height (#5663). Everything else is `medium`: empty states and retries inside
 a tab, buttons in sheets, secondary actions, and a dismiss like Done on a dead end. Use `small`
 inside cards. On iOS the label is semibold when the drawn style is prominent (filled, or an
 outlined/tonal button drawn as a solid scrim pill over board art) and regular otherwise. On
