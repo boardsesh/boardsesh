@@ -156,16 +156,16 @@ describe('resolveClimbRenderBoard', () => {
     expect(result?.boardConfig.sizeId).toBe(1);
   });
 
-  it('keeps the layout default for a Woods climb that names no sizes', () => {
-    // No compatibility data (a legacy row, or unpopulated columns) imposes no
-    // constraint — today's 12x12 default stands.
-    const result = resolveClimbRenderBoard(
-      { boardType: 'woods', layoutId: 1, angle: 40, frames: '' },
-      knownBoard('kilter', 1),
-    );
+  it('does not guess the 12x12 for a Woods climb that names no sizes', () => {
+    // No compatibility data (a legacy row, or unpopulated columns) gives no
+    // Woods size to draw on, and the 12x12 would show an 8x10 climb as different
+    // holds (#5241). With no board of its own, the climb stays on the active one.
+    const activeBoard = knownBoard('kilter', 1);
+    const result = resolveClimbRenderBoard({ boardType: 'woods', layoutId: 1, angle: 40, frames: '' }, activeBoard);
 
-    expect(result?.boardConfig.boardName).toBe('woods');
-    expect(result?.boardConfig.sizeId).toBe(2);
+    expect(result?.boardConfig).toBe(activeBoard);
+    expect(result?.incompatible).toBe(false);
+    expect(resolveClimbRenderBoard({ boardType: 'woods', layoutId: 1, angle: 40, frames: '' }, null)).toBeNull();
   });
 
   it('resolves the climb own board when there is no active board yet', () => {

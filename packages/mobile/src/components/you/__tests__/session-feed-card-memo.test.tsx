@@ -66,18 +66,11 @@ vi.mock('../../../lib/haptics', () => ({ hapticLight: vi.fn(), hapticMedium: vi.
 
 vi.mock('../../../lib/beta-video-url', () => ({ mapBetaLink: () => null }));
 vi.mock('../../../lib/open-external-link', () => ({ openValidatedUrl: vi.fn() }));
-vi.mock('../../../lib/playlists/board-details-for-playlist', () => ({
+// The real `renderBoardToPlaylistConfig`, so the test cannot drift from it
+// (a server-resolved renderBoard wins; Woods with none draws a plain tile).
+vi.mock('../../../lib/playlists/board-details-for-playlist', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../lib/playlists/board-details-for-playlist')>()),
   getBoardConfigForPlaylist: () => null,
-  // Mirrors the real helper: a server-resolved renderBoard wins; otherwise the
-  // layout default (always the Woods 12x12, sizeId 2).
-  renderBoardToPlaylistConfig: (
-    boardType: string,
-    layoutId: number | null,
-    renderBoard: { layoutId: number; sizeId: number; setIds: number[] } | null | undefined,
-  ) =>
-    renderBoard
-      ? { boardName: boardType, ...renderBoard }
-      : { boardName: boardType, layoutId: layoutId ?? 1, sizeId: 2, setIds: [1] },
 }));
 vi.mock('../../../lib/tick-to-climb', () => ({ tickToClimb: heroMocks.tickToClimb }));
 
