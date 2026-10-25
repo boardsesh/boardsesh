@@ -5,8 +5,9 @@ import { useMemo, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ClimbSearchInput } from '@boardsesh/shared-schema';
 import type { ReadyBoardArtSnapshot } from '../../board-render/ready-board-art';
-import type { Climb, ClimbQueueItem } from '@boardsesh/queue';
-import { computeNavigationStateWithSuggestions } from '@boardsesh/play-view';
+import { createPlaylistSuggestionSource } from '@boardsesh/queue';
+import type { Climb, ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
+import { computeNavigationStateWithSuggestions, findNextQueueItemWithSuggestions } from '@boardsesh/play-view';
 import type { UsePlaylistClimbActivationOptions } from '@boardsesh/playlists-react';
 import { MAX_PLAYLIST_QUEUE_REPLACE_PAGES } from '@boardsesh/playlists-react/fetch-playlist-suggestion-climbs';
 import {
@@ -1526,20 +1527,166 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
         appendedCount: 2,
       });
       expect(mocks.showQueueAddedSnackbar).toHaveBeenCalledWith({ kind: 'added', count: 2 });
-      // And the climb they tapped opens, playing from the list.
-      expect(mocks.activate).toHaveBeenCalledWith(tapped);
+      // And the climb they tapped opens, next in the queue.
       expect(mocks.openPlayDrawer).toHaveBeenCalledWith(tapped, { committedExternally: true });
+      expect(mocks.activate).not.toHaveBeenCalled();
 
-      // Its commit is a queued climb, not a browse-origin one, and it sets the
-      // track on its own so the reducer's suggested-after-current prune leaves
-      // the climbs the prompt promised to keep alone.
-      const source = { playlistUuid: 'playlist:pl-1', activatedClimbUuid: 'b', boardKey: 'kilter:1:2:3', climbs: [] };
-      const dispatched = await captured().queueApi!.setCurrentClimb(tapped, { playlistSuggestionSource: source });
+      // Its commit is a queued climb, not a browse-origin one, and carries no
+      // track: the swipes walk the queue the prompt kept, and a commit without
+      // a track prunes none of it.
+      expect(mocks.setCurrentClimb).toHaveBeenCalledTimes(1);
+      const [dispatched, commitOptions] = mocks.setCurrentClimb.mock.calls[0];
       expect(dispatched).toMatchObject({ climb: tapped });
-      expect(dispatched?.suggested).toBeUndefined();
-      expect(mocks.setPlaylistSuggestionSource).toHaveBeenCalledWith(source);
-      expect(mocks.setCurrentClimb).toHaveBeenCalledExactlyOnceWith(dispatched, {
-        playlistSuggestionSource: undefined,
+      expect(dispatched.suggested).toBeUndefined();
+      expect(commitOptions).toEqual({ playlistSuggestionSource: null });
+    });
+
+    describe('swiping on after "Add to queue"', () => {
+      // A queue that behaves like the provider's: a commit slots its climb in
+      // after the current one (or moves to it when it is already queued), a
+      // batch lands at the tail, and a track is kept when one is handed over.
+      function simulateQueue() {
+        mocks.setCurrentClimb.mockImplementation(
+          (item: ClimbQueueItem, options?: { playlistSuggestionSource?: SuggestionSource }) => {
+            if (options?.playlistSuggestionSource !== undefined) {
+              mocks.suggestionSource = options.playlistSuggestionSource;
+            }
+            const { queue, currentClimbQueueItem } = mocks.queueState;
+            if (queue.some(({ uuid }) => uuid === item.uuid)) {
+              mocks.queueState = { queue, currentClimbQueueItem: item };
+              return;
+            }
+            const currentIndex = currentClimbQueueItem ? queue.indexOf(currentClimbQueueItem) : -1;
+            mocks.queueState = {
+              queue: [...queue.slice(0, currentIndex + 1), item, ...queue.slice(currentIndex + 1)],
+              currentClimbQueueItem: item,
+            };
+          },
+        );
+        mocks.setPlaylistSuggestionSource.mockImplementation((source: SuggestionSource) => {
+          mocks.suggestionSource = source;
+        });
+        mocks.appendQueueItems.mockImplementation((items: ClimbQueueItem[]) => {
+          mocks.queueState = { ...mocks.queueState, queue: [...mocks.queueState.queue, ...items] };
+          return items.length;
+        });
+        // The shared hook's commit: the tapped climb, with the list as its track.
+        mocks.activate.mockImplementation(async (climb: Climb) => {
+          const { queueApi, allClimbs } = captured();
+          await queueApi!.setCurrentClimb(climb, {
+            playlistSuggestionSource: createPlaylistSuggestionSource({
+              playlistUuid: 'playlist:pl-1',
+              activatedClimb: climb,
+              climbs: allClimbs,
+              boardKey: 'kilter:1:2:3',
+            }),
+          });
+        });
+      }
+
+      // Next, the way the drawer does it: the target the player shows, and a
+      // peek of a list climb that is not queued gets committed after the current.
+      function swipeNext() {
+        const next = findNextQueueItemWithSuggestions(
+          mocks.queueState.queue,
+          mocks.queueState.currentClimbQueueItem,
+          mocks.suggestionSource as unknown as PlaylistSuggestionSource | null,
+        );
+        if (!next) throw new Error('nothing to swipe to');
+        mocks.setCurrentClimb(next);
+      }
+
+      function queuedClimbUuids(): string[] {
+        return mocks.queueState.queue.map(({ climb }) => climb.uuid);
+      }
+
+      it('walks the kept queue and then the list, queueing no climb twice', async () => {
+        simulateQueue();
+        const current = makeQueueItem('q-current', 'current');
+        const kept = makeQueueItem('q-kept', 'kept');
+        mocks.queueState = { queue: [current, kept], currentClimbQueueItem: current };
+        const list = ['a', 'b', 'c', 'd'].map((uuid) => makeClimb(uuid));
+        mocks.choose.mockResolvedValue('append');
+        const { result } = renderActivation(vi.fn().mockResolvedValue({ climbs: list, hasMore: false }), {
+          replaceQueueOnActivate: true,
+          allClimbs: list,
+        });
+
+        await act(async () => {
+          await result.current.activate(list[1]);
+        });
+        await waitFor(() => expect(queuedClimbUuids()).toEqual(['current', 'b', 'kept', 'a', 'c', 'd']));
+        expect(mocks.queueState.currentClimbQueueItem?.climb.uuid).toBe('b');
+
+        swipeNext();
+        swipeNext();
+
+        expect(mocks.queueState.currentClimbQueueItem?.climb.uuid).toBe('a');
+        expect(queuedClimbUuids()).toEqual(['current', 'b', 'kept', 'a', 'c', 'd']);
+      });
+
+      it('walks the queue after the second prompt too', async () => {
+        simulateQueue();
+        const list = ['a', 'b', 'c', 'd'].map((uuid) => makeClimb(uuid));
+        let releaseFetch: (page: { climbs: Climb[]; hasMore: boolean }) => void = () => {};
+        const fetchPage = vi.fn(
+          () =>
+            new Promise<{ climbs: Climb[]; hasMore: boolean }>((resolve) => {
+              releaseFetch = resolve;
+            }),
+        );
+        mocks.choose.mockResolvedValue('append');
+        const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true, allClimbs: list });
+        let activation: Promise<void> = Promise.resolve();
+        act(() => {
+          activation = result.current.activate(list[1]);
+        });
+        // A climb lands while the list loads, so the prompt comes up once it has.
+        mocks.appendQueueItems([makeQueueItem('q-landed', 'landed')]);
+
+        await act(async () => {
+          releaseFetch({ climbs: list, hasMore: false });
+          await activation;
+        });
+        expect(mocks.choose).toHaveBeenCalledTimes(1);
+        expect(queuedClimbUuids()).toEqual(['b', 'landed', 'a', 'c', 'd']);
+
+        swipeNext();
+        swipeNext();
+
+        expect(mocks.queueState.currentClimbQueueItem?.climb.uuid).toBe('a');
+        expect(queuedClimbUuids()).toEqual(['b', 'landed', 'a', 'c', 'd']);
+      });
+
+      it('leaves the track of a list the climber moved to while this one loaded', async () => {
+        simulateQueue();
+        const list = ['a', 'b', 'c'].map((uuid) => makeClimb(uuid));
+        let releaseFetch: (page: { climbs: Climb[]; hasMore: boolean }) => void = () => {};
+        const fetchPage = vi.fn(
+          () =>
+            new Promise<{ climbs: Climb[]; hasMore: boolean }>((resolve) => {
+              releaseFetch = resolve;
+            }),
+        );
+        mocks.choose.mockResolvedValue('append');
+        const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true, allClimbs: list });
+        let activation: Promise<void> = Promise.resolve();
+        act(() => {
+          activation = result.current.activate(list[1]);
+        });
+        mocks.appendQueueItems([makeQueueItem('q-landed', 'landed')]);
+        const otherTrack = { playlistUuid: 'playlist:other', activatedClimbUuid: 'landed', boardKey: 'kilter:1:2:3' };
+        mocks.suggestionSource = otherTrack;
+        mocks.setPlaylistSuggestionSource.mockClear();
+
+        await act(async () => {
+          releaseFetch({ climbs: list, hasMore: false });
+          await activation;
+        });
+
+        expect(mocks.choose).toHaveBeenCalledTimes(1);
+        expect(mocks.setPlaylistSuggestionSource).not.toHaveBeenCalledWith(null);
+        expect(mocks.suggestionSource).toBe(otherTrack);
       });
     });
 
