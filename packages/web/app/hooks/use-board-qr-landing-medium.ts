@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { GymQrMedium } from '@boardsesh/analytics';
-import { readBoardQrLandingMedium } from '@/app/lib/board-qr-landing';
+import { captureBoardQrLandingMedium } from '@/app/lib/board-qr-landing';
 
 /**
  * The printed medium this board page was reached through, for a store button's
@@ -19,7 +19,7 @@ import { readBoardQrLandingMedium } from '@/app/lib/board-qr-landing';
 export function useBoardQrLandingMedium(enabled = true): GymQrMedium | null {
   const [landingMedium, setLandingMedium] = useState<GymQrMedium | null>(null);
   useEffect(() => {
-    if (enabled) setLandingMedium(readBoardQrLandingMedium());
+    if (enabled) setLandingMedium(captureBoardQrLandingMedium());
   }, [enabled]);
   return enabled ? landingMedium : null;
 }

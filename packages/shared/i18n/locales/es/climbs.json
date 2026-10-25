@@ -1060,6 +1060,7 @@
       "photoAlt": "El Spraywall {{wallName}}",
       "openInApp": "Abre este Spraywall en la app de Boardsesh para ver sus bloques, equipar los tuyos y registrar tus ascensiones.",
       "openButton": "Abrir en la app",
+      "haveApp": "¿Ya tienes Boardsesh?",
       "install": {
         "helper": "¿Aún no tienes la app? Descárgala y escala en este Spraywall.",
         "scanAgain": "¿Acabas de instalarla? Vuelve a escanear el código para abrir este Spraywall."

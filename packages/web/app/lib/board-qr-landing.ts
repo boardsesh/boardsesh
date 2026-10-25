@@ -39,14 +39,19 @@ export function searchToGymQrParams(search: string): GymQrSearchParams {
 }
 
 /**
- * The printed medium this page was reached through, or `null` for a visit that
- * did not come off a code, and always `null` on the server.
+ * Capture a QR landing from the address bar, then return the printed medium
+ * this page was reached through: `null` for a visit that did not come off a
+ * code, and always `null` on the server.
+ *
+ * Not a pure read, on purpose. When the URL carries a valid pair it is stored
+ * for this pathname, replacing any earlier landing, so a call after the
+ * tracker's strip still gets the medium. Call it before stripping.
  *
  * The answer belongs to the page the code opened. A later client-side visit to
  * another page reads `null` there, and coming back to the scanned page reads
  * the medium again, which the tracker's own dedupe keeps from counting twice.
  */
-export function readBoardQrLandingMedium(): GymQrMedium | null {
+export function captureBoardQrLandingMedium(): GymQrMedium | null {
   if (typeof window === 'undefined') return null;
   const { pathname, search } = window.location;
   const landing = parseGymQrLanding(searchToGymQrParams(search));

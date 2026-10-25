@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import { boardQrScanned, stripGymQrParams } from '@boardsesh/analytics';
 import { useConsent } from '@/app/components/consent/consent-provider';
 import { track } from '@/app/lib/analytics';
-import { readBoardQrLandingMedium } from '@/app/lib/board-qr-landing';
+import { captureBoardQrLandingMedium } from '@/app/lib/board-qr-landing';
 
 type BoardQrLandingTrackerProps = {
   /** The board's type. Never its slug, name or uuid: `Board QR Scanned` names no board. */
@@ -35,7 +35,7 @@ export function __resetReportedBoardQrLandingsForTests(): void {
  *
  * Unlike `GymQrLandingTracker`, the medium is read here in the browser and not
  * passed by the server: this page's HTML is shared at the edge, so it cannot
- * know whether this visit came off a code. `readBoardQrLandingMedium` applies
+ * know whether this visit came off a code. `captureBoardQrLandingMedium` applies
  * the same strict `parseGymQrLanding` and remembers the answer for this page.
  *
  * Two effects, because the two jobs wait for different things:
@@ -57,7 +57,7 @@ export default function BoardQrLandingTracker({ boardType }: BoardQrLandingTrack
 
   useEffect(() => {
     // Read before the strip below runs, so the landing is remembered for this page.
-    if (!readBoardQrLandingMedium()) return;
+    if (!captureBoardQrLandingMedium()) return;
 
     const stripTimer = setTimeout(() => {
       const cleanedSearch = stripGymQrParams(window.location.search);
@@ -70,7 +70,7 @@ export default function BoardQrLandingTracker({ boardType }: BoardQrLandingTrack
 
   useEffect(() => {
     if (!granted) return;
-    const medium = readBoardQrLandingMedium();
+    const medium = captureBoardQrLandingMedium();
     if (!medium) return;
 
     const landingKey = window.location.pathname;

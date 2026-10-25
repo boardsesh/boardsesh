@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
 import { render } from '@testing-library/react';
 import React from 'react';
-import { __resetBoardQrLandingForTests, readBoardQrLandingMedium } from '@/app/lib/board-qr-landing';
+import { __resetBoardQrLandingForTests, captureBoardQrLandingMedium } from '@/app/lib/board-qr-landing';
 
 const track = vi.hoisted(() => vi.fn());
 vi.mock('@/app/lib/analytics', () => ({ track }));
@@ -185,6 +185,6 @@ describe('BoardQrLandingTracker', () => {
     flushStrip();
 
     expect(window.location.search).toBe(`?wall=${WALL_UUID}`);
-    expect(readBoardQrLandingMedium()).toBe('board');
+    expect(captureBoardQrLandingMedium()).toBe('board');
   });
 });

@@ -226,7 +226,7 @@ catalogue board list. Three ways it differs from the gym tracker:
 
 - **It reads the pair in the browser.** The list page's HTML is stored at the
   edge with a shared `s-maxage`, so the server cannot say whether this visit came
-  off a code. `readBoardQrLandingMedium` (`app/lib/board-qr-landing.ts`) parses
+  off a code. `captureBoardQrLandingMedium` (`app/lib/board-qr-landing.ts`) parses
   `window.location.search` with the same strict `parseGymQrLanding` and
   remembers the answer for that page, so the store buttons can still read it
   after the strip.

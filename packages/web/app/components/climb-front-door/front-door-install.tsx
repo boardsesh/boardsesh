@@ -1,7 +1,10 @@
 import React from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
-import StoreInstallButtons, { type StoreButtonLabels } from '@/app/components/marketing/store-install-buttons';
+import StoreInstallButtons, {
+  type StoreButtonAppearance,
+  type StoreButtonLabels,
+} from '@/app/components/marketing/store-install-buttons';
 import type { AppInstallPlacement } from '@/app/lib/app-install-event';
 import { themeTokens } from '@/app/theme/theme-config';
 
@@ -12,6 +15,12 @@ type FrontDoorInstallProps = {
   labels: StoreButtonLabels;
   /** The page a printed board code lands on: the link id names the code after a scan. See `StoreInstallButtons`. */
   qrLanding?: boolean;
+  /**
+   * `plain` (outlined) under a filled hand-off, the default. `brand` where the
+   * store IS the primary action: a Spraywall's page, which a poster scan
+   * reaches mostly on phones with no app.
+   */
+  appearance?: StoreButtonAppearance;
 };
 
 const wrapperSx = {
@@ -42,7 +51,13 @@ const helperSx = { color: 'var(--neutral-400)' };
  * No hooks and no data here: the wrapper is plain markup a server component can
  * render, and the only client code is the `StoreInstallButtons` island.
  */
-export default function FrontDoorInstall({ placement, helperText, labels, qrLanding = false }: FrontDoorInstallProps) {
+export default function FrontDoorInstall({
+  placement,
+  helperText,
+  labels,
+  qrLanding = false,
+  appearance = 'plain',
+}: FrontDoorInstallProps) {
   return (
     <Box sx={wrapperSx}>
       <Typography variant="body2" sx={helperSx}>
@@ -51,7 +66,7 @@ export default function FrontDoorInstall({ placement, helperText, labels, qrLand
       <StoreInstallButtons
         placement={placement}
         labels={labels}
-        appearance="plain"
+        appearance={appearance}
         align="start"
         sharedHtml
         qrLanding={qrLanding}

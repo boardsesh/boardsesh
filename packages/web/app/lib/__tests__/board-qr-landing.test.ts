@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vite-plus/test';
-import { __resetBoardQrLandingForTests, readBoardQrLandingMedium, searchToGymQrParams } from '../board-qr-landing';
+import { __resetBoardQrLandingForTests, captureBoardQrLandingMedium, searchToGymQrParams } from '../board-qr-landing';
 
 beforeEach(() => {
   __resetBoardQrLandingForTests();
@@ -20,11 +20,11 @@ describe('searchToGymQrParams', () => {
   });
 });
 
-describe('readBoardQrLandingMedium', () => {
+describe('captureBoardQrLandingMedium', () => {
   it('reads the medium of a scan off the address bar', () => {
     window.history.replaceState(null, '', '/b/garage-wall/40/list?src=qr&medium=board');
 
-    expect(readBoardQrLandingMedium()).toBe('board');
+    expect(captureBoardQrLandingMedium()).toBe('board');
   });
 
   it('reads null for a plain visit and for anything the parser refuses', () => {
@@ -37,36 +37,36 @@ describe('readBoardQrLandingMedium', () => {
     ]) {
       __resetBoardQrLandingForTests();
       window.history.replaceState(null, '', `/b/garage-wall/40/list${search}`);
-      expect(readBoardQrLandingMedium(), search).toBeNull();
+      expect(captureBoardQrLandingMedium(), search).toBeNull();
     }
   });
 
   it('remembers the scan on its page after the pair has left the address bar', () => {
     window.history.replaceState(null, '', '/b/garage-wall/40/list?src=qr&medium=board&wall=abc');
-    expect(readBoardQrLandingMedium()).toBe('board');
+    expect(captureBoardQrLandingMedium()).toBe('board');
 
     window.history.replaceState(null, '', '/b/garage-wall/40/list?wall=abc');
 
-    expect(readBoardQrLandingMedium()).toBe('board');
+    expect(captureBoardQrLandingMedium()).toBe('board');
   });
 
   it('answers null on another page, and the scan again back on its own', () => {
     window.history.replaceState(null, '', '/b/garage-wall/40/list?src=qr&medium=board');
-    readBoardQrLandingMedium();
+    captureBoardQrLandingMedium();
 
     window.history.replaceState(null, '', '/gyms');
-    expect(readBoardQrLandingMedium()).toBeNull();
+    expect(captureBoardQrLandingMedium()).toBeNull();
 
     window.history.replaceState(null, '', '/b/garage-wall/40/list');
-    expect(readBoardQrLandingMedium()).toBe('board');
+    expect(captureBoardQrLandingMedium()).toBe('board');
   });
 
   it('takes a newer scan over the one it remembered', () => {
     window.history.replaceState(null, '', '/b/garage-wall/40/list?src=qr&medium=board');
-    readBoardQrLandingMedium();
+    captureBoardQrLandingMedium();
 
     window.history.replaceState(null, '', '/b/the-kilter/40/list?src=qr&medium=kiosk');
 
-    expect(readBoardQrLandingMedium()).toBe('kiosk');
+    expect(captureBoardQrLandingMedium()).toBe('kiosk');
   });
 });

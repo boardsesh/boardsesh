@@ -104,11 +104,22 @@ describe('SprayWallFrontDoor', () => {
     }
   });
 
-  it('puts the Open button first, as the one filled button, with the stores under it', async () => {
-    const html = await render(buildNativeBoardListUrl('garage-wall', 40));
+  it('makes the store the primary action, and puts the Open link last and quiet', async () => {
+    // A poster scan reaches this page mostly on phones with no app, and a scheme
+    // link with no app behind it is an error page, so it must not come first.
+    const appLink = buildNativeBoardListUrl('garage-wall', 40);
+    const html = await render(appLink);
+    const appStoreAt = html.indexOf(asAttribute(buildStoreUrl('ios', { placement: 'spray-wall' })));
+    const openAt = html.indexOf(asAttribute(appLink));
 
+    expect(appStoreAt).toBeGreaterThan(-1);
+    expect(appStoreAt).toBeLessThan(openAt);
+    expect(html.indexOf('spray.wall.haveApp')).toBeLessThan(openAt);
+    // One filled button, and it is a store: the Open link is a text button.
     expect(html.match(/MuiButton-contained[\s"]/g) ?? []).toHaveLength(1);
-    expect(html.indexOf('spray.wall.openButton')).toBeLessThan(html.indexOf('spray.wall.install.helper'));
+    const openAnchor = html.slice(html.lastIndexOf('<a', openAt), openAt);
+    expect(openAnchor).toContain('MuiButton-text');
+    expect(openAnchor).not.toContain('MuiButton-contained');
   });
 
   it('keeps the scan-again line out of the shared HTML, since a shared link has nothing to scan', async () => {
