@@ -505,6 +505,12 @@ describe('applyCapturedValueNormalization', () => {
     expect(result.exception.values[0].value).toBe('WebSocket close (code 1000)');
   });
 
+  it('leaves a non-close object with a type key untouched', () => {
+    const event = { exception: { values: [{ value: 'orig' }] } };
+    const result = applyCapturedValueNormalization(event, { type: 'click' });
+    expect(result).toEqual({ exception: { values: [{ value: 'orig' }] } });
+  });
+
   it('leaves an event whose original exception is a real Error untouched', () => {
     const event = { exception: { values: [{ value: 'boom' }] } };
     const result = applyCapturedValueNormalization(event, new Error('boom'));

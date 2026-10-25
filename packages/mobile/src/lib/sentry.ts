@@ -108,10 +108,17 @@ type NormalizableEvent = {
  * that path and arrives as `Event captured as promise rejection`. Apply the same
  * normalization in `beforeSend`: when the original exception is not an `Error`, put
  * the close code/reason into `extra` and replace the exception message. Pure and
- * ungated so it is unit-testable.
+ * ungated so it is unit-testable. Raw close events that used to group under the SDK's
+ * `Event captured as promise rejection` title will regroup under the new message.
  */
 export function applyCapturedValueNormalization<T extends NormalizableEvent>(event: T, originalException?: unknown): T {
   if (originalException instanceof Error) return event;
+  // Only close-event shapes (a numeric code or a socket target). Any other object
+  // with a `type` key keeps the SDK's own grouping.
+  if (typeof originalException !== 'object' || originalException === null) return event;
+  if (typeof (originalException as { code?: unknown }).code !== 'number' && !('target' in originalException)) {
+    return event;
+  }
   const { error, extra } = normalizeCapturedValueForSentry(originalException);
   if (!extra) return event;
   event.extra = { ...event.extra, ...extra };

@@ -194,7 +194,7 @@ describe('isTransientTransportClose', () => {
     expect(isTransientTransportClose(new GraphQLTransportClosedError(code, ''))).toBe(true);
   });
 
-  it.each([1011, 4400, 4401, 4500])('is false for fatal close code %i', (code) => {
+  it.each([1011, 4400, 4401, 4403, 4500])('is false for non-transient close code %i', (code) => {
     expect(isTransientTransportClose(new GraphQLTransportClosedError(code, ''))).toBe(false);
   });
 

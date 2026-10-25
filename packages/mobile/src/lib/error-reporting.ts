@@ -188,6 +188,11 @@ const breadcrumbedDiscoveryThrottles = new WeakSet<object>();
  *     `Backend Reachability Changed` event per outage episode, so a Sentry
  *     event per failed query adds nothing but quota (BOARDSESH-99, 6k
  *     events/12d),
+ *   - a subscription socket lost for good with a connection-loss close code
+ *     (`isTransientTransportClose`) is dropped entirely and left as a `network`
+ *     breadcrumb, like the fetch failures above,
+ *   - any other transport close (fatal code, or 4403 after auth refresh failed) is
+ *     downgraded to `warning`, tagged `ws_close_code`, and fingerprinted per code,
  *   - BLE write-resume timeouts are downgraded to `warning` and tagged
  *     `ble_write_timeout` (the native layer auto-recovers them by cycling the
  *     connection — #3181 — so they're transient, not hard failures),

@@ -182,9 +182,13 @@ export function isTransportClosedError(error: unknown): boolean {
   return error instanceof GraphQLTransportClosedError;
 }
 
-// Close codes graphql-ws retries on its own. A subscription only sees one of them
-// after the retry budget is spent, so the cause is a lost connection, not a fault.
-const TRANSIENT_CLOSE_CODES = new Set([1000, 1001, 1005, 1006, 1012, 1013, 1014, 4403, 4408, 4499, 4504]);
+// Close codes that mean "the connection was lost" (network drop, server restart,
+// idle timeout). graphql-ws retries every non-fatal code, so this is a narrower,
+// deliberate allowlist: anything outside it is reported at warning with its code.
+// 4403 is left out on purpose: the app remaps a rejected handshake (4401) to 4403 so
+// graphql-ws retries it, and one reaching a subscription means every auth refresh
+// failed, which is a persistent auth fault worth seeing.
+const TRANSIENT_CLOSE_CODES = new Set([1000, 1001, 1005, 1006, 1012, 1013, 1014, 4408, 4499, 4504]);
 
 /** True for a transport close whose code means "connection lost", not a server or protocol fault. */
 export function isTransientTransportClose(error: unknown): boolean {
