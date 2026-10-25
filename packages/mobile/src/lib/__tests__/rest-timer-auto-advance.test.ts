@@ -18,6 +18,7 @@ const armedState = (overrides: Partial<RestTimerState> = {}): RestTimerState => 
   armed: true,
   armedForSessionId: 'session-1',
   crew: null,
+  crewPacingDraft: null,
   anchorMs: T0,
   isRunning: true,
   pausedElapsedSeconds: 0,
