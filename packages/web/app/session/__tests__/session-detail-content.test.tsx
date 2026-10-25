@@ -378,8 +378,9 @@ describe('SessionDetailContent', () => {
 
   it.each([
     ['daily_highlight', 'daily:user-1:2024-01-15'],
-    ['party', 'daily:user-1:2024-01-15'],
-  ] as const)('hides session-level like and comment on a daily group (%s)', (sessionType, sessionId) => {
+    ['party (id prefix only)', 'daily:user-1:2024-01-15'],
+  ] as const)('hides session-level like and comment on a daily group (%s)', (sessionTypeLabel, sessionId) => {
+    const sessionType = sessionTypeLabel === 'daily_highlight' ? 'daily_highlight' : 'party';
     render(<SessionDetailContent session={makeSession({ sessionId, sessionType })} />);
     const voteButtons = screen.getAllByTestId('vote-button');
     expect(voteButtons.some((el) => el.getAttribute('data-entity-type') === 'session')).toBe(false);
