@@ -59,9 +59,8 @@ import { endLiveActivity } from '../../../services/apns';
 import { buildSessionPayload } from './helpers';
 import { buildRestCadenceChange } from '../../../services/rest-cadence';
 import { logMutationMetrics } from '../queue/mutation-metrics';
-import { MAX_SYNCED_QUEUE_ITEMS } from '@boardsesh/queue';
 import { isNowSlotSession } from '../../../services/queue-now-slot-rollout';
-import { MAX_RAW_PAYLOAD_ITEMS, composeQueuePayload } from '../queue/now-slot-payload';
+import { composeQueuePayload, maxPayloadItems } from '../queue/now-slot-payload';
 
 /**
  * `isLeader` audit (always-live sessions):
@@ -161,11 +160,13 @@ export const sessionMutations = {
     let seedQueue: ClimbQueueItem[] | undefined;
     if (initialQueue) {
       const seedValidationStartTime = performance.now();
+      // Outside the caps the guard is 501 when the seed's current climb is in
+      // it, else 500: the climb on the wall doesn't count (section 5).
       const { items, droppedCount } = parseArrayTolerant(
         ClimbQueueItemSchema,
         initialQueue,
         'initialQueue',
-        capsApply ? MAX_RAW_PAYLOAD_ITEMS : MAX_SYNCED_QUEUE_ITEMS,
+        maxPayloadItems(initialQueue, initialCurrentClimb, capsApply),
       );
       // ClimbQueueItemSchema's `.nullish()` fields infer as `T | null | undefined`,
       // one shade looser than the hand-written `ClimbQueueItem` type (`T | null`)

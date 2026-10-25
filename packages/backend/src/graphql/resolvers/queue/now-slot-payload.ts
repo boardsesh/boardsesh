@@ -2,6 +2,7 @@ import type { ClimbQueueItem } from '@boardsesh/shared-schema';
 import { GraphQLError } from 'graphql';
 import {
   capHistory,
+  historyAndUpNextCount,
   historyLine,
   historyOf,
   isUpNextFull,
@@ -10,26 +11,52 @@ import {
   normaliseOrphanCurrent,
   MAX_SYNCED_QUEUE_ITEMS,
   QUEUE_FULL,
+  upNextOf,
   type NowSlotState,
 } from '@boardsesh/queue';
 
 /**
  * The raw-item ceiling for a whole-queue payload (`setQueue`, the
  * `joinSession` seed) when the F3 caps apply. Still a memory guard; the cap on
- * what is stored is `MAX_SYNCED_QUEUE_ITEMS`, reached by trimming History
- * instead of throwing (docs/current-climb-outside-queue.md, section 5).
+ * what is stored is `MAX_SYNCED_QUEUE_ITEMS` History + Up next entries plus
+ * the climb on the wall, reached by trimming History instead of throwing
+ * (docs/current-climb-outside-queue.md, section 5).
  */
 export const MAX_RAW_PAYLOAD_ITEMS = 1000;
 
+function uuidOf(value: unknown): string | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const { uuid } = value as { uuid?: unknown };
+  return typeof uuid === 'string' ? uuid : null;
+}
+
 /**
- * A whole-queue payload whose Now + Up next alone are over
- * `MAX_SYNCED_QUEUE_ITEMS`. Carries the same `extensions.code` as
- * `addQueueItem`'s rejection (`QUEUE_FULL`), so a client can tell it apart
- * from a malformed payload.
+ * The `maxLength` for `parseArrayTolerant` on a whole-queue payload, read from
+ * the raw input before any item is validated. With the caps:
+ * {@link MAX_RAW_PAYLOAD_ITEMS}. Without them (outside the percent, no line):
+ * today's 500, plus one when the payload's current climb is in the payload
+ * queue. The climb on the wall doesn't count toward the cap (section 5), so a
+ * room stored at 501 entries with a climb current is written back by an old
+ * phone as is instead of being refused. 501 entries with nothing current, or
+ * with a current climb that isn't in the queue, are still refused.
+ */
+export function maxPayloadItems(rawQueue: unknown, rawCurrentClimbQueueItem: unknown, capsApply: boolean): number {
+  if (capsApply) return MAX_RAW_PAYLOAD_ITEMS;
+  const currentUuid = uuidOf(rawCurrentClimbQueueItem);
+  const holdsCurrent =
+    currentUuid !== null && Array.isArray(rawQueue) && rawQueue.some((rawItem) => uuidOf(rawItem) === currentUuid);
+  return MAX_SYNCED_QUEUE_ITEMS + (holdsCurrent ? 1 : 0);
+}
+
+/**
+ * A whole-queue payload whose Up next alone is over `MAX_SYNCED_QUEUE_ITEMS`
+ * (History is trimmed first, and the climb on the wall doesn't count).
+ * Carries the same `extensions.code` as `addQueueItem`'s rejection
+ * (`QUEUE_FULL`), so a client can tell it apart from a malformed payload.
  */
 export class UpNextOverCapError extends GraphQLError {
-  constructor(nowAndUpNextCount: number) {
-    super(`Invalid queue: Now and Up next hold ${nowAndUpNextCount} climbs, over ${MAX_SYNCED_QUEUE_ITEMS}`, {
+  constructor(upNextCount: number) {
+    super(`Invalid queue: Up next holds ${upNextCount} climbs, over ${MAX_SYNCED_QUEUE_ITEMS}`, {
       extensions: { code: QUEUE_FULL },
     });
     this.name = 'UpNextOverCapError';
@@ -88,14 +115,18 @@ export function payloadNeedsStoredLine(
  *    (an old solo snapshot) is inserted at that line, never cleared and never
  *    appended. A seed of only a current climb becomes `[current]`.
  * 3. With `capsApply`: History is trimmed (100 kept, trimmed at 125, and
- *    further while the array is over 500). Up next is never trimmed: when Now
- *    and Up next alone are over 500 (a climb current or not) the payload is
- *    rejected with {@link UpNextOverCapError}, as today's 500 check did.
- * 4. Without `capsApply`, the payload is stored as sent except that an array
- *    over 500 (an orphan inserted into a 500-item payload, or merge
- *    survivors) loses its oldest History entries down to 500, so the phone's
- *    next placement-less `setQueue` isn't rejected. With no History to trim it
- *    is stored over the cap (a percent-0 residual, section 5).
+ *    further while History + Up next is over 500; the climb on the wall is
+ *    extra). Up next is never trimmed: when Up next alone is over 500 (a climb
+ *    current or not) the payload is rejected with {@link UpNextOverCapError},
+ *    as today's 500 check did. Stored: at most 501 entries with a climb
+ *    current, 500 without.
+ * 4. Without `capsApply`, the payload is stored as sent. {@link maxPayloadItems}
+ *    already held it to 501 entries with its current climb in it and 500
+ *    otherwise, so an orphan inserted into a 500-item payload is the extra
+ *    Now entry and nothing is trimmed. Only merge survivors can push History +
+ *    Up next past 500; the oldest History entries go, so the phone's next
+ *    placement-less `setQueue` isn't rejected. With no History to trim it is
+ *    stored over the cap (a percent-0 residual, section 5).
  */
 export function composeQueuePayload(input: {
   queue: ClimbQueueItem[];
@@ -111,7 +142,7 @@ export function composeQueuePayload(input: {
   const normalised = normaliseOrphanCurrent({ queue, currentClimbQueueItem, historyCount: line });
 
   if (!capsApply) {
-    const overflow = normalised.queue.length - MAX_SYNCED_QUEUE_ITEMS;
+    const overflow = historyAndUpNextCount(normalised) - MAX_SYNCED_QUEUE_ITEMS;
     const trimmedCount = overflow > 0 ? Math.min(overflow, historyLine(normalised)) : 0;
     return {
       queue: normalised.queue.slice(trimmedCount),
@@ -126,7 +157,7 @@ export function composeQueuePayload(input: {
   // goes first, all of it if needed.
   const capped = capHistory(normalised, 0);
   if (isUpNextFull(capped, 0)) {
-    throw new UpNextOverCapError(capped.queue.length - historyLine(capped));
+    throw new UpNextOverCapError(upNextOf(capped).length);
   }
 
   return {

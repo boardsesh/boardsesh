@@ -42,8 +42,8 @@ import { isNowSlotSession } from '../../../services/queue-now-slot-rollout';
 import { publishFullSync } from '../../../services/queue-now-slot-events';
 import type { QueueWriteResult } from '../../../services/room-manager/types';
 import {
-  MAX_RAW_PAYLOAD_ITEMS,
   composeQueuePayload,
+  maxPayloadItems,
   payloadNeedsStoredLine,
   type ComposedQueuePayload,
 } from './now-slot-payload';
@@ -562,11 +562,13 @@ export const queueMutations = {
     // rejecting the whole setQueue call. A single non-RFC-uuid queue item
     // used to reject the entire array here and wedge sync for a user's whole
     // queue indefinitely (issue #3857).
+    // Outside the caps the guard is 501 when the payload's current climb is in
+    // it, else 500: the climb on the wall doesn't count (section 5).
     const { items, droppedCount } = parseArrayTolerant(
       ClimbQueueItemSchema,
       rawQueue,
       'queue',
-      capsApply ? MAX_RAW_PAYLOAD_ITEMS : MAX_SYNCED_QUEUE_ITEMS,
+      maxPayloadItems(rawQueue, rawCurrentClimbQueueItem, capsApply),
     );
     // ClimbQueueItemSchema's `.nullish()` fields infer as `T | null | undefined`,
     // one shade looser than the hand-written `ClimbQueueItem` type (`T | null`) —
@@ -596,8 +598,8 @@ export const queueMutations = {
       ) as ClimbQueueItem;
     }
     const needsStoredLine = payloadNeedsStoredLine(queue, currentClimbQueueItem, historyCountInput);
-    // Throws `UpNextOverCapError` when the caps apply, a climb is current and
-    // Now + Up next alone are over 500 (section 5).
+    // Throws `UpNextOverCapError` when the caps apply and Up next alone is
+    // over 500, a climb current or not (section 5).
     const composePayload = (payloadQueue: ClimbQueueItem[], stored: NowSlotState<ClimbQueueItem> | null) =>
       composeQueuePayload({ queue: payloadQueue, currentClimbQueueItem, historyCountInput, stored, capsApply });
 

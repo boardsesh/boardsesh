@@ -1,21 +1,25 @@
 // Protocol limits the client and the party backend have to agree on.
 
 /**
- * Hard cap on the number of items the whole synced queue (History + Now + Up
- * next) may hold. The backend imports it in
+ * Hard cap on History + Up next in the synced queue. The climb on the wall is
+ * extra (docs/current-climb-outside-queue.md, section 5), so the stored array
+ * holds at most this + 1 entries with a climb current and this many with
+ * nothing current. The backend imports it in
  * `packages/backend/src/graphql/resolvers/queue/mutations.ts` and the
  * `joinSession` seed.
  *
- * F3 (docs/current-climb-outside-queue.md, section 5): outside
- * `QUEUE_NOW_SLOT_PERCENT`, a placement-less `setQueue` or seed longer than
- * this still THROWS (`parseArrayTolerant`). Inside it, or when the payload
- * carries `historyCount`, the server accepts up to 1,000 raw items and trims
- * the oldest History entries to fit; it throws only when Now + Up next alone
- * exceed the cap with a climb current. `addQueueItem` refuses with
- * `QUEUE_FULL` when Now + Up next already fill it.
+ * F3: outside `QUEUE_NOW_SLOT_PERCENT`, a placement-less `setQueue` or seed
+ * longer than this + 1 (current climb in the payload) or this (otherwise)
+ * still THROWS (`parseArrayTolerant`). Inside it, or when the payload carries
+ * `historyCount`, the server accepts up to 1,000 raw items and trims the
+ * oldest History entries to fit; it throws only when Up next alone exceeds
+ * the cap. `addQueueItem` refuses with `QUEUE_FULL` when Up next already
+ * fills it.
  *
  * An append can still trip the throw by addition, which is why the bulk append
- * clamps against it before broadcasting.
+ * clamps against it before broadcasting. `clampQueueAroundCurrent` below keeps
+ * this many entries in all, the current climb included: stricter than the
+ * server, so its payloads are never refused.
  */
 export const MAX_SYNCED_QUEUE_ITEMS = 500;
 

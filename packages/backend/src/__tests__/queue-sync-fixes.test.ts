@@ -1166,7 +1166,7 @@ describe('F3: setQueue, joinSession and addQueueItem around the History / Up nex
       );
       expect(error).toBeInstanceOf(GraphQLError);
       expect((error as GraphQLError).extensions.code).toBe('QUEUE_FULL');
-      expect((error as GraphQLError).message).toMatch(/Now and Up next/);
+      expect((error as GraphQLError).message).toMatch(/Up next holds 600/);
     });
 
     it('trims History, not Up next, from a 600-item payload with nothing current', async () => {
@@ -1179,16 +1179,67 @@ describe('F3: setQueue, joinSession and addQueueItem around the History / Up nex
       expect(uuidsOf(state.queue)[100]).toBe(queue[200].uuid);
     });
 
-    it('outside the percent, an orphan in a 500-item payload trims one History entry instead of storing 501', async () => {
+    it('outside the percent, an orphan in a 500-item payload becomes the extra Now entry: 501 stored, nothing trimmed', async () => {
       process.env.QUEUE_NOW_SLOT_PERCENT = '0';
       const queue = Array.from({ length: 500 }, () => createTestClimb());
       const sessionId = await roomWith(queue, null, 10);
       const orphan = createTestClimb();
       const state = await queueMutations.setQueue({}, { queue, currentClimbQueueItem: orphan }, ctxFor(sessionId));
-      expect(state.queue).toHaveLength(500);
-      expect(uuidsOf(state.queue)[0]).toBe(queue[1].uuid);
-      expect(uuidsOf(state.queue)[9]).toBe(orphan.uuid);
+      expect(state.queue).toHaveLength(501);
+      expect(uuidsOf(state.queue)[0]).toBe(queue[0].uuid);
+      expect(uuidsOf(state.queue)[10]).toBe(orphan.uuid);
       expect(state.currentClimbQueueItem?.uuid).toBe(orphan.uuid);
+      expect(state.historyCount).toBe(10);
+    });
+
+    it('outside the percent, stores a 501-item payload whose current climb is in it (the climb on the wall is extra)', async () => {
+      process.env.QUEUE_NOW_SLOT_PERCENT = '0';
+      const sessionId = await roomWith([], null, 0);
+      const queue = Array.from({ length: 501 }, () => createTestClimb());
+      const state = await queueMutations.setQueue({}, { queue, currentClimbQueueItem: queue[0] }, ctxFor(sessionId));
+      expect(state.queue).toHaveLength(501);
+      expect(state.currentClimbQueueItem?.uuid).toBe(queue[0].uuid);
+      expect(state.historyCount).toBe(0);
+    });
+
+    it('outside the percent, still refuses 501 items with nothing current or a current climb not in the payload', async () => {
+      process.env.QUEUE_NOW_SLOT_PERCENT = '0';
+      const sessionId = await roomWith([], null, 0);
+      const queue = Array.from({ length: 501 }, () => createTestClimb());
+      await expect(queueMutations.setQueue({}, { queue }, ctxFor(sessionId))).rejects.toThrow(/Invalid queue/);
+      await expect(
+        queueMutations.setQueue({}, { queue, currentClimbQueueItem: createTestClimb() }, ctxFor(sessionId)),
+      ).rejects.toThrow(/Invalid queue/);
+      await expect(
+        queueMutations.setQueue(
+          {},
+          { queue: [...queue, createTestClimb()], currentClimbQueueItem: queue[0] },
+          ctxFor(sessionId),
+        ),
+      ).rejects.toThrow(/Invalid queue/);
+    });
+
+    it('inside the percent, a 501-item payload with its current climb in it is stored as is', async () => {
+      process.env.QUEUE_NOW_SLOT_PERCENT = '100';
+      const sessionId = await roomWith([], null, 0);
+      const queue = Array.from({ length: 501 }, () => createTestClimb());
+      const state = await queueMutations.setQueue({}, { queue, currentClimbQueueItem: queue[0] }, ctxFor(sessionId));
+      expect(state.queue).toHaveLength(501);
+      expect(uuidsOf(state.queue)).toEqual(uuidsOf(queue));
+    });
+
+    it('inside the percent, a 501-item payload with nothing current loses its History entry, or is refused with none', async () => {
+      process.env.QUEUE_NOW_SLOT_PERCENT = '100';
+      const sessionId = await roomWith([], null, 0);
+      const queue = Array.from({ length: 501 }, () => createTestClimb());
+      const trimmed = await queueMutations.setQueue({}, { queue, historyCount: 1 }, ctxFor(sessionId));
+      expect(trimmed.queue).toHaveLength(500);
+      expect(trimmed.historyCount).toBe(0);
+      expect(uuidsOf(trimmed.queue)[0]).toBe(queue[1].uuid);
+
+      await expect(queueMutations.setQueue({}, { queue, historyCount: 0 }, ctxFor(sessionId))).rejects.toMatchObject({
+        extensions: { code: 'QUEUE_FULL' },
+      });
     });
 
     it('still throws a 600-item placement-less payload outside the percent', async () => {
@@ -1197,12 +1248,90 @@ describe('F3: setQueue, joinSession and addQueueItem around the History / Up nex
       await expect(queueMutations.setQueue({}, { queue }, ctxFor(sessionId))).rejects.toThrow(/Invalid queue/);
     });
 
-    it('throws when Now + Up next alone exceed 500 with a climb current', async () => {
+    it('throws when Up next alone exceeds 500 with a climb current', async () => {
       const sessionId = await roomWith([], null, 0);
       const queue = Array.from({ length: 600 }, () => createTestClimb());
       await expect(
         queueMutations.setQueue({}, { queue, currentClimbQueueItem: queue[10], historyCount: 0 }, ctxFor(sessionId)),
-      ).rejects.toThrow(/Now and Up next/);
+      ).rejects.toThrow(/Up next holds 589/);
+    });
+
+    it('joinSession outside the percent seeds 501 items when the seed current climb is in them, and refuses 501 without', async () => {
+      process.env.QUEUE_NOW_SLOT_PERCENT = '0';
+      const seed = Array.from({ length: 501 }, () => createTestClimb());
+      const join = async (connectionId: string, initialCurrentClimb?: ClimbQueueItem) => {
+        await roomManager.registerClient(connectionId);
+        const joinCtx = { connectionId, rateLimitTokens: 60, rateLimitLastReset: Date.now() };
+        return sessionMutations.joinSession(
+          {},
+          {
+            sessionId: uuidv4(),
+            boardPath: '/kilter/1/2/3/40',
+            username: 'User1',
+            initialQueue: seed,
+            initialCurrentClimb,
+          },
+          joinCtx,
+        );
+      };
+      const seeded = await join('join-501-current', seed[0]);
+      expect(seeded.queueState?.queue).toHaveLength(501);
+      expect(seeded.queueState?.currentClimbQueueItem?.uuid).toBe(seed[0].uuid);
+      await expect(join('join-501-nothing-current')).rejects.toThrow(/Invalid initialQueue/);
+    });
+
+    describe('opening a climb with Up next at 500 and nothing current (inside the percent)', () => {
+      beforeEach(() => {
+        process.env.QUEUE_NOW_SLOT_PERCENT = '100';
+      });
+
+      it.each([
+        ['a new phone (placement NOW)', { placement: 'NOW' as const, shouldAddToQueue: false }],
+        ['an old phone (shouldAddToQueue: true)', { shouldAddToQueue: true }],
+      ])('stores 501 entries for %s and refuses nothing', async (_label, request) => {
+        const upNext = Array.from({ length: 500 }, () => createTestClimb());
+        const sessionId = await roomWith(upNext, null, 0);
+        const opened = createTestClimb();
+        await queueMutations.setCurrentClimb({}, { item: opened, ...request }, ctxFor(sessionId));
+        const state = await roomManager.getQueueState(sessionId);
+        expect(state.queue).toHaveLength(501);
+        expect(uuidsOf(state.queue)).toEqual([opened.uuid, ...uuidsOf(upNext)]);
+        expect(state.currentClimbQueueItem?.uuid).toBe(opened.uuid);
+        expect(state.historyCount).toBe(0);
+      });
+
+      it('then Next keeps all 501, and a clear drops the cleared climb rather than store 501 with nothing current', async () => {
+        const upNext = Array.from({ length: 500 }, () => createTestClimb());
+        const sessionId = await roomWith(upNext, null, 0);
+        const opened = createTestClimb();
+        await queueMutations.setCurrentClimb({}, { item: opened, placement: 'NOW' }, ctxFor(sessionId));
+        await queueMutations.setCurrentClimb({}, { item: upNext[0], placement: 'NOW' }, ctxFor(sessionId));
+        const afterNext = await roomManager.getQueueState(sessionId);
+        expect(afterNext.queue).toHaveLength(501);
+        expect(afterNext.historyCount).toBe(1);
+        expect(afterNext.currentClimbQueueItem?.uuid).toBe(upNext[0].uuid);
+
+        // Back to [opened | ...500 Up next], then take it off the wall.
+        await queueMutations.setCurrentClimb({}, { item: opened, placement: 'STEP' }, ctxFor(sessionId));
+        publishSpy.mockClear();
+        await queueMutations.setCurrentClimb({}, { item: null, placement: 'NOW' }, ctxFor(sessionId));
+        const cleared = await roomManager.getQueueState(sessionId);
+        expect(uuidsOf(cleared.queue)).toEqual(uuidsOf(upNext));
+        expect(cleared.currentClimbQueueItem).toBeNull();
+        expect(cleared.historyCount).toBe(0);
+        const typenames = publishSpy.mock.calls.map(
+          (call: unknown[]) => (call[1] as { __typename: string }).__typename,
+        );
+        expect(typenames[0]).toBe('FullSync');
+      });
+
+      it('refuses an add from there with QUEUE_FULL', async () => {
+        const upNext = Array.from({ length: 500 }, () => createTestClimb());
+        const sessionId = await roomWith(upNext, null, 0);
+        await expect(
+          queueMutations.addQueueItem({}, { item: createTestClimb() }, ctxFor(sessionId)),
+        ).rejects.toMatchObject({ extensions: { code: 'QUEUE_FULL' } });
+      });
     });
   });
 
@@ -1275,13 +1404,33 @@ describe('F3: setQueue, joinSession and addQueueItem around the History / Up nex
       process.env.QUEUE_NOW_SLOT_PERCENT = '100';
     });
 
-    it('refuses with QUEUE_FULL when Now + Up next already hold 500', async () => {
-      const queue = Array.from({ length: 500 }, () => createTestClimb());
+    it('refuses with QUEUE_FULL when Up next already holds 500 (the climb on the wall is not counted)', async () => {
+      const queue = Array.from({ length: 501 }, () => createTestClimb());
       const sessionId = await roomWith(queue, queue[0], 0);
       await expect(
         queueMutations.addQueueItem({}, { item: createTestClimb() }, ctxFor(sessionId)),
       ).rejects.toMatchObject({ extensions: { code: 'QUEUE_FULL' } });
       expect(publishSpy).not.toHaveBeenCalled();
+    });
+
+    it('takes an add while Up next is at 499, giving 501 entries with the climb on the wall', async () => {
+      const queue = Array.from({ length: 500 }, () => createTestClimb());
+      const sessionId = await roomWith(queue, queue[0], 0);
+      await queueMutations.addQueueItem({}, { item: createTestClimb() }, ctxFor(sessionId));
+      const state = await roomManager.getQueueState(sessionId);
+      expect(state.queue).toHaveLength(501);
+    });
+
+    it('trims History before refusing: History + Up next at 500 with one History entry takes the add', async () => {
+      const queue = Array.from({ length: 501 }, () => createTestClimb());
+      // [H | Now | 499 Up next]
+      const sessionId = await roomWith(queue, queue[1], 1);
+      const added = createTestClimb();
+      await queueMutations.addQueueItem({}, { item: added }, ctxFor(sessionId));
+      const state = await roomManager.getQueueState(sessionId);
+      expect(state.queue).toHaveLength(501);
+      expect(state.historyCount).toBe(0);
+      expect(uuidsOf(state.queue).at(-1)).toBe(added.uuid);
     });
 
     it('honours a position inside History while a climb is current', async () => {
