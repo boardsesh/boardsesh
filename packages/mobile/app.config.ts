@@ -796,9 +796,6 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       // deobfuscate Java/Kotlin frames. No-op when the env var is unset (local
       // prebuild, PR builds); never moves the fingerprint (env isn't hashed).
       './plugins/with-android-sentry-proguard-uuid',
-      // Pins the generated Android wrapper below Gradle 9 until React Native's
-      // included Foojay toolchain resolver plugin is compatible with Gradle 9.
-      './plugins/with-android-gradle-wrapper-version',
       // Register this before @bacons/apple-targets so Expo's mod chain runs it
       // after the widget target has been created, while keeping the provider last.
       './plugins/with-boardsesh-widget-build-settings',

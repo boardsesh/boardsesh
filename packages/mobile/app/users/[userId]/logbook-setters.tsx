@@ -87,6 +87,8 @@ export default function LogbookSettersScreen() {
       if (appliedRef.current) return;
       emitLogbookSetterSelection({ handoffId, setterUsernames: selectedSettersRef.current, apply: false });
     });
+    // `removed` arrives after unmount. Its callback only publishes to the
+    // handoff store; a mounted guard would discard the picks.
     return () => queueMicrotask(unsubscribe);
   }, [navigation, handoffId]);
 

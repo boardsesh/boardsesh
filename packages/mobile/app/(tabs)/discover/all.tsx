@@ -225,7 +225,7 @@ export default function AllPlaylistsScreen() {
               </View>
             }
             ListFooterComponent={
-              (hasLoadMoreError ? (
+              hasLoadMoreError ? (
                 <PressableSurface
                   style={styles.footer}
                   onPress={retryLoadMore}
@@ -243,7 +243,7 @@ export default function AllPlaylistsScreen() {
                 <View style={styles.footer}>
                   <ActivityIndicator size="small" />
                 </View>
-              ) : null) ?? undefined
+              ) : undefined
             }
           />
         )}

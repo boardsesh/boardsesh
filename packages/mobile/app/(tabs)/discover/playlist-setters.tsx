@@ -78,6 +78,8 @@ export default function PlaylistSettersScreen() {
       if (appliedRef.current) return;
       emitSetterFilterSelection({ handoffId, setters: selectedSettersRef.current });
     });
+    // `removed` arrives after unmount. Its callback only publishes to the
+    // handoff store; a mounted guard would discard the picks.
     return () => queueMicrotask(unsubscribe);
   }, [navigation, handoffId]);
 
