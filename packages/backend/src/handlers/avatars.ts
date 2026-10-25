@@ -319,8 +319,9 @@ export async function handleAvatarUpload(req: IncomingMessage, res: ServerRespon
                 uploadToS3('media', body, key, contentType, { cacheControl: MUTABLE_IMAGE_CACHE_CONTROL }),
               undefined,
               uploadMimeType,
-              // Right magic bytes, junk after them: refuse rather than store
-              // the raw bytes at every variant key.
+              // Defence in depth: storedBuffer is already sharp's re-encode, so
+              // this should never fire. If a resize still fails, refuse rather
+              // than fall back to storing the base bytes at every variant key.
               { rejectUndecodable: true },
             );
             await uploadToS3('media', storedBuffer, s3Key, uploadMimeType);
