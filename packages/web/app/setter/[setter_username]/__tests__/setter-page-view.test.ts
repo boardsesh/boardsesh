@@ -4,6 +4,7 @@ import type { SetterPageData } from '../server-setter-data';
 
 const state = vi.hoisted(() => ({
   configs: (async () => []) as () => Promise<PopularBoardConfig[]>,
+  dataDelayMs: 0,
 }));
 
 vi.mock('server-only', () => ({}));
@@ -13,8 +14,9 @@ vi.mock('react', async (importOriginal) => ({
 }));
 vi.mock('@/app/lib/server-popular-configs', () => ({ getAllBoardConfigsOrThrow: () => state.configs() }));
 vi.mock('../server-setter-data', () => ({
-  getSetterPageData: async (): Promise<SetterPageData> =>
-    ({
+  getSetterPageData: async (): Promise<SetterPageData> => {
+    if (state.dataDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, state.dataDelayMs));
+    return {
       username: 'marco',
       climbs: [
         {
@@ -26,7 +28,8 @@ vi.mock('../server-setter-data', () => ({
           requiredSetIds: [1, 20],
         },
       ],
-    }) as unknown as SetterPageData,
+    } as unknown as SetterPageData;
+  },
 }));
 
 const { getSetterPageView, setterPageHasCrawlableClimb } = await import('../setter-page-view');
@@ -51,6 +54,7 @@ describe('getSetterPageView when the board catalogue is missing', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
   });
   afterEach(() => {
+    state.dataDelayMs = 0;
     vi.useRealTimers();
     vi.restoreAllMocks();
   });
@@ -73,6 +77,17 @@ describe('getSetterPageView when the board catalogue is missing', () => {
     const view = await pending;
     expect(view?.linksDegraded).toBe(true);
     expect(view?.links.unlinkedClimbUuids.size).toBe(1);
+  });
+
+  it('keeps links the catalogue delivered while a slow setter read was still running', async () => {
+    vi.useFakeTimers();
+    state.dataDelayMs = 5000;
+    state.configs = () => new Promise((resolve) => setTimeout(() => resolve([kilterConfig]), 4000));
+    const pending = getSetterPageView('marco', 1);
+    await vi.advanceTimersByTimeAsync(5001);
+    const view = await pending;
+    expect(view?.linksDegraded).toBe(false);
+    expect(view?.hasCrawlableClimb).toBe(true);
   });
 
   it('links the climb as before when the catalogue answers', async () => {
