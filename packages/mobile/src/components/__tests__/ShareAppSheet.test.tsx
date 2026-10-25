@@ -13,6 +13,7 @@ const captures = vi.hoisted(() => ({
   platform: 'ios',
   qrValue: undefined as string | undefined,
   qrLabel: undefined as string | undefined,
+  showToast: vi.fn(),
 }));
 vi.mock('react-native', () => ({
   Platform: {
@@ -20,9 +21,17 @@ vi.mock('react-native', () => ({
       return captures.platform;
     },
   },
-  Share: { share: vi.fn() },
-  View: ({ children, accessibilityLabel }: { children?: ReactNode; accessibilityLabel?: string }) => {
-    if (accessibilityLabel) captures.qrLabel = accessibilityLabel;
+  Share: { share: vi.fn(async () => ({ action: 'sharedAction' })) },
+  View: ({
+    children,
+    accessibilityRole,
+    accessibilityLabel,
+  }: {
+    children?: ReactNode;
+    accessibilityRole?: string;
+    accessibilityLabel?: string;
+  }) => {
+    if (accessibilityRole === 'image') captures.qrLabel = accessibilityLabel;
     return createElement('div', null, children);
   },
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
@@ -66,7 +75,7 @@ vi.mock('../SheetTopBar', () => ({
     createElement('div', null, title, createElement('button', { 'data-testid': 'close', onClick: leading.onPress })),
 }));
 vi.mock('../../providers/theme-provider', () => ({ useTheme: () => ({ systemColors: { label: '#LABEL' } }) }));
-vi.mock('../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
+vi.mock('../../providers/toast-provider', () => ({ useToast: () => ({ showToast: captures.showToast }) }));
 vi.mock('../sheet-snap-points', () => ({ MEDIUM_LARGE_SNAP_POINTS: ['50%', '90%'] }));
 vi.mock('../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../theme/tokens', () => ({ spacing: { 2: 8, 3: 12, 4: 16, 6: 24 }, borderRadius: { lg: 12 } }));
@@ -95,6 +104,32 @@ describe('ShareAppSheet', () => {
     render(<ShareAppSheet onDismiss={vi.fn()} />);
     expect(captures.qrValue).toBe(storeUrlForAppShare('android'));
     expect(captures.qrLabel).toBe('mobile.about.shareApp.qrLabelAndroid');
+  });
+
+  it('reads the store from the user agent in the browser app', () => {
+    captures.platform = 'web';
+    vi.stubGlobal('navigator', {
+      userAgent: 'Mozilla/5.0 (Linux; Android 15; Pixel 9) Chrome/141.0 Mobile Safari/537.36',
+    });
+    render(<ShareAppSheet onDismiss={vi.fn()} />);
+    vi.unstubAllGlobals();
+    expect(captures.qrValue).toBe(storeUrlForAppShare('android'));
+  });
+
+  it('confirms a copy, and says so when the copy fails', async () => {
+    const { getByText } = render(<ShareAppSheet onDismiss={vi.fn()} />);
+    await act(async () => getByText('mobile.about.shareApp.copyLink').click());
+    expect(captures.showToast).toHaveBeenCalledWith('mobile.about.shareApp.copied', 'success');
+    vi.mocked(Clipboard.setStringAsync).mockRejectedValueOnce(new Error('denied'));
+    await act(async () => getByText('mobile.about.shareApp.copyLink').click());
+    expect(captures.showToast).toHaveBeenCalledWith('mobile.about.shareApp.copyFailed', 'error');
+  });
+
+  it('copies the message when there is no share menu', async () => {
+    vi.mocked(Share.share).mockRejectedValueOnce(new Error('no navigator.share'));
+    const { getByText } = render(<ShareAppSheet onDismiss={vi.fn()} />);
+    await act(async () => getByText('mobile.about.shareApp.share').click());
+    expect(vi.mocked(Clipboard.setStringAsync).mock.calls[0]?.[0]).toContain('mobile.about.shareApp.message');
   });
 
   it('switches the QR code and copied link with the store toggle', async () => {

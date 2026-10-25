@@ -651,7 +651,8 @@
         "copyLink": "Copier le lien",
         "share": "Partager",
         "copied": "Lien copié",
-        "message": "Installe Boardsesh pour tes séances sur board.\niPhone : {{iosUrl}}\nAndroid : {{androidUrl}}"
+        "copyFailed": "Impossible de copier le lien",
+        "message": "Installe Boardsesh pour tes séances de board.\niPhone : {{iosUrl}}\nAndroid : {{androidUrl}}"
       }
     },
     "acknowledgements": {

@@ -912,9 +912,9 @@
       "acknowledgementsLinkBody": "Las personas detrás de Boardsesh",
       "shareApp": {
         "link": "Comparte Boardsesh",
-        "linkBody": "Código QR para los móviles de tu crew",
+        "linkBody": "Código QR para los móviles de tu grupo",
         "title": "Comparte Boardsesh",
-        "body": "Que tu crew escanee esto con la cámara del móvil para bajarse la app.",
+        "body": "Que tu grupo escanee esto con la cámara del móvil para bajarse la app.",
         "appStore": "App Store",
         "googlePlay": "Google Play",
         "storeToggleLabel": "Tienda",
@@ -923,6 +923,7 @@
         "copyLink": "Copiar enlace",
         "share": "Compartir",
         "copied": "Enlace copiado",
+        "copyFailed": "No se ha podido copiar el enlace",
         "message": "Bájate Boardsesh para tus sesiones de plafón.\niPhone: {{iosUrl}}\nAndroid: {{androidUrl}}"
       }
     },

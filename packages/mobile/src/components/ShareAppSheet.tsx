@@ -12,7 +12,7 @@ import { useTheme } from '../providers/theme-provider';
 import { useToast } from '../providers/toast-provider';
 import { MEDIUM_LARGE_SNAP_POINTS } from './sheet-snap-points';
 import { hapticSelection } from '../lib/haptics';
-import { storeUrlForAppShare, type StorePlatform } from '../lib/store-links';
+import { detectStorePlatform, storeUrlForAppShare, type StorePlatform } from '../lib/store-links';
 import { spacing, borderRadius } from '../theme/tokens';
 
 type ShareAppSheetProps = {
@@ -23,6 +23,16 @@ const QR_SIZE = 200;
 // QR codes need a light background to scan reliably, even in dark mode — the
 // scannable surface, not themeable chrome (same as BoardShareSheet).
 const QR_TILE_BACKGROUND = '#FFFFFF';
+
+// The store this device installs from. In the browser app `Platform.OS` is
+// `web` on every phone, so the user agent says which store it is.
+function initialStore(): StorePlatform {
+  if (Platform.OS === 'android') return 'android';
+  if (Platform.OS === 'web' && typeof navigator !== 'undefined') {
+    return detectStorePlatform(navigator.userAgent) ?? 'ios';
+  }
+  return 'ios';
+}
 
 /**
  * Get a friend onto Boardsesh: a store QR they scan with their own camera, plus
@@ -35,26 +45,33 @@ export function ShareAppSheet({ onDismiss }: ShareAppSheetProps) {
   const { t } = useTranslation('common');
   const { systemColors } = useTheme();
   const { showToast } = useToast();
-  const [store, setStore] = useState<StorePlatform>(Platform.OS === 'android' ? 'android' : 'ios');
+  const [store, setStore] = useState<StorePlatform>(initialStore);
   const storeUrl = storeUrlForAppShare(store);
+
+  const copyToClipboard = useCallback(
+    (text: string) =>
+      Clipboard.setStringAsync(text).then(
+        () => showToast(t('mobile.about.shareApp.copied'), 'success'),
+        () => showToast(t('mobile.about.shareApp.copyFailed'), 'error'),
+      ),
+    [showToast, t],
+  );
 
   const handleCopyLink = useCallback(() => {
     hapticSelection();
-    void Clipboard.setStringAsync(storeUrl).then(() => {
-      showToast(t('mobile.about.shareApp.copied'), 'success');
-    });
-  }, [storeUrl, showToast, t]);
+    void copyToClipboard(storeUrl);
+  }, [copyToClipboard, storeUrl]);
 
   const handleShare = useCallback(() => {
     hapticSelection();
     // The share message carries both stores: whoever receives it picks theirs.
-    void Share.share({
-      message: t('mobile.about.shareApp.message', {
-        iosUrl: storeUrlForAppShare('ios'),
-        androidUrl: storeUrlForAppShare('android'),
-      }),
+    const message = t('mobile.about.shareApp.message', {
+      iosUrl: storeUrlForAppShare('ios'),
+      androidUrl: storeUrlForAppShare('android'),
     });
-  }, [t]);
+    // A desktop browser has no share menu and rejects: copy the message instead.
+    void Share.share({ message }).catch(() => copyToClipboard(message));
+  }, [copyToClipboard, t]);
 
   return (
     <ModalSheet
