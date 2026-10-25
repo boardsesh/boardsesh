@@ -4216,6 +4216,81 @@ describe('QueueProvider mutation-failure resync', () => {
     });
   });
 
+  // The refusal can also come AFTER the rejoin FullSync: the session had moved
+  // on, so the snapshot retired the move and put the wall back on the climb it
+  // left. The wall already shows the session's climb, so there is nothing to
+  // resync, but it went back without a tap, so the phone says so.
+  it('says the wall went back when a move’s refusal comes after a FullSync that moved on', async () => {
+    const snapshots: Snapshot[] = [];
+    const shadowChaser = makeQueueItem('shadow-chaser');
+    const lukewarm = makeQueueItem('lukewarm');
+    let queueStateCalls = 0;
+    routeHttpRequest(queueStateResponse([shadowChaser, lukewarm], shadowChaser), {
+      onQueueStateCall: () => (queueStateCalls += 1),
+    });
+    await renderWallSession(snapshots, [shadowChaser, lukewarm]);
+    await dropAndRejoinSocket();
+    const inFlightSetCurrent = createDeferred<void>();
+    queueMutations.setCurrentClimb.mockReturnValueOnce(inFlightSetCurrent.promise);
+
+    act(() => {
+      snapshots.at(-1)?.setCurrentClimb(lukewarm);
+    });
+    act(() => {
+      pushFullSync([shadowChaser, lukewarm], shadowChaser, 3);
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('shadow-chaser');
+    });
+    expect(snapshots.at(-1)?.state.unconfirmedMove).toBeNull();
+    expect(toast.showToast).not.toHaveBeenCalled();
+
+    await act(async () => {
+      inFlightSetCurrent.reject(makeNotInSessionError());
+      await inFlightSetCurrent.promise.catch(() => {});
+    });
+    expect(toast.showToast.mock.calls.map(([message]) => message)).toEqual(['mobile.queue.outOfSyncRefreshed']);
+    expect(queueStateCalls).toBe(0);
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('shadow-chaser');
+    expect(setCurrentCorrelationIdsFor('lukewarm')).toHaveLength(1);
+  });
+
+  // Its pair: the climber moved the wall again before the refusal came, onto a
+  // climb that has not hydrated yet, so that move sent nothing (#2527) and
+  // retired the record itself. Nothing in the session changed: no word.
+  it('stays quiet about a refused move the climber has already swiped past without a send', async () => {
+    const snapshots: Snapshot[] = [];
+    const shadowChaser = makeQueueItem('shadow-chaser');
+    const lukewarm = makeQueueItem('lukewarm');
+    const thinPick = makeQueueItem('thin-pick');
+    thinPick.climb = { ...thinPick.climb, name: '', frames: '' };
+    let queueStateCalls = 0;
+    routeHttpRequest(queueStateResponse([shadowChaser, lukewarm], shadowChaser), {
+      onQueueStateCall: () => (queueStateCalls += 1),
+    });
+    await renderWallSession(snapshots, [shadowChaser, lukewarm]);
+    await dropAndRejoinSocket();
+    const inFlightSetCurrent = createDeferred<void>();
+    queueMutations.setCurrentClimb.mockReturnValueOnce(inFlightSetCurrent.promise);
+
+    act(() => {
+      snapshots.at(-1)?.setCurrentClimb(lukewarm);
+    });
+    act(() => {
+      snapshots.at(-1)?.setCurrentClimb(thinPick);
+    });
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('thin-pick');
+    expect(snapshots.at(-1)?.state.unconfirmedMove).toBeNull();
+
+    await act(async () => {
+      inFlightSetCurrent.reject(makeNotInSessionError());
+      await inFlightSetCurrent.promise.catch(() => {});
+    });
+    expect(toast.showToast).not.toHaveBeenCalled();
+    expect(queueStateCalls).toBe(0);
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('thin-pick');
+  });
+
   // An auth-refresh close keeps the streams, and graphql-ws re-subscribes them
   // on the new socket at once: their FullSync can come before JOIN_SESSION binds
   // it. A re-send released then would wait for the JOIN while a crewmate's move
@@ -4261,6 +4336,65 @@ describe('QueueProvider mutation-failure resync', () => {
     await waitFor(() => {
       expect(setCurrentCorrelationIdsFor('next-up')).toHaveLength(2);
     });
+  });
+
+  // The other order: the move missed the session first, then the kept stream's
+  // FullSync arrives inside the server's reconnect grace, before the JOIN binds.
+  // Releasing the re-send on it would send it before the JOIN, get "Must be in
+  // a session" again and fall back to a resync with a toast. Only the FullSync
+  // of a stream the JOIN opened releases it.
+  it('holds a waiting re-send through the kept stream’s FullSync until the JOIN binds', async () => {
+    const snapshots: Snapshot[] = [];
+    const wallClimb = makeQueueItem('wall-climb');
+    const nextUp = makeQueueItem('next-up');
+    let queueStateCalls = 0;
+    routeHttpRequest(queueStateResponse([wallClimb, nextUp], wallClimb), {
+      onQueueStateCall: () => (queueStateCalls += 1),
+    });
+    await renderWallSession(snapshots, [wallClimb, nextUp]);
+    const rejoin = createDeferred<ReturnType<typeof createJoinSessionResponse>>();
+    graph.execute.mockReturnValueOnce(rejoin.promise);
+    const retainedSink = ws.getQueueUpdatesSink();
+    act(() => {
+      ws.emit('closed', { code: 4403, reason: 'Unauthorized', wasClean: false });
+      ws.emit('connected');
+    });
+    queueMutations.setCurrentClimb.mockRejectedValueOnce(makeNotInSessionError());
+
+    act(() => {
+      snapshots.at(-1)?.setCurrentClimb(nextUp);
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.unconfirmedMove?.resend).toBe('awaiting-snapshot');
+    });
+    const [correlationId] = setCurrentCorrelationIdsFor('next-up');
+
+    // The kept stream's FullSync, before the JOIN has bound the connection: it
+    // keeps the wall and releases nothing.
+    act(() => {
+      pushFullSync([wallClimb, nextUp], wallClimb, 1);
+    });
+    expect(ws.getQueueUpdatesSink()).toBe(retainedSink);
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('next-up');
+    expect(snapshots.at(-1)?.state.unconfirmedMove?.resend).toBe('awaiting-snapshot');
+    expect(setCurrentCorrelationIdsFor('next-up')).toEqual([correlationId]);
+
+    await act(async () => {
+      rejoin.resolve(createJoinSessionResponse());
+      await rejoin.promise;
+    });
+    await waitFor(() => {
+      expect(ws.getQueueUpdatesSink()).not.toBe(retainedSink);
+    });
+    act(() => {
+      pushFullSync([wallClimb, nextUp], wallClimb, 1);
+    });
+    await waitFor(() => {
+      expect(setCurrentCorrelationIdsFor('next-up')).toEqual([correlationId, correlationId]);
+    });
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('next-up');
+    expect(queueStateCalls).toBe(0);
+    expect(toast.showToast).not.toHaveBeenCalled();
   });
 
   it('re-sends at once when the connection is live, and resyncs if the re-send misses too', async () => {

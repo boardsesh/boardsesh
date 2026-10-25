@@ -233,9 +233,14 @@ type SetCurrentClimbFailure = {
   correlationId: string;
   /** The account, room and queue generation the send was aimed at. */
   origin: QueueMutationOrigin;
+  /** The server sequence this phone had applied when the move was sent. */
+  sentAtSequence: number | undefined;
   /** Sent from the coalescer's drain loop: its caller's promise had long resolved. */
   drained: boolean;
 };
+
+/** Where a setCurrentClimb send was aimed, kept by correlation id. */
+type MoveSend = Pick<SetCurrentClimbFailure, 'origin' | 'sentAtSequence'>;
 
 /** Sends whose origin a drained failure may still need; older ones are long settled. */
 const MAX_TRACKED_MOVE_SENDS = 16;
@@ -407,10 +412,10 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // fire time closes that window; the effect-based clear stays as a backstop.
   const pendingUnsyncedCurrentRef = useRef<{ queueItemUuid: string; sessionId: string | null } | null>(null);
 
-  // The origin of each recent setCurrentClimb send, by correlation id. A send
-  // the coalescer drained fails long after its caller's promise resolved, so
-  // this is where its failure handler finds the room it was aimed at.
-  const moveSendOriginsRef = useRef(new Map<string, QueueMutationOrigin>());
+  // The origin and send-time sequence of each recent setCurrentClimb send, by
+  // correlation id. A send the coalescer drained fails long after its caller's
+  // promise resolved, so this is where its failure handler finds them.
+  const moveSendsRef = useRef(new Map<string, MoveSend>());
   // A move whose send missed the session and waits to be re-sent (see
   // handleSetCurrentClimbFailure). The re-send effect fires it once the reducer
   // marks the unconfirmed move `ready`. `queueAdds` are slots that never reached
@@ -1093,13 +1098,13 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     // climber's latest move missed the session (a reconnect, #6783 QA).
     onSetCurrentClimbDrainError: (error, { item, shouldAddToQueue, correlationId }) => {
       if (!item || !correlationId) return false;
-      const origin = moveSendOriginsRef.current.get(correlationId);
-      if (!origin) return false;
+      const send = moveSendsRef.current.get(correlationId);
+      if (!send) return false;
       return handleSetCurrentClimbFailureRef.current(error, {
         item,
         shouldAddToQueue: shouldAddToQueue === true,
         correlationId,
-        origin,
+        ...send,
         drained: true,
       });
     },
@@ -2227,11 +2232,17 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   //     marks the unconfirmed move `ready`, the effect below sends it), or
   //     given up the old way if that snapshot does not come in time;
   //   - an older send, already superseded on screen, changes nothing; only a
-  //     queue slot it added still needs to reach the crew (see moveResendRef).
+  //     queue slot it added still needs to reach the crew (see moveResendRef);
+  //   - a send whose move a snapshot or a crewmate's move already retired
+  //     needs no resync either (the wall shows the session's climb), only the
+  //     "out of sync" toast that resync would have shown.
   // Every other failure, and a re-send that fails again, keeps the behaviour it
   // always had, after retiring the move so the next snapshot is the truth.
   const handleSetCurrentClimbFailure = useCallback(
-    (error: unknown, { item, shouldAddToQueue, correlationId, origin, drained }: SetCurrentClimbFailure): boolean => {
+    (
+      error: unknown,
+      { item, shouldAddToQueue, correlationId, origin, sentAtSequence, drained }: SetCurrentClimbFailure,
+    ): boolean => {
       if (!isQueueMutationOriginCurrent(origin)) return false;
       const { unconfirmedMove, currentClimbQueueItem, serverSequence } = stateRef.current;
       const isLatestSend = unconfirmedMove?.correlationId === correlationId;
@@ -2277,14 +2288,24 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           }, MOVE_RESEND_WAIT_MS);
           return shouldAddToQueue;
         }
-        // A newer send of this climb, or a different climb on the wall: this
-        // send's pointer half is moot, so no resync and no toast.
-        const coveredByNewerSend = !isLatestSend && unconfirmedMove?.itemUuid === item.uuid;
-        const movedOnSince = currentClimbQueueItem?.uuid !== item.uuid;
-        if (coveredByNewerSend || (!isLatestSend && movedOnSince)) {
+        // A newer send (of this climb or another) is on its way: this send's
+        // pointer half is moot, so no resync and no toast.
+        const supersededByNewerSend = !isLatestSend && unconfirmedMove != null;
+        // No newer send, and the record is gone with the wall on another climb.
+        // The wall already shows what the session holds, so no resync either.
+        const wallMovedOff = unconfirmedMove == null && currentClimbQueueItem?.uuid !== item.uuid;
+        if (supersededByNewerSend || wallMovedOff) {
           // A slot it added still has to reach the crew, held back while a
           // re-send is pending. A drained one's too, instead of the coalescer.
           if (shouldAddToQueue) queueOrRecoverMoveAdd(item, origin);
+          // A snapshot or a crewmate's move retired the record before this
+          // failure arrived: the wall went back without a tap, so say so, as
+          // the resync this replaced did. A server change is the one way the
+          // sequence moves on; without one, this climber moved the wall again
+          // without a send (an unresolved climb), and that needs no word.
+          if (wallMovedOff && serverSequence !== sentAtSequence) {
+            showToast(t('mobile.queue.outOfSyncRefreshed'), 'error');
+          }
           return shouldAddToQueue;
         }
       }
@@ -2341,15 +2362,23 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // (Re)start the echo's TTL: a re-send's echo can come well after the
       // first send's window opened.
       coordinator.trackPendingMutation(correlationId);
-      const origins = moveSendOriginsRef.current;
-      origins.delete(correlationId);
-      origins.set(correlationId, origin);
-      if (origins.size > MAX_TRACKED_MOVE_SENDS) {
-        const oldest = origins.keys().next().value;
-        if (oldest !== undefined) origins.delete(oldest);
+      const sentAtSequence = stateRef.current.serverSequence;
+      const sends = moveSendsRef.current;
+      sends.delete(correlationId);
+      sends.set(correlationId, { origin, sentAtSequence });
+      if (sends.size > MAX_TRACKED_MOVE_SENDS) {
+        const oldest = sends.keys().next().value;
+        if (oldest !== undefined) sends.delete(oldest);
       }
       mutations.setCurrentClimb(item, shouldAddToQueue, correlationId).catch((error: unknown) => {
-        handleSetCurrentClimbFailure(error, { item, shouldAddToQueue, correlationId, origin, drained: false });
+        handleSetCurrentClimbFailure(error, {
+          item,
+          shouldAddToQueue,
+          correlationId,
+          origin,
+          sentAtSequence,
+          drained: false,
+        });
       });
     },
     [coordinator, handleSetCurrentClimbFailure, mutations],

@@ -91,16 +91,22 @@ function toSyncQueueEvent(event: QueueUpdateEvent): QueueSyncGateEvent {
 }
 
 /**
- * A FullSync is a snapshot of THIS session, read after the stream subscribed
- * (live: every later change arrives as an event). Saying so lets the reducer
- * compare it with a move of ours that is still on its way to the same session,
- * keep that move when the snapshot predates it (a reconnect's FullSync is read
- * before the re-sent move lands), and release a re-send that waited for it.
- * Every other action passes through untouched.
+ * A FullSync is a snapshot of THIS session, read after the stream subscribed.
+ * Saying so lets the reducer compare it with a move of ours that is still on
+ * its way to the same session, and keep that move when the snapshot predates it
+ * (a reconnect's FullSync is read before the re-sent move lands).
+ *
+ * `live` (every later change arrives as an event) also releases a re-send that
+ * waited for it, so it holds only once JOIN_SESSION has bound the connection.
+ * A stream graphql-ws kept across an auth-refresh close re-subscribes at once
+ * and can deliver its FullSync inside the server's ~350 ms reconnect grace,
+ * before the JOIN binds: a re-send released then is refused "Must be in a
+ * session" and falls back to a resync. The streams the JOIN opens bring their
+ * own FullSync. Every other action passes through untouched.
  */
-function tagSnapshotWithSession(action: QueueAction, sessionId: string): QueueAction {
+function tagSnapshotWithSession(action: QueueAction, sessionId: string, live: boolean): QueueAction {
   if (action.type !== 'INITIAL_QUEUE_DATA') return action;
-  return { ...action, payload: { ...action.payload, sessionId, live: true } };
+  return { ...action, payload: { ...action.payload, sessionId, live } };
 }
 
 export const createEmptySessionRuntimeState = (): MobileSessionRuntimeState => ({
@@ -723,7 +729,7 @@ export function useSessionRealtime({
             gate.noteApplied(gateEvent);
             if (result.kind !== 'dispatch') return;
             dispatch({
-              ...tagSnapshotWithSession(result.action, sessionId),
+              ...tagSnapshotWithSession(result.action, sessionId, joinedOnBoundConnection),
               serverSequence: gateEvent.sequence ?? undefined,
             });
             // A FullSync on a joined connection is applied: from here every
