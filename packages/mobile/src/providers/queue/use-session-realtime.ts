@@ -265,6 +265,11 @@ export function useSessionRealtime({
     let joinRetryTimer: ReturnType<typeof setTimeout> | null = null;
     let joinRetryCount = 0;
     let authRefreshRejoinInProgress = false;
+    // JOIN_SESSION completed on the bound connection. A stream graphql-ws kept
+    // across an auth-refresh close re-subscribes at once and can deliver its
+    // FullSync before the JOIN binds the new connection, so the live flag
+    // waits for both.
+    let joinedOnBoundConnection = false;
 
     // Single-flight, snapshot-checked recovery for a failed session seed. The
     // empty-room FullSync guard (below) calls this to re-push the local queue so
@@ -350,6 +355,7 @@ export function useSessionRealtime({
 
     const cleanupSubscriptions = () => {
       queueStreamLiveRef.current = false;
+      joinedOnBoundConnection = false;
       clearJoinRetryTimer();
       authRefreshRejoinInProgress = false;
       queueUpdatesCleanup?.();
@@ -446,8 +452,9 @@ export function useSessionRealtime({
         clearJoinRetryTimer();
         gate.reset();
         // The retained streams belong to the closed socket: not live until the
-        // replacement streams open with their own FullSync.
+        // new connection has joined and a stream on it opens with a FullSync.
         queueStreamLiveRef.current = false;
+        joinedOnBoundConnection = false;
         return;
       }
       preserveSubscriptionsOnNextConnect = false;
@@ -614,6 +621,7 @@ export function useSessionRealtime({
 
       if (!isCurrent() || currentStartToken !== subscriptionStartToken || sessionIdRef.current !== sessionId) return;
       joinRetryCount = 0;
+      joinedOnBoundConnection = true;
 
       queueUpdatesCleanup = subscribe<{ queueUpdates: QueueUpdateEvent }>(
         client,
@@ -718,9 +726,9 @@ export function useSessionRealtime({
               ...tagSnapshotWithSession(result.action, sessionId),
               serverSequence: gateEvent.sequence ?? undefined,
             });
-            // This stream's opening (or any later) FullSync is applied: from here
-            // every change in the session reaches this phone as an event.
-            if (event.__typename === 'FullSync') queueStreamLiveRef.current = true;
+            // A FullSync on a joined connection is applied: from here every
+            // change in the session reaches this phone as an event.
+            if (event.__typename === 'FullSync' && joinedOnBoundConnection) queueStreamLiveRef.current = true;
             switch (result.eventType) {
               case 'QueueItemAdded': {
                 // The server echoes our own adds back to us. A locally

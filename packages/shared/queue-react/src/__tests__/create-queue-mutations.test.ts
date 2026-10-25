@@ -385,6 +385,30 @@ describe('setCurrentClimb coalescer', () => {
     expect(onBestEffortError).toHaveBeenCalledWith('setCurrentClimb', lost);
   });
 
+  it('skips the deferred ADD_QUEUE_ITEM when onSetCurrentClimbDrainError claims it', async () => {
+    localQueue = [item('A'), item('B')];
+    let firstResolve: (() => void) | undefined;
+    let setCurrentCalls = 0;
+    executeMock.mockImplementation((_c, op) => {
+      if (op.query !== SET_CURRENT_CLIMB) return Promise.resolve();
+      setCurrentCalls += 1;
+      if (setCurrentCalls === 1)
+        return new Promise<void>((resolve) => {
+          firstResolve = () => resolve();
+        });
+      return Promise.reject(new Error('Must be in a session to perform this operation (connectionId: c2)'));
+    });
+
+    const m = make({ onSetCurrentClimbDrainError: () => true });
+    const pA = m.setCurrentClimb(item('A'), false, 'corr-A');
+    const pB = m.setCurrentClimb(item('B'), true, 'corr-B');
+    firstResolve?.();
+    await Promise.all([pA, pB]);
+    await flush();
+
+    expect(queriesFor(ADD_QUEUE_ITEM)).toHaveLength(0);
+  });
+
   it('does not call onSetCurrentClimbDrainError for the head call, whose caller sees its own rejection', async () => {
     const lost = new Error('Must be in a session to perform this operation (connectionId: c2)');
     executeMock.mockImplementation((_c, op) =>

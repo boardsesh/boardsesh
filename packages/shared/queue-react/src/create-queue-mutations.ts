@@ -170,11 +170,13 @@ export type QueueMutationsDeps<TItem> = {
    * resolves at once and is sent later from the coalescer's drain loop, so its
    * caller never sees this failure; this hands it over with the call's own args
    * (item, shouldAddToQueue, correlationId) so the caller can tell WHICH move
-   * never landed. Fires after `onBestEffortError('setCurrentClimb', …)` and after
-   * the coalescer has already re-sent a lost queue-add (#3936). Mobile uses it to
-   * re-send a move that missed the session during a reconnect.
+   * never landed. Fires after `onBestEffortError('setCurrentClimb', …)`. Return
+   * `true` when the caller re-sends a lost `shouldAddToQueue` slot itself; the
+   * coalescer then skips its own deferred queue-add (#3936). Mobile uses it to
+   * re-send a move that missed the session during a reconnect, and holds the
+   * slot back until then.
    */
-  onSetCurrentClimbDrainError?: (error: unknown, args: SetCurrentClimbArgs<TItem>) => void;
+  onSetCurrentClimbDrainError?: (error: unknown, args: SetCurrentClimbArgs<TItem>) => boolean | void;
   /**
    * Notified when a queue mutation is throttled and `execute` is backing off to
    * retry it (not on the final give-up). Web wires a debounced "catching up"
@@ -509,7 +511,7 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
     },
     onDrainError: (error, args) => {
       onBestEffortError?.('setCurrentClimb', error);
-      onSetCurrentClimbDrainError?.(error, args);
+      return onSetCurrentClimbDrainError?.(error, args) === true;
     },
     onDeferredQueueAddError: (error) => onBestEffortError?.('addQueueItem', error),
   });

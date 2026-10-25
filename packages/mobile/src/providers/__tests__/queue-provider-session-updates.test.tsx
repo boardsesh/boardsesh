@@ -4175,11 +4175,14 @@ describe('QueueProvider mutation-failure resync', () => {
     await waitFor(() => {
       expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('crew-pick');
     });
-    // Their move is newer than the one that never landed: leave it.
+    // Their move is newer than the one that never landed: leave it, and say
+    // the wall moved without a tap, as the resync this replaced did.
     expect(setCurrentCorrelationIdsFor('old-and-in-the-way')).toHaveLength(1);
     expect(snapshots.at(-1)?.state.unconfirmedMove).toBeNull();
     expect(queueStateCalls).toBe(0);
-    expect(toast.showToast).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(toast.showToast.mock.calls.map(([message]) => message)).toEqual(['mobile.queue.outOfSyncRefreshed']);
+    });
   });
 
   // The other half of the review's case: graphql-ws's re-send was refused, but
@@ -4208,6 +4211,56 @@ describe('QueueProvider mutation-failure resync', () => {
     });
     expect(setCurrentCorrelationIdsFor('old-and-in-the-way')).toHaveLength(1);
     expect(snapshots.at(-1)?.state.unconfirmedMove).toBeNull();
+    await waitFor(() => {
+      expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.outOfSyncRefreshed', 'error');
+    });
+  });
+
+  // An auth-refresh close keeps the streams, and graphql-ws re-subscribes them
+  // on the new socket at once: their FullSync can come before JOIN_SESSION binds
+  // it. A re-send released then would wait for the JOIN while a crewmate's move
+  // goes by, so live means joined as well.
+  it('waits for the JOIN before re-sending after an auth-refresh close', async () => {
+    const snapshots: Snapshot[] = [];
+    const wallClimb = makeQueueItem('wall-climb');
+    const nextUp = makeQueueItem('next-up');
+    routeHttpRequest(queueStateResponse([wallClimb, nextUp], wallClimb));
+    await renderWallSession(snapshots, [wallClimb, nextUp]);
+    const rejoin = createDeferred<ReturnType<typeof createJoinSessionResponse>>();
+    graph.execute.mockReturnValueOnce(rejoin.promise);
+    const retainedSink = ws.getQueueUpdatesSink();
+    act(() => {
+      ws.emit('closed', { code: 4403, reason: 'Unauthorized', wasClean: false });
+      ws.emit('connected');
+    });
+    // The retained stream's FullSync, before the JOIN has bound the connection.
+    act(() => {
+      pushFullSync([wallClimb, nextUp], wallClimb, 1);
+    });
+    expect(ws.getQueueUpdatesSink()).toBe(retainedSink);
+    queueMutations.setCurrentClimb.mockRejectedValueOnce(makeNotInSessionError());
+
+    act(() => {
+      snapshots.at(-1)?.setCurrentClimb(nextUp);
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.unconfirmedMove?.resend).toBe('awaiting-snapshot');
+    });
+    expect(setCurrentCorrelationIdsFor('next-up')).toHaveLength(1);
+
+    await act(async () => {
+      rejoin.resolve(createJoinSessionResponse());
+      await rejoin.promise;
+    });
+    await waitFor(() => {
+      expect(ws.getQueueUpdatesSink()).not.toBe(retainedSink);
+    });
+    act(() => {
+      pushFullSync([wallClimb, nextUp], wallClimb, 1);
+    });
+    await waitFor(() => {
+      expect(setCurrentCorrelationIdsFor('next-up')).toHaveLength(2);
+    });
   });
 
   it('re-sends at once when the connection is live, and resyncs if the re-send misses too', async () => {
@@ -4415,8 +4468,9 @@ describe('QueueProvider mutation-failure resync', () => {
       snapshots.at(-1)?.setCurrentClimb(landedOn);
     });
     const [landedOnCorrelationId] = setCurrentCorrelationIdsFor('landed-on');
+    let claimedQueueAdd: boolean | void = undefined;
     act(() => {
-      queueMutationsDeps.current?.onSetCurrentClimbDrainError?.(makeNotInSessionError(), {
+      claimedQueueAdd = queueMutationsDeps.current?.onSetCurrentClimbDrainError?.(makeNotInSessionError(), {
         item: landedOn,
         shouldAddToQueue: true,
         correlationId: landedOnCorrelationId,
@@ -4425,6 +4479,9 @@ describe('QueueProvider mutation-failure resync', () => {
     await waitFor(() => {
       expect(snapshots.at(-1)?.state.unconfirmedMove?.resend).toBe('awaiting-snapshot');
     });
+    // Held with the move: the coalescer's own queue-add would land before the
+    // rejoin snapshot is read and spoil it.
+    expect(claimedQueueAdd).toBe(true);
 
     // The session still holds a climb this phone swiped off and nothing else
     // happened, so neither swipe landed: re-send the one the climber stopped on.
@@ -4436,11 +4493,13 @@ describe('QueueProvider mutation-failure resync', () => {
     });
     expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('landed-on');
     expect(setCurrentCorrelationIdsFor('swiped-past')).toHaveLength(1);
+    // Already queued, and the re-send carries the add anyway.
+    expect(queueMutations.addQueueItem).not.toHaveBeenCalled();
     expect(queueStateCalls).toBe(0);
     expect(toast.showToast).not.toHaveBeenCalled();
   });
 
-  it('does nothing when a drained send that missed the session was already swiped past', async () => {
+  it('changes nothing on screen when a drained send that missed the session was already swiped past', async () => {
     const snapshots: Snapshot[] = [];
     const wallClimb = makeQueueItem('wall-climb');
     const swipedPast = makeQueueItem('swiped-past');
@@ -4458,8 +4517,9 @@ describe('QueueProvider mutation-failure resync', () => {
       snapshots.at(-1)?.setCurrentClimb(landedOn);
     });
     const [swipedPastCorrelationId] = setCurrentCorrelationIdsFor('swiped-past');
+    let claimedQueueAdd: boolean | void = undefined;
     act(() => {
-      queueMutationsDeps.current?.onSetCurrentClimbDrainError?.(makeNotInSessionError(), {
+      claimedQueueAdd = queueMutationsDeps.current?.onSetCurrentClimbDrainError?.(makeNotInSessionError(), {
         item: swipedPast,
         shouldAddToQueue: true,
         correlationId: swipedPastCorrelationId,
@@ -4467,16 +4527,43 @@ describe('QueueProvider mutation-failure resync', () => {
     });
 
     // The wall is on a newer move with its own send. The lost one changes
-    // nothing on screen: no re-send, no resync, no toast, and no second
-    // queue-add (the coalescer already re-sent a drained one's).
-    await act(async () => {
-      await Promise.resolve();
+    // nothing on screen: no re-send, no resync, no toast. Its queue slot is
+    // sent once, by the provider, which tells the coalescer to skip its own.
+    await waitFor(() => {
+      expect(queueMutations.addQueueItem).toHaveBeenCalledTimes(1);
     });
+    expect(claimedQueueAdd).toBe(true);
+    expect((queueMutations.addQueueItem.mock.calls[0] as unknown as [ClimbQueueItem])[0].uuid).toBe('swiped-past');
     expect(snapshots.at(-1)?.state.unconfirmedMove?.resend).toBe('none');
     expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('landed-on');
     expect(setCurrentCorrelationIdsFor('swiped-past')).toHaveLength(1);
-    expect(queueMutations.addQueueItem).not.toHaveBeenCalled();
     expect(queueStateCalls).toBe(0);
+    expect(toast.showToast).not.toHaveBeenCalled();
+  });
+
+  it('leaves a drained send that failed for any other reason to the coalescer, as before', async () => {
+    const snapshots: Snapshot[] = [];
+    const wallClimb = makeQueueItem('wall-climb');
+    const landedOn = makeQueueItem('landed-on');
+    routeHttpRequest(queueStateResponse([wallClimb, landedOn], wallClimb));
+    await renderWallSession(snapshots, [wallClimb, landedOn]);
+    act(() => {
+      snapshots.at(-1)?.setCurrentClimb(landedOn);
+    });
+    const [correlationId] = setCurrentCorrelationIdsFor('landed-on');
+    let claimedQueueAdd: boolean | void = undefined;
+    act(() => {
+      claimedQueueAdd = queueMutationsDeps.current?.onSetCurrentClimbDrainError?.(new Error('validation failed'), {
+        item: landedOn,
+        shouldAddToQueue: true,
+        correlationId,
+      });
+    });
+    expect(claimedQueueAdd).toBe(false);
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.unconfirmedMove).toBeNull();
+    });
+    expect(queueMutations.addQueueItem).not.toHaveBeenCalled();
     expect(toast.showToast).not.toHaveBeenCalled();
   });
 });

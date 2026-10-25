@@ -404,6 +404,32 @@ describe('createSetCurrentClimbCoalescer — drained-then-rejected recovery', ()
     expect(onDrainError.mock.calls[0]?.[0]).toBeInstanceOf(Error);
   });
 
+  // Mobile holds a lost slot back while it waits to re-send the move: an ADD
+  // landing before the rejoin snapshot is read would spoil it (#6783 QA).
+  it('skips its deferred queue-add when onDrainError claims it, and fires it when the sink throws', async () => {
+    const claimed = harness('reject');
+    claimed.onDrainError.mockReturnValue(true);
+    const claimedEnqueue = claimed.coalescer.enqueue({ item: makeItem('a') });
+    await Promise.resolve();
+    await claimed.coalescer.enqueue({ item: makeItem('b'), shouldAddToQueue: true });
+    claimed.first.resolve();
+    await claimedEnqueue;
+    expect(claimed.sendDeferredQueueAdd).not.toHaveBeenCalled();
+
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const throwing = harness('reject');
+    throwing.onDrainError.mockImplementation(() => {
+      throw new Error('sink bug');
+    });
+    const throwingEnqueue = throwing.coalescer.enqueue({ item: makeItem('a') });
+    await Promise.resolve();
+    await throwing.coalescer.enqueue({ item: makeItem('b'), shouldAddToQueue: true });
+    throwing.first.resolve();
+    await throwingEnqueue;
+    expect(throwing.sendDeferredQueueAdd).toHaveBeenCalledTimes(1);
+    consoleError.mockRestore();
+  });
+
   it('does not await the deferred add (a backing-off ADD must not wedge the drain)', async () => {
     // A rate-limited ADD can sit in the transport's back-off for seconds.
     const { first, sendArgs, sendDeferredQueueAdd, coalescer } = harness(

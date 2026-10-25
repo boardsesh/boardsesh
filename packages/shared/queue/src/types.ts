@@ -272,6 +272,13 @@ export type QueueState<TSearchParams extends QueueSearchParams = QueueSearchPara
   needsResync: boolean;
   /** See `UnconfirmedQueueMove`. Optional so state built before it existed still type-checks. */
   unconfirmedMove?: UnconfirmedQueueMove | null;
+  /**
+   * The party session `serverSequence` counts in: the one the last
+   * INITIAL_QUEUE_DATA named, null after one that named none. A sequence is
+   * only comparable within one session, and switching rooms keeps the old
+   * room's number until the new room's first snapshot.
+   */
+  serverSequenceSessionId?: string | null;
 };
 
 export type QueueAction<TSearchParams extends QueueSearchParams = QueueSearchParams> =

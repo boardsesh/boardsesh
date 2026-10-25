@@ -583,5 +583,7 @@ describe('QueueProvider — a wall move in flight across a socket drop', () => {
     expect(setCurrentOutcomes()).toEqual(['not_in_session']);
     expect(server.queueFeed.current?.uuid).toBe('shadow-chaser');
     expect(currentQueue(queueRef).state.unconfirmedMove).toBeNull();
+    // The wall moved without a tap: the climber is told, as the old resync did.
+    expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.outOfSyncRefreshed', 'error');
   });
 });

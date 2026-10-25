@@ -1144,7 +1144,13 @@ describe('unconfirmed moves', () => {
     });
   }
 
-  const onWall = () => makeState({ queue: [wall, next], currentClimbQueueItem: wall, serverSequence: SEEN });
+  const onWall = () =>
+    makeState({
+      queue: [wall, next],
+      currentClimbQueueItem: wall,
+      serverSequence: SEEN,
+      serverSequenceSessionId: 'session-1',
+    });
 
   it('records a move that is sent to a session, with the climb it moved off', () => {
     const moved = moveTo(onWall(), next, 'corr-1');
@@ -1217,6 +1223,15 @@ describe('unconfirmed moves', () => {
     expect(synced.pendingCurrentClimbUpdates).toEqual([]);
   });
 
+  // Joined straight from another room: the sequence this client last applied
+  // counts in that room, so an equal number here proves nothing.
+  it('takes a snapshot whose sequence matches one this client applied in another session', () => {
+    const moved = moveTo({ ...onWall(), serverSequenceSessionId: 'session-0' }, next, 'corr-1');
+    const synced = snapshot(moved, [wall, next], wall);
+    expect(synced.currentClimbQueueItem?.uuid).toBe('wall');
+    expect(synced.serverSequenceSessionId).toBe('session-1');
+  });
+
   it('takes a snapshot of another session, or one that names none, whatever it shows', () => {
     const moved = moveTo(onWall(), next, 'corr-1');
     expect(snapshot(moved, [wall, next], wall, { sessionId: 'session-2' }).currentClimbQueueItem?.uuid).toBe('wall');
@@ -1235,7 +1250,12 @@ describe('unconfirmed moves', () => {
   });
 
   it('treats any climb along a chain of unconfirmed moves as predating the latest one', () => {
-    const state = makeState({ queue: [wall, next, later], currentClimbQueueItem: wall, serverSequence: SEEN });
+    const state = makeState({
+      queue: [wall, next, later],
+      currentClimbQueueItem: wall,
+      serverSequence: SEEN,
+      serverSequenceSessionId: 'session-1',
+    });
     const chained = moveTo(moveTo(state, next, 'corr-1'), later, 'corr-2');
     expect(chained.unconfirmedMove?.movedOff).toEqual(['wall', 'next']);
     expect(snapshot(chained, [wall, next, later], wall).currentClimbQueueItem?.uuid).toBe('later');

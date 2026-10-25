@@ -420,7 +420,11 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // the reducer would then read the rejoin snapshot as "something happened".
   const moveResendRef = useRef<{
     correlationId: string;
+    /** The climb the move put on the wall. */
+    itemUuid: string;
     origin: QueueMutationOrigin;
+    /** The last sequence applied when it was parked: did the session move it since? */
+    parkedAtSequence: number | undefined;
     sent: boolean;
     queueAdds: ClimbQueueItem[];
   } | null>(null);
@@ -434,7 +438,10 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   );
   // The mutations factory is built before the failure handler exists, so its
   // drained-failure hook reaches the handler through this ref.
-  const handleSetCurrentClimbFailureRef = useRef<(error: unknown, failure: SetCurrentClimbFailure) => void>(() => {});
+  // Returns whether it took over a lost queue-add, so the coalescer skips its own.
+  const handleSetCurrentClimbFailureRef = useRef<(error: unknown, failure: SetCurrentClimbFailure) => boolean>(
+    () => false,
+  );
 
   // The active board is the angle source of truth. Read it here so the
   // self-healing re-grade effect can compare each queued climb's display angle
@@ -1085,10 +1092,10 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     // loop. Its caller never hears of it, so this is the only way to learn the
     // climber's latest move missed the session (a reconnect, #6783 QA).
     onSetCurrentClimbDrainError: (error, { item, shouldAddToQueue, correlationId }) => {
-      if (!item || !correlationId) return;
+      if (!item || !correlationId) return false;
       const origin = moveSendOriginsRef.current.get(correlationId);
-      if (!origin) return;
-      handleSetCurrentClimbFailureRef.current(error, {
+      if (!origin) return false;
+      return handleSetCurrentClimbFailureRef.current(error, {
         item,
         shouldAddToQueue: shouldAddToQueue === true,
         correlationId,
@@ -2224,9 +2231,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // Every other failure, and a re-send that fails again, keeps the behaviour it
   // always had, after retiring the move so the next snapshot is the truth.
   const handleSetCurrentClimbFailure = useCallback(
-    (error: unknown, { item, shouldAddToQueue, correlationId, origin, drained }: SetCurrentClimbFailure) => {
-      if (!isQueueMutationOriginCurrent(origin)) return;
-      const { unconfirmedMove, currentClimbQueueItem } = stateRef.current;
+    (error: unknown, { item, shouldAddToQueue, correlationId, origin, drained }: SetCurrentClimbFailure): boolean => {
+      if (!isQueueMutationOriginCurrent(origin)) return false;
+      const { unconfirmedMove, currentClimbQueueItem, serverSequence } = stateRef.current;
       const isLatestSend = unconfirmedMove?.correlationId === correlationId;
       const missedTheSession = origin.sessionId !== null && moveMissedTheSession(error);
       if (missedTheSession) {
@@ -2236,10 +2243,15 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           releasePendingResend();
           moveResendRef.current = {
             correlationId,
+            itemUuid: item.uuid,
             origin,
+            parkedAtSequence: serverSequence,
             sent: false,
             // The re-send carries the add itself; this is in case it never goes.
-            queueAdds: shouldAddToQueue && !drained ? [item] : [],
+            // A drained one's too: the coalescer leaves it to us (see the
+            // return below), because its own re-send would land before the
+            // rejoin snapshot is read.
+            queueAdds: shouldAddToQueue ? [item] : [],
           };
           // The wait starts now: keep the echo's correlation id alive past it.
           coordinator.trackPendingMutation(correlationId);
@@ -2263,24 +2275,24 @@ export function QueueProvider({ children }: { children: ReactNode }) {
             dispatch({ type: 'UNCONFIRMED_MOVE_DROPPED', payload: { correlationId } });
             void resyncQueueAfterMutationFailure(origin);
           }, MOVE_RESEND_WAIT_MS);
-          return;
+          return shouldAddToQueue;
         }
         // A newer send of this climb, or a different climb on the wall: this
         // send's pointer half is moot, so no resync and no toast.
         const coveredByNewerSend = !isLatestSend && unconfirmedMove?.itemUuid === item.uuid;
         const movedOnSince = currentClimbQueueItem?.uuid !== item.uuid;
         if (coveredByNewerSend || (!isLatestSend && movedOnSince)) {
-          // A slot it added still has to reach the crew. The coalescer already
-          // re-sent a drained one's (#3936).
-          if (shouldAddToQueue && !drained) queueOrRecoverMoveAdd(item, origin);
-          return;
+          // A slot it added still has to reach the crew, held back while a
+          // re-send is pending. A drained one's too, instead of the coalescer.
+          if (shouldAddToQueue) queueOrRecoverMoveAdd(item, origin);
+          return shouldAddToQueue;
         }
       }
       // This move is not coming. Stop protecting it so the next snapshot wins.
       if (isLatestSend) dispatch({ type: 'UNCONFIRMED_MOVE_DROPPED', payload: { correlationId } });
-      // A drained send has always been best-effort: the coalescer re-sent its
+      // A drained send has always been best-effort: the coalescer re-sends its
       // queue-add, and the hash watchdog reconciles the pointer.
-      if (drained) return;
+      if (drained) return false;
       // A slot a lost send added would otherwise vanish in the resync below.
       if (missedTheSession && shouldAddToQueue) void recoverThrottledQueueAdd(item, origin);
       // A throttled POINTER move is not a divergence: the rate-limit gate
@@ -2296,7 +2308,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         // Any other party-session failure means peers really did diverge —
         // reconcile against the server (and toast that we refreshed).
         void resyncQueueAfterMutationFailure(origin);
-        return;
+        return false;
       }
       // Throttled while ALSO adding a fresh climb to the queue: the pointer
       // half self-heals, the new slot doesn't. Re-send it on its own so the
@@ -2308,6 +2320,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // Solo (no server to reconcile) and the rate-limited party case both
       // land here: toast only, no resync.
       showQueueMutationErrorToast(error, t, showToast);
+      return false;
     },
     [
       coordinator,
@@ -2429,7 +2442,18 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     // move, the TTL, the fallback): it will not be re-sent, so its slots go out
     // on their own now.
     if (pending && !pending.sent && moveAwaitingResend?.correlationId !== pending.correlationId) {
+      // Was it the session that undid it (a snapshot taken over it, a
+      // crewmate's move), rather than this climber's own next move or edit?
+      // Then the wall just went back without a tap: say so, as the resync this
+      // replaced did. A server change is the one way the sequence moves on.
+      const { serverSequence, currentClimbQueueItem } = stateRef.current;
+      const undoneBySession =
+        !moveAwaitingResend &&
+        currentClimbQueueItem?.uuid !== pending.itemUuid &&
+        serverSequence !== pending.parkedAtSequence &&
+        isQueueMutationOriginCurrent(pending.origin);
       releasePendingResend();
+      if (undoneBySession) showToast(t('mobile.queue.outOfSyncRefreshed'), 'error');
       return;
     }
     if (moveAwaitingResend?.resend !== 'ready') return;
@@ -2472,6 +2496,8 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     privacyRevocationGeneration,
     releasePendingResend,
     sendCurrentClimb,
+    showToast,
+    t,
   ]);
 
   // Re-broadcast the current climb once a deferred thin item hydrates (#3868).

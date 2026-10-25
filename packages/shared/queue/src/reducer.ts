@@ -148,6 +148,7 @@ function reduceQueue<TSearchParams extends QueueSearchParams>(
         // Request resync if we filtered out corrupted data
         needsResync: hadCorruptedData,
         unconfirmedMove: null,
+        serverSequenceSessionId: action.payload.sessionId ?? null,
       };
 
       // A snapshot can be older than this client's latest move: a reconnect's
@@ -166,13 +167,15 @@ function reduceQueue<TSearchParams extends QueueSearchParams>(
       const snapshotCurrentUuid = action.payload.currentClimbQueueItem?.uuid ?? null;
       // The snapshot predates the move only if nothing at all happened in the
       // session since this client last heard from it: same sequence as the
-      // last one it applied, and on a climb it moved off. A higher sequence
+      // last one it applied in this same session, and on a climb it moved off. A higher sequence
       // means events it never saw, and a climb it moved off then proves
       // nothing: its own move may have landed and a crewmate moved the wall
       // back. Every event it did see either confirmed the move, retired it (a
       // crewmate's move) or left the wall alone.
       const nothingHappenedSince =
-        action.serverSequence !== undefined && action.serverSequence === state.serverSequence;
+        action.serverSequence !== undefined &&
+        state.serverSequenceSessionId === move.sessionId &&
+        action.serverSequence === state.serverSequence;
       if (
         snapshotCurrentUuid === move.itemUuid ||
         !nothingHappenedSince ||
