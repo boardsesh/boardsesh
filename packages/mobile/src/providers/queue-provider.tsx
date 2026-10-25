@@ -1845,12 +1845,13 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         reorderedBy: 'self',
         source: options?.source ?? 'drag',
       });
-      // The wire move carries indexes, and the server splices by index without
-      // checking the uuid, so the indexes must describe the server's queue, not
-      // this phone's. They differ while the lane drains: a whole-list Play next
-      // puts every climb here at once but on the server one send at a time. So
-      // the move waits its turn on the lane and reads both indexes at send time
-      // (`serverIndexIn`), when every earlier send from this phone has landed.
+      // The wire move carries indexes. The server finds the climb by uuid
+      // (#6792), but it still places it at `newIndex`, so the indexes must
+      // describe the server's queue, not this phone's. They differ while the
+      // lane drains: a whole-list Play next puts every climb here at once but
+      // on the server one send at a time. So the move waits its turn on the
+      // lane and reads both indexes at send time (`serverIndexIn`), when every
+      // earlier send from this phone has landed.
       void enqueueQueueMutation(async () => {
         if (!isQueueMutationOriginCurrent(origin)) return;
         // Gone, or never reached the server: there is nothing there to move.
