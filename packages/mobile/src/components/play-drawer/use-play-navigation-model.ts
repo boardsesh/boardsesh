@@ -56,6 +56,8 @@ type PlayNavigationInputs = {
   drawerPreviewItem: ClimbQueueItem | null;
   drawerPreviewSuggestionSource: PlaylistSuggestionSource | null;
   currentClimbQueueItem: ClimbQueueItem | null;
+  /** F3 now-slot mode: the line `nextClimb` / `previousClimb` walk from with nothing current. */
+  historyCount?: number | null;
   playlistSuggestionSource: PlaylistSuggestionSource | null;
   activeBoardForNavigation: { boardType: string; layoutId: number } | null | undefined;
   boardConfig: BoardConfig;
@@ -72,6 +74,7 @@ export function usePlayNavigationModel({
   drawerPreviewItem,
   drawerPreviewSuggestionSource,
   currentClimbQueueItem,
+  historyCount,
   playlistSuggestionSource,
   activeBoardForNavigation,
   boardConfig,
@@ -122,8 +125,17 @@ export function usePlayNavigationModel({
         navigationBoardConfig,
         isReachableClimb,
         preparedQueue,
+        historyCount,
       ),
-    [queue, displayedQueueItem, navigationSuggestionSource, navigationBoardConfig, isReachableClimb, preparedQueue],
+    [
+      queue,
+      displayedQueueItem,
+      navigationSuggestionSource,
+      navigationBoardConfig,
+      isReachableClimb,
+      preparedQueue,
+      historyCount,
+    ],
   );
   const remainingCount = useMemo(
     () =>
@@ -135,6 +147,7 @@ export function usePlayNavigationModel({
             navigationBoardConfig,
             isReachableClimb,
             preparedQueue,
+            historyCount,
           )
         : 0,
     [
@@ -145,6 +158,7 @@ export function usePlayNavigationModel({
       navigationBoardConfig,
       isReachableClimb,
       preparedQueue,
+      historyCount,
     ],
   );
   const navigationState = useMemo(
@@ -294,6 +308,7 @@ export function usePlayNavigationModel({
       navigationBoardConfig,
       isReachableClimb,
       preparedQueue,
+      historyCount,
     );
     const framesToWarm = new Set<string>();
     for (const item of upcomingItems) {
@@ -313,6 +328,7 @@ export function usePlayNavigationModel({
     isReachableClimb,
     queue,
     displayedQueueItem,
+    historyCount,
     navigationSuggestionSource,
     navigationBoardConfig,
     boardConfig,

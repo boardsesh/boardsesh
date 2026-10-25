@@ -378,7 +378,7 @@ export function PlayCore({
     transform: [{ translateY: dismissTranslateY.value }],
   }));
 
-  const { queue, currentClimbQueueItem } = useQueueData();
+  const { queue, currentClimbQueueItem, historyCount } = useQueueData();
   const {
     setCurrentClimb,
     nextClimb,
@@ -734,6 +734,7 @@ export function PlayCore({
     drawerPreviewItem,
     drawerPreviewSuggestionSource,
     currentClimbQueueItem,
+    historyCount,
     playlistSuggestionSource,
     activeBoardForNavigation,
     boardConfig,

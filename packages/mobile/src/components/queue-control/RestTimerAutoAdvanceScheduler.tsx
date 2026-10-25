@@ -124,7 +124,7 @@ export function RestTimerAutoAdvanceScheduler() {
   const { targetSeconds, autoAdvance, mode, advanceOn, stage } = useEffectiveRestPacing();
 
   const { nextClimb, getQueueSnapshot, refreshPlaylistSuggestionSource, setSessionRestCadence } = useQueueActions();
-  const { queue, currentClimbQueueItem } = useQueueData();
+  const { queue, currentClimbQueueItem, historyCount } = useQueueData();
   const playlistSuggestionSource = usePlaylistSuggestionSource();
   // A long list keeps going with the player closed too (#6664): the player
   // pages the track only while it is open, and a hands-free session walks the
@@ -197,6 +197,7 @@ export function RestTimerAutoAdvanceScheduler() {
   const advanceInputsRef = useRef({
     queue,
     currentClimbQueueItem,
+    historyCount,
     playlistSuggestionSource,
     activeBoard,
     showToast,
@@ -206,6 +207,7 @@ export function RestTimerAutoAdvanceScheduler() {
   advanceInputsRef.current = {
     queue,
     currentClimbQueueItem,
+    historyCount,
     playlistSuggestionSource,
     activeBoard,
     showToast,
@@ -453,6 +455,8 @@ export function RestTimerAutoAdvanceScheduler() {
         inputs.playlistSuggestionSource,
         activeConfig,
         isReachableRef.current,
+        undefined,
+        inputs.historyCount,
       );
 
       if (!canNext) {
@@ -734,6 +738,8 @@ export function RestTimerAutoAdvanceScheduler() {
       inputs.playlistSuggestionSource,
       activeConfig,
       isReachable,
+      undefined,
+      inputs.historyCount,
     );
     if (canNext) clearRestTimerQueueEnded(nowMs(), mode, anchorAfterFire({ mode, advanceOn }));
   }, [
@@ -742,6 +748,7 @@ export function RestTimerAutoAdvanceScheduler() {
     advanceOn,
     queue,
     currentClimbQueueItem,
+    historyCount,
     playlistSuggestionSource,
     activeBoard,
     queueEnded,
