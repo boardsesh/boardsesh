@@ -70,7 +70,7 @@ describe('CrashScreen palette', () => {
     renderCrash();
     expect(screen.getByText('Something went wrong').getAttribute('data-color')).toBe(materialSurfaces.dark.label);
     expect(screen.getByText(/unexpected error/).getAttribute('data-color')).toBe(materialSurfaces.dark.secondaryLabel);
-    expect(screen.getByTestId('crash-container').getAttribute('data-background')).toBe(
+    expect(screen.getAllByTestId('crash-container')[0].getAttribute('data-background')).toBe(
       materialSurfaces.dark.background,
     );
   });
@@ -80,7 +80,7 @@ describe('CrashScreen palette', () => {
     env.scheme = 'dark';
     renderCrash();
     expect(screen.getByText('Something went wrong').getAttribute('data-color')).toBe(materialSurfaces.dark.label);
-    expect(screen.getByTestId('crash-container').getAttribute('data-background')).toBe(
+    expect(screen.getAllByTestId('crash-container')[0].getAttribute('data-background')).toBe(
       materialSurfaces.dark.background,
     );
   });
@@ -90,7 +90,7 @@ describe('CrashScreen palette', () => {
     env.scheme = 'light';
     renderCrash();
     expect(screen.getByText('Something went wrong').getAttribute('data-color')).toBe('unset');
-    expect(screen.getByTestId('crash-container').getAttribute('data-background')).toBe('unset');
+    expect(screen.getAllByTestId('crash-container')[0].getAttribute('data-background')).toBe('unset');
   });
 
   it('resolves the four platform and scheme combinations', () => {
