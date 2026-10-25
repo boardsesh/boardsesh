@@ -27,6 +27,7 @@
 import type { Client, RateLimitRetryEvent } from '@boardsesh/graphql-client';
 import { execute } from '@boardsesh/graphql-client';
 import type { ClimbQueueItemInput } from '@boardsesh/shared-schema';
+import type { CurrentClimbPlacement } from '@boardsesh/queue';
 import type { SessionRestCadenceInput, SetSessionRestCadencePayload } from '@boardsesh/shared-schema/generated';
 import { createSetCurrentClimbCoalescer, type SetCurrentClimbArgs } from '@boardsesh/queue-runtime';
 import {
@@ -34,10 +35,13 @@ import {
   REMOVE_QUEUE_ITEM,
   REORDER_QUEUE_ITEM,
   SET_CURRENT_CLIMB,
+  SET_CURRENT_CLIMB_NOW_SLOT,
   MIRROR_CURRENT_CLIMB,
   PUBLISH_PLAYBACK_STATE,
   SET_QUEUE,
+  SET_QUEUE_NOW_SLOT,
   SET_QUEUE_WITH_BASELINE,
+  SET_QUEUE_WITH_BASELINE_NOW_SLOT,
   REPLACE_QUEUE_ITEM,
   CONFIRM_CLIMB_ON_WALL,
   REPORT_WALL_DISCONNECT,
@@ -92,6 +96,34 @@ function isUnknownBaselineArgumentError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
   if (!message.includes('baselineSequence')) return false;
   return /unknown argument|graphql_validation_failed|is not defined/i.test(message);
+}
+
+/**
+ * The names an F3 `_NOW_SLOT` document carries that a backend without F3 does
+ * not know (docs/current-climb-outside-queue.md, section 2).
+ */
+const NOW_SLOT_SCHEMA_NAMES = [
+  'placement',
+  'CurrentClimbPlacement',
+  'historyCount',
+  'initialHistoryCount',
+  'currentChangedAt',
+];
+
+/**
+ * Did a backend without the F3 fields reject a `_NOW_SLOT` document at
+ * validation time? graphql-js reports `Unknown argument "placement" ...`,
+ * `Unknown type "CurrentClimbPlacement".` or `Cannot query field
+ * "historyCount" ...` before any resolver runs, with no `extensions.code`, so
+ * this has to match the message. As narrow as `isUnknownBaselineArgumentError`:
+ * one of the F3 names AND a validation-shaped phrase, so a genuine server error
+ * is never mistaken for deploy skew and retried. Exported so the mobile join
+ * (which runs its own document) applies the same rule.
+ */
+export function isNowSlotValidationError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+  if (!NOW_SLOT_SCHEMA_NAMES.some((name) => message.includes(name))) return false;
+  return /unknown argument|unknown type|cannot query field|graphql_validation_failed|is not defined/i.test(message);
 }
 
 /**
@@ -184,6 +216,21 @@ export type QueueMutationsDeps<TItem> = {
    * pacing, not failure (#2655). Fires per mutation, per retry attempt.
    */
   onRateLimited?: (event: RateLimitRetryEvent) => void;
+  /**
+   * F3 now-slot mode, read at SEND time (after the session join, which runs the
+   * server probe): true when the `queue-now-slot` flag is on and the connected
+   * backend serves the Now slot fields. Then a request that carries `placement`
+   * or `historyCount` goes out on the `_NOW_SLOT` document; otherwise every call
+   * uses today's documents and sends neither. Absent (web) means always legacy.
+   */
+  shouldUseNowSlotDocuments?: () => boolean;
+  /**
+   * The backend rejected a `_NOW_SLOT` document at validation time (a rollback
+   * past the F3 backend, with the request already in flight on the old socket).
+   * The caller marks the connection legacy; the request is then retried once on
+   * the legacy document.
+   */
+  onNowSlotDocumentsRejected?: (error: unknown) => void;
 };
 
 export type QueueMutationsActions<TItem> = {
@@ -197,7 +244,20 @@ export type QueueMutationsActions<TItem> = {
    * makes the echoed event a safe no-op.
    */
   reorderQueueItem: (uuid: string, oldIndex: number, newIndex: number) => Promise<void>;
-  setCurrentClimb: (item: TItem | null, shouldAddToQueue?: boolean, correlationId?: string) => Promise<void>;
+  /**
+   * `placement` (F3) is optional and trailing, so every other importer keeps
+   * compiling unchanged. It is sent only on the `_NOW_SLOT` document; a request
+   * that carries it and goes out on the legacy document (mode off at send time,
+   * or the validation fallback) is sent as a legacy open, `shouldAddToQueue:
+   * true`, so a backend without F3 inserts a missing climb instead of storing
+   * an orphan.
+   */
+  setCurrentClimb: (
+    item: TItem | null,
+    shouldAddToQueue?: boolean,
+    correlationId?: string,
+    placement?: CurrentClimbPlacement,
+  ) => Promise<void>;
   /**
    * Is the climber's LATEST intent for `uuid` "drop it" — set by a per-item
    * `removeQueueItem` or by a wholesale `setQueue` replace that discarded a
@@ -233,7 +293,11 @@ export type QueueMutationsActions<TItem> = {
    * peers stay in sync. Best-effort; no-op in solo (no active session).
    */
   publishPlaybackState: (input: PublishPlaybackStateInput) => Promise<void>;
-  setQueue: (queue: TItem[], currentClimbQueueItem?: TItem | null) => Promise<void>;
+  /**
+   * `historyCount` (F3) is sent only on the `_NOW_SLOT` documents, same rule as
+   * `setCurrentClimb`'s `placement`.
+   */
+  setQueue: (queue: TItem[], currentClimbQueueItem?: TItem | null, historyCount?: number | null) => Promise<void>;
   replaceQueueItem: (uuid: string, item: TItem) => Promise<void>;
   /**
    * Tell the backend this client just relayed `climbUuid` to the wall over BLE
@@ -284,7 +348,40 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
     onBestEffortError,
     onSetCurrentClimbDrainError,
     onRateLimited,
+    shouldUseNowSlotDocuments,
+    onNowSlotDocumentsRejected,
   } = deps;
+
+  const nowSlotDocumentsEnabled = () => shouldUseNowSlotDocuments?.() === true;
+
+  /**
+   * Run `nowSlotOperation` when now-slot mode is on, else `legacyOperation`.
+   * A validation error naming an F3 field marks the connection legacy and
+   * retries once on the legacy document; any other error propagates.
+   */
+  async function runWithNowSlotFallback<TData = unknown>(
+    client: Client,
+    nowSlotOperation: { query: string; variables?: Record<string, unknown> } | null,
+    legacyOperation: () => Promise<TData>,
+  ): Promise<TData> {
+    if (nowSlotOperation && nowSlotDocumentsEnabled()) {
+      try {
+        return await runMutation<TData>(client, nowSlotOperation);
+      } catch (error) {
+        if (!isNowSlotValidationError(error)) throw error;
+        onNowSlotDocumentsRejected?.(error);
+      }
+    }
+    return legacyOperation();
+  }
+
+  function setCurrentClimbVariables(args: SetCurrentClimbArgs<TItem>): Record<string, unknown> {
+    return {
+      item: args.item ? toQueueItemInput(args.item) : null,
+      shouldAddToQueue: args.shouldAddToQueue,
+      correlationId: args.correlationId,
+    };
+  }
 
   type Ready = { client: Client; sessionId: string };
 
@@ -454,14 +551,22 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
         // session is fatal (throws), unlike mobile which lazily creates above.
         throw new Error(NOT_CONNECTED);
       }
-      await runMutation(client, {
-        query: SET_CURRENT_CLIMB,
-        variables: {
-          item: args.item ? toQueueItemInput(args.item) : null,
-          shouldAddToQueue: args.shouldAddToQueue,
-          correlationId: args.correlationId,
-        },
-      });
+      const variables = setCurrentClimbVariables(args);
+      const sendClient = client;
+      await runWithNowSlotFallback(
+        sendClient,
+        args.placement === undefined
+          ? null
+          : { query: SET_CURRENT_CLIMB_NOW_SLOT, variables: { ...variables, placement: args.placement } },
+        () =>
+          runMutation(sendClient, {
+            query: SET_CURRENT_CLIMB,
+            // A placement-carrying open on the legacy document is a legacy open:
+            // a backend without F3 must insert a missing climb, never store an orphan.
+            variables:
+              args.placement === undefined ? variables : { ...variables, shouldAddToQueue: args.item !== null },
+          }),
+      );
     },
     sendDeferredQueueAdd: async (item, capturedSessionId) => {
       let client = getClient();
@@ -545,7 +650,7 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
       await runMutation(ready.client, { query: REORDER_QUEUE_ITEM, variables: { uuid, oldIndex, newIndex } });
     },
 
-    setCurrentClimb: async (item, shouldAddToQueue, correlationId) => {
+    setCurrentClimb: async (item, shouldAddToQueue, correlationId, placement) => {
       // Only an activation that carries a queue-add can ever produce a deferred
       // ADD, so only those uuids need tracking for the wholesale-replace diff.
       // Such an activation is also the climber asking for the climb back, so it
@@ -562,7 +667,11 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
       if (!ensureReady && (!getClient() || !getSessionId())) {
         throw new Error(NOT_CONNECTED);
       }
-      await coalescer.enqueue({ item, shouldAddToQueue, correlationId });
+      await coalescer.enqueue(
+        placement === undefined
+          ? { item, shouldAddToQueue, correlationId }
+          : { item, shouldAddToQueue, correlationId, placement },
+      );
     },
 
     wasUuidExplicitlyRemoved: (uuid) => removedUuids.has(uuid),
@@ -588,7 +697,7 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
       }
     },
 
-    setQueue: async (queue, currentClimbQueueItem) => {
+    setQueue: async (queue, currentClimbQueueItem, historyCount) => {
       const queueInputs = queue.map(toQueueItemInput);
       // Read the baseline SYNCHRONOUSLY, before any await, so it describes what
       // the caller knew when it handed over this payload (#3933). Reading it
@@ -629,23 +738,31 @@ export function createQueueMutations<TItem>(deps: QueueMutationsDeps<TItem>): Qu
         queue: queueInputs,
         currentClimbQueueItem: currentClimbQueueItem ? toQueueItemInput(currentClimbQueueItem) : undefined,
       };
-      if (baselineSequence !== null) {
-        try {
-          await runMutation(ready.client, {
-            query: SET_QUEUE_WITH_BASELINE,
-            variables: { ...variables, baselineSequence },
-          });
-          return;
-        } catch (error) {
-          // A backend that predates the `baselineSequence` argument rejects the
-          // whole document at validation time. That is a deploy-skew artefact,
-          // not a user error — retry once on the legacy document so nobody's
-          // Clear button or playlist activation hard-fails during a rollout.
-          // Any other failure (rate limit, transport, auth) propagates.
-          if (!isUnknownBaselineArgumentError(error)) throw error;
+      const nowSlotOperation =
+        historyCount == null
+          ? null
+          : baselineSequence !== null
+            ? { query: SET_QUEUE_WITH_BASELINE_NOW_SLOT, variables: { ...variables, baselineSequence, historyCount } }
+            : { query: SET_QUEUE_NOW_SLOT, variables: { ...variables, historyCount } };
+      await runWithNowSlotFallback(ready.client, nowSlotOperation, async () => {
+        if (baselineSequence !== null) {
+          try {
+            await runMutation(ready.client, {
+              query: SET_QUEUE_WITH_BASELINE,
+              variables: { ...variables, baselineSequence },
+            });
+            return;
+          } catch (error) {
+            // A backend that predates the `baselineSequence` argument rejects the
+            // whole document at validation time. That is a deploy-skew artefact,
+            // not a user error — retry once on the legacy document so nobody's
+            // Clear button or playlist activation hard-fails during a rollout.
+            // Any other failure (rate limit, transport, auth) propagates.
+            if (!isUnknownBaselineArgumentError(error)) throw error;
+          }
         }
-      }
-      await runMutation(ready.client, { query: SET_QUEUE, variables });
+        await runMutation(ready.client, { query: SET_QUEUE, variables });
+      });
     },
 
     replaceQueueItem: async (uuid, item) => {

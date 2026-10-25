@@ -98,6 +98,57 @@ export const JOIN_SESSION = `
   }
 `;
 
+// F3 (#6666, docs/current-climb-outside-queue.md section 2): the same join with
+// the seed's History / Up next line, selecting the two new QueueState fields.
+//
+// The `_NOW_SLOT` documents sit BESIDE today's and are never folded into them:
+// an unknown argument, field or variable type is a document-level validation
+// error against a backend without F3, whatever the variable's value (the same
+// reason as SET_QUEUE_WITH_BASELINE below). A phone sends them only in now-slot
+// mode, when the `queue-now-slot` flag is on and the per-connect probe
+// (QUEUE_STATE_FIELDS_PROBE) found the fields. Deleted with the legacy set in
+// the F3 cleanup PR.
+export const JOIN_SESSION_NOW_SLOT = `
+  mutation JoinSessionNowSlot($sessionId: ID!, $boardPath: String!, $username: String, $avatarUrl: String, $participantId: ID, $initialQueue: [ClimbQueueItemInput!], $initialCurrentClimb: ClimbQueueItemInput, $sessionName: String, $initialHistoryCount: Int) {
+    joinSession(sessionId: $sessionId, boardPath: $boardPath, username: $username, avatarUrl: $avatarUrl, participantId: $participantId, initialQueue: $initialQueue, initialCurrentClimb: $initialCurrentClimb, sessionName: $sessionName, initialHistoryCount: $initialHistoryCount) {
+      id
+      name
+      boardPath
+      clientId
+      participantId
+      isLeader
+      lastConnectedBoardSerial
+      goal
+      isPublic
+      startedAt
+      endedAt
+      isPermanent
+      color
+      users {
+        id
+        username
+        isLeader
+        avatarUrl
+        userId
+        connectionState
+      }
+      queueState {
+        sequence
+        stateHash
+        stateHashOrdered
+        historyCount
+        currentChangedAt
+        queue {
+          ${QUEUE_ITEM_FIELDS}
+        }
+        currentClimbQueueItem {
+          ${QUEUE_ITEM_FIELDS}
+        }
+      }
+    }
+  }
+`;
+
 export const LEAVE_SESSION = `
   mutation LeaveSession {
     leaveSession
@@ -167,6 +218,17 @@ export const REORDER_QUEUE_ITEM = `
 export const SET_CURRENT_CLIMB = `
   mutation SetCurrentClimb($item: ClimbQueueItemInput, $shouldAddToQueue: Boolean, $correlationId: ID) {
     setCurrentClimb(item: $item, shouldAddToQueue: $shouldAddToQueue, correlationId: $correlationId) {
+      ${QUEUE_ITEM_FIELDS}
+    }
+  }
+`;
+
+// F3: setCurrentClimb with `placement` (NOW for an open, STEP for Previous on
+// the queue walk and Replay from here). A request with placement sends
+// `shouldAddToQueue: false`; the server ignores it under placement anyway.
+export const SET_CURRENT_CLIMB_NOW_SLOT = `
+  mutation SetCurrentClimbNowSlot($item: ClimbQueueItemInput, $shouldAddToQueue: Boolean, $correlationId: ID, $placement: CurrentClimbPlacement) {
+    setCurrentClimb(item: $item, shouldAddToQueue: $shouldAddToQueue, correlationId: $correlationId, placement: $placement) {
       ${QUEUE_ITEM_FIELDS}
     }
   }
@@ -329,6 +391,60 @@ export const SET_QUEUE_WITH_BASELINE = `
       }
       currentClimbQueueItem {
         ${QUEUE_ITEM_FIELDS}
+      }
+    }
+  }
+`;
+
+// F3: setQueue with the payload's History / Up next line. Without it the server
+// derives the line from the stored History, which is what a legacy phone gets.
+export const SET_QUEUE_NOW_SLOT = `
+  mutation SetQueueNowSlot($queue: [ClimbQueueItemInput!]!, $currentClimbQueueItem: ClimbQueueItemInput, $historyCount: Int) {
+    setQueue(queue: $queue, currentClimbQueueItem: $currentClimbQueueItem, historyCount: $historyCount) {
+      sequence
+      stateHash
+      stateHashOrdered
+      historyCount
+      currentChangedAt
+      queue {
+        ${QUEUE_ITEM_FIELDS}
+      }
+      currentClimbQueueItem {
+        ${QUEUE_ITEM_FIELDS}
+      }
+    }
+  }
+`;
+
+// F3: SET_QUEUE_WITH_BASELINE plus the line.
+export const SET_QUEUE_WITH_BASELINE_NOW_SLOT = `
+  mutation SetQueueWithBaselineNowSlot($queue: [ClimbQueueItemInput!]!, $currentClimbQueueItem: ClimbQueueItemInput, $baselineSequence: Int, $historyCount: Int) {
+    setQueue(queue: $queue, currentClimbQueueItem: $currentClimbQueueItem, baselineSequence: $baselineSequence, historyCount: $historyCount) {
+      sequence
+      stateHash
+      stateHashOrdered
+      historyCount
+      currentChangedAt
+      queue {
+        ${QUEUE_ITEM_FIELDS}
+      }
+      currentClimbQueueItem {
+        ${QUEUE_ITEM_FIELDS}
+      }
+    }
+  }
+`;
+
+// F3: does the connected backend serve the Now slot fields? Run once per
+// socket connect, before the join; a deploy or a rollback drops the socket, so
+// the reconnect asks again. The backend has no introspection-blocking rule.
+// `__type` is valid against any schema, so this document itself never fails
+// validation on an old backend: it just lists fewer fields.
+export const QUEUE_STATE_FIELDS_PROBE = `
+  query QueueStateFieldsProbe {
+    __type(name: "QueueState") {
+      fields {
+        name
       }
     }
   }

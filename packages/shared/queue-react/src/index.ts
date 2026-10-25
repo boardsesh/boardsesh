@@ -7,7 +7,7 @@
 // `QueueMutationsDeps`. `react` is a peerDependency.
 
 export { useQueueMutations } from './use-queue-mutations';
-export { createQueueMutations } from './create-queue-mutations';
+export { createQueueMutations, isNowSlotValidationError } from './create-queue-mutations';
 export type {
   QueueMutationsActions,
   QueueMutationsDeps,

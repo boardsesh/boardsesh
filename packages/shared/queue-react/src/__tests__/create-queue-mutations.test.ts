@@ -5,8 +5,11 @@ import {
   REMOVE_QUEUE_ITEM,
   REORDER_QUEUE_ITEM,
   SET_CURRENT_CLIMB,
+  SET_CURRENT_CLIMB_NOW_SLOT,
   SET_QUEUE,
+  SET_QUEUE_NOW_SLOT,
   SET_QUEUE_WITH_BASELINE,
+  SET_QUEUE_WITH_BASELINE_NOW_SLOT,
   MIRROR_CURRENT_CLIMB,
   REPLACE_QUEUE_ITEM,
   CONFIRM_CLIMB_ON_WALL,
@@ -18,7 +21,7 @@ import {
 const { executeMock } = vi.hoisted(() => ({ executeMock: vi.fn() }));
 vi.mock('@boardsesh/graphql-client', () => ({ execute: executeMock }));
 
-import { createQueueMutations, type QueueMutationsDeps } from '../create-queue-mutations';
+import { createQueueMutations, isNowSlotValidationError, type QueueMutationsDeps } from '../create-queue-mutations';
 
 // Minimal item shape — the factory is generic over TItem and only forwards it
 // through the injected mapper, so a stand-in is enough.
@@ -938,5 +941,111 @@ describe('removal ledger retraction (#4009)', () => {
 
     expect(queriesFor(ADD_QUEUE_ITEM)).toHaveLength(1);
     expect(queriesFor(ADD_QUEUE_ITEM)[0][1].variables).toEqual({ item: { uuid: 'B', climb: { uuid: 'c-B' } } });
+  });
+});
+
+describe('F3 now-slot documents', () => {
+  const nowSlotValidationError = new Error('Unknown argument "placement" on field "Mutation.setCurrentClimb".');
+
+  it("mode off: today's documents, with neither placement nor historyCount", async () => {
+    const mutations = make({ shouldUseNowSlotDocuments: () => false });
+    await mutations.setCurrentClimb(item('a'), false, 'corr', 'NOW');
+    await mutations.setQueue([item('a')], item('a'), 0);
+    expect(queriesFor(SET_CURRENT_CLIMB_NOW_SLOT)).toHaveLength(0);
+    const [[, sent]] = queriesFor(SET_CURRENT_CLIMB);
+    expect(sent.variables).not.toHaveProperty('placement');
+    // A placement-carrying open sent on the legacy document is a legacy open.
+    expect(sent.variables.shouldAddToQueue).toBe(true);
+    expect(queriesFor(SET_QUEUE)[0][1].variables).not.toHaveProperty('historyCount');
+  });
+
+  it('no getter (web) is legacy', async () => {
+    await make().setCurrentClimb(item('a'), false, undefined, 'NOW');
+    expect(queriesFor(SET_CURRENT_CLIMB)).toHaveLength(1);
+    expect(queriesFor(SET_CURRENT_CLIMB_NOW_SLOT)).toHaveLength(0);
+  });
+
+  it('mode on: the _NOW_SLOT documents carry placement and historyCount', async () => {
+    const mutations = make({ shouldUseNowSlotDocuments: () => true, getBaselineSequence: () => 5 });
+    await mutations.setCurrentClimb(item('a'), false, 'corr', 'STEP');
+    expect(queriesFor(SET_CURRENT_CLIMB_NOW_SLOT)[0][1].variables).toEqual({
+      item: { uuid: 'a', climb: { uuid: 'c-a' } },
+      shouldAddToQueue: false,
+      correlationId: 'corr',
+      placement: 'STEP',
+    });
+    await mutations.setQueue([item('a'), item('b')], null, 1);
+    expect(queriesFor(SET_QUEUE_WITH_BASELINE_NOW_SLOT)[0][1].variables).toMatchObject({
+      baselineSequence: 5,
+      historyCount: 1,
+    });
+    await make({ shouldUseNowSlotDocuments: () => true }).setQueue([item('a')], null, 0);
+    expect(queriesFor(SET_QUEUE_NOW_SLOT)[0][1].variables.historyCount).toBe(0);
+  });
+
+  it('mode on but no placement (a legacy-shaped caller) stays on the legacy document', async () => {
+    await make({ shouldUseNowSlotDocuments: () => true }).setCurrentClimb(item('a'), true);
+    expect(queriesFor(SET_CURRENT_CLIMB)).toHaveLength(1);
+    expect(queriesFor(SET_CURRENT_CLIMB)[0][1].variables.shouldAddToQueue).toBe(true);
+  });
+
+  it('a validation error naming an F3 field falls back once and marks the connection legacy', async () => {
+    let nowSlotServer = true;
+    const onNowSlotDocumentsRejected = vi.fn(() => {
+      nowSlotServer = false;
+    });
+    executeMock.mockImplementation(async (_client, operation: { query: string }) => {
+      if (operation.query === SET_CURRENT_CLIMB_NOW_SLOT || operation.query === SET_QUEUE_NOW_SLOT) {
+        throw nowSlotValidationError;
+      }
+    });
+    const mutations = make({ shouldUseNowSlotDocuments: () => nowSlotServer, onNowSlotDocumentsRejected });
+    await mutations.setCurrentClimb(item('a'), false, 'corr', 'NOW');
+    expect(onNowSlotDocumentsRejected).toHaveBeenCalledTimes(1);
+    expect(queriesFor(SET_CURRENT_CLIMB)).toHaveLength(1);
+    expect(queriesFor(SET_CURRENT_CLIMB)[0][1].variables.shouldAddToQueue).toBe(true);
+
+    // Marked legacy: the next call goes straight to the legacy document.
+    await mutations.setQueue([item('a')], item('a'), 0);
+    expect(queriesFor(SET_QUEUE_NOW_SLOT)).toHaveLength(0);
+    expect(queriesFor(SET_QUEUE)).toHaveLength(1);
+  });
+
+  it('setQueue falls back from the now-slot baseline document to the legacy baseline document', async () => {
+    executeMock.mockImplementation(async (_client, operation: { query: string }) => {
+      if (operation.query === SET_QUEUE_WITH_BASELINE_NOW_SLOT) {
+        throw new Error('Unknown argument "historyCount" on field "Mutation.setQueue".');
+      }
+    });
+    const onNowSlotDocumentsRejected = vi.fn();
+    await make({
+      shouldUseNowSlotDocuments: () => true,
+      onNowSlotDocumentsRejected,
+      getBaselineSequence: () => 3,
+    }).setQueue([item('a')], null, 1);
+    expect(onNowSlotDocumentsRejected).toHaveBeenCalledTimes(1);
+    expect(queriesFor(SET_QUEUE_WITH_BASELINE)[0][1].variables).toMatchObject({ baselineSequence: 3 });
+    expect(queriesFor(SET_QUEUE_WITH_BASELINE)[0][1].variables).not.toHaveProperty('historyCount');
+  });
+
+  it('any other error is not retried on the legacy document', async () => {
+    const onNowSlotDocumentsRejected = vi.fn();
+    executeMock.mockRejectedValue(new Error('RATE_LIMITED'));
+    await expect(
+      make({ shouldUseNowSlotDocuments: () => true, onNowSlotDocumentsRejected }).setQueue([item('a')], null, 0),
+    ).rejects.toThrow('RATE_LIMITED');
+    expect(queriesFor(SET_QUEUE)).toHaveLength(0);
+    expect(onNowSlotDocumentsRejected).not.toHaveBeenCalled();
+  });
+
+  it('isNowSlotValidationError matches only validation-shaped errors naming an F3 field', () => {
+    expect(isNowSlotValidationError(nowSlotValidationError)).toBe(true);
+    expect(isNowSlotValidationError(new Error('Unknown type "CurrentClimbPlacement".'))).toBe(true);
+    expect(isNowSlotValidationError(new Error('Cannot query field "historyCount" on type "QueueState".'))).toBe(true);
+    expect(
+      isNowSlotValidationError(new Error('Unknown argument "baselineSequence" on field "Mutation.setQueue".')),
+    ).toBe(false);
+    expect(isNowSlotValidationError(new Error('historyCount must be at least 0'))).toBe(false);
+    expect(isNowSlotValidationError('nope')).toBe(false);
   });
 });
