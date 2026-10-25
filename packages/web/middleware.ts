@@ -18,7 +18,12 @@ import {
 import { detectLocale } from './app/lib/i18n/detect-locale';
 import { isBlockedCrawler, isOriginAutomationDefaultDenyEnabled } from './app/lib/crawler-policy';
 
-const SPECIAL_ROUTES = ['angles', 'grades']; // routes that don't need board validation
+// The /api/v1 route families whose first segment is not a board name, so the
+// board-name check below must let them through. Every static directory under
+// app/api/v1 belongs here (middleware.test.ts walks the folder to hold that).
+// `spray-walls` serves a wall's photo and generated art: the route itself
+// answers `no-store` and 404s any wall an anonymous read may not see.
+const SPECIAL_ROUTES = ['angles', 'grades', 'spray-walls'];
 
 // Locale-prefixed embed URLs (/es/embed/..., /fr/embed/...) are 308'd to the
 // un-prefixed path (see the carve-out below). Derived from SUPPORTED_LOCALES

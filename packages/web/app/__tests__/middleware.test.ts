@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vite-plus/test';
+import { readdirSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { NextRequest } from 'next/server';
 import { CLIMB_SESSION_COOKIE } from '@/app/lib/climb-session-cookie';
 import { DEFAULT_LOCALE, LOCALE_COOKIE, LOCALE_HEADER } from '@/app/lib/i18n/config';
@@ -441,6 +444,17 @@ function makeRequest(url: string): NextRequest {
   return new NextRequest(new URL(url, 'http://localhost:3000'));
 }
 
+const SPRAY_WALL_UUID = '0144249a-3a8c-47c2-8c1e-54c0c572fe02';
+
+/** Every `app/api/v1/<name>` directory that is a literal segment, not `[board_name]`. */
+function listStaticApiV1Families(): string[] {
+  const apiV1Root = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'api', 'v1');
+  return readdirSync(apiV1Root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith('[') && entry.name !== '__tests__')
+    .map((entry) => entry.name)
+    .sort();
+}
+
 describe('middleware matcher config', () => {
   it('pins the exact matcher entries', () => {
     // Vercel bills/logs per invocation — this literal is the whole point of
@@ -504,6 +518,33 @@ describe('middleware /api/v1 board validation', () => {
 
   it.each(['angles', 'grades'])('passes through the %s special segment without board validation', (segment) => {
     const response = middleware(makeRequest(`/api/v1/${segment}`));
+    expect(response.status).toBe(200);
+  });
+
+  // The middleware decides nothing about a wall: whether it is public, unlisted
+  // or private is the route's backend read to answer, and it answers the same
+  // 404 for a private wall as for no wall. All the middleware can do is let the
+  // request reach the route, for every wall alike.
+  it.each([
+    ['photo', `/api/v1/spray-walls/${SPRAY_WALL_UUID}/photo`],
+    ['flattened art', `/api/v1/spray-walls/${SPRAY_WALL_UUID}/photo?look=wall-crop`],
+    ['hold-only art', `/api/v1/spray-walls/${SPRAY_WALL_UUID}/photo?look=hold-cutouts`],
+  ])("lets a spray wall's %s request reach its route", (_image, url) => {
+    const response = middleware(makeRequest(url));
+    expect(response.status).toBe(200);
+    // The route answers `no-store` itself on every branch. The middleware must
+    // not hand the CDN a window over the top of it: the redirect points at a
+    // signature that expires in fifteen minutes.
+    expect(response.headers.get('CDN-Cache-Control')).toBeNull();
+    expect(response.headers.get('Vercel-CDN-Cache-Control')).toBeNull();
+  });
+
+  // The bug this guards against: `spray-walls` shipped as a route family
+  // beside `[board_name]` and the board-name check 404'd every request to it
+  // for six weeks. Any static directory under /api/v1 is a route family that is
+  // not a board, so each one has to get through.
+  it.each(listStaticApiV1Families())('lets the /api/v1/%s route family through the board-name check', (family) => {
+    const response = middleware(makeRequest(`/api/v1/${family}/x`));
     expect(response.status).toBe(200);
   });
 });
