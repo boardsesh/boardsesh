@@ -17,8 +17,12 @@ const { selectRows, dbMock, dbReadMock, whereMock, aliasWhereMock } = vi.hoisted
     from: vi.fn(() => aliasChain),
     where: vi.fn(async (_whereClause: unknown) => state.aliasRows),
   };
+  // Match the alias lookup's exact selection, so a stats selection that ever
+  // gains an `aliasUuid` field still routes to the stats chain.
   const isAliasSelection = (selection: unknown) =>
-    typeof selection === 'object' && selection !== null && 'aliasUuid' in selection;
+    typeof selection === 'object' &&
+    selection !== null &&
+    Object.keys(selection).sort().join(',') === 'aliasUuid,canonicalUuid';
   return {
     selectRows: state,
     dbMock: { select: vi.fn((selection: unknown) => (isAliasSelection(selection) ? aliasChain : chain)) },

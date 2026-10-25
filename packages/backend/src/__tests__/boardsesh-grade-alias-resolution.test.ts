@@ -108,6 +108,21 @@ describe('play-drawer grade and stats reads resolve climb aliases', () => {
     expect(rows.map((row: { angle: number }) => row.angle)).toEqual([40, 45]);
   });
 
+  it('climbStatsHistory and climbStatsForAngles are empty for an unknown uuid', async () => {
+    const history = await climbQueries.climbStatsHistory(
+      undefined,
+      { boardName: 'kilter', climbUuid: unknownUuid },
+      ctx,
+    );
+    expect(history).toEqual([]);
+    const forAngles = await climbQueries.climbStatsForAngles(
+      undefined,
+      { boardName: 'kilter', climbUuid: unknownUuid },
+      ctx,
+    );
+    expect(forAngles).toEqual([]);
+  });
+
   it('climbStatsForClimbs returns canonical stats under the requested alias uuid', async () => {
     const authedCtx = { ...ctx, isAuthenticated: true, userId: 'alias-test-user' } as unknown as ConnectionContext;
     const rows = await climbQueries.climbStatsForClimbs(
