@@ -284,11 +284,16 @@ export function favoriteRemoveKey(input: FavoriteInput): string {
   return `del:user_favorites:${input.climbUuid}`;
 }
 
-// One climb's add and remove keys carry no board or angle, so cancelling the
-// opposite queued operation by its exact key already covers every angle: an add
-// queued at 40° can no longer survive a remove made at 25°.
+// Cancels the opposite queued operation for one climb, on every board and angle,
+// by the payload's climb UUID rather than the key. Rows an older bundle queued
+// still carry `<op>:user_favorites:<board>:<uuid>:<angle>` keys, and the v14
+// migration does not rewrite them; an exact match on today's UUID-only key would
+// leave such a dead-lettered add behind, and the pending-override read (which
+// also matches on payload climbUuid) would paint the heart filled after a remove.
 const CANCEL_OPPOSITE_FAVORITE_SQL = `DELETE FROM pending_mutations
-  WHERE idempotency_key = ? AND status IN ('pending', 'dead_letter')`;
+  WHERE table_name = 'user_favorites' AND operation = ?
+    AND json_extract(payload, '$.climbUuid') = ?
+    AND status IN ('pending', 'dead_letter')`;
 
 export async function addFavoriteLocal(db: OfflineDatabase, input: FavoriteInput): Promise<void> {
   const now = new Date().toISOString();
@@ -314,7 +319,7 @@ export async function addFavoriteLocal(db: OfflineDatabase, input: FavoriteInput
     // dead letter is by definition not in flight, and leaving it would keep the
     // "Sync issues" badge lit for a remove this add has just superseded — and
     // poison the key when the user toggles back.
-    await txn.runAsync(CANCEL_OPPOSITE_FAVORITE_SQL, [favoriteRemoveKey(input)]);
+    await txn.runAsync(CANCEL_OPPOSITE_FAVORITE_SQL, ['delete', input.climbUuid]);
     // A retry re-runs this and reassigns the holder — last attempt wins, which
     // is the outcome that matters. Re-running `enqueue` against a row a previous
     // attempt committed reports `pending`, and neither the revived nor the
@@ -371,7 +376,7 @@ export async function removeFavoriteLocal(db: OfflineDatabase, input: FavoriteIn
     // remove is harmless in the truly-canceled case and corrective in the race.
     // A dead-lettered add is cleared too (#4331) — it is not in flight, and it
     // would otherwise outlive the favorite the user just removed.
-    await txn.runAsync(CANCEL_OPPOSITE_FAVORITE_SQL, [favoriteAddKey(input)]);
+    await txn.runAsync(CANCEL_OPPOSITE_FAVORITE_SQL, ['create', input.climbUuid]);
     enqueueOutcome.result = await enqueue(txn, 'user_favorites', 'delete', input, favoriteRemoveKey(input), {
       reviveDeadLetter: true,
     });

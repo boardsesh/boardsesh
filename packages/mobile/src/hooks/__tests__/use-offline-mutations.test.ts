@@ -801,6 +801,38 @@ describe('a dead-lettered key no longer swallows the next write', () => {
     expect(await getDeadLetterCount(db)).toBe(0);
   });
 
+  // An older bundle keyed favorites `<op>:user_favorites:<board>:<uuid>:<angle>`,
+  // and those outbox rows survive the update. The cancel must still find them.
+  it('clears dead letters an older bundle queued under board-and-angle keys', async () => {
+    const { getPendingFavoriteOverridesLocal } = await import('../../db/queries/get-favorite-status-local');
+    await stampLocalUserId(db, 'me');
+    const legacyAddKey = 'add:user_favorites:kilter:climb-9:40';
+    const legacyRemoveKey = 'del:user_favorites:kilter:climb-9:25';
+    const otherClimbKey = 'add:user_favorites:kilter:climb-10:40';
+    async function seedLegacyDeadLetter(operation: 'create' | 'delete', idempotencyKey: string, climbUuid: string) {
+      await db.runAsync(
+        `INSERT INTO pending_mutations (table_name, operation, payload, idempotency_key, status, retry_count, last_error)
+         VALUES ('user_favorites', ?, ?, ?, 'dead_letter', 3, ?)`,
+        [operation, JSON.stringify({ boardName: 'kilter', climbUuid, angle: 40 }), idempotencyKey, LOCK_MESSAGE],
+      );
+    }
+    await seedLegacyDeadLetter('create', legacyAddKey, 'climb-9');
+    await seedLegacyDeadLetter('create', otherClimbKey, 'climb-10');
+
+    await removeFavoriteLocal(db, { climbUuid: 'climb-9' });
+
+    expect(await readRow(legacyAddKey)).toBeNull();
+    expect(await readRow(otherClimbKey)).toMatchObject({ status: 'dead_letter' });
+    expect(await getPendingFavoriteOverridesLocal(db, ['climb-9'], 'me')).toEqual(new Map([['climb-9', false]]));
+
+    await seedLegacyDeadLetter('delete', legacyRemoveKey, 'climb-9');
+    await addFavoriteLocal(db, { climbUuid: 'climb-9' });
+
+    expect(await readRow(legacyRemoveKey)).toBeNull();
+    expect(await getPendingFavoriteOverridesLocal(db, ['climb-9'], 'me')).toEqual(new Map([['climb-9', true]]));
+    expect(await getDeadLetterCount(db)).toBe(1);
+  });
+
   it('reports a live pending duplicate as pending, not as a loss', async () => {
     await addFavoriteLocal(db, favorite);
     reportEnqueueSuppressedMock.mockClear();
