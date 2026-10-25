@@ -62,7 +62,19 @@ vi.mock('../../../lib/haptics', () => ({ hapticLight: vi.fn(), hapticMedium: vi.
 
 vi.mock('../../../lib/beta-video-url', () => ({ mapBetaLink: () => null }));
 vi.mock('../../../lib/open-external-link', () => ({ openValidatedUrl: vi.fn() }));
-vi.mock('../../../lib/playlists/board-details-for-playlist', () => ({ getBoardConfigForPlaylist: () => null }));
+vi.mock('../../../lib/playlists/board-details-for-playlist', () => ({
+  getBoardConfigForPlaylist: () => null,
+  // Mirrors the real helper: a server-resolved renderBoard wins; otherwise the
+  // layout default (always the Woods 12x12, sizeId 2).
+  renderBoardToPlaylistConfig: (
+    boardType: string,
+    layoutId: number | null,
+    renderBoard: { layoutId: number; sizeId: number; setIds: number[] } | null | undefined,
+  ) =>
+    renderBoard
+      ? { boardName: boardType, ...renderBoard }
+      : { boardName: boardType, layoutId: layoutId ?? 1, sizeId: 2, setIds: [1] },
+}));
 vi.mock('../../../lib/tick-to-climb', () => ({ tickToClimb: () => null }));
 
 vi.mock('../../Text', () => ({
@@ -79,7 +91,7 @@ vi.mock('../../PressableSurface', () => ({
   PressableSurface: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
 vi.mock('../../ClimbListThumbnail', () => ({
-  ClimbListThumbnail: () => createElement('div', { 'data-thumb': 'true' }),
+  ClimbListThumbnail: ({ sizeId }: { sizeId: number }) => createElement('div', { 'data-thumb': String(sizeId) }),
 }));
 vi.mock('../AvatarGroup', () => ({ AvatarGroup: () => createElement('div', { 'data-avatars': 'true' }) }));
 vi.mock('../FeedSocialRow', () => ({ FeedSocialRow: () => createElement('div', { 'data-social': 'true' }) }));
@@ -172,5 +184,28 @@ describe('SessionFeedCard React.memo', () => {
     // A new object (buildVoteSummaryMap mints one only when the vote actually moved).
     rerender(<SessionFeedCard {...props} voteSummary={{ upvotes: 4, userVote: 1 }} />);
     expect(renderCounter.count).toBe(2);
+  });
+});
+
+describe('SessionFeedCard hero board art', () => {
+  it('draws the hardest send on the server-resolved renderBoard, not the layout default', () => {
+    const hardestSend = {
+      boardType: 'woods',
+      layoutId: 1,
+      frames: 'p1r1',
+      renderBoard: { layoutId: 1, sizeId: 1, setIds: [1] },
+      status: 'send',
+      attemptCount: 1,
+    } as unknown as SessionFeedItem['hardestSend'];
+    const { container } = render(
+      <SessionFeedCard
+        session={makeSession({ hardestSend, boardTypes: ['woods'] })}
+        onOpenComments={onOpenComments}
+        onPress={onPress}
+        onOpenClimb={onOpenClimb}
+      />,
+    );
+    // An 8x10 climb (sizeId 1) must not be drawn on the 12x12 (sizeId 2).
+    expect(container.querySelector('[data-thumb]')?.getAttribute('data-thumb')).toBe('1');
   });
 });

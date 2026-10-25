@@ -331,12 +331,9 @@ describe('resolveRenderBoard — Woods', () => {
     ).toEqual({ layoutId: WOODS_LAYOUT, sizeId: WOODS_8X10, setIds: [WOODS_SET] });
   });
 
-  it('falls back to the 12x12 when nothing is known about the climb size', () => {
-    expect(resolveRenderBoard({ boardType: 'woods', climbLayoutId: WOODS_LAYOUT })).toEqual({
-      layoutId: WOODS_LAYOUT,
-      sizeId: WOODS_12X12,
-      setIds: [WOODS_SET],
-    });
+  it('returns null when nothing is known about the climb size, rather than guessing the 12x12', () => {
+    expect(resolveRenderBoard({ boardType: 'woods', climbLayoutId: WOODS_LAYOUT })).toBeNull();
+    expect(resolveRenderBoard({ boardType: 'woods', climbLayoutId: WOODS_LAYOUT, compatibleSizeIds: null })).toBeNull();
   });
 
   it('reads an empty compatibleSizeIds as no data, not as "fits nothing"', () => {
@@ -360,13 +357,9 @@ describe('resolveRenderBoard — Woods', () => {
         ownerBoards: [woodsBoard(WOODS_12X12)],
       })?.sizeId,
     ).toBe(WOODS_12X12);
-    // With no board to reason from either, it still degrades to the 12x12
-    // default rather than returning null.
-    expect(resolveRenderBoard({ boardType: 'woods', climbLayoutId: WOODS_LAYOUT, compatibleSizeIds: [] })).toEqual({
-      layoutId: WOODS_LAYOUT,
-      sizeId: WOODS_12X12,
-      setIds: [WOODS_SET],
-    });
+    // With no board to reason from either, there is nothing to draw on: null,
+    // not a 12x12 guess.
+    expect(resolveRenderBoard({ boardType: 'woods', climbLayoutId: WOODS_LAYOUT, compatibleSizeIds: [] })).toBeNull();
   });
 
   it('pins the layout to Woods when the climb carries none, whatever the tick board says', () => {

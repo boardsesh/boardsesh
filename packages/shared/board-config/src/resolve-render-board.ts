@@ -257,14 +257,17 @@ function resolveWoodsRenderBoard({
     return { layoutId, sizeId: firstCompatibleSizeId, setIds: [...WOODS_SET_IDS] };
   }
 
-  // 4. Nothing known about the climb's size either — the 12x12 default.
-  return getDefaultRenderBoard('woods', climbLayoutId);
+  // 4. Nothing known about the climb's size. Guessing the 12x12 would draw an
+  //    8x10 climb as different holds, so return null and let the caller draw a
+  //    plain tile instead (#5241).
+  return null;
 }
 
 /**
  * Resolve the board configuration a logged climb should be drawn on. See the
  * module comment for the ladder. Returns null only when the board type or layout
- * can't be resolved at all, which callers render as a plain tile.
+ * can't be resolved at all (or a Woods climb has no size information), which
+ * callers render as a plain tile.
  */
 export function resolveRenderBoard(args: ResolveRenderBoardArgs): RenderBoardConfig | null {
   const { boardType, climbLayoutId, compatibleSizeIds, requiredSetIds, tickBoard, ownerBoards } = args;

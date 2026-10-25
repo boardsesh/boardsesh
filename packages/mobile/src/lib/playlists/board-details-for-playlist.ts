@@ -66,9 +66,8 @@ export function getBoardConfigForPlaylist(
  * each from its own origin, so an 8x10 climb's ids all exist on the 12x12 as
  * COMPLETELY DIFFERENT holds: the layout default (always the 12x12) doesn't fail
  * to render, it silently renders a different climb. `resolveRenderBoard` has the
- * per-board rules for this; with no tick board and no owner boards it degrades to
- * exactly `getDefaultRenderBoard` whenever the climb names no sizes, so a climb
- * without `compatibleSizeIds` keeps today's answer.
+ * per-board rules for this. Woods with no size information returns null (the
+ * caller draws a plain tile) instead of the 12x12 guess.
  *
  * See `docs/board-art-geometry.md` for the coordinate contract.
  */

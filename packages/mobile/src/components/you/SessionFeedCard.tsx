@@ -22,7 +22,7 @@ import { SessionGradeStrip } from './SessionGradeStrip';
 import { gradeBadgeColor } from './profile-chart-colors';
 import { mapBetaLink } from '../../lib/beta-video-url';
 import { openValidatedUrl } from '../../lib/open-external-link';
-import { getBoardConfigForPlaylist } from '../../lib/playlists/board-details-for-playlist';
+import { renderBoardToPlaylistConfig } from '../../lib/playlists/board-details-for-playlist';
 import { tickToClimb } from '../../lib/tick-to-climb';
 import { formatRelativeTime } from '../../lib/format-relative-time';
 import { spacing, borderRadius } from '../../theme/tokens';
@@ -141,7 +141,7 @@ export const SessionFeedCard = memo(function SessionFeedCard({
   const handleHeroLongPress = useCallback(() => {
     if (!hardestSend) return;
     const climb = tickToClimb(hardestSend);
-    const config = getBoardConfigForPlaylist(hardestSend.boardType, hardestSend.layoutId);
+    const config = renderBoardToPlaylistConfig(hardestSend.boardType, hardestSend.layoutId, hardestSend.renderBoard);
     if (!climb || !config) return;
     hapticMedium();
     openClimbActions(climb, {
@@ -355,7 +355,7 @@ const HeroSend = memo(function HeroSend({ tick }: { tick: SessionFeedTickHighlig
   const { systemColors } = useTheme();
   const { formatGrade } = useGradeFormat();
 
-  const boardConfig = getBoardConfigForPlaylist(tick.boardType, tick.layoutId);
+  const boardConfig = renderBoardToPlaylistConfig(tick.boardType, tick.layoutId, tick.renderBoard);
   const displayGrade = tick.difficultyName
     ? (formatGrade(tick.difficultyName, tick.boardType) ?? tick.difficultyName)
     : null;
