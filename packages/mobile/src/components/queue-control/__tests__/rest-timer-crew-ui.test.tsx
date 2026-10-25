@@ -255,8 +255,26 @@ vi.mock('../../ModalSheet', () => ({
 }));
 
 vi.mock('../../Text', () => ({
-  Text: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
-    createElement('span', { 'data-testid': testID }, children),
+  Text: ({
+    children,
+    testID,
+    maxFontSizeMultiplier,
+    numberOfLines,
+  }: {
+    children?: ReactNode;
+    testID?: string;
+    maxFontSizeMultiplier?: number;
+    numberOfLines?: number;
+  }) =>
+    createElement(
+      'span',
+      {
+        'data-testid': testID,
+        'data-max-scale': maxFontSizeMultiplier,
+        'data-lines': numberOfLines,
+      },
+      children,
+    ),
 }));
 
 vi.mock('../../Button', () => ({
@@ -433,6 +451,22 @@ describe('RestTimerPacerCaption', () => {
     followCrewClock();
     const { getByTestId } = render(<RestTimerPacerCaption />);
     expect(getByTestId('rest-timer-pacer-caption').textContent).toBe(expected);
+  });
+
+  it('keeps the pill’s line to one, capped at the chrome-label scale', () => {
+    followCrewClock();
+    const { getByTestId } = render(<RestTimerPacerCaption />);
+    const caption = getByTestId('rest-timer-pacer-caption');
+    expect(caption.getAttribute('data-max-scale')).toBe('1.2');
+    expect(caption.getAttribute('data-lines')).toBe('1');
+  });
+
+  it('lets the sheet’s line grow with Dynamic Type and wrap', () => {
+    followCrewClock();
+    const { getByTestId } = render(<RestTimerPacerCaption variant="subheadline" centered scalesWithText />);
+    const caption = getByTestId('rest-timer-pacer-caption');
+    expect(caption.hasAttribute('data-max-scale')).toBe(false);
+    expect(caption.hasAttribute('data-lines')).toBe(false);
   });
 
   it('says nothing when the crew clock never moves the wall', () => {

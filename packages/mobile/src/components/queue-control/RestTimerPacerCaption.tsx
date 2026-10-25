@@ -1,7 +1,7 @@
 // Who paces the crew's rest timer (#5382): "Sam is pacing the wall", "You're
 // pacing the wall", "Nobody is holding the board". One line under the pill's
-// digits and the sheet's clock while this phone follows a crew clock that
-// moves the wall.
+// digits, and a line under the sheet's clock that grows with Dynamic Type and
+// wraps, while this phone follows a crew clock that moves the wall.
 //
 // Its own memoized leaf, outside the 1 Hz clock: it reads the crew clock's
 // config and the wall-driver rule, which change when the board changes hands,
@@ -66,6 +66,12 @@ type RestTimerPacerCaptionProps = {
   variant?: 'footnote' | 'subheadline';
   /** Center it under the sheet's clock; the pill keeps its row alignment. */
   centered?: boolean;
+  /**
+   * The sheet's hero: grows with Dynamic Type like the clock's own caption
+   * and wraps. The pill keeps one line, capped at the chrome-label scale, so
+   * it never grows wider than the screen.
+   */
+  scalesWithText?: boolean;
   style?: StyleProp<TextStyle>;
 };
 
@@ -76,7 +82,12 @@ export const RestTimerPacerCaption = memo(function RestTimerPacerCaption(props: 
   return <CrewPacerLine {...props} />;
 });
 
-function CrewPacerLine({ variant = 'footnote', centered = false, style }: RestTimerPacerCaptionProps) {
+function CrewPacerLine({
+  variant = 'footnote',
+  centered = false,
+  scalesWithText = false,
+  style,
+}: RestTimerPacerCaptionProps) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
   const { role, pacerDisplayName } = useSessionTimerDriver();
@@ -86,8 +97,8 @@ function CrewPacerLine({ variant = 'footnote', centered = false, style }: RestTi
     <Text
       variant={variant}
       color={systemColors.secondaryLabel}
-      maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-      numberOfLines={1}
+      // Left out, not undefined: Text's own default (no cap) has to stand.
+      {...(scalesWithText ? null : PILL_LINE_PROPS)}
       style={[centered ? styles.centered : null, style]}
       testID="rest-timer-pacer-caption"
     >
@@ -95,6 +106,9 @@ function CrewPacerLine({ variant = 'footnote', centered = false, style }: RestTi
     </Text>
   );
 }
+
+/** The pill's one capped line. */
+const PILL_LINE_PROPS = { maxFontSizeMultiplier: CHROME_LABEL_MAX_FONT_SCALE, numberOfLines: 1 } as const;
 
 const styles = StyleSheet.create({
   centered: {

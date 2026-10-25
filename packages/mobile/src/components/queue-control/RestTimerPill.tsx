@@ -353,7 +353,7 @@ export function RestTimerHeroClock() {
       </View>
       {/* Who paces a crew's clock (#5382). Outside the clock's one accessible
           element: it is a separate fact, and it changes when the board does. */}
-      <RestTimerPacerCaption variant="subheadline" centered />
+      <RestTimerPacerCaption variant="subheadline" centered scalesWithText />
     </View>
   );
 }
