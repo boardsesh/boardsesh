@@ -80,6 +80,8 @@ const sampleQueueState = {
   stateHashOrdered: 'hash-5-ordered',
   queue: [],
   currentClimbQueueItem: null,
+  historyCount: 0,
+  currentChangedAt: '2026-05-18T12:05:00.000Z',
   version: 3,
 };
 
@@ -110,6 +112,8 @@ describe('buildSessionPayload — defaults (no overrides)', () => {
         stateHashOrdered: 'hash-5-ordered',
         queue: [],
         currentClimbQueueItem: null,
+        historyCount: 0,
+        currentChangedAt: '2026-05-18T12:05:00.000Z',
       },
       isLeader: true, // leaderConnectionId === ctx.connectionId
       lastConnectedBoardSerial: 'SERIAL-123',
@@ -157,7 +161,8 @@ describe('buildSessionPayload — override short-circuits', () => {
     const payload = await buildSessionPayload('session-1', makeCtx(), { queueState: prefetched });
 
     expect(getQueueStateMock).not.toHaveBeenCalled();
-    expect(payload.queueState).toEqual(prefetched);
+    // A prefetched state without the F3 fields (#6666) reads as null for both.
+    expect(payload.queueState).toEqual({ ...prefetched, historyCount: null, currentChangedAt: null });
   });
 
   it('skips getSessionById when inputs.sessionData is supplied (including explicit null)', async () => {

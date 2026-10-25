@@ -165,6 +165,8 @@ describe('session query — membership gate compat matrix', () => {
       stateHashOrdered: 'hash-5-ordered',
       queue: [],
       currentClimbQueueItem: null,
+      historyCount: null,
+      currentChangedAt: null,
     });
     expect(result!.users).toEqual(sampleUsers);
     expect(result!.lastConnectedBoardSerial).toBe('SERIAL-123');

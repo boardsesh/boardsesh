@@ -41,12 +41,17 @@ type SessionQueryResult = {
 type QueueEvent =
   | {
       __typename: 'FullSync';
+      sequence?: number;
       state: { queue: Array<{ uuid: string }>; currentClimbQueueItem?: { uuid: string } | null };
     }
   | { __typename: 'QueueItemAdded'; item: { uuid: string; climb?: { name: string } } }
   | { __typename: 'QueueItemRemoved'; uuid: string }
   | { __typename: 'QueueReordered'; uuid: string; oldIndex: number; newIndex: number }
-  | { __typename: 'CurrentClimbChanged'; item: { uuid: string; climb?: { name: string } } | null }
+  | {
+      __typename: 'CurrentClimbChanged';
+      sequence?: number;
+      item: { uuid: string; climb?: { name: string } } | null;
+    }
   | { __typename: 'ClimbMirrored'; mirrored: boolean };
 
 type SessionEvent =
@@ -562,24 +567,79 @@ describe('Daemon Integration Tests', () => {
       // Client 2 subscribes to queue updates
       const eventPromise = collectEvents<QueueEvent>(
         client2,
-        `subscription { queueUpdates(sessionId: "${sessionId}") { __typename ... on FullSync { state { currentClimbQueueItem { uuid } } } ... on CurrentClimbChanged { item { uuid } } } }`,
-        2, // FullSync + CurrentClimbChanged
+        `subscription { queueUpdates(sessionId: "${sessionId}") { __typename ... on FullSync { sequence state { queue { uuid } currentClimbQueueItem { uuid } } } ... on CurrentClimbChanged { sequence item { uuid } } } }`,
+        3, // subscribe FullSync, insert FullSync, trailing CurrentClimbChanged
       );
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      // Client 1 sets current climb
+      // Client 1 sets a current climb that is not in the queue, without
+      // shouldAddToQueue (the native socket's stale-item shape). F3 never stores
+      // an orphan, at any QUEUE_NOW_SLOT_PERCENT: the climb is inserted at the
+      // Now slot, published as a FullSync plus a same-sequence trailing
+      // CurrentClimbChanged (docs/current-climb-outside-queue.md, section 1
+      // "Invariants" item 1, and section 2 "Which event the server publishes").
       await execute(client1, {
         query: `mutation SetCurrentClimb($item: ClimbQueueItemInput) { setCurrentClimb(item: $item) { uuid } }`,
         variables: { item: createTestClimb('current-sync') },
       });
 
       const events = await eventPromise;
+      const climbUuid = getTestClimbUuid('current-sync');
 
+      expectTypename(events[0]!, 'FullSync');
+      const insert = events[1];
+      expect(insert).toBeDefined();
+      expectTypename(insert!, 'FullSync');
+      expect(insert!.state.queue.map((item) => item.uuid)).toEqual([climbUuid]);
+      expect(insert!.state.currentClimbQueueItem?.uuid).toBe(climbUuid);
+      const trailing = events[2];
+      expect(trailing).toBeDefined();
+      expectTypename(trailing!, 'CurrentClimbChanged');
+      expect(trailing!.item?.uuid).toBe(climbUuid);
+      expect(insert!.sequence).toEqual(expect.any(Number));
+      expect(trailing!.sequence).toBe(insert!.sequence);
+    });
+
+    it('should sync a pointer move onto a queued climb as one CurrentClimbChanged', async () => {
+      const sessionId = createTestSessionId();
+      const client1 = createTestClient();
+      const client2 = createTestClient();
+
+      await execute(client1, {
+        query: `mutation { joinSession(sessionId: "${sessionId}", boardPath: "${TEST_BOARD_PATH}") { id } }`,
+      });
+      await execute(client2, {
+        query: `mutation { joinSession(sessionId: "${sessionId}", boardPath: "${TEST_BOARD_PATH}") { id } }`,
+      });
+      await execute(client1, {
+        query: `mutation AddQueueItem($item: ClimbQueueItemInput!) { addQueueItem(item: $item) { uuid } }`,
+        variables: { item: createTestClimb('pointer-sync') },
+      });
+
+      const eventPromise = collectEvents<QueueEvent>(
+        client2,
+        `subscription { queueUpdates(sessionId: "${sessionId}") { __typename ... on FullSync { state { currentClimbQueueItem { uuid } } } ... on CurrentClimbChanged { item { uuid } } } }`,
+        2, // subscribe FullSync + CurrentClimbChanged
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // A well-formed room at QUEUE_NOW_SLOT_PERCENT=0 with no placement keeps
+      // today's pointer event (docs/current-climb-outside-queue.md, section 8
+      // "Kill switches").
+      await execute(client1, {
+        query: `mutation SetCurrentClimb($item: ClimbQueueItemInput) { setCurrentClimb(item: $item) { uuid } }`,
+        variables: { item: createTestClimb('pointer-sync') },
+      });
+
+      const events = await eventPromise;
+
+      expectTypename(events[0]!, 'FullSync');
       const second = events[1];
       expect(second).toBeDefined();
       expectTypename(second!, 'CurrentClimbChanged');
-      expect(second!.item?.uuid).toBe(getTestClimbUuid('current-sync'));
+      expect(second!.item?.uuid).toBe(getTestClimbUuid('pointer-sync'));
     });
 
     it('should sync queue reordering across clients', async () => {
