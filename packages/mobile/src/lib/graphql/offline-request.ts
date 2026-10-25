@@ -407,16 +407,18 @@ registerOfflineOperation<BoardseshGradeVariables, BoardseshGradeResponse>({
 // graded), so retrying it would cost a network round trip on every chart
 // open for those climbs. Instead the gate is the climb's own downloaded layout
 // (grade rows sync per scope, like stats): past it, empty means empty. A uuid
-// with no local board_climbs row, or a delisted one (a merged-away alias, which
-// the dedups keep and unlist), or a climb from a scope that was never
-// downloaded, fails the gate and goes to the server, which
-// resolves aliases. With no signal such a uuid still reads as empty, because
+// with no local board_climbs row, or a delisted one with no grade rows of its
+// own (a merged-away alias, which the dedups keep and unlist), or a climb from
+// a scope that was never downloaded, fails the gate and goes to the server,
+// which resolves aliases. A delisted climb that has its own rows keeps
+// serving them. With no signal such a uuid still reads as empty, because
 // board_climb_aliases is not on the phone.
 registerOfflineOperation<BoardseshGradesForAnglesVariables, BoardseshGradesForAnglesResponse>({
   document: BOARDSESH_GRADES_FOR_ANGLES,
   surface: 'grade',
   boardNameOf: ({ boardName }) => boardName,
-  canServeLocal: (db, { boardName, climbUuid }) => isClimbLayoutDownloadedLocally(db, boardName, climbUuid),
+  canServeLocal: (db, { boardName, climbUuid }) =>
+    isClimbLayoutDownloadedLocally(db, boardName, climbUuid, 'board_climb_grades'),
   resolveLocal: async (db, { boardName, climbUuid }) => ({
     boardseshGradesForAngles: await getBoardseshGradesForAnglesLocal(db, {
       boardName,
@@ -440,7 +442,8 @@ registerOfflineOperation<ClimbStatsHistoryVariables, ClimbStatsHistoryResponse>(
   document: CLIMB_STATS_HISTORY,
   surface: 'grade',
   boardNameOf: ({ boardName }) => boardName,
-  canServeLocal: (db, { boardName, climbUuid }) => isClimbLayoutDownloadedLocally(db, boardName, climbUuid),
+  canServeLocal: (db, { boardName, climbUuid }) =>
+    isClimbLayoutDownloadedLocally(db, boardName, climbUuid, 'board_climb_stats'),
   resolveLocal: async (db, { boardName, climbUuid }) => ({
     climbStatsHistory: await getClimbStatsHistoryLocal(db, { boardName, climbUuid, viewerId: await readViewerId() }),
   }),

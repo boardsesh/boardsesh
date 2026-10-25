@@ -834,6 +834,7 @@ describe('offlineAwareRequest — BOARDSESH_GRADES_FOR_ANGLES', () => {
       fakeDb,
       gradesForAnglesVars.boardName,
       gradesForAnglesVars.climbUuid,
+      'board_climb_grades',
     );
     expect(getBoardseshGradesForAnglesLocal).toHaveBeenCalledWith(fakeDb, { ...gradesForAnglesVars, viewerId: null });
     expect(request).not.toHaveBeenCalled();
@@ -882,7 +883,7 @@ describe('offlineAwareRequest — CLIMB_STATS_HISTORY', () => {
     setOnline(true);
     const result = await offlineAwareRequest<ClimbStatsHistoryResponse>(CLIMB_STATS_HISTORY, statsHistoryVars);
     expect(result).toEqual({ climbStatsHistory: [localStatsEntry] });
-    expect(isClimbLayoutDownloadedLocally).toHaveBeenCalledWith(fakeDb, 'kilter', 'c1');
+    expect(isClimbLayoutDownloadedLocally).toHaveBeenCalledWith(fakeDb, 'kilter', 'c1', 'board_climb_stats');
     expect(getClimbStatsHistoryLocal).toHaveBeenCalledWith(fakeDb, { ...statsHistoryVars, viewerId: null });
     expect(request).not.toHaveBeenCalled();
   });
