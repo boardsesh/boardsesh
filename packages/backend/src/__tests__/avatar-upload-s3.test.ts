@@ -4,6 +4,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { once } from 'node:events';
 import { Readable } from 'node:stream';
+import sharp from 'sharp';
 
 const validateTokenMock = vi.hoisted(() => vi.fn());
 const isS3ConfiguredMock = vi.hoisted(() => vi.fn());
@@ -27,7 +28,12 @@ const { handleStaticAvatar } = await import('../handlers/static');
 const { parseSizeParam } = await import('../lib/image-resize');
 
 const USER_ID = '22222222-2222-4222-8222-222222222222';
-const JPEG_BYTES = Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43, 0xff, 0xd9]);
+// A real, decodable JPEG: the S3 path refuses bytes sharp cannot read.
+const JPEG_BYTES = await sharp({ create: { width: 4, height: 4, channels: 3, background: '#7c3aed' } })
+  .jpeg()
+  .toBuffer();
+// JPEG magic bytes with nothing decodable after them.
+const JPEG_HEADER_ONLY_BYTES = Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43, 0xff, 0xd9]);
 
 async function startAvatarServer(): Promise<{ baseUrl: string; server: Server }> {
   const server = createServer((req, res) => {
@@ -59,10 +65,10 @@ function closeServer(server: Server): Promise<void> {
   });
 }
 
-async function uploadJpegAvatar(baseUrl: string): Promise<Response> {
+async function uploadJpegAvatar(baseUrl: string, avatarBytes: Buffer = JPEG_BYTES): Promise<Response> {
   const formData = new FormData();
   formData.set('userId', USER_ID);
-  formData.set('avatar', new Blob([JPEG_BYTES], { type: 'image/jpeg' }), 'avatar.jpg');
+  formData.set('avatar', new Blob([new Uint8Array(avatarBytes)], { type: 'image/jpeg' }), 'avatar.jpg');
   return fetch(`${baseUrl}/api/avatars`, {
     method: 'POST',
     headers: { Authorization: 'Bearer avatar-token' },
@@ -130,6 +136,41 @@ describe('avatar upload S3 path (write-first, clean-after)', () => {
       });
       expect(response.status).toBe(400);
       expect(await response.json()).toEqual({ error: 'Uploaded file is empty' });
+      expect(uploadToS3Mock).not.toHaveBeenCalled();
+      expect(deleteUserAvatarsFromS3Mock).not.toHaveBeenCalled();
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it('rejects a non-image labelled image/jpeg before writing or deleting anything', async () => {
+    validateTokenMock.mockResolvedValue({ userId: USER_ID });
+    isS3ConfiguredMock.mockReturnValue(true);
+    const { baseUrl, server } = await startAvatarServer();
+    try {
+      const response = await uploadJpegAvatar(
+        baseUrl,
+        Buffer.from('<!doctype html><script>alert(1)</script>', 'latin1'),
+      );
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: 'File contents do not match the declared image type' });
+      expect(uploadToS3Mock).not.toHaveBeenCalled();
+      expect(deleteUserAvatarsFromS3Mock).not.toHaveBeenCalled();
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it('rejects JPEG magic bytes sharp cannot decode instead of storing them raw at every variant key', async () => {
+    validateTokenMock.mockResolvedValue({ userId: USER_ID });
+    isS3ConfiguredMock.mockReturnValue(true);
+    const { baseUrl, server } = await startAvatarServer();
+    try {
+      const response = await uploadJpegAvatar(baseUrl, JPEG_HEADER_ONLY_BYTES);
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: 'File is not a readable image' });
       expect(uploadToS3Mock).not.toHaveBeenCalled();
       expect(deleteUserAvatarsFromS3Mock).not.toHaveBeenCalled();
     } finally {

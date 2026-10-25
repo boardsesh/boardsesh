@@ -9,11 +9,11 @@ import * as dbSchema from '@boardsesh/db/schema';
 import { applyCorsHeaders } from './cors';
 import { guardUploadFileStream } from './http-utils';
 import {
-  detectImageMimeType,
   extractAuthTokenFromHeader,
   formatByteCapForMessage,
   validateGymUuid as isWellFormedUuid,
 } from './gym-image-upload';
+import { detectImageMimeType } from '../lib/image-mime';
 import { validateToken } from '../middleware/auth';
 import { deleteFromS3, isS3Configured, uploadToS3 } from '../storage/s3';
 import { writeImageVariants } from '../lib/image-resize';

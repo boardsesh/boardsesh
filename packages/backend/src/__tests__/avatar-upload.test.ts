@@ -207,6 +207,49 @@ describe('avatar upload routes', () => {
     }
   });
 
+  it('rejects bytes that contradict the declared image type and keeps the existing avatar', async () => {
+    validateTokenMock.mockResolvedValue({ userId: USER_ID });
+    const { baseUrl, server } = await startAvatarServer();
+    try {
+      const jpegResponse = await uploadAvatar(baseUrl, new Blob([JPEG_BYTES], { type: 'image/jpeg' }), 'avatar.jpg');
+      expect(jpegResponse.status).toBe(200);
+      const jpegBody = (await jpegResponse.json()) as { avatarUrl?: string };
+
+      const htmlPayload = Buffer.from('<!doctype html><script>alert(1)</script>', 'latin1');
+      const htmlResponse = await uploadAvatar(baseUrl, new Blob([htmlPayload], { type: 'image/jpeg' }), 'avatar.jpg');
+
+      expect(htmlResponse.status).toBe(400);
+      expect((await htmlResponse.json()) as { error?: string }).toEqual({
+        error: 'File contents do not match the declared image type',
+      });
+
+      // The HTML never overwrote the stored JPEG, and no other file appeared.
+      const staticResponse = await fetch(`${baseUrl}${jpegBody.avatarUrl}`);
+      expect(staticResponse.status).toBe(200);
+      expect(Buffer.from(await staticResponse.arrayBuffer())).toEqual(JPEG_BYTES);
+      const userFiles = (await readdir(getAvatarsDir())).filter((fileName) => fileName.startsWith(USER_ID));
+      expect(userFiles).toEqual([`${USER_ID}.jpg`]);
+    } finally {
+      await closeServer(server);
+    }
+  });
+
+  it('rejects a real PNG declared as image/jpeg', async () => {
+    validateTokenMock.mockResolvedValue({ userId: USER_ID });
+    const { baseUrl, server } = await startAvatarServer();
+    try {
+      const response = await uploadAvatar(baseUrl, new Blob([PNG_BYTES], { type: 'image/jpeg' }), 'avatar.jpg');
+
+      expect(response.status).toBe(400);
+      expect((await response.json()) as { error?: string }).toEqual({
+        error: 'File contents do not match the declared image type',
+      });
+      await expect(access(path.join(getAvatarsDir(), `${USER_ID}.jpg`))).rejects.toThrow();
+    } finally {
+      await closeServer(server);
+    }
+  });
+
   it('serves 404 (uncacheable) for a zero-byte avatar file instead of an empty 200', async () => {
     validateTokenMock.mockResolvedValue({ userId: USER_ID });
     const { baseUrl, server } = await startAvatarServer();

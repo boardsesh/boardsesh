@@ -9,7 +9,8 @@ import { validateToken } from '../middleware/auth';
 import { isS3Configured, uploadToS3, deleteUserAvatarsFromS3 } from '../storage/s3';
 import { logger } from '../utils/logger';
 import { buildStaticAvatarUrl } from '../lib/avatar-url';
-import { MUTABLE_IMAGE_CACHE_CONTROL, writeImageVariants } from '../lib/image-resize';
+import { detectImageMimeType } from '../lib/image-mime';
+import { MUTABLE_IMAGE_CACHE_CONTROL, UndecodableImageError, writeImageVariants } from '../lib/image-resize';
 
 // Avatar upload configuration
 const AVATARS_DIR = './avatars';
@@ -269,6 +270,17 @@ export async function handleAvatarUpload(req: IncomingMessage, res: ServerRespon
         return;
       }
 
+      // The declared Content-Type is the client's word; the BYTES decide what
+      // we store. Without this any 2MB payload labelled image/jpeg lands at
+      // avatars/{userId}.jpg and is re-served from our origin as a JPEG.
+      // Checked before the per-user lock so the existing avatar is untouched.
+      if (detectImageMimeType(fileBuffer) !== mimeType) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'File contents do not match the declared image type' }));
+        resolve();
+        return;
+      }
+
       // Capture the narrowed values so the serialized closure below keeps
       // their non-null types.
       const uploadBuffer = fileBuffer;
@@ -297,6 +309,9 @@ export async function handleAvatarUpload(req: IncomingMessage, res: ServerRespon
                 uploadToS3('media', body, key, contentType, { cacheControl: MUTABLE_IMAGE_CACHE_CONTROL }),
               undefined,
               uploadMimeType,
+              // Right magic bytes, junk after them: refuse rather than store
+              // the raw bytes at every variant key.
+              { rejectUndecodable: true },
             );
             await uploadToS3('media', uploadBuffer, s3Key, uploadMimeType);
             await deleteUserAvatarsFromS3(uploadUserId, ext);
@@ -310,6 +325,12 @@ export async function handleAvatarUpload(req: IncomingMessage, res: ServerRespon
           return buildStaticAvatarUrl(avatarFileName, randomUUID());
         });
       } catch (saveErr) {
+        if (saveErr instanceof UndecodableImageError) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'File is not a readable image' }));
+          resolve();
+          return;
+        }
         logger.error('Failed to save avatar:', saveErr);
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Failed to save avatar' }));

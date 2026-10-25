@@ -9,12 +9,12 @@ import { guardUploadFileStream } from './http-utils';
 import { validateToken } from '../middleware/auth';
 import { isS3Configured, uploadToS3 } from '../storage/s3';
 import {
-  detectImageMimeType,
   extractAuthTokenFromHeader,
   formatByteCapForMessage,
   GYM_IMAGE_ALLOWED_MIME_TYPES,
   MIME_TO_EXT,
 } from './gym-image-upload';
+import { detectImageMimeType } from '../lib/image-mime';
 import { logger } from '../utils/logger';
 
 // Screenshot attached to a bug report or a QA verdict. One image per request;

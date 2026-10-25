@@ -59,6 +59,27 @@ export async function streamToBuffer(stream: Readable): Promise<Buffer> {
 }
 
 /**
+ * Thrown by writeImageVariants in `rejectUndecodable` mode when sharp cannot
+ * decode the source. Nothing has been written when it is thrown: every resize
+ * runs before the first write.
+ */
+export class UndecodableImageError extends Error {
+  constructor(cause: unknown) {
+    super('Image could not be decoded', { cause });
+    this.name = 'UndecodableImageError';
+  }
+}
+
+export interface WriteImageVariantsOptions {
+  /**
+   * Throw UndecodableImageError instead of storing the original bytes at every
+   * variant key when sharp cannot decode the source. For user uploads, where a
+   * file sharp cannot read is not an image we should be hosting at all.
+   */
+  rejectUndecodable?: boolean;
+}
+
+/**
  * Write every allowed resize variant of a freshly uploaded image.
  *
  * Called for the MUTABLE media keys (avatars, gym logos, gym photos), which the
@@ -78,6 +99,7 @@ export async function writeImageVariants(
   writeObject: (key: string, body: Buffer, contentType: string) => Promise<unknown>,
   sizes: readonly AllowedImageSize[] = ALLOWED_IMAGE_SIZES,
   originalContentType = 'image/jpeg',
+  { rejectUndecodable = false }: WriteImageVariantsOptions = {},
 ): Promise<void> {
   const resized = await Promise.all(
     sizes.map(async (size) => {
@@ -87,7 +109,8 @@ export async function writeImageVariants(
           body: await resizeImageBuffer(original, size),
           contentType: 'image/jpeg',
         };
-      } catch {
+      } catch (decodeError) {
+        if (rejectUndecodable) throw new UndecodableImageError(decodeError);
         // A source sharp cannot decode still has to produce an OBJECT at every
         // variant key, because direct-from-bucket serving has no fallback: a
         // missing key is a 404, not a slightly-too-large image. Storing the
