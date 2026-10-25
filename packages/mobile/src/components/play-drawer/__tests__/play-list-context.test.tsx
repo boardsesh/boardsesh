@@ -27,28 +27,40 @@ vi.mock('react-native', () => ({
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: { secondaryLabel: 'secondaryLabel' } }),
 }));
+// Android's answer: font scaling off, the line height scaled by hand (see
+// use-capped-text-props). The label must hand it to every one of its texts.
+vi.mock('../../../hooks/use-capped-text-props', () => ({
+  useCappedTextProps: () => ({ allowFontScaling: false, style: { lineHeight: 19.2 } }),
+}));
+type MockTextStyle = { flexShrink?: number; textAlign?: string; lineHeight?: number };
 vi.mock('../../Text', () => ({
   Text: ({
     children,
     numberOfLines,
     numeric,
+    allowFontScaling,
     style,
   }: {
     children?: ReactNode;
     numberOfLines?: number;
     numeric?: boolean;
-    style?: { flexShrink?: number; textAlign?: string };
-  }) =>
-    createElement(
+    allowFontScaling?: boolean;
+    style?: MockTextStyle | MockTextStyle[];
+  }) => {
+    const flat: MockTextStyle = Object.assign({}, ...[style].flat().filter(Boolean));
+    return createElement(
       'span',
       {
         'data-lines': numberOfLines,
         'data-numeric': numeric ? 'true' : undefined,
-        'data-shrink': style?.flexShrink === undefined ? undefined : style.flexShrink,
-        'data-align': style?.textAlign,
+        'data-shrink': flat.flexShrink === undefined ? undefined : flat.flexShrink,
+        'data-align': flat.textAlign,
+        'data-font-scaling': String(allowFontScaling),
+        'data-line-height': flat.lineHeight,
       },
       children,
-    ),
+    );
+  },
 }));
 
 import { PlayListContext } from '../PlayListContext';
@@ -135,5 +147,22 @@ describe('PlayListContext', () => {
   it('renders nothing with neither', () => {
     const { container } = render(createElement(PlayListContext, { parts: null }));
     expect(container.innerHTML).toBe('');
+  });
+
+  // At Android's 2.0 text size the line heights grew past the cap and the
+  // first line ran into the grabber (#6702 QA).
+  it('hands every text the capped scaling, line height included', () => {
+    const { container } = render(
+      createElement(PlayListContext, {
+        parts: { name: 'Projects', count: '4 of 23', accessibilityLabel: 'Playing from Projects, 4 of 23' },
+        caption: 'Preview, not lit',
+      }),
+    );
+    const all = texts(container);
+    expect(all).toHaveLength(3);
+    for (const text of all) {
+      expect(text.getAttribute('data-font-scaling')).toBe('false');
+      expect(text.getAttribute('data-line-height')).toBe('19.2');
+    }
   });
 });

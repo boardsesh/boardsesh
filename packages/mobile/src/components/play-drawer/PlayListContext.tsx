@@ -2,6 +2,7 @@ import { memo } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Text } from '../Text';
 import { useTheme } from '../../providers/theme-provider';
+import { useCappedTextProps } from '../../hooks/use-capped-text-props';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import type { TrackLabelParts } from './track-label-text';
 
@@ -30,6 +31,10 @@ export const PlayListContext = memo(function PlayListContext({
   testID,
 }: PlayListContextProps) {
   const { systemColors } = useTheme();
+  // Capped like the rest of the bar's chrome, line height included, so two
+  // lines at the largest Android text still fit under the grabber.
+  const lineText = useCappedTextProps('caption1', CHROME_LABEL_MAX_FONT_SCALE);
+  const captionText = useCappedTextProps('caption2', CHROME_LABEL_MAX_FONT_SCALE);
   if (!parts && !caption) return null;
   // Two sentences: where the player is, then what the wall is doing.
   const accessibilityLabel = [parts?.accessibilityLabel, caption].filter(Boolean).join('. ');
@@ -48,8 +53,8 @@ export const PlayListContext = memo(function PlayListContext({
             variant="caption1"
             color={systemColors.secondaryLabel}
             numberOfLines={1}
-            maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-            style={styles.name}
+            {...lineText}
+            style={[lineText.style, styles.name]}
           >
             {parts.name}
           </Text>
@@ -58,9 +63,9 @@ export const PlayListContext = memo(function PlayListContext({
               variant="caption1"
               color={systemColors.secondaryLabel}
               numberOfLines={1}
-              maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
               numeric
-              style={styles.count}
+              {...lineText}
+              style={[lineText.style, styles.count]}
             >
               {` · ${parts.count}`}
             </Text>
@@ -72,8 +77,8 @@ export const PlayListContext = memo(function PlayListContext({
           variant="caption2"
           color={systemColors.secondaryLabel}
           numberOfLines={1}
-          maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-          style={styles.caption}
+          {...captionText}
+          style={[captionText.style, styles.caption]}
         >
           {caption}
         </Text>
