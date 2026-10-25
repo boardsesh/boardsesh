@@ -287,10 +287,6 @@ function snapshotSupplementCondition(watermark: SyncCursor, prefix: SQL = sql``)
     NOT (
       ${prefix}user_id IS NULL AND NOT ${prefix}is_boardsesh_authored
       AND ${prefix}is_draft IS NOT TRUE
-      AND NOT EXISTS (
-        SELECT 1 FROM content_privacy snapshot_privacy
-        WHERE snapshot_privacy.entity_type = 'climb' AND snapshot_privacy.entity_id = ${prefix}uuid
-      )
     )
     OR (${prefix}updated_at, ${prefix}sync_seq) > (${watermark.updatedAt}::timestamp, ${watermark.syncSeq}::bigint)
   )`;

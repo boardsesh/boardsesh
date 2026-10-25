@@ -234,7 +234,6 @@ describe.each([
     await db.execute(sql`ANALYZE board_climbs`);
     await db.execute(sql`ANALYZE board_climb_stats`);
     await db.execute(sql`ANALYZE board_climb_grades`);
-    await db.execute(sql`ANALYZE content_privacy`);
 
     // Capture the actual resolver SELECT, including the FA projection and all
     // bound parameters, so EXPLAIN cannot drift into a simpler copied query.
