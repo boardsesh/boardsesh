@@ -57,3 +57,36 @@ describe('AscentThumbnail climb-view href', () => {
     );
   });
 });
+
+/**
+ * Woods numbers each size's holds from its own origin, so the layout default
+ * (the 12x12) would draw an 8x10 climb as different holds. With no resolved
+ * board the backend has no size for the climb, and the thumbnail draws nothing
+ * (#5241). Kilter keeps its layout default.
+ */
+describe('AscentThumbnail with no renderBoard', () => {
+  function renderWithoutBoard(boardType: string) {
+    return render(
+      <AscentThumbnail
+        boardType={boardType}
+        layoutId={1}
+        angle={40}
+        climbUuid="ABC123"
+        climbName="Test Climb"
+        frames="p1r12"
+        isMirror={false}
+        renderBoard={null}
+      />,
+    );
+  }
+
+  it('draws nothing for a Woods climb instead of guessing the 12x12', () => {
+    const { container } = renderWithoutBoard('woods');
+    expect(container.innerHTML).toBe('');
+  });
+
+  it('still falls back to the layout default for Kilter', () => {
+    renderWithoutBoard('kilter');
+    expect(screen.getByRole('link').getAttribute('href')).toContain('/kilter/');
+  });
+});
