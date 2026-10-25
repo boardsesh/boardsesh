@@ -16,6 +16,7 @@ import { runLocalWriteWithRetry } from '../db/write-retry';
 import { invalidateKeysForTable } from '../sync/invalidate-keys';
 import { createInvalidationBatch, type InvalidationBatch } from '../sync/invalidation-batch';
 import { parseQueueTimestamp } from './queue-timestamps';
+import { getLocalUserId } from '../sync/local-user-owner';
 
 // Module-level singletons (drain flag, sign-out guard, wipe epoch): correct as
 // long as exactly one app runtime consumes this package per JS context — the
@@ -337,6 +338,13 @@ export type MutationDeadLetterInfo = {
 
 export type MutationDeadLetterReporter = (info: MutationDeadLetterInfo) => void;
 
+/**
+ * Why a drain sent nothing because the outbox is not provably the signed-in
+ * account's (#6824). `unstamped` is the ordinary moment between sign-in and the
+ * stamp; `other-account` is the one the guard exists for.
+ */
+export type OutboxOwnerRefusal = 'no-signed-in-user' | 'unstamped' | 'other-account';
+
 export type DrainOptions = {
   /** Injectable sleep for deterministic tests. Defaults to setTimeout. */
   sleep?: (ms: number) => Promise<void>;
@@ -356,6 +364,29 @@ export type DrainOptions = {
    * packages/mobile/src/offline/offline-sync-adapter.ts; tests pass a literal.
    */
   isOnline: () => boolean;
+  /**
+   * The account the requests this drain sends will be filed under: on mobile,
+   * the user id in the token the HTTP client is about to attach. REQUIRED, for
+   * the same reason as `isOnline`: a default either way is wrong for someone.
+   *
+   * The outbox has no owner column, and the server takes the owner of a
+   * replayed write from the token, never from the payload (`saveTick` stores
+   * the tick under `ctx.userId`). So the drain sends only when the database's
+   * owner stamp names this account (`isLocalDataStampedFor`). Anything else
+   * (no account, an unclaimed database, somebody else's stamp) sends nothing,
+   * charges no retry and leaves every row exactly as it was (#6824): a drain
+   * after the account claims the device delivers them.
+   *
+   * Resolve the id from the credential itself, not from a cache that can
+   * outlive it.
+   */
+  getSignedInUserId: () => Promise<string | null | undefined>;
+  /**
+   * Observational: the drain declined because of the owner check above. Must
+   * not throw (a throw is swallowed). The mobile adapter reports
+   * `other-account` once per process.
+   */
+  onOutboxOwnerRefused?: (reason: OutboxOwnerRefusal) => void;
   /**
    * Called when a mutation fails with a server-side failure signal (5xx or the
    * masked INTERNAL_SERVER_ERROR shape the backend serves over HTTP 200).
@@ -417,6 +448,25 @@ function notifyDeadLetter(options: DrainOptions, info: MutationDeadLetterInfo): 
       console.warn('[MutationQueue] dead-letter reporter failed:', reportingError);
     }
   }
+}
+
+function notifyOutboxOwnerRefused(options: DrainOptions, reason: OutboxOwnerRefusal): void {
+  try {
+    options.onOutboxOwnerRefused?.(reason);
+  } catch (reportingError) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('[MutationQueue] outbox-owner reporter failed:', reportingError);
+    }
+  }
+}
+
+/** Null when the outbox is provably the signed-in account's. See `getSignedInUserId`. */
+async function outboxOwnerRefusal(db: OfflineDatabase, options: DrainOptions): Promise<OutboxOwnerRefusal | null> {
+  const signedInUserId = await options.getSignedInUserId();
+  if (!signedInUserId) return 'no-signed-in-user';
+  const stampedUserId = await getLocalUserId(db);
+  if (stampedUserId === null) return 'unstamped';
+  return stampedUserId === signedInUserId ? null : 'other-account';
 }
 
 function defaultSleep(ms: number): Promise<void> {
@@ -509,6 +559,16 @@ export async function drainMutationQueue(
   });
 
   try {
+    // Before the first peek, and inside the latch so a concurrent trigger
+    // cannot slip a send past it. A refusal returns here: nothing was read off
+    // the queue, so no row is charged a retry or marked failed. The loop's own
+    // epoch check below covers a wipe that lands during these awaits.
+    const ownerRefusal = await outboxOwnerRefusal(db, options);
+    if (ownerRefusal !== null) {
+      notifyOutboxOwnerRefused(options, ownerRefusal);
+      return;
+    }
+
     while (true) {
       if (_isSigningOut || _globalWipeEpoch !== startEpoch || _isBackgrounded) break;
       const batch = await peekPending(db, 10);

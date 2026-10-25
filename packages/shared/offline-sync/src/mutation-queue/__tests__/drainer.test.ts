@@ -9,6 +9,12 @@ vi.mock('../queue', () => ({
   markDeadLetter: vi.fn().mockResolvedValue(undefined),
 }));
 
+// The owner check (#6824) reads the stamp; these suites are about other
+// branches, so the database always belongs to the account that is signed in.
+// drainer-outbox-owner.test.ts covers the check itself on a real database.
+vi.mock('../../sync/local-user-owner', () => ({ getLocalUserId: async () => 'climber-1' }));
+const signedInAsStampedOwner = async (): Promise<string> => 'climber-1';
+
 vi.mock('../handlers', () => ({
   processMutation: vi.fn().mockResolvedValue(undefined),
 }));
@@ -74,7 +80,7 @@ function useRealClassification(): void {
 
 // Always online unless a test opts out — matches the onlineManager default and
 // keeps every existing drain-behaviour test running as before.
-const ONLINE = { isOnline: () => true } as const;
+const ONLINE = { isOnline: () => true, getSignedInUserId: signedInAsStampedOwner } as const;
 
 function makeMutation(overrides: Partial<PendingMutation> = {}): PendingMutation {
   return {
@@ -124,7 +130,7 @@ describe('drainMutationQueue', () => {
     mockPeekPending.mockResolvedValue([mutation]);
     const queryClient = createMockQueryClient();
 
-    await drainMutationQueue(mockDb, queryClient, mockGraphqlFetch, { isOnline: () => false });
+    await drainMutationQueue(mockDb, queryClient, mockGraphqlFetch, { ...ONLINE, isOnline: () => false });
 
     // Never even peeks the queue: no processing, no retry bump, no dead-letter.
     expect(mockPeekPending).not.toHaveBeenCalled();

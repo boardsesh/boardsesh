@@ -185,6 +185,7 @@ import {
   __resetCoverageVerdictDedupeForTests,
   __resetCycleErrorDedupeForTests,
   __resetMeteredStateForTests,
+  __resetOutboxOwnerReportForTests,
 } from '../offline-sync-adapter';
 import { resetLaunchReloadWindowForTests, setJsRestartCount } from '../../lib/launch-reload-window';
 import type {
@@ -1957,6 +1958,67 @@ describe('triggerSync / pullSync bindings', () => {
     options.onSchemaDrift?.(drift);
     expect(customDrift).toHaveBeenCalledWith(drift);
     expect(reportHandledError).not.toHaveBeenCalled();
+  });
+});
+
+// #6824. Every mobile drain asks the token who is signed in, and every cycle
+// pulls only into a database stamped for that account.
+describe('outbox owner binding', () => {
+  beforeEach(() => {
+    __resetOutboxOwnerReportForTests();
+  });
+
+  it('gives every drain the account in the stored token', async () => {
+    await drainMutationQueue(db, queryClient, graphqlFetch);
+    const options = drainMutationQueueCore.mock.calls[0][3] as DrainOptions;
+    await expect(options.getSignedInUserId()).resolves.toBe('viewer-6653');
+  });
+
+  it('answers no account when credentials change while the token is read', async () => {
+    await drainMutationQueue(db, queryClient, graphqlFetch);
+    authToken.generationCurrent = false;
+    const options = drainMutationQueueCore.mock.calls[0][3] as DrainOptions;
+    await expect(options.getSignedInUserId()).resolves.toBeUndefined();
+  });
+
+  it('reports a drain held by another account once per process, with no ids', async () => {
+    const callerRefusal = vi.fn();
+    await drainMutationQueue(db, queryClient, graphqlFetch, { onOutboxOwnerRefused: callerRefusal });
+    const options = drainMutationQueueCore.mock.calls[0][3] as DrainOptions;
+
+    options.onOutboxOwnerRefused?.('unstamped');
+    expect(reportHandledError).not.toHaveBeenCalled();
+    options.onOutboxOwnerRefused?.('other-account');
+    options.onOutboxOwnerRefused?.('other-account');
+
+    expect(callerRefusal).toHaveBeenCalledTimes(3);
+    expect(reportHandledError).toHaveBeenCalledOnce();
+    expect(reportHandledError.mock.calls[0][1]).toEqual({
+      level: 'warning',
+      tags: { source: 'offline-sync', kind: 'outbox-owner-hold', reason: 'other-account' },
+    });
+    expect(addErrorBreadcrumb).toHaveBeenCalledTimes(3);
+  });
+
+  it('asks every pull path to pull only into a database stamped for the viewer', async () => {
+    startSyncScheduler(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+    );
+    expect((startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions).requireOwnedDatabase).toBe(true);
+    triggerSync(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+    );
+    expect((triggerSyncCore.mock.calls[0][5] as SchedulerOptions).requireOwnedDatabase).toBe(true);
+    await pullSync(db, queryClient, graphqlFetch, { enabledBoards: [] });
+    expect((pullSyncCore.mock.calls[0][3] as SyncOptions).requireOwnedDatabase).toBe(true);
   });
 });
 

@@ -36,6 +36,7 @@ import {
   setPullWriteSettledReporter,
   getSqliteWriteSite,
   type DrainOptions,
+  type OutboxOwnerRefusal,
   type MutationDeadLetterReporter,
   type MutationDeliveryEvent,
   type MutationStatusListenerFailure,
@@ -777,15 +778,48 @@ const schedulerTriggers: SchedulerTriggers = {
   },
 };
 
+// A drain that declined because the database still belongs to another account.
+// Reported once per process (#6824): after the first, every tick save in that
+// session would repeat it. No ids ride along, only the reason.
+let reportedOtherAccountOutbox = false;
+
+function reportOutboxOwnerRefused(reason: OutboxOwnerRefusal): void {
+  // The moment between sign-in and the stamp is ordinary; leave a trail only.
+  addErrorBreadcrumb({ category: 'offline-sync.outbox-owner', message: `Drain declined: ${reason}`, level: 'info' });
+  if (reason !== 'other-account' || reportedOtherAccountOutbox) return;
+  reportedOtherAccountOutbox = true;
+  reportHandledError(new Error('Offline outbox held: the local database belongs to another account'), {
+    level: 'warning',
+    tags: { source: 'offline-sync', kind: 'outbox-owner-hold', reason },
+  });
+}
+
+export function __resetOutboxOwnerReportForTests(): void {
+  reportedOtherAccountOutbox = false;
+}
+
 export function drainMutationQueue(
   db: OfflineDatabase,
   queryClient: QueryClient,
   graphqlFetch: GraphQLFetch,
-  options?: Partial<DrainOptions>,
+  // The owner check is not a caller's choice: every mobile drain sends with the
+  // token in SecureStore, so every one compares the stamp against that token.
+  options?: Partial<Omit<DrainOptions, 'getSignedInUserId'>>,
 ): Promise<void> {
   return drainMutationQueueCore(db, queryClient, graphqlFetch, {
     ...options,
     isOnline: options?.isOnline ?? isOnline,
+    // Whose account the server will file these sends under (#6824). The token
+    // the HTTP client attaches, read the same way, so the check and the send
+    // cannot disagree about who is signed in.
+    getSignedInUserId: readSignedInUserId,
+    onOutboxOwnerRefused: (reason) => {
+      try {
+        options?.onOutboxOwnerRefused?.(reason);
+      } finally {
+        reportOutboxOwnerRefused(reason);
+      }
+    },
     // A 5xx is not a reason to burn a queued write's retry budget (#4862): the
     // request was fine, the server was not. The store answers from its backoff
     // ladder when an outage is already known, so this costs a probe only when
@@ -878,7 +912,17 @@ export type SyncRunOptions = {
   snapshotSource?: SnapshotSource;
 };
 
-async function getSnapshotViewerUserId(): Promise<string | undefined> {
+/**
+ * The signed-in account, from the token in SecureStore: the same token
+ * `authenticatedFetch` attaches to every request the drain and the pull make.
+ * Undefined when credentials changed while it was read, so a sign-in landing
+ * mid-read is never mistaken for the account that started it.
+ *
+ * Deliberately not `useStoredUserId`'s cached answer: that query lives until a
+ * cache clear, and the keychain-unavailable branch skips the clear, so it can
+ * still name the previous account after a new one signs in.
+ */
+async function readSignedInUserId(): Promise<string | undefined> {
   const generation = captureAuthCredentialGeneration();
   const token = await getAuthToken();
   return isAuthCredentialGenerationCurrent(generation) ? userIdFromJwt(token) : undefined;
@@ -893,7 +937,9 @@ export function startSyncScheduler(
   options?: SyncRunOptions,
 ): () => void {
   return startSyncSchedulerCore(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, schedulerTriggers, {
-    getViewerUserId: getSnapshotViewerUserId,
+    getViewerUserId: readSignedInUserId,
+    // Pull only into a database stamped for that account (#6824).
+    requireOwnedDatabase: true,
     isOnline,
     onProgress: downloadTrackingProgressSink(db, options?.onProgress),
     getPriorityBoards: getPendingUserStartedDownloads,
@@ -927,7 +973,9 @@ export function triggerSync(
   options?: SyncRunOptions,
 ): void {
   triggerSyncCore(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, {
-    getViewerUserId: getSnapshotViewerUserId,
+    getViewerUserId: readSignedInUserId,
+    // Pull only into a database stamped for that account (#6824).
+    requireOwnedDatabase: true,
     isOnline,
     onProgress: downloadTrackingProgressSink(db, options?.onProgress),
     getPriorityBoards: getPendingUserStartedDownloads,
@@ -964,7 +1012,8 @@ export async function pullSync(
 ): Promise<void> {
   return pullSyncCore(db, queryClient, graphqlFetch, {
     ...options,
-    viewerUserId: options?.viewerUserId ?? (await getSnapshotViewerUserId()),
+    viewerUserId: options?.viewerUserId ?? (await readSignedInUserId()),
+    requireOwnedDatabase: true,
     isOnline: options?.isOnline ?? isOnline,
     onSchemaDrift: options?.onSchemaDrift ?? reportSchemaDrift,
     onSnapshotBootstrapError: options?.onSnapshotBootstrapError ?? reportSnapshotBootstrapError,

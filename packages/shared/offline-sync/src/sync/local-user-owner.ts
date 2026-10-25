@@ -90,6 +90,24 @@ export async function assertLocalUserDataOwner(
 }
 
 /**
+ * Whether the stamp names `userId`: the check the engine runs before it SENDS or
+ * PULLS for an account (#6824).
+ *
+ * Stricter than `assertLocalUserDataOwner` on purpose. That one answers
+ * `unstamped` for a database nobody has claimed yet, which is right for a reader
+ * deciding whether to wipe. A sender cannot use it: the outbox carries no owner
+ * column, and the server files every replayed write under the token that carries
+ * it, so a row on an unclaimed database could belong to anyone. Only a stamp
+ * that names this account says the queued writes are its own. `OfflineSyncBridge`
+ * writes the stamp once the signed-in account has claimed the device, after any
+ * wipe of a previous account's rows.
+ */
+export async function isLocalDataStampedFor(db: SqlExecutor, userId: string | null | undefined): Promise<boolean> {
+  if (!userId) return false;
+  return (await getLocalUserId(db)) === userId;
+}
+
+/**
  * Whether an unstamped database already holds user rows that name an account
  * other than `currentUserId`. A database restored from a backup, carried over by
  * a reinstall, or migrated from a bundle that never stamped can hold another

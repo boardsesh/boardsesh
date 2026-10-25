@@ -59,6 +59,7 @@ export {
 export type {
   PurgeToken,
   DrainOptions,
+  OutboxOwnerRefusal,
   MutationDeliveryEvent,
   MutationStatusListenerFailure,
   MutationDeadLetterInfo,
@@ -265,6 +266,7 @@ export {
   stampLocalUserId,
   clearLocalUserId,
   assertLocalUserDataOwner,
+  isLocalDataStampedFor,
   markUserDataComplete,
   isUserDataComplete,
   canServeLocalUserData,

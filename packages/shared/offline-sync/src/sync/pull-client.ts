@@ -22,7 +22,7 @@ import {
   getSnapshotSupplement,
 } from './checkpoints';
 import { removeBoardScopeRows } from './scope-teardown';
-import { isUserDataComplete, markUserDataComplete } from './local-user-owner';
+import { isLocalDataStampedFor, isUserDataComplete, markUserDataComplete } from './local-user-owner';
 import {
   getSchemaRefreshState,
   schemaRefreshKey,
@@ -592,6 +592,16 @@ export type RowsDeletedSink = (info: {
 export type SyncOptions = {
   /** Authenticated viewer captured for this cycle; absent retains legacy snapshot replay. */
   viewerUserId?: string;
+  /**
+   * Pull only into a database whose owner stamp names `viewerUserId` (#6824).
+   * An unclaimed database, or one still stamped for the previous account, gets
+   * no cycle at all: the account's rows would land beside the other account's,
+   * and a later sign-in of that other account would read them as its own. The
+   * owner check in the app claims the device and writes the stamp; the next
+   * cycle after that pulls. The mobile adapter always sets this. Off by default
+   * so headless callers and suites that never stamp keep pulling.
+   */
+  requireOwnedDatabase?: boolean;
   /** Encoded board scope keys ("boardType:layoutId:sizeId") to download offline. */
   enabledBoards?: string[];
   /** User-started scopes go first in both bootstrap and board pulls. */
@@ -3543,6 +3553,11 @@ async function performPullSync(
   // drainMutationQueue's `if (!options.isOnline()) return`.
   const isOnline = options?.isOnline ?? (() => true);
   if (!isOnline()) return reportInterruptedCycle();
+
+  // Not this account's database (yet): see `requireOwnedDatabase`. Before the
+  // bootstrap phase, which writes catalogue rows and download markers too.
+  if (options?.requireOwnedDatabase && !(await isLocalDataStampedFor(db, options.viewerUserId)))
+    return reportInterruptedCycle();
 
   // The enqueue token covers the queue wait AND every phase; never rebase per table.
   // enabledBoards stays the captured snapshot after a namespace purge advances.

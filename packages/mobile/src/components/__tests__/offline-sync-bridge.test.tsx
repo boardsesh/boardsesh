@@ -122,8 +122,10 @@ vi.mock('../../hooks/use-current-user-id', () => ({
   useStoredUserId: () => ({ userId: storedUserId, isLoading: false }),
 }));
 
+const reportHandledErrorMock = vi.hoisted(() => vi.fn());
 vi.mock('../../lib/error-reporting', () => ({
   reportError: vi.fn(),
+  reportHandledError: reportHandledErrorMock,
 }));
 
 // The gauge itself is unit-tested in offline/__tests__/outbox-telemetry.test.ts;
@@ -335,7 +337,9 @@ beforeEach(() => {
   assertLocalUserDataOwnerMock.mockClear();
   assertLocalUserDataOwnerMock.mockResolvedValue('ok');
   stampLocalUserIdMock.mockClear();
-  clearUserDataMock.mockClear();
+  clearUserDataMock.mockReset();
+  clearUserDataMock.mockResolvedValue(undefined);
+  reportHandledErrorMock.mockClear();
   clearStoredSprayPhotosMock.mockClear();
   beginGlobalPurgeMock.mockClear();
   snapshotBaseUrlConfigured.value = true;
@@ -441,6 +445,95 @@ describe('OfflineSyncBridge — the same account keeps its downloads', () => {
     expect(clearUserDataMock).not.toHaveBeenCalled();
     expect(clearStoredSprayPhotosMock).not.toHaveBeenCalled();
     expect(stampLocalUserIdMock).not.toHaveBeenCalled();
+  });
+});
+
+// #6824. The outbox records no owner, and the server files a replayed write under
+// the token that sends it. Everything that drains or reports the outbox waits
+// for the owner claim: `ok`, or the wipe and the new stamp done.
+describe('OfflineSyncBridge — nothing drains before the owner claim', () => {
+  it('starts the scheduler, the sweep and the outbox recovery only after the wipe and the new stamp', async () => {
+    let settleOwnership: (ownership: string) => void = () => {};
+    assertLocalUserDataOwnerMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          settleOwnership = resolve;
+        }),
+    );
+    render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
+    await waitFor(() => expect(assertLocalUserDataOwnerMock).toHaveBeenCalled());
+    await act(async () => {});
+    expect(startSyncSchedulerMock).not.toHaveBeenCalled();
+    expect(sweepDelistedDownloadTerminalsMock).not.toHaveBeenCalled();
+    expect(recoverAndReportOutboxOnceMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      settleOwnership('mismatch');
+    });
+    await waitFor(() => expect(startSyncSchedulerMock).toHaveBeenCalledOnce());
+    await waitFor(() => expect(sweepDelistedDownloadTerminalsMock).toHaveBeenCalledOnce());
+    await waitFor(() => expect(recoverAndReportOutboxOnceMock).toHaveBeenCalledOnce());
+    const stampedAt = stampLocalUserIdMock.mock.invocationCallOrder[0];
+    expect(clearUserDataMock.mock.invocationCallOrder[0]).toBeLessThan(stampedAt);
+    expect(startSyncSchedulerMock.mock.invocationCallOrder[0]).toBeGreaterThan(stampedAt);
+    expect(sweepDelistedDownloadTerminalsMock.mock.invocationCallOrder[0]).toBeGreaterThan(stampedAt);
+    expect(recoverAndReportOutboxOnceMock.mock.invocationCallOrder[0]).toBeGreaterThan(stampedAt);
+  });
+
+  it('holds all three for the session when the wipe fails, and reports it once', async () => {
+    assertLocalUserDataOwnerMock.mockResolvedValue('mismatch');
+    clearUserDataMock.mockRejectedValue(new Error('database is locked'));
+    const queryClient = makeQueryClient();
+    const view = render(<Harness flags={FLAG_ON} queryClient={queryClient} />);
+    await waitFor(() => expect(reportHandledErrorMock).toHaveBeenCalledOnce());
+    // A re-run in the same session (a re-render) fails the same way and stays quiet.
+    view.rerender(<Harness flags={FLAG_ON} queryClient={queryClient} />);
+    await act(async () => {});
+
+    expect(stampLocalUserIdMock).not.toHaveBeenCalled();
+    expect(startSyncSchedulerMock).not.toHaveBeenCalled();
+    expect(sweepDelistedDownloadTerminalsMock).not.toHaveBeenCalled();
+    expect(recoverAndReportOutboxOnceMock).not.toHaveBeenCalled();
+    expect(reportHandledErrorMock).toHaveBeenCalledOnce();
+    expect(reportHandledErrorMock.mock.calls[0][1]).toEqual({
+      level: 'warning',
+      tags: { source: 'offline-sync', op: 'owner-claim-hold', reason: 'prepare-failed' },
+    });
+  });
+
+  it('holds all three when the token has no readable user id', async () => {
+    storedUserId = undefined;
+    render(<Harness flags={FLAG_ON} queryClient={makeQueryClient()} />);
+    await waitFor(() => expect(reportHandledErrorMock).toHaveBeenCalledOnce());
+    await act(async () => {});
+
+    expect(assertLocalUserDataOwnerMock).not.toHaveBeenCalled();
+    expect(startSyncSchedulerMock).not.toHaveBeenCalled();
+    expect(sweepDelistedDownloadTerminalsMock).not.toHaveBeenCalled();
+    expect(recoverAndReportOutboxOnceMock).not.toHaveBeenCalled();
+    expect(reportHandledErrorMock.mock.calls[0][1]).toEqual({
+      level: 'warning',
+      tags: { source: 'offline-sync', op: 'owner-claim-hold', reason: 'no-user-id' },
+    });
+  });
+
+  it('starts over after a sign-out: the next sign-in waits for its own claim', async () => {
+    const queryClient = makeQueryClient();
+    const view = render(<Harness flags={FLAG_ON} queryClient={queryClient} />);
+    await waitFor(() => expect(startSyncSchedulerMock).toHaveBeenCalledOnce());
+
+    isAuthenticated = false;
+    view.rerender(<Harness flags={FLAG_ON} queryClient={queryClient} />);
+    await waitFor(() => expect(startSyncSchedulerStop).toHaveBeenCalledOnce());
+
+    // The same account and connection sign in again, and this time the check
+    // has not answered yet.
+    assertLocalUserDataOwnerMock.mockImplementation(() => new Promise(() => {}));
+    isAuthenticated = true;
+    view.rerender(<Harness flags={FLAG_ON} queryClient={queryClient} />);
+    await waitFor(() => expect(assertLocalUserDataOwnerMock).toHaveBeenCalledTimes(2));
+    await act(async () => {});
+    expect(startSyncSchedulerMock).toHaveBeenCalledOnce();
   });
 });
 

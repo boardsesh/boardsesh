@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useOfflineDatabase } from '../db/use-offline-database';
 import { useQueryClient } from '@tanstack/react-query';
 import { notifyBootstrapMetadataChanged, notifyScopeDownloadComplete, setSyncProgress } from '../sync';
@@ -15,7 +15,7 @@ import { registerOfflineEngineState } from '../lib/analytics-offline-engine-stat
 import { useAuth } from '../providers/auth-provider';
 import { useSnapshotSource } from '../offline/use-snapshot-source';
 import { useStoredUserId } from '../hooks/use-current-user-id';
-import { reportError } from '../lib/error-reporting';
+import { reportError, reportHandledError } from '../lib/error-reporting';
 import { useOfflineSchemaReady } from '../db/use-offline-schema-ready';
 import { loadFollowedAuthors, useFollowedAuthors } from '../lib/graphql/hooks/use-followed-authors';
 import { invalidateFollowingCatalogueQueries, isCatalogueQuery } from '../lib/graphql/author-query-invalidation';
@@ -101,16 +101,43 @@ export function OfflineSyncBridge() {
   // moment. It also waits for `launchWritesReady`: a missing stamp during the launch
   // gate only sends user-scoped reads to the network, and the catalogue recovery
   // below re-runs them once the stamp lands.
-  const { userId: localUserId } = useStoredUserId(isAuthenticated);
+  //
+  // It is also the gate for everything below that touches the outbox or pulls
+  // (#6824). The outbox records no owner and the server files a replayed write
+  // under the token that sends it, so a scheduler started before this effect
+  // settles would drain the previous account's queued writes into this one.
+  // `ownerClaim` records the account and connection the stamp was confirmed
+  // for; the scheduler, the launch sweep and the outbox recovery wait for it.
+  // It fails closed: a wipe that throws, or a token with no readable user id,
+  // holds them for the session. Nothing persists the hold, so the next launch
+  // runs the check from scratch. The drainer and the pull check the stamp
+  // themselves as well, which covers the drains this bridge does not start.
+  const { userId: localUserId, isLoading: isLocalUserIdLoading } = useStoredUserId(isAuthenticated);
   useNotificationUpdates(isAuthenticated && !isLoading, localUserId);
   const previousDatabase = useRef(db);
   const catalogueRecoveryPending = useRef(!schemaReady);
+  const [ownerClaim, setOwnerClaim] = useState<{ db: typeof db; userId: string } | null>(null);
+  const ownerClaimed =
+    isAuthenticated && localUserId !== undefined && ownerClaim?.db === db && ownerClaim.userId === localUserId;
+  // One report per reason per mount: the bridge is mounted once at the root, and
+  // a held session would otherwise repeat it on every re-run. No ids.
+  const reportedHolds = useRef(new Set<string>());
+  const reportHoldOnce = useCallback((reason: 'prepare-failed' | 'no-user-id', cause?: unknown) => {
+    if (reportedHolds.current.has(reason)) return;
+    reportedHolds.current.add(reason);
+    reportHandledError(new Error(`Offline sync held for this session: ${reason}`, { cause }), {
+      level: 'warning',
+      tags: { source: 'offline-sync', op: 'owner-claim-hold', reason },
+    });
+  }, []);
   useEffect(() => {
     // Ordinary offline reads can cache an empty fallback before initialization,
     // or personal results before the owner stamp. Remember recovery across auth
     // delays and canceled preparations, without refreshing normal ready launches.
     if (!schemaReady || previousDatabase.current !== db) catalogueRecoveryPending.current = true;
     previousDatabase.current = db;
+    // A claim belongs to one session: the next sign-in proves itself again.
+    if (!isAuthenticated) setOwnerClaim(null);
     if (!isAuthenticated || !localUserId || !schemaReady || !launchWritesReady) return;
     let cancelled = false;
     void (async () => {
@@ -122,14 +149,27 @@ export function OfflineSyncBridge() {
           reportError(new Error('Local offline user data belonged to a different account'), {
             tags: { source: 'offline-sync', op: 'owner-stamp-mismatch' },
           });
-          // The scheduler effect below may already have a pull cycle mid-table;
-          // the wipe bumps the global purge epoch first, so the next cycle
-          // restarts from the now-empty checkpoints.
+          // Nothing drains or pulls for this account before the claim below
+          // (#6824). The wipe still bumps the global purge epoch first, as every
+          // global wipe does.
           await wipePreviousAccountLocalData(db);
           if (cancelled) return;
         }
         if (ownership !== 'ok') await stampLocalUserId(db, localUserId);
         if (cancelled) return;
+        // The device is this account's now: release the scheduler and the
+        // launch passes below.
+        setOwnerClaim({ db, userId: localUserId });
+      } catch (error) {
+        if (__DEV__) {
+          console.warn('[OfflineSyncBridge] failed to claim local user data:', error);
+        }
+        // Fail closed (#6824): the previous account's rows may still be on disk,
+        // so nothing drains or pulls this session.
+        if (!cancelled) reportHoldOnce('prepare-failed', error);
+        return;
+      }
+      try {
         if (catalogueRecoveryPending.current) {
           // Cancel even an initial fetch with no cached data: invalidation alone
           // would reuse its promise and accept results captured before stamping.
@@ -160,7 +200,14 @@ export function OfflineSyncBridge() {
     return () => {
       cancelled = true;
     };
-  }, [db, isAuthenticated, localUserId, schemaReady, launchWritesReady, queryClient]);
+  }, [db, isAuthenticated, localUserId, schemaReady, launchWritesReady, queryClient, reportHoldOnce]);
+
+  // A token with no readable user id can never be matched against the stamp, so
+  // the claim above never runs and sync stays held (#6824). Say so once.
+  useEffect(() => {
+    if (!isAuthenticated || isLoading || isLocalUserIdLoading || localUserId) return;
+    reportHoldOnce('no-user-id');
+  }, [isAuthenticated, isLoading, isLocalUserIdLoading, localUserId, reportHoldOnce]);
 
   // The download funnel's launch backstop (issue #4452). Every in-session
   // de-listing path reports its own terminal now — the My Boards toggle-off and
@@ -171,17 +218,15 @@ export function OfflineSyncBridge() {
   // launch makes the invariant structural rather than a list of remembered call
   // sites (the lesson #4391 wrote down).
   //
-  // Runs alongside the owner-stamp effect, not after it: that effect is async.
-  // A mismatch wipe clears the previous account's markers before it empties
-  // `syncEnabledBoards`, and the sweep reads the list before the markers, so it
-  // cannot report them on this account (#6563). Gated on `isAuthenticated` so a
-  // signed-out cold start cannot re-report what sign-out already reported and
-  // cleared. Self-limiting across re-runs: it clears the markers it reports, so
-  // a second pass finds nothing.
+  // Waits for the owner claim so a mismatch wipe runs first and the previous
+  // account's downloads are never reported as this one's (#6824), and gated on
+  // `isAuthenticated` so a signed-out cold start cannot re-report what
+  // sign-out already reported and cleared. Self-limiting across re-runs: it
+  // clears the markers it reports, so a second pass finds nothing.
   useEffect(() => {
-    if (!isAuthenticated || !schemaReady || !launchWritesReady) return;
+    if (!isAuthenticated || !schemaReady || !launchWritesReady || !ownerClaimed) return;
     void sweepDelistedDownloadTerminals(db);
-  }, [db, isAuthenticated, schemaReady, launchWritesReady]);
+  }, [db, isAuthenticated, schemaReady, launchWritesReady, ownerClaimed]);
 
   // Unconditional (unlike the scheduler effect below): the offline-sync
   // engine's backgrounding guard must cover ad-hoc drainMutationQueue() calls
@@ -195,11 +240,12 @@ export function OfflineSyncBridge() {
   // on auth changes and swallows its own errors.
   // Gated on the schema like every other db effect: pending_mutations does not
   // exist yet on a contended launch, and a gauge that throws there would report
-  // no backlog rather than the backlog it could not read.
+  // no backlog rather than the backlog it could not read. And for the owner
+  // claim: before it, the backlog may be the previous account's (#6824).
   useEffect(() => {
-    if (!isAuthenticated || !schemaReady || !launchWritesReady) return;
+    if (!isAuthenticated || !schemaReady || !launchWritesReady || !ownerClaimed) return;
     void recoverAndReportOutboxOnce(db);
-  }, [db, isAuthenticated, schemaReady, launchWritesReady]);
+  }, [db, isAuthenticated, schemaReady, launchWritesReady, ownerClaimed]);
 
   // Push-then-pull sync loop (foreground + reconnect triggers). Returns its own
   // teardown, so React calls it on unmount / dependency change — including the
@@ -213,6 +259,11 @@ export function OfflineSyncBridge() {
     if (!schemaReady) return undefined;
     // And for the launch to settle: see `launchWritesReady` above.
     if (!launchWritesReady) return undefined;
+    // And for this account to own the database (#6824). Every cycle drains the
+    // outbox first, and before the claim that outbox can hold the previous
+    // account's writes. A write this account queued meanwhile was declined by
+    // the drainer untouched, and this first cycle sends it.
+    if (!ownerClaimed) return undefined;
     try {
       const getEnabledBoards = () => getSetting('syncEnabledBoards');
       const drainQueue = () => drainMutationQueue(db, queryClient, graphqlFetch);
@@ -229,7 +280,7 @@ export function OfflineSyncBridge() {
       }
       return undefined;
     }
-  }, [db, queryClient, graphqlFetch, snapshotSource, isAuthenticated, schemaReady, launchWritesReady]);
+  }, [db, queryClient, graphqlFetch, snapshotSource, isAuthenticated, schemaReady, launchWritesReady, ownerClaimed]);
 
   return null;
 }
