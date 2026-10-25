@@ -216,6 +216,10 @@ final class SessionWebSocketManager {
     private func sendSubscription() {
         guard let sessionId = sessionId else { return }
 
+        // `state.historyCount` (F3, #6666) needs a backend that serves it: a
+        // server without the field rejects this whole document, and the
+        // subscription error reconnects until the attempt cap. Keep the copy in
+        // NATIVE_IOS_QUEUE_UPDATES (packages/shared/graphql) identical.
         let query = """
         subscription QueueUpdates($sessionId: ID!) {
           queueUpdates(sessionId: $sessionId) {
@@ -225,6 +229,7 @@ final class SessionWebSocketManager {
               state {
                 sequence
                 stateHash
+                historyCount
                 queue {
                   uuid
                   climb { uuid setter_username name frames framesCount framesPace angle ascensionist_count difficulty quality_average stars difficulty_error mirrored benchmark_difficulty }

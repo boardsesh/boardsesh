@@ -869,6 +869,119 @@ final class LiveActivityWidgetTests: XCTestCase {
         XCTAssertEqual(state.currentIndex, 2)
     }
 
+    // MARK: - History / Up next line (F3, #6666)
+
+    private func makeQueueItems(_ uuids: [String]) -> [SharedQueueItem] {
+        uuids.map { makeQueueItem(uuid: $0, climbUuid: "climb-\($0)", climbName: "Climb \($0)") }
+    }
+
+    /// Parses a graphql-ws `next` payload from JSON text, the way the socket
+    /// receives it, so JSON null and NSNumber decoding are exercised too.
+    private func parseQueueUpdate(json: String) -> QueueUpdateEvent? {
+        let payload = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
+        guard let updates = QueueMessageParser.extractQueueUpdates(from: payload) else { return nil }
+        return QueueMessageParser.parseQueueUpdate(updates)
+    }
+
+    private func fullSyncHistoryCount(_ event: QueueUpdateEvent?) -> Int? {
+        guard let event, case .fullSync(_, _, _, let historyCount) = event else { return nil }
+        return historyCount
+    }
+
+    func testFullSyncWithNothingCurrentLandsOnTheHeadOfUpNext() {
+        // History [A B], nothing current, Up next [C D]: a crewmate removed the
+        // current climb. The lock screen used to show A (index 0), History's
+        // oldest climb; it now shows C, the climb Next would pick.
+        let state = QueueStateReducer.apply(
+            .fullSync(items: makeQueueItems(["A", "B", "C", "D"]), currentItem: nil, sequence: 4, historyCount: 2),
+            to: makeQueueState(uuids: ["A", "B", "X", "C", "D"], currentIndex: 2)
+        )
+        XCTAssertEqual(state.items.map(\.uuid), ["A", "B", "C", "D"])
+        XCTAssertEqual(state.currentIndex, 2)
+
+        // No History: the head of Up next is index 0.
+        let noHistory = QueueStateReducer.apply(
+            .fullSync(items: makeQueueItems(["C", "D"]), currentItem: nil, sequence: 5, historyCount: 0),
+            to: state
+        )
+        XCTAssertEqual(noHistory.currentIndex, 0)
+    }
+
+    func testFullSyncLineIsClampedIntoTheQueue() {
+        // Up next empty (historyCount == count) lands on History's newest climb
+        // rather than past the end; out-of-range values clamp the same way.
+        XCTAssertEqual(QueueStateReducer.lineIndex(historyCount: 3, itemCount: 3), 2)
+        XCTAssertEqual(QueueStateReducer.lineIndex(historyCount: 9999, itemCount: 3), 2)
+        XCTAssertEqual(QueueStateReducer.lineIndex(historyCount: -3, itemCount: 3), 0)
+        XCTAssertEqual(QueueStateReducer.lineIndex(historyCount: 0, itemCount: 0), 0)
+        XCTAssertEqual(QueueStateReducer.lineIndex(historyCount: 2, itemCount: 0), 0)
+        // A pre-F3 server sends no historyCount: today's index 0.
+        XCTAssertEqual(QueueStateReducer.lineIndex(historyCount: nil, itemCount: 3), 0)
+
+        let emptyUpNext = QueueStateReducer.apply(
+            .fullSync(items: makeQueueItems(["A", "B", "C"]), currentItem: nil, sequence: 6, historyCount: 3),
+            to: makeQueueState(uuids: [], currentIndex: 0)
+        )
+        XCTAssertEqual(emptyUpNext.currentIndex, 2)
+
+        let emptyQueue = QueueStateReducer.apply(
+            .fullSync(items: [], currentItem: nil, sequence: 7, historyCount: 0),
+            to: emptyUpNext
+        )
+        XCTAssertTrue(emptyQueue.items.isEmpty)
+        XCTAssertEqual(emptyQueue.currentIndex, 0)
+        SharedQueueState.save(items: emptyQueue.items, currentIndex: emptyQueue.currentIndex, to: defaults)
+        XCTAssertNil(SharedQueueState.currentItem(from: defaults))
+    }
+
+    func testFullSyncWithACurrentClimbIgnoresHistoryCount() {
+        // While a climb is current the server sends its index as historyCount;
+        // the reducer follows the current uuid whatever the field says.
+        let items = makeQueueItems(["A", "B", "C"])
+        let state = QueueStateReducer.apply(
+            .fullSync(items: items, currentItem: items[1], sequence: 8, historyCount: 0),
+            to: makeQueueState(uuids: [], currentIndex: 0)
+        )
+        XCTAssertEqual(state.currentIndex, 1)
+
+        // An off-queue current climb is still appended, as before F3.
+        let offQueue = makeQueueItem(uuid: "S", climbUuid: "climb-S", climbName: "Search Pick")
+        let appended = QueueStateReducer.apply(
+            .fullSync(items: items, currentItem: offQueue, sequence: 9, historyCount: 1),
+            to: state
+        )
+        XCTAssertEqual(appended.items.map(\.uuid), ["A", "B", "C", "S"])
+        XCTAssertEqual(appended.currentIndex, 3)
+    }
+
+    func testFullSyncParsesHistoryCountFromTheWire() {
+        let withLine = parseQueueUpdate(json: """
+        {"data":{"queueUpdates":{"__typename":"FullSync","sequence":11,"state":{"sequence":11,"stateHash":"h","historyCount":2,"queue":[{"uuid":"A","climb":{"uuid":"climb-A","name":"Climb A"}},{"uuid":"B","climb":{"uuid":"climb-B","name":"Climb B"}},{"uuid":"C","climb":{"uuid":"climb-C","name":"Climb C"}}],"currentClimbQueueItem":null}}}}
+        """)
+        XCTAssertEqual(fullSyncHistoryCount(withLine), 2)
+        guard let parsedWithLine = withLine else { return XCTFail("FullSync did not parse") }
+        XCTAssertEqual(parsedWithLine.sequence, 11)
+        let state = QueueStateReducer.apply(parsedWithLine, to: makeQueueState(uuids: [], currentIndex: 0))
+        XCTAssertEqual(state.items.map(\.uuid), ["A", "B", "C"])
+        XCTAssertEqual(state.currentIndex, 2)
+
+        // JSON null and an absent field (a pre-F3 server) both parse to nil,
+        // which keeps today's index 0.
+        let nullLine = parseQueueUpdate(json: """
+        {"data":{"queueUpdates":{"__typename":"FullSync","sequence":12,"state":{"sequence":12,"stateHash":"h","historyCount":null,"queue":[{"uuid":"A","climb":{"uuid":"climb-A","name":"Climb A"}}],"currentClimbQueueItem":null}}}}
+        """)
+        XCTAssertNotNil(nullLine)
+        XCTAssertNil(fullSyncHistoryCount(nullLine))
+
+        let absentLine = parseQueueUpdate(json: """
+        {"data":{"queueUpdates":{"__typename":"FullSync","sequence":13,"state":{"sequence":13,"stateHash":"h","queue":[{"uuid":"A","climb":{"uuid":"climb-A","name":"Climb A"}}],"currentClimbQueueItem":null}}}}
+        """)
+        XCTAssertNotNil(absentLine)
+        XCTAssertNil(fullSyncHistoryCount(absentLine))
+        guard let parsedAbsentLine = absentLine else { return XCTFail("FullSync did not parse") }
+        XCTAssertEqual(QueueStateReducer.apply(parsedAbsentLine, to: makeQueueState(uuids: [], currentIndex: 0)).currentIndex, 0)
+    }
+
     func testMoonboardSerialPositionMiniGridMath() {
         // Parity with moonboard.test.ts §Mini (numRows = 12): the Mini LED strip
         // is 11×12, so the odd-column serpentine reversal folds at row 12 (#3392).

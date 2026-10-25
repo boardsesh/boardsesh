@@ -764,7 +764,11 @@ export const QUEUE_UPDATES = `
 
 // Mirrors the native iOS subscription in SessionWebSocketManager.swift. Keeping
 // a copy here lets the schema-validation test catch drift in fields that native
-// decodes manually, including climb.mirrored for widget-triggered BLE updates.
+// decodes manually, including climb.mirrored for widget-triggered BLE updates,
+// and state.historyCount (F3, #6666), which the native reducer reads to land on
+// the head of Up next when nothing is current. A server without that field
+// rejects this whole document, so the native slice must not ship to a binary
+// before the backend that serves it is live.
 export const NATIVE_IOS_QUEUE_UPDATES = `
   subscription QueueUpdates($sessionId: ID!) {
     queueUpdates(sessionId: $sessionId) {
@@ -774,6 +778,7 @@ export const NATIVE_IOS_QUEUE_UPDATES = `
         state {
           sequence
           stateHash
+          historyCount
           queue {
             uuid
             climb { uuid setter_username name frames framesCount framesPace angle ascensionist_count difficulty quality_average stars difficulty_error mirrored benchmark_difficulty }

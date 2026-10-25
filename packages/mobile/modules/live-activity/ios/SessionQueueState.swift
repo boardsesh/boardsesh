@@ -9,7 +9,12 @@ import Foundation
 // MARK: - Queue Update Events
 
 enum QueueUpdateEvent {
-    case fullSync(items: [SharedQueueItem], currentItem: SharedQueueItem?, sequence: Int)
+    /// `historyCount` is `QueueState.historyCount` (F3, #6666): the number of
+    /// `items` before Up next. The server sends it on every FullSync; it only
+    /// matters when `currentItem` is nil, and is nil from a pre-F3 server. It
+    /// trails with a default so a three-argument `.fullSync(items:currentItem:sequence:)`
+    /// (the tests `main` adds) still compiles after the train merges `main` in.
+    case fullSync(items: [SharedQueueItem], currentItem: SharedQueueItem?, sequence: Int, historyCount: Int? = nil)
     case currentClimbChanged(item: SharedQueueItem?, sequence: Int)
     case itemAdded(item: SharedQueueItem, position: Int, sequence: Int)
     case itemRemoved(uuid: String, sequence: Int)
@@ -18,7 +23,7 @@ enum QueueUpdateEvent {
 
     var sequence: Int {
         switch self {
-        case .fullSync(_, _, let sequence),
+        case .fullSync(_, _, let sequence, _),
              .currentClimbChanged(_, let sequence),
              .itemAdded(_, _, let sequence),
              .itemRemoved(_, let sequence),
@@ -34,7 +39,7 @@ enum QueueEventRepaintPolicy {
         switch event {
         case .currentClimbChanged(_, _), .climbMirrored(_, _, _):
             return true
-        case .fullSync(_, _, _), .itemAdded(_, _, _), .itemRemoved(_, _), .reordered(_, _, _, _):
+        case .fullSync(_, _, _, _), .itemAdded(_, _, _), .itemRemoved(_, _), .reordered(_, _, _, _):
             return false
         }
     }
@@ -112,8 +117,16 @@ enum QueueStateReducer {
         let currentUuid = currentItemUuid(in: state)
 
         switch event {
-        case .fullSync(let syncedItems, let currentItem, _):
-            return stateSettingCurrent(item: currentItem, items: syncedItems, fallbackIndex: 0)
+        case .fullSync(let syncedItems, let currentItem, _, let historyCount):
+            // With nothing current, land on the History / Up next line (the
+            // climb Next would pick) instead of index 0, which is History's
+            // oldest climb — the lock screen used to show it after a crewmate
+            // removed the current climb.
+            return stateSettingCurrent(
+                item: currentItem,
+                items: syncedItems,
+                fallbackIndex: lineIndex(historyCount: historyCount, itemCount: syncedItems.count)
+            )
 
         case .currentClimbChanged(let item, _):
             guard let item else { return state }
@@ -169,6 +182,16 @@ enum QueueStateReducer {
     private static func currentItemUuid(in state: QueueState) -> String? {
         guard state.currentIndex >= 0, state.currentIndex < state.items.count else { return nil }
         return state.items[state.currentIndex].uuid
+    }
+
+    /// The index to show when nothing is current: `queue[historyCount]`, the
+    /// head of Up next. Clamped into bounds the same way `resolveCurrentIndex`
+    /// clamps, so an empty Up next (`historyCount == items.count`) lands on
+    /// History's newest climb. A pre-F3 server sends no `historyCount`, which
+    /// keeps today's index 0.
+    static func lineIndex(historyCount: Int?, itemCount: Int) -> Int {
+        guard let historyCount else { return 0 }
+        return min(max(historyCount, 0), max(itemCount - 1, 0))
     }
 
     /// The current item follows its uuid; if it vanished, clamp the old index
@@ -245,8 +268,10 @@ enum QueueMessageParser {
         let items = queueArray.compactMap { parseQueueItem($0) }
 
         let currentItem = parseQueueItem(state["currentClimbQueueItem"] as? [String: Any])
+        // JSON null and an absent field (a pre-F3 server) both parse to nil.
+        let historyCount = Self.parseIntValue(state["historyCount"])
 
-        return .fullSync(items: items, currentItem: currentItem, sequence: sequence)
+        return .fullSync(items: items, currentItem: currentItem, sequence: sequence, historyCount: historyCount)
     }
 
     /// Parse a CurrentClimbChanged event.

@@ -2225,6 +2225,7 @@ A bridge would be cheaper on the server side, but the trade-offs ended up favour
 - The same `graphql-transport-ws` handshake (`connection_init` with optional `authToken`, `connection_ack`, `subscribe`, `next`, `complete`, ping/pong) as the JS client.
 - Exponential reconnection backoff: 1s, 2s, 4s, 8s, 16s, capped at 30s. Reconnect stops on intentional disconnect (`endSession`, app termination).
 - Stale-date handling: 3-minute stale window refreshed every 60s by the ping timer. After force-quit or crash, the Live Activity goes stale within 3 minutes instead of lingering for 30.
+- A `FullSync` with nothing current lands on `queue[historyCount]`, the head of Up next, clamped into the queue (F3, `docs/current-climb-outside-queue.md`). It used to land on index 0, History's oldest climb. The subscription selects `QueueState.historyCount`, so a backend without that field rejects it: a binary with this document needs the F3 backend live. `NATIVE_IOS_QUEUE_UPDATES` in `packages/shared/graphql` mirrors the Swift text, and the `train-schema-on-main` CI step validates it against `main`'s schema.
 
 ### Thread Safety
 

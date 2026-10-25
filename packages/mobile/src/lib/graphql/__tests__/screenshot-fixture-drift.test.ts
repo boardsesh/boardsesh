@@ -456,6 +456,25 @@ describe('the operations mobile sends', () => {
     ).toEqual([]);
   });
 
+  // The native Live Activity socket (SessionWebSocketManager.swift) sends its
+  // own subscription, which the registry above never sees because no JS call
+  // site sends it. A train binary that selects a field main's schema lacks
+  // (QueueState.historyCount, F3) gets a subscription error on every connect
+  // and stops updating the lock screen. NATIVE_IOS_QUEUE_UPDATES is pinned to
+  // the Swift text by the backend's native drift guard.
+  it.runIf(process.env.PRODUCTION_SCHEMA_SDL)(
+    'validates the native Live Activity subscription against the production (main) schema',
+    () => {
+      const productionSchema = buildSchema(readFileSync(process.env.PRODUCTION_SCHEMA_SDL as string, 'utf8'));
+      const errors = validate(productionSchema, parse(sharedQueueSession.NATIVE_IOS_QUEUE_UPDATES));
+      expect(
+        errors.map((error) => error.message),
+        'Production deploys from main, so this train binary would lose its Live Activity socket. ' +
+          'Land the server half on main first, then merge main into the train.',
+      ).toEqual([]);
+    },
+  );
+
   it('carries every operation the store flow depends on', () => {
     const missing = REQUIRED_STORE_FLOW_OPERATIONS.filter((operationName) => !registry.has(operationName));
     expect(missing).toEqual([]);
