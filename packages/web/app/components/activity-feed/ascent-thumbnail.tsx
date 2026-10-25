@@ -23,7 +23,8 @@ type AscentThumbnailProps = {
   /**
    * The board this ascent should be drawn on, resolved server-side — the board
    * it was climbed on, or the closest one the climber has. Falls back to the
-   * layout default when absent (feeds that don't resolve it).
+   * layout default when absent (feeds that don't resolve it). Woods has no
+   * default: null there means the climb has no known size, so no thumbnail.
    */
   renderBoard?: RenderBoardConfig | null;
   /** When provided, renders as a <button> instead of the climb-view <Link>. */
@@ -47,6 +48,9 @@ const AscentThumbnail: React.FC<AscentThumbnailProps> = ({
     if (!layoutId) return null;
 
     const boardName = boardType as BoardName;
+    // Woods sizes number holds from separate origins: with no resolved board the
+    // 12x12 guess would draw different holds, so draw nothing instead.
+    if (!renderBoard && boardName === 'woods') return null;
     const config = renderBoard ?? getDefaultBoardConfig(boardName, layoutId);
     if (!config) return null;
 

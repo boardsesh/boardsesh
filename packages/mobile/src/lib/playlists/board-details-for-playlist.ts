@@ -90,6 +90,11 @@ export function getBoardConfigForClimb(
  * resolved (the board it was climbed on, or the closest one the climber has),
  * falling back to the layout default for payloads that don't carry one — an
  * older app talking to an older server, or a feed that doesn't resolve it.
+ *
+ * Woods is the exception: its sizes number holds from separate origins, so the
+ * layout default (the 12x12) would draw an 8x10 climb as different holds. A
+ * Woods payload with no `renderBoard` returns null (plain tile) — the backend
+ * sends null exactly when it has no size information for the climb.
  */
 export function renderBoardToPlaylistConfig(
   boardType: string,
@@ -105,5 +110,6 @@ export function renderBoardToPlaylistConfig(
       setIds: renderBoard.setIds,
     };
   }
+  if (boardName === 'woods') return null;
   return getBoardConfigForPlaylist(boardType, layoutId);
 }

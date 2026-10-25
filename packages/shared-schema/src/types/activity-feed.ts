@@ -41,7 +41,9 @@ export type CrewFeedResult = { items: CrewFeedItem[]; cursor: string | null; has
  * The board configuration a logged climb should be drawn on (GraphQL
  * `RenderBoardConfig`). Resolved server-side against the climber's own boards —
  * see `resolveRenderBoard` in `@boardsesh/board-config` for the ladder. Null on
- * payloads that don't resolve it; clients then fall back to the layout default.
+ * payloads that don't resolve it; clients then fall back to the layout default,
+ * except for Woods, where null means the climb has no known size and clients draw
+ * a plain tile (the two sizes number their holds from separate origins).
  */
 export type RenderBoardConfig = {
   layoutId: number;

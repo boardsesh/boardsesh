@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { SessionFeedItem } from '@boardsesh/shared-schema';
 
@@ -8,6 +8,10 @@ import type { SessionFeedItem } from '@boardsesh/shared-schema';
 // `Card` exactly once, so a counter in the Card mock is a faithful proxy: if
 // React.memo bails an identical-props re-render, this must NOT bump.
 const renderCounter = vi.hoisted(() => ({ count: 0 }));
+const heroMocks = vi.hoisted(() => ({
+  openClimbActions: vi.fn(),
+  tickToClimb: vi.fn(() => null as unknown),
+}));
 
 vi.mock('react-native', () => {
   const passthrough =
@@ -55,7 +59,7 @@ vi.mock('../../../providers/toast-provider', () => ({
 }));
 
 vi.mock('../../../providers/drawer-host-provider', () => ({
-  useDrawerHost: () => ({ openClimbActions: vi.fn() }),
+  useDrawerHost: () => ({ openClimbActions: heroMocks.openClimbActions }),
 }));
 
 vi.mock('../../../lib/haptics', () => ({ hapticLight: vi.fn(), hapticMedium: vi.fn() }));
@@ -75,7 +79,7 @@ vi.mock('../../../lib/playlists/board-details-for-playlist', () => ({
       ? { boardName: boardType, ...renderBoard }
       : { boardName: boardType, layoutId: layoutId ?? 1, sizeId: 2, setIds: [1] },
 }));
-vi.mock('../../../lib/tick-to-climb', () => ({ tickToClimb: () => null }));
+vi.mock('../../../lib/tick-to-climb', () => ({ tickToClimb: heroMocks.tickToClimb }));
 
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
@@ -88,7 +92,8 @@ vi.mock('../../Card', () => ({
   },
 }));
 vi.mock('../../PressableSurface', () => ({
-  PressableSurface: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  PressableSurface: ({ children, onLongPress }: { children?: ReactNode; onLongPress?: () => void }) =>
+    createElement('div', { 'data-pressable': 'true', onContextMenu: onLongPress }, children),
 }));
 vi.mock('../../ClimbListThumbnail', () => ({
   ClimbListThumbnail: ({ sizeId }: { sizeId: number }) => createElement('div', { 'data-thumb': String(sizeId) }),
@@ -207,5 +212,36 @@ describe('SessionFeedCard hero board art', () => {
     );
     // An 8x10 climb (sizeId 1) must not be drawn on the 12x12 (sizeId 2).
     expect(container.querySelector('[data-thumb]')?.getAttribute('data-thumb')).toBe('1');
+  });
+
+  it('opens the climb actions on the server-resolved renderBoard when the hero is long-pressed', () => {
+    const climb = { uuid: 'c1' };
+    heroMocks.tickToClimb.mockReturnValue(climb);
+    heroMocks.openClimbActions.mockClear();
+    const hardestSend = {
+      boardType: 'woods',
+      layoutId: 1,
+      angle: 40,
+      frames: 'p1r1',
+      renderBoard: { layoutId: 1, sizeId: 1, setIds: [1] },
+      status: 'send',
+      attemptCount: 1,
+    } as unknown as SessionFeedItem['hardestSend'];
+    const { container } = render(
+      <SessionFeedCard
+        session={makeSession({ hardestSend, boardTypes: ['woods'] })}
+        onOpenComments={onOpenComments}
+        onPress={onPress}
+        onOpenClimb={onOpenClimb}
+      />,
+    );
+    for (const pressable of Array.from(container.querySelectorAll('[data-pressable]'))) {
+      fireEvent.contextMenu(pressable);
+    }
+    expect(heroMocks.openClimbActions).toHaveBeenCalledWith(
+      climb,
+      expect.objectContaining({ boardName: 'woods', sizeId: 1, setIds: '1', angle: 40 }),
+    );
+    heroMocks.tickToClimb.mockReturnValue(null);
   });
 });

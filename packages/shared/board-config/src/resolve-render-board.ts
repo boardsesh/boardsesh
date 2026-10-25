@@ -22,7 +22,8 @@
  *
  * Pure and synchronous — the backend resolves it per feed row against the ascent
  * owner's boards (so it is correct for every viewer, not just for yourself), and
- * the clients call the rung-4 wrapper when a payload carries no resolved config.
+ * the clients call the rung-4 wrapper when a payload carries no resolved config
+ * (except for Woods, where a null result means "no size known": plain tile).
  */
 import {
   getSizesForLayoutId,

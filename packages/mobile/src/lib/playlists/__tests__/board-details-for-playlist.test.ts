@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { getAllLayouts, getSizesForLayoutId } from '@boardsesh/board-constants/product-sizes';
 import { getSizeRank } from '@boardsesh/board-constants/size-comparison';
 import { MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE } from '@boardsesh/board-config';
-import { getBoardConfigForPlaylist } from '../board-details-for-playlist';
+import { getBoardConfigForPlaylist, renderBoardToPlaylistConfig } from '../board-details-for-playlist';
 import { getBoardRenderData } from '../../board-details';
 
 // "Biggest" = tallest, widest breaking ties — the shared `getSizeRank` order, so
@@ -81,5 +81,24 @@ describe('getBoardConfigForPlaylist', () => {
     expect(renderData).not.toBeNull();
     expect(renderData?.backgroundImageKeys.length).toBeGreaterThan(0);
     expect(renderData?.holdsData.length).toBeGreaterThan(0);
+  });
+});
+
+describe('renderBoardToPlaylistConfig', () => {
+  it('draws on the server-resolved renderBoard when there is one', () => {
+    const config = renderBoardToPlaylistConfig('woods', 1, { layoutId: 1, sizeId: 1, setIds: [1] });
+    expect(config).toEqual({ boardName: 'woods', layoutId: 1, sizeId: 1, setIds: [1] });
+  });
+
+  it('returns null for a Woods climb with no renderBoard instead of guessing the 12x12', () => {
+    expect(renderBoardToPlaylistConfig('woods', 1, null)).toBeNull();
+    expect(renderBoardToPlaylistConfig('woods', 1, undefined)).toBeNull();
+  });
+
+  it('still falls back to the layout default for other boards with no renderBoard', () => {
+    const layoutId = getAllLayouts('kilter')[0].id;
+    expect(renderBoardToPlaylistConfig('kilter', layoutId, null)).toEqual(
+      getBoardConfigForPlaylist('kilter', layoutId),
+    );
   });
 });
