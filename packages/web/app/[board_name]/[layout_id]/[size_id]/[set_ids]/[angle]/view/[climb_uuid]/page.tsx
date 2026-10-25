@@ -1,9 +1,9 @@
 import React from 'react';
 import { notFound, permanentRedirect, redirect } from 'next/navigation';
-import type { BoardRouteParametersWithUuid } from '@/app/lib/types';
+import type { BoardRouteParametersWithUuid, Climb, ParsedBoardRouteParametersWithUuid } from '@/app/lib/types';
 import { getClimb, getClimbStatsForAllAngles } from '@/app/lib/data/queries';
 import { getFrontDoorBetaLinks, getFrontDoorSimilarClimbs } from '@/app/lib/data/front-door-data.server';
-import { resolveRenderBoard } from '@boardsesh/board-config';
+import { resolveRenderBoard, type RenderBoardConfig } from '@boardsesh/board-config';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import {
   buildCanonicalClimbViewUrl,
@@ -23,13 +23,37 @@ import { resolveClimbDisplayName } from '@/app/lib/string-utils';
 import { selectCanonicalClimbAngle } from '@/app/lib/seo/canonical-climb-angle';
 import { buildOgClimbCardIdentity } from '@/app/lib/seo/og-climb-identity';
 
+/**
+ * Woods' two sizes number holds from different origins, and the 8x10 ids are a
+ * numeric subset of the 12x12 ids, so a climb drawn on a size it does not fit
+ * renders the wrong holds without failing. Returns the board it should be drawn
+ * on instead, `'none'` when no Woods size fits it, and `null` when the URL's
+ * size is fine (or the board is not Woods).
+ */
+function woodsSizeRedirectTarget(
+  parsedParams: ParsedBoardRouteParametersWithUuid,
+  climb: Climb,
+): RenderBoardConfig | 'none' | null {
+  const { compatibleSizeIds } = climb;
+  if (
+    parsedParams.board_name !== 'woods' ||
+    !compatibleSizeIds ||
+    compatibleSizeIds.length === 0 ||
+    compatibleSizeIds.includes(parsedParams.size_id)
+  ) {
+    return null;
+  }
+  const target = resolveRenderBoard({ boardType: 'woods', climbLayoutId: climb.layoutId, compatibleSizeIds });
+  if (!target || !compatibleSizeIds.includes(target.sizeId)) return 'none';
+  return target;
+}
+
 export async function generateMetadata(props: { params: Promise<BoardRouteParametersWithUuid> }): Promise<Metadata> {
   const params = await props.params;
   const { t, locale } = await getServerTranslation('climbs');
 
   try {
     const { parsedParams } = await parseRouteParams(params);
-    const boardDetails = getBoardDetailsForBoard(parsedParams);
     // Sequential on purpose: the angle table is keyed on the uuid the climb
     // resolved to, not the URL's (an alias URL names a husk). It costs no page
     // latency, because the body renders concurrently and already waits on the
@@ -44,6 +68,19 @@ export async function generateMetadata(props: { params: Promise<BoardRouteParame
       });
     }
     const angleStats = await getClimbStatsForAllAngles(parsedParams.board_name, currentClimb.uuid);
+    // The body redirects a Woods climb off a size it does not fit; describe the
+    // board it lands on, so the card never draws its holds on the wrong size.
+    const woodsTarget = woodsSizeRedirectTarget(parsedParams, currentClimb);
+    const boardDetails = getBoardDetailsForBoard(
+      woodsTarget && woodsTarget !== 'none'
+        ? {
+            ...parsedParams,
+            layout_id: woodsTarget.layoutId,
+            size_id: woodsTarget.sizeId,
+            set_ids: woodsTarget.setIds,
+          }
+        : parsedParams,
+    );
 
     const climbName = resolveClimbDisplayName(currentClimb.name, boardDetails.board_name);
     const climbGrade = currentClimb.difficulty || 'Unknown Grade';
@@ -107,23 +144,12 @@ export default async function ClimbViewPage(props: { params: Promise<BoardRouteP
     const currentClimb = await getClimb(parsedParams);
     if (!currentClimb) notFound();
 
-    // Woods' two sizes number holds from different origins, and the 8x10 ids are
-    // a numeric subset of the 12x12 ids, so a climb drawn on a size it does not
-    // fit renders the wrong holds without failing. Send it to a size it fits.
-    // 307, not 308: the target comes from climb data, which a re-measure can change.
-    const compatibleSizeIds = currentClimb.compatibleSizeIds;
-    if (
-      parsedParams.board_name === 'woods' &&
-      compatibleSizeIds &&
-      compatibleSizeIds.length > 0 &&
-      !compatibleSizeIds.includes(parsedParams.size_id)
-    ) {
-      const target = resolveRenderBoard({
-        boardType: 'woods',
-        climbLayoutId: currentClimb.layoutId,
-        compatibleSizeIds,
-      });
-      if (!target || !compatibleSizeIds.includes(target.sizeId)) notFound();
+    // Send a Woods climb on a size it does not fit to one it does. 307, not
+    // 308: the target comes from climb data, which a re-measure can change.
+    const woodsTarget = woodsSizeRedirectTarget(parsedParams, currentClimb);
+    if (woodsTarget === 'none') notFound();
+    if (woodsTarget) {
+      const target = woodsTarget;
       const targetUrl = tryConstructSlugViewUrl(
         'woods',
         target.layoutId,

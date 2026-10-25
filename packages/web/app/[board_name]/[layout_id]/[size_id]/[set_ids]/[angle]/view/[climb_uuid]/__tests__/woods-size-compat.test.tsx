@@ -84,6 +84,7 @@ vi.mock('@/app/lib/data/front-door-data.server', () => ({
 vi.mock('@/app/components/climb-front-door/climb-front-door', () => ({ default: () => null }));
 
 const pageModule = await import('../page');
+const { getBoardDetailsForBoard } = await import('@/app/lib/board-utils');
 
 const renderPage = () =>
   pageModule.default({
@@ -102,6 +103,7 @@ beforeEach(() => {
   redirect.mockClear();
   permanentRedirect.mockClear();
   notFound.mockClear();
+  vi.mocked(getBoardDetailsForBoard).mockClear();
   routeBoard = 'woods';
   routeSizeId = 2;
   routeIsNumeric = false;
@@ -130,6 +132,32 @@ describe('Woods climb on a size it does not fit', () => {
     climbCompatibleSizeIds = [99];
     await expect(renderPage()).rejects.toThrow('NOT_FOUND');
     expect(redirect).not.toHaveBeenCalled();
+  });
+});
+
+describe('metadata for a Woods climb on a size it does not fit', () => {
+  const generateMetadata = () =>
+    pageModule.generateMetadata({
+      params: Promise.resolve({
+        board_name: routeBoard,
+        layout_id: '1',
+        size_id: String(routeSizeId),
+        set_ids: '1',
+        angle: '40',
+        climb_uuid: `tiny-crimp-${CLIMB_UUID}`,
+      }),
+    });
+
+  it('builds the card and canonical from the size the page redirects to', async () => {
+    await generateMetadata();
+    expect(vi.mocked(getBoardDetailsForBoard)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(getBoardDetailsForBoard).mock.calls[0]![0]).toMatchObject({ size_id: 1 });
+  });
+
+  it('keeps the URL size when the climb fits it', async () => {
+    climbCompatibleSizeIds = [2];
+    await generateMetadata();
+    expect(vi.mocked(getBoardDetailsForBoard).mock.calls[0]![0]).toMatchObject({ size_id: 2 });
   });
 });
 
