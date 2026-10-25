@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import type { Gym, UserBoard } from '@boardsesh/shared-schema';
-import { buildGymListRows, findRowIndex, type GymListLabels, type GymListRow } from '../gym-list-rows';
+import {
+  buildGymListRows,
+  filterBoardsByChips,
+  findRowIndex,
+  type GymListLabels,
+  type GymListRow,
+} from '../gym-list-rows';
 
 // ── Factory helpers (only the fields the builder reads) ──────────────────
 
@@ -137,5 +143,52 @@ describe('findRowIndex', () => {
     expect(findRowIndex(rows, 'gym:g1')).toBeGreaterThanOrEqual(0);
     expect(rows[findRowIndex(rows, 'gym:g1')].key).toBe('gym:g1');
     expect(findRowIndex(rows, 'gym:missing')).toBe(-1);
+  });
+});
+
+describe('expanded gym roster', () => {
+  const gym = makeGym('g1');
+  const gymRow = (rows: GymListRow[]) => rows.find((row) => row.kind === 'gym');
+
+  it('lists boards the nearby search never returned', () => {
+    const noPin = makeBoard('a', { gymUuid: 'g1', latitude: undefined, longitude: undefined });
+    const row = gymRow(build({ gyms: [gym], expandedGymUuid: 'g1', expandedGymRoster: [noPin] }));
+    expect(row && row.kind === 'gym' && row.boards).toEqual([noPin]);
+  });
+
+  it('puts roster boards first and dedupes nearby ones by uuid', () => {
+    const a = makeBoard('a');
+    const b = makeBoard('b');
+    const nearbyB = makeBoard('b', { name: 'nearby copy' });
+    const c = makeBoard('c');
+    const row = gymRow(
+      build({
+        gyms: [gym],
+        expandedGymUuid: 'g1',
+        expandedGymRoster: [a, b],
+        boardsByGym: new Map([['g1', [nearbyB, c]]]),
+      }),
+    );
+    expect(row && row.kind === 'gym' && row.boards).toEqual([a, b, c]);
+  });
+
+  it('never gives the roster to a collapsed gym', () => {
+    const row = gymRow(build({ gyms: [gym], expandedGymUuid: null, expandedGymRoster: [makeBoard('a')] }));
+    expect(row && row.kind === 'gym' && row.boards).toEqual([]);
+  });
+});
+
+describe('filterBoardsByChips', () => {
+  const kilter = makeBoard('k', { boardType: 'kilter', layoutId: 1, sizeId: 10 });
+  const tension = makeBoard('t', { boardType: 'tension', layoutId: 2, sizeId: 20 });
+
+  it('keeps everything for an empty filter', () => {
+    expect(filterBoardsByChips([kilter, tension], {})).toEqual([kilter, tension]);
+  });
+
+  it('narrows by board type, layout and size', () => {
+    expect(filterBoardsByChips([kilter, tension], { boardTypes: ['kilter'] })).toEqual([kilter]);
+    expect(filterBoardsByChips([kilter, tension], { layoutIds: [2] })).toEqual([tension]);
+    expect(filterBoardsByChips([kilter, tension], { sizeIds: [10, 20], boardTypes: ['tension'] })).toEqual([tension]);
   });
 });

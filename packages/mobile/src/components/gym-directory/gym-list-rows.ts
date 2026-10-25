@@ -1,4 +1,5 @@
 import type { Gym, UserBoard } from '@boardsesh/shared-schema';
+import type { GymBoardFilter } from '@boardsesh/gym-filters';
 
 // One flat, heterogeneous row list for the gym panel's FlashList. The old screen
 // mapped every gym AND every board inside a ScrollView, which can't recycle. Here
@@ -36,17 +37,55 @@ type BuildGymListRowsArgs = {
   boardsByGym: Map<string, UserBoard[]>;
   standaloneBoards: UserBoard[];
   expandedGymUuid: string | null;
+  /**
+   * The expanded gym's own linked boards (already narrowed by the chip filters).
+   * The nearby-boards search only sees boards with a visible pin close to the
+   * map centre, so it can miss boards the gym itself lists.
+   */
+  expandedGymRoster?: readonly UserBoard[];
   /** The selected gym/board (mirrors the map pin) — drives the row accent. */
   selectedId: string | null;
   gymsLoading: boolean;
   labels: GymListLabels;
 };
 
+/**
+ * The gym's own roster first (server order), then any nearby-search board the
+ * roster doesn't have, deduped by uuid. A union so a nearby board is never lost
+ * while the roster loads or when the server answers an empty list.
+ */
+export function mergeGymBoards(roster: readonly UserBoard[], nearby: readonly UserBoard[]): UserBoard[] {
+  const seen = new Set(roster.map((board) => board.uuid));
+  const merged = [...roster];
+  for (const board of nearby) {
+    if (seen.has(board.uuid)) continue;
+    seen.add(board.uuid);
+    merged.push(board);
+  }
+  return merged;
+}
+
+/**
+ * Applies the board-type / layout / size chips to a gym's roster, as the server
+ * does for the nearby search. The name filter is skipped on purpose: it matched
+ * the gym, and a gym's boards need not share its name.
+ */
+export function filterBoardsByChips(boards: readonly UserBoard[], filter: GymBoardFilter): UserBoard[] {
+  const { boardTypes, layoutIds, sizeIds } = filter;
+  return boards.filter(
+    (board) =>
+      (!boardTypes?.length || (boardTypes as string[]).includes(board.boardType)) &&
+      (!layoutIds?.length || layoutIds.includes(board.layoutId)) &&
+      (!sizeIds?.length || sizeIds.includes(board.sizeId)),
+  );
+}
+
 export function buildGymListRows({
   gyms,
   boardsByGym,
   standaloneBoards,
   expandedGymUuid,
+  expandedGymRoster,
   selectedId,
   gymsLoading,
   labels,
@@ -67,7 +106,10 @@ export function buildGymListRows({
       subtitle: gym.address ?? labels.boardCount(gym.boardCount ?? boardsByGym.get(gym.uuid)?.length ?? 0),
       expanded: expandedGymUuid === gym.uuid,
       selected: selectedId === gym.uuid,
-      boards: boardsByGym.get(gym.uuid) ?? [],
+      boards:
+        expandedGymUuid === gym.uuid
+          ? mergeGymBoards(expandedGymRoster ?? [], boardsByGym.get(gym.uuid) ?? [])
+          : (boardsByGym.get(gym.uuid) ?? []),
     });
   }
 

@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BoardName, Gym, UserBoard } from '@boardsesh/shared-schema';
 import { useNearbyBoards, useNearbyGyms } from '../../src/lib/graphql/hooks';
+import { useGymBoards } from '../../src/lib/graphql/hooks/use-gym-boards';
 import { useActiveBoard } from '../../src/lib/graphql/use-active-board';
 import { useDeviceLocation, type Coords } from '../../src/lib/use-device-location';
 import { useGeocodePlace } from '../../src/lib/use-place-search';
@@ -29,7 +30,7 @@ import { GymListPanel, type GymListPanelHandle } from '../../src/components/gym-
 import { GymLocationPrompt } from '../../src/components/gym-directory/GymLocationPrompt';
 import { ClaimGymSheet } from '../../src/components/gym-directory/ClaimGymSheet';
 import { WallFinderFilterChips } from '../../src/components/gym-directory/WallFinderFilterChips';
-import { buildGymListRows } from '../../src/components/gym-directory/gym-list-rows';
+import { buildGymListRows, filterBoardsByChips } from '../../src/components/gym-directory/gym-list-rows';
 import {
   DEFAULT_WALL_FINDER_FILTER,
   buildLayoutOptions,
@@ -253,6 +254,15 @@ export default function GymDiscovery() {
     [gyms, standaloneBoards],
   );
 
+  // The expanded gym's own linked boards. The nearby search above only returns
+  // boards with a visible pin near the map centre, so a gym can list a board it
+  // never returns.
+  const { data: gymRoster } = useGymBoards(expandedGymUuid);
+  const expandedGymRoster = useMemo(
+    () => (gymRoster ? filterBoardsByChips(gymRoster, search.filter) : undefined),
+    [gymRoster, search.filter],
+  );
+
   const rows = useMemo(
     () =>
       buildGymListRows({
@@ -260,6 +270,7 @@ export default function GymDiscovery() {
         boardsByGym,
         standaloneBoards,
         expandedGymUuid,
+        expandedGymRoster,
         selectedId,
         gymsLoading,
         labels: {
@@ -269,7 +280,7 @@ export default function GymDiscovery() {
           boardCount: (count: number) => t('mobile.gyms.boardCount', { count }),
         },
       }),
-    [gyms, boardsByGym, standaloneBoards, expandedGymUuid, selectedId, gymsLoading, t],
+    [gyms, boardsByGym, standaloneBoards, expandedGymUuid, expandedGymRoster, selectedId, gymsLoading, t],
   );
 
   // Nested filter chips, derived from board-constants so they're deterministic

@@ -113,6 +113,9 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
     return { ...captured.boardsQuery, refetch: refetchBoards };
   },
 }));
+vi.mock('../../../src/lib/graphql/hooks/use-gym-boards', () => ({
+  useGymBoards: () => ({ data: undefined }),
+}));
 vi.mock('../../../src/lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: null, isError: false }),
 }));
