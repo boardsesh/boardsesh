@@ -3470,6 +3470,59 @@ describe('useBoardBluetooth connect() initial frame write (#3875)', () => {
     expect(result.current.connectInitialSendRef.current).toBeNull();
   });
 
+  it('drops the dedup seed when the link drops (#4413)', async () => {
+    // A seed left behind by a dropped link would let the next link's first
+    // drain record the climb as already lit on a wall this app never wrote to.
+    let dropLink: (() => void) | null = null;
+    const fakeAdapter = {
+      ...makeFakeAdapter(),
+      onDisconnect: vi.fn((callback: () => void) => {
+        dropLink = callback;
+        return () => {};
+      }),
+    };
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockAuroraSendable();
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    await act(async () => {
+      await result.current.connect('p100r12');
+    });
+    expect(result.current.connectInitialSendRef.current).not.toBeNull();
+    expect(dropLink).not.toBeNull();
+
+    await act(async () => {
+      dropLink?.();
+    });
+
+    expect(result.current.isConnected).toBe(false);
+    expect(result.current.connectInitialSendRef.current).toBeNull();
+  });
+
+  it('drops the dedup seed on a deliberate disconnect (#4413)', async () => {
+    const fakeAdapter = makeFakeAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockAuroraSendable();
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    await act(async () => {
+      await result.current.connect('p100r12');
+    });
+    expect(result.current.connectInitialSendRef.current).not.toBeNull();
+
+    await act(async () => {
+      await result.current.disconnect();
+    });
+
+    expect(result.current.connectInitialSendRef.current).toBeNull();
+  });
+
   it('fails the connect when the board config switches during the initial write (#3875)', async () => {
     // The guard for commit 1 (connectedConfigIdentityRef assigned when the link opens
     // rather than after the initial send). That move is what makes this path
