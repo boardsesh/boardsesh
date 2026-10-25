@@ -1,4 +1,4 @@
-import { describe, expect, it, afterEach } from 'vite-plus/test';
+import { describe, expect, it, afterEach, vi } from 'vite-plus/test';
 import net from 'node:net';
 import postgres from 'postgres';
 import { sql } from 'drizzle-orm';
@@ -43,6 +43,28 @@ describe('connectErrorCode', () => {
 });
 
 describe('withDbConnectRetry', () => {
+  it('keeps the process alive while it waits to retry a refused connect (#6703)', async () => {
+    const timerSpy = vi.spyOn(globalThis, 'setTimeout');
+    try {
+      let calls = 0;
+      const result = await withDbConnectRetry(
+        () => {
+          calls += 1;
+          return calls === 1 ? Promise.reject(connectError('ECONNREFUSED')) : Promise.resolve('rows');
+        },
+        { random: () => 0, budgetMs: 10_000 },
+      );
+
+      expect(result).toBe('rows');
+      const retryCallIndex = timerSpy.mock.calls.findIndex(([, delayMs]) => delayMs === 75);
+      expect(retryCallIndex).toBeGreaterThanOrEqual(0);
+      const retryTimer = timerSpy.mock.results[retryCallIndex].value as NodeJS.Timeout;
+      expect(retryTimer.hasRef()).toBe(true);
+    } finally {
+      timerSpy.mockRestore();
+    }
+  });
+
   it('runs once when the statement succeeds', async () => {
     let calls = 0;
     const result = await withDbConnectRetry(

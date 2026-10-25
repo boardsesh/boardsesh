@@ -141,6 +141,10 @@ its job. In other words this shrinks blips; it does not survive outages. The
 2026-08-10 burst (Sentry BOARDSESH-D8, 03:11–03:54Z) would still have produced
 errors.
 
+The wait between attempts is a ref'd timer. A process that only awaits a
+retrying statement (worker startup, before its health server listens) would
+otherwise exit 0 mid-retry with no log (#6703).
+
 ### postgres.js paces its own connects, and that is what the budget bounds
 
 `ECONNREFUSED` is only cheap for the first few failures. postgres.js gates every

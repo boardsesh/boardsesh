@@ -112,9 +112,9 @@ export function isRetryableConnectError(error: unknown): boolean {
 
 function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms);
-    // Never hold a process open just to pace a retry.
-    timer.unref?.();
+    // Ref'd on purpose: a caller is awaiting the statement, and an unref'd wait
+    // let a process with nothing else running exit 0 mid-retry (#6703).
+    setTimeout(resolve, ms);
   });
 }
 
