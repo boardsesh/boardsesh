@@ -161,7 +161,7 @@ phones (`lineAfterDelta`, below), whoever sent it and whatever `QUEUE_NOW_SLOT_P
    its index, so they change no membership. The widget and Garmin navigate stops at the ends
    instead of wrapping (section 3).
 4. History holds at most 125 entries and is trimmed to 100. History + Up next hold at most
-   `MAX_SYNCED_QUEUE_ITEMS` = 500 (`shared/queue/src/limits.ts:17`); the climb on the wall is
+   `MAX_SYNCED_QUEUE_ITEMS` = 500 (`shared/queue/src/limits.ts:25`); the climb on the wall is
    extra, so the array holds at most 501 entries with a climb current and 500 with nothing
    current. Opening a climb is never rejected and never drops a queued climb (section 5).
    Navigation moves (the widget, Garmin and controller Next and Previous) add nothing and never
@@ -732,11 +732,12 @@ wall lights: the backend PR (the trailing event), the #4979 hold, and PR 7.
 (owner decision, 2026-10-24): the stored array holds at most 501 entries while a climb is
 current and at most 500 while nothing is. Opening a climb is never rejected and never drops a
 queued climb. With nothing current and 500 climbs in Up next, opening a new climb takes the
-`insert` row and stores 501 entries; there is no History to trim and none has to go. Today
-`setQueue` and `joinSession` throw above 500 (`parseArrayTolerant(..., 500)`,
-`queue/mutations.ts:381`, `sessions/mutations.ts:146`), while `addQueueItem`
-(`queue/mutations.ts:37-130`) and `setCurrentClimb` have no cap. A long session can pass 500
-through opens, after which every full-queue write throws. That wedge is fixed here inside the
+`insert` row and stores 501 entries; there is no History to trim and none has to go. Before
+F3, `setQueue` and `joinSession` threw above 500 (a literal `500` passed to
+`parseArrayTolerant`), while `addQueueItem` and `setCurrentClimb` had no cap. F3 passes
+`maxPayloadItems` (`queue/now-slot-payload.ts`) instead, at `queue/mutations.ts:567-572` and
+`sessions/mutations.ts:165-170`. A long session could pass 500 through opens, after which
+every full-queue write threw. That wedge is fixed here inside the
 percent, and for every request that carries `placement` or `historyCount`. Outside the percent
 opens still grow the array past 501 as today, so a placement-less `setQueue` from such a room
 is still rejected. Two things change there at every percent: the raw guard takes 501 entries
@@ -832,8 +833,8 @@ a pointer move is echo-suppressed and an add is a plain `QueueItemAdded`. The 60
 untrimmed array, and the next move would trim again: a `Queue Sync Hash Drift` loop on new
 builds. Leaving the trim to the server removes the loop at any percent.
 
-Swap the inline `500` in both resolvers for `MAX_SYNCED_QUEUE_ITEMS` in the same PR (the
-`limits.ts` comment tracks it).
+Both resolvers read the cap through `maxPayloadItems`, which is built on
+`MAX_SYNCED_QUEUE_ITEMS`; no inline `500` is left in them.
 
 ---
 

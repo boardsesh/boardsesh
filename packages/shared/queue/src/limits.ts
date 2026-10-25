@@ -4,9 +4,10 @@
  * Hard cap on History + Up next in the synced queue. The climb on the wall is
  * extra (docs/current-climb-outside-queue.md, section 5), so the stored array
  * holds at most this + 1 entries with a climb current and this many with
- * nothing current. The backend imports it in
- * `packages/backend/src/graphql/resolvers/queue/mutations.ts` and the
- * `joinSession` seed.
+ * nothing current. The backend reads it through `maxPayloadItems` in
+ * `packages/backend/src/graphql/resolvers/queue/now-slot-payload.ts` (the
+ * `setQueue` and `joinSession` raw guard) and through `isUpNextFull`
+ * (`addQueueItem`, and the payload's Up next check).
  *
  * F3: outside `QUEUE_NOW_SLOT_PERCENT`, a placement-less `setQueue` or seed
  * longer than this + 1 (current climb in the payload) or this (otherwise)
