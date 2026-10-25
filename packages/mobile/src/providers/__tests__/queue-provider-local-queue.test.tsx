@@ -198,6 +198,7 @@ type Snapshot = {
   playNext: ReturnType<typeof useQueue>['playNext'];
   startSession: ReturnType<typeof useQueue>['startSession'];
   joinSession: ReturnType<typeof useQueue>['joinSession'];
+  lastCurrentChange: ReturnType<typeof useQueue>['lastCurrentChange'];
 };
 
 function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
@@ -222,6 +223,7 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
       playNext: queue.playNext,
       startSession: queue.startSession,
       joinSession: queue.joinSession,
+      lastCurrentChange: queue.lastCurrentChange,
     });
   }, [
     queue.state,
@@ -240,6 +242,7 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
     queue.playNext,
     queue.startSession,
     queue.joinSession,
+    queue.lastCurrentChange,
     onSnapshot,
   ]);
   return null;
@@ -425,6 +428,34 @@ describe('QueueProvider local solo queue', () => {
     });
     expect(snapshots.at(-1)?.sessionId).toBeNull();
     expect(http.request).not.toHaveBeenCalled();
+  });
+
+  // #4979: opening the climb already current is the climber asking for it, so
+  // it restarts the hold's clock even though the current uuid does not move.
+  it('restarts the hold clock when the current climb is opened again, and only then', async () => {
+    const itemA = makeQueueItem('item-a');
+    const itemB = makeQueueItem('item-b');
+    queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(storedSnapshot([itemA, itemB], itemA));
+
+    const snapshots: Snapshot[] = [];
+    renderProvider((snapshot) => snapshots.push(snapshot));
+    // An older snapshot without the field seeds from `savedAt`, months ago.
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.lastCurrentChange).toEqual({
+        queueItemUuid: 'item-a',
+        changedAt: Date.parse('2026-06-10T00:00:00.000Z'),
+      });
+    });
+
+    const beforeOpen = Date.now();
+    act(() => {
+      snapshots.at(-1)?.setCurrentClimb(itemA);
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.lastCurrentChange.queueItemUuid).toBe('item-a');
+      expect(snapshots.at(-1)?.lastCurrentChange.changedAt).toBeGreaterThanOrEqual(beforeOpen);
+    });
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('item-a');
   });
 
   it('inserts an activated new climb right after the current climb, not at the end (issue #2217)', async () => {

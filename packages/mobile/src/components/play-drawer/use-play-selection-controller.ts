@@ -57,6 +57,17 @@ type SimilarClimbsTrack = {
   committedBoardKey: string;
   label: string;
 };
+/**
+ * The #4979 hold (docs/current-climb-outside-queue.md, section 6), as the
+ * selection controller needs it: which queue item the hold keeps dark, and the
+ * held climb's Put on the wall.
+ */
+type HeldClimbSelection = {
+  /** The queue item the hold keeps dark, or null while nothing is held. */
+  heldQueueItemUuid: string | null;
+  /** Put on the wall for the held climb: releases the hold and lights the board. */
+  putHeldClimbOnWall: () => void;
+};
 type PlaySelectionInputs = {
   openTarget: PlayDrawerOpenTarget | null;
   viewer: NonNullable<PlayDrawerProps['viewer']>;
@@ -69,6 +80,7 @@ type PlaySelectionInputs = {
   navigation: SelectionNavigation;
   chrome: SelectionChrome;
   confirmation: CommitConfirmation;
+  hold: HeldClimbSelection;
 };
 
 type SwipeSelectionInputs = Pick<
@@ -154,6 +166,7 @@ export function usePlaySelectionController({
     setBusyWallConfirmArmed,
     markLatchExit,
   },
+  hold: { heldQueueItemUuid, putHeldClimbOnWall },
 }: PlaySelectionInputs) {
   const openDrawer = useCallback(
     (selectedClimb: Climb, options?: PlayDrawerOpenOptions) => {
@@ -201,8 +214,42 @@ export function usePlaySelectionController({
       if (isFreshActiveOpen && !isAlreadyCurrent && !opensAsBrowse) {
         setCurrentClimb(climbToQueueItem(selectedClimb), { playlistSuggestionSource: null });
       }
+      // #4979 (section 6, decision A): the hold only keeps the automatic send on
+      // connect dark. Picking the held climb again from a list (a search row, a
+      // playlist, the logbook) is the climber asking for it, so it lights the
+      // board the way the held climb's Put on the wall does. Those opens never
+      // reach `setCurrentClimb` for a climb that is already current, so nothing
+      // else would restart its clock. A `committedExternally` opener (the queue
+      // sheet, the board sheet) already called `setCurrentClimb`, which restarts
+      // the clock for the held uuid and lights it (`reopen`), so a second
+      // write here would only send the climb twice. The accessory bar and the
+      // mini player reopening the current climb (`reopensCurrent`) are not a
+      // pick: the drawer shows the climb as it is, with Put on the wall and the
+      // "Last on the wall" line. Previews never light the wall, held climb or not.
+      if (
+        !previewItem &&
+        !options?.committedExternally &&
+        !options?.reopensCurrent &&
+        viewer !== 'anonymous' &&
+        !showBoardMismatch &&
+        heldQueueItemUuid !== null &&
+        currentClimbQueueItem?.uuid === heldQueueItemUuid &&
+        currentClimbQueueItem.climb.uuid === selectedClimb.uuid
+      ) {
+        putHeldClimbOnWall();
+      }
     },
-    [currentClimbQueueItem, setCurrentClimb, browseByDefault, setDrawerPreviewItem, setDrawerPreviewSuggestionSource],
+    [
+      currentClimbQueueItem,
+      setCurrentClimb,
+      browseByDefault,
+      setDrawerPreviewItem,
+      setDrawerPreviewSuggestionSource,
+      viewer,
+      showBoardMismatch,
+      heldQueueItemUuid,
+      putHeldClimbOnWall,
+    ],
   );
 
   // Apply the host's open target. A new target is a fresh object with a bumped
@@ -214,9 +261,19 @@ export function usePlaySelectionController({
   // the latest `openDrawer` without making it a dep (we key only on the target).
   const openDrawerRef = useRef(openDrawer);
   openDrawerRef.current = openDrawer;
+  //
+  // The host keeps the iPad pane's target after it lands, and every tab mounts
+  // its own pane, so a pane that mounts later replays a target another pane
+  // already applied. That replay is a look, not a pick: it must not light a
+  // climb the #4979 hold kept dark hours after the tap, so it opens as
+  // `reopensCurrent`.
   useEffect(() => {
     if (!openTarget) return;
-    openDrawerRef.current(openTarget.climb, openTarget.options);
+    const replay = openTarget.claimFirstApply ? !openTarget.claimFirstApply() : false;
+    openDrawerRef.current(
+      openTarget.climb,
+      replay ? { ...openTarget.options, reopensCurrent: true } : openTarget.options,
+    );
   }, [openTarget]);
 
   const handlePrev = useSwipeSelection({

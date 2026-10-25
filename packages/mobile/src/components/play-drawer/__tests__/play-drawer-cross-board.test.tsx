@@ -404,7 +404,16 @@ vi.mock('../../../providers/queue-provider', () => ({
   useIsSharedSession: () => false,
   usePlaylistSuggestionSource: () => null,
 }));
-vi.mock('../../../providers/bluetooth-provider', () => ({ useOptionalBluetoothContext: () => null }));
+// Null (no Bluetooth transport) unless a case hands the player a context, as
+// the #4979 stale-climb hold cases do.
+const bluetoothContext = vi.hoisted(() => ({ value: null as Props | null }));
+vi.mock('../../../providers/bluetooth-provider', () => ({
+  useOptionalBluetoothContext: () => bluetoothContext.value,
+}));
+vi.mock('../LastOnWallNote', () => ({
+  LastOnWallNote: (props: { lastOnWallAt: number }) =>
+    createElement('div', { 'data-testid': 'last-on-wall', 'data-at': String(props.lastOnWallAt) }),
+}));
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../../lib/graphql/hooks', () => ({
@@ -551,6 +560,7 @@ beforeEach(() => {
   drawerSections.ready = true;
   queueState.queue = [];
   queueState.currentClimbQueueItem = null;
+  bluetoothContext.value = null;
   navigation.state = { nextItem: null, prevItem: null, canNext: false, canPrevious: false };
   prefetchWalk.items = [];
 });
@@ -1380,5 +1390,110 @@ describe('PlayDrawer controls position (#6229)', () => {
     const screen = renderDrawer();
     act(() => setSetting('playerButtonsPosition', 'above'));
     expect(follows(screen.getByTestId('action-bar'), screen.getByTestId('board'))).toBe(true);
+  });
+});
+
+// #4979 (docs/current-climb-outside-queue.md, section 6, decision 9): the board
+// connected but the hold kept the current climb dark. The player offers Put on
+// the wall in the browse latch's slot, and says when the climb was last on the
+// wall, so the dark board doesn't read as a Bluetooth failure.
+describe('PlayDrawer stale-climb hold', () => {
+  const LAST_ON_WALL_AT = Date.parse('2026-10-20T08:00:00.000Z');
+
+  function connectedBluetooth(staleCurrentHold: { queueItemUuid: string; lastCurrentChangeAt: number } | null) {
+    return {
+      isConnected: true,
+      staleCurrentHold,
+      reassertWall: vi.fn(),
+      armUndoWallChangeToast: vi.fn(),
+      setMirrorIntent: vi.fn(),
+      getMirrorIntent: vi.fn(() => undefined),
+      retainMirrorIntentFor: vi.fn(),
+      sendFramesToBoard: vi.fn(async () => true),
+      wallHeldByOtherUser: false,
+      autoDisconnectWarning: false,
+    };
+  }
+
+  it('offers Put on the wall and the last-on-the-wall line for the held current climb', () => {
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    const bluetooth = connectedBluetooth({ queueItemUuid: 'queue-twelve', lastCurrentChangeAt: LAST_ON_WALL_AT });
+    bluetoothContext.value = bluetooth;
+    const screen = renderDrawer();
+
+    const actionBar = recorded.actionBar.at(-1);
+    expect(actionBar?.commitButton).toBe('putOnWall');
+    expect(actionBar?.commitLabel).toBe('putOnWall');
+    expect(screen.getByTestId('last-on-wall').getAttribute('data-at')).toBe(String(LAST_ON_WALL_AT));
+
+    const onCommit = actionBar?.onCommit;
+    if (typeof onCommit !== 'function') throw new Error('Put on the wall has no handler');
+    act(() => {
+      onCommit();
+    });
+    expect(bluetooth.armUndoWallChangeToast).toHaveBeenCalledTimes(1);
+    expect(bluetooth.reassertWall).toHaveBeenCalledTimes(1);
+    expect(setCurrentClimb).not.toHaveBeenCalled();
+  });
+
+  it('drops both once the hold releases', () => {
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    bluetoothContext.value = connectedBluetooth({
+      queueItemUuid: 'queue-twelve',
+      lastCurrentChangeAt: LAST_ON_WALL_AT,
+    });
+    const screen = renderDrawer();
+    expect(screen.queryByTestId('last-on-wall')).not.toBeNull();
+
+    bluetoothContext.value = connectedBluetooth(null);
+    screen.rerender(
+      createElement(PlayDrawer, {
+        presentation: 'pane' as const,
+        boardConfig: TWELVE_BY_TWELVE,
+        openTarget: null,
+        onOpenQueue: vi.fn(),
+      }),
+    );
+    flushOpeningFrame();
+    expect(screen.queryByTestId('last-on-wall')).toBeNull();
+    expect(recorded.actionBar.at(-1)?.commitButton).toBeNull();
+  });
+
+  // Decision A: only the automatic send on connect is held. A pick of the held
+  // climb from a list lights it; the accessory bar reopening it does not, and a
+  // queue-sheet tap leaves it to the clock its own setCurrentClimb restarted.
+  it.each([
+    { label: 'a list pick', options: undefined, lights: true },
+    { label: 'an accessory bar reopen', options: { reopensCurrent: true }, lights: false },
+    { label: 'a queue-sheet tap', options: { committedExternally: true }, lights: false },
+  ])('$label of the held climb lights=$lights', ({ options, lights }) => {
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    const bluetooth = connectedBluetooth({ queueItemUuid: 'queue-twelve', lastCurrentChangeAt: LAST_ON_WALL_AT });
+    bluetoothContext.value = bluetooth;
+    render(
+      createElement(PlayDrawer, {
+        presentation: 'pane' as const,
+        boardConfig: TWELVE_BY_TWELVE,
+        openTarget: { climb: TWELVE_CLIMB, options, nonce: 1 },
+        onOpenQueue: vi.fn(),
+      }),
+    );
+    expect(bluetooth.reassertWall).toHaveBeenCalledTimes(lights ? 1 : 0);
+    expect(bluetooth.armUndoWallChangeToast).toHaveBeenCalledTimes(lights ? 1 : 0);
+    expect(setCurrentClimb).not.toHaveBeenCalled();
+  });
+
+  it('shows nothing for a hold that names another climb, or with no hold at all (the kill switch)', () => {
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    bluetoothContext.value = connectedBluetooth({ queueItemUuid: 'queue-other', lastCurrentChangeAt: LAST_ON_WALL_AT });
+    const otherClimb = renderDrawer();
+    expect(otherClimb.queryByTestId('last-on-wall')).toBeNull();
+    expect(recorded.actionBar.at(-1)?.commitButton).toBeNull();
+    otherClimb.unmount();
+
+    bluetoothContext.value = connectedBluetooth(null);
+    const killed = renderDrawer();
+    expect(killed.queryByTestId('last-on-wall')).toBeNull();
+    expect(recorded.actionBar.at(-1)?.commitButton).toBeNull();
   });
 });

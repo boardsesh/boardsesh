@@ -187,6 +187,12 @@ diagnostic) applies on native. The whole surface lives in three files:
   `useClimbModerationEnabled`, unresolved = enabled) that takes down the whole
   community-moderation surface at once: the "Report climb" action, the More-tab
   Moderation row, and the community moderation status on a climb.
+  `stale-current-hold-kill` is a kill switch (read through
+  `useStaleCurrentHoldEnabled`, unresolved = enabled) for the #4979 hold: when
+  the climb on the wall has not changed for 4 h, connecting a board keeps it
+  dark and the player offers Put on the wall with "Last on the wall …". With it
+  on, connecting lights that climb as before and the line never shows. See
+  `docs/current-climb-outside-queue.md`, section 6.
   `active-board-follow-heal-kill` is a kill switch (read through
   `useActiveBoardFollowHealEnabled`, unresolved = enabled) for the silent
   launch follow of the active board (#5654, `use-active-board-follow-heal.ts`).

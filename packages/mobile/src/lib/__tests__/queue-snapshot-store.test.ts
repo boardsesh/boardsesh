@@ -72,6 +72,53 @@ describe('queue-snapshot-store', () => {
     expect(typeof stored?.savedAt).toBe('string');
   });
 
+  it('keeps lastCurrentChangeAt as given while savedAt is restamped on every write (#4979)', async () => {
+    vi.useFakeTimers();
+    try {
+      const { getStoredQueueSnapshot, setStoredQueueSnapshot } = await import('../queue-snapshot-store');
+      const queue = [makeQueueItem('a')];
+      const lastCurrentChangeAt = '2026-10-20T08:00:00.000Z';
+      vi.setSystemTime(new Date('2026-10-21T09:00:00.000Z'));
+      await setStoredQueueSnapshot({
+        queue,
+        currentClimbQueueItem: queue[0],
+        playlistSuggestionSource: null,
+        lastCurrentChangeAt,
+      });
+      const first = await getStoredQueueSnapshot();
+      vi.setSystemTime(new Date('2026-10-23T09:00:00.000Z'));
+      await setStoredQueueSnapshot({
+        queue,
+        currentClimbQueueItem: queue[0],
+        playlistSuggestionSource: null,
+        lastCurrentChangeAt: first?.lastCurrentChangeAt,
+      });
+      const second = await getStoredQueueSnapshot();
+      expect(first?.savedAt).toBe('2026-10-21T09:00:00.000Z');
+      expect(second?.savedAt).toBe('2026-10-23T09:00:00.000Z');
+      expect(second?.lastCurrentChangeAt).toBe(lastCurrentChangeAt);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('reads an older snapshot without lastCurrentChangeAt as absent', async () => {
+    const storage = await getStorageMock();
+    storage.__rawSet(
+      'boardsesh_local_queue_snapshot_v1',
+      JSON.stringify({
+        queue: [makeQueueItem('a')],
+        currentClimbQueueItem: makeQueueItem('a'),
+        playlistSuggestionSource: null,
+        savedAt: '2026-10-20T08:00:00.000Z',
+      }),
+    );
+    const { getStoredQueueSnapshot } = await import('../queue-snapshot-store');
+    const stored = await getStoredQueueSnapshot();
+    expect(stored?.lastCurrentChangeAt).toBeUndefined();
+    expect(stored?.savedAt).toBe('2026-10-20T08:00:00.000Z');
+  });
+
   it('returns null when nothing is stored', async () => {
     const { getStoredQueueSnapshot } = await import('../queue-snapshot-store');
     await expect(getStoredQueueSnapshot()).resolves.toBeNull();

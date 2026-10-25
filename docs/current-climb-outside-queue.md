@@ -881,12 +881,50 @@ beside it:
      So `LocalQueueSnapshot` gains `lastCurrentChangeAt`, owned by the provider and written
      through the save effect unchanged; the restore seeds the in-memory value from it. An older
      snapshot without the field seeds from `savedAt` once, which errs towards lighting.
+   As built (PR 4), the provider doesn't list those actions one by one. The clock
+   (`useCurrentChangeClock`, `src/providers/queue/use-current-change-clock.ts`) is stamped
+   for a queue-item uuid and advances, during render, whenever the current uuid differs from
+   it, which is the same set: every action above changes the uuid and none of the excluded
+   ones does. The FullSync reseed rides the provider's `dispatch`: an `INITIAL_QUEUE_DATA`
+   carrying `currentChangedAt` (the action gained that optional field; the reducer ignores
+   it) sets the clock in the same tick, so the committed render pairs the new climb with the
+   server's time. For the climb the clock already holds, the older of the two times wins. The
+   room stamps `currentChangedAt = now` whenever it is seeded or settled, so starting a session
+   from a held solo queue would otherwise hand the held climb a young clock and light it. The
+   one case the older time reads wrong: a crewmate moves off the climb and back to the same
+   queue item while this phone is offline, and it then holds a climb they just picked. That
+   costs one tap on Put on the wall, and it stays that way with no schema change (decision 11).
 2. When the auto-sender would send and `now - lastCurrentChangeAt >= 4 h`, it records the current
-   uuid as held and skips the send.
-3. The hold releases only when the current climb's uuid changes (a tap, Next, a crewmate's
-   pick) or when the climber asks for a re-light (the lightbulb or Put on the wall bumps
-   `reassertNonce`). It compares uuids, so a `FullSync` that rebuilds the same item (every
-   reconnect) doesn't release it.
+   uuid as held and skips the send. It checks per write, after the #4499 gate, and only on the
+   Bluetooth transport: taking a wall with no lights (the virtual hold) is itself the
+   climber's ask. A climb the same connection already lit is never held, so a colour or mirror
+   change on a climb that has been up for 4 h still re-pushes it; that memory is per
+   connection, so the next connect asks again.
+3. The hold releases when the current climb's uuid changes (a tap on another climb, Next, a
+   crewmate's pick, the held climb removed or the queue cleared) or when the climber asks for a
+   re-light (the lightbulb or Put on the wall bumps `reassertNonce`). It compares uuids, so a
+   `FullSync` that rebuilds the same item (every reconnect) doesn't release it. Any
+   `reassertWall()` releases it, which includes the MoonBoard adjacent-holds toggle and the Live
+   Activity's re-light, both deliberate wall actions. A `setCurrentClimb` that lands on the
+   climb already current (a queue-sheet or board-sheet tap on the current row) restarts the clock, which releases it too (`reopen`). Only the automatic
+   send on connect is held (decision 10): picking the held climb again from a list (a search
+   row, a playlist, the logbook) lights it, even though that open never calls
+   `setCurrentClimb`. The play-selection controller
+   (`src/components/play-drawer/use-play-selection-controller.ts`) runs the held climb's Put on
+   the wall for it (`relight`). It skips an open marked `committedExternally`: that caller
+   already called `setCurrentClimb`, which lit the climb (`reopen`), and a second write would
+   send it twice. A playlist row for the climb already current calls nothing, so it opens as a
+   plain pick. In a crew, a feed or logbook tap on the held climb lights it too: the tap opens
+   the current climb live, not as a preview, and lighting the crew's own current climb moves no
+   queue. A playlist row in a crew opens a preview and stays dark. The accessory bar and the
+   mini player reopening the current climb pass `reopensCurrent`, which is a look, not an ask:
+   the player shows the held climb with Put on the wall and the last-on-the-wall line. So does
+   an iPad pane that mounts after the tap (another tab's) and replays the host's kept target.
+   A preview never lights the wall, held climb or not, so a list tap with Light on tap off still
+   opens dark. The Bluetooth change
+   stays in the send gate. A hold ends once the climb is actually on the wall, so a failed write
+   leaves it standing. A disconnect ends the hold too (the next connect evaluates afresh), and
+   so does the kill switch coming on, which then lights the climb the hold kept dark.
 
 | Case | Board on connect |
 | --- | --- |
@@ -897,6 +935,7 @@ beside it:
 | Session, `currentChangedAt` 4 h or older (ticks, Up next edits and no-op write-backs don't move it) | Dark on new phones. The room's state is not touched. |
 | Session, current climb set 5 h ago, a crewmate added to Up next 10 min ago | Dark |
 | Session, held, then the socket reconnects (Wi-Fi change, foreground) | Still dark: the reconnect `FullSync` reseeds from `currentChangedAt` |
+| Solo, held, then Start session | Still dark: the seed stamps the room `now`, and the `FullSync` for the same climb keeps the older solo time. Crewmates' phones read the room's young time and light. |
 | Session restored from Postgres after 4 h or more | Dark on new phones, unless any queue write within 4 h bumped `board_session_queues.updated_at` (section 2): then it lights. The room's state is not touched. |
 | Old JS bundle | Lights, as today, until it takes the OTA |
 
@@ -929,6 +968,14 @@ writes it so). The Spanish line says _muro_ like `putOnWall` does; the board dev
 _plafón_ anywhere it is named. French lights with « allumer » only, German says _Board
 beleuchten_. PR 4 scope, behind the same `stale-current-hold-kill` flag: off, no hold and no
 line.
+
+As built: `{{time}}` is `hour: numeric, minute: 2-digit`, so it reads "9:30 AM" in en-US and
+"9:30" in es, fr and de (no leading zero). `{{weekday}}` is the long weekday and `{{date}}` is
+day plus short month ("15 oct.", "15. Okt."), with the year added once it is another year. The
+four bands are calendar days, not 24 h steps (`src/lib/last-on-wall.ts`). The player shows Put
+on the wall in the browse latch's slot of the second row while the held climb is the one on
+screen, and the line under the controls (`LastOnWallNote`); a pinned preview keeps its own
+commit.
 
 The gate lives in `bluetooth-provider.tsx`, which isn't on the CLAUDE.md Bluetooth list. It
 still gets a Fable review, because it decides what the wall lights.
@@ -1117,11 +1164,11 @@ was measured, so old and new clients can be compared.
 | Backend `logMutationMetrics('setCurrentClimb' / 'addQueueItem' / 'setQueue')` gains `placement` (`explicit` / `absent`), `rewrite`, `event` (`pointer` / `fullsync` / `fullsync+trailing`), `trimmed`, `queueFull` | `FullSync`s per session-hour over 2× the pre-ramp baseline |
 | Share of opens that were `dedupe-*` | Near 0 means the match key is wrong |
 | `Set Active Climb` (`shared/analytics/src/events.ts:139`, already tracked in `setCurrentClimb`, `queue-provider.tsx:2085`, with `sessionId` null when solo) gains `rewrite`, `placement` and `nowSlotMode` from the local `placeOnWall`. This is the only signal for the issue's headline case: a solo queue never reaches the server, so the backend metrics can't see it. | Near-zero `dedupe-*` share on new builds with `sessionId` null, while the session share is healthy: the match key misses on solo inputs (for example `boardType` on one side only) |
-| New `Queue Snapshot Restored`, once per launch: `historyCount`, `upNextCount`, and `upNextDuplicates` (climbs that appear more than once in the restored solo Up next) | `upNextDuplicates` not falling on new builds as old solo snapshots age out |
+| New `Queue Snapshot Restored`, once per launch: `historyCount`, `upNextCount`, and `upNextDuplicates` (climbs that appear more than once in the restored solo Up next, by the `isSameWallClimb` key). PR 4 also sends `hasCurrent`, `lastCurrentChangeAgeHours` and `lastCurrentChangeSource` (`snapshot` / `savedAt`) | `upNextDuplicates` not falling on new builds as old solo snapshots age out |
 | Daily read-only query on `board_session_queues`: rooms where one climb appears more than once in Up next | Not falling as the ramp goes up. Measure the baseline before PR 2. |
 | `QUEUE_FULL` rejections, and rooms whose Up next alone exceeds 500 or whose array exceeds 501 (500 with nothing current) | Any sustained count |
 | `Queue Sync Stale Event Ignored` (`use-session-realtime.ts:571-578`) per session-hour | Expected to rise in step with the `FullSync` + trailing count, because every JS subscriber drops the trailing event as `ignore-stale`. Bad is a rise beyond that ratio. |
-| New `Board Stale Current Held` (`ageHours`, `solo` / `session`) and its release reason | Holds with no release (a stuck gate), or session holds released by `reconnect` (the reseed failed) |
+| New `Board Stale Current Held` (`ageHours`, `scope: solo / session`) and `Board Stale Current Released` (`reason: new-current / relight / reopen / disconnect / kill-switch`, `scope`, `heldMinutes`) | Holds with no release (a stuck gate) |
 | New `Queue Server Probe` (`nowSlotServer: true / false`, `fallback: probe / validation-error`), at most once per launch and on every `false` | Any `false` after PR 2 is live, outside a deploy window |
 | APNs `buildContentStateFromQueueState` returning null | Any rise |
 
@@ -1161,7 +1208,7 @@ was measured, so old and new clients can be compared.
 | `backend/src/__tests__/board-queue-preview.test.ts`, `navigate-queue.test.ts`, `widget-navigate.test.ts`, `session-state.test.ts`, `apns.test.ts`, `controller.test.ts` | Nothing current with History: the kiosk's Up next starts at the line; widget next goes to `queue[historyCount]`. Inside the percent the widget and Garmin stop at both ends with `out_of_bounds` (the wrap case at `widget-navigate.test.ts:399` flips); at percent 0 they still wrap. The LED path reuses a queued climb and keeps its controller event. APNs never sees an orphan. |
 | `mobile/src/providers/__tests__/queue-provider-now-slot.test.tsx` (new), `queue-provider-play-next.test.tsx` | Logbook tap on a queued climb: no copy. Similar climbs leaves Up next alone. Track walk forward and back leaves Up next alone. Three fast swipes in a session leave Up next unchanged. Flag off, or probe `false`: no `placement`, today's documents. `Set Active Climb` carries `rewrite`, `placement` and `nowSlotMode`, solo and in a session. |
 | `mobile/src/components/play-drawer/__tests__/use-queue-sheet-handlers.test.tsx`, `climb-actions/__tests__/use-climb-actions.test.tsx` | Long-press a History row with a climb current: the menu shows Replay from here, and tapping it calls `setCurrentClimb` with that row's uuid and `placement: STEP`. A plain tap on the same row still sends `NOW`. The action is absent on Up next rows, on the current climb, with nothing current, and in legacy mode. |
-| `mobile/src/providers/__tests__/bluetooth-auto-sender.test.ts`, `mobile/src/providers/queue/__tests__/use-queue-persistence-stale.test.ts` (new) | A snapshot whose `lastCurrentChangeAt` is 5 h old holds; 1 h lights. The app relaunched three times over five days with no queue change still holds (the save effect rewrites `savedAt` but not `lastCurrentChangeAt`). An add to Up next 10 min ago with the current climb set 5 h ago still holds, solo and in a session. A hydrate or regrade doesn't advance it. A snapshot without the field seeds from `savedAt`. In memory for 5 h holds. A session join with `currentChangedAt` 5 h ago holds; then a reconnect `FullSync`, a watchdog resync and a sequence-gap resync with the same `currentChangedAt` keep holding. Each release: a new current, a crewmate's pick, the lightbulb. The kill switch turns the hold off. While held, the player shows the last-on-the-wall line for each age band in section 6 (same day, yesterday, 2 to 6 days, 7 or more) in all four locales; it goes away on release and never shows with the kill switch on. |
+| `mobile/src/providers/__tests__/bluetooth-auto-sender.test.ts` (the pure gate), the "stale-climb hold" block in `bluetooth-provider-wall-confirm.test.tsx` (the real `BluetoothProvider`: hold, releases, telemetry, kill switch), `mobile/src/providers/queue/__tests__/use-queue-persistence-stale.test.ts` (new), `mobile/src/lib/__tests__/last-on-wall.test.ts` (new, the four bands in four locales), the "stale-climb hold" block in `play-drawer-cross-board.test.tsx` (the player) | A snapshot whose `lastCurrentChangeAt` is 5 h old holds; 1 h lights. The app relaunched three times over five days with no queue change still holds (the save effect rewrites `savedAt` but not `lastCurrentChangeAt`). An add to Up next 10 min ago with the current climb set 5 h ago still holds, solo and in a session. A hydrate or regrade doesn't advance it. A snapshot without the field seeds from `savedAt`. In memory for 5 h holds. A session join with `currentChangedAt` 5 h ago holds; then a reconnect `FullSync`, a watchdog resync and a sequence-gap resync with the same `currentChangedAt` keep holding. Each release: a new current, a crewmate's pick, the lightbulb, a list pick of the held climb (the "#4979 hold" block in `use-play-selection-controller.test.tsx`); the accessory bar's reopen does not release it. The kill switch turns the hold off. While held, the player shows the last-on-the-wall line for each age band in section 6 (same day, yesterday, 2 to 6 days, 7 or more) in all four locales; it goes away on release and never shows with the kill switch on. |
 | `mobile/src/lib/live-activity/__tests__/use-live-activity.test.tsx` | Nothing current with History and Up next: the update names Up next[0], not `queue[0]`. Nothing current and Up next empty: no climb sent. Flag off: today's `queue[0]`. |
 | `mobile/src/lib/graphql/__tests__/screenshot-fixture-drift.test.ts` | Passes after re-recording, with both document sets validated against the schema. |
 | `mobile/ios-tests/LiveActivityWidgetTests.swift` | Three new assertions (section 4): `QueueSequencePolicy.decision` applies a `CurrentClimbChanged` at `received == lastKnown`; `SharedMirrorState.persist` returns `true` twice at the same sequence; `QueueEventRepaintPolicy.shouldRepaintBoard(for: .currentClimbChanged)` is `true`. Together they pin the trailing event where it lives, which the TS port can't (its reducer ignores sequences). They run in PR 2's CI through the new `mobile-native-gate` rule (section 4); check that the iOS job ran rather than skipped. |
@@ -1205,3 +1252,14 @@ Owner answers, 2026-10-24, posted on PR #6699.
 9. **Say why the board is dark.** Approved 2026-10-24, from the same panel. While the hold keeps
    the board dark, the player shows when the climb was last on the wall ("Last on the wall
    Tuesday") beside Put on the wall, so it doesn't read as a Bluetooth failure. PR 4 scope.
+
+Owner answers, 2026-10-25, on PR #6770's open questions.
+
+10. **A list tap on the held climb.** It lights the board. The hold is only for the automatic
+    send on connect (the auto-sender); any deliberate tap releases it and lights the wall.
+    Reopening the current climb from the accessory bar or the mini player keeps the held
+    state, with Put on the wall. Section 6, step 3. PR 4 scope.
+11. **A climb a crewmate re-lit while this phone was offline.** The older time keeps winning
+    for the same queue item. If a crewmate moved off the climb and back while this phone was
+    offline, the phone holds a climb they just picked, and lighting it costs one tap on Put
+    on the wall. No schema change. Section 6, step 1.

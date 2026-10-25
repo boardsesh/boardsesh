@@ -34,14 +34,15 @@ export function useAccessoryClimbTap(): AccessoryClimbTap {
   const handleOpenPlay = useCallback(() => {
     if (!accessoryClimb) return;
     hapticLight();
-    // It already IS current, so openDrawer won't re-append it.
-    openPlayDrawer(accessoryClimb, {});
+    // It already IS current, so openDrawer won't re-append it. A reopen, not a
+    // pick: a #4979 hold stays, and the player offers Put on the wall.
+    openPlayDrawer(accessoryClimb, { reopensCurrent: true });
   }, [openPlayDrawer, accessoryClimb]);
 
   const preparePlay = useCallback(() => {
     if (!accessoryClimb) return false;
     hapticLight();
-    openPlayDrawer(accessoryClimb, { navigate: false });
+    openPlayDrawer(accessoryClimb, { navigate: false, reopensCurrent: true });
     return true;
   }, [openPlayDrawer, accessoryClimb]);
 

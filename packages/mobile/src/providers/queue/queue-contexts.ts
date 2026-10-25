@@ -14,6 +14,7 @@ import type { PublishPlaybackStateInput, SessionRestCadenceSendOptions } from '@
 import type { SessionRestCadenceInput, SetSessionRestCadencePayload } from '@boardsesh/shared-schema/generated';
 import type { PlaybackStateChangedEvent, SessionSummary, SessionUser, UserBoard } from '@boardsesh/shared-schema';
 import type { SessionLiveStatsEvent } from '../../lib/graphql/operations';
+import type { CurrentChangeClock } from '../../lib/ble/stale-current-hold';
 
 /** What triggered a queue reorder — attribution for `SHARED_EVENTS.QueueReordered`. */
 export type QueueReorderSource = 'drag' | 'play-next';
@@ -51,6 +52,13 @@ type QueueContextValue = {
    * the lightbulb's lit indicator; the current climb is never cleared by either.
    */
   isSessionWallLit: boolean;
+  /**
+   * When the current climb last became a different climb (#4979,
+   * docs/current-climb-outside-queue.md section 6). Read by the Bluetooth
+   * auto-sender's stale-climb hold. Stamped for the current queue-item uuid; it
+   * changes identity only when that uuid changes or a FullSync reseeds it.
+   */
+  lastCurrentChange: CurrentChangeClock;
   /**
    * Queue a climb. Resolves `'cancelled'` when the climb belongs to another
    * board and the climber backed out of the cross-board prompt — callers that
@@ -396,6 +404,7 @@ type QueueActionsContextValue = Omit<
   | 'lastConnectedBoardSerial'
   | 'participantId'
   | 'isSessionWallLit'
+  | 'lastCurrentChange'
 >;
 
 export const QueueActionsContext = createContext<QueueActionsContextValue | null>(null);

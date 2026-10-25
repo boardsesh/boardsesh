@@ -8,6 +8,7 @@ import type { BoardSerialConfig } from '@boardsesh/graphql/operations';
 import { getMoonboardBluetoothPacket } from '@boardsesh/ble-protocol/moonboard';
 import type { ResolvedBoardEntry } from '../../lib/ble/resolve-serials';
 import type { BleConnectionEnded, BleConnectionHandle, PickerState } from '../../lib/ble/use-board-bluetooth';
+import type { CurrentChangeClock } from '../../lib/ble/stale-current-hold';
 import { setHoldColorOverridesPreference } from '../../lib/hold-color-overrides';
 
 type TestResolvedBoard = { boardId: number };
@@ -53,6 +54,9 @@ const alert = vi.hoisted(() => ({
 
 const queue = vi.hoisted(() => ({
   currentClimbQueueItem: null as ClimbQueueItem | null,
+  // The #4979 hold's clock (`useCurrentChangeClock` in the real provider). Null
+  // here means "no clock", which never holds.
+  lastCurrentChange: null as CurrentChangeClock | null,
   sessionId: 'session-1' as string | null,
   participantId: 'participant-self' as string | null,
   lastConnectedBoardSerial: null as string | null,
@@ -236,10 +240,18 @@ vi.mock('../../components/ble/BleControlSheet', () => ({
     ),
 }));
 
+// `stale-current-hold-kill`, read `!== true` like the real hook.
+const flags = vi.hoisted(() => ({ staleCurrentHoldKill: false }));
+vi.mock('../feature-flags-provider', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../feature-flags-provider')>()),
+  useStaleCurrentHoldEnabled: () => !flags.staleCurrentHoldKill,
+}));
+
 vi.mock('../queue-provider', () => ({
   useQueue: () => ({
     sessionId: queue.sessionId,
     state: { currentClimbQueueItem: queue.currentClimbQueueItem, queue: [] },
+    lastCurrentChange: queue.lastCurrentChange,
   }),
   useQueueActions: () => ({
     setCurrentClimb: vi.fn(),
@@ -360,6 +372,8 @@ describe('BluetoothProvider wall-confirm integration', () => {
   beforeEach(async () => {
     await setHoldColorOverridesPreference({});
     queue.currentClimbQueueItem = makeQueueItem('climb-1');
+    queue.lastCurrentChange = null;
+    flags.staleCurrentHoldKill = false;
     queue.sessionId = 'session-1';
     queue.participantId = 'participant-self';
     queue.lastConnectedBoardSerial = null;
@@ -476,6 +490,253 @@ describe('BluetoothProvider wall-confirm integration', () => {
         expect.any(AbortSignal),
         expect.objectContaining({ sendSource: 'auto', targetQueueItemUuid: 'queue-climb-2' }),
       );
+    });
+  });
+
+  // #4979 (docs/current-climb-outside-queue.md, section 6): when the current
+  // climb hasn't changed for 4 h or more, connecting must not light it.
+  describe('stale-climb hold', () => {
+    const HOUR = 60 * 60 * 1000;
+
+    function rerenderProvider(rerender: (ui: ReturnType<typeof createElement>) => void, children?: ReactNode) {
+      rerender(
+        createElement(BluetoothProvider, {
+          boardName: 'kilter',
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,20',
+          children: children ?? createElement('div', null),
+        }),
+      );
+    }
+
+    function heldTelemetry() {
+      return analytics.track.mock.calls.filter(([event]) => event === 'Board Stale Current Held');
+    }
+
+    function releaseTelemetry() {
+      return analytics.track.mock.calls.filter(([event]) => event === 'Board Stale Current Released');
+    }
+
+    async function settle() {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+    }
+
+    it('keeps the board dark on connect when the current climb changed 5 h ago, and says so', async () => {
+      queue.lastCurrentChange = { queueItemUuid: 'queue-climb-1', changedAt: Date.now() - 5 * HOUR };
+      renderProvider(createElement(BluetoothProbe));
+      await settle();
+
+      expect(bluetooth.state.sendFramesToBoard).not.toHaveBeenCalled();
+      expect(wallConfirm.emitWallConfirm).not.toHaveBeenCalled();
+      expect(capturedBluetooth?.staleCurrentHold).toEqual({
+        queueItemUuid: 'queue-climb-1',
+        lastCurrentChangeAt: queue.lastCurrentChange.changedAt,
+      });
+      expect(heldTelemetry()).toEqual([['Board Stale Current Held', { ageHours: 5, scope: 'session' }]]);
+    });
+
+    it('lights a climb that became current 1 h ago, as today', async () => {
+      queue.lastCurrentChange = { queueItemUuid: 'queue-climb-1', changedAt: Date.now() - HOUR };
+      renderProvider(createElement(BluetoothProbe));
+
+      await waitFor(() => {
+        expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledWith(
+          'p1r12',
+          false,
+          expect.any(AbortSignal),
+          expect.objectContaining({ sendSource: 'auto', targetQueueItemUuid: 'queue-climb-1' }),
+        );
+      });
+      expect(capturedBluetooth?.staleCurrentHold).toBeNull();
+      expect(heldTelemetry()).toEqual([]);
+    });
+
+    it('lights a climb whose clock is still stamped for the previous one (it has just changed)', async () => {
+      queue.lastCurrentChange = { queueItemUuid: 'queue-previous', changedAt: Date.now() - 5 * HOUR };
+      renderProvider();
+      await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
+    });
+
+    it('keeps holding through a reconnect FullSync that rebuilds the same item with the same clock', async () => {
+      const changedAt = Date.now() - 3 * 24 * HOUR;
+      queue.lastCurrentChange = { queueItemUuid: 'queue-climb-1', changedAt };
+      const { rerender } = renderProvider(createElement(BluetoothProbe));
+      await settle();
+
+      // A FullSync gives the item a new identity under the same uuid; the queue
+      // provider reseeds the clock from the room's `currentChangedAt`.
+      queue.currentClimbQueueItem = makeQueueItem('climb-1');
+      queue.lastCurrentChange = { queueItemUuid: 'queue-climb-1', changedAt };
+      rerenderProvider(rerender, createElement(BluetoothProbe));
+      await settle();
+
+      expect(bluetooth.state.sendFramesToBoard).not.toHaveBeenCalled();
+      expect(capturedBluetooth?.staleCurrentHold?.queueItemUuid).toBe('queue-climb-1');
+      expect(heldTelemetry()).toHaveLength(1);
+      expect(releaseTelemetry()).toEqual([]);
+    });
+
+    it('releases on Put on the wall: the reassert lights the held climb once', async () => {
+      queue.lastCurrentChange = { queueItemUuid: 'queue-climb-1', changedAt: Date.now() - 5 * HOUR };
+      renderProvider(createElement(BluetoothProbe));
+      await settle();
+      expect(bluetooth.state.sendFramesToBoard).not.toHaveBeenCalled();
+
+      act(() => {
+        capturedBluetooth?.reassertWall();
+      });
+
+      await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
+      expect(capturedBluetooth?.staleCurrentHold).toBeNull();
+      expect(releaseTelemetry()).toEqual([
+        ['Board Stale Current Released', expect.objectContaining({ reason: 'relight', scope: 'session' })],
+      ]);
+    });
+
+    it('releases when the current climb changes (a tap, Next or a crewmate pick)', async () => {
+      queue.lastCurrentChange = { queueItemUuid: 'queue-climb-1', changedAt: Date.now() - 5 * HOUR };
+      const { rerender } = renderProvider(createElement(BluetoothProbe));
+      await settle();
+
+      queue.currentClimbQueueItem = makeQueueItem('climb-2');
+      queue.lastCurrentChange = { queueItemUuid: 'queue-climb-2', changedAt: Date.now() };
+      rerenderProvider(rerender, createElement(BluetoothProbe));
+
+      await waitFor(() => {
+        expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledWith(
+          'p1r12',
+          false,
+          expect.any(AbortSignal),
+          expect.objectContaining({ targetQueueItemUuid: 'queue-climb-2' }),
+        );
+      });
+      await waitFor(() => expect(capturedBluetooth?.staleCurrentHold).toBeNull());
+      expect(releaseTelemetry()).toEqual([
+        ['Board Stale Current Released', expect.objectContaining({ reason: 'new-current' })],
+      ]);
+    });
+
+    it('never holds a climb this connection already lit, even once it sits current past 4 h', async () => {
+      const realNow = Date.now();
+      const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(realNow);
+      try {
+        queue.lastCurrentChange = { queueItemUuid: 'queue-climb-1', changedAt: realNow - HOUR };
+        const { rerender } = renderProvider(createElement(BluetoothProbe));
+        await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
+
+        // Four more hours on the same climb, then a hold-colour change re-pushes it.
+        nowSpy.mockReturnValue(realNow + 4 * HOUR);
+        await act(async () => {
+          await setHoldColorOverridesPreference({ HAND: '#123456' });
+        });
+        rerenderProvider(rerender, createElement(BluetoothProbe));
+
+        await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2));
+        expect(capturedBluetooth?.staleCurrentHold).toBeNull();
+        expect(heldTelemetry()).toEqual([]);
+      } finally {
+        nowSpy.mockRestore();
+      }
+    });
+
+    it('lights as before and shows nothing with stale-current-hold-kill on', async () => {
+      flags.staleCurrentHoldKill = true;
+      queue.lastCurrentChange = { queueItemUuid: 'queue-climb-1', changedAt: Date.now() - 5 * HOUR };
+      renderProvider(createElement(BluetoothProbe));
+
+      await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
+      expect(capturedBluetooth?.staleCurrentHold).toBeNull();
+      expect(heldTelemetry()).toEqual([]);
+    });
+
+    it('lights the held climb when stale-current-hold-kill comes on while the hold stands', async () => {
+      queue.lastCurrentChange = { queueItemUuid: 'queue-climb-1', changedAt: Date.now() - 5 * HOUR };
+      const { rerender } = renderProvider(createElement(BluetoothProbe));
+      await settle();
+      expect(bluetooth.state.sendFramesToBoard).not.toHaveBeenCalled();
+
+      // Flags reload on foreground: nothing else about the queue changes.
+      flags.staleCurrentHoldKill = true;
+      rerenderProvider(rerender, createElement(BluetoothProbe));
+
+      await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
+      expect(capturedBluetooth?.staleCurrentHold).toBeNull();
+      expect(releaseTelemetry()).toEqual([
+        ['Board Stale Current Released', expect.objectContaining({ reason: 'kill-switch' })],
+      ]);
+    });
+
+    it('releases with reopen and lights when the climber opens the held climb again', async () => {
+      queue.lastCurrentChange = { queueItemUuid: 'queue-climb-1', changedAt: Date.now() - 5 * HOUR };
+      const { rerender } = renderProvider(createElement(BluetoothProbe));
+      await settle();
+      expect(bluetooth.state.sendFramesToBoard).not.toHaveBeenCalled();
+
+      // The queue provider restarts the clock for the same uuid; the item
+      // itself keeps its identity, so only the clock can re-run the gate.
+      queue.lastCurrentChange = { queueItemUuid: 'queue-climb-1', changedAt: Date.now() };
+      rerenderProvider(rerender, createElement(BluetoothProbe));
+
+      await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
+      // The hold ends once the write lands, not when it starts.
+      await waitFor(() => expect(capturedBluetooth?.staleCurrentHold).toBeNull());
+      expect(releaseTelemetry()).toEqual([
+        ['Board Stale Current Released', expect.objectContaining({ reason: 'reopen' })],
+      ]);
+    });
+
+    it('ends the hold when the held climb leaves the wall slot (removed, or the queue cleared)', async () => {
+      queue.lastCurrentChange = { queueItemUuid: 'queue-climb-1', changedAt: Date.now() - 5 * HOUR };
+      const { rerender } = renderProvider(createElement(BluetoothProbe));
+      await settle();
+
+      queue.currentClimbQueueItem = null;
+      queue.lastCurrentChange = { queueItemUuid: null, changedAt: Date.now() };
+      rerenderProvider(rerender, createElement(BluetoothProbe));
+      await settle();
+
+      expect(capturedBluetooth?.staleCurrentHold).toBeNull();
+      expect(releaseTelemetry()).toEqual([
+        ['Board Stale Current Released', expect.objectContaining({ reason: 'new-current' })],
+      ]);
+    });
+
+    it("keeps the hold standing while the next climb's write fails", async () => {
+      queue.lastCurrentChange = { queueItemUuid: 'queue-climb-1', changedAt: Date.now() - 5 * HOUR };
+      const { rerender } = renderProvider(createElement(BluetoothProbe));
+      await settle();
+
+      // A new current climb whose write fails: the old hold is not over yet,
+      // and nothing reports a second hold.
+      bluetooth.state.sendFramesToBoard.mockResolvedValueOnce(false);
+      queue.currentClimbQueueItem = makeQueueItem('climb-2');
+      queue.lastCurrentChange = { queueItemUuid: 'queue-climb-2', changedAt: Date.now() };
+      rerenderProvider(rerender, createElement(BluetoothProbe));
+      await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
+      await settle();
+
+      expect(releaseTelemetry()).toEqual([]);
+      expect(heldTelemetry()).toHaveLength(1);
+    });
+
+    it('ends the hold when the board disconnects', async () => {
+      queue.sessionId = null;
+      queue.lastCurrentChange = { queueItemUuid: 'queue-climb-1', changedAt: Date.now() - 5 * HOUR };
+      const { rerender } = renderProvider(createElement(BluetoothProbe));
+      await settle();
+      expect(heldTelemetry()).toEqual([['Board Stale Current Held', { ageHours: 5, scope: 'solo' }]]);
+
+      bluetooth.state.isConnected = false;
+      rerenderProvider(rerender, createElement(BluetoothProbe));
+      await settle();
+
+      expect(capturedBluetooth?.staleCurrentHold).toBeNull();
+      expect(releaseTelemetry()).toEqual([
+        ['Board Stale Current Released', expect.objectContaining({ reason: 'disconnect', scope: 'solo' })],
+      ]);
     });
   });
 

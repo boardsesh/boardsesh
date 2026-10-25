@@ -356,7 +356,20 @@ describe('FullSync historyCount (F3)', () => {
       queue: [],
       currentClimbQueueItem: null,
       historyCount: 3,
+      currentChangedAt: null,
     });
+  });
+
+  it("passes the room's currentChangedAt through for the #4979 hold clock", () => {
+    const result = mapQueueEventToAction({
+      __typename: 'FullSync',
+      state: { queue: [], currentClimbQueueItem: null, historyCount: 0, currentChangedAt: '2026-10-20T08:00:00.000Z' },
+    });
+    expect(
+      result.kind === 'dispatch' &&
+        result.action.type === 'INITIAL_QUEUE_DATA' &&
+        result.action.payload.currentChangedAt,
+    ).toBe('2026-10-20T08:00:00.000Z');
   });
 
   it('reads a legacy FullSync without the field as null', () => {
@@ -365,6 +378,7 @@ describe('FullSync historyCount (F3)', () => {
       queue: [],
       currentClimbQueueItem: null,
       historyCount: null,
+      currentChangedAt: null,
     });
   });
 });

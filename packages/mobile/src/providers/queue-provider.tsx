@@ -70,6 +70,7 @@ import { subscribeWsConnectionEnded } from '../lib/graphql/ws-client-lifecycle';
 import { getHttpClient } from '../lib/graphql/client';
 import { sanitizeQueueSnapshot } from '../lib/queue-privacy';
 import { invalidateStoredQueueSnapshot } from '../lib/queue-snapshot-store';
+import { nowMs } from '../lib/clock';
 import { restoreRemovedQueueItems, type QueueContentSnapshot } from '../lib/queue-undo';
 import {
   getPrivacyCredentialGeneration,
@@ -144,6 +145,7 @@ import { useQueueRegrade } from './queue/use-queue-regrade';
 import { useQueueResolveClimbs } from './queue/use-queue-resolve-climbs';
 import { useQueueClimbReads } from './queue/use-queue-climb-reads';
 import { useQueuePersistence } from './queue/use-queue-persistence';
+import { useCurrentChangeClock } from './queue/use-current-change-clock';
 import { useSessionCommands } from './queue/use-session-commands';
 import {
   useSessionRealtime,
@@ -319,7 +321,17 @@ export const SHARED_SESSION_DWELL_MS = 3_000;
 
 export function QueueProvider({ children }: { children: ReactNode }) {
   const authTransportRevision = useAuthTransportRevision();
-  const [state, dispatch] = useReducer(queueReducer, defaultSearchParams, initialState);
+  const [state, reducerDispatch] = useReducer(queueReducer, defaultSearchParams, initialState);
+  // The #4979 hold's clock (docs/current-climb-outside-queue.md, section 6): when
+  // the current climb last became a different climb. The Bluetooth auto-sender
+  // reads it to keep a stale climb off the wall on connect. `dispatch` is the
+  // reducer's, reseeding the clock from every FullSync's `currentChangedAt` on
+  // the way through, so no dispatch site can forget it.
+  const {
+    clock: lastCurrentChange,
+    seedCurrentChange,
+    dispatch,
+  } = useCurrentChangeClock(state.currentClimbQueueItem?.uuid ?? null, reducerDispatch);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   // F3 now-slot mode (docs/current-climb-outside-queue.md, section 7). Solo it
@@ -1284,6 +1296,8 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     queue: state.queue,
     currentClimbQueueItem: state.currentClimbQueueItem,
     historyCount: savedHistoryCount,
+    lastCurrentChange,
+    seedCurrentChange,
     playlistSuggestionSource,
     setPlaylistSuggestionSourceState,
     activeBoardSettled: !isActiveBoardPending,
@@ -1426,6 +1440,8 @@ export function QueueProvider({ children }: { children: ReactNode }) {
             // the snapshot predates instead of putting the wall back.
             sessionId: activeSessionId,
             historyCount: queueState.historyCount ?? null,
+            // The #4979 hold's clock reseeds from it, like a subscribe FullSync.
+            currentChangedAt: queueState.currentChangedAt ?? null,
           },
         });
         // Re-baseline the sync gate to this snapshot's authoritative
@@ -2939,6 +2955,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // (driven by findNextQueueItemWithSuggestions anchoring on the current
       // climb) is preserved. In now-slot mode (F3) the open goes through
       // `placeOnWall` instead: a queued climb moves into Now, never copied.
+      const currentUuidBeforeOpen = stateRef.current.currentClimbQueueItem?.uuid ?? null;
       const nowSlotOpen = dispatchSetCurrent(
         item,
         true,
@@ -2947,6 +2964,15 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         undefined,
         options?.placement,
       );
+      // #4979: opening the climb that is already current (a re-tap, or a list
+      // row for the same climb, which now-slot mode dedupes onto it) leaves the
+      // uuid alone, so the clock would not move and a stale-climb hold would
+      // keep the wall dark. The open is the climber asking for this climb, so
+      // it restarts the clock; the auto-sender sees the young clock and lights.
+      const openedQueueItemUuid = nowSlotOpen ? nowSlotOpen.resolvedItem.uuid : item.uuid;
+      if (currentUuidBeforeOpen !== null && openedQueueItemUuid === currentUuidBeforeOpen) {
+        seedCurrentChange(currentUuidBeforeOpen, nowMs());
+      }
       track(SHARED_EVENTS.SetActiveClimb, {
         climbUuid: item.climb.uuid,
         layoutId: activeBoardRef.current?.layoutId,
@@ -2973,7 +2999,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         placement: nowSlotOpen?.placement ?? null,
       });
     },
-    [dispatchSetCurrent, privacyRevocationGeneration, storeTrackResume],
+    [dispatchSetCurrent, privacyRevocationGeneration, seedCurrentChange, storeTrackResume],
   );
 
   // The editor saved a climb that is already in the queue. See the reducer's
@@ -3450,9 +3476,10 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       lastConnectedBoardSerial,
       participantId,
       isSessionWallLit,
+      lastCurrentChange,
       ...actionsValue,
     }),
-    [state, sessionId, lastConnectedBoardSerial, participantId, isSessionWallLit, actionsValue],
+    [state, sessionId, lastConnectedBoardSerial, participantId, isSessionWallLit, lastCurrentChange, actionsValue],
   );
 
   // Active-climb selector: identity changes ONLY when the active climb uuid

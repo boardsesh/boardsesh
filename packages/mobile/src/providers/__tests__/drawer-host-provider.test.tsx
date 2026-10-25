@@ -1926,6 +1926,11 @@ describe('DrawerHostProvider iPad pane open (regular width)', () => {
     expect(hosts.at(-1)?.playDrawerPaneProps?.openTarget?.options).toEqual({});
     // The pane hosts the drawer in place — no full-screen /play navigation.
     expect(routerNavigate).not.toHaveBeenCalled();
+    // The target outlives its first apply: a pane another tab mounts later gets
+    // it as a replay (#4979: a replay never lights a held climb).
+    const claimFirstApply = hosts.at(-1)?.playDrawerPaneProps?.openTarget?.claimFirstApply;
+    expect(claimFirstApply?.()).toBe(true);
+    expect(claimFirstApply?.()).toBe(false);
   });
 
   it('passes a view-only open through openTarget.options, stripping the analytics source', async () => {

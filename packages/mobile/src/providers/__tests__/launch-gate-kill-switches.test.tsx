@@ -18,6 +18,7 @@ import {
   useFirstConnectCtaEnabled,
   useQaTesterGateEnabled,
   useSendRecoveryGateEnabled,
+  useStaleCurrentHoldEnabled,
 } from '../feature-flags-provider';
 
 vi.mock('@react-native-async-storage/async-storage', () => ({
@@ -34,6 +35,9 @@ const KILL_SWITCHES = [
   { key: 'send-recovery-gate-kill', useEnabled: useSendRecoveryGateEnabled },
   { key: 'first-board-picker-kill', useEnabled: useFirstBoardPickerEnabled },
   { key: 'first-connect-cta-kill', useEnabled: useFirstConnectCtaEnabled },
+  // Not a launch surface, but the same direction: the #4979 hold is on until
+  // PostHog says `true` (docs/current-climb-outside-queue.md, section 8).
+  { key: 'stale-current-hold-kill', useEnabled: useStaleCurrentHoldEnabled },
 ] as const;
 
 function readEnabled(useEnabled: () => boolean, flags?: Record<string, boolean | string | undefined>): boolean {

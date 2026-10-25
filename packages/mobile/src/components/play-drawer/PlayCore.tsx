@@ -57,6 +57,7 @@ import { PlayListContext } from './PlayListContext';
 import { resolveTopListContextFrame } from './top-list-context-frame';
 import { TrackEndCard } from './TrackEndCard';
 import { PlayDrawerActionBar } from './PlayDrawerActionBar';
+import { LastOnWallNote } from './LastOnWallNote';
 import { PlayDrawerActionsMenu } from './PlayDrawerActionsMenu';
 import { resolveQueuedSlotUuid } from './play-drawer-menu-rows';
 import { resolveActionBarLayout, type ActionBarCommitButton } from './action-bar-layout';
@@ -1013,11 +1014,31 @@ export function PlayCore({
     confirmArmed: busyWallConfirmArmed,
     wallDriven: lightbulbActive,
   });
+  // #4979: the board connected but the hold kept this climb dark, because it
+  // hasn't changed for 4 h or more. The climb on screen IS the current one, so
+  // the browse latch has nothing to commit; Put on the wall takes the same
+  // place in the row and re-lights it (a reassert, which releases the hold),
+  // with "Last on the wall …" saying why the board is dark.
+  const staleCurrentHold = bluetooth?.staleCurrentHold ?? null;
+  const heldClimbOnScreen =
+    staleCurrentHold !== null &&
+    !isPreview &&
+    !isAnonymous &&
+    !showBoardMismatch &&
+    currentClimbQueueItem?.uuid === staleCurrentHold.queueItemUuid;
+  // The held climb's Put on the wall: a reassert, which releases the hold. Never
+  // a preview's (a pinned preview is never the held climb, see above), so the
+  // preview commit keeps `handleSetActive`. A list pick of the held climb takes
+  // the same path (the selection controller, section 6 decision A).
+  const handlePutHeldClimbOnWall = useCallback(() => {
+    bluetooth?.armUndoWallChangeToast();
+    bluetooth?.reassertWall();
+  }, [bluetooth]);
   // What the browse latch puts in the second row: one button in the middle of
   // the usual row, or the busy-wall question in place of it.
   const commitButton: ActionBarCommitButton = commitBarModel.showConfirm
     ? 'confirm'
-    : commitBarModel.showPutOnWall
+    : commitBarModel.showPutOnWall || heldClimbOnScreen
       ? 'putOnWall'
       : null;
   // A timed workout block's one-tap Fell / Sent (#6231): the climb on the wall,
@@ -1380,6 +1401,10 @@ export function PlayCore({
         setBusyWallConfirmArmed,
         markLatchExit,
       },
+      hold: {
+        heldQueueItemUuid: staleCurrentHold?.queueItemUuid ?? null,
+        putHeldClimbOnWall: handlePutHeldClimbOnWall,
+      },
     });
 
   // A swipe step changes the climb with these, whichever render it follows.
@@ -1704,6 +1729,7 @@ export function PlayCore({
             isAuthenticated,
             isTickBarActive,
             commitButton,
+            heldClimbOnScreen,
             showConnectPill,
             workoutOutcome !== null,
             bluetooth !== null,
@@ -1858,9 +1884,9 @@ export function PlayCore({
       workoutOutcomeWallLeftAtMs={workoutOutcomeShown?.wallLeftAtMs ?? null}
       wallClimbName={wallClimb.name}
       wallClimbUuid={wallClimbUuid}
-      commitLabel={commitBarModel.commitLabel}
+      commitLabel={heldClimbOnScreen ? 'putOnWall' : commitBarModel.commitLabel}
       onKeepTheirs={handleBackToLive}
-      onCommit={handleSetActive}
+      onCommit={heldClimbOnScreen ? handlePutHeldClimbOnWall : handleSetActive}
       ascentCount={ascentCount}
       onPrevClick={handlePrev}
       onNextClick={handleNextPress}
@@ -1899,6 +1925,9 @@ export function PlayCore({
       >
         {controlsAbove ? actionBar : playbackControls}
         {controlsAbove ? playbackControls : actionBar}
+        {heldClimbOnScreen && staleCurrentHold ? (
+          <LastOnWallNote lastOnWallAt={staleCurrentHold.lastCurrentChangeAt} />
+        ) : null}
       </View>
 
       {showSwitchBoardCard ? (

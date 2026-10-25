@@ -627,7 +627,15 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       // re-tap of the same climb still re-applies). No router.navigate → no modal.
       if (usesDetailPaneRef.current) {
         paneTargetNonceRef.current += 1;
-        setPaneTarget({ climb, options: openOptions, nonce: paneTargetNonceRef.current });
+        // The pane target outlives its first apply, and each tab mounts its own
+        // pane: only the first player to apply it treats it as this tap.
+        let applied = false;
+        const claimFirstApply = () => {
+          if (applied) return false;
+          applied = true;
+          return true;
+        };
+        setPaneTarget({ climb, options: openOptions, nonce: paneTargetNonceRef.current, claimFirstApply });
         return;
       }
       // Stash the target (bumped nonce) and navigate. When `/play` is already up the

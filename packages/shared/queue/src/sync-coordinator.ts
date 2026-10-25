@@ -35,6 +35,8 @@ export type SyncQueueEvent =
         currentClimbQueueItem: ClimbQueueItem | null;
         /** The History / Up next line (F3). Absent or null from a pre-F3 server or a legacy document. */
         historyCount?: number | null;
+        /** When the room's current climb last changed (ISO 8601). Absent or null like `historyCount`. */
+        currentChangedAt?: string | null;
       };
     }
   | {
@@ -104,6 +106,8 @@ export function mapQueueEventToAction<TSearchParams extends QueueSearchParams = 
             currentClimbQueueItem: event.state.currentClimbQueueItem,
             // The reducer keeps it only in now-slot mode; legacy mode ignores it.
             historyCount: event.state.historyCount ?? null,
+            // Read by the mobile provider's #4979 hold clock, never by the reducer.
+            currentChangedAt: event.state.currentChangedAt ?? null,
           },
         },
       };

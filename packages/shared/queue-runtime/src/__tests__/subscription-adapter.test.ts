@@ -77,6 +77,22 @@ describe('mapSubscriptionEnvelopeToAction', () => {
     expect(lineOf(withoutLine)).toBeNull();
   });
 
+  it("passes the room's currentChangedAt through, and null when the document does not select it", () => {
+    const changedAtOf = (envelope: SubscriptionWireEnvelope<WireItem>) => {
+      const result = mapSubscriptionEnvelopeToAction(envelope, { mapItem: liftToClimbItem });
+      return result.kind === 'dispatch' && result.action.type === 'INITIAL_QUEUE_DATA'
+        ? result.action.payload.currentChangedAt
+        : 'not dispatched';
+    };
+    expect(
+      changedAtOf({
+        __typename: 'FullSync',
+        state: { queue: [], currentClimbQueueItem: null, currentChangedAt: '2026-10-20T08:00:00.000Z' },
+      }),
+    ).toBe('2026-10-20T08:00:00.000Z');
+    expect(changedAtOf({ __typename: 'FullSync', state: { queue: [], currentClimbQueueItem: null } })).toBeNull();
+  });
+
   it('handles QueueItemAdded with either addedItem (mobile alias) or item (web)', () => {
     const mobileEnvelope: SubscriptionWireEnvelope<WireItem> = {
       __typename: 'QueueItemAdded',

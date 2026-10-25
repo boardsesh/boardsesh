@@ -50,6 +50,13 @@ export type PlayDrawerOpenOptions = {
    * swipe-through-playlist in the drawer without re-dispatching.
    */
   playlistSuggestionSource?: PlaylistSuggestionSource | null;
+  /**
+   * The accessory bar or the mini player reopening the current climb. Every
+   * other open of the current climb is a pick, which lights a climb the #4979
+   * hold kept dark (docs/current-climb-outside-queue.md, section 6); this one
+   * only shows the climb, so a hold stays and the player offers Put on the wall.
+   */
+  reopensCurrent?: boolean;
 };
 
 /**
@@ -61,6 +68,12 @@ export type PlayDrawerOpenTarget = {
   climb: Climb;
   options?: PlayDrawerOpenOptions;
   nonce: number;
+  /**
+   * Set on a target the host keeps after it lands (the iPad pane's). True the
+   * first time a player applies this target, false on every later apply, so a
+   * pane that mounts afterwards (another tab's) replays it as a look.
+   */
+  claimFirstApply?: () => boolean;
 };
 
 export type PlayDrawerProps = {
