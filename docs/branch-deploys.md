@@ -1496,14 +1496,38 @@ Backend-affecting paths are defined in two places that must stay in sync:
 
 `production-deploy.yml` polls Railway deployment status after redeploy and attempts to roll back to the previously observed Railway deployment if the new one fails. Production deploys use a non-canceling concurrency group and cumulative change detection because GitHub may still replace an older pending run. After Railway reports success, a live GraphQL smoke verifies the client-required notification fields before the workflow reports the backend as deployed.
 
+### Standalone Expo-web PR preview
+
+`branch-deploy.yml` has a third, root-served browser-app preview at
+`https://{PR}.app.boardsesh.com`. The workflow resolves the selected open,
+same-repository PR through the GitHub API, checks out its immutable head SHA,
+and uses that SHA for every preview image's build-release metadata and the
+GitHub deployment reference. The deployment verifies those image labels before
+replacing running containers, then waits for the new Caddy container to serve
+HTTP 200 at `/` before listing the preview URLs.
+
+The export uses the repository's pinned Vite+ install and keeps
+`packages/mobile/web-runtime` isolated from the native dependency graph. The
+COPY-only `Dockerfile.app-web` serves the static export with SPA fallback,
+immutable cache headers for fingerprinted JS/assets, and `noindex`/`nosniff`
+headers. `scripts/test-app-preview-serving.sh` exercises that contract against
+a local synthetic export; it requires an already available Caddy base image
+and never pulls images or contacts a preview host.
+
+The workflow remains `workflow_dispatch` only. A selected PR's source is built
+by SHA, but the homelab URL is not considered operator-accepted until a real
+dispatch and serving check have succeeded. Wildcard DNS/TLS and that manual
+homelab check are activation prerequisites before enabling automatic PR
+triggers; they are not results claimed by source validation.
+
 ### Workflows
 
 | Workflow                    | Trigger                   | Purpose                                                                            |
 | --------------------------- | ------------------------- | ---------------------------------------------------------------------------------- |
-| `branch-deploy.yml`         | PR open/sync              | Detects changes, builds web (always) + backend (if needed), deploys                |
+| `branch-deploy.yml`         | Manual dispatch (PR ID)   | Builds the selected PR's web, backend (if needed), and standalone Expo-web app by immutable head SHA; triggers remain disabled |
 | `production-deploy.yml`     | Push to main / dispatch   | Builds web + backend, gated migrate, deploys prod web (Vercel) + backend (Railway) |
-| `branch-deploy-cleanup.yml` | PR close                  | Removes per-PR containers (backend may not exist for FE-only)                      |
-| `branch-deploy-sweep.yml`   | Daily 3am UTC + main push | Cleans stale containers, prunes images (7-day TTL)                                 |
+| `branch-deploy-cleanup.yml` | Manual dispatch only (PR-close trigger disabled) | Legacy per-PR cleanup workflow; automatic cleanup is not enabled                    |
+| `branch-deploy-sweep.yml`   | Manual dispatch only (schedule/push disabled)    | Removes stale containers when run; unused images age out under the 7-day prune    |
 
 ---
 
@@ -1527,9 +1551,11 @@ Backend-affecting paths are defined in two places that must stay in sync:
 | `packages/moonboard-sync/`                    | MoonBoard public location sync CLI                                            |
 | `packages/scheduler/`                         | Cron jobs moved off Vercel — see `docs/scheduler.md`                          |
 | `packages/web/vercel.json`                    | Build command (migration skip), remaining Vercel cron definitions             |
-| `.github/workflows/branch-deploy.yml`         | Build images + trigger Ansible deploy on PR open/sync                         |
-| `.github/workflows/branch-deploy-cleanup.yml` | Trigger Ansible cleanup + GHCR delete on PR close                             |
-| `.github/workflows/branch-deploy-sweep.yml`   | Trigger Ansible sweep on push to main / daily                                 |
+| `.github/workflows/branch-deploy.yml`         | Build selected-PR images and deploy them when manually dispatched             |
+| `Dockerfile.app-web`                           | COPY-only static image for the standalone Expo-web preview                     |
+| `deploy/app-preview/Caddyfile`                 | SPA fallback, immutable asset caching, and preview privacy headers             |
+| `.github/workflows/branch-deploy-cleanup.yml` | Legacy cleanup workflow; PR-close trigger remains disabled                    |
+| `.github/workflows/branch-deploy-sweep.yml`   | Manual stale-container sweep and age-based Docker pruning                     |
 | `.github/workflows/dev-db-docker.yml`         | Existing path-filtered CI for DB changes                                      |
 | `.github/workflows/test.yml`                  | Existing CI for web package                                                   |
 | `packages/web/app/api/internal/`              | 12 route files to eventually migrate (Phase 3)                                |
