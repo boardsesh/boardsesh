@@ -45,6 +45,7 @@ import {
 import { REST_TIMER_PILL_HEIGHT, TOOLBAR_CAPSULE_MAX_WIDTH, glassSize } from '../../theme/layout';
 import { spacing } from '../../theme/tokens';
 import { CHROME_LABEL_MAX_FONT_SCALE, REST_CLOCK_MAX_FONT_SCALE } from '../../theme/typography';
+import { TICK_GUTTER } from '../tick/tick-sheet-metrics';
 import { AccessoryBarSurface } from './AccessoryBarSurface';
 import { RestTimerPacerCaption } from './RestTimerPacerCaption';
 
@@ -353,7 +354,7 @@ export function RestTimerHeroClock() {
       </View>
       {/* Who paces a crew's clock (#5382). Outside the clock's one accessible
           element: it is a separate fact, and it changes when the board does. */}
-      <RestTimerPacerCaption variant="subheadline" centered scalesWithText />
+      <RestTimerPacerCaption variant="subheadline" centered scalesWithText style={styles.heroPacer} />
     </View>
   );
 }
@@ -524,5 +525,9 @@ const styles = StyleSheet.create({
   },
   heroCaption: {
     textAlign: 'center',
+  },
+  // Wraps at large text sizes: keep it off the sheet's edges, on the crew note's gutter.
+  heroPacer: {
+    paddingHorizontal: TICK_GUTTER,
   },
 });
