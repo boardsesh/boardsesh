@@ -92,6 +92,10 @@ function isBlePlxError(error: unknown): error is BlePlxErrorShape {
 // handshake failure. Keep this narrower than BLE_PLX_CODE_TO_CATEGORY below:
 // timeout, MTU, discovery and lookup errors are terminal and must not replay the
 // selected-device connect.
+// 200 (DeviceConnectionFailed) is ble-plx's named connect-failure code, but the
+// installed 3.5.1 Android sources never construct it, which matches the zero
+// events we saw for it. It stays in the set so a ble-plx upgrade that starts
+// emitting it keeps the same retry, still bounded by the GATT status check below.
 const RETRYABLE_ANDROID_CONNECT_ERROR_CODES = new Set([200, 201, 205]);
 const RETRYABLE_ANDROID_GATT_STATUSES = new Set([133, 147]);
 
