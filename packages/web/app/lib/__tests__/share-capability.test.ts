@@ -142,6 +142,16 @@ describe('scrubShareCapabilitiesFromEvent', () => {
     expect(scrubShareCapabilitiesFromEvent(event)).toBe(event);
     expect(scrubShareCapabilitiesFromEvent(null)).toBeNull();
   });
+
+  it('survives a circular reference and still scrubs the strings around it', () => {
+    const event = eventLandingOn(`${ORIGIN}/b/garage/40/list?wall=${WALL}`, '');
+    const circular: Record<string, unknown> = { label: 'loop' };
+    circular.self = circular;
+    const eventWithCycle = { ...event, properties: { ...event.properties, circular } };
+    const scrubbed = scrubShareCapabilitiesFromEvent(eventWithCycle);
+    expect(scrubbed?.properties.$current_url).not.toContain(WALL);
+    expect(scrubbed?.properties.circular).toBe(circular);
+  });
 });
 
 describe("the wall photo's path", () => {

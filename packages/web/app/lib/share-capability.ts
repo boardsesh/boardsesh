@@ -99,27 +99,35 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null;
 }
 
-/** Scrub every string under `value`, keeping the same reference wherever nothing changed. */
-function scrubDeep(value: unknown): unknown {
+/**
+ * Scrub every string under `value`, keeping the same reference wherever nothing changed.
+ * `ancestors` guards against a circular reference: an object already on the path is returned as is.
+ */
+function scrubDeep(value: unknown, ancestors: WeakSet<object> = new WeakSet()): unknown {
   if (typeof value === 'string') return scrubShareCapabilityParams(value);
+  if (typeof value !== 'object' || value === null || ancestors.has(value)) return value;
   if (Array.isArray(value)) {
+    ancestors.add(value);
     let changed = false;
     const scrubbed = value.map((item) => {
-      const next = scrubDeep(item);
+      const next = scrubDeep(item, ancestors);
       if (next !== item) changed = true;
       return next;
     });
+    ancestors.delete(value);
     return changed ? scrubbed : value;
   }
   // Dates (the event timestamp) and anything else that is not plain JSON pass through.
   if (!isPlainObject(value)) return value;
+  ancestors.add(value);
   let changed = false;
   const scrubbed: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(value)) {
-    const next = scrubDeep(item);
+    const next = scrubDeep(item, ancestors);
     if (next !== item) changed = true;
     scrubbed[key] = next;
   }
+  ancestors.delete(value);
   return changed ? scrubbed : value;
 }
 

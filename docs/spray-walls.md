@@ -4610,7 +4610,9 @@ it redacted the same way, and so does the uuid in the photo route's path
 image span next to the slug. The `/flags` request skips `before_send`, so the
 transport runs the same rule over its body (it carries every person property).
 Errors thrown by the wall reads name the operation, never the uuid. The rule is
-`packages/web/app/lib/share-capability.ts`. Unlike the invite token, a `?wall=` page keeps analytics: the scrub covers every
+`packages/web/app/lib/share-capability.ts`.
+
+Unlike the invite token, a `?wall=` page keeps analytics: the scrub covers every
 capture path, and www has no session replay to leak the URL some other way.
 
 ### Which photograph the page shows
