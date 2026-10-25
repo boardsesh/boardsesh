@@ -7,6 +7,7 @@ const { mockDb, requestFollowMock, removeFollowMock } = vi.hoisted(() => {
   const mockDb = {
     execute: vi.fn(),
     select: vi.fn(),
+    selectDistinct: vi.fn(),
     insert: vi.fn(),
     delete: vi.fn(),
     update: vi.fn(),
@@ -107,6 +108,7 @@ function createMockChain(resolveValue: unknown = []): Record<string, unknown> {
   const chain: Record<string, unknown> = {};
   const methods = [
     'select',
+    'selectDistinct',
     'from',
     'where',
     'leftJoin',
@@ -149,9 +151,8 @@ describe('followSetter mutation', () => {
   it('should throw if setter does not exist', async () => {
     const ctx = makeCtx();
 
-    // select().from().where().limit() → [{ count: 0 }]
-    const existsChain = createMockChain([{ count: 0 }]);
-    mockDb.select.mockReturnValueOnce(existsChain);
+    // No visible climbs → no board types
+    mockDb.selectDistinct.mockReturnValueOnce(createMockChain([]));
 
     await expect(
       setterFollowMutations.followSetter(null, { input: { setterUsername: 'nonexistent' } }, ctx),
@@ -161,17 +162,16 @@ describe('followSetter mutation', () => {
   it('should insert follow and return true', async () => {
     const ctx = makeCtx();
 
-    // 1. Setter exists check → count: 1
-    const existsChain = createMockChain([{ count: 1 }]);
-    mockDb.select.mockReturnValueOnce(existsChain);
+    // 1. Board types with visible climbs → setter exists
+    mockDb.selectDistinct.mockReturnValueOnce(createMockChain([{ boardType: 'kilter' }]));
 
     // 2. Insert follow → returns row (new follow)
     const insertChain = createMockChain([{ id: 1, followerId: 'user-123', setterUsername: 'setter1' }]);
     mockDb.insert.mockReturnValueOnce(insertChain);
 
-    // 3. Check linked user → no linked users
-    const linkedChain = createMockChain([]);
-    mockDb.select.mockReturnValueOnce(linkedChain);
+    // 3. No climb author, then no linked login
+    mockDb.select.mockReturnValueOnce(createMockChain([]));
+    mockDb.select.mockReturnValueOnce(createMockChain([]));
 
     const result = await setterFollowMutations.followSetter(null, { input: { setterUsername: 'setter1' } }, ctx);
 
@@ -183,8 +183,7 @@ describe('followSetter mutation', () => {
     const ctx = makeCtx();
 
     // Setter exists
-    const existsChain = createMockChain([{ count: 1 }]);
-    mockDb.select.mockReturnValueOnce(existsChain);
+    mockDb.selectDistinct.mockReturnValueOnce(createMockChain([{ boardType: 'kilter' }]));
 
     // Insert returns empty (conflict, already following)
     const insertChain = createMockChain([]);
@@ -201,16 +200,14 @@ describe('followSetter mutation', () => {
     const ctx = makeCtx();
 
     // 1. Setter exists
-    const existsChain = createMockChain([{ count: 1 }]);
-    mockDb.select.mockReturnValueOnce(existsChain);
+    mockDb.selectDistinct.mockReturnValueOnce(createMockChain([{ boardType: 'kilter' }]));
 
     // 2. Insert follow returns new row
     const insertChain = createMockChain([{ id: 1 }]);
     mockDb.insert.mockReturnValueOnce(insertChain);
 
-    // 3. Linked user found
-    const linkedChain = createMockChain([{ userId: 'linked-user-456' }]);
-    mockDb.select.mockReturnValueOnce(linkedChain);
+    // 3. The account that set the name's climbs
+    mockDb.select.mockReturnValueOnce(createMockChain([{ userId: 'linked-user-456' }]));
 
     const result = await setterFollowMutations.followSetter(null, { input: { setterUsername: 'setter1' } }, ctx);
 
@@ -235,13 +232,15 @@ describe('unfollowSetter mutation', () => {
   it('should delete follow and return true', async () => {
     const ctx = makeCtx();
 
+    mockDb.selectDistinct.mockReturnValueOnce(createMockChain([{ boardType: 'kilter' }]));
+
     // Delete setter_follows
     const deleteChain = createMockChain(undefined);
     mockDb.delete.mockReturnValueOnce(deleteChain);
 
-    // Check linked user → no linked users
-    const linkedChain = createMockChain([]);
-    mockDb.select.mockReturnValueOnce(linkedChain);
+    // No climb author, then no linked login
+    mockDb.select.mockReturnValueOnce(createMockChain([]));
+    mockDb.select.mockReturnValueOnce(createMockChain([]));
 
     const result = await setterFollowMutations.unfollowSetter(null, { input: { setterUsername: 'setter1' } }, ctx);
 
@@ -252,19 +251,34 @@ describe('unfollowSetter mutation', () => {
   it('should also delete user_follows when setter has linked account', async () => {
     const ctx = makeCtx();
 
+    mockDb.selectDistinct.mockReturnValueOnce(createMockChain([{ boardType: 'kilter' }]));
+
     // Delete setter_follows
     const deleteChain = createMockChain(undefined);
     mockDb.delete.mockReturnValueOnce(deleteChain);
 
-    // Check linked user → found
-    const linkedChain = createMockChain([{ userId: 'linked-user-456' }]);
-    mockDb.select.mockReturnValueOnce(linkedChain);
+    // The account that set the name's climbs
+    mockDb.select.mockReturnValueOnce(createMockChain([{ userId: 'linked-user-456' }]));
 
     const result = await setterFollowMutations.unfollowSetter(null, { input: { setterUsername: 'setter1' } }, ctx);
 
     expect(result).toBe(true);
     expect(mockDb.delete).toHaveBeenCalledTimes(1);
     expect(removeFollowMock).toHaveBeenCalledWith('user-123', 'linked-user-456');
+  });
+
+  it('drops the setter follow without looking up an account when the name has no visible climbs', async () => {
+    const ctx = makeCtx();
+
+    mockDb.selectDistinct.mockReturnValueOnce(createMockChain([]));
+    mockDb.delete.mockReturnValueOnce(createMockChain(undefined));
+
+    const result = await setterFollowMutations.unfollowSetter(null, { input: { setterUsername: 'setter1' } }, ctx);
+
+    expect(result).toBe(true);
+    expect(mockDb.delete).toHaveBeenCalledTimes(1);
+    expect(mockDb.select).not.toHaveBeenCalled();
+    expect(removeFollowMock).not.toHaveBeenCalled();
   });
 });
 
