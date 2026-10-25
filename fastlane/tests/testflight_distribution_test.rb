@@ -40,6 +40,13 @@ module Spaceship
 end
 
 class TestflightDistributionTest < Minitest::Test
+  def test_summary_refuses_an_unrecognized_status
+    error = assert_raises(BoardseshTestflightDistribution::Error) do
+      BoardseshTestflightDistribution.summary({ "version" => "2.7.0", "buildNumber" => "2", "status" => "unknown" })
+    end
+    assert_includes error.message, "Unknown TestFlight distribution summary status"
+  end
+
   FakeApp = Struct.new(:id, :bundle_id, :groups) do
     def get_beta_groups
       groups

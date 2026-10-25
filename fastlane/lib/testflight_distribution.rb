@@ -36,6 +36,8 @@ module BoardseshTestflightDistribution
       "#{identity} is assigned to #{GROUP_NAME}; Apple beta review is pending."
     when "approved-awaiting-availability"
       "#{identity} is assigned to #{GROUP_NAME}; Apple approved beta review and availability is pending."
+    else
+      raise Error, "Unknown TestFlight distribution summary status: #{receipt.fetch('status').inspect}"
     end
   end
 
