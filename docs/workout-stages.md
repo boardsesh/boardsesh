@@ -296,6 +296,30 @@ agree on these points:
   line is one element to a screen reader ("Set rest. Rest timer, 2:58 left. Then Crimp City",
   the overrun in words through `restTimerClockAccessibilityLabel`), so it is a leaf that reads
   the live display; nothing above it re-renders per second.
+- **Over the board.** The player reads the same hook for the climb on the wall
+  (`WorkoutRunnerOverlay`, mounted only with a run, so a crewmate without it sees nothing; a
+  swipe, a preview, the end-of-list card or the switch-board gate hides it). While a timed
+  block's rest runs (phase `resting`), a compact rest card sits on the board's bottom edge, its
+  wording from the pure `resolveWorkoutRestCard`: what the rest is ("Set 2 done", "4x4 done",
+  "Rest", "Next climb in"), the `RestTimerClock`, and what follows ("Next: Crimp City · V5",
+  "Next: Limit Bouldering", or back on the same climb "Then rep 2 of 4 · Set 1 of 4" and "Then
+  try again · Try 3"). It is not modal: the board, its swipes and Fell / Sent stay live, and it
+  never takes screen-reader focus. A rest that keeps the climb up offers Go now, which only hides
+  the card until the next go. A rest that moves the wall offers Skip rest on an after-tick block
+  (never on the minute, whose beat is the block) on the phone that may move the wall
+  (`canAdvanceQueue`), and not under a crew clock this app cannot run. Skip rest is the
+  scheduler's own local advance with now as the deadline (`skipRestOnWall` in
+  `lib/rest-timer-skip.ts`): the rule asked again against the climb on the wall at the tap, the
+  cycle claimed before `nextClimb`, the climb remembered as moved off, so the wall moves once
+  and the crew clock waits for the next tick. A crew phone that does not hold the wall says
+  whose phone moves it instead of naming the next climb. Untimed blocks get no rest card,
+  whatever the climber's own rest timer does: the readout has no rest for them, and the pill
+  already counts it. When the workout turns `done` while the player is up, "Workout done" opens
+  over the board, modal in the end-of-list card's pattern (focus on the title, Android back
+  closes it), with this phone's sent, tried and skipped (`totals`; "Nothing logged on this
+  phone" instead of three zeros), See your workout (the Record tab) and Done. It opens once per
+  run, never on a player that opened on a workout already done, and waits while the climber
+  looks at another climb.
 - **Next** is what Next lands on (`selectNextQueueItemWithSuggestions`, with the scheduler's
   board rules), so a list the climber is walking counts. `startsStage` marks the boundary.
 - **Outcomes.** Every queued staged climb is `sent` (a flash or send logged on it; on a 4x4,

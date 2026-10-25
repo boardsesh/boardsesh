@@ -105,6 +105,7 @@ import { usePushAfterPlayerDismiss } from './use-push-after-player-dismiss';
 import { RestTimerPillHost } from '../queue-control/RestTimerPillHost';
 import { useWorkoutRun } from '../../lib/workout-run-store';
 import { useWorkoutQueueUuids, useWorkoutStageParts } from './use-workout-stage-label';
+import { WorkoutRunnerOverlay } from './WorkoutRunnerOverlay';
 import { ChromeIconButton, useChromeIconButtonSize } from '../ChromeIconButton';
 import { topBarByVariant } from '../../theme/top-bar';
 import {
@@ -1565,6 +1566,11 @@ export function PlayCore({
   const handleFindClimbers = useCallback(() => {
     pushAfterPlayerDismiss(() => router.push('/users/search'));
   }, [pushAfterPlayerDismiss]);
+  // "Workout done" → See your workout: the Record tab's card, once the player is
+  // out of the way (the pane has nothing to dismiss and goes straight there).
+  const handleSeeWorkout = useCallback(() => {
+    pushAfterPlayerDismiss(() => router.navigate('/(tabs)/record'));
+  }, [pushAfterPlayerDismiss]);
 
   // Arm (expand) / disarm (collapse) the scroll-into-view for the first section peek.
   const handleFirstSectionToggle = useCallback(
@@ -2194,6 +2200,18 @@ export function PlayCore({
                             climbName={displayedClimb.name}
                           />
                         )}
+                        {/* A timed block's rest and "Workout done" (#6291), for the
+                            climb on the wall. The rest card leaves the board live;
+                            both wait while the end-of-list card or the switch-board
+                            gate owns the board. */}
+                        <WorkoutRunnerOverlay
+                          sessionId={sessionId}
+                          run={workoutRun}
+                          displayedQueueItemUuid={displayedQueueItemUuid ?? null}
+                          boardName={boardName}
+                          suppressed={trackEndCardVisible || showBoardMismatch}
+                          onSeeWorkout={handleSeeWorkout}
+                        />
                         {/* Over the board only: the header and the action bar
                             stay live, so Previous still walks back along the list. */}
                         {trackEndCardVisible && trackEndCard ? (

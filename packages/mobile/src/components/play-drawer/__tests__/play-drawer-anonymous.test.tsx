@@ -56,6 +56,7 @@ const recorded = vi.hoisted(() => ({
   actionsMenu: [] as Props[],
   liveHeader: [] as Props[],
   trackEndCard: [] as Props[],
+  workoutOverlay: [] as Props[],
   listContext: [] as Props[],
   swipeableHeader: [] as { next?: ReactNode; previous?: ReactNode }[],
   panePlaceholder: 0,
@@ -287,6 +288,13 @@ vi.mock('../TrackEndCard', () => ({
   TrackEndCard: (props: Props) => {
     recorded.trackEndCard.push(props);
     return createElement('div', { 'data-testid': 'track-end-card' });
+  },
+}));
+// Recorded: the workout cards (#6291) wait while the end card owns the board.
+vi.mock('../WorkoutRunnerOverlay', () => ({
+  WorkoutRunnerOverlay: (props: Props) => {
+    recorded.workoutOverlay.push(props);
+    return null;
   },
 }));
 // Recorded: the top bar's "Projects · 4 of 23" (#6664) is a join this file pins.
@@ -563,6 +571,7 @@ beforeEach(() => {
   recorded.actionsMenu = [];
   recorded.liveHeader = [];
   recorded.trackEndCard = [];
+  recorded.workoutOverlay = [];
   recorded.listContext = [];
   recorded.swipeableHeader = [];
   recorded.panePlaceholder = 0;
@@ -2198,6 +2207,23 @@ describe('PlayDrawer — the list it walks, and its end (#6664)', () => {
       firstUpNextName: 'Queued',
       action: { kind: 'nextInQueue', target: itemQueued },
     });
+  });
+
+  // #6291: the rest and workout-done cards share the board with the end card,
+  // so they wait while it is open, and they are for the climb on screen.
+  it('holds the workout cards back while the end card owns the board', () => {
+    session.sessionId = 'session-1';
+    onTheLastClimbOfProjects();
+    expect(recorded.workoutOverlay.at(-1)).toMatchObject({
+      sessionId: 'session-1',
+      run: null,
+      displayedQueueItemUuid: itemLast.uuid,
+      suppressed: false,
+    });
+
+    pressNext();
+
+    expect(recorded.workoutOverlay.at(-1)).toMatchObject({ suppressed: true });
   });
 
   // #6238: Next plays the list, so the queue button keeps Up next in sight.
