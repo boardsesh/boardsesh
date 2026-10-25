@@ -759,7 +759,7 @@
       "preWorkoutPreviewGradeSpan": "{{lowest}} to {{highest}}",
       "preWorkoutPreviewShuffle": "Shuffle",
       "preWorkoutPreviewShuffleAccessibilityLabel": "Shuffle the climbs, keeping the same grades",
-      "preWorkoutPreviewShortfall": "Found {{filled}} of {{planned}} climbs, so the session starts with {{filled}}. Try another grade or loosen the climb filters to fill the rest.",
+      "preWorkoutPreviewShortfall": "Found {{filled}} of {{planned}} climbs. Try another grade or loosen the climb filters to fill the rest.",
       "preWorkoutPreviewSubstituted_one": "{{count}} climb is from a nearby grade, since its own ran short. Its row says which grade it fills in for.",
       "preWorkoutPreviewSubstituted_other": "{{count}} climbs are from a nearby grade, since their own ran short. Each row says which grade it fills in for.",
       "preWorkoutPreviewBorrowedGrade": "{{grade}} for {{plannedGrade}}",

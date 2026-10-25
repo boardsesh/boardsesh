@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { BoardName } from '@boardsesh/shared-schema';
@@ -11,6 +12,17 @@ import { hapticSelection } from '../../../lib/haptics';
 import { useTheme } from '../../../providers/theme-provider';
 import { spacing } from '../../../theme/tokens';
 import type { StartQueueSummary } from './workout-start-queue';
+
+/**
+ * Points taken off each note line's height. React Native draws a paragraph into
+ * a text box exactly its frame's size, and deep in a long scroll view Yoga's
+ * float rounding can leave that frame a hair short of its lines (35.9999 for two
+ * 18 pt lines). TextKit then drops the last line and clips the one above it at
+ * the card edge, leaving an empty line under it. With each line a little
+ * shorter, the measured height still rounds up to the same pixels and the lines
+ * fit inside it.
+ */
+const NOTE_LINE_HEIGHT_SLACK = 0.02;
 
 type WorkoutPreviewSummaryProps = {
   summary: PlanFillSummary;
@@ -42,8 +54,13 @@ export function WorkoutPreviewSummary({
   startQueue,
 }: WorkoutPreviewSummaryProps) {
   const { t } = useTranslation('session');
-  const { systemColors, brandColors, opacity } = useTheme();
+  const { systemColors, brandColors, opacity, textStyles } = useTheme();
   const { formatGradeByDifficultyId } = useGradeFormat();
+  const footnoteLineHeight = textStyles.footnote.lineHeight;
+  const noteLineStyle = useMemo(
+    () => (footnoteLineHeight === undefined ? null : { lineHeight: footnoteLineHeight - NOTE_LINE_HEIGHT_SLACK }),
+    [footnoteLineHeight],
+  );
 
   if (summary.filled === 0) return null;
 
@@ -84,18 +101,20 @@ export function WorkoutPreviewSummary({
       {/* Why some rows are not at the planned grade, and what is still missing. */}
       {summary.substituted > 0 || summary.missing > 0 ? (
         <Card>
-          <View style={styles.noteLines}>
-            {summary.substituted > 0 ? (
-              <Text variant="footnote" color={systemColors.secondaryLabel}>
-                {t('mobile.session.preWorkoutPreviewSubstituted', { count: summary.substituted })}
-              </Text>
-            ) : null}
-            {summary.missing > 0 ? (
-              <Text variant="footnote" color={systemColors.secondaryLabel}>
-                {t('mobile.session.preWorkoutPreviewShortfall', { filled: summary.filled, planned: summary.planned })}
-              </Text>
-            ) : null}
-          </View>
+          {summary.substituted > 0 ? (
+            <Text variant="footnote" color={systemColors.secondaryLabel} style={noteLineStyle}>
+              {t('mobile.session.preWorkoutPreviewSubstituted', { count: summary.substituted })}
+            </Text>
+          ) : null}
+          {summary.missing > 0 ? (
+            <Text
+              variant="footnote"
+              color={systemColors.secondaryLabel}
+              style={[noteLineStyle, summary.substituted > 0 ? styles.secondNoteLine : null]}
+            >
+              {t('mobile.session.preWorkoutPreviewShortfall', { filled: summary.filled, planned: summary.planned })}
+            </Text>
+          ) : null}
         </Card>
       ) : null}
     </View>
@@ -125,7 +144,7 @@ const styles = StyleSheet.create({
   shuffleText: {
     fontWeight: '600',
   },
-  noteLines: {
-    gap: spacing[2],
+  secondNoteLine: {
+    marginTop: spacing[2],
   },
 });

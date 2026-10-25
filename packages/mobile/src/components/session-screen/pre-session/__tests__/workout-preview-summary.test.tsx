@@ -25,13 +25,25 @@ vi.mock('../../../Card', () => ({
   Card: ({ children }: { children?: ReactNode }) => createElement('section', null, children),
 }));
 vi.mock('../../../Icon', () => ({ Icon: () => null }));
+// Exposes the line height a Text was given, its style arrays flattened.
+type TextStyleProp = { lineHeight?: number } | null | undefined | TextStyleProp[];
+const lineHeightOf = (style: TextStyleProp): number | undefined =>
+  Array.isArray(style)
+    ? style.reduce<number | undefined>((found, entry) => lineHeightOf(entry) ?? found, undefined)
+    : (style?.lineHeight ?? undefined);
 vi.mock('../../../Text', () => ({
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+  Text: ({ children, style }: { children?: ReactNode; style?: TextStyleProp }) =>
+    createElement('span', { 'data-line-height': lineHeightOf(style) }, children),
 }));
 vi.mock('../../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12, 4: 16 } }));
 vi.mock('../../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../../providers/theme-provider', () => ({
-  useTheme: () => ({ systemColors: {}, brandColors: {}, opacity: { disabled: 0.5 } }),
+  useTheme: () => ({
+    systemColors: {},
+    brandColors: {},
+    opacity: { disabled: 0.5 },
+    textStyles: { footnote: { fontSize: 13, lineHeight: 18 } },
+  }),
 }));
 vi.mock('../../../../hooks/use-grade-format', () => ({
   useGradeFormat: () => ({ formatGradeByDifficultyId: (difficultyId: number) => `G${difficultyId}` }),
@@ -108,6 +120,21 @@ describe('WorkoutPreviewSummary', () => {
 
     getByText('mobile.session.preWorkoutPreviewSubstituted {"count":2}');
     getByText('mobile.session.preWorkoutPreviewShortfall {"filled":5,"planned":6}');
+  });
+
+  it('draws each note line a hair under the footnote line height, so a rounded frame keeps every line', () => {
+    // QA: deep in the session screen a two-line note got a 35.9999 pt frame and
+    // showed one clipped line over an empty one.
+    const { getByText } = renderSummary(makeSummary({ filled: 5, missing: 1, substituted: 2 }));
+
+    for (const text of [
+      'mobile.session.preWorkoutPreviewSubstituted {"count":2}',
+      'mobile.session.preWorkoutPreviewShortfall {"filled":5,"planned":6}',
+    ]) {
+      const lineHeight = Number(getByText(text).getAttribute('data-line-height'));
+      expect(lineHeight).toBeLessThan(18);
+      expect(lineHeight).toBeGreaterThan(18 - 1 / 3);
+    }
   });
 
   it('shuffles on tap, and not while disabled', () => {

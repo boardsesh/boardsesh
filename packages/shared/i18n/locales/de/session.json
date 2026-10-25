@@ -759,7 +759,7 @@
       "preWorkoutPreviewGradeSpan": "{{lowest}} bis {{highest}}",
       "preWorkoutPreviewShuffle": "Mischen",
       "preWorkoutPreviewShuffleAccessibilityLabel": "Boulder neu mischen, die Grade bleiben gleich",
-      "preWorkoutPreviewShortfall": "{{filled}} von {{planned}} Bouldern gefunden, die Session startet also mit {{filled}}. Probier einen anderen Grad oder lockere die Filter, um den Rest zu füllen.",
+      "preWorkoutPreviewShortfall": "{{filled}} von {{planned}} Bouldern gefunden. Probier einen anderen Grad oder lockere die Filter, um den Rest zu füllen.",
       "preWorkoutPreviewSubstituted_one": "{{count}} Boulder kommt aus einem Nachbargrad, weil sein eigener Grad nicht genug hatte. Seine Zeile zeigt, welchen Grad er ersetzt.",
       "preWorkoutPreviewSubstituted_other": "{{count}} Boulder kommen aus einem Nachbargrad, weil ihr eigener Grad nicht genug hatte. Jede Zeile zeigt, welchen Grad der Boulder ersetzt.",
       "preWorkoutPreviewBorrowedGrade": "{{grade}} statt {{plannedGrade}}",

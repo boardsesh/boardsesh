@@ -150,7 +150,7 @@ function WorkoutPreviewRowComponent({
           variant="caption1"
           color={systemColors.secondaryLabel}
           numberOfLines={1}
-          style={{ marginStart: climbRowSeparatorInset(rowDisplay.thumbnail, 0) }}
+          style={rowDisplay.thumbnail ? captionStyles.pastThumbnail : null}
         >
           {borrowedCaption}
         </Text>
@@ -254,6 +254,12 @@ export const WorkoutPreviewRow = memo(WorkoutPreviewRowComponent, (prev, next) =
 
 // Where the row's first column starts: the row button's own leading padding.
 const ROW_LEADING_INSET = spacing[3];
+
+// A borrowed row's caption starts under the climb name: past the thumbnail
+// when the row shows one, at the row's first column when it does not.
+const captionStyles = StyleSheet.create({
+  pastThumbnail: { marginStart: climbRowSeparatorInset(true, 0) },
+});
 
 const styles = StyleSheet.create({
   row: {

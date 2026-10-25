@@ -484,7 +484,12 @@ Benchmarks only are what usually bring it here.
   how many climbs came from a nearby grade, above the shortfall line when slots are still
   empty, and the grade span covers the grades the climbs are at. Start queues exactly the
   rows on screen, borrowed ones included, under their planned stage. `Session Queue
-  Generated` carries `substitutedCount` on both Start and Add to session.
+  Generated` carries `substitutedCount` on both Start and Add to session. The shortfall
+  line says how many climbs were found, not how many the session starts with, since a 4x4
+  queues each of its climbs once per round. The card's lines sit a fiftieth of a point under
+  the footnote line height (`NOTE_LINE_HEIGHT_SLACK`): deep in the session screen Yoga's
+  float rounding gave a two-line note a 35.9999 pt frame, and iOS then drew one clipped line
+  over an empty one.
 - **Screenshot captures borrow nothing** (`borrowScaleFor`). The pinned fixture set has no
   answer for a nearby grade's search, nor for the stats of the climbs it would show, where
   a recorded grade came back short (Woods, and MoonBoard at the recorded grade). Remove

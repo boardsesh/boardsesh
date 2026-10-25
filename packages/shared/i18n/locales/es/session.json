@@ -759,7 +759,7 @@
       "preWorkoutPreviewGradeSpan": "{{lowest}} a {{highest}}",
       "preWorkoutPreviewShuffle": "Mezclar",
       "preWorkoutPreviewShuffleAccessibilityLabel": "Mezclar los bloques sin cambiar los grados",
-      "preWorkoutPreviewShortfall": "Hay {{filled}} de {{planned}} bloques, así que la sesión empieza con {{filled}}. Prueba otro grado o afloja los filtros para completar el resto.",
+      "preWorkoutPreviewShortfall": "Hay {{filled}} de {{planned}} bloques. Prueba otro grado o afloja los filtros para completar el resto.",
       "preWorkoutPreviewSubstituted_one": "{{count}} bloque es de un grado cercano porque en el suyo no había suficientes. Su fila indica a qué grado sustituye.",
       "preWorkoutPreviewSubstituted_other": "{{count}} bloques son de un grado cercano porque en el suyo no había suficientes. Cada fila indica a qué grado sustituye.",
       "preWorkoutPreviewBorrowedGrade": "{{grade}} en lugar de {{plannedGrade}}",

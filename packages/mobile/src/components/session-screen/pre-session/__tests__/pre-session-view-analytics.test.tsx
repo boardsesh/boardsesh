@@ -195,6 +195,7 @@ vi.mock('../../../../providers/theme-provider', () => ({
     brandColors: {},
     opacity: { disabled: 0.5 },
     features: { inBodyLargeTitle: false, filtersInTopChrome: false },
+    textStyles: { footnote: { fontSize: 13, lineHeight: 18 } },
   }),
 }));
 vi.mock('../../../../lib/graphql/use-active-board', () => ({ useActiveBoard: () => activeBoard }));
