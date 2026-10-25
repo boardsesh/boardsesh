@@ -287,9 +287,10 @@ function NavRow({ row, colors }: { row: MoreNavRow; colors: RowColors }) {
 /**
  * A label with a trailing value or spinner: SwitcherForm's info row, with its
  * status row's `busy` spinner. Clickable (ripple, no chevron) only when the row
- * has an action.
+ * has an action. With `valuePlacement: 'below'` the value goes under the label.
  */
 function ValueRow({ row }: { row: MoreValueRow }) {
+  const valueBelow = row.valuePlacement === 'below';
   return (
     <Row
       modifiers={[fillMaxWidth(), ...(row.onPress ? [clickable(row.onPress)] : []), ROW_PADDING]}
@@ -297,6 +298,11 @@ function ValueRow({ row }: { row: MoreValueRow }) {
     >
       <Column modifiers={[weight(1)]} verticalArrangement={{ spacedBy: spacing[1] }}>
         <Text style={{ typography: 'bodyLarge' }}>{row.label}</Text>
+        {valueBelow && row.value ? (
+          <Text style={{ typography: 'bodyMedium' }} modifiers={[alpha(0.6)]}>
+            {row.value}
+          </Text>
+        ) : null}
         {row.subtitle ? (
           <Text style={{ typography: 'bodySmall' }} modifiers={[alpha(0.6)]}>
             {row.subtitle}
@@ -308,7 +314,7 @@ function ValueRow({ row }: { row: MoreValueRow }) {
         // reverse order draws the indicator shrunk and off-centre.
         <CircularProgressIndicator modifiers={[padding(spacing[2], 0, 0, 0), size(20, 20)]} strokeWidth={2} />
       ) : null}
-      {row.value ? (
+      {!valueBelow && row.value ? (
         <Text style={{ typography: 'bodyMedium' }} modifiers={[padding(spacing[2], 0, 0, 0), alpha(0.6)]}>
           {row.value}
         </Text>

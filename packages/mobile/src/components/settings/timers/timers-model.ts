@@ -40,7 +40,17 @@ export type TimersModelInput = {
     onPair: (boardUuid: string) => void;
     onRemove: (boardUuid: string) => void;
   } | null;
+  /** The system text size (`useWindowDimensions().fontScale`). */
+  fontScale: number;
 };
+
+/**
+ * Past this text size a board's name and its timer's name no longer fit side by
+ * side without breaking words, so the timer goes under the board's name. The
+ * size SegmentedControl swaps to scrolling tabs at, and climb rows start
+ * wrapping names at.
+ */
+export const ROGUE_TIMER_STACK_FONT_SCALE = 1.3;
 
 /** How the paired timer is doing, said only on the active board's row. */
 export type RogueTimerLinkState = 'connected' | 'connecting' | 'unreachable';
@@ -158,17 +168,24 @@ function rogueLinkSubtitle(t: SettingsTranslate, link: RogueTimerLinkState | nul
 
 /**
  * One row per board: its paired timer (tap to pair or change it), and a quiet
- * Remove under a paired one. An info row when the climber owns no board yet.
+ * Remove under a paired one. At large text sizes the timer sits under the
+ * board's name. When the climber owns no board yet, one status row: the fact in
+ * the row's label, what to do about it in the subtitle under it.
  */
-function rogueSection(t: SettingsTranslate, rogue: NonNullable<TimersModelInput['rogue']>): MoreSection {
+function rogueSection(
+  t: SettingsTranslate,
+  rogue: NonNullable<TimersModelInput['rogue']>,
+  fontScale: number,
+): MoreSection {
+  const valuePlacement = fontScale > ROGUE_TIMER_STACK_FONT_SCALE ? 'below' : 'trailing';
   const rows: MoreRow[] =
     rogue.boards.length === 0
       ? [
           {
-            kind: 'info',
+            kind: 'value',
             key: 'rogueNoBoards',
             label: t('mobile.settings.timers.rogueNoBoardsTitle'),
-            body: t('mobile.settings.timers.rogueNoBoards'),
+            subtitle: t('mobile.settings.timers.rogueNoBoards'),
           },
         ]
       : rogue.boards.flatMap((board): MoreRow[] => {
@@ -177,6 +194,7 @@ function rogueSection(t: SettingsTranslate, rogue: NonNullable<TimersModelInput[
             key: `rogueBoard:${board.uuid}`,
             label: board.name,
             value: board.timerName ?? t('mobile.settings.timers.rogueNotPaired'),
+            valuePlacement,
             subtitle: board.timerName ? rogueLinkSubtitle(t, board.link) : undefined,
             busy: board.busy,
             accessibilityHint: board.timerName
@@ -215,7 +233,7 @@ function rogueSection(t: SettingsTranslate, rogue: NonNullable<TimersModelInput[
  * edits the same settings, so the two always agree.
  */
 export function buildTimersModel(input: TimersModelInput): MoreFormModel {
-  const { t, rest, cues, rogue } = input;
+  const { t, rest, cues, rogue, fontScale } = input;
   const hasLength = hasRestLength(rest.targetSeconds);
 
   const modeOptions: (MoreOption & { key: RestTimerMode })[] = [
@@ -311,7 +329,7 @@ export function buildTimersModel(input: TimersModelInput): MoreFormModel {
             },
           ]
         : []),
-      ...(rogue ? [rogueSection(t, rogue)] : []),
+      ...(rogue ? [rogueSection(t, rogue, fontScale)] : []),
     ],
   };
 }

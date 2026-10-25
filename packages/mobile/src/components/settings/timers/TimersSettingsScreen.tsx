@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { MoreForm } from '../../MoreForm';
@@ -37,6 +37,7 @@ export function TimersSettingsScreen() {
   const [sound, setSound] = useSetting('restTimerSound');
   const { blockedReason } = useSessionTimerDriver();
   const { sessionId } = useQueueSessionId();
+  const { fontScale } = useWindowDimensions();
   // A build property, fixed for the life of the app.
   const soundAvailable = isRestTimerSoundAvailable();
 
@@ -83,6 +84,7 @@ export function TimersSettingsScreen() {
             sound: soundAvailable ? { enabled: sound, onChange: onToggle(setSound) } : null,
           },
           rogue: rogue.section,
+          fontScale,
         }),
         'timers',
       ),
@@ -100,6 +102,7 @@ export function TimersSettingsScreen() {
       sound,
       setSound,
       rogue.section,
+      fontScale,
     ],
   );
 

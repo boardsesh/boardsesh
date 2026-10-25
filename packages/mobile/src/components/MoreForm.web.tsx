@@ -119,12 +119,14 @@ function RenderRow({ row }: { row: MoreRow }): ReactNode {
           )}
         />
       );
-    case 'value':
+    case 'value': {
+      const valueBelow = row.valuePlacement === 'below';
       return (
         <List.Item
           key={row.key}
           title={row.label}
-          description={row.subtitle}
+          // Below, the value leads the description, on its own line.
+          description={valueBelow ? [row.value, row.subtitle].filter(Boolean).join('\n') : row.subtitle}
           // A value row's subtitle can be several facts (a stored board's size,
           // config and last sync), so don't clip it at Paper's default 2 lines.
           descriptionNumberOfLines={4}
@@ -134,7 +136,7 @@ function RenderRow({ row }: { row: MoreRow }): ReactNode {
           right={() => (
             <View style={styles.trailing}>
               {row.busy ? <ActivityIndicator size="small" /> : null}
-              {row.value ? (
+              {!valueBelow && row.value ? (
                 <Text style={[styles.trailingValue, { color: systemColors.secondaryLabel as string }]}>
                   {row.value}
                 </Text>
@@ -143,6 +145,7 @@ function RenderRow({ row }: { row: MoreRow }): ReactNode {
           )}
         />
       );
+    }
     case 'toggle':
       return (
         <List.Item

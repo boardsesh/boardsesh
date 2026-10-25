@@ -256,6 +256,18 @@ describe('value rows', () => {
     expect(screen.getByRole('button', { name: /Space used/ }).getAttribute('data-pressable')).toBe('false');
   });
 
+  it('puts the value under the label, once, when placed below', () => {
+    renderRows({
+      kind: 'value',
+      key: 'timer',
+      label: 'Garage',
+      subtitle: 'Connected',
+      value: 'Echo Gym Timer 2.0',
+      valuePlacement: 'below',
+    });
+    expect(screen.getByRole('button', { name: /Garage/ }).textContent).toBe('GarageEcho Gym Timer 2.0\nConnected');
+  });
+
   it('shows a spinner while the value is being worked out', () => {
     renderRows({ kind: 'value', key: 'used', label: 'Space used', busy: true });
     expect(screen.getByTestId('spinner')).toBeTruthy();

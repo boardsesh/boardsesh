@@ -190,6 +190,14 @@ export type MoreValueRow = {
   label: string;
   value?: string;
   subtitle?: string;
+  /**
+   * Where the value sits. `'trailing'` (the default) is beside the label.
+   * `'below'` puts it on its own line under the label, for a row whose label and
+   * value are both names (a board and its paired timer): side by side at large
+   * text sizes, two narrow columns break words mid-way. The same choice as
+   * ListRow's `trailingPlacement`.
+   */
+  valuePlacement?: 'trailing' | 'below';
   /** The value is being worked out; a spinner sits in the trailing slot. */
   busy?: boolean;
   onPress?: () => void;

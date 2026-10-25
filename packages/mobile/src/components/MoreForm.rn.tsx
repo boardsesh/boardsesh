@@ -146,6 +146,7 @@ function Row({ row, isLast, fitted }: { row: MoreRow; isLast: boolean; fitted?: 
               </View>
             ) : undefined
           }
+          trailingPlacement={row.valuePlacement === 'below' ? 'below' : 'end'}
           onPress={row.onPress}
           accessibilityHint={row.accessibilityHint}
           accessibilityState={row.busy ? { busy: true } : undefined}

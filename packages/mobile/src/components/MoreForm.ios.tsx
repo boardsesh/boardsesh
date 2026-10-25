@@ -172,18 +172,22 @@ function NavRow({ row }: { row: MoreNavRow }) {
 /**
  * A label with a trailing value or spinner — the SwitcherForm info row plus its
  * status row's `busy` spinner. Tappable rows wrap it in a Button for the press
- * highlight; there is no chevron because the row does not navigate.
+ * highlight; there is no chevron because the row does not navigate. With
+ * `valuePlacement: 'below'` the value goes under the label instead.
  */
 function ValueRow({ row }: { row: MoreValueRow }) {
+  const valueBelow = row.valuePlacement === 'below';
+  const value = row.value ? <Text modifiers={[SECONDARY_LABEL]}>{row.value}</Text> : null;
   const body = (
     <HStack spacing={spacing[3]}>
       <VStack alignment="leading" spacing={spacing[1]}>
         <Text modifiers={[PRIMARY_LABEL]}>{row.label}</Text>
+        {valueBelow ? value : null}
         {row.subtitle ? <Text modifiers={[FOOTNOTE, SECONDARY_LABEL]}>{row.subtitle}</Text> : null}
       </VStack>
       <Spacer />
       {row.busy ? <ProgressView /> : null}
-      {row.value ? <Text modifiers={[SECONDARY_LABEL]}>{row.value}</Text> : null}
+      {valueBelow ? null : value}
     </HStack>
   );
   if (row.onPress) {

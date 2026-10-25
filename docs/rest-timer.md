@@ -252,7 +252,7 @@ agree. The root row shows the rest length (or Off).
 | --- | --- |
 | Rest | Rest length (a menu: Off, 0:30 to 10:00 in 30 s rungs, plus a saved length that sits between rungs), cadence, auto-advance |
 | Cues | Sound, only when `isRestTimerSoundAvailable()` |
-| Gym timer | One row per board the climber owns, with its paired Rogue timer; Remove under a paired one. Signed out: no section |
+| Gym timer | One row per board the climber owns, with its paired Rogue timer (under the board's name past text size 1.3); Remove under a paired one. Signed out: no section |
 
 - A cadence change goes through `changeRestTimerMode` (`lib/rest-timer-mode-change.ts`), the one
   re-arm rule the sheet's cadence control uses too: choosing the saved cadence does nothing, and a

@@ -18,6 +18,7 @@ const analytics = vi.hoisted(() => ({ track: vi.fn() }));
 const driver = vi.hoisted(() => ({ blockedReason: null as 'crewPassenger' | null }));
 const sound = vi.hoisted(() => ({ available: false }));
 const modeChange = vi.hoisted(() => ({ change: vi.fn(() => true) }));
+const windowSize = vi.hoisted(() => ({ fontScale: 1 }));
 const pairingSheet = vi.hoisted(() => ({
   props: null as null | { onSelect: (timerName: string) => void; onDismiss: () => void },
 }));
@@ -52,6 +53,7 @@ vi.mock('../../../../lib/rest-timer-mode-change', () => ({ changeRestTimerMode: 
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
   StyleSheet: { create: <T,>(styles: T) => styles },
+  useWindowDimensions: () => ({ width: 393, height: 852, fontScale: windowSize.fontScale, scale: 3 }),
 }));
 vi.mock('../../../ble/TimerPairingSheet', () => ({
   TimerPairingSheet: (props: { onSelect: (timerName: string) => void; onDismiss: () => void }) => {
@@ -118,6 +120,7 @@ beforeEach(() => {
   analytics.track.mockClear();
   modeChange.change.mockClear();
   pairingSheet.props = null;
+  windowSize.fontScale = 1;
   rogueScenario.isAuthenticated = true;
   rogueScenario.viewerUserId = 'me';
   rogueScenario.boards = undefined;
@@ -283,6 +286,16 @@ describe('TimersSettingsScreen gym timer', () => {
     expect(captured.model?.sections.flatMap((section) => section.rows).map((r) => r.key)).not.toContain(
       'rogueBoard:gym',
     );
+  });
+
+  it('puts the timer under the board name at the largest text sizes', () => {
+    rogueScenario.boards = [board({ uuid: 'mine', name: "Test User's Kilter Original 12×12 with kickboard" })];
+    render(<TimersSettingsScreen />);
+    expect(row<MoreValueRow>('rogueBoard:mine', 'value').valuePlacement).toBe('trailing');
+    cleanup();
+    windowSize.fontScale = 3.12;
+    render(<TimersSettingsScreen />);
+    expect(row<MoreValueRow>('rogueBoard:mine', 'value').valuePlacement).toBe('below');
   });
 
   it('pairs a timer to the active board and re-saves the stored copy the provider connects from', async () => {

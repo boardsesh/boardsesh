@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import type {
   MoreButtonRow,
-  MoreInfoRow,
   MoreSegmentedRow,
   MoreSelectRow,
   MoreToggleRow,
@@ -13,6 +12,7 @@ import {
   REST_LENGTH_LADDER_SECONDS,
   restLengthKey,
   restLengthSummary,
+  ROGUE_TIMER_STACK_FONT_SCALE,
   rogueTimerBoards,
   type TimersModelInput,
   type TimersRogueBoard,
@@ -25,6 +25,7 @@ function makeInput(
     rest?: Partial<TimersModelInput['rest']>;
     cues?: Partial<TimersModelInput['cues']>;
     rogue?: TimersModelInput['rogue'];
+    fontScale?: number;
   } = {},
 ) {
   return {
@@ -45,6 +46,7 @@ function makeInput(
       ...overrides.cues,
     },
     rogue: overrides.rogue ?? null,
+    fontScale: overrides.fontScale ?? 1,
   } satisfies TimersModelInput;
 }
 
@@ -237,10 +239,28 @@ describe('the gym timer section', () => {
     expect(section?.footer).toBe('mobile.settings.timers.rogueFooter');
   });
 
-  it('says so when the climber owns no board yet', () => {
-    const row = find<MoreInfoRow>(makeInput({ rogue: rogueInput([]) }), 'rogueNoBoards', 'info');
-    expect(row.label).toBe('mobile.settings.timers.rogueNoBoardsTitle');
-    expect(row.body).toBe('mobile.settings.timers.rogueNoBoards');
+  it('says so when the climber owns no board yet, the fact first and the way out under it', () => {
+    const row = find<MoreValueRow>(makeInput({ rogue: rogueInput([]) }), 'rogueNoBoards', 'value');
+    expect(row).toEqual({
+      kind: 'value',
+      key: 'rogueNoBoards',
+      label: 'mobile.settings.timers.rogueNoBoardsTitle',
+      subtitle: 'mobile.settings.timers.rogueNoBoards',
+    });
+  });
+
+  it.each([
+    [1, 'trailing'],
+    [ROGUE_TIMER_STACK_FONT_SCALE, 'trailing'],
+    [1.35, 'below'],
+    [3.12, 'below'],
+  ] as const)('at text size %s puts the timer %s the board name', (fontScale, valuePlacement) => {
+    const input = makeInput({
+      rogue: rogueInput([rogueBoard({ timerName: 'Echo Gym Timer 2.0' }), rogueBoard({ uuid: 'bare' })]),
+      fontScale,
+    });
+    expect(find<MoreValueRow>(input, 'rogueBoard:board-1', 'value').valuePlacement).toBe(valuePlacement);
+    expect(find<MoreValueRow>(input, 'rogueBoard:bare', 'value').valuePlacement).toBe(valuePlacement);
   });
 
   it('shows each board with its timer, and Not paired without one', () => {
