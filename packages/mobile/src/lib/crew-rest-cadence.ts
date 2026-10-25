@@ -22,6 +22,9 @@
 //     change is taken, through the server clock offset (server-clock.ts). A
 //     later sample that moves the offset by more than 250 ms converts the held
 //     clock again, even from a change too old to take (adoptCrewCadence).
+//   - `autoAdvanceOnce` (a 4x4 set rest: move the wall once, then wait) rides
+//     in the config, so every CONFIGURE this phone re-sends from the clock it
+//     holds keeps it, and a CONFIGURE without it clears it on the server.
 
 import type {
   SessionRestCadenceAnchor,
@@ -115,6 +118,9 @@ function parseCrewConfig(wire: SessionRestCadenceWire): CrewRestConfig | null {
     mode: wire.mode,
     targetSeconds,
     autoAdvance: wire.autoAdvance === true,
+    // Null from a server that predates the flag: false, as it ran. Inert
+    // without auto-advance (no FIRE applies), so it is held only with it.
+    ...(wire.autoAdvance === true && wire.autoAdvanceOnce === true ? { autoAdvanceOnce: true as const } : {}),
     advanceOn: wire.advanceOn,
     source: wire.source,
     setByParticipantId: wire.setByParticipantId ?? null,
@@ -146,8 +152,11 @@ export function parseCrewRestCadence(
   };
 }
 
-/** The five fields an ARM or CONFIGURE carries. */
-export type CrewConfigFields = Pick<CrewRestConfig, 'mode' | 'targetSeconds' | 'autoAdvance' | 'advanceOn' | 'source'>;
+/** The fields an ARM or CONFIGURE carries. `autoAdvanceOnce` is there only while true. */
+export type CrewConfigFields = Pick<
+  CrewRestConfig,
+  'mode' | 'targetSeconds' | 'autoAdvance' | 'autoAdvanceOnce' | 'advanceOn' | 'source'
+>;
 
 /** Field by field, so a freshly built config compares equal to the one held. */
 export function sameCrewConfig(left: CrewConfigFields | null, right: CrewConfigFields | null): boolean {
@@ -156,9 +165,26 @@ export function sameCrewConfig(left: CrewConfigFields | null, right: CrewConfigF
     left.mode === right.mode &&
     left.targetSeconds === right.targetSeconds &&
     left.autoAdvance === right.autoAdvance &&
+    (left.autoAdvanceOnce === true) === (right.autoAdvanceOnce === true) &&
     left.advanceOn === right.advanceOn &&
     left.source === right.source
   );
+}
+
+/**
+ * The config after a move this phone made itself on it: a once-only clock's
+ * advance is spent, so auto-advance goes off, as the server's own FIRE turns
+ * it off. Any other config is returned as it is.
+ */
+export function spendAdvanceOnce(config: CrewConfigFields): CrewConfigFields {
+  if (config.autoAdvanceOnce !== true) return config;
+  return {
+    mode: config.mode,
+    targetSeconds: config.targetSeconds,
+    autoAdvance: false,
+    advanceOn: config.advanceOn,
+    source: config.source,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -337,7 +363,12 @@ export function resetCrewCadenceForTests(): void {
 /** What this phone would run on with no crew clock: its stage, else its settings. */
 export type OwnRestPacing = CrewConfigFields;
 
-/** A config the server accepts: the rest length rounded and clamped into its mode's bounds. */
+/**
+ * A config the server accepts: the rest length rounded and clamped into its
+ * mode's bounds. `autoAdvanceOnce` is kept only while auto-advance is on (off,
+ * it moves nothing), and left out otherwise, so every other config goes out
+ * exactly as before the flag (the server reads it missing as false).
+ */
 export function normalizeCrewConfig(pacing: CrewConfigFields): CrewConfigFields {
   const bounds = CREW_REST_TARGET_SECONDS[pacing.mode];
   const targetSeconds =
@@ -348,6 +379,7 @@ export function normalizeCrewConfig(pacing: CrewConfigFields): CrewConfigFields 
     mode: pacing.mode,
     targetSeconds,
     autoAdvance: pacing.autoAdvance,
+    ...(pacing.autoAdvance && pacing.autoAdvanceOnce === true ? { autoAdvanceOnce: true as const } : {}),
     advanceOn: pacing.advanceOn,
     source: pacing.source,
   };
@@ -377,7 +409,9 @@ export function buildArmInput(own: OwnRestPacing, state: RestTimerState, nowMs: 
  * A rest restarting on this phone (back from the background, or a FIRE that
  * never landed) as the server's equivalent. On the deadline the restart is a
  * RESET; under a tick or send rule RESET would forget the tick the next advance
- * needs, so it is a CONFIGURE that moves only the anchor (contracts §10).
+ * needs, so it is a CONFIGURE that moves only the anchor (contracts §10). It
+ * re-sends the clock's config as held, so a 4x4 set rest that restarts still
+ * moves the wall only once.
  */
 export function buildRestartInput(
   config: CrewConfigFields,
@@ -454,9 +488,11 @@ export type CrewRestPacingEdit = Partial<Pick<CrewConfigFields, 'targetSeconds' 
  * from the timer's sheet or the Record tab (Marco, 2026-10-25: in a crew those
  * controls show and change the crew's clock). The crew's config, as this phone
  * holds it or last edited it, with only that change; the advance rule stays,
- * and the source becomes 'settings', since a workout no longer set it. The
- * publisher sends it as a CONFIGURE (buildCrewPacingEditInput). False when this
- * phone follows no crew clock it can run, or nothing changed.
+ * and the source becomes 'settings', since a workout no longer set it. A 4x4
+ * set rest's once-only advance stays too, unless the edit turns auto-advance
+ * off: a longer set rest still moves the wall once. The publisher sends it as
+ * a CONFIGURE (buildCrewPacingEditInput). False when this phone follows no
+ * crew clock it can run, or nothing changed.
  */
 export function editCrewRestPacing(edit: CrewRestPacingEdit): boolean {
   const state = getRestTimerState();
@@ -465,7 +501,8 @@ export function editCrewRestPacing(edit: CrewRestPacingEdit): boolean {
   const base = state.crewPacingDraft ?? crewConfig;
   const next = normalizeCrewConfig({ ...base, ...edit, source: 'settings' });
   if (sameCrewConfig(next, base)) return false;
-  return setCrewRestPacingDraft({ ...base, ...next });
+  // Built from `next` alone, so a flag the edit dropped is not put back from `base`.
+  return setCrewRestPacingDraft({ ...next, setByParticipantId: base.setByParticipantId });
 }
 
 /**

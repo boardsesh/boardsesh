@@ -263,10 +263,15 @@ stage, leaves the climber's own rest settings in charge, exactly as before. The 
   rest and waits on its rule; if the builder's phone sleeps, the crew keeps the last pacing it
   sent. The crew clock counts no reps, so a 4x4 set reaches it as the `tick` rule with
   auto-advance off until the builder's phone logs the set's last rep, then the set rest with
-  auto-advance on. A holder without the run never moves the wall mid-set; the builder's
-  phone, when it holds the wall, also checks the count itself. If the builder's phone sleeps
-  after a set's last rep, the crew keeps that pacing, so the next climb moves on after its
-  first rep: log on the builder's phone. A workout started over a crewmate's running clock takes it over on its first paced
+  auto-advance on, once only (`autoAdvanceOnce`, `stageAdvancesOnce`; Marco, 2026-10-25): the
+  server's FIRE at the end of the set rest moves the wall and turns auto-advance off, so the
+  crew moves on once per set. A holder without the run never moves the wall mid-set; the
+  builder's phone, when it holds the wall, also checks the count itself. If the builder's
+  phone sleeps after a set's last rep, the wall still moves on once at the end of the set rest
+  and then waits: the next climb stays up through its reps until the builder's phone sends the
+  next set, or someone taps Next. A restart of the set rest keeps it once-only; the next set
+  and the next block never carry it (docs/websocket-implementation.md, "The mobile client").
+  A workout started over a crewmate's running clock takes it over on its first paced
   climb: on the minute the beat starts then, a tick or send rule waits for the climb's tick.
 
 **The runner** (#6291). The Record tab's "Your workout" card runs the workout without a

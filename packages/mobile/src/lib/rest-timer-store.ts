@@ -695,6 +695,7 @@ function sameCrewTimerConfig(left: CrewRestCadence['config'], right: CrewRestCad
     left.mode === right.mode &&
     left.targetSeconds === right.targetSeconds &&
     left.autoAdvance === right.autoAdvance &&
+    (left.autoAdvanceOnce === true) === (right.autoAdvanceOnce === true) &&
     left.advanceOn === right.advanceOn &&
     left.source === right.source &&
     left.setByParticipantId === right.setByParticipantId
@@ -706,15 +707,19 @@ function sameLastTick(left: RestTimerLastTick | null, right: RestTimerLastTick |
   return left.status === right.status && left.queueItemUuid === right.queueItemUuid;
 }
 
-/** The five fields a CONFIGURE carries, compared one by one. */
-function sameCrewPacingFields(
-  left: Pick<CrewRestConfig, 'mode' | 'targetSeconds' | 'autoAdvance' | 'advanceOn' | 'source'>,
-  right: Pick<CrewRestConfig, 'mode' | 'targetSeconds' | 'autoAdvance' | 'advanceOn' | 'source'>,
-): boolean {
+/** The fields a CONFIGURE carries. */
+type CrewPacingFields = Pick<
+  CrewRestConfig,
+  'mode' | 'targetSeconds' | 'autoAdvance' | 'autoAdvanceOnce' | 'advanceOn' | 'source'
+>;
+
+/** The fields a CONFIGURE carries, compared one by one. */
+function sameCrewPacingFields(left: CrewPacingFields, right: CrewPacingFields): boolean {
   return (
     left.mode === right.mode &&
     left.targetSeconds === right.targetSeconds &&
     left.autoAdvance === right.autoAdvance &&
+    (left.autoAdvanceOnce === true) === (right.autoAdvanceOnce === true) &&
     left.advanceOn === right.advanceOn &&
     left.source === right.source
   );
@@ -740,9 +745,7 @@ export function setCrewRestPacingDraft(config: CrewRestConfig): boolean {
  * draft goes unless the climber has changed it again since, in which case the
  * newer one is still on its way.
  */
-export function settleCrewRestPacingDraft(
-  sent: Pick<CrewRestConfig, 'mode' | 'targetSeconds' | 'autoAdvance' | 'advanceOn' | 'source'>,
-): void {
+export function settleCrewRestPacingDraft(sent: CrewPacingFields): void {
   const draft = state.crewPacingDraft;
   if (draft === null || !sameCrewPacingFields(draft, sent)) return;
   setState({ ...state, crewPacingDraft: null });

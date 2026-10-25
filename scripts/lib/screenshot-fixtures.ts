@@ -148,8 +148,9 @@ const SMART_PLAYLIST_UNFILTERED_COUNT_SELECTION = 'unfilteredCount';
  * is collapsed.
  */
 export const SESSION_REST_CADENCE_SELECTION =
-  '... on SessionRestCadenceChanged { restCadence { mode targetSeconds autoAdvance advanceOn source isRunning ' +
-  'anchorAt pausedElapsedSeconds lastFiredBeatAt lastTickQueueItemUuid lastTickStatus setByParticipantId } ' +
+  '... on SessionRestCadenceChanged { restCadence { mode targetSeconds autoAdvance autoAdvanceOnce advanceOn ' +
+  'source isRunning anchorAt pausedElapsedSeconds lastFiredBeatAt lastTickQueueItemUuid lastTickStatus ' +
+  'setByParticipantId } ' +
   'revision serverNow isSnapshot action }';
 
 /**

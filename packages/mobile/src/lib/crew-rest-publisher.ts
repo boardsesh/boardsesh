@@ -8,7 +8,7 @@
 //   pause / resume / reset    PAUSE / RESUME / RESET
 //   rest restarted            RESET on the deadline, else CONFIGURE anchor NOW
 //   queue refilled, or the    RESET, CONFIGURE anchor CLEAR, or nothing
-//   wall moved by this phone
+//   wall moved by this phone  (a move spends a 4x4 set rest's once-only advance)
 //   settings edit, stage      CONFIGURE with this phone's own pacing, 400 ms
 //   change on the wall        debounced, anchor NOW / CLEAR at a stage boundary
 //                             (no settings edit in a crew: RestTimerCrewPublisher)
@@ -34,6 +34,7 @@ import {
   normalizeCrewConfig,
   noteCrewClockArmedHere,
   noteCrewClockTurnedOffHere,
+  spendAdvanceOnce,
   toCrewConfigInput,
   type CrewAnchorRequest,
   type CrewCadenceSnapshot,
@@ -276,16 +277,24 @@ export function createCrewRestPublisher({
           enqueueInput(() => buildRestartInput(heldConfig(), getState(), nowMs()));
           return;
         // A wall this phone moved itself, or a refilled queue: the shared rest
-        // restarts (RESET), waits for a tick (CLEAR), or keeps its beat.
+        // restarts (RESET), waits for a tick (CLEAR), or keeps its beat. A move
+        // made here spends a once-only advance, as the server's FIRE would have:
+        // a 4x4 set rest runs on the tick rule, so its move is always a CLEAR.
         case 'fired':
-        case 'queueEndedCleared':
+        case 'queueEndedCleared': {
           if (action.anchorAfter === 'keep') return;
+          const movedHere = action.type === 'fired';
           enqueueInput(() =>
             action.anchorAfter === 'now'
               ? { action: 'RESET', isRunning: true }
-              : { action: 'CONFIGURE', config: toCrewConfigInput(heldConfig()), anchor: 'CLEAR' },
+              : {
+                  action: 'CONFIGURE',
+                  config: toCrewConfigInput(movedHere ? spendAdvanceOnce(heldConfig()) : heldConfig()),
+                  anchor: 'CLEAR',
+                },
           );
           return;
+        }
         case 'stagePacing':
           requestConfigure({
             anchor: action.transition === 'anchorNow' ? 'NOW' : action.transition === 'waitForTick' ? 'CLEAR' : 'KEEP',

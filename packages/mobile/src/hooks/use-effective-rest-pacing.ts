@@ -17,6 +17,7 @@ import { useMemo, useSyncExternalStore } from 'react';
 import { getSetting, useSetting } from '../settings';
 import {
   resolveEffectiveRestPacing,
+  stageAdvancesOnce,
   type CrewRestConfig,
   type EffectiveRestPacing,
   type RestPacingSettings,
@@ -121,12 +122,24 @@ export function getEffectiveRestPacing(): EffectiveRestPacing {
  * What this phone would run on with no crew clock: its workout stage, else its
  * settings. The crew publisher sends this when the climber edits a setting or
  * the stage on the wall changes, so the crew takes this phone's pacing then.
+ *
+ * A 4x4 set with every rep logged goes as a once-only advance
+ * (`stageAdvancesOnce`): the crew clock, which counts no reps, moves the wall
+ * once at the end of the set rest and then waits for this phone's next set.
+ * Nothing else ever carries the flag, so the next block's pacing clears it.
  */
 export function getOwnRestPacing(): OwnRestPacing {
-  const { mode, targetSeconds, autoAdvance, advanceOn, source } = resolveEffectiveRestPacing({
+  const { mode, targetSeconds, autoAdvance, advanceOn, source, stage } = resolveEffectiveRestPacing({
     settings: getRestPacingSettings(),
     stage: getStagePacing(),
     crew: null,
   });
-  return { mode, targetSeconds, autoAdvance, advanceOn, source: source === 'stage' ? 'stage' : 'settings' };
+  return {
+    mode,
+    targetSeconds,
+    autoAdvance,
+    ...(stageAdvancesOnce(stage) ? { autoAdvanceOnce: true as const } : {}),
+    advanceOn,
+    source: source === 'stage' ? 'stage' : 'settings',
+  };
 }

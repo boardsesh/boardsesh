@@ -322,6 +322,7 @@ const REST_CADENCE_CHANGE_FIELDS = `
     mode
     targetSeconds
     autoAdvance
+    autoAdvanceOnce
     advanceOn
     source
     isRunning

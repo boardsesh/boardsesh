@@ -1105,6 +1105,7 @@ export const SESSION_UPDATES_SUBSCRIPTION = `
           mode
           targetSeconds
           autoAdvance
+          autoAdvanceOnce
           advanceOn
           source
           isRunning
@@ -1155,6 +1156,8 @@ export type SessionRestCadenceWire = {
   mode: string;
   targetSeconds?: number | null;
   autoAdvance: boolean;
+  /** Move the wall once more, then wait (a 4x4 set rest). Null from a server that predates it: false. */
+  autoAdvanceOnce?: boolean | null;
   advanceOn: string;
   source: string;
   isRunning: boolean;

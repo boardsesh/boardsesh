@@ -15,9 +15,11 @@ import {
   applyRestTimerStagePacing,
   armRestTimer,
   bindRestTimerToSession,
+  clearRestTimerQueueEnded,
   disarmRestTimer,
   getRestTimerState,
   noteRestTimerAutoAdvanceFired,
+  noteRestTimerQueueEnded,
   noteRestTimerTick,
   pauseRestTimer,
   reanchorRestTimerAfterBackground,
@@ -461,7 +463,7 @@ describe('CONFIGURE', () => {
       advanceOn: 'tick',
       source: 'stage',
     };
-    const setDone: OwnRestPacing = { ...midSet, targetSeconds: 180, autoAdvance: true };
+    const setDone: OwnRestPacing = { ...midSet, targetSeconds: 180, autoAdvance: true, autoAdvanceOnce: true };
 
     own = midSet;
     applyRestTimerStagePacing(setOnTheWall(0), currentNowMs, 'waitForTick');
@@ -492,6 +494,80 @@ describe('CONFIGURE', () => {
     await flush();
     expect(sent.map((input) => input.action)).toEqual(['TICK', 'CONFIGURE']);
     expect(sent[1]).toEqual({ action: 'CONFIGURE', config: toCrewConfigInput(setDone), anchor: 'KEEP' });
+    // Once-only: the server moves the wall at the end of the set rest, then waits.
+    expect(sent[1].config).toMatchObject({ autoAdvance: true, autoAdvanceOnce: true });
+    sent.length = 0;
+
+    // The next set on the wall: no advance, and no once-only flag left over.
+    own = midSet;
+    applyRestTimerStagePacing({ ...setOnTheWall(0), queueItemUuid: 'item-2' }, currentNowMs, 'waitForTick');
+    vi.advanceTimersByTime(CREW_CONFIGURE_DEBOUNCE_MS);
+    await flush();
+    expect(sent).toEqual([{ action: 'CONFIGURE', config: toCrewConfigInput(midSet), anchor: 'CLEAR' }]);
+    expect(sent[0].config).not.toHaveProperty('autoAdvanceOnce');
+  });
+
+  it('never sends a once-only advance for a block after a 4x4: the limit block’s CONFIGURE clears it', async () => {
+    own = {
+      mode: 'afterTick',
+      targetSeconds: 180,
+      autoAdvance: true,
+      autoAdvanceOnce: true,
+      advanceOn: 'tick',
+      source: 'stage',
+    };
+    // The last set's last rep: its set rest goes out once-only.
+    applyRestTimerStagePacing(
+      {
+        sessionId: SESSION,
+        stageId: 'four',
+        kind: 'fourByFour',
+        queueItemUuid: 'item-4',
+        mode: 'afterTick',
+        targetSeconds: 180,
+        advanceOn: 'tick',
+        closesSet: true,
+        reps: { logged: 2, perSet: 2 },
+        stagePacing: {
+          mode: 'afterTick',
+          restSeconds: 0,
+          advanceOn: 'set',
+          sets: { repsPerSet: 2, restBetweenSetsSeconds: 180 },
+        },
+      },
+      currentNowMs,
+      'none',
+    );
+    vi.advanceTimersByTime(CREW_CONFIGURE_DEBOUNCE_MS);
+    await flush();
+    expect(sent).toEqual([{ action: 'CONFIGURE', config: toCrewConfigInput(own), anchor: 'KEEP' }]);
+    sent.length = 0;
+
+    own = { mode: 'afterTick', targetSeconds: 180, autoAdvance: true, advanceOn: 'send', source: 'stage' };
+    applyRestTimerStagePacing(
+      {
+        sessionId: SESSION,
+        stageId: 'limit',
+        kind: 'limitBouldering',
+        queueItemUuid: 'item-9',
+        mode: 'afterTick',
+        targetSeconds: 180,
+        advanceOn: 'send',
+        closesSet: false,
+        stagePacing: { mode: 'afterTick', restSeconds: 180, advanceOn: 'send' },
+      },
+      currentNowMs,
+      'waitForTick',
+    );
+    vi.advanceTimersByTime(CREW_CONFIGURE_DEBOUNCE_MS);
+    await flush();
+    expect(sent).toEqual([
+      {
+        action: 'CONFIGURE',
+        config: { mode: 'afterTick', targetSeconds: 180, autoAdvance: true, advanceOn: 'send', source: 'stage' },
+        anchor: 'CLEAR',
+      },
+    ]);
   });
 
   it('drops a pending CONFIGURE when the timer is turned off', async () => {
@@ -770,5 +846,120 @@ describe('crew pacing edits from the timer’s controls', () => {
     editCrewRestPacing({ targetSeconds: 90 });
     publisher.dispose();
     expect(getRestTimerState().crewPacingDraft).toBeNull();
+  });
+});
+
+// The CONFIGUREs this phone sends from the crew clock it holds, on a 4x4 set
+// rest (#5382, #5380): a restart re-sends the once-only advance, a move this
+// phone made itself spends it, as the server's FIRE does.
+describe('a crew clock’s once-only advance', () => {
+  const setRestConfig = {
+    mode: 'afterTick' as const,
+    targetSeconds: 180,
+    autoAdvance: true,
+    autoAdvanceOnce: true as const,
+    advanceOn: 'tick' as const,
+    source: 'stage' as const,
+    setByParticipantId: 'participant-sam',
+  };
+
+  function followCrewClock(config: CrewRestCadence['config']) {
+    adoptCrewCadence({
+      sessionId: SESSION,
+      revision: 3,
+      config,
+      isRunning: true,
+      anchorMs: T0,
+      pausedElapsedSeconds: 0,
+      lastFiredBeatMs: null,
+      lastTick: { status: 'send', queueItemUuid: 'item-wall' },
+      anchorServerMs: T0,
+      lastFiredBeatServerMs: null,
+    });
+  }
+
+  beforeEach(async () => {
+    armRestTimer('afterTick', currentNowMs, SESSION);
+    await flush();
+    sent.length = 0;
+  });
+
+  it('keeps it in the restart of a set rest that ran out in the background', async () => {
+    followCrewClock(setRestConfig);
+    currentNowMs = T0 + 200_000;
+    reanchorRestTimerAfterBackground(currentNowMs, T0 + 180_000);
+    await flush();
+    expect(sent).toEqual([
+      {
+        action: 'CONFIGURE',
+        config: {
+          mode: 'afterTick',
+          targetSeconds: 180,
+          autoAdvance: true,
+          autoAdvanceOnce: true,
+          advanceOn: 'tick',
+          source: 'stage',
+        },
+        anchor: 'NOW',
+        elapsedMs: 0,
+      },
+    ]);
+  });
+
+  it('keeps it when a refilled queue picks the set rest back up: that beat moved nothing', async () => {
+    followCrewClock(setRestConfig);
+    noteRestTimerQueueEnded();
+    clearRestTimerQueueEnded(T0 + 5_000, 'afterTick', 'clear');
+    await flush();
+    expect(sent).toEqual([
+      { action: 'CONFIGURE', config: expect.objectContaining({ autoAdvanceOnce: true }), anchor: 'CLEAR' },
+    ]);
+  });
+
+  it('spends it when this phone moved the wall itself, so the server stops advancing too', async () => {
+    followCrewClock(setRestConfig);
+    noteRestTimerAutoAdvanceFired(getRestTimerState().cycleId, 'afterTick', T0 + 180_000, T0 + 180_000, 'clear');
+    await flush();
+    expect(sent).toEqual([
+      {
+        action: 'CONFIGURE',
+        config: { mode: 'afterTick', targetSeconds: 180, autoAdvance: false, advanceOn: 'tick', source: 'stage' },
+        anchor: 'CLEAR',
+      },
+    ]);
+  });
+
+  it('keeps auto-advance on after a local move on a clock that advances every rest', async () => {
+    const { autoAdvanceOnce: _once, ...everyRest } = setRestConfig;
+    followCrewClock(everyRest);
+    noteRestTimerAutoAdvanceFired(getRestTimerState().cycleId, 'afterTick', T0 + 180_000, T0 + 180_000, 'clear');
+    await flush();
+    expect(sent).toEqual([
+      {
+        action: 'CONFIGURE',
+        config: { mode: 'afterTick', targetSeconds: 180, autoAdvance: true, advanceOn: 'tick', source: 'stage' },
+        anchor: 'CLEAR',
+      },
+    ]);
+  });
+
+  it('keeps it through a crew rest-length edit from the timer’s controls', async () => {
+    followCrewClock(setRestConfig);
+    editCrewRestPacing({ targetSeconds: 240 });
+    await flush();
+    expect(sent).toEqual([
+      {
+        action: 'CONFIGURE',
+        config: {
+          mode: 'afterTick',
+          targetSeconds: 240,
+          autoAdvance: true,
+          autoAdvanceOnce: true,
+          advanceOn: 'tick',
+          source: 'settings',
+        },
+        anchor: 'KEEP',
+      },
+    ]);
   });
 });
