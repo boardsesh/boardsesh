@@ -390,13 +390,12 @@ describe('sessionDetail per-tick betaLinks (tick-scoped to the crew)', () => {
     expect(byUuid.get('tick-ungraded')?.boardseshConfidence).toBeNull();
   });
 
-  // Regression guard for #5245: isNoMatch used to rely solely on the legacy
-  // Aurora description convention (isNoMatchClimb), a documented no-op on Woods
-  // and MoonBoard. A climb whose no-match state lives ONLY in characteristics
-  // (empty description, as fixture below) must still surface isNoMatch: true,
-  // and characteristics itself must reach the client so the mobile
-  // Logbook/session play drawer can show Woods' explicit rules — see
-  // tickToClimb in packages/mobile/src/lib/tick-to-climb.ts.
+  // Regression guard for #5245: the characteristics assertions are the guard.
+  // characteristics must reach the client so the mobile Logbook/session play
+  // drawer can show Woods' explicit rules — see tickToClimb in
+  // packages/mobile/src/lib/tick-to-climb.ts. isNoMatch already comes from
+  // resolveClimbNoMatch; it is asserted only to pin that it agrees with the
+  // array on a climb with an empty description (fixture below).
   it('carries characteristics onto each session-detail tick and derives isNoMatch from it', async () => {
     betaLinkTestState.tickRows = [
       makeTickRow({
