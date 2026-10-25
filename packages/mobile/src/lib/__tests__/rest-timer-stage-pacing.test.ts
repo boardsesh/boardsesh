@@ -113,6 +113,40 @@ describe('resolveStageRestPacing', () => {
   });
 });
 
+// A paced warm-up queued after a workout stage: only the `coolDown` flag tells
+// it from a warm-up.
+const PACED_WARM_UP = {
+  mode: 'afterTick',
+  restSeconds: 30,
+  advanceOn: 'tick',
+} as const;
+const COOL_DOWN_RUN: WorkoutRun = {
+  stages: [
+    { id: 'stage-limit', kind: 'limitBouldering', itemUuids: ['l1'], pacing: RUN.stages[2]?.pacing },
+    { id: 'stage-cool', kind: 'warmUp', itemUuids: ['c1', 'c2'], coolDown: true, pacing: PACED_WARM_UP },
+  ],
+};
+const COOL_DOWN_QUEUE = ['l1', 'c1', 'c2'];
+const WARM_UP_RUN: WorkoutRun = {
+  stages: [{ id: 'stage-warm', kind: 'warmUp', itemUuids: ['c1', 'c2'], pacing: PACED_WARM_UP }],
+};
+
+describe('isCoolDown on the stage pacing', () => {
+  it('is set for a cool-down stage and absent for a warm-up and any other stage', () => {
+    expect(stageFor('c1', COOL_DOWN_QUEUE, COOL_DOWN_RUN)).toMatchObject({ kind: 'warmUp', isCoolDown: true });
+    expect(stageFor('c1', COOL_DOWN_QUEUE, WARM_UP_RUN)).not.toHaveProperty('isCoolDown');
+    expect(stageFor('l1', COOL_DOWN_QUEUE, COOL_DOWN_RUN)).not.toHaveProperty('isCoolDown');
+  });
+
+  it('is display only: it never makes a pacing change, so the timer is not re-anchored', () => {
+    const coolDown = stageFor('c1', COOL_DOWN_QUEUE, COOL_DOWN_RUN);
+    if (!coolDown) throw new Error('the cool-down is paced');
+    const { isCoolDown: _dropped, ...asWarmUp } = coolDown;
+    expect(sameStagePacing(coolDown, asWarmUp)).toBe(true);
+    expect(planRestTimerPacingTransition(effective(asWarmUp), effective(coolDown))).toBe('none');
+  });
+});
+
 describe('sameStagePacing', () => {
   it('compares field by field, so a rebuilt object is the same pacing', () => {
     expect(sameStagePacing(stageFor('a1'), stageFor('a1'))).toBe(true);

@@ -30,7 +30,7 @@ export function RestTimerWorkoutPacingRow({ stage, inset = true }: RestTimerWork
   // rather than promise an advance the scheduler will refuse.
   const { blockedReason: driverBlockedReason } = useSessionTimerDriver();
 
-  const stageName = workoutStageName(stage.kind, t);
+  const stageName = workoutStageName(stage.kind, t, stage.isCoolDown === true);
   const { stagePacing } = stage;
   const summary =
     stagePacing.mode === 'onTheMinute'

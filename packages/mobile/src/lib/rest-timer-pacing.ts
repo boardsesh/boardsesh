@@ -54,6 +54,12 @@ export type RestTimerStagePacing = {
   advanceOn: RestAdvanceRule;
   /** The rest after this climb ends a round (4x4), so it is the longer round rest. */
   closesRound: boolean;
+  /**
+   * A warm-up stage queued after the workout: the sheet names it "Cool-down".
+   * Display only, so `sameStagePacing` ignores it and it never re-anchors the
+   * timer. It cannot flip inside a stage anyway: a stage's id fixes its kind.
+   */
+  isCoolDown?: true;
   stagePacing: WorkoutStagePacing;
 };
 
@@ -197,6 +203,7 @@ export function resolveStageRestPacing({
     // climb comes up on time.
     advanceOn: stagePacing.mode === 'onTheMinute' ? 'deadline' : stagePacing.advanceOn,
     closesRound,
+    ...(position.isCoolDown === true ? { isCoolDown: true as const } : {}),
     stagePacing,
   };
 }
@@ -228,6 +235,7 @@ export function sameStagePacing(left: RestTimerStagePacing | null, right: RestTi
     left.targetSeconds === right.targetSeconds &&
     left.advanceOn === right.advanceOn &&
     left.closesRound === right.closesRound &&
+    // `isCoolDown` is display-only and deliberately not compared.
     sameWorkoutStagePacing(left.stagePacing, right.stagePacing)
   );
 }

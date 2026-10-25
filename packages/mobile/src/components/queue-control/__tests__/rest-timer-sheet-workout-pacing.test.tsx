@@ -118,6 +118,18 @@ const ON_THE_MINUTE: RestTimerStagePacing = {
   stagePacing: { mode: 'onTheMinute', restSeconds: 45 },
 };
 
+const WARM_UP: RestTimerStagePacing = {
+  sessionId: 'session-1',
+  stageId: 'stage-warm',
+  kind: 'warmUp',
+  queueItemUuid: 'w1',
+  mode: 'afterTick',
+  targetSeconds: 30,
+  advanceOn: 'tick',
+  closesRound: false,
+  stagePacing: { mode: 'afterTick', restSeconds: 30, advanceOn: 'tick' },
+};
+
 const CLIMBERS_OWN_CONTROLS = [
   '[data-control="rest-length"]',
   '[data-control="cadence"]',
@@ -186,6 +198,23 @@ describe('RestTimerSheet under a workout stage', () => {
       getByText('mobile.restTimer.workoutPacingInterval:mobile.session.preGeneratorOnTheMinute,0:45'),
     ).toBeTruthy();
     expect(getByText('mobile.restTimer.workoutPacingAdvanceBeat')).toBeTruthy();
+  });
+
+  it('names a warm-up queued after the workout "Cool-down", and any other warm-up "Warm-up"', () => {
+    paceWith({ ...WARM_UP, isCoolDown: true });
+    const coolDown = renderSheet();
+    expect(
+      coolDown.getByText('mobile.restTimer.workoutPacingRest:mobile.session.preWorkoutSectionCoolDown,0:30'),
+    ).toBeTruthy();
+    cleanup();
+
+    // The store ignores a re-apply that only differs in `isCoolDown`, so clear it.
+    paceWith(null);
+    paceWith(WARM_UP);
+    const warmUp = renderSheet();
+    expect(
+      warmUp.getByText('mobile.restTimer.workoutPacingRest:mobile.session.preWorkoutSectionWarmUp,0:30'),
+    ).toBeTruthy();
   });
 
   it('tells a crew passenger the wall is not theirs to move, stage or not', () => {

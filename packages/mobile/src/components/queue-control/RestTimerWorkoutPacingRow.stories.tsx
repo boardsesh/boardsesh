@@ -66,6 +66,19 @@ const ON_THE_MINUTE: RestTimerStagePacing = {
   stagePacing: { mode: 'onTheMinute', restSeconds: 15 },
 };
 
+const COOL_DOWN: RestTimerStagePacing = {
+  sessionId: STORY_SESSION_ID,
+  stageId: 'story-cool-down',
+  kind: 'warmUp',
+  queueItemUuid: 'story-climb-c1',
+  mode: 'afterTick',
+  targetSeconds: 30,
+  advanceOn: 'tick',
+  closesRound: false,
+  isCoolDown: true,
+  stagePacing: { mode: 'afterTick', restSeconds: 30, advanceOn: 'tick' },
+};
+
 const CREW: SessionUser[] = [
   { id: 'story-me', username: 'You', isLeader: true, connectionState: 'CONNECTED' },
   { id: 'story-sam', username: 'Sam', isLeader: false, userId: 'story-sam-user', connectionState: 'CONNECTED' },
@@ -139,6 +152,11 @@ const stories: StoryModule = {
           <StoryVariant label="On the minute">
             <StorySurface>
               <RestTimerWorkoutPacingRow stage={ON_THE_MINUTE} />
+            </StorySurface>
+          </StoryVariant>
+          <StoryVariant label="Cool-down">
+            <StorySurface>
+              <RestTimerWorkoutPacingRow stage={COOL_DOWN} />
             </StorySurface>
           </StoryVariant>
         </>
