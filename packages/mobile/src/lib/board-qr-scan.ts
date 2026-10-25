@@ -12,6 +12,21 @@ import { boardQrScanned, parseGymQrLanding, type GymQrMedium } from '@boardsesh/
 import { track } from './analytics';
 import { createConsentBoundAnalyticsRunner } from './consent-bound-analytics';
 import { isProductAnalyticsGranted } from './consent-state';
+import { RELAXES_ANONYMOUS_ROUTES } from './routing/anonymous-auth-gate';
+
+/**
+ * How long one landing counts once. A signed-out cold-start scan can reach the
+ * board route twice, once from the consent prompt's deferred destination and
+ * once from the sign-in replay, and each mounts its own route screen, so the
+ * screen's own guard cannot see the other one.
+ */
+export const BOARD_QR_SCAN_DEDUPE_MS = 60_000;
+const recentLandings = new Map<string, number>();
+
+/** Tests only: forget recent landings, as a new process would. */
+export function resetBoardQrScansForTests(): void {
+  recentLandings.clear();
+}
 
 /** The route params a QR landing reads. A repeated param arrives as an array. */
 export type BoardQrRouteParams = {
@@ -31,11 +46,28 @@ export function boardQrScanMedium(params: BoardQrRouteParams): GymQrMedium | nul
 /**
  * Send one `Board QR Scanned` for a scan whose board the app has opened.
  *
+ * `landingKey` names the URL that opened it (never sent): the same landing
+ * within {@link BOARD_QR_SCAN_DEDUPE_MS} counts once.
+ *
  * A cold-start scan can resolve before the analytics SDK is ready. When consent
  * is already given, the capture waits for the SDK (the runner gives up after two
  * minutes); with no consent it is dropped, and a later Allow never replays it.
+ *
+ * The browser app sends nothing: `surface: 'app'` is the store app, and a
+ * printed code never points at the browser app.
  */
-export function trackBoardQrScan(medium: GymQrMedium, boardType: string | null | undefined): void {
+export function trackBoardQrScan(
+  medium: GymQrMedium,
+  boardType: string | null | undefined,
+  landingKey: string,
+  nowMs: number = Date.now(),
+): void {
+  if (RELAXES_ANONYMOUS_ROUTES) return;
+  const dedupeKey = `${landingKey}#${medium}`;
+  const countedAt = recentLandings.get(dedupeKey);
+  if (countedAt !== undefined && nowMs - countedAt >= 0 && nowMs - countedAt < BOARD_QR_SCAN_DEDUPE_MS) return;
+  recentLandings.set(dedupeKey, nowMs);
+
   const event = boardQrScanned({ medium, surface: 'app', boardType });
   const capture = () => track(event.name, event.properties);
   if (isProductAnalyticsGranted()) {

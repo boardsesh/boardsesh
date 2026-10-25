@@ -256,7 +256,10 @@ counts those scans itself: `app/b/[board_slug]/index.tsx` and
 `surface: 'app'` once its hand-off has opened the board
 (`packages/mobile/src/lib/board-qr-scan.ts`). A dead slug, a refused wall or a
 bounce to login counts nothing. The capture waits for the SDK when consent is
-already given, and is dropped without consent.
+already given, and is dropped without consent. The same landing counts once in
+60 s, because a signed-out cold start can reach the route twice (the consent
+prompt's deferred destination and the sign-in replay). The browser app sends
+nothing: `app` means the store app.
 
 A signed-out scanner is sent to login first. The deep-link provider keeps the
 link through sign-in, and its allowlist (`parseBoardLinkPath` in

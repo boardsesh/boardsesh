@@ -108,7 +108,8 @@ function useBoardRouteHandoffReporter(target: BoardRouteTarget | null, mode: Boa
  * is not a scan that landed. A signed-out scanner's link is replayed after
  * sign-in with its `src` and `medium` kept (`board-deep-link.ts`), so that open
  * counts then. Keyed on the URL and the medium like the hand-off reporter, so a
- * re-render cannot send it twice.
+ * re-render cannot send it twice; `trackBoardQrScan` also drops the same landing
+ * arriving on a second route screen.
  */
 function useBoardQrScanReporter(target: BoardRouteTarget | null, qrMedium: GymQrMedium | null | undefined) {
   const reportedRef = useRef<string | null>(null);
@@ -119,7 +120,7 @@ function useBoardQrScanReporter(target: BoardRouteTarget | null, qrMedium: GymQr
       const reportKey = `${identity}#${qrMedium}`;
       if (reportedRef.current === reportKey) return;
       reportedRef.current = reportKey;
-      trackBoardQrScan(qrMedium, boardType);
+      trackBoardQrScan(qrMedium, boardType, identity);
     },
     [identity, qrMedium],
   );
