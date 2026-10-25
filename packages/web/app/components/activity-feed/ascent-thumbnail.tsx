@@ -101,6 +101,8 @@ const AscentThumbnail: React.FC<AscentThumbnailProps> = ({
       );
     }
 
+    // Never Woods without a renderBoard: boardDetails is null for that case, so
+    // the early return above already left.
     const config = renderBoard ?? getDefaultBoardConfig(boardType as BoardName, layoutId);
     return constructClimbViewUrl(
       {
