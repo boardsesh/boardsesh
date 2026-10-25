@@ -281,6 +281,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # freeze the previous uploaded native build before this upload
 
       # Needed by the post-archive `vp run mobile:upload-dsyms` step at the end
       # of this job; the rest of the build shells out to vp exec/xcodebuild directly.
@@ -421,6 +423,13 @@ jobs:
           const version = versionMatch[1];
           fs.appendFileSync(process.env.GITHUB_ENV, `BOARDSESH_MOBILE_VERSION=${version}\n`);
           NODE
+
+      - name: Freeze TestFlight build and previous native baseline
+        id: testflight_receipt
+        if: env.FINGERPRINT_IOS != ''
+        env:
+          IOS_BUILD_NUMBER: ${{ steps.build_number.outputs.value }}
+        run: vp exec tsx scripts/testflight-build.ts capture --output "$RUNNER_TEMP/testflight-receipt/testflight-build.json"
 
       - name: Set build number
         working-directory: packages/mobile/ios
@@ -824,6 +833,17 @@ jobs:
             fi
           fi
           unset git_auth
+
+      # The external-group follow-up consumes this exact run's receipt. It never
+      # re-derives a baseline after the new build tag has been published.
+      - name: Save uploaded TestFlight build receipt
+        if: steps.testflight_upload.outcome == 'success' && steps.testflight_receipt.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-testflight-build-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/testflight-receipt/testflight-build.json
+          retention-days: 90
+          if-no-files-found: error
 
       # Un-strand the binary we just uploaded. expo-updates launches whichever
       # update has the newest commitTime, and this binary stamped its embedded

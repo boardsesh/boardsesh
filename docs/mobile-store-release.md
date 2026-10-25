@@ -149,6 +149,38 @@ marketing version in `packages/mobile/app.config.ts` has no
   `changesNotSentForReview: false` and `changesInReviewBehavior: ERROR_IF_IN_REVIEW`. After Play accepts the edit, the exact signed arm64 APK is
   published as the newest **Boardsesh Android Beta** prerelease.
 
+### Automatic TestFlight access for Discord testers
+
+After a successful iOS native build, **Distribute iOS TestFlight to Discord Users**
+(`ios-testflight-distribute.yml`) submits that exact version and build to the
+existing external **discord users** group. It waits up to 45 minutes for Apple
+processing, submits beta review when needed, and enables tester notifications.
+Pending beta review means submitted, not yet installable. This separate workflow
+never holds the native build lock or blocks store drafts and screenshots.
+
+The native build freezes its previous uploaded iOS ancestor before uploading and
+saves that baseline with the exact source commit and build number. The follow-up
+reads only that run's receipt, so a newer train push or retry cannot change which
+changes its notes cover. Build-number resets at a marketing-version bump are
+supported; an earlier build of the same commit produces no new test steps.
+
+TestFlight's **What to Test** contains up to five native test scenarios, ordered
+by PR risk. Only merged PRs entering this binary since the frozen baseline and
+confirmed native on **iOS** by the OTA compatibility check are eligible. JS-only
+and Android-only changes are excluded. Plans come from **Test plan**, even when
+**Release Notes** is `none`. Complete steps retain prerequisites and expected
+results; CI-only steps are omitted. Full plans and the submitted notes remain in
+the distribution workflow's artifacts for 90 days.
+
+To retry, rerun failed jobs in the distribution workflow, or dispatch it from
+`main` with the original native build's **source_run_id**. It never rebuilds or
+uploads an IPA. Missing groups, stale/unknown iOS verdicts, unreadable history,
+or missing receipts fail this follow-up with the affected reference. Correct the
+reported metadata and rerun. Builds predating receipt capture cannot be selected;
+a first-ever build without a predecessor needs an explicit baseline before notes
+can be generated. App Store Connect must already have the beta-review details
+and an API key allowed to manage external testing.
+
 Open-beta testers can receive these native updates through Play with automatic
 updates enabled. This includes native builds from `release/next`, so the train
 is visible to open-beta testers too. The workflow keeps its existing **Android

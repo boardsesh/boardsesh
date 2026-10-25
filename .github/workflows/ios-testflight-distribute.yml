@@ -1,0 +1,120 @@
+name: Distribute iOS TestFlight to Discord Users
+
+on:
+  workflow_run:
+    workflows: [iOS TestFlight Deploy (React Native)]
+    types: [completed]
+    branches: [main, release/next]
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: 'Successful native TestFlight build run to distribute (no rebuild)'
+        required: true
+        type: string
+
+# Independent of the native upload lock: Apple processing never holds up builds.
+concurrency:
+  group: ios-testflight-distribution
+  cancel-in-progress: false
+  queue: max
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+jobs:
+  distribute:
+    if: >-
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: Production
+    env:
+      GH_TOKEN: ${{ github.token }}
+      FASTLANE_SKIP_UPDATE_CHECK: '1'
+      FASTLANE_DISABLE_ANIMATION: '1'
+      SOURCE_RUN_ID: ${{ github.event.workflow_run.id || inputs.source_run_id }}
+      SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt || '' }}
+    steps:
+      # Execute this workflow's trusted tooling, never code extracted from the
+      # build artifact or a branch that may have advanced while Apple processed.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+      - name: Install workspace dependencies
+        run: vp install --frozen-lockfile
+      - name: Validate native build run and locate its receipt
+        id: source
+        run: vp exec tsx scripts/testflight-build.ts resolve --run-id "$SOURCE_RUN_ID"
+      - name: Download exact native build receipt
+        if: steps.source.outputs.should_distribute == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ steps.source.outputs.artifact_id }}
+          run-id: ${{ steps.source.outputs.source_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/testflight-receipt
+          merge-multiple: true
+      - name: Verify receipt against the uploaded build and frozen baseline
+        if: steps.source.outputs.should_distribute == 'true'
+        id: build
+        env:
+          SOURCE_RUN_ATTEMPT: ${{ steps.source.outputs.source_run_attempt }}
+        run: >-
+          vp exec tsx scripts/testflight-build.ts validate --run-id "$SOURCE_RUN_ID"
+          --receipt "$RUNNER_TEMP/testflight-receipt/testflight-build.json"
+      - name: Summarize native test plans
+        if: steps.source.outputs.should_distribute == 'true'
+        run: >-
+          vp exec tsx scripts/testflight-notes.ts
+          --receipt "$RUNNER_TEMP/testflight-receipt/testflight-build.json"
+          --output "$RUNNER_TEMP/testflight-notes/what-to-test.txt"
+          --plans-output "$RUNNER_TEMP/testflight-notes/plans.json"
+      - uses: ruby/setup-ruby@v1
+        if: steps.source.outputs.should_distribute == 'true'
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+          working-directory: fastlane
+      - name: Set up App Store Connect API key
+        if: steps.source.outputs.should_distribute == 'true'
+        env:
+          ASC_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+        run: |
+          set -euo pipefail
+          key_path="$RUNNER_TEMP/testflight-auth.p8"
+          umask 077
+          printf '%s' "$ASC_KEY_BASE64" | base64 --decode > "$key_path"
+          test -s "$key_path"
+          echo "ASC_KEY_PATH=$key_path" >> "$GITHUB_ENV"
+      - name: Submit exact build to discord users
+        if: steps.source.outputs.should_distribute == 'true'
+        working-directory: fastlane
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          RELEASE_VERSION: ${{ steps.build.outputs.version }}
+          IOS_BUILD_NUMBER: ${{ steps.build.outputs.build_number }}
+          TESTFLIGHT_NOTES_PATH: ${{ runner.temp }}/testflight-notes/what-to-test.txt
+        run: bundle exec fastlane ios distribute_testflight
+      - name: Retain submitted notes and full native test plans
+        if: always() && steps.source.outputs.should_distribute == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: testflight-distribution-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/testflight-notes/
+            ${{ runner.temp }}/testflight-receipt/
+          retention-days: 90
+          if-no-files-found: warn
+      - name: Remove App Store Connect private key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/testflight-auth.p8"

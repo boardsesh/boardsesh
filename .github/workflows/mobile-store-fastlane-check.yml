@@ -6,6 +6,7 @@ on:
       - 'fastlane/**'
       - '.github/workflows/android-apk-rn.yml'
       - '.github/workflows/ios-testflight-rn.yml'
+      - '.github/workflows/ios-testflight-distribute.yml'
       - '.github/workflows/mobile-store-android-*.yml'
       - '.github/workflows/mobile-store-fastlane-check.yml'
       - '.github/workflows/mobile-store-draft.yml'
@@ -26,6 +27,10 @@ on:
       - 'scripts/lib/google-play-tracks.test.ts'
       - 'scripts/__tests__/mobile-store-android-*.test.ts'
       - 'scripts/native-release-workflows.test.ts'
+      - 'scripts/testflight-build.ts'
+      - 'scripts/testflight-notes.ts'
+      - 'scripts/lib/testflight-*.ts'
+      - 'scripts/__tests__/testflight-*.test.ts'
       - 'scripts/push-run-superseded.ts'
       - 'scripts/__tests__/push-run-superseded.test.ts'
       - '.github/workflows/mobile-ota-production.yml'
@@ -63,6 +68,7 @@ jobs:
         run: |
           vp exec ruby tests/android_release_test.rb
           vp exec ruby tests/native_upload_lanes_test.rb
+          vp exec ruby tests/testflight_distribution_test.rb
           vp exec ruby tests/play_listing_test.rb
           vp exec ruby tests/store_submission_status_test.rb
           vp exec ruby tests/store_review_submission_test.rb
@@ -77,4 +83,4 @@ jobs:
         run: |
           bundle exec ruby -e 'require "supply"; require "supply/client"; abort "Missing review guard" unless Google::Apis::AndroidpublisherV3::AndroidPublisherService.instance_method(:commit_edit).parameters.include?([:key, :changes_in_review_behavior])'
       - name: Verify native triggers, exact promotion and the merge-back submission
-        run: vp test run scripts/native-release-workflows.test.ts scripts/__tests__/mobile-store-android-audit.test.ts scripts/__tests__/mobile-store-android-beta.test.ts scripts/__tests__/mobile-store-android-production.test.ts scripts/__tests__/mobile-store-android-draft-guard.test.ts scripts/__tests__/mobile-store-android-draft.test.ts scripts/__tests__/mobile-store-android-merge-back-hold.test.ts scripts/lib/google-play-tracks.test.ts scripts/__tests__/mobile-store-android-review-pending.test.ts scripts/__tests__/push-run-superseded.test.ts scripts/release-train-sync.test.ts scripts/__tests__/mobile-store-submit-target.test.ts scripts/__tests__/mobile-store-submit-android.test.ts scripts/__tests__/mobile-store-submit-workflow.test.ts scripts/__tests__/mobile-screenshots-workflows.test.ts scripts/__tests__/mobile-cut-release-tags.test.ts --reporter=agent
+        run: vp test run scripts/native-release-workflows.test.ts scripts/__tests__/testflight-build.test.ts scripts/__tests__/testflight-notes.test.ts scripts/__tests__/testflight-distribution-workflow.test.ts scripts/__tests__/mobile-store-android-audit.test.ts scripts/__tests__/mobile-store-android-beta.test.ts scripts/__tests__/mobile-store-android-production.test.ts scripts/__tests__/mobile-store-android-draft-guard.test.ts scripts/__tests__/mobile-store-android-draft.test.ts scripts/__tests__/mobile-store-android-merge-back-hold.test.ts scripts/lib/google-play-tracks.test.ts scripts/__tests__/mobile-store-android-review-pending.test.ts scripts/__tests__/push-run-superseded.test.ts scripts/release-train-sync.test.ts scripts/__tests__/mobile-store-submit-target.test.ts scripts/__tests__/mobile-store-submit-android.test.ts scripts/__tests__/mobile-store-submit-workflow.test.ts scripts/__tests__/mobile-screenshots-workflows.test.ts scripts/__tests__/mobile-cut-release-tags.test.ts --reporter=agent

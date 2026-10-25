@@ -273,6 +273,29 @@ platform :ios do
       "-authenticationKeyID", key_id, "-authenticationKeyIssuerID", issuer_id)
   end
 
+  desc "Submit an exact uploaded build to the discord users TestFlight group with its test notes"
+  lane :distribute_testflight do |options|
+    require File.join(REPO_ROOT, "fastlane", "lib", "testflight_distribution")
+    require "spaceship"
+    version = (options[:version] || ENV["RELEASE_VERSION"]).to_s
+    build_number = (options[:build_number] || ENV["IOS_BUILD_NUMBER"]).to_s
+    notes = BoardseshTestflightDistribution.read_notes(options[:notes_path] || ENV["TESTFLIGHT_NOTES_PATH"], root: REPO_ROOT)
+    BoardseshTestflightDistribution.validate_inputs!(version: version, build_number: build_number, notes: notes)
+    api_key = asc_api_key
+    app = Spaceship::ConnectAPI::App.find(APP_IDENTIFIER)
+    receipt = BoardseshTestflightDistribution::Runner.new(
+      app: app, version: version, build_number: build_number, notes: notes,
+      find_builds: -> { Spaceship::ConnectAPI::Build.all(app_id: app.id, version: version, build_number: build_number, platform: "IOS") },
+      distribute: ->(distribution_options) { upload_to_testflight(api_key: api_key, **distribution_options) }
+    ).run
+    summary = BoardseshTestflightDistribution.summary(receipt)
+    UI.success(summary)
+    emit_step_summary(summary)
+    receipt
+  rescue BoardseshTestflightDistribution::Error => error
+    UI.user_error!(error.message)
+  end
+
   desc "Plan or submit the exact reviewed app/CPP snapshot without changing store content"
   lane :review_submission do |options|
     require File.join(REPO_ROOT, "fastlane", "lib", "store_review_submission")

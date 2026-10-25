@@ -81,6 +81,44 @@ open testing unchanged until they finish. Audit the exact build afterward.
 Relative iOS build paths resolve from the repository root. The lane preserves
 `xcodebuild -exportArchive` and the existing export/signing configuration.
 
+## TestFlight external testing — `ios distribute_testflight`
+
+After an iOS native upload, CI distributes that exact version and build to the
+existing external **discord users** group. This separate lane uploads no binary.
+It waits up to 45 minutes for Apple processing, writes the build's **What to Test**
+notes, submits beta review when required, and requests tester notifications.
+Apple beta review can keep an assigned build unavailable until approval; the
+lane reports review pending separately from a build ready for testing.
+
+```bash
+cd fastlane
+bundle exec fastlane ios distribute_testflight version:2.7.0 build_number:2 notes_path:/tmp/testflight-notes.txt
+```
+
+| Input | Meaning |
+| --- | --- |
+| `version:` / `RELEASE_VERSION` | Exact uploaded marketing version |
+| `build_number:` / `IOS_BUILD_NUMBER` | Exact uploaded build number |
+| `notes_path:` / `TESTFLIGHT_NOTES_PATH` | UTF-8 text file, 1–4000 bytes, relative to the repository root or absolute |
+| `APP_STORE_CONNECT_API_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID`, `ASC_KEY_PATH` | Existing App Store Connect API key inputs |
+
+Options override environment inputs. CI supplies a summary of the test plans
+for iOS native changes since the previous native build, excluding JavaScript-only
+and Android-only changes. It reads the PR test-plan sections rather than the
+public App Store release notes.
+
+The lane requires exactly one external group with the exact name `discord users`,
+passes its ID to Pilot, and independently verifies the exact build and group
+assignment afterward. Rerunning an already assigned build with pending review
+or available testing skips distribution and sends no additional notification.
+An assigned build that still needs review submission keeps approval notifications
+enabled. Retry the failed distribution job after processing delays; no
+native rebuild is required. The lane does not expire older builds or reject
+another build's pending review.
+
+Mocked distribution and actual lane-wiring checks:
+`vp exec ruby fastlane/tests/testflight_distribution_test.rb`.
+
 ## Play catch-up and publication checks — `android beta`, `android audit`
 
 Use an exact versionCode to inspect open testing without opening an edit:
