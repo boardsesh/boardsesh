@@ -763,6 +763,7 @@
       "preWorkoutPreviewSubstituted_one": "{{count}} Boulder kommt aus einem Nachbargrad, weil sein eigener Grad nicht genug hatte. Seine Zeile zeigt, welchen Grad er ersetzt.",
       "preWorkoutPreviewSubstituted_other": "{{count}} Boulder kommen aus einem Nachbargrad, weil ihr eigener Grad nicht genug hatte. Jede Zeile zeigt, welchen Grad der Boulder ersetzt.",
       "preWorkoutPreviewBorrowedGrade": "{{grade}} statt {{plannedGrade}}",
+      "preWorkoutPreviewNoOtherClimb": "Alle Boulder, die zu dieser Zeile passen, sind schon in deinem Workout.",
       "preWorkoutSectionHeading_one": "{{section}} · {{count}} Boulder",
       "preWorkoutSectionHeading_other": "{{section}} · {{count}} Boulder",
       "preWorkoutSectionWarmUp": "Aufwärmen",

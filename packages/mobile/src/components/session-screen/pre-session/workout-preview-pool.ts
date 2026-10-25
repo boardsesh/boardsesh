@@ -255,6 +255,12 @@ export type WorkoutPreviewData = {
   poolTopUpTiers?: Map<string, TopUpTiers>;
   /** The pools that hold every climb their grade has (`GradePool.exhausted`), by pool key. */
   exhaustedPoolKeys?: Set<string>;
+  /**
+   * The pools a row refresh has searched again since this preview was built, by
+   * pool key. Searching one a second time would bring back the same climbs, so
+   * a refresh never does: tapping a row that has nothing new sends no request.
+   */
+  refetchedPoolKeys?: Set<string>;
   /** climb.uuid currently shown across ALL rows (refresh never re-picks one). */
   usedUuids: Set<string>;
 };
@@ -526,6 +532,9 @@ export async function borrowForShortSlots(
     }
     const searches: Array<Promise<void>> = [];
     for (const [key, { source, count }] of needsByKey) {
+      // Settled even when the cap stops its search: with no search left, the
+      // slot may take a pool the build already has one step further out
+      // rather than stay empty, and the next rebuild searches this one.
       settledKeys.add(key);
       const demand = (demandByGrade.get(source.grade) ?? 0) + count;
       // A pool `built` already has gave these slots nothing (the fill above
@@ -537,6 +546,10 @@ export async function borrowForShortSlots(
       searches.push(searchNearbyPool(built, key, source, demand, ctx, fetchPool));
     }
     await Promise.all(searches);
+    // `stepCount` stays on purpose: the next pass fills again with the pools
+    // just found at this reach, and moves one step further (the `continue`
+    // above) only once every short slot's steps so far are settled, so while
+    // searches are left no slot takes a further grade before a nearer one.
   }
   return built;
 }
@@ -726,25 +739,37 @@ function fillSlots(
   return { items, usedUuids, shortSlots };
 }
 
-export type RefreshSlotResult = { state: WorkoutPreviewData; changed: boolean };
+export type RefreshSlotResult = {
+  state: WorkoutPreviewData;
+  changed: boolean;
+  /**
+   * True when the row stays as it was because every climb that could fill it is
+   * already on another row, or it is the only one. `state` then carries the
+   * pools the refresh searched, so the next tap does not search them again.
+   */
+  nothingNew?: boolean;
+};
 
 /**
  * Swap a single preview row for a different climb in its slot, with the slot's
- * filters. The row's planned grade comes first, a borrowed row's included: a
- * random unused climb from the cached pool's earliest tier that has one (no
- * network), so repeated refreshes of one row keep re-rolling across the whole
- * pool rather than toggling between two climbs; then one refetch + reshuffle of
- * that pool when the cache has no unused climb left, unless the pool already
- * holds every climb its grade has. With `grades`, a planned grade with nothing
- * left then borrows from the nearby grades in `BORROW_GRADE_STEPS` order, each
- * the same way: its cached pool, then one fetch. A differing repeat is the last
- * resort. Keeps the queue-item uuid (swaps `.climb`) so the row keeps its
- * identity and highlight — mirroring DELTA_REPLACE_QUEUE_ITEM.
+ * filters, never one another row shows. The row's planned grade comes first, a
+ * borrowed row's included: a random unused climb from the cached pool's
+ * earliest tier that has one (no network), so repeated refreshes of one row keep
+ * re-rolling across the whole pool rather than toggling between two climbs;
+ * then one refetch + reshuffle of that pool when the cache has no unused climb
+ * left, unless the pool already holds every climb its grade has or a refresh
+ * already searched it again (`refetchedPoolKeys`). With `grades`,
+ * a planned grade with nothing left then borrows from the nearby grades in
+ * `BORROW_GRADE_STEPS` order, each the same way: its cached pool, then one
+ * fetch. When none of them has a climb no row shows, the row keeps its climb
+ * (and its caption) and the result says `nothingNew`. Keeps the queue-item uuid
+ * (swaps `.climb`) so the row keeps its identity and highlight — mirroring
+ * DELTA_REPLACE_QUEUE_ITEM.
  *
  * `avoidClimbUuids` is the same preference `selectItemsFromPools` takes: the
  * refresh passes over those climbs while the pool has others. At the planned
  * grade it falls back to one of them before borrowing; at a nearby grade only
- * once no nearby grade has another climb, and before a repeat.
+ * once no nearby grade has another climb.
  */
 export async function refreshSlotInState(
   state: WorkoutPreviewData,
@@ -759,11 +784,11 @@ export async function refreshSlotInState(
 
   const current = state.items[index];
   const plannedSlot = plannedSlotOf(current);
-  const oldClimbUuid = current.item.climb.uuid;
 
   const { pools } = state;
   let poolTopUpTiers = state.poolTopUpTiers;
   let exhaustedPoolKeys = state.exhaustedPoolKeys;
+  let refetchedPoolKeys = state.refetchedPoolKeys;
   // Exclude every climb currently shown (including this row's own) so the refresh
   // lands on a genuinely different climb that isn't already on screen elsewhere.
   // Avoided climbs only if nothing else is left; null means nothing unused at all.
@@ -788,8 +813,9 @@ export async function refreshSlotInState(
     const cachedPool = pools.get(poolKey);
     let climb = cachedPool ? pick(cachedPool, topUpTiersOf(poolKey)) : null;
     // Nothing unused in the cache → refetch + reshuffle this pool once, unless
-    // it already holds every climb its grade has and would come back the same.
-    if (!climb && exhaustedPoolKeys?.has(poolKey) !== true) {
+    // it already holds every climb its grade has, or an earlier refresh already
+    // searched it again: either way it would come back the same.
+    if (!climb && exhaustedPoolKeys?.has(poolKey) !== true && refetchedPoolKeys?.has(poolKey) !== true) {
       // Ask for one more than every row at this grade, in every pool: the other
       // pools' rows may hold the same climbs, so the refetch has to reach past them.
       const rowsAtGrade = state.items.filter((preview) => preview.slot.grade === source.grade).length;
@@ -808,6 +834,7 @@ export async function refreshSlotInState(
       exhaustedPoolKeys = new Set(exhaustedPoolKeys);
       if (refetched.exhausted) exhaustedPoolKeys.add(poolKey);
       else exhaustedPoolKeys.delete(poolKey);
+      refetchedPoolKeys = new Set(refetchedPoolKeys).add(poolKey);
       climb = pick(refreshedPool, refetched.topUpTiers);
     }
     if (climb) {
@@ -817,7 +844,7 @@ export async function refreshSlotInState(
   }
 
   // No nearby grade has a climb that is not avoided: an avoided one there, from
-  // the pools just searched, still beats a repeat.
+  // the pools just searched, nearest first.
   if (!picked) {
     for (const source of nearbySources) {
       const poolKey = poolKeyForSlot(source);
@@ -830,19 +857,15 @@ export async function refreshSlotInState(
     }
   }
 
-  // Tiny catalog: everything at the planned grade, and at every grade it may
-  // borrow from, is already shown somewhere. Accept a repeat from the planned
-  // grade, or else the grade the row borrowed from, as long as it at least
-  // differs from THIS row's current climb.
+  // Every climb that fits this row, at its grade and at every grade it may
+  // borrow from, is on screen already. Showing one twice would leave Start
+  // queueing it twice, so the row keeps its climb and its caption.
   if (!picked) {
-    for (const source of [plannedSlot, current.slot]) {
-      const repeat = (pools.get(poolKeyForSlot(source)) ?? []).find((climb) => climb.uuid !== oldClimbUuid);
-      if (repeat) {
-        picked = { climb: repeat, source };
-        break;
-      }
-    }
-    if (!picked) return { state, changed: false }; // only this climb exists → nothing to swap to
+    return {
+      state: { ...state, poolTopUpTiers, exhaustedPoolKeys, refetchedPoolKeys },
+      changed: false,
+      nothingNew: true,
+    };
   }
 
   // Keep the queue-item uuid (swap `.climb` only); recompute usedUuids from the
@@ -857,7 +880,15 @@ export async function refreshSlotInState(
   const usedUuids = new Set(items.map((preview) => preview.item.climb.uuid));
 
   return {
-    state: { items, pools, usedUuids, poolDemands: state.poolDemands, poolTopUpTiers, exhaustedPoolKeys },
+    state: {
+      items,
+      pools,
+      usedUuids,
+      poolDemands: state.poolDemands,
+      poolTopUpTiers,
+      exhaustedPoolKeys,
+      refetchedPoolKeys,
+    },
     changed: true,
   };
 }

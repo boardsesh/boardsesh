@@ -249,14 +249,15 @@ describe('useWorkoutPreview', () => {
 
   it('refreshes a single row and de-dupes a double-tap into one fetch', async () => {
     // Pool is exactly [a, b] for 2 slots → both used → refresh misses the cache
-    // and must refetch (so we can count the fetch).
+    // and must refetch (so we can count the fetch). The refetch finds 'c'.
     const fetchPool = vi.fn<FetchGradePool>(async () => poolOf([makeClimb('a'), makeClimb('b')]));
     const { result } = renderPreview(fetchPool, on(10));
 
     await waitFor(() => expect(result.current.status).toBe('ready'));
     const targetUuid = result.current.items[0].item.uuid;
-    const initialClimbUuid = result.current.items[0].item.climb.uuid; // 'a' or 'b' (shuffled)
+    const otherClimbUuid = result.current.items[1].item.climb.uuid;
     fetchPool.mockClear();
+    fetchPool.mockImplementation(async () => poolOf(['a', 'b', 'c'].map(makeClimb)));
 
     await act(async () => {
       result.current.refreshSlot(targetUuid);
@@ -265,12 +266,46 @@ describe('useWorkoutPreview', () => {
     });
 
     await waitFor(() => expect(result.current.refreshingUuids.size).toBe(0));
-    // A single refetch of grade 10 despite the double tap. With nothing new
-    // there, the refresh also looks one grade up before it settles on a repeat.
-    expect(fetchPool.mock.calls.filter(([grade]) => grade === 10)).toHaveLength(1);
+    // A single refetch of grade 10 despite the double tap.
+    expect(fetchPool.mock.calls.map(([grade]) => grade)).toEqual([10]);
     expect(result.current.items[0].item.uuid).toBe(targetUuid); // queue-item identity preserved
-    expect(result.current.items[0].item.climb.uuid).not.toBe(initialClimbUuid); // swapped climb
-    expect(['a', 'b']).toContain(result.current.items[0].item.climb.uuid);
+    expect(result.current.items[0].item.climb.uuid).toBe('c'); // the one climb no row shows
+    expect(result.current.items[1].item.climb.uuid).toBe(otherClimbUuid);
+  });
+
+  it('keeps the row and says so when every climb that fits it is on another row', async () => {
+    // Grades 10 and 11 hold only the two climbs already shown, and both are read out.
+    const fetchPool = vi.fn<FetchGradePool>(async () => ({
+      ...poolOf([makeClimb('a'), makeClimb('b')]),
+      exhausted: true,
+    }));
+    const { result } = renderPreview(fetchPool, on(10));
+
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    const itemsBefore = result.current.items;
+    fetchPool.mockClear();
+
+    await act(async () => {
+      result.current.refreshSlot(itemsBefore[0].item.uuid);
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(result.current.refreshingUuids.size).toBe(0));
+    expect(result.current.items).toBe(itemsBefore);
+    expect(new Set(result.current.items.map((preview) => preview.item.climb.uuid)).size).toBe(2);
+    expect(toast.showToast).toHaveBeenCalledWith('mobile.session.preWorkoutPreviewNoOtherClimb');
+    // Only grade 11 was new to this preview, and it is searched once.
+    expect(fetchPool.mock.calls.map(([grade]) => grade)).toEqual([11]);
+
+    toast.showToast.mockClear();
+    fetchPool.mockClear();
+    await act(async () => {
+      result.current.refreshSlot(itemsBefore[0].item.uuid);
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(toast.showToast).toHaveBeenCalledTimes(1));
+    // The second tap answers from the pools the first one searched.
+    expect(fetchPool).not.toHaveBeenCalled();
   });
 
   it('drops a stale build whose fetch resolves after a newer one', async () => {

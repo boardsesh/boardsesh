@@ -763,6 +763,7 @@
       "preWorkoutPreviewSubstituted_one": "{{count}} bloque es de un grado cercano porque en el suyo no había suficientes. Su fila indica a qué grado sustituye.",
       "preWorkoutPreviewSubstituted_other": "{{count}} bloques son de un grado cercano porque en el suyo no había suficientes. Cada fila indica a qué grado sustituye.",
       "preWorkoutPreviewBorrowedGrade": "{{grade}} en lugar de {{plannedGrade}}",
+      "preWorkoutPreviewNoOtherClimb": "Todos los bloques que encajan en esta fila ya están en tu entrenamiento.",
       "preWorkoutSectionHeading_one": "{{section}} · {{count}} bloque",
       "preWorkoutSectionHeading_other": "{{section}} · {{count}} bloques",
       "preWorkoutSectionWarmUp": "Calentamiento",

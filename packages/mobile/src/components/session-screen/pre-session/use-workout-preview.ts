@@ -295,8 +295,10 @@ export function useWorkoutPreview(
   const committedPreviewKeyRef = useRef<string | null>(null);
   // Rows with a refresh fetch in flight (guards double-tap races).
   const inFlightSlotsRef = useRef<Set<string>>(new Set());
-  const toastRef = useRef({ showToast, t });
-  toastRef.current = { showToast, t };
+  // What a row refresh says when every climb that fits the row is on screen.
+  const noOtherClimbMessage = t('mobile.session.preWorkoutPreviewNoOtherClimb');
+  const toastRef = useRef({ showToast, t, noOtherClimbMessage });
+  toastRef.current = { showToast, t, noOtherClimbMessage };
 
   // Latest inputs behind refs so the public callbacks stay referentially stable
   // (empty deps) and never re-trigger the debounce effect by identity.
@@ -497,6 +499,10 @@ export function useWorkoutPreview(
         if (result.changed) {
           dataRef.current = result.state;
           setItems(result.state.items);
+        } else if (result.nothingNew) {
+          // Same rows; keep the pools it searched so the next tap need not.
+          dataRef.current = result.state;
+          toastRef.current.showToast(toastRef.current.noOtherClimbMessage);
         }
       } catch {
         // Best-effort: leave the old climb in place; the spinner clears below.
@@ -525,7 +531,7 @@ export function useWorkoutPreview(
       boardseshGradesRef.current,
     );
     if (committedPreviewKeyRef.current !== currentPreviewKey || planRef.current.length === 0) return;
-    const { poolDemands, poolTopUpTiers, exhaustedPoolKeys } = dataRef.current;
+    const { poolDemands, poolTopUpTiers, exhaustedPoolKeys, refetchedPoolKeys } = dataRef.current;
     // Within each pool's tiers, so the climbs you have not sent stay first.
     const pools = reshufflePools(dataRef.current.pools, poolTopUpTiers, screenshotModeRandom());
     const avoided = getAvoidedClimbUuidsRef.current?.() ?? NO_AVOIDED_CLIMBS;
@@ -537,7 +543,16 @@ export function useWorkoutPreview(
       poolTopUpTiers,
       committedGradesRef.current,
     );
-    dataRef.current = { items: nextItems, pools, usedUuids, poolDemands, poolTopUpTiers, exhaustedPoolKeys };
+    // The same pools, reshuffled: what a refresh already searched again stays searched.
+    dataRef.current = {
+      items: nextItems,
+      pools,
+      usedUuids,
+      poolDemands,
+      poolTopUpTiers,
+      exhaustedPoolKeys,
+      refetchedPoolKeys,
+    };
     setItems(nextItems);
   }, []);
 

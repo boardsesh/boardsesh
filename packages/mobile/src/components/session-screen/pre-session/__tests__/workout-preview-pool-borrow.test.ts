@@ -577,7 +577,92 @@ describe('refreshSlotInState for a borrowed row', () => {
     expect(fetchPool.mock.calls.map(([grade]) => grade)).toEqual([19]);
   });
 
-  it('takes a queued climb at a nearby grade before a repeat once no nearby grade has a fresh one', async () => {
+  it('keeps a borrowed row and its caption when no grade it may use has a climb no row shows', async () => {
+    // QA on Kilter 40, Benchmarks only: refreshing "V9 for V10" turned it into a
+    // second copy of the one V10 climb, which another row already showed.
+    const fetchPool = catalogue({ 18: 1, 17: 1 });
+    const state = await buildPreview([slot(18, 0), slot(18, 1)], fetchPool);
+    fetchPool.mockClear();
+    const target = state.items[1];
+    expect(target.borrowedFrom).toEqual({ plannedGrade: 18 });
+
+    const result = await refreshSlotInState(state, target.item.uuid, ctx, fetchPool, undefined, GRADES);
+
+    expect(result.changed).toBe(false);
+    expect(result.nothingNew).toBe(true);
+    expect(result.state.items).toBe(state.items);
+    expect(result.state.items.map((row) => row.item.climb.uuid)).toEqual(['g18-0', 'g17-0']);
+    expect(result.state.items[1].borrowedFrom).toEqual({ plannedGrade: 18 });
+    // 18 and 17 are read out; each other step was searched once, nearest first.
+    expect(fetchPool.mock.calls.map(([grade]) => grade)).toEqual([19, 16, 20]);
+
+    // Those searches are kept, so tapping again searches nothing.
+    fetchPool.mockClear();
+    const again = await refreshSlotInState(result.state, target.item.uuid, ctx, fetchPool, undefined, GRADES);
+    expect(again.nothingNew).toBe(true);
+    expect(fetchPool).not.toHaveBeenCalled();
+  });
+
+  it('searches each pool again at most once, so tapping a row with nothing new sends no more requests', async () => {
+    // Benchmarks only on a busy grade: the search stops at its page cap, so no
+    // pool is ever read out, and every grade it may use holds only shown climbs.
+    const fetchPool = vi.fn<FetchGradePool>(async (grade) => ({
+      climbs: climbsAt(grade, grade === 18 || grade === 17 ? 1 : 0),
+      topUpTiers: NO_TOP_UPS,
+    }));
+    const state = await buildPreview([slot(18, 0, BENCHMARKS), slot(18, 1, BENCHMARKS)], fetchPool);
+    fetchPool.mockClear();
+    const target = state.items[1];
+
+    const first = await refreshSlotInState(state, target.item.uuid, ctx, fetchPool, undefined, GRADES);
+    expect(first.nothingNew).toBe(true);
+    expect(fetchPool.mock.calls.map(([grade]) => grade)).toEqual([18, 17, 19, 16, 20]);
+
+    fetchPool.mockClear();
+    const second = await refreshSlotInState(first.state, target.item.uuid, ctx, fetchPool, undefined, GRADES);
+    expect(second.nothingNew).toBe(true);
+    expect(fetchPool).not.toHaveBeenCalled();
+  });
+
+  it('tries the planned grade, then each borrow step in order, and stops at the first fresh climb', async () => {
+    // Nothing is read out, so every grade can be searched again. Only 16, two
+    // grades easier, has a climb no row shows.
+    const countByGrade: Record<number, number> = { 18: 1, 17: 1, 19: 0, 16: 1, 20: 1 };
+    const fetchPool = vi.fn<FetchGradePool>(async (grade) => ({
+      climbs: climbsAt(grade, countByGrade[grade] ?? 0),
+      topUpTiers: NO_TOP_UPS,
+    }));
+    const slots = [slot(18, 0), slot(18, 1)];
+    const built = await buildPoolsReusing(slots, ctx, fetchPool);
+    const { pools, poolDemands, poolTopUpTiers, exhaustedPoolKeys } = await borrowForShortSlots(
+      slots,
+      built,
+      ctx,
+      fetchPool,
+      GRADES,
+    );
+    const { items, usedUuids } = selectItemsFromPools(slots, pools, undefined, undefined, poolTopUpTiers, GRADES);
+    const state: WorkoutPreviewData = { items, pools, usedUuids, poolDemands, poolTopUpTiers, exhaustedPoolKeys };
+    expect(items.map((row) => row.item.climb.uuid)).toEqual(['g18-0', 'g17-0']);
+    fetchPool.mockClear();
+
+    const { state: next, changed } = await refreshSlotInState(
+      state,
+      items[1].item.uuid,
+      ctx,
+      fetchPool,
+      undefined,
+      GRADES,
+    );
+
+    expect(changed).toBe(true);
+    expect(fetchPool.mock.calls.map(([grade]) => grade)).toEqual([18, 17, 19, 16]);
+    expect(next.items[1].item.climb.uuid).toBe('g16-0');
+    expect(next.items[1].borrowedFrom).toEqual({ plannedGrade: 18 });
+    expect(new Set(next.items.map((row) => row.item.climb.uuid)).size).toBe(2);
+  });
+
+  it('takes a queued climb at a nearby grade once no nearby grade has a fresh one', async () => {
     const fetchPool = catalogue({ 18: 1, 17: 3 });
     const state = await buildPreview([slot(18, 0), slot(18, 1)], fetchPool);
     fetchPool.mockClear();

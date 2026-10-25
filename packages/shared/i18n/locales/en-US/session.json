@@ -763,6 +763,7 @@
       "preWorkoutPreviewSubstituted_one": "{{count}} climb is from a nearby grade, since its own ran short. Its row says which grade it fills in for.",
       "preWorkoutPreviewSubstituted_other": "{{count}} climbs are from a nearby grade, since their own ran short. Each row says which grade it fills in for.",
       "preWorkoutPreviewBorrowedGrade": "{{grade}} for {{plannedGrade}}",
+      "preWorkoutPreviewNoOtherClimb": "Every climb that fits this row is already in your workout.",
       "preWorkoutSectionHeading_one": "{{section}} · {{count}} climb",
       "preWorkoutSectionHeading_other": "{{section}} · {{count}} climbs",
       "preWorkoutSectionWarmUp": "Warm-up",

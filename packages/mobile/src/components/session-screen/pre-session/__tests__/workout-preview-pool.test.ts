@@ -429,19 +429,26 @@ describe('refreshSlotInState', () => {
     expect(next.items[1].item.climb.uuid).toBe('b'); // sibling untouched
   });
 
-  it('allows a differing repeat when every climb at the grade is already shown', async () => {
+  it('keeps the row when every climb at the grade is on another row, never showing one twice', async () => {
     // Two slots, two-climb catalog → a and b both used; refetch yields nothing new.
     const state = buildState({ 10: ['a', 'b'] }, [
       [10, 0],
       [10, 1],
     ]);
     const targetUuid = state.items[0].item.uuid; // 'a'
-    const fetchPool = vi.fn(async () => poolOf([makeClimb('a'), makeClimb('b')]));
+    const fetchPool = vi.fn(async () => ({ ...poolOf([makeClimb('a'), makeClimb('b')]), exhausted: true }));
 
-    const { state: next, changed } = await refreshSlotInState(state, targetUuid, ctx, fetchPool);
+    const result = await refreshSlotInState(state, targetUuid, ctx, fetchPool);
 
-    expect(changed).toBe(true);
-    expect(next.items[0].item.climb.uuid).toBe('b'); // differs from the old 'a' (a duplicate of row 1)
+    expect(result.changed).toBe(false);
+    expect(result.nothingNew).toBe(true);
+    expect(result.state.items).toBe(state.items);
+    expect(result.state.items.map((preview) => preview.item.climb.uuid)).toEqual(['a', 'b']);
+    // The refetch read the grade out, so the next tap answers from the cache.
+    fetchPool.mockClear();
+    const again = await refreshSlotInState(result.state, targetUuid, ctx, fetchPool);
+    expect(again.nothingNew).toBe(true);
+    expect(fetchPool).not.toHaveBeenCalled();
   });
 
   it('no-ops when the grade has only the climb already shown', async () => {
@@ -449,9 +456,10 @@ describe('refreshSlotInState', () => {
     const targetUuid = state.items[0].item.uuid;
     const fetchPool = vi.fn(async () => poolOf([makeClimb('a')]));
 
-    const { changed } = await refreshSlotInState(state, targetUuid, ctx, fetchPool);
+    const { changed, nothingNew } = await refreshSlotInState(state, targetUuid, ctx, fetchPool);
 
     expect(changed).toBe(false);
+    expect(nothingNew).toBe(true);
   });
 
   // Mid-session the avoided set is the live queue: a refresh must not re-pick a
