@@ -65,6 +65,8 @@ const ARRAY_LITERAL_HEAD = /(^|[^\w\]')")`])\[\s*(['"`])([A-Za-z][\w.-]*)\2/g;
  * A reader can also build its key from a named string constant
  * (`[SMART_PLAYLIST_COUNTS_QUERY_KEY, token]`). Those heads count only when the
  * constant is declared as a string literal somewhere in the scanned tree.
+ * Only UPPER_SNAKE_CASE constants are tracked: a camelCase or PascalCase key
+ * constant is not resolved, so its key would read as an orphan here.
  */
 const STRING_CONSTANT = /\bconst\s+([A-Z][A-Z0-9_]*)\s*=\s*(['"`])([A-Za-z][\w.-]*)\2/g;
 const CONSTANT_ARRAY_HEAD = /(^|[^\w\]')")`])\[\s*([A-Z][A-Z0-9_]*)\s*[,\]]/g;

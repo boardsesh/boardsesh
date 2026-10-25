@@ -1171,6 +1171,11 @@ export function useToggleFavorite() {
       if (typeof variables.currentlyFavorited !== 'boolean') return;
       if (!context || !ownsFavoriteWrite(variables.input.climbUuid, context)) return;
       favoritesStore.setIsFavorited(variables.input.climbUuid, variables.currentlyFavorited);
+      // A failed un-like already dropped the climb from the cached Liked pages in
+      // onMutate; refetch them so the still-liked climb comes back (#5304).
+      if (variables.currentlyFavorited) {
+        void queryClient.invalidateQueries({ queryKey: LIKED_LIST_QUERY_KEY_PREFIX });
+      }
     },
     onSettled: (_data, _error, variables, context) => {
       if (context) favoriteToggleOrder.settle(variables.input.climbUuid, context.token);
