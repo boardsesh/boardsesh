@@ -68,7 +68,6 @@ async function seedClimb(climb: {
 
 beforeEach(async () => {
   await db.execute(sql`TRUNCATE TABLE board_climbs, board_climb_stats, board_climb_grades RESTART IDENTITY CASCADE`);
-  await db.execute(sql`DELETE FROM content_privacy WHERE entity_type = 'climb'`);
   for (const userId of [VIEWER_ID, SETTER_ID]) {
     await db.execute(sql`INSERT INTO users (id, name, email)
       VALUES (${userId}, ${userId}, ${`${userId}@example.test`}) ON CONFLICT DO NOTHING`);
@@ -82,9 +81,8 @@ beforeEach(async () => {
   await seedClimb({ uuid: 'own-draft', owner: VIEWER_ID, authored: true, draft: true });
   await seedClimb({ uuid: 'foreign-draft', owner: SETTER_ID, authored: true, draft: true });
   await seedClimb({ uuid: 'ownerless-draft', draft: true });
-  await seedClimb({ uuid: 'policy-reference' });
-  await db.execute(sql`INSERT INTO content_privacy (entity_type, entity_id, owner_id, audience)
-    VALUES ('climb', 'policy-reference', NULL, 'only_me')`);
+  // Published and listed but owned, so it was never in the reference artifact.
+  await seedClimb({ uuid: 'owned-import', owner: SETTER_ID });
   // Now reference-shaped, but missing when the artifact was built. Its child
   // timestamps remain older than the imported watermarks and must still arrive.
   await seedClimb({ uuid: 'changed-reference', updatedAt: AFTER_SNAPSHOT });
@@ -101,7 +99,7 @@ describe.each(pulls)('snapshot supplemental $name', ({ resolver, key }) => {
       'changed-reference',
       'deleted-author',
       'own-draft',
-      'policy-reference',
+      'owned-import',
       'published-authored',
       'unlisted-authored',
     ]);
@@ -158,7 +156,7 @@ describe.each(pulls)('snapshot supplemental $name', ({ resolver, key }) => {
       'changed-reference',
       'deleted-author',
       'own-draft',
-      'policy-reference',
+      'owned-import',
       'published-authored',
       'unlisted-authored',
     ]);
