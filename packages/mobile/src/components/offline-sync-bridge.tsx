@@ -174,6 +174,10 @@ export function OfflineSyncBridge() {
     }
     if (!schemaReady || !launchWritesReady) return;
     let cancelled = false;
+    // This attempt answers any retry an earlier one asked for, whatever started
+    // it: a claim that re-runs on a replacement connection (#5410) and succeeds,
+    // or holds, must not leave a request behind for the next foreground.
+    claimRetry.current.pending = false;
     void (async () => {
       let localUserId: string;
       // Which step threw decides the catch below.

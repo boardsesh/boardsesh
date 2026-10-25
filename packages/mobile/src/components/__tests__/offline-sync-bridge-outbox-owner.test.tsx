@@ -37,13 +37,23 @@ vi.mock('../../sync', () => ({
   notifyBootstrapMetadataChanged: vi.fn(),
   notifyScopeDownloadComplete: vi.fn(),
 }));
-vi.mock('../../settings', () => ({ getSetting: () => [] }));
+// The per-account settings the owner wipe resets (#6563). Their own behaviour is
+// covered by account-boundary.test.ts; here they only must not throw.
+vi.mock('../../settings', () => ({
+  getSetting: () => [],
+  setSetting: vi.fn(),
+  clearOfflineBoards: vi.fn(),
+  clearOwnedSprayWallPins: vi.fn(),
+}));
 vi.mock('../../lib/env', () => ({ isSnapshotBaseUrlConfigured: () => false }));
 vi.mock('../../offline/snapshot-source', () => ({ mobileSnapshotSource: {} }));
 vi.mock('../../lib/spray/spray-photo-store', () => ({ clearStoredSprayPhotos: vi.fn() }));
 // Launch-time reporting only; neither sends a queued write.
 vi.mock('../../offline/outbox-telemetry', () => ({ recoverAndReportOutboxOnce: async () => {} }));
-vi.mock('../../offline/abandoned-download-terminals', () => ({ sweepDelistedDownloadTerminals: async () => {} }));
+vi.mock('../../offline/abandoned-download-terminals', () => ({
+  sweepDelistedDownloadTerminals: async () => {},
+  forgetAbandonedDownloads: async () => {},
+}));
 
 // Foreground transitions, which retry a claim that failed without deciding anything.
 const appState = vi.hoisted(() => ({ listeners: new Set<(state: string) => void>() }));
@@ -583,6 +593,88 @@ describe('OfflineSyncBridge: when the claim cannot be made', () => {
     expect(network.sent).toEqual([]);
     expect(await getLocalUserId(db)).toBe('user-a');
     expect(holdReports()).toEqual(['no-user-id']);
+
+    app.view.unmount();
+  });
+});
+
+/** The same file on a new connection object, as a dead-handle recovery publishes it. */
+function replacementConnection(onStampRead?: () => void): TestSqliteDb & SQLiteDatabase {
+  return new Proxy(db, {
+    get(target, property, receiver) {
+      if (property === 'getFirstAsync' && onStampRead) {
+        return async <T,>(source: string, ...params: (string | number | null)[]): Promise<T | null> => {
+          if (JSON.stringify(params).includes(LOCAL_USER_ID_KEY)) onStampRead();
+          return target.getFirstAsync<T>(source, ...params);
+        };
+      }
+      const value = Reflect.get(target, property, receiver) as unknown;
+      return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+    },
+  }) as TestSqliteDb & SQLiteDatabase;
+}
+
+async function rerenderApp({ view, queryClient }: App): Promise<void> {
+  await act(async () => {
+    view.rerender(<Harness queryClient={queryClient} />);
+  });
+}
+
+// A retry is requested by a failed claim and consumed by the next attempt,
+// whatever started it. A claim that re-runs for another reason (a replacement
+// connection after a dead-handle recovery, #5410) must not leave the request
+// behind for the next foreground (review of #6825).
+describe('OfflineSyncBridge: a retry request does not outlive the next attempt', () => {
+  it('a foreground does not re-run a claim that already succeeded', async () => {
+    await runMigrations(db);
+    const app = await launch();
+    // First attempt fails without deciding anything: credentials still settling.
+    auth.token = null;
+    auth.isAuthenticated = true;
+    await rerenderApp(app);
+    await settle();
+    expect(schedulerStarts).toEqual([]);
+
+    // The connection is replaced; the claim re-runs on it (not a retry) and succeeds.
+    auth.token = 'user-b';
+    let stampReads = 0;
+    database.current = replacementConnection(() => {
+      stampReads += 1;
+    });
+    await rerenderApp(app);
+    await waitFor(() => expect(schedulerStarts).toHaveLength(1));
+    await settle();
+    const readsBefore = stampReads;
+
+    await foreground();
+    expect(stampReads - readsBefore).toBe(0);
+
+    app.view.unmount();
+  });
+
+  it('a failed wipe stays held on the next foreground even after an earlier failed attempt', async () => {
+    await seedAccountAOutbox();
+    const app = await launch();
+    auth.token = null;
+    auth.isAuthenticated = true;
+    await rerenderApp(app);
+    await settle();
+    expect(holdReports()).toEqual([]);
+
+    // Replacement connection: B's token now reads, and the owner wipe hits a lock.
+    auth.token = 'user-b';
+    faults.lockTransactions = true;
+    database.current = replacementConnection();
+    await rerenderApp(app);
+    await waitFor(() => expect(holdReports()).toEqual(['wipe-failed']));
+
+    // A failed wipe holds the session: a foreground does not retry it.
+    faults.lockTransactions = false;
+    await foreground();
+    expect({ stamp: await getLocalUserId(db), schedulerStarts: schedulerStarts.length }).toEqual({
+      stamp: 'user-a',
+      schedulerStarts: 0,
+    });
 
     app.view.unmount();
   });

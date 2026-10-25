@@ -39,25 +39,24 @@ export function resetOfflineAccountSettings(): void {
  * board checkpoints stay (#6545).
  */
 export async function wipePreviousAccountLocalData(db: SQLiteDatabase): Promise<void> {
-  // First, for the same hazard every other wipe path guards against (sign-out
-  // uses setSigningOut, a board removal uses beginScopePurge): the scheduler may
-  // already have a pull cycle mid-table, and a page that was on the wire when
-  // clearUserData ran would land AFTER the wipe, resurrecting rows with a
-  // checkpoint past them. The strict `>` delta pull never revisits those, and
-  // `user_data_complete` would then vouch for the gap. Bumping the epoch makes
-  // syncTable's post-await re-check discard that page. GLOBAL, unlike a board
-  // removal: clearUserData DELETEs every user table plus deleteUserCheckpoints,
-  // so there is nothing scope-shaped to narrow it to.
+  // First, as every other wipe path does (sign-out uses setSigningOut, a board
+  // removal uses beginScopePurge). Since #6824 nothing should be mid-cycle here:
+  // the bridge starts the scheduler only after this wipe and the new stamp, and
+  // every pull requires a database stamped for its viewer. The bump stays as the
+  // backstop: a page that was on the wire when clearUserData ran would land AFTER
+  // the wipe, resurrecting rows with a checkpoint past them, which the strict `>`
+  // delta pull never revisits and `user_data_complete` would then vouch for.
+  // Bumping the epoch makes syncTable's post-await re-check discard that page.
+  // GLOBAL, unlike a board removal: clearUserData DELETEs every user table plus
+  // deleteUserCheckpoints, so there is nothing scope-shaped to narrow it to.
   beginGlobalPurge();
   // The previous account's unfinished downloads, closed without an event, and
   // BEFORE the enabled list is emptied: see `sweepDelistedDownloadTerminals`.
   await forgetAbandonedDownloads(db);
-  // Before the row wipe's await, so a sync cycle that starts during clearUserData
-  // reads an empty list. A cycle that starts during the forget await above can
-  // still read the previous account's list, with a purge token taken after the
-  // bump, so this purge does not tear it down. Reordering only moves that window;
-  // holding the scheduler until the owner check settles closes it, and is a
-  // follow-up to #6563.
+  // Before the row wipe's await. No sync cycle can start during this wipe or the
+  // forget await above: the bridge holds the scheduler until the owner claim,
+  // which lands after this wipe and the new stamp, and an ad-hoc pull refuses a
+  // database not yet stamped for its viewer (#6824, the follow-up #6563 left).
   resetOfflineAccountSettings();
   await clearUserData(db);
   // The rows named a photograph each, and this recovery exists precisely because
