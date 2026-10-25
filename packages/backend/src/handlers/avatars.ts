@@ -9,7 +9,7 @@ import { validateToken } from '../middleware/auth';
 import { isS3Configured, uploadToS3, deleteUserAvatarsFromS3 } from '../storage/s3';
 import { logger } from '../utils/logger';
 import { buildStaticAvatarUrl } from '../lib/avatar-url';
-import { detectImageMimeType } from '../lib/image-mime';
+import { detectImageMimeType, MIME_TO_EXT } from '../lib/image-mime';
 import {
   MUTABLE_IMAGE_CACHE_CONTROL,
   UndecodableImageError,
@@ -21,12 +21,6 @@ import {
 const AVATARS_DIR = './avatars';
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-const MIME_TO_EXT: Record<string, string> = {
-  'image/jpeg': 'jpg',
-  'image/png': 'png',
-  'image/gif': 'gif',
-  'image/webp': 'webp',
-};
 
 // UUID validation regex for path traversal prevention
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

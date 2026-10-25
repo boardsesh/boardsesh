@@ -3,6 +3,18 @@
 // imports, so any handler can use them without pulling in the gym resolvers.
 
 /**
+ * Stored extension per allowed mime type. Shared because every image upload
+ * handler needs the same mapping, and a divergent copy would store the same
+ * bytes under two different keys.
+ */
+export const MIME_TO_EXT: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+};
+
+/**
  * Sniff the real image type from the file's magic bytes.
  *
  * The multipart `Content-Type` is whatever the CLIENT declared, and until this

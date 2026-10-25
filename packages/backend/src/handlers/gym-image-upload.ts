@@ -8,7 +8,7 @@ import { applyCorsHeaders } from './cors';
 import { guardUploadFileStream } from './http-utils';
 import { validateToken } from '../middleware/auth';
 import { isS3Configured, uploadToS3 } from '../storage/s3';
-import { detectImageMimeType } from '../lib/image-mime';
+import { detectImageMimeType, MIME_TO_EXT } from '../lib/image-mime';
 import { MUTABLE_IMAGE_CACHE_CONTROL, writeImageVariants } from '../lib/image-resize';
 import { logger } from '../utils/logger';
 import { db } from '../db/client';
@@ -27,18 +27,6 @@ import { userCanEditGym } from '../graphql/resolvers/social/gyms';
 // prefix, the size cap, the URL builder, the response key and the (English)
 // error strings.
 export const GYM_IMAGE_ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-
-/**
- * Stored extension per allowed mime type. Exported because every image upload
- * handler needs the same mapping, and a divergent copy would store the same
- * bytes under two different keys.
- */
-export const MIME_TO_EXT: Record<string, string> = {
-  'image/jpeg': 'jpg',
-  'image/png': 'png',
-  'image/gif': 'gif',
-  'image/webp': 'webp',
-};
 
 /** Extensions a gym image can have been stored under, for stale-file cleanup. */
 export const GYM_IMAGE_EXTENSIONS = ['jpg', 'png', 'gif', 'webp'];
