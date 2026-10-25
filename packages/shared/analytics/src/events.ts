@@ -204,9 +204,10 @@ export const SHARED_EVENTS = {
   // scope: 'solo' | 'session' }. Fired once per held queue item per connection.
   BoardStaleCurrentHeld: 'Board Stale Current Held',
   // The end of that hold. Props: { reason: 'new-current' | 'relight' |
-  // 'reconnect' | 'disconnect' | 'kill-switch', scope, heldMinutes }. A session
-  // hold released by `reconnect` means a FullSync reseed moved the clock (it
-  // should not); holds with no release at all mean a stuck gate.
+  // 'reopen' | 'disconnect' | 'kill-switch', scope, heldMinutes }. `reopen` is
+  // the climber opening the held climb again; a FullSync never releases a hold
+  // (for the same climb it keeps the older time). Holds with no release at all
+  // mean a stuck gate.
   BoardStaleCurrentReleased: 'Board Stale Current Released',
   // Props: { kind: 'field' | 'preset', field?, value?, preset? }. Controller interactions only.
   ClimbRowDisplayChanged: 'Climb Row Display Changed',

@@ -416,8 +416,11 @@ function BluetoothAutoSender({
   staleCurrentHoldEnabled: boolean;
   // A write was skipped because the climb hasn't changed for 4 h or more.
   onStaleCurrentHeld: (item: ClimbQueueItem, lastCurrentChangeAt: number) => void;
-  // A climb reached the write past the hold, so any hold standing is over.
-  onStaleCurrentPassed: (item: ClimbQueueItem) => void;
+  // The current climb is on the wall (a write that landed, or a deduped climb
+  // the wall already shows), or there is no current climb any more: any hold
+  // standing is over. Not called for a write that failed, so a failure does not
+  // end the hold and the next drain does not start a second one.
+  onStaleCurrentPassed: (item: ClimbQueueItem | null) => void;
 }) {
   type AutoSendRequest = {
     item: ClimbQueueItem;
@@ -517,7 +520,11 @@ function BluetoothAutoSender({
   }, []);
 
   useEffect(() => {
-    if (!currentClimbQueueItem) return;
+    if (!currentClimbQueueItem) {
+      // The held climb was removed or the queue cleared: nothing is held.
+      onStaleCurrentPassedRef.current(null);
+      return;
+    }
     const signal = abortControllerRef.current?.signal;
     if (signal?.aborted) return;
 
@@ -679,7 +686,6 @@ function BluetoothAutoSender({
             pendingSendRef.current = null;
             continue;
           }
-          onStaleCurrentPassedRef.current(item);
 
           // Honour a pending reassert exactly when the climb is picked up —
           // clearing the signature here (rather than in the effect) survives an
@@ -701,6 +707,7 @@ function BluetoothAutoSender({
             // A relight/undo may have changed the wall out from under us, in which
             // case confirming here would report a climb that isn't lit (a phantom).
             if (physicalFramesSignature(item.climb.frames, effectiveMirrored) === lastPhysicalFramesRef.current) {
+              onStaleCurrentPassedRef.current(item);
               onWallConfirmedRef.current(item, effectiveMirrored);
             }
             toSend = pendingSendRef.current;
@@ -725,6 +732,7 @@ function BluetoothAutoSender({
               lastSentSignatureRef.current = sendSignature;
               lastPhysicalFramesRef.current = physicalFramesSignature(item.climb.frames, effectiveMirrored);
               litQueueItemUuidRef.current = item.uuid;
+              onStaleCurrentPassedRef.current(item);
               onWallConfirmedRef.current(item, effectiveMirrored);
               hapticSuccess();
             }
@@ -753,6 +761,10 @@ function BluetoothAutoSender({
     colorSignature,
     encodingSignature,
     sessionId,
+    // The clock moving for the same climb (the climber opening the held climb
+    // again) must re-run the gate, which the item alone would not. The clock
+    // keeps its identity until it changes, so this adds no runs otherwise.
+    lastCurrentChange,
   ]);
 
   return null;
@@ -2232,22 +2244,20 @@ export function BluetoothProvider({
     [releaseStaleCurrentHold],
   );
   const handleStaleCurrentPassed = useCallback(
-    (item: ClimbQueueItem) => {
+    (item: ClimbQueueItem | null) => {
       const held = staleCurrentHoldRef.current;
       if (!held) return;
-      // The same climb past the hold without a relight means its clock moved
-      // (a FullSync reseed); anything else is a new current climb.
-      releaseStaleCurrentHold(held.hold.queueItemUuid === item.uuid ? 'reconnect' : 'new-current');
+      // The same climb on the wall without a relight means its clock moved for
+      // the same uuid, which only a re-open does (a FullSync keeps the older
+      // time); anything else, `null` included, is a new current climb.
+      releaseStaleCurrentHold(held.hold.queueItemUuid === item?.uuid ? 'reopen' : 'new-current');
     },
     [releaseStaleCurrentHold],
   );
-  // The board went away, or the kill switch came on: nothing is held any more.
+  // The board went away: nothing is held any more.
   useEffect(() => {
     if (!isConnected) releaseStaleCurrentHold('disconnect');
   }, [isConnected, releaseStaleCurrentHold]);
-  useEffect(() => {
-    if (!staleCurrentHoldFlagEnabled) releaseStaleCurrentHold('kill-switch');
-  }, [staleCurrentHoldFlagEnabled, releaseStaleCurrentHold]);
 
   // Bumped by `reassertWall()` to force the auto-sender to re-push the current
   // climb once, bypassing the byte-identical dedup.
@@ -2263,6 +2273,14 @@ export function BluetoothProvider({
     releaseStaleCurrentHold('relight');
     setReassertNonce((nonce) => nonce + 1);
   }, [releaseStaleCurrentHold]);
+  // The kill switch came on: nothing is held any more, and the climb the hold
+  // kept dark goes on the wall now, as it would have without the hold. The
+  // drain does not list the flag as a dep, so the nonce is what re-runs it.
+  useEffect(() => {
+    if (staleCurrentHoldFlagEnabled || !staleCurrentHoldRef.current) return;
+    releaseStaleCurrentHold('kill-switch');
+    setReassertNonce((nonce) => nonce + 1);
+  }, [staleCurrentHoldFlagEnabled, releaseStaleCurrentHold]);
 
   const invalidateWallState = useCallback(() => {
     lastPhysicalFramesRef.current = null;

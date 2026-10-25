@@ -394,6 +394,38 @@ describe('session: every FullSync reseeds the clock from currentChangedAt', () =
     rendered.unmount();
   });
 
+  it('keeps a solo hold through Start session: the seed stamps the room now, the older time wins', () => {
+    const rendered = renderHook(() => useSessionQueueHarness());
+    // The solo queue as the clock knows it: the climb went current 5 h ago.
+    act(() => {
+      rendered.result.current.dispatch(fullSync(makeItem('solo-climb'), roomChangedAt));
+    });
+    // createSessionWithConfig seeds the room with the same current item, and
+    // the room stamps `currentChangedAt = now` for a room with no stored climb.
+    act(() => {
+      rendered.result.current.dispatch(fullSync(makeItem('solo-climb'), new Date(time.now).toISOString()));
+    });
+    expect(rendered.result.current.lastCurrentChange).toEqual({
+      queueItemUuid: 'solo-climb',
+      changedAt: Date.parse(roomChangedAt),
+    });
+    expect(isStaleCurrentClimb(rendered.result.current.lastCurrentChange, 'solo-climb', time.now)).toBe(true);
+    rendered.unmount();
+  });
+
+  it('lets an older room time win over a young local one for the same climb', () => {
+    const rendered = renderHook(() => useSessionQueueHarness());
+    act(() => {
+      rendered.result.current.dispatch(fullSync(makeItem('room-climb'), null));
+    });
+    expect(rendered.result.current.lastCurrentChange.changedAt).toBe(time.now);
+    act(() => {
+      rendered.result.current.dispatch(fullSync(makeItem('room-climb'), roomChangedAt));
+    });
+    expect(rendered.result.current.lastCurrentChange.changedAt).toBe(Date.parse(roomChangedAt));
+    rendered.unmount();
+  });
+
   it('removing the current climb advances the clock (null counts as a value)', () => {
     const rendered = renderHook(() => useSessionQueueHarness());
     act(() => {

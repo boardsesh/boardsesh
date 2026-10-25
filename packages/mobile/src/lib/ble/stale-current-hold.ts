@@ -33,12 +33,13 @@ export type StaleCurrentHold = {
  * Why a hold ended, for `Board Stale Current Released`:
  * - `new-current`: the current climb changed (a tap, Next, a crewmate's pick);
  * - `relight`: the climber asked (Put on the wall, the lightbulb's Re-light);
- * - `reconnect`: the same climb is no longer stale, so a FullSync reseed moved
- *   the clock. In a session that is the signal the reseed failed;
+ * - `reopen`: the climber opened the held climb again (a re-tap of the current
+ *   climb), which restarts its clock. A FullSync never does this: for the same
+ *   climb it keeps the older time;
  * - `disconnect`: the board went away while the hold stood;
  * - `kill-switch`: `stale-current-hold-kill` came on.
  */
-export type StaleCurrentHoldReleaseReason = 'new-current' | 'relight' | 'reconnect' | 'disconnect' | 'kill-switch';
+export type StaleCurrentHoldReleaseReason = 'new-current' | 'relight' | 'reopen' | 'disconnect' | 'kill-switch';
 
 /**
  * Whether the clock says `queueItemUuid` has been the current climb for 4 h or

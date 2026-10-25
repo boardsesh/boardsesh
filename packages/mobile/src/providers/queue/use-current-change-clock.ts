@@ -8,14 +8,15 @@ export type CurrentChangeClockControls = {
   clock: CurrentChangeClock;
   /**
    * Set the clock from a source that knows better than "now": a restored
-   * snapshot's `lastCurrentChangeAt`. Call it in the same tick as the dispatch
+   * snapshot's `lastCurrentChangeAt`, or "now" itself when the climber opens
+   * the current climb again (the queue provider's `setCurrentClimb`). Call it in the same tick as the dispatch
    * that makes `queueItemUuid` current, so the render that commits the climb
    * also commits its seeded clock.
    */
   seedCurrentChange: (queueItemUuid: string | null, changedAt: number) => void;
   /**
    * The reducer's dispatch, reseeding the clock from every FullSync on the way
-   * through. Stable, like the reducer's own.
+   * through (the older time wins for the same uuid). Stable, like the reducer's own.
    */
   dispatch: Dispatch<QueueAction>;
 };
@@ -31,13 +32,20 @@ export type CurrentChangeClockControls = {
  * ones it excludes: adds, reorders, removals of other entries, mirror flips,
  * `replaceQueueItem`, hydrates and regrades all keep the uuid.
  *
- * Every FullSync reseeds it from the room's `currentChangedAt`, whatever the
- * uuid: the subscribe FullSync on every (re)connect, the watchdog and
- * sequence-gap resyncs and the HTTP snapshot all reach the reducer as
- * `INITIAL_QUEUE_DATA`. Seeding from the arrival time instead would let the
- * Wi-Fi change on the walk to the wall release a three-day-old hold. Without the
- * field (legacy documents) the clock keeps its own rule: the same uuid keeps its
- * time, another uuid is "now".
+ * Every FullSync reseeds it from the room's `currentChangedAt`: the subscribe
+ * FullSync on every (re)connect, the watchdog and sequence-gap resyncs and the
+ * HTTP snapshot all reach the reducer as `INITIAL_QUEUE_DATA`. Seeding from the
+ * arrival time instead would let the Wi-Fi change on the walk to the wall
+ * release a three-day-old hold. For another uuid the room's time wins. For the
+ * uuid the clock already holds, the OLDER of the two wins: both times are
+ * "this climb was current by then", and the room's can only be younger through
+ * a stamp that is not a change (the seed of a room this phone just started
+ * from its solo queue, a settle, a Postgres `updated_at` fallback). Taking the
+ * younger one would light a held climb on Start session. The one case it reads
+ * wrong is a crewmate going away from the climb and back while this phone was
+ * offline; that holds a climb they just picked, which costs one Put on the wall.
+ * Without the field (legacy documents) the clock keeps its own rule: the same
+ * uuid keeps its time, another uuid is "now".
  *
  * The advance happens during render (React's "adjust state while rendering"
  * pattern), not in an effect, so the committed render never pairs a new current
@@ -69,12 +77,21 @@ export function useCurrentChangeClock(
       if (action.type === 'INITIAL_QUEUE_DATA' && 'currentClimbQueueItem' in action.payload) {
         const serverChangedAt = parseClockInstant(action.payload.currentChangedAt);
         if (serverChangedAt !== null) {
-          seedCurrentChange(action.payload.currentClimbQueueItem?.uuid ?? null, serverChangedAt);
+          const serverQueueItemUuid = action.payload.currentClimbQueueItem?.uuid ?? null;
+          setClock((previous) => {
+            const changedAt =
+              previous.queueItemUuid === serverQueueItemUuid
+                ? Math.min(previous.changedAt, serverChangedAt)
+                : serverChangedAt;
+            return previous.queueItemUuid === serverQueueItemUuid && previous.changedAt === changedAt
+              ? previous
+              : { queueItemUuid: serverQueueItemUuid, changedAt };
+          });
         }
       }
       reducerDispatch(action);
     },
-    [seedCurrentChange, reducerDispatch],
+    [reducerDispatch],
   );
   return { clock: effectiveClock, seedCurrentChange, dispatch };
 }

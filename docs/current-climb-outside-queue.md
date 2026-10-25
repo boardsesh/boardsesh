@@ -888,20 +888,30 @@ beside it:
    ones does. The FullSync reseed rides the provider's `dispatch`: an `INITIAL_QUEUE_DATA`
    carrying `currentChangedAt` (the action gained that optional field; the reducer ignores
    it) sets the clock in the same tick, so the committed render pairs the new climb with the
-   server's time.
+   server's time. For the climb the clock already holds, the older of the two times wins. The
+   room stamps `currentChangedAt = now` whenever it is seeded or settled, so starting a session
+   from a held solo queue would otherwise hand the held climb a young clock and light it. The
+   one case the older time reads wrong: a crewmate moves off the climb and back to the same
+   queue item while this phone is offline, and it then holds a climb they just picked.
 2. When the auto-sender would send and `now - lastCurrentChangeAt >= 4 h`, it records the current
    uuid as held and skips the send. It checks per write, after the #4499 gate, and only on the
    Bluetooth transport: taking a wall with no lights (the virtual hold) is itself the
    climber's ask. A climb the same connection already lit is never held, so a colour or mirror
    change on a climb that has been up for 4 h still re-pushes it; that memory is per
    connection, so the next connect asks again.
-3. The hold releases only when the current climb's uuid changes (a tap, Next, a crewmate's
-   pick) or when the climber asks for a re-light (the lightbulb or Put on the wall bumps
-   `reassertNonce`). It compares uuids, so a `FullSync` that rebuilds the same item (every
-   reconnect) doesn't release it. Any `reassertWall()` releases it, which includes the MoonBoard
-   adjacent-holds toggle and the Live Activity's re-light, both deliberate wall actions. A
-   disconnect ends the hold too (the next connect evaluates afresh), and so does the kill
-   switch coming on.
+3. The hold releases when the current climb's uuid changes (a tap on another climb, Next, a
+   crewmate's pick, the held climb removed or the queue cleared) or when the climber asks for a
+   re-light (the lightbulb or Put on the wall bumps `reassertNonce`). It compares uuids, so a
+   `FullSync` that rebuilds the same item (every reconnect) doesn't release it. Any
+   `reassertWall()` releases it, which includes the MoonBoard adjacent-holds toggle and the Live
+   Activity's re-light, both deliberate wall actions. A `setCurrentClimb` that lands on the
+   climb already current (a queue-sheet tap on the current row, a playlist activation that
+   dedupes onto it) restarts the clock, which releases it too (`reopen`). Opening the player on
+   the current climb from a list does not call `setCurrentClimb`, so it shows the held climb
+   with Put on the wall: the same gesture opens the player from the accessory bar, which is a
+   look, not an ask. A hold ends once the climb is actually on the wall, so a failed write
+   leaves it standing. A disconnect ends the hold too (the next connect evaluates afresh), and
+   so does the kill switch coming on, which then lights the climb the hold kept dark.
 
 | Case | Board on connect |
 | --- | --- |
@@ -912,6 +922,7 @@ beside it:
 | Session, `currentChangedAt` 4 h or older (ticks, Up next edits and no-op write-backs don't move it) | Dark on new phones. The room's state is not touched. |
 | Session, current climb set 5 h ago, a crewmate added to Up next 10 min ago | Dark |
 | Session, held, then the socket reconnects (Wi-Fi change, foreground) | Still dark: the reconnect `FullSync` reseeds from `currentChangedAt` |
+| Solo, held, then Start session | Still dark: the seed stamps the room `now`, and the `FullSync` for the same climb keeps the older solo time. Crewmates' phones read the room's young time and light. |
 | Session restored from Postgres after 4 h or more | Dark on new phones, unless any queue write within 4 h bumped `board_session_queues.updated_at` (section 2): then it lights. The room's state is not touched. |
 | Old JS bundle | Lights, as today, until it takes the OTA |
 
@@ -1144,7 +1155,7 @@ was measured, so old and new clients can be compared.
 | Daily read-only query on `board_session_queues`: rooms where one climb appears more than once in Up next | Not falling as the ramp goes up. Measure the baseline before PR 2. |
 | `QUEUE_FULL` rejections, and rooms whose Up next alone exceeds 500 or whose array exceeds 501 (500 with nothing current) | Any sustained count |
 | `Queue Sync Stale Event Ignored` (`use-session-realtime.ts:571-578`) per session-hour | Expected to rise in step with the `FullSync` + trailing count, because every JS subscriber drops the trailing event as `ignore-stale`. Bad is a rise beyond that ratio. |
-| New `Board Stale Current Held` (`ageHours`, `scope: solo / session`) and `Board Stale Current Released` (`reason: new-current / relight / reconnect / disconnect / kill-switch`, `scope`, `heldMinutes`) | Holds with no release (a stuck gate), or session holds released by `reconnect` (the reseed failed) |
+| New `Board Stale Current Held` (`ageHours`, `scope: solo / session`) and `Board Stale Current Released` (`reason: new-current / relight / reopen / disconnect / kill-switch`, `scope`, `heldMinutes`) | Holds with no release (a stuck gate) |
 | New `Queue Server Probe` (`nowSlotServer: true / false`, `fallback: probe / validation-error`), at most once per launch and on every `false` | Any `false` after PR 2 is live, outside a deploy window |
 | APNs `buildContentStateFromQueueState` returning null | Any rise |
 

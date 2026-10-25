@@ -70,6 +70,7 @@ import { subscribeWsConnectionEnded } from '../lib/graphql/ws-client-lifecycle';
 import { getHttpClient } from '../lib/graphql/client';
 import { sanitizeQueueSnapshot } from '../lib/queue-privacy';
 import { invalidateStoredQueueSnapshot } from '../lib/queue-snapshot-store';
+import { nowMs } from '../lib/clock';
 import { restoreRemovedQueueItems, type QueueContentSnapshot } from '../lib/queue-undo';
 import {
   getPrivacyCredentialGeneration,
@@ -2954,6 +2955,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // (driven by findNextQueueItemWithSuggestions anchoring on the current
       // climb) is preserved. In now-slot mode (F3) the open goes through
       // `placeOnWall` instead: a queued climb moves into Now, never copied.
+      const currentUuidBeforeOpen = stateRef.current.currentClimbQueueItem?.uuid ?? null;
       const nowSlotOpen = dispatchSetCurrent(
         item,
         true,
@@ -2962,6 +2964,15 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         undefined,
         options?.placement,
       );
+      // #4979: opening the climb that is already current (a re-tap, or a list
+      // row for the same climb, which now-slot mode dedupes onto it) leaves the
+      // uuid alone, so the clock would not move and a stale-climb hold would
+      // keep the wall dark. The open is the climber asking for this climb, so
+      // it restarts the clock; the auto-sender sees the young clock and lights.
+      const openedQueueItemUuid = nowSlotOpen ? nowSlotOpen.resolvedItem.uuid : item.uuid;
+      if (currentUuidBeforeOpen !== null && openedQueueItemUuid === currentUuidBeforeOpen) {
+        seedCurrentChange(currentUuidBeforeOpen, nowMs());
+      }
       track(SHARED_EVENTS.SetActiveClimb, {
         climbUuid: item.climb.uuid,
         layoutId: activeBoardRef.current?.layoutId,
@@ -2988,7 +2999,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         placement: nowSlotOpen?.placement ?? null,
       });
     },
-    [dispatchSetCurrent, privacyRevocationGeneration, storeTrackResume],
+    [dispatchSetCurrent, privacyRevocationGeneration, seedCurrentChange, storeTrackResume],
   );
 
   // The editor saved a climb that is already in the queue. See the reducer's
