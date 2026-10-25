@@ -45,6 +45,22 @@ function liveSite(files: Record<string, LiveFile>, requested: string[] = []): ty
   };
 }
 
+/** Adds a delay to every request and records the most requests ever in flight at once. */
+function withLatency(fetchImpl: typeof fetch, delayMs: number) {
+  const stats = { inFlight: 0, peakInFlight: 0 };
+  const slowFetch: typeof fetch = async (input, init) => {
+    stats.inFlight += 1;
+    stats.peakInFlight = Math.max(stats.peakInFlight, stats.inFlight);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      return await fetchImpl(input, init);
+    } finally {
+      stats.inFlight -= 1;
+    }
+  };
+  return { fetchImpl: slowFetch, stats };
+}
+
 const shell = (...scripts: string[]) =>
   `<!doctype html><html><body><div id="root"></div>${scripts
     .map((script) => `<script src="${script}" defer></script>`)
@@ -198,6 +214,64 @@ describe('carryOverChunks', () => {
     expect(manifest.current).toEqual([chunk('entry-n')]);
     expect(Object.keys(manifest.carried)).toHaveLength(6);
     expect(new Set(Object.values(manifest.carried))).toEqual(new Set([new Date(NOW_MS).toISOString()]));
+  });
+
+  it('downloads the routes a bootstrap entry names in parallel, not one at a time', async () => {
+    // The first run's queue holds only the 2 eager scripts. The 40 routes the
+    // entry names arrive while the other workers would otherwise have quit.
+    const routeNames = Array.from({ length: 40 }, (_unused, index) => `route-${index}`);
+    const files: Record<string, LiveFile> = {
+      '/': html(shell(chunk('__expo-metro-runtime-n1'), chunk('entry-n1'))),
+      [chunk('__expo-metro-runtime-n1')]: js('runtime'),
+      [chunk('entry-n1')]: js(routeNames.map((name) => `load("${chunk(name)}")`).join(';')),
+    };
+    for (const name of routeNames) files[chunk(name)] = js(name);
+    const { fetchImpl, stats } = withLatency(liveSite(files), 20);
+
+    const result = await run(fetchImpl);
+
+    expect(result.carriedCount).toBe(42);
+    expect(stats.peakInFlight).toBe(8);
+    expect(warnings).toEqual([]);
+  });
+
+  it('retries a manifest answered 503 once and carries what it lists', async () => {
+    let manifestRequests = 0;
+    const site = liveSite({
+      '/': html(shell(chunk('entry-n1'))),
+      [chunk('entry-n1')]: js('entry'),
+      [chunk('route-one-day')]: js('one'),
+    });
+    const fetchImpl: typeof fetch = async (input, init) => {
+      if (requestedPath(input) !== '/chunk-carryover.json') return site(input, init);
+      manifestRequests += 1;
+      if (manifestRequests === 1) return new Response('busy', { status: 503 });
+      return new Response(
+        JSON.stringify({
+          version: 1,
+          current: [chunk('entry-n1')],
+          carried: { [chunk('route-one-day')]: new Date(NOW_MS - DAY_MS).toISOString() },
+        }),
+        { headers: { 'content-type': 'application/json' } },
+      );
+    };
+
+    await run(fetchImpl);
+
+    expect(manifestRequests).toBe(2);
+    expect(existsSync(join(exportDir, chunk('route-one-day')))).toBe(true);
+    expect(warnings).toEqual([]);
+  });
+
+  it('warns when the manifest keeps failing with something other than a 404', async () => {
+    const site = liveSite({ '/': html(shell(chunk('entry-n1'))), [chunk('entry-n1')]: js('entry') });
+    const fetchImpl: typeof fetch = async (input, init) =>
+      requestedPath(input) === '/chunk-carryover.json' ? new Response('slow down', { status: 429 }) : site(input, init);
+
+    const result = await run(fetchImpl);
+
+    expect(result.carriedCount).toBe(1);
+    expect(warnings).toEqual([expect.stringContaining('/chunk-carryover.json answered 429 twice')]);
   });
 
   it('carries a manifest entry 2 days old and drops one 4 days old', async () => {

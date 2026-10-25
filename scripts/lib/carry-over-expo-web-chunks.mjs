@@ -231,15 +231,33 @@ export async function carryOverChunks({
       recordWarning(`could not read the live shell at ${origin}/ (${errorMessage(error)})`);
     }
 
+    // A 404 is the first run. Anything else that is not a manifest (a 5xx, a
+    // 429, a dropped connection) loses every older file the live deploy carried,
+    // so it gets one retry and then a warning.
     let manifest = parseCarryoverManifest('');
-    try {
-      const manifestResponse = await fetchImpl(`${origin}${MANIFEST_PATH}?carryover=${nowMs}`, {
-        cache: 'no-store',
-        signal: requestSignal(),
-      });
-      if (manifestResponse.ok) manifest = parseCarryoverManifest(await manifestResponse.text());
-    } catch (error) {
-      recordWarning(`could not read ${MANIFEST_PATH} (${errorMessage(error)}); carrying only the live deploy`);
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      const isLastAttempt = attempt === 2;
+      try {
+        const manifestResponse = await fetchImpl(`${origin}${MANIFEST_PATH}?carryover=${nowMs}&attempt=${attempt}`, {
+          cache: 'no-store',
+          signal: requestSignal(),
+        });
+        if (manifestResponse.ok) {
+          manifest = parseCarryoverManifest(await manifestResponse.text());
+          break;
+        }
+        if (manifestResponse.status === 404) break;
+        if (isLastAttempt) {
+          recordWarning(
+            `${MANIFEST_PATH} answered ${manifestResponse.status} twice; older deploys' files drop out, carrying only the live deploy`,
+          );
+        }
+      } catch (error) {
+        if (isLastAttempt || deadline.aborted) {
+          recordWarning(`could not read ${MANIFEST_PATH} (${errorMessage(error)}); carrying only the live deploy`);
+          break;
+        }
+      }
     }
 
     const pending = selectCarryCandidates({ livePaths, manifest, nowMs, maxAgeMs });
@@ -296,11 +314,34 @@ export async function carryOverChunks({
       }
     };
 
+    // An empty queue is not the end while another worker is still downloading:
+    // that file can name more chunks (on the first run the queue starts with
+    // only the shell's eager scripts). Idle workers wait for a download to
+    // finish and stop only once nothing is queued and nothing is in flight.
+    let inFlight = 0;
+    let idleWorkers = [];
+    const wakeIdleWorkers = () => {
+      const waking = idleWorkers;
+      idleWorkers = [];
+      for (const wake of waking) wake();
+    };
     const worker = async () => {
-      while (pending.length > 0 && !deadline.aborted) {
+      while (!deadline.aborted) {
         const next = pending.shift();
-        if (next) await carryOne(next);
+        if (!next) {
+          if (inFlight === 0) break;
+          await new Promise((resolve) => idleWorkers.push(resolve));
+          continue;
+        }
+        inFlight += 1;
+        try {
+          await carryOne(next);
+        } finally {
+          inFlight -= 1;
+          wakeIdleWorkers();
+        }
       }
+      wakeIdleWorkers();
     };
     await Promise.all(Array.from({ length: Math.max(1, concurrency) }, worker));
 
