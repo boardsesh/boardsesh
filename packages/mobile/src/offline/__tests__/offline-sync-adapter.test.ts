@@ -8,10 +8,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const authToken = vi.hoisted(() => ({
   token: 'e30.eyJzdWIiOiJ2aWV3ZXItNjY1MyJ9.signature' as string | null,
   generationCurrent: true,
+  generation: 1,
 }));
 vi.mock('../../lib/auth-store', () => ({
   getAuthToken: async () => authToken.token,
-  captureAuthCredentialGeneration: () => 1,
+  captureAuthCredentialGeneration: () => authToken.generation,
   isAuthCredentialGenerationCurrent: () => authToken.generationCurrent,
 }));
 
@@ -254,6 +255,7 @@ beforeEach(() => {
   // The trigger store is persisted, so it survives between tests unless cleared.
   mockSettingsStorage.clear();
   authToken.generationCurrent = true;
+  authToken.generation = 1;
 });
 
 describe('drainMutationQueue binding', () => {
@@ -1995,7 +1997,7 @@ describe('outbox owner binding', () => {
     await expect(options.getSignedInUserId()).resolves.toBeUndefined();
   });
 
-  it('reports a drain held by another account once per process, with no ids', async () => {
+  it('reports a drain held by another account once per sign-in, with no ids', async () => {
     const callerRefusal = vi.fn();
     await drainMutationQueue(db, queryClient, graphqlFetch, { onOutboxOwnerRefused: callerRefusal });
     const options = drainMutationQueueCore.mock.calls[0][3] as DrainOptions;
@@ -2012,6 +2014,13 @@ describe('outbox owner binding', () => {
       tags: { source: 'offline-sync', kind: 'outbox-owner-hold', reason: 'other-account' },
     });
     expect(addErrorBreadcrumb).toHaveBeenCalledTimes(3);
+
+    // A sign-out and the next sign-in move the credential generation: that
+    // account's first held drain is reported too.
+    authToken.generation = 2;
+    options.onOutboxOwnerRefused?.('other-account');
+    options.onOutboxOwnerRefused?.('other-account');
+    expect(reportHandledError).toHaveBeenCalledTimes(2);
   });
 
   it('asks every pull path to pull only into a database stamped for the viewer', async () => {

@@ -779,15 +779,20 @@ const schedulerTriggers: SchedulerTriggers = {
 };
 
 // A drain that declined because the database still belongs to another account.
-// Reported once per process (#6824): after the first, every tick save in that
-// session would repeat it. No ids ride along, only the reason.
-let reportedOtherAccountOutbox = false;
+// Reported once per credential generation (#6824): after the first, every tick
+// save in that session would repeat it, but the next sign-in is a new account
+// and gets its own report. The generation moves only on sign-in and sign-out
+// (storeTokens / clearTokens), never on a token refresh, so this is at most one
+// event per sign-in. No ids ride along, only the reason.
+let reportedOtherAccountOutboxGeneration: number | null = null;
 
 function reportOutboxOwnerRefused(reason: OutboxOwnerRefusal): void {
   // The moment between sign-in and the stamp is ordinary; leave a trail only.
   addErrorBreadcrumb({ category: 'offline-sync.outbox-owner', message: `Drain declined: ${reason}`, level: 'info' });
-  if (reason !== 'other-account' || reportedOtherAccountOutbox) return;
-  reportedOtherAccountOutbox = true;
+  if (reason !== 'other-account') return;
+  const generation = captureAuthCredentialGeneration();
+  if (reportedOtherAccountOutboxGeneration === generation) return;
+  reportedOtherAccountOutboxGeneration = generation;
   reportHandledError(new Error('Offline outbox held: the local database belongs to another account'), {
     level: 'warning',
     tags: { source: 'offline-sync', kind: 'outbox-owner-hold', reason },
@@ -795,7 +800,7 @@ function reportOutboxOwnerRefused(reason: OutboxOwnerRefusal): void {
 }
 
 export function __resetOutboxOwnerReportForTests(): void {
-  reportedOtherAccountOutbox = false;
+  reportedOtherAccountOutboxGeneration = null;
 }
 
 export function drainMutationQueue(

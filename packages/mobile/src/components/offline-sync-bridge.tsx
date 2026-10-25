@@ -149,8 +149,9 @@ export function OfflineSyncBridge() {
   // deciding anything; see the retry effect below.
   const [claimAttempt, setClaimAttempt] = useState(0);
   const claimRetry = useRef({ pending: false, left: CLAIM_RETRY_LIMIT });
-  // One report per reason per mount: the bridge is mounted once at the root, and
-  // a held session would otherwise repeat it on every re-run. No ids.
+  // One report per reason per sign-in: a held session would otherwise repeat it
+  // on every re-run, and a sign-out clears it so the next account's hold is
+  // reported too. No ids.
   const reportedHolds = useRef(new Set<string>());
   const reportHoldOnce = useCallback((reason: OwnerClaimHold, cause?: unknown) => {
     if (reportedHolds.current.has(reason)) return;
@@ -170,6 +171,7 @@ export function OfflineSyncBridge() {
       // A claim belongs to one sign-in: the next one proves itself again.
       setOwnerClaim(null);
       claimRetry.current = { pending: false, left: CLAIM_RETRY_LIMIT };
+      reportedHolds.current.clear();
       return;
     }
     if (!schemaReady || !launchWritesReady) return;
@@ -194,6 +196,8 @@ export function OfflineSyncBridge() {
         const ownership = await assertLocalUserDataOwner(db, localUserId);
         if (cancelled) return;
         if (ownership !== 'ok') catalogueRecoveryPending.current = true;
+        // Only `mismatch` wipes. `unstamped` (nobody has claimed the database)
+        // and `ok` go straight to the stamp, on the `claim` path.
         step = ownership === 'mismatch' ? 'wipe' : 'claim';
         if (ownership === 'mismatch') {
           reportError(new Error('Local offline user data belonged to a different account'), {

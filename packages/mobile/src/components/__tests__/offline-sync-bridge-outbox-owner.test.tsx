@@ -581,6 +581,37 @@ describe('OfflineSyncBridge: when the claim cannot be made', () => {
     secondLaunch.unmount();
   });
 
+  it("reports the next account's failed wipe too, after a sign-out", async () => {
+    // A lapsed account Z left its rows; the database stays locked through two
+    // sign-ins. Each sign-in's hold is its own event: once per sign-in, not per process.
+    await runMigrations(db);
+    await stampLocalUserId(db, 'user-z');
+    await enqueue(db, 'boardsesh_ticks', 'create', tickInput("Z's send"), A_TICK_UUID);
+    faults.lockTransactions = true;
+
+    const app = await launch();
+    await signIn(app, 'user-a');
+    await waitFor(() => expect(holdReports()).toEqual(['wipe-failed']));
+
+    // A forced sign-out: its own wipe hits the same lock, which the real cleanup
+    // swallows, and the query cache goes.
+    auth.token = null;
+    app.queryClient.clear();
+    auth.isAuthenticated = false;
+    await act(async () => {
+      app.view.rerender(<Harness queryClient={app.queryClient} />);
+    });
+    await settle();
+
+    await signIn(app, 'user-b');
+    await waitFor(() => expect(holdReports()).toEqual(['wipe-failed', 'wipe-failed']));
+    expect(schedulerStarts).toEqual([]);
+    expect(network.sent).toEqual([]);
+    expect(await getLocalUserId(db)).toBe('user-z');
+
+    app.view.unmount();
+  });
+
   it('holds sync when the token names nobody, and says so once', async () => {
     await seedAccountAOutbox();
 
