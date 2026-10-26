@@ -242,16 +242,8 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
   // pixels land), so anchoring on the raw <Image> let a screenshot fire on a
   // blank drawer. Gating on onDisplay makes the anchor mean "the lit board is on
   // screen".
-  const [overlayPainted, setOverlayPainted] = useState(false);
+  const [paintedOverlayIdentity, setPaintedOverlayIdentity] = useState<string | null>(null);
   const [paintedAttempt, setPaintedAttempt] = useState<{ identity: string } | null>(null);
-  // Native image events can already be queued when React replaces an overlay.
-  // Keep the currently rendered attempt in a ref so an old image cannot expose
-  // the screenshot anchor after the replacement reset it. The recovery owner
-  // still receives the captured key below and independently rejects stale cache
-  // events; this guard owns the component-local painted marker.
-  const latestOverlayAttemptRef = useRef({ uri: overlayUri, loadKey: overlayLoadKey ?? null });
-  latestOverlayAttemptRef.current = { uri: overlayUri, loadKey: overlayLoadKey ?? null };
-
   // Drop the decoded board-art bitmaps whenever this surface is hidden: render an
   // empty stack so expo-image releases their GPU textures + native-heap bitmaps
   // (the views stay mounted, so without this they pin ~100 MB+ that raises the OS
@@ -281,7 +273,28 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
           mirrored ?? false,
         ],
   );
-  const nativeOverlayIdentity = JSON.stringify([overlayUri, overlayLoadKey, recyclingKey, visibilityEpoch]);
+  const nativeOverlaySourceIdentity = JSON.stringify([overlayUri, overlayLoadKey, recyclingKey, visibilityEpoch]);
+  const [nativeOverlayAttempt, setNativeOverlayAttempt] = useState({
+    sourceIdentity: nativeOverlaySourceIdentity,
+    generation: 0,
+  });
+  if (nativeOverlayAttempt.sourceIdentity !== nativeOverlaySourceIdentity) {
+    // A -> B -> A creates a new native image even if B never displayed. Advance
+    // before committing its children, so an old A display cannot own the new A.
+    // React state keeps an abandoned render from advancing this generation.
+    setNativeOverlayAttempt({
+      sourceIdentity: nativeOverlaySourceIdentity,
+      generation: nativeOverlayAttempt.generation + 1,
+    });
+  }
+  const nativeOverlayIdentity = JSON.stringify([nativeOverlaySourceIdentity, nativeOverlayAttempt.generation]);
+  // Queued callbacks keep the board/attempt they came from, even when a later
+  // board reuses its URI and load key. Recovery still receives the captured key;
+  // this guard owns only the local reveal, retention and screenshot marker.
+  const overlayAttempt = JSON.stringify([nativeOverlayIdentity, retainPreviousOverlayFor, retainDisplayedOverlayFor]);
+  const latestOverlayAttemptRef = useRef(overlayAttempt);
+  latestOverlayAttemptRef.current = overlayAttempt;
+  const overlayPainted = paintedOverlayIdentity === nativeOverlayIdentity;
   const nativeBackgroundIdentity = (path: string) =>
     JSON.stringify(['background', backgroundImageUri(path), visibilityEpoch]);
   const mountedNativeLayersRef = useRef(new Map<string, { token: NativeImageToken; displayed: boolean }>());
@@ -290,7 +303,10 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
     nativeOverlayIdentity,
     reported: false,
   });
-  if (displayedAttemptRef.current.identity !== displayAttempt) {
+  if (
+    displayedAttemptRef.current.identity !== displayAttempt ||
+    displayedAttemptRef.current.nativeOverlayIdentity !== nativeOverlayIdentity
+  ) {
     displayedAttemptRef.current = {
       identity: displayAttempt,
       nativeOverlayIdentity,
@@ -351,19 +367,19 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
     identity: string;
     nativeIdentity: string;
   } | null>(null);
-  // While hidden, reset the overlay-painted anchor so it re-gates on the next
-  // real onLoad after this shows again, not before the lit board.
+  // Hidden surfaces release their native images; returning needs a new display.
   useEffect(() => {
     if (!hidden) return;
-    setOverlayPainted(false);
+    setPaintedOverlayIdentity(null);
     // A retained frame must not survive the surface being hidden: coming back
     // would paint the stale holds under a render that has not happened yet.
     setRetainedOverlay(null);
     setDisplayedOverlay(null);
   }, [hidden]);
-  // Different board — the retained frame belongs to a wall that is no longer here.
+  // A cached load may arrive before this passive effect. Keep a frame already
+  // loaded for the new board while dropping the previous board's holds.
   useEffect(() => {
-    setRetainedOverlay(null);
+    setRetainedOverlay((previous) => (previous?.identity === retainPreviousOverlayFor ? previous : null));
   }, [retainPreviousOverlayFor]);
   useEffect(() => {
     // A cached image may display before passive effects. Preserve a display
@@ -371,9 +387,6 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
     setDisplayedOverlay((previous) => (previous?.identity === retainDisplayedOverlayFor ? previous : null));
   }, [retainDisplayedOverlayFor]);
 
-  useEffect(() => {
-    setOverlayPainted(false);
-  }, [overlayUri, overlayLoadKey]);
   // Mirror the exact condition the overlay `<Image>` below renders under, so a
   // consumer waiting on a paint learns the instant there is nothing left to
   // paint — the app backgrounding, or this tab's board art being released while
@@ -574,18 +587,10 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
             // The holds are on the layer now: let the photo through with them.
             // Guarded like the marker below, so a late event from the previous
             // climb's image cannot reveal a row whose own overlay is still out.
-            if (
-              revealWithOverlay != null &&
-              latestAttempt.uri === overlayUri &&
-              latestAttempt.loadKey === emittingLoadKey
-            ) {
+            if (revealWithOverlay != null && latestAttempt === overlayAttempt) {
               setRevealed((previous) => (previous?.key === revealIdentity ? previous : { key: revealIdentity }));
             }
-            if (
-              retainPreviousOverlayFor != null &&
-              latestAttempt.uri === overlayUri &&
-              latestAttempt.loadKey === emittingLoadKey
-            ) {
+            if (retainPreviousOverlayFor != null && latestAttempt === overlayAttempt) {
               setRetainedOverlay((previous) =>
                 previous?.uri === overlayUri && previous.identity === retainPreviousOverlayFor
                   ? previous
@@ -600,8 +605,7 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
             if (
               hidden ||
               displayedAttemptRef.current.nativeOverlayIdentity !== nativeOverlayIdentity ||
-              latestAttempt.uri !== overlayUri ||
-              latestAttempt.loadKey !== emittingLoadKey
+              latestAttempt !== overlayAttempt
             )
               return;
             noteBoardArtInMemory(overlayUri, emittingLoadKey?.split(':')[0]);
@@ -612,7 +616,7 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
                   : { uri: overlayUri, identity: retainDisplayedOverlayFor, nativeIdentity: nativeOverlayIdentity },
               );
             }
-            if (overlayTestID) setOverlayPainted(true);
+            if (overlayTestID) setPaintedOverlayIdentity(nativeOverlayIdentity);
             onOverlayDisplay?.(emittingLoadKey);
             reportArtDisplayedRef.current();
           }}

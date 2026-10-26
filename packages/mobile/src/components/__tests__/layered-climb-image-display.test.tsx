@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { Activity, createElement, useLayoutEffect, type ReactNode } from 'react';
+import { Activity, Suspense, createElement, startTransition, useLayoutEffect, type ReactNode } from 'react';
 import { act, render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -42,6 +42,124 @@ describe('native artwork display handoff', () => {
     native.events.length = 0;
     native.hidden = false;
   });
+  it('keeps a current display received in a parent layout effect before passive resets', () => {
+    function CachedMarker({ loadKey }: { loadKey: string }) {
+      useLayoutEffect(() => latest('file:///cached-marker.png').display?.(), [loadKey]);
+      return createElement(LayeredClimbImage, {
+        overlayUri: 'file:///cached-marker.png',
+        overlayLoadKey: loadKey,
+        backgroundPaths: [],
+        overlayTestID: 'cached-marker',
+      });
+    }
+    const { queryByTestId, rerender } = render(createElement(CachedMarker, { loadKey: 'first:0' }));
+    expect(queryByTestId('cached-marker')).not.toBeNull();
+    rerender(createElement(CachedMarker, { loadKey: 'second:0' }));
+    expect(queryByTestId('cached-marker')).not.toBeNull();
+  });
+
+  it.each(['overlayUri', 'overlayLoadKey', 'recyclingKey'] as const)(
+    'requires a fresh display when %s cycles A to undisplayed B and back to A',
+    (physicalIdentity) => {
+      const props = {
+        overlayUri: 'file:///returning-a.png',
+        overlayLoadKey: 'a:0',
+        recyclingKey: 'first',
+        backgroundPaths: [],
+        overlayTestID: 'returning-overlay',
+      };
+      const { queryByTestId, rerender } = render(createElement(LayeredClimbImage, props));
+      const originalA = latest(props.overlayUri);
+      act(() => originalA.display?.());
+      expect(queryByTestId(props.overlayTestID)).not.toBeNull();
+      rerender(
+        createElement(LayeredClimbImage, {
+          ...props,
+          [physicalIdentity]:
+            physicalIdentity === 'overlayUri'
+              ? 'file:///undisplayed-b.png'
+              : physicalIdentity === 'overlayLoadKey'
+                ? 'b:0'
+                : 'second',
+        }),
+      );
+      expect(queryByTestId(props.overlayTestID)).toBeNull();
+      rerender(createElement(LayeredClimbImage, props));
+      expect(queryByTestId(props.overlayTestID)).toBeNull();
+      act(() => originalA.display?.());
+      expect(queryByTestId(props.overlayTestID)).toBeNull();
+      act(() => latest(props.overlayUri).display?.());
+      expect(queryByTestId(props.overlayTestID)).not.toBeNull();
+    },
+  );
+
+  it('preserves committed A when a suspended B render is abandoned without another display', async () => {
+    const suspended = new Promise<void>(() => {});
+    const attemptedB = vi.fn();
+    const displayed = vi.fn();
+    function PendingSibling({ pending }: { pending: boolean }) {
+      if (pending) {
+        attemptedB();
+        throw suspended;
+      }
+      return null;
+    }
+    function Board({ pending, revision = 0 }: { pending: boolean; revision?: number }) {
+      return createElement(
+        Suspense,
+        { fallback: createElement('div', { 'data-testid': 'pending' }) },
+        createElement(LayeredClimbImage, {
+          overlayUri: pending ? 'file:///suspended-b.png' : 'file:///committed-a.png',
+          overlayLoadKey: 'same-native-view:0',
+          backgroundPaths: [],
+          overlayTestID: 'committed-marker',
+          displayIdentity: String(revision),
+          onOverlayDisplay: displayed,
+        }),
+        createElement(PendingSibling, { pending }),
+      );
+    }
+    const committedA = createElement(Board, { pending: false });
+    const { container, queryByTestId, rerender } = render(committedA);
+    act(() => latest('file:///committed-a.png').display?.());
+    const originalImage = container.querySelector('img');
+    expect(queryByTestId('committed-marker')).not.toBeNull();
+    await act(async () => startTransition(() => rerender(createElement(Board, { pending: true }))));
+    expect(attemptedB).toHaveBeenCalled();
+    expect(queryByTestId('pending')).toBeNull();
+    expect(queryByTestId('committed-marker')).not.toBeNull();
+    // Force a metadata-only A render too; the abandoned attempt must not
+    // become a new physical source just because React resumes this component.
+    rerender(createElement(Board, { pending: false, revision: 1 }));
+    expect(container.querySelector('img')).toBe(originalImage);
+    expect(queryByTestId('committed-marker')).not.toBeNull();
+    expect(displayed).toHaveBeenCalledExactlyOnceWith('same-native-view:0');
+  });
+
+  it.each(['retainPreviousOverlayFor', 'retainDisplayedOverlayFor'] as const)(
+    'rejects a queued display for the previous %s when the native source is unchanged',
+    (retentionIdentity) => {
+      const displayed = vi.fn();
+      const initial = {
+        overlayUri: 'file:///shared-retention.png',
+        overlayLoadKey: 'same:0',
+        backgroundPaths: [],
+        overlayTestID: 'retention-marker',
+        onOverlayDisplay: displayed,
+        [retentionIdentity]: 'board-a',
+      };
+      const { queryByTestId, rerender } = render(createElement(LayeredClimbImage, initial));
+      const oldOverlay = latest(initial.overlayUri);
+      rerender(createElement(LayeredClimbImage, { ...initial, [retentionIdentity]: 'board-b' }));
+      act(() => oldOverlay.display?.());
+      expect(queryByTestId(initial.overlayTestID)).toBeNull();
+      expect(displayed).not.toHaveBeenCalled();
+      act(() => latest(initial.overlayUri).display?.());
+      expect(queryByTestId(initial.overlayTestID)).not.toBeNull();
+      expect(displayed).toHaveBeenCalledExactlyOnceWith('same:0');
+    },
+  );
+
   it('requires native display of both backgrounds and holds before declaring a cold neighbour ready', () => {
     const readiness = vi.fn();
     const props = {
@@ -100,16 +218,20 @@ describe('native artwork display handoff', () => {
     const props = {
       overlayUri: 'file:///retained-native-holds.png',
       overlayLoadKey: 'retained:0',
+      overlayTestID: 'retained-native-marker',
       backgroundPaths: ['/retained-native-board.webp'],
       onArtReadinessChange: readiness,
     };
     const board = createElement(LayeredClimbImage, props);
-    const { container, rerender } = render(createElement(Activity, { mode: 'visible', children: board }));
+    const { container, queryByTestId, rerender } = render(
+      createElement(Activity, { mode: 'visible', children: board }),
+    );
     act(() => {
       latest('file:///retained-native-board.webp').display?.();
       latest(props.overlayUri).display?.();
     });
     expect(readiness).toHaveBeenLastCalledWith(true);
+    expect(queryByTestId(props.overlayTestID)).not.toBeNull();
     const originalImages = Array.from(container.querySelectorAll('img'));
 
     // Activity disconnects effects while retaining the native image instances,
@@ -124,6 +246,17 @@ describe('native artwork display handoff', () => {
       expect(revealedImages[imageIndex]).toBe(originalImage);
     }
     expect(readiness).toHaveBeenLastCalledWith(true);
+    expect(queryByTestId(props.overlayTestID)).not.toBeNull();
+
+    rerender(
+      createElement(Activity, {
+        mode: 'visible',
+        children: createElement(LayeredClimbImage, { ...props, overlayLoadKey: 'retained:1' }),
+      }),
+    );
+    expect(queryByTestId(props.overlayTestID)).toBeNull();
+    act(() => latest(props.overlayUri).display?.());
+    expect(queryByTestId(props.overlayTestID)).not.toBeNull();
   });
 
   it.each([true, false])('refuses an unresolved background layer when overlayRequired is %s', (overlayRequired) => {
@@ -357,6 +490,7 @@ describe('native artwork display handoff', () => {
       overlayLoadKey: '1:0',
       backgroundPaths: ['/board.webp'],
       paintedTestID: 'cpp-climb-painted-remounted-overlay',
+      overlayTestID: 'cpp-climb-painted-remounted-overlay-overlay',
       onArtDisplayed: displayed,
     };
     const { rerender, queryByTestId } = render(createElement(LayeredClimbImage, props));
@@ -366,14 +500,18 @@ describe('native artwork display handoff', () => {
       removedOverlay.display?.();
     });
     expect(queryByTestId(props.paintedTestID)).not.toBeNull();
+    expect(queryByTestId(props.overlayTestID)).not.toBeNull();
     rerender(createElement(LayeredClimbImage, { ...props, overlayUri: null }));
     rerender(createElement(LayeredClimbImage, props));
     expect(queryByTestId(props.paintedTestID)).toBeNull();
+    expect(queryByTestId(props.overlayTestID)).toBeNull();
     act(() => removedOverlay.display?.());
     expect(queryByTestId(props.paintedTestID)).toBeNull();
+    expect(queryByTestId(props.overlayTestID)).toBeNull();
     expect(displayed).toHaveBeenCalledTimes(1);
     act(() => latest(props.overlayUri).display?.());
     expect(queryByTestId(props.paintedTestID)).not.toBeNull();
+    expect(queryByTestId(props.overlayTestID)).not.toBeNull();
     expect(displayed).toHaveBeenCalledTimes(2);
   });
   it.each(['overlayLoadKey', 'recyclingKey'] as const)(
@@ -386,6 +524,7 @@ describe('native artwork display handoff', () => {
         recyclingKey: 'first',
         backgroundPaths: ['/board.webp'],
         paintedTestID: 'cpp-climb-painted-new-attempt',
+        overlayTestID: 'cpp-climb-painted-new-attempt-overlay',
         onArtDisplayed: displayed,
       };
       const { rerender, queryByTestId } = render(createElement(LayeredClimbImage, props));
@@ -399,9 +538,11 @@ describe('native artwork display handoff', () => {
       );
       act(() => staleOverlay.display?.());
       expect(queryByTestId(props.paintedTestID)).toBeNull();
+      expect(queryByTestId(props.overlayTestID)).toBeNull();
       expect(displayed).not.toHaveBeenCalled();
       act(() => latest(props.overlayUri).display?.());
       expect(queryByTestId(props.paintedTestID)).not.toBeNull();
+      expect(queryByTestId(props.overlayTestID)).not.toBeNull();
       expect(displayed).toHaveBeenCalledExactlyOnceWith(physicalIdentity === 'overlayLoadKey' ? '2:0' : '1:0');
     },
   );

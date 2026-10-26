@@ -85,6 +85,61 @@ describe('LayeredClimbImage', () => {
       return props;
     }
 
+    function CachedFrame({ uri, board }: { uri: string | null; board: string }) {
+      useLayoutEffect(() => {
+        if (uri) imageEvents.loadCallbacks.at(-1)?.();
+      }, [uri, board]);
+      return createElement(LayeredClimbImage, {
+        ...paintOverlay(uri ?? ''),
+        overlayUri: uri,
+        retainPreviousOverlayFor: board,
+      });
+    }
+
+    it('retains the first cached load received before passive effects', () => {
+      const { container, rerender } = render(
+        createElement(CachedFrame, { uri: 'file:///first-cached.png', board: 'board-a' }),
+      );
+      rerender(createElement(CachedFrame, { uri: null, board: 'board-a' }));
+      expect(container.querySelector('img[src="file:///first-cached.png"]')).not.toBeNull();
+    });
+
+    it('preserves an early load for the new board instead of the previous board', () => {
+      const { container, rerender } = render(
+        createElement(CachedFrame, { uri: 'file:///old-board.png', board: 'board-a' }),
+      );
+      rerender(createElement(CachedFrame, { uri: 'file:///new-board.png', board: 'board-b' }));
+      rerender(createElement(CachedFrame, { uri: null, board: 'board-b' }));
+      expect(container.querySelector('img[src="file:///new-board.png"]')).not.toBeNull();
+      expect(container.querySelector('img[src="file:///old-board.png"]')).toBeNull();
+    });
+
+    it.each(['first:0', 'replacement:0'])(
+      'keeps current retention after an old same-URI load with current key %s',
+      (currentLoadKey) => {
+        const uri = 'file:///shared-board.png';
+        const { container, rerender } = render(
+          createElement(
+            LayeredClimbImage,
+            paintOverlay(uri, {
+              overlayLoadKey: 'first:0',
+              retainPreviousOverlayFor: 'board-a',
+            }),
+          ),
+        );
+        const oldLoad = imageEvents.loadCallbacks.at(-1);
+        const current = paintOverlay(uri, {
+          overlayLoadKey: currentLoadKey,
+          retainPreviousOverlayFor: 'board-b',
+        });
+        rerender(createElement(LayeredClimbImage, current));
+        act(() => imageEvents.loadCallbacks.at(-1)?.());
+        act(() => oldLoad?.());
+        rerender(createElement(LayeredClimbImage, { ...current, overlayUri: null }));
+        expect(container.querySelector('img[src="file:///shared-board.png"]')).not.toBeNull();
+      },
+    );
+
     it('holds the last painted overlay while the next one renders', () => {
       const { container, rerender } = render(createElement(LayeredClimbImage, paintOverlay('file:///a.png')));
       act(() => {
