@@ -123,6 +123,31 @@ describe('mergeLogbookEntries', () => {
     const existing = [make('a')];
     expect(mergeLogbookEntries(existing, [make('a')])).toBe(existing);
   });
+
+  it('refreshes a cleared rating from an authoritative matching raw-quality answer', () => {
+    const existing = [{ ...make('a'), effectiveQuality: null }];
+    const incoming = [{ ...make('a'), effectiveQuality: 3 }];
+    expect(mergeLogbookEntries(existing, incoming, { refreshEffectiveQuality: true })[0]?.effectiveQuality).toBe(3);
+  });
+
+  it('does not let an older personal rating overwrite a cleared rating', () => {
+    const existing = [{ ...make('a'), effectiveQuality: null }];
+    const incoming = [{ ...make('a'), quality: 4, effectiveQuality: 4 }];
+    expect(mergeLogbookEntries(existing, incoming, { refreshEffectiveQuality: true })).toBe(existing);
+  });
+
+  it('keeps derived ratings unchanged unless the caller confirms a current answer', () => {
+    const existing = [{ ...make('a'), effectiveQuality: 3 }];
+    const incoming = [{ ...make('a'), effectiveQuality: null }];
+    expect(mergeLogbookEntries(existing, incoming)).toBe(existing);
+    expect(mergeLogbookEntries(existing, incoming, { refreshEffectiveQuality: false })).toBe(existing);
+  });
+
+  it('can clear a removed synced fallback from an authoritative matching answer', () => {
+    const existing = [{ ...make('a'), effectiveQuality: 3 }];
+    const incoming = [{ ...make('a'), effectiveQuality: null }];
+    expect(mergeLogbookEntries(existing, incoming, { refreshEffectiveQuality: true })[0]?.effectiveQuality).toBeNull();
+  });
 });
 
 describe('logbook query keys', () => {

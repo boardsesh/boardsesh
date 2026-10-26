@@ -145,9 +145,17 @@ export function withTickRevisions(
  * can know the version when the first did not (the platform pulled the tick in
  * between), and a row that kept "not known" for the rest of the session would
  * misread a send (#6023). The upgrade only ever adds knowledge
- * (`mergeTickRevision`). Returns the same array when nothing changed.
+ * (`mergeTickRevision`). A current, non-invalidated answer can also refresh
+ * effectiveQuality when its raw quality agrees with the cached row. This lets
+ * a cleared personal rating acquire the server's actual synced fallback,
+ * without letting an older personal rating overwrite the mutation's result.
+ * Returns the same array when nothing changed.
  */
-export function mergeLogbookEntries(existing: LogbookEntry[], incoming: LogbookEntry[]): LogbookEntry[] {
+export function mergeLogbookEntries(
+  existing: LogbookEntry[],
+  incoming: LogbookEntry[],
+  options?: { refreshEffectiveQuality?: boolean },
+): LogbookEntry[] {
   if (incoming.length === 0) return existing;
 
   const incomingByUuid = new Map(incoming.map((entry) => [entry.uuid, entry]));
@@ -157,9 +165,17 @@ export function mergeLogbookEntries(existing: LogbookEntry[], incoming: LogbookE
     if (!later) return entry;
     incomingByUuid.delete(entry.uuid);
     const revision = mergeTickRevision(entry.climb_revision, later.climb_revision);
-    if (revision === entry.climb_revision) return entry;
+    const effectiveQuality =
+      options?.refreshEffectiveQuality && later.quality === entry.quality && later.effectiveQuality !== undefined
+        ? later.effectiveQuality
+        : entry.effectiveQuality;
+    if (revision === entry.climb_revision && effectiveQuality === entry.effectiveQuality) return entry;
     upgraded = true;
-    return { ...entry, climb_revision: revision };
+    return {
+      ...entry,
+      ...(revision === entry.climb_revision ? {} : { climb_revision: revision }),
+      ...(effectiveQuality === entry.effectiveQuality ? {} : { effectiveQuality }),
+    };
   });
 
   // What is left in the map is new. `incoming` order is kept.
