@@ -35,7 +35,7 @@ A probe build is a diagnostic build in the other docs' terms. Its numbers find c
 
 `scripts/mobile-probe-kit/probe/apply_probes.py` edits a checkout so that the app records timing events. It adds one module, `packages/mobile/src/lib/perf-probe.ts`, and calls into it from the places below. Nothing here ships: the build script puts the tree back afterwards, and the module does nothing unless the bundle was built with `EXPO_PUBLIC_PERF_PROBE=1`.
 
-Every edit is an exact-text replacement that asserts its anchor occurs once. When the code under a probe moves, the script fails and names the anchor. Re-fit it; the table says what the probe is for.
+Every edit is an exact-text replacement whose anchor must occur exactly once. Both injectors stage all replacements before writing: a missing or duplicate anchor, an ambiguous supported variant, or a repeated application fails without changing any file. Errors name the affected path. Re-fit a moved anchor using the event's purpose below; never skip it silently. A successful injector prints the modified mobile paths.
 
 | Event | Recorded when | Fields that matter |
 | --- | --- | --- |
@@ -154,7 +154,18 @@ Everything below runs from the repo root on a Mac with the phone wired and unloc
 
 ### Opening a climb after deep scrolling
 
-Run `python3 scripts/mobile-probe-kit/probe/apply_opening_probes.py <isolated-checkout>` after `apply_probes.py`, on **both** builds. The opening injector supports baseline `8b842c4950` and the `PlayCore` candidate, asserts every anchor, and stages all replacements before writing. Keep the source revision and probe-script hashes with the build. Apply only to isolated checkouts; restore only the paths the injector reports. The ordinary script now accepts both legacy background-load callbacks and current board-art callbacks, preserving their behavior.
+Run `vp exec python3 scripts/mobile-probe-kit/probe/apply_opening_probes.py <isolated-checkout>` after `apply_probes.py`, on **both** builds. Keep the source revision and probe-script hashes with the build. Apply only to isolated clean checkouts; restore only the paths the injector reports. Both stages validate every anchor before writing, and a second application fails without adding writes.
+
+The supported source families have these pinned examples:
+
+| Revision | Offline request shape | Opening activation guard |
+| --- | --- | --- |
+| `8b842c4950` baseline | Legacy local cast and network request | Baseline without `PlayCore` |
+| `635753d563` PlayCore candidate | Legacy local cast and network request | Three loaded-snapshot privacy guards |
+| `329e73f824` | Nullable local response and abortable network request | Single privacy-generation guard |
+| `cb0f82386b` | Nullable local response and abortable network request | Single credential-generation guard |
+
+The ordinary injector preserves the nullable cast and both branches of the abortable network request while adding timing calls. The opening injector records one rejection at a current generation guard, or the three distinct historical rejection reasons. Legacy and current background-load callbacks retain their existing behavior. Compact fixtures exercise these families and deliberately missing, duplicate, mixed, and already-instrumented anchors in the `scripts` test project. Re-check a new source revision in an isolated copy before taking phone measurements.
 
 | Event | Meaning |
 | --- | --- |
