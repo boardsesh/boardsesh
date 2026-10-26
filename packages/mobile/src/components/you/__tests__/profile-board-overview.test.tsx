@@ -88,6 +88,7 @@ vi.mock('../../../providers/theme-provider', () => ({
       fill: '#444',
     },
     brandColors: { primary: '#a78bfa' },
+    textStyles: { largeTitle: { fontSize: 34, lineHeight: 41 } },
     colorScheme: 'dark',
   }),
 }));
@@ -175,6 +176,8 @@ function makeData(overrides: Partial<YouData> = {}): YouData {
     refreshing: false,
     offline: { isBlocked: false },
     refetch: vi.fn(),
+    totalsStatus: 'ready',
+    retryTotals: vi.fn(),
     statisticsSummary: buildStatisticsSummary({ totalDistinctClimbs: 254, layoutStats: layoutInputs }),
     selectedBoard: 'all',
     timeframe: 'all',
@@ -413,5 +416,57 @@ describe('profile smoke content', () => {
     const profileData = makeData();
     render(<ProgressTab data={profileData} topInset={0} />);
     expect(reportScreenshotSmokeContent).toHaveBeenCalledWith('/profile', profileData.statisticsSummary.totalAscents);
+  });
+});
+
+describe('all-board totals before the totals request succeeds (#6918)', () => {
+  // What `useYouProfileData` produces when `userProfileStats` has not landed:
+  // the summary is built from `null`, so it reads 0 — which must never reach the screen.
+  const unknownTotals = buildStatisticsSummary(null);
+  const recordsLoaded = {
+    statisticsSummary: unknownTotals,
+    hardestSend: { difficulty: 30, label: 'V14', status: 'send' as const },
+    hardestFlash: { difficulty: 26, label: 'V10', status: 'flash' as const },
+  };
+
+  it('shows a retry row instead of "0 climbs sent" when the totals request failed', () => {
+    const retryTotals = vi.fn();
+    const { getByTestId, queryByText, queryByTestId } = render(
+      <ProgressTab data={makeData({ ...recordsLoaded, totalsStatus: 'error', retryTotals })} topInset={0} />,
+    );
+    expect(getByTestId('profile-board-overview-error').textContent).toContain('stats.boardOverview.totalsError');
+    expect(queryByText('0')).toBeNull();
+    expect(queryByText('stats.boardOverview.climbsLabel:0')).toBeNull();
+    // The "no sends yet" empty state is a claim about the climber, not a fallback.
+    expect(queryByText('stats.boardOverview.empty')).toBeNull();
+    expect(queryByTestId('board-link-prompt')).toBeNull();
+    fireEvent.click(getByTestId('profile-board-overview-retry'));
+    expect(retryTotals).toHaveBeenCalledOnce();
+  });
+
+  it('shows a skeleton, not a number, while the totals are loading', () => {
+    const { getByTestId, queryByText } = render(
+      <ProgressTab data={makeData({ ...recordsLoaded, totalsStatus: 'loading' })} topInset={0} />,
+    );
+    expect(getByTestId('profile-board-overview-loading')).toBeTruthy();
+    expect(queryByText('0')).toBeNull();
+    expect(queryByText('stats.boardOverview.empty')).toBeNull();
+  });
+
+  it('says the totals load when back online instead of showing 0 offline', () => {
+    const { getByTestId, queryByText } = render(
+      <ProgressTab data={makeData({ ...recordsLoaded, totalsStatus: 'offline' })} topInset={0} />,
+    );
+    expect(getByTestId('profile-board-overview-offline').textContent).toBe('stats.boardOverview.totalsOffline');
+    expect(queryByText('0')).toBeNull();
+  });
+
+  it('still shows a real zero and the empty state once the totals say 0', () => {
+    const { getByText } = render(
+      <ProgressTab data={makeData({ statisticsSummary: unknownTotals, totalsStatus: 'ready' })} topInset={0} />,
+    );
+    expect(getByText('0')).toBeTruthy();
+    expect(getByText('stats.boardOverview.climbsLabel:0')).toBeTruthy();
+    expect(getByText('stats.boardOverview.empty')).toBeTruthy();
   });
 });

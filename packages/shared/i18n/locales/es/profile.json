@@ -98,7 +98,10 @@
       "rowAria": "{{name}}: {{count}} bloques distintos encadenados desde siempre",
       "recordAria": "Mejor encadene: {{grade}}",
       "publicTitle": "En todos sus plafones",
-      "publicEmpty": "Aún no hay encadenes registrados."
+      "publicEmpty": "Aún no hay encadenes registrados.",
+      "totalsLoading": "Cargando los totales",
+      "totalsError": "No se pudieron cargar estos totales.",
+      "totalsOffline": "Estos totales se cargan cuando vuelvas a tener conexión."
     },
     "progress": {
       "title": "Tu progreso",

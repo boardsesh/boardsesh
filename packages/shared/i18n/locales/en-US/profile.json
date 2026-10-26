@@ -98,7 +98,10 @@
       "rowAria": "{{name}}: {{count}} distinct climbs sent, all time",
       "recordAria": "Best send: {{grade}}",
       "publicTitle": "Across their boards",
-      "publicEmpty": "No sends logged yet."
+      "publicEmpty": "No sends logged yet.",
+      "totalsLoading": "Loading the totals",
+      "totalsError": "Couldn't load these totals.",
+      "totalsOffline": "These totals load when you're back online."
     },
     "progress": {
       "title": "Your progress",

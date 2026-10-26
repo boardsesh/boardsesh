@@ -22,7 +22,8 @@ vi.mock('../../../../hooks/use-grade-format', () => ({
   useGradeFormat: () => ({ gradeFormat: 'v-grade' }),
 }));
 
-import { useYouProfileData } from '../use-you-profile-data';
+import { useUserProfileStats } from '../use-you-data';
+import { profileTotalsStatus, useYouProfileData } from '../use-you-profile-data';
 
 describe('useYouProfileData filter state', () => {
   it('defaults to no active filters (all boards, all time)', () => {
@@ -85,5 +86,44 @@ describe('useYouProfileData filter state', () => {
 
     rerender({ userId: 'user-1' });
     expect(result.current.loading).toBe(false);
+  });
+});
+
+describe('profileTotalsStatus', () => {
+  it('is ready only when the totals have data', () => {
+    expect(profileTotalsStatus({ data: { totalDistinctClimbs: 0 }, status: 'success', fetchStatus: 'idle' })).toBe(
+      'ready',
+    );
+    // A refetch error keeps the last good totals on screen.
+    expect(profileTotalsStatus({ data: { totalDistinctClimbs: 3 }, status: 'error', fetchStatus: 'idle' })).toBe(
+      'ready',
+    );
+  });
+
+  it('is loading while the first request is in flight', () => {
+    expect(profileTotalsStatus({ data: undefined, status: 'pending', fetchStatus: 'fetching' })).toBe('loading');
+  });
+
+  it('is error when the request failed with nothing cached', () => {
+    expect(profileTotalsStatus({ data: undefined, status: 'error', fetchStatus: 'idle' })).toBe('error');
+  });
+
+  it('is offline when the request is paused for want of a network', () => {
+    expect(profileTotalsStatus({ data: undefined, status: 'pending', fetchStatus: 'paused' })).toBe('offline');
+  });
+});
+
+describe('useYouProfileData totals gate', () => {
+  it('does not hold the whole tab on a spinner while only the totals are pending', () => {
+    vi.mocked(useUserProfileStats).mockReturnValueOnce({
+      ...settledQuery,
+      data: undefined,
+      isPending: true,
+      status: 'pending',
+      fetchStatus: 'fetching',
+    } as unknown as ReturnType<typeof useUserProfileStats>);
+    const { result } = renderHook(() => useYouProfileData('user-1'));
+    expect(result.current.loading).toBe(false);
+    expect(result.current.totalsStatus).toBe('loading');
   });
 });

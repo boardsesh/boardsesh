@@ -98,7 +98,10 @@
       "rowAria": "{{name}} : {{count}} blocs distincts enchaînés depuis toujours",
       "recordAria": "Meilleure croix : {{grade}}",
       "publicTitle": "Sur toutes ses boards",
-      "publicEmpty": "Aucune croix enregistrée pour le moment."
+      "publicEmpty": "Aucune croix enregistrée pour le moment.",
+      "totalsLoading": "Chargement des totaux",
+      "totalsError": "Impossible de charger ces totaux.",
+      "totalsOffline": "Ces totaux se chargent dès que tu retrouves une connexion."
     },
     "progress": {
       "title": "Ta progression",

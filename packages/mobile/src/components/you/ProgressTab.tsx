@@ -89,7 +89,12 @@ export const ProgressTab = memo(function ProgressTab({
   const listRef = useRef<FlashListRef<ProgressItem>>(null);
   const [boardsExpanded, setBoardsExpanded] = useState(false);
   const [recordTipVisible, setRecordTipVisible] = useState(false);
-  const hasSends = data.statisticsSummary.totalAscents > 0;
+  // The all-board total is only a fact once its request succeeded. Until then
+  // (loading, failed, offline) the header shows that state instead of a 0, and
+  // the "no sends yet" empty state stays hidden.
+  const totalsKnown = data.totalsStatus === 'ready';
+  const hasSends = totalsKnown && data.statisticsSummary.totalAscents > 0;
+  const knownNoSends = totalsKnown && data.statisticsSummary.totalAscents === 0;
   const hasActivity = data.filteredLogbook.length > 0;
 
   useEffect(() => {
@@ -158,7 +163,7 @@ export const ProgressTab = memo(function ProgressTab({
       }),
     );
     if (layouts.length > collapsedBoardCount) result.push({ kind: 'expand' });
-    if (!hasSends && !hasActivity) result.push({ kind: 'empty' });
+    if (knownNoSends && !hasActivity) result.push({ kind: 'empty' });
     if (recordTipVisible) result.push({ kind: 'tip' });
     if (hasSends || hasActivity || data.hasActiveFilters) {
       result.push({ kind: 'progress' });
@@ -174,14 +179,21 @@ export const ProgressTab = memo(function ProgressTab({
     }
     if (userId) result.push({ kind: 'beta' });
     return result;
-  }, [data, boardsExpanded, collapsedBoardCount, hasActivity, hasSends, recordTipVisible, userId]);
+  }, [data, boardsExpanded, collapsedBoardCount, hasActivity, hasSends, knownNoSends, recordTipVisible, userId]);
 
   const renderItem = useCallback(
     ({ item }: { item: ProgressItem }) => {
       const noAscentData = t('empty.noAscentData');
       switch (item.kind) {
         case 'overview':
-          return <ProfileBoardOverview summary={data.statisticsSummary} isOwnProfile={isOwnProfile} />;
+          return (
+            <ProfileBoardOverview
+              summary={data.statisticsSummary}
+              status={data.totalsStatus}
+              onRetry={data.retryTotals}
+              isOwnProfile={isOwnProfile}
+            />
+          );
         case 'board':
           return (
             <ProfileBoardRow

@@ -98,7 +98,10 @@
       "rowAria": "{{name}}: {{count}} verschiedene Boulder getoppt, gesamte Zeit",
       "recordAria": "Beste Begehung: {{grade}}",
       "publicTitle": "An allen Boards",
-      "publicEmpty": "Noch keine Begehungen erfasst."
+      "publicEmpty": "Noch keine Begehungen erfasst.",
+      "totalsLoading": "Summen werden geladen",
+      "totalsError": "Diese Summen konnten nicht geladen werden.",
+      "totalsOffline": "Diese Summen laden, sobald du wieder online bist."
     },
     "progress": {
       "title": "Dein Fortschritt",
