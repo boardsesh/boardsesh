@@ -53,6 +53,25 @@ export function computeDrawerFirstScreenHeight({
 }
 
 /**
+ * The phone split's pane (iPhone Duo open in landscape) fits the board to the
+ * pane's height: the first screen fills the viewport down to the tick row and
+ * one more row (favourite, share) sits just below the fold with the sections
+ * after it. On a 669pt pane that draws the board about 1.8× larger than the
+ * usual first screen, which also holds that row and a section header.
+ */
+export function computeFitToHeightFirstScreenHeight({
+  viewport,
+  bottomInset,
+  belowFoldRowHeight,
+}: {
+  viewport: number;
+  bottomInset: number;
+  belowFoldRowHeight: number;
+}): number {
+  return Math.max(0, viewport - bottomInset) + belowFoldRowHeight;
+}
+
+/**
  * The preview item a drawer should already be showing on its FIRST render.
  *
  * The open target is normally applied by an effect, which does not run until

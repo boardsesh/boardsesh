@@ -14,15 +14,13 @@ import { spacing } from '../../theme/tokens';
 import { computeContainedBoardSize } from './play-drawer-layout';
 import type { BoardConfig } from './play-drawer-types';
 
-// The player's first screen around the board, approximated so the board sits
-// where the player will draw it and opening a climb only lights holds. The
-// header row (avatar, name, grade) is where the hint goes; the controls (tick
-// row, then favourite and share) and the Logbook peek stay empty below.
+// The split player's first screen around the board (fit to the pane's height,
+// see computeFitToHeightFirstScreenHeight), approximated so the board sits where
+// the player will draw it and opening a climb only lights holds. The header row
+// (avatar, name, grade) is where the hint goes; the tick row stays empty below,
+// and everything after it is below the fold.
 const HEADER_HEIGHT_ESTIMATE = 64;
-const CONTROLS_HEIGHT_ESTIMATE = 136;
-// computeDrawerFirstScreenHeight's reserve: section top padding + a collapsed
-// section header + its margin.
-const SECTION_PEEK_HEIGHT = spacing[3] + 52 + spacing[2];
+const TICK_ROW_HEIGHT_ESTIMATE = 72;
 
 type BoardBox = { width: number; height: number };
 
@@ -68,7 +66,7 @@ function UnlitBoardPaneComponent({ boardConfig, paneTopInset }: { boardConfig: B
         styles.root,
         {
           paddingTop: (paneTopInset ? insets.top : 0) + spacing[2],
-          paddingBottom: insets.bottom + SECTION_PEEK_HEIGHT,
+          paddingBottom: insets.bottom,
         },
       ]}
     >
@@ -112,5 +110,5 @@ const styles = StyleSheet.create({
   },
   hint: { textAlign: 'center' },
   boardArea: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  controls: { height: CONTROLS_HEIGHT_ESTIMATE },
+  controls: { height: TICK_ROW_HEIGHT_ESTIMATE },
 });

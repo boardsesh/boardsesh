@@ -17,7 +17,7 @@ import { useClimbModerationEnabled } from './feature-flags-provider';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { router, useNavigationContainerRef, useSegments } from 'expo-router';
 import { Platform } from 'react-native';
-import { tabsActiveSegment } from '../lib/route-segments';
+import { isTabsRoute, tabsActiveSegment } from '../lib/route-segments';
 import type { BoardName, Climb, UserBoard } from '@boardsesh/shared-schema';
 import { buildBoardPath, formatBoardDisplayName } from '@boardsesh/board-config';
 import { buildSessionBoardPath } from '../lib/boards/session-board-path';
@@ -58,7 +58,12 @@ import { useActiveClimbUuid, useIsSharedSession, useQueueActions, useQueueSessio
 import { getSetting } from '../settings/hooks';
 import { useDeviceLayout } from '../hooks/use-device-layout';
 import { usePhoneSplit } from '../hooks/use-phone-split';
-import { armPlayerScrollHandoff } from '../components/play-drawer/player-scroll-handoff';
+import {
+  armPlayerScrollHandoff,
+  readRoutePlayerSnapshot,
+  useRoutePlayerBusy,
+} from '../components/play-drawer/route-player-handoff';
+import { buildCarriedPaneTarget, resolvePlayerSurface, resolveSplitRouteClose } from '../lib/phone-split-player';
 import { resolveDetailPaneSurface } from '../theme/size-class';
 import { useQueueSnackbar } from './queue-snackbar-provider';
 import { useBoardPresenceControls, type ResolveBoardUuidArgs } from './board-presence-provider';
@@ -412,14 +417,20 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const routeSegments = useSegments();
   const onWallTab = tabsActiveSegment(routeSegments) === 'wall';
   // The phone split (iPhone Duo opened in landscape) hosts the same pane on the
-  // trailing half of each tab. Never true on a tablet, so the iPad term is as it was.
+  // leading half of each tab. Never true on a tablet, so the iPad answers are as
+  // they were. A root page over the tabs hides the split's pane, so taps there
+  // open `/play` (see resolvePlayerSurface).
   const phoneSplit = usePhoneSplit();
-  const usesDetailPane =
-    (resolveDetailPaneSurface({ width: windowWidth, widthClass, sidebarWidth: paneSidebarWidth }) === 'pane' ||
-      phoneSplit) &&
-    !onWallTab;
+  const { paneMounted, tapsOpenPane: usesDetailPane } = resolvePlayerSurface({
+    tabletPane: resolveDetailPaneSurface({ width: windowWidth, widthClass, sidebarWidth: paneSidebarWidth }) === 'pane',
+    phoneSplit,
+    onWallTab,
+    tabsUncovered: isTabsRoute(routeSegments),
+  });
   const usesDetailPaneRef = useRef(usesDetailPane);
   usesDetailPaneRef.current = usesDetailPane;
+  const paneMountedRef = useRef(paneMounted);
+  paneMountedRef.current = paneMounted;
   // Auth gates two things here. (1) myBoards requires authentication: running it
   // while logged out throws "Authentication required to perform this operation"
   // (pure noise in error tracking) and returns nothing useful — every other call
@@ -648,37 +659,52 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // Drop the pane's selected climb when the pane goes away (a resize into compact,
   // or a narrow-regular split where the /play route takes over), so a later return
   // to the pane starts from the current climb rather than a stale selection.
+  // Keyed on the pane being mounted, not on where taps go: a page pushed over the
+  // split's tabs routes taps to `/play` but leaves the pane (and its selection)
+  // underneath. On iPad the two are the same value.
   useEffect(() => {
-    if (!usesDetailPane) setPaneTarget(null);
-  }, [usesDetailPane, setPaneTarget]);
+    if (!paneMounted) setPaneTarget(null);
+  }, [paneMounted, setPaneTarget]);
 
   // Opening an iPhone Duo into landscape with the full-screen player up: the
-  // split's pane is now the player, so close the route instead of leaving it over
-  // the split. The pane shows the queue's current climb by itself; a preview the
-  // route was showing (a climb not on the wall) moves across as a look, never a
-  // fresh pick, and the scroll position follows it (player-scroll-handoff).
-  // Phone split only: an iPad crossing into its pane keeps the route as before.
+  // split's pane is now the player, so the route closes instead of staying over
+  // the split. Not while it has work open (a tick being typed, a sheet up): the
+  // close waits until the climber is done, and is dropped if they fold back
+  // first. The pane shows the queue's current climb by itself; a preview the
+  // route shows moves across as a look, never a fresh pick, and the scroll
+  // position follows it (route-player-handoff). Phone split only: an iPad
+  // crossing into its pane keeps the route as before.
+  const [splitRouteClosePending, setSplitRouteClosePending] = useState(false);
+  const routePlayerBusy = useRoutePlayerBusy();
   const previousPhoneSplitRef = useRef(phoneSplit);
   useEffect(() => {
     const enteredSplit = phoneSplit && !previousPhoneSplitRef.current;
     previousPhoneSplitRef.current = phoneSplit;
-    if (!enteredSplit || !navigationRef.isReady()) return;
-    const rootState = navigationRef.getRootState();
-    if (rootState.routes[rootState.index]?.name !== 'play') return;
-    const routeTarget = playTargetRef.current;
-    if (routeTarget?.options?.previewQueueItem) {
-      const { previewQueueItem, previewIsWallClimb, playlistSuggestionSource } = routeTarget.options;
-      paneTargetNonceRef.current += 1;
-      setPaneTarget({
-        climb: routeTarget.climb,
-        options: { previewQueueItem, previewIsWallClimb, playlistSuggestionSource },
-        nonce: paneTargetNonceRef.current,
-        claimFirstApply: () => false,
-      });
+    if (enteredSplit) setSplitRouteClosePending(true);
+    else if (!phoneSplit) setSplitRouteClosePending(false);
+  }, [phoneSplit]);
+  useEffect(() => {
+    if (!splitRouteClosePending) return;
+    const rootState = navigationRef.isReady() ? navigationRef.getRootState() : null;
+    const decision = resolveSplitRouteClose({
+      phoneSplit,
+      routeOnTop: rootState?.routes[rootState.index]?.name === 'play',
+      routeBusy: routePlayerBusy,
+    });
+    if (decision === 'wait') return;
+    setSplitRouteClosePending(false);
+    if (decision !== 'close' || !rootState) return;
+    const routePlayer = readRoutePlayerSnapshot();
+    const carriedTarget = buildCarriedPaneTarget(routePlayer, paneTargetNonceRef.current + 1);
+    if (carriedTarget) {
+      paneTargetNonceRef.current = carriedTarget.nonce;
+      setPaneTarget(carriedTarget);
     }
-    armPlayerScrollHandoff();
+    armPlayerScrollHandoff(
+      routePlayer?.climbUuid ? { climbUuid: routePlayer.climbUuid, offsetY: routePlayer.offsetY } : null,
+    );
     navigationRef.dispatch({ type: 'POP', target: rootState.key, payload: { count: 1 } });
-  }, [phoneSplit, navigationRef, setPaneTarget]);
+  }, [splitRouteClosePending, phoneSplit, routePlayerBusy, navigationRef, setPaneTarget]);
 
   // Reset on route unmount (close): drop the board override so non-drawer surfaces
   // snap back to the stored board, and clear the open target so a stray remount
@@ -693,7 +719,9 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       // the stored board with no way back to the one it was tapped on.
       const targetPending = playTargetRef.current != null && playTargetNonceRef.current !== consumedNonce;
       addErrorBreadcrumb({ category: 'ui.play', message: 'play drawer closed', data: { targetPending } });
-      if (!targetPending && !usesDetailPaneRef.current) setBoardConfigOverride(null);
+      // A mounted pane keeps using the override, even while a page over the split
+      // sent this open to the route (paneMounted equals usesDetailPane on iPad).
+      if (!targetPending && !paneMountedRef.current) setBoardConfigOverride(null);
       // Only drop the target this close was actually for. The reset runs from the
       // route's UNMOUNT cleanup — the end of the dismiss animation — and the list
       // underneath is live and tappable for that whole window (and for the pull-down

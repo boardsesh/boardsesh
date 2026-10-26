@@ -20,7 +20,6 @@ import {
 import { tabsActiveSegment } from '../../lib/route-segments';
 import { IpadPlayPane } from '../play-drawer/IpadPlayPane';
 import { IpadWallColumn } from '../board-presence/IpadWallColumn';
-import { HingeObserver } from './HingeObserver';
 
 /**
  * Keep content panes inside UIKit's sidebar, where their actual width is known.
@@ -79,68 +78,67 @@ function NativeTabletContentHost({ children }: { children: ReactNode }) {
 
 /**
  * The iPhone host. Closed, portrait, and every ordinary iPhone: the tab content
- * fills it exactly as before (the insets context below passes the same object
- * through, so nothing downstream re-renders). In the phone split the content
- * keeps the leading half up to the hinge and the player pane takes the trailing
- * half beside the vertical tab rail.
+ * fills it exactly as before. In the phone split the player pane takes the
+ * leading half up to the hinge and the tab content the trailing half, beside the
+ * vertical tab rail.
+ *
+ * The content View is always the second child (the pane slot before it is `null`
+ * off the split) and never changes style, so entering or leaving the split never
+ * remounts the tab's stack.
  *
  * Safe areas: in landscape the rail and the side status bar arrive as a right
- * inset (84pt on the Duo). The pane pads by it so ⋯ and the grade clear them,
- * and hands its subtree insets with the sides zeroed so nothing inside pads
- * again; the content column sits away from the rail, so its right inset is zero.
+ * inset (84pt on the Duo). The content column ends at the rail, so it keeps the
+ * real insets and anything that pads by them (`useHorizontalSafeArea`, the
+ * native header) stays right. The pane sits at the other edge: it pads by the
+ * left inset (0 on the Duo) and hands its subtree side insets of zero, so nothing
+ * inside it pads for a rail it never touches.
  */
 function PhoneSplitContentHost({ children }: { children: ReactNode }) {
   const phoneSplit = usePhoneSplit();
-  const insets = useSafeAreaInsets();
-  const { width: windowWidth } = useWindowDimensions();
-  const partiallyFolded = useHingePartiallyOpen();
-  const { contentWidth, foldInset } = resolvePhoneSplitColumns({ windowWidth, partiallyFolded });
-  const contentInsets = useMemo(() => (phoneSplit ? { ...insets, right: 0 } : insets), [phoneSplit, insets]);
   return (
     <View style={styles.host}>
-      {/* The same View either way (only its style changes), so entering or
-          leaving the split never remounts the tab's stack. */}
-      <View style={phoneSplit ? { width: contentWidth - foldInset } : styles.content}>
-        <SafeAreaInsetsContext.Provider value={contentInsets}>{children}</SafeAreaInsetsContext.Provider>
-      </View>
-      {phoneSplit ? <PhoneSplitPane foldInset={foldInset} /> : null}
+      {phoneSplit ? <PhoneSplitPane /> : null}
+      <View style={styles.content}>{children}</View>
     </View>
   );
 }
 
 /**
- * The player half of the phone split: a fold gutter (zero wide unless the Duo is
- * half open) and the pane. Mounted only while the split is on. The hinge
- * observer lives here because the gutter only matters while there is a split to
- * keep off the crease; with no observer mounted the store keeps its last value,
- * which the next split's observer replaces as soon as it appears.
+ * The player half of the phone split: the pane, ending at the hinge, and a fold
+ * gutter (zero wide unless the Duo is half open). Mounted only while the split
+ * is on. The hinge status comes from the app's one observer
+ * (`PhoneSplitHingeObserver`, at the root).
  */
-function PhoneSplitPane({ foldInset }: { foldInset: number }) {
+function PhoneSplitPane() {
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
+  const partiallyFolded = useHingePartiallyOpen();
+  const { leadingWidth, foldInset } = resolvePhoneSplitColumns({ windowWidth, partiallyFolded });
   // Only the focused tab's pane takes over the full-screen player's scroll
   // position; the other visited tabs' panes mount in the same commit.
   const isFocused = useIsFocused();
   const paneInsets = useMemo(() => ({ ...insets, left: 0, right: 0 }), [insets]);
   return (
     <>
-      <View style={{ width: foldInset * 2 }} />
       <View
         style={[
           styles.splitPane,
           {
-            paddingRight: insets.right,
-            // Half open, the fold itself divides the halves; flat, a hairline does.
-            borderLeftWidth: foldInset > 0 ? 0 : StyleSheet.hairlineWidth,
-            borderLeftColor: systemColors.separator,
+            width: leadingWidth - foldInset,
+            paddingLeft: insets.left,
+            // Half open, the fold itself divides the halves; flat, a hairline on
+            // the pane's hinge edge does.
+            borderEndWidth: foldInset > 0 ? 0 : StyleSheet.hairlineWidth,
+            borderEndColor: systemColors.separator,
           },
         ]}
       >
         <SafeAreaInsetsContext.Provider value={paneInsets}>
           <IpadPlayPane variant="phoneSplit" acceptsScrollHandoff={isFocused} />
         </SafeAreaInsetsContext.Provider>
-        <HingeObserver />
       </View>
+      <View style={{ width: foldInset * 2 }} />
     </>
   );
 }
@@ -149,5 +147,5 @@ const styles = StyleSheet.create({
   host: { flex: 1, flexDirection: 'row' },
   content: { flex: 1, minWidth: 0 },
   pane: { height: '100%', borderLeftWidth: StyleSheet.hairlineWidth },
-  splitPane: { flex: 1, minWidth: 0 },
+  splitPane: { minWidth: 0 },
 });

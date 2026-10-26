@@ -32,6 +32,7 @@ import { selectByVariant } from '../../theme/variants';
 import { isTopLevelTabRoute, tabsActiveSegment } from '../../lib/route-segments';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { useDeviceLayout } from '../../hooks/use-device-layout';
+import { usePhoneSplit } from '../../hooks/use-phone-split';
 import { ActiveContextBar } from './ActiveContextBar';
 import { ClimbCapsule } from './ClimbCapsule';
 import { LogAscentFab } from './LogAscentFab';
@@ -57,10 +58,14 @@ export function PersistentQueueBar() {
   // Queue head only — the wall's lit climb lives in the top "On the wall" strip.
   const currentClimb = state.currentClimbQueueItem?.climb ?? null;
   const detailPaneOwnsQueue = resolveDetailPaneSurface({ width, widthClass, sidebarWidth: SIDEBAR_WIDTH }) === 'pane';
+  // The phone split (iPhone Duo opened in landscape) shows it in its pane too.
+  // Its bottom-chrome metrics take the iPad branch, which reports the native
+  // accessory as not presented, so the gate further down would let this bar in.
+  const phoneSplit = usePhoneSplit();
 
   // The iPad shell shows the current climb in the persistent right-column pane
   // (IpadPlayPane), so the floating bar must not also render there.
-  if (detailPaneOwnsQueue) return null;
+  if (detailPaneOwnsQueue || phoneSplit) return null;
   if (!currentClimb) return null;
   // Show the climb bar only on a top-level tab page (a tab's own index), never on a
   // pushed sub-route or any root push/modal. This single gate subsumes the old

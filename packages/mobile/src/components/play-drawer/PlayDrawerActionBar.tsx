@@ -27,6 +27,9 @@ import { useVariantValue } from '../../theme/variants';
 import { hapticMedium, hapticSelection } from '../../lib/haptics';
 import { COUNT_BADGE_MAX_FONT_SCALE, countBadgeBox, countBadgeText, formatCountBadge } from '../count-badge-style';
 
+/** The second row's usual height: its padding plus one small button. */
+export const ACTION_BAR_SECONDARY_ROW_HEIGHT = spacing[2] + SIZES.sm.dim + spacing[3];
+
 type PlayDrawerActionBarProps = {
   canSwipePrevious: boolean;
   canSwipeNext: boolean;
@@ -647,7 +650,7 @@ const styles = StyleSheet.create({
   // The second row's usual 64pt (its padding plus one small button), held even
   // when a draft leaves it nothing to draw, so the board doesn't move.
   rowSecondaryHeight: {
-    minHeight: spacing[2] + SIZES.sm.dim + spacing[3],
+    minHeight: ACTION_BAR_SECONDARY_ROW_HEIGHT,
   },
   // Holder avatar overlaid on the lightbulb's top-right corner.
   connectionBadge: {

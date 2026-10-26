@@ -109,14 +109,14 @@ describe('phone windows leave the iPad rules alone', () => {
 describe('resolvePhoneSplitColumns', () => {
   it('puts the split on the hinge, the window centre', () => {
     expect(resolvePhoneSplitColumns({ windowWidth: 951, partiallyFolded: false })).toEqual({
-      contentWidth: 476,
+      leadingWidth: 476,
       foldInset: 0,
     });
   });
 
   it('keeps half the fold gutter clear on each side when half open, without moving the hinge', () => {
     expect(resolvePhoneSplitColumns({ windowWidth: 951, partiallyFolded: true })).toEqual({
-      contentWidth: 476,
+      leadingWidth: 476,
       foldInset: PHONE_SPLIT_FOLD_GUTTER / 2,
     });
   });

@@ -123,9 +123,13 @@ export type PlayDrawerProps = {
    *  climb" placeholder; the phone split passes the unlit board instead. */
   paneEmptyState?: ReactNode;
   /** Pane mode only: take the scroll position the full-screen player left behind
-   *  when the phone split replaced it (see player-scroll-handoff). Only the
+   *  when the phone split replaced it (see route-player-handoff). Only the
    *  focused tab's pane accepts, so a background tab never consumes it. */
   acceptsScrollHandoff?: boolean;
+  /** Pane mode only: size the board from the pane's height, with the tick row
+   *  under it and the rest below the fold. The phone split sets it; the iPad
+   *  pane keeps the usual first screen. */
+  fitBoardToPaneHeight?: boolean;
   /**
    * Who is looking. `'anonymous'` is the signed-out reader that
    * `AnonymousClimbView` renders on the web export's read-only climb URL: the

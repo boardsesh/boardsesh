@@ -54,7 +54,7 @@ import { formatBrowseCaption, formatTrackLabelParts } from './track-label-text';
 import { PlayListContext } from './PlayListContext';
 import { resolveTopListContextFrame } from './top-list-context-frame';
 import { TrackEndCard } from './TrackEndCard';
-import { PlayDrawerActionBar } from './PlayDrawerActionBar';
+import { ACTION_BAR_SECONDARY_ROW_HEIGHT, PlayDrawerActionBar } from './PlayDrawerActionBar';
 import { LastOnWallNote } from './LastOnWallNote';
 import { PlayDrawerActionsMenu } from './PlayDrawerActionsMenu';
 import { resolveQueuedSlotUuid } from './play-drawer-menu-rows';
@@ -82,9 +82,10 @@ import { previewNeedsAngleReanchor, reanchorPreviewAtAngle } from './preview-ang
 import { SwitchBoardOverlay } from './SwitchBoardOverlay';
 import { DeferredSections } from './DeferredSections';
 import { PanePlaceholder } from './PanePlaceholder';
-import { usePlayerScrollHandoff } from './use-player-scroll-handoff';
+import { useRoutePlayerHandoff } from './use-route-player-handoff';
 import {
   computeDrawerFirstScreenHeight,
+  computeFitToHeightFirstScreenHeight,
   computeFirstSectionScrollTarget,
   initialDrawerPreviewItem,
   shouldShowPanePlaceholder,
@@ -213,6 +214,7 @@ export function PlayCore({
   paneTopInset = true,
   paneEmptyState,
   acceptsScrollHandoff = false,
+  fitBoardToPaneHeight = false,
   viewer = 'member',
   onSignIn,
 }: PlayDrawerProps) {
@@ -1767,15 +1769,34 @@ export function PlayCore({
 
   // Reserve only the first eligible section's header. Without sections, content
   // plus bottom safe area exactly fills the measured viewport and cannot scroll.
-  const firstScreenHeight = computeDrawerFirstScreenHeight({
-    viewport: sheetViewportHeight || cachedOpeningLayout?.viewportHeight || windowHeight,
-    bottomInset: insets.bottom,
-    firstSectionHeaderHeight: hasVisibleSections
-      ? firstSectionHeaderHeight || cachedOpeningLayout?.firstSectionHeaderHeight || DEFAULT_SECTION_HEADER_HEIGHT
-      : null,
-    sectionTopPadding: spacing[3],
-    sectionMargin: spacing[2],
-  });
+  // The phone split's pane fits the board to the pane's height instead: the tick
+  // row stays right under the board, and the favourite/share row and the sections
+  // sit just below the fold. Only with sections to scroll to, with the controls
+  // under the board, and with a plain second row (Put on the wall or Fell / Sent
+  // keep their place on screen).
+  const fitsBoardToHeight =
+    isPane &&
+    fitBoardToPaneHeight &&
+    hasVisibleSections &&
+    !controlsAbove &&
+    Array.isArray(actionBarLayout.secondaryRow) &&
+    actionBarLayout.secondaryRow.length > 0;
+  const firstScreenViewport = sheetViewportHeight || cachedOpeningLayout?.viewportHeight || windowHeight;
+  const firstScreenHeight = fitsBoardToHeight
+    ? computeFitToHeightFirstScreenHeight({
+        viewport: firstScreenViewport,
+        bottomInset: insets.bottom,
+        belowFoldRowHeight: ACTION_BAR_SECONDARY_ROW_HEIGHT,
+      })
+    : computeDrawerFirstScreenHeight({
+        viewport: firstScreenViewport,
+        bottomInset: insets.bottom,
+        firstSectionHeaderHeight: hasVisibleSections
+          ? firstSectionHeaderHeight || cachedOpeningLayout?.firstSectionHeaderHeight || DEFAULT_SECTION_HEADER_HEIGHT
+          : null,
+        sectionTopPadding: spacing[3],
+        sectionMargin: spacing[2],
+      });
   // Named because the wall-state callout needs it too: it hangs off the header's
   // measured bottom edge, and that measurement is relative to the a11y-trap
   // wrapper INSIDE this padding, not to the first screen itself.
@@ -1804,23 +1825,47 @@ export function PlayCore({
     [firstScreenHeight, sheetViewportHeight, windowHeight, insets.bottom, insets.top],
   );
 
-  // The phone split swaps this route for the pane mid-read; the pane picks up
-  // where the climber was (see player-scroll-handoff).
+  const ascentCount = displayedClimb?.userAscents ?? 0;
+
+  const angleSelectorVisible = activeSubDrawer === 'angleSelector';
+  const climberLogsOpen = climberLogsClimbUuid !== null && climberLogsClimbUuid === displayedClimbUuid;
+
+  // The phone split swaps this route for the pane mid-read; the pane picks up the
+  // same climb where the climber was, and waits while anything here is open (see
+  // route-player-handoff).
   const readScrollOffset = useCallback(() => scrollYSV.value, [scrollYSV]);
-  const handleScrollContentSizeChange = usePlayerScrollHandoff({
+  const routeHasOpenWork =
+    isTickBarActive ||
+    activeSubDrawer !== 'none' ||
+    addBetaVideoOpen ||
+    addToPlaylistOpen ||
+    reportClimbOpen ||
+    sectionsSettingsOpen ||
+    climberLogsOpen ||
+    fullLogbookClimbUuid !== null ||
+    bleControlVisible;
+  const routePreview = useMemo(
+    () =>
+      drawerPreviewItem
+        ? {
+            item: drawerPreviewItem,
+            suggestionSource: drawerPreviewSuggestionSource,
+            isWallClimb: drawerPreviewIsWallClimb,
+          }
+        : null,
+    [drawerPreviewItem, drawerPreviewSuggestionSource, drawerPreviewIsWallClimb],
+  );
+  const handleScrollContentSizeChange = useRoutePlayerHandoff({
     isPane,
     acceptsHandoff: acceptsScrollHandoff,
+    busy: routeHasOpenWork,
     displayedClimbUuid,
+    preview: routePreview,
     scrollRef,
     readScrollOffset,
     viewportHeight: sheetViewportHeight || windowHeight,
     requestBelowFoldContent,
   });
-
-  const ascentCount = displayedClimb?.userAscents ?? 0;
-
-  const angleSelectorVisible = activeSubDrawer === 'angleSelector';
-  const climberLogsOpen = climberLogsClimbUuid !== null && climberLogsClimbUuid === displayedClimbUuid;
   const showPanePlaceholder = shouldShowPanePlaceholder(isPane, displayedClimb != null);
 
   // Controls region — gated by the switch-board overlay when the displayed

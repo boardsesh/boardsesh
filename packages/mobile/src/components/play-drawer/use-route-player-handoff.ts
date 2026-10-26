@@ -1,26 +1,31 @@
 import { useCallback, useEffect, useRef, type RefObject } from 'react';
 import {
   PLAYER_SCROLL_HANDOFF_TTL_MS,
-  registerRoutePlayerScroll,
+  publishRoutePlayerBusy,
+  registerRoutePlayer,
   takePlayerScrollHandoff,
   usePendingPlayerScrollHandoff,
-} from './player-scroll-handoff';
+  type RoutePlayerPreview,
+} from './route-player-handoff';
 
 type ScrollTarget = { scrollTo: (options: { y: number; animated: boolean }) => void };
 
 /**
- * The player's side of `player-scroll-handoff`. The route player registers its
- * live offset; a pane that `acceptsHandoff` takes an armed offset for the climb
- * it shows, asks for the below-fold sections (they mount lazily, and the offset
- * usually points into them) and scrolls there once its content is tall enough.
+ * The player's side of `route-player-handoff`. The route player registers its
+ * live state (climb, preview, offset) and publishes whether it is busy; a pane
+ * that `acceptsHandoff` takes an armed offset for the climb it shows, asks for
+ * the below-fold sections (they mount lazily, and the offset usually points into
+ * them) and scrolls there once its content is tall enough.
  *
  * Returns the ScrollView's `onContentSizeChange`. Inert unless a handoff is
  * armed, which only the phone split's route-to-pane swap does.
  */
-export function usePlayerScrollHandoff({
+export function useRoutePlayerHandoff({
   isPane,
   acceptsHandoff,
+  busy,
   displayedClimbUuid,
+  preview,
   scrollRef,
   readScrollOffset,
   viewportHeight,
@@ -28,7 +33,10 @@ export function usePlayerScrollHandoff({
 }: {
   isPane: boolean;
   acceptsHandoff: boolean;
+  /** A sheet, sub-drawer or tick composer is open on the route. */
+  busy: boolean;
   displayedClimbUuid: string | undefined;
+  preview: RoutePlayerPreview | null;
   scrollRef: RefObject<ScrollTarget | null>;
   readScrollOffset: () => number;
   viewportHeight: number;
@@ -36,6 +44,8 @@ export function usePlayerScrollHandoff({
 }): (contentWidth: number, contentHeight: number) => void {
   const displayedClimbUuidRef = useRef(displayedClimbUuid);
   displayedClimbUuidRef.current = displayedClimbUuid;
+  const previewRef = useRef(preview);
+  previewRef.current = preview;
   const readScrollOffsetRef = useRef(readScrollOffset);
   readScrollOffsetRef.current = readScrollOffset;
   const viewportHeightRef = useRef(viewportHeight);
@@ -43,11 +53,15 @@ export function usePlayerScrollHandoff({
 
   useEffect(() => {
     if (isPane) return undefined;
-    return registerRoutePlayerScroll(() => {
-      const climbUuid = displayedClimbUuidRef.current;
-      return climbUuid ? { climbUuid, offsetY: readScrollOffsetRef.current() } : null;
-    });
+    return registerRoutePlayer(() => ({
+      climbUuid: displayedClimbUuidRef.current ?? null,
+      offsetY: readScrollOffsetRef.current(),
+      preview: previewRef.current,
+    }));
   }, [isPane]);
+  useEffect(() => {
+    if (!isPane) publishRoutePlayerBusy(busy);
+  }, [isPane, busy]);
 
   const pendingHandoff = usePendingPlayerScrollHandoff();
   const restoreRef = useRef<{ offsetY: number; takenAt: number } | null>(null);

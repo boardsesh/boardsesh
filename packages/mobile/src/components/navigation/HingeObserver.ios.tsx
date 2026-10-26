@@ -18,8 +18,9 @@ const HINGE_MODIFIERS = [onHingeChange(handleHingeChange)];
  * keeps only "half open or not", so the angle stream never re-renders React.
  *
  * SwiftUI fires the modifier when the view appears (and again on every change),
- * so a tab whose view comes back on screen republishes the current status. A
- * no-op on devices without a hinge and in builds made before Xcode 27.1.
+ * so a fresh mount publishes the current status. Mounted once, by
+ * `PhoneSplitHingeObserver`. A no-op on devices without a hinge and in builds
+ * made before Xcode 27.1.
  */
 export function HingeObserver() {
   return (

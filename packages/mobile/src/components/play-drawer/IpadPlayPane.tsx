@@ -28,7 +28,7 @@ import { spacing } from '../../theme/tokens';
  * from DrawerHostProvider so the pane and the compact bottom sheet stay identical;
  * the sheet is not mounted at regular width (see drawer-host-provider).
  *
- * `variant="phoneSplit"` is the same pane on the trailing half of the phone split
+ * `variant="phoneSplit"` is the same pane on the leading half of the phone split
  * (iPhone Duo open in landscape). There it is the current climb's home rather
  * than a selection's, so its empty states show the board unlit, or the board
  * picker when no board is chosen. The wall strip never shows there (a phone is
@@ -109,6 +109,7 @@ function IpadPlayPaneComponent({
         paneTopInset={!showStrip}
         paneEmptyState={paneEmptyState}
         acceptsScrollHandoff={acceptsScrollHandoff}
+        fitBoardToPaneHeight={phoneSplit}
       />
     </View>
   );

@@ -260,8 +260,8 @@ export function resolveDetailPaneSurface({
 }
 
 /**
- * The phone two-pane split: the active tab on the leading half and the player on
- * the trailing half. It exists for the iPhone Duo's inner display held in
+ * The phone two-pane split: the player on the leading half and the active tab on
+ * the trailing half, beside the tab rail. It exists for the iPhone Duo's inner display held in
  * landscape (951×669pt), the one iPhone window with room for a list and a board
  * side by side. A second live axis next to `widthClass`, which stays `compact` on
  * every phone so no iPad-only surface (popovers, the sidebar, the wall column)
@@ -312,18 +312,19 @@ export function resolvePhoneSplit({
 export const PHONE_SPLIT_FOLD_GUTTER = 24;
 
 export type PhoneSplitColumns = {
-  /** Width of the leading (tab content) column, ending at the hinge. */
-  contentWidth: number;
+  /** Distance from the leading edge to the hinge: the leading (player) column's width before any gutter. */
+  leadingWidth: number;
   /** Space each column keeps clear on its side of the hinge. */
   foldInset: number;
 };
 
 /**
- * The split sits on the hinge, the centre of the window: tab content takes the
- * leading half and the player the trailing half. The tab host spans the whole
- * window (the vertical tab rail floats over its trailing edge and arrives as a
- * safe-area inset), so the window centre is the host centre too. A half-open
- * hinge adds `PHONE_SPLIT_FOLD_GUTTER`, split evenly between the two columns.
+ * The split sits on the hinge, the centre of the window: the player takes the
+ * leading half and the tab content the trailing half, beside the rail. The tab
+ * host spans the whole window (the vertical tab rail floats over its trailing
+ * edge and arrives as a safe-area inset), so the window centre is the host
+ * centre too. A half-open hinge adds `PHONE_SPLIT_FOLD_GUTTER`, split evenly
+ * between the two columns.
  */
 export function resolvePhoneSplitColumns({
   windowWidth,
@@ -333,7 +334,7 @@ export function resolvePhoneSplitColumns({
   partiallyFolded: boolean;
 }): PhoneSplitColumns {
   return {
-    contentWidth: Math.round(windowWidth / 2),
+    leadingWidth: Math.round(windowWidth / 2),
     foldInset: partiallyFolded ? PHONE_SPLIT_FOLD_GUTTER / 2 : 0,
   };
 }
