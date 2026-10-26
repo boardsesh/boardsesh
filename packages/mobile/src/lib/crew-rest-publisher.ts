@@ -280,18 +280,26 @@ export function createCrewRestPublisher({
           return;
         // A wall this phone moved itself, or a refilled queue: the shared rest
         // restarts (RESET), waits for a tick (CLEAR), or keeps its beat. A move
-        // made here spends a once-only advance, as the server's FIRE would have:
-        // a 4x4 set rest runs on the tick rule, so its move is always a CLEAR.
+        // made here spends a once-only advance, as the server's FIRE would have,
+        // including a set rest whose cadence a crewmate changed to on the minute.
         case 'fired':
         case 'queueEndedCleared': {
+          if (action.type === 'fired' && heldConfig().autoAdvanceOnce === true) {
+            enqueueInput(() => ({
+              action: 'CONFIGURE',
+              config: toCrewConfigInput(spendAdvanceOnce(heldConfig())),
+              anchor: action.anchorAfter === 'keep' ? 'KEEP' : action.anchorAfter === 'now' ? 'NOW' : 'CLEAR',
+              ...(action.anchorAfter === 'now' ? { elapsedMs: 0 } : {}),
+            }));
+            return;
+          }
           if (action.anchorAfter === 'keep') return;
-          const movedHere = action.type === 'fired';
           enqueueInput(() =>
             action.anchorAfter === 'now'
               ? { action: 'RESET', isRunning: true }
               : {
                   action: 'CONFIGURE',
-                  config: toCrewConfigInput(movedHere ? spendAdvanceOnce(heldConfig()) : heldConfig()),
+                  config: toCrewConfigInput(heldConfig()),
                   anchor: 'CLEAR',
                 },
           );

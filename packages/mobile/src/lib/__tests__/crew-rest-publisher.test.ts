@@ -933,6 +933,72 @@ describe('a crew clock’s once-only advance', () => {
     ]);
   });
 
+  it('spends it after a cadence edit when a solo fallback keeps the minute beat', async () => {
+    followCrewClock(setRestConfig);
+    autoReply = false;
+    expect(editCrewRestPacing({ mode: 'onTheMinute' })).toBe(true);
+    await flush();
+    expect(sent.at(-1)).toMatchObject({
+      action: 'CONFIGURE',
+      config: { mode: 'onTheMinute', autoAdvanceOnce: true },
+      anchor: 'NOW',
+    });
+    pendingReplies.shift()?.resolve({
+      applied: true,
+      change: {
+        restCadence: {
+          ...setRestConfig,
+          mode: 'onTheMinute',
+          source: 'settings',
+          isRunning: true,
+          anchorAt: String(T0),
+          pausedElapsedSeconds: 0,
+          lastTickQueueItemUuid: 'item-wall',
+          lastTickStatus: 'send',
+        },
+        revision: ++revision,
+        serverNow: String(currentNowMs),
+        isSnapshot: false,
+        action: 'CONFIGURE',
+      },
+    });
+    await flush();
+    sent.length = 0;
+
+    noteRestTimerAutoAdvanceFired(getRestTimerState().cycleId, 'onTheMinute', T0 + 180_000, T0 + 180_000, 'keep');
+    await flush();
+    expect(sent).toEqual([
+      {
+        action: 'CONFIGURE',
+        config: { mode: 'onTheMinute', targetSeconds: 180, autoAdvance: false, advanceOn: 'tick', source: 'settings' },
+        anchor: 'KEEP',
+      },
+    ]);
+  });
+
+  it('spends it when a local move starts another deadline rest', async () => {
+    followCrewClock({ ...setRestConfig, advanceOn: 'deadline' });
+    noteRestTimerAutoAdvanceFired(getRestTimerState().cycleId, 'afterTick', T0 + 180_000, T0 + 180_000, 'now');
+    await flush();
+    expect(sent).toEqual([
+      {
+        action: 'CONFIGURE',
+        config: { mode: 'afterTick', targetSeconds: 180, autoAdvance: false, advanceOn: 'deadline', source: 'stage' },
+        anchor: 'NOW',
+        elapsedMs: 0,
+      },
+    ]);
+  });
+
+  it('keeps it when a refilled queue resumes the minute beat without moving the wall', async () => {
+    followCrewClock({ ...setRestConfig, mode: 'onTheMinute' });
+    noteRestTimerQueueEnded();
+    clearRestTimerQueueEnded(T0 + 5_000, 'onTheMinute', 'keep');
+    await flush();
+    expect(sent).toEqual([]);
+    expect(getRestTimerState().crew?.config?.autoAdvanceOnce).toBe(true);
+  });
+
   it('keeps auto-advance on after a local move on a clock that advances every rest', async () => {
     const { autoAdvanceOnce: _once, ...everyRest } = setRestConfig;
     followCrewClock(everyRest);
