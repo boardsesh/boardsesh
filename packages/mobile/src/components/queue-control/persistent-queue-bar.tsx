@@ -58,9 +58,10 @@ export function PersistentQueueBar() {
   // Queue head only — the wall's lit climb lives in the top "On the wall" strip.
   const currentClimb = state.currentClimbQueueItem?.climb ?? null;
   const detailPaneOwnsQueue = resolveDetailPaneSurface({ width, widthClass, sidebarWidth: SIDEBAR_WIDTH }) === 'pane';
-  // The phone split (iPhone Duo opened in landscape) shows it in its pane too.
-  // Its bottom-chrome metrics take the iPad branch, which reports the native
-  // accessory as not presented, so the gate further down would let this bar in.
+  // The phone split (iPhone Duo open in landscape) shows the climb in its pane
+  // and in the native accessory along the bottom, never in this floating bar.
+  // Stated outright rather than left to the accessory gate below: a split whose
+  // metrics ever stop reporting the accessory must not bring the bar back.
   const phoneSplit = usePhoneSplit();
 
   // The iPad shell shows the current climb in the persistent right-column pane

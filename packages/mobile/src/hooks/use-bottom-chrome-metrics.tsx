@@ -79,15 +79,13 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
   // intentionally absent there.
   const { width: windowWidth } = useWindowDimensions();
   const { widthClass } = useDeviceLayout();
-  // The phone split (iPhone Duo opened in landscape) is the same shape: the tab
-  // bar is a vertical rail at the side and the player pane owns the current climb
-  // (the accessory is hidden there), so nothing floats at the bottom either.
-  const phoneSplit = usePhoneSplit();
-  const usesSidebar = insideTabs && (widthClass === 'regular' || phoneSplit);
+  const usesSidebar = insideTabs && widthClass === 'regular';
   const detailPaneOwnsQueue =
-    usesSidebar &&
-    (phoneSplit ||
-      resolveDetailPaneSurface({ width: windowWidth, widthClass, sidebarWidth: SIDEBAR_WIDTH }) === 'pane');
+    usesSidebar && resolveDetailPaneSurface({ width: windowWidth, widthClass, sidebarWidth: SIDEBAR_WIDTH }) === 'pane';
+  // The phone split (iPhone Duo open in landscape) keeps the phone path: the
+  // accessory stays presented, spanning the bottom of both halves, and the
+  // in-tab inset carries it. Only the tab bar leaves the bottom (it is a rail).
+  const phoneSplit = usePhoneSplit();
   // This provider samples the ROOT safe-area inset (window / home indicator
   // only). The in-tab inset — the one UIKit extends with the native tab bar +
   // accessory — is published by NativeTabContentInsetProbe from inside the
@@ -121,8 +119,10 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
         measuredTabContentInsetBottom,
         connectivityBannerHeight,
         restTimerArmed,
+        tabBarAtBottom: !phoneSplit,
       }),
     [
+      phoneSplit,
       variant,
       usesNativeTabBar,
       insets.bottom,

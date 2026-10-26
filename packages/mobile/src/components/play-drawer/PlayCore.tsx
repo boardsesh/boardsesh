@@ -1773,7 +1773,9 @@ export function PlayCore({
   // row stays right under the board, and the favourite/share row and the sections
   // sit just below the fold. Only with sections to scroll to, with the controls
   // under the board, and with a plain second row (Put on the wall or Fell / Sent
-  // keep their place on screen).
+  // keep their place on screen). `insets.bottom` here is the tab's own inset,
+  // which UIKit grows by the bottom accessory spanning the split, so the board
+  // and the tick row end above the accessory and the rest scrolls clear of it.
   const fitsBoardToHeight =
     isPane &&
     fitBoardToPaneHeight &&

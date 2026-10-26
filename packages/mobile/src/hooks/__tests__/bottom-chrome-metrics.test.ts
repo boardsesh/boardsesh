@@ -139,6 +139,48 @@ describe('computeBottomChromeMetrics', () => {
     expect(metrics.preSessionFooterBottom).toBe(IN_TAB_MEASURED_ACCESSORY_INSET);
   });
 
+  describe('phone split (iPhone Duo open in landscape, tab bar as a side rail)', () => {
+    // INFERRED: the Duo's landscape home indicator, and an in-tab inset that holds
+    // it plus the accessory spanning the bottom of the split, with no bar below.
+    const DUO_ROOT_INSET = 21;
+    const DUO_IN_TAB_ACCESSORY_INSET = DUO_ROOT_INSET + NATIVE_BOTTOM_ACCESSORY_HEIGHT;
+    const splitInputs = {
+      uiVariant: 'liquidGlass' as const,
+      usesNativeTabBar: true,
+      insetsBottom: DUO_ROOT_INSET,
+      insideTabs: true,
+      onAccessorySurface: true,
+      hasCurrentClimb: true,
+      nativeAccessoryPresented: true,
+      tabBarAtBottom: false,
+    };
+
+    it('keeps the accessory presented and clears it, with no floating JS bar', () => {
+      const metrics = computeBottomChromeMetrics({
+        ...splitInputs,
+        measuredTabContentInsetBottom: DUO_IN_TAB_ACCESSORY_INSET,
+      });
+      expect(metrics.nativeAccessoryPresented).toBe(true);
+      expect(metrics.nativeAccessoryVisible).toBe(true);
+      expect(metrics.jsQueueToolbarVisible).toBe(false);
+      expect(metrics.tabBarHeight).toBe(0);
+      expect(metrics.scrollBottomPadding).toBe(DUO_IN_TAB_ACCESSORY_INSET);
+      expect(metrics.floatingControlBottom).toBe(DUO_IN_TAB_ACCESSORY_INSET);
+    });
+
+    it('leaves the side rail out of the reconstruction, so lists get no 49pt dead band', () => {
+      const unmeasured = computeBottomChromeMetrics({ ...splitInputs, measuredTabContentInsetBottom: null });
+      expect(unmeasured.scrollBottomPadding).toBe(DUO_ROOT_INSET + NATIVE_BOTTOM_ACCESSORY_HEIGHT);
+      // The default still reserves a bottom bar, byte-for-byte.
+      const bottomBar = computeBottomChromeMetrics({
+        ...splitInputs,
+        tabBarAtBottom: undefined,
+        measuredTabContentInsetBottom: null,
+      });
+      expect(bottomBar.scrollBottomPadding).toBe(DUO_ROOT_INSET + TAB_BAR_HEIGHT + NATIVE_BOTTOM_ACCESSORY_HEIGHT);
+    });
+  });
+
   it('hides the bar but keeps tab-bar clearance on a pushed sub-route (Material)', () => {
     // A tab sub-route (session detail, filters): still inside the tabs (tab bar
     // present) but NOT an accessory surface, so no JS toolbar and no toolbar reserve —

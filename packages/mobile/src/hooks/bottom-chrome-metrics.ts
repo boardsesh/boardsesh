@@ -138,6 +138,15 @@ export type BottomChromeInputs = {
    * it — it anchors to {@link BottomChromeMetrics.restTimerBottom}.
    */
   restTimerArmed?: boolean;
+  /**
+   * Whether the native tab bar runs along the bottom. False in the phone split
+   * (iPhone Duo open in landscape), where UIKit draws it as a vertical rail and
+   * only the accessory, spanning the bottom of the content, takes bottom space.
+   * The unmeasured reconstruction then leaves the 49pt bar out instead of
+   * reserving dead space for it under every list. `true` (the default) leaves
+   * every other call site byte-identical.
+   */
+  tabBarAtBottom?: boolean;
 };
 
 export type BottomChromeMetrics = {
@@ -270,6 +279,7 @@ export function computeBottomChromeMetrics({
   measuredTabContentInsetBottom = null,
   connectivityBannerHeight = 0,
   restTimerArmed = false,
+  tabBarAtBottom = true,
 }: BottomChromeInputs): BottomChromeMetrics {
   // Regular-width iPad with the detail pane mounted: the left sidebar replaces
   // the bottom tab bar and the selected-climb pane replaces the floating queue
@@ -321,7 +331,7 @@ export function computeBottomChromeMetrics({
   // `tabBarBottom` is the full clearance from the screen bottom: the opaque raw
   // inset for NativeTabs, or raw inset + JS bar height for the fallback.
   const tabBarConstant = usesNativeTabBar ? TAB_BAR_HEIGHT : MATERIAL_TAB_BAR_HEIGHT;
-  const tabBarHeight = insideTabs && !usesSidebar ? tabBarConstant : 0;
+  const tabBarHeight = insideTabs && !usesSidebar && tabBarAtBottom ? tabBarConstant : 0;
   // Only the native tab bar overlays content (UIKit draws it over the scroll view);
   // the JS `MaterialTabBar` sits in flow. NativeTabs extends the IN-TAB safe-area
   // inset to include both the bar and its BottomAccessory (DEVICE_VERIFIED 139 =
@@ -354,7 +364,9 @@ export function computeBottomChromeMetrics({
   // the window's own inset) — e.g. a probe publish that raced a provider
   // teardown — without imposing an assumption-based floor on valid ones.
   const nativeChromeFallback =
-    insetsBottom + TAB_BAR_HEIGHT + (nativeAccessoryVisible ? NATIVE_BOTTOM_ACCESSORY_HEIGHT : 0);
+    insetsBottom +
+    (tabBarAtBottom ? TAB_BAR_HEIGHT : 0) +
+    (nativeAccessoryVisible ? NATIVE_BOTTOM_ACCESSORY_HEIGHT : 0);
   const nativeChromeBottom =
     measuredTabContentInsetBottom !== null && measuredTabContentInsetBottom >= insetsBottom
       ? measuredTabContentInsetBottom
