@@ -271,7 +271,7 @@ describe('production OTA workflow reliability', () => {
 
   it('keeps the gate watching exactly the paths that trigger the Railway apply job', () => {
     const railway = parse(readFileSync(resolve(WORKFLOW_DIR, 'railway-drift.yml'), 'utf8')) as {
-      on: { push: { paths: string[] } };
+      on: { push: { paths: string[]; branches: string[] } };
     };
     const gateSource = readFileSync(resolve(REPO_ROOT, 'scripts', 'mobile-ota-server-ready.mjs'), 'utf8');
     const listed = gateSource.match(/RAILWAY_APPLY_PATHS = \[([\s\S]*?)\];/)?.[1] ?? '';
@@ -279,6 +279,9 @@ describe('production OTA workflow reliability', () => {
     expect(gatePaths.map((path) => (path.endsWith('/') ? `${path}**` : path)).sort()).toEqual(
       [...railway.on.push.paths].sort(),
     );
+    // The gate only expects a run on the one branch whose pushes start one.
+    expect(railway.on.push.branches).toEqual(['main']);
+    expect(gateSource).toContain("RAILWAY_APPLY_REF = 'refs/heads/main'");
   });
 
   it('keeps the job-overhead allowance above the steps it is meant to cover', () => {

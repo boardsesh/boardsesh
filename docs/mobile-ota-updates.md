@@ -114,7 +114,8 @@ What the retry has to respect:
 - **One PR moves the image, the CLI and the promote script.** On that push, Railway Config rolls the
   server while production-deploy stages the OTA. `scripts/mobile-ota-server-ready.mjs` makes the
   staging publish and the promote step wait for the Railway Config run on the same commit, and
-  fail if it did not succeed. Every other push returns from it at once.
+  fail if it did not succeed. Every other push returns from it at once, including a
+  `release/next` sync that carries main's Railway change: Railway Config only runs for pushes to main.
 - **Assets are content-addressed from 3.2.0.** Uploads land at `{appId}/cas/<sha256>` and each update
   maps its files there (`updates.asset_mapping`). Updates published before the upgrade keep being
   served from their old folders. The first boot runs the Postgres migrations for this (`blobs`,

@@ -17,6 +17,8 @@ import { execFileSync } from 'node:child_process';
 
 const SHA = /^[0-9a-f]{40}$/;
 const RAILWAY_WORKFLOW_FILE = 'railway-drift.yml';
+/** The only ref whose pushes trigger the Railway Config apply job (railway-drift.yml `on.push.branches`). */
+const RAILWAY_APPLY_REF = 'refs/heads/main';
 /** Paths whose change on a push to main triggers the Railway Config apply job. */
 const RAILWAY_APPLY_PATHS = [
   'infra/railway/',
@@ -55,6 +57,16 @@ export function touchesRailwayApply(changedFiles) {
   );
 }
 
+/**
+ * True when a Railway Config run should exist for this push. Only pushes to main
+ * trigger one. A release/next sync merge carries main's Railway changes, but main's
+ * own push already rolled the server, so no run ever starts for the train's commit
+ * and waiting for one fails every train publish after such a sync.
+ */
+export function expectsRailwayRun({ ref, changedFiles }) {
+  return ref === RAILWAY_APPLY_REF && touchesRailwayApply(changedFiles);
+}
+
 function changedFilesInHead() {
   try {
     const output = execFileSync('git', ['diff', '--name-only', 'HEAD~1', 'HEAD'], {
@@ -85,7 +97,11 @@ async function railwayRunsFor(sha) {
     },
     signal: AbortSignal.timeout(20_000),
   });
-  if (!response.ok) throw new Error(`GitHub API answered HTTP ${response.status} listing Railway Config runs`);
+  if (!response.ok) {
+    // Name the reason: a 403 is either a missing `actions: read` or a secondary rate limit.
+    const reason = await response.text().catch(() => '');
+    throw new Error(`GitHub API answered HTTP ${response.status} listing Railway Config runs: ${reason.slice(0, 200)}`);
+  }
   const body = await response.json();
   if (!Array.isArray(body.workflow_runs)) throw new Error('GitHub API returned no workflow_runs array');
   return body.workflow_runs.map((run) => ({ id: run.id, status: run.status, conclusion: run.conclusion }));
@@ -94,7 +110,7 @@ async function railwayRunsFor(sha) {
 async function main() {
   const sha = process.env.GITHUB_SHA;
   if (!sha || !SHA.test(sha)) throw new Error('GITHUB_SHA must be a full commit SHA');
-  const expectRun = touchesRailwayApply(changedFilesInHead());
+  const expectRun = expectsRailwayRun({ ref: process.env.GITHUB_REF ?? '', changedFiles: changedFilesInHead() });
   const started = Date.now();
   let consecutiveReadFailures = 0;
   for (;;) {
