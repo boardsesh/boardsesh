@@ -130,6 +130,16 @@ A preview walks only its list.
 | Workout preview | No session yet | No session yet | None | None |
 | Wall tab kiosk | Lights the board; the room's current climb doesn't move | Same | None | None |
 
+### Retrying playlist pages
+
+Each page gets one retry for a transient connection failure and one for a short rate limit
+(#4840). A connection failure does not spend the rate-limit retry, or the other way around.
+Repeating either failure stops the load, so a page makes at most three requests. A rate-limit
+wait longer than three seconds fails immediately, and cancelling a load stops its retry sleep.
+Both budgets reset for the next page. The queue-replacement drain still stops after 20 pages;
+with mixed failures that can mean 60 requests, so long smart logbooks have no guaranteed
+headroom in the shared 60-per-minute limit. Only recommendations stop after six pages.
+
 ### Sorting and filtering a playlist
 
 A playlist (#6651) has the Climbs chip row under its hero: Filters, Grade, Your progress and

@@ -275,16 +275,86 @@ describe('drainPlaylistPages', () => {
     expect(46_000).toBeGreaterThan(PLAYLIST_RATE_LIMIT_MAX_WAIT_MS);
   });
 
-  // The attempt budget is per page and covers BOTH retry reasons: a rate limit
-  // arriving on the second attempt throws rather than sleeping again. That keeps
-  // a page bounded at two requests no matter how the failures interleave, which
-  // is the property that stops a rate limit from becoming an unbounded wait.
-  it('does not wait out a rate limit that arrives on the last allowed attempt', async () => {
+  it.each([
+    {
+      order: 'transport then rate limit',
+      errors: [makeTransportError(), makeRateLimitError(1)],
+      expectedWaits: [600, 1000],
+    },
+    {
+      order: 'rate limit then transport',
+      errors: [makeRateLimitError(1), makeTransportError()],
+      expectedWaits: [1000, 600],
+    },
+  ])('recovers from $order without spending the other retry budget', async ({ errors, expectedWaits }) => {
     const sleep = makeImmediateSleep();
     const fetchPage = vi
       .fn<(args: { page: number }) => Promise<{ climbs: Climb[]; hasMore: boolean }>>()
-      .mockRejectedValueOnce(makeTransportError())
-      .mockRejectedValueOnce(makeRateLimitError(1));
+      .mockRejectedValueOnce(errors[0])
+      .mockRejectedValueOnce(errors[1])
+      .mockResolvedValueOnce({ climbs: makePage(0, 2), hasMore: false });
+
+    const result = await drainPlaylistPages({
+      fetchPage,
+      signal: new AbortController().signal,
+      pageSize: 2,
+      maxPages: 20,
+      isRetryable: (error) => error instanceof TypeError,
+      parseRetryAfterSeconds: parseRetryAfterSecondsForTest,
+      sleep,
+      random: () => 0,
+    });
+
+    expect(result.stopReason).toBe('complete');
+    expect(result.pagesFetched).toBe(1);
+    expect(result.climbs).toEqual(makePage(0, 2));
+    expect(fetchPage.mock.calls.map(([{ page }]) => page)).toEqual([0, 0, 0]);
+    expect(sleep.mock.calls.map(([waitMs]) => waitMs)).toEqual(expectedWaits);
+  });
+
+  it.each([
+    {
+      exhaustedClass: 'transport',
+      errors: [makeTransportError(), makeRateLimitError(1), makeTransportError()],
+    },
+    {
+      exhaustedClass: 'rate limit',
+      errors: [makeRateLimitError(1), makeTransportError(), makeRateLimitError(1)],
+    },
+  ])('stops when the $exhaustedClass retry is exhausted after mixed failures', async ({ errors }) => {
+    const sleep = makeImmediateSleep();
+    const fetchPage = vi
+      .fn<(args: { page: number }) => Promise<{ climbs: Climb[]; hasMore: boolean }>>()
+      .mockRejectedValueOnce(errors[0])
+      .mockRejectedValueOnce(errors[1])
+      .mockRejectedValueOnce(errors[2])
+      .mockResolvedValueOnce({ climbs: makePage(0, 2), hasMore: false });
+
+    await expect(
+      drainPlaylistPages({
+        fetchPage,
+        signal: new AbortController().signal,
+        pageSize: 2,
+        maxPages: 20,
+        // A spent rate-limit retry cannot fall back to this permissive predicate.
+        isRetryable: () => true,
+        parseRetryAfterSeconds: parseRetryAfterSecondsForTest,
+        sleep,
+      }),
+    ).rejects.toBe(errors[2]);
+
+    expect(fetchPage).toHaveBeenCalledTimes(3);
+    expect(sleep).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not spend the transport retry on repeated short rate limits', async () => {
+    const sleep = makeImmediateSleep();
+    const rateLimitError = makeRateLimitError(1);
+    const fetchPage = vi
+      .fn<(args: { page: number }) => Promise<{ climbs: Climb[]; hasMore: boolean }>>()
+      .mockRejectedValueOnce(rateLimitError)
+      .mockRejectedValueOnce(rateLimitError)
+      .mockResolvedValueOnce({ climbs: makePage(0, 2), hasMore: false });
 
     await expect(
       drainPlaylistPages({
@@ -292,15 +362,43 @@ describe('drainPlaylistPages', () => {
         signal: new AbortController().signal,
         pageSize: 100,
         maxPages: 30,
-        isRetryable: (error) => error instanceof TypeError,
-        parseRetryAfterSeconds: (error) => parseRetryAfterSecondsForTest(error),
+        isRetryable: () => true,
+        parseRetryAfterSeconds: parseRetryAfterSecondsForTest,
         sleep,
       }),
-    ).rejects.toThrow(/Rate limit exceeded/);
+    ).rejects.toBe(rateLimitError);
 
     expect(fetchPage).toHaveBeenCalledTimes(PLAYLIST_PAGE_MAX_ATTEMPTS);
-    // Only the transport backoff slept. The rate limit was never waited out.
     expect(sleep).toHaveBeenCalledTimes(1);
+  });
+
+  it('resets both retry budgets for each page', async () => {
+    const sleep = makeImmediateSleep();
+    const fetchPage = vi
+      .fn<(args: { page: number }) => Promise<{ climbs: Climb[]; hasMore: boolean }>>()
+      .mockRejectedValueOnce(makeTransportError())
+      .mockRejectedValueOnce(makeRateLimitError(1))
+      .mockResolvedValueOnce({ climbs: makePage(0, 2), hasMore: true })
+      .mockRejectedValueOnce(makeRateLimitError(1))
+      .mockRejectedValueOnce(makeTransportError())
+      .mockResolvedValueOnce({ climbs: makePage(1, 2), hasMore: false });
+
+    const result = await drainPlaylistPages({
+      fetchPage,
+      signal: new AbortController().signal,
+      pageSize: 2,
+      maxPages: 20,
+      isRetryable: (error) => error instanceof TypeError,
+      parseRetryAfterSeconds: parseRetryAfterSecondsForTest,
+      sleep,
+      random: () => 0,
+    });
+
+    expect(result.stopReason).toBe('complete');
+    expect(result.pagesFetched).toBe(2);
+    expect(result.climbs).toHaveLength(4);
+    expect(fetchPage.mock.calls.map(([{ page }]) => page)).toEqual([0, 0, 0, 1, 1, 1]);
+    expect(sleep.mock.calls.map(([waitMs]) => waitMs)).toEqual([600, 1000, 1000, 600]);
   });
 
   it('reports a caller-requested stop as caller-stop, not the runaway page cap', async () => {
