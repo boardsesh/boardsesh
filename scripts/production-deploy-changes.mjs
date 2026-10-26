@@ -65,8 +65,9 @@ function isProductionDeployWatchdogFile(filePath) {
 
 function isProductionDeployTestFile(filePath) {
   return (
-    filePath === 'scripts/__tests__/docker-build-release-stamp.test.ts' ||
-    filePath === 'scripts/__tests__/production-deploy-serial-plan.test.ts' ||
+    // Direct Vitest suites in this directory are CI inputs, including new ones.
+    // Keep runtime scripts and nested fixtures subject to normal classification.
+    /^scripts\/__tests__\/[^/]+\.test\.ts$/.test(filePath) ||
     filePath === 'scripts/production-backend-smoke.test.mjs' ||
     filePath === 'scripts/production-deploy-changes.test.mjs' ||
     filePath === 'scripts/production-web-deploy-targets.test.mjs' ||

@@ -207,6 +207,58 @@ void test('keeps production deploy unit tests CI-only', () => {
   }
 });
 
+for (const filePath of [
+  'scripts/__tests__/production-deploy-web-targets.test.ts',
+  'scripts/__tests__/static-asset-deploy-origin.test.ts',
+  'scripts/__tests__/future-deploy-contract.test.ts',
+]) {
+  void test(`keeps ${filePath} CI-only without an exact-path exception`, () => {
+    assert.deepEqual(classifyChangedFiles([filePath]), {
+      web: false,
+      backend: false,
+      app: false,
+      ota: false,
+      cloudflare: false,
+      staticAssets: false,
+    });
+  });
+}
+
+void test('limits the script test exclusion to direct test filenames', () => {
+  for (const filePath of [
+    'scripts/__tests__/runtime.ts',
+    'scripts/__tests__/fixture.test.ts.json',
+    'scripts/__tests__/nested/fixture.test.ts',
+    'nested/scripts/__tests__/fixture.test.ts',
+    'scripts/lib/deploy-runtime.ts',
+    'packages/web/app/page.tsx',
+  ]) {
+    assert.equal(classifyChangedFiles([filePath]).web, true, `${filePath} must remain web-affecting`);
+  }
+});
+
+void test('script tests alongside runtime code still deploy the runtime targets', () => {
+  for (const runtimePath of ['packages/backend/src/index.ts', 'packages/mobile/app/index.tsx']) {
+    assert.deepEqual(
+      classifyChangedFiles(['scripts/__tests__/future-deploy-contract.test.ts', runtimePath]),
+      classifyChangedFiles([runtimePath]),
+    );
+  }
+});
+
+void test('script tests alongside deploy controls still affect every target', () => {
+  for (const controlPath of ['.github/workflows/production-deploy.yml', 'scripts/production-deploy-changes.mjs']) {
+    assert.deepEqual(classifyChangedFiles(['scripts/__tests__/future-deploy-contract.test.ts', controlPath]), {
+      web: true,
+      backend: true,
+      app: true,
+      ota: true,
+      cloudflare: true,
+      staticAssets: true,
+    });
+  }
+});
+
 void test('treats every input of the app.boardsesh.com export as app-affecting', () => {
   // The export recipe and the manifest patcher it shells out to both decide what
   // the subdomain serves, so a change to either has to fire deploy-app-web (and

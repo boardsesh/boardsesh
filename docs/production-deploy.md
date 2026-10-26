@@ -750,6 +750,11 @@ exactly one run queued behind the group and replaces it with each newer push, so
 therefore absorbs every push that was dropped while it waited; nothing is
 skipped.
 
+With a usable baseline, changes confined to direct `scripts/__tests__/*.test.ts` suites do not
+select a production deploy target. Tests outside that directory keep their explicit exclusions.
+The exclusion applies per file: runtime changes in the same commit still deploy, and changes to
+the production workflow or its detector still select every target.
+
 ## The failure mode: a run that holds the group without running
 
 `cancel-in-progress: false` protects a run that is doing nothing just as firmly
