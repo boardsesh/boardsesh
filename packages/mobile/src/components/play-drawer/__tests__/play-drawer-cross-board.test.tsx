@@ -188,7 +188,7 @@ vi.mock('react-native-mmkv', () => {
   };
 });
 vi.mock('react-native-gesture-handler', () => ({
-  ScrollView: ({ children, ...props }: { children?: ReactNode } & Props) => {
+  LegacyScrollView: ({ children, ...props }: { children?: ReactNode } & Props) => {
     recorded.scroll.push(props);
     return createElement('div', null, children);
   },

@@ -747,6 +747,12 @@ is fine. A navigator _below_ the modal you're standing in needs the dismiss firs
 
 ### Player swipe dismissal
 
+The player's scroll container uses RNGH 3's `LegacyScrollView`, because its
+dismiss, carousel, pinch and zoom-pan gestures still use the builder API.
+RNGH 3's default `ScrollView` uses the hook API; relations cannot cross those
+APIs, so the native scroll cancels the dismiss gesture (#6901). Keep the scroll
+container and its related gestures on the same API when migrating them.
+
 The player keeps its native opening and chevron-close transitions. A downward
 swipe instead owns one Reanimated translation for the entire route surface,
 including its opaque backing and glass. `use-drawer-dismiss-gesture` continues

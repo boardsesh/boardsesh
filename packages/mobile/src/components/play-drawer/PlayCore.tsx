@@ -20,7 +20,9 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
-import { ScrollView, GestureDetector, Gesture } from 'react-native-gesture-handler';
+// The player's builder gestures need the legacy scroll handler: RNGH 3's
+// default ScrollView uses the hook API, which cannot share their relations.
+import { LegacyScrollView as ScrollView, GestureDetector, Gesture } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { scopedRouter as router } from '../../lib/routing/scoped-navigation';
 import { useTranslation } from 'react-i18next';
