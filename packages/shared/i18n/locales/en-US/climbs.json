@@ -504,6 +504,11 @@
       "pinChip": "Pin {{name}} to the top row",
       "unpinChip": "Unpin {{name}} from the top row",
       "recentDescription": "Your last 10 searches will show here.",
+      "ratingAtLeast": "{{count}}★+",
+      "quickFilters": {
+        "title": "Quick filters",
+        "footer": "Switched-on filters show as chips above the list."
+      },
       "established2plus": "Established 2+",
       "benchmark": "Benchmarks",
       "showCount_one": "Show {{count}} climb",
