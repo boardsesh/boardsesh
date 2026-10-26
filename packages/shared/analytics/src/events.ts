@@ -907,7 +907,8 @@ export const SHARED_EVENTS = {
   // — occluded, laid out past the sheet's detent, or swallowed by a wedged
   // presentation. This one alone means the handler chain broke in between.
   // Without the pair, a "switching boards did nothing" report is unfalsifiable.
-  // Props: { boardId?, historyCount }.
+  // Props: { boardId?, historyCount }. The landscape iPad player's side panel
+  // sends { boardId?, surface: 'player_side_panel' } instead: it has no history.
   BoardSwapTapped: 'Board Swap Tapped',
   BoardSwapInvokedFromSheet: 'Board Swap Invoked From Sheet',
   // Closes the pair above: the swap actually landed (or didn't). Nine different

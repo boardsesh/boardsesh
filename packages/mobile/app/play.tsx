@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, StyleSheet, useWindowDimensions } from 'react-native';
 import Animated from 'react-native-reanimated';
-import { Link, router } from 'expo-router';
+import { Link } from 'expo-router';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { ScreenBackground } from '../src/components/ScreenBackground';
 import { PlayDrawer } from '../src/components/play-drawer';
@@ -26,13 +26,12 @@ import { holdUntilLaunchReady } from '../src/components/launch-update/hold-until
 import { useReportRoutePlayerBusy } from '../src/components/play-drawer/route-player-handoff';
 import { useBlePickerHost } from '../src/providers/ble-picker-host';
 import { resolvePlayerArrangement } from '../src/components/play-drawer/play-drawer-layout';
-import { PlayerSidePanel, type PlayerSidePanelSegment } from '../src/components/play-drawer/PlayerSidePanel';
+import { PlayerSidePanel, type PlayerSidePanelHandle } from '../src/components/play-drawer/PlayerSidePanel';
 import type { PlayerSidePanelClimb } from '../src/components/play-drawer/play-drawer-types';
 
 // The side panel's queue has no sheet to fold away and nothing to wait on.
 const keepPanelOpen = () => {};
 const panelDismissed = () => dismissManagedSheetAndWait(null);
-const openBoardSwitcher = () => router.push('/boards');
 
 /**
  * Full-screen "now playing" player route (`presentation: 'transparentModal'`,
@@ -79,8 +78,9 @@ function PlayScreen() {
   const isNativeIpad = Platform.OS === 'ios' && Platform.isPad;
   const sideBySide =
     resolvePlayerArrangement({ width: windowWidth, height: windowHeight, isTablet: isNativeIpad }) === 'sideBySide';
-  // Every open starts on Up next, like Music's queue beside the artwork.
-  const [panelSegment, setPanelSegment] = useState<PlayerSidePanelSegment>('upNext');
+  // The panel owns its segment (it opens on Up next, like Music's queue beside
+  // the artwork); the queue button reaches it through this handle.
+  const sidePanelRef = useRef<PlayerSidePanelHandle>(null);
 
   const queueSheetRef = useRef<QueueSheetHandle>(null);
   const [mountQueue, setMountQueue] = useState(false);
@@ -106,10 +106,15 @@ function PlayScreen() {
   // With Up next already beside the board, the queue button picks that segment
   // instead of stacking a second copy of the queue over the player.
   const openQueue = useCallback(() => {
-    if (sideBySide) setPanelSegment('upNext');
+    if (sideBySide) sidePanelRef.current?.showUpNext();
     else presentQueue();
   }, [sideBySide, presentQueue]);
   const requestCloseQueue = useCallback(() => queueSheetRef.current?.dismiss(), []);
+  // Rotating into landscape with the queue sheet up would show the queue twice,
+  // the sheet over the panel's Up next. The panel takes over.
+  useEffect(() => {
+    if (sideBySide) requestCloseQueue();
+  }, [sideBySide, requestCloseQueue]);
   const dismissQueueAndWait = useCallback((): Promise<DismissAndWaitResult> => {
     return dismissManagedSheetAndWait(queueSheetRef.current);
   }, []);
@@ -203,25 +208,16 @@ function PlayScreen() {
   const renderSidePanel = useCallback(
     (displayed: PlayerSidePanelClimb | null) => (
       <PlayerSidePanel
+        ref={sidePanelRef}
         displayed={displayed}
-        segment={panelSegment}
-        onSegmentChange={setPanelSegment}
         queueBoard={queueBoard}
-        onSwitchBoard={openBoardSwitcher}
         onClimbPress={handlePanelClimbPress}
         onOpenActions={handlePanelOpenActions}
         onSuggestionPress={handlePanelSuggestionPress}
         onTickHistory={handlePanelTickHistory}
       />
     ),
-    [
-      panelSegment,
-      queueBoard,
-      handlePanelClimbPress,
-      handlePanelOpenActions,
-      handlePanelSuggestionPress,
-      handlePanelTickHistory,
-    ],
+    [queueBoard, handlePanelClimbPress, handlePanelOpenActions, handlePanelSuggestionPress, handlePanelTickHistory],
   );
 
   return (

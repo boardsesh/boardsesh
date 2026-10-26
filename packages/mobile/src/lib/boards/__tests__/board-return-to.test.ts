@@ -47,6 +47,11 @@ describe('resolveBoardReturnTo', () => {
     expect(resolveBoardReturnTo('/(tabs)/record')).toBe('/(tabs)/record');
   });
 
+  it('returns to the player after a board change from its side panel', () => {
+    expect(resolveBoardReturnTo('/play')).toBe('/play');
+    expect(resolveBoardReturnTo('/play/extra')).toBe('/(tabs)/climbs');
+  });
+
   it('returns to Home after a board change from its board card', () => {
     expect(resolveBoardReturnTo('/(tabs)/home')).toBe('/(tabs)/home');
   });

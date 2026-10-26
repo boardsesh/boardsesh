@@ -117,14 +117,20 @@ vi.mock('../../src/components/play-drawer', () => ({
     );
   },
 }));
-vi.mock('../../src/components/play-drawer/PlayerSidePanel', () => ({
-  PlayerSidePanel: ({ segment, onSegmentChange }: { segment: string; onSegmentChange: (segment: string) => void }) =>
-    createElement(
-      'div',
-      { 'data-testid': 'side-panel', 'data-segment': segment },
-      createElement('button', { onClick: () => onSegmentChange('logbook') }, 'Logbook segment'),
-    ),
-}));
+vi.mock('../../src/components/play-drawer/PlayerSidePanel', async () => {
+  const { useImperativeHandle, useState } = await import('react');
+  return {
+    PlayerSidePanel: ({ ref }: { ref: Ref<{ showUpNext: () => void }> }) => {
+      const [segment, setSegment] = useState('upNext');
+      useImperativeHandle(ref, () => ({ showUpNext: () => setSegment('upNext') }));
+      return createElement(
+        'div',
+        { 'data-testid': 'side-panel', 'data-segment': segment },
+        createElement('button', { onClick: () => setSegment('logbook') }, 'Logbook segment'),
+      );
+    },
+  };
+});
 vi.mock('../../src/components/play-drawer/QueueSheet', async () => {
   const { useImperativeHandle, useEffect } = await import('react');
   return {
@@ -590,6 +596,19 @@ describe('iPad player arrangement', () => {
     expect(screen.getByTestId('side-panel').getAttribute('data-segment')).toBe('upNext');
     expect(queueSheet.mounted).toBe(0);
     expect(queueSheet.present).not.toHaveBeenCalled();
+  });
+
+  it('folds an open queue sheet away when the iPad turns to landscape', () => {
+    Object.assign(device, { isPad: true, width: 1032, height: 1376 });
+    const { rerender } = renderPlayer();
+    fireEvent.click(screen.getByRole('button', { name: 'Open queue' }));
+    expect(queueSheet.present).toHaveBeenCalledTimes(1);
+    expect(queueSheet.dismiss).not.toHaveBeenCalled();
+
+    Object.assign(device, { width: 1376, height: 1032 });
+    rerender(createElement(PlayScreen));
+    expect(screen.getByTestId('side-panel')).toBeTruthy();
+    expect(queueSheet.dismiss).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the board on top in portrait and presents the queue sheet', () => {

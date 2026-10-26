@@ -275,11 +275,19 @@ function QueueListComponent({
     onDraggingChange?.(isDragging);
   }, [isDragging, onDraggingChange]);
 
+  // The sheet re-centres whenever its rows move while open. The side panel stays
+  // up for the whole session, so it re-centres only when it comes forward or the
+  // current climb changes: a crew add or a suggestion page landing must not yank
+  // a climber who scrolled away back to the current row.
+  const currentRowIndexRef = useRef(currentRowIndex);
+  currentRowIndexRef.current = currentRowIndex;
+  const scrollTrigger = presentation === 'panel' ? currentItemUuid : `${currentRowIndex}:${rows.length}`;
   useEffect(() => {
-    if (autoScrollOnMount && currentRowIndex >= 0 && rows.length > 0) {
+    const index = currentRowIndexRef.current;
+    if (autoScrollOnMount && index >= 0) {
       const timer = setTimeout(() => {
         flatListRef.current?.scrollToIndex?.({
-          index: currentRowIndex,
+          index,
           animated: true,
           viewPosition: 0.3,
         });
@@ -287,7 +295,7 @@ function QueueListComponent({
       return () => clearTimeout(timer);
     }
     return undefined;
-  }, [autoScrollOnMount, currentRowIndex, rows.length]);
+  }, [autoScrollOnMount, scrollTrigger]);
 
   const keyExtractor = useCallback((row: QueueListRow, index: number): string => {
     switch (row.type) {

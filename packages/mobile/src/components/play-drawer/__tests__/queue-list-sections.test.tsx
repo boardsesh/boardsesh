@@ -27,7 +27,9 @@ const feedFixture = vi.hoisted(() => ({ climbs: [] as Climb[] }));
 const scrollToIndex = vi.hoisted(() => vi.fn());
 const dragArgs = vi.hoisted(() => ({ calls: [] as Array<{ firstFutureRowIndex: number }> }));
 
-vi.mock('react-native', () => ({
+vi.mock('react-native', async () => ({
+  // The side panel's plain list renders like the sheet's.
+  FlatList: (await import('@expo/ui/community/bottom-sheet')).BottomSheetFlatList,
   useWindowDimensions: () => ({ fontScale: 1 }),
   View: ({ children, testID }: ViewProps) => createElement('div', { 'data-testid': testID }, children),
   Pressable: ({
@@ -139,9 +141,11 @@ function renderQueue(
   currentItemUuid: string | null,
   showFullHistory = false,
   autoScrollOnMount = false,
+  presentation: 'sheet' | 'panel' = 'sheet',
 ) {
   return render(
     createElement(QueueList, {
+      presentation,
       queue,
       currentItemUuid,
       board,
@@ -243,6 +247,43 @@ describe('QueueList section headers', () => {
       renderQueue(['h1', 'cur', 'f1'].map(item), 'cur', false, true);
       vi.advanceTimersByTime(400);
       expect(scrollToIndex).toHaveBeenCalledWith(expect.objectContaining({ index: 3 }));
+    });
+
+    it('re-centres the side panel only when the current climb changes, not when rows arrive', () => {
+      const props = (queue: ClimbQueueItem[], current: string) =>
+        createElement(QueueList, {
+          presentation: 'panel',
+          queue,
+          currentItemUuid: current,
+          board,
+          isEditMode: false,
+          showHistory: true,
+          showFullHistory: false,
+          selectedItems: new Set<string>(),
+          playlistSuggestionSource: null,
+          active: true,
+          autoScrollOnMount: true,
+          onToggleSelect: vi.fn(),
+          onClimbPress: vi.fn(),
+          onRemove: vi.fn(),
+          onShowFullHistory: vi.fn(),
+          onTickHistory: vi.fn(),
+          onSuggestionPress: vi.fn(),
+          reorderQueue: vi.fn(),
+        });
+      const { rerender } = render(props(['h1', 'cur', 'f1'].map(item), 'cur'));
+      vi.advanceTimersByTime(400);
+      expect(scrollToIndex).toHaveBeenCalledTimes(1);
+
+      // A crew member queues another climb: the climber's scroll stays put.
+      rerender(props(['h1', 'cur', 'f1', 'f2'].map(item), 'cur'));
+      vi.advanceTimersByTime(400);
+      expect(scrollToIndex).toHaveBeenCalledTimes(1);
+
+      // Next climb: the panel follows it.
+      rerender(props(['h1', 'cur', 'f1', 'f2'].map(item), 'f1'));
+      vi.advanceTimersByTime(400);
+      expect(scrollToIndex).toHaveBeenCalledTimes(2);
     });
 
     it('points the drag window at the first upcoming climb after the headers', () => {
