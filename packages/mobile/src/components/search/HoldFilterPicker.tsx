@@ -2,7 +2,7 @@ import { PressableSurface } from '../PressableSurface';
 import { useCallback, useMemo, type ReactNode } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
-import { usePhoneSplit } from '../../hooks/use-phone-split';
+import { useVerticalTabBar } from '../../hooks/use-vertical-tab-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import type { BoardName, HoldFilterMode, HoldFilterType } from '@boardsesh/shared-schema';
@@ -50,13 +50,13 @@ export function HoldFilterPicker({
   const { t } = useTranslation('climbs');
   const { systemColors } = useTheme();
   const windowInsetBottom = useWindowBottomInset();
-  // In the phone split (iPhone Duo open in landscape) the accessory stays up over
-  // this screen (hiding it collapses the side tab rail), and the tab's own inset
-  // carries it; everywhere else the accessory is hidden here and the window inset
-  // is the right floor.
-  const phoneSplit = usePhoneSplit();
+  // While the tab bar is a vertical rail (iPhone Duo, closed or open in landscape)
+  // the accessory stays up over this screen (hiding it collapses the rail), and the
+  // tab's own inset carries it. Everywhere else the accessory is hidden here and
+  // the window inset is the right floor.
+  const verticalTabBar = useVerticalTabBar();
   const { bottom: tabInsetBottom } = useSafeAreaInsets();
-  const controlsInsetBottom = phoneSplit ? tabInsetBottom : windowInsetBottom;
+  const controlsInsetBottom = verticalTabBar ? tabInsetBottom : windowInsetBottom;
   const {
     overrides: holdColorOverrides,
     shapes: holdShapeOverrides,

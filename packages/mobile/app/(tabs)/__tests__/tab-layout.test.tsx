@@ -913,6 +913,28 @@ describe('TabLayout', () => {
 
       expect(minimizeBehavior(container)).toBe('never');
     });
+
+    // Hiding the accessory beside a vertical rail collapses the rail to Climbs, so
+    // the filter boards keep it there and clear it through the tab's inset.
+    it.each([
+      ['closed', 466, 678, 84],
+      ['open in landscape', 951, 669, 84],
+    ])('keeps the accessory on the hold and zone filter boards on the %s Duo', (_pose, width, height, sideInset) => {
+      cfg.windowWidth = width;
+      cfg.windowHeight = height;
+      cfg.nativeAccessoryActive = true;
+      cfg.hasCurrentClimb = true;
+      act(() => publishNativeTabContentInsetSide(sideInset));
+
+      for (const route of ['holds', 'zone']) {
+        cfg.segments = ['(tabs)', 'climbs', route];
+        const { container, unmount } = render(<TabLayout />);
+        expect(container.querySelector('[data-tabs="true"]')?.getAttribute('data-bottom-accessory-hidden')).toBe(
+          'false',
+        );
+        unmount();
+      }
+    });
   });
 
   it('uses adaptive neutral colors for native Liquid Glass tab icons and labels', () => {

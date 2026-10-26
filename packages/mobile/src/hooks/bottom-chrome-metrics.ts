@@ -139,9 +139,10 @@ export type BottomChromeInputs = {
    */
   restTimerArmed?: boolean;
   /**
-   * Whether the native tab bar runs along the bottom. False in the phone split
-   * (iPhone Duo open in landscape), where UIKit draws it as a vertical rail and
-   * only the accessory, spanning the bottom of the content, takes bottom space.
+   * Whether the native tab bar runs along the bottom. False on iPhone Duo closed
+   * and open in landscape (`useVerticalTabBar`), where UIKit draws it as a
+   * vertical rail and only the accessory, along the bottom of the content, takes
+   * bottom space.
    * The unmeasured reconstruction then leaves the 49pt bar out instead of
    * reserving dead space for it under every list. `true` (the default) leaves
    * every other call site byte-identical.

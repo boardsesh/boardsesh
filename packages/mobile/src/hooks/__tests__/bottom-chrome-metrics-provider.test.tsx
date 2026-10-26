@@ -39,6 +39,8 @@ vi.mock('../use-bottom-accessory', () => ({
   }),
 }));
 vi.mock('../use-device-layout', () => ({ useDeviceLayout: () => ({ widthClass: cfg.widthClass }) }));
+// A horizontal tab bar; the Duo's vertical rail is covered in bottom-chrome-metrics.test.ts.
+vi.mock('../use-vertical-tab-bar', () => ({ useVerticalTabBar: () => false }));
 // Mock the sticky presence wrapper to a plain flag — its internal grace-timer
 // state is irrelevant to what this test pins (the fan-out), and this keeps the
 // presence input deterministic and free of the queue-provider chain.
