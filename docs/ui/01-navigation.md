@@ -87,13 +87,34 @@ The bar itself depends on the device:
   it stays on screen at the right when the bar collapses, as Music's Search does;
   the collapsed accessory fills the room left between it and the selected tab. On iOS 18 the bar has neither, and the current climb rides
   the floating JS queue bar just above the native bar.
+- **Platter controls (iOS 26):** the open platter shows the lightbulb and the tick. The
+  collapsed platter has one 44pt slot: the bulb while a board is bound and nobody holds it,
+  otherwise the tick. A mark on the thumbnail's top-trailing corner shows who holds the board in
+  both placements: amber `lightbulb.fill` (LED board you hold), brand-tone `pin.fill` (board with
+  no lights you hold), `person.fill` (a teammate holds it), nothing when it is free. The collapsed
+  platter's climb link reads the connection aloud; the open one leaves that to its bulb. The
+  platter's bulb and tick send `placement` (`regular` / `inline`) on `Board Connect Tapped` and
+  `Quick Tick Opened`.
+- **Climbs header (Liquid Glass):** while you hold the board and no other climb is lit on the
+  wall, the centre slot shows a "You have the board" capsule (brand-tone pin and "You have the
+  wall" for a board with no lights). The "On the wall" capsule keeps priority. The tap opens the
+  Bluetooth controls sheet when this device holds the radio link and logs `Board Controls Opened
+  {surface: 'header_pill'}`; otherwise it is plain text. Both capsules share the
+  `HeaderStatusCapsule` glass shell. Material and Android are unchanged: their bar never
+  collapses, so its bulb stays visible.
+  The header hides the Climbs title by drawing it in a clear colour
+  (`HIDDEN_HEADER_TITLE_STYLE`), not with an empty title view: the native stack keeps one
+  centre view per screen, and a capsule swapped into an empty one kept its zero size and
+  stayed invisible until the tab was left and re-entered.
 - **Climbs search, every platform:** the Climbs screen has no search field and
   its header draws no "Climbs" title (`NativeRootHeader` `titleHidden`; the tab
   names the screen). The climb-name search is the first row of the Filters
   sheet, as in the Logbook. A second tap on the Climbs tab with the list showing
   opens Filters without the keyboard (`useTabReselect`, which listens for the tab
   bar's re-press; the JS tablet rails navigate without one, so there the Filters
-  chip is the way in). A typed name shows as the first token under the chips and
+  chip is the way in). Known gap: on iOS 27, while the bar is collapsed, a second tap on the
+  prominent Climbs tab still expands the bar instead of only opening Filters (#6885; UIKit expands
+  a minimized bar on a tab tap, and scroll-to-top and the Filters sheet were ruled out on iOS 26.5). A typed name shows as the first token under the chips and
   counts in the Filters badge.
 - **Other phones:** Material, and Liquid Glass forced on Android, use JS `Tabs`
   with `MaterialTabBar`.

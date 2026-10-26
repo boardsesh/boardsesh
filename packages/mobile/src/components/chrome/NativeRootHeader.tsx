@@ -15,7 +15,7 @@ import {
   NativeTitleMaxWidthContext,
 } from './native-header-action-context';
 import { nativeTitleMaxWidth } from './native-title-bound';
-import { renderHiddenHeaderTitle } from './hidden-header-title';
+import { HIDDEN_HEADER_TITLE_STYLE } from './hidden-header-title';
 
 /** UIKit owns title collapse, edge effects, Dynamic Type and the status-bar tap. */
 export function NativeRootHeader({
@@ -117,8 +117,8 @@ export function NativeRootHeader({
           headerLargeTitleShadowVisible: false,
           // Route layouts own the title even while a root modal is focused.
           ...(title === undefined ? {} : { title }),
-          headerTitle: hasCenterContent ? renderCenterContent : titleHidden ? renderHiddenHeaderTitle : undefined,
-          headerTitleStyle: { color: systemColors.label },
+          headerTitle: hasCenterContent ? renderCenterContent : undefined,
+          headerTitleStyle: titleHidden ? HIDDEN_HEADER_TITLE_STYLE : { color: systemColors.label },
           headerLargeTitleStyle: { color: systemColors.label },
           headerLeft:
             leftActions && !leftActionsStandalone

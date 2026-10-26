@@ -86,9 +86,19 @@ older iPhone is the variant with the chrome degraded, not Material.
   - `nativeAccessory`: the `BottomAccessory` platter carries the current climb (iOS 26 only).
     Like Apple Music's platter, it shows a 32pt thumbnail and the climb name over a byline (grade ·
     sends, or grade · rating when nobody has sent it), and fills the frame UIKit gives it, with
-    Music's insets (artwork 16pt in, last control ~30pt from the right edge). Open, the lightbulb
-    and the tick sit at the trailing edge; collapsed, the tick alone. The bulb is drawn solid like
-    Music's controls, and outlined when off while Differentiate Without Color is on.
+    Music's insets (artwork 16pt in, last control ~30pt from the right edge). Open
+    (`regular`), the lightbulb and the tick sit at the trailing edge. Collapsed (`inline`) there is
+    one 44pt control slot: the bulb while a board is bound and nobody holds it, otherwise the tick
+    (you hold it, a teammate does, or no board is bound). The bulb is drawn solid like Music's
+    controls, and outlined when off while Differentiate Without Color is on. Both placements put a
+    connection mark on the thumbnail's top-trailing corner: a 14pt neutral disc (`CornerStatusDisc`,
+    shared with `BoardDriverAvatar`'s badge) with a 9pt glyph. `lightbulb.fill` in amber
+    (`brandColors.warning`) is an LED board you hold, `pin.fill` in the brand tone is a board with
+    no lights you hold, `person.fill` in secondary label is a teammate holding it, and no mark
+    (kept mounted at opacity 0, because UIKit snapshots the platter between placements) means free.
+    The shape carries the state, so it survives Differentiate Without Color; amber only ever means
+    lit LEDs. The collapsed platter's climb link also speaks the connection as its accessibility
+    value; the open one doesn't, because its bulb already does.
     Wherever it is false, including the native bar on iOS 18, the floating JS `PersistentQueueBar`
     carries the current climb, positioned above whichever bar is on screen.
 - Surfaces degrade in `GlassSurface` via `useEffectiveSurfaceMode()`: `glass` (iOS 26) → `blur`

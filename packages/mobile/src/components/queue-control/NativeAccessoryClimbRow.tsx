@@ -20,8 +20,14 @@ import { largeContentTitle } from './accessory-large-content-title';
 import { LogAscentToolbarButton } from './LogAscentToolbarButton';
 import { BoardControlIndicator } from './BoardControlIndicator';
 import { formatQuality, formatSends } from '../../lib/format-climb-stats';
-
-type AccessoryPlacement = 'regular' | 'inline';
+import { useBoardConnectionState } from '../ble/use-board-connection-state';
+import { AccessoryConnectionBadge } from './AccessoryConnectionBadge';
+import {
+  getBoardConnectionBadgeVisual,
+  getBoardConnectionLabel,
+  type BoardConnectionBadgeVisual,
+} from './board-control-indicator-state';
+import type { AccessoryPlacement } from '../../lib/analytics-board-connect';
 
 type NativeAccessoryClimbRowProps = {
   climb: Climb;
@@ -43,17 +49,31 @@ type ClimbLabelProps = {
   byline: string | null;
   thumbnailSize: number | null;
   boardConfig: BoardConfig | null;
+  connectionBadge: BoardConnectionBadgeVisual | null;
 };
 
 /**
  * Thumbnail, then the name over a byline, like a song over its artist in Apple
  * Music's platter: "V4 · 7.7k sends", or the rating when nobody has sent it.
  */
-function ClimbLabel({ climb, labelColor, bylineColor, byline, thumbnailSize, boardConfig }: ClimbLabelProps) {
+function ClimbLabel({
+  climb,
+  labelColor,
+  bylineColor,
+  byline,
+  thumbnailSize,
+  boardConfig,
+  connectionBadge,
+}: ClimbLabelProps) {
   return (
     <View style={styles.labelInner}>
       {thumbnailSize !== null ? (
-        <AccessoryClimbThumbnail climb={climb} boardConfig={boardConfig} size={thumbnailSize} />
+        // The connection mark rides the artwork's corner, so it costs the name no
+        // width in the 44pt collapsed platter.
+        <View style={{ width: thumbnailSize, height: thumbnailSize }}>
+          <AccessoryClimbThumbnail climb={climb} boardConfig={boardConfig} size={thumbnailSize} />
+          <AccessoryConnectionBadge visual={connectionBadge} />
+        </View>
       ) : null}
       <View style={styles.titleBlock}>
         <View style={styles.titleLine}>
@@ -116,7 +136,10 @@ function useAccessoryByline(climb: Climb, boardConfig: BoardConfig | null, grade
 /**
  * Content for the iOS 26 tab-bar bottom accessory (Liquid Glass variant only).
  * UIKit supplies the glass platter, so this stays bare: the current climb, then
- * the lightbulb (open platter only) and the tick at the trailing edge. The
+ * the lightbulb and the tick at the trailing edge. The collapsed platter has room
+ * for one control: the lightbulb while the board is free (so connecting stays one
+ * tap away), the tick once someone holds it. A mark on the thumbnail says who
+ * holds it, in both placements. The
  * displayed climb is resolved once by {@link QueueBottomAccessory} and passed in,
  * so this component never re-gates (a second gate could blank the live platter for
  * a frame, which UIKit snapshotted as doubled text). Tap-to-open is shared with
@@ -126,9 +149,11 @@ function useAccessoryByline(climb: Climb, boardConfig: BoardConfig | null, grade
  */
 export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAccessoryClimbRowProps) {
   const { boardConfig } = useDrawerHost();
-  const { systemColors } = useTheme();
+  const { systemColors, brandColors } = useTheme();
   const { resolveGrade } = useDisplayGrade();
   const { openPlay, preparePlay } = useAccessoryClimbTap();
+  const { t } = useTranslation('settings');
+  const { bluetooth, inAppBoardConnection, ledless, holderDisplayName } = useBoardConnectionState();
 
   const isInline = placement === 'inline';
   const rowHeight = isInline ? glassSize.inline : glassSize.standard;
@@ -137,6 +162,24 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
   // Boardsesh grade when the toggle is on and a trusted one exists.
   const currentFormattedGrade = resolveGrade(climb, boardConfig?.boardName).label;
   const byline = useAccessoryByline(climb, boardConfig, currentFormattedGrade);
+
+  const connectionBadge = getBoardConnectionBadgeVisual({
+    boardConnection: inAppBoardConnection,
+    connectedColor: brandColors.warning,
+    peerColor: systemColors.secondaryLabel,
+    ledless,
+    wallHeldColor: brandColors.primary,
+  });
+  // One slot when collapsed: the bulb only while there is a board to connect to
+  // and nobody holds it. With no board bound the bulb renders nothing, so the
+  // tick keeps the slot.
+  const collapsedSlotShowsBulb = bluetooth != null && inAppBoardConnection === 'disconnected';
+  // The open platter's bulb already speaks the state; collapsed, only the mark
+  // shows it, so the climb link says it.
+  const connectionValue =
+    isInline && inAppBoardConnection !== 'disconnected'
+      ? getBoardConnectionLabel(t, { boardConnection: inAppBoardConnection, ledless, holderDisplayName })
+      : undefined;
 
   // UIKit can omit the central zoom-source subtree from its accessory AX tree.
   // CPP metadata belongs to this existing visible row; ordinary captures and
@@ -155,6 +198,7 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
       <AccessoryPlayLink
         style={styles.tapClip}
         accessibilityLabel={climb.name}
+        accessibilityValue={connectionValue}
         onOpen={openPlay}
         onPrepare={preparePlay}
         zoomSourceRetained
@@ -171,22 +215,46 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
             byline={byline}
             thumbnailSize={thumbnailSize}
             boardConfig={boardConfig}
+            connectionBadge={connectionBadge}
           />
         </LargeContentViewer>
       </AccessoryPlayLink>
       {/* The trailing controls sit beside the climb gesture, never inside it, so
-          their 44pt tap targets are never stolen by the row's tap. The lightbulb
-          is the open platter's only: the collapsed one keeps the tick alone.
-          Long-press on the bulb opens the controls sheet, as on the other
-          lightbulbs now that a short press disconnects. */}
-      {isInline ? null : (
+          their 44pt tap targets are never stolen by the row's tap. Long-press on
+          the bulb opens the controls sheet, as on the other lightbulbs now that a
+          short press disconnects. Collapsed, the one slot swaps its child in place
+          and the row never remounts: UIKit snapshots the platter between
+          placements. */}
+      {isInline ? (
         <View style={[styles.controlSlot, { width: glassSize.inline, height: rowHeight }]}>
-          <BoardControlIndicator size={glassSize.inline} iconSize={22} enableLongPress solidGlyphs />
+          {collapsedSlotShowsBulb ? (
+            <BoardControlIndicator
+              size={glassSize.inline}
+              iconSize={22}
+              enableLongPress
+              solidGlyphs
+              placement={placement}
+            />
+          ) : (
+            <LogAscentToolbarButton climb={climb} size={glassSize.inline} iconSize={24} placement={placement} />
+          )}
         </View>
+      ) : (
+        <>
+          <View style={[styles.controlSlot, { width: glassSize.inline, height: rowHeight }]}>
+            <BoardControlIndicator
+              size={glassSize.inline}
+              iconSize={22}
+              enableLongPress
+              solidGlyphs
+              placement={placement}
+            />
+          </View>
+          <View style={[styles.controlSlot, { width: glassSize.inline, height: rowHeight }]}>
+            <LogAscentToolbarButton climb={climb} size={glassSize.inline} iconSize={24} placement={placement} />
+          </View>
+        </>
       )}
-      <View style={[styles.controlSlot, { width: glassSize.inline, height: rowHeight }]}>
-        <LogAscentToolbarButton climb={climb} size={glassSize.inline} iconSize={24} />
-      </View>
     </View>
   );
 }

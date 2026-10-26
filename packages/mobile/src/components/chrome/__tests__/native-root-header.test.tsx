@@ -132,7 +132,7 @@ import {
   toolbarGlyphSize,
 } from '../GlassActionToolbar';
 import { UserAvatarToolbarAction } from '../../user-drawer/UserAvatarToolbarAction';
-import { renderHiddenHeaderTitle } from '../hidden-header-title';
+import { HIDDEN_HEADER_TITLE_STYLE } from '../hidden-header-title';
 
 function lastOptions(): NativeStackNavigationOptions {
   return controls.options.at(-1)!;
@@ -294,17 +294,22 @@ describe('NativeRootHeader', () => {
     const { rerender } = render(<NativeRootHeader titleHidden onHeightChange={vi.fn()} />);
 
     expect(lastOptions().headerLargeTitle).toBe(false);
-    expect(lastOptions().headerTitle).toBe(renderHiddenHeaderTitle);
-    // A view, never null: with no title view the native stack draws `title` again.
-    expect(renderHiddenHeaderTitle()).not.toBeNull();
+    // A clear title, not an empty title view: the native stack keeps one centre
+    // view for the screen's life, and a capsule swapped into an empty one kept
+    // its zero size and never showed.
+    expect(lastOptions().headerTitle).toBeUndefined();
+    expect(lastOptions().headerTitleStyle).toBe(HIDDEN_HEADER_TITLE_STYLE);
     expect(lastOptions()).not.toHaveProperty('title');
     expect({ ...routeOptions, ...lastOptions() }.title).toBe('Climbs');
 
     // The wall capsule still takes the centre when it shows.
     rerender(<NativeRootHeader titleHidden centerContent={<span>On the wall</span>} onHeightChange={vi.fn()} />);
     expect(lastOptions().headerLargeTitle).toBe(false);
-    expect(lastOptions().headerTitle).not.toBe(renderHiddenHeaderTitle);
     expect(typeof lastOptions().headerTitle).toBe('function');
+
+    // And gives it back when it goes, so the next capsule mounts a fresh view.
+    rerender(<NativeRootHeader titleHidden onHeightChange={vi.fn()} />);
+    expect(lastOptions().headerTitle).toBeUndefined();
   });
 
   it('keeps an explicit title override independent of the focused route', () => {

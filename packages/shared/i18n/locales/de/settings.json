@@ -513,7 +513,9 @@
     "releaseWall": "Wand freigeben",
     "barControl": {
       "connectedLabel": "Board verbunden, du hast die Steuerung",
-      "connectedHint": "Öffnet die Board-Steuerung",
+      "youHaveBoard": "Du hast das Board",
+      "connectedHint": "Trennt das Board",
+      "openControlsHint": "Öffnet die Board-Steuerung",
       "peerLabel": "An der Wand von {{name}}",
       "peerLabelAnonymous": "An der Wand",
       "peerHint": "Öffnet den Boulder an der Wand",

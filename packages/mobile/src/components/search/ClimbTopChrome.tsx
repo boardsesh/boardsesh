@@ -30,6 +30,8 @@ import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { GradeRangeRail, type GradeRailChange } from '../grade';
 import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction';
 import { WallStatusCapsule } from '../queue-control/WallStatusCapsule';
+import { BoardHeldCapsule } from '../queue-control/BoardHeldCapsule';
+import { useBoardConnectionState } from '../ble/use-board-connection-state';
 import { useWallClimbIfDistinct } from '../queue-control/use-wall-or-queue-climb';
 import { useActiveClimbUuid } from '../../providers/queue-provider';
 import { addErrorBreadcrumb } from '../../lib/error-reporting';
@@ -136,10 +138,18 @@ function ClimbTopChromeComponent({
   const currentClimbUuid = useActiveClimbUuid();
   const liveWallClimb = useWallClimbIfDistinct(currentClimbUuid);
   const wallClimb = useSettledHeaderValue(liveWallClimb);
-  const wallCapsule = useMemo(
-    () => (wallClimb ? <WallStatusCapsule climb={wallClimb} boardName={boardName} /> : undefined),
-    [wallClimb, boardName],
-  );
+  // "You have the board" takes the same slot while this climber holds the board
+  // and the wall shows their own climb (Liquid Glass only: the Material bar keeps
+  // its bulb on screen, where the glass platter collapses). Settled for the same
+  // reason as the wall capsule.
+  const { inAppBoardConnection, ledless, localConnected } = useBoardConnectionState();
+  const liveBoardHeld = variant === 'liquidGlass' && inAppBoardConnection === 'connectedByMe';
+  const boardHeld = useSettledHeaderValue(liveBoardHeld);
+  const wallCapsule = useMemo(() => {
+    if (wallClimb) return <WallStatusCapsule climb={wallClimb} boardName={boardName} />;
+    if (boardHeld) return <BoardHeldCapsule ledless={ledless} canOpenControls={localConnected} />;
+    return undefined;
+  }, [wallClimb, boardName, boardHeld, ledless, localConnected]);
   const hasWallCapsule = wallClimb !== null;
   const loggedWallCapsuleRef = useRef(false);
   useEffect(() => {

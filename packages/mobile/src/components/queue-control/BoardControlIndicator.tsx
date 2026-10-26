@@ -29,9 +29,10 @@ import { useBoardConnectionState } from '../ble/use-board-connection-state';
 import { useLightbulbControl } from '../ble/use-lightbulb-control';
 import { hapticMedium } from '../../lib/haptics';
 import { glassSize } from '../../theme/layout';
-import { getBoardControlIndicatorVisual } from './board-control-indicator-state';
+import { getBoardConnectionLabel, getBoardControlIndicatorVisual } from './board-control-indicator-state';
 import { useDifferentiateWithoutColor } from '../../hooks/use-differentiate-without-color';
 import { useAccessoryClimbTap } from './use-accessory-climb-tap';
+import type { AccessoryPlacement } from '../../lib/analytics-board-connect';
 
 type BoardControlIndicatorProps = {
   /** Container (tap target) size; defaults to the 44pt control floor. */
@@ -50,6 +51,8 @@ type BoardControlIndicatorProps = {
    * Without Color is on, so "off" still differs from "on" by shape.
    */
   solidGlyphs?: boolean;
+  /** The accessory platter's placement, when this bulb sits on the platter (analytics). */
+  placement?: AccessoryPlacement;
 };
 
 export function BoardControlIndicator({
@@ -57,6 +60,7 @@ export function BoardControlIndicator({
   iconSize = 22,
   enableLongPress = false,
   solidGlyphs = false,
+  placement,
 }: BoardControlIndicatorProps) {
   const { t } = useTranslation('settings');
   const { systemColors, brandColors } = useTheme();
@@ -66,7 +70,7 @@ export function BoardControlIndicator({
   // Shared connect/disconnect path so undo-arming and the press semantics match
   // the drawer + toolbar lightbulbs: connectedByMe → disconnect, disconnected →
   // connect. (Connect outcome telemetry is emitted inside bluetooth.connect().)
-  const { onPress: lightbulbPress } = useLightbulbControl({ surface: 'board_control_indicator' });
+  const { onPress: lightbulbPress } = useLightbulbControl({ surface: 'board_control_indicator', placement });
   const { openPlay } = useAccessoryClimbTap();
 
   const handlePress = useCallback(() => {
@@ -87,8 +91,8 @@ export function BoardControlIndicator({
     // there is no controller behind a virtual hold to write to.
     if (!localConnected) return;
     hapticMedium();
-    openBoardControls();
-  }, [localConnected, openBoardControls]);
+    openBoardControls({ surface: 'board_control_indicator', placement });
+  }, [localConnected, openBoardControls, placement]);
 
   const handleAccessibilityAction = useCallback(
     (event: AccessibilityActionEvent) => {
@@ -111,13 +115,11 @@ export function BoardControlIndicator({
   });
 
   const heldByMe = inAppBoardConnection === 'connectedByMe';
-  const accessibilityLabel = heldByMe
-    ? t(ledless ? 'ble.barControl.wallHeldLabel' : 'ble.barControl.connectedLabel')
-    : inAppBoardConnection === 'heldByPeer'
-      ? holderDisplayName
-        ? t('ble.barControl.peerLabel', { name: holderDisplayName })
-        : t('ble.barControl.peerLabelAnonymous')
-      : t(ledless ? 'ble.barControl.wallOpenLabel' : 'ble.barControl.disconnectedLabel');
+  const accessibilityLabel = getBoardConnectionLabel(t, {
+    boardConnection: inAppBoardConnection,
+    ledless,
+    holderDisplayName,
+  });
 
   const accessibilityHint = heldByMe
     ? t(ledless ? 'ble.barControl.wallHeldHint' : 'ble.barControl.connectedHint')

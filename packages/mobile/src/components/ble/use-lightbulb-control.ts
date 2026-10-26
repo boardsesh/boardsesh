@@ -1,6 +1,11 @@
 import { useCallback, useMemo } from 'react';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
-import { trackBoardConnectTapped, type BoardConnectSurface } from '../../lib/analytics-board-connect';
+import {
+  trackBoardConnectTapped,
+  type AccessoryPlacement,
+  type BoardConnectSurface,
+  type BoardControlsSource,
+} from '../../lib/analytics-board-connect';
 import {
   derivePlayDrawerLightbulbPressAction,
   type PlayDrawerLightbulbPressAction,
@@ -16,13 +21,15 @@ export type LightbulbSurface = Extract<
 type UseLightbulbControlOptions = {
   /** Required so every bulb reports where a connect tap came from. */
   surface: LightbulbSurface;
+  /** The accessory platter's placement, for a bulb on the platter; omitted elsewhere. */
+  placement?: AccessoryPlacement;
   /**
    * Opens the BLE controls sheet (Re-light / Turn off all lights / Disconnect).
    * Wired to the returned `onLongPress` so every lightbulb shares one gesture
    * vocabulary: short press connects/disconnects, long press (when connected)
    * opens the labelled controls. Omit on surfaces with no long-press affordance.
    */
-  onOpenControls?: () => void;
+  onOpenControls?: (source: BoardControlsSource) => void;
   /**
    * Put the climb this surface is displaying onto the wall a session peer is
    * driving, by making it the session's current climb. The holder's auto-sender
@@ -119,7 +126,7 @@ export type LightbulbControl = {
  * controls and board-presence controls are always present under the tab tree.
  */
 export function useLightbulbControl(options: UseLightbulbControlOptions): LightbulbControl {
-  const { surface, onOpenControls, onRelayToHolder, canRelay = onRelayToHolder != null } = options;
+  const { surface, placement, onOpenControls, onRelayToHolder, canRelay = onRelayToHolder != null } = options;
   // Ownership/lit derivation is shared with the Live Activity bridge via this
   // hook so the in-app bulb and the lock-screen bulb can never disagree.
   const { bluetooth, lit, localConnected, pending, ledless, wallHeldLocally, holderIsAuthoritative } =
@@ -152,6 +159,7 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
       const reconnectDeviceId = bluetooth.reconnectDeviceIdForCurrentBoard ?? undefined;
       trackBoardConnectTapped({
         surface: surfaceOverride ?? surface,
+        placement,
         boardName: bluetooth.boardName,
         reconnect: reconnectSerial !== undefined || reconnectDeviceId !== undefined,
       });
@@ -160,7 +168,7 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
       // (MoonBoard). With neither remembered, the adapter opens the picker.
       return bluetooth.connect(undefined, undefined, reconnectSerial, reconnectDeviceId);
     },
-    [bluetooth, pressAction, surface],
+    [bluetooth, pressAction, surface, placement],
   );
 
   const onPress = useCallback(() => {
@@ -209,8 +217,8 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
     // while THIS device holds the link (the sheet self-guards too). Disconnected,
     // long-press does nothing — short press connects.
     if (!localConnected) return;
-    onOpenControls?.();
-  }, [localConnected, onOpenControls]);
+    onOpenControls?.({ surface, placement });
+  }, [localConnected, onOpenControls, surface, placement]);
 
   return {
     bluetooth,

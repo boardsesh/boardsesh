@@ -9,10 +9,14 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import { useOptionalBluetoothContext } from './bluetooth-provider';
 import { BleControlSheetHost } from '../components/ble/BleControlSheetHost';
+import { trackBoardControlsOpened, type BoardControlsSource } from '../lib/analytics-board-connect';
 
 type BleControlSheetContextValue = {
-  /** Reveal the BLE controls. No-ops unless this device holds the BLE link. */
-  open: () => void;
+  /**
+   * Reveal the BLE controls, saying which control asked. No-ops unless this
+   * device holds the BLE link.
+   */
+  open: (source: BoardControlsSource) => void;
   close: () => void;
 };
 
@@ -24,11 +28,15 @@ export function BleControlSheetProvider({ children }: { children: ReactNode }) {
 
   const isConnected = bluetooth?.isConnected ?? false;
 
-  const open = useCallback(() => {
-    // Nothing to control unless this device holds the link.
-    if (!isConnected) return;
-    setVisible(true);
-  }, [isConnected]);
+  const open = useCallback(
+    (source: BoardControlsSource) => {
+      // Nothing to control unless this device holds the link.
+      if (!isConnected) return;
+      trackBoardControlsOpened(source);
+      setVisible(true);
+    },
+    [isConnected],
+  );
 
   const close = useCallback(() => setVisible(false), []);
 

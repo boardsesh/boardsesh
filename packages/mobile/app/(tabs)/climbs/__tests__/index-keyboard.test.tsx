@@ -882,7 +882,7 @@ vi.mock('../../../../src/theme/layout', () => ({ glassSize: { standard: 48 } }))
 vi.mock('../../../../src/theme/animations', () => ({ timing: { normal: 180 } }));
 
 import ClimbList from '../index';
-import { renderHiddenHeaderTitle } from '../../../../src/components/chrome/hidden-header-title';
+import { HIDDEN_HEADER_TITLE_STYLE } from '../../../../src/components/chrome/hidden-header-title';
 import { setPinnedChips } from '../../../../src/lib/pinned-chips-store';
 import { DEFAULT_PINNED_CHIPS } from '../../../../src/lib/pinnable-chips';
 import { resetClimbRowDisplayForTests, setClimbRowField } from '../../../../src/lib/climb-row-display-preference';
@@ -1121,10 +1121,11 @@ describe('ClimbList native header ownership', () => {
     rerender(<ClimbList />);
 
     const restoredOptions = Object.assign({}, previousHeaderOptions, ...mocks.stackOptions);
-    // The tab names the screen: no large title and an empty title view, while the
+    // The tab names the screen: no large title and a clear title, while the
     // navigation item keeps "Climbs" for the back button's long-press menu.
     expect(restoredOptions).toMatchObject({ title: 'Climbs', headerShown: true, headerLargeTitle: false });
-    expect(restoredOptions.headerTitle).toBe(renderHiddenHeaderTitle);
+    expect(restoredOptions.headerTitle).toBeUndefined();
+    expect(restoredOptions.headerTitleStyle).toBe(HIDDEN_HEADER_TITLE_STYLE);
     expect(mocks.stackOptions.every((options) => !Object.hasOwn(options, 'title'))).toBe(true);
   });
 });

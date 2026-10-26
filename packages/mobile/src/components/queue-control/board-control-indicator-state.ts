@@ -1,4 +1,5 @@
 import type { OpaqueColorValue } from 'react-native';
+import type { TFunction } from 'i18next';
 import type { IconName } from '../icon-map';
 import type { BoardConnection } from '../play-drawer/lightbulb-control';
 
@@ -82,5 +83,71 @@ export function getBoardControlIndicatorVisual({
     case 'disconnected':
       // Tap to take control — neutral outline bulb, no glow.
       return { iconName: solidGlyphs ? 'lightbulb.fill' : 'lightbulb', iconColor: disconnectedColor };
+  }
+}
+
+export type BoardConnectionBadgeVisual = {
+  iconName: IconName;
+  iconColor: string | OpaqueColorValue;
+};
+
+type BoardConnectionBadgeVisualInput = Pick<
+  BoardControlIndicatorVisualInput,
+  'boardConnection' | 'connectedColor' | 'peerColor' | 'ledless'
+> & {
+  /** "You have the wall" on a board with no lights. Required: falling back to amber would claim lit LEDs. */
+  wallHeldColor: string;
+};
+
+/**
+ * The status mark on the accessory platter's climb thumbnail: who holds the
+ * board, in the indicator's own glyphs and tones, so the mark and the bulb can
+ * never disagree. It is how the collapsed platter, which has no room for the
+ * bulb once you are connected, still says so. Shape carries the state (bulb /
+ * pin / person, or nothing), so it reads without colour; amber only ever means
+ * the LEDs are on. `null` when the board is free: no mark at all.
+ */
+export function getBoardConnectionBadgeVisual({
+  boardConnection,
+  connectedColor,
+  peerColor,
+  ledless = false,
+  wallHeldColor,
+}: BoardConnectionBadgeVisualInput): BoardConnectionBadgeVisual | null {
+  switch (boardConnection) {
+    case 'connectedByMe':
+      return ledless
+        ? { iconName: 'pin.fill', iconColor: wallHeldColor }
+        : { iconName: 'lightbulb.fill', iconColor: connectedColor };
+    case 'heldByPeer':
+      return { iconName: 'person.fill', iconColor: peerColor };
+    case 'disconnected':
+      return null;
+  }
+}
+
+type BoardConnectionLabelInput = {
+  boardConnection: BoardConnection;
+  ledless: boolean;
+  holderDisplayName: string | null;
+};
+
+/**
+ * What the board connection is, in words: the bulb's accessibility label, and
+ * the collapsed platter's climb value, where only the thumbnail mark shows it.
+ */
+export function getBoardConnectionLabel(
+  t: TFunction<'settings'>,
+  { boardConnection, ledless, holderDisplayName }: BoardConnectionLabelInput,
+): string {
+  switch (boardConnection) {
+    case 'connectedByMe':
+      return t(ledless ? 'ble.barControl.wallHeldLabel' : 'ble.barControl.connectedLabel');
+    case 'heldByPeer':
+      return holderDisplayName
+        ? t('ble.barControl.peerLabel', { name: holderDisplayName })
+        : t('ble.barControl.peerLabelAnonymous');
+    case 'disconnected':
+      return t(ledless ? 'ble.barControl.wallOpenLabel' : 'ble.barControl.disconnectedLabel');
   }
 }

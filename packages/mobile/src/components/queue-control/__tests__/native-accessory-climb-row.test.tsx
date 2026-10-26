@@ -47,6 +47,21 @@ vi.mock('@boardsesh/board-react', () => ({
     },
 }));
 
+// Who holds the board. Default: a bound board nobody holds.
+const connection = vi.hoisted(() => ({
+  state: {
+    bluetooth: {} as object | null,
+    inAppBoardConnection: 'disconnected' as 'connectedByMe' | 'heldByPeer' | 'disconnected',
+    ledless: false,
+    holderDisplayName: null as string | null,
+  },
+}));
+vi.mock('../../ble/use-board-connection-state', () => ({ useBoardConnectionState: () => connection.state }));
+vi.mock('../../Icon', () => ({
+  Icon: ({ name, color }: { name: string; color?: string }) =>
+    createElement('i', { 'data-icon': name, 'data-icon-color': color ?? '' }),
+}));
+
 const drawer = vi.hoisted(() => ({
   boardConfig: null as BoardConfig | null,
   openPlayDrawer: vi.fn(),
@@ -73,15 +88,18 @@ vi.mock('../AccessoryPlayLink', () => ({
   AccessoryPlayLink: ({
     children,
     accessibilityLabel,
+    accessibilityValue,
   }: {
     children: ReactNode;
     style?: unknown;
     accessibilityLabel: string;
+    accessibilityValue?: string;
   }) =>
     createElement(
       'div',
       {
         'aria-label': accessibilityLabel,
+        'data-a11y-value': accessibilityValue ?? '',
         'data-role': 'button',
         'data-actions': '',
         'data-accessory-play-link': true,
@@ -138,10 +156,12 @@ vi.mock('react-native', () => ({
     const borderColor = readStyleValue('borderColor');
     const borderRadius = readStyleValue('borderRadius');
     const overflow = readStyleValue('overflow');
+    const opacity = readStyleValue('opacity');
     return createElement(
       'div',
       {
         'data-width': styleDataValue(width),
+        'data-opacity': styleDataValue(opacity),
         'data-height': styleDataValue(height),
         'data-padding-end': styleDataValue(paddingEnd),
         'data-background-color': styleDataValue(backgroundColor),
@@ -187,8 +207,12 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => k
 // The board control drags in the BLE stack + Icon (@expo/vector-icons); stub it
 // with a marker so the layout tests see where it sits (it has its own unit test).
 vi.mock('../BoardControlIndicator', () => ({
-  BoardControlIndicator: ({ solidGlyphs }: { solidGlyphs?: boolean }) =>
-    createElement('span', { 'data-board-control': 'true', 'data-solid-glyphs': String(solidGlyphs === true) }),
+  BoardControlIndicator: ({ solidGlyphs, placement }: { solidGlyphs?: boolean; placement?: string }) =>
+    createElement('span', {
+      'data-board-control': 'true',
+      'data-solid-glyphs': String(solidGlyphs === true),
+      'data-placement': placement ?? '',
+    }),
 }));
 
 type TextMockProps = {
@@ -247,6 +271,7 @@ vi.mock('../../../providers/theme-provider', () => ({
   useOptionalTheme: () => null,
   useTheme: () => ({
     systemColors: { label: '#111111', secondaryLabel: '#777777' },
+    brandColors: { warning: '#FBBF24', primary: '#6D28D9' },
   }),
 }));
 
@@ -334,9 +359,10 @@ vi.mock('../../BoardImageNative', () => ({
 }));
 
 vi.mock('../LogAscentToolbarButton', () => ({
-  LogAscentToolbarButton: ({ size, iconSize }: { size?: number; iconSize?: number }) =>
+  LogAscentToolbarButton: ({ size, iconSize, placement }: { size?: number; iconSize?: number; placement?: string }) =>
     createElement('button', {
       'data-tick': 'true',
+      'data-placement': placement ?? '',
       'data-tick-size': String(size),
       'data-icon-size': String(iconSize),
     }),
@@ -416,6 +442,7 @@ describe('NativeAccessoryClimbRow', () => {
     queue.previousClimb.mockClear();
     liveStats.override = null;
     drawer.openPlayDrawer.mockClear();
+    connection.state = { bluetooth: {}, inAppBoardConnection: 'disconnected', ledless: false, holderDisplayName: null };
   });
 
   it('renders a regular now-climbing row with thumbnail, grade, and integrated tick', () => {
@@ -538,7 +565,8 @@ describe('NativeAccessoryClimbRow', () => {
     expectNumericAttribute(thumbnail, 'data-board-height', 17.68);
   });
 
-  it('shows the thumbnail, the byline and the tick, but no lightbulb, when collapsed', () => {
+  it('shows the thumbnail, the byline and the tick, but no lightbulb, when collapsed and connected', () => {
+    connection.state.inAppBoardConnection = 'connectedByMe';
     const { container } = renderRow('inline');
 
     expect(container.textContent).toContain("Alvin's Nuts");
@@ -548,6 +576,111 @@ describe('NativeAccessoryClimbRow', () => {
     expect(container.querySelector('[data-board-control]')).toBeNull();
     expect(container.querySelector('[data-tick-size="44"]')).not.toBeNull();
     expect(container.querySelector('[data-height="44"]')).not.toBeNull();
+  });
+
+  describe("the collapsed platter's one slot", () => {
+    it('offers the lightbulb while the board is free, and no tick', () => {
+      const { container } = renderRow('inline');
+      const bulb = container.querySelector('[data-board-control="true"]');
+      expect(bulb).not.toBeNull();
+      expect(bulb?.getAttribute('data-placement')).toBe('inline');
+      expect(bulb?.closest('[data-accessory-play-link]')).toBeNull();
+      expect(container.querySelector('[data-tick="true"]')).toBeNull();
+    });
+
+    it.each(['connectedByMe', 'heldByPeer'] as const)('swaps to the tick once the board is %s', (state) => {
+      connection.state.inAppBoardConnection = state;
+      const { container } = renderRow('inline');
+      expect(container.querySelector('[data-board-control]')).toBeNull();
+      expect(container.querySelector('[data-tick="true"]')?.getAttribute('data-placement')).toBe('inline');
+    });
+
+    it('keeps the tick when no board is bound: there is nothing to connect to', () => {
+      connection.state.bluetooth = null;
+      const { container } = renderRow('inline');
+      expect(container.querySelector('[data-board-control]')).toBeNull();
+      expect(container.querySelector('[data-tick="true"]')).not.toBeNull();
+    });
+
+    it.each(['connectedByMe', 'heldByPeer', 'disconnected'] as const)(
+      'keeps both controls on the open platter when the board is %s',
+      (state) => {
+        connection.state.inAppBoardConnection = state;
+        const { container } = renderRow('regular');
+        expect(container.querySelector('[data-board-control]')?.getAttribute('data-placement')).toBe('regular');
+        expect(container.querySelector('[data-tick="true"]')?.getAttribute('data-placement')).toBe('regular');
+      },
+    );
+  });
+
+  describe('the connection mark on the thumbnail', () => {
+    const badge = (container: HTMLElement) =>
+      container.querySelector('[data-testid="accessory-connection-badge"]') as HTMLElement | null;
+
+    it.each(['regular', 'inline'] as const)('marks a lit board you hold with an amber bulb (%s)', (placement) => {
+      connection.state.inAppBoardConnection = 'connectedByMe';
+      const { container } = renderRow(placement);
+      const icon = badge(container)?.querySelector('[data-icon]');
+      expect(icon?.getAttribute('data-icon')).toBe('lightbulb.fill');
+      expect(icon?.getAttribute('data-icon-color')).toBe('#FBBF24');
+      expect(badge(container)?.closest('[data-accessory-play-link]')).not.toBeNull();
+    });
+
+    it('marks a board with no lights with a pin in the brand tone, never amber', () => {
+      connection.state.inAppBoardConnection = 'connectedByMe';
+      connection.state.ledless = true;
+      const { container } = renderRow('inline');
+      const icon = badge(container)?.querySelector('[data-icon]');
+      expect(icon?.getAttribute('data-icon')).toBe('pin.fill');
+      expect(icon?.getAttribute('data-icon-color')).toBe('#6D28D9');
+    });
+
+    it("marks a teammate's hold with a grey person, not your bulb", () => {
+      connection.state.inAppBoardConnection = 'heldByPeer';
+      const { container } = renderRow('inline');
+      const icon = badge(container)?.querySelector('[data-icon]');
+      expect(icon?.getAttribute('data-icon')).toBe('person.fill');
+      expect(icon?.getAttribute('data-icon-color')).toBe('#777777');
+    });
+
+    it('hides the mark while the board is free, but keeps it mounted', () => {
+      const { container } = renderRow('inline');
+      // Mounted (UIKit snapshots the platter), but nothing to see.
+      expect(badge(container)).not.toBeNull();
+      expect(badge(container)?.getAttribute('data-opacity')).toBe('0');
+    });
+
+    it('shows the mark at full opacity once someone holds the board', () => {
+      connection.state.inAppBoardConnection = 'connectedByMe';
+      const { container } = renderRow('inline');
+      expect(badge(container)?.getAttribute('data-opacity')).toBe('');
+    });
+  });
+
+  describe("the climb link's spoken connection", () => {
+    const link = (container: HTMLElement) => container.querySelector('[data-accessory-play-link]');
+
+    it('says who holds the board on the collapsed platter, where only the mark shows it', () => {
+      connection.state.inAppBoardConnection = 'connectedByMe';
+      const { container } = renderRow('inline');
+      expect(link(container)?.getAttribute('data-a11y-value')).toBe('ble.barControl.connectedLabel');
+    });
+
+    it('names the teammate holding the wall', () => {
+      connection.state.inAppBoardConnection = 'heldByPeer';
+      connection.state.holderDisplayName = 'Alex';
+      const { container } = renderRow('inline');
+      expect(link(container)?.getAttribute('data-a11y-value')).toBe('ble.barControl.peerLabel');
+    });
+
+    it('says nothing extra while the board is free, or on the open platter where the bulb speaks', () => {
+      const free = renderRow('inline');
+      expect(link(free.container)?.getAttribute('data-a11y-value')).toBe('');
+      free.unmount();
+      connection.state.inAppBoardConnection = 'connectedByMe';
+      const open = renderRow('regular');
+      expect(link(open.container)?.getAttribute('data-a11y-value')).toBe('');
+    });
   });
 
   it('omits the thumbnail when board config is unavailable', () => {

@@ -513,7 +513,9 @@
     "releaseWall": "Release the wall",
     "barControl": {
       "connectedLabel": "Board connected, you have control",
-      "connectedHint": "Opens board controls",
+      "youHaveBoard": "You have the board",
+      "connectedHint": "Disconnects from the board",
+      "openControlsHint": "Opens board controls",
       "peerLabel": "On {{name}}'s wall",
       "peerLabelAnonymous": "On the wall",
       "peerHint": "Opens the climb on the wall",

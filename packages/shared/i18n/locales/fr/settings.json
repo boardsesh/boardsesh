@@ -513,7 +513,9 @@
     "releaseWall": "Libérer le mur",
     "barControl": {
       "connectedLabel": "Board connectée, vous avez le contrôle",
-      "connectedHint": "Ouvre les commandes de la board",
+      "youHaveBoard": "Vous avez la board",
+      "connectedHint": "Déconnecte la board",
+      "openControlsHint": "Ouvre les commandes de la board",
       "peerLabel": "Sur le mur de {{name}}",
       "peerLabelAnonymous": "Sur le mur",
       "peerHint": "Ouvre la voie sur le mur",

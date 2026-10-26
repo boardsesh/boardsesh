@@ -12,8 +12,13 @@ import { useReduceMotion } from '../../hooks/use-reduce-motion';
 import { springs } from '../../theme/animations';
 import { hapticSelection } from '../../lib/haptics';
 import { countSentAscents } from '../../lib/ascent-status-utils';
+import type { AccessoryPlacement } from '../../lib/analytics-board-connect';
 
-export function useLogAscentAction(climb: Climb) {
+/**
+ * `placement` is set only by the tab-bar accessory platter's tick, so its Quick
+ * Tick Opened can be told apart from the JS bars that share `source: 'queue_bar'`.
+ */
+export function useLogAscentAction(climb: Climb, placement?: AccessoryPlacement) {
   const { t } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
   const { boardConfig, openLogAscent } = useDrawerHost();
@@ -74,6 +79,7 @@ export function useLogAscentAction(climb: Climb) {
       climbUuid: climb.uuid,
       layoutId: boardConfig.layoutId ?? null,
       source: 'queue_bar',
+      ...(placement ? { placement } : {}),
     });
     openLogAscent({
       climb,
@@ -90,7 +96,7 @@ export function useLogAscentAction(climb: Climb) {
       sessionId,
       consensusGradeName: climb.difficulty,
     });
-  }, [openLogAscent, boardConfig, sessionId, climb, angle, isMirror]);
+  }, [openLogAscent, boardConfig, sessionId, climb, angle, isMirror, placement]);
 
   // Always neutral glass — no coloured background. The "you sent this" signal
   // rides the glyph instead: a green tick when logged, the system label otherwise

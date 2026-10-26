@@ -1,6 +1,6 @@
 import { useNativeRootHeader } from '../../../src/hooks/use-native-root-header';
 import { NativeTabletContent } from '../../../src/components/navigation/NativeTabletContent';
-import { renderHiddenHeaderTitle } from '../../../src/components/chrome/hidden-header-title';
+import { HIDDEN_HEADER_TITLE_STYLE } from '../../../src/components/chrome/hidden-header-title';
 import { Platform } from 'react-native';
 import { Stack } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -32,7 +32,7 @@ export default function ClimbsLayout() {
               title: t('mobile.nav.climbs'),
               headerShown: nativeRootHeader,
               headerLargeTitle: false,
-              headerTitle: nativeRootHeader ? renderHiddenHeaderTitle : undefined,
+              headerTitleStyle: nativeRootHeader ? HIDDEN_HEADER_TITLE_STYLE : undefined,
               headerTransparent: nativeRootHeader,
             }}
           />

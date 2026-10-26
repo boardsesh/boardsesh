@@ -9,6 +9,8 @@ type AccessoryPlayLinkProps = {
   children: ReactNode;
   style?: StyleProp<ViewStyle>;
   accessibilityLabel: string;
+  /** Spoken after the label, e.g. the board connection the platter shows only as a mark. */
+  accessibilityValue?: string;
   onOpen: () => void;
   onPrepare: () => boolean;
   /** Only native tab accessory hosts retain the source beneath /play. */
@@ -34,6 +36,7 @@ export function AccessoryPlayLink({
   children,
   style,
   accessibilityLabel,
+  accessibilityValue,
   onOpen,
   onPrepare,
   zoomSourceRetained = false,
@@ -45,6 +48,7 @@ export function AccessoryPlayLink({
     <PlayPressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
+      accessibilityValue={accessibilityValue ? { text: accessibilityValue } : undefined}
       onPress={supportsZoom ? undefined : onOpen}
       style={StyleSheet.flatten(style)}
     >

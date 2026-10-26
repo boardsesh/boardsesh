@@ -478,6 +478,27 @@ describe('useLightbulbControl Board Connect Tapped (#5654)', () => {
     expect(connectTaps()[0]?.[1]).toMatchObject({ surface: 'toolbar', reconnect: true });
   });
 
+  it('says which placement a platter bulb sat in, and only for the platter', () => {
+    ctrl.bluetooth = makeBluetooth({ boardName: 'kilter' });
+    renderControl({ surface: 'board_control_indicator', placement: 'inline' }).result.current.onPress();
+    renderControl({ surface: 'board_control_indicator' }).result.current.onPress();
+    expect(connectTaps().map(([, properties]) => properties)).toEqual([
+      { surface: 'board_control_indicator', placement: 'inline', boardName: 'kilter', reconnect: false },
+      { surface: 'board_control_indicator', boardName: 'kilter', reconnect: false },
+    ]);
+  });
+
+  it('tells the controls sheet which bulb opened it', () => {
+    const openControls = vi.fn();
+    ctrl.bluetooth = makeBluetooth({ isConnected: true });
+    renderControl({
+      surface: 'board_control_indicator',
+      placement: 'regular',
+      onOpenControls: openControls,
+    }).result.current.onLongPress();
+    expect(openControls).toHaveBeenCalledWith({ surface: 'board_control_indicator', placement: 'regular' });
+  });
+
   it('counts only taps that start a connect', () => {
     // Disconnect, take/release the wall and a no-op tap are not connect attempts.
     ctrl.bluetooth = makeBluetooth({ isConnected: true });

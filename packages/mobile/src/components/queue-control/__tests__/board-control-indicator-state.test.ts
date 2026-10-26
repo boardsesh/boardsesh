@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { getBoardControlIndicatorVisual } from '../board-control-indicator-state';
+import {
+  getBoardConnectionBadgeVisual,
+  getBoardConnectionLabel,
+  getBoardControlIndicatorVisual,
+} from '../board-control-indicator-state';
 
 const colors = {
   connectedColor: '#FBBF24',
@@ -99,5 +103,65 @@ describe('getBoardControlIndicatorVisual with solid glyphs', () => {
         getBoardControlIndicatorVisual({ boardConnection, ...colors }),
       );
     }
+  });
+});
+
+describe('getBoardConnectionBadgeVisual', () => {
+  const badgeColors = { connectedColor: '#FBBF24', peerColor: '#8E8898', wallHeldColor: '#6D28D9' };
+
+  it('marks lit LEDs you hold with the amber bulb', () => {
+    expect(getBoardConnectionBadgeVisual({ boardConnection: 'connectedByMe', ...badgeColors })).toEqual({
+      iconName: 'lightbulb.fill',
+      iconColor: '#FBBF24',
+    });
+  });
+
+  it('marks a board with no lights you hold with a pin in the brand tone', () => {
+    expect(getBoardConnectionBadgeVisual({ boardConnection: 'connectedByMe', ledless: true, ...badgeColors })).toEqual({
+      iconName: 'pin.fill',
+      iconColor: '#6D28D9',
+    });
+  });
+
+  it.each([false, true])('marks a teammate holding the wall with a neutral person (ledless: %s)', (ledless) => {
+    expect(getBoardConnectionBadgeVisual({ boardConnection: 'heldByPeer', ledless, ...badgeColors })).toEqual({
+      iconName: 'person.fill',
+      iconColor: '#8E8898',
+    });
+  });
+
+  it.each([false, true])('shows no mark while the board is free (ledless: %s)', (ledless) => {
+    expect(getBoardConnectionBadgeVisual({ boardConnection: 'disconnected', ledless, ...badgeColors })).toBeNull();
+  });
+
+  it('keeps amber for lit LEDs only', () => {
+    const tones = (['connectedByMe', 'heldByPeer', 'disconnected'] as const).flatMap((boardConnection) =>
+      [false, true].map(
+        (ledless) =>
+          [
+            boardConnection,
+            ledless,
+            getBoardConnectionBadgeVisual({ boardConnection, ledless, ...badgeColors })?.iconColor,
+          ] as const,
+      ),
+    );
+    const amber = tones.filter(([, , color]) => color === '#FBBF24');
+    expect(amber).toEqual([['connectedByMe', false, '#FBBF24']]);
+  });
+});
+
+describe('getBoardConnectionLabel', () => {
+  const t = ((key: string, options?: { name?: string }) =>
+    options?.name ? `${key}:${options.name}` : key) as unknown as Parameters<typeof getBoardConnectionLabel>[0];
+
+  it.each([
+    ['connectedByMe', false, null, 'ble.barControl.connectedLabel'],
+    ['connectedByMe', true, null, 'ble.barControl.wallHeldLabel'],
+    ['heldByPeer', false, 'Alex', 'ble.barControl.peerLabel:Alex'],
+    ['heldByPeer', false, null, 'ble.barControl.peerLabelAnonymous'],
+    ['disconnected', false, null, 'ble.barControl.disconnectedLabel'],
+    ['disconnected', true, null, 'ble.barControl.wallOpenLabel'],
+  ] as const)('%s (ledless %s, holder %s) reads %s', (boardConnection, ledless, holderDisplayName, expected) => {
+    expect(getBoardConnectionLabel(t, { boardConnection, ledless, holderDisplayName })).toBe(expected);
   });
 });

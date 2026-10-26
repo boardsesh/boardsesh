@@ -330,7 +330,8 @@ export const SHARED_EVENTS = {
   //
   // Fired at every explicit tick-sheet open, with a `source` prop: mobile
   // 'play_fab' | 'climb_actions' | 'queue_bar', web 'climb_actions' |
-  // 'logbook_tick_button'. Gives the invariant Dismissed + Logged <= Opened; a
+  // 'logbook_tick_button'. The tab-bar accessory platter's tick also sends
+  // `placement` ('regular' | 'inline') beside 'queue_bar'. Gives the invariant Dismissed + Logged <= Opened; a
   // violation means the sheet presented without user intent (the phantom-reopen
   // bug this event was added to watchdog).
   QuickTickOpened: 'Quick Tick Opened',
@@ -420,8 +421,17 @@ export const SHARED_EVENTS = {
   // Android session notification's bulb) | 'first_connect_card' |
   // 'first_connect_pill' (the connect-step test's card and labelled pill, #5654
   // PR 7). `reconnect` is true when a remembered board is targeted (silent
-  // auto-select), false when the tap opens the device picker.
+  // auto-select), false when the tap opens the device picker. `placement`
+  // ('regular' | 'inline') is set only by the iOS 26 tab-bar accessory platter's
+  // bulb (open or collapsed), which shares 'board_control_indicator' with the
+  // floating JS capsule's bulb.
   BoardConnectTapped: 'Board Connect Tapped',
+  // The Bluetooth controls sheet (Re-light / Turn off all lights / Disconnect)
+  // opened. Props: { surface: 'board_control_indicator' | 'toolbar' | 'app_bar' |
+  // 'header_pill', placement? }. A lightbulb's long-press, or the Climbs header's
+  // "You have the board" pill. Same `placement` rule as Board Connect Tapped. The
+  // play drawer's own sheet host does not fire it.
+  BoardControlsOpened: 'Board Controls Opened',
   // Mobile-only (#5654): the /boards Bluetooth quickstart scan ended. Before this
   // the quickstart scanned without any event, so a climber who found their board
   // through it never counted as having scanned. Fires once per scan that started

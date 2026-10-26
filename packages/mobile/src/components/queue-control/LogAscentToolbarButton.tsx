@@ -6,11 +6,14 @@ import { Icon } from '../Icon';
 import { glassSize } from '../../theme/layout';
 import { opacity } from '../../theme/tokens';
 import { useLogAscentAction } from './use-log-ascent-action';
+import type { AccessoryPlacement } from '../../lib/analytics-board-connect';
 
 type LogAscentToolbarButtonProps = {
   climb: Climb;
   size?: number;
   iconSize?: number;
+  /** The accessory platter's placement, when this tick sits on the platter (analytics). */
+  placement?: AccessoryPlacement;
 };
 
 /**
@@ -22,8 +25,12 @@ export function LogAscentToolbarButton({
   climb,
   size = glassSize.standard,
   iconSize = 26,
+  placement,
 }: LogAscentToolbarButtonProps) {
-  const { accessibilityLabel, disabled, handleLogAscentPress, iconColor, popStyle } = useLogAscentAction(climb);
+  const { accessibilityLabel, disabled, handleLogAscentPress, iconColor, popStyle } = useLogAscentAction(
+    climb,
+    placement,
+  );
 
   return (
     <Animated.View style={[popStyle, { width: size, height: size }]}>
