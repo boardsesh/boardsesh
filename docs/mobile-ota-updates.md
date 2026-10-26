@@ -3276,21 +3276,57 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
   that platform is **skipped** — `vp run check:mobile-ota-compat` (the same engine as
   `mobile-ota-check.yml`) gates each platform, and the PR comment says so. The env is held
   byte-identical to the native builds + production publish by `scripts/mobile-ci-env-parity.test.ts`.
-- **Base pushes refresh previews.** Changes to `main` or `release/next`, including
-  marketing-version activation changes, dispatch fresh previews for open
-  same-repository mobile PRs. Replays use the newest pinned bases and recheck
-  that the PR is still open at the same head before publication. Fork heads
-  retain the existing explicit maintainer authorization; a base push never
-  silently authorizes new fork code. The sticky comment reports each target
-  and platform independently, including conflicts and native changes.
-  PRs whose base absorbed their last mobile change are also dispatched when their deployment
-  history contains a preview, including older heads and legacy deployments. The normal gate then
-  selects cleanup. Unrelated web-only PRs without preview history are skipped.
-  Refresh dispatches one run per matching PR. Per-PR lanes coalesce pending
-  refreshes. Because every gate compares durable deployment context, a PR push that replaces a
-  queued refresh still detects changed bases and resets stale variants. There is no global preview
-  runner cap. An active train can
-  double the export work, so account for open PR count when sizing runners.
+- **When an open preview is republished.** A push to `main` or `release/next` republishes an open
+  same-repository PR's preview only when the existing preview would stop matching what testers
+  have installed. Any other base commit waits for the PR's next push, which pins the newest bases.
+  Until 2026-10-25 every base push re-dispatched every open mobile PR: that day 103 base pushes
+  produced 597 refresh runs (against 99 PR-push runs); the successful ones alone took about 88
+  runner-hours (5,260 minutes), and 166 were cancelled by the next push. A PR author's own
+  preview queued for 15 minutes or more behind them.
+  `mobile-ota-preview-refresh.yml` now runs `scripts/mobile-ota-preview-refresh.ts`, which
+  dispatches a PR when one of these is true:
+  1. The PR has no `pr-preview` deployment for task `ota-preview-pr-<number>`, its payload has no
+     valid `otaPreviewBases` (the same check the gate's pin step runs), or the latest status is
+     `failure` or `error`.
+  2. The release train was switched on or off since that deployment: `release/next` appeared,
+     disappeared, or its marketing version now matches or no longer matches `main`'s.
+  3. A runtime input of a target the preview serves changed between the SHA the deployment pinned
+     and the branch's current head. `main` always counts; `release/next` counts while the train is
+     active.
+  4. The PR no longer changes mobile files (its base absorbed them) and a preview deployment for it
+     is not yet `inactive`. The gate then selects cleanup, and cleanup marks every deployment
+     inactive, so this happens once.
+
+  The inputs are the gate's native-fingerprint paths (root `package.json`, `pnpm-lock.yaml`,
+  `pnpm-workspace.yaml`, `patches/`, and under `packages/mobile/`: `app.config.ts`, `package.json`,
+  `fingerprint.config.js`, `plugins/`, `modules/`, `locales/`, `targets/`, `ios/`, `android/`),
+  plus `packages/mobile/react-native.config.js` and `main`'s copy of `mobile-ota-preview.yml`,
+  whose env is part of the resolved app config. `targets/` and `ios/` count for iOS only and `android/` for Android only;
+  everything else counts for both. The planner compares git object ids, read for every SHA in one
+  GraphQL query, so equal ids mean equal bytes. `app.config.ts` is compared with its marketing
+  version line removed, because `ExpoConfigVersions` keeps the version out of the fingerprint.
+  This works because a preview variant only publishes when the replayed PR resolves the same
+  runtimeVersion as its pinned base. The runtime a preview serves is therefore the base's runtime
+  at the recorded SHA, and identical native inputs cannot resolve to a different one. The
+  comparison is stricter than the fingerprint: a lockfile change for a web dependency refreshes
+  too (about one a day on `main` in October 2026). On 2026-10-25 rule 3 would have fired on 2 of
+  the 103 base pushes, both native changes to the train; rules 1 and 4 add the few PRs with no
+  usable preview record.
+  Why not read the runtime itself: `fingerprint-<platform>-<hash>` tags exist only for train
+  commits that shipped a binary, the production and train publish receipts are artifacts that
+  finish after the refresh starts, and `expo-updates runtimeversion:resolve` would need a checkout
+  and `vp install` of every recorded base SHA inside the refresh.
+  Each PR gets one line in the run summary (`PR #123: unchanged runtime, skipped`). The `plan` job
+  checks out the workflow's own commit (`github.workflow_sha`, sparse `scripts/`, no credentials),
+  installs nothing, and holds only read scopes. The `dispatch` job holds `actions: write`, runs no
+  checked-out code, and queues the default-branch publisher. If the current bases cannot be read,
+  the run fails instead of dispatching every PR. A PR whose own state cannot be read is dispatched.
+  Forks, `release/next`'s own merge-back PR and PRs into other branches are never dispatched. Fork
+  heads keep the explicit maintainer authorization; a base push never authorizes fork code.
+  Dispatched runs re-pin the newest bases, recheck that the PR is still open at the same head, and
+  reset the branch because the bases changed. Per-PR lanes coalesce pending refreshes, and a PR
+  push that replaces a queued refresh still detects changed bases through the gate. There is no
+  global preview runner cap, and an active train doubles the export work.
   To inspect availability from a laptop, use the fingerprint a native build baked:
   `vp run mobile:ota-surf-doctor -- --platform ios --runtime-version <hash>` (take `<hash>` from that
   build's `EXPO_UPDATES_FINGERPRINT_OVERRIDE`; a locally resolved one is macOS-flavoured and will not

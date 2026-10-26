@@ -131,14 +131,23 @@ describe('mobile-ota-boot-check.yml', () => {
 
   it('refreshes same-repository previews from base pushes without authorizing forks', () => {
     const refresh = readFileSync(join(REPO_ROOT, '.github/workflows/mobile-ota-preview-refresh.yml'), 'utf8');
-    const parsed = parse(refresh) as { on: { push: { branches: string[] } }; jobs: { refresh: Job } };
+    const parsed = parse(refresh) as { on: { push: { branches: string[] } }; jobs: { plan: Job; dispatch: Job } };
     expect(parsed.on.push.branches).toEqual(['main', 'release/next']);
-    expect(refresh).toContain('pr.head.repo?.full_name !== repository');
+    // The planner filters to same-repository heads; see mobile-ota-preview-refresh.ts.
+    const planner = readFileSync(join(REPO_ROOT, 'scripts/mobile-ota-preview-refresh.ts'), 'utf8');
+    expect(planner).toContain('pull.headRepository === repository');
     expect(refresh).toContain('ref: context.payload.repository.default_branch');
     expect(refresh).toContain("workflow_id: 'mobile-ota-preview.yml'");
     expect(refresh).not.toContain('secrets.');
-    expect(refresh).not.toContain('actions/checkout');
     expect(refresh).not.toContain('pull_request_target');
+    // The only checkout is the workflow's own trusted commit, never a PR head,
+    // and the job holding actions:write checks out nothing.
+    const checkouts = Object.values(parsed.jobs).flatMap((job) =>
+      job.steps.filter((step) => step.uses?.startsWith('actions/checkout@')),
+    );
+    expect(checkouts.map((step) => step.with?.ref)).toEqual(['${{ github.workflow_sha }}']);
+    expect(parsed.jobs.dispatch.permissions).toEqual({ actions: 'write' });
+    expect(parsed.jobs.dispatch.steps.some((step) => step.uses?.startsWith('actions/checkout@'))).toBe(false);
     const preview = parse(readFileSync(join(REPO_ROOT, '.github/workflows/mobile-ota-preview.yml'), 'utf8')) as {
       jobs: { publish: Job };
     };

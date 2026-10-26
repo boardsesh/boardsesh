@@ -4,164 +4,591 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
+import {
+  affectsMobilePreview,
+  appConfigDigest,
+  createGitHubRefreshApi,
+  decidePreviewRefresh,
+  parsePreviewBases,
+  planPreviewRefresh,
+  PREVIEW_BASE_KEYS,
+  RUNTIME_INPUTS,
+  snapshotQuery,
+  unreadableSnapshot,
+  type BaseHeads,
+  type BaseSnapshot,
+  type PreviewRecord,
+  type RefreshApi,
+  type RefreshPull,
+} from './mobile-ota-preview-refresh.ts';
 
 interface WorkflowStep {
   id?: string;
-  with?: { script?: string };
+  name?: string;
+  uses?: string;
+  run?: string;
+  env?: Record<string, string>;
+  with?: Record<string, unknown> & { script?: string };
+}
+interface WorkflowJob {
+  if?: string;
+  needs?: string | string[];
+  permissions?: Record<string, string>;
+  outputs?: Record<string, string>;
+  steps: WorkflowStep[];
 }
 interface Workflow {
   permissions?: Record<string, string>;
-  jobs: Record<string, { steps: WorkflowStep[] }>;
+  jobs: Record<string, WorkflowJob>;
 }
 const readWorkflow = (name: string) =>
   parse(readFileSync(resolve(import.meta.dirname, `../.github/workflows/${name}.yml`), 'utf8')) as Workflow;
 const refresh = readWorkflow('mobile-ota-preview-refresh');
 const publisher = readWorkflow('mobile-ota-preview');
-const pr = (number = 7, base = 'main', repository = 'boardsesh/boardsesh', ref = 'feature') => ({
-  number,
-  state: 'open',
-  head: { sha: 'a'.repeat(40), ref, repo: { full_name: repository } },
-  base: { ref: base },
+const decideScript = publisher.jobs.gate.steps.find((step) => step.id === 'decide')?.with?.script ?? '';
+const pinScript = publisher.jobs.gate.steps.find((step) => step.id === 'pin')?.with?.script ?? '';
+
+const sha = (character: string) => character.repeat(40);
+const MAIN_OLD = sha('1');
+const MAIN_NEW = sha('2');
+const TRAIN_OLD = sha('3');
+const TRAIN_NEW = sha('4');
+
+const baseInputs = (): Record<string, string> =>
+  Object.fromEntries(RUNTIME_INPUTS.map(({ path }, index) => [path, `oid-${index}`]));
+const snap = (commit: string, version = '2.6.0', overrides: Record<string, string> = {}): BaseSnapshot => ({
+  sha: commit,
+  readable: true,
+  inputs: { ...baseInputs(), ...overrides },
+  marketingVersion: version,
 });
-const history = (nodes: unknown[] = [], hasPreviousPage = false, startCursor: string | null = null) => ({
-  repository: { pullRequest: { timelineItems: { nodes, pageInfo: { hasPreviousPage, startCursor } } } },
+const found = (status = 'success', trainSha = TRAIN_OLD): PreviewRecord => ({
+  kind: 'found',
+  status,
+  bases: { version: 1, mainSha: MAIN_OLD, trainSha, sourceBaseRef: 'main', sourceBaseSha: MAIN_OLD },
 });
-const previewEvent = (task = 'deploy', state = 'FAILURE') => ({
-  deployment: {
-    environment: 'pr-preview',
-    description: 'OTA preview pr-7',
-    task,
-    state,
-    commitOid: 'b'.repeat(40),
-  },
+/** Recorded and current heads with an active train (main 2.6.0, train 2.7.0) and identical inputs. */
+const heads = (): { recorded: BaseHeads; current: BaseHeads } => ({
+  recorded: { main: snap(MAIN_OLD), train: snap(TRAIN_OLD, '2.7.0') },
+  current: { main: snap(MAIN_NEW), train: snap(TRAIN_NEW, '2.7.0') },
 });
 
-async function execute(script: string | undefined, github: unknown, eventName: string, inputs = {}) {
-  if (!script) throw new Error('Workflow script missing');
-  const outputs = new Map<string, unknown>();
-  const core = {
-    info: vi.fn(),
-    notice: vi.fn(),
-    setOutput: (key: string, result: unknown) => outputs.set(key, result),
-  };
-  // Execute actual workflow code with injected API/context objects and no shell environment.
-  // oxlint-disable-next-line no-implied-eval
-  const run = new Function('github', 'context', 'core', `return (async () => {\n${script}\n})();`) as (
-    github: unknown,
-    context: unknown,
-    core: unknown,
-  ) => Promise<void>;
-  await run(
-    github,
-    {
-      repo: { owner: 'boardsesh', repo: 'boardsesh' },
-      eventName,
-      payload: { repository: { default_branch: 'main' }, inputs },
-    },
-    core,
-  );
-  return outputs;
-}
+describe('decidePreviewRefresh', () => {
+  it('skips a preview whose base runtime inputs did not change across new SHAs', () => {
+    const { recorded, current } = heads();
+    expect(decidePreviewRefresh(found(), current, recorded)).toEqual({
+      dispatch: false,
+      reason: 'unchanged runtime, skipped',
+    });
+  });
 
-function fixture(options: { pulls?: ReturnType<typeof pr>[]; mobile?: boolean; pages?: unknown[] } = {}) {
-  const pulls = { list: vi.fn(), listFiles: vi.fn(), get: vi.fn(async () => ({ data: pr() })) };
-  const actions = { createWorkflowDispatch: vi.fn(async () => ({})) };
-  const pages = [...(options.pages ?? [history()])];
-  const graphql = vi.fn(async (_query: string, _variables: unknown) => pages.shift());
-  const paginate = vi.fn(async (method: unknown, _options: unknown) =>
-    method === pulls.list
-      ? (options.pulls ?? [pr()])
-      : [{ filename: options.mobile ? 'packages/mobile/app/index.tsx' : 'packages/web/app/page.tsx' }],
-  );
-  const github = { rest: { pulls, actions }, paginate, graphql };
-  const run = () => execute(refresh.jobs.refresh.steps[0].with?.script, github, 'push');
-  return { github, actions, graphql, run };
-}
+  it('dispatches when only the iOS runtime of main changed', () => {
+    const { recorded, current } = heads();
+    current.main = snap(MAIN_NEW, '2.6.0', { 'packages/mobile/targets': 'widget-v2' });
+    expect(decidePreviewRefresh(found(), current, recorded)).toEqual({
+      dispatch: true,
+      reason: 'runtime inputs changed on main ios',
+    });
+  });
 
-describe('base-refresh preview cleanup discovery', () => {
-  it('refreshes a mobile PR without reading deployment history', async () => {
-    const { run, graphql, actions } = fixture({ mobile: true });
-    await run();
-    expect(graphql).not.toHaveBeenCalled();
-    expect(actions.createWorkflowDispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ inputs: { pr: '7' }, ref: 'main' }),
+  it('names the train and both platforms for a shared native input', () => {
+    const { recorded, current } = heads();
+    current.train = snap(TRAIN_NEW, '2.7.0', { 'pnpm-lock.yaml': 'lock-v2' });
+    expect(decidePreviewRefresh(found(), current, recorded).reason).toBe(
+      'runtime inputs changed on release/next ios+android',
     );
   });
 
-  it.each(['deploy', 'ota-preview-pr-7'])(
-    'reconciles absorbed mobile changes using old-head %s deployments, including failed partial uploads',
-    async (task) => {
-      const { run, actions, github } = fixture({ pages: [history([previewEvent(task)])] });
-      await run();
-      expect(actions.createWorkflowDispatch).toHaveBeenCalledWith(expect.objectContaining({ inputs: { pr: '7' } }));
-      const decide = publisher.jobs.gate.steps.find((step) => step.id === 'decide');
-      const outputs = await execute(decide?.with?.script, github, 'workflow_dispatch', { pr: '7' });
-      expect(outputs.get('action')).toBe('cleanup');
-      expect(outputs.get('cleanup_reason')).toBe('no-mobile');
-      expect(outputs.get('head_sha')).toBe(pr().head.sha);
+  it('dispatches when the release train becomes active', () => {
+    const { current } = heads();
+    const recorded: BaseHeads = { main: snap(MAIN_OLD), train: null };
+    expect(decidePreviewRefresh(found('success', ''), current, recorded)).toEqual({
+      dispatch: true,
+      reason: 'release train activated',
+    });
+  });
+
+  it('dispatches when a merge-back levels the versions and the train stops being a target', () => {
+    const { recorded } = heads();
+    const current: BaseHeads = { main: snap(MAIN_NEW, '2.7.0'), train: snap(TRAIN_NEW, '2.7.0') };
+    expect(decidePreviewRefresh(found(), current, recorded).reason).toBe('release train deactivated');
+  });
+
+  it('dispatches when the PR has no preview record', () => {
+    const { current } = heads();
+    expect(decidePreviewRefresh({ kind: 'missing' }, current)).toEqual({
+      dispatch: true,
+      reason: 'no preview record, refreshing',
+    });
+  });
+
+  it('dispatches an unreadable preview record', () => {
+    const { current } = heads();
+    expect(decidePreviewRefresh({ kind: 'unreadable', detail: 'no valid otaPreviewBases' }, current).dispatch).toBe(
+      true,
+    );
+  });
+
+  it.each(['failure', 'error'])('dispatches when the last preview ended in %s', (status) => {
+    const { recorded, current } = heads();
+    expect(decidePreviewRefresh(found(status), current, recorded)).toEqual({
+      dispatch: true,
+      reason: `last preview ended in ${status}, refreshing`,
+    });
+  });
+
+  it.each(['in_progress', 'queued', 'pending', '', 'inactive'])(
+    'compares runtimes for a %j preview instead of refreshing it',
+    (status) => {
+      const { recorded, current } = heads();
+      expect(decidePreviewRefresh(found(status), current, recorded).dispatch).toBe(false);
     },
   );
 
-  it('walks backward past unrelated deployments to find a preview before a force-push', async () => {
-    const { run, graphql, actions } = fixture({
-      pages: [
-        history([{ deployment: { environment: 'web-preview', description: 'web' } }], true, 'older'),
-        history([previewEvent('deploy', 'SUCCESS')]),
-      ],
-    });
-    await run();
-    expect(graphql).toHaveBeenCalledTimes(2);
-    expect(graphql).toHaveBeenNthCalledWith(2, expect.stringContaining('DEPLOYED_EVENT'), {
-      owner: 'boardsesh',
-      repo: 'boardsesh',
-      number: 7,
-      before: 'older',
-    });
-    expect(actions.createWorkflowDispatch).toHaveBeenCalledTimes(1);
+  it('ignores native changes on an inactive train', () => {
+    const recorded: BaseHeads = { main: snap(MAIN_OLD), train: snap(TRAIN_OLD) };
+    const current: BaseHeads = {
+      main: snap(MAIN_NEW),
+      train: snap(TRAIN_NEW, '2.6.0', { 'packages/mobile/modules': 'changed' }),
+    };
+    expect(decidePreviewRefresh(found(), current, recorded).dispatch).toBe(false);
   });
 
-  it('skips unrelated web PRs, wrong environments and another PR’s preview', async () => {
-    const { run, actions } = fixture({
-      pages: [
-        history([
-          { deployment: { environment: 'production', description: 'OTA preview pr-7' } },
-          { deployment: { environment: 'pr-preview', description: 'OTA preview pr-8' } },
-          { deployment: null },
-        ]),
+  it('counts the publisher workflow on main only, since dispatches run main’s copy', () => {
+    const workflow = '.github/workflows/mobile-ota-preview.yml';
+    const onTrain = heads();
+    onTrain.current.train = snap(TRAIN_NEW, '2.7.0', { [workflow]: 'edited' });
+    expect(decidePreviewRefresh(found(), onTrain.current, onTrain.recorded).dispatch).toBe(false);
+    const onMain = heads();
+    onMain.current.main = snap(MAIN_NEW, '2.6.0', { [workflow]: 'edited' });
+    expect(decidePreviewRefresh(found(), onMain.current, onMain.recorded).reason).toBe(
+      'runtime inputs changed on main ios+android',
+    );
+  });
+
+  it('refreshes when a recorded base can no longer be read', () => {
+    const { current } = heads();
+    const recorded: BaseHeads = { main: unreadableSnapshot(MAIN_OLD), train: snap(TRAIN_OLD, '2.7.0') };
+    expect(decidePreviewRefresh(found(), current, recorded).dispatch).toBe(true);
+  });
+
+  it('refreshes when a marketing version cannot be read', () => {
+    const { recorded, current } = heads();
+    current.train = { ...snap(TRAIN_NEW), marketingVersion: null };
+    expect(decidePreviewRefresh(found(), current, recorded).reason).toBe(
+      'release train version unreadable, refreshing',
+    );
+  });
+});
+
+describe('runtime inputs', () => {
+  it('treats a marketing-version bump as runtime-neutral, like ExpoConfigVersions', () => {
+    const config = (version: string, scheme = 'boardsesh') =>
+      `export default () => ({\n    name: 'Boardsesh',\n    version: '${version}',\n    scheme: '${scheme}',\n});\n`;
+    expect(appConfigDigest(config('2.7.0'))).toBe(appConfigDigest(config('2.7.1')));
+    expect(appConfigDigest(config('2.7.0'))).not.toBe(appConfigDigest(config('2.7.0', 'other')));
+    // More than one literal version line is hashed as-is rather than guessed at.
+    const doubled = `${config('2.7.0')}\n    version: '1.0.0',\n`;
+    expect(appConfigDigest(doubled)).not.toBe(appConfigDigest(`${config('2.7.0')}\n    version: '1.0.1',\n`));
+  });
+
+  it('covers every path the publisher gate treats as a native fingerprint input', () => {
+    const body = /const affectsNativeFingerprint = \(path\) =>([\s\S]*?);\n\n/.exec(decideScript)?.[1];
+    expect(body).toBeTruthy();
+    // oxlint-disable-next-line no-implied-eval
+    const gate = new Function('path', `return (${body});`) as (path: string) => boolean;
+    const covered = (path: string) =>
+      RUNTIME_INPUTS.some((input) => path === input.path || path.startsWith(`${input.path}/`));
+    const samples = [
+      'package.json',
+      'pnpm-lock.yaml',
+      'pnpm-workspace.yaml',
+      'patches/expo-updates@58.0.18.patch',
+      'packages/mobile/app.config.ts',
+      'packages/mobile/package.json',
+      'packages/mobile/fingerprint.config.js',
+      'packages/mobile/targets/widget/Info.plist',
+      'packages/mobile/plugins/with-android-minify.js',
+      'packages/mobile/modules/live-activity/ios/LiveActivity.swift',
+      'packages/mobile/locales/de.json',
+      'packages/mobile/ios/Podfile',
+      'packages/mobile/android/build.gradle',
+      'packages/mobile/src/app.tsx',
+      'packages/shared/queue/src/index.ts',
+      'packages/web/package.json',
+    ];
+    for (const path of samples) expect(covered(path), path).toBe(gate(path));
+    // Extra inputs beyond the gate: react-native.config.js and the publisher env.
+    const extras = RUNTIME_INPUTS.filter((input) => !gate(input.path) && !gate(`${input.path}/file`)).map(
+      (input) => input.path,
+    );
+    expect(extras).toEqual(['packages/mobile/react-native.config.js', '.github/workflows/mobile-ota-preview.yml']);
+  });
+  it('treats exactly the files the publisher gate publishes for as mobile changes', () => {
+    const body = /const affectsMobilePreview = \(path\) =>([\s\S]*?);\n\n/.exec(decideScript)?.[1];
+    expect(body).toBeTruthy();
+    // oxlint-disable-next-line no-implied-eval
+    const gate = new Function('path', `return (${body});`) as (path: string) => boolean;
+    const literals = [...String(body).matchAll(/'([^']+)'/g)].map((match) => match[1]);
+    expect(literals.length).toBeGreaterThan(10);
+    const samples = [
+      ...literals,
+      ...literals.map((literal) => `${literal}x`),
+      'packages/web/app/page.tsx',
+      '.github/workflows/mobile-ota-production.yml',
+      'scripts/mobile-ota-preview-refresh.ts',
+    ];
+    for (const path of samples) expect(affectsMobilePreview(path), path).toBe(gate(path));
+  });
+});
+
+describe('parsePreviewBases', () => {
+  const bases = { version: 1, mainSha: MAIN_OLD, trainSha: '', sourceBaseRef: 'main', sourceBaseSha: MAIN_OLD };
+
+  it('uses the same keys the publisher pin step validates', () => {
+    const literal = /const baseKeys = (\[[^\]]+\]);/.exec(pinScript)?.[1];
+    expect(JSON.parse(String(literal).replaceAll("'", '"'))).toEqual([...PREVIEW_BASE_KEYS]);
+  });
+
+  it('accepts object and JSON-string payloads', () => {
+    expect(parsePreviewBases({ otaPreviewBases: bases })).toEqual(bases);
+    expect(parsePreviewBases(JSON.stringify({ otaPreviewBases: bases }))).toEqual(bases);
+  });
+
+  it.each([
+    null,
+    'not json',
+    {},
+    { otaPreviewBases: { ...bases, extra: true } },
+    { otaPreviewBases: { ...bases, version: 2 } },
+    { otaPreviewBases: { ...bases, mainSha: 'abc' } },
+    { otaPreviewBases: { ...bases, trainSha: 'abc' } },
+    { otaPreviewBases: { ...bases, sourceBaseRef: '' } },
+  ])('rejects %j', (payload) => {
+    expect(parsePreviewBases(payload)).toBeNull();
+  });
+});
+
+const pull = (number: number, overrides: Partial<RefreshPull> = {}): RefreshPull => ({
+  number,
+  headRef: `feature-${number}`,
+  headRepository: 'boardsesh/boardsesh',
+  baseRef: 'main',
+  ...overrides,
+});
+
+function fakeApi(options: {
+  pulls?: RefreshPull[];
+  files?: Record<number, string[]>;
+  records?: Record<number, PreviewRecord>;
+  live?: Record<number, boolean>;
+  snapshots?: BaseSnapshot[];
+  trainHead?: string | null;
+}) {
+  const snapshots = options.snapshots ?? [
+    snap(MAIN_OLD),
+    snap(MAIN_NEW),
+    snap(TRAIN_OLD, '2.7.0'),
+    snap(TRAIN_NEW, '2.7.0'),
+  ];
+  const api = {
+    openPulls: vi.fn(async () => options.pulls ?? [pull(7)]),
+    pullFiles: vi.fn(async (number: number) => options.files?.[number] ?? ['packages/mobile/app/index.tsx']),
+    branchHead: vi.fn(async (branch: string) =>
+      branch === 'main' ? MAIN_NEW : options.trainHead === undefined ? TRAIN_NEW : options.trainHead,
+    ),
+    latestPreview: vi.fn(async (number: number) => options.records?.[number] ?? found()),
+    hasLivePreview: vi.fn(async (number: number) => options.live?.[number] ?? false),
+    snapshots: vi.fn(
+      async (shas: readonly string[]) =>
+        new Map(
+          snapshots.filter((snapshot) => shas.includes(snapshot.sha)).map((snapshot) => [snapshot.sha, snapshot]),
+        ),
+    ),
+  } satisfies RefreshApi;
+  return api;
+}
+
+describe('planPreviewRefresh', () => {
+  it('writes one summary line per PR and dispatches only stale previews', async () => {
+    const api = fakeApi({
+      pulls: [pull(7), pull(8), pull(9)],
+      records: { 8: { kind: 'missing' }, 9: found('failure') },
+    });
+    expect(await planPreviewRefresh(api, 'boardsesh/boardsesh')).toEqual({
+      dispatch: [8, 9],
+      lines: [
+        'PR #7: unchanged runtime, skipped',
+        'PR #8: no preview record, refreshing',
+        'PR #9: last preview ended in failure, refreshing',
       ],
     });
-    await run();
-    expect(actions.createWorkflowDispatch).not.toHaveBeenCalled();
+    // One batched snapshot read for the current heads and every recorded base.
+    expect(api.snapshots).toHaveBeenCalledTimes(1);
+    expect(new Set(api.snapshots.mock.calls[0][0])).toEqual(new Set([MAIN_NEW, TRAIN_NEW, MAIN_OLD, TRAIN_OLD]));
   });
 
   it('keeps forks, train merge-backs and unsupported bases outside the dispatcher', async () => {
-    const { run, graphql, actions, github } = fixture({
-      pulls: [pr(7, 'main', 'outsider/fork'), pr(8, 'main', 'boardsesh/boardsesh', 'release/next'), pr(9, 'other')],
+    const api = fakeApi({
+      pulls: [
+        pull(7, { headRepository: 'outsider/boardsesh' }),
+        pull(8, { headRef: 'release/next' }),
+        pull(9, { baseRef: 'other' }),
+        pull(10, { headRepository: null }),
+      ],
     });
-    await run();
-    expect(github.paginate).toHaveBeenCalledTimes(1);
-    expect(graphql).not.toHaveBeenCalled();
-    expect(actions.createWorkflowDispatch).not.toHaveBeenCalled();
+    const plan = await planPreviewRefresh(api, 'boardsesh/boardsesh');
+    expect(plan.dispatch).toEqual([]);
+    expect(api.pullFiles).not.toHaveBeenCalled();
+    expect(api.branchHead).not.toHaveBeenCalled();
   });
 
-  it.each([null, {}, history([], true, null), history([], true, '')])(
-    'fails visibly when deployment history cannot prove there was no preview: %j',
-    async (page) => {
-      const { run, actions } = fixture({ pages: [page] });
-      await expect(run()).rejects.toThrow();
-      expect(actions.createWorkflowDispatch).not.toHaveBeenCalled();
-    },
-  );
-
-  it('rejects a repeated pagination cursor', async () => {
-    const { run } = fixture({ pages: [history([], true, 'same'), history([], true, 'same')] });
-    await expect(run()).rejects.toThrow('Invalid preview deployment history cursor');
+  it('reconciles a PR whose base absorbed its last mobile change only while a preview is live', async () => {
+    const api = fakeApi({
+      pulls: [pull(7), pull(8)],
+      files: { 7: ['packages/web/app/page.tsx'], 8: ['packages/web/app/page.tsx'] },
+      live: { 7: true },
+    });
+    const plan = await planPreviewRefresh(api, 'boardsesh/boardsesh');
+    expect(plan.dispatch).toEqual([7]);
+    expect(plan.lines[1]).toBe('PR #8: no mobile changes and no live preview, skipped');
+    expect(api.latestPreview).not.toHaveBeenCalled();
   });
 
-  it('surfaces history API failures rather than silently skipping cleanup', async () => {
-    const { run, graphql } = fixture();
-    graphql.mockRejectedValueOnce(new Error('History unavailable'));
-    await expect(run()).rejects.toThrow('History unavailable');
-    expect(refresh.permissions?.deployments).toBe('read');
+  it('refreshes a PR whose state cannot be read instead of skipping it', async () => {
+    const api = fakeApi({ pulls: [pull(7)] });
+    api.pullFiles.mockRejectedValueOnce(new Error('HTTP 502'));
+    expect(await planPreviewRefresh(api, 'boardsesh/boardsesh')).toEqual({
+      dispatch: [7],
+      lines: ['PR #7: preview state unreadable (HTTP 502), refreshing'],
+    });
+  });
+
+  it('fails visibly rather than fan out when the current bases cannot be read', async () => {
+    const api = fakeApi({ snapshots: [snap(MAIN_OLD), snap(TRAIN_OLD, '2.7.0'), snap(TRAIN_NEW, '2.7.0')] });
+    await expect(planPreviewRefresh(api, 'boardsesh/boardsesh')).rejects.toThrow('current bases');
+  });
+
+  it('treats a deleted release/next as a deactivated train', async () => {
+    const api = fakeApi({ trainHead: null });
+    const plan = await planPreviewRefresh(api, 'boardsesh/boardsesh');
+    expect(plan.lines).toEqual(['PR #7: release train deactivated']);
+  });
+});
+
+const jsonResponse = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+
+describe('createGitHubRefreshApi', () => {
+  it('reads runtime inputs as git object ids with a version-free app config digest', async () => {
+    const config = "export default () => ({\n    version: '2.7.0',\n});\n";
+    const appConfigIndex = RUNTIME_INPUTS.findIndex(({ path }) => path === 'packages/mobile/app.config.ts');
+    const iosIndex = RUNTIME_INPUTS.findIndex(({ path }) => path === 'packages/mobile/ios');
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const { query } = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as { query: string };
+      expect(query).toContain(`c0: object(oid: "${MAIN_NEW}")`);
+      expect(query).toContain(`object(expression: "${MAIN_NEW}:packages/mobile/targets")`);
+      const repository: Record<string, unknown> = { c0: { oid: MAIN_NEW }, c1: null };
+      RUNTIME_INPUTS.forEach((_input, index) => {
+        repository[`c0_${index}`] =
+          index === appConfigIndex ? { oid: 'blob', text: config, isTruncated: false } : { oid: `oid-${index}` };
+        repository[`c1_${index}`] = null;
+      });
+      repository[`c0_${iosIndex}`] = null;
+      return jsonResponse({ data: { repository } });
+    });
+    const api = createGitHubRefreshApi({ token: 't', repository: 'boardsesh/boardsesh', fetchImpl });
+    const snapshots = await api.snapshots([MAIN_NEW, MAIN_OLD]);
+    const current = snapshots.get(MAIN_NEW);
+    expect(current?.readable).toBe(true);
+    expect(current?.marketingVersion).toBe('2.7.0');
+    expect(current?.inputs['packages/mobile/app.config.ts']).toBe(appConfigDigest(config));
+    expect(current?.inputs['packages/mobile/ios']).toBe('');
+    expect(snapshots.get(MAIN_OLD)?.readable).toBe(false);
+  });
+
+  it('refuses to interpolate anything but a full SHA into the query', () => {
+    expect(() => snapshotQuery(['main") { oid } x: object(oid: "1'])).toThrow('full commit SHAs');
+  });
+
+  it('reads the latest preview deployment exactly like the pin step', async () => {
+    const deployment = {
+      id: 123,
+      environment: 'pr-preview',
+      task: 'ota-preview-pr-7',
+      description: 'OTA preview pr-7',
+      transient_environment: true,
+      production_environment: false,
+      payload: {
+        otaPreviewBases: {
+          version: 1,
+          mainSha: MAIN_OLD,
+          trainSha: '',
+          sourceBaseRef: 'main',
+          sourceBaseSha: MAIN_OLD,
+        },
+      },
+    };
+    const routes = new Map<string, unknown>([
+      ['/deployments?environment=pr-preview&task=ota-preview-pr-7&per_page=1', [deployment]],
+      ['/deployments/123/statuses?per_page=1', [{ state: 'success' }]],
+      ['/deployments?environment=pr-preview&task=ota-preview-pr-8&per_page=1', []],
+      ['/deployments?environment=pr-preview&task=ota-preview-pr-9&per_page=1', [{ ...deployment, task: 'other' }]],
+    ]);
+    const fetchImpl = vi.fn(async (url: string | URL | Request, _init?: RequestInit) => {
+      const path = (typeof url === 'string' ? url : url instanceof URL ? url.href : url.url).replace(
+        'https://api.github.com/repos/boardsesh/boardsesh',
+        '',
+      );
+      return routes.has(path) ? jsonResponse(routes.get(path)) : jsonResponse({}, 404);
+    });
+    const api = createGitHubRefreshApi({ token: 't', repository: 'boardsesh/boardsesh', fetchImpl });
+    expect(await api.latestPreview(7)).toMatchObject({ kind: 'found', status: 'success' });
+    expect(await api.latestPreview(8)).toEqual({ kind: 'missing' });
+    expect(await api.latestPreview(9)).toEqual({ kind: 'unreadable', detail: 'unexpected deployment identity' });
+    expect(await api.branchHead('release/next')).toBeNull();
+    expect(fetchImpl).toHaveBeenLastCalledWith(
+      'https://api.github.com/repos/boardsesh/boardsesh/branches/release%2Fnext',
+      expect.anything(),
+    );
+  });
+
+  it('treats only non-inactive preview deployments as live, walking back through history', async () => {
+    const page = (nodes: unknown[], hasPreviousPage: boolean, startCursor: string | null) =>
+      jsonResponse({
+        data: {
+          repository: { pullRequest: { timelineItems: { nodes, pageInfo: { hasPreviousPage, startCursor } } } },
+        },
+      });
+    const event = (state: string, description = 'OTA preview pr-7', environment = 'pr-preview') => ({
+      deployment: { environment, description, latestStatus: { state } },
+    });
+    const apiOver = (pages: Response[]) =>
+      createGitHubRefreshApi({
+        token: 't',
+        repository: 'boardsesh/boardsesh',
+        fetchImpl: vi.fn(
+          async (_url: string | URL | Request, _init?: RequestInit) => pages.shift() ?? jsonResponse({}, 500),
+        ),
+      });
+
+    // Another PR's preview, another environment and a removed preview are not live;
+    // an older failed partial upload still is.
+    const live = apiOver([
+      page([event('INACTIVE'), event('SUCCESS', 'OTA preview pr-8'), event('SUCCESS', 'x', 'web')], true, 'older'),
+      page([event('FAILURE')], false, null),
+    ]);
+    expect(await live.hasLivePreview(7)).toBe(true);
+    expect(await apiOver([page([event('INACTIVE')], false, null)]).hasLivePreview(7)).toBe(false);
+    await expect(apiOver([page([], true, 'same'), page([], true, 'same')]).hasLivePreview(7)).rejects.toThrow(
+      'Invalid preview deployment history cursor',
+    );
+  });
+});
+
+async function runDispatch(dispatch: string) {
+  const script = refresh.jobs.dispatch.steps[0].with?.script;
+  if (!script) throw new Error('Dispatch script missing');
+  const actions = { createWorkflowDispatch: vi.fn(async (_request: unknown) => ({})) };
+  const core = { info: vi.fn() };
+  const previous = process.env.DISPATCH;
+  process.env.DISPATCH = dispatch;
+  try {
+    // Execute the workflow's own code with injected API objects.
+    // oxlint-disable-next-line no-implied-eval
+    const run = new Function('github', 'context', 'core', `return (async () => {\n${script}\n})();`) as (
+      github: unknown,
+      context: unknown,
+      core: unknown,
+    ) => Promise<void>;
+    await run(
+      { rest: { actions } },
+      { repo: { owner: 'boardsesh', repo: 'boardsesh' }, payload: { repository: { default_branch: 'main' } } },
+      core,
+    );
+  } finally {
+    if (previous === undefined) delete process.env.DISPATCH;
+    else process.env.DISPATCH = previous;
+  }
+  return actions.createWorkflowDispatch;
+}
+
+describe('refresh workflow shape', () => {
+  it('plans with a read-only token from the workflow’s own trusted commit, installing nothing', () => {
+    const plan = refresh.jobs.plan;
+    expect(refresh.permissions).toEqual({ contents: 'read' });
+    expect(plan.permissions).toEqual({ contents: 'read', deployments: 'read', 'pull-requests': 'read' });
+    const checkout = plan.steps.find((step) => step.uses?.startsWith('actions/checkout@'));
+    expect(checkout?.with).toEqual({
+      ref: '${{ github.workflow_sha }}',
+      'persist-credentials': false,
+      'sparse-checkout': 'scripts',
+    });
+    const runs = plan.steps.flatMap((step) => (step.run ? [step.run] : []));
+    expect(runs).toEqual(['node --experimental-strip-types scripts/mobile-ota-preview-refresh.ts']);
+    expect(JSON.stringify(refresh)).not.toMatch(/secrets\.|vp install|pnpm|npm (?:ci|install)|head\.sha|head_sha/);
+    expect(plan.outputs?.dispatch).toBe('${{ steps.plan.outputs.dispatch }}');
+  });
+
+  it('dispatches from a job that holds only actions:write and runs no checked-out code', () => {
+    const dispatch = refresh.jobs.dispatch;
+    expect(dispatch.needs).toBe('plan');
+    expect(dispatch.permissions).toEqual({ actions: 'write' });
+    expect(dispatch.steps.map((step) => step.uses?.split('@')[0])).toEqual(['actions/github-script']);
+    expect(dispatch.if).toContain("needs.plan.outputs.dispatch != '[]'");
+  });
+
+  it('queues the default-branch publisher once per planned PR', async () => {
+    const createWorkflowDispatch = await runDispatch('[7,12]');
+    const request = (pr: string) => ({
+      owner: 'boardsesh',
+      repo: 'boardsesh',
+      workflow_id: 'mobile-ota-preview.yml',
+      ref: 'main',
+      inputs: { pr },
+    });
+    expect(createWorkflowDispatch.mock.calls).toEqual([[request('7')], [request('12')]]);
+  });
+
+  it.each(['{"pr":7}', '["7"]', '[0]', '[1.5]'])('rejects a malformed plan %s', async (dispatch) => {
+    await expect(runDispatch(dispatch)).rejects.toThrow('list of PR numbers');
+  });
+
+  it('hands an absorbed PR to the gate, which selects cleanup', async () => {
+    // The planner dispatched PR 7 because its base absorbed the last mobile
+    // file while a preview was live. The trusted gate re-resolves it.
+    const prData = {
+      number: 7,
+      state: 'open',
+      head: { sha: sha('a'), ref: 'feature', repo: { full_name: 'boardsesh/boardsesh' } },
+    };
+    const github = {
+      rest: { pulls: { get: vi.fn(async () => ({ data: prData })), listFiles: vi.fn() } },
+      paginate: vi.fn(async () => [{ filename: 'packages/web/app/page.tsx' }]),
+    };
+    const outputs = new Map<string, unknown>();
+    const core = {
+      info: vi.fn(),
+      notice: vi.fn(),
+      setOutput: (key: string, result: unknown) => outputs.set(key, result),
+    };
+    // oxlint-disable-next-line no-implied-eval
+    const run = new Function('github', 'context', 'core', `return (async () => {\n${decideScript}\n})();`) as (
+      github: unknown,
+      context: unknown,
+      core: unknown,
+    ) => Promise<void>;
+    await run(
+      github,
+      {
+        repo: { owner: 'boardsesh', repo: 'boardsesh' },
+        eventName: 'workflow_dispatch',
+        payload: { repository: { default_branch: 'main' }, inputs: { pr: '7' } },
+      },
+      core,
+    );
+    expect(outputs.get('action')).toBe('cleanup');
+    expect(outputs.get('cleanup_reason')).toBe('no-mobile');
+    expect(outputs.get('head_sha')).toBe(sha('a'));
   });
 });
