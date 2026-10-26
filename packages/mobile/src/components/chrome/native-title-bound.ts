@@ -34,3 +34,47 @@ export function nativeTitleMaxWidth(
     2 * TITLE_VIEW_SPACING;
   return Math.min(CENTER_CONTENT_MAX_WIDTH, Math.max(0, freeWidth));
 }
+
+/**
+ * Native UIKit bar items (`root-bar-items.ts`) are wider than the custom
+ * capsules' 38pt slots. Measured on an iPhone 17 Pro (iOS 26): one item's glass
+ * is 44pt; two items sharing a background span 101pt; two separate items sit
+ * 12pt apart (100pt). So each item past the first adds 57pt either way.
+ */
+export const NATIVE_BAR_ITEM_WIDTH = 44;
+const NATIVE_BAR_ITEM_STEP = 57;
+/**
+ * A title-only item ("40°") is wider than a glyph: about 32pt of semibold
+ * digits plus UIKit's padding. The allowance rounds that up.
+ */
+const NATIVE_TITLE_ITEM_ALLOWANCE = 12;
+
+/** What one side of the bar holds: every item, and how many of them are title-only. */
+export type NativeBarSide = { items: number; titleItems?: number };
+
+/** The width one side's native items take, edge to edge of their glass. */
+export function nativeBarSideWidth({ items, titleItems = 0 }: NativeBarSide): number {
+  if (items <= 0) return 0;
+  return NATIVE_BAR_ITEM_WIDTH + (items - 1) * NATIVE_BAR_ITEM_STEP + titleItems * NATIVE_TITLE_ITEM_ALLOWANCE;
+}
+
+/**
+ * `nativeTitleMaxWidth` for native bar items. Each side gives up its safe-area
+ * inset, the bar margin, its items' measured width and UIKit's title-view
+ * clearance; UIKit draws the items' glass, so no group padding is added. On an
+ * iPhone 17 Pro (402pt) with two items a side this leaves 144pt, so the
+ * on-the-wall capsule ellipsizes instead of running under history.
+ */
+export function nativeItemsTitleMaxWidth(
+  frameWidth: number,
+  insets: { left: number; right: number },
+  sides: { leading: NativeBarSide; trailing: NativeBarSide },
+): number {
+  const freeWidth =
+    frameWidth -
+    (insets.left + nativeBarSideWidth(sides.leading)) -
+    (insets.right + nativeBarSideWidth(sides.trailing)) -
+    2 * TOOLBAR_SIDE_MARGIN -
+    2 * TITLE_VIEW_SPACING;
+  return Math.min(CENTER_CONTENT_MAX_WIDTH, Math.max(0, freeWidth));
+}

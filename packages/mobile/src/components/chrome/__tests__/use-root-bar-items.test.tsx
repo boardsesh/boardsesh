@@ -13,7 +13,7 @@ type ToolbarLightbulb = {
 
 const ctrl = vi.hoisted(() => ({
   avatarUrl: null as string | null,
-  getSize: vi.fn<(uri: string) => Promise<{ width: number; height: number }>>(),
+  loadRoundAvatar: vi.fn<(uri: string, pixelSize: number) => Promise<{ uri: string; pixelSize: number } | null>>(),
   openUserDrawer: vi.fn(),
   unread: 0,
   board: null as Board | null,
@@ -30,7 +30,6 @@ const ctrl = vi.hoisted(() => ({
 }));
 
 vi.mock('react-native', () => ({
-  Image: { getSize: (uri: string) => ctrl.getSize(uri) },
   PixelRatio: { get: () => 3 },
 }));
 vi.mock('expo-router', () => ({ useRouter: () => ctrl.router }));
@@ -58,6 +57,9 @@ vi.mock('../../user-drawer/UserDrawerProvider', () => ({
 vi.mock('../BoardAnglePicker', () => ({
   BoardAnglePicker: ({ children }: { children: (open: () => void) => ReactElement }) => children(ctrl.openAngle),
 }));
+vi.mock('../../../lib/round-avatar/round-avatar', () => ({
+  loadRoundAvatar: (uri: string, pixelSize: number) => ctrl.loadRoundAvatar(uri, pixelSize),
+}));
 vi.mock('../../../hooks/use-vertical-tab-bar', () => ({ useVerticalTabBar: () => ctrl.onRail }));
 vi.mock('../LightbulbToolbarAction', () => ({ useToolbarLightbulb: () => ctrl.lightbulb }));
 
@@ -74,7 +76,7 @@ const adjustable: Board = { angle: 40, isAngleAdjustable: true };
 
 beforeEach(() => {
   ctrl.avatarUrl = null;
-  ctrl.getSize.mockReset();
+  ctrl.loadRoundAvatar.mockReset();
   ctrl.openUserDrawer.mockReset();
   ctrl.unread = 0;
   ctrl.board = null;
@@ -86,51 +88,52 @@ beforeEach(() => {
 });
 
 describe('useAvatarBarItem', () => {
-  it('shows the outline symbol, titled like the drawer button, with no photo', () => {
+  const ACCOUNT_SYMBOL = { type: 'sfSymbol', name: 'person.crop.circle.badge.ellipsis' };
+  const ROUND = { uri: 'data:image/png;base64,round', pixelSize: 84 };
+
+  it('shows the account symbol, titled like the drawer button, with no photo', () => {
     const { result } = renderHook(() => useAvatarBarItem());
-    expect(result.current).toMatchObject({
-      label: 'ariaLabels.userMenu',
-      icon: { type: 'sfSymbol', name: 'person.crop.circle' },
-    });
-    expect(ctrl.getSize).not.toHaveBeenCalled();
+    expect(result.current).toMatchObject({ label: 'ariaLabels.userMenu', icon: ACCOUNT_SYMBOL });
+    expect(ctrl.loadRoundAvatar).not.toHaveBeenCalled();
   });
 
-  it('switches to the photo once it has loaded, untinted and bar-sized', async () => {
+  it('switches to the round photo once it is ready, untinted and drawn at 28pt', async () => {
     ctrl.avatarUrl = 'https://x/static/avatars/me.jpg';
-    ctrl.getSize.mockResolvedValue({ width: 84, height: 84 });
+    ctrl.loadRoundAvatar.mockResolvedValue(ROUND);
     const { result } = renderHook(() => useAvatarBarItem());
-    // The symbol holds the slot until the photo is in the cache.
-    expect(result.current.icon).toEqual({ type: 'sfSymbol', name: 'person.crop.circle' });
+    // The symbol holds the slot until the round photo is made.
+    expect(result.current.icon).toEqual(ACCOUNT_SYMBOL);
+    expect(ctrl.loadRoundAvatar).toHaveBeenCalledWith('https://x/static/avatars/me.jpg?size=28', 84);
     await waitFor(() =>
       expect(result.current.icon).toEqual({
         type: 'image',
-        source: { uri: 'https://x/static/avatars/me.jpg?size=28', width: 28, height: 28, scale: 3 },
+        source: { uri: ROUND.uri, width: 28, height: 28, scale: 3 },
         tinted: false,
       }),
     );
   });
 
-  it('keeps the symbol when the photo fails to load', async () => {
+  it('keeps the symbol when the round photo cannot be made', async () => {
     ctrl.avatarUrl = 'https://x/static/avatars/gone.jpg';
-    ctrl.getSize.mockRejectedValue(new Error('404'));
+    ctrl.loadRoundAvatar.mockResolvedValue(null);
     const { result } = renderHook(() => useAvatarBarItem());
-    await waitFor(() => expect(ctrl.getSize).toHaveBeenCalled());
-    expect(result.current.icon).toEqual({ type: 'sfSymbol', name: 'person.crop.circle' });
+    await waitFor(() => expect(ctrl.loadRoundAvatar).toHaveBeenCalled());
+    expect(result.current.icon).toEqual(ACCOUNT_SYMBOL);
   });
 
-  it('stays the outline symbol on the iPhone Duo rail, where a URL photo keeps it off the rail', () => {
+  it('stays the account symbol on the iPhone Duo rail, where a photo keeps it off the rail', () => {
     ctrl.onRail = true;
     ctrl.avatarUrl = 'https://x/static/avatars/me.jpg';
-    ctrl.getSize.mockResolvedValue({ width: 84, height: 84 });
+    ctrl.loadRoundAvatar.mockResolvedValue(ROUND);
     const { result } = renderHook(() => useAvatarBarItem());
-    expect(result.current.icon).toEqual({ type: 'sfSymbol', name: 'person.crop.circle' });
-    expect(ctrl.getSize).not.toHaveBeenCalled();
+    expect(result.current.icon).toEqual(ACCOUNT_SYMBOL);
+    expect(ctrl.loadRoundAvatar).not.toHaveBeenCalled();
   });
 
   it('loads nothing while the chrome draws the glass avatar instead', () => {
     ctrl.avatarUrl = 'https://x/static/avatars/me.jpg';
     renderHook(() => useAvatarBarItem({ enabled: false }));
-    expect(ctrl.getSize).not.toHaveBeenCalled();
+    expect(ctrl.loadRoundAvatar).not.toHaveBeenCalled();
   });
 
   it('opens the user drawer', () => {

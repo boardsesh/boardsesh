@@ -22,6 +22,7 @@ vi.mock('../../chrome/NativeRootHeader', () => ({
   NativeRootHeader: ({
     centerContent,
     centerActionWidths,
+    centerItemSides,
     children,
     leftActions,
     leftItems,
@@ -30,6 +31,7 @@ vi.mock('../../chrome/NativeRootHeader', () => ({
   }: {
     centerContent?: ReactNode;
     centerActionWidths?: { leading: number; trailing: number };
+    centerItemSides?: ItemSides;
     children?: ReactNode;
     leftActions?: ReactNode;
     leftItems?: () => BarItemStandIn[];
@@ -41,6 +43,7 @@ vi.mock('../../chrome/NativeRootHeader', () => ({
     ctrl.nativeLeftItems = leftItems?.() ?? null;
     ctrl.nativeRightItems = rightItems?.() ?? null;
     ctrl.nativeCenterActionWidths = centerActionWidths;
+    ctrl.nativeCenterItemSides = centerItemSides;
     return createElement(
       'div',
       null,
@@ -75,6 +78,8 @@ type BluetoothCtx = {
   armUndoWallChangeToast: () => void;
 } | null;
 
+type ItemSides = { leading: { items: number; titleItems?: number }; trailing: { items: number; titleItems?: number } };
+
 type BarItemStandIn = {
   type: string;
   label?: string;
@@ -96,6 +101,7 @@ const ctrl = vi.hoisted(() => ({
   // The scroll-edge store the native header was handed.
   nativeScrollEdge: undefined as unknown,
   nativeCenterActionWidths: undefined as { leading: number; trailing: number } | undefined,
+  nativeCenterItemSides: undefined as ItemSides | undefined,
   nativeLeftActions: undefined as ReactNode,
 }));
 const haptics = vi.hoisted(() => ({ light: vi.fn() }));
@@ -340,6 +346,7 @@ describe('CollapsingTopChrome', () => {
     ctrl.nativeHeader = false;
     ctrl.nativeScrollEdge = undefined;
     ctrl.nativeCenterActionWidths = undefined;
+    ctrl.nativeCenterItemSides = undefined;
     ctrl.nativeLeftActions = undefined;
     ctrl.nativeBarItems = false;
     ctrl.onRail = false;
@@ -551,7 +558,8 @@ describe('CollapsingTopChrome', () => {
       expect(container.querySelector('[data-glass]')).toBeNull();
       // The angle picker sheet still mounts beside the header.
       expect(container.querySelector('[data-native-angle-picker]')).not.toBeNull();
-      expect(ctrl.nativeCenterActionWidths).toEqual({ leading: 76, trailing: 114 });
+      // Counted as native items (their measured widths), the angle as a title item.
+      expect(ctrl.nativeCenterItemSides).toEqual({ leading: { items: 2 }, trailing: { items: 3, titleItems: 1 } });
     });
 
     it('keeps the glass bulb, long press included, as the last custom item in a horizontal bar', () => {
@@ -564,7 +572,7 @@ describe('CollapsingTopChrome', () => {
       const bulb = rightItems[2] as BarItemStandIn & { element?: ReactElement };
       const { container } = render(bulb.element as ReactElement);
       expect(container.querySelector('[data-pressable="lightControl.disconnect"]')).not.toBeNull();
-      expect(ctrl.nativeCenterActionWidths).toEqual({ leading: 38, trailing: 114 });
+      expect(ctrl.nativeCenterItemSides).toEqual({ leading: { items: 1 }, trailing: { items: 3, titleItems: 1 } });
     });
 
     it('gives + an SF Symbol, its label and the highest visibility priority, and fires onCreate', () => {

@@ -58,7 +58,7 @@ describe('symbolBarItem', () => {
 });
 
 describe('avatarBarItem', () => {
-  const photo = avatarPhotoSource('https://x/static/avatars/me.jpg?size=96', 3);
+  const photo = avatarPhotoSource('data:image/png;base64,round', 84);
 
   it('shows the photo in its own colours when one has loaded', () => {
     const item = avatarBarItem({ label: 'User menu', onPress: vi.fn(), photo });
@@ -78,9 +78,9 @@ describe('avatarBarItem', () => {
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 
-  it('asks the image loader for a bar-sized photo', () => {
+  it('draws the round photo at 28pt whatever scale it was made for', () => {
     expect(photo).toEqual({
-      uri: 'https://x/static/avatars/me.jpg?size=96',
+      uri: 'data:image/png;base64,round',
       width: AVATAR_BAR_PHOTO_SIZE,
       height: AVATAR_BAR_PHOTO_SIZE,
       scale: 3,

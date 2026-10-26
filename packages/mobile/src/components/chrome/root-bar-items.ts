@@ -27,8 +27,13 @@ export type RootBarItem = RootBarButtonItem | RootBarMenuItem;
 /** The `unstable_header{Left,Right}Items` factory for a fixed list of items. */
 export type RootBarItemsFactory = () => NativeStackHeaderItem[];
 
-/** The avatar shows the person's photo; with none, this outline. */
-export const AVATAR_FALLBACK_SYMBOL: BarSymbol = 'person.crop.circle';
+/**
+ * The account item's symbol: on the Duo rail always, elsewhere until the round
+ * photo is ready or when there is none. Not `person.crop.circle`, which is the
+ * Profile tab's icon just below it on the rail; the ellipsis badge reads as
+ * "your menu", which is what the item opens.
+ */
+export const AVATAR_FALLBACK_SYMBOL: BarSymbol = 'person.crop.circle.badge.ellipsis';
 
 /**
  * The avatar photo's size in the bar, in points. UIKit draws a bar item's image
@@ -122,9 +127,17 @@ export function avatarBarItem({ label, onPress, photo }: AvatarBarItemOptions): 
   };
 }
 
-/** The bar-sized request for a photo: UIKit scales the decoded image to this box. */
-export function avatarPhotoSource(uri: string, scale: number): ImageURISource {
-  return { uri, width: AVATAR_BAR_PHOTO_SIZE, height: AVATAR_BAR_PHOTO_SIZE, scale };
+/**
+ * The bar-sized source for a round photo `pixelSize` pixels square: drawn at
+ * `AVATAR_BAR_PHOTO_SIZE` points, whatever the screen scale it was made for.
+ */
+export function avatarPhotoSource(uri: string, pixelSize: number): ImageURISource {
+  return {
+    uri,
+    width: AVATAR_BAR_PHOTO_SIZE,
+    height: AVATAR_BAR_PHOTO_SIZE,
+    scale: pixelSize / AVATAR_BAR_PHOTO_SIZE,
+  };
 }
 
 type MenuRow = { label: string; symbol: BarSymbol; onPress: () => void };

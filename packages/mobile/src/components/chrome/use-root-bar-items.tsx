@@ -12,7 +12,7 @@ import {
   type ReactElement,
   type RefObject,
 } from 'react';
-import { Image, PixelRatio, type ImageURISource } from 'react-native';
+import { PixelRatio, type ImageURISource } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../providers/theme-provider';
@@ -23,6 +23,7 @@ import { formatActiveBoardLabel } from '../../lib/boards/active-board-label';
 import { canAdjustBoardAngle } from '../../lib/boards/can-adjust-board-angle';
 import { hapticLight } from '../../lib/haptics';
 import { useVerticalTabBar } from '../../hooks/use-vertical-tab-bar';
+import { loadRoundAvatar, type RoundAvatarImage } from '../../lib/round-avatar/round-avatar';
 import { sizedAvatarUri } from '../Avatar';
 import { iconMap } from '../icon-map';
 import { useUserDrawer } from '../user-drawer/UserDrawerProvider';
@@ -53,19 +54,17 @@ export function useBarItemsOnRail(): boolean {
 /**
  * The account avatar. Opens the user drawer, like the glass avatar.
  *
- * In the horizontal bar it shows the person's photo once it has loaded; until
- * then, and when there is none or it fails, the outline symbol. Loading it once
- * here first keeps a dead URL from leaving the item with no image at all, since
- * UIKit cannot report the failure back. It loads through `Image.getSize`: the
- * board-art network check bans the image prefetch API in app code.
+ * In a horizontal bar it shows the person's photo cut round (`loadRoundAvatar`:
+ * UIKit does not clip a bar item's image, so a plain photo shows square). Until
+ * that is ready, and when there is no photo or it fails, the account symbol.
  *
- * On the rail it is always the outline symbol. With the photo, the closed iPhone
+ * On the rail it is always the account symbol. With a photo, the closed iPhone
  * Duo kept the avatar in a horizontal bar above the content while every symbol
- * item beside it moved to the rail. react-native-screens loads a URL image
- * after it creates the item, so UIKit first sees an item with a title and no
- * icon, which Apple never presents vertically; the photo is also an
- * original-colour image rather than a template. Either keeps it off the rail,
- * and neither is fixable from JavaScript. A symbol is there when the item is made.
+ * item beside it moved to the rail. react-native-screens loads any image source,
+ * a data URI included, after it creates the item, so UIKit first sees an item
+ * with a title and no icon, which Apple never presents vertically; the photo
+ * is also an original-colour image rather than a template. Neither is fixable
+ * from JavaScript, and a symbol is there when the item is made.
  *
  * `enabled: false` for a chrome that calls this unconditionally but draws the
  * glass avatar instead: nothing is loaded for an item nobody shows.
@@ -75,30 +74,31 @@ export function useAvatarBarItem({ enabled = true }: { enabled?: boolean } = {})
   const { openUserDrawer } = useUserDrawer();
   const onRail = useVerticalTabBar();
   const avatarUrl = useProfile().data?.avatarUrl ?? null;
-  const photo = useLoadedBarPhoto(enabled && !onRail ? avatarUrl : null);
+  const photo = useRoundBarPhoto(enabled && !onRail ? avatarUrl : null);
   const label = t('ariaLabels.userMenu');
   return useMemo(() => avatarBarItem({ label, onPress: openUserDrawer, photo }), [label, openUserDrawer, photo]);
 }
 
-function useLoadedBarPhoto(avatarUrl: string | null): ImageURISource | null {
+function useRoundBarPhoto(avatarUrl: string | null): ImageURISource | null {
+  const pixelSize = Math.round(AVATAR_BAR_PHOTO_SIZE * PixelRatio.get());
   const sizedUri = avatarUrl ? sizedAvatarUri(avatarUrl, AVATAR_BAR_PHOTO_SIZE) : null;
-  const [loadedUri, setLoadedUri] = useState<string | null>(null);
+  const [roundPhoto, setRoundPhoto] = useState<{ sourceUri: string; image: RoundAvatarImage } | null>(null);
   useEffect(() => {
     if (!sizedUri) return;
     let cancelled = false;
-    Image.getSize(sizedUri).then(
-      () => {
-        if (!cancelled) setLoadedUri(sizedUri);
-      },
-      () => undefined,
-    );
+    void loadRoundAvatar(sizedUri, pixelSize).then((image) => {
+      if (!cancelled && image) setRoundPhoto({ sourceUri: sizedUri, image });
+    });
     return () => {
       cancelled = true;
     };
-  }, [sizedUri]);
+  }, [sizedUri, pixelSize]);
   return useMemo(
-    () => (sizedUri != null && loadedUri === sizedUri ? avatarPhotoSource(sizedUri, PixelRatio.get()) : null),
-    [sizedUri, loadedUri],
+    () =>
+      sizedUri != null && roundPhoto?.sourceUri === sizedUri
+        ? avatarPhotoSource(roundPhoto.image.uri, roundPhoto.image.pixelSize)
+        : null,
+    [sizedUri, roundPhoto],
   );
 }
 

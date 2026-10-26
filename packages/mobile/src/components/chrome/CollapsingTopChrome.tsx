@@ -470,9 +470,13 @@ function CollapsingNativeBarHeader({
         rightItems={rightItems}
         centerContent={centerContent}
         titleHidden={titleHidden}
-        centerActionWidths={{
-          leading: leftItemList.length * NATIVE_ACTION_SIZE,
-          trailing: (rightItemList.length + rightCustomElements.length) * NATIVE_ACTION_SIZE,
+        centerItemSides={{
+          leading: { items: leftItemList.length },
+          trailing: {
+            items: rightItemList.length + rightCustomElements.length,
+            // The angle is the one title-only item ("40°").
+            titleItems: angleItem ? 1 : 0,
+          },
         }}
         scrollEdge={scrollEdge}
         onHeightChange={onHeightChange}

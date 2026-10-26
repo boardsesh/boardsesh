@@ -504,10 +504,14 @@ native items onto its side rail; a custom view never moves there, and neither do
 title but no icon. So every root action carries an SF Symbol and a title. UIKit shows the symbol in
 the bar and on the rail, and the title in the overflow menu and to VoiceOver.
 
-- In a horizontal bar the avatar shows the person's photo once it has loaded, and
-  `person.crop.circle` until then. On the Duo rail it is always `person.crop.circle`: with the photo
-  the closed Duo kept the avatar out of the rail. react-native-screens loads a URL image after it
-  creates the item, and the photo is an original-colour image, not a template.
+- In a horizontal bar the avatar shows the person's photo cut round (`src/lib/round-avatar/`: UIKit
+  does not clip a bar item's image, so the photo is squared by expo-image-manipulator, masked to a
+  circle in TypeScript and passed as a PNG data URI). Until it is ready, and on the Duo rail always,
+  it is `person.crop.circle.badge.ellipsis`, not the Profile tab's `person.crop.circle`. With a photo
+  the closed Duo kept the avatar out of the rail: react-native-screens loads any image source after
+  it creates the item, and the photo is an original-colour image, not a template.
+- The centre capsule's width comes from the native items' measured widths (`nativeItemsTitleMaxWidth`:
+  44pt for one item, 57pt for each one after it), so it ellipsizes before the trailing group.
 - The bulb is a native item only on the rail. In a horizontal bar it stays the glass bulb as a custom
   view, because react-native-screens has no item with both a tap and a long-press menu, and the
   long press opens Board controls.

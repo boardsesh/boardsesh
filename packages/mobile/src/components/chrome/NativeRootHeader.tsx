@@ -15,7 +15,7 @@ import {
   NativeHeaderOwnBackgroundContext,
   NativeTitleMaxWidthContext,
 } from './native-header-action-context';
-import { nativeTitleMaxWidth } from './native-title-bound';
+import { nativeItemsTitleMaxWidth, nativeTitleMaxWidth, type NativeBarSide } from './native-title-bound';
 import { HIDDEN_HEADER_TITLE_STYLE } from './hidden-header-title';
 
 /** UIKit owns title collapse, edge effects, Dynamic Type and the status-bar tap. */
@@ -28,6 +28,7 @@ export function NativeRootHeader({
   rightItems,
   centerContent,
   centerActionWidths,
+  centerItemSides,
   titleHidden = false,
   children,
   opaqueControls = false,
@@ -49,6 +50,12 @@ export function NativeRootHeader({
   centerContent?: ReactNode;
   /** Content widths of the native action groups flanking the custom title. */
   centerActionWidths?: { leading: number; trailing: number };
+  /**
+   * What the native bar items on each side hold, for `leftItems`/`rightItems`:
+   * they take UIKit's measured widths, not the custom 38pt slots. Takes
+   * precedence over `centerActionWidths`.
+   */
+  centerItemSides?: { leading: NativeBarSide; trailing: NativeBarSide };
   /**
    * Draw no title, large or inline, for a screen whose tab already names it
    * (Climbs). `centerContent` still shows when present.
@@ -78,7 +85,11 @@ export function NativeRootHeader({
   const frameWidth = useFrameSize((frame) => frame.width);
   const insets = useSafeAreaInsets();
   // The title view gets the free space between the two groups (see nativeTitleMaxWidth).
-  const centerMaxWidth = centerActionWidths ? nativeTitleMaxWidth(frameWidth, insets, centerActionWidths) : undefined;
+  const centerMaxWidth = centerItemSides
+    ? nativeItemsTitleMaxWidth(frameWidth, insets, centerItemSides)
+    : centerActionWidths
+      ? nativeTitleMaxWidth(frameWidth, insets, centerActionWidths)
+      : undefined;
   // Stable renderer identity across re-renders that change neither input: one
   // fewer header option that changes on every render of the screen (#6619).
   const hasCenterContent = centerContent != null;
