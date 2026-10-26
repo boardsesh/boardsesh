@@ -14,6 +14,17 @@ import { describe, expect, it } from 'vitest';
 //
 // Counts are characters (not bytes) with the trailing newline stripped, which is
 // what both stores count and what deliver/supply send.
+//
+// The one exception is the App Store keyword field, which is held to 100 UTF-8
+// BYTES. Apple's App Store Connect help says of Keywords: "You can provide up to
+// 100 bytes of content", while every other field on that page is "limited to N
+// characters":
+// https://developer.apple.com/help/app-store-connect/reference/app-information/platform-version-information
+// Third-party write-ups disagree on whether App Store Connect really counts a
+// Chinese character as three, and `deliver` has no length check of its own, so
+// nothing local settles it. Bytes is the reading that cannot be rejected or
+// truncated at upload. For Latin text the two counts are nearly the same; for
+// zh-Hans it is 100 bytes against roughly 33 characters.
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const APPLE_METADATA = resolve(REPO_ROOT, 'fastlane/metadata');
@@ -37,8 +48,15 @@ const PLAY_LIMITS: Record<string, number> = {
 
 const PLAY_CHANGELOG_LIMIT = 500;
 
+/** Apple fields whose cap is counted in UTF-8 bytes rather than characters. */
+const APPLE_BYTE_COUNTED = new Set(['keywords.txt']);
+
 function contentLength(path: string): number {
   return readFileSync(path, 'utf8').replace(/\n$/, '').length;
+}
+
+function contentByteLength(path: string): number {
+  return Buffer.byteLength(readFileSync(path, 'utf8').replace(/\n$/, ''), 'utf8');
 }
 
 /** Locale dirs under fastlane/metadata/, excluding the android/ subtree. */
@@ -89,11 +107,13 @@ describe('App Store listing copy', () => {
     for (const [fileName, limit] of Object.entries(APPLE_LIMITS)) {
       const path = join(APPLE_METADATA, locale, fileName);
       if (!existsSync(path)) continue;
-      const length = contentLength(path);
+      const unit = APPLE_BYTE_COUNTED.has(fileName) ? 'bytes' : 'characters';
+      const length = unit === 'bytes' ? contentByteLength(path) : contentLength(path);
       // Assert on an object so a failure names the file and both numbers rather
       // than just "expected 172 to be less than 171".
-      expect({ file: `${locale}/${fileName}`, length, within: length <= limit }).toEqual({
+      expect({ file: `${locale}/${fileName}`, unit, length, within: length <= limit }).toEqual({
         file: `${locale}/${fileName}`,
+        unit,
         length,
         within: true,
       });
