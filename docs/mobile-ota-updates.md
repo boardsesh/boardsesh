@@ -619,9 +619,10 @@ to check.
   or a dispatch) and `release/next` (the train push, or a dispatch), once at least one platform
   exported from a verified store. The store is sealed, packed with GNU tar (no `-P`, owner 0) and
   uploaded with 7-day retention. The step summary records its size.
-- **Who uses it.** `scripts/ci/metro-cache-select.ts` lists the artifacts with this exact name
-  through the Actions API and takes the newest one that passes every rule below, before a byte is
-  downloaded. `publish` downloads it with `run-id` into a fresh directory, checks every tar member,
+- **Who uses it.** `scripts/ci/metro-cache-select.ts` lists recent successful runs of the trusted
+  workflows through the Actions API, newest first, and asks each for an artifact with this exact
+  name, before a byte is downloaded. `publish` downloads the chosen artifact by its id (never by
+  name) with `run-id` into a fresh directory, checks its unpacked size and every tar member,
   unpacks it and verifies the seal.
 - **Never blocks a publish.** Every cache step is `continue-on-error`, and the publish steps don't
   depend on any of them. Bundle bytes are unchanged: Metro keys each entry on the file's content
@@ -629,13 +630,15 @@ to check.
 
 #### Selection rules
 
-An artifact is used only when all of these hold (`scripts/ci/metro-cache-select.ts`, unit-tested
-in `scripts/ci/metro-cache-select.test.ts`):
+The selector starts from runs, not artifacts (`scripts/ci/metro-cache-select.ts`, unit-tested in
+`scripts/ci/metro-cache-select.test.ts`). Artifacts are only ever listed per run, so a same-named
+artifact uploaded by any other run is never even seen and can't crowd out the real ones. An
+artifact is used only when all of these hold:
 
-1. Its name is exactly this run's `metro-ota-store-<hash>`, it has not expired, it is not empty,
-   its `size_in_bytes` is within the 1 GiB budget, and it came from another run.
-2. The run that produced it completed with conclusion `success`, from this repository (not a fork),
-   triggered by `push` or `workflow_dispatch`.
+1. The run that produced it completed with conclusion `success`, from this repository (not a fork),
+   triggered by `push` or `workflow_dispatch`, and is not the current run.
+2. Its name is exactly this run's `metro-ota-store-<hash>`, it has not expired, it is not empty,
+   its `size_in_bytes` is within the 1 GiB budget, and its `workflow_run` is that run.
 3. That run's workflow file and branch are one of: `.github/workflows/mobile-ota-production.yml`
    on `main` or `release/next`, or `.github/workflows/production-deploy.yml` on `main`. Main's
    staging publish runs as a `workflow_call` inside `production-deploy.yml`, and the Actions API
@@ -644,9 +647,11 @@ in `scripts/ci/metro-cache-select.test.ts`):
    seal still applies to what it produces.
 4. The artifact's branch matches its run's branch.
 
-The newest passing artifact wins, and at most 20 runs are looked up. A run still in progress
-(including the current one) never qualifies, so a deploy's store becomes usable once that deploy
-has finished green.
+The newest qualifying run with a usable artifact wins. At most 40 runs are asked, one API call
+each, because most `production-deploy.yml` runs stage no OTA. A run still in progress never
+qualifies, so a deploy's store becomes usable once that deploy has finished green. The download
+names the vetted artifact id, so an artifact replaced after the check (which gets a new id) fails
+the download and the export runs cold.
 
 #### Threat model: why it works this way
 
@@ -657,15 +662,18 @@ has finished green.
   (`scripts/lib/ci-sandbox.cjs`), and `scripts/__tests__/untrusted-code-workflow-guard.test.ts`
   fails any default-branch workflow that executes a computed checkout without a reviewed reason.
   Even so, our cache key is computable from public files, so any main-scope run that guard missed
-  could plant an entry that `restore-keys` would hand to the production export. Worse, `@actions/cache` extracts with `tar -xf … -P -C
-  $GITHUB_WORKSPACE`, and `-P` turns off GNU tar's refusal of absolute and `..` names, so a planted
-  entry could rewrite any file the runner user can reach (repo scripts, `node_modules`, a binary
-  in `~/.local/bin`) during the restore, before any check ran.
+  could plant an entry that `restore-keys` would hand to the production export. Worse,
+  `@actions/cache` extracts with `tar -xf … -P -C $GITHUB_WORKSPACE`, and `-P` turns off GNU tar's
+  refusal of absolute and `..` names, so a planted entry could rewrite any file the runner user can
+  reach (repo scripts, `node_modules`, a binary in `~/.local/bin`) during the restore, before any
+  check ran.
 - **Nothing from the same run.** Jobs in one run share an artifact namespace, so the publish
   job never consumes a Metro store produced alongside it. No job other than `publish` handles the
   store, and it only ever comes from an earlier, finished run that passed the selection rules.
 - **Every byte is still checked.** download-artifact rejects path traversal inside the zip. The
-  unpack step lists the tar first and refuses it unless every member is a regular file or directory
+  unpack step refuses a tar over the budget, then one whose members' sizes add up to more than the
+  budget (a sparse member is a few bytes in the tar and any size on disk). It lists the tar first
+  and refuses it unless every member is a regular file or directory
   named `metro-cache/`, `metro-cache/<2 hex>/`, `metro-cache/<2 hex>/<hex>.mp` or
   `metro-cache/.metro-ota-seal`. Only then does it extract, without `-P` and with `--no-same-owner
   --no-same-permissions --no-overwrite-dir`.
@@ -698,8 +706,10 @@ has finished green.
 #### Size budget
 
 The budget is 1 GiB (`METRO_CACHE_MAX_BYTES`, default 1073741824). The selector compares it with
-the artifact's `size_in_bytes` (compressed) before downloading; the verify and seal steps compare
-it with the store on disk. For scale, `ci.yml`'s `metro-native` entry holds the same two production
+the artifact's `size_in_bytes` (compressed) before downloading. The unpack step compares it with
+the tar and with the sum of its members' sizes before writing anything. The verify and seal steps
+compare it with the store on disk. The zip itself is expanded inside download-artifact, so how big
+that can get rests on the artifact coming from a vetted run. For scale, `ci.yml`'s `metro-native` entry holds the same two production
 exports and is 85.6 MiB compressed (`gh cache list --key metro-native`, October 2026). The store
 only grows because each run carries every earlier transform forward until the key changes. Past the
 budget, the verify step drops it and that run starts fresh, and the seal step refuses to upload an

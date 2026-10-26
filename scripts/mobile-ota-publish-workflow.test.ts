@@ -798,10 +798,11 @@ with tarfile.open(sys.argv[1], "w", format=tarfile.GNU_FORMAT) as archive:
     expect(built.status, built.stderr).toBe(0);
   }
 
-  function runUnpackStep(workspace: string) {
+  function runUnpackStep(workspace: string, env: Record<string, string> = {}) {
     const result = runBash(unpackStep.run ?? '', workspace, {
       RUNNER_TEMP: join(workspace, 'runner-temp'),
       GITHUB_STEP_SUMMARY: join(workspace, 'summary'),
+      ...env,
     });
     expect(result.status, result.stderr).toBe(0);
     return result;
@@ -873,11 +874,15 @@ with tarfile.open(sys.argv[1], "w", format=tarfile.GNU_FORMAT) as archive:
     );
     expect(findStep.env?.METRO_STORE_ARTIFACT).toBe('${{ steps.metro_cache.outputs.store_artifact }}');
     expect(downloadStep.uses).toBe('actions/download-artifact@v4');
-    expect(downloadStep.if).toBe("steps.gate.outputs.configured == 'true' && steps.metro_find.outputs.run_id != ''");
-    expect(downloadStep.with).toMatchObject({
-      name: '${{ steps.metro_cache.outputs.store_artifact }}',
+    expect(downloadStep.if).toBe(
+      "steps.gate.outputs.configured == 'true' && steps.metro_find.outputs.run_id != '' && steps.metro_find.outputs.artifact_id != ''",
+    );
+    // By the vetted id, never by name: a same-named re-upload can't take its place.
+    expect(downloadStep.with).toEqual({
+      'artifact-ids': '${{ steps.metro_find.outputs.artifact_id }}',
       'run-id': '${{ steps.metro_find.outputs.run_id }}',
       'github-token': '${{ github.token }}',
+      'merge-multiple': true,
       path: '${{ runner.temp }}/metro-ota-download',
     });
     expect(uploadStep.uses).toBe('actions/upload-artifact@v4');
@@ -918,6 +923,35 @@ with tarfile.open(sys.argv[1], "w", format=tarfile.GNU_FORMAT) as archive:
       expect(entriesIn(workspace).some((entry) => entry.endsWith('escaped'))).toBe(false);
     });
     expect(() => readFileSync('/tmp/metro-ota-absolute-escape')).toThrow();
+  });
+
+  it('refuses a tar over the budget before listing it', () => {
+    withWorkspace((workspace) => {
+      writeArtifact(workspace, GENUINE_MEMBERS);
+      const { stdout } = runUnpackStep(workspace, { METRO_CACHE_MAX_BYTES: '4096' });
+      expect(stdout).toContain('its tar is');
+      expect(entriesIn(storeIn(workspace))).toEqual([]);
+    });
+  });
+
+  // The compressed size the selector checks says nothing about what a tar
+  // unpacks to: a sparse member is a few bytes in the tar and any size on disk.
+  it('refuses a tar whose members add up to more than the budget', () => {
+    withWorkspace((workspace) => {
+      const source = join(workspace, 'source');
+      mkdirSync(join(source, 'metro-cache', 'ab'), { recursive: true });
+      expect(spawnSync('truncate', ['-s', '64M', join(source, 'metro-cache', 'ab', '0123.mp')]).status).toBe(0);
+      const archive = join(workspace, 'runner-temp', 'metro-ota-download', 'metro-cache.tar');
+      mkdirSync(dirname(archive), { recursive: true });
+      const packed = spawnSync('tar', ['--sparse', '--format=gnu', '-cf', archive, '-C', source, 'metro-cache'], {
+        encoding: 'utf8',
+      });
+      expect(packed.status, packed.stderr).toBe(0);
+      expect(statSync(archive).size).toBeLessThan(1024 * 1024);
+      const { stdout } = runUnpackStep(workspace, { METRO_CACHE_MAX_BYTES: String(1024 * 1024) });
+      expect(stdout).toContain('it unpacks to 67108864 bytes');
+      expect(entriesIn(storeIn(workspace))).toEqual([]);
+    });
   });
 
   it('builds cold when there is no artifact, or it is not a tar archive', () => {

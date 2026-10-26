@@ -8,34 +8,57 @@
  * Env: GITHUB_REPOSITORY, GITHUB_API_URL, GH_TOKEN (actions: read),
  * METRO_STORE_ARTIFACT (the expected artifact name, which carries the cache
  * key), METRO_CACHE_MAX_BYTES (default 1 GiB), GITHUB_RUN_ID, GITHUB_OUTPUT.
- * Writes `run_id` and `artifact_id` to GITHUB_OUTPUT when it finds one.
+ * Writes `run_id` and `artifact_id` to GITHUB_OUTPUT when it finds one; the
+ * workflow downloads by that id, never by name.
  *
  * Only the publish job of a trusted run uploads a `metro-ota-store-*` artifact
- * (see docs/mobile-ota-updates.md, "Metro transform cache"), so this accepts an
- * artifact only when the run that made it is one of those runs:
+ * (see docs/mobile-ota-updates.md, "Metro transform cache"). So this starts
+ * from the runs, not the artifacts: it lists recent successful runs of the
+ * trusted workflows, newest first, and asks each one for an artifact with the
+ * expected name. Artifacts uploaded anywhere else under the same name are
+ * never listed. A run qualifies when it is:
  *
  * - `.github/workflows/mobile-ota-production.yml` on main or release/next, or
  *   `.github/workflows/production-deploy.yml` on main (main's staging publish
  *   runs inside it as a workflow_call, so that is the run's path);
  * - triggered by push or workflow_dispatch, from this repository, not a fork;
- * - completed with conclusion success;
- * - the artifact is unexpired, non-empty, within the size budget, and named
- *   for exactly this cache key.
+ * - completed with conclusion success, and not this run.
  *
- * The newest artifact that passes wins. None of this is the last line of
- * defence: the publish job still checks every tar member and the HMAC seal.
- * Any error here means "no store", never a failed publish.
+ * Its artifact must be unexpired, non-empty, within the size budget, and named
+ * for exactly this cache key. The newest qualifying run with such an artifact
+ * wins. None of this is the last line of defence: the publish job still checks
+ * the unpacked size, every tar member and the HMAC seal. Any error here means
+ * "no store", never a failed publish.
  */
 import { appendFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 export const DEFAULT_MAX_BYTES = 1024 * 1024 * 1024;
-/** Run lookups are one API call each; past this many candidates, build cold. */
-export const MAX_CANDIDATES = 20;
+/**
+ * Runs asked for an artifact, one API call each. Most production-deploy runs
+ * stage no OTA (no mobile change), so this looks back further than the last
+ * few runs.
+ */
+export const MAX_RUN_LOOKUPS = 40;
 
-const TRUSTED_PRODUCERS: ReadonlyArray<{ path: string; branches: ReadonlySet<string> }> = [
-  { path: '.github/workflows/mobile-ota-production.yml', branches: new Set(['main', 'release/next']) },
-  { path: '.github/workflows/production-deploy.yml', branches: new Set(['main']) },
+export interface TrustedSource {
+  workflowFile: string;
+  path: string;
+  branch: string;
+}
+
+export const TRUSTED_SOURCES: readonly TrustedSource[] = [
+  {
+    workflowFile: 'mobile-ota-production.yml',
+    path: '.github/workflows/mobile-ota-production.yml',
+    branch: 'main',
+  },
+  {
+    workflowFile: 'mobile-ota-production.yml',
+    path: '.github/workflows/mobile-ota-production.yml',
+    branch: 'release/next',
+  },
+  { workflowFile: 'production-deploy.yml', path: '.github/workflows/production-deploy.yml', branch: 'main' },
 ];
 const TRUSTED_EVENTS: ReadonlySet<string> = new Set(['push', 'workflow_dispatch']);
 
@@ -55,68 +78,70 @@ export interface RunRecord {
   status?: string | null;
   conclusion?: string | null;
   head_branch?: string | null;
+  created_at?: string | null;
   repository?: { id?: number | null } | null;
   head_repository?: { id?: number | null } | null;
 }
 
+export interface SelectOptions {
+  expectedName: string;
+  maxBytes: number;
+  currentRunId?: number;
+}
+
 export type Verdict = { ok: true } | { ok: false; reason: string };
 
-export function judgeArtifact(
-  artifact: ArtifactRecord,
-  options: { expectedName: string; maxBytes: number; currentRunId?: number },
-): Verdict {
+export function judgeRun(run: RunRecord, currentRunId?: number): Verdict {
+  if (run.id === currentRunId) return { ok: false, reason: 'this run' };
+  if (run.status !== 'completed' || run.conclusion !== 'success') return { ok: false, reason: 'did not succeed' };
+  if (!run.event || !TRUSTED_EVENTS.has(run.event)) return { ok: false, reason: `event ${run.event}` };
+  const repositoryId = run.repository?.id;
+  if (typeof repositoryId !== 'number' || run.head_repository?.id !== repositoryId) {
+    return { ok: false, reason: 'from another repository' };
+  }
+  const trusted = TRUSTED_SOURCES.some((source) => source.path === run.path && source.branch === run.head_branch);
+  if (!trusted) return { ok: false, reason: `${run.path} on ${run.head_branch}` };
+  return { ok: true };
+}
+
+export function judgeArtifact(artifact: ArtifactRecord, run: RunRecord, options: SelectOptions): Verdict {
   if (artifact.name !== options.expectedName) return { ok: false, reason: 'named for another cache key' };
   if (artifact.expired) return { ok: false, reason: 'expired' };
   if (!(artifact.size_in_bytes > 0)) return { ok: false, reason: 'empty' };
   if (artifact.size_in_bytes > options.maxBytes) return { ok: false, reason: 'over the size budget' };
-  const runId = artifact.workflow_run?.id;
-  if (typeof runId !== 'number') return { ok: false, reason: 'no producing run' };
-  if (runId === options.currentRunId) return { ok: false, reason: 'made by this run' };
+  if (artifact.workflow_run?.id !== run.id) return { ok: false, reason: 'not made by this run' };
+  if (artifact.workflow_run?.head_branch !== run.head_branch) return { ok: false, reason: 'branch disagrees' };
   return { ok: true };
 }
 
-export function judgeRun(run: RunRecord, artifact: ArtifactRecord): Verdict {
-  if (run.id !== artifact.workflow_run?.id) return { ok: false, reason: 'run does not match the artifact' };
-  if (run.status !== 'completed' || run.conclusion !== 'success') return { ok: false, reason: 'run did not succeed' };
-  if (!run.event || !TRUSTED_EVENTS.has(run.event)) return { ok: false, reason: `run event ${run.event}` };
-  const repositoryId = run.repository?.id;
-  if (typeof repositoryId !== 'number' || run.head_repository?.id !== repositoryId) {
-    return { ok: false, reason: 'run came from another repository' };
-  }
-  const producer = TRUSTED_PRODUCERS.find((candidate) => candidate.path === run.path);
-  if (!producer) return { ok: false, reason: `run of ${run.path}` };
-  if (!run.head_branch || !producer.branches.has(run.head_branch)) {
-    return { ok: false, reason: `run on ${run.head_branch}` };
-  }
-  if (artifact.workflow_run?.head_branch !== run.head_branch) {
-    return { ok: false, reason: 'artifact branch does not match its run' };
-  }
-  return { ok: true };
-}
-
-/** Newest first; artifacts without a timestamp sort last. */
-export function newestFirst(artifacts: ArtifactRecord[]): ArtifactRecord[] {
-  const time = (artifact: ArtifactRecord) => Date.parse(artifact.created_at ?? '') || 0;
-  return [...artifacts].sort((left, right) => time(right) - time(left));
-}
+const timeOf = (value: string | null | undefined) => Date.parse(value ?? '') || 0;
 
 export async function selectStore(
-  artifacts: ArtifactRecord[],
-  getRun: (runId: number) => Promise<RunRecord>,
-  options: { expectedName: string; maxBytes: number; currentRunId?: number },
+  listRuns: (source: TrustedSource) => Promise<RunRecord[]>,
+  listArtifacts: (runId: number) => Promise<ArtifactRecord[]>,
+  options: SelectOptions,
   log: (line: string) => void = () => {},
 ): Promise<{ artifact: ArtifactRecord; run: RunRecord } | null> {
-  const candidates = newestFirst(artifacts).filter((artifact) => {
-    const verdict = judgeArtifact(artifact, options);
-    if (!verdict.ok) log(`skip artifact ${artifact.id}: ${verdict.reason}`);
-    return verdict.ok;
-  });
-  for (const artifact of candidates.slice(0, MAX_CANDIDATES)) {
-    const runId = artifact.workflow_run?.id as number;
-    const run = await getRun(runId);
-    const verdict = judgeRun(run, artifact);
-    if (verdict.ok) return { artifact, run };
-    log(`skip artifact ${artifact.id} from run ${runId}: ${verdict.reason}`);
+  const runsById = new Map<number, RunRecord>();
+  for (const source of TRUSTED_SOURCES) {
+    for (const run of await listRuns(source)) {
+      const verdict = judgeRun(run, options.currentRunId);
+      if (verdict.ok) runsById.set(run.id, run);
+      else log(`skip run ${run.id}: ${verdict.reason}`);
+    }
+  }
+  const runs = [...runsById.values()]
+    .sort((left, right) => timeOf(right.created_at) - timeOf(left.created_at))
+    .slice(0, MAX_RUN_LOOKUPS);
+  for (const run of runs) {
+    const artifacts = (await listArtifacts(run.id)).sort(
+      (left, right) => timeOf(right.created_at) - timeOf(left.created_at),
+    );
+    for (const artifact of artifacts) {
+      const verdict = judgeArtifact(artifact, run, options);
+      if (verdict.ok) return { artifact, run };
+      log(`skip artifact ${artifact.id} from run ${run.id}: ${verdict.reason}`);
+    }
   }
   return null;
 }
@@ -144,13 +169,22 @@ export async function main(env: NodeJS.ProcessEnv = process.env): Promise<void> 
     console.log('Metro store lookup is not configured; building cold.');
     return;
   }
-  const listing = (await getJson(
-    `${apiUrl}/repos/${repository}/actions/artifacts?name=${encodeURIComponent(expectedName)}&per_page=100`,
-    token,
-  )) as { artifacts?: ArtifactRecord[] };
+  const base = `${apiUrl}/repos/${repository}/actions`;
   const chosen = await selectStore(
-    listing.artifacts ?? [],
-    async (runId) => (await getJson(`${apiUrl}/repos/${repository}/actions/runs/${runId}`, token)) as RunRecord,
+    async (source) => {
+      const query = `branch=${encodeURIComponent(source.branch)}&status=success&exclude_pull_requests=true&per_page=${MAX_RUN_LOOKUPS}`;
+      const listing = (await getJson(`${base}/workflows/${source.workflowFile}/runs?${query}`, token)) as {
+        workflow_runs?: RunRecord[];
+      };
+      return listing.workflow_runs ?? [];
+    },
+    async (runId) => {
+      const listing = (await getJson(
+        `${base}/runs/${runId}/artifacts?name=${encodeURIComponent(expectedName)}&per_page=100`,
+        token,
+      )) as { artifacts?: ArtifactRecord[] };
+      return listing.artifacts ?? [];
+    },
     { expectedName, maxBytes, currentRunId },
     (line) => console.log(line),
   );

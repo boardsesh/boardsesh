@@ -834,24 +834,30 @@ jobs:
           METRO_STORE_ARTIFACT: ${{ steps.metro_cache.outputs.store_artifact }}
         run: vp exec tsx scripts/ci/metro-cache-select.ts
 
+      # By the exact artifact id the selector vetted, never by name, so a
+      # same-named artifact uploaded after the check can't take its place (a
+      # replaced artifact has a new id, and the download then fails: cold).
+      # merge-multiple keeps the single artifact's files directly in `path`.
       # download-artifact rejects path traversal inside the zip; the unpack
-      # step checks every tar member and the seal decides the rest.
+      # step checks sizes and every tar member, and the seal decides the rest.
       - name: Download the Metro store
         id: metro_download
-        if: steps.gate.outputs.configured == 'true' && steps.metro_find.outputs.run_id != ''
+        if: steps.gate.outputs.configured == 'true' && steps.metro_find.outputs.run_id != '' && steps.metro_find.outputs.artifact_id != ''
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
-          name: ${{ steps.metro_cache.outputs.store_artifact }}
+          artifact-ids: ${{ steps.metro_find.outputs.artifact_id }}
           run-id: ${{ steps.metro_find.outputs.run_id }}
           github-token: ${{ github.token }}
+          merge-multiple: true
           path: ${{ runner.temp }}/metro-ota-download
 
-      # Always runs, so the store starts empty whatever came before. Every
-      # member is listed and checked before anything is written: only regular
-      # files and directories, only Metro's own layout under metro-cache/. The
-      # extract itself is GNU tar without -P (so it also refuses absolute and
-      # .. names) and without owner or mode trust.
+      # Always runs, so the store starts empty whatever came before. Nothing is
+      # written until the tar passes every check: the tar itself and the sum of
+      # its members' sizes within the 1 GiB budget (the selector only saw the
+      # compressed size), only regular files and directories, only Metro's own
+      # layout under metro-cache/. The extract itself is GNU tar without -P (so
+      # it also refuses absolute and .. names) and without owner or mode trust.
       - name: Unpack the Metro cache artifact
         id: metro_unpack
         if: steps.gate.outputs.configured == 'true' && steps.sentry_uploader.outcome == 'success'
@@ -874,6 +880,9 @@ jobs:
             mkdir -p "$store"
             exit 0
           fi
+          max_bytes="${METRO_CACHE_MAX_BYTES:-1073741824}"
+          archive_bytes="$(stat -c %s "$archive")"
+          [ "$archive_bytes" -le "$max_bytes" ] || refuse "its tar is $archive_bytes bytes, over the $max_bytes-byte budget"
           names="$(tar --list --file "$archive")" || refuse 'it is not a readable tar archive'
           types="$(tar --list --verbose --file "$archive" | cut -c1 | LC_ALL=C sort -u | tr -d '\n')" || refuse 'it is not a readable tar archive'
           case "$types" in
@@ -883,6 +892,10 @@ jobs:
           if [ -n "$names" ] && printf '%s\n' "$names" | grep -Evxq 'metro-cache/?|metro-cache/[0-9a-f]{2}/?|metro-cache/[0-9a-f]{2}/[0-9a-f]+\.mp|metro-cache/\.metro-ota-seal'; then
             refuse 'it names a path outside the Metro store layout'
           fi
+          # Members' own sizes (sparse members report their expanded size), so
+          # the extract can never write more than the budget.
+          member_bytes="$(tar --list --verbose --numeric-owner --file "$archive" | awk '{ total += $3 } END { printf "%.0f", total }')" || refuse 'it is not a readable tar archive'
+          [ "$member_bytes" -le "$max_bytes" ] || refuse "it unpacks to $member_bytes bytes, over the $max_bytes-byte budget"
           tar --extract --file "$archive" --directory "$parent" --no-same-owner --no-same-permissions --no-overwrite-dir
           mkdir -p "$store"
           echo "Unpacked $(printf '%s\n' "$names" | grep -c '\.mp$' || true) Metro cache entries for verification."
