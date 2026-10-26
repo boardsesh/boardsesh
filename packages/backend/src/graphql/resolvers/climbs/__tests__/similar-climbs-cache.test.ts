@@ -36,7 +36,7 @@ vi.mock('../../../../redis/client', () => ({
 import { findSimilarClimbsCached, SIMILAR_CLIMBS_CACHE_TTL_SECONDS } from '../similar-climbs-cache';
 import { resetSingleFlightForTests } from '../../../../utils/single-flight';
 
-const ROWS = [{ uuid: 'NEIGHBOUR-1', similarity: 0.8 }];
+const ROWS = [{ uuid: 'NEIGHBOUR-1', similarity: 0.8, requiredSetIds: [1, 20] }];
 
 function argsFor(overrides: Record<string, unknown> = {}) {
   return {
@@ -82,6 +82,16 @@ describe('findSimilarClimbsCached', () => {
     expect(setMock).toHaveBeenCalledTimes(1);
     expect(setMock.mock.calls[0]?.[2]).toBe('EX');
     expect(setMock.mock.calls[0]?.[3]).toBe(SIMILAR_CLIMBS_CACHE_TTL_SECONDS);
+  });
+
+  it('bypasses legacy cache rows that predate required hold-set metadata', async () => {
+    getMock.mockImplementation(async (cacheKey: string) =>
+      cacheKey.startsWith('boardsesh:similar-climbs:v1:')
+        ? JSON.stringify([{ uuid: 'NEIGHBOUR-1', similarity: 0.8 }])
+        : null,
+    );
+    expect(await findSimilarClimbsCached(argsFor())).toEqual(ROWS);
+    expect(findSimilarClimbsMock).toHaveBeenCalledOnce();
   });
 
   it('keys on the hold SET, not the row order Postgres happens to return', async () => {

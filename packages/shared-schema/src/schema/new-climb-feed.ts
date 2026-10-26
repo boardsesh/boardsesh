@@ -291,6 +291,8 @@ export const newClimbFeedTypeDefs = /* GraphQL */ `
     server has no compatibility data for this climb (legacy row).
     """
     compatibleSizeIds: [Int!]!
+    "Hold-set IDs required by the climb, derived from its frame placements. Null means unknown; an empty list requires no sets."
+    requiredSetIds: [Int!]
     """
     Structured climb rules ('no_match', 'any_feet', 'campus', 'no_kickboard',
     method_*). Nullable, unlike compatibleSizeIds above: null means the server

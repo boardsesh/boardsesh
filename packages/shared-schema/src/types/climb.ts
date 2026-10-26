@@ -93,6 +93,8 @@ export type Climb = {
   // their own origins, so hold-id containment alone can't tell them apart
   // (canAddClimbToBoard rule 5).
   compatibleSizeIds?: number[] | null;
+  // Frame-derived hold sets. Null/undefined is unknown; [] requires no sets.
+  requiredSetIds?: number[] | null;
   // `board_climbs.missing_hold_count` — how many of this climb's holds have come
   // off the wall. Spray walls only: null/undefined on every catalogue board, and
   // on any spray row a reset has never touched. Both mean intact.
@@ -148,6 +150,8 @@ export type ClimbInput = {
   // party peer on a different-sized wall can tell the climb doesn't fit theirs.
   // Null/undefined means unknown and imposes no constraint.
   compatibleSizeIds?: number[] | null;
+  // Frame-derived hold sets. Null/undefined is unknown; [] requires no sets.
+  requiredSetIds?: number[] | null;
   // How many of this climb's holds are no longer on the wall after a spray-wall
   // reset. Round-tripped through the queue because a broken climb stays
   // queueable and stays playable, and the peer showing it has to be able to say

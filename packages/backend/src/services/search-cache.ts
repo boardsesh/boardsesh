@@ -56,7 +56,8 @@ export const DEFAULT_SEARCH_CACHE_TTL = 86400;
  * shared page, and search rows still carry the same two revision fields. No
  * board is cacheable at the moment in any case (`isCacheableBoard`).
  */
-export const CACHE_VERSION = 'v10';
+// v11: project frame-derived requiredSetIds so cached rows retain hold-set metadata.
+export const CACHE_VERSION = 'v11';
 
 /**
  * Recursively sorts the keys of an object so that JSON.stringify produces

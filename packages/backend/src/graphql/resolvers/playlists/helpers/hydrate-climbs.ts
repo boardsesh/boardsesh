@@ -199,6 +199,7 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
       // the only field that stops an 8x10 climb reading as an exact fit on a
       // 12x12 wall whose hold ids happen to cover the same numbers.
       compatible_size_ids: tables.climbs.compatibleSizeIds,
+      required_set_ids: tables.climbs.requiredSetIds,
       // How many of the climb's holds have come off the wall. Spray walls only —
       // NULL on every catalogue board, where holds do not come off — and the badge,
       // the Intact / Lost holds filter and the remix prompt all read it, so a
@@ -305,6 +306,7 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
       framesCount: row.frames_count ?? null,
       framesPace: row.frames_pace ?? null,
       compatibleSizeIds: row.compatible_size_ids ?? null,
+      requiredSetIds: row.required_set_ids ?? null,
       missingHoldCount: row.missing_hold_count ?? null,
       revisionNumber: row.revision_number ?? null,
       holdsRevisionNumber: row.holds_revision_number ?? null,

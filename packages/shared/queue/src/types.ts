@@ -63,6 +63,8 @@ export type Climb = {
   // only field that stops an 8x10 climb lighting up wrong (canAddClimbToBoard
   // rule 5).
   compatibleSizeIds?: number[] | null;
+  // Frame-derived hold sets. Null/undefined is unknown; [] requires no sets.
+  requiredSetIds?: number[] | null;
   // `board_climbs.missing_hold_count` — how many of this climb's holds are no
   // longer on the wall after a spray-wall hold edit. Null/undefined means
   // "unknown", which every catalogue board is: holds do not come off a Kilter.

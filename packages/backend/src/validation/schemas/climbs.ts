@@ -125,6 +125,9 @@ export const ClimbInputSchema = z.object({
   // (their hold ids overlap as different holds). Bounded: a board type has a
   // handful of product sizes, never dozens.
   compatibleSizeIds: z.array(z.number().int()).max(50).nullish(),
+  // Additive server-first field; old queue items omit it. Preserve known-empty
+  // separately from unknown while bounding client-supplied metadata.
+  requiredSetIds: z.array(z.number().int()).max(50).nullish(),
   // How many of this climb's holds a spray-wall reset has taken off. Round-trips
   // through the queue because a broken climb is still queueable and still
   // playable, and the peer showing it has to be able to say why the board is

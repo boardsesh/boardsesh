@@ -165,6 +165,27 @@ Two non-obvious narrowing points bit us in #3927: `climbToQueueItem` hand-picked
 
 The contract is enforced by `packages/backend/src/__tests__/queue-climb-field-contract.test.ts`, which reads every list from its live source and compares by set equality against the GraphQL `ClimbInput` type. `userAscents` / `userAttempts` are the only deliberate exception — they are per-user tick counts and must never be broadcast, at the cost of behaving exactly like the bug the test guards against.
 
+### Hold-set metadata rollout (#5428)
+
+Postgres `board_climbs.required_set_ids` derives from frame placements and already syncs to
+SQLite. The server exposes it as nullable `requiredSetIds` on `Climb`, `SimilarClimb` and
+`ClimbInput`, preserves it through queue validation and persistence, and hydrates it beside
+`compatibleSizeIds` on search, detail, playlist, favorites and setter reads. Null or an absent
+legacy field means unknown; an empty array means no hold sets are required. No migration or
+backfill is part of this rollout.
+
+Deploy this additive server contract to **every backend replica before releasing clients** that
+select or emit the field. GraphQL validates selections even behind `@skip`, and an unknown input
+key is rejected even when its value is null, so neither is safe against an older server. Phase A
+keeps client documents and input mappers unchanged, using the queue contract test's existing
+`SERVER_READY_NOT_YET_ON_CLIENTS` staging list. Phase B must remove that entry when it adds the
+client read/write paths and compatibility behavior. Until Phase B ships, this server preparation
+alone does not prevent partial climbs on a board missing a required set.
+
+After Phase B ships, a server rollback must retain these additive fields and their input acceptance.
+Removing them would reject the newer clients' operations; roll back behavior while keeping the
+contract. Existing per-user queue field exclusions and climb visibility filters remain in force.
+
 ### Queue item field contract
 
 The **item** wrapping that climb flaps for the same reason (#3995). `ClimbQueueItemInput` carries `addedBy`, `addedByUser`, `tickedBy` and `suggested` alongside `uuid`/`climb`, and each crosses its own write list (`toQueueItemInput` in `@boardsesh/queue-react`), the backend's Zod item schema, and each client's read selection (`QUEUE_ITEM_FIELDS` in `@boardsesh/graphql`, `SUBSCRIPTION_QUEUE_ITEM_FIELDS` on mobile, plus mobile's `toClimbQueueItem` rebuild). Item drift is louder than climb drift because attribution is rendered: the queue row's trailing avatar blinks in and out depending on who wrote last. Before #3995 mobile neither sent nor selected the four, so a phone in the session stripped attribution from climbs the crew had queued on web. The same contract test guards the item lists, by set equality against `ClimbQueueItemInput`.

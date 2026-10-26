@@ -1240,6 +1240,8 @@ export type Climb = {
   quality_average: Scalars['String']['output'];
   /** Board configuration to draw this climb on, resolved against its setter's boards. Populated by userClimbs; null wherever the board is already known from the route. */
   renderBoard?: Maybe<RenderBoardConfig>;
+  /** Hold-set IDs required by the climb, derived from its frame placements. Null means unknown; an empty list requires no sets. */
+  requiredSetIds?: Maybe<Array<Scalars['Int']['output']>>;
   /**
    * The climb's stored revision number. Edits no longer move it, so it is 1 for
    * almost every climb and frozen at its last value for the few edited before
@@ -1334,6 +1336,8 @@ export type ClimbInput = {
   /** ISO timestamp of when this climb was first published. */
   published_at?: InputMaybe<Scalars['String']['input']>;
   quality_average: Scalars['String']['input'];
+  /** Hold-set IDs required by the climb, derived from its frame placements. Null means unknown; an empty list requires no sets. */
+  requiredSetIds?: InputMaybe<Array<Scalars['Int']['input']>>;
   /** The climb's revision as the queueing client read it (`Climb.revisionNumber`). Round-tripped through the queue so whoever logs a queued climb can say which revision was on the wall without a refetch. Null from a client that predates the field. */
   revisionNumber?: InputMaybe<Scalars['Int']['input']>;
   setter_username: Scalars['String']['input'];
@@ -10042,6 +10046,8 @@ export type SimilarClimb = {
   name?: Maybe<Scalars['String']['output']>;
   /** Average quality at this angle on the canonical 1-5 scale (board_climb_stats.quality_average). */
   qualityAverage?: Maybe<Scalars['Float']['output']>;
+  /** Hold-set IDs required by the climb, derived from its frame placements. Null means unknown; an empty list requires no sets. */
+  requiredSetIds?: Maybe<Array<Scalars['Int']['output']>>;
   setterUsername?: Maybe<Scalars['String']['output']>;
   /** Number of hold positions present in both climbs. */
   sharedHoldCount: Scalars['Int']['output'];

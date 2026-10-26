@@ -371,6 +371,7 @@ export const setterFollowQueries = {
           // needs it to tell Woods' two sizes apart (their hold ids overlap as
           // different holds).
           compatible_size_ids: tables.climbs.compatibleSizeIds,
+          required_set_ids: tables.climbs.requiredSetIds,
           // How many of the climb's holds have come off the wall — see get-climb.ts.
           missing_hold_count: tables.climbs.missingHoldCount,
           revision_number: tables.climbs.revisionNumber,
@@ -432,6 +433,7 @@ export const setterFollowQueries = {
         framesCount: result.frames_count ?? null,
         framesPace: result.frames_pace ?? null,
         compatibleSizeIds: result.compatible_size_ids ?? null,
+        requiredSetIds: result.required_set_ids ?? null,
         missingHoldCount: result.missing_hold_count ?? null,
         revisionNumber: result.revision_number ?? null,
         holdsRevisionNumber: result.holds_revision_number ?? null,
@@ -494,6 +496,7 @@ export const setterFollowQueries = {
           frames_count: tables.climbs.framesCount,
           frames_pace: tables.climbs.framesPace,
           compatible_size_ids: tables.climbs.compatibleSizeIds,
+          required_set_ids: tables.climbs.requiredSetIds,
           // How many of the climb's holds have come off the wall — see get-climb.ts.
           missing_hold_count: tables.climbs.missingHoldCount,
           revision_number: tables.climbs.revisionNumber,
@@ -563,6 +566,7 @@ export const setterFollowQueries = {
           framesCount: result.frames_count ?? null,
           framesPace: result.frames_pace ?? null,
           compatibleSizeIds: result.compatible_size_ids ?? null,
+          requiredSetIds: result.required_set_ids ?? null,
           missingHoldCount: result.missing_hold_count ?? null,
           revisionNumber: result.revision_number ?? null,
           holdsRevisionNumber: result.holds_revision_number ?? null,
@@ -819,6 +823,7 @@ export const setterFollowQueries = {
         framesCount: result.frames_count ?? null,
         framesPace: result.frames_pace ?? null,
         compatibleSizeIds: result.compatible_size_ids ?? null,
+        requiredSetIds: result.required_set_ids ?? null,
         missingHoldCount: result.missing_hold_count ?? null,
         revisionNumber: result.revision_number ?? null,
         holdsRevisionNumber: result.holds_revision_number ?? null,

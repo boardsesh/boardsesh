@@ -377,6 +377,8 @@ export type ClimbRow = {
    *  (`canAddClimbToBoard`) can separate Woods' two sizes, whose hold ids
    *  overlap without meaning the same holds. */
   compatibleSizeIds: number[] | null;
+  /** Frame-derived hold-set requirements; null/undefined means unknown. */
+  requiredSetIds?: number[] | null;
   /** `board_climbs.missing_hold_count` — how many of this climb's holds have come
    *  off the wall. Spray only; null on every catalogue board and on any row the
    *  reset recompute has never touched, both of which mean "intact". */

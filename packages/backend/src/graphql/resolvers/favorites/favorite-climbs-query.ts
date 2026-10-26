@@ -82,6 +82,7 @@ export const favoriteClimbsQuery = {
         frames_count: tables.climbs.framesCount,
         frames_pace: tables.climbs.framesPace,
         compatible_size_ids: tables.climbs.compatibleSizeIds,
+        required_set_ids: tables.climbs.requiredSetIds,
         // How many of the climb's holds have come off the wall. Spray walls only —
         // NULL on every catalogue board, where holds do not come off — and the badge,
         // the Intact / Lost holds filter and the remix prompt all read it, so a
@@ -164,6 +165,7 @@ export const favoriteClimbsQuery = {
       framesCount: result.frames_count ?? null,
       framesPace: result.frames_pace ?? null,
       compatibleSizeIds: result.compatible_size_ids ?? null,
+      requiredSetIds: result.required_set_ids ?? null,
       missingHoldCount: result.missing_hold_count ?? null,
       revisionNumber: result.revision_number ?? null,
       holdsRevisionNumber: result.holds_revision_number ?? null,

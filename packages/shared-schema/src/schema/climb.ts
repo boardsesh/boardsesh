@@ -76,6 +76,8 @@ export const climbTypeDefs = /* GraphQL */ `
     apart (see canAddClimbToBoard rule 5).
     """
     compatibleSizeIds: [Int!]
+    "Hold-set IDs required by the climb, derived from its frame placements. Null means unknown; an empty list requires no sets."
+    requiredSetIds: [Int!]
     """
     How many of this climb's holds are no longer on the wall.
 
@@ -188,6 +190,8 @@ export const climbTypeDefs = /* GraphQL */ `
     boardseshConfidence: String
     "Product sizes this climb fits on. Round-tripped through the queue so a party peer on a different-sized wall can tell the climb doesn't fit theirs — on Woods the two sizes' hold ids overlap, so this is the only signal that separates them."
     compatibleSizeIds: [Int!]
+    "Hold-set IDs required by the climb, derived from its frame placements. Null means unknown; an empty list requires no sets."
+    requiredSetIds: [Int!]
     "How many of this climb's holds are no longer on the wall after a spray-wall reset. Round-tripped through the queue because a broken climb stays queueable and stays playable, and the peer showing it has to be able to say so — a queued row that dropped this would be the one surface pretending the climb was whole. Null on every catalogue board."
     missingHoldCount: Int
     "The climb's revision as the queueing client read it (\`Climb.revisionNumber\`). Round-tripped through the queue so whoever logs a queued climb can say which revision was on the wall without a refetch. Null from a client that predates the field."

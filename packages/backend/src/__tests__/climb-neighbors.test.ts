@@ -691,6 +691,7 @@ describe('getMaterializedSimilarClimbs', () => {
       qualityAverage: 2.5,
       ascensionistCount: 7,
       compatibleSizeIds: [],
+      requiredSetIds: null,
       characteristics: null,
       similarity: 9 / 11,
       sharedHoldCount: 9,

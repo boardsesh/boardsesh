@@ -61,6 +61,7 @@ type RawSelectResult = {
   // integer[] comes back as a real JS number array; NULL for a climb whose
   // denormalised columns haven't been populated (drafts, legacy rows).
   compatible_size_ids: number[] | null;
+  required_set_ids: number[] | null;
   // Spray walls only: how many of the climb's holds a reset has taken off the
   // wall. NULL on every catalogue board, and on a spray row the recompute has
   // never touched — both mean intact.
@@ -126,6 +127,7 @@ function mapResultToClimbRow(result: RawSelectResult, params: BoardRouteParams, 
     framesCount: result.frames_count ?? null,
     framesPace: result.frames_pace ?? null,
     compatibleSizeIds: result.compatible_size_ids ?? null,
+    requiredSetIds: result.required_set_ids ?? null,
     missingHoldCount: result.missing_hold_count ?? null,
     revisionNumber: result.revision_number ?? null,
     holdsRevisionNumber: result.holds_revision_number ?? null,
@@ -459,6 +461,7 @@ export function statsDrivenClimbFields() {
     // and the playlist rows judge size compatibility client-side, and on Woods
     // that is the only signal that separates the 8x10 from the 12x12.
     compatible_size_ids: boardClimbs.compatibleSizeIds,
+    required_set_ids: boardClimbs.requiredSetIds,
     // Carried on every search row so a spray list can badge a climb that lost a
     // hold without a second round trip — the badge is on the row, not the detail.
     missing_hold_count: boardClimbs.missingHoldCount,
@@ -569,6 +572,7 @@ async function joinGradesToRankedPage(
       frames_count: rankedPage.frames_count,
       frames_pace: rankedPage.frames_pace,
       compatible_size_ids: rankedPage.compatible_size_ids,
+      required_set_ids: rankedPage.required_set_ids,
       missing_hold_count: rankedPage.missing_hold_count,
       revision_number: rankedPage.revision_number,
       holds_revision_number: rankedPage.holds_revision_number,
@@ -1008,6 +1012,7 @@ async function runStandardSearch(
     // and the playlist rows judge size compatibility client-side, and on Woods
     // that is the only signal that separates the 8x10 from the 12x12.
     compatible_size_ids: boardClimbs.compatibleSizeIds,
+    required_set_ids: boardClimbs.requiredSetIds,
     // Carried on every search row so a spray list can badge a climb that lost a
     // hold without a second round trip — the badge is on the row, not the detail.
     missing_hold_count: boardClimbs.missingHoldCount,
