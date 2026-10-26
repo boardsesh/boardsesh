@@ -238,6 +238,12 @@ and with a long queue the climber never reached it.
 | Which chips a playlist shows | AsyncStorage key `pinnedPlaylistChips`, one set for every playlist on the phone. | `src/lib/playlist-pinned-chips-store.ts` |
 | Ticks, wall history, playlists | The server. The lists above only read them. | — |
 
+Pinned playlists and their recently opened fallback are scoped to the current account, board,
+layout and adapters in the shared `usePinnedPlaylists` hook (#6875). Switching that context hides
+the previous rows while its replacement loads. Only the latest request for each stream can update
+rows or loading; a late response, failed old request, or retained old refresh callback cannot restore
+a previous context. A current recents-storage failure settles loading and keeps any fetched pins.
+
 <img src="images/list-model/board-history-sheet-dark.png" alt="The board history sheet in dark mode" width="300">
 
 _The board history sheet (dark theme, screenshot mode's demo wall activity). (1) The climb lit on the wall now. (2) "Lit on this wall", the wall's history. Tapping any row puts that climb on the wall for everyone in the session._
