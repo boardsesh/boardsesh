@@ -140,13 +140,18 @@ const PICKER_PATHS = {
     setters: '/(tabs)/climbs/setters',
     holds: '/(tabs)/climbs/holds',
     zone: '/(tabs)/climbs/zone',
+    quickFilters: '/(tabs)/climbs/quick-filters',
   },
   discover: {
     setters: '/(tabs)/discover/playlist-setters',
     holds: '/(tabs)/discover/holds',
     zone: '/(tabs)/discover/zone',
+    quickFilters: '/(tabs)/discover/quick-filters',
   },
-} as const satisfies Record<ClimbFilterSheetPickers['stack'], Record<'setters' | 'holds' | 'zone', string>>;
+} as const satisfies Record<
+  ClimbFilterSheetPickers['stack'],
+  Record<'setters' | 'holds' | 'zone' | 'quickFilters', string>
+>;
 
 /**
  * The pins of a list other than Climbs, which keeps its own pin store. Pass the
@@ -282,23 +287,6 @@ const SHEET_DETENT_FRACTION = 0.9;
 // the name field, Recent and the grade rail fit there. Dragging up or focusing
 // the name field takes it to the tall detent.
 const NATIVE_FORM_DETENTS = ['50%', `${SHEET_DETENT_FRACTION * 100}%`];
-
-// The order of the Quick filters switches: the order of their controls.
-const PIN_ORDER: readonly FilterChipKind[] = [
-  'recent',
-  'grade',
-  'accuracy',
-  'progress',
-  'collection',
-  'rating',
-  'popularity',
-  'climbType',
-  'tall',
-  'wide',
-  'beta',
-  'boardFit',
-  'sort',
-];
 
 // A presentation belongs to one board and angle. Late native closes and
 // sub-picker results must not affect a search that replaced that scope.
@@ -948,6 +936,15 @@ export function ClimbFilterSheet({
     });
   }, [beginSubPickerSuspend, boardConfig, isAwaitingReturn, isCurrentPresentation, router, pickerPaths, handoffId]);
 
+  // Settings › Quick filters, from the iOS Form's last row. The pins are a
+  // device-wide store, so nothing is handed back: the sheet re-presents and the
+  // chip row follows the store.
+  const openQuickFilters = useCallback(() => {
+    if (!isCurrentPresentation() || isAwaitingReturn() || closingRef.current) return;
+    beginSubPickerSuspend();
+    router.push(pickerPaths.quickFilters);
+  }, [beginSubPickerSuspend, isAwaitingReturn, isCurrentPresentation, router, pickerPaths]);
+
   // useSheetSubRoute re-presents the sheet when a sub-picker route pops (back
   // chevron OR swipe-back both re-focus this screen). The setters route's "Show N
   // climbs" button never gets there: its apply handoff commits the picks and
@@ -1043,22 +1040,6 @@ export function ClimbFilterSheet({
     else for (const kind of PINNABLE_CHIP_KINDS) toggles.set(kind, () => toggleClimbPin(kind));
     return toggles;
   }, [pins, toggleClimbPin]);
-  // Which pins the iOS Form's Quick filters lists: those whose control shows.
-  const pinShown: Record<FilterChipKind, boolean> = {
-    recent: shownSections.recent,
-    grade: true,
-    accuracy: true,
-    progress: isAuthenticated && shownSections.progress,
-    collection: true,
-    rating: true,
-    popularity: true,
-    climbType: showClimbTypeControl,
-    tall: showTallControl,
-    wide: showWideControl,
-    beta: shownSections.beta,
-    boardFit: !!boardFit,
-    sort: true,
-  };
   const pinProps = (kind: FilterChipKind) => {
     const onTogglePin = pinToggles.get(kind);
     if (!onTogglePin) return {};
@@ -1203,11 +1184,11 @@ export function ClimbFilterSheet({
               onSortOrder: handleSortOrderChange,
               onReshuffle: handleReshuffle,
             },
-        pins: PIN_ORDER.filter((kind) => pinToggles.has(kind) && pinShown[kind]).map((kind) => ({
-          kind,
-          pinned: pinProps(kind).pinned ?? false,
-          onToggle: pinToggles.get(kind) ?? (() => {}),
-        })),
+        quickFilters: {
+          label: t('mobile.filter.quickFiltersLink'),
+          footer: t('mobile.filter.quickFiltersFooter'),
+          onPress: openQuickFilters,
+        },
         setFiltersPatch,
       })
     : null;

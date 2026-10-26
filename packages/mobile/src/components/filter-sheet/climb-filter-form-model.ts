@@ -6,7 +6,8 @@
 // A Form row has no room for a label row above its control, so each control's
 // label moves onto the row itself (a menu Picker's label, a Toggle's title) and
 // the descriptions that explain a section's last control become its footer. The
-// pins move out of the rows into one "Quick filters" section of switches.
+// pins leave the sheet: the last row opens Settings › Quick filters, where the
+// chips are switched on and ordered.
 
 import type { ReactNode } from 'react';
 import type { TFunction } from 'i18next';
@@ -114,8 +115,8 @@ export type ClimbFilterFormInput = {
   boardFit: { value: boolean; onChange: (value: boolean) => void } | null;
   pickers: Record<FilterPickerRowKey, PickerRowInput>;
   sort: SortInput;
-  /** The pin switches, in display order: only kinds this list can pin and whose control shows. */
-  pins: { kind: FilterChipKind; pinned: boolean; onToggle: () => void }[];
+  /** The last row: opens the Quick filters settings screen. */
+  quickFilters: { label: string; footer: string; onPress: () => void };
   setFiltersPatch: (patch: Partial<ClimbFilters>) => void;
 };
 
@@ -460,22 +461,12 @@ function sortSection(input: ClimbFilterFormInput): ClimbFilterFormSection {
   return { key: 'sort', title: t('mobile.filter.section.sort'), rows };
 }
 
-function pinsSection(input: ClimbFilterFormInput): ClimbFilterFormSection | null {
-  const { t, pins } = input;
-  if (pins.length === 0) return null;
+function quickFiltersSection(input: ClimbFilterFormInput): ClimbFilterFormSection {
+  const { quickFilters } = input;
   return {
     key: 'quickFilters',
-    title: t('mobile.filter.quickFilters.title'),
-    footer: t('mobile.filter.quickFilters.footer'),
-    rows: pins.map(({ kind, pinned, onToggle }) => ({
-      kind: 'toggle',
-      key: `pin-${kind}`,
-      label: pinLabel(kind, t),
-      value: pinned,
-      onValueChange: (next) => {
-        if (next !== pinned) onToggle();
-      },
-    })),
+    footer: quickFilters.footer,
+    rows: [{ kind: 'nav', key: 'quickFilters', label: quickFilters.label, onPress: quickFilters.onPress }],
   };
 }
 
@@ -488,7 +479,7 @@ export function buildClimbFilterFormModel(input: ClimbFilterFormInput): ClimbFil
     climbSection(input),
     pickerSection(input),
     sortSection(input),
-    pinsSection(input),
+    quickFiltersSection(input),
   ].filter((section): section is ClimbFilterFormSection => section !== null && section.rows.length > 0);
   return { sections };
 }
