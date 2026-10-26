@@ -52,7 +52,10 @@ const useThemeMock = vi.hoisted(() =>
   ),
 );
 vi.mock('../../providers/theme-provider', () => ({ useTheme: useThemeMock }));
-vi.mock('../../theme/expo-ui-modifiers', () => ({ switchControlColors: () => ({}) }));
+vi.mock('../../theme/expo-ui-modifiers', () => ({
+  switchControlColors: () => ({}),
+  composeSeedColor: () => '#7C3AED',
+}));
 vi.mock('../../theme/tokens', () => ({ spacing: { 2: 8, 4: 16 } }));
 
 import { SwitchRow } from '../SwitchRow.android';

@@ -10,7 +10,7 @@
 // select.
 
 import { Fragment, useMemo, useState } from 'react';
-import { Host } from '@expo/ui';
+import { ComposeHost } from './ComposeHost.android';
 import {
   DropdownMenu,
   DropdownMenuItem,
@@ -36,7 +36,7 @@ const CARET = '▾';
 
 export function AppMenu(props: AppMenuProps) {
   const { actions, onSelectIndex, maxWidth, accessibilityLabel, accessibilityHint, style } = props;
-  const { brandColors, m3, systemColors, colorScheme } = useTheme();
+  const { brandColors, m3, systemColors } = useTheme();
   const [expanded, setExpanded] = useState(false);
   const resolved = useMemo(() => resolveMenuActions(actions), [actions]);
 
@@ -61,18 +61,12 @@ export function AppMenu(props: AppMenuProps) {
     // gym name isn't clipped in the open list (symmetric with the iOS Menu, which caps
     // the anchor, not the popup).
     //
-    // `colorScheme` forces the Compose MaterialTheme (the menu surface + default
-    // content colours) to follow our in-app Light/Dark toggle (`themeOverride`)
-    // instead of the OS scheme — same fix MoreForm uses; without it the menu surface
-    // and text track the device scheme and clash with the app.
-    //
     // Accessibility rides the RN Host boundary: @expo/ui/jetpack-compose has no
     // content-description modifier, and the Host forwards these props to its native
     // view — so the trigger reads as a labelled button to TalkBack, matching the iOS
     // `Menu` a11y modifiers and the old Paper Pressable anchor.
-    <Host
+    <ComposeHost
       matchContents
-      colorScheme={colorScheme}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? props.label}
       accessibilityHint={accessibilityHint}
@@ -146,6 +140,6 @@ export function AppMenu(props: AppMenuProps) {
           })}
         </DropdownMenu.Items>
       </DropdownMenu>
-    </Host>
+    </ComposeHost>
   );
 }

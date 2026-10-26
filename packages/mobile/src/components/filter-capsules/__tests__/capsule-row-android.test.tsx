@@ -21,11 +21,13 @@ vi.mock('@expo/ui/jetpack-compose', () => {
       selected,
       onClick,
       colors,
+      border,
       modifiers,
     }: ChildrenProps & {
       selected: boolean;
       onClick?: () => void;
       colors?: Record<string, string>;
+      border?: { width: number; color: string };
       modifiers?: unknown;
     }) =>
       createElement(
@@ -35,6 +37,9 @@ vi.mock('@expo/ui/jetpack-compose', () => {
           'data-selected': String(selected),
           'data-container': colors?.selectedContainerColor,
           'data-label-color': colors?.selectedLabelColor,
+          'data-idle-label-color': colors?.labelColor,
+          'data-idle-icon-color': colors?.iconColor,
+          'data-border': border ? `${border.width}:${border.color}` : undefined,
           'data-modifiers': JSON.stringify(modifiers),
           onClick,
         },
@@ -59,7 +64,8 @@ vi.mock('@expo/ui/jetpack-compose', () => {
     Row: ({ children }: ChildrenProps) => createElement('div', { 'data-row': true }, children),
     Text: ({ children, color }: ChildrenProps & { color?: string }) =>
       createElement('span', { 'data-text-color': color }, children),
-    Icon: ({ source }: { source?: unknown }) => createElement('i', { 'data-icon': String(source) }),
+    Icon: ({ source, tint }: { source?: unknown; tint?: string }) =>
+      createElement('i', { 'data-icon': String(source), 'data-tint': tint }),
     Badge: ({
       children,
       containerColor,
@@ -87,7 +93,8 @@ vi.mock('react-native', () => ({
 }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
-    brandColors: { primaryFill: '#7C3AED', onPrimary: '#FFFFFF', error: '#F87171' },
+    brandColors: { primary: '#A78BFA', primaryFill: '#7C3AED', onPrimary: '#FFFFFF', error: '#F87171' },
+    m3: { outline: '#817B8D', onSurfaceVariant: '#A9A2B6' },
     systemColors: { label: '#EEEEEE' },
     colorScheme: 'dark',
   }),
@@ -131,6 +138,9 @@ describe('CapsuleRow.android', () => {
       expect(badge?.getAttribute('data-background')).toBe('#FFFFFF');
       expect(badge?.getAttribute('data-color')).toBe('#7C3AED');
     }
+    // The icon sits in the Label slot, out of `iconColor`'s reach, so it is
+    // tinted directly: brand tint while idle, on-fill once a filter is set.
+    expect(chip.querySelector('[data-icon]')?.getAttribute('data-tint')).toBe(count ? '#FFFFFF' : '#A78BFA');
     expect(chip.textContent).not.toContain('Filters');
     fireEvent.click(chip);
     expect(onPress).toHaveBeenCalledOnce();
@@ -176,6 +186,18 @@ describe('CapsuleRow.android', () => {
     ]);
     expect(row[1].getAttribute('data-container')).toBe('#7C3AED');
     expect(row[1].getAttribute('data-label-color')).toBe('#FFFFFF');
+    // Idle chips name their own label, icon and border so none of them falls back
+    // to the wallpaper palette (#6919); a selected chip keeps M3's borderless fill.
+    expect(row[0].getAttribute('data-idle-label-color')).toBe('#A9A2B6');
+    expect(row[0].getAttribute('data-idle-icon-color')).toBe('#A78BFA');
+    expect(row.map((chip) => chip.getAttribute('data-border'))).toEqual([
+      '1:#817B8D',
+      null,
+      null,
+      '1:#817B8D',
+      '1:#817B8D',
+      null,
+    ]);
     // Only the Filters opener carries an icon; the rail has no chevron on Android.
     expect(row.map((chip) => chip.querySelector('[data-icon]')?.getAttribute('data-icon') ?? null)).toEqual([
       null,

@@ -3,7 +3,7 @@
 // stays until the paper-removal endgame, #3273).
 //
 // The emphasis tier maps onto the Compose Material 3 button family:
-//   filled   → Button (brand container)        tonal → FilledTonalButton (MD3
+//   filled   → Button (brand container)        tonal → FilledTonalButton (Velvet
 //   outlined → OutlinedButton                          secondaryContainer)
 //   text     → TextButton
 // Material is opaque, so the `over` surface prop is inert here (a Material button
@@ -12,7 +12,7 @@
 // (no native equivalent) swaps the leading icon for a CircularProgressIndicator
 // and disables the button. The press/haptic guard lives in Button.logic.ts.
 
-import { Host } from '@expo/ui';
+import { ComposeHost } from './ComposeHost.android';
 import {
   Button as ComposeButton,
   FilledTonalButton,
@@ -32,7 +32,7 @@ import {
 } from '@expo/ui/jetpack-compose/modifiers';
 import { useWindowDimensions, type ImageSourcePropType } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
-import { brandAccentColor } from '../theme/expo-ui-modifiers';
+import { brandAccentColor, tonalButtonColors } from '../theme/expo-ui-modifiers';
 import {
   buttonFillAxes,
   buttonLabelStyle,
@@ -88,7 +88,7 @@ export function Button({
   testID,
   style,
 }: ButtonProps) {
-  const { brandColors, colorScheme } = useTheme();
+  const { brandColors, m3 } = useTheme();
   const { fontScale } = useWindowDimensions();
   // Every tier and size step sets its label in M3 labelLarge (14/20, weight 500),
   // the M3 Buttons spec. The @expo/ui Text has to be TOLD: it builds its own
@@ -121,17 +121,20 @@ export function Button({
   const fillColor = tintColor ?? brandAccentColor(brandColors);
   const accentColor = tintColor ?? brandColors.primary;
 
-  // Per-variant Compose colours. tonal intentionally takes the MD3 default
-  // (secondaryContainer / onSecondaryContainer) and ignores tintColor — byte
-  // parity with Paper's `contained-tonal`. Destructive uses the brand error
-  // tokens (MoreForm.android idiom).
-  let colors: { containerColor?: string; contentColor?: string } | undefined;
+  // Per-variant Compose colours. tonal takes the Velvet secondaryContainer /
+  // onSecondaryContainer pair and ignores tintColor — parity with Paper's
+  // `contained-tonal`. It has to be named: the Compose default comes from the
+  // seeded scheme, not Velvet's roles. Destructive uses the brand error tokens
+  // (MoreForm.android idiom).
+  let colors: { containerColor?: string; contentColor?: string };
   if (variant === 'filled') {
     colors = isDestructive
       ? { containerColor: brandColors.error, contentColor: brandColors.onPrimary }
       : { containerColor: fillColor, contentColor: brandColors.onPrimary };
   } else if (variant === 'tonal') {
-    colors = isDestructive ? { containerColor: brandColors.error, contentColor: brandColors.onPrimary } : undefined;
+    colors = isDestructive
+      ? { containerColor: brandColors.error, contentColor: brandColors.onPrimary }
+      : tonalButtonColors(m3);
   } else {
     colors = { contentColor: isDestructive ? brandColors.error : accentColor };
   }
@@ -144,9 +147,9 @@ export function Button({
     // White on the brand fill (destructive fills with the error container, still white content).
     spinnerColor = brandColors.onPrimary;
   } else if (variant === 'tonal') {
-    // Non-destructive tonal content ≈ brand primary; destructive fills the error
-    // container, so its content (and the spinner) is white (onPrimary), not error.
-    spinnerColor = isDestructive ? brandColors.onPrimary : brandColors.primary;
+    // Matches the tonal content colour; destructive fills the error container, so
+    // its content (and the spinner) is white (onPrimary), not error.
+    spinnerColor = isDestructive ? brandColors.onPrimary : tonalButtonColors(m3).contentColor;
   } else {
     spinnerColor = isDestructive ? brandColors.error : accentColor;
   }
@@ -180,7 +183,7 @@ export function Button({
   ];
 
   return (
-    <Host matchContents={buttonMatchContents(style)} colorScheme={colorScheme} style={style} testID={testID}>
+    <ComposeHost matchContents={buttonMatchContents(style)} style={style} testID={testID}>
       <Comp
         onClick={handlePress}
         enabled={!(disabled || loading)}
@@ -215,6 +218,6 @@ export function Button({
           <Text style={labelStyle}>{title}</Text>
         </Row>
       </Comp>
-    </Host>
+    </ComposeHost>
   );
 }

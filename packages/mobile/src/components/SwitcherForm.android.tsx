@@ -4,8 +4,8 @@
 // The whole OTA Channel / Branch switcher screen is ONE `Host` containing a single
 // `LazyColumn` — the Compose counterpart to the iOS `Form`. Same consolidation as
 // MoreForm / FeatureFlagsForm. A `LazyColumn` virtualizes its items, so the Host is
-// `style={{ flex: 1 }}` (NOT `matchContents`). `colorScheme` forces the Compose
-// MaterialTheme to follow the in-app Light/Dark toggle.
+// `style={{ flex: 1 }}` (NOT `matchContents`). ComposeHost keeps the Compose
+// MaterialTheme on the in-app Light/Dark toggle.
 //
 // Each section is one list item: an optional title `Text`, an optional intro `Text`, a
 // Material `Card` wrapping ALL its rows (info / status / target / field / action),
@@ -16,7 +16,7 @@
 // Compose Material theme.
 
 import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
-import { Host } from '@expo/ui';
+import { ComposeHost } from './ComposeHost.android';
 import {
   LazyColumn,
   Card,
@@ -255,15 +255,15 @@ function renderSection(section: SwitcherSection, errorColor: string, isFirst: bo
 }
 
 export function SwitcherForm({ model }: SwitcherFormProps) {
-  const { brandColors, colorScheme } = useTheme();
+  const { brandColors } = useTheme();
   const items = model.sections.map((section, index) => renderSection(section, brandColors.error, index === 0));
 
   return (
-    <Host style={styles.host} colorScheme={colorScheme}>
+    <ComposeHost style={styles.host}>
       <LazyColumn contentPadding={{ start: spacing[4], top: spacing[4], end: spacing[4], bottom: spacing[10] }}>
         {items}
       </LazyColumn>
-    </Host>
+    </ComposeHost>
   );
 }
 

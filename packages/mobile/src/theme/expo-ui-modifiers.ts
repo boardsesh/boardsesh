@@ -2,10 +2,14 @@
 //
 // Native @expo/ui controls read system colours automatically — iOS via
 // PlatformColor / SwiftUI semantic styles, Android via the Compose Material
-// theme — so only the BRAND ACCENT needs bridging from our theme tokens. This
-// module is the single place that maps `useTheme().brandColors` onto the plain
-// colour values the native modifiers / props want, so the brand colour is
-// sourced once and every primitive tints identically.
+// theme. On Android that theme is Material You: unseeded, every Compose control
+// takes the phone wallpaper's palette for each colour we don't set (#6919). So
+// every Android Host is seeded from the brand (`composeSeedColor`, applied by
+// `ComposeHost.android.tsx`), and each control's colour set below names every
+// state a climber sees from `useTheme().brandColors` / `useTheme().m3`. This
+// module is the single place that maps those onto the plain colour values the
+// native modifiers / props want, so the brand colour is sourced once and every
+// primitive tints identically.
 //
 // WHY THIS FILE IMPORTS NOTHING FROM @expo/ui
 // It is shared by both `*.ios.tsx` and `*.android.tsx` component files, and the
@@ -54,6 +58,33 @@ export type BrandControlColors = {
 };
 
 /**
+ * The Velvet Material roles the Android colour sets read for a control's
+ * neutral states. `useTheme().m3` (built by `buildPaperTheme`) satisfies this
+ * structurally, so the Compose controls match their Paper / RN neighbours.
+ */
+export type MaterialControlRoles = {
+  /** Component boundary: 4.08:1 on the dark card #221A33, 3.00:1 on white. */
+  outline: string;
+  /** Neutral toned container (an unchecked Switch track). */
+  surfaceVariant: string;
+  /** Muted foreground on a surface (an unselected chip's label). */
+  onSurfaceVariant: string;
+  /** Tonal button fill: translucent brand violet. */
+  secondaryContainer: string;
+  /** Ink on `secondaryContainer`. */
+  onSecondaryContainer: string;
+};
+
+/**
+ * The seed for every Android Compose `Host`. A seeded Host generates its
+ * Material 3 scheme from this colour (`SchemeTonalSpot`) instead of the
+ * wallpaper, so any Compose colour we don't set explicitly is still violet.
+ */
+export function composeSeedColor(brandColors: BrandControlColors): string {
+  return brandColors.primaryFill;
+}
+
+/**
  * The brand FILL: the colour of a surface that carries white text or a white
  * glyph (a filled button, a selected segment, a badge). White on it is 7.10:1
  * light and 5.70:1 dark. Not for a control drawn straight on a card; that is
@@ -83,18 +114,38 @@ const DARK_SCHEME_CHECKED_THUMB = '#16111F';
 
 /**
  * Plain Compose `SwitchColors` for a native Android `Switch` drawn on a settings
- * card: the on-track is `brandControlTint`. In dark mode that track is the light
- * #A78BFA, so the checked thumb switches to a dark ink to stay visible; light
- * mode keeps the Compose default thumb (the track is the same #6D28D9 as before).
+ * card. Checked: the track is `brandControlTint`; in dark mode that track is the
+ * light #A78BFA, so the thumb is a dark ink to stay visible, and in light mode
+ * it is white on #6D28D9. Unchecked follows the M3 switch: a neutral track whose
+ * `outline` border and thumb carry the boundary (3:1 or better on the card).
  */
 export function switchControlColors(
   brandColors: BrandControlColors,
+  m3: MaterialControlRoles,
   colorScheme: 'light' | 'dark',
-): { checkedTrackColor: string; checkedThumbColor?: string } {
+): {
+  checkedTrackColor: string;
+  checkedThumbColor: string;
+  uncheckedTrackColor: string;
+  uncheckedThumbColor: string;
+  uncheckedBorderColor: string;
+} {
   return {
     checkedTrackColor: brandControlTint(brandColors),
-    ...(colorScheme === 'dark' ? { checkedThumbColor: DARK_SCHEME_CHECKED_THUMB } : {}),
+    checkedThumbColor: colorScheme === 'dark' ? DARK_SCHEME_CHECKED_THUMB : brandColors.onPrimary,
+    uncheckedTrackColor: m3.surfaceVariant,
+    uncheckedThumbColor: m3.outline,
+    uncheckedBorderColor: m3.outline,
   };
+}
+
+/**
+ * Plain Compose `ButtonColors` for a native Android `FilledTonalButton`: the same
+ * `secondaryContainer` / `onSecondaryContainer` pair Paper's `contained-tonal`
+ * reads, so a tonal button matches its Paper neighbours.
+ */
+export function tonalButtonColors(m3: MaterialControlRoles): { containerColor: string; contentColor: string } {
+  return { containerColor: m3.secondaryContainer, contentColor: m3.onSecondaryContainer };
 }
 
 /**
@@ -175,25 +226,40 @@ export function textInputBrandColors(
 }
 
 /**
- * Plain Compose `FilterChipColors` bridging the brand fill for a native Android
- * Material 3 `FilterChip` — only the SELECTED (active facet) state is branded: the
- * container takes the brand fill and the label + leading icon take the on-fill
- * colour. Every unselected state reads the Compose Material theme. This is the
- * Compose equivalent of the iOS chip's `glassProminent` + `tint(brandColors.primary)`
- * active style. Returned as a minimal object — every `FilterChipColors` field is
- * optional — so this shared file needs no `@expo/ui/jetpack-compose` import; the
- * `.android.tsx` file passes it straight to each chip's `colors` prop. All branded
- * fields read `brandAccentColor` / `onPrimary` so they can't drift from the other
- * primitives.
+ * Plain Compose `FilterChipColors` for a native Android Material 3 `FilterChip`.
+ * SELECTED (active facet): the container takes the brand fill and the label +
+ * leading icon take the on-fill colour, the Compose equivalent of the iOS chip's
+ * `glassProminent` + `tint(brandColors.primary)` active style. UNSELECTED: the
+ * leading icon is `brandControlTint` (6.11:1 on the dark card) and the label is
+ * `onSurfaceVariant`, as M3 draws them. Returned as a plain object so this shared
+ * file needs no `@expo/ui/jetpack-compose` import; the `.android.tsx` file passes
+ * it straight to each chip's `colors` prop.
  */
-export function filterChipBrandColors(brandColors: BrandControlColors): {
+export function filterChipBrandColors(
+  brandColors: BrandControlColors,
+  m3: MaterialControlRoles,
+): {
+  labelColor: string;
+  iconColor: string;
   selectedContainerColor: string;
   selectedLabelColor: string;
   selectedLeadingIconColor: string;
 } {
   return {
+    labelColor: m3.onSurfaceVariant,
+    iconColor: brandControlTint(brandColors),
     selectedContainerColor: brandAccentColor(brandColors),
     selectedLabelColor: brandColors.onPrimary,
     selectedLeadingIconColor: brandColors.onPrimary,
   };
+}
+
+/**
+ * Plain Compose `ChipBorder` for an UNSELECTED `FilterChip`: 1dp of `outline`,
+ * 4.08:1 on the dark card where the wallpaper-derived default was 1.77:1. A
+ * Compose chip draws a custom border in every state, so the caller passes this
+ * only while the chip is unselected; a selected chip keeps M3's borderless fill.
+ */
+export function filterChipBorder(m3: MaterialControlRoles): { width: number; color: string } {
+  return { width: 1, color: m3.outline };
 }

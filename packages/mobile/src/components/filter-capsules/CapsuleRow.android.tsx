@@ -8,11 +8,12 @@
 //                           marks the selected one; `actions` after a divider.
 //   toggleMenu            → a plain toggle chip. Its `actions` are unreachable:
 //                           a Compose FilterChip eats the long-press (#3319, #3322).
-// Active chips take the brand fill with on-fill text (filterChipBrandColors).
+// Active chips take the brand fill with on-fill text, idle chips an `outline`
+// border and a brand icon (filterChipBrandColors / filterChipBorder).
 
 import { memo, useMemo } from 'react';
 import { StyleSheet } from 'react-native';
-import { Host } from '@expo/ui';
+import { ComposeHost } from '../ComposeHost.android';
 import { Row, HorizontalDivider, Spacer } from '@expo/ui/jetpack-compose';
 import { fillMaxWidth, horizontalScroll, padding } from '@expo/ui/jetpack-compose/modifiers';
 import { useTheme } from '../../providers/theme-provider';
@@ -105,14 +106,13 @@ function CapsuleChip({
 }
 
 function CapsuleRowComponent({ capsules }: CapsuleRowProps) {
-  const { brandColors, colorScheme } = useTheme();
-  const colors = useMemo(() => filterChipBrandColors(brandColors), [brandColors]);
+  const { brandColors, m3 } = useTheme();
+  const colors = useMemo(() => filterChipBrandColors(brandColors, m3), [brandColors, m3]);
   return (
-    // `colorScheme` keeps the Compose MaterialTheme on our in-app Light/Dark toggle.
     // `matchContents={{ vertical: true }}` (NOT the boolean form) fills the parent
     // width so the Row's `fillMaxWidth()` has a bounded width to scroll within, while
     // height tracks the chip content (mirrors SwitchRow / SegmentedControl).
-    <Host matchContents={{ vertical: true }} colorScheme={colorScheme} style={styles.host}>
+    <ComposeHost matchContents={{ vertical: true }} style={styles.host}>
       <Row
         modifiers={[fillMaxWidth(), horizontalScroll(), padding(spacing[4], spacing[2], spacing[4], spacing[2])]}
         verticalAlignment="center"
@@ -125,7 +125,7 @@ function CapsuleRowComponent({ capsules }: CapsuleRowProps) {
           <CapsuleChip key={capsule.key} capsule={capsule} colors={colors} errorColor={brandColors.error} />,
         ])}
       </Row>
-    </Host>
+    </ComposeHost>
   );
 }
 
