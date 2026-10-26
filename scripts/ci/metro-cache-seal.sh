@@ -4,7 +4,7 @@
 # cache".
 #
 #   metro-cache-seal.sh seal   <store-dir>   before actions/cache/save
-#   metro-cache-seal.sh verify <store-dir>   after actions/cache/restore, before any export
+#   metro-cache-seal.sh verify <store-dir>   after the store is unpacked, before any export
 #
 # Why: GitHub's cache is writable by any job that runs with a main-scope ref,
 # including jobs that run PR code (an /ota-preview comment on a fork PR, the
@@ -14,6 +14,11 @@
 # is an HMAC over every file in the store, keyed by METRO_CACHE_HMAC_KEY, a
 # secret only the Production environment holds. A store whose MAC we cannot
 # recompute is deleted and the export runs cold.
+#
+# The restore itself never happens in the job that runs this script:
+# @actions/cache extracts with `tar -P`, which can write anywhere, including
+# over this file. The metro-cache-fetch job restores and repacks; the publish
+# job only unpacks a member-checked tarball and then calls `verify`.
 #
 # The MAC also covers METRO_CACHE_PREFIX (the cache key minus the sha, which
 # carries the EXPO_PUBLIC_* hash). Without it, a genuine store sealed under old
@@ -25,8 +30,8 @@
 #   METRO_CACHE_MAX_BYTES  size budget, default 1 GiB (see the doc for why).
 #
 # verify never fails the job for a bad store: it deletes it and exits 0. seal
-# exits non-zero when the store must not be saved (no key, over budget, foreign
-# entries), and the workflow skips the save on that.
+# exits non-zero when the store must not be saved (no key, over budget, not
+# Metro's layout), and the workflow skips the save on that.
 set -euo pipefail
 
 mode="${1:?usage: metro-cache-seal.sh seal|verify <store-dir>}"
@@ -54,10 +59,17 @@ mac() {
   ' "$seal_version"
 }
 
-# Symlinks, fifos and devices are never something Metro wrote; refuse them
-# outright rather than reason about what following them would do.
-has_foreign_entries() {
-  [ -n "$(find "$store" -mindepth 1 ! -type f ! -type d -print -quit)" ]
+# The only layout Metro's binary FileStore writes (@expo/metro-config
+# binary-file-store.js): 256 two-hex-digit shard directories at depth 1, each
+# holding `<hex>.mp` entries, plus our own seal at the root. Anything else
+# (symlinks, fifos, deeper paths, other names) is refused outright rather than
+# reasoned about. Prints the first offending path, or nothing.
+first_nonconforming() {
+  (cd "$store" && find . -regextype posix-extended -mindepth 1 \
+    ! \( -type d -regex '\./[0-9a-f]{2}' \) \
+    ! \( -type f -regex '\./[0-9a-f]{2}/[0-9a-f]+\.mp' \) \
+    ! \( -type f -path "./$seal_name" \) \
+    -print -quit)
 }
 
 store_bytes() {
@@ -71,11 +83,14 @@ case "$mode" in
       exit 1
     fi
     [ -d "$store" ] || { echo "No store at $store; nothing to save."; exit 1; }
-    if has_foreign_entries; then
-      echo "::warning::The Metro store holds entries that are not regular files; not saving it."
+    rm -f "$store/$seal_name"
+    # A write Metro never finished leaves `.tmp<pid>_<name>` beside its target.
+    find "$store" -mindepth 2 -maxdepth 2 -type f -name '.tmp*' -delete
+    offender="$(first_nonconforming)"
+    if [ -n "$offender" ]; then
+      echo "::warning::The Metro store holds $offender, which is not Metro's layout; not saving it."
       exit 1
     fi
-    rm -f "$store/$seal_name"
     bytes="$(store_bytes)"
     if [ "$bytes" -gt "$max_bytes" ]; then
       echo "::warning::The Metro store is $bytes bytes, over the $max_bytes-byte budget; not saving it."
@@ -113,7 +128,7 @@ case "$mode" in
       exit 0
     fi
     [ -n "${METRO_CACHE_HMAC_KEY:-}" ] || reject 'no METRO_CACHE_HMAC_KEY to check it with'
-    if has_foreign_entries; then reject 'it holds entries that are not regular files'; fi
+    [ -z "$(first_nonconforming)" ] || reject 'it holds something other than Metro shard directories and entries'
     # Checked before hashing, so an oversized store costs no hashing time.
     # Restore-keys carry every earlier transform forward, so a genuine store
     # only grows until the lockfile changes. Past the budget, start fresh.
@@ -131,6 +146,9 @@ case "$mode" in
     actual="$(manifest | mac)"
     [ "$actual" = "$expected" ] || reject 'its seal does not match its files'
     rm -f "$store/$seal_name"
+    # A genuine store can still carry a read-only directory, and Metro's set()
+    # would then throw mid-export. The modes were never part of the seal.
+    chmod -R u+rwX "$store"
     echo "Metro cache verified ($bytes bytes)."
     ;;
 

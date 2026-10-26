@@ -581,9 +581,9 @@ upstream expo-open-ota change.
 
 Before this cache, every OTA export started cold. The iOS export alone logged `Bundled 141682ms`
 for 6,545 modules, about 142 s of a 3 min 15 s publish step, and Android paid the same again.
-`mobile-ota-production.yml` now restores Metro's transform store before the two publish steps and
-saves it afterwards, the same way `ci.yml`'s `mobile-bundle` job does (178 s cold, 90 s warm
-there). Expect each publish step to lose roughly half its bundle time once warm; the first warm
+`mobile-ota-production.yml` now hands the two publish steps a warm Metro transform store and saves
+it afterwards, like `ci.yml`'s `mobile-bundle` job does (178 s cold, 90 s warm there). The restore
+runs in a separate job, `metro-cache-fetch`, for the reason in the threat model below. Expect each publish step to lose roughly half its bundle time once warm; the first warm
 staging run is the measurement to check.
 
 - **Where it lives.** `@expo/metro-config` hard-codes the store to `os.tmpdir()/metro-cache`, so
@@ -602,12 +602,19 @@ staging run is the measurement to check.
 - **Key shape.** `metro-ota-<os>-<inputs hash>-<inlined env hash>-<sha>`, with the same string
   minus the sha as the only restore key. It never restores `ci.yml`'s `metro-native-*` entries,
   which are built under a different env. A dependency bump starts cold.
+- **Who reads it.** `metro-cache-fetch` restores the entry and uploads the store as a one-day
+  artifact. `publish` downloads it, checks every tar member, unpacks it and verifies the seal. The
+  fetch job computes the key with steps byte-identical to publish's (the `.env` writer and the key
+  step; tested), but it resolves `vars.*` without the Production environment. If an
+  environment-level variable ever differs from the repository one, the fetch picks the wrong entry
+  and publish logs a notice: always a cold build, never a wrong one, because publish verifies
+  against its own key.
 - **Who writes it.** Only runs on `main` (the staging call from `production-deploy.yml`, or a
   dispatch) and `release/next` (the train push, or a dispatch) save, and only after at least one
   platform published from a verified store. The train restores main's entries, because a branch
   can read the default branch's caches.
-- **Never blocks a publish.** Every cache step is `continue-on-error`, and the publish steps don't
-  depend on any of them. eoas 3.2.6 runs `expo export` without `--clear`, so a restored store is
+- **Never blocks a publish.** Every cache step is `continue-on-error`, the publish steps don't
+  depend on any of them, and `publish` runs whatever `metro-cache-fetch` did. eoas 3.2.6 runs `expo export` without `--clear`, so a restored store is
   reused. Bundle bytes are unchanged: Metro keys each entry on the file's content hash, and the
   staged receipt hashes the exported bundle itself. A download or extract error does not need
   handling of its own: `@actions/cache` logs it and reports a miss, and Metro's binary file store
@@ -625,7 +632,30 @@ and the workflow's public env. The exact key (`prefix` + sha) always misses on a
 `restore-keys` would hand the planted store to the production export, Metro would trust every
 transform in it, and the attacker's JS would ship, signed, to every user.
 
-So the store is sealed with an HMAC that only the Production environment can compute
+There is a second, worse problem: `@actions/cache` extracts with `tar -xf … -P -C
+$GITHUB_WORKSPACE` (`lib/internal/tar.js`), and `-P` turns off GNU tar's refusal of absolute and
+`..` member names. A planted entry can therefore write any path the runner user can, during the
+restore itself: `scripts/ci/metro-cache-seal.sh`, `scripts/mobile-publish.ts`,
+`packages/mobile/src/**`, `node_modules/**`, `.git/config`, or a binary in `~/.local/bin`, which is
+early on `PATH`. A check that runs after the restore is too late, because it runs code the restore
+may have replaced.
+
+So **a restore never happens in a job that holds a secret**:
+
+- `metro-cache-fetch` has no environment, no secrets and a read-only token (`contents: read`,
+  credentials not persisted). It checks out only the files the key hashes, and runs nothing from
+  the repo: every step is inline shell. It restores the entry, repacks only `metro-cache/` (regular
+  files and directories, no `-P`), and uploads that tar as an artifact. Everything it produces is
+  treated as hostile, since after the restore it may be running planted code.
+- `publish` never calls `actions/cache/restore`. It downloads the artifact (download-artifact
+  rejects path traversal inside the zip) into a fresh directory, lists the tar first, and refuses it
+  unless every member is a regular file or directory named `metro-cache/`, `metro-cache/<2 hex>/`,
+  `metro-cache/<2 hex>/<hex>.mp` or `metro-cache/.metro-ota-seal`. Only then does it extract, with
+  GNU tar without `-P` and with `--no-same-owner --no-same-permissions --no-overwrite-dir`. The
+  outputs of the fetch job are never interpolated into a script.
+- Saving is safe and stays in `publish`.
+
+Then the store is checked with an HMAC that only the Production environment can compute
 (`scripts/ci/metro-cache-seal.sh`):
 
 1. **Secret.** `METRO_CACHE_HMAC_KEY` is a secret on the `Production` environment only, which the
@@ -638,16 +668,19 @@ So the store is sealed with an HMAC that only the Production environment can com
    computes it with the key read from its environment, so the key never reaches a command line or
    a log. The prefix is in the MAC so that a genuine store sealed under old `EXPO_PUBLIC_*` values
    cannot be replanted under the current prefix.
-3. **Verify, after restoring and before either export.** The script recomputes the manifest from
-   the files on disk (the stored manifest is never read) and compares the MAC. A missing or
-   malformed seal, any changed, added or removed file, a wrong key, a different prefix, or any
-   symlink, fifo or device in the store empties the store, with a `::warning::` and a step summary
-   line, and the export runs cold. Directories are made writable first, because a planted archive
-   can carry read-only ones.
+3. **Verify, after unpacking and before either export.** The store must have exactly the layout
+   Metro's binary FileStore writes: two-hex-digit shard directories at depth 1 holding `<hex>.mp`
+   files, plus the seal. The script then recomputes the manifest from the files on disk (the stored
+   manifest is never read) and compares the MAC. A missing or malformed seal, any changed, added
+   or removed file, a wrong key, a different prefix, or anything outside that layout (symlinks,
+   deeper paths, other names) empties the store, with a `::warning::` and a step summary line, and
+   the export runs cold. Directories are made writable before deleting, and after a pass too: a
+   read-only shard in a genuine store would otherwise make Metro's `set()` throw mid-export. Before
+   sealing, the seal step deletes the `.tmp<pid>_` files an unfinished Metro write leaves behind.
 4. **The exports only read a store the check passed.** The publish steps set
    `TMPDIR` to `$RUNNER_TEMP/metro-ota` only when the verify step wrote `store_ready=true`. If the
    check itself crashes, they fall back to `$RUNNER_TEMP`, a fresh store that is never saved.
-5. **No key, no cache.** With the secret unset, nothing is restored, nothing is sealed or saved,
+5. **No key, no cache.** With the secret unset, nothing is downloaded, nothing is sealed or saved,
    and the step summary says the exports ran cold. The job never fails over it.
 
 #### Size budget
