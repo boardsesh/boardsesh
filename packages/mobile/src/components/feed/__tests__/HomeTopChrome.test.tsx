@@ -97,8 +97,13 @@ vi.mock('../../Text', () => ({
 }));
 vi.mock('../../Icon', () => ({ Icon: ({ name }: { name: string }) => createElement('span', { 'data-icon': name }) }));
 vi.mock('../FeedScopeTitle', () => ({
-  FeedScopeTitle: ({ title }: { title: string }) => createElement('div', { 'data-feed-scope': 'true' }, title),
+  FeedScopeTitle: ({ title, headline }: { title: string; headline?: string }) =>
+    createElement('div', { 'data-feed-scope': 'true', 'data-feed-headline': headline ?? '' }, title),
 }));
+vi.mock('../../chrome/MaterialAppBarTitle', () => ({
+  MaterialAppBarTitle: ({ title }: { title: string }) => createElement('div', { 'data-appbar-title': title }),
+}));
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
 import { HomeTopChrome, type HomeTopChromeProps } from '../HomeTopChrome';
 
@@ -209,11 +214,14 @@ describe('HomeTopChrome', () => {
       ctrl.variant = 'material';
     });
 
-    it('renders an M3 app bar (avatar + scope title-menu + find-climbers action), no glass chrome', () => {
+    it('renders an M3 app bar (avatar + Home title-menu over the scope + find-climbers action), no glass chrome', () => {
       const { container } = render(<HomeTopChrome {...makeProps()} />);
       expect(container.querySelector('[data-appbar-header]')).not.toBeNull();
       expect(container.querySelector('[data-avatar-variant="material"]')).not.toBeNull();
-      expect(container.querySelector('[data-feed-scope]')?.textContent).toBe('My crew');
+      // The bar names the tab; the scope rides under it as the title-menu's subtitle.
+      const scope = container.querySelector('[data-feed-scope]');
+      expect(scope?.getAttribute('data-feed-headline')).toBe('mobile.nav.home');
+      expect(scope?.textContent).toBe('My crew');
       expect(searchAction(container)).not.toBeNull();
       // No floating blur / glass islands on Material.
       expect(container.querySelector('[data-blur]')).toBeNull();
@@ -225,7 +233,7 @@ describe('HomeTopChrome', () => {
         <HomeTopChrome {...makeProps({ showScopeMenu: false, scopeTitle: 'Home', scopeActions: [] })} />,
       );
       expect(container.querySelector('[data-feed-scope]')).toBeNull();
-      expect(container.querySelector('[data-appbar-content]')?.textContent).toBe('Home');
+      expect(container.querySelector('[data-appbar-title]')?.getAttribute('data-appbar-title')).toBe('mobile.nav.home');
       expect(bell(container, 'material')).not.toBeNull();
       expect(searchAction(container)).not.toBeNull();
     });

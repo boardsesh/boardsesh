@@ -1,9 +1,7 @@
 // Profile navigation stays separate from the filters in the Progress section.
-import { type ReactNode, useCallback, useMemo } from 'react';
-import { type LayoutChangeEvent, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { type ReactNode, useMemo } from 'react';
+import { StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { Appbar } from 'react-native-paper';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/theme-provider';
 import type { ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
 import { createVariantComponent } from '../../theme/variants';
@@ -12,7 +10,10 @@ import { SegmentedControl } from '../SegmentedControl';
 import { ScrollableTabs } from '../navigation/ScrollableTabs';
 import { MaterialTabs } from '../navigation/MaterialTabs';
 import { CollapsingLargeTitleHeader, GlassActionToolbar } from '../chrome';
+import { MaterialAppBarTitle } from '../chrome/MaterialAppBarTitle';
+import { MaterialTopAppBar } from '../chrome/MaterialTopAppBar';
 import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction';
+import { useProfile } from '../../lib/graphql/hooks';
 
 export type ProfileTabKey = 'progress' | 'sessions' | 'logbook' | 'climbs' | 'social';
 
@@ -54,56 +55,47 @@ function useSegmentOptions() {
   );
 }
 
-function ProfileTopChromeMaterial({ activeTab, onSelectTab, onHeightChange, children }: ProfileTopChromeProps) {
+function ProfileTopChromeMaterial({
+  activeTab,
+  onSelectTab,
+  onHeightChange,
+  children,
+  scrollEdge,
+}: ProfileTopChromeProps) {
   const { t } = useTranslation('you');
-  const { systemColors, m3 } = useTheme();
-  const insets = useSafeAreaInsets();
+  const { t: tCommon } = useTranslation('common');
+  const { data: profile } = useProfile();
 
   const dashboardTitle = t('metadata.dashboard.title');
   const tabOptions = useSegmentOptions();
   const { fontScale } = useWindowDimensions();
   const Tabs = fontScale > 1.3 ? ScrollableTabs : MaterialTabs;
 
-  const handleLayout = useCallback(
-    (event: LayoutChangeEvent) => onHeightChange(event.nativeEvent.layout.height),
-    [onHeightChange],
-  );
-
   return (
-    <View
-      // NOT box-none — the opaque Material band must swallow touches; see ClimbTopChrome for the RNGH mechanism.
-      pointerEvents="auto"
-      style={[
-        styles.materialContainer,
-        {
-          paddingTop: insets.top,
-          backgroundColor: systemColors.secondaryBackground,
-          borderBottomColor: systemColors.separator,
-        },
-      ]}
-      onLayout={handleLayout}
+    <MaterialTopAppBar
+      onHeightChange={onHeightChange}
+      scrollEdge={scrollEdge}
+      below={
+        <>
+          {/* Inner box-none is fine: the band already claims the RNGH pointer, so
+              this wrapper only needs RN hit-testing to reach the tabs. */}
+          <View pointerEvents="box-none">
+            <Tabs
+              options={tabOptions}
+              selectedKey={activeTab}
+              onSelect={onSelectTab}
+              accessibilityLabel={dashboardTitle}
+            />
+          </View>
+          {children}
+        </>
+      }
     >
-      <Appbar.Header
-        statusBarHeight={0}
-        mode="small"
-        elevated
-        style={[styles.materialAppbar, { backgroundColor: systemColors.secondaryBackground }]}
-      >
-        <UserAvatarToolbarAction variant="material" />
-        {/* No visible title — the sub-tab group below already names the surface
-            (matches Liquid Glass, which never rendered one). The empty Content is
-            the flex spacer that keeps the avatar at the leading edge;
-            dashboardTitle still labels the tabs for screen readers. */}
-        <Appbar.Content title="" />
-      </Appbar.Header>
-
-      {/* Inner box-none is fine: the outer `auto` container already claims the RNGH
-          pointer, so this wrapper only needs RN hit-testing to reach the tabs. */}
-      <View pointerEvents="box-none" style={[styles.materialTabsRow, { borderTopColor: m3.outlineVariant }]}>
-        <Tabs options={tabOptions} selectedKey={activeTab} onSelect={onSelectTab} accessibilityLabel={dashboardTitle} />
-      </View>
-      {children}
-    </View>
+      <UserAvatarToolbarAction variant="material" />
+      {/* The page is the climber's own profile, so it carries their name; the tabs
+          below switch views inside it. Falls back to "Profile" until it loads. */}
+      <MaterialAppBarTitle title={profile?.displayName || tCommon('mobile.nav.profile')} />
+    </MaterialTopAppBar>
   );
 }
 
@@ -165,20 +157,5 @@ const styles = StyleSheet.create({
   segmentStack: {
     paddingHorizontal: spacing[4],
     paddingVertical: spacing[2],
-  },
-  materialContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 20,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  materialAppbar: {
-    elevation: 0,
-    shadowOpacity: 0,
-  },
-  materialTabsRow: {
-    borderTopWidth: StyleSheet.hairlineWidth,
   },
 });

@@ -6,15 +6,16 @@ import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 // `FeedScopeTitle` title-menu pill centred, and a two-slot trailing island
 // holding notifications + find-climbers). The feed scrolls under the blur.
 //
-// Material: an absolutely-positioned, `onHeightChange`-measured M3 small app bar
-// (mirroring `ProfileTopChrome` / `ClimbTopChrome`) — the account avatar, the
-// `FeedScopeTitle` as the flat app-bar title-menu, then the notifications and
-// find-climbers `Appbar.Action`s. Home has no board/angle/light controls and no
-// create action, so the bar stays avatar · scope · notifications · find-climbers.
+// Material: the shared `MaterialTopAppBar` — the account avatar, "Home" as the
+// title with the feed scope under it (the `FeedScopeTitle` title-menu), then the
+// notifications and find-climbers `Appbar.Action`s. Home has no board/angle/light
+// controls and no create action, so the bar stays avatar · title · notifications ·
+// find-climbers.
 
 import { useCallback } from 'react';
 import { type LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 import { Appbar } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../../providers/theme-provider';
@@ -35,6 +36,9 @@ import {
 import { NotificationsToolbarAction } from '../chrome/NotificationsToolbarAction';
 import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction';
 import { NativeRootHeader } from '../chrome/NativeRootHeader';
+import { MaterialAppBarTitle } from '../chrome/MaterialAppBarTitle';
+import { MaterialTopAppBar } from '../chrome/MaterialTopAppBar';
+import type { ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
 import { FeedScopeTitle } from './FeedScopeTitle';
 
 const ROW_GUTTER = spacing[4];
@@ -63,6 +67,8 @@ export type HomeTopChromeProps = {
   scopeAccessibilityHint?: string;
   /** Report the measured chrome height so the feed insets its top padding. */
   onHeightChange: (height: number) => void;
+  /** The feed under the bar, so the Material app bar tints once it scrolls under. */
+  scrollEdge?: ScrollEdgeBackdrop;
 };
 
 export const HomeTopChrome = createVariantComponent('HomeTopChrome', {
@@ -177,64 +183,43 @@ function HomeTopChromeMaterial({
   searchAccessibilityLabel,
   scopeAccessibilityHint,
   onHeightChange,
+  scrollEdge,
 }: HomeTopChromeProps) {
+  const { t } = useTranslation('common');
   const { systemColors } = useTheme();
-  const insets = useSafeAreaInsets();
   const router = useRouter();
-
-  const handleLayout = useCallback(
-    (event: LayoutChangeEvent) => onHeightChange(event.nativeEvent.layout.height),
-    [onHeightChange],
-  );
+  const homeTitle = t('mobile.nav.home');
 
   const handleOpenNotifications = useCallback(() => router.push('/(tabs)/home/notifications'), [router]);
 
   return (
-    <View
-      // NOT box-none — the opaque Material band must swallow touches; see ClimbTopChrome for the RNGH mechanism.
-      pointerEvents="auto"
-      style={[
-        styles.materialContainer,
-        {
-          paddingTop: insets.top,
-          backgroundColor: systemColors.secondaryBackground,
-          borderBottomColor: systemColors.separator,
-        },
-      ]}
-      onLayout={handleLayout}
-    >
-      <Appbar.Header
-        statusBarHeight={0}
-        mode="small"
-        elevated
-        style={[styles.materialAppbar, { backgroundColor: systemColors.secondaryBackground }]}
-      >
-        <UserAvatarToolbarAction variant="material" />
-        {showScopeMenu ? (
-          <>
-            <FeedScopeTitle
-              title={scopeTitle}
-              actions={scopeActions}
-              onSelectIndex={onSelectScopeIndex}
-              accessibilityHint={scopeAccessibilityHint}
-            />
-            {/* Flex spacer holds the find-climbers action to the trailing edge — the
-                scope title-menu is a Paper Menu (content-width anchor), so it can't flex
-                into the slot itself the way Appbar.Content / BoardSwitcherButton do. */}
-            <View style={styles.materialSpacer} />
-          </>
-        ) : (
-          <Appbar.Content title={scopeTitle} />
-        )}
-        <NotificationsToolbarAction variant="material" onPress={handleOpenNotifications} />
-        <Appbar.Action
-          icon={iconMap['person.badge.plus'].android}
-          color={systemColors.label as string}
-          onPress={onOpenSearch}
-          accessibilityLabel={searchAccessibilityLabel}
-        />
-      </Appbar.Header>
-    </View>
+    <MaterialTopAppBar onHeightChange={onHeightChange} scrollEdge={scrollEdge}>
+      <UserAvatarToolbarAction variant="material" />
+      {showScopeMenu ? (
+        <>
+          <FeedScopeTitle
+            headline={homeTitle}
+            title={scopeTitle}
+            actions={scopeActions}
+            onSelectIndex={onSelectScopeIndex}
+            accessibilityHint={scopeAccessibilityHint}
+          />
+          {/* Flex spacer holds the actions to the trailing edge — the title-menu is a
+              native menu anchor that hugs its content, so it can't flex into the slot
+              the way `MaterialAppBarTitle` does. */}
+          <View style={styles.materialSpacer} />
+        </>
+      ) : (
+        <MaterialAppBarTitle title={homeTitle} />
+      )}
+      <NotificationsToolbarAction variant="material" onPress={handleOpenNotifications} />
+      <Appbar.Action
+        icon={iconMap['person.badge.plus'].android}
+        color={systemColors.label as string}
+        onPress={onOpenSearch}
+        accessibilityLabel={searchAccessibilityLabel}
+      />
+    </MaterialTopAppBar>
   );
 }
 
@@ -268,20 +253,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing[2],
-  },
-  // Material small app bar (mirrors ProfileTopChrome / ClimbTopChrome): absolutely
-  // positioned so the feed scrolls under it, height reported via onLayout.
-  materialContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 20,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  materialAppbar: {
-    elevation: 0,
-    shadowOpacity: 0,
   },
   // Pushes the find-climbers action to the trailing edge (the scope title-menu can't
   // flex, so the spacer takes the slack instead).

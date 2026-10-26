@@ -478,10 +478,17 @@ describe('CollapsingTopChrome', () => {
       // The M3 small app bar replaces the floating glass islands.
       expect(container.querySelector('[data-appbar-header]')).not.toBeNull();
       expect(container.querySelector('[data-avatar-variant="material"]')).not.toBeNull();
-      // The board switcher carries the board label (a `•`-bearing PressableSurface).
+      // The board switcher carries the board label (a `•`-bearing PressableSurface)
+      // as the subtitle under the screen's title.
       expect(boardAction(container)).not.toBeNull();
       // No floating GlassSurface island on Material.
       expect(container.querySelector('[data-glass]')).toBeNull();
+    });
+
+    it('titles the app bar with the screen name over the board', () => {
+      ctrl.board = board;
+      const { container } = render(<CollapsingTopChrome {...makeProps({ materialTitle: 'Discover' })} />);
+      expect(boardAction(container)?.getAttribute('data-capsule')).toMatch(/^Discover, /);
     });
 
     it('reports the app bar height through onHeightChange', () => {

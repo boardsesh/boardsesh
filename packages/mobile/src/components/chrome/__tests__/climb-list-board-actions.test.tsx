@@ -93,7 +93,6 @@ vi.mock('../../LargeContentViewer', () => ({
 vi.mock('react-native-paper', () => ({
   Appbar: {
     Action: MockAction,
-    Content: ({ title }: { title: string }) => createElement('span', { 'data-board-title': true }, title),
   },
 }));
 vi.mock('../../Icon', () => ({
@@ -184,7 +183,7 @@ vi.mock('../../play-drawer/AngleSlider', () => ({
     createElement('button', { onClick: () => onChange(45), 'data-preview': value }, 'Preview 45'),
 }));
 
-import { ClimbListBoardActions, ClimbListBoardTitle, climbListBoardActionCount } from '../ClimbListBoardActions';
+import { ClimbListBoardActions, climbListBoardActionCount } from '../ClimbListBoardActions';
 
 const BOARD: Board = {
   uuid: 'board-a',
@@ -329,26 +328,16 @@ describe('Climb list angle, history and options', () => {
     expect(state.menusMounted).toBe(1);
   });
 
-  it('leaves the Material angle to the filter chip: no angle button, M3 menu target, angle off the title', () => {
+  // The Material title (screen name over the board) is BoardSwitcherButton's; its
+  // suite covers when the subtitle keeps the angle.
+  it('leaves the Material angle to the filter chip: no angle button, M3 menu target', () => {
     state.os = 'android';
     const openHistory = vi.fn();
-    const { getByRole, queryByRole, container } = render(
-      <>
-        <ClimbListBoardTitle />
-        <ClimbListBoardActions material onOpenHistory={openHistory} />
-      </>,
-    );
+    const { getByRole, queryByRole } = render(<ClimbListBoardActions material onOpenHistory={openHistory} />);
     expect(queryByRole('button', { name: /Board angle/ })).toBeNull();
     expect(state.menu?.anchorSize).toBeUndefined();
-    expect(container.querySelector('[data-board-title]')?.textContent).toBe('Garage wall');
     fireEvent.click(getByRole('button', { name: 'Board history, Garage wall • 35°' }));
     expect(openHistory).toHaveBeenCalledOnce();
-  });
-
-  it('keeps the angle in the Material title of a fixed-angle board, which has no chip', () => {
-    state.board = { ...BOARD, isAngleAdjustable: false };
-    const { container } = render(<ClimbListBoardTitle />);
-    expect(container.querySelector('[data-board-title]')?.textContent).toBe('Garage wall • 35°');
   });
 });
 

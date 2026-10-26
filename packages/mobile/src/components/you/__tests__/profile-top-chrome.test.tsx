@@ -20,6 +20,7 @@ import type { ProfileTabKey, ProfileTopChromeProps } from '../ProfileTopChrome';
 const ctrl = vi.hoisted(() => ({
   fontScale: 1,
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
+  profileName: 'Sam Climber' as string | null,
   materialMeasure: undefined as ((event: { nativeEvent: { layout: { height: number } } }) => void) | undefined,
   glassMeasure: undefined as ((height: number) => void) | undefined,
   // What the glass header was told about floating its controls over the list.
@@ -135,6 +136,12 @@ vi.mock('../../navigation/MaterialTabs', () => ({
     return createElement('div', { 'data-material-tabs': 'true' });
   },
 }));
+vi.mock('../../../lib/graphql/hooks', () => ({
+  useProfile: () => ({ data: ctrl.profileName == null ? undefined : { displayName: ctrl.profileName } }),
+}));
+vi.mock('../../chrome/MaterialAppBarTitle', () => ({
+  MaterialAppBarTitle: ({ title }: { title: string }) => createElement('div', { 'data-appbar-title': title }),
+}));
 vi.mock('../../user-drawer/UserAvatarToolbarAction', () => ({
   UserAvatarToolbarAction: ({ variant }: { variant: 'glass' | 'material' }) =>
     createElement('button', { 'data-action': 'ariaLabels.userMenu', 'data-avatar-variant': variant }),
@@ -144,7 +151,6 @@ vi.mock('../../user-drawer/UserAvatarToolbarAction', () => ({
 vi.mock('react-native-paper', () => ({
   Appbar: {
     Header: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-appbar': 'true' }, children),
-    Content: ({ title }: { title?: string }) => createElement('div', { 'data-appbar-title': title ?? '' }),
     Action: ({
       icon,
       color,
@@ -228,6 +234,7 @@ describe('ProfileTopChrome', () => {
   beforeEach(() => {
     ctrl.fontScale = 1;
     ctrl.variant = 'liquidGlass';
+    ctrl.profileName = 'Sam Climber';
     ctrl.materialMeasure = undefined;
     ctrl.glassMeasure = undefined;
     ctrl.glassOpaqueControls = undefined;
@@ -319,15 +326,23 @@ describe('ProfileTopChrome', () => {
       ctrl.variant = 'material';
     });
 
-    it('renders a Paper app bar with no visible title and the MaterialTabs row', () => {
+    it("titles the Paper app bar with the climber's name over the MaterialTabs row", () => {
       const { container } = render(<ProfileTopChrome {...makeProps()} />);
       expect(container.querySelector('[data-appbar="true"]')).not.toBeNull();
-      // The "You" title is dropped — the sub-tab group already names the surface.
-      expect(container.querySelector('[data-appbar-title="metadata.dashboard.title"]')).toBeNull();
+      // The bar names the page; the tabs below switch views inside it.
+      expect(container.querySelector('[data-appbar-title]')?.getAttribute('data-appbar-title')).toBe('Sam Climber');
       expect(container.querySelector('[data-material-tabs="true"]')).not.toBeNull();
       // No glass segmented control / track on the material branch.
       expect(container.querySelector('[data-segmented="true"]')).toBeNull();
       expect(container.querySelector('[data-glass="true"]')).toBeNull();
+    });
+
+    it('falls back to the Profile title until the profile loads', () => {
+      ctrl.profileName = null;
+      const { container } = render(<ProfileTopChrome {...makeProps()} />);
+      expect(container.querySelector('[data-appbar-title]')?.getAttribute('data-appbar-title')).toBe(
+        'mobile.nav.profile',
+      );
     });
 
     it('renders the material avatar menu', () => {

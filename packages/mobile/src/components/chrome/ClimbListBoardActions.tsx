@@ -138,17 +138,6 @@ export function ClimbListBoardActions({
   );
 }
 
-/**
- * Material shows the active board as a static title beside the trailing
- * actions. An adjustable board's angle rides the filter row's Angle chip, so
- * the title drops it rather than truncate it; a fixed-angle wall keeps it.
- */
-export function ClimbListBoardTitle() {
-  const { data: activeBoard } = useActiveBoard();
-  const title = formatActiveBoardLabel(activeBoard, { includeAngle: !canAdjustBoardAngle(activeBoard) });
-  return <Appbar.Content title={title ?? ''} />;
-}
-
 const styles = StyleSheet.create({
   badge: { position: 'absolute', top: 2, right: 2 },
   menu: { alignItems: 'center', justifyContent: 'center' },

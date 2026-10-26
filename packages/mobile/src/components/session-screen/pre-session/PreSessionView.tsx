@@ -27,6 +27,8 @@ import { useQueueActions } from '../../../providers/queue-provider';
 import { useToast } from '../../../providers/toast-provider';
 import { useDrawerHost } from '../../../providers/drawer-host-provider';
 import { useBottomChromeMetrics } from '../../../hooks/use-bottom-chrome-metrics';
+import { useScrollEdgeBackdrop } from '../../../hooks/use-scroll-edge-backdrop';
+import { useVariantValue } from '../../../theme/variants';
 import { reportError } from '../../../lib/error-reporting';
 import { RecordTopChrome } from '../RecordTopChrome';
 import { SESSION_START_FAB_HEIGHT, SessionStartFab } from '../SessionStartFab';
@@ -144,6 +146,13 @@ export function PreSessionView({
   // Measured chrome height (incl. the top safe-area inset) so the list pads its
   // top by it. Only used when the floating chrome renders (tab mode).
   const [chromeHeight, setChromeHeight] = useState(() => insets.top + 56);
+  // Tells the Material app bar when the preview has scrolled under it.
+  const scrollEdge = useScrollEdgeBackdrop();
+  // Material's app bar names the tab ("Session"); UIKit's header keeps the call to action.
+  const chromeTitle = useVariantValue({
+    liquidGlass: t('mobile.session.headerStart'),
+    material: t('mobile.session.recordTab'),
+  });
 
   const [selection, setSelection] = useState<GeneratorSelection>(initialGeneratorSelection);
   const [isStarting, setIsStarting] = useState(false);
@@ -552,9 +561,12 @@ export function PreSessionView({
         showsVerticalScrollIndicator={false}
         nestedScrollEnabled
         keyboardShouldPersistTaps="handled"
+        {...scrollEdge.list?.listProps}
       />
 
-      {showChrome ? <RecordTopChrome title={t('mobile.session.headerStart')} onHeightChange={setChromeHeight} /> : null}
+      {showChrome ? (
+        <RecordTopChrome title={chromeTitle} onHeightChange={setChromeHeight} scrollEdge={scrollEdge.backdrop} />
+      ) : null}
 
       <SessionStartFab
         testID="pre-session-footer"

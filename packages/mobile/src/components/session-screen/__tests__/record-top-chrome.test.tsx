@@ -23,7 +23,6 @@ const controls = vi.hoisted(() => ({
 const appbar = vi.hoisted(() => ({
   title: null as string | null,
   contentPress: null as (() => void) | null,
-  contentAria: null as string | null,
   contentHint: null as string | null,
 }));
 
@@ -48,25 +47,26 @@ vi.mock('../../../providers/theme-provider', () => ({
 vi.mock('react-native-paper', () => ({
   Appbar: {
     Header: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-appbar': 'true' }, children),
-    Content: ({
-      title,
-      onPress,
-      accessibilityLabel,
-      accessibilityHint,
-    }: {
-      title?: string;
-      onPress?: () => void;
-      accessibilityLabel?: string;
-      accessibilityHint?: string;
-    }) => {
-      appbar.title = title ?? null;
-      appbar.contentPress = onPress ?? null;
-      appbar.contentAria = accessibilityLabel ?? null;
-      appbar.contentHint = accessibilityHint ?? null;
-      return createElement('div', { 'data-appbar-title': title ?? '', onClick: onPress }, title);
-    },
     Action: ({ accessibilityLabel, onPress }: { accessibilityLabel?: string; onPress?: () => void }) =>
       createElement('button', { 'data-action': accessibilityLabel, onClick: onPress }),
+  },
+}));
+// The shared Material title. Captures what the chrome hands it; its own rendering
+// is covered by the board switcher suite.
+vi.mock('../../chrome/MaterialAppBarTitle', () => ({
+  MaterialAppBarTitle: ({
+    title,
+    onPress,
+    accessibilityHint,
+  }: {
+    title: string;
+    onPress?: () => void;
+    accessibilityHint?: string;
+  }) => {
+    appbar.title = title;
+    appbar.contentPress = onPress ?? null;
+    appbar.contentHint = accessibilityHint ?? null;
+    return createElement('div', { 'data-appbar-title': title, onClick: onPress }, title);
   },
 }));
 vi.mock('../../icon-map', () => ({
@@ -173,7 +173,6 @@ describe('RecordTopChrome', () => {
     controls.fallbackProps = null;
     appbar.title = null;
     appbar.contentPress = null;
-    appbar.contentAria = null;
     appbar.contentHint = null;
   });
 
@@ -309,7 +308,6 @@ describe('RecordTopChrome', () => {
     );
     expect(container.querySelectorAll('[data-appbar-title]')).toHaveLength(1);
     expect(appbar.title).toBe('Active session');
-    expect(appbar.contentAria).toBe('Active session');
     expect(appbar.contentHint).toBe('mobile.session.editTitleAria');
     fireEvent.click(container.querySelector('[data-action="mobile.session.editTitleAria"]')!);
     expect(onEditTitle).toHaveBeenCalledOnce();
@@ -319,5 +317,15 @@ describe('RecordTopChrome', () => {
     expect(appbar.contentPress).toBeNull();
     expect(appbar.contentHint).toBeNull();
     expect(container.querySelector('[data-action="mobile.session.editTitleAria"]')).toBeNull();
+  });
+
+  it('starts the Material title right after the avatar, with invite among the trailing actions', () => {
+    controls.variant = 'material';
+    const { container } = render(<RecordTopChrome {...makeProps({ onShare: vi.fn(), onEndSession: vi.fn() })} />);
+    const bar = container.querySelector('[data-appbar]')!;
+    const order = Array.from(bar.children).map(
+      (child) => child.getAttribute('data-action') ?? (child.hasAttribute('data-appbar-title') ? 'title' : null),
+    );
+    expect(order.slice(0, 3)).toEqual(['ariaLabels.userMenu', 'title', 'mobile.session.invite']);
   });
 });
