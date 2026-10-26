@@ -496,6 +496,23 @@ Neutral tiles in session summaries and Profile's period comparison use `systemCo
 on Liquid Glass, leaving visual emphasis to the actual values and semantic highlights. Material
 keeps `systemColors.fill`. Do not apply a violet background to every content card.
 
+### Root header actions are native bar items
+
+On an iPhone running iOS 26 Liquid Glass, the root tabs' header buttons are native UIKit bar items
+(`root-bar-items.ts`, gated by `useNativeRootBarItems`), not custom glass capsules. iPhone Duo moves
+native items onto its side rail; a custom view never moves there, and neither does an item with a
+title but no icon. So every root action carries an SF Symbol and a title. UIKit shows the symbol in
+the bar and on the rail, and the title in the overflow menu and to VoiceOver.
+
+- The avatar shows the person's photo once it has loaded, and `person.crop.circle` until then.
+- + (create) and the notifications bell keep `visibilityPriority: 'high'`, so they stay on screen
+  longest. Board history is `'standard'`; the rest take the default.
+- The angle ("40°") stays a title-only item. An icon would hide the number on every iPhone, so it
+  gives up its place on the Duo rail.
+- Custom views stay custom: the Climbs "On the wall" capsule and the controls under the bar.
+
+iPad, iOS 18 and the Material variant keep the glass capsules.
+
 ### Controls pinned under the bar
 
 Some root tabs pin a block of controls under the UIKit navigation bar: Climbs has its filter chips,

@@ -324,6 +324,7 @@
       "title": "Options de la liste de blocs",
       "viewOptions": "Options d’affichage",
       "history": "Historique de la board, {{board}}",
+      "historyTitle": "Historique de la board",
       "historyHint": "Voir les blocs qui ont été allumés sur ce mur"
     },
     "moderation": {

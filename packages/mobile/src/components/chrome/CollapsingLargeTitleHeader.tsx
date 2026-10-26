@@ -2,6 +2,7 @@ import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import type { ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
 import { type ReactNode, useCallback } from 'react';
 import { type LayoutChangeEvent, StyleSheet, View } from 'react-native';
+import type { NativeStackNavigationOptions } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/theme-provider';
 import { HorizontalSafeAreaApplied, useHorizontalSafeArea } from '../../hooks/use-horizontal-safe-area';
@@ -30,6 +31,11 @@ type CollapsingLargeTitleHeaderProps = {
   leftActions?: ReactNode;
   /** Glass island(s) anchored to the right of the islands row. */
   rightActions?: ReactNode;
+  /**
+   * Under the UIKit header, native leading bar items that replace `leftActions`
+   * (see `NativeRootHeader`). Ignored by the floating islands.
+   */
+  leftItems?: NativeStackNavigationOptions['unstable_headerLeftItems'];
   /** Extra controls rendered below the islands row (e.g. a search or segmented
    *  control row). Measured into the reported chrome height. */
   children?: ReactNode;
@@ -55,6 +61,7 @@ export function CollapsingLargeTitleHeader({
   onHeightChange,
   leftActions,
   rightActions,
+  leftItems,
   children,
   opaqueControls,
   scrollEdge,
@@ -78,6 +85,7 @@ export function CollapsingLargeTitleHeader({
       <NativeRootHeader
         leftActions={leftActions}
         leftActionsStandalone={Boolean(leftActions)}
+        leftItems={leftItems}
         rightActions={rightActions}
         centerContent={centerContent}
         opaqueControls={opaqueControls}

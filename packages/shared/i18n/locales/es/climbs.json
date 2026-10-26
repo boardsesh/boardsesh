@@ -324,6 +324,7 @@
       "title": "Opciones de la lista de bloques",
       "viewOptions": "Opciones de vista",
       "history": "Historial del plafón, {{board}}",
+      "historyTitle": "Historial del plafón",
       "historyHint": "Mira los bloques que se han iluminado en este muro"
     },
     "moderation": {

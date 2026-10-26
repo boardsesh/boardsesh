@@ -324,6 +324,7 @@
       "title": "Optionen für die Boulderliste",
       "viewOptions": "Ansichtsoptionen",
       "history": "Board-Verlauf, {{board}}",
+      "historyTitle": "Board-Verlauf",
       "historyHint": "Sieh, welche Boulder an diesem Board beleuchtet wurden"
     },
     "moderation": {

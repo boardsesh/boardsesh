@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+vi.mock('../../../hooks/use-native-root-bar-items', () => ({ useNativeRootBarItems: () => false }));
+vi.mock('../../chrome/use-root-bar-items', () => import('../../../../test/use-root-bar-items-stub'));
 vi.mock('../../AccessibleTextInput', async () => {
   const { TextInput } = await import('react-native');
   return { AccessibleTextInput: TextInput };

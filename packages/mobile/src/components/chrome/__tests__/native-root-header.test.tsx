@@ -342,6 +342,27 @@ describe('NativeRootHeader', () => {
     expect(getByText('Custom actions')).toBeTruthy();
   });
 
+  it('lets native leading items replace the custom leading group, standalone or not', () => {
+    const leftItems: NativeStackNavigationOptions['unstable_headerLeftItems'] = () => [
+      { type: 'button', label: 'User menu', icon: { type: 'sfSymbol', name: 'person.crop.circle' }, onPress: vi.fn() },
+    ];
+    const { rerender } = render(
+      <NativeRootHeader leftItems={leftItems} leftActions={<span>Avatar</span>} onHeightChange={vi.fn()} />,
+    );
+    expect(lastOptions().unstable_headerLeftItems).toBe(leftItems);
+    expect(lastOptions().headerLeft).toBeUndefined();
+
+    rerender(
+      <NativeRootHeader
+        leftItems={leftItems}
+        leftActionsStandalone
+        leftActions={<span>Avatar</span>}
+        onHeightChange={vi.fn()}
+      />,
+    );
+    expect(lastOptions().unstable_headerLeftItems).toBe(leftItems);
+  });
+
   it('keeps the existing blur on iOS before native glass support', () => {
     controls.glassCapability = false;
     render(<NativeRootHeader onHeightChange={vi.fn()} />);

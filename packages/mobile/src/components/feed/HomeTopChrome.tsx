@@ -12,13 +12,14 @@ import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 // find-climbers `Appbar.Action`s. Home has no board/angle/light controls and no
 // create action, so the bar stays avatar · scope · notifications · find-climbers.
 
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { type LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Appbar } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../../providers/theme-provider';
 import { useHorizontalSafeArea } from '../../hooks/use-horizontal-safe-area';
+import { useNativeRootBarItems } from '../../hooks/use-native-root-bar-items';
 import { createVariantComponent } from '../../theme/variants';
 import { spacing } from '../../theme/tokens';
 import { Icon } from '../Icon';
@@ -36,6 +37,8 @@ import {
 import { NotificationsToolbarAction } from '../chrome/NotificationsToolbarAction';
 import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction';
 import { NativeRootHeader } from '../chrome/NativeRootHeader';
+import { barItemsFactory, symbolBarItem } from '../chrome/root-bar-items';
+import { useAvatarBarItem, useNotificationsBarItem } from '../chrome/use-root-bar-items';
 import { FeedScopeTitle } from './FeedScopeTitle';
 
 const ROW_GUTTER = spacing[4];
@@ -86,6 +89,7 @@ function HomeTopChromeGlass({
   const horizontalSafeArea = useHorizontalSafeArea();
   const router = useRouter();
   const nativeHeader = useNativeRootHeader();
+  const nativeBarItems = useNativeRootBarItems();
 
   const handleLayout = useCallback(
     (event: LayoutChangeEvent) => onHeightChange(event.nativeEvent.layout.height),
@@ -93,6 +97,16 @@ function HomeTopChromeGlass({
   );
 
   const handleOpenNotifications = useCallback(() => router.push('/(tabs)/home/notifications'), [router]);
+
+  if (nativeHeader && nativeBarItems)
+    return (
+      <HomeNativeBarHeader
+        onOpenNotifications={handleOpenNotifications}
+        onOpenSearch={onOpenSearch}
+        searchAccessibilityLabel={searchAccessibilityLabel}
+        onHeightChange={onHeightChange}
+      />
+    );
 
   if (nativeHeader)
     return (
@@ -175,6 +189,41 @@ function HomeTopChromeGlass({
       </View>
     </>
   );
+}
+
+/**
+ * Home's header as native bar items, so iPhone Duo can put them on its side
+ * rail: the avatar leading; the bell (badged, kept visible longest) and
+ * find-climbers trailing, in the glass capsules' order.
+ */
+function HomeNativeBarHeader({
+  onOpenNotifications,
+  onOpenSearch,
+  searchAccessibilityLabel,
+  onHeightChange,
+}: {
+  onOpenNotifications: () => void;
+  onOpenSearch: () => void;
+  searchAccessibilityLabel: string;
+  onHeightChange: (height: number) => void;
+}) {
+  const avatarItem = useAvatarBarItem();
+  const notificationsItem = useNotificationsBarItem(onOpenNotifications);
+  const leftItems = useMemo(() => barItemsFactory([avatarItem]), [avatarItem]);
+  const rightItems = useMemo(
+    () =>
+      barItemsFactory([
+        notificationsItem,
+        symbolBarItem({
+          label: searchAccessibilityLabel,
+          symbol: iconMap['person.badge.plus'].ios,
+          onPress: onOpenSearch,
+          identifier: 'root.findClimbers',
+        }),
+      ]),
+    [notificationsItem, searchAccessibilityLabel, onOpenSearch],
+  );
+  return <NativeRootHeader onHeightChange={onHeightChange} leftItems={leftItems} rightItems={rightItems} />;
 }
 
 function HomeTopChromeMaterial({

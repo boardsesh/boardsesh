@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+vi.mock('../../../hooks/use-native-root-bar-items', () => ({ useNativeRootBarItems: () => controls.nativeBarItems }));
+vi.mock('../../chrome/use-root-bar-items', () => import('../../../../test/use-root-bar-items-stub'));
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -10,12 +12,14 @@ type HeaderProps = {
   leftActionsStandalone?: boolean;
   rightActions?: ReactNode;
   rightItems?: NativeStackNavigationOptions['unstable_headerRightItems'];
+  leftItems?: NativeStackNavigationOptions['unstable_headerLeftItems'];
   onHeightChange?: (height: number) => void;
 };
 
 const controls = vi.hoisted(() => ({
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
   nativeHeader: false,
+  nativeBarItems: false,
   glassCapability: true,
   nativeProps: null as HeaderProps | null,
   fallbackProps: null as HeaderProps | null,
@@ -168,6 +172,7 @@ describe('RecordTopChrome', () => {
   beforeEach(() => {
     controls.variant = 'liquidGlass';
     controls.nativeHeader = false;
+    controls.nativeBarItems = false;
     controls.glassCapability = true;
     controls.nativeProps = null;
     controls.fallbackProps = null;
@@ -197,6 +202,29 @@ describe('RecordTopChrome', () => {
       expect(controls.nativeProps ?? controls.fallbackProps ?? {}).not.toHaveProperty('onOpenBoardSwitcher');
     },
   );
+
+  it('puts the avatar and invite in native leading items on the iOS 26 iPhone', () => {
+    controls.nativeHeader = true;
+    controls.nativeBarItems = true;
+    const onShare = vi.fn();
+    render(<RecordTopChrome {...makeProps({ onShare })} />);
+    const leftItems = controls.nativeProps?.leftItems?.({ tintColor: '#000', canGoBack: false }) ?? [];
+    expect(leftItems.map((item) => (item.type === 'button' ? item.label : item.type))).toEqual([
+      'avatar',
+      'mobile.session.invite',
+    ]);
+    const invite = leftItems[1];
+    if (invite?.type !== 'button') throw new Error('Expected a native invite button');
+    expect(invite.icon).toEqual({ type: 'sfSymbol', name: 'person.badge.plus' });
+    invite.onPress();
+    expect(onShare).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the glass leading capsule where native items are off', () => {
+    controls.nativeHeader = true;
+    render(<RecordTopChrome {...makeProps({ onShare: vi.fn() })} />);
+    expect(controls.nativeProps?.leftItems).toBeUndefined();
+  });
 
   it('lets the native header own the contextual title and updates it as a session starts', () => {
     controls.nativeHeader = true;

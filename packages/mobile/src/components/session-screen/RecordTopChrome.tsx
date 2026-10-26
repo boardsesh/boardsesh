@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { type LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import type { NativeStackNavigationOptions } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -25,6 +25,9 @@ import { glassSize } from '../../theme/layout';
 import { topBarFor } from '../../theme/top-bar';
 import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import { useGlassCapability } from '../../hooks/use-glass-capability';
+import { useNativeRootBarItems } from '../../hooks/use-native-root-bar-items';
+import { barItemsFactory, symbolBarItem, type RootBarItem } from '../chrome/root-bar-items';
+import { useAvatarBarItem } from '../chrome/use-root-bar-items';
 
 type RecordTopChromeProps = {
   /** The native or Material header owns the contextual session title. */
@@ -64,6 +67,27 @@ export function RecordTopChrome({
     (event: LayoutChangeEvent) => onHeightChange(event.nativeEvent.layout.height),
     [onHeightChange],
   );
+
+  // On the iOS 26 iPhone header the avatar and invite are native bar items, so
+  // iPhone Duo can put them on its side rail.
+  const nativeBarItems = useNativeRootBarItems();
+  const avatarItem = useAvatarBarItem({ enabled: nativeBarItems });
+  const inviteLabel = t('mobile.session.invite');
+  const leftItems = useMemo(() => {
+    if (!nativeBarItems) return undefined;
+    const items: RootBarItem[] = [avatarItem];
+    if (onShare) {
+      items.push(
+        symbolBarItem({
+          label: inviteLabel,
+          symbol: iconMap['person.badge.plus'].ios,
+          onPress: onShare,
+          identifier: 'root.invite',
+        }),
+      );
+    }
+    return barItemsFactory(items);
+  }, [nativeBarItems, avatarItem, inviteLabel, onShare]);
 
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
   const exitAction = onEndSession ? (
@@ -199,6 +223,7 @@ export function RecordTopChrome({
         title={title}
         leftActions={leftActions}
         leftActionsStandalone={!onShare}
+        leftItems={leftItems}
         rightActions={rightActions}
         rightItems={rightItems}
         onHeightChange={onHeightChange}

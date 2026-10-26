@@ -13,6 +13,9 @@ import { ScrollableTabs } from '../navigation/ScrollableTabs';
 import { MaterialTabs } from '../navigation/MaterialTabs';
 import { CollapsingLargeTitleHeader, GlassActionToolbar } from '../chrome';
 import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction';
+import { barItemsFactory } from '../chrome/root-bar-items';
+import { useAvatarBarItem } from '../chrome/use-root-bar-items';
+import { useNativeRootBarItems } from '../../hooks/use-native-root-bar-items';
 
 export type ProfileTabKey = 'progress' | 'sessions' | 'logbook' | 'climbs' | 'social';
 
@@ -121,6 +124,13 @@ function ProfileTopChromeGlass({
   const dashboardTitle = t('metadata.dashboard.title');
   const segmentOptions = useSegmentOptions();
   const { fontScale } = useWindowDimensions();
+  // On the iOS 26 iPhone header the avatar is a native bar item (iPhone Duo's side rail).
+  const nativeBarItems = useNativeRootBarItems();
+  const avatarItem = useAvatarBarItem({ enabled: nativeBarItems });
+  const leftItems = useMemo(
+    () => (nativeBarItems ? barItemsFactory([avatarItem]) : undefined),
+    [nativeBarItems, avatarItem],
+  );
 
   const leftActions = (
     <GlassActionToolbar actionCount={1}>
@@ -132,6 +142,7 @@ function ProfileTopChromeGlass({
     <CollapsingLargeTitleHeader
       onHeightChange={onHeightChange}
       leftActions={leftActions}
+      leftItems={leftItems}
       opaqueControls={opaqueControls}
       scrollEdge={scrollEdge}
     >

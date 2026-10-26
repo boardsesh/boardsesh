@@ -171,6 +171,11 @@ function ClimbTopChromeComponent({
     (event: LayoutChangeEvent) => onHeightChange(event.nativeEvent.layout.height),
     [onHeightChange],
   );
+  // The same history and ⋯ actions as native bar items on the iOS 26 iPhone header.
+  const climbListBarActions = useMemo(
+    () => ({ onOpenHistory: onOpenBoardDetail, badge: showBoardBadge }),
+    [onOpenBoardDetail, showBoardBadge],
+  );
 
   const handleCloseOverlays = useCallback(() => {
     Keyboard.dismiss();
@@ -359,6 +364,7 @@ function ClimbTopChromeComponent({
         ),
         actionCount: climbListBoardActionCount(activeBoard),
       }}
+      climbListBarActions={climbListBarActions}
       onHeightChange={onHeightChange}
       scrollEdge={scrollEdge}
       hideLight

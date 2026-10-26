@@ -26,18 +26,9 @@ import { GlassToolbarAction, toolbarGlyphSize, useToolbarActionSize } from './Gl
  */
 export function LightbulbToolbarAction() {
   const { systemColors, brandColors } = useTheme();
-  const { t: tCommon } = useTranslation('common');
   const { t: tSettings } = useTranslation('settings');
-  const { open: openControls } = useBleControlSheet();
   const actionSize = useToolbarActionSize();
-  const { bluetooth, lit, localConnected, onPress, onLongPress, pressAction, holderIsAuthoritative } =
-    useLightbulbControl({ surface: 'toolbar', onOpenControls: openControls });
-  const labelKind = getBleLightbulbLabelKind(pressAction, holderIsAuthoritative);
-
-  const handlePress = useCallback(() => {
-    hapticLight();
-    onPress();
-  }, [onPress]);
+  const { available, lit, localConnected, onLongPress, handlePress, accessibilityLabel } = useToolbarLightbulb();
 
   // Offered only where the long press itself is wired (connected, handler present).
   const canOpenControls = localConnected && !!onLongPress;
@@ -52,23 +43,7 @@ export function LightbulbToolbarAction() {
     [canOpenControls, onLongPress],
   );
 
-  if (!bluetooth) return null;
-
-  // On a wall with no light kit there is no Bluetooth link to describe, so the
-  // label names the two states that DO exist there: holding the wall or not.
-  let accessibilityLabel: string;
-  if (labelKind === 'releaseWall') {
-    accessibilityLabel = tSettings('ble.releaseWall');
-  } else if (labelKind === 'takeWall') {
-    accessibilityLabel = tSettings('ble.takeWall');
-  } else if (labelKind === 'relay') {
-    accessibilityLabel = tSettings('ble.relayToWall');
-  } else if (labelKind === 'peerDriving') {
-    accessibilityLabel = tSettings('ble.peerDrivingBoard');
-  } else {
-    accessibilityLabel =
-      labelKind === 'disconnect' ? tCommon('lightControl.disconnect') : tSettings('ble.connectBoard');
-  }
+  if (!available) return null;
 
   return (
     <GlassToolbarAction
@@ -93,4 +68,41 @@ export function LightbulbToolbarAction() {
       />
     </GlassToolbarAction>
   );
+}
+
+/**
+ * The toolbar bulb's state, label and tap, shared by the glass capsule above
+ * and the native bar item (`use-root-bar-items.tsx`), so both say and do the
+ * same thing. The long press stays with the capsule: a native bar item has none.
+ */
+export function useToolbarLightbulb() {
+  const { t: tCommon } = useTranslation('common');
+  const { t: tSettings } = useTranslation('settings');
+  const { open: openControls } = useBleControlSheet();
+  const { bluetooth, lit, localConnected, onPress, onLongPress, pressAction, holderIsAuthoritative } =
+    useLightbulbControl({ surface: 'toolbar', onOpenControls: openControls });
+  const labelKind = getBleLightbulbLabelKind(pressAction, holderIsAuthoritative);
+
+  const handlePress = useCallback(() => {
+    hapticLight();
+    onPress();
+  }, [onPress]);
+
+  // On a wall with no light kit there is no Bluetooth link to describe, so the
+  // label names the two states that DO exist there: holding the wall or not.
+  let accessibilityLabel: string;
+  if (labelKind === 'releaseWall') {
+    accessibilityLabel = tSettings('ble.releaseWall');
+  } else if (labelKind === 'takeWall') {
+    accessibilityLabel = tSettings('ble.takeWall');
+  } else if (labelKind === 'relay') {
+    accessibilityLabel = tSettings('ble.relayToWall');
+  } else if (labelKind === 'peerDriving') {
+    accessibilityLabel = tSettings('ble.peerDrivingBoard');
+  } else {
+    accessibilityLabel =
+      labelKind === 'disconnect' ? tCommon('lightControl.disconnect') : tSettings('ble.connectBoard');
+  }
+
+  return { available: bluetooth != null, lit, localConnected, onLongPress, handlePress, accessibilityLabel };
 }

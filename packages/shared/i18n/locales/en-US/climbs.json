@@ -324,6 +324,7 @@
       "title": "Climb list options",
       "viewOptions": "View options",
       "history": "Board history, {{board}}",
+      "historyTitle": "Board history",
       "historyHint": "See what has been lit on this wall"
     },
     "moderation": {

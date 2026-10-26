@@ -24,6 +24,7 @@ export function NativeRootHeader({
   leftActions,
   leftActionsStandalone = false,
   rightActions,
+  leftItems,
   rightItems,
   centerContent,
   centerActionWidths,
@@ -37,6 +38,11 @@ export function NativeRootHeader({
   /** A single avatar draws a circle instead of UIKit's wider shared capsule. */
   leftActionsStandalone?: boolean;
   rightActions?: ReactNode;
+  /**
+   * Native leading bar items (`root-bar-items.ts`). When set they replace
+   * `leftActions`: iPhone Duo moves native items onto its side rail.
+   */
+  leftItems?: NativeStackNavigationOptions['unstable_headerLeftItems'];
   /** Native bar items take precedence over the custom trailing group. */
   rightItems?: NativeStackNavigationOptions['unstable_headerRightItems'];
   /** Interactive content in the compact native bar, beside the action groups. */
@@ -122,13 +128,14 @@ export function NativeRootHeader({
           headerTitleStyle: titleHidden ? HIDDEN_HEADER_TITLE_STYLE : { color: systemColors.label },
           headerLargeTitleStyle: { color: systemColors.label },
           headerLeft:
-            leftActions && !leftActionsStandalone
+            leftActions && !leftItems && !leftActionsStandalone
               ? () => (
                   <NativeHeaderActionContext.Provider value={true}>{leftActions}</NativeHeaderActionContext.Provider>
                 )
               : undefined,
           unstable_headerLeftItems:
-            leftActions && leftActionsStandalone
+            leftItems ??
+            (leftActions && leftActionsStandalone
               ? () => [
                   {
                     type: 'custom',
@@ -142,7 +149,7 @@ export function NativeRootHeader({
                     ),
                   },
                 ]
-              : undefined,
+              : undefined),
           headerRight: rightActions
             ? () => <NativeHeaderActionContext.Provider value={true}>{rightActions}</NativeHeaderActionContext.Provider>
             : undefined,

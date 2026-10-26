@@ -1,4 +1,20 @@
 // @vitest-environment jsdom
+vi.mock('../../../hooks/use-native-root-bar-items', () => ({ useNativeRootBarItems: () => ctrl.nativeBarItems }));
+// The live item hooks have their own suite; here they hand back labelled stand-ins
+// so the chrome's ordering and gating can be read off the items it passes UIKit.
+vi.mock('../use-root-bar-items', () => {
+  const stub = (label: string) => ({ type: 'button' as const, label, onPress: () => undefined });
+  return {
+    useAvatarBarItem: () => stub('avatar'),
+    useAngleBarItem: () => ({
+      item: ctrl.board ? stub('angle') : null,
+      picker: createElement('div', { 'data-native-angle-picker': 'true' }),
+    }),
+    useBoardSwitcherBarItem: () => (ctrl.board ? stub('board') : null),
+    useClimbListBarItems: () => [stub('history'), stub('list-menu')],
+    useLightbulbBarItem: () => (ctrl.bluetooth ? stub('lightbulb') : null),
+  };
+});
 vi.mock('../../SheetTopBar', () => ({ SheetTopBar: () => null }));
 vi.mock('../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: () => ctrl.nativeHeader }));
 vi.mock('../../chrome/NativeRootHeader', () => ({
@@ -7,16 +23,22 @@ vi.mock('../../chrome/NativeRootHeader', () => ({
     centerActionWidths,
     children,
     leftActions,
+    leftItems,
+    rightItems,
     scrollEdge,
   }: {
     centerContent?: ReactNode;
     centerActionWidths?: { leading: number; trailing: number };
     children?: ReactNode;
     leftActions?: ReactNode;
+    leftItems?: () => BarItemStandIn[];
+    rightItems?: () => BarItemStandIn[];
     scrollEdge?: unknown;
   }) => {
     ctrl.nativeScrollEdge = scrollEdge;
     ctrl.nativeLeftActions = leftActions;
+    ctrl.nativeLeftItems = leftItems?.() ?? null;
+    ctrl.nativeRightItems = rightItems?.() ?? null;
     ctrl.nativeCenterActionWidths = centerActionWidths;
     return createElement(
       'div',
@@ -52,12 +74,23 @@ type BluetoothCtx = {
   armUndoWallChangeToast: () => void;
 } | null;
 
+type BarItemStandIn = {
+  type: string;
+  label?: string;
+  onPress?: () => void;
+  visibilityPriority?: string;
+  icon?: { type: string; name?: string };
+};
+
 const ctrl = vi.hoisted(() => ({
   board: null as BoardFields | null,
   bluetooth: null as BluetoothCtx,
   setActiveBoard: vi.fn(),
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
   nativeHeader: false,
+  nativeBarItems: false,
+  nativeLeftItems: null as BarItemStandIn[] | null,
+  nativeRightItems: null as BarItemStandIn[] | null,
   // The scroll-edge store the native header was handed.
   nativeScrollEdge: undefined as unknown,
   nativeCenterActionWidths: undefined as { leading: number; trailing: number } | undefined,
@@ -306,6 +339,9 @@ describe('CollapsingTopChrome', () => {
     ctrl.nativeScrollEdge = undefined;
     ctrl.nativeCenterActionWidths = undefined;
     ctrl.nativeLeftActions = undefined;
+    ctrl.nativeBarItems = false;
+    ctrl.nativeLeftItems = null;
+    ctrl.nativeRightItems = null;
     haptics.light.mockClear();
   });
 
@@ -489,6 +525,66 @@ describe('CollapsingTopChrome', () => {
       const { container } = render(<CollapsingTopChrome {...makeProps({ onHeightChange })} />);
       fireEvent.click(container.querySelector('[data-has-layout="true"]') as HTMLElement);
       expect(onHeightChange).toHaveBeenCalledWith(64);
+    });
+  });
+
+  describe('native bar items (iOS 26 iPhone)', () => {
+    beforeEach(() => {
+      ctrl.nativeHeader = true;
+      ctrl.nativeBarItems = true;
+    });
+
+    const labels = (items: BarItemStandIn[] | null) => items?.map((item) => item.label) ?? null;
+
+    it('hands UIKit the islands as items, in the islands order, and no custom capsules', () => {
+      ctrl.board = board;
+      ctrl.bluetooth = { isConnected: false, connect: vi.fn(), disconnect: vi.fn(), armUndoWallChangeToast: vi.fn() };
+      const { container } = render(<CollapsingTopChrome {...makeProps({ canCreate: true })} />);
+      expect(labels(ctrl.nativeLeftItems)).toEqual(['avatar', 'create.label']);
+      expect(labels(ctrl.nativeRightItems)).toEqual(['angle', 'board', 'lightbulb']);
+      expect(ctrl.nativeLeftActions).toBeUndefined();
+      expect(container.querySelector('[data-glass]')).toBeNull();
+      // The angle picker sheet still mounts beside the header.
+      expect(container.querySelector('[data-native-angle-picker]')).not.toBeNull();
+      expect(ctrl.nativeCenterActionWidths).toEqual({ leading: 76, trailing: 114 });
+    });
+
+    it('gives + an SF Symbol, its label and the highest visibility priority, and fires onCreate', () => {
+      const onCreate = vi.fn();
+      render(<CollapsingTopChrome {...makeProps({ canCreate: true, onCreate })} />);
+      const create = ctrl.nativeLeftItems?.[1];
+      expect(create).toMatchObject({
+        type: 'button',
+        label: 'create.label',
+        icon: { type: 'sfSymbol', name: 'plus' },
+        visibilityPriority: 'high',
+      });
+      create?.onPress?.();
+      expect(onCreate).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves out + without canCreate and the bulb when hideLight is set', () => {
+      ctrl.bluetooth = { isConnected: false, connect: vi.fn(), disconnect: vi.fn(), armUndoWallChangeToast: vi.fn() };
+      render(<CollapsingTopChrome {...makeProps({ hideLight: true })} />);
+      expect(labels(ctrl.nativeLeftItems)).toEqual(['avatar']);
+      expect(ctrl.nativeRightItems).toBeNull();
+    });
+
+    it('swaps the board switcher for history and the list menu on Climbs', () => {
+      ctrl.board = board;
+      render(
+        <CollapsingTopChrome
+          {...makeProps({ hideLight: true, climbListBarActions: { onOpenHistory: vi.fn(), badge: false } })}
+        />,
+      );
+      expect(labels(ctrl.nativeRightItems)).toEqual(['angle', 'history', 'list-menu']);
+    });
+
+    it('keeps an interactive centre capsule as a custom view', () => {
+      const { getByRole } = render(
+        <CollapsingTopChrome {...makeProps({ centerContent: <button>On the wall</button> })} />,
+      );
+      expect(getByRole('button', { name: 'On the wall' })).toBeTruthy();
     });
   });
 });
