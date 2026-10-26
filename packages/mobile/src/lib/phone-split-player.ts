@@ -10,9 +10,10 @@ import type { RoutePlayerSnapshot } from '../components/play-drawer/route-player
  * - `paneMounted`: a pane is on screen in the tab content, so its selection is
  *   worth keeping.
  * - `tapsOpenPane`: a climb tap drives that pane instead of the `/play` route.
- *   In the split, only while the tabs are what the climber sees: a root page
- *   pushed over them (a profile, a setter page) hides the pane, so a tap there
- *   opens `/play` instead of changing a pane nobody can see.
+ *   In the split, only while the climber can see the player there: a root page
+ *   pushed over the tabs (a profile, a setter page) hides the pane, and a screen
+ *   can fill the pane with its own content (the workout preview while one is
+ *   built), so a tap then opens `/play` instead of changing an unseen player.
  *
  * The iPad answer is the old one: `tabletPane` and not on the wall tab, for both.
  */
@@ -21,15 +22,18 @@ export function resolvePlayerSurface({
   phoneSplit,
   onWallTab,
   tabsUncovered,
+  paneTaken = false,
 }: {
   tabletPane: boolean;
   phoneSplit: boolean;
   onWallTab: boolean;
   tabsUncovered: boolean;
+  /** A screen's own content fills the split's pane (`usePhoneSplitPaneTaken`). */
+  paneTaken?: boolean;
 }): { paneMounted: boolean; tapsOpenPane: boolean } {
   return {
     paneMounted: (tabletPane || phoneSplit) && !onWallTab,
-    tapsOpenPane: (tabletPane || (phoneSplit && tabsUncovered)) && !onWallTab,
+    tapsOpenPane: (tabletPane || (phoneSplit && tabsUncovered && !paneTaken)) && !onWallTab,
   };
 }
 

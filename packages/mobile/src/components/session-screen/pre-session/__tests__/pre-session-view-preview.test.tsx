@@ -107,7 +107,10 @@ vi.mock('react-native-reanimated', () => ({
   useSharedValue: (value: number) => ({ value }),
 }));
 
-vi.mock('expo-router', () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock('expo-router', () => ({ useRouter: () => ({ push: vi.fn() }), useIsFocused: () => true }));
+// The phone split (iPhone Duo open in landscape); off except in its own test.
+const split = vi.hoisted(() => ({ on: false }));
+vi.mock('../../../../hooks/use-phone-split', () => ({ usePhoneSplit: () => split.on }));
 
 vi.mock('@shopify/flash-list', () => ({
   FlashList: ({
@@ -254,6 +257,7 @@ vi.mock('../../../../lib/onboarding/onboarding-storage', () => ({
 }));
 
 import { PreSessionView } from '../PreSessionView';
+import { PhoneSplitPaneSlotContext } from '../../../navigation/phone-split-pane-slot';
 
 /** Render the view with a volume workout selected, so the preview section shows. */
 function renderWithWorkout() {
@@ -465,6 +469,42 @@ describe('PreSessionView preview rows', () => {
       fab.onHeightChange?.(50);
     });
     expect(list.props.at(-1)?.paddingBottom).toBe(150);
+  });
+});
+
+describe('PreSessionView in the phone split (iPhone Duo open in landscape)', () => {
+  function renderInSessionTab(setPaneContent: (content: ReactNode | null) => void) {
+    const view = render(
+      createElement(PhoneSplitPaneSlotContext.Provider, { value: setPaneContent }, createElement(PreSessionView)),
+    );
+    act(() => {
+      picker.onChange?.(singleBlockSelection({ ...DEFAULT_VOLUME_OPTIONS, targetGrade: 10 }, 'block-volume'));
+    });
+    return view;
+  }
+
+  beforeEach(() => {
+    split.on = false;
+  });
+
+  it('moves the preview into the pane and keeps only the block cards and Start here', () => {
+    split.on = true;
+    const setPaneContent = vi.fn();
+    const view = renderInSessionTab(setPaneContent);
+
+    expect(setPaneContent).toHaveBeenLastCalledWith(expect.objectContaining({ props: expect.any(Object) }));
+    expect(list.props.at(-1)).toMatchObject({ dataLength: 0, hasHeaderComponent: true });
+    expect(summaryLine.props).toBeNull();
+    expect(view.getByTestId('pre-session-footer')).toBeTruthy();
+  });
+
+  it('keeps the stacked preview off the split, and hands the pane back to the board', () => {
+    const setPaneContent = vi.fn();
+    renderInSessionTab(setPaneContent);
+
+    expect(setPaneContent).not.toHaveBeenCalledWith(expect.objectContaining({ props: expect.any(Object) }));
+    expect(list.props.at(-1)).toMatchObject({ dataLength: 2 });
+    expect(summaryLine.props).not.toBeNull();
   });
 });
 

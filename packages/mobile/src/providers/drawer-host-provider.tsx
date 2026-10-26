@@ -64,6 +64,7 @@ import {
   useRoutePlayerBusy,
 } from '../components/play-drawer/route-player-handoff';
 import { buildCarriedPaneTarget, resolvePlayerSurface, resolveSplitRouteClose } from '../lib/phone-split-player';
+import { usePhoneSplitPaneTaken } from '../components/navigation/phone-split-pane-slot';
 import { resolveDetailPaneSurface } from '../theme/size-class';
 import { useQueueSnackbar } from './queue-snackbar-provider';
 import { useBoardPresenceControls, type ResolveBoardUuidArgs } from './board-presence-provider';
@@ -421,11 +422,13 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // they were. A root page over the tabs hides the split's pane, so taps there
   // open `/play` (see resolvePlayerSurface).
   const phoneSplit = usePhoneSplit();
+  const splitPaneTaken = usePhoneSplitPaneTaken();
   const { paneMounted, tapsOpenPane: usesDetailPane } = resolvePlayerSurface({
     tabletPane: resolveDetailPaneSurface({ width: windowWidth, widthClass, sidebarWidth: paneSidebarWidth }) === 'pane',
     phoneSplit,
     onWallTab,
     tabsUncovered: isTabsRoute(routeSegments),
+    paneTaken: splitPaneTaken,
   });
   const usesDetailPaneRef = useRef(usesDetailPane);
   usesDetailPaneRef.current = usesDetailPane;

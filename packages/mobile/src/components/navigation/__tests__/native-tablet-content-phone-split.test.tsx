@@ -75,6 +75,7 @@ vi.mock('../../play-drawer/IpadPlayPane', async () => {
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeTabletContent } from '../NativeTabletContent';
+import { usePhoneSplitPaneContent } from '../phone-split-pane-slot';
 
 /** Stands in for the tab's native stack: counts mounts, records the insets it reads. */
 function TabStack() {
@@ -137,6 +138,21 @@ describe('NativeTabletContent on iPhone, across the phone split', () => {
     const paneColumn = view.container.querySelector('[data-pane="true"]')?.parentElement;
     expect(paneColumn?.getAttribute('data-style')).toContain('"paddingLeft":0');
     expect(paneColumn?.getAttribute('data-style')).not.toContain('"paddingRight"');
+  });
+
+  it("shows a screen's own content in the pane instead of the player, and the player again after", () => {
+    cfg.phoneSplit = true;
+    function PreviewScreen({ show }: { show: boolean }) {
+      usePhoneSplitPaneContent(show ? createElement('div', { 'data-preview': 'true' }) : null);
+      return createElement('div', { 'data-stack': 'true' });
+    }
+    const view = render(createElement(NativeTabletContent, null, createElement(PreviewScreen, { show: true })));
+    expect(view.container.querySelector('[data-preview="true"]')).not.toBeNull();
+    expect(view.container.querySelector('[data-pane="true"]')).toBeNull();
+
+    view.rerender(createElement(NativeTabletContent, null, createElement(PreviewScreen, { show: false })));
+    expect(view.container.querySelector('[data-preview="true"]')).toBeNull();
+    expect(view.container.querySelector('[data-pane="true"]')).not.toBeNull();
   });
 
   it('passes the real insets through untouched off the split', () => {

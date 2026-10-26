@@ -118,6 +118,7 @@ vi.mock('react-native-reanimated', () => ({
 
 vi.mock('expo-router', () => ({ useRouter: () => navigation, useIsFocused: () => screenState.isFocused }));
 vi.mock('../../../../lib/error-reporting', () => ({ reportError: errors.reportError }));
+vi.mock('../../../../hooks/use-phone-split', () => ({ usePhoneSplit: () => false }));
 
 vi.mock('@shopify/flash-list', () => ({
   FlashList: ({

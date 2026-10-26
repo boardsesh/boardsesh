@@ -45,6 +45,28 @@ describe('resolvePlayerSurface', () => {
     ).toEqual({ paneMounted: true, tapsOpenPane: true });
   });
 
+  it("sends split taps to /play while a screen's own content fills the pane", () => {
+    expect(
+      resolvePlayerSurface({
+        tabletPane: false,
+        phoneSplit: true,
+        onWallTab: false,
+        tabsUncovered: true,
+        paneTaken: true,
+      }),
+    ).toEqual({ paneMounted: true, tapsOpenPane: false });
+    // Never on iPad, where nothing takes the pane.
+    expect(
+      resolvePlayerSurface({
+        tabletPane: true,
+        phoneSplit: false,
+        onWallTab: false,
+        tabsUncovered: true,
+        paneTaken: true,
+      }),
+    ).toEqual({ paneMounted: true, tapsOpenPane: true });
+  });
+
   it('sends split taps to /play from a page over the tabs, keeping the pane underneath', () => {
     expect(
       resolvePlayerSurface({ tabletPane: false, phoneSplit: true, onWallTab: false, tabsUncovered: false }),

@@ -20,6 +20,7 @@ import {
 import { tabsActiveSegment } from '../../lib/route-segments';
 import { IpadPlayPane } from '../play-drawer/IpadPlayPane';
 import { IpadWallColumn } from '../board-presence/IpadWallColumn';
+import { PhoneSplitPaneSlotContext } from './phone-split-pane-slot';
 
 /**
  * Keep content panes inside UIKit's sidebar, where their actual width is known.
@@ -95,21 +96,27 @@ function NativeTabletContentHost({ children }: { children: ReactNode }) {
  */
 function PhoneSplitContentHost({ children }: { children: ReactNode }) {
   const phoneSplit = usePhoneSplit();
+  // What a screen in this tab asked to show in the pane instead of the player
+  // (`usePhoneSplitPaneContent`), e.g. the workout preview while one is built.
+  const [paneContent, setPaneContent] = useState<ReactNode | null>(null);
   return (
     <View style={styles.host}>
-      {phoneSplit ? <PhoneSplitPane /> : null}
-      <View style={styles.content}>{children}</View>
+      {phoneSplit ? <PhoneSplitPane content={paneContent} /> : null}
+      <View style={styles.content}>
+        <PhoneSplitPaneSlotContext.Provider value={setPaneContent}>{children}</PhoneSplitPaneSlotContext.Provider>
+      </View>
     </View>
   );
 }
 
 /**
- * The player half of the phone split: the pane, ending at the hinge, and a fold
+ * The leading half of the phone split: the pane, ending at the hinge, and a fold
  * gutter (zero wide unless the Duo is half open). Mounted only while the split
- * is on. The hinge status comes from the app's one observer
- * (`PhoneSplitHingeObserver`, at the root).
+ * is on. It shows the player unless a screen in this tab handed it `content`.
+ * The hinge status comes from the app's one observer (`PhoneSplitHingeObserver`,
+ * at the root).
  */
-function PhoneSplitPane() {
+function PhoneSplitPane({ content }: { content: ReactNode | null }) {
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
   const { width: windowWidth } = useWindowDimensions();
@@ -135,7 +142,7 @@ function PhoneSplitPane() {
         ]}
       >
         <SafeAreaInsetsContext.Provider value={paneInsets}>
-          <IpadPlayPane variant="phoneSplit" acceptsScrollHandoff={isFocused} />
+          {content ?? <IpadPlayPane variant="phoneSplit" acceptsScrollHandoff={isFocused} />}
         </SafeAreaInsetsContext.Provider>
       </View>
       <View style={{ width: foldInset * 2 }} />

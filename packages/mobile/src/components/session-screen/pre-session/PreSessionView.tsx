@@ -7,6 +7,7 @@ import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { ScrollView as GestureScrollView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
+import { useIsFocused } from 'expo-router';
 import { toBoardName } from '@boardsesh/board-config';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
@@ -15,9 +16,6 @@ import { track } from '../../../lib/analytics';
 import { setWorkoutRun } from '../../../lib/workout-run-store';
 import { armRestTimerForWorkout } from '../../../lib/rest-timer-effective';
 import { nowMs } from '../../../lib/clock';
-import { Card } from '../../Card';
-import { SectionHeader } from '../../SectionHeader';
-import { Text } from '../../Text';
 import { ScreenTitle } from '../../ScreenTitle';
 import type { QueueItemRowBoard } from '../../QueueItemRow';
 import { useTheme } from '../../../providers/theme-provider';
@@ -47,8 +45,12 @@ import {
   type GeneratorSelection,
 } from './workout-blocks';
 import { WorkoutPreviewListRow } from './WorkoutPreviewListRow';
-import { WorkoutPreviewSummary } from './WorkoutPreviewSummary';
+import { WorkoutPreviewPane } from './WorkoutPreviewPane';
+import { WorkoutPreviewSection } from './WorkoutPreviewSection';
+import { resolveWorkoutPreviewPlacement } from './workout-preview-placement';
 import { useWorkoutPreview } from './use-workout-preview';
+import { usePhoneSplit } from '../../../hooks/use-phone-split';
+import { useHasPhoneSplitPaneSlot, usePhoneSplitPaneContent } from '../../navigation/phone-split-pane-slot';
 import { buildPreviewListRows, type PreviewListRow } from './workout-preview-sections';
 import { OnboardingTipBanner } from '../../onboarding/OnboardingTipBanner';
 import { hasSeenTip, markTipSeen } from '../../../lib/onboarding/onboarding-storage';
@@ -84,6 +86,9 @@ type PreSessionViewProps = {
  * created lazily) and queues the preview behind the live queue without moving the
  * current climb, then opens Climbs with the new session running.
  */
+// The cards-only list while the preview rows are in the split's pane.
+const NO_PREVIEW_ROWS: PreviewListRow[] = [];
+
 function previewKeyExtractor(row: PreviewListRow): string {
   return row.key;
 }
@@ -101,7 +106,7 @@ export function PreSessionView({
   const nativeRootHeader = useNativeRootHeader();
   const { t } = useTranslation('session');
   const { t: tCommon } = useTranslation('common');
-  const { systemColors, variant } = useTheme();
+  const { variant } = useTheme();
   const insets = useSafeAreaInsets();
   const bottomChrome = useBottomChromeMetrics();
   const { boardQuery, hasNoBoard, browseClimbs, openBoardSwitcher, retryBoard } =
@@ -111,6 +116,11 @@ export function PreSessionView({
   const { startSession, appendQueueItems } = useQueueActions();
   const { openPlayDrawer } = useDrawerHost();
   const { showToast } = useToast();
+  // The phone split (iPhone Duo open in landscape) can show the workout preview in
+  // its leading pane; see resolveWorkoutPreviewPlacement.
+  const phoneSplit = usePhoneSplit();
+  const hasPaneSlot = useHasPhoneSplitPaneSlot();
+  const isFocused = useIsFocused();
 
   // Just-in-time feature tips on the Record tab, shown one at a time (never
   // stacked) once a board is active: the workout builder first, then crew
@@ -355,7 +365,12 @@ export function PreSessionView({
   // error). When rows are already present a rebuild keeps them mounted, so these
   // only render while the preview is empty. A plan with no slots at all is only
   // warm-ups with nothing after them: say so instead of blaming the filters.
-  const showPreviewSection = hasWorkoutBlocks(selection);
+  const previewPlacement = resolveWorkoutPreviewPlacement({
+    hasWorkoutBlocks: hasWorkoutBlocks(selection),
+    phoneSplit,
+    hasPaneSlot,
+    isFocused,
+  });
   const previewStateMessage =
     previewItems.length > 0
       ? null
@@ -368,6 +383,21 @@ export function PreSessionView({
               ? t('mobile.session.preWorkoutPreviewNothingPlanned')
               : t('mobile.session.preWorkoutPreviewEmpty')
             : null;
+  const shuffleDisabled = status !== 'ready' || isRefreshingAnyRow || isStartPending;
+  const previewSection = useMemo(
+    () => (
+      <WorkoutPreviewSection
+        boardName={previewBoard?.boardName ?? null}
+        hasPreviewItems={hasPreviewItems}
+        summary={planSummary}
+        startQueue={startQueue}
+        onShuffle={shuffle}
+        shuffleDisabled={shuffleDisabled}
+        stateMessage={previewStateMessage}
+      />
+    ),
+    [previewBoard?.boardName, hasPreviewItems, planSummary, startQueue, shuffle, shuffleDisabled, previewStateMessage],
+  );
 
   // Tab mode insets the list top by the measured floating-chrome height; the
   // overlay host renders its own header strip above, so no inset there.
@@ -468,29 +498,7 @@ export function PreSessionView({
           onRevealBlock={revealBlock}
         />
 
-        {showPreviewSection ? (
-          <View>
-            <SectionHeader title={t('mobile.session.preWorkoutPreviewTitle')} />
-            {previewBoard && hasPreviewItems ? (
-              <WorkoutPreviewSummary
-                summary={planSummary}
-                boardName={previewBoard.boardName}
-                onShuffle={shuffle}
-                shuffleDisabled={status !== 'ready' || isRefreshingAnyRow || isStartPending}
-                startQueue={startQueue}
-              />
-            ) : null}
-            {previewStateMessage ? (
-              <View style={styles.cardInset}>
-                <Card>
-                  <Text variant="body" color={systemColors.secondaryLabel}>
-                    {previewStateMessage}
-                  </Text>
-                </Card>
-              </View>
-            ) : null}
-          </View>
-        ) : null}
+        {previewPlacement === 'inline' ? previewSection : null}
       </View>
     ),
     [
@@ -507,33 +515,42 @@ export function PreSessionView({
       privacySettings?.enabled,
       effectiveSessionAudience,
       isStartPending,
-      previewStateMessage,
-      previewBoard,
-      hasPreviewItems,
-      planSummary,
-      startQueue,
-      shuffle,
-      status,
-      isRefreshingAnyRow,
       selection,
       setSelection,
       revealBlock,
-      showPreviewSection,
+      previewPlacement,
+      previewSection,
       showChrome,
       nativeRootHeader,
-      systemColors.secondaryLabel,
       t,
       tCommon,
       variant,
     ],
   );
 
+  // In the phone split the preview fills the leading pane in place of the board;
+  // the block cards and Start stay here. Same rows, same heading, same state.
+  const paneContent = useMemo(
+    () =>
+      previewPlacement === 'pane' ? (
+        <WorkoutPreviewPane
+          rows={previewRows}
+          renderRow={renderPreviewRow}
+          keyExtractor={previewKeyExtractor}
+          getItemType={previewItemType}
+          header={previewSection}
+        />
+      ) : null,
+    [previewPlacement, previewRows, renderPreviewRow, previewSection],
+  );
+  usePhoneSplitPaneContent(paneContent);
+
   return (
     <View ref={screenRef} style={styles.container}>
       <FlashList
         ref={listRef}
         style={styles.scroll}
-        data={previewRows}
+        data={previewPlacement === 'pane' ? NO_PREVIEW_ROWS : previewRows}
         renderItem={renderPreviewRow}
         keyExtractor={previewKeyExtractor}
         getItemType={previewItemType}
