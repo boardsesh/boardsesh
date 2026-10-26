@@ -23,6 +23,8 @@ import { usePlaySwipeDismiss } from '../src/components/play-drawer/use-play-swip
 import type { Climb } from '@boardsesh/shared-schema';
 import { dismissManagedSheetAndWait, type DismissAndWaitResult } from '../src/providers/sheet-presentation-provider';
 import { holdUntilLaunchReady } from '../src/components/launch-update/hold-until-launch-ready';
+import { useReportRoutePlayerBusy } from '../src/components/play-drawer/route-player-handoff';
+import { useBlePickerHost } from '../src/providers/ble-picker-host';
 
 /**
  * Full-screen "now playing" player route (`presentation: 'transparentModal'`,
@@ -65,7 +67,13 @@ function PlayScreen() {
   const queueSheetRef = useRef<QueueSheetHandle>(null);
   const [mountQueue, setMountQueue] = useState(false);
   const pendingQueuePresentation = useRef(false);
+  // Up from present until the dismiss settles. With the Bluetooth picker this
+  // route hosts, it tells the phone split (iPhone Duo opened into landscape) to
+  // wait before closing this route for its pane (route-player-handoff).
+  const [queueSheetUp, setQueueSheetUp] = useState(false);
+  const handleQueueDismissed = useCallback(() => setQueueSheetUp(false), []);
   const presentQueue = useCallback(() => {
+    setQueueSheetUp(true);
     if (queueSheetRef.current) queueSheetRef.current.present();
     else {
       pendingQueuePresentation.current = true;
@@ -191,6 +199,7 @@ function PlayScreen() {
                 ref={queueSheetRef}
                 board={queueBoard}
                 onClose={requestCloseQueue}
+                onDismissed={handleQueueDismissed}
                 onClimbPress={handleClimbPress}
                 onOpenActions={handleOpenActions}
                 onSuggestionPress={handleSuggestionPress}
@@ -203,9 +212,21 @@ function PlayScreen() {
           player's lightbulb (when disconnected) presents OVER the player. Claims
           the picker, suppressing the app-root instance while mounted. */}
         <DevicePickerSheetHost registerExternal />
+        <RouteSheetsBusyReporter queueSheetUp={queueSheetUp} />
       </Animated.View>
     </Link.AppleZoomTarget>
   );
+}
+
+/**
+ * Reports this route busy while its queue sheet or its Bluetooth device picker
+ * is up. A component of its own so the picker's updates while it scans re-render
+ * only this, never the player.
+ */
+function RouteSheetsBusyReporter({ queueSheetUp }: { queueSheetUp: boolean }) {
+  const { pickerState } = useBlePickerHost();
+  useReportRoutePlayerBusy('route', queueSheetUp || pickerState != null);
+  return null;
 }
 
 const styles = StyleSheet.create({

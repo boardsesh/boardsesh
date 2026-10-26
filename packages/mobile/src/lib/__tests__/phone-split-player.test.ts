@@ -75,17 +75,23 @@ describe('resolvePlayerSurface', () => {
 });
 
 describe('resolveSplitRouteClose', () => {
+  const overTabs = { phoneSplit: true, routeOnTop: true, routeOverTabs: true };
+
   it('closes an idle route the split now replaces', () => {
-    expect(resolveSplitRouteClose({ phoneSplit: true, routeOnTop: true, routeBusy: false })).toBe('close');
+    expect(resolveSplitRouteClose({ ...overTabs, routeBusy: false })).toBe('close');
   });
 
   it('waits while the route has work open', () => {
-    expect(resolveSplitRouteClose({ phoneSplit: true, routeOnTop: true, routeBusy: true })).toBe('wait');
+    expect(resolveSplitRouteClose({ ...overTabs, routeBusy: true })).toBe('wait');
   });
 
   it('does nothing once the split is gone or the route already closed', () => {
-    expect(resolveSplitRouteClose({ phoneSplit: false, routeOnTop: true, routeBusy: false })).toBe('none');
-    expect(resolveSplitRouteClose({ phoneSplit: true, routeOnTop: false, routeBusy: true })).toBe('none');
+    expect(resolveSplitRouteClose({ ...overTabs, phoneSplit: false, routeBusy: false })).toBe('none');
+    expect(resolveSplitRouteClose({ ...overTabs, routeOnTop: false, routeBusy: true })).toBe('none');
+  });
+
+  it('leaves the player up over a page pushed over the tabs, which a close would reveal instead of the pane', () => {
+    expect(resolveSplitRouteClose({ ...overTabs, routeOverTabs: false, routeBusy: false })).toBe('none');
   });
 });
 

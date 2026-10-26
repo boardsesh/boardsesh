@@ -9,6 +9,7 @@ import {
   registerRoutePlayer,
   resetRoutePlayerHandoffForTests,
   takePlayerScrollHandoff,
+  useReportRoutePlayerBusy,
   useRoutePlayerBusy,
 } from '../route-player-handoff';
 
@@ -43,14 +44,35 @@ describe('route-player-handoff', () => {
     expect(readRoutePlayerSnapshot()).toEqual({ climbUuid: 'new', offsetY: 20, preview: null });
   });
 
-  it('reports the route busy while work is open, and idle once the route goes', () => {
-    const unregister = registerRoutePlayer(() => ({ climbUuid: 'a', offsetY: 0, preview: null }));
-    const { result } = renderHook(() => useRoutePlayerBusy());
+  it('is busy while either the player or the route around it has something open', () => {
+    const { result } = renderHook(() => useRoutePlayerBusy(true));
     expect(result.current).toBe(false);
-    act(() => publishRoutePlayerBusy(true));
+    act(() => publishRoutePlayerBusy('player', true));
+    act(() => publishRoutePlayerBusy('route', true));
+    act(() => publishRoutePlayerBusy('player', false));
+    // The route's queue sheet is still up.
     expect(result.current).toBe(true);
-    act(() => unregister());
+    act(() => publishRoutePlayerBusy('route', false));
     expect(result.current).toBe(false);
-    expect(readRoutePlayerSnapshot()).toBeNull();
+  });
+
+  it('goes idle when a reporting source unmounts', () => {
+    const busy = renderHook(() => useRoutePlayerBusy(true));
+    const reporter = renderHook(() => useReportRoutePlayerBusy('route', true));
+    expect(busy.result.current).toBe(true);
+    act(() => reporter.unmount());
+    expect(busy.result.current).toBe(false);
+  });
+
+  it('reads as idle and stays unsubscribed while not enabled', () => {
+    let renders = 0;
+    const { result } = renderHook(() => {
+      renders += 1;
+      return useRoutePlayerBusy(false);
+    });
+    const rendersBefore = renders;
+    act(() => publishRoutePlayerBusy('player', true));
+    expect(result.current).toBe(false);
+    expect(renders).toBe(rendersBefore);
   });
 });

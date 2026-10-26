@@ -40,18 +40,23 @@ export function resolvePlayerSurface({
 /**
  * What to do with a `/play` route that was up when the split appeared: close it
  * so the pane takes over, wait while it has work open (a tick being typed, a
- * sheet up), or nothing (the split went away again, or the route already closed).
+ * sheet up), or nothing. Nothing when the split went away again, the route
+ * already closed, or the route sits on a page pushed over the tabs (a profile):
+ * closing it there would show that page, not the pane, so the player stays up.
  */
 export function resolveSplitRouteClose({
   phoneSplit,
   routeOnTop,
+  routeOverTabs,
   routeBusy,
 }: {
   phoneSplit: boolean;
   routeOnTop: boolean;
+  /** The route directly under `/play` is the tabs. */
+  routeOverTabs: boolean;
   routeBusy: boolean;
 }): 'close' | 'wait' | 'none' {
-  if (!phoneSplit || !routeOnTop) return 'none';
+  if (!phoneSplit || !routeOnTop || !routeOverTabs) return 'none';
   return routeBusy ? 'wait' : 'close';
 }
 

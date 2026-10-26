@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 
 /**
@@ -41,7 +41,15 @@ export type PlayerScrollHandoff = PlayerScrollPosition & { armedAt: number };
 /** How long an armed handoff waits for the pane to mount and show its climb. */
 export const PLAYER_SCROLL_HANDOFF_TTL_MS = 2000;
 
+/**
+ * Who reports the route busy: the player itself (its tick composer, sheets and
+ * sub-drawers) and the `/play` route around it (its own queue sheet and the
+ * Bluetooth device picker it hosts). Busy while either has something open.
+ */
+export type RoutePlayerBusySource = 'player' | 'route';
+
 let readRoutePlayer: (() => RoutePlayerSnapshot) | null = null;
+const busySources = new Set<RoutePlayerBusySource>();
 let routePlayerBusy = false;
 let pendingHandoff: PlayerScrollHandoff | null = null;
 const busyListeners = new Set<() => void>();
@@ -64,14 +72,14 @@ const subscribeBusy = subscribeTo(busyListeners);
 const subscribeHandoff = subscribeTo(handoffListeners);
 const getBusy = () => routePlayerBusy;
 const getHandoff = () => pendingHandoff;
+const subscribeNothing = () => () => {};
+const getNotBusy = () => false;
 
 /** The route player offers its live state. Returns the unregister. */
 export function registerRoutePlayer(reader: () => RoutePlayerSnapshot): () => void {
   readRoutePlayer = reader;
   return () => {
-    if (readRoutePlayer !== reader) return;
-    readRoutePlayer = null;
-    publishRoutePlayerBusy(false);
+    if (readRoutePlayer === reader) readRoutePlayer = null;
   };
 }
 
@@ -80,16 +88,36 @@ export function readRoutePlayerSnapshot(): RoutePlayerSnapshot | null {
   return readRoutePlayer?.() ?? null;
 }
 
-/** The route reports a sheet, sub-drawer or tick composer opening or closing. */
-export function publishRoutePlayerBusy(busy: boolean): void {
-  if (busy === routePlayerBusy) return;
-  routePlayerBusy = busy;
+/** One source reports something opening or closing on the route. */
+export function publishRoutePlayerBusy(source: RoutePlayerBusySource, busy: boolean): void {
+  if (busy) busySources.add(source);
+  else busySources.delete(source);
+  const next = busySources.size > 0;
+  if (next === routePlayerBusy) return;
+  routePlayerBusy = next;
   notify(busyListeners);
 }
 
-/** True while the route player has work open that a close would lose. */
-export function useRoutePlayerBusy(): boolean {
-  return useSyncExternalStore(subscribeBusy, getBusy, getBusy);
+/** Report `busy` for `source` while mounted; idle again on unmount. */
+export function useReportRoutePlayerBusy(source: RoutePlayerBusySource, busy: boolean, enabled = true): void {
+  useEffect(() => {
+    if (!enabled) return undefined;
+    publishRoutePlayerBusy(source, busy);
+    return () => publishRoutePlayerBusy(source, false);
+  }, [source, busy, enabled]);
+}
+
+/**
+ * True while the route player has work open that a close would lose. Only
+ * subscribes while `enabled` (the drawer host passes "a split close is
+ * waiting"), so no other device re-renders on every sheet the player opens.
+ */
+export function useRoutePlayerBusy(enabled: boolean): boolean {
+  return useSyncExternalStore(
+    enabled ? subscribeBusy : subscribeNothing,
+    enabled ? getBusy : getNotBusy,
+    enabled ? getBusy : getNotBusy,
+  );
 }
 
 /** Hand this position to the pane. A player at the top arms nothing. */
@@ -120,6 +148,7 @@ export function usePendingPlayerScrollHandoff(): PlayerScrollHandoff | null {
 /** Test-only: back to the launch state. */
 export function resetRoutePlayerHandoffForTests(): void {
   readRoutePlayer = null;
+  busySources.clear();
   routePlayerBusy = false;
   pendingHandoff = null;
   busyListeners.clear();

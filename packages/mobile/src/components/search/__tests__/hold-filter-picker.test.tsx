@@ -49,6 +49,8 @@ vi.mock('react-native', () => ({
 vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
 }));
+// The iPhone Duo split, which only changes the bottom padding; off here.
+vi.mock('../../../hooks/use-phone-split', () => ({ usePhoneSplit: () => false }));
 
 type SvgMockProps = {
   children?: ReactNode;

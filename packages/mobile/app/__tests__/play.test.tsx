@@ -118,6 +118,8 @@ vi.mock('../../src/components/play-drawer/QueueSheet', async () => {
   };
 });
 vi.mock('../../src/components/ble/DevicePickerSheetHost', () => ({ DevicePickerSheetHost: () => null }));
+// The route reports its picker as busy for the phone split; no picker is up here.
+vi.mock('../../src/providers/ble-picker-host', () => ({ useBlePickerHost: () => ({ pickerState: null }) }));
 vi.mock('../../src/components/play-drawer/use-queue-sheet-handlers', () => ({ useQueueSheetHandlers: () => ({}) }));
 vi.mock('../../src/providers/drawer-host-provider', () => ({
   usePlayDrawerRoute: () => ({

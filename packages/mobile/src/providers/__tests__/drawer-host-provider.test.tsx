@@ -2258,7 +2258,7 @@ describe('DrawerHostProvider phone split (iPhone Duo open in landscape)', () => 
     nativeNavigation.stack = ['(tabs)', 'play'];
     nativeNavigation.segments = ['play'];
     registerRoutePlayer(() => ({ climbUuid: 'busy-climb', offsetY: 0, preview: null }));
-    act(() => publishRoutePlayerBusy(true));
+    act(() => publishRoutePlayerBusy('player', true));
     const { hosts, rerenderHost } = renderSplitHost();
     await waitFor(() => expect(hosts.at(-1)).toBeDefined());
 
@@ -2267,10 +2267,97 @@ describe('DrawerHostProvider phone split (iPhone Duo open in landscape)', () => 
     await act(async () => {});
     expect(nativeNavigation.dispatch).not.toHaveBeenCalledWith(POP_PLAYER);
 
-    act(() => publishRoutePlayerBusy(false));
+    act(() => publishRoutePlayerBusy('player', false));
     await waitFor(() => expect(nativeNavigation.dispatch).toHaveBeenCalledWith(POP_PLAYER));
     // The route showed the queue's current climb: the pane shows it by itself.
     expect(hosts.at(-1)?.playDrawerPaneProps?.openTarget).toBeNull();
+  });
+
+  it("waits while the route's own queue sheet or device picker is up, even with the player idle", async () => {
+    nativeNavigation.ready = true;
+    nativeNavigation.stack = ['(tabs)', 'play'];
+    nativeNavigation.segments = ['play'];
+    registerRoutePlayer(() => ({ climbUuid: 'queue-open', offsetY: 0, preview: null }));
+    act(() => publishRoutePlayerBusy('route', true));
+    const { hosts, rerenderHost } = renderSplitHost();
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+
+    splitCfg.phoneSplit = true;
+    rerenderHost();
+    act(() => publishRoutePlayerBusy('player', false));
+    await act(async () => {});
+    expect(nativeNavigation.dispatch).not.toHaveBeenCalledWith(POP_PLAYER);
+
+    act(() => publishRoutePlayerBusy('route', false));
+    await waitFor(() => expect(nativeNavigation.dispatch).toHaveBeenCalledWith(POP_PLAYER));
+  });
+
+  it('leaves /play up when it sits on a page pushed over the tabs', async () => {
+    nativeNavigation.ready = true;
+    nativeNavigation.stack = ['(tabs)', 'users/[userId]', 'play'];
+    nativeNavigation.segments = ['play'];
+    registerRoutePlayer(() => ({
+      climbUuid: 'from-profile',
+      offsetY: 120,
+      preview: { item: makeQueueItem('queue-profile', 'from-profile'), suggestionSource: null, isWallClimb: false },
+    }));
+    const { hosts, rerenderHost } = renderSplitHost();
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+
+    splitCfg.phoneSplit = true;
+    rerenderHost();
+    await act(async () => {});
+
+    expect(nativeNavigation.dispatch).not.toHaveBeenCalledWith(POP_PLAYER);
+    expect(hosts.at(-1)?.playDrawerPaneProps?.openTarget).toBeNull();
+  });
+
+  it("clears a foreign board on /play close when the open came from a page over the tabs, not the pane's", async () => {
+    splitCfg.phoneSplit = true;
+    nativeNavigation.segments = ['users', '[userId]'];
+    const hosts: Array<HostValue> = [];
+    const routes: Array<RouteValue> = [];
+    renderHost(
+      (host) => hosts.push(host),
+      (route) => routes.push(route),
+    );
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+    const foreignBoard: BoardConfig = { boardName: 'tension', layoutId: 8, sizeId: 7, setIds: '5,6', angle: 35 };
+
+    act(() =>
+      hosts.at(-1)?.openPlayDrawer(makeQueueItem('queue-foreign', 'foreign').climb as unknown as Climb, {
+        boardConfig: foreignBoard,
+      }),
+    );
+    await waitFor(() => expect(routes.at(-1)?.activeBoardConfig).toMatchObject(foreignBoard));
+    expect(routerNavigate).toHaveBeenCalledWith('/play');
+
+    act(() => routes.at(-1)?.onPlayDrawerClosed(routes.at(-1)?.playTarget?.nonce ?? null));
+    await waitFor(() => expect(routes.at(-1)?.activeBoardConfig).not.toMatchObject(foreignBoard));
+    expect(hosts.at(-1)?.playDrawerPaneProps?.boardConfig).not.toMatchObject(foreignBoard);
+  });
+
+  it('keeps a foreign board the pane opened with when a later /play closes', async () => {
+    splitCfg.phoneSplit = true;
+    const hosts: Array<HostValue> = [];
+    const routes: Array<RouteValue> = [];
+    renderHost(
+      (host) => hosts.push(host),
+      (route) => routes.push(route),
+    );
+    await waitFor(() => expect(hosts.at(-1)?.usesDetailPane).toBe(true));
+    const foreignBoard: BoardConfig = { boardName: 'tension', layoutId: 8, sizeId: 7, setIds: '5,6', angle: 35 };
+
+    act(() =>
+      hosts.at(-1)?.openPlayDrawer(makeQueueItem('queue-pane-foreign', 'pane-foreign').climb as unknown as Climb, {
+        boardConfig: foreignBoard,
+      }),
+    );
+    await waitFor(() => expect(hosts.at(-1)?.playDrawerPaneProps?.boardConfig).toMatchObject(foreignBoard));
+
+    act(() => routes.at(-1)?.onPlayDrawerClosed(null));
+    await act(async () => {});
+    expect(hosts.at(-1)?.playDrawerPaneProps?.boardConfig).toMatchObject(foreignBoard);
   });
 
   it('drops a waiting close when the Duo is folded back before the route is idle', async () => {
@@ -2278,7 +2365,7 @@ describe('DrawerHostProvider phone split (iPhone Duo open in landscape)', () => 
     nativeNavigation.stack = ['(tabs)', 'play'];
     nativeNavigation.segments = ['play'];
     registerRoutePlayer(() => ({ climbUuid: 'busy-climb', offsetY: 0, preview: null }));
-    act(() => publishRoutePlayerBusy(true));
+    act(() => publishRoutePlayerBusy('player', true));
     const { hosts, rerenderHost } = renderSplitHost();
     await waitFor(() => expect(hosts.at(-1)).toBeDefined());
 
@@ -2286,7 +2373,7 @@ describe('DrawerHostProvider phone split (iPhone Duo open in landscape)', () => 
     rerenderHost();
     splitCfg.phoneSplit = false;
     rerenderHost();
-    act(() => publishRoutePlayerBusy(false));
+    act(() => publishRoutePlayerBusy('player', false));
     await act(async () => {});
 
     expect(nativeNavigation.dispatch).not.toHaveBeenCalledWith(POP_PLAYER);

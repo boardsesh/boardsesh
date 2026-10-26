@@ -434,6 +434,13 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   usesDetailPaneRef.current = usesDetailPane;
   const paneMountedRef = useRef(paneMounted);
   paneMountedRef.current = paneMounted;
+  const phoneSplitRef = useRef(phoneSplit);
+  phoneSplitRef.current = phoneSplit;
+  // Which surface the current board override was set for: the pane or the
+  // `/play` route. The split can have both at once (a page over the tabs routes
+  // taps to `/play` while the pane stays mounted), so a route close clears only
+  // an override the route owned. See onPlayDrawerClosed.
+  const overrideOwnerRef = useRef<'pane' | 'route' | null>(null);
   // Auth gates two things here. (1) myBoards requires authentication: running it
   // while logged out throws "Authentication required to perform this operation"
   // (pure noise in error tracking) and returns nothing useful — every other call
@@ -618,8 +625,10 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       // precise board (and clears any leftover override from a prior open).
       if (override && !boardConfigsMatch(override, storedActiveBoardConfigRef.current)) {
         setBoardConfigOverride(override);
+        overrideOwnerRef.current = usesDetailPaneRef.current ? 'pane' : 'route';
       } else {
         setBoardConfigOverride(null);
+        overrideOwnerRef.current = null;
       }
       setPreviewedClimbUuid(openOptions.previewQueueItem ? climb.uuid : null);
       // iPad regular width hosts the drawer as a persistent right-column pane, so
@@ -678,7 +687,9 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // position follows it (route-player-handoff). Phone split only: an iPad
   // crossing into its pane keeps the route as before.
   const [splitRouteClosePending, setSplitRouteClosePending] = useState(false);
-  const routePlayerBusy = useRoutePlayerBusy();
+  // Subscribed only while a close waits, so no device re-renders this provider
+  // on every sheet the player opens.
+  const routePlayerBusy = useRoutePlayerBusy(splitRouteClosePending);
   const previousPhoneSplitRef = useRef(phoneSplit);
   useEffect(() => {
     const enteredSplit = phoneSplit && !previousPhoneSplitRef.current;
@@ -692,6 +703,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     const decision = resolveSplitRouteClose({
       phoneSplit,
       routeOnTop: rootState?.routes[rootState.index]?.name === 'play',
+      routeOverTabs: rootState?.routes[rootState.index - 1]?.name === '(tabs)',
       routeBusy: routePlayerBusy,
     });
     if (decision === 'wait') return;
@@ -702,6 +714,8 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     if (carriedTarget) {
       paneTargetNonceRef.current = carriedTarget.nonce;
       setPaneTarget(carriedTarget);
+      // The carried climb now lives in the pane, so its board override does too.
+      overrideOwnerRef.current = 'pane';
     }
     armPlayerScrollHandoff(
       routePlayer?.climbUuid ? { climbUuid: routePlayer.climbUuid, offsetY: routePlayer.offsetY } : null,
@@ -722,9 +736,13 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       // the stored board with no way back to the one it was tapped on.
       const targetPending = playTargetRef.current != null && playTargetNonceRef.current !== consumedNonce;
       addErrorBreadcrumb({ category: 'ui.play', message: 'play drawer closed', data: { targetPending } });
-      // A mounted pane keeps using the override, even while a page over the split
-      // sent this open to the route (paneMounted equals usesDetailPane on iPad).
-      if (!targetPending && !paneMountedRef.current) setBoardConfigOverride(null);
+      // A mounted pane keeps using the override. In the phone split, only when the
+      // pane owns it: an open from a page over the tabs went to this route, and its
+      // foreign board must not stick to the pane (it would raise the switch-board
+      // overlay there). On iPad the old rule stands, byte for byte.
+      const paneKeepsOverride =
+        paneMountedRef.current && !(phoneSplitRef.current && overrideOwnerRef.current === 'route');
+      if (!targetPending && !paneKeepsOverride) setBoardConfigOverride(null);
       // Only drop the target this close was actually for. The reset runs from the
       // route's UNMOUNT cleanup — the end of the dismiss animation — and the list
       // underneath is live and tappable for that whole window (and for the pull-down

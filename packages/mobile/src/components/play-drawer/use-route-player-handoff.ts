@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, type RefObject } from 'react';
 import {
   PLAYER_SCROLL_HANDOFF_TTL_MS,
-  publishRoutePlayerBusy,
   registerRoutePlayer,
   takePlayerScrollHandoff,
   usePendingPlayerScrollHandoff,
+  useReportRoutePlayerBusy,
   type RoutePlayerPreview,
 } from './route-player-handoff';
 
@@ -59,9 +59,7 @@ export function useRoutePlayerHandoff({
       preview: previewRef.current,
     }));
   }, [isPane]);
-  useEffect(() => {
-    if (!isPane) publishRoutePlayerBusy(busy);
-  }, [isPane, busy]);
+  useReportRoutePlayerBusy('player', busy, !isPane);
 
   const pendingHandoff = usePendingPlayerScrollHandoff();
   const restoreRef = useRef<{ offsetY: number; takenAt: number } | null>(null);
