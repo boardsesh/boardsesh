@@ -746,7 +746,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
           working-directory: tooling
           run-install: false
 
@@ -989,7 +989,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
 
       # No `vp install`: ota-preview-cleanup.ts is dependency-free (node built-ins only).
       # Skipping the workspace install keeps this most-sensitive job (admin creds in

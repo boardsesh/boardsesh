@@ -69,7 +69,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
 
       - name: Install dependencies
         run: vp install --frozen-lockfile
@@ -114,7 +114,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
       - name: Install dependencies
         run: vp install --frozen-lockfile
       - name: Seal only the five existing Tigris publisher credentials

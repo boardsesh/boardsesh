@@ -315,8 +315,10 @@ describe('routed jobs must not save a dependency cache on the fleet', () => {
             `gate it with \`cache: \${{ runner.environment == 'github-hosted' }}\``,
         ).toEqual([]);
 
-        // Anything that configures caching at all must use the gated form.
-        if (lines.some((line) => /^\s*cache:/.test(line))) {
+        // Anything that configures caching at all must use the gated form or
+        // turn it off (scripts/workflow-cache-restore.test.ts forces `false` in
+        // jobs that hold secrets or write permissions).
+        if (lines.some((line) => /^\s*cache:/.test(line) && !/^\s*cache:\s*false\s*$/.test(line))) {
           expect(lines.some((line) => gated.test(line))).toBe(true);
         }
       });

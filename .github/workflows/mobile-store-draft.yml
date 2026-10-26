@@ -201,7 +201,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
 
       - name: Install trusted release tooling
         run: vp install --frozen-lockfile --ignore-scripts
@@ -440,8 +440,13 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.4'
-          bundler-cache: true
           working-directory: fastlane
+      - name: Install fastlane gems
+        working-directory: fastlane
+        run: |
+          bundle config set --local path "$PWD/vendor/bundle"
+          bundle config set --local deployment true
+          bundle install --jobs 4
 
       - name: Decode App Store Connect API key
         env:
@@ -542,7 +547,7 @@ jobs:
         continue-on-error: true
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
 
       - name: Install screenshot tooling
         if: steps.draft.outcome == 'success' && !inputs.release_sha
@@ -630,8 +635,13 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.4'
-          bundler-cache: true
           working-directory: fastlane
+      - name: Install fastlane gems
+        working-directory: fastlane
+        run: |
+          bundle config set --local path "$PWD/vendor/bundle"
+          bundle config set --local deployment true
+          bundle install --jobs 4
 
       - name: Recheck the pinned release branch and uploaded builds
         env:
@@ -668,7 +678,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
 
       - name: Install dependencies
         run: vp install --frozen-lockfile

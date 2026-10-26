@@ -912,7 +912,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
 
       - name: Install Node.js dependencies
         run: vp install --frozen-lockfile
@@ -1015,8 +1015,14 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.4'
-          bundler-cache: true
           working-directory: fastlane
+      - name: Install fastlane gems
+        if: ${{ success() && env.FULL_SET_CAPTURED == 'true' && (env.MANUAL_UPLOAD_RUN == 'true' || github.event_name == 'workflow_run') }}
+        working-directory: fastlane
+        run: |
+          bundle config set --local path "$PWD/vendor/bundle"
+          bundle config set --local deployment true
+          bundle install --jobs 4
 
       - name: Decode App Store Connect API key
         if: ${{ success() && env.FULL_SET_CAPTURED == 'true' && (env.MANUAL_UPLOAD_RUN == 'true' || github.event_name == 'workflow_run') }}
@@ -1113,7 +1119,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
       - run: vp install --frozen-lockfile
       - uses: ./.github/actions/asc-cpp
         with:
@@ -1146,7 +1152,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
       - run: vp install --frozen-lockfile
       - uses: ./.github/actions/asc-cpp
         with:
@@ -1170,7 +1176,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
       - run: vp install --frozen-lockfile
       - name: Restore account-bound bootstrap checkpoint
         uses: actions/cache/restore@v4
@@ -1268,7 +1274,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
       - run: vp install --frozen-lockfile
       - name: Verify and download retained native records before credentials
         if: ${{ (inputs.cpp_record_run_id || '') != '' }}
@@ -1354,7 +1360,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
       - run: vp install --frozen-lockfile
       - uses: actions/download-artifact@v4
         if: ${{ inputs.cpp_target == 'all' || inputs.cpp_target == 'kilter' }}

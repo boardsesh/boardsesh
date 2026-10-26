@@ -148,7 +148,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
 
       - name: Install dependencies (PR tree)
         run: vp install --frozen-lockfile

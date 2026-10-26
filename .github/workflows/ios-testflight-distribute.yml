@@ -59,7 +59,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
       - name: Install workspace dependencies
         run: vp install --frozen-lockfile
       - name: Validate native build run and locate its receipt
@@ -93,8 +93,14 @@ jobs:
         if: steps.source.outputs.should_distribute == 'true'
         with:
           ruby-version: '3.4'
-          bundler-cache: true
           working-directory: fastlane
+      - name: Install fastlane gems
+        if: steps.source.outputs.should_distribute == 'true'
+        working-directory: fastlane
+        run: |
+          bundle config set --local path "$PWD/vendor/bundle"
+          bundle config set --local deployment true
+          bundle install --jobs 4
       - name: Set up App Store Connect API key
         if: steps.source.outputs.should_distribute == 'true'
         env:

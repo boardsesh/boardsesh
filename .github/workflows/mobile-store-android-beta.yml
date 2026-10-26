@@ -36,7 +36,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
       - name: Install dependencies
         run: vp install --frozen-lockfile
       - name: Test beta promotion guards
@@ -44,8 +44,13 @@ jobs:
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.4'
-          bundler-cache: true
           working-directory: fastlane
+      - name: Install fastlane gems
+        working-directory: fastlane
+        run: |
+          bundle config set --local path "$PWD/vendor/bundle"
+          bundle config set --local deployment true
+          bundle install --jobs 4
       - name: Plan or submit the exact beta build
         working-directory: fastlane
         env:

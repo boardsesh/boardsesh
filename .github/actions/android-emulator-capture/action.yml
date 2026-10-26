@@ -54,6 +54,13 @@ inputs:
     description: 'Capture account password. Leave empty on replay.'
     required: false
     default: ''
+  restore-caches:
+    description: >
+      'true' lets setup-vp and the Gradle fallback restore shared caches. Leave it
+      'false' in any job that holds secrets or writes anywhere: those jobs
+      install fresh (scripts/workflow-cache-restore.test.ts).
+    required: false
+    default: 'false'
 
 outputs:
   apk-source:
@@ -66,7 +73,7 @@ runs:
     - uses: voidzero-dev/setup-vp@v1
       with:
         node-version: '22.x'
-        cache: true
+        cache: ${{ inputs.restore-caches == 'true' }}
 
     - name: Install Node.js dependencies
       shell: bash
@@ -100,6 +107,7 @@ runs:
     # mirrors the same native-input files devApkFreshness diffs, so it's
     # invalidated exactly when the fallback build's own output would change.
     - name: Cache Gradle (local-build fallback only)
+      if: ${{ inputs.restore-caches == 'true' }}
       uses: actions/cache@v4
       with:
         path: |

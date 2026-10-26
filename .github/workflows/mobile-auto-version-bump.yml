@@ -72,7 +72,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
 
       # mobile-cut-release-tags.ts imports an extensionless local module, so use
       # the installed tsx loader instead of Node's dependency-free type stripping.

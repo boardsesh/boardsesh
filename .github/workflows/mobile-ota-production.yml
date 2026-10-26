@@ -135,7 +135,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
       - name: Install Node.js dependencies (workspace root)
         run: vp install --frozen-lockfile
       - name: Write .env for Expo build-time inlining
@@ -472,7 +472,7 @@ jobs:
         if: steps.superseded.outputs.superseded != 'true'
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
 
       - name: Install Node.js dependencies (workspace root)
         if: steps.superseded.outputs.superseded != 'true'

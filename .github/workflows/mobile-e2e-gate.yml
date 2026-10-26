@@ -198,6 +198,8 @@ jobs:
           # One orchestrator run. It retries itself once, from a reboot, and only
           # when the app died natively at launch with no replay miss.
           attempts: '1'
+          # Secret-free PR job: the shared dependency cache is safe to use.
+          restore-caches: 'true'
 
       - name: Read the smoke result
         id: result
@@ -306,6 +308,8 @@ jobs:
           # No screenshots are taken, so there is nothing to upload.
           upload-captures: 'false'
           debug-artifact-on: always
+          # Secret-free PR job: the shared dependency cache is safe to use.
+          restore-caches: 'true'
 
       - name: Read the smoke result
         id: result

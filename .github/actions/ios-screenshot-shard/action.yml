@@ -75,6 +75,14 @@ inputs:
       green run that needed its retry.
     required: false
     default: failure
+  restore-caches:
+    description: >
+      'true' lets setup-vp restore the shared dependency cache. Leave it 'false'
+      in any job that holds secrets or writes anywhere: those jobs install
+      dependencies fresh (scripts/workflow-cache-restore.test.ts). The
+      prebuilt simulator app below is restored either way.
+    required: false
+    default: 'false'
 
 runs:
   using: composite
@@ -82,7 +90,7 @@ runs:
     - uses: voidzero-dev/setup-vp@v1
       with:
         node-version: '22.x'
-        cache: true
+        cache: ${{ inputs.restore-caches == 'true' }}
 
     - name: Install Node.js dependencies
       shell: bash

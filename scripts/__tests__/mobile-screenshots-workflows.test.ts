@@ -1007,6 +1007,7 @@ describe('ios-screenshot-shard composite action', () => {
       'attempts',
       'upload-captures',
       'debug-artifact-on',
+      'restore-caches',
     ]);
     expect(action.runs.using).toBe('composite');
   });

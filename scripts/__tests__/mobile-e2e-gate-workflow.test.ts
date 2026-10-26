@@ -165,13 +165,14 @@ describe('mobile-e2e-gate.yml jobs', () => {
 
   it('runs both smokes on recorded fixtures, with one orchestrator attempt', () => {
     const [android] = stepsUsing(workflow.jobs['android-smoke'], ANDROID_ACTION_USES);
-    expect(android.with).toEqual({ flow: 'smoke', fixtures: 'replay', attempts: '1' });
+    expect(android.with).toEqual({ flow: 'smoke', fixtures: 'replay', attempts: '1', 'restore-caches': 'true' });
     const [ios] = stepsUsing(workflow.jobs['ios-smoke'], IOS_ACTION_USES);
     expect(ios.with).toMatchObject({
       flow: 'smoke',
       fixtures: 'replay',
       attempts: '1',
       'upload-captures': 'false',
+      'restore-caches': 'true',
       locale: 'en-US',
       'device-name': 'iPhone 16 Pro Max',
     });
@@ -264,6 +265,7 @@ describe('android-emulator-capture composite action', () => {
       'attempts',
       'user-email',
       'user-password',
+      'restore-caches',
     ]);
     expect(action.inputs.flow.default).toBe('app-store');
     expect(action.inputs.attempts.default).toBe('3');

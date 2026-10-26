@@ -152,7 +152,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: '22.x'
-          cache: true
+          cache: false
 
       # The hotfix tree is about to move to an older release anchor, which may
       # predate OTA source-map support. Snapshot the exact trusted workflow commit
