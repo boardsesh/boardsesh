@@ -34,9 +34,8 @@ const POPULARITY_KEYS = ['any', 'projects', '2', '10', '100', '1000'] as const;
 const STAR_VALUES = [1, 2, 3, 4, 5] as const;
 const ANY = 'any';
 
-/** The keys of the three picker rows, also their scroll-restore ids. */
-export const FILTER_PICKER_ROW_KEYS = { setters: 'setters', holds: 'holds', zone: 'zone' } as const;
-export type FilterPickerRowKey = (typeof FILTER_PICKER_ROW_KEYS)[keyof typeof FILTER_PICKER_ROW_KEYS];
+/** The three rows that push a picker route. */
+type FilterPickerRowKey = 'setters' | 'holds' | 'zone';
 
 type PickerRowInput = {
   show: boolean;

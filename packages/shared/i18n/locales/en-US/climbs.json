@@ -506,7 +506,7 @@
       "recentDescription": "Your last 10 searches will show here.",
       "ratingAtLeast": "{{count}}★+",
       "quickFiltersLink": "Quick filters",
-      "quickFiltersFooter": "Choose the filters that show as chips above the list, and their order.",
+      "quickFiltersFooter": "Choose the filters that show in the top row, and their order.",
       "established2plus": "Established 2+",
       "benchmark": "Benchmarks",
       "showCount_one": "Show {{count}} climb",
