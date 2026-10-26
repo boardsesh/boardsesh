@@ -89,6 +89,24 @@ export type CrewRestConfig = RestPacingSettings & {
   setByParticipantId: string | null;
 };
 
+/** The fields an ARM or CONFIGURE carries. `autoAdvanceOnce` is there only while true. */
+export type CrewConfigFields = Pick<
+  CrewRestConfig,
+  'mode' | 'targetSeconds' | 'autoAdvance' | 'autoAdvanceOnce' | 'advanceOn' | 'source'
+>;
+
+/** A local move spends a once-only clock's advance, as the server's FIRE does. */
+export function spendAdvanceOnce(config: CrewConfigFields): CrewConfigFields {
+  if (config.autoAdvanceOnce !== true) return config;
+  return {
+    mode: config.mode,
+    targetSeconds: config.targetSeconds,
+    autoAdvance: false,
+    advanceOn: config.advanceOn,
+    source: config.source,
+  };
+}
+
 export type EffectiveRestPacing = RestPacingSettings & {
   advanceOn: RestAdvanceRule;
   source: RestPacingSource;

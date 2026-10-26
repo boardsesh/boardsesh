@@ -33,6 +33,7 @@ import {
   subscribeLocalRestTimerActions,
 } from '../rest-timer-store';
 import { resetServerClock } from '../server-clock';
+import { resolveEffectiveRestPacing } from '../rest-timer-pacing';
 
 const SESSION = 'session-1';
 const ME = 'participant-me';
@@ -931,6 +932,67 @@ describe('a crew clock’s once-only advance', () => {
         anchor: 'CLEAR',
       },
     ]);
+  });
+
+  it.each([
+    { mode: 'afterTick' as const, anchorAfter: 'clear' as const, advanceOn: 'tick' as const },
+    { mode: 'onTheMinute' as const, anchorAfter: 'keep' as const, advanceOn: 'tick' as const },
+    { mode: 'afterTick' as const, anchorAfter: 'now' as const, advanceOn: 'deadline' as const },
+  ])(
+    'keeps a local $anchorAfter advance spent when its CONFIGURE fails offline',
+    async ({ mode, anchorAfter, advanceOn }) => {
+      followCrewClock({ ...setRestConfig, mode, advanceOn });
+      autoReply = false;
+      currentNowMs = T0 + 180_000;
+      noteRestTimerAutoAdvanceFired(getRestTimerState().cycleId, mode, currentNowMs, currentNowMs, anchorAfter);
+
+      // The server has not answered: scheduling must already see the move as spent.
+      expect(sent.at(-1)).toMatchObject({ action: 'CONFIGURE', config: { autoAdvance: false } });
+      expect(getRestTimerState().crew?.config?.autoAdvance).toBe(false);
+      expect(getRestTimerState().crew?.config).not.toHaveProperty('autoAdvanceOnce');
+
+      const offlineError = new Error('offline');
+      pendingReplies.shift()?.reject(offlineError);
+      await flush();
+      expect(report).toHaveBeenCalledWith(offlineError, 'CONFIGURE');
+
+      currentNowMs += 1_000;
+      noteRestTimerTick(new Date(currentNowMs).toISOString(), mode, currentNowMs, {
+        status: 'send',
+        queueItemUuid: 'item-next',
+      });
+      const state = getRestTimerState();
+      expect(state.stagePacing).toBeNull();
+      expect(
+        resolveEffectiveRestPacing({ settings: own, stage: state.stagePacing, crew: state.crew?.config ?? null }),
+      ).toMatchObject({
+        source: 'crew',
+        autoAdvance: false,
+      });
+      expect(state.crew?.config).not.toHaveProperty('autoAdvanceOnce');
+    },
+  );
+
+  it('keeps an ordinary clock enabled when local move synchronization fails offline', async () => {
+    const { autoAdvanceOnce: _once, ...everyRest } = setRestConfig;
+    followCrewClock(everyRest);
+    autoReply = false;
+    currentNowMs = T0 + 180_000;
+    noteRestTimerAutoAdvanceFired(getRestTimerState().cycleId, 'afterTick', currentNowMs, currentNowMs, 'clear');
+    expect(getRestTimerState().crew?.config?.autoAdvance).toBe(true);
+    pendingReplies.shift()?.reject(new Error('offline'));
+    await flush();
+
+    currentNowMs += 1_000;
+    noteRestTimerTick(new Date(currentNowMs).toISOString(), 'afterTick', currentNowMs, {
+      status: 'send',
+      queueItemUuid: 'item-next',
+    });
+    const state = getRestTimerState();
+    expect(
+      resolveEffectiveRestPacing({ settings: own, stage: state.stagePacing, crew: state.crew?.config ?? null })
+        .autoAdvance,
+    ).toBe(true);
   });
 
   it('spends it after a cadence edit when a solo fallback keeps the minute beat', async () => {

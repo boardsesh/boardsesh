@@ -32,7 +32,7 @@ import type {
   SessionRestCadenceInput,
 } from '@boardsesh/shared-schema/generated';
 import type { RestTimerMode } from './rest-timer';
-import type { CrewRestConfig, RestAdvanceRule, RestTimerLastTick } from './rest-timer-pacing';
+import type { CrewConfigFields, CrewRestConfig, RestAdvanceRule, RestTimerLastTick } from './rest-timer-pacing';
 import type { SessionRestCadenceChangeWire, SessionRestCadenceWire } from './graphql/operations';
 import {
   adoptCrewCadence,
@@ -43,6 +43,8 @@ import {
   type RestTimerState,
 } from './rest-timer-store';
 import { noteServerTimeFromEvent, noteServerTimeFromMutation, serverToLocalMs, localToServerMs } from './server-clock';
+
+export { spendAdvanceOnce, type CrewConfigFields } from './rest-timer-pacing';
 
 /**
  * The crew clock as the rest-timer store holds it: the server's state with
@@ -152,12 +154,6 @@ export function parseCrewRestCadence(
   };
 }
 
-/** The fields an ARM or CONFIGURE carries. `autoAdvanceOnce` is there only while true. */
-export type CrewConfigFields = Pick<
-  CrewRestConfig,
-  'mode' | 'targetSeconds' | 'autoAdvance' | 'autoAdvanceOnce' | 'advanceOn' | 'source'
->;
-
 /** Field by field, so a freshly built config compares equal to the one held. */
 export function sameCrewConfig(left: CrewConfigFields | null, right: CrewConfigFields | null): boolean {
   if (left === null || right === null) return left === right;
@@ -169,22 +165,6 @@ export function sameCrewConfig(left: CrewConfigFields | null, right: CrewConfigF
     left.advanceOn === right.advanceOn &&
     left.source === right.source
   );
-}
-
-/**
- * The config after a move this phone made itself on it: a once-only clock's
- * advance is spent, so auto-advance goes off, as the server's own FIRE turns
- * it off. Any other config is returned as it is.
- */
-export function spendAdvanceOnce(config: CrewConfigFields): CrewConfigFields {
-  if (config.autoAdvanceOnce !== true) return config;
-  return {
-    mode: config.mode,
-    targetSeconds: config.targetSeconds,
-    autoAdvance: false,
-    advanceOn: config.advanceOn,
-    source: config.source,
-  };
 }
 
 // ---------------------------------------------------------------------------

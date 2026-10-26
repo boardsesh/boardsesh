@@ -41,6 +41,8 @@ The timer runs on an `EffectiveRestPacing`: a rest length, a cadence (`afterTick
    (`stageAdvancesOnce`), so the crew moves on once per set even if this phone then sleeps.
    A solo fallback spends that advance for every cadence, including a set rest a crewmate
    changed to on the minute; keeping the minute beat does not earn another wall move.
+   The phone turns off its own held clock's auto-advance before publishing that change,
+   so a failed CONFIGURE cannot leave a second offline move armed.
 3. `settings`: the climber's own preferences. These never carry an advance rule, so they run on
    the deadline, as the timer always has.
 

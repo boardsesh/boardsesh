@@ -36,6 +36,7 @@ import { getRestTimerStartMs, type RestTimerMode } from './rest-timer';
 import { getAfterTickRestFloorMs, isTickFreshEnoughToArm } from './rest-timer-auto-advance';
 import {
   sameStagePacing,
+  spendAdvanceOnce,
   type CrewRestConfig,
   type RestTimerLastTick,
   type RestTimerPacingTransition,
@@ -57,8 +58,9 @@ export type RestTimerState = {
   armedForSessionId: string | null;
   /**
    * The crew's shared clock for `armedForSessionId`, when this phone follows
-   * one (#5382). Written only by `adoptCrewCadence` and `clearCrewCadence`; a
-   * local arm or disarm drops it until the server's answer comes back. Its
+   * one (#5382). Adopted by `adoptCrewCadence`, dropped by `clearCrewCadence`,
+   * and spent locally after a once-only fallback advance. A local arm or disarm
+   * drops it until the server's answer comes back. Its
    * config is null for a clock this app cannot run (never fired on).
    */
   crew: CrewRestCadence | null;
@@ -196,7 +198,7 @@ export type LocalRestTimerAction =
   | { type: 'reset'; sessionId: string | null; isRunning: boolean }
   | { type: 'queueEndedCleared'; sessionId: string | null; anchorAfter: RestTimerAnchorAfter }
   /** This phone moved the wall itself (no crew clock, or a solo FIRE that got no answer). */
-  | { type: 'fired'; sessionId: string | null; anchorAfter: RestTimerAnchorAfter }
+  | { type: 'fired'; sessionId: string | null; anchorAfter: RestTimerAnchorAfter; spentAdvanceOnce?: true }
   | { type: 'reanchored'; sessionId: string | null }
   /** `atMs`: the instant an `anchorNow` transition started the beat at, so the crew's NOW counts from it. */
   | { type: 'stagePacing'; sessionId: string | null; transition: RestTimerPacingTransition; atMs: number }
@@ -529,8 +531,20 @@ export function noteRestTimerAutoAdvanceFired(
   anchorAfter: RestTimerAnchorAfter = mode === 'onTheMinute' ? 'keep' : 'now',
 ): boolean {
   if (!state.armed || state.cycleId !== expectedCycleId) return false;
+  const { crew } = state;
+  const spentAdvanceOnce = crew?.config?.autoAdvanceOnce === true;
+  // Consume before notifying readers or publishing: the same connection that
+  // lost FIRE may also lose CONFIGURE, and the next tick must not earn a move.
+  const spentCrew =
+    spentAdvanceOnce && crew?.config
+      ? {
+          ...crew,
+          config: { ...spendAdvanceOnce(crew.config), setByParticipantId: crew.config.setByParticipantId },
+        }
+      : crew;
   setState({
     ...state,
+    crew: spentCrew,
     anchorMs: anchorFor(anchorAfter, nowMs),
     lastTick: anchorAfter === 'clear' ? null : state.lastTick,
     isRunning: true,
@@ -538,7 +552,12 @@ export function noteRestTimerAutoAdvanceFired(
     cycleId: state.cycleId + 1,
     lastFiredDeadlineMs: firedDeadlineMs,
   });
-  announce({ type: 'fired', sessionId: state.armedForSessionId, anchorAfter });
+  announce({
+    type: 'fired',
+    sessionId: state.armedForSessionId,
+    anchorAfter,
+    ...(spentAdvanceOnce ? { spentAdvanceOnce: true as const } : {}),
+  });
   return true;
 }
 

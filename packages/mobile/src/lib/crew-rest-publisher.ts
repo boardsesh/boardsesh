@@ -284,7 +284,7 @@ export function createCrewRestPublisher({
         // including a set rest whose cadence a crewmate changed to on the minute.
         case 'fired':
         case 'queueEndedCleared': {
-          if (action.type === 'fired' && heldConfig().autoAdvanceOnce === true) {
+          if (action.type === 'fired' && (action.spentAdvanceOnce || heldConfig().autoAdvanceOnce === true)) {
             enqueueInput(() => ({
               action: 'CONFIGURE',
               config: toCrewConfigInput(spendAdvanceOnce(heldConfig())),

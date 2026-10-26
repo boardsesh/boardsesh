@@ -173,6 +173,19 @@ describe('clearCrewCadence', () => {
 });
 
 describe('local actions', () => {
+  it('spends the crew’s once-only advance synchronously only for the current cycle', () => {
+    const clock = crewClock();
+    if (clock.config === null) throw new Error('crewClock has a config');
+    adoptCrewCadence({ ...clock, config: { ...clock.config, autoAdvanceOnce: true } });
+    const { cycleId } = getRestTimerState();
+
+    expect(noteRestTimerAutoAdvanceFired(cycleId - 1, 'afterTick', T0 + 60_000, T0 + 60_000)).toBe(false);
+    expect(getRestTimerState().crew?.config?.autoAdvanceOnce).toBe(true);
+    expect(noteRestTimerAutoAdvanceFired(cycleId, 'afterTick', T0 + 60_000, T0 + 60_000)).toBe(true);
+    expect(getRestTimerState().crew?.config?.autoAdvance).toBe(false);
+    expect(getRestTimerState().crew?.config).not.toHaveProperty('autoAdvanceOnce');
+  });
+
   it('announces what this phone did, with the session it was armed for', () => {
     const actions = recordActions();
     armRestTimer('afterTick', T0, null);
