@@ -3,13 +3,21 @@ vi.mock('../../AccessibleBottomSheetTextInput', async () => {
   const { BottomSheetTextInput } = await import('@expo/ui/community/bottom-sheet');
   return { AccessibleBottomSheetTextInput: BottomSheetTextInput };
 });
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render } from '@testing-library/react';
-import { createElement, createRef, type ReactNode } from 'react';
-import type { ManagedSheetHandle } from '../../../providers/sheet-presentation-provider';
+import { createElement, createRef, useImperativeHandle, useRef, type ReactNode, type RefObject } from 'react';
+import {
+  SHEET_SETTLE_MS,
+  SheetPresentationProvider,
+  useManagedSheet,
+  type DismissAndWaitResult,
+  type ManagedSheetHandle,
+} from '../../../providers/sheet-presentation-provider';
+import type { BottomSheetMethods } from '@expo/ui/community/bottom-sheet';
 
 type ViewMockProps = { children?: ReactNode };
 vi.mock('react-native', () => ({
+  Platform: { OS: 'ios' },
   View: ({ children }: ViewMockProps) => createElement('div', {}, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
 }));
@@ -18,8 +26,15 @@ vi.mock('react-native', () => ({
 // dismiss/onFullyDismissed wiring instead: the ORDER of those two is the whole
 // point of the surf-after-dismiss rule.
 const sheet = vi.hoisted(() => ({
+  present: vi.fn(),
   dismiss: vi.fn(),
+  dismissAndWait: vi.fn<() => Promise<DismissAndWaitResult>>(),
+  isOpen: true,
+  dismissWaiters: [] as ((result: DismissAndWaitResult) => void)[],
   fullyDismissed: null as (() => void) | null,
+  onFullyDismissed: null as (() => void) | null,
+  nativeChange: null as ((index: number) => void) | null,
+  nativeFullyDismissed: null as (() => void) | null,
 }));
 vi.mock('../../ModalSheet', () => ({
   ModalSheet: ({
@@ -31,7 +46,7 @@ vi.mock('../../ModalSheet', () => ({
     header?: ReactNode;
     onFullyDismissed?: () => void;
   }) => {
-    sheet.fullyDismissed = onFullyDismissed ?? null;
+    sheet.onFullyDismissed = onFullyDismissed ?? null;
     return createElement('div', { 'data-modal-sheet': 'true' }, header, children);
   },
 }));
@@ -237,8 +252,9 @@ function renderSheet() {
   // The provider owns the ref; stand in for the imperative handle the real
   // ModalSheet installs.
   (sheetRef as { current: ManagedSheetHandle | null }).current = {
-    present: vi.fn(),
+    present: sheet.present,
     dismiss: sheet.dismiss,
+    dismissAndWait: sheet.dismissAndWait,
   } as unknown as ManagedSheetHandle;
   return { sheetRef, ...render(<QaVerdictSheet sheetRef={sheetRef} />) };
 }
@@ -248,8 +264,24 @@ function submitButton(container: HTMLElement): HTMLButtonElement {
 }
 
 beforeEach(() => {
+  sheet.present.mockClear();
   sheet.dismiss.mockClear();
-  sheet.fullyDismissed = null;
+  sheet.isOpen = true;
+  sheet.dismissWaiters = [];
+  sheet.onFullyDismissed = null;
+  sheet.nativeChange = null;
+  sheet.nativeFullyDismissed = null;
+  sheet.fullyDismissed = () => {
+    sheet.isOpen = false;
+    const waiters = sheet.dismissWaiters.splice(0);
+    for (const resolve of waiters) resolve({ status: 'dismissed' });
+    sheet.onFullyDismissed?.();
+  };
+  sheet.dismissAndWait.mockReset().mockImplementation(() => {
+    if (!sheet.isOpen) return Promise.resolve({ status: 'dismissed' });
+    sheet.dismiss();
+    return new Promise((resolve) => sheet.dismissWaiters.push(resolve));
+  });
   actions.leave = null;
   actions.submit = null;
   showToast.mockClear();
@@ -314,7 +346,7 @@ describe('QaVerdictSheet approve path', () => {
     await vi.waitFor(() => expect(sheet.dismiss).toHaveBeenCalled());
     expect(qa.surfToProduction).not.toHaveBeenCalled();
 
-    sheet.fullyDismissed?.();
+    await act(async () => sheet.fullyDismissed?.());
     expect(qa.surfToProduction).toHaveBeenCalledTimes(1);
     await vi.waitFor(() => expect(showToast).toHaveBeenCalledWith('Back on production at the next update', 'info'));
     expect(trackMock).not.toHaveBeenCalledWith('QA Preview Left', expect.anything());
@@ -330,7 +362,7 @@ describe('QaVerdictSheet approve path', () => {
     await vi.waitFor(() => expect(sheet.dismiss).toHaveBeenCalled());
     expect(earlyUpdates.joinEarlyUpdates).not.toHaveBeenCalled();
 
-    sheet.fullyDismissed?.();
+    await act(async () => sheet.fullyDismissed?.());
     expect(earlyUpdates.joinEarlyUpdates).toHaveBeenCalledOnce();
     expect(qa.surfToProduction).not.toHaveBeenCalled();
     await vi.waitFor(() => expect(showToast).toHaveBeenCalledWith('qa.shared.backOnEarlyUpdates', 'info'));
@@ -394,7 +426,7 @@ describe('QaVerdictSheet synchronous action ownership', () => {
     expect(leaveButton(container).disabled).toBe(true);
     expect(submitButton(container).disabled).toBe(true);
 
-    act(() => sheet.fullyDismissed?.());
+    await act(async () => sheet.fullyDismissed?.());
     act(() => {
       leave();
       submit();
@@ -434,7 +466,7 @@ describe('QaVerdictSheet synchronous action ownership', () => {
     expect(sheet.dismiss).toHaveBeenCalledOnce();
     expect(previews.mutateAsync).toHaveBeenCalledOnce();
     expect(qa.surfToProduction).not.toHaveBeenCalled();
-    act(() => sheet.fullyDismissed?.());
+    await act(async () => sheet.fullyDismissed?.());
     act(() => {
       leave();
       submit();
@@ -495,14 +527,14 @@ describe('QaVerdictSheet synchronous action ownership', () => {
     const { container } = renderSheet();
     const leave = retainedAction('leave');
     act(() => leave());
-    act(() => sheet.fullyDismissed?.());
+    await act(async () => sheet.fullyDismissed?.());
     await act(async () => returning.reject(new Error('offline')));
 
     expect(showToast).toHaveBeenCalledWith('Could not switch off this preview — try again', 'error');
     expect(leaveButton(container).disabled).toBe(false);
     expect(submitButton(container).disabled).toBe(false);
     act(() => leave());
-    act(() => sheet.fullyDismissed?.());
+    await act(async () => sheet.fullyDismissed?.());
     await vi.waitFor(() => expect(qa.surfToProduction).toHaveBeenCalledTimes(2));
   });
 
@@ -516,13 +548,13 @@ describe('QaVerdictSheet synchronous action ownership', () => {
       const { container } = renderSheet();
       const leave = retainedAction('leave');
       act(() => leave());
-      act(() => sheet.fullyDismissed?.());
+      await act(async () => sheet.fullyDismissed?.());
       await act(async () => returning.resolve(outcome));
 
       expect(leaveButton(container).disabled).toBe(false);
       expect(submitButton(container).disabled).toBe(false);
       act(() => leave());
-      act(() => sheet.fullyDismissed?.());
+      await act(async () => sheet.fullyDismissed?.());
       await vi.waitFor(() => expect(returnToTrack).toHaveBeenCalledTimes(2));
     },
   );
@@ -533,7 +565,7 @@ describe('QaVerdictSheet synchronous action ownership', () => {
     const leave = retainedAction('leave');
     const submit = retainedAction('submit');
     act(() => leave());
-    act(() => sheet.fullyDismissed?.());
+    await act(async () => sheet.fullyDismissed?.());
     await vi.waitFor(() => expect(trackMock).toHaveBeenCalledWith('QA Preview Left', { prNumber: 4792 }));
     act(() => {
       leave();
@@ -567,12 +599,84 @@ describe('QaVerdictSheet synchronous action ownership', () => {
     const submit = retainedAction('submit');
     act(() => submit());
     await vi.waitFor(() => expect(sheet.dismiss).toHaveBeenCalledOnce());
-    act(() => sheet.fullyDismissed?.());
+    await act(async () => sheet.fullyDismissed?.());
 
     expect(qa.surfToProduction).not.toHaveBeenCalled();
     expect(submitButton(container).disabled).toBe(false);
     act(() => submit());
     await vi.waitFor(() => expect(previews.mutateAsync).toHaveBeenCalledTimes(2));
+  });
+});
+
+function ManagedVerdictHarness({ sheetRef }: { sheetRef: RefObject<ManagedSheetHandle | null> }) {
+  const nativeRef = useRef<BottomSheetMethods | null>({
+    snapToIndex: sheet.present,
+    dismiss: sheet.dismiss,
+  } as unknown as BottomSheetMethods);
+  const managed = useManagedSheet({ sheetRef: nativeRef, onFullyDismissed: () => sheet.onFullyDismissed?.() });
+  useImperativeHandle(sheetRef, () => managed.handle, [managed.handle]);
+  sheet.nativeChange = managed.onChange;
+  sheet.nativeFullyDismissed = managed.onFullyDismissed;
+  return <QaVerdictSheet sheetRef={sheetRef} />;
+}
+
+function renderManagedSheet() {
+  const sheetRef = createRef<ManagedSheetHandle>();
+  const rendered = render(<ManagedVerdictHarness sheetRef={sheetRef} />, { wrapper: SheetPresentationProvider });
+  act(() => {
+    sheetRef.current?.present();
+    vi.advanceTimersByTime(SHEET_SETTLE_MS);
+  });
+  return { sheetRef, ...rendered };
+}
+
+describe('QaVerdictSheet managed dismissal lifecycle', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it.each(['upload', 'mutation'] as const)(
+    'returns after the sheet was already dismissed during pending %s',
+    async (pendingPhase) => {
+      const upload = deferred<string[]>();
+      const verdict = deferred<{ id: string }>();
+      if (pendingPhase === 'upload') uploadFeedbackScreenshots.mockReturnValueOnce(upload.promise);
+      previews.mutateAsync.mockReturnValueOnce(verdict.promise);
+      const { container } = renderManagedSheet();
+      if (pendingPhase === 'upload') fireEvent.click(pickerButton(container));
+      fireEvent.click(submitButton(container));
+
+      // A real user pan/backdrop close settles before the async verdict. The
+      // coordinator must not need another native callback for an absent sheet.
+      act(() => {
+        sheet.nativeChange?.(-1);
+        sheet.nativeFullyDismissed?.();
+      });
+      expect(qa.surfToProduction).not.toHaveBeenCalled();
+      if (pendingPhase === 'upload') await act(async () => upload.resolve(['feedback-screenshots/one.jpg']));
+      await act(async () => verdict.resolve({ id: 'verdict-1' }));
+
+      expect(qa.surfToProduction).toHaveBeenCalledOnce();
+      expect(sheet.dismiss).not.toHaveBeenCalled();
+      expect(showToast).toHaveBeenCalledWith('Verdict sent to #4792', 'success');
+      expect(submitButton(container).disabled).toBe(false);
+    },
+  );
+
+  it('releases ownership when reopening aborts an in-flight managed dismissal', async () => {
+    const { container, sheetRef } = renderManagedSheet();
+    fireEvent.click(leaveButton(container));
+    expect(sheet.dismiss).toHaveBeenCalledOnce();
+    await act(async () => sheetRef.current?.present());
+
+    expect(qa.surfToProduction).not.toHaveBeenCalled();
+    expect(leaveButton(container).disabled).toBe(false);
+    expect(submitButton(container).disabled).toBe(false);
   });
 });
 
@@ -615,7 +719,7 @@ describe('QaVerdictSheet decline path', () => {
 });
 
 describe('QaVerdictSheet leaving without a verdict', () => {
-  it('closes the form without filing a verdict or leaving the preview', () => {
+  it('closes the form without filing a verdict or leaving the preview', async () => {
     const { container } = renderSheet();
     fireEvent.click(container.querySelector('[data-testid="sheet-top-bar-leading"]')!);
     expect(sheet.dismiss).toHaveBeenCalledTimes(1);
@@ -632,10 +736,10 @@ describe('QaVerdictSheet leaving without a verdict', () => {
     expect(sheet.dismiss).toHaveBeenCalled();
     expect(qa.surfToProduction).not.toHaveBeenCalled();
 
-    sheet.fullyDismissed?.();
+    await act(async () => sheet.fullyDismissed?.());
     expect(qa.surfToProduction).toHaveBeenCalledTimes(1);
     await vi.waitFor(() => expect(trackMock).toHaveBeenCalledExactlyOnceWith('QA Preview Left', { prNumber: 4792 }));
-    sheet.fullyDismissed?.();
+    await act(async () => sheet.fullyDismissed?.());
     expect(qa.surfToProduction).toHaveBeenCalledTimes(1);
     expect(trackMock).toHaveBeenCalledTimes(1);
   });

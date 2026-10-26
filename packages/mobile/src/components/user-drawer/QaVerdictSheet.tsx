@@ -33,7 +33,7 @@ import {
   QA_VERDICT_SUBMITTED_EVENT,
   surfFailureReason,
 } from '../../lib/qa/qa-analytics';
-import type { ManagedSheetHandle } from '../../providers/sheet-presentation-provider';
+import { dismissManagedSheetAndWait, type ManagedSheetHandle } from '../../providers/sheet-presentation-provider';
 
 // This sheet was tester-only (hardcoded English, like the other QA screens and
 // the dev rows on the More tab) until it opened to every user in #5126.
@@ -122,9 +122,6 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
   const canSubmit =
     runningPrNumber !== null && userId !== undefined && (verdict === 'approved' || remainingDeclineChars === 0);
 
-  // Set before dismissing, read after the dismissal has really settled.
-  const leaveAfterDismissRef = useRef<'submitted' | 'without-feedback' | null>(null);
-
   const leavePreview = useCallback(
     (withoutFeedback: boolean) => {
       if (actionOwnerRef.current !== 'leaving') return;
@@ -156,12 +153,20 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
     [earlyUpdatesMember, releaseAction, runningPrNumber, showToast, surfingAvailable, t],
   );
 
-  const handleFullyDismissed = useCallback(() => {
-    const reason = leaveAfterDismissRef.current;
-    if (reason === null) return;
-    leaveAfterDismissRef.current = null;
-    leavePreview(reason === 'without-feedback');
-  }, [leavePreview]);
+  const dismissBeforeLeaving = useCallback(
+    async (withoutFeedback: boolean) => {
+      // The tester may have closed the sheet while upload/submission was pending.
+      // The managed wait also resolves when it is already gone; a second native
+      // onFullyDismissed callback would never arrive in that case.
+      const dismissal = await dismissManagedSheetAndWait(sheetRef.current);
+      if (dismissal.status !== 'dismissed') {
+        releaseAction();
+        return;
+      }
+      leavePreview(withoutFeedback);
+    },
+    [leavePreview, releaseAction, sheetRef],
+  );
 
   const handleSubmit = async () => {
     if (!canSubmit || runningPrNumber === null || userId === undefined || !claimAction('submitting')) return;
@@ -204,8 +209,7 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
         // Transfer ownership without a gap between submitting and dismissal.
         actionOwnerRef.current = 'leaving';
         setActionOwner('leaving');
-        leaveAfterDismissRef.current = 'submitted';
-        sheetRef.current?.dismiss();
+        void dismissBeforeLeaving(false);
         // The sheet lives at the provider root for the whole app session, so it is
         // never remounted — clearing here is what stops the next verdict opening
         // pre-filled with the last one.
@@ -227,9 +231,8 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
 
   const handleLeaveWithoutFeedback = () => {
     if (!surfingAvailable || !claimAction('leaving')) return;
-    // Ownership begins before dismiss(), not when its async completion arrives.
-    leaveAfterDismissRef.current = 'without-feedback';
-    sheetRef.current?.dismiss();
+    // Ownership begins before the dismissal request, not when it settles.
+    void dismissBeforeLeaving(true);
   };
 
   const title =
@@ -242,7 +245,6 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
       scrollable
       surface="solid"
       contentContainerStyle={styles.content}
-      onFullyDismissed={handleFullyDismissed}
       header={
         <SheetTopBar
           title={title}
