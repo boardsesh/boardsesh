@@ -18,6 +18,8 @@ import ClimbFrontDoor from '@/app/components/climb-front-door/climb-front-door';
 import { buildOgBoardRenderUrl, buildOverlayPreloadUrls } from '@/app/components/board-renderer/util';
 import { scheduleOgImageWarming } from '@/app/lib/warm-overlay-cache';
 import { getServerTranslation } from '@/app/lib/i18n/server';
+import { getLocale } from '@/app/lib/i18n/get-locale';
+import { localeHref } from '@/app/lib/i18n/locale-href';
 import { createBoardContentPageMetadata } from '@/app/lib/seo/metadata';
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
 import { selectCanonicalClimbAngle } from '@/app/lib/seo/canonical-climb-angle';
@@ -94,7 +96,7 @@ export async function generateMetadata(props: { params: Promise<BoardRouteParame
       catalogAngle: currentClimb.catalogAngle,
       angleStats,
     });
-    const climbUrl = buildCanonicalClimbViewUrl(boardDetails, canonicalAngle, parsedParams.climb_uuid, climbName);
+    const climbUrl = buildCanonicalClimbViewUrl(boardDetails, canonicalAngle, currentClimb.uuid, climbName);
 
     // The same name, grade and setter the title and description already use, so
     // the card and the snippet can never disagree about the climb they describe.
@@ -136,13 +138,14 @@ export default async function ClimbViewPage(props: { params: Promise<BoardRouteP
 
   try {
     const { parsedParams, isNumericFormat } = await parseRouteParams(params);
-    const needsSlugRedirect = isNumericFormat || isUuidOnly(params.climb_uuid);
 
     // Fetch the climb once. On the redirect path we use its name to build the
     // slug URL; on the normal path we pass it through to the SEO fragment and
     // the drawer.
     const currentClimb = await getClimb(parsedParams);
     if (!currentClimb) notFound();
+    const needsSlugRedirect =
+      isNumericFormat || isUuidOnly(params.climb_uuid) || currentClimb.uuid !== parsedParams.climb_uuid;
 
     // Send a Woods climb on a size it does not fit to one it does. 307, not
     // 308: the target comes from climb data, which a re-measure can change.
@@ -156,11 +159,11 @@ export default async function ClimbViewPage(props: { params: Promise<BoardRouteP
         target.sizeId,
         target.setIds,
         parsedParams.angle,
-        parsedParams.climb_uuid,
+        currentClimb.uuid,
         currentClimb.name,
       );
       if (!targetUrl) notFound();
-      redirect(targetUrl);
+      redirect(localeHref(targetUrl, await getLocale()));
     }
 
     if (needsSlugRedirect) {
@@ -194,7 +197,7 @@ export default async function ClimbViewPage(props: { params: Promise<BoardRouteP
           parsedParams.size_id,
           parsedParams.set_ids,
           parsedParams.angle,
-          parsedParams.climb_uuid,
+          currentClimb.uuid,
           currentClimb.name,
         ) ??
         constructClimbViewUrlWithSlugs(
@@ -204,7 +207,7 @@ export default async function ClimbViewPage(props: { params: Promise<BoardRouteP
           size.description,
           selectedSets.map((s) => s.name),
           parsedParams.angle,
-          parsedParams.climb_uuid,
+          currentClimb.uuid,
           currentClimb.name,
         );
       // `generateSlugFromText` (shared/play-view) is ASCII-only (`\w` doesn't
@@ -217,7 +220,7 @@ export default async function ClimbViewPage(props: { params: Promise<BoardRouteP
       // would 308 the page to itself forever.
       const requestedPath = `/${params.board_name}/${params.layout_id}/${params.size_id}/${params.set_ids}/${params.angle}/view/${params.climb_uuid}`;
       if (newUrl !== requestedPath) {
-        permanentRedirect(newUrl);
+        permanentRedirect(localeHref(newUrl, await getLocale()));
       }
     }
 
@@ -243,7 +246,7 @@ export default async function ClimbViewPage(props: { params: Promise<BoardRouteP
     const handoffPath = buildCanonicalClimbViewUrl(
       boardDetails,
       parsedParams.angle,
-      parsedParams.climb_uuid,
+      currentClimb.uuid,
       resolveClimbDisplayName(currentClimb.name, boardDetails.board_name),
     );
     const canonicalAngle = selectCanonicalClimbAngle({

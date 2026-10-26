@@ -4,6 +4,9 @@ import { renderToString } from 'react-dom/server';
 import ClimbViewSeoFragment from '@/app/components/climb-detail/climb-view-seo-fragment';
 import { resolveServerTree } from '@/app/lib/__tests__/helpers/resolve-server-tree';
 import { getClimbStatsForAllAngles, type ClimbStatsForAngle } from '@/app/lib/data/queries';
+import { getRedirectStatusCodeFromError, getURLFromRedirectError } from 'next/dist/client/components/redirect';
+import { isRedirectError } from 'next/dist/client/components/redirect-error';
+import { constructBoardSlugViewUrl, extractUuidFromSlug } from '@/app/lib/url-utils';
 
 /**
  * The climb front door's acceptance suite — the vitest form of #4369's curl
@@ -25,7 +28,12 @@ const climbRow = vi.hoisted(() => ({ description: null as string | null }));
 
 vi.mock('server-only', () => ({}));
 // `usePathname` for the store button island, which re-reads a QR landing per page.
-vi.mock('next/navigation', () => ({ notFound: vi.fn(), usePathname: () => null }));
+vi.mock('next/navigation', async () => ({
+  notFound: vi.fn(),
+  permanentRedirect: (await import('next/dist/client/components/redirect')).permanentRedirect,
+  usePathname: () => null,
+}));
+vi.mock('@/app/lib/i18n/get-locale', () => ({ getLocale: vi.fn(async () => 'en-US') }));
 
 vi.mock('@/app/lib/i18n/server', () => ({
   getServerTranslation: vi.fn(async () => ({
@@ -159,6 +167,12 @@ vi.mock('@/app/components/board-renderer/util', () => ({
 vi.mock('@/app/components/similar-climbs/similar-climbs-list', () => ({ default: () => null }));
 vi.mock('@/app/components/social/climb-social-section', () => ({ default: () => null }));
 vi.mock('@/app/components/beta-videos/boardsesh-beta-list', () => ({ default: () => null }));
+
+function requireRedirectError(outcome: unknown) {
+  expect(isRedirectError(outcome)).toBe(true);
+  if (!isRedirectError(outcome)) throw new Error('Expected a Next redirect error');
+  return outcome;
+}
 
 const pageModule = await import('../page');
 
@@ -392,33 +406,70 @@ describe('setter notes on the climb front door', () => {
 });
 
 describe('an alias URL', () => {
-  it('reads angle stats, similar climbs and beta for the canonical climb, not the husk uuid', async () => {
+  const canonicalUuid = 'abcdef1234567890abcdef1234567890';
+  const aliasUuid = '11112222333344445555666677778888';
+  const canonicalRow = {
+    uuid: canonicalUuid,
+    name: 'Test Climb',
+    difficulty: 'V5',
+    setter_username: 'setter-person',
+    quality_average: '4.20',
+    ascensionist_count: 12,
+    frames: 'p1r12',
+    description: null,
+  };
+
+  it.each([aliasUuid, `old-name-${aliasUuid}`])(
+    '308s alias %s within the same saved board and angle',
+    async (requestedClimb) => {
+      const { getClimb } = await import('@/app/lib/data/queries');
+      vi.mocked(getClimb).mockResolvedValueOnce(canonicalRow as never);
+      const outcome = await renderFrontDoor({ ...PARAMS, angle: '25', climb_uuid: requestedClimb }).catch(
+        (error: unknown) => error,
+      );
+      expect(getRedirectStatusCodeFromError(requireRedirectError(outcome))).toBe(308);
+      expect(getURLFromRedirectError(requireRedirectError(outcome))).toBe(
+        constructBoardSlugViewUrl('my-board', 25, canonicalUuid, 'Test Climb'),
+      );
+    },
+  );
+
+  it('preserves locale and redirects a non-Latin alias to the bare canonical UUID', async () => {
+    const { getClimb } = await import('@/app/lib/data/queries');
+    const { getLocale } = await import('@/app/lib/i18n/get-locale');
+    vi.mocked(getLocale).mockResolvedValueOnce('de');
+    vi.mocked(getClimb).mockResolvedValueOnce({ ...canonicalRow, name: 'Скала' } as never);
+    const outcome = await renderFrontDoor({ ...PARAMS, climb_uuid: aliasUuid }).catch((error: unknown) => error);
+    expect(getRedirectStatusCodeFromError(requireRedirectError(outcome))).toBe(308);
+    expect(getURLFromRedirectError(requireRedirectError(outcome))).toBe(
+      `/de${constructBoardSlugViewUrl('my-board', 40, canonicalUuid, 'Скала')}`,
+    );
+  });
+
+  it('renders the canonical landing once and reads its stats, similar climbs and beta', async () => {
     const { getClimb } = await import('@/app/lib/data/queries');
     const { getFrontDoorSimilarClimbs, getFrontDoorBetaLinks } = await import('@/app/lib/data/front-door-data.server');
-    // The URL names an old uuid; `getClimb` resolved it to the canonical row.
-    vi.mocked(getClimb).mockResolvedValueOnce({
-      uuid: 'canonical-climb',
-      name: 'Test Climb',
-      difficulty: 'V5',
-      setter_username: 'setter-person',
-      quality_average: '4.20',
-      ascensionist_count: 12,
-      frames: 'p1r12',
-      description: null,
-    } as unknown as Awaited<ReturnType<typeof getClimb>>);
+    vi.mocked(getClimb)
+      .mockResolvedValueOnce(canonicalRow as never)
+      .mockResolvedValueOnce(canonicalRow as never);
+    const outcome = await renderFrontDoor({ ...PARAMS, climb_uuid: aliasUuid }).catch((error: unknown) => error);
+    const target = getURLFromRedirectError(requireRedirectError(outcome));
+    if (!target) throw new Error('Expected canonical redirect');
+    const landingSegment = target.split('/').at(-1)!;
+    expect(extractUuidFromSlug(landingSegment)).toBe(canonicalUuid);
     vi.mocked(getClimbStatsForAllAngles).mockClear();
     vi.mocked(getFrontDoorSimilarClimbs).mockClear();
     vi.mocked(getFrontDoorBetaLinks).mockClear();
-
-    await renderFrontDoor({ ...PARAMS, climb_uuid: 'alias-climb' });
-
-    expect(vi.mocked(getClimbStatsForAllAngles)).toHaveBeenCalledWith('kilter', 'canonical-climb');
+    const html = await renderFrontDoor({ ...PARAMS, climb_uuid: landingSegment });
+    expect(html).toContain('<h1');
+    expect(vi.mocked(getClimbStatsForAllAngles)).toHaveBeenCalledWith('kilter', canonicalUuid);
     expect(vi.mocked(getFrontDoorSimilarClimbs)).toHaveBeenCalledWith(
-      expect.objectContaining({ climbUuid: 'canonical-climb' }),
+      expect.objectContaining({ climbUuid: canonicalUuid }),
     );
     expect(vi.mocked(getFrontDoorBetaLinks)).toHaveBeenCalledWith(
-      expect.objectContaining({ climbUuid: 'canonical-climb' }),
+      expect.objectContaining({ climbUuid: canonicalUuid }),
     );
+    expect(html).toContain(`https://app.boardsesh.com${target}`);
   });
 });
 

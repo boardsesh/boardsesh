@@ -22,8 +22,10 @@ const notFound = vi.fn(() => {
 });
 vi.mock('next/navigation', () => ({ redirect, permanentRedirect, notFound }));
 vi.mock('server-only', () => ({}));
+vi.mock('@/app/lib/i18n/get-locale', () => ({ getLocale: vi.fn(async () => 'en-US') }));
 
 let routeBoard = 'woods';
+let resolvedClimbUuid = CLIMB_UUID;
 let routeSizeId = 2;
 let routeIsNumeric = false;
 let climbCompatibleSizeIds: number[] | null = [1];
@@ -44,7 +46,7 @@ vi.mock('@/app/lib/url-utils.server', () => ({
 
 vi.mock('@/app/lib/data/queries', () => ({
   getClimb: vi.fn(async () => ({
-    uuid: CLIMB_UUID,
+    uuid: resolvedClimbUuid,
     name: 'Tiny Crimp',
     frames: 'p1r12',
     layoutId: 1,
@@ -105,6 +107,7 @@ beforeEach(() => {
   notFound.mockClear();
   vi.mocked(getBoardDetailsForBoard).mockClear();
   routeBoard = 'woods';
+  resolvedClimbUuid = CLIMB_UUID;
   routeSizeId = 2;
   routeIsNumeric = false;
   climbCompatibleSizeIds = [1];
@@ -126,6 +129,17 @@ describe('Woods climb on a size it does not fit', () => {
     expect(redirect).toHaveBeenCalledTimes(1);
     expect(permanentRedirect).not.toHaveBeenCalled();
     expect(redirect.mock.calls[0]![0]).toBe(tryConstructSlugViewUrl('woods', 1, 1, [1], 40, CLIMB_UUID, 'Tiny Crimp'));
+  });
+
+  it('corrects size and alias identity together before any permanent redirect', async () => {
+    resolvedClimbUuid = '11112222333344445555666677778888';
+    const { getLocale } = await import('@/app/lib/i18n/get-locale');
+    vi.mocked(getLocale).mockResolvedValueOnce('fr');
+    const outcome = await renderPage().catch((error: unknown) => error);
+    expect(outcome).toMatchObject({
+      digest: `NEXT_REDIRECT;replace;/fr${tryConstructSlugViewUrl('woods', 1, 1, [1], 40, resolvedClimbUuid, 'Tiny Crimp')};307;`,
+    });
+    expect(permanentRedirect).not.toHaveBeenCalled();
   });
 
   it('404s when the climb fits no Woods size', async () => {

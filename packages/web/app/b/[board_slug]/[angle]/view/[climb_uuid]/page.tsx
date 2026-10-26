@@ -1,15 +1,17 @@
 import React from 'react';
-import { notFound } from 'next/navigation';
+import { notFound, permanentRedirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { resolveBoardBySlug, boardToRouteParamsFromAngleSegment } from '@/app/lib/board-slug-utils';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import { getClimb, getClimbStatsForAllAngles } from '@/app/lib/data/queries';
 import { getFrontDoorBetaLinks, getFrontDoorSimilarClimbs } from '@/app/lib/data/front-door-data.server';
 import ClimbFrontDoor from '@/app/components/climb-front-door/climb-front-door';
-import { buildCanonicalClimbViewUrl, extractUuidFromSlug } from '@/app/lib/url-utils';
+import { buildCanonicalClimbViewUrl, constructBoardSlugViewUrl, extractUuidFromSlug } from '@/app/lib/url-utils';
 import { buildOgBoardRenderUrl, buildOverlayPreloadUrls } from '@/app/components/board-renderer/util';
 import { scheduleOgImageWarming } from '@/app/lib/warm-overlay-cache';
 import { getServerTranslation } from '@/app/lib/i18n/server';
+import { getLocale } from '@/app/lib/i18n/get-locale';
+import { localeHref } from '@/app/lib/i18n/locale-href';
 import { createBoardContentPageMetadata } from '@/app/lib/seo/metadata';
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
 import { selectCanonicalClimbAngle } from '@/app/lib/seo/canonical-climb-angle';
@@ -118,7 +120,7 @@ export async function generateMetadata(props: BoardSlugViewPageProps): Promise<M
     });
     const canonicalPath = shouldNoindex
       ? undefined
-      : buildCanonicalClimbViewUrl(boardDetails, canonicalAngle, parsedParams.climb_uuid, climbName);
+      : buildCanonicalClimbViewUrl(boardDetails, canonicalAngle, currentClimb.uuid, climbName);
 
     // The same name, grade and setter the title and description already use, so
     // the card and the snippet can never disagree about the climb they describe.
@@ -175,6 +177,18 @@ export default async function BoardSlugViewPage(props: BoardSlugViewPageProps) {
   try {
     const currentClimb = await getClimb(parsedParams);
     if (!currentClimb) notFound();
+
+    if (currentClimb.uuid !== parsedParams.climb_uuid) {
+      // Keep the saved-board context and requested angle while retiring the
+      // alias identity. The resolved row, not a separate alias lookup, wins.
+      const targetUrl = constructBoardSlugViewUrl(
+        params.board_slug,
+        parsedParams.angle,
+        currentClimb.uuid,
+        resolveClimbDisplayName(currentClimb.name, parsedParams.board_name),
+      );
+      permanentRedirect(localeHref(targetUrl, await getLocale()));
+    }
 
     const boardDetails = getBoardDetailsForBoard(parsedParams);
 
