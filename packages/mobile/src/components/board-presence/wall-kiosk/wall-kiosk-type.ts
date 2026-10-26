@@ -1,6 +1,6 @@
 /**
  * Distance-driven type scale for the wall kiosk. A wall-mounted iPad is read from
- * across a gym (5–8 m), so the hero name + grade key off the PHYSICAL screen size
+ * the mat or across a gym (3–8 m), so the hero name + grade key off the PHYSICAL screen size
  * (and, as a proxy, the pane's short side) rather than the leftover gutter — the
  * fix for "biggest text exactly when the art is smallest." Pure + unit-testable.
  *
@@ -49,7 +49,7 @@ export type WallKioskTypeScale = {
   /** The climb name; shrinks-to-fit at render but this is its target size. */
   nameFontSize: number;
   nameLineHeight: number;
-  /** Supporting lines (setter, angle, driver) — a readable step below the name. */
+  /** Supporting lines (the idle "last on the wall" line) — a readable step below the name. */
   metaFontSize: number;
   metaLineHeight: number;
   /** The state strip + "on the wall now" line — near-hero so the preview tell is
@@ -116,38 +116,28 @@ export function resolveWallKioskBandColumns(bandWidth: number): WallKioskBandCol
 // this floor can be diffed against each other — the geometry tests pin the
 // resulting heights, but only a reader can tell that `24` was the on-wall row.
 const TIGHT_GAP = 8; // spacing[2]
-const BLOCK_GAP = 12; // spacing[3]
 const BAND_STRIP_PADDING = 16; // state strip paddingVertical 8×2
 const BAND_CHIP_PADDING = 4; // grade chip paddingVertical 2×2
-const BAND_DRIVER_ROW = 36; // avatar + line
 const BAND_CONTROL_ROW = 56; // nav row / Light-this min height
 const BAND_BACK_TO_LIVE_ROW = 30;
 const BAND_CONTROLS_COLUMN = BAND_CONTROL_ROW + BAND_CONTROL_ROW + BAND_BACK_TO_LIVE_ROW;
-const BAND_STACKED_BLOCK_GAPS = BLOCK_GAP * 4; // between stacked blocks
+const BAND_STACKED_BLOCK_GAPS = 12 * 4; // spacing[3] between stacked blocks
 const BAND_SURFACE_PADDING = 32; // spacing[4] top + bottom
 const ON_WALL_ROW = 24; // fixed-size "on the wall now" row
 const STATE_LINE_INNER_GAP = 2;
-const ATTRIBUTION_ROW_MIN = 28; // avatar diameter floors the Lit-by / Sent-by row
-const ATTRIBUTION_ROW_PADDING = 2; // inside each row, not between them — that gap is TIGHT_GAP
 const HISTORY_TIMESTAMP_RATIO = 0.7; // history timestamp, relative to the state line
 
 /**
  * The minimum band HEIGHT that funds its content, so a band is never sized below
  * what its selected arrangement must show (else `overflow: hidden` clips the
- * scrubber below the fold). Two-column bands move the paired Lit-by/Sent-by block
- * into the controls column's existing vertical slack, so the new sender row does
- * not increase the long-standing two-column floor. Very wide, shallow bands use
- * three columns plus a fitted one-line name; their middle column combines the
- * state strip and short metadata so even the taller HISTORY state fits without
- * shrinking the board into a lossy rail.
+ * scrubber below the fold). The kiosk is read from 3–5 m, so a band carries the
+ * state strip, the grade, the name and the scrubber, and nothing smaller: the
+ * setter byline and the Lit-by / Sent-by rows are gone, and so is their height.
+ * Very wide, shallow bands use three columns plus a fitted one-line name; their
+ * middle column holds the state strip, sized for the taller HISTORY state.
  */
 export function bandContentFloor(scale: WallKioskTypeScale, bandWidth: number): number {
-  const columns = resolveWallKioskBandColumns(bandWidth);
-  // One Lit-by / Sent-by line: the avatar floors it, the copy grows it. Shared by
-  // every arrangement so a row is measured the same way wherever it is mounted.
-  const attributionRow = Math.max(ATTRIBUTION_ROW_MIN, scale.metaLineHeight) + ATTRIBUTION_ROW_PADDING;
-
-  if (columns === 3) {
+  if (resolveWallKioskBandColumns(bandWidth) === 3) {
     const primaryColumn = scale.gradeLineHeight + BAND_CHIP_PADDING + TIGHT_GAP + scale.nameLineHeight;
     const historyStateStrip =
       scale.stateLineHeight +
@@ -156,41 +146,14 @@ export function bandContentFloor(scale: WallKioskTypeScale, bandWidth: number): 
       BAND_STRIP_PADDING +
       TIGHT_GAP +
       ON_WALL_ROW;
-    const attributionColumn =
-      historyStateStrip +
-      BLOCK_GAP + // state strip → setter
-      scale.metaLineHeight +
-      BLOCK_GAP + // setter → paired attribution block
-      attributionRow +
-      TIGHT_GAP + // Lit by → Sent by
-      attributionRow;
-    return Math.round(Math.max(primaryColumn, attributionColumn, BAND_CONTROLS_COLUMN) + BAND_SURFACE_PADDING);
+    return Math.round(Math.max(primaryColumn, historyStateStrip, BAND_CONTROLS_COLUMN) + BAND_SURFACE_PADDING);
   }
 
-  // Only the stacked band still funds the Lit-by driver row here. From two
-  // columns up, WallChromeRegion renders WallIdentityBlock with
-  // `showAttribution={false}` and hoists the whole attribution block into its
-  // own column, so charging the identity column for a row it no longer renders
-  // just makes the band taller than its content and steals it from the board.
+  // One and two columns fund the same identity column: the state strip over the
+  // grade chip over a two-line name.
   const identityColumn =
-    scale.stateLineHeight +
-    BAND_STRIP_PADDING +
-    scale.gradeLineHeight +
-    BAND_CHIP_PADDING +
-    2 * scale.nameLineHeight +
-    scale.metaLineHeight +
-    (columns === 1 ? BAND_DRIVER_ROW : 0);
-  const baseFloor = Math.round(
-    Math.max(identityColumn, BAND_CONTROLS_COLUMN) + BAND_STACKED_BLOCK_GAPS + BAND_SURFACE_PADDING,
-  );
-
-  // Shared by the one- and two-column arrangements; the stacked band then adds
-  // the Sent-by row, because it has no sibling-column slack to put it in (its
-  // Lit-by row is already in `identityColumn` above). Common iPad panes are
-  // two/three-column bands. The row takes the driver-row height as a floor and
-  // grows with the copy: on a large external display heroScale can push the meta
-  // line past 36pt, and a fixed 36 would then undercut the row it is funding.
-  return columns === 1 ? baseFloor + Math.max(BAND_DRIVER_ROW, attributionRow) + TIGHT_GAP : baseFloor;
+    scale.stateLineHeight + BAND_STRIP_PADDING + scale.gradeLineHeight + BAND_CHIP_PADDING + 2 * scale.nameLineHeight;
+  return Math.round(Math.max(identityColumn, BAND_CONTROLS_COLUMN) + BAND_STACKED_BLOCK_GAPS + BAND_SURFACE_PADDING);
 }
 
 function clamp(min: number, value: number, max: number): number {

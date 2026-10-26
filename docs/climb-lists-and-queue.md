@@ -107,7 +107,7 @@ drives the wall, and the "flag on" behaviour below is built but nobody has it ye
 | Queue sheet | The queue button in the player, the mini-player | Makes the row current, clears the track (`src/components/play-drawer/use-queue-sheet-handlers.ts:61-70`). A suggestion row commits with the suggestions as the track (`:90-99`). | The queue, or the suggestions | Stops at the end of the queue |
 | Similar climbs | The strip under the board in the player | Since F2: commits, flagged `suggested`, inserted after the current climb, with the strip as the track, named "Similar climbs" (`use-play-selection-controller.ts:373`). The strip is the climbs this wall fits, plus the one tapped. A preview with the same track with Light on tap off, or when the player shows a climb from another board. | Walks the strip | Track end |
 | Workout preview | Record tab before a session, workout on | A trackless preview (`src/components/session-screen/pre-session/PreSessionView.tsx:245-251`). **Start** appends the workout behind the queue (`:301`). | Nothing | — |
-| Wall tab kiosk | Wall tab on an iPad bound to a board | No rows. Older and Newer step through the wall's own history locally; **Light this** lights the board without touching the queue (`src/components/board-presence/wall-kiosk/useWallPreview.ts:345-357`). | The wall's history | Returns to live |
+| Wall display kiosk | Wall display on a tablet bound to a board | No rows. Older and Newer step through the wall's own history locally; **Light this** lights the board without touching the queue (`src/components/board-presence/wall-kiosk/useWallPreview.ts:345-357`). | The wall's history | Returns to live |
 
 Since #6777, every "Walks …" in the Next column plays Up next first: the queue after the
 climb on the wall, Play next climbs at the top of it, then Play last ones. The list picks up
@@ -128,7 +128,7 @@ A preview walks only its list.
 | Queue sheet | Commits for the whole room | Commits, on purpose: it is the room's queue | Left only: delete | Climb menu |
 | Similar climbs | Commits for the whole room, after the current climb (F2) | Preview with the strip as the track (F2) | None | None |
 | Workout preview | No session yet | No session yet | None | None |
-| Wall tab kiosk | Lights the board; the room's current climb doesn't move | Same | None | None |
+| Wall display kiosk | Lights the board; the room's current climb doesn't move | Same | None | None |
 
 ### Retrying playlist pages
 
@@ -613,7 +613,7 @@ card once both are done. Every "walks … to the end card" under Today plays Up 
 | Queue sheet                              | Takes the wall (it is the room's queue); walks the queue.                                 | Unchanged: plays from the queue (rule 4). Sections get labels (F6).                                |
 | Similar climbs | Inserts the climb after the current one and plays from the strip; a preview in a crew or with Light on tap off (F2). | Plays from the similar list; nothing is added (F2, F3). |
 | Workout preview                          | Trackless preview: swipes do nothing.                                                     | Plays from the workout preview. Start still queues the workout until #5379.                        |
-| Wall tab kiosk                           | Steps through the wall's own history; Light this lights the board, not the room's climb.  | Unchanged. It is a view of one wall, not a list you play from.                                     |
+| Wall display kiosk                       | Steps through the wall's own history; Light this lights the board, not the room's climb.  | Unchanged. It is a view of one wall, not a list you play from.                                     |
 
 Closing the player returns you to the list you came from, at the same scroll position, on
 every row above (F5).

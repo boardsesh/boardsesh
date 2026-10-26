@@ -27,9 +27,8 @@ import {
   resolveDetailPaneWidth,
   WALL_COLUMN_WIDTH,
 } from '../../src/theme/size-class';
-import { isAccessoryHiddenRoute, tabsActiveSegment } from '../../src/lib/route-segments';
+import { isAccessoryHiddenRoute, isWallDisplayRoute } from '../../src/lib/route-segments';
 import { usePendingBoardSyncPoll } from '../../src/lib/integrations/use-pending-board-sync-poll';
-import { useKeepAwakeWhile } from '../../src/hooks/use-keep-awake-while';
 import { SIDEBAR_WIDTH } from '../../src/theme/layout';
 import { getAppEntryTab } from '../../src/lib/app-entry-route';
 
@@ -166,12 +165,11 @@ export default function TabLayout() {
   const verticalTabBar = useVerticalTabBar();
   const tabBarMinimizeBehavior = liquidGlassTabBar ? (verticalTabBar ? 'never' : 'onScrollDown') : undefined;
   const { width: windowWidth } = useWindowDimensions();
-  // The focused tab drives the wall-redundancy rule below: when the "On the
-  // Wall" destination is open, the ambient column is suppressed so the same feed
-  // isn't shown twice. `tabsActiveSegment` reads segment 1 without indexing the
-  // route-typed tuple (see route-segments.ts).
+  // The wall-redundancy rule below: while the full-screen Wall display covers the
+  // shell, the shell's own wall column and player pane stand down, so the same
+  // feed isn't rendered twice behind an opaque kiosk.
   const segments = useSegments();
-  const onWallTab = tabsActiveSegment(segments) === 'wall';
+  const wallDisplayOpen = isWallDisplayRoute(segments);
   // The hold-type and zone filter boards keep their controls at the bottom of the
   // screen, right where the accessory platter draws. Hide the platter there through
   // the native `bottomAccessoryHidden` prop instead of unmounting the host (#5055);
@@ -186,10 +184,6 @@ export default function TabLayout() {
     nativeAccessoryActive && isAccessoryHiddenRoute(segments) && !verticalTabBar
       ? ACCESSORY_HIDDEN_NATIVE_PROPS
       : ACCESSORY_SHOWN_NATIVE_PROPS;
-  // Kiosk stays lit: hold the screen awake while the "On the Wall" tab is the
-  // focused destination (iPad-only — /wall is unreachable elsewhere). Released
-  // on navigate-away and unmount so other tabs don't hold the lock.
-  useKeepAwakeWhile(onWallTab, 'wall');
   // The live wall gets a dedicated column in landscape (room for sidebar + browse
   // list + detail pane + wall) and falls back to a strip atop the pane in portrait
   // (see resolveWallSurface). Gated on a bound board so an empty column never sits
@@ -204,8 +198,8 @@ export default function TabLayout() {
   // Below the device-size floor (iPad mini / base 11" / Air 11" — see
   // WALL_PANEL_MIN_DEVICE_LONG_SIDE) `resolveEffectiveWallSurface` collapses the
   // column AND the strip to `none`; those devices reach the wall through the
-  // BoardSheet peek and the "On the Wall" tab, like the phone. Only the 11" Pro
-  // and 13" iPads keep the persistent panel.
+  // BoardSheet and its Wall display. Only the 11" Pro and 13" tablets keep the
+  // persistent panel.
   const wallSurface = resolveEffectiveWallSurface({
     width: windowWidth,
     widthClass: deviceLayout.widthClass,
@@ -269,18 +263,6 @@ export default function TabLayout() {
       }}
     />,
     <Tabs.Screen
-      key="wall"
-      name="wall"
-      // iPad-only "On the Wall" destination. `href: null` hides it from the JS
-      // Material tab bar (expo-router turns it into tabBarItemStyle:{display:'none'},
-      // which MaterialTabBar filters) and there's no NativeTabs.Trigger below, so it
-      // never appears as a 6th bottom tab on any phone. It's registered here anyway
-      // so the single JS Tabs navigator can route /wall INSIDE the shell content
-      // (keeping the sidebar + panes), reached from the iPad sidebar rail row; a root
-      // route would cover the shell instead.
-      options={{ href: null, title: t('mobile.nav.wall') }}
-    />,
-    <Tabs.Screen
       key="discover"
       name="discover"
       options={{
@@ -331,21 +313,20 @@ export default function TabLayout() {
             master-detail). Width-budgeted like the wall column (resolveDetailPaneSurface):
             the tightest regular portraits — iPad mini and 9.7–10.2" (744–810pt) — suppress
             it rather than squeeze the browse list below the readable floor; there the
-            compact bottom-sheet PlayDrawer takes over (see drawer-host-provider). Hidden
-            on the "On the Wall" tab: the kiosk IS the wall surface and needs the full
-            content pane, so a persistent (usually empty) detail pane there just squeezes
-            it — same redundancy guard as the wall column below. */}
-        {isRegular && showDetailPane && !onWallTab ? (
+            compact bottom-sheet PlayDrawer takes over (see drawer-host-provider). Not
+            mounted under the Wall display, which covers the whole shell — same
+            redundancy guard as the wall column below. */}
+        {isRegular && showDetailPane && !wallDisplayOpen ? (
           <View key="pane" style={[styles.playPane, { width: playPaneWidth, borderLeftColor: shellDividerColor }]}>
             <IpadPlayPane />
           </View>
         ) : null}
         {/* Dedicated "Now on the wall" column — landscape only, where the width
             budget leaves room for it (see resolveWallSurface). In portrait the wall
-            rides a strip atop the pane (IpadPlayPane) instead. Hidden while the
-            "On the Wall" tab is the focused destination — it shows the same feed,
-            so two live copies would be redundant. */}
-        {isRegular && showWallColumn && !onWallTab ? (
+            rides a strip atop the pane (IpadPlayPane) instead. Hidden under the
+            Wall display — it shows the same feed, so two live copies would be
+            redundant. */}
+        {isRegular && showWallColumn && !wallDisplayOpen ? (
           <View
             key="wall"
             style={[styles.wallColumn, { width: WALL_COLUMN_WIDTH, borderLeftColor: shellDividerColor }]}
@@ -407,13 +388,6 @@ export default function TabLayout() {
           <QueueBottomAccessory />
         </NativeTabs.BottomAccessory>
       ) : null}
-
-      {/* A hidden trigger still registers its route. Declare Wall exactly once,
-          keeping it first in the iPad sidebar and off the iPhone tab bar. */}
-      <NativeTabs.Trigger name="wall" hidden={!deviceLayout.isPad}>
-        <NativeTabs.Trigger.Icon sf={{ default: 'rectangle.portrait', selected: 'rectangle.portrait.fill' }} />
-        <NativeTabs.Trigger.Label>{t('mobile.nav.wall')}</NativeTabs.Trigger.Label>
-      </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="home">
         <NativeTabs.Trigger.Icon sf={TAB_SF_SYMBOLS.home} md="home" />

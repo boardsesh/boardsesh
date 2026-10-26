@@ -13,6 +13,7 @@ type PickerProps = { visible: boolean; onClose: () => void; onAngleChange: (angl
 const state = vi.hoisted(() => ({
   board: null as Board | null,
   isPad: false,
+  isTablet: false,
   widthClass: 'compact',
   os: 'ios',
   push: vi.fn(),
@@ -52,7 +53,7 @@ vi.mock('../../../lib/graphql/use-active-board', () => ({ useActiveBoard: () => 
 vi.mock('../../../lib/boards/use-set-board-angle', () => ({ useSetBoardAngle: () => state.change }));
 vi.mock('../../../lib/haptics', () => ({ hapticLight: state.haptic }));
 vi.mock('../../../hooks/use-device-layout', () => ({
-  useDeviceLayout: () => ({ isPad: state.isPad, widthClass: state.widthClass }),
+  useDeviceLayout: () => ({ isPad: state.isPad, isTablet: state.isTablet, widthClass: state.widthClass }),
 }));
 vi.mock('../../../hooks/use-board-angle-options', () => ({ useBoardAngleOptions: () => [30, 35, 40, 45] }));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 4: 16 } }));
@@ -200,6 +201,7 @@ const BOARD: Board = {
 beforeEach(() => {
   state.board = { ...BOARD };
   state.isPad = false;
+  state.isTablet = false;
   state.widthClass = 'compact';
   state.os = 'ios';
   state.push.mockReset();
@@ -279,6 +281,21 @@ describe('Climb list angle, history and options', () => {
       ]);
       unmount();
     }
+  });
+
+  it('offers the full-screen Wall display on a tablet, between View options and Switch board', () => {
+    state.isPad = true;
+    state.isTablet = true;
+    const { getByRole } = render(<ClimbListBoardActions onOpenHistory={vi.fn()} />);
+    expect(state.menu?.actions.map(({ label }) => label)).toEqual([
+      'mobile.listOptions.viewOptions',
+      'mobile.boardPresence.wallDisplay.open',
+      'mobile.boardPresence.switchBoard',
+    ]);
+    // Switch board still opens its own group.
+    expect(state.menu?.actions[2].dividerBefore).toBe(true);
+    fireEvent.click(getByRole('button', { name: 'mobile.boardPresence.wallDisplay.open' }));
+    expect(state.push).toHaveBeenCalledExactlyOnceWith('/wall-display');
   });
 
   it('cancels a phone picker without saving and applies only after confirmation', () => {

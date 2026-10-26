@@ -53,7 +53,7 @@ function cppDiagnosticPathname(pathname: string): string {
     '/climbs/create',
     '/profile',
     '/record',
-    '/wall',
+    '/wall-display',
     '/discover/smart/PROJECTS',
     '/boards/spray/holds',
   ].includes(pathname)
@@ -76,7 +76,7 @@ function cppDiagnosticPathname(pathname: string): string {
  * AppState race) the effect re-runs and re-activates.
  *
  * Also publishes the wall-kiosk seed (the active board's first climbs) from
- * here, at the root, so the iPad "On the Wall" hero lights up even if the
+ * here, at the root, so the iPad Wall display hero lights up even if the
  * Maestro flow never reaches the Climbs screen — its sidebar coordinate tap has
  * missed on the 11" iPad, which shipped a "WALL IS DARK" App Store shot. The
  * Climbs screen still re-publishes the same seed when it mounts (idempotent).

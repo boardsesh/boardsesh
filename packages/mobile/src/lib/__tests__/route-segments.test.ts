@@ -6,6 +6,7 @@ import {
   isAccessoryHostRoute,
   isAccessoryHiddenRoute,
   isTabsChromeRoute,
+  isWallDisplayRoute,
 } from '../route-segments';
 
 describe('isTabsRoute', () => {
@@ -74,6 +75,8 @@ describe('isAccessorySurfaceRoute', () => {
     // The walkthrough keeps the host mounted underneath, but nothing of the
     // accessory is on show over its opaque cover.
     expect(isAccessorySurfaceRoute(['onboarding'])).toBe(false);
+    // The Wall display covers the bottom accessory: the kiosk is the whole screen.
+    expect(isAccessorySurfaceRoute(['wall-display'])).toBe(false);
     expect(isAccessorySurfaceRoute([])).toBe(false);
   });
 
@@ -99,6 +102,9 @@ describe('isAccessoryHostRoute', () => {
     // And under the walkthrough, a transparentModal over the live tabs since #5654
     // (it was a fullScreenModal, which snapshots the tabs: rule 2).
     expect(isAccessoryHostRoute(['onboarding'])).toBe(true);
+    // And under the Wall display, another transparentModal straight over the tabs.
+    expect(isAccessoryHostRoute(['wall-display'])).toBe(true);
+    expect(isAccessoryHostRoute(['wall-display', 'settings'])).toBe(true);
   });
 
   it('is false on root pushes and modals, where the tab bar leaves too', () => {
@@ -127,10 +133,25 @@ describe('isAccessoryHostRoute', () => {
       ['auth', 'login'],
       ['gyms'],
       ['onboarding'],
+      ['wall-display'],
+      ['wall-display', 'users', '[userId]'],
     ];
     for (const segments of routes) {
       expect(isAccessoryHostRoute(segments)).toBe(isTabsChromeRoute(segments));
     }
+  });
+});
+
+describe('isWallDisplayRoute', () => {
+  it('is true on the Wall display and the pages pushed inside it', () => {
+    expect(isWallDisplayRoute(['wall-display'])).toBe(true);
+    expect(isWallDisplayRoute(['wall-display', 'settings', 'board-look'])).toBe(true);
+  });
+
+  it('is false everywhere else, the tabs included', () => {
+    expect(isWallDisplayRoute(['(tabs)', 'climbs'])).toBe(false);
+    expect(isWallDisplayRoute(['play'])).toBe(false);
+    expect(isWallDisplayRoute([])).toBe(false);
   });
 });
 
@@ -145,12 +166,6 @@ describe('isAccessoryHiddenRoute', () => {
     expect(isAccessoryHiddenRoute(['(tabs)', 'discover', 'zone'])).toBe(true);
   });
 
-  it('is true on the iPad "On the Wall" kiosk, whose hero already shows the lit climb', () => {
-    expect(isAccessoryHiddenRoute(['(tabs)', 'wall'])).toBe(true);
-    // Its pushed settings and user pages never present the platter anyway.
-    expect(isAccessoryHiddenRoute(['(tabs)', 'wall', 'settings'])).toBe(false);
-  });
-
   it('is false everywhere else', () => {
     expect(isAccessoryHiddenRoute(['(tabs)', 'climbs'])).toBe(false);
     expect(isAccessoryHiddenRoute(['(tabs)', 'climbs', 'setters'])).toBe(false);
@@ -158,6 +173,8 @@ describe('isAccessoryHiddenRoute', () => {
     expect(isAccessoryHiddenRoute(['(tabs)', 'discover', 'playlist-setters'])).toBe(false);
     expect(isAccessoryHiddenRoute(['(tabs)', 'home', 'holds'])).toBe(false);
     expect(isAccessoryHiddenRoute(['play'])).toBe(false);
+    // The Wall display covers the platter as a root modal; nothing to hide.
+    expect(isAccessoryHiddenRoute(['wall-display'])).toBe(false);
     expect(isAccessoryHiddenRoute([])).toBe(false);
   });
 });

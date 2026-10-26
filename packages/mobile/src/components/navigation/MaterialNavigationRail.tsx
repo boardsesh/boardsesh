@@ -103,7 +103,7 @@ function MaterialNavigationRailComponent({ showWallCell = true }: { showWallCell
 
   // Same destinations and i18n keys as IpadSidebar / MaterialTabBar so the rail,
   // the glass rail, and the phone bottom bar stay one nav system. Active/inactive
-  // glyphs mirror the bottom bar's `materialTabIcon` pairs (Wall gets the bulb).
+  // glyphs mirror the bottom bar's `materialTabIcon` pairs.
   const primary = useMemo<RailDestination[]>(
     () => [
       { segment: 'home', href: '/home', icon: 'home', iconInactive: 'home-outline', label: t('mobile.nav.home') },
@@ -113,15 +113,6 @@ function MaterialNavigationRailComponent({ showWallCell = true }: { showWallCell
         icon: 'record-circle',
         iconInactive: 'record-circle-outline',
         label: tSession('mobile.session.recordTab'),
-      },
-      // "On the Wall" sits with Record — the two "I'm at the board" activities.
-      // Tablet-only: it's a rail row here, never a phone tab.
-      {
-        segment: 'wall',
-        href: '/wall',
-        icon: 'lightbulb-on',
-        iconInactive: 'lightbulb-on-outline',
-        label: t('mobile.nav.wall'),
       },
       {
         segment: 'discover',

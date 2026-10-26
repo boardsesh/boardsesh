@@ -739,6 +739,24 @@ function RootLayout() {
                                                                                 animation: 'none',
                                                                               }}
                                                                             />
+                                                                            {/* The Wall display, the full-screen kiosk for an iPad
+                                                      mounted at the board (it replaced the iPad "On the Wall"
+                                                      tab). transparentModal like the player, NOT
+                                                      fullScreenModal (hard rule 2): it covers the sidebar, the
+                                                      tab bar and the bottom accessory while they stay live
+                                                      behind it, and paints its own opaque background. Its
+                                                      Settings and profile pages push inside its own Stack. */}
+                                                                            <Stack.Screen
+                                                                              name="wall-display"
+                                                                              options={{
+                                                                                presentation: 'transparentModal',
+                                                                                headerShown: false,
+                                                                                // Exit is the way out; a stray swipe at the wall
+                                                                                // must not close the kiosk.
+                                                                                gestureEnabled: false,
+                                                                                animation: 'fade',
+                                                                              }}
+                                                                            />
                                                                             <Stack.Screen
                                                                               name="play"
                                                                               options={{

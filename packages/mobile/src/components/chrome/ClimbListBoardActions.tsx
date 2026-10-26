@@ -5,6 +5,8 @@ import { useTranslation } from 'react-i18next';
 import { Appbar } from 'react-native-paper';
 import { useTheme } from '../../providers/theme-provider';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
+import { useDeviceLayout } from '../../hooks/use-device-layout';
+import { WALL_DISPLAY_HREF } from '../../lib/routing/wall-display-link';
 import { formatActiveBoardLabel } from '../../lib/boards/active-board-label';
 import { canAdjustBoardAngle, type BoardAngleFields } from '../../lib/boards/can-adjust-board-angle';
 import { ShowcaseAnchorView } from '../../lib/showcase-anchor';
@@ -24,7 +26,7 @@ type ClimbListBoardActionsProps = {
   material?: boolean;
 };
 
-type ListMenuRow = AppMenuAction & { id: 'viewOptions' | 'switchBoard' };
+type ListMenuRow = AppMenuAction & { id: 'viewOptions' | 'wallDisplay' | 'switchBoard' };
 
 type CountedBoard = NonNullable<Parameters<typeof formatActiveBoardLabel>[0]> & BoardAngleFields;
 
@@ -41,8 +43,9 @@ export function climbListBoardActionCount(activeBoard: CountedBoard | null | und
 
 /**
  * The Climbs list's trailing board actions. Liquid Glass: the one-tap angle,
- * history, then the ⋯ menu (View options, Switch board). Material leaves the
- * angle to the filter row's Angle chip, so it keeps history and the menu.
+ * history, then the ⋯ menu (View options, Switch board, and on a tablet the
+ * full-screen Wall display). Material leaves the angle to the filter row's
+ * Angle chip, so it keeps history and the menu.
  */
 export function ClimbListBoardActions({
   onOpenHistory,
@@ -56,10 +59,21 @@ export function ClimbListBoardActions({
   const { data: activeBoard } = useActiveBoard();
   const router = useRouter();
   const actionSize = useToolbarActionSize();
+  // The Wall display is for a tablet mounted at the board; a phone keeps its menu.
+  const { isTablet } = useDeviceLayout();
   const boardLabel = formatActiveBoardLabel(activeBoard);
   const rows = useMemo<ListMenuRow[]>(
     () => [
       { id: 'viewOptions', label: t('mobile.listOptions.viewOptions'), systemIcon: iconMap['view.options'].ios },
+      ...(isTablet
+        ? [
+            {
+              id: 'wallDisplay' as const,
+              label: tSession('mobile.boardPresence.wallDisplay.open'),
+              systemIcon: 'arrow.up.left.and.arrow.down.right',
+            },
+          ]
+        : []),
       {
         id: 'switchBoard',
         label: tSession('mobile.boardPresence.switchBoard'),
@@ -67,7 +81,7 @@ export function ClimbListBoardActions({
         dividerBefore: true,
       },
     ],
-    [t, tSession],
+    [t, tSession, isTablet],
   );
   const rowSignature = rows.map((row) => `${row.id}:${row.label}`).join('|');
   const handleOpenHistory = useCallback(() => {
@@ -126,6 +140,9 @@ export function ClimbListBoardActions({
             switch (rows[index]?.id) {
               case 'viewOptions':
                 router.push('/(tabs)/climbs/settings/climb-list');
+                break;
+              case 'wallDisplay':
+                router.push(WALL_DISPLAY_HREF);
                 break;
               case 'switchBoard':
                 router.push('/boards');

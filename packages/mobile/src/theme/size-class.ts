@@ -187,7 +187,7 @@ export function resolveWallSurface({
 /**
  * The wall surface after the device-size floor is applied: a `sheet-only` device
  * never mounts the column or strip (the wall lives in the bottom sheet + the
- * "On the Wall" tab instead), so it always resolves to `none`; a `panel-capable`
+ * full-screen Wall display instead), so it always resolves to `none`; a `panel-capable`
  * device defers to the live width logic in {@link resolveWallSurface}. The one
  * gate the shell and the play pane both consult, so they never diverge. Pure —
  * `wallDeviceClass` and the sidebar width are injected — for unit testing.

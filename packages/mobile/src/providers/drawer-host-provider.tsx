@@ -17,7 +17,7 @@ import { useClimbModerationEnabled } from './feature-flags-provider';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { router, useNavigationContainerRef, useSegments } from 'expo-router';
 import { Platform } from 'react-native';
-import { isTabsRoute, tabsActiveSegment } from '../lib/route-segments';
+import { isTabsRoute, isWallDisplayRoute } from '../lib/route-segments';
 import type { BoardName, Climb, UserBoard } from '@boardsesh/shared-schema';
 import { buildBoardPath, formatBoardDisplayName } from '@boardsesh/board-config';
 import { buildSessionBoardPath } from '../lib/boards/session-board-path';
@@ -410,13 +410,12 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // full-screen player. A ref lets the empty-dep `openPlayDrawer` read it without
   // churning its identity.
   const { home: currentClimbHome } = useCurrentClimbSurface();
-  // The "On the Wall" kiosk tab hides the shell's detail pane (it IS the wall
-  // surface and needs the full content pane), so a climb open there must fall back
-  // to the `/play` route instead of a paneTarget that lands in an unmounted pane.
-  // Folding it into `usesDetailPane` also makes the effect below clear a stale
-  // paneTarget when the wall tab becomes focused.
+  // The full-screen Wall display covers the shell and its detail pane, so a climb
+  // opened there falls back to the `/play` route above it instead of a paneTarget
+  // that lands in an unmounted pane. Folding it into `usesDetailPane` also makes
+  // the effect below clear a stale paneTarget when the display opens.
   const routeSegments = useSegments();
-  const onWallTab = tabsActiveSegment(routeSegments) === 'wall';
+  const wallDisplayOpen = isWallDisplayRoute(routeSegments);
   // The phone split (iPhone Duo opened in landscape) hosts the same pane on the
   // leading half of each tab. Never true on a tablet. A root page over the tabs
   // hides the split's pane, so taps there
@@ -426,7 +425,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const { paneMounted, tapsOpenPane: usesDetailPane } = resolvePlayerSurface({
     tabletPane: currentClimbHome === 'detailPane',
     phoneSplit,
-    onWallTab,
+    wallDisplayOpen,
     tabsUncovered: isTabsRoute(routeSegments),
     paneTaken: splitPaneTaken,
   });

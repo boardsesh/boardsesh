@@ -1488,7 +1488,9 @@ describe('custom product page captures', () => {
               coverage.scenes.status.boardId,
             );
             const finalRoute = new URL(registry[finalScene].route, 'https://capture.invalid');
-            expect(finalRoute.pathname).toBe(target === 'spray' ? '/boards/spray/holds' : ipad ? '/wall' : '/climbs');
+            expect(finalRoute.pathname).toBe(
+              target === 'spray' ? '/boards/spray/holds' : ipad ? '/wall-display' : '/climbs',
+            );
             if (target === 'spray')
               expect(finalRoute.searchParams.get('wallUuid')).toBe(coverage.scenes.island.boardId);
             if (!ipad && target !== 'spray') expect(finalRoute.searchParams.get('screenshotOpenFirst')).toBe('1');

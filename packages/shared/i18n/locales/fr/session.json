@@ -28,9 +28,7 @@
     "open": "Sur le mur",
     "railDark": "Rien d'allumé pour l'instant",
     "openAria": "Voir ce qui est sur le mur",
-    "openAriaWithClimb": "Voir ce qui est sur le mur : {{name}}",
-    "litByLine": "Allumé par {{name}}",
-    "sentByLabel": "Enchaîné par"
+    "openAriaWithClimb": "Voir ce qui est sur le mur : {{name}}"
   },
   "detail": {
     "subtitleSends_one": "{{count}} croix",
@@ -606,7 +604,13 @@
         "headerSwitcherHintClose": "Masque les autres boards"
       },
       "kilterHistorySource": "Allumé via Kilter",
-      "retryHistory": "Réessayer de charger l’historique"
+      "retryHistory": "Réessayer de charger l’historique",
+      "wallDisplay": {
+        "open": "Affichage mural",
+        "openHint": "Affiche le bloc au mur en plein écran, lisible depuis le tapis.",
+        "exit": "Quitter",
+        "exitA11y": "Quitter l'affichage mural"
+      }
     },
     "toast": {
       "sessionEnded": "Session terminée",

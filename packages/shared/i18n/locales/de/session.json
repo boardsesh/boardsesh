@@ -28,9 +28,7 @@
     "open": "An der Wand",
     "railDark": "Gerade ist nichts beleuchtet",
     "openAria": "Zeigen, was an der Wand ist",
-    "openAriaWithClimb": "Zeigen, was an der Wand ist: {{name}}",
-    "litByLine": "Beleuchtet von {{name}}",
-    "sentByLabel": "Getoppt von"
+    "openAriaWithClimb": "Zeigen, was an der Wand ist: {{name}}"
   },
   "detail": {
     "subtitleSends_one": "{{count}} Begehung",
@@ -606,7 +604,13 @@
         "headerSwitcherHintClose": "Blendet die anderen Boards aus"
       },
       "kilterHistorySource": "Über Kilter beleuchtet",
-      "retryHistory": "Verlauf erneut laden"
+      "retryHistory": "Verlauf erneut laden",
+      "wallDisplay": {
+        "open": "Wandanzeige",
+        "openHint": "Zeigt den Boulder an der Wand im Vollbild, lesbar von der Matte.",
+        "exit": "Beenden",
+        "exitA11y": "Wandanzeige beenden"
+      }
     },
     "toast": {
       "sessionEnded": "Session beendet",

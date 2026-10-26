@@ -1,4 +1,4 @@
-// Screenshot mode ONLY: a mobile-local seed for the iPad "On the Wall" kiosk, so
+// Screenshot mode ONLY: a mobile-local seed for the iPad Wall display kiosk, so
 // the App Store capture shows a lit climb + recent history instead of the empty
 // "Connect a board" state.
 //
@@ -135,7 +135,7 @@ function highestClimbSeq(climbs: readonly BoardPresenceClimb[]): number {
  * Publish the climbs to show on the wall (newest first — index 0 is the lit
  * climb). Called from ScreenshotBoardAutoActivator (root) and the Climbs screen
  * with the active board's real climbs. The seed persists at module scope, so it
- * survives any screen unmounting before the flow reaches the wall tab.
+ * survives any screen unmounting before the flow reaches the Wall display.
  *
  * `boardKey` names the board the climbs came from (its uuid). When it differs
  * from the previous publish's, the capture has switched walls: the old wall's

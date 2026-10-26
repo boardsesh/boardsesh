@@ -28,9 +28,7 @@
     "open": "On the wall",
     "railDark": "Nothing lit right now",
     "openAria": "See what's on the wall",
-    "openAriaWithClimb": "See what's on the wall: {{name}}",
-    "litByLine": "Lit by {{name}}",
-    "sentByLabel": "Sent by"
+    "openAriaWithClimb": "See what's on the wall: {{name}}"
   },
   "detail": {
     "subtitleSends_one": "{{count}} send",
@@ -606,7 +604,13 @@
         "headerSwitcherHintClose": "Hides the other boards"
       },
       "kilterHistorySource": "Displayed via Kilter",
-      "retryHistory": "Try loading history again"
+      "retryHistory": "Try loading history again",
+      "wallDisplay": {
+        "open": "Wall display",
+        "openHint": "Shows the climb on the wall full screen, big enough to read from the mat.",
+        "exit": "Exit",
+        "exitA11y": "Exit wall display"
+      }
     },
     "toast": {
       "sessionEnded": "Session ended",

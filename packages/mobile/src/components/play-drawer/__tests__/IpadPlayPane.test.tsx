@@ -125,9 +125,9 @@ describe('IpadPlayPane wall surface', () => {
     expect(captured.playDrawerProps?.paneTopInset).toBe(true);
   });
 
-  it('shows no strip while the "On the Wall" tab is the focused destination', () => {
-    // The tab already shows the wall feed, so the ambient strip steps aside.
-    cfg.segments = ['(tabs)', 'wall'];
+  it('shows no strip while the Wall display covers the shell', () => {
+    // The display already shows the wall feed, so the ambient strip steps aside.
+    cfg.segments = ['wall-display'];
     const { container } = render(<IpadPlayPane />);
     expect(container.querySelector('[data-wall-strip="true"]')).toBeNull();
     expect(captured.playDrawerProps?.paneTopInset).toBe(true);

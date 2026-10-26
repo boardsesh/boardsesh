@@ -15,25 +15,26 @@ import type { RoutePlayerSnapshot } from '../components/play-drawer/route-player
  *   can fill the pane with its own content (the workout preview while one is
  *   built), so a tap then opens `/play` instead of changing an unseen player.
  *
- * The tablet shell's answer is `tabletPane` and not on the wall tab, for both.
+ * The tablet shell's answer is `tabletPane`, for both, unless the Wall display
+ * covers the shell: a tap there opens `/play` above the display.
  */
 export function resolvePlayerSurface({
   tabletPane,
   phoneSplit,
-  onWallTab,
+  wallDisplayOpen,
   tabsUncovered,
   paneTaken = false,
 }: {
   tabletPane: boolean;
   phoneSplit: boolean;
-  onWallTab: boolean;
+  wallDisplayOpen: boolean;
   tabsUncovered: boolean;
   /** A screen's own content fills the split's pane (`usePhoneSplitPaneTaken`). */
   paneTaken?: boolean;
 }): { paneMounted: boolean; tapsOpenPane: boolean } {
   return {
-    paneMounted: (tabletPane || phoneSplit) && !onWallTab,
-    tapsOpenPane: (tabletPane || (phoneSplit && tabsUncovered && !paneTaken)) && !onWallTab,
+    paneMounted: (tabletPane || phoneSplit) && !wallDisplayOpen,
+    tapsOpenPane: (tabletPane || (phoneSplit && tabsUncovered && !paneTaken)) && !wallDisplayOpen,
   };
 }
 

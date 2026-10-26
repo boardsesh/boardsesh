@@ -199,7 +199,7 @@ name: app-store screenshots
 
 # NOTE: this flow is iPhone-only. iPad deep links don't navigate on the simulator
 # (the scheme-confirm dialog swallows the openurl), so iPad captures — including the
-# On the Wall kiosk — run from app-store-ipad.yaml via sidebar taps, which the
+# Wall display kiosk — run from app-store-ipad.yaml via native taps, which the
 # orchestrator selects for iPad devices (iosSourceFlowFile).
 
 # Board view — the signature feature: the wall with holds lit. The screenshot-mode param

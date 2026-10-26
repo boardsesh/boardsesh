@@ -28,9 +28,7 @@
     "open": "En el muro",
     "railDark": "Nada encendido ahora",
     "openAria": "Ver qué hay en el muro",
-    "openAriaWithClimb": "Ver qué hay en el muro: {{name}}",
-    "litByLine": "Encendido por {{name}}",
-    "sentByLabel": "Encadenado por"
+    "openAriaWithClimb": "Ver qué hay en el muro: {{name}}"
   },
   "detail": {
     "subtitleSends_one": "{{count}} encadene",
@@ -606,7 +604,13 @@
         "headerSwitcherHintClose": "Oculta los otros plafones"
       },
       "kilterHistorySource": "Iluminado desde Kilter",
-      "retryHistory": "Volver a cargar el historial"
+      "retryHistory": "Volver a cargar el historial",
+      "wallDisplay": {
+        "open": "Pantalla de muro",
+        "openHint": "Muestra el bloque del muro a pantalla completa, legible desde la colchoneta.",
+        "exit": "Salir",
+        "exitA11y": "Salir de la pantalla de muro"
+      }
     },
     "toast": {
       "sessionEnded": "Sesión terminada",

@@ -725,7 +725,8 @@ function cppRuntimeNavigationCommands(
       };
     }
   }
-  if (coverage.target !== 'spray') commands.kiosk = { ...commands.island, route: '/wall?screenshotCppScene=kiosk' };
+  if (coverage.target !== 'spray')
+    commands.kiosk = { ...commands.island, route: '/wall-display?screenshotCppScene=kiosk' };
   if (coverage.target !== 'spray') {
     const tabletStatus = new URL(commands.island.route, 'http://localhost');
     tabletStatus.searchParams.set('screenshotCppScene', 'status-ipad');
@@ -3224,21 +3225,30 @@ export function assertIosCampaignCaptureReady(
 export function buildIosSidebarMaestroEnv(locale: Locale): string[] {
   const directory = join(ROOT_DIR, 'packages/shared/i18n/locales', locale);
   const common = JSON.parse(readFileSync(join(directory, 'common.json'), 'utf8')) as {
-    mobile: { nav: { home: string; climbs: string; wall: string; profile: string } };
+    mobile: { nav: { home: string; climbs: string; profile: string } };
   };
   const session = JSON.parse(readFileSync(join(directory, 'session.json'), 'utf8')) as {
-    mobile: { session: { recordTab: string } };
+    mobile: {
+      session: { recordTab: string };
+      boardPresence: { wallDisplay: { open: string; exitA11y: string } };
+    };
   };
   const playlists = JSON.parse(readFileSync(join(directory, 'playlists.json'), 'utf8')) as {
     bottomTabBar: { discover: string };
   };
+  const climbs = JSON.parse(readFileSync(join(directory, 'climbs.json'), 'utf8')) as {
+    mobile: { listOptions: { title: string } };
+  };
   const labels = {
     SCREENSHOT_SIDEBAR_HOME_LABEL: common.mobile.nav.home,
     SCREENSHOT_SIDEBAR_CLIMBS_LABEL: common.mobile.nav.climbs,
-    SCREENSHOT_SIDEBAR_WALL_LABEL: common.mobile.nav.wall,
     SCREENSHOT_SIDEBAR_RECORD_LABEL: session.mobile.session.recordTab,
     SCREENSHOT_SIDEBAR_DISCOVER_LABEL: playlists.bottomTabBar.discover,
     SCREENSHOT_SIDEBAR_PROFILE_LABEL: common.mobile.nav.profile,
+    // The Wall display opens from the Climbs ⋯ menu, not the sidebar.
+    SCREENSHOT_CLIMBS_OPTIONS_LABEL: climbs.mobile.listOptions.title,
+    SCREENSHOT_WALL_DISPLAY_LABEL: session.mobile.boardPresence.wallDisplay.open,
+    SCREENSHOT_WALL_DISPLAY_EXIT_LABEL: session.mobile.boardPresence.wallDisplay.exitA11y,
     // These UIKit-owned controls follow the simulator system language, not the JS catalog.
     // Store capture simulators use English; an unsupported native language fails closed.
     SCREENSHOT_SIDEBAR_HIDE_LABEL: 'Hide Sidebar',

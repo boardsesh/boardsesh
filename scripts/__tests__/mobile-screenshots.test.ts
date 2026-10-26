@@ -1041,7 +1041,7 @@ describe('renderMaestroFlowForIosDevice', () => {
     }
   });
 
-  it('drives all six native iPad destinations by localized labels and proves selection', () => {
+  it('drives the native iPad sidebar by localized labels and proves selection', () => {
     const ipadFlow = readFileSync('packages/mobile/.maestro/app-store-ipad.yaml', 'utf8');
     const documents = parseAllDocuments(ipadFlow);
     for (const document of documents) expect(document.errors).toEqual([]);
@@ -1058,11 +1058,14 @@ describe('renderMaestroFlowForIosDevice', () => {
       extendedWaitUntil?: { visible: string };
       assertNotVisible?: string;
     }>;
+    // Sidebar navigations open the collapsed sidebar first; the Wall display's own
+    // retries (open it from the Climbs menu, leave it) do not.
     const navigation = commands.flatMap((command) =>
-      command.retry?.commands.some((nested) => nested.tapOn) ? [command.retry.commands] : [],
+      command.retry?.commands.some((nested) => nested.runFlow) ? [command.retry.commands] : [],
     );
     expect(navigation).toHaveLength(6);
-    for (const [index, segment] of ['CLIMBS', 'HOME', 'WALL', 'RECORD', 'DISCOVER', 'PROFILE'].entries()) {
+    // The Wall display is no sidebar destination: its scene goes back to Climbs.
+    for (const [index, segment] of ['CLIMBS', 'HOME', 'CLIMBS', 'RECORD', 'DISCOVER', 'PROFILE'].entries()) {
       const label = '${SCREENSHOT_SIDEBAR_' + segment + '_LABEL}';
       expect(navigation[index][0].runFlow).toEqual({
         when: { visible: '${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}' },
@@ -1115,18 +1118,27 @@ describe('renderMaestroFlowForIosDevice', () => {
 
   it('provides the current native sidebar labels for every supported locale', () => {
     const expected = {
-      'en-US': ['Home', 'Climbs', 'On the Wall', 'Session', 'Discover', 'Profile'],
-      es: ['Inicio', 'Bloques', 'En el muro', 'Sesión', 'Descubre', 'Perfil'],
-      fr: ['Accueil', 'Blocs', 'Sur le mur', 'Session', 'Découvrir', 'Profil'],
-      de: ['Start', 'Boulder', 'An der Wand', 'Session', 'Entdecken', 'Profil'],
+      'en-US': ['Home', 'Climbs', 'Session', 'Discover', 'Profile'],
+      es: ['Inicio', 'Bloques', 'Sesión', 'Descubre', 'Perfil'],
+      fr: ['Accueil', 'Blocs', 'Session', 'Découvrir', 'Profil'],
+      de: ['Start', 'Boulder', 'Session', 'Entdecken', 'Profil'],
+    };
+    const wallDisplay = {
+      'en-US': ['Climb list options', 'Wall display', 'Exit wall display'],
+      es: ['Opciones de la lista de bloques', 'Pantalla de muro', 'Salir de la pantalla de muro'],
+      fr: ['Options de la liste de blocs', 'Affichage mural', "Quitter l'affichage mural"],
+      de: ['Optionen für die Boulderliste', 'Wandanzeige', 'Wandanzeige beenden'],
     };
     for (const locale of allAppLocales) {
       const env = buildIosSidebarMaestroEnv(locale);
-      expect(env).toHaveLength(16);
+      expect(env).toHaveLength(20);
       expect(env).toContain('SCREENSHOT_SIDEBAR_HIDE_LABEL=Hide Sidebar');
       expect(env).toContain('SCREENSHOT_SIDEBAR_TOGGLE_LABEL=Toggle sidebar');
-      for (const [index, segment] of ['HOME', 'CLIMBS', 'WALL', 'RECORD', 'DISCOVER', 'PROFILE'].entries()) {
+      for (const [index, segment] of ['HOME', 'CLIMBS', 'RECORD', 'DISCOVER', 'PROFILE'].entries()) {
         expect(env).toContain('SCREENSHOT_SIDEBAR_' + segment + '_LABEL=' + expected[locale][index]);
+      }
+      for (const [index, name] of ['CLIMBS_OPTIONS', 'WALL_DISPLAY', 'WALL_DISPLAY_EXIT'].entries()) {
+        expect(env).toContain('SCREENSHOT_' + name + '_LABEL=' + wallDisplay[locale][index]);
       }
     }
   });

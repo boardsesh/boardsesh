@@ -15,6 +15,9 @@ const PLAYER_ROUTE = 'play';
 // backing (docs/mobile-sheets-vs-routes.md rule 2), so where it IS over the live
 // tabs the tab bar never leaves while it is up.
 const ONBOARDING_ROUTE = 'onboarding';
+// The full-screen Wall display for an iPad mounted at the board. Another
+// transparentModal over the live tabs, like the player.
+const WALL_DISPLAY_ROUTE = 'wall-display';
 
 /** True when the focused route lives inside the bottom-tab navigator. */
 export function isTabsRoute(segments: Segments): boolean {
@@ -24,14 +27,16 @@ export function isTabsRoute(segments: Segments): boolean {
 /**
  * True when the native bottom tab CHROME (the tab bar) is present and STABLE — on any
  * route inside the tabs (including pushed sub-routes, which keep the tab bar), OR under
- * the player route (`/play`) or the walkthrough (`/onboarding`).
+ * the player route (`/play`), the walkthrough (`/onboarding`) or the Wall display
+ * (`/wall-display`, with its settings and profile pages).
  *
- * Both are `transparentModal`s (app/_layout.tsx): the tabs screen stays LIVE behind
+ * All three are `transparentModal`s (app/_layout.tsx): the tabs screen stays LIVE behind
  * them, so UIKit never snapshots the presenting view controller. That lets the tab-bar
  * metrics stay put across their open/close instead of churning. The walkthrough joined
  * the player when it stopped being a `fullScreenModal` (#5654): unmounting the
  * accessory under a transparent cover would detach it while the bar is still up, which
  * is the #5055 failure below.
+ * The Wall display joined for the same reason: it opens straight over the live tabs.
  *
  * The walkthrough's clause is now deliberately WIDER than the truth. Since Settings
  * became a root destination, its replay rows push `/onboarding` over `/settings` —
@@ -61,6 +66,7 @@ export function isTabsChromeRoute(segments: Segments): boolean {
     segments[0] === TABS_GROUP ||
     segments[0] === PLAYER_ROUTE ||
     segments[0] === ONBOARDING_ROUTE ||
+    segments[0] === WALL_DISPLAY_ROUTE ||
     segments[0] === 'privacy-consent'
   );
 }
@@ -87,6 +93,15 @@ export function isTopLevelTabRoute(segments: Segments): boolean {
  */
 export function isPlayerRoute(segments: Segments): boolean {
   return segments[0] === PLAYER_ROUTE;
+}
+
+/**
+ * True when the full-screen Wall display (`/wall-display`) or a page pushed inside
+ * it is focused. It covers the tab bar, the sidebar and the bottom accessory, so
+ * the shell behind it skips its own wall surfaces and player pane.
+ */
+export function isWallDisplayRoute(segments: Segments): boolean {
+  return segments[0] === WALL_DISPLAY_ROUTE;
 }
 
 /**
@@ -153,17 +168,15 @@ const ACCESSORY_HIDDEN_TAB_ROUTES: Readonly<Record<string, ReadonlySet<string>>>
 
 /**
  * True where the native accessory platter must be HIDDEN while its host stays
- * mounted: the filter boards above, and the iPad "On the Wall" kiosk. Hiding goes through react-native-screens' `bottomAccessoryHidden` prop,
- * not an unmount: the React host and its content stay alive, and the patched
+ * mounted: the filter boards above. (The Wall display needs no entry: it is a root
+ * modal that covers the platter.) Hiding goes through react-native-screens'
+ * `bottomAccessoryHidden` prop, not an unmount: the React host and its content stay alive, and the patched
  * `applyBottomAccessoryVisibility` schedules the tab-bar relayout on that edge too
  * (patches/react-native-screens@4.26.2.patch), which is the #5055 fix. This is a
  * narrow exception to `isAccessoryHostRoute`, never a replacement for it.
  */
 export function isAccessoryHiddenRoute(segments: Segments): boolean {
   const activeTab = tabsActiveSegment(segments);
-  // The iPad "On the Wall" kiosk shows the lit climb as its hero already: the
-  // platter would repeat it, and a tap would put the player over the kiosk.
-  if (activeTab === 'wall') return isTopLevelTabRoute(segments);
   const hiddenRoutes = ACCESSORY_HIDDEN_TAB_ROUTES[activeTab ?? ''];
   return !!hiddenRoutes && hiddenRoutes.has(segments[2] ?? '');
 }

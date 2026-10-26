@@ -130,6 +130,27 @@ describe('redirectSystemPath', () => {
     expect(redirectSystemPath({ path: '/preview/production', initial: true })).toBe('/preview/production');
   });
 
+  // The iPad "On the Wall" tab became the full-screen Wall display.
+  it.each([
+    'com.boardsesh.app://wall',
+    'com.boardsesh.app:///wall',
+    'com.boardsesh.app://wall/',
+    'com.boardsesh.app://wall?screenshotCppScene=kiosk',
+    '/wall',
+    '/(tabs)/wall',
+  ])('opens the Wall display for the old wall tab link: %s', (path) => {
+    getShareExtensionKeyMock.mockReturnValue('SHAREKEY');
+    expect(redirectSystemPath({ path, initial: false })).toBe('/wall-display');
+  });
+
+  it.each(['com.boardsesh.app://wall-display', '/walls', 'https://boardsesh.com/b/my-wall/40/list?wall=abc'])(
+    'leaves a link that only mentions a wall alone: %s',
+    (path) => {
+      getShareExtensionKeyMock.mockReturnValue('SHAREKEY');
+      expect(redirectSystemPath({ path, initial: false })).toBe(path);
+    },
+  );
+
   it('does not treat a non-callback deep link on the same scheme as the callback', () => {
     getShareExtensionKeyMock.mockReturnValue('SHAREKEY');
     expect(redirectSystemPath({ path: 'com.boardsesh.app://join/some-session', initial: true })).toBe(

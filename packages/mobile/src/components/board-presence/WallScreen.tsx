@@ -7,7 +7,7 @@ import { useBoardPresenceControls } from '../../providers/board-presence-provide
 import { useTheme } from '../../providers/theme-provider';
 
 /**
- * The "On the Wall" tab body — a wall-mounted iPad KIOSK. Its job is to DISPLAY
+ * The Wall display body — a wall-mounted iPad KIOSK. Its job is to DISPLAY
  * what climb is currently lit on the physical wall, big and glanceable from across
  * a gym, and to step back/forward through the wall's own history to restore an
  * accidental change (preview-then-confirm). It is NOT a search/driving surface —

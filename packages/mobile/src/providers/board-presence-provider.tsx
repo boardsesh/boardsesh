@@ -289,7 +289,7 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
   // kept (constant true here) so consumers and the outside-provider fallback can
   // still branch on provider availability.
   const enabled = true;
-  // Screenshot mode: bind a sentinel board on boot so the iPad "On the Wall"
+  // Screenshot mode: bind a sentinel board on boot so the iPad Wall display
   // kiosk renders live (its `isWallLive` gate is `boardId !== null`) with the
   // seeded feed below, instead of the empty "Connect a board" state. The simulator
   // has no Bluetooth to set a real boardId. Dead-strips in normal builds (inlined

@@ -103,6 +103,7 @@ vi.mock('../../../hooks/use-effective-surface-mode', () => ({
 }));
 
 // Self-subscribing (React Query, Reanimated, expo-router); covered by its own suite.
+vi.mock('../WallDisplayEntry', () => ({ WallDisplayEntry: () => null }));
 vi.mock('../../live-sessions/BoardLiveSessionsBlock', () => ({ BoardLiveSessionsBlock: () => null }));
 vi.mock('../../../lib/graphql/hooks/use-gym-boards', () => ({
   useGymBoards: () => ({ data: undefined }),

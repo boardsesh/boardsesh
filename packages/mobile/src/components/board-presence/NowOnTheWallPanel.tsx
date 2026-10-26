@@ -58,6 +58,7 @@ import { ClimbListRow, type ClimbListRowRenderContentArgs } from '../ClimbListRo
 import { PressableAvatar } from '../PressableAvatar';
 import { BoardDriverAvatar } from './BoardDriverAvatar';
 import { BoardLiveSessionsBlock } from '../live-sessions/BoardLiveSessionsBlock';
+import { WallDisplayEntry } from './WallDisplayEntry';
 import { AccessoryClimbThumbnail } from '../queue-control/AccessoryClimbThumbnail';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
@@ -730,7 +731,7 @@ function NowOnTheWallPanelComponent(
           />
         ) : null}
         {/* Showcase anchors (screenshot mode): the board sheet only, never the
-            iPad kiosk column or the Wall tab, so one panel reports each name. */}
+            iPad kiosk column or the Wall display, so one panel reports each name. */}
         <ShowcaseAnchorView name="now-on-wall" enabled={variant === 'sheet'} testID={cppWallHeroTestID}>
           {canUseInteractiveRows && rowBoard && currentClimb ? (
             <InteractiveHeroRow
@@ -762,6 +763,9 @@ function NowOnTheWallPanelComponent(
             />
           )}
         </ShowcaseAnchorView>
+        {/* Sheet only, and only on a tablet (the entry decides): the full-screen
+            Wall display for a tablet mounted at the board. */}
+        {variant === 'sheet' ? <WallDisplayEntry onBeforeNavigate={leaveSheet} /> : null}
         {/* Sheet only: the column variant is also the wall-mounted iPad kiosk,
             where a passer-by's "Join" or "Start" would act on the kiosk's
             account. */}

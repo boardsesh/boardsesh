@@ -22,17 +22,23 @@ function queueItem(climbUuid: string): ClimbQueueItem {
 }
 
 describe('resolvePlayerSurface', () => {
-  it('answers exactly as before on iPad: both flags follow the tablet pane, off on the wall tab', () => {
+  it('follows the tablet pane on a JS-shell tablet, off under the Wall display', () => {
     for (const tabsUncovered of [true, false]) {
-      expect(resolvePlayerSurface({ tabletPane: true, phoneSplit: false, onWallTab: false, tabsUncovered })).toEqual({
+      expect(
+        resolvePlayerSurface({ tabletPane: true, phoneSplit: false, wallDisplayOpen: false, tabsUncovered }),
+      ).toEqual({
         paneMounted: true,
         tapsOpenPane: true,
       });
-      expect(resolvePlayerSurface({ tabletPane: true, phoneSplit: false, onWallTab: true, tabsUncovered })).toEqual({
+      expect(
+        resolvePlayerSurface({ tabletPane: true, phoneSplit: false, wallDisplayOpen: true, tabsUncovered }),
+      ).toEqual({
         paneMounted: false,
         tapsOpenPane: false,
       });
-      expect(resolvePlayerSurface({ tabletPane: false, phoneSplit: false, onWallTab: false, tabsUncovered })).toEqual({
+      expect(
+        resolvePlayerSurface({ tabletPane: false, phoneSplit: false, wallDisplayOpen: false, tabsUncovered }),
+      ).toEqual({
         paneMounted: false,
         tapsOpenPane: false,
       });
@@ -41,7 +47,7 @@ describe('resolvePlayerSurface', () => {
 
   it('sends split taps to the pane while the tabs are on screen', () => {
     expect(
-      resolvePlayerSurface({ tabletPane: false, phoneSplit: true, onWallTab: false, tabsUncovered: true }),
+      resolvePlayerSurface({ tabletPane: false, phoneSplit: true, wallDisplayOpen: false, tabsUncovered: true }),
     ).toEqual({ paneMounted: true, tapsOpenPane: true });
   });
 
@@ -50,7 +56,7 @@ describe('resolvePlayerSurface', () => {
       resolvePlayerSurface({
         tabletPane: false,
         phoneSplit: true,
-        onWallTab: false,
+        wallDisplayOpen: false,
         tabsUncovered: true,
         paneTaken: true,
       }),
@@ -60,7 +66,7 @@ describe('resolvePlayerSurface', () => {
       resolvePlayerSurface({
         tabletPane: true,
         phoneSplit: false,
-        onWallTab: false,
+        wallDisplayOpen: false,
         tabsUncovered: true,
         paneTaken: true,
       }),
@@ -69,7 +75,7 @@ describe('resolvePlayerSurface', () => {
 
   it('sends split taps to /play from a page over the tabs, keeping the pane underneath', () => {
     expect(
-      resolvePlayerSurface({ tabletPane: false, phoneSplit: true, onWallTab: false, tabsUncovered: false }),
+      resolvePlayerSurface({ tabletPane: false, phoneSplit: true, wallDisplayOpen: false, tabsUncovered: false }),
     ).toEqual({ paneMounted: true, tapsOpenPane: false });
   });
 });

@@ -502,7 +502,7 @@ export function cppNavigationCommands(
       coverage.target === 'spray'
         ? `/boards/spray/holds?wallUuid=${encodeURIComponent(boardId ?? '')}`
         : ipad
-          ? '/wall'
+          ? '/wall-display'
           : `/climbs?screenshotOpenFirst=1&screenshotBoardIndex=${index}`,
   };
   for (const [scene, route] of Object.entries(routes))

@@ -2,7 +2,6 @@ import { memo, useMemo, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BoardName } from '@boardsesh/shared-schema';
-import { useBoardClimbRecentSenders } from '@boardsesh/board-presence-react';
 import { getBoardRenderData } from '../../../lib/board-details';
 import { useSprayWallToken } from '../../../lib/spray/use-spray-wall-token';
 import { parseSetIds } from '../../../lib/board-presence/parse-set-ids';
@@ -14,7 +13,6 @@ import { useWallPreview } from './useWallPreview';
 import { WallHeroStage } from './WallHeroStage';
 import { WallChromeRegion } from './WallChromeRegion';
 import type { WallStateMode } from './WallStateStrip';
-import { shouldFetchRecentSenders } from './wall-kiosk-layout';
 
 /**
  * The wall-mounted kiosk surface. The board is a SIBLING flex region (never an
@@ -49,11 +47,6 @@ function WallKioskScreenComponent({ boardConfig }: { boardConfig: BoardConfig })
   const preview = useWallPreview();
 
   const mode: WallStateMode = preview.isPreviewing ? 'history' : preview.liveClimb ? 'live' : 'idle';
-  const { senders: recentSenders } = useBoardClimbRecentSenders({
-    climbUuid: preview.displayedClimb?.climbUuid,
-    angle: preview.displayedClimb?.angle,
-    enabled: shouldFetchRecentSenders(layout, mode),
-  });
 
   let content: ReactNode = null;
   if (!renderData) {
@@ -77,8 +70,6 @@ function WallKioskScreenComponent({ boardConfig }: { boardConfig: BoardConfig })
         preview={preview}
         typeScale={typeScale}
         bandWidth={chromeRect.width}
-        compact={layout.compact}
-        recentSenders={recentSenders}
         boardName={boardConfig.boardName}
       />
     );

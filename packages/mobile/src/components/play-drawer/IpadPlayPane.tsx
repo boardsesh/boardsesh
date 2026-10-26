@@ -12,7 +12,7 @@ import { useBoardPresenceControls } from '../../providers/board-presence-provide
 import { useDeviceLayout } from '../../hooks/use-device-layout';
 import { resolveEffectiveWallSurface } from '../../theme/size-class';
 import { SIDEBAR_WIDTH } from '../../theme/layout';
-import { tabsActiveSegment } from '../../lib/route-segments';
+import { isWallDisplayRoute } from '../../lib/route-segments';
 import { NO_BOARD_PICKER_HREF } from '../../lib/boards/first-board-mode';
 import { spacing } from '../../theme/tokens';
 
@@ -50,7 +50,7 @@ function IpadPlayPaneComponent({
   const { widthClass, wallDeviceClass } = useDeviceLayout();
   const { enabled, boardId } = useBoardPresenceControls();
   const segments = useSegments();
-  const onWallTab = tabsActiveSegment(segments) === 'wall';
+  const wallDisplayOpen = isWallDisplayRoute(segments);
   const phoneSplit = variant === 'phoneSplit';
   // The picker's no-board entry, as on the Climbs tab's empty state: a climber
   // with no boards gets "Where do you climb?", one whose board was cleared gets
@@ -60,16 +60,15 @@ function IpadPlayPaneComponent({
   // In portrait/narrow regular there's no room for a wall column, so the wall
   // lives as a strip atop the pane. It shows only when board presence is active,
   // the device is large enough for the panel at all (sheet-only devices collapse
-  // it — same gate the shell uses), and the "On the Wall" tab isn't already the
-  // focused destination. When it shows, the strip owns the top inset (PlayDrawer
-  // skips it).
+  // it — same gate the shell uses), and the Wall display isn't covering the
+  // shell. When it shows, the strip owns the top inset (PlayDrawer skips it).
   const wallSurface = resolveEffectiveWallSurface({
     width,
     widthClass,
     wallDeviceClass,
     sidebarWidth: SIDEBAR_WIDTH,
   });
-  const showStrip = wallSurface === 'strip' && enabled && boardId !== null && !onWallTab;
+  const showStrip = wallSurface === 'strip' && enabled && boardId !== null && !wallDisplayOpen;
   const paneBoardConfig = playDrawerPaneProps?.boardConfig;
   const paneEmptyState = useMemo(
     () =>

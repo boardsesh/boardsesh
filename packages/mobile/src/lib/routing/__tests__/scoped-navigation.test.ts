@@ -21,6 +21,12 @@ const SETTINGS_PAGES = readdirSync(fileURLToPath(new URL('../../../../app/settin
   )
   .sort();
 
+// Account and the Wall display are root routes with their own Settings stack;
+// every other scope is a tab.
+const ROOT_SCOPES = new Set(['account', 'wall-display']);
+const scopeSegments = (scope: string) => (ROOT_SCOPES.has(scope) ? [scope] : ['(tabs)', scope]);
+const scopeRoot = (scope: string) => (ROOT_SCOPES.has(scope) ? `/${scope}` : `/(tabs)/${scope}`);
+
 describe('navigation keeps the originating tab', () => {
   it('finds the Settings pages', () => {
     expect(SETTINGS_PAGES).toEqual(expect.arrayContaining(['privacy', 'climbs', 'general', 'board-look/custom']));
@@ -28,11 +34,11 @@ describe('navigation keeps the originating tab', () => {
     expect(SETTINGS_PAGES).not.toContain('board-lighting');
   });
 
-  it.each(['home', 'climbs', 'record', 'discover', 'profile', 'wall', 'account'])(
+  it.each(['home', 'climbs', 'record', 'discover', 'profile', 'wall-display', 'account'])(
     'resolves every Settings page to a registered route from %s',
     (scope) => {
-      publishNavigationScope(scope === 'account' ? ['account'] : ['(tabs)', scope]);
-      const scopedRoot = `${scope === 'account' ? '/account' : `/(tabs)/${scope}`}/settings`;
+      publishNavigationScope(scopeSegments(scope));
+      const scopedRoot = `${scopeRoot(scope)}/settings`;
       expect(resolveScopedDestination('/settings')).toBe(scopedRoot);
       expect(existsSync(new URL(`../../../../app${scopedRoot}/index.tsx`, import.meta.url))).toBe(true);
       for (const route of SETTINGS_PAGES) {
@@ -40,7 +46,7 @@ describe('navigation keeps the originating tab', () => {
           pathname: `/settings/${route}`,
           params: { kind: 'board', resourceId: 'home-board' },
         });
-        const expectedPath = `${scope === 'account' ? '/account' : `/(tabs)/${scope}`}/settings/${route}`;
+        const expectedPath = `${scopeRoot(scope)}/settings/${route}`;
         expect(destination).toEqual({
           pathname: expectedPath,
           params: { kind: 'board', resourceId: 'home-board' },
@@ -50,14 +56,14 @@ describe('navigation keeps the originating tab', () => {
     },
   );
   it('scopes user drilling and Settings into each existing tab stack', () => {
-    for (const tab of ['home', 'climbs', 'record', 'discover', 'profile', 'wall']) {
-      publishNavigationScope(['(tabs)', tab]);
-      expect(resolveScopedDestination('/users/search')).toBe(`/(tabs)/${tab}/users/search`);
+    for (const scope of ['home', 'climbs', 'record', 'discover', 'profile', 'wall-display']) {
+      publishNavigationScope(scopeSegments(scope));
+      expect(resolveScopedDestination('/users/search')).toBe(`${scopeRoot(scope)}/users/search`);
       expect(resolveScopedDestination({ pathname: '/users/[userId]', params: { userId: 'climber-1' } })).toEqual({
-        pathname: `/(tabs)/${tab}/users/[userId]`,
+        pathname: `${scopeRoot(scope)}/users/[userId]`,
         params: { userId: 'climber-1' },
       });
-      expect(resolveScopedDestination('/settings/storage')).toBe(`/(tabs)/${tab}/settings/storage`);
+      expect(resolveScopedDestination('/settings/storage')).toBe(`${scopeRoot(scope)}/settings/storage`);
     }
   });
   it('keeps Account Settings inside the modal and leaves unrelated destinations intact', () => {

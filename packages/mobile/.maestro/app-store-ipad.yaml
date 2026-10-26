@@ -116,8 +116,9 @@ name: app-store screenshots (iPad)
     timeout: 90000
 - takeScreenshot: 01-home
 
-# On the Wall — the wall-mounted kiosk HERO: the lit board + the current climb big
-# and readable from across the gym.
+# Wall display — the wall-mounted kiosk HERO: the lit board + the current climb big
+# and readable from the mat. It is no sidebar destination: it opens full screen from
+# the Climbs ⋯ menu, so go back to Climbs first.
 - retry:
     maxRetries: 2
     commands:
@@ -130,11 +131,11 @@ name: app-store screenshots (iPad)
           visible: ${SCREENSHOT_SIDEBAR_HIDE_LABEL}
           timeout: 15000
       - tapOn:
-          text: ${SCREENSHOT_SIDEBAR_WALL_LABEL}
+          text: ${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}
           index: 0
       - extendedWaitUntil:
           visible:
-            text: ${SCREENSHOT_SIDEBAR_WALL_LABEL}
+            text: ${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}
             selected: true
           timeout: 5000
 - tapOn: ${SCREENSHOT_SIDEBAR_HIDE_LABEL}
@@ -144,13 +145,40 @@ name: app-store screenshots (iPad)
 - assertNotVisible: ${SCREENSHOT_SIDEBAR_HIDE_LABEL}
 - waitForAnimationToEnd
 - extendedWaitUntil:
+    visible:
+      id: '^climbs-screen$'
+    timeout: 90000
+- retry:
+    maxRetries: 2
+    commands:
+      - tapOn: ${SCREENSHOT_CLIMBS_OPTIONS_LABEL}
+      - tapOn: ${SCREENSHOT_WALL_DISPLAY_LABEL}
+      - extendedWaitUntil:
+          visible: ${SCREENSHOT_WALL_DISPLAY_EXIT_LABEL}
+          timeout: 15000
+- extendedWaitUntil:
     visible: '.*${SCREENSHOT_PRIMARY_CLIMB_TITLE}.*'
     timeout: 90000
 - extendedWaitUntil:
     visible:
       id: ${SCREENSHOT_PRIMARY_WALL_PAINTED_ID}
     timeout: 90000
+# Exit and Settings fade a few seconds after the display opens; capture the kiosk alone.
+- extendedWaitUntil:
+    notVisible: ${SCREENSHOT_WALL_DISPLAY_EXIT_LABEL}
+    timeout: 15000
+- waitForAnimationToEnd
 - takeScreenshot: 00-wall
+# Any touch brings Exit back. Leave the display so the sidebar steps below can run.
+- retry:
+    maxRetries: 2
+    commands:
+      - tapOn: '.*${SCREENSHOT_PRIMARY_CLIMB_TITLE}.*'
+      - tapOn: ${SCREENSHOT_WALL_DISPLAY_EXIT_LABEL}
+      - extendedWaitUntil:
+          visible:
+            id: '^climbs-screen$'
+          timeout: 15000
 
 # Record — the workout generator (a workout is pre-selected in screenshot mode via
 # EXPO_PUBLIC_SCREENSHOT_WORKOUT).

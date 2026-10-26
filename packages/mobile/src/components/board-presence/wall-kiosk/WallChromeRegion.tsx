@@ -1,9 +1,9 @@
 import { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import type { BoardClimbRecentSender, BoardPresenceClimb } from '@boardsesh/shared-schema';
+import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
 import { WallStateStrip, type WallStateMode } from './WallStateStrip';
-import { WallAttributionBlock, WallIdentityBlock } from './WallIdentityBlock';
+import { WallIdentityBlock } from './WallIdentityBlock';
 import { WallScrubber } from './WallScrubber';
 import { Text } from '../../Text';
 import { useTheme } from '../../../providers/theme-provider';
@@ -78,10 +78,6 @@ type WallChromeRegionProps = {
   typeScale: WallKioskTypeScale;
   /** The chrome region's width, to pick one-, two-, or three-column band content. */
   bandWidth: number;
-  /** The dominance cap starved the region (extreme aspect ratio) → shed the
-   *  lower-priority identity lines so the controls still fit. */
-  compact: boolean;
-  recentSenders: BoardClimbRecentSender[];
   /** The kiosk's board, so grades read on its scale (the wall payload names no board). */
   boardName?: string;
 };
@@ -89,26 +85,16 @@ type WallChromeRegionProps = {
 /**
  * The single off-board chrome region — the ONLY home for all identity + controls.
  * A vertical RAIL (landscape) with identity top-anchored and the scrubber pinned
- * to the bottom, or a horizontal BAND (portrait) that splits into two columns when
- * wide enough and stacks when narrow. Sits on an opaque surface so its text needs
- * no scrim; nothing here ever touches the board.
+ * to the bottom, or a horizontal BAND (portrait) that splits into two or three
+ * columns when wide enough and stacks when narrow. Sits on an opaque surface so
+ * its text needs no scrim; nothing here ever touches the board. Read from 3–5 m,
+ * so it carries the state strip, the grade and the name; detail lines too small
+ * to read from the mat (setter, angle, Lit-by / Sent-by avatars) are not drawn.
  */
-function WallChromeRegionComponent({
-  region,
-  mode,
-  preview,
-  typeScale,
-  bandWidth,
-  compact,
-  recentSenders,
-  boardName,
-}: WallChromeRegionProps) {
-  const { t } = useTranslation('session');
+function WallChromeRegionComponent({ region, mode, preview, typeScale, bandWidth, boardName }: WallChromeRegionProps) {
   const { systemColors } = useTheme();
   const { displayedClimb, liveClimb, isPreviewing, stepsBack, previewTimestamp, lastLitClimb } = preview;
   const bandColumns = region === 'band' ? resolveWallKioskBandColumns(bandWidth) : 1;
-  const separateAttribution = bandColumns >= 2;
-  const setter = displayedClimb?.setter?.trim() || null;
 
   const stateStrip = (
     <WallStateStrip
@@ -128,25 +114,10 @@ function WallChromeRegionComponent({
         climb={displayedClimb}
         typeScale={typeScale}
         isPreviewing={isPreviewing}
-        recentSenders={recentSenders}
-        showAttribution={!separateAttribution}
-        showSetter={bandColumns !== 3}
         nameLines={bandColumns === 3 ? 1 : 2}
-        driverSize={region === 'rail' ? 32 : 28}
-        compact={compact}
         boardName={boardName}
       />
     );
-  const attribution =
-    mode !== 'idle' && separateAttribution ? (
-      <WallAttributionBlock
-        climb={displayedClimb}
-        typeScale={typeScale}
-        recentSenders={recentSenders}
-        driverSize={28}
-        compact={compact}
-      />
-    ) : null;
   const scrubber = <WallScrubber preview={preview} />;
 
   const surface = [styles.surface, { backgroundColor: systemColors.elevatedSurface }];
@@ -168,19 +139,7 @@ function WallChromeRegionComponent({
       <View style={[surface, styles.bandRow]}>
         <View style={styles.bandPrimaryThree}>{identity}</View>
         <View style={[styles.bandSeparator, { backgroundColor: systemColors.separator }]} />
-        <View style={styles.bandAttributionThree}>
-          {stateStrip}
-          {setter ? (
-            <Text
-              numberOfLines={1}
-              color={systemColors.secondaryLabel}
-              style={{ fontSize: typeScale.metaFontSize, lineHeight: typeScale.metaLineHeight }}
-            >
-              {t('mobile.boardPresence.setByLine', { setter })}
-            </Text>
-          ) : null}
-          {attribution}
-        </View>
+        <View style={styles.bandStateThree}>{stateStrip}</View>
         <View style={[styles.bandSeparator, { backgroundColor: systemColors.separator }]} />
         <View style={styles.bandControlsThree}>{scrubber}</View>
       </View>
@@ -195,10 +154,7 @@ function WallChromeRegionComponent({
           {identity}
         </View>
         <View style={[styles.bandSeparator, { backgroundColor: systemColors.separator }]} />
-        <View style={styles.bandRight}>
-          {attribution}
-          {scrubber}
-        </View>
+        <View style={styles.bandRight}>{scrubber}</View>
       </View>
     );
   }
@@ -252,7 +208,7 @@ const styles = StyleSheet.create({
     gap: spacing[3],
     justifyContent: 'flex-start',
   },
-  bandAttributionThree: {
+  bandStateThree: {
     flex: 0.26,
     gap: spacing[3],
     justifyContent: 'center',

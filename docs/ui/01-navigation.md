@@ -124,9 +124,10 @@ The bar itself depends on the device:
   the phone tab bar in a narrow Split View. Each tab is one content column, with
   no player pane or wall column beside it. The current climb rides the bottom
   accessory, as on iPhone (Music's MiniPlayer), and tapping it or any climb opens
-  the full-screen `/play` player (the accessory zooms into it). The On the Wall
-  destination stays registered at every width, so a resize never resets tab
-  history. One resolver, `resolveCurrentClimbSurface`
+  the full-screen `/play` player (the accessory zooms into it). Five tabs, as
+  on iPhone (HIG Tab bars: "aim for a default list of five or fewer"): the
+  iPad-only On the Wall tab became the **Wall display**, below. One resolver,
+  `resolveCurrentClimbSurface`
   (`src/hooks/current-climb-surface.ts`), decides who shows the current climb, so
   the floating JS bar never appears over the accessory; tab content clears the
   accessory through the measured in-tab inset, as on the iPhone Duo.
@@ -134,6 +135,20 @@ The bar itself depends on the device:
   every width (rail at regular width, `MaterialTabBar` in a narrow split), so a
   resize keeps each tab's state. At regular width the shell keeps its
   persistent player pane (`IpadPlayPane`) and, in landscape, the live wall column.
+- **Wall display (tablets):** a full-screen kiosk for a tablet mounted at the
+  board, read from 3–5 m (`app/wall-display/`). It opens from the board sheet
+  and from the Climbs ⋯ menu, on a tablet only; the old
+  `com.boardsesh.app://wall` link opens it too (`+native-intent.ts`). A root
+  `transparentModal` like `/play`, never `fullScreenModal`
+  (`docs/mobile-sheets-vs-routes.md` rule 2), so it covers the sidebar, the tab
+  bar and the bottom accessory while they stay live behind it. The screen stays
+  awake while it is up. Exit and Settings sit in the top corner and fade 4 s
+  after the last touch; any touch brings them back (HIG, Going full screen), and
+  with VoiceOver or TalkBack on they never fade. The kiosk shows the board, the
+  grade, the name and the "On the wall now" strip; the setter, the angle badge
+  and the Lit-by / Sent-by avatars were too small to read from the mat and are
+  not drawn. Its Settings and profile pages push inside its own stack
+  (`scoped-navigation.ts`).
 - **Session setup:** Browse climbs opens the selected board's library
   directly, without rewriting the board selection.
   Change board is a separate action; its picker returns to Session. First-time

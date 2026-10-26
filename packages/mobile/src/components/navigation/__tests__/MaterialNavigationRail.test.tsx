@@ -83,7 +83,9 @@ import { MaterialNavigationRail } from '../MaterialNavigationRail';
 
 // Rail order: Climbs is the last primary row, as it is the rightmost phone tab;
 // Profile stays pinned at the bottom.
-const SEGMENTS = ['home', 'record', 'wall', 'discover', 'climbs', 'profile'];
+// The Wall display is no destination: it opens from the board sheet and the
+// Climbs menu.
+const SEGMENTS = ['home', 'record', 'discover', 'climbs', 'profile'];
 
 describe('MaterialNavigationRail', () => {
   beforeEach(() => {
@@ -91,7 +93,7 @@ describe('MaterialNavigationRail', () => {
     cfg.navigate.mockClear();
   });
 
-  it('renders all six destinations (five primary + pinned profile) in rail order', () => {
+  it('renders all five destinations (four primary + pinned profile) in rail order', () => {
     const { container } = render(<MaterialNavigationRail />);
     for (const segment of SEGMENTS) {
       expect(container.querySelector(`[data-testid="tablet-rail-${segment}"]`)).not.toBeNull();
@@ -120,8 +122,8 @@ describe('MaterialNavigationRail', () => {
 
   it('navigates to a destination href on press', () => {
     const { container } = render(<MaterialNavigationRail />);
-    fireEvent.click(container.querySelector('[data-testid="tablet-rail-wall"]')!);
-    expect(cfg.navigate).toHaveBeenCalledWith('/wall');
+    fireEvent.click(container.querySelector('[data-testid="tablet-rail-discover"]')!);
+    expect(cfg.navigate).toHaveBeenCalledWith('/discover');
   });
 
   it('shows the focused (filled) glyph for the active destination and outline for the rest', () => {

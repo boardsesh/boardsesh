@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { createElement, type ReactNode } from 'react';
 import { render } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { BoardClimbRecentSender, BoardPresenceClimb } from '@boardsesh/shared-schema';
+import { describe, expect, it, vi } from 'vitest';
+import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
 
 type HostProps = { children?: ReactNode };
 
@@ -16,37 +16,12 @@ vi.mock('react-native', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, values?: Record<string, string>) => {
-      if (key === 'boardPresence.litByLine') return `Lit by ${values?.name}`;
-      if (key === 'boardPresence.sentByLabel') return 'Sent by';
-      if (key === 'mobile.boardPresence.setByLine') return `Set by ${values?.setter}`;
-      if (key === 'mobile.boardPresence.drivenByA11y') return `${values?.name} is lighting the wall`;
-      return key;
-    },
+    t: (key: string) => (key === 'mobile.boardPresence.kiosk.previewTag' ? 'Preview' : key),
   }),
 }));
 
 vi.mock('../../../Text', () => ({
   Text: ({ children }: HostProps) => createElement('span', null, children),
-}));
-
-const avatarGroupCapture = vi.hoisted(() => ({ participants: [] as BoardClimbRecentSender[][] }));
-vi.mock('../../../you/AvatarGroup', () => ({
-  AvatarGroup: ({ participants }: { participants: BoardClimbRecentSender[] }) => {
-    avatarGroupCapture.participants.push(participants);
-    return createElement(
-      'div',
-      { 'data-testid': 'recent-senders' },
-      participants.map((participant) =>
-        createElement('span', { key: participant.userId, 'data-user-id': participant.userId }, participant.displayName),
-      ),
-    );
-  },
-}));
-
-vi.mock('../../BoardDriverAvatar', () => ({
-  BoardDriverAvatar: ({ userId }: { userId?: string | null }) =>
-    createElement('div', { 'data-testid': 'wall-lighter', 'data-user-id': userId ?? '' }),
 }));
 
 vi.mock('../../../grade/grade-chip-colors', () => ({ readableTextColor: () => '#000000' }));
@@ -90,81 +65,29 @@ const climb: BoardPresenceClimb = {
   seq: 1,
 };
 
-const recentSenders: BoardClimbRecentSender[] = [
-  {
-    userId: 'sender-newest',
-    displayName: 'Alex',
-    avatarUrl: null,
-    lastSentAt: '2026-07-31T11:00:00.000Z',
-  },
-  {
-    userId: 'sender-older',
-    displayName: 'Maya',
-    avatarUrl: null,
-    lastSentAt: '2026-07-30T11:00:00.000Z',
-  },
-];
-
-beforeEach(() => {
-  avatarGroupCapture.participants.length = 0;
-});
-
-describe('WallIdentityBlock attribution', () => {
-  it('labels the wall activator as Lit by, then renders sender avatars below it', () => {
-    const { container, getByText, getByTestId } = render(
-      <WallIdentityBlock climb={climb} typeScale={typeScale} isPreviewing={false} recentSenders={recentSenders} />,
+describe('WallIdentityBlock at reading distance', () => {
+  it('shows the grade and the name, and nothing too small to read from the mat', () => {
+    const { container, getByText } = render(
+      <WallIdentityBlock climb={climb} typeScale={typeScale} isPreviewing={false} />,
     );
 
-    expect(getByText('Lit by Marco')).toBeTruthy();
-    expect(getByText('Sent by')).toBeTruthy();
-    expect(getByTestId('wall-lighter').getAttribute('data-user-id')).toBe('lighter-1');
-    expect(container.textContent?.indexOf('Lit by Marco')).toBeLessThan(container.textContent?.indexOf('Sent by') ?? 0);
-    expect(avatarGroupCapture.participants[0]?.map((recentSender) => recentSender.userId)).toEqual([
-      'sender-newest',
-      'sender-older',
-    ]);
+    expect(getByText('V5')).toBeTruthy();
+    expect(getByText('Moon Cheese')).toBeTruthy();
+    // The setter, the angle badge and the Lit-by name were 13–24 pt.
+    expect(container.textContent).not.toContain('Taylor');
+    expect(container.textContent).not.toContain('40°');
+    expect(container.textContent).not.toContain('Marco');
   });
 
-  it('omits the sender row when nobody has sent this climb', () => {
-    const { queryByText, queryByTestId } = render(
-      <WallIdentityBlock climb={climb} typeScale={typeScale} isPreviewing={false} recentSenders={[]} />,
-    );
+  it('tags a history preview so it never reads as the live climb', () => {
+    const { getByText } = render(<WallIdentityBlock climb={climb} typeScale={typeScale} isPreviewing />);
 
-    expect(queryByText('Lit by Marco')).toBeTruthy();
-    expect(queryByText('Sent by')).toBeNull();
-    expect(queryByTestId('recent-senders')).toBeNull();
+    expect(getByText('Preview')).toBeTruthy();
   });
 
-  it('hands both attribution rows off together when a band provides a sibling column', () => {
-    const { queryByText, queryByTestId, getByText } = render(
-      <WallIdentityBlock
-        climb={climb}
-        typeScale={typeScale}
-        isPreviewing={false}
-        recentSenders={recentSenders}
-        showAttribution={false}
-      />,
-    );
+  it('renders nothing without a climb', () => {
+    const { container } = render(<WallIdentityBlock climb={null} typeScale={typeScale} isPreviewing={false} />);
 
-    expect(getByText('Set by Taylor')).toBeTruthy();
-    expect(queryByText('Lit by Marco')).toBeNull();
-    expect(queryByText('Sent by')).toBeNull();
-    expect(queryByTestId('recent-senders')).toBeNull();
-  });
-
-  it('sheds both attribution rows in compact chrome', () => {
-    const { queryByText, queryByTestId } = render(
-      <WallIdentityBlock
-        climb={climb}
-        typeScale={typeScale}
-        isPreviewing={false}
-        recentSenders={recentSenders}
-        compact
-      />,
-    );
-
-    expect(queryByText('Lit by Marco')).toBeNull();
-    expect(queryByText('Sent by')).toBeNull();
-    expect(queryByTestId('recent-senders')).toBeNull();
+    expect(container.textContent).toBe('');
   });
 });

@@ -15,7 +15,7 @@ import { isSupportedLocale, type Locale } from '@boardsesh/i18n';
  * `boardsesh:e2e-suppress-install-card`): a presentation-stability switch, not a
  * data-mocking layer — the seeded backend stays the source of truth.
  *
- * The ONE deliberate exception is the iPad "On the Wall" kiosk (see
+ * The ONE deliberate exception is the iPad Wall display kiosk (see
  * `lib/board-presence/screenshot-wall-seed.ts`): the wall feed is a live
  * graphql-ws subscription keyed on a `boardId` only a BLE bind can set, and the
  * simulator has no Bluetooth, so there is no seeded-backend path to a lit wall.
