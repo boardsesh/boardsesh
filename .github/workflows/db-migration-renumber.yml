@@ -28,8 +28,8 @@ name: DB Migration Renumber
 #
 # The App token (not GITHUB_TOKEN) has to do the push: a GITHUB_TOKEN push does not
 # re-trigger workflows, so the renumbered commit would land with no CI at all.
-# Labels and comments go the other way — the App has no pull_requests permission, so
-# GITHUB_TOKEN does those.
+# Labels and comments go the other way: the App also holds pull_requests: write, but
+# its token stays confined to the push step, so GITHUB_TOKEN does those.
 
 on:
   workflow_dispatch:
@@ -100,6 +100,20 @@ jobs:
             if (pr.head.repo?.full_name !== repoFull) reasons.push('fork PR — cannot push to a fork');
             if (pr.base.ref !== defaultBranch) reasons.push(`PR targets ${pr.base.ref}, not ${defaultBranch}`);
             if (pr.head.ref === defaultBranch) reasons.push('head ref is the default branch');
+            // The push App bypasses the release-train ruleset, so never point it at a
+            // release branch (the release/next merge-back PR) or any ruleset-protected
+            // head. An unreadable answer stops the run rather than guessing.
+            if (pr.head.ref.startsWith('release/')) reasons.push('head ref is a release branch');
+            let headRules;
+            try {
+              ({ data: headRules } = await github.request('GET /repos/{owner}/{repo}/rules/branches/{branch}', {
+                owner: context.repo.owner, repo: context.repo.repo, branch: pr.head.ref,
+              }));
+            } catch (error) {
+              throw new Error(`Could not read the rules for ${pr.head.ref} (${error.status ?? error.message}); not renumbering.`);
+            }
+            if (!Array.isArray(headRules)) throw new Error(`Unreadable rules for ${pr.head.ref}; not renumbering.`);
+            if (headRules.length > 0) reasons.push(`head ref ${pr.head.ref} is protected by a ruleset`);
             if (pr.labels.some((label) => label.name === 'renumber:skip')) reasons.push('opted out via renumber:skip');
 
             // PR code runs only on this PR's sandbox branch; a default-branch run
@@ -344,14 +358,15 @@ jobs:
           set -euo pipefail
           base="$(git merge-base "$RESULT_SHA" origin/main)"
           # Exit 1 means conflicts (usually the journal); the tree is still written, first line.
-          merged="$(git merge-tree --write-tree --no-messages "$base" "$HEAD_SHA" || true)"
+          merged="$(git merge-tree --write-tree --no-messages "$base" "$HEAD_SHA")" || [ $? -eq 1 ]
           expected="${merged%%$'\n'*}"
           printf '%s' "$expected" | grep -Eq '^[0-9a-f]{40}$' \
             || { echo "::error::Could not compute the plain merge of $HEAD_SHA onto $base."; exit 1; }
           git diff --name-only "$(git merge-base "$HEAD_SHA" "$base")" "$HEAD_SHA" > "$RUNNER_TEMP/pr-files"
-          git diff --name-only "$expected" "$RESULT_SHA" \
-            | grep -v '^packages/db/drizzle/' \
-            | grep -vxF -f "$RUNNER_TEMP/pr-files" > "$RUNNER_TEMP/unexpected" || true
+          git diff --name-only "$expected" "$RESULT_SHA" > "$RUNNER_TEMP/changed"
+          # grep exits 1 for "nothing left", which is fine; any other failure stops the push.
+          { grep -v '^packages/db/drizzle/' "$RUNNER_TEMP/changed" || [ $? -eq 1 ]; } > "$RUNNER_TEMP/outside"
+          { grep -vxF -f "$RUNNER_TEMP/pr-files" "$RUNNER_TEMP/outside" || [ $? -eq 1 ]; } > "$RUNNER_TEMP/unexpected"
           if [ -s "$RUNNER_TEMP/unexpected" ]; then
             echo "::error::The renumbered result changes files outside the migration folder that this PR never touched:"
             cat "$RUNNER_TEMP/unexpected"

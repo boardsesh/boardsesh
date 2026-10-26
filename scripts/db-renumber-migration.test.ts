@@ -407,7 +407,9 @@ describe('workflow trust boundaries', () => {
     expect(treeCheck).toBeGreaterThan(-1);
     expect(treeCheck).toBeLessThan(pushJob.indexOf('\n      - name: Mint the push token\n'));
     expect(pushJob).toContain('git merge-tree --write-tree --no-messages "$base" "$HEAD_SHA"');
-    expect(pushJob).toContain("grep -v '^packages/db/drizzle/'");
+    expect(pushJob).toContain(`{ grep -v '^packages/db/drizzle/' "$RUNNER_TEMP/changed" || [ $? -eq 1 ]; }`);
+    // Only grep's "no lines" status is tolerated; a failing git diff must stop the push.
+    expect(sliceWorkflowStep(pushJob, 'Refuse changes beyond the renumber')).not.toContain('|| true');
   });
 
   it('pins every action on the token-bearing push runner to a commit SHA', () => {

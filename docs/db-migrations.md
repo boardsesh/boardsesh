@@ -110,7 +110,9 @@ commit, because a run on `main` must never execute PR code (its writes are share
 every branch and PR). The sandbox run installs, renumbers and proves your branch with no
 secret in scope, then hands the result to a fresh `push` job as a git bundle; only that
 job holds the App token, and it pushes the bundle's commit to your branch, leased to the
-head it vetted. The sandbox branch is deleted when the run ends. Look for the run whose
+head it vetted, and only if the result changes nothing outside the migration folder
+beyond files your PR already touches. It never renumbers a `release/*` head or any
+branch a ruleset protects. The sandbox branch is deleted when the run ends. Look for the run whose
 branch starts with `ci-sandbox/db-renumber/` when you want the log.
 
 To do it yourself, or when the bot stops:

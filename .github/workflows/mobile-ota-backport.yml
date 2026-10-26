@@ -239,8 +239,25 @@ jobs:
               exit 1
             fi
           done
-          echo "Cherry-picking onto $tag: ${commits[*]}"
-          git cherry-pick "${commits[@]}"
+          # Only reviewed code reaches a production OTA: every fix must already be
+          # on main (the runbook lands it there first). The checkout fetched every
+          # branch, so an unreviewed commit pushed anywhere would otherwise resolve.
+          # Fail closed on an unknown, ambiguous or off-main SHA.
+          git fetch --no-tags --quiet origin main
+          resolved=()
+          for commit in "${commits[@]}"; do
+            if ! full="$(git rev-parse --verify --quiet "${commit}^{commit}")"; then
+              echo "::error::'$commit' is not a single known commit."
+              exit 1
+            fi
+            if ! git merge-base --is-ancestor "$full" origin/main; then
+              echo "::error::$full is not on main. Land the fix on main first, then backport its SHA."
+              exit 1
+            fi
+            resolved+=("$full")
+          done
+          echo "Cherry-picking onto $tag: ${resolved[*]}"
+          git cherry-pick "${resolved[@]}"
 
       - name: Overlay trusted OTA publish tooling
         run: |

@@ -2018,7 +2018,8 @@ the latest Android build.
 ### Backport runbook
 
 1. Land the JS-only fix on `main` as normal (get its commit SHA). It also ships to current-`main`
-   installs via the usual production OTA.
+   installs via the usual production OTA. The workflow refuses any SHA that is not already on
+   `main`, so a fix sitting on a branch or on `release/next` cannot be backported.
 2. Run the **Mobile OTA Backport** workflow (`mobile-ota-backport.yml`, `workflow_dispatch`) with the
    approved `version` (e.g. `2.1.0`), the `platform` (`all`/`ios`/`android`), and the fix commit
    SHA(s). Leave `dry_run` on for the first pass.

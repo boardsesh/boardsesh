@@ -84,7 +84,7 @@ const ALLOWED: Record<string, string> = {
     'validate-main fails unless expected_main_sha equals github.sha and the live main head.',
   // Run steps whose git checkout arguments come from a variable (`file::job::step`).
   'mobile-ota-backport.yml::backport::Locate the release anchor and prepare the hotfix tree':
-    'Checks out a release/* anchor tag, which only the release App may create (tag ruleset); the variable part is the new local branch name.',
+    'Checks out a release/* anchor tag (only the release App may create one), then cherry-picks fix_commits only after each resolves to a single commit that is an ancestor of origin/main (mobile-ota-backport-fix-commits.test.ts).',
   'mobile-ota-check.yml::ota-check::Materialize the base-branch baseline':
     "BASE_REF is the PR's base branch on a pull_request run (PR scope) and main on a push run; the variable path is RUNNER_TEMP.",
   'mobile-store-submit.yml::submit-ios::Take the listing text from the merge commit':
@@ -415,45 +415,61 @@ describe('mobile-ota-preview gate', () => {
 });
 
 describe('db-migration-renumber gate', () => {
-  const github = {
+  const makeGithub = (headRef = 'feature', rules: () => Promise<{ data: unknown }> = async () => ({ data: [] })) => ({
+    request: vi.fn(rules),
     rest: {
       pulls: {
         get: vi.fn(async () => ({
           data: {
             state: 'open',
-            head: { sha: headSha, ref: 'feature', repo: { full_name: 'boardsesh/boardsesh' } },
+            head: { sha: headSha, ref: headRef, repo: { full_name: 'boardsesh/boardsesh' } },
             base: { ref: 'main' },
             labels: [],
           },
         })),
       },
     },
-  };
+  });
   const dispatchOn = (ref: string) => ({
     ref,
     repo,
     payload: { inputs: { pr: '42' }, repository: { default_branch: 'main' } },
   });
+  const sandbox = 'refs/heads/ci-sandbox/db-renumber/pr-42/77';
 
   it.each(['refs/heads/main', 'refs/heads/feature', 'refs/heads/ci-sandbox/db-renumber/pr-4/1'])(
     'hands a vetted PR off from %s without running it',
     async (ref) => {
-      const outputs = await runGateStep('db-migration-renumber.yml', 'gate', 'decide', github, dispatchOn(ref));
+      const outputs = await runGateStep('db-migration-renumber.yml', 'gate', 'decide', makeGithub(), dispatchOn(ref));
       expect(outputs.get('run')).toBe('false');
       expect(outputs.get('handoff')).toBe('true');
     },
   );
 
   it('runs on its own sandbox branch', async () => {
-    const outputs = await runGateStep(
-      'db-migration-renumber.yml',
-      'gate',
-      'decide',
-      github,
-      dispatchOn('refs/heads/ci-sandbox/db-renumber/pr-42/77'),
-    );
+    const outputs = await runGateStep('db-migration-renumber.yml', 'gate', 'decide', makeGithub(), dispatchOn(sandbox));
     expect(outputs.get('run')).toBe('true');
     expect(outputs.get('handoff')).toBe('false');
+  });
+
+  it.each([
+    ['a release branch head', makeGithub('release/next')],
+    ['a ruleset-protected head', makeGithub('feature', async () => ({ data: [{ type: 'non_fast_forward' }] }))],
+  ])('never touches %s', async (_label, github) => {
+    for (const ref of ['refs/heads/main', sandbox]) {
+      const outputs = await runGateStep('db-migration-renumber.yml', 'gate', 'decide', github, dispatchOn(ref));
+      expect(outputs.get('run')).toBe('false');
+      expect(outputs.get('handoff')).toBe('false');
+    }
+  });
+
+  it('stops when the head branch rules cannot be read', async () => {
+    const github = makeGithub('feature', async () => {
+      throw Object.assign(new Error('boom'), { status: 502 });
+    });
+    await expect(
+      runGateStep('db-migration-renumber.yml', 'gate', 'decide', github, dispatchOn(sandbox)),
+    ).rejects.toThrow(/Could not read the rules/);
   });
 });
 
