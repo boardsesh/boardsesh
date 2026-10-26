@@ -91,3 +91,13 @@ vp run check:mobile-simulator
 ```
 
 This opt-in mode validates the existing executable and bundle identity, installs in place, and launches the plist's bundle identifier on the leased device before the normal log smoke check. Leave `BOARDSESH_IOS_SMOKE_APP_PATH` unset for the usual build-and-launch flow. A Debug export still requires its selected Metro server to be running.
+
+
+Cached Debug smoke exports must expose a readable React Native version in
+`React-Core_privacy.bundle/Info.plist` matching the exact installed React Native
+package in the invoking checkout's mobile workspace. A mismatch or missing/unreadable
+metadata stops before simulator selection or commands; select or rebuild a matching
+Debug app. Older exports without that metadata are explicitly unverifiable.
+Matching this version is a necessary check, not proof of full native, Expo or
+Worklets compatibility. Release exports with an embedded bundle retain their
+existing executable/bundle identity checks without comparison to workspace Metro.
