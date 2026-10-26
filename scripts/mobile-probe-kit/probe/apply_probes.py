@@ -260,13 +260,13 @@ edit("app/play.tsx", [
 add_import("app/play.tsx", "import { perfProbe } from '../src/lib/perf-probe';")
 
 edit("src/components/play-drawer/SwipeBoardCarousel.tsx", [
-("""  const isScreenshotMode = process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1';
+("""  const measuredOverlayWidth = boardBox ? Math.round(boardBox.width * PixelRatio.get()) : null;
 """,
- """  const isScreenshotMode = process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1';
-  const probeBoardMeasured = boardBox != null;
+ """  const probeBoardMeasured = boardBox != null;
   useEffect(() => {
     perfProbe(probeBoardMeasured ? 'play-board-measured' : 'play-carousel-mounted');
   }, [probeBoardMeasured]);
+  const measuredOverlayWidth = boardBox ? Math.round(boardBox.width * PixelRatio.get()) : null;
 """),
 ])
 add_import("src/components/play-drawer/SwipeBoardCarousel.tsx", "import { perfProbe } from '../../lib/perf-probe';")

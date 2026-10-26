@@ -307,7 +307,19 @@ else:
           onError={(event) => onOverlayError?.(event, overlayLoadKey ?? null)}""")
 
 carousel = "src/components/play-drawer/SwipeBoardCarousel.tsx"
-add_import(carousel, "import { runOnUI } from 'react-native-reanimated';")
+legacy_reanimated_import = "import Animated, { useAnimatedStyle, type AnimatedStyle, type SharedValue } from 'react-native-reanimated';"
+current_reanimated_import = """import Animated, {
+  runOnUI,
+  useAnimatedStyle,
+  useSharedValue,
+  type AnimatedStyle,
+  type SharedValue,
+} from 'react-native-reanimated';"""
+import_counts = [read(carousel).count(anchor) for anchor in [legacy_reanimated_import, current_reanimated_import]]
+if sum(import_counts) != 1:
+    raise ValueError(f"{carousel}: expected exactly one supported Reanimated import; found {import_counts}")
+if import_counts[0] == 1:
+    replace(carousel, legacy_reanimated_import, legacy_reanimated_import.replace("{ useAnimatedStyle", "{ runOnUI, useAnimatedStyle"))
 add_import(carousel, "import { PERF_PROBE_ENABLED, probeOpeningGeometryUi, probeOpeningDetail, useOpeningProbeOwner } from '../../lib/perf-probe';")
 gesture_condition = "gesturesEnabled" if candidate else "enabled && boardBox != null"
 replace(carousel, "  const boardSurfaceAnchor = useShowcaseAnchor('board-surface');", """  const probeOwner = useOpeningProbeOwner();

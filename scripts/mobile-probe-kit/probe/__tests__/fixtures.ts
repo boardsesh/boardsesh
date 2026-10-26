@@ -18,6 +18,17 @@ export const ACTIVATION_PRIVACY =
 export const ACTIVATION_CREDENTIAL =
   '      if (credentialGeneration !== getCredentialGeneration()) return Promise.resolve();';
 export const CORE_FRAMES = '                            currentFrames={displayedClimb.frames}';
+export const MEASURED_WIDTH =
+  '  const measuredOverlayWidth = boardBox ? Math.round(boardBox.width * PixelRatio.get()) : null;';
+export const REANIMATED_CURRENT = `import Animated, {
+  runOnUI,
+  useAnimatedStyle,
+  useSharedValue,
+  type AnimatedStyle,
+  type SharedValue,
+} from 'react-native-reanimated';`;
+export const REANIMATED_LEGACY =
+  "import Animated, { useAnimatedStyle, type AnimatedStyle, type SharedValue } from 'react-native-reanimated';";
 
 export function probeFixture(variant: FixtureVariant): Record<string, string> {
   const candidate = variant !== 'baseline';
@@ -87,7 +98,10 @@ function PlayScreen() {
     </Link.AppleZoomTarget>
 ${candidate ? 'canConsumeTarget(playTarget.nonce);\n' : ''}`,
     'src/components/play-drawer/SwipeBoardCarousel.tsx': `import { useEffect } from 'react';
+${current ? REANIMATED_CURRENT : REANIMATED_LEGACY}
   const isScreenshotMode = process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1';
+  const boardBox = useMemo(() => null, []);
+${MEASURED_WIDTH}
   const boardSurfaceAnchor = useShowcaseAnchor('board-surface');
 `,
     'src/lib/graphql/offline-request.ts': `import { ${current ? 'isLocalDataOwnerCurrent' : 'canReadPrivateCatalog'} } from '../owner';

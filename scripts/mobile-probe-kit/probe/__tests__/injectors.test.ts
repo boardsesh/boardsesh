@@ -12,6 +12,8 @@ import {
   FIXTURE_VARIANTS,
   LOCAL_CURRENT,
   LOCAL_LEGACY,
+  MEASURED_WIDTH,
+  REANIMATED_CURRENT,
   NETWORK_CURRENT,
   NETWORK_LEGACY,
   probeFixture,
@@ -107,6 +109,10 @@ describe('probe injector supported source variants', () => {
     ).toHaveLength(1);
     expect(offline.match(/perfProbe\('offline-request'/g)).toHaveLength(2);
     expect(readSource(root, 'src/lib/perf-probe.ts')).toContain('export function probeOpeningTap');
+    const carousel = readSource(root, 'src/components/play-drawer/SwipeBoardCarousel.tsx');
+    expect(carousel.indexOf('const probeBoardMeasured')).toBeGreaterThan(carousel.indexOf('const boardBox'));
+    expect(carousel.match(/\brunOnUI\b/g)).toHaveLength(2);
+
     if (variant === 'baseline') {
       expect(readSource(root, 'src/components/LayeredClimbImage.tsx')).toContain(
         'onProbeArtDisplayed?.(overlayLoadKey ?? null)',
@@ -231,6 +237,25 @@ describe('probe injectors reject unsupported anchors before writing', () => {
     applyStandard(root);
     writeSource(root, ACTIVATION, readSource(root, ACTIVATION) + 'capturedGeneration !== undefined');
     expectUnchangedFailure(root, 'opening', 'unsupported mixed activation guards', ACTIVATION);
+  });
+
+  it.each(['missing', 'duplicate'] as const)('opening stage rejects a %s Reanimated import atomically', (fault) => {
+    const root = makeFixture();
+    applyStandard(root);
+    const carousel = 'src/components/play-drawer/SwipeBoardCarousel.tsx';
+    writeSource(
+      root,
+      carousel,
+      readSource(root, carousel).replace(REANIMATED_CURRENT, fault === 'missing' ? '' : REANIMATED_CURRENT.repeat(2)),
+    );
+    expectUnchangedFailure(root, 'opening', 'expected exactly one supported Reanimated import', carousel);
+  });
+
+  it('standard stage rejects a missing post-geometry measurement anchor atomically', () => {
+    const root = makeFixture();
+    const carousel = 'src/components/play-drawer/SwipeBoardCarousel.tsx';
+    writeSource(root, carousel, readSource(root, carousel).replace(MEASURED_WIDTH, ''));
+    expectUnchangedFailure(root, 'standard', 'expected exactly one anchor', carousel);
   });
 
   it('opening stage requires the standard probe module', () => {
