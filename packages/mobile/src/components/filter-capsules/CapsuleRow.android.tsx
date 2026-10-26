@@ -9,7 +9,7 @@
 //   toggleMenu            → a plain toggle chip. Its `actions` are unreachable:
 //                           a Compose FilterChip eats the long-press (#3319, #3322).
 // Active chips take the brand fill with on-fill text, idle chips an `outline`
-// border and a brand icon (filterChipBrandColors / filterChipBorder).
+// border and a brand icon (filterChipBrandColors / filterChipBorders).
 
 import { memo, useMemo } from 'react';
 import { StyleSheet } from 'react-native';

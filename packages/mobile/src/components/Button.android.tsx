@@ -149,7 +149,7 @@ export function Button({
   } else if (variant === 'tonal') {
     // Matches the tonal content colour; destructive fills the error container, so
     // its content (and the spinner) is white (onPrimary), not error.
-    spinnerColor = isDestructive ? brandColors.onPrimary : tonalButtonColors(m3).contentColor;
+    spinnerColor = isDestructive ? brandColors.onPrimary : (colors.contentColor ?? brandColors.primary);
   } else {
     spinnerColor = isDestructive ? brandColors.error : accentColor;
   }

@@ -21,7 +21,7 @@
 // Each platform component file imports its OWN native modifier factories
 // (`tint`, `disabled`, the `SwitchColors` shape, …) and feeds them these values,
 // e.g. `tint(brandControlTint(brandColors))` on iOS, or
-// `colors={switchControlColors(brandColors, colorScheme)}` on Android.
+// `colors={switchControlColors(brandColors, m3, colorScheme)}` on Android.
 //
 // Two brand colours, two jobs:
 // - `brandAccentColor` (the theme's `primaryFill`) is for a surface that carries

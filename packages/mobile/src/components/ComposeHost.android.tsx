@@ -9,10 +9,6 @@
 // app runs dark on a light-mode phone). Both come from `useTheme()`, so callers
 // can't pass them; `compose-host-discipline.test.ts` keeps raw `Host` out of
 // Android component files.
-//
-// A DropdownMenu popup inherits the seeded MaterialTheme too. Its rows still
-// take an explicit text colour for a different reason: a custom `Text` in an item
-// slot does not inherit `DropdownMenuItem`'s content colour.
 
 import { Host } from '@expo/ui';
 import type { ComponentProps } from 'react';
