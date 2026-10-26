@@ -1132,9 +1132,9 @@ with tarfile.open(sys.argv[1], "w", format=tarfile.GNU_FORMAT) as archive:
       ).toEqual([]);
     }
     expect(parsedProduction.env.TMPDIR).toBeUndefined();
-    // The unpack and verify steps run whenever an export does, whatever came before.
-    expect(unpackStep.if).toBe("steps.sentry_uploader.outcome == 'success'");
-    expect(verifyStep.if).toBe("steps.sentry_uploader.outcome == 'success'");
+    // The unpack and verify steps run whenever an export does (gate configured, uploader checked).
+    expect(unpackStep.if).toBe("steps.gate.outputs.configured == 'true' && steps.sentry_uploader.outcome == 'success'");
+    expect(verifyStep.if).toBe("steps.gate.outputs.configured == 'true' && steps.sentry_uploader.outcome == 'success'");
     // A cache problem must never block a publish.
     for (const step of [keyStep, sealKeyStep, downloadStep, unpackStep, verifyStep, sealStep, saveStep]) {
       expect(step['continue-on-error'], step.name).toBe(true);

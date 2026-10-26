@@ -897,7 +897,7 @@ jobs:
       # without failing the job, and the publish steps don't depend on them.
       - name: Key the Metro transform cache on the inlined build env
         id: metro_cache
-        if: steps.sentry_uploader.outcome == 'success'
+        if: steps.gate.outputs.configured == 'true' && steps.sentry_uploader.outcome == 'success'
         continue-on-error: true
         # Byte-identical to the same step in metro-cache-fetch (tested), so both
         # jobs name the same entry.
@@ -918,7 +918,7 @@ jobs:
 
       - name: Check for the Metro cache seal key
         id: metro_seal_key
-        if: steps.metro_cache.outcome == 'success'
+        if: steps.gate.outputs.configured == 'true' && steps.metro_cache.outcome == 'success'
         continue-on-error: true
         env:
           # A boolean, so this step never holds the key itself.
@@ -947,7 +947,7 @@ jobs:
       # the unpack step checks every tar member, and the seal decides the rest.
       - name: Download the Metro cache artifact
         id: metro_download
-        if: steps.metro_seal_key.outputs.sealing == 'true' && needs.metro-cache-fetch.outputs.packed == 'true'
+        if: steps.gate.outputs.configured == 'true' && steps.metro_seal_key.outputs.sealing == 'true' && needs.metro-cache-fetch.outputs.packed == 'true'
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
@@ -961,7 +961,7 @@ jobs:
       # .. names) and without owner or mode trust.
       - name: Unpack the Metro cache artifact
         id: metro_unpack
-        if: steps.sentry_uploader.outcome == 'success'
+        if: steps.gate.outputs.configured == 'true' && steps.sentry_uploader.outcome == 'success'
         continue-on-error: true
         run: |
           set -euo pipefail
@@ -999,7 +999,7 @@ jobs:
       # leaves it unset, so the exports run cold rather than on unverified files.
       - name: Verify the Metro cache seal
         id: metro_verify
-        if: steps.sentry_uploader.outcome == 'success'
+        if: steps.gate.outputs.configured == 'true' && steps.sentry_uploader.outcome == 'success'
         continue-on-error: true
         env:
           METRO_CACHE_HMAC_KEY: ${{ secrets.METRO_CACHE_HMAC_KEY }}
@@ -1126,7 +1126,7 @@ jobs:
         run: bash scripts/ci/metro-cache-seal.sh seal "$RUNNER_TEMP/metro-ota/metro-cache"
 
       - name: Save Metro's OTA transform cache
-        if: "!cancelled() && steps.metro_seal.outcome == 'success'"
+        if: "!cancelled() && steps.gate.outputs.configured == 'true' && steps.metro_seal.outcome == 'success'"
         continue-on-error: true
         uses: actions/cache/save@v4
         with:
