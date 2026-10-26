@@ -202,14 +202,7 @@ describe('production OTA workflow reliability', () => {
       jobs: Record<string, { if?: string; needs?: string[] }>;
     };
     const publisher = workflow.jobs.publish;
-    expect(publisher.needs).toEqual([
-      'resolve-staging-runtimes',
-      'capture-staging-baselines',
-      'live-store-runtimes',
-      'metro-cache-fetch',
-    ]);
-    // The Metro cache fetch is optional: its result must never gate the publish.
-    expect(publisher.if).not.toContain('metro-cache-fetch');
+    expect(publisher.needs).toEqual(['resolve-staging-runtimes', 'capture-staging-baselines', 'live-store-runtimes']);
     const expression = publisher
       .if!.replace(/needs\.([a-z-]+)/g, 'needs["$1"]')
       .replaceAll('github.ref', '"refs/heads/main"');
@@ -630,10 +623,10 @@ describe('publisher helper preview routing', () => {
 
 // babel-preset-expo inlines every EXPO_PUBLIC_* value into the transformed code,
 // and Metro's own cache key never sees those values, so the cache key must carry
-// them. The key alone is no trust boundary, though: jobs that run PR code under a
-// main-scope ref can write main's cache. So the store is HMAC-sealed with a
-// Production secret, and the restore (which extracts with `tar -P` and can write
-// anywhere) happens only in a job that holds no secrets.
+// them. The store never goes through actions/cache (writable by any main-scope run,
+// restored with `tar -P`), and no other job in the run touches it (they share an
+// artifact namespace). It travels only as an artifact from an earlier successful publish
+// run, and is HMAC-sealed with a Production secret.
 describe('production OTA Metro transform cache', () => {
   type WorkflowStep = {
     id?: string;
@@ -657,8 +650,6 @@ describe('production OTA Metro transform cache', () => {
     env: Record<string, string>;
     jobs: Record<string, WorkflowJob>;
   };
-  const fetchJob = parsedProduction.jobs['metro-cache-fetch'];
-  const fetchSteps = fetchJob.steps ?? [];
   const publishSteps = parsedProduction.jobs.publish.steps ?? [];
   const stepIn = (steps: WorkflowStep[], name: string): WorkflowStep => {
     const step = steps.find((candidate) => candidate.name === name);
@@ -670,16 +661,13 @@ describe('production OTA Metro transform cache', () => {
   const ENV_STEP = 'Write .env for Expo build-time inlining';
   const keyStep = stepNamed(KEY_STEP);
   const sealKeyStep = stepNamed('Check for the Metro cache seal key');
-  const downloadStep = stepNamed('Download the Metro cache artifact');
+  const findStep = stepNamed('Find the newest trusted Metro store');
+  const downloadStep = stepNamed('Download the Metro store');
   const unpackStep = stepNamed('Unpack the Metro cache artifact');
   const verifyStep = stepNamed('Verify the Metro cache seal');
   const sealStep = stepNamed("Seal Metro's OTA transform cache");
-  const saveStep = stepNamed("Save Metro's OTA transform cache");
-  const restoreStep = stepIn(fetchSteps, "Restore Metro's OTA transform cache");
-  const packStep = stepIn(fetchSteps, 'Pack the Metro store for publish');
-  const uploadStep = stepIn(fetchSteps, 'Upload the Metro store for publish');
-  const cachePath = '${{ runner.temp }}/metro-ota/metro-cache';
-  const exactKey = '${{ steps.metro_cache.outputs.prefix }}${{ github.sha }}';
+  const packStep = stepNamed('Pack the sealed Metro store');
+  const uploadStep = stepNamed('Upload the sealed Metro store');
   const sealScript = resolve(REPO_ROOT, 'scripts', 'ci', 'metro-cache-seal.sh');
   const SEAL_ENV = { METRO_CACHE_HMAC_KEY: 'production-secret', METRO_CACHE_PREFIX: 'metro-ota-Linux-a-b-' };
   const WORKFLOW_ENV = {
@@ -721,8 +709,8 @@ describe('production OTA Metro transform cache', () => {
     );
   }
 
-  /** Runs a job's own `.env` writer and key step, the way that job would. */
-  function prefixFrom(steps: WorkflowStep[], env: Record<string, string>): string {
+  /** Runs the job's own `.env` writer and key step, the way the job would. */
+  function keyOutputs(steps: WorkflowStep[], env: Record<string, string>): Record<string, string> {
     return withWorkspace((workspace) => {
       const mobileDir = join(workspace, 'packages', 'mobile');
       mkdirSync(mobileDir, { recursive: true });
@@ -738,10 +726,14 @@ describe('production OTA Metro transform cache', () => {
       const outputPath = join(workspace, 'github-output');
       const keyed = runBash(stepIn(steps, KEY_STEP).run ?? '', workspace, { ...runnerEnv, GITHUB_OUTPUT: outputPath });
       expect(keyed.status, keyed.stderr).toBe(0);
-      const prefix = readOutputs(outputPath).prefix;
-      if (!prefix) throw new Error('key step wrote no prefix output');
-      return prefix;
+      return readOutputs(outputPath);
     });
+  }
+
+  function prefixFrom(steps: WorkflowStep[], env: Record<string, string>): string {
+    const prefix = keyOutputs(steps, env).prefix;
+    if (!prefix) throw new Error('key step wrote no prefix output');
+    return prefix;
   }
 
   // A store shaped like Metro's binary FileStore: two-hex-digit shards of `<hex>.mp`.
@@ -837,22 +829,18 @@ with tarfile.open(sys.argv[1], "w", format=tarfile.GNU_FORMAT) as archive:
     expect(prefixFrom(publishSteps, { ...WORKFLOW_ENV, METRO_INPUTS_HASH: 'bumped-lockfile' })).not.toBe(prefix);
   });
 
-  it('computes the same key in the fetch job as in publish', () => {
-    for (const name of [ENV_STEP, KEY_STEP]) {
-      const fetchStep = stepIn(fetchSteps, name);
-      const publishStep = stepIn(publishSteps, name);
-      expect(fetchStep.run, name).toBe(publishStep.run);
-      expect(fetchStep.env, name).toEqual(publishStep.env);
-      expect(fetchStep['working-directory'], name).toBe(publishStep['working-directory']);
-    }
-    // Neither job may add an EXPO_PUBLIC_* of its own on top of the shared env.
-    for (const job of [fetchJob, parsedProduction.jobs.publish]) {
-      expect(Object.keys(job.env ?? {}).filter((key) => key.startsWith('EXPO_PUBLIC_'))).toEqual([]);
-    }
-    expect(prefixFrom(fetchSteps, WORKFLOW_ENV)).toBe(prefixFrom(publishSteps, WORKFLOW_ENV));
+  it('names the store artifact after the whole key', () => {
+    const outputs = keyOutputs(publishSteps, WORKFLOW_ENV);
+    expect(outputs.store_artifact).toMatch(/^metro-ota-store-[0-9a-f]{40}$/);
+    const otherEnv = keyOutputs(publishSteps, { ...WORKFLOW_ENV, EXPO_PUBLIC_BACKEND_URL: 'https://staging.example' });
+    expect(otherEnv.store_artifact).not.toBe(outputs.store_artifact);
+    // The publish job may not add an EXPO_PUBLIC_* of its own on top of the shared env.
+    expect(
+      Object.keys(parsedProduction.jobs.publish.env ?? {}).filter((key) => key.startsWith('EXPO_PUBLIC_')),
+    ).toEqual([]);
   });
 
-  it('hashes the same Metro inputs as ci.yml and never touches its metro-native entries', () => {
+  it('hashes the same Metro inputs as ci.yml, and never uses actions/cache', () => {
     for (const input of [
       'pnpm-lock.yaml',
       'pnpm-workspace.yaml',
@@ -863,42 +851,40 @@ with tarfile.open(sys.argv[1], "w", format=tarfile.GNU_FORMAT) as archive:
     ]) {
       expect(keyStep.env?.METRO_INPUTS_HASH).toContain(`'${input}'`);
     }
-    for (const step of [...fetchSteps, ...publishSteps].filter((candidate) =>
-      candidate.uses?.startsWith('actions/cache'),
-    )) {
-      expect(`${step.with?.key} ${step.with?.['restore-keys'] ?? ''}`, step.name).not.toContain('metro-native');
+    expect(keyStep.run).toContain('prefix="metro-ota-');
+    // actions/cache is writable by any main-scope run and restores with `tar -P`.
+    for (const [jobName, job] of Object.entries(parsedProduction.jobs)) {
+      for (const step of job.steps ?? []) {
+        expect(step.uses ?? '', `${jobName}: ${step.name}`).not.toMatch(/^actions\/cache/);
+      }
     }
-    expect(keyStep.run).toContain('prefix=metro-ota-');
-    expect(restoreStep.uses).toBe('actions/cache/restore@v4');
-    expect(restoreStep.with?.path).toBe(cachePath);
-    expect(restoreStep.with?.key).toBe(exactKey);
-    expect(String(restoreStep.with?.['restore-keys']).trim()).toBe('${{ steps.metro_cache.outputs.prefix }}');
-    expect(saveStep.with?.path).toBe(cachePath);
-    expect(saveStep.with?.key).toBe(exactKey);
   });
 
-  it('restores only in a job with no environment, no secrets and nothing from the repo executed', () => {
-    expect(fetchJob.environment).toBeUndefined();
-    expect(fetchJob.permissions).toEqual({ contents: 'read' });
-    expect(JSON.stringify(fetchJob)).not.toMatch(/secrets\./);
-    const checkout = fetchSteps.find((step) => step.uses?.startsWith('actions/checkout'));
-    expect(checkout?.with?.['persist-credentials']).toBe(false);
-    for (const step of fetchSteps.filter((candidate) => candidate.run)) {
-      // Inline shell only: no repo script, package binary or toolchain.
-      expect(step.run, step.name).not.toMatch(/scripts\/|\bvp\b|\bnode\b|\bnpx\b|\bpnpm\b|\bbash [^-]|\.\/|\bsource\b/);
-    }
-    expect(uploadStep.uses).toBe('actions/upload-artifact@v4');
-    expect(uploadStep.with?.name).toBe('metro-ota-cache');
-    expect(uploadStep.with?.['retention-days']).toBe(1);
-    expect(packStep.if).toBe("steps.metro_restore.outputs.cache-matched-key != ''");
-    expect(packStep.run).not.toMatch(/\s-P\b|--absolute-names/);
-    // Every restore in the workflow is in the fetch job; publish only downloads.
+  it('moves the store only between publish jobs of trusted runs', () => {
+    // Jobs in one run share an artifact namespace, so no other job may touch the store.
+    expect(Object.keys(parsedProduction.jobs)).not.toContain('metro-cache-fetch');
     for (const [jobName, job] of Object.entries(parsedProduction.jobs)) {
-      const restores = (job.steps ?? []).filter((step) => step.uses?.startsWith('actions/cache/restore'));
-      expect(restores.length, jobName).toBe(jobName === 'metro-cache-fetch' ? 1 : 0);
+      if (jobName === 'publish') continue;
+      expect(JSON.stringify(job), jobName).not.toMatch(/metro/i);
     }
+    expect(findStep.run).toBe('vp exec tsx scripts/ci/metro-cache-select.ts');
+    expect(findStep.if).toBe(
+      "steps.gate.outputs.configured == 'true' && steps.metro_seal_key.outputs.sealing == 'true'",
+    );
+    expect(findStep.env?.METRO_STORE_ARTIFACT).toBe('${{ steps.metro_cache.outputs.store_artifact }}');
     expect(downloadStep.uses).toBe('actions/download-artifact@v4');
-    expect(downloadStep.with?.name).toBe('metro-ota-cache');
+    expect(downloadStep.if).toBe("steps.gate.outputs.configured == 'true' && steps.metro_find.outputs.run_id != ''");
+    expect(downloadStep.with).toMatchObject({
+      name: '${{ steps.metro_cache.outputs.store_artifact }}',
+      'run-id': '${{ steps.metro_find.outputs.run_id }}',
+      'github-token': '${{ github.token }}',
+      path: '${{ runner.temp }}/metro-ota-download',
+    });
+    expect(uploadStep.uses).toBe('actions/upload-artifact@v4');
+    expect(uploadStep.with?.name).toBe('${{ steps.metro_cache.outputs.store_artifact }}');
+    expect(uploadStep.with?.['retention-days']).toBe(7);
+    expect(packStep.run).not.toMatch(/\s-P\b|--absolute-names/);
+    expect(packStep.run).toContain('size_bytes=');
   });
 
   it('unpacks a genuine artifact into the store', () => {
@@ -1061,7 +1047,7 @@ with tarfile.open(sys.argv[1], "w", format=tarfile.GNU_FORMAT) as archive:
       });
     expect(sealingFor('false')).toBe('false');
     expect(sealingFor('true')).toBe('true');
-    expect(downloadStep.if).toContain("steps.metro_seal_key.outputs.sealing == 'true'");
+    expect(findStep.if).toContain("steps.metro_seal_key.outputs.sealing == 'true'");
     expect(sealStep.if).toContain("steps.metro_seal_key.outputs.sealing == 'true'");
     const noKey = { METRO_CACHE_PREFIX: SEAL_ENV.METRO_CACHE_PREFIX };
     withWorkspace((workspace) => {
@@ -1076,9 +1062,9 @@ with tarfile.open(sys.argv[1], "w", format=tarfile.GNU_FORMAT) as archive:
     });
   });
 
-  it('saves only a sealed store, from main and release/next, after a platform published', () => {
-    expect(saveStep.uses).toBe('actions/cache/save@v4');
-    expect(saveStep.if).toContain("steps.metro_seal.outcome == 'success'");
+  it('publishes only a sealed store, from main and release/next, after a platform published', () => {
+    expect(packStep.if).toContain("steps.metro_seal.outcome == 'success'");
+    expect(uploadStep.if).toContain("steps.metro_pack.outcome == 'success'");
     expect(sealStep.run).toContain('scripts/ci/metro-cache-seal.sh seal');
     expect(sealStep.if).toContain("(github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release/next')");
     expect(sealStep.if).toContain(
@@ -1086,10 +1072,6 @@ with tarfile.open(sys.argv[1], "w", format=tarfile.GNU_FORMAT) as archive:
     );
     expect(sealStep.if).toContain("steps.metro_verify.outputs.store_ready == 'true'");
     expect(sealStep.if).toContain('!cancelled()');
-    const saves = Object.values(parsedProduction.jobs).flatMap((job) =>
-      (job.steps ?? []).filter((step) => step.uses?.startsWith('actions/cache/save')),
-    );
-    expect(saves).toEqual([saveStep]);
   });
 
   it('keeps METRO_CACHE_HMAC_KEY inside the Production-environment publish job', () => {
@@ -1111,13 +1093,6 @@ with tarfile.open(sys.argv[1], "w", format=tarfile.GNU_FORMAT) as archive:
       expect(readFileSync(resolve(WORKFLOW_DIR, filename), 'utf8'), filename).not.toContain('METRO_CACHE_HMAC_KEY');
     }
   });
-
-  it('never interpolates the untrusted fetch job outputs into a script', () => {
-    for (const step of publishSteps) {
-      expect(step.run ?? '', step.name).not.toContain('needs.metro-cache-fetch');
-    }
-  });
-
   it('lets an export read the store only when the seal check said so', () => {
     for (const name of ['Publish iOS OTA', 'Publish Android OTA']) {
       const env = stepNamed(name).env ?? {};
@@ -1132,11 +1107,21 @@ with tarfile.open(sys.argv[1], "w", format=tarfile.GNU_FORMAT) as archive:
       ).toEqual([]);
     }
     expect(parsedProduction.env.TMPDIR).toBeUndefined();
-    // The unpack and verify steps run whenever an export does (gate configured, uploader checked).
+    // The unpack and verify steps run whenever an export does, whatever came before.
     expect(unpackStep.if).toBe("steps.gate.outputs.configured == 'true' && steps.sentry_uploader.outcome == 'success'");
     expect(verifyStep.if).toBe("steps.gate.outputs.configured == 'true' && steps.sentry_uploader.outcome == 'success'");
     // A cache problem must never block a publish.
-    for (const step of [keyStep, sealKeyStep, downloadStep, unpackStep, verifyStep, sealStep, saveStep]) {
+    for (const step of [
+      keyStep,
+      sealKeyStep,
+      findStep,
+      downloadStep,
+      unpackStep,
+      verifyStep,
+      sealStep,
+      packStep,
+      uploadStep,
+    ]) {
       expect(step['continue-on-error'], step.name).toBe(true);
     }
   });
@@ -1147,13 +1132,15 @@ with tarfile.open(sys.argv[1], "w", format=tarfile.GNU_FORMAT) as archive:
       'Validate Sentry uploader support before publishing',
       KEY_STEP,
       'Check for the Metro cache seal key',
-      'Download the Metro cache artifact',
+      'Find the newest trusted Metro store',
+      'Download the Metro store',
       'Unpack the Metro cache artifact',
       'Verify the Metro cache seal',
       'Publish iOS OTA',
       'Publish Android OTA',
       "Seal Metro's OTA transform cache",
-      "Save Metro's OTA transform cache",
+      'Pack the sealed Metro store',
+      'Upload the sealed Metro store',
     ].map(position);
     expect(order.every((index) => index >= 0)).toBe(true);
     expect(order).toEqual([...order].sort((left, right) => left - right));

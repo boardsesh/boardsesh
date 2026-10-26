@@ -1,28 +1,21 @@
 #!/usr/bin/env bash
 # Seal and verify the Metro transform store that mobile-ota-production.yml
-# caches between OTA exports. See docs/mobile-ota-updates.md, "Metro transform
-# cache".
+# carries between OTA publishes as a `metro-ota-store-*` artifact. See
+# docs/mobile-ota-updates.md, "Metro transform cache".
 #
-#   metro-cache-seal.sh seal   <store-dir>   before actions/cache/save
+#   metro-cache-seal.sh seal   <store-dir>   before the store is packed and uploaded
 #   metro-cache-seal.sh verify <store-dir>   after the store is unpacked, before any export
 #
-# Why: GitHub's cache is writable by any job that runs with a main-scope ref,
-# including jobs that run PR code (an /ota-preview comment on a fork PR, the
-# migration renumber bot). Both halves of our cache key are computable from
-# public data, so such a job can plant an entry that `restore-keys` would hand
-# to the production export, and Metro trusts every cached transform. The seal
-# is an HMAC over every file in the store, keyed by METRO_CACHE_HMAC_KEY, a
-# secret only the Production environment holds. A store whose MAC we cannot
-# recompute is deleted and the export runs cold.
+# Why: the store is only taken from earlier successful publish runs on trusted
+# branches (scripts/ci/metro-cache-select.ts), and every tar member is checked
+# before it is unpacked. The seal is the last check: an HMAC over every file in
+# the store, keyed by METRO_CACHE_HMAC_KEY, a secret only the Production
+# environment holds. Even an artifact from a trusted run is useless without it.
+# A store whose MAC we cannot recompute is deleted and the export runs cold.
 #
-# The restore itself never happens in the job that runs this script:
-# @actions/cache extracts with `tar -P`, which can write anywhere, including
-# over this file. The metro-cache-fetch job restores and repacks; the publish
-# job only unpacks a member-checked tarball and then calls `verify`.
-#
-# The MAC also covers METRO_CACHE_PREFIX (the cache key minus the sha, which
-# carries the EXPO_PUBLIC_* hash). Without it, a genuine store sealed under old
-# EXPO_PUBLIC_* values could be re-uploaded under the current prefix.
+# The MAC also covers METRO_CACHE_PREFIX (the cache key, which carries the
+# EXPO_PUBLIC_* hash). Without it, a genuine store sealed under old
+# EXPO_PUBLIC_* values could be renamed into the current key.
 #
 # Env:
 #   METRO_CACHE_HMAC_KEY   the secret. Never printed, never put on a command line.
@@ -124,7 +117,7 @@ case "$mode" in
     }
     mkdir -p "$store"
     if [ -z "$(find "$store" -mindepth 1 -print -quit)" ]; then
-      echo 'No Metro cache restored; building cold.'
+      echo 'No Metro store to verify; building cold.'
       exit 0
     fi
     [ -n "${METRO_CACHE_HMAC_KEY:-}" ] || reject 'no METRO_CACHE_HMAC_KEY to check it with'

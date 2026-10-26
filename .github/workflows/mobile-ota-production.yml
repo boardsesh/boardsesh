@@ -221,117 +221,9 @@ jobs:
           echo "production_baseline=$(jq -c . production-baseline.json)" >> "$GITHUB_OUTPUT"
           echo "early_baseline=$(jq -c . early-baseline.json)" >> "$GITHUB_OUTPUT"
 
-  # Restores Metro's OTA transform cache in a job that holds nothing worth
-  # stealing, then hands publish a plain tarball. @actions/cache extracts with
-  # `tar -P` into the workspace, so a planted entry can write any path the
-  # runner user can (repo scripts, node_modules, .git/config, ~/.local/bin on
-  # PATH) before any check runs. That must never happen in the job holding
-  # the OTA publish token and the seal key. So: no environment, no secrets, read-only
-  # token without persisted credentials, and nothing from the checkout is
-  # executed. Everything this job produces is treated as untrusted by publish.
-  # A failure here only means a cold export.
-  metro-cache-fetch:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    outputs:
-      prefix: ${{ steps.metro_cache.outputs.prefix }}
-      packed: ${{ steps.metro_pack.outputs.packed }}
-    steps:
-      # Only the files the cache key hashes. Read, never run.
-      - name: Check out the cache-key inputs
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-          sparse-checkout-cone-mode: false
-          sparse-checkout: |
-            /pnpm-lock.yaml
-            /pnpm-workspace.yaml
-            /patches/
-            /packages/mobile/metro.config.js
-            /packages/mobile/metro-web-runtime-resolution.cjs
-            /packages/mobile/expo-web-response-headers.cjs
-            /packages/mobile/babel.config.js
-            /packages/mobile/app.config.ts
-
-      # Byte-identical to publish's step of the same name (tested), so the
-      # inlined-env hash below matches.
-      - name: Write .env for Expo build-time inlining
-        working-directory: packages/mobile
-        run: |
-          cat > .env <<EOF
-          EXPO_PUBLIC_BACKEND_URL=$EXPO_PUBLIC_BACKEND_URL
-          EXPO_PUBLIC_WS_URL=$EXPO_PUBLIC_WS_URL
-          EXPO_PUBLIC_WEB_URL=$EXPO_PUBLIC_WEB_URL
-          EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID
-          EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID
-          EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
-          EXPO_PUBLIC_SENTRY_DSN=$EXPO_PUBLIC_SENTRY_DSN
-          EXPO_PUBLIC_POSTHOG_KEY=$EXPO_PUBLIC_POSTHOG_KEY
-          EXPO_PUBLIC_SNAPSHOT_BASE_URL=$EXPO_PUBLIC_SNAPSHOT_BASE_URL
-          EXPO_PUBLIC_USE_RN_FETCH=$EXPO_PUBLIC_USE_RN_FETCH
-          EOF
-
-      - name: Key the Metro transform cache on the inlined build env
-        id: metro_cache
-        env:
-          METRO_INPUTS_HASH: ${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/mobile/metro.config.js', 'packages/mobile/metro-web-runtime-resolution.cjs', 'packages/mobile/expo-web-response-headers.cjs', 'packages/mobile/babel.config.js', 'packages/mobile/app.config.ts', 'patches/**') }}
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/metro-ota/metro-cache"
-          # NUL-separated so no value can run into the next one's name.
-          inlined_env_hash="$(
-            {
-              env -0 | grep -z '^EXPO_PUBLIC_' | LC_ALL=C sort -z
-              printf '\0packages/mobile/.env\0'
-              cat packages/mobile/.env
-            } | sha256sum | cut -d' ' -f1
-          )"
-          echo "prefix=metro-ota-${RUNNER_OS}-${METRO_INPUTS_HASH}-${inlined_env_hash}-" >> "$GITHUB_OUTPUT"
-
-      - name: Restore Metro's OTA transform cache
-        id: metro_restore
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ runner.temp }}/metro-ota/metro-cache
-          key: ${{ steps.metro_cache.outputs.prefix }}${{ github.sha }}
-          restore-keys: |
-            ${{ steps.metro_cache.outputs.prefix }}
-
-      # Repack only the store, as regular files and directories, without -P.
-      # This is a courtesy, not a boundary: after the restore this job may be
-      # running planted code. publish checks every member again and the seal
-      # decides.
-      - name: Pack the Metro store for publish
-        id: metro_pack
-        if: steps.metro_restore.outputs.cache-matched-key != ''
-        run: |
-          set -euo pipefail
-          store="$RUNNER_TEMP/metro-ota/metro-cache"
-          if [ -n "$(find "$store" -mindepth 1 ! -type f ! -type d -print -quit)" ]; then
-            echo '::warning::The restored Metro store holds entries that are not regular files or directories; not passing it on.'
-            exit 0
-          fi
-          mkdir -p "$RUNNER_TEMP/metro-ota-artifact"
-          tar --create --file "$RUNNER_TEMP/metro-ota-artifact/metro-cache.tar" --directory "$RUNNER_TEMP/metro-ota" \
-            --format=gnu --owner=0 --group=0 --numeric-owner metro-cache
-          echo "packed=true" >> "$GITHUB_OUTPUT"
-
-      - name: Upload the Metro store for publish
-        if: steps.metro_pack.outputs.packed == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: metro-ota-cache
-          path: ${{ runner.temp }}/metro-ota-artifact/metro-cache.tar
-          retention-days: 1
-          if-no-files-found: error
-
   publish:
-    needs: [resolve-staging-runtimes, capture-staging-baselines, live-store-runtimes, metro-cache-fetch]
+    needs: [resolve-staging-runtimes, capture-staging-baselines, live-store-runtimes]
     # Skipped staging prerequisites must not suppress direct/train/manual runs.
-    # metro-cache-fetch is deliberately absent from this condition: whatever it
-    # did (success, failure, skip), the publish runs, cold if it must.
     if: >-
       always() && !cancelled()
       && (github.ref != 'refs/heads/release/next' || needs.live-store-runtimes.result == 'success')
@@ -870,28 +762,24 @@ jobs:
       # EXPO_PUBLIC_, and the one plugin that inlines the app config
       # (expo-inline-manifest) runs for web bundles only.
       #
-      # Own prefix, metro-ota-. Never restore ci.yml's native bundle-check
-      # entries, which are built under a different env. No cross-lockfile
-      # restore key, as in ci.yml: a dependency bump falls back to a fully cold
-      # Metro.
+      # The store travels as a workflow ARTIFACT, never through actions/cache.
+      # actions/cache is writable by any main-scope run, including ones that
+      # run PR code (an /ota-preview comment on a fork PR, the migration
+      # renumber bot), and its restore extracts with `tar -P`, which can
+      # overwrite any file the runner user can reach. And the exports never
+      # consume a store produced alongside them in this run: jobs in one run
+      # share an artifact namespace.
       #
-      # The store is SEALED, because the key alone is not a trust boundary.
-      # Jobs that run PR code under a main-scope ref (an /ota-preview comment on
-      # a fork PR, the migration renumber bot) can write main's cache, and both
-      # halves of the prefix are computable from public data. A planted entry
-      # would come back through restore-keys, and Metro trusts every cached
-      # transform. scripts/ci/metro-cache-seal.sh HMACs every file in the store
-      # (and the prefix) with METRO_CACHE_HMAC_KEY, a Production-environment
-      # secret, before saving, and recomputes it from the files on disk after
-      # unpacking. A store that fails is deleted. The publish steps only point
-      # TMPDIR at the store when the check said so; otherwise they export cold
-      # in a scratch dir that is never saved. No key: nothing used, no save.
-      #
-      # This job NEVER runs actions/cache/restore: it extracts with `tar -P`,
-      # so a planted entry could overwrite any file here (this repo's scripts,
-      # node_modules) before the seal is checked. The metro-cache-fetch job
-      # restores in a job with no secrets and passes a tarball, which is
-      # downloaded and member-checked below.
+      # So only this job, on main or release/next, uploads a sealed
+      # `metro-ota-store-<key hash>` artifact after it published. The next run
+      # takes the newest one whose producing run passes
+      # scripts/ci/metro-cache-select.ts (right workflow file, branch, event,
+      # repository, success, size), downloads it into a fresh dir, checks every
+      # tar member, and verifies the HMAC seal (scripts/ci/metro-cache-seal.sh,
+      # keyed by METRO_CACHE_HMAC_KEY, a Production secret). The seal stays
+      # mandatory: even an artifact from a trusted run needs the key. A store
+      # that fails is deleted. The publish steps only point TMPDIR at the store
+      # when the check said so. No key: nothing downloaded, nothing uploaded.
       #
       # A cache failure must never block a publish: each cache step may fail
       # without failing the job, and the publish steps don't depend on them.
@@ -899,8 +787,6 @@ jobs:
         id: metro_cache
         if: steps.gate.outputs.configured == 'true' && steps.sentry_uploader.outcome == 'success'
         continue-on-error: true
-        # Byte-identical to the same step in metro-cache-fetch (tested), so both
-        # jobs name the same entry.
         env:
           METRO_INPUTS_HASH: ${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/mobile/metro.config.js', 'packages/mobile/metro-web-runtime-resolution.cjs', 'packages/mobile/expo-web-response-headers.cjs', 'packages/mobile/babel.config.js', 'packages/mobile/app.config.ts', 'patches/**') }}
         run: |
@@ -914,7 +800,10 @@ jobs:
               cat packages/mobile/.env
             } | sha256sum | cut -d' ' -f1
           )"
-          echo "prefix=metro-ota-${RUNNER_OS}-${METRO_INPUTS_HASH}-${inlined_env_hash}-" >> "$GITHUB_OUTPUT"
+          prefix="metro-ota-${RUNNER_OS}-${METRO_INPUTS_HASH}-${inlined_env_hash}-"
+          echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
+          # The artifact name carries the whole key, hashed to a safe length.
+          echo "store_artifact=metro-ota-store-$(printf '%s' "$prefix" | sha256sum | cut -c1-40)" >> "$GITHUB_OUTPUT"
 
       - name: Check for the Metro cache seal key
         id: metro_seal_key
@@ -923,10 +812,6 @@ jobs:
         env:
           # A boolean, so this step never holds the key itself.
           HAS_HMAC_KEY: ${{ secrets.METRO_CACHE_HMAC_KEY != '' }}
-          OWN_PREFIX: ${{ steps.metro_cache.outputs.prefix }}
-          # Diagnostic only: the fetch job is untrusted, and nothing here is
-          # decided by what it says. Passed through env, never interpolated.
-          FETCH_PREFIX: ${{ needs.metro-cache-fetch.outputs.prefix }}
         run: |
           if [ "$HAS_HMAC_KEY" = true ]; then
             echo "sealing=true" >> "$GITHUB_OUTPUT"
@@ -935,23 +820,31 @@ jobs:
             echo '::notice::METRO_CACHE_HMAC_KEY is not set in the Production environment; Metro exports build cold and nothing is cached.'
             echo 'Metro cache: off (METRO_CACHE_HMAC_KEY unset); both exports ran cold.' >> "$GITHUB_STEP_SUMMARY"
           fi
-          # The fetch job resolves vars without the Production environment. If
-          # an environment-level override ever differs, it fetches the wrong
-          # entry: always a cold build, never a wrong one.
-          if [ -n "$FETCH_PREFIX" ] && [ "$FETCH_PREFIX" != "$OWN_PREFIX" ]; then
-            echo '::notice::metro-cache-fetch computed a different cache key than this job; check for an EXPO_PUBLIC_* value that differs between repository and Production variables.'
-          fi
 
-      # The artifact is untrusted bytes from a job anyone with main-scope cache
-      # access can steer. download-artifact rejects path traversal in the zip,
-      # the unpack step checks every tar member, and the seal decides the rest.
-      - name: Download the Metro cache artifact
+      # Picks the newest metro-ota-store artifact for this exact key from a
+      # successful trusted run, checked through the Actions API before a byte
+      # is downloaded (see the script's header for every rule). Size is
+      # checked here too, so an oversized artifact is never fetched.
+      - name: Find the newest trusted Metro store
+        id: metro_find
+        if: steps.gate.outputs.configured == 'true' && steps.metro_seal_key.outputs.sealing == 'true'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          METRO_STORE_ARTIFACT: ${{ steps.metro_cache.outputs.store_artifact }}
+        run: vp exec tsx scripts/ci/metro-cache-select.ts
+
+      # download-artifact rejects path traversal inside the zip; the unpack
+      # step checks every tar member and the seal decides the rest.
+      - name: Download the Metro store
         id: metro_download
-        if: steps.gate.outputs.configured == 'true' && steps.metro_seal_key.outputs.sealing == 'true' && needs.metro-cache-fetch.outputs.packed == 'true'
+        if: steps.gate.outputs.configured == 'true' && steps.metro_find.outputs.run_id != ''
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
-          name: metro-ota-cache
+          name: ${{ steps.metro_cache.outputs.store_artifact }}
+          run-id: ${{ steps.metro_find.outputs.run_id }}
+          github-token: ${{ github.token }}
           path: ${{ runner.temp }}/metro-ota-download
 
       # Always runs, so the store starts empty whatever came before. Every
@@ -1101,15 +994,14 @@ jobs:
         if: inputs.stage_for_production_deploy && steps.publish_android.outcome == 'success'
         run: cp -a packages/mobile/dist ota-stage/android
 
-      # Only main and release/next write the cache. Every event that reaches those
-      # refs is trusted: a push to the protected train, main's staging call from
-      # production-deploy.yml, or a dispatch, which needs write access. A dispatch
-      # from any other branch restores but never saves (GitHub would scope its
-      # entry to that branch anyway). The train restores main's staging entries,
-      # since a branch may read the default branch's caches. Saved only once at
-      # least one platform published from the verified store, never from a
-      # cancelled run, and only with a seal: the seal step refuses without the
-      # key or past the 1 GiB budget, and the save follows its verdict.
+      # Only main and release/next publish a store. Every event that reaches
+      # those refs is trusted: a push to the protected train, main's staging call
+      # from production-deploy.yml, or a dispatch, which needs write access. A
+      # dispatch from any other branch can use a store but never makes one (and
+      # the selector would refuse it anyway). Published only once at least one
+      # platform exported from the verified store, never from a cancelled run,
+      # and only with a seal: the seal step refuses without the key, outside
+      # Metro's layout, or past the 1 GiB budget, and the upload follows it.
       - name: Seal Metro's OTA transform cache
         id: metro_seal
         if: >-
@@ -1125,13 +1017,28 @@ jobs:
           METRO_CACHE_PREFIX: ${{ steps.metro_cache.outputs.prefix }}
         run: bash scripts/ci/metro-cache-seal.sh seal "$RUNNER_TEMP/metro-ota/metro-cache"
 
-      - name: Save Metro's OTA transform cache
+      - name: Pack the sealed Metro store
+        id: metro_pack
         if: "!cancelled() && steps.gate.outputs.configured == 'true' && steps.metro_seal.outcome == 'success'"
         continue-on-error: true
-        uses: actions/cache/save@v4
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/metro-ota-upload"
+          tar --create --file "$RUNNER_TEMP/metro-ota-upload/metro-cache.tar" --directory "$RUNNER_TEMP/metro-ota" \
+            --format=gnu --owner=0 --group=0 --numeric-owner metro-cache
+          bytes="$(stat -c %s "$RUNNER_TEMP/metro-ota-upload/metro-cache.tar")"
+          echo "size_bytes=$bytes" >> "$GITHUB_OUTPUT"
+          echo "Metro cache: published a sealed store, $bytes bytes before compression." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the sealed Metro store
+        if: "!cancelled() && steps.gate.outputs.configured == 'true' && steps.metro_pack.outcome == 'success'"
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
         with:
-          path: ${{ runner.temp }}/metro-ota/metro-cache
-          key: ${{ steps.metro_cache.outputs.prefix }}${{ github.sha }}
+          name: ${{ steps.metro_cache.outputs.store_artifact }}
+          path: ${{ runner.temp }}/metro-ota-upload/metro-cache.tar
+          retention-days: 7
+          if-no-files-found: error
 
       - name: Record staged export fingerprints and hashes
         if: inputs.stage_for_production_deploy && steps.publish_ios.outcome == 'success' && steps.publish_android.outcome == 'success'
