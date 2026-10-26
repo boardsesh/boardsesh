@@ -8,7 +8,7 @@ import { PressableAvatar } from '../../PressableAvatar';
 import { Card } from '../../Card';
 import { SectionHeader } from '../../SectionHeader';
 import { useTheme } from '../../../providers/theme-provider';
-import { gradeBadgeColor } from '../../you/profile-chart-colors';
+import { gradeTextColor } from '../../you/profile-chart-colors';
 import { spacing } from '../../../theme/tokens';
 import { useGradeFormat } from '../../../hooks/use-grade-format';
 import { SessionGradeChart } from './SessionGradeChart';
@@ -45,7 +45,7 @@ export function SessionAnalytics({
   boardName,
 }: SessionAnalyticsProps) {
   const { t } = useTranslation('session');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors, brandColors, colorScheme } = useTheme();
   const { formatGrade, formatGradeByDifficultyId } = useGradeFormat();
 
   return (
@@ -94,7 +94,7 @@ export function SessionAnalytics({
                   <PressableAvatar userId={send.userId} uri={send.avatarUrl} name={send.displayName} size={28} />
                 ) : null}
                 {/* Grade as bold coloured text — no pill, per the chip cleanup. */}
-                <Text variant="title3" color={gradeBadgeColor(send.grade)} style={styles.hardestGrade}>
+                <Text variant="title3" color={gradeTextColor(send.grade, colorScheme)} style={styles.hardestGrade}>
                   {formatGradeByDifficultyId(send.difficultyId, send.boardType ?? boardName) ??
                     formatGrade(send.grade, send.boardType ?? boardName) ??
                     send.grade}

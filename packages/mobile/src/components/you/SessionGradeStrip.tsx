@@ -43,8 +43,12 @@ export const SessionGradeStrip = memo(function SessionGradeStrip({
   );
 
   // Reuse the chart builder: easy→hard order, empty grades dropped, each grade's
-  // vivid colour + total already resolved. Solid bars (no splitFlash).
-  const bars = useMemo(() => buildSessionGradeBars(distribution, formatGrade), [distribution, formatGrade]);
+  // vivid colour (lifted to 3:1 on dark cards) + total already resolved. Solid
+  // bars (no splitFlash).
+  const bars = useMemo(
+    () => buildSessionGradeBars(distribution, formatGrade, { colorScheme }),
+    [distribution, formatGrade, colorScheme],
+  );
 
   if (!bars || bars.length < 2) return null;
 

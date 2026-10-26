@@ -17,7 +17,7 @@ import { ClimbListThumbnail } from '../../../src/components/ClimbListThumbnail';
 import { StatTile, GradeTile } from '../../../src/components/session/session-stat-tiles';
 import { SessionRecapCard } from '../../../src/components/session/SessionRecapCard';
 import { StackedBarChart } from '../../../src/components/you/YouCharts';
-import { buildSessionGradeBars, gradeBadgeColor } from '../../../src/components/you/profile-chart-colors';
+import { buildSessionGradeBars, gradeTextColor } from '../../../src/components/you/profile-chart-colors';
 import { useTheme } from '../../../src/providers/theme-provider';
 import { useHeaderActions } from '../../../src/hooks/use-header-actions';
 import { useSessionSummary } from '../../../src/lib/graphql/hooks';
@@ -131,7 +131,7 @@ function SessionSummaryContent({
   storeReviewWillPrompt: boolean;
 }) {
   const { t } = useTranslation('session');
-  const { systemColors } = useTheme();
+  const { systemColors, colorScheme } = useTheme();
   const insets = useSafeAreaInsets();
   const { formatGrade } = useGradeFormat();
   const scrollViewRef = useRef<ScrollView>(null);
@@ -187,8 +187,8 @@ function SessionSummaryContent({
       : null;
 
   const gradeBars = useMemo(
-    () => buildSessionGradeBars(summary.gradeDistribution, formatGrade),
-    [summary.gradeDistribution, formatGrade],
+    () => buildSessionGradeBars(summary.gradeDistribution, formatGrade, { colorScheme }),
+    [summary.gradeDistribution, formatGrade, colorScheme],
   );
 
   // Celebration: the featured number springs in and the tiles rise in just
@@ -274,7 +274,7 @@ function SessionSummaryContent({
               <Text variant="caption1" color={systemColors.secondaryLabel}>
                 {t('summary.hardestSendTitle')}
               </Text>
-              <Text variant="title2" color={gradeBadgeColor(hardest.grade)} style={styles.hardestGrade}>
+              <Text variant="title2" color={gradeTextColor(hardest.grade, colorScheme)} style={styles.hardestGrade}>
                 {formatGrade(hardest.grade, hardest.boardType) ?? hardest.grade}
               </Text>
               <Text variant="body" numberOfLines={1}>

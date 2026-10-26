@@ -140,8 +140,10 @@ vi.mock('../../hooks/use-grade-format', () => ({
   useGradeFormat: () => ({ gradeFormat: gradeFormatOverride.current }),
 }));
 
+const themeScheme = vi.hoisted(() => ({ current: 'light' as 'light' | 'dark' }));
 vi.mock('../../providers/theme-provider', () => ({
   useTheme: () => ({
+    colorScheme: themeScheme.current,
     textStyles: { body: { lineHeight: 22 } },
     systemColors: { secondaryLabel: '#8E8E93' },
     actionColors: { favorite: '#FF3B30' },
@@ -199,6 +201,7 @@ vi.mock('../Icon', () => ({
 vi.mock('../ClimbPlaylistChips', () => ({ ClimbPlaylistChips: () => null }));
 
 import { favoritesStore } from '@boardsesh/climb-actions';
+import { readableGradeColor } from '@boardsesh/board-constants/grade-colors';
 import { ClimbListItemContent } from '../ClimbListItemContent';
 import { DEFAULT_CLIMB_ROW_DISPLAY } from '../../lib/climb-row-display';
 import { resetClimbRowDisplayForTests, setClimbRowField } from '../../lib/climb-row-display-preference';
@@ -229,6 +232,7 @@ const renderRow = () =>
 
 describe('ClimbListItemContent grade', () => {
   beforeEach(() => {
+    themeScheme.current = 'light';
     resolveGrade.mockReset();
     liveStatsOverride.current = null;
     myGradeOverride.current = { status: 'unknown' };
@@ -252,6 +256,18 @@ describe('ClimbListItemContent grade', () => {
     const node = gradeNode(container);
     expect(node?.textContent).toBe('V4');
     expect(node?.getAttribute('data-color')).toBe('#111111');
+  });
+
+  it('lifts a dark hard-grade colour for contrast in dark mode (#6917)', () => {
+    themeScheme.current = 'dark';
+    resolveGrade.mockReturnValue({ label: 'V16', color: '#38006B', isBoardsesh: false });
+    const { container } = render(
+      <ClimbListItemContent climb={baseClimb} boardName="kilter" layoutId={1} sizeId={1} setIds="1" angle={40} />,
+    );
+    const node = gradeNode(container);
+    expect(node?.textContent).toBe('V16');
+    expect(node?.getAttribute('data-color')).toBe(readableGradeColor('#38006B', 'dark'));
+    expect(node?.getAttribute('data-color')).not.toBe('#38006B');
   });
 
   it('passes the climb (with its Boardsesh grade fields) to resolveGrade', () => {

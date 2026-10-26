@@ -1,4 +1,4 @@
-import { getGradeColor, DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
+import { getGradeColor, DEFAULT_GRADE_COLOR, readableGradeColor } from '@boardsesh/board-constants/grade-colors';
 import type { RawBar, RawBarSegment } from '@boardsesh/profile-stats';
 import type { SessionGradeDistributionItem } from '@boardsesh/shared-schema';
 import { brandColors, brandColorsDark, withAlpha } from '../../theme/colors';
@@ -128,13 +128,32 @@ export function flashRedpointColor(seriesKey: 'flash' | 'redpoint', colorScheme:
 }
 
 /**
- * Solid (vivid) grade color for badges, bars and grade text. Routes through
- * board-constants' `getGradeColor`, which extracts the V- or font-grade token
- * from a label — so combined board names like "6B+/V4" resolve to a real colour
- * instead of the grey fallback the naive map lookup produced.
+ * Solid (vivid) grade color for FILLS — badges and pills whose text colour is
+ * contrast-picked against it. Routes through board-constants' `getGradeColor`,
+ * which extracts the V- or font-grade token from a label — so combined board
+ * names like "6B+/V4" resolve to a real colour instead of the grey fallback the
+ * naive map lookup produced. Don't draw it straight onto a page as text or a thin
+ * mark: use `gradeTextColor` / `gradeMarkColor`, which stay readable in dark mode.
  */
 export function gradeBadgeColor(gradeLabel: string | null | undefined): string {
   return getGradeColor(gradeLabel) ?? DEFAULT_GRADE_COLOR;
+}
+
+/**
+ * Grade colour for grade TEXT drawn directly on a page or card surface. Light
+ * mode returns the vivid `gradeBadgeColor`; dark mode lifts it toward white just
+ * enough for 4.5:1, so hard grades (V6+ purples) stay legible.
+ */
+export function gradeTextColor(gradeLabel: string | null | undefined, colorScheme: ColorSchemeName): string {
+  return readableGradeColor(gradeBadgeColor(gradeLabel), colorScheme, 'text');
+}
+
+/**
+ * Grade colour for a non-text MARK (chart bar, dot, glyph) drawn on a page
+ * surface. Like `gradeTextColor` but lifted only to 3:1 in dark mode.
+ */
+export function gradeMarkColor(gradeLabel: string | null | undefined, colorScheme: ColorSchemeName): string {
+  return readableGradeColor(gradeBadgeColor(gradeLabel), colorScheme, 'mark');
 }
 
 export type SessionGradeBarsOptions =
@@ -145,24 +164,25 @@ export type SessionGradeBarsOptions =
        */
       splitFlash: true;
       /**
-       * Required when splitting: the muted redpoint base is colour-scheme aware,
-       * so omitting it would silently force light-mode shades on dark-mode users.
+       * Every bar colour is colour-scheme aware (the muted base and the
+       * dark-mode contrast lift), so omitting it would silently force
+       * light-mode shades on dark-mode users.
        */
       colorScheme: ColorSchemeName;
     }
   | {
       /** Each bar is a single vivid segment of flash + send (the default). */
       splitFlash?: false;
-      colorScheme?: ColorSchemeName;
+      colorScheme: ColorSchemeName;
     };
 
 /**
  * Build grade-distribution bars for a session view. By default each grade bar is
  * the total ascents (flash + send) for that grade, drawn in the grade's own vivid
- * colour — a colourful grade pyramid.
+ * colour (`gradeMarkColor`, lifted to 3:1 in dark mode) — a colourful grade pyramid.
  *
  * With `options.splitFlash`, each bar is split into two same-hue shades: a muted
- * `gradeChartColor` send (redpoint) base and a vivid `gradeBadgeColor` flash cap.
+ * `gradeChartColor` send (redpoint) base and a vivid `gradeMarkColor` flash cap.
  * The flash segment is pushed last so it renders at the top of the stack
  * (`StackedBarChart` maps `segments[0]` to the bottom of the bar). The same-hue
  * two-shade split keeps grades distinguishable across the whole V0→V17 palette.
@@ -173,11 +193,11 @@ export type SessionGradeBarsOptions =
  */
 export function buildSessionGradeBars(
   distribution: SessionGradeDistributionItem[],
-  formatGrade?: FormatGrade,
-  options?: SessionGradeBarsOptions,
+  formatGrade: FormatGrade | undefined,
+  options: SessionGradeBarsOptions,
 ): ColoredBar[] | null {
-  const splitFlash = options?.splitFlash ?? false;
-  const colorScheme = options?.colorScheme ?? 'light';
+  const splitFlash = options.splitFlash ?? false;
+  const { colorScheme } = options;
   const bars: ColoredBar[] = [];
   // Order the X-axis easy→hard regardless of the order the backend returns.
   const ordered = [...distribution].sort((a, b) => gradeSortValue(a.grade) - gradeSortValue(b.grade));
@@ -193,14 +213,14 @@ export function buildSessionGradeBars(
       }
       // Flash cap — vivid same-hue shade — pushed last so it tops the stack.
       if (item.flash > 0) {
-        segments.push({ value: item.flash, key: item.grade, label, color: gradeBadgeColor(item.grade) });
+        segments.push({ value: item.flash, key: item.grade, label, color: gradeMarkColor(item.grade, colorScheme) });
       }
       bars.push({ key: item.grade, label, segments });
     } else {
       bars.push({
         key: item.grade,
         label,
-        segments: [{ value: total, key: item.grade, label, color: gradeBadgeColor(item.grade) }],
+        segments: [{ value: total, key: item.grade, label, color: gradeMarkColor(item.grade, colorScheme) }],
       });
     }
   }

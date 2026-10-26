@@ -11,7 +11,7 @@ import { PressableSurface } from '../PressableSurface';
 import { PressableAvatar } from '../PressableAvatar';
 import { ClimbListThumbnail } from '../ClimbListThumbnail';
 import { SnapCarousel } from '../SnapCarousel';
-import { gradeBadgeColor } from '../you/profile-chart-colors';
+import { gradeTextColor } from '../you/profile-chart-colors';
 import { renderBoardToPlaylistConfig } from '../../lib/playlists/board-details-for-playlist';
 import { newClimbToClimb } from '../../lib/feed/new-climb-to-climb';
 import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
@@ -228,7 +228,7 @@ const ClimbHero = memo(function ClimbHero({
   climb: ActivityFeedItem;
   onPress: (climb: ActivityFeedItem) => void;
 }) {
-  const { systemColors } = useTheme();
+  const { systemColors, colorScheme } = useTheme();
   const { formatGrade } = useGradeFormat();
   const board = climb.boardType
     ? renderBoardToPlaylistConfig(climb.boardType, climb.layoutId, climb.renderBoard)
@@ -275,7 +275,7 @@ const ClimbHero = memo(function ClimbHero({
             {grade ? (
               <Text
                 variant="title3"
-                style={[styles.gradeText, { color: gradeBadgeColor(climb.difficultyName ?? grade) }]}
+                style={[styles.gradeText, { color: gradeTextColor(climb.difficultyName ?? grade, colorScheme) }]}
               >
                 {grade}
               </Text>

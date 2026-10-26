@@ -7,6 +7,7 @@ import { SectionHeader } from '../SectionHeader';
 import { StackedBarChart } from '../you/YouCharts';
 import { buildSessionGradeBars } from '../you/profile-chart-colors';
 import { useGradeFormat } from '../../hooks/use-grade-format';
+import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 
 /**
@@ -26,6 +27,7 @@ export function SessionAnalyticsSection({
 }) {
   const { t } = useTranslation('profile');
   const { t: tSession } = useTranslation('session');
+  const { colorScheme } = useTheme();
   // Match the grade format the Progress tab / useYouProfileData uses so a
   // session's chart reads identically to the profile's.
   const { formatGrade: formatAnyBoardGrade } = useGradeFormat();
@@ -34,10 +36,10 @@ export function SessionAnalyticsSection({
     [formatAnyBoardGrade, boardName],
   );
 
-  // No splitFlash → each grade bar is one solid `gradeBadgeColor` segment.
+  // No splitFlash → each grade bar is one solid `gradeMarkColor` segment.
   const gradeBars = useMemo(
-    () => buildSessionGradeBars(gradeDistribution, formatGrade),
-    [gradeDistribution, formatGrade],
+    () => buildSessionGradeBars(gradeDistribution, formatGrade, { colorScheme }),
+    [gradeDistribution, formatGrade, colorScheme],
   );
 
   // `buildSessionGradeBars` returns null for an empty or all-zero distribution,

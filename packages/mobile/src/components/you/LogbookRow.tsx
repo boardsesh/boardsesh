@@ -21,7 +21,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import type { AscentFeedItem } from '@boardsesh/graphql/operations';
 import { getLayoutDisplayName, parseTickTime } from '@boardsesh/profile-stats';
-import { getGradeColor, DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
+import { getGradeColor, DEFAULT_GRADE_COLOR, readableGradeColor } from '@boardsesh/board-constants/grade-colors';
 import {
   deriveLogbookGradeDisplay,
   consensusDeltaDirection,
@@ -183,7 +183,7 @@ export const LogbookRow = memo(function LogbookRow({
   const editActionLabel = t('mobile.logbook.row.editAction');
   const deleteActionLabel = t('mobile.logbook.row.deleteAction');
   const moreActionsLabel = t('mobile.logbook.row.moreActions');
-  const { systemColors, brandColors: brand } = useTheme();
+  const { systemColors, brandColors: brand, colorScheme } = useTheme();
   const { formatGrade, formatGradeByDifficultyId } = useGradeFormat();
   const boardseshActive = useBoardseshGradesActive();
 
@@ -217,7 +217,10 @@ export const LogbookRow = memo(function LogbookRow({
     gradeIsConsensus && crowdDifficulty != null
       ? (getBoulderGradeById(clampDifficultyId(crowdDifficulty), ascent.boardType)?.difficulty_name ?? rawGradeLabel)
       : rawGradeLabel;
-  const gradeColor = gradeColorName ? (getGradeColor(gradeColorName) ?? DEFAULT_GRADE_COLOR) : DEFAULT_GRADE_COLOR;
+  const gradeColor = readableGradeColor(
+    gradeColorName ? (getGradeColor(gradeColorName) ?? DEFAULT_GRADE_COLOR) : DEFAULT_GRADE_COLOR,
+    colorScheme,
+  );
   const consensusGradeLabel = showConsensusSecondary
     ? (formatGradeByDifficultyId(crowdDifficulty, ascent.boardType) ??
       formatGrade(ascent.consensusDifficultyName, ascent.boardType) ??

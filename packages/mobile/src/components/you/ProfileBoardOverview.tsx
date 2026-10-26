@@ -7,7 +7,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { getCachedNumberFormat } from '../../lib/intl-formatter-cache';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useVariantValue } from '../../theme/variants';
-import { gradeBadgeColor } from './profile-chart-colors';
+import { gradeMarkColor } from './profile-chart-colors';
 
 /** The authoritative all-board total is independent of the progress filters. */
 export const ProfileBoardOverview = memo(function ProfileBoardOverview({
@@ -56,7 +56,7 @@ export const ProfileBoardRow = memo(function ProfileBoardRow({
   last: boolean;
 }) {
   const { t } = useTranslation('profile');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors, brandColors, colorScheme } = useTheme();
   const record = layout.hardestSend;
   const recordLabel = record ? t('stats.boardOverview.recordAria', { grade: record.label }) : '';
   const relativeWidth = largestCount > 0 ? Math.min(100, Math.max(0, (layout.count / largestCount) * 100)) : 0;
@@ -96,7 +96,7 @@ export const ProfileBoardRow = memo(function ProfileBoardRow({
             <Text variant="caption1" color={systemColors.secondaryLabel}>
               {t('stats.boardOverview.bestSend')}
             </Text>
-            <View style={[styles.gradeDot, { backgroundColor: gradeBadgeColor(record.label) }]} />
+            <View style={[styles.gradeDot, { backgroundColor: gradeMarkColor(record.label, colorScheme) }]} />
             <Text variant="headline" color={systemColors.label}>
               {record.label}
             </Text>

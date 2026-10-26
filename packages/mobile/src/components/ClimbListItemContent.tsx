@@ -13,6 +13,7 @@ import { useClimbRowCrowdGrade, useClimbRowGrade } from '../hooks/use-climb-row-
 import { useBoardseshGradesActive } from '../hooks/use-display-grade';
 import { usePersonalGradesActive } from '../hooks/use-personal-grades';
 import { climbStatsKnown, isProjectClimb } from '@boardsesh/play-view';
+import { readableGradeColor } from '@boardsesh/board-constants/grade-colors';
 import { useTheme } from '../providers/theme-provider';
 import { Icon } from './Icon';
 import { ClimbAttributeIcons } from './ClimbAttributeIcons';
@@ -889,8 +890,10 @@ export const ClimbGradeView = React.memo(function ClimbGradeView({
   setAtAngle,
   reserveSetAngleLine,
 }: ClimbGradeViewProps) {
-  const { systemColors } = useTheme();
+  const { systemColors, colorScheme } = useTheme();
   const { t } = useTranslation('climbs');
+  // The grade is text on the row surface: lift it for dark-mode contrast (cached).
+  const gradeTextColor = readableGradeColor(color, colorScheme);
 
   return (
     <View style={styles.gradeColumn}>
@@ -906,7 +909,7 @@ export const ClimbGradeView = React.memo(function ClimbGradeView({
             // width is only needed on an unmarked row. Without this a marked row
             // would cost the climb name the full glyph width on top of a gutter
             // it no longer needs.
-            style={[styles.gradeText, markedAsMine ? styles.gradeTextMarked : null, { color }]}
+            style={[styles.gradeText, markedAsMine ? styles.gradeTextMarked : null, { color: gradeTextColor }]}
           >
             {label}
           </Text>

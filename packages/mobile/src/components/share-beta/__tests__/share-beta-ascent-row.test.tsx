@@ -62,6 +62,7 @@ vi.mock('@boardsesh/board-config', () => ({
 vi.mock('@boardsesh/board-constants/grade-colors', () => ({
   getGradeColor: (label: string) => `color:${label}`,
   DEFAULT_GRADE_COLOR: 'color:default',
+  readableGradeColor: (gradeColor: string) => gradeColor,
 }));
 
 // ShareBetaAscentRow calls the mobile wrapper (`lib/format-relative-time.ts`),

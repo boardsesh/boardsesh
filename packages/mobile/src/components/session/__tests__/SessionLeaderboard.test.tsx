@@ -39,7 +39,7 @@ vi.mock('../../ListRow', () => ({
     createElement('div', { 'data-row': title }, leading, trailing),
 }));
 vi.mock('../../SectionHeader', () => ({ SectionHeader: () => createElement('div', { 'data-testid': 'header' }) }));
-vi.mock('../../you/profile-chart-colors', () => ({ gradeBadgeColor: () => '#000' }));
+vi.mock('../../you/profile-chart-colors', () => ({ gradeBadgeColor: () => '#000', gradeTextColor: () => '#000' }));
 vi.mock('../../../theme/colors', () => ({ withAlpha: (c: string) => c }));
 vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { white: '#fff' } }));
 const SECONDARY_LABEL = '#5B5563';

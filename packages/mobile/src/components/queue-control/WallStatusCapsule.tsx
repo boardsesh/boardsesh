@@ -23,6 +23,7 @@ import { AccessibilityInfo, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, useReducedMotion } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
+import { readableGradeColor } from '@boardsesh/board-constants/grade-colors';
 import { useTheme } from '../../providers/theme-provider';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { useNativeGlass } from '../../hooks/use-native-glass';
@@ -93,7 +94,8 @@ function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
   // once the backend stamps presence climbs.
   const resolvedGrade = resolveGrade({ difficulty: climb.grade ?? '' }, boardName);
   const formattedGrade = climb.grade ? resolvedGrade.label : null;
-  const gradeColor = resolvedGrade.color;
+  // Grade text on the capsule surface: lifted for dark-mode contrast.
+  const gradeColor = readableGradeColor(resolvedGrade.color, colorScheme);
   const senderName = climb.sentByDisplayName?.trim() || null;
   const hasSenderIdentity = climb.sentByAvatarUrl != null || senderName != null;
 
@@ -136,7 +138,7 @@ function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
     // The grade sits on the app-bar surface (the band body is transparent). In the
     // light scheme that surface is near-white, where bright hues (e.g. V0 #FFD400)
     // fail 4.5:1 — so wrap the grade in a neutral tonal pill there. Dark scheme keeps
-    // bare text (already legible on the dark surface).
+    // bare text, legible because `gradeColor` is lifted for the dark surface.
     const gradeNode = formattedGrade ? (
       colorScheme === 'light' ? (
         <View style={[styles.gradePill, { backgroundColor: m3SurfaceContainers.highest }]}>

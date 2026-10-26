@@ -2,7 +2,7 @@ import { memo, useCallback, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { AscentFeedItem } from '@boardsesh/graphql/operations';
-import { getGradeColor, DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
+import { getGradeColor, DEFAULT_GRADE_COLOR, readableGradeColor } from '@boardsesh/board-constants/grade-colors';
 import { deriveLogbookGradeDisplay, displayedAttemptCount, logbookAttemptsKind } from '@boardsesh/logbook';
 import { getLayoutDisplayName } from '@boardsesh/profile-stats';
 import { ClimbListThumbnail } from '../ClimbListThumbnail';
@@ -63,7 +63,7 @@ export const ShareBetaAscentRow = memo(function ShareBetaAscentRow({
   onActivate,
 }: ShareBetaAscentRowProps) {
   const { t } = useTranslation(['session', 'you']);
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors, brandColors, colorScheme } = useTheme();
   const { formatGrade, formatGradeByDifficultyId } = useGradeFormat();
   const boardseshActive = useBoardseshGradesActive();
 
@@ -83,7 +83,10 @@ export const ShareBetaAscentRow = memo(function ShareBetaAscentRow({
     gradeIsConsensus && crowdDifficulty != null
       ? (getBoulderGradeById(clampDifficultyId(crowdDifficulty), ascent.boardType)?.difficulty_name ?? rawGradeLabel)
       : rawGradeLabel;
-  const gradeColor = gradeColorName ? (getGradeColor(gradeColorName) ?? DEFAULT_GRADE_COLOR) : DEFAULT_GRADE_COLOR;
+  const gradeColor = readableGradeColor(
+    gradeColorName ? (getGradeColor(gradeColorName) ?? DEFAULT_GRADE_COLOR) : DEFAULT_GRADE_COLOR,
+    colorScheme,
+  );
 
   // Result line reuses the logbook's own wording so the picker and the diary
   // agree — no new visible strings, no new translations to drift.

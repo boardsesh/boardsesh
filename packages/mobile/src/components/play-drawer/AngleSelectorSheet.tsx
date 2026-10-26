@@ -6,6 +6,7 @@ import { BottomSheetModal, BottomSheetView } from '@expo/ui/community/bottom-she
 import { useTranslation } from 'react-i18next';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { MOONBOARD_ANGLES } from '@boardsesh/board-config';
+import { readableGradeColor } from '@boardsesh/board-constants/grade-colors';
 import { Text } from '../Text';
 import { SheetTopBar } from '../SheetTopBar';
 import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
@@ -45,7 +46,7 @@ export const AngleSelectorSheet = memo(function AngleSelectorSheet({
   const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('session');
   const { t: tCommon } = useTranslation('common');
-  const { systemColors } = useTheme();
+  const { systemColors, colorScheme } = useTheme();
   const iosBackgroundStyle = useIosSheetBackgroundStyle();
   // The window's inset, not the mount point's: a sheet covers the tab bar (#3776).
   const windowInsetBottom = useWindowBottomInset();
@@ -139,7 +140,7 @@ export const AngleSelectorSheet = memo(function AngleSelectorSheet({
           </Text>
 
           {stats?.gradeName ? (
-            <Text variant="headline" style={[styles.grade, { color: stats.color }]}>
+            <Text variant="headline" style={[styles.grade, { color: readableGradeColor(stats.color, colorScheme) }]}>
               {stats.gradeName}
             </Text>
           ) : null}

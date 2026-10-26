@@ -20,6 +20,7 @@ import { ESTIMATE_PREFIX, renderDifficulty } from '../../lib/boardsesh-grade-dis
 import { useMyGrade } from '../../hooks/use-my-grade';
 import type { IconName } from '../icon-map';
 import type { GradeDisplayFormat } from '@boardsesh/play-view';
+import { readableGradeColor } from '@boardsesh/board-constants/grade-colors';
 
 type BoardseshGradeSectionProps = {
   climbUuid: string;
@@ -50,7 +51,7 @@ const GradeLadderRow = memo(function GradeLadderRow({
   /** Omitted for every rung except the one the app is actually using for you. */
   gradeColor?: string;
 }) {
-  const { systemColors } = useTheme();
+  const { systemColors, colorScheme } = useTheme();
   return (
     <View style={styles.ladderRow}>
       <View style={styles.ladderGlyph}>
@@ -66,7 +67,10 @@ const GradeLadderRow = memo(function GradeLadderRow({
       </View>
       <Text
         variant="title3"
-        style={[styles.ladderGrade, { color: gradeColor ?? systemColors.secondaryLabel }]}
+        style={[
+          styles.ladderGrade,
+          { color: gradeColor ? readableGradeColor(gradeColor, colorScheme) : systemColors.secondaryLabel },
+        ]}
         numberOfLines={1}
       >
         {grade}
@@ -166,7 +170,7 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
   const { t } = useTranslation('climbs');
   const { t: tCommon } = useTranslation('common');
   const { gradeFormat } = useGradeFormat();
-  const { brandColors, systemColors } = useTheme();
+  const { brandColors, systemColors, colorScheme } = useTheme();
   // The cheap boolean, not the whole snapshot — see BetaVideosSection: a memo'd
   // drawer section must not re-render on every probe tick.
   const effectiveOffline = useIsOffline();
@@ -276,7 +280,14 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
           <Text variant="caption1" color={systemColors.secondaryLabel}>
             {t('boardseshGrade.moonboardAngle.label')}
           </Text>
-          <Text variant="title1" style={[styles.gradeValue, styles.estimateGrade, { color: view.grade.color }]}>
+          <Text
+            variant="title1"
+            style={[
+              styles.gradeValue,
+              styles.estimateGrade,
+              { color: readableGradeColor(view.grade.color, colorScheme) },
+            ]}
+          >
             {`${ESTIMATE_PREFIX}${view.grade.label}`}
           </Text>
         </View>
@@ -305,7 +316,14 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
           <Text variant="caption1" color={systemColors.secondaryLabel}>
             {t('boardseshGrade.moonboardWideAngle.label')}
           </Text>
-          <Text variant="title1" style={[styles.gradeValue, styles.estimateGrade, { color: view.grade.color }]}>
+          <Text
+            variant="title1"
+            style={[
+              styles.gradeValue,
+              styles.estimateGrade,
+              { color: readableGradeColor(view.grade.color, colorScheme) },
+            ]}
+          >
             {`${ESTIMATE_PREFIX}${view.grade.label}`}
           </Text>
         </View>
@@ -364,7 +382,14 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
           <Text variant="caption1" color={systemColors.secondaryLabel}>
             {t('boardseshGrade.estimate.label')}
           </Text>
-          <Text variant="title1" style={[styles.gradeValue, styles.estimateGrade, { color: view.grade.color }]}>
+          <Text
+            variant="title1"
+            style={[
+              styles.gradeValue,
+              styles.estimateGrade,
+              { color: readableGradeColor(view.grade.color, colorScheme) },
+            ]}
+          >
             {`${ESTIMATE_PREFIX}${view.grade.label}`}
           </Text>
         </View>
@@ -418,6 +443,8 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
   const provisional = view.kind === 'provisional';
   const universal = view.universal;
   const heroGrade = view.grade;
+  // Grade text on the drawer surface: lifted for dark-mode contrast.
+  const heroGradeColor = readableGradeColor(heroGrade.color, colorScheme);
   const showConfirmedSeal = view.kind === 'confirmed' && view.universal;
   const rangeLabel = view.kind === 'provisional' ? view.rangeLabel : null;
   const count = view.count;
@@ -457,7 +484,7 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
           <Text variant="caption1" color={systemColors.secondaryLabel}>
             {t('boardseshGrade.hero.thisBoardOnly')}
           </Text>
-          <Text variant="largeTitle" style={[styles.gradeValue, { color: heroGrade.color }]}>
+          <Text variant="largeTitle" style={[styles.gradeValue, { color: heroGradeColor }]}>
             {everywhereLabel}
           </Text>
           <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.centered}>
@@ -468,7 +495,7 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
         // Crowd rounds equal to the cross-board grade: drop the comparison, say so.
         <View style={styles.singleHero}>
           <View style={styles.everywhereValue}>
-            <Text variant="largeTitle" style={[styles.gradeValue, { color: heroGrade.color }]}>
+            <Text variant="largeTitle" style={[styles.gradeValue, { color: heroGradeColor }]}>
               {everywhereLabel}
             </Text>
             {seal}
@@ -484,7 +511,7 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
             {t('boardseshGrade.hero.everywhere')}
           </Text>
           <View style={styles.everywhereValue}>
-            <Text variant="largeTitle" style={[styles.gradeValue, { color: heroGrade.color }]}>
+            <Text variant="largeTitle" style={[styles.gradeValue, { color: heroGradeColor }]}>
               {everywhereLabel}
             </Text>
             {seal}
@@ -512,7 +539,7 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
               {t('boardseshGrade.hero.everywhere')}
             </Text>
             <View style={styles.everywhereValue}>
-              <Text variant="largeTitle" style={[styles.gradeValue, { color: heroGrade.color }]}>
+              <Text variant="largeTitle" style={[styles.gradeValue, { color: heroGradeColor }]}>
                 {everywhereLabel}
               </Text>
               {seal}

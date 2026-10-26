@@ -7,7 +7,18 @@ vi.mock('react-native', () => ({
   PlatformColor: (name: string) => name,
 }));
 
-import { buildSessionGradeBars, gradeBadgeColor, gradeChartColor, layoutChartColor } from '../profile-chart-colors';
+import { DARK_GRADE_REFERENCE_SURFACE } from '@boardsesh/board-constants/grade-colors';
+import { contrastRatio } from '@boardsesh/board-constants/readable-text-color';
+import {
+  buildSessionGradeBars,
+  gradeBadgeColor,
+  gradeChartColor,
+  gradeMarkColor,
+  gradeTextColor,
+  layoutChartColor,
+} from '../profile-chart-colors';
+
+const HARD_GRADES = ['V5', 'V8', 'V10', 'V12', 'V14', 'V16', '7C', '8C+'];
 
 function gradeItem(overrides: Partial<SessionGradeDistributionItem> = {}): SessionGradeDistributionItem {
   return { grade: 'V4', flash: 0, send: 0, attempt: 0, ...overrides };
@@ -55,7 +66,9 @@ describe('buildSessionGradeBars with splitFlash', () => {
     expect(bar.segments[0].color).toMatch(/^hsl\(/);
 
     // segments[1] is pushed last so it caps the top of the stack — the vivid flash.
-    expect(bar.segments[1]).toMatchObject({ value: 2, key: 'V4', color: gradeBadgeColor('V4') });
+    // In light mode the mark colour is the raw badge colour.
+    expect(bar.segments[1]).toMatchObject({ value: 2, key: 'V4', color: gradeMarkColor('V4', 'light') });
+    expect(gradeMarkColor('V4', 'light')).toBe(gradeBadgeColor('V4'));
     // V4 resolves to its vivid badge hex (#FF5026), not the muted hsl().
     expect(bar.segments[1].color).toBe('#FF5026');
   });
@@ -81,7 +94,7 @@ describe('buildSessionGradeBars with splitFlash', () => {
     expect(bars).toHaveLength(1);
     const [bar] = bars ?? [];
     expect(bar.segments).toHaveLength(1);
-    expect(bar.segments[0]).toMatchObject({ value: 4, color: gradeBadgeColor('V4') });
+    expect(bar.segments[0]).toMatchObject({ value: 4, color: gradeMarkColor('V4', 'light') });
   });
 
   it('drops grades with no ascents and returns null for an entirely empty distribution', () => {
@@ -117,9 +130,11 @@ describe('buildSessionGradeBars with splitFlash', () => {
   });
 });
 
-describe('buildSessionGradeBars default (no options) — regression guard', () => {
+describe('buildSessionGradeBars default (no splitFlash) — regression guard', () => {
   it('produces a single vivid total segment per grade (SessionGradeChart / SessionFeedCard shape)', () => {
-    const bars = buildSessionGradeBars([gradeItem({ grade: 'V4', send: 3, flash: 2 })]);
+    const bars = buildSessionGradeBars([gradeItem({ grade: 'V4', send: 3, flash: 2 })], undefined, {
+      colorScheme: 'light',
+    });
 
     expect(bars).toHaveLength(1);
     const [bar] = bars ?? [];
@@ -130,6 +145,60 @@ describe('buildSessionGradeBars default (no options) — regression guard', () =
   });
 
   it('returns null for an empty distribution', () => {
-    expect(buildSessionGradeBars([])).toBeNull();
+    expect(buildSessionGradeBars([], undefined, { colorScheme: 'light' })).toBeNull();
+  });
+});
+
+describe('buildSessionGradeBars in dark mode', () => {
+  const distribution = HARD_GRADES.map((grade) => gradeItem({ grade, send: 2, flash: 1 }));
+
+  it('lifts every solid bar to at least 3:1 against the dark surface', () => {
+    const bars = buildSessionGradeBars(distribution, undefined, { colorScheme: 'dark' }) ?? [];
+    expect(bars).toHaveLength(HARD_GRADES.length);
+    for (const bar of bars) {
+      const color = bar.segments[0].color ?? '';
+      expect(color).toBe(gradeMarkColor(bar.key, 'dark'));
+      expect(contrastRatio(color, DARK_GRADE_REFERENCE_SURFACE)).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('lifts the split flash cap to at least 3:1 and keeps the muted send base', () => {
+    const bars = buildSessionGradeBars(distribution, undefined, { splitFlash: true, colorScheme: 'dark' }) ?? [];
+    for (const bar of bars) {
+      const [sendBase, flashCap] = bar.segments;
+      expect(sendBase.color).toBe(gradeChartColor(bar.key, 'dark'));
+      expect(contrastRatio(flashCap.color ?? '', DARK_GRADE_REFERENCE_SURFACE)).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('changes the V16 bar (1.1:1 raw) but leaves the light-mode bar raw', () => {
+    const [darkBar] =
+      buildSessionGradeBars([gradeItem({ grade: 'V16', send: 1 })], undefined, { colorScheme: 'dark' }) ?? [];
+    const [lightBar] =
+      buildSessionGradeBars([gradeItem({ grade: 'V16', send: 1 })], undefined, { colorScheme: 'light' }) ?? [];
+    expect(lightBar.segments[0].color).toBe(gradeBadgeColor('V16'));
+    expect(darkBar.segments[0].color).not.toBe(gradeBadgeColor('V16'));
+  });
+});
+
+describe('gradeTextColor / gradeMarkColor', () => {
+  it('return the raw badge colour in light mode', () => {
+    for (const grade of HARD_GRADES) {
+      expect(gradeTextColor(grade, 'light')).toBe(gradeBadgeColor(grade));
+      expect(gradeMarkColor(grade, 'light')).toBe(gradeBadgeColor(grade));
+    }
+  });
+
+  it('clear 4.5:1 (text) and 3:1 (mark) against the dark surface for hard grades', () => {
+    for (const grade of HARD_GRADES) {
+      expect(contrastRatio(gradeTextColor(grade, 'dark'), DARK_GRADE_REFERENCE_SURFACE)).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(gradeMarkColor(grade, 'dark'), DARK_GRADE_REFERENCE_SURFACE)).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('resolves combined board labels and unknown grades like gradeBadgeColor', () => {
+    expect(gradeTextColor('6B+/V4', 'light')).toBe(gradeBadgeColor('6B+/V4'));
+    expect(gradeTextColor(null, 'light')).toBe(gradeBadgeColor(null));
+    expect(contrastRatio(gradeTextColor(null, 'dark'), DARK_GRADE_REFERENCE_SURFACE)).toBeGreaterThanOrEqual(4.5);
   });
 });

@@ -97,7 +97,7 @@ vi.mock('../../SnapCarousel', () => ({
     );
   },
 }));
-vi.mock('../../you/profile-chart-colors', () => ({ gradeBadgeColor: () => '#fff' }));
+vi.mock('../../you/profile-chart-colors', () => ({ gradeTextColor: () => '#fff' }));
 vi.mock('../../../providers/drawer-host-provider', () => ({ useDrawerHost: () => ({ openPlayDrawer: vi.fn() }) }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({

@@ -19,7 +19,7 @@ import { ClimbListThumbnail } from '../ClimbListThumbnail';
 import { AvatarGroup } from './AvatarGroup';
 import { FeedSocialRow } from './FeedSocialRow';
 import { SessionGradeStrip } from './SessionGradeStrip';
-import { gradeBadgeColor } from './profile-chart-colors';
+import { gradeTextColor } from './profile-chart-colors';
 import { mapBetaLink } from '../../lib/beta-video-url';
 import { openValidatedUrl } from '../../lib/open-external-link';
 import { renderBoardToPlaylistConfig } from '../../lib/playlists/board-details-for-playlist';
@@ -278,7 +278,7 @@ const BetaHero = memo(function BetaHero({
   uploaderName: string | null;
 }) {
   const { t } = useTranslation('feed');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors, brandColors, colorScheme } = useTheme();
   const { formatGrade } = useGradeFormat();
   const [imageFailed, setImageFailed] = useState(false);
 
@@ -328,7 +328,7 @@ const BetaHero = memo(function BetaHero({
           {displayGrade ? (
             <Text
               variant="title3"
-              style={[styles.gradeText, { color: gradeBadgeColor(tick.difficultyName ?? displayGrade) }]}
+              style={[styles.gradeText, { color: gradeTextColor(tick.difficultyName ?? displayGrade, colorScheme) }]}
             >
               {displayGrade}
             </Text>
@@ -352,7 +352,7 @@ const BetaHero = memo(function BetaHero({
 /** Hero for sessions with no beta: enlarged board art + the hardest send. */
 const HeroSend = memo(function HeroSend({ tick }: { tick: SessionFeedTickHighlight }) {
   const { t } = useTranslation('feed');
-  const { systemColors } = useTheme();
+  const { systemColors, colorScheme } = useTheme();
   const { formatGrade } = useGradeFormat();
 
   const boardConfig = renderBoardToPlaylistConfig(tick.boardType, tick.layoutId, tick.renderBoard);
@@ -388,7 +388,7 @@ const HeroSend = memo(function HeroSend({ tick }: { tick: SessionFeedTickHighlig
           {displayGrade ? (
             <Text
               variant="title3"
-              style={[styles.gradeText, { color: gradeBadgeColor(tick.difficultyName ?? displayGrade) }]}
+              style={[styles.gradeText, { color: gradeTextColor(tick.difficultyName ?? displayGrade, colorScheme) }]}
             >
               {displayGrade}
             </Text>

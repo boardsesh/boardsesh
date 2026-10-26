@@ -8,7 +8,7 @@ import { type IconName } from '../icon-map';
 import { Avatar } from '../Avatar';
 import { ListRow } from '../ListRow';
 import { SectionHeader } from '../SectionHeader';
-import { gradeBadgeColor } from '../you/profile-chart-colors';
+import { gradeBadgeColor, gradeTextColor } from '../you/profile-chart-colors';
 import { withAlpha } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, borderRadius } from '../../theme/tokens';
@@ -126,11 +126,13 @@ function RankAvatar({ participant, isLeader }: { participant: SessionFeedPartici
 /** Quiet grade-tinted pill showing a climber's hardest grade. */
 function HardestPill({ grade, boardType }: { grade: string; boardType: string }) {
   const { formatGrade } = useGradeFormat();
+  const { colorScheme } = useTheme();
+  // The tint keeps the raw vivid hue; the text is lifted for dark-mode contrast.
   const gradeColor = gradeBadgeColor(grade);
   const displayGrade = formatGrade(grade, boardType) ?? grade;
   return (
     <View style={[styles.hardestPill, { backgroundColor: withAlpha(gradeColor, 0.15) }]}>
-      <Text variant="caption1" color={gradeColor} numeric style={styles.hardestText}>
+      <Text variant="caption1" color={gradeTextColor(grade, colorScheme)} numeric style={styles.hardestText}>
         {displayGrade}
       </Text>
     </View>

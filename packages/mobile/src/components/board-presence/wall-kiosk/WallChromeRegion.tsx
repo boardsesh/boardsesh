@@ -2,6 +2,7 @@ import { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { BoardClimbRecentSender, BoardPresenceClimb } from '@boardsesh/shared-schema';
+import { readableGradeColor } from '@boardsesh/board-constants/grade-colors';
 import { WallStateStrip, type WallStateMode } from './WallStateStrip';
 import { WallAttributionBlock, WallIdentityBlock } from './WallIdentityBlock';
 import { WallScrubber } from './WallScrubber';
@@ -31,7 +32,7 @@ function WallIdleRecovery({
   boardName?: string;
 }) {
   const { t } = useTranslation('session');
-  const { systemColors } = useTheme();
+  const { systemColors, colorScheme } = useTheme();
   const { resolveGrade } = useDisplayGrade();
   // Same source as WallStateStrip's idle line so the two can't disagree about
   // whether this wall has a light kit. Optional-field contract: only `false`.
@@ -43,7 +44,7 @@ function WallIdleRecovery({
   // back to the legacy label + colour — lights up once the backend stamps them.
   const resolvedGrade = resolveGrade({ difficulty: lastLitClimb?.grade ?? '' }, boardName);
   const grade = lastLitClimb?.grade ? resolvedGrade.label : null;
-  const gradeColor = resolvedGrade.color;
+  const gradeColor = readableGradeColor(resolvedGrade.color, colorScheme);
   const lastLine = { fontSize: typeScale.metaFontSize, lineHeight: typeScale.metaLineHeight };
   const hintLine = { fontSize: Math.round(typeScale.metaFontSize * 0.85) };
 

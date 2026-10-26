@@ -40,6 +40,7 @@ import {
   useBoardPresenceFeed,
 } from '@boardsesh/board-presence-react';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { readableGradeColor } from '@boardsesh/board-constants/grade-colors';
 import type {
   BoardName,
   BoardPresenceClimb,
@@ -270,7 +271,7 @@ function NowOnTheWallPanelComponent(
   const toggleGymWalls = useCallback(() => setGymWallsExpanded((open) => !open), []);
   const insets = useSafeAreaInsets();
   const windowBottomInset = useWindowBottomInset();
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors, brandColors, colorScheme } = useTheme();
   const { showToast } = useToast();
   // `formatGrade` still renders the board-wide aggregate grade tiles (hardest / top
   // grade), which aren't a single climb's grade; `resolveGrade` swaps the per-climb
@@ -647,7 +648,8 @@ function NowOnTheWallPanelComponent(
     ({ item }: { item: BoardPresenceClimb }) => {
       const resolvedGrade = resolveGrade({ difficulty: item.grade ?? '' }, boardConfig?.boardName);
       const formattedGrade = item.grade ? resolvedGrade.label : null;
-      const gradeColor = resolvedGrade.color;
+      // Grade text on the sheet surface: lifted for dark-mode contrast (cached).
+      const gradeColor = readableGradeColor(resolvedGrade.color, colorScheme);
 
       if (canUseInteractiveRows && rowBoard) {
         return (
@@ -685,6 +687,7 @@ function NowOnTheWallPanelComponent(
       rowBoard,
       systemColors.label,
       systemColors.secondaryLabel,
+      colorScheme,
       resolveGrade,
       handleInteractiveClimbPress,
       handleInteractivePlayNext,
@@ -714,6 +717,9 @@ function NowOnTheWallPanelComponent(
     const wallBoardName = boardConfig?.boardName;
     const heroGrade = resolveGrade({ difficulty: currentClimb?.grade ?? '' }, wallBoardName);
     const hardestSendGrade = resolveGrade({ difficulty: stats?.hardestSend?.grade ?? '' }, wallBoardName);
+    // Both grades are text on the sheet surface: lifted for dark-mode contrast.
+    const heroGradeColor = readableGradeColor(heroGrade.color, colorScheme);
+    const hardestSendGradeColor = readableGradeColor(hardestSendGrade.color, colorScheme);
     return (
       <View>
         {/* First in the header, above the hero: the disclosure opens directly
@@ -742,7 +748,7 @@ function NowOnTheWallPanelComponent(
               accentColor={brandColors.warning}
               surfaceColor={systemColors.secondaryBackground}
               formattedGrade={currentClimb.grade ? heroGrade.label : null}
-              gradeColor={heroGrade.color}
+              gradeColor={heroGradeColor}
               isActionLoading={heroActionLoading}
               onPress={onClimbPress ? handleInteractiveClimbPress : undefined}
               onPlayNext={handleInteractivePlayNext}
@@ -758,7 +764,7 @@ function NowOnTheWallPanelComponent(
               accentColor={brandColors.warning}
               surfaceColor={systemColors.secondaryBackground}
               formattedGrade={currentClimb?.grade ? heroGrade.label : null}
-              gradeColor={heroGrade.color}
+              gradeColor={heroGradeColor}
             />
           )}
         </ShowcaseAnchorView>
@@ -820,7 +826,7 @@ function NowOnTheWallPanelComponent(
                 surfaceColor={systemColors.secondaryBackground}
                 crownColor={brandColors.warning}
                 formattedGrade={hardestSendGrade.label}
-                gradeColor={hardestSendGrade.color}
+                gradeColor={hardestSendGradeColor}
               />
             ) : null}
           </View>
@@ -841,6 +847,7 @@ function NowOnTheWallPanelComponent(
     stats,
     visibleHistory.length,
     systemColors,
+    colorScheme,
     brandColors.warning,
     formatGrade,
     resolveGrade,

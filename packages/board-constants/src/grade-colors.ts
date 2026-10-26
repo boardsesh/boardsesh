@@ -15,6 +15,8 @@
  * per-pill text colour is auto-picked by contrast (black on V0–V6, white on V7+).
  */
 
+import { liftToContrast } from './readable-text-color';
+
 // V-grade to hex color mapping
 export const V_GRADE_COLORS: Record<string, string> = {
   V0: '#FFD400', // Golden yellow
@@ -67,6 +69,46 @@ export const FONT_GRADE_COLORS: Record<string, string> = {
 
 // Default color when grade cannot be determined
 export const DEFAULT_GRADE_COLOR = '#808080';
+
+/**
+ * The lightest dark-mode surface a grade is drawn on across both platforms (iOS
+ * `tertiarySystemBackground`, lighter than Material's `#221A32` card). A colour
+ * that clears contrast here clears it on every darker surface too, which matters
+ * because iOS surfaces are `PlatformColor`s with no hex to measure against.
+ */
+export const DARK_GRADE_REFERENCE_SURFACE = '#2C2C2E';
+
+/** WCAG 1.4.3 minimum for grade text, 1.4.11 minimum for bars, dots and glyphs. */
+const GRADE_MIN_CONTRAST = { text: 4.5, mark: 3 } as const;
+
+export type GradeColorUsage = keyof typeof GRADE_MIN_CONTRAST;
+
+const readableGradeColorCache = new Map<string, string>();
+
+/**
+ * A grade colour that stays readable where it is drawn directly on the page
+ * (grade text, chart bars, dots, glyphs). Light mode returns the colour as is.
+ * Dark mode lifts it toward white only as far as `usage` needs against
+ * {@link DARK_GRADE_REFERENCE_SURFACE}: V0–V3 come back unchanged, V4 barely
+ * moves, and the reds and logo purples (V5+) come back as lighter tints of
+ * their own hue.
+ *
+ * Not for a grade used as a fill behind its own text — pair the vivid colour
+ * with `getGradeTextColor` / `readableTextColor` there instead.
+ */
+export function readableGradeColor(
+  gradeColor: string,
+  colorScheme: 'light' | 'dark',
+  usage: GradeColorUsage = 'text',
+): string {
+  if (colorScheme === 'light') return gradeColor;
+  const cacheKey = `${gradeColor}|${usage}`;
+  const cached = readableGradeColorCache.get(cacheKey);
+  if (cached) return cached;
+  const readable = liftToContrast(gradeColor, DARK_GRADE_REFERENCE_SURFACE, GRADE_MIN_CONTRAST[usage]);
+  readableGradeColorCache.set(cacheKey, readable);
+  return readable;
+}
 
 /**
  * Get color for a V-grade string (e.g., "V3", "V10", "V5+")

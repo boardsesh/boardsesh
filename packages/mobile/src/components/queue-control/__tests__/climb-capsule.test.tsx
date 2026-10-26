@@ -91,6 +91,7 @@ vi.mock('expo-crypto', () => ({ randomUUID: () => 'preview-uuid' }));
 vi.mock('@boardsesh/board-constants/grade-colors', () => ({
   getGradeColor: (difficulty: string | null | undefined) => (difficulty === 'V6' ? '#FF0000' : undefined),
   DEFAULT_GRADE_COLOR: '#808080',
+  readableGradeColor: (gradeColor: string) => gradeColor,
 }));
 
 // Text → span exposing colour: prefer the explicit `color` prop, else the

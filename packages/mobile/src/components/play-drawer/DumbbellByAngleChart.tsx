@@ -3,6 +3,7 @@ import { memo, useCallback, useMemo, useState, type ReactNode } from 'react';
 import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { LineChart } from 'react-native-gifted-charts';
 import type { GradeDisplayFormat } from '@boardsesh/play-view';
+import { readableGradeColor } from '@boardsesh/board-constants/grade-colors';
 import { Text } from '../Text';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
@@ -83,7 +84,7 @@ export const DumbbellByAngleChart = memo(function DumbbellByAngleChart({
   boardName,
   accessibilityLabel,
 }: DumbbellByAngleChartProps) {
-  const { chartColors } = useTheme();
+  const { chartColors, colorScheme } = useTheme();
   const { t } = useTranslation('climbs');
   const [width, setWidth] = useState(0);
   const [focusedAngle, setFocusedAngle] = useState<number | null>(null);
@@ -228,7 +229,11 @@ export const DumbbellByAngleChart = memo(function DumbbellByAngleChart({
                   width: diaSize,
                   height: diaSize,
                   backgroundColor: row.estimated ? 'transparent' : row.boardseshColor,
-                  borderColor: row.estimated ? row.boardseshColor : diamondEdge,
+                  // The hollow outline is a thin mark on the plot background, so lift
+                  // it to 3:1 in dark mode; the filled diamond keeps its label edge.
+                  borderColor: row.estimated
+                    ? readableGradeColor(row.boardseshColor, colorScheme, 'mark')
+                    : diamondEdge,
                   borderWidth: row.estimated ? ESTIMATED_DIAMOND_BORDER : undefined,
                   left: centerX - diaSize / 2,
                   top: diamondY - diaSize / 2,
@@ -239,7 +244,17 @@ export const DumbbellByAngleChart = memo(function DumbbellByAngleChart({
         </PressableSurface>
       );
     },
-    [focusedAngle, slotWidth, localY, neutralStroke, diamondEdge, chartColors.tertiaryLabel, chartColors.separator, t],
+    [
+      focusedAngle,
+      slotWidth,
+      localY,
+      neutralStroke,
+      diamondEdge,
+      chartColors.tertiaryLabel,
+      chartColors.separator,
+      colorScheme,
+      t,
+    ],
   );
 
   // All points anchor at the axis midpoint so every marker container spans the

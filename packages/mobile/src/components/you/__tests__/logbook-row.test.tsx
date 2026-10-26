@@ -141,6 +141,7 @@ vi.mock('@boardsesh/profile-stats', () => ({
 vi.mock('@boardsesh/board-constants/grade-colors', () => ({
   getGradeColor: () => '#7A3FE4',
   DEFAULT_GRADE_COLOR: '#8A8A8E',
+  readableGradeColor: (gradeColor: string) => gradeColor,
 }));
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),

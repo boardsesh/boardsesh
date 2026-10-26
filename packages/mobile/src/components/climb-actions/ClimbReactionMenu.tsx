@@ -28,7 +28,7 @@ import { useTranslation } from 'react-i18next';
 import { FullWindowOverlay } from 'react-native-screens';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
-import { getGradeColor, DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
+import { getGradeColor, DEFAULT_GRADE_COLOR, readableGradeColor } from '@boardsesh/board-constants/grade-colors';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { ListRow } from '../ListRow';
@@ -278,7 +278,7 @@ export function ClimbReactionMenu({
   }, [actions]);
   const listActions = useMemo(() => actions.filter((action) => !PRIMARY_ACTION_IDS.includes(action.id)), [actions]);
 
-  const gradeColor = getGradeColor(climb.difficulty) ?? DEFAULT_GRADE_COLOR;
+  const gradeColor = readableGradeColor(getGradeColor(climb.difficulty) ?? DEFAULT_GRADE_COLOR, colorScheme);
   const formattedGrade = formatGrade(climb.difficulty, boardConfig.boardName);
 
   // Subtle byline under the name: sends · quality★ · setter · hidden (each dropped

@@ -94,7 +94,7 @@ vi.mock('../../ClimbListThumbnail', () => ({
 vi.mock('../AvatarGroup', () => ({ AvatarGroup: () => createElement('div', { 'data-avatars': 'true' }) }));
 vi.mock('../FeedSocialRow', () => ({ FeedSocialRow: () => createElement('div', { 'data-social': 'true' }) }));
 vi.mock('../SessionGradeStrip', () => ({ SessionGradeStrip: () => null }));
-vi.mock('../profile-chart-colors', () => ({ gradeBadgeColor: () => '#000' }));
+vi.mock('../profile-chart-colors', () => ({ gradeTextColor: () => '#000' }));
 
 import { SessionFeedCard } from '../SessionFeedCard';
 

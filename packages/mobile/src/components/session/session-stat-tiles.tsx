@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { type IconName } from '../icon-map';
-import { gradeBadgeColor } from '../you/profile-chart-colors';
+import { gradeBadgeColor, gradeTextColor } from '../you/profile-chart-colors';
 import { withAlpha } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
@@ -39,16 +39,19 @@ export function StatTile({ value, label, icon }: { value: number; label: string;
 export function GradeTile({ grade, boardName }: { grade: string; boardName?: string | null }) {
   const { t } = useTranslation('feed');
   const { formatGrade } = useGradeFormat();
+  const { colorScheme } = useTheme();
   // A 15%-alpha grade tint (the participant-chip treatment) rather than a solid
-  // slab, so the only saturated grade colour on screen is the chart.
+  // slab, so the only saturated grade colour on screen is the chart. The tint
+  // keeps the raw vivid hue; the text is lifted so it stays legible in dark mode.
   const gradeColor = gradeBadgeColor(grade);
+  const gradeLabelColor = gradeTextColor(grade, colorScheme);
   const displayGrade = formatGrade(grade, boardName) ?? grade;
   return (
     <View style={[styles.tile, { backgroundColor: withAlpha(gradeColor, 0.15) }]}>
-      <Text variant="title2" color={gradeColor}>
+      <Text variant="title2" color={gradeLabelColor}>
         {displayGrade}
       </Text>
-      <Text variant="caption1" color={gradeColor} style={styles.gradeLabel} numberOfLines={1}>
+      <Text variant="caption1" color={gradeLabelColor} style={styles.gradeLabel} numberOfLines={1}>
         {t('sessionFeedCard.hardest')}
       </Text>
     </View>

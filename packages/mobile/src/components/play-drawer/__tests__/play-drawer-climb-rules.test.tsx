@@ -49,6 +49,7 @@ vi.mock('react-i18next', () => ({
 vi.mock('@boardsesh/board-constants/grade-colors', () => ({
   getGradeColor: () => '#abcdef',
   DEFAULT_GRADE_COLOR: '#000000',
+  readableGradeColor: (gradeColor: string) => gradeColor,
 }));
 vi.mock('../../../lib/format-climb-stats', () => ({
   formatSends: (count: number) => `${count} sends`,

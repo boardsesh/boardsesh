@@ -6,7 +6,7 @@
 
 import { useMemo, type ReactNode } from 'react';
 import { View, StyleSheet, type ColorValue } from 'react-native';
-import { DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
+import { DEFAULT_GRADE_COLOR, readableGradeColor } from '@boardsesh/board-constants/grade-colors';
 import type { Climb } from '@boardsesh/queue';
 import { TOOLBAR_CAPSULE_HEIGHT, TOOLBAR_CAPSULE_MAX_WIDTH, glassSize } from '../../theme/layout';
 import { spacing } from '../../theme/tokens';
@@ -88,7 +88,7 @@ export function ClimbCapsule({
   endActionSize = 0,
   surfaceTreatment = 'floating',
 }: ClimbCapsuleProps) {
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors, brandColors, colorScheme } = useTheme();
   const { boardConfig } = useDrawerHost();
   const { resolveGrade } = useDisplayGrade();
   const { openPlay, preparePlay, currentItem } = useAccessoryClimbTap();
@@ -164,7 +164,8 @@ export function ClimbCapsule({
             climb={currentClimb}
             labelColor={systemColors.label}
             formattedGrade={grades.current}
-            gradeColor={grades.currentColor}
+            // Grade text on the bar surface: lifted for dark-mode contrast.
+            gradeColor={readableGradeColor(grades.currentColor, colorScheme)}
             showThumbnail={showThumbnail}
             boardConfig={boardConfig}
           />

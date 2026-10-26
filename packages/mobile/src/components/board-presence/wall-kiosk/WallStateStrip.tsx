@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
 import { Text } from '../../Text';
 import { readableTextColor } from '../../grade/grade-chip-colors';
+import { readableGradeColor } from '@boardsesh/board-constants/grade-colors';
 import { useTheme } from '../../../providers/theme-provider';
 import { useDisplayGrade } from '../../../hooks/use-display-grade';
 import { useActiveBoard } from '../../../lib/graphql/use-active-board';
@@ -42,7 +43,7 @@ function WallStateStripComponent({
 }: WallStateStripProps) {
   const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('session');
-  const { brandColors, systemColors } = useTheme();
+  const { brandColors, systemColors, colorScheme } = useTheme();
   const { resolveGrade } = useDisplayGrade();
   // Read from the active board rather than the Bluetooth context: this memoized
   // leaf re-renders on every glance-line change already, and `useActiveBoard`'s
@@ -87,7 +88,8 @@ function WallStateStripComponent({
   // back to the legacy label + colour — lights up once the backend stamps them.
   const liveResolvedGrade = resolveGrade({ difficulty: liveClimb?.grade ?? '' }, boardName);
   const liveGrade = liveClimb?.grade ? liveResolvedGrade.label : null;
-  const liveGradeColor = liveResolvedGrade.color;
+  // Grade text on the page surface (not the bar fill): lifted for dark-mode contrast.
+  const liveGradeColor = readableGradeColor(liveResolvedGrade.color, colorScheme);
 
   return (
     <View style={styles.root}>

@@ -131,7 +131,7 @@ vi.mock('../../../../src/components/you/AvatarGroup', () => ({ AvatarGroup: () =
 vi.mock('../../../../src/components/you/YouCharts', () => ({ StackedBarChart: () => createElement('div', null) }));
 vi.mock('../../../../src/components/you/profile-chart-colors', () => ({
   buildSessionGradeBars: () => null,
-  gradeBadgeColor: () => '#000000',
+  gradeTextColor: () => '#000000',
 }));
 vi.mock('../../../../src/components/session/session-stat-tiles', () => ({
   StatTile: () => createElement('div', null),

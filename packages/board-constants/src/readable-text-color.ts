@@ -35,6 +35,34 @@ export function contrastRatio(firstHexColor: string, secondHexColor: string): nu
   return (lighter + 0.05) / (darker + 0.05);
 }
 
+function toHexChannel(channel: number): string {
+  return Math.round(channel).toString(16).padStart(2, '0').toUpperCase();
+}
+
+/**
+ * Lighten `foregroundColor` toward white just far enough to reach `minRatio`
+ * against `surfaceColor`, so a colour keeps as much of its own hue as it can.
+ * Returns the input unchanged when it already passes, and white when nothing
+ * short of white does. Only lightens: meant for foregrounds on dark surfaces.
+ */
+export function liftToContrast(foregroundColor: string, surfaceColor: string, minRatio: number): string {
+  const normalized = normalizeHexColor(foregroundColor);
+  if (!normalized) return foregroundColor;
+  const initialRatio = contrastRatio(normalized, surfaceColor);
+  if (initialRatio == null || initialRatio >= minRatio) return foregroundColor;
+
+  const red = parseInt(normalized.slice(0, 2), 16);
+  const green = parseInt(normalized.slice(2, 4), 16);
+  const blue = parseInt(normalized.slice(4, 6), 16);
+  for (let step = 1; step <= 100; step += 1) {
+    const mix = step / 100;
+    const candidate = `#${toHexChannel(red + (255 - red) * mix)}${toHexChannel(green + (255 - green) * mix)}${toHexChannel(blue + (255 - blue) * mix)}`;
+    const ratio = contrastRatio(candidate, surfaceColor);
+    if (ratio != null && ratio >= minRatio) return candidate;
+  }
+  return readableLightText;
+}
+
 export function readableTextColor(backgroundColor: string): string {
   const lightContrast = contrastRatio(backgroundColor, readableLightText);
   const darkContrast = contrastRatio(backgroundColor, readableDarkText);

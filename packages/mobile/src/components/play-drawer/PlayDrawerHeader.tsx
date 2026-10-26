@@ -6,7 +6,7 @@ import type { TFunction } from 'i18next';
 import { CLIMB_CHARACTERISTICS, type BoardName, type Climb } from '@boardsesh/shared-schema';
 import { useEffectiveClimbStats } from '@boardsesh/board-react';
 import { getBoardCapabilities } from '@boardsesh/board-config';
-import { getGradeColor, DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
+import { getGradeColor, DEFAULT_GRADE_COLOR, readableGradeColor } from '@boardsesh/board-constants/grade-colors';
 import { formatSends, formatQuality } from '../../lib/format-climb-stats';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -219,16 +219,18 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   angle,
 }: PlayDrawerHeaderProps) {
   const { t } = useTranslation('climbs');
-  const { systemColors } = useTheme();
+  const { systemColors, colorScheme } = useTheme();
   // The header's height is pinned (see `minRowHeight` below) and the headline's
   // line height alone eats that floor once type is scaled up, so the second line
   // is dropped rather than clamping anyone's Dynamic Type. The same information
   // is spelled out in the Grades section below, which scrolls.
   const { fontScale } = useWindowDimensions();
   const dropSecondaryLine = fontScale > 1.3;
+  // Drawn as text on the drawer surface, so lift it for dark-mode contrast.
   const resolvedGradeColor = useMemo(
-    () => gradeColor ?? getGradeColor(rawDifficulty ?? difficulty) ?? DEFAULT_GRADE_COLOR,
-    [gradeColor, rawDifficulty, difficulty],
+    () =>
+      readableGradeColor(gradeColor ?? getGradeColor(rawDifficulty ?? difficulty) ?? DEFAULT_GRADE_COLOR, colorScheme),
+    [gradeColor, rawDifficulty, difficulty, colorScheme],
   );
 
   const { statsParts, ruleLabels, attributes, showsProject, showsSetAngleMarker } = deriveHeaderFacts(

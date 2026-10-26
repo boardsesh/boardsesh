@@ -3,6 +3,7 @@ import type { SessionGradeDistributionItem } from '@boardsesh/shared-schema';
 import { StackedBarChart } from '../../you/YouCharts';
 import { buildSessionGradeBars } from '../../you/profile-chart-colors';
 import { useGradeFormat } from '../../../hooks/use-grade-format';
+import { useTheme } from '../../../providers/theme-provider';
 
 type SessionGradeChartProps = {
   distribution: SessionGradeDistributionItem[];
@@ -18,12 +19,16 @@ type SessionGradeChartProps = {
  * logged yet.
  */
 export function SessionGradeChart({ distribution, boardName }: SessionGradeChartProps) {
+  const { colorScheme } = useTheme();
   const { formatGrade: formatAnyBoardGrade } = useGradeFormat();
   const formatGrade = useCallback(
     (difficulty: string | null | undefined) => formatAnyBoardGrade(difficulty, boardName),
     [formatAnyBoardGrade, boardName],
   );
-  const bars = useMemo(() => buildSessionGradeBars(distribution, formatGrade), [distribution, formatGrade]);
+  const bars = useMemo(
+    () => buildSessionGradeBars(distribution, formatGrade, { colorScheme }),
+    [distribution, formatGrade, colorScheme],
+  );
 
   if (!bars) return null;
 

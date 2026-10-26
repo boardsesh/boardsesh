@@ -90,6 +90,7 @@ vi.mock('react-i18next', () => ({
 vi.mock('@boardsesh/board-constants/grade-colors', () => ({
   getGradeColor: (grade: string | null | undefined) => (grade === 'V5' ? '#FF0000' : undefined),
   DEFAULT_GRADE_COLOR: '#808080',
+  readableGradeColor: (gradeColor: string) => gradeColor,
 }));
 
 vi.mock('../use-open-wall-preview', () => ({ useOpenWallPreview: () => spies.openWallPreview }));

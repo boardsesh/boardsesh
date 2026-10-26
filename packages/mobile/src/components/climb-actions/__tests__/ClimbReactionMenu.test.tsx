@@ -179,6 +179,7 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }
 vi.mock('@boardsesh/board-constants/grade-colors', () => ({
   getGradeColor: () => '#fff',
   DEFAULT_GRADE_COLOR: '#fff',
+  readableGradeColor: (gradeColor: string) => gradeColor,
 }));
 
 vi.mock('../../Text', () => ({
