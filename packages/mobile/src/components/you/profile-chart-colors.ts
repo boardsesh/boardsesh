@@ -158,8 +158,8 @@ export const GRADE_TINT_ALPHA = 0.15;
 
 /**
  * Grade text on a pill or tile tinted with the grade's own colour at
- * `tintAlpha`. The tint is lighter than the page, so dark mode lifts the text
- * against the composited tint rather than the bare surface.
+ * `tintAlpha`. Dark mode measures the text against the composited tint rather
+ * than the bare surface, since the tint changes how light the ground is.
  */
 export function gradeTextOnTintColor(
   gradeLabel: string | null | undefined,

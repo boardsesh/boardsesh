@@ -116,8 +116,9 @@ export function readableGradeColor(
 
 /**
  * Grade text on a pill or tile tinted with the grade's own colour at
- * `tintAlpha`. The tint makes the ground lighter than the page, so the text is
- * lifted against the tint composited over {@link DARK_GRADE_REFERENCE_SURFACE}.
+ * `tintAlpha`. The text is measured against the tint composited over
+ * {@link DARK_GRADE_REFERENCE_SURFACE}, not the page: a warm grade's tint is
+ * lighter than the page and needs more lift, a dark purple's can be darker.
  */
 export function readableGradeColorOnTint(gradeColor: string, colorScheme: 'light' | 'dark', tintAlpha: number): string {
   if (colorScheme === 'light') return gradeColor;
