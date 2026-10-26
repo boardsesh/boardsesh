@@ -303,7 +303,7 @@ describe('migration 0280 re-sends the climbs a stray climb policy withheld', () 
   it('moves the published climb past a cursor that walked by it, leaves the draft, deletes the policies', async () => {
     const before = await syncQueries.syncClimbs(undefined, scope, ctx(STRANGER_ID));
     const migration = readFileSync(
-      new URL('../../../db/drizzle/0280_drop_stray_climb_content_privacy.sql', import.meta.url),
+      new URL('../../../db/drizzle/0281_drop_stray_climb_content_privacy.sql', import.meta.url),
       'utf8',
     );
     for (const statement of migration.split('--> statement-breakpoint')) {
