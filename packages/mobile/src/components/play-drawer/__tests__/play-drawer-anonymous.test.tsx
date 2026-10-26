@@ -202,8 +202,10 @@ vi.mock('react-native-mmkv', () => {
   };
 });
 vi.mock('react-native-gesture-handler', () => ({
-  LegacyScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  // Main's RNGH 2 preview keeps the legacy handler under its original name.
+  ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   GestureDetector: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  Gesture: { Simultaneous: (...gestures: unknown[]) => ({ gestures }) },
 }));
 vi.mock('react-native-reanimated', () => ({
   default: { View: ({ children }: { children?: ReactNode }) => createElement('div', null, children) },

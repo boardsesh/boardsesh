@@ -20,9 +20,7 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
-// The player's builder gestures need the legacy scroll handler: RNGH 3's
-// default ScrollView uses the hook API, which cannot share their relations.
-import { LegacyScrollView as ScrollView, GestureDetector, Gesture } from 'react-native-gesture-handler';
+import * as GestureHandler from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { scopedRouter as router } from '../../lib/routing/scoped-navigation';
 import { useTranslation } from 'react-i18next';
@@ -153,6 +151,14 @@ import { track } from '../../lib/analytics';
 import { spacing, sheetStyles } from '../../theme/tokens';
 import type { BoardConfig, PlayDrawerProps } from './play-drawer-types';
 export type { PlayDrawerOpenOptions, PlayDrawerOpenTarget, PlayDrawerProps } from './play-drawer-types';
+
+const { GestureDetector, Gesture, ScrollView: DefaultScrollView } = GestureHandler;
+// Builder gestures need the legacy scroll handler on both preview runtimes:
+// RNGH 3 renamed it, while main's RNGH 2 still exports it as ScrollView.
+const ScrollView =
+  'LegacyScrollView' in GestureHandler
+    ? (GestureHandler.LegacyScrollView as typeof DefaultScrollView)
+    : DefaultScrollView;
 
 /**
  * What identifies a queue item's page in the swipe (see use-swipe-pager): its

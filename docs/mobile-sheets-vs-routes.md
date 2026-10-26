@@ -751,7 +751,10 @@ The player's scroll container uses RNGH 3's `LegacyScrollView`, because its
 dismiss, carousel, pinch and zoom-pan gestures still use the builder API.
 RNGH 3's default `ScrollView` uses the hook API; relations cannot cross those
 APIs, so the native scroll cancels the dismiss gesture (#6901). Keep the scroll
-container and its related gestures on the same API when migrating them.
+container and its related gestures on the same API when migrating them. Main's
+preview runtime still uses RNGH 2, where that same legacy handler is named
+`ScrollView`, so select `LegacyScrollView` only when the module exports it and
+otherwise keep `ScrollView`.
 
 The player keeps its native opening and chevron-close transitions. A downward
 swipe instead owns one Reanimated translation for the entire route surface,
