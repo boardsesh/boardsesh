@@ -463,6 +463,25 @@ order). On someone else's logbook the copy says "Their", never "Your", and the f
 the visit: only your own logbook saves them. The setter row pushes a picker route and the sheet
 suspends around it (`useSheetSubRoute`).
 
+On iOS with Liquid Glass, the climbs Filters sheet (Climbs, playlists, smart lists, setter pages)
+draws its body as one SwiftUI `Form`, the grouped look of iOS Settings (#6872,
+`ClimbFilterForm.ios.tsx`). The X / Filters / Reset bar stays our RN `SheetTopBar`.
+- **Opening height.** It opens at half height, with the name field, Recent and the grade rail on
+  screen and the list still visible behind it. Drag it, or focus the name field, for the tall detent.
+- **Controls.** A segmented control only for two or three options (climb type, sort order). Four or
+  more become a menu row with the value on the right: grade accuracy, collection, progress, both
+  star minimums, popularity, sort by. Recent searches are one "Recent" menu row with the current
+  search ticked. Switches are toggle rows with a subtitle. Setters, Hold types and Board region are
+  value-and-chevron rows that push their pickers.
+- **Glass.** The Form's own background is hidden so the sheet's glass shows between the cards. The
+  cards are opaque (`secondarySystemGroupedBackground`): a Form row's default fill is translucent
+  over glass, and in light mode the list behind showed through it.
+- **No pins in the sheet.** Its last row opens Settings › Quick filters, where the chips are switched
+  on and ordered. After any picker round trip the Form comes back at the top: SwiftUI can't scroll a
+  Form to a row.
+
+Android and the Material variant keep the RN sheet with its pin icons.
+
 Neutral tiles in session summaries and Profile's period comparison use `systemColors.tertiaryFill`
 on Liquid Glass, leaving visual emphasis to the actual values and semantic highlights. Material
 keeps `systemColors.fill`. Do not apply a violet background to every content card.
