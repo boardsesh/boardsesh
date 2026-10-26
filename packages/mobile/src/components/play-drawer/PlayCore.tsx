@@ -97,7 +97,7 @@ import {
   DEFAULT_PLAY_DRAWER_SECTIONS,
   usePlayDrawerSectionsPreference,
 } from '../../lib/play-drawer-sections-preference';
-import { visiblePlayDrawerSections } from './play-drawer-sections';
+import { visiblePlayDrawerSections, withoutPanelSections } from './play-drawer-sections';
 import { PlaybackFrameContext } from './playback-frame-context';
 import { usePlayerButtonsPreference } from '../../lib/player-buttons-preference';
 import { DEFAULT_PLAYER_BUTTONS_POSITION } from '../../lib/player-buttons';
@@ -425,7 +425,14 @@ export function PlayCore({
   // no read, so they are ready at once. Every other viewer, a guest without an
   // account included, keeps their stored choices: they can reach both ⋯ → View
   // options and Settings → Climb view, and those write exactly that store.
-  const sections = isAnonymous ? DEFAULT_PLAY_DRAWER_SECTIONS : storedSectionsPreference.sections;
+  const preferredSections = isAnonymous ? DEFAULT_PLAY_DRAWER_SECTIONS : storedSectionsPreference.sections;
+  // Beside the landscape iPad panel, the column leaves Logbook and Beta to the
+  // panel's segments rather than drawing them twice; every other section stays.
+  const hasSidePanel = renderSidePanel != null;
+  const sections = useMemo(
+    () => (hasSidePanel ? withoutPanelSections(preferredSections) : preferredSections),
+    [hasSidePanel, preferredSections],
+  );
   const sectionOrder = isAnonymous ? DEFAULT_PLAY_DRAWER_SECTION_ORDER : storedSectionsPreference.order;
   const sectionsReady = isAnonymous || storedSectionsPreference.ready;
   // The climber's buttons and where the controls sit (#6229), read synchronously
@@ -1878,6 +1885,15 @@ export function PlayCore({
     requestBelowFoldContent,
   });
   const showPanePlaceholder = shouldShowPanePlaceholder(isPane, displayedClimb != null);
+  // Beside the panel the header swipes across the board column, not the window,
+  // so the title keeps pace with the board and its neighbour enters at the
+  // column's edge. Measured only while the panel is up.
+  const [playerColumnWidth, setPlayerColumnWidth] = useState(0);
+  const handlePlayerColumnLayout = useCallback((event: LayoutChangeEvent) => {
+    const measured = Math.round(event.nativeEvent.layout.width);
+    setPlayerColumnWidth((previous) => (previous === measured ? previous : measured));
+  }, []);
+  const headerViewportWidth = hasSidePanel && playerColumnWidth > 0 ? playerColumnWidth : windowWidth;
   // The landscape iPad panel follows the climb on screen. Memoised on what it
   // reads, so the panel's memoised content skips the player's own re-renders.
   const sidePanelClimb = useMemo(
@@ -2026,8 +2042,11 @@ export function PlayCore({
     // The play route paints its background and this interactive core together.
     // The board column is always its own view, so a rotation that brings the
     // side panel in or out never remounts the board.
-    <View style={[styles.root, renderSidePanel ? styles.rootSideBySide : null]}>
-      <View style={[styles.playerColumn, renderSidePanel ? styles.playerColumnSideBySide : null]}>
+    <View style={[styles.root, hasSidePanel ? styles.rootSideBySide : null]}>
+      <View
+        style={[styles.playerColumn, hasSidePanel ? styles.playerColumnSideBySide : null]}
+        onLayout={hasSidePanel ? handlePlayerColumnLayout : undefined}
+      >
         {enhancementsReady ? (
           <PlayCoreEnhancements
             boardName={boardName}
@@ -2186,7 +2205,7 @@ export function PlayCore({
                           <SwipeableHeader
                             pager={swipePager}
                             centerPage={swipeCenterPage}
-                            viewportWidth={windowWidth}
+                            viewportWidth={headerViewportWidth}
                             // The header a screen reader reads, in one place that
                             // the climb changing never moves: every drawn header
                             // below is hidden from it.
@@ -2513,8 +2532,8 @@ const styles = StyleSheet.create({
   playerColumn: {
     flex: 1,
   },
-  // The swipe pages its neighbours a window width away; the column clips them
-  // so a sliding header never draws over the panel.
+  // A fling sends the board a window width away; the column clips it so the
+  // outgoing board never draws over the panel.
   playerColumnSideBySide: {
     overflow: 'hidden',
   },

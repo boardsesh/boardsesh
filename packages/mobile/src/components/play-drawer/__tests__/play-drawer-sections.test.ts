@@ -5,7 +5,7 @@ import {
   DEFAULT_PLAY_DRAWER_SECTIONS,
   type PlayDrawerSectionsVisibility,
 } from '../../../lib/play-drawer-sections-preference';
-import { visiblePlayDrawerSections } from '../play-drawer-sections';
+import { visiblePlayDrawerSections, withoutPanelSections } from '../play-drawer-sections';
 
 // Eligibility is pure; preference I/O and telemetry do not participate.
 vi.mock('../../../lib/preference-store', () => ({ getPreference: vi.fn(), setPreference: vi.fn() }));
@@ -187,4 +187,22 @@ describe('visiblePlayDrawerSections', () => {
       ).toEqual([]);
     },
   );
+});
+
+describe('withoutPanelSections', () => {
+  it('leaves Logbook and Beta to the landscape iPad panel and keeps the rest', () => {
+    const column = visiblePlayDrawerSections({
+      ...ELIGIBLE_INPUT,
+      sections: withoutPanelSections(DEFAULT_PLAY_DRAWER_SECTIONS),
+    });
+    expect(column).not.toContain('logbook');
+    expect(column).not.toContain('betaVideos');
+    expect(column).toEqual(
+      visiblePlayDrawerSections(ELIGIBLE_INPUT).filter((id) => id !== 'logbook' && id !== 'betaVideos'),
+    );
+  });
+
+  it('never turns on a section the climber hid', () => {
+    expect(withoutPanelSections(NO_SECTIONS)).toEqual(NO_SECTIONS);
+  });
 });

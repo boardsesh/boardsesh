@@ -35,3 +35,11 @@ export function visiblePlayDrawerSections({
     return true;
   });
 }
+
+/**
+ * The landscape iPad panel has its own Logbook and Beta segments, so the board
+ * column beside it leaves those two out. The climber's other choices stand.
+ */
+export function withoutPanelSections(sections: PlayDrawerSectionsVisibility): PlayDrawerSectionsVisibility {
+  return { ...sections, logbook: false, betaVideos: false };
+}

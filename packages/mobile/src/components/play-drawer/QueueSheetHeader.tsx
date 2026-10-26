@@ -16,6 +16,8 @@ type QueueSheetHeaderProps = {
   selectedCount: number;
   queueCount: number;
   viewOnlyMode: boolean;
+  /** False under the side panel's "Up next" segment, which already names the list. */
+  showTitle?: boolean;
   onToggleEditMode: () => void;
   onToggleHistory: () => void;
   /** Folds the sheet away. The side panel has nothing to close, so it omits it. */
@@ -29,6 +31,7 @@ export const QueueSheetHeader = memo(function QueueSheetHeader({
   selectedCount,
   queueCount,
   viewOnlyMode,
+  showTitle = true,
   onToggleEditMode,
   onToggleHistory,
   onClose,
@@ -108,7 +111,7 @@ export const QueueSheetHeader = memo(function QueueSheetHeader({
       </View>
 
       <View style={styles.centerSection}>
-        <Text variant="headline">{t('queueDrawer.title')}</Text>
+        {showTitle ? <Text variant="headline">{t('queueDrawer.title')}</Text> : null}
         {queueCount > 0 && (
           <Text variant="caption1" color={systemColors.secondaryLabel}>
             {t('mobile.queue.climbCount', { count: queueCount })}

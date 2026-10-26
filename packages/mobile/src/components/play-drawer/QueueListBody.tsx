@@ -248,6 +248,7 @@ export const QueueListBody = forwardRef<QueueListBodyHandle, QueueListBodyProps>
         selectedCount={selectedItems.size}
         queueCount={upNextCount}
         viewOnlyMode={viewOnlyMode}
+        showTitle={presentation === 'sheet'}
         onToggleEditMode={handleToggleEditMode}
         onToggleHistory={handleToggleHistory}
         onClose={onClose}
