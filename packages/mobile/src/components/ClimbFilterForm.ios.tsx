@@ -20,13 +20,14 @@
 // their system fill: Liquid Glass is never drawn in the content layer.
 
 import { useCallback, useEffect, useRef } from 'react';
-import { Keyboard, StyleSheet } from 'react-native';
+import { Keyboard, PlatformColor, StyleSheet } from 'react-native';
 import { Host } from '@expo/ui';
 import { Button, Form, HStack, Image, Menu, Section, Spacer, Text, TextField, useNativeState } from '@expo/ui/swift-ui';
 import {
   accessibilityLabel as accessibilityLabelModifier,
   autocorrectionDisabled,
   buttonStyle,
+  listRowBackground,
   onSubmit as onSubmitModifier,
   scrollContentBackground,
   scrollDismissesKeyboard,
@@ -43,6 +44,11 @@ import { CHEVRON, PRIMARY_LABEL, ROW_ICON, SECONDARY_LABEL, TERTIARY_LABEL } fro
 import type { ClimbFilterFormProps, ClimbFilterFormRow, FilterMenuRow, FilterNameRow } from './ClimbFilterForm.types';
 
 const FORM_MODIFIERS = [scrollContentBackground('hidden'), scrollDismissesKeyboard('interactively')];
+// An opaque card fill. Over the sheet's glass a Form row's own fill is
+// translucent, and in light mode the list behind (its red grades) showed through
+// the rows. The system grouped-card colour follows light/dark and Increase
+// Contrast, like the cards in Settings.
+const SECTION_MODIFIERS = [listRowBackground(PlatformColor('secondarySystemGroupedBackground'))];
 
 /**
  * The climb-name search. The value is controlled by the sheet (it owns the draft
@@ -154,6 +160,7 @@ export function ClimbFilterForm({ model }: ClimbFilterFormProps) {
             key={section.key}
             title={section.title}
             footer={section.footer ? <Text>{section.footer}</Text> : undefined}
+            modifiers={SECTION_MODIFIERS}
           >
             {section.rows.map((row) => renderFilterRow(row, tints))}
           </Section>
