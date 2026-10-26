@@ -316,6 +316,7 @@ import {
   resetNativeTabContentInsetForTests,
 } from '../../../src/lib/native-tab-content-inset-store';
 import { TAB_BADGE_CONNECTED, TAB_BADGE_LIVE } from '../../../src/components/navigation/tab-badge';
+import { markWallDisplayMounted } from '../../../src/lib/wall-display-presence';
 
 describe('TabLayout', () => {
   beforeEach(() => {
@@ -723,16 +724,31 @@ describe('TabLayout', () => {
     cfg.boardPresenceEnabled = true;
     cfg.boardPresenceBoardId = 1;
     cfg.activeBoard = { uuid: 'board-1' };
-    cfg.segments = ['wall-display'];
+    // The player pushed over the kiosk is the focused route; the display is still
+    // in the stack, so nothing may remount behind it.
+    cfg.segments = ['play'];
+    const release = markWallDisplayMounted();
 
-    const { container } = render(<TabLayout />);
+    try {
+      const { container, rerender } = render(<TabLayout />);
 
-    expect(container.querySelector('[data-ipad-wall-column="true"]')).toBeNull();
-    // The pane is covered too, so it is not mounted behind the display.
-    expect(container.querySelector('[data-ipad-play-pane="true"]')).toBeNull();
-    // The surface still EXISTS for this layout, so the sidebar cell stays hidden — it
-    // doesn't pop back in merely because the display is open.
-    expect(container.querySelector('[data-tablet-sidebar="true"]')?.getAttribute('data-show-wall-cell')).toBe('false');
+      expect(container.querySelector('[data-ipad-wall-column="true"]')).toBeNull();
+      // The pane is covered too, so it is not mounted behind the display.
+      expect(container.querySelector('[data-ipad-play-pane="true"]')).toBeNull();
+      // The surface still EXISTS for this layout, so the sidebar cell stays hidden — it
+      // doesn't pop back in merely because the display is open.
+      expect(container.querySelector('[data-tablet-sidebar="true"]')?.getAttribute('data-show-wall-cell')).toBe(
+        'false',
+      );
+
+      // Leaving the display brings both back.
+      act(() => release());
+      rerender(<TabLayout />);
+      expect(container.querySelector('[data-ipad-wall-column="true"]')).not.toBeNull();
+      expect(container.querySelector('[data-ipad-play-pane="true"]')).not.toBeNull();
+    } finally {
+      release();
+    }
   });
 
   it('hides the sidebar wall cell when the portrait play-pane strip owns the wall surface', () => {

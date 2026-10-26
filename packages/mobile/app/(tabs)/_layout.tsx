@@ -27,7 +27,8 @@ import {
   resolveDetailPaneWidth,
   WALL_COLUMN_WIDTH,
 } from '../../src/theme/size-class';
-import { isAccessoryHiddenRoute, isWallDisplayRoute } from '../../src/lib/route-segments';
+import { isAccessoryHiddenRoute } from '../../src/lib/route-segments';
+import { useWallDisplayOpen } from '../../src/lib/wall-display-presence';
 import { usePendingBoardSyncPoll } from '../../src/lib/integrations/use-pending-board-sync-poll';
 import { SIDEBAR_WIDTH } from '../../src/theme/layout';
 import { getAppEntryTab } from '../../src/lib/app-entry-route';
@@ -165,11 +166,13 @@ export default function TabLayout() {
   const verticalTabBar = useVerticalTabBar();
   const tabBarMinimizeBehavior = liquidGlassTabBar ? (verticalTabBar ? 'never' : 'onScrollDown') : undefined;
   const { width: windowWidth } = useWindowDimensions();
+  const segments = useSegments();
   // The wall-redundancy rule below: while the full-screen Wall display covers the
   // shell, the shell's own wall column and player pane stand down, so the same
-  // feed isn't rendered twice behind an opaque kiosk.
-  const segments = useSegments();
-  const wallDisplayOpen = isWallDisplayRoute(segments);
+  // feed isn't rendered twice behind an opaque kiosk. Read from the root stack,
+  // not the focused segments, so a page pushed over the kiosk does not remount
+  // them behind it.
+  const wallDisplayOpen = useWallDisplayOpen();
   // The hold-type and zone filter boards keep their controls at the bottom of the
   // screen, right where the accessory platter draws. Hide the platter there through
   // the native `bottomAccessoryHidden` prop instead of unmounting the host (#5055);

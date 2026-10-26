@@ -2,7 +2,12 @@ import { createContext, useContext, useMemo, useSyncExternalStore, type ReactNod
 import { useSegments } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../providers/theme-provider';
-import { isAccessoryHiddenRoute, isAccessorySurfaceRoute, isTabsChromeRoute } from '../lib/route-segments';
+import {
+  isAccessoryHiddenRoute,
+  isAccessorySurfaceRoute,
+  isTabsChromeRoute,
+  isWallDisplayRoute,
+} from '../lib/route-segments';
 import { useNativeTabContentInsetBottom } from '../lib/native-tab-content-inset-store';
 import { useConnectivityBannerHeight } from '../lib/connectivity-banner-inset-store';
 import { getRestTimerState, subscribeRestTimer } from '../lib/rest-timer-store';
@@ -48,7 +53,12 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
   // The TAB BAR is present on every tab route, including pushed sub-routes (session
   // detail keeps it). The player route counts too (it's a modal over the live tabs)
   // so the tab-bar metrics don't churn across its open/close — see isTabsChromeRoute.
-  const insideTabs = isTabsChromeRoute(segments);
+  // The Wall display is the exception: it keeps the accessory host mounted
+  // (isTabsChromeRoute) but covers the bar, the accessory and the rest-timer pill's
+  // spot, so it reserves nothing. Counting it here put the root rest-timer pill
+  // over the kiosk and left a dead gap under its pages (RestTimerPillHost reads
+  // this same `insideTabs`).
+  const insideTabs = isTabsChromeRoute(segments) && !isWallDisplayRoute(segments);
   // The JS queue toolbar (Android / iOS 18 / tablets) only shows on a top-level tab page, plus
   // occluded under the player. Keep it separate from `insideTabs` so a pushed sub-route
   // still reserves tab-bar height but no longer reserves toolbar space for a bar that's
@@ -60,9 +70,8 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
   // above the native bar and is reserved for below.
   const { nativeTabBar, nativeAccessory: nativeAccessoryActive } = useTabChrome();
   // The tab layout hides the platter on a few routes (`isAccessoryHiddenRoute`,
-  // never on the Duo's rail), with the same expression as here. The iPad "On the
-  // Wall" kiosk is the one that is otherwise an accessory surface: nothing stands
-  // in for the hidden platter there, so it stops counting as one.
+  // never on the Duo's rail), with the same expression as here, and a hidden
+  // platter stops counting as an accessory surface.
   const verticalTabBar = useVerticalTabBar();
   const accessoryHidden = nativeAccessoryActive && isAccessoryHiddenRoute(segments) && !verticalTabBar;
   const onAccessorySurface = isAccessorySurfaceRoute(segments) && !accessoryHidden;

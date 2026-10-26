@@ -1,7 +1,8 @@
 import * as Notifications from 'expo-notifications';
 import { sprayImportRoute } from '../lib/spray/spray-import-progress';
+import { isWallDisplayOpen } from '../lib/wall-display-presence';
 
-type RouterLike = { push: (href: never) => void };
+type RouterLike = { push: (href: never) => void; dismissTo?: (href: never) => void };
 export type NotificationRoute = { path: string; params?: Record<string, string> };
 export type NotificationHandlerOptions = {
   canNavigate?: boolean;
@@ -58,7 +59,12 @@ export function setupNotificationHandlers(router: RouterLike, options: Notificat
     consumedResponses.add(identifier);
     if (response.notification.request.content.data?.type === 'spray_wall_detection_completed')
       options.onSprayCompletion?.();
-    router.push((route.params ? { pathname: route.path, params: route.params } : route.path) as never);
+    const href = (route.params ? { pathname: route.path, params: route.params } : route.path) as never;
+    // Over the full-screen Wall display, a push to a tab would stack the tabs on
+    // top of the kiosk. Close back down to the tabs instead. Root modals (the
+    // spray import) still present over it, and nothing changes elsewhere.
+    if (route.path.startsWith('/(tabs)/') && isWallDisplayOpen() && router.dismissTo) router.dismissTo(href);
+    else router.push(href);
   };
   const responseSubscription = Notifications.addNotificationResponseReceivedListener(consume);
   const receivedSubscription = Notifications.addNotificationReceivedListener((notification) => {

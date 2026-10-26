@@ -194,14 +194,19 @@ describe('BottomChromeMetricsProvider fan-out', () => {
       expect(received.a.preSessionFooterBottom).toBe(20 + 56);
     });
 
-    it('reserves no accessory on the "On the Wall" kiosk, where the layout hides it', () => {
-      cfg.segments = ['(tabs)', 'wall'];
-      render(<Harness tick={0} />);
-      expect(received.a.nativeAccessoryPresented).toBe(false);
-      expect(received.a.nativeAccessoryVisible).toBe(false);
-      expect(received.a.jsQueueToolbarVisible).toBe(false);
-      expect(received.a.scrollBottomPadding).toBe(20);
-    });
+    it.each([['wall-display'], ['wall-display', 'settings']])(
+      'reserves no tab chrome under the Wall display (%s), which covers it all',
+      (...segments) => {
+        cfg.segments = segments;
+        render(<Harness tick={0} />);
+        // No rest-timer pill and no dead gap: the kiosk and its pages are not tab chrome.
+        expect(received.a.insideTabs).toBe(false);
+        expect(received.a.nativeAccessoryPresented).toBe(false);
+        expect(received.a.nativeAccessoryVisible).toBe(false);
+        expect(received.a.jsQueueToolbarVisible).toBe(false);
+        expect(received.a.scrollBottomPadding).toBe(20);
+      },
+    );
 
     it('keeps the bottom tab bar in a narrow Split View', () => {
       cfg.widthClass = 'compact';

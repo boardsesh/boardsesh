@@ -1,8 +1,10 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Stack } from 'expo-router';
+import { DevicePickerSheetHost } from '../../src/components/ble/DevicePickerSheetHost';
 import { holdUntilLaunchReady } from '../../src/components/launch-update/hold-until-launch-ready';
 import { useStackScreenOptions } from '../../src/hooks/use-stack-screen-options';
 import { useTheme } from '../../src/providers/theme-provider';
+import { markWallDisplayMounted } from '../../src/lib/wall-display-presence';
 
 /**
  * The Wall display: the full-screen kiosk for an iPad mounted at the board. A
@@ -17,12 +19,18 @@ import { useTheme } from '../../src/providers/theme-provider';
  * is not focused, and this route is not a tab. While it is up, the tabs behind
  * it report hidden and release their board art.
  *
+ * While mounted it tells the shell behind it that the display is up
+ * (`wall-display-presence.ts`), even with a page pushed over it, and it hosts
+ * the BLE device picker: the kiosk's Connect buttons would otherwise present
+ * the app-root picker underneath this modal, out of reach.
+ *
  * Held until launch is ready: the old `wall` link can open it on a cold start,
  * while the launch update gate may still reload the app.
  */
 function WallDisplayLayout() {
   const stackScreenOptions = useStackScreenOptions();
   const { systemColors } = useTheme();
+  useEffect(() => markWallDisplayMounted(), []);
   // The glass stack draws transparent content over the root backstop. Under a
   // transparentModal that would show the tabs through every page pushed here, so
   // each one gets the opaque system background.
@@ -32,10 +40,15 @@ function WallDisplayLayout() {
   );
 
   return (
-    <Stack screenOptions={screenOptions}>
-      <Stack.Screen name="index" options={{ headerShown: false }} />
-      <Stack.Screen name="settings" options={{ headerShown: false }} />
-    </Stack>
+    <>
+      <Stack screenOptions={screenOptions}>
+        <Stack.Screen name="index" options={{ headerShown: false }} />
+        <Stack.Screen name="settings" options={{ headerShown: false }} />
+      </Stack>
+      {/* Claims the picker from the app-root host while mounted, as /play does, so
+          Connect in the kiosk presents over this modal instead of behind it. */}
+      <DevicePickerSheetHost registerExternal />
+    </>
   );
 }
 

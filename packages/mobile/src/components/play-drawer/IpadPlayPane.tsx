@@ -1,6 +1,6 @@
 import { memo, useCallback, useMemo } from 'react';
 import { View, StyleSheet, useWindowDimensions } from 'react-native';
-import { router, useSegments } from 'expo-router';
+import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PlayDrawer } from './PlayDrawer';
@@ -12,7 +12,7 @@ import { useBoardPresenceControls } from '../../providers/board-presence-provide
 import { useDeviceLayout } from '../../hooks/use-device-layout';
 import { resolveEffectiveWallSurface } from '../../theme/size-class';
 import { SIDEBAR_WIDTH } from '../../theme/layout';
-import { isWallDisplayRoute } from '../../lib/route-segments';
+import { useWallDisplayOpen } from '../../lib/wall-display-presence';
 import { NO_BOARD_PICKER_HREF } from '../../lib/boards/first-board-mode';
 import { spacing } from '../../theme/tokens';
 
@@ -49,8 +49,7 @@ function IpadPlayPaneComponent({
   const { width } = useWindowDimensions();
   const { widthClass, wallDeviceClass } = useDeviceLayout();
   const { enabled, boardId } = useBoardPresenceControls();
-  const segments = useSegments();
-  const wallDisplayOpen = isWallDisplayRoute(segments);
+  const wallDisplayOpen = useWallDisplayOpen();
   const phoneSplit = variant === 'phoneSplit';
   // The picker's no-board entry, as on the Climbs tab's empty state: a climber
   // with no boards gets "Where do you climb?", one whose board was cleared gets

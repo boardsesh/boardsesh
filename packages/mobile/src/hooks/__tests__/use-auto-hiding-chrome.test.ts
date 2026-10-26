@@ -67,6 +67,58 @@ describe('useAutoHidingChrome', () => {
     expect(result.current.visible).toBe(false);
   });
 
+  it('runs a control only while the controls were already up', () => {
+    const action = vi.fn();
+    const { result } = renderHook(() => useAutoHidingChrome({ visibleMs: 4000, pinned: false }));
+
+    act(() => {
+      result.current.guardPress(action)();
+    });
+    expect(action).toHaveBeenCalledOnce();
+
+    act(() => {
+      vi.advanceTimersByTime(4000);
+    });
+    // Faded: an activation that reaches the control without a touch (Switch
+    // Control, Voice Control) brings the controls back first.
+    act(() => {
+      result.current.guardPress(action)();
+    });
+    expect(action).toHaveBeenCalledOnce();
+    expect(result.current.visible).toBe(true);
+    act(() => {
+      result.current.guardPress(action)();
+    });
+    expect(action).toHaveBeenCalledTimes(2);
+  });
+
+  it('never lets the touch that revealed the controls press one of them', () => {
+    const action = vi.fn();
+    const { result } = renderHook(() => useAutoHidingChrome({ visibleMs: 4000, pinned: false }));
+    act(() => {
+      vi.advanceTimersByTime(4000);
+    });
+
+    // A tap lands on the invisible Exit: touch start reveals, the press that
+    // ends the same touch must not exit.
+    act(() => {
+      result.current.handleTouchStart();
+    });
+    act(() => {
+      result.current.guardPress(action)();
+    });
+    expect(action).not.toHaveBeenCalled();
+
+    // The next tap, with the controls up, acts.
+    act(() => {
+      result.current.handleTouchStart();
+    });
+    act(() => {
+      result.current.guardPress(action)();
+    });
+    expect(action).toHaveBeenCalledOnce();
+  });
+
   it('clears its timer on unmount', () => {
     const { unmount } = renderHook(() => useAutoHidingChrome({ visibleMs: 4000, pinned: false }));
     unmount();

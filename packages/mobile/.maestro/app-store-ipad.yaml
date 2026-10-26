@@ -164,8 +164,10 @@ name: app-store screenshots (iPad)
       id: ${SCREENSHOT_PRIMARY_WALL_PAINTED_ID}
     timeout: 90000
 # Exit and Settings fade a few seconds after the display opens; capture the kiosk alone.
+# Faded, they stay in the accessibility tree, so wait on the container's faded id.
 - extendedWaitUntil:
-    notVisible: ${SCREENSHOT_WALL_DISPLAY_EXIT_LABEL}
+    visible:
+      id: '^wall-display-controls-faded$'
     timeout: 15000
 - waitForAnimationToEnd
 - takeScreenshot: 00-wall

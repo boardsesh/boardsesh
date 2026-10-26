@@ -104,6 +104,36 @@ describe('native import notification handlers', () => {
     }
   });
 
+  it('closes the Wall display down to the tabs instead of stacking a tab over the kiosk', async () => {
+    const { markWallDisplayMounted } = await import('../../lib/wall-display-presence');
+    const { setupNotificationHandlers } = await import('../handlers');
+    const router = { push: vi.fn(), dismissTo: vi.fn() };
+    setupNotificationHandlers(router, { canNavigate: true });
+    const consume = mocks.listenResponse.mock.calls[0][0] as (notificationResponse: NotificationResponse) => void;
+    const profileHref = { pathname: '/(tabs)/profile', params: { userId: 'friend' } };
+
+    const release = markWallDisplayMounted();
+    try {
+      consume(response({ type: 'follow', userId: 'friend' }, 'follow-tap'));
+      expect(router.dismissTo).toHaveBeenCalledWith(profileHref);
+      expect(router.push).not.toHaveBeenCalled();
+
+      // A root modal (the spray import) still presents over the kiosk.
+      consume(response(completed, 'import-tap'));
+      expect(router.push).toHaveBeenCalledWith({
+        pathname: '/boards/spray/new',
+        params: { wallUuid, versionId: '42' },
+      });
+    } finally {
+      release();
+    }
+
+    // Without the display, a tab tap pushes as before.
+    consume(response({ type: 'follow', userId: 'friend' }, 'follow-tap-later'));
+    expect(router.push).toHaveBeenLastCalledWith(profileHref);
+    expect(router.dismissTo).toHaveBeenCalledOnce();
+  });
+
   it('refreshes import progress for a foreground completion without navigating', async () => {
     const { setupNotificationHandlers } = await import('../handlers');
     const router = { push: vi.fn() };

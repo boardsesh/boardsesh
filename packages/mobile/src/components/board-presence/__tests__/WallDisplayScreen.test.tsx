@@ -2,43 +2,38 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
+import type { NativeShortcutCommand } from '../../../../modules/spray-editor-input/src/index';
 
 const cfg = vi.hoisted(() => ({
-  screenReaderEnabled: false,
+  isFocused: true,
+  assistiveTechnologyEnabled: false,
   router: { back: vi.fn(), push: vi.fn(), replace: vi.fn(), canGoBack: vi.fn() },
   keepAwake: vi.fn(),
+  keyScope: null as null | {
+    commands: readonly NativeShortcutCommand[];
+    onShortcut: (event: { nativeEvent: { id: string } }) => void;
+  },
 }));
 
-type HostProps = {
-  children?: ReactNode;
-  testID?: string;
-  onTouchStart?: () => void;
-  pointerEvents?: string;
-  accessibilityElementsHidden?: boolean;
-};
+type HostProps = { children?: ReactNode; testID?: string; onTouchStart?: () => void; pointerEvents?: string };
 
 vi.mock('react-native', () => ({
-  View: ({ children, onTouchStart }: HostProps) => createElement('div', { 'data-root': true, onTouchStart }, children),
-  StyleSheet: { create: (styles: unknown) => styles },
+  Platform: { OS: 'ios' },
+  View: ({ children, onTouchStart }: HostProps) =>
+    createElement('div', { 'data-root': onTouchStart ? true : undefined, onTouchStart }, children),
+  StyleSheet: { create: (styles: unknown) => styles, absoluteFill: {} },
 }));
 vi.mock('react-native-reanimated', () => ({
   default: {
-    View: ({ children, testID, pointerEvents, accessibilityElementsHidden }: HostProps) =>
-      createElement(
-        'div',
-        {
-          'data-testid': testID,
-          'data-pointer-events': pointerEvents,
-          'data-a11y-hidden': String(accessibilityElementsHidden),
-        },
-        children,
-      ),
+    View: ({ children, testID, pointerEvents }: HostProps) =>
+      createElement('div', { 'data-testid': testID, 'data-pointer-events': pointerEvents }, children),
   },
   useAnimatedStyle: () => ({}),
   useReducedMotion: () => false,
   useSharedValue: (value: number) => ({ value }),
   withTiming: (value: number) => value,
 }));
+vi.mock('expo-router', () => ({ useIsFocused: () => cfg.isFocused }));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 2: 8, 3: 12, 4: 16 } }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('react-native-safe-area-context', () => ({
@@ -57,19 +52,31 @@ vi.mock('../../Button', () => ({
   }) => createElement('button', { 'aria-label': accessibilityLabel ?? title, onClick: onPress }, title),
 }));
 vi.mock('../../../hooks/use-keep-awake-while', () => ({ useKeepAwakeWhile: cfg.keepAwake }));
-vi.mock('../../../hooks/use-screen-reader-enabled', () => ({
-  useScreenReaderEnabled: () => cfg.screenReaderEnabled,
+vi.mock('../../../hooks/use-assistive-technology-enabled', () => ({
+  useAssistiveTechnologyEnabled: () => cfg.assistiveTechnologyEnabled,
 }));
 vi.mock('../../../lib/routing/scoped-navigation', () => ({ useScopedRouter: () => cfg.router }));
+vi.mock('../../../../modules/spray-editor-input/src/index', () => ({
+  NativeSprayEditorKeyScope: (props: {
+    children?: ReactNode;
+    commands: readonly NativeShortcutCommand[];
+    onShortcut: (event: { nativeEvent: { id: string } }) => void;
+  }) => {
+    cfg.keyScope = { commands: props.commands, onShortcut: props.onShortcut };
+    return createElement('div', { 'data-key-scope': true }, props.children);
+  },
+}));
 
 import { WallDisplayScreen, WALL_DISPLAY_CONTROLS_VISIBLE_MS } from '../WallDisplayScreen';
 
-const controls = (container: HTMLElement) => container.querySelector('[data-testid="wall-display-controls"]')!;
+const exitButton = { name: 'mobile.boardPresence.wallDisplay.exitA11y' };
 
 describe('WallDisplayScreen', () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    cfg.screenReaderEnabled = false;
+    cfg.isFocused = true;
+    cfg.assistiveTechnologyEnabled = false;
+    cfg.keyScope = null;
     cfg.router.back.mockReset();
     cfg.router.push.mockReset();
     cfg.router.replace.mockReset();
@@ -80,47 +87,82 @@ describe('WallDisplayScreen', () => {
     vi.useRealTimers();
   });
 
-  it('shows the kiosk and keeps the screen awake while it is up', () => {
+  it('shows the kiosk and keeps the screen awake while the kiosk is focused', () => {
     const { container } = render(<WallDisplayScreen />);
 
     expect(container.querySelector('[data-kiosk]')).not.toBeNull();
-    expect(cfg.keepAwake).toHaveBeenCalledWith(true, 'wall');
+    expect(cfg.keepAwake).toHaveBeenLastCalledWith(true, 'wall');
   });
 
-  it('fades Exit and Settings after a few seconds and brings them back on a touch', () => {
-    const { container } = render(<WallDisplayScreen />);
-    expect(controls(container).getAttribute('data-pointer-events')).toBe('box-none');
-    expect(controls(container).getAttribute('data-a11y-hidden')).toBe('false');
+  it('lets the screen dim and hands Esc back while a page is pushed over the kiosk', () => {
+    cfg.isFocused = false;
+    render(<WallDisplayScreen />);
+
+    expect(cfg.keepAwake).toHaveBeenLastCalledWith(false, 'wall');
+    expect(cfg.keyScope?.commands).toEqual([]);
+  });
+
+  it('fades Exit and Settings after a few seconds, keeps them reachable, and brings them back on a touch', () => {
+    const { container, getByRole } = render(<WallDisplayScreen />);
+    expect(container.querySelector('[data-testid="wall-display-controls"]')).not.toBeNull();
 
     act(() => {
       vi.advanceTimersByTime(WALL_DISPLAY_CONTROLS_VISIBLE_MS);
     });
-    // Hidden controls take no taps and leave the accessibility tree.
-    expect(controls(container).getAttribute('data-pointer-events')).toBe('none');
-    expect(controls(container).getAttribute('data-a11y-hidden')).toBe('true');
+    expect(container.querySelector('[data-testid="wall-display-controls-faded"]')).not.toBeNull();
+    // Still in the tree (Switch Control, Voice Control and keyboard focus reach it).
+    expect(getByRole('button', exitButton)).toBeTruthy();
 
     fireEvent.touchStart(container.querySelector('[data-root]')!);
-    expect(controls(container).getAttribute('data-pointer-events')).toBe('box-none');
+    expect(container.querySelector('[data-testid="wall-display-controls"]')).not.toBeNull();
   });
 
-  it('keeps the controls up while a screen reader runs', () => {
-    cfg.screenReaderEnabled = true;
+  it('does not exit on a tap that lands on the faded Exit; the next tap does', () => {
+    const { container, getByRole } = render(<WallDisplayScreen />);
+    act(() => {
+      vi.advanceTimersByTime(WALL_DISPLAY_CONTROLS_VISIBLE_MS);
+    });
+
+    fireEvent.touchStart(container.querySelector('[data-root]')!);
+    fireEvent.click(getByRole('button', exitButton));
+    expect(cfg.router.back).not.toHaveBeenCalled();
+
+    fireEvent.touchStart(container.querySelector('[data-root]')!);
+    fireEvent.click(getByRole('button', exitButton));
+    expect(cfg.router.back).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the controls up while an assistive technology runs', () => {
+    cfg.assistiveTechnologyEnabled = true;
     const { container } = render(<WallDisplayScreen />);
 
     act(() => {
       vi.advanceTimersByTime(WALL_DISPLAY_CONTROLS_VISIBLE_MS * 10);
     });
-    expect(controls(container).getAttribute('data-pointer-events')).toBe('box-none');
+    expect(container.querySelector('[data-testid="wall-display-controls"]')).not.toBeNull();
   });
 
   it('leaves with Exit, falling back to the app root when the display is the only screen', () => {
     const { getByRole } = render(<WallDisplayScreen />);
-    fireEvent.click(getByRole('button', { name: 'mobile.boardPresence.wallDisplay.exitA11y' }));
+    fireEvent.click(getByRole('button', exitButton));
     expect(cfg.router.back).toHaveBeenCalledOnce();
 
     cfg.router.canGoBack.mockReturnValue(false);
-    fireEvent.click(getByRole('button', { name: 'mobile.boardPresence.wallDisplay.exitA11y' }));
+    fireEvent.click(getByRole('button', exitButton));
     expect(cfg.router.replace).toHaveBeenCalledWith('/');
+  });
+
+  it('leaves with ⌘W or Esc from a hardware keyboard', () => {
+    render(<WallDisplayScreen />);
+    expect(cfg.keyScope?.commands.map(({ input, modifiers }) => [input, modifiers])).toEqual([
+      ['w', ['command']],
+      ['escape', []],
+    ]);
+
+    act(() => {
+      cfg.keyScope?.onShortcut({ nativeEvent: { id: 'exit' } });
+    });
+    expect(cfg.router.back).toHaveBeenCalledOnce();
   });
 
   it("opens Settings inside the display's own stack", () => {

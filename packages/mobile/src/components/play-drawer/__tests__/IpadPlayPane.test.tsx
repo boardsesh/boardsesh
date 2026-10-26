@@ -12,7 +12,6 @@ const cfg = vi.hoisted(() => ({
   // 'panel-capable' (11" Pro / 13") keeps the strip/column; 'sheet-only' collapses it.
   wallDeviceClass: 'panel-capable' as 'panel-capable' | 'sheet-only',
   // Focused route — the strip is suppressed while the "On the Wall" tab is open.
-  segments: ['(tabs)', 'record'] as readonly string[],
   presenceEnabled: true,
   presenceBoardId: 1 as number | null,
   paneProps: { boardConfig: { boardName: 'kilter', layoutId: 1, sizeId: 1, setIds: '1', angle: 40 } } as Record<
@@ -35,7 +34,7 @@ vi.mock('react-native', () => ({
   PlatformColor: (name: string) => name,
 }));
 
-vi.mock('expo-router', () => ({ useSegments: () => cfg.segments, router: { push: vi.fn() } }));
+vi.mock('expo-router', () => ({ router: { push: vi.fn() } }));
 vi.mock('../../../lib/boards/first-board-mode', () => ({ NO_BOARD_PICKER_HREF: '/boards' }));
 vi.mock('../UnlitBoardPane', () => ({
   UnlitBoardPane: () => createElement('div', { 'data-unlit-board': 'true' }),
@@ -81,13 +80,13 @@ vi.mock('../../../hooks/use-device-layout', () => ({
 }));
 
 import { IpadPlayPane } from '../IpadPlayPane';
+import { markWallDisplayMounted } from '../../../lib/wall-display-presence';
 
 describe('IpadPlayPane wall surface', () => {
   beforeEach(() => {
     cfg.width = 834;
     cfg.widthClass = 'regular';
     cfg.wallDeviceClass = 'panel-capable';
-    cfg.segments = ['(tabs)', 'record'];
     cfg.presenceEnabled = true;
     cfg.presenceBoardId = 1;
     cfg.paneProps = { boardConfig: { boardName: 'kilter', layoutId: 1, sizeId: 1, setIds: '1', angle: 40 } };
@@ -125,12 +124,18 @@ describe('IpadPlayPane wall surface', () => {
     expect(captured.playDrawerProps?.paneTopInset).toBe(true);
   });
 
-  it('shows no strip while the Wall display covers the shell', () => {
+  it('shows no strip while the Wall display covers the shell, even with a page pushed over it', () => {
     // The display already shows the wall feed, so the ambient strip steps aside.
-    cfg.segments = ['wall-display'];
-    const { container } = render(<IpadPlayPane />);
-    expect(container.querySelector('[data-wall-strip="true"]')).toBeNull();
-    expect(captured.playDrawerProps?.paneTopInset).toBe(true);
+    // The display stays marked while a page (the player, say) is pushed over it,
+    // so the strip must not come back behind it.
+    const release = markWallDisplayMounted();
+    try {
+      const { container } = render(<IpadPlayPane />);
+      expect(container.querySelector('[data-wall-strip="true"]')).toBeNull();
+      expect(captured.playDrawerProps?.paneTopInset).toBe(true);
+    } finally {
+      release();
+    }
   });
 
   it('renders the shared placeholder (not the drawer) when no board is resolved', () => {
@@ -158,7 +163,6 @@ describe('IpadPlayPane in the phone split', () => {
     cfg.width = 951;
     cfg.widthClass = 'compact';
     cfg.wallDeviceClass = 'sheet-only';
-    cfg.segments = ['(tabs)', 'climbs'];
     cfg.presenceEnabled = true;
     cfg.presenceBoardId = 1;
     cfg.paneProps = { boardConfig: { boardName: 'kilter', layoutId: 1, sizeId: 1, setIds: '1', angle: 40 } };

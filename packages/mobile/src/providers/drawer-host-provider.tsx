@@ -17,7 +17,8 @@ import { useClimbModerationEnabled } from './feature-flags-provider';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { router, useNavigationContainerRef, useSegments } from 'expo-router';
 import { Platform } from 'react-native';
-import { isTabsRoute, isWallDisplayRoute } from '../lib/route-segments';
+import { isTabsRoute } from '../lib/route-segments';
+import { useWallDisplayOpen } from '../lib/wall-display-presence';
 import type { BoardName, Climb, UserBoard } from '@boardsesh/shared-schema';
 import { buildBoardPath, formatBoardDisplayName } from '@boardsesh/board-config';
 import { buildSessionBoardPath } from '../lib/boards/session-board-path';
@@ -415,7 +416,9 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // that lands in an unmounted pane. Folding it into `usesDetailPane` also makes
   // the effect below clear a stale paneTarget when the display opens.
   const routeSegments = useSegments();
-  const wallDisplayOpen = isWallDisplayRoute(routeSegments);
+  // Anywhere in the root stack: with /play pushed over the kiosk the pane is
+  // still covered.
+  const wallDisplayOpen = useWallDisplayOpen();
   // The phone split (iPhone Duo opened in landscape) hosts the same pane on the
   // leading half of each tab. Never true on a tablet. A root page over the tabs
   // hides the split's pane, so taps there

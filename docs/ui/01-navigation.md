@@ -142,9 +142,14 @@ The bar itself depends on the device:
   `transparentModal` like `/play`, never `fullScreenModal`
   (`docs/mobile-sheets-vs-routes.md` rule 2), so it covers the sidebar, the tab
   bar and the bottom accessory while they stay live behind it. The screen stays
-  awake while it is up. Exit and Settings sit in the top corner and fade 4 s
-  after the last touch; any touch brings them back (HIG, Going full screen), and
-  with VoiceOver or TalkBack on they never fade. The kiosk shows the board, the
+  awake while the kiosk is the focused screen. Exit and Settings sit in the top
+  corner and fade 4 s after the last touch; any touch brings them back (HIG,
+  Going full screen). Faded, they stay in the accessibility tree and a press on
+  them only brings them back; with VoiceOver or an Android accessibility service
+  on they never fade. Esc and ⌘W exit from a hardware keyboard. The route hosts
+  its own Bluetooth device picker, as `/play` does, and marks itself in
+  `wall-display-presence.ts` so the shell behind it stays quiet even with a page
+  pushed over the kiosk. The kiosk shows the board, the
   grade, the name and the "On the wall now" strip; the setter, the angle badge
   and the Lit-by / Sent-by avatars were too small to read from the mat and are
   not drawn. Its Settings and profile pages push inside its own stack

@@ -56,6 +56,8 @@ vi.mock('../../../lib/route-segments', () => ({
   // The player route counts as chrome-mounted; these tests don't exercise /play,
   // so it tracks the same `insideTabs` config as the tab-chrome predicate.
   isTabsChromeRoute: () => cfg.insideTabs,
+  // None of these tests opens the Wall display.
+  isWallDisplayRoute: () => false,
   // The bar's own route gate (top-level tab only) and the bottom-chrome surface gate.
   isTopLevelTabRoute: () => cfg.onTopLevelTab,
   isAccessorySurfaceRoute: () => cfg.onAccessorySurface,

@@ -951,11 +951,18 @@ on a tablet (`app/wall-display/`):
 - Give it its own `Stack` and register it in `scoped-navigation.ts` if it can open Settings or a
   profile, with a mirror of `app/settings/` (guarded by `route-mirrors.test.ts`). Its stack paints
   an opaque `contentStyle`, or the tabs show through every pushed page.
+- Host anything that presents a native sheet from inside the route: the Wall display mounts
+  `<DevicePickerSheetHost registerExternal />`, as `/play` does, or Connect would present the
+  app-root picker underneath the modal.
+- Tell the shell the mode is up from its layout (`markWallDisplayMounted`), not from the focused
+  segments: with a page pushed over it the segments name that page, and the shell would remount
+  its pane behind the kiosk. Leave it out of the bottom-chrome reserve (`insideTabs`).
 - No `BoardArtVisibilityProvider`: the route is not a tab. The tabs behind it report hidden and
   release their board art while it is up.
 - Entry points are actions, not tabs: a row in a menu or a sheet, gated on `isTablet`, so the
   phone keeps its UI. Any controls over the content hide after a few seconds and come back on a
-  touch (`useAutoHidingChrome`), and stay up while a screen reader runs.
+  touch (`useAutoHidingChrome`). They stay in the accessibility tree while hidden, stay up while
+  an assistive technology the app can detect runs, and a hardware keyboard gets Esc / ⌘W.
 - Redirect any link to the old tab in `app/+native-intent.ts`.
 
 ## Bumping `react-native-screens` (the bottom-accessory patch)
