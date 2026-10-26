@@ -499,6 +499,8 @@ type UseBoardBluetoothOptions = {
   setIds?: string;
   /** UUID of the active (saved) board, linked to the serial recording. */
   boardUuid?: string;
+  /** Known controller serial on the active saved board, independent of reconnect memory. */
+  boardSerialNumber?: string | null;
   holdsData?: HoldPlacement[];
   ledColorOverrides?: LedColorOverrides;
   /** MoonBoard "V2" BLE feature: also light each active hold's firmware-
@@ -619,6 +621,7 @@ export function useBoardBluetooth({
   sizeId,
   setIds,
   boardUuid,
+  boardSerialNumber,
   holdsData,
   ledColorOverrides,
   moonboardLightAdjacentHolds = false,
@@ -645,20 +648,31 @@ export function useBoardBluetooth({
   // current route still points at the same board — switching board/layout/size
   // invalidates it and callers fall back to the picker. Mirrors the web
   // `reconnectSerialForCurrentBoard`.
-  const [lastConnectedBoard, setLastConnectedBoard] = useState<StoredLastConnectedBoard | null>(null);
-  const lastConnectedBoardRef = useRef(lastConnectedBoard);
-  lastConnectedBoardRef.current = lastConnectedBoard;
+  // Readiness and the hydrated record commit together: native adoption must not
+  // observe "ready" while the remembered identity still belongs to the old render.
+  const [{ board: lastConnectedBoard, hydrated: lastConnectedBoardHydrated }, setRememberedBoardState] = useState<{
+    board: StoredLastConnectedBoard | null;
+    hydrated: boolean;
+  }>({ board: null, hydrated: false });
+  const lastConnectedBoardRef = useRef<StoredLastConnectedBoard | null>(null);
+  // A deliberate connect/disconnect wins over a storage read already in flight,
+  // including a disconnect whose null record cannot be distinguished by truthiness.
+  const rememberedBoardIntentGenerationRef = useRef(0);
 
   // Persist / forget the remembered board alongside the in-memory state so a
   // one-tap silent reconnect survives a cold start or provider remount, not just
   // the current session (#3609). Storage writes are fire-and-forget: a failure
   // just means the next launch falls back to the picker, never a thrown error.
   const rememberConnectedBoard = useCallback((board: StoredLastConnectedBoard) => {
-    setLastConnectedBoard(board);
+    rememberedBoardIntentGenerationRef.current += 1;
+    lastConnectedBoardRef.current = board;
+    setRememberedBoardState((current) => ({ ...current, board }));
     void setStoredLastConnectedBoard(board).catch(() => {});
   }, []);
   const forgetConnectedBoard = useCallback(() => {
-    setLastConnectedBoard(null);
+    rememberedBoardIntentGenerationRef.current += 1;
+    lastConnectedBoardRef.current = null;
+    setRememberedBoardState((current) => ({ ...current, board: null }));
     void clearStoredLastConnectedBoard().catch(() => {});
   }, []);
 
@@ -2086,10 +2100,10 @@ export function useBoardBluetooth({
     if (!adapterRef.current || !connectedIdentity) return;
     const activeIdentity = connectionConfigIdentity(boardName, layoutId, sizeId, setIds, boardUuid);
     if (activeIdentity === connectedIdentity) return;
-    // teardownConnection sets adoptionSuppressedRef on purpose: the named-device
-    // adopt guard is boardType-granular only, so a same-family layout switch
-    // (kilter/8/17 -> kilter/8/25) could otherwise race the async native
-    // disconnect and re-adopt the old wall. A deliberate connect re-arms
+    // teardownConnection sets adoptionSuppressedRef on purpose: named adoption
+    // checks type and known serials, but cannot identify native's current layout.
+    // A same-controller layout switch (kilter/8/17 -> kilter/8/25) could still
+    // race the async disconnect and re-adopt the old config. A deliberate connect re-arms
     // adoption. lastConnectedBoard is PRESERVED so switching back offers a silent
     // reconnect (reconnectSerialForCurrentBoard self-guards on configKey).
     void teardownConnection('config_switch').catch(() => {});
@@ -2117,7 +2131,10 @@ export function useBoardBluetooth({
     // and the running binary's actual encoder support (an OTA'd JS can be
     // newer than the installed Swift — see nativeBleSupportsBoard).
     if (!getBoardCapabilities(boardName).nativeBoardControl || !nativeBleSupportsBoard(boardName)) return;
+    if (!lastConnectedBoardHydrated) return;
+    let cancelled = false;
     const adopt = (deviceId: string, rawDeviceName?: string) => {
+      if (cancelled) return;
       // The bridge sends '' for a missing name — normalise so name parsing
       // (board type, serial, API level) sees undefined instead.
       const deviceName = rawDeviceName || undefined;
@@ -2137,7 +2154,22 @@ export function useBoardBluetooth({
       const currentConnectionConfig = { boardName, layoutId, sizeId, setIds };
       const currentConnectionIdentity = connectionConfigIdentity(boardName, layoutId, sizeId, setIds, boardUuid);
       const rememberedBoard = lastConnectedBoardRef.current;
-      const canAdoptNamelessRememberedBoard = !adoptedBoardType && rememberedBoard?.configKey === currentConfigKey;
+      const rememberedForCurrentConfig = rememberedBoard?.configKey === currentConfigKey ? rememberedBoard : null;
+      const serial = deviceName
+        ? (parseSerialNumber(deviceName) ?? null)
+        : (rememberedForCurrentConfig?.serial ?? null);
+      // A named native restore can belong to the identical wall next door. Both
+      // independent known identities must agree before creating an adapter or
+      // mutating native configuration, callbacks, lifetimes, or persisted memory.
+      if (
+        deviceName &&
+        serial &&
+        ((rememberedForCurrentConfig?.serial && rememberedForCurrentConfig.serial !== serial) ||
+          (boardSerialNumber && boardSerialNumber !== serial))
+      ) {
+        return;
+      }
+      const canAdoptNamelessRememberedBoard = !adoptedBoardType && rememberedForCurrentConfig !== null;
       if (
         (!adoptedBoardType && !canAdoptNamelessRememberedBoard) ||
         (adoptedBoardType && adoptedBoardType !== boardName)
@@ -2188,7 +2220,6 @@ export function useBoardBluetooth({
         })
         .catch(() => {});
 
-      const serial = deviceName ? (parseSerialNumber(deviceName) ?? null) : (rememberedBoard?.serial ?? null);
       if (serial) {
         rememberConnectedBoard({ configKey: currentConfigKey, serial });
       } else if (boardName === 'moonboard') {
@@ -2241,7 +2272,6 @@ export function useBoardBluetooth({
     // getConnectedDevice promise can't be cancelled — without this flag it
     // would adopt (create an adapter, setState) after the effect was torn
     // down by an unmount or a config change.
-    let cancelled = false;
     const checkNativeConnection = () => {
       void getNativeBleConnectedDevice().then((device) => {
         if (cancelled) return;
@@ -2267,6 +2297,8 @@ export function useBoardBluetooth({
     sizeId,
     setIds,
     boardUuid,
+    boardSerialNumber,
+    lastConnectedBoardHydrated,
     devicePicker,
     handleDisconnection,
     onConnectionChange,
@@ -2323,18 +2355,24 @@ export function useBoardBluetooth({
 
   // Rehydrate the remembered board from storage on mount so a one-tap silent
   // reconnect survives a cold start / provider remount, not just the in-memory
-  // session (#3609). A live connect that lands during the async read wins — only
-  // seed when nothing has been remembered yet. reconnectSerialForCurrentBoard
+  // session (#3609). Any deliberate remember/forget during the read wins over
+  // its stale result, including an explicit disconnect. reconnectSerialForCurrentBoard
   // self-guards on configKey, so a stored board for a different config is simply
   // never offered as a reconnect target. This only sets the target for a user
   // tap; it never auto-connects, so the no-auto-reconnect policy is untouched.
   useEffect(() => {
     let cancelled = false;
-    void getStoredLastConnectedBoard().then((stored) => {
-      if (cancelled || !stored) return;
-      if (lastConnectedBoardRef.current) return;
-      setLastConnectedBoard(stored);
-    });
+    const intentGeneration = rememberedBoardIntentGenerationRef.current;
+    const settleHydration = (stored: StoredLastConnectedBoard | null) => {
+      if (cancelled) return;
+      const board =
+        rememberedBoardIntentGenerationRef.current === intentGeneration ? stored : lastConnectedBoardRef.current;
+      lastConnectedBoardRef.current = board;
+      setRememberedBoardState({ board, hydrated: true });
+    };
+    // A rejected read is terminal too: roster identity can still reject a
+    // foreign controller, and an unavailable store must not wedge adoption.
+    void getStoredLastConnectedBoard().then(settleHydration, () => settleHydration(null));
     return () => {
       cancelled = true;
     };

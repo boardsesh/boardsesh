@@ -834,6 +834,7 @@ type BluetoothProviderProps = {
   sizeId?: number;
   setIds?: string;
   boardUuid?: string;
+  boardSerialNumber?: string | null;
   /**
    * Board models at the same gym as the active board. The auto-sender still
    * refuses to write a climb this board can't draw, but a climb on one of these
@@ -856,6 +857,7 @@ export function BluetoothProvider({
   sizeId,
   setIds,
   boardUuid,
+  boardSerialNumber,
   reachableBoardKeys,
   hasLeds,
   children,
@@ -1438,6 +1440,7 @@ export function BluetoothProvider({
     sizeId,
     setIds,
     boardUuid,
+    boardSerialNumber,
     holdsData,
     analyticsBoardId: presenceBoardId,
     analyticsInSession: sessionId != null,

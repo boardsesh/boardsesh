@@ -9,6 +9,7 @@ import type { ResolvedBoardEntry } from '../../lib/ble/resolve-serials';
 import type { BleConnectionHandle, PickerState } from '../../lib/ble/use-board-bluetooth';
 
 type BluetoothHookOptions = {
+  boardSerialNumber?: string | null;
   onConnectSuccess?: (serial: string | null, connection: BleConnectionHandle) => void;
   holdsData?: unknown;
   encodingSignature?: string;
@@ -324,6 +325,7 @@ type BoardProps = {
   sizeId?: number;
   setIds?: string;
   boardUuid?: string;
+  boardSerialNumber?: string | null;
 };
 
 const KILTER_PROPS: BoardProps = {
@@ -476,6 +478,11 @@ describe('BluetoothProvider mismatch switch', () => {
       }),
     );
     expect(bluetooth.state.connect).toHaveBeenCalledOnce();
+  });
+
+  it('passes the active roster controller serial into the Bluetooth hook', () => {
+    renderProvider({ ...KILTER_PROPS, boardSerialNumber: 'roster-B' });
+    expect(bluetooth.options?.boardSerialNumber).toBe('roster-B');
   });
 
   it.each(['cancel', 'connect_anyway'] as const)(
