@@ -99,7 +99,7 @@ vi.mock('@/app/lib/board-utils', () => ({
 }));
 
 vi.mock('@/app/lib/data/queries', () => ({
-  getClimb: vi.fn(async () => ({ name: 'My Test Climb', frames: 'p1r12' })),
+  getClimb: vi.fn(async () => ({ uuid: CLIMB_UUID, name: 'My Test Climb', frames: 'p1r12' })),
   getLayouts: vi.fn(async () => [{ id: 1, name: 'Kilter Board Original' }]),
   getSizes: vi.fn(async () => [{ id: 10, name: '12 x 12', description: 'Commercial' }]),
   getSets: vi.fn(async () => [
