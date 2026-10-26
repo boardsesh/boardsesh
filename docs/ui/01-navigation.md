@@ -95,13 +95,13 @@ The bar itself depends on the device:
   platter's climb link reads the connection aloud; the open one leaves that to its bulb. The
   platter's bulb and tick send `placement` (`regular` / `inline`) on `Board Connect Tapped` and
   `Quick Tick Opened`.
-- **Climbs header (Liquid Glass):** while you hold the board and no other climb is lit on the
+- **Climbs header (iOS 26 Liquid Glass, where the accessory platter mounts):** while you hold the board and no other climb is lit on the
   wall, the centre slot shows a "You have the board" capsule (brand-tone pin and "You have the
   wall" for a board with no lights). The "On the wall" capsule keeps priority. The tap opens the
   Bluetooth controls sheet when this device holds the radio link and logs `Board Controls Opened
   {surface: 'header_pill'}`; otherwise it is plain text. Both capsules share the
   `HeaderStatusCapsule` glass shell. Material and Android are unchanged: their bar never
-  collapses, so its bulb stays visible.
+  collapses, so its bulb stays visible; neither does the iOS 18 floating bar.
   The header hides the Climbs title by drawing it in a clear colour
   (`HIDDEN_HEADER_TITLE_STYLE`), not with an empty title view: the native stack keeps one
   centre view per screen, and a capsule swapped into an empty one kept its zero size and

@@ -111,6 +111,8 @@ const ctrl = vi.hoisted(() => ({
   bluetooth: null as BluetoothCtx,
   setBoardAngle: vi.fn(),
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
+  // The iOS 26 tab-bar accessory platter mounts (false on iOS 18 and Material).
+  nativeAccessory: true,
   wallClimb: null as { climbUuid: string; name: string } | null,
   // The chrome's focus effects, kept so a test can run one and its cleanup: the
   // cleanup is what the screen losing focus does.
@@ -317,6 +319,9 @@ vi.mock('../../../providers/queue-provider', () => ({
   useActiveClimbUuid: () => null,
 }));
 // No distinct wall climb in these layout tests, so the centre capsule never mounts.
+vi.mock('../../../hooks/use-bottom-accessory', () => ({
+  useTabChrome: () => ({ nativeAccessory: ctrl.nativeAccessory && ctrl.variant === 'liquidGlass' }),
+}));
 vi.mock('../../queue-control/use-wall-or-queue-climb', () => ({ useWallClimbIfDistinct: () => ctrl.wallClimb }));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 
@@ -527,6 +532,7 @@ describe('ClimbTopChrome', () => {
     ctrl.board = null;
     ctrl.bluetooth = null;
     ctrl.variant = 'liquidGlass';
+    ctrl.nativeAccessory = true;
     ctrl.wallClimb = null;
     ctrl.focusEffects.length = 0;
     ctrl.setBoardAngle.mockClear();
@@ -694,6 +700,14 @@ describe('ClimbTopChrome', () => {
 
     it('is Liquid Glass only: the Material bar keeps its bulb on screen', () => {
       ctrl.variant = 'material';
+      ctrl.board = typedBoard;
+      ctrl.bluetooth = connectedBoard();
+      const { container } = render(<ClimbTopChrome {...makeProps()} />);
+      expect(container.querySelector('[data-board-held-capsule]')).toBeNull();
+    });
+
+    it('stays out on iOS 18, where the floating bar keeps its bulb on screen', () => {
+      ctrl.nativeAccessory = false;
       ctrl.board = typedBoard;
       ctrl.bluetooth = connectedBoard();
       const { container } = render(<ClimbTopChrome {...makeProps()} />);
