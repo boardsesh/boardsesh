@@ -1521,11 +1521,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     continue-on-error: true
-    # Deliberately no `environment: Production`: its only secret,
-    # DISCORD_DEPLOY_WEBHOOK, is repository-level, and an environment is one
-    # more thing a job can wait on before it starts. In run 40105607795 this job
-    # never started and sat for 27 hours. It is outside the publish lane now, so
-    # a repeat would hold nothing up.
+    # DISCORD_DEPLOY_WEBHOOK is a Production / Native Release environment secret,
+    # not a repository one (docs/mobile-e2e-gate.md), so without this the webhook
+    # reads empty and nothing posts. In run 40105607795 this job parked at the
+    # environment gate for 27 hours; it is outside the publish lane now, so a
+    # repeat costs one missing post and holds nothing up.
+    environment: Production
     steps:
       # Outputs carry only publication results; webhook delivery runs main code.
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6

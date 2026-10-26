@@ -748,11 +748,12 @@ further publishing on that branch, so a forgotten one turns the next auto-publis
 
 ### A parked run holds the whole lane
 
-`mobile-ota-production.yml` runs under `concurrency: mobile-ota-production` with
+`mobile-ota-production.yml` runs `publish` under `concurrency: mobile-ota-production` with
 `cancel-in-progress: false` and `queue: max`, and every job a direct run executes
-(`live-store-runtimes / resolve`, `publish`) declares `environment: Production`;
-`notify-train-deployment` no longer does, and since the group moved onto
-`publish` the jobs around it cannot hold the lane at all. A job parked in `waiting` at that gate holds the lane
+(`live-store-runtimes / resolve`, `publish`, `notify-train-deployment`) declares
+`environment: Production` (the notify job needs it: `DISCORD_DEPLOY_WEBHOOK` is an
+environment secret). Since the group moved onto `publish`, the jobs around it cannot
+hold the lane at all. A job parked in `waiting` at that gate holds the lane
 for up to 30 days, and `timeout-minutes` does not help because a parked job's
 clock never starts. On 2026-10-24 run 40105607795 finished `publish`, then parked
 `notify-train-deployment` for 27 hours; 40 runs queued behind it, the daily stable

@@ -44,6 +44,7 @@ describe('native release workflow contracts', () => {
           string,
           {
             'continue-on-error'?: boolean;
+            environment?: string;
             steps: Array<{ name?: string; if?: string; run?: string }>;
           }
         >;
@@ -51,6 +52,8 @@ describe('native release workflow contracts', () => {
     ).jobs;
     expect(jobs.publish['continue-on-error']).toBeUndefined();
     expect(jobs['notify-train-deployment']['continue-on-error']).toBe(true);
+    // The Discord webhook is an environment secret; without Production it reads empty.
+    expect(jobs['notify-train-deployment'].environment).toBe('Production');
     expect(
       jobs['notify-train-deployment'].steps.find((step) => step.name === 'Surface train notification failure'),
     ).toMatchObject({ if: 'failure()', run: expect.stringContaining('::warning::') });
