@@ -578,6 +578,17 @@
         "valueDefault": "Default",
         "valueCustom": "Custom"
       },
+      "quickFilters": {
+        "title": "Quick filters",
+        "valueDefault": "Default",
+        "valueCustom": "Custom",
+        "climbsTitle": "Climbs",
+        "climbsFooter": "These show above the Climbs list, in this order. A filter you switch on joins the end.",
+        "playlistsTitle": "Playlists",
+        "playlistsFooter": "These show above every playlist, smart playlist and setter page, in this order.",
+        "restoreDefaults": "Restore defaults",
+        "footer": "Changes apply right away, on this phone only. Every filter stays in Filters either way."
+      },
       "timers": {
         "restTitle": "Rest",
         "restLength": "Rest",

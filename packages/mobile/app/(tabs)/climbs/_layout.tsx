@@ -103,6 +103,10 @@ export default function ClimbsLayout() {
               headerTransparent: false,
             }}
           />
+          {/* Settings › Climbs & grades › Quick filters, also pushed on this stack
+              so the filter sheet can open it over the list. The settings
+              page's own header: the stack defaults and its title. */}
+          <Stack.Screen name="quick-filters" options={{ title: t('mobile.settings.quickFilters.title') }} />
           <Stack.Screen name="settings" options={{ headerShown: false }} />
         </Stack>
       </NativeTabletContent>

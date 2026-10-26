@@ -26,12 +26,15 @@ export type ClimbsModelInput = {
   /** "Default", or "Custom" once the player's buttons or the sections below the climb changed. */
   climbViewLabel: string;
   onOpenClimbView: () => void;
+  /** "Default", or "Custom" once a list's quick-filter chips or their order changed. */
+  quickFiltersLabel: string;
+  onOpenQuickFilters: () => void;
 };
 
 /**
- * "Climbs & grades": how grades read, what the climb list shows, and how the
- * climb view is laid out. Everything here changes how a climb looks, so it
- * lives together.
+ * "Climbs & grades": how grades read, what the climb list shows, how the climb
+ * view is laid out, and which quick filters sit above a list. Everything here
+ * changes how climbs look, so it lives together.
  */
 export function buildClimbsModel(input: ClimbsModelInput): MoreFormModel {
   const { t } = input;
@@ -94,6 +97,13 @@ export function buildClimbsModel(input: ClimbsModelInput): MoreFormModel {
             label: t('mobile.settings.climbView.title'),
             value: input.climbViewLabel,
             onPress: input.onOpenClimbView,
+          },
+          {
+            kind: 'nav',
+            key: 'quickFilters',
+            label: t('mobile.settings.quickFilters.title'),
+            value: input.quickFiltersLabel,
+            onPress: input.onOpenQuickFilters,
           },
         ],
       },

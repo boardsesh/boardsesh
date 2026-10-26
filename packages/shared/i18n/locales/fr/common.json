@@ -578,6 +578,17 @@
         "valueDefault": "Par défaut",
         "valueCustom": "Personnalisée"
       },
+      "quickFilters": {
+        "title": "Filtres rapides",
+        "valueDefault": "Par défaut",
+        "valueCustom": "Personnalisés",
+        "climbsTitle": "Blocs",
+        "climbsFooter": "Ils s'affichent au-dessus de la liste des blocs, dans cet ordre. Un filtre que tu actives se place à la fin.",
+        "playlistsTitle": "Listes",
+        "playlistsFooter": "Ils s'affichent au-dessus de chaque playlist, playlist intelligente et page d'ouvreur, dans cet ordre.",
+        "restoreDefaults": "Rétablir les réglages par défaut",
+        "footer": "Les changements s'appliquent immédiatement, sur ce téléphone uniquement. Tous les filtres restent dans Filtres."
+      },
       "timers": {
         "restTitle": "Repos",
         "restLength": "Repos",

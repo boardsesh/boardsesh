@@ -850,6 +850,17 @@
         "valueDefault": "Predeterminada",
         "valueCustom": "Personalizada"
       },
+      "quickFilters": {
+        "title": "Filtros rápidos",
+        "valueDefault": "Predeterminados",
+        "valueCustom": "Personalizados",
+        "climbsTitle": "Bloques",
+        "climbsFooter": "Aparecen sobre la lista de Bloques, en este orden. Un filtro que actives se añade al final.",
+        "playlistsTitle": "Listas",
+        "playlistsFooter": "Aparecen sobre cada playlist, playlist inteligente y página de un setter, en este orden.",
+        "restoreDefaults": "Restablecer valores predeterminados",
+        "footer": "Los cambios se aplican al momento y solo en este teléfono. Todos los filtros siguen en Filtros."
+      },
       "timers": {
         "restTitle": "Descanso",
         "restLength": "Descanso",

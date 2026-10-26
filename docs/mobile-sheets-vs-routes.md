@@ -560,7 +560,9 @@ Done button is needed to commit the filters.
 
 **Filter sheet parts are shared.** The sheet is built from the parts in
 `src/components/filter-sheet/`: `FilterSheetSection` (headline group), `FilterLabelRow` (muted
-sub-label with an optional pin and description), `FilterChip` / `FilterChipGroup`, `FilterNameField`,
+sub-label with an optional pin and description; the iOS SwiftUI Filters form has no pins, and which
+chips show, in what order, lives in Settings › Climbs & grades › Quick filters), `FilterChip` /
+`FilterChipGroup`, `FilterNameField`,
 `FilterTappableRow` and `filterSheetStyles` for the gaps between them. A second filter sheet
 uses the same parts, so the two read and space the same. Ranges use `RangeRail`
 (`src/components/grade/RangeRail.tsx`) through `GradeRangeRail` or `AngleRangeRail`. A filter

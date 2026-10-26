@@ -88,6 +88,12 @@ export default function DiscoverLayout() {
           {/* A For You setter card's list. The Climbs tab's setter route renders the
               same screen on the same stack defaults, and its view sets the header. */}
           <Stack.Screen name="setter/[username]" />
+          {/* Settings › Climbs & grades › Quick filters, also pushed on this stack
+              so a playlist's filter sheet can open it over the list. */}
+          <Stack.Screen
+            name="quick-filters"
+            options={{ title: tCommon('mobile.settings.quickFilters.title'), headerShown: true }}
+          />
           <Stack.Screen name="settings" options={{ headerShown: false }} />
         </Stack>
       </NativeTabletContent>

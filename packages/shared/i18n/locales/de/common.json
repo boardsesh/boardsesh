@@ -578,6 +578,17 @@
         "valueDefault": "Standard",
         "valueCustom": "Benutzerdefiniert"
       },
+      "quickFilters": {
+        "title": "Schnellfilter",
+        "valueDefault": "Standard",
+        "valueCustom": "Benutzerdefiniert",
+        "climbsTitle": "Boulder",
+        "climbsFooter": "Sie stehen in dieser Reihenfolge über der Boulderliste. Ein Filter, den du einschaltest, kommt ans Ende.",
+        "playlistsTitle": "Playlists",
+        "playlistsFooter": "Sie stehen in dieser Reihenfolge über jeder Playlist, jeder Smart-Playlist und jeder Seite von Routenbauer*innen.",
+        "restoreDefaults": "Standard wiederherstellen",
+        "footer": "Änderungen gelten sofort und nur auf diesem Handy. Alle Filter bleiben unter Filter."
+      },
       "timers": {
         "restTitle": "Pause",
         "restLength": "Pause",

@@ -23,7 +23,6 @@ import {
 import { formatMinAscentsFilterCount } from '@boardsesh/climb-filters';
 import type { ClimbFilters } from '../../lib/climb-filter-types';
 import type { CollectionFilter } from '../../lib/collection-filter';
-import type { FilterChipKind } from '../../lib/pinnable-chips';
 import type { RecentFilter } from '../../lib/recent-filter-store';
 import type { MoreOption, MoreRow } from '../MoreForm.types';
 import type { SegmentOption } from '../SegmentedControl.types';
@@ -137,38 +136,6 @@ function starValue(key: string): number | undefined {
 function popularityKey(filters: ClimbFilters): string {
   if (filters.status === 'projects') return 'projects';
   return filters.minAscents == null ? ANY : String(filters.minAscents);
-}
-
-/** The label a pin switch carries: the name of the control (and chip) it pins. */
-export function pinLabel(kind: FilterChipKind, t: TFunction<'climbs'>): string {
-  switch (kind) {
-    case 'recent':
-      return t('mobile.search.recentFilters');
-    case 'grade':
-      return t('mobile.filter.gradeRange');
-    case 'accuracy':
-      return t('mobile.filter.accuracy.label');
-    case 'progress':
-      return t('mobile.filter.progress.label');
-    case 'collection':
-      return t('mobile.filter.collection.label');
-    case 'climbType':
-      return t('mobile.filter.climbType.label');
-    case 'tall':
-      return t('mobile.search.chips.tall');
-    case 'wide':
-      return t('mobile.search.chips.wide');
-    case 'beta':
-      return t('mobile.filter.betaVideos');
-    case 'popularity':
-      return t('mobile.filter.popularity');
-    case 'rating':
-      return t('mobile.filter.minRating');
-    case 'sort':
-      return t('mobile.filter.sortBy');
-    case 'boardFit':
-      return t('mobile.filter.boardFit.label');
-  }
 }
 
 function nameSection(input: ClimbFilterFormInput): ClimbFilterFormSection {

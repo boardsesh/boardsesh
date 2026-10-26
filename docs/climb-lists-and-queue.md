@@ -143,7 +143,8 @@ headroom in the shared 60-per-minute limit. Only recommendations stop after six 
 ### Sorting and filtering a playlist
 
 A playlist (#6651) has the Climbs chip row under its hero: Filters, Grade, Your progress and
-Sort by default, each pinnable from the filter sheet. Once the hero scrolls away, a ≡ button in
+Sort by default, each pinnable from the filter sheet, or switched on and put in order in
+Settings › Climbs & grades › Quick filters. Once the hero scrolls away, a ≡ button in
 the header opens the same sheet. With a filter on, a line under the chips reads "12 of 117
 climbs · Clear filters". Clear filters keeps the sort; the sheet's Reset clears the sort too.
 Smart lists and setter pages have the same chip row, sheet and ≡ button; see
