@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { type IconName } from '../icon-map';
-import { gradeBadgeColor, gradeTextOnTintColor } from '../you/profile-chart-colors';
+import { GRADE_TINT_ALPHA, gradeBadgeColor, gradeTextOnTintColor } from '../you/profile-chart-colors';
 import { withAlpha } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
@@ -34,8 +34,6 @@ export function StatTile({ value, label, icon }: { value: number; label: string;
     </View>
   );
 }
-
-const GRADE_TINT_ALPHA = 0.15;
 
 /** Grade tile — the one saturated tile, tinted in the grade's own colour. */
 export function GradeTile({ grade, boardName }: { grade: string; boardName?: string | null }) {

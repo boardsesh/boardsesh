@@ -63,11 +63,17 @@ describe('readableGradeColor', () => {
     }
   });
 
-  it('keeps each lifted grade on its own hue', () => {
+  it('keeps each lifted grade on its own hue, as text, mark and tinted text', () => {
     for (const [grade, color] of Object.entries(V_GRADE_COLORS)) {
-      const readable = readableGradeColor(color, 'dark', 'text');
-      const drift = Math.abs(hue(readable) - hue(color));
-      expect(Math.min(drift, 360 - drift), grade).toBeLessThanOrEqual(6);
+      const variants = {
+        text: readableGradeColor(color, 'dark', 'text'),
+        mark: readableGradeColor(color, 'dark', 'mark'),
+        tint: readableGradeColorOnTint(color, 'dark', 0.15),
+      };
+      for (const [usage, readable] of Object.entries(variants)) {
+        const drift = Math.abs(hue(readable) - hue(color));
+        expect(Math.min(drift, 360 - drift), `${grade} ${usage}`).toBeLessThanOrEqual(6);
+      }
     }
   });
 
@@ -121,6 +127,11 @@ describe('compositeOver', () => {
     expect(compositeOver('#FFFFFF', 0.5, '#000000')).toBe('#808080');
     expect(compositeOver('#FF0000', 0, '#2C2C2E')).toBe('#2C2C2E');
     expect(compositeOver('#FF0000', 1, '#2C2C2E')).toBe('#FF0000');
+  });
+
+  it('clamps alpha to 0–1', () => {
+    expect(compositeOver('#FF0000', 1.2, '#2C2C2E')).toBe('#FF0000');
+    expect(compositeOver('#FF0000', -0.5, '#2C2C2E')).toBe('#2C2C2E');
   });
 
   it('returns the background for an invalid colour', () => {

@@ -8,13 +8,15 @@ vi.mock('react-native', () => ({
 }));
 
 import { DARK_GRADE_REFERENCE_SURFACE } from '@boardsesh/board-constants/grade-colors';
-import { contrastRatio } from '@boardsesh/board-constants/readable-text-color';
+import { compositeOver, contrastRatio } from '@boardsesh/board-constants/readable-text-color';
 import {
   buildSessionGradeBars,
   gradeBadgeColor,
   gradeChartColor,
   gradeMarkColor,
   gradeTextColor,
+  gradeTextOnTintColor,
+  GRADE_TINT_ALPHA,
   layoutChartColor,
 } from '../profile-chart-colors';
 
@@ -200,5 +202,23 @@ describe('gradeTextColor / gradeMarkColor', () => {
     expect(gradeTextColor('6B+/V4', 'light')).toBe(gradeBadgeColor('6B+/V4'));
     expect(gradeTextColor(null, 'light')).toBe(gradeBadgeColor(null));
     expect(contrastRatio(gradeTextColor(null, 'dark'), DARK_GRADE_REFERENCE_SURFACE)).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe('gradeTextOnTintColor', () => {
+  const grades = ['V0', 'V4', 'V6', 'V10', 'V13', 'V16', '7a', '8c+'];
+
+  it('clears 4.5:1 on the grade tint over the reference surface in dark mode', () => {
+    for (const grade of grades) {
+      const tint = compositeOver(gradeBadgeColor(grade), GRADE_TINT_ALPHA, DARK_GRADE_REFERENCE_SURFACE);
+      const text = gradeTextOnTintColor(grade, 'dark', GRADE_TINT_ALPHA);
+      expect(contrastRatio(text, tint), grade).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it('returns the raw grade colour in light mode', () => {
+    for (const grade of grades) {
+      expect(gradeTextOnTintColor(grade, 'light', GRADE_TINT_ALPHA)).toBe(gradeBadgeColor(grade));
+    }
   });
 });

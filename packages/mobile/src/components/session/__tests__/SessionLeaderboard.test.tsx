@@ -42,6 +42,7 @@ vi.mock('../../SectionHeader', () => ({ SectionHeader: () => createElement('div'
 vi.mock('../../you/profile-chart-colors', () => ({
   gradeBadgeColor: () => '#000',
   gradeTextOnTintColor: () => '#000',
+  GRADE_TINT_ALPHA: 0.15,
 }));
 vi.mock('../../../theme/colors', () => ({ withAlpha: (c: string) => c }));
 vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { white: '#fff' } }));

@@ -8,7 +8,7 @@ import { type IconName } from '../icon-map';
 import { Avatar } from '../Avatar';
 import { ListRow } from '../ListRow';
 import { SectionHeader } from '../SectionHeader';
-import { gradeBadgeColor, gradeTextOnTintColor } from '../you/profile-chart-colors';
+import { GRADE_TINT_ALPHA, gradeBadgeColor, gradeTextOnTintColor } from '../you/profile-chart-colors';
 import { withAlpha } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, borderRadius } from '../../theme/tokens';
@@ -122,8 +122,6 @@ function RankAvatar({ participant, isLeader }: { participant: SessionFeedPartici
     </View>
   );
 }
-
-const GRADE_TINT_ALPHA = 0.15;
 
 /** Quiet grade-tinted pill showing a climber's hardest grade. */
 function HardestPill({ grade, boardType }: { grade: string; boardType: string }) {

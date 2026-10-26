@@ -153,6 +153,9 @@ export function gradeTextColor(gradeLabel: string | null | undefined, colorSchem
   return readableGradeColor(gradeBadgeColor(gradeLabel), colorScheme, 'text');
 }
 
+/** Alpha of the quiet grade tint behind a grade pill or tile's text. */
+export const GRADE_TINT_ALPHA = 0.15;
+
 /**
  * Grade text on a pill or tile tinted with the grade's own colour at
  * `tintAlpha`. The tint is lighter than the page, so dark mode lifts the text

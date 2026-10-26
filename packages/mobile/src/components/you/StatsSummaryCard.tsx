@@ -74,17 +74,20 @@ function GradeTile({
   /** On-container text (Material). Glass falls back to the contrast-aware colour. */
   textColor?: string;
 }) {
-  // Glass: the whole tile is the grade's vivid colour, and glyph and text pick
-  // the contrast colour. Material: a tonal container carries the tile, and glyph
-  // and text both use the on-container role. A grade-hued glyph can't reach 3:1
-  // on the lighter tonal container in dark mode.
+  // Glass: the whole tile is the grade's vivid colour, text picks the contrast
+  // colour. Material: a tonal container carries the tile and text uses the
+  // on-container role. In light mode the grade hue lives on the leading glyph;
+  // in dark mode the glyph also takes the on-container role, because the tonal
+  // container is lighter than the page and a dark grade hue vanishes on it.
+  const { colorScheme } = useTheme();
   const gradeFill = gradeBadgeColor(highlight.label);
   const tileBackground = background ?? gradeFill;
   const onTile = textColor ?? getGradeTextColor(gradeFill);
+  const glyphColor = background && colorScheme === 'light' ? gradeFill : onTile;
   return (
     <View style={[styles.tile, { backgroundColor: tileBackground }]}>
       <View style={styles.gradeRow}>
-        <Icon name={icon} size={14} color={onTile} />
+        <Icon name={icon} size={14} color={glyphColor} />
         <Text variant="title3" color={onTile}>
           {highlight.label}
         </Text>

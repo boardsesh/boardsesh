@@ -41,16 +41,18 @@ function toHexChannel(channel: number): string {
 
 /**
  * The opaque colour `foregroundColor` at `alpha` paints over `backgroundColor`,
- * e.g. a 15% grade tint over a card. Returns `backgroundColor` for invalid input.
+ * e.g. a 15% grade tint over a card. `alpha` is clamped to 0–1. Returns
+ * `backgroundColor` for invalid input.
  */
 export function compositeOver(foregroundColor: string, alpha: number, backgroundColor: string): string {
   const foreground = normalizeHexColor(foregroundColor);
   const background = normalizeHexColor(backgroundColor);
   if (!foreground || !background) return backgroundColor;
+  const coverage = Math.min(Math.max(alpha, 0), 1);
   const channels = [0, 2, 4].map((offset) => {
     const top = parseInt(foreground.slice(offset, offset + 2), 16);
     const bottom = parseInt(background.slice(offset, offset + 2), 16);
-    return toHexChannel(top * alpha + bottom * (1 - alpha));
+    return toHexChannel(top * coverage + bottom * (1 - coverage));
   });
   return `#${channels.join('')}`;
 }
