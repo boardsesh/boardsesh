@@ -31,6 +31,7 @@ import type {
   DeleteHoldOutlineOverrideInput,
 } from '@boardsesh/shared-schema';
 import { BOARD_FIELDS } from '@boardsesh/graphql/operations/boards';
+export { GET_SPRAY_CLIMB } from '@boardsesh/graphql/operations/climb-search';
 import type { SubscriptionQueueItem } from '../queue-conversion';
 
 // ============================================
@@ -386,6 +387,7 @@ export const GET_CLIMB = gql`
 `;
 
 export type GetClimbQueryVariables = {
+  sprayWallUuid?: string;
   boardName: string;
   layoutId: number;
   sizeId: number;

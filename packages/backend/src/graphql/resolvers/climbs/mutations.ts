@@ -30,7 +30,7 @@ import {
   climbEditDecisionsAreStale,
   lockClimbForEdit,
 } from './climb-edit-guard';
-import { deleteClimbDependentRows } from './climb-cleanup';
+import { deleteClimbDependentRows, deleteClimbReferenceRows } from './climb-cleanup';
 import {
   SPRAY_CLIMB_CODES,
   assertSprayAngleMatchesWall,
@@ -181,7 +181,6 @@ export const climbMutations = {
     if (sprayTarget) {
       // An archived wall is read-only: nothing new is set on it. Early here for a
       // fast answer; the deciding check runs under the wall lock below.
-      assertSprayTargetNotArchived(sprayTarget);
       // A wall's angle is fixed for its life — it is chosen once at creation and
       // `is_angle_adjustable` is false — so an angle that disagrees with the wall
       // is a client bug, and accepting it would scatter the wall's climbs and
@@ -266,7 +265,8 @@ export const climbMutations = {
 
     const framesCount = validated.framesCount ?? 1;
     const holdEntries = parseFramesToHoldEntries(boardType, validated.frames);
-    const uuid = generateClimbUuid();
+    const uuid = validated.uuid ?? generateClimbUuid();
+    let replayedCreate: SaveClimbResult | undefined;
 
     // Resolved before the transaction so a grade string the scale does not know
     // fails the write rather than silently landing an ungradeable climb. Null for
@@ -298,6 +298,48 @@ export const climbMutations = {
     const gateRuleSignature = buildStoredRuleSignature(boardType, storedCharacteristics, storedDescription);
     const gateSizeId = woodsShape?.sizeId;
     await db.transaction(async (tx) => {
+      if (validated.uuid) {
+        // Serialize retries by the client identity before the duplicate gate.
+        // A replay must not overwrite edits accepted after the original create.
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`climb-create:${uuid}`}, 0))`);
+        const [existing] = await tx
+          .select({
+            userId: dbSchema.boardClimbs.userId,
+            boardType: dbSchema.boardClimbs.boardType,
+            layoutId: dbSchema.boardClimbs.layoutId,
+            createdAt: dbSchema.boardClimbs.createdAt,
+            publishedAt: dbSchema.boardClimbs.publishedAt,
+            synced: dbSchema.boardClimbs.synced,
+            compatibleSizeIds: dbSchema.boardClimbs.compatibleSizeIds,
+          })
+          .from(dbSchema.boardClimbs)
+          .where(eq(dbSchema.boardClimbs.uuid, uuid))
+          .limit(1);
+        if (existing) {
+          if (
+            existing.userId !== ctx.userId ||
+            existing.boardType !== boardType ||
+            existing.layoutId !== validated.layoutId ||
+            (woodsShape && !existing.compatibleSizeIds?.includes(woodsShape.sizeId))
+          ) {
+            throw new GraphQLError('Climb identity is unavailable', { extensions: { code: 'CLIMB_ID_CONFLICT' } });
+          }
+          replayedCreate = {
+            uuid,
+            synced: existing.synced ?? false,
+            createdAt: existing.createdAt,
+            publishedAt: existing.publishedAt,
+          };
+          return;
+        }
+        const [deleted] = await tx
+          .select({ id: dbSchema.syncDeletions.id })
+          .from(dbSchema.syncDeletions)
+          .where(and(eq(dbSchema.syncDeletions.tableName, 'board_climbs'), eq(dbSchema.syncDeletions.recordId, uuid)))
+          .limit(1);
+        if (deleted) throw new GraphQLError('Climb not found', { extensions: { code: 'CLIMB_NOT_FOUND' } });
+      }
+      if (sprayTarget) assertSprayTargetNotArchived(sprayTarget);
       if (shouldGate) {
         await acquireDuplicateGateLock(tx, boardType, validated.layoutId, gateSignature, {
           ruleSignature: gateRuleSignature,
@@ -484,6 +526,7 @@ export const climbMutations = {
     // follower, so firing one for a PRIVATE wall would announce the existence of
     // somebody's home wall to people who cannot open it. Public walls only
     // (epic decision 2026-09-14: private-wall ticks are the owner's logbook).
+    if (replayedCreate) return replayedCreate;
     const mayAnnounce = !sprayTarget || sprayMayAnnounce;
     if (!validated.isDraft && mayAnnounce) {
       await publishSocialEvent({
@@ -1387,7 +1430,8 @@ export const climbMutations = {
         .where(
           and(eq(dbSchema.boardClimbs.uuid, validatedUuid), eq(dbSchema.boardClimbs.boardType, validatedBoardType)),
         )
-        .limit(1);
+        .limit(1)
+        .for('update');
 
       if (!existing) {
         throw new Error('Climb not found');
@@ -1399,6 +1443,22 @@ export const climbMutations = {
 
       if (existing.isDraft !== true) {
         throw new Error('Published climbs cannot be deleted here');
+      }
+
+      if (validatedBoardType === 'spray') {
+        const [tick] = await tx
+          .select({ uuid: dbSchema.boardseshTicks.uuid })
+          .from(dbSchema.boardseshTicks)
+          .where(
+            and(eq(dbSchema.boardseshTicks.boardType, 'spray'), eq(dbSchema.boardseshTicks.climbUuid, validatedUuid)),
+          )
+          .limit(1);
+        if (tick) {
+          throw new GraphQLError('Somebody has logged this climb, so it stays', {
+            extensions: { code: 'CLIMB_HAS_TICKS' },
+          });
+        }
+        await deleteClimbReferenceRows(tx, validatedBoardType, validatedUuid);
       }
 
       // Clear the rows that have no FK back to board_climbs before deleting

@@ -56,7 +56,11 @@ export async function readableSocialEntityIds(
           and(
             inArray(dbSchema.boardClimbs.uuid, entityIds),
             climbDraftVisibilityCondition(
-              { isDraft: dbSchema.boardClimbs.isDraft, userId: dbSchema.boardClimbs.userId },
+              {
+                boardType: dbSchema.boardClimbs.boardType,
+                isDraft: dbSchema.boardClimbs.isDraft,
+                userId: dbSchema.boardClimbs.userId,
+              },
               viewerUserId,
             ),
             sprayReferenceVisibilityCondition(

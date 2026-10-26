@@ -1774,8 +1774,9 @@ describe('references to a hard-deleted spray climb', () => {
       )
     `);
 
-    // The real path, not a raw DELETE: this is the mutation that strands them.
-    await climbMutations.deleteDraftClimb({}, { uuid: orphanClimbUuid, boardType: 'spray' }, ctxFor(OWNER));
+    // Historical orphan fixture: shared logged drafts now refuse API deletion.
+    // Legacy rows still require the same fail-closed read behavior.
+    await db.execute(sql`DELETE FROM board_climbs WHERE uuid = ${orphanClimbUuid}`);
     const remaining = (await db.execute(
       sql`SELECT 1 FROM board_climbs WHERE uuid = ${orphanClimbUuid}`,
     )) as unknown as unknown[];

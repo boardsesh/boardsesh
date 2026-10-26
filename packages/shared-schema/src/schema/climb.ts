@@ -1,4 +1,9 @@
 export const climbTypeDefs = /* GraphQL */ `
+  enum DraftScope {
+    OWN
+    WALL
+  }
+
   """
   A climbing problem/route on an interactive training board.
   Contains all information needed to display and light up the climb on the board.
@@ -299,6 +304,8 @@ export const climbTypeDefs = /* GraphQL */ `
     useMyGrades: Boolean
     "Show only the user's draft climbs (requires auth)"
     onlyDrafts: Boolean
+    "OWN lists personal drafts; WALL lists all drafts on an accessible spray wall."
+    draftScope: DraftScope
     "Show only climbs the user has hearted on this board. A heart belongs to the climb, not to an angle, so it matches at every angle. Signed out returns no climbs. (requires auth)"
     onlyFavorited: Boolean
     "Show only unclimbed projects (climbs with 0 ascents)"

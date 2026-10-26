@@ -197,6 +197,7 @@ function parseSavedClimbSnapshot(serialized: string | undefined): SavedClimbSnap
       createdAt: parsed.createdAt ?? null,
       publishedAt: parsed.publishedAt ?? null,
       isDraft: parsed.isDraft ?? true,
+      ...(parsed.delivery === 'queued' || parsed.delivery === 'acknowledged' ? { delivery: parsed.delivery } : {}),
     };
   } catch {
     // Corrupt snapshot — restore the paint, drop the row link. The next Save
@@ -510,6 +511,57 @@ export function useCreateClimbScreen({
   }, [feetFollowPaint, litUpHoldsMap]);
 
   const [savedClimb, setSavedClimb] = useState<SavedClimbSnapshot | null>(null);
+  const savedClimbUuid = savedClimb?.uuid;
+  useEffect(() => {
+    if (board.boardName !== 'spray' || !savedClimbUuid) return;
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
+    void Promise.all([
+      import('../../db'),
+      import('@boardsesh/offline-sync'),
+      import('../../offline/offline-sync-adapter'),
+    ])
+      .then(([database, engine, delivery]) => {
+        const refresh = async () => {
+          const db = database.getDatabaseHandle();
+          if (!db || cancelled) return;
+          const pending = await engine.getLatestClimbMutationKey(db, 'spray', savedClimbUuid);
+          const canonical = await db.getFirstAsync<{
+            created_at: string | null;
+            published_at: string | null;
+            is_draft: number;
+          }>("SELECT created_at, published_at, is_draft FROM board_climbs WHERE uuid = ? AND board_type = 'spray'", [
+            savedClimbUuid,
+          ]);
+          if (cancelled) return;
+          setSavedClimb((previous) =>
+            previous?.uuid !== savedClimbUuid
+              ? previous
+              : {
+                  ...previous,
+                  delivery: pending ? 'queued' : 'acknowledged',
+                  ...(!pending && canonical
+                    ? {
+                        createdAt: canonical.created_at,
+                        publishedAt: canonical.published_at,
+                        isDraft: canonical.is_draft === 1,
+                      }
+                    : {}),
+                },
+          );
+        };
+        if (cancelled) return;
+        unsubscribe = delivery.subscribeMutationDelivery((event) => {
+          if (event.tableName === 'board_climbs') void refresh().catch(() => undefined);
+        });
+        return refresh();
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, [board.boardName, savedClimbUuid]);
   const [isSaving, setIsSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
   const [publishDuplicateError, setPublishDuplicateError] = useState<PublishDuplicateError | null>(null);
@@ -646,6 +698,9 @@ export function useCreateClimbScreen({
   // Apply a stored working copy over whatever the editor currently holds.
   const applyStoredDraft = useCallback(
     (draft: CreateClimbDraft) => {
+      if (typeof draft.pendingClimbUuid === 'string' && /^[0-9A-F]{32}$/.test(draft.pendingClimbUuid)) {
+        previewUuidRef.current = draft.pendingClimbUuid;
+      }
       let restoredFrameCount = 0;
       try {
         const restoredFrames = draft.framesJson
@@ -776,6 +831,7 @@ export function useCreateClimbScreen({
       createdAt: editClimb.created_at ?? null,
       publishedAt: editClimb.published_at ?? null,
       isDraft: serverIsDraft,
+      ...(editClimb.localWritePending ? { delivery: 'queued' as const } : {}),
     };
     setSavedClimb(serverSnapshot);
     setFramesPaceMs(serverPaceMs);
@@ -953,9 +1009,12 @@ export function useCreateClimbScreen({
     savedClimb != null && (savedSignatureUnknown || (savedSignature !== null && savedSignature !== payloadSignature));
 
   const savedClimbJson = useMemo(() => (savedClimb ? JSON.stringify(savedClimb) : undefined), [savedClimb]);
+  const pendingClimbUuid =
+    board.boardName === 'spray' ? previewUuidRef.current?.replace(/-/g, '').toUpperCase() : undefined;
 
   const autosaveDraft = useMemo<CreateClimbDraft>(
     () => ({
+      pendingClimbUuid,
       holdsJson,
       framesJson,
       name,
@@ -977,6 +1036,7 @@ export function useCreateClimbScreen({
       updatedAtMs: Date.now(),
     }),
     [
+      pendingClimbUuid,
       holdsJson,
       framesJson,
       name,
@@ -1330,6 +1390,7 @@ export function useCreateClimbScreen({
       // Not-yet-saved climbs are drafts by definition; once saved, mirror the
       // tracked row so a published climb doesn't queue as a draft.
       is_draft: saved?.isDraft ?? true,
+      ...(saved?.delivery === 'queued' ? { localWritePending: true } : {}),
       published_at: saved?.publishedAt ?? null,
       userAscents: 0,
       userAttempts: 0,
@@ -1399,6 +1460,7 @@ export function useCreateClimbScreen({
         frames: climb.frames,
         description: climb.description,
         is_draft: climb.is_draft,
+        localWritePending: saved.delivery === 'queued',
         published_at: climb.published_at,
         is_no_match: climb.is_no_match,
         characteristics: climb.characteristics,
@@ -1411,6 +1473,10 @@ export function useCreateClimbScreen({
 
   // ---- Set Active: build a minimal Climb and push to the queue. ----
   const handleSetActive = useCallback(() => {
+    if (board.boardName === 'spray' && !savedClimb) {
+      showToast(t('mobile.create.save.beforeLogging'), 'info');
+      return;
+    }
     const framesString = generateFramesString();
     if (!framesString) return;
     // Stop the transport first: a running clock would race the auto-sender's
@@ -1419,7 +1485,16 @@ export function useCreateClimbScreen({
     setHandedOff(true);
     const uuid = savedClimb?.uuid ?? previewUuidRef.current ?? randomUUID();
     setCurrentClimb(climbToQueueItem(buildProvisionalClimb(uuid, framesString), { uuid }));
-  }, [generateFramesString, savedClimb, buildProvisionalClimb, setCurrentClimb, playbackPause]);
+  }, [
+    generateFramesString,
+    savedClimb,
+    buildProvisionalClimb,
+    setCurrentClimb,
+    playbackPause,
+    board.boardName,
+    showToast,
+    t,
+  ]);
 
   // ---- BLE toggle (drives the header lightbulb): connect lights the wall with
   // the current holds; tapping again disconnects. ----
@@ -1472,6 +1547,7 @@ export function useCreateClimbScreen({
           hasContent,
           localPersistenceAvailable,
           hasSavedClimb: savedClimb != null,
+          waitingToSync: savedClimb?.delivery === 'queued',
           hasUnsavedEdits,
           saveFailed,
           publishBlocked,
@@ -1563,6 +1639,9 @@ export function useCreateClimbScreen({
     const sprayWallUuid = sprayWallUuidFor(board.boardName, board.layoutId);
     let nextSavedClimb: SavedClimbSnapshot | null = null;
     try {
+      if (pendingClimbUuid && !savedClimb) {
+        await persistAutosaveSlot({ ...autosaveDraftRef.current, pendingClimbUuid });
+      }
       if (canUpdate && savedClimb) {
         const result = await updateClimb({
           uuid: savedClimb.uuid,
@@ -1593,6 +1672,7 @@ export function useCreateClimbScreen({
           createdAt: result.createdAt ?? savedClimb.createdAt,
           publishedAt: result.publishedAt ?? savedClimb.publishedAt,
           isDraft: result.isDraft,
+          delivery: result.delivery,
         };
         setSavedClimb(nextSavedClimb);
         // Match web's schema exactly (create-climb-form.tsx) so PostHog funnels
@@ -1606,6 +1686,7 @@ export function useCreateClimbScreen({
         syncSavedToQueue(nextSavedClimb, frames);
       } else {
         const result = await saveClimb({
+          ...(pendingClimbUuid ? { uuid: pendingClimbUuid } : {}),
           layout_id: board.layoutId,
           size_id: board.sizeId,
           name: name.trim(),
@@ -1625,7 +1706,8 @@ export function useCreateClimbScreen({
           boardType: board.boardName,
           createdAt: result.createdAt ?? null,
           publishedAt: result.publishedAt ?? null,
-          isDraft,
+          isDraft: result.isDraft ?? isDraft,
+          delivery: result.delivery,
         };
         setSavedClimb(nextSavedClimb);
         // Web's schema (create-climb-form.tsx, see ClimbUpdated above) plus
@@ -1673,7 +1755,14 @@ export function useCreateClimbScreen({
       // catches up when the climb syncs down and the index rebuilds.
       void queryClient.invalidateQueries({ queryKey: ['holdHeatmap'] });
       setJustSaved(true);
-      showToast(isDraft ? t('mobile.create.save.draftToast') : t('mobile.create.save.publishedToast'), 'success');
+      showToast(
+        nextSavedClimb?.delivery === 'queued'
+          ? t('mobile.create.autosave.waitingToSync')
+          : isDraft
+            ? t('mobile.create.save.draftToast')
+            : t('mobile.create.save.publishedToast'),
+        'success',
+      );
       // A publish is commit-and-done — dismiss the drawer so the toast shows
       // over the climbs list (drafts stay open so you can keep editing).
       if (!isDraft) onPublished?.();
@@ -1723,6 +1812,7 @@ export function useCreateClimbScreen({
     }
   }, [
     isAuthenticated,
+    pendingClimbUuid,
     router,
     editLocked,
     canSave,

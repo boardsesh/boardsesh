@@ -4,6 +4,10 @@
  */
 
 import { readFileSync } from 'node:fs';
+const sharedSprayDraftsSchema = readFileSync(
+  new URL('../../../db/drizzle/0283_shared_spray_drafts.sql', import.meta.url),
+  'utf8',
+);
 import { socialEntityTypeEnum } from '@boardsesh/db/schema';
 
 const socialEntityTypeLabels = socialEntityTypeEnum.enumValues.map((entityType) => `'${entityType}'`).join(', ');
@@ -2205,4 +2209,5 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${anonymousOnForeignBoardsSchema};
   ${boardShareLinksSchema}
   ${sessionWorkoutsSchema}
+  ${sharedSprayDraftsSchema}
 `;

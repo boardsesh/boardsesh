@@ -129,7 +129,15 @@ export const queriesTypeDefs = /* GraphQL */ `
     """
     Get a single climb by its UUID.
     """
-    climb(boardName: String!, layoutId: Int!, sizeId: Int!, setIds: String!, angle: Int!, climbUuid: ID!): Climb
+    climb(
+      boardName: String!
+      layoutId: Int!
+      sizeId: Int!
+      setIds: String!
+      angle: Int!
+      climbUuid: ID!
+      sprayWallUuid: String
+    ): Climb
 
     """
     Setter usernames with climb counts for the given board, optionally filtered by username substring.
@@ -860,7 +868,7 @@ export const queriesTypeDefs = /* GraphQL */ `
     The spray wall occupying a catalogue layout id, for a client holding only a
     board config. Same visibility rules as \`sprayWall\`.
     """
-    sprayWallByLayout(layoutId: Int!): SprayWall
+    sprayWallByLayout(layoutId: Int!, sprayWallUuid: String): SprayWall
 
     """
     Everything needed to render a wall at one version: the photo, the homography
@@ -1157,6 +1165,7 @@ export const queriesTypeDefs = /* GraphQL */ `
       boardType: String!
       layoutId: Int
       sizeId: Int
+      sprayWallUuid: String
       cursor: SyncCursorInput
       limit: Int! = 500
       audience: SyncAudience = ALL
@@ -1171,6 +1180,7 @@ export const queriesTypeDefs = /* GraphQL */ `
       boardType: String!
       layoutId: Int
       sizeId: Int
+      sprayWallUuid: String
       cursor: SyncCursorInput
       limit: Int! = 500
       audience: SyncAudience = ALL
@@ -1185,6 +1195,7 @@ export const queriesTypeDefs = /* GraphQL */ `
       boardType: String!
       layoutId: Int
       sizeId: Int
+      sprayWallUuid: String
       cursor: SyncCursorInput
       limit: Int! = 500
       audience: SyncAudience = ALL
@@ -1210,6 +1221,7 @@ export const queriesTypeDefs = /* GraphQL */ `
       boardType: String!
       layoutId: Int
       sizeId: Int
+      sprayWallUuid: String
       cursor: SyncCursorInput
       limit: Int! = 500
     ): SyncResult!

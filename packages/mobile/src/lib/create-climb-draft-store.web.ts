@@ -9,6 +9,7 @@ export type CreateClimbDraftOrigin = 'new' | 'edit' | 'fork';
 // Mirrors the native shape field for field. `framesJson` round-tripped here all
 // along (the validator ignores unknown keys) but was missing from the type.
 export type CreateClimbDraft = {
+  pendingClimbUuid?: string;
   /** JSON.stringify of the editor's active-frame LitUpHoldsMap. */
   holdsJson: string;
   /** JSON.stringify(LitUpHoldsMap[]) — the full frame sequence. */

@@ -1764,14 +1764,22 @@ export const sprayWallQueries = {
     return toGraphQLWall(loaded, ctx.userId, await computeCanEdit(ctx, loaded.board));
   },
 
-  sprayWallByLayout: async (_: unknown, { layoutId }: { layoutId: unknown }, ctx: ConnectionContext) => {
+  sprayWallByLayout: async (
+    _: unknown,
+    { layoutId, sprayWallUuid }: { layoutId: unknown; sprayWallUuid?: unknown },
+    ctx: ConnectionContext,
+  ) => {
     await applyRateLimit(ctx, WALL_QUERY_RATE_LIMIT, 'sprayWallByLayout');
     if (typeof layoutId !== 'number' || !Number.isInteger(layoutId) || layoutId <= 0) {
       throw new Error('Invalid layoutId');
     }
 
-    // NOT `viewerCanSeeSprayWall`: a layout id is a small integer from a
-    // sequence, so an unlisted wall must not resolve here. See that function.
+    if (sprayWallUuid != null) {
+      const validatedUuid = validateInput(UUIDSchema, sprayWallUuid, 'sprayWallUuid');
+      const linkedWall = await loadVisibleWall(validatedUuid, ctx.userId);
+      if (!linkedWall || linkedWall.wall.layoutId !== layoutId) return null;
+      return toGraphQLWall(linkedWall, ctx.userId, await computeCanEdit(ctx, linkedWall.board));
+    }
     const loaded = await loadWall('layoutId', layoutId);
     if (!loaded || !(await viewerCanSeeSprayWallByLayout(loaded.wall, loaded.board, ctx.userId))) return null;
     return toGraphQLWall(loaded, ctx.userId, await computeCanEdit(ctx, loaded.board));

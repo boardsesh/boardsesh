@@ -82,6 +82,8 @@ export type Climb = {
   // it is one climber's opinion, not a property of the climb. See
   // PRIVATE_CLIMB_FIELDS in @boardsesh/queue.
   myDifficulty?: number | null;
+  /** Device-only outbox state; never included in shared queue or API payloads. */
+  localWritePending?: boolean;
   // Board configuration to draw this climb on, resolved against its setter's
   // boards. Populated by `userClimbs` (the profile Climbs tab, where no board is
   // in the route); null everywhere the board comes from the URL.
@@ -232,6 +234,8 @@ export type ClimbSearchInput = {
    */
   useMyGrades?: boolean;
   onlyDrafts?: boolean;
+  /** OWN keeps the personal draft list; WALL shares spray drafts with wall readers. */
+  draftScope?: 'OWN' | 'WALL';
   // Only climbs the user has hearted on this board. A heart is per climb, not
   // per angle, so it matches at every angle.
   onlyFavorited?: boolean;
@@ -326,6 +330,8 @@ export type ClimbStatsEvent = {
 };
 
 export type SaveClimbInput = {
+  /** Stable client identity for idempotent offline replay. Omit for server generation. */
+  uuid?: string | null;
   boardType: string;
   layoutId: number;
   name: string;

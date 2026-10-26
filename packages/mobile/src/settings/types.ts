@@ -78,6 +78,8 @@ export type AppSettings = {
    * off. `null` until the first pin; cleared at the account boundary.
    */
   offlineOwnedSprayWallsV1: OwnedSprayWallPinLedger | null;
+  /** Verified opened-wall identities; entries also remember explicit offline opt-outs. */
+  offlineOpenedSprayWallsV1: { userId: string; walls: Record<string, string | null> } | null;
   /** Keep every board the user follows/uses available offline by default. */
   autoOfflineBoards: boolean;
   /**

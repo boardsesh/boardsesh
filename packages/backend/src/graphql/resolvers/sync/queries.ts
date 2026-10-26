@@ -15,7 +15,7 @@ import { withSerialPlan, aliveHolds, type SerialPlanDb } from '@boardsesh/db/que
 import { isS3Configured, presignGetObject } from '../../../storage/s3';
 import { logger } from '../../../utils/logger';
 import { requireAuthenticated } from '../shared/helpers';
-import { isSprayBoardType, sprayLayoutIsReadable } from '../climbs/spray-read-access';
+import { isSprayBoardType, sprayLayoutIsReadableWithCapability } from '../climbs/spray-read-access';
 import { normalizeRow, toIso, type RawRow } from './row-normalize';
 import { syncClimbDocuments } from './saved-climb';
 import {
@@ -24,6 +24,7 @@ import {
   SyncLimitSchema,
   SyncBoardScopeIdSchema,
   BoardNameSchema,
+  UUIDSchema,
 } from '../../../validation/schemas';
 
 /**
@@ -314,7 +315,10 @@ async function runSnapshotSupplementRefPage(params: {
     [
       sql`bc.board_type = ${boardType}`,
       ...boardClimbsLayoutSizeConditions(boardType, layoutId, sizeId, sql`bc.`),
-      climbDraftVisibilityCondition({ isDraft: sql`bc.is_draft`, userId: sql`bc.user_id` }, params.viewerUserId),
+      climbDraftVisibilityCondition(
+        { isDraft: sql`bc.is_draft`, userId: sql`bc.user_id`, boardType: sql`bc.board_type` },
+        params.viewerUserId,
+      ),
       snapshotSupplementCondition(params.snapshotClimbWatermark, sql`bc.`),
     ],
     sql` AND `,
@@ -391,7 +395,10 @@ async function runScopedBoardRefSyncPage(params: {
   // climb has no audience, so its rows go to everyone whoever set it.
   const scopeConditions = [
     ...boardClimbsLayoutSizeConditions(boardType, layoutId, sizeId, sql`bc.`),
-    climbDraftVisibilityCondition({ isDraft: sql`bc.is_draft`, userId: sql`bc.user_id` }, params.viewerUserId),
+    climbDraftVisibilityCondition(
+      { isDraft: sql`bc.is_draft`, userId: sql`bc.user_id`, boardType: sql`bc.board_type` },
+      params.viewerUserId,
+    ),
   ];
   let scope: SQL = sql`board_type = ${boardType}`;
   if (scopeConditions.length > 0) {
@@ -659,6 +666,7 @@ export const syncQueries = {
       boardType,
       layoutId,
       sizeId,
+      sprayWallUuid,
       cursor,
       limit,
       audience,
@@ -667,6 +675,7 @@ export const syncQueries = {
       boardType: string;
       layoutId?: number | null;
       sizeId?: number | null;
+      sprayWallUuid?: string | null;
       cursor?: SyncCursorInput | null;
       limit: number;
       audience?: SyncAudience | null;
@@ -692,7 +701,15 @@ export const syncQueries = {
     // because one authenticated account could walk `layoutId` 1..N and pull every
     // column of every private wall's climbs. An unreadable scope returns an
     // ordinary empty page.
-    if (isSprayBoardType(validBoardType) && !(await sprayLayoutIsReadable(validBoardType, lid, ctx.userId))) {
+    if (
+      isSprayBoardType(validBoardType) &&
+      !(await sprayLayoutIsReadableWithCapability(
+        validBoardType,
+        lid,
+        ctx.userId,
+        sprayWallUuid == null ? null : validateInput(UUIDSchema, sprayWallUuid, 'sprayWallUuid'),
+      ))
+    ) {
       return emptySyncPage(cursor);
     }
 
@@ -703,7 +720,7 @@ export const syncQueries = {
         characteristics, hold_fingerprint, missing_hold_count, retired_by_reset, revision_number, holds_revision_number,
         updated_at, sync_seq`,
       fromClause: sql`board_climbs`,
-      scope: sql`(${boardClimbsScope(validBoardType, lid, sid)}) AND ${climbDraftVisibilityCondition({ isDraft: sql`board_climbs.is_draft`, userId: sql`board_climbs.user_id` }, ctx.userId)}${supplementalWatermark ? sql` AND ${snapshotSupplementCondition(supplementalWatermark, sql`board_climbs.`)}` : sql``}`,
+      scope: sql`(${boardClimbsScope(validBoardType, lid, sid)}) AND ${climbDraftVisibilityCondition({ isDraft: sql`board_climbs.is_draft`, userId: sql`board_climbs.user_id`, boardType: sql`board_climbs.board_type` }, ctx.userId)}${supplementalWatermark ? sql` AND ${snapshotSupplementCondition(supplementalWatermark, sql`board_climbs.`)}` : sql``}`,
       updatedAtColumn: sql`updated_at`,
       seqColumn: sql`sync_seq`,
       cursor,
@@ -724,6 +741,7 @@ export const syncQueries = {
       boardType,
       layoutId,
       sizeId,
+      sprayWallUuid,
       cursor,
       limit,
       audience,
@@ -732,6 +750,7 @@ export const syncQueries = {
       boardType: string;
       layoutId?: number | null;
       sizeId?: number | null;
+      sprayWallUuid?: string | null;
       cursor?: SyncCursorInput | null;
       limit: number;
       audience?: SyncAudience | null;
@@ -751,7 +770,15 @@ export const syncQueries = {
     // layout to decide which rows belong to the pull, so a private spray wall
     // would hand over its climbs' stats (and grades) to any account that guessed
     // the layout id.
-    if (isSprayBoardType(validBoardType) && !(await sprayLayoutIsReadable(validBoardType, lid, ctx.userId))) {
+    if (
+      isSprayBoardType(validBoardType) &&
+      !(await sprayLayoutIsReadableWithCapability(
+        validBoardType,
+        lid,
+        ctx.userId,
+        sprayWallUuid == null ? null : validateInput(UUIDSchema, sprayWallUuid, 'sprayWallUuid'),
+      ))
+    ) {
       return emptySyncPage(cursor);
     }
 
@@ -787,6 +814,7 @@ export const syncQueries = {
       boardType,
       layoutId,
       sizeId,
+      sprayWallUuid,
       cursor,
       limit,
       audience,
@@ -795,6 +823,7 @@ export const syncQueries = {
       boardType: string;
       layoutId?: number | null;
       sizeId?: number | null;
+      sprayWallUuid?: string | null;
       cursor?: SyncCursorInput | null;
       limit: number;
       audience?: SyncAudience | null;
@@ -814,7 +843,15 @@ export const syncQueries = {
     // layout to decide which rows belong to the pull, so a private spray wall
     // would hand over its climbs' stats (and grades) to any account that guessed
     // the layout id.
-    if (isSprayBoardType(validBoardType) && !(await sprayLayoutIsReadable(validBoardType, lid, ctx.userId))) {
+    if (
+      isSprayBoardType(validBoardType) &&
+      !(await sprayLayoutIsReadableWithCapability(
+        validBoardType,
+        lid,
+        ctx.userId,
+        sprayWallUuid == null ? null : validateInput(UUIDSchema, sprayWallUuid, 'sprayWallUuid'),
+      ))
+    ) {
       return emptySyncPage(cursor);
     }
 
@@ -875,12 +912,14 @@ export const syncQueries = {
       boardType,
       layoutId,
       sizeId,
+      sprayWallUuid,
       cursor,
       limit,
     }: {
       boardType: string;
       layoutId?: number | null;
       sizeId?: number | null;
+      sprayWallUuid?: string | null;
       cursor?: SyncCursorInput | null;
       limit: number;
     },
@@ -901,7 +940,15 @@ export const syncQueries = {
     // Only spray has walls, and `sprayLayoutIsReadable` answers false without a
     // layout id — there is no wall an unscoped pull could be checked against.
     // Both land on the same empty page.
-    if (!isSprayBoardType(validBoardType) || !(await sprayLayoutIsReadable(validBoardType, lid, ctx.userId))) {
+    if (
+      !isSprayBoardType(validBoardType) ||
+      !(await sprayLayoutIsReadableWithCapability(
+        validBoardType,
+        lid,
+        ctx.userId,
+        sprayWallUuid == null ? null : validateInput(UUIDSchema, sprayWallUuid, 'sprayWallUuid'),
+      ))
+    ) {
       return emptySyncPage(cursor);
     }
 

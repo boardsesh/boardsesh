@@ -36,6 +36,7 @@ export type DraftStatusState = {
   /** False on signed-out expo-web, where nothing is written at all. */
   localPersistenceAvailable: boolean;
   hasSavedClimb: boolean;
+  waitingToSync?: boolean;
   /** Edited since the last successful explicit save. */
   hasUnsavedEdits: boolean;
   /** The last explicit save was rejected for a non-duplicate reason. */
@@ -118,6 +119,7 @@ export function deriveDraftStatusView(state: DraftStatusState, t: TranslateDraft
   const savingAsDraft = state.isDraft ?? true;
 
   if (state.hasSavedClimb) {
+    if (state.waitingToSync) return { text: t('mobile.create.autosave.waitingToSync'), tone: 'muted', announce: true };
     if (state.hasUnsavedEdits) {
       return { text: t('mobile.create.autosave.unsyncedEdits'), tone: 'muted', announce: false };
     }

@@ -554,10 +554,11 @@ export const createClimbFilters = (
   // open by uuid and the board sync sends them. Matching the caller's linked
   // manufacturer account against `setter_id` as well would list an imported
   // draft with no owner, which then opens for nobody.
-  const isOnlyDrafts = searchParams.onlyDrafts && userId;
+  const wallDrafts = params.board_name === 'spray' && searchParams.draftScope === 'WALL';
+  const isOnlyDrafts = searchParams.onlyDrafts && (wallDrafts || userId);
 
   const isDraftCondition: SQL = isOnlyDrafts
-    ? and(eq(boardClimbs.isDraft, true), eq(boardClimbs.userId, userId))!
+    ? and(eq(boardClimbs.isDraft, true), ...(wallDrafts ? [] : [eq(boardClimbs.userId, userId!)]))!
     : eq(boardClimbs.isDraft, false);
 
   // When showing only drafts, skip the isListed filter (drafts are never listed)
@@ -1438,6 +1439,7 @@ export const PLAYLIST_FILTER_SCOPE = {
   // draft rule), no spray hold-integrity filter, and no cross-angle switch: each
   // row already reads its own angle. The setter suggestion is UI text.
   onlyDrafts: 'unsupported',
+  draftScope: 'unsupported',
   holdIntegrity: 'unsupported',
   crossAngleStats: 'unsupported',
   setternameSuggestion: 'unsupported',

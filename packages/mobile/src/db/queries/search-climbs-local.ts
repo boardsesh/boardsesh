@@ -38,6 +38,33 @@ import { tickOnCurrentHoldsLocalSql } from './climb-revisions-local';
 
 export type LocalSearchResult = { climbs: Climb[]; hasMore: boolean };
 
+/** An offline first ascent grades an ungraded wall climb until canonical stats arrive. */
+export async function withLocalSprayGrades(
+  db: OfflineDatabase,
+  rows: LocalClimbRow[],
+  boardName: string,
+  angle: number,
+  viewerId: string | null,
+): Promise<LocalClimbRow[]> {
+  if (boardName !== 'spray' || !viewerId) return rows;
+  const ungraded = rows.filter((row) => row.display_difficulty == null).map((row) => row.uuid);
+  if (ungraded.length === 0) return rows;
+  const grades = await db.getAllAsync<{ climb_uuid: string; difficulty: number }>(
+    `SELECT climb_uuid, difficulty FROM (
+    SELECT climb_uuid, difficulty, ROW_NUMBER() OVER (PARTITION BY climb_uuid ORDER BY climbed_at ASC, uuid ASC) AS position
+    FROM boardsesh_ticks WHERE board_type = 'spray' AND angle = ? AND user_id = ? AND status IN ('send', 'flash')
+      AND difficulty IS NOT NULL AND climb_uuid IN (${ungraded.map(() => '?').join(', ')})
+    ) WHERE position = 1`,
+    [angle, viewerId, ...ungraded],
+  );
+  const byClimb = new Map(grades.map((tick) => [tick.climb_uuid, tick.difficulty]));
+  return rows.map((row) =>
+    row.display_difficulty == null && byClimb.has(row.uuid)
+      ? { ...row, display_difficulty: byClimb.get(row.uuid)! }
+      : row,
+  );
+}
+
 // `null` is a real bind value here, not an absence: with no `local_user_id`
 // stamp the owner predicate binds NULL, and `user_id = NULL` never matches — so
 // the read degrades to this device's own unsynced writes rather than to
@@ -137,7 +164,7 @@ export function isOfflineSearchSupported(input: ClimbSearchInput): boolean {
   // see buildJoinAndWhere), and personal progress/rating filters are all
   // supported (synced ticks carry quality + climbed_at).
   // These need tables we don't sync (or the drafts owner path), so fall back:
-  if (input.onlyDrafts) return false;
+  if (input.onlyDrafts && input.boardName !== 'spray') return false;
   // Personal grades (#4828) are NOT listed here: buildJoinAndWhere and
   // sortColumnSql implement the same latest-graded-tick rule the server does,
   // against the synced ticks (which carry both `difficulty` and `uuid`). This
@@ -376,6 +403,7 @@ export function buildJoinAndWhere(
   const angle = input.angle;
   const setIds = parseSetIds(input.setIds);
   const isMoonboard = boardType === 'moonboard';
+  const isDraftQuery = context === 'catalogue' && input.onlyDrafts === true;
 
   const crossAngle = context === 'catalogue' && isCrossAngleStats(input);
   const eff = (column: StatsColumn) => effectiveStatsSql(column, crossAngle);
@@ -415,8 +443,17 @@ export function buildJoinAndWhere(
   if (context === 'catalogue') {
     push('c.board_type = ?', boardType);
     push('c.layout_id = ?', input.layoutId);
-    push('c.is_listed = 1');
-    push('c.is_draft = 0');
+    if (isDraftQuery) {
+      push('c.is_draft = 1');
+      if (input.draftScope === 'WALL' && boardType === 'spray') {
+        push('EXISTS (SELECT 1 FROM spray_walls wall WHERE wall.layout_id = c.layout_id)');
+      } else {
+        push('c.user_id = ?', ownerUserId);
+      }
+    } else {
+      push('c.is_listed = 1');
+      push('c.is_draft = 0');
+    }
 
     // Community-hidden climbs, mirroring hiddenClimbCondition in
     // packages/db/src/queries/climbs/create-climb-filters.ts: gone from browsing,
@@ -434,7 +471,7 @@ export function buildJoinAndWhere(
     // so NULL means exactly "no row at this angle" — the same probe
     // `effectiveStatsSql` uses. `countClimbsLocal` shares this builder, so the badge
     // counts what the list shows.
-    if (isBrowsedAngleRestricted(input)) {
+    if (!isDraftQuery && isBrowsedAngleRestricted(input)) {
       push('(c.angle = ? OR c.angle IS NULL OR s.climb_uuid IS NOT NULL)', angle);
     }
 
@@ -466,7 +503,7 @@ export function buildJoinAndWhere(
 
   // Size: compatible_size_ids contains sizeId (skipped for boards without size
   // variants — moonboard — via the shared isSizeScopedBoard predicate).
-  if (context === 'catalogue' && isSizeScopedBoard(boardType)) {
+  if (context === 'catalogue' && !isDraftQuery && isSizeScopedBoard(boardType)) {
     push(
       'c.compatible_size_ids IS NOT NULL AND EXISTS (SELECT 1 FROM json_each(c.compatible_size_ids) WHERE value = ?)',
       input.sizeId,
@@ -476,7 +513,7 @@ export function buildJoinAndWhere(
   // Set membership (subset): every required set is in the selected sets. NULL
   // required_set_ids is excluded for non-draft/non-moonboard (matches Postgres
   // NULL <@ semantics); moonboard allows NULL (backfill pending).
-  if (context === 'catalogue' && setIds.length > 0) {
+  if (context === 'catalogue' && !isDraftQuery && setIds.length > 0) {
     const placeholders = setIds.map(() => '?').join(', ');
     const subsetProbe = `NOT EXISTS (SELECT 1 FROM json_each(c.required_set_ids) WHERE value NOT IN (${placeholders}))`;
     if (isMoonboard) {
@@ -501,7 +538,7 @@ export function buildJoinAndWhere(
   }
 
   // Min ascents (mutually exclusive with projectsOnly).
-  if (input.minAscents && !input.projectsOnly) {
+  if (!isDraftQuery && input.minAscents && !input.projectsOnly) {
     push(`${eff('ascensionist_count')} >= ?`, input.minAscents);
   }
 
@@ -521,16 +558,16 @@ export function buildJoinAndWhere(
   const gradeRangeValue = gradeValueSql(eff('display_difficulty'), input.gradeSource);
   const personalGradeBinds = usesMyGrades(input) ? myGradeBinds(boardType, angle, ownerUserId) : [];
   const rangeValue = usesMyGrades(input) ? effectiveGradeExpr(gradeRangeValue) : gradeRangeValue;
-  if (input.minGrade && input.maxGrade) {
+  if (!isDraftQuery && input.minGrade && input.maxGrade) {
     push(`${rangeValue} BETWEEN ? AND ?`, ...personalGradeBinds, input.minGrade, input.maxGrade);
-  } else if (input.minGrade) {
+  } else if (!isDraftQuery && input.minGrade) {
     push(`${rangeValue} >= ?`, ...personalGradeBinds, input.minGrade);
-  } else if (input.maxGrade) {
+  } else if (!isDraftQuery && input.maxGrade) {
     push(`${rangeValue} <= ?`, ...personalGradeBinds, input.maxGrade);
   }
 
   // Min rating (quality_average is canonical 1-5).
-  if (input.minRating) {
+  if (!isDraftQuery && input.minRating) {
     push(`${eff('quality_average')} >= ?`, input.minRating);
   }
 
@@ -540,7 +577,7 @@ export function buildJoinAndWhere(
   // must return the same rows the network would for the same input, even for
   // malformed deep-link values.
   const gradeAccuracy = input.gradeAccuracy ? parseFloat(String(input.gradeAccuracy)) : NaN;
-  if (Number.isFinite(gradeAccuracy)) {
+  if (!isDraftQuery && Number.isFinite(gradeAccuracy)) {
     // Always the upstream-first value, whatever the grade source: accuracy measures
     // how far the crowd average sits from the upstream grade.
     push(
@@ -554,13 +591,13 @@ export function buildJoinAndWhere(
   // hold NaN (it stores NULL, which fails `> 0`), but it ranks any TEXT above
   // every number, so a value that arrived as text would pass `> 0` the way NaN
   // does in Postgres and come back as a climb with no benchmark.
-  if (input.onlyBenchmarks) {
+  if (!isDraftQuery && input.onlyBenchmarks) {
     const benchmarkDifficulty = eff('benchmark_difficulty');
     push(`(typeof(${benchmarkDifficulty}) IN ('integer', 'real') AND ${benchmarkDifficulty} > 0)`);
   }
 
   // Projects only: 0 ascents or no stats row.
-  if (input.projectsOnly) {
+  if (!isDraftQuery && input.projectsOnly) {
     push(`COALESCE(${eff('ascensionist_count')}, 0) = 0`);
   }
 
@@ -717,6 +754,7 @@ function roundTo(value: number, digits: number): number {
 }
 
 export type LocalClimbRow = {
+  local_write_pending?: number;
   uuid: string;
   setter_username: string | null;
   user_id: string | null;
@@ -812,6 +850,7 @@ export function mapRowToClimb(
   const bench = row.benchmark_difficulty;
   return {
     uuid: row.uuid,
+    ...(row.local_write_pending === 1 ? { localWritePending: true } : {}),
     boardType,
     layoutId,
     setter_username: row.setter_username ?? '',
@@ -1168,6 +1207,8 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
   // One column list for both readers below, so a row means the same thing
   // whichever of them produced it.
   const selectSql = `c.uuid, c.setter_username, c.user_id, c.name, c.description, c.frames, c.is_draft, c.is_hidden,
+      EXISTS (SELECT 1 FROM pending_mutations mutation WHERE mutation.table_name = 'board_climbs'
+        AND mutation.entity_key = 'climb:' || c.board_type || ':' || c.uuid) AS local_write_pending,
       c.missing_hold_count, c.holds_revision_number, c.characteristics,
       c.created_at, c.published_at, c.frames_count, c.frames_pace, c.compatible_size_ids,
       ${eff('ascensionist_count')} AS ascensionist_count,
@@ -1234,7 +1275,9 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
   // rather than repeating that subquery and its three binds here.
   const orderBinds: Bind[] = isRandom ? [randomSeedBind] : [];
   const binds: Bind[] = [...selectBinds, ...joinBinds, ...whereBinds, ...orderBinds, pageSize + 1, page * pageSize];
-  return toResult(await db.getAllAsync<LocalClimbRow>(query, binds));
+  return toResult(
+    await withLocalSprayGrades(db, await db.getAllAsync<LocalClimbRow>(query, binds), boardType, angle, ownerUserId),
+  );
 }
 
 export async function countClimbsLocal(db: OfflineDatabase, input: ClimbSearchInput): Promise<number> {

@@ -25,8 +25,15 @@ import {
  * generic fallback toast.
  */
 export function useSaveClimb(boardName: BoardName | null) {
-  const { isAuthenticated, executeWs, showError, afterClimbWrite, captureAuthEpoch, isAuthEpochCurrent } =
-    useBoardAdapter();
+  const {
+    isAuthenticated,
+    executeWs,
+    showError,
+    afterClimbWrite,
+    captureAuthEpoch,
+    isAuthEpochCurrent,
+    saveClimbOffline,
+  } = useBoardAdapter();
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -40,6 +47,8 @@ export function useSaveClimb(boardName: BoardName | null) {
 
       const variables: SaveClimbMutationVariables = { input: toSaveClimbInput(boardName, options) };
       const authEpoch = captureAuthEpoch?.();
+      const queued = await saveClimbOffline?.(variables.input, { queryClient });
+      if (queued) return queued;
       const result = await executeWs<SaveClimbMutationResponse, SaveClimbMutationVariables>({
         query: SAVE_CLIMB_MUTATION,
         variables,
@@ -90,8 +99,15 @@ export function useSaveClimb(boardName: BoardName | null) {
  * enforces both rules.
  */
 export function useUpdateClimb() {
-  const { isAuthenticated, executeWs, showError, afterClimbWrite, captureAuthEpoch, isAuthEpochCurrent } =
-    useBoardAdapter();
+  const {
+    isAuthenticated,
+    executeWs,
+    showError,
+    afterClimbWrite,
+    captureAuthEpoch,
+    isAuthEpochCurrent,
+    updateClimbOffline,
+  } = useBoardAdapter();
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -102,6 +118,8 @@ export function useUpdateClimb() {
 
       const variables: UpdateClimbMutationVariables = { input };
       const authEpoch = captureAuthEpoch?.();
+      const queued = await updateClimbOffline?.(input, { queryClient });
+      if (queued) return queued;
       const result = await executeWs<UpdateClimbMutationResponse, UpdateClimbMutationVariables>({
         query: UPDATE_CLIMB_MUTATION,
         variables,

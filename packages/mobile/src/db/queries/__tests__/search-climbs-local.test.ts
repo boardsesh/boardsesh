@@ -901,8 +901,8 @@ describe('searchClimbsLocal: spray climbs that lost a hold', () => {
     expect(await names({ holdIntegrity: 'BROKEN' })).toEqual(['lost', 'unknown', 'whole']);
   });
 
-  it('leaves the drafts list to the network', () => {
-    expect(isOfflineSearchSupported(sprayInput({ onlyDrafts: true }))).toBe(false);
+  it('serves the spray drafts list offline', () => {
+    expect(isOfflineSearchSupported(sprayInput({ onlyDrafts: true }))).toBe(true);
   });
 
   it('carries the count on the rows it lists, for the badge', async () => {

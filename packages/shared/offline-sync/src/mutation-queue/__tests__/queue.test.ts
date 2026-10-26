@@ -41,6 +41,8 @@ describe('mutation queue', () => {
       'create',
       JSON.stringify(payload),
       'idem-key-1',
+      null,
+      null,
     ]);
   });
 
@@ -49,7 +51,7 @@ describe('mutation queue', () => {
 
     expect(db.getAllAsync).toHaveBeenCalledWith(
       expect.stringMatching(
-        /SELECT \* FROM pending_mutations WHERE status = 'pending' ORDER BY created_at ASC, id ASC LIMIT \?/,
+        /SELECT pending\.\* FROM pending_mutations pending[\s\S]*NOT EXISTS[\s\S]*ORDER BY pending\.created_at ASC, pending\.id ASC LIMIT \?/,
       ),
       [5],
     );

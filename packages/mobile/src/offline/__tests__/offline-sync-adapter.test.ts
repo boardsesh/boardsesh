@@ -352,6 +352,53 @@ describe('drainMutationQueue binding', () => {
       unsubscribeLater();
     }
   });
+
+  it('does not publish an old drain acknowledgement into a replacement account', async () => {
+    const listener = vi.fn();
+    const caller = vi.fn();
+    const unsubscribe = subscribeMutationDelivery(listener);
+    try {
+      await drainMutationQueue(db, queryClient, graphqlFetch, { onMutationStatus: caller });
+      const options = drainMutationQueueCore.mock.calls[0][3] as DrainOptions;
+      authToken.generationCurrent = false;
+      options.onMutationStatus?.({
+        tableName: 'board_climbs',
+        operation: 'create',
+        idempotencyKey: 'climb:create:ABC',
+        entityKey: 'climb:spray:ABC',
+        status: 'acknowledged',
+      });
+      expect(caller).not.toHaveBeenCalled();
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      authToken.generationCurrent = true;
+      unsubscribe();
+    }
+  });
+
+  it('rechecks the source account after a caller handles the acknowledgement', async () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribeMutationDelivery(listener);
+    try {
+      await drainMutationQueue(db, queryClient, graphqlFetch, {
+        onMutationStatus: () => {
+          authToken.generationCurrent = false;
+        },
+      });
+      const options = drainMutationQueueCore.mock.calls[0][3] as DrainOptions;
+      options.onMutationStatus?.({
+        tableName: 'board_climbs',
+        operation: 'create',
+        idempotencyKey: 'climb:create:ABC',
+        entityKey: 'climb:spray:ABC',
+        status: 'acknowledged',
+      });
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      authToken.generationCurrent = true;
+      unsubscribe();
+    }
+  });
 });
 
 // Issue #4315: before this binding a dead-lettered write — a user action that
