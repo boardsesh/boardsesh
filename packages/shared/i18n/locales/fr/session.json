@@ -920,6 +920,12 @@
     "shareError": "Impossible de partager — réessaie",
     "favoriteError": "Impossible de mettre à jour tes favoris — réessaie",
     "closeAria": "Fermer",
+    "sidePanel": {
+      "upNext": "À suivre",
+      "logbook": "Carnet",
+      "beta": "Beta",
+      "segmentsAria": "Panneau latéral"
+    },
     "actionBar": {
       "previousAria": "Bloc précédent",
       "nextAria": "Bloc suivant",

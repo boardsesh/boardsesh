@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet } from 'react-native';
+import { Platform, StyleSheet, useWindowDimensions } from 'react-native';
 import Animated from 'react-native-reanimated';
-import { Link } from 'expo-router';
+import { Link, router } from 'expo-router';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { ScreenBackground } from '../src/components/ScreenBackground';
 import { PlayDrawer } from '../src/components/play-drawer';
@@ -25,6 +25,14 @@ import { dismissManagedSheetAndWait, type DismissAndWaitResult } from '../src/pr
 import { holdUntilLaunchReady } from '../src/components/launch-update/hold-until-launch-ready';
 import { useReportRoutePlayerBusy } from '../src/components/play-drawer/route-player-handoff';
 import { useBlePickerHost } from '../src/providers/ble-picker-host';
+import { resolvePlayerArrangement } from '../src/components/play-drawer/play-drawer-layout';
+import { PlayerSidePanel, type PlayerSidePanelSegment } from '../src/components/play-drawer/PlayerSidePanel';
+import type { PlayerSidePanelClimb } from '../src/components/play-drawer/play-drawer-types';
+
+// The side panel's queue has no sheet to fold away and nothing to wait on.
+const keepPanelOpen = () => {};
+const panelDismissed = () => dismissManagedSheetAndWait(null);
+const openBoardSwitcher = () => router.push('/boards');
 
 /**
  * Full-screen "now playing" player route (`presentation: 'transparentModal'`,
@@ -64,6 +72,16 @@ function PlayScreen() {
     playTarget?.nonce,
   );
 
+  // Landscape iPad: the board on the left, Up next / Logbook / Beta on the right.
+  // The native iPad's only (the Music layout); Android tablets and the browser
+  // build keep the stacked player.
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const isNativeIpad = Platform.OS === 'ios' && Platform.isPad;
+  const sideBySide =
+    resolvePlayerArrangement({ width: windowWidth, height: windowHeight, isTablet: isNativeIpad }) === 'sideBySide';
+  // Every open starts on Up next, like Music's queue beside the artwork.
+  const [panelSegment, setPanelSegment] = useState<PlayerSidePanelSegment>('upNext');
+
   const queueSheetRef = useRef<QueueSheetHandle>(null);
   const [mountQueue, setMountQueue] = useState(false);
   const pendingQueuePresentation = useRef(false);
@@ -85,6 +103,12 @@ function PlayScreen() {
     pendingQueuePresentation.current = false;
     queueSheetRef.current.present();
   }, [mountQueue]);
+  // With Up next already beside the board, the queue button picks that segment
+  // instead of stacking a second copy of the queue over the player.
+  const openQueue = useCallback(() => {
+    if (sideBySide) setPanelSegment('upNext');
+    else presentQueue();
+  }, [sideBySide, presentQueue]);
   const requestCloseQueue = useCallback(() => queueSheetRef.current?.dismiss(), []);
   const dismissQueueAndWait = useCallback((): Promise<DismissAndWaitResult> => {
     return dismissManagedSheetAndWait(queueSheetRef.current);
@@ -161,6 +185,44 @@ function PlayScreen() {
     requestCloseQueueSheet: requestCloseQueue,
     dismissQueueSheetAndWait: dismissQueueAndWait,
   });
+  const {
+    handleClimbPress: handlePanelClimbPress,
+    handleOpenActions: handlePanelOpenActions,
+    handleSuggestionPress: handlePanelSuggestionPress,
+    handleTickHistory: handlePanelTickHistory,
+  } = useQueueSheetHandlers({
+    setCurrentClimb,
+    openPlayDrawer,
+    openClimbActions: openPlayerClimbActions,
+    openLogAscent,
+    storedBoardConfig,
+    sessionId,
+    requestCloseQueueSheet: keepPanelOpen,
+    dismissQueueSheetAndWait: panelDismissed,
+  });
+  const renderSidePanel = useCallback(
+    (displayed: PlayerSidePanelClimb | null) => (
+      <PlayerSidePanel
+        displayed={displayed}
+        segment={panelSegment}
+        onSegmentChange={setPanelSegment}
+        queueBoard={queueBoard}
+        onSwitchBoard={openBoardSwitcher}
+        onClimbPress={handlePanelClimbPress}
+        onOpenActions={handlePanelOpenActions}
+        onSuggestionPress={handlePanelSuggestionPress}
+        onTickHistory={handlePanelTickHistory}
+      />
+    ),
+    [
+      panelSegment,
+      queueBoard,
+      handlePanelClimbPress,
+      handlePanelOpenActions,
+      handlePanelSuggestionPress,
+      handlePanelTickHistory,
+    ],
+  );
 
   return (
     <Link.AppleZoomTarget>
@@ -186,13 +248,15 @@ function PlayScreen() {
               boardConfig={activeBoardConfig}
               onAngleChange={onAngleChange}
               isAngleAdjustable={isAngleAdjustable}
-              onOpenQueue={presentQueue}
+              onOpenQueue={openQueue}
               boardMismatch={boardMismatch}
               reachableBoardKeys={reachableBoardKeys}
               mismatchBoardLabel={mismatchBoardLabel}
               onSwitchBoard={onSwitchBoard}
               dismissPlayerAndWait={dismissPlayerAndWait}
               openTarget={playTarget}
+              fitBoardToHeight={sideBySide}
+              renderSidePanel={sideBySide ? renderSidePanel : undefined}
             />
             {mountQueue && queueBoard ? (
               <QueueSheet

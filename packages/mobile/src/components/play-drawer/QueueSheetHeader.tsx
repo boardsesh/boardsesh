@@ -18,7 +18,8 @@ type QueueSheetHeaderProps = {
   viewOnlyMode: boolean;
   onToggleEditMode: () => void;
   onToggleHistory: () => void;
-  onClose: () => void;
+  /** Folds the sheet away. The side panel has nothing to close, so it omits it. */
+  onClose?: () => void;
   onClearAll: () => void;
 };
 
@@ -126,7 +127,9 @@ export const QueueSheetHeader = memo(function QueueSheetHeader({
         )}
 
         {/* A chevron, not an xmark: the queue folds back into the player. */}
-        <ChromeIconButton icon="chevron.down" onPress={onClose} accessibilityLabel={t('playView.closeAria')} />
+        {onClose ? (
+          <ChromeIconButton icon="chevron.down" onPress={onClose} accessibilityLabel={t('playView.closeAria')} />
+        ) : null}
       </View>
     </View>
   );

@@ -110,7 +110,7 @@ function IpadPlayPaneComponent({
         paneTopInset={!showStrip}
         paneEmptyState={paneEmptyState}
         acceptsScrollHandoff={acceptsScrollHandoff}
-        fitBoardToPaneHeight={phoneSplit}
+        fitBoardToHeight={phoneSplit}
       />
     </View>
   );

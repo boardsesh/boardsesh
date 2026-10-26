@@ -49,6 +49,7 @@ import type {
 } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
 import { GymWallSwitcher } from './GymWallSwitcher';
+import { SwitchBoardFooter } from './SwitchBoardFooter';
 import { SprayWallActions } from '../board-discovery/SprayWallActions';
 import type { SprayDetailRowKey } from '../board-discovery/spray-detail-rows';
 import { useGymBoards } from '../../lib/graphql/hooks/use-gym-boards';
@@ -1016,36 +1017,7 @@ function NowOnTheWallPanelComponent(
       )}
 
       {variant === 'column' ? (
-        <PressableSurface
-          onPress={handleSwitchBoard}
-          accessibilityRole="button"
-          accessibilityLabel={t('mobile.boardPresence.switchBoardAria')}
-          style={[
-            styles.footer,
-            {
-              borderTopColor: systemColors.separator,
-              paddingBottom: footerBottomPadding,
-              backgroundColor: systemColors.secondaryBackground,
-            },
-          ]}
-        >
-          <View style={[styles.footerIcon, { backgroundColor: systemColors.secondaryBackground }]}>
-            <Icon name="transfer" size={20} color={systemColors.label} />
-          </View>
-          <View style={styles.footerText}>
-            <Text variant="body" color={systemColors.label}>
-              {/* Stays "Switch board": the gym's own boards live behind the header
-                title now, so this is the way out to every board anywhere. */}
-              {t('mobile.boardPresence.switchBoard')}
-            </Text>
-            {boardLabel ? (
-              <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
-                {boardLabel}
-              </Text>
-            ) : null}
-          </View>
-          <Icon name="chevron.right" size={16} color={systemColors.secondaryLabel} />
-        </PressableSurface>
+        <SwitchBoardFooter boardLabel={boardLabel} onPress={handleSwitchBoard} bottomPadding={footerBottomPadding} />
       ) : null}
     </>
   );
@@ -1723,24 +1695,5 @@ const styles = StyleSheet.create({
   historyFooter: {
     paddingVertical: spacing[5],
     alignItems: 'center',
-  },
-  footer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[3],
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[3],
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  footerIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  footerText: {
-    flex: 1,
-    gap: 2,
   },
 });

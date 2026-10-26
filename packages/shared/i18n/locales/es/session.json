@@ -920,6 +920,12 @@
     "shareError": "No se pudo compartir — inténtalo otra vez",
     "favoriteError": "No se pudieron actualizar tus favoritos — inténtalo otra vez",
     "closeAria": "Cerrar",
+    "sidePanel": {
+      "upNext": "Cola",
+      "logbook": "Registro",
+      "beta": "Beta",
+      "segmentsAria": "Panel lateral"
+    },
     "actionBar": {
       "previousAria": "Bloque anterior",
       "nextAria": "Siguiente bloque",

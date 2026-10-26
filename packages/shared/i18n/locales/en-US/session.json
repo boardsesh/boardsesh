@@ -920,6 +920,12 @@
     "shareError": "Couldn't share — try again",
     "favoriteError": "Couldn't update your favorites — try again",
     "closeAria": "Close",
+    "sidePanel": {
+      "upNext": "Up next",
+      "logbook": "Logbook",
+      "beta": "Beta",
+      "segmentsAria": "Side panel"
+    },
     "actionBar": {
       "previousAria": "Previous climb",
       "nextAria": "Next climb",

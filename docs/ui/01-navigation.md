@@ -130,6 +130,9 @@ The bar itself depends on the device:
   (`src/hooks/current-climb-surface.ts`), decides who shows the current climb, so
   the floating JS bar never appears over the accessory; tab content clears the
   accessory through the measured in-tab inset, as on the iPhone Duo.
+  In landscape the player puts the board on the left and Up next / Logbook /
+  Beta in a 400 pt panel on the right (`resolvePlayerArrangement`); in portrait
+  the board stays on top.
 - **Android tablets, Expo web, iPad on Material:** one JS `Tabs` navigator at
   every width (rail at regular width, `MaterialTabBar` in a narrow split), so a
   resize keeps each tab's state. At regular width the shell keeps its

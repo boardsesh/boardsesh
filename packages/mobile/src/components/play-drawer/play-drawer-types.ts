@@ -77,6 +77,17 @@ export type PlayDrawerOpenTarget = {
   claimFirstApply?: () => boolean;
 };
 
+/** The climb on screen, handed to the landscape iPad player's side panel. */
+export type PlayerSidePanelClimb = {
+  climb: Climb;
+  /** The board the climb renders on (it can differ from the active board). */
+  boardName: string;
+  layoutId: number;
+  angle: number;
+  /** Opens the full logbook sheet the player hosts. */
+  onOpenFullLogbook: () => void;
+};
+
 export type PlayDrawerProps = {
   /** `/play` owns the transform so its backing and content travel together. */
   swipeDismiss?: SwipeDismissAnimation;
@@ -126,10 +137,16 @@ export type PlayDrawerProps = {
    *  when the phone split replaced it (see route-player-handoff). Only the
    *  focused tab's pane accepts, so a background tab never consumes it. */
   acceptsScrollHandoff?: boolean;
-  /** Pane mode only: size the board from the pane's height, with the tick row
-   *  under it and the rest below the fold. The phone split sets it; the iPad
-   *  pane keeps the usual first screen. */
-  fitBoardToPaneHeight?: boolean;
+  /** Size the board from the viewport's height, with the tick row under it and
+   *  the rest below the fold. The phone split's pane and the landscape iPad
+   *  player set it; everywhere else keeps the usual first screen. */
+  fitBoardToHeight?: boolean;
+  /**
+   * The landscape iPad player's side panel (see `resolvePlayerArrangement`).
+   * Rendered to the right of the board column, which narrows to make room; it
+   * receives the climb on screen, or null before one resolves.
+   */
+  renderSidePanel?: (displayed: PlayerSidePanelClimb | null) => ReactNode;
   /**
    * Who is looking. `'anonymous'` is the signed-out reader that
    * `AnonymousClimbView` renders on the web export's read-only climb URL: the

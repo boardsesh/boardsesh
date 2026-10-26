@@ -52,12 +52,47 @@ export function computeDrawerFirstScreenHeight({
   return computeFirstScreenHeight(viewport, sectionTopPadding + firstSectionHeaderHeight + sectionMargin);
 }
 
+/** Width of the landscape iPad player's Up next / Logbook / Beta panel. */
+export const PLAYER_SIDE_PANEL_WIDTH = 400;
 /**
- * The phone split's pane (iPhone Duo open in landscape) fits the board to the
- * pane's height: the first screen fills the viewport down to the tick row and
- * one more row (favourite, share) sits just below the fold with the sections
- * after it. On a 669pt pane that draws the board about 1.8× larger than the
- * usual first screen, which also holds that row and a section header.
+ * The narrowest board column worth a side panel. The iPad mini's landscape
+ * window leaves 733pt; a Stage Manager window that leaves less keeps the board
+ * on top instead of squeezing it beside the panel.
+ */
+const MIN_SIDE_BY_SIDE_BOARD_COLUMN = 600;
+
+/**
+ * - `stacked`: the board on top, the sections below (iPhone, and iPad portrait).
+ * - `sideBySide`: the board on the left at full height, with the side panel on
+ *   the right, the way Music's iPad player puts the queue beside the artwork.
+ */
+export type PlayerArrangement = 'stacked' | 'sideBySide';
+
+/**
+ * How the full-screen player lays out in this window. Only a tablet whose window
+ * is wider than tall, with room for the panel and a 600pt board column, goes
+ * side by side; every phone (the iPhone Duo's split included) stays stacked.
+ */
+export function resolvePlayerArrangement({
+  width,
+  height,
+  isTablet,
+}: {
+  width: number;
+  height: number;
+  isTablet: boolean;
+}): PlayerArrangement {
+  if (!isTablet || width <= height) return 'stacked';
+  return width - PLAYER_SIDE_PANEL_WIDTH >= MIN_SIDE_BY_SIDE_BOARD_COLUMN ? 'sideBySide' : 'stacked';
+}
+
+/**
+ * Fits the board to the viewport's height: the first screen fills the viewport
+ * down to the tick row and one more row (favourite, share) sits just below the
+ * fold with the sections after it. The phone split's pane (iPhone Duo open in
+ * landscape) and the landscape iPad player use it. On a 669pt pane that draws
+ * the board about 1.8× larger than the usual first screen, which also holds that
+ * row and a section header.
  */
 export function computeFitToHeightFirstScreenHeight({
   viewport,

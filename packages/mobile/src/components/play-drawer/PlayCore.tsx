@@ -222,7 +222,8 @@ export function PlayCore({
   paneTopInset = true,
   paneEmptyState,
   acceptsScrollHandoff = false,
-  fitBoardToPaneHeight = false,
+  fitBoardToHeight = false,
+  renderSidePanel,
   viewer = 'member',
   onSignIn,
 }: PlayDrawerProps) {
@@ -1777,16 +1778,16 @@ export function PlayCore({
 
   // Reserve only the first eligible section's header. Without sections, content
   // plus bottom safe area exactly fills the measured viewport and cannot scroll.
-  // The phone split's pane fits the board to the pane's height instead: the tick
-  // row stays right under the board, and the favourite/share row and the sections
-  // sit just below the fold. Only with sections to scroll to, with the controls
-  // under the board, and with a plain second row (Put on the wall or Fell / Sent
-  // keep their place on screen). `insets.bottom` here is the tab's own inset,
-  // which UIKit grows by the bottom accessory spanning the split, so the board
-  // and the tick row end above the accessory and the rest scrolls clear of it.
+  // The phone split's pane and the landscape iPad player fit the board to the
+  // viewport's height instead: the tick row stays right under the board, and the
+  // favourite/share row and the sections sit just below the fold. Only with
+  // sections to scroll to, with the controls under the board, and with a plain
+  // second row (Put on the wall or Fell / Sent keep their place on screen). In
+  // the split's pane `insets.bottom` is the tab's own inset, which UIKit grows
+  // by the bottom accessory spanning the split, so the board and the tick row
+  // end above the accessory and the rest scrolls clear of it.
   const fitsBoardToHeight =
-    isPane &&
-    fitBoardToPaneHeight &&
+    fitBoardToHeight &&
     hasVisibleSections &&
     !controlsAbove &&
     Array.isArray(actionBarLayout.secondaryRow) &&
@@ -1877,6 +1878,15 @@ export function PlayCore({
     requestBelowFoldContent,
   });
   const showPanePlaceholder = shouldShowPanePlaceholder(isPane, displayedClimb != null);
+  // The landscape iPad panel follows the climb on screen. Memoised on what it
+  // reads, so the panel's memoised content skips the player's own re-renders.
+  const sidePanelClimb = useMemo(
+    () =>
+      displayedClimb
+        ? { climb: displayedClimb, boardName, layoutId, angle, onOpenFullLogbook: handleOpenFullLogbook }
+        : null,
+    [displayedClimb, boardName, layoutId, angle, handleOpenFullLogbook],
+  );
 
   // Controls region — gated by the switch-board overlay when the displayed
   // climb is on a board the user isn't currently on. Board art + swipe stay
@@ -2014,107 +2024,112 @@ export function PlayCore({
 
   return (
     // The play route paints its background and this interactive core together.
-    <View style={styles.root}>
-      {enhancementsReady ? (
-        <PlayCoreEnhancements
-          boardName={boardName}
-          climbUuid={displayedClimb?.uuid ?? null}
-          angle={angle}
-          enabled={!isAnonymous}
-          onSnapshot={handleEnhancementSnapshot}
-        />
-      ) : null}
-      {showPanePlaceholder ? (
-        (paneEmptyState ?? (
-          <PanePlaceholder
-            title={t('playView.paneEmpty.title')}
-            subtitle={t('playView.paneEmpty.subtitle')}
-            paddingTop={(paneTopInset ? insets.top : 0) + spacing[8]}
-            paddingBottom={insets.bottom}
+    // The board column is always its own view, so a rotation that brings the
+    // side panel in or out never remounts the board.
+    <View style={[styles.root, renderSidePanel ? styles.rootSideBySide : null]}>
+      <View style={[styles.playerColumn, renderSidePanel ? styles.playerColumnSideBySide : null]}>
+        {enhancementsReady ? (
+          <PlayCoreEnhancements
+            boardName={boardName}
+            climbUuid={displayedClimb?.uuid ?? null}
+            angle={angle}
+            enabled={!isAnonymous}
+            onSnapshot={handleEnhancementSnapshot}
           />
-        ))
-      ) : (
-        <GestureDetector gesture={contentGesture}>
-          <Animated.View style={[styles.content, !swipeDismiss && dismissAnimatedStyle]}>
-            <ScrollView
-              ref={scrollRef}
-              nestedScrollEnabled
-              scrollEnabled={hasVisibleSections}
-              directionalLockEnabled={Platform.OS === 'ios'}
-              showsVerticalScrollIndicator={false}
-              showsHorizontalScrollIndicator={false}
-              // No top/bottom rubber-band: at the top, a downward drag is the
-              // dismiss (the drawer translates) — a simultaneous scroll bounce would
-              // fight it and read as double movement.
-              bounces={false}
-              overScrollMode="never"
-              style={styles.content}
-              contentContainerStyle={{
-                paddingBottom: insets.bottom,
-                paddingLeft: contentSideInsets.left,
-                paddingRight: contentSideInsets.right,
-                minHeight: initialScrollHeight,
-              }}
-              onLayout={onViewportMeasured}
-              onScroll={handleScroll}
-              scrollEventThrottle={16}
-              onScrollBeginDrag={handleScrollTowardBelowFold}
-              onContentSizeChange={handleScrollContentSizeChange}
-            >
-              {displayedClimb && (
-                <>
-                  {/* The firstScreen container owns the top safe area, so the grabber +
+        ) : null}
+        {showPanePlaceholder ? (
+          (paneEmptyState ?? (
+            <PanePlaceholder
+              title={t('playView.paneEmpty.title')}
+              subtitle={t('playView.paneEmpty.subtitle')}
+              paddingTop={(paneTopInset ? insets.top : 0) + spacing[8]}
+              paddingBottom={insets.bottom}
+            />
+          ))
+        ) : (
+          <GestureDetector gesture={contentGesture}>
+            <Animated.View style={[styles.content, !swipeDismiss && dismissAnimatedStyle]}>
+              <ScrollView
+                ref={scrollRef}
+                nestedScrollEnabled
+                scrollEnabled={hasVisibleSections}
+                directionalLockEnabled={Platform.OS === 'ios'}
+                showsVerticalScrollIndicator={false}
+                showsHorizontalScrollIndicator={false}
+                // No top/bottom rubber-band: at the top, a downward drag is the
+                // dismiss (the drawer translates) — a simultaneous scroll bounce would
+                // fight it and read as double movement.
+                bounces={false}
+                overScrollMode="never"
+                style={styles.content}
+                contentContainerStyle={{
+                  paddingBottom: insets.bottom,
+                  paddingLeft: contentSideInsets.left,
+                  paddingRight: contentSideInsets.right,
+                  minHeight: initialScrollHeight,
+                }}
+                onLayout={onViewportMeasured}
+                onScroll={handleScroll}
+                scrollEventThrottle={16}
+                onScrollBeginDrag={handleScrollTowardBelowFold}
+                onContentSizeChange={handleScrollContentSizeChange}
+              >
+                {displayedClimb && (
+                  <>
+                    {/* The firstScreen container owns the top safe area, so the grabber +
                 close + climb name sit at the very top. In the pane a docked WallStrip
                 can already own the top inset (paneTopInset=false). */}
-                  <View style={[styles.firstScreen, { height: firstScreenHeight, paddingTop: firstScreenPaddingTop }]}>
-                    {/* Everything the wall-state callout covers. Wrapped so the
+                    <View
+                      style={[styles.firstScreen, { height: firstScreenHeight, paddingTop: firstScreenPaddingTop }]}
+                    >
+                      {/* Everything the wall-state callout covers. Wrapped so the
                         callout can trap assistive tech the way a modal does: iOS
                         gets `accessibilityViewIsModal` on the callout itself,
                         Android has no such thing, so TalkBack would otherwise
                         wander the drawer "behind" the open card. */}
-                    <View
-                      style={styles.firstScreenContent}
-                      accessibilityElementsHidden={wallCallout === 'explainer'}
-                      importantForAccessibility={wallCallout === 'explainer' ? 'no-hide-descendants' : 'auto'}
-                    >
-                      <View style={styles.topRow}>
-                        {/* The persistent pane has no dismiss, so it shows no grabber or
+                      <View
+                        style={styles.firstScreenContent}
+                        accessibilityElementsHidden={wallCallout === 'explainer'}
+                        importantForAccessibility={wallCallout === 'explainer' ? 'no-hide-descendants' : 'auto'}
+                      >
+                        <View style={styles.topRow}>
+                          {/* The persistent pane has no dismiss, so it shows no grabber or
                           close chevron; the route keeps both. */}
-                        {!isPane ? (
-                          <>
-                            <View style={[sheetStyles.indicator, styles.grabber]} />
-                            {/* A chevron, not an xmark: the player minimises, it isn't closed. */}
-                            <ChromeIconButton
-                              icon="chevron.down"
-                              onPress={handleDismiss}
-                              accessibilityLabel={t('playView.closeAria')}
-                              style={styles.closeButton}
-                            />
-                          </>
-                        ) : null}
-                        {/* The workout stage or the list the player walks, under the grabber. Takes no
+                          {!isPane ? (
+                            <>
+                              <View style={[sheetStyles.indicator, styles.grabber]} />
+                              {/* A chevron, not an xmark: the player minimises, it isn't closed. */}
+                              <ChromeIconButton
+                                icon="chevron.down"
+                                onPress={handleDismiss}
+                                accessibilityLabel={t('playView.closeAria')}
+                                style={styles.closeButton}
+                              />
+                            </>
+                          ) : null}
+                          {/* The workout stage or the list the player walks, under the grabber. Takes no
                           touches of its own, but keeps them (no pointerEvents="none"),
                           which on Android would hide it from TalkBack's explore by touch. */}
-                        {topBarParts || browseCaption ? (
-                          <View
-                            style={[
-                              styles.topListContext,
-                              {
-                                height: chromeButtonSize,
-                                left: topListContextFrame.left,
-                                right: topListContextFrame.right,
-                              },
-                              topListContextFrame.measured ? null : styles.topListContextUnmeasured,
-                            ]}
-                          >
-                            <PlayListContext
-                              parts={topBarParts}
-                              caption={browseCaption}
-                              testID="play-drawer-track-label"
-                            />
-                          </View>
-                        ) : null}
-                        {/* Mirrored across the grabber from the close chevron: the rest
+                          {topBarParts || browseCaption ? (
+                            <View
+                              style={[
+                                styles.topListContext,
+                                {
+                                  height: chromeButtonSize,
+                                  left: topListContextFrame.left,
+                                  right: topListContextFrame.right,
+                                },
+                                topListContextFrame.measured ? null : styles.topListContextUnmeasured,
+                              ]}
+                            >
+                              <PlayListContext
+                                parts={topBarParts}
+                                caption={browseCaption}
+                                testID="play-drawer-track-label"
+                              />
+                            </View>
+                          ) : null}
+                          {/* Mirrored across the grabber from the close chevron: the rest
                           timer (#5378), then ⋯. The timer has its own host — and so its
                           own sheet — because a root-level sheet would present UNDER this
                           transparent modal. The cluster runs from just right of the
@@ -2122,232 +2137,240 @@ export function PlayCore({
                           timer shrinks rather than sliding under it. It sits outside
                           the commit bar and the switch-board scrim, so ⋯ stays in reach
                           while browsing and on another board's climb. */}
-                        <View style={[styles.topTrailing, { height: chromeButtonSize }]} pointerEvents="box-none">
-                          <View style={styles.topTrailingContent} onLayout={handleTopTrailingLayout}>
-                            <View style={styles.restTimerSlot}>
-                              <RestTimerPillHost compact />
-                            </View>
-                            {/* Every row is an account action, and the signed-out reader's
+                          <View style={[styles.topTrailing, { height: chromeButtonSize }]} pointerEvents="box-none">
+                            <View style={styles.topTrailingContent} onLayout={handleTopTrailingLayout}>
+                              <View style={styles.restTimerSlot}>
+                                <RestTimerPillHost compact />
+                              </View>
+                              {/* Every row is an account action, and the signed-out reader's
                             gate bounces most of their targets to login. Mounted a frame
                             after the board, like the rest of the drawer's reads; the
                             placeholder holds its place so the timer never jumps. */}
-                            {isAnonymous ? null : (
-                              <View style={styles.menuSlot}>
-                                {enhancementsReady ? (
-                                  <PlayDrawerActionsMenu
-                                    climb={displayedClimb}
-                                    boardConfig={renderBoardConfig}
-                                    queueItemUuid={displayedQueueSlotUuid}
-                                    isAuthenticated={isAuthenticated}
-                                    hidden={actionBarLayout.hidden}
-                                    boardMismatch={showBoardMismatch}
-                                    isFavorited={isFavorited}
-                                    isMirrored={isMirrored}
-                                    onToggleFavorite={handleToggleFavoriteFromMenu}
-                                    onToggleMirror={handleMirror}
-                                    onOpenAngle={isAngleAdjustable ? handleOpenAngleSelector : undefined}
-                                    onTick={handleOpenTickForClimb}
-                                    onAddBetaVideo={handleOpenAddBetaVideoForClimb}
-                                    onReportClimb={handleOpenReportClimbForClimb}
-                                    onSelectPlaylist={handleOpenAddToPlaylistForClimb}
-                                    onOpenQueue={onOpenQueue}
-                                    onOpenViewOptions={handleOpenSectionsSettings}
-                                    dismissPlayerAndWait={dismissPlayerAndWait}
-                                  />
-                                ) : (
-                                  <View style={styles.menuPlaceholder} />
-                                )}
-                              </View>
-                            )}
+                              {isAnonymous ? null : (
+                                <View style={styles.menuSlot}>
+                                  {enhancementsReady ? (
+                                    <PlayDrawerActionsMenu
+                                      climb={displayedClimb}
+                                      boardConfig={renderBoardConfig}
+                                      queueItemUuid={displayedQueueSlotUuid}
+                                      isAuthenticated={isAuthenticated}
+                                      hidden={actionBarLayout.hidden}
+                                      boardMismatch={showBoardMismatch}
+                                      isFavorited={isFavorited}
+                                      isMirrored={isMirrored}
+                                      onToggleFavorite={handleToggleFavoriteFromMenu}
+                                      onToggleMirror={handleMirror}
+                                      onOpenAngle={isAngleAdjustable ? handleOpenAngleSelector : undefined}
+                                      onTick={handleOpenTickForClimb}
+                                      onAddBetaVideo={handleOpenAddBetaVideoForClimb}
+                                      onReportClimb={handleOpenReportClimbForClimb}
+                                      onSelectPlaylist={handleOpenAddToPlaylistForClimb}
+                                      onOpenQueue={onOpenQueue}
+                                      onOpenViewOptions={handleOpenSectionsSettings}
+                                      dismissPlayerAndWait={dismissPlayerAndWait}
+                                    />
+                                  ) : (
+                                    <View style={styles.menuPlaceholder} />
+                                  )}
+                                </View>
+                              )}
+                            </View>
                           </View>
                         </View>
-                      </View>
 
-                      {/* Title + grade swipe with the board: same translateX, same
+                        {/* Title + grade swipe with the board: same translateX, same
                         tilt/fling; the next climb's header slides in edge-adjacent.
                         Wrapped only to measure where the header ends, which is what
                         the wall-state callout hangs from. */}
-                      <View onLayout={onHeaderMeasured}>
-                        <SwipeableHeader
-                          pager={swipePager}
-                          centerPage={swipeCenterPage}
-                          viewportWidth={windowWidth}
-                          // The header a screen reader reads, in one place that
-                          // the climb changing never moves: every drawn header
-                          // below is hidden from it.
-                          accessibilityStandIn={
-                            currentHeaderModel ? (
-                              <PlayDrawerHeaderAccessibility
-                                model={currentHeaderModel}
-                                pillState={headerPillState}
-                                pillBackTarget={headerBackTarget}
-                                pillLatched={browseLatchActive}
-                                onPillPress={wallPillPress}
-                                onLongPressName={handleCopyName}
-                                onPressSetter={openSetterPlaylist}
-                              />
-                            ) : null
-                          }
-                          current={
-                            currentHeaderModel ? (
-                              <PreparedPlayDrawerHeader
-                                model={currentHeaderModel}
-                                // What the WALL is doing rides the header's leading slot
-                                // (left of the name, opposite the grade). It's absent
-                                // entirely when there are no wall stakes, so the plain solo
-                                // header keeps today's mirrored-flank centring.
-                                leading={
-                                  headerPillState ? (
-                                    <WallStatePill
-                                      state={headerPillState}
-                                      backTarget={headerBackTarget}
-                                      latched={browseLatchActive}
-                                      onPress={wallPillPress}
-                                    />
-                                  ) : undefined
-                                }
-                                onLongPressName={handleCopyName}
-                                onPressSetter={openSetterPlaylist}
-                              />
-                            ) : null
-                          }
-                          // A neighbour's header reserves the same flank the
-                          // current one spends on the pill, so the name and its
-                          // attribute glyphs slide across at a fixed position
-                          // instead of stepping mid-swipe. Invisible and
-                          // a11y-hidden: it holds space, it claims nothing.
-                          previous={
-                            previousHeaderClimb ? (
-                              <LivePlayDrawerHeader
-                                climb={previousHeaderClimb}
-                                boardName={previousHeaderBoard.boardName as BoardName}
-                                layoutId={previousHeaderBoard.layoutId}
-                                angle={previousHeaderBoard.angle}
-                                leading={
-                                  headerPillState ? (
-                                    <WallStatePill state={headerPillState} backTarget={headerBackTarget} reserveOnly />
-                                  ) : undefined
-                                }
-                              />
-                            ) : null
-                          }
-                          next={
-                            nextHeaderClimb ? (
-                              <LivePlayDrawerHeader
-                                climb={nextHeaderClimb}
-                                boardName={nextHeaderBoard.boardName as BoardName}
-                                layoutId={nextHeaderBoard.layoutId}
-                                angle={nextHeaderBoard.angle}
-                                leading={
-                                  headerPillState ? (
-                                    <WallStatePill state={headerPillState} backTarget={headerBackTarget} reserveOnly />
-                                  ) : undefined
-                                }
-                              />
-                            ) : null
-                          }
-                        />
-                      </View>
+                        <View onLayout={onHeaderMeasured}>
+                          <SwipeableHeader
+                            pager={swipePager}
+                            centerPage={swipeCenterPage}
+                            viewportWidth={windowWidth}
+                            // The header a screen reader reads, in one place that
+                            // the climb changing never moves: every drawn header
+                            // below is hidden from it.
+                            accessibilityStandIn={
+                              currentHeaderModel ? (
+                                <PlayDrawerHeaderAccessibility
+                                  model={currentHeaderModel}
+                                  pillState={headerPillState}
+                                  pillBackTarget={headerBackTarget}
+                                  pillLatched={browseLatchActive}
+                                  onPillPress={wallPillPress}
+                                  onLongPressName={handleCopyName}
+                                  onPressSetter={openSetterPlaylist}
+                                />
+                              ) : null
+                            }
+                            current={
+                              currentHeaderModel ? (
+                                <PreparedPlayDrawerHeader
+                                  model={currentHeaderModel}
+                                  // What the WALL is doing rides the header's leading slot
+                                  // (left of the name, opposite the grade). It's absent
+                                  // entirely when there are no wall stakes, so the plain solo
+                                  // header keeps today's mirrored-flank centring.
+                                  leading={
+                                    headerPillState ? (
+                                      <WallStatePill
+                                        state={headerPillState}
+                                        backTarget={headerBackTarget}
+                                        latched={browseLatchActive}
+                                        onPress={wallPillPress}
+                                      />
+                                    ) : undefined
+                                  }
+                                  onLongPressName={handleCopyName}
+                                  onPressSetter={openSetterPlaylist}
+                                />
+                              ) : null
+                            }
+                            // A neighbour's header reserves the same flank the
+                            // current one spends on the pill, so the name and its
+                            // attribute glyphs slide across at a fixed position
+                            // instead of stepping mid-swipe. Invisible and
+                            // a11y-hidden: it holds space, it claims nothing.
+                            previous={
+                              previousHeaderClimb ? (
+                                <LivePlayDrawerHeader
+                                  climb={previousHeaderClimb}
+                                  boardName={previousHeaderBoard.boardName as BoardName}
+                                  layoutId={previousHeaderBoard.layoutId}
+                                  angle={previousHeaderBoard.angle}
+                                  leading={
+                                    headerPillState ? (
+                                      <WallStatePill
+                                        state={headerPillState}
+                                        backTarget={headerBackTarget}
+                                        reserveOnly
+                                      />
+                                    ) : undefined
+                                  }
+                                />
+                              ) : null
+                            }
+                            next={
+                              nextHeaderClimb ? (
+                                <LivePlayDrawerHeader
+                                  climb={nextHeaderClimb}
+                                  boardName={nextHeaderBoard.boardName as BoardName}
+                                  layoutId={nextHeaderBoard.layoutId}
+                                  angle={nextHeaderBoard.angle}
+                                  leading={
+                                    headerPillState ? (
+                                      <WallStatePill
+                                        state={headerPillState}
+                                        backTarget={headerBackTarget}
+                                        reserveOnly
+                                      />
+                                    ) : undefined
+                                  }
+                                />
+                              ) : null
+                            }
+                          />
+                        </View>
 
-                      {controlsAbove ? controlsRegion : null}
+                        {controlsAbove ? controlsRegion : null}
 
-                      {/* A climb that lost a hold. Still listed, playable and
+                        {/* A climb that lost a hold. Still listed, playable and
                           loggable, but nothing else on this screen would say why
                           the board draws fewer holds than the setter painted.
                           Above the board, because it is about what the board is
                           showing. */}
-                      <LostHoldsBanner count={lostHoldCount} onRemix={handleRemixLostHolds ?? undefined} />
+                        <LostHoldsBanner count={lostHoldCount} onRemix={handleRemixLostHolds ?? undefined} />
 
-                      <View style={styles.boardSection} onLayout={handleBoardContainerLayout}>
-                        {boardRenderData ? (
-                          <DeferredBoard
-                            capturePaintedTestID={screenshotPaintedClimbTestId(
-                              process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1',
-                              activeBoardForNavigation,
-                              renderBoardConfig,
-                              displayedClimb,
-                              isMirrored,
-                            )}
-                            captureLocalMirrorTestID={screenshotLocalMirrorTestId(
-                              {
-                                captureEnabled:
-                                  process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' &&
-                                  process.env.EXPO_PUBLIC_SCREENSHOT_CPP_COMMANDS?.includes('screenshotClimbId=') ===
-                                    true,
-                                supportsMirroring,
-                                sessionId,
-                                isPreview,
-                              },
-                              activeBoardForNavigation,
-                              renderBoardConfig,
-                              displayedClimb,
-                            )}
-                            open={isSheetOpen}
-                            containerSize={boardContainerSize}
-                            boardName={boardName as BoardName}
-                            boardRenderData={boardRenderData}
-                            layoutId={layoutId}
-                            sizeId={sizeId}
-                            setIds={setIds}
-                            readyBoardArt={
-                              openTarget?.climb.uuid === displayedClimb.uuid
-                                ? openTarget.options?.readyBoardArt
-                                : undefined
-                            }
-                            currentFrames={displayedClimb.frames}
-                            currentFrameOverride={playback.isAnimatable ? playback.currentFrameString : null}
-                            nextFrames={nextPeekFrames}
-                            prevFrames={prevPeekFrames}
-                            prefetchFrames={upcomingPrefetchFrames}
-                            mirrored={isMirrored}
-                            canSwipeNext={canPressNext}
-                            canSwipePrevious={navigationState.canPrevious}
-                            onSwipeNext={handleNextPress}
-                            onSwipePrevious={handlePrev}
-                            onResetZoomReady={handleResetZoomReady}
-                            enabled={!isTickBarActive}
-                            scrollRef={scrollGestureRef}
-                            pager={swipePager}
-                            centerPage={swipeCenterPage}
-                            dismissRef={dismissGestureRef}
-                          />
-                        ) : (
-                          <BoardRenderUnavailable
-                            boardName={boardName}
-                            layoutId={layoutId}
-                            sizeId={sizeId}
-                            setIds={setIds}
-                            climbUuid={displayedClimb.uuid}
-                            climbName={displayedClimb.name}
-                          />
-                        )}
-                        {/* A timed block's rest and "Workout done" (#6291), for the
+                        <View style={styles.boardSection} onLayout={handleBoardContainerLayout}>
+                          {boardRenderData ? (
+                            <DeferredBoard
+                              capturePaintedTestID={screenshotPaintedClimbTestId(
+                                process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1',
+                                activeBoardForNavigation,
+                                renderBoardConfig,
+                                displayedClimb,
+                                isMirrored,
+                              )}
+                              captureLocalMirrorTestID={screenshotLocalMirrorTestId(
+                                {
+                                  captureEnabled:
+                                    process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' &&
+                                    process.env.EXPO_PUBLIC_SCREENSHOT_CPP_COMMANDS?.includes('screenshotClimbId=') ===
+                                      true,
+                                  supportsMirroring,
+                                  sessionId,
+                                  isPreview,
+                                },
+                                activeBoardForNavigation,
+                                renderBoardConfig,
+                                displayedClimb,
+                              )}
+                              open={isSheetOpen}
+                              containerSize={boardContainerSize}
+                              boardName={boardName as BoardName}
+                              boardRenderData={boardRenderData}
+                              layoutId={layoutId}
+                              sizeId={sizeId}
+                              setIds={setIds}
+                              readyBoardArt={
+                                openTarget?.climb.uuid === displayedClimb.uuid
+                                  ? openTarget.options?.readyBoardArt
+                                  : undefined
+                              }
+                              currentFrames={displayedClimb.frames}
+                              currentFrameOverride={playback.isAnimatable ? playback.currentFrameString : null}
+                              nextFrames={nextPeekFrames}
+                              prevFrames={prevPeekFrames}
+                              prefetchFrames={upcomingPrefetchFrames}
+                              mirrored={isMirrored}
+                              canSwipeNext={canPressNext}
+                              canSwipePrevious={navigationState.canPrevious}
+                              onSwipeNext={handleNextPress}
+                              onSwipePrevious={handlePrev}
+                              onResetZoomReady={handleResetZoomReady}
+                              enabled={!isTickBarActive}
+                              scrollRef={scrollGestureRef}
+                              pager={swipePager}
+                              centerPage={swipeCenterPage}
+                              dismissRef={dismissGestureRef}
+                            />
+                          ) : (
+                            <BoardRenderUnavailable
+                              boardName={boardName}
+                              layoutId={layoutId}
+                              sizeId={sizeId}
+                              setIds={setIds}
+                              climbUuid={displayedClimb.uuid}
+                              climbName={displayedClimb.name}
+                            />
+                          )}
+                          {/* A timed block's rest and "Workout done" (#6291), for the
                             climb on the wall. The rest card leaves the board live;
                             both wait while the end-of-list card or the switch-board
                             gate owns the board. */}
-                        <WorkoutRunnerOverlay
-                          sessionId={sessionId}
-                          run={workoutRun}
-                          displayedQueueItemUuid={displayedQueueItemUuid ?? null}
-                          boardName={boardName}
-                          suppressed={trackEndCardVisible || showBoardMismatch}
-                          onSeeWorkout={handleSeeWorkout}
-                        />
-                        {/* Over the board only: the header and the action bar
-                            stay live, so Previous still walks back along the list. */}
-                        {trackEndCardVisible && trackEndCard ? (
-                          <TrackEndCard
-                            model={trackEndCard}
-                            onKeepGoing={handleTrackEndKeepGoing}
-                            onDismiss={closeTrackEndCard}
+                          <WorkoutRunnerOverlay
+                            sessionId={sessionId}
+                            run={workoutRun}
+                            displayedQueueItemUuid={displayedQueueItemUuid ?? null}
+                            boardName={boardName}
+                            suppressed={trackEndCardVisible || showBoardMismatch}
+                            onSeeWorkout={handleSeeWorkout}
                           />
-                        ) : null}
+                          {/* Over the board only: the header and the action bar
+                            stay live, so Previous still walks back along the list. */}
+                          {trackEndCardVisible && trackEndCard ? (
+                            <TrackEndCard
+                              model={trackEndCard}
+                              onKeepGoing={handleTrackEndKeepGoing}
+                              onDismiss={closeTrackEndCard}
+                            />
+                          ) : null}
+                        </View>
+
+                        {controlsAbove ? null : controlsRegion}
                       </View>
 
-                      {controlsAbove ? null : controlsRegion}
-                    </View>
-
-                    {/* The pill's explainer. A sibling of the a11y-trap wrapper (so
+                      {/* The pill's explainer. A sibling of the a11y-trap wrapper (so
                         the trap can hide everything it covers) and of the swipeable
                         header (so it doesn't ride the swipe translate), overlaying
                         board art — zero layout cost, which is why it isn't a sheet.
@@ -2356,25 +2379,25 @@ export function PlayCore({
                         controls above the board it hangs from their bottom edge
                         instead (measured in the same wrapper), so it never covers
                         Log. */}
-                    {wallCallout !== 'none' && headerPillState ? (
-                      <WallStateCallout
-                        state={headerPillState}
-                        top={
-                          firstScreenPaddingTop +
-                          (controlsAbove ? Math.max(headerBottomY, controlsBottomY) : headerBottomY) +
-                          spacing[1]
-                        }
-                        // Offered whenever going back from a pinned preview lands
-                        // somewhere (`canLeavePreview`). The callout only opens from
-                        // On the wall and Live now (the browsing chip goes back
-                        // itself), so this covers previewing the lit climb.
-                        onBackToLive={canReturnToCommittedClimb ? handleBackToLive : undefined}
-                        onDismiss={handleCloseWallCallout}
-                      />
-                    ) : null}
-                  </View>
+                      {wallCallout !== 'none' && headerPillState ? (
+                        <WallStateCallout
+                          state={headerPillState}
+                          top={
+                            firstScreenPaddingTop +
+                            (controlsAbove ? Math.max(headerBottomY, controlsBottomY) : headerBottomY) +
+                            spacing[1]
+                          }
+                          // Offered whenever going back from a pinned preview lands
+                          // somewhere (`canLeavePreview`). The callout only opens from
+                          // On the wall and Live now (the browsing chip goes back
+                          // itself), so this covers previewing the lit climb.
+                          onBackToLive={canReturnToCommittedClimb ? handleBackToLive : undefined}
+                          onDismiss={handleCloseWallCallout}
+                        />
+                      ) : null}
+                    </View>
 
-                  {/* Below-fold deferred sections. The wrapper joins the
+                    {/* Below-fold deferred sections. The wrapper joins the
                       callout's assistive-tech trap: Android has no
                       accessibilityViewIsModal, so every ScrollView sibling of
                       the callout must hide itself while it's open or TalkBack
@@ -2383,97 +2406,99 @@ export function PlayCore({
                       fixed-height first screen, outside the callout's scrim, and
                       a tap there must not scroll the logbook behind an open
                       modal. */}
-                  {hasVisibleSections && (
-                    <View
-                      accessibilityElementsHidden={wallCallout === 'explainer'}
-                      importantForAccessibility={wallCallout === 'explainer' ? 'no-hide-descendants' : 'auto'}
-                      pointerEvents={wallCallout === 'explainer' ? 'none' : 'auto'}
-                    >
-                      {/* The frame the board paints on an animated climb, for Active
+                    {hasVisibleSections && (
+                      <View
+                        accessibilityElementsHidden={wallCallout === 'explainer'}
+                        importantForAccessibility={wallCallout === 'explainer' ? 'no-hide-descendants' : 'auto'}
+                        pointerEvents={wallCallout === 'explainer' ? 'none' : 'auto'}
+                      >
+                        {/* The frame the board paints on an animated climb, for Active
                           holds alone (and only while it is on): the sections' own
                           props stay the same between playback frames. */}
-                      <PlaybackFrameContext.Provider
-                        value={
-                          visibleSectionIds.includes('activeHolds') && playback.isAnimatable
-                            ? playback.currentFrameString
-                            : null
-                        }
-                      >
-                        <DeferredSections
-                          climb={displayedClimb}
-                          boardName={boardName as BoardName}
-                          layoutId={layoutId}
-                          sizeId={sizeId}
-                          setIds={setIds}
-                          angle={angle}
-                          enabled={isSheetOpen}
-                          contentEnabled={belowFoldContentRequested}
-                          sections={sections}
-                          order={sectionOrder}
-                          onSimilarClimbPress={handleSimilarClimbPress}
-                          onFirstSectionHeaderLayout={onSectionHeaderMeasured}
-                          onFirstSectionLayout={handleFirstSectionLayout}
-                          onFirstSectionToggle={handleFirstSectionToggle}
-                          onAddBetaVideo={isAuthenticated ? handleOpenAddBetaVideo : undefined}
-                          onOpenFullLogbook={handleOpenFullLogbook}
-                          onOpenClimberLogs={handleOpenClimberLogs}
-                          onOpenClimberProfile={handleOpenClimberProfile}
-                          onFindClimbers={handleFindClimbers}
-                        />
-                      </PlaybackFrameContext.Provider>
-                    </View>
-                  )}
-                </>
-              )}
-            </ScrollView>
-            {ownsTopInset && insets.top > 0 ? (
-              <PlayDrawerStatusBarScrim height={insets.top} scrollY={scrollYSV} />
-            ) : null}
-          </Animated.View>
-        </GestureDetector>
-      )}
+                        <PlaybackFrameContext.Provider
+                          value={
+                            visibleSectionIds.includes('activeHolds') && playback.isAnimatable
+                              ? playback.currentFrameString
+                              : null
+                          }
+                        >
+                          <DeferredSections
+                            climb={displayedClimb}
+                            boardName={boardName as BoardName}
+                            layoutId={layoutId}
+                            sizeId={sizeId}
+                            setIds={setIds}
+                            angle={angle}
+                            enabled={isSheetOpen}
+                            contentEnabled={belowFoldContentRequested}
+                            sections={sections}
+                            order={sectionOrder}
+                            onSimilarClimbPress={handleSimilarClimbPress}
+                            onFirstSectionHeaderLayout={onSectionHeaderMeasured}
+                            onFirstSectionLayout={handleFirstSectionLayout}
+                            onFirstSectionToggle={handleFirstSectionToggle}
+                            onAddBetaVideo={isAuthenticated ? handleOpenAddBetaVideo : undefined}
+                            onOpenFullLogbook={handleOpenFullLogbook}
+                            onOpenClimberLogs={handleOpenClimberLogs}
+                            onOpenClimberProfile={handleOpenClimberProfile}
+                            onFindClimbers={handleFindClimbers}
+                          />
+                        </PlaybackFrameContext.Provider>
+                      </View>
+                    )}
+                  </>
+                )}
+              </ScrollView>
+              {ownsTopInset && insets.top > 0 ? (
+                <PlayDrawerStatusBarScrim height={insets.top} scrollY={scrollYSV} />
+              ) : null}
+            </Animated.View>
+          </GestureDetector>
+        )}
 
-      <PlayCoreSheetHosts
-        displayedClimb={displayedClimb}
-        boardName={boardName}
-        layoutId={layoutId}
-        sizeId={sizeId}
-        setIds={setIds}
-        angle={angle}
-        boardConfig={boardConfig}
-        activeAngle={activeAngle}
-        climbBoardMismatch={climbBoardMismatch}
-        sectionsSettingsOpen={sectionsSettingsOpen}
-        sectionsListActiveHolds={sectionsListActiveHolds}
-        buttonsPreviewBoard={buttonsPreviewBoard}
-        addBetaVideoOpen={addBetaVideoOpen}
-        addToPlaylistOpen={addToPlaylistOpen}
-        fullLogbookClimbUuid={fullLogbookClimbUuid}
-        climberLogsOpen={climberLogsOpen}
-        reportClimbOpen={reportClimbOpen}
-        angleSelectorVisible={angleSelectorVisible}
-        isTickBarActive={isTickBarActive}
-        bleControlVisible={bleControlVisible}
-        composerCredentialScope={composerCredentialScope}
-        betaVideoTarget={betaVideoTarget}
-        playlistTarget={playlistTarget}
-        reportTarget={reportTarget}
-        tickTarget={tickTarget}
-        isMirrored={isMirrored}
-        boardseshActive={boardseshActive}
-        sessionId={sessionId}
-        onAngleChange={onAngleChange}
-        handleCloseSectionsSettings={handleCloseSectionsSettings}
-        handleCloseSubDrawer={handleCloseSubDrawer}
-        handleCloseAddBetaVideo={handleCloseAddBetaVideo}
-        handleCloseAddToPlaylist={handleCloseAddToPlaylist}
-        handleCloseFullLogbook={handleCloseFullLogbook}
-        handleCloseClimberLogs={handleCloseClimberLogs}
-        handleOpenClimberProfile={handleOpenClimberProfile}
-        handleCloseReportClimb={handleCloseReportClimb}
-        handleTickBarDismiss={handleTickBarDismiss}
-        handleCloseBleControl={handleCloseBleControl}
-      />
+        <PlayCoreSheetHosts
+          displayedClimb={displayedClimb}
+          boardName={boardName}
+          layoutId={layoutId}
+          sizeId={sizeId}
+          setIds={setIds}
+          angle={angle}
+          boardConfig={boardConfig}
+          activeAngle={activeAngle}
+          climbBoardMismatch={climbBoardMismatch}
+          sectionsSettingsOpen={sectionsSettingsOpen}
+          sectionsListActiveHolds={sectionsListActiveHolds}
+          buttonsPreviewBoard={buttonsPreviewBoard}
+          addBetaVideoOpen={addBetaVideoOpen}
+          addToPlaylistOpen={addToPlaylistOpen}
+          fullLogbookClimbUuid={fullLogbookClimbUuid}
+          climberLogsOpen={climberLogsOpen}
+          reportClimbOpen={reportClimbOpen}
+          angleSelectorVisible={angleSelectorVisible}
+          isTickBarActive={isTickBarActive}
+          bleControlVisible={bleControlVisible}
+          composerCredentialScope={composerCredentialScope}
+          betaVideoTarget={betaVideoTarget}
+          playlistTarget={playlistTarget}
+          reportTarget={reportTarget}
+          tickTarget={tickTarget}
+          isMirrored={isMirrored}
+          boardseshActive={boardseshActive}
+          sessionId={sessionId}
+          onAngleChange={onAngleChange}
+          handleCloseSectionsSettings={handleCloseSectionsSettings}
+          handleCloseSubDrawer={handleCloseSubDrawer}
+          handleCloseAddBetaVideo={handleCloseAddBetaVideo}
+          handleCloseAddToPlaylist={handleCloseAddToPlaylist}
+          handleCloseFullLogbook={handleCloseFullLogbook}
+          handleCloseClimberLogs={handleCloseClimberLogs}
+          handleOpenClimberProfile={handleOpenClimberProfile}
+          handleCloseReportClimb={handleCloseReportClimb}
+          handleTickBarDismiss={handleTickBarDismiss}
+          handleCloseBleControl={handleCloseBleControl}
+        />
+      </View>
+      {renderSidePanel ? renderSidePanel(sidePanelClimb) : null}
     </View>
   );
 }
@@ -2481,6 +2506,17 @@ export function PlayCore({
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+  },
+  rootSideBySide: {
+    flexDirection: 'row',
+  },
+  playerColumn: {
+    flex: 1,
+  },
+  // The swipe pages its neighbours a window width away; the column clips them
+  // so a sliding header never draws over the panel.
+  playerColumnSideBySide: {
+    overflow: 'hidden',
   },
   content: {
     flex: 1,

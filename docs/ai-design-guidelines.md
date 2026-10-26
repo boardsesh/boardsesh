@@ -810,8 +810,19 @@ into the player. `resolveCurrentClimbSurface` (`src/hooks/current-climb-surface.
 to "who shows the current climb": the floating JS bar, the bottom-chrome reserve, the rest pill and the
 drawer host's tap routing all read it, so the climb never shows twice. Tab content clears the
 accessory through the measured in-tab inset (`tabBarAtBottom: false`, the same path as the iPhone
-Duo's side rail). The rest of this section describes the **JS tablet shell**, which Android tablets,
-Expo web and an iPad on the Material variant still use.
+Duo's side rail).
+
+**The landscape iPad player is Music's Now Playing.** `resolvePlayerArrangement`
+(`src/components/play-drawer/play-drawer-layout.ts`) returns `sideBySide` when a native iPad window is
+wider than tall and leaves a 600 pt board column beside the 400 pt panel; everything else, iPad portrait
+and every phone included, is `stacked`, the board on top as before. Side by side, the board fits the
+column's full height with the title and the tick row under it, and `PlayerSidePanel` sits on the right:
+a segmented control for Up next (the queue sheet's own `QueueListBody`), Logbook (`LogbookSection`) and
+Beta (`BetaVideosSection`), opening on Up next, with Switch board at its foot where Music keeps AirPlay.
+The queue button then selects Up next instead of stacking the queue sheet over the player.
+
+The rest of this section describes the **JS tablet shell**, which Android tablets, Expo web and an iPad
+on the Material variant still use.
 
 A **tablet-sized surface** on the JS shell — an Android tablet, a qualifying web screen, or an iPad on
 Material — gets a multi-column shell; every phone, and a tablet-sized surface in a narrow window, falls

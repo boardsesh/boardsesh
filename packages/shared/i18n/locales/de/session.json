@@ -920,6 +920,12 @@
     "shareError": "Teilen hat nicht geklappt — versuch es nochmal",
     "favoriteError": "Deine Favoriten konnten nicht aktualisiert werden — versuch es nochmal",
     "closeAria": "Schließen",
+    "sidePanel": {
+      "upNext": "Als Nächstes",
+      "logbook": "Routenbuch",
+      "beta": "Beta",
+      "segmentsAria": "Seitenleiste"
+    },
     "actionBar": {
       "previousAria": "Vorheriger Boulder",
       "nextAria": "Nächster Boulder",

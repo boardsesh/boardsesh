@@ -7,8 +7,51 @@ import {
   computeFirstSectionScrollTarget,
   computeFitToHeightFirstScreenHeight,
   initialDrawerPreviewItem,
+  PLAYER_SIDE_PANEL_WIDTH,
+  resolvePlayerArrangement,
   shouldShowPanePlaceholder,
 } from '../play-drawer-layout';
+
+describe('resolvePlayerArrangement', () => {
+  const ipads = [
+    { name: 'iPad mini', portrait: { width: 744, height: 1133 } },
+    { name: 'iPad 11-inch', portrait: { width: 834, height: 1210 } },
+    { name: 'iPad 13-inch', portrait: { width: 1032, height: 1376 } },
+  ];
+
+  it.each(ipads)('$name puts the board beside the panel in landscape', ({ portrait }) => {
+    const landscape = { width: portrait.height, height: portrait.width };
+    expect(resolvePlayerArrangement({ ...landscape, isTablet: true })).toBe('sideBySide');
+    // The board column keeps at least 600pt beside the 400pt panel.
+    expect(landscape.width - PLAYER_SIDE_PANEL_WIDTH).toBeGreaterThanOrEqual(600);
+  });
+
+  it.each(ipads)('$name keeps the board on top in portrait', ({ portrait }) => {
+    expect(resolvePlayerArrangement({ ...portrait, isTablet: true })).toBe('stacked');
+  });
+
+  it('keeps every phone stacked, landscape and the iPhone Duo split included', () => {
+    for (const phone of [
+      { width: 402, height: 874 },
+      { width: 874, height: 402 },
+      { width: 440, height: 956 },
+      { width: 956, height: 440 },
+      // The Duo opened flat: a wide window, still a phone.
+      { width: 1338, height: 669 },
+    ]) {
+      expect(resolvePlayerArrangement({ ...phone, isTablet: false })).toBe('stacked');
+    }
+  });
+
+  it('keeps a wide but small Stage Manager window stacked', () => {
+    expect(resolvePlayerArrangement({ width: 980, height: 700, isTablet: true })).toBe('stacked');
+    expect(resolvePlayerArrangement({ width: 1000, height: 700, isTablet: true })).toBe('sideBySide');
+  });
+
+  it('stays stacked in a square window', () => {
+    expect(resolvePlayerArrangement({ width: 1032, height: 1032, isTablet: true })).toBe('stacked');
+  });
+});
 
 describe('computeFitToHeightFirstScreenHeight', () => {
   // The iPhone Duo's split pane: 669pt tall, a 21pt home-indicator inset, and the
