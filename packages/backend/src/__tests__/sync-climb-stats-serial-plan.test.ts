@@ -127,7 +127,8 @@ describe('syncClimbGrades serial-plan guard', () => {
     expect(pageStatement).toContain('FROM board_climb_grades');
     // Omitting layout/size does not omit the climb's draft rule. A published
     // climb has no audience, so no privacy table is read.
-    expect(pageStatement).toContain('bc.is_draft IS NOT TRUE OR COALESCE(bc.user_id = ');
+    expect(pageStatement).toContain("bc.is_draft IS NOT TRUE OR COALESCE(bc.board_type = 'spray', false)");
+    expect(pageStatement).toContain('OR COALESCE(bc.user_id = ');
     expect(pageStatement).not.toContain('content_privacy');
     expect(pageStatement).toContain('FROM board_climbs bc');
     expect(pageStatement).not.toMatch(/\bbc\.layout_id\s*=/);
