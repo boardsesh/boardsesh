@@ -2,12 +2,19 @@ import { execSync, spawnSync } from 'node:child_process';
 import { createConnection } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import postgres from 'postgres';
+import {
+  createWorkerDatabaseNamespace,
+  selectWorkerDatabasesForCleanup,
+  workerDatabaseCleanupPattern,
+  WORKER_DATABASE_PREFIX,
+} from './worker-db-namespace';
 
 const PG_PORT = 5433;
 const REDIS_PORT = 6380;
 const COMPOSE_FILE = fileURLToPath(new URL('../../docker-compose.test.yml', import.meta.url));
 
-const WORKER_DB_PREFIX = 'boardsesh_backend_test';
+const WORKER_DB_PREFIX = WORKER_DATABASE_PREFIX;
+const CHECKOUT_ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
 const baseConnectionString = (
   process.env.DATABASE_URL || `postgresql://postgres:postgres@localhost:${PG_PORT}/${WORKER_DB_PREFIX}`
 ).replace(/\/[^/]+$/, '/postgres');
@@ -61,16 +68,25 @@ async function ensureInfra(): Promise<void> {
   }
 }
 
-// Drop per-worker DB clones left over from a previous run so workers rebuild
+// Drop this checkout/salt's per-worker DB clones left over from a previous run so workers rebuild
 // them against the current schema. Running tests always materialise their own
 // DB via worker-db, so there is nothing else to prepare here.
 async function dropStaleWorkerDatabases(): Promise<void> {
+  const namespace = createWorkerDatabaseNamespace({
+    checkoutRoot: CHECKOUT_ROOT,
+    ci: Boolean(process.env.CI),
+    salt: process.env.BOARDSESH_TEST_DB_SALT,
+  });
   const adminClient = postgres(baseConnectionString, { max: 1, onnotice: () => {} });
   try {
-    const stale = await adminClient`
-      SELECT datname FROM pg_database WHERE datname LIKE ${WORKER_DB_PREFIX + '_w%'}
+    const stale = await adminClient<{ datname: string }[]>`
+      SELECT datname FROM pg_database WHERE datname ~ ${workerDatabaseCleanupPattern(namespace)}
     `;
-    for (const { datname } of stale) {
+    const ownedDatabaseNames = selectWorkerDatabasesForCleanup(
+      stale.map(({ datname }) => datname),
+      namespace,
+    );
+    for (const datname of ownedDatabaseNames) {
       try {
         await adminClient.unsafe(`DROP DATABASE "${datname}"`);
       } catch {

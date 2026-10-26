@@ -3,28 +3,39 @@
  *
  * When vitest runs test files in parallel, each file lands in a worker process
  * identified by VITEST_POOL_ID. Each worker gets its own throwaway database
- * (`boardsesh_backend_test_w<POOL_ID>`) that it creates blank and populates by
+ * (`boardsesh_backend_test_w<POOL_ID>_<CHECKOUT_HASH>` locally) that it creates blank and populates by
  * running schemaSQL itself — we don't use Postgres's `CREATE DATABASE ...
  * TEMPLATE` because the template can't have open connections while being copied.
  * That way a TRUNCATE in one file can't stomp on data another file is mid-way
  * through inserting.
  */
 
+import { fileURLToPath } from 'node:url';
 import postgres from 'postgres';
+import { createWorkerDatabaseName, createWorkerDatabaseNamespace, WORKER_DATABASE_PREFIX } from './worker-db-namespace';
 import { schemaSQL } from './schema-sql';
 
 const PG_PORT = 5433;
-const WORKER_DB_PREFIX = 'boardsesh_backend_test';
+const WORKER_DB_PREFIX = WORKER_DATABASE_PREFIX;
+// Module location is stable whether tests start from the repo root or packages/backend.
+const CHECKOUT_ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
 
 function getBaseConnection(): string {
   const raw = process.env.DATABASE_URL || `postgresql://postgres:postgres@localhost:${PG_PORT}/${WORKER_DB_PREFIX}`;
   return raw.replace(/\/[^/]+$/, '/postgres');
 }
 
-export function getWorkerDatabaseName(): string {
-  const id = process.env.VITEST_POOL_ID || '0';
+export function getWorkerDatabaseName(prefix = WORKER_DB_PREFIX): string {
   // fileParallelism=false still spawns one worker with id=0; we still get our own DB copy.
-  return `${WORKER_DB_PREFIX}_w${id}`;
+  return createWorkerDatabaseName({
+    poolId: process.env.VITEST_POOL_ID || '0',
+    prefix,
+    namespace: createWorkerDatabaseNamespace({
+      checkoutRoot: CHECKOUT_ROOT,
+      ci: Boolean(process.env.CI),
+      salt: process.env.BOARDSESH_TEST_DB_SALT,
+    }),
+  });
 }
 
 function buildWorkerDatabaseUrl(): string {
