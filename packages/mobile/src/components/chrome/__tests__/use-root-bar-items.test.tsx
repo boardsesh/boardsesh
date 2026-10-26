@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, renderHook, waitFor } from '@testing-library/react';
+import { render, renderHook } from '@testing-library/react';
 import type { ReactElement } from 'react';
 
 type Board = { angle: number; isAngleAdjustable: boolean };
@@ -12,8 +12,6 @@ type ToolbarLightbulb = {
 };
 
 const ctrl = vi.hoisted(() => ({
-  avatarUrl: null as string | null,
-  loadRoundAvatar: vi.fn<(uri: string, pixelSize: number) => Promise<{ uri: string; pixelSize: number } | null>>(),
   openUserDrawer: vi.fn(),
   unread: 0,
   board: null as Board | null,
@@ -29,9 +27,6 @@ const ctrl = vi.hoisted(() => ({
   onRail: false,
 }));
 
-vi.mock('react-native', () => ({
-  PixelRatio: { get: () => 3 },
-}));
 vi.mock('expo-router', () => ({ useRouter: () => ctrl.router }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -41,31 +36,24 @@ vi.mock('react-i18next', () => ({
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ brandColors: { primary: '#8B5CF6', warning: '#FF9500' } }),
 }));
-vi.mock('../../../lib/graphql/hooks', () => ({
-  useProfile: () => ({ data: ctrl.avatarUrl ? { avatarUrl: ctrl.avatarUrl } : { avatarUrl: null } }),
-}));
 vi.mock('../../../lib/graphql/hooks/use-notifications', () => ({ useUnreadNotificationCount: () => ctrl.unread }));
 vi.mock('../../../lib/graphql/use-active-board', () => ({ useActiveBoard: () => ({ data: ctrl.board }) }));
 vi.mock('../../../lib/boards/active-board-label', () => ({
   formatActiveBoardLabel: (board: Board | null) => (board ? 'Kilter • M • 40°' : null),
 }));
 vi.mock('../../../lib/haptics', () => ({ hapticLight: ctrl.haptic }));
-vi.mock('../../Avatar', () => ({ sizedAvatarUri: (uri: string, size: number) => `${uri}?size=${size}` }));
 vi.mock('../../user-drawer/UserDrawerProvider', () => ({
   useUserDrawer: () => ({ openUserDrawer: ctrl.openUserDrawer }),
 }));
 vi.mock('../BoardAnglePicker', () => ({
   BoardAnglePicker: ({ children }: { children: (open: () => void) => ReactElement }) => children(ctrl.openAngle),
 }));
-vi.mock('../../../lib/round-avatar/round-avatar', () => ({
-  loadRoundAvatar: (uri: string, pixelSize: number) => ctrl.loadRoundAvatar(uri, pixelSize),
-}));
 vi.mock('../../../hooks/use-vertical-tab-bar', () => ({ useVerticalTabBar: () => ctrl.onRail }));
 vi.mock('../LightbulbToolbarAction', () => ({ useToolbarLightbulb: () => ctrl.lightbulb }));
 
 import {
+  useAccountRailItem,
   useAngleBarItem,
-  useAvatarBarItem,
   useBoardSwitcherBarItem,
   useClimbListBarItems,
   useLightbulbBarItem,
@@ -75,8 +63,6 @@ import {
 const adjustable: Board = { angle: 40, isAngleAdjustable: true };
 
 beforeEach(() => {
-  ctrl.avatarUrl = null;
-  ctrl.loadRoundAvatar.mockReset();
   ctrl.openUserDrawer.mockReset();
   ctrl.unread = 0;
   ctrl.board = null;
@@ -87,57 +73,13 @@ beforeEach(() => {
   ctrl.onRail = false;
 });
 
-describe('useAvatarBarItem', () => {
-  const ACCOUNT_SYMBOL = { type: 'sfSymbol', name: 'person.crop.circle.badge.ellipsis' };
-  const ROUND = { uri: 'data:image/png;base64,round', pixelSize: 84 };
-
-  it('shows the account symbol, titled like the drawer button, with no photo', () => {
-    const { result } = renderHook(() => useAvatarBarItem());
-    expect(result.current).toMatchObject({ label: 'ariaLabels.userMenu', icon: ACCOUNT_SYMBOL });
-    expect(ctrl.loadRoundAvatar).not.toHaveBeenCalled();
-  });
-
-  it('switches to the round photo once it is ready, untinted and drawn at 28pt', async () => {
-    ctrl.avatarUrl = 'https://x/static/avatars/me.jpg';
-    ctrl.loadRoundAvatar.mockResolvedValue(ROUND);
-    const { result } = renderHook(() => useAvatarBarItem());
-    // The symbol holds the slot until the round photo is made.
-    expect(result.current.icon).toEqual(ACCOUNT_SYMBOL);
-    expect(ctrl.loadRoundAvatar).toHaveBeenCalledWith('https://x/static/avatars/me.jpg?size=28', 84);
-    await waitFor(() =>
-      expect(result.current.icon).toEqual({
-        type: 'image',
-        source: { uri: ROUND.uri, width: 28, height: 28, scale: 3 },
-        tinted: false,
-      }),
-    );
-  });
-
-  it('keeps the symbol when the round photo cannot be made', async () => {
-    ctrl.avatarUrl = 'https://x/static/avatars/gone.jpg';
-    ctrl.loadRoundAvatar.mockResolvedValue(null);
-    const { result } = renderHook(() => useAvatarBarItem());
-    await waitFor(() => expect(ctrl.loadRoundAvatar).toHaveBeenCalled());
-    expect(result.current.icon).toEqual(ACCOUNT_SYMBOL);
-  });
-
-  it('stays the account symbol on the iPhone Duo rail, where a photo keeps it off the rail', () => {
-    ctrl.onRail = true;
-    ctrl.avatarUrl = 'https://x/static/avatars/me.jpg';
-    ctrl.loadRoundAvatar.mockResolvedValue(ROUND);
-    const { result } = renderHook(() => useAvatarBarItem());
-    expect(result.current.icon).toEqual(ACCOUNT_SYMBOL);
-    expect(ctrl.loadRoundAvatar).not.toHaveBeenCalled();
-  });
-
-  it('loads nothing while the chrome draws the glass avatar instead', () => {
-    ctrl.avatarUrl = 'https://x/static/avatars/me.jpg';
-    renderHook(() => useAvatarBarItem({ enabled: false }));
-    expect(ctrl.loadRoundAvatar).not.toHaveBeenCalled();
-  });
-
-  it('opens the user drawer', () => {
-    const { result } = renderHook(() => useAvatarBarItem());
+describe('useAccountRailItem', () => {
+  it('is the account symbol titled like the drawer button, and opens the drawer', () => {
+    const { result } = renderHook(() => useAccountRailItem());
+    expect(result.current).toMatchObject({
+      label: 'ariaLabels.userMenu',
+      icon: { type: 'sfSymbol', name: 'person.crop.circle.badge.ellipsis' },
+    });
     result.current.onPress();
     expect(ctrl.openUserDrawer).toHaveBeenCalledTimes(1);
   });
@@ -256,6 +198,23 @@ describe('useClimbListBarItems', () => {
     if (viewOptions?.type === 'action') viewOptions.onPress();
     if (switchBoard?.type === 'action') switchBoard.onPress();
     expect(ctrl.router.push.mock.calls).toEqual([['/(tabs)/climbs/settings/climb-list'], ['/boards']]);
+  });
+
+  it('puts the angle at the top of the menu when the bar has no room for it', () => {
+    const openAngle = vi.fn();
+    const { result } = renderHook(() =>
+      useClimbListBarItems({
+        onOpenHistory: vi.fn(),
+        badge: false,
+        angleRow: { label: 'Board angle, 40°', onPress: openAngle },
+      }),
+    );
+    const menu = result.current.find((item) => item.type === 'menu');
+    if (menu?.type !== 'menu') throw new Error('expected the list menu');
+    const [angle] = menu.menu.items;
+    expect(angle).toMatchObject({ label: 'Board angle, 40°', icon: { type: 'sfSymbol', name: 'angle' } });
+    if (angle?.type === 'action') angle.onPress();
+    expect(openAngle).toHaveBeenCalledTimes(1);
   });
 
   it('keeps only the menu without a board', () => {

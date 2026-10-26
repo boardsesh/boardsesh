@@ -27,7 +27,7 @@ import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import { useGlassCapability } from '../../hooks/use-glass-capability';
 import { useNativeRootBarItems } from '../../hooks/use-native-root-bar-items';
 import { barItemsFactory, symbolBarItem, type RootBarItem } from '../chrome/root-bar-items';
-import { useAvatarBarItem } from '../chrome/use-root-bar-items';
+import { useAccountRailItem, useBarItemsOnRail } from '../chrome/use-root-bar-items';
 
 type RecordTopChromeProps = {
   /** The native or Material header owns the contextual session title. */
@@ -68,14 +68,15 @@ export function RecordTopChrome({
     [onHeightChange],
   );
 
-  // On the iOS 26 iPhone header the avatar and invite are native bar items, so
-  // iPhone Duo can put them on its side rail.
+  // On iPhone Duo's side rail the account and invite are native bar items. A
+  // horizontal bar keeps the glass avatar (round photo, initials) and invite.
   const nativeBarItems = useNativeRootBarItems();
-  const avatarItem = useAvatarBarItem({ enabled: nativeBarItems });
+  const onRail = useBarItemsOnRail();
+  const accountItem = useAccountRailItem();
   const inviteLabel = t('mobile.session.invite');
   const leftItems = useMemo(() => {
-    if (!nativeBarItems) return undefined;
-    const items: RootBarItem[] = [avatarItem];
+    if (!nativeBarItems || !onRail) return undefined;
+    const items: RootBarItem[] = [accountItem];
     if (onShare) {
       items.push(
         symbolBarItem({
@@ -87,7 +88,7 @@ export function RecordTopChrome({
       );
     }
     return barItemsFactory(items);
-  }, [nativeBarItems, avatarItem, inviteLabel, onShare]);
+  }, [nativeBarItems, onRail, accountItem, inviteLabel, onShare]);
 
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
   const exitAction = onEndSession ? (

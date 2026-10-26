@@ -2,7 +2,8 @@
 vi.mock('../../../hooks/use-native-root-bar-items', () => ({ useNativeRootBarItems: () => ctrl.nativeBarItems }));
 // The live item hooks have their own suite; these stand-ins keep the wiring visible.
 vi.mock('../../chrome/use-root-bar-items', () => ({
-  useAvatarBarItem: () => ({ type: 'button', label: 'avatar', onPress: () => undefined }),
+  useAccountRailItem: () => ({ type: 'button', label: 'account', onPress: () => undefined }),
+  useBarItemsOnRail: () => ctrl.onRail,
   useNotificationsBarItem: (onOpen: () => void) => ({ type: 'button', label: 'notifications', onPress: onOpen }),
 }));
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -14,10 +15,12 @@ const ctrl = vi.hoisted(() => ({
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
   nativeHeader: false,
   nativeBarItems: false,
+  onRail: false,
   nativeHeaderProps: undefined as
     | {
         title?: string;
         leftActionsStandalone?: boolean;
+        leftActions?: ReactNode;
         children?: ReactNode;
         leftItems?: () => BarItemStandIn[];
         rightItems?: () => BarItemStandIn[];
@@ -147,6 +150,7 @@ describe('HomeTopChrome', () => {
     ctrl.variant = 'liquidGlass';
     ctrl.nativeHeader = false;
     ctrl.nativeBarItems = false;
+    ctrl.onRail = false;
     ctrl.nativeHeaderProps = undefined;
     routerMock.push.mockClear();
   });
@@ -185,24 +189,35 @@ describe('HomeTopChrome', () => {
       expect(ctrl.nativeHeaderProps?.children).toBeUndefined();
     });
 
-    it('hands UIKit the avatar, bell and find-climbers as native items on the iOS 26 iPhone', () => {
+    it('hands UIKit the bell and find-climbers as native items, and keeps the glass avatar, on the iOS 26 iPhone', () => {
       ctrl.nativeHeader = true;
       ctrl.nativeBarItems = true;
       const onOpenSearch = vi.fn();
-      const { container } = render(<HomeTopChrome {...makeProps({ onOpenSearch })} />);
+      render(<HomeTopChrome {...makeProps({ onOpenSearch })} />);
 
-      const leftItems = ctrl.nativeHeaderProps?.leftItems?.() ?? [];
+      // A horizontal bar keeps the glass avatar: round photo, initials without one.
+      expect(ctrl.nativeHeaderProps?.leftItems).toBeUndefined();
+      expect(ctrl.nativeHeaderProps?.leftActionsStandalone).toBe(true);
+      const leading = render(<>{ctrl.nativeHeaderProps?.leftActions}</>).container;
+      expect(leading.querySelector('[data-avatar-variant="glass"]')).not.toBeNull();
+
       const rightItems = ctrl.nativeHeaderProps?.rightItems?.() ?? [];
-      expect(leftItems.map((item) => item.label)).toEqual(['avatar']);
       expect(rightItems.map((item) => item.label)).toEqual(['notifications', 'searchLabel']);
       expect(rightItems[1]?.icon).toEqual({ type: 'sfSymbol', name: 'person.badge.plus' });
-      // No custom glass capsules alongside them.
-      expect(container.querySelector('[data-island]')).toBeNull();
 
       rightItems[0]?.onPress?.();
       expect(routerMock.push).toHaveBeenCalledWith('/(tabs)/home/notifications');
       rightItems[1]?.onPress?.();
       expect(onOpenSearch).toHaveBeenCalledTimes(1);
+    });
+
+    it('leads with the native account item on the iPhone Duo rail', () => {
+      ctrl.nativeHeader = true;
+      ctrl.nativeBarItems = true;
+      ctrl.onRail = true;
+      render(<HomeTopChrome {...makeProps()} />);
+      const leftItems = ctrl.nativeHeaderProps?.leftItems?.() ?? [];
+      expect(leftItems.map((item) => item.label)).toEqual(['account']);
     });
 
     it('renders the floating glass chrome (blur + avatar/search islands + scope title)', () => {

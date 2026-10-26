@@ -6,7 +6,7 @@
 // read.
 //
 // Pure builders, no hooks: `use-root-bar-items.tsx` feeds them live data.
-import type { ColorValue, ImageURISource } from 'react-native';
+import type { ColorValue } from 'react-native';
 import type { NativeStackHeaderItem, NativeStackHeaderItemButton, NativeStackHeaderItemMenu } from 'expo-router';
 import type { HeaderBarButtonItemVisibilityPriority } from 'react-native-screens';
 /** An SF Symbol name, as the native item takes it. */
@@ -28,20 +28,14 @@ export type RootBarItem = RootBarButtonItem | RootBarMenuItem;
 export type RootBarItemsFactory = () => NativeStackHeaderItem[];
 
 /**
- * The account item's symbol: on the Duo rail always, elsewhere until the round
- * photo is ready or when there is none. Not `person.crop.circle`, which is the
- * Profile tab's icon just below it on the rail; the ellipsis badge reads as
+ * The account item's symbol on the Duo rail. Not `person.crop.circle`, which is
+ * the Profile tab's icon just below it on the rail; the ellipsis badge reads as
  * "your menu", which is what the item opens.
  */
-export const AVATAR_FALLBACK_SYMBOL: BarSymbol = 'person.crop.circle.badge.ellipsis';
+export const ACCOUNT_RAIL_SYMBOL: BarSymbol = 'person.crop.circle.badge.ellipsis';
 
-/**
- * The avatar photo's size in the bar, in points. UIKit draws a bar item's image
- * at its own size, so this is the face's size: the glass slot around it is
- * UIKit's. 28pt keeps the face inside the 38pt native slot with the same 5pt
- * margin the custom capsule had.
- */
-export const AVATAR_BAR_PHOTO_SIZE = 28;
+/** The board-history item's identifier; the showcase recorder's anchor finds it by this. */
+export const BOARD_HISTORY_ITEM_ID = 'root.boardHistory';
 
 /** Badge text for an unread count: the number, capped like the tab badges. */
 export function unreadBadgeValue(count: number): string | null {
@@ -101,43 +95,16 @@ export function symbolBarItem({
   };
 }
 
-type AvatarBarItemOptions = {
-  label: string;
-  onPress: () => void;
-  /**
-   * The loaded photo, sized for the bar. `null` while there is none, it has not
-   * loaded yet, or it failed: the item then shows `AVATAR_FALLBACK_SYMBOL`.
-   */
-  photo: ImageURISource | null;
-};
-
 /**
- * The account avatar: the person's photo in its own colours (`tinted: false`,
- * so UIKit does not flatten it to the bar tint), else the outline symbol.
+ * The account item for the Duo rail: a symbol, never the photo. In a horizontal
+ * bar the chrome keeps the glass avatar (round photo, initials without one) as
+ * a custom view instead. A bar item's image is not clipped (a photo shows
+ * square), react-native-screens loads any image source after it makes the item
+ * (a blank item on every header change, and UIKit then keeps it off the rail),
+ * and a bar item cannot draw initials.
  */
-export function avatarBarItem({ label, onPress, photo }: AvatarBarItemOptions): RootBarButtonItem {
-  return {
-    type: 'button',
-    label,
-    icon: photo ? { type: 'image', source: photo, tinted: false } : { type: 'sfSymbol', name: AVATAR_FALLBACK_SYMBOL },
-    variant: 'plain',
-    onPress,
-    identifier: 'root.account',
-    accessibilityLabel: label,
-  };
-}
-
-/**
- * The bar-sized source for a round photo `pixelSize` pixels square: drawn at
- * `AVATAR_BAR_PHOTO_SIZE` points, whatever the screen scale it was made for.
- */
-export function avatarPhotoSource(uri: string, pixelSize: number): ImageURISource {
-  return {
-    uri,
-    width: AVATAR_BAR_PHOTO_SIZE,
-    height: AVATAR_BAR_PHOTO_SIZE,
-    scale: pixelSize / AVATAR_BAR_PHOTO_SIZE,
-  };
+export function accountRailItem({ label, onPress }: { label: string; onPress: () => void }): RootBarButtonItem {
+  return symbolBarItem({ label, symbol: ACCOUNT_RAIL_SYMBOL, onPress, identifier: 'root.account' });
 }
 
 type MenuRow = { label: string; symbol: BarSymbol; onPress: () => void };

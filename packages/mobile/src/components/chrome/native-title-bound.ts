@@ -48,22 +48,34 @@ const NATIVE_BAR_ITEM_STEP = 57;
  * digits plus UIKit's padding. The allowance rounds that up.
  */
 const NATIVE_TITLE_ITEM_ALLOWANCE = 12;
+/** A custom glass island's slot, plus UIKit's padding inside its glass on each side. */
+const CUSTOM_SLOT_WIDTH = 38;
+const CUSTOM_ISLAND_PADDING = 2 * spacing[1];
 
-/** What one side of the bar holds: every item, and how many of them are title-only. */
-export type NativeBarSide = { items: number; titleItems?: number };
+/**
+ * What one side of the bar holds. `nativeItems` counts every item in the native
+ * group, a custom view that shares its glass included (the glass bulb);
+ * `titleItems` how many of those are title-only; `customSlots` the slots of a
+ * custom glass island on its own (the avatar and +, in a horizontal bar).
+ */
+export type NativeBarSide = { nativeItems?: number; titleItems?: number; customSlots?: number };
 
-/** The width one side's native items take, edge to edge of their glass. */
-export function nativeBarSideWidth({ items, titleItems = 0 }: NativeBarSide): number {
-  if (items <= 0) return 0;
-  return NATIVE_BAR_ITEM_WIDTH + (items - 1) * NATIVE_BAR_ITEM_STEP + titleItems * NATIVE_TITLE_ITEM_ALLOWANCE;
+/** The width one side's items take, edge to edge of their glass. */
+export function nativeBarSideWidth({ nativeItems = 0, titleItems = 0, customSlots = 0 }: NativeBarSide): number {
+  const native =
+    nativeItems > 0
+      ? NATIVE_BAR_ITEM_WIDTH + (nativeItems - 1) * NATIVE_BAR_ITEM_STEP + titleItems * NATIVE_TITLE_ITEM_ALLOWANCE
+      : 0;
+  const custom = customSlots > 0 ? customSlots * CUSTOM_SLOT_WIDTH + CUSTOM_ISLAND_PADDING : 0;
+  return native + custom + (native > 0 && custom > 0 ? TITLE_VIEW_SPACING : 0);
 }
 
 /**
- * `nativeTitleMaxWidth` for native bar items. Each side gives up its safe-area
- * inset, the bar margin, its items' measured width and UIKit's title-view
- * clearance; UIKit draws the items' glass, so no group padding is added. On an
- * iPhone 17 Pro (402pt) with two items a side this leaves 144pt, so the
- * on-the-wall capsule ellipsizes instead of running under history.
+ * `nativeTitleMaxWidth` for a bar of native items. Each side gives up its
+ * safe-area inset, the bar margin, its items' width and UIKit's title-view
+ * clearance. Climbs on an iPhone 17 Pro (402pt), with the glass avatar and +
+ * leading and history and ⋯ trailing, leaves 161pt; an adjustable angle beside
+ * history takes it down to 92pt.
  */
 export function nativeItemsTitleMaxWidth(
   frameWidth: number,
@@ -77,4 +89,21 @@ export function nativeItemsTitleMaxWidth(
     2 * TOOLBAR_SIDE_MARGIN -
     2 * TITLE_VIEW_SPACING;
   return Math.min(CENTER_CONTENT_MAX_WIDTH, Math.max(0, freeWidth));
+}
+
+/**
+ * The narrowest the on-the-wall capsule may get: its compact form (no avatar,
+ * `HeaderStatusCapsule` drops it under 100pt) with about six letters of the
+ * climb and the grade. Below this it would read as a grade with no name, so the
+ * chrome moves the angle into the list menu to make room.
+ */
+export const CENTER_CONTENT_MIN_WIDTH = 96;
+
+/**
+ * Where a trailing native item sits, `positionFromEnd` items in from the
+ * trailing edge (0 is the last one): its glyph's 44pt box, from the frame's
+ * left. For the showcase recorder, which cannot measure a UIKit item.
+ */
+export function nativeTrailingItemLeft(frameWidth: number, insetRight: number, positionFromEnd: number): number {
+  return frameWidth - insetRight - TOOLBAR_SIDE_MARGIN - NATIVE_BAR_ITEM_WIDTH - positionFromEnd * NATIVE_BAR_ITEM_STEP;
 }

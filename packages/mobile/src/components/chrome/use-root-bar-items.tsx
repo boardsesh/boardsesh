@@ -2,38 +2,24 @@
 // hook mirrors one custom glass action: the same label, tap, haptic and badge,
 // built as a UIKit item that iPhone Duo can move onto its side rail. Mounted
 // only where `useNativeRootBarItems()` holds.
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactElement,
-  type RefObject,
-} from 'react';
-import { PixelRatio, type ImageURISource } from 'react-native';
+import { useCallback, useLayoutEffect, useMemo, useRef, type ReactElement, type RefObject } from 'react';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../providers/theme-provider';
-import { useProfile } from '../../lib/graphql/hooks';
 import { useUnreadNotificationCount } from '../../lib/graphql/hooks/use-notifications';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { formatActiveBoardLabel } from '../../lib/boards/active-board-label';
 import { canAdjustBoardAngle } from '../../lib/boards/can-adjust-board-angle';
 import { hapticLight } from '../../lib/haptics';
 import { useVerticalTabBar } from '../../hooks/use-vertical-tab-bar';
-import { loadRoundAvatar, type RoundAvatarImage } from '../../lib/round-avatar/round-avatar';
-import { sizedAvatarUri } from '../Avatar';
 import { iconMap } from '../icon-map';
 import { useUserDrawer } from '../user-drawer/UserDrawerProvider';
 import { BoardAnglePicker } from './BoardAnglePicker';
 import { useToolbarLightbulb } from './LightbulbToolbarAction';
 import {
-  AVATAR_BAR_PHOTO_SIZE,
+  BOARD_HISTORY_ITEM_ID,
   ONBOARDING_BADGE_VALUE,
-  avatarBarItem,
-  avatarPhotoSource,
+  accountRailItem,
   menuBarItem,
   symbolBarItem,
   titleBarItem,
@@ -52,54 +38,14 @@ export function useBarItemsOnRail(): boolean {
 }
 
 /**
- * The account avatar. Opens the user drawer, like the glass avatar.
- *
- * In a horizontal bar it shows the person's photo cut round (`loadRoundAvatar`:
- * UIKit does not clip a bar item's image, so a plain photo shows square). Until
- * that is ready, and when there is no photo or it fails, the account symbol.
- *
- * On the rail it is always the account symbol. With a photo, the closed iPhone
- * Duo kept the avatar in a horizontal bar above the content while every symbol
- * item beside it moved to the rail. react-native-screens loads any image source,
- * a data URI included, after it creates the item, so UIKit first sees an item
- * with a title and no icon, which Apple never presents vertically; the photo
- * is also an original-colour image rather than a template. Neither is fixable
- * from JavaScript, and a symbol is there when the item is made.
- *
- * `enabled: false` for a chrome that calls this unconditionally but draws the
- * glass avatar instead: nothing is loaded for an item nobody shows.
+ * The account item for the Duo rail (`accountRailItem`): opens the user drawer,
+ * like the glass avatar the horizontal bar keeps.
  */
-export function useAvatarBarItem({ enabled = true }: { enabled?: boolean } = {}): RootBarButtonItem {
+export function useAccountRailItem(): RootBarButtonItem {
   const { t } = useTranslation('common');
   const { openUserDrawer } = useUserDrawer();
-  const onRail = useVerticalTabBar();
-  const avatarUrl = useProfile().data?.avatarUrl ?? null;
-  const photo = useRoundBarPhoto(enabled && !onRail ? avatarUrl : null);
   const label = t('ariaLabels.userMenu');
-  return useMemo(() => avatarBarItem({ label, onPress: openUserDrawer, photo }), [label, openUserDrawer, photo]);
-}
-
-function useRoundBarPhoto(avatarUrl: string | null): ImageURISource | null {
-  const pixelSize = Math.round(AVATAR_BAR_PHOTO_SIZE * PixelRatio.get());
-  const sizedUri = avatarUrl ? sizedAvatarUri(avatarUrl, AVATAR_BAR_PHOTO_SIZE) : null;
-  const [roundPhoto, setRoundPhoto] = useState<{ sourceUri: string; image: RoundAvatarImage } | null>(null);
-  useEffect(() => {
-    if (!sizedUri) return;
-    let cancelled = false;
-    void loadRoundAvatar(sizedUri, pixelSize).then((image) => {
-      if (!cancelled && image) setRoundPhoto({ sourceUri: sizedUri, image });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [sizedUri, pixelSize]);
-  return useMemo(
-    () =>
-      sizedUri != null && roundPhoto?.sourceUri === sizedUri
-        ? avatarPhotoSource(roundPhoto.image.uri, roundPhoto.image.pixelSize)
-        : null,
-    [sizedUri, roundPhoto],
-  );
+  return useMemo(() => accountRailItem({ label, onPress: openUserDrawer }), [label, openUserDrawer]);
 }
 
 /** The bell, with the unread count as its badge. High priority: badged status stays visible longest. */
@@ -235,13 +181,17 @@ export function useLightbulbBarItem(): RootBarButtonItem | null {
 /**
  * The Climbs list's trailing actions after the angle: board history (with the
  * onboarding cue) and the list's ⋯ menu (View options, Switch board).
+ * `angleRow` puts the angle at the top of that menu, for when the bar has no
+ * room for the angle item beside the on-the-wall capsule.
  */
 export function useClimbListBarItems({
   onOpenHistory,
   badge,
+  angleRow = null,
 }: {
   onOpenHistory: () => void;
   badge: boolean;
+  angleRow?: { label: string; onPress: () => void } | null;
 }): RootBarItem[] {
   const { t } = useTranslation('climbs');
   const { t: tSession } = useTranslation('session');
@@ -269,7 +219,7 @@ export function useClimbListBarItems({
           badge: badge ? ONBOARDING_BADGE_VALUE : null,
           badgeColor,
           visibilityPriority: 'standard',
-          identifier: 'root.boardHistory',
+          identifier: BOARD_HISTORY_ITEM_ID,
         }),
       );
     }
@@ -279,6 +229,7 @@ export function useClimbListBarItems({
         symbol: iconMap.more.ios,
         identifier: 'root.climbListMenu',
         rows: [
+          ...(angleRow ? [{ label: angleRow.label, symbol: iconMap.angle.ios, onPress: angleRow.onPress }] : []),
           { label: t('mobile.listOptions.viewOptions'), symbol: iconMap['view.options'].ios, onPress: openViewOptions },
           {
             label: tSession('mobile.boardPresence.switchBoard'),
@@ -289,5 +240,5 @@ export function useClimbListBarItems({
       }),
     );
     return items;
-  }, [boardLabel, t, tSession, handleOpenHistory, badge, badgeColor, openViewOptions, openBoards]);
+  }, [boardLabel, t, tSession, handleOpenHistory, badge, badgeColor, openViewOptions, openBoards, angleRow]);
 }

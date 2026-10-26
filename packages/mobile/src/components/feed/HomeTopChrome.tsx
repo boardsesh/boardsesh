@@ -38,7 +38,7 @@ import { NotificationsToolbarAction } from '../chrome/NotificationsToolbarAction
 import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction';
 import { NativeRootHeader } from '../chrome/NativeRootHeader';
 import { barItemsFactory, symbolBarItem } from '../chrome/root-bar-items';
-import { useAvatarBarItem, useNotificationsBarItem } from '../chrome/use-root-bar-items';
+import { useAccountRailItem, useBarItemsOnRail, useNotificationsBarItem } from '../chrome/use-root-bar-items';
 import { FeedScopeTitle } from './FeedScopeTitle';
 
 const ROW_GUTTER = spacing[4];
@@ -193,8 +193,9 @@ function HomeTopChromeGlass({
 
 /**
  * Home's header as native bar items, so iPhone Duo can put them on its side
- * rail: the avatar leading; the bell (badged, kept visible longest) and
- * find-climbers trailing, in the glass capsules' order.
+ * rail: the bell (badged, kept visible longest) and find-climbers trailing, in
+ * the glass capsules' order. The account leads as a native item on the rail
+ * only; a horizontal bar keeps the glass avatar (round photo, initials).
  */
 function HomeNativeBarHeader({
   onOpenNotifications,
@@ -207,9 +208,10 @@ function HomeNativeBarHeader({
   searchAccessibilityLabel: string;
   onHeightChange: (height: number) => void;
 }) {
-  const avatarItem = useAvatarBarItem();
+  const onRail = useBarItemsOnRail();
+  const accountItem = useAccountRailItem();
   const notificationsItem = useNotificationsBarItem(onOpenNotifications);
-  const leftItems = useMemo(() => barItemsFactory([avatarItem]), [avatarItem]);
+  const leftItems = useMemo(() => (onRail ? barItemsFactory([accountItem]) : undefined), [onRail, accountItem]);
   const rightItems = useMemo(
     () =>
       barItemsFactory([
@@ -223,7 +225,19 @@ function HomeNativeBarHeader({
       ]),
     [notificationsItem, searchAccessibilityLabel, onOpenSearch],
   );
-  return <NativeRootHeader onHeightChange={onHeightChange} leftItems={leftItems} rightItems={rightItems} />;
+  return (
+    <NativeRootHeader
+      onHeightChange={onHeightChange}
+      leftItems={leftItems}
+      leftActionsStandalone
+      leftActions={
+        <GlassActionToolbar actionCount={1}>
+          <UserAvatarToolbarAction variant="glass" />
+        </GlassActionToolbar>
+      }
+      rightItems={rightItems}
+    />
+  );
 }
 
 function HomeTopChromeMaterial({

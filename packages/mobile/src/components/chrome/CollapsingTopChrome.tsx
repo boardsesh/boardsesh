@@ -1,7 +1,7 @@
 import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import type { ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
 import { type ReactElement, type ReactNode, isValidElement, useCallback, useMemo } from 'react';
-import { type LayoutChangeEvent, StyleSheet, View } from 'react-native';
+import { type LayoutChangeEvent, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Appbar } from 'react-native-paper';
 import { useTheme } from '../../providers/theme-provider';
@@ -33,10 +33,12 @@ import { NativeRootHeader } from './NativeRootHeader';
 import { NativeHeaderActionContext } from './native-header-action-context';
 import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction';
 import { iconMap } from '../icon-map';
-import { barItemsFactory, symbolBarItem, type RootBarItem } from './root-bar-items';
+import { BOARD_HISTORY_ITEM_ID, barItemsFactory, symbolBarItem, type RootBarItem } from './root-bar-items';
+import { CENTER_CONTENT_MIN_WIDTH, nativeItemsTitleMaxWidth, type NativeBarSide } from './native-title-bound';
+import { NativeTrailingItemShowcaseAnchor } from './NativeTrailingItemShowcaseAnchor';
 import {
+  useAccountRailItem,
   useAngleBarItem,
-  useAvatarBarItem,
   useBarItemsOnRail,
   useBoardSwitcherBarItem,
   useClimbListBarItems,
@@ -208,6 +210,7 @@ export function CollapsingTopChrome({
         boardBadge={boardBadge}
         climbListBarActions={climbListBarActions}
         hideLight={hideLight}
+        anchorBoardButton={anchorBoardButton}
         leadingAction={leadingAction}
         trailingAction={trailingAction}
         centerContent={centerContent}
@@ -243,20 +246,14 @@ export function CollapsingTopChrome({
   const rightToolbarWidth = rightActionCount * TOP_ACTION_SIZE;
 
   const leftActions = (
-    <GlassActionToolbar actionCount={leftActionCount}>
-      <UserAvatarToolbarAction variant="glass" />
-      {leadingAction}
-      {canCreate ? (
-        <GlassToolbarAction onPress={onCreate} accessibilityLabel={createAccessibilityLabel}>
-          <Icon
-            maxFontSizeMultiplier={1}
-            name="plus"
-            size={toolbarGlyphSize(24, nativeHeader ? NATIVE_ACTION_SIZE : TOP_ACTION_SIZE)}
-            color={systemColors.label}
-          />
-        </GlassToolbarAction>
-      ) : null}
-    </GlassActionToolbar>
+    <LeadingIsland
+      actionCount={leftActionCount}
+      leadingAction={leadingAction}
+      canCreate={canCreate}
+      onCreate={onCreate}
+      createAccessibilityLabel={createAccessibilityLabel}
+      nativeHeader={nativeHeader}
+    />
   );
 
   const boardControlContent = boardControls ? (
@@ -344,6 +341,45 @@ export function CollapsingTopChrome({
   );
 }
 
+/**
+ * The left island: the glass avatar (round photo, initials without one), an
+ * optional leading action, then +. The floating chrome, the native header's
+ * custom leading group and the native-item header's horizontal bar share it.
+ */
+function LeadingIsland({
+  actionCount,
+  leadingAction,
+  canCreate,
+  onCreate,
+  createAccessibilityLabel,
+  nativeHeader,
+}: {
+  actionCount: number;
+  leadingAction?: ReactNode;
+  canCreate: boolean;
+  onCreate: () => void;
+  createAccessibilityLabel: string;
+  nativeHeader: boolean;
+}) {
+  const { systemColors } = useTheme();
+  return (
+    <GlassActionToolbar actionCount={actionCount}>
+      <UserAvatarToolbarAction variant="glass" />
+      {leadingAction}
+      {canCreate ? (
+        <GlassToolbarAction onPress={onCreate} accessibilityLabel={createAccessibilityLabel}>
+          <Icon
+            maxFontSizeMultiplier={1}
+            name="plus"
+            size={toolbarGlyphSize(24, nativeHeader ? NATIVE_ACTION_SIZE : TOP_ACTION_SIZE)}
+            color={systemColors.label}
+          />
+        </GlassToolbarAction>
+      ) : null}
+    </GlassActionToolbar>
+  );
+}
+
 type CollapsingNativeBarHeaderProps = Pick<
   CollapsingTopChromeProps,
   | 'canCreate'
@@ -359,19 +395,26 @@ type CollapsingNativeBarHeaderProps = Pick<
   | 'scrollEdge'
   | 'onHeightChange'
   | 'children'
-> & { boardBadge: boolean; hideLight: boolean };
+> & { boardBadge: boolean; hideLight: boolean; anchorBoardButton: boolean };
 
 /**
- * The glass islands as native bar items, so iPhone Duo can put them on its side
- * rail. Same order and grouping as the islands: avatar and + leading; angle,
- * then the board switcher (Discover) or history and ⋯ (Climbs), then the bulb,
- * trailing. + keeps the highest visibility priority: it is the screen's
- * defining action. The `centerContent` capsule and the controls under the bar
- * stay custom views.
+ * The islands as native bar items, so iPhone Duo can put them on its side rail.
+ * Same order as the islands: avatar and + leading; angle, then the board
+ * switcher (Discover) or history and ⋯ (Climbs), then the bulb, trailing. +
+ * keeps the highest visibility priority: it is the screen's defining action.
  *
- * The bulb is a native item only on the rail. In a horizontal bar it stays the
- * glass bulb as a custom view, which keeps its long press to Board controls; a
- * custom view lands outside the native items, and the bulb is last anyway.
+ * What stays a custom view, and where:
+ * - In a horizontal bar the left island stays the glass avatar and + (round
+ *   photo, initials without one). On the rail they are native items, the
+ *   account as `person.crop.circle.badge.ellipsis` (`accountRailItem`).
+ * - In a horizontal bar the bulb stays the glass bulb, which keeps its long
+ *   press to Board controls: react-native-screens has no native item with both
+ *   a tap and a long-press menu. On the rail it is a native item.
+ * - The `centerContent` capsule and the controls under the bar, always.
+ *
+ * The capsule's room comes from the items' measured widths. Where it would drop
+ * under `CENTER_CONTENT_MIN_WIDTH`, the angle moves to the top of the list's ⋯
+ * menu for as long as the capsule shows.
  */
 function CollapsingNativeBarHeader({
   canCreate,
@@ -382,6 +425,7 @@ function CollapsingNativeBarHeader({
   boardBadge,
   climbListBarActions,
   hideLight,
+  anchorBoardButton,
   leadingAction,
   trailingAction,
   centerContent,
@@ -390,20 +434,49 @@ function CollapsingNativeBarHeader({
   onHeightChange,
   children,
 }: CollapsingNativeBarHeaderProps) {
-  const avatarItem = useAvatarBarItem();
+  const onRail = useBarItemsOnRail();
+  const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
+  const accountItem = useAccountRailItem();
   const { item: angleItem, picker: anglePicker } = useAngleBarItem();
   const boardSwitcherItem = useBoardSwitcherBarItem({
     onPress: onOpenBoardSwitcher,
     accessibilityHint: boardPillAccessibilityHint,
     badge: boardBadge,
   });
+  const lightbulbItem = useLightbulbBarItem();
+  const showsLight = lightbulbItem != null && !hideLight;
+  const hasLeadingAction = isValidElement(leadingAction);
+  const hasTrailingAction = isValidElement(trailingAction);
+
+  // In a horizontal bar: does the angle leave the capsule enough room?
+  const leadingSide: NativeBarSide = { customSlots: 1 + (hasLeadingAction ? 1 : 0) + (canCreate ? 1 : 0) };
+  const trailingBesideAngle =
+    (climbListBarActions ? 2 : boardSwitcherItem ? 1 : 0) + (showsLight ? 1 : 0) + (hasTrailingAction ? 1 : 0);
+  const capsuleRoomWithAngle = nativeItemsTitleMaxWidth(windowWidth, insets, {
+    leading: leadingSide,
+    trailing: { nativeItems: trailingBesideAngle + 1, titleItems: 1 },
+  });
+  const angleInMenu =
+    !onRail &&
+    centerContent != null &&
+    angleItem != null &&
+    climbListBarActions != null &&
+    capsuleRoomWithAngle < CENTER_CONTENT_MIN_WIDTH;
+  const barAngle = angleInMenu ? null : angleItem;
+  const angleRow = useMemo(
+    () =>
+      angleInMenu && angleItem
+        ? { label: angleItem.accessibilityLabel ?? angleItem.label, onPress: angleItem.onPress }
+        : null,
+    [angleInMenu, angleItem],
+  );
   const climbListItems = useClimbListBarItems({
     onOpenHistory: climbListBarActions?.onOpenHistory ?? onOpenBoardSwitcher,
     badge: climbListBarActions?.badge ?? false,
+    angleRow,
   });
-  const lightbulbItem = useLightbulbBarItem();
-  const onRail = useBarItemsOnRail();
-  const showsLight = lightbulbItem != null && !hideLight;
+
   const glassLightbulb = useMemo(
     () => (
       <NativeHeaderActionContext.Provider value={true}>
@@ -415,45 +488,41 @@ function CollapsingNativeBarHeader({
     [],
   );
 
-  const leftItemList = useMemo(() => {
-    const items: RootBarItem[] = [avatarItem];
-    if (canCreate) {
-      items.push(
-        symbolBarItem({
-          label: createAccessibilityLabel,
-          symbol: iconMap.plus.ios,
-          onPress: onCreate,
-          visibilityPriority: 'high',
-          identifier: 'root.create',
-        }),
-      );
-    }
-    return items;
-  }, [avatarItem, canCreate, createAccessibilityLabel, onCreate]);
+  const createItem = useMemo(
+    () =>
+      symbolBarItem({
+        label: createAccessibilityLabel,
+        symbol: iconMap.plus.ios,
+        onPress: onCreate,
+        visibilityPriority: 'high',
+        identifier: 'root.create',
+      }),
+    [createAccessibilityLabel, onCreate],
+  );
+  // On the rail only: a horizontal bar keeps the glass left island.
+  const leftItems = useMemo(() => {
+    if (!onRail) return undefined;
+    const factory = barItemsFactory(canCreate ? [accountItem, createItem] : [accountItem]);
+    // No caller passes a leading action today; kept as a custom view so nothing
+    // is dropped. A custom view stays in the bar on iPhone Duo.
+    if (!isValidElement(leadingAction)) return factory;
+    return () => [...(factory?.() ?? []), { type: 'custom' as const, element: leadingAction }];
+  }, [onRail, canCreate, accountItem, createItem, leadingAction]);
 
   const rightItemList = useMemo(() => {
     const items: RootBarItem[] = [];
-    if (angleItem) items.push(angleItem);
+    if (barAngle) items.push(barAngle);
     if (climbListBarActions) items.push(...climbListItems);
     else if (boardSwitcherItem) items.push(boardSwitcherItem);
     if (lightbulbItem && showsLight && onRail) items.push(lightbulbItem);
     return items;
-  }, [angleItem, climbListBarActions, climbListItems, boardSwitcherItem, lightbulbItem, showsLight, onRail]);
+  }, [barAngle, climbListBarActions, climbListItems, boardSwitcherItem, lightbulbItem, showsLight, onRail]);
   const rightCustomElements = useMemo(() => {
     const elements: ReactElement[] = [];
     if (showsLight && !onRail) elements.push(glassLightbulb);
     if (isValidElement(trailingAction)) elements.push(trailingAction);
     return elements;
   }, [showsLight, onRail, glassLightbulb, trailingAction]);
-
-  // No caller passes leading/trailing actions today; kept as custom views so
-  // nothing is dropped. A custom view stays in the bar on iPhone Duo and lands
-  // outside the native items.
-  const leftItems = useMemo(() => {
-    const factory = barItemsFactory(leftItemList);
-    if (!isValidElement(leadingAction)) return factory;
-    return () => [...(factory?.() ?? []), { type: 'custom' as const, element: leadingAction }];
-  }, [leftItemList, leadingAction]);
   const rightItems = useMemo(() => {
     const factory = barItemsFactory(rightItemList);
     if (rightCustomElements.length === 0) return factory;
@@ -463,27 +532,52 @@ function CollapsingNativeBarHeader({
     ];
   }, [rightItemList, rightCustomElements]);
 
+  // On the rail every item has left the bar, so the capsule has the whole bar.
+  const centerItemSides = onRail
+    ? { leading: {}, trailing: {} }
+    : {
+        leading: leadingSide,
+        trailing: {
+          nativeItems: rightItemList.length + rightCustomElements.length,
+          titleItems: barAngle ? 1 : 0,
+        },
+      };
+  // History is second from the end on Climbs (⋯ is last), where the showcase
+  // recorder's callout points. Not on the rail: the video is shot on iPhones.
+  const historyAnchored =
+    anchorBoardButton &&
+    !onRail &&
+    climbListBarActions != null &&
+    rightItemList.some((item) => item.identifier === BOARD_HISTORY_ITEM_ID);
+
   return (
     <>
       <NativeRootHeader
         leftItems={leftItems}
+        leftActions={
+          onRail ? undefined : (
+            <LeadingIsland
+              actionCount={leadingSide.customSlots ?? 1}
+              leadingAction={leadingAction}
+              canCreate={canCreate}
+              onCreate={onCreate}
+              createAccessibilityLabel={createAccessibilityLabel}
+              nativeHeader
+            />
+          )
+        }
+        leftActionsStandalone={!canCreate && !hasLeadingAction}
         rightItems={rightItems}
         centerContent={centerContent}
         titleHidden={titleHidden}
-        centerItemSides={{
-          leading: { items: leftItemList.length },
-          trailing: {
-            items: rightItemList.length + rightCustomElements.length,
-            // The angle is the one title-only item ("40°").
-            titleItems: angleItem ? 1 : 0,
-          },
-        }}
+        centerItemSides={centerItemSides}
         scrollEdge={scrollEdge}
         onHeightChange={onHeightChange}
       >
         {children}
       </NativeRootHeader>
       {anglePicker}
+      {historyAnchored ? <NativeTrailingItemShowcaseAnchor name="board-history-button" positionFromEnd={1} /> : null}
     </>
   );
 }

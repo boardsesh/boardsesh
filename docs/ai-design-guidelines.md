@@ -504,17 +504,23 @@ native items onto its side rail; a custom view never moves there, and neither do
 title but no icon. So every root action carries an SF Symbol and a title. UIKit shows the symbol in
 the bar and on the rail, and the title in the overflow menu and to VoiceOver.
 
-- In a horizontal bar the avatar shows the person's photo cut round (`src/lib/round-avatar/`: UIKit
-  does not clip a bar item's image, so the photo is squared by expo-image-manipulator, masked to a
-  circle in TypeScript and passed as a PNG data URI). Until it is ready, and on the Duo rail always,
-  it is `person.crop.circle.badge.ellipsis`, not the Profile tab's `person.crop.circle`. With a photo
-  the closed Duo kept the avatar out of the rail: react-native-screens loads any image source after
-  it creates the item, and the photo is an original-colour image, not a template.
-- The centre capsule's width comes from the native items' measured widths (`nativeItemsTitleMaxWidth`:
-  44pt for one item, 57pt for each one after it), so it ellipsizes before the trailing group.
+- In a horizontal bar the avatar stays the glass `UserAvatarToolbarAction` (round photo, initials
+  without one); on Climbs and Discover the glass island keeps + beside it. On the Duo rail the account
+  is a native item with `person.crop.circle.badge.ellipsis`, not the Profile tab's
+  `person.crop.circle`. A bar item's image is not clipped (a photo shows square), react-native-screens
+  loads any image source after it makes the item (a blank item on every header change, and the closed
+  Duo then kept it off the rail), and a bar item cannot draw initials.
 - The bulb is a native item only on the rail. In a horizontal bar it stays the glass bulb as a custom
   view, because react-native-screens has no item with both a tap and a long-press menu, and the
   long press opens Board controls.
+- The centre capsule's width comes from the items' measured widths (`nativeItemsTitleMaxWidth`: a
+  native item 44pt and 57pt for each one after it, a glass island 38pt a slot plus 8pt), so it
+  ellipsizes before the trailing group. Climbs gets 134pt at 375pt, 161pt at 402pt and 199pt at
+  440pt. An adjustable angle beside history would leave 65, 92 and 130pt; under 96pt
+  (`CENTER_CONTENT_MIN_WIDTH`, about six letters and the grade) the angle moves to the top of the ⋯
+  menu while the capsule shows, so 375pt and 402pt keep 134pt and 161pt.
+- Board history is a native item, so the showcase recorder's `board-history-button` anchor is a box
+  drawn from the bar's geometry in screenshot mode (`NativeTrailingItemShowcaseAnchor`).
 - + (create) and the notifications bell keep `visibilityPriority: 'high'`, so they stay on screen
   longest. Board history is `'standard'`; the rest take the default.
 - The angle ("40°") stays a title-only item. An icon would hide the number on every iPhone, so it

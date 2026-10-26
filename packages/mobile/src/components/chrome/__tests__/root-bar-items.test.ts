@@ -1,9 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
-  AVATAR_BAR_PHOTO_SIZE,
-  AVATAR_FALLBACK_SYMBOL,
-  avatarBarItem,
-  avatarPhotoSource,
+  ACCOUNT_RAIL_SYMBOL,
+  accountRailItem,
   barItemsFactory,
   menuBarItem,
   symbolBarItem,
@@ -57,34 +55,23 @@ describe('symbolBarItem', () => {
   });
 });
 
-describe('avatarBarItem', () => {
-  const photo = avatarPhotoSource('data:image/png;base64,round', 84);
-
-  it('shows the photo in its own colours when one has loaded', () => {
-    const item = avatarBarItem({ label: 'User menu', onPress: vi.fn(), photo });
-    expect(item.icon).toEqual({ type: 'image', source: photo, tinted: false });
-    expect(item.label).toBe('User menu');
-    expect(item.accessibilityLabel).toBe('User menu');
-  });
-
-  it('falls back to the outline symbol without a photo', () => {
-    const item = avatarBarItem({ label: 'User menu', onPress: vi.fn(), photo: null });
-    expect(item.icon).toEqual({ type: 'sfSymbol', name: AVATAR_FALLBACK_SYMBOL });
+describe('accountRailItem', () => {
+  it('is a symbol with the drawer title, never a photo, and not the Profile tab icon', () => {
+    const item = accountRailItem({ label: 'User menu', onPress: vi.fn() });
+    expect(item).toMatchObject({
+      type: 'button',
+      label: 'User menu',
+      accessibilityLabel: 'User menu',
+      icon: { type: 'sfSymbol', name: 'person.crop.circle.badge.ellipsis' },
+      identifier: 'root.account',
+    });
+    expect(ACCOUNT_RAIL_SYMBOL).not.toBe('person.crop.circle');
   });
 
   it('opens what it is given', () => {
     const onPress = vi.fn();
-    avatarBarItem({ label: 'User menu', onPress, photo: null }).onPress();
+    accountRailItem({ label: 'User menu', onPress }).onPress();
     expect(onPress).toHaveBeenCalledTimes(1);
-  });
-
-  it('draws the round photo at 28pt whatever scale it was made for', () => {
-    expect(photo).toEqual({
-      uri: 'data:image/png;base64,round',
-      width: AVATAR_BAR_PHOTO_SIZE,
-      height: AVATAR_BAR_PHOTO_SIZE,
-      scale: 3,
-    });
   });
 });
 

@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 vi.mock('../../../hooks/use-native-root-bar-items', () => ({ useNativeRootBarItems: () => controls.nativeBarItems }));
-vi.mock('../../chrome/use-root-bar-items', () => import('../../../../test/use-root-bar-items-stub'));
+vi.mock('../../chrome/use-root-bar-items', () => ({
+  useAccountRailItem: () => ({ type: 'button', label: 'account', onPress: () => undefined }),
+  useBarItemsOnRail: () => controls.onRail,
+}));
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -20,6 +23,7 @@ const controls = vi.hoisted(() => ({
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
   nativeHeader: false,
   nativeBarItems: false,
+  onRail: false,
   glassCapability: true,
   nativeProps: null as HeaderProps | null,
   fallbackProps: null as HeaderProps | null,
@@ -173,6 +177,7 @@ describe('RecordTopChrome', () => {
     controls.variant = 'liquidGlass';
     controls.nativeHeader = false;
     controls.nativeBarItems = false;
+    controls.onRail = false;
     controls.glassCapability = true;
     controls.nativeProps = null;
     controls.fallbackProps = null;
@@ -203,14 +208,15 @@ describe('RecordTopChrome', () => {
     },
   );
 
-  it('puts the avatar and invite in native leading items on the iOS 26 iPhone', () => {
+  it('puts the account and invite in native leading items on the iPhone Duo rail', () => {
     controls.nativeHeader = true;
     controls.nativeBarItems = true;
+    controls.onRail = true;
     const onShare = vi.fn();
     render(<RecordTopChrome {...makeProps({ onShare })} />);
     const leftItems = controls.nativeProps?.leftItems?.({ tintColor: '#000', canGoBack: false }) ?? [];
     expect(leftItems.map((item) => (item.type === 'button' ? item.label : item.type))).toEqual([
-      'avatar',
+      'account',
       'mobile.session.invite',
     ]);
     const invite = leftItems[1];
@@ -220,8 +226,12 @@ describe('RecordTopChrome', () => {
     expect(onShare).toHaveBeenCalledOnce();
   });
 
-  it('keeps the glass leading capsule where native items are off', () => {
+  it.each([
+    ['native items are off', false],
+    ['the bar is horizontal', true],
+  ])('keeps the glass avatar and invite where %s', (_case, nativeBarItems) => {
     controls.nativeHeader = true;
+    controls.nativeBarItems = nativeBarItems;
     render(<RecordTopChrome {...makeProps({ onShare: vi.fn() })} />);
     expect(controls.nativeProps?.leftItems).toBeUndefined();
   });

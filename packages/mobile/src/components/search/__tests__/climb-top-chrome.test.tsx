@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 vi.mock('../../../hooks/use-native-root-bar-items', () => ({ useNativeRootBarItems: () => false }));
 vi.mock('../../chrome/use-root-bar-items', () => import('../../../../test/use-root-bar-items-stub'));
+// Screenshot mode only; this suite covers the glass capsules.
+vi.mock('../../chrome/NativeTrailingItemShowcaseAnchor', () => ({ NativeTrailingItemShowcaseAnchor: () => null }));
 vi.mock('../../SheetTopBar', () => ({ SheetTopBar: () => null }));
 vi.mock('../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: () => nativeChrome.enabled }));
 vi.mock('../../../hooks/use-floating-header-controls', () => ({
