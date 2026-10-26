@@ -18,11 +18,11 @@ export type VerticalTabBarInputs = {
   /** The root (window) safe-area insets. The status bar moves to the side with the bars. */
   windowInsets: { left: number; right: number };
   /**
-   * The larger side inset measured inside the focused native tab, which includes
-   * the tab bar itself (`native-tab-content-inset-store`). `null` before the
-   * first measurement.
+   * Whether the larger side inset measured inside the focused native tab, which
+   * includes the tab bar itself (`native-tab-content-inset-store`), reached
+   * `VERTICAL_TAB_BAR_MIN_SIDE_INSET`. False before the first measurement.
    */
-  tabContentSideInset: number | null;
+  tabContentSideInsetReached: boolean;
 };
 
 /**
@@ -46,10 +46,10 @@ export function resolveVerticalTabBar({
   windowWidth,
   windowHeight,
   windowInsets,
-  tabContentSideInset,
+  tabContentSideInsetReached,
 }: VerticalTabBarInputs): boolean {
   if (platformOS !== 'ios' || isPad) return false;
   if (windowWidth > windowHeight) return true;
-  const sideInset = Math.max(windowInsets.left, windowInsets.right, tabContentSideInset ?? 0);
-  return sideInset >= VERTICAL_TAB_BAR_MIN_SIDE_INSET;
+  if (tabContentSideInsetReached) return true;
+  return Math.max(windowInsets.left, windowInsets.right) >= VERTICAL_TAB_BAR_MIN_SIDE_INSET;
 }

@@ -7,7 +7,7 @@ import {
   resetNativeTabContentInsetForTests,
   useNativeTabContentInsetBottom,
   useNativeTabContentInsetPublishCount,
-  useNativeTabContentInsetSide,
+  useNativeTabContentInsetSideAtLeast,
 } from '../native-tab-content-inset-store';
 
 describe('native-tab-content-inset-store', () => {
@@ -49,22 +49,38 @@ describe('native-tab-content-inset-store', () => {
     expect(result.current).toBe(0);
   });
 
-  it('carries the side inset apart from the bottom one', () => {
+  it('carries the side inset apart from the bottom one, as a threshold answer', () => {
     // INFERRED from a simulator log: a tab on iPhone Duo's inner display in
     // landscape read { right: 84, bottom: 34 } with the side rail.
-    const { result: side } = renderHook(() => useNativeTabContentInsetSide());
+    const { result: reached } = renderHook(() => useNativeTabContentInsetSideAtLeast(20));
     const { result: bottom } = renderHook(() => useNativeTabContentInsetBottom());
     const { result: publishCount } = renderHook(() => useNativeTabContentInsetPublishCount());
-    expect(side.current).toBeNull();
+    expect(reached.current).toBe(false);
     act(() => publishNativeTabContentInsetSide(84));
-    expect(side.current).toBe(84);
+    expect(reached.current).toBe(true);
     expect(bottom.current).toBeNull();
     // The diagnostic counter tracks bottom publishes only.
     expect(publishCount.current).toBe(0);
-    act(() => publishNativeTabContentInsetSide(84.3));
-    expect(side.current).toBe(84);
     act(() => resetNativeTabContentInsetForTests());
-    expect(side.current).toBeNull();
+    expect(reached.current).toBe(false);
+  });
+
+  it("re-renders a threshold reader only when the answer flips, not on an iPhone's first 0", () => {
+    let renders = 0;
+    const { result } = renderHook(() => {
+      renders += 1;
+      return useNativeTabContentInsetSideAtLeast(20);
+    });
+    const rendersBefore = renders;
+    act(() => publishNativeTabContentInsetSide(0));
+    act(() => publishNativeTabContentInsetSide(12));
+    expect(result.current).toBe(false);
+    expect(renders).toBe(rendersBefore);
+    act(() => publishNativeTabContentInsetSide(84));
+    expect(result.current).toBe(true);
+    expect(renders).toBe(rendersBefore + 1);
+    act(() => publishNativeTabContentInsetSide(90));
+    expect(renders).toBe(rendersBefore + 1);
   });
 
   it('resets to the unmeasured state for tests', () => {

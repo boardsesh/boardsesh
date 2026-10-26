@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { act, render } from '@testing-library/react';
 import { Children, createElement, isValidElement, useEffect, type ReactNode } from 'react';
 
 const accessoryMounts = vi.hoisted(() => ({ count: 0 }));
@@ -43,9 +43,11 @@ const cfg = vi.hoisted(() => ({
   // Focused route segments — drives the wall-tab redundancy rule (the ambient
   // column is hidden while the "On the Wall" tab is the focused destination).
   segments: ['(tabs)', 'home'] as readonly string[],
-  // iOS draws the native tab bar as a vertical rail (iPhone Duo closed, or its
-  // inner display in landscape). `resolveVerticalTabBar` has its own tests.
-  verticalTabBar: false,
+  // The window height, and the root (window) side insets the real
+  // `useVerticalTabBar` reads. The in-tab side inset comes from the real
+  // native-tab-content-inset-store, which the vertical-rail tests publish to.
+  windowHeight: 1366,
+  windowInsets: { left: 0, right: 0 },
   materialScreens: [] as Array<{ name: string; options?: { lazy?: boolean; href?: string | null } }>,
 }));
 
@@ -65,7 +67,7 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
   // The regular-width shell sizes the play pane + decides the wall surface off the
   // window width.
-  useWindowDimensions: () => ({ width: cfg.windowWidth, height: 1366 }),
+  useWindowDimensions: () => ({ width: cfg.windowWidth, height: cfg.windowHeight }),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -171,8 +173,9 @@ vi.mock('../../../src/hooks/use-bottom-accessory', async () => {
   };
 });
 
-vi.mock('../../../src/hooks/use-vertical-tab-bar', () => ({
-  useVerticalTabBar: () => cfg.verticalTabBar,
+// The real `useVerticalTabBar` runs; only the root safe-area read is stubbed.
+vi.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => ({ top: 0, bottom: 0, ...cfg.windowInsets }),
 }));
 
 // Stub the Material-variant path so it doesn't pull in native modules.
@@ -320,6 +323,10 @@ vi.mock('expo-router/unstable-native-tabs', () => {
 });
 
 import TabLayout, { unstable_settings } from '../_layout';
+import {
+  publishNativeTabContentInsetSide,
+  resetNativeTabContentInsetForTests,
+} from '../../../src/lib/native-tab-content-inset-store';
 import { TAB_BADGE_CONNECTED, TAB_BADGE_LIVE } from '../../../src/components/navigation/tab-badge';
 
 describe('TabLayout', () => {
@@ -341,7 +348,9 @@ describe('TabLayout', () => {
     cfg.activeBoard = null;
     cfg.wallDeviceClass = 'panel-capable';
     cfg.segments = ['(tabs)', 'home'];
-    cfg.verticalTabBar = false;
+    cfg.windowHeight = 1366;
+    cfg.windowInsets = { left: 0, right: 0 };
+    resetNativeTabContentInsetForTests();
     cfg.materialScreens = [];
     keepAwake.activate.mockClear();
     keepAwake.deactivate.mockClear();
@@ -858,12 +867,52 @@ describe('TabLayout', () => {
     expect(container.querySelector('[data-tabs="true"]')?.getAttribute('data-minimize-behavior')).toBe('onScrollDown');
   });
 
-  it('never minimizes a vertical tab rail', () => {
-    // Minimized, the Duo's rail kept only Climbs and hid the other four tabs.
-    cfg.verticalTabBar = true;
-    const { container } = render(<TabLayout />);
+  describe('a vertical tab rail (iPhone Duo)', () => {
+    const minimizeBehavior = (container: HTMLElement) =>
+      container.querySelector('[data-tabs="true"]')?.getAttribute('data-minimize-behavior');
 
-    expect(container.querySelector('[data-tabs="true"]')?.getAttribute('data-minimize-behavior')).toBe('never');
+    it('keeps minimizing on a portrait iPhone once a tab reports no side inset', () => {
+      // An iPhone 17 Pro: the probe's first publish is a 0 side inset.
+      cfg.windowWidth = 402;
+      cfg.windowHeight = 874;
+      act(() => publishNativeTabContentInsetSide(0));
+      const { container } = render(<TabLayout />);
+
+      expect(minimizeBehavior(container)).toBe('onScrollDown');
+    });
+
+    it('stops minimizing when a tab measures the rail, and resumes when it goes', () => {
+      // The Duo's outer display, 466 x 678pt. Minimized, its rail kept only Climbs
+      // and hid the other four tabs.
+      cfg.windowWidth = 466;
+      cfg.windowHeight = 678;
+      const { container } = render(<TabLayout />);
+      expect(minimizeBehavior(container)).toBe('onScrollDown');
+
+      // INFERRED: the rail plus the side status bar, 84pt as on the inner display.
+      act(() => publishNativeTabContentInsetSide(84));
+      expect(minimizeBehavior(container)).toBe('never');
+
+      act(() => publishNativeTabContentInsetSide(0));
+      expect(minimizeBehavior(container)).toBe('onScrollDown');
+    });
+
+    it('reads the rail from the window inset before any tab measures', () => {
+      cfg.windowWidth = 466;
+      cfg.windowHeight = 678;
+      cfg.windowInsets = { left: 0, right: 62 };
+      const { container } = render(<TabLayout />);
+
+      expect(minimizeBehavior(container)).toBe('never');
+    });
+
+    it("never minimizes on the Duo's inner display in landscape", () => {
+      cfg.windowWidth = 951;
+      cfg.windowHeight = 669;
+      const { container } = render(<TabLayout />);
+
+      expect(minimizeBehavior(container)).toBe('never');
+    });
   });
 
   it('uses adaptive neutral colors for native Liquid Glass tab icons and labels', () => {

@@ -617,9 +617,13 @@ describe('NativeAccessoryClimbRow', () => {
       },
     );
 
-    it("keeps one slot on a narrow open platter, as on iPhone Duo's outer display", () => {
-      // 290pt: the platter beside the Duo's side tab rail in the closed shots.
-      layout.width = 290;
+    it.each([
+      // The platter beside iPhone Duo's side tab rail in the closed shots.
+      ['290pt (iPhone Duo outer display)', 290],
+      // INFERRED: a 320pt-wide Display Zoom iPhone (SE, 13 mini) less the platter margins.
+      ['288pt (320pt Display Zoom iPhone)', 288],
+    ] as const)('keeps one slot on a narrow open platter: %s', (_label, platterWidth) => {
+      layout.width = platterWidth;
       const free = renderRow('regular');
       expect(free.container.querySelector('[data-board-control]')?.getAttribute('data-placement')).toBe('regular');
       expect(free.container.querySelector('[data-tick="true"]')).toBeNull();

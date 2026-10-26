@@ -9,14 +9,17 @@ export const ACCESSORY_MIN_NAME_WIDTH = 160;
  * Whether the open platter row shows both the lightbulb and the tick, or one slot
  * as the collapsed platter does.
  *
- * The platter is as wide as UIKit makes it, and that varies: about 370pt on an
- * iPhone 17 Pro, 290pt on iPhone Duo's outer display, where it sits beside the
- * side tab rail. There both controls left the name 134pt, so a typical name never
- * stopped scrolling. Below the floor the row keeps one control and gives the name
- * the other's 44pt.
+ * A rule about any narrow platter, not about one device. The platter is as wide
+ * as UIKit makes it: about 370pt on an iPhone 17 Pro and 343pt on a 375pt-wide
+ * iPhone, both of which keep both controls. Two platters fall below the floor:
+ * iPhone Duo's outer display (290pt, beside the side tab rail) and a 320pt-wide
+ * iPhone under Display Zoom (SE, 13 mini; about 288pt). With both controls the
+ * name had about 134pt there, so a typical name never stopped scrolling; the row
+ * keeps one control instead and gives the name the other's 44pt. The one slot
+ * follows the collapsed platter: the bulb while the board is free, else the tick.
  *
  * `rowWidth` is the row's measured width, `null` before its first layout: the row
- * starts with both controls, which every iPhone platter fits. `widthBesideName` is
+ * starts with both controls, as most platters fit them. `widthBesideName` is
  * everything else the row holds with both controls showing: its insets, the
  * thumbnail and its gap, and the two control slots.
  */

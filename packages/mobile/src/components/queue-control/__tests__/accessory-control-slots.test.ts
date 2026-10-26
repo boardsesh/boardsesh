@@ -22,6 +22,12 @@ describe('accessoryFitsBothControls', () => {
     expect(accessoryFitsBothControls(290, WIDTH_BESIDE_NAME)).toBe(false);
   });
 
+  it('keeps one control on a 320pt Display Zoom iPhone (~288pt platter), the same narrow-platter case', () => {
+    // INFERRED: a 320pt-wide window (SE or 13 mini under Display Zoom) less the
+    // platter's side margins. Not a Duo rule: any platter this narrow drops one.
+    expect(accessoryFitsBothControls(288, WIDTH_BESIDE_NAME)).toBe(false);
+  });
+
   it('switches exactly at the name floor', () => {
     expect(accessoryFitsBothControls(WIDTH_BESIDE_NAME + ACCESSORY_MIN_NAME_WIDTH, WIDTH_BESIDE_NAME)).toBe(true);
     expect(accessoryFitsBothControls(WIDTH_BESIDE_NAME + ACCESSORY_MIN_NAME_WIDTH - 1, WIDTH_BESIDE_NAME)).toBe(false);

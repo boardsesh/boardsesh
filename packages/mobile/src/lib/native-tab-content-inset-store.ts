@@ -31,7 +31,7 @@ import { useSyncExternalStore } from 'react';
 let measuredBottom: number | null = null;
 // The larger of the left and right insets from the same measurement. A tab bar
 // that iOS draws as a vertical rail (iPhone Duo) shows up here, never in the
-// bottom inset alone; `useVerticalTabBar` reads it.
+// bottom inset alone; `useVerticalTabBar` reads it through a boolean snapshot.
 let measuredSide: number | null = null;
 const listeners = new Set<() => void>();
 // Total accepted publishes since launch, surfaced by BottomChromeDebugOverlay so
@@ -63,10 +63,6 @@ function getSnapshot(): number | null {
   return measuredBottom;
 }
 
-function getSideSnapshot(): number | null {
-  return measuredSide;
-}
-
 function getPublishCountSnapshot(): number {
   return publishCount;
 }
@@ -89,9 +85,14 @@ export function useNativeTabContentInsetBottom(): number | null {
   return useSyncExternalStore(subscribe, getSnapshot);
 }
 
-/** The latest in-tab side inset (larger of left and right), or null before the first publish. */
-export function useNativeTabContentInsetSide(): number | null {
-  return useSyncExternalStore(subscribe, getSideSnapshot);
+/**
+ * Whether the latest in-tab side inset (larger of left and right) is at least
+ * `minimum`; false before the first publish. A boolean snapshot, so a consumer
+ * re-renders only when the answer flips, not on every publish (an iPhone's first
+ * null → 0 among them).
+ */
+export function useNativeTabContentInsetSideAtLeast(minimum: number): boolean {
+  return useSyncExternalStore(subscribe, () => measuredSide !== null && measuredSide >= minimum);
 }
 
 /** Diagnostic-only: accepted-publish counter for BottomChromeDebugOverlay. */

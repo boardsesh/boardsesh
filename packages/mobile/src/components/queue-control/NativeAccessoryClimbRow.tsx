@@ -164,8 +164,8 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
   const rowHeight = isInline ? glassSize.inline : glassSize.standard;
   const thumbnailSize = boardConfig === null ? null : ACCESSORY_PLATTER_THUMBNAIL_SIZE;
   // The width UIKit gave the platter. A narrow open platter (iPhone Duo's outer
-  // display, beside the side tab rail) keeps one control, like the collapsed one,
-  // so the name has room to read (see accessoryFitsBothControls).
+  // display beside its side rail, a 320pt Display Zoom iPhone) keeps one control,
+  // like the collapsed one, so the name has room to read (accessoryFitsBothControls).
   const [rowWidth, setRowWidth] = useState<number | null>(null);
   const handleRowLayout = useCallback((event: LayoutChangeEvent) => {
     const measuredWidth = Math.round(event.nativeEvent.layout.width);
