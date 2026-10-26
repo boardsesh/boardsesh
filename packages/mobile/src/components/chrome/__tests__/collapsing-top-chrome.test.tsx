@@ -13,6 +13,7 @@ vi.mock('../use-root-bar-items', () => {
     useBoardSwitcherBarItem: () => (ctrl.board ? stub('board') : null),
     useClimbListBarItems: () => [stub('history'), stub('list-menu')],
     useLightbulbBarItem: () => (ctrl.bluetooth ? stub('lightbulb') : null),
+    useBarItemsOnRail: () => ctrl.onRail,
   };
 });
 vi.mock('../../SheetTopBar', () => ({ SheetTopBar: () => null }));
@@ -60,7 +61,7 @@ vi.mock('../../play-drawer/AngleSlider', () => ({ AngleSlider: () => null }));
 vi.mock('../../../lib/boards/use-set-board-angle', () => ({ useSetBoardAngle: () => vi.fn() }));
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
+import { createElement, type ReactElement, type ReactNode } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
 
 type BoardFields = Pick<
@@ -89,6 +90,7 @@ const ctrl = vi.hoisted(() => ({
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
   nativeHeader: false,
   nativeBarItems: false,
+  onRail: false,
   nativeLeftItems: null as BarItemStandIn[] | null,
   nativeRightItems: null as BarItemStandIn[] | null,
   // The scroll-edge store the native header was handed.
@@ -340,6 +342,7 @@ describe('CollapsingTopChrome', () => {
     ctrl.nativeCenterActionWidths = undefined;
     ctrl.nativeLeftActions = undefined;
     ctrl.nativeBarItems = false;
+    ctrl.onRail = false;
     ctrl.nativeLeftItems = null;
     ctrl.nativeRightItems = null;
     haptics.light.mockClear();
@@ -536,17 +539,32 @@ describe('CollapsingTopChrome', () => {
 
     const labels = (items: BarItemStandIn[] | null) => items?.map((item) => item.label) ?? null;
 
-    it('hands UIKit the islands as items, in the islands order, and no custom capsules', () => {
+    it('hands UIKit the islands as items on the rail, in the islands order, and no custom capsules', () => {
+      ctrl.onRail = true;
       ctrl.board = board;
       ctrl.bluetooth = { isConnected: false, connect: vi.fn(), disconnect: vi.fn(), armUndoWallChangeToast: vi.fn() };
       const { container } = render(<CollapsingTopChrome {...makeProps({ canCreate: true })} />);
       expect(labels(ctrl.nativeLeftItems)).toEqual(['avatar', 'create.label']);
       expect(labels(ctrl.nativeRightItems)).toEqual(['angle', 'board', 'lightbulb']);
+      expect(ctrl.nativeRightItems?.some((item) => item.type === 'custom')).toBe(false);
       expect(ctrl.nativeLeftActions).toBeUndefined();
       expect(container.querySelector('[data-glass]')).toBeNull();
       // The angle picker sheet still mounts beside the header.
       expect(container.querySelector('[data-native-angle-picker]')).not.toBeNull();
       expect(ctrl.nativeCenterActionWidths).toEqual({ leading: 76, trailing: 114 });
+    });
+
+    it('keeps the glass bulb, long press included, as the last custom item in a horizontal bar', () => {
+      ctrl.board = board;
+      ctrl.bluetooth = { isConnected: true, connect: vi.fn(), disconnect: vi.fn(), armUndoWallChangeToast: vi.fn() };
+      render(<CollapsingTopChrome {...makeProps()} />);
+      const rightItems = ctrl.nativeRightItems ?? [];
+      expect(rightItems.map((item) => item.type)).toEqual(['button', 'button', 'custom']);
+      expect(labels(rightItems.slice(0, 2))).toEqual(['angle', 'board']);
+      const bulb = rightItems[2] as BarItemStandIn & { element?: ReactElement };
+      const { container } = render(bulb.element as ReactElement);
+      expect(container.querySelector('[data-pressable="lightControl.disconnect"]')).not.toBeNull();
+      expect(ctrl.nativeCenterActionWidths).toEqual({ leading: 38, trailing: 114 });
     });
 
     it('gives + an SF Symbol, its label and the highest visibility priority, and fires onCreate', () => {

@@ -1,6 +1,6 @@
 import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import type { ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
-import { type ReactNode, isValidElement, useCallback, useMemo } from 'react';
+import { type ReactElement, type ReactNode, isValidElement, useCallback, useMemo } from 'react';
 import { type LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Appbar } from 'react-native-paper';
@@ -30,12 +30,14 @@ import { LightbulbToolbarAction } from './LightbulbToolbarAction';
 import { MaterialAngleAction, MaterialLightbulbAction } from './MaterialBoardActions';
 import { CollapsingLargeTitleHeader } from './CollapsingLargeTitleHeader';
 import { NativeRootHeader } from './NativeRootHeader';
+import { NativeHeaderActionContext } from './native-header-action-context';
 import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction';
 import { iconMap } from '../icon-map';
 import { barItemsFactory, symbolBarItem, type RootBarItem } from './root-bar-items';
 import {
   useAngleBarItem,
   useAvatarBarItem,
+  useBarItemsOnRail,
   useBoardSwitcherBarItem,
   useClimbListBarItems,
   useLightbulbBarItem,
@@ -366,6 +368,10 @@ type CollapsingNativeBarHeaderProps = Pick<
  * trailing. + keeps the highest visibility priority: it is the screen's
  * defining action. The `centerContent` capsule and the controls under the bar
  * stay custom views.
+ *
+ * The bulb is a native item only on the rail. In a horizontal bar it stays the
+ * glass bulb as a custom view, which keeps its long press to Board controls; a
+ * custom view lands outside the native items, and the bulb is last anyway.
  */
 function CollapsingNativeBarHeader({
   canCreate,
@@ -396,6 +402,18 @@ function CollapsingNativeBarHeader({
     badge: climbListBarActions?.badge ?? false,
   });
   const lightbulbItem = useLightbulbBarItem();
+  const onRail = useBarItemsOnRail();
+  const showsLight = lightbulbItem != null && !hideLight;
+  const glassLightbulb = useMemo(
+    () => (
+      <NativeHeaderActionContext.Provider value={true}>
+        <GlassActionToolbar actionCount={1}>
+          <LightbulbToolbarAction />
+        </GlassActionToolbar>
+      </NativeHeaderActionContext.Provider>
+    ),
+    [],
+  );
 
   const leftItemList = useMemo(() => {
     const items: RootBarItem[] = [avatarItem];
@@ -418,12 +436,19 @@ function CollapsingNativeBarHeader({
     if (angleItem) items.push(angleItem);
     if (climbListBarActions) items.push(...climbListItems);
     else if (boardSwitcherItem) items.push(boardSwitcherItem);
-    if (lightbulbItem && !hideLight) items.push(lightbulbItem);
+    if (lightbulbItem && showsLight && onRail) items.push(lightbulbItem);
     return items;
-  }, [angleItem, climbListBarActions, climbListItems, boardSwitcherItem, lightbulbItem, hideLight]);
+  }, [angleItem, climbListBarActions, climbListItems, boardSwitcherItem, lightbulbItem, showsLight, onRail]);
+  const rightCustomElements = useMemo(() => {
+    const elements: ReactElement[] = [];
+    if (showsLight && !onRail) elements.push(glassLightbulb);
+    if (isValidElement(trailingAction)) elements.push(trailingAction);
+    return elements;
+  }, [showsLight, onRail, glassLightbulb, trailingAction]);
 
-  // No caller passes these today; kept as custom views so nothing is dropped.
-  // A custom view stays in the bar on iPhone Duo and lands outside the native items.
+  // No caller passes leading/trailing actions today; kept as custom views so
+  // nothing is dropped. A custom view stays in the bar on iPhone Duo and lands
+  // outside the native items.
   const leftItems = useMemo(() => {
     const factory = barItemsFactory(leftItemList);
     if (!isValidElement(leadingAction)) return factory;
@@ -431,9 +456,12 @@ function CollapsingNativeBarHeader({
   }, [leftItemList, leadingAction]);
   const rightItems = useMemo(() => {
     const factory = barItemsFactory(rightItemList);
-    if (!isValidElement(trailingAction)) return factory;
-    return () => [...(factory?.() ?? []), { type: 'custom' as const, element: trailingAction }];
-  }, [rightItemList, trailingAction]);
+    if (rightCustomElements.length === 0) return factory;
+    return () => [
+      ...(factory?.() ?? []),
+      ...rightCustomElements.map((element) => ({ type: 'custom' as const, element })),
+    ];
+  }, [rightItemList, rightCustomElements]);
 
   return (
     <>
@@ -444,7 +472,7 @@ function CollapsingNativeBarHeader({
         titleHidden={titleHidden}
         centerActionWidths={{
           leading: leftItemList.length * NATIVE_ACTION_SIZE,
-          trailing: rightItemList.length * NATIVE_ACTION_SIZE,
+          trailing: (rightItemList.length + rightCustomElements.length) * NATIVE_ACTION_SIZE,
         }}
         scrollEdge={scrollEdge}
         onHeightChange={onHeightChange}

@@ -26,6 +26,7 @@ const ctrl = vi.hoisted(() => ({
   } as ToolbarLightbulb,
   router: { push: vi.fn() },
   haptic: vi.fn(),
+  onRail: false,
 }));
 
 vi.mock('react-native', () => ({
@@ -57,6 +58,7 @@ vi.mock('../../user-drawer/UserDrawerProvider', () => ({
 vi.mock('../BoardAnglePicker', () => ({
   BoardAnglePicker: ({ children }: { children: (open: () => void) => ReactElement }) => children(ctrl.openAngle),
 }));
+vi.mock('../../../hooks/use-vertical-tab-bar', () => ({ useVerticalTabBar: () => ctrl.onRail }));
 vi.mock('../LightbulbToolbarAction', () => ({ useToolbarLightbulb: () => ctrl.lightbulb }));
 
 import {
@@ -80,6 +82,7 @@ beforeEach(() => {
   ctrl.lightbulb = { available: false, lit: false, handlePress: vi.fn(), accessibilityLabel: 'ble.connectBoard' };
   ctrl.router.push.mockReset();
   ctrl.haptic.mockReset();
+  ctrl.onRail = false;
 });
 
 describe('useAvatarBarItem', () => {
@@ -113,6 +116,15 @@ describe('useAvatarBarItem', () => {
     const { result } = renderHook(() => useAvatarBarItem());
     await waitFor(() => expect(ctrl.getSize).toHaveBeenCalled());
     expect(result.current.icon).toEqual({ type: 'sfSymbol', name: 'person.crop.circle' });
+  });
+
+  it('stays the outline symbol on the iPhone Duo rail, where a URL photo keeps it off the rail', () => {
+    ctrl.onRail = true;
+    ctrl.avatarUrl = 'https://x/static/avatars/me.jpg';
+    ctrl.getSize.mockResolvedValue({ width: 84, height: 84 });
+    const { result } = renderHook(() => useAvatarBarItem());
+    expect(result.current.icon).toEqual({ type: 'sfSymbol', name: 'person.crop.circle' });
+    expect(ctrl.getSize).not.toHaveBeenCalled();
   });
 
   it('loads nothing while the chrome draws the glass avatar instead', () => {

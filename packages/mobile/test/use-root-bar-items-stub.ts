@@ -10,3 +10,4 @@ export const useBoardSwitcherBarItem = () => null;
 export const useAngleBarItem = () => ({ item: null, picker: null });
 export const useLightbulbBarItem = () => null;
 export const useClimbListBarItems = () => [];
+export const useBarItemsOnRail = () => false;

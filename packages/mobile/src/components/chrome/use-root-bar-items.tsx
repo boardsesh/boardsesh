@@ -22,6 +22,7 @@ import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { formatActiveBoardLabel } from '../../lib/boards/active-board-label';
 import { canAdjustBoardAngle } from '../../lib/boards/can-adjust-board-angle';
 import { hapticLight } from '../../lib/haptics';
+import { useVerticalTabBar } from '../../hooks/use-vertical-tab-bar';
 import { sizedAvatarUri } from '../Avatar';
 import { iconMap } from '../icon-map';
 import { useUserDrawer } from '../user-drawer/UserDrawerProvider';
@@ -41,12 +42,30 @@ import {
 } from './root-bar-items';
 
 /**
- * The account avatar. Opens the user drawer, like the glass avatar. Shows the
- * person's photo once it has loaded; until then, and when there is none or it
- * fails, the outline symbol. Loading it once here first keeps a dead URL from
- * leaving the item with no image at all, since UIKit cannot report the failure
- * back. It loads through `Image.getSize`: the board-art network check bans the
- * image prefetch API in app code.
+ * Whether UIKit lays the bar items out on iPhone Duo's vertical rail: the tab
+ * bar is a rail there, and the bar items move with it. Exported from here so a
+ * chrome reads the rail through the same module as its items.
+ */
+export function useBarItemsOnRail(): boolean {
+  return useVerticalTabBar();
+}
+
+/**
+ * The account avatar. Opens the user drawer, like the glass avatar.
+ *
+ * In the horizontal bar it shows the person's photo once it has loaded; until
+ * then, and when there is none or it fails, the outline symbol. Loading it once
+ * here first keeps a dead URL from leaving the item with no image at all, since
+ * UIKit cannot report the failure back. It loads through `Image.getSize`: the
+ * board-art network check bans the image prefetch API in app code.
+ *
+ * On the rail it is always the outline symbol. With the photo, the closed iPhone
+ * Duo kept the avatar in a horizontal bar above the content while every symbol
+ * item beside it moved to the rail. react-native-screens loads a URL image
+ * after it creates the item, so UIKit first sees an item with a title and no
+ * icon, which Apple never presents vertically; the photo is also an
+ * original-colour image rather than a template. Either keeps it off the rail,
+ * and neither is fixable from JavaScript. A symbol is there when the item is made.
  *
  * `enabled: false` for a chrome that calls this unconditionally but draws the
  * glass avatar instead: nothing is loaded for an item nobody shows.
@@ -54,8 +73,9 @@ import {
 export function useAvatarBarItem({ enabled = true }: { enabled?: boolean } = {}): RootBarButtonItem {
   const { t } = useTranslation('common');
   const { openUserDrawer } = useUserDrawer();
+  const onRail = useVerticalTabBar();
   const avatarUrl = useProfile().data?.avatarUrl ?? null;
-  const photo = useLoadedBarPhoto(enabled ? avatarUrl : null);
+  const photo = useLoadedBarPhoto(enabled && !onRail ? avatarUrl : null);
   const label = t('ariaLabels.userMenu');
   return useMemo(() => avatarBarItem({ label, onPress: openUserDrawer, photo }), [label, openUserDrawer, photo]);
 }
@@ -186,9 +206,12 @@ function AnglePickerOpener({ open, openRef }: { open: () => void; openRef: RefOb
 }
 
 /**
- * The board-light bulb (Discover): same label, fill and tap as the glass bulb.
- * A native item has no long press, so the Board controls sheet stays on the
- * play drawer's and the current-climb bar's bulbs.
+ * The board-light bulb (Discover) as a native item: same label, fill and tap as
+ * the glass bulb, but no long press. react-native-screens 4.30 has no item with
+ * both a tap action and a menu: it gives only `button` items a tap id and routes
+ * menu picks only for `menu` items. So the chrome uses this item only on the
+ * rail, and keeps the glass bulb (with its long press to Board controls) as a
+ * custom view in a horizontal bar.
  */
 export function useLightbulbBarItem(): RootBarButtonItem | null {
   const { brandColors } = useTheme();
