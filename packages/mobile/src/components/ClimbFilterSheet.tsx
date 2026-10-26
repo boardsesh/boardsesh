@@ -61,6 +61,7 @@ import { androidSafeSnapPoints } from './sheet-snap-points';
 import { useSheetColumnStyle } from './use-sheet-column-style';
 import { useSheetDetentProbe } from './sheet-detent-probe';
 import { useIosSheetBackgroundStyle } from './use-ios-sheet-background-style';
+import { selectByVariant } from '../theme/variants';
 import { useGrades, useSearchClimbsCount } from '../lib/graphql/hooks';
 import type { BoardName, HoldsFilter } from '@boardsesh/shared-schema';
 import { getTallWideScope } from '@boardsesh/board-constants';
@@ -328,7 +329,7 @@ export function ClimbFilterSheet({
   const { systemColors, variant } = theme;
   // iOS with Liquid Glass draws the body as a SwiftUI Form (ClimbFilterForm.ios,
   // #6872). Android and the Material variant keep the RN body below.
-  const nativeForm = Platform.OS === 'ios' && variant === 'liquidGlass';
+  const nativeForm = Platform.OS === 'ios' && selectByVariant(variant, { liquidGlass: true, material: false });
   const { fontScale } = useWindowDimensions();
   const iosBackgroundStyle = useIosSheetBackgroundStyle();
   const { isAuthenticated } = useAuth();
