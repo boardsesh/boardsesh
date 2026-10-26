@@ -4,7 +4,7 @@
 # retried without rebuilding or uploading the signed archive again.
 module BoardseshTestflightDistribution
   APP_IDENTIFIER = "com.boardsesh.app"
-  GROUP_NAME = "discord users"
+  GROUP_NAME = "Discord Users"
   MAX_NOTES_BYTES = 4_000
   READY_STATES = %w[READY_FOR_BETA_TESTING IN_BETA_TESTING].freeze
   REVIEW_STATES = %w[WAITING_FOR_BETA_REVIEW IN_BETA_REVIEW].freeze
@@ -31,11 +31,11 @@ module BoardseshTestflightDistribution
     identity = "TestFlight #{receipt.fetch('version')} (#{receipt.fetch('buildNumber')})"
     case receipt.fetch("status")
     when "ready-for-testing"
-      "#{identity} is ready for the #{GROUP_NAME} tester group."
+      "#{identity} is ready for the #{receipt.fetch('groupName')} tester group."
     when "pending-beta-review"
-      "#{identity} is assigned to #{GROUP_NAME}; Apple beta review is pending."
+      "#{identity} is assigned to #{receipt.fetch('groupName')}; Apple beta review is pending."
     when "approved-awaiting-availability"
-      "#{identity} is assigned to #{GROUP_NAME}; Apple approved beta review and availability is pending."
+      "#{identity} is assigned to #{receipt.fetch('groupName')}; Apple approved beta review and availability is pending."
     else
       raise Error, "Unknown TestFlight distribution summary status: #{receipt.fetch('status').inspect}"
     end
@@ -50,10 +50,17 @@ module BoardseshTestflightDistribution
     end
 
     def run
-      matches = @app.get_beta_groups.select { |group| group.name == GROUP_NAME }
-      raise Error, "Expected exactly one existing TestFlight group named #{GROUP_NAME.inspect}" unless matches.length == 1
+      groups = @app.get_beta_groups
+      matches = groups.select { |group| group.name.to_s.casecmp?(GROUP_NAME) }
+      unless matches.length == 1
+        available = groups.map do |group|
+          "#{group.name.inspect} (id: #{group.id.inspect}, internal: #{group.is_internal_group.inspect})"
+        end
+        raise Error, "Expected exactly one existing TestFlight group named #{GROUP_NAME.inspect} (case-insensitive); " \
+          "found #{matches.length}. Available groups: #{available.empty? ? '(none)' : available.join('; ')}"
+      end
       group = matches.first
-      raise Error, "TestFlight group #{GROUP_NAME.inspect} must be external" unless group.is_internal_group == false
+      raise Error, "TestFlight group #{group.name.inspect} must be external" unless group.is_internal_group == false
       raise Error, "TestFlight group has no identity" if group.id.to_s.empty?
 
       before = exact_build(allow_missing: true)
@@ -89,7 +96,7 @@ module BoardseshTestflightDistribution
       if before && after.id != before.id
         raise Error, "TestFlight build identity changed during distribution; inspect the exact build before retrying"
       end
-      raise Error, "Exact TestFlight build is not assigned to #{GROUP_NAME.inspect}; rerun to recheck" unless assigned?(group, after.id)
+      raise Error, "Exact TestFlight build is not assigned to #{group.name.inspect}; rerun to recheck" unless assigned?(group, after.id)
       receipt(after, group, "assigned", notification_requested: true)
     end
 
@@ -141,7 +148,7 @@ module BoardseshTestflightDistribution
       end
       {
         "version" => @version, "buildNumber" => @build_number, "buildId" => build.id,
-        "groupId" => group.id, "groupName" => GROUP_NAME, "action" => action,
+        "groupId" => group.id, "groupName" => group.name, "action" => action,
         "status" => status, "externalBuildState" => state, "notificationRequested" => notification_requested
       }
     end

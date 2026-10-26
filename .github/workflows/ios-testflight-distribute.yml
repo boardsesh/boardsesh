@@ -39,8 +39,8 @@ jobs:
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
-    # Keep setup, submission and cleanup outside Pilot's 45-minute processing wait.
-    timeout-minutes: 90
+    # Preparation has 65 minutes, leaving Pilot 45 minutes plus setup and cleanup.
+    timeout-minutes: 120
     environment: Production
     env:
       GH_TOKEN: ${{ github.token }}
@@ -49,6 +49,8 @@ jobs:
       SOURCE_RUN_ID: ${{ github.event.workflow_run.id || inputs.source_run_id }}
       SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt || '' }}
     steps:
+      - name: Bound TestFlight preparation across GitHub reads
+        run: echo "TESTFLIGHT_PREPARATION_DEADLINE_MS=$(( $(date +%s) * 1000 + 65 * 60 * 1000 ))" >> "$GITHUB_ENV"
       # Execute this workflow's trusted tooling, never code extracted from the
       # build artifact or a branch that may have advanced while Apple processed.
       - uses: actions/checkout@v4
@@ -106,7 +108,7 @@ jobs:
           printf '%s' "$ASC_KEY_BASE64" | base64 --decode > "$key_path"
           test -s "$key_path"
           echo "ASC_KEY_PATH=$key_path" >> "$GITHUB_ENV"
-      - name: Submit exact build to discord users
+      - name: Submit exact build to Discord Users
         if: steps.source.outputs.should_distribute == 'true'
         working-directory: fastlane
         env:

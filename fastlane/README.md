@@ -84,7 +84,7 @@ Relative iOS build paths resolve from the repository root. The lane preserves
 ## TestFlight external testing — `ios distribute_testflight`
 
 After an iOS native upload, CI distributes that exact version and build to the
-existing external **discord users** group. This separate lane uploads no binary.
+existing external **Discord Users** group. This separate lane uploads no binary.
 It waits up to 45 minutes for Apple processing, writes the build's **What to Test**
 notes, submits beta review when required, and requests tester notifications.
 Apple beta review can keep an assigned build unavailable until approval; the
@@ -107,9 +107,12 @@ for iOS native changes since the previous native build, excluding JavaScript-onl
 and Android-only changes. It reads the PR test-plan sections rather than the
 public App Store release notes.
 
-The lane requires exactly one external group with the exact name `discord users`,
-passes its ID to Pilot, and independently verifies the exact build and group
-assignment afterward. Rerunning an already assigned build with pending review
+The lane matches `Discord Users` without regard to capitalization, requires exactly
+one matching group, and verifies that it is external before any write. It passes
+the group's ID to Pilot, reports the actual group name, and independently verifies
+the exact build and group assignment afterward. Missing or ambiguous matches
+report available group names, IDs, and internal flags, without tester details.
+Rerunning an already assigned build with pending review
 or available testing skips distribution and sends no additional notification.
 An assigned build that still needs review submission keeps approval notifications
 enabled. Retry the failed distribution job after processing delays; no

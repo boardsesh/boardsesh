@@ -97,7 +97,7 @@ class TestflightDistributionTest < Minitest::Test
     @original_env = ENV.to_h
     @root = Dir.mktmpdir("testflight-distribution-")
     @notes = "1. Open Boardsesh → your climbs appear.\n"
-    @group = FakeGroup.new("external-1", "discord users", false, [])
+    @group = FakeGroup.new("external-1", "Discord Users", false, [])
     @app = FakeApp.new("app-1", "com.boardsesh.app", [@group])
     @build = FakeBuild.new("build-2", "2", "2.7.0", "app-1", "com.boardsesh.app", "IOS",
       false, "VALID", FakeDetails.new("READY_FOR_BETA_SUBMISSION"))
@@ -134,6 +134,7 @@ class TestflightDistributionTest < Minitest::Test
     }], @distribution_options
     assert_equal "build-2", receipt.fetch("buildId")
     assert_equal "external-1", receipt.fetch("groupId")
+    assert_equal "Discord Users", receipt.fetch("groupName")
     assert_equal "pending-beta-review", receipt.fetch("status")
     assert_includes BoardseshTestflightDistribution.summary(receipt), "Apple beta review is pending"
     refute_includes BoardseshTestflightDistribution.summary(receipt), "ready for"
@@ -156,7 +157,7 @@ class TestflightDistributionTest < Minitest::Test
       @after_distribution = -> { @build.build_beta_detail.external_build_state = state; @group.builds = [@build] }
       receipt = runner.run
       assert_equal status, receipt.fetch("status")
-      assert BoardseshTestflightDistribution.summary(receipt)
+      assert_includes BoardseshTestflightDistribution.summary(receipt), @group.name
       @group.builds = []
     end
   end
@@ -169,6 +170,7 @@ class TestflightDistributionTest < Minitest::Test
     assert_equal "already-assigned", receipt.fetch("action")
     assert_equal false, receipt.fetch("notificationRequested")
     assert_equal "pending-beta-review", receipt.fetch("status")
+    assert_equal "Discord Users", receipt.fetch("groupName")
   end
 
   def test_repairs_an_existing_unsubmitted_assignment_with_approval_notifications_enabled
@@ -182,13 +184,58 @@ class TestflightDistributionTest < Minitest::Test
     assert_empty @distribution_options
   end
 
-  def test_missing_ambiguous_wrong_case_or_internal_group_prevents_all_writes
-    [[], [@group, @group], [FakeGroup.new("other", "Discord Users", false, [])],
+  def test_group_name_matching_ignores_capitalization_and_preserves_the_actual_name
+    ["Discord Users", "discord users", "DISCORD USERS", "DiScOrD uSeRs"].each do |name|
+      @group.name = name
+      @group.builds = []
+      receipt = runner.run
+      assert_equal ["external-1"], @distribution_options.last.fetch(:groups)
+      assert_equal name, receipt.fetch("groupName")
+      assert_includes BoardseshTestflightDistribution.summary(receipt), name
+
+      writes = @distribution_options.length
+      repeated = runner.run
+      assert_equal writes, @distribution_options.length
+      assert_equal false, repeated.fetch("notificationRequested")
+      assert_equal name, repeated.fetch("groupName")
+    end
+  end
+
+  def test_missing_ambiguous_or_internal_group_prevents_all_writes
+    [[], [@group, @group], [FakeGroup.new("other", "Other Users", false, [])],
       [FakeGroup.new("internal", "discord users", true, [])],
-      [FakeGroup.new("unknown", "discord users", nil, [])]].each do |groups|
+      [FakeGroup.new("unknown", "Discord Users", nil, [])],
+      [@group, FakeGroup.new("other", "discord users", false, [])],
+      [@group, FakeGroup.new("internal", "DISCORD USERS", true, [])]].each do |groups|
       @app.groups = groups
       assert_raises(BoardseshTestflightDistribution::Error) { runner.run }
     end
+    assert_empty @distribution_options
+  end
+
+  def test_lookup_failure_reports_only_available_group_metadata
+    @app.groups = [FakeGroup.new("staff-1", "Staff", true, ["tester@example.com"])]
+    error = assert_raises(BoardseshTestflightDistribution::Error) { runner.run }
+    assert_includes error.message, '"Discord Users"'
+    assert_includes error.message, '"Staff"'
+    assert_includes error.message, 'id: "staff-1"'
+    assert_includes error.message, "internal: true"
+    refute_includes error.message, "tester@example.com"
+    assert_empty @distribution_options
+  end
+
+  def test_empty_group_list_is_explicit_in_lookup_failure
+    @app.groups = []
+    error = assert_raises(BoardseshTestflightDistribution::Error) { runner.run }
+    assert_includes error.message, "Available groups: (none)"
+    assert_empty @distribution_options
+  end
+
+  def test_ambiguous_case_variants_are_reported_without_selecting_either_group
+    @app.groups = [@group, FakeGroup.new("external-2", "discord users", false, [])]
+    error = assert_raises(BoardseshTestflightDistribution::Error) { runner.run }
+    assert_includes error.message, '"Discord Users" (id: "external-1", internal: false)'
+    assert_includes error.message, '"discord users" (id: "external-2", internal: false)'
     assert_empty @distribution_options
   end
 

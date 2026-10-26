@@ -52,6 +52,15 @@ describe('external TestFlight distribution workflow', () => {
     expect(rejected.steps[0].env).toBeUndefined();
   });
 
+  it('shares one preparation deadline while reserving time for Apple processing', () => {
+    const deadline = steps.findIndex((step) => step.name === 'Bound TestFlight preparation across GitHub reads');
+    expect(deadline).toBe(0);
+    expect(steps[deadline].run).toContain('TESTFLIGHT_PREPARATION_DEADLINE_MS=');
+    expect(steps[deadline].run).toContain('65 * 60 * 1000');
+    expect(steps[deadline].run).toContain('"$GITHUB_ENV"');
+    expect(followup.jobs.distribute['timeout-minutes']).toBe(120);
+  });
+
   it('freezes the prior native build before upload and publishes the receipt only after upload', () => {
     const capture = nativeSteps.findIndex((step) => step.id === 'testflight_receipt');
     const upload = nativeSteps.findIndex((step) => step.id === 'testflight_upload');

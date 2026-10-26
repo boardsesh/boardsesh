@@ -1,10 +1,10 @@
 /// <reference types="node" />
 
-import { execFileSync } from 'node:child_process';
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { formatBuildTag, shortFingerprint } from './lib/release-tags';
+import { createTestflightCommandRunner } from './lib/testflight-github';
 import {
   objectFields,
   parseTestflightBuildReceipt,
@@ -14,8 +14,9 @@ import {
   validateReceiptSource,
 } from './lib/testflight-build';
 
+const runCommand = createTestflightCommandRunner();
 function command(binary: string, argumentsList: string[]): string {
-  return execFileSync(binary, argumentsList, { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 }).trim();
+  return runCommand(binary, argumentsList).trim();
 }
 
 function requiredEnvironment(name: string): string {

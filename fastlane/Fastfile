@@ -273,7 +273,7 @@ platform :ios do
       "-authenticationKeyID", key_id, "-authenticationKeyIssuerID", issuer_id)
   end
 
-  desc "Submit an exact uploaded build to the discord users TestFlight group with its test notes"
+  desc "Submit an exact uploaded build to the Discord Users TestFlight group with its test notes"
   lane :distribute_testflight do |options|
     require File.join(REPO_ROOT, "fastlane", "lib", "testflight_distribution")
     require "spaceship"

@@ -153,10 +153,18 @@ marketing version in `packages/mobile/app.config.ts` has no
 
 After a successful iOS native build, **Distribute iOS TestFlight to Discord Users**
 (`ios-testflight-distribute.yml`) submits that exact version and build to the
-existing external **discord users** group. It waits up to 45 minutes for Apple
+existing external **Discord Users** group. Group names match without regard to
+capitalization; missing groups, ambiguous matches, and internal groups stop the
+submission and report available group names. It waits up to 45 minutes for Apple
 processing, submits beta review when needed, and enables tester notifications.
 Pending beta review means submitted, not yet installable. This separate workflow
 never holds the native build lock or blocks store drafts and screenshots.
+
+Receipt and native-test-note GitHub reads retry rate limits within one 65-minute
+preparation deadline shared across the workflow. They honor GitHub's retry/reset
+headers; secondary limits without a reset retry after 60, 120, then 240 seconds.
+Permission errors fail immediately. The job allows 120 minutes overall, preserving
+Apple's processing window after preparation.
 
 The native build freezes its previous uploaded iOS ancestor before uploading and
 saves that baseline with the exact source commit and build number. The follow-up
@@ -172,7 +180,9 @@ and Android-only changes are excluded. Plans come from **Test plan**, even when
 results; CI-only steps are omitted. Full plans and the submitted notes remain in
 the distribution workflow's artifacts for 90 days.
 
-To retry, rerun failed jobs in the distribution workflow, or dispatch it from
+After a tooling fix, dispatch the corrected workflow from `main` with the newest
+uploaded build's **source_run_id**; rerunning an old workflow uses its old tooling.
+For transient failures, rerun failed jobs in the distribution workflow, or dispatch it from
 `main` with the original native build's **source_run_id**. It never rebuilds or
 uploads an IPA. Missing groups, stale/unknown iOS verdicts, unreadable history,
 or missing receipts fail this follow-up with the affected reference. Correct the
