@@ -222,6 +222,11 @@ jobs:
               // Declares the extra fingerprint sources and the autolinking hook, and
               // hashes itself, so editing it moves runtimeVersion on its own.
               path === 'packages/mobile/fingerprint.config.js' ||
+              // Hashed files the app config names (fingerprint:generate --debug).
+              path === 'packages/mobile/eas.json' ||
+              path === 'packages/mobile/assets/icon.png' ||
+              path === 'packages/mobile/assets/splash-icon.png' ||
+              path === 'packages/mobile/assets/adaptive-icon.png' ||
               // @bacons/apple-targets Xcode extensions (the widget) — native by
               // definition, and prebuilt into the iOS project.
               path.startsWith('packages/mobile/targets/') ||
@@ -500,11 +505,34 @@ jobs:
       # Every request queues behind an in-flight mutation. The outer lifecycle
       # lane also queues so a remote publish is never interrupted mid-request.
       cancel-in-progress: false
+    # deployments: write only marks the previous record stale; no PR code runs here.
     permissions:
       contents: read
+      deployments: write
       pull-requests: read
     environment: ota-preview-unattended
     steps:
+      # The delete below wipes what the latest deployment says is live. If this run
+      # then dies before `publish` creates a new deployment, that old `success`
+      # would tell the base-push refresh the preview is intact. Mark it first; a
+      # failure here stops before the delete, so record and branch never disagree.
+      - name: Mark the previous preview record stale
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
+        with:
+          script: |
+            const task = `ota-preview-pr-${process.env.PR_NUMBER}`;
+            const { data: deployments } = await github.rest.repos.listDeployments({
+              ...context.repo, environment: 'pr-preview', task, per_page: 1,
+            });
+            if (!Array.isArray(deployments)) throw new Error('Preview deployment history is unreadable.');
+            const latest = deployments[0];
+            if (!latest) return core.info('No previous preview record to mark.');
+            await github.rest.repos.createDeploymentStatus({ ...context.repo,
+              deployment_id: latest.id, state: 'error', description: 'Reset, republish pending',
+            });
+
       - name: Reset preview branch before publish
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:

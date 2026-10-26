@@ -44,10 +44,17 @@ export interface RuntimeInput {
 }
 
 /**
- * Every repository path that can move a preview's runtimeVersion. It covers
- * `affectsNativeFingerprint` in mobile-ota-preview.yml (the gate's proof that a
- * diff cannot move the fingerprint; the test keeps the two aligned) plus the
- * publisher workflow, whose env is part of the resolved app config.
+ * Every repository path that can move a preview's runtimeVersion, or stop a
+ * candidate from publishing. It covers `affectsNativeFingerprint` in
+ * mobile-ota-preview.yml (the gate's proof that a diff cannot move the
+ * fingerprint; the test keeps the two aligned), the publisher workflow, whose
+ * env is part of the resolved app config, and the eoas pin, whose mismatch with
+ * main makes every candidate a `server-upgrade`.
+ *
+ * The repo-local fingerprint sources come from
+ *   cd packages/mobile && vp exec expo-updates fingerprint:generate --platform <ios|android> --debug
+ * (every `file`/`dir` source outside node_modules). The test pins that list;
+ * re-run the command after adding a plugin input, an icon or a native target.
  */
 export const RUNTIME_INPUTS: readonly RuntimeInput[] = [
   { path: 'package.json', platforms: BOTH },
@@ -58,13 +65,21 @@ export const RUNTIME_INPUTS: readonly RuntimeInput[] = [
   { path: 'packages/mobile/package.json', platforms: BOTH },
   { path: 'packages/mobile/fingerprint.config.js', platforms: BOTH },
   { path: 'packages/mobile/react-native.config.js', platforms: BOTH },
+  { path: 'packages/mobile/eas.json', platforms: BOTH },
+  { path: 'packages/mobile/assets/icon.png', platforms: BOTH },
+  { path: 'packages/mobile/assets/splash-icon.png', platforms: BOTH },
+  { path: 'packages/mobile/assets/adaptive-icon.png', platforms: ['android'] },
   { path: 'packages/mobile/plugins', platforms: BOTH },
   { path: 'packages/mobile/modules', platforms: BOTH },
   { path: 'packages/mobile/locales', platforms: BOTH },
-  { path: 'packages/mobile/targets', platforms: ['ios'] },
+  // expo-target.config.js is a config-plugin source on both platforms.
+  { path: 'packages/mobile/targets', platforms: BOTH },
   { path: 'packages/mobile/ios', platforms: ['ios'] },
   { path: 'packages/mobile/android', platforms: ['android'] },
   { path: '.github/workflows/mobile-ota-preview.yml', platforms: BOTH, mainOnly: true },
+  // A candidate whose eoas pin differs from main's is skipped as `server-upgrade`
+  // (mobile-ota-preview-candidates.ts), on either target.
+  { path: 'scripts/lib/eoas.ts', platforms: BOTH },
 ];
 
 const MOBILE_PREVIEW_PREFIXES = [
@@ -207,10 +222,25 @@ export function parsePreviewBases(payload: unknown): PreviewBases | null {
   return { version, mainSha, trainSha, sourceBaseRef, sourceBaseSha };
 }
 
+export interface PreviewAttempt {
+  /** The PR head the deployment was created for. */
+  sha: string;
+  status: string;
+}
+
 export type PreviewRecord =
   | { kind: 'missing' }
   | { kind: 'unreadable'; detail: string }
-  | { kind: 'found'; status: string; bases: PreviewBases };
+  | {
+      kind: 'found';
+      /** Latest status of the latest deployment, '' when it has none yet. */
+      status: string;
+      /** When that status (or, without one, the deployment) was created. */
+      statusAt: string;
+      bases: PreviewBases;
+      /** The latest deployments for the task, newest first, this one included (at most 2). */
+      recent: PreviewAttempt[];
+    };
 
 export interface BaseHeads {
   main: BaseSnapshot;
@@ -224,18 +254,52 @@ export interface RefreshDecision {
 }
 
 const FAILED_STATUSES = new Set(['failure', 'error']);
+const NON_TERMINAL_STATUSES = new Set(['in_progress', 'queued', 'pending', '']);
+/** Longer than the publish job's 330-minute timeout, so a live attempt is never called stuck. */
+export const STUCK_ATTEMPT_MS = 6 * 60 * 60 * 1_000;
 
 /**
  * Decide one mobile PR. `recorded` holds the snapshots at the SHAs the latest
- * preview deployment pinned; it is only read for a found record.
+ * preview deployment pinned; it is only read for a found record. A runtime
+ * change or train flip always dispatches. Otherwise a failed, errored or stuck
+ * attempt dispatches, except after two failures in a row at the current head:
+ * the same code against the same runtime would fail a third time, so the PR's
+ * next push retries instead.
  */
-export function decidePreviewRefresh(record: PreviewRecord, current: BaseHeads, recorded?: BaseHeads): RefreshDecision {
+export function decidePreviewRefresh(
+  record: PreviewRecord,
+  current: BaseHeads,
+  recorded?: BaseHeads,
+  context: { headSha?: string; now?: number } = {},
+): RefreshDecision {
   if (record.kind === 'missing') return { dispatch: true, reason: 'no preview record, refreshing' };
   if (record.kind === 'unreadable')
     return { dispatch: true, reason: `unreadable preview record (${record.detail}), refreshing` };
-  if (FAILED_STATUSES.has(record.status))
-    return { dispatch: true, reason: `last preview ended in ${record.status}, refreshing` };
   if (!recorded) return { dispatch: true, reason: 'recorded bases unavailable, refreshing' };
+  const runtime = runtimeDecision(current, recorded);
+  if (runtime.dispatch) return runtime;
+  if (FAILED_STATUSES.has(record.status)) {
+    const lastTwo = record.recent.slice(0, 2);
+    if (
+      lastTwo.length === 2 &&
+      context.headSha &&
+      lastTwo.every((attempt) => attempt.status === 'failure' && attempt.sha === context.headSha)
+    )
+      return { dispatch: false, reason: 'failed twice at this head; next PR push retries' };
+    return { dispatch: true, reason: `last preview ended in ${record.status}, refreshing` };
+  }
+  if (NON_TERMINAL_STATUSES.has(record.status)) {
+    const age = (context.now ?? Date.now()) - Date.parse(record.statusAt);
+    if (!Number.isFinite(age) || age > STUCK_ATTEMPT_MS)
+      return {
+        dispatch: true,
+        reason: `last preview stuck ${record.status ? `in ${record.status}` : 'without a status'} for over 6 hours, refreshing`,
+      };
+  }
+  return runtime;
+}
+
+function runtimeDecision(current: BaseHeads, recorded: BaseHeads): RefreshDecision {
   const wasActive = isTrainActive(recorded.main, recorded.train);
   const isActive = isTrainActive(current.main, current.train);
   if (wasActive === null || isActive === null)
@@ -256,6 +320,7 @@ export function decidePreviewRefresh(record: PreviewRecord, current: BaseHeads, 
 export interface RefreshPull {
   number: number;
   headRef: string;
+  headSha: string;
   headRepository: string | null;
   baseRef: string;
 }
@@ -278,7 +343,7 @@ export interface RefreshPlan {
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-export async function planPreviewRefresh(api: RefreshApi, repository: string): Promise<RefreshPlan> {
+export async function planPreviewRefresh(api: RefreshApi, repository: string, now = Date.now()): Promise<RefreshPlan> {
   const pulls = (await api.openPulls()).filter(
     (pull) =>
       pull.headRepository === repository &&
@@ -294,12 +359,12 @@ export async function planPreviewRefresh(api: RefreshApi, repository: string): P
   const trainHead = await api.branchHead('release/next');
 
   const decided: Array<{ pull: number; decision: RefreshDecision }> = [];
-  const pending: Array<{ pull: number; record: PreviewRecord }> = [];
+  const pending: Array<{ pull: number; headSha: string; record: PreviewRecord }> = [];
   for (const pull of pulls) {
     try {
       const files = await api.pullFiles(pull.number);
       if (files.some(affectsMobilePreview)) {
-        pending.push({ pull: pull.number, record: await api.latestPreview(pull.number) });
+        pending.push({ pull: pull.number, headSha: pull.headSha, record: await api.latestPreview(pull.number) });
         continue;
       }
       // A base can absorb a PR's last mobile change without moving its head.
@@ -333,7 +398,7 @@ export async function planPreviewRefresh(api: RefreshApi, repository: string): P
   if (!current.main.readable || (current.train && !current.train.readable))
     throw new Error('Could not read the runtime inputs of the current bases.');
 
-  for (const { pull, record } of pending) {
+  for (const { pull, headSha, record } of pending) {
     const recorded =
       record.kind === 'found'
         ? {
@@ -341,7 +406,7 @@ export async function planPreviewRefresh(api: RefreshApi, repository: string): P
             train: record.bases.trainSha ? snapshot(record.bases.trainSha) : null,
           }
         : undefined;
-    decided.push({ pull, decision: decidePreviewRefresh(record, current, recorded) });
+    decided.push({ pull, decision: decidePreviewRefresh(record, current, recorded, { headSha, now }) });
   }
   decided.sort((left, right) => left.pull - right.pull);
   return {
@@ -461,11 +526,17 @@ export function createGitHubRefreshApi(options: {
         const head = objectRecord(pull.head, 'Pull request head');
         const headRepository = head.repo ? objectRecord(head.repo, 'Head repository').full_name : null;
         const base = objectRecord(pull.base, 'Pull request base');
-        if (!Number.isSafeInteger(pull.number) || typeof head.ref !== 'string' || typeof base.ref !== 'string')
+        if (
+          !Number.isSafeInteger(pull.number) ||
+          typeof head.ref !== 'string' ||
+          typeof head.sha !== 'string' ||
+          typeof base.ref !== 'string'
+        )
           throw new Error('Pull request is malformed.');
         return {
           number: pull.number as number,
           headRef: head.ref,
+          headSha: head.sha,
           headRepository: typeof headRepository === 'string' ? headRepository : null,
           baseRef: base.ref,
         };
@@ -488,30 +559,43 @@ export function createGitHubRefreshApi(options: {
     async latestPreview(pull) {
       const task = `ota-preview-pr-${pull}`;
       const deployments = arrayOf(
-        await rest(`/deployments?environment=pr-preview&task=${encodeURIComponent(task)}&per_page=1`),
+        await rest(`/deployments?environment=pr-preview&task=${encodeURIComponent(task)}&per_page=3`),
         'Preview deployments',
-      );
+      ).map((input) => objectRecord(input, 'Preview deployment'));
       if (deployments.length === 0) return { kind: 'missing' };
-      const deployment = objectRecord(deployments[0], 'Preview deployment');
-      if (
-        deployment.environment !== 'pr-preview' ||
-        deployment.task !== task ||
-        deployment.description !== `OTA preview pr-${pull}` ||
-        deployment.transient_environment !== true ||
-        deployment.production_environment !== false ||
-        !Number.isSafeInteger(deployment.id) ||
-        (deployment.id as number) < 1
-      )
-        return { kind: 'unreadable', detail: 'unexpected deployment identity' };
+      const isPreview = (deployment: Record<string, unknown>) =>
+        deployment.environment === 'pr-preview' &&
+        deployment.task === task &&
+        deployment.description === `OTA preview pr-${pull}` &&
+        deployment.transient_environment === true &&
+        deployment.production_environment === false &&
+        Number.isSafeInteger(deployment.id) &&
+        (deployment.id as number) > 0 &&
+        typeof deployment.sha === 'string' &&
+        typeof deployment.created_at === 'string';
+      const latestStatus = async (deployment: Record<string, unknown>) => {
+        const statuses = arrayOf(
+          await rest(`/deployments/${deployment.id as number}/statuses?per_page=1`),
+          'Preview deployment statuses',
+        );
+        if (statuses.length === 0) return { state: '', at: deployment.created_at as string };
+        const status = objectRecord(statuses[0], 'Preview deployment status');
+        if (typeof status.state !== 'string' || typeof status.created_at !== 'string') return null;
+        return { state: status.state, at: status.created_at };
+      };
+      const [deployment, previous] = deployments;
+      if (!isPreview(deployment)) return { kind: 'unreadable', detail: 'unexpected deployment identity' };
       const bases = parsePreviewBases(deployment.payload);
       if (!bases) return { kind: 'unreadable', detail: 'no valid otaPreviewBases' };
-      const statuses = arrayOf(
-        await rest(`/deployments/${deployment.id as number}/statuses?per_page=1`),
-        'Preview deployment statuses',
-      );
-      const state = statuses.length > 0 ? objectRecord(statuses[0], 'Preview deployment status').state : '';
-      if (typeof state !== 'string') return { kind: 'unreadable', detail: 'malformed deployment status' };
-      return { kind: 'found', status: state, bases };
+      const status = await latestStatus(deployment);
+      if (!status) return { kind: 'unreadable', detail: 'malformed deployment status' };
+      const recent: PreviewAttempt[] = [{ sha: deployment.sha as string, status: status.state }];
+      // The previous attempt only matters for the failed-twice cap.
+      if (status.state === 'failure' && previous && isPreview(previous)) {
+        const previousStatus = await latestStatus(previous);
+        if (previousStatus) recent.push({ sha: previous.sha as string, status: previousStatus.state });
+      }
+      return { kind: 'found', status: status.state, statusAt: status.at, bases, recent };
     },
     async hasLivePreview(pull) {
       let before: string | null = null;

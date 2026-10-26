@@ -3184,9 +3184,11 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
   Clearing the previous revision first prevents an omitted runtime from keeping old code surfable.
   Native changes, base advances, and train activation/removal also reset.
   The gate scans the PR diff for
-  fingerprint paths (`packages/mobile/app.config.ts`, `fingerprint.config.js`, `plugins/`, `modules/`,
+  fingerprint paths (`packages/mobile/app.config.ts`, `fingerprint.config.js`, `eas.json`,
+  `assets/icon.png`, `assets/splash-icon.png`, `assets/adaptive-icon.png`, `plugins/`, `modules/`,
   `locales/`, `targets/`, `ios/`, `android/`, `packages/mobile/package.json`, `patches/`, the root
-  manifest and lockfile — every extra source `packages/mobile/fingerprint.config.js` declares) and emits
+  manifest and lockfile — every repo-local source
+  `vp exec expo-updates fingerprint:generate --platform <p> --debug` lists) and emits
   a native-change signal. Every run also compares the pinned main/train SHAs and the PR's base
   ref/SHA against the latest per-PR deployment's versioned `otaPreviewBases` payload. That deployment
   must have completed successfully, and its SHA must match the current PR head. Only a retry of
@@ -3286,8 +3288,12 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
   `mobile-ota-preview-refresh.yml` now runs `scripts/mobile-ota-preview-refresh.ts`, which
   dispatches a PR when one of these is true:
   1. The PR has no `pr-preview` deployment for task `ota-preview-pr-<number>`, its payload has no
-     valid `otaPreviewBases` (the same check the gate's pin step runs), or the latest status is
-     `failure` or `error`.
+     valid `otaPreviewBases` (the same check the gate's pin step runs), its latest status is
+     `failure` or `error`, or it has sat in `in_progress`, `queued`, `pending` or no status for
+     over 6 hours (the publish job times out at 330 minutes). One exception: when the latest two
+     deployments both ended in `failure` at the PR's current head, the PR is skipped ("failed
+     twice at this head; next PR push retries"), unless rule 2 or 3 also applies. The same code
+     on the same runtime would fail a third time.
   2. The release train was switched on or off since that deployment: `release/next` appeared,
      disappeared, or its marketing version now matches or no longer matches `main`'s.
   3. A runtime input of a target the preview serves changed between the SHA the deployment pinned
@@ -3299,10 +3305,15 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
 
   The inputs are the gate's native-fingerprint paths (root `package.json`, `pnpm-lock.yaml`,
   `pnpm-workspace.yaml`, `patches/`, and under `packages/mobile/`: `app.config.ts`, `package.json`,
-  `fingerprint.config.js`, `plugins/`, `modules/`, `locales/`, `targets/`, `ios/`, `android/`),
-  plus `packages/mobile/react-native.config.js` and `main`'s copy of `mobile-ota-preview.yml`,
-  whose env is part of the resolved app config. `targets/` and `ios/` count for iOS only and `android/` for Android only;
-  everything else counts for both. The planner compares git object ids, read for every SHA in one
+  `fingerprint.config.js`, `eas.json`, `assets/icon.png`, `assets/splash-icon.png`,
+  `assets/adaptive-icon.png`, `plugins/`, `modules/`, `locales/`, `targets/`, `ios/`, `android/`),
+  plus `packages/mobile/react-native.config.js`, `main`'s copy of `mobile-ota-preview.yml`, whose
+  env is part of the resolved app config, and `scripts/lib/eoas.ts`, because a candidate whose eoas
+  pin differs from `main`'s is skipped as `server-upgrade`. `ios/` counts for iOS only;
+  `android/` and `assets/adaptive-icon.png` count for Android only; everything else, including
+  `targets/` (its `expo-target.config.js` is hashed on both platforms), counts for both. The test
+  pins this list against the `fingerprint:generate --debug` sources; re-capture them after adding
+  an icon, a plugin input or a native target. The planner compares git object ids, read for every SHA in one
   GraphQL query, so equal ids mean equal bytes. `app.config.ts` is compared with its marketing
   version line removed, because `ExpoConfigVersions` keeps the version out of the fingerprint.
   This works because a preview variant only publishes when the replayed PR resolves the same
@@ -3316,6 +3327,11 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
   commits that shipped a binary, the production and train publish receipts are artifacts that
   finish after the refresh starts, and `expo-updates runtimeversion:resolve` would need a checkout
   and `vp install` of every recorded base SHA inside the refresh.
+  Rule 1 relies on the record telling the truth after a reset. The publisher's `reset` job deletes
+  `pr-<number>` before `publish` creates the new deployment, so a run that dies in between would
+  leave the old `success` describing a branch that no longer exists. `reset` therefore first sets
+  that deployment to `error` ("Reset, republish pending"), which rule 1 re-dispatches; if it cannot,
+  it stops before the delete.
   Each PR gets one line in the run summary (`PR #123: unchanged runtime, skipped`). The `plan` job
   checks out the workflow's own commit (`github.workflow_sha`, sparse `scripts/`, no credentials),
   installs nothing, and holds only read scopes. The `dispatch` job holds `actions: write`, runs no
@@ -3327,6 +3343,11 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
   reset the branch because the bases changed. Per-PR lanes coalesce pending refreshes, and a PR
   push that replaces a queued refresh still detects changed bases through the gate. There is no
   global preview runner cap, and an active train doubles the export work.
+  A failed refresh on a push to `main` or `release/next` posts to the Discord deploy channel from a
+  `notify` job: most train pushes come from the sync bot, so nobody is watching the run. The
+  webhook is a `Production` environment secret, so `notify` declares that environment and holds no
+  token scope. The refresh lane's concurrency group sits on `plan`, not the workflow, so a `notify`
+  parked at the environment gate cannot hold it.
   To inspect availability from a laptop, use the fingerprint a native build baked:
   `vp run mobile:ota-surf-doctor -- --platform ios --runtime-version <hash>` (take `<hash>` from that
   build's `EXPO_UPDATES_FINGERPRINT_OVERRIDE`; a locally resolved one is macOS-flavoured and will not

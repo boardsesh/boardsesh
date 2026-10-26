@@ -138,7 +138,8 @@ describe('mobile-ota-boot-check.yml', () => {
     expect(planner).toContain('pull.headRepository === repository');
     expect(refresh).toContain('ref: context.payload.repository.default_branch');
     expect(refresh).toContain("workflow_id: 'mobile-ota-preview.yml'");
-    expect(refresh).not.toContain('secrets.');
+    // The only secret is the Discord webhook, read by the failure notice.
+    expect(refresh.match(/secrets\.[A-Z_]+/g)).toEqual(['secrets.DISCORD_DEPLOY_WEBHOOK']);
     expect(refresh).not.toContain('pull_request_target');
     // The only checkout is the workflow's own trusted commit, never a PR head,
     // and the job holding actions:write checks out nothing.
