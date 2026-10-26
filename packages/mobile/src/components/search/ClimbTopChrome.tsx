@@ -143,7 +143,8 @@ function ClimbTopChromeComponent({
   // its bulb on screen, where the glass platter collapses). Settled for the same
   // reason as the wall capsule.
   const { inAppBoardConnection, ledless, localConnected } = useBoardConnectionState();
-  const liveBoardHeld = variant === 'liquidGlass' && inAppBoardConnection === 'connectedByMe';
+  const liveBoardHeld =
+    selectByVariant(variant, { liquidGlass: true, material: false }) && inAppBoardConnection === 'connectedByMe';
   const boardHeld = useSettledHeaderValue(liveBoardHeld);
   const wallCapsule = useMemo(() => {
     if (wallClimb) return <WallStatusCapsule climb={wallClimb} boardName={boardName} />;
