@@ -239,6 +239,46 @@ describe('tick mutations reconcile mounted logbooks', () => {
     queryClient.clear();
   });
 
+  it.each(['edit', 'delete'] as const)('cancels an initial unresolved batch before %s cache writes', async (kind) => {
+    let reads = 0;
+    let releaseOldRead: (response: { ticks: LogbookSourceTick[] }) => void = () => {};
+    const oldRead = new Promise<{ ticks: LogbookSourceTick[] }>((resolve) => {
+      releaseOldRead = resolve;
+    });
+    const executeHttp = vi.fn(async (document: string) => {
+      if (document === DELETE_TICK || document === UPDATE_TICK) {
+        return kind === 'edit' ? { updateTick: updatedTick() } : { deleteTick: true };
+      }
+      reads += 1;
+      if (reads === 1) return oldRead;
+      return {
+        ticks: kind === 'delete' ? [] : [serverTick({ ...updatedTick(), status: 'attempt', effectiveQuality: 4 })],
+      };
+    });
+    const { wrapper, queryClient } = createWrapper({ executeHttp: executeHttp as unknown as ExecuteHttp });
+    // The accumulated row can come from a previous multi-climb batch even
+    // though this drawer's initial single-climb request has no data yet.
+    queryClient.setQueryData(accumulatedLogbookQueryKey('kilter'), [toLogbookEntry(serverTick())]);
+    const view = renderHook(() => ({ history: useLogbook('kilter', DRAWER_CLIMBS), mutations: useTickMutations() }), {
+      wrapper,
+    });
+    await waitFor(() => expect(reads).toBe(1));
+
+    await act(async () => {
+      await runMutation(kind, view.result.current.mutations);
+      releaseOldRead({ ticks: [serverTick()] });
+      await oldRead;
+    });
+
+    await waitFor(() => {
+      if (kind === 'delete') expect(view.result.current.history.logbook).toEqual([]);
+      else expect(view.result.current.history.logbook[0]?.comment).toBe('Updated');
+    });
+    expect(reads).toBe(2);
+    view.unmount();
+    queryClient.clear();
+  });
+
   it.each(['edit', 'delete'] as const)('leaves logbook rows untouched when %s fails', async (kind) => {
     const executeHttp = vi.fn(async () => {
       throw new Error('Rejected');
