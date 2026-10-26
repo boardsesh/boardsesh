@@ -112,9 +112,10 @@ The bar itself depends on the device:
   sheet, as in the Logbook. A second tap on the Climbs tab with the list showing
   opens Filters without the keyboard (`useTabReselect`, which listens for the tab
   bar's re-press; the JS tablet rails navigate without one, so there the Filters
-  chip is the way in). Known gap: on iOS 27, while the bar is collapsed, a second tap on the
-  prominent Climbs tab still expands the bar instead of only opening Filters (#6885; UIKit expands
-  a minimized bar on a tab tap, and scroll-to-top and the Filters sheet were ruled out on iOS 26.5). A typed name shows as the first token under the chips and
+  chip is the way in). On a collapsed bar that tap also expands the bar. That is UIKit, not
+  us: iOS expands a minimized bar on any tab tap, the prominent one included, and offers no API to
+  keep it minimized. Checked on iOS 27 with the Filters sheet off and with a programmatic scroll
+  after the tap; the bar expanded both times (#6885, closed as platform behaviour). A typed name shows as the first token under the chips and
   counts in the Filters badge.
 - **Other phones:** Material, and Liquid Glass forced on Android, use JS `Tabs`
   with `MaterialTabBar`.
