@@ -3,6 +3,8 @@ vi.mock('../../../hooks/use-native-root-bar-items', () => ({ useNativeRootBarIte
 vi.mock('../../chrome/use-root-bar-items', () => import('../../../../test/use-root-bar-items-stub'));
 // Screenshot mode only; this suite covers the glass capsules.
 vi.mock('../../chrome/NativeTrailingItemShowcaseAnchor', () => ({ NativeTrailingItemShowcaseAnchor: () => null }));
+// The native bar header reads the stack frame; this suite never reaches it.
+vi.mock('expo-router/react-navigation', () => ({ useFrameSize: () => 402 }));
 vi.mock('../../SheetTopBar', () => ({ SheetTopBar: () => null }));
 vi.mock('../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: () => nativeChrome.enabled }));
 vi.mock('../../../hooks/use-floating-header-controls', () => ({

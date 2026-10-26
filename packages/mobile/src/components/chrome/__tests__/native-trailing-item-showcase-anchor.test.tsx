@@ -4,6 +4,8 @@ import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 const anchorCalls = vi.hoisted(() => ({ names: [] as string[] }));
+// The stack's frame: a phone's whole window, or an iPad's content beside the sidebar.
+const stackFrame = vi.hoisted(() => ({ width: 402 }));
 
 type BoxProps = { style?: unknown; children?: ReactNode; onLayout?: unknown; pointerEvents?: string };
 const flatten = (style: unknown): Record<string, unknown> =>
@@ -21,13 +23,16 @@ vi.mock('react-native', () => ({
       'data-pointer-events': pointerEvents,
       'data-measured': onLayout ? 'true' : 'false',
     }),
-  useWindowDimensions: () => ({ width: 402, height: 874 }),
   // The theme tokens behind native-title-bound read these.
   Platform: { OS: 'ios', select: (options: { ios?: unknown }) => options.ios },
   DynamicColorIOS: (colors: { light: string }) => colors.light,
   PlatformColor: (name: string) => name,
 }));
-vi.mock('expo-router/react-navigation', () => ({ useHeaderHeight: () => 116 }));
+vi.mock('expo-router/react-navigation', () => ({
+  useHeaderHeight: () => 116,
+  useFrameSize: (selector: (frame: { width: number; height: number }) => number) =>
+    selector({ width: stackFrame.width, height: 874 }),
+}));
 vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 62, right: 0, bottom: 0, left: 0 }),
 }));
@@ -42,6 +47,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
   vi.resetModules();
   anchorCalls.names = [];
+  stackFrame.width = 402;
 });
 
 async function loadAnchor(screenshotMode: boolean) {
@@ -66,6 +72,15 @@ describe('NativeTrailingItemShowcaseAnchor', () => {
     expect(box?.getAttribute('data-pointer-events')).toBe('none');
     expect(box?.getAttribute('data-measured')).toBe('true');
     expect(anchorCalls.names).toEqual(['board-history-button']);
+  });
+
+  it("measures from the stack's frame, not the window, so an iPad sidebar doesn't shift it", async () => {
+    // iPad Pro 11" landscape: a 1210pt window, of which the content column beside the sidebar is 930pt.
+    stackFrame.width = 930;
+    const Anchor = await loadAnchor(true);
+    const { container } = render(<Anchor name="board-history-button" positionFromEnd={1} />);
+    const box = container.querySelector('[data-box]');
+    expect(JSON.parse(box?.getAttribute('data-box') ?? '{}')).toMatchObject({ left: 930 - 16 - 44 - 57 });
   });
 
   it('renders nothing outside screenshot mode', async () => {

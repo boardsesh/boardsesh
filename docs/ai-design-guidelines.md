@@ -499,11 +499,13 @@ keeps `systemColors.fill`. Do not apply a violet background to every content car
 
 ### Root header actions are native bar items
 
-On an iPhone running iOS 26 Liquid Glass, the root tabs' header buttons are native UIKit bar items
-(`root-bar-items.ts`, gated by `useNativeRootBarItems`), not custom glass capsules. iPhone Duo moves
-native items onto its side rail; a custom view never moves there, and neither does an item with a
-title but no icon. So every root action carries an SF Symbol and a title. UIKit shows the symbol in
-the bar and on the rail, and the title in the overflow menu and to VoiceOver.
+On an iPhone or iPad running iOS 26 Liquid Glass, the root tabs' header buttons are native UIKit bar
+items (`root-bar-items.ts`, gated by `useNativeRootBarItems`), not custom glass capsules. iPhone Duo
+moves native items onto its side rail; a custom view never moves there, and neither does an item with
+a title but no icon. So every root action carries an SF Symbol and a title. UIKit shows the symbol in
+the bar and on the rail, and the title in the overflow menu and to VoiceOver. On iPad, UIKit lays the
+items out beside its own sidebar button and the portrait top tab bar, which the glass capsules
+collided with; the leading and trailing groups stay separate, as on the rail.
 
 - In a horizontal bar the avatar stays the glass `UserAvatarToolbarAction` (round photo, initials
   without one); on Climbs and Discover the glass island keeps + beside it. On the Duo rail the account
@@ -525,10 +527,15 @@ the bar and on the rail, and the title in the overflow menu and to VoiceOver.
 - + (create) and the notifications bell keep `visibilityPriority: 'high'`, so they stay on screen
   longest. Board history is `'standard'`; the rest take the default.
 - The angle ("40°") stays a title-only item. An icon would hide the number on every iPhone, so it
-  gives up its place on the Duo rail.
+  gives up its place on the Duo rail. On a regular-width iPad it stays the glass "40°" as a custom
+  view, still first in the trailing group: its picker is a popover there (`useAnglePickerPopover`),
+  and a popover needs a React view to point at, which a UIKit bar item is not. For the same reason it
+  never moves into the ⋯ menu on iPad.
+- The capsule's room and the showcase anchor measure the navigation stack's frame
+  (`useFrameSize`), not the window, so the iPad sidebar is left out.
 - Custom views stay custom: the Climbs "On the wall" capsule and the controls under the bar.
 
-iPad, iOS 18 and the Material variant keep the glass capsules.
+iOS 18 and the Material variant keep the glass capsules.
 
 ### Controls pinned under the bar
 

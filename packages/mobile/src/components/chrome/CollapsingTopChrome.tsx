@@ -1,7 +1,8 @@
 import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import type { ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
 import { type ReactElement, type ReactNode, isValidElement, useCallback, useMemo } from 'react';
-import { type LayoutChangeEvent, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { type LayoutChangeEvent, StyleSheet, View } from 'react-native';
+import { useFrameSize } from 'expo-router/react-navigation';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Appbar } from 'react-native-paper';
 import { useTheme } from '../../providers/theme-provider';
@@ -26,6 +27,7 @@ import {
   toolbarGlyphSize,
 } from './GlassActionToolbar';
 import { AngleToolbarAction } from './AngleToolbarAction';
+import { useAnglePickerPopover } from './BoardAnglePicker';
 import { LightbulbToolbarAction } from './LightbulbToolbarAction';
 import { MaterialAngleAction, MaterialLightbulbAction } from './MaterialBoardActions';
 import { CollapsingLargeTitleHeader } from './CollapsingLargeTitleHeader';
@@ -410,6 +412,9 @@ type CollapsingNativeBarHeaderProps = Pick<
  * - In a horizontal bar the bulb stays the glass bulb, which keeps its long
  *   press to Board controls: react-native-screens has no native item with both
  *   a tap and a long-press menu. On the rail it is a native item.
+ * - On a regular-width iPad the angle stays the glass "40°", first in the
+ *   trailing group: its picker is a popover there, and a popover needs a view
+ *   to point at, which a UIKit bar item is not.
  * - The `centerContent` capsule and the controls under the bar, always.
  *
  * The capsule's room comes from the items' measured widths. Where it would drop
@@ -436,9 +441,11 @@ function CollapsingNativeBarHeader({
 }: CollapsingNativeBarHeaderProps) {
   const onRail = useBarItemsOnRail();
   const insets = useSafeAreaInsets();
-  const { width: windowWidth } = useWindowDimensions();
+  // The stack's own frame: on iPad the sidebar takes part of the window.
+  const frameWidth = useFrameSize((frame) => frame.width);
   const accountItem = useAccountRailItem();
   const { item: angleItem, picker: anglePicker } = useAngleBarItem();
+  const angleAnchorsPopover = useAnglePickerPopover() && angleItem != null;
   const boardSwitcherItem = useBoardSwitcherBarItem({
     onPress: onOpenBoardSwitcher,
     accessibilityHint: boardPillAccessibilityHint,
@@ -453,17 +460,18 @@ function CollapsingNativeBarHeader({
   const leadingSide: NativeBarSide = { customSlots: 1 + (hasLeadingAction ? 1 : 0) + (canCreate ? 1 : 0) };
   const trailingBesideAngle =
     (climbListBarActions ? 2 : boardSwitcherItem ? 1 : 0) + (showsLight ? 1 : 0) + (hasTrailingAction ? 1 : 0);
-  const capsuleRoomWithAngle = nativeItemsTitleMaxWidth(windowWidth, insets, {
+  const capsuleRoomWithAngle = nativeItemsTitleMaxWidth(frameWidth, insets, {
     leading: leadingSide,
     trailing: { nativeItems: trailingBesideAngle + 1, titleItems: 1 },
   });
   const angleInMenu =
     !onRail &&
+    !angleAnchorsPopover &&
     centerContent != null &&
     angleItem != null &&
     climbListBarActions != null &&
     capsuleRoomWithAngle < CENTER_CONTENT_MIN_WIDTH;
-  const barAngle = angleInMenu ? null : angleItem;
+  const barAngle = angleInMenu || angleAnchorsPopover ? null : angleItem;
   const angleRow = useMemo(
     () =>
       angleInMenu && angleItem
@@ -477,6 +485,16 @@ function CollapsingNativeBarHeader({
     angleRow,
   });
 
+  const glassAngle = useMemo(
+    () => (
+      <NativeHeaderActionContext.Provider value={true}>
+        <GlassActionToolbar actionCount={1}>
+          <AngleToolbarAction />
+        </GlassActionToolbar>
+      </NativeHeaderActionContext.Provider>
+    ),
+    [],
+  );
   const glassLightbulb = useMemo(
     () => (
       <NativeHeaderActionContext.Provider value={true}>
@@ -517,6 +535,12 @@ function CollapsingNativeBarHeader({
     if (lightbulbItem && showsLight && onRail) items.push(lightbulbItem);
     return items;
   }, [barAngle, climbListBarActions, climbListItems, boardSwitcherItem, lightbulbItem, showsLight, onRail]);
+  // Custom views before the native items (the iPad's glass angle keeps the
+  // angle's place at the front) and after them (the bulb, a trailing action).
+  const leadingCustomElements = useMemo(
+    () => (angleAnchorsPopover ? [glassAngle] : []),
+    [angleAnchorsPopover, glassAngle],
+  );
   const rightCustomElements = useMemo(() => {
     const elements: ReactElement[] = [];
     if (showsLight && !onRail) elements.push(glassLightbulb);
@@ -525,12 +549,14 @@ function CollapsingNativeBarHeader({
   }, [showsLight, onRail, glassLightbulb, trailingAction]);
   const rightItems = useMemo(() => {
     const factory = barItemsFactory(rightItemList);
-    if (rightCustomElements.length === 0) return factory;
+    if (leadingCustomElements.length === 0 && rightCustomElements.length === 0) return factory;
+    const toCustomItem = (element: ReactElement) => ({ type: 'custom' as const, element });
     return () => [
+      ...leadingCustomElements.map(toCustomItem),
       ...(factory?.() ?? []),
-      ...rightCustomElements.map((element) => ({ type: 'custom' as const, element })),
+      ...rightCustomElements.map(toCustomItem),
     ];
-  }, [rightItemList, rightCustomElements]);
+  }, [leadingCustomElements, rightItemList, rightCustomElements]);
 
   // On the rail every item has left the bar, so the capsule has the whole bar.
   const centerItemSides = onRail
@@ -538,7 +564,7 @@ function CollapsingNativeBarHeader({
     : {
         leading: leadingSide,
         trailing: {
-          nativeItems: rightItemList.length + rightCustomElements.length,
+          nativeItems: leadingCustomElements.length + rightItemList.length + rightCustomElements.length,
           titleItems: barAngle ? 1 : 0,
         },
       };
@@ -576,7 +602,7 @@ function CollapsingNativeBarHeader({
       >
         {children}
       </NativeRootHeader>
-      {anglePicker}
+      {angleAnchorsPopover ? null : anglePicker}
       {historyAnchored ? <NativeTrailingItemShowcaseAnchor name="board-history-button" positionFromEnd={1} /> : null}
     </>
   );

@@ -12,7 +12,7 @@ vi.mock('../use-root-bar-items', () => {
   return {
     useAccountRailItem: () => stub('account'),
     useAngleBarItem: () => ({
-      item: ctrl.board ? { ...stub('40°'), accessibilityLabel: 'Board angle, 40°' } : null,
+      item: ctrl.board?.isAngleAdjustable ? { ...stub('40°'), accessibilityLabel: 'Board angle, 40°' } : null,
       picker: createElement('div', { 'data-native-angle-picker': 'true' }),
     }),
     useBoardSwitcherBarItem: () => (ctrl.board ? stub('board') : null),
@@ -65,7 +65,7 @@ vi.mock('../../chrome/NativeRootHeader', () => ({
   },
 }));
 vi.mock('../../../hooks/use-device-layout', () => ({
-  useDeviceLayout: () => ({ isPad: false, widthClass: 'compact' }),
+  useDeviceLayout: () => ({ isPad: ctrl.isPad, widthClass: ctrl.isPad ? 'regular' : 'compact' }),
 }));
 vi.mock('../../../hooks/use-board-angle-options', () => ({ useBoardAngleOptions: () => [30, 40] }));
 vi.mock('../../navigation/AnchoredPopover', () => ({
@@ -109,7 +109,9 @@ const ctrl = vi.hoisted(() => ({
   nativeHeader: false,
   nativeBarItems: false,
   onRail: false,
-  windowWidth: 402,
+  // The navigation stack's frame: the window on a phone, the content beside the sidebar on iPad.
+  frameWidth: 402,
+  isPad: false,
   climbListAngleRow: null as { label: string } | null,
   openBoardControls: vi.fn(),
   nativeLeftItems: null as BarItemStandIn[] | null,
@@ -138,7 +140,11 @@ vi.mock('react-native', () => ({
       children,
     ),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, absoluteFill: {}, hairlineWidth: 1 },
-  useWindowDimensions: () => ({ width: ctrl.windowWidth, height: 874 }),
+  useWindowDimensions: () => ({ width: ctrl.frameWidth, height: 874 }),
+}));
+vi.mock('expo-router/react-navigation', () => ({
+  useFrameSize: (selector: (frame: { width: number; height: number }) => number) =>
+    selector({ width: ctrl.frameWidth, height: 874 }),
 }));
 
 vi.mock('expo-linear-gradient', () => ({
@@ -379,7 +385,8 @@ describe('CollapsingTopChrome', () => {
     ctrl.onRail = false;
     ctrl.nativeLeftItems = null;
     ctrl.nativeRightItems = null;
-    ctrl.windowWidth = 402;
+    ctrl.frameWidth = 402;
+    ctrl.isPad = false;
     ctrl.climbListAngleRow = null;
     ctrl.openBoardControls.mockClear();
     haptics.light.mockClear();
@@ -568,7 +575,7 @@ describe('CollapsingTopChrome', () => {
     });
   });
 
-  describe('native bar items (iOS 26 iPhone)', () => {
+  describe('native bar items (iOS 26 iPhone and iPad)', () => {
     beforeEach(() => {
       ctrl.nativeHeader = true;
       ctrl.nativeBarItems = true;
@@ -618,7 +625,7 @@ describe('CollapsingTopChrome', () => {
         [402, true],
         [440, false],
       ])('on a %ipt iPhone beside the wall capsule, moves the angle into the list menu: %s', (width, moved) => {
-        ctrl.windowWidth = width;
+        ctrl.frameWidth = width;
         ctrl.board = board;
         render(
           <CollapsingTopChrome
@@ -633,7 +640,7 @@ describe('CollapsingTopChrome', () => {
       });
 
       it('keeps the angle in the bar when no capsule needs the room', () => {
-        ctrl.windowWidth = 375;
+        ctrl.frameWidth = 375;
         ctrl.board = board;
         render(
           <CollapsingTopChrome {...makeProps({ canCreate: true, hideLight: true, climbListBarActions: climbList })} />,
@@ -651,6 +658,56 @@ describe('CollapsingTopChrome', () => {
         );
         const anchor = container.querySelector('[data-native-anchor="board-history-button"]');
         expect(anchor?.getAttribute('data-position-from-end')).toBe('1');
+      });
+    });
+
+    describe('on a regular-width iPad', () => {
+      beforeEach(() => {
+        ctrl.isPad = true;
+        // iPad Pro 11" landscape: the content column beside the sidebar.
+        ctrl.frameWidth = 930;
+      });
+
+      it('keeps the glass "40°" first in the trailing group, so its popover has a view to point at', () => {
+        ctrl.board = board;
+        const { container } = render(
+          <CollapsingTopChrome {...makeProps({ canCreate: true, hideLight: true, climbListBarActions: climbList })} />,
+        );
+        expect(labels(ctrl.nativeRightItems)).toEqual(['custom', 'history', 'list-menu']);
+        const angle = ctrl.nativeRightItems?.[0] as BarItemStandIn & { element?: ReactElement };
+        const angleButton = render(angle.element as ReactElement).container.querySelector(
+          '[data-pressable="mobile.angleSelector.buttonAria"]',
+        );
+        expect(angleButton).not.toBeNull();
+        // No second, unanchored picker beside the header.
+        expect(container.querySelector('[data-native-angle-picker]')).toBeNull();
+        expect(ctrl.nativeCenterItemSides?.trailing).toEqual({ nativeItems: 3, titleItems: 0 });
+      });
+
+      it('never moves the angle into the list menu, which could not anchor its popover', () => {
+        ctrl.board = board;
+        ctrl.frameWidth = 375;
+        render(
+          <CollapsingTopChrome
+            {...makeProps({ canCreate: true, hideLight: true, climbListBarActions: climbList })}
+            centerContent={<button>On the wall</button>}
+          />,
+        );
+        expect(labels(ctrl.nativeRightItems)).toEqual(['custom', 'history', 'list-menu']);
+        expect(ctrl.climbListAngleRow).toBeNull();
+      });
+
+      it('keeps the board switcher native and the glass bulb last on Discover', () => {
+        ctrl.board = board;
+        ctrl.bluetooth = connected();
+        render(<CollapsingTopChrome {...makeProps({ canCreate: true })} />);
+        expect(labels(ctrl.nativeRightItems)).toEqual(['custom', 'board', 'custom']);
+      });
+
+      it('uses native items alone for a fixed-angle board', () => {
+        ctrl.board = { ...board, isAngleAdjustable: false };
+        render(<CollapsingTopChrome {...makeProps({ hideLight: true, climbListBarActions: climbList })} />);
+        expect(labels(ctrl.nativeRightItems)).toEqual(['history', 'list-menu']);
       });
     });
 
@@ -691,7 +748,7 @@ describe('CollapsingTopChrome', () => {
       });
 
       it('keeps the angle on the rail beside the capsule, and logs no history anchor', () => {
-        ctrl.windowWidth = 375;
+        ctrl.frameWidth = 375;
         ctrl.board = board;
         const { container } = render(
           <CollapsingTopChrome

@@ -130,7 +130,10 @@ The bar itself depends on the device:
   `resolveCurrentClimbSurface`
   (`src/hooks/current-climb-surface.ts`), decides who shows the current climb, so
   the floating JS bar never appears over the accessory; tab content clears the
-  accessory through the measured in-tab inset, as on the iPhone Duo.
+  accessory through the measured in-tab inset, as on the iPhone Duo. Root
+  headers use native bar items, as on iPhone, so UIKit places them beside the
+  sidebar button and the top tab bar (see "Root header actions are native bar
+  items" in `docs/ai-design-guidelines.md`).
   In landscape the player puts the board on the left and Up next / Logbook /
   Beta in a 400 pt panel on the right (`resolvePlayerArrangement`); in portrait
   the board stays on top.

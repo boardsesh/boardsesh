@@ -18,12 +18,21 @@ import { SheetTopBar } from '../SheetTopBar';
 
 type AnglePresentation = { scope: string; popover: boolean; open: boolean };
 
+/**
+ * Whether the picker opens as a popover pointing at its trigger (a regular-width
+ * iPad) rather than a sheet. A popover needs a React view to point at, so a
+ * trigger that is a UIKit bar item, which is not one, must stay a custom view here.
+ */
+export function useAnglePickerPopover(): boolean {
+  const { isPad, widthClass } = useDeviceLayout();
+  return Platform.OS === 'ios' && isPad && widthClass === 'regular';
+}
+
 /** One angle picker shared by the toolbar angle buttons and the Climbs filter-row Angle chip. */
 export function BoardAnglePicker({ children }: { children: (open: () => void) => ReactElement }) {
   const { t: tSession } = useTranslation('session');
   const { t: tCommon } = useTranslation('common');
-  const { isPad, widthClass } = useDeviceLayout();
-  const usesPopover = Platform.OS === 'ios' && isPad && widthClass === 'regular';
+  const usesPopover = useAnglePickerPopover();
   const { data: activeBoard } = useActiveBoard();
   const setBoardAngle = useSetBoardAngle();
   const angles = useBoardAngleOptions(activeBoard?.boardType as BoardName | undefined);

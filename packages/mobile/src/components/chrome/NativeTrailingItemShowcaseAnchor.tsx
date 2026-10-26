@@ -9,8 +9,8 @@
 // component that renders nothing, chosen once at module load like
 // `useShowcaseAnchor`.
 import type { ReactNode } from 'react';
-import { StyleSheet, View, useWindowDimensions } from 'react-native';
-import { useHeaderHeight } from 'expo-router/react-navigation';
+import { StyleSheet, View } from 'react-native';
+import { useFrameSize, useHeaderHeight } from 'expo-router/react-navigation';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useShowcaseAnchor, type ShowcaseAnchorName } from '../../lib/showcase-anchor';
 import { NATIVE_BAR_ITEM_WIDTH, nativeTrailingItemLeft } from './native-title-bound';
@@ -24,7 +24,8 @@ type NativeTrailingItemShowcaseAnchorProps = {
 function ScreenshotNativeTrailingItemShowcaseAnchor({ name, positionFromEnd }: NativeTrailingItemShowcaseAnchorProps) {
   const anchor = useShowcaseAnchor(name);
   const insets = useSafeAreaInsets();
-  const { width: windowWidth } = useWindowDimensions();
+  // The stack's frame, not the window: on iPad the sidebar takes the leading part.
+  const frameWidth = useFrameSize((frame) => frame.width);
   const headerHeight = useHeaderHeight();
   // Bar items sit centred in the bar, which runs from the top inset to the header's bottom.
   const barCentre = insets.top + (headerHeight - insets.top) / 2;
@@ -36,7 +37,7 @@ function ScreenshotNativeTrailingItemShowcaseAnchor({ name, positionFromEnd }: N
       style={[
         styles.box,
         {
-          left: nativeTrailingItemLeft(windowWidth, insets.right, positionFromEnd),
+          left: nativeTrailingItemLeft(frameWidth, insets.right, positionFromEnd),
           top: barCentre - NATIVE_BAR_ITEM_WIDTH / 2,
         },
       ]}
