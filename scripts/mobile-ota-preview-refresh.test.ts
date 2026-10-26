@@ -1,7 +1,9 @@
 /// <reference types="node" />
 
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
 import {
@@ -68,13 +70,15 @@ const snap = (commit: string, version = '2.6.0', overrides: Record<string, strin
 });
 const HEAD = sha('a');
 const NOW = Date.parse('2026-10-26T12:00:00Z');
+const hoursBefore = (hours: number) => new Date(NOW - hours * 60 * 60 * 1000).toISOString();
 const found = (
   status = 'success',
   trainSha = TRAIN_OLD,
-  extra: { statusAt?: string; recent?: PreviewAttempt[] } = {},
+  extra: { statusAt?: string; statusDescription?: string; recent?: PreviewAttempt[] } = {},
 ): PreviewRecord => ({
   kind: 'found',
   status,
+  statusDescription: extra.statusDescription ?? '',
   statusAt: extra.statusAt ?? new Date().toISOString(),
   bases: { version: 1, mainSha: MAIN_OLD, trainSha, sourceBaseRef: 'main', sourceBaseSha: MAIN_OLD },
   recent: extra.recent ?? [{ sha: HEAD, status }],
@@ -131,6 +135,7 @@ describe('decidePreviewRefresh', () => {
     expect(decidePreviewRefresh({ kind: 'missing' }, current)).toEqual({
       dispatch: true,
       reason: 'no preview record, refreshing',
+      conservative: true,
     });
   });
 
@@ -146,6 +151,7 @@ describe('decidePreviewRefresh', () => {
     expect(decidePreviewRefresh(found(status), current, recorded)).toEqual({
       dispatch: true,
       reason: `last preview ended in ${status}, refreshing`,
+      conservative: true,
     });
   });
 
@@ -197,7 +203,11 @@ describe('decidePreviewRefresh', () => {
     const hoursAgo = (hours: number) => new Date(NOW - hours * 60 * 60 * 1000).toISOString();
     expect(
       decidePreviewRefresh(found('in_progress', TRAIN_OLD, { statusAt: hoursAgo(7) }), current, recorded, { now: NOW }),
-    ).toEqual({ dispatch: true, reason: 'last preview stuck in in_progress for over 6 hours, refreshing' });
+    ).toEqual({
+      dispatch: true,
+      reason: 'last preview stuck in in_progress for over 6 hours, refreshing',
+      conservative: true,
+    });
     expect(
       decidePreviewRefresh(found('', TRAIN_OLD, { statusAt: hoursAgo(6.5) }), current, recorded, { now: NOW }).reason,
     ).toBe('last preview stuck without a status for over 6 hours, refreshing');
@@ -262,6 +272,65 @@ describe('decidePreviewRefresh', () => {
     expect(decidePreviewRefresh(twice, flipped.current, flipped.recorded, { headSha: HEAD }).reason).toBe(
       'release train deactivated',
     );
+  });
+
+  it('retries a twice-failed head once its last failure is 12 hours old', () => {
+    const { recorded, current } = heads();
+    const twice = (hours: number) =>
+      found('failure', TRAIN_OLD, {
+        statusAt: hoursBefore(hours),
+        recent: [
+          { sha: HEAD, status: 'failure' },
+          { sha: HEAD, status: 'failure' },
+        ],
+      });
+    expect(decidePreviewRefresh(twice(11), current, recorded, { headSha: HEAD, now: NOW }).dispatch).toBe(false);
+    expect(decidePreviewRefresh(twice(13), current, recorded, { headSha: HEAD, now: NOW })).toEqual({
+      dispatch: true,
+      reason: 'failed twice at this head over 12 hours ago, retrying once',
+      conservative: true,
+    });
+  });
+
+  it('holds a reset-marked record while it republishes, then retries once per 12 hours', () => {
+    const { recorded, current } = heads();
+    const reset = (hours: number) =>
+      found('error', TRAIN_OLD, { statusDescription: 'Reset, republish pending', statusAt: hoursBefore(hours) });
+    const decide = (hours: number) => decidePreviewRefresh(reset(hours), current, recorded, { now: NOW });
+    expect(decide(1)).toEqual({ dispatch: false, reason: 'reset less than 2 hours ago, republish in flight' });
+    expect(decide(5)).toEqual({ dispatch: false, reason: 'reset did not republish; retrying 12 hours after it' });
+    expect(decide(13)).toEqual({
+      dispatch: true,
+      reason: 'reset did not republish within 12 hours, refreshing',
+      conservative: true,
+    });
+    // An error the reset did not write is a plain failed attempt.
+    expect(
+      decidePreviewRefresh(found('error', TRAIN_OLD, { statusAt: hoursBefore(1) }), current, recorded, { now: NOW }),
+    ).toEqual({ dispatch: true, reason: 'last preview ended in error, refreshing', conservative: true });
+    // A runtime change still wins over the hold.
+    const changed = heads();
+    changed.current.main = snap(MAIN_NEW, '2.6.0', { 'scripts/lib/eoas.ts': 'bumped' });
+    expect(decidePreviewRefresh(reset(1), changed.current, changed.recorded, { now: NOW }).dispatch).toBe(true);
+  });
+
+  it('applies the reset hold to an unreadable record the reset marked', () => {
+    const { current } = heads();
+    const unreadable = (hours: number, statusDescription = 'Reset, republish pending'): PreviewRecord => ({
+      kind: 'unreadable',
+      detail: 'no valid otaPreviewBases',
+      status: 'error',
+      statusDescription,
+      statusAt: hoursBefore(hours),
+    });
+    expect(decidePreviewRefresh(unreadable(1), current, undefined, { now: NOW }).dispatch).toBe(false);
+    expect(decidePreviewRefresh(unreadable(6), current, undefined, { now: NOW }).dispatch).toBe(false);
+    expect(decidePreviewRefresh(unreadable(13), current, undefined, { now: NOW }).dispatch).toBe(true);
+    expect(decidePreviewRefresh(unreadable(1, 'OTA preview failed'), current, undefined, { now: NOW })).toEqual({
+      dispatch: true,
+      reason: 'unreadable preview record (no valid otaPreviewBases), refreshing',
+      conservative: true,
+    });
   });
 });
 
@@ -459,6 +528,7 @@ describe('planPreviewRefresh', () => {
         'PR #8: no preview record, refreshing',
         'PR #9: last preview ended in failure, refreshing',
       ],
+      conservativeDispatches: 2,
     });
     // One batched snapshot read for the current heads and every recorded base.
     expect(api.snapshots).toHaveBeenCalledTimes(1);
@@ -498,7 +568,33 @@ describe('planPreviewRefresh', () => {
     expect(await planPreviewRefresh(api, 'boardsesh/boardsesh')).toEqual({
       dispatch: [7],
       lines: ['PR #7: preview state unreadable (HTTP 502), refreshing'],
+      conservativeDispatches: 1,
     });
+  });
+
+  it('counts conservative dispatches and flags more than 10 of them', async () => {
+    const numbers = Array.from({ length: 12 }, (_value, index) => 100 + index);
+    const api = fakeApi({
+      pulls: [pull(7), ...numbers.map((number) => pull(number))],
+      records: Object.fromEntries(numbers.map((number) => [number, { kind: 'missing' } as PreviewRecord])),
+    });
+    const plan = await planPreviewRefresh(api, 'boardsesh/boardsesh');
+    expect(plan.dispatch).toEqual(numbers);
+    expect(plan.conservativeDispatches).toBe(12);
+    expect(plan.lines.at(-1)).toBe(
+      '12 PRs were dispatched for a missing, unreadable, failed or stuck record; previews may not be landing.',
+    );
+    // A runtime change is not conservative, however many PRs it dispatches.
+    const moved = fakeApi({
+      pulls: numbers.map((number) => pull(number)),
+      snapshots: [
+        snap(MAIN_OLD),
+        snap(MAIN_NEW, '2.6.0', { 'pnpm-lock.yaml': 'moved' }),
+        snap(TRAIN_OLD, '2.7.0'),
+        snap(TRAIN_NEW, '2.7.0'),
+      ],
+    });
+    expect((await planPreviewRefresh(moved, 'boardsesh/boardsesh')).conservativeDispatches).toBe(0);
   });
 
   it('fails visibly rather than fan out when the current bases cannot be read', async () => {
@@ -722,7 +818,10 @@ describe('refresh workflow shape', () => {
   it('posts a failed push run to Discord with the webhook and nothing else', async () => {
     const notify = refresh.jobs.notify;
     expect(notify.needs).toEqual(['plan', 'dispatch']);
-    expect(notify.if).toBe("${{ failure() && github.event_name == 'push' }}");
+    expect(notify.if).toBe(
+      "${{ github.event_name == 'push' && (failure() || fromJSON(needs.plan.outputs.conservative || '0') > 10) }}",
+    );
+    expect(refresh.jobs.plan.outputs?.conservative).toBe('${{ steps.plan.outputs.conservative }}');
     expect(notify.permissions).toEqual({});
     // DISCORD_DEPLOY_WEBHOOK is a Production environment secret (docs/mobile-e2e-gate.md).
     expect(notify.environment).toBe('Production');
@@ -732,6 +831,49 @@ describe('refresh workflow shape', () => {
     expect(run).toContain('allowed_mentions: {parse: []}');
     expect(run).toContain('curl -sS --fail-with-body -X POST');
     expect(run).toMatch(/if \[ -z "\$\{DISCORD_DEPLOY_WEBHOOK:-\}" \]; then[\s\S]*exit 0/);
+  });
+
+  it.each([
+    [
+      'failure',
+      'skipped',
+      '',
+      'PR preview refresh failed** on `release/next` at `abcdef1` (plan: failure, dispatch: skipped)',
+    ],
+    [
+      'success',
+      'success',
+      '14',
+      're-dispatched 14 PRs whose last preview record is missing, unreadable, failed or stuck',
+    ],
+  ])('posts the right notice for plan=%s dispatch=%s', (planResult, dispatchResult, conservativeCount, expected) => {
+    const directory = mkdtempSync(join(tmpdir(), 'refresh-notify-'));
+    try {
+      // A stand-in curl that records the JSON body it would have posted.
+      writeFileSync(join(directory, 'curl'), `#!/bin/sh\ncat > "${join(directory, 'body.json')}"\n`);
+      chmodSync(join(directory, 'curl'), 0o755);
+      // No rc files: a developer's bashrc must not rewrite PATH past the stub.
+      execFileSync('/bin/bash', ['--noprofile', '--norc', '-c', refresh.jobs.notify.steps[0].run ?? ''], {
+        env: {
+          PATH: `${directory}:${process.env.PATH ?? ''}`,
+          DISCORD_DEPLOY_WEBHOOK: 'https://discord.invalid/hook',
+          BRANCH: 'release/next',
+          COMMIT_SHA: 'abcdef1234567',
+          PLAN_RESULT: planResult,
+          DISPATCH_RESULT: dispatchResult,
+          CONSERVATIVE: conservativeCount,
+          RUN_URL: 'https://github.com/boardsesh/boardsesh/actions/runs/1',
+        },
+      });
+      const body = JSON.parse(readFileSync(join(directory, 'body.json'), 'utf8')) as {
+        content: string;
+        allowed_mentions: unknown;
+      };
+      expect(body.content).toContain(expected);
+      expect(body.allowed_mentions).toEqual({ parse: [] });
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it('queues the default-branch publisher once per planned PR', async () => {
@@ -840,8 +982,15 @@ describe('publisher reset marks the record it is about to invalidate', () => {
       description: 'Reset, republish pending',
     });
     const { recorded, current } = heads();
-    const marked = found('error', TRAIN_OLD, { recent: [{ sha: HEAD, status: 'error' }] });
-    expect(decidePreviewRefresh(marked, current, recorded, { headSha: HEAD }).dispatch).toBe(true);
+    const marked = (hours: number) =>
+      found('error', TRAIN_OLD, {
+        statusDescription: 'Reset, republish pending',
+        statusAt: hoursBefore(hours),
+        recent: [{ sha: HEAD, status: 'error' }],
+      });
+    // The run that marked it is still publishing; after 12 hours it is retried.
+    expect(decidePreviewRefresh(marked(1), current, recorded, { headSha: HEAD, now: NOW }).dispatch).toBe(false);
+    expect(decidePreviewRefresh(marked(13), current, recorded, { headSha: HEAD, now: NOW }).dispatch).toBe(true);
   });
 
   it('leaves a first publish alone', async () => {

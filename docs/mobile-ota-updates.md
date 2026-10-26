@@ -3290,10 +3290,17 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
   1. The PR has no `pr-preview` deployment for task `ota-preview-pr-<number>`, its payload has no
      valid `otaPreviewBases` (the same check the gate's pin step runs), its latest status is
      `failure` or `error`, or it has sat in `in_progress`, `queued`, `pending` or no status for
-     over 6 hours (the publish job times out at 330 minutes). One exception: when the latest two
-     deployments both ended in `failure` at the PR's current head, the PR is skipped ("failed
-     twice at this head; next PR push retries"), unless rule 2 or 3 also applies. The same code
-     on the same runtime would fail a third time.
+     over 6 hours (the publish job times out at 330 minutes). Two caps keep this from firing on
+     every base push, and rule 2 or 3 overrides both:
+     - When the latest two deployments both ended in `failure` at the PR's current head, the PR
+       is skipped ("failed twice at this head; next PR push retries") until that failure is
+       12 hours old, then retried once. A failure caused by the base or an outage (the OTA
+       server, a broken `main`, a replay conflict) thus heals within 12 hours without a push.
+     - A record the publisher's `reset` job marked `error` ("Reset, republish pending") is left
+       alone for 2 hours while its publish runs, and after that retried at most once per
+       12 hours. Each retry's reset re-marks it, so a reset that keeps failing (for example bad
+       admin credentials) costs one run per PR per 12 hours. This applies to a marked record
+       whose payload is unreadable too. A PR with no deployment at all is always dispatched.
   2. The release train was switched on or off since that deployment: `release/next` appeared,
      disappeared, or its marketing version now matches or no longer matches `main`'s.
   3. A runtime input of a target the preview serves changed between the SHA the deployment pinned
@@ -3344,7 +3351,9 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
   push that replaces a queued refresh still detects changed bases through the gate. There is no
   global preview runner cap, and an active train doubles the export work.
   A failed refresh on a push to `main` or `release/next` posts to the Discord deploy channel from a
-  `notify` job: most train pushes come from the sync bot, so nobody is watching the run. The
+  `notify` job: most train pushes come from the sync bot, so nobody is watching the run. So does a
+  green run that dispatched more than 10 PRs for a missing, unreadable, failed or stuck record
+  (`conservative` in the plan output), which means previews are not landing at all. The
   webhook is a `Production` environment secret, so `notify` declares that environment and holds no
   token scope. The refresh lane's concurrency group sits on `plan`, not the workflow, so a `notify`
   parked at the environment gate cannot hold it.

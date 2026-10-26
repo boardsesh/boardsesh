@@ -228,19 +228,25 @@ export interface PreviewAttempt {
   status: string;
 }
 
+/** The latest status of the latest deployment for the task. */
+export interface PreviewStatus {
+  /** '' when the deployment has no status yet. */
+  status: string;
+  statusDescription: string;
+  /** When that status (or, without one, the deployment) was created. */
+  statusAt: string;
+}
+
 export type PreviewRecord =
   | { kind: 'missing' }
-  | { kind: 'unreadable'; detail: string }
-  | {
+  /** A deployment exists but cannot be trusted. Its status is present when its identity was valid. */
+  | ({ kind: 'unreadable'; detail: string } & Partial<PreviewStatus>)
+  | ({
       kind: 'found';
-      /** Latest status of the latest deployment, '' when it has none yet. */
-      status: string;
-      /** When that status (or, without one, the deployment) was created. */
-      statusAt: string;
       bases: PreviewBases;
       /** The latest deployments for the task, newest first, this one included (at most 2). */
       recent: PreviewAttempt[];
-    };
+    } & PreviewStatus);
 
 export interface BaseHeads {
   main: BaseSnapshot;
@@ -251,20 +257,53 @@ export interface BaseHeads {
 export interface RefreshDecision {
   dispatch: boolean;
   reason: string;
+  /**
+   * Dispatched because the record is missing, unreadable, failed or stuck, not
+   * because a runtime moved. Many of these in one run means previews are not
+   * landing at all, which the workflow reports to Discord.
+   */
+  conservative?: boolean;
 }
 
-const FAILED_STATUSES = new Set(['failure', 'error']);
 const NON_TERMINAL_STATUSES = new Set(['in_progress', 'queued', 'pending', '']);
+const HOUR_MS = 60 * 60 * 1_000;
 /** Longer than the publish job's 330-minute timeout, so a live attempt is never called stuck. */
-export const STUCK_ATTEMPT_MS = 6 * 60 * 60 * 1_000;
+export const STUCK_ATTEMPT_MS = 6 * HOUR_MS;
+/** A reset this recent still has its publish running (or queued behind the PR lane). */
+export const REPUBLISH_IN_FLIGHT_MS = 2 * HOUR_MS;
+/** A capped PR (failed twice, or a reset that never republished) is retried once per this window. */
+export const CAPPED_RETRY_MS = 12 * HOUR_MS;
+/** The description the publisher's reset job writes before it deletes pr-N. */
+export const RESET_MARKER = 'Reset, republish pending';
+
+const conservative = (reason: string): RefreshDecision => ({ dispatch: true, reason, conservative: true });
+
+/**
+ * A reset-marked record means a dispatched run already deleted pr-N. Leave it
+ * alone while its publish may still be running, and afterwards retry at most
+ * once per CAPPED_RETRY_MS: each retry's reset re-marks the record, restarting
+ * the clock, so a reset that keeps failing (for example bad admin credentials)
+ * costs one run per PR per 12 hours instead of one per base push.
+ */
+function resetHold(record: Partial<PreviewStatus>, now: number): RefreshDecision | null {
+  if (record.status !== 'error' || record.statusDescription !== RESET_MARKER || !record.statusAt) return null;
+  const age = now - Date.parse(record.statusAt);
+  if (!Number.isFinite(age)) return null;
+  if (age < REPUBLISH_IN_FLIGHT_MS)
+    return { dispatch: false, reason: 'reset less than 2 hours ago, republish in flight' };
+  if (age < CAPPED_RETRY_MS) return { dispatch: false, reason: 'reset did not republish; retrying 12 hours after it' };
+  return conservative('reset did not republish within 12 hours, refreshing');
+}
 
 /**
  * Decide one mobile PR. `recorded` holds the snapshots at the SHAs the latest
  * preview deployment pinned; it is only read for a found record. A runtime
  * change or train flip always dispatches. Otherwise a failed, errored or stuck
- * attempt dispatches, except after two failures in a row at the current head:
- * the same code against the same runtime would fail a third time, so the PR's
- * next push retries instead.
+ * attempt dispatches, with two caps so a PR cannot be re-dispatched on every
+ * base push: after two failures in a row at the current head, and after a
+ * reset that did not republish, it is retried at most once per 12 hours. A
+ * failure caused by the base or an outage therefore heals within 12 hours
+ * without the PR being pushed.
  */
 export function decidePreviewRefresh(
   record: PreviewRecord,
@@ -272,29 +311,33 @@ export function decidePreviewRefresh(
   recorded?: BaseHeads,
   context: { headSha?: string; now?: number } = {},
 ): RefreshDecision {
-  if (record.kind === 'missing') return { dispatch: true, reason: 'no preview record, refreshing' };
+  const now = context.now ?? Date.now();
+  if (record.kind === 'missing') return conservative('no preview record, refreshing');
   if (record.kind === 'unreadable')
-    return { dispatch: true, reason: `unreadable preview record (${record.detail}), refreshing` };
-  if (!recorded) return { dispatch: true, reason: 'recorded bases unavailable, refreshing' };
+    return resetHold(record, now) ?? conservative(`unreadable preview record (${record.detail}), refreshing`);
+  if (!recorded) return conservative('recorded bases unavailable, refreshing');
   const runtime = runtimeDecision(current, recorded);
   if (runtime.dispatch) return runtime;
-  if (FAILED_STATUSES.has(record.status)) {
+  if (record.status === 'error')
+    return resetHold(record, now) ?? conservative('last preview ended in error, refreshing');
+  if (record.status === 'failure') {
     const lastTwo = record.recent.slice(0, 2);
-    if (
+    const failedTwiceAtHead =
       lastTwo.length === 2 &&
-      context.headSha &&
-      lastTwo.every((attempt) => attempt.status === 'failure' && attempt.sha === context.headSha)
-    )
+      Boolean(context.headSha) &&
+      lastTwo.every((attempt) => attempt.status === 'failure' && attempt.sha === context.headSha);
+    if (!failedTwiceAtHead) return conservative('last preview ended in failure, refreshing');
+    const age = now - Date.parse(record.statusAt);
+    if (Number.isFinite(age) && age < CAPPED_RETRY_MS)
       return { dispatch: false, reason: 'failed twice at this head; next PR push retries' };
-    return { dispatch: true, reason: `last preview ended in ${record.status}, refreshing` };
+    return conservative('failed twice at this head over 12 hours ago, retrying once');
   }
   if (NON_TERMINAL_STATUSES.has(record.status)) {
-    const age = (context.now ?? Date.now()) - Date.parse(record.statusAt);
+    const age = now - Date.parse(record.statusAt);
     if (!Number.isFinite(age) || age > STUCK_ATTEMPT_MS)
-      return {
-        dispatch: true,
-        reason: `last preview stuck ${record.status ? `in ${record.status}` : 'without a status'} for over 6 hours, refreshing`,
-      };
+      return conservative(
+        `last preview stuck ${record.status ? `in ${record.status}` : 'without a status'} for over 6 hours, refreshing`,
+      );
   }
   return runtime;
 }
@@ -339,7 +382,12 @@ export interface RefreshApi {
 export interface RefreshPlan {
   dispatch: number[];
   lines: string[];
+  /** Dispatches for a missing, unreadable, failed or stuck record rather than a runtime change. */
+  conservativeDispatches: number;
 }
+
+/** More conservative dispatches than this in one run means previews are not landing; say so. */
+export const CONSERVATIVE_ALERT_THRESHOLD = 10;
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -352,7 +400,12 @@ export async function planPreviewRefresh(api: RefreshApi, repository: string, no
       // preview. It already receives train OTAs directly.
       pull.headRef !== 'release/next',
   );
-  if (pulls.length === 0) return { dispatch: [], lines: ['No open same-repository PRs target main or release/next.'] };
+  if (pulls.length === 0)
+    return {
+      dispatch: [],
+      lines: ['No open same-repository PRs target main or release/next.'],
+      conservativeDispatches: 0,
+    };
 
   const mainHead = await api.branchHead('main');
   if (!mainHead) throw new Error('main has no readable head.');
@@ -379,7 +432,7 @@ export async function planPreviewRefresh(api: RefreshApi, repository: string, no
     } catch (error) {
       decided.push({
         pull: pull.number,
-        decision: { dispatch: true, reason: `preview state unreadable (${message(error)}), refreshing` },
+        decision: conservative(`preview state unreadable (${message(error)}), refreshing`),
       });
     }
   }
@@ -409,9 +462,16 @@ export async function planPreviewRefresh(api: RefreshApi, repository: string, no
     decided.push({ pull, decision: decidePreviewRefresh(record, current, recorded, { headSha, now }) });
   }
   decided.sort((left, right) => left.pull - right.pull);
+  const conservativeDispatches = decided.filter(({ decision }) => decision.dispatch && decision.conservative).length;
+  const lines = decided.map(({ pull, decision }) => `PR #${pull}: ${decision.reason}`);
+  if (conservativeDispatches > CONSERVATIVE_ALERT_THRESHOLD)
+    lines.push(
+      `${conservativeDispatches} PRs were dispatched for a missing, unreadable, failed or stuck record; previews may not be landing.`,
+    );
   return {
     dispatch: decided.filter(({ decision }) => decision.dispatch).map(({ pull }) => pull),
-    lines: decided.map(({ pull, decision }) => `PR #${pull}: ${decision.reason}`),
+    lines,
+    conservativeDispatches,
   };
 }
 
@@ -578,24 +638,30 @@ export function createGitHubRefreshApi(options: {
           await rest(`/deployments/${deployment.id as number}/statuses?per_page=1`),
           'Preview deployment statuses',
         );
-        if (statuses.length === 0) return { state: '', at: deployment.created_at as string };
-        const status = objectRecord(statuses[0], 'Preview deployment status');
-        if (typeof status.state !== 'string' || typeof status.created_at !== 'string') return null;
-        return { state: status.state, at: status.created_at };
+        if (statuses.length === 0)
+          return { status: '', statusDescription: '', statusAt: deployment.created_at as string };
+        const latest = objectRecord(statuses[0], 'Preview deployment status');
+        if (typeof latest.state !== 'string' || typeof latest.created_at !== 'string') return null;
+        return {
+          status: latest.state,
+          statusDescription: typeof latest.description === 'string' ? latest.description : '',
+          statusAt: latest.created_at,
+        };
       };
       const [deployment, previous] = deployments;
       if (!isPreview(deployment)) return { kind: 'unreadable', detail: 'unexpected deployment identity' };
-      const bases = parsePreviewBases(deployment.payload);
-      if (!bases) return { kind: 'unreadable', detail: 'no valid otaPreviewBases' };
       const status = await latestStatus(deployment);
       if (!status) return { kind: 'unreadable', detail: 'malformed deployment status' };
-      const recent: PreviewAttempt[] = [{ sha: deployment.sha as string, status: status.state }];
+      // The status still matters for an unreadable payload: a reset marks it.
+      const bases = parsePreviewBases(deployment.payload);
+      if (!bases) return { kind: 'unreadable', detail: 'no valid otaPreviewBases', ...status };
+      const recent: PreviewAttempt[] = [{ sha: deployment.sha as string, status: status.status }];
       // The previous attempt only matters for the failed-twice cap.
-      if (status.state === 'failure' && previous && isPreview(previous)) {
+      if (status.status === 'failure' && previous && isPreview(previous)) {
         const previousStatus = await latestStatus(previous);
-        if (previousStatus) recent.push({ sha: previous.sha as string, status: previousStatus.state });
+        if (previousStatus) recent.push({ sha: previous.sha as string, status: previousStatus.status });
       }
-      return { kind: 'found', status: status.state, statusAt: status.at, bases, recent };
+      return { kind: 'found', ...status, bases, recent };
     },
     async hasLivePreview(pull) {
       let before: string | null = null;
@@ -679,7 +745,10 @@ async function main() {
       ['### Preview refresh', '', ...plan.lines.map((line) => `- ${line}`), ''].join('\n'),
     );
   if (process.env.GITHUB_OUTPUT)
-    appendFileSync(process.env.GITHUB_OUTPUT, `dispatch=${JSON.stringify(plan.dispatch)}\n`);
+    appendFileSync(
+      process.env.GITHUB_OUTPUT,
+      `dispatch=${JSON.stringify(plan.dispatch)}\nconservative=${plan.conservativeDispatches}\n`,
+    );
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

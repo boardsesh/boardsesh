@@ -15,7 +15,9 @@ name: Refresh Mobile OTA Previews
 # default-branch publisher; forks still require a fresh maintainer authorization.
 #
 # A red run on a push (most release/next pushes are the sync bot's, so nobody is
-# watching) posts to the Discord deploy channel from `notify`. The webhook is a
+# watching) posts to the Discord deploy channel from `notify`, and so does a
+# green run that dispatched more than 10 PRs for a missing, unreadable, failed or
+# stuck record: previews are then not landing at all (CONSERVATIVE_ALERT_THRESHOLD). The webhook is a
 # Production environment secret, so `notify` declares that environment, holds no
 # token scope and runs no checked-out code. Concurrency sits on `plan` rather
 # than the workflow: a `notify` parked at the environment gate must not hold the
@@ -46,6 +48,7 @@ jobs:
       pull-requests: read
     outputs:
       dispatch: ${{ steps.plan.outputs.dispatch }}
+      conservative: ${{ steps.plan.outputs.conservative }}
     steps:
       - name: Check out trusted refresh tooling
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
@@ -92,19 +95,22 @@ jobs:
 
   notify:
     needs: [plan, dispatch]
-    if: ${{ failure() && github.event_name == 'push' }}
+    if: >-
+      ${{ github.event_name == 'push' &&
+      (failure() || fromJSON(needs.plan.outputs.conservative || '0') > 10) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
     environment: Production
     steps:
-      - name: Tell Discord the preview refresh failed
+      - name: Tell Discord the preview refresh needs attention
         env:
           DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
           BRANCH: ${{ github.ref_name }}
           COMMIT_SHA: ${{ github.sha }}
           PLAN_RESULT: ${{ needs.plan.result }}
           DISPATCH_RESULT: ${{ needs.dispatch.result }}
+          CONSERVATIVE: ${{ needs.plan.outputs.conservative }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
@@ -112,8 +118,13 @@ jobs:
             echo "::warning::The preview refresh failed but DISCORD_DEPLOY_WEBHOOK is not readable here."
             exit 0
           fi
-          content=$(printf '⚠️ **PR preview refresh failed** on `%s` at `%s` (plan: %s, dispatch: %s). Open PR previews may not follow this base until the next push.\n<%s>' \
-            "$BRANCH" "${COMMIT_SHA:0:7}" "$PLAN_RESULT" "$DISPATCH_RESULT" "$RUN_URL")
+          if [ "$PLAN_RESULT" = "failure" ] || [ "$DISPATCH_RESULT" = "failure" ]; then
+            content=$(printf '⚠️ **PR preview refresh failed** on `%s` at `%s` (plan: %s, dispatch: %s). Open PR previews may not follow this base until the next push.\n<%s>' \
+              "$BRANCH" "${COMMIT_SHA:0:7}" "$PLAN_RESULT" "$DISPATCH_RESULT" "$RUN_URL")
+          else
+            content=$(printf '⚠️ **PR previews are not landing**: the refresh on `%s` at `%s` re-dispatched %s PRs whose last preview record is missing, unreadable, failed or stuck. Check the latest preview runs (reset credentials, the OTA server).\n<%s>' \
+              "$BRANCH" "${COMMIT_SHA:0:7}" "$CONSERVATIVE" "$RUN_URL")
+          fi
           jq -n --arg content "$content" '{content: $content, allowed_mentions: {parse: []}}' \
             | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
               echo "::warning::Failed to post the Discord notification (see status above)"
