@@ -424,16 +424,26 @@ describe('production OTA workflow reliability', () => {
   // platform and do not cover for each other, so a superseded pending run leaves
   // that platform's fleet stranded.
   it('queues runs in the shared production lane instead of superseding pending ones', () => {
-    for (const [name, source] of [
-      ['mobile-ota-production.yml', production],
-      ['mobile-ota-backport.yml', backport],
+    type Concurrency = { group?: string; queue?: string; 'cancel-in-progress'?: boolean };
+    const productionWorkflow = parse(production) as {
+      concurrency?: Concurrency;
+      jobs: Record<string, { concurrency?: Concurrency }>;
+    };
+    // The lane sits on the publish job alone: a workflow-level group let a
+    // notify job that never got a runner hold it for 27 hours (run 40105607795).
+    expect(productionWorkflow.concurrency).toBeUndefined();
+    expect(
+      Object.entries(productionWorkflow.jobs)
+        .filter(([, job]) => job.concurrency !== undefined)
+        .map(([jobName]) => jobName),
+    ).toEqual(['publish']);
+    for (const [name, concurrency] of [
+      ['mobile-ota-production.yml', productionWorkflow.jobs.publish.concurrency ?? {}],
+      ['mobile-ota-backport.yml', (parse(backport) as { concurrency: Concurrency }).concurrency],
     ] as const) {
       // Read the PARSED concurrency block, not the workflow text: both files
       // explain `queue: max` in a comment right above the setting, so a
       // `toContain('queue: max')` stays green when the setting itself is deleted.
-      const { concurrency } = parse(source) as {
-        concurrency: { group?: string; queue?: string; 'cancel-in-progress'?: boolean };
-      };
       if (name === 'mobile-ota-production.yml') {
         expect(concurrency.group).toContain("'mobile-ota-staging' || 'mobile-ota-production'");
       } else {

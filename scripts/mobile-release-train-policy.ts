@@ -9,6 +9,7 @@ import {
   mayPublishTrainRuntime,
   parseLiveStoreRuntimes,
   readMarketingVersion,
+  TRAIN_LIVE_STORE_MAX_AGE_MS,
 } from './lib/mobile-release-policy.ts';
 
 /** A cut is a newly selected train version, including creation of an active train. */
@@ -65,10 +66,26 @@ function flag(name: string): string {
 }
 
 function main(): void {
+  // Its own workflow step, so a refusal on age alone is visible by step name.
+  if (process.argv.includes('--check-evidence')) {
+    parseLiveStoreRuntimes(
+      JSON.parse(process.env['LIVE_STORE_RUNTIMES'] ?? 'null'),
+      Date.now(),
+      TRAIN_LIVE_STORE_MAX_AGE_MS,
+    );
+    console.log('evidence_fresh=true');
+    return;
+  }
   if (process.argv.includes('--runtime')) {
     const platform = flag('--platform');
     if (platform !== 'ios' && platform !== 'android') throw new Error('Invalid platform');
-    const live = parseLiveStoreRuntimes(JSON.parse(process.env['LIVE_STORE_RUNTIMES'] ?? 'null'));
+    // The train guard runs as the publish job starts, so this is the age the
+    // evidence had when the job took the OTA lane.
+    const live = parseLiveStoreRuntimes(
+      JSON.parse(process.env['LIVE_STORE_RUNTIMES'] ?? 'null'),
+      Date.now(),
+      TRAIN_LIVE_STORE_MAX_AGE_MS,
+    );
     const runtime = flag('--runtime');
     const allowed =
       mayPublishTrainRuntime(live, platform, runtime) &&

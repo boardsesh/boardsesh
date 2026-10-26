@@ -452,7 +452,19 @@ belong to `main` also reserve their runtimes for public release; the train canno
 publish onto those while approval is pending, even if `main` has since advanced
 to a newer runtime. Main and train tips are checked again before publication
 attempts, so a delayed retry cannot reuse authorization after either branch moves.
-A superseded train push publishes nothing.
+A superseded train push publishes nothing. It checks the train tip right after
+checkout, before setup and install, so a backlog of queued pushes costs about a
+minute each instead of a full publish each.
+The store evidence comes from a separate job that runs before `publish` queues
+for the OTA lane, so `publish` refuses evidence older than two hours
+(`TRAIN_LIVE_STORE_MAX_AGE_MS`) in its own step, "Refuse stale public store
+evidence". Store runtimes change only when a store release goes public, days
+apart, so two hours trades a little staleness for not failing a run that waited
+behind a long publish. That job is not folded into `publish` because it holds
+the store credentials and runs only main's code with no install. A refusal
+fails the run; re-run all its jobs or dispatch a new one. For a native build's
+republish or the train tip, production-deploy-watchdog.yml does that once by
+itself.
 Train cuts, publications and failures report to the deployments Discord channel.
 Because
 runtimeVersion is a fingerprint, this is safe to run on every push: a native change publishes an
@@ -622,8 +634,9 @@ further publishing on that branch, so a forgotten one turns the next auto-publis
 
 `mobile-ota-production.yml` runs under `concurrency: mobile-ota-production` with
 `cancel-in-progress: false` and `queue: max`, and every job a direct run executes
-(`live-store-runtimes / resolve`, `publish`, `notify-train-deployment`) declares
-`environment: Production`. A job parked in `waiting` at that gate holds the lane
+(`live-store-runtimes / resolve`, `publish`) declares `environment: Production`;
+`notify-train-deployment` no longer does, and since the group moved onto
+`publish` the jobs around it cannot hold the lane at all. A job parked in `waiting` at that gate holds the lane
 for up to 30 days, and `timeout-minutes` does not help because a parked job's
 clock never starts. On 2026-10-24 run 40105607795 finished `publish`, then parked
 `notify-train-deployment` for 27 hours; 40 runs queued behind it, the daily stable
@@ -635,10 +648,13 @@ and nothing alerted.
 run only when a listed job is `waiting` at a gate, nothing is `in_progress`, and
 no job has started or completed for 45 minutes. It never cancels an executing
 publish, however old the run: a publish killed part-way can leave one platform
-published and the other not. It never re-dispatches, since `queue: max` keeps
-every pending run. A cancelled run's unfinished jobs are not retried, so the
-Discord report says for each stopped run whether `publish` had already succeeded.
-If it had not, dispatch the workflow again for that branch unless a later run
+published and the other not. It does not re-dispatch the run it cancels, since
+`queue: max` keeps every pending run, except the work nothing queued would
+redo: a native republish that was cancelled or refused stale store evidence,
+and the `release/next` tip (older pushes skip as superseded). Those get one
+dispatch each, or the exact command in Discord when the retry is spent or
+`OTA_LANE_REDISPATCH` is `off`. For any other stopped run whose `publish` had
+not succeeded, dispatch the workflow again for that branch unless a later run
 there publishes the same platforms (`gh workflow run mobile-ota-production.yml
 --ref <branch>`, adding `-f platform=…` for a per-platform republish). If it
 cannot read a held run's job list it goes red and names the run rather than
@@ -1713,7 +1729,13 @@ Two details that make it hold:
 - The shared `mobile-ota-production` lane uses `queue: max`. `cancel-in-progress: false` protects
   only the *running* run — GitHub still cancels a *pending* one when a new run queues, and the
   republishes are per-platform, so a superseded pending run would strand that platform. The cost is
-  that pushes during a long publish queue instead of coalescing.
+  that pushes during a long publish queue instead of coalescing; a superseded train push skips its
+  publish as soon as it gets the lane.
+- The lane is declared on the `publish` job, not the workflow, so the jobs around it
+  (`live-store-runtimes`, `notify-train-deployment`) can never hold it. On 2026-10-24 a workflow-level
+  lane let a notify job that never got a runner block every OTA for 27 hours.
+  `production-deploy-watchdog.yml` cancels a parked lane holder and dispatches a stranded republish
+  or train tip again once — see [The OTA lane](production-deploy.md#the-ota-lane).
 
 After a successful republish the workflow probes the manifest endpoint the way the app does and
 fails unless the served update is for that fingerprint and was created after the run started. "The

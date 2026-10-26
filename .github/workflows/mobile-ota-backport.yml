@@ -49,9 +49,13 @@ on:
 concurrency:
   group: mobile-ota-production
   cancel-in-progress: false
-  # Keep `queue: max` in lockstep with mobile-ota-production.yml — the two share
-  # this group, and a lane that supersedes pending runs on one side would drop the
-  # per-platform republishes the other side depends on. See the long note there.
+  # Keep `queue: max` in lockstep with mobile-ota-production.yml's `publish` job —
+  # the two share this group, and a lane that supersedes pending runs on one side
+  # would drop the per-platform republishes the other side depends on. See the
+  # long note there. This workflow keeps the group at workflow level: every job
+  # here belongs to the publish (setup only fans out the platform matrix).
+  # production-deploy-watchdog.yml does not watch this workflow, so a backport
+  # parked at its environment gate needs cancelling by hand.
   queue: max
 
 permissions:

@@ -1254,6 +1254,18 @@ describe('train OTA guard, executed', { timeout: 30_000 }, () => {
       ios: publicRuntime('ios', IOS),
       android: publicRuntime('android', ANDROID),
     });
+  const evidenceAged = (minutes: number) =>
+    JSON.stringify({
+      ...(JSON.parse(live()) as Record<string, unknown>),
+      checkedAt: new Date(Date.now() - minutes * 60_000).toISOString(),
+    });
+  const stepsOfPublish = () =>
+    (
+      parse(workflow('mobile-ota-production.yml')) as {
+        jobs: { publish: { steps: Array<ExecutedStep & { if?: string }> } };
+      }
+    ).jobs.publish.steps;
+
   function runGuard(
     scenario: {
       ios?: string;
@@ -1327,11 +1339,61 @@ printf '{"runtimeVersion":"%s"}\\n' "$runtime"
   });
 
   it('fails closed on unavailable store evidence or invalid resolved fingerprints', () => {
-    for (const scenario of [{ evidence: 'null' }, { evidence: '{}' }, { ios: 'unknown' }, { ios: 'a'.repeat(12) }]) {
+    // Evidence resolved before a wait of over two hours for the OTA lane is refused too.
+    const staleEvidence = evidenceAged(121);
+    for (const scenario of [
+      { evidence: 'null' },
+      { evidence: '{}' },
+      { evidence: staleEvidence },
+      { ios: 'unknown' },
+      { ios: 'a'.repeat(12) },
+    ]) {
       const run = runGuard(scenario);
       expect(run.status).not.toBe(0);
       expect(run.outputs).toEqual({ publish_ios: 'false', publish_android: 'false' });
     }
+  });
+
+  // A native republish that waited behind a fully throttled publish (about 100
+  // minutes) must still publish: failing it strands the binary it was for.
+  it('accepts store evidence that waited up to two hours for the lane', () => {
+    const run = runGuard({ evidence: evidenceAged(110) });
+    expect(run.status).toBe(0);
+    expect(run.outputs).toMatchObject({ publish_ios: 'true', publish_android: 'true' });
+  });
+
+  const STALE_EVIDENCE_STEP = 'Refuse stale public store evidence';
+
+  function runEvidenceCheck(evidence: string): ScriptRun {
+    const step = workflowStep(
+      workflow('mobile-ota-production.yml'),
+      'publish',
+      (candidate) => candidate.name === STALE_EVIDENCE_STEP,
+    );
+    return runStepScript(String(step.run), {
+      stubs: {},
+      files: Object.fromEntries(
+        [
+          'scripts/mobile-release-train-policy.ts',
+          'scripts/lib/mobile-release-policy.ts',
+          'scripts/lib/release-tags.ts',
+        ].map((path) => [path, readFileSync(path, 'utf8')]),
+      ),
+      env: { LIVE_STORE_RUNTIMES: evidence },
+    });
+  }
+
+  // Its own step, so the watchdog can tell an age refusal from any other failure.
+  it('refuses stale store evidence in a step of its own, before the train guard', () => {
+    expect(runEvidenceCheck(evidenceAged(110)).status).toBe(0);
+    expect(runEvidenceCheck(evidenceAged(121)).status).not.toBe(0);
+    const steps = stepsOfPublish();
+    const index = steps.findIndex((step) => step.name === STALE_EVIDENCE_STEP);
+    expect(index).toBeGreaterThan(steps.findIndex((step) => step.id === 'live_store'));
+    expect(index).toBeLessThan(steps.findIndex((step) => step.name === TRAIN_GUARD_STEP));
+    // Superseded or inactive trains never read the evidence, so never fail on it.
+    expect(steps[index]?.if).toContain("steps.train_baselines.outputs.superseded == 'false'");
+    expect(steps[index]?.if).toContain("steps.train_baselines.outputs.train_active == 'true'");
   });
 
   it('resolves only the platform a native republish asked for', () => {
@@ -1340,5 +1402,93 @@ printf '{"runtimeVersion":"%s"}\\n' "$runtime"
     expect(run.outputs).toMatchObject({ publish_ios: 'true', publish_android: 'false', ios_runtime_version: TRAIN });
     expect(run.calls).toHaveLength(2);
     expect(run.calls[0]).toContain('--platform ios');
+  });
+});
+
+// A backlog of train pushes used to cost one full publish each. The first step
+// after the publish job takes the lane now skips a push that a newer push has
+// superseded, and that skip has to carry through every later publish step.
+describe('superseded train push skip, executed', { timeout: 30_000 }, () => {
+  const SUPERSEDED_STEP = 'Skip a train push a newer push has superseded';
+  const OWN_SHA = 'a'.repeat(40);
+  const source = workflow('mobile-ota-production.yml');
+  const steps = (
+    parse(source) as { jobs: { publish: { steps: Array<ExecutedStep & { if?: string; uses?: string }> } } }
+  ).jobs.publish.steps;
+
+  function runSkip(lsRemote: string): ScriptRun & { summary: string } {
+    const step = workflowStep(source, 'publish', (candidate) => candidate.name === SUPERSEDED_STEP);
+    const summaryDirectory = mkdtempSync(join(tmpdir(), 'superseded-summary-'));
+    const summaryPath = join(summaryDirectory, 'summary');
+    writeFileSync(summaryPath, '');
+    try {
+      const run = runStepScript(String(step.run), {
+        stubs: {
+          git: `#!/usr/bin/env bash
+printf 'git %s\\n' "$*" >> "$STUB_CALL_LOG"
+if [ "$STUB_LS_REMOTE" = fail ]; then exit 128; fi
+printf '%s\\trefs/heads/release/next\\n' "$STUB_LS_REMOTE"
+`,
+        },
+        env: { GITHUB_SHA: OWN_SHA, GITHUB_STEP_SUMMARY: summaryPath, STUB_LS_REMOTE: lsRemote },
+      });
+      return { ...run, summary: readFileSync(summaryPath, 'utf8') };
+    } finally {
+      rmSync(summaryDirectory, { recursive: true, force: true });
+    }
+  }
+
+  it('runs right after checkout, only for push runs on the train', () => {
+    const index = steps.findIndex((step) => step.name === SUPERSEDED_STEP);
+    expect(steps[index - 1]?.name).toBe('Checkout repository');
+    expect(steps[index]?.id).toBe('superseded');
+    expect(steps[index]?.if).toBe(`github.event_name == 'push' && github.ref == 'refs/heads/${releaseBranch}'`);
+    // Equivalent to push-run-superseded.ts only because every push starts a run.
+    expect(parse(source).on.push.paths).toBeUndefined();
+  });
+
+  it('marks a run superseded when the train tip has moved on', () => {
+    const newer = 'b'.repeat(40);
+    const run = runSkip(newer);
+    expect(run.status).toBe(0);
+    expect(run.outputs).toEqual({ superseded: 'true' });
+    expect(run.summary).toBe(`superseded by ${newer}\n`);
+    expect(run.calls).toEqual([`git ls-remote origin refs/heads/${releaseBranch}`]);
+  });
+
+  it('publishes when the run is still the tip, or when the tip cannot be read', () => {
+    for (const lsRemote of [OWN_SHA, 'fail', '']) {
+      const run = runSkip(lsRemote);
+      expect(run.status, lsRemote).toBe(0);
+      expect(run.outputs, lsRemote).toEqual({ superseded: 'false' });
+      expect(run.summary, lsRemote).toBe('');
+    }
+  });
+
+  // Skipping the gate leaves `configured` empty, which every later publish,
+  // changelog and train step requires, so nothing after it runs and the job's
+  // outputs read "nothing published" rather than a failure.
+  it('skips setup, install, the server wait and the gate once superseded', () => {
+    const skipGuard = "steps.superseded.outputs.superseded != 'true'";
+    for (const name of [
+      'Install Node.js dependencies (workspace root)',
+      'Wait for the OTA server rollout on this commit',
+    ]) {
+      expect(steps.find((step) => step.name === name)?.if, name).toBe(skipGuard);
+    }
+    expect(steps.find((step) => step.uses?.startsWith('voidzero-dev/setup-vp@'))?.if).toBe(skipGuard);
+    expect(steps.find((step) => step.id === 'gate')?.if).toBe(skipGuard);
+    const gateIndex = steps.findIndex((step) => step.id === 'gate');
+    for (const step of steps.slice(gateIndex + 1)) {
+      const condition = String(step.if ?? '');
+      const gated =
+        condition.includes("steps.gate.outputs.configured == 'true'") ||
+        condition.includes("steps.publish_ios.outcome == 'success'") ||
+        condition.includes("steps.publish_android.outcome == 'success'") ||
+        condition.includes("steps.publish_summary.outputs.all_success == 'true'") ||
+        condition.includes('inputs.stage_for_production_deploy') ||
+        condition.includes("github.ref == 'refs/heads/main'");
+      expect(gated, `${step.name ?? step.uses} must not run for a superseded train push`).toBe(true);
+    }
   });
 });

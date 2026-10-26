@@ -790,6 +790,10 @@ holds the group with at least one parked job, no job `in_progress`, and no job
 progress for 45 minutes. Progress means actual job start/completion timestamps;
 queued-job timestamps and run `updated_at` changes caused by cancellation do not
 reset the timer. Incomplete job lists cannot authorize an idle cancellation.
+A job `pending` on another concurrency group does not count as parked: in this
+workflow that is `promote-mobile-ota` waiting on the OTA publish lane, which the
+`mobile-ota-production` lane watches, and counting it cancelled a deploy that
+had waited 45 minutes behind a long publish.
 
 The hold starts when the run's first job is created, not at `run_started_at`.
 For a run that queued behind the group, `run_started_at` is the trigger time:
@@ -881,12 +885,14 @@ calls, dry run) and differs in five rules:
   that workflow; what it cannot bound is a parked job, whose clock never starts.
   The re-check before each cancel stage uses the lane's own rules, so a
   publish that starts while the watchdog is cancelling is never force-cancelled.
-- **No redispatch.** The lane is `queue: max`, so every pending run keeps its
-  place and starts once the group frees. The stopped run's own unfinished jobs
-  are not retried, so the Discord report says for each stopped run whether
-  `publish` had already succeeded (the October case: only the Discord post was
-  lost) or not. If not, dispatch the workflow again for that branch unless a
-  later run there publishes the same platforms. It cannot read this off the
+- **No redispatch of the stopped run as such.** The lane is `queue: max`, so
+  every pending run keeps its place and starts once the group frees. The stopped
+  run's own unfinished jobs are not retried, so the Discord report says for each
+  stopped run whether `publish` had already succeeded (the October case: only
+  the Discord post was lost) or not. The two cases nothing queued would redo are
+  re-dispatched once each (see [Recovering stranded work](#recovering-stranded-work));
+  for any other run, dispatch the workflow again for that branch unless a later
+  run there publishes the same platforms. It cannot read this off the
   parked-job list: a job is created only once its `needs` finish, so a run
   parked at `live-store-runtimes / resolve` lists no `publish` job at all. The
   report also names the run's branch and title, which tells a train push from a
@@ -904,6 +910,43 @@ calls, dry run) and differs in five rules:
   so a holding run whose job list cannot be read fails the matrix job and is
   named in the job summary. It is not cancelled: without its jobs the watchdog
   cannot tell a parked run from a publishing one.
+
+#### Recovering stranded work
+
+On every tick, after any cancels, the lane checks the last 24 hours for work
+that nothing queued would publish, and dispatches it once:
+
+- **A native build's republish** (`Republish <platform> after native build
+  (<fingerprint>)`), on the same branch with the same platform and fingerprint.
+  This covers a republish that was cancelled and one that failed in its
+  "Refuse stale public store evidence" step (it waited past the two-hour
+  evidence limit for the lane). Not when its publish job had already succeeded,
+  when a newer run with the same name exists, or when an earlier same-named run
+  was itself cancelled or failed (so this one was already the retry).
+- **The `release/next` tip**, when its own latest run was cancelled or failed
+  in that same stale-evidence step, and nothing else for that commit succeeded
+  or is still running. Older train pushes skip their publish as superseded once
+  the tip moves, so nothing else would publish it, and "Re-run failed jobs"
+  would reuse the same stale evidence. The dispatch skips the push-only
+  superseded check and still checks the tip. Not when the tip already had a
+  dispatched run.
+
+When a retry is spent or something cannot be read, Discord gets the exact
+`gh workflow run` command instead and the job goes red. Decisions about runs the
+current tick did not stop only notify when they dispatch, or, for a
+stale-evidence failure, on the ticks within 30 minutes of it, so a spent retry
+does not ping the channel every 15 minutes. A cancel that lands after the tick
+that sent it stopped waiting, or one an operator made, is picked up by the next
+tick. To cancel a republish or the tip's run for good, cancel the watchdog's
+retry too.
+
+**Off switch.** During an incident, stop the lane from dispatching anything:
+`gh variable set OTA_LANE_REDISPATCH --body off`. It still cancels parked runs,
+and posts each re-dispatch it would have made as the exact `gh workflow run`
+command, on the ticks within 30 minutes of the run stopping; that alone does
+not turn the job red. Re-enable with `gh variable set OTA_LANE_REDISPATCH
+--body on`, or delete the variable. Any value other than `off` leaves
+dispatching on.
 
 Not covered: the other workflows that take the `mobile-ota-production` group
 (`mobile-ota-backport.yml`, `mobile-ota-promote-staged.yml`,
@@ -930,3 +973,6 @@ Decision rules and their tests: `scripts/production-deploy-watchdog.mjs`,
    target rather than diffing against a baseline.
 5. `Production Deploy Watchdog` → **Run workflow** with **dry run** ticked
    reports what it would cancel without touching anything.
+6. If the OTA lane watchdog's re-dispatches are making an incident worse,
+   switch them off: `gh variable set OTA_LANE_REDISPATCH --body off`. Re-enable
+   with `--body on`, or `gh variable delete OTA_LANE_REDISPATCH`.

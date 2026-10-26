@@ -22,8 +22,13 @@ import {
   isParked,
   laneRules,
   parseCliArguments,
+  parseRepublishRunName,
   planWatchdogActions,
+  redispatchEnabledFrom,
   runCli,
+  STALE_EVIDENCE_STEP,
+  decideRepublish,
+  decideTipRecovery,
 } from './production-deploy-watchdog.mjs';
 
 const NOW = Date.parse('2026-08-21T12:00:00Z');
@@ -2019,7 +2024,7 @@ void test('OTA lane: the report says whether publish succeeded in each stopped r
   assert.match(report, /#1101[^\n]*\n {2}`publish` had already succeeded; only the jobs after it were lost\./);
   assert.match(
     report,
-    /#1102[^\n]*\n {2}`publish` did not succeed and is not retried: dispatch mobile-ota-production\.yml again for this branch/,
+    /#1102[^\n]*\n {2}`publish` did not succeed\. A native republish or the release\/next tip is re-dispatched below; any other run is not retried: dispatch mobile-ota-production\.yml again for this branch/,
   );
   const summary = formatSummary(plan, { lane: MOBILE_OTA_LANE });
   assert.match(summary, /#1101 .*; publish succeeded$/m);
@@ -2066,4 +2071,544 @@ void test('a re-run attempt is timed from its own job creation, not its carried-
     classifyRun({ run: rerun, jobs: jobsCreatedAt(DEFAULT_STALL_MINUTES), nowMs: NOW, ...OTA_RULES }).action,
     'cancel',
   );
+});
+
+// ─── mobile-ota-production lane: recovering stranded work ────────────────────
+
+const FINGERPRINT = 'f'.repeat(40);
+
+void test('a republish run name yields its platform and full fingerprint, and nothing else does', () => {
+  assert.deepEqual(parseRepublishRunName(`Republish android after native build (${FINGERPRINT})`), {
+    platform: 'android',
+    fingerprint: FINGERPRINT,
+  });
+  for (const name of [
+    'Production OTA',
+    'Stage main OTA',
+    `Republish all after native build (${FINGERPRINT})`,
+    'Republish ios after native build (abc123)',
+    `Republish ios after native build (${FINGERPRINT}) ; rm -rf /`,
+    undefined,
+  ]) {
+    assert.equal(parseRepublishRunName(name), null, String(name));
+  }
+});
+
+function republishRun(overrides = {}) {
+  return run({
+    id: 50,
+    run_number: 900,
+    status: 'in_progress',
+    event: 'workflow_dispatch',
+    head_branch: 'release/next',
+    name: `Republish ios after native build (${FINGERPRINT})`,
+    run_started_at: minutesAgo(120),
+    updated_at: minutesAgo(60),
+    ...overrides,
+  });
+}
+
+// publish parked at the Production gate for an hour, the one state the OTA
+// lane cancels.
+const PARKED_PUBLISH_JOBS = [
+  {
+    name: 'live-store-runtimes / resolve',
+    status: 'completed',
+    conclusion: 'success',
+    created_at: minutesAgo(120),
+    started_at: minutesAgo(119),
+    completed_at: minutesAgo(118),
+  },
+  { name: 'publish', status: 'waiting', created_at: minutesAgo(60) },
+];
+
+void test('a stopped republish is dispatched again once, unless it already published', () => {
+  const stopped = republishRun({ status: 'completed', conclusion: 'cancelled' });
+  const decide = (overrides) =>
+    decideRepublish({ run: stopped, laneJob: 'publish', finalJobs: [], dispatchedRuns: [], ...overrides });
+
+  assert.deepEqual(decide({}), {
+    kind: 'republish',
+    action: 'redispatch',
+    platform: 'ios',
+    fingerprint: FINGERPRINT,
+    runId: 50,
+    name: stopped.name,
+    ref: 'release/next',
+    command: `gh workflow run mobile-ota-production.yml --ref release/next -f platform=ios -f expect_fingerprint=${FINGERPRINT}`,
+  });
+  assert.equal(decide({ run: run({ name: 'Production OTA' }) }).action, 'none');
+  assert.equal(
+    decide({ finalJobs: [{ name: 'publish', status: 'completed', conclusion: 'success' }] }).action,
+    'already-published',
+  );
+  assert.equal(
+    decide({ dispatchedRuns: [stopped, run({ id: 51, name: stopped.name, status: 'queued' })] }).action,
+    'replacement-exists',
+  );
+  assert.equal(
+    decide({ dispatchedRuns: [run({ id: 49, name: stopped.name, status: 'completed', conclusion: 'cancelled' })] })
+      .action,
+    'retry-spent',
+  );
+  // An earlier republish of the same fingerprint that SUCCEEDED (a forced
+  // rebuild) is not a spent retry.
+  assert.equal(
+    decide({ dispatchedRuns: [run({ id: 49, name: stopped.name, status: 'completed', conclusion: 'success' })] })
+      .action,
+    'redispatch',
+  );
+  assert.equal(decide({ finalJobs: null }).action, 'unreadable');
+  assert.equal(decide({ dispatchedRuns: null }).action, 'unreadable');
+  assert.equal(decide({ run: republishRun({ head_branch: null }) }).action, 'unreadable');
+});
+
+const TIP_SHA = '9'.repeat(40);
+
+// Run listings reflect cancellations made earlier in the same tick, as GitHub's do.
+function laneGitHub({ holding = [], jobs = {}, dispatched = [], branchRuns = [], tip = TIP_SHA } = {}) {
+  const calls = [];
+  const observed = new Map(holding.map((holdingRun) => [holdingRun.id, holdingRun]));
+  const current = (runs) => runs.map((listed) => observed.get(listed.id) ?? listed);
+  return {
+    calls,
+    listRuns: () => ({ runs: current(holding), recentPageOk: true }),
+    listJobs: (runId) => jobs[runId] ?? [],
+    getRun: (runId) => observed.get(runId),
+    cancelRun: (runId) => {
+      calls.push(['cancel', runId]);
+      observed.set(runId, { ...observed.get(runId), status: 'completed', conclusion: 'cancelled' });
+    },
+    forceCancelRun: (runId) => calls.push(['force', runId]),
+    listDispatchedRuns: () => current(dispatched),
+    getBranchHead: () => tip,
+    listBranchRuns: () => current(branchRuns),
+    dispatchWorkflow: (ref, inputs) => calls.push(['dispatch', ref, inputs]),
+  };
+}
+
+async function runLane(publishGitHub, overrides = {}) {
+  const workDirectory = mkdtempSync(join(tmpdir(), 'boardsesh-ota-watchdog-'));
+  const discordFilePath = join(workDirectory, 'discord.txt');
+  const outputPath = join(workDirectory, 'github-output.txt');
+  const result = await runCli({
+    github: publishGitHub,
+    lane: MOBILE_OTA_LANE,
+    headSha: '',
+    now: () => NOW,
+    runUrlBase: 'https://github.com/example/repository/actions/runs',
+    discordFilePath,
+    outputPath,
+    dryRun: false,
+    ...overrides,
+  });
+  return {
+    result,
+    output: readFileSync(outputPath, 'utf8'),
+    discord: existsSync(discordFilePath) ? readFileSync(discordFilePath, 'utf8') : '',
+  };
+}
+
+void test('the lane watchdog cancels a wedged native republish and dispatches it again on its branch', async () => {
+  const github = laneGitHub({ holding: [republishRun()], jobs: { 50: PARKED_PUBLISH_JOBS } });
+  const { result, output, discord } = await runLane(github);
+  assert.deepEqual(github.calls, [
+    ['cancel', 50],
+    ['dispatch', 'release/next', { platform: 'ios', expect_fingerprint: FINGERPRINT }],
+  ]);
+  assert.equal(result.failed, false);
+  assert.equal(output, 'notify=true\n');
+  assert.match(discord, /Mobile OTA lane unwedged/);
+  assert.match(discord, /Re-dispatched "Republish ios after native build/);
+  assert.match(discord, /<https:\/\/github\.com\/example\/repository\/actions\/runs\/50>/);
+});
+
+void test('the lane watchdog never re-dispatches a wedged push for an older commit', async () => {
+  // The tip has moved on, and the tip's own run publishes newer JS.
+  const pushRun = republishRun({ event: 'push', name: 'Production OTA' });
+  const tipRun = run({ id: 60, event: 'push', name: 'Production OTA', head_sha: TIP_SHA, status: 'pending' });
+  const github = laneGitHub({ holding: [pushRun], jobs: { 50: PARKED_PUBLISH_JOBS }, branchRuns: [tipRun, pushRun] });
+  const { result, discord } = await runLane(github);
+  assert.deepEqual(github.calls, [['cancel', 50]]);
+  assert.equal(result.failed, false);
+  assert.doesNotMatch(discord, /Re-dispatched|Dispatched a fresh publish|NOT re-dispatched/);
+});
+
+void test('a wedged push for the release/next tip is dispatched again once on the branch', async () => {
+  // Older pushes already skipped as superseded, so nothing else would publish it.
+  const tipRun = republishRun({ event: 'push', name: 'Production OTA', head_sha: TIP_SHA });
+  const github = laneGitHub({ holding: [tipRun], jobs: { 50: PARKED_PUBLISH_JOBS }, branchRuns: [tipRun] });
+  const { result, discord } = await runLane(github);
+  assert.deepEqual(github.calls, [
+    ['cancel', 50],
+    ['dispatch', 'release/next', {}],
+  ]);
+  assert.equal(result.failed, false);
+  assert.match(discord, /Dispatched a fresh publish for the release\/next tip \(9999999\)/);
+});
+
+void test('a wedged tip push whose retry is spent posts the dispatch command and fails', async () => {
+  const tipRun = republishRun({ event: 'push', name: 'Production OTA', head_sha: TIP_SHA });
+  const earlierDispatch = run({
+    id: 45,
+    event: 'workflow_dispatch',
+    name: 'Production OTA',
+    head_sha: TIP_SHA,
+    status: 'completed',
+    conclusion: 'cancelled',
+  });
+  const github = laneGitHub({
+    holding: [tipRun],
+    jobs: { 50: PARKED_PUBLISH_JOBS },
+    branchRuns: [tipRun, earlierDispatch],
+  });
+  const { result, discord } = await runLane(github);
+  assert.deepEqual(github.calls, [['cancel', 50]]);
+  assert.equal(result.failed, true);
+  assert.match(discord, /`gh workflow run mobile-ota-production\.yml --ref release\/next`/);
+});
+
+void test('tip recovery acts only on a recently cancelled tip with no publish and no earlier dispatch', () => {
+  const cancelledTip = run({ id: 70, event: 'push', head_sha: TIP_SHA, status: 'completed', conclusion: 'cancelled' });
+  const decide = (overrides) =>
+    decideTipRecovery({
+      tip: TIP_SHA,
+      branchRuns: [cancelledTip],
+      finalJobs: [],
+      laneJob: 'publish',
+      nowMs: NOW,
+      ...overrides,
+    });
+  assert.equal(decide({}).action, 'redispatch');
+  assert.equal(decide({ branchRuns: [] }).action, 'none');
+  assert.equal(
+    decide({ branchRuns: [cancelledTip, run({ id: 71, head_sha: TIP_SHA, status: 'queued' })] }).action,
+    'none',
+  );
+  assert.equal(
+    decide({
+      branchRuns: [run({ id: 69, head_sha: TIP_SHA, status: 'completed', conclusion: 'success' }), cancelledTip],
+    }).action,
+    'none',
+  );
+  assert.equal(decide({ branchRuns: [{ ...cancelledTip, updated_at: minutesAgo(25 * 60) }] }).action, 'none');
+  assert.equal(
+    decide({ finalJobs: [{ name: 'publish', status: 'completed', conclusion: 'success' }] }).action,
+    'already-published',
+  );
+  // A republish for the tip is decideRepublish's business, not this one's.
+  assert.equal(
+    decide({ branchRuns: [{ ...cancelledTip, name: `Republish ios after native build (${FINGERPRINT})` }] }).action,
+    'none',
+  );
+  assert.equal(decide({ tip: null }).action, 'unreadable');
+  assert.equal(decide({ finalJobs: null }).action, 'unreadable');
+});
+
+void test('a republish cancelled after an earlier tick gave up confirming it is re-dispatched by a later tick', async () => {
+  // The cancel landed after the tick that sent it stopped waiting. That tick
+  // reported the run as not stopped; this one finds it completed and cancelled.
+  const cancelled = republishRun({ status: 'completed', conclusion: 'cancelled', updated_at: minutesAgo(20) });
+  const github = laneGitHub({ dispatched: [cancelled], jobs: { 50: PARKED_PUBLISH_JOBS } });
+  const { result, output, discord } = await runLane(github);
+  assert.deepEqual(github.calls, [['dispatch', 'release/next', { platform: 'ios', expect_fingerprint: FINGERPRINT }]]);
+  assert.equal(result.failed, false);
+  assert.equal(output, 'notify=true\n');
+  assert.match(discord, /Mobile OTA lane recovery/);
+});
+
+void test('an old spent retry found by the scan stays quiet', async () => {
+  const github = laneGitHub({
+    dispatched: [
+      republishRun({ id: 50, status: 'completed', conclusion: 'cancelled', updated_at: minutesAgo(20) }),
+      republishRun({ id: 40, status: 'completed', conclusion: 'cancelled', updated_at: minutesAgo(200) }),
+    ],
+  });
+  const { result, output } = await runLane(github);
+  assert.deepEqual(github.calls, []);
+  assert.equal(result.failed, false);
+  assert.equal(output, 'notify=false\n');
+});
+
+void test('a republish whose cancel is not confirmed is reported and left for the next tick', async () => {
+  const github = laneGitHub({ holding: [republishRun()], jobs: { 50: PARKED_PUBLISH_JOBS } });
+  github.cancelRun = () => {
+    throw new Error('HTTP 403: cancellation denied');
+  };
+  const { result, discord } = await runLane(github);
+  assert.deepEqual(github.calls, []);
+  assert.equal(result.failed, true);
+  assert.deepEqual(
+    result.recoveries.map(({ decision }) => decision.action),
+    ['cancel-unconfirmed'],
+  );
+  assert.match(discord, /still wedged/);
+  assert.match(discord, /not confirmed stopped\. Once it is, the next tick re-dispatches it/);
+});
+
+void test('a republish whose retry is spent is cancelled, reported with the command, and fails the watchdog', async () => {
+  const github = laneGitHub({
+    holding: [republishRun()],
+    jobs: { 50: PARKED_PUBLISH_JOBS },
+    dispatched: [republishRun({ id: 40, status: 'completed', conclusion: 'cancelled' })],
+  });
+  const { result, discord } = await runLane(github);
+  assert.deepEqual(github.calls, [['cancel', 50]]);
+  assert.equal(result.failed, true);
+  assert.match(discord, /was NOT re-dispatched/);
+  assert.match(
+    discord,
+    new RegExp(
+      `gh workflow run mobile-ota-production\\.yml --ref release/next -f platform=ios -f expect_fingerprint=${FINGERPRINT}`,
+    ),
+  );
+});
+
+void test('runs queued behind the lane produce no action and no notification', async () => {
+  const github = laneGitHub({
+    holding: [republishRun()],
+    jobs: { 50: [{ name: 'publish', status: 'pending', created_at: minutesAgo(600) }] },
+  });
+  const { result, output, discord } = await runLane(github);
+  assert.deepEqual(github.calls, []);
+  assert.equal(result.failed, false);
+  assert.equal(output, 'notify=false\n');
+  assert.equal(discord, '');
+});
+
+void test('a lane dry run reports what it would do without mutating anything', async () => {
+  const github = laneGitHub({ holding: [republishRun()], jobs: { 50: PARKED_PUBLISH_JOBS } });
+  github.cancelRun = () => assert.fail('dry run must not cancel');
+  github.dispatchWorkflow = () => assert.fail('dry run must not dispatch');
+  const { result, output } = await runLane(github, { dryRun: true });
+  assert.equal(result.cancel.length, 1);
+  assert.equal(result.recoveries[0].decision.action, 'redispatch');
+  assert.equal(output, 'notify=false\n');
+});
+
+void test('a deploy job waiting on another group is queued behind it, not parked', () => {
+  // promote-mobile-ota waits as `pending` on the OTA publish lane. The --lane ota
+  // pass watches that lane; this pass must not cancel the deploy for waiting.
+  const verdict = classifyRun({
+    run: run({ status: 'in_progress', run_started_at: minutesAgo(90) }),
+    jobs: [
+      { name: 'deploy-web', status: 'completed', conclusion: 'success', completed_at: minutesAgo(80) },
+      { name: 'promote-mobile-ota', status: 'pending', started_at: minutesAgo(80) },
+    ],
+    nowMs: NOW,
+  });
+  assert.equal(verdict.action, 'none');
+  assert.equal(isParked(run({ status: 'in_progress' }), [{ name: 'promote-mobile-ota', status: 'pending' }]), false);
+});
+
+// A republish that waited past TRAIN_LIVE_STORE_MAX_AGE_MS for the lane fails
+// rather than being cancelled. Its binary is stranded just the same.
+function staleEvidenceFailure(overrides = {}, failingStep = STALE_EVIDENCE_STEP) {
+  return {
+    run: republishRun({ status: 'completed', conclusion: 'failure', updated_at: minutesAgo(10), ...overrides }),
+    jobs: [
+      {
+        name: 'publish',
+        status: 'completed',
+        conclusion: 'failure',
+        steps: [
+          { name: 'Read public store runtimes', conclusion: 'success' },
+          { name: failingStep, conclusion: 'failure' },
+        ],
+      },
+    ],
+  };
+}
+
+void test('a republish that failed on stale store evidence is dispatched again once', async () => {
+  const failed = staleEvidenceFailure();
+  const github = laneGitHub({ dispatched: [failed.run], jobs: { 50: failed.jobs } });
+  const { result, output, discord } = await runLane(github);
+  assert.deepEqual(github.calls, [['dispatch', 'release/next', { platform: 'ios', expect_fingerprint: FINGERPRINT }]]);
+  assert.equal(result.failed, false);
+  assert.equal(output, 'notify=true\n');
+  assert.match(discord, /Mobile OTA lane recovery/);
+  assert.match(discord, /Re-dispatched "Republish ios after native build/);
+});
+
+void test('a republish that failed for any other reason is left to its own failure report', async () => {
+  const failed = staleEvidenceFailure({}, 'Publish iOS OTA');
+  const github = laneGitHub({ dispatched: [failed.run], jobs: { 50: failed.jobs } });
+  const { result, output } = await runLane(github);
+  assert.deepEqual(github.calls, []);
+  assert.equal(result.failed, false);
+  assert.equal(output, 'notify=false\n');
+});
+
+void test('a fresh stale-evidence failure whose retry is spent posts the command and fails the watchdog', async () => {
+  const failed = staleEvidenceFailure();
+  const earlier = staleEvidenceFailure({ id: 40, updated_at: minutesAgo(140) }).run;
+  const github = laneGitHub({ dispatched: [failed.run, earlier], jobs: { 50: failed.jobs } });
+  const { result, discord } = await runLane(github);
+  assert.deepEqual(github.calls, []);
+  assert.equal(result.failed, true);
+  assert.match(discord, /was NOT re-dispatched\*\* \(it already had its one retry\)/);
+  assert.match(discord, new RegExp(`--ref release/next -f platform=ios -f expect_fingerprint=${FINGERPRINT}`));
+});
+
+void test('an old stale-evidence failure whose retry is spent stays quiet', async () => {
+  const failed = staleEvidenceFailure({ updated_at: minutesAgo(180) });
+  const earlier = staleEvidenceFailure({ id: 40, updated_at: minutesAgo(300) }).run;
+  const github = laneGitHub({ dispatched: [failed.run, earlier], jobs: { 50: failed.jobs } });
+  const { result, output } = await runLane(github);
+  assert.deepEqual(github.calls, []);
+  assert.equal(result.failed, false);
+  assert.equal(output, 'notify=false\n');
+});
+
+void test('mobile-ota-production.yml refuses stale evidence in the step the watchdog looks for', () => {
+  const workflow = parseYaml(
+    readFileSync(new URL('../.github/workflows/mobile-ota-production.yml', import.meta.url), 'utf8'),
+  );
+  const step = workflow.jobs.publish.steps.find((candidate) => candidate.name === STALE_EVIDENCE_STEP);
+  assert.ok(step, `publish must keep a step named "${STALE_EVIDENCE_STEP}"`);
+  assert.match(step.run, /mobile-release-train-policy\.ts --check-evidence/);
+});
+
+function staleTipFailure(overrides = {}, failingStep = STALE_EVIDENCE_STEP) {
+  const tipRun = run({
+    id: 80,
+    event: 'push',
+    name: 'Production OTA',
+    head_branch: 'release/next',
+    head_sha: TIP_SHA,
+    status: 'completed',
+    conclusion: 'failure',
+    updated_at: minutesAgo(10),
+    ...overrides,
+  });
+  const jobs = [
+    {
+      name: 'publish',
+      status: 'completed',
+      conclusion: 'failure',
+      steps: [{ name: failingStep, conclusion: 'failure' }],
+    },
+  ];
+  return { tipRun, jobs };
+}
+
+void test('a tip push that failed on stale store evidence is dispatched again once', async () => {
+  // Last in a backlog, so the likeliest run to wait past the evidence limit.
+  const { tipRun, jobs } = staleTipFailure();
+  const github = laneGitHub({ branchRuns: [tipRun], jobs: { 80: jobs } });
+  const { result, output, discord } = await runLane(github);
+  assert.deepEqual(github.calls, [['dispatch', 'release/next', {}]]);
+  assert.equal(result.failed, false);
+  assert.equal(output, 'notify=true\n');
+  assert.match(discord, /Dispatched a fresh publish for the release\/next tip/);
+});
+
+void test('a tip push that failed for another reason is not dispatched again', async () => {
+  const { tipRun, jobs } = staleTipFailure({}, 'Publish iOS OTA');
+  const github = laneGitHub({ branchRuns: [tipRun], jobs: { 80: jobs } });
+  const { output } = await runLane(github);
+  assert.deepEqual(github.calls, []);
+  assert.equal(output, 'notify=false\n');
+});
+
+void test('a fresh stale-evidence tip failure whose retry is spent posts the command and fails', async () => {
+  const { tipRun, jobs } = staleTipFailure();
+  const earlierDispatch = run({
+    id: 75,
+    event: 'workflow_dispatch',
+    name: 'Production OTA',
+    head_sha: TIP_SHA,
+    status: 'completed',
+    conclusion: 'failure',
+  });
+  const github = laneGitHub({ branchRuns: [tipRun, earlierDispatch], jobs: { 80: jobs } });
+  const { result, discord } = await runLane(github);
+  assert.deepEqual(github.calls, []);
+  assert.equal(result.failed, true);
+  assert.match(discord, /`gh workflow run mobile-ota-production\.yml --ref release\/next`/);
+});
+
+void test('with OTA_LANE_REDISPATCH off the watchdog still cancels but posts the command instead', async () => {
+  const github = laneGitHub({ holding: [republishRun()], jobs: { 50: PARKED_PUBLISH_JOBS } });
+  const { result, output, discord } = await runLane(github, { redispatchEnabled: false });
+  assert.deepEqual(github.calls, [['cancel', 50]]);
+  assert.equal(result.failed, false);
+  assert.equal(output, 'notify=true\n');
+  assert.match(discord, /needs a re-dispatch\*\*, but OTA_LANE_REDISPATCH is off/);
+  assert.match(
+    discord,
+    new RegExp(
+      `gh workflow run mobile-ota-production\\.yml --ref release/next -f platform=ios -f expect_fingerprint=${FINGERPRINT}`,
+    ),
+  );
+});
+
+void test('with OTA_LANE_REDISPATCH off a stale tip failure posts its command once fresh, then goes quiet', async () => {
+  const fresh = staleTipFailure();
+  const freshGitHub = laneGitHub({ branchRuns: [fresh.tipRun], jobs: { 80: fresh.jobs } });
+  const freshTick = await runLane(freshGitHub, { redispatchEnabled: false });
+  assert.deepEqual(freshGitHub.calls, []);
+  assert.equal(freshTick.result.failed, false);
+  assert.match(freshTick.discord, /OTA_LANE_REDISPATCH is off/);
+  assert.match(freshTick.discord, /`gh workflow run mobile-ota-production\.yml --ref release\/next`/);
+
+  const old = staleTipFailure({ updated_at: minutesAgo(120) });
+  const oldGitHub = laneGitHub({ branchRuns: [old.tipRun], jobs: { 80: old.jobs } });
+  const oldTick = await runLane(oldGitHub, { redispatchEnabled: false });
+  assert.deepEqual(oldGitHub.calls, []);
+  assert.equal(oldTick.output, 'notify=false\n');
+});
+
+void test('only an explicit off disables re-dispatch', () => {
+  assert.equal(redispatchEnabledFrom({}), true);
+  assert.equal(redispatchEnabledFrom({ OTA_LANE_REDISPATCH: '' }), true);
+  assert.equal(redispatchEnabledFrom({ OTA_LANE_REDISPATCH: 'on' }), true);
+  assert.equal(redispatchEnabledFrom({ OTA_LANE_REDISPATCH: 'of' }), true);
+  assert.equal(redispatchEnabledFrom({ OTA_LANE_REDISPATCH: 'off' }), false);
+  assert.equal(redispatchEnabledFrom({ OTA_LANE_REDISPATCH: ' OFF ' }), false);
+});
+
+void test('the OTA lane job reads the OTA_LANE_REDISPATCH repository variable', () => {
+  const workflow = parseYaml(
+    readFileSync(new URL('../.github/workflows/production-deploy-watchdog.yml', import.meta.url), 'utf8'),
+  );
+  const step = workflow.jobs.watchdog.steps.find((candidate) => candidate.id === 'watchdog');
+  assert.equal(step.env.OTA_LANE_REDISPATCH, '${{ vars.OTA_LANE_REDISPATCH }}');
+});
+
+void test('OTA recovery reads and dispatches through the GitHub adapter', () => {
+  const requests = [];
+  const github = createCliGitHub({
+    repository: 'example/repository',
+    workflowFile: MOBILE_OTA_LANE.workflowFile,
+    branch: MOBILE_OTA_LANE.branch,
+    api: (argumentsList) => {
+      requests.push(argumentsList);
+      return argumentsList[2].includes('/git/ref/')
+        ? JSON.stringify({ object: { sha: TIP_SHA } })
+        : JSON.stringify({ workflow_runs: [] });
+    },
+  });
+  github.listDispatchedRuns();
+  github.listBranchRuns('release/next');
+  assert.equal(github.getBranchHead('release/next'), TIP_SHA);
+  github.dispatchWorkflow('release/next', { platform: 'ios', expect_fingerprint: FINGERPRINT });
+  const base = 'repos/example/repository/actions/workflows/mobile-ota-production.yml';
+  assert.deepEqual(requests, [
+    ['--method', 'GET', `${base}/runs?event=workflow_dispatch&per_page=30`],
+    ['--method', 'GET', `${base}/runs?branch=release%2Fnext&per_page=30`],
+    ['--method', 'GET', 'repos/example/repository/git/ref/heads/release/next'],
+    [
+      '--method',
+      'POST',
+      `${base}/dispatches`,
+      '-f',
+      'ref=release/next',
+      '-f',
+      'inputs[platform]=ios',
+      '-f',
+      `inputs[expect_fingerprint]=${FINGERPRINT}`,
+    ],
+  ]);
 });

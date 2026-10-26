@@ -58,25 +58,8 @@ permissions:
   # scripts/mobile-ota-server-ready.mjs lists this commit's Railway Config runs.
   actions: read
 
-concurrency:
-  # Direct production publishes share one lane with native republishes and
-  # backports. Staging has its own lane so it can overlap production publishes
-  # and the web/backend builds; promotion later takes the production lane.
-  group: ${{ inputs.stage_for_production_deploy && 'mobile-ota-staging' || 'mobile-ota-production' }}
-  cancel-in-progress: false
-  # QUEUE, never supersede. cancel-in-progress governs only the RUNNING run —
-  # by default GitHub still cancels an existing *pending* run when a new one
-  # queues. That used to be harmless (the winner republished the latest state
-  # anyway), but the native workflows now dispatch a per-PLATFORM republish to
-  # un-strand a binary they just uploaded, and those don't cover for each other:
-  # an iOS republish running + an Android republish pending + any push to main
-  # would drop the Android one, leaving Android installs frozen on their embedded
-  # bundle until the next Android native build. The cost is real — pushes during a
-  # long publish now queue instead of coalescing, so a busy day is N sequential
-  # ~10-minute publishes rather than one. That is the right trade: never silently
-  # dropping a republish is the whole point. Must stay in lockstep with
-  # mobile-ota-backport.yml, which shares this group.
-  queue: max
+# No workflow-level concurrency: the publish lane is taken by the `publish` job
+# alone (see the note there), so a job before or after it can never hold it.
 
 # ─── SHARED BUILD ENV (workflow-level) ───────────────────────────────────────
 # MUST stay byte-identical to ios-testflight-rn.yml / android-apk-rn.yml, for two
@@ -120,6 +103,12 @@ env:
   EXPO_PUBLIC_USE_RN_FETCH: '1'
 
 jobs:
+  # Runs outside the publish lane, so its evidence can be old by the time
+  # `publish` gets the lane. It stays a separate job on purpose: it holds the
+  # App Store Connect and Play credentials under `environment: Production` and
+  # runs only main's code with no install, while `publish` runs train code and
+  # `vp install`. Instead, `publish` refuses evidence older than two hours
+  # (TRAIN_LIVE_STORE_MAX_AGE_MS in scripts/lib/mobile-release-policy.ts).
   live-store-runtimes:
     if: github.ref == 'refs/heads/release/next'
     uses: ./.github/workflows/mobile-live-store-runtimes.yml
@@ -250,6 +239,41 @@ jobs:
       contents: read
       actions: write
     runs-on: ubuntu-latest
+    # Direct production publishes share one lane with native republishes,
+    # backports, staged promotions and the stable tick. Staging has its own lane
+    # so it can overlap production publishes and the web/backend builds;
+    # promotion later takes the production lane.
+    #
+    # The lane sits on THIS job, not the workflow. A group held at workflow level
+    # is held by every job in the run, and on 2026-10-24 run 40105607795 published
+    # in ten minutes, then its notify job never got a runner and held the lane for
+    # 27 hours: 25 train pushes, two native republishes and the hourly stable tick
+    # queued behind a job that was only going to post to Discord. Job timeouts
+    # never fire on a job that never starts. production-deploy-watchdog.yml's
+    # mobile-ota-production lane breaks a run parked at a gate.
+    #
+    # The staging-only jobs above (resolve-staging-runtimes,
+    # capture-staging-baselines) run outside the staging lane. That is safe:
+    # staging runs only come from production-deploy.yml's workflow_call, and
+    # that workflow is serialised by its own `production-deploy` group, so two
+    # staging runs never overlap. Both jobs only read.
+    #
+    # QUEUE, never supersede. cancel-in-progress governs only the RUNNING job —
+    # by default GitHub still cancels an existing *pending* one when a new one
+    # queues. That used to be harmless (the winner republished the latest state
+    # anyway), but the native workflows now dispatch a per-PLATFORM republish to
+    # un-strand a binary they just uploaded, and those don't cover for each other:
+    # an iOS republish running + an Android republish pending + any push to main
+    # would drop the Android one, leaving Android installs frozen on their embedded
+    # bundle until the next Android native build. The cost is that pushes during a
+    # long publish queue instead of coalescing; a superseded train push skips its
+    # publish (first step below), so a backlog drains at about a minute per push.
+    # Never silently dropping a republish is the whole point. Must stay in
+    # lockstep with mobile-ota-backport.yml, which shares this group.
+    concurrency:
+      group: ${{ inputs.stage_for_production_deploy && 'mobile-ota-staging' || 'mobile-ota-production' }}
+      cancel-in-progress: false
+      queue: max
     # Six attempts per platform can spend 34 minutes in backoff alone, and iOS
     # and Android each get that budget sequentially — a fully throttled run is
     # ~98 minutes of publishing plus setup, changelog, source maps and the health
@@ -307,16 +331,43 @@ jobs:
           # token (read-only checkout) when the app isn't set up.
           token: ${{ steps.push_token.outputs.token || github.token }}
 
+      # The first thing a train push does once it holds the lane. Every push to
+      # release/next starts a run (no paths filter), and runs queue behind each
+      # other, so when the branch has already moved on, the run for the newer
+      # tip is queued behind this one and publishes newer JS. Skipping here,
+      # before setup and install, makes a backlog of N pushes cost about N
+      # minutes instead of N full publishes. Skipping the gate below skips every
+      # later publish step, so the outputs read "nothing published", not a
+      # failure. Native republishes (workflow_dispatch) and staging
+      # (workflow_call) never skip here. If ls-remote fails this falls through
+      # to publishing; the push-run-superseded check in the train baseline step
+      # still decides.
+      - name: Skip a train push a newer push has superseded
+        id: superseded
+        if: github.event_name == 'push' && github.ref == 'refs/heads/release/next'
+        run: |
+          set -uo pipefail
+          tip="$(git ls-remote origin refs/heads/release/next | cut -f1)" || tip=''
+          if printf '%s' "$tip" | grep -Eq '^[0-9a-f]{40}$' && [ "$tip" != "$GITHUB_SHA" ]; then
+            echo 'superseded=true' >> "$GITHUB_OUTPUT"
+            echo "superseded by $tip" >> "$GITHUB_STEP_SUMMARY"
+            echo "::notice::release/next moved to $tip; the run queued for it publishes newer JS."
+          else
+            echo 'superseded=false' >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Require live backend schema before direct main publish
         if: github.ref == 'refs/heads/main' && !inputs.stage_for_production_deploy
         run: node scripts/mobile-ota-schema-ready.mjs
 
       - uses: voidzero-dev/setup-vp@v1
+        if: steps.superseded.outputs.superseded != 'true'
         with:
           node-version: '22.x'
           cache: true
 
       - name: Install Node.js dependencies (workspace root)
+        if: steps.superseded.outputs.superseded != 'true'
         run: vp install --frozen-lockfile
 
       # eoas and the xprem server must speak the same upload protocol (3.2.0 broke
@@ -324,12 +375,16 @@ jobs:
       # runs alongside this job; wait for it rather than publish against the old
       # server. Returns at once for the ordinary push with no Railway change.
       - name: Wait for the OTA server rollout on this commit
+        if: steps.superseded.outputs.superseded != 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/mobile-ota-server-ready.mjs
 
+      # Skipped for a superseded push, which leaves `configured` empty and so
+      # skips every step gated on it.
       - name: Check OTA infra is wired
         id: gate
+        if: steps.superseded.outputs.superseded != 'true'
         env:
           STAGING: ${{ inputs.stage_for_production_deploy }}
         run: |
@@ -410,6 +465,18 @@ jobs:
           set -euo pipefail
           live_runtimes="$(jq -c . "$RUNNER_TEMP/live-store-runtimes/live-store-runtimes.json")"
           echo "live_runtimes=$live_runtimes" >> "$GITHUB_OUTPUT"
+
+      # Refuses evidence older than TRAIN_LIVE_STORE_MAX_AGE_MS (two hours): the
+      # job that resolved it ran before this one waited for the lane. A separate
+      # step on purpose: production-deploy-watchdog.mjs matches this step NAME to
+      # tell a stale-evidence failure from any other, and dispatches a stranded
+      # native republish again once. Rename both together. Only an active,
+      # current train reads the evidence, so only that case is checked.
+      - name: Refuse stale public store evidence
+        if: steps.gate.outputs.configured == 'true' && github.ref == 'refs/heads/release/next' && steps.train_baselines.outputs.superseded == 'false' && steps.train_baselines.outputs.train_active == 'true'
+        env:
+          LIVE_STORE_RUNTIMES: ${{ steps.live_store.outputs.live_runtimes }}
+        run: node --experimental-strip-types scripts/mobile-release-train-policy.ts --check-evidence
 
       # The live stores are the source of truth. main can already carry native
       # code awaiting review while production still runs the previous runtime.
@@ -1147,7 +1214,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     continue-on-error: true
-    environment: Production
+    # Deliberately no `environment: Production`: its only secret,
+    # DISCORD_DEPLOY_WEBHOOK, is repository-level, and an environment is one
+    # more thing a job can wait on before it starts. In run 40105607795 this job
+    # never started and sat for 27 hours. It is outside the publish lane now, so
+    # a repeat would hold nothing up.
     steps:
       # Outputs carry only publication results; webhook delivery runs main code.
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6

@@ -11,6 +11,7 @@ import {
 import {
   isReleaseTrainActive,
   LIVE_STORE_MAX_AGE_MS,
+  TRAIN_LIVE_STORE_MAX_AGE_MS,
   mayPublishTrainRuntime,
   parseLiveStoreRuntimes,
   readMarketingVersion,
@@ -74,6 +75,15 @@ describe('release train policy', () => {
     }
     expect(() => parseLiveStoreRuntimes(live(), NOW + LIVE_STORE_MAX_AGE_MS + 1)).toThrow(/stale/);
     expect(() => parseLiveStoreRuntimes(live(), NOW - 61_000)).toThrow(/stale/);
+    // The train publish refuses evidence older than two hours; it is resolved
+    // outside the OTA lane, before the publish job queued for it.
+    expect(TRAIN_LIVE_STORE_MAX_AGE_MS).toBe(2 * 60 * 60 * 1_000);
+    expect(parseLiveStoreRuntimes(live(), NOW + TRAIN_LIVE_STORE_MAX_AGE_MS, TRAIN_LIVE_STORE_MAX_AGE_MS)).toEqual(
+      live(),
+    );
+    expect(() =>
+      parseLiveStoreRuntimes(live(), NOW + TRAIN_LIVE_STORE_MAX_AGE_MS + 1, TRAIN_LIVE_STORE_MAX_AGE_MS),
+    ).toThrow(/stale.*re-run all jobs/);
   });
 });
 

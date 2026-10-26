@@ -20,8 +20,11 @@ name: Production Deploy Watchdog
 # when cancelling empties the group.
 # mobile-ota-production: cancel only a run with a job waiting at an environment
 # gate, nothing executing, and 45 minutes without job progress. No age ceiling
-# (an executing publish is never killed) and no redispatch (`queue: max` keeps
-# every pending run).
+# (an executing publish is never killed). A cancelled run is not re-dispatched
+# (`queue: max` keeps every pending run), except the work nothing queued would
+# redo, once each: a native build's republish that was cancelled or refused
+# stale store evidence, and the release/next tip. OTA_LANE_REDISPATCH=off posts
+# those as commands instead.
 # Both: give ordinary cancellation five minutes, then force-cancel and verify
 # completion before reporting recovery. See scripts/production-deploy-watchdog.mjs
 # for the decision rules.
@@ -65,7 +68,7 @@ jobs:
     # same silent stall it exists to break.
     timeout-minutes: 10
     permissions:
-      actions: write # cancel a stalled run, dispatch the production-deploy replacement
+      actions: write # cancel a stalled run, dispatch a replacement (production-deploy, OTA recovery)
       contents: read
     steps:
       - uses: actions/checkout@v6
@@ -80,6 +83,10 @@ jobs:
           # fallback makes that an explicit "false" rather than something the
           # shell has to infer from an empty expansion.
           DRY_RUN: ${{ inputs.dry_run || 'false' }}
+          # Incident off switch for the OTA lane's re-dispatches:
+          # `gh variable set OTA_LANE_REDISPATCH --body off` keeps the cancels
+          # but posts each re-dispatch as a command. production-deploy ignores it.
+          OTA_LANE_REDISPATCH: ${{ vars.OTA_LANE_REDISPATCH }}
         run: |
           set -euo pipefail
           if [ "$DRY_RUN" = "true" ]; then
@@ -89,7 +96,7 @@ jobs:
           fi
           # github.sha is main's head on both triggers, which is the commit the
           # production-deploy lane re-dispatches for when cancelling empties the
-          # group. The OTA lane never dispatches and ignores it.
+          # group. The OTA lane ignores it.
           # Piped through tee so the report reaches the log and the job summary
           # whether the script succeeds or fails.
           node scripts/production-deploy-watchdog.mjs \
