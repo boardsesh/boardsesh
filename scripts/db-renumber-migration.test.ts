@@ -402,6 +402,24 @@ describe('workflow trust boundaries', () => {
     expect(pushJob).toContain('git push --force-with-lease="$BRANCH:$HEAD_SHA"');
   });
 
+  it('refuses a result that changes files the PR never touched, before minting the token', () => {
+    const treeCheck = pushJob.indexOf('\n      - name: Refuse changes beyond the renumber\n');
+    expect(treeCheck).toBeGreaterThan(-1);
+    expect(treeCheck).toBeLessThan(pushJob.indexOf('\n      - name: Mint the push token\n'));
+    expect(pushJob).toContain('git merge-tree --write-tree --no-messages "$base" "$HEAD_SHA"');
+    expect(pushJob).toContain("grep -v '^packages/db/drizzle/'");
+  });
+
+  it('pins every action on the token-bearing push runner to a commit SHA', () => {
+    const uses = [...pushJob.matchAll(/uses: (\S+)/g)].map(([, action]) => action);
+    expect(uses.length).toBeGreaterThan(3);
+    for (const action of uses) expect(action).toMatch(/@[0-9a-f]{40}$/);
+  });
+
+  it('accepts only a positive PR number', () => {
+    expect(gateJob).toContain('if (!/^[1-9][0-9]*$/.test(raw)) {');
+  });
+
   it('rejects a status-function escape in the force-push condition', () => {
     const escapedConditionJob = pushJob.replace(
       `if: ${EXPECTED_FORCE_PUSH_CONDITION}\n        env:`,

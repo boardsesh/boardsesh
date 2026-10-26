@@ -84,7 +84,7 @@ jobs:
           script: |
             const raw = String(context.payload.inputs.pr);
             // Defense in depth: this value reaches git refs and shell env.
-            if (!/^[0-9]+$/.test(raw)) {
+            if (!/^[1-9][0-9]*$/.test(raw)) {
               core.setOutput('run', 'false');
               core.setOutput('skip_reason', 'pr input is not a number');
               return;
@@ -312,14 +312,14 @@ jobs:
       RESULT_SHA: ${{ needs.renumber.outputs.result_sha }}
     steps:
       - name: Check out history for the bundle's prerequisites
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.workflow_sha }}
           fetch-depth: 0
           persist-credentials: false
 
       - name: Download the renumbered commits
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: renumbered-branch
           path: ${{ runner.temp }}/renumbered
@@ -335,9 +335,32 @@ jobs:
           test "$(git rev-parse refs/renumber/result)" = "$RESULT_SHA" \
             || { echo "::error::The bundle does not carry the reported result."; exit 1; }
 
+      # The renumber job ran PR code, so its result is checked against what a plain
+      # merge of the vetted head onto the same main commit would give. Only the
+      # migration folder may differ, plus files the PR itself changed (the script
+      # rewrites references to the old migration tag there, and only there).
+      - name: Refuse changes beyond the renumber
+        run: |
+          set -euo pipefail
+          base="$(git merge-base "$RESULT_SHA" origin/main)"
+          # Exit 1 means conflicts (usually the journal); the tree is still written, first line.
+          merged="$(git merge-tree --write-tree --no-messages "$base" "$HEAD_SHA" || true)"
+          expected="${merged%%$'\n'*}"
+          printf '%s' "$expected" | grep -Eq '^[0-9a-f]{40}$' \
+            || { echo "::error::Could not compute the plain merge of $HEAD_SHA onto $base."; exit 1; }
+          git diff --name-only "$(git merge-base "$HEAD_SHA" "$base")" "$HEAD_SHA" > "$RUNNER_TEMP/pr-files"
+          git diff --name-only "$expected" "$RESULT_SHA" \
+            | grep -v '^packages/db/drizzle/' \
+            | grep -vxF -f "$RUNNER_TEMP/pr-files" > "$RUNNER_TEMP/unexpected" || true
+          if [ -s "$RUNNER_TEMP/unexpected" ]; then
+            echo "::error::The renumbered result changes files outside the migration folder that this PR never touched:"
+            cat "$RUNNER_TEMP/unexpected"
+            exit 1
+          fi
+
       - name: Re-check the PR immediately before pushing
         id: recheck
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
             const { data: pr } = await github.rest.pulls.get({
@@ -360,7 +383,7 @@ jobs:
       - name: Mint the push token
         id: push_token
         if: steps.recheck.outputs.ok == 'true'
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
         with:
           app-id: ${{ vars.OTA_PUSH_APP_ID }}
           private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}

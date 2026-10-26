@@ -59,13 +59,13 @@ const ALLOWED: Record<string, string> = {
   'db-migration-renumber.yml ${{ needs.gate.outputs.branch }}':
     'The gate sets run=true only on its own ci-sandbox/db-renumber branch, and the job holds no secret; a default-branch dispatch sets handoff=true instead. The gate tests below execute it.',
   'mobile-e2e-gate.yml ${{ needs.resolve.outputs.sha }}':
-    'resolve refuses a commit outside main history whenever the run itself is on main.',
+    'On main or release/*, resolve refuses a commit that is not an ancestor of the run commit.',
   'mobile-e2e-gate.yml ${{ needs.resolve.outputs.sha || github.sha }}':
-    'resolve refuses a commit outside main history whenever the run itself is on main; the fallback is the run commit.',
+    'On main or release/*, resolve refuses a commit that is not an ancestor of the run commit; the fallback is the run commit.',
   'e2e-tests.yml ${{ inputs.ref }}':
     'Only mobile-e2e-gate.yml passes a ref, after its resolve job checked it; a dispatch leaves it empty (the run ref).',
   'mobile-ota-boot-check.yml ${{ needs.resolve.outputs.commit }}':
-    'resolve refuses a commit outside main history when a dispatch runs on main; the daily stable call passes a staged main commit.',
+    "On main or release/*, a dispatch's commit must be an ancestor of the run commit; the daily stable call passes a staged main commit.",
   'mobile-screenshots-ios.yml ${{ github.event.workflow_run.head_sha || github.sha }}':
     'workflow_run is filtered to deploy runs on release/next (the release train); a dispatch checks out its own ref.',
   'mobile-screenshots-ios.yml ${{ needs.setup.outputs.source_sha }}':
@@ -82,6 +82,17 @@ const ALLOWED: Record<string, string> = {
     'The release-candidate job output: the pinned main/release/next head checked above.',
   'postgres-image-publisher.yml ${{ inputs.expected_main_sha }}':
     'validate-main fails unless expected_main_sha equals github.sha and the live main head.',
+  // Run steps whose git checkout arguments come from a variable (`file::job::step`).
+  'mobile-ota-backport.yml::backport::Locate the release anchor and prepare the hotfix tree':
+    'Checks out a release/* anchor tag, which only the release App may create (tag ruleset); the variable part is the new local branch name.',
+  'mobile-ota-check.yml::ota-check::Materialize the base-branch baseline':
+    "BASE_REF is the PR's base branch on a pull_request run (PR scope) and main on a push run; the variable path is RUNNER_TEMP.",
+  'mobile-store-submit.yml::submit-ios::Take the listing text from the merge commit':
+    'Copies only fastlane/metadata text from the release merge commit on main; nothing from it is executed.',
+  'ota-image-bump.yml::bump::Open or update the bump PRs':
+    'Creates the bump branch from origin/main; the variable is the new branch name, not the source.',
+  'production-deploy.yml::push-promoted-changelog::Push promoted changelog to main':
+    'Detached worktree of origin/main; the variable is the RUNNER_TEMP path.',
 };
 
 function triggers(workflow: Workflow): Record<string, unknown> {
@@ -115,11 +126,15 @@ function expressionTerms(ref: string): string[] | null {
     .filter((term) => term.length > 0 && !/^'[^']*'$/.test(term) && term !== 'true' && term !== 'false');
 }
 
-/** A checkout's `with.ref` as written; YAML may hand back a number for a bare SHA-like value. */
-function checkoutRef(step: Step): string {
-  const ref = step.with?.ref;
-  return typeof ref === 'string' || typeof ref === 'number' ? String(ref).trim() : '';
+/** A scalar `with:` input as written ('' when absent); YAML may hand back a number or boolean. */
+function scalarInput(step: Step, name: string): string {
+  const input = step.with?.[name];
+  return typeof input === 'string' || typeof input === 'number' || typeof input === 'boolean'
+    ? String(input).trim()
+    : '';
 }
+
+const checkoutRef = (step: Step) => scalarInput(step, 'ref');
 
 function isTrustedRef(ref: string, workflow: Workflow): boolean {
   if (ref === '') return true;
@@ -135,9 +150,34 @@ function isTrustedRef(ref: string, workflow: Workflow): boolean {
   );
 }
 
-const executes = (step: Step) => typeof step.run === 'string' || (step.uses ?? '').startsWith('./');
+/** True when a step runs code from the workspace a computed checkout may have filled. */
+function executes(step: Step): boolean {
+  if (typeof step.run === 'string' || (step.uses ?? '').startsWith('./')) return true;
+  // setup-vp (and friends) can install the workspace, running its lifecycle scripts.
+  const runInstall = scalarInput(step, 'run-install');
+  if (runInstall !== '' && runInstall !== 'false') return true;
+  // A github-script step that loads a module from disk runs whatever the checkout put there.
+  const script = step.with?.script;
+  if ((step.uses ?? '').startsWith('actions/github-script@') && typeof script === 'string') {
+    return [...script.matchAll(/\b(?:require|import)\s*\(\s*([^)]*)\)/g)].some(
+      ([, target]) =>
+        !/^['"`](?:node:)?(?:fs|path|os|crypto|child_process|util|url|zlib)['"`]$/.test(target?.trim() ?? ''),
+    );
+  }
+  return false;
+}
+
 const isCheckout = (step: Step) => (step.uses ?? '').startsWith('actions/checkout@');
 const PR_FETCH = /gh pr checkout|refs\/pull\/|\bpull\/(?:\$\{?[A-Za-z_]+\}?|[0-9]+)\/head/;
+// `git checkout|switch|worktree add` whose arguments come from a variable or expression.
+const COMPUTED_GIT_CHECKOUT =
+  /\bgit\s+(?:-C\s+\S+\s+)?(?:checkout|switch|worktree\s+add)\b[^\n]*(?:\$\{\{|\$[A-Za-z_{])/;
+
+/** A checkout of another repository is computed code no matter which ref it names. */
+function foreignRepository(step: Step): boolean {
+  const repository = scalarInput(step, 'repository');
+  return repository !== '' && repository.replace(/\s+/g, '') !== '${{github.repository}}';
+}
 
 function findViolations(files: Array<{ file: string; workflow: Workflow }>) {
   const violations: string[] = [];
@@ -148,15 +188,22 @@ function findViolations(files: Array<{ file: string; workflow: Workflow }>) {
       const steps = job.steps ?? [];
       steps.forEach((step, index) => {
         const where = `${file}::${jobName}::${step.name ?? step.uses ?? step.id ?? index}`;
-        if (typeof step.run === 'string' && PR_FETCH.test(step.run)) {
+        if (typeof step.run === 'string' && (PR_FETCH.test(step.run) || COMPUTED_GIT_CHECKOUT.test(step.run))) {
           if (ALLOWED[where]) used.add(where);
-          else violations.push(`${where}: fetches a pull request ref in a run step`);
+          else violations.push(`${where}: checks out a pull request or computed ref in a run step`);
         }
-        if (!isCheckout(step) || isTrustedRef(checkoutRef(step), workflow)) return;
+        if (!isCheckout(step)) return;
+        const foreign = foreignRepository(step);
+        if (!foreign && isTrustedRef(checkoutRef(step), workflow)) return;
         if (!steps.slice(index + 1).some(executes)) return;
-        const key = `${file} ${checkoutRef(step)}`;
+        const key = foreign
+          ? `${file} ${scalarInput(step, 'repository')} ${checkoutRef(step)}`
+          : `${file} ${checkoutRef(step)}`;
         if (ALLOWED[key]) used.add(key);
-        else violations.push(`${where}: checks out ${checkoutRef(step)} and later runs code`);
+        else
+          violations.push(
+            `${where}: checks out ${foreign ? 'another repository' : checkoutRef(step)} and later runs code`,
+          );
       });
     }
   }
@@ -221,6 +268,35 @@ describe('default-branch workflows never execute unreviewed checkouts', () => {
       ),
     ) as Workflow;
     expect(findViolations([{ file: 'x.yml', workflow }]).violations).toHaveLength(1);
+  });
+
+  it('flags installs, module loads, foreign repositories and git checkouts of computed code', () => {
+    const job = (steps: string[]) =>
+      parse(['on: { workflow_dispatch: {} }', 'jobs:', '  build:', '    steps:', ...steps].join('\n')) as Workflow;
+    const computed = ['      - uses: actions/checkout@v4', '        with: { ref: "${{ needs.gate.outputs.sha }}" }'];
+    const cases = [
+      job([...computed, '      - uses: voidzero-dev/setup-vp@v1', '        with: { run-install: true }']),
+      job([
+        ...computed,
+        '      - uses: actions/github-script@v7',
+        '        with:',
+        '          script: require(`${process.env.GITHUB_WORKSPACE}/scripts/x.cjs`)',
+      ]),
+      job([
+        '      - uses: actions/checkout@v4',
+        '        with: { repository: "${{ inputs.fork }}" }',
+        '      - run: make',
+      ]),
+      job(['      - run: git checkout "$PR_SHA" && make']),
+      job(['      - run: git worktree add ../pr "${{ inputs.sha }}"']),
+    ];
+    for (const workflow of cases) expect(findViolations([{ file: 'x.yml', workflow }]).violations).toHaveLength(1);
+    const builtinOnly = job([
+      ...computed,
+      '      - uses: actions/github-script@v7',
+      '        with: { script: "const fs = require(\'fs\')" }',
+    ]);
+    expect(findViolations([{ file: 'y.yml', workflow: builtinOnly }]).violations).toEqual([]);
   });
 
   it('ignores pull_request-only workflows and trusted refs', () => {
@@ -378,5 +454,41 @@ describe('db-migration-renumber gate', () => {
     );
     expect(outputs.get('run')).toBe('true');
     expect(outputs.get('handoff')).toBe('false');
+  });
+});
+
+// A branch created with GITHUB_TOKEN starts no `on: push` / `on: create` runs, so a
+// sandbox branch never wakes another workflow. An App token would.
+describe('sandbox handoff token', () => {
+  it.each([
+    ['mobile-ota-preview.yml', 'handoff'],
+    ['db-migration-renumber.yml', 'handoff'],
+    ['mobile-ota-preview.yml', 'sandbox-cleanup'],
+    ['db-migration-renumber.yml', 'sandbox-cleanup'],
+  ])('%s %s creates and deletes branches with GITHUB_TOKEN only', (file, jobName) => {
+    const workflow = parse(readFileSync(resolve(WORKFLOW_DIR, file), 'utf8')) as Workflow;
+    const job = workflow.jobs?.[jobName];
+    expect(job, `${file} ${jobName}`).toBeDefined();
+    for (const step of job?.steps ?? []) {
+      expect(step.uses ?? '').not.toContain('create-github-app-token');
+      expect(step.with?.['github-token']).toBeUndefined();
+      expect(step.with?.token).toBeUndefined();
+    }
+    expect(JSON.stringify(job)).not.toMatch(/secrets\./);
+  });
+
+  it('runs the helper with the github client github-script hands it', () => {
+    const helper = readFileSync(resolve(import.meta.dirname, '../lib/ci-sandbox.cjs'), 'utf8');
+    expect(helper).not.toMatch(/new Octokit|getOctokit|process\.env\.[A-Z_]*TOKEN/);
+  });
+});
+
+describe('.claude/setup.sh', () => {
+  it('exits before installing anything in GitHub Actions', () => {
+    const setup = readFileSync(resolve(import.meta.dirname, '../../.claude/setup.sh'), 'utf8');
+    const guard = setup.indexOf('if [ "${GITHUB_ACTIONS:-}" = "true" ]; then');
+    expect(guard).toBeGreaterThan(-1);
+    expect(setup.slice(guard).split('\n').slice(0, 4).join('\n')).toContain('exit 0');
+    expect(guard).toBeLessThan(setup.indexOf('\nvp install'));
   });
 });

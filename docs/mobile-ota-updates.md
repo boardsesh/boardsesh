@@ -2431,9 +2431,10 @@ Staging or beta moving during QA cannot change the candidate under test.
 gh workflow run mobile-ota-boot-check.yml -f ref=<40-character commit> -f branch=pr-staging
 ```
 
-A dispatch on `main` builds only what main made: the commit must be in main's history, the
-`mobile-ota-stage` artifact must come from a `main` run, and `receipt_json` is refused, since a
-hand-written receipt can name any commit or source artifact. To boot-check a PR preview with a
+A dispatch on `main` or a `release/*` branch builds only what that branch made: the commit must be
+an ancestor of the run's commit, the `mobile-ota-stage` artifact must come from a run on the same
+branch, and `receipt_json` is refused, since a hand-written receipt can name any commit or source
+artifact. To boot-check a PR preview with a
 hand-written receipt, dispatch on a branch (`--ref <branch>`).
 
 ### What a run does

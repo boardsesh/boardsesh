@@ -127,20 +127,22 @@ jobs:
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "Testing commit \`$sha\` (ref input: \"${REF_INPUT:-none, the triggering ref}\")." >> "$GITHUB_STEP_SUMMARY"
 
-      # A run on main shares what it writes with every branch and PR, so a person's
-      # dispatch on main only tests code already in main's history. To test any other
-      # commit, dispatch on its own branch: `gh workflow run mobile-e2e-gate.yml --ref <branch>`.
-      - name: Refuse a commit outside main on a main run
-        if: github.ref == 'refs/heads/main' && !inputs.called
+      # A run on main or a release branch writes where protected builds read, so a
+      # person's dispatch there only tests the run's own commit or its history. To
+      # test any other commit, dispatch on its own branch:
+      # `gh workflow run mobile-e2e-gate.yml --ref <branch>`.
+      - name: Refuse a commit outside the run's history on a protected branch
+        if: (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')) && !inputs.called
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ steps.sha.outputs.sha }}
+          RUN_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          status="$(gh api "repos/$GITHUB_REPOSITORY/compare/$SHA...main" --jq .status)"
+          status="$(gh api "repos/$GITHUB_REPOSITORY/compare/$SHA...$RUN_SHA" --jq .status)"
           case "$status" in
             ahead|identical) ;;
-            *) echo "::error::$SHA is not in main's history ($status). Dispatch on the commit's own branch instead."; exit 1 ;;
+            *) echo "::error::$SHA is not an ancestor of $GITHUB_REF_NAME's $RUN_SHA ($status). Dispatch on the commit's own branch instead."; exit 1 ;;
           esac
 
   # ---------------------------------------------------------------------------

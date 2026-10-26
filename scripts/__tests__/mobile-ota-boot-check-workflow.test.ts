@@ -110,20 +110,21 @@ describe('mobile-ota-boot-check.yml', () => {
     expect(receipt.run).toContain('elif [ -n "$RECEIPT_JSON" ]; then');
   });
 
-  it('builds only main-made commits and artifacts when a person dispatches on main', () => {
+  it('builds only the run history and its own branch artifacts on a protected dispatch', () => {
     const receipt = stepNamed(workflow.jobs.resolve, 'Find the receipt for the commit under test');
-    expect(receipt.env?.MAIN_DISPATCH).toBe(
-      "${{ github.event_name == 'workflow_dispatch' && !inputs.called && github.ref == 'refs/heads/main' }}",
+    expect(receipt.env?.PROTECTED_DISPATCH).toBe(
+      "${{ github.event_name == 'workflow_dispatch' && !inputs.called && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')) }}",
     );
+    expect(receipt.env?.RUN_SHA).toBe('${{ github.sha }}');
     const run = receipt.run ?? '';
     // A hand-written receipt can name any commit or source artifact.
-    expect(run.indexOf('if [ "$MAIN_DISPATCH" = true ] && [ -n "$RECEIPT_JSON" ]; then')).toBeLessThan(
+    expect(run.indexOf('if [ "$PROTECTED_DISPATCH" = true ] && [ -n "$RECEIPT_JSON" ]; then')).toBeLessThan(
       run.indexOf('printf \'%s\' "$RECEIPT_JSON" > receipt.json'),
     );
     expect(run).toContain(
-      '.workflow_run.head_branch == \\"main\\" and .workflow_run.head_repository_id == .workflow_run.repository_id',
+      '.workflow_run.head_branch == \\"$GITHUB_REF_NAME\\" and .workflow_run.head_repository_id == .workflow_run.repository_id',
     );
-    expect(run).toContain('gh api "repos/$GITHUB_REPOSITORY/compare/$commit...main" --jq .status');
+    expect(run).toContain('gh api "repos/$GITHUB_REPOSITORY/compare/$commit...$RUN_SHA" --jq .status');
     expect(workflow.on.workflow_call.inputs.called.default).toBe(true);
   });
 
