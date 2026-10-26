@@ -17,7 +17,14 @@ import {
   type WoodsBoardSize,
   type WoodsPacketResult,
 } from '@boardsesh/ble-protocol/woods';
-import { getBoardCapabilities, getMoonBoardGeometryByLayoutId, woodsSizeIdToDimension } from '@boardsesh/board-config';
+import {
+  classifyClimbBoardCompatibility,
+  getBoardCapabilities,
+  getMoonBoardGeometryByLayoutId,
+  woodsSizeIdToDimension,
+  toBoardName,
+  type ClimbBoardIdentity,
+} from '@boardsesh/board-config';
 import {
   blePlxErrorCodes,
   classifyBleFailure,
@@ -414,6 +421,9 @@ export type BleSendContext = {
   /** The climb's own board metadata, when known — lets a board/climb mismatch be seen. */
   climbBoardType?: string;
   climbLayoutId?: number | null;
+  /** Only applies when its original frames exactly match this send's frames.
+   * Raw editor/undo/relight callers can omit it. Never infer it from the queue. */
+  climbIdentity?: ClimbBoardIdentity;
 };
 
 export type SendFramesToBoard = (
@@ -714,6 +724,11 @@ export function useBoardBluetooth({
   // and the board uuid so a switch between two identically-configured walls at
   // one gym ends it too.
   const connectedConfigIdentityRef = useRef<string | null>(null);
+  // Async scans and queued sends can outlive their render. Check the live
+  // configuration before attaching or writing, including an awaited LED import.
+  const renderedConfigIdentity = connectionConfigIdentity(boardName, layoutId, sizeId, setIds, boardUuid);
+  const liveConfigIdentityRef = useRef(renderedConfigIdentity);
+  liveConfigIdentityRef.current = renderedConfigIdentity;
   // What connect() pushed as its initialFrames write, if any. The AutoSender
   // (mounted right after isConnected flips true) reads this one-shot seed so a
   // byte-identical current climb doesn't get re-sent immediately on connect —
@@ -1059,6 +1074,14 @@ export function useBoardBluetooth({
       // Resolved here (where layoutId is narrowed to a number) so the nested
       // performSend closure can use it. Mini LED strips are 12 rows, standard 18.
       const moonNumRows = getMoonBoardGeometryByLayoutId(layoutId).numRows;
+      const requestedConfigIdentity = connectionConfigIdentity(boardName, layoutId, sizeId, setIds, boardUuid);
+      const requestedAdapter = adapterRef.current;
+      const requestedGeneration = activeConnectionLifetimeRef.current?.generation;
+      // Metadata belongs to the actual original frames, before flattening or
+      // mirroring. Unrelated queue metadata cannot restrict raw editor frames.
+      const { climbIdentity, ...sendAnalyticsContext } = sendContext ?? {};
+      const associatedClimb = climbIdentity?.frames === frames ? climbIdentity : undefined;
+      const activeBoardName = toBoardName(boardName);
       const boardAnalyticsProperties = {
         boardName,
         layoutId,
@@ -1066,7 +1089,7 @@ export function useBoardBluetooth({
         mirrored,
         boardId: analyticsBoardId ?? undefined,
         connectedViaMismatchOverride: getConnectedViaMismatchOverride?.() ?? false,
-        ...sendContext,
+        ...sendAnalyticsContext,
       };
 
       // Lazily create the per-connection-generation controller so connect()
@@ -1080,6 +1103,12 @@ export function useBoardBluetooth({
       // signal with the generation controller; web passes the caller signal
       // straight through (see resolveWriteSignal).
       const { combinedSignal, dispose: disposeWriteSignal } = resolveWriteSignal(signal, generationSignal, Platform.OS);
+      const isCurrentSend = () =>
+        !combinedSignal.aborted &&
+        adapterRef.current === requestedAdapter &&
+        activeConnectionLifetimeRef.current?.generation === requestedGeneration &&
+        connectedConfigIdentityRef.current === requestedConfigIdentity &&
+        liveConfigIdentityRef.current === requestedConfigIdentity;
 
       // Collapse a multi-frame route to one static snapshot before any packet
       // builder sees it (#4634). Aurora (`aurora.ts` `frames.split('p')`) and
@@ -1127,7 +1156,23 @@ export function useBoardBluetooth({
             });
             return;
           }
-          sendAdapter = adapterRef.current;
+          if (!isCurrentSend()) return false;
+          if (
+            associatedClimb &&
+            activeBoardName &&
+            classifyClimbBoardCompatibility(
+              { boardName: activeBoardName, layoutId, sizeId, setIds },
+              associatedClimb,
+            ) === 'incompatible'
+          ) {
+            Alert.alert(t('ble.sendFailedTitle'), t('ble.errorIncompatible'));
+            track(SHARED_EVENTS.ClimbSentToBoardFailure, {
+              ...boardAnalyticsProperties,
+              failureReason: 'incompatible_climb',
+            });
+            return false;
+          }
+          sendAdapter = requestedAdapter;
           const activeLifetime = activeConnectionLifetimeRef.current;
           sendGeneration = activeLifetime?.adapter === sendAdapter ? activeLifetime.generation : null;
 
@@ -1204,7 +1249,7 @@ export function useBoardBluetooth({
           if (boardName === 'moonboard') {
             const sent = await dispatchMoonboardPacket(
               framesToSend,
-              adapterRef.current.write.bind(adapterRef.current),
+              sendAdapter.write.bind(sendAdapter),
               combinedSignal,
               moonNumRows,
               moonboardLightAdjacentHolds,
@@ -1253,7 +1298,7 @@ export function useBoardBluetooth({
             const woodsResult = await dispatchWoodsPacket(
               framesToSend,
               sizeId,
-              adapterRef.current.write.bind(adapterRef.current),
+              sendAdapter.write.bind(sendAdapter),
               combinedSignal,
             );
 
@@ -1323,7 +1368,7 @@ export function useBoardBluetooth({
           // wall (long-standing Aurora behaviour) without counting as one.
           if (frames === '') {
             const clearResult = getAuroraBluetoothPacket('', {}, boardName as AuroraBoardName, apiLevelRef.current);
-            await adapterRef.current.write(clearResult.packet, combinedSignal);
+            await sendAdapter.write(clearResult.packet, combinedSignal);
             if (sendContext?.sendSource === 'clear') {
               track(SHARED_EVENTS.BoardLightsCleared, boardAnalyticsProperties);
             }
@@ -1405,7 +1450,10 @@ export function useBoardBluetooth({
             console.warn(`[BLE] ${skippedCount} of ${result.totalPlacements} placements skipped`);
           }
 
-          await adapterRef.current.write(result.packet, combinedSignal);
+          // The lazy module import yields: a board/config switch may have
+          // invalidated the captured adapter even when this climb fits both walls.
+          if (!isCurrentSend()) return false;
+          await sendAdapter.write(result.packet, combinedSignal);
           track(SHARED_EVENTS.ClimbSentToBoardSuccess, {
             ...boardAnalyticsProperties,
             // `allLedsDark` refuses only the all-or-nothing v2 cliff. These two
@@ -1509,6 +1557,8 @@ export function useBoardBluetooth({
       boardName,
       layoutId,
       sizeId,
+      setIds,
+      boardUuid,
       holdsData,
       ledColorOverrides,
       moonboardLightAdjacentHolds,
@@ -1521,7 +1571,13 @@ export function useBoardBluetooth({
   );
 
   const connect = useCallback(
-    async (initialFrames?: string, mirrored?: boolean, targetSerial?: string, targetDeviceId?: string) => {
+    async (
+      initialFrames?: string,
+      mirrored?: boolean,
+      targetSerial?: string,
+      targetDeviceId?: string,
+      initialClimbIdentity?: ClimbBoardIdentity,
+    ) => {
       if (!boardName) {
         console.error('Cannot connect to Bluetooth without board name');
         return false;
@@ -1541,6 +1597,11 @@ export function useBoardBluetooth({
       // previous connection must not survive into it (#4499).
       backgroundAdoptSendGateRef.current = false;
 
+      const requestedConfigIdentity = connectionConfigIdentity(boardName, layoutId, sizeId, setIds, boardUuid);
+      if (liveConfigIdentityRef.current !== requestedConfigIdentity) {
+        connectInFlightRef.current = false;
+        return false;
+      }
       setLoading(true);
 
       // Hoisted so the catch can read the adapter's post-mortem connect
@@ -1672,6 +1733,12 @@ export function useBoardBluetooth({
         }
 
         const connection = await adapter.requestAndConnect(targetSerial, targetDeviceId);
+        // The config-switch effect had no attached adapter to tear down during
+        // the scan. Do not install this stale link or write its initial frames.
+        if (liveConfigIdentityRef.current !== requestedConfigIdentity) {
+          await adapter.disconnect().catch(() => {});
+          return false;
+        }
         apiLevelRef.current = parseApiLevel(connection.deviceName);
         configuredDeviceNameRef.current = connection.deviceName;
 
@@ -1775,7 +1842,10 @@ export function useBoardBluetooth({
         // millisecond gap against Bluetooth Connection Success.
         let initialSendResult: boolean | undefined;
         if (initialFrames) {
-          initialSendResult = await sendFramesToBoard(initialFrames, mirrored, undefined, { sendSource: 'connect' });
+          initialSendResult = await sendFramesToBoard(initialFrames, mirrored, undefined, {
+            sendSource: 'connect',
+            climbIdentity: initialClimbIdentity,
+          });
         }
 
         // The initial write can kill the link it just rode in on: out of range

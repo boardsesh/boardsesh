@@ -36,6 +36,7 @@ const CLIMB_FIELDS = `
   boardseshDifficulty
   boardseshConfidence
   compatibleSizeIds
+  requiredSetIds
   missingHoldCount
 `;
 

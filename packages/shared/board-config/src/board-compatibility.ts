@@ -162,6 +162,8 @@ export type ClimbBoardIdentity = {
    * signal" and constrain nothing.
    */
   compatibleSizeIds?: readonly number[] | null;
+  /** Frame-derived requirements; missing, null or empty keeps the legacy fallback. */
+  requiredSetIds?: readonly number[] | null;
   /** Read only to derive the hold sets a MoonBoard climb needs. */
   frames?: string | null;
 };
@@ -186,21 +188,20 @@ function climbFitsWallSize(activeConfig: ActiveBoardForCompatibility, climb: Cli
 }
 
 /**
- * Whether every hold set a MoonBoard climb needs is bolted on the connected
- * wall. MoonBoard only, for the same reason as `canAddClimbToBoard` rule 4:
- * Aurora placements are per-set, so an uninstalled set's holds are absent from
- * the wall's placement map and hold-id containment catches them at send time — a
- * check that needs render data this identity-only classifier doesn't have.
- * MoonBoard's grid is the full grid whatever is bolted on, so the cell-to-set
- * map is the only signal, and it needs nothing but the frames.
+ * Known frame-derived requirements apply to every board. Legacy MoonBoard
+ * climbs still derive their requirements from cells when metadata is absent.
+ * A caller without installed sets keeps the model-only compatibility answer.
  */
 function climbFitsWallSets(activeConfig: ActiveBoardForCompatibility, climb: ClimbBoardIdentity): boolean {
-  if (activeConfig.boardName !== 'moonboard') return true;
-  if (!climb.frames) return true;
   const wallSetIds = installedWallSetIds(activeConfig);
   if (!wallSetIds) return true;
+  const requiredSetIds = climb.requiredSetIds?.length
+    ? climb.requiredSetIds
+    : activeConfig.boardName === 'moonboard' && climb.frames
+      ? requiredSetIdsForMoonBoard(activeConfig.layoutId, climb.frames)
+      : [];
   const installedSetIds = new Set(wallSetIds);
-  return requiredSetIdsForMoonBoard(activeConfig.layoutId, climb.frames).every((setId) => installedSetIds.has(setId));
+  return requiredSetIds.every((setId) => installedSetIds.has(setId));
 }
 
 /**
@@ -209,7 +210,7 @@ function climbFitsWallSets(activeConfig: ActiveBoardForCompatibility, climb: Cli
  * - `unknown` — the climb carries no board metadata (older items, or party-synced
  *   items from before the metadata round-trip). Never block on this; send as today.
  * - `incompatible` — a KNOWN climb field clearly differs from the active board:
- *   its `boardType`, its `layoutId`, the wall's size, or a MoonBoard hold set the
+ *   its `boardType`, its `layoutId`, the wall's size, or a required hold set the
  *   wall doesn't have. A "spill" climb (party peer on another board, a queue left
  *   over from a board switch, or a climb set on a bigger wall) — skip it instead
  *   of writing a partial climb the wall cannot show.

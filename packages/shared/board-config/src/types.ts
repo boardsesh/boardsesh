@@ -16,6 +16,7 @@ export type ClimbCompatibilityInput = {
    * and imposes no constraint.
    */
   compatibleSizeIds?: readonly number[] | null;
+  requiredSetIds?: readonly number[] | null;
 };
 
 export type BoardCompatibilityTarget = {

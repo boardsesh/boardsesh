@@ -65,7 +65,30 @@ subscription/query, and superseded results cannot adopt a connection.
 
 ### Frame Sending
 
-`sendFramesToBoard(frames, mirrored, signal, climbUuid)`:
+`sendFramesToBoard(frames, mirrored, signal, sendContext)`:
+
+For a known queue climb, the auto-sender classifies the physical wall's size and installed hold
+sets before sending, skipping an incompatible item to the next compatible queue item. Nonempty
+`requiredSetIds` must all be installed. Unknown installed sets are permissive; missing, null or
+empty requirements retain legacy behavior, including MoonBoard's frame-derived fallback.
+Board/layout identity still must be known before physical constraints apply. Queue navigation
+that knows only the model is unchanged.
+
+`BleSendContext.climbIdentity` associates compatibility metadata with the original frame string;
+it is used only when those frames match exactly, before flattening or mirroring. The auto-sender
+passes the actual climb. An optional fifth `connect()` argument supports the same explicit
+association for initial frames; today's only production initial-frame caller is the raw editor,
+which omits it. No metadata is inferred from a different current queue item. Refusing an initial
+climb returns false from the send, retains a live connection, and never seeds successful-send
+deduplication or confirms the climb on the wall.
+
+Queued JS sends recheck rendered config, captured adapter and connection generation before
+encoding, and again after the asynchronous Aurora LED-module load before writing. A config
+change during scanning disconnects the stale scan result before attaching it or sending JS frames.
+Raw editor, clear and metadata-free undo/relight paths retain their existing packet behavior.
+Native stored-queue relight inside `requestAndConnect()` runs outside this JavaScript guard
+(the pre-connect native configuration above still applies); this change does not guarantee a
+physically unlit connection or eliminate partial skips in every encoder/raw-frame path.
 
 **Aurora boards:**
 

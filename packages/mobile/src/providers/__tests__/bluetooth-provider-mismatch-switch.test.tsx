@@ -1115,6 +1115,37 @@ describe('BluetoothProvider spill skip', () => {
     });
   });
 
+  it('skips a climb needing an absent set without sending or confirming it', async () => {
+    const missing = makeBoardItem('missing-set', 'kilter', 1);
+    missing.climb.requiredSetIds = [1, 20];
+    const fits = makeBoardItem('base-set', 'kilter', 1);
+    fits.climb.requiredSetIds = [1];
+    queue.currentClimbQueueItem = missing;
+    queue.queue = [missing, fits];
+    queue.confirmClimbOnWall.mockClear();
+    renderProvider({ ...KILTER_PROPS, setIds: '1' });
+    await act(async () => {});
+    expect(bluetooth.state.sendFramesToBoard).not.toHaveBeenCalled();
+    expect(queue.confirmClimbOnWall).not.toHaveBeenCalled();
+    expect(queue.setCurrentClimb).toHaveBeenCalledWith(fits);
+  });
+
+  it('sends a required subset and associates the actual climb with its frames', async () => {
+    const fits = makeBoardItem('subset', 'kilter', 1);
+    fits.climb.requiredSetIds = [1];
+    queue.currentClimbQueueItem = fits;
+    queue.queue = [fits];
+    renderProvider({ ...KILTER_PROPS, setIds: '1,20' });
+    await act(async () => {});
+    expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledWith(
+      fits.climb.frames,
+      false,
+      expect.any(AbortSignal),
+      expect.objectContaining({ climbIdentity: fits.climb }),
+    );
+    expect(queue.setCurrentClimb).not.toHaveBeenCalled();
+  });
+
   it('clears the board (no advance) when no compatible climb remains', async () => {
     const spill = makeBoardItem('spill', 'tension', 1);
     queue.currentClimbQueueItem = spill;

@@ -59,6 +59,7 @@ export type Climb = {
   // the two sizes, whose hold ids overlap without meaning the same holds
   // (canAddClimbToBoard rule 5).
   compatibleSizeIds?: number[] | null;
+  requiredSetIds?: number[] | null;
 };
 
 export type ClimbQueryResult = {

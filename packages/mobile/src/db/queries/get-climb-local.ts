@@ -54,7 +54,7 @@ export async function getClimbLocal(db: OfflineDatabase, input: GetClimbLocalInp
     SELECT
       c.uuid, c.setter_username, c.user_id, c.name, c.description, c.frames, c.is_draft, c.is_hidden,
       c.missing_hold_count, c.holds_revision_number, c.characteristics,
-      c.created_at, c.published_at, c.frames_count, c.frames_pace, c.compatible_size_ids,
+      c.created_at, c.published_at, c.frames_count, c.frames_pace, c.compatible_size_ids, c.required_set_ids,
       ${eff('ascensionist_count')} AS ascensionist_count,
       ${eff('display_difficulty')} AS display_difficulty,
       ${eff('difficulty_average')} AS difficulty_average,

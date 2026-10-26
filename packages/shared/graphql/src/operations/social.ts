@@ -444,6 +444,7 @@ export const GET_SETTER_CLIMBS_FULL = gql`
         boardseshDifficulty
         boardseshConfidence
         compatibleSizeIds
+        requiredSetIds
         characteristics
         is_no_match
       }
@@ -502,6 +503,7 @@ export const GET_USER_CLIMBS = gql`
         boardseshDifficulty
         boardseshConfidence
         compatibleSizeIds
+        requiredSetIds
         characteristics
         is_no_match
         renderBoard {

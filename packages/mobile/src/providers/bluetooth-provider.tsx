@@ -13,6 +13,7 @@ import {
   normaliseSetIds,
   toBoardName,
   type ActiveBoardForCompatibility,
+  type ClimbBoardIdentity,
 } from '@boardsesh/board-config';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { useBoardPresenceCurrent } from '@boardsesh/board-presence-react';
@@ -82,6 +83,7 @@ type BluetoothContextValue = {
     mirrored?: boolean,
     targetSerial?: string,
     targetDeviceId?: string,
+    initialClimbIdentity?: ClimbBoardIdentity,
   ) => Promise<boolean>;
   disconnect: (reason?: BluetoothDisconnectReason) => Promise<void>;
   sendFramesToBoard: SendFramesToBoard;
@@ -723,6 +725,7 @@ function BluetoothAutoSender({
               climbUuid: item.climb.uuid,
               climbBoardType: item.climb.boardType,
               climbLayoutId: item.climb.layoutId,
+              climbIdentity: item.climb,
             });
 
             // After the await, the AutoSender may have unmounted — skip

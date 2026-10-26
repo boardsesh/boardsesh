@@ -131,6 +131,119 @@ describe('normalizeDocument', () => {
   });
 });
 
+describe('legacy required hold-set replay compatibility', () => {
+  const legacy =
+    'query SearchClimbs($input: ClimbSearchInput!) { searchClimbs(input: $input) { climbs { uuid compatibleSizeIds } hasMore } }';
+  const current = legacy.replace('compatibleSizeIds', 'compatibleSizeIds requiredSetIds');
+  const fixture = (): GraphqlFixtureFile => ({
+    formatVersion: 1,
+    operationName: 'SearchClimbs',
+    query: legacy,
+    documentHash: 'original',
+    variablesHash: 'variables',
+    variables: { input: { boardName: 'kilter', layoutId: 1 } },
+    response: {
+      data: { searchClimbs: { climbs: [{ uuid: 'climb', compatibleSizeIds: [5] }], hasMore: false } },
+      errors: [{ message: 'recorded error' }],
+    },
+    status: 200,
+    recordedAt: '2026-01-01T00:00:00Z',
+    upstream: 'https://example.test',
+  });
+
+  it('adds only unknown metadata without changing recordings or errors', () => {
+    const recorded = fixture();
+    const before = JSON.stringify(recorded);
+    expect(replayCompatibleFixtureResponse(current, recorded)).toEqual({
+      response: {
+        data: {
+          searchClimbs: { climbs: [{ uuid: 'climb', compatibleSizeIds: [5], requiredSetIds: null }], hasMore: false },
+        },
+        errors: [{ message: 'recorded error' }],
+      },
+    });
+    expect(JSON.stringify(recorded)).toBe(before);
+  });
+
+  it('handles repeated nested queue climb selections independently', () => {
+    const recorded = {
+      ...fixture(),
+      operationName: 'QueueUpdates',
+      query:
+        'subscription QueueUpdates($sessionId: ID!) { queueUpdates(sessionId: $sessionId) { queue { climb { uuid compatibleSizeIds } } current { climb { uuid compatibleSizeIds } } } }',
+    };
+    recorded.response = {
+      data: {
+        queueUpdates: {
+          queue: [{ climb: { uuid: 'queued', compatibleSizeIds: [5] } }],
+          current: { climb: { uuid: 'current', compatibleSizeIds: [5], requiredSetIds: [1, 20] } },
+        },
+      },
+    };
+    const query = recorded.query.replaceAll('compatibleSizeIds', 'compatibleSizeIds requiredSetIds');
+    expect(replayCompatibleFixtureResponse(query, recorded)).toEqual({
+      response: {
+        data: {
+          queueUpdates: {
+            queue: [{ climb: { uuid: 'queued', compatibleSizeIds: [5], requiredSetIds: null } }],
+            current: { climb: { uuid: 'current', compatibleSizeIds: [5], requiredSetIds: [1, 20] } },
+          },
+        },
+      },
+    });
+  });
+
+  it.each([
+    current.replace('uuid compatibleSizeIds', 'uuid name compatibleSizeIds'),
+    current.replace('input: $input', 'input: { boardName: "tension" }'),
+    current.replace('SearchClimbs(', 'SearchDraftClimbs('),
+    current.replace('requiredSetIds', 'sets: requiredSetIds'),
+    current.replace('requiredSetIds', 'requiredSetIds @skip(if: true)'),
+    current.replace('requiredSetIds', 'requiredSetIds requiredSetIds'),
+    legacy,
+  ])('rejects unrelated or non-plain selection drift: %s', (query) => {
+    expect(replayCompatibleFixtureResponse(query, fixture())).toBeNull();
+  });
+
+  it('composes only the existing nullable SmartPlaylist count adaptation', () => {
+    const recorded = {
+      ...fixture(),
+      operationName: 'GetSmartPlaylist',
+      query: 'query GetSmartPlaylist { smartPlaylist { climbs { uuid compatibleSizeIds } totalCount } }',
+      response: { data: { smartPlaylist: { climbs: [{ uuid: 'climb', compatibleSizeIds: [5] }], totalCount: 1 } } },
+    };
+    const query = recorded.query
+      .replace('compatibleSizeIds', 'compatibleSizeIds requiredSetIds')
+      .replace('totalCount', 'totalCount unfilteredCount');
+    expect(replayCompatibleFixtureResponse(query, recorded)).toEqual({
+      response: {
+        data: {
+          smartPlaylist: {
+            climbs: [{ uuid: 'climb', compatibleSizeIds: [5], requiredSetIds: null }],
+            totalCount: 1,
+            unfilteredCount: null,
+          },
+        },
+      },
+    });
+    expect(replayCompatibleFixtureResponse(query.replace('totalCount', 'totalCount hasMore'), recorded)).toBeNull();
+  });
+
+  it('does not collapse any changed fixture variables', () => {
+    const request = {
+      operationName: 'SearchClimbs',
+      query: current,
+      variables: { input: { boardName: 'kilter', layoutId: 1 } },
+    };
+    const originalKey = graphqlFixtureKey(request, sha256Hex);
+    const changedKey = graphqlFixtureKey(
+      { ...request, variables: { input: { boardName: 'tension', layoutId: 1 } } },
+      sha256Hex,
+    );
+    expect(changedKey.variablesHash).not.toBe(originalKey.variablesHash);
+  });
+});
+
 describe('legacy manufacturer-board replay compatibility', () => {
   const selection = 'sprayImport { wallUuid versionId detectionId stage queuePosition retryAt resetOfWallUuid }';
   const legacy = 'query GetBoard { board { uuid boardType } }';

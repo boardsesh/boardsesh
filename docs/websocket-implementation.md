@@ -176,11 +176,16 @@ backfill is part of this rollout.
 
 Deploy this additive server contract to **every backend replica before releasing clients** that
 select or emit the field. GraphQL validates selections even behind `@skip`, and an unknown input
-key is rejected even when its value is null, so neither is safe against an older server. Phase A
-keeps client documents and input mappers unchanged, using the queue contract test's existing
-`SERVER_READY_NOT_YET_ON_CLIENTS` staging list. Phase B must remove that entry when it adds the
-client read/write paths and compatibility behavior. Until Phase B ships, this server preparation
-alone does not prevent partial climbs on a board missing a required set.
+key is rejected even when its value is null, so neither is safe against an older server. A merge
+is not deployment evidence: verify every serving replica before publishing a client preview or
+release. The client phase selects this field in search, detail, similar, playlist, favorites and
+queue documents, preserves it in local SQLite reads and queue reconstruction, and emits it through
+the shared input mapper. It removes the field from the queue contract's server-only staging list.
+
+Lighting a known climb requires its nonempty required-set list to be a subset of the wall's known
+installed sets. Missing, null or empty requirements preserve legacy behavior, including MoonBoard's
+frame-derived set fallback; unknown installed sets remain permissive. Model-only navigation omits
+the physical wall fields and stays independent of this lighting check.
 
 After Phase B ships, a server rollback must retain these additive fields and their input acceptance.
 Removing them would reject the newer clients' operations; roll back behavior while keeping the

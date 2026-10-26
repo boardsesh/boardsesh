@@ -24,6 +24,7 @@ export function buildClimbStub(similar: SimilarClimb, boardType: string): Climb 
     // null, and the difference matters: an empty list would otherwise read as
     // "fits nothing" instead of "imposes no constraint".
     compatibleSizeIds: similar.compatibleSizeIds.length > 0 ? similar.compatibleSizeIds : null,
+    requiredSetIds: similar.requiredSetIds ?? null,
     // Passed through verbatim, including null — the opposite of the line above.
     // `[]` is a climb set under all the default rules and null is a climb whose
     // rules were never recorded, and the Woods drawer says those differently.

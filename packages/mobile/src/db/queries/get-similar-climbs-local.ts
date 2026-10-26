@@ -21,7 +21,7 @@ import {
 } from '@boardsesh/offline-sync';
 import type { SimilarClimb } from '@boardsesh/shared-schema';
 import { getGradeLabel } from '../../lib/grade-label';
-import { parseCharacteristics, parseCompatibleSizeIds } from './search-climbs-local';
+import { parseCharacteristics, parseCompatibleSizeIds, parseRequiredSetIds } from './search-climbs-local';
 
 export const DEFAULT_SIMILAR_THRESHOLD = 0.5;
 export const DEFAULT_SIMILAR_LIMIT = 12;
@@ -68,6 +68,7 @@ type CandidateRow = {
   layout_id: number;
   frames: string | null;
   compatible_size_ids: string | null;
+  required_set_ids?: string | null;
   characteristics: string | null;
   quality_average: number | null;
   ascensionist_count: number | null;
@@ -111,7 +112,7 @@ async function fetchCandidateRows(
     if (sizeId !== null) params.push(sizeId);
     const rows = await db.getAllAsync<CandidateRow>(
       `SELECT c.uuid, c.name, c.setter_username, c.angle, c.layout_id, c.frames,
-              c.compatible_size_ids, c.characteristics,
+              c.compatible_size_ids, c.required_set_ids, c.characteristics,
               s.quality_average, s.ascensionist_count, s.display_difficulty
        FROM board_climbs c
        LEFT JOIN board_climb_stats s
@@ -203,6 +204,7 @@ export async function getSimilarClimbsLocal(
       qualityAverage: row.quality_average,
       ascensionistCount: row.ascensionist_count,
       compatibleSizeIds: parseCompatibleSizeIds(row.compatible_size_ids) ?? [],
+      requiredSetIds: parseRequiredSetIds(row.required_set_ids ?? null),
       characteristics: parseCharacteristics(row.characteristics),
       similarity: candidate.jaccard,
       sharedHoldCount: candidate.shared,

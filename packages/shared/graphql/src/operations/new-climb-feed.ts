@@ -105,6 +105,7 @@ export const SIMILAR_CLIMBS_QUERY = gql`
       qualityAverage
       ascensionistCount
       compatibleSizeIds
+      requiredSetIds
       characteristics
       similarity
       sharedHoldCount

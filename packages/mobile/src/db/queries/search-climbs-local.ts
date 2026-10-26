@@ -762,6 +762,8 @@ export type LocalClimbRow = {
    *  array in TEXT (see the offline schema), not a native array. Null when the
    *  server had no compatibility data for the climb. */
   compatible_size_ids: string | null;
+  /** Frame-derived hold-set requirements, stored as JSON text by sync. */
+  required_set_ids?: string | null;
   /** The climber's own clamped grade for this climb+angle. Selected only when
    *  the search asked for personal grades; null within such a search when they
    *  never graded the climb (#4828). */
@@ -784,16 +786,26 @@ export function parseCharacteristics(raw: string | null): string[] | null {
  * as "no compatibility data" (null) rather than as an empty list, because an
  * empty list would otherwise be read as "fits nothing" by a stricter consumer.
  */
-export function parseCompatibleSizeIds(raw: string | null): number[] | null {
+function parseNumericIds(raw: string | null): number[] | null {
   if (!raw) return null;
   try {
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return null;
-    const sizeIds = parsed.filter((sizeId): sizeId is number => typeof sizeId === 'number' && Number.isFinite(sizeId));
-    return sizeIds.length > 0 ? sizeIds : null;
+    const ids = parsed.filter((id): id is number => typeof id === 'number' && Number.isFinite(id));
+    return ids.length > 0 || parsed.length === 0 ? ids : null;
   } catch {
     return null;
   }
+}
+
+export function parseCompatibleSizeIds(raw: string | null): number[] | null {
+  const sizeIds = parseNumericIds(raw);
+  return sizeIds?.length ? sizeIds : null;
+}
+
+/** The same safe JSON decoder; a known-empty requirement remains an empty list. */
+export function parseRequiredSetIds(raw: string | null): number[] | null {
+  return parseNumericIds(raw);
 }
 
 export function mapRowToClimb(
@@ -856,6 +868,7 @@ export function mapRowToClimb(
     // way an online one is — on Woods this is the only signal that separates the
     // 8x10 from the 12x12 (canAddClimbToBoard rule 5).
     compatibleSizeIds: parseCompatibleSizeIds(row.compatible_size_ids),
+    requiredSetIds: parseRequiredSetIds(row.required_set_ids ?? null),
     // The climber's own grade, so a row that was filtered and ordered by it
     // arrives holding it. Key omitted entirely when the search did not ask for
     // personal grades, matching the server row shape.
@@ -1169,7 +1182,7 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
   // whichever of them produced it.
   const selectSql = `c.uuid, c.setter_username, c.user_id, c.name, c.description, c.frames, c.is_draft, c.is_hidden,
       c.missing_hold_count, c.holds_revision_number, c.characteristics,
-      c.created_at, c.published_at, c.frames_count, c.frames_pace, c.compatible_size_ids,
+      c.created_at, c.published_at, c.frames_count, c.frames_pace, c.compatible_size_ids, c.required_set_ids,
       ${eff('ascensionist_count')} AS ascensionist_count,
       ${eff('display_difficulty')} AS display_difficulty,
       ${eff('difficulty_average')} AS difficulty_average,

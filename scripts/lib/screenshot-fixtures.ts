@@ -9,6 +9,8 @@
  * vitest project without dragging Node builtins into that graph.
  */
 
+import { Kind, parse, print, visit } from 'graphql';
+
 /** Prefix every line the screenshot backend logs, so a tee'd capture log is greppable. */
 export const SCREENSHOT_BACKEND_LOG_PREFIX = '[screenshot-backend]';
 
@@ -208,6 +210,8 @@ export function replayCompatibleFixtureResponse(
 ): { response: unknown } | null {
   const operationName = resolveOperationName({ query: requestQuery });
   if (operationName !== fixture.operationName) return null;
+  const holdSetCompatibility = replayClimbsWithoutRequiredSets(requestQuery, fixture);
+  if (holdSetCompatibility) return holdSetCompatibility;
   if (operationName === 'GetSession') return replayGetSessionWithPermanence(requestQuery, fixture, evidence);
   if (PRESENCE_CAPABILITY_OPERATIONS.has(operationName ?? '')) {
     const normalized = normalizeDocument(requestQuery);
@@ -251,6 +255,107 @@ export function replayCompatibleFixtureResponse(
       },
     },
   };
+}
+
+/** Only climb operations changed by the nullable hold-set client rollout. */
+const REQUIRED_SET_REPLAY_OPERATIONS = new Set([
+  'SearchClimbs',
+  'SearchDraftClimbs',
+  'GetClimb',
+  'SimilarClimbs',
+  'GetUserFavoriteClimbs',
+  'GetPlaylistClimbs',
+  'GetSmartPlaylist',
+  'GetSetterClimbsFull',
+  'GetUserClimbs',
+  'JoinSession',
+  'JoinSessionNowSlot',
+  'QueueUpdates',
+  'QueueUpdatesNowSlot',
+  'GetSessionQueueState',
+  'GetSessionQueueStateNowSlot',
+  'AddQueueItem',
+  'SetCurrentClimb',
+  'SetCurrentClimbNowSlot',
+  'MirrorCurrentClimb',
+  'ReplaceQueueItem',
+  'SetQueue',
+  'SetQueueWithBaseline',
+  'SetQueueNowSlot',
+  'SetQueueWithBaselineNowSlot',
+  'CreateSession',
+]);
+
+/**
+ * Old recordings lack nullable frame-derived requirements. Accept only plain
+ * requiredSetIds selections added beside the existing compatibleSizeIds field;
+ * AST equality keeps all names, arguments, directives and other fields intact.
+ * Fixture variables are still matched by the backend's unchanged exact key.
+ */
+function replayClimbsWithoutRequiredSets(
+  requestQuery: string,
+  fixture: GraphqlFixtureFile,
+): { response: unknown } | null {
+  if (!REQUIRED_SET_REPLAY_OPERATIONS.has(fixture.operationName)) return null;
+  try {
+    let addedSelections = 0;
+    const withoutRequiredSets = visit(parse(requestQuery), {
+      SelectionSet(node) {
+        const requirements = node.selections.filter(
+          (selection) => selection.kind === Kind.FIELD && selection.name.value === 'requiredSetIds',
+        );
+        if (requirements.length !== 1) return;
+        const requirement = requirements[0];
+        if (
+          requirement.kind !== Kind.FIELD ||
+          requirement.alias ||
+          requirement.arguments?.length ||
+          requirement.directives?.length ||
+          requirement.selectionSet
+        )
+          return;
+        if (
+          !node.selections.some(
+            (selection) =>
+              selection.kind === Kind.FIELD && selection.name.value === 'compatibleSizeIds' && !selection.alias,
+          )
+        )
+          return;
+        addedSelections += 1;
+        return { ...node, selections: node.selections.filter((selection) => selection !== requirement) };
+      },
+    });
+    if (addedSelections === 0) return null;
+    const legacyQuery = print(withoutRequiredSets);
+    const legacyResponse =
+      legacyQuery === print(parse(fixture.query))
+        ? { response: fixture.response }
+        : fixture.operationName === 'GetSmartPlaylist'
+          ? replaySmartPlaylistWithoutUnfilteredCount(legacyQuery, fixture)
+          : null;
+    if (!legacyResponse) return null;
+    const withUnknownRequirements = (entry: unknown): unknown => {
+      if (Array.isArray(entry)) return entry.map(withUnknownRequirements);
+      if (!isRecord(entry)) return entry;
+      const copied = Object.fromEntries(
+        Object.entries(entry).map(([key, child]) => [key, withUnknownRequirements(child)]),
+      );
+      if (Object.hasOwn(entry, 'compatibleSizeIds') && !Object.hasOwn(entry, 'requiredSetIds'))
+        copied.requiredSetIds = null;
+      return copied;
+    };
+    if (!isRecord(legacyResponse.response)) return null;
+    return {
+      response: {
+        ...legacyResponse.response,
+        ...(Object.hasOwn(legacyResponse.response, 'data')
+          ? { data: withUnknownRequirements(legacyResponse.response.data) }
+          : {}),
+      },
+    };
+  } catch {
+    return null;
+  }
 }
 
 /** The request is the recorded document plus exactly one copy of `selection`, and nothing else. */

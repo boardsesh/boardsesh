@@ -6,6 +6,14 @@ change, a rollout. The screenshot backend removes that: it records what PROD
 answered once, then replays those bytes for every later capture. The screenshots
 become a pure function of the JS bundle.
 
+The #5428 client rollout can replay older climb responses with nullable
+`requiredSetIds` left unknown. The adapter accepts only that plain selection added
+beside `compatibleSizeIds` in the known climb operations; every other document
+field and every request variable keeps the existing drift check. It copies the
+response in memory, preserves recorded errors, and never rewrites recordings or
+infers requirements from a different climb. This replay support does not bypass
+the requirement to deploy the additive backend schema before publishing clients.
+
 The server is `scripts/lib/screenshot-backend.ts`; everything it keys, validates
 and logs is defined in the pure sibling `scripts/lib/screenshot-fixtures.ts`.
 

@@ -174,6 +174,61 @@ describe('classifyClimbBoardCompatibility', () => {
     });
   });
 
+  describe('frame-derived required hold sets', () => {
+    const climb = { boardType: 'kilter', layoutId: 1, frames: 'p1r12', requiredSetIds: [1, 20] };
+    const baseWall = { ...KILTER_L1, setIds: [1] };
+
+    it('rejects a partially installed requirement and skips it in the lighting queue', () => {
+      expect(classifyClimbBoardCompatibility(baseWall, climb)).toBe('incompatible');
+      const queue = [makeItem('extra-set', climb), makeItem('base-set', { ...climb, requiredSetIds: [1] })];
+      expect(findNextCompatibleQueueItem(queue, 'extra-set', baseWall)).toMatchObject({
+        item: { uuid: 'base-set' },
+        skippedCount: 1,
+      });
+    });
+
+    it('accepts a subset of a larger installed wall', () => {
+      expect(classifyClimbBoardCompatibility({ ...KILTER_L1, setIds: '1,20' }, { ...climb, requiredSetIds: [1] })).toBe(
+        'compatible',
+      );
+    });
+
+    it.each([undefined, null, []].map((requiredSetIds) => ({ requiredSetIds })))(
+      'preserves legacy requirements %j',
+      ({ requiredSetIds }) => {
+        expect(classifyClimbBoardCompatibility(baseWall, { ...climb, requiredSetIds })).toBe('compatible');
+        expect(
+          classifyClimbBoardCompatibility(
+            { boardName: 'moonboard', layoutId: 3, setIds: [5] },
+            { boardType: 'moonboard', layoutId: 3, frames: 'p1r42p2r43p17r44', requiredSetIds },
+          ),
+        ).toBe('incompatible');
+      },
+    );
+
+    it.each([undefined, null, [], ''].map((setIds) => ({ setIds })))(
+      'keeps unknown wall sets %j permissive',
+      ({ setIds }) => {
+        expect(classifyClimbBoardCompatibility({ ...KILTER_L1, setIds }, climb)).toBe('compatible');
+      },
+    );
+
+    it('keeps model-only navigation independent of physical sets', () => {
+      expect(classifyClimbBoardCompatibility(KILTER_L1, climb)).toBe('compatible');
+      expect(findNextCompatibleQueueItem([makeItem('extra-set', climb)], 'extra-set', KILTER_L1)).toMatchObject({
+        item: { uuid: 'extra-set' },
+        skippedCount: 0,
+      });
+    });
+
+    it('still requires a board or layout identity', () => {
+      expect(classifyClimbBoardCompatibility(baseWall, { requiredSetIds: [20] })).toBe('unknown');
+      expect(classifyClimbBoardCompatibility(baseWall, { ...climb, boardType: 'tension', requiredSetIds: [1] })).toBe(
+        'incompatible',
+      );
+    });
+  });
+
   // MoonBoard 2024 (layout 3): cell 1 belongs to Hold Set D (set 5), cells 2 and
   // 17 to the wooden sets (8 and 10). The grid is the full grid whichever sets
   // are bolted on, so the cell-to-set map is the only thing that can tell a

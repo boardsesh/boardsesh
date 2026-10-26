@@ -162,6 +162,7 @@ describe('getSimilarClimbsLocal', () => {
       qualityAverage: 2.5,
       ascensionistCount: 10,
       compatibleSizeIds: [5],
+      requiredSetIds: null,
       characteristics: ['no_match'],
       similarity: 0.8,
       sharedHoldCount: 4,
@@ -174,6 +175,13 @@ describe('getSimilarClimbsLocal', () => {
       qualityAverage: null,
       ascensionistCount: null,
     });
+  });
+
+  it('carries required sets through the distinct SimilarClimb SQLite projection', async () => {
+    await seedKilter();
+    await db.runAsync('UPDATE board_climbs SET required_set_ids = ? WHERE uuid = ?', ['[1,20]', 'a-few-sends']);
+    const result = await getSimilarClimbsLocal(db, { ...KILTER, climbUuid: 'target', angle: 40 }, parseHoldRows);
+    expect(result.find(({ uuid }) => uuid === 'a-few-sends')?.requiredSetIds).toEqual([1, 20]);
   });
 
   it('reads stats at the requested angle', async () => {

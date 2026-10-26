@@ -1,7 +1,11 @@
-import { describe, it, expect } from 'vitest';
-import { parse, visit } from 'graphql';
+import { describe, it, expect, vi } from 'vitest';
+
+vi.mock('expo-crypto', () => ({ randomUUID: () => 'generated-uuid' }));
+import { buildSchema, coerceInputValue, graphql, isInputType, parse, visit } from 'graphql';
+import { typeDefs } from '@boardsesh/shared-schema';
+import { toClimbInput } from '../climb-to-queue-item';
 import { toClimbQueueItem, type SubscriptionQueueItem } from '../queue-conversion';
-import { SUBSCRIPTION_CLIMB_FIELDS, SUBSCRIPTION_QUEUE_ITEM_FIELDS } from '../graphql/operations';
+import { GET_CLIMB, SUBSCRIPTION_CLIMB_FIELDS, SUBSCRIPTION_QUEUE_ITEM_FIELDS } from '../graphql/operations';
 
 // Parse the selection set with graphql's own parser rather than splitting on
 // whitespace: an alias (`uuid: id`), an argument, or a directive would make a
@@ -183,3 +187,52 @@ describe('toClimbQueueItem item-level attribution (#3995)', () => {
     expect(rebuilt).toEqual(selectedQueueItemFieldNames());
   });
 });
+
+describe('required hold-set subscription roundtrip', () => {
+  it.each([[1, 20], null, undefined, []].map((requiredSetIds) => ({ requiredSetIds })))(
+    'keeps %j through subscription, outbound input, and a peer JSON payload',
+    ({ requiredSetIds }) => {
+      const source = makeSubscriptionItem({ requiredSetIds });
+      const current = toClimbQueueItem(source);
+      const input = toClimbInput(current.climb);
+      const peerPayload: SubscriptionQueueItem = JSON.parse(JSON.stringify({ ...source, climb: input }));
+      expect(toClimbQueueItem(peerPayload).climb.requiredSetIds).toEqual(requiredSetIds);
+      expect(selectedClimbFieldNames().has('requiredSetIds')).toBe(true);
+    },
+  );
+});
+
+it.each([[1, 20], null].map((requiredSetIds) => ({ requiredSetIds })))(
+  'roundtrips %j through real GraphQL read selections and input coercion',
+  async ({ requiredSetIds }) => {
+    const schema = buildSchema(typeDefs.join('\n\n'));
+    const source = makeSubscriptionItem({ requiredSetIds }).climb;
+    const variableValues = {
+      boardName: 'kilter',
+      layoutId: 1,
+      sizeId: 5,
+      setIds: '1,20',
+      angle: 40,
+      climbUuid: source.uuid,
+    };
+    const read = await graphql({ schema, source: GET_CLIMB, rootValue: { climb: () => source }, variableValues });
+    expect(read.errors).toBeUndefined();
+    const readClimb = read.data?.climb as SubscriptionQueueItem['climb'];
+    const queued = toClimbQueueItem({ uuid: 'qi-read', climb: readClimb });
+    const input = toClimbInput(queued.climb);
+    const inputType = schema.getType('ClimbInput');
+    if (!inputType || !isInputType(inputType)) throw new Error('Missing ClimbInput schema');
+    const acceptedInput: unknown = coerceInputValue(JSON.parse(JSON.stringify(input)), inputType);
+    const peerRead = await graphql({
+      schema,
+      source: GET_CLIMB,
+      rootValue: { climb: () => acceptedInput },
+      variableValues,
+    });
+    expect(peerRead.errors).toBeUndefined();
+    expect(
+      toClimbQueueItem({ uuid: 'qi-peer', climb: peerRead.data?.climb as SubscriptionQueueItem['climb'] }).climb
+        .requiredSetIds,
+    ).toEqual(requiredSetIds);
+  },
+);

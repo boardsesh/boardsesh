@@ -4,12 +4,17 @@ import { runMigrations } from '@boardsesh/offline-sync';
 import { clearLocalUserId, ensureMutationQueueTable, stampLocalUserId } from '@boardsesh/offline-sync';
 import type { OfflineDatabase, SqlExecutor, SqlRunResult, SqlValue } from '@boardsesh/offline-sync';
 import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
-import { canAddClimbToBoard, type BoardCompatibilityTarget } from '@boardsesh/board-config';
+import {
+  classifyClimbBoardCompatibility,
+  canAddClimbToBoard,
+  type BoardCompatibilityTarget,
+} from '@boardsesh/board-config';
 import {
   searchClimbsLocal,
   countClimbsLocal,
   isOfflineSearchSupported,
   parseCompatibleSizeIds,
+  parseRequiredSetIds,
 } from '../search-climbs-local';
 
 // The climber whose rows this device holds — written into sync_meta by the
@@ -1002,6 +1007,23 @@ describe('searchClimbsLocal: compatibleSizeIds survives the row -> Climb mapping
     await ensureMutationQueueTable(db);
     await runMigrations(db);
     await stampLocalUserId(db, LOCAL_OWNER);
+  });
+
+  it('preserves frame-derived sets from the real SQLite read for the lighting guard', async () => {
+    await insertClimb(db, { uuid: 'extra-set', requiredSetIds: [1, 20], frames: 'p1r12' });
+    const [climb] = (await searchClimbsLocal(db, makeInput())).climbs;
+    expect(climb.requiredSetIds).toEqual([1, 20]);
+    expect(classifyClimbBoardCompatibility({ boardName: 'kilter', layoutId: 1, setIds: [1] }, climb)).toBe(
+      'incompatible',
+    );
+  });
+
+  it('safely decodes legacy, empty and malformed required-set arrays', () => {
+    expect(parseRequiredSetIds(null)).toBeNull();
+    expect(parseRequiredSetIds('not json')).toBeNull();
+    expect(parseRequiredSetIds('{}')).toBeNull();
+    expect(parseRequiredSetIds('[]')).toEqual([]);
+    expect(parseRequiredSetIds('[1,"two",20]')).toEqual([1, 20]);
   });
 
   it('decodes the stored JSON array onto the mapped climb', async () => {

@@ -679,3 +679,12 @@ describe('local playlist view parity', () => {
     expect(await getPlaylistSettersLocal(db, { smartType: 'LIKED_CLIMBS' }, 'owner')).toBeNull();
   });
 });
+
+it('preserves required sets in playlist hydration from SQLite', async () => {
+  await playlist();
+  await climb({ uuid: 'sets', requiredSets: [1, 20] });
+  await member('sets');
+  await downloaded();
+  const result = await readPage();
+  expect(result?.playlistClimbs.climbs[0]?.requiredSetIds).toEqual([1, 20]);
+});

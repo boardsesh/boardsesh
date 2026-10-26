@@ -111,7 +111,7 @@ async function fetchClimbFromDb(
         CASE WHEN climb_stats.benchmark_difficulty > 0 AND climb_stats.benchmark_difficulty <> 'NaN'::double precision
           THEN climb_stats.benchmark_difficulty::text ELSE NULL END as benchmark_difficulty,
         climbs.is_draft, climbs.is_hidden, climbs.created_at, climbs.published_at, climbs.characteristics,
-        climbs.compatible_size_ids as "compatibleSizeIds"
+        climbs.compatible_size_ids as "compatibleSizeIds", climbs.required_set_ids as "requiredSetIds"
         FROM resolved_climb
         INNER JOIN board_climbs climbs ON climbs.uuid = resolved_climb.uuid
         LEFT JOIN board_climb_stats climb_stats

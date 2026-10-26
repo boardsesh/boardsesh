@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { Alert } from 'react-native';
+import * as boardConfig from '@boardsesh/board-config';
 import type { HoldPlacement } from '../../../components/board-renderer/types';
 import {
   reactNativePermissionHarness,
@@ -72,9 +73,7 @@ vi.mock('../../analytics', () => ({
 }));
 
 const mockGetLedPlacements = vi.hoisted(() => vi.fn());
-vi.mock('@boardsesh/board-constants/led-placements', () => ({
-  getLedPlacements: mockGetLedPlacements,
-}));
+vi.mock('@boardsesh/board-constants/led-placements', () => ({ getLedPlacements: mockGetLedPlacements }));
 
 const mockGetMoonboardBluetoothPacket = vi.hoisted(() => vi.fn());
 vi.mock('@boardsesh/ble-protocol/moonboard', () => ({
@@ -238,6 +237,59 @@ describe('useBoardBluetooth', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it('refuses a stale config while the Aurora LED module import is pending (#5428)', async () => {
+    // Even a cached dynamic import yields. Pause the test immediately after the
+    // real classifier runs inside performSend, before that import resumes.
+    const classify = boardConfig.classifyClimbBoardCompatibility;
+    let reachedImport!: () => void;
+    const enteredSend = new Promise<void>((resolve) => {
+      reachedImport = resolve;
+    });
+    const classifier = vi.spyOn(boardConfig, 'classifyClimbBoardCompatibility').mockImplementation((...args) => {
+      const verdict = classify(...args);
+      reachedImport();
+      return verdict;
+    });
+    const fakeAdapter = makeFakeAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockGetLedPlacements.mockReturnValue({ 100: 7 });
+    mockGetAuroraBluetoothPacket.mockReturnValue({
+      packet: new Uint8Array([1]),
+      skippedPositionCount: 0,
+      skippedRoleCount: 0,
+      totalPlacements: 1,
+    });
+    const { result, rerender } = renderHook((props) => useBoardBluetooth(props), {
+      initialProps: { boardName: 'kilter', layoutId: 1, sizeId: 1, setIds: '1', boardUuid: 'wall-a' },
+    });
+    try {
+      await act(async () => {
+        await result.current.connect();
+      });
+      let sending!: Promise<boolean | undefined>;
+      act(() => {
+        sending = result.current.sendFramesToBoard('p100r12', false, undefined, {
+          sendSource: 'auto',
+          climbIdentity: { boardType: 'kilter', layoutId: 1, frames: 'p100r12', requiredSetIds: [1] },
+        });
+      });
+      await enteredSend;
+      expect(mockGetLedPlacements).not.toHaveBeenCalled();
+      act(() => {
+        rerender({ boardName: 'kilter', layoutId: 1, sizeId: 1, setIds: '1,20', boardUuid: 'wall-b' });
+      });
+      await act(async () => {
+        expect(await sending).toBe(false);
+      });
+      expect(fakeAdapter.write).not.toHaveBeenCalled();
+      expect(mockTrack).not.toHaveBeenCalledWith('Climb Sent to Board Success', expect.anything());
+    } finally {
+      classifier.mockRestore();
+    }
   });
 
   it('shows permission copy and stops before adapter availability when Android BLE permission is denied', async () => {
@@ -3234,12 +3286,11 @@ describe('useBoardBluetooth config-switch teardown', () => {
     expect(result.current.isConnected).toBe(true);
   });
 
-  it('defers config-switch teardown until after an in-flight connect completes', async () => {
+  it('rejects a config changed during scanning before any initial frame write (#5428)', async () => {
     // Race: config changes WHILE connect is awaiting requestAndConnect.
     // adapterRef and connectedConfigIdentityRef are both null at that point, so the
-    // config-switch effect must return early. Once the connect resolves and
-    // isConnected flips to true the effect re-runs, finds the mismatch, and
-    // calls teardown.
+    // config-switch effect must return early. connect must reject the stale
+    // scan result before installing a generation or writing initial frames.
     let resolveConnect!: (connection: { deviceId: string; deviceName?: string }) => void;
     const fakeAdapter = makeFakeAdapter({
       requestAndConnect: vi.fn(
@@ -3260,7 +3311,12 @@ describe('useBoardBluetooth config-switch teardown', () => {
     // Start connect but do not let it complete — requestAndConnect is pending.
     let connectPromise!: Promise<boolean>;
     await act(async () => {
-      connectPromise = result.current.connect();
+      connectPromise = result.current.connect('p100r12', false, undefined, undefined, {
+        boardType: 'kilter',
+        layoutId: 1,
+        frames: 'p100r12',
+        requiredSetIds: [1],
+      });
       // Advance past the synchronous pre-connect awaits (permissions,
       // isAvailable) so the request is truly in-flight.
       await Promise.resolve();
@@ -3275,15 +3331,16 @@ describe('useBoardBluetooth config-switch teardown', () => {
     expect(fakeAdapter.disconnect).not.toHaveBeenCalled();
     expect(result.current.isConnected).toBe(false);
 
-    // Connect resolves against the OLD config (kilter/1/1). isConnected briefly
-    // flips to true, which re-triggers the config-switch effect; it sees the
-    // mismatch and calls teardown.
+    // The old scan result is disconnected, with no JS frame write or success.
     await act(async () => {
       resolveConnect({ deviceId: 'device-1', deviceName: 'Kilter Board#123@3' });
-      await connectPromise;
+      expect(await connectPromise).toBe(false);
     });
     expect(fakeAdapter.disconnect).toHaveBeenCalled();
     expect(result.current.isConnected).toBe(false);
+    expect(fakeAdapter.write).not.toHaveBeenCalled();
+    expect(result.current.connectInitialSendRef.current).toBeNull();
+    expect(mockTrack).not.toHaveBeenCalledWith('Bluetooth Connection Success', expect.anything());
   });
 });
 
@@ -3473,6 +3530,162 @@ describe('useBoardBluetooth connect() initial frame write (#3875)', () => {
       totalPlacements: 1,
     });
   }
+
+  it('keeps an attached connection but refuses missing-set initial frames without seeding dedup (#5428)', async () => {
+    const fakeAdapter = makeFakeAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockAuroraSendable();
+    const { result } = renderHook(() =>
+      useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1, setIds: '1' }),
+    );
+    await act(async () => {
+      expect(
+        await result.current.connect('p100r12', false, undefined, undefined, {
+          boardType: 'kilter',
+          layoutId: 1,
+          frames: 'p100r12',
+          requiredSetIds: [1, 20],
+        }),
+      ).toBe(true);
+    });
+    expect(result.current.isConnected).toBe(true);
+    expect(fakeAdapter.write).not.toHaveBeenCalled();
+    expect(result.current.connectInitialSendRef.current).toBeNull();
+    expect(mockTrack).not.toHaveBeenCalledWith('Climb Sent to Board Success', expect.anything());
+    expect(Alert.alert).toHaveBeenCalledWith('ble.sendFailedTitle', 'ble.errorIncompatible');
+    await act(async () => {
+      expect(
+        await result.current.sendFramesToBoard('p100r12', false, undefined, {
+          sendSource: 'auto',
+          climbIdentity: { boardType: 'kilter', layoutId: 1, frames: 'p100r12', requiredSetIds: [1] },
+        }),
+      ).toBe(true);
+    });
+    expect(fakeAdapter.write).toHaveBeenCalledOnce();
+  });
+
+  it('matches initial metadata before flattening multi-frame routes (#5428)', async () => {
+    const fakeAdapter = makeFakeAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockAuroraSendable();
+    const frames = 'p100r12,p999r13';
+    const { result } = renderHook(() =>
+      useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1, setIds: '1' }),
+    );
+    await act(async () => {
+      expect(
+        await result.current.connect(frames, false, undefined, undefined, {
+          boardType: 'kilter',
+          layoutId: 1,
+          frames,
+          requiredSetIds: [1, 20],
+        }),
+      ).toBe(true);
+    });
+    expect(fakeAdapter.write).not.toHaveBeenCalled();
+    expect(result.current.connectInitialSendRef.current).toBeNull();
+  });
+
+  it('does not apply unrelated climb requirements to raw editor frames (#5428)', async () => {
+    const fakeAdapter = makeFakeAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockAuroraSendable();
+    const { result } = renderHook(() =>
+      useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1, setIds: '1' }),
+    );
+    await act(async () => {
+      expect(
+        await result.current.connect('p100r12', false, undefined, undefined, {
+          boardType: 'kilter',
+          layoutId: 1,
+          frames: 'different-queue-frames',
+          requiredSetIds: [20],
+        }),
+      ).toBe(true);
+    });
+    expect(fakeAdapter.write).toHaveBeenCalledOnce();
+    expect(result.current.connectInitialSendRef.current?.frames).toBe('p100r12');
+  });
+
+  it('rejects a retained old send callback after reconnecting under a different config (#5428)', async () => {
+    const firstAdapter = makeFakeAdapter();
+    const nextAdapter = makeFakeAdapter();
+    vi.mocked(createBluetoothAdapter)
+      .mockReturnValueOnce(firstAdapter as unknown as ReturnType<typeof createBluetoothAdapter>)
+      .mockReturnValue(nextAdapter as unknown as ReturnType<typeof createBluetoothAdapter>);
+    mockAuroraSendable();
+    const { result, rerender } = renderHook((props) => useBoardBluetooth(props), {
+      initialProps: { boardName: 'kilter', layoutId: 1, sizeId: 1, setIds: '1' },
+    });
+    await act(async () => {
+      await result.current.connect();
+    });
+    const retainedSend = result.current.sendFramesToBoard;
+    await act(async () => {
+      rerender({ boardName: 'kilter', layoutId: 1, sizeId: 1, setIds: '1,20' });
+    });
+    await act(async () => {
+      await result.current.connect();
+    });
+    await act(async () => {
+      expect(
+        await retainedSend('p100r12', false, undefined, {
+          sendSource: 'auto',
+          climbIdentity: { boardType: 'kilter', layoutId: 1, frames: 'p100r12', requiredSetIds: [1] },
+        }),
+      ).toBe(false);
+    });
+    expect(nextAdapter.write).not.toHaveBeenCalled();
+  });
+
+  it('refuses a send queued under a previous rendered config (#5428)', async () => {
+    let finishWrite!: () => void;
+    const fakeAdapter = makeFakeAdapter({
+      write: vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise<void>((resolve) => {
+              finishWrite = resolve;
+            }),
+        )
+        .mockResolvedValue(undefined),
+    });
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockAuroraSendable();
+    const { result, rerender } = renderHook((props) => useBoardBluetooth(props), {
+      initialProps: { boardName: 'kilter', layoutId: 1, sizeId: 1, setIds: '1' },
+    });
+    await act(async () => {
+      await result.current.connect();
+    });
+    let first!: Promise<boolean | undefined>;
+    let queued!: Promise<boolean | undefined>;
+    act(() => {
+      first = result.current.sendFramesToBoard('p100r12');
+      queued = result.current.sendFramesToBoard('p999r13', false, undefined, {
+        sendSource: 'auto',
+        climbIdentity: { boardType: 'kilter', layoutId: 1, frames: 'p999r13', requiredSetIds: [1] },
+      });
+    });
+    await waitFor(() => expect(fakeAdapter.write).toHaveBeenCalledOnce());
+    act(() => {
+      rerender({ boardName: 'kilter', layoutId: 1, sizeId: 1, setIds: '1,20' });
+    });
+    await act(async () => {
+      finishWrite();
+      await Promise.all([first, queued]);
+    });
+    expect(fakeAdapter.write).toHaveBeenCalledOnce();
+  });
 
   it('fails the connect when the initial write kills the link (#3875)', async () => {
     // The write rejects with a disconnection signature, so sendFramesToBoard tears

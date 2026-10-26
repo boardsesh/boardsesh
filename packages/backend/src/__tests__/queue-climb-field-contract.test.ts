@@ -134,9 +134,9 @@ const NEVER_BROADCAST = new Set(['userAscents', 'userAttempts']);
  * listed here it fails as "read but never written", so the entry has to be
  * removed in the same change that adds the field to the documents.
  */
-// requiredSetIds (#5428) follows the same two-phase rollout: deploy every
-// server replica before any client selects or emits the new field.
-const SERVER_READY_NOT_YET_ON_CLIENTS = new Set(['revisionNumber', 'requiredSetIds']);
+// The #5428 client read and input paths now carry requiredSetIds together.
+// Publication still requires the additive contract on every serving replica.
+const SERVER_READY_NOT_YET_ON_CLIENTS = new Set(['revisionNumber']);
 
 const expectedReadPathFields = new Set(
   [...climbInputFields].filter((field) => !NEVER_BROADCAST.has(field) && !SERVER_READY_NOT_YET_ON_CLIENTS.has(field)),

@@ -53,6 +53,25 @@ describe('getClimbLocal — Boardsesh grade join', () => {
     await runMigrations(db);
   });
 
+  it.each([[1, 20], null, []].map((requiredSetIds) => ({ requiredSetIds })))(
+    'keeps required sets %j on the detail read',
+    async ({ requiredSetIds }) => {
+      await insertClimb(db, 'sets');
+      await db.runAsync('UPDATE board_climbs SET required_set_ids = ? WHERE uuid = ?', [
+        requiredSetIds === null ? null : JSON.stringify(requiredSetIds),
+        'sets',
+      ]);
+      const climb = await getClimbLocal(db, {
+        boardName: 'kilter',
+        layoutId: 1,
+        angle: 40,
+        climbUuid: 'sets',
+        viewerId: null,
+      });
+      expect(climb?.requiredSetIds).toEqual(requiredSetIds);
+    },
+  );
+
   it('surfaces the grade + confidence for the requested angle (universal preferred)', async () => {
     await insertClimb(db, 'c1');
     await insertGrade(db, { climbUuid: 'c1', angle: 40, localGrade: 21.0, universalGrade: 19.5 });

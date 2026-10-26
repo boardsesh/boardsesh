@@ -119,3 +119,12 @@ describe('rankBySizeCompatibility', () => {
     expect(rankBySizeCompatibility([], 1)).toEqual([]);
   });
 });
+
+describe('similar climb hold-set metadata', () => {
+  it.each([[1, 20], null, undefined, []].map((requiredSetIds) => ({ requiredSetIds })))(
+    'carries %j into a queueable Climb',
+    ({ requiredSetIds }) => {
+      expect(buildClimbStub(makeSimilar({ requiredSetIds }), 'kilter').requiredSetIds).toEqual(requiredSetIds ?? null);
+    },
+  );
+});

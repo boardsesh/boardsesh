@@ -171,3 +171,16 @@ describe('toQueueItemWireInput (#3995)', () => {
     expect(sentOnTheWire).toEqual(new Set(Object.keys(toClimbInput(climb))));
   });
 });
+
+describe('required hold-set queue metadata', () => {
+  it.each([[1, 20], null, undefined, []].map((requiredSetIds) => ({ requiredSetIds })))(
+    'preserves %j in the queued climb and outbound input',
+    ({ requiredSetIds }) => {
+      const climb = makeClimb({ requiredSetIds });
+      const item = climbToQueueItem(climb);
+      expect(item.climb.requiredSetIds).toEqual(requiredSetIds);
+      expect(toClimbInput(item.climb).requiredSetIds).toEqual(requiredSetIds);
+      expect(toQueueItemWireInput(item).climb.requiredSetIds).toEqual(requiredSetIds);
+    },
+  );
+});

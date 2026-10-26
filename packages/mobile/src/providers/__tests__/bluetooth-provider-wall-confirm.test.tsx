@@ -437,6 +437,38 @@ describe('BluetoothProvider wall-confirm integration', () => {
     expect(queue.confirmClimbOnWall).toHaveBeenCalledWith('climb-1');
   });
 
+  it('keeps tick attribution for matching board/layout with legacy hold-set metadata', async () => {
+    const item = makeQueueItem('legacy');
+    item.climb.boardType = 'kilter';
+    item.climb.layoutId = 1;
+    item.climb.requiredSetIds = null;
+    queue.currentClimbQueueItem = item;
+    renderProvider();
+    await waitFor(() => expect(queue.confirmClimbOnWall).toHaveBeenCalledWith('legacy'));
+    expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('legacy');
+  });
+
+  it('does not confirm or deduplicate a refused send', async () => {
+    bluetooth.state.sendFramesToBoard.mockResolvedValue(false);
+    const { rerender } = renderProvider();
+    await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
+    expect(queue.confirmClimbOnWall).not.toHaveBeenCalled();
+    expect(wallConfirm.emitWallConfirm).not.toHaveBeenCalled();
+    bluetooth.state.sendFramesToBoard.mockResolvedValue(true);
+    queue.currentClimbQueueItem = makeQueueItem('climb-1');
+    rerender(
+      createElement(BluetoothProvider, {
+        boardName: 'kilter',
+        layoutId: 1,
+        sizeId: 10,
+        setIds: '1,20',
+        children: createElement('div', null),
+      }),
+    );
+    await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2));
+    expect(queue.confirmClimbOnWall).toHaveBeenCalledWith('climb-1');
+  });
+
   // #4499. A CoreBluetooth state restoration (or a connect parked across
   // suspension and honoured days later) boots React Native in the background,
   // the hook adopts the link, and the auto-sender mounts with the restored queue
