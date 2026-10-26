@@ -2,7 +2,7 @@ import { createContext, useContext, useMemo, useSyncExternalStore, type ReactNod
 import { useSegments } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../providers/theme-provider';
-import { isAccessorySurfaceRoute, isTabsChromeRoute } from '../lib/route-segments';
+import { isAccessoryHiddenRoute, isAccessorySurfaceRoute, isTabsChromeRoute } from '../lib/route-segments';
 import { useNativeTabContentInsetBottom } from '../lib/native-tab-content-inset-store';
 import { useConnectivityBannerHeight } from '../lib/connectivity-banner-inset-store';
 import { getRestTimerState, subscribeRestTimer } from '../lib/rest-timer-store';
@@ -53,13 +53,19 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
   // occluded under the player. Keep it separate from `insideTabs` so a pushed sub-route
   // still reserves tab-bar height but no longer reserves toolbar space for a bar that's
   // gone. The NATIVE accessory is wider — see `nativeAccessoryPresented` below.
-  const onAccessorySurface = isAccessorySurfaceRoute(segments);
   // The single canonical answer to "which tab chrome is on screen?" — the same
   // `useTabChrome()` the tab layout mounts from, so the accessory reserved here is
   // exactly the accessory `_layout` mounts. On iOS 18 the native bar is up but the
   // accessory is not (it is an iOS 26 UIKit feature), so the JS queue bar floats
   // above the native bar and is reserved for below.
   const { nativeTabBar, nativeAccessory: nativeAccessoryActive } = useTabChrome();
+  // The tab layout hides the platter on a few routes (`isAccessoryHiddenRoute`,
+  // never on the Duo's rail), with the same expression as here. The iPad "On the
+  // Wall" kiosk is the one that is otherwise an accessory surface: nothing stands
+  // in for the hidden platter there, so it stops counting as one.
+  const verticalTabBar = useVerticalTabBar();
+  const accessoryHidden = nativeAccessoryActive && isAccessoryHiddenRoute(segments) && !verticalTabBar;
+  const onAccessorySurface = isAccessorySurfaceRoute(segments) && !accessoryHidden;
   // `onAccessorySurface`, NOT the host-mount gate — the two genuinely differ here, and
   // conflating them costs a dead gap. The host stays MOUNTED on pushed sub-routes (that
   // is #5055's fix, see `isAccessoryHostRoute`), but UIKit does not PRESENT the platter
@@ -86,7 +92,6 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
   // A regular-width native iPad is the same shape: its tab bar is the sidebar
   // (landscape) or sits at the top (portrait), and only the accessory takes
   // bottom space, which UIKit folds into the measured in-tab inset.
-  const verticalTabBar = useVerticalTabBar();
   const { isTablet, widthClass } = useDeviceLayout();
   const tabBarAtBottom = !verticalTabBar && !(isTablet && nativeTabBar && widthClass === 'regular');
   // This provider samples the ROOT safe-area inset (window / home indicator

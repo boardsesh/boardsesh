@@ -179,7 +179,9 @@ export default function TabLayout() {
   // Duo, closed or open in landscape): hiding the accessory then collapses the
   // rail to the Climbs tab. There it stays, spanning the bottom of the content
   // like Music's mini player, and those filter boards clear it through the tab's
-  // own inset instead (HoldFilterPicker; the zone footer already does).
+  // own inset instead (HoldFilterPicker; the zone footer already does). The iPad
+  // "On the Wall" kiosk hides it too: its hero already shows the lit climb. The
+  // bottom-chrome metrics mirror this expression so nothing is reserved for it.
   const accessoryNativeProps =
     nativeAccessoryActive && isAccessoryHiddenRoute(segments) && !verticalTabBar
       ? ACCESSORY_HIDDEN_NATIVE_PROPS

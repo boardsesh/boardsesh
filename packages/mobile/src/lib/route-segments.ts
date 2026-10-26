@@ -153,14 +153,18 @@ const ACCESSORY_HIDDEN_TAB_ROUTES: Readonly<Record<string, ReadonlySet<string>>>
 
 /**
  * True where the native accessory platter must be HIDDEN while its host stays
- * mounted. Hiding goes through react-native-screens' `bottomAccessoryHidden` prop,
+ * mounted: the filter boards above, and the iPad "On the Wall" kiosk. Hiding goes through react-native-screens' `bottomAccessoryHidden` prop,
  * not an unmount: the React host and its content stay alive, and the patched
  * `applyBottomAccessoryVisibility` schedules the tab-bar relayout on that edge too
  * (patches/react-native-screens@4.26.2.patch), which is the #5055 fix. This is a
  * narrow exception to `isAccessoryHostRoute`, never a replacement for it.
  */
 export function isAccessoryHiddenRoute(segments: Segments): boolean {
-  const hiddenRoutes = ACCESSORY_HIDDEN_TAB_ROUTES[tabsActiveSegment(segments) ?? ''];
+  const activeTab = tabsActiveSegment(segments);
+  // The iPad "On the Wall" kiosk shows the lit climb as its hero already: the
+  // platter would repeat it, and a tap would put the player over the kiosk.
+  if (activeTab === 'wall') return isTopLevelTabRoute(segments);
+  const hiddenRoutes = ACCESSORY_HIDDEN_TAB_ROUTES[activeTab ?? ''];
   return !!hiddenRoutes && hiddenRoutes.has(segments[2] ?? '');
 }
 

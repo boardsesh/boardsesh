@@ -217,6 +217,22 @@ describe('computeBottomChromeMetrics', () => {
       expect(metrics.preSessionFooterBottom).toBe(IPAD_ROOT_INSET + NATIVE_BOTTOM_ACCESSORY_HEIGHT);
     });
 
+    it('floors every anchor at the accessory if UIKit leaves it out of the tab inset', () => {
+      // A measured inset holding only the home indicator must not let a docked
+      // footer, the rest pill or a floating control sink under the MiniPlayer.
+      const metrics = computeBottomChromeMetrics({
+        ...ipadInputs,
+        measuredTabContentInsetBottom: IPAD_ROOT_INSET,
+        restTimerArmed: true,
+      });
+      const accessoryTop = IPAD_ROOT_INSET + NATIVE_BOTTOM_ACCESSORY_HEIGHT;
+      expect(metrics.tabBarBottom).toBe(accessoryTop);
+      expect(metrics.preSessionFooterBottom).toBe(accessoryTop + REST_TIMER_RESERVE);
+      expect(metrics.fixedFooterBottom).toBe(accessoryTop + REST_TIMER_RESERVE);
+      expect(metrics.restTimerBottom).toBe(accessoryTop + TOOLBAR_GAP_ABOVE_TABBAR);
+      expect(metrics.floatingControlBottom).toBe(accessoryTop + REST_TIMER_RESERVE);
+    });
+
     it('stacks the rest pill one gap above the accessory', () => {
       const metrics = computeBottomChromeMetrics({
         ...ipadInputs,

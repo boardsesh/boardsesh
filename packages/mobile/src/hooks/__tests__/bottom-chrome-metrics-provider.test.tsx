@@ -38,7 +38,10 @@ vi.mock('../use-bottom-accessory', () => ({
     nativeAccessory: cfg.nativeTabBar && cfg.accessoryAvailable,
   }),
 }));
-vi.mock('../use-device-layout', () => ({ useDeviceLayout: () => ({ widthClass: cfg.widthClass }) }));
+vi.mock('../use-device-layout', () => ({
+  // A regular width only ever resolves on a tablet.
+  useDeviceLayout: () => ({ widthClass: cfg.widthClass, isTablet: cfg.widthClass === 'regular' }),
+}));
 // A horizontal tab bar; the Duo's vertical rail is covered in bottom-chrome-metrics.test.ts.
 vi.mock('../use-vertical-tab-bar', () => ({ useVerticalTabBar: () => false }));
 // Mock the sticky presence wrapper to a plain flag — its internal grace-timer
@@ -170,5 +173,41 @@ describe('BottomChromeMetricsProvider fan-out', () => {
     rerender(<Harness tick={1} />);
     expect(received.a.nativeAccessoryVisible).toBe(false);
     expect(received.a.scrollBottomPadding).toBeLessThan(rootPadding);
+  });
+
+  describe('native iPad (Liquid Glass, regular width)', () => {
+    beforeEach(() => {
+      cfg.nativeTabBar = true;
+      cfg.accessoryAvailable = true;
+      cfg.widthClass = 'regular';
+      cfg.windowWidth = 1376;
+      cfg.insetsBottom = 20;
+      cfg.segments = ['(tabs)', 'climbs'];
+    });
+
+    it('takes the native-tab path with no bottom tab bar, clearing only the accessory', () => {
+      render(<Harness tick={0} />);
+      expect(received.a.nativeAccessoryVisible).toBe(true);
+      expect(received.a.jsQueueToolbarVisible).toBe(false);
+      expect(received.a.tabBarHeight).toBe(0);
+      // Pre-measurement reconstruction: the home indicator plus the accessory, no 49pt bar.
+      expect(received.a.preSessionFooterBottom).toBe(20 + 56);
+    });
+
+    it('reserves no accessory on the "On the Wall" kiosk, where the layout hides it', () => {
+      cfg.segments = ['(tabs)', 'wall'];
+      render(<Harness tick={0} />);
+      expect(received.a.nativeAccessoryPresented).toBe(false);
+      expect(received.a.nativeAccessoryVisible).toBe(false);
+      expect(received.a.jsQueueToolbarVisible).toBe(false);
+      expect(received.a.scrollBottomPadding).toBe(20);
+    });
+
+    it('keeps the bottom tab bar in a narrow Split View', () => {
+      cfg.widthClass = 'compact';
+      cfg.windowWidth = 500;
+      render(<Harness tick={0} />);
+      expect(received.a.tabBarHeight).toBe(49);
+    });
   });
 });

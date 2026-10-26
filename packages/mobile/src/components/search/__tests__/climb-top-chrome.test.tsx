@@ -71,7 +71,7 @@ vi.mock('../../chrome/NativeRootHeader', async () => {
   };
 });
 vi.mock('../../../hooks/use-device-layout', () => ({
-  useDeviceLayout: () => ({ isPad: ctrl.isPad, widthClass: ctrl.isPad ? 'regular' : 'compact' }),
+  useDeviceLayout: () => ({ isPad: ctrl.isPad, widthClass: ctrl.widthClass }),
 }));
 vi.mock('../../../hooks/use-board-angle-options', () => ({ useBoardAngleOptions: () => [30, 40] }));
 vi.mock('../../navigation/AnchoredPopover', () => ({
@@ -118,6 +118,7 @@ const ctrl = vi.hoisted(() => ({
   // The iOS 26 tab-bar accessory platter mounts (false on iOS 18 and Material).
   nativeAccessory: true,
   isPad: false,
+  widthClass: 'compact' as 'compact' | 'regular',
   wallClimb: null as { climbUuid: string; name: string } | null,
   // The chrome's focus effects, kept so a test can run one and its cleanup: the
   // cleanup is what the screen losing focus does.
@@ -539,6 +540,7 @@ describe('ClimbTopChrome', () => {
     ctrl.variant = 'liquidGlass';
     ctrl.nativeAccessory = true;
     ctrl.isPad = false;
+    ctrl.widthClass = 'compact';
     ctrl.wallClimb = null;
     ctrl.focusEffects.length = 0;
     ctrl.setBoardAngle.mockClear();
@@ -720,12 +722,22 @@ describe('ClimbTopChrome', () => {
       expect(container.querySelector('[data-board-held-capsule]')).toBeNull();
     });
 
-    it('stays out on iPad, where the accessory platter keeps its bulb on screen', () => {
+    it('stays out on a regular-width iPad, where the accessory platter keeps its bulb on screen', () => {
       ctrl.isPad = true;
+      ctrl.widthClass = 'regular';
       ctrl.board = typedBoard;
       ctrl.bluetooth = connectedBoard({ ledless: true });
       const { container } = render(<ClimbTopChrome {...makeProps()} />);
       expect(container.querySelector('[data-board-held-capsule]')).toBeNull();
+    });
+
+    it('keeps the cue on an iPad in a narrow Split View, which has the bottom bar', () => {
+      ctrl.isPad = true;
+      ctrl.widthClass = 'compact';
+      ctrl.board = typedBoard;
+      ctrl.bluetooth = connectedBoard();
+      const { container } = render(<ClimbTopChrome {...makeProps()} />);
+      expect(container.querySelector('[data-board-held-capsule]')).not.toBeNull();
     });
 
     it('passes the no-lights flag so the capsule never claims lit LEDs', () => {

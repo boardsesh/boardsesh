@@ -545,6 +545,18 @@ describe('TabLayout', () => {
     expect(container.querySelector('[data-ipad-wall-column="true"]')).toBeNull();
   });
 
+  it('hides the iPad accessory on the "On the Wall" kiosk, whose hero shows the lit climb', () => {
+    cfg.isTablet = true;
+    cfg.widthClass = 'regular';
+    cfg.windowWidth = 1366;
+    cfg.hasCurrentClimb = true;
+    cfg.segments = ['(tabs)', 'wall'];
+
+    const { container } = render(<TabLayout />);
+
+    expect(container.querySelector('[data-tabs="true"]')?.getAttribute('data-bottom-accessory-hidden')).toBe('true');
+  });
+
   it('renders the iPad sidebar shell at regular width and registers all six tabs (wall hidden from the bar)', () => {
     cfg.variant = 'material';
     // Regular-width iPad takes the sidebar branch before the native/Material tab

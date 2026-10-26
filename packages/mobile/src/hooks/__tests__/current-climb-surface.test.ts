@@ -73,25 +73,30 @@ describe('resolveCurrentClimbSurface', () => {
     ).toBe('nativeAccessory');
   });
 
-  it('never floats the bar over a mounted accessory, on any device', () => {
+  it('never floats the bar over a mounted accessory, and never calls the native iPad the sidebar shell', () => {
     const bools = [true, false];
     for (const isTablet of bools)
       for (const widthClass of ['compact', 'regular'] as const)
         for (const windowWidth of [402, 744, 1024, 1376])
           for (const nativeTabBar of bools)
-            for (const phoneSplit of bools) {
-              const surface = resolveCurrentClimbSurface({
-                isTablet,
-                widthClass,
-                windowWidth,
-                nativeTabBar,
-                nativeAccessory: nativeTabBar,
-                phoneSplit,
-              });
-              if (nativeTabBar) {
-                expect(surface.home).toBe('nativeAccessory');
-                expect(surface.sidebarShell).toBe(false);
+            for (const nativeAccessory of bools)
+              for (const phoneSplit of bools) {
+                // The accessory lives inside the native bar (`resolveTabChrome`).
+                if (nativeAccessory && !nativeTabBar) continue;
+                const surface = resolveCurrentClimbSurface({
+                  isTablet,
+                  widthClass,
+                  windowWidth,
+                  nativeTabBar,
+                  nativeAccessory,
+                  phoneSplit,
+                });
+                if (nativeAccessory) expect(surface.home).toBe('nativeAccessory');
+                if (nativeTabBar) {
+                  expect(surface.sidebarShell).toBe(false);
+                  expect(surface.home).not.toBe('detailPane');
+                }
+                if (surface.home === 'detailPane') expect(surface.sidebarShell).toBe(true);
               }
-            }
   });
 });

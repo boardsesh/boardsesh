@@ -145,6 +145,12 @@ describe('isAccessoryHiddenRoute', () => {
     expect(isAccessoryHiddenRoute(['(tabs)', 'discover', 'zone'])).toBe(true);
   });
 
+  it('is true on the iPad "On the Wall" kiosk, whose hero already shows the lit climb', () => {
+    expect(isAccessoryHiddenRoute(['(tabs)', 'wall'])).toBe(true);
+    // Its pushed settings and user pages never present the platter anyway.
+    expect(isAccessoryHiddenRoute(['(tabs)', 'wall', 'settings'])).toBe(false);
+  });
+
   it('is false everywhere else', () => {
     expect(isAccessoryHiddenRoute(['(tabs)', 'climbs'])).toBe(false);
     expect(isAccessoryHiddenRoute(['(tabs)', 'climbs', 'setters'])).toBe(false);

@@ -133,7 +133,11 @@ vi.mock('react-native', () => ({
 // regular-width pane describe flips it.
 // `nativeTabBar` models the native iPad (UIKit sidebar, no pane); off, a regular
 // width is the JS tablet shell, whose pane takes taps.
-const layoutCfg = vi.hoisted(() => ({ widthClass: 'compact' as 'compact' | 'regular', nativeTabBar: false }));
+const layoutCfg = vi.hoisted(() => ({
+  widthClass: 'compact' as 'compact' | 'regular',
+  nativeTabBar: false,
+  windowWidth: 1024,
+}));
 vi.mock('../../hooks/use-device-layout', () => ({
   useDeviceLayout: () => ({ widthClass: layoutCfg.widthClass, expanded: false }),
 }));
@@ -152,7 +156,7 @@ vi.mock('../../hooks/use-current-climb-surface', async () => {
       resolveCurrentClimbSurface({
         isTablet: layoutCfg.widthClass === 'regular',
         widthClass: layoutCfg.widthClass,
-        windowWidth: 1024,
+        windowWidth: layoutCfg.windowWidth,
         nativeTabBar: layoutCfg.nativeTabBar,
         nativeAccessory: layoutCfg.nativeTabBar,
         phoneSplit: splitCfg.phoneSplit,
@@ -525,6 +529,22 @@ describe('drawer copied content withdrawal', () => {
     await waitFor(() => expect(routes.at(-1)?.playTarget?.climb.uuid).toBe('ipad-tap'));
     expect(hosts.at(-1)?.playDrawerPaneProps?.openTarget ?? null).toBeNull();
   });
+
+  it('sends a tap to the full-screen player on a JS tablet shell too narrow for the pane', async () => {
+    // 744pt (an Android tablet or iPad mini width on the Material shell): the rail
+    // and a 320pt pane would leave the list under its floor, so there is no pane.
+    layoutCfg.widthClass = 'regular';
+    layoutCfg.windowWidth = 744;
+    const hosts: HostValue[] = [];
+    const routes: RouteValue[] = [];
+    renderHost(
+      (host) => hosts.push(host),
+      (route) => routes.push(route),
+    );
+    expect(hosts.at(-1)?.usesDetailPane).toBe(false);
+    act(() => hosts.at(-1)!.openPlayDrawer(makeQueueItem('narrow-tap').climb as Climb));
+    await waitFor(() => expect(routes.at(-1)?.playTarget?.climb.uuid).toBe('narrow-tap'));
+  });
 });
 
 beforeEach(() => {
@@ -557,6 +577,7 @@ beforeEach(() => {
   previewedClimbUuids.length = 0;
   layoutCfg.widthClass = 'compact';
   layoutCfg.nativeTabBar = false;
+  layoutCfg.windowWidth = 1024;
 });
 
 describe('DrawerHostProvider board presence binding', () => {

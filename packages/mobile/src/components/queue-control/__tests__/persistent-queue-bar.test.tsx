@@ -63,6 +63,7 @@ vi.mock('../../../lib/route-segments', () => ({
   // identical to the tab-chrome one (#5055). These tests are the JS bar's, so it tracks
   // `insideTabs` exactly as isTabsChromeRoute does.
   isAccessoryHostRoute: () => cfg.insideTabs,
+  isAccessoryHiddenRoute: () => false,
   tabsActiveSegment: () => cfg.activeSegment,
 }));
 // useBottomChromeMetrics now reads the device layout; in jsdom this test runs as
