@@ -35,7 +35,6 @@ export function FeedScopeTitle({ title, actions, onSelectIndex, accessibilityHin
       actions={actions}
       onSelectIndex={onSelectIndex}
       maxWidth={maxWidth}
-      accessibilityLabel={headline ? `${headline}, ${title}` : title}
       accessibilityHint={accessibilityHint}
     />
   );

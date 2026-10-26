@@ -49,9 +49,9 @@ type AppMenuTextAnchorProps = AppMenuSharedProps & {
   /** Trailing down-caret on the anchor. Default `true`. */
   showCaret?: boolean;
   /**
-   * Material (Android, web) title-menu: a headline drawn above `label`, so the
-   * anchor is the app bar's title ("Home") with the active scope under it and
-   * the whole block opens the menu. iOS draws `label` alone.
+   * Material title-menu: a headline drawn above `label`, so the anchor is the
+   * app bar's title ("Home") with the active scope under it and the whole block
+   * opens the menu. Read aloud as "Home, My crew" unless `accessibilityLabel` is set.
    */
   headline?: string;
   anchorSize?: never;

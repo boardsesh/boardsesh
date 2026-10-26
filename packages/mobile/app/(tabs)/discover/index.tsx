@@ -666,6 +666,9 @@ export default function DiscoverLibrary() {
           }}
           scrollIndicatorInsets={{ top: chromeHeight }}
           keyboardShouldPersistTaps="handled"
+          // Every frame, so the app bar tints while rows pass under it (the browser
+          // build otherwise reports little more than the start and end of a scroll).
+          scrollEventThrottle={16}
           {...scrollEdge.list?.listProps}
         >
           {/* The floating glass header has no title slot, so the page carries one.

@@ -562,6 +562,9 @@ export default function HomeTab() {
             paddingBottom: bottomChrome.scrollBottomPadding + spacing[5],
           }}
           scrollIndicatorInsets={{ top: chromeHeight }}
+          // Every frame, so the app bar tints while rows pass under it (the browser
+          // build otherwise reports little more than the start and end of a scroll).
+          scrollEventThrottle={16}
           {...scrollEdge.list?.listProps}
           onEndReached={handleEndReached}
           onEndReachedThreshold={0.5}

@@ -447,13 +447,13 @@ export function InSessionView({
   const overlayMode = translateY !== undefined && screenHeight !== undefined;
   const scrollOffset = useSharedValue(0);
   const startedAtTop = useSharedValue(true);
+  // Tells the Material app bar when the session list has scrolled under it.
+  const scrollEdge = useScrollEdgeBackdrop();
+  const edgeOnScroll = scrollEdge.list?.listProps.onScroll;
   // FlashList forwards a plain JS scroll event (it isn't a reanimated host
   // component), so we mirror the offset into the shared value here. The dismiss
   // gesture only reads `scrollOffset.value <= 0` on start, so JS-thread latency
   // is immaterial.
-  // Tells the Material app bar when the session list has scrolled under it.
-  const scrollEdge = useScrollEdgeBackdrop();
-  const edgeOnScroll = scrollEdge.list?.listProps.onScroll;
   const handleScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       scrollOffset.value = event.nativeEvent.contentOffset.y;

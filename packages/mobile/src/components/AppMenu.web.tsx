@@ -139,7 +139,8 @@ const createStyles = (textStyles: TypographyScale) =>
     headlineAnchor: {
       flexDirection: 'column',
       alignItems: 'flex-start',
-      paddingStart: 0,
+      paddingHorizontal: 0,
+      paddingRight: spacing[1],
     },
     anchorLabel: {
       fontSize: textStyles.body.fontSize,

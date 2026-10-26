@@ -96,7 +96,7 @@ export function MaterialAppBarTitle({
       feedback="none"
       rippleColor={systemColors.fill as string}
       accessibilityRole="button"
-      accessibilityLabel={subtitle ? `${title}, ${subtitle}` : title}
+      accessibilityLabel={[title, subtitle].filter(Boolean).join(', ')}
       accessibilityHint={accessibilityHint}
       style={styles.block}
       onLayout={anchorOnLayout}
