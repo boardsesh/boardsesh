@@ -244,6 +244,55 @@ describe('buildClimbCapsules: every chip pinned and set', () => {
   });
 });
 
+describe('buildClimbCapsules: the climber’s order', () => {
+  const recents: RecentFilter[] = [
+    { id: 'a', label: 'Crimpy', filters: DEFAULT_CLIMB_FILTER_STATE, searchText: 'crimp', timestamp: 2 },
+  ];
+  const keysOf = (overrides: Partial<FilterChipRowProps>, angle: ClimbAngleCapsule | null = null) =>
+    buildClimbCapsules(makeProps(overrides), mockT, angle).map(({ key }) => key);
+
+  it('draws the pinned chips in the saved order, after the Angle and Filters capsules', () => {
+    expect(
+      keysOf({ pinnedChips: ['sort', 'rating', 'beta', 'grade', 'accuracy', 'climbType', 'collection'] }, ANGLE),
+    ).toEqual(['angle', 'filters', 'sort', 'rating', 'beta', 'grade', 'accuracy', 'climbType', 'collection']);
+  });
+
+  it('keeps each chip’s own rule wherever it sits', () => {
+    const pinnedChips = ['rating', 'wide', 'recent', 'progress', 'tall', 'grade'] as const;
+    // Recent needs saved searches, Your progress a signed-in climber, Tall / Wide a size that has them.
+    expect(keysOf({ pinnedChips, dimensionChips: [dimension('wide')], canFilterProgress: false })).toEqual([
+      'filters',
+      'rating',
+      'wide',
+      'grade',
+    ]);
+    expect(
+      keysOf({ pinnedChips, dimensionChips: [dimension('tall'), dimension('wide')], recentFilters: recents }),
+    ).toEqual(['filters', 'rating', 'wide', 'recent', 'progress', 'tall', 'grade']);
+  });
+
+  it('puts a list’s own Sort capsule and "Fits my board" where they are pinned', () => {
+    const sortControl = {
+      label: 'Sort',
+      active: false,
+      options: [{ value: 'position', label: 'List order' }],
+      selected: 'position',
+      onSelect: vi.fn(),
+    };
+    expect(
+      keysOf({
+        pinnedChips: ['sort', 'boardFit', 'grade'],
+        sortControl,
+        boardFit: { active: false, onToggle: vi.fn() },
+      }),
+    ).toEqual(['filters', 'sort', 'boardFit', 'grade']);
+  });
+
+  it('draws a pin saved twice once, where it first appears', () => {
+    expect(keysOf({ pinnedChips: ['rating', 'grade', 'rating'] })).toEqual(['filters', 'rating', 'grade']);
+  });
+});
+
 describe('buildClimbCapsules: Recent', () => {
   const recents: RecentFilter[] = [
     { id: 'a', label: 'Crimpy', filters: DEFAULT_CLIMB_FILTER_STATE, searchText: 'crimp', timestamp: 2 },
@@ -480,7 +529,8 @@ describe('buildClimbCapsules: what each capsule commits', () => {
 // The playlist row reuses this builder (#6651). Its seams are optional, so every
 // case above, built without them, is the unchanged Climbs row.
 describe('buildClimbCapsules: list seams', () => {
-  const ALL_PINNED = [...PINNABLE_CHIP_CATALOG, 'boardFit' as const];
+  // Every chip, "Fits my board" where the playlist defaults put it: before Sort.
+  const ALL_PINNED = [...PINNABLE_CHIP_CATALOG.filter((kind) => kind !== 'sort'), 'boardFit' as const, 'sort' as const];
 
   it('swaps the Climbs sort menu for the list’s own Sort capsule', () => {
     const onSelect = vi.fn();
@@ -508,7 +558,7 @@ describe('buildClimbCapsules: list seams', () => {
     expect(sort.onSelect).toBe(onSelect);
   });
 
-  it('puts "Fits my board" right before Sort, only while pinned', () => {
+  it('draws "Fits my board" where it is pinned, only while pinned', () => {
     const onToggle = vi.fn();
     const withBoardFit = buildClimbCapsules(
       makeProps({ pinnedChips: ALL_PINNED, boardFit: { active: true, onToggle } }),

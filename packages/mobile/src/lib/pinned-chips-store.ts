@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import { getPreference, setPreference } from './preference-store';
+import type { SectionMoveDirection } from './section-layout';
 import {
   DEFAULT_PINNED_CHIPS,
   PINNABLE_CHIP_CATALOG,
@@ -9,12 +10,12 @@ import {
   type PinnableChipKind,
 } from './pinnable-chips';
 
-// Which quick-filter capsules the user has pinned to a list's capsule row. A
-// non-secret UI-layout preference → AsyncStorage via preference-store (NOT
-// SecureStore). Device-global, like grade-format-preference: it's a layout
-// choice, not per-user sensitive data, so no auth-provider sign-out cleanup is
-// needed. Auth-gated capsules just hide at render when signed out; the pin
-// persists.
+// Which quick-filter capsules the user has pinned to a list's capsule row, in
+// the order the row draws them. A non-secret UI-layout preference →
+// AsyncStorage via preference-store (NOT SecureStore). Device-global, like
+// grade-format-preference: it's a layout choice, not per-user sensitive data,
+// so no auth-provider sign-out cleanup is needed. Auth-gated capsules just hide
+// at render when signed out; the pin persists.
 //
 // One store per surface, from createPinnedChipsStore: each has its own storage
 // key, catalog and defaults, and its own state and listeners, so pinning a
@@ -24,19 +25,23 @@ import {
 // sheet pin toggles, token dedup) re-renders live on pin/unpin, sharing ONE load
 // + ONE subscription. `snapshot` is rebuilt only in notify() so getSnapshot
 // stays referentially stable across renders.
+//
+// The order is the climber's: a newly pinned kind goes last, and Settings ›
+// Climbs & grades › Quick filters moves them (`move`). An older bundle reads the
+// same payload in its catalog order, which loses the order but never a pin.
 
 /** What a surface's pin store is built from. */
 export type PinnedChipsStoreConfig<K extends string> = {
   /** The preference-store key. Never reuse one: a key holds one surface's saved pins. */
   storageKey: string;
-  /** Every pinnable kind, in the fixed order the capsules render in. */
+  /** Every pinnable kind. Pins outside it drop out; the Quick filters page lists unpinned kinds in this order. */
   catalog: readonly K[];
   /** The pins a fresh install starts with; also the fallback for an empty or garbage payload. */
   defaults: readonly K[];
   /**
-   * Stored payload → pins in catalog order, without unknown or duplicate kinds.
-   * Also runs on every `set`. Override it to migrate retired kinds. Defaults to
-   * filtering the catalog by the payload.
+   * Stored payload → pins in the saved order, without unknown or duplicate
+   * kinds. Also runs on every `set`. Override it to migrate retired kinds.
+   * Defaults to {@link keepStoredPinOrder}.
    */
   normalize?: (stored: readonly unknown[]) => K[];
   /**
@@ -61,22 +66,63 @@ export type PinnedChipsState<K extends string> = {
 
 export type PinnedChipsStore<K extends string> = {
   storageKey: string;
+  /** Every pinnable kind, as configured. */
+  catalog: readonly K[];
+  /** The pins a fresh install starts with, in their order. */
+  defaults: readonly K[];
   /** Live pins for a component; loads the saved set on first mount. */
   usePinnedChips: () => PinnedChipsState<K>;
   load: () => Promise<readonly K[]>;
+  /** Replaces the pins with `kinds`, in that order. */
   set: (kinds: readonly K[]) => Promise<void>;
+  /** Unpins a pinned kind, or pins it last. */
   toggle: (kind: K) => Promise<void>;
+  /** Swaps a pinned kind with its neighbour; a kind at that end, or not pinned, stays put. */
+  move: (kind: K, direction: SectionMoveDirection) => Promise<void>;
   /** Test-only: reset this store between tests (see grade-format-preference / section-expand-store). */
   resetForTests: () => void;
 };
 
 type PinnedChipsSnapshot<K extends string> = { pinned: readonly K[]; loaded: boolean };
 
-function filterByCatalog<K extends string>(catalog: readonly K[]): (stored: readonly unknown[]) => K[] {
-  return (stored) => {
-    const storedKinds = new Set(stored);
-    return catalog.filter((kind) => storedKinds.has(kind));
-  };
+/**
+ * The default `normalize`: the payload's catalog kinds in the order it holds
+ * them, each once (the first one wins). Anything else drops out.
+ */
+export function keepStoredPinOrder<K extends string>(catalog: readonly K[]): (stored: readonly unknown[]) => K[] {
+  const known = new Set<unknown>(catalog);
+  return (stored) => [...new Set(stored.filter((kind): kind is K => known.has(kind)))];
+}
+
+/** `pinned` with `kind` pinned last (when `pin`) or taken out. The same list when nothing changes. */
+export function withChipPinned<K extends string>(pinned: readonly K[], kind: K, pin: boolean): readonly K[] {
+  if (pinned.includes(kind) === pin) return pinned;
+  return pin ? [...pinned, kind] : pinned.filter((pinnedKind) => pinnedKind !== kind);
+}
+
+/** Whether `kind` is pinned and has a neighbour that way. */
+export function canMovePinnedChip<K extends string>(
+  pinned: readonly K[],
+  kind: K,
+  direction: SectionMoveDirection,
+): boolean {
+  const from = pinned.indexOf(kind);
+  const to = from + direction;
+  return from >= 0 && to >= 0 && to < pinned.length;
+}
+
+/** `pinned` with `kind` swapped with its neighbour. The same list when it cannot move. */
+export function withPinnedChipMoved<K extends string>(
+  pinned: readonly K[],
+  kind: K,
+  direction: SectionMoveDirection,
+): readonly K[] {
+  if (!canMovePinnedChip(pinned, kind, direction)) return pinned;
+  const from = pinned.indexOf(kind);
+  const moved = [...pinned];
+  moved.splice(from, 1);
+  moved.splice(from + direction, 0, kind);
+  return moved;
 }
 
 /**
@@ -85,8 +131,8 @@ function filterByCatalog<K extends string>(catalog: readonly K[]): (stored: read
  * capsule builder, and reads `store.usePinnedChips()`.
  */
 export function createPinnedChipsStore<K extends string>(config: PinnedChipsStoreConfig<K>): PinnedChipsStore<K> {
-  const { storageKey, defaults } = config;
-  const normalize = config.normalize ?? filterByCatalog(config.catalog);
+  const { storageKey, catalog, defaults } = config;
+  const normalize = config.normalize ?? keepStoredPinOrder(catalog);
   const fromStored = config.fromStored ?? normalize;
   const toStored = config.toStored ?? ((kinds: readonly K[]): unknown[] => [...kinds]);
   const serverSnapshot: PinnedChipsSnapshot<K> = { pinned: defaults, loaded: false };
@@ -134,8 +180,14 @@ export function createPinnedChipsStore<K extends string>(config: PinnedChipsStor
     // Without this, an early tap would compute DEFAULT±kind and set()'s
     // hasLoaded=true would then make the in-flight load discard the saved set.
     await ensureLoaded();
-    const next = current.includes(kind) ? current.filter((pinned) => pinned !== kind) : [...current, kind];
-    await set(next);
+    await set(withChipPinned(current, kind, !current.includes(kind)));
+  }
+
+  async function move(kind: K, direction: SectionMoveDirection): Promise<void> {
+    // Same reason as toggle: move the SAVED order, not the defaults.
+    await ensureLoaded();
+    const next = withPinnedChipMoved(current, kind, direction);
+    if (next !== current) await set(next);
   }
 
   function subscribe(onStoreChange: () => void): () => void {
@@ -172,7 +224,7 @@ export function createPinnedChipsStore<K extends string>(config: PinnedChipsStor
     listeners.clear();
   }
 
-  return { storageKey, usePinnedChips, load, set, toggle, resetForTests };
+  return { storageKey, catalog, defaults, usePinnedChips, load, set, toggle, move, resetForTests };
 }
 
 // --- The climbs list's pin store --------------------------------------------
@@ -180,8 +232,9 @@ export function createPinnedChipsStore<K extends string>(config: PinnedChipsStor
 export const STORAGE_KEY = 'pinnedFilterChips';
 
 /**
- * The climbs capsule row's pins. Its normalize folds a stored legacy 'shape' pin
- * into Tall + Wide on every load (storage is never rewritten just to migrate),
+ * The climbs capsule row's pins, in the climber's order. Its normalize folds a
+ * stored legacy 'shape' pin into Tall + Wide on every load (storage is never
+ * rewritten just to migrate),
  * and it persists the rollback-safe form (see toStoredPinnedChips): an older
  * bundle reading this key still finds the Shape chip it knows when Tall + Wide
  * are pinned. Its fromStored also gives a list saved before Recent was pinnable

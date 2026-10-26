@@ -16,7 +16,11 @@
 
 import type { FilterChipKind } from './pinnable-chips';
 
-/** Every pinnable playlist capsule, in the order the chip row draws them (Sort last). */
+/**
+ * Every pinnable playlist capsule, in the sheet's order (Sort last): the order
+ * the defaults draw in and unpinned kinds list in on the Quick filters page.
+ * Pinned chips draw in the climber's saved order.
+ */
 export const PLAYLIST_PINNABLE_CHIP_KINDS = [
   'grade',
   'accuracy',
@@ -31,7 +35,7 @@ export const PLAYLIST_PINNABLE_CHIP_KINDS = [
 
 export type PlaylistPinnableChipKind = (typeof PLAYLIST_PINNABLE_CHIP_KINDS)[number];
 
-/** The fixed render order. A capsule never moves because it was pinned later. */
+/** The catalog the store and the Quick filters page read. */
 export const PLAYLIST_PINNABLE_CHIP_CATALOG: readonly PlaylistPinnableChipKind[] = PLAYLIST_PINNABLE_CHIP_KINDS;
 
 /** Pinned on a fresh install: Grade, Your progress and Sort, the row in the approved layout. */

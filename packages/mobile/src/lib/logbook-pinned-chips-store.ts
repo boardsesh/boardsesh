@@ -12,7 +12,9 @@ export const LOGBOOK_PINNED_CHIPS_STORAGE_KEY = 'pinnedLogbookChips';
  * Which Logbook capsules the climber has pinned. Device-global like the climbs
  * pins: a layout choice, so the same row shows on your own logbook and on
  * anyone else's. Unknown kinds in a stored payload drop out (the factory's
- * default normalize), so the catalog can grow without a migration.
+ * default normalize), so the catalog can grow without a migration. The store
+ * keeps the order kinds were pinned in, but the Logbook row and its tokens draw
+ * in catalog order (logbook-capsules.ts), so that order shows nowhere.
  */
 export const logbookPinnedChipsStore = createPinnedChipsStore<LogbookPinnableChipKind>({
   storageKey: LOGBOOK_PINNED_CHIPS_STORAGE_KEY,

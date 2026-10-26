@@ -48,13 +48,21 @@ describe('playlist pinned chips', () => {
     expect(await playlistPinnedChipsStore.load()).toEqual(['grade', 'progress', 'sort']);
   });
 
-  it('drops kinds a playlist cannot pin and keeps the catalog order', async () => {
+  it('drops kinds a playlist cannot pin and keeps the saved order', async () => {
     (await getMockStorage()).__setRaw(
       'pinnedPlaylistChips',
       JSON.stringify(['sort', 'recent', 'boardFit', 'collection', 'tall', 'grade']),
     );
     const { playlistPinnedChipsStore } = await import('../playlist-pinned-chips-store');
-    expect(await playlistPinnedChipsStore.load()).toEqual(['grade', 'boardFit', 'sort']);
+    expect(await playlistPinnedChipsStore.load()).toEqual(['sort', 'boardFit', 'grade']);
+  });
+
+  it('pins a new chip last and moves it', async () => {
+    const { playlistPinnedChipsStore } = await import('../playlist-pinned-chips-store');
+    await playlistPinnedChipsStore.toggle('beta');
+    expect(await playlistPinnedChipsStore.load()).toEqual(['grade', 'progress', 'sort', 'beta']);
+    await playlistPinnedChipsStore.move('beta', -1);
+    expect(await playlistPinnedChipsStore.load()).toEqual(['grade', 'progress', 'beta', 'sort']);
   });
 
   it('draws "Fits my board" right before Sort, which stays last', async () => {

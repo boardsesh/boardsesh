@@ -1,12 +1,12 @@
 // The climbs list's quick-filter capsules: turns FilterChipRow's props into the
-// CapsuleRow descriptors, in the row's fixed order. Pure (no React, no native
+// CapsuleRow descriptors, in the row's order. Pure (no React, no native
 // imports), so the order, labels, active states and visibility rules are locked
 // by a unit test instead of three hand-written platform trees.
 //
-// Order: [Angle] Filters · N, then the pinnable chips in catalog order
-// (lib/pinnable-chips.ts): Recent, Grade, Grade accuracy, Your progress,
-// Collection, Climb type, Tall, Wide, Beta videos, Popularity, Min rating,
-// [Fits my board], Sort. "Fits my board" is playlist-only (its own catalog in
+// Order: [Angle] Filters · N, which never move, then the pinned chips in the
+// order the climber saved them (`pinnedChips`, set in Settings › Climbs & grades
+// › Quick filters; a fresh install's defaults follow lib/pinnable-chips.ts).
+// "Fits my board" is playlist-only (its own catalog in
 // lib/playlist-pinnable-chips.ts), as is a `sortControl` replacing the Climbs
 // sort menu.
 //   • Angle is the Material first capsule (Liquid Glass keeps its toolbar angle
@@ -38,6 +38,7 @@ import {
 } from '../../lib/filter-chip-menus';
 import { buildSortLabel } from '../../lib/filter-labels';
 import { visibleCollectionValues } from '../../lib/collection-filter';
+import type { FilterChipKind } from '../../lib/pinnable-chips';
 import type { Capsule, CapsuleOption } from '../filter-capsules/CapsuleRow.types';
 import {
   accuracyChipLabel,
@@ -107,7 +108,6 @@ export function buildClimbCapsules(
     sortControl,
     boardFit,
   } = props;
-  const isPinned = (kind: (typeof pinnedChips)[number]) => pinnedChips.includes(kind);
   const capsules: Capsule[] = [];
 
   if (angle) {
@@ -136,210 +136,227 @@ export function buildClimbCapsules(
     onPress: onOpenFilters,
   });
 
-  // Recent ▾: shown while pinned and there are saved searches. Each one is
-  // something to apply, so a tap re-applies even the checked (current) one.
-  if (isPinned('recent') && recentFilters && recentFilters.length > 0 && onApplyRecent && currentFilters) {
-    const current = findCurrentRecentFilter(recentFilters, currentFilters, currentSearchText ?? '');
-    capsules.push({
-      kind: 'menu',
-      key: 'recent',
-      label: t('mobile.search.recentFilters'),
-      active: false,
-      icon: 'recent',
-      optionStyle: 'commands',
-      options: recentFilters.map((recent) => ({ value: recent.id, label: recent.label })),
-      selected: current?.id,
-      onSelect: (id) => applyRecentFilterById(recentFilters, id, onApplyRecent),
-      actions: onClearRecent
-        ? [{ key: 'clear', label: t('mobile.search.clearRecentSearches'), destructive: true, onPress: onClearRecent }]
-        : [],
-    });
-  }
+  // One pinned kind's capsule, or null while it has nothing to show here.
+  const pinnedCapsule = (kind: FilterChipKind): Capsule | null => {
+    switch (kind) {
+      // Recent ▾: shown while pinned and there are saved searches. Each one is
+      // something to apply, so a tap re-applies even the checked (current) one.
+      case 'recent': {
+        if (!recentFilters || recentFilters.length === 0 || !onApplyRecent || !currentFilters) return null;
+        const current = findCurrentRecentFilter(recentFilters, currentFilters, currentSearchText ?? '');
+        return {
+          kind: 'menu',
+          key: 'recent',
+          label: t('mobile.search.recentFilters'),
+          active: false,
+          icon: 'recent',
+          optionStyle: 'commands',
+          options: recentFilters.map((recent) => ({ value: recent.id, label: recent.label })),
+          selected: current?.id,
+          onSelect: (id) => applyRecentFilterById(recentFilters, id, onApplyRecent),
+          actions: onClearRecent
+            ? [
+                {
+                  key: 'clear',
+                  label: t('mobile.search.clearRecentSearches'),
+                  destructive: true,
+                  onPress: onClearRecent,
+                },
+              ]
+            : [],
+        };
+      }
 
-  // Grade → shows and hides the range rail (a popover on regular-width iPad).
-  if (isPinned('grade')) {
-    capsules.push({
-      kind: 'rail',
-      key: 'grade',
-      label: gradeLabel,
-      active: gradeActive,
-      expanded: gradeRailOpen,
-      onPress: gradeRailOpen ? onCloseGrade : onOpenGrade,
-      accessibilityHint: gradeRailOpen ? t('mobile.search.gradeCloseHint') : t('mobile.search.gradeOpenHint'),
-      popover: gradePopoverContent ? { content: gradePopoverContent, onDismiss: onCloseGrade } : undefined,
-    });
-  }
+      // Grade → shows and hides the range rail (a popover on regular-width iPad).
+      case 'grade':
+        return {
+          kind: 'rail',
+          key: 'grade',
+          label: gradeLabel,
+          active: gradeActive,
+          expanded: gradeRailOpen,
+          onPress: gradeRailOpen ? onCloseGrade : onOpenGrade,
+          accessibilityHint: gradeRailOpen ? t('mobile.search.gradeCloseHint') : t('mobile.search.gradeOpenHint'),
+          popover: gradePopoverContent ? { content: gradePopoverContent, onDismiss: onCloseGrade } : undefined,
+        };
 
-  // Grade accuracy ▾: Off / Loose / Moderate / Tight; 'off' tags the neutral '0'.
-  if (isPinned('accuracy')) {
-    capsules.push({
-      kind: 'menu',
-      key: 'accuracy',
-      label: accuracyValue === 'off' ? t('mobile.filter.accuracy.label') : accuracyChipLabel(accuracyValue, t),
-      active: accuracyValue !== 'off',
-      options: GRADE_ACCURACY_VALUES.map((value) => ({
-        value: value === '0' ? 'off' : value,
-        label: accuracyChipLabel(value, t),
-      })),
-      selected: accuracyValue,
-      onSelect: (value) => {
-        if (isAccuracyTag(value)) onChangeAccuracy(value);
-      },
-    });
-  }
+      // Grade accuracy ▾: Off / Loose / Moderate / Tight; 'off' tags the neutral '0'.
+      case 'accuracy':
+        return {
+          kind: 'menu',
+          key: 'accuracy',
+          label: accuracyValue === 'off' ? t('mobile.filter.accuracy.label') : accuracyChipLabel(accuracyValue, t),
+          active: accuracyValue !== 'off',
+          options: GRADE_ACCURACY_VALUES.map((value) => ({
+            value: value === '0' ? 'off' : value,
+            label: accuracyChipLabel(value, t),
+          })),
+          selected: accuracyValue,
+          onSelect: (value) => {
+            if (isAccuracyTag(value)) onChangeAccuracy(value);
+          },
+        };
 
-  // Your progress ▾: auth-gated. Resting label is the dimension name.
-  if (canFilterProgress && isPinned('progress')) {
-    capsules.push({
-      kind: 'menu',
-      key: 'progress',
-      label: progress === 'all' ? t('mobile.filter.progress.label') : progressFilterLabel(progress, t),
-      active: progress !== 'all',
-      options: PROGRESS_FILTER_VALUES.map((value) => ({ value, label: progressFilterLabel(value, t) })),
-      selected: progress,
-      onSelect: (value) => {
-        if (isProgressFilter(value)) onChangeProgress(value);
-      },
-    });
-  }
+      // Your progress ▾: auth-gated. Resting label is the dimension name.
+      case 'progress':
+        if (!canFilterProgress) return null;
+        return {
+          kind: 'menu',
+          key: 'progress',
+          label: progress === 'all' ? t('mobile.filter.progress.label') : progressFilterLabel(progress, t),
+          active: progress !== 'all',
+          options: PROGRESS_FILTER_VALUES.map((value) => ({ value, label: progressFilterLabel(value, t) })),
+          selected: progress,
+          onSelect: (value) => {
+            if (isProgressFilter(value)) onChangeProgress(value);
+          },
+        };
 
-  // Collection ▾: Any / Benchmarks / My drafts / Liked (personal collections
-  // auth-gated, benchmarks hidden on a spray wall unless already active).
-  if (isPinned('collection')) {
-    capsules.push({
-      kind: 'menu',
-      key: 'collection',
-      label: collection === 'any' ? t('mobile.filter.collection.label') : collectionChipLabel(collection, t),
-      active: collection !== 'any',
-      options: visibleCollectionValues({ canFilterPersonalCollections, isSprayWall, current: collection }).map(
-        (value) => ({ value, label: collectionChipLabel(value, t) }),
-      ),
-      selected: collection,
-      onSelect: (value) => {
-        if (isCollectionFilter(value)) onChangeCollection(value);
-      },
-    });
-  }
+      // Collection ▾: Any / Benchmarks / My drafts / Liked (personal collections
+      // auth-gated, benchmarks hidden on a spray wall unless already active).
+      case 'collection':
+        return {
+          kind: 'menu',
+          key: 'collection',
+          label: collection === 'any' ? t('mobile.filter.collection.label') : collectionChipLabel(collection, t),
+          active: collection !== 'any',
+          options: visibleCollectionValues({ canFilterPersonalCollections, isSprayWall, current: collection }).map(
+            (value) => ({ value, label: collectionChipLabel(value, t) }),
+          ),
+          selected: collection,
+          onSelect: (value) => {
+            if (isCollectionFilter(value)) onChangeCollection(value);
+          },
+        };
 
-  // Climb type ▾: rests as "Climb type" on the list's own default (boulders
-  // only on the Climbs list, both on a playlist).
-  if (isPinned('climbType')) {
-    capsules.push({
-      kind: 'menu',
-      key: 'climbType',
-      label: climbType === defaultClimbType ? t('mobile.filter.climbType.label') : climbTypeChipLabel(climbType, t),
-      active: climbType !== defaultClimbType,
-      options: CLIMB_TYPE_VALUES.map((value) => ({ value, label: climbTypeChipLabel(value, t) })),
-      selected: climbType,
-      onSelect: (value) => {
-        if (isClimbType(value)) onChangeClimbType(value);
-      },
-    });
-  }
+      // Climb type ▾: rests as "Climb type" on the list's own default (boulders
+      // only on the Climbs list, both on a playlist).
+      case 'climbType':
+        return {
+          kind: 'menu',
+          key: 'climbType',
+          label: climbType === defaultClimbType ? t('mobile.filter.climbType.label') : climbTypeChipLabel(climbType, t),
+          active: climbType !== defaultClimbType,
+          options: CLIMB_TYPE_VALUES.map((value) => ({ value, label: climbTypeChipLabel(value, t) })),
+          selected: climbType,
+          onSelect: (value) => {
+            if (isClimbType(value)) onChangeClimbType(value);
+          },
+        };
 
-  // Tall / Wide: tap toggles; the iOS long-press offers Lock / Unlock. A locked
-  // chip shows a lock and ignores tap until unlocked (lib/dimension-chips.ts).
-  for (const dimension of dimensionChips) {
-    if (!isPinned(dimension.key)) continue;
-    capsules.push({
-      kind: 'toggleMenu',
-      key: dimension.key,
-      label: dimension.key === 'tall' ? t('mobile.search.chips.tall') : t('mobile.search.chips.wide'),
-      active: dimension.active,
-      icon: dimension.locked ? 'locked' : undefined,
-      onPress: dimension.onToggle,
-      actions: [
-        {
-          key: 'lock',
-          label: dimension.locked ? t('mobile.search.chips.unlock') : t('mobile.search.chips.lock'),
-          icon: dimension.locked ? 'unlock' : 'lock',
-          onPress: dimension.onToggleLock,
-        },
-      ],
-    });
-  }
+      // Tall / Wide: only on board sizes that have them (`dimensionChips`). Tap
+      // toggles; the iOS long-press offers Lock / Unlock. A locked chip shows a
+      // lock and ignores tap until unlocked (lib/dimension-chips.ts).
+      case 'tall':
+      case 'wide': {
+        const dimension = dimensionChips.find((candidate) => candidate.key === kind);
+        if (!dimension) return null;
+        return {
+          kind: 'toggleMenu',
+          key: dimension.key,
+          label: dimension.key === 'tall' ? t('mobile.search.chips.tall') : t('mobile.search.chips.wide'),
+          active: dimension.active,
+          icon: dimension.locked ? 'locked' : undefined,
+          onPress: dimension.onToggle,
+          actions: [
+            {
+              key: 'lock',
+              label: dimension.locked ? t('mobile.search.chips.unlock') : t('mobile.search.chips.lock'),
+              icon: dimension.locked ? 'unlock' : 'lock',
+              onPress: dimension.onToggleLock,
+            },
+          ],
+        };
+      }
 
-  // Beta videos: a plain on/off toggle.
-  if (isPinned('beta')) {
-    capsules.push({
-      kind: 'toggle',
-      key: 'beta',
-      label: t('mobile.filter.betaVideos'),
-      active: betaActive,
-      onPress: onToggleBeta,
-    });
-  }
+      // Beta videos: a plain on/off toggle.
+      case 'beta':
+        return {
+          kind: 'toggle',
+          key: 'beta',
+          label: t('mobile.filter.betaVideos'),
+          active: betaActive,
+          onPress: onToggleBeta,
+        };
 
-  // Popularity ▾: min-ascents buckets (the conflict-clear is upstream).
-  if (isPinned('popularity')) {
-    capsules.push({
-      kind: 'menu',
-      key: 'popularity',
-      label: minAscents != null ? popularityChipLabel(minAscents, t) : t('mobile.filter.popularity'),
-      active: minAscents != null,
-      options: POPULARITY_BUCKETS.map((bucket): CapsuleOption => ({
-        value: popularityTag(bucket),
-        label: popularityChipLabel(bucket, t),
-      })),
-      selected: popularityTag(minAscents),
-      onSelect: (value) => onChangePopularity(popularityFromTag(value)),
-    });
-  }
+      // Popularity ▾: min-ascents buckets (the conflict-clear is upstream).
+      case 'popularity':
+        return {
+          kind: 'menu',
+          key: 'popularity',
+          label: minAscents != null ? popularityChipLabel(minAscents, t) : t('mobile.filter.popularity'),
+          active: minAscents != null,
+          options: POPULARITY_BUCKETS.map((bucket): CapsuleOption => ({
+            value: popularityTag(bucket),
+            label: popularityChipLabel(bucket, t),
+          })),
+          selected: popularityTag(minAscents),
+          onSelect: (value) => onChangePopularity(popularityFromTag(value)),
+        };
 
-  // Min rating ▾: star buckets.
-  if (isPinned('rating')) {
-    capsules.push({
-      kind: 'menu',
-      key: 'rating',
-      label: minRating != null ? ratingChipLabel(minRating, t) : t('mobile.filter.minRating'),
-      active: minRating != null,
-      options: RATING_BUCKETS.map((bucket): CapsuleOption => ({
-        value: ratingTag(bucket),
-        label: ratingChipLabel(bucket, t),
-      })),
-      selected: ratingTag(minRating),
-      onSelect: (value) => onChangeRating(ratingFromTag(value)),
-    });
-  }
+      // Min rating ▾: star buckets.
+      case 'rating':
+        return {
+          kind: 'menu',
+          key: 'rating',
+          label: minRating != null ? ratingChipLabel(minRating, t) : t('mobile.filter.minRating'),
+          active: minRating != null,
+          options: RATING_BUCKETS.map((bucket): CapsuleOption => ({
+            value: ratingTag(bucket),
+            label: ratingChipLabel(bucket, t),
+          })),
+          selected: ratingTag(minRating),
+          onSelect: (value) => onChangeRating(ratingFromTag(value)),
+        };
 
-  // Fits my board: a plain toggle, playlist-only and only with an active board.
-  if (boardFit && isPinned('boardFit')) {
-    capsules.push({
-      kind: 'toggle',
-      key: 'boardFit',
-      label: t('mobile.filter.boardFit.label'),
-      active: boardFit.active,
-      onPress: boardFit.onToggle,
-    });
-  }
+      // Fits my board: a plain toggle, playlist-only and only with an active board.
+      case 'boardFit':
+        if (!boardFit) return null;
+        return {
+          kind: 'toggle',
+          key: 'boardFit',
+          label: t('mobile.filter.boardFit.label'),
+          active: boardFit.active,
+          onPress: boardFit.onToggle,
+        };
 
-  // Sort ▾: the sort key only (direction stays in the sheet). Picking Random
-  // reseeds a fresh shuffle. Sits last. A list with sorts of its own hands over
-  // its whole capsule in `sortControl`.
-  if (isPinned('sort') && sortControl) {
-    capsules.push({
-      kind: 'menu',
-      key: 'sort',
-      label: sortControl.label,
-      active: sortControl.active,
-      options: sortControl.options,
-      selected: sortControl.selected,
-      onSelect: sortControl.onSelect,
-    });
-  } else if (isPinned('sort') && sortBy !== undefined && onChangeSort) {
-    const sortLabelFor = buildSortLabel(t);
-    const sortIsActive = sortActive ?? false;
-    capsules.push({
-      kind: 'menu',
-      key: 'sort',
-      label: sortIsActive ? (sortLabelFor(sortBy) ?? sortBy) : t('mobile.filter.sortBy'),
-      active: sortIsActive,
-      options: SORT_OPTIONS.map((value) => ({ value, label: sortLabelFor(value) ?? value })),
-      selected: sortBy,
-      onSelect: (value) => {
-        if (isSortOption(value)) onChangeSort(value);
-      },
-    });
+      // Sort ▾: the sort key only (direction stays in the sheet). Picking Random
+      // reseeds a fresh shuffle. A list with sorts of its own hands over its
+      // whole capsule in `sortControl`.
+      case 'sort': {
+        if (sortControl) {
+          return {
+            kind: 'menu',
+            key: 'sort',
+            label: sortControl.label,
+            active: sortControl.active,
+            options: sortControl.options,
+            selected: sortControl.selected,
+            onSelect: sortControl.onSelect,
+          };
+        }
+        if (sortBy === undefined || !onChangeSort) return null;
+        const sortLabelFor = buildSortLabel(t);
+        const sortIsActive = sortActive ?? false;
+        return {
+          kind: 'menu',
+          key: 'sort',
+          label: sortIsActive ? (sortLabelFor(sortBy) ?? sortBy) : t('mobile.filter.sortBy'),
+          active: sortIsActive,
+          options: SORT_OPTIONS.map((value) => ({ value, label: sortLabelFor(value) ?? value })),
+          selected: sortBy,
+          onSelect: (value) => {
+            if (isSortOption(value)) onChangeSort(value);
+          },
+        };
+      }
+    }
+  };
+
+  // Each pinned kind once, in the saved order: a capsule key appears once in a row.
+  for (const kind of new Set(pinnedChips)) {
+    const capsule = pinnedCapsule(kind);
+    if (capsule) capsules.push(capsule);
   }
 
   return capsules;

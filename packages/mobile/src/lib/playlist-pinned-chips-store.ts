@@ -13,10 +13,12 @@ import {
 export const PLAYLIST_PINNED_CHIPS_STORAGE_KEY = 'pinnedPlaylistChips';
 
 /**
- * Which playlist capsules the climber has pinned. Device-global like the climbs
- * and Logbook pins: one layout for every playlist, smart list and setter page. Unknown kinds in a stored
- * payload drop out (the factory's default normalize), so the catalog can grow
- * without a migration.
+ * Which playlist capsules the climber has pinned, in the order the row draws
+ * them (set in Settings › Climbs & grades › Quick filters). Device-global like
+ * the climbs and Logbook pins: one layout for every playlist, smart list and
+ * setter page. Unknown kinds in a stored payload drop out and the saved order
+ * stays (the factory's default normalize), so the catalog can grow without a
+ * migration.
  */
 export const playlistPinnedChipsStore = createPinnedChipsStore<PlaylistPinnableChipKind>({
   storageKey: PLAYLIST_PINNED_CHIPS_STORAGE_KEY,
