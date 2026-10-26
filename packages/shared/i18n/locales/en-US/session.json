@@ -903,7 +903,8 @@
     "setActive": "Set active",
     "paneEmpty": {
       "title": "Pick a climb",
-      "subtitle": "Tap a climb to see it here."
+      "subtitle": "Tap a climb to see it here.",
+      "unlitHint": "Tap a climb to light it"
     },
     "previousFrame": "Previous frame",
     "nextFrame": "Next frame",

@@ -82,6 +82,7 @@ import { previewNeedsAngleReanchor, reanchorPreviewAtAngle } from './preview-ang
 import { SwitchBoardOverlay } from './SwitchBoardOverlay';
 import { DeferredSections } from './DeferredSections';
 import { PanePlaceholder } from './PanePlaceholder';
+import { usePlayerScrollHandoff } from './use-player-scroll-handoff';
 import {
   computeDrawerFirstScreenHeight,
   computeFirstSectionScrollTarget,
@@ -210,6 +211,8 @@ export function PlayCore({
   openTarget,
   presentation = 'route',
   paneTopInset = true,
+  paneEmptyState,
+  acceptsScrollHandoff = false,
   viewer = 'member',
   onSignIn,
 }: PlayDrawerProps) {
@@ -1801,6 +1804,19 @@ export function PlayCore({
     [firstScreenHeight, sheetViewportHeight, windowHeight, insets.bottom, insets.top],
   );
 
+  // The phone split swaps this route for the pane mid-read; the pane picks up
+  // where the climber was (see player-scroll-handoff).
+  const readScrollOffset = useCallback(() => scrollYSV.value, [scrollYSV]);
+  const handleScrollContentSizeChange = usePlayerScrollHandoff({
+    isPane,
+    acceptsHandoff: acceptsScrollHandoff,
+    displayedClimbUuid,
+    scrollRef,
+    readScrollOffset,
+    viewportHeight: sheetViewportHeight || windowHeight,
+    requestBelowFoldContent,
+  });
+
   const ascentCount = displayedClimb?.userAscents ?? 0;
 
   const angleSelectorVisible = activeSubDrawer === 'angleSelector';
@@ -1954,12 +1970,14 @@ export function PlayCore({
         />
       ) : null}
       {showPanePlaceholder ? (
-        <PanePlaceholder
-          title={t('playView.paneEmpty.title')}
-          subtitle={t('playView.paneEmpty.subtitle')}
-          paddingTop={(paneTopInset ? insets.top : 0) + spacing[8]}
-          paddingBottom={insets.bottom}
-        />
+        (paneEmptyState ?? (
+          <PanePlaceholder
+            title={t('playView.paneEmpty.title')}
+            subtitle={t('playView.paneEmpty.subtitle')}
+            paddingTop={(paneTopInset ? insets.top : 0) + spacing[8]}
+            paddingBottom={insets.bottom}
+          />
+        ))
       ) : (
         <GestureDetector gesture={contentGesture}>
           <Animated.View style={[styles.content, !swipeDismiss && dismissAnimatedStyle]}>
@@ -1986,6 +2004,7 @@ export function PlayCore({
               onScroll={handleScroll}
               scrollEventThrottle={16}
               onScrollBeginDrag={handleScrollTowardBelowFold}
+              onContentSizeChange={handleScrollContentSizeChange}
             >
               {displayedClimb && (
                 <>

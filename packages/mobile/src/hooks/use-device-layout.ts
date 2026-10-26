@@ -3,6 +3,7 @@ import { Dimensions, Platform, useWindowDimensions } from 'react-native';
 import {
   resolveDeviceLayout,
   resolveIsTablet,
+  resolvePhoneSplit,
   resolveWallDeviceClass,
   type DeviceLayout,
   type WallDeviceClass,
@@ -29,13 +30,20 @@ import {
  * short side (Android/web tablet eligibility) are read from `Dimensions.get('screen')`
  * — the PHYSICAL screen, not the app window (which shrinks under Split View /
  * multi-window / DeX) — and rotation-invariant via `max`/`min`, so memoized once.
+ *
+ * `phoneSplit` is live like `widthClass`: an iPhone window wide and tall enough
+ * for the tab content and the player side by side (the iPhone Duo opened in
+ * landscape; see `resolvePhoneSplit`). It is false on every tablet, so no iPad
+ * value above changes with it. Read it through `usePhoneSplit`, which adds the
+ * NativeTabs gate the split mounts in.
  */
 export function useDeviceLayout(): DeviceLayout & {
   isPad: boolean;
   isTablet: boolean;
   wallDeviceClass: WallDeviceClass;
+  phoneSplit: boolean;
 } {
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   // `Platform.isPad` is iOS-only (undefined on Android), so guard on the OS too.
   const isPad = Platform.OS === 'ios' && Platform.isPad === true;
   const { screenLongSide, screenShortSide } = useMemo(() => {
@@ -53,8 +61,11 @@ export function useDeviceLayout(): DeviceLayout & {
   // the long side (the live width budget decides the surface); only iPad consults
   // the points floor.
   const wallDeviceClass = resolveWallDeviceClass({ screenLongSide, isPad, isTablet, platformOS: Platform.OS });
+  // A boolean, not the height, goes into the memo below, so a height change that
+  // leaves the split as it was keeps the returned object's identity.
+  const phoneSplit = resolvePhoneSplit({ platformOS: Platform.OS, isTablet, width, height });
   return useMemo(
-    () => ({ ...resolveDeviceLayout({ width, isTablet }), isPad, isTablet, wallDeviceClass }),
-    [width, isPad, isTablet, wallDeviceClass],
+    () => ({ ...resolveDeviceLayout({ width, isTablet }), isPad, isTablet, wallDeviceClass, phoneSplit }),
+    [width, isPad, isTablet, wallDeviceClass, phoneSplit],
   );
 }

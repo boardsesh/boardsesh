@@ -24,7 +24,10 @@ const cfg = vi.hoisted(() => ({
   > | null,
 }));
 
-const captured = vi.hoisted(() => ({ playDrawerProps: null as Record<string, unknown> | null }));
+const captured = vi.hoisted(() => ({
+  playDrawerProps: null as Record<string, unknown> | null,
+  placeholderProps: null as Record<string, unknown> | null,
+}));
 
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
@@ -35,7 +38,11 @@ vi.mock('react-native', () => ({
   PlatformColor: (name: string) => name,
 }));
 
-vi.mock('expo-router', () => ({ useSegments: () => cfg.segments }));
+vi.mock('expo-router', () => ({ useSegments: () => cfg.segments, router: { push: vi.fn() } }));
+vi.mock('../../../lib/boards/first-board-mode', () => ({ NO_BOARD_PICKER_HREF: '/boards' }));
+vi.mock('../UnlitBoardPane', () => ({
+  UnlitBoardPane: () => createElement('div', { 'data-unlit-board': 'true' }),
+}));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 24, bottom: 0, left: 0, right: 0 }),
@@ -49,7 +56,10 @@ vi.mock('../PlayDrawer', () => ({
 }));
 
 vi.mock('../PanePlaceholder', () => ({
-  PanePlaceholder: () => createElement('div', { 'data-pane-placeholder': 'true' }),
+  PanePlaceholder: (props: Record<string, unknown>) => {
+    captured.placeholderProps = props;
+    return createElement('div', { 'data-pane-placeholder': 'true' });
+  },
 }));
 
 vi.mock('../../board-presence/WallStrip', () => ({
@@ -85,6 +95,7 @@ describe('IpadPlayPane wall surface', () => {
     cfg.presenceBoardId = 1;
     cfg.paneProps = { boardConfig: { boardName: 'kilter', layoutId: 1, sizeId: 1, setIds: '1', angle: 40 } };
     captured.playDrawerProps = null;
+    captured.placeholderProps = null;
   });
 
   it('docks the wall strip atop the pane in portrait and tells PlayDrawer to skip the top inset', () => {
@@ -133,5 +144,46 @@ describe('IpadPlayPane wall surface', () => {
     expect(container.querySelector('[data-pane-placeholder="true"]')).not.toBeNull();
     expect(container.querySelector('[data-play-drawer="true"]')).toBeNull();
     expect(container.querySelector('[data-wall-strip="true"]')).toBeNull();
+  });
+
+  it('keeps the iPad empty states: no unlit board, no board-picker action', () => {
+    render(<IpadPlayPane />);
+    expect(captured.playDrawerProps?.paneEmptyState).toBeUndefined();
+    cfg.paneProps = null;
+    render(<IpadPlayPane />);
+    expect(captured.placeholderProps?.actionTitle).toBeUndefined();
+  });
+});
+
+describe('IpadPlayPane in the phone split', () => {
+  beforeEach(() => {
+    // The Duo opened in landscape: an iPhone, so compact and sheet-only.
+    cfg.width = 951;
+    cfg.widthClass = 'compact';
+    cfg.wallDeviceClass = 'sheet-only';
+    cfg.segments = ['(tabs)', 'climbs'];
+    cfg.presenceEnabled = true;
+    cfg.presenceBoardId = 1;
+    cfg.paneProps = { boardConfig: { boardName: 'kilter', layoutId: 1, sizeId: 1, setIds: '1', angle: 40 } };
+    captured.playDrawerProps = null;
+    captured.placeholderProps = null;
+  });
+
+  it('hands PlayDrawer the unlit board as its empty state and never docks a wall strip', () => {
+    const { container } = render(<IpadPlayPane variant="phoneSplit" acceptsScrollHandoff />);
+    expect(container.querySelector('[data-wall-strip="true"]')).toBeNull();
+    expect(captured.playDrawerProps?.paneEmptyState).toBeDefined();
+    expect(captured.playDrawerProps?.acceptsScrollHandoff).toBe(true);
+    expect(captured.playDrawerProps?.paneTopInset).toBe(true);
+  });
+
+  it('offers the board picker when no board is chosen', () => {
+    cfg.paneProps = null;
+    render(<IpadPlayPane variant="phoneSplit" />);
+    expect(captured.placeholderProps).toMatchObject({
+      icon: 'boards',
+      title: 'mobile.emptyState.noBoard.title',
+      actionTitle: 'mobile.emptyState.noBoard.cta',
+    });
   });
 });

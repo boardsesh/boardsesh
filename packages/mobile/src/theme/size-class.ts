@@ -258,3 +258,82 @@ export function resolveDetailPaneSurface({
   const contentWidth = width - sidebarWidth - DETAIL_PANE_MIN_WIDTH;
   return contentWidth >= WALL_COLUMN_CONTENT_FLOOR ? 'pane' : 'sheet';
 }
+
+/**
+ * The phone two-pane split: the active tab on the leading half and the player on
+ * the trailing half. It exists for the iPhone Duo's inner display held in
+ * landscape (951×669pt), the one iPhone window with room for a list and a board
+ * side by side. A second live axis next to `widthClass`, which stays `compact` on
+ * every phone so no iPad-only surface (popovers, the sidebar, the wall column)
+ * ever reaches an iPhone.
+ *
+ * Not a tablet rule: tablets keep `resolveDetailPaneSurface` as it is, so the
+ * split is off on every iPad, Android tablet and web screen.
+ */
+export const PHONE_SPLIT_MIN_WIDTH = 900;
+
+/**
+ * The split also needs a tall window. A Pro Max held in landscape is 956pt wide
+ * but only 440pt tall, which leaves a board about a third the size of the Duo's,
+ * so it keeps the phone UI. The Duo's inner display is 669pt tall in landscape.
+ * Portrait (669 wide) and the closed outer display (466 wide) fail the width
+ * floor and keep the phone UI too.
+ */
+export const PHONE_SPLIT_MIN_HEIGHT = 600;
+
+/**
+ * Whether this window gets the phone two-pane split. Pure (the platform, the
+ * tablet flag and the live window size are injected) so it unit-tests without
+ * react-native; `useDeviceLayout` feeds it. iOS only: the split mounts inside
+ * NativeTabs, which only an iPhone uses, and an Android or web phone never
+ * reaches these sizes without already being a tablet.
+ */
+export function resolvePhoneSplit({
+  platformOS,
+  isTablet,
+  width,
+  height,
+}: {
+  platformOS: PlatformOS;
+  isTablet: boolean;
+  width: number;
+  height: number;
+}): boolean {
+  return platformOS === 'ios' && !isTablet && width >= PHONE_SPLIT_MIN_WIDTH && height >= PHONE_SPLIT_MIN_HEIGHT;
+}
+
+/**
+ * Room kept clear at the fold while the Duo is half open like a book, half on
+ * each side of the hinge. The fold's exact frame is a reserved region only
+ * native code can read (`UIView.reservedRegions`); 24pt keeps text and touch
+ * targets off the crease. Zero when the device is flat, so opening it fully
+ * moves nothing but these few points.
+ */
+export const PHONE_SPLIT_FOLD_GUTTER = 24;
+
+export type PhoneSplitColumns = {
+  /** Width of the leading (tab content) column, ending at the hinge. */
+  contentWidth: number;
+  /** Space each column keeps clear on its side of the hinge. */
+  foldInset: number;
+};
+
+/**
+ * The split sits on the hinge, the centre of the window: tab content takes the
+ * leading half and the player the trailing half. The tab host spans the whole
+ * window (the vertical tab rail floats over its trailing edge and arrives as a
+ * safe-area inset), so the window centre is the host centre too. A half-open
+ * hinge adds `PHONE_SPLIT_FOLD_GUTTER`, split evenly between the two columns.
+ */
+export function resolvePhoneSplitColumns({
+  windowWidth,
+  partiallyFolded,
+}: {
+  windowWidth: number;
+  partiallyFolded: boolean;
+}): PhoneSplitColumns {
+  return {
+    contentWidth: Math.round(windowWidth / 2),
+    foldInset: partiallyFolded ? PHONE_SPLIT_FOLD_GUTTER / 2 : 0,
+  };
+}

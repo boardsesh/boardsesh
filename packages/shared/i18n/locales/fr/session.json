@@ -903,7 +903,8 @@
     "setActive": "Activer",
     "paneEmpty": {
       "title": "Choisis un bloc",
-      "subtitle": "Touche un bloc pour le voir ici."
+      "subtitle": "Touche un bloc pour le voir ici.",
+      "unlitHint": "Touche un bloc pour l’allumer"
     },
     "previousFrame": "Image précédente",
     "nextFrame": "Image suivante",

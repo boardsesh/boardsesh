@@ -12,6 +12,7 @@ import { StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useRestTimerArmed } from '../../hooks/use-rest-timer';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { useDeviceLayout } from '../../hooks/use-device-layout';
+import { usePhoneSplit } from '../../hooks/use-phone-split';
 import { resolveDetailPaneSurface } from '../../theme/size-class';
 import { SIDEBAR_WIDTH } from '../../theme/layout';
 import { spacing } from '../../theme/tokens';
@@ -90,9 +91,13 @@ export function RootRestTimerPillHost() {
   // `usesSidebar` is the reserve's own term, recomputed from the same inputs.
   // The detail-pane check is the persistent-queue-bar bail-out and is strictly
   // narrower, so it is kept only as documentation of which shell this is.
-  const usesSidebar = bottomChrome.insideTabs && widthClass === 'regular';
+  // The phone split counts as that shell too (see useComputedBottomChromeMetrics):
+  // its player pane carries the timer, as the iPad pane does.
+  const phoneSplit = usePhoneSplit();
+  const usesSidebar = bottomChrome.insideTabs && (widthClass === 'regular' || phoneSplit);
   const detailPaneOwnsQueue =
-    usesSidebar && resolveDetailPaneSurface({ width, widthClass, sidebarWidth: SIDEBAR_WIDTH }) === 'pane';
+    usesSidebar &&
+    (phoneSplit || resolveDetailPaneSurface({ width, widthClass, sidebarWidth: SIDEBAR_WIDTH }) === 'pane');
 
   if (!shouldRenderRestTimerPill({ armed, insideTabs: bottomChrome.insideTabs, usesSidebar })) return null;
   // Unreachable while the gate above holds (a detail pane implies the sidebar),

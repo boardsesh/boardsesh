@@ -138,6 +138,11 @@ vi.mock('../../hooks/use-device-layout', () => ({
 vi.mock('../../hooks/native-tablet-pane-width', () => ({
   useTabletPaneWidth: () => ({ width: 1024, sidebarWidth: 96 }),
 }));
+// The phone split (iPhone Duo in landscape) is off here; the iPad pane above is
+// what these tests drive.
+vi.mock('../../hooks/use-phone-split', () => ({
+  usePhoneSplit: () => false,
+}));
 
 vi.mock('expo-crypto', () => ({
   randomUUID: () => 'test-uuid',

@@ -903,7 +903,8 @@
     "setActive": "Aktiv setzen",
     "paneEmpty": {
       "title": "Wähl einen Boulder",
-      "subtitle": "Tipp einen Boulder an, um ihn hier zu sehen."
+      "subtitle": "Tipp einen Boulder an, um ihn hier zu sehen.",
+      "unlitHint": "Tipp einen Boulder an, um ihn zu beleuchten"
     },
     "previousFrame": "Vorheriges Bild",
     "nextFrame": "Nächstes Bild",

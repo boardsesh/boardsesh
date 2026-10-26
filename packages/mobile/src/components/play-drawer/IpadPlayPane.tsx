@@ -1,17 +1,19 @@
 import { useTabletPaneWidth } from '../../hooks/native-tablet-pane-width';
-import { memo } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import { View, StyleSheet } from 'react-native';
-import { useSegments } from 'expo-router';
+import { router, useSegments } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PlayDrawer } from './PlayDrawer';
 import { PanePlaceholder } from './PanePlaceholder';
+import { UnlitBoardPane } from './UnlitBoardPane';
 import { WallStrip } from '../board-presence/WallStrip';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { useDeviceLayout } from '../../hooks/use-device-layout';
 import { resolveEffectiveWallSurface } from '../../theme/size-class';
 import { tabsActiveSegment } from '../../lib/route-segments';
+import { NO_BOARD_PICKER_HREF } from '../../lib/boards/first-board-mode';
 import { spacing } from '../../theme/tokens';
 
 /**
@@ -25,16 +27,34 @@ import { spacing } from '../../theme/tokens';
  * the one physically lit (see PlayDrawer's pane header). The drawer props come
  * from DrawerHostProvider so the pane and the compact bottom sheet stay identical;
  * the sheet is not mounted at regular width (see drawer-host-provider).
+ *
+ * `variant="phoneSplit"` is the same pane on the trailing half of the phone split
+ * (iPhone Duo open in landscape). There it is the current climb's home rather
+ * than a selection's, so its empty states show the board unlit, or the board
+ * picker when no board is chosen. The wall strip never shows there (a phone is
+ * `sheet-only`).
  */
-function IpadPlayPaneComponent() {
+function IpadPlayPaneComponent({
+  variant = 'tablet',
+  acceptsScrollHandoff = false,
+}: {
+  variant?: 'tablet' | 'phoneSplit';
+  acceptsScrollHandoff?: boolean;
+}) {
   const { playDrawerPaneProps } = useDrawerHost();
   const insets = useSafeAreaInsets();
   const { t } = useTranslation('session');
+  const { t: tClimbs } = useTranslation('climbs');
   const { width, sidebarWidth: paneSidebarWidth } = useTabletPaneWidth();
   const { widthClass, wallDeviceClass } = useDeviceLayout();
   const { enabled, boardId } = useBoardPresenceControls();
   const segments = useSegments();
   const onWallTab = tabsActiveSegment(segments) === 'wall';
+  const phoneSplit = variant === 'phoneSplit';
+  // The picker's no-board entry, as on the Climbs tab's empty state: a climber
+  // with no boards gets "Where do you climb?", one whose board was cleared gets
+  // their list.
+  const openBoardPicker = useCallback(() => router.push(NO_BOARD_PICKER_HREF), []);
 
   // In portrait/narrow regular there's no room for a wall column, so the wall
   // lives as a strip atop the pane. It shows only when board presence is active,
@@ -49,10 +69,28 @@ function IpadPlayPaneComponent() {
     sidebarWidth: paneSidebarWidth,
   });
   const showStrip = wallSurface === 'strip' && enabled && boardId !== null && !onWallTab;
+  const paneBoardConfig = playDrawerPaneProps?.boardConfig;
+  const paneEmptyState = useMemo(
+    () =>
+      phoneSplit && paneBoardConfig ? (
+        <UnlitBoardPane boardConfig={paneBoardConfig} paneTopInset={!showStrip} />
+      ) : undefined,
+    [phoneSplit, paneBoardConfig, showStrip],
+  );
 
   // No board resolved yet — the pane has no selection to show.
   if (!playDrawerPaneProps) {
-    return (
+    return phoneSplit ? (
+      <PanePlaceholder
+        icon="boards"
+        title={tClimbs('mobile.emptyState.noBoard.title')}
+        subtitle={tClimbs('mobile.emptyState.noBoard.subtitle')}
+        actionTitle={tClimbs('mobile.emptyState.noBoard.cta')}
+        onAction={openBoardPicker}
+        paddingTop={insets.top + spacing[8]}
+        paddingBottom={insets.bottom}
+      />
+    ) : (
       <PanePlaceholder
         title={t('playView.paneEmpty.title')}
         subtitle={t('playView.paneEmpty.subtitle')}
@@ -65,7 +103,13 @@ function IpadPlayPaneComponent() {
   return (
     <View style={styles.paneRoot}>
       {showStrip ? <WallStrip /> : null}
-      <PlayDrawer presentation="pane" {...playDrawerPaneProps} paneTopInset={!showStrip} />
+      <PlayDrawer
+        presentation="pane"
+        {...playDrawerPaneProps}
+        paneTopInset={!showStrip}
+        paneEmptyState={paneEmptyState}
+        acceptsScrollHandoff={acceptsScrollHandoff}
+      />
     </View>
   );
 }

@@ -13,6 +13,7 @@ const harness = vi.hoisted(() => ({
   restTimerBottom: 83,
   widthClass: 'compact' as 'compact' | 'regular',
   windowWidth: 390,
+  phoneSplit: false,
 }));
 
 vi.mock('react-native', () => ({
@@ -31,6 +32,10 @@ vi.mock('../../../hooks/use-bottom-chrome-metrics', () => ({
 
 vi.mock('../../../hooks/use-device-layout', () => ({
   useDeviceLayout: () => ({ widthClass: harness.widthClass }),
+}));
+
+vi.mock('../../../hooks/use-phone-split', () => ({
+  usePhoneSplit: () => harness.phoneSplit,
 }));
 
 vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12, 4: 16 } }));
@@ -96,6 +101,7 @@ describe('RootRestTimerPillHost', () => {
     harness.restTimerBottom = 83;
     harness.widthClass = 'compact';
     harness.windowWidth = 390;
+    harness.phoneSplit = false;
   });
 
   afterEach(() => {
@@ -123,6 +129,14 @@ describe('RootRestTimerPillHost', () => {
     arm();
     harness.widthClass = 'regular';
     harness.windowWidth = 1194;
+    const { queryByTestId } = render(<RootRestTimerPillHost />);
+    expect(queryByTestId('pill')).toBeNull();
+  });
+
+  it('does not render in the phone split, where the player pane carries the timer', () => {
+    arm();
+    harness.windowWidth = 951;
+    harness.phoneSplit = true;
     const { queryByTestId } = render(<RootRestTimerPillHost />);
     expect(queryByTestId('pill')).toBeNull();
   });

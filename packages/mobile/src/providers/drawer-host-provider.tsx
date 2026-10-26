@@ -57,6 +57,8 @@ import { climbToQueueItem } from '../lib/climb-to-queue-item';
 import { useActiveClimbUuid, useIsSharedSession, useQueueActions, useQueueSessionControls } from './queue-provider';
 import { getSetting } from '../settings/hooks';
 import { useDeviceLayout } from '../hooks/use-device-layout';
+import { usePhoneSplit } from '../hooks/use-phone-split';
+import { armPlayerScrollHandoff } from '../components/play-drawer/player-scroll-handoff';
 import { resolveDetailPaneSurface } from '../theme/size-class';
 import { useQueueSnackbar } from './queue-snackbar-provider';
 import { useBoardPresenceControls, type ResolveBoardUuidArgs } from './board-presence-provider';
@@ -409,8 +411,12 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // paneTarget when the wall tab becomes focused.
   const routeSegments = useSegments();
   const onWallTab = tabsActiveSegment(routeSegments) === 'wall';
+  // The phone split (iPhone Duo opened in landscape) hosts the same pane on the
+  // trailing half of each tab. Never true on a tablet, so the iPad term is as it was.
+  const phoneSplit = usePhoneSplit();
   const usesDetailPane =
-    resolveDetailPaneSurface({ width: windowWidth, widthClass, sidebarWidth: paneSidebarWidth }) === 'pane' &&
+    (resolveDetailPaneSurface({ width: windowWidth, widthClass, sidebarWidth: paneSidebarWidth }) === 'pane' ||
+      phoneSplit) &&
     !onWallTab;
   const usesDetailPaneRef = useRef(usesDetailPane);
   usesDetailPaneRef.current = usesDetailPane;
@@ -645,6 +651,34 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!usesDetailPane) setPaneTarget(null);
   }, [usesDetailPane, setPaneTarget]);
+
+  // Opening an iPhone Duo into landscape with the full-screen player up: the
+  // split's pane is now the player, so close the route instead of leaving it over
+  // the split. The pane shows the queue's current climb by itself; a preview the
+  // route was showing (a climb not on the wall) moves across as a look, never a
+  // fresh pick, and the scroll position follows it (player-scroll-handoff).
+  // Phone split only: an iPad crossing into its pane keeps the route as before.
+  const previousPhoneSplitRef = useRef(phoneSplit);
+  useEffect(() => {
+    const enteredSplit = phoneSplit && !previousPhoneSplitRef.current;
+    previousPhoneSplitRef.current = phoneSplit;
+    if (!enteredSplit || !navigationRef.isReady()) return;
+    const rootState = navigationRef.getRootState();
+    if (rootState.routes[rootState.index]?.name !== 'play') return;
+    const routeTarget = playTargetRef.current;
+    if (routeTarget?.options?.previewQueueItem) {
+      const { previewQueueItem, previewIsWallClimb, playlistSuggestionSource } = routeTarget.options;
+      paneTargetNonceRef.current += 1;
+      setPaneTarget({
+        climb: routeTarget.climb,
+        options: { previewQueueItem, previewIsWallClimb, playlistSuggestionSource },
+        nonce: paneTargetNonceRef.current,
+        claimFirstApply: () => false,
+      });
+    }
+    armPlayerScrollHandoff();
+    navigationRef.dispatch({ type: 'POP', target: rootState.key, payload: { count: 1 } });
+  }, [phoneSplit, navigationRef, setPaneTarget]);
 
   // Reset on route unmount (close): drop the board override so non-drawer surfaces
   // snap back to the stored board, and clear the open target so a stray remount

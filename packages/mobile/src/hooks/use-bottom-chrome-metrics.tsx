@@ -10,6 +10,7 @@ import { getRestTimerState, subscribeRestTimer } from '../lib/rest-timer-store';
 import { useStickyAccessoryPresence } from './use-sticky-accessory-presence';
 import { useTabChrome } from './use-bottom-accessory';
 import { useDeviceLayout } from './use-device-layout';
+import { usePhoneSplit } from './use-phone-split';
 import { computeBottomChromeMetrics, type BottomChromeMetrics } from './bottom-chrome-metrics';
 import { shouldThrowOnMissingProvider } from './bottom-chrome-provider-gate';
 import { resolveDetailPaneSurface } from '../theme/size-class';
@@ -78,9 +79,15 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
   // intentionally absent there.
   const { width: windowWidth } = useWindowDimensions();
   const { widthClass } = useDeviceLayout();
-  const usesSidebar = insideTabs && widthClass === 'regular';
+  // The phone split (iPhone Duo opened in landscape) is the same shape: the tab
+  // bar is a vertical rail at the side and the player pane owns the current climb
+  // (the accessory is hidden there), so nothing floats at the bottom either.
+  const phoneSplit = usePhoneSplit();
+  const usesSidebar = insideTabs && (widthClass === 'regular' || phoneSplit);
   const detailPaneOwnsQueue =
-    usesSidebar && resolveDetailPaneSurface({ width: windowWidth, widthClass, sidebarWidth: SIDEBAR_WIDTH }) === 'pane';
+    usesSidebar &&
+    (phoneSplit ||
+      resolveDetailPaneSurface({ width: windowWidth, widthClass, sidebarWidth: SIDEBAR_WIDTH }) === 'pane');
   // This provider samples the ROOT safe-area inset (window / home indicator
   // only). The in-tab inset — the one UIKit extends with the native tab bar +
   // accessory — is published by NativeTabContentInsetProbe from inside the

@@ -174,9 +174,10 @@ export default function TabLayout() {
   // The hold-type and zone filter boards keep their controls at the bottom of the
   // screen, right where the accessory platter draws. Hide the platter there through
   // the native `bottomAccessoryHidden` prop instead of unmounting the host (#5055);
-  // see `isAccessoryHiddenRoute`.
+  // see `isAccessoryHiddenRoute`. The phone split (iPhone Duo opened in landscape)
+  // hides it too: its player pane already shows the current climb.
   const accessoryNativeProps =
-    nativeAccessoryActive && isAccessoryHiddenRoute(segments)
+    nativeAccessoryActive && (isAccessoryHiddenRoute(segments) || deviceLayout.phoneSplit)
       ? ACCESSORY_HIDDEN_NATIVE_PROPS
       : ACCESSORY_SHOWN_NATIVE_PROPS;
   // Kiosk stays lit: hold the screen awake while the "On the Wall" tab is the

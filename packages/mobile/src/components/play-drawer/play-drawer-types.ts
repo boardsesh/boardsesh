@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { Climb } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import type { ReadyBoardArtSnapshot } from '../../lib/board-render/ready-board-art';
@@ -118,6 +119,13 @@ export type PlayDrawerProps = {
    *  when a WallStrip is docked above the pane and already owns that inset. Ignored
    *  in route mode (the modal always owns the top inset). */
   paneTopInset?: boolean;
+  /** Pane mode only: what the pane shows with no climb. Defaults to the "Pick a
+   *  climb" placeholder; the phone split passes the unlit board instead. */
+  paneEmptyState?: ReactNode;
+  /** Pane mode only: take the scroll position the full-screen player left behind
+   *  when the phone split replaced it (see player-scroll-handoff). Only the
+   *  focused tab's pane accepts, so a background tab never consumes it. */
+  acceptsScrollHandoff?: boolean;
   /**
    * Who is looking. `'anonymous'` is the signed-out reader that
    * `AnonymousClimbView` renders on the web export's read-only climb URL: the
