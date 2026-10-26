@@ -4,6 +4,7 @@ import { act, fireEvent, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import type { NativeStackNavigationOptions } from 'expo-router';
+import { useHorizontalSafeArea } from '../../../hooks/use-horizontal-safe-area';
 
 const controls = vi.hoisted(() => ({
   glassCapability: true,
@@ -372,6 +373,21 @@ describe('NativeRootHeader', () => {
 
     rerender(<NativeRootHeader onHeightChange={onHeightChange} />);
     expect(onHeightChange).toHaveBeenLastCalledWith(0);
+  });
+
+  it('pads the controls once for a side rail, so nested columns do not pad again', () => {
+    controls.horizontalInsets = { left: 0, right: 84 };
+    const NestedColumn = () => {
+      const { left, right } = useHorizontalSafeArea();
+      return <span data-nested-inset={`${left},${right}`} />;
+    };
+    const { container } = render(
+      <NativeRootHeader onHeightChange={vi.fn()}>
+        <NestedColumn />
+      </NativeRootHeader>,
+    );
+    expect(readStyle(container.querySelector('[data-controls]')).right).toBe(84);
+    expect(container.querySelector('[data-nested-inset]')?.getAttribute('data-nested-inset')).toBe('0,0');
   });
 
   describe('supplementary controls under the bar', () => {

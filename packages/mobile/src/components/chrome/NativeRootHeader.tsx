@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/theme-provider';
 import { useFloatingHeaderControls } from '../../hooks/use-floating-header-controls';
 import { useGlassCapability } from '../../hooks/use-glass-capability';
-import { useHorizontalSafeArea } from '../../hooks/use-horizontal-safe-area';
+import { HorizontalSafeAreaApplied, useHorizontalSafeArea } from '../../hooks/use-horizontal-safe-area';
 import type { ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
 import { glassSize } from '../../theme/layout';
 
@@ -200,7 +200,8 @@ function HeaderControls({
       ]}
     >
       <View pointerEvents="box-none" onLayout={onLayout}>
-        {children}
+        {/* The frame above is already inset; a nested ReadableColumn must not pad again. */}
+        <HorizontalSafeAreaApplied>{children}</HorizontalSafeAreaApplied>
       </View>
     </View>
   );

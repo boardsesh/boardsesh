@@ -4,7 +4,7 @@ import { type ReactNode, useCallback } from 'react';
 import { type LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/theme-provider';
-import { useHorizontalSafeArea } from '../../hooks/use-horizontal-safe-area';
+import { HorizontalSafeAreaApplied, useHorizontalSafeArea } from '../../hooks/use-horizontal-safe-area';
 import { spacing } from '../../theme/tokens';
 import { Text } from '../Text';
 import { ProgressiveBlur } from '../ProgressiveBlur';
@@ -136,7 +136,8 @@ export function CollapsingLargeTitleHeader({
           {rightActions}
         </View>
 
-        {children}
+        {/* Already clear of the side inset; nested columns must not pad again. */}
+        <HorizontalSafeAreaApplied>{children}</HorizontalSafeAreaApplied>
       </View>
     </View>
   );
