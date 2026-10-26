@@ -141,7 +141,7 @@ export function AppMenu(props: AppMenuProps) {
             <VStack spacing={0} alignment="leading">
               <Text
                 modifiers={[
-                  font({ size: 22 }),
+                  font({ textStyle: 'title2' }),
                   lineLimit(1),
                   truncationMode('tail'),
                   foregroundStyle(systemColors.label),
@@ -152,7 +152,7 @@ export function AppMenu(props: AppMenuProps) {
               <HStack spacing={spacing[1]} alignment="center">
                 <Text
                   modifiers={[
-                    font({ size: 14 }),
+                    font({ textStyle: 'subheadline' }),
                     lineLimit(1),
                     truncationMode('tail'),
                     foregroundStyle(systemColors.secondaryLabel),

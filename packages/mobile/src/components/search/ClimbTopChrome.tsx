@@ -348,6 +348,7 @@ function ClimbTopChromeComponent({
   // and the other chromes keep their bulb.
   return (
     <CollapsingTopChrome
+      materialTitle={tCommon('mobile.nav.climbs')}
       centerTitle={title}
       // "On the wall" status — a compact capsule in the centre islands slot (where
       // the title used to sit) when a board feed lights a climb that differs from

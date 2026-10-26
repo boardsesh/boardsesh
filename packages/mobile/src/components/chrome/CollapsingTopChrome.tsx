@@ -50,7 +50,7 @@ type CollapsingTopChromeProps = {
   onHeightChange: (height: number) => void;
   /** The destination's name, the Material app bar's title ("Discover"). The
    *  liquid-glass islands have no title slot and ignore it. */
-  materialTitle?: string;
+  materialTitle: string;
   /** Optional persistent plain centre title (Climbs filter summary). */
   centerTitle?: string;
   /** Optional interactive element for the centre slot (Climbs "On the wall"
@@ -105,7 +105,7 @@ export function CollapsingTopChrome({
   boardBadge = false,
   boardControls,
   onHeightChange,
-  materialTitle = '',
+  materialTitle,
   centerTitle,
   centerContent,
   trailingAction,
