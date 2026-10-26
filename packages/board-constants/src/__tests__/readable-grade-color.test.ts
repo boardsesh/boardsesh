@@ -1,10 +1,26 @@
 import { describe, it, expect } from 'vite-plus/test';
-import { V_GRADE_COLORS, DARK_GRADE_REFERENCE_SURFACE, readableGradeColor } from '../grade-colors';
-import { contrastRatio, liftToContrast } from '../readable-text-color';
+import {
+  V_GRADE_COLORS,
+  DARK_GRADE_REFERENCE_SURFACE,
+  readableGradeColor,
+  readableGradeColorOnTint,
+} from '../grade-colors';
+import { compositeOver, contrastRatio, liftToContrast } from '../readable-text-color';
 
 // Every dark surface a grade is drawn on: the reference (iOS tertiary), the
 // Material cards and page, and the near-black feed card from the issue (#6917).
-const DARK_SURFACES = [DARK_GRADE_REFERENCE_SURFACE, '#221A32', '#181225', '#1A1228', '#0F0B16', '#1C1C1E', '#000000'];
+const DARK_SURFACES = [DARK_GRADE_REFERENCE_SURFACE, '#221A33', '#181225', '#1A1228', '#0F0B16', '#1C1C1E', '#000000'];
+
+function mixTowardWhite(hexColor: string, mix: number): string {
+  const channel = (offset: number) => {
+    const value = parseInt(hexColor.slice(offset, offset + 2), 16);
+    return Math.round(value + (255 - value) * mix)
+      .toString(16)
+      .padStart(2, '0')
+      .toUpperCase();
+  };
+  return `#${channel(1)}${channel(3)}${channel(5)}`;
+}
 
 function hue(hexColor: string): number {
   const red = parseInt(hexColor.slice(1, 3), 16) / 255;
@@ -55,7 +71,9 @@ describe('readableGradeColor', () => {
     }
   });
 
-  it('keeps the hardest grades distinguishable from each other', () => {
+  // The lifted V14–V17 sit in a narrow lavender band; this only guards that they
+  // don't collapse onto one colour. The grade label carries the difference.
+  it('maps distinct hard grades to distinct colours', () => {
     const lifted = ['V14', 'V15', 'V16', 'V17'].map((grade) => readableGradeColor(V_GRADE_COLORS[grade], 'dark'));
     expect(new Set(lifted).size).toBe(lifted.length);
   });
@@ -78,13 +96,56 @@ describe('liftToContrast', () => {
   });
 
   it('lifts only as far as needed', () => {
-    const lifted = liftToContrast('#38006B', '#2C2C2E', 4.5);
-    expect(contrastRatio(lifted, '#2C2C2E')).toBeGreaterThanOrEqual(4.5);
-    // One step less lift should fail, so the colour keeps as much hue as it can.
-    expect(contrastRatio(lifted, '#2C2C2E')).toBeLessThan(4.8);
+    const surface = '#2C2C2E';
+    const lifted = liftToContrast('#38006B', surface, 4.5);
+    expect(contrastRatio(lifted, surface)).toBeGreaterThanOrEqual(4.5);
+    // Rebuild the 1% mixes toward white: the one just before the returned colour
+    // must still fail, or the lift went further than it needed to.
+    const mixes = Array.from({ length: 101 }, (_, step) => mixTowardWhite('#38006B', step / 100));
+    const liftedStep = mixes.indexOf(lifted);
+    expect(liftedStep).toBeGreaterThan(0);
+    expect(contrastRatio(mixes[liftedStep - 1], surface)).toBeLessThan(4.5);
+  });
+
+  it('returns white when nothing short of white passes', () => {
+    expect(liftToContrast('#38006B', '#808080', 21)).toBe('#FFFFFF');
   });
 
   it('passes an invalid colour through', () => {
     expect(liftToContrast('not-a-color', '#000000', 4.5)).toBe('not-a-color');
+  });
+});
+
+describe('compositeOver', () => {
+  it('blends a colour over a background at the given alpha', () => {
+    expect(compositeOver('#FFFFFF', 0.5, '#000000')).toBe('#808080');
+    expect(compositeOver('#FF0000', 0, '#2C2C2E')).toBe('#2C2C2E');
+    expect(compositeOver('#FF0000', 1, '#2C2C2E')).toBe('#FF0000');
+  });
+
+  it('returns the background for an invalid colour', () => {
+    expect(compositeOver('not-a-color', 0.5, '#2C2C2E')).toBe('#2C2C2E');
+  });
+});
+
+describe('readableGradeColorOnTint', () => {
+  it('clears 4.5:1 on a 15% tint of its own grade, for every V-grade', () => {
+    for (const [grade, color] of Object.entries(V_GRADE_COLORS)) {
+      const tint = compositeOver(color, 0.15, DARK_GRADE_REFERENCE_SURFACE);
+      expect(contrastRatio(readableGradeColorOnTint(color, 'dark', 0.15), tint), grade).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it('returns the colour unchanged in light mode', () => {
+    expect(readableGradeColorOnTint(V_GRADE_COLORS.V16, 'light', 0.15)).toBe(V_GRADE_COLORS.V16);
+  });
+});
+
+describe('readableGradeColor surfaceColor', () => {
+  it('lifts against a lighter surface when one is passed', () => {
+    const container = '#3F246F';
+    const onContainer = readableGradeColor(V_GRADE_COLORS.V16, 'dark', 'mark', container);
+    expect(contrastRatio(onContainer, container)).toBeGreaterThanOrEqual(3);
+    expect(onContainer).not.toBe(readableGradeColor(V_GRADE_COLORS.V16, 'dark', 'mark'));
   });
 });

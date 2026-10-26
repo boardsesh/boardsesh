@@ -6,7 +6,7 @@ import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { type IconName } from '../icon-map';
 import { Card } from '../Card';
-import { gradeBadgeColor, gradeMarkColor } from './profile-chart-colors';
+import { gradeBadgeColor } from './profile-chart-colors';
 import { spacing, borderRadius, opacity } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { useVariantValue } from '../../theme/variants';
@@ -74,19 +74,17 @@ function GradeTile({
   /** On-container text (Material). Glass falls back to the contrast-aware colour. */
   textColor?: string;
 }) {
-  // Glass: the whole tile is the grade's vivid colour, text picks the contrast
-  // colour. Material: a tonal container carries the tile, so the grade hue lives
-  // only on the leading glyph (the small accent, lifted to 3:1 on a dark tonal
-  // tile) and text uses the on-container role.
-  const { colorScheme } = useTheme();
+  // Glass: the whole tile is the grade's vivid colour, and glyph and text pick
+  // the contrast colour. Material: a tonal container carries the tile, and glyph
+  // and text both use the on-container role. A grade-hued glyph can't reach 3:1
+  // on the lighter tonal container in dark mode.
   const gradeFill = gradeBadgeColor(highlight.label);
   const tileBackground = background ?? gradeFill;
   const onTile = textColor ?? getGradeTextColor(gradeFill);
-  const accentColor = background ? gradeMarkColor(highlight.label, colorScheme) : onTile;
   return (
     <View style={[styles.tile, { backgroundColor: tileBackground }]}>
       <View style={styles.gradeRow}>
-        <Icon name={icon} size={14} color={accentColor} />
+        <Icon name={icon} size={14} color={onTile} />
         <Text variant="title3" color={onTile}>
           {highlight.label}
         </Text>

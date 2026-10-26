@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { DARK_GRADE_REFERENCE_SURFACE } from '@boardsesh/board-constants/grade-colors';
+import { contrastRatio } from '@boardsesh/board-constants/readable-text-color';
 import { render } from '@testing-library/react';
 import { createElement, useEffect, type ReactNode, type CSSProperties } from 'react';
 import type { ClimbQueueItem, Climb } from '@boardsesh/queue';
@@ -88,11 +90,16 @@ vi.mock('expo-crypto', () => ({ randomUUID: () => 'preview-uuid' }));
 
 // getGradeColor returns a distinct hue for V6 so we can assert the grade text
 // carries the grade colour (not a generic white-on-pill style).
-vi.mock('@boardsesh/board-constants/grade-colors', () => ({
-  getGradeColor: (difficulty: string | null | undefined) => (difficulty === 'V6' ? '#FF0000' : undefined),
-  DEFAULT_GRADE_COLOR: '#808080',
-  readableGradeColor: (gradeColor: string) => gradeColor,
-}));
+// The real `readableGradeColor`, so the dark-mode lift is under test.
+vi.mock('@boardsesh/board-constants/grade-colors', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@boardsesh/board-constants/grade-colors')>();
+  return {
+    getGradeColor: (difficulty: string | null | undefined) => (difficulty === 'V6' ? '#FF0000' : undefined),
+    DEFAULT_GRADE_COLOR: '#808080',
+    readableGradeColor: actual.readableGradeColor,
+    DARK_GRADE_REFERENCE_SURFACE: actual.DARK_GRADE_REFERENCE_SURFACE,
+  };
+});
 
 // Text → span exposing colour: prefer the explicit `color` prop, else the
 // merged `style.color`, so a test can read whichever the component used.
@@ -130,8 +137,11 @@ vi.mock('../../GlassSurface', () => ({
     createElement('div', { 'data-glass': 'true', 'data-tint': tintColor ?? '' }),
 }));
 
+const themeState = vi.hoisted(() => ({ colorScheme: 'light' as 'light' | 'dark' }));
+
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
+    colorScheme: themeState.colorScheme,
     systemColors: { label: '#111111', separator: '#cccccc', elevatedSurface: '#f0f0f0' },
     brandColors: { primary: '#6D28D9', warning: '#FBBF24' },
   }),
@@ -160,14 +170,15 @@ vi.mock('../AccessoryClimbThumbnail', () => ({ AccessoryClimbThumbnail: () => nu
 
 // The capsule renders whatever `resolveGrade` returns (the app-wide "Show Boardsesh
 // grades" swap). Stub it to the legacy behaviour: label = formatGrade output
-// ("<difficulty> 6C"), colour = the mocked grade hue (#FF0000 for V6, else default),
+// ("<difficulty> 6C"), colour = the mocked grade hue (#FF0000 for V6, the V16 logo
+// purple #38006B for V16, else default),
 // so the colorization assertions below hold under the new resolver.
 vi.mock('../../../hooks/use-display-grade', () => ({
   useDisplayGrade: () => ({
     boardseshActive: false,
     resolveGrade: (climb: { difficulty?: string | null }) => ({
       label: climb.difficulty ? `${climb.difficulty} 6C` : null,
-      color: climb.difficulty === 'V6' ? '#FF0000' : '#808080',
+      color: climb.difficulty === 'V6' ? '#FF0000' : climb.difficulty === 'V16' ? '#38006B' : '#808080',
       isBoardsesh: false,
     }),
   }),
@@ -314,6 +325,31 @@ describe('ClimbCapsule', () => {
     const nameNode = texts.find((node) => (node.textContent ?? '').includes('Crimp'));
     expect(gradeNode?.getAttribute('data-color')).toBe('#FF0000');
     expect(nameNode?.getAttribute('data-color')).toBe('#111111');
+  });
+
+  it('lifts the accent stripe and grade text for contrast in dark mode', () => {
+    themeState.colorScheme = 'dark';
+    try {
+      // V16's raw #38006B is ~1.1:1 on a dark bar, so both the stripe and the text must lift.
+      const item = makeItem(makeClimb({ difficulty: 'V16', name: 'The Crimp Ladder' }));
+      queue.state.currentClimbQueueItem = item;
+      queue.state.queue = [item];
+
+      const { container } = render(<ClimbCapsule surfaceTreatment="docked" />);
+
+      const stripeColor = container.querySelector('[data-testid="grade-accent"]')?.getAttribute('data-bg') ?? '';
+      expect(stripeColor).not.toBe('#38006B');
+      expect(contrastRatio(stripeColor, DARK_GRADE_REFERENCE_SURFACE)).toBeGreaterThanOrEqual(3);
+
+      const gradeNode = Array.from(container.querySelectorAll('[data-text]')).find((node) =>
+        (node.textContent ?? '').includes('6C'),
+      );
+      const gradeColor = gradeNode?.getAttribute('data-color') ?? '';
+      expect(gradeColor).not.toBe('#38006B');
+      expect(contrastRatio(gradeColor, DARK_GRADE_REFERENCE_SURFACE)).toBeGreaterThanOrEqual(4.5);
+    } finally {
+      themeState.colorScheme = 'light';
+    }
   });
 
   it('uses the gray fallback for the accent stripe of an unknown grade', () => {

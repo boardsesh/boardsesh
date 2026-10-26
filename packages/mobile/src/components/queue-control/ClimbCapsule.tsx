@@ -132,7 +132,9 @@ export function ClimbCapsule({
   // keeps its per-grade colour, matching the list rows. When you hold control the
   // stripe recolors to the brand violet so it reads as a control-on edge marker.
   const showGradeAccent = surfaceTreatment === 'docked';
-  const gradeAccentColor = connected ? brandColors.primary : grades.currentColor;
+  const gradeAccentColor = connected
+    ? brandColors.primary
+    : readableGradeColor(grades.currentColor, colorScheme, 'mark');
 
   return (
     <AccessoryBarSurface
@@ -187,8 +189,8 @@ const styles = StyleSheet.create({
   capsule: {
     flex: 1,
   },
-  // Leading grade marker on the docked Material bar: a vivid full-height stripe in
-  // the raw grade colour, sitting in the label's left padding so it never overlaps
+  // Leading grade marker on the docked Material bar: a full-height stripe in the
+  // grade colour (lifted to 3:1 in dark mode), sitting in the label's left padding so it never overlaps
   // text. Distinguishes the bar from the tab bar and reads grade at a glance.
   gradeAccent: {
     position: 'absolute',

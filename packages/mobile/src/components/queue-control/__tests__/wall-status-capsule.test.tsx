@@ -5,6 +5,8 @@ vi.mock('../../AccessibleTextInput', async () => {
 });
 vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { DARK_GRADE_REFERENCE_SURFACE } from '@boardsesh/board-constants/grade-colors';
+import { contrastRatio } from '@boardsesh/board-constants/readable-text-color';
 import { fireEvent, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
@@ -87,11 +89,16 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-vi.mock('@boardsesh/board-constants/grade-colors', () => ({
-  getGradeColor: (grade: string | null | undefined) => (grade === 'V5' ? '#FF0000' : undefined),
-  DEFAULT_GRADE_COLOR: '#808080',
-  readableGradeColor: (gradeColor: string) => gradeColor,
-}));
+// The real `readableGradeColor`, so the dark-mode lift is under test.
+vi.mock('@boardsesh/board-constants/grade-colors', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@boardsesh/board-constants/grade-colors')>();
+  return {
+    getGradeColor: (grade: string | null | undefined) => (grade === 'V5' ? '#FF0000' : undefined),
+    DEFAULT_GRADE_COLOR: '#808080',
+    readableGradeColor: actual.readableGradeColor,
+    DARK_GRADE_REFERENCE_SURFACE: actual.DARK_GRADE_REFERENCE_SURFACE,
+  };
+});
 
 vi.mock('../use-open-wall-preview', () => ({ useOpenWallPreview: () => spies.openWallPreview }));
 vi.mock('../../../hooks/use-native-glass', () => ({ useNativeGlass: () => spies.nativeGlass }));
@@ -286,6 +293,19 @@ describe('WallStatusCapsule', () => {
     spies.variant = 'liquidGlass';
     spies.colorScheme = 'dark';
     spies.nativeGlass = true;
+  });
+
+  it.each([
+    ['dark', false],
+    ['light', true],
+  ] as const)('lifts the grade text for contrast only in %s mode', (scheme, keepsRawHue) => {
+    spies.colorScheme = scheme;
+    const { getByText } = render(<WallStatusCapsule climb={makeClimb()} />);
+    const gradeStyle = JSON.parse(getByText('V5 6C').getAttribute('data-style') ?? '{}') as { color?: string };
+    expect(gradeStyle.color === '#FF0000').toBe(keepsRawHue);
+    if (scheme === 'dark') {
+      expect(contrastRatio(gradeStyle.color ?? '', DARK_GRADE_REFERENCE_SURFACE)).toBeGreaterThanOrEqual(4.5);
+    }
   });
 
   it('keeps the climb name intrinsic and shrinkable inside the native header', () => {

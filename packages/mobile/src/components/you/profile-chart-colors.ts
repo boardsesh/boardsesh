@@ -1,4 +1,9 @@
-import { getGradeColor, DEFAULT_GRADE_COLOR, readableGradeColor } from '@boardsesh/board-constants/grade-colors';
+import {
+  getGradeColor,
+  DEFAULT_GRADE_COLOR,
+  readableGradeColor,
+  readableGradeColorOnTint,
+} from '@boardsesh/board-constants/grade-colors';
 import type { RawBar, RawBarSegment } from '@boardsesh/profile-stats';
 import type { SessionGradeDistributionItem } from '@boardsesh/shared-schema';
 import { brandColors, brandColorsDark, withAlpha } from '../../theme/colors';
@@ -146,6 +151,19 @@ export function gradeBadgeColor(gradeLabel: string | null | undefined): string {
  */
 export function gradeTextColor(gradeLabel: string | null | undefined, colorScheme: ColorSchemeName): string {
   return readableGradeColor(gradeBadgeColor(gradeLabel), colorScheme, 'text');
+}
+
+/**
+ * Grade text on a pill or tile tinted with the grade's own colour at
+ * `tintAlpha`. The tint is lighter than the page, so dark mode lifts the text
+ * against the composited tint rather than the bare surface.
+ */
+export function gradeTextOnTintColor(
+  gradeLabel: string | null | undefined,
+  colorScheme: ColorSchemeName,
+  tintAlpha: number,
+): string {
+  return readableGradeColorOnTint(gradeBadgeColor(gradeLabel), colorScheme, tintAlpha);
 }
 
 /**

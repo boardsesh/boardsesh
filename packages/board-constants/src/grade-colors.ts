@@ -15,7 +15,7 @@
  * per-pill text colour is auto-picked by contrast (black on V0–V6, white on V7+).
  */
 
-import { liftToContrast } from './readable-text-color';
+import { compositeOver, liftToContrast } from './readable-text-color';
 
 // V-grade to hex color mapping
 export const V_GRADE_COLORS: Record<string, string> = {
@@ -71,10 +71,13 @@ export const FONT_GRADE_COLORS: Record<string, string> = {
 export const DEFAULT_GRADE_COLOR = '#808080';
 
 /**
- * The lightest dark-mode surface a grade is drawn on across both platforms (iOS
- * `tertiarySystemBackground`, lighter than Material's `#221A32` card). A colour
- * that clears contrast here clears it on every darker surface too, which matters
- * because iOS surfaces are `PlatformColor`s with no hex to measure against.
+ * The lightest neutral dark-mode page or card a grade is drawn on across both
+ * platforms (iOS `tertiarySystemBackground`, lighter than Material's `#221A33`
+ * card). A colour that clears contrast here clears it on every darker neutral
+ * surface too, which matters because iOS surfaces are `PlatformColor`s with no
+ * hex to measure against. Tinted or tonal containers are lighter than this: use
+ * {@link readableGradeColorOnTint}, or pass the composited container colour as
+ * `surfaceColor`.
  */
 export const DARK_GRADE_REFERENCE_SURFACE = '#2C2C2E';
 
@@ -89,9 +92,9 @@ const readableGradeColorCache = new Map<string, string>();
  * A grade colour that stays readable where it is drawn directly on the page
  * (grade text, chart bars, dots, glyphs). Light mode returns the colour as is.
  * Dark mode lifts it toward white only as far as `usage` needs against
- * {@link DARK_GRADE_REFERENCE_SURFACE}: V0–V3 come back unchanged, V4 barely
- * moves, and the reds and logo purples (V5+) come back as lighter tints of
- * their own hue.
+ * `surfaceColor` (default {@link DARK_GRADE_REFERENCE_SURFACE}): on that surface
+ * V0–V3 come back unchanged, V4 barely moves, and the reds and logo purples
+ * (V5+) come back as lighter tints of their own hue.
  *
  * Not for a grade used as a fill behind its own text — pair the vivid colour
  * with `getGradeTextColor` / `readableTextColor` there instead.
@@ -100,14 +103,30 @@ export function readableGradeColor(
   gradeColor: string,
   colorScheme: 'light' | 'dark',
   usage: GradeColorUsage = 'text',
+  surfaceColor: string = DARK_GRADE_REFERENCE_SURFACE,
 ): string {
   if (colorScheme === 'light') return gradeColor;
-  const cacheKey = `${gradeColor}|${usage}`;
+  const cacheKey = `${gradeColor}|${usage}|${surfaceColor}`;
   const cached = readableGradeColorCache.get(cacheKey);
   if (cached) return cached;
-  const readable = liftToContrast(gradeColor, DARK_GRADE_REFERENCE_SURFACE, GRADE_MIN_CONTRAST[usage]);
+  const readable = liftToContrast(gradeColor, surfaceColor, GRADE_MIN_CONTRAST[usage]);
   readableGradeColorCache.set(cacheKey, readable);
   return readable;
+}
+
+/**
+ * Grade text on a pill or tile tinted with the grade's own colour at
+ * `tintAlpha`. The tint makes the ground lighter than the page, so the text is
+ * lifted against the tint composited over {@link DARK_GRADE_REFERENCE_SURFACE}.
+ */
+export function readableGradeColorOnTint(gradeColor: string, colorScheme: 'light' | 'dark', tintAlpha: number): string {
+  if (colorScheme === 'light') return gradeColor;
+  return readableGradeColor(
+    gradeColor,
+    colorScheme,
+    'text',
+    compositeOver(gradeColor, tintAlpha, DARK_GRADE_REFERENCE_SURFACE),
+  );
 }
 
 /**

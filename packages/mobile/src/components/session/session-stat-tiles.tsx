@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { type IconName } from '../icon-map';
-import { gradeBadgeColor, gradeTextColor } from '../you/profile-chart-colors';
+import { gradeBadgeColor, gradeTextOnTintColor } from '../you/profile-chart-colors';
 import { withAlpha } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
@@ -35,6 +35,8 @@ export function StatTile({ value, label, icon }: { value: number; label: string;
   );
 }
 
+const GRADE_TINT_ALPHA = 0.15;
+
 /** Grade tile — the one saturated tile, tinted in the grade's own colour. */
 export function GradeTile({ grade, boardName }: { grade: string; boardName?: string | null }) {
   const { t } = useTranslation('feed');
@@ -42,12 +44,13 @@ export function GradeTile({ grade, boardName }: { grade: string; boardName?: str
   const { colorScheme } = useTheme();
   // A 15%-alpha grade tint (the participant-chip treatment) rather than a solid
   // slab, so the only saturated grade colour on screen is the chart. The tint
-  // keeps the raw vivid hue; the text is lifted so it stays legible in dark mode.
+  // keeps the raw vivid hue; the text is lifted against that tint so it clears
+  // 4.5:1 in dark mode.
   const gradeColor = gradeBadgeColor(grade);
-  const gradeLabelColor = gradeTextColor(grade, colorScheme);
+  const gradeLabelColor = gradeTextOnTintColor(grade, colorScheme, GRADE_TINT_ALPHA);
   const displayGrade = formatGrade(grade, boardName) ?? grade;
   return (
-    <View style={[styles.tile, { backgroundColor: withAlpha(gradeColor, 0.15) }]}>
+    <View style={[styles.tile, { backgroundColor: withAlpha(gradeColor, GRADE_TINT_ALPHA) }]}>
       <Text variant="title2" color={gradeLabelColor}>
         {displayGrade}
       </Text>
