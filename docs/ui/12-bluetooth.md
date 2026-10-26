@@ -32,6 +32,19 @@ The BLE connection is managed by `useBoardBluetooth` hook and exposed via `Bluet
 - "Cancel" button in actions.
 - Board config mismatch detection: if the resolved config doesn't match the current route's board, a `BoardConfigMismatchDialog` offers "Switch" (navigate to matching route with `?autoConnect` param), "Connect anyway", or "Cancel".
 
+On mobile, a resolved controller also carries its saved board UUID. Two known,
+nonempty UUIDs must agree even when the board type, layout, size and normalized
+hold sets are identical (#5430). Missing or anonymous UUIDs retain the existing
+configuration-only comparison. A different saved board opens the existing choice
+instead of selecting the device immediately, with copy explaining which board's
+wall feed receives the climbs; a saved board's name is used when available.
+Cancel leaves the picker open, Connect anyway remains an explicit override, and
+Switch selects the resolved board before reconnecting to the chosen serial.
+Recorded mappings are fetched through `GetBoard`, and the returned canonical UUID
+and configuration control the hop. Reconnect waits for that UUID, board type,
+layout, size and normalized hold sets to reach the provider, including a change
+that affects only the UUID or hold sets. The one-shot still expires and fires once.
+
 **Auto-connect (`AutoConnectHandler`):**
 
 - Reads `?autoConnect={serialNumber}` from URL search params.

@@ -426,6 +426,9 @@
     "cancel": "Abbrechen",
     "mobileConnectAnyway": "Trotzdem verbinden",
     "mobileConnectAnywayWarning": "Bei uns gehört dieser Controller zu einem anderen Board-Setup. Wenn du trotzdem verbindest, werden Boulder womöglich falsch beleuchtet.",
+    "mobileDifferentBoardTitle": "Anderes gespeichertes Board",
+    "mobileDifferentBoardNamedWarning": "Dieser Controller ist mit {{name}}, einem anderen gespeicherten Board, verknüpft. Wenn du dich trotzdem verbindest, erscheinen deine Boulder im Feed deines aktuellen Boards.",
+    "mobileDifferentBoardWarning": "Dieser Controller ist mit einem anderen gespeicherten Board verknüpft. Wenn du dich trotzdem verbindest, erscheinen deine Boulder im Feed deines aktuellen Boards.",
     "mobileSwitchSetup": "Board-Setup wechseln",
     "mobileUseRecordedSetup": "Hinterlegtes Setup verwenden"
   },

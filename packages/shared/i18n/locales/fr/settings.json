@@ -426,6 +426,9 @@
     "cancel": "Annuler",
     "mobileConnectAnyway": "Connecter quand même",
     "mobileConnectAnywayWarning": "D'après nos enregistrements, ce contrôleur appartient à une autre configuration de board. Connecter quand même pourrait allumer les voies de façon incorrecte.",
+    "mobileDifferentBoardTitle": "Autre board enregistrée",
+    "mobileDifferentBoardNamedWarning": "Ce contrôleur est associé à {{name}}, une autre board enregistrée. Si vous vous connectez quand même, vos blocs apparaîtront dans le fil d'activité de votre board actuelle.",
+    "mobileDifferentBoardWarning": "Ce contrôleur est associé à une autre board enregistrée. Si vous vous connectez quand même, vos blocs apparaîtront dans le fil d'activité de votre board actuelle.",
     "mobileSwitchSetup": "Changer de board",
     "mobileUseRecordedSetup": "Utiliser la configuration enregistrée"
   },

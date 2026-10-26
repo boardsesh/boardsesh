@@ -10,6 +10,7 @@ import {
   classifyClimbBoardCompatibility,
   findNextCompatibleQueueItem,
   formatBoardDisplayName,
+  normaliseSetIds,
   toBoardName,
   type ActiveBoardForCompatibility,
 } from '@boardsesh/board-config';
@@ -1684,8 +1685,9 @@ export function BluetoothProvider({
       layoutId,
       sizeId,
       setIds,
+      boardUuid,
     };
-  }, [boardName, layoutId, sizeId, setIds]);
+  }, [boardName, layoutId, sizeId, setIds, boardUuid]);
 
   // Stack (not a boolean) of route-hosted picker claims — e.g. the play route
   // pushes on mount and pops on unmount — so the app-root picker below stays
@@ -1792,6 +1794,8 @@ export function BluetoothProvider({
      */
     serial?: string;
     configKey: string;
+    /** Expected hold sets from the board snapshot selected by the switch. */
+    setIds?: string;
     armUndoToast: boolean;
   } | null>(null);
 
@@ -1821,6 +1825,11 @@ export function BluetoothProvider({
     // don't auto-connect against the LED placement map we're switching away from.
     if (!boardName || layoutId === undefined || sizeId === undefined) return;
     if (boardConfigKey(boardName, layoutId, sizeId, boardUuid) !== pendingAutoConnect.configKey) return;
+    if (
+      pendingAutoConnect.setIds !== undefined &&
+      normaliseSetIds(setIds ?? '') !== normaliseSetIds(pendingAutoConnect.setIds)
+    )
+      return;
     // The old cancelled connect may still be settling. connect() bails while
     // connectInFlightRef is set (which tracks `loading`), so a new connect fired
     // now would be silently swallowed — wait for it to clear first.
@@ -1833,7 +1842,7 @@ export function BluetoothProvider({
     // connect's third param auto-selects that serial while the picker shows
     // "searching", falling back to the list only if it never advertises.
     void connect(undefined, undefined, serial);
-  }, [pendingAutoConnect, boardName, layoutId, sizeId, loading, armUndoWallChangeToast, connect]);
+  }, [pendingAutoConnect, boardName, layoutId, sizeId, setIds, boardUuid, loading, armUndoWallChangeToast, connect]);
 
   // "Scan again" in a picker whose scan found nothing (#5654). The adapter's
   // connect owns that scan, so instead of teaching both adapters to restart it
@@ -1859,9 +1868,10 @@ export function BluetoothProvider({
     activePickerState.handleCancel();
     setPendingAutoConnect({
       configKey: boardConfigKey(boardName, layoutId, sizeId, boardUuid),
+      setIds,
       armUndoToast: armUndoToastAfterRescan,
     });
-  }, [boardName, layoutId, sizeId, boardUuid]);
+  }, [boardName, layoutId, sizeId, setIds, boardUuid]);
 
   const handleMismatchSwitch = useCallback(
     async (decision: Extract<PickerSelectionDecision, { kind: 'mismatch' }>) => {
@@ -1893,12 +1903,10 @@ export function BluetoothProvider({
         pickerStateRef.current?.handleCancel();
         setPendingAutoConnect({
           serial: decision.serial,
-          configKey: boardConfigKey(
-            decision.config.boardName,
-            decision.config.layoutId,
-            decision.config.sizeId,
-            board.uuid,
-          ),
+          // A recorded serial can point at an alias or an older configuration.
+          // The fetched board is the snapshot setActiveBoard just accepted.
+          configKey: boardConfigKey(board.boardType, board.layoutId, board.sizeId, board.uuid),
+          setIds: board.setIds,
           armUndoToast: armUndoToastAfterSwitch,
         });
       } catch (error) {
@@ -1941,6 +1949,16 @@ export function BluetoothProvider({
         ? formatPickerBoardConfig(t, activeBoardConfig)
         : t('boardConfigMismatch.mobileUnknownConfig');
       const recordedLabel = formatPickerBoardConfig(t, decision.config);
+      const differentSavedBoard = Boolean(
+        activeBoardConfig?.boardUuid &&
+        decision.config.boardUuid &&
+        activeBoardConfig.boardUuid !== decision.config.boardUuid,
+      );
+      const mismatchWarning = differentSavedBoard
+        ? decision.entry.kind === 'saved' && decision.entry.board.name.trim().length > 0
+          ? t('boardConfigMismatch.mobileDifferentBoardNamedWarning', { name: decision.entry.board.name })
+          : t('boardConfigMismatch.mobileDifferentBoardWarning')
+        : t('boardConfigMismatch.mobileConnectAnywayWarning');
       const canSwitch =
         decision.entry.kind === 'saved' ||
         (decision.entry.kind === 'recorded' && decision.entry.config.boardUuid != null);
@@ -1986,9 +2004,9 @@ export function BluetoothProvider({
           : []),
       ];
       Alert.alert(
-        t('boardConfigMismatch.title'),
+        differentSavedBoard ? t('boardConfigMismatch.mobileDifferentBoardTitle') : t('boardConfigMismatch.title'),
         [
-          t('boardConfigMismatch.mobileConnectAnywayWarning'),
+          mismatchWarning,
           t('boardConfigMismatch.mobileCurrentLabel', { config: currentLabel }),
           t('boardConfigMismatch.mobileRecordedLabel', { config: recordedLabel }),
         ].join('\n\n'),

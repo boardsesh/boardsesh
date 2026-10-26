@@ -118,7 +118,8 @@ vi.mock('@boardsesh/play-view', () => ({
 vi.mock('../../lib/ble/use-board-bluetooth', () => ({
   // Mirror the real pure helper so the provider's config-key comparisons work
   // without importing the hook module (which pulls in expo native modules).
-  boardConfigKey: (boardName: string, layoutId: number, sizeId: number) => `${boardName}::${layoutId}::${sizeId}`,
+  boardConfigKey: (boardName: string, layoutId: number, sizeId: number, boardUuid?: string) =>
+    `${boardName}::${layoutId}::${sizeId}::${boardUuid ?? ''}`,
   useBoardBluetooth: bluetooth.useBoardBluetooth,
 }));
 
@@ -322,10 +323,23 @@ type BoardProps = {
   layoutId?: number;
   sizeId?: number;
   setIds?: string;
+  boardUuid?: string;
 };
 
-const KILTER_PROPS: BoardProps = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20' };
-const TENSION_PROPS: BoardProps = { boardName: 'tension', layoutId: 1, sizeId: 10, setIds: '1' };
+const KILTER_PROPS: BoardProps = {
+  boardName: 'kilter',
+  layoutId: 1,
+  sizeId: 10,
+  setIds: '1,20',
+  boardUuid: 'board-kilter',
+};
+const TENSION_PROPS: BoardProps = {
+  boardName: 'tension',
+  layoutId: 1,
+  sizeId: 10,
+  setIds: '1',
+  boardUuid: 'board-tension',
+};
 
 function renderProvider(props: BoardProps, children?: ReactNode) {
   return render(
@@ -461,6 +475,157 @@ describe('BluetoothProvider mismatch switch', () => {
         children: createElement('div', null),
       }),
     );
+    expect(bluetooth.state.connect).toHaveBeenCalledOnce();
+  });
+
+  it.each(['cancel', 'connect_anyway'] as const)(
+    'explains a same-config physical-board mismatch and preserves %s',
+    (action) => {
+      const pickerState = makeMismatchingPickerState();
+      pickerState.devices = [{ deviceId: 'device-2', name: 'Kilter Board#SN-2@3', rssi: -40 }];
+      bluetooth.state.pickerState = pickerState;
+      resolvedBoards.value = new Map([
+        [
+          'SN-2',
+          {
+            kind: 'saved',
+            board: makeBoard({ boardType: 'kilter', uuid: 'wall-a', setIds: '1,20', name: 'Board A' }),
+          },
+        ],
+      ]);
+      renderProvider({ ...KILTER_PROPS, boardUuid: 'wall-b' });
+
+      pickerSheet.props?.onSelect('device-2');
+
+      expect(alert.alert.mock.calls[0]?.[0]).toBe('boardConfigMismatch.mobileDifferentBoardTitle');
+      expect(alert.alert.mock.calls[0]?.[1]).toContain('boardConfigMismatch.mobileDifferentBoardNamedWarning');
+      expect(pickerState.handleSelect).not.toHaveBeenCalled();
+      expect(lastAlertButtons()).toHaveLength(3);
+      lastAlertButtons()[action === 'cancel' ? 0 : 1]?.onPress?.();
+      if (action === 'cancel') expect(pickerState.handleSelect).not.toHaveBeenCalled();
+      else expect(pickerState.handleSelect).toHaveBeenCalledWith('device-2');
+      expect(activeBoard.setActiveBoard).not.toHaveBeenCalled();
+    },
+  );
+
+  it('reconnects once after only the selected board UUID propagates, with stable callbacks', async () => {
+    const pickerState = makeMismatchingPickerState();
+    pickerState.devices = [{ deviceId: 'device-2', name: 'Kilter Board#SN-2@3', rssi: -40 }];
+    bluetooth.state.pickerState = pickerState;
+    const savedBoard = makeBoard({ boardType: 'kilter', uuid: 'wall-a', setIds: '1,20' });
+    resolvedBoards.value = new Map([['SN-2', { kind: 'saved', board: savedBoard }]]);
+    const currentProps = { ...KILTER_PROPS, boardUuid: 'wall-b' };
+    const { rerender } = renderProvider(currentProps);
+    const stableConnect = bluetooth.state.connect;
+
+    pickerSheet.props?.onSelect('device-2');
+    lastAlertButtons()[2]?.onPress?.();
+    await waitFor(() => expect(pickerState.handleCancel).toHaveBeenCalledOnce());
+    expect(activeBoard.setActiveBoard).toHaveBeenCalledWith(savedBoard);
+    expect(stableConnect).not.toHaveBeenCalled();
+
+    rerender(
+      createElement(BluetoothProvider, { ...currentProps, boardUuid: 'wall-a', children: createElement('div') }),
+    );
+    expect(bluetooth.state.connect).toBe(stableConnect);
+    await waitFor(() => expect(stableConnect).toHaveBeenCalledWith(undefined, undefined, 'SN-2'));
+    rerender(
+      createElement(BluetoothProvider, { ...currentProps, boardUuid: 'wall-a', children: createElement('div') }),
+    );
+    expect(stableConnect).toHaveBeenCalledOnce();
+  });
+
+  it('uses generic physical-board wording for a same-config recorded board', () => {
+    const pickerState = makeMismatchingPickerState();
+    pickerState.devices = [{ deviceId: 'device-2', name: 'Kilter Board#SN-2@3', rssi: -40 }];
+    bluetooth.state.pickerState = pickerState;
+    resolvedBoards.value = new Map([
+      [
+        'SN-2',
+        {
+          kind: 'recorded',
+          config: makeSerialConfig({ boardName: 'kilter', boardUuid: 'wall-a', setIds: '1,20' }),
+        },
+      ],
+    ]);
+    renderProvider({ ...KILTER_PROPS, boardUuid: 'wall-b' });
+    pickerSheet.props?.onSelect('device-2');
+
+    expect(alert.alert.mock.calls[0]?.[0]).toBe('boardConfigMismatch.mobileDifferentBoardTitle');
+    expect(alert.alert.mock.calls[0]?.[1]).toContain('boardConfigMismatch.mobileDifferentBoardWarning');
+    expect(pickerState.handleSelect).not.toHaveBeenCalled();
+  });
+
+  it('waits for the fetched canonical board and fetched configuration before reconnecting', async () => {
+    const pickerState = makeMismatchingPickerState();
+    bluetooth.state.pickerState = pickerState;
+    resolvedBoards.value = new Map([
+      [
+        'SN-2',
+        {
+          kind: 'recorded',
+          config: makeSerialConfig({ boardUuid: 'alias-uuid' }),
+        },
+      ],
+    ]);
+    const fetchedBoard = makeBoard({
+      uuid: 'canonical-uuid',
+      boardType: 'kilter',
+      layoutId: 2,
+      sizeId: 17,
+      setIds: '2,7',
+    });
+    graphql.request.mockResolvedValue({ board: fetchedBoard });
+    const { rerender } = renderProvider(KILTER_PROPS);
+    pickerSheet.props?.onSelect('device-2');
+    lastAlertButtons()[2]?.onPress?.();
+    await waitFor(() => expect(pickerState.handleCancel).toHaveBeenCalledOnce());
+    expect(activeBoard.setActiveBoard).toHaveBeenCalledWith(fetchedBoard);
+    expect(graphql.request).toHaveBeenCalledWith(expect.anything(), { boardUuid: 'alias-uuid' });
+    expect(bluetooth.state.connect).not.toHaveBeenCalled();
+
+    rerender(
+      createElement(BluetoothProvider, { ...TENSION_PROPS, boardUuid: 'alias-uuid', children: createElement('div') }),
+    );
+    expect(bluetooth.state.connect).not.toHaveBeenCalled();
+    rerender(
+      createElement(BluetoothProvider, {
+        boardName: 'kilter',
+        layoutId: 2,
+        sizeId: 17,
+        setIds: '7,2',
+        boardUuid: 'canonical-uuid',
+        children: createElement('div'),
+      }),
+    );
+    await waitFor(() => expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, 'SN-2'));
+    expect(bluetooth.state.connect).toHaveBeenCalledOnce();
+  });
+
+  it('waits for fetched hold sets even when the canonical UUID and other props already match', async () => {
+    const pickerState = makeMismatchingPickerState();
+    bluetooth.state.pickerState = pickerState;
+    resolvedBoards.value = new Map([
+      [
+        'SN-2',
+        {
+          kind: 'recorded',
+          config: makeSerialConfig({ boardUuid: 'alias-uuid' }),
+        },
+      ],
+    ]);
+    const currentProps = { ...KILTER_PROPS, boardUuid: 'canonical-uuid' };
+    const fetchedBoard = makeBoard({ uuid: 'canonical-uuid', boardType: 'kilter', setIds: '1,7' });
+    graphql.request.mockResolvedValue({ board: fetchedBoard });
+    const { rerender } = renderProvider(currentProps);
+    pickerSheet.props?.onSelect('device-2');
+    lastAlertButtons()[2]?.onPress?.();
+    await waitFor(() => expect(pickerState.handleCancel).toHaveBeenCalledOnce());
+    expect(activeBoard.setActiveBoard).toHaveBeenCalledWith(fetchedBoard);
+    expect(bluetooth.state.connect).not.toHaveBeenCalled();
+
+    rerender(createElement(BluetoothProvider, { ...currentProps, setIds: '7,1', children: createElement('div') }));
+    await waitFor(() => expect(bluetooth.state.connect).toHaveBeenCalledWith(undefined, undefined, 'SN-2'));
     expect(bluetooth.state.connect).toHaveBeenCalledOnce();
   });
 

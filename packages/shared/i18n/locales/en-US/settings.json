@@ -426,6 +426,9 @@
     "cancel": "Cancel",
     "mobileConnectAnyway": "Connect anyway",
     "mobileConnectAnywayWarning": "Our records show this controller belongs to another board setup. Connecting anyway may light climbs incorrectly.",
+    "mobileDifferentBoardTitle": "Different saved board",
+    "mobileDifferentBoardNamedWarning": "This controller is linked to {{name}}, a different saved board. Connecting anyway puts your climbs in your current board's wall feed.",
+    "mobileDifferentBoardWarning": "This controller is linked to a different saved board. Connecting anyway puts your climbs in your current board's wall feed.",
     "mobileSwitchSetup": "Switch board setup",
     "mobileUseRecordedSetup": "Use recorded setup"
   },

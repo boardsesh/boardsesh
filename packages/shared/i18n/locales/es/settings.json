@@ -426,6 +426,9 @@
     "cancel": "Cancelar",
     "mobileConnectAnyway": "Conectar igualmente",
     "mobileConnectAnywayWarning": "Nuestros registros muestran que este controlador pertenece a otra configuración de plafón. Conectar igualmente podría iluminar las vías de forma incorrecta.",
+    "mobileDifferentBoardTitle": "Otro plafón guardado",
+    "mobileDifferentBoardNamedWarning": "Este controlador está vinculado a {{name}}, otro plafón guardado. Si te conectas igualmente, tus bloques aparecerán en la actividad de tu plafón actual.",
+    "mobileDifferentBoardWarning": "Este controlador está vinculado a otro plafón guardado. Si te conectas igualmente, tus bloques aparecerán en la actividad de tu plafón actual.",
     "mobileSwitchSetup": "Cambiar de plafón",
     "mobileUseRecordedSetup": "Usar la configuración registrada"
   },
