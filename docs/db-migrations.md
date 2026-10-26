@@ -191,10 +191,13 @@ container is often ahead of an older worktree (the `:latest` image is rebuilt on
 `main` that touches drizzle, and other worktrees apply their own branch migrations). Those
 rows print a warning and `db:up` carries on.
 
-Two dev database paths can still encounter unverified history: a shared tailnet database
-reached through `scripts/dev-db-discover.ts`, and a persistent volume that predates a
-migration renumber or collapse. Both stop before applying migration SQL when they encounter
-such a gap. Local failure guidance, on a refusal or on an apply failure, names the discovered
+Two dev database paths can still encounter unverified history: a database found by
+`scripts/dev-db-discover.ts`, and a persistent volume that predates a migration renumber or
+collapse. Both read the ledger with the same selector. `dev-db-discover.ts` only ever migrates
+a standalone Postgres on this machine (#6497): there a gap stops it before any migration SQL
+runs. A tailnet or `BOARDSESH_DEV_DB_HOST` database is read only, never migrated and never
+given a tracker table; one that is behind, or whose ledger fails the check, is skipped and
+`db:up` falls back to local Docker. Local failure guidance, on a refusal or on an apply failure, names the discovered
 container's Compose owner. When that owner is the current checkout, it prints
 `docker compose down -v && vp run db:up` for a volume with nothing worth keeping. It never
 prints a reset command for the current checkout to run against another project's volume. That

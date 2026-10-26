@@ -420,9 +420,9 @@ jobs:
               - 'packages/db/scripts/migration-journal.ts'
               - 'packages/db/scripts/verify-migration-journal.ts'
               - 'packages/db/scripts/migration-journal-verification.integration.test.ts'
-              # The dev-db pending-migration selector and the tailnet applier
-              # that test drives against real Postgres (#3979): a ledger hole
-              # must stop both before any migration SQL runs.
+              # The dev-db pending-migration selector and the discover-path
+              # applier that test drives against real Postgres (#3979): a ledger
+              # hole must stop both before any migration SQL runs.
               - 'scripts/lib/dev-db-pending-migrations.ts'
               - 'scripts/dev-db-pending-migrations.ts'
               - 'scripts/dev-db-discover.ts'

@@ -323,7 +323,10 @@ describe('migration journal verification (#2933)', () => {
     // A tailnet peer is never migrated (#6497); an unverifiable ledger there
     // skips the peer instead of failing db:up.
     assert.equal(
-      await prepareMigrations({ ...scratchSelection, source: 'tailscale' }, { installCutoffHelper: refuseCutoffHelper }),
+      await prepareMigrations(
+        { ...scratchSelection, source: 'tailscale' },
+        { installCutoffHelper: refuseCutoffHelper },
+      ),
       false,
       'the tailnet path must not use a peer whose ledger cannot be verified',
     );
