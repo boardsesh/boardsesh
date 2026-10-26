@@ -7,6 +7,7 @@ const hapticSelectionMock = vi.hoisted(() => vi.fn());
 const composeSwitchProps = vi.hoisted(() => ({ last: null as null | Record<string, unknown> }));
 const rowToggle = vi.hoisted(() => ({ last: null as null | (() => void) }));
 const composeTextColors = vi.hoisted(() => ({ seen: [] as Array<unknown> }));
+const switchColorArgs = vi.hoisted(() => ({ last: null as null | unknown[] }));
 
 vi.mock('../../lib/haptics', () => ({ hapticSelection: hapticSelectionMock }));
 vi.mock('react-native', () => ({ StyleSheet: { create: <Styles,>(styles: Styles) => styles } }));
@@ -42,10 +43,12 @@ const useThemeMock = vi.hoisted(() =>
   vi.fn(
     (): {
       brandColors: { primary: string };
+      m3: { outline: string };
       colorScheme: 'light' | 'dark';
       systemColors: { label: string; secondaryLabel: string };
     } => ({
       brandColors: { primary: '#6D28D9' },
+      m3: { outline: '#96949A' },
       colorScheme: 'light',
       systemColors: { label: '#111111', secondaryLabel: '#222222' },
     }),
@@ -53,7 +56,10 @@ const useThemeMock = vi.hoisted(() =>
 );
 vi.mock('../../providers/theme-provider', () => ({ useTheme: useThemeMock }));
 vi.mock('../../theme/expo-ui-modifiers', () => ({
-  switchControlColors: () => ({}),
+  switchControlColors: (...args: unknown[]) => {
+    switchColorArgs.last = args;
+    return { checkedTrackColor: 'from-switchControlColors' };
+  },
   composeSeedColor: () => '#7C3AED',
 }));
 vi.mock('../../theme/tokens', () => ({ spacing: { 2: 8, 4: 16 } }));
@@ -65,8 +71,10 @@ beforeEach(() => {
   composeSwitchProps.last = null;
   rowToggle.last = null;
   composeTextColors.seen = [];
+  switchColorArgs.last = null;
   useThemeMock.mockReturnValue({
     brandColors: { primary: '#6D28D9' },
+    m3: { outline: '#96949A' },
     colorScheme: 'light',
     systemColors: { label: '#111111', secondaryLabel: '#222222' },
   });
@@ -110,6 +118,15 @@ describe('Android SwitchRow', () => {
     expect(onValueChange).not.toHaveBeenCalled();
   });
 
+  it('hands the Switch the full brand + Velvet colour set, not just the on-track', () => {
+    // Every unset Compose colour used to come from the wallpaper (#6919), so the
+    // m3 roles that name the off state must reach switchControlColors.
+    render(<SwitchRow label="Public board" value={false} onValueChange={vi.fn()} />);
+
+    expect(switchColorArgs.last).toEqual([{ primary: '#6D28D9' }, { outline: '#96949A' }, 'light']);
+    expect(composeSwitchProps.last?.colors).toEqual({ checkedTrackColor: 'from-switchControlColors' });
+  });
+
   it('gives the label and description an explicit colour instead of relying on M3 defaults', () => {
     // This Row sits directly in the Host, not inside a Card, so Compose gives
     // its Text nodes no on-surface content colour and renders them black
@@ -124,6 +141,7 @@ describe('Android SwitchRow', () => {
     // on a dark background. Confirm the fix isn't accidentally light-only.
     useThemeMock.mockReturnValue({
       brandColors: { primary: '#6D28D9' },
+      m3: { outline: '#817B8D' },
       colorScheme: 'dark',
       systemColors: { label: '#F5F2FB', secondaryLabel: '#A9A2B6' },
     });

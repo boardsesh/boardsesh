@@ -15,7 +15,7 @@ import type { ImageSourcePropType } from 'react-native';
 import { Text, Icon, Badge, Row, FilterChip, DropdownMenu, DropdownMenuItem } from '@expo/ui/jetpack-compose';
 import { semantics } from '@expo/ui/jetpack-compose/modifiers';
 import { useTheme } from '../../providers/theme-provider';
-import { filterChipBorder, type filterChipBrandColors } from '../../theme/expo-ui-modifiers';
+import type { filterChipBorders, filterChipBrandColors } from '../../theme/expo-ui-modifiers';
 import { CHECK_ICON_SOURCE } from './capsule-icons.android';
 import { capsuleBadgeLabel } from './CapsuleRow.logic';
 import { spacing } from '../../theme/tokens';
@@ -24,13 +24,7 @@ import { spacing } from '../../theme/tokens';
 const ICON_SIZE = 18;
 
 export type CapsuleChipColors = ReturnType<typeof filterChipBrandColors>;
-
-// A Compose chip draws a custom border in every state, so only an idle chip gets
-// the `outline` one; a selected chip keeps M3's borderless brand fill.
-function useIdleChipBorder(selected: boolean) {
-  const { m3 } = useTheme();
-  return selected ? undefined : filterChipBorder(m3);
-}
+export type CapsuleChipBorders = ReturnType<typeof filterChipBorders>;
 
 function ChipContent({ label, iconSource }: { label: string; iconSource?: ImageSourcePropType }) {
   return (
@@ -52,6 +46,7 @@ export function ActionChip({
   label,
   selected,
   colors,
+  borders,
   iconSource,
   iconOnly = false,
   badgeCount,
@@ -61,6 +56,7 @@ export function ActionChip({
   label: string;
   selected: boolean;
   colors: CapsuleChipColors;
+  borders: CapsuleChipBorders;
   iconSource?: ImageSourcePropType;
   iconOnly?: boolean;
   badgeCount?: number;
@@ -68,7 +64,6 @@ export function ActionChip({
   onPress: () => void;
 }) {
   const { brandColors } = useTheme();
-  const border = useIdleChipBorder(selected);
   const badgeLabel = capsuleBadgeLabel(badgeCount);
   // A chip speaks its own label when it has one ("Board angle, 40°" for a chip
   // that shows "40°"); an icon-only chip falls back to its visible label.
@@ -77,7 +72,7 @@ export function ActionChip({
     <FilterChip
       selected={selected}
       colors={colors}
-      border={border}
+      border={selected ? borders.selected : borders.idle}
       onClick={onPress}
       modifiers={spokenLabel ? [semantics({ contentDescription: spokenLabel })] : undefined}
     >
@@ -119,24 +114,30 @@ export function MenuChip({
   label,
   selected,
   colors,
+  borders,
   iconSource,
   renderItems,
 }: {
   label: string;
   selected: boolean;
   colors: CapsuleChipColors;
+  borders: CapsuleChipBorders;
   iconSource?: ImageSourcePropType;
   renderItems: (close: () => void) => ReactNode;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const border = useIdleChipBorder(selected);
   // Only the popup (`DropdownMenu.Items` → MenuItem) needs an explicit text
   // colour: the trigger chip renders inside the row's single `colorScheme`-pinned
   // Host, so its label already tracks the in-app theme.
   return (
     <DropdownMenu expanded={expanded} onDismissRequest={() => setExpanded(false)}>
       <DropdownMenu.Trigger>
-        <FilterChip selected={selected} colors={colors} border={border} onClick={() => setExpanded(true)}>
+        <FilterChip
+          selected={selected}
+          colors={colors}
+          border={selected ? borders.selected : borders.idle}
+          onClick={() => setExpanded(true)}
+        >
           <ChipContent label={label} iconSource={iconSource} />
         </FilterChip>
       </DropdownMenu.Trigger>

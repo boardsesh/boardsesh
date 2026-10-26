@@ -4,10 +4,11 @@ import {
   brandAccentColor,
   brandControlTint,
   composeSeedColor,
-  filterChipBorder,
+  filterChipBorders,
   filterChipBrandColors,
   sliderControlColors,
   switchControlColors,
+  radioControlColors,
   textFieldBrandColors,
   textInputBrandColors,
   tonalButtonColors,
@@ -67,7 +68,7 @@ describe('brand control colours', () => {
     });
   });
 
-  it('names every filter chip state and borders the idle chip with outline', () => {
+  it('names the filter chip label, icon and fill states and borders only the idle chip', () => {
     expect(filterChipBrandColors(brandColorsDark, DARK_M3)).toEqual({
       labelColor: '#A9A2B6',
       iconColor: '#A78BFA',
@@ -75,7 +76,17 @@ describe('brand control colours', () => {
       selectedLabelColor: '#FFFFFF',
       selectedLeadingIconColor: '#FFFFFF',
     });
-    expect(filterChipBorder(DARK_M3)).toEqual({ width: 1, color: '#817b8d' });
+    expect(filterChipBorders(DARK_M3)).toEqual({
+      idle: { width: 1, color: '#817b8d' },
+      selected: { width: 0, color: 'transparent' },
+    });
+  });
+
+  it('dots the selected radio in the control tint and rings the empty one in onSurfaceVariant', () => {
+    expect(radioControlColors(brandColorsDark, DARK_M3)).toEqual({
+      selectedColor: '#A78BFA',
+      unselectedColor: '#A9A2B6',
+    });
   });
 
   it('fills the Android Slider with the control tint', () => {

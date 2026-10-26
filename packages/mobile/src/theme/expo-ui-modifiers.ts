@@ -255,11 +255,28 @@ export function filterChipBrandColors(
 }
 
 /**
- * Plain Compose `ChipBorder` for an UNSELECTED `FilterChip`: 1dp of `outline`,
- * 4.08:1 on the dark card where the wallpaper-derived default was 1.77:1. A
- * Compose chip draws a custom border in every state, so the caller passes this
- * only while the chip is unselected; a selected chip keeps M3's borderless fill.
+ * Plain Compose `ChipBorder`s for a `FilterChip`, one per selection state. Idle:
+ * 1dp of `outline`, 4.08:1 on the dark card where the wallpaper-derived default
+ * was 1.77:1. Selected: no visible border, M3's plain brand fill. A Compose chip
+ * draws a custom border in every state, so the caller picks one per chip, and
+ * the selected one is explicit rather than an omitted prop so a chip toggled on
+ * clears its outline.
  */
-export function filterChipBorder(m3: MaterialControlRoles): { width: number; color: string } {
-  return { width: 1, color: m3.outline };
+export function filterChipBorders(m3: MaterialControlRoles): {
+  idle: { width: number; color: string };
+  selected: { width: number; color: string };
+} {
+  return { idle: { width: 1, color: m3.outline }, selected: { width: 0, color: 'transparent' } };
+}
+
+/**
+ * Plain Compose `RadioButtonColors` for a native Android `RadioButton` on a
+ * settings card: the selected dot takes `brandControlTint`, like the Switch track
+ * beside it, and the empty ring takes `onSurfaceVariant`, as M3 draws it.
+ */
+export function radioControlColors(
+  brandColors: BrandControlColors,
+  m3: MaterialControlRoles,
+): { selectedColor: string; unselectedColor: string } {
+  return { selectedColor: brandControlTint(brandColors), unselectedColor: m3.onSurfaceVariant };
 }

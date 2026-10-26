@@ -16,7 +16,7 @@ const MOBILE_DIR = fileURLToPath(new URL('../../..', import.meta.url));
 const SCANNED_DIRS = ['src', 'app'].map((dir) => join(MOBILE_DIR, dir));
 const COMPOSE_HOST_FILE = join(MOBILE_DIR, 'src/components/ComposeHost.android.tsx');
 
-const RAW_HOST_IMPORT = /import\s*\{[^}]*\bHost\b[^}]*\}\s*from\s*'@expo\/ui(?:\/jetpack-compose)?'/;
+const RAW_HOST_IMPORT = /import\s*\{[^}]*\bHost\b[^}]*\}\s*from\s*['"]@expo\/ui(?:\/jetpack-compose)?['"]/;
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {

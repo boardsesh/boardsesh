@@ -7,9 +7,8 @@
 // picks it and TalkBack reads the row as a radio option labelled by its text. The
 // RadioButton's own `onClick` is left undefined so the tap fires once, not twice.
 // Unlike iOS, Android CAN show the per-option `description` and disable a row, so
-// the public API's full fidelity survives here. Brand tint comes from the Compose
-// Material theme ComposeHost seeds from the brand violet (RadioButton has no
-// colours prop — it reads the seeded M3 `primary`).
+// the public API's full fidelity survives here. The dot takes the brand control
+// tint (radioControlColors), matching the Switch and Slider beside it.
 //
 // One Host per control is intentional for now (RadioGroup is used one-per-card).
 
@@ -26,11 +25,15 @@ import {
   alpha,
 } from '@expo/ui/jetpack-compose/modifiers';
 import { StyleSheet } from 'react-native';
+import { useTheme } from '../providers/theme-provider';
+import { radioControlColors } from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
 import { makeRadioSelectHandler } from './RadioGroup.logic';
 import type { RadioGroupProps } from './RadioGroup.types';
 
 export function RadioGroup<T extends string>({ options, value, onChange }: RadioGroupProps<T>) {
+  const { brandColors, m3 } = useTheme();
+  const radioColors = radioControlColors(brandColors, m3);
   // Memoize so a stable `onChange` doesn't push a new handler into the native Host
   // (and re-render the Compose tree) on every parent render.
   const handleSelect = useMemo(() => makeRadioSelectHandler(onChange), [onChange]);
@@ -58,7 +61,7 @@ export function RadioGroup<T extends string>({ options, value, onChange }: Radio
             <Row key={option.value} verticalAlignment="center" modifiers={rowModifiers}>
               {/* The Row's `selectable` owns the tap — leave the RadioButton passive
                   so a tap on it doesn't double-fire the selection. */}
-              <RadioButton selected={selected} />
+              <RadioButton selected={selected} colors={radioColors} />
               <Column modifiers={disabled ? [weight(1), alpha(0.4)] : [weight(1)]}>
                 <Text style={{ typography: 'bodyLarge' }}>{option.label}</Text>
                 {option.description ? (

@@ -187,16 +187,17 @@ describe('CapsuleRow.android', () => {
     expect(row[1].getAttribute('data-container')).toBe('#7C3AED');
     expect(row[1].getAttribute('data-label-color')).toBe('#FFFFFF');
     // Idle chips name their own label, icon and border so none of them falls back
-    // to the wallpaper palette (#6919); a selected chip keeps M3's borderless fill.
+    // to the wallpaper palette (#6919); a selected chip clears it explicitly so a
+    // chip toggled on loses its outline.
     expect(row[0].getAttribute('data-idle-label-color')).toBe('#A9A2B6');
     expect(row[0].getAttribute('data-idle-icon-color')).toBe('#A78BFA');
     expect(row.map((chip) => chip.getAttribute('data-border'))).toEqual([
       '1:#817B8D',
-      null,
-      null,
+      '0:transparent',
+      '0:transparent',
       '1:#817B8D',
       '1:#817B8D',
-      null,
+      '0:transparent',
     ]);
     // Only the Filters opener carries an icon; the rail has no chevron on Android.
     expect(row.map((chip) => chip.querySelector('[data-icon]')?.getAttribute('data-icon') ?? null)).toEqual([

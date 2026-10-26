@@ -10,8 +10,9 @@
 // can't pass them; `compose-host-discipline.test.ts` keeps raw `Host` out of
 // Android component files.
 //
-// The seed does NOT reach a DropdownMenu popup or a dialog: those are separate
-// Compose compositions, which is why their rows still take explicit colours.
+// A DropdownMenu popup inherits the seeded MaterialTheme too. Its rows still
+// take an explicit text colour for a different reason: a custom `Text` in an item
+// slot does not inherit `DropdownMenuItem`'s content colour.
 
 import { Host } from '@expo/ui';
 import type { ComponentProps } from 'react';
