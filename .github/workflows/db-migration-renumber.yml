@@ -12,16 +12,19 @@ name: DB Migration Renumber
 # gates cannot be edited from the PR it acts on (the property mobile-ota-preview.yml
 # relies on for the same reason). NEVER add `pull_request` or `pull_request_target`.
 #
-# This job runs PR-author code (`vp install` lifecycle scripts, `vp run build:db`)
-# and holds a repo-write App token, so:
+# The `renumber` job runs PR-author code (`vp install` lifecycle scripts,
+# `vp run build:db`, drizzle-kit loading the PR's schema, the PR's migrate script), so:
 #   * SAME-REPO PRs only. The App is installed on this repo, so it could not push to
-#     a fork anyway, and running fork code next to a write token is not a trade we
-#     make. The gate enforces it.
-#   * `persist-credentials: false` on checkout. mobile-ota-production.yml deliberately
-#     does the opposite (mint-then-checkout so the push inherits the token), but that
-#     workflow does not execute PR-author code. Here the token would sit in
-#     .git/config, readable by any postinstall hook, for the whole run. It is instead
-#     injected only into the push step, after all author code has finished.
+#     a fork anyway. The gate enforces it.
+#   * It never runs on the default branch. A main run's Actions writes are shared
+#     with every branch and PR, so a main run (the dispatcher's fan-out, a manual
+#     `gh workflow run`) only vets the PR and hands off: `handoff` re-dispatches this
+#     file on a throwaway `ci-sandbox/db-renumber/pr-<n>/<run id>` branch at the same
+#     trusted commit (scripts/lib/ci-sandbox.cjs), and `sandbox-cleanup` deletes it.
+#   * It holds NO secret. It hands the renumbered commits to `push` as a git bundle;
+#     `push` runs on a fresh runner that executes no PR code, and is the only job
+#     that mints the App token. `persist-credentials: false` everywhere, so no token
+#     ever sits in .git/config.
 #
 # The App token (not GITHUB_TOKEN) has to do the push: a GITHUB_TOKEN push does not
 # re-trigger workflows, so the renumbered commit would land with no CI at all.
@@ -56,14 +59,15 @@ jobs:
     timeout-minutes: 5
     outputs:
       run: ${{ steps.decide.outputs.run }}
+      handoff: ${{ steps.decide.outputs.handoff }}
       branch: ${{ steps.decide.outputs.branch }}
       head_sha: ${{ steps.decide.outputs.head_sha }}
       skip_reason: ${{ steps.decide.outputs.skip_reason }}
     steps:
-      # Fail loudly rather than skipping. Without this the `renumber` job is skipped
-      # by its `vars.OTA_PUSH_APP_ID` guard, so a missing or expired App credential
-      # looks exactly like "nothing to do": the dispatch fires, the gate passes, and
-      # stranded PRs get no explanation. Failing here also stops the `comment` job,
+      # Fail loudly, and before any work. Without this a missing App credential
+      # surfaces only after the whole renumber and proof run, at the push, so the
+      # dispatch fires, the gate passes, and stranded PRs wait 20 minutes for a
+      # failure that was knowable up front. Failing here also stops the `comment` job,
       # which needs a successful gate — otherwise it would post a "renumbering was
       # held" comment blaming the PR for an operator misconfiguration. A red run is
       # the right signal for that.
@@ -98,15 +102,60 @@ jobs:
             if (pr.head.ref === defaultBranch) reasons.push('head ref is the default branch');
             if (pr.labels.some((label) => label.name === 'renumber:skip')) reasons.push('opted out via renumber:skip');
 
-            core.setOutput('run', reasons.length === 0 ? 'true' : 'false');
+            // PR code runs only on this PR's sandbox branch; a default-branch run
+            // that vetted the PR hands off instead. Keep the prefix in step with
+            // scripts/lib/ci-sandbox.cjs.
+            const sandboxPrefix = `refs/heads/ci-sandbox/db-renumber/pr-${raw}/`;
+            const onSandbox = context.ref.startsWith(sandboxPrefix) &&
+              /^[1-9][0-9]*$/.test(context.ref.slice(sandboxPrefix.length));
+            const vetted = reasons.length === 0;
+            core.setOutput('run', vetted && onSandbox ? 'true' : 'false');
+            core.setOutput('handoff', vetted && !onSandbox ? 'true' : 'false');
             core.setOutput('skip_reason', reasons.join('; '));
             core.setOutput('branch', pr.head.ref);
             core.setOutput('head_sha', pr.head.sha);
             if (reasons.length > 0) core.notice(`Skipping #${raw}: ${reasons.join('; ')}`);
 
+  # ── A default-branch run never executes PR code. Re-dispatch this workflow on a
+  # fresh sandbox branch at the same trusted commit; that run does the work.
+  handoff:
+    needs: gate
+    if: needs.gate.outputs.handoff == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: write
+    steps:
+      - name: Check out the sandbox helper
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          sparse-checkout: scripts/lib/ci-sandbox.cjs
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Hand the renumber to a sandbox branch
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ github.event.inputs.pr }}
+          STRATEGY: ${{ github.event.inputs.strategy || 'rebase' }}
+        with:
+          script: |
+            const { handOffToSandbox } = require(`${process.env.GITHUB_WORKSPACE}/scripts/lib/ci-sandbox.cjs`);
+            await handOffToSandbox({
+              github, context, core,
+              workflowKey: 'db-renumber',
+              workflowFile: 'db-migration-renumber.yml',
+              prNumber: process.env.PR_NUMBER,
+              inputs: { pr: process.env.PR_NUMBER, strategy: process.env.STRATEGY },
+              sha: context.sha,
+            });
+
+  # PR-author code runs here, on the sandbox branch only, with no secret in scope.
   renumber:
     needs: gate
-    if: needs.gate.outputs.run == 'true' && vars.OTA_PUSH_APP_ID != ''
+    if: needs.gate.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
@@ -115,10 +164,7 @@ jobs:
       validation_outcome: ${{ steps.validate.outcome }}
       apply_outcome: ${{ steps.apply.outcome }}
       reapply_outcome: ${{ steps.reapply.outcome }}
-      recheck_outcome: ${{ steps.recheck.outcome }}
-      recheck_ok: ${{ steps.recheck.outputs.ok }}
-      recheck_reason: ${{ steps.recheck.outputs.reason }}
-      push_outcome: ${{ steps.push.outcome }}
+      result_sha: ${{ steps.bundle.outputs.result_sha }}
     services:
       # The only viable verification target. A from-scratch `drizzle-kit migrate` on
       # a bare Postgres cannot work: 0000_*.sql ALTERs kilter_climbs/tension_climbs,
@@ -144,13 +190,6 @@ jobs:
       HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
       DATABASE_URL: postgresql://postgres:password@localhost:5432/main
     steps:
-      - name: Mint the push token
-        id: push_token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ vars.OTA_PUSH_APP_ID }}
-          private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
-
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.gate.outputs.branch }}
@@ -232,9 +271,72 @@ jobs:
         if: steps.renumber.outputs.status == 'renumbered'
         run: vp exec pnpm --filter @boardsesh/db run db:migrate
 
+      # The new commits sit on top of origin/main (rebase) or merge it with the
+      # vetted head (merge); both are excluded so the bundle carries only them.
+      - name: Bundle the renumbered branch
+        id: bundle
+        if: steps.renumber.outputs.status == 'renumbered'
+        run: |
+          git bundle create "$RUNNER_TEMP/renumbered.bundle" HEAD ^origin/main "^$HEAD_SHA"
+          echo "result_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Hand the renumbered commits to the push job
+        if: steps.renumber.outputs.status == 'renumbered'
+        uses: actions/upload-artifact@v4
+        with:
+          name: renumbered-branch
+          path: ${{ runner.temp }}/renumbered.bundle
+          retention-days: 1
+          if-no-files-found: error
+
+  # Fresh runner: no PR code has run here, so the App token is minted only where
+  # nothing PR-controlled can read it. The bundle and result SHA are PR-influenced
+  # data; they can only ever land on the PR's own branch, leased to the vetted head.
+  push:
+    needs: [gate, renumber]
+    if: >-
+      needs.gate.outputs.run == 'true' &&
+      needs.renumber.result == 'success' &&
+      needs.renumber.outputs.renumber_status == 'renumbered'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      recheck_outcome: ${{ steps.recheck.outcome }}
+      recheck_ok: ${{ steps.recheck.outputs.ok }}
+      recheck_reason: ${{ steps.recheck.outputs.reason }}
+      push_outcome: ${{ steps.push.outcome }}
+    env:
+      PR_NUMBER: ${{ github.event.inputs.pr }}
+      BRANCH: ${{ needs.gate.outputs.branch }}
+      HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
+      RESULT_SHA: ${{ needs.renumber.outputs.result_sha }}
+    steps:
+      - name: Check out history for the bundle's prerequisites
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download the renumbered commits
+        uses: actions/download-artifact@v4
+        with:
+          name: renumbered-branch
+          path: ${{ runner.temp }}/renumbered
+
+      - name: Unbundle and verify the result
+        run: |
+          printf '%s' "$RESULT_SHA" | grep -Eq '^[0-9a-f]{40}$' \
+            || { echo "::error::The renumber job reported no result SHA."; exit 1; }
+          git fetch --no-tags origin "$HEAD_SHA" main
+          bundle="$RUNNER_TEMP/renumbered/renumbered.bundle"
+          git bundle verify "$bundle"
+          git fetch --no-tags "$bundle" "HEAD:refs/renumber/result"
+          test "$(git rev-parse refs/renumber/result)" = "$RESULT_SHA" \
+            || { echo "::error::The bundle does not carry the reported result."; exit 1; }
+
       - name: Re-check the PR immediately before pushing
         id: recheck
-        if: steps.renumber.outputs.status == 'renumbered'
         uses: actions/github-script@v7
         with:
           script: |
@@ -255,9 +357,17 @@ jobs:
             core.setOutput('reason', reasons.join(' '));
             if (!ok) core.warning(`#${process.env.PR_NUMBER}: ${reasons.join(' ')} Not pushing.`);
 
+      - name: Mint the push token
+        id: push_token
+        if: steps.recheck.outputs.ok == 'true'
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.OTA_PUSH_APP_ID }}
+          private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
+
       - name: Force-push the renumbered branch
         id: push
-        if: steps.renumber.outputs.status == 'renumbered' && steps.recheck.outputs.ok == 'true'
+        if: steps.recheck.outputs.ok == 'true'
         env:
           GH_APP_TOKEN: ${{ steps.push_token.outputs.token }}
         run: |
@@ -267,14 +377,14 @@ jobs:
           # that way, so a contributor pushing mid-run aborts us instead of losing work.
           git push --force-with-lease="$BRANCH:$HEAD_SHA" \
             "https://x-access-token:${GH_APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
-            "HEAD:refs/heads/$BRANCH"
+            "$RESULT_SHA:refs/heads/$BRANCH"
 
   # PR-controlled install/build/migration code ran in `renumber`. Never load a
   # helper from that writable runner inside a token-bearing action: a postinstall
   # could replace it. This fresh runner checks out only the immutable workflow
   # commit, then renders and upserts the sticky comment with the narrow PR token.
   comment:
-    needs: [gate, renumber]
+    needs: [gate, renumber, push]
     if: >-
       always() &&
       needs.gate.result == 'success' &&
@@ -304,10 +414,10 @@ jobs:
           VALIDATION_OUTCOME: ${{ needs.renumber.outputs.validation_outcome }}
           APPLY_OUTCOME: ${{ needs.renumber.outputs.apply_outcome }}
           REAPPLY_OUTCOME: ${{ needs.renumber.outputs.reapply_outcome }}
-          RECHECK_OUTCOME: ${{ needs.renumber.outputs.recheck_outcome }}
-          RECHECK_OK: ${{ needs.renumber.outputs.recheck_ok }}
-          RECHECK_REASON: ${{ needs.renumber.outputs.recheck_reason }}
-          PUSH_OUTCOME: ${{ needs.renumber.outputs.push_outcome }}
+          RECHECK_OUTCOME: ${{ needs.push.outputs.recheck_outcome }}
+          RECHECK_OK: ${{ needs.push.outputs.recheck_ok }}
+          RECHECK_REASON: ${{ needs.push.outputs.recheck_reason }}
+          PUSH_OUTCOME: ${{ needs.push.outputs.push_outcome }}
         with:
           script: |
             // This dependency-free module comes from the immutable workflow
@@ -351,3 +461,28 @@ jobs:
                 ...context.repo, issue_number: Number(process.env.PR_NUMBER), body,
               });
             }
+
+  # Remove this run's own sandbox branch. A no-op on any other ref; a sandbox
+  # replaced while still pending is pruned by the next handoff for the same PR.
+  sandbox-cleanup:
+    needs: [gate, renumber, push, comment]
+    if: always() && startsWith(github.ref, 'refs/heads/ci-sandbox/db-renumber/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the sandbox helper
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          sparse-checkout: scripts/lib/ci-sandbox.cjs
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Delete this run's sandbox branch
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { deleteOwnSandbox } = require(`${process.env.GITHUB_WORKSPACE}/scripts/lib/ci-sandbox.cjs`);
+            await deleteOwnSandbox({ github, context, core, workflowKey: 'db-renumber' });

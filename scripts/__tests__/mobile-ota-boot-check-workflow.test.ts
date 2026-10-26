@@ -43,7 +43,10 @@ interface Job {
 }
 const workflow = parse(source) as {
   on: {
-    workflow_call: { inputs: Record<string, { default?: string }>; outputs: Record<string, { value: string }> };
+    workflow_call: {
+      inputs: Record<string, { default?: string | boolean }>;
+      outputs: Record<string, { value: string }>;
+    };
     workflow_dispatch: { inputs: Record<string, { default?: string }> };
     pull_request: { paths: string[] };
   };
@@ -62,7 +65,8 @@ const indexOfStep = (job: Job, name: string): number => job.steps.indexOf(stepNa
 
 describe('mobile-ota-boot-check.yml', () => {
   it('can be called, dispatched, and runs itself on a PR that edits it', () => {
-    expect(Object.keys(workflow.on.workflow_call.inputs)).toEqual(['ref', 'branch', 'receipt_json']);
+    // `called` exists only on workflow_call, so a dispatch can be told apart from a call.
+    expect(Object.keys(workflow.on.workflow_call.inputs)).toEqual(['ref', 'branch', 'receipt_json', 'called']);
     expect(Object.keys(workflow.on.workflow_dispatch.inputs)).toEqual(['ref', 'branch', 'receipt_json']);
     expect(workflow.on.workflow_call.inputs.branch.default).toBe('pr-staging');
     expect(workflow.on.workflow_call.outputs.passed.value).toBe('${{ jobs.verdict.outputs.passed }}');
@@ -104,6 +108,23 @@ describe('mobile-ota-boot-check.yml', () => {
     expect(receipt.env?.REF).toContain('github.event.pull_request.head.sha');
     expect(receipt.run).toContain('if [ "$EVENT_NAME" = "pull_request" ]; then');
     expect(receipt.run).toContain('elif [ -n "$RECEIPT_JSON" ]; then');
+  });
+
+  it('builds only main-made commits and artifacts when a person dispatches on main', () => {
+    const receipt = stepNamed(workflow.jobs.resolve, 'Find the receipt for the commit under test');
+    expect(receipt.env?.MAIN_DISPATCH).toBe(
+      "${{ github.event_name == 'workflow_dispatch' && !inputs.called && github.ref == 'refs/heads/main' }}",
+    );
+    const run = receipt.run ?? '';
+    // A hand-written receipt can name any commit or source artifact.
+    expect(run.indexOf('if [ "$MAIN_DISPATCH" = true ] && [ -n "$RECEIPT_JSON" ]; then')).toBeLessThan(
+      run.indexOf('printf \'%s\' "$RECEIPT_JSON" > receipt.json'),
+    );
+    expect(run).toContain(
+      '.workflow_run.head_branch == \\"main\\" and .workflow_run.head_repository_id == .workflow_run.repository_id',
+    );
+    expect(run).toContain('gh api "repos/$GITHUB_REPOSITORY/compare/$commit...main" --jq .status');
+    expect(workflow.on.workflow_call.inputs.called.default).toBe(true);
   });
 
   it('retains receipts and exact generated source from the same candidate publication', () => {

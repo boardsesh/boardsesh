@@ -104,6 +104,15 @@ force-pushes. Your SQL is never rewritten. Its PR comment says the renumber land
 only after that force-push succeeds; a failed validation, proof, re-check, or push
 leaves a "Nothing was pushed" comment with the action run to inspect.
 
+Each renumber is two runs. The dispatch on `main` only vets the PR, then re-dispatches
+the workflow on a throwaway `ci-sandbox/db-renumber/pr-<n>/<run id>` branch at the same
+commit, because a run on `main` must never execute PR code (its writes are shared with
+every branch and PR). The sandbox run installs, renumbers and proves your branch with no
+secret in scope, then hands the result to a fresh `push` job as a git bundle; only that
+job holds the App token, and it pushes the bundle's commit to your branch, leased to the
+head it vetted. The sandbox branch is deleted when the run ends. Look for the run whose
+branch starts with `ci-sandbox/db-renumber/` when you want the log.
+
 To do it yourself, or when the bot stops:
 
 ```bash

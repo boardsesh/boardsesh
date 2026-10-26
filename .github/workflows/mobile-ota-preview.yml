@@ -31,7 +31,8 @@ name: Mobile OTA Preview (Per-PR Branch)
 #   * The `/ota-preview` COMMENT path runs the DEFAULT-BRANCH (main) copy of this file
 #     (issue_comment events always use the default branch), so its repository-
 #     permission gate is NOT PR-editable. An accepted comment creates a second,
-#     trusted default-branch workflow_dispatch run inside the PR lifecycle lane.
+#     trusted default-branch workflow_dispatch run inside the PR lifecycle lane,
+#     which hands the publish to a sandbox run in the same lane (below).
 #     A manual workflow_dispatch can run the copy on whichever ref the dispatcher
 #     picks; dispatch itself requires repository write access. Either way a FORK is
 #     previewed safely after a live permission check.
@@ -40,6 +41,15 @@ name: Mobile OTA Preview (Per-PR Branch)
 #     relevant paths auto-publishes. The environment can add a reviewer checkpoint,
 #     but it is not a hard wall against a malicious insider, who already holds the
 #     repo's secrets via other workflows.
+#   * A DEFAULT-BRANCH run never executes PR code. Comment, refresh and manual
+#     dispatches run on `main`, and whatever a main run writes to Actions storage
+#     is readable by every branch and PR. So the gate turns their publish into
+#     `handoff`, which re-dispatches this file on a throwaway
+#     `ci-sandbox/ota-preview/pr-<n>/<run id>` branch at the same trusted commit
+#     (scripts/lib/ci-sandbox.cjs). Only that run, or a same-repo PR's own
+#     pull_request run, checks out and executes PR code; `sandbox-cleanup` deletes
+#     the branch afterwards. scripts/__tests__/untrusted-code-workflow-guard.test.ts
+#     fails any default-branch workflow that runs a computed checkout unreviewed.
 #   * `^pr-[1-9][0-9]*$` guards every branch mutation (defense-in-depth, not the control).
 #
 # Fork PRs are SKIPPED here (no secrets). A separate metadata-only
@@ -345,8 +355,19 @@ jobs:
               }
             }
 
+            // A run on the default branch (comment, refresh and manual dispatches)
+            // writes entries every branch and PR reads, so it must never execute PR
+            // code. Only a pull_request run (PR-scoped) or a ci-sandbox dispatch
+            // publishes; anywhere else the `handoff` job re-dispatches this workflow
+            // on a throwaway sandbox branch at the same trusted commit.
+            // Keep the prefix in step with scripts/lib/ci-sandbox.cjs.
+            const sandboxPrefix = `refs/heads/ci-sandbox/ota-preview/pr-${prNumber}/`;
+            const onSandbox = Boolean(prNumber) && context.ref.startsWith(sandboxPrefix) &&
+              /^[1-9][0-9]*$/.test(context.ref.slice(sandboxPrefix.length));
+            if (action === 'publish' && context.eventName !== 'pull_request' && !onSandbox) action = 'handoff';
+
             const branch = prNumber ? `pr-${prNumber}` : '';
-            core.info(`event=${context.eventName} action=${action} branch=${branch || '(none)'} head_sha=${headSha || '(none)'} fork_skip=${forkSkip} needs_reset=${needsReset}`);
+            core.info(`event=${context.eventName} ref=${context.ref} action=${action} branch=${branch || '(none)'} head_sha=${headSha || '(none)'} fork_skip=${forkSkip} needs_reset=${needsReset}`);
             core.setOutput('action', action);
             core.setOutput('pr_number', String(prNumber));
             core.setOutput('branch', branch);
@@ -426,6 +447,43 @@ jobs:
             core.setOutput('source_base_ref', bases.sourceBaseRef);
             core.setOutput('main_sha', bases.mainSha);
             core.setOutput('train_sha', bases.trainSha);
+
+  # ── Default-branch runs never execute PR code. Re-dispatch this workflow on a
+  # fresh `ci-sandbox/ota-preview/pr-<n>/<run id>` branch at the same trusted commit;
+  # that run publishes, and everything it writes stays scoped to the throwaway ref.
+  # Trusted job: no OTA secrets, and only the immutable workflow commit's helper.
+  handoff:
+    needs: gate
+    if: needs.gate.outputs.action == 'handoff'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: write
+    steps:
+      - name: Check out the sandbox helper
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          sparse-checkout: scripts/lib/ci-sandbox.cjs
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Hand the publish to a sandbox branch
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
+        with:
+          script: |
+            const { handOffToSandbox } = require(`${process.env.GITHUB_WORKSPACE}/scripts/lib/ci-sandbox.cjs`);
+            await handOffToSandbox({
+              github, context, core,
+              workflowKey: 'ota-preview',
+              workflowFile: 'mobile-ota-preview.yml',
+              prNumber: process.env.PR_NUMBER,
+              inputs: { pr: process.env.PR_NUMBER },
+              sha: context.sha,
+            });
 
   # ── Say so BEFORE the branch disappears. A reset takes the preview offline for the
   # length of both builds (usually 20–30 min); without notice that reads as "the preview is gone",
@@ -1091,3 +1149,29 @@ jobs:
             } catch (error) {
               core.warning(`Could not update sticky comment: ${error.message}`);
             }
+
+  # ── Remove this run's own sandbox branch once every job above has finished. A
+  # no-op on any other ref. A sandbox replaced while still pending never reaches
+  # this job; the next handoff for the same PR prunes it.
+  sandbox-cleanup:
+    needs: [gate, notify, reset, publish, announce, cleanup]
+    if: always() && startsWith(github.ref, 'refs/heads/ci-sandbox/ota-preview/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the sandbox helper
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          sparse-checkout: scripts/lib/ci-sandbox.cjs
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Delete this run's sandbox branch
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const { deleteOwnSandbox } = require(`${process.env.GITHUB_WORKSPACE}/scripts/lib/ci-sandbox.cjs`);
+            await deleteOwnSandbox({ github, context, core, workflowKey: 'ota-preview' });

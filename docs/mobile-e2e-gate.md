@@ -126,6 +126,11 @@ gh workflow run mobile-e2e-gate.yml --ref main -f ref=<sha, branch or tag>
 `--ref` picks the copy of the workflow file. `-f ref=` picks the commit to
 test; leave it out to test the head of `--ref`.
 
+A dispatch on `main` only tests commits already in main's history: a run on
+`main` shares what it writes with every branch and PR, so `resolve` refuses
+anything else. To test a PR's commit, dispatch on its branch instead
+(`--ref <branch>`, with or without `-f ref=`).
+
 Calling it from another workflow:
 
 ```yaml

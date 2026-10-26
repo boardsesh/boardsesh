@@ -635,10 +635,15 @@ staging run is the measurement to check.
 #### Threat model: why the store is sealed
 
 The cache key is not a trust boundary. GitHub lets any workflow run whose ref is `main` write
-main-scope cache entries, and two of ours run code we did not review under that ref:
-`mobile-ota-preview.yml` on an `/ota-preview` comment for a fork PR (it checks out the fork head and
-runs the install and `app.config.ts`), and `db-migration-renumber.yml` (it runs same-repo PR code).
-That code can read the runner's cache token and save an entry named
+main-scope cache entries. Two of ours used to run code we did not review under that ref:
+`mobile-ota-preview.yml` on an `/ota-preview` comment or a refresh dispatch (it checks out the PR
+head and runs the install and `app.config.ts`), and `db-migration-renumber.yml` (it runs same-repo
+PR code). Both now hand that work to a run on a throwaway `ci-sandbox/<workflow>/pr-<n>/<run id>`
+branch at the same trusted commit (`scripts/lib/ci-sandbox.cjs`), whose writes stay in that
+branch's scope, and `scripts/__tests__/untrusted-code-workflow-guard.test.ts` fails any
+default-branch workflow that executes a computed checkout without a reviewed reason. The seal below
+stays as defence in depth, for the case that guard misses. Code running under `main` could read the
+runner's cache token and save an entry named
 `metro-ota-Linux-<inputs hash>-<env hash>-anything`. Both hashes are computable from public files
 and the workflow's public env. The exact key (`prefix` + sha) always misses on a new commit, so
 `restore-keys` would hand the planted store to the production export, Metro would trust every
@@ -2426,6 +2431,11 @@ Staging or beta moving during QA cannot change the candidate under test.
 gh workflow run mobile-ota-boot-check.yml -f ref=<40-character commit> -f branch=pr-staging
 ```
 
+A dispatch on `main` builds only what main made: the commit must be in main's history, the
+`mobile-ota-stage` artifact must come from a `main` run, and `receipt_json` is refused, since a
+hand-written receipt can name any commit or source artifact. To boot-check a PR preview with a
+hand-written receipt, dispatch on a branch (`--ref <branch>`).
+
 ### What a run does
 
 1. **Pins a receipt for the exact bytes.** The daily controller passes its frozen candidate receipt.
@@ -3523,7 +3533,14 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
     `author_association: COLLABORATOR` label is not enough. Those events run the **default-branch
     (main)** copy of the workflow, so the permission gate is not PR-editable. An accepted comment
     dispatches a trusted default-branch run into the per-PR lifecycle lane; rejected comments never
-    enter that lane or evict pending reconciliation. To make that path discoverable,
+    enter that lane or evict pending reconciliation.
+  - **No PR code runs on `main`.** A run on `main` (comment, refresh, or manual dispatch) shares what
+    it writes with every branch and PR, so its gate never publishes. It answers `handoff`: the
+    `handoff` job creates `ci-sandbox/ota-preview/pr-<n>/<run id>` at the same trusted commit and
+    dispatches this workflow there, in the same lifecycle lane. That run re-resolves the PR, checks
+    out its head and publishes; `sandbox-cleanup` deletes the branch when it ends. Each handoff
+    first deletes older sandboxes for the same PR, which catches one replaced while still pending.
+    To re-run a preview, dispatch again rather than re-running a sandbox run, whose branch is gone. To make that path discoverable,
     `mobile-ota-preview-prompt.yml` reacts directly to trusted `pull_request_target`
     metadata, verifies the PR is a fork, and reads its current file list. It removes an older fork
     preview before posting a sticky "a maintainer can `/ota-preview`" comment; on close or removal of
