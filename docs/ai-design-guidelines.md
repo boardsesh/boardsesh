@@ -530,7 +530,9 @@ collided with; the leading and trailing groups stay separate, as on the rail.
   gives up its place on the Duo rail. On a regular-width iPad it stays the glass "40°" as a custom
   view, still first in the trailing group: its picker is a popover there (`useAnglePickerPopover`),
   and a popover needs a React view to point at, which a UIKit bar item is not. For the same reason it
-  never moves into the ⋯ menu on iPad.
+  never moves into the ⋯ menu on a regular-width iPad. A compact-width iPad (Split View under 700pt)
+  behaves like an iPhone: the native title item opens the sheet and may move into the ⋯ menu. A width
+  change while the picker is open closes it first, then swaps the trigger.
 - The capsule's room and the showcase anchor measure the navigation stack's frame
   (`useFrameSize`), not the window, so the iPad sidebar is left out.
 - Custom views stay custom: the Climbs "On the wall" capsule and the controls under the bar.

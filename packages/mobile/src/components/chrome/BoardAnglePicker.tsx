@@ -29,7 +29,18 @@ export function useAnglePickerPopover(): boolean {
 }
 
 /** One angle picker shared by the toolbar angle buttons and the Climbs filter-row Angle chip. */
-export function BoardAnglePicker({ children }: { children: (open: () => void) => ReactElement }) {
+export function BoardAnglePicker({
+  children,
+  onOpenChange,
+}: {
+  children: (open: () => void) => ReactElement;
+  /**
+   * Whether the picker is on screen. A caller that swaps the trigger between a
+   * popover anchor and a sheet opener holds its choice while this is true, so
+   * the open picker closes itself instead of unmounting mid-presentation.
+   */
+  onOpenChange?: (open: boolean) => void;
+}) {
   const { t: tSession } = useTranslation('session');
   const { t: tCommon } = useTranslation('common');
   const usesPopover = useAnglePickerPopover();
@@ -54,9 +65,18 @@ export function BoardAnglePicker({ children }: { children: (open: () => void) =>
   currentScope.current = scope;
   const visible = presentation?.open === true && presentation.scope === scope && canAdjust;
 
+  // Close an open picker whose board changed, or whose presentation no longer
+  // fits the width (a Split View resize between popover and sheet).
   useEffect(() => {
-    if (presentation?.open && presentation.scope !== scope) setPresentation({ ...presentation, open: false });
-  }, [presentation, scope]);
+    if (presentation?.open && (presentation.scope !== scope || presentation.popover !== usesPopover))
+      setPresentation({ ...presentation, open: false });
+  }, [presentation, scope, usesPopover]);
+  // Reports closed when the picker closes or unmounts, so a caller never holds a stale "open".
+  useEffect(() => {
+    if (!visible || !onOpenChange) return undefined;
+    onOpenChange(true);
+    return () => onOpenChange(false);
+  }, [onOpenChange, visible]);
 
   const open = useCallback(() => {
     if (!activeBoard || !canAdjust) return;

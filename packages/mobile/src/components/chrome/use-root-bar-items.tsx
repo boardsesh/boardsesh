@@ -113,16 +113,23 @@ export function useBoardSwitcherBarItem({
 /**
  * The one-tap angle ("40°") and its picker. The picker sheet still mounts in
  * the screen: render `picker` beside the header. `item` is `null` for a
- * fixed-angle board or none.
+ * fixed-angle board or none. `onPickerOpenChange` hears the picker open and close.
  */
-export function useAngleBarItem(): { item: RootBarButtonItem | null; picker: ReactElement } {
+export function useAngleBarItem({ onPickerOpenChange }: { onPickerOpenChange?: (open: boolean) => void } = {}): {
+  item: RootBarButtonItem | null;
+  picker: ReactElement;
+} {
   const { t } = useTranslation('session');
   const { data: activeBoard } = useActiveBoard();
   const openPickerRef = useRef<(() => void) | null>(null);
   const openPicker = useCallback(() => openPickerRef.current?.(), []);
   const picker = useMemo(
-    () => <BoardAnglePicker>{(open) => <AnglePickerOpener open={open} openRef={openPickerRef} />}</BoardAnglePicker>,
-    [],
+    () => (
+      <BoardAnglePicker onOpenChange={onPickerOpenChange}>
+        {(open) => <AnglePickerOpener open={open} openRef={openPickerRef} />}
+      </BoardAnglePicker>
+    ),
+    [onPickerOpenChange],
   );
   const angle = canAdjustBoardAngle(activeBoard) ? activeBoard.angle : null;
   const item = useMemo(

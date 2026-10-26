@@ -1,6 +1,6 @@
 import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import type { ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
-import { type ReactElement, type ReactNode, isValidElement, useCallback, useMemo } from 'react';
+import { type ReactElement, type ReactNode, isValidElement, useCallback, useMemo, useState } from 'react';
 import { type LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import { useFrameSize } from 'expo-router/react-navigation';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -444,8 +444,16 @@ function CollapsingNativeBarHeader({
   // The stack's own frame: on iPad the sidebar takes part of the window.
   const frameWidth = useFrameSize((frame) => frame.width);
   const accountItem = useAccountRailItem();
-  const { item: angleItem, picker: anglePicker } = useAngleBarItem();
-  const angleAnchorsPopover = useAnglePickerPopover() && angleItem != null;
+  // Swapping the glass angle for the native item unmounts whichever picker is
+  // open. So a width-class flip waits while it is open: the picker sees the new
+  // width, closes itself, reports closed, and only then does the trigger swap.
+  const [anglePickerOpen, setAnglePickerOpen] = useState(false);
+  const { item: angleItem, picker: anglePicker } = useAngleBarItem({ onPickerOpenChange: setAnglePickerOpen });
+  const livePickerPopover = useAnglePickerPopover();
+  const [heldPickerPopover, setHeldPickerPopover] = useState(livePickerPopover);
+  if (!anglePickerOpen && heldPickerPopover !== livePickerPopover) setHeldPickerPopover(livePickerPopover);
+  const pickerPopover = anglePickerOpen ? heldPickerPopover : livePickerPopover;
+  const angleAnchorsPopover = pickerPopover && angleItem != null;
   const boardSwitcherItem = useBoardSwitcherBarItem({
     onPress: onOpenBoardSwitcher,
     accessibilityHint: boardPillAccessibilityHint,
@@ -489,7 +497,7 @@ function CollapsingNativeBarHeader({
     () => (
       <NativeHeaderActionContext.Provider value={true}>
         <GlassActionToolbar actionCount={1}>
-          <AngleToolbarAction />
+          <AngleToolbarAction onPickerOpenChange={setAnglePickerOpen} />
         </GlassActionToolbar>
       </NativeHeaderActionContext.Provider>
     ),

@@ -15,7 +15,7 @@ import { GlassToolbarAction } from './GlassActionToolbar';
  * the angle, and shows it in the Large Content Viewer where the capped label
  * can't grow.
  */
-export function AngleToolbarAction() {
+export function AngleToolbarAction({ onPickerOpenChange }: { onPickerOpenChange?: (open: boolean) => void } = {}) {
   const { systemColors } = useTheme();
   const { t } = useTranslation('session');
   const { data: activeBoard } = useActiveBoard();
@@ -23,7 +23,7 @@ export function AngleToolbarAction() {
   const spokenLabel = t('mobile.angleSelector.buttonAria', { angle: activeBoard.angle });
 
   return (
-    <BoardAnglePicker>
+    <BoardAnglePicker onOpenChange={onPickerOpenChange}>
       {(open) => (
         <GlassToolbarAction onPress={open} accessibilityLabel={spokenLabel}>
           <LargeContentViewer title={spokenLabel} onActivate={open}>
