@@ -2,7 +2,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNativeTabBar } from '../../hooks/use-bottom-accessory';
-import { publishNativeTabContentInsetBottom } from '../../lib/native-tab-content-inset-store';
+import {
+  publishNativeTabContentInsetBottom,
+  publishNativeTabContentInsetSide,
+} from '../../lib/native-tab-content-inset-store';
 
 /**
  * Publishes the bottom safe-area inset measured INSIDE a native tab's content to
@@ -11,6 +14,8 @@ import { publishNativeTabContentInsetBottom } from '../../lib/native-tab-content
  * expo-router's `NativeTabsView` wraps around every tab's content, so the inset
  * it reads includes the UIKit tab bar, the BottomAccessory, and the live
  * minimize state (unlike the root provider, which only sees the home indicator).
+ * It also publishes the larger side inset, where a tab bar drawn as a vertical
+ * rail (iPhone Duo) shows up.
  *
  * Renders nothing, publishes nothing off the native-tab-bar path (Material,
  * tablets, Android — `useNativeTabBar()` is the same predicate that
@@ -41,6 +46,12 @@ function NativeTabContentInsetPublisher() {
     if (!isFocused) return;
     publishNativeTabContentInsetBottom(insets.bottom);
   }, [isFocused, insets.bottom]);
+
+  const sideInset = Math.max(insets.left, insets.right);
+  useEffect(() => {
+    if (!isFocused) return;
+    publishNativeTabContentInsetSide(sideInset);
+  }, [isFocused, sideInset]);
 
   return null;
 }

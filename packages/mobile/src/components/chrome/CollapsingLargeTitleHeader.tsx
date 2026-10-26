@@ -4,6 +4,7 @@ import { type ReactNode, useCallback } from 'react';
 import { type LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/theme-provider';
+import { useHorizontalSafeArea } from '../../hooks/use-horizontal-safe-area';
 import { spacing } from '../../theme/tokens';
 import { Text } from '../Text';
 import { ProgressiveBlur } from '../ProgressiveBlur';
@@ -60,6 +61,7 @@ export function CollapsingLargeTitleHeader({
 }: CollapsingLargeTitleHeaderProps) {
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
+  const horizontalSafeArea = useHorizontalSafeArea();
   const nativeHeader = useNativeRootHeader();
 
   // Always-on progressive blur from the top of the screen to just below the
@@ -92,7 +94,16 @@ export function CollapsingLargeTitleHeader({
           just below the islands, strongest up top and fading to clear, so content
           frosts out gradually and the status-bar strip reads as glass. */}
       <ProgressiveBlur style={[styles.blur, { height: blurHeight }]} />
-      <View pointerEvents="box-none" style={{ paddingTop: insets.top }} onLayout={handleLayout}>
+      {/* The blur stays full width; the islands and controls clear a side status bar. */}
+      <View
+        pointerEvents="box-none"
+        style={{
+          paddingTop: insets.top,
+          paddingLeft: horizontalSafeArea.left,
+          paddingRight: horizontalSafeArea.right,
+        }}
+        onLayout={handleLayout}
+      >
         {/* A standard three-section nav row: left island, a flexible centre that
           holds the optional persistent title, right island. The flex centre keeps
           a long title from sliding under the islands — it ellipsizes in the gap

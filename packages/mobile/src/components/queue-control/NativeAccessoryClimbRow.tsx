@@ -1,4 +1,5 @@
-import { StyleSheet, View, type ColorValue } from 'react-native';
+import { useCallback, useState } from 'react';
+import { StyleSheet, View, type ColorValue, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { Climb } from '@boardsesh/queue';
 import type { BoardName } from '@boardsesh/shared-schema';
@@ -28,6 +29,7 @@ import {
   type BoardConnectionBadgeVisual,
 } from './board-control-indicator-state';
 import type { AccessoryPlacement } from '../../lib/analytics-board-connect';
+import { accessoryFitsBothControls } from './accessory-control-slots';
 
 type NativeAccessoryClimbRowProps = {
   climb: Climb;
@@ -41,6 +43,9 @@ const ACCESSORY_LEADING_INSET = spacing[4];
 const ACCESSORY_TRAILING_INSET = spacing[2];
 // One artwork size in both placements, as Music uses (~30pt).
 const ACCESSORY_PLATTER_THUMBNAIL_SIZE = 32;
+// `labelInner`'s gap after the artwork and its trailing padding.
+const ACCESSORY_THUMBNAIL_GAP = spacing[2];
+const ACCESSORY_LABEL_TRAILING_PADDING = spacing[1];
 
 type ClimbLabelProps = {
   climb: Climb;
@@ -158,6 +163,21 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
   const isInline = placement === 'inline';
   const rowHeight = isInline ? glassSize.inline : glassSize.standard;
   const thumbnailSize = boardConfig === null ? null : ACCESSORY_PLATTER_THUMBNAIL_SIZE;
+  // The width UIKit gave the platter. A narrow open platter (iPhone Duo's outer
+  // display, beside the side tab rail) keeps one control, like the collapsed one,
+  // so the name has room to read (see accessoryFitsBothControls).
+  const [rowWidth, setRowWidth] = useState<number | null>(null);
+  const handleRowLayout = useCallback((event: LayoutChangeEvent) => {
+    const measuredWidth = Math.round(event.nativeEvent.layout.width);
+    setRowWidth((previous) => (previous === measuredWidth ? previous : measuredWidth));
+  }, []);
+  const widthBesideName =
+    ACCESSORY_LEADING_INSET +
+    (thumbnailSize === null ? 0 : thumbnailSize + ACCESSORY_THUMBNAIL_GAP) +
+    ACCESSORY_LABEL_TRAILING_PADDING +
+    2 * glassSize.inline +
+    ACCESSORY_TRAILING_INSET;
+  const singleControlSlot = isInline || !accessoryFitsBothControls(rowWidth, widthBesideName);
   // The platter shows a plain (non-colorized) grade; only the label swaps to the
   // Boardsesh grade when the toggle is on and a trusted one exists.
   const currentFormattedGrade = resolveGrade(climb, boardConfig?.boardName).label;
@@ -170,14 +190,14 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
     ledless,
     wallHeldColor: brandColors.primary,
   });
-  // One slot when collapsed: the bulb only while there is a board to connect to
-  // and nobody holds it. With no board bound the bulb renders nothing, so the
-  // tick keeps the slot.
+  // One slot when collapsed or narrow: the bulb only while there is a board to
+  // connect to and nobody holds it. With no board bound the bulb renders nothing,
+  // so the tick keeps the slot.
   const collapsedSlotShowsBulb = bluetooth != null && inAppBoardConnection === 'disconnected';
-  // The open platter's bulb already speaks the state; collapsed, only the mark
-  // shows it, so the climb link says it.
+  // A visible bulb already speaks the state; with one slot, only the mark shows
+  // it, so the climb link says it.
   const connectionValue =
-    isInline && inAppBoardConnection !== 'disconnected'
+    singleControlSlot && inAppBoardConnection !== 'disconnected'
       ? getBoardConnectionLabel(t, { boardConnection: inAppBoardConnection, ledless, holderDisplayName })
       : undefined;
 
@@ -191,6 +211,7 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
       // the real platter: open, by ~10pt, cramming the tick into the edge; collapsed,
       // where the bar also holds the selected and prominent tabs, by far more.
       style={[styles.row, { height: rowHeight }]}
+      onLayout={handleRowLayout}
       testID={testID}
       accessible={testID ? true : undefined}
       accessibilityLabel={testID ? climb.name : undefined}
@@ -222,10 +243,10 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
       {/* The trailing controls sit beside the climb gesture, never inside it, so
           their 44pt tap targets are never stolen by the row's tap. Long-press on
           the bulb opens the controls sheet, as on the other lightbulbs now that a
-          short press disconnects. Collapsed, the one slot swaps its child in place
-          and the row never remounts: UIKit snapshots the platter between
+          short press disconnects. Collapsed or narrow, the one slot swaps its child
+          in place and the row never remounts: UIKit snapshots the platter between
           placements. */}
-      {isInline ? (
+      {singleControlSlot ? (
         <View style={[styles.controlSlot, { width: glassSize.inline, height: rowHeight }]}>
           {collapsedSlotShowsBulb ? (
             <BoardControlIndicator
@@ -281,8 +302,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     minWidth: 0,
-    gap: spacing[2],
-    paddingEnd: spacing[1],
+    gap: ACCESSORY_THUMBNAIL_GAP,
+    paddingEnd: ACCESSORY_LABEL_TRAILING_PADDING,
   },
   titleBlock: {
     flex: 1,

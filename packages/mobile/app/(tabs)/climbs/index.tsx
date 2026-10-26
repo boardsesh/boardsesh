@@ -1,5 +1,6 @@
 import { scheduleIdleTask } from '../../../src/lib/schedule-idle-task';
 import { useNativeRootHeader } from '../../../src/hooks/use-native-root-header';
+import { useHorizontalSafeArea } from '../../../src/hooks/use-horizontal-safe-area';
 import { useListTopOffset } from '../../../src/hooks/use-list-top-offset';
 import { useListChromeClearance } from '../../../src/hooks/use-list-chrome-clearance';
 import { ScrollEdgeListReset, useScrollEdgeBackdrop } from '../../../src/hooks/use-scroll-edge-backdrop';
@@ -357,6 +358,8 @@ function ClimbListInner() {
   // The name as last typed in the Filters sheet, before the debounce commits it.
   const visibleSearchTextRef = useRef('');
   const insets = useSafeAreaInsets();
+  // iPhone Duo's side tab rail and status bar; 0 on a portrait iPhone.
+  const horizontalSafeArea = useHorizontalSafeArea();
   const bottomChrome = useBottomChromeMetrics();
 
   const listPaddingBottom = bottomChrome.scrollBottomPadding;
@@ -2104,13 +2107,20 @@ function ClimbListInner() {
   );
 
   // The list-clip wrapper's style (see the render below): full-bleed on Liquid
-  // Glass, clipped below the measured chrome on Material. Memoized so Android
-  // doesn't allocate a new style array on every render of this screen.
+  // Glass, clipped below the measured chrome on Material. Its sides clear the
+  // side safe area, so the grade column and ⋮ never sit under iPhone Duo's tab
+  // rail; the rows keep their own 16pt gutter. Memoized so Android doesn't
+  // allocate a new style array on every render of this screen.
   // Must stay above the no-board early return: a hook below it changes the
   // hook count when the board config resolves (BOARDSESH-K1 / BOARDSESH-K2).
+  const { left: listClipLeft, right: listClipRight } = horizontalSafeArea;
   const listClipStyle = useMemo(
-    () => (filterInTopChrome ? [styles.listClip, { top: searchBarHeight }] : styles.listClip),
-    [filterInTopChrome, searchBarHeight],
+    () => [
+      styles.listClip,
+      { left: listClipLeft, right: listClipRight },
+      filterInTopChrome ? { top: searchBarHeight } : null,
+    ],
+    [filterInTopChrome, searchBarHeight, listClipLeft, listClipRight],
   );
 
   if (!hasBoardConfig && isBoardRestoreError) {

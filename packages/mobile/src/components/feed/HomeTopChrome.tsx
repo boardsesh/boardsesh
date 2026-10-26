@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Appbar } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../../providers/theme-provider';
+import { useHorizontalSafeArea } from '../../hooks/use-horizontal-safe-area';
 import { createVariantComponent } from '../../theme/variants';
 import { spacing } from '../../theme/tokens';
 import { Icon } from '../Icon';
@@ -82,6 +83,7 @@ function HomeTopChromeGlass({
 }: HomeTopChromeProps) {
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
+  const horizontalSafeArea = useHorizontalSafeArea();
   const router = useRouter();
   const nativeHeader = useNativeRootHeader();
 
@@ -129,7 +131,14 @@ function HomeTopChromeGlass({
           RNGH's Android hit-test still targets them. */}
       <View
         pointerEvents="box-none"
-        style={[styles.headerChrome, { paddingTop: insets.top + spacing[1] }]}
+        style={[
+          styles.headerChrome,
+          {
+            paddingTop: insets.top + spacing[1],
+            paddingLeft: horizontalSafeArea.left,
+            paddingRight: horizontalSafeArea.right,
+          },
+        ]}
         onLayout={handleLayout}
       >
         <View pointerEvents="box-none" style={styles.headerRow}>
@@ -180,6 +189,7 @@ function HomeTopChromeMaterial({
 }: HomeTopChromeProps) {
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
+  const horizontalSafeArea = useHorizontalSafeArea();
   const router = useRouter();
 
   const handleLayout = useCallback(
@@ -197,6 +207,8 @@ function HomeTopChromeMaterial({
         styles.materialContainer,
         {
           paddingTop: insets.top,
+          paddingLeft: horizontalSafeArea.left,
+          paddingRight: horizontalSafeArea.right,
           backgroundColor: systemColors.secondaryBackground,
           borderBottomColor: systemColors.separator,
         },

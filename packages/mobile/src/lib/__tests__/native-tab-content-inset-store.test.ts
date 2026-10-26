@@ -3,9 +3,11 @@ import { beforeEach, describe, it, expect } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import {
   publishNativeTabContentInsetBottom,
+  publishNativeTabContentInsetSide,
   resetNativeTabContentInsetForTests,
   useNativeTabContentInsetBottom,
   useNativeTabContentInsetPublishCount,
+  useNativeTabContentInsetSide,
 } from '../native-tab-content-inset-store';
 
 describe('native-tab-content-inset-store', () => {
@@ -45,6 +47,24 @@ describe('native-tab-content-inset-store', () => {
     const { result } = renderHook(() => useNativeTabContentInsetBottom());
     act(() => publishNativeTabContentInsetBottom(0));
     expect(result.current).toBe(0);
+  });
+
+  it('carries the side inset apart from the bottom one', () => {
+    // INFERRED from a simulator log: a tab on iPhone Duo's inner display in
+    // landscape read { right: 84, bottom: 34 } with the side rail.
+    const { result: side } = renderHook(() => useNativeTabContentInsetSide());
+    const { result: bottom } = renderHook(() => useNativeTabContentInsetBottom());
+    const { result: publishCount } = renderHook(() => useNativeTabContentInsetPublishCount());
+    expect(side.current).toBeNull();
+    act(() => publishNativeTabContentInsetSide(84));
+    expect(side.current).toBe(84);
+    expect(bottom.current).toBeNull();
+    // The diagnostic counter tracks bottom publishes only.
+    expect(publishCount.current).toBe(0);
+    act(() => publishNativeTabContentInsetSide(84.3));
+    expect(side.current).toBe(84);
+    act(() => resetNativeTabContentInsetForTests());
+    expect(side.current).toBeNull();
   });
 
   it('resets to the unmeasured state for tests', () => {

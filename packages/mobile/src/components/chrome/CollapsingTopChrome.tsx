@@ -10,6 +10,7 @@ import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { canAdjustBoardAngle } from '../../lib/boards/can-adjust-board-angle';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useNativeGlass } from '../../hooks/use-native-glass';
+import { useHorizontalSafeArea } from '../../hooks/use-horizontal-safe-area';
 import { shadows } from '../../theme/tokens';
 import { Icon } from '../Icon';
 import { GlassSurface } from '../GlassSurface';
@@ -120,6 +121,7 @@ export function CollapsingTopChrome({
 }: CollapsingTopChromeProps) {
   const { systemColors, variant } = useTheme();
   const insets = useSafeAreaInsets();
+  const horizontalSafeArea = useHorizontalSafeArea();
   const nativeGlass = useNativeGlass();
   const nativeHeader = useNativeRootHeader();
   const { data: activeBoard } = useActiveBoard();
@@ -148,6 +150,8 @@ export function CollapsingTopChrome({
           styles.materialContainer,
           {
             paddingTop: insets.top,
+            paddingLeft: horizontalSafeArea.left,
+            paddingRight: horizontalSafeArea.right,
             backgroundColor: systemColors.secondaryBackground,
             borderBottomColor: systemColors.separator,
           },

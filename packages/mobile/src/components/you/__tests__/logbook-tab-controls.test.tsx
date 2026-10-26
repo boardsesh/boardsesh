@@ -79,6 +79,11 @@ const feed = vi.hoisted(() => ({
 
 vi.mock('../../../lib/analytics', () => ({ track: analytics.track }));
 
+// ReadableColumn pads by the side safe area; a portrait phone has none.
+vi.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
+}));
+
 vi.mock('react-native', () => ({
   Platform: {
     get OS() {

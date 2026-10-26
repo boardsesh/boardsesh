@@ -14,6 +14,7 @@ import { useTheme } from '../../src/providers/theme-provider';
 import { selectByVariant } from '../../src/theme/variants/select-by-variant';
 import { useTabChrome } from '../../src/hooks/use-bottom-accessory';
 import { useAccessoryHostRoute } from '../../src/hooks/use-accessory-host-route';
+import { useVerticalTabBar } from '../../src/hooks/use-vertical-tab-bar';
 import { useDeviceLayout } from '../../src/hooks/use-device-layout';
 import { TabletSidebar } from '../../src/components/navigation/TabletSidebar';
 import { IpadPlayPane } from '../../src/components/play-drawer/IpadPlayPane';
@@ -156,6 +157,13 @@ export default function TabLayout() {
   // only: that is where the bar collapses.
   const prominentClimbsTab =
     liquidGlassTabBar && !deviceLayout.isPad && Platform.OS === 'ios' && parseInt(String(Platform.Version), 10) >= 27;
+  // On iPhone Duo the bar is a vertical rail, and collapsing it on scroll leaves
+  // only Climbs: Home, Record, Discover and Profile disappear until the climber
+  // scrolls back up. HIG ("Designing for iPhone Duo"): in navigation-focused
+  // screens, keep "the tab bar and primary destinations" accessible. So the rail
+  // never minimizes; the horizontal iPhone bar keeps minimize-on-scroll.
+  const verticalTabBar = useVerticalTabBar();
+  const tabBarMinimizeBehavior = liquidGlassTabBar ? (verticalTabBar ? 'never' : 'onScrollDown') : undefined;
   const { width: windowWidth } = useWindowDimensions();
   // The focused tab drives the wall-redundancy rule below: when the "On the
   // Wall" destination is open, the ambient column is suppressed so the same feed
@@ -363,7 +371,7 @@ export default function TabLayout() {
     // value below 26), so the iOS 18 bar keeps the system default.
     <NativeTabs
       sidebarAdaptable={deviceLayout.isPad}
-      minimizeBehavior={liquidGlassTabBar ? 'onScrollDown' : undefined}
+      minimizeBehavior={tabBarMinimizeBehavior}
       unstable_nativeProps={accessoryNativeProps}
       iconColor={{ default: systemColors.secondaryLabel, selected: systemColors.label }}
       labelStyle={{ default: { color: systemColors.secondaryLabel }, selected: { color: systemColors.label } }}

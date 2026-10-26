@@ -43,6 +43,9 @@ const cfg = vi.hoisted(() => ({
   // Focused route segments — drives the wall-tab redundancy rule (the ambient
   // column is hidden while the "On the Wall" tab is the focused destination).
   segments: ['(tabs)', 'home'] as readonly string[],
+  // iOS draws the native tab bar as a vertical rail (iPhone Duo closed, or its
+  // inner display in landscape). `resolveVerticalTabBar` has its own tests.
+  verticalTabBar: false,
   materialScreens: [] as Array<{ name: string; options?: { lazy?: boolean; href?: string | null } }>,
 }));
 
@@ -167,6 +170,10 @@ vi.mock('../../../src/hooks/use-bottom-accessory', async () => {
       }),
   };
 });
+
+vi.mock('../../../src/hooks/use-vertical-tab-bar', () => ({
+  useVerticalTabBar: () => cfg.verticalTabBar,
+}));
 
 // Stub the Material-variant path so it doesn't pull in native modules.
 vi.mock('expo-router', () => {
@@ -334,6 +341,7 @@ describe('TabLayout', () => {
     cfg.activeBoard = null;
     cfg.wallDeviceClass = 'panel-capable';
     cfg.segments = ['(tabs)', 'home'];
+    cfg.verticalTabBar = false;
     cfg.materialScreens = [];
     keepAwake.activate.mockClear();
     keepAwake.deactivate.mockClear();
@@ -848,6 +856,14 @@ describe('TabLayout', () => {
     const { container } = render(<TabLayout />);
 
     expect(container.querySelector('[data-tabs="true"]')?.getAttribute('data-minimize-behavior')).toBe('onScrollDown');
+  });
+
+  it('never minimizes a vertical tab rail', () => {
+    // Minimized, the Duo's rail kept only Climbs and hid the other four tabs.
+    cfg.verticalTabBar = true;
+    const { container } = render(<TabLayout />);
+
+    expect(container.querySelector('[data-tabs="true"]')?.getAttribute('data-minimize-behavior')).toBe('never');
   });
 
   it('uses adaptive neutral colors for native Liquid Glass tab icons and labels', () => {

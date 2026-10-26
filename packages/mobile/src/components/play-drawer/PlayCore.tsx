@@ -128,6 +128,7 @@ import {
 } from './PlayCoreEnhancements';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
+import { useHorizontalSafeArea } from '../../hooks/use-horizontal-safe-area';
 import { useShareClimb } from '../../hooks/use-share-climb';
 import { activeBoardIsMoonboard } from '../../hooks/use-active-board-is-moonboard';
 import { isMoonboardBoardName } from '@boardsesh/board-config';
@@ -225,6 +226,11 @@ export function PlayCore({
   // of the climb actions' copy.
   const { t: tClimbs } = useTranslation('climbs');
   const insets = useSafeAreaInsets();
+  // On iPhone Duo the status bar sits on the trailing edge, over ⋯ and the grade.
+  // The route pads its scroll content clear of it; 0 on a portrait iPhone. The
+  // pane's host owns its edges, so the pane takes none here.
+  const routeHorizontalSafeArea = useHorizontalSafeArea();
+  const contentSideInsets = isPane ? null : routeHorizontalSafeArea;
   // The close chevron's footprint (44pt on iOS, 48dp on Material). The top row's
   // trailing cluster takes the same height so ⋯ centres on the chevron, and an
   // Android 48dp overflow button sits inside the cluster it is tapped through.
@@ -1970,7 +1976,12 @@ export function PlayCore({
               bounces={false}
               overScrollMode="never"
               style={styles.content}
-              contentContainerStyle={{ paddingBottom: insets.bottom, minHeight: initialScrollHeight }}
+              contentContainerStyle={{
+                paddingBottom: insets.bottom,
+                paddingLeft: contentSideInsets?.left,
+                paddingRight: contentSideInsets?.right,
+                minHeight: initialScrollHeight,
+              }}
               onLayout={onViewportMeasured}
               onScroll={handleScroll}
               scrollEventThrottle={16}

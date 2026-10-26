@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/theme-provider';
 import { useFloatingHeaderControls } from '../../hooks/use-floating-header-controls';
 import { useGlassCapability } from '../../hooks/use-glass-capability';
+import { useHorizontalSafeArea } from '../../hooks/use-horizontal-safe-area';
 import type { ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
 import { glassSize } from '../../theme/layout';
 
@@ -185,12 +186,18 @@ function HeaderControls({
   const { systemColors } = useTheme();
   const canFloat = useFloatingHeaderControls();
   const floating = canFloat && !opaque;
+  // Clear of iPhone Duo's side status bar and tab rail; 0 on a portrait iPhone.
+  const { left, right } = useHorizontalSafeArea();
   return (
     <View
       testID="header-controls"
       // Controls and their gaps own touches rather than opening a row underneath.
       pointerEvents="auto"
-      style={[styles.controls, { top: headerHeight }, floating ? null : { backgroundColor: systemColors.background }]}
+      style={[
+        styles.controls,
+        { top: headerHeight, left, right },
+        floating ? null : { backgroundColor: systemColors.background },
+      ]}
     >
       <View pointerEvents="box-none" onLayout={onLayout}>
         {children}

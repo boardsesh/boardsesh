@@ -6,6 +6,7 @@ import type { LegacyPanGesture as PanGesture } from 'react-native-gesture-handle
 import type { SharedValue } from 'react-native-reanimated';
 import { countDistinctSessionUsers } from '@boardsesh/queue-runtime';
 import { useQueueSessionId, useQueueLiveStats } from '../../providers/queue-provider';
+import { HorizontalSafeAreaApplied, useHorizontalSafeArea } from '../../hooks/use-horizontal-safe-area';
 import { SessionScreenHeader } from './SessionScreenHeader';
 import { useSessionExitOptions } from './use-session-exit-options';
 import { PreSessionView } from './pre-session/PreSessionView';
@@ -39,6 +40,9 @@ export function SessionScreen({ onClose, headerGesture, translateY, screenHeight
   const { sessionId } = useQueueSessionId();
   const { sessionUsers } = useQueueLiveStats();
   const insets = useSafeAreaInsets();
+  // Tab mode pads clear of iPhone Duo's side tab rail and status bar, so the Start
+  // capsule, the toggles and the chrome inside need no inset of their own.
+  const { left: safeAreaLeft, right: safeAreaRight } = useHorizontalSafeArea();
   const [showInvite, setShowInvite] = useState(false);
   const isFocused = useIsFocused();
   const router = useRouter();
@@ -153,29 +157,31 @@ export function SessionScreen({ onClose, headerGesture, translateY, screenHeight
 
   // Tab mode: the chrome (large title + board pill + share) floats inside the
   // view over its own FlashList, which insets its top padding by the measured
-  // chrome height. No padded container, no header strip.
+  // chrome height. No top padding (only the side safe area), no header strip.
   return (
-    <View style={styles.container}>
-      {showLiveSession ? (
-        <InSessionView
-          showChrome
-          onShare={onShare}
-          onRequestEndSession={requestEndSession}
-          endVisible={showEndSession}
-          onEndDismiss={dismissEndSession}
-        />
-      ) : (
-        <PreSessionView
-          showChrome
-          onStartingChange={handleStartingChange}
-          onStarted={handleStarted}
-          isOpeningClimbs={isOpeningClimbs}
-        />
-      )}
-      {sessionId ? (
-        <InviteSheet visible={showInvite} onDismiss={() => setShowInvite(false)} sessionId={sessionId} />
-      ) : null}
-    </View>
+    <HorizontalSafeAreaApplied>
+      <View style={[styles.container, { paddingLeft: safeAreaLeft, paddingRight: safeAreaRight }]}>
+        {showLiveSession ? (
+          <InSessionView
+            showChrome
+            onShare={onShare}
+            onRequestEndSession={requestEndSession}
+            endVisible={showEndSession}
+            onEndDismiss={dismissEndSession}
+          />
+        ) : (
+          <PreSessionView
+            showChrome
+            onStartingChange={handleStartingChange}
+            onStarted={handleStarted}
+            isOpeningClimbs={isOpeningClimbs}
+          />
+        )}
+        {sessionId ? (
+          <InviteSheet visible={showInvite} onDismiss={() => setShowInvite(false)} sessionId={sessionId} />
+        ) : null}
+      </View>
+    </HorizontalSafeAreaApplied>
   );
 }
 
