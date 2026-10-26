@@ -40,6 +40,7 @@ export function BluetoothProviderWrapper({ children }: { children: ReactNode }) 
       sizeId={activeBoard?.sizeId}
       setIds={activeBoard?.setIds}
       boardUuid={activeBoard?.uuid}
+      boardSerialNumber={activeBoard?.serialNumber}
       hasLeds={activeBoard?.hasLeds}
     >
       {activeBoard ? (

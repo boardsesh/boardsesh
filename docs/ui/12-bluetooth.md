@@ -45,6 +45,18 @@ and configuration control the hop. Reconnect waits for that UUID, board type,
 layout, size and normalized hold sets to reach the provider, including a change
 that affects only the UUID or hold sets. The one-shot still expires and fires once.
 
+On iOS, adopting a connection restored outside JavaScript waits until reconnect
+memory finishes loading, including a failed read (#5429). A named controller's
+serial must agree with each known identity: memory for the active board UUID key
+and the active saved board's roster serial. A contradictory roster serial rejects
+even a previously poisoned matching memory record; unrelated-key memory does not
+identify the current wall. Rejection happens before adapter creation, native
+configuration, connection callbacks or persistence. Nameless reconnects retain
+the existing current-config memory requirement. Explicit connect/disconnect intent
+wins over a delayed storage read, so it cannot overwrite a new pairing or restore
+a forgotten one. Identity readiness and roster-serial changes refresh the native
+subscription/query, and superseded results cannot adopt a connection.
+
 **Auto-connect (`AutoConnectHandler`):**
 
 - Reads `?autoConnect={serialNumber}` from URL search params.

@@ -7,6 +7,7 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 // Controllable active-board read. The whole point of the regression is the
 // async undefined -> board transition, so the test drives it explicitly.
 const activeBoard = vi.hoisted(() => ({ data: undefined as UserBoard | undefined }));
+const provider = vi.hoisted(() => ({ props: undefined as { boardSerialNumber?: string | null } | undefined }));
 // The gym roster behind this is a React Query hook reaching the GraphQL client,
 // which pulls react-native's Flow source into a harness that mocks it narrowly.
 // An empty set is "no other board in reach" — the behaviour these tests describe.
@@ -19,8 +20,10 @@ vi.mock('../../lib/graphql/use-active-board', () => ({
 // BluetoothProvider is stubbed to a passthrough so the test exercises only the
 // wrapper's element-stability decision, not the real BLE provider's internals.
 vi.mock('../bluetooth-provider', () => ({
-  BluetoothProvider: ({ children }: { children: ReactNode }) =>
-    createElement('div', { 'data-testid': 'bluetooth-provider' }, children),
+  BluetoothProvider: (props: { children: ReactNode; boardSerialNumber?: string | null }) => {
+    provider.props = props;
+    return createElement('div', { 'data-testid': 'bluetooth-provider' }, props.children);
+  },
 }));
 
 vi.mock('../../lib/live-activity/live-activity-bridge', () => ({
@@ -52,6 +55,7 @@ const board = {
 describe('BluetoothProviderWrapper', () => {
   beforeEach(() => {
     activeBoard.data = undefined;
+    provider.props = undefined;
     mountCounter.mockClear();
   });
 
@@ -72,6 +76,12 @@ describe('BluetoothProviderWrapper', () => {
     // The child must NOT remount: BluetoothProvider stays at the same tree
     // position, so the navigation subtree below it is untouched.
     expect(mountCounter).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes the active saved board controller serial to the Bluetooth provider', () => {
+    activeBoard.data = { ...board, serialNumber: 'roster-B' };
+    render(createElement(BluetoothProviderWrapper, null, createElement(MountProbe)));
+    expect(provider.props?.boardSerialNumber).toBe('roster-B');
   });
 
   it('only mounts the LiveActivityBridge once a board is present', () => {

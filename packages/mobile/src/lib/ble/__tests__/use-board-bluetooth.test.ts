@@ -2200,6 +2200,8 @@ describe('useBoardBluetooth native connection adoption', () => {
     vi.clearAllMocks();
     resetReactNativePermissionHarness();
     connectedListener = null;
+    mockLastConnectedBoardStore.getStoredLastConnectedBoard.mockReset();
+    mockLastConnectedBoardStore.getStoredLastConnectedBoard.mockResolvedValue(null);
     vi.mocked(subscribeNativeBleConnected).mockImplementation((listener) => {
       connectedListener = listener;
       return { remove: vi.fn() };
@@ -2232,6 +2234,8 @@ describe('useBoardBluetooth native connection adoption', () => {
 
     renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
 
+    // Finish reconnect-memory hydration before emitting a native connection.
+    await act(async () => {});
     await act(async () => {
       connectedListener?.({ deviceId: 'native-dev', deviceName: 'Kilter Board#9@3' });
     });
@@ -2253,6 +2257,8 @@ describe('useBoardBluetooth native connection adoption', () => {
 
     const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
 
+    // Finish reconnect-memory hydration before emitting a native connection.
+    await act(async () => {});
     await act(async () => {
       await result.current.connect();
     });
@@ -2274,6 +2280,8 @@ describe('useBoardBluetooth native connection adoption', () => {
       },
     });
 
+    // Finish reconnect-memory hydration before emitting a native connection.
+    await act(async () => {});
     await act(async () => {
       connectedListener?.({ deviceId: 'native-dev', deviceName: 'Kilter Board#9@3' });
     });
@@ -2304,6 +2312,8 @@ describe('useBoardBluetooth native connection adoption', () => {
 
     const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
 
+    // Finish reconnect-memory hydration before emitting a native connection.
+    await act(async () => {});
     await act(async () => {
       connectedListener?.({ deviceId: 'native-dev', deviceName: 'Kilter Board#9@3' });
     });
@@ -2327,6 +2337,8 @@ describe('useBoardBluetooth native connection adoption', () => {
 
     const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
 
+    // Finish reconnect-memory hydration before emitting a native connection.
+    await act(async () => {});
     await act(async () => {
       connectedListener?.({ deviceId: 'native-dev', deviceName: 'Kilter Board#9@3' });
     });
@@ -2360,6 +2372,8 @@ describe('useBoardBluetooth native connection adoption', () => {
 
     const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
 
+    // Finish reconnect-memory hydration before emitting a native connection.
+    await act(async () => {});
     await act(async () => {
       connectedListener?.({ deviceId: 'native-dev', deviceName: 'Kilter Board#9@3' });
     });
@@ -2383,6 +2397,8 @@ describe('useBoardBluetooth native connection adoption', () => {
 
     const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
 
+    // Finish reconnect-memory hydration before emitting a native connection.
+    await act(async () => {});
     await act(async () => {
       connectedListener?.({ deviceId: 'native-dev', deviceName: 'Kilter Board#9@3' });
     });
@@ -2399,6 +2415,8 @@ describe('useBoardBluetooth native connection adoption', () => {
 
     const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
 
+    // Finish reconnect-memory hydration before emitting a native connection.
+    await act(async () => {});
     await act(async () => {
       connectedListener?.({ deviceId: 'native-dev', deviceName: 'Kilter Board#9@3' });
     });
@@ -2413,6 +2431,8 @@ describe('useBoardBluetooth native connection adoption', () => {
 
     const { result } = renderHook(() => useBoardBluetooth({ boardName: 'moonboard', layoutId: 1, sizeId: 1 }));
 
+    // Finish reconnect-memory hydration before emitting a native connection.
+    await act(async () => {});
     await act(async () => {
       connectedListener?.({ deviceId: 'moon-native-dev', deviceName: 'MoonBoard A1' });
     });
@@ -2440,6 +2460,8 @@ describe('useBoardBluetooth native connection adoption', () => {
       },
     });
 
+    // Finish reconnect-memory hydration before emitting a native connection.
+    await act(async () => {});
     await act(async () => {
       connectedListener?.({ deviceId: 'native-dev', deviceName: 'Kilter Board#9@3' });
     });
@@ -2491,6 +2513,7 @@ describe('useBoardBluetooth native connection adoption', () => {
 
     renderHook(() => useBoardBluetooth({ boardName: 'woods', layoutId: 1, sizeId: 1 }));
 
+    await act(async () => {});
     expect(subscribeNativeBleConnected).toHaveBeenCalledTimes(1);
   });
 
@@ -2500,6 +2523,8 @@ describe('useBoardBluetooth native connection adoption', () => {
 
     const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
 
+    // Finish reconnect-memory hydration before emitting a native connection.
+    await act(async () => {});
     await act(async () => {
       // Unnamed device ('' from the bridge) — could be anything, e.g. a
       // MoonBoard that would receive Aurora-format packets.
@@ -2544,6 +2569,8 @@ describe('useBoardBluetooth native connection adoption', () => {
       }),
     );
 
+    // Finish reconnect-memory hydration before emitting a native connection.
+    await act(async () => {});
     await act(async () => {
       connectedListener?.({ deviceId: 'native-dev-1', deviceName: 'Kilter Board#9@3' });
     });
@@ -2601,6 +2628,8 @@ describe('useBoardBluetooth native connection adoption', () => {
       useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1, onConnectSuccess }),
     );
 
+    // Finish reconnect-memory hydration before emitting a native connection.
+    await act(async () => {});
     await act(async () => {
       connectedListener?.({ deviceId: 'native-dev-1', deviceName: 'Kilter Board#9@3' });
     });
@@ -2630,6 +2659,8 @@ describe('useBoardBluetooth native connection adoption', () => {
 
     const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
 
+    // Finish reconnect-memory hydration before emitting a native connection.
+    await act(async () => {});
     await act(async () => {
       connectedListener?.({ deviceId: 'native-dev', deviceName: 'Kilter Board#9@3' });
     });
@@ -2649,6 +2680,263 @@ describe('useBoardBluetooth native connection adoption', () => {
 
     expect(adapter.adoptConnection).toHaveBeenCalledTimes(1);
     expect(result.current.isConnected).toBe(false);
+  });
+});
+
+// ── Native controller identity hydration (#5429) ────────────────────────────
+
+describe('useBoardBluetooth native identity hydration', () => {
+  type StoredBoard = { configKey: string; serial?: string; deviceId?: string };
+  type ConnectedListener = (payload: { deviceId: string; deviceName?: string }) => void;
+  let connectedListener: ConnectedListener | null = null;
+  const currentConfigKey = 'kilter::1::1::wall-b';
+  const currentBoard = { boardName: 'kilter', layoutId: 1, sizeId: 1, boardUuid: 'wall-b' };
+
+  function deferred<Result>() {
+    let resolve!: (result: Result) => void;
+    let reject!: (error: Error) => void;
+    const promise = new Promise<Result>((resolvePromise, rejectPromise) => {
+      resolve = resolvePromise;
+      reject = rejectPromise;
+    });
+    return { promise, resolve, reject };
+  }
+
+  function makeAdoptableAdapter() {
+    return {
+      ...makeFakeAdapter(),
+      adoptConnection: vi.fn(),
+      configureBoard: vi.fn().mockResolvedValue(undefined),
+    };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetReactNativePermissionHarness();
+    mockAppState.currentState = 'active';
+    connectedListener = null;
+    mockLastConnectedBoardStore.getStoredLastConnectedBoard.mockReset();
+    mockLastConnectedBoardStore.getStoredLastConnectedBoard.mockResolvedValue(null);
+    mockLastConnectedBoardStore.setStoredLastConnectedBoard.mockReset();
+    mockLastConnectedBoardStore.setStoredLastConnectedBoard.mockResolvedValue(undefined);
+    mockLastConnectedBoardStore.clearStoredLastConnectedBoard.mockReset();
+    mockLastConnectedBoardStore.clearStoredLastConnectedBoard.mockResolvedValue(undefined);
+    vi.mocked(getNativeBleConnectedDevice).mockReset();
+    vi.mocked(getNativeBleConnectedDevice).mockResolvedValue(null);
+    vi.mocked(subscribeNativeBleConnected).mockImplementation((listener) => {
+      connectedListener = listener;
+      return { remove: vi.fn() };
+    });
+    vi.mocked(isNativeIosBleAdapter).mockReturnValue(true);
+    vi.mocked(parseBoardTypeFromDeviceName).mockImplementation((name?: string) =>
+      name?.toLowerCase().startsWith('kilter') ? 'kilter' : undefined,
+    );
+    vi.mocked(parseSerialNumber).mockImplementation((name?: string) => name?.match(/#([^@]+)/)?.[1]);
+  });
+
+  afterEach(() => {
+    vi.mocked(subscribeNativeBleConnected).mockImplementation(() => null);
+    vi.mocked(getNativeBleConnectedDevice).mockResolvedValue(null);
+    vi.mocked(isNativeIosBleAdapter).mockReturnValue(false);
+    vi.mocked(parseBoardTypeFromDeviceName).mockReset();
+    vi.mocked(parseSerialNumber).mockReset();
+  });
+
+  it('waits for stored board B before considering already-ready native board A', async () => {
+    const storage = deferred<StoredBoard | null>();
+    mockLastConnectedBoardStore.getStoredLastConnectedBoard.mockReturnValueOnce(storage.promise);
+    vi.mocked(getNativeBleConnectedDevice).mockResolvedValue({ deviceId: 'native-a', name: 'Kilter Board#A@3' });
+    const adapter = makeAdoptableAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(adapter as unknown as ReturnType<typeof createBluetoothAdapter>);
+    const onConnectSuccess = vi.fn();
+    const onConnectionChange = vi.fn();
+    const onConnectionEnded = vi.fn();
+    const { result, unmount } = renderHook(() =>
+      useBoardBluetooth({ ...currentBoard, onConnectSuccess, onConnectionChange, onConnectionEnded }),
+    );
+
+    await act(async () => {});
+    expect(subscribeNativeBleConnected).not.toHaveBeenCalled();
+    expect(getNativeBleConnectedDevice).not.toHaveBeenCalled();
+    expect(createBluetoothAdapter).not.toHaveBeenCalled();
+
+    await act(async () => storage.resolve({ configKey: currentConfigKey, serial: 'B' }));
+
+    expect(getNativeBleConnectedDevice).toHaveBeenCalledOnce();
+    expect(result.current.reconnectSerialForCurrentBoard).toBe('B');
+    expect(result.current.isConnected).toBe(false);
+    expect(createBluetoothAdapter).not.toHaveBeenCalled();
+    expect(adapter.adoptConnection).not.toHaveBeenCalled();
+    expect(adapter.configureBoard).not.toHaveBeenCalled();
+    expect(adapter.onDisconnect).not.toHaveBeenCalled();
+    expect(onConnectSuccess).not.toHaveBeenCalled();
+    expect(onConnectionChange).not.toHaveBeenCalled();
+    expect(mockLastConnectedBoardStore.setStoredLastConnectedBoard).not.toHaveBeenCalled();
+    unmount();
+    expect(onConnectionEnded).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { label: 'remembered contradiction', rememberedSerial: 'B', rosterSerial: undefined, expected: false },
+    { label: 'roster-only contradiction', rememberedSerial: undefined, rosterSerial: 'B', expected: false },
+    { label: 'poisoned memory contradicted by roster', rememberedSerial: 'A', rosterSerial: 'B', expected: false },
+    {
+      label: 'remembered contradiction despite matching roster',
+      rememberedSerial: 'B',
+      rosterSerial: 'A',
+      expected: false,
+    },
+    { label: 'matching identities', rememberedSerial: 'A', rosterSerial: 'A', expected: true },
+    { label: 'matching memory only', rememberedSerial: 'A', rosterSerial: undefined, expected: true },
+    { label: 'matching roster only', rememberedSerial: undefined, rosterSerial: 'A', expected: true },
+    { label: 'both identities unknown', rememberedSerial: undefined, rosterSerial: undefined, expected: true },
+    { label: 'empty identities', rememberedSerial: '', rosterSerial: '', expected: true },
+    {
+      label: 'memory for another UUID',
+      rememberedSerial: 'B',
+      rosterSerial: undefined,
+      otherConfig: true,
+      expected: true,
+    },
+  ])(
+    'checks both independent identities: $label',
+    async ({ rememberedSerial, rosterSerial, otherConfig, expected }) => {
+      mockLastConnectedBoardStore.getStoredLastConnectedBoard.mockResolvedValueOnce(
+        rememberedSerial === undefined
+          ? null
+          : { configKey: otherConfig ? 'kilter::1::1::wall-a' : currentConfigKey, serial: rememberedSerial },
+      );
+      const adapter = makeAdoptableAdapter();
+      vi.mocked(createBluetoothAdapter).mockReturnValue(
+        adapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+      );
+      const onConnectSuccess = vi.fn();
+      const onConnectionChange = vi.fn();
+      const { result } = renderHook(() =>
+        useBoardBluetooth({ ...currentBoard, boardSerialNumber: rosterSerial, onConnectSuccess, onConnectionChange }),
+      );
+      await act(async () => {});
+      await act(async () => connectedListener?.({ deviceId: 'native-a', deviceName: 'Kilter Board#A@3' }));
+
+      expect(result.current.isConnected).toBe(expected);
+      if (expected) {
+        expect(adapter.adoptConnection).toHaveBeenCalledWith('native-a');
+        expect(onConnectSuccess).toHaveBeenCalledWith('A', expect.anything());
+        expect(mockLastConnectedBoardStore.setStoredLastConnectedBoard).toHaveBeenCalledWith({
+          configKey: currentConfigKey,
+          serial: 'A',
+        });
+      } else {
+        expect(createBluetoothAdapter).not.toHaveBeenCalled();
+        expect(adapter.adoptConnection).not.toHaveBeenCalled();
+        expect(adapter.configureBoard).not.toHaveBeenCalled();
+        expect(onConnectSuccess).not.toHaveBeenCalled();
+        expect(onConnectionChange).not.toHaveBeenCalled();
+        expect(mockLastConnectedBoardStore.setStoredLastConnectedBoard).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  it('settles rejected storage as ready and refreshes adoption when the roster serial changes', async () => {
+    mockLastConnectedBoardStore.getStoredLastConnectedBoard.mockRejectedValueOnce(new Error('Storage is locked'));
+    vi.mocked(getNativeBleConnectedDevice).mockResolvedValue({ deviceId: 'native-a', name: 'Kilter Board#A@3' });
+    const adapter = makeAdoptableAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(adapter as unknown as ReturnType<typeof createBluetoothAdapter>);
+    const { result, rerender } = renderHook((props) => useBoardBluetooth(props), {
+      initialProps: { ...currentBoard, boardSerialNumber: 'B' },
+    });
+    await act(async () => {});
+    expect(getNativeBleConnectedDevice).toHaveBeenCalledOnce();
+    expect(createBluetoothAdapter).not.toHaveBeenCalled();
+    expect(result.current.isConnected).toBe(false);
+
+    rerender({ ...currentBoard, boardSerialNumber: 'A' });
+    await act(async () => {});
+    expect(adapter.adoptConnection).toHaveBeenCalledWith('native-a');
+    expect(result.current.isConnected).toBe(true);
+  });
+
+  it('cancels stale native query results and queued subscription callbacks after identity changes', async () => {
+    const nativeQuery = deferred<Awaited<ReturnType<typeof getNativeBleConnectedDevice>>>();
+    vi.mocked(getNativeBleConnectedDevice).mockReturnValueOnce(nativeQuery.promise);
+    const oldSubscriptionRemove = vi.fn();
+    vi.mocked(subscribeNativeBleConnected).mockImplementationOnce((listener) => {
+      connectedListener = listener;
+      return { remove: oldSubscriptionRemove };
+    });
+    const adapter = makeAdoptableAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(adapter as unknown as ReturnType<typeof createBluetoothAdapter>);
+    const { result, rerender } = renderHook((props) => useBoardBluetooth(props), {
+      initialProps: { ...currentBoard, boardSerialNumber: 'A' },
+    });
+    await act(async () => {});
+    const oldConnectedListener = connectedListener;
+    rerender({ ...currentBoard, boardSerialNumber: 'B' });
+    expect(oldSubscriptionRemove).toHaveBeenCalledOnce();
+    await act(async () => {
+      oldConnectedListener?.({ deviceId: 'native-a', deviceName: 'Kilter Board#A@3' });
+      nativeQuery.resolve({ deviceId: 'native-a', name: 'Kilter Board#A@3' });
+    });
+    expect(createBluetoothAdapter).not.toHaveBeenCalled();
+    expect(result.current.isConnected).toBe(false);
+
+    await act(async () => connectedListener?.({ deviceId: 'native-b', deviceName: 'Kilter Board#B@3' }));
+    expect(adapter.adoptConnection).toHaveBeenCalledWith('native-b');
+    expect(result.current.isConnected).toBe(true);
+  });
+
+  it('keeps a deliberate connection when a stale storage read settles before React commits', async () => {
+    const storage = deferred<StoredBoard | null>();
+    mockLastConnectedBoardStore.getStoredLastConnectedBoard.mockReturnValueOnce(storage.promise);
+    const adapter = makeAdoptableAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(adapter as unknown as ReturnType<typeof createBluetoothAdapter>);
+    const { result } = renderHook(() => useBoardBluetooth(currentBoard));
+
+    await act(async () => {
+      await result.current.connect();
+      storage.resolve({ configKey: currentConfigKey, serial: 'stale-B' });
+    });
+
+    expect(result.current.isConnected).toBe(true);
+    expect(result.current.reconnectSerialForCurrentBoard).toBe('123');
+    expect(mockLastConnectedBoardStore.setStoredLastConnectedBoard).toHaveBeenCalledWith({
+      configKey: currentConfigKey,
+      serial: '123',
+    });
+    expect(createBluetoothAdapter).toHaveBeenCalledOnce();
+  });
+
+  it('does not resurrect a deliberate disconnect when a pending storage read settles', async () => {
+    const storage = deferred<StoredBoard | null>();
+    mockLastConnectedBoardStore.getStoredLastConnectedBoard.mockReturnValueOnce(storage.promise);
+    vi.mocked(getNativeBleConnectedDevice).mockResolvedValue({ deviceId: 'native-b', name: 'Kilter Board#B@3' });
+    const adapter = makeAdoptableAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(adapter as unknown as ReturnType<typeof createBluetoothAdapter>);
+    const { result } = renderHook(() => useBoardBluetooth(currentBoard));
+
+    await act(async () => {
+      await result.current.disconnect();
+      storage.resolve({ configKey: currentConfigKey, serial: 'B' });
+    });
+
+    expect(result.current.reconnectSerialForCurrentBoard).toBeNull();
+    expect(result.current.isConnected).toBe(false);
+    expect(mockLastConnectedBoardStore.clearStoredLastConnectedBoard).toHaveBeenCalledOnce();
+    expect(mockLastConnectedBoardStore.setStoredLastConnectedBoard).not.toHaveBeenCalled();
+    expect(createBluetoothAdapter).not.toHaveBeenCalled();
+  });
+
+  it('ignores a storage read that settles after unmount', async () => {
+    const storage = deferred<StoredBoard | null>();
+    mockLastConnectedBoardStore.getStoredLastConnectedBoard.mockReturnValueOnce(storage.promise);
+    vi.mocked(getNativeBleConnectedDevice).mockResolvedValue({ deviceId: 'native-a', name: 'Kilter Board#A@3' });
+    const { unmount } = renderHook(() => useBoardBluetooth(currentBoard));
+    unmount();
+    await act(async () => storage.resolve({ configKey: currentConfigKey, serial: 'B' }));
+
+    expect(subscribeNativeBleConnected).not.toHaveBeenCalled();
+    expect(createBluetoothAdapter).not.toHaveBeenCalled();
+    expect(mockLastConnectedBoardStore.setStoredLastConnectedBoard).not.toHaveBeenCalled();
   });
 });
 
