@@ -56,6 +56,17 @@ const RESTORE_ALLOWLIST: Record<string, string> = {
     'prebuilt simulator .app; follow-up: build in a secret-free job and hand over as a verified artifact',
   // Not a speed cache: the resumable bootstrap checkpoint that lets a failed
   // custom-product-page bootstrap resume. Follow-up: move it out of the cache.
+  // anthropics/claude-code-action installs Bun through oven-sh/setup-bun, which
+  // restores the Bun binary from the Actions cache. Follow-up: install Bun
+  // without a cache and pass `path_to_bun_executable` so setup-bun is skipped.
+  'claude.yml#claude#Run Claude Code':
+    'setup-bun binary cache inside claude-code-action; follow-up: path_to_bun_executable',
+  'claude-code-review.yml#claude-review#Run Claude Code Review':
+    'setup-bun binary cache inside claude-code-action; follow-up: path_to_bun_executable',
+  'discord-feedback-issues.yml#triage#Triage with Claude':
+    'setup-bun binary cache inside claude-code-action; follow-up: path_to_bun_executable',
+  'sentry-triage.yml#triage#Run Sentry triage':
+    'setup-bun binary cache inside claude-code-action; follow-up: path_to_bun_executable',
   'mobile-screenshots-ios.yml#cpp-bootstrap#Restore account-bound bootstrap checkpoint':
     'resumable bootstrap checkpoint; follow-up: carry it in an artifact or the repo instead of the cache',
 };
@@ -74,11 +85,41 @@ function isTruthy(value: unknown): boolean {
   return text !== '' && text !== 'false';
 }
 
-// Resolve `${{ inputs.NAME }}` and `${{ inputs.NAME == 'true' }}` against the
-// caller's inputs. Any other expression stays as-is and counts as truthy, so an
-// unknown condition is treated as "may restore".
-function resolveInputs(value: unknown, inputs: Record<string, unknown>): unknown {
-  if (typeof value !== 'string') return value;
+// Remote actions whose source was read and found to touch no GitHub Actions
+// cache (or only the runner-local tool cache). A remote action missing from this
+// set and from the switch in stepMechanism fails the guard in a sensitive job:
+// a composite or JavaScript action can restore a cache internally, so an
+// unreviewed one counts as a restore until someone reads it.
+const REVIEWED_CACHE_FREE_ACTIONS = new Set([
+  'actions/checkout',
+  'actions/upload-artifact',
+  'actions/download-artifact',
+  'actions/github-script',
+  'actions/create-github-app-token',
+  'actions/attest',
+  'actions/attest-build-provenance',
+  'actions/cache/save',
+  'docker/login-action',
+  'docker/metadata-action',
+  'android-actions/setup-android', // @actions/tool-cache only
+  'reactivecircus/android-emulator-runner', // @actions/tool-cache only
+  'oras-project/setup-oras', // @actions/tool-cache only
+  'dtolnay/rust-toolchain',
+  'dorny/paths-filter',
+  'softprops/action-gh-release',
+  'marocchino/sticky-pull-request-comment',
+  'turing85/publish-report',
+]);
+
+// `null` = top level of a workflow job: nothing is resolved, so any expression
+// (including a workflow_dispatch `inputs.*`) counts as "may restore". Inside a
+// composite action, `${{ inputs.NAME }}` and `${{ inputs.NAME == 'x' }}` are
+// resolved against the caller's `with:` and the action's defaults; any other
+// expression stays as-is and counts as truthy.
+type Inputs = Record<string, unknown> | null;
+
+function resolveInputs(value: unknown, inputs: Inputs): unknown {
+  if (inputs === null || typeof value !== 'string') return value;
   const plain = /^\$\{\{\s*inputs\.([\w-]+)\s*\}\}$/.exec(value.trim());
   if (plain) return inputs[plain[1]];
   const equals = /^\$\{\{\s*inputs\.([\w-]+)\s*==\s*'([^']*)'\s*\}\}$/.exec(value.trim());
@@ -90,8 +131,11 @@ function resolveInputs(value: unknown, inputs: Record<string, unknown>): unknown
   return value;
 }
 
-function stepMechanism(step: Step, inputs: Record<string, unknown>): string | null {
-  const action = (step.uses ?? '').replace(/@.*$/, '');
+const isLiterallyFalse = (value: unknown): boolean => value === false || value === 'false';
+
+function stepMechanism(step: Step, inputs: Inputs): string | null {
+  if (!step.uses) return null;
+  const action = step.uses.replace(/@.*$/, '');
   const option = (key: string): unknown => resolveInputs(step.with?.[key], inputs);
   switch (action) {
     case 'actions/cache':
@@ -107,7 +151,7 @@ function stepMechanism(step: Step, inputs: Record<string, unknown>): string | nu
     case 'actions/setup-dotnet':
       return isTruthy(option('cache')) ? `${action} cache` : null;
     case 'actions/setup-go':
-      return option('cache') === undefined || isTruthy(option('cache')) ? 'actions/setup-go cache' : null;
+      return isLiterallyFalse(option('cache')) ? null : 'actions/setup-go cache';
     case 'ruby/setup-ruby':
       return isTruthy(option('bundler-cache')) ? 'setup-ruby bundler-cache' : null;
     case 'Swatinem/rust-cache':
@@ -115,24 +159,38 @@ function stepMechanism(step: Step, inputs: Record<string, unknown>): string | nu
     case 'gradle/actions/setup-gradle':
       return isTruthy(option('cache-disabled')) ? null : 'setup-gradle cache';
     case 'astral-sh/setup-uv':
-      return asText(option('enable-cache') ?? 'auto') === 'false' ? null : 'setup-uv cache';
+      return isLiterallyFalse(option('enable-cache')) ? null : 'setup-uv cache';
     case 'jdx/mise-action':
-      return asText(option('cache') ?? 'true') === 'false' ? null : 'mise cache';
+      return isLiterallyFalse(option('cache')) ? null : 'mise cache';
     case 'docker/build-push-action':
       return /type=gha/.test(asText(option('cache-from') ?? '')) ? 'buildx type=gha cache-from' : null;
-    default:
-      return null;
+    // Both cache a downloaded binary/image in the Actions cache by default.
+    case 'docker/setup-buildx-action':
+      return isLiterallyFalse(option('cache-binary')) ? null : 'setup-buildx cache-binary';
+    case 'docker/setup-qemu-action':
+      return isLiterallyFalse(option('cache-image')) ? null : 'setup-qemu cache-image';
+    default: {
+      // Local composite actions are expanded and checked step by step instead.
+      if (action.startsWith('./')) return null;
+      // Fail closed: any cache-looking input that isn't literally off.
+      const cacheKeys = Object.keys(step.with ?? {}).filter(
+        (key) => /cache/i.test(key) && !isLiterallyFalse(option(key)),
+      );
+      if (cacheKeys.length > 0) return `${action} ${cacheKeys.join(', ')}`;
+      if (action.startsWith('docker://')) return null;
+      return REVIEWED_CACHE_FREE_ACTIONS.has(action) ? null : `unreviewed remote action ${action}`;
+    }
   }
 }
 
-function skippedByInputs(step: Step, inputs: Record<string, unknown>): boolean {
-  return step.if !== undefined && resolveInputs(step.if, inputs) === 'false';
+function skippedByInputs(step: Step, inputs: Inputs): boolean {
+  return inputs !== null && step.if !== undefined && resolveInputs(step.if, inputs) === 'false';
 }
 
 function restoringSteps(
   steps: Step[],
   loadAction: (uses: string) => CompositeAction | null,
-  inputs: Record<string, unknown> = {},
+  inputs: Inputs = null,
   prefix = '',
 ): RestoringStep[] {
   const found: RestoringStep[] = [];
@@ -164,7 +222,7 @@ function sensitivityReasons(workflow: Workflow, job: Job): string[] {
   const secrets = [...text.matchAll(/secrets\.([\w-]+)/g)]
     .map((match) => match[1])
     .filter((name) => name !== 'GITHUB_TOKEN');
-  if (secrets.length > 0 || /secrets\[/.test(text)) reasons.push('secrets');
+  if (secrets.length > 0 || /secrets\[/.test(text) || job.secrets === 'inherit') reasons.push('secrets');
   const permissions = job.permissions !== undefined ? job.permissions : workflow.permissions;
   const writes =
     permissions === 'write-all' ||
@@ -193,10 +251,22 @@ function scanRepo(): Finding[] {
   for (const file of files.sort()) {
     const workflow = parse(readFileSync(join(WORKFLOW_DIR, file), 'utf8')) as Workflow;
     for (const [jobId, job] of Object.entries(workflow.jobs ?? {})) {
-      // A reusable-workflow call has no steps; the callee is scanned on its own.
-      if (!job.steps) continue;
       const reasons = sensitivityReasons(workflow, job);
       if (reasons.length === 0) continue;
+      // A local reusable workflow is scanned on its own; a remote one can't be
+      // read here, so it fails closed like an unreviewed remote action.
+      if (job.uses !== undefined) {
+        if (!job.uses.startsWith('./')) {
+          findings.push({
+            label: job.uses,
+            mechanism: `unreviewed remote reusable workflow ${job.uses}`,
+            key: `${file}#${jobId}#${job.uses}`,
+            reasons,
+          });
+        }
+        continue;
+      }
+      if (!job.steps) continue;
       for (const restoring of restoringSteps(job.steps, loadRepoAction)) {
         findings.push({ ...restoring, key: `${file}#${jobId}#${restoring.label}`, reasons });
       }
@@ -276,11 +346,74 @@ describe('cache restore detection', () => {
     ).toEqual(['capture > voidzero-dev/setup-vp@v1', 'capture > Gradle']);
   });
 
+  it('fails closed on cache-looking inputs and unreviewed remote actions', () => {
+    const steps: Step[] = [
+      { name: 'unknown cache input', uses: 'someone/setup-thing@v1', with: { 'use-cache': 'yes' } },
+      { name: 'unknown cache input off', uses: 'actions/checkout@v6', with: { 'cache-thing': 'false' } },
+      { name: 'boolean off', uses: 'actions/checkout@v6', with: { cache: false } },
+      { name: 'unreviewed', uses: 'someone/other-action@v2' },
+      { name: 'reviewed', uses: 'actions/checkout@v6' },
+      { name: 'save only', uses: 'actions/cache/save@v4', with: { key: 'k', path: 'p' } },
+      { name: 'buildx default', uses: 'docker/setup-buildx-action@v4' },
+      { name: 'buildx off', uses: 'docker/setup-buildx-action@v4', with: { 'cache-binary': false } },
+      { name: 'qemu default', uses: 'docker/setup-qemu-action@v3' },
+      { name: 'local composite', uses: './.github/actions/thing', with: { 'app-cache-key': 'k' } },
+      { name: 'docker image', uses: 'docker://alpine:3' },
+    ];
+    expect(restoringSteps(steps, noActions)).toEqual([
+      { label: 'unknown cache input', mechanism: 'someone/setup-thing use-cache' },
+      { label: 'unreviewed', mechanism: 'unreviewed remote action someone/other-action' },
+      { label: 'buildx default', mechanism: 'setup-buildx cache-binary' },
+      { label: 'qemu default', mechanism: 'setup-qemu cache-image' },
+    ]);
+  });
+
+  it('flags an unreviewed action inside a local composite action', () => {
+    const action: CompositeAction = { runs: { using: 'composite', steps: [{ name: 'Inner', uses: 'someone/x@v1' }] } };
+    expect(restoringSteps([{ uses: './.github/actions/wrap' }], () => action)).toEqual([
+      { label: 'wrap > Inner', mechanism: 'unreviewed remote action someone/x' },
+    ]);
+  });
+
+  it('never resolves workflow-level inputs: expression toggles and conditions count as restores', () => {
+    const steps: Step[] = [
+      { name: 'dispatch toggle', uses: 'voidzero-dev/setup-vp@v1', with: { cache: '${{ inputs.use_cache }}' } },
+      {
+        name: 'dispatch equality',
+        uses: 'voidzero-dev/setup-vp@v1',
+        with: { cache: "${{ inputs.use_cache == 'true' }}" },
+      },
+      { name: 'conditional restore', if: "${{ inputs.restore == 'true' }}", uses: 'actions/cache/restore@v4' },
+      { name: 'go default', uses: 'actions/setup-go@v5', with: { cache: '${{ inputs.go_cache }}' } },
+    ];
+    expect(restoringSteps(steps, noActions).map((step) => step.label)).toEqual([
+      'dispatch toggle',
+      'dispatch equality',
+      'conditional restore',
+      'go default',
+    ]);
+  });
+
+  it('passes an unresolved workflow expression through a composite input as a restore', () => {
+    const action: CompositeAction = {
+      inputs: { 'restore-caches': { default: 'false' } },
+      runs: {
+        using: 'composite',
+        steps: [{ uses: 'voidzero-dev/setup-vp@v1', with: { cache: "${{ inputs.restore-caches == 'true' }}" } }],
+      },
+    };
+    const caller: Step = { uses: './.github/actions/capture', with: { 'restore-caches': '${{ inputs.cache }}' } };
+    expect(restoringSteps([caller], () => action)).toHaveLength(1);
+  });
+
   it('counts environments, non-GITHUB_TOKEN secrets and write permissions as sensitive', () => {
     expect(sensitivityReasons({}, { environment: 'Production' })).toEqual(['environment']);
     expect(sensitivityReasons({}, { env: { TOKEN: '${{ secrets.GITHUB_TOKEN }}' } })).toEqual([]);
     expect(sensitivityReasons({}, { env: { TOKEN: '${{ secrets.EOO_TOKEN }}' } })).toEqual(['secrets']);
     expect(sensitivityReasons({ env: { KEY: '${{ secrets.KEY }}' } }, {})).toEqual(['secrets']);
+    expect(sensitivityReasons({}, { uses: 'org/repo/.github/workflows/x.yml@v1', secrets: 'inherit' })).toEqual([
+      'secrets',
+    ]);
     expect(sensitivityReasons({ permissions: { contents: 'write' } }, {})).toEqual(['write permissions']);
     expect(sensitivityReasons({ permissions: { contents: 'write' } }, { permissions: { contents: 'read' } })).toEqual(
       [],
