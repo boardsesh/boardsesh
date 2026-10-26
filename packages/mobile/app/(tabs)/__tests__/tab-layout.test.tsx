@@ -167,7 +167,6 @@ vi.mock('../../../src/hooks/use-bottom-accessory', async () => {
         platformOS: cfg.platformOS,
         variant: cfg.variant,
         glassCapable: cfg.glassCapable,
-        isTablet: cfg.widthClass === 'regular' || cfg.isTablet,
         accessoryAvailable: cfg.nativeAccessoryActive,
       }),
   };
@@ -527,6 +526,23 @@ describe('TabLayout', () => {
     expect(container.querySelector('[data-tabs="true"]')).toBe(navigator);
     expect(container.querySelector('[data-trigger="wall"]')).not.toBeNull();
     expect(container.querySelector('[data-tablet-sidebar="true"]')).toBeNull();
+  });
+
+  it('gives native iPad the Music MiniPlayer: the accessory, and no pane or wall column', () => {
+    cfg.isTablet = true;
+    cfg.widthClass = 'regular';
+    cfg.windowWidth = 1366;
+    cfg.hasCurrentClimb = true;
+    cfg.boardPresenceEnabled = true;
+    cfg.boardPresenceBoardId = 1;
+    cfg.activeBoard = { uuid: 'board' };
+
+    const { container } = render(<TabLayout />);
+
+    expect(container.querySelector('[data-tabs="true"]')?.getAttribute('data-sidebar-adaptable')).toBe('true');
+    expect(container.querySelector('[data-bottom-accessory="true"]')).not.toBeNull();
+    expect(container.querySelector('[data-ipad-play-pane="true"]')).toBeNull();
+    expect(container.querySelector('[data-ipad-wall-column="true"]')).toBeNull();
   });
 
   it('renders the iPad sidebar shell at regular width and registers all six tabs (wall hidden from the bar)', () => {

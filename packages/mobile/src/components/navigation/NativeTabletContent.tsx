@@ -1,80 +1,29 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Platform, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
+import { useMemo, useState, type ReactNode } from 'react';
+import { Platform, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect, useIsFocused, useSegments } from 'expo-router';
+import { useIsFocused } from 'expo-router';
 import { useTheme } from '../../providers/theme-provider';
 import { useNativeRootHeader } from '../../hooks/use-native-root-header';
-import { useDeviceLayout } from '../../hooks/use-device-layout';
 import { usePhoneSplit } from '../../hooks/use-phone-split';
-import { publishNativeTabletContentWidth, useTabletPaneWidth } from '../../hooks/native-tablet-pane-width';
-import { useBoardPresenceControls } from '../../providers/board-presence-provider';
-import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useHingePartiallyOpen } from '../../lib/device-hinge-store';
-import {
-  resolveEffectiveWallSurface,
-  resolveDetailPaneSurface,
-  resolveDetailPaneWidth,
-  resolvePhoneSplitColumns,
-  WALL_COLUMN_WIDTH,
-} from '../../theme/size-class';
-import { tabsActiveSegment } from '../../lib/route-segments';
+import { resolvePhoneSplitColumns } from '../../theme/size-class';
 import { IpadPlayPane } from '../play-drawer/IpadPlayPane';
-import { IpadWallColumn } from '../board-presence/IpadWallColumn';
 import { PhoneSplitPaneSlotContext } from './phone-split-pane-slot';
 
 /**
- * Keep content panes inside UIKit's sidebar, where their actual width is known.
- * On iPad that is the tablet shell's panes; on iPhone it is the phone split (the
- * iPhone Duo opened in landscape), which can come and go with every fold, so the
+ * Hosts the phone split's player pane (the iPhone Duo opened in landscape) beside
+ * each native tab's content. The split can come and go with every fold, so the
  * iPhone always renders its host and only the pane mounts and unmounts. Swapping
  * the wrapper in and out would remount the tab's stack and lose its screens.
+ *
+ * The native iPad renders the tab as it is: like Apple Music it shows one content
+ * column, with the current climb in the bottom accessory and the player full
+ * screen, so it has no pane to host.
  */
 export function NativeTabletContent({ children }: { children: ReactNode }) {
   const nativeRootHeader = useNativeRootHeader();
-  if (!(nativeRootHeader && Platform.OS === 'ios')) return children;
-  if (Platform.isPad === true) return <NativeTabletContentHost>{children}</NativeTabletContentHost>;
+  if (!(nativeRootHeader && Platform.OS === 'ios') || Platform.isPad === true) return children;
   return <PhoneSplitContentHost>{children}</PhoneSplitContentHost>;
-}
-
-function NativeTabletContentHost({ children }: { children: ReactNode }) {
-  const { systemColors } = useTheme();
-  const { widthClass, wallDeviceClass } = useDeviceLayout();
-  const { width, sidebarWidth } = useTabletPaneWidth();
-  const [hostWidth, setHostWidth] = useState(0);
-  const [focused, setFocused] = useState(false);
-  useFocusEffect(
-    useCallback(() => {
-      setFocused(true);
-      return () => setFocused(false);
-    }, []),
-  );
-  useEffect(() => {
-    if (focused) publishNativeTabletContentWidth(hostWidth);
-  }, [focused, hostWidth]);
-  const measureHost = useCallback((event: LayoutChangeEvent) => setHostWidth(event.nativeEvent.layout.width), []);
-  const segments = useSegments();
-  const onWallTab = tabsActiveSegment(segments) === 'wall';
-  const { enabled, boardId } = useBoardPresenceControls();
-  const { data: activeBoard } = useActiveBoard();
-  const wallSurface = resolveEffectiveWallSurface({ width, widthClass, wallDeviceClass, sidebarWidth });
-  const showWall = !onWallTab && wallSurface === 'column' && enabled && boardId !== null && activeBoard != null;
-  const showDetail = !onWallTab && resolveDetailPaneSurface({ width, widthClass, sidebarWidth }) === 'pane';
-  const paneWidth = resolveDetailPaneWidth({ width, sidebarWidth, wallColumnVisible: showWall });
-  return (
-    <View onLayout={measureHost} style={styles.host}>
-      <View style={styles.content}>{children}</View>
-      {showDetail ? (
-        <View style={[styles.pane, { width: paneWidth, borderLeftColor: systemColors.separator }]}>
-          <IpadPlayPane />
-        </View>
-      ) : null}
-      {showWall ? (
-        <View style={[styles.pane, { width: WALL_COLUMN_WIDTH, borderLeftColor: systemColors.separator }]}>
-          <IpadWallColumn />
-        </View>
-      ) : null}
-    </View>
-  );
 }
 
 /**
@@ -153,6 +102,5 @@ function PhoneSplitPane({ content }: { content: ReactNode | null }) {
 const styles = StyleSheet.create({
   host: { flex: 1, flexDirection: 'row' },
   content: { flex: 1, minWidth: 0 },
-  pane: { height: '100%', borderLeftWidth: StyleSheet.hairlineWidth },
   splitPane: { minWidth: 0 },
 });

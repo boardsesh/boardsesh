@@ -13,6 +13,8 @@ const harness = vi.hoisted(() => ({
   restTimerBottom: 83,
   widthClass: 'compact' as 'compact' | 'regular',
   windowWidth: 390,
+  // The native iPad (UIKit sidebar + accessory) rather than the JS tablet shell.
+  nativeTabBar: false,
 }));
 
 vi.mock('react-native', () => ({
@@ -29,9 +31,23 @@ vi.mock('../../../hooks/use-bottom-chrome-metrics', () => ({
   }),
 }));
 
-vi.mock('../../../hooks/use-device-layout', () => ({
-  useDeviceLayout: () => ({ widthClass: harness.widthClass }),
-}));
+// The real resolver, fed from the harness.
+vi.mock('../../../hooks/use-current-climb-surface', async () => {
+  const { resolveCurrentClimbSurface } = await vi.importActual<typeof import('../../../hooks/current-climb-surface')>(
+    '../../../hooks/current-climb-surface',
+  );
+  return {
+    useCurrentClimbSurface: () =>
+      resolveCurrentClimbSurface({
+        isTablet: harness.widthClass === 'regular',
+        widthClass: harness.widthClass,
+        windowWidth: harness.windowWidth,
+        nativeTabBar: harness.nativeTabBar,
+        nativeAccessory: harness.nativeTabBar,
+        phoneSplit: false,
+      }),
+  };
+});
 
 vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12, 4: 16 } }));
 
@@ -96,6 +112,7 @@ describe('RootRestTimerPillHost', () => {
     harness.restTimerBottom = 83;
     harness.widthClass = 'compact';
     harness.windowWidth = 390;
+    harness.nativeTabBar = false;
   });
 
   afterEach(() => {
@@ -119,12 +136,22 @@ describe('RootRestTimerPillHost', () => {
     expect(queryByTestId('pill')).toBeNull();
   });
 
-  it('does not render on the regular-width iPad shell, where the pane owns the queue', () => {
+  it('does not render on the regular-width tablet shell, where the pane owns the queue', () => {
     arm();
     harness.widthClass = 'regular';
     harness.windowWidth = 1194;
     const { queryByTestId } = render(<RootRestTimerPillHost />);
     expect(queryByTestId('pill')).toBeNull();
+  });
+
+  it('floats above the accessory on the native iPad, as on iPhone', () => {
+    arm();
+    harness.widthClass = 'regular';
+    harness.windowWidth = 744;
+    harness.nativeTabBar = true;
+    harness.restTimerBottom = 90;
+    const { getByTestId } = render(<RootRestTimerPillHost />);
+    expect(getByTestId('pill').parentElement?.getAttribute('data-style')).toContain('"bottom":90');
   });
 });
 
@@ -153,8 +180,10 @@ describe('the root pill gate matches the bottom-chrome reserve', () => {
   const cases = [
     { insideTabs: true, usesSidebar: false, detailPaneOwnsQueue: false, label: 'phone, on a tab' },
     { insideTabs: false, usesSidebar: false, detailPaneOwnsQueue: false, label: 'phone, off the tabs' },
-    { insideTabs: true, usesSidebar: true, detailPaneOwnsQueue: true, label: 'iPad sidebar + detail pane' },
-    { insideTabs: true, usesSidebar: true, detailPaneOwnsQueue: false, label: 'iPad sidebar, narrow window' },
+    { insideTabs: true, usesSidebar: true, detailPaneOwnsQueue: true, label: 'tablet shell + detail pane' },
+    { insideTabs: true, usesSidebar: true, detailPaneOwnsQueue: false, label: 'tablet shell, narrow window' },
+    // The native iPad is not the sidebar shell: the pill floats above its accessory.
+    { insideTabs: true, usesSidebar: false, detailPaneOwnsQueue: false, label: 'native iPad' },
   ];
 
   for (const { label, ...inputs } of cases) {

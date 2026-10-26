@@ -119,13 +119,21 @@ The bar itself depends on the device:
   counts in the Filters badge.
 - **Other phones:** Material, and Liquid Glass forced on Android, use JS `Tabs`
   with `MaterialTabBar`.
-- **Tablets:** one JS `Tabs` navigator at every width (sidebar at regular width,
-  `MaterialTabBar` in a narrow split), so a Split View resize keeps each tab's
-  state. `NativeTabs` remounts when a tab's `hidden` flag flips, and the
-  iPad-only On the Wall tab would have to be hidden in a narrow split (a sixth
-  native tab spills into UIKit's More list), so the iPad shell stays JS. The
-  native `sidebarAdaptable` sidebar is not used for the same reason, and because
-  it cannot host the live wall cell or report its width to the pane budgets.
+- **iPad (Liquid Glass):** the Apple Music layout. `NativeTabs` with
+  `sidebarAdaptable`: a sidebar in landscape, a tab bar at the top in portrait,
+  the phone tab bar in a narrow Split View. Each tab is one content column, with
+  no player pane or wall column beside it. The current climb rides the bottom
+  accessory, as on iPhone (Music's MiniPlayer), and tapping it or any climb opens
+  the full-screen `/play` player (the accessory zooms into it). The On the Wall
+  destination stays registered at every width, so a resize never resets tab
+  history. One resolver, `resolveCurrentClimbSurface`
+  (`src/hooks/current-climb-surface.ts`), decides who shows the current climb, so
+  the floating JS bar never appears over the accessory; tab content clears the
+  accessory through the measured in-tab inset, as on the iPhone Duo.
+- **Android tablets, Expo web, iPad on Material:** one JS `Tabs` navigator at
+  every width (rail at regular width, `MaterialTabBar` in a narrow split), so a
+  resize keeps each tab's state. At regular width the shell keeps its
+  persistent player pane (`IpadPlayPane`) and, in landscape, the live wall column.
 - **Session setup:** Browse climbs opens the selected board's library
   directly, without rewriting the board selection.
   Change board is a separate action; its picker returns to Session. First-time

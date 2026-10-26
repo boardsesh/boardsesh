@@ -319,7 +319,7 @@ function ClimbListInner() {
   const { t } = useTranslation('climbs');
   const { t: tCommon } = useTranslation('common');
   const { t: tSession } = useTranslation('session');
-  const { openClimbActions, openAddToPlaylist, openBoardSheet, openPlayDrawer, usesDetailPane } = useDrawerHost();
+  const { openClimbActions, openAddToPlaylist, openBoardSheet, openPlayDrawer } = useDrawerHost();
   // The grade row is hidden until the Grade chip opens it. Then it stays, across
   // opening a climb, search, Filters and app launches, until the chip hides it.
   const [gradeRowShown, setGradeRowShown] = useSetting('gradeRowShown');
@@ -1277,41 +1277,6 @@ function ClimbListInner() {
     handleClimbPress,
     screenshotTargetBoard,
     activeBoard,
-  ]);
-
-  // Screenshot mode, iPad master-detail only: the plain `/climbs` list shot must
-  // also LIGHT the detail pane — with nothing selected it reads as a dead black
-  // column in the App Store shot. Activating the first climb fills the pane
-  // beside the list (and it stays lit for the later Home/Discover shots). Gated
-  // on `usesDetailPane` because on iPhone the same activation opens the play
-  // drawer OVER the list; every other capture that opens the first climb itself
-  // (`screenshotOpenFirst`, and the two wall-state shots below) runs its own
-  // activation, so this yields to all of them — otherwise it would COMMIT the
-  // climb the wall-state shot then previews, collapsing the commit row out of
-  // the frame. Dead-strips in normal builds.
-  const screenshotPaneLitRef = useRef(false);
-  useEffect(() => {
-    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1') return;
-    if (screenshotOpenFirst || screenshotClimbId !== undefined || screenshotOpenPreview || screenshotOpenWallPreview)
-      return;
-    if (screenshotOpenClimbActions) return;
-    if (!usesDetailPane || screenshotPaneLitRef.current) return;
-    if (!activeBoard || !searchReady) return;
-    const firstClimb = visibleClimbs[0];
-    if (!firstClimb) return;
-    screenshotPaneLitRef.current = true;
-    handleClimbPress(firstClimb);
-  }, [
-    screenshotOpenFirst,
-    screenshotClimbId,
-    screenshotOpenPreview,
-    screenshotOpenWallPreview,
-    screenshotOpenClimbActions,
-    usesDetailPane,
-    activeBoard,
-    searchReady,
-    visibleClimbs,
-    handleClimbPress,
   ]);
 
   // Screenshot mode: deterministically open the board-presence "now on the wall"

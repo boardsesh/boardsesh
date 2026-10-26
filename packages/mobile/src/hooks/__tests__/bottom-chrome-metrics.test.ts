@@ -181,6 +181,53 @@ describe('computeBottomChromeMetrics', () => {
     });
   });
 
+  describe('native iPad (UIKit sidebar or top tab bar, accessory along the bottom)', () => {
+    // INFERRED: an iPad's home indicator, and an in-tab inset that holds it plus
+    // the accessory, with no tab bar below (it is the sidebar, or sits at the top).
+    const IPAD_ROOT_INSET = 20;
+    const IPAD_IN_TAB_ACCESSORY_INSET = IPAD_ROOT_INSET + NATIVE_BOTTOM_ACCESSORY_HEIGHT;
+    const ipadInputs = {
+      uiVariant: 'liquidGlass' as const,
+      usesNativeTabBar: true,
+      insetsBottom: IPAD_ROOT_INSET,
+      insideTabs: true,
+      onAccessorySurface: true,
+      hasCurrentClimb: true,
+      nativeAccessoryPresented: true,
+      usesSidebar: false,
+      tabBarAtBottom: false,
+    };
+
+    it("clears the accessory with the tab's own inset: the last row and Session's Start button", () => {
+      const metrics = computeBottomChromeMetrics({
+        ...ipadInputs,
+        measuredTabContentInsetBottom: IPAD_IN_TAB_ACCESSORY_INSET,
+      });
+      expect(metrics.nativeAccessoryVisible).toBe(true);
+      expect(metrics.jsQueueToolbarVisible).toBe(false);
+      expect(metrics.tabBarHeight).toBe(0);
+      expect(metrics.scrollBottomPadding).toBe(IPAD_IN_TAB_ACCESSORY_INSET);
+      expect(metrics.preSessionFooterBottom).toBe(IPAD_IN_TAB_ACCESSORY_INSET);
+      expect(metrics.inSessionListBottom).toBe(IPAD_IN_TAB_ACCESSORY_INSET);
+    });
+
+    it('reconstructs the accessory, and no bottom bar, before the inset is measured', () => {
+      const metrics = computeBottomChromeMetrics({ ...ipadInputs, measuredTabContentInsetBottom: null });
+      expect(metrics.scrollBottomPadding).toBe(IPAD_ROOT_INSET + NATIVE_BOTTOM_ACCESSORY_HEIGHT);
+      expect(metrics.preSessionFooterBottom).toBe(IPAD_ROOT_INSET + NATIVE_BOTTOM_ACCESSORY_HEIGHT);
+    });
+
+    it('stacks the rest pill one gap above the accessory', () => {
+      const metrics = computeBottomChromeMetrics({
+        ...ipadInputs,
+        measuredTabContentInsetBottom: IPAD_IN_TAB_ACCESSORY_INSET,
+        restTimerArmed: true,
+      });
+      expect(metrics.restTimerBottom).toBe(IPAD_IN_TAB_ACCESSORY_INSET + TOOLBAR_GAP_ABOVE_TABBAR);
+      expect(metrics.scrollBottomPadding).toBe(IPAD_IN_TAB_ACCESSORY_INSET + REST_TIMER_RESERVE);
+    });
+  });
+
   it('hides the bar but keeps tab-bar clearance on a pushed sub-route (Material)', () => {
     // A tab sub-route (session detail, filters): still inside the tabs (tab bar
     // present) but NOT an accessory surface, so no JS toolbar and no toolbar reserve —

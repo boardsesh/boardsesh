@@ -131,18 +131,34 @@ vi.mock('react-native', () => ({
 // The host reads the device layout to decide sheet (compact) vs pane (regular).
 // Defaults to compact (the bottom-sheet path most tests exercise); the
 // regular-width pane describe flips it.
-const layoutCfg = vi.hoisted(() => ({ widthClass: 'compact' as 'compact' | 'regular' }));
+// `nativeTabBar` models the native iPad (UIKit sidebar, no pane); off, a regular
+// width is the JS tablet shell, whose pane takes taps.
+const layoutCfg = vi.hoisted(() => ({ widthClass: 'compact' as 'compact' | 'regular', nativeTabBar: false }));
 vi.mock('../../hooks/use-device-layout', () => ({
   useDeviceLayout: () => ({ widthClass: layoutCfg.widthClass, expanded: false }),
-}));
-vi.mock('../../hooks/native-tablet-pane-width', () => ({
-  useTabletPaneWidth: () => ({ width: 1024, sidebarWidth: 96 }),
 }));
 // The phone split (iPhone Duo in landscape). Off except in its own describe.
 const splitCfg = vi.hoisted(() => ({ phoneSplit: false }));
 vi.mock('../../hooks/use-phone-split', () => ({
   usePhoneSplit: () => splitCfg.phoneSplit,
 }));
+// The real resolver, fed from the two configs above.
+vi.mock('../../hooks/use-current-climb-surface', async () => {
+  const { resolveCurrentClimbSurface } = await vi.importActual<typeof import('../../hooks/current-climb-surface')>(
+    '../../hooks/current-climb-surface',
+  );
+  return {
+    useCurrentClimbSurface: () =>
+      resolveCurrentClimbSurface({
+        isTablet: layoutCfg.widthClass === 'regular',
+        widthClass: layoutCfg.widthClass,
+        windowWidth: 1024,
+        nativeTabBar: layoutCfg.nativeTabBar,
+        nativeAccessory: layoutCfg.nativeTabBar,
+        phoneSplit: splitCfg.phoneSplit,
+      }),
+  };
+});
 
 vi.mock('expo-crypto', () => ({
   randomUUID: () => 'test-uuid',
@@ -492,6 +508,23 @@ describe('drawer copied content withdrawal', () => {
       await waitFor(() => expect(currentTarget()?.climb.uuid).toBe('fresh'));
     },
   );
+
+  it('sends a native iPad tap to the full-screen player, never a pane', async () => {
+    // Like Apple Music: a regular-width native iPad has no pane, so a climb tap
+    // opens `/play` exactly as on iPhone.
+    layoutCfg.widthClass = 'regular';
+    layoutCfg.nativeTabBar = true;
+    const hosts: HostValue[] = [];
+    const routes: RouteValue[] = [];
+    renderHost(
+      (host) => hosts.push(host),
+      (route) => routes.push(route),
+    );
+    expect(hosts.at(-1)?.usesDetailPane).toBe(false);
+    act(() => hosts.at(-1)!.openPlayDrawer(makeQueueItem('ipad-tap').climb as Climb));
+    await waitFor(() => expect(routes.at(-1)?.playTarget?.climb.uuid).toBe('ipad-tap'));
+    expect(hosts.at(-1)?.playDrawerPaneProps?.openTarget ?? null).toBeNull();
+  });
 });
 
 beforeEach(() => {
@@ -523,6 +556,7 @@ beforeEach(() => {
   queue.activeClimbUuid = null;
   previewedClimbUuids.length = 0;
   layoutCfg.widthClass = 'compact';
+  layoutCfg.nativeTabBar = false;
 });
 
 describe('DrawerHostProvider board presence binding', () => {

@@ -18,8 +18,8 @@ export type HorizontalSafeAreaInputs = {
  * (HIG, "Designing for iPhone Duo": "Use safe areas to make sure controls don't cover
  * your content"), and a tab's safe area reports them: right 84 on the inner display
  * in landscape. A portrait-locked iPhone reports 0 on both sides, and so does an
- * iPad tab, which UIKit lays out beside its sidebar (`publishNativeTabletContentWidth`),
- * so this is a no-op on both.
+ * iPad tab, which UIKit lays out beside its sidebar, so this is a no-op on
+ * both.
  *
  * Once one container pads, everything inside it is already clear, so a nested
  * container must not pad a second time.

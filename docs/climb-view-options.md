@@ -155,7 +155,7 @@ the card's measured height plus 8 pt above and below (a typical 184 pt card unti
 positions. Above the board the region also has `zIndex: 1` over the lost-holds banner and the board. The region
 is measured while it sits above, and the wall-state callout hangs below it instead of below the header, so the
 notice never covers Log. The opening-layout cache keys on the resolved small row and the position, since both move
-the board. The iPad pane renders the same `PlayCore`, so all of this applies there too.
+the board. The tablet-shell and phone-split panes render the same `PlayCore`, so all of this applies there too.
 
 ## Storage
 

@@ -76,14 +76,15 @@ older iPhone is the variant with the chrome degraded, not Material.
 - `useTabChrome()` (pure core: `resolveTabChrome` in `src/hooks/tab-chrome.ts`) is the canonical
   answer for the tab chrome, and `useBottomChromeMetrics` keys tab-bar geometry on it so the layout
   math matches the bar actually on screen:
-  - `nativeTabBar` (`useNativeTabBar()`): Liquid Glass on any iPhone, iOS 18 included, gets the
-    system UIKit tab bar through `NativeTabs` (HIG, Tab bars). Material, Android and the tablet
-    shell keep the JS `Tabs` + `MaterialTabBar` / sidebar.
+  - `nativeTabBar` (`useNativeTabBar()`): Liquid Glass on any iPhone or iPad, iOS 18 included, gets
+    the system UIKit tab bar through `NativeTabs` (HIG, Tab bars); on iPad it adapts to a sidebar.
+    Material, Android and the JS tablet shell keep the JS `Tabs` + `MaterialTabBar` / rail.
   - `liquidGlassTabBar`: the iOS 26 extras on that bar, also gated on `useGlassCapability()` —
     minimize-on-scroll. Climbs stays an ordinary labelled tab, the rightmost one, like Apple
     Music's Search tab, not a separated `role="search"` tab. On an iOS 27 iPhone it is the
     prominent tab, so it stays on screen when the bar collapses.
-  - `nativeAccessory`: the `BottomAccessory` platter carries the current climb (iOS 26 only).
+  - `nativeAccessory`: the `BottomAccessory` platter carries the current climb (iOS 26 only), on
+    iPhone and iPad alike.
     Like Apple Music's platter, it shows a 32pt thumbnail and the climb name over a byline (grade ·
     sends, or grade · rating when nobody has sent it), and fills the frame UIKit gives it, with
     Music's insets (artwork 16pt in, last control ~30pt from the right edge). Open
@@ -799,11 +800,24 @@ borderless)` builds a Pressable `android_ripple` config at that state-layer opac
 
 ## Large-screen adaptive layout (iPad + Android tablet + web desktop)
 
-A **tablet-sized surface** — an iPad, Android tablet, or qualifying web screen — gets a multi-column
-shell; every phone, and a tablet-sized surface in a narrow window, falls through to the phone UI
-**verbatim**. The shell is drawn in each platform's own chrome: **Liquid Glass** on iPad (the glass
-`IpadSidebar` rail), **Material 3** on Android tablets and web (`MaterialNavigationRail`), routed by
-variant through `TabletSidebar` (`createVariantComponent`).
+**iPad on Liquid Glass follows Apple Music.** It uses the native `NativeTabs` sidebar
+(`sidebarAdaptable`): a sidebar in landscape, a tab bar at the top in portrait. Every tab is **one
+content column**; there is no player pane, wall column or wall strip beside it. The current climb rides
+the bottom accessory, Music's MiniPlayer (HIG Tab bars: "tab bars with an attached accessory, like the
+MiniPlayer in Music"), and tapping it, or any climb, opens the full-screen `/play` player, as on iPhone
+(HIG: "Don't change your app's functionality based on the space it occupies"). The accessory zooms
+into the player. `resolveCurrentClimbSurface` (`src/hooks/current-climb-surface.ts`) is the one answer
+to "who shows the current climb": the floating JS bar, the bottom-chrome reserve, the rest pill and the
+drawer host's tap routing all read it, so the climb never shows twice. Tab content clears the
+accessory through the measured in-tab inset (`tabBarAtBottom: false`, the same path as the iPhone
+Duo's side rail). The rest of this section describes the **JS tablet shell**, which Android tablets,
+Expo web and an iPad on the Material variant still use.
+
+A **tablet-sized surface** on the JS shell — an Android tablet, a qualifying web screen, or an iPad on
+Material — gets a multi-column shell; every phone, and a tablet-sized surface in a narrow window, falls
+through to the phone UI **verbatim**. The shell is drawn in each platform's own chrome through
+`TabletSidebar` (`createVariantComponent`): **Material 3** (`MaterialNavigationRail`) on Android
+tablets and web, and the glass `IpadSidebar` rail where the Liquid Glass look applies.
 The size class is pure and unit-tested in `theme/size-class.ts` (`resolveDeviceLayout`), fed window
 width by `hooks/use-device-layout.ts`:
 

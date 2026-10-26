@@ -68,7 +68,11 @@ vi.mock('../../../lib/route-segments', () => ({
 // useBottomChromeMetrics now reads the device layout; in jsdom this test runs as
 // a compact phone (no sidebar), so the bottom-chrome arithmetic is unchanged.
 vi.mock('../../../hooks/use-device-layout', () => ({
-  useDeviceLayout: () => ({ widthClass: cfg.widthClass, expanded: cfg.windowWidth >= 1024 }),
+  useDeviceLayout: () => ({
+    widthClass: cfg.widthClass,
+    expanded: cfg.windowWidth >= 1024,
+    isTablet: cfg.widthClass === 'regular',
+  }),
 }));
 vi.mock('../../../providers/queue-provider', () => ({
   useQueue: () => ({ state: { currentClimbQueueItem: cfg.currentClimbQueueItem } }),
@@ -324,7 +328,7 @@ describe('PersistentQueueBar', () => {
     );
   });
 
-  it('renders in tight regular iPad widths where the detail pane is suppressed', () => {
+  it('renders in tight regular tablet-shell widths where the detail pane is suppressed', () => {
     cfg.widthClass = 'regular';
     cfg.windowWidth = 744;
 
@@ -334,7 +338,7 @@ describe('PersistentQueueBar', () => {
     expect(container.querySelector('[data-tick]')).not.toBeNull();
   });
 
-  it('stays hidden in regular iPad widths where the detail pane owns the current climb', () => {
+  it('stays hidden in regular tablet-shell widths where the detail pane owns the current climb', () => {
     cfg.widthClass = 'regular';
     cfg.windowWidth = 1024;
 
@@ -342,6 +346,32 @@ describe('PersistentQueueBar', () => {
 
     expect(container.querySelector('[data-capsule]')).toBeNull();
     expect(container.querySelector('[data-tick]')).toBeNull();
+  });
+
+  it('stays hidden on a native iPad mini in portrait, where the accessory carries the climb', () => {
+    // The mini portrait window (744) is too narrow for the tablet shell's pane, so
+    // the old width budget brought this bar back over the native accessory: two
+    // mini players on one screen.
+    cfg.widthClass = 'regular';
+    cfg.windowWidth = 744;
+    cfg.nativeTabBar = true;
+    cfg.nativeAccessoryActive = true;
+
+    const { container } = renderBar();
+
+    expect(container.querySelector('[data-capsule]')).toBeNull();
+    expect(container.querySelector('[data-tick]')).toBeNull();
+  });
+
+  it('floats on a native iPad without the iOS 26 accessory, like an iOS 18 iPhone', () => {
+    cfg.widthClass = 'regular';
+    cfg.windowWidth = 1180;
+    cfg.nativeTabBar = true;
+    cfg.nativeAccessoryActive = false;
+
+    const { container } = renderBar();
+
+    expect(container.querySelector('[data-capsule]')).not.toBeNull();
   });
 
   describe('return-to-session affordance (#2563)', () => {

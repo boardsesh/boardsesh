@@ -83,11 +83,12 @@ const ACCESSORY_SHOWN_NATIVE_PROPS = { ios: { bottomAccessoryHidden: false } } a
 const ACCESSORY_HIDDEN_NATIVE_PROPS = { ios: { bottomAccessoryHidden: true } } as const;
 
 /**
- * Bottom tabs. Every iPhone on the Liquid Glass variant gets the system UIKit tab
- * bar (`expo-router/unstable-native-tabs`), iOS 18 included (HIG, Tab bars: use
- * the system bar so it carries the platform's own materials, Dynamic Type and
- * accessibility). iOS 26 adds the Liquid Glass extras on top: a native
- * `BottomAccessory` platter for the current climb + tick and minimize-on-scroll.
+ * Bottom tabs. Every iPhone and iPad on the Liquid Glass variant gets the system
+ * UIKit tab bar (`expo-router/unstable-native-tabs`), iOS 18 included (HIG, Tab
+ * bars: use the system bar so it carries the platform's own materials, Dynamic
+ * Type and accessibility); on iPad it adapts to a sidebar. iOS 26 adds the Liquid
+ * Glass extras on top: a native `BottomAccessory` platter for the current climb +
+ * tick (on iPad too, like Music's MiniPlayer) and minimize-on-scroll.
  * On iOS 18 the bar has neither, so the current climb rides the floating JS
  * `PersistentQueueBar` just above the native bar. Climbs is an ordinary labelled
  * tab everywhere, like Apple Music's Search tab. Material, Android and the
@@ -301,9 +302,10 @@ export default function TabLayout() {
     />,
   ];
 
-  // Material tablets retain the JS rail and pane shell at every width.
-  // Native iPad instead keeps one UIKit adaptive sidebar navigator below;
-  // NativeTabletContent owns panes inside each measured native tab host.
+  // Material tablets (Android, Expo web, an iPad on the Material variant) retain
+  // the JS rail and pane shell at every width. Native iPad instead keeps one UIKit
+  // adaptive sidebar navigator below, with one content column and the current
+  // climb in the bottom accessory, like Apple Music.
   if (deviceLayout.isTablet && !nativeTabBar) {
     const isRegular = deviceLayout.widthClass === 'regular';
     const tabsNavigator = (

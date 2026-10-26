@@ -4,7 +4,6 @@ import { isLiquidGlassAvailable } from 'expo-glass-effect';
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import { useTheme } from '../providers/theme-provider';
 import { useGlassCapability } from './use-glass-capability';
-import { useDeviceLayout } from './use-device-layout';
 import { resolveTabChrome, type TabChrome } from './tab-chrome';
 
 /**
@@ -25,24 +24,22 @@ export function isBottomAccessoryAvailable(): boolean {
 export function useTabChrome(): TabChrome {
   const { variant } = useTheme();
   const glassCapable = useGlassCapability();
-  const { isTablet } = useDeviceLayout();
   return useMemo(
     () =>
       resolveTabChrome({
         platformOS: Platform.OS,
         variant,
         glassCapable,
-        isTablet,
         accessoryAvailable: isBottomAccessoryAvailable(),
       }),
-    [variant, glassCapable, isTablet],
+    [variant, glassCapable],
   );
 }
 
 /**
- * Whether the native UIKit tab bar (`NativeTabs`) is the bottom bar on screen:
- * the Liquid Glass variant on any iPhone, iOS 18 included. Everything else
- * (Material, Android, the tablet shell) uses the JS `Tabs` + `MaterialTabBar`.
+ * Whether the native UIKit tab bar (`NativeTabs`) is on screen: the Liquid Glass
+ * variant on any iPhone or iPad, iOS 18 included. Everything else (Material,
+ * Android, the JS tablet shell) uses the JS `Tabs` + `MaterialTabBar`.
  * Drives the tab-bar choice in `_layout` and the tab-bar geometry in
  * `useBottomChromeMetrics`, so the two never disagree about which bar is up.
  */

@@ -71,7 +71,7 @@ vi.mock('../../chrome/NativeRootHeader', async () => {
   };
 });
 vi.mock('../../../hooks/use-device-layout', () => ({
-  useDeviceLayout: () => ({ isPad: false, widthClass: 'compact' }),
+  useDeviceLayout: () => ({ isPad: ctrl.isPad, widthClass: ctrl.isPad ? 'regular' : 'compact' }),
 }));
 vi.mock('../../../hooks/use-board-angle-options', () => ({ useBoardAngleOptions: () => [30, 40] }));
 vi.mock('../../navigation/AnchoredPopover', () => ({
@@ -117,6 +117,7 @@ const ctrl = vi.hoisted(() => ({
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
   // The iOS 26 tab-bar accessory platter mounts (false on iOS 18 and Material).
   nativeAccessory: true,
+  isPad: false,
   wallClimb: null as { climbUuid: string; name: string } | null,
   // The chrome's focus effects, kept so a test can run one and its cleanup: the
   // cleanup is what the screen losing focus does.
@@ -537,6 +538,7 @@ describe('ClimbTopChrome', () => {
     ctrl.bluetooth = null;
     ctrl.variant = 'liquidGlass';
     ctrl.nativeAccessory = true;
+    ctrl.isPad = false;
     ctrl.wallClimb = null;
     ctrl.focusEffects.length = 0;
     ctrl.setBoardAngle.mockClear();
@@ -714,6 +716,14 @@ describe('ClimbTopChrome', () => {
       ctrl.nativeAccessory = false;
       ctrl.board = typedBoard;
       ctrl.bluetooth = connectedBoard();
+      const { container } = render(<ClimbTopChrome {...makeProps()} />);
+      expect(container.querySelector('[data-board-held-capsule]')).toBeNull();
+    });
+
+    it('stays out on iPad, where the accessory platter keeps its bulb on screen', () => {
+      ctrl.isPad = true;
+      ctrl.board = typedBoard;
+      ctrl.bluetooth = connectedBoard({ ledless: true });
       const { container } = render(<ClimbTopChrome {...makeProps()} />);
       expect(container.querySelector('[data-board-held-capsule]')).toBeNull();
     });

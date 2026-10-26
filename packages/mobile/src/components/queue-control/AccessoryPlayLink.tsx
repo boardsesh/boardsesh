@@ -42,8 +42,8 @@ export function AccessoryPlayLink({
   zoomSourceRetained = false,
 }: AccessoryPlayLinkProps) {
   const reduceMotion = useReduceMotion();
-  const supportsZoom =
-    zoomSourceRetained && Platform.OS === 'ios' && !Platform.isPad && Number(Platform.Version) >= 18 && !reduceMotion;
+  // iPad too: like Music's MiniPlayer, the accessory zooms into the full-screen player.
+  const supportsZoom = zoomSourceRetained && Platform.OS === 'ios' && Number(Platform.Version) >= 18 && !reduceMotion;
   const content = (
     <PlayPressable
       accessibilityRole="button"

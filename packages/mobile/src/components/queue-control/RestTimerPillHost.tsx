@@ -8,12 +8,10 @@
 // each mount owns its own `visible` state.
 
 import { useCallback, useState } from 'react';
-import { StyleSheet, View, useWindowDimensions } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useRestTimerArmed } from '../../hooks/use-rest-timer';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
-import { useDeviceLayout } from '../../hooks/use-device-layout';
-import { resolveDetailPaneSurface } from '../../theme/size-class';
-import { SIDEBAR_WIDTH } from '../../theme/layout';
+import { useCurrentClimbSurface } from '../../hooks/use-current-climb-surface';
 import { spacing } from '../../theme/tokens';
 import { RestTimerPill } from './RestTimerPill';
 import { RestTimerSheet } from './RestTimerSheet';
@@ -49,7 +47,7 @@ export type RestTimerPillGateInputs = {
   armed: boolean;
   /** `BottomChromeMetrics.insideTabs`. */
   insideTabs: boolean;
-  /** True on the regular-width iPad shell, where the sidebar replaces the tab bar. */
+  /** True on the regular-width JS tablet shell, where its rail replaces the tab bar. */
   usesSidebar: boolean;
 };
 
@@ -84,20 +82,13 @@ export function shouldRenderRestTimerPill({ armed, insideTabs, usesSidebar }: Re
 export function RootRestTimerPillHost() {
   const armed = useRestTimerArmed();
   const bottomChrome = useBottomChromeMetrics();
-  const { widthClass } = useDeviceLayout();
-  const { width } = useWindowDimensions();
-
-  // `usesSidebar` is the reserve's own term, recomputed from the same inputs.
-  // The detail-pane check is the persistent-queue-bar bail-out and is strictly
-  // narrower, so it is kept only as documentation of which shell this is.
-  const usesSidebar = bottomChrome.insideTabs && widthClass === 'regular';
-  const detailPaneOwnsQueue =
-    usesSidebar && resolveDetailPaneSurface({ width, widthClass, sidebarWidth: SIDEBAR_WIDTH }) === 'pane';
+  // `usesSidebar` is the reserve's own term, from the same resolver the reserve
+  // reads. The native iPad is not the sidebar shell, so there the pill floats
+  // above the accessory exactly as on iPhone.
+  const { sidebarShell } = useCurrentClimbSurface();
+  const usesSidebar = bottomChrome.insideTabs && sidebarShell;
 
   if (!shouldRenderRestTimerPill({ armed, insideTabs: bottomChrome.insideTabs, usesSidebar })) return null;
-  // Unreachable while the gate above holds (a detail pane implies the sidebar),
-  // but stated so the iPad shell's intent survives a future edit to either.
-  if (detailPaneOwnsQueue) return null;
 
   return (
     <View pointerEvents="box-none" style={[styles.overlay, { bottom: bottomChrome.restTimerBottom }]}>

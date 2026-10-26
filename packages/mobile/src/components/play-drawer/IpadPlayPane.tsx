@@ -1,6 +1,5 @@
-import { useTabletPaneWidth } from '../../hooks/native-tablet-pane-width';
 import { memo, useCallback, useMemo } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, useWindowDimensions } from 'react-native';
 import { router, useSegments } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,15 +11,17 @@ import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { useDeviceLayout } from '../../hooks/use-device-layout';
 import { resolveEffectiveWallSurface } from '../../theme/size-class';
+import { SIDEBAR_WIDTH } from '../../theme/layout';
 import { tabsActiveSegment } from '../../lib/route-segments';
 import { NO_BOARD_PICKER_HREF } from '../../lib/boards/first-board-mode';
 import { spacing } from '../../theme/tokens';
 
 /**
- * The persistent right column on the iPad shell: the PlayDrawer for the user's
- * selected climb, rendered as a pane (not a bottom sheet). It follows selection
- * like the iPad master-detail pattern — tapping a list row updates it — so the
- * browse→inspect flow works on iPad. The live wall is shown elsewhere (the
+ * The persistent right column on the JS tablet shell (Android tablets, Expo web, a
+ * Material-variant iPad): the PlayDrawer for the user's selected climb, rendered
+ * as a pane (not a bottom sheet). It follows selection like a master-detail pane:
+ * tapping a list row updates it. The native iPad has no pane; like Music it opens
+ * the full-screen player from the bottom accessory. The live wall is shown elsewhere (the
  * sidebar footer cell, a column in landscape, and — here — a compact strip docked
  * atop the pane in portrait, where there's no room for a column). The pane also
  * annotates its own header with an "On the wall" chip when the selected climb is
@@ -45,7 +46,7 @@ function IpadPlayPaneComponent({
   const insets = useSafeAreaInsets();
   const { t } = useTranslation('session');
   const { t: tClimbs } = useTranslation('climbs');
-  const { width, sidebarWidth: paneSidebarWidth } = useTabletPaneWidth();
+  const { width } = useWindowDimensions();
   const { widthClass, wallDeviceClass } = useDeviceLayout();
   const { enabled, boardId } = useBoardPresenceControls();
   const segments = useSegments();
@@ -66,7 +67,7 @@ function IpadPlayPaneComponent({
     width,
     widthClass,
     wallDeviceClass,
-    sidebarWidth: paneSidebarWidth,
+    sidebarWidth: SIDEBAR_WIDTH,
   });
   const showStrip = wallSurface === 'strip' && enabled && boardId !== null && !onWallTab;
   const paneBoardConfig = playDrawerPaneProps?.boardConfig;

@@ -1,4 +1,4 @@
-import { useTabletPaneWidth } from '../hooks/native-tablet-pane-width';
+import { useCurrentClimbSurface } from '../hooks/use-current-climb-surface';
 import type { TickClimbIdentity } from '@boardsesh/board-config';
 /**
  * DrawerHostProvider mounts PlayDrawer and LogAscentSheet once at the app root
@@ -56,7 +56,6 @@ import { BoardShareSheet } from '../components/board-discovery/BoardShareSheet';
 import { climbToQueueItem } from '../lib/climb-to-queue-item';
 import { useActiveClimbUuid, useIsSharedSession, useQueueActions, useQueueSessionControls } from './queue-provider';
 import { getSetting } from '../settings/hooks';
-import { useDeviceLayout } from '../hooks/use-device-layout';
 import { usePhoneSplit } from '../hooks/use-phone-split';
 import {
   armPlayerScrollHandoff,
@@ -65,7 +64,6 @@ import {
 } from '../components/play-drawer/route-player-handoff';
 import { buildCarriedPaneTarget, resolvePlayerSurface, resolveSplitRouteClose } from '../lib/phone-split-player';
 import { usePhoneSplitPaneTaken } from '../components/navigation/phone-split-pane-slot';
-import { resolveDetailPaneSurface } from '../theme/size-class';
 import { useQueueSnackbar } from './queue-snackbar-provider';
 import { useBoardPresenceControls, type ResolveBoardUuidArgs } from './board-presence-provider';
 import { boardUuidOrNull } from '../lib/boards/board-identity';
@@ -208,16 +206,17 @@ type DrawerHostValue = {
    *  separate Switch-board control). Wired to the board glyph when the
    *  `board-presence` flag is on. */
   openBoardSheet: () => void;
-  /** Props for the iPad right-column PlayDrawer pane (regular width); null while
-   *  no board is resolved. Consumed by `IpadPlayPane` in the shell. On iPad regular
-   *  width `openPlayDrawer` drives this pane instead of the `/play` route. */
+  /** Props for the tablet shell's right-column PlayDrawer pane (regular width) and
+   *  the iPhone Duo's split pane; null while no board is resolved. Consumed by
+   *  `IpadPlayPane`. Where that pane is up, `openPlayDrawer` drives it instead of
+   *  the `/play` route. */
   playDrawerPaneProps: PlayDrawerPaneProps | null;
   /** Props for the iPad "Now on the wall" column (regular landscape); null while
    *  no board is resolved. Consumed by `IpadWallColumn` in the shell. */
   boardPanelProps: NowOnTheWallColumnProps | null;
-  /** True when `openPlayDrawer` lands in the iPad shell's persistent right-column
-   *  pane (regular-width master-detail) rather than the `/play` route / bottom
-   *  sheet — a selection fills the pane beside the list instead of covering it. */
+  /** True when `openPlayDrawer` lands in a pane beside the list (the JS tablet
+   *  shell at regular width, the iPhone Duo's split) rather than the `/play` route.
+   *  Always false on the native iPad, which opens the full-screen player. */
   usesDetailPane: boolean;
 };
 
@@ -390,8 +389,9 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       replayFrameRef.current = null;
     }
   }, []);
-  // iPad regular width shows the PlayDrawer inline in the right-column pane
-  // (IpadPlayPane) instead of the full-screen `/play` route. `paneTarget` is the
+  // The JS tablet shell at regular width shows the PlayDrawer inline in the
+  // right-column pane (IpadPlayPane) instead of the full-screen `/play` route, and
+  // the iPhone Duo's split shows it in its leading pane. `paneTarget` is the
   // pane's equivalent of `playTarget`: the selected climb with a per-selection
   // nonce so re-tapping the same climb still re-applies it in the pane.
   const [paneTarget, setPaneTarget] = usePrivacyScopedState<PlayDrawerOpenTarget>();
@@ -403,13 +403,13 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const queueSheetRef = useRef<QueueSheetHandle>(null);
   const boardSheetRef = useRef<BoardSheetHandle>(null);
   const { data: activeBoard } = useActiveBoard();
-  // iPad regular width hosts the PlayDrawer as a persistent right-column pane
-  // rather than the `/play` route. `usesDetailPane` mirrors the shell's pane
-  // budget (resolveDetailPaneSurface — the tightest regular portraits fall back
-  // to the route + compact sheets). A ref lets the empty-dep `openPlayDrawer`
-  // read it without churning its identity.
-  const { width: windowWidth, sidebarWidth: paneSidebarWidth } = useTabletPaneWidth();
-  const { widthClass } = useDeviceLayout();
+  // The JS tablet shell at regular width hosts the PlayDrawer as a persistent
+  // right-column pane rather than the `/play` route. `usesDetailPane` mirrors the
+  // shell's pane budget (the tightest regular portraits fall back to the route +
+  // compact sheets). The native iPad has no pane: like Music, a tap opens the
+  // full-screen player. A ref lets the empty-dep `openPlayDrawer` read it without
+  // churning its identity.
+  const { home: currentClimbHome } = useCurrentClimbSurface();
   // The "On the Wall" kiosk tab hides the shell's detail pane (it IS the wall
   // surface and needs the full content pane), so a climb open there must fall back
   // to the `/play` route instead of a paneTarget that lands in an unmounted pane.
@@ -418,13 +418,13 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const routeSegments = useSegments();
   const onWallTab = tabsActiveSegment(routeSegments) === 'wall';
   // The phone split (iPhone Duo opened in landscape) hosts the same pane on the
-  // leading half of each tab. Never true on a tablet, so the iPad answers are as
-  // they were. A root page over the tabs hides the split's pane, so taps there
+  // leading half of each tab. Never true on a tablet. A root page over the tabs
+  // hides the split's pane, so taps there
   // open `/play` (see resolvePlayerSurface).
   const phoneSplit = usePhoneSplit();
   const splitPaneTaken = usePhoneSplitPaneTaken();
   const { paneMounted, tapsOpenPane: usesDetailPane } = resolvePlayerSurface({
-    tabletPane: resolveDetailPaneSurface({ width: windowWidth, widthClass, sidebarWidth: paneSidebarWidth }) === 'pane',
+    tabletPane: currentClimbHome === 'detailPane',
     phoneSplit,
     onWallTab,
     tabsUncovered: isTabsRoute(routeSegments),
@@ -631,8 +631,8 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
         overrideOwnerRef.current = null;
       }
       setPreviewedClimbUuid(openOptions.previewQueueItem ? climb.uuid : null);
-      // iPad regular width hosts the drawer as a persistent right-column pane, so
-      // drive it in place instead of navigating to `/play`. The pane reads
+      // A pane beside the list (the JS tablet shell, the Duo's split) hosts the
+      // drawer, so drive it in place instead of navigating to `/play`. The pane reads
       // `paneTarget` via playDrawerPaneProps and re-applies on the bumped nonce (a
       // re-tap of the same climb still re-applies). No router.navigate → no modal.
       if (usesDetailPaneRef.current) {
@@ -673,7 +673,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // to the pane starts from the current climb rather than a stale selection.
   // Keyed on the pane being mounted, not on where taps go: a page pushed over the
   // split's tabs routes taps to `/play` but leaves the pane (and its selection)
-  // underneath. On iPad the two are the same value.
+  // underneath. On the tablet shell the two are the same value.
   useEffect(() => {
     if (!paneMounted) setPaneTarget(null);
   }, [paneMounted, setPaneTarget]);
@@ -684,7 +684,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // close waits until the climber is done, and is dropped if they fold back
   // first. The pane shows the queue's current climb by itself; a preview the
   // route shows moves across as a look, never a fresh pick, and the scroll
-  // position follows it (route-player-handoff). Phone split only: an iPad
+  // position follows it (route-player-handoff). Phone split only: a tablet shell
   // crossing into its pane keeps the route as before.
   const [splitRouteClosePending, setSplitRouteClosePending] = useState(false);
   // Subscribed only while a close waits, so no device re-renders this provider
@@ -739,7 +739,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       // A mounted pane keeps using the override. In the phone split, only when the
       // pane owns it: an open from a page over the tabs went to this route, and its
       // foreign board must not stick to the pane (it would raise the switch-board
-      // overlay there). On iPad the old rule stands, byte for byte.
+      // overlay there). On the tablet shell the old rule stands, byte for byte.
       const paneKeepsOverride =
         paneMountedRef.current && !(phoneSplitRef.current && overrideOwnerRef.current === 'route');
       if (!targetPending && !paneKeepsOverride) setBoardConfigOverride(null);

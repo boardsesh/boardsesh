@@ -14,6 +14,7 @@ const cfg = vi.hoisted(() => ({
   // side status bar arrive as the right inset.
   insets: { top: 0, bottom: 21, left: 0, right: 84 },
   windowWidth: 951,
+  isPad: false,
 }));
 const captured = vi.hoisted(() => ({
   contentInsets: [] as Array<{ left: number; right: number }>,
@@ -26,7 +27,12 @@ vi.mock('react-native', () => ({
   View: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
     createElement('div', { 'data-style': JSON.stringify(style) }, children),
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
-  Platform: { OS: 'ios', isPad: false },
+  Platform: {
+    OS: 'ios',
+    get isPad() {
+      return cfg.isPad;
+    },
+  },
   useWindowDimensions: () => ({ width: cfg.windowWidth, height: 669 }),
 }));
 
@@ -39,28 +45,12 @@ vi.mock('react-native-safe-area-context', async () => {
   };
 });
 
-vi.mock('expo-router', () => ({
-  useFocusEffect: () => {},
-  useIsFocused: () => true,
-  useSegments: () => ['(tabs)', 'climbs'],
-}));
+vi.mock('expo-router', () => ({ useIsFocused: () => true }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: { separator: '#333' } }),
 }));
 vi.mock('../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: () => true }));
 vi.mock('../../../hooks/use-phone-split', () => ({ usePhoneSplit: () => cfg.phoneSplit }));
-vi.mock('../../../hooks/use-device-layout', () => ({
-  useDeviceLayout: () => ({ widthClass: 'compact', wallDeviceClass: 'sheet-only' }),
-}));
-vi.mock('../../../hooks/native-tablet-pane-width', () => ({
-  publishNativeTabletContentWidth: () => {},
-  useTabletPaneWidth: () => ({ width: cfg.windowWidth, sidebarWidth: 96 }),
-}));
-vi.mock('../../../providers/board-presence-provider', () => ({
-  useBoardPresenceControls: () => ({ enabled: false, boardId: null }),
-}));
-vi.mock('../../../lib/graphql/use-active-board', () => ({ useActiveBoard: () => ({ data: null }) }));
-vi.mock('../../board-presence/IpadWallColumn', () => ({ IpadWallColumn: () => null }));
 vi.mock('../../play-drawer/IpadPlayPane', async () => {
   const { useSafeAreaInsets } = await import('react-native-safe-area-context');
   return {
@@ -94,6 +84,7 @@ function renderTab() {
 describe('NativeTabletContent on iPhone, across the phone split', () => {
   beforeEach(() => {
     cfg.phoneSplit = false;
+    cfg.isPad = false;
     captured.contentInsets = [];
     captured.paneInsets = null;
     captured.paneProps = null;
@@ -158,5 +149,15 @@ describe('NativeTabletContent on iPhone, across the phone split', () => {
   it('passes the real insets through untouched off the split', () => {
     renderTab();
     expect(captured.contentInsets.at(-1)).toEqual({ left: 0, right: 84 });
+  });
+
+  it('renders the native iPad tab as it is: one column, no pane to host', () => {
+    // Like Apple Music: the current climb rides the bottom accessory and the
+    // player opens full screen, so the iPad never mounts a pane beside the tab.
+    cfg.isPad = true;
+    cfg.phoneSplit = true;
+    const view = renderTab();
+    expect(view.container.querySelector('[data-pane="true"]')).toBeNull();
+    expect(view.container.firstElementChild?.getAttribute('data-stack')).toBe('true');
   });
 });

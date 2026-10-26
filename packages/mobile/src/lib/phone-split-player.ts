@@ -4,8 +4,8 @@ import type { RoutePlayerSnapshot } from '../components/play-drawer/route-player
 
 /**
  * Where the player lives while the phone split (iPhone Duo open in landscape) or
- * the iPad pane is up. Pure, so the drawer host's rules unit-test without
- * navigation.
+ * the JS tablet shell's pane is up. Pure, so the drawer host's rules unit-test
+ * without navigation. The native iPad has neither: every tap opens `/play`.
  *
  * - `paneMounted`: a pane is on screen in the tab content, so its selection is
  *   worth keeping.
@@ -15,7 +15,7 @@ import type { RoutePlayerSnapshot } from '../components/play-drawer/route-player
  *   can fill the pane with its own content (the workout preview while one is
  *   built), so a tap then opens `/play` instead of changing an unseen player.
  *
- * The iPad answer is the old one: `tabletPane` and not on the wall tab, for both.
+ * The tablet shell's answer is `tabletPane` and not on the wall tab, for both.
  */
 export function resolvePlayerSurface({
   tabletPane,

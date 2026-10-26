@@ -284,7 +284,7 @@ Settings → Climbs & grades → Climb view and the player's ⋯ → View option
 switches, listed in the climber's order. View options opens the **View options** sheet (`PlayDrawerSectionsSheet`)
 as a managed `ModalSheet` mounted inside the player, above `/play`. ⋯ is a native menu
 (SwiftUI `Menu` on iOS, Compose dropdown on Android, Paper menu on web) in the top row:
-`[⌄] ━━━ [rest timer][⋯]`, in the route, the iPad pane and the web pane alike. The top
+`[⌄] ━━━ [rest timer][⋯]`, in the route and the tablet-shell pane alike. The top
 row sits outside the commit bar and the switch-board scrim, so ⋯ (and View options)
 stays in reach while browsing in commit mode and on another board's climb. On another
 board's climb every ⋯ row that writes is disabled; Share, View options and Open in
@@ -719,8 +719,9 @@ the action guard is set before the first asynchronous boundary.
 
 `handleSwitchBoardFromDrawer` in `drawer-host-provider.tsx` does the same
 `router.dismiss()` → `router.push('/boards')` when the play drawer's board-mismatch overlay
-routes to the board picker — but copy the shape, not the code: it is **ungated**, so on an
-iPad pane (where there is no `/play` route) it pops whatever is focused instead. The gated
+routes to the board picker — but copy the shape, not the code: it is **ungated**, so in a
+pane (the JS tablet shell or the iPhone Duo's split, where there is no `/play` route) it pops
+whatever is focused instead. The gated
 version is `useCreateClimbNavigation`
 (`src/components/create-climb/use-create-climb-navigation.ts`), and both remix/edit entry
 points (`useClimbActions`, behind both the long-press reaction menu and the player's ⋯) go through
@@ -736,9 +737,10 @@ Two things that are easy to get wrong:
   await, so dismissal completes immediately. Thread this callback down through the in-tree opener;
   a hook mounted in a sibling root provider cannot safely subscribe to the `/play` navigator.
 - **Omit the player callback when there is no player route.** The same menu opens from the
-  climbs list and BoardSheet, and on an **iPad regular-width layout the player is an inline
-  detail pane**. Those entry points must not call `router.dismiss()` or they can pop an unrelated
-  route. The callback's presence is the gate; do not infer it from root-level segments.
+  climbs list and BoardSheet, and on the **JS tablet shell at regular width (Android tablets,
+  Expo web, an iPad on Material) and the iPhone Duo's split the player is an inline pane**. Those
+  entry points must not call `router.dismiss()` or they can pop an unrelated route. The native
+  iPad has no pane: its player is the `/play` route, as on iPhone. The callback's presence is the gate; do not infer it from root-level segments.
 
 The rule of thumb: **before pushing a route, ask which navigator it lands in.** Same navigator
 is fine. A navigator _below_ the modal you're standing in needs the dismiss first.
@@ -777,7 +779,7 @@ after unmount when a newer target is still pending. This retry preserves the
 nonce and checks the credential generation; it excludes pane opens,
 `navigate: false`, superseded targets, and targets another route already consumed.
 
-The iPad pane does not receive this route-owned animation. Keep the modal's
+The tablet-shell and phone-split panes do not receive this route-owned animation. Keep the modal's
 live-behind presentation and accessory-host mount rules above when changing it.
 
 ### Opening a heavy route
@@ -931,8 +933,7 @@ bottom tab (e.g. `/wall`, the "On the Wall" tab — `app/(tabs)/wall/`):
 
 - Register it as a keyed `<Tabs.Screen name="wall" options={{ href: null }} />` in the shared
   `tabScreens` array (`app/(tabs)/_layout.tsx`). It **must** be a `(tabs)` route so it renders in
-  the iPad shell's content pane (keeping the sidebar + play/wall panes); a root route would cover
-  them.
+  the tablet shell's content column (keeping the sidebar); a root route would cover it.
 - `href: null` is meant to hide it from the bar — but expo-router turns it into
   `tabBarItemStyle: { display: 'none' }` and **strips the `href` key**, so a _custom_ tab bar still
   renders it unless it filters. `MaterialTabBar` skips
@@ -1000,15 +1001,16 @@ store builds, temporarily pausing OTA delivery to older binaries until users ins
 
 ## Player zoom from the tab accessory
 
-On iPhone with the native tab accessory, tapping the current climb uses Router's native
+On iPhone and iPad with the native tab accessory, tapping the current climb uses Router's native
 `Link.AppleZoom` source and `/play`'s `Link.AppleZoomTarget`. The tap stages the
 current queue head with `openPlayDrawer(climb, { navigate: false })` before Link
 navigates. This preserves the board override and existing play-target reset rules
 without a second navigation. Keep the source mounted in the tab accessory while
 the transparent player is open so closing it can zoom back to the same climb.
 
-Reduce Motion, floating toolbar hosts, Android, web and iPad use the existing opener. iPad opens
-its persistent detail pane. The player's native interactive dismissal stays
+Reduce Motion, floating toolbar hosts, Android and web use the existing opener. The iPad zooms
+from its accessory into the full-screen player like Music's MiniPlayer; it has no pane to open
+instead. The player's native interactive dismissal stays
 disabled; its existing vertical swipe owns dismissal, so two gestures cannot
 compete. Keep the lightbulb and tick controls outside the zoom source.
 
