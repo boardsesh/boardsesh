@@ -447,17 +447,20 @@ export function ClimbFilterSheet({
   const sheetColumnStyle = useSheetColumnStyle(detentSnapPoints, { activeIndex });
   // With two detents the keyboard raises the sheet to the tall one, as in
   // ModalSheet; with the RN body's single detent there is nothing to raise.
+  // Never while suspended: a keyboard on the pushed picker route (the setters
+  // search) would otherwise present this hidden sheet over that route.
   const raiseToKeyboardDetent = useCallback(() => {
+    if (isAwaitingReturn() || closingRef.current) return;
     const next = keyboardDetentIndex(activeIndexRef.current, detentSnapPoints.length - 1);
     if (next != null) sheetRef.current?.snapToIndex(next);
-  }, [detentSnapPoints.length]);
+  }, [detentSnapPoints.length, isAwaitingReturn]);
   const {
     keyboardOverlap,
     columnRef,
     onColumnLayout: measureColumnForKeyboard,
     onHostLayout,
     measureAfterDetentChange,
-  } = useSheetKeyboardInset({ enabled: true, onKeyboardShow: raiseToKeyboardDetent });
+  } = useSheetKeyboardInset({ enabled: !suspended, onKeyboardShow: raiseToKeyboardDetent });
   // A detent change while the keyboard is up moves the column without a layout
   // event once the native animation ends.
   useEffect(() => {

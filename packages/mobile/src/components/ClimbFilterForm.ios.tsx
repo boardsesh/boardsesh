@@ -19,7 +19,7 @@
 // background so the sheet's own material shows between the cards. The cards keep
 // their system fill: Liquid Glass is never drawn in the content layer.
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useLayoutEffect, useRef } from 'react';
 import { Keyboard, PlatformColor, StyleSheet } from 'react-native';
 import { Host } from '@expo/ui';
 import { Button, Form, HStack, Image, Menu, Section, Spacer, Text, TextField, useNativeState } from '@expo/ui/swift-ui';
@@ -64,7 +64,9 @@ function NameRow({ row, controlTint }: { row: FilterNameRow; controlTint: string
   const onFocusRef = useRef(row.onFocus);
   onFocusRef.current = row.onFocus;
 
-  useEffect(() => {
+  // A layout effect, so the guard runs in the commit, before the next keystroke's
+  // handler: a passive effect could run after it and push the older value back.
+  useLayoutEffect(() => {
     if (shouldPushValueToNative(row.value, lastEmittedRef.current)) {
       lastEmittedRef.current = row.value;
       textState.set(row.value);

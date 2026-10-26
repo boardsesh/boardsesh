@@ -71,6 +71,8 @@ const bottomSheetModalProps = vi.hoisted(() => ({
   // real native close arrives later (after the slide-down). Tests fire that close
   // explicitly with simulateNativeClose().
   dismiss: vi.fn(),
+  // The raw ref's snapToIndex: the keyboard raise to the tall detent.
+  snapToIndex: vi.fn(),
 }));
 
 // Captures the controlled `open` the sheet hands the coordinator, so tests can
@@ -237,7 +239,15 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
     ref,
   ) {
     bottomSheetModalProps.latest = props;
-    useImperativeHandle(ref, () => ({ present: vi.fn(), dismiss: bottomSheetModalProps.dismiss }), []);
+    useImperativeHandle(
+      ref,
+      () => ({
+        present: vi.fn(),
+        dismiss: bottomSheetModalProps.dismiss,
+        snapToIndex: bottomSheetModalProps.snapToIndex,
+      }),
+      [],
+    );
     useEffect(() => {
       bottomSheetModalProps.mountCount += 1;
     }, []);
@@ -2560,6 +2570,36 @@ describe('ClimbFilterSheet native iOS form (#6872)', () => {
     expect(routerPush).toHaveBeenCalledTimes(1);
     expect(routerPush.mock.calls[0]?.[0]).toBe('/(tabs)/climbs/quick-filters');
     expect(managedSheetProps.latest?.open).toBe(false);
+  });
+
+  it('raises the form to its tall detent when the keyboard shows', () => {
+    platformMock.OS = 'ios';
+    themeVariantMock.variant = 'liquidGlass';
+    renderFilterSheet();
+
+    // iPhone listens on the will-change event (sheet-keyboard-inset.ts).
+    expect(keyboardListeners.has('keyboardWillChangeFrame')).toBe(true);
+    act(() =>
+      keyboardListeners.get('keyboardWillChangeFrame')?.({ endCoordinates: { height: 280, screenY: 564, width: 390 } }),
+    );
+
+    expect(bottomSheetModalProps.snapToIndex).toHaveBeenCalledWith(1);
+  });
+
+  it('leaves the suspended sheet alone when a picker route raises the keyboard', () => {
+    platformMock.OS = 'ios';
+    themeVariantMock.variant = 'liquidGlass';
+    renderFilterSheet();
+    act(() => {
+      lastFormRow().row.onPress?.();
+    });
+    expect(managedSheetProps.latest?.open).toBe(false);
+
+    act(() =>
+      keyboardListeners.get('keyboardWillChangeFrame')?.({ endCoordinates: { height: 280, screenY: 564, width: 390 } }),
+    );
+
+    expect(bottomSheetModalProps.snapToIndex).not.toHaveBeenCalled();
   });
 
   it('pushes the Discover Quick filters route for the discover picker stack', () => {
