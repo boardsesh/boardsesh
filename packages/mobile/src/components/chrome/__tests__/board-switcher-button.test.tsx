@@ -4,7 +4,9 @@ import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
 
-type BoardLabelFields = Pick<UserBoard, 'name' | 'angle' | 'boardType' | 'sizeName' | 'layoutName'>;
+type BoardLabelFields = Pick<UserBoard, 'name' | 'angle' | 'boardType' | 'sizeName' | 'layoutName'> & {
+  isAngleAdjustable?: boolean;
+};
 
 const ctrl = vi.hoisted(() => ({ board: null as BoardLabelFields | null }));
 const haptics = vi.hoisted(() => ({ light: vi.fn() }));
@@ -90,59 +92,70 @@ const namedBoardNoAngle: BoardLabelFields = {
   layoutName: 'Tension Layout',
 };
 
+const renderSwitcher = (props: Partial<{ onPress: () => void; accessibilityHint: string; badge: boolean }> = {}) =>
+  render(createElement(BoardSwitcherButton, { title: 'Discover', onPress: vi.fn(), ...props }));
+
 describe('BoardSwitcherButton', () => {
   beforeEach(() => {
     ctrl.board = null;
     haptics.light.mockClear();
   });
 
-  it('renders nothing when there is no active board', () => {
-    const { container } = render(createElement(BoardSwitcherButton, { onPress: vi.fn() }));
+  it('shows the screen title alone, not as a button, when there is no active board', () => {
+    const { container } = renderSwitcher();
     expect(button(container)).toBeNull();
+    expect(container.textContent).toBe('Discover');
+    expect(container.querySelector('[data-icon="chevron.down"]')).toBeNull();
   });
 
-  it('renders the board label (angle omitted) with a caret and fires onPress with a haptic', () => {
+  it('puts the board (angle omitted) under the title with a caret and fires onPress with a haptic', () => {
     ctrl.board = typedBoard;
     const onPress = vi.fn();
-    const { container } = render(createElement(BoardSwitcherButton, { onPress }));
+    const { container } = renderSwitcher({ onPress });
     const target = button(container);
-    // The angle rides its own filter chip now, so the title omits "• 40°".
-    expect(target?.getAttribute('data-label')).toBe('Display:kilter • M');
+    // An adjustable board's angle rides its own control, so the subtitle omits "• 40°".
+    expect(target?.getAttribute('data-label')).toBe('Discover, Display:kilter • M');
+    expect(container.textContent).toContain('Discover');
+    expect(container.textContent).toContain('Display:kilter • M');
     expect(container.querySelector('[data-icon="chevron.down"]')).not.toBeNull();
     fireEvent.click(target!);
     expect(onPress).toHaveBeenCalledTimes(1);
     expect(haptics.light).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps the angle for a fixed-angle wall, which has no angle control', () => {
+    ctrl.board = { ...typedBoard, isAngleAdjustable: false };
+    const { container } = renderSwitcher();
+    expect(button(container)?.getAttribute('data-label')).toBe('Discover, Display:kilter • M • 40°');
+  });
+
   it('leads with the custom board name for a named board (angle omitted)', () => {
     ctrl.board = namedBoard;
-    const { container } = render(createElement(BoardSwitcherButton, { onPress: vi.fn() }));
-    expect(button(container)?.getAttribute('data-label')).toBe('Garage Wall');
+    const { container } = renderSwitcher();
+    expect(button(container)?.getAttribute('data-label')).toBe('Discover, Garage Wall');
   });
 
   it('renders a named board with no angle', () => {
     ctrl.board = namedBoardNoAngle;
-    const { container } = render(createElement(BoardSwitcherButton, { onPress: vi.fn() }));
-    expect(button(container)?.getAttribute('data-label')).toBe('Garage Wall');
+    const { container } = renderSwitcher();
+    expect(button(container)?.getAttribute('data-label')).toBe('Discover, Garage Wall');
   });
 
   it('forwards the accessibility hint', () => {
     ctrl.board = typedBoard;
-    const { container } = render(
-      createElement(BoardSwitcherButton, { onPress: vi.fn(), accessibilityHint: 'Opens the board switcher' }),
-    );
+    const { container } = renderSwitcher({ accessibilityHint: 'Opens the board switcher' });
     expect(button(container)?.getAttribute('data-hint')).toBe('Opens the board switcher');
   });
 
   it('renders no onboarding badge by default', () => {
     ctrl.board = typedBoard;
-    const { container } = render(createElement(BoardSwitcherButton, { onPress: vi.fn() }));
+    const { container } = renderSwitcher();
     expect(container.querySelector('[data-badge-dot]')).toBeNull();
   });
 
   it('renders the onboarding badge when badge is true', () => {
     ctrl.board = typedBoard;
-    const { container } = render(createElement(BoardSwitcherButton, { onPress: vi.fn(), badge: true }));
+    const { container } = renderSwitcher({ badge: true });
     expect(container.querySelector('[data-badge-dot]')).not.toBeNull();
   });
 });

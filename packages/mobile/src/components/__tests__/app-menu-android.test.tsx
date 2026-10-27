@@ -23,6 +23,7 @@ vi.mock('@expo/ui/jetpack-compose', () => {
     DropdownMenu,
     DropdownMenuItem,
     Row: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-row': true }, children),
+    Column: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-column': true }, children),
     Text: ({ children }: { children?: ReactNode }) => createElement('span', { 'data-compose-text': true }, children),
     IconButton: ({ children, onClick }: { children?: ReactNode; onClick?: () => void }) =>
       createElement('button', { 'data-icon-button': true, onClick }, children),
@@ -96,6 +97,16 @@ describe('AppMenu (Android) overflow anchor', () => {
     );
     expect(container.querySelector('[data-trigger] [data-icon-button]')).toBeNull();
     expect(container.querySelector('[data-trigger]')?.textContent).toContain('My crew');
+  });
+
+  it('stacks a headline over the label as one title-menu and reads both', () => {
+    const { container } = render(
+      createElement(AppMenu, { label: 'My crew', headline: 'Home', actions: ACTIONS, onSelectIndex: vi.fn() }),
+    );
+    const column = container.querySelector('[data-trigger] > [data-column]');
+    const texts = Array.from(column?.querySelectorAll('[data-compose-text]') ?? []).map((text) => text.textContent);
+    expect(texts).toEqual(['Home', 'My crew', ' ▾']);
+    expect(container.querySelector('[data-host]')?.getAttribute('aria-label')).toBe('Home, My crew');
   });
 });
 

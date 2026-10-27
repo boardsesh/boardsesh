@@ -172,8 +172,9 @@ vi.mock('react-native-reanimated', () => ({
   useDerivedValue: () => ({ value: 0 }),
 }));
 
+const routerPush = vi.hoisted(() => vi.fn());
 vi.mock('expo-router', () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: routerPush }),
   useIsFocused: () => true,
   useFocusEffect: (effect: () => void | (() => void)) => {
     ctrl.focusEffects.push(effect);
@@ -510,8 +511,12 @@ const angleAction = (root: HTMLElement) =>
 const lightbulb = (root: HTMLElement) =>
   (root.querySelector('[data-pressable="ble.connectBoard"]') ??
     root.querySelector('[data-pressable="lightControl.disconnect"]')) as HTMLButtonElement | null;
+// The board history capsule. Material's title ("Climbs" over the board) also reads
+// with a "•", so it is excluded by its label.
 const capsule = (root: HTMLElement) =>
-  root.querySelector('[data-capsule]:not([data-capsule=""])') as HTMLButtonElement | null;
+  root.querySelector(
+    '[data-capsule]:not([data-capsule=""]):not([data-pressable^="mobile.nav."])',
+  ) as HTMLButtonElement | null;
 
 const typedBoard: BoardLabelFields = {
   name: '',
@@ -542,6 +547,7 @@ describe('ClimbTopChrome', () => {
     ctrl.widthClass = 'compact';
     ctrl.wallClimb = null;
     ctrl.focusEffects.length = 0;
+    routerPush.mockClear();
     ctrl.setBoardAngle.mockClear();
     nativeChrome.enabled = false;
     nativeChrome.glassGradeRail = false;
@@ -946,7 +952,7 @@ describe('ClimbTopChrome', () => {
     ).toBe('#010203');
   });
 
-  it('renders Material with a static board title, separate history and grade controls, and no search field', () => {
+  it('renders Material with the tab title over the board, separate history and grade controls, and no search field', () => {
     ctrl.variant = 'material';
     ctrl.board = typedBoard;
     const onOpenBoardDetail = vi.fn();
@@ -965,8 +971,13 @@ describe('ClimbTopChrome', () => {
     );
 
     expect(container.querySelector('[data-gradient]')).toBeNull();
-    // The Angle chip shows an adjustable board's angle, so the title drops it.
-    expect(container.querySelector('[data-appbar-title]')?.textContent).toBe('Display:kilter • 12x12');
+    // "Climbs" names the tab; the board is its subtitle. The Angle chip shows an
+    // adjustable board's angle, so the subtitle drops it.
+    const title = container.querySelector('[data-pressable="mobile.nav.climbs, Display:kilter • 12x12"]');
+    expect(title?.getAttribute('data-hint')).toBe('boardPill.switchHint');
+    fireEvent.click(title!);
+    expect(routerPush).toHaveBeenCalledWith('/boards');
+    haptics.light.mockClear();
     const history = capsule(container);
     expect(history?.getAttribute('data-capsule')).toBe('Board history, Display:kilter • 12x12 • 40°');
     expect(container.querySelector('input')).toBeNull();

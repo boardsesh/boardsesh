@@ -21,6 +21,7 @@ import { useSessionDetail, useBulkVoteSummaries, useProfile } from '../../lib/gr
 import { useTickListActivation } from '../../lib/playlists/use-tick-list-activation';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { spacing } from '../../theme/tokens';
+import { useVariantValue } from '../../theme/variants';
 import { useTheme } from '../../providers/theme-provider';
 import { getSoleBoardType } from '../../lib/grade-label';
 import { canEditSessionDetail, isDailySessionId } from '../../lib/session-edit-permissions';
@@ -117,13 +118,15 @@ export default function SessionDetailScreen() {
     [isMultiUser, participantById, handleTickPress],
   );
 
-  // Header title follows the loaded session name/date.
+  // UIKit's header follows the loaded session name/date. Material's app bar names
+  // the screen instead: the summary card right under it already leads with the name.
+  const headerTitle = useVariantValue({ liquidGlass: title, material: '' }) || t('mobileDetail.title');
   useEffect(() => {
     navigation.setOptions({
       headerShown: true,
-      title: title || t('mobileDetail.title'),
+      title: headerTitle,
     });
-  }, [navigation, title, t]);
+  }, [navigation, headerTitle]);
 
   if (isPending) {
     return (

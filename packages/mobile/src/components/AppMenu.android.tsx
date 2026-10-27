@@ -12,6 +12,7 @@
 import { Fragment, useMemo, useState } from 'react';
 import { Host } from '@expo/ui';
 import {
+  Column,
   DropdownMenu,
   DropdownMenuItem,
   HorizontalDivider,
@@ -52,6 +53,7 @@ export function AppMenu(props: AppMenuProps) {
   const disabledColor = systemColors.tertiaryLabel as string;
 
   const showCaret = props.iconName == null && props.showCaret !== false;
+  const headline = props.iconName == null ? props.headline : undefined;
 
   return (
     // `matchContents` (content width AND height): the title-menu hugs its label so it
@@ -74,7 +76,7 @@ export function AppMenu(props: AppMenuProps) {
       matchContents
       colorScheme={colorScheme}
       accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel ?? props.label}
+      accessibilityLabel={accessibilityLabel ?? (headline ? `${headline}, ${props.label}` : props.label)}
       accessibilityHint={accessibilityHint}
       style={[maxWidth != null ? { maxWidth } : null, style]}
     >
@@ -88,6 +90,25 @@ export function AppMenu(props: AppMenuProps) {
             <IconButton onClick={() => setExpanded(true)}>
               <Icon source={MORE_VERT_ICON} size={topBarByVariant.material.glyphSize} tint={caretColor} />
             </IconButton>
+          ) : headline != null ? (
+            // The M3 title-menu: titleLarge headline over a bodyMedium scope line,
+            // one click target. No start padding, so the headline lands on the same
+            // 56dp title inset as `MaterialAppBarTitle` on the other tabs.
+            <Column modifiers={[clickable(() => setExpanded(true)), padding(0, spacing[2], spacing[2], spacing[2])]}>
+              <Text style={{ typography: 'titleLarge' }} color={labelColor} maxLines={1} overflow="ellipsis">
+                {headline}
+              </Text>
+              <Row verticalAlignment="center">
+                <Text style={{ typography: 'bodyMedium' }} color={caretColor} maxLines={1} overflow="ellipsis">
+                  {props.label}
+                </Text>
+                {showCaret ? (
+                  <Text style={{ typography: 'bodyMedium' }} color={caretColor}>
+                    {` ${CARET}`}
+                  </Text>
+                ) : null}
+              </Row>
+            </Column>
           ) : (
             <Row
               modifiers={[clickable(() => setExpanded(true)), padding(spacing[2], spacing[1], spacing[2], spacing[1])]}
