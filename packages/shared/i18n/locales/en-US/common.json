@@ -469,7 +469,8 @@
         "footer": "Changes apply immediately. Hide all for just the climb, without vertical scrolling.",
         "tabs": {
           "sections": "Below the climb",
-          "buttons": "Buttons"
+          "buttons": "Buttons",
+          "miniPlayer": "Mini player"
         }
       },
       "sectionLayout": {
@@ -623,6 +624,19 @@
         "rogueConnecting": "Connecting…",
         "rogueUnreachable": "Can't reach it. Check it's on and close by.",
         "rogueSaveFailed": "Couldn't save the timer. Try again."
+      },
+      "miniPlayer": {
+        "title": "Mini player",
+        "description": "The bar above the tabs. Tap it to open the climb.",
+        "buttons": {
+          "next": "Next climb",
+          "previous": "Previous climb"
+        },
+        "fixedNote": "Board light is always there, beside Log. Log is always last, under your thumb.",
+        "footer": "On iPhone the bar fits one of these beside Board light and Log: the first one that's on.",
+        "open": "Open",
+        "collapsed": "Collapsed",
+        "previewLabel": "Preview, {{shape}} bar: {{buttons}}"
       }
     },
     "sendRecovery": {

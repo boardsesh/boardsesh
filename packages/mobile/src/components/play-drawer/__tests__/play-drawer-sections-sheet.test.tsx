@@ -72,6 +72,29 @@ vi.mock('../../../lib/player-buttons-preference', () => ({
     buttons.order.join() === 'mirror,favorite,angle,share,queue' &&
     Object.values(buttons.visible).every(Boolean),
 }));
+const miniPlayer = vi.hoisted(() => ({
+  buttons: {
+    order: ['next', 'previous', 'mirror', 'favorite', 'queue', 'share', 'angle'],
+    visible: { next: true, previous: true, mirror: true, favorite: false, queue: false, share: false, angle: false },
+  } as { order: string[]; visible: Record<string, boolean> },
+  isDefault: true,
+  setVisible: vi.fn(),
+  move: vi.fn(),
+  restoreDefaults: vi.fn(),
+}));
+vi.mock('../../../lib/mini-player-buttons-preference', () => ({
+  useMiniPlayerButtonsEditor: () => miniPlayer,
+}));
+const deviceLayout = vi.hoisted(() => ({ isTablet: false, phoneSplit: false }));
+vi.mock('../../../hooks/use-device-layout', () => ({ useDeviceLayout: () => deviceLayout }));
+vi.mock('../../queue-control/MiniPlayerButtonsPreview', () => ({
+  MiniPlayerButtonsPreview: ({ wide, board }: { wide: boolean; board: { supportsMirroring: boolean } }) =>
+    createElement('figure', {
+      'data-testid': 'mini-player-buttons-preview',
+      'data-wide': String(wide),
+      'data-mirror': String(board.supportsMirroring),
+    }),
+}));
 vi.mock('../../player-buttons/PlayerButtonsPreview', () => ({
   PlayerButtonsPreview: ({ position, board }: { position: string; board: { supportsMirroring: boolean } }) =>
     createElement('figure', {
@@ -323,6 +346,14 @@ beforeEach(() => {
   playerButtons.previousNext = true;
   playerButtons.wallBadge = true;
   playerButtons.position = 'below';
+  miniPlayer.buttons = {
+    order: ['next', 'previous', 'mirror', 'favorite', 'queue', 'share', 'angle'],
+    visible: { next: true, previous: true, mirror: true, favorite: false, queue: false, share: false, angle: false },
+  };
+  miniPlayer.isDefault = true;
+  deviceLayout.isTablet = false;
+  deviceLayout.phoneSplit = false;
+  for (const action of [miniPlayer.setVisible, miniPlayer.move, miniPlayer.restoreDefaults]) action.mockClear();
   for (const action of [
     playerButtons.setVisible,
     playerButtons.move,
@@ -532,6 +563,7 @@ describe('PlayDrawerSectionsSheet', () => {
     ).toEqual([
       ['mobile.settings.climbDrawer.tabs.sections', 'true'],
       ['mobile.settings.climbDrawer.tabs.buttons', 'false'],
+      ['mobile.settings.climbDrawer.tabs.miniPlayer', 'false'],
     ]);
     expect(screen.queryByTestId('player-buttons-preview')).toBeNull();
   });
@@ -598,6 +630,66 @@ describe('PlayDrawerSectionsSheet', () => {
     expect(restore.disabled).toBe(false);
     fireEvent.click(restore);
     expect(playerButtons.restoreDefaults).toHaveBeenCalledTimes(1);
+    expect(preferences.restoreDefaults).not.toHaveBeenCalled();
+  });
+
+  it('shows the Mini player tab: a pinned preview, the seven buttons with arrows, the fixed pair in a note', () => {
+    const screen = render(sheet());
+    fireEvent.click(screen.getByRole('radio', { name: 'mobile.settings.climbDrawer.tabs.miniPlayer' }));
+
+    const preview = screen.getByTestId('mini-player-buttons-preview');
+    expect(preview.closest('[data-sheet-list]')).toBeNull();
+    expect(preview.getAttribute('data-mirror')).toBe('true');
+    expect(preview.getAttribute('data-wide')).toBe('false');
+    expect(screen.queryByTestId('player-buttons-preview')).toBeNull();
+    expect(screen.getAllByRole('switch').map((control) => control.getAttribute('aria-label'))).toEqual([
+      'mobile.settings.miniPlayer.buttons.next',
+      'mobile.settings.miniPlayer.buttons.previous',
+      'mobile.settings.playerButtons.buttons.mirror',
+      'mobile.settings.playerButtons.buttons.favorite',
+      'mobile.settings.playerButtons.buttons.queue',
+      'mobile.settings.playerButtons.buttons.share',
+      'mobile.settings.playerButtons.buttons.angle',
+    ]);
+    expect(screen.container.querySelectorAll('[data-icon="arrow.up"]')).toHaveLength(7);
+    expect(screen.getByText('mobile.settings.miniPlayer.description').closest('[data-list-header]')).not.toBeNull();
+    expect(screen.getByText('mobile.settings.miniPlayer.fixedNote').closest('footer')).toBeTruthy();
+    expect(screen.getByText('mobile.settings.miniPlayer.footer').closest('footer')).toBeTruthy();
+  });
+
+  it('draws the wide bar on an iPad and on the open Duo', () => {
+    deviceLayout.isTablet = true;
+    const screen = render(sheet());
+    fireEvent.click(screen.getByRole('radio', { name: 'mobile.settings.climbDrawer.tabs.miniPlayer' }));
+    expect(screen.getByTestId('mini-player-buttons-preview').getAttribute('data-wide')).toBe('true');
+    deviceLayout.isTablet = false;
+    deviceLayout.phoneSplit = true;
+    screen.rerender(sheet());
+    expect(screen.getByTestId('mini-player-buttons-preview').getAttribute('data-wide')).toBe('true');
+  });
+
+  it('applies Mini player choices at once: switches and arrows', () => {
+    const screen = render(sheet());
+    fireEvent.click(screen.getByRole('radio', { name: 'mobile.settings.climbDrawer.tabs.miniPlayer' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'mobile.settings.playerButtons.buttons.share' }));
+    expect(miniPlayer.setVisible).toHaveBeenCalledWith('share', true);
+    fireEvent.click(screen.getByTestId('section-layout-move-up-queue'));
+    expect(miniPlayer.move).toHaveBeenCalledWith('queue', -1);
+    expect(playerButtons.setVisible).not.toHaveBeenCalled();
+  });
+
+  it("offers the Mini player's Restore defaults once anything differs, and leaves the other tabs alone", () => {
+    const screen = render(sheet());
+    fireEvent.click(screen.getByRole('radio', { name: 'mobile.settings.climbDrawer.tabs.miniPlayer' }));
+    const restore = screen.getByTestId('mini-player-buttons-restore-defaults') as HTMLButtonElement;
+    expect(restore.disabled).toBe(true);
+
+    miniPlayer.isDefault = false;
+    screen.rerender(sheet());
+    expect(restore.disabled).toBe(false);
+    fireEvent.click(restore);
+    expect(miniPlayer.restoreDefaults).toHaveBeenCalledTimes(1);
+    expect(playerButtons.restoreDefaults).not.toHaveBeenCalled();
     expect(preferences.restoreDefaults).not.toHaveBeenCalled();
   });
 

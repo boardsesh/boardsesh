@@ -469,7 +469,8 @@
         "footer": "Änderungen gelten sofort. Blende alles aus, um nur den Boulder ohne vertikales Scrollen zu sehen.",
         "tabs": {
           "sections": "Unter dem Boulder",
-          "buttons": "Buttons"
+          "buttons": "Buttons",
+          "miniPlayer": "Mini-Player"
         }
       },
       "sectionLayout": {
@@ -623,6 +624,19 @@
         "rogueConnecting": "Verbinde…",
         "rogueUnreachable": "Nicht erreichbar. Prüf, ob er an und in der Nähe ist.",
         "rogueSaveFailed": "Der Timer konnte nicht gespeichert werden. Versuch es noch mal."
+      },
+      "miniPlayer": {
+        "title": "Mini-Player",
+        "description": "Die Leiste über den Tabs. Tippe darauf, um den Boulder zu öffnen.",
+        "buttons": {
+          "next": "Nächster Boulder",
+          "previous": "Vorheriger Boulder"
+        },
+        "fixedNote": "Board beleuchten ist immer da, neben Eintragen. Eintragen steht immer ganz hinten, direkt unter deinem Daumen.",
+        "footer": "Auf dem iPhone hat die Leiste neben Board beleuchten und Eintragen Platz für einen dieser Buttons: den ersten, der aktiv ist.",
+        "open": "Geöffnet",
+        "collapsed": "Eingeklappt",
+        "previewLabel": "Vorschau, Leiste {{shape}}: {{buttons}}"
       }
     },
     "sendRecovery": {

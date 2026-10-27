@@ -1,11 +1,11 @@
 # Climb view options
 
 What a climber can change about the player (the climb view): the sections below the climb, and the player buttons
-around Log (#6229). Both live in the player's ⋯ → **View options** sheet, on two tabs, **Below the climb** and
-**Buttons**. Settings → Climbs & grades → **Climb view** has the same switches on the native form; the order only
+around Log (#6229), plus the buttons on the MiniPlayer bar above the tabs (#6940). All three live in the player's
+⋯ → **View options** sheet, on three tabs, **Below the climb**, **Buttons** and **Mini player**. Settings → Climbs & grades → **Climb view** has the same switches on the native form; the order only
 changes in View options (#6477, #6480). The sections half is described in
 [mobile-sheets-vs-routes.md › Play drawer section controls](mobile-sheets-vs-routes.md#play-drawer-section-controls);
-this page covers the buttons and what both share.
+this page covers the buttons, the MiniPlayer and what they share.
 
 ## What the climber gets
 
@@ -206,6 +206,62 @@ The sections below the climb keep their own AsyncStorage record (`playDrawerSect
 | Preview                                 | `packages/mobile/src/components/player-buttons/PlayerButtonsPreview.tsx`        |
 | Settings › Climb view                   | `packages/mobile/src/components/settings/climb-view/`, `app/settings/climb-view.tsx` |
 | Reorder rows (shared with sections)     | `packages/mobile/src/components/section-layout/SectionLayoutList.tsx`           |
+
+## Mini player
+
+The MiniPlayer is the bar above the tabs: the current climb, then buttons. Tap it to open the climb.
+
+### What the climber gets
+
+- A **Mini player** tab in View options: a switch and ↑/↓ arrows for Next climb, Previous climb, Mirror, Favorite,
+  Queue, Share and Angle, a pinned preview, and **Restore defaults**. Settings → Climbs & grades → **Climb view** has
+  a Mini player section with the switches only; the order changes in View options, the same rule as the player's
+  buttons.
+- Defaults: Next, Previous and Mirror on (Mirror only draws on boards that mirror: Tension, Decoy, Woods);
+  Favorite, Queue, Share and Angle off.
+- The preview draws two bars from `resolveMiniPlayerControls`, so it can't disagree with the real one: the open bar
+  for this device (wide on an iPad or an open Duo, three slots on an iPhone) and the collapsed one. Static glyphs;
+  no Bluetooth component is mounted.
+- Board light and Log are fixed, like the player's: a note on the tab says so. They have no switch or arrows.
+
+### Layout rules
+
+- Drawing order, left to right: the climber's others, then ⏮ ⏭, then 💡 ✓. Slots inside a group touch; groups have a
+  12 pt gap.
+- Slot count: inline (tab bar minimized) 1; an iPhone 3, Board light and Log included, so the climber's first
+  button that is on takes the third; iPad and the open Duo fit every button (`floor((width - 68 - 160) / 44)`). A
+  bar too narrow for three (Duo closed, a 320 pt iPhone) keeps one slot: the bulb while the board is free,
+  otherwise Log.
+- Buttons claim slots in the climber's order; what doesn't fit drops from the end of that list. The player's ⋯ still
+  has every action.
+- The open Duo's split drops what the player pane already shows (⏮ ⏭ 💡 ✓).
+
+### Session states
+
+- A timed workout block hides ⏮ ⏭: the stage moves the wall on its own beat.
+- Next and Previous in a crew, or with Light on swipe off, open the player on a preview instead of moving the room's
+  climb.
+- Signed out: no Log or Favorite. A draft has no Share. A board that can't mirror has no Mirror; a fixed-angle board
+  has no Angle.
+
+### Storage
+
+`miniPlayerButtonsV1` in the synchronous settings store (MMKV), a `SectionLayoutRecord | null` written only by
+`miniPlayerButtonsStore`. `null` means the defaults, written again when a change lands back on them and on Restore
+defaults; ids this build doesn't know survive its writes. **Rollback**: an older bundle ignores the key and draws
+today's bar (Board light and Log). `resetAllSettings` clears it.
+
+### Code map
+
+| Piece                                  | File                                                                                  |
+| -------------------------------------- | ------------------------------------------------------------------------------------- |
+| Ids and defaults                       | `packages/mobile/src/lib/mini-player-buttons.ts`                                      |
+| Store, `useMiniPlayerButtonsEditor`    | `packages/mobile/src/lib/mini-player-buttons-preference.ts`                           |
+| Slot count and what the bar holds      | `packages/mobile/src/components/queue-control/mini-player-controls.ts`                |
+| The bar                                | `packages/mobile/src/components/queue-control/NativeAccessoryClimbRow.tsx`            |
+| Preview                                | `packages/mobile/src/components/queue-control/MiniPlayerButtonsPreview.tsx`           |
+| Shared labels and actions              | `packages/mobile/src/components/settings/use-mini-player-button-controls.ts`          |
+| View options tab, Settings › Climb view | `PlayDrawerSectionsSheet.tsx`, `settings/climb-view/`                                |
 
 ## Adding a button
 

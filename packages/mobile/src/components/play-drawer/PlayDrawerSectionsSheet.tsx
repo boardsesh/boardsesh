@@ -5,6 +5,7 @@ import { SegmentedControl } from '../SegmentedControl';
 import { SwitchRow } from '../SwitchRow';
 import { Text } from '../Text';
 import { usePlayDrawerSectionControls } from '../settings/use-play-drawer-section-controls';
+import { useMiniPlayerButtonControls } from '../settings/use-mini-player-button-controls';
 import { usePlayerButtonControls } from '../settings/use-player-button-controls';
 import {
   SectionLayoutSheetFooter,
@@ -16,10 +17,12 @@ import {
   type SectionLayoutSheetAction,
 } from '../section-layout/SectionLayoutSheet';
 import { PlayerButtonsPreview, type PlayerButtonsPreviewBoard } from '../player-buttons/PlayerButtonsPreview';
+import { MiniPlayerButtonsPreview } from '../queue-control/MiniPlayerButtonsPreview';
+import { useDeviceLayout } from '../../hooks/use-device-layout';
 import { useTheme } from '../../providers/theme-provider';
 import { borderRadius, spacing } from '../../theme/tokens';
 
-type ViewOptionsTab = 'sections' | 'buttons';
+type ViewOptionsTab = 'sections' | 'buttons' | 'miniPlayer';
 
 type PlayDrawerSectionsSheetProps = {
   visible: boolean;
@@ -31,8 +34,8 @@ type PlayDrawerSectionsSheetProps = {
 };
 
 /**
- * ⋯ → View options. Two tabs: the sections below the climb, and the player's
- * buttons (#6229). Choices apply at once; there is no save step. Keep mounted
+ * ⋯ → View options. Three tabs: the sections below the climb, the player's
+ * buttons (#6229) and the MiniPlayer's buttons (#6940). Choices apply at once; there is no save step. Keep mounted
  * inside PlayDrawer so its managed presenter sits above /play.
  */
 export function PlayDrawerSectionsSheet({
@@ -45,11 +48,14 @@ export function PlayDrawerSectionsSheet({
   const [tab, setTab] = useState<ViewOptionsTab>('sections');
   const sections = usePlayDrawerSectionControls({ listsActiveHolds });
   const playerButtons = usePlayerButtonControls();
+  const miniPlayer = useMiniPlayerButtonControls();
+  const { isTablet, phoneSplit } = useDeviceLayout();
   const { systemColors } = useTheme();
   const tabOptions = useMemo<{ key: ViewOptionsTab; label: string }[]>(
     () => [
       { key: 'sections', label: t('mobile.settings.climbDrawer.tabs.sections') },
       { key: 'buttons', label: t('mobile.settings.climbDrawer.tabs.buttons') },
+      { key: 'miniPlayer', label: t('mobile.settings.climbDrawer.tabs.miniPlayer') },
     ],
     [t],
   );
@@ -97,6 +103,16 @@ export function PlayDrawerSectionsSheet({
     [playerButtons.restoreDefaultsLabel, playerButtons.restoreDefaults, playerButtons.canRestoreDefaults],
   );
 
+  const miniPlayerRestore = useMemo<SectionLayoutSheetAction>(
+    () => ({
+      label: miniPlayer.restoreDefaultsLabel,
+      onPress: miniPlayer.restoreDefaults,
+      disabled: !miniPlayer.canRestoreDefaults,
+      testID: 'mini-player-buttons-restore-defaults',
+    }),
+    [miniPlayer.restoreDefaultsLabel, miniPlayer.restoreDefaults, miniPlayer.canRestoreDefaults],
+  );
+
   const sectionsFooter = useMemo(
     () => <SectionLayoutSheetFooter guidance={sections.footer} restoreDefaults={sectionsRestore} />,
     [sections.footer, sectionsRestore],
@@ -104,6 +120,18 @@ export function PlayDrawerSectionsSheet({
   const buttonsFooter = useMemo(
     () => <SectionLayoutSheetFooter guidance={playerButtons.footer} restoreDefaults={buttonsRestore} />,
     [playerButtons.footer, buttonsRestore],
+  );
+
+  const miniPlayerFooter = useMemo(
+    () => (
+      <>
+        <Text variant="footnote" color={systemColors.secondaryLabel} style={sectionLayoutSheetStyles.guidance}>
+          {miniPlayer.fixedNote}
+        </Text>
+        <SectionLayoutSheetFooter guidance={miniPlayer.footer} restoreDefaults={miniPlayerRestore} />
+      </>
+    ),
+    [systemColors.secondaryLabel, miniPlayer.fixedNote, miniPlayer.footer, miniPlayerRestore],
   );
 
   // Scroll the description and actions away so large text cannot fill a small
@@ -177,6 +205,18 @@ export function PlayDrawerSectionsSheet({
     ],
   );
 
+  const miniPlayerHeader = useMemo(
+    () => (
+      <View style={styles.buttonsHeader}>
+        <Text variant="subheadline" color={systemColors.secondaryLabel} style={sectionLayoutSheetStyles.guidance}>
+          {miniPlayer.description}
+        </Text>
+        <SectionLayoutSheetGroupTitle title={miniPlayer.groupTitle} />
+      </View>
+    ),
+    [systemColors.secondaryLabel, miniPlayer.description, miniPlayer.groupTitle],
+  );
+
   return (
     <SectionLayoutSheetFrame
       visible={visible}
@@ -198,6 +238,9 @@ export function PlayDrawerSectionsSheet({
               board={previewBoard}
             />
           ) : null}
+          {tab === 'miniPlayer' ? (
+            <MiniPlayerButtonsPreview buttons={miniPlayer.buttons} board={previewBoard} wide={isTablet || phoneSplit} />
+          ) : null}
         </>
       }
     >
@@ -210,6 +253,15 @@ export function PlayDrawerSectionsSheet({
           onMove={sections.onMove}
           ListHeaderComponent={sectionsHeader}
           ListFooterComponent={sectionsFooter}
+        />
+      ) : tab === 'miniPlayer' ? (
+        <SectionLayoutSheetList
+          key="miniPlayer"
+          rows={miniPlayer.controls}
+          onVisibleChange={miniPlayer.onVisibleChange}
+          onMove={miniPlayer.onMove}
+          ListHeaderComponent={miniPlayerHeader}
+          ListFooterComponent={miniPlayerFooter}
         />
       ) : (
         <SectionLayoutSheetList
