@@ -447,7 +447,7 @@ const COMMUNITY_MONTHLY_STATS_GRANTS: readonly WorkerTableGrant[] = [
   // The gym ranking's rows: identity for the join, the public name and slug
   // the dashboard links, and the two flags that keep a private or deleted gym
   // out. No owner, contact, address or coordinates.
-  { table: 'gyms', privileges: ['SELECT'], columns: ['id', 'name', 'slug', 'is_public', 'deleted_at'] },
+  { table: 'gyms', privileges: ['SELECT'], columns: ['id', 'name', 'slug', 'is_public', 'is_listed', 'deleted_at'] },
   // The tick privacy rule finds a tick's own audience in content_privacy by
   // the tick's uuid. Still no comments, sessions or media.
   { table: 'boardsesh_ticks', privileges: ['SELECT'], columns: ['uuid'] },
