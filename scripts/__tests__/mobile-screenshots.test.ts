@@ -452,6 +452,34 @@ describe('iOS campaign capture', () => {
     },
   );
 
+  it('opens the populated crew queue by its native badge despite the Up next accessibility label', () => {
+    const catalog = JSON.parse(readFileSync('packages/shared/i18n/locales/it/session.json', 'utf8')) as {
+      playView: { actionBar: { queueCountAria: string; queueUpNextAria_other: string } };
+    };
+    const labels = catalog.playView.actionBar;
+    const actualLabel = labels.queueUpNextAria_other.replace('{{count}}', '5');
+    expect(actualLabel).toBe('Coda, 5 blocchi in arrivo');
+    expect(new RegExp(`^${labels.queueCountAria.replace('{{count}}', '.*')}$`).test(actualLabel)).toBe(false);
+
+    const campaign = readFileSync('packages/mobile/.maestro/app-store-campaign.yaml', 'utf8');
+    const steps = parseAllDocuments(campaign)[1].toJS() as {
+      tapOn?: { id: string } | string;
+      extendedWaitUntil?: { visible: string };
+      takeScreenshot?: string;
+    }[];
+    const queueTap = steps.findIndex(
+      (step) => typeof step.tapOn === 'object' && step.tapOn.id === '^play-drawer-queue-badge$',
+    );
+    expect(queueTap).toBeGreaterThan(0);
+    expect(steps.some((step) => step.tapOn === '${SCREENSHOT_QUEUE_LABEL}')).toBe(false);
+    const titleGate = steps.findIndex((step) => step.extendedWaitUntil?.visible === '.*${SCREENSHOT_QUEUE_TITLE}.*');
+    const contentGate = steps.findIndex((step) => step.extendedWaitUntil?.visible === '.*Wax On.*');
+    const capture = steps.findIndex((step) => step.takeScreenshot === '15-crew-queue');
+    expect(queueTap).toBeLessThan(titleGate);
+    expect(titleGate).toBeLessThan(contentGate);
+    expect(contentGate).toBeLessThan(capture);
+  });
+
   it('captures all seventeen runtime sources without optional skipping of campaign images', () => {
     const legacy = readFileSync('packages/mobile/.maestro/app-store.yaml', 'utf8');
     const campaign = readFileSync('packages/mobile/.maestro/app-store-campaign.yaml', 'utf8');
