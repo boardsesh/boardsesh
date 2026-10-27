@@ -210,7 +210,9 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
     ACCESSORY_TRAILING_INSET;
   // iPad and the open Duo: as many as fit. An iPhone: three at most.
   const wide = isTablet || phoneSplit;
-  const slotCount = miniPlayerSlotCount({ placement, rowWidth, widthBesideName, wide });
+  // Between the climber's buttons and ⏮ ⏭, and before 💡 ✓, on a bar with room to spare.
+  const groupGap = wide ? ACCESSORY_GROUP_GAP : 0;
+  const slotCount = miniPlayerSlotCount({ placement, rowWidth, widthBesideName, wide, groupGap });
   // The platter shows a plain (non-colorized) grade; only the label swaps to the
   // Boardsesh grade when the toggle is on and a trusted one exists.
   const currentFormattedGrade = resolveGrade(climb, boardConfig?.boardName).label;
@@ -242,15 +244,12 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
       }),
     [slotCount, buttonsLayout, isAvailable, collapsedSlotShowsBulb],
   );
-  const singleControlSlot = controls.trailing.length === 1;
-  // A visible bulb already speaks the state; with one slot, only the mark shows
+  // A visible bulb already speaks the state; without it, only the mark shows
   // it, so the climb link says it.
   const connectionValue =
-    singleControlSlot && inAppBoardConnection !== 'disconnected'
+    !controls.trailing.includes('lightbulb') && inAppBoardConnection !== 'disconnected'
       ? getBoardConnectionLabel(t, { boardConnection: inAppBoardConnection, ledless, holderDisplayName })
       : undefined;
-  // Between the climber's buttons and the fixed pair, on a bar with room to spare.
-  const groupGap = wide ? ACCESSORY_GROUP_GAP : 0;
 
   // UIKit can omit the central zoom-source subtree from its accessory AX tree.
   // CPP metadata belongs to this existing visible row; ordinary captures and
@@ -305,15 +304,17 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
           groupGap={groupGap}
         />
       ) : null}
-      {singleControlSlot ? (
+      {controls.trailing.map((slot, index) => (
+        // Keyed by position, so the one collapsed slot swaps its child in place.
         <View
+          key={`trailing-${index}`}
           style={[
             styles.controlSlot,
             { width: glassSize.inline, height: rowHeight },
-            controls.leading.length > 0 ? { marginStart: groupGap } : null,
+            index === 0 && controls.leading.length > 0 ? { marginStart: groupGap } : null,
           ]}
         >
-          {collapsedSlotShowsBulb ? (
+          {slot === 'lightbulb' ? (
             <BoardControlIndicator
               size={glassSize.inline}
               iconSize={22}
@@ -325,28 +326,7 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
             <LogAscentToolbarButton climb={climb} size={glassSize.inline} iconSize={24} placement={placement} />
           )}
         </View>
-      ) : (
-        <>
-          <View
-            style={[
-              styles.controlSlot,
-              { width: glassSize.inline, height: rowHeight },
-              controls.leading.length > 0 ? { marginStart: groupGap } : null,
-            ]}
-          >
-            <BoardControlIndicator
-              size={glassSize.inline}
-              iconSize={22}
-              enableLongPress
-              solidGlyphs
-              placement={placement}
-            />
-          </View>
-          <View style={[styles.controlSlot, { width: glassSize.inline, height: rowHeight }]}>
-            <LogAscentToolbarButton climb={climb} size={glassSize.inline} iconSize={24} placement={placement} />
-          </View>
-        </>
-      )}
+      ))}
     </View>
   );
 }

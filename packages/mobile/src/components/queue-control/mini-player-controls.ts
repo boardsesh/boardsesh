@@ -2,10 +2,19 @@ import { visibleSectionIds } from '../../lib/section-layout';
 import type { MiniPlayerButtonId, MiniPlayerButtonsLayout } from '../../lib/mini-player-buttons';
 
 /**
- * The least room the climb name keeps before the bar gives up a slot. About 20
- * characters of a subheadline name: enough that most names read without scrolling.
+ * The least room the climb name keeps before a wide bar gives up a slot. About
+ * 20 characters of a subheadline name: enough that most names read without
+ * scrolling.
  */
 export const ACCESSORY_MIN_NAME_WIDTH = 160;
+
+/**
+ * The same floor on an iPhone, a little lower so a 375pt iPhone's 343pt bar
+ * keeps its three controls (#6940): the name gets ~143pt there. Below it the
+ * bar keeps fewer, down to today's one slot on iPhone Duo's closed display
+ * (~290pt) and a 320pt Display Zoom iPhone (~288pt).
+ */
+export const PHONE_ACCESSORY_MIN_NAME_WIDTH = 140;
 
 /** One control's tap target. Every slot on the bar is this wide. */
 export const ACCESSORY_SLOT_WIDTH = 44;
@@ -26,28 +35,40 @@ export type MiniPlayerBarShape = {
   widthBesideName: number;
   /** iPad, or iPhone Duo open: no cap but the width. Otherwise an iPhone, capped at three. */
   wide: boolean;
+  /** What a wide bar spends between its groups (others · ⏮ ⏭ · 💡 ✓), at most twice. */
+  groupGap: number;
 };
+
+/** Before the first layout a wide bar is taken to fit everything: no wide bar measured so far is short of that. */
+const UNMEASURED_WIDE_SLOTS = 99;
 
 /**
  * How many 44pt controls the bar holds.
  *
  * - Inline (the tab bar minimized) holds one, as Music's MiniPlayer drops its
  *   controls there (WWDC25 "Build a UIKit app with the new design").
- * - Before the first layout the row holds two, today's open platter, so most
- *   bars never change on their first measurement.
- * - An iPhone holds three, Board light and Log included. A bar too narrow for
- *   two beside a readable name (iPhone Duo closed, ~290pt; a 320pt Display Zoom
- *   iPhone, ~288pt) holds one, as before #6940. A 375pt iPhone's 343pt bar gets
- *   three, leaving the name ~143pt.
- * - iPad and the open Duo hold as many as fit beside a 160pt name, which is
- *   every button the climber has on.
+ * - An iPhone holds as many as fit beside a 140pt name, three at most, Board
+ *   light and Log included: three on every current iPhone (343pt and up), one
+ *   on iPhone Duo's closed display and a 320pt Display Zoom iPhone.
+ * - iPad and the open Duo hold as many as fit beside a 160pt name and the two
+ *   group gaps, which is every button the climber has on.
+ * - Before the first layout the row guesses the answer most bars measure (three
+ *   on an iPhone, everything when wide), so the common bar never redraws on its
+ *   first measurement: UIKit snapshots the platter, and a redraw then is the
+ *   doubled-text case.
  */
-export function miniPlayerSlotCount({ placement, rowWidth, widthBesideName, wide }: MiniPlayerBarShape): number {
+export function miniPlayerSlotCount({
+  placement,
+  rowWidth,
+  widthBesideName,
+  wide,
+  groupGap,
+}: MiniPlayerBarShape): number {
   if (placement === 'inline') return 1;
-  if (rowWidth === null) return 2;
-  const fit = Math.floor((rowWidth - widthBesideName - ACCESSORY_MIN_NAME_WIDTH) / ACCESSORY_SLOT_WIDTH);
-  if (!wide) return fit >= 2 ? PHONE_MINI_PLAYER_MAX_SLOTS : 1;
-  return Math.max(1, fit);
+  if (rowWidth === null) return wide ? UNMEASURED_WIDE_SLOTS : PHONE_MINI_PLAYER_MAX_SLOTS;
+  const nameFloor = wide ? ACCESSORY_MIN_NAME_WIDTH + 2 * groupGap : PHONE_ACCESSORY_MIN_NAME_WIDTH;
+  const fit = Math.max(1, Math.floor((rowWidth - widthBesideName - nameFloor) / ACCESSORY_SLOT_WIDTH));
+  return wide ? fit : Math.min(PHONE_MINI_PLAYER_MAX_SLOTS, fit);
 }
 
 /** One slot on the bar. `lightbulb` and `log` are the fixed pair at the trailing edge. */

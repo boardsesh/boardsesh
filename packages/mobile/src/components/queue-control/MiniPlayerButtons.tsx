@@ -7,7 +7,9 @@ import { opacity } from '../../theme/tokens';
 import { Icon } from '../Icon';
 import type { IconName } from '../icon-map';
 import { PressableSurface } from '../PressableSurface';
-import { useMiniPlayerNavigation } from './use-mini-player-navigation';
+import { useSegments } from 'expo-router';
+import { isPlayerRoute } from '../../lib/route-segments';
+import { MiniPlayerTrackPager, useMiniPlayerNavigation } from './use-mini-player-navigation';
 
 type MiniPlayerIconButtonProps = {
   iconName: IconName;
@@ -60,6 +62,9 @@ export const MiniPlayerLeadingButtons = memo(function MiniPlayerLeadingButtons({
 }: MiniPlayerLeadingButtonsProps) {
   const { t } = useTranslation('session');
   const navigation = useMiniPlayerNavigation();
+  // The host stays mounted under the player, which pages its own track.
+  const segments = useSegments();
+  const playerOpen = isPlayerRoute(segments);
   const firstTransportIndex = buttonIds.findIndex((buttonId) => TRANSPORT.has(buttonId));
 
   const renderButton = (buttonId: MiniPlayerButtonId) => {
@@ -91,6 +96,7 @@ export const MiniPlayerLeadingButtons = memo(function MiniPlayerLeadingButtons({
 
   return (
     <>
+      {buttonIds.includes('next') && !playerOpen ? <MiniPlayerTrackPager /> : null}
       {buttonIds.map((buttonId, index) => (
         <View
           key={buttonId}

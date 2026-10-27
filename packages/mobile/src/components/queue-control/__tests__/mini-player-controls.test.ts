@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ACCESSORY_MIN_NAME_WIDTH,
   ACCESSORY_SLOT_WIDTH,
+  PHONE_ACCESSORY_MIN_NAME_WIDTH,
   miniPlayerSlotCount,
   resolveMiniPlayerControls,
   type MiniPlayerControlsInput,
@@ -15,21 +16,31 @@ import {
 // 16pt leading inset + 32pt artwork + 8pt gap + 4pt label padding + 8pt trailing inset.
 const WIDTH_BESIDE_NAME = 68;
 
+const GROUP_GAP = 12;
+
 function phone(rowWidth: number | null, placement: 'regular' | 'inline' = 'regular') {
-  return miniPlayerSlotCount({ placement, rowWidth, widthBesideName: WIDTH_BESIDE_NAME, wide: false });
+  return miniPlayerSlotCount({ placement, rowWidth, widthBesideName: WIDTH_BESIDE_NAME, wide: false, groupGap: 0 });
 }
 function wide(rowWidth: number | null, placement: 'regular' | 'inline' = 'regular') {
-  return miniPlayerSlotCount({ placement, rowWidth, widthBesideName: WIDTH_BESIDE_NAME, wide: true });
+  return miniPlayerSlotCount({
+    placement,
+    rowWidth,
+    widthBesideName: WIDTH_BESIDE_NAME,
+    wide: true,
+    groupGap: GROUP_GAP,
+  });
 }
 
 describe('miniPlayerSlotCount', () => {
-  it('holds two before the first layout, as the open platter always has', () => {
-    expect(phone(null)).toBe(2);
-    expect(wide(null)).toBe(2);
+  it('guesses what most bars measure before the first layout, so they never redraw on it', () => {
+    expect(phone(null)).toBe(3);
+    expect(phone(null)).toBe(phone(370));
+    expect(wide(null)).toBeGreaterThanOrEqual(wide(995));
   });
 
   it('holds one inline, on every device', () => {
     expect(phone(370, 'inline')).toBe(1);
+    expect(phone(null, 'inline')).toBe(1);
     expect(wide(995, 'inline')).toBe(1);
   });
 
@@ -47,12 +58,25 @@ describe('miniPlayerSlotCount', () => {
     expect(phone(288)).toBe(1);
   });
 
+  it('keeps the iPhone name at 140pt or more', () => {
+    const exactlyTwo = WIDTH_BESIDE_NAME + PHONE_ACCESSORY_MIN_NAME_WIDTH + 2 * ACCESSORY_SLOT_WIDTH;
+    expect(phone(exactlyTwo)).toBe(2);
+    expect(phone(exactlyTwo + ACCESSORY_SLOT_WIDTH - 1)).toBe(2);
+    expect(phone(exactlyTwo - 1)).toBe(1);
+  });
+
   it('gives the name the artwork room when the row has no artwork', () => {
-    // No board config: 40pt less beside the name, so the Duo's 290pt platter fits.
+    // No board config: 40pt less beside the name, so the Duo's 290pt platter fits two.
     const withoutArtwork = (rowWidth: number) =>
-      miniPlayerSlotCount({ placement: 'regular', rowWidth, widthBesideName: WIDTH_BESIDE_NAME - 40, wide: false });
-    expect(withoutArtwork(290)).toBe(3);
-    expect(withoutArtwork(270)).toBe(1);
+      miniPlayerSlotCount({
+        placement: 'regular',
+        rowWidth,
+        widthBesideName: WIDTH_BESIDE_NAME - 40,
+        wide: false,
+        groupGap: 0,
+      });
+    expect(withoutArtwork(290)).toBe(2);
+    expect(withoutArtwork(370)).toBe(3);
   });
 
   it('fits every button on an iPad (~995pt) and the open Duo (~800pt)', () => {
@@ -60,8 +84,8 @@ describe('miniPlayerSlotCount', () => {
     expect(wide(800)).toBeGreaterThanOrEqual(9);
   });
 
-  it('counts a wide bar against the name floor', () => {
-    const exactlyFour = WIDTH_BESIDE_NAME + ACCESSORY_MIN_NAME_WIDTH + 4 * ACCESSORY_SLOT_WIDTH;
+  it('counts a wide bar against the name floor and both group gaps', () => {
+    const exactlyFour = WIDTH_BESIDE_NAME + ACCESSORY_MIN_NAME_WIDTH + 2 * GROUP_GAP + 4 * ACCESSORY_SLOT_WIDTH;
     expect(wide(exactlyFour)).toBe(4);
     expect(wide(exactlyFour - 1)).toBe(3);
     expect(wide(100)).toBe(1);
