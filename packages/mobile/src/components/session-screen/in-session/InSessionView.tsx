@@ -28,6 +28,8 @@ import { useDrawerHost } from '../../../providers/drawer-host-provider';
 import { useSessionDetail, useSessionPreview, useSessionSummary } from '../../../lib/graphql/hooks';
 import { runSessionEndExports } from '../../../lib/integrations';
 import { SESSION_STORE_REVIEW_CANDIDATE_PARAM, isSessionStoreReviewEligible } from '../../../lib/store-review';
+import { hasQueuedTicksForSession } from '../../../offline/pending-tick';
+import { waitForSessionTicksToSync } from '../../../offline/session-tick-drain';
 import { setDraftComment, clearDraftComment } from '../../../lib/session-comment-draft-store';
 import { renderBoardToPlaylistConfig } from '../../../lib/playlists/board-details-for-playlist';
 import { isMultiFrameClimb } from '../../../lib/is-multi-frame-climb';
@@ -506,6 +508,11 @@ export function InSessionView({
       if (trimmedNotes && endingSessionId) {
         await setDraftComment(endingSessionId, trimmedNotes);
       }
+      // Give ticks still in the offline outbox up to 3 s to land first: the
+      // server builds the summary (and the Strava export) from the ticks it
+      // has, so ending right after the last tick read "0 attempts" (#6903).
+      // Never throws; the session ends whatever it returns.
+      if (endingSessionId) await waitForSessionTicksToSync(endingSessionId, queryClient);
       const summary = await endSession({ notes: trimmedNotes });
       onEndDismiss?.();
       if (summary) {
@@ -519,9 +526,13 @@ export function InSessionView({
         // rejection. The manual save button on the summary screen shares the same
         // dedup guard, so this won't double-write.
         runSessionEndExports(summary, {});
-        const summaryParams = isSessionStoreReviewEligible(summary)
-          ? { sessionId: summary.sessionId, reviewCandidate: SESSION_STORE_REVIEW_CANDIDATE_PARAM }
-          : { sessionId: summary.sessionId };
+        // No store-review prompt while some of this session's ticks are still
+        // queued on the phone: the summary is missing them for now.
+        const ticksStillQueued = await hasQueuedTicksForSession(summary.sessionId);
+        const summaryParams =
+          isSessionStoreReviewEligible(summary) && !ticksStillQueued
+            ? { sessionId: summary.sessionId, reviewCandidate: SESSION_STORE_REVIEW_CANDIDATE_PARAM }
+            : { sessionId: summary.sessionId };
         router.push({ pathname: '/(tabs)/record/summary', params: summaryParams });
       }
     } catch (error) {
@@ -533,7 +544,7 @@ export function InSessionView({
       // confirm button spinning forever and the sheet undismissable.
       setIsEnding(false);
     }
-  }, [endSession, router, onEndDismiss, endNotes, sessionId]);
+  }, [endSession, router, onEndDismiss, endNotes, sessionId, queryClient]);
 
   // Drop out WITHOUT ending the session for anyone else (#3502). Deliberately
   // NOT `clearSession()`: `notifyServer` emits LEAVE_SESSION so peers see the

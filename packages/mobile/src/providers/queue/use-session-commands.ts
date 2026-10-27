@@ -1,4 +1,5 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useContext, useRef } from 'react';
+import { QueryClientContext } from '@tanstack/react-query';
 import { buildSessionBoardPath } from '../../lib/boards/session-board-path';
 import { execute } from '@boardsesh/graphql-client';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -25,6 +26,7 @@ import {
   setStoredSessionVisibility,
 } from '../../lib/session-store';
 import { clearStoredQueueSnapshot } from '../../lib/queue-snapshot-store';
+import { seedEndedSessionCaches } from '../../lib/session-end-cache';
 import { track } from '../../lib/analytics';
 import { reportError, reportHandledError } from '../../lib/error-reporting';
 import { extractGraphqlMessage, isGraphqlRateLimitedError } from '../../lib/graphql/extract-error-message';
@@ -100,6 +102,10 @@ export function useSessionCommands({
   // Single-flight + coalesce guard for concurrent Start taps. Only this callback
   // reads it, so it lives here rather than in the provider body.
   const sessionCreationRef = useRef<Promise<string | null> | null>(null);
+  // Read off the context directly (as useSessionRealtime does) so the hook
+  // still renders without a QueryClientProvider; endSession then skips the
+  // summary cache write.
+  const queryClient = useContext(QueryClientContext);
 
   // Explicit session creation — the Start button (PreSessionView) and nothing
   // else. Sessions are never created lazily: the solo queue lives locally
@@ -315,6 +321,9 @@ export function useSessionCommands({
           timezone: getDeviceTimezone(),
           ...(trimmedNotes ? { notes: trimmedNotes } : {}),
         });
+        // The summary screen reads this cache next; without the write it can
+        // show the copy cached at the start of the session (#6903).
+        if (queryClient && response.endSession) seedEndedSessionCaches(queryClient, response.endSession);
         await clearSession();
         locallyEndingSessionIdRef.current = null;
         suppressedRemoteEndSessionIdRef.current = null;
@@ -358,7 +367,7 @@ export function useSessionCommands({
         return null;
       }
     },
-    [clearSession, showToast, t],
+    [clearSession, queryClient, showToast, t],
   );
 
   const joinSession = useCallback(
