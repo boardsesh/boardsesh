@@ -309,6 +309,10 @@ name: multiboard App Store campaign sources
 - extendedWaitUntil:
     visible: ${SCREENSHOT_WALL_STATUS_LABEL}
     timeout: 60000
+- extendedWaitUntil:
+    visible:
+      id: '^climbs-capture-settled$'
+    timeout: 60000
 - waitForAnimationToEnd
 - takeScreenshot: 16-wall-status
 

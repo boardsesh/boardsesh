@@ -162,6 +162,10 @@ name: app-store screenshots
 - tapOn:
     text: 'Open'
     optional: true
+- extendedWaitUntil:
+    visible:
+      id: '^climbs-capture-settled$'
+    timeout: 60000
 - waitForAnimationToEnd
 - takeScreenshot: 03-climbs
 

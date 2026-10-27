@@ -2241,6 +2241,19 @@ function ClimbListInner() {
         // still let the list visibly scroll underneath the blurred header, which
         // iOS honours.
         style={listClipStyle}
+        testID={
+          process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' &&
+          searchReady &&
+          !isBoardResolving &&
+          !isClimbsLoading &&
+          !isClimbsError &&
+          !isPlaceholderData &&
+          !isRefetching &&
+          !isFetchingNextPage &&
+          visibleClimbs.length > 0
+            ? 'climbs-capture-settled'
+            : undefined
+        }
       >
         {/* The no-board branches above unmount the list; it comes back at rest. */}
         <ScrollEdgeListReset edge={scrollEdge.list} />

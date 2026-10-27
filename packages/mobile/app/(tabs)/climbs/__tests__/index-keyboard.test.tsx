@@ -1909,6 +1909,71 @@ describe('ClimbList screenshot-mode wall-state deep links', () => {
     updatedAt: 1,
   };
 
+  it.each(['isClimbsLoading', 'searchFailed', 'isPlaceholderData', 'isRefetching', 'isFetchingNextPage'] as const)(
+    'withdraws the capture-settled marker while %s and restores it after settling',
+    async (busyFlag) => {
+      await withScreenshotMode(async () => {
+        const view = render(<ClimbList />);
+        await view.findByTestId('climbs-capture-settled');
+
+        mocks[busyFlag] = true;
+        view.rerender(<ClimbList />);
+        expect(view.queryByTestId('climbs-capture-settled')).toBeNull();
+        if (busyFlag === 'isRefetching') {
+          expect(view.container.querySelector('[data-refresh-control]')?.getAttribute('data-refreshing')).toBe('true');
+        }
+
+        mocks[busyFlag] = false;
+        view.rerender(<ClimbList />);
+        expect(view.getByTestId('climbs-capture-settled')).toBeTruthy();
+        expect(view.container.querySelector('[data-refresh-control]')?.getAttribute('data-refreshing')).toBe('false');
+      });
+    },
+  );
+
+  it('waits for saved-search restoration and nonempty rows before marking capture settled', async () => {
+    await withScreenshotMode(async () => {
+      let finishRestore: (saved: LastSearch | null) => void = () => {
+        throw new Error('Expected saved-search restoration to start');
+      };
+      mocks.getLastSearch.mockReturnValueOnce(
+        new Promise<LastSearch | null>((resolve) => {
+          finishRestore = resolve;
+        }),
+      );
+      const view = render(<ClimbList />);
+      await waitFor(() => expect(mocks.getLastSearch).toHaveBeenCalled());
+      expect(view.queryByTestId('climbs-capture-settled')).toBeNull();
+      await act(async () => finishRestore(null));
+      await view.findByTestId('climbs-capture-settled');
+
+      mocks.searchClimbs = [];
+      view.rerender(<ClimbList />);
+      expect(view.queryByTestId('climbs-capture-settled')).toBeNull();
+      mocks.searchClimbs = [mocks.climb];
+      view.rerender(<ClimbList />);
+      expect(view.getByTestId('climbs-capture-settled')).toBeTruthy();
+    });
+  });
+
+  it('never marks a resolving board or ordinary app mode as capture settled', async () => {
+    await withScreenshotMode(async () => {
+      mocks.activeBoard = undefined;
+      mocks.boardStatus = 'pending';
+      mocks.boardFetchStatus = 'fetching';
+      const view = render(<ClimbList />);
+      expect(view.queryByTestId('climbs-capture-settled')).toBeNull();
+      mocks.activeBoard = { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1', angle: 40 };
+      mocks.boardStatus = 'success';
+      mocks.boardFetchStatus = 'idle';
+      view.rerender(<ClimbList />);
+      await view.findByTestId('climbs-capture-settled');
+      delete process.env.EXPO_PUBLIC_SCREENSHOT_MODE;
+      view.rerender(<ClimbList />);
+      expect(view.queryByTestId('climbs-capture-settled')).toBeNull();
+    });
+  });
+
   it.each([false, true])(
     'leaves board selection to the regular command controller when enabled: %s',
     async (commandMode) => {

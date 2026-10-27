@@ -563,6 +563,23 @@ describe('iOS store capture content readiness', () => {
       true,
     );
   });
+
+  it.each([
+    ['app-store', '03-climbs'],
+    ['app-store-campaign', '16-wall-status'],
+  ])('blocks %s %s until the visible climb search has settled', (flow, screenshot) => {
+    const prerequisites = prerequisitesFor(flow, screenshot);
+    const settledIndex = prerequisites.findIndex(
+      (command) => command.extendedWaitUntil?.visible?.id === '^climbs-capture-settled$',
+    );
+    expect(settledIndex).toBeGreaterThanOrEqual(0);
+    // Earlier commands deliberately open then close the player. The final
+    // capture state starts after that navigation, once its rows have settled.
+    const captureState = prerequisites.slice(settledIndex);
+    expect(canCapture(captureState, ['climbs-screen'])).toBe(false);
+    expect(canCapture(captureState, ['climbs-screen', 'climbs-capture-settled'])).toBe(true);
+    expect(prerequisites.at(-1)).toBe('waitForAnimationToEnd');
+  });
 });
 
 describe('buildAndroidMaestroArgs', () => {
