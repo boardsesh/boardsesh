@@ -785,14 +785,14 @@ function NowOnTheWallPanelComponent(
             <View style={styles.statTiles}>
               <StatTile
                 value={String(stats.climbsSentCount)}
-                label={t('mobile.boardPresence.statSent')}
+                label={t('mobile.boardPresence.statSent', { count: stats.climbsSentCount })}
                 surfaceColor={systemColors.secondaryBackground}
                 labelColor={systemColors.secondaryLabel}
                 valueColor={systemColors.label}
               />
               <StatTile
                 value={String(stats.distinctClimbersCount)}
-                label={t('mobile.boardPresence.statClimbers')}
+                label={t('mobile.boardPresence.statClimbers', { count: stats.distinctClimbersCount })}
                 surfaceColor={systemColors.secondaryBackground}
                 labelColor={systemColors.secondaryLabel}
                 valueColor={systemColors.label}
