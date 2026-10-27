@@ -781,7 +781,7 @@
     "helpers": {
       "website": "Se usa para verificar la propiedad cuando alguien reclama este rocódromo",
       "hours": "Una línea, como tú la escribas. Tu página muestra la fecha en que lo confirmaste por última vez.",
-      "visibility": "Los gimnasios no listados se abren con su enlace y no aparecen en las búsquedas ni en el mapa."
+      "visibility": "Los rocódromos no listados se abren con su enlace y no aparecen en las búsquedas ni en el mapa."
     },
     "visibility": {
       "public": "Público",
