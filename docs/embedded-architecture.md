@@ -48,10 +48,13 @@ The project uses PlatformIO with multiple build environments defined in `embedde
 | `esp32s3dev-proxy` | ESP32-S3 DevKit         | No          | Yes       | No          |
 | `tdisplay-s3`      | LilyGo T-Display-S3     | 170x320 LCD | Yes       | No          |
 | `waveshare-7inch`  | Waveshare 7" Touch LCD  | 480x800 RGB | Yes       | Yes         |
-| `waveshare-amoled-216` | Waveshare 2.1" AMOLED | 480x480 AMOLED | Yes | Yes |
+| `waveshare-amoled-216` | Waveshare 2.16" AMOLED | 480x480 AMOLED | Yes | Yes |
 | `esp32dev`         | Original ESP32 (legacy) | No          | No        | No          |
 
-Feature flags are controlled via build defines: `ENABLE_BLE_PROXY`, `ENABLE_DISPLAY`, `ENABLE_WAVESHARE_DISPLAY`, `ENABLE_BOARD_IMAGE`.
+Feature flags are controlled via build defines: `ENABLE_BLE_PROXY`, `ENABLE_DISPLAY`, `ENABLE_WAVESHARE_DISPLAY`, `ENABLE_WAVESHARE_AMOLED_DISPLAY`, `ENABLE_BOARD_IMAGE`.
+
+The AMOLED environment's current platform requires pioarduino Core 6.2 or newer.
+System PlatformIO 6.1.19 rejects it with `IncompatiblePlatform`.
 
 ## Operating Modes
 
@@ -174,13 +177,21 @@ Display support uses an abstract base class (`DisplayBase`) with multiple concre
 - All LilyGo features plus: touch navigation, settings screen, board image rendering
 - Board image: JPEG decoded to PSRAM sprite with LED hold overlay
 
-### Waveshare 2.1" AMOLED (480x480)
+### Waveshare 2.16" AMOLED (480x480)
 
 - SPI/QSPI AMOLED display for the portable debug controller
-- Uses the same generated board image and hold-map data as the 7" Waveshare display
-- BLE payloads are decoded on-device and rendered directly with the local preview board config (`preview_board_name`, `preview_layout_id`, `preview_size_id`, `preview_set_ids`)
-- The board image JPEG is compiled into firmware via `board-data`, decoded at half scale, and overlaid with colored hold rings
+- Uses the same compiled board JPEGs and hold maps as the 7" Waveshare display, with colored hold overlays
+- BLE payloads work without WiFi setup and render directly with the local preview board config (`preview_board_name`, `preview_layout_id`, `preview_size_id`, `preview_set_ids`)
+- A 460,800-byte RGB565 canvas lives in PSRAM; rendering and status updates run on the main loop
 - Backend/session sync is optional; when enabled, `backend_host` should point at the GraphQL WebSocket host (`ws.boardsesh.com`)
+
+USB serial diagnostics at 115200 baud accept `display-status` for preview JSON
+and `screenshot` for a tagged framebuffer stream. Run
+`vp run controller:screenshot --port /dev/cu.usbmodem101 --output /tmp/preview.png`
+from the repo root to save a PNG; the task uses `uv` with pinned `pyserial==3.5`.
+Pass the flags directly, without a standalone `--`. These captures show the
+logical framebuffer, so physical orientation and electrical faults require a
+photo or a check of the panel itself.
 
 Display implementations share common state management in `DisplayBase`:
 
@@ -200,6 +211,7 @@ Display implementations share common state management in `DisplayBase`:
 | Climb history      | ~1 KB     | 5 entries                                 |
 | QR code            | 211 bytes | 41x41 module grid                         |
 | Board image sprite | ~768 KB   | PSRAM only (Waveshare)                    |
+| AMOLED framebuffer | 450 KiB   | PSRAM only (480×480 RGB565)               |
 
 ## Testing
 

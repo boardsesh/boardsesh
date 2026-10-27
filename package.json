@@ -15,6 +15,7 @@
     "controller:build": "cd embedded/projects/board-controller && pio run",
     "controller:upload": "cd embedded/projects/board-controller && pio run -t upload",
     "controller:monitor": "cd embedded/projects/board-controller && pio device monitor",
+    "controller:screenshot": "uv run embedded/scripts/capture-display.py",
     "moonboard:build": "cd embedded/projects/moonboard-dev-server && pio run",
     "moonboard:upload": "cd embedded/projects/moonboard-dev-server && pio run -t upload",
     "moonboard:monitor": "cd embedded/projects/moonboard-dev-server && pio device monitor",

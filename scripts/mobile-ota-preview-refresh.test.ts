@@ -921,6 +921,7 @@ describe('refresh workflow shape', () => {
       {
         repo: { owner: 'boardsesh', repo: 'boardsesh' },
         eventName: 'workflow_dispatch',
+        ref: 'refs/heads/main',
         payload: { repository: { default_branch: 'main' }, inputs: { pr: '7' } },
       },
       core,

@@ -94,6 +94,30 @@ Main firmware for controlling Kilter/Tension climbing board LEDs. Features:
 `esp32s3dev-proxy`, `tdisplay-s3`, `waveshare-7inch`, `waveshare-amoled-216`,
 `esp32dev` (legacy), and **`gledopto-c015`** (below).
 
+#### Waveshare 2.16-inch AMOLED variant
+
+`waveshare-amoled-216` targets the ESP32-S3-Touch-AMOLED-2.16 (480×480).
+Its current platform requires **pioarduino Core 6.2 or newer**; system
+PlatformIO 6.1.19 fails with `IncompatiblePlatform`.
+The controller accepts and previews climbs over Bluetooth without WiFi setup.
+WiFi remains available for configuration and optional backend sync.
+
+Capture the display over USB from the repo root:
+
+```bash
+vp run controller:screenshot --port /dev/cu.usbmodem101 --output /tmp/preview.png
+```
+
+The task uses `uv` with pinned `pyserial==3.5`. Close any serial monitor before
+capturing. Pass flags directly as shown: a standalone `--` is forwarded literally
+by `vp` and breaks argument parsing.
+
+At 115200 baud, the serial commands `display-status` and `screenshot` return
+preview diagnostics and the tagged RGB565 screen stream, respectively. The
+capture task converts that stream into a PNG. It captures the logical framebuffer;
+physical orientation or electrical display faults still need a photo or a check
+of the panel itself.
+
 #### GLEDOPTO GL-C-015WL-D variant
 
 `gledopto-c015` targets the [GLEDOPTO GL-C-015WL-D](https://gledopto.com/h-pd-125.html) —
@@ -204,6 +228,7 @@ Most editors support clang-format:
 vp run controller:build         # Build board-controller
 vp run controller:upload        # Flash board-controller
 vp run controller:monitor       # Serial monitor
+vp run controller:screenshot --port /dev/cu.usbmodem101 --output /tmp/preview.png
 vp run moonboard:build          # Build moonboard-dev-server
 vp run moonboard:upload         # Flash moonboard-dev-server
 vp run moonboard:monitor        # Serial monitor for moonboard-dev-server
