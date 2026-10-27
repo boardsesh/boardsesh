@@ -1,0 +1,33 @@
+Scala su Kilter, Tension, MoonBoard e altri pannelli, e sulla tua Spraywall. Ritrova blocchi, coda condivisa e diario in un'unica app.
+
+I tuoi pannelli. Una sola app.
+Boardsesh è compatibile con Kilter, Tension, MoonBoard, Woods, Decoy, Touchstone, Grasshopper e So iLL. Passa da un pannello supportato all'altro e tieni insieme tutta la tua storia di arrampicata.
+
+Anche la tua Spraywall
+Hai una Spraywall a casa o in palestra? Fotografala e Boardsesh suggerisce le prese dalla foto. Correggi quelle mancanti, poi traccia blocchi, mettili in coda e registra le ripetizioni nello stesso diario degli altri pannelli. Non servono LED: le prese sono evidenziate sulla foto. Condividi la Spraywall tramite link e anche la tua crew potrà tracciare. Hai smontato la Spraywall? Reimpostala con una nuova foto: quella precedente viene archiviata con i suoi blocchi e le sue ripetizioni. Se cambi una sola presa, ogni blocco che la usava viene segnalato.
+
+La cronologia del pannello
+Quando condividi un pannello, è facile perdere il blocco precedente o cancellarlo per sbaglio.
+Ritrova i blocchi illuminati su quel pannello tramite Boardsesh: nome, chi li ha illuminati, chi li ha tracciati, grado, inclinazione e ripetizioni recenti.
+
+Session con la crew
+Avvia una session e condividi con la crew una coda che tutti possono controllare. Chiunque può illuminare il prossimo blocco in parete. Alla fine trovi un riepilogo con ripetizioni, tentativi, distribuzione dei gradi, il blocco più duro chiuso e i progressi nel tempo.
+
+Controlla dalla schermata di blocco (iOS 17+)
+Le Attività live di iOS mostrano il blocco illuminato e ti permettono di cambiarlo dalla schermata di blocco.
+
+Crea un allenamento
+Scegli Volume, Piramide, Scala o Grado fisso, imposta grado obiettivo e riscaldamento, guarda l'anteprima dei blocchi e illuminane uno alla volta in parete.
+
+Segui i tuoi progressi
+Registra ripetizioni, flash e tentativi. Ritrova un riepilogo con durata, distribuzione dei gradi e il blocco più duro chiuso, e segui ripetizioni e gradi nella scheda Progressi.
+
+Porta con te la tua storia
+Salva la session in Apple Salute e importa il tuo diario Kilter e Tension da Aurora Climbing.
+
+Trova altri blocchi
+Segui la crew e chi traccia, cerca altri climber e fissa le playlist da Scopri.
+
+Pannelli supportati: Kilter, Tension, MoonBoard (2010, 2016, 2024, Masters 2017, Masters 2019), Woods (12x12, 8x10), Decoy, Touchstone, Grasshopper e So iLL. In più, qualsiasi Spraywall che puoi fotografare.
+
+Boardsesh è un progetto della community compatibile con questi pannelli. Non è affiliato né approvato da alcun produttore.

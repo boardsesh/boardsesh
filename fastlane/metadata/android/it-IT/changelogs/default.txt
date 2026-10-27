@@ -1,0 +1,7 @@
+Novità della 2.7:
+- Boardsesh ora è disponibile in italiano.
+- Conto alla rovescia del recupero nella notifica della session, con un suono alla fine.
+- Allenamenti in fasi: riscaldamento, piramide, volume.
+- Scorrendo rimani nella lista scelta. Metti un blocco subito dopo o in fondo.
+- Ordina e filtra playlist, Blocchi che ti piacciono e Progetti.
+- Diario, Mi piace e playlist funzionano senza segnale. La ricerca trova MoonBoard.

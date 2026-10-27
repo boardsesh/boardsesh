@@ -1,4 +1,5 @@
 Novedades de 2.7:
+- Boardsesh ya está disponible en italiano.
 - Tu cuenta atrás de descanso aparece en la notificación de la sesión, con un tono al terminar.
 - Monta entrenamientos por fases: calentamiento, pirámide y luego volumen.
 - Al deslizar te quedas en la lista que tocaste. Desliza un bloque para ponerlo a continuación o al final.

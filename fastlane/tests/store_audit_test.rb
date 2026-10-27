@@ -82,6 +82,16 @@ class StoreAuditTest < Minitest::Test
     assert report.fetch("readinessIssues").any? { |issue| issue.include?("APP_IPHONE_61") }
   end
 
+  def test_default_locale_addition_does_not_expand_cpp_requirements
+    report = BoardseshStoreAudit::Apple.new(
+      client: FakeApple.new, app_id: "app", version: "2.6.0", build_number: "17",
+      cpp_targets: { "kilter" => { "referenceName" => "Boardsesh Kilter" } },
+      locales: %w[en-US it], cpp_locales: %w[en-US], display_types: %w[APP_IPHONE_67]
+    ).run
+    assert_includes report.fetch("readinessIssues"), "default: missing locale it"
+    refute report.fetch("readinessIssues").any? { |issue| issue.start_with?("CPP") && issue.include?("missing locale it") }
+  end
+
   def test_missing_cpp_assets_are_reported_without_hiding_release_identity
     client = FakeApple.new
     client.cpp_pages = []

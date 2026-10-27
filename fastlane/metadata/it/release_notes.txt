@@ -1,0 +1,38 @@
+Boardsesh ora è disponibile in italiano.
+
+iPad e iPhone Duo: più spazio per il pannello
+
+Su iPad, i blocchi occupano tutto lo schermo e il blocco illuminato in parete resta in un mini player in basso. Toccalo per aprire il player. In orizzontale, il pannello affianca i prossimi blocchi, il diario e la beta. Fissa un iPad vicino al pannello e attiva Schermo parete dal menu ⋯ di Blocchi: il blocco riempie lo schermo ed è leggibile dal materasso.
+
+Apri il tuo iPhone Duo e il pannello affianca la lista. Crea un allenamento con il Duo aperto e vedi i blocchi previsti accanto alle fasi.
+
+Il timer di recupero sulla schermata di blocco
+
+Il conto alla rovescia del recupero compare sulla schermata di blocco e nella Dynamic Island. Negli ultimi secondi senti un ticchettio e alla fine un segnale acustico, anche con il telefono in silenzioso.
+
+Allenamenti in fasi
+
+Crea una session in più fasi: riscaldamento, poi piramide, poi volume. Aggiungi una fase durante la session, scegli filtri diversi per ogni fase e vedi subito a che punto sei. Gli allenamenti scelgono prima i blocchi che non hai chiuso, possono escludere quelli già chiusi o tentati e possono attingere a Chiusi o Blocchi che ti piacciono. Alla fine compare un riepilogo.
+
+Scala dalla lista che hai toccato
+
+Il player mostra da quale lista stai scalando e, quando scorri, rimani in quella lista: diario, session, profili o blocchi simili. Le playlist si riproducono senza modificare la coda. Scorri su un blocco in qualsiasi lista per metterlo subito dopo o in fondo.
+
+Più modi per farla tua
+
+- Ordina le playlist per difficoltà, aggiunta più recente, valutazione o ordine casuale. Puoi ordinare e filtrare anche Blocchi che ti piacciono, Cinque stelle, Progetti e le pagine di chi traccia.
+- Blocchi ha una scheda dedicata. Toccala di nuovo per aprire Filtri e cercare per nome. Su iPhone, Filtri si apre a mezza altezza e riprende l'aspetto delle Impostazioni iOS.
+- Scegli quali sezioni mostrare in Home, in quale ordine e se aprire l'app su Home o Blocchi.
+- Le Impostazioni sono raccolte in sei pagine, con tutti i timer nello stesso posto.
+- Registra una ripetizione a un'inclinazione diversa da quella del pannello.
+- Ricevi notifiche sui commenti a session, blocchi, playlist, pannelli e palestre.
+
+Correzioni per la prossima session
+
+- Diario, Mi piace e playlist funzionano senza segnale. I pannelli scaricati non vengono più riscaricati ogni settimana.
+- La ricerca trova MoonBoard e centraline Kilter più recenti, iniziando da quelle più vicine. Boardsesh chiede il Bluetooth alla prima ricerca, non all'avvio.
+- Scorri verso il basso per chiudere il player. Le prese illuminate restano visibili mentre sfogli.
+- Quando togli Mi piace a un blocco, sparisce subito da Blocchi che ti piacciono.
+- Migliore supporto per VoiceOver e testo grande.
+
+Gratis, senza pubblicità, open source.

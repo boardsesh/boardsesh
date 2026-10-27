@@ -37,11 +37,12 @@ module BoardseshStoreAudit
       "subscriptionGroupVersion" => "subscriptionGroupVersions"
     }.freeze
 
-    def initialize(client:, app_id:, version:, build_number:, cpp_targets:, locales:, display_types:)
+    def initialize(client:, app_id:, version:, build_number:, cpp_targets:, locales:, display_types:, cpp_locales: locales)
       raise Error, "Expected iOS version must be semver" unless version.match?(/\A\d+\.\d+\.\d+\z/)
       raise Error, "Expected iOS build must be numeric" unless build_number.match?(/\A[1-9]\d*\z/)
       @client, @app_id, @version, @build_number = client, app_id, version, build_number
       @cpp_targets, @locales, @display_types = cpp_targets, locales, display_types
+      @cpp_locales = cpp_locales
       @issues = []
     end
 
@@ -160,17 +161,17 @@ module BoardseshStoreAudit
           "versions" => versions.map do |version|
             {
               "id" => version.fetch("id"), "version" => version.dig("attributes", "version"), "state" => version.dig("attributes", "state"),
-              "localizations" => localizations("appCustomProductPageVersions", version.fetch("id"), "appCustomProductPageLocalizations", "CPP #{target}/#{version.fetch('id')}")
+              "localizations" => localizations("appCustomProductPageVersions", version.fetch("id"), "appCustomProductPageLocalizations", "CPP #{target}/#{version.fetch('id')}", expected_locales: @cpp_locales)
             }
           end
         }
       end
     end
 
-    def localizations(parent_type, parent_id, localization_type, label)
+    def localizations(parent_type, parent_id, localization_type, label, expected_locales: @locales)
       entries = @client.list("/v1/#{parent_type}/#{parent_id}/#{localization_type}?limit=200")
       found_locales = entries.map { |entry| entry.dig("attributes", "locale") }
-      (@locales - found_locales).each { |locale| @issues << "#{label}: missing locale #{locale}" }
+      (expected_locales - found_locales).each { |locale| @issues << "#{label}: missing locale #{locale}" }
       entries.map do |localization|
         locale = localization.fetch("attributes").fetch("locale")
         sets = @client.list("/v1/#{localization_type}/#{localization.fetch('id')}/appScreenshotSets?limit=200")

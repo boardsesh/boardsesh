@@ -8,6 +8,7 @@ import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import { CPP_MANIFEST_PATH, CPP_TARGETS, readCppPage } from '../lib/screenshot-cpp';
+import { STORE_CAPTION_LOCALES } from '../lib/screenshot-presentation';
 
 /**
  * The screenshot runs gate themselves twice over: a `workflow_run` trigger plus a
@@ -231,7 +232,7 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
     expect(source).toContain(`probe_exclude=$(printf '%s' "$devices" | jq -c '[{locale:"en-US", device: .[0]}]')`);
   });
 
-  it('captures four devices across four app locales and five store locales', () => {
+  it('captures four devices across five app locales and six store locales', () => {
     const compute = workflow.jobs.setup.steps?.find((step) => step.id === 'compute')?.run ?? '';
     const devicesJson = compute.match(/devices='([^']+)'/)?.[1];
     expect(devicesJson).toBeDefined();
@@ -242,8 +243,10 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
       'ipad-pro-13-inch-m5',
       'ipad-pro-11-inch-m5',
     ]);
-    expect(devices.length * 4).toBe(16);
-    expect(devices.length * 5).toBe(20);
+    const appLocales = JSON.parse(compute.match(/ios_locales='([^']+)'/)?.[1] ?? '[]') as string[];
+    expect(appLocales).toEqual(['en-US', 'es', 'fr', 'de', 'it']);
+    expect(devices.length * appLocales.length).toBe(20);
+    expect(devices.length * Object.keys(STORE_CAPTION_LOCALES).length).toBe(24);
   });
 
   it('runs the probe on gate=probe only, off the shared shard action', () => {

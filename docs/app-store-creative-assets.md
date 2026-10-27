@@ -35,12 +35,16 @@ vp run mobile:screenshots -- --platform ios --fixtures replay --theme dark --dev
 ```
 
 The common matrix contains iPhone 16 Pro Max, iPhone 16 Pro, and both existing
-landscape iPads, across four app locales. That is 16 capture shards and
-20 storefront sets because Spanish supplies two Apple locales. The campaign
-captures 18 native sources per iPhone and frames nine output images. Sources
+landscape iPads, across five app locales (`en-US`, `es`, `fr`, `de`, `it`). That
+is 20 capture shards and 24 storefront sets because Spanish supplies two Apple
+locales; Italian writes Apple's `it` folder. The default listing has 180 images.
+The campaign captures 18 native sources per iPhone and frames nine output images. Sources
 remain under `app-stores/apple/raw-screenshots/`; composed sets are under
 `app-stores/apple/screenshots/`, with presentation manifests and contact sheets.
 The explicit `--flow app-store-campaign` alias selects the same iOS campaign.
+Italian phone slot 07 uses `07-session-detail.png`, framed from native
+`04-session-detail.png` with the `session` caption, until a reviewed Italian
+physical Live Activity fixture exists.
 
 Explicit `--fixtures record` and `--fixtures off` retain the legacy diagnostic
 flow. The iOS workflow refuses store upload or baseline publication from these
@@ -48,7 +52,9 @@ modes. Review complete replay captures before uploading them.
 
 ## Generate Header and Search Results stills
 
-Record fresh native captures for every app locale (`en-US`, `es`, `fr`, `de`).
+Header, Search Results, CPP and video campaigns retain the four campaign app
+locales (`en-US`, `es`, `fr`, `de`); Italian is enabled for the default listing
+and its screenshots. Record fresh native captures for each campaign locale.
 Use the original PNG directory for the matching variant, device and locale:
 
 ```bash

@@ -85,6 +85,7 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   CPP_TARGETS,
+  CPP_MANIFEST_PATH,
   isCppTarget,
   readCppPage,
   cppNavigationCommands,
@@ -346,11 +347,11 @@ const APP_STORE_LOCALES_BY_APP_LOCALE: Record<Locale, readonly string[]> = {
   es: ['es-ES', 'es-MX'],
   fr: ['fr-FR'],
   de: ['de-DE'],
-  it: ['it-IT'],
+  it: ['it'],
 };
 
 /** Default / `--locales all` set. Excludes app locales without store screenshot folders yet. */
-const STORE_READY_APP_LOCALES: readonly Locale[] = ['en-US', 'es', 'fr', 'de'];
+const STORE_READY_APP_LOCALES: readonly Locale[] = ['en-US', 'es', 'fr', 'de', 'it'];
 
 export interface ScreenshotOptions {
   platform: ScreenshotPlatform;
@@ -575,6 +576,14 @@ export function parseArgs(argv: readonly string[]): ScreenshotOptions {
       options.boards
     )
       throw new Error('--cpp requires iOS App Store capture and controls its board selectors');
+    const campaign = JSON.parse(readFileSync(CPP_MANIFEST_PATH, 'utf8')) as { locales: Record<string, string[]> };
+    const campaignLocales = Object.keys(campaign.locales).filter(isSupportedLocale);
+    const localesFlag = args.indexOf('--locales');
+    if (localesFlag === -1 || args[localesFlag + 1] === 'all') {
+      options.appLocales = campaignLocales;
+    } else if (options.appLocales.some((locale) => !campaignLocales.includes(locale))) {
+      throw new Error(`--cpp locales must have reviewed campaign assets (${campaignLocales.join(', ')})`);
+    }
     options.flow = 'app-store-cpp';
     if (!args.includes('--fixtures')) options.fixtures = 'replay';
   }
@@ -3222,7 +3231,7 @@ export function assertIosCampaignCaptureReady(
   }
 }
 
-/** Read accessibility labels from the same catalog as the native UI for all four locales. */
+/** Read accessibility labels from the same catalog as the native UI for all store locales. */
 export function buildIosSidebarMaestroEnv(locale: Locale): string[] {
   const directory = join(ROOT_DIR, 'packages/shared/i18n/locales', locale);
   const common = JSON.parse(readFileSync(join(directory, 'common.json'), 'utf8')) as {
@@ -3258,7 +3267,7 @@ export function buildIosSidebarMaestroEnv(locale: Locale): string[] {
   return Object.entries(labels).flatMap(([name, label]) => ['-e', `${name}=${label}`]);
 }
 
-/** Read accessibility labels from the same catalog as the native UI for all four locales. */
+/** Read accessibility labels from the same catalog as the native UI for all store locales. */
 export function buildIosCampaignMaestroEnv(
   locale: Locale,
   capture?: ScreenshotCaptureScenario,

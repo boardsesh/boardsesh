@@ -4,6 +4,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { STORE_CAPTION_LOCALES } from './lib/screenshot-presentation';
 
 // The listing copy in fastlane/metadata/ has hard per-field caps that nothing
 // checks until upload time: `deliver` and `supply` reject an over-long field
@@ -70,8 +71,8 @@ function fileSet(root: string, locale: string): string[] {
 }
 
 describe('App Store listing copy', () => {
-  it('has locale folders to check', () => {
-    expect(appleLocales().length).toBeGreaterThan(0);
+  it('has listing text for every default screenshot locale', () => {
+    expect(appleLocales()).toEqual(Object.keys(STORE_CAPTION_LOCALES).sort());
   });
 
   // The length checks below skip a missing file, and nothing else guards Apple

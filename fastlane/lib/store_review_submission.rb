@@ -202,8 +202,13 @@ module BoardseshStoreReview
     end
 
     def normalized_localizations(localizations, target, counts)
-      expected_locales = @manifest.fetch("locales").values.flatten.sort
-      raise Error, "#{target}: locales must exactly match the release manifest" unless localizations.map { |entry| entry.fetch("locale") }.sort == expected_locales
+      # The default listing can add a language before the optional CPP campaigns.
+      expected_locales = if target == "default"
+        Dir.children(@metadata_root).select { |locale| locale != "android" && File.directory?(File.join(@metadata_root, locale)) }.sort
+      else
+        @manifest.fetch("locales").values.flatten.sort
+      end
+      raise Error, "#{target}: locales must exactly match the declared listing locales" unless localizations.map { |entry| entry.fetch("locale") }.sort == expected_locales
       localizations.sort_by { |entry| entry.fetch("locale") }.map do |localization|
         locale = localization.fetch("locale")
         metadata = localization.fetch("metadata")

@@ -248,8 +248,13 @@ the first `navigate` / `screenshot --to` may catch the dialog.
 
 `vp run mobile:screenshots -- --devices common` captures iPhone 16 Pro Max
 (1320 × 2868), iPhone 16 Pro (1206 × 2622), and both existing landscape iPads.
-`--devices phones` selects both phones. The four app locales produce 16 capture
-shards and 20 storefront sets because Spanish targets both `es-ES` and `es-MX`.
+`--devices phones` selects both phones. The five default-listing app locales
+(`en-US`, `es`, `fr`, `de`, `it`) produce 20 capture shards and 24 storefront sets
+because Spanish targets both `es-ES` and `es-MX`; Italian targets `it`. The full
+default listing contains 180 screenshots: nine per phone and six per iPad.
+Italian phone slot 07 shows the native session recap, `07-session-detail.png`,
+until a reviewed Italian physical Live Activity fixture exists. CPP/ad/video
+campaigns retain their four app locales and five Apple locales.
 The `smoke` flow keeps its single Pro Max / English default; pass an explicit
 `--device` to inspect another device. The ad-hoc `mobile:ios-shots` default is
 unchanged.
@@ -261,7 +266,7 @@ destination's selected state before continuing; screen-specific content checks
 still gate each capture. Before capturing, the flow collapses the floating sidebar
 so it cannot obscure content, then reopens it for the next destination. The UIKit
 controls (`Hide Sidebar` / `Toggle sidebar`) follow the simulator system language,
-not the app catalog locale: use English-system simulators for all four app locales.
+not the app catalog locale: use English-system simulators for all five app locales.
 Missing native controls fail the capture rather than leave the overlay visible.
 
 Store Home captures require a visible recent-session card as well as a settled

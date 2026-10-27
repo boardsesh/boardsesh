@@ -81,7 +81,7 @@ A person can also set a higher version with a commit on the train.
    PRs target `main`. The OTA compatibility check reports a native change on `main`
    without blocking it.
 2. **Update the localized release notes** for `en-US`, `es-ES`, `es-MX`, `fr-FR`,
-   and `de-DE` on the train, before the final native change, so the automatic
+   `de-DE`, and `it` on the train, before the final native change, so the automatic
    builds carry the intended copy.
 3. **QA the uploaded builds**, then **close the train** (below). The merge-back is
    what submits both stores for review.
@@ -389,8 +389,8 @@ feature graphic. The iOS half can only write onto an _editable_ App Store
 version, so when the copy lands before a version exists (the normal order, §1)
 that run skips iOS; `mobile-store-draft.yml` dispatches it again with
 `platform: ios` right after it creates the version (§4), so the text and What's
-New land without anyone running it by hand. Dispatch it manually only to re-push
-unchanged copy.
+New land without anyone running it by hand. Dispatch it manually to refresh an
+existing draft after store-only edits on the train, or to re-push unchanged copy.
 
 Screenshots are automatic too. **Mobile Screenshots** (`mobile-screenshots-ios.yml`
 and `mobile-screenshots-android.yml`) runs after each native deploy on
@@ -430,6 +430,26 @@ uploads the artifact; committing the set back to `main` stays opt-in on a
 dispatch (`commit_to_main`) — that is deliberately still `main`, because
 `mobile-store-metadata.yml` reads the committed PNGs from there.
 
+### Italian release checklist
+
+1. Verify the candidate includes Italian in both its UI and native languages.
+   `APP_LOCALIZATIONS` already declares `it`, and `packages/mobile/locales/it.json`
+   supplies its permission prompts; use a candidate built after that addition.
+2. Check listing copy and release notes under `fastlane/metadata/it/` for Apple
+   and `fastlane/metadata/android/it-IT/` for Play. Apple uses `it`, not `it-IT`.
+3. After these changes merge into `release/next`, explicitly dispatch **Mobile
+   Screenshots (iOS)** on that branch with `flow: app-store`, `gate: full`,
+   `fixtures: replay`, empty `locales`, `cpp_target: none`, `upload: true`, and
+   `publish_baseline: true`. Store-only changes can skip the native build, so its
+   automatic screenshot follow-up is insufficient. Review all 20 capture shards
+   and the resulting 24 storefront sets, including Italian's session recap slot.
+4. Dispatch **Mobile Store Metadata** on `release/next` with `platform: ios` to
+   refresh the editable release draft. Read back all six Apple locales and their
+   180 default-listing screenshots before submission. CPP/ad/video campaigns
+   retain the original four app locales and five Apple locales.
+5. Verify the Play Italian listing and candidate's localized What's New. Play
+   release notes ship with the AAB; the metadata lane does not upload changelogs.
+
 ### iPhone campaign capture
 
 The default iOS `app-store` replay uses the nine-frame multiboard campaign.
@@ -450,8 +470,12 @@ must be an actual permitted wall photograph included in that fixture's static fi
 Use an entitled simulator client for the Dynamic Island. The flow uses the existing
 screenshot BLE adapter and verifies the native Next control before capturing;
 an empty island or disconnected widget fails. Inspect the sources on both phones
-and all four locales before publishing an updated baseline or uploading to the
-store. Missing campaign sources never select a legacy layout.
+and all four Live Activity locales before publishing an updated baseline or
+uploading to the store. Italian's default phone slot 07 uses
+`07-session-detail.png`, framed from the native `04-session-detail.png` capture
+with the `session` caption, until a reviewed Italian physical Live Activity
+fixture exists. All five app locales still require complete native captures.
+Missing campaign sources never select a legacy layout.
 
 ### The iOS probe gate
 
@@ -461,13 +485,13 @@ Dynamic Island set is captured natively rather than resized from Pro Max. The
 navigation smoke still defaults to one Pro Max in English. Inventory changes
 force the first complete baseline even if the Pro Max probe pixels match.
 
-The iOS capture is a 16-shard macOS fan-out (4 app locales × 4 devices) and a
-public repo gets 5 concurrent macOS runners, so the run sizes itself. With
+The default iOS capture is a 20-shard macOS fan-out (5 app locales × 4 devices).
+A public repo gets 5 concurrent macOS runners, so the run sizes itself. With
 `gate: probe` it shoots ONE shard first — en-US × iPhone 16 Pro Max — pulls the
 matching shard out of the stored baseline and compares them pixel by pixel
 (`vp run screenshot:compare`, `scripts/compare-screenshots.ts`). Unchanged and
 the run stops there in roughly 15 minutes; changed, or no baseline yet, and it
-fans out to the remaining 15 shards. Automatic runs always probe. On a dispatch
+fans out to the remaining 19 shards. Automatic runs always probe. On a dispatch
 `gate: full` is the default, and a narrowed `locales` list, the `onboarding` flow
 or `upload: true` force it back to `full` — none of those has a full-set baseline
 to compare against.
@@ -505,13 +529,13 @@ probe actually captured matched byte for byte.
 iPad (a `Platform.isPad` branch, a width-based layout switch) is caught by
 neither the pixel probe (en-US iPhone only) nor the path rules above — its
 file path says nothing about iPad. There is no changed-path signal to force a
-fan-out here without also forcing a full 16-shard capture on every ordinary
+fan-out here without also forcing a full 20-shard capture on every ordinary
 component edit, which would defeat probing in the first place. Dispatch with
 `gate: full` (or `upload: true`) by hand when a change is iPad-specific by
 intent.
 
 The baseline lives on a rolling GitHub prerelease tagged `screenshots-baseline`:
-`pack` writes 20 `ios-<store-locale>-<device>.zip` files — 5 store locales × 4
+`pack` writes 24 `ios-<store-locale>-<device>.zip` files — 6 store locales × 4
 devices, since the captured `es` app locale fans out into both `es-ES` and
 `es-MX` — plus an `ios-manifest.json` recording the commit, the run id and a
 sha256 per file. Captured PNGs are deliberately not committed (issue #2905),
@@ -823,9 +847,11 @@ After screenshot upload, independent image review and metadata readback, dispatc
 with `action=plan`, the exact version/build, and the selected comma-separated
 surfaces (`default,kilter,tension,moonboard,spray`). Download the `store-review`
 artifact and check its snapshot against the reviewed source images and copy.
-The default page requires 150 images; each CPP requires 180, across five locales
-and four device slots. Every image must have a source checksum and be fully
-processed. A valid snapshot does not substitute for visual review or comparison
+The default page requires 180 images across six Apple locales and four device
+slots. Each CPP still requires 180 images across its existing five Apple locales
+and four device slots; CPP/ad/video campaigns do not add Italian. Every image must
+have a source checksum and be fully processed. A valid snapshot does not substitute
+for visual review or comparison
 with the expected source checksums.
 
 Submit with the same selection and the artifact's `snapshotSha256`. The helper

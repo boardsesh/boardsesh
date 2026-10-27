@@ -66,7 +66,7 @@ name: Mobile Screenshots (iOS)
 #
 # The run is SELF-GATING. macOS minutes are the scarce resource (free on a public
 # repo, but capped at 5 concurrent), and most runs change no pixels at all, so a
-# `gate: probe` dispatch shoots ONE shard and only pays for the other fifteen when
+# `gate: probe` dispatch shoots ONE shard and only pays for the other nineteen when
 # that shard actually moved:
 #   setup        — resolve the locale list, the capture matrix and the gate.
 #   ios-build    — build/restore the cached .app ONCE (no per-shard cold build).
@@ -83,25 +83,25 @@ name: Mobile Screenshots (iOS)
 #                  shard) and ios-capture picks between them on
 #                  `needs.probe.result`, not on `gate` alone — a crashed probe
 #                  never actually captured or uploaded that shard, so it needs
-#                  the FULL 16-shard matrix, or ios-finalize's dimension gate
+#                  the FULL 20-shard matrix, or ios-finalize's dimension gate
 #                  would red the whole run over a hole the probe itself left.
 #                  This one shard is blind to a change confined to another locale
-#                  (es/fr/de strings) or to an iPad-only layout — it would always
+#                  (es/fr/de/it strings) or to an iPad-only layout — it would always
 #                  read as "unchanged". scripts/screenshot-probe-scope.ts closes
 #                  that gap: it diffs the changed paths between the baseline's
 #                  commit and this run's commit and forces the fan-out (`force_full`)
 #                  whenever one falls in a documented blind spot, regardless of what
 #                  the pixel comparison found. See docs/mobile-store-release.md.
-#   ios-capture  — matrix of locale (en-US, es, fr, de) × device (the 6.9" iPhone 16
+#   ios-capture  — matrix of locale (en-US, es, fr, de, it) × device (the 6.9" iPhone 16
 #                  Pro Max and 6.3" Pro, plus the
 #                  iPad Pro 13-inch and 11-inch, a separate slot that doesn't
-#                  auto-scale) = 16 shards, each its own runner: one Metro, one
+#                  auto-scale) = 20 shards, each its own runner: one Metro, one
 #                  simulator, one capture. When the probe actually SUCCEEDED, its
 #                  own shard is excluded from the matrix (the probe already
-#                  uploaded it), so a changed probe fans out to the remaining 15;
-#                  a skipped (gate=full) or crashed probe gets the full 16.
+#                  uploaded it), so a changed probe fans out to the remaining 19;
+#                  a skipped (gate=full) or crashed probe gets the full 20.
 #   ios-finalize — merge the per-shard artifacts into one tree, run the dimension
-#                  gate and the content gate (each needs all five App Store
+#                  gate and the content gate (each needs all six App Store
 #                  locales at once), and upload. An automatic run refreshes the
 #                  baseline itself after a green full capture; a dispatch has to
 #                  ask with `publish_baseline`.
@@ -153,14 +153,14 @@ on:
           - app-store
           - onboarding
       gate:
-        description: 'full = capture all 16 shards. probe = shoot en-US × iPhone 16 Pro Max first, compare it with the stored baseline, and fan out to the other 15 shards only when it changed. Automatic runs after a native deploy always probe.'
+        description: 'full = capture all 20 shards. probe = shoot en-US × iPhone 16 Pro Max first, compare it with the stored baseline, and fan out to the other 19 shards only when it changed. Automatic runs after a native deploy always probe.'
         type: choice
         default: full
         options:
           - full
           - probe
       locales:
-        description: 'iOS locales to capture (comma-separated, e.g. "en-US" or "en-US,es,fr"). Empty = the full en-US,es,fr,de set. A narrowed set (or the onboarding flow) skips the App Store dimension gate, which needs all five store locales at once.'
+        description: 'iOS locales to capture (comma-separated, e.g. "en-US" or "en-US,es,fr"). Empty = the full en-US,es,fr,de,it set. A narrowed set (or the onboarding flow) skips the App Store dimension gate, which needs all six store locales at once.'
         type: string
         default: ''
       render_mode:
@@ -264,7 +264,7 @@ jobs:
   # Decide whether this run has anything to capture, then resolve the locale
   # list, the capture matrix and the gate — once, on a cheap ubuntu runner, so
   # every macOS job downstream just reads an output. Empty `locales` = the full
-  # en-US,es,fr,de store set (an automatic run and a no-arg dispatch); a value
+  # en-US,es,fr,de,it store set (an automatic run and a no-arg dispatch); a value
   # narrows it (e.g. a single locale).
   setup:
     # workflow_run fires on every completion; a failed or cancelled deploy has
@@ -475,7 +475,7 @@ jobs:
           # (all-blank input) from aborting the step under pipefail; the empty
           # result is then caught explicitly below with a clear error.
           if [ -z "$locales" ]; then
-            ios_locales='["en-US","es","fr","de"]'
+            ios_locales='["en-US","es","fr","de","it"]'
           else
             ios_locales=$(printf '%s' "$locales" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' | jq -R . | jq -cs . || true)
             if [ -z "$ios_locales" ] || [ "$ios_locales" = "[]" ]; then
@@ -493,7 +493,7 @@ jobs:
           # Same reasoning for the probe gate: an upload must carry the whole set,
           # and the probe deliberately captures one shard and may stop there.
           if [ "$upload" = "true" ] && [ "$gate" = "probe" ]; then
-            echo "::error::upload=true cannot be combined with gate=probe — an upload needs all 16 shards, and the probe stops after one when nothing changed."
+            echo "::error::upload=true cannot be combined with gate=probe — an upload needs all 20 shards, and the probe stops after one when nothing changed."
             exit 1
           fi
           # A narrowed / onboarding / uploading run has no meaningful baseline to
@@ -519,7 +519,7 @@ jobs:
           # ACTUAL result rather than this job's gate input. A probe that
           # CRASHES never captured or uploaded its shard, even though gate=probe
           # asked for the exclude, so ios-capture must fall back to the full
-          # 16-shard matrix on that path instead of leaving a hole for
+          # 20-shard matrix on that path instead of leaving a hole for
           # ios-finalize's assertCompleteTree to catch as a red finalize job.
           ios_matrix_full=$(jq -cn \
             --argjson locale "$ios_locales" \
@@ -774,10 +774,10 @@ jobs:
        (needs.probe.result == 'success' &&
         (needs.probe.outputs.changed == 'true' || needs.probe.outputs.force_full == 'true')))
     # The `if:` above lets a crashed probe fan out, but the MATRIX also has to
-    # switch to the full 16-shard set on that path: a crashed probe may have
+    # switch to the full 20-shard set on that path: a crashed probe may have
     # uploaded partial screenshots before a later step failed. Its artifacts
     # stay separate and ios-finalize uses only the recovery captures. `needs.probe.result == 'success'` is the only
-    # branch that gets the excluded (15-shard) matrix; both `skipped` (gate=full,
+    # branch that gets the excluded (19-shard) matrix; both `skipped` (gate=full,
     # no probe ran) and `failure` fall through to the full one. GitHub Actions'
     # `&&`/`||` return the actual operand, not a coerced boolean, and a matrix
     # JSON string is always non-empty (truthy) — so `false && x` short-circuits
@@ -790,13 +790,13 @@ jobs:
       fail-fast: false
       # A public repo gets 5 concurrent macOS runners; the sixth queues anyway.
       # Capping at 4 leaves a slot for the other macOS workflows (ios-rn-ci, the
-      # TestFlight deploy) instead of starving them behind a 16-shard sweep.
+      # TestFlight deploy) instead of starving them behind a 20-shard sweep.
       max-parallel: 4
       # Devices: native large and medium Dynamic Island iPhone slots, plus the
-      # 13-inch and 11-inch landscape iPads. Matrix = 4 locales × 4 devices
-      # = 16 shards, one simulator per shard — minus the probe's own pair when the
+      # 13-inch and 11-inch landscape iPads. Matrix = 5 locales × 4 devices
+      # = 20 shards, one simulator per shard — minus the probe's own pair when the
       # probe actually succeeded and uploaded it itself (see the `if:` comment
-      # above for the failure/skip fallback to the full 16).
+      # above for the failure/skip fallback to the full 20).
       matrix: >-
         ${{ fromJSON(needs.probe.result == 'success' && needs.setup.outputs.ios_matrix_without_probe ||
             needs.setup.outputs.ios_matrix_full) }}
@@ -888,9 +888,9 @@ jobs:
       # A complete, trustworthy App Store tree landed in this run: the fan-out
       # succeeded and neither the flow nor the locale list was narrowed. Whether
       # the probe itself succeeded, was skipped, or crashed does not gate this —
-      # a probe crash also switches ios-capture onto the full 16-shard matrix
+      # a probe crash also switches ios-capture onto the full 20-shard matrix
       # (see its `strategy.matrix` expression above), not just the excluded
-      # 15-shard one gate=probe would otherwise ask for, so all 16 shards are
+      # 19-shard one gate=probe would otherwise ask for, so all 20 shards are
       # genuinely expected here regardless of how the probe fared. Any shard
       # ios-capture itself failed to produce is still caught by the dimension
       # gate below, which every upload and baseline-refresh step is already
@@ -920,7 +920,7 @@ jobs:
       # Merge every per-locale artifact back into ONE app-stores/apple/screenshots
       # tree. merge-multiple flattens all matching artifacts into the single path,
       # preserving each one's <locale>/<device>/NN-name.png layout — so the gate
-      # and fastlane see the full five-locale tree. On the unchanged path the
+      # and fastlane see the full six-locale tree. On the unchanged path the
       # probe's single shard is the only match, which merge-multiple handles the
       # same way (it is a merge of one).
       #
@@ -943,10 +943,10 @@ jobs:
 
       # Fail loudly if any capture isn't an App Store-accepted size for its slot,
       # or if a locale/device folder is missing — so deliver can't get silently
-      # rejected by Apple (or upload a partial set). Requires all five App Store
+      # rejected by Apple (or upload a partial set). Requires all six App Store
       # locales at once, which is why it runs here after the merge, not per-shard.
       - name: Assert screenshot dimensions
-        # The gate needs the full App Store set (all five store locales, app-store
+        # The gate needs the full App Store set (all six store locales, app-store
         # flow). Skip it for the onboarding flow, a narrowed `locales` run, or an
         # unchanged probe — those are capture-only and hold one shard at most; the
         # per-shard artifacts are still produced + uploaded. `success() &&` is kept
@@ -1090,7 +1090,7 @@ jobs:
           elif [ "$PROBE_CHANGED" = "false" ] && [ "$PROBE_FORCE_FULL" = "true" ]; then
             echo "**Forced full capture vs baseline ${BASELINE_COMMIT:-(none)}** — the probe shard matched pixel-for-pixel, but ${PROBE_FORCE_FULL_REASON:-a change outside the probe shard} forced the fan-out anyway (see scripts/screenshot-probe-scope.ts)." >> "$GITHUB_STEP_SUMMARY"
           elif [ "$PROBE_CHANGED" = "false" ]; then
-            echo "**Unchanged vs baseline ${BASELINE_COMMIT:-(none)}** — the probe shard matched, so the other 15 shards were skipped." >> "$GITHUB_STEP_SUMMARY"
+            echo "**Unchanged vs baseline ${BASELINE_COMMIT:-(none)}** — the probe shard matched, so the other 19 shards were skipped." >> "$GITHUB_STEP_SUMMARY"
           else
             echo "**Changed vs baseline ${BASELINE_COMMIT:-(none)}**: ${PROBE_CHANGED_FILES:-(no baseline yet)}. Fanned out to the remaining shards; the baseline is refreshed when this run publishes one." >> "$GITHUB_STEP_SUMMARY"
           fi

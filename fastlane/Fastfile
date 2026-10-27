@@ -27,7 +27,7 @@ default_platform(:ios)
 REPO_ROOT = File.expand_path("..", __dir__)
 APPLE_SCREENSHOTS_ROOT = File.join(REPO_ROOT, "app-stores", "apple", "screenshots")
 GOOGLE_SCREENSHOTS_DIR = File.join(REPO_ROOT, "app-stores", "google", "screenshots", "pixel-2")
-EXPECTED_DELIVER_LOCALES = ["en-US", "es-ES", "es-MX", "fr-FR", "de-DE"].freeze
+EXPECTED_DELIVER_LOCALES = ["en-US", "es-ES", "es-MX", "fr-FR", "de-DE", "it"].freeze
 SUPPLY_LOCALE = "en-US"
 
 APP_IDENTIFIER = "com.boardsesh.app"
@@ -313,7 +313,7 @@ platform :ios do
       BoardseshStoreAudit::Apple.new(
         client: client, app_id: app.id, version: ENV.fetch("RELEASE_VERSION"),
         build_number: ENV.fetch("IOS_BUILD_NUMBER"), cpp_targets: manifest.fetch("targets").select { |target, _config| selected.include?(target) },
-        locales: EXPECTED_DELIVER_LOCALES, display_types: manifest.fetch("devices").values.uniq
+        locales: EXPECTED_DELIVER_LOCALES, cpp_locales: manifest.fetch("locales").values.flatten, display_types: manifest.fetch("devices").values.uniq
       ).run
     end
     # MANUAL unless asked: only the automatic merge-back submission
@@ -345,7 +345,7 @@ platform :ios do
     report = BoardseshStoreAudit::Apple.new(
       client: client, app_id: app.id, version: ENV.fetch("RELEASE_VERSION"),
       build_number: ENV.fetch("IOS_BUILD_NUMBER"), cpp_targets: cpp_targets,
-      locales: EXPECTED_DELIVER_LOCALES, display_types: manifest.fetch("devices").values.uniq
+      locales: EXPECTED_DELIVER_LOCALES, cpp_locales: manifest.fetch("locales").values.flatten, display_types: manifest.fetch("devices").values.uniq
     ).run
     BoardseshStoreAudit.write_report(ENV.fetch("STORE_AUDIT_OUTPUT"), report)
     UI.success("iOS release identity verified; audit report includes #{report.fetch('readinessIssues').length} asset readiness issue(s).")

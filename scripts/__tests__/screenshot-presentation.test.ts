@@ -22,6 +22,8 @@ import { decideProbeScope } from '../screenshot-probe-scope';
 import {
   PRESENTATION_MANIFEST,
   CAPTION_IDS,
+  CAPTION_LOCALES,
+  IOS_CAMPAIGN_CAPTURE_NAMES,
   STORE_CAPTION_LOCALES,
   captionLocaleForStore,
   readCaptionCatalog,
@@ -366,6 +368,43 @@ describe('store screenshot presentation', () => {
     expect(captionLocaleForStore('android', '')).toBe('en-US');
     expect(() => captionLocaleForStore('ios', 'it-IT')).toThrow('No screenshot captions');
   });
+
+  it('maps Italian to Apple it and keeps its default campaign independent of physical fixtures', () => {
+    expect(captionLocaleForStore('ios', 'it')).toBe('it');
+    const recipes = resolveScreenshotRecipes('ios', 'iphone-16-pro-max', IOS_CAMPAIGN_CAPTURE_NAMES, 'it');
+    expect(recipes).toHaveLength(9);
+    expect(recipes.every((recipe) => !recipe.liveActivity && recipe.sources.length > 0)).toBe(true);
+    expect(recipes[7]).toEqual({
+      output: '07-session-detail.png',
+      caption: 'session',
+      layout: 'screen',
+      sources: ['04-session-detail.png'],
+    });
+    expect(resolveScreenshotRecipes('ios', 'iphone-16-pro-max', IOS_CAMPAIGN_CAPTURE_NAMES)[7].liveActivity).toEqual({
+      boardFamily: 'kilter',
+    });
+  });
+
+  it('frames the Italian phone campaign with localized session pixels and provenance', async () => {
+    const input = directory();
+    const output = directory();
+    const size = ACCEPTED_SIZES['iphone-16-pro'][0];
+    const raw = await sharp(randomBytes(size.width * size.height * 3), { raw: { ...size, channels: 3 } })
+      .png()
+      .toBuffer();
+    for (const name of IOS_CAMPAIGN_CAPTURE_NAMES) writeFileSync(join(input, name), raw);
+    const saved = await frameDirectory({ platform: 'ios', device: 'iphone-16-pro', locale: 'it', input, output });
+    expect(saved).toHaveLength(9);
+    const manifest = readPresentationManifest(output);
+    expect(manifest.locale).toBe('it');
+    const session = manifest.files['07-session-detail.png'];
+    expect(readFileSync(join(output, '07-session-detail.png'))).toEqual(
+      await frameComposition([raw], readCaptionCatalog('it').session, 'screen', true),
+    );
+    expect(session.sources?.['04-session-detail.png'].rawSha256).toBe(sha256Screenshot(raw));
+    expect(Object.values(manifest.files).every((entry) => !entry.liveActivity)).toBe(true);
+    expect(readPngDimensions(readFileSync(join(output, '07-session-detail.png')))).toEqual(size);
+  }, 60_000);
 
   it('canonicalizes composite source names and field order without ignoring changed provenance', () => {
     const sources = {
@@ -842,7 +881,7 @@ describe('store screenshot presentation', () => {
     );
   }, 60_000);
 
-  it.each(['en-US', 'es', 'fr', 'de'] as const)(
+  it.each(CAPTION_LOCALES)(
     'fits every %s caption in every store device shape',
     async (locale) => {
       const catalog = readCaptionCatalog(locale);
