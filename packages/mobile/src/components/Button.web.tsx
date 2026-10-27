@@ -16,6 +16,7 @@
 import { Button as PaperButton } from 'react-native-paper';
 import { StyleSheet } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
+import { brandAccentColor } from '../theme/expo-ui-modifiers';
 import { isFullWidthStyle, makeButtonPressHandler } from './Button.logic';
 import { sizeConfig, type ButtonProps, type ButtonVariant } from './Button.types';
 import { iconMap } from './icon-map';
@@ -51,19 +52,16 @@ export function Button({
   const config = sizeConfig[buttonSize];
   const isDestructive = role === 'destructive';
 
-  // Per-variant Paper colours. Non-destructive filled/tonal take the MD3 theme
-  // defaults (brand primary / secondaryContainer from buildPaperTheme) unless a
-  // custom `tintColor` is passed; destructive fills with the brand error token and
-  // keeps white content. outlined/text carry the brand (or error) on the LABEL.
+  // Per-variant Paper colours. Filled paints the brand fill (or a custom
+  // `tintColor`) with white content, as the Compose button does: Paper's default
+  // `primary` is the lighter foreground tint in dark, made for text, not fills.
+  // Tonal takes the MD3 secondaryContainer default; destructive fills with the
+  // brand error token. outlined/text carry the brand (or error) on the LABEL.
   let buttonColor: string | undefined;
   let textColor: string | undefined;
   if (variant === 'filled') {
-    if (isDestructive) {
-      buttonColor = brandColors.error;
-      textColor = brandColors.onPrimary;
-    } else if (tintColor) {
-      buttonColor = tintColor;
-    }
+    buttonColor = isDestructive ? brandColors.error : (tintColor ?? brandAccentColor(brandColors));
+    textColor = brandColors.onPrimary;
   } else if (variant === 'tonal') {
     if (isDestructive) {
       buttonColor = brandColors.error;
