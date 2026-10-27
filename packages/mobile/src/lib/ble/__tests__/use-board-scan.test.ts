@@ -52,6 +52,10 @@ vi.mock('@boardsesh/ble-protocol', () => ({
     ['kilter', 'tension', 'decoy', 'touchstone', 'grasshopper', 'soill'].find((board) =>
       name?.toLowerCase().replace(/[\s-]/g, '').startsWith(board),
     ),
+  parseAnyBoardTypeFromDeviceName: (name?: string) =>
+    ['moonboard', 'kilter', 'tension', 'decoy', 'touchstone', 'grasshopper', 'soill'].find((board) =>
+      name?.toLowerCase().replace(/[\s-]/g, '').startsWith(board),
+    ),
 }));
 
 // Lets a test stand in the web fork's answer (use-ble-permissions.web.ts), which

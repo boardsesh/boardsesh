@@ -5,14 +5,13 @@ import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import {
   getAuroraBluetoothPacket,
   parseApiLevel,
-  parseBoardTypeFromDeviceName,
   parseSerialNumber,
   type LedColorOverrides,
 } from '@boardsesh/ble-protocol/aurora';
-import { getMoonboardBluetoothPacket, isMoonboardDeviceName } from '@boardsesh/ble-protocol/moonboard';
+import { parseAnyBoardTypeFromDeviceName } from '@boardsesh/ble-protocol';
+import { getMoonboardBluetoothPacket } from '@boardsesh/ble-protocol/moonboard';
 import {
   getWoodsBluetoothPacket,
-  isWoodsDeviceName,
   WoodsMultiFrameError,
   type WoodsBoardSize,
   type WoodsPacketResult,
@@ -300,18 +299,6 @@ export function boardConfigKey(
   return `${boardName}::${layoutId}::${sizeId}::${boardUuid ?? ''}`;
 }
 
-/**
- * Board type parsed from a BLE device name, covering both families: Aurora
- * names via the product-name prefix, MoonBoard via its name prefixes. Returns
- * undefined when the name identifies neither.
- */
-function parseAnyBoardTypeFromDeviceName(deviceName?: string): string | undefined {
-  if (!deviceName) return undefined;
-  if (isMoonboardDeviceName(deviceName)) return 'moonboard';
-  if (isWoodsDeviceName(deviceName)) return 'woods';
-  return parseBoardTypeFromDeviceName(deviceName);
-}
-
 // 'moonboard' here is the Nordic-UART (non-Aurora) scan family: MoonBoard and
 // Woods both advertise the UART service and need name-based matching.
 function scanFamilyForBoard(boardName: string): 'aurora' | 'moonboard' {
@@ -337,7 +324,7 @@ function recordBoardSerial(input: {
   layoutId: number;
   sizeId: number;
   setIds: string;
-  apiLevel: number;
+  apiLevel?: number;
   boardUuid?: string;
 }): void {
   // Canonicalise set IDs: dedupe + numeric sort, dropping any non-numeric token
@@ -1726,11 +1713,10 @@ export function useBoardBluetooth({
           }
         }
 
-        // Parse serial for Aurora boards and record the (serial, config, API
-        // level) mapping for serial→config lookups. Moonboard device names
-        // don't carry a serial in this format, so they're skipped.
+        // Fixture MoonBoards may carry a serial suffix; stock controllers
+        // still reconnect by peripheral id. MoonBoard has no Aurora API level.
         let parsedSerial: string | null = null;
-        if (boardName !== 'moonboard' && connection.deviceName) {
+        if (connection.deviceName) {
           parsedSerial = parseSerialNumber(connection.deviceName) ?? null;
           if (parsedSerial && boardName && layoutId !== undefined && sizeId !== undefined && setIds) {
             recordBoardSerial({
@@ -1739,7 +1725,7 @@ export function useBoardBluetooth({
               layoutId,
               sizeId,
               setIds,
-              apiLevel: apiLevelRef.current,
+              ...(boardName === 'moonboard' ? {} : { apiLevel: apiLevelRef.current }),
               // A hidden board picked from a signed-out scan is geometry with
               // uuid ''. The backend's RecordBoardSerialInputSchema declares
               // `boardUuid: UUIDSchema.optional()`, so '' would fail the whole

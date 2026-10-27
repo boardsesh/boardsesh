@@ -2,7 +2,7 @@
 // lists boards in.
 //
 // The quickstart used to keep only devices whose name carried an Aurora serial
-// (`Kilter Board#751737@3`). That dropped every MoonBoard (no serial, ever) and
+// (`Kilter Board#751737@3`). That dropped ordinary serial-less MoonBoards and
 // every Kilter-built box (a bare `Kilter Board`), so a climber standing at one
 // waited 15 seconds for "No boards in range". 45% of the connect picker's
 // sightings had no serial. These are kept now, keyed by the BLE device id, so
@@ -35,8 +35,7 @@ type QuickstartScanDeviceBase = {
 };
 
 /**
- * An Aurora box whose name carries its serial. The sheet resolves it to a saved
- * board through `boardsBySerialNumbers`, exactly as before.
+ * A controller whose name carries its serial, including MoonBoard fixtures.
  */
 export type QuickstartSerialDevice = QuickstartScanDeviceBase & {
   kind: 'serial';
@@ -46,7 +45,7 @@ export type QuickstartSerialDevice = QuickstartScanDeviceBase & {
 };
 
 /**
- * A board that advertises no serial: a MoonBoard controller (never has one) or
+ * A board that advertises no serial: an ordinary MoonBoard controller or
  * a Kilter-built Aurora box that advertises only its type, `Kilter Board`
  * (`isKilterBuiltBox`). Its type is all we know.
  */
@@ -112,6 +111,18 @@ export function classifyQuickstartDevice({
   const signal = isUsableRssi(rssi) ? rssi : null;
 
   if (isMoonboardDeviceName(name)) {
+    const serial = parseSerialNumber(name);
+    if (serial) {
+      return {
+        key: `serial:${serial}`,
+        deviceId,
+        name,
+        kind: 'serial',
+        boardType: MOONBOARD_BOARD_NAME,
+        serial,
+        rssi: signal,
+      };
+    }
     return {
       key: `device:${deviceId}`,
       deviceId,
