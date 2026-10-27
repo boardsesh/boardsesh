@@ -99,6 +99,21 @@ describe('usePlayFavorite', () => {
     expect(initial.showToast).toHaveBeenCalledWith('playView.favoriteError', 'error');
   });
 
+  // The MiniPlayer's heart writes the same cache (#6940). Once the cache moves,
+  // the player's own tap no longer holds the heart, so the two agree.
+  it('follows the shared cache once it moves past its own optimistic tap', () => {
+    const initial = options();
+    const { result, rerender } = renderHook((props) => usePlayFavorite(props), { initialProps: initial });
+    act(() => result.current.handleToggleFavorite());
+    expect(result.current.isFavorited).toBe(true);
+    // The toggle's own optimistic write lands in the cache.
+    rerender({ ...initial, serverFavorited: true });
+    expect(result.current.isFavorited).toBe(true);
+    // A tap on the MiniPlayer's heart takes it off again.
+    rerender({ ...initial, serverFavorited: false });
+    expect(result.current.isFavorited).toBe(false);
+  });
+
   it('tags heart and menu toggles with this phone’s current connection', () => {
     const initial = options();
     const { result, rerender } = renderHook((props) => usePlayFavorite(props), { initialProps: initial });

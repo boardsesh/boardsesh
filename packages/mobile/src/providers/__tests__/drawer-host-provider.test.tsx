@@ -172,6 +172,10 @@ vi.mock('expo-crypto', () => ({
 // `app/play.tsx` route — so the host only needs the barrel to resolve (it imports
 // type-only symbols from it). A no-op keeps the real, native-heavy PlayDrawer out
 // of jsdom.
+vi.mock('../../components/chrome/BoardAnglePicker', () => ({
+  BoardAnglePicker: () => null,
+  AnglePickerOpener: () => null,
+}));
 vi.mock('../../components/play-drawer', () => ({
   PlayDrawer: () => null,
 }));

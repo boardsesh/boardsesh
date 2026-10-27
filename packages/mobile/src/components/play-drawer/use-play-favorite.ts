@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import type { Climb } from '@boardsesh/shared-schema';
 import type { TFunction } from 'i18next';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -36,11 +36,29 @@ export function usePlayFavorite({
   showToast,
   t,
 }: PlayFavoriteOptions) {
-  const [favoriteOverride, setFavoriteOverride] = useState<boolean | null>(null);
+  // The override answers the server value it was set against. Once the shared
+  // `favoriteStatus` cache moves (this toggle's own optimistic write, or a tap on
+  // the MiniPlayer's heart, #6940), the cache is the truth again, so the two
+  // hearts never disagree.
+  const [override, setOverride] = useState<{ favorited: boolean; against: boolean | undefined } | null>(null);
+  const serverFavoritedRef = useRef(serverFavorited);
+  serverFavoritedRef.current = serverFavorited;
+  const overrideCurrent = override !== null && override.against === serverFavorited;
+  // Dropped for good once the cache moves, so a later move back can't revive it.
+  if (override !== null && !overrideCurrent) setOverride(null);
+  const favoriteOverride = overrideCurrent ? override.favorited : null;
   const isFavorited = favoriteOverride ?? serverFavorited ?? false;
+  const setFavoriteOverride = useCallback((update: boolean | null | ((current: boolean | null) => boolean | null)) => {
+    setOverride((current) => {
+      const against = serverFavoritedRef.current;
+      const currentValue = current !== null && current.against === against ? current.favorited : null;
+      const next = typeof update === 'function' ? update(currentValue) : update;
+      return next === null ? null : { favorited: next, against };
+    });
+  }, []);
   // Core invokes this in its original climb-change effect and explicit-open
   // callback, including a fresh nonce reopening the same climb.
-  const resetFavoriteOverride = useCallback(() => setFavoriteOverride(null), []);
+  const resetFavoriteOverride = useCallback(() => setFavoriteOverride(null), [setFavoriteOverride]);
   const toggleFavorite = useCallback(
     (source: PlayFavoriteSource) => {
       if (!displayedClimb || !toggleFavoriteMutate) return;
@@ -94,6 +112,7 @@ export function usePlayFavorite({
       angle,
       bluetoothConnected,
       toggleFavoriteMutate,
+      setFavoriteOverride,
       showToast,
       t,
     ],

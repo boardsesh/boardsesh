@@ -297,6 +297,9 @@ const miniPlayer = vi.hoisted(() => ({
   isTablet: false,
   phoneSplit: false,
   paneTaken: false,
+  signedIn: true,
+  angleAdjustable: true,
+  playerButtons: null as null | { order: readonly string[]; visible: Record<string, boolean> },
 }));
 vi.mock('../../../lib/mini-player-buttons-preference', async () => {
   const { DEFAULT_MINI_PLAYER_BUTTONS } = await import('../../../lib/mini-player-buttons');
@@ -306,6 +309,24 @@ vi.mock('../../../hooks/use-device-layout', () => ({ useDeviceLayout: () => ({ i
 vi.mock('../../../hooks/use-phone-split', () => ({ usePhoneSplit: () => miniPlayer.phoneSplit }));
 vi.mock('../../navigation/phone-split-pane-slot', () => ({ usePhoneSplitPaneTaken: () => miniPlayer.paneTaken }));
 vi.mock('../../../lib/workout-run-store', () => ({ useWorkoutRun: () => null }));
+vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: miniPlayer.signedIn }) }));
+vi.mock('../../../lib/graphql/use-active-board', () => ({
+  useActiveBoard: () => ({ data: { angle: 40, isAngleAdjustable: miniPlayer.angleAdjustable } }),
+}));
+vi.mock('../../../lib/player-buttons-preference', async () => {
+  const { DEFAULT_PLAYER_BUTTONS } = await import('../../../lib/player-buttons');
+  return {
+    usePlayerButtonsPreference: () => ({
+      buttons: miniPlayer.playerButtons ?? DEFAULT_PLAYER_BUTTONS,
+      previousNext: true,
+      position: 'below',
+    }),
+  };
+});
+// The climb is drawn on the active board, as every climb in these tests is.
+vi.mock('../../../lib/boards/climb-render-board', () => ({
+  resolveClimbRenderBoard: (_climb: unknown, boardConfig: unknown) => (boardConfig ? { boardConfig } : null),
+}));
 vi.mock('../MiniPlayerButtons', () => ({
   MiniPlayerLeadingButtons: ({ buttonIds }: { buttonIds: readonly string[] }) =>
     createElement('span', { 'data-mini-player-buttons': buttonIds.join(',') }),
@@ -476,6 +497,9 @@ describe('NativeAccessoryClimbRow', () => {
     miniPlayer.isTablet = false;
     miniPlayer.phoneSplit = false;
     miniPlayer.paneTaken = false;
+    miniPlayer.signedIn = true;
+    miniPlayer.angleAdjustable = true;
+    miniPlayer.playerButtons = null;
   });
 
   it('renders a regular now-climbing row with thumbnail, grade, and integrated tick', () => {
@@ -695,13 +719,46 @@ describe('NativeAccessoryClimbRow', () => {
       expect(buttons(renderRow('regular').container)).toBeNull();
     });
 
-    it("leaves ⏮ ⏭ to the open Duo's player pane, which shows them right above", () => {
+    it("carries the open Duo pane's covered small row instead of ⏮ ⏭ 💡 ✓, which the pane shows above", () => {
       miniPlayer.phoneSplit = true;
       layout.width = 800;
       const { container } = renderRow('regular');
-      expect(buttons(container)).toBeNull();
-      expect(container.querySelector('[data-board-control]')).not.toBeNull();
-      expect(container.querySelector('[data-tick="true"]')).not.toBeNull();
+      // Kilter's default player row: ♡ 40° ··· ⬆ (☰ leads the big row).
+      expect(buttons(container)).toBe('favorite,angle,share');
+      expect(container.querySelector('[data-board-control]')).toBeNull();
+      expect(container.querySelector('[data-tick="true"]')).toBeNull();
+    });
+
+    it("follows the climber's player buttons on the open Duo, not their MiniPlayer ones", () => {
+      miniPlayer.phoneSplit = true;
+      layout.width = 800;
+      miniPlayer.playerButtons = {
+        order: ['share', 'queue', 'favorite', 'angle', 'mirror'],
+        visible: { mirror: true, favorite: true, angle: false, share: true, queue: true },
+      };
+      // Queue takes the pane's big leading slot, so the bar covers Share and the heart.
+      expect(buttons(renderRow('regular').container)).toBe('share,favorite');
+    });
+
+    it('leaves out what a signed-out climber, a draft or a fixed-angle board cannot use', () => {
+      miniPlayer.phoneSplit = true;
+      layout.width = 800;
+      miniPlayer.signedIn = false;
+      miniPlayer.angleAdjustable = false;
+      const current = queue.state.currentClimbQueueItem as ClimbQueueItem;
+      queue.state.currentClimbQueueItem = { ...current, climb: { ...current.climb, is_draft: true } };
+      expect(buttons(renderRow('regular').container)).toBeNull();
+    });
+
+    it('places the extra buttons the climber switched on, on an iPad', () => {
+      miniPlayer.isTablet = true;
+      layout.width = 995;
+      miniPlayer.layout = {
+        order: ['next', 'previous', 'mirror', 'favorite', 'queue', 'share', 'angle'],
+        visible: { next: true, previous: true, mirror: true, favorite: true, queue: true, share: true, angle: true },
+      };
+      // Mirror waits for its own store; the rest keep the climber's order before ⏮ ⏭.
+      expect(buttons(renderRow('regular').container)).toBe('favorite,queue,share,angle,previous,next');
     });
 
     it("adds them on the open Duo while a screen's own content fills the pane", () => {

@@ -46,9 +46,18 @@ vi.mock('../../../lib/haptics', () => ({ hapticLight: ctrl.haptic }));
 vi.mock('../../user-drawer/UserDrawerProvider', () => ({
   useUserDrawer: () => ({ openUserDrawer: ctrl.openUserDrawer }),
 }));
-vi.mock('../BoardAnglePicker', () => ({
-  BoardAnglePicker: ({ children }: { children: (open: () => void) => ReactElement }) => children(ctrl.openAngle),
-}));
+vi.mock('../BoardAnglePicker', async () => {
+  const { useLayoutEffect } = await import('react');
+  return {
+    BoardAnglePicker: ({ children }: { children: (open: () => void) => ReactElement }) => children(ctrl.openAngle),
+    AnglePickerOpener: ({ open, openRef }: { open: () => void; openRef: { current: (() => void) | null } }) => {
+      useLayoutEffect(() => {
+        openRef.current = open;
+      }, [open, openRef]);
+      return null;
+    },
+  };
+});
 vi.mock('../../../hooks/use-vertical-tab-bar', () => ({ useVerticalTabBar: () => ctrl.onRail }));
 vi.mock('../../../hooks/use-device-layout', () => ({ useDeviceLayout: () => ({ isTablet: ctrl.isTablet }) }));
 vi.mock('../LightbulbToolbarAction', () => ({ useToolbarLightbulb: () => ctrl.lightbulb }));

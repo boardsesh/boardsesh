@@ -293,6 +293,32 @@ describe('useToggleFavorite', () => {
     expect(favoritesStore.getIsFavorited('climb-1')).toBe(false);
   });
 
+  // The player's heart and the MiniPlayer's read this one cache entry (#6940),
+  // so a tap on either flips both at once, and a failure puts both back.
+  it('flips the per-climb heart at once, and puts it back when the toggle fails', async () => {
+    requestMock.mockResolvedValueOnce({ favorites: [] });
+    const { Wrapper } = makeWrapper();
+    const statusHook = renderHook(() => useFavoriteStatus('kilter', 'climb-1', 40), { wrapper: Wrapper });
+    await waitFor(() => expect(statusHook.result.current.data).toBe(false));
+
+    let rejectToggle: (error: Error) => void = () => {};
+    requestMock.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        rejectToggle = reject;
+      }),
+    );
+    const toggleHook = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
+    const toggle = toggleHook.result.current.mutateAsync({
+      input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+      currentlyFavorited: false,
+    });
+    await waitFor(() => expect(statusHook.result.current.data).toBe(true));
+
+    rejectToggle(new Error('offline'));
+    await expect(toggle).rejects.toThrow('offline');
+    await waitFor(() => expect(statusHook.result.current.data).toBe(false));
+  });
+
   // The store is a singleton scoped to one board+angle+user. A toggle that
   // resolves after the user switched angles must not paint its result onto the
   // list now showing a different angle.

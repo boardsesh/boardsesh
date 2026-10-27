@@ -70,6 +70,7 @@ import { useBoardPresenceControls, type ResolveBoardUuidArgs } from './board-pre
 import { boardUuidOrNull } from '../lib/boards/board-identity';
 import { useOptionalBluetoothContext } from './bluetooth-provider';
 import { dismissManagedSheetAndWait, type DismissAndWaitResult } from './sheet-presentation-provider';
+import { AnglePickerOpener, BoardAnglePicker } from '../components/chrome/BoardAnglePicker';
 
 export type BoardConfig = {
   boardName: string;
@@ -207,6 +208,11 @@ type DrawerHostValue = {
    *  separate Switch-board control). Wired to the board glyph when the
    *  `board-presence` flag is on. */
   openBoardSheet: () => void;
+  /** Opens the active board's angle picker as a sheet: the MiniPlayer's Angle
+   *  button (#6940). The picker lives here, not in the tab bar's accessory, where
+   *  a sheet or popover would present from inside UIKit's platter. No-op on a
+   *  fixed-angle board. */
+  openAnglePicker: () => void;
   /** Props for the tablet shell's right-column PlayDrawer pane (regular width) and
    *  the iPhone Duo's split pane; null while no board is resolved. Consumed by
    *  `IpadPlayPane`. Where that pane is up, `openPlayDrawer` drives it instead of
@@ -934,6 +940,19 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     return dismissManagedSheetAndWait(queueSheetRef.current);
   }, []);
 
+  // One angle picker for the MiniPlayer, mounted at the root beside the other
+  // sheets. A held element, so the host's own re-renders never reach it.
+  const anglePickerOpenRef = useRef<(() => void) | null>(null);
+  const openAnglePicker = useCallback(() => anglePickerOpenRef.current?.(), []);
+  const anglePicker = useMemo(
+    () => (
+      <BoardAnglePicker allowPopover={false}>
+        {(open) => <AnglePickerOpener open={open} openRef={anglePickerOpenRef} />}
+      </BoardAnglePicker>
+    ),
+    [],
+  );
+
   const requestCloseBoardSheet = useCallback(() => boardSheetRef.current?.dismiss(), []);
   const dismissBoardSheetAndWait = useCallback((): Promise<DismissAndWaitResult> => {
     return dismissManagedSheetAndWait(boardSheetRef.current);
@@ -1284,6 +1303,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       openReportClimb,
       openQueueSheet,
       openBoardSheet,
+      openAnglePicker,
       playDrawerPaneProps,
       boardPanelProps,
       usesDetailPane,
@@ -1299,6 +1319,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       openReportClimb,
       openQueueSheet,
       openBoardSheet,
+      openAnglePicker,
       playDrawerPaneProps,
       boardPanelProps,
       usesDetailPane,
@@ -1430,6 +1451,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
             onOpenPlaylist={handleBoardSheetOpenPlaylist}
             onOpenActions={handleBoardSheetModalOpenActions}
           />
+          {anglePicker}
           {sprayWallActions.shareSnapshot ? (
             <BoardShareSheet
               visible={sprayWallActions.shareVisible}

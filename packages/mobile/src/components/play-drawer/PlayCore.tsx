@@ -137,7 +137,7 @@ import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { useHorizontalSafeArea } from '../../hooks/use-horizontal-safe-area';
 import { playContentSideInsets } from './play-content-side-insets';
-import { useShareClimb } from '../../hooks/use-share-climb';
+import { useShareClimbAction } from '../../hooks/use-share-climb-action';
 import { activeBoardIsMoonboard } from '../../hooks/use-active-board-is-moonboard';
 import { isMoonboardBoardName } from '@boardsesh/board-config';
 import { LostHoldsBanner } from './LostHoldsBanner';
@@ -1367,32 +1367,16 @@ export function PlayCore({
     setDrawerPreviewItem((current) => reanchorPreviewAtAngle(current, angle, previewClimbAtAngle));
   }, [previewClimbAtAngle, angle, setDrawerPreviewItem]);
 
-  const shareClimb = useShareClimb({
+  // Tracked as an intent, with a toast when the share sheet throws (shared with the MiniPlayer's).
+  const handleShare = useShareClimbAction({
     climb: displayedClimb ?? null,
     boardName,
     layoutId,
     sizeId,
     setIds,
     angle,
+    source: 'play_drawer',
   });
-
-  // Android can throw on share cancellation; surface anything we didn't expect
-  // rather than silently swallowing the rejection.
-  const handleShare = useCallback(() => {
-    if (!displayedClimb) return;
-    // Tracks share intent (like the actions-menu site), not share completion.
-    track(SHARED_EVENTS.ClimbShared, {
-      method: 'share',
-      source: 'play_drawer',
-      climbUuid: displayedClimb.uuid,
-      boardName,
-      layoutId,
-    });
-    shareClimb().catch((error) => {
-      console.warn('[playDrawer] share failed:', error);
-      showToast(t('playView.shareError'), 'error');
-    });
-  }, [shareClimb, displayedClimb, boardName, layoutId, showToast, t]);
 
   // A draft is visible to its setter alone: a share link opens nowhere for
   // anyone else, and the only person who can report it is the setter (#5960).

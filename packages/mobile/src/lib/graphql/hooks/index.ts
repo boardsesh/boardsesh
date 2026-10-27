@@ -166,6 +166,20 @@ type ToggleFavoriteVariables = ToggleFavoriteMutationVariables & {
   currentlyFavorited?: boolean;
 };
 
+/** The per-climb heart's cache key: the backend keys a favourite on (board, climb, angle). */
+function favoriteStatusQueryKey(input: ToggleFavoriteVariables['input']) {
+  return ['favoriteStatus', input.boardName, input.climbUuid, input.angle] as const;
+}
+
+/** Pins the per-climb heart. The cached shape is the RAW GET_FAVORITES response (select runs on read). */
+function setFavoriteStatusCache(
+  queryClient: ReturnType<typeof useQueryClient>,
+  input: ToggleFavoriteVariables['input'],
+  favorited: boolean,
+) {
+  queryClient.setQueryData(favoriteStatusQueryKey(input), { favorites: favorited ? [input.climbUuid] : [] });
+}
+
 function graphqlFetchFromClient(): GraphQLFetch {
   return (query, variables) => getHttpClient().request(query, variables);
 }
@@ -1130,10 +1144,7 @@ export function useToggleFavorite() {
         // PRE-toggle state for 5 minutes. The drainer invalidates
         // ['favoriteStatus'] once the queued write actually lands. The cached
         // shape is the RAW GET_FAVORITES response (select runs on read).
-        queryClient.setQueryData(
-          ['favoriteStatus', variables.input.boardName, variables.input.climbUuid, variables.input.angle],
-          { favorites: favorited ? [variables.input.climbUuid] : [] },
-        );
+        setFavoriteStatusCache(queryClient, variables.input, favorited);
 
         scheduleDrain(db, queryClient);
 
@@ -1160,6 +1171,11 @@ export function useToggleFavorite() {
       const contextEpoch = favoritesStore.getContextEpoch();
       if (typeof variables.currentlyFavorited === 'boolean') {
         favoritesStore.setIsFavorited(variables.input.climbUuid, !variables.currentlyFavorited);
+        // Every heart on this climb reads the same cache entry (the player's,
+        // the MiniPlayer's, #6940), so they flip together. A fetch already in
+        // flight would land the pre-toggle state over it.
+        void queryClient.cancelQueries({ queryKey: favoriteStatusQueryKey(variables.input) });
+        setFavoriteStatusCache(queryClient, variables.input, !variables.currentlyFavorited);
       }
       // Un-liking drops the climb from the cached Liked list now, on both the
       // queued and the online path (#5304). Liking it again puts back the row an
@@ -1176,6 +1192,8 @@ export function useToggleFavorite() {
       if (typeof variables.currentlyFavorited !== 'boolean') return;
       // A newer toggle for this climb owns both the heart and the Liked rows.
       if (!context || !favoriteToggleOrder.isLatest(variables.input.climbUuid, context.token)) return;
+      // The cache entry is keyed on this toggle's board and angle, so it is always this toggle's to undo.
+      setFavoriteStatusCache(queryClient, variables.input, variables.currentlyFavorited);
       // The heart store is scoped to one board+angle+user, so only roll it back
       // while it is still scoped to where this toggle started.
       if (ownsFavoriteWrite(variables.input.climbUuid, context)) {
@@ -1213,9 +1231,7 @@ export function useToggleFavorite() {
       // the optimistic setQueryData above holds until the drainer's
       // post-landing invalidation.
       if (!('viaLocalQueue' in data)) {
-        void queryClient.invalidateQueries({
-          queryKey: ['favoriteStatus', variables.input.boardName, variables.input.climbUuid, variables.input.angle],
-        });
+        void queryClient.invalidateQueries({ queryKey: favoriteStatusQueryKey(variables.input) });
         // The Liked smart list (and its library count) would otherwise keep an
         // un-liked climb on screen for its 5-minute staleTime (#5304).
         // When the server confirms an un-like, the cached pages already lost the

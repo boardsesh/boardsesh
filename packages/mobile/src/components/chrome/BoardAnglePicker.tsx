@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactElement, type RefObject } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { useTranslation } from 'react-i18next';
@@ -32,8 +32,14 @@ export function useAnglePickerPopover(): boolean {
 export function BoardAnglePicker({
   children,
   onOpenChange,
+  allowPopover = true,
 }: {
   children: (open: () => void) => ReactElement;
+  /**
+   * `false` keeps the sheet even on a regular-width iPad, for a trigger the
+   * popover can't point at (one that lives outside this React subtree).
+   */
+  allowPopover?: boolean;
   /**
    * Whether the picker is on screen. A caller that swaps the trigger between a
    * popover anchor and a sheet opener holds its choice while this is true, so
@@ -43,7 +49,7 @@ export function BoardAnglePicker({
 }) {
   const { t: tSession } = useTranslation('session');
   const { t: tCommon } = useTranslation('common');
-  const usesPopover = useAnglePickerPopover();
+  const usesPopover = useAnglePickerPopover() && allowPopover;
   const { data: activeBoard } = useActiveBoard();
   const setBoardAngle = useSetBoardAngle();
   const angles = useBoardAngleOptions(activeBoard?.boardType as BoardName | undefined);
@@ -147,6 +153,20 @@ export function BoardAnglePicker({
       />
     </>
   );
+}
+
+/**
+ * Hands the picker's `open` to a trigger outside the React tree that renders the
+ * picker: a native bar item, or the MiniPlayer inside the tab bar's accessory.
+ */
+export function AnglePickerOpener({ open, openRef }: { open: () => void; openRef: RefObject<(() => void) | null> }) {
+  useLayoutEffect(() => {
+    openRef.current = open;
+    return () => {
+      if (openRef.current === open) openRef.current = null;
+    };
+  }, [open, openRef]);
+  return null;
 }
 
 const styles = StyleSheet.create({
