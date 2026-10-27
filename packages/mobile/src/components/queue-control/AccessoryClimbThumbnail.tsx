@@ -64,6 +64,12 @@ export function AccessoryClimbThumbnail({
   boardConfig: BoardConfig | null;
   size?: number;
 }) {
+  'use no memo';
+
+  // React Compiler drops the registry token from its inferred render-data
+  // dependencies. Keep the explicit memo below so arriving or withdrawn spray
+  // walls invalidate the thumbnail even when its board props stay unchanged.
+
   // Keyed on the climb's own fields, not the `climb` object: several callers pass
   // a fresh literal every render, which would make an object-keyed memo a
   // guaranteed miss on a bar that re-renders on every queue swipe.
