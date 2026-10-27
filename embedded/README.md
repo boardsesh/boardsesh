@@ -118,6 +118,51 @@ capture task converts that stream into a PNG. It captures the logical framebuffe
 physical orientation or electrical display faults still need a photo or a check
 of the panel itself.
 
+#### Production QA gym fixture
+
+`waveshare-amoled-gym` is a separate firmware target for a gym with one to three
+simulated boards. It fetches the gym's current serials, layouts, JPEGs and exact
+LED-position maps at startup. Kilter, Tension and MoonBoard advertise independent
+connectable identities concurrently; each connection has its own protocol parser.
+The legacy controller and proxy targets keep their existing BLE configuration.
+
+The latest complete Bluetooth send selects its board automatically. Short presses
+of GPIO18/KEY advance through the boards; a short PWR press selects the previous
+board. Long PWR behavior and the reset button are preserved. Each board retains
+its latest preview during the current boot; previews start empty after reboot.
+
+Use the existing local settings page to choose a gym link, slug or UUID and enter
+the registered controller key. Keys are write-only in the fixture configuration
+API. Settings changes restart the device and fetch the selected gym. Validated
+configuration and assets support an offline boot with a visible saved-gym status.
+Explicit access rejection stops the advertisements and remains effective across
+an offline reboot.
+
+The fixture reserves only the blank tail at `0xF20000` for its cache. It verifies
+the partition and every byte before first initialization, never formats existing
+factory storage, and commits complete asset generations atomically. Back up the
+connected device before changing firmware or its partition table.
+
+```sh
+vp run controller:build -e waveshare-amoled-gym
+vp run controller:upload -e waveshare-amoled-gym --upload-port /dev/cu.usbmodem2101
+vp run controller:screenshot --port /dev/cu.usbmodem2101 --output /tmp/gym-preview.png
+vp run controller:fixture:test --sanitize
+```
+
+USB commands `fixture-status`, `fixture-next`, `fixture-prev` and
+`fixture-refresh` support diagnostics without changing BLE connections merely to
+browse a preview. `fixture-config <JSON>` supports private USB setup using
+`fixture_gym_ref`, `fixture_endpoint`, `fixture_api_key`, and optional `wifi_ssid`
+and `wifi_password`; it saves settings and restarts without echoing secrets.
+
+`waveshare-amoled-gym-proof` is an explicit hardware feasibility build with three
+synthetic identities and connection-specific echo probes. It does not fetch or
+represent production gym data. Complete its discovery, simultaneous connection
+and routing checks before production provisioning. See
+[the production QA gym runbook](../docs/prod-qa-gym.md) for release order,
+idempotent provisioning and credential handling.
+
 #### GLEDOPTO GL-C-015WL-D variant
 
 `gledopto-c015` targets the [GLEDOPTO GL-C-015WL-D](https://gledopto.com/h-pd-125.html) —

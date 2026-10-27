@@ -109,11 +109,8 @@ import { requestSearchBoards, shouldRetryBoardSearch, boardSearchRetryDelay } fr
 import { useStoredUserId } from '../../../hooks/use-current-user-id';
 import { withHoldOutlineOverride, withoutHoldOutlineOverride } from './hold-outline-cache';
 import { useGradeSourceSearchInput } from './search-grade-source';
-import {
-  matchesAdvertisedType,
-  sharedAdvertisedBoardType,
-  type AdvertisedBoardTypes,
-} from '../../ble/advertised-board-type';
+import type { AdvertisedBoardTypes } from '../../ble/advertised-board-type';
+import { fetchBoardsForObservedSerials } from '../../ble/observed-board-matches';
 import {
   GET_PROFILE,
   UPDATE_PROFILE,
@@ -360,9 +357,8 @@ export function fetchBoardsBySerialNumbers(serialNumbers: string[]): Promise<Use
  * carries the number — which is how an in-range Tension controller could be
  * offered as a stranger's Kilter board, and made active.
  *
- * The `boardType` argument only narrows the request (and a mixed scan can't use
- * it at all); the per-serial `matchesAdvertisedType` filter below is what
- * actually enforces the rule.
+ * Correlate typed BLE observations through a batch wrapper because stored
+ * serial fields are owner-only. Untyped form lookups retain the legacy query.
  */
 export function useBoardsBySerialNumbers(serialNumbers: string[], advertisedTypes: AdvertisedBoardTypes = new Map()) {
   // Sorted entries, not the map, so the key hashes stably across renders while
@@ -374,25 +370,9 @@ export function useBoardsBySerialNumbers(serialNumbers: string[], advertisedType
     () => [...advertisedTypes].sort(([first], [second]) => first.localeCompare(second)),
     [advertisedTypes],
   );
-  const boardType = useMemo(() => sharedAdvertisedBoardType(advertisedTypes), [advertisedTypes]);
   return useQuery({
     queryKey: ['boardsBySerialNumbers', serialNumbers, advertisedTypeEntries],
-    queryFn: () =>
-      getHttpClient().request<GetBoardsBySerialNumbersQueryResponse>(GET_BOARDS_BY_SERIAL_NUMBERS, {
-        serialNumbers,
-        boardType,
-      }),
-    // Memoized on `advertisedTypes` so the dependency is explicit: `select`
-    // re-runs when its own reference changes, so an unmemoized closure would
-    // re-filter the cached response whenever a caller handed over a new Map with
-    // the same contents.
-    select: useCallback(
-      (data: GetBoardsBySerialNumbersQueryResponse) =>
-        data.boardsBySerialNumbers.filter((board) =>
-          board.serialNumber ? matchesAdvertisedType(board.serialNumber, board.boardType, advertisedTypes) : true,
-        ),
-      [advertisedTypes],
-    ),
+    queryFn: () => fetchBoardsForObservedSerials(serialNumbers, advertisedTypes),
     enabled: serialNumbers.length > 0,
   });
 }

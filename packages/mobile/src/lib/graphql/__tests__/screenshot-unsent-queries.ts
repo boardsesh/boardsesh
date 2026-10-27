@@ -65,6 +65,8 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'GetNearbySessions',
   'GetNotificationActors',
   'GetNotifications',
+  // Only a real BLE scan sends observed identities; capture flows do not scan.
+  'GetObservedBoardSerialMatches',
   'GetPlaylist',
   'GetPlaylistClimbs',
   // A playlist's or smart list's setter picker (#6651): only a tap inside its filter sheet asks.
