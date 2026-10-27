@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 // Relative, not '@boardsesh/i18n': the scripts vitest project doesn't resolve
 // workspace package names (same as mobile-locales-parity.test.ts).
 import { SUPPORTED_LOCALES } from '../../packages/shared/i18n/src/config';
@@ -22,6 +22,7 @@ import {
   collectScreenshots,
   deviceSlug,
   findFrozenClockProblems,
+  findOrCreateIosDevice,
   parseRecordingStatus,
   readScreenshotBackendLogSince,
   reportRecordingSummary,
@@ -1229,6 +1230,43 @@ describe('resolveIosScreenshotDevices', () => {
     expect(unlisted.orientation).toBe('LANDSCAPE_LEFT');
     // …but the known iPhone keeps its own portrait orientation.
     expect(known.orientation).toBe('PORTRAIT');
+  });
+});
+
+describe('simulator creation diagnostics', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  function captureCommands() {
+    vi.stubEnv('BOARDSESH_IOS_SIMULATOR_UDID', '');
+    return vi
+      .fn(() => ({ status: 0, stdout: '', stderr: '' }))
+      .mockReturnValueOnce({ status: 0, stdout: JSON.stringify({ devices: {} }), stderr: '' })
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: JSON.stringify({
+          runtimes: [{ identifier: 'com.apple.CoreSimulator.SimRuntime.iOS-27-1', version: '27.1', isAvailable: true }],
+        }),
+        stderr: '',
+      });
+  }
+
+  it('includes the requested device, runtime and simctl failure diagnostic', () => {
+    const capture = captureCommands().mockReturnValueOnce({
+      status: 1,
+      stdout: '',
+      stderr: 'Invalid device type: com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro',
+    });
+    expect(() => findOrCreateIosDevice(resolveIosScreenshotDevices(['iPhone 16 Pro'])[0], capture)).toThrow(
+      /iPhone 16 Pro.*iOS-27-1.*Invalid device type/,
+    );
+  });
+
+  it('still resolves a successfully created simulator from the refreshed inventory', () => {
+    const created = { udid: 'created-device', name: 'iPhone 16 Pro', state: 'Shutdown' };
+    const capture = captureCommands()
+      .mockReturnValueOnce({ status: 0, stdout: created.udid, stderr: '' })
+      .mockReturnValueOnce({ status: 0, stdout: JSON.stringify({ devices: { runtime: [created] } }), stderr: '' });
+    expect(findOrCreateIosDevice(resolveIosScreenshotDevices([created.name])[0], capture)).toEqual(created);
   });
 });
 

@@ -154,6 +154,16 @@ runs:
         unzip -q maestro.zip -d "$HOME/.maestro-dist"
         echo "$HOME/.maestro-dist/maestro/bin" >> "$GITHUB_PATH"
 
+    - name: Record simulator inventory
+      shell: bash
+      run: |
+        mkdir -p capture-debug
+        xcodebuild -version > capture-debug/xcode-version.txt 2>&1 || true
+        xcode-select -p > capture-debug/xcode-path.txt 2>&1 || true
+        xcrun simctl list runtimes --json > capture-debug/simulator-runtimes.json 2>&1 || true
+        xcrun simctl list devicetypes --json > capture-debug/simulator-device-types.json 2>&1 || true
+        xcrun simctl list devices --json > capture-debug/simulator-devices.json 2>&1 || true
+
     - name: Capture screenshots (${{ inputs.locale }} · ${{ inputs.device-slug }})
       id: capture
       # Installs the prebuilt .app, starts Metro with the screenshot env for this
