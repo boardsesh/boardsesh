@@ -2,7 +2,7 @@ import { GraphQLError } from 'graphql';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import * as dbSchema from '@boardsesh/db/schema';
-import { getGradeLabel, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
+import { getGradeLabel, resourceAccessCondition } from '@boardsesh/db/queries';
 import { resolveRenderBoard } from '@boardsesh/board-config';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import type {
@@ -21,15 +21,13 @@ import {
   restrictDerivedWorkout,
   workoutHeadline,
   type DerivedWorkoutClimb,
-  type SessionWorkoutPlan,
   type SessionWorkoutRepOutcome as RepOutcome,
-  type SessionWorkoutTickMapEntry,
 } from '@boardsesh/workout-summary';
 import { db } from '../../../db/client';
 import { canAccessResource } from '../../../services/privacy';
-import { sessionAnonymousUserIds } from '../../../services/board-session-privacy';
+import { sessionsOwnSurfaceVisibleUserIds, sessionVisibleUserIds } from '../../../services/board-session-privacy';
 import { logger } from '../../../utils/logger';
-import { sessionTickVisibleCondition } from '../shared/activity-privacy';
+import { scopedClimbCondition, sessionTickVisibleCondition } from '../shared/activity-privacy';
 import { applyRateLimit, isDurableSessionMember, requireAuthenticated } from '../shared/helpers';
 import { fetchOwnerBoards, toTickBoardCandidate } from '../shared/render-board';
 import { sprayTickVisibleSql } from '../shared/spray-tick-visibility';
@@ -40,11 +38,18 @@ import { sprayTickVisibleSql } from '../shared/spray-tick-visibility';
  * each block came to is derived on read from that climber's ticks with
  * `@boardsesh/workout-summary`, so a tick edited or deleted later is reflected
  * without a rewrite. docs/workout-stages.md, "Workouts on the server".
+ *
+ * Who a reader shows follows `sessionDetail`: a workout appears only when the
+ * session opens for the viewer, its climber is someone the session's own
+ * surfaces name to them (`sessionVisibleUserIds`), and at least one of that
+ * climber's ticks in the session is one the viewer may see. Inside it, a climb
+ * the viewer may not see is left out with all its reps.
  */
 
 /** Feed cards ask for one page of sessions at a time. */
 export const MAX_SESSION_WORKOUT_HEADLINE_IDS = 50;
 const RATE_LIMIT_RECORD_SESSION_WORKOUT = 60;
+const RATE_LIMIT_SESSION_WORKOUT_HEADLINES = 120;
 const MAX_REVISION = 2_147_483_647;
 
 const REP_OUTCOME: Record<RepOutcome, SessionWorkoutRepOutcome> = {
@@ -66,37 +71,18 @@ const boardTypeFromPath = (boardPath: string | null): string | null =>
 const gradeName = (difficulty: number | null | undefined, boardType: string | null | undefined): string | null =>
   difficulty == null || !boardType ? null : getGradeLabel(difficulty, boardType) || null;
 
-/** Plan + tick map from a stored row, or null when it no longer parses. */
-function readStoredWorkout(row: {
-  sessionId: string;
-  userId: string;
-  plan: unknown;
-  tickMap: unknown;
-}): { plan: SessionWorkoutPlan; tickMap: SessionWorkoutTickMapEntry[] } | null {
-  const plan = parseSessionWorkoutPlan(row.plan);
-  const tickMap = parseSessionWorkoutTickMap(row.tickMap);
-  if (!plan || !tickMap) {
-    logger.warn(`[sessionWorkouts] Unreadable workout for session ${row.sessionId}, user ${row.userId}; skipped.`);
-    return null;
-  }
-  return { plan, tickMap };
-}
+const logUnreadable = (sessionId: string, userId: string): void => {
+  logger.warn(`[sessionWorkouts] Unreadable workout for session ${sessionId}, user ${userId}; skipped.`);
+};
 
 /**
- * Who may write a workout for a session: its creator, anyone who ever joined it
- * (`board_session_participants`, written on join and never deleted), or anyone
- * who logged a tick in it. Reads the primary so a fresh join is never missed.
+ * The session's tick rule plus the spray wall rule, for ticks aliased `t`:
+ * exactly the pair the session summary's participant counts use.
  */
-async function canRecordWorkout(userId: string, sessionId: string, createdByUserId: string | null): Promise<boolean> {
-  if (createdByUserId === userId) return true;
-  if (await isDurableSessionMember(userId, sessionId)) return true;
-  const [tick] = await db
-    .select({ uuid: dbSchema.boardseshTicks.uuid })
-    .from(dbSchema.boardseshTicks)
-    .where(and(eq(dbSchema.boardseshTicks.sessionId, sessionId), eq(dbSchema.boardseshTicks.userId, userId)))
-    .limit(1);
-  return tick !== undefined;
-}
+const tickVisibleSql = (
+  ticks: NonNullable<Parameters<typeof sessionTickVisibleCondition>[1]>,
+  viewerUserId: string | null,
+) => sql<boolean>`(${sessionTickVisibleCondition(viewerUserId, ticks)} AND ${sprayTickVisibleSql('t', viewerUserId)})`;
 
 type ClimbRow = {
   uuid: string;
@@ -113,7 +99,10 @@ type ClimbRow = {
  * The climb rows behind the plan's climb uuids, keyed by the uuid the plan
  * names. A uuid deduplicated into another climb resolves through
  * `board_climb_aliases` to its canonical row, as the session summary does.
- * `visible` is the spray wall rule for this viewer.
+ * `visible` is the climb half of the tick rule (`scopedClimbCondition`,
+ * `listed`): published and listed, or the viewer's own, and not on a spray
+ * wall they can't see. A skipped climb has no tick to carry that rule, so it
+ * is checked here.
  */
 async function fetchPlanClimbs(
   climbUuids: readonly string[],
@@ -139,10 +128,7 @@ async function fetchPlanClimbs(
       frames: dbSchema.boardClimbs.frames,
       compatibleSizeIds: dbSchema.boardClimbs.compatibleSizeIds,
       requiredSetIds: dbSchema.boardClimbs.requiredSetIds,
-      visible: sql<boolean>`${sprayClimbVisibilityCondition(
-        { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
-        viewerUserId,
-      )}`,
+      visible: sql<boolean>`${scopedClimbCondition(dbSchema.boardClimbs, viewerUserId, 'listed')}`,
     })
     .from(dbSchema.boardClimbs)
     .where(inArray(dbSchema.boardClimbs.uuid, lookupUuids));
@@ -183,9 +169,13 @@ async function fetchConsensusDifficulty(
 
 export const sessionWorkoutMutations = {
   /**
-   * Upserts the caller's own workout for a session. Written only when the
-   * revision is higher than the stored one; an equal or lower revision is a
-   * no-op that still answers true, so an outbox replay is idempotent.
+   * Upserts the caller's own workout for a session. Only the session's creator
+   * and people who joined it (`board_session_participants`) may write: logging
+   * a tick is not enough, since `saveTick` accepts any existing session id.
+   * Written only when the revision is higher than the stored one; an equal or
+   * lower revision is a no-op that still answers true, so an outbox replay is
+   * idempotent. Tick-map entries naming anything but the caller's own ticks in
+   * the session are dropped.
    */
   recordSessionWorkout: async (
     _: unknown,
@@ -208,6 +198,7 @@ export const sessionWorkoutMutations = {
     const tickMap = parseSessionWorkoutTickMap(input.ticks);
     if (!tickMap) throw badInput('Invalid workout tick map');
 
+    // The primary throughout, so a session or join written a moment ago is seen.
     const [session] = await db
       .select({ createdByUserId: dbSchema.boardSessions.createdByUserId })
       .from(dbSchema.boardSessions)
@@ -216,14 +207,36 @@ export const sessionWorkoutMutations = {
     // BAD_USER_INPUT rather than NOT_FOUND: the outbox reads it as permanent,
     // so a replay for a deleted session never blocks the writes behind it.
     if (!session) throw badInput('Session not found');
-    if (!(await canRecordWorkout(userId, sessionId, session.createdByUserId))) {
+    if (session.createdByUserId !== userId && !(await isDurableSessionMember(userId, sessionId))) {
       throw new GraphQLError('Not a participant of this session', { extensions: { code: 'FORBIDDEN' } });
     }
+
+    const ownTickUuids =
+      tickMap.length === 0
+        ? new Set<string>()
+        : new Set(
+            (
+              await db
+                .select({ uuid: dbSchema.boardseshTicks.uuid })
+                .from(dbSchema.boardseshTicks)
+                .where(
+                  and(
+                    eq(dbSchema.boardseshTicks.sessionId, sessionId),
+                    eq(dbSchema.boardseshTicks.userId, userId),
+                    inArray(
+                      dbSchema.boardseshTicks.uuid,
+                      tickMap.map((entry) => entry.tickUuid),
+                    ),
+                  ),
+                )
+            ).map((tick) => tick.uuid),
+          );
+    const ownTickMap = tickMap.filter((entry) => ownTickUuids.has(entry.tickUuid));
 
     const now = new Date();
     await db
       .insert(dbSchema.sessionWorkouts)
-      .values({ sessionId, userId, plan, tickMap, revision, createdAt: now, updatedAt: now })
+      .values({ sessionId, userId, plan, tickMap: ownTickMap, revision, createdAt: now, updatedAt: now })
       .onConflictDoUpdate({
         target: [dbSchema.sessionWorkouts.sessionId, dbSchema.sessionWorkouts.userId],
         set: {
@@ -240,10 +253,8 @@ export const sessionWorkoutMutations = {
 
 export const sessionWorkoutQueries = {
   /**
-   * Every workout followed in a session, with what each block came to.
-   * Visible wherever the session is (`sessionDetail`'s rule). A climb the
-   * viewer may not see (a spray wall they can't open, a tick they may not
-   * read) is left out with all its reps.
+   * Every workout followed in a session that the viewer may see, with what
+   * each block came to. See the module comment for who appears.
    */
   sessionWorkouts: async (
     _: unknown,
@@ -252,36 +263,28 @@ export const sessionWorkoutQueries = {
   ): Promise<SessionWorkout[]> => {
     if (!sessionId || isDailySessionId(sessionId)) return [];
     const viewerUserId = ctx?.isAuthenticated ? (ctx.userId ?? null) : null;
-    if (!(await canAccessResource('session', sessionId, ctx?.userId))) return [];
+    if (!(await canAccessResource('session', sessionId, viewerUserId))) return [];
 
     const workoutRows = await db
       .select({
-        sessionId: dbSchema.sessionWorkouts.sessionId,
         userId: dbSchema.sessionWorkouts.userId,
         plan: dbSchema.sessionWorkouts.plan,
         tickMap: dbSchema.sessionWorkouts.tickMap,
         updatedAt: dbSchema.sessionWorkouts.updatedAt,
         displayName: sql<string | null>`COALESCE(${dbSchema.userProfiles.displayName}, ${dbSchema.users.name})`,
-        avatarUrl: dbSchema.userProfiles.avatarUrl,
+        avatarUrl: sql<string | null>`COALESCE(${dbSchema.userProfiles.avatarUrl}, ${dbSchema.users.image})`,
       })
       .from(dbSchema.sessionWorkouts)
       .leftJoin(dbSchema.users, eq(dbSchema.users.id, dbSchema.sessionWorkouts.userId))
       .leftJoin(dbSchema.userProfiles, eq(dbSchema.userProfiles.userId, dbSchema.sessionWorkouts.userId))
       .where(eq(dbSchema.sessionWorkouts.sessionId, sessionId))
       .orderBy(asc(dbSchema.sessionWorkouts.createdAt), asc(dbSchema.sessionWorkouts.userId));
-    const workouts = workoutRows.flatMap((row) => {
-      const stored = readStoredWorkout(row);
-      return stored ? [{ row, ...stored }] : [];
-    });
-    if (workouts.length === 0) return [];
-    const ownerIds = workouts.map(({ row }) => row.userId);
+    if (workoutRows.length === 0) return [];
 
-    // The owners' ticks in the session, each with this viewer's verdict on it:
-    // the session's own tick rule plus the spray wall rule, exactly the pair
-    // the session summary's participant counts use.
+    // The owners' ticks in the session, each with this viewer's verdict on it.
     const ticks = alias(dbSchema.boardseshTicks, 't');
     const tickBoards = alias(dbSchema.userBoards, 'tick_board');
-    const [tickRows, [session]] = await Promise.all([
+    const [tickRows, [session], visibleOwners] = await Promise.all([
       db
         .select({
           uuid: ticks.uuid,
@@ -296,11 +299,19 @@ export const sessionWorkoutQueries = {
           boardLayoutId: tickBoards.layoutId,
           boardSizeId: tickBoards.sizeId,
           boardSetIds: tickBoards.setIds,
-          visible: sql<boolean>`(${sessionTickVisibleCondition(viewerUserId, ticks)} AND ${sprayTickVisibleSql('t', viewerUserId)})`,
+          visible: tickVisibleSql(ticks, viewerUserId),
         })
         .from(ticks)
         .leftJoin(tickBoards, eq(ticks.boardId, tickBoards.id))
-        .where(and(eq(ticks.sessionId, sessionId), inArray(ticks.userId, ownerIds))),
+        .where(
+          and(
+            eq(ticks.sessionId, sessionId),
+            inArray(
+              ticks.userId,
+              workoutRows.map((row) => row.userId),
+            ),
+          ),
+        ),
       db
         .select({
           boardPath: dbSchema.boardSessions.boardPath,
@@ -313,7 +324,29 @@ export const sessionWorkoutQueries = {
         .leftJoin(dbSchema.userBoards, eq(dbSchema.boardSessions.boardId, dbSchema.userBoards.id))
         .where(eq(dbSchema.boardSessions.id, sessionId))
         .limit(1),
+      sessionVisibleUserIds(
+        workoutRows.map((row) => row.userId),
+        viewerUserId,
+        sessionId,
+      ),
     ]);
+
+    // sessionDetail's rule: a climber is shown when the session's own surfaces
+    // name them to this viewer and the viewer may see at least one of their
+    // ticks in it.
+    const ownersWithVisibleTick = new Set(tickRows.filter((tick) => tick.visible).map((tick) => tick.userId));
+    const workouts = workoutRows.flatMap((row) => {
+      if (!visibleOwners.has(row.userId) || !ownersWithVisibleTick.has(row.userId)) return [];
+      const plan = parseSessionWorkoutPlan(row.plan);
+      const tickMap = parseSessionWorkoutTickMap(row.tickMap);
+      if (!plan || !tickMap) {
+        logUnreadable(sessionId, row.userId);
+        return [];
+      }
+      return [{ row, plan, tickMap }];
+    });
+    if (workouts.length === 0) return [];
+
     const tickByUuid = new Map(tickRows.map((row) => [row.uuid, row]));
     const sessionBoardType = session?.boardType ?? boardTypeFromPath(session?.boardPath ?? null);
     const sessionBoard = session
@@ -330,10 +363,9 @@ export const sessionWorkoutQueries = {
         workouts.flatMap(({ plan }) => plan.stages.flatMap((stage) => stage.items.map((item) => item.climbUuid))),
       ),
     );
-    const [climbByPlanUuid, ownerBoardsByUserId, anonymous] = await Promise.all([
+    const [climbByPlanUuid, ownerBoardsByUserId] = await Promise.all([
       fetchPlanClimbs(planClimbUuids, viewerUserId),
-      fetchOwnerBoards(ownerIds),
-      sessionAnonymousUserIds(ownerIds, viewerUserId, sessionId),
+      fetchOwnerBoards(workouts.map(({ row }) => row.userId)),
     ]);
     const consensusByKey = await fetchConsensusDifficulty(
       workouts.flatMap(({ plan }) =>
@@ -426,11 +458,10 @@ export const sessionWorkoutQueries = {
         };
       });
 
-      const hidden = anonymous.has(row.userId);
       return {
-        userId: hidden ? null : row.userId,
-        displayName: hidden ? null : row.displayName,
-        avatarUrl: hidden ? null : row.avatarUrl,
+        userId: row.userId,
+        displayName: row.displayName,
+        avatarUrl: row.avatarUrl,
         stages,
         offPlan: visible.offPlan,
         updatedAt: row.updatedAt.toISOString(),
@@ -439,16 +470,19 @@ export const sessionWorkoutQueries = {
   },
 
   /**
-   * One headline per workout for a page of feed cards (≤ 50 sessions). A
-   * session the viewer may not open, or with no workout, is left out. Built
-   * from the plan alone: no ticks are read, so the line carries only block
-   * kinds, the main block's grade and counts.
+   * One headline per workout for a page of feed cards (≤ 50 sessions), under
+   * the same rule as `sessionWorkouts` for who appears. A session the viewer
+   * may not open, or with no workout, is left out. Built from the plan alone,
+   * so the line carries only block kinds, the main block's grade and counts.
+   * One query for the rows and their access, one for the visible ticks, and
+   * one batched name check.
    */
   sessionWorkoutHeadlines: async (
     _: unknown,
     { sessionIds }: { sessionIds: string[] },
-    ctx?: ConnectionContext,
+    ctx: ConnectionContext,
   ): Promise<SessionWorkoutHeadline[]> => {
+    await applyRateLimit(ctx, RATE_LIMIT_SESSION_WORKOUT_HEADLINES, 'sessionWorkoutHeadlines');
     if (sessionIds.length > MAX_SESSION_WORKOUT_HEADLINE_IDS) {
       throw badInput(`At most ${MAX_SESSION_WORKOUT_HEADLINE_IDS} sessions per request`);
     }
@@ -456,38 +490,72 @@ export const sessionWorkoutQueries = {
     if (requestedIds.length === 0) return [];
     const viewerUserId = ctx?.isAuthenticated ? (ctx.userId ?? null) : null;
 
+    // The session access check (`canAccessResource`'s rule) sits in the WHERE.
     const rows = await db
       .select({
         sessionId: dbSchema.sessionWorkouts.sessionId,
         userId: dbSchema.sessionWorkouts.userId,
         plan: dbSchema.sessionWorkouts.plan,
-        tickMap: dbSchema.sessionWorkouts.tickMap,
         boardPath: dbSchema.boardSessions.boardPath,
+        boardId: dbSchema.boardSessions.boardId,
+        createdByUserId: dbSchema.boardSessions.createdByUserId,
       })
       .from(dbSchema.sessionWorkouts)
       .innerJoin(dbSchema.boardSessions, eq(dbSchema.boardSessions.id, dbSchema.sessionWorkouts.sessionId))
-      .where(inArray(dbSchema.sessionWorkouts.sessionId, requestedIds))
+      .where(
+        and(
+          inArray(dbSchema.sessionWorkouts.sessionId, requestedIds),
+          resourceAccessCondition('session', dbSchema.sessionWorkouts.sessionId, viewerUserId),
+        ),
+      )
       .orderBy(asc(dbSchema.sessionWorkouts.createdAt), asc(dbSchema.sessionWorkouts.userId));
     if (rows.length === 0) return [];
 
+    const ticks = alias(dbSchema.boardseshTicks, 't');
     const sessionsWithRows = Array.from(new Set(rows.map((row) => row.sessionId)));
-    const accessible = await Promise.all(
-      sessionsWithRows.map(async (sessionId) => {
-        if (!(await canAccessResource('session', sessionId, ctx?.userId))) return null;
-        const owners = rows.filter((row) => row.sessionId === sessionId).map((row) => row.userId);
-        return [sessionId, await sessionAnonymousUserIds(owners, viewerUserId, sessionId)] as const;
-      }),
+    const [visibleTickOwners, visibleOwnersBySession] = await Promise.all([
+      db
+        .selectDistinct({ sessionId: ticks.sessionId, userId: ticks.userId })
+        .from(ticks)
+        .where(
+          and(
+            inArray(ticks.sessionId, sessionsWithRows),
+            inArray(ticks.userId, Array.from(new Set(rows.map((row) => row.userId)))),
+            tickVisibleSql(ticks, viewerUserId),
+          ),
+        ),
+      sessionsOwnSurfaceVisibleUserIds(
+        sessionsWithRows.map((sessionId) => {
+          const first = rows.find((row) => row.sessionId === sessionId)!;
+          return {
+            session: {
+              id: sessionId,
+              boardId: first.boardId,
+              boardPath: first.boardPath,
+              createdByUserId: first.createdByUserId,
+            },
+            userIds: rows.filter((row) => row.sessionId === sessionId).map((row) => row.userId),
+          };
+        }),
+        viewerUserId,
+      ),
+    ]);
+    const shownKey = (sessionId: string | null, userId: string) => `${sessionId}\u0000${userId}`;
+    const withVisibleTick = new Set(visibleTickOwners.map((tick) => shownKey(tick.sessionId, tick.userId)));
+    const visibleOwners = new Map(
+      sessionsWithRows.map((sessionId, index) => [sessionId, visibleOwnersBySession[index]]),
     );
-    const anonymousBySession = new Map(accessible.flatMap((entry) => (entry ? [entry] : [])));
 
     const headlines = rows.flatMap((row) => {
-      const anonymous = anonymousBySession.get(row.sessionId);
-      if (!anonymous) return [];
-      const stored = readStoredWorkout(row);
-      if (!stored) return [];
-      const headline = workoutHeadline(stored.plan.stages);
-      const [mainStage] = mainWorkoutStages(stored.plan.stages);
-      return [{ row, headline, mainClimbUuid: mainStage?.items[0]?.climbUuid, anonymous }];
+      if (!visibleOwners.get(row.sessionId)?.has(row.userId)) return [];
+      if (!withVisibleTick.has(shownKey(row.sessionId, row.userId))) return [];
+      const plan = parseSessionWorkoutPlan(row.plan);
+      if (!plan) {
+        logUnreadable(row.sessionId, row.userId);
+        return [];
+      }
+      const [mainStage] = mainWorkoutStages(plan.stages);
+      return [{ row, headline: workoutHeadline(plan.stages), mainClimbUuid: mainStage?.items[0]?.climbUuid }];
     });
 
     // The main block's grade is named on its own climbs' board, falling back to
@@ -509,11 +577,11 @@ export const sessionWorkoutQueries = {
     const order = new Map(requestedIds.map((sessionId, position) => [sessionId, position]));
     return headlines
       .sort((left, right) => (order.get(left.row.sessionId) ?? 0) - (order.get(right.row.sessionId) ?? 0))
-      .map(({ row, headline, mainClimbUuid, anonymous }) => {
+      .map(({ row, headline, mainClimbUuid }) => {
         const boardType = (mainClimbUuid && boardTypeByClimb.get(mainClimbUuid)) || boardTypeFromPath(row.boardPath);
         return {
           sessionId: row.sessionId,
-          userId: anonymous.has(row.userId) ? null : row.userId,
+          userId: row.userId,
           mainKind: headline.mainKind ?? null,
           mainTargetGrade: gradeName(headline.mainTargetGrade, boardType),
           secondMainKind: headline.secondMainKind ?? null,

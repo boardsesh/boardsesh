@@ -4508,7 +4508,8 @@ export type Mutation = {
    * Store the caller's workout for a session. Written only when revision is
    * higher than the stored one; an equal or lower revision is a no-op that still
    * returns true, so outbox replays are idempotent. The caller must have created
-   * or joined the session, or logged a tick in it.
+   * or joined the session. Tick-map entries that are not the caller's own ticks
+   * in the session are dropped.
    */
   recordSessionWorkout: Scalars['Boolean']['output'];
   /** Join the board a share link names as an approved member. NOT_FOUND for a revoked or unknown link. */
@@ -7397,14 +7398,17 @@ export type Query = {
    */
   sessionSummary?: Maybe<SessionSummary>;
   /**
-   * Feed-card headlines for up to 50 sessions. Sessions the viewer may not open,
-   * or with no workout, are left out.
+   * Feed-card headlines for up to 50 sessions, under the sessionWorkouts rule
+   * for who appears. Sessions the viewer may not open, or with no workout, are
+   * left out.
    */
   sessionWorkoutHeadlines: Array<SessionWorkoutHeadline>;
   /**
    * The workouts followed in a session, one per climber, with what each block
-   * came to. Visible wherever the session is (the sessionDetail rule); climbs
-   * the viewer may not see are left out along with their ticks.
+   * came to. Follows sessionDetail: the session must open for the viewer, the
+   * climber must be someone its own surfaces name to them, and at least one of
+   * the climber's ticks in it must be visible to them. Climbs the viewer may not
+   * see are left out along with their ticks.
    */
   sessionWorkouts: Array<SessionWorkout>;
   /** Get climbs created by a setter. */
@@ -9897,8 +9901,7 @@ export type SessionWorkout = {
   offPlan: Scalars['Int']['output'];
   stages: Array<SessionWorkoutStage>;
   updatedAt: Scalars['String']['output'];
-  /** Null when the climber stays anonymous to this viewer, like a session summary's participant row. */
-  userId?: Maybe<Scalars['ID']['output']>;
+  userId: Scalars['ID']['output'];
 };
 
 export type SessionWorkoutClimb = {
@@ -9932,8 +9935,7 @@ export type SessionWorkoutHeadline = {
   mainTargetGrade?: Maybe<Scalars['String']['output']>;
   secondMainKind?: Maybe<Scalars['String']['output']>;
   sessionId: Scalars['ID']['output'];
-  /** Null when the climber stays anonymous to this viewer. */
-  userId?: Maybe<Scalars['ID']['output']>;
+  userId: Scalars['ID']['output'];
 };
 
 /** One queued climb of a workout block, captured when the run is written. */

@@ -30,6 +30,15 @@ const isAbsent = (candidate: unknown): candidate is null | undefined => candidat
 const isShortString = (candidate: unknown): candidate is string =>
   typeof candidate === 'string' && candidate.length > 0 && candidate.length <= MAX_SESSION_WORKOUT_STRING_LENGTH;
 
+/**
+ * A stage kind: a camelCase identifier like `fourByFour`, so it is safe to use
+ * as a lookup key and an analytics value. Kinds this reader does not know still
+ * pass.
+ */
+const STAGE_KIND_PATTERN = /^[a-zA-Z][a-zA-Z0-9]{0,31}$/;
+const isStageKind = (candidate: unknown): candidate is string =>
+  typeof candidate === 'string' && STAGE_KIND_PATTERN.test(candidate);
+
 const isWholeNumberIn = (candidate: unknown, min: number, max: number): candidate is number =>
   typeof candidate === 'number' && Number.isInteger(candidate) && candidate >= min && candidate <= max;
 
@@ -87,7 +96,7 @@ function readItem(candidate: unknown): SessionWorkoutPlanItem | null {
 function readStage(candidate: unknown): SessionWorkoutPlanStage | null {
   if (!isFields(candidate)) return null;
   const { id, kind, items } = candidate;
-  if (!isShortString(id) || !isShortString(kind) || !Array.isArray(items)) return null;
+  if (!isShortString(id) || !isStageKind(kind) || !Array.isArray(items)) return null;
   const coolDown = readOptionalBoolean(candidate.coolDown);
   const targetGrade = readOptionalWholeNumber(candidate.targetGrade, 0, MAX_DIFFICULTY_ID);
   const pacing = readPacing(candidate.pacing);
@@ -111,8 +120,8 @@ function readStage(candidate: unknown): SessionWorkoutPlanStage | null {
  * anything is malformed or over a cap, when two stages share an id, or when a
  * queue item appears twice: a tick on it could not say which climb it was.
  *
- * A stage kind is any short string, so a kind added by a newer app passes
- * through to readers that show it as best they can.
+ * A stage kind is any camelCase identifier up to 32 characters, so a kind
+ * added by a newer app passes through to readers that show it as best they can.
  */
 export function parseSessionWorkoutPlan(candidate: unknown): SessionWorkoutPlan | null {
   if (!isFields(candidate) || candidate.version !== 1 || !Array.isArray(candidate.stages)) return null;

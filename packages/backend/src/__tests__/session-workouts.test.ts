@@ -33,6 +33,10 @@ const WARM_CLIMB = 'workouts-climb-warm';
 const CLIMB_A = 'workouts-climb-a';
 const CLIMB_B = 'workouts-climb-b';
 const OFF_PLAN_CLIMB = 'workouts-climb-off';
+/** The climber's own unpublished draft. */
+const DRAFT_CLIMB = 'workouts-climb-draft';
+/** Somebody else's published climb kept out of lists. */
+const UNLISTED_CLIMB = 'workouts-climb-unlisted';
 const TARGET_GRADE = 20;
 
 let boardId: number;
@@ -44,7 +48,7 @@ const viewer = (userId: string | null): ConnectionContext =>
     userId,
   }) as ConnectionContext;
 
-const at = (minute: number): string => `2026-10-27 10:${String(minute).padStart(2, '0')}:00`;
+const at = (minute: number): string => `2026-10-20 10:${String(minute).padStart(2, '0')}:00`;
 
 /** The workout in the tests: a warm-up, then a 4x4 of two climbs at 4 reps. */
 const workoutInput = (sessionId: string, revision: number, ticks: RecordSessionWorkoutInput['ticks'] = []) => ({
@@ -79,7 +83,7 @@ async function hostSession(): Promise<string> {
     boardId,
     isPublic: true,
     status: 'active',
-    startedAt: new Date('2026-10-27T10:00:00Z'),
+    startedAt: new Date('2026-10-20T10:00:00Z'),
   });
   return sessionId;
 }
@@ -124,6 +128,28 @@ beforeAll(async () => {
     .insert(dbSchema.users)
     .values([CLIMBER, MEMBER, STRANGER, GYM_OWNER].map((id) => ({ id, email: `${id}@test.com`, name: id })));
   await db.insert(dbSchema.userProfiles).values([{ userId: CLIMBER, displayName: CLIMBER_NAME }]);
+  await db.insert(dbSchema.boardClimbs).values([
+    {
+      uuid: DRAFT_CLIMB,
+      boardType: 'kilter',
+      layoutId: 1,
+      userId: CLIMBER,
+      name: 'Secret draft',
+      isListed: true,
+      isDraft: true,
+      frames: 'p1r12-draft',
+    },
+    {
+      uuid: UNLISTED_CLIMB,
+      boardType: 'kilter',
+      layoutId: 1,
+      userId: GYM_OWNER,
+      name: 'Unlisted climb',
+      isListed: false,
+      isDraft: false,
+      frames: 'p1r12-unlisted',
+    },
+  ]);
   await db.insert(dbSchema.boardClimbs).values(
     [WARM_CLIMB, CLIMB_A, CLIMB_B, OFF_PLAN_CLIMB].map((uuid) => ({
       uuid,
@@ -155,8 +181,9 @@ beforeAll(async () => {
 beforeEach(async () => {
   await db
     .update(dbSchema.userProfiles)
-    .set({ anonymousOnForeignBoards: false })
+    .set({ anonymousOnForeignBoards: false, isPrivate: false })
     .where(eq(dbSchema.userProfiles.userId, CLIMBER));
+  await db.delete(dbSchema.userFollows).where(eq(dbSchema.userFollows.followingId, CLIMBER));
 });
 
 afterEach(async () => {
@@ -194,15 +221,47 @@ describe('recordSessionWorkout', () => {
     expect((await storedRow(sessionId, MEMBER))?.revision).toBe(5);
   });
 
-  it('lets a climber who logged a tick in the session write', async () => {
+  it('refuses a climber whose only link to the session is a tick logged into it', async () => {
+    // saveTick takes any existing session id, so a tick proves nothing.
     const sessionId = await hostSession();
-    await logTick(sessionId, CLIMB_A, 'send', 1, MEMBER);
-    await expect(record(workoutInput(sessionId, 1), MEMBER)).resolves.toBe(true);
+    await logTick(sessionId, CLIMB_A, 'send', 1, STRANGER);
+    await expect(record(workoutInput(sessionId, 1), STRANGER)).rejects.toMatchObject({
+      extensions: { code: 'FORBIDDEN' },
+    });
+    expect(await storedRow(sessionId, STRANGER)).toBeUndefined();
+  });
+
+  it('never lets one climber overwrite another climber’s row', async () => {
+    const sessionId = await hostSession();
+    await db.insert(dbSchema.boardSessionParticipants).values({ sessionId, userId: MEMBER });
+    await record(workoutInput(sessionId, 1));
+    const before = await storedRow(sessionId);
+    await record({ ...workoutInput(sessionId, 99), stages: [] }, MEMBER);
+    expect(await storedRow(sessionId)).toEqual(before);
+    expect((await storedRow(sessionId, MEMBER))?.revision).toBe(99);
+  });
+
+  it('keeps only tick-map entries that are the caller’s own ticks in the session', async () => {
+    const sessionId = await hostSession();
+    const otherSession = await hostSession();
+    const own = await logTick(sessionId, CLIMB_A, 'send', 1);
+    const someoneElses = await logTick(sessionId, CLIMB_A, 'send', 2, MEMBER);
+    const ownElsewhere = await logTick(otherSession, CLIMB_A, 'send', 3);
+    await record(
+      workoutInput(sessionId, 1, [
+        { tickUuid: own, queueItemUuid: 'qi-a' },
+        { tickUuid: someoneElses, queueItemUuid: 'qi-a' },
+        { tickUuid: ownElsewhere, queueItemUuid: 'qi-a' },
+        { tickUuid: 'no-such-tick', queueItemUuid: 'qi-a' },
+      ]),
+    );
+    expect((await storedRow(sessionId))?.tickMap).toEqual([{ tickUuid: own, queueItemUuid: 'qi-a' }]);
   });
 
   it('writes only a higher revision; a replay is a no-op that still answers true', async () => {
     const sessionId = await hostSession();
-    await record(workoutInput(sessionId, 2, [{ tickUuid: 't-1', queueItemUuid: 'qi-a' }]));
+    const tick = await logTick(sessionId, CLIMB_A, 'send', 1);
+    await record(workoutInput(sessionId, 2, [{ tickUuid: tick, queueItemUuid: 'qi-a' }]));
     const first = await storedRow(sessionId);
 
     const replay = { ...workoutInput(sessionId, 2), stages: [] };
@@ -210,7 +269,7 @@ describe('recordSessionWorkout', () => {
     await expect(record({ ...replay, revision: 1 })).resolves.toBe(true);
     const unchanged = await storedRow(sessionId);
     expect(unchanged?.plan).toEqual(first?.plan);
-    expect(unchanged?.tickMap).toEqual([{ tickUuid: 't-1', queueItemUuid: 'qi-a' }]);
+    expect(unchanged?.tickMap).toEqual([{ tickUuid: tick, queueItemUuid: 'qi-a' }]);
     expect(unchanged?.revision).toBe(2);
 
     await expect(record({ ...replay, revision: 3 })).resolves.toBe(true);
@@ -228,6 +287,9 @@ describe('recordSessionWorkout', () => {
     await expect(record({ ...workoutInput(sessionId, 1), revision: -1 })).rejects.toMatchObject({
       extensions: { code: 'BAD_USER_INPUT' },
     });
+    const badKind = workoutInput(sessionId, 1);
+    badKind.stages[0].kind = 'warm-up<script>';
+    await expect(record(badKind)).rejects.toMatchObject({ extensions: { code: 'BAD_USER_INPUT' } });
   });
 });
 
@@ -322,17 +384,78 @@ describe('sessionWorkouts', () => {
     await expect(sessionWorkoutQueries.sessionWorkouts(null, { sessionId }, viewer(CLIMBER))).resolves.toHaveLength(1);
   });
 
-  it('keeps an anonymous climber unnamed for a stranger', async () => {
+  it('leaves out a skipped draft or unlisted climb for everyone but whoever may list it', async () => {
+    const sessionId = await hostSession();
+    await logTick(sessionId, CLIMB_A, 'send', 1);
+    const input = workoutInput(sessionId, 1);
+    input.stages[0].items.push(
+      { queueItemUuid: 'qi-draft', climbUuid: DRAFT_CLIMB, angle: 40 },
+      { queueItemUuid: 'qi-unlisted', climbUuid: UNLISTED_CLIMB, angle: 40 },
+    );
+    await record(input);
+
+    const [forStranger] = await sessionWorkoutQueries.sessionWorkouts(null, { sessionId }, viewer(STRANGER));
+    expect(forStranger.stages[0].climbs.map((climb) => climb.climbUuid)).toEqual([WARM_CLIMB]);
+    expect(JSON.stringify(forStranger)).not.toContain('Secret draft');
+
+    const [forOwner] = await sessionWorkoutQueries.sessionWorkouts(null, { sessionId }, viewer(CLIMBER));
+    expect(forOwner.stages[0].climbs.map((climb) => climb.climbUuid)).toEqual([WARM_CLIMB, DRAFT_CLIMB]);
+    expect(forOwner.stages[0].climbs[1]).toMatchObject({ name: 'Secret draft', skipped: true });
+  });
+
+  /** What each viewer gets from both readers for one session. */
+  async function shownTo(sessionId: string, userId: string | null) {
+    const workouts = await sessionWorkoutQueries.sessionWorkouts(null, { sessionId }, viewer(userId));
+    const headlines = await sessionWorkoutQueries.sessionWorkoutHeadlines(
+      null,
+      { sessionIds: [sessionId] },
+      viewer(userId),
+    );
+    return { workouts: workouts.map((workout) => workout.userId), headlines: headlines.map((line) => line.userId) };
+  }
+
+  it('hides a private account’s workout from a stranger, as sessionDetail hides its climber', async () => {
+    const { sessionId } = await playedSession();
+    await db.update(dbSchema.userProfiles).set({ isPrivate: true }).where(eq(dbSchema.userProfiles.userId, CLIMBER));
+    expect(await shownTo(sessionId, STRANGER)).toEqual({ workouts: [], headlines: [] });
+    expect(await shownTo(sessionId, null)).toEqual({ workouts: [], headlines: [] });
+    expect(await shownTo(sessionId, CLIMBER)).toEqual({ workouts: [CLIMBER], headlines: [CLIMBER] });
+
+    // An approved follower sees it; so does a fellow member of the session.
+    await db.insert(dbSchema.userFollows).values({ followerId: STRANGER, followingId: CLIMBER });
+    expect(await shownTo(sessionId, STRANGER)).toEqual({ workouts: [CLIMBER], headlines: [CLIMBER] });
+    // Joined before the climber's ticks: a member sees what was logged while they were in it.
+    await db
+      .insert(dbSchema.boardSessionParticipants)
+      .values({ sessionId, userId: MEMBER, joinedAt: new Date('2026-10-20T09:55:00Z') });
+    expect(await shownTo(sessionId, MEMBER)).toEqual({ workouts: [CLIMBER], headlines: [CLIMBER] });
+  });
+
+  it('hides the workout of a climber who stays anonymous on boards they don’t own', async () => {
     const { sessionId } = await playedSession();
     await db
       .update(dbSchema.userProfiles)
       .set({ anonymousOnForeignBoards: true })
       .where(eq(dbSchema.userProfiles.userId, CLIMBER));
-    const [workout] = await sessionWorkoutQueries.sessionWorkouts(null, { sessionId }, viewer(STRANGER));
-    expect(workout).toMatchObject({ userId: null, displayName: null, avatarUrl: null });
-    expect(workout.stages).toHaveLength(2);
-    const [own] = await sessionWorkoutQueries.sessionWorkouts(null, { sessionId }, viewer(CLIMBER));
-    expect(own.userId).toBe(CLIMBER);
+    expect(await shownTo(sessionId, STRANGER)).toEqual({ workouts: [], headlines: [] });
+    expect(await shownTo(sessionId, CLIMBER)).toEqual({ workouts: [CLIMBER], headlines: [CLIMBER] });
+  });
+
+  it('hides a workout none of whose ticks the viewer may see', async () => {
+    const { sessionId, ticks } = await playedSession();
+    for (const tickUuid of Object.values(ticks)) {
+      await db.execute(sql`
+        INSERT INTO content_privacy (entity_type, entity_id, owner_id, audience)
+        VALUES ('tick', ${tickUuid}, ${CLIMBER}, 'only_me')
+      `);
+    }
+    expect(await shownTo(sessionId, STRANGER)).toEqual({ workouts: [], headlines: [] });
+    expect(await shownTo(sessionId, CLIMBER)).toEqual({ workouts: [CLIMBER], headlines: [CLIMBER] });
+
+    // With no tick at all yet, the same: sessionDetail has nothing to show either.
+    const empty = await hostSession();
+    await record(workoutInput(empty, 1));
+    expect(await shownTo(empty, STRANGER)).toEqual({ workouts: [], headlines: [] });
   });
 });
 
@@ -341,6 +464,7 @@ describe('sessionWorkoutHeadlines', () => {
     const open = await hostSession();
     const closed = await hostSession();
     const plain = await hostSession();
+    for (const sessionId of [open, closed, plain]) await logTick(sessionId, CLIMB_A, 'send', 1);
     await record(workoutInput(open, 1));
     await record(workoutInput(closed, 1));
     await db.insert(dbSchema.resourcePrivacy).values({

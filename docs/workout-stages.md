@@ -138,7 +138,8 @@ enough for the player, but the session summary, session detail, feed cards and l
 Strava need the workout after the phone has moved on. So a copy goes to the server.
 
 **What is stored.** `session_workouts`, one row per climber per session (unique on
-`(session_id, user_id)`, both foreign keys cascade on delete):
+`(session_id, user_id)`, which also serves reads by session; both foreign keys cascade
+on delete):
 
 - `plan` (jsonb): `SessionWorkoutPlan` from `@boardsesh/workout-summary`. Per stage its
   id, kind, `coolDown`, `targetGrade` (difficulty id) and flattened pacing (a 4x4's
@@ -148,22 +149,28 @@ Strava need the workout after the phone has moved on. So a copy goes to the serv
 - `tick_map` (jsonb): `{ tickUuid, queueItemUuid }[]` from the run's tick log.
 - `revision` (int): the phone's per-session write counter.
 
-The kind is a plain string, so a kind newer than the server survives a round trip. Caps:
+The kind is any camelCase identifier up to 32 characters (`^[a-zA-Z][a-zA-Z0-9]{0,31}$`),
+so a kind newer than the server survives a round trip. Caps:
 30 stages, 300 climbs, 4000 tick-map entries, strings up to 64 characters; anything over
 is rejected, not trimmed. `parseSessionWorkoutPlan` and `parseSessionWorkoutTickMap`
 check the input on write and every stored row on read.
 
 **Who writes.** Only the climber, for their own row, with `recordSessionWorkout`. They must
-have created the session, joined it (`board_session_participants`) or logged a tick in it.
-A write lands only when its revision is higher than the stored one; an equal or lower
-revision is a no-op that still answers true, so an outbox replay never rolls a newer plan
-back. An unknown session and a malformed plan answer `BAD_USER_INPUT` and a stranger
+have created the session or joined it (`board_session_participants`). A tick in the session
+is not enough: `saveTick` takes any existing session id, so a tick proves nothing. Tick-map
+entries that are not the caller's own ticks in that session are dropped on write. A write
+lands only when its revision is higher than the stored one; an equal or lower revision is
+a no-op that still answers true, so an outbox replay never rolls a newer plan back. Both
+the mutation and the headline query are rate limited. An unknown session and a malformed plan answer `BAD_USER_INPUT` and a stranger
 `FORBIDDEN`, which the offline outbox treats as final instead of retrying.
 
 **How results are derived.** Nothing about results is stored. Each read takes the owner's
 ticks in the session and runs `deriveWorkoutStages`: a tick in the tick map goes to that
-queue item, any other tick to the first climb of the plan (in plan order) with the same
-climb and angle, and mirror when both say. A tick that matches nothing counts as off plan.
+queue item. Any other tick goes to a plan climb with the same climb and angle (and mirror
+when both say): the first one in plan order that still has room (a 4x4 climb until it
+holds its reps per set, any other climb until it holds one tick), else the last one. So a
+climb queued twice fills its first slot before its second. A tick that matches nothing
+counts as off plan.
 Each climb's reps are its ticks in time order. Every tally counts ticks, the unit the
 session totals use: `sent` is flash plus send ticks, `attempts` is attempt ticks, `skipped`
 is the block's climbs with no tick. When every tick is on the plan, the blocks' `sent`
@@ -181,15 +188,21 @@ are all there is. Headlines read the plan alone, no ticks. Both are separate fro
 `sessionSummary`, `sessionDetail` and `sessionGroupedFeed` so the pinned screenshot
 fixtures for those documents do not change.
 
-**Privacy.** A workout is visible wherever its session is: the same `canAccessResource`
-check `sessionDetail` makes, and nothing for a daily card. Inside it, a climb the viewer
-may not see goes with all of its reps: a spray climb on a wall they can't open, or a climb
-holding a tick the session's own tick rule hides from them (`sessionTickVisibleCondition`
-plus the spray tick rule, the pair the session summary's counts use). A climb goes whole,
-so a hidden tick never turns a climb the owner did into one that reads as skipped. A block
-left with no climbs goes too, and hidden off-plan ticks stop counting. A climber who stays
-anonymous on boards they don't own gets a null `userId`, name and avatar, like their row
-in the session summary. A per-session "Show workout" switch is a follow-up.
+**Privacy.** A workout follows `sessionDetail`. It appears only when the session opens for
+the viewer (the same `canAccessResource` rule, nothing for a daily card), its climber is
+someone the session's own surfaces name to the viewer (`sessionVisibleUserIds`: a private
+account shows to approved followers and fellow members, a climber who stays anonymous on
+boards they don't own does not show to strangers), and at least one of the climber's ticks
+in the session is one the viewer may see. Inside it, a climb the viewer may not see goes
+with all of its reps: a climb that fails the climb half of the tick rule (another
+climber's draft, an unlisted climb, a spray climb on a wall they can't open; checked on the
+climb itself, so a skipped climb is covered too), or a climb holding a tick the session's
+own tick rule hides from them (`sessionTickVisibleCondition` plus the spray tick rule, the
+pair the session summary's counts use). A climb goes whole, so a hidden tick never turns a
+climb the owner did into one that reads as skipped. A block left with no climbs goes too,
+and hidden off-plan ticks stop counting. Headlines apply the same rule for who appears,
+batched across the page, but read only the plan. A per-session "Show workout" switch is a
+follow-up.
 
 ## Store lifecycle
 

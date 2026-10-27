@@ -69,7 +69,7 @@ function listedClimbCondition(
  */
 export type ClimbScope = 'listed' | 'by-reference';
 
-function scopedClimbCondition(
+export function scopedClimbCondition(
   climb: { userId: SQLWrapper; isDraft: SQLWrapper; isListed: SQLWrapper; boardType: SQLWrapper; layoutId: SQLWrapper },
   viewerId: string | null | undefined,
   climbScope: ClimbScope,

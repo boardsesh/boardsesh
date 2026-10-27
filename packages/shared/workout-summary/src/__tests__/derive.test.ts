@@ -70,7 +70,6 @@ describe('deriveWorkoutStages', () => {
   });
 
   it('prefers the tick map over climb and angle', () => {
-    // The same climb queued twice: by climb alone, every tick lands on the first.
     const plan: SessionWorkoutPlan = {
       version: 1,
       stages: [
@@ -80,12 +79,43 @@ describe('deriveWorkoutStages', () => {
     };
     const ticks = [tick('t1', 'same', 'send', 1), tick('t2', 'same', 'flash', 2)];
     const byClimb = deriveWorkoutStages(plan, [], ticks);
-    expect(byClimb.stages[0].climbs[0].reps).toEqual(['send', 'flash']);
-    expect(byClimb.stages[1].climbs[0].skipped).toBe(true);
+    expect(byClimb.stages[0].climbs[0].reps).toEqual(['send']);
+    expect(byClimb.stages[1].climbs[0].reps).toEqual(['flash']);
 
-    const byMap = deriveWorkoutStages(plan, [{ tickUuid: 't2', queueItemUuid: 'q2' }], ticks);
-    expect(byMap.stages[0].climbs[0].reps).toEqual(['send']);
-    expect(byMap.stages[1].climbs[0].reps).toEqual(['flash']);
+    // The map puts the first tick on the second item; the unmapped one fills the first.
+    const byMap = deriveWorkoutStages(plan, [{ tickUuid: 't1', queueItemUuid: 'q2' }], ticks);
+    expect(byMap.stages[0].climbs[0].reps).toEqual(['flash']);
+    expect(byMap.stages[1].climbs[0].reps).toEqual(['send']);
+  });
+
+  it('fills a climb queued more than once slot by slot, then piles extras on the last', () => {
+    const plan: SessionWorkoutPlan = {
+      version: 1,
+      stages: [
+        {
+          id: 'warm',
+          kind: 'warmUp',
+          items: [{ queueItemUuid: 'q-warm', climbUuid: 'same', angle: 40 }],
+        },
+        {
+          id: 'sets',
+          kind: 'fourByFour',
+          pacing: { mode: 'afterTick', restSeconds: 30, advanceOn: 'set', repsPerSet: 2, restBetweenSetsSeconds: 120 },
+          items: [
+            { queueItemUuid: 'q-set1', climbUuid: 'same', angle: 40 },
+            { queueItemUuid: 'q-set2', climbUuid: 'same', angle: 40 },
+          ],
+        },
+      ],
+    };
+    const ticks = [1, 2, 3, 4, 5, 6].map((minute) =>
+      tick(`t${minute}`, 'same', minute % 2 === 0 ? 'send' : 'attempt', minute),
+    );
+    const { stages } = deriveWorkoutStages(plan, [], ticks);
+    expect(stages[0].climbs[0].tickUuids).toEqual(['t1']);
+    expect(stages[1].climbs[0].tickUuids).toEqual(['t2', 't3']);
+    expect(stages[1].climbs[1].tickUuids).toEqual(['t4', 't5', 't6']);
+    expect(stages[1].tally).toEqual({ sent: 3, attempts: 2, skipped: 0, climbs: 2 });
   });
 
   it('falls back to climb and angle when the map names an item the plan lacks', () => {

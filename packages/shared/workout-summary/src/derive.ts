@@ -61,10 +61,13 @@ function deriveStage(stage: SessionWorkoutPlanStage, climbs: DerivedWorkoutClimb
  * What each block of a workout came to, from the OWNER's ticks in the session.
  *
  * A tick listed in `tickMap` goes to that queue item. Any other tick goes to
- * the first item, in plan order, with the same climb and angle (and mirror,
- * when both say). A tick matching no item counts as off plan. Reps keep tick
- * order (`climbedAt`, ties in input order). Every stage of the plan is kept,
- * a stage with no ticks included.
+ * an item with the same climb and angle (and mirror, when both say): the first
+ * one, in plan order, that still has room (a 4x4 climb until it holds
+ * `repsPerSet` reps, any other climb until it holds one), else the last one.
+ * So a climb queued twice fills its first slot before its second. A tick
+ * matching no item counts as off plan. Ticks are placed in time order
+ * (`climbedAt`, ties in input order) and reps keep that order. Every stage of
+ * the plan is kept, a stage with no ticks included.
  */
 export function deriveWorkoutStages(
   plan: SessionWorkoutPlan,
@@ -72,7 +75,7 @@ export function deriveWorkoutStages(
   ticks: ReadonlyArray<SessionWorkoutTick>,
 ): DerivedWorkout {
   const climbsByQueueItem = new Map<string, DerivedWorkoutClimb>();
-  const itemsInPlanOrder: SessionWorkoutPlanItem[] = [];
+  const itemsInPlanOrder: Array<{ item: SessionWorkoutPlanItem; capacity: number }> = [];
   const climbsByStage = plan.stages.map((stage) =>
     stage.items.map((item) => {
       const climb: DerivedWorkoutClimb = {
@@ -85,7 +88,7 @@ export function deriveWorkoutStages(
       };
       if (item.isMirror !== undefined) climb.isMirror = item.isMirror;
       climbsByQueueItem.set(item.queueItemUuid, climb);
-      itemsInPlanOrder.push(item);
+      itemsInPlanOrder.push({ item, capacity: stage.pacing?.repsPerSet ?? 1 });
       return climb;
     }),
   );
@@ -100,18 +103,23 @@ export function deriveWorkoutStages(
     .sort((left, right) => left.millis - right.millis || left.index - right.index)
     .map(({ tick }) => tick);
 
+  const matchByClimb = (tick: SessionWorkoutTick): DerivedWorkoutClimb | undefined => {
+    const matching = itemsInPlanOrder.filter(
+      ({ item }) => item.climbUuid === tick.climbUuid && item.angle === tick.angle && sameMirror(item, tick),
+    );
+    const withRoom = matching.find(
+      ({ item, capacity }) => (climbsByQueueItem.get(item.queueItemUuid)?.reps.length ?? 0) < capacity,
+    );
+    const chosen = withRoom ?? matching.at(-1);
+    return chosen ? climbsByQueueItem.get(chosen.item.queueItemUuid) : undefined;
+  };
+
   const offPlanTickUuids: string[] = [];
   for (const tick of orderedTicks) {
     const mappedQueueItem = queueItemByTick.get(tick.uuid);
     // A map entry naming an item the plan doesn't hold falls back to matching by climb.
     const mappedClimb = mappedQueueItem === undefined ? undefined : climbsByQueueItem.get(mappedQueueItem);
-    const matchedItem =
-      mappedClimb === undefined
-        ? itemsInPlanOrder.find(
-            (item) => item.climbUuid === tick.climbUuid && item.angle === tick.angle && sameMirror(item, tick),
-          )
-        : undefined;
-    const climb = mappedClimb ?? (matchedItem ? climbsByQueueItem.get(matchedItem.queueItemUuid) : undefined);
+    const climb = mappedClimb ?? matchByClimb(tick);
     if (!climb) {
       offPlanTickUuids.push(tick.uuid);
       continue;

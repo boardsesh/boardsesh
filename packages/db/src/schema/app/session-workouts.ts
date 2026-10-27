@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, jsonb, integer, index, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, jsonb, integer, uniqueIndex } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { users } from '../auth/users';
 import { boardSessions } from './sessions';
@@ -39,8 +39,8 @@ export const sessionWorkouts = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
+    // Leads with session_id, so it also serves every read by session.
     sessionUserIdx: uniqueIndex('session_workouts_session_user_idx').on(table.sessionId, table.userId),
-    sessionIdx: index('session_workouts_session_idx').on(table.sessionId),
   }),
 );
 

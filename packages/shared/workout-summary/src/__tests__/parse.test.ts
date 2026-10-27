@@ -56,6 +56,9 @@ describe('parseSessionWorkoutPlan', () => {
     ['another version', { version: 2, stages: [] }],
     ['a stage without an id', { version: 1, stages: [{ kind: 'volume', items: [] }] }],
     ['an empty kind', { version: 1, stages: [{ id: 's', kind: '', items: [] }] }],
+    ['a kind with punctuation', { version: 1, stages: [{ id: 's', kind: 'four-by-four', items: [] }] }],
+    ['a kind starting with a digit', { version: 1, stages: [{ id: 's', kind: '4x4', items: [] }] }],
+    ['a kind over 32 characters', { version: 1, stages: [{ id: 's', kind: 'k'.repeat(33), items: [] }] }],
     ['a long string', { version: 1, stages: [{ id: 'x'.repeat(65), kind: 'volume', items: [] }] }],
     ['a fractional angle', { version: 1, stages: [{ id: 's', kind: 'volume', items: [{ ...item(1), angle: 40.5 }] }] }],
     [

@@ -108,8 +108,7 @@ export const sessionWorkoutsTypeDefs = /* GraphQL */ `
   }
 
   type SessionWorkout {
-    "Null when the climber stays anonymous to this viewer, like a session summary's participant row."
-    userId: ID
+    userId: ID!
     displayName: String
     avatarUrl: String
     stages: [SessionWorkoutStage!]!
@@ -121,8 +120,7 @@ export const sessionWorkoutsTypeDefs = /* GraphQL */ `
   "One line for a feed card: the main block, the second for 'A + B', how many more."
   type SessionWorkoutHeadline {
     sessionId: ID!
-    "Null when the climber stays anonymous to this viewer."
-    userId: ID
+    userId: ID!
     mainKind: String
     "Display grade name of the main block's target grade."
     mainTargetGrade: String
@@ -136,14 +134,17 @@ export const sessionWorkoutsTypeDefs = /* GraphQL */ `
   extend type Query {
     """
     The workouts followed in a session, one per climber, with what each block
-    came to. Visible wherever the session is (the sessionDetail rule); climbs
-    the viewer may not see are left out along with their ticks.
+    came to. Follows sessionDetail: the session must open for the viewer, the
+    climber must be someone its own surfaces name to them, and at least one of
+    the climber's ticks in it must be visible to them. Climbs the viewer may not
+    see are left out along with their ticks.
     """
     sessionWorkouts(sessionId: ID!): [SessionWorkout!]!
 
     """
-    Feed-card headlines for up to 50 sessions. Sessions the viewer may not open,
-    or with no workout, are left out.
+    Feed-card headlines for up to 50 sessions, under the sessionWorkouts rule
+    for who appears. Sessions the viewer may not open, or with no workout, are
+    left out.
     """
     sessionWorkoutHeadlines(sessionIds: [ID!]!): [SessionWorkoutHeadline!]!
   }
@@ -153,7 +154,8 @@ export const sessionWorkoutsTypeDefs = /* GraphQL */ `
     Store the caller's workout for a session. Written only when revision is
     higher than the stored one; an equal or lower revision is a no-op that still
     returns true, so outbox replays are idempotent. The caller must have created
-    or joined the session, or logged a tick in it.
+    or joined the session. Tick-map entries that are not the caller's own ticks
+    in the session are dropped.
     """
     recordSessionWorkout(input: RecordSessionWorkoutInput!): Boolean!
   }
