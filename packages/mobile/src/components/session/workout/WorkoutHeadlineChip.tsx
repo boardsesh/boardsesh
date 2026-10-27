@@ -1,6 +1,7 @@
 // The feed card's workout line (#6903): "Workout · 4x4 at V4 · 3 blocks", one
-// line under the card's header. Part of the card's tap target, so it is text
-// only; the card's own label carries it for VoiceOver.
+// line under the card's header. Part of the card's tap target and not its own
+// accessibility element: the card's label already says it, so VoiceOver and
+// TalkBack stop on the card once.
 
 import { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -16,12 +17,10 @@ import { workoutHeadlineText } from './workout-summary-format';
 export const WorkoutHeadlineChip = memo(function WorkoutHeadlineChip({ headline }: { headline: WorkoutHeadlineView }) {
   const { t } = useTranslation('session');
   const { brandColors } = useTheme();
-  const { text, spoken } = workoutHeadlineText(headline, t);
+  const { text } = workoutHeadlineText(headline, t);
   return (
     <View
       style={[styles.chip, { backgroundColor: withAlpha(brandColors.primary, 0.12) }]}
-      accessible
-      accessibilityLabel={spoken}
       testID="workout-headline-chip"
     >
       <Icon name="repeat" size={12} color={brandColors.primary} />

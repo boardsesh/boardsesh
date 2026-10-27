@@ -154,12 +154,18 @@ describe('workoutHeadlineText', () => {
     });
   });
 
-  it('names two main blocks', () => {
-    expect(workoutHeadlineText(STORY_HEADLINE_TWO, t).text).toBe('Workout · 4x4 at V4 + Pyramid at V6 · 4 blocks');
+  it('names two main blocks, the second by kind alone', () => {
+    expect(workoutHeadlineText(STORY_HEADLINE_TWO, t).text).toBe('Workout · 4x4 at V4 + Pyramid');
   });
 
-  it('counts the rest past the first', () => {
-    expect(workoutHeadlineText(STORY_HEADLINE_MORE, t).text).toBe('Workout · 4x4 at V4 + 2 more · 5 blocks');
+  it('counts the rest past the first, without a block count', () => {
+    expect(workoutHeadlineText(STORY_HEADLINE_MORE, t).text).toBe('Workout · 4x4 at V4 + 2 more');
+  });
+
+  it('reads two main blocks with no second kind as one more', () => {
+    expect(workoutHeadlineText({ ...STORY_HEADLINE_TWO, secondMainKind: null }, t).text).toBe(
+      'Workout · 4x4 at V4 + 1 more',
+    );
   });
 
   it('leaves out a block count the name already says', () => {

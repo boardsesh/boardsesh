@@ -33,12 +33,20 @@ import {
 const NO_PARTICIPANTS: ReadonlyMap<string, SessionFeedParticipant> = new Map();
 const noop = () => {};
 
-function GroupedClimbs() {
+function GroupedClimbs({ fromCoolDown = false }: { fromCoolDown?: boolean }) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
-  const ticks = useMemo(() => storyDetailTicks().reverse(), []);
+  // Newest first, as the server lists them; Pinch Me's tick hidden from this
+  // viewer (its row still says what the tally counted), and a crewmate's tick.
+  const ticks = useMemo(() => {
+    const own = storyDetailTicks().filter((tick) => tick.uuid !== 't-q-w3-0');
+    const crewTick = { ...own[0]!, uuid: 't-crew', userId: 'story-crewmate', climbName: 'Jug Haul' };
+    return [...own, crewTick].reverse();
+  }, []);
   const { rows } = useMemo(() => buildWorkoutClimbRows(ticks, STORY_WORKOUT), [ticks]);
+  // The end of the list: the cool-down, then "Off plan" and the crew.
+  const coolDownIndex = rows.findIndex((row) => row.type === 'block' && row.stage.isCoolDown);
   const header = useMemo(() => <SectionHeader title={t('detail.climbsCount', { count: ticks.length })} />, [t, ticks]);
   return (
     <View style={[styles.fill, { backgroundColor: systemColors.groupedBackground }]}>
@@ -50,6 +58,7 @@ function GroupedClimbs() {
         keyExtractor={workoutClimbsRowKey}
         getItemType={workoutClimbsRowType}
         ListHeaderComponent={header}
+        initialScrollIndex={fromCoolDown && coolDownIndex >= 0 ? coolDownIndex : undefined}
         contentContainerStyle={{ paddingTop: insets.top, paddingBottom: insets.bottom + spacing[6] }}
       />
     </View>
@@ -60,9 +69,14 @@ const stories: StoryModule = {
   title: 'Session / Workout elsewhere',
   stories: {
     detailGrouped: {
-      name: 'Session detail: climbs grouped by block',
+      name: 'Session detail: climbs grouped by block, a hidden tick, a crewmate',
       layout: 'fullscreen',
       render: () => <GroupedClimbs />,
+    },
+    detailGroupedEnd: {
+      name: 'Session detail: the cool-down, Off plan and the crew',
+      layout: 'fullscreen',
+      render: () => <GroupedClimbs fromCoolDown />,
     },
     feedCard: {
       name: 'Feed card with its workout line',

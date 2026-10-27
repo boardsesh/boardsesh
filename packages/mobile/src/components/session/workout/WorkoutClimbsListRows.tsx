@@ -4,7 +4,7 @@
 // "Off plan" / crew section labels. Memoized: they live in a FlashList.
 
 import { memo, useCallback } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { SessionDetailTick } from '@boardsesh/shared-schema';
 import { Text } from '../../Text';
@@ -16,12 +16,14 @@ import { useTheme } from '../../../providers/theme-provider';
 import { withAlpha } from '../../../theme/colors';
 import { spacing } from '../../../theme/tokens';
 import { RepGlyph, RepGlyphs } from './RepGlyphs';
+import { workoutRowStacks } from './workout-layout';
 import type { WorkoutClimbView, WorkoutStageView } from './types';
 import {
   plannedReps,
   workoutBlockAccessibilityLabel,
   workoutBlockDetail,
   workoutBlockName,
+  workoutClimbOutcome,
   workoutClimbStatus,
   workoutTally,
 } from './workout-summary-format';
@@ -59,7 +61,7 @@ export const WorkoutBlockSectionRow = memo(function WorkoutBlockSectionRow({ sta
   );
 });
 
-/** "Off plan" or the crew: a plain section label with the count of its ticks. */
+/** "Off plan" or the crew: a plain section label with the count of its ticks ("2 ticks"). */
 export const WorkoutListSectionLabel = memo(function WorkoutListSectionLabel({
   kind,
   count,
@@ -70,15 +72,15 @@ export const WorkoutListSectionLabel = memo(function WorkoutListSectionLabel({
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
   const title = kind === 'offPlan' ? t('mobile.workoutSummary.offPlan') : t('summary.crew');
-  const climbs = t('mobile.session.workoutStageClimbs', { count });
+  const ticks = t('mobile.workoutSummary.tickCount', { count });
   return (
-    <View style={styles.section} accessible accessibilityRole="header" accessibilityLabel={`${title}, ${climbs}`}>
+    <View style={styles.section} accessible accessibilityRole="header" accessibilityLabel={`${title}, ${ticks}`}>
       <View style={styles.sectionNameRow}>
         <Text variant="subheadline" style={styles.sectionName}>
           {title}
         </Text>
         <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.sectionTally} numeric>
-          {climbs}
+          {ticks}
         </Text>
       </View>
     </View>
@@ -101,6 +103,8 @@ export const WorkoutSetRow = memo(function WorkoutSetRow({
 }) {
   const { t } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
+  // At large text sizes the reps go under the name, so the name keeps the width.
+  const stacked = workoutRowStacks(useWindowDimensions().fontScale);
   const status = workoutClimbStatus(climb, repsPerSet, t);
   const setLabel = t('mobile.workoutSummary.setLabel', { number: setNumber });
   const name = climb.name ?? t('detail.unknownClimb');
@@ -113,23 +117,27 @@ export const WorkoutSetRow = memo(function WorkoutSetRow({
     onPress(tick);
   }, [onPress, tick]);
 
+  const reps = (
+    <View style={stacked ? styles.trailingStacked : styles.trailing}>
+      <RepGlyphs reps={climb.reps} planned={plannedReps(climb, repsPerSet)} />
+      <Text variant="footnote" color={systemColors.secondaryLabel} numeric>
+        {status.text}
+      </Text>
+    </View>
+  );
   const content = (
     <>
       <ClimbThumbnailOrNumber climb={climb} number={setNumber} tint={brandColors.primary} />
       <View style={styles.rowText}>
-        <Text variant="body" numberOfLines={1}>
+        <Text variant="body" numberOfLines={2}>
           {name}
         </Text>
-        <Text variant="footnote" color={systemColors.secondaryLabel} numberOfLines={1} numeric>
+        <Text variant="footnote" color={systemColors.secondaryLabel} numberOfLines={2} numeric>
           {subtitle}
         </Text>
+        {stacked ? reps : null}
       </View>
-      <View style={styles.trailing}>
-        <RepGlyphs reps={climb.reps} planned={plannedReps(climb, repsPerSet)} />
-        <Text variant="footnote" color={systemColors.secondaryLabel} numeric>
-          {status.text}
-        </Text>
-      </View>
+      {stacked ? null : reps}
     </>
   );
 
@@ -162,25 +170,30 @@ export const WorkoutSetRow = memo(function WorkoutSetRow({
   );
 });
 
-/** A planned climb with no tick: dimmed, "Skipped". */
-export const WorkoutSkippedClimbRow = memo(function WorkoutSkippedClimbRow({ climb }: { climb: WorkoutClimbView }) {
+/**
+ * A planned climb with no tick to list: "Skipped" (dimmed), or, when its ticks
+ * are hidden from this viewer, what the block's tally counted for it.
+ */
+export const WorkoutPlannedClimbRow = memo(function WorkoutPlannedClimbRow({ climb }: { climb: WorkoutClimbView }) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
   const name = climb.name ?? t('detail.unknownClimb');
-  const skipped = t('mobile.workoutSummary.outcomeSkipped');
+  const outcome = workoutClimbOutcome(climb);
+  const isSkipped = outcome === 'skipped';
+  const status = workoutClimbStatus(climb, null, t);
   return (
     <View>
       <View
         accessible
-        accessibilityLabel={[name, climb.grade, skipped].filter(Boolean).join(', ')}
+        accessibilityLabel={[name, climb.grade, status.spoken].filter(Boolean).join(', ')}
         style={[styles.row, { backgroundColor: systemColors.secondaryBackground }]}
-        testID="workout-skipped-row"
+        testID={isSkipped ? 'workout-skipped-row' : 'workout-planned-row'}
       >
         <View style={styles.leading}>
-          <RepGlyph kind="unlogged" />
+          <RepGlyph kind={isSkipped ? 'unlogged' : outcome} />
         </View>
         <View style={styles.rowText}>
-          <Text variant="body" color={systemColors.secondaryLabel} numberOfLines={1}>
+          <Text variant="body" color={isSkipped ? systemColors.secondaryLabel : systemColors.label} numberOfLines={2}>
             {name}
           </Text>
           {climb.grade ? (
@@ -189,8 +202,8 @@ export const WorkoutSkippedClimbRow = memo(function WorkoutSkippedClimbRow({ cli
             </Text>
           ) : null}
         </View>
-        <Text variant="footnote" color={systemColors.secondaryLabel}>
-          {skipped}
+        <Text variant="footnote" color={systemColors.secondaryLabel} numeric>
+          {status.text}
         </Text>
       </View>
       <View style={[styles.separator, { backgroundColor: systemColors.separator }]} />
@@ -221,7 +234,8 @@ function ClimbThumbnailOrNumber({ climb, number, tint }: { climb: WorkoutClimbVi
   return (
     <View style={styles.leading}>
       <View style={[styles.disc, { backgroundColor: withAlpha(tint, 0.15) }]}>
-        <Text variant="footnote" color={tint} style={styles.discText} numeric>
+        {/* The disc is a fixed size: the number grows only so far inside it. */}
+        <Text variant="footnote" color={tint} style={styles.discText} numeric maxFontSizeMultiplier={1.2}>
           {number}
         </Text>
       </View>
@@ -281,6 +295,13 @@ const styles = StyleSheet.create({
   trailing: {
     alignItems: 'flex-end',
     gap: 2,
+  },
+  trailingStacked: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    columnGap: spacing[2],
+    rowGap: 2,
   },
   separator: {
     height: StyleSheet.hairlineWidth,

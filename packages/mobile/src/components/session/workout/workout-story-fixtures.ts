@@ -40,6 +40,8 @@ function climb(
     angle: ANGLE,
     reps,
     skipped: reps.length === 0,
+    // The derivation's tick map: the uuids `storyDetailTicks` gives these reps.
+    tickUuids: reps.map((_, index) => `t-${queueItemUuid}-${index}`),
     name,
     ...GRADES[gradeKey],
     boardType: 'kilter',
@@ -111,7 +113,8 @@ export const COOL_DOWN = stage({
 export const STORY_WORKOUT: SessionWorkoutView = {
   userId: STORY_USER_ID,
   stages: [WARM_UP, FOUR_BY_FOUR, COOL_DOWN],
-  offPlan: 0,
+  offPlan: 1,
+  offPlanTickUuids: ['t-off-plan'],
 };
 
 /** The other kinds, one block each, for the row story. */
@@ -256,8 +259,7 @@ export const STORY_HEADLINE: WorkoutHeadlineView = {
 export const STORY_HEADLINE_TWO: WorkoutHeadlineView = {
   mainKind: 'fourByFour',
   mainTargetGrade: 'V4',
-  secondKind: 'pyramid',
-  secondTargetGrade: 'V6',
+  secondMainKind: 'pyramid',
   blockCount: 4,
   extraMainBlocks: 1,
 };

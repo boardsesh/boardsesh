@@ -47,9 +47,9 @@ export type WorkoutClimbView = {
   frames?: string | null;
   renderBoard?: RenderBoardConfig | null;
   /**
-   * The owner's tick uuids on this climb, when known (the stored tick map). The
-   * session detail groups ticks by them; without them it matches ticks by climb
-   * and angle in plan order.
+   * The owner's tick uuids on this climb, from the derivation's tick map. The
+   * session detail groups ticks by them; an older payload without them falls
+   * back to matching the owner's ticks by climb and angle.
    */
   tickUuids?: string[];
 };
@@ -75,10 +75,12 @@ export type WorkoutStageView = {
 
 export type SessionWorkoutView = {
   /** The workout's owner: only their ticks count toward it. */
-  userId?: string | null;
+  userId: string;
   stages: WorkoutStageView[];
   /** The owner's ticks in the session that matched no block. */
   offPlan: number;
+  /** Those ticks' uuids, from the derivation. */
+  offPlanTickUuids?: string[];
 };
 
 /**
@@ -89,9 +91,8 @@ export type SessionWorkoutView = {
 export type WorkoutHeadlineView = {
   mainKind: string | null;
   mainTargetGrade?: string | null;
-  /** The second main block, for "A + B". Left out, two main blocks read "A + 1 more". */
-  secondKind?: string | null;
-  secondTargetGrade?: string | null;
+  /** The second main block's kind, for "4x4 at V4 + Pyramid". Left out, two main blocks read "A + 1 more". */
+  secondMainKind?: string | null;
   /** Every block, warm-up and cool-down included. */
   blockCount: number;
   /** Main blocks after the first. */

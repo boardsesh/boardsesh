@@ -703,10 +703,12 @@
       "headlineMoreBlocks_other": "{{first}} + {{count}} more",
       "offPlan": "Off plan",
       "setLabel": "Set {{number}}",
-      "stillSaving_one": "Still saving {{count}} climb. Your totals catch up once it's in.",
-      "stillSaving_other": "Still saving {{count}} climbs. Your totals catch up once they're in.",
-      "stillSavingOffline_one": "You're offline, so {{count}} climb is waiting on this phone. Your totals catch up once you're back online.",
-      "stillSavingOffline_other": "You're offline, so {{count}} climbs are waiting on this phone. Your totals catch up once you're back online."
+      "stillSaving_one": "Still saving {{count}} tick. Your totals catch up once it's in.",
+      "stillSaving_other": "Still saving {{count}} ticks. Your totals catch up once they're in.",
+      "stillSavingOffline_one": "You're offline, so {{count}} tick is waiting on this phone. Your totals catch up once you're back online.",
+      "stillSavingOffline_other": "You're offline, so {{count}} ticks are waiting on this phone. Your totals catch up once you're back online.",
+      "tickCount_one": "{{count}} tick",
+      "tickCount_other": "{{count}} ticks"
     },
     "session": {
       "headerStart": "Start a session",

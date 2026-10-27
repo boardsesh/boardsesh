@@ -79,7 +79,7 @@ vi.mock('../workout/WorkoutClimbsListRows', () => ({
   WorkoutBlockSectionRow: () => null,
   WorkoutListSectionLabel: () => null,
   WorkoutSetRow: () => null,
-  WorkoutSkippedClimbRow: () => null,
+  WorkoutPlannedClimbRow: () => null,
 }));
 vi.mock('../../../lib/graphql/hooks', () => ({
   useSessionDetail: () => ({ data: mocks.session, isPending: false }),

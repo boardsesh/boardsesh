@@ -213,9 +213,10 @@ export function workoutClimbAccessibilityLabel(
 }
 
 /**
- * The feed card's line: "Workout · 4x4 at V4 · 3 blocks", "Workout · 4x4 at V4
- * + Pyramid at V6 · 3 blocks", "Workout · 4x4 at V4 + 2 more · 5 blocks". The
- * block count is left out when it says nothing the names don't.
+ * The feed card's line: "Workout · 4x4 at V4 · 3 blocks" for one main block,
+ * "Workout · 4x4 at V4 + Pyramid" for two, "Workout · 4x4 at V4 + 2 more" past
+ * that. The block count rides only with a single main block, where it adds
+ * the warm-up and cool-down the name leaves out.
  */
 export function workoutHeadlineText(
   headline: WorkoutHeadlineView,
@@ -227,8 +228,8 @@ export function workoutHeadlineText(
   const parts = [t('mobile.session.preGeneratorLabel')];
   const main = mainBlocksText(headline, t);
   if (main) parts.push(main);
-  const namedBlocks = main ? 1 + Math.min(headline.extraMainBlocks, 1) : 0;
-  if (headline.blockCount > namedBlocks || !main) {
+  const singleMain = main !== null && headline.extraMainBlocks <= 0;
+  if (main === null || (singleMain && headline.blockCount > 1)) {
     parts.push(t('mobile.workoutSummary.blockCount', { count: headline.blockCount }));
   }
   return { text: parts.join(VISIBLE_SEPARATOR), spoken: parts.join(SPOKEN_SEPARATOR) };
@@ -238,8 +239,8 @@ function mainBlocksText(headline: WorkoutHeadlineView, t: TranslateWorkoutStage)
   if (!headline.mainKind) return null;
   const first = nameWithGrade(headline.mainKind, headline.mainTargetGrade, t);
   if (headline.extraMainBlocks <= 0) return first;
-  if (headline.extraMainBlocks === 1 && headline.secondKind) {
-    const second = nameWithGrade(headline.secondKind, headline.secondTargetGrade, t);
+  if (headline.extraMainBlocks === 1 && headline.secondMainKind) {
+    const second = stageKindName(headline.secondMainKind, t, false);
     return t('mobile.workoutSummary.headlineTwoBlocks', { first, second });
   }
   return t('mobile.workoutSummary.headlineMoreBlocks', { first, count: headline.extraMainBlocks });

@@ -703,10 +703,12 @@
       "headlineMoreBlocks_other": "{{first}} + {{count}} autres",
       "offPlan": "Hors programme",
       "setLabel": "Série {{number}}",
-      "stillSaving_one": "Encore {{count}} bloc à enregistrer. Tes totaux se mettent à jour dès qu'il arrive.",
-      "stillSaving_other": "Encore {{count}} blocs à enregistrer. Tes totaux se mettent à jour dès qu'ils arrivent.",
-      "stillSavingOffline_one": "Tu es hors ligne, alors {{count}} bloc attend sur ce téléphone. Tes totaux se mettent à jour dès ton retour en ligne.",
-      "stillSavingOffline_other": "Tu es hors ligne, alors {{count}} blocs attendent sur ce téléphone. Tes totaux se mettent à jour dès ton retour en ligne."
+      "stillSaving_one": "Encore {{count}} entrée à enregistrer. Tes totaux se mettent à jour dès qu'elle arrive.",
+      "stillSaving_other": "Encore {{count}} entrées à enregistrer. Tes totaux se mettent à jour dès qu'elles arrivent.",
+      "stillSavingOffline_one": "Tu es hors ligne, alors {{count}} entrée attend sur ce téléphone. Tes totaux se mettent à jour dès ton retour en ligne.",
+      "stillSavingOffline_other": "Tu es hors ligne, alors {{count}} entrées attendent sur ce téléphone. Tes totaux se mettent à jour dès ton retour en ligne.",
+      "tickCount_one": "{{count}} entrée",
+      "tickCount_other": "{{count}} entrées"
     },
     "session": {
       "headerStart": "Démarrer une session",

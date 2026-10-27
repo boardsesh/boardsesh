@@ -7,7 +7,7 @@
 // them. Each climb line is its own element.
 
 import { memo, useCallback, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../../Icon';
 import { PressableSurface } from '../../PressableSurface';
@@ -16,6 +16,7 @@ import { hapticSelection } from '../../../lib/haptics';
 import { useTheme } from '../../../providers/theme-provider';
 import { spacing } from '../../../theme/tokens';
 import { RepGlyph, RepGlyphs } from './RepGlyphs';
+import { workoutRowStacks } from './workout-layout';
 import type { WorkoutClimbView, WorkoutStageView } from './types';
 import {
   plannedReps,
@@ -157,20 +158,23 @@ export const WorkoutClimbLine = memo(function WorkoutClimbLine({
 }) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
+  // At large text sizes the glyphs and status go under the name, so the name
+  // keeps the row's full width.
+  const stacked = workoutRowStacks(useWindowDimensions().fontScale);
   const isSets = typeof repsPerSet === 'number' && repsPerSet > 0;
   const status = workoutClimbStatus(climb, repsPerSet, t);
   const outcome = workoutClimbOutcome(climb);
   return (
     <View
-      style={styles.climbLine}
+      style={stacked ? styles.climbLineStacked : styles.climbLine}
       accessible
       accessibilityLabel={workoutClimbAccessibilityLabel(climb, repsPerSet, t)}
       testID="workout-climb-line"
     >
-      <View style={styles.climbName}>
+      <View style={stacked ? styles.climbNameStacked : styles.climbName}>
         <Text
           variant="subheadline"
-          numberOfLines={1}
+          numberOfLines={2}
           style={styles.climbNameText}
           color={outcome === 'skipped' ? systemColors.secondaryLabel : systemColors.label}
         >
@@ -259,6 +263,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'baseline',
     gap: spacing[2],
+  },
+  climbLineStacked: {
+    alignItems: 'flex-start',
+    gap: 2,
+    minHeight: 28,
+  },
+  climbNameStacked: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'baseline',
+    columnGap: spacing[2],
   },
   climbNameText: {
     flexShrink: 1,

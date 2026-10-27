@@ -703,10 +703,12 @@
       "headlineMoreBlocks_other": "{{first}} + {{count}} más",
       "offPlan": "Fuera del plan",
       "setLabel": "Serie {{number}}",
-      "stillSaving_one": "Aún se está guardando {{count}} bloque. Tus totales se ponen al día en cuanto llegue.",
-      "stillSaving_other": "Aún se están guardando {{count}} bloques. Tus totales se ponen al día en cuanto lleguen.",
-      "stillSavingOffline_one": "Estás sin conexión, así que {{count}} bloque espera en este teléfono. Tus totales se ponen al día cuando vuelvas a tener conexión.",
-      "stillSavingOffline_other": "Estás sin conexión, así que {{count}} bloques esperan en este teléfono. Tus totales se ponen al día cuando vuelvas a tener conexión."
+      "stillSaving_one": "Aún se está guardando {{count}} registro. Tus totales se ponen al día en cuanto llegue.",
+      "stillSaving_other": "Aún se están guardando {{count}} registros. Tus totales se ponen al día en cuanto lleguen.",
+      "stillSavingOffline_one": "Estás sin conexión, así que {{count}} registro espera en este teléfono. Tus totales se ponen al día cuando vuelvas a tener conexión.",
+      "stillSavingOffline_other": "Estás sin conexión, así que {{count}} registros esperan en este teléfono. Tus totales se ponen al día cuando vuelvas a tener conexión.",
+      "tickCount_one": "{{count}} registro",
+      "tickCount_other": "{{count}} registros"
     },
     "session": {
       "headerStart": "Empezar sesión",

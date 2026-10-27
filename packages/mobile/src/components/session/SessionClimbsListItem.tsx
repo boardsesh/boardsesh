@@ -1,5 +1,5 @@
 // One row of the session detail's Climbs list: a tick, or, on a workout session
-// (#6903), a block's section row, a 4x4 set, a skipped climb, or the "Off plan"
+// (#6903), a block's section row, a 4x4 set, a planned climb with no tick to list, or the "Off plan"
 // and crew labels. Every branch is a memoized row, so FlashList recycling stays
 // cheap.
 
@@ -9,7 +9,7 @@ import {
   WorkoutBlockSectionRow,
   WorkoutListSectionLabel,
   WorkoutSetRow,
-  WorkoutSkippedClimbRow,
+  WorkoutPlannedClimbRow,
 } from './workout/WorkoutClimbsListRows';
 import type { WorkoutClimbsRow } from './workout/workout-climb-rows';
 
@@ -43,8 +43,8 @@ export function SessionClimbsListItem({ row, isMultiUser, participantById, onPre
           onPress={onPress}
         />
       );
-    case 'skipped':
-      return <WorkoutSkippedClimbRow climb={row.climb} />;
+    case 'climb':
+      return <WorkoutPlannedClimbRow climb={row.climb} />;
     case 'offPlan':
       return <WorkoutListSectionLabel kind="offPlan" count={row.count} />;
     case 'crew':

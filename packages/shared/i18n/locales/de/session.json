@@ -703,10 +703,12 @@
       "headlineMoreBlocks_other": "{{first}} + {{count}} weitere",
       "offPlan": "Nicht im Plan",
       "setLabel": "Satz {{number}}",
-      "stillSaving_one": "{{count}} Boulder wird noch gespeichert. Deine Summen ziehen nach, sobald er da ist.",
-      "stillSaving_other": "{{count}} Boulder werden noch gespeichert. Deine Summen ziehen nach, sobald sie da sind.",
-      "stillSavingOffline_one": "Du bist offline, darum wartet {{count}} Boulder auf diesem Handy. Deine Summen ziehen nach, sobald du wieder online bist.",
-      "stillSavingOffline_other": "Du bist offline, darum warten {{count}} Boulder auf diesem Handy. Deine Summen ziehen nach, sobald du wieder online bist."
+      "stillSaving_one": "{{count}} Eintrag wird noch gespeichert. Deine Summen ziehen nach, sobald er da ist.",
+      "stillSaving_other": "{{count}} Einträge werden noch gespeichert. Deine Summen ziehen nach, sobald sie da sind.",
+      "stillSavingOffline_one": "Du bist offline, darum wartet {{count}} Eintrag auf diesem Handy. Deine Summen ziehen nach, sobald du wieder online bist.",
+      "stillSavingOffline_other": "Du bist offline, darum warten {{count}} Einträge auf diesem Handy. Deine Summen ziehen nach, sobald du wieder online bist.",
+      "tickCount_one": "{{count}} Eintrag",
+      "tickCount_other": "{{count}} Einträge"
     },
     "session": {
       "headerStart": "Session starten",
