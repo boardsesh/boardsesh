@@ -486,12 +486,12 @@ export const BACKEND_BOARD_RENDER_CACHE_EXPRESSION = `(http.host eq "${WS_HOSTNA
  *
  * The empty string is en-US, which is served UNPREFIXED (see `detectLocale` in
  * packages/web/app/lib/i18n/detect-locale.ts — it skips DEFAULT_LOCALE). The
- * other three are real path prefixes, and the middleware strips them before it
+ * other four are real path prefixes, and the middleware strips them before it
  * decides whether to decorate the response, so `/es/kilter/…/list` gets the
  * same CDN-Cache-Control as `/kilter/…/list`. Cloudflare has no way to strip a
  * prefix, so the prefixes are enumerated here instead.
  */
-export const WWW_HTML_CACHE_LOCALE_PREFIXES = ['', '/es', '/fr', '/de'] as const;
+export const WWW_HTML_CACHE_LOCALE_PREFIXES = ['', '/es', '/fr', '/de', '/it'] as const;
 
 /**
  * The first path segment of every page tree that renders a board list or climb

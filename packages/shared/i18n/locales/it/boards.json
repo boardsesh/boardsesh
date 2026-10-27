@@ -1,0 +1,1346 @@
+{
+  "sprayDetection": {
+    "queued": "La tua foto è in coda per il riconoscimento delle prese.",
+    "running": "Ricerca delle prese nella tua foto…",
+    "connection": "Impossibile raggiungere il riconoscimento delle prese. Riprova quando hai connessione.",
+    "failed": "Impossibile completare la ricerca delle prese. La tua foto è salvata.",
+    "resumeHint": "Puoi uscire e riprendere più tardi. La tua Spraywall pubblicata resta invariata.",
+    "retry": "Riprova",
+    "manual": "Segna le prese a mano",
+    "queuePosition": "La tua foto è la n. {{position}} nella coda di riconoscimento.",
+    "retrying": "La tua foto è salvata. Il riconoscimento riproverà a breve.",
+    "notifyHint": "Ti avviseremo quando la foto sarà pronta da controllare."
+  },
+  "mobile": {
+    "edit": {
+      "screenTitle": "Modifica pannello",
+      "save": "Salva le modifiche",
+      "updateError": "Impossibile salvare le modifiche. Riprova.",
+      "notFound": "Pannello non trovato",
+      "noAccess": "Non hai il permesso di modificare questo pannello",
+      "back": "Indietro",
+      "configLockedHint": "Non hai il permesso di cambiare layout, dimensione o set di prese di questo pannello.",
+      "configLockedHintSpray": "Il layout di una Spraywall è la sua foto. Fotografa di nuovo la Spraywall per cambiarne le prese.",
+      "duplicate": {
+        "title": "Hai già questa configurazione",
+        "body": "Con questa modifica il pannello diventa uguale a \"{{name}}\": stesso layout, stessa dimensione e stessi set di prese.",
+        "bodyWithLocation": "Con questa modifica il pannello diventa uguale a \"{{name}}\" a {{location}}: stesso layout, stessa dimensione e stessi set di prese.",
+        "bodyGeneric": "Questa modifica coincide con una configurazione di pannello che il proprietario ha già.",
+        "saveAnyway": "Salva comunque",
+        "keepEditing": "Continua a modificare"
+      }
+    },
+    "gymEdit": {
+      "screenTitle": "Modifica palestra",
+      "save": "Salva le modifiche",
+      "updateError": "Impossibile salvare le modifiche. Riprova.",
+      "updateSuccess": "Palestra aggiornata",
+      "notFound": "Palestra non trovata",
+      "noAccess": "Non hai il permesso di modificare questa palestra",
+      "back": "Indietro",
+      "name": "Nome",
+      "namePlaceholder": "Nome della palestra",
+      "description": "Descrizione",
+      "descriptionPlaceholder": "Racconta ai climber cosa c'è in parete",
+      "address": "Indirizzo",
+      "addressPlaceholder": "Via, città",
+      "contactEmail": "Email di contatto",
+      "contactEmailPlaceholder": "ciao@palestra.it",
+      "contactPhone": "Telefono di contatto",
+      "contactPhonePlaceholder": "Numero di telefono",
+      "latitude": "Latitudine",
+      "longitude": "Longitudine",
+      "coordinatePlaceholder": "Gradi decimali",
+      "invalidCoordinate": "Inserisci una coordinata valida",
+      "public": "Palestra pubblica",
+      "publicHint": "Mostrala sulla mappa così i climber la trovano",
+      "website": "Sito web",
+      "websitePlaceholder": "https://tuapalestra.it",
+      "websiteHint": "Lo usiamo per verificare la proprietà quando qualcuno rivendica la palestra"
+    },
+    "manage": {
+      "ownedHeader": "I tuoi pannelli",
+      "followingHeader": "Pannelli che segui",
+      "deleteTitle": "Eliminare il pannello?",
+      "deleteMessage": "Rimuovere \"{{name}}\" dai tuoi pannelli? L'operazione non si può annullare.",
+      "deleteConfirm": "Elimina",
+      "cancel": "Annulla",
+      "deleteError": "Impossibile eliminare quel pannello. Riprova.",
+      "unfollowError": "Impossibile smettere di seguire quel pannello. Riprova.",
+      "editAria": "Modifica {{name}}",
+      "deleteAria": "Elimina {{name}}",
+      "unfollowAria": "Smetti di seguire {{name}}",
+      "unfollowTitle": "Smettere di seguire?",
+      "unfollowMessage": "\"{{name}}\" è il tuo pannello attivo. Se smetti di seguirlo, sparisce dai tuoi pannelli e la selezione viene azzerata.",
+      "unfollowConfirm": "Smetti di seguire",
+      "edit": "Modifica",
+      "done": "Fatto",
+      "deleteWallTitle": "Eliminare la Spraywall?",
+      "deleteWallMessage": "Eliminare \"{{name}}\"? Le sue foto e i suoi blocchi non saranno più disponibili. L'operazione non si può annullare.",
+      "deleteSuccess": "Hai eliminato \"{{name}}\""
+    },
+    "emptyTitle": "Ancora nessun pannello",
+    "emptySubtitle": "Cerca un pannello per iniziare",
+    "signInTitle": "Accedi per vedere i tuoi pannelli",
+    "signInSubtitle": "I tuoi pannelli sono legati al tuo account.",
+    "signInCta": "Accedi",
+    "errorTitle": "Impossibile caricare i tuoi pannelli",
+    "errorRetry": "Riprova",
+    "boardSwitchError": "Impossibile salvare quel pannello. Riprova.",
+    "onboardingPrompt": "Segui il pannello su cui arrampichi: così si attiva la sua cronologia.",
+    "firstBoard": {
+      "title": "Dove arrampichi?",
+      "body": "Scegli il tuo pannello per caricarne i blocchi. Quando sei connesso, toccando un blocco lo illumini in parete.",
+      "gym": "In una palestra",
+      "gymHint": "Scegli il pannello della tua palestra",
+      "own": "Il mio pannello",
+      "ownHint": "Configura il pannello che hai a casa",
+      "sprayWall": "Aggiungi la mia Spraywall",
+      "scan": "Cerca il pannello che ho davanti",
+      "searching": "Ricerca dei pannelli vicino a te…",
+      "nearbyEmpty": "Niente entro 20 km",
+      "nearbyError": "Impossibile caricare i pannelli vicino a te",
+      "findGymOnMap": "Trova la tua palestra sulla mappa",
+      "locationOff": "La posizione è disattivata",
+      "openSettings": "Apri Impostazioni",
+      "notNow": "Non ora",
+      "nearbyEmptyMoonboard": "Nessuna MoonBoard entro 20 km",
+      "nearbyEmptyType": "Nessun pannello {{board}} entro 20 km"
+    },
+    "firstConnect": {
+      "card": {
+        "title": "Illumina i blocchi su {{board}}",
+        "titleNoName": "Illumina i blocchi sul tuo pannello",
+        "body": "Collega questo telefono al pannello, poi tocca un blocco qualsiasi per illuminarlo.",
+        "connect": "Connetti",
+        "tryAgain": "Riprova",
+        "noLights": "Questo pannello non ha luci",
+        "notNow": "Non ora",
+        "connecting": "Connessione a {{board}}…",
+        "connectingNoName": "Connessione al tuo pannello…",
+        "failed": "Non ancora connesso a {{board}}. Riprova quando vuoi.",
+        "failedNoName": "Non ancora connesso al tuo pannello. Riprova quando vuoi."
+      },
+      "pill": "Illumina sul pannello",
+      "confirm": {
+        "title": "Connesso a {{board}}",
+        "titleNoName": "Connesso al tuo pannello",
+        "body": "Ora, toccando un blocco nell'elenco, lo illumini in parete.",
+        "gotIt": "Ok"
+      }
+    },
+    "discovery": {
+      "findNearby": "Trova vicino a te",
+      "bluetooth": "Bluetooth",
+      "locationDenied": "Consenti la posizione",
+      "nearbyTitle": "Vicino a te",
+      "nearbyShowing": "Quelli vicini a te",
+      "yourBoardsTitle": "I tuoi pannelli",
+      "activeBadge": "Attivo",
+      "ownedBadgeAria": "Il tuo pannello",
+      "followingBadgeAria": "Lo segui",
+      "popularTitle": "Configurazioni popolari",
+      "findGym": "Trova una palestra",
+      "create": "Crea un pannello",
+      "createTile": "Crea",
+      "followed": "{{name}} aggiunto ai tuoi pannelli",
+      "followError": "Impossibile aggiungere {{name}} ai tuoi pannelli",
+      "pinAria": "Fissa {{name}}",
+      "unpinAria": "Togli {{name}} dai fissati",
+      "pinnedBadgeAria": "Fissato",
+      "pinError": "Impossibile aggiornare i tuoi pannelli fissati",
+      "addWallTile": "Spraywall",
+      "nearbyTitleMoonboard": "MoonBoard vicino a te",
+      "nearbyTitleType": "Pannelli {{board}} vicino a te",
+      "nearbyShowAll": "Mostra tutti"
+    },
+    "create": {
+      "screenTitle": "Configura il tuo pannello",
+      "previewHint": "Scegli il layout e ti mostriamo il tuo pannello",
+      "adjustable": "Inclinazione regolabile",
+      "anglePreview": "Pannello inclinato a {{angle}}°",
+      "moreOptions": "Altre opzioni",
+      "ownBoard": "Questo pannello è mio",
+      "public": "Pannello pubblico",
+      "publicHint": "Mostralo sulla mappa così la tua crew lo trova",
+      "unlisted": "Non in elenco",
+      "hideLocation": "Nascondi la posizione esatta",
+      "gymLocationHint": "In una palestra pubblica, le persone vedono invece la posizione della palestra.",
+      "location": "Posizione",
+      "locationPlaceholder": "Casa, nome della palestra o città",
+      "useMyLocation": "Usa la mia posizione",
+      "locationDeniedHint": "Boardsesh non può vedere la tua posizione. Consentila in Impostazioni, oppure scrivi un luogo qui sopra.",
+      "locationUnavailableHint": "Impossibile capire dove sei. Scrivi un luogo qui sopra.",
+      "serial": "Seriale del controller",
+      "serialPlaceholder": "es. ABC-12345",
+      "serialHint": "Facoltativo: il controller si collega da solo la prima volta che ti connetti.",
+      "save": "Salva il mio pannello",
+      "createError": "Impossibile creare quel pannello. Riprova.",
+      "limitReached": "Hai raggiunto il numero massimo di pannelli per un account. Elimina un pannello che non usi più per aggiungerne un altro.",
+      "timer": "Timer degli allenamenti",
+      "timerNone": "Nessun timer abbinato",
+      "timerHint": "Abbina un timer da palestra Rogue a questo pannello. Mentre controlli il pannello, il suo cronometro riparte a ogni recupero, oppure a ogni blocco registrato quando il timer di recupero è spento.",
+      "timerPairCta": "Abbina un timer",
+      "timerChangeCta": "Cambia timer",
+      "timerRemoveCta": "Rimuovi",
+      "gym": "Palestra",
+      "gymNone": "Non in una palestra",
+      "clearLocation": "Cancella la posizione",
+      "lights": "Luci",
+      "hasLeds": "Il pannello ha luci LED",
+      "hasLedsHint": "Disattivalo per un pannello senza kit di luci. La tua crew si alterna comunque e lo schermo della palestra mostra sempre il blocco attivo. Non serve il Bluetooth.",
+      "duplicate": {
+        "title": "Hai già questa configurazione",
+        "body": "Hai già \"{{name}}\" con lo stesso layout, la stessa dimensione e gli stessi set di prese.",
+        "bodyWithLocation": "Hai già \"{{name}}\" a {{location}}, con lo stesso layout, la stessa dimensione e gli stessi set di prese.",
+        "useExisting": "Usa quel pannello",
+        "addAnother": "Aggiungi qui un nuovo pannello",
+        "addAnotherHint": "Scegli questa opzione se è un pannello diverso: un'altra palestra, un'altra stanza.",
+        "cancel": "Continua a modificare",
+        "switchError": "Impossibile passare a quel pannello. Riprova."
+      }
+    },
+    "custom": {
+      "board": "Pannello",
+      "layout": "Layout",
+      "size": "Dimensione",
+      "sets": "Set",
+      "angle": "Inclinazione",
+      "name": "Nome del pannello"
+    },
+    "bluetooth": {
+      "title": "Pannelli vicino a te",
+      "scanning": "Ricerca dei pannelli…",
+      "resolving": "Caricamento dei pannelli…",
+      "noResults": "Nessun pannello nel raggio d'azione",
+      "unavailable": "Attiva il Bluetooth per cercare",
+      "notAsked": "Consenti il Bluetooth per cercare pannelli vicino a te.",
+      "unknownSetupTitle": "Trovato un pannello {{board}}",
+      "unknownSetupBody": "Non ne conosciamo ancora la configurazione.",
+      "moonboardTitle": "Trovata una MoonBoard qui vicino",
+      "moonboardBody": "Scopriamo quale sia.",
+      "bareNameTitle": "Trovato un pannello {{board}} qui vicino",
+      "bareNameBody": "Il suo controller non dice quale sia.",
+      "needSignalTitle": "Trovato un pannello, serve segnale",
+      "needSignalBody": "L'abbiamo rilevato, ma offline non possiamo identificarlo.",
+      "findAtGym": "Trovalo nella mia palestra",
+      "ownBoard": "È il mio pannello"
+    },
+    "boardDetail": {
+      "setActive": "Imposta come pannello attivo",
+      "setActiveShort": "Imposta attivo",
+      "alreadyActive": "Pannello attivo",
+      "stats": {
+        "ascents": "salite",
+        "climbers": "climber",
+        "followers": "follower"
+      },
+      "spec": {
+        "layout": "Layout",
+        "size": "Dimensione",
+        "sets": "Set",
+        "angle": "Inclinazione",
+        "adjustable": "regolabile"
+      },
+      "spray": {
+        "kind": "Spraywall",
+        "editHolds": "Modifica le prese",
+        "editHoldsHint": "Aggiungi, sposta o elimina le prese della tua Spraywall.",
+        "resetWall": "Reimposta questa Spraywall",
+        "resetWallHint": "Fai una nuova foto e segna di nuovo le prese.",
+        "shareLink": "Condividi il link",
+        "shareLinkPublicHint": "Chiunque può aprire questa Spraywall.",
+        "shareLinkUnlistedHint": "Solo i climber a cui lo mandi."
+      },
+      "details": "Dettagli",
+      "detailsAria": "Apri i dettagli di {{name}}",
+      "activeSprayDetails": "{{name}} · Dettagli della Spraywall",
+      "share": {
+        "shareLink": "Condividi il link",
+        "publicHint": "Chiunque può aprire questo pannello.",
+        "unlistedHint": "Solo i climber a cui lo mandi.",
+        "inviteHint": "Chi lo apre può toccare Unisciti per ottenere l'accesso."
+      }
+    },
+    "disambiguation": {
+      "title": "Su quale pannello sei?",
+      "subtitle": "Questo seriale è condiviso da più di un pannello. Scegli quello su cui ti trovi.",
+      "yourBoard": "Il tuo pannello",
+      "cancel": "Non ora"
+    },
+    "gyms": {
+      "title": "Palestre vicino a te",
+      "subtitle": "Tocca una palestra per usare il suo pannello",
+      "locationNeeded": "Condividi la tua posizione per trovare le palestre vicine",
+      "grantLocation": "Usa la mia posizione",
+      "locationBlocked": "Il tuo browser tiene la tua posizione per sé. Scrivi invece una città nella casella di ricerca: funziona ovunque.",
+      "empty": "Ancora nessuna palestra vicina",
+      "noBoards": "Ancora nessun pannello qui",
+      "boardCount_one": "{{count}} pannello",
+      "boardCount_other": "{{count}} pannelli",
+      "searchPlaceholder": "Cerca una città, una palestra o un pannello",
+      "showingPlace": "Risultati per {{place}}",
+      "clearSearch": "Cancella la ricerca",
+      "closeMap": "Chiudi",
+      "otherBoardsTitle": "Pannelli qui vicino",
+      "multiBoardChip": "2+ tipi di pannello",
+      "editGym": "Modifica palestra",
+      "editBoard": "Modifica pannello",
+      "updating": "Aggiornamento dei risultati…",
+      "refreshFailed": "Impossibile aggiornare i risultati.",
+      "retry": "Riprova"
+    },
+    "myGyms": {
+      "moreRowTitle": "Le mie palestre",
+      "screenTitle": "Le mie palestre",
+      "loadError": "Impossibile caricare le tue palestre. Riprova.",
+      "retry": "Riprova",
+      "emptyTitle": "Ancora nessuna palestra",
+      "emptyBody": "Rivendica la tua palestra per tenere aggiornati pannelli e dettagli.",
+      "findGym": "Trova la tua palestra",
+      "kioskHint": "La configurazione dei kiosk si fa sul grande schermo: aprila in un browser per configurare le tue TV.",
+      "kioskHintDismiss": "Ok",
+      "manageKiosks": "Gestisci kiosk e TV",
+      "manageKiosksFor": "Gestisci kiosk e TV di {{gym}}",
+      "manageError": "Impossibile aprire la console di gestione. Provaci da un browser.",
+      "manageUnavailable": "Questa palestra non è ancora configurata per i kiosk.",
+      "roleOwner": "Proprietario",
+      "noAddress": "Ancora nessun indirizzo"
+    },
+    "timerPair": {
+      "title": "Abbina un timer degli allenamenti",
+      "subtitle": "Scegli il timer Rogue o Echo accanto a questo pannello.",
+      "scanning": "Ricerca dei timer vicini…",
+      "empty": "Nessun timer trovato. Controlla che il timer sia acceso e nel raggio d'azione.",
+      "permissionDenied": "Consenti i permessi Bluetooth per cercare i timer."
+    },
+    "gymGrant": {
+      "sectionTitle": "Accesso in modifica",
+      "description": "Permetti a climber di fiducia di modificare i dettagli di questa palestra. Non potranno eliminarla né gestire i membri.",
+      "searchLabel": "Cerca climber",
+      "searchPlaceholder": "Cerca per nome",
+      "clearSearch": "Cancella la ricerca",
+      "noResults": "Nessun climber corrisponde a quel nome",
+      "unknownUser": "Climber sconosciuto",
+      "grant": "Concedi",
+      "grantFor": "Concedi l'accesso in modifica a {{name}}",
+      "granted": "Accesso in modifica concesso",
+      "grantFailed": "Impossibile concedere l'accesso. Riprova.",
+      "membersTitle": "Membri attuali",
+      "membersEmpty": "Ancora nessun membro",
+      "revoke": "Revoca",
+      "revokeFor": "Revoca l'accesso in modifica a {{name}}",
+      "revoked": "Accesso in modifica revocato",
+      "revokeFailed": "Impossibile revocare l'accesso. Riprova.",
+      "roles": {
+        "admin": "Admin",
+        "editor": "Editor",
+        "member": "Membro"
+      }
+    },
+    "gymClaim": {
+      "title": "Rivendica {{gym}}",
+      "done": "Fatto",
+      "sectionTitle": "Questa palestra è tua?",
+      "sectionDescription": "Rivendicala per tenere aggiornati la scheda e i pannelli.",
+      "claimAction": "Rivendica questa palestra",
+      "errorGeneric": "Qualcosa è andato storto. Riprova.",
+      "switchToAdmin": "Niente email di lavoro? Chiedi al nostro team di controllare",
+      "switchToDomain": "Verifica invece con un'email di lavoro",
+      "domain": {
+        "description": "Gestisci {{gym}}? Inserisci la tua email del dominio {{domain}} e ti mandiamo un link per confermare.",
+        "emailLabel": "Email di lavoro",
+        "emailPlaceholder": "tu@{{domain}}",
+        "submit": "Invia l'email di verifica",
+        "submitShort": "Invia",
+        "sent": "Controlla la posta di {{email}} e tocca il link per finire."
+      },
+      "admin": {
+        "description": "Dicci che gestisci {{gym}} e il nostro team esaminerà la tua richiesta.",
+        "messageLabel": "Messaggio (facoltativo)",
+        "messagePlaceholder": "Tutto ciò che ci aiuta a verificare che gestisci questa palestra",
+        "submit": "Richiedi una revisione",
+        "submitShort": "Richiedi",
+        "sent": "La tua richiesta è nella coda di revisione. Ti scriviamo appena c'è una decisione."
+      },
+      "approved": {
+        "sent": "Ora puoi gestire {{gym}}.",
+        "manageCta": "Configura la tua palestra",
+        "manageError": "Impossibile aprire la configurazione della palestra. Provaci da un browser."
+      },
+      "protections": {
+        "syncFreeze": "Quando è tua, le tue modifiche restano: la sincronizzazione delle sedi non sovrascrive mai ciò che imposta un proprietario.",
+        "transfer": "Vuoi passare la palestra a qualcun altro più avanti? Scrivi a {{email}} e spostiamo la proprietà."
+      }
+    },
+    "offline": {
+      "available": "Disponibile offline",
+      "pending": "In attesa di scaricare",
+      "finalizing": "Completamento del download…",
+      "bootstrapping": "Download del pannello…",
+      "bootstrapPreparing": "Preparazione del download…",
+      "bootstrapDownloading": "Download: {{done}} di {{total}}",
+      "bootstrapDownloadingUnknown": "Download di {{total}}…",
+      "bootstrapImporting": "Estrazione dei blocchi…",
+      "bootstrapGrades": "Caricamento dei gradi…",
+      "screenAwakeHint": "Lo schermo resta acceso durante il download.",
+      "pill": {
+        "board": "Pannello",
+        "done": "Disponibile offline",
+        "waiting": "In attesa di scaricare…",
+        "failed": "Download non completato",
+        "percent": "{{percent}}%",
+        "more": "+{{count}} altri",
+        "open": "Apri I miei pannelli per {{name}}",
+        "hide": "Nascondi l'avanzamento del download",
+        "rows_one": "{{count}} elemento caricato",
+        "rows_other": "{{count}} elementi caricati"
+      },
+      "snapshotRetrying": "Download veloce interrotto: riproveremo alla prossima sincronizzazione",
+      "snapshotRetryingAria": "Il download offline veloce di {{name}} è stato interrotto. Riproverà alla prossima sincronizzazione.",
+      "pagedFallbackPending": "Download veloce non disponibile: download più lento in attesa",
+      "pagedFallbackPendingAria": "Il download offline veloce di {{name}} non è disponibile. Il download più lento è in attesa.",
+      "pagedFallbackActive": "Download veloce non disponibile: è in corso quello più lento",
+      "pagedFallbackActiveAria": "Il download offline veloce di {{name}} non è disponibile. Il download più lento è in corso.",
+      "downloadingCount_one": "Download di {{count}} blocco",
+      "downloadingCount_other": "Download di {{count}} blocchi",
+      "makeAvailableAria": "Rendi {{name}} disponibile offline",
+      "removeAria": "Rimuovi {{name}} dai pannelli offline",
+      "enableTitle": "Scaricare {{name}}?",
+      "enableMessage": "Scarica tutti i blocchi di questo pannello così puoi sfogliarli e registrare le ripetizioni anche senza segnale.",
+      "enableMessageWithSize": "Circa {{size}}. Scarica tutti i blocchi di questo pannello così puoi sfogliarli e registrare le ripetizioni anche senza segnale.",
+      "enableIndexLine": "Fino a circa {{index}} sul telefono per i blocchi simili.",
+      "enableConfirm": "Scarica",
+      "pickerNotice": "Niente segnale: ecco i pannelli che hai scaricato.",
+      "pickerNoticeUnreachable": "Al momento è impossibile raggiungere i tuoi pannelli: ecco quelli che hai scaricato.",
+      "pickerNoticeOfflineMode": "La modalità offline è attiva. Ecco i pannelli che hai scaricato.",
+      "pickerEmptyTitle": "Ancora niente di scaricato",
+      "pickerEmptyBody": "I pannelli che rendi disponibili offline compaiono qui. Scaricane uno finché hai segnale.",
+      "retryFastDownload": "Riprova il download veloce",
+      "retryFastDownloadAria": "Riprova il download veloce per {{name}}",
+      "retryFastDownloadTitle": "Riprovare il download veloce?",
+      "retryFastDownloadMessage": "Scarica i blocchi di questo pannello in un colpo solo invece che con migliaia di piccole richieste.",
+      "retryFastDownloadMessageWithSize": "Circa {{size}}, scaricati in un colpo solo invece che con migliaia di piccole richieste.",
+      "retryFastDownloadConfirm": "Riprova",
+      "pickerQueuedNotice": "{{name}} è in coda: si scarica appena torni online.",
+      "nudge": {
+        "notNow": "Non ora",
+        "never": "Non mostrare più",
+        "postSession": {
+          "title": "Tieni {{name}} sul telefono",
+          "body": "Scarica una volta tutto il catalogo e ogni blocco sarà lì anche la prossima volta che il wifi della palestra non c'è: sfogliare, filtrare, registrare le ripetizioni, tutto.",
+          "cta": "Scarica questo pannello",
+          "allBoardsCta": "Tieni scaricati tutti i miei pannelli"
+        },
+        "noCatalog": {
+          "title": "Niente segnale, niente catalogo",
+          "body": "{{name}} non è ancora sul tuo telefono, quindi qui non c'è niente da cercare.",
+          "cta": "Scaricalo quando ho segnale",
+          "sprayTitle": "Niente segnale, niente blocchi",
+          "sprayBody": "{{name}} non è ancora sul tuo telefono, quindi i suoi blocchi non si aprono qui.",
+          "armedToast": "{{name}} è in coda: si scarica appena torni online."
+        },
+        "spotlight": {
+          "title": "Arrampica dove il wifi non arriva",
+          "body": "Scarica un pannello una volta e tutto il suo catalogo vive sul tuo telefono: ricerca, filtri e registrazione delle ripetizioni funzionano anche in una palestra in cantina senza tacche di segnale.",
+          "cta": "Scegli un pannello da scaricare"
+        },
+        "similarClimbs": {
+          "title": "I blocchi simili sono sul tuo telefono",
+          "body": "Scarica {{name}} per vedere i blocchi che condividono queste prese",
+          "cta": "Scarica {{name}}"
+        }
+      }
+    },
+    "gymPicker": {
+      "title": "Dov'è questo pannello?",
+      "subtitle": "Scegli la palestra in cui si trova così i climber lo trovano sulla mappa.",
+      "searchPlaceholder": "Cerca palestre",
+      "noGym": "Non in una palestra",
+      "noGymHint": "Comparirà comunque sulla mappa come segnaposto a sé.",
+      "noGymHintOffMap": "Resta fuori dalla mappa finché non è pubblico.",
+      "addNew": "La mia palestra non è in elenco",
+      "empty": "Nessuna palestra vicina",
+      "sharedEditHint": "Lo staff di questa palestra potrà modificare i dettagli di questo pannello.",
+      "linkError": "Impossibile collegare quella palestra. Potrebbe essere troppo lontana dal tuo pannello. Le altre modifiche sono state salvate."
+    },
+    "sprayShare": {
+      "title": "Condividi questa Spraywall",
+      "publicBody": "Questa Spraywall è pubblica: chiunque può aprirla, compare nella pagina della palestra e i suoi blocchi finiscono nel feed.",
+      "unlistedBody": "Solo i climber a cui mandi questo link possono aprire la Spraywall. Non è in elenco da nessuna parte.",
+      "copyLink": "Copia il link",
+      "share": "Condividi",
+      "copied": "Link copiato",
+      "qrLabel": "Codice QR per {{name}}"
+    },
+    "boardShare": {
+      "title": "Condividi questo pannello",
+      "publicBody": "Questo pannello è pubblico: chiunque abbia il link può aprirlo e arrampicarci.",
+      "unlistedBody": "Solo i climber a cui mandi questo link possono aprire il pannello. Non è in elenco da nessuna parte.",
+      "inviteBody": "Chiunque abbia questo link può scegliere Unisciti per ottenere l'accesso al tuo pannello.",
+      "loading": "Preparazione del tuo link",
+      "loadFailed": "Impossibile ottenere il tuo link. Chiudi e riprova.",
+      "resetLink": "Reimposta il link",
+      "resetConfirmTitle": "Reimpostare questo link?",
+      "resetConfirmBody": "Il vecchio link smette di funzionare. Chi è già entrato mantiene l'accesso.",
+      "resetConfirm": "Reimposta",
+      "resetCancel": "Annulla",
+      "resetDone": "Nuovo link pronto. Il vecchio non funziona più.",
+      "resetFailed": "Impossibile reimpostare il link. Riprova."
+    },
+    "wallPoster": {
+      "print": "Stampa un poster",
+      "sprayHint": "Attaccalo vicino alla Spraywall così i climber possono scansionarlo per entrare.",
+      "boardHint": "Attaccalo vicino al pannello così i climber possono scansionarlo per entrare."
+    },
+    "sprayVisibility": {
+      "label": "Chi può vederla",
+      "private": "Privata",
+      "unlisted": "Solo con link",
+      "public": "Pubblica",
+      "privateHint": "La vedi solo tu, più i membri della sua palestra se ne ha una. Con “Aiuta ad addestrare il riconoscimento delle prese” attivo, il team di Boardsesh può usare la foto per migliorare il riconoscimento delle prese.",
+      "unlistedHint": "Entra chiunque abbia il link. La Spraywall non è in elenco nella pagina della palestra e la sua foto resta fuori dal web aperto.",
+      "publicHint": "Chiunque può trovare la Spraywall. Compare nella pagina della palestra, i suoi blocchi finiscono nel feed e la foto della Spraywall va sul web aperto.",
+      "ownerOnlyError": "Solo il climber che ha creato questa Spraywall può cambiare chi la vede. Le altre modifiche sono state salvate.",
+      "updateError": "Impossibile cambiare chi può vedere questa Spraywall. Riprova."
+    },
+    "publicGymWarning": {
+      "message": "La tua palestra {{name}} è pubblica, quindi la sua posizione è visibile a tutti. Se è casa tua, rendi privata la palestra.",
+      "openSettings": "Apri le impostazioni della palestra"
+    },
+    "sprayTraining": {
+      "label": "Aiuta ad addestrare il riconoscimento delle prese",
+      "description": "Usiamo la foto di questa Spraywall e le prese che segni per insegnare all'app a riconoscere le prese. Prima le controlla un admin di Boardsesh. La copia per l'addestramento resta privata.",
+      "updateError": "Impossibile cambiare “Aiuta ad addestrare il riconoscimento delle prese”. Riprova.",
+      "loadError": "Impossibile caricare “Aiuta ad addestrare il riconoscimento delle prese”. Chiudi questa schermata e riaprila."
+    }
+  },
+  "boardEntity": {
+    "notFound": "Pannello non trovato",
+    "chips": {
+      "unlisted": "Non in elenco",
+      "locationHidden": "Posizione nascosta"
+    },
+    "tabs": {
+      "leaderboard": "Classifica",
+      "comments": "Commenti"
+    },
+    "actions": {
+      "addToGym": "Aggiungi a una palestra",
+      "edit": "Modifica",
+      "delete": "Elimina"
+    },
+    "stats": {
+      "ascents": "salite",
+      "climbers": "climber",
+      "followers": "follower",
+      "comments": "commenti"
+    },
+    "delete": {
+      "title": "Elimina pannello",
+      "confirm": "Eliminare \"{{name}}\"? L'operazione non si può annullare.",
+      "cancel": "Annulla",
+      "delete": "Elimina"
+    },
+    "snackbar": {
+      "deleted": "Pannello eliminato",
+      "deleteFailed": "Impossibile eliminare il pannello",
+      "linkedToGym": "Pannello collegato alla palestra",
+      "unlinkedFromGym": "Pannello scollegato dalla palestra",
+      "linkFailed": "Impossibile collegare il pannello alla palestra"
+    },
+    "comments": {
+      "title": "Discussione sul pannello"
+    },
+    "follow": {
+      "entityLabel": "pannello"
+    }
+  },
+  "boardForm": {
+    "create": {
+      "limitReached": "Hai raggiunto il numero massimo di pannelli per un account. Elimina un pannello che non usi più per aggiungerne un altro.",
+      "nameRequired": "Il nome del pannello è obbligatorio"
+    },
+    "fields": {
+      "name": "Nome del pannello",
+      "slug": "Slug dell'URL",
+      "description": "Descrizione",
+      "location": "Nome del luogo",
+      "serialNumber": "Numero di serie del controller",
+      "defaultAngle": "Inclinazione predefinita",
+      "angleAdjustable": "L'inclinazione è regolabile",
+      "hasLeds": "Il pannello ha luci LED",
+      "isPublic": "Pannello pubblico",
+      "unlisted": "Non in elenco",
+      "hideLocation": "Nascondi dai pannelli vicini",
+      "isOwned": "Questo pannello è mio",
+      "layout": "Layout",
+      "size": "Dimensione",
+      "holdSets": "Set di prese"
+    },
+    "placeholders": {
+      "description": "Descrizione facoltativa",
+      "serialNumber": "es. ABC-12345",
+      "select": "Seleziona…"
+    },
+    "helperText": {
+      "unlisted": "Nascosto dai risultati di ricerca ma raggiungibile con il link diretto",
+      "hideLocation": "Nascosto dalle ricerche di pannelli vicini, a meno che tu non segua chi cerca",
+      "hasLeds": "Disattivato significa nessun kit di luci. I turni funzionano comunque e lo schermo della palestra mostra sempre il blocco attivo."
+    },
+    "alerts": {
+      "configEditable": "Puoi cambiare layout, dimensione e set di prese. I blocchi già registrati restano dove sono."
+    },
+    "sections": {
+      "details": "Dettagli del pannello",
+      "location": "Posizione",
+      "setup": "Configurazione",
+      "visibility": "Visibilità"
+    },
+    "edit": {
+      "duplicateTitle": "Hai già questa configurazione",
+      "duplicateBody": "Con questa modifica il pannello diventa uguale a \"{{name}}\": stesso layout, stessa dimensione e stessi set di prese.",
+      "duplicateBodyWithLocation": "Con questa modifica il pannello diventa uguale a \"{{name}}\" a {{location}}: stesso layout, stessa dimensione e stessi set di prese.",
+      "duplicateBodyGeneric": "Questa modifica coincide con una configurazione di pannello che il proprietario ha già.",
+      "saveAnyway": "Salva comunque",
+      "cancel": "Annulla"
+    },
+    "serialReuse": {
+      "warning": "Questo numero di serie appartiene già a \"{{name}}\". Se ti unisci a quel pannello, le ripetizioni e le statistiche di tutti restano su un unico pannello.",
+      "warningPrivate": "Questo numero di serie è già registrato sul pannello privato di un altro climber.",
+      "dialogTitle": "Questo pannello è già su Boardsesh",
+      "dialogBody": "Il numero di serie {{serial}} è registrato su \"{{name}}\". Se crei un duplicato, le tue ripetizioni e le tue session si separano dalla crew che già arrampica lì.",
+      "dialogBodyPrivate": "Il numero di serie {{serial}} è già registrato sul pannello privato di un altro climber. Se è davvero un pannello diverso, puoi comunque creare il tuo.",
+      "useExisting": "Usa il pannello esistente",
+      "createAnyway": "Crea comunque un duplicato"
+    }
+  },
+  "editBoard": {
+    "title": "Modifica pannello",
+    "submitLabel": "Salva le modifiche",
+    "snackbar": {
+      "updated": "Pannello aggiornato!",
+      "updateFailed": "Impossibile aggiornare il pannello"
+    }
+  },
+  "editGym": {
+    "title": "Modifica palestra",
+    "submitLabel": "Salva le modifiche",
+    "snackbar": {
+      "updated": "Palestra aggiornata!",
+      "updateFailed": "Impossibile aggiornare la palestra"
+    }
+  },
+  "mapLocationPicker": {
+    "locationDisplay": "Posizione: {{lat}}, {{lng}}",
+    "setOnMap": "Imposta la posizione sulla mappa",
+    "searchPlaceholder": "Cerca un indirizzo o una città...",
+    "myLocation": "La mia posizione",
+    "helpText": "Clicca sulla mappa per impostare la posizione del tuo pannello, oppure trascina il segnaposto per regolarla"
+  },
+  "boardLeaderboard": {
+    "empty": "Ancora nessuna attività in questo periodo.",
+    "period": {
+      "week": "Settimana",
+      "month": "Mese",
+      "year": "Anno",
+      "all": "Di sempre"
+    },
+    "columns": {
+      "climber": "Climber",
+      "sends": "Ripetizioni",
+      "flashes": "Flash",
+      "hardest": "Più duro"
+    }
+  },
+  "boardPill": {
+    "switchHint": "Apre il selettore dei pannelli"
+  },
+  "gymMemberManagement": {
+    "removeConfirm": "Rimuovere questo membro dalla palestra?",
+    "empty": "Ancora nessun membro",
+    "unknownUser": "Utente sconosciuto",
+    "loadMore": "Carica altri ({{count}} di {{total}})",
+    "snackbar": {
+      "removed": "Membro rimosso",
+      "removeFailed": "Impossibile rimuovere il membro"
+    },
+    "remove": "Rimuovi",
+    "roles": {
+      "admin": "Admin",
+      "editor": "Editor",
+      "member": "Membro"
+    },
+    "roleHelp": {
+      "title": "Cosa può fare ogni ruolo",
+      "admin": "Gli admin gestiscono tutto: pannelli, kiosk, branding e chi fa parte dello staff.",
+      "editor": "Gli editor possono modificare la palestra, i pannelli e i kiosk, ma non eliminarla né gestire lo staff.",
+      "member": "I membri fanno parte della crew e non possono modificare nulla."
+    },
+    "grant": {
+      "button": "Concedi l'accesso in modifica",
+      "revoke": "Revoca l'accesso in modifica",
+      "snackbar": {
+        "granted": "Accesso in modifica concesso",
+        "grantFailed": "Impossibile concedere l'accesso",
+        "revoked": "Accesso in modifica revocato",
+        "revokeFailed": "Impossibile revocare l'accesso"
+      },
+      "dialog": {
+        "title": "Concedi l'accesso in modifica",
+        "description": "Trova un climber per permettergli di modificare i dettagli di questa palestra. Non potrà eliminarla né gestire i membri.",
+        "searchLabel": "Cerca climber",
+        "searchPlaceholder": "Cerca per nome",
+        "change": "Cambia",
+        "cancel": "Annulla",
+        "submit": "Concedi l'accesso"
+      }
+    }
+  },
+  "gymSelector": {
+    "loading": "Caricamento delle palestre...",
+    "linkToGym": "Collega a una palestra",
+    "noGym": "Nessuna palestra",
+    "createNew": "Creane una nuova"
+  },
+  "similarGyms": {
+    "heading": "Sembra che la tua palestra sia già qui",
+    "subtitle": "Rivendica la tua per gestirla, oppure aggiungine una nuova qui sotto.",
+    "distanceMeters": "A {{meters}} m",
+    "distanceKm": "A {{km}} km",
+    "providerBadge": "Da {{provider}}",
+    "viewGym": "Vedi la palestra",
+    "claim": "È la mia palestra: rivendicala",
+    "createAnyway": "Nessuna di queste? Aggiungi la tua palestra con il pulsante qui sotto."
+  },
+  "gymEntity": {
+    "notFound": "Palestra non trovata",
+    "tabs": {
+      "members": "Membri",
+      "comments": "Commenti"
+    },
+    "actions": {
+      "edit": "Modifica",
+      "delete": "Elimina",
+      "claim": "Rivendica"
+    },
+    "stats": {
+      "boards": "pannelli",
+      "members": "membri",
+      "followers": "follower",
+      "comments": "commenti"
+    },
+    "delete": {
+      "title": "Elimina palestra",
+      "confirm": "Eliminare \"{{name}}\"? L'operazione non si può annullare.",
+      "cancel": "Annulla",
+      "delete": "Elimina"
+    },
+    "snackbar": {
+      "deleted": "Palestra eliminata",
+      "deleteFailed": "Impossibile eliminare la palestra"
+    },
+    "comments": {
+      "title": "Discussione sulla palestra"
+    },
+    "follow": {
+      "entityLabel": "palestra"
+    }
+  },
+  "gymForm": {
+    "fields": {
+      "name": "Nome della palestra",
+      "slug": "Slug dell'URL",
+      "description": "Descrizione",
+      "hours": "Orari di apertura",
+      "address": "Indirizzo",
+      "contactEmail": "Email di contatto",
+      "contactPhone": "Telefono di contatto",
+      "isPublic": "Palestra pubblica",
+      "website": "Sito web"
+    },
+    "placeholders": {
+      "name": "es. Boulder World, The Climbing Factory",
+      "description": "Descrizione facoltativa",
+      "hours": "es. Lun-Ven 7-23, Sab-Dom 9-20",
+      "address": "es. Via Roma 123, Città",
+      "contactEmail": "Email di contatto facoltativa",
+      "contactPhone": "Telefono di contatto facoltativo",
+      "website": "es. https://tuapalestra.it"
+    },
+    "actions": {
+      "cancel": "Annulla"
+    },
+    "create": {
+      "title": "Crea palestra",
+      "submit": "Crea palestra",
+      "authRequired": "Devi aver effettuato l'accesso per creare una palestra",
+      "errorMessage": "Impossibile creare la palestra",
+      "nameRequired": "Il nome della palestra è obbligatorio",
+      "createdNamed": "Palestra \"{{name}}\" creata!"
+    },
+    "helpers": {
+      "website": "Serve a verificare la proprietà quando qualcuno rivendica questa palestra",
+      "hours": "Una riga, come preferisci scriverla. La pagina della palestra mostra la data dell'ultima conferma."
+    }
+  },
+  "claimGym": {
+    "title": "Rivendica {{gym}}",
+    "cancel": "Annulla",
+    "done": "Fatto",
+    "switchToAdmin": "Non hai un'email di lavoro? Richiedi una revisione",
+    "switchToDomain": "Verifica invece con un'email di lavoro",
+    "errors": {
+      "generic": "Qualcosa è andato storto. Riprova.",
+      "tokenUnavailable": "Impossibile confermare che hai effettuato l'accesso. Ricarica la pagina e riprova."
+    },
+    "domain": {
+      "description": "Gestisci {{gym}}? Inserisci la tua email del dominio {{domain}} e ti mandiamo un link per confermare.",
+      "emailLabel": "Email di lavoro",
+      "emailPlaceholder": "tu@{{domain}}",
+      "submit": "Invia l'email di verifica",
+      "sent": "Controlla la posta di {{email}} e clicca sul link per finire.",
+      "mismatch": "Quell'email non è del dominio {{domain}}. Usa un indirizzo del dominio del sito della palestra, oppure richiedi una revisione."
+    },
+    "admin": {
+      "description": "Dicci che gestisci {{gym}} e il nostro team esaminerà la tua richiesta.",
+      "messageLabel": "Messaggio (facoltativo)",
+      "messagePlaceholder": "Tutto ciò che ci aiuta a verificare che gestisci questa palestra",
+      "submit": "Richiedi una revisione",
+      "sent": "La tua richiesta è nella coda di revisione. Ti scriviamo appena c'è una decisione."
+    },
+    "approved": {
+      "body": "{{gym}} è tua. Configurala quando vuoi.",
+      "manageCta": "Configura la tua palestra"
+    },
+    "protections": {
+      "syncFreeze": "Quando è tua, le tue modifiche restano: la sincronizzazione delle sedi non sovrascrive mai ciò che imposta un proprietario.",
+      "transfer": "Vuoi passare la palestra a qualcun altro più avanti? Scrivi a {{email}} e spostiamo la proprietà."
+    }
+  },
+  "claimLanding": {
+    "backHome": "Torna a Boardsesh",
+    "success": {
+      "title": "La palestra è tua",
+      "body": "Ora sei tu il proprietario. Tieni aggiornati la scheda e i pannelli, e invita la tua crew a darti una mano.",
+      "setupCta": "Configura la tua palestra"
+    },
+    "error": {
+      "title": "Quel link non ha funzionato",
+      "reasons": {
+        "invalid": "Questo link di rivendicazione non è valido. Ricomincia la richiesta dalla palestra.",
+        "expired": "Questo link è scaduto. Ricomincia la richiesta per averne uno nuovo.",
+        "used": "Questo link è già stato usato.",
+        "superseded": "Questa palestra ora ha un altro proprietario, quindi questo link non può passargliela. Ricomincia la richiesta dalla palestra.",
+        "serverError": "Qualcosa è andato storto da parte nostra. Riprova tra un po'."
+      }
+    }
+  },
+  "reportDuplicate": {
+    "cta": "Segnala un duplicato",
+    "title": "Segnala un duplicato",
+    "description": "{{gym}} compare due volte? Indicaci l'altra scheda e le uniamo.",
+    "searchLabel": "Trova la scheda duplicata",
+    "searchPlaceholder": "Nome della palestra",
+    "noResults": "Ancora nessun risultato. Prova un altro nome.",
+    "noteLabel": "Altro da dirci? (facoltativo)",
+    "notePlaceholder": "Cosa ti fa pensare che sia la stessa palestra",
+    "submit": "Invia la segnalazione",
+    "cancel": "Annulla",
+    "done": "Fatto",
+    "sent": "Grazie, ci diamo un'occhiata e le uniamo.",
+    "alreadyReported": "Hai già segnalato questa coppia. Ce ne stiamo occupando.",
+    "errorGeneric": "Qualcosa è andato storto. Riprova."
+  },
+  "sprayEditor": {
+    "bar": {
+      "holds_one": "{{count}} presa",
+      "holds_other": "{{count}} prese",
+      "maybes_one": "{{count}} dubbia",
+      "maybes_other": "{{count}} dubbie",
+      "withMaybes": "{{holds}} · {{maybes}}",
+      "undo": "Annulla",
+      "redo": "Ripeti",
+      "menuHint": "Apre le opzioni per tutte le tue prese",
+      "saved": "Prese salvate",
+      "addA11y": "Aggiungi le prese mancanti"
+    },
+    "preview": {
+      "open": "Anteprima solo prese",
+      "back": "Torna alla modifica"
+    },
+    "toast": {
+      "deleted": "Presa eliminata",
+      "joined": "2 prese unite",
+      "keptMaybes_one": "{{count}} dubbia mantenuta",
+      "keptMaybes_other": "{{count}} dubbie mantenute",
+      "startedOver": "Si riparte da capo"
+    },
+    "menu": {
+      "keepMaybes": "Mantieni tutte le dubbie",
+      "hideMaybes": "Nascondi le dubbie",
+      "showMaybes": "Mostra le dubbie",
+      "startOver": "Riparti da capo",
+      "close": "Chiudi"
+    },
+    "startOver": {
+      "title": "Ripartire da capo?",
+      "body": "Ogni presa torna com'era quando hai aperto la Spraywall. Puoi annullare.",
+      "confirm": "Riparti da capo",
+      "cancel": "Continua a modificare"
+    },
+    "chips": {
+      "join": "Unisci",
+      "switchOff": "Disattiva",
+      "switchOn": "Attiva",
+      "delete": "Elimina",
+      "keep": "Mantieni",
+      "finish": "Fine",
+      "refine": "Rifinisci"
+    },
+    "modes": {
+      "label": "Modalità di modifica",
+      "select": "Seleziona",
+      "add": "Aggiungi",
+      "trace": "Contorna",
+      "refine": "Rifinisci",
+      "join": "Unisci",
+      "hints": {
+        "select": "Tocca le prese per sceglierle e attivarle o disattivarle",
+        "add": "Disegna attorno alle prese che la scansione ha saltato",
+        "trace": "Ridisegna il contorno di una presa con un unico giro. Vale per la presa scelta o per la prossima che tocchi.",
+        "refine": "Con il pennello ingrandisci o riduci il contorno di una presa. Vale per la presa scelta o per la prossima che tocchi.",
+        "join": "Trasforma due prese in una. Parte dalla presa scelta o dalla prossima che tocchi."
+      }
+    },
+    "banner": {
+      "trace": "Disegna attorno alla presa con un dito",
+      "join": "Tocca la presa da unire a questa",
+      "cancel": "Annulla",
+      "addDraw": "Disegna attorno a una presa mancante, oppure tocca per mettere un cerchio",
+      "addCorners": "Tocca gli angoli di una presa mancante",
+      "done": "Fatto",
+      "tracePencil": "Disegna attorno alla presa con l'Apple Pencil",
+      "refineAdd": "Dipingi per ingrandire la presa. Pizzica per fare zoom.",
+      "refineErase": "Dipingi per ridurre la presa. Pizzica per fare zoom.",
+      "refineAddPencil": "Dipingi con l'Apple Pencil per ingrandire la presa",
+      "refineErasePencil": "Dipingi con l'Apple Pencil per ridurre la presa",
+      "tracePick": "Tocca una presa da contornare",
+      "refinePick": "Tocca una presa da rifinire",
+      "joinPick": "Tocca la prima presa da unire"
+    },
+    "addShape": {
+      "label": "Come contornare una presa",
+      "draw": "Disegna",
+      "corners": "Angoli"
+    },
+    "resize": {
+      "bigger": "+{{percent}}%",
+      "smaller": "−{{percent}}%",
+      "original": "Originale",
+      "typical": "Tipica"
+    },
+    "hints": {
+      "tap": "Tocca un cerchio per sceglierlo. Toccalo di nuovo per disattivarlo.",
+      "maybe": "I cerchi tratteggiati sono dubbi. Tocca un cerchio, poi tocca Mantieni.",
+      "longPress": "Tieni premuto un cerchio, poi scorri per spostarlo.",
+      "addHold": "Tieni premuto per aggiungere una presa.",
+      "dismiss": "Nascondi il suggerimento",
+      "replay": "Mostra i suggerimenti",
+      "pencil": "L'Apple Pencil aggiunge e attiva le prese. Le dita si muovono sulla foto e scelgono una presa."
+    },
+    "a11y": {
+      "wall": "La foto della tua Spraywall: {{summary}}",
+      "holdValue": "Presa {{position}} di {{total}}, {{role}}",
+      "noHold": "Nessuna presa scelta",
+      "hint": "Scorri su o giù per spostarti tra le prese. Tocca due volte per attivarne o disattivarne una.",
+      "joinHint": "Scorri su o giù fino alla presa da unire, poi tocca due volte.",
+      "role": {
+        "on": "attiva",
+        "maybe": "dubbia",
+        "off": "disattivata"
+      },
+      "actions": {
+        "smaller": "Riduci",
+        "bigger": "Ingrandisci",
+        "delete": "Elimina",
+        "addHold": "Aggiungi una presa al centro della vista"
+      },
+      "revealed": "Prese trovate: {{summary}}",
+      "pickHint": "Scorri su o giù fino a una presa, poi tocca due volte per sceglierla."
+    },
+    "readOnly": "Questa Spraywall non è tua, quindi non puoi modificarla.",
+    "errors": {
+      "tooManyHolds": "Hai raggiunto il limite di {{max}} prese. Disattivane qualcuna per aggiungerne altre.",
+      "saveFailed": "Impossibile salvare le tue prese. Riprova.",
+      "strokeNotClosed": "Quel giro ha mancato la presa. Disegna tutto attorno.",
+      "strokeTooBig": "Quel giro è molto più grande di una presa. Ingrandisci e contorna la presa stessa.",
+      "strokeTooDetailed": "Quel tratto ha troppi dettagli per essere salvato. Contorna il bordo in un solo passaggio.",
+      "strokeTooShort": "Quel tratto è troppo corto. Disegna un giro completo attorno alla presa.",
+      "someHoldsOffWall_one": "{{count}} presa finisce fuori dalla Spraywall. Riportala sulla foto oppure disattivala.",
+      "someHoldsOffWall_other": "{{count}} prese finiscono fuori dalla Spraywall. Riportale sulla foto oppure disattivale.",
+      "cornersCross": "Due lati si incrociano. Tocca gli angoli in ordine attorno alla presa.",
+      "cornersTooFew": "Quegli angoli sono troppo vicini o allineati. Toccane almeno 3 attorno alla presa.",
+      "cornersHollow": "Quella forma è troppo cava. Tocca gli angoli attorno all'esterno della presa.",
+      "refineNothingLeft": "Così cancelleresti tutta la presa. Disattivala piuttosto.",
+      "refineTooDetailed": "Resterebbe un bordo troppo frastagliato da salvare. Prova un pennello più grande.",
+      "refineCantStore": "Quel tratto lascerebbe una forma che non si può salvare come una sola presa, quindi non è stato mantenuto.",
+      "needsOnHold": "Prima attiva la presa"
+    },
+    "empty": {
+      "noPhoto": "Questa Spraywall non ha ancora una foto da modificare."
+    },
+    "loading": "Caricamento della tua Spraywall…",
+    "loadStalled": "Impossibile caricare la tua Spraywall. Riprova.",
+    "rail": {
+      "label": "Strumenti di modifica",
+      "grip": "Sposta gli strumenti sull'altro lato",
+      "mark": "Scegli e attiva le prese",
+      "pencilOnly": "Solo Pencil",
+      "pencilOnlyHint": "Le dita scelgono le prese e si muovono sulla foto. Solo l'Apple Pencil modifica la Spraywall.",
+      "fit": "Adatta la Spraywall allo schermo",
+      "more": "Altre opzioni"
+    },
+    "inspector": {
+      "role": {
+        "on": "Attiva",
+        "off": "Disattivata",
+        "maybe": "Dubbia"
+      },
+      "source": {
+        "scan": "Trovata dalla scansione",
+        "scanConfidence": "Trovata dalla scansione · {{percent}}%",
+        "manual": "Aggiunta da te"
+      },
+      "size": "Dimensione",
+      "redraw": "Ridisegna",
+      "previous": "Presa precedente",
+      "next": "Presa successiva"
+    },
+    "shortcuts": {
+      "delete": "Disattiva o elimina la presa"
+    },
+    "palette": {
+      "label": "Strumenti Pencil",
+      "close": "Chiudi gli strumenti Pencil",
+      "draw": "Aggiungi una presa disegnandoci attorno",
+      "corners": "Aggiungi una presa toccandone gli angoli"
+    },
+    "refine": {
+      "mode": "Pennello",
+      "add": "Aggiungi",
+      "erase": "Cancella",
+      "size": "Dimensione del pennello",
+      "sizeValue": "Dimensione {{step}} di {{total}}",
+      "dropped_one": "Mantenuta la parte principale. {{count}} frammento isolato è stato scartato.",
+      "dropped_other": "Mantenuta la parte principale. {{count}} frammenti isolati sono stati scartati.",
+      "atLimit": "Più di così questa presa non può crescere. Con Contorna la ridisegni più grande."
+    }
+  },
+  "sprayWizard": {
+    "screenTitle": "Aggiungi una Spraywall",
+    "stepCounter": "Passo {{current}} di {{total}}",
+    "back": "Indietro",
+    "next": "Avanti",
+    "notSaved": "Non salvata",
+    "photo": {
+      "helpLink": "Come scattarla",
+      "helpLinkHint": "Apre la guida alle foto nel browser",
+      "adjust": "Ritaglia o ruota",
+      "cameraDenied": "Boardsesh ha bisogno della fotocamera per fotografare una Spraywall.",
+      "failed": "Impossibile aprire quella foto. Provane un'altra.",
+      "tip": "Allontanati, mettiti di fronte alla Spraywall e inquadra tutti e quattro gli angoli.",
+      "heroTitle": "Fai una foto della tua Spraywall",
+      "heroBody": "Tocca per aprire la fotocamera",
+      "heroTitleLibrary": "Scegli una foto della tua Spraywall",
+      "heroBodyLibrary": "Tocca per aprire le tue foto",
+      "fromLibrary": "Scegli tra le tue foto",
+      "retake": "Rifai la foto",
+      "change": "Cambia foto",
+      "tileLabel": "La foto della tua Spraywall",
+      "howItWorks": {
+        "snap": "Fotografa la Spraywall",
+        "holds": "Segna le prese",
+        "name": "Dalle un nome",
+        "step": "{{number}}. {{label}}"
+      }
+    },
+    "adjust": {
+      "title": "Ritaglia e ruota",
+      "body": "Ritaglia fino ai bordi della Spraywall. Ruotala se è venuta di traverso.",
+      "hint": "Trascina un bordo o un angolo. Trascina dentro il riquadro per spostarlo.",
+      "small": "Questa foto è piccola. Le prese potrebbero sembrare sfocate se ingrandisci.",
+      "failed": "Impossibile ritagliare quella foto. Riprova, oppure annulla per lasciarla com'era.",
+      "rotate": "Ruota",
+      "rotateLabel": "Ruota di un quarto di giro in senso orario",
+      "done": "Fatto",
+      "reset": "Reimposta",
+      "handleTopLeft": "Angolo in alto a sinistra del ritaglio",
+      "handleTop": "Bordo superiore del ritaglio",
+      "handleTopRight": "Angolo in alto a destra del ritaglio",
+      "handleRight": "Bordo destro del ritaglio",
+      "handleBottomRight": "Angolo in basso a destra del ritaglio",
+      "handleBottom": "Bordo inferiore del ritaglio",
+      "handleBottomLeft": "Angolo in basso a sinistra del ritaglio",
+      "handleLeft": "Bordo sinistro del ritaglio",
+      "handleMove": "Area di ritaglio"
+    },
+    "anchors": {
+      "title": "Segna gli angoli",
+      "body": "Trascina i cerchi sugli angoli della Spraywall. Così la foto viene raddrizzata e si sbloccano gli aspetti Solo la Spraywall e Solo le prese. Puoi saltare questo passo.",
+      "hint": "In alto a sinistra, in alto a destra, in basso a destra, in basso a sinistra.",
+      "crossed": "Quegli angoli si incrociano. Mettili attorno alla Spraywall in ordine.",
+      "cornerTopLeft": "Angolo in alto a sinistra",
+      "cornerTopRight": "Angolo in alto a destra",
+      "cornerBottomRight": "Angolo in basso a destra",
+      "cornerBottomLeft": "Angolo in basso a sinistra",
+      "clear": "Reimposta gli angoli",
+      "quality": {
+        "good": "Bella dritta. La Spraywall si raddrizzerà bene.",
+        "soft": "Un po' inclinata. Rifai la foto frontale per un risultato più nitido.",
+        "fail": "Troppo inclinata per essere raddrizzata. La foto funziona comunque, oppure rifalla di fronte alla Spraywall.",
+        "small": "Questa foto è troppo piccola per essere raddrizzata. La foto funziona comunque così com'è."
+      }
+    },
+    "upload": {
+      "title": "Caricamento della foto",
+      "working": "Caricamento della foto…",
+      "percent": "Caricato il {{percent}}%",
+      "failed": "La foto non è stata caricata.",
+      "retry": "Riprova",
+      "offlineMode": "La modalità offline è attiva, quindi la foto non può essere caricata. Disattivala e riprova.",
+      "noSignal": "Niente segnale, quindi la foto non è stata caricata. Riprova quando sei di nuovo online.",
+      "serverUnreachable": "Boardsesh al momento non è raggiungibile. La tua foto è ancora qui, quindi riprova tra un minuto.",
+      "checkFailed": "Impossibile capire se la foto è stata caricata. Riprova quando hai segnale.",
+      "resumeHint": "Puoi uscire e riprendere più tardi."
+    },
+    "detect": {
+      "title": "Ricerca delle prese"
+    },
+    "scan": {
+      "queued": "Ti mettiamo in coda…",
+      "running": "Ricerca delle prese…",
+      "slow": "Le Spraywall piene di prese richiedono un po' più di tempo",
+      "resumeHint": "Puoi uscire e riprendere più tardi."
+    },
+    "review": {
+      "nothingFound": "Nessuna presa individuata. Tocca la Spraywall per aggiungerle.",
+      "detectionFailed": "Stavolta non è stato possibile individuare le prese. Tocca la Spraywall per aggiungerle.",
+      "manualOnly": "Tocca la Spraywall per aggiungere le tue prese.",
+      "retry": "Riprova"
+    },
+    "look": {
+      "title": "Come devono illuminarsi le prese?",
+      "body": "Scorri per provare un aspetto. I climber vedranno la tua Spraywall così.",
+      "loading": "Caricamento della tua Spraywall…",
+      "unavailable": "La foto della tua Spraywall non può essere mostrata qui, ma puoi comunque scegliere un aspetto.",
+      "saving": "Salvataggio del tuo aspetto…",
+      "failed": "Impossibile salvare l'aspetto. Riprova, oppure vai avanti senza.",
+      "publishWithout": "Pubblica comunque",
+      "continueWithout": "Vai avanti comunque",
+      "dimTitle": "Oscura il resto della Spraywall",
+      "dimOff": "Disattivato",
+      "previewPhoto": "L'illuminazione delle prese è mostrata sulla tua foto originale. Quando pubblichi viene usato {{background}}.",
+      "failedPublish": "Impossibile salvare l'aspetto. Riprova, oppure pubblica senza."
+    },
+    "details": {
+      "title": "Dai un nome alla tua Spraywall",
+      "namePlaceholder": "La mia Spraywall",
+      "defaultName": "La Spraywall di {{name}}",
+      "angle": "Inclinazione",
+      "angleValue": "{{angle}}°",
+      "angleHint": "Non si può più cambiare dopo la pubblicazione.",
+      "save": "Salva",
+      "saving": "Salvataggio della tua Spraywall…",
+      "saveFailed": "Impossibile salvare i dettagli della tua Spraywall. Riprova.",
+      "name": "Nome",
+      "renameTitle": "Rinomina la tua Spraywall",
+      "renameDone": "Fatto",
+      "renameHint": "Apre un riquadro per scrivere un nuovo nome"
+    },
+    "publish": {
+      "title": "La aggiungiamo ai tuoi pannelli",
+      "working": "Pubblicazione della tua Spraywall…",
+      "failed": "Impossibile pubblicare la Spraywall.",
+      "stalled": "La tua Spraywall è salvata, ma la configurazione ha richiesto troppo tempo. Riprova.",
+      "retry": "Riprova"
+    },
+    "done": {
+      "body": "Configurazione della tua Spraywall…",
+      "leave": "Torna ad arrampicare"
+    },
+    "leave": {
+      "title": "Lasciare questa Spraywall per ora?",
+      "body": "La tua Spraywall e la sua foto sono salvate. Riprendi da dove avevi lasciato.",
+      "stay": "Continua",
+      "go": "Esci",
+      "unsavedTitle": "Uscire senza pubblicare?",
+      "unsavedBody": "Le modifiche alle prese andranno perse. La Spraywall e la sua foto restano salvate.",
+      "discard": "Esci comunque"
+    },
+    "resume": {
+      "checking": "Ricerca di una Spraywall che avevi iniziato…",
+      "title": "Hai una Spraywall in sospeso",
+      "body": "“{{name}}” non è finita. Riprendi da dove avevi lasciato, oppure ricomincia.",
+      "pickUp": "Riprendi da dove avevi lasciato",
+      "startOver": "Ricomincia",
+      "checkFailed": "Impossibile controllare quella Spraywall. Riprova.",
+      "retry": "Riprova"
+    },
+    "reset": {
+      "screenTitle": "Reimposta questa Spraywall",
+      "starting": "Preparazione della tua nuova Spraywall…",
+      "startFailed": "Impossibile avviare la reimpostazione. Riprova.",
+      "resumeTitle": "Hai una reimpostazione in corso",
+      "resumeBody": "La nuova foto di “{{name}}” non è finita. Riprendi da dove avevi lasciato, oppure ricomincia. La Spraywall resta online finché non va online quella nuova.",
+      "archiveNotice": "Quando questa Spraywall va online, la vecchia viene archiviata. I suoi blocchi e le sue ripetizioni restano.",
+      "heroTitle": "Fai una nuova foto della Spraywall",
+      "heroTitleLibrary": "Scegli una nuova foto della Spraywall",
+      "photoNote": "Stesso nome e stessa inclinazione di prima."
+    },
+    "background": {
+      "title": "Cosa deve mostrare la Spraywall?",
+      "body": "Scorri per confrontare la foto, solo la Spraywall o solo le prese.",
+      "unsupported": "Per ora è disponibile solo la foto. Puoi comunque finire la tua Spraywall."
+    }
+  },
+  "sprayResetConfirm": {
+    "title": "Reimpostare questa Spraywall?",
+    "body": "Fai una nuova foto e segna le prese da zero. Quando la nuova Spraywall va online, questa viene archiviata. I suoi blocchi e le sue ripetizioni restano nei diari e nelle playlist, ma nessuno potrà più tracciare su di essa.",
+    "start": "Avvia la reimpostazione",
+    "cancel": "Non ora"
+  },
+  "sprayArchive": {
+    "banner": "Archiviata il {{date}}. I blocchi e le ripetizioni restano, ma qui non si può tracciare più nulla.",
+    "bannerUndated": "Archiviata. I blocchi e le ripetizioni restano, ma qui non si può tracciare più nulla.",
+    "switchToNew": "Passa alla nuova Spraywall",
+    "openFailed": "Impossibile aprire quella Spraywall. Riprova.",
+    "manageHeader": "Archiviate",
+    "manageRow": "Archiviata il {{date}}",
+    "manageRowUndated": "Archiviata",
+    "deleteMessage": "Eliminare “{{name}}”? La sua foto sparisce. I suoi blocchi, e ogni ripetizione registrata su di essi, escono da diari e playlist. L'operazione non si può annullare."
+  },
+  "sprayWallErrors": {
+    "archived": "Questa Spraywall è archiviata. I suoi blocchi e le sue ripetizioni restano, ma non si può tracciare più nulla.",
+    "resetRetired": "Ora le Spraywall si cambiano reimpostandole. Aggiorna l'app, poi reimposta la Spraywall.",
+    "resetOwnerOnly": "Solo il proprietario della Spraywall può reimpostarla.",
+    "resetSourceUnpublished": "Finisci di configurare questa Spraywall prima di reimpostarla.",
+    "archiveLimitReached": "Puoi tenere {{max}} Spraywall archiviate. Eliminane una in Archiviate per reimpostare questa Spraywall."
+  },
+  "sprayMaintenance": {
+    "screenTitle": "Modifica le prese",
+    "preparing": "Apertura della tua Spraywall…",
+    "unavailable": "Non puoi modificare questa Spraywall.",
+    "nothingPublished": "Finisci di configurare questa Spraywall prima di modificarne le prese.",
+    "draftUnavailable": "Questa bozza è cambiata. Riapri la Spraywall per modificarne le prese.",
+    "loadFailed": "Impossibile aprire l'editor delle prese. Riprova.",
+    "publish": "Pubblica le prese",
+    "publishing": "Pubblicazione delle tue prese…",
+    "publishFailed": "Le modifiche alle prese sono salvate. Prova a pubblicare di nuovo.",
+    "refreshing": "Caricamento della Spraywall aggiornata…",
+    "refreshFailed": "Le tue prese sono pubblicate. Prova a ricaricare la Spraywall.",
+    "retry": "Riprova",
+    "temporarilyUnavailable": "La modifica delle prese al momento non è disponibile. Riprova più tardi.",
+    "leave": {
+      "title": "Scartare le modifiche alle prese non salvate?",
+      "body": "Le modifiche non salvate andranno perse. La bozza salvata resta disponibile.",
+      "stay": "Continua a modificare",
+      "discard": "Scarta le modifiche"
+    },
+    "leftoverPhoto": "Questa Spraywall ha una nuova foto non finita, rimasta da una versione precedente dell'app. Scartala per modificare le prese.",
+    "discardLeftover": "Scarta la foto non finita",
+    "discardLeftoverFailed": "Impossibile rimuovere quella foto. Riprova."
+  },
+  "sprayHoldUsage": {
+    "title": "Rimuovere una presa usata da dei blocchi?",
+    "body_one": "{{count}} blocco pubblicato usa queste prese. Verrà segnato come privo di una presa finché qualcuno non lo remixa.",
+    "body_other": "{{count}} blocchi pubblicati usano queste prese. Verranno segnati come privi di una presa finché qualcuno non li remixa.",
+    "bodyUnknown": "Alcuni blocchi potrebbero usare queste prese. Verranno segnati come privi di una presa finché qualcuno non li remixa.",
+    "removeAnyway": "Rimuovi comunque",
+    "keep": "Tieni le prese"
+  },
+  "sprayCaps": {
+    "holds": "Una Spraywall può avere fino a {{max}} prese. Togline qualcuna e salva di nuovo.",
+    "versions": "Una Spraywall tiene fino a {{max}} versioni delle sue prese, una per ogni modifica pubblicata, e questa le ha esaurite. Reimposta la Spraywall per ripartire da zero.",
+    "walls": "Puoi tenere {{max}} Spraywall. Eliminane una per fare spazio.",
+    "wallsHint": "Puoi tenere fino a {{max}} Spraywall."
+  },
+  "sprayHidden": {
+    "body": "Qualcuno l'ha segnalata e l'abbiamo tolta dalla vista degli altri. Per te è ancora qui e non è stato eliminato nulla.",
+    "title": "Questa Spraywall è nascosta"
+  },
+  "sprayModeration": {
+    "reportTitle": "Segnala la Spraywall",
+    "reportHint": "Segnala questa Spraywall agli admin per una revisione",
+    "submit": "Invia",
+    "reported": "Grazie. La tua segnalazione è nella coda di revisione.",
+    "reportOffline": "Connettiti a internet per inviare la segnalazione.",
+    "reportError": "La segnalazione non è andata a buon fine. Riprova.",
+    "queueTitle": "Segnalazioni delle Spraywall",
+    "hide": "Nascondi la Spraywall",
+    "unhide": "Mostra di nuovo la Spraywall",
+    "keepVisible": "Lascia visibile",
+    "hidden": "Nascosta",
+    "photoLabel": "Foto di {{wall}}",
+    "noPhoto": "Nessuna foto disponibile",
+    "review": "Rivedi la Spraywall",
+    "reviewError": "La decisione non è stata salvata. Riprova.",
+    "unavailable": "La moderazione delle Spraywall al momento non è disponibile per questo account.",
+    "loadError": "Impossibile caricare le segnalazioni delle Spraywall.",
+    "empty": "Nessuna Spraywall in attesa di revisione.",
+    "reasons": {
+      "inappropriate": "Foto o nome inappropriati",
+      "notAWall": "Non è una parete di arrampicata",
+      "personalInfo": "Dati personali nella foto",
+      "other": "Altro"
+    },
+    "reportCount_one": "{{count}} segnalazione",
+    "reportCount_other": "{{count}} segnalazioni"
+  },
+  "sprayBackground": {
+    "label": "Sfondo della Spraywall",
+    "photo": "Foto",
+    "wallCrop": "Solo la Spraywall",
+    "holdCutouts": "Solo le prese",
+    "retake": "Reimposta la Spraywall con una nuova foto",
+    "previewLabel": "Anteprima di {{look}}",
+    "saveFailed": "Impossibile salvare lo sfondo. Riprova.",
+    "notAvailable": "Questa foto è troppo inclinata per questo aspetto. Rifalla di fronte alla Spraywall.",
+    "note": {
+      "lockedNoPins": "Fissa i 4 angoli per sbloccarlo.",
+      "lockedRetake": "Reimposta la Spraywall con una foto frontale per sbloccarlo.",
+      "generating": "Generazione…",
+      "failed": "Questo aspetto non è stato creato. Salvalo di nuovo per riprovare.",
+      "preview": "Così apparirà la tua Spraywall. La tua foto resta visibile per circa un minuto dopo la pubblicazione.",
+      "soft": "Rifai la foto frontale per un risultato più nitido.",
+      "volumes": "I volumi non sono ancora ritagliati."
+    },
+    "notAvailableNoPins": "Fissa prima i 4 angoli della Spraywall per usare questo aspetto.",
+    "notAvailableSmall": "Questa foto è troppo piccola per essere raddrizzata. Rifalla con la fotocamera principale del telefono a 1x.",
+    "usePhoto": "Usa la foto"
+  },
+  "sprayImport": {
+    "draft": "Bozza",
+    "queued": "Importazione · In coda",
+    "queuePosition": "Importazione · n. {{position}} in coda",
+    "running": "Importazione in corso",
+    "ready": "Pronta da controllare",
+    "failed": "Importazione non riuscita",
+    "retrying": "Importazione · In attesa di riprovare",
+    "offline": "Importazione · Connettiti per controllare lo stato",
+    "open": "Controlla l'importazione",
+    "review": "Rivedi le prese",
+    "unavailable": "Questa importazione non c'è più. La sua foto è stata sostituita o scartata, oppure non puoi più modificare questa Spraywall."
+  },
+  "boardShareLink": {
+    "metadataTitle": "Hai un invito per un pannello | Boardsesh",
+    "heading": "Hai un invito per arrampicare su {{name}}",
+    "body": "Accedi, poi scegli Unisciti per entrare. Nessuna approvazione necessaria.",
+    "signIn": "Accedi per unirti",
+    "joinHeading": "Vuoi unirti a {{name}}?",
+    "joinBody": "Unendoti avrai accesso a questo pannello. Il proprietario può vedere il tuo nome nell'elenco dei membri.",
+    "join": "Unisciti",
+    "cancel": "Annulla",
+    "joinFailed": "Impossibile unirti a questo pannello. Riprova, oppure chiedi un nuovo link al proprietario."
+  }
+}

@@ -1,0 +1,168 @@
+{
+  "metadata": {
+    "all": {
+      "title": "Palestre di arrampicata con pannelli da allenamento",
+      "description": "Sfoglia le palestre di arrampicata con un Kilter Board, una MoonBoard o un Tension Board in parete, con l'inclinazione di ogni pannello."
+    },
+    "kilter": {
+      "title": "Palestre con un Kilter Board",
+      "description": "Cerchi un Kilter Board vicino a te? Sfoglia le palestre di arrampicata con un Kilter Board in parete e l'inclinazione di ciascuno."
+    },
+    "moonboard": {
+      "title": "Palestre con una MoonBoard",
+      "description": "Cerchi una MoonBoard vicino a te? Sfoglia le palestre di arrampicata con una MoonBoard in parete e l'inclinazione di ciascuna."
+    },
+    "tension": {
+      "title": "Palestre con un Tension Board",
+      "description": "Cerchi un Tension Board vicino a te? Sfoglia le palestre di arrampicata con un Tension Board in parete e l'inclinazione di ciascuno."
+    }
+  },
+  "breadcrumb": {
+    "home": "Boardsesh",
+    "gyms": "Palestre"
+  },
+  "directory": {
+    "all": {
+      "h1": "Palestre di arrampicata con pannelli da allenamento",
+      "lead_one": "{{formattedCount}} palestra ha un pannello su Boardsesh. La scheda mostra i pannelli in parete e l'inclinazione a cui sono impostati, così sai cosa ti aspetta prima di attraversare la città.",
+      "lead_other": "{{formattedCount}} palestre hanno un pannello su Boardsesh. Ogni scheda mostra i pannelli in parete e l'inclinazione a cui sono impostati, così sai cosa ti aspetta prima di attraversare la città.",
+      "detail": "{{kilterCount}} hanno un Kilter Board, {{moonboardCount}} una MoonBoard e {{tensionCount}} un Tension Board, e molte ne hanno più di uno. Scegli un pannello qui sotto, o cerca per nome."
+    },
+    "kilter": {
+      "h1": "Palestre con un Kilter Board",
+      "lead_one": "{{formattedCount}} palestra su Boardsesh ha un Kilter Board in parete. La scheda mostra l'inclinazione a cui è impostato, così capisci se va bene per il progetto a cui stai lavorando.",
+      "lead_other": "{{formattedCount}} palestre su Boardsesh hanno un Kilter Board in parete. Ogni scheda mostra l'inclinazione a cui è impostato, così capisci quale va bene per il progetto a cui stai lavorando.",
+      "detail": "Sono i climber stessi a elencare queste palestre, e Boardsesh non è affiliato a chi produce i pannelli. Gestisci una di queste palestre? Rivendica la scheda e tieni i dettagli in ordine."
+    },
+    "moonboard": {
+      "h1": "Palestre con una MoonBoard",
+      "lead_one": "{{formattedCount}} palestra su Boardsesh ha una MoonBoard in parete. La scheda mostra l'inclinazione a cui è impostata, così capisci se va bene per il progetto a cui stai lavorando.",
+      "lead_other": "{{formattedCount}} palestre su Boardsesh hanno una MoonBoard in parete. Ogni scheda mostra l'inclinazione a cui è impostata, così capisci quale va bene per il progetto a cui stai lavorando.",
+      "detail": "Sono i climber stessi a elencare queste palestre, e Boardsesh non è affiliato a chi produce i pannelli. Gestisci una di queste palestre? Rivendica la scheda e tieni i dettagli in ordine."
+    },
+    "tension": {
+      "h1": "Palestre con un Tension Board",
+      "lead_one": "{{formattedCount}} palestra su Boardsesh ha un Tension Board in parete. La scheda mostra l'inclinazione a cui è impostato, così capisci se va bene per il progetto a cui stai lavorando.",
+      "lead_other": "{{formattedCount}} palestre su Boardsesh hanno un Tension Board in parete. Ogni scheda mostra l'inclinazione a cui è impostato, così capisci quale va bene per il progetto a cui stai lavorando.",
+      "detail": "Sono i climber stessi a elencare queste palestre, e Boardsesh non è affiliato a chi produce i pannelli. Gestisci una di queste palestre? Rivendica la scheda e tieni i dettagli in ordine."
+    }
+  },
+  "facets": {
+    "heading": "Sfoglia per pannello",
+    "all": "Tutte le palestre · {{formattedCount}}",
+    "kilter": "Kilter · {{formattedCount}}",
+    "moonboard": "MoonBoard · {{formattedCount}}",
+    "tension": "Tension · {{formattedCount}}",
+    "countHint": "I numeri contano le palestre, non i pannelli: una palestra con tre Kilter Board conta una volta sola."
+  },
+  "filters": {
+    "boardHeading": "Pannello",
+    "moreLabel": "Restringi la ricerca",
+    "moreLabelActive": "Restringi la ricerca · {{count}}",
+    "layoutHeading": "Layout",
+    "layoutLocked": "Scegli un pannello qui sopra e compaiono i suoi layout.",
+    "sizeHeading": "Dimensione",
+    "sizeLocked": "Scegli un layout e compaiono le dimensioni.",
+    "angleHeading": "Inclinazione",
+    "angleLocked": "Scegli un pannello qui sopra e compaiono le sue inclinazioni.",
+    "angleOption": "{{angle}}°",
+    "angleHint": "L'inclinazione registrata per ogni palestra. La maggior parte dei pannelli si regola, quindi leggila come l'ultima impostazione nota.",
+    "multiBoardLabel": "Solo palestre con due o più pannelli diversi",
+    "submit": "Mostra palestre",
+    "activeHeading": "Filtri attivi",
+    "clearAll": "Cancella tutti i filtri"
+  },
+  "search": {
+    "geoHint": "Posizione disattivata? Scrivi una città. Non serve nessun permesso.",
+    "label": "Cerca palestre",
+    "placeholder": "Nome della palestra o città",
+    "submit": "Cerca"
+  },
+  "results": {
+    "heading_one": "{{formattedCount}} palestra",
+    "heading_other": "{{formattedCount}} palestre",
+    "emptyTitle": "Ancora nessun risultato",
+    "emptyBody": "Prova una ricerca più corta, o togli il filtro del pannello e sfoglia tutte le palestre.",
+    "emptyClearSearch": "Cancella la ricerca",
+    "emptyBrowseAll": "Sfoglia tutte le palestre"
+  },
+  "error": {
+    "title": "Al momento l'elenco delle palestre non è raggiungibile",
+    "body": "Qualcosa non va da parte nostra. Aspetta un minuto e ricarica, oppure vai alla pagina di una palestra che già conosci.",
+    "retry": "Ricarica l'elenco",
+    "home": "Torna a Boardsesh"
+  },
+  "card": {
+    "claimed": "Rivendicata",
+    "unclaimed": "Non rivendicata",
+    "boardChip": "{{board}} {{angle}}°",
+    "distance": "a {{distance}} km"
+  },
+  "claim": {
+    "body": "È la tua palestra? Rivendicala e decidi tu i pannelli, gli orari e i link che i climber vedono qui.",
+    "action": "Trova la tua palestra"
+  },
+  "nearMe": {
+    "cta": "Usa la mia posizione",
+    "locating": "Rilevamento della posizione…",
+    "showAll": "Mostra tutte le palestre",
+    "radiusLabel": "Entro",
+    "radius": {
+      "10": "10 km",
+      "25": "25 km",
+      "50": "50 km",
+      "100": "100 km"
+    },
+    "loading": "Cerchiamo palestre vicino a te…",
+    "error": "Impossibile eseguire la ricerca. Aspetta un attimo e riprova.",
+    "empty": "Nessuna palestra con un segnaposto sulla mappa in quel raggio. Allargalo, o cerca per città.",
+    "resultsHeading_one": "{{formattedCount}} palestra entro {{radius}} km",
+    "resultsHeading_other": "{{formattedCount}} palestre entro {{radius}} km",
+    "resultsHeadingCapped_one": "La più vicina tra {{formattedCount}} palestra entro {{radius}} km",
+    "resultsHeadingCapped_other": "Le {{shown}} più vicine tra {{formattedCount}} palestre entro {{radius}} km",
+    "pinlessNotice": "Vicino a me mostra solo le palestre con un segnaposto sulla mappa, e circa un terzo non ce l'ha. Mostra tutte le palestre per riavere l'elenco completo.",
+    "deniedBody": "Il tuo browser tiene la tua posizione per sé. Scrivi una città nella casella di ricerca: funziona ovunque.",
+    "unsupportedBody": "Questo browser non gestisce la posizione. Scrivi una città nella casella di ricerca: funziona ovunque.",
+    "unavailableBody": "Impossibile capire dove sei. Riprova, o scrivi una città nella casella di ricerca."
+  },
+  "map": {
+    "showMap": "Mostra mappa",
+    "hideMap": "Nascondi mappa",
+    "regionLabel": "Mappa delle palestre in questo elenco",
+    "pinnedPill_one": "{{pinned}} palestra su {{total}} ha un segnaposto sulla mappa",
+    "pinnedPill_other": "{{pinned}} palestre su {{total}} hanno un segnaposto sulla mappa",
+    "clusterLabel_one": "{{count}} palestra",
+    "clusterLabel_other": "{{count}} palestre"
+  },
+  "pagination": {
+    "label": "Pagine dell'elenco",
+    "previous": "Precedente",
+    "next": "Successiva",
+    "page": "Pagina {{page}}",
+    "current": "Pagina {{page}}, pagina corrente"
+  },
+  "links": {
+    "heading": "Altri modi per sfogliare",
+    "all": "Tutte le palestre su Boardsesh",
+    "kilter": "Palestre con un Kilter Board",
+    "moonboard": "Palestre con una MoonBoard",
+    "tension": "Palestre con un Tension Board"
+  },
+  "places": {
+    "loading": "Cerchiamo le città…",
+    "clear": "Cancella luogo",
+    "open": "Mostra luoghi",
+    "close": "Nascondi luoghi",
+    "hint": "Scegli una città suggerita, o cerca una palestra per nome.",
+    "empty": "Nessuna città trovata. Puoi comunque cercare una palestra per nome.",
+    "error": "I suggerimenti di città non sono disponibili. Puoi comunque cercare una palestra per nome.",
+    "attribution": "Nomi dei luoghi da GeoNames",
+    "area": "Palestre entro {{radius}} km da {{place}}",
+    "selectedArea": "il luogo selezionato",
+    "pinlessNotice": "I risultati vicini includono solo le palestre con un segnaposto sulla mappa."
+  },
+  "install": {
+    "heading": "Scarica l'app",
+    "body": "Illumina i pannelli della tua palestra dal telefono e registra ogni ripetizione."
+  }
+}

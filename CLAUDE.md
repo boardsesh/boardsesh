@@ -219,7 +219,7 @@ Vitest via `vp test`. Backend tests auto-start postgres+redis via `packages/back
 
 ### Internationalisation
 
-Supported locales: `en-US` (root), `es` (`/es/*`), `fr` (`/fr/*`), `de` (`/de/*`). Path-based detection via middleware (`packages/web/middleware.ts`). Catalogs in `packages/shared/i18n/locales/<locale>/<namespace>.json` (`@boardsesh/i18n`, shared by web and mobile). Namespaces: `common`, `marketing`, `auth`, and friends — add new ones to `ALL_NAMESPACES` in `packages/shared/i18n/src/config.ts` (web re-exports it as `SEED_NAMESPACES`; mobile ships the `MOBILE_NAMESPACES` subset).
+Supported locales: `en-US` (root), `es` (`/es/*`), `fr` (`/fr/*`), `de` (`/de/*`), `it` (`/it/*`). Path-based detection via middleware (`packages/web/middleware.ts`). Catalogs in `packages/shared/i18n/locales/<locale>/<namespace>.json` (`@boardsesh/i18n`, shared by web and mobile). Namespaces: `common`, `marketing`, `auth`, and friends — add new ones to `ALL_NAMESPACES` in `packages/shared/i18n/src/config.ts` (web re-exports it as `SEED_NAMESPACES`; mobile ships the `MOBILE_NAMESPACES` subset).
 
 - **Add every new key to every locale.** `catalog-completeness.test.ts` in `@boardsesh/i18n` enforces parity per namespace.
 - Server: `const { t } = await getServerTranslation('marketing')`.
@@ -238,6 +238,8 @@ Adding a new locale: update `SUPPORTED_LOCALES` and friends in `packages/shared/
 **French terminology:** French translations follow a fixed glossary too. Most importantly, a climbing send is never **« envoyer »** — French climbers don't "send" a climb. The send status/verb is **« Enchaîné » / enchaîner**, the noun send is **« la croix »** (invariable: _dix croix_; « faire la croix » = tick it in the logbook), and lighting a climb on the wall is **« allumer »**, not « envoyer ». Attempts on a climb are « essais », never « tentatives ». Full terminology and exceptions: **`docs/i18n-french-glossary.md`** — follow it for every French string you add.
 
 **German terminology:** German translations follow a fixed glossary. Product UI uses informal **du** and gender-star role nouns (`Routenbauer*in`). A climbing send is never **senden** — status/button is **Getoppt**, counts use **Begehung/Begehungen**, and lighting holds on the wall is **Board beleuchten**. The device is **Board** (neuter — _das Board_). Full terminology and exceptions: **`docs/i18n-german-glossary.md`** — follow it for every German string you add.
+
+**Italian terminology:** Italian translations follow a fixed glossary. Product UI uses informal **tu**. A climb is a **blocco**. A climbing send is never **inviare** — the status/button is **Chiuso** (masculine, verb _chiudere_), counts use **ripetizione/ripetizioni**, attempts are **tentativi**, and lighting a climb on the wall is **illuminare il blocco in parete**. The device is **il pannello** (masculine). Full terminology and exceptions: **`docs/i18n-italian-glossary.md`** — follow it for every Italian string you add.
 
 ### Copy & microcopy
 

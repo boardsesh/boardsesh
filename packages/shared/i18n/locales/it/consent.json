@@ -1,0 +1,18 @@
+{
+  "title": "Ci aiuti a migliorare Boardsesh?",
+  "body": "Consenti analisi del prodotto e, se vuoi, la registrazione delle sessioni per aiutarci a capire cosa funziona. Con No, grazie restano disattivate. La diagnostica di base su arresti anomali e prestazioni resta attiva. La tua scelta vale ovunque tu abbia effettuato l'accesso e puoi cambiarla quando vuoi.",
+  "allow": "Consenti",
+  "deny": "No, grazie",
+  "privacyLink": "Leggi la nostra informativa sulla privacy",
+  "privacyChoices": "Scelte sulla privacy",
+  "settingsTitle": "Analisi",
+  "settingsBody": "Scegli se condividere le analisi del prodotto e, se vuoi, la registrazione delle sessioni. La diagnostica di base resta attiva. Puoi continuare ad arrampicare qualunque cosa tu scelga.",
+  "enabled": "Analisi attive",
+  "disabled": "Analisi disattivate",
+  "close": "Chiudi",
+  "syncError": "La tua scelta è salvata qui. La sincronizzeremo con il tuo account appena torni online.",
+  "mobileTitle": "La tua privacy, la tua scelta",
+  "mobileBody": "Consenti analisi del prodotto e, se vuoi, la registrazione delle sessioni per aiutarci a migliorare Boardsesh. Con No, grazie restano disattivate. La diagnostica di base su arresti anomali e prestazioni resta attiva. La tua scelta vale ovunque tu abbia effettuato l'accesso. Puoi cambiarla quando vuoi in Impostazioni → Privacy.",
+  "analyticsLabel": "Condividi le analisi",
+  "regionDefaultNote": "Nella tua regione le analisi sono attive di default. Puoi disattivarle qui quando vuoi."
+}

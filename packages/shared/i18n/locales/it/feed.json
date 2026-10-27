@@ -1,0 +1,246 @@
+{
+  "crewLoadMore": "Vedi altre attività",
+  "activityFeed": {
+    "signInPrompt": "Accedi per vedere un feed personalizzato dei climber che segui."
+  },
+  "mobile": {
+    "home": {
+      "betaOpenError": "Impossibile aprire quel video della beta.",
+      "betaCardLabel": "Apri video della beta",
+      "feedTitle": "Dalla tua crew",
+      "signInTitle": "Accedi per vedere il tuo feed",
+      "signInBody": "Segui i climber per vedere qui le loro session e le ripetizioni del giorno.",
+      "searchAction": "Trova climber",
+      "emptyTitle": "Ancora nessuna session",
+      "emptyBody": "Segui i climber per riempire questo spazio con session e ripetizioni del giorno.",
+      "sessionsTitle": "Session recenti",
+      "boardEmptyTitle": "Tutto tranquillo su {{board}} per ora",
+      "boardEmptyBody": "Registra tu la prima session, o guarda cosa stanno scalando gli altri.",
+      "boardEmptyCta": "Sfoglia tutti",
+      "scope": {
+        "myCrew": "La mia crew",
+        "everyone": "Tutti",
+        "findGym": "Trova una palestra vicino a te",
+        "hint": "Scegli di chi vedere i blocchi"
+      },
+      "sections": {
+        "session": {
+          "startTitle": "Inizia una session",
+          "startBody": "Scegli un allenamento o scala e basta",
+          "running": "Session in corso",
+          "open": "Apri session"
+        },
+        "playlists": {
+          "all": "Tutte le playlist"
+        },
+        "empty": {
+          "title": "La tua Home è vuota",
+          "body": "Riattiva le sezioni per vedere il tuo pannello, la tua session o la tua crew."
+        },
+        "beta": {
+          "title": "Beta fresche",
+          "titleBoard": "Beta fresche su questo pannello",
+          "empty": "Ancora nessun video della beta",
+          "error": "Impossibile caricare i video della beta.",
+          "offline": "Nessun segnale. Le beta fresche tornano quando sei di nuovo online.",
+          "offlineMode": "La modalità offline è attiva. Le beta fresche tornano quando la disattivi.",
+          "unknownClimb": "Blocco sconosciuto",
+          "openClimb": "Apri {{climb}}"
+        }
+      }
+    },
+    "liveSessions": {
+      "title": "In arrampicata ora",
+      "liveCount_one": "{{count}} in diretta",
+      "liveCount_other": "{{count}} in diretta",
+      "live": "In diretta",
+      "quiet": "Tranquillo",
+      "names": {
+        "two": "{{first}} e {{second}}",
+        "you": "Tu",
+        "youAnd": "Tu e {{name}}",
+        "justYou": "Per ora solo tu",
+        "someone": "Un climber"
+      },
+      "boardLine": "{{board}} · {{angle}}°",
+      "boardYouFollow": "Pannello che segui",
+      "onClimb": "Su {{climb}}",
+      "onClimbGrade": "Su {{climb}} · {{grade}}",
+      "sends_one": "{{count}} ripetizione",
+      "sends_other": "{{count}} ripetizioni",
+      "elapsed": {
+        "minutes": "{{minutes}}m",
+        "hours": "{{hours}}h",
+        "hoursMinutes": "{{hours}}h {{minutes}}m",
+        "justStarted": "Appena iniziata"
+      },
+      "actions": {
+        "join": "Unisciti",
+        "open": "Apri",
+        "invite": "Invita"
+      },
+      "start": {
+        "title": "Inizia una session",
+        "body": "Chi ti segue la vede qui e può unirsi.",
+        "cta": "Inizia una session",
+        "bleTitle": "Sei su {{board}}",
+        "bleBody": "Inizia una session così la tua crew può unirsi."
+      },
+      "find": {
+        "title": "Porta la tua crew",
+        "body": "Segui dei climber: qui vedrai le loro session in diretta.",
+        "cta": "Trova climber"
+      },
+      "error": "Impossibile caricare chi sta scalando.",
+      "offline": "Nessun segnale. Le session tornano quando sei di nuovo online.",
+      "offlineMode": "La modalità offline è attiva. Le session tornano quando la disattivi.",
+      "board": {
+        "header": "In arrampicata qui ora",
+        "more_one": "{{count}} altro",
+        "more_other": "{{count}} altri",
+        "emptyTitle": "Nessuno è in session qui.",
+        "emptyBody": "Iniziane una e chiunque sia al pannello può unirsi.",
+        "emptyBodyLitBy": "{{name}} è in parete. Inizia una session e {{name}} potrà unirsi alla tua coda.",
+        "emptyCta": "Inizia una session qui"
+      },
+      "a11y": {
+        "namesOthers_one": "{{name}} e {{count}} altro",
+        "namesOthers_other": "{{name}} e altri {{count}}",
+        "youOthers_one": "Tu e {{count}} altro",
+        "youOthers_other": "Tu e altri {{count}}",
+        "liveOn": "in diretta su {{board}}",
+        "liveNow": "in diretta ora",
+        "quietOn": "tranquillo su {{board}}",
+        "quietNow": "tranquillo ora",
+        "boardAngle": "{{board}} a {{angle}} gradi",
+        "started": "iniziata {{elapsed}} fa",
+        "minutes_one": "{{count}} minuto",
+        "minutes_other": "{{count}} minuti",
+        "hours_one": "{{count}} ora",
+        "hours_other": "{{count}} ore",
+        "hardest": "più duro {{grade}}",
+        "hint": "Apre la session",
+        "invite": "Invita climber alla tua session",
+        "justStarted": "appena iniziata"
+      }
+    }
+  },
+  "ascentsFeed": {
+    "mirrored": "Specchiato",
+    "setBy": "Tracciato da {{name}}",
+    "benchmark": "Benchmark",
+    "empty": "Ancora nessuna salita registrata"
+  },
+  "betaVideos": {
+    "shareBeta": "Condividi beta",
+    "addedToast": "Video aggiunto alla beta",
+    "addError": "Impossibile aggiungere il video. Riprova.",
+    "urlPlaceholder": "URL di Instagram o TikTok",
+    "urlLabel": "URL del video della beta",
+    "urlLabelForClimb": "URL del video della beta per {{name}}",
+    "defaultHelper": "Incolla l'URL di un reel/post pubblico di Instagram o di TikTok così gli altri possono vedere la tua beta.",
+    "cancel": "Annulla",
+    "copyAndOpenInstagram": "Copia e apri Instagram",
+    "instagramCopyFailed": "Impossibile copiare la didascalia. Riprova.",
+    "instagramCopiedAndOpened": "Didascalia copiata: incollala su Instagram.",
+    "instagramCopiedOnly": "Didascalia copiata negli appunti.",
+    "steps": {
+      "optional": "Facoltativo",
+      "step1Title": "Apri Instagram e copia la tua didascalia",
+      "step2Title": "Dal tuo post, copia il link di condivisione",
+      "step3Title": "Incolla il link qui sotto"
+    }
+  },
+  "emptyStates": {
+    "followClimbers": "Segui qualche climber per riempire questo spazio",
+    "findClimbers": "Trova climber",
+    "noRecentActivity": "Ancora nessuna attività recente"
+  },
+  "errors": {
+    "loadFeed": "Impossibile caricare il feed delle attività. Riprova.",
+    "loadActivity": "Impossibile caricare il feed delle attività"
+  },
+  "feedCommentButton": {
+    "commentsTitle": "Commenti"
+  },
+  "feedItemComment": {
+    "commented": "ha commentato"
+  },
+  "feedItemNewClimb": {
+    "createdClimb": "ha creato un nuovo blocco"
+  },
+  "followerCount": {
+    "followingLabel": "seguiti"
+  },
+  "freezeDialog": {
+    "reasonLabel": "Motivo (facoltativo)",
+    "reasonPlaceholder": "Perché congelare/scongelare questo blocco?"
+  },
+  "freezeIndicator": {
+    "frozen": "Questo blocco è congelato e non può ricevere nuove proposte.",
+    "reasonPrefix": "Motivo: {{reason}}"
+  },
+  "proposalCard": {
+    "quotedReason": "“{{reason}}”",
+    "support": "Favorevole",
+    "oppose": "Contrario",
+    "approve": "Approva",
+    "reject": "Rifiuta",
+    "deleteProposal": "Elimina proposta",
+    "deleteDialog": {
+      "title": "Elimina proposta accettata",
+      "description": "Verranno annullati gli effetti di questa proposta (ad es. cambio di grado, stato benchmark/classico) e verrà eliminata definitivamente. Questa azione non può essere annullata."
+    }
+  },
+  "proposalSection": {
+    "title": "Proposte della community",
+    "noOpen": "Nessuna proposta aperta"
+  },
+  "proposalVoteBar": {
+    "approved": "Approvata",
+    "rejected": "Rifiutata",
+    "votesNeeded": "{{current}} / {{required}} voti necessari",
+    "opposed": "{{count}} contrari"
+  },
+  "sessionFeedCard": {
+    "climbCount_one": "{{count}} blocco",
+    "climbCount_other": "{{count}} blocchi",
+    "sendsCount_one": "{{count}} ripetizione",
+    "sendsCount_other": "{{count}} ripetizioni",
+    "flashesCount_one": "{{count}} flash",
+    "flashesCount_other": "{{count}} flash",
+    "hardestGrade": "{{grade}} il più duro",
+    "status": {
+      "flash": "Flash",
+      "send": "Chiuso",
+      "attempt": "Tentativo"
+    },
+    "hardest": "Il più duro",
+    "betaEyebrow": "Beta",
+    "betaBy": "Beta di {{name}}",
+    "gradeSpread": "Gradi da {{min}} a {{max}}, {{sends}} ripetizioni",
+    "unknownClimb": "Blocco sconosciuto",
+    "attempts_one": "{{count}} tentativo",
+    "attempts_other": "{{count}} tentativi",
+    "openHint": "Apre la session",
+    "openHardestClimb": "Apri {{climb}}"
+  },
+  "socialActions": {
+    "upvoteWithCount_one": "Mi piace, {{count}} mi piace",
+    "upvoteWithCount_other": "Mi piace, {{count}} mi piace",
+    "removeUpvoteWithCount_one": "Rimuovi mi piace, {{count}} mi piace",
+    "removeUpvoteWithCount_other": "Rimuovi mi piace, {{count}} mi piace",
+    "openCommentsWithCount_one": "Apri i commenti, {{count}} commento",
+    "openCommentsWithCount_other": "Apri i commenti, {{count}} commenti"
+  },
+  "socialFeedItem": {
+    "climbed": "ha scalato"
+  },
+  "userSmartCard": {
+    "follower_one": "{{count}} follower",
+    "follower_other": "{{count}} follower",
+    "following": "{{count}} seguiti",
+    "distinctClimb_one": "{{count}} blocco diverso",
+    "distinctClimb_other": "{{count}} blocchi diversi"
+  }
+}

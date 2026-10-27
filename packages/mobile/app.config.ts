@@ -12,7 +12,7 @@ import type { ExpoConfig, ConfigContext } from 'expo/config';
  * scripts/mobile-locales-parity.test.ts enforces that, and that each code has a
  * matching locales/<code>.json translating the same keys.
  */
-export const APP_LOCALIZATIONS = ['en', 'de', 'es', 'fr'] as const;
+export const APP_LOCALIZATIONS = ['en', 'de', 'es', 'fr', 'it'] as const;
 
 /** Where the InfoPlist strings for a declared localization live, relative to this config. */
 export function localeStringsPath(language: string): string {
@@ -50,7 +50,7 @@ export const ANDROID_BOARD_LINK_PREFIXES = [
 // the retry drops the query string, and an unlisted wall's /b/ link needs its
 // ?wall= to open. Hardcoded for the same reason as the board list above, and
 // held to SUPPORTED_LOCALES minus the default by the same parity test.
-export const ANDROID_LINK_LOCALE_SEGMENTS = ['es', 'fr', 'de'] as const;
+export const ANDROID_LINK_LOCALE_SEGMENTS = ['es', 'fr', 'de', 'it'] as const;
 
 export const ANDROID_LOCALISED_BOARD_LINK_PREFIXES: readonly string[] = ANDROID_LINK_LOCALE_SEGMENTS.flatMap((locale) =>
   ANDROID_BOARD_LINK_PREFIXES.map((boardPrefix) => `/${locale}${boardPrefix}`),
@@ -395,8 +395,8 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
     // plugin turns them into res/values-b+<lang>/strings.xml, so InfoPlist keys
     // would land as junk Android string resources.
     //
-    // This is also what makes the App Store product page list German, Spanish
-    // and French under "Languages" — Apple reads the localizations shipped in
+    // This is also what makes the App Store product page list German, Spanish,
+    // French and Italian under "Languages" — Apple reads the localizations shipped in
     // the binary, not the storefront listings, so a de-DE listing alone would
     // still show "English" there.
     locales: Object.fromEntries(APP_LOCALIZATIONS.map((language) => [language, localeStringsPath(language)])),

@@ -1,0 +1,319 @@
+{
+  "metadata": {
+    "library": {
+      "title": "Playlist di blocchi per Kilter, Tension e MoonBoard",
+      "description": "Playlist pubbliche create dai climber, più raccolte che Boardsesh ricostruisce ogni notte. Aprine una nell'app e scalala."
+    },
+    "detail": {
+      "fallbackTitle": "Playlist",
+      "fallbackDescription": "Guarda i blocchi di questa playlist su Boardsesh.",
+      "privateTitle": "Playlist privata",
+      "privateDescription": "Questa playlist è privata.",
+      "generatedDescription_one": "{{count}} blocco {{board}} in {{name}}. Apri la playlist in Boardsesh e scalalo.",
+      "generatedDescription_other": "{{count}} blocchi {{board}} in {{name}}. Apri la playlist in Boardsesh e scalali.",
+      "ogAlt": "La playlist {{name}} su Boardsesh"
+    }
+  },
+  "library": {
+    "signInBanner": {
+      "title": "Accedi per usare la tua libreria",
+      "description": "Tieni traccia delle tue ripetizioni e gestisci le playlist.",
+      "cta": "Accedi"
+    },
+    "sections": {
+      "pinned": "Fissate",
+      "forYou": "Per te",
+      "community": "Playlist della community"
+    },
+    "communityByline": "{{creatorName}} - {{climbCount}}",
+    "gradeBand": "Gradi {{band}}",
+    "allPlaylists": {
+      "title": "Le mie playlist",
+      "seeAll": "Vedi tutte",
+      "searchPlaceholder": "Filtra per titolo",
+      "clearSearch": "Cancella ricerca",
+      "loadMoreError": "Impossibile caricare tutte le tue playlist.",
+      "noResults": "Nessuna playlist corrisponde a \"{{query}}\""
+    },
+    "community": {
+      "searchPlaceholder": "Cerca playlist",
+      "madeByLabel": "Create da",
+      "madeBy": {
+        "everyone": "Tutti",
+        "mine": "Mie",
+        "following": "Seguiti"
+      },
+      "sortLabel": "Ordina",
+      "sort": {
+        "popular": "Popolari",
+        "recent": "Nuove"
+      },
+      "sizeLabel": "Dimensione",
+      "size": {
+        "any": "Qualsiasi dimensione",
+        "short": "Corta",
+        "session": "Session",
+        "big": "Grande"
+      },
+      "gradeLabel": "Grado",
+      "gradeAny": "Qualsiasi grado",
+      "gradeA11y": "Intervallo di gradi: {{band}}",
+      "sizeBand": {
+        "upTo": "Fino a {{max}} blocchi",
+        "range": "{{min}}–{{max}} blocchi",
+        "atLeast": "{{min}}+ blocchi"
+      },
+      "resultCount_one": "{{count}} playlist",
+      "resultCount_other": "{{count}} playlist",
+      "loadMoreError": "Impossibile caricare altre playlist.",
+      "errors": {
+        "loadTitle": "Impossibile caricare le playlist",
+        "loadDescription": "Controlla la connessione e riprova."
+      },
+      "empty": {
+        "title": "Ancora nessuna playlist qui",
+        "description": "Rendi pubblica una delle tue e la vede tutta la crew."
+      },
+      "emptyFollowing": {
+        "title": "Ancora nessuna playlist dalla tua crew",
+        "description": "I climber che segui non hanno creato una playlist pubblica su questo pannello."
+      },
+      "noMatches": {
+        "title": "Niente corrisponde a questi filtri",
+        "description": "Allenta un filtro o due per vedere di più.",
+        "clearFilters": "Cancella filtri"
+      }
+    },
+    "pin": {
+      "pin": "Fissa",
+      "unpin": "Togli dai fissati",
+      "pinAriaLabel": "Fissa playlist",
+      "unpinAriaLabel": "Togli la playlist dai fissati",
+      "pinFailed": "Impossibile fissare la playlist",
+      "unpinFailed": "Impossibile togliere la playlist dai fissati"
+    },
+    "smart": {
+      "fiveStars": {
+        "title": "Cinque stelle",
+        "description": "I blocchi a cui hai dato cinque stelle."
+      },
+      "mostRepeated": {
+        "title": "Più ripetuti",
+        "description": "I blocchi a cui continui a tornare."
+      },
+      "projects": {
+        "title": "Progetti",
+        "description": "I blocchi su cui hai lavorato di più senza chiuderli."
+      },
+      "likedClimbs": {
+        "title": "Blocchi che ti piacciono",
+        "description": "Tutti i blocchi a cui hai messo il cuore.",
+        "empty": {
+          "title": "Ancora nessun mi piace",
+          "supporting": "Tocca il cuore su un blocco per metterlo da parte qui."
+        }
+      },
+      "crowdFavorites": {
+        "title": "Preferiti dalla community",
+        "description": "I classici più ripetuti del tuo pannello che non hai ancora chiuso."
+      },
+      "hiddenGems": {
+        "title": "Perle nascoste",
+        "description": "Blocchi molto apprezzati per il tuo pannello che non sono ancora diventati famosi."
+      },
+      "atYourLevel": {
+        "title": "Al tuo livello",
+        "description": "Blocchi intorno al tuo grado, su misura per il tuo pannello."
+      },
+      "fresh": {
+        "title": "Novità",
+        "description": "Nuovi blocchi per il tuo pannello da tracciatori che vale la pena seguire."
+      },
+      "notFound": {
+        "title": "Playlist smart non trovata",
+        "description": "Questa playlist smart non esiste."
+      },
+      "empty": "Ancora nessun blocco in questa playlist smart."
+    },
+    "empty": {
+      "title": "Ancora nessuna playlist",
+      "description": "Salva in una playlist i tuoi progetti e i blocchi che fai sempre, così li ritrovi subito.",
+      "createCta": "Crea playlist"
+    },
+    "createFab": {
+      "ariaLabel": "Crea playlist"
+    },
+    "errors": {
+      "loadTitle": "Impossibile caricare la libreria",
+      "loadDescription": "Si è verificato un errore nel caricamento della tua libreria. Riprova.",
+      "tryAgain": "Riprova"
+    }
+  },
+  "detail": {
+    "share": "Condividi playlist",
+    "actions": "Azioni della playlist",
+    "activateAll": "Avvia",
+    "addToQueue": {
+      "action": "Metti in fondo",
+      "actionCount_one": "Metti {{count}} in fondo",
+      "actionCount_other": "Metti {{count}} in fondo",
+      "subtitle": "Va dopo il resto della tua coda",
+      "playNextAction": "Metti subito dopo",
+      "playNextActionCount_one": "Metti {{count}} subito dopo",
+      "playNextActionCount_other": "Metti {{count}} subito dopo",
+      "playNextSubtitle": "Va prima del resto della tua coda",
+      "queueFull": "La tua coda è piena: massimo {{max}} blocchi",
+      "nothingToAdd": "Ancora niente qui per il tuo pannello",
+      "alreadyAdding": "Stai già aggiungendo questa playlist",
+      "failed": "Impossibile aggiungere alla coda. Riprova."
+    },
+    "boardMismatch": {
+      "title": "Passa a {{board}} per scalare questa playlist",
+      "subtitle": "Questi sono blocchi {{board}}. Cambia pannello per metterli in coda.",
+      "cta": "Cambia pannello"
+    },
+    "unrenderableClimb": {
+      "subtitle": "Mancano i dati del pannello per questo blocco."
+    },
+    "menu": {
+      "addClimbs": "Aggiungi blocchi",
+      "editDetails": "Modifica dettagli",
+      "editClimbs": "Riordina e rimuovi blocchi",
+      "delete": "Elimina"
+    },
+    "visibility": {
+      "public": "Pubblica",
+      "private": "Privata"
+    },
+    "shareText": "Guarda questa playlist di blocchi su Boardsesh",
+    "shareFallbackTitle": "Playlist",
+    "shareSuccess": "Link copiato negli appunti!",
+    "shareError": "Condivisione non riuscita",
+    "deleted": "Playlist eliminata",
+    "deleteFailed": "Impossibile eliminare la playlist",
+    "queueReplace": {
+      "title": "Avviare la playlist?",
+      "message_one": "Avvia la playlist in ordine da qui. Il blocco in coda dopo quello attuale viene rimosso.",
+      "message_other": "Avvia la playlist in ordine da qui. I {{count}} blocchi in coda dopo quello attuale vengono rimossi.",
+      "cancel": "Annulla",
+      "confirm": "Avvia playlist",
+      "loadFailed": "Impossibile avviare la playlist. Riprova.",
+      "trimmed": "Caricati {{loaded}} blocchi su {{total}}. La tua coda ne contiene {{max}}.",
+      "trimmedUnknownTotal": "Caricati {{loaded}} blocchi. La tua coda ne contiene {{max}}.",
+      "addInstead": "Metti in fondo"
+    },
+    "deleteConfirm": {
+      "title": "Eliminare la playlist?",
+      "message": "Elimina definitivamente \"{{name}}\" e i suoi blocchi. Non si può annullare.",
+      "confirm": "Elimina",
+      "cancel": "Annulla"
+    },
+    "discussion": "Discussione",
+    "empty": "Ancora nessun blocco in questa playlist",
+    "view": {
+      "status_one": "{{shown}} di {{count}} blocco",
+      "status_other": "{{shown}} di {{count}} blocchi",
+      "clearFilters": "Cancella filtri",
+      "editNote": "Durante la modifica vedi l'ordine della playlist",
+      "namePlaceholder": "Nome del blocco",
+      "empty": {
+        "noMatch": "Niente qui corrisponde a questi filtri.",
+        "allSent": "Hai chiuso tutto in questa lista. Grande!",
+        "noName": "Nessun blocco chiamato “{{name}}” in questa playlist.",
+        "noBoardFit": "Nessuno di questi va bene per il tuo pannello."
+      }
+    },
+    "climbCount_one": "{{count}} blocco",
+    "climbCount_other": "{{count}} blocchi",
+    "openInApp": "Scalala nell'app",
+    "followerCount_one": "{{count}} follower",
+    "followerCount_other": "{{count}} follower",
+    "followFailed": "Impossibile aggiornare il follow della playlist",
+    "errors": {
+      "notFoundTitle": "Playlist non trovata",
+      "notFoundDescription": "Questa playlist potrebbe essere stata eliminata o potresti non avere il permesso di vederla.",
+      "loadTitle": "Impossibile caricare la playlist",
+      "loadDescription": "Si è verificato un errore nel caricamento di questa playlist. Riprova.",
+      "tryAgain": "Riprova"
+    },
+    "setterPicker": {
+      "showClimbs": "Mostra blocchi",
+      "error": "Impossibile caricare i tracciatori di questa lista."
+    }
+  },
+  "editClimbs": {
+    "done": "Fatto",
+    "editDetailsAria": "Modifica i dettagli della playlist",
+    "removeAria": "Rimuovi {{name}}",
+    "dragHandleAria": "Trascina per riordinare {{name}}",
+    "removeConfirm": {
+      "title": "Rimuovere il blocco?",
+      "message": "Rimuovere \"{{name}}\" da questa playlist?",
+      "confirm": "Rimuovi",
+      "cancel": "Annulla"
+    },
+    "removeFailed": "Impossibile rimuovere il blocco",
+    "reorderFailed": "Impossibile salvare il nuovo ordine"
+  },
+  "edit": {
+    "title": "Modifica playlist",
+    "fields": {
+      "name": "Nome della playlist",
+      "description": "Descrizione",
+      "color": "Colore",
+      "icon": "Icona",
+      "iconHint": "Scrivi un emoji qualsiasi, o scegline uno qui sotto",
+      "removeIcon": "Rimuovi",
+      "visibility": "Visibilità",
+      "publicHint": "Le playlist pubbliche possono essere viste da chiunque abbia il link",
+      "privateHint": "Le playlist private sono visibili solo a te"
+    },
+    "actions": {
+      "save": "Salva"
+    },
+    "validation": {
+      "nameRequired": "Inserisci un nome per la playlist",
+      "nameTooLong": "Il nome può avere al massimo 100 caratteri",
+      "descriptionTooLong": "La descrizione può avere al massimo 500 caratteri"
+    },
+    "messages": {
+      "updated": "Playlist aggiornata",
+      "updateFailed": "Impossibile aggiornare la playlist"
+    }
+  },
+  "create": {
+    "drawerTitle": "Crea playlist",
+    "submit": "Crea",
+    "fields": {
+      "name": "Nome",
+      "namePlaceholder": "es. Tacche difficili",
+      "description": "Descrizione",
+      "descriptionPlaceholder": "Descrizione facoltativa...",
+      "color": "Colore"
+    }
+  },
+  "bottomTabBar": {
+    "discover": "Scopri",
+    "selectBoardForPlaylist": "Scegli un pannello prima di creare una playlist",
+    "createdPlaylistToast": "Playlist \"{{name}}\" creata",
+    "createPlaylistFailed": "Impossibile creare la playlist"
+  },
+  "directory": {
+    "h1": "Playlist da affrontare",
+    "lead_one": "Aprine una nell'app e scalala. {{formattedCount}} playlist pubblica tra cui scegliere.",
+    "lead_other": "Aprine una nell'app e scalala. {{formattedCount}} playlist pubbliche tra cui scegliere.",
+    "leadNoCount": "Aprine una nell'app e scalala.",
+    "curated": {
+      "title": "Ricostruite ogni notte",
+      "lead": "Preferiti della community, blocchi nuovi e perle nascoste per ogni pannello, in base a ciò che la gente sta chiudendo."
+    },
+    "community": {
+      "title": "Salvate dai climber",
+      "lead": "In ordine di quanti climber hanno salvato ciascuna."
+    },
+    "empty": {
+      "title": "Ancora nessuna playlist pubblica",
+      "body": "Creane una nell'app e compare qui."
+    }
+  }
+}

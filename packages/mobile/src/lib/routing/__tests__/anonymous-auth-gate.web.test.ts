@@ -92,7 +92,7 @@ describe('readPostLoginReturnHref', () => {
   // extended for, so the round trip is exercised end to end and not only through
   // the predicate: the locale-prefixed path is what login is handed, and it has
   // to come back out intact.
-  it.each(['es', 'fr', 'de'])('returns a /%s-prefixed board path', (locale) => {
+  it.each(['es', 'fr', 'de', 'it'])('returns a /%s-prefixed board path', (locale) => {
     const next = `/${locale}/b/the-gym/40/view/${CLIMB_SEGMENT}`;
     goTo(`/auth/login?next=${encodeURIComponent(next)}`);
     expect(readPostLoginReturnHref()).toBe(next);

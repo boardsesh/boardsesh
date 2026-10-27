@@ -1,0 +1,521 @@
+{
+  "metadata": {
+    "title": "{{gymName}} · kiosk {{kioskName}}",
+    "description": "Vista in diretta della parete di {{gymName}}: guarda cosa è illuminato e chi sta spaccando in questo momento.",
+    "fallbackTitle": "Kiosk della palestra",
+    "fallbackDescription": "Vista in diretta del pannello per le palestre di arrampicata."
+  },
+  "header": {
+    "reconnecting": "Riconnessione…"
+  },
+  "setup": {
+    "title": "Questo kiosk non è ancora configurato",
+    "body": "Aggiungi un pannello a questo kiosk dalla pagina di gestione della tua palestra e lo vedrai qui."
+  },
+  "retry": {
+    "title": "Impossibile raggiungere Boardsesh al momento",
+    "body": "Un attimo: questa schermata si riconnette da sola. La parete torna appena torniamo noi."
+  },
+  "board": {
+    "wallsOpen": "Il pannello è libero",
+    "lastLit": "Ultimo in parete: {{name}}",
+    "litBy": "Scelta di {{name}}",
+    "unnamedClimb": "Blocco senza nome"
+  },
+  "installQr": {
+    "caption": "Scansiona e registra qui le tue salite"
+  },
+  "leaderboard": {
+    "periodSession": "Classifica della session",
+    "periodLast24h": "Ultime 24 ore",
+    "periodWeek": "Questa settimana",
+    "periodMonth": "Questo mese",
+    "allBoards": "Tutti i pannelli",
+    "anonymous": "Climber anonimo",
+    "sends_one": "ripetizione",
+    "sends_other": "ripetizioni",
+    "live": "In diretta",
+    "updatedAt": "Aggiornato {{time}}",
+    "emptyTitle": "Non c'è ancora nessuno sul pannello",
+    "emptyBody": "Illumina un blocco e chiudilo: la classifica parte da te.",
+    "unavailableTitle": "La classifica non è raggiungibile al momento",
+    "unavailableBody": "Continuiamo a provare: la classifica torna da sola."
+  },
+  "attribution": {
+    "poweredBy": "Powered by"
+  },
+  "embed": {
+    "metadata": {
+      "boardTitle": "{{boardName}} — vista in diretta del pannello",
+      "boardDescription": "Guarda cosa è illuminato su {{boardName}} in questo momento. Powered by Boardsesh.",
+      "boardFallbackTitle": "Vista in diretta del pannello",
+      "boardFallbackDescription": "Widget del pannello da arrampicata in diretta. Powered by Boardsesh.",
+      "leaderboardTitle": "{{gymName}} — classifica",
+      "leaderboardDescription": "Chi sta chiudendo blocchi a {{gymName}}. Powered by Boardsesh.",
+      "leaderboardFallbackTitle": "Classifica della palestra",
+      "leaderboardFallbackDescription": "Widget della classifica della palestra. Powered by Boardsesh."
+    },
+    "leaderboard": {
+      "errorTitle": "Classifica non disponibile",
+      "errorBody": "Impossibile caricare le ultime ripetizioni. Nuovo tentativo automatico a breve."
+    },
+    "boardButton": "Incorpora questo pannello",
+    "railButton": "Incorpora la classifica",
+    "boardDialogTitle": "Incorpora {{name}}",
+    "railDialogTitle": "Incorpora la classifica di {{name}}",
+    "copy": "Copia",
+    "copied": "Copiato negli appunti.",
+    "copyFailed": "Impossibile copiare: seleziona il codice e copialo a mano.",
+    "periodNote": "Il parametro period accetta day, week o month.",
+    "docsHint": "Incollalo in qualsiasi pagina HTML: resta sempre aggiornato.",
+    "close": "Chiudi",
+    "publicOnlyBoard": "Si possono incorporare solo i pannelli pubblici.",
+    "publicOnlyGym": "Solo le palestre pubbliche possono incorporare la classifica."
+  },
+  "gymPage": {
+    "metaTitle": "Palestra di arrampicata {{gymName}}",
+    "metaDescription": "Guarda i pannelli di {{gymName}} e cosa c'è in parete in diretta su Boardsesh.",
+    "breadcrumbHome": "Boardsesh",
+    "breadcrumbGyms": "Palestre",
+    "manageGym": "Gestisci palestra",
+    "seeOnTheWall": "Guarda cosa c'è in parete",
+    "boardsHeading": "Pannelli",
+    "boardCount_one": "{{count}} pannello",
+    "boardCount_other": "{{count}} pannelli",
+    "hoursHeading": "Orari di apertura",
+    "hoursConfirmed": "Confermati {{date}}",
+    "visitWebsite": "Visita il sito",
+    "install": {
+      "heading": "Scarica l'app per questa palestra",
+      "body": "Illumina i pannelli di {{gymName}} dal telefono e registra ogni ripetizione.",
+      "googlePlay": "Disponibile su Google Play",
+      "appStore": "Scarica dall'App Store"
+    },
+    "noBoardsYet": "Ancora nessun pannello elencato qui.",
+    "explorePlaylists": "Guarda cosa stanno creando gli altri",
+    "claimTitle": "È la tua palestra?",
+    "claimBody": "Rivendicala per gestire i pannelli, il brand e ciò che compare in parete.",
+    "claimCta": "Rivendica questa palestra",
+    "claimCtaSignedOut": "Accedi e rivendicala",
+    "claimPendingTitle": "La tua richiesta è in revisione",
+    "claimPendingBody": "Stiamo verificando che gestisci questa palestra. Ti scriviamo comunque, di solito entro qualche giorno.",
+    "claimPendingDomainTitle": "Controlla la posta",
+    "claimPendingDomainBody": "Ti abbiamo mandato un link alla tua email di lavoro. Clicca sul link e la palestra è tua.",
+    "claimAuthTitle": "Rivendica la tua palestra",
+    "claimAuthBody": "Accedi e ti riportiamo subito qui per rivendicarla.",
+    "owner": {
+      "linkBoards": {
+        "title": "Collega i tuoi pannelli",
+        "body": "I climber non vedono ancora nessun pannello qui."
+      },
+      "addHours": {
+        "title": "Aggiungi i tuoi orari di apertura",
+        "body": "Chi vuole sapere se riesce a fare una session stasera non può capirlo."
+      },
+      "addDescription": {
+        "title": "Racconta com'è scalare qui",
+        "body": "Un paio di righe sulle pareti, sulla tracciatura e sull'atmosfera."
+      },
+      "putOnTv": {
+        "title": "Metti i tuoi pannelli su una TV",
+        "body": "Trasforma uno schermo della tua palestra in un display del pannello in diretta."
+      },
+      "addBranding": {
+        "title": "Aggiungi il tuo brand",
+        "body": "Aggiungi logo e colori così la tua pagina ti somiglia."
+      }
+    },
+    "photoAlt": "La parete di arrampicata di {{gymName}}",
+    "poster": {
+      "metaTitle": "Poster QR per {{gymName}}",
+      "metaDescription": "Un codice pronto da stampare che i climber possono scansionare alla parete.",
+      "heading": "Scansiona il codice, illumina il pannello",
+      "pitch": "Scarica Boardsesh, scegli un blocco e le prese si illuminano sul pannello davanti a te. Intanto registra ogni ripetizione.",
+      "typedUrlLabel": "Niente fotocamera? Scrivi questo:",
+      "compatibility": "Funziona con Kilter, Tension e MoonBoard.",
+      "independence": "Boardsesh è un'app indipendente. Non è affiliata né approvata da Aurora Climbing, Moon Climbing o da qualsiasi produttore di pannelli.",
+      "printAction": "Stampa questo poster",
+      "backToGym": "Torna alla pagina della palestra"
+    },
+    "sprayWallsHeading": "Spraywall",
+    "sprayWallCount_one": "{{count}} Spraywall",
+    "sprayWallCount_other": "{{count}} Spraywall",
+    "sprayWallsIntro": "Le Spraywall di questa palestra, presa per presa. Aprine una per vedere cosa è stato tracciato.",
+    "sprayWallPhotoAlt": "Foto di {{wallName}}",
+    "sprayWallMeta": "{{angle}}° · {{holds}} prese"
+  },
+  "boardPoster": {
+    "metaTitle": "Poster QR per {{boardName}}",
+    "fallbackTitle": "Poster QR",
+    "metaDescription": "Un codice QR pronto da stampare. I climber lo scansionano per vedere i blocchi qui e registrare le loro ripetizioni.",
+    "scanStep": "Scansiona il codice con la fotocamera",
+    "openSource": "Boardsesh è gratuita e open source.",
+    "printedOn": "Stampato: {{monthYear}}",
+    "layoutLabel": "Layout del poster",
+    "layouts": {
+      "photo": "Poster con foto",
+      "plain": "Poster semplice",
+      "cards": "Schede"
+    },
+    "unlistedNotice": "Chiunque lo scansioni può aprire la Spraywall.",
+    "spray": {
+      "headline": "Questa Spraywall è su Boardsesh",
+      "pickStep": "Scegli un blocco sulla foto",
+      "logStep": "Registra la tua ripetizione o traccia un tuo blocco",
+      "justInstalled": "Hai appena installato l'app? Scansiona di nuovo per aprire questa Spraywall.",
+      "backAction": "Torna alla Spraywall"
+    },
+    "led": {
+      "headline": "Questo pannello è su Boardsesh",
+      "pickStep": "Scegli un blocco e illuminalo",
+      "logStep": "Blocco chiuso? Registra la tua ripetizione",
+      "justInstalled": "Hai appena installato l'app? Scansiona di nuovo per aprire questo pannello.",
+      "compatibility": "Funziona con {{boardBrand}}.",
+      "backAction": "Torna al pannello"
+    }
+  },
+  "manage": {
+    "welcome": {
+      "title": "Metti online la tua palestra",
+      "allDoneTitle": "È tutto pronto",
+      "allDoneBody": "La tua palestra è pronta a partire. Chiudi pure quando vuoi.",
+      "progress": "{{done}} di {{total}} completati",
+      "dismiss": "Chiudi",
+      "steps": {
+        "kiosk": {
+          "title": "Mettila sulla TV",
+          "body": "Crea un kiosk per lo schermo della palestra"
+        },
+        "branding": {
+          "title": "Imposta il tuo brand",
+          "body": "Aggiungi logo e colori"
+        },
+        "boards": {
+          "title": "Collega i tuoi pannelli",
+          "body": "Collega i pannelli della tua palestra"
+        },
+        "members": {
+          "title": "Invita la tua crew",
+          "body": "Aggiungi staff e tracciatori che aiutano a gestirla"
+        }
+      }
+    },
+    "title": "Gestisci {{gymName}}",
+    "backToGym": "Torna alla pagina della palestra",
+    "accessDenied": "Non hai il permesso di gestire questa palestra.",
+    "tabs": {
+      "kiosks": "Kiosk",
+      "branding": "Brand",
+      "boards": "Pannelli",
+      "members": "Membri",
+      "insights": "Statistiche",
+      "overview": "Panoramica",
+      "profile": "Profilo",
+      "comments": "Commenti"
+    },
+    "insights": {
+      "subtitle": "Come sono andati i tuoi pannelli questa settimana rispetto alla scorsa.",
+      "uniqueClimbers": "Climber",
+      "ascents": "Ripetizioni",
+      "busiestDay": "Giorno più affollato",
+      "byDay": "Ripetizioni per giorno",
+      "byDayAria": "Ripetizioni per giorno della settimana",
+      "topClimbs": "Su cosa stanno lavorando tutti",
+      "noTopClimbs": "Nessuna ripetizione registrata questa settimana.",
+      "unnamedClimb": "Blocco senza nome",
+      "ascentsCount_one": "{{count}} ripetizione",
+      "ascentsCount_other": "{{count}} ripetizioni",
+      "deltaUp": "+{{count}} rispetto alla scorsa settimana",
+      "deltaDown": "−{{count}} rispetto alla scorsa settimana",
+      "deltaFlat": "Come la scorsa settimana",
+      "loadError": "Impossibile caricare i numeri di questa settimana.",
+      "empty": {
+        "title": "Nessuna ripetizione questa settimana",
+        "body": "È ora di cambiare i blocchi? Appena i climber registrano una ripetizione qui, vedrai chi è passato e su cosa sta lavorando."
+      }
+    },
+    "navGuard": {
+      "title": "Scartare le modifiche non salvate?",
+      "body": "Hai modifiche in questa scheda che non sono ancora salvate. Uscendo vengono scartate.",
+      "discard": "Scarta ed esci",
+      "stay": "Resta qui"
+    },
+    "slugGuard": {
+      "title": "Dai un indirizzo web a questa palestra",
+      "body": "Il tuo kiosk e la pagina pubblica della palestra hanno bisogno di uno slug URL breve prima che qualcuno possa aprirli.",
+      "label": "Slug URL",
+      "helper": "boardsesh.com/gym/{{slug}}",
+      "placeholder": "la-tua-palestra",
+      "save": "Salva slug",
+      "errorEmpty": "Inserisci uno slug.",
+      "errorInvalid": "Usa solo lettere minuscole, numeri e trattini.",
+      "saved": "Slug salvato.",
+      "saveFailed": "Impossibile salvare lo slug."
+    },
+    "kiosks": {
+      "emptyTitle": "Porta i tuoi pannelli su uno schermo",
+      "emptyBody": "Un kiosk mostra in diretta cosa è illuminato sui tuoi pannelli, nel browser di qualsiasi TV. Creane uno, assegna i tuoi pannelli e apri il suo URL sullo schermo.",
+      "cta": "Configura un kiosk",
+      "heading": "Kiosk",
+      "description": "Schermi TV che mostrano i tuoi pannelli in diretta. Ogni kiosk ha il suo URL.",
+      "newKiosk": "Nuovo kiosk",
+      "capReached": "Una palestra può avere fino a {{max}} kiosk.",
+      "needSlugHint": "Imposta qui sopra lo slug URL della tua palestra: gli URL dei kiosk ne hanno bisogno prima che una TV possa aprirli.",
+      "loadError": "Impossibile caricare i kiosk di questa palestra.",
+      "defaultBadge": "Predefinito",
+      "boardCount_one": "{{count}} pannello",
+      "boardCount_other": "{{count}} pannelli",
+      "railOn": "Classifica attiva",
+      "railOff": "Nessuna classifica",
+      "openTv": "Apri vista TV",
+      "openTvNeedsSlug": "Imposta prima lo slug URL della tua palestra (vedi il banner qui sopra).",
+      "urlPending": "URL: /kiosk/…/{{slug}} — serve lo slug della palestra",
+      "edit": "Modifica",
+      "delete": "Elimina",
+      "deleteTitle": "Eliminare questo kiosk?",
+      "deleteBody": "“{{name}}” si spegne: qualsiasi TV che lo mostra finisce su una schermata di pagina non trovata. Non si può annullare.",
+      "deleteBodyDefault": "“{{name}}” è il tuo kiosk predefinito: una TV sull'URL breve /kiosk passa al tuo kiosk più vecchio successivo, e le TV sull'URL di questo kiosk finiscono su una schermata di pagina non trovata. Non si può annullare.",
+      "deleteConfirm": "Elimina",
+      "cancel": "Annulla",
+      "deleted": "Kiosk eliminato.",
+      "deleteFailed": "Impossibile eliminare il kiosk.",
+      "liveness": {
+        "live": "In diretta",
+        "lastSeenMinutes_one": "Visto {{count}} minuto fa",
+        "lastSeenMinutes_other": "Visto {{count}} minuti fa",
+        "lastSeenHours_one": "Visto {{count}} ora fa",
+        "lastSeenHours_other": "Visto {{count}} ore fa",
+        "noSignalDays_one": "Nessun segnale da {{count}} giorno",
+        "noSignalDays_other": "Nessun segnale da {{count}} giorni",
+        "noSignalYet": "Ancora nessun segnale",
+        "reinstall": "Reinstalla sulla TV"
+      },
+      "reinstall": {
+        "title": "Rimetti in funzione questo schermo",
+        "body": "Apri questo URL nel browser della TV per riportare “{{name}}”, oppure scansionalo con un telefono per mandarlo lì.",
+        "scanHint": "Scansiona per aprire su un telefono",
+        "openTv": "Apri vista TV",
+        "close": "Fatto",
+        "noUrl": "Imposta prima lo slug URL della tua palestra: poi questo kiosk avrà un link da mettere su qualsiasi schermo."
+      }
+    },
+    "boards": {
+      "heading": "Pannelli in questa palestra",
+      "description": "Collega i pannelli che possiedi così compaiono sulla pagina della tua palestra e sui kiosk.",
+      "addBoard": "Aggiungi un pannello",
+      "empty": "Ancora nessun pannello collegato. Aggiungine uno per iniziare.",
+      "loadError": "Impossibile caricare i pannelli di questa palestra.",
+      "unlink": "Scollega",
+      "onlyOwnerCanUnlink": "Solo il proprietario del pannello può scollegarlo",
+      "readOnlyHint": "Solo il proprietario della palestra o un admin può collegare i pannelli.",
+      "unlinkTitle": "Scollegare questo pannello?",
+      "unlinkBody": "\"{{name}}\" non compare più sulla pagina e sui kiosk di questa palestra. Puoi ricollegarlo quando vuoi.",
+      "unlinkConfirm": "Scollega",
+      "cancel": "Annulla",
+      "linked": "Pannello collegato.",
+      "linkFailed": "Impossibile collegare il pannello.",
+      "unlinked": "Pannello scollegato.",
+      "unlinkFailed": "Impossibile scollegare il pannello.",
+      "visibility": {
+        "public": "Pubblico",
+        "unlisted": "Non in elenco",
+        "private": "Privato"
+      },
+      "printPoster": "Stampa poster",
+      "addDialog": {
+        "title": "Aggiungi uno dei tuoi pannelli",
+        "body": "Scegli un pannello che possiedi da collegare a questa palestra.",
+        "empty": "Non ti restano pannelli da collegare.",
+        "loading": "Caricamento dei tuoi pannelli…",
+        "link": "Collega",
+        "close": "Chiudi"
+      },
+      "strays": {
+        "heading": "Pannelli che potrebbero essere tuoi",
+        "description": "Si trovano nella tua palestra o si sono staccati da una scheda unita. Aggiungi quelli che appartengono qui.",
+        "reasonMerged": "Era su una scheda unita",
+        "reasonNearby": "a {{meters}} m",
+        "reasonNearbyGeneric": "Proprio vicino",
+        "onListing": "su \"{{name}}\"",
+        "attach": "Aggiungi alla palestra",
+        "attached": "Pannello aggiunto alla tua palestra.",
+        "attachFailed": "Impossibile aggiungere quel pannello.",
+        "lastBoardNote": "Ultimo pannello di quella scheda",
+        "lastBoardTitle": "Così l'altra scheda resta vuota",
+        "lastBoardBody": "\"{{name}}\" non ha altri pannelli. Aggiungi questo e quella scheda si fonde nella tua palestra: i vecchi link portano comunque qui, e non compare più nella ricerca come duplicato vuoto.",
+        "lastBoardConfirm": "Aggiungi e unisci",
+        "empty": "Nessun pannello isolato al momento. Ogni pannello vicino alla tua palestra è già nella tua scheda.",
+        "loadError": "Impossibile cercare pannelli isolati.",
+        "retry": "Riprova"
+      }
+    },
+    "presets": {
+      "single": "Un pannello",
+      "dual": "Due pannelli",
+      "triple": "Tre pannelli",
+      "quad": "Quattro pannelli",
+      "none": "Ancora nessun pannello"
+    },
+    "createDialog": {
+      "title": "Nuovo kiosk",
+      "body": "Dagli il nome del posto dove è appeso lo schermo: “TV della reception”, “Angolo Kilter”.",
+      "nameLabel": "Nome del kiosk",
+      "namePlaceholder": "TV della parete principale",
+      "urlHint": "URL assegnato alla creazione.",
+      "create": "Crea kiosk",
+      "cancel": "Annulla",
+      "created": "Kiosk creato: il suo URL finisce con /{{slug}}.",
+      "createFailed": "Impossibile creare il kiosk."
+    },
+    "editor": {
+      "back": "Tutti i kiosk",
+      "save": "Salva layout",
+      "saved": "Kiosk salvato.",
+      "saveFailed": "Impossibile salvare il kiosk.",
+      "needSlug": "Imposta lo slug della palestra per ottenere l'URL di questo kiosk",
+      "boardsHeading": "Pannelli su questo schermo",
+      "boardsLoadError": "Impossibile caricare i pannelli di questa palestra. Ricarica la pagina per riprovare.",
+      "slotLabel": "Posizione {{index}}",
+      "slotUnknownBoard": "Questo pannello non è più in questa palestra: rimuovilo.",
+      "addBoard": "Aggiungi un pannello",
+      "addBoardHelper": "L'ordine delle posizioni è l'ordine sullo schermo.",
+      "addBoardNoneLeft": "Ogni pannello della palestra è già su questo kiosk.",
+      "addBoardFullHelper": "Un kiosk mostra fino a {{max}} pannelli.",
+      "moveUp": "Sposta su",
+      "moveDown": "Sposta giù",
+      "removeSlot": "Rimuovi pannello",
+      "presetNoneHelper": "Aggiungi un pannello e qui compare il layout della TV.",
+      "quadRailHint": "Quattro pannelli più la classifica sono un po' stretti: ogni pannello ha circa 740×420 pixel su una TV 1080p. Controlla che l'anteprima si legga ancora da lontano.",
+      "leaderboardHeading": "Barra della classifica",
+      "railSwitch": "Mostra la classifica",
+      "railDisabledTooltip": "Assegna prima almeno un pannello: la classifica ordina le ripetizioni sui pannelli di questo kiosk.",
+      "scopeLabel": "Classifica le ripetizioni su",
+      "scopeAll": "Tutti i pannelli del kiosk",
+      "periodLabel": "Periodo",
+      "period": {
+        "session": "Session",
+        "day": "Ultime 24 ore",
+        "week": "Settimana",
+        "month": "Mese"
+      },
+      "previewHeading": "Anteprima in diretta",
+      "previewHint": "Questo è il vero rendering del kiosk: le ripetizioni in diretta compaiono mentre accadono e le modifiche non salvate si vedono subito.",
+      "previewMissingBoard": "Questo pannello non è più in questa palestra",
+      "previewUnavailable": "{{name}} non può essere mostrato qui",
+      "slotDuplicateError": "Questo pannello è già in un'altra posizione.",
+      "scopeInvalidError": "Scegli uno dei pannelli del kiosk.",
+      "installQrHeading": "QR per installare l'app",
+      "installQrSwitch": "Mostra il QR per installare l'app su ogni pannello",
+      "installQrHelper": "Ogni pannello mostra un codice che i climber scansionano per scaricare Boardsesh e registrare le ripetizioni su quel pannello.",
+      "discardTitle": "Scartare le modifiche?",
+      "discardBody": "Le modifiche al layout non sono ancora salvate.",
+      "keepEditing": "Continua a modificare",
+      "discard": "Scarta"
+    },
+    "overview": {
+      "quickLinksHeading": "Gestisci la tua palestra",
+      "viewPublicPage": "Vedi la pagina pubblica",
+      "embedAction": "Incorpora nel tuo sito",
+      "printPoster": "Stampa il tuo poster",
+      "stats": {
+        "boards": "pannelli",
+        "members": "membri",
+        "followers": "follower",
+        "kiosks": "kiosk"
+      },
+      "quickLinks": {
+        "kiosks": {
+          "title": "Mettila sulla TV",
+          "body": "Crea uno schermo in diretta per la tua palestra"
+        },
+        "branding": {
+          "title": "Imposta i tuoi colori",
+          "body": "Aggiungi logo e colori del brand"
+        },
+        "boards": {
+          "title": "Collega i tuoi pannelli",
+          "body": "Collega i pannelli della tua palestra"
+        },
+        "members": {
+          "title": "Invita la tua crew",
+          "body": "Aggiungi staff e tracciatori che la gestiscono"
+        },
+        "insights": {
+          "title": "Guarda l'attività di questa settimana",
+          "body": "Chi sta scalando e cosa viene chiuso"
+        },
+        "profile": {
+          "title": "Modifica il tuo profilo",
+          "body": "Nome, indirizzo, sito e visibilità"
+        }
+      }
+    },
+    "profile": {
+      "heading": "Profilo della palestra",
+      "description": "Il nome, l'indirizzo della tua palestra e ciò che i climber vedono sulla pagina pubblica.",
+      "photo": {
+        "heading": "Foto della palestra",
+        "description": "Uno scatto della tua parete o dell'area dei pannelli. Apre la tua pagina pubblica e viaggia con il link quando qualcuno lo condivide.",
+        "upload": "Carica foto",
+        "replace": "Sostituisci foto",
+        "remove": "Rimuovi",
+        "currentAlt": "Foto di {{gymName}}",
+        "emptyPlaceholder": "Ancora nessuna foto",
+        "formatsHint": "JPG, PNG o WebP, fino a {{maxMb}} MB. Ridimensionata a {{maxDimension}} px. Usa una foto vera della tua parete o dell'area dei pannelli, non una generata con l'IA.",
+        "unsupportedType": "Usa un'immagine JPG, PNG o WebP.",
+        "tooLarge": "Quel file supera {{maxMb}} MB. Scegli un'immagine più piccola.",
+        "uploadTooLarge": "Quella foto supera ancora {{maxMb}} MB dopo il ridimensionamento. Scegline un'altra.",
+        "uploadFailed": "Impossibile caricare la foto.",
+        "saveFailed": "Impossibile salvare la foto."
+      }
+    },
+    "comments": {
+      "intro": "Rispondi al thread dei commenti della tua palestra senza uscire dalla console.",
+      "heading": "Cosa dice la tua crew"
+    }
+  },
+  "branding": {
+    "logo": {
+      "heading": "Logo della palestra",
+      "description": "Compare nell'intestazione del kiosk e negli embed. I PNG trasparenti rendono meglio sullo schermo TV scuro.",
+      "upload": "Carica logo",
+      "replace": "Sostituisci logo",
+      "remove": "Rimuovi",
+      "removed": "Logo rimosso.",
+      "uploaded": "Logo salvato.",
+      "uploadFailed": "Impossibile caricare il logo.",
+      "saveFailed": "Impossibile salvare il logo.",
+      "tooLarge": "Quel file supera 10 MB. Scegli un'immagine più piccola.",
+      "uploadTooLarge": "Quel file supera 2 MB e le GIF animate non si possono ridurre qui. Scegline uno più piccolo.",
+      "unsupportedType": "Usa un'immagine JPG, PNG, GIF o WebP.",
+      "currentAlt": "Logo di {{gymName}}",
+      "emptyPlaceholder": "Nessun logo",
+      "formatsHint": "JPG, PNG, GIF o WebP. Ridimensionato a 512 px: la trasparenza resta."
+    },
+    "colors": {
+      "heading": "Colori del brand",
+      "description": "Il tuo kiosk resta scuro: questi colori definiscono l'accento su chip dei gradi ed evidenziazioni.",
+      "primary": "Colore primario",
+      "accent": "Colore di accento",
+      "invalidHex": "Usa un valore esadecimale #RRGGBB.",
+      "contrastWarning": "{{colors}}: difficile da leggere sullo schermo scuro del kiosk (contrasto sotto 3:1). Il kiosk lo schiarisce da solo finché si legge.",
+      "save": "Salva colori",
+      "saved": "Colori salvati.",
+      "saveFailed": "Impossibile salvare i colori.",
+      "unsavedHint": "Modifiche non salvate"
+    },
+    "preview": {
+      "heading": "Anteprima del kiosk",
+      "sampleChip": "Esempio di accento",
+      "poweredByNote": "Il badge “Powered by Boardsesh” compare su ogni kiosk ed embed e non si può rimuovere."
+    },
+    "reset": {
+      "button": "Ripristina il brand ai valori predefiniti",
+      "title": "Ripristinare il brand?",
+      "body": "Cancella il tuo logo e tutti e tre i colori. Kiosk ed embed tornano all'aspetto Boardsesh.",
+      "confirm": "Ripristina",
+      "cancel": "Annulla",
+      "done": "Brand ripristinato."
+    }
+  }
+}

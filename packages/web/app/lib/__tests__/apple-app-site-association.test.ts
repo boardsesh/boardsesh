@@ -111,10 +111,12 @@ describe('apple-app-site-association paths', () => {
       'NOT /es/gym/*',
       'NOT /fr/gym/*',
       'NOT /de/gym/*',
+      'NOT /it/gym/*',
       'NOT /poster/*',
       'NOT /es/poster/*',
       'NOT /fr/poster/*',
       'NOT /de/poster/*',
+      'NOT /it/poster/*',
       '/*',
     ]);
   });

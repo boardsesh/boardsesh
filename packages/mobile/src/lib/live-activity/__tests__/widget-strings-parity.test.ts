@@ -9,7 +9,7 @@ import { join } from 'node:path';
 // button but Mirror shipped English-only before #6513.
 
 const WIDGET_TARGET = join(__dirname, '../../../../targets/BoardseshWidgets');
-const LANGUAGES = ['en', 'es', 'fr', 'de'] as const;
+const LANGUAGES = ['en', 'es', 'fr', 'de', 'it'] as const;
 
 // Keys the widget's SwiftUI literals resolve through. Interpolated literals
 // become format keys: `Text("\(index) of \(total)")` looks up "%lld of %lld".

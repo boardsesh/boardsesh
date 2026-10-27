@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
+import type { Locale } from '../../packages/shared/i18n/src/config';
 import {
   CAPTION_IDS,
   validateScreenshotBoardLabels,
@@ -14,6 +15,10 @@ import {
   screenshotCppBoardMatches,
   type ScreenshotCppBoardIdentity,
 } from '../../packages/mobile/src/lib/screenshot-cpp-board-identity';
+
+// Ready text per app locale. Only the store-captured locales (en-US, es, fr, de)
+// carry one; a locale without store screenshots yet falls back to readyText.
+type LocalizedReadyText = Partial<Record<Locale, string>>;
 
 export const CPP_TARGETS = ['kilter', 'tension', 'moonboard', 'spray'] as const;
 export type CppTarget = (typeof CPP_TARGETS)[number];
@@ -47,7 +52,7 @@ export interface CppSceneCoverage {
   ascentId?: string;
   /** Actual rendered climb identifier, preserving Aurora's compact UUID form. */
   climbId?: string;
-  readyTextByLocale?: Record<'en-US' | 'es' | 'fr' | 'de', string>;
+  readyTextByLocale?: LocalizedReadyText;
   sessionId?: string;
   /** Genuine GradeRail bounds and the API count for this exact selection. */
   gradeFilter?: {
@@ -94,7 +99,7 @@ export interface CppCaptureCoverage {
   /** Actual visible names from the verified UUID/config-matched owned roster. */
   boardNames?: Record<string, string>;
   boardReadyText: Record<string, string>;
-  boardReadyTextByLocale?: Record<string, Record<'en-US' | 'es' | 'fr' | 'de', string>>;
+  boardReadyTextByLocale?: Record<string, LocalizedReadyText>;
   boardHeroModes?: Record<string, 'climb' | 'wall-editor'>;
   boardClimbCounts?: Record<string, number>;
   boardPhotoSha256?: Record<string, string>;

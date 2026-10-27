@@ -1,0 +1,515 @@
+{
+  "metadata": {
+    "admin": {
+      "title": "Area admin",
+      "description": "Area admin di Boardsesh"
+    },
+    "retention": {
+      "title": "Retention",
+      "description": "Dashboard della retention per coorte"
+    }
+  },
+  "title": "Area admin",
+  "auth": {
+    "signInRequired": "Accedi per usare l'area admin.",
+    "noAccess": "Non hai accesso admin.",
+    "boardScopedNoAccess": "Il tuo ruolo admin copre un solo pannello. Questi strumenti richiedono l'accesso admin all'intero sito."
+  },
+  "tabs": {
+    "roles": "Ruoli",
+    "settings": "Impostazioni",
+    "gyms": "Palestre"
+  },
+  "nav": {
+    "retention": "Dashboard della retention",
+    "gymClaims": "Richieste di proprietà",
+    "feedback": "Segnalazioni di bug",
+    "gymDuplicates": "Palestre duplicate",
+    "locationSync": "Sincronizzazioni delle sedi congelate",
+    "sprayWalls": "Dati di addestramento Spraywall"
+  },
+  "feedback": {
+    "title": "Segnalazioni di bug e feedback",
+    "subtitle": "Segnalazioni di bug e valutazioni dall'app. Filtra, trova l'email di chi ha segnalato e segna come completate.",
+    "backToAdmin": "Torna all'admin",
+    "type": {
+      "bugs": "Bug",
+      "ratings": "Valutazioni",
+      "all": "Tutti",
+      "bug": "Bug",
+      "rating": "Valutazione"
+    },
+    "status": {
+      "new": "Nuova",
+      "in_progress": "In corso",
+      "resolved": "Risolta",
+      "wont_fix": "Non verrà corretta"
+    },
+    "statusFilter": {
+      "all": "Tutte"
+    },
+    "search": {
+      "placeholder": "Cerca nei commenti"
+    },
+    "table": {
+      "date": "Data",
+      "type": "Tipo",
+      "platform": "Piattaforma",
+      "comment": "Commento",
+      "reporter": "Segnalato da",
+      "status": "Stato",
+      "github": "GitHub",
+      "actions": "Azioni"
+    },
+    "reporter": {
+      "anonymous": "Anonimo",
+      "copyEmail": "Copia email",
+      "consentYes": "Contatto consentito",
+      "consentNo": "Nessun consenso"
+    },
+    "rating": {
+      "value": "{{rating}}/5"
+    },
+    "github": {
+      "view": "Issue #{{number}}"
+    },
+    "actions": {
+      "markDone": "Segna come fatta"
+    },
+    "detail": {
+      "toggle": "Mostra o nascondi i dettagli",
+      "comment": "Commento",
+      "board": "Pannello",
+      "climb": "Blocco",
+      "session": "Session",
+      "url": "URL",
+      "userAgent": "User agent",
+      "screenshots": "Screenshot",
+      "screenshotAlt": "Screenshot {{index}}",
+      "resolvedBy": "Risolta da",
+      "releaseChannel": "Canale di rilascio",
+      "releaseBranch": "Branch in uso",
+      "updateId": "ID aggiornamento",
+      "runtimeVersion": "Runtime",
+      "automaticCanary": "Canary automatico",
+      "canaryYes": "Sì",
+      "canaryNo": "No",
+      "canaryUnknown": "Sconosciuto",
+      "canaryCheckedAt": "Canary verificato"
+    },
+    "empty": "Nessun feedback corrisponde a questi filtri.",
+    "error": "Impossibile caricare il feedback.",
+    "retry": "Riprova",
+    "loadMore": "Carica altri",
+    "showing": "Mostrati {{shown}} su {{total}}",
+    "snackbar": {
+      "statusUpdated": "Stato aggiornato",
+      "updateFailed": "Impossibile aggiornare lo stato",
+      "emailCopied": "Email copiata",
+      "copyFailed": "Copia non riuscita"
+    }
+  },
+  "retention": {
+    "heading": "Retention degli utenti",
+    "subheading": "Tra gli utenti iscritti nella settimana W, quanti erano attivi il giorno N: la classica retention Dn. Calcolata sia per le salite registrate (blocchi segnati) sia per qualsiasi attività nell'app.",
+    "definitions": "Coorte = settimana di iscrizione (UTC). Dn conta un utente se ha avuto attività nelle 24 ore che iniziano N giorni dopo l'iscrizione (quindi D7 = attivo esattamente il giorno 7, non in un momento qualsiasi dei primi 7 giorni). Salite = almeno un blocco registrato in Boardsesh (escluse le salite importate da Aurora). Qualsiasi attività = una salita, creare o unirsi a una party session, un preferito, una playlist (creata o fissata), un follow (utente, tracciatore o playlist), l'iscrizione ai nuovi blocchi, un commento, un voto, un voto a una proposta o l'invio di un feedback. Le coorti più recenti della finestra mostrano —.",
+    "back": "Torna all'admin",
+    "table": {
+      "cohortWeek": "Settimana della coorte",
+      "signups": "Iscrizioni",
+      "groupTicks": "Salite",
+      "groupAny": "Qualsiasi attività",
+      "activated": "Attivati",
+      "d1": "D1",
+      "d3": "D3",
+      "d7": "D7",
+      "d30": "D30",
+      "notReady": "—",
+      "empty": "Ancora nessun dato di coorte."
+    },
+    "chart": {
+      "title": "Retention a D7 per settimana di coorte",
+      "label": "Salite",
+      "labelAny": "Qualsiasi attività"
+    }
+  },
+  "roles": {
+    "heading": "Ruoli della community",
+    "grant": "Assegna ruolo",
+    "table": {
+      "user": "Utente",
+      "role": "Ruolo",
+      "board": "Pannello",
+      "grantedBy": "Assegnato da",
+      "date": "Data",
+      "actions": "Azioni"
+    },
+    "labels": {
+      "admin": "Admin",
+      "leader": "Leader",
+      "tester": "Tester",
+      "global": "Globale",
+      "fallbackUserInitial": "U",
+      "fallbackEmpty": "-"
+    },
+    "empty": "Ancora nessun ruolo assegnato",
+    "dialog": {
+      "title": "Assegna ruolo",
+      "search": {
+        "label": "Cerca utente",
+        "placeholder": "Scrivi un nome per cercare..."
+      },
+      "fallbackUserInitial": "U",
+      "change": "Cambia",
+      "roleLabel": "Ruolo",
+      "boardTypeLabel": "Tipo di pannello (facoltativo)",
+      "boardTypeOptions": {
+        "global": "Globale (tutti i pannelli)"
+      },
+      "roleOptions": {
+        "communityLeader": "Leader della community",
+        "admin": "Admin",
+        "tester": "Tester"
+      },
+      "cancel": "Annulla",
+      "submit": "Assegna"
+    },
+    "snackbar": {
+      "granted": "Ruolo assegnato",
+      "grantFailed": "Impossibile assegnare il ruolo",
+      "revoked": "Ruolo revocato",
+      "revokeFailed": "Impossibile revocare il ruolo"
+    }
+  },
+  "settings": {
+    "heading": "Impostazioni della community",
+    "scope": {
+      "label": "Ambito",
+      "options": {
+        "global": "Globale",
+        "board": "Pannello",
+        "climb": "Blocco"
+      },
+      "boardTypeLabel": "Tipo di pannello",
+      "boardTypePlaceholder": "kilter, tension",
+      "climbUuidLabel": "UUID del blocco",
+      "climbUuidPlaceholder": "UUID del blocco"
+    },
+    "table": {
+      "setting": "Impostazione",
+      "description": "Descrizione",
+      "value": "Valore"
+    },
+    "rows": {
+      "approvalThreshold": {
+        "label": "Soglia di approvazione",
+        "description": "Voti ponderati necessari per l'approvazione automatica"
+      },
+      "outlierMinAscents": {
+        "label": "Salite minime per outlier",
+        "description": "Salite minime per rilevare un outlier"
+      },
+      "outlierGradeDiff": {
+        "label": "Differenza di grado per outlier",
+        "description": "Soglia di differenza di grado per un outlier"
+      },
+      "adminVoteWeight": {
+        "label": "Peso del voto admin",
+        "description": "Moltiplicatore del peso del voto per gli admin"
+      },
+      "leaderVoteWeight": {
+        "label": "Peso del voto leader",
+        "description": "Moltiplicatore del peso del voto per i leader"
+      }
+    },
+    "save": "Salva tutto",
+    "saving": "Salvataggio...",
+    "snackbar": {
+      "saved_one": "{{count}} impostazione salvata",
+      "saved_other": "{{count}} impostazioni salvate",
+      "saveFailed": "Impossibile salvare le impostazioni"
+    }
+  },
+  "gymSettings": {
+    "heading": "Impostazioni delle palestre",
+    "autoApprove": {
+      "label": "Approva in automatico le richieste di proprietà",
+      "description": "Assegna le palestre senza proprietario direttamente a chi le rivendica. Le richieste su una palestra che ha già un proprietario arrivano comunque a te.",
+      "queueNote": "Le richieste già in coda restano lì."
+    },
+    "snackbar": {
+      "enabled": "Approvazione automatica attiva.",
+      "disabled": "Approvazione automatica disattivata.",
+      "saveFailed": "Impossibile salvare. Riprova.",
+      "loadFailed": "Impossibile caricare le impostazioni delle palestre."
+    }
+  },
+  "gymClaims": {
+    "title": "Richieste di proprietà",
+    "backToAdmin": "Torna all'admin",
+    "heading": "Richieste in attesa",
+    "empty": "Nessuna richiesta in attesa",
+    "error": "Impossibile caricare le richieste. Riprova.",
+    "retry": "Riprova",
+    "approve": "Approva",
+    "deny": "Rifiuta",
+    "method": {
+      "domain": "Dominio",
+      "admin": "Revisione"
+    },
+    "snackbar": {
+      "approved": "Richiesta approvata: proprietà trasferita",
+      "denied": "Richiesta rifiutata",
+      "failed": "Impossibile aggiornare la richiesta",
+      "superseded": "Questa palestra ha cambiato proprietario dopo l'invio della richiesta. Rifiutala, oppure usa Sposta la proprietà della palestra qui sotto."
+    },
+    "table": {
+      "claimant": "Richiedente",
+      "gym": "Palestra",
+      "method": "Metodo",
+      "detail": "Dettaglio",
+      "date": "Data",
+      "actions": "Azioni"
+    },
+    "loadMore": "Carica altre"
+  },
+  "gymOwnerReassign": {
+    "title": "Sposta la proprietà della palestra",
+    "intro": "Passa una palestra a un altro account quando cambia gestione: una palestra venduta, un membro del comitato che se n'è andato, una richiesta approvata alla persona sbagliata. Il congelamento della sincronizzazione della scheda resta esattamente com'è e il proprietario uscente resta admin della palestra.",
+    "form": {
+      "gymLabel": "Palestra",
+      "gymPlaceholder": "UUID, slug o nome",
+      "ownerLabel": "Nuovo proprietario",
+      "ownerPlaceholder": "Email o ID utente dell'account",
+      "submit": "Cerca",
+      "searching": "Ricerca in corso…"
+    },
+    "result": {
+      "gymHeading": "Palestra",
+      "ownerHeading": "Nuovo proprietario",
+      "noGym": "Nessuna palestra corrisponde a questa ricerca.",
+      "noOwner": "Nessun account corrisponde a questa email o a questo ID.",
+      "currentOwner": "Di proprietà di {{owner}}",
+      "unknownOwner": "un account che non esiste più",
+      "systemOwned": "Scheda senza proprietario",
+      "frozen": "Sincronizzazione congelata",
+      "notFrozen": "Sincronizzazione non congelata",
+      "deleted": "Questa scheda è stata eliminata, quindi non c'è nessuna proprietà da spostare.",
+      "merged": "Questa scheda è stata unita a un'altra palestra. Sposta invece la scheda rimasta.",
+      "sameOwner": "Quell'account è già proprietario di questa palestra."
+    },
+    "actions": {
+      "reassign": "Sposta la proprietà"
+    },
+    "confirm": {
+      "title": "Passare questa palestra a un nuovo proprietario?",
+      "body": "{{gym}} passa da {{from}} a {{to}}. Il proprietario uscente mantiene l'accesso da admin della palestra; il nuovo proprietario ottiene il controllo completo.",
+      "freezeNote": "Il congelamento della sincronizzazione della scheda resta esattamente com'è: questo passaggio non lo attiva né lo toglie.",
+      "reasonLabel": "Motivo",
+      "reasonPlaceholder": "Perché questa palestra cambia gestione?",
+      "reasonRemaining": "Caratteri ancora necessari: {{count}}",
+      "reasonStored": "Questo motivo resta nel registro di controllo.",
+      "cancel": "Annulla",
+      "submit": "Sposta la proprietà",
+      "submitting": "Spostamento in corso…"
+    },
+    "snackbar": {
+      "moved": "{{gym}} è passata al nuovo proprietario",
+      "failed": "Impossibile spostare la proprietà. Controlla la palestra e riprova.",
+      "ownerChanged": "Questa palestra ha cambiato proprietario mentre la conferma era aperta. Cercala di nuovo per vedere chi la possiede ora.",
+      "newOwnerGone": "Quell'account non esiste più. Cercane un altro.",
+      "merged": "Questa scheda è stata unita a un'altra palestra. Sposta invece la scheda rimasta.",
+      "gymGone": "Questa palestra non è più disponibile per essere spostata.",
+      "ownerUnchanged": "Quell'account è già proprietario di questa palestra.",
+      "lookupFailed": "Ricerca non riuscita. Riprova."
+    }
+  },
+  "locationSync": {
+    "title": "Sincronizzazioni delle sedi congelate",
+    "backToAdmin": "Torna all'admin",
+    "intro": "Rimuovi una modifica manuale solo quando la scheda originale deve tornare a prevalere. Non avvia una sincronizzazione: il prossimo aggiornamento della fonte corrispondente può sostituire i dettagli o riportare in vita una scheda eliminata.",
+    "tabs": {
+      "label": "Tipo di scheda",
+      "gyms": "Palestre",
+      "boards": "Pannelli"
+    },
+    "search": {
+      "label": "Cerca schede congelate",
+      "placeholder": "Nome, slug o UUID",
+      "submit": "Cerca"
+    },
+    "summary": "Mostrate {{shown}} schede congelate su {{total}}",
+    "retry": "Riprova",
+    "error": "Impossibile caricare le schede congelate.",
+    "empty": "Nessuna scheda congelata corrisponde a questa ricerca.",
+    "loadMore": "Carica altre",
+    "notAvailable": "questa scheda",
+    "table": {
+      "listing": "Scheda",
+      "state": "Stato",
+      "frozenAt": "Congelata il",
+      "sources": "Fonti di sincronizzazione",
+      "actions": "Azioni",
+      "noRecordedSources": "Nessuna fonte registrata"
+    },
+    "state": {
+      "deleted": "Eliminata",
+      "live": "Attiva",
+      "systemOwned": "Del sistema",
+      "userOwned": "Di un utente",
+      "ownerProtected": "Protetta dal proprietario"
+    },
+    "actions": {
+      "release": "Scongela"
+    },
+    "confirm": {
+      "title": "Scongelare questa sincronizzazione?",
+      "body": "La prossima sincronizzazione delle sedi corrispondente potrà aggiornare di nuovo {{name}}. Leggi gli avvisi e scrivi perché la stai scongelando.",
+      "deletedWarning": "Questa scheda è eliminata. Una fonte corrispondente può riportarla in vita alla prossima sincronizzazione.",
+      "ownerProtectedWarning": "Questa palestra ha un proprietario utente o una richiesta approvata. La protezione del proprietario resta attiva anche dopo lo scongelamento.",
+      "noSourceWarning": "Al momento nessuna fonte di sincronizzazione è collegata a questa palestra. Lo scongelamento non avrà effetto finché una fonte non la trova.",
+      "moonBoardWarning": "Le sincronizzazioni delle sedi MoonBoard si avviano a mano, non a orari fissi. Dopo lo scongelamento, le modifiche della fonte arrivano quando qualcuno avvia la prossima sincronizzazione delle sedi MoonBoard.",
+      "reasonLabel": "Motivo",
+      "reasonPlaceholder": "Perché i dati originali devono tornare a prevalere?",
+      "reasonRemaining": "Caratteri ancora necessari: {{count}}",
+      "reasonStored": "Questo motivo verrà salvato nel registro di controllo.",
+      "cancel": "Annulla",
+      "releasing": "Scongelamento in corso…",
+      "release": "Scongela"
+    },
+    "snackbar": {
+      "alreadyReleased": "La sincronizzazione era già stata scongelata",
+      "released": "Sincronizzazione scongelata",
+      "failed": "Impossibile scongelare la sincronizzazione. L'elenco è stato aggiornato."
+    }
+  },
+  "gymDuplicates": {
+    "title": "Palestre duplicate",
+    "backToAdmin": "Torna all'admin",
+    "heading": "Coda di revisione dei duplicati",
+    "tabs": {
+      "duplicates": "Duplicati",
+      "orphans": "Audit delle orfane"
+    },
+    "tier": {
+      "a": "Corrispondenza esatta",
+      "b": "Corrispondenza vicina"
+    },
+    "maxDistance": "Distanza fino a {{meters}} m",
+    "owner": {
+      "system": "Sistema",
+      "user": "Di un utente"
+    },
+    "claim": {
+      "pending": "Richiesta in attesa",
+      "approved": "Richiesta approvata"
+    },
+    "counts": "{{boards}} pannelli · {{follows}} follow · {{members}} membri · {{kiosks}} kiosk · {{claims}} richieste",
+    "orphanCounts": "{{boards}} pannelli · {{follows}} follow · {{members}} membri · {{kiosks}} kiosk",
+    "distance": "A {{meters}} m dalla scheda da mantenere",
+    "merge": "Unisci",
+    "dismiss": "Non è un duplicato",
+    "confirm": {
+      "title": "Unire queste palestre?",
+      "body": "Questo unisce {{count}} palestre duplicate in {{canonical}} e sposta su di essa {{boards}} pannelli, {{follows}} follow, {{members}} membri, {{kiosks}} kiosk e {{claims}} richieste. L'operazione non si può annullare.",
+      "cancel": "Annulla",
+      "confirm": "Unisci",
+      "overrideWarning": "Attenzione: stai mantenendo una scheda di sistema al posto di una palestra che ha un proprietario o una richiesta. La loro palestra verrà assorbita da quella di sistema. Fallo solo se la scheda di sistema è davvero quella giusta.",
+      "confirmOverride": "Unisci comunque"
+    },
+    "kioskWarning": "Il kiosk \"{{name}}\" è passato da /{{previous}} a /{{next}}",
+    "snackbar": {
+      "merged": "Palestre unite",
+      "mergeFailed": "Impossibile unire le palestre",
+      "dismissed": "Segnata come non duplicata",
+      "dismissFailed": "Impossibile scartare il gruppo"
+    },
+    "empty": "Nessun duplicato da rivedere",
+    "error": "Impossibile caricare i duplicati. Riprova.",
+    "retry": "Riprova",
+    "loadMore": "Carica altri",
+    "orphans": {
+      "summary": "{{count}} palestre del sistema senza una fonte di sincronizzazione delle sedi",
+      "empty": "Nessuna palestra orfana",
+      "name": "Palestra",
+      "address": "Indirizzo",
+      "counts": "Conteggi"
+    },
+    "ownerReports": {
+      "note": "Ora i proprietari possono segnalare i duplicati dalla pagina della loro palestra. Per ora queste segnalazioni arrivano via email al team, quindi tieni d'occhio la casella oltre a questa coda."
+    }
+  },
+  "sprayTraining": {
+    "title": "Dati di addestramento Spraywall",
+    "statusLabel": "Stato della revisione",
+    "status": {
+      "unreviewed": "Da rivedere ({{total}})",
+      "approved": "Approvate ({{total}})",
+      "rejected": "Rifiutate ({{total}})"
+    },
+    "empty": "Qui non c'è niente",
+    "error": "Impossibile caricare la coda. Riprova.",
+    "retry": "Riprova",
+    "loadMore": "Carica altre",
+    "card": {
+      "open": "Rivedi la versione {{version}} della Spraywall",
+      "holds": "Prese: {{total}}",
+      "edited": "Modificate: {{percent}}%",
+      "accepted": "Accettate senza controllo: {{percent}}%",
+      "deleted": "Suggerimenti eliminati: {{total}}"
+    },
+    "kind": {
+      "manual": "Segnata a mano",
+      "auto": "Trovata, senza revisione",
+      "accepted": "Accettata senza controllo",
+      "confirmed": "Confermata come possibile",
+      "edited": "Modificata",
+      "deleted": "Suggerimento eliminato",
+      "notShown": "Mai mostrata"
+    },
+    "reason": {
+      "BAD_HOLDS": "Prese disegnate male",
+      "MISSING_HOLDS": "Prese mancanti",
+      "PHOTO_QUALITY": "Qualità della foto",
+      "NOT_A_WALL": "Non è una parete di arrampicata",
+      "PEOPLE_OR_PERSONAL_INFO": "Persone o dati personali",
+      "DUPLICATE": "Duplicato",
+      "OTHER": "Altro"
+    },
+    "visibility": {
+      "PRIVATE": "Visibilità: privata",
+      "UNLISTED": "Visibilità: solo con link",
+      "PUBLIC": "Visibilità: pubblica"
+    },
+    "review": {
+      "title": "Versione {{version}} della Spraywall",
+      "close": "Chiudi",
+      "previous": "Spraywall precedente",
+      "next": "Spraywall successiva",
+      "position": "{{current}} di {{total}}",
+      "photoAlt": "Foto della Spraywall con le prese segnate",
+      "noPhoto": "Questa foto non è più disponibile.",
+      "photoLoading": "Caricamento della foto",
+      "loadingNext": "Caricamento di altre Spraywall",
+      "unmappable": "Prese che non è stato possibile collocare sulla foto: {{total}}",
+      "model": "Rilevatore: {{version}}",
+      "showMarks": "Mostra i segni (H)",
+      "legend": "Legenda",
+      "reason": "Motivo del rifiuto",
+      "notes": "Note (facoltative)",
+      "approve": "Approva (A)",
+      "reject": "Rifiuta (R)",
+      "backToUnreviewed": "Torna a quelle da rivedere",
+      "shortcuts": "A approva, R rifiuta, H nasconde i segni, frecce sinistra e destra per precedente e successiva."
+    },
+    "snackbar": {
+      "approved": "Approvata",
+      "rejected": "Rifiutata",
+      "reset": "Di nuovo nella coda da rivedere",
+      "failed": "Impossibile salvare la revisione",
+      "notEligible": "Non salvata. Questa Spraywall non è più disponibile come dato di addestramento."
+    },
+    "backToAdmin": "Torna all'admin",
+    "noAccess": "Il tuo ruolo admin non copre le Spraywall. Questa pagina richiede l'accesso admin alle Spraywall o all'intero sito."
+  }
+}

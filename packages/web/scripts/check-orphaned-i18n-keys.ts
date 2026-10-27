@@ -5,7 +5,7 @@
  * `packages/backend/src/`:
  *
  *   - ORPHANS — a key in `packages/shared/i18n/locales/en-US/<ns>.json` with no
- *     live reference. en-US is the source of truth — `es`, `fr`, and `de` fall
+ *     live reference. en-US is the source of truth — `es`, `fr`, `de`, and `it` fall
  *     back through i18next, so an orphan in en-US is an orphan in every locale.
  *   - MISSING — a `t()` / `<Trans>` reference to a key that exists in no catalog.
  *     i18next has no `parseMissingKeyHandler` here, so it renders the raw key: a
@@ -843,7 +843,7 @@ function formatReport(report: Report): { exitCode: 0 | 1; lines: string[] } {
       `Found ${report.orphans.length} orphaned key(s) across ${new Set(report.orphans.map((orphan) => orphan.namespace)).size} namespace(s).`,
     );
     lines.push(
-      'Delete each from every locale catalog (en-US, es, fr, de) or add `// i18n-keep namespace.key.path` if the key is referenced outside the scanned web + mobile source.',
+      'Delete each from every locale catalog (en-US, es, fr, de, it) or add `// i18n-keep namespace.key.path` if the key is referenced outside the scanned web + mobile source.',
     );
   }
 
@@ -858,7 +858,7 @@ function formatReport(report: Report): { exitCode: 0 | 1; lines: string[] } {
     lines.push('');
     lines.push(`Found ${report.missing.length} reference(s) to key(s) that exist in no catalog.`);
     lines.push(
-      "i18next renders the raw key when it can't resolve one, so each of these ships as visible gibberish. Add the key to all four locale catalogs (en-US, es, fr, de) or point the call at a key that already exists.",
+      "i18next renders the raw key when it can't resolve one, so each of these ships as visible gibberish. Add the key to all five locale catalogs (en-US, es, fr, de, it) or point the call at a key that already exists.",
     );
   }
 

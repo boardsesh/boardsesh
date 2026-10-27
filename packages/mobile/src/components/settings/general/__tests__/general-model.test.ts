@@ -92,7 +92,7 @@ describe('buildGeneralModel', () => {
   it('offers System first, then every supported language in its own script', () => {
     const row = findRow(makeInput(), 'language');
     if (row.kind !== 'select') throw new Error('language is not a select');
-    expect(row.options.map((option) => option.key)).toEqual(['system', 'en-US', 'es', 'fr', 'de']);
+    expect(row.options.map((option) => option.key)).toEqual(['system', 'en-US', 'es', 'fr', 'de', 'it']);
     expect(row.options.find((option) => option.key === 'es')?.label).toBe('Español');
   });
 

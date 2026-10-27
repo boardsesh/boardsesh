@@ -1,0 +1,1084 @@
+{
+  "authors": {
+    "selectHint": "Spunta una casella per filtrare i blocchi. Tocca un nome per sfogliare.",
+    "selectedCount": "{{count}} selezionati",
+    "viaUserFollow": "Tramite una persona che segui",
+    "followingHint": "Include gli account collegati delle persone che segui. Con Segui salvi direttamente un tracciatore.",
+    "follow": "Segui",
+    "unfollow": "Smetti di seguire",
+    "following": "Segui già",
+    "allSetters": "Tutti i tracciatori",
+    "followingClimbs": "Blocchi delle persone che seguo",
+    "playlistSubtitleSort": "Tutti i blocchi su questo pannello · {{sort}}",
+    "signIn": "Accedi per seguire questo tracciatore",
+    "syncNeeded": "Vai online una volta per sincronizzare chi segui e i tracciatori collegati.",
+    "followError": "Impossibile aggiornare questo follow. Riprova.",
+    "loadError": "Impossibile caricare questi blocchi.",
+    "empty": "Ancora nessun blocco di questo tracciatore su questo pannello.",
+    "chooseBoard": "Scegli un pannello",
+    "retry": "Riprova",
+    "newClimb": "Nuovo blocco",
+    "newClimbCount_one": "1 nuovo blocco",
+    "newClimbCount_other": "{{count}} nuovi blocchi",
+    "seeAllClimbs": "Vedi tutti i {{count}}"
+  },
+  "sends_one": "{{formattedCount}} ripetizione",
+  "sends_other": "{{formattedCount}} ripetizioni",
+  "metadata": {
+    "list": {
+      "title": "Blocchi {{boardName}} a {{angle}}°",
+      "description": "Sfoglia i blocchi su {{boardName}} a {{angle}}°",
+      "fallbackTitle": "Blocchi",
+      "fallbackDescription": "Sfoglia i blocchi",
+      "paginatedTitle": "Blocchi {{boardName}} a {{angle}}° — Pagina {{page}}"
+    },
+    "view": {
+      "title": "{{climbName}} - {{grade}}",
+      "description": "{{climbName}} - {{grade}} di {{setter}}. Qualità: {{quality}}/5. Salite: {{ascents}}",
+      "imageAlt": "{{climbName}} - {{grade}} sul pannello {{boardName}}",
+      "fallbackTitle": "Blocco",
+      "fallbackDescription": "Guarda i dettagli del blocco e i video della beta",
+      "seoHeading": "{{climbName}} — {{grade}}",
+      "seoSummary": "Blocco {{boardName}} {{layoutName}}",
+      "seoSetterSuffix": " tracciato da {{setter}}",
+      "seoAscentsSuffix": ". {{ascents}} salite registrate"
+    },
+    "import": {
+      "title": "Importa blocchi",
+      "description": "Importa i blocchi MoonBoard dagli screenshot"
+    }
+  },
+  "list": {
+    "noMore": "Non ci sono altri blocchi",
+    "frontDoor": {
+      "heading": "Blocchi {{boardName}} a {{angle}}°",
+      "intro": "Tutti i blocchi tracciati su questa configurazione {{boardName}} a {{angle}}°, a partire dai più saliti. Toccane uno per vedere il pannello, il grado a ogni inclinazione e la beta.",
+      "empty": "Ancora nessun blocco su questo pannello.",
+      "cta": "Scala su questo pannello",
+      "pagination": {
+        "aria": "Paginazione",
+        "previous": "Pagina precedente",
+        "next": "Pagina successiva",
+        "pageLabel": "Pagina {{page}}"
+      },
+      "install": {
+        "helper": "Non hai ancora l'app? Scaricala e illumina questi blocchi sul tuo pannello."
+      }
+    }
+  },
+  "header": {},
+  "share": {
+    "actionLabel": "Condividi"
+  },
+  "angleSelector": {
+    "selectAngle": "Scegli l'inclinazione"
+  },
+  "search": {
+    "placeholders": {
+      "climbs": "Cerca blocchi..."
+    },
+    "summary": {
+      "routesOnly": "Solo vie",
+      "bouldersOnly": "Solo blocchi",
+      "bouldersAndRoutes": "Blocchi e vie"
+    },
+    "holds": {
+      "include": "Includi",
+      "exclude": "Escludi"
+    }
+  },
+  "actions": {
+    "playlist": {
+      "toast": {
+        "added": "Aggiunto alla playlist",
+        "removed": "Rimosso dalla playlist",
+        "addFailed": "Impossibile aggiungere alla playlist",
+        "removeFailed": "Impossibile rimuovere dalla playlist",
+        "addFailedNamed": "Impossibile aggiungere a \"{{playlist}}\"",
+        "removeFailedNamed": "Impossibile rimuovere da \"{{playlist}}\"",
+        "createFailed": "Impossibile creare la playlist"
+      },
+      "validation": {
+        "nameRequired": "Inserisci un nome per la playlist"
+      },
+      "popover": {
+        "title": "Aggiungi alla playlist",
+        "empty": "Ancora nessuna playlist",
+        "createNew": "Crea una nuova playlist",
+        "signInBlurb": "Accedi per creare e gestire le playlist"
+      },
+      "create": {
+        "namePlaceholder": "es. Tacche dure",
+        "submit": "Crea"
+      }
+    }
+  },
+  "card": {
+    "title": {
+      "noClimbSelected": "Nessun blocco selezionato",
+      "project": "progetto",
+      "projectAtAngle": "progetto @ {{angle}}°",
+      "setBy": "Di {{setter}}",
+      "setByWithSends": "Di {{setter}} - {{sends}}",
+      "draftBy": "Bozza di {{setter}}"
+    },
+    "method": {
+      "footless": "Senza piedi",
+      "footlessKickboard": "Senza piedi + KB",
+      "noKickboard": "No KB"
+    },
+    "anyFeet": "Piedi liberi"
+  },
+  "boardseshGrade": {
+    "title": "Grado Boardsesh",
+    "moonboardBody": "Per ora non abbiamo dati sui gradi della community per la MoonBoard. Registra su Boardsesh le tue ripetizioni sulla MoonBoard per aiutarci a sbloccarli.",
+    "woodsBody": "Per ora non abbiamo dati sui gradi della community per il Woods Board. Registra su Boardsesh le tue ripetizioni sul Woods Board per aiutarci a sbloccarli.",
+    "sprayBody": "Su una Spraywall è la crew a dare il grado a ogni blocco. La prima salita fissa il grado, poi ogni grado dato dai climber lo sposta.",
+    "loadError": "Impossibile caricare il grado in questo momento.",
+    "byAngle": "Com'è a ogni inclinazione",
+    "summaryLocal": "locale",
+    "matchesBoard": "Coincide con il vecchio grado",
+    "localOnlyNote": "Non ci sono ancora abbastanza ripetizioni su più pannelli per standardizzare.",
+    "setterCall": "Il grado del tracciatore",
+    "hero": {
+      "thisBoard": "Vecchio grado",
+      "everywhere": "Grado Boardsesh",
+      "thisBoardOnly": "Grado Boardsesh",
+      "approx": "Circa {{amount}}"
+    },
+    "payoff": {
+      "softer": "{{amount}} più morbido del vecchio grado.",
+      "stiffer": "{{amount}} più duro del vecchio grado."
+    },
+    "trust": {
+      "confirmedSingle_one": "Confermato · {{count}} ripetizione",
+      "confirmedSingle_other": "Confermato · {{count}} ripetizioni",
+      "confirmedRange_one": "Di solito {{low}}–{{high}} · {{count}} ripetizione",
+      "confirmedRange_other": "Di solito {{low}}–{{high}} · {{count}} ripetizioni",
+      "provisionalSingle_one": "Ancora in assestamento · {{count}} ripetizione",
+      "provisionalSingle_other": "Ancora in assestamento · {{count}} ripetizioni",
+      "provisionalRange_one": "Ancora in assestamento · probabile {{low}}–{{high}} · {{count}} ripetizione",
+      "provisionalRange_other": "Ancora in assestamento · probabile {{low}}–{{high}} · {{count}} ripetizioni",
+      "setter": "Meno di 3 ripetizioni per standardizzare"
+    },
+    "estimate": {
+      "label": "Stimato",
+      "body": "Nessuno ha ancora salito questa inclinazione: il numero è stimato da come è gradato alle inclinazioni già salite.",
+      "bodyRange": "Nessuno ha ancora salito questa inclinazione: probabile {{low}}–{{high}}, stimato dalle inclinazioni già salite."
+    },
+    "moonboardAngle": {
+      "label": "Stimato",
+      "body": "Nessuno ha ancora salito questo blocco a questa inclinazione: il grado è ricavato da come va all'altra.",
+      "bodyRange": "Nessuno ha ancora salito questo blocco a questa inclinazione: probabile {{low}}–{{high}}, ricavato da come va all'altra inclinazione."
+    },
+    "moonboardWideAngle": {
+      "label": "Stima approssimativa",
+      "body": "Nessuno ha ancora salito questa inclinazione: è una stima approssimativa basata su come cambiano di solito gli altri pannelli con inclinazioni più o meno ripide.",
+      "bodyRange": "Nessuno ha ancora salito questa inclinazione: probabile {{low}}–{{high}}, una stima approssimativa basata su come cambiano di solito gli altri pannelli con inclinazioni più o meno ripide."
+    },
+    "dumbbell": {
+      "legendBoardsesh": "Grado Boardsesh",
+      "legendCrowd": "Vecchio grado",
+      "legendSize": "Punto più grande = più ripetizioni",
+      "tapCaption_one": "{{angle}}° · vecchio grado {{crowd}} · grado Boardsesh {{boardsesh}} · {{count}} ripetizione",
+      "tapCaption_other": "{{angle}}° · vecchio grado {{crowd}} · grado Boardsesh {{boardsesh}} · {{count}} ripetizioni",
+      "tapCaptionAgree_one": "{{angle}}° · i due gradi coincidono · {{grade}} · {{count}} ripetizione",
+      "tapCaptionAgree_other": "{{angle}}° · i due gradi coincidono · {{grade}} · {{count}} ripetizioni",
+      "tapCaptionEstimated": "{{angle}}° · grado Boardsesh {{boardsesh}} · stimato, non ancora salito",
+      "singleAngle_one": "A {{angle}}° · vecchio grado {{crowd}} · grado Boardsesh {{boardsesh}} · {{count}} ripetizione",
+      "singleAngle_other": "A {{angle}}° · vecchio grado {{crowd}} · grado Boardsesh {{boardsesh}} · {{count}} ripetizioni",
+      "crowdOnlyNote": "Non ci sono ancora abbastanza ripetizioni su più pannelli per confrontare per inclinazione."
+    },
+    "yours": {
+      "label": "Il tuo grado",
+      "meta": "A {{angle}}°",
+      "boardGrade": "Grado del pannello",
+      "community": "Grado della community",
+      "matches": "Sei d'accordo.",
+      "emptyBody": "Pensi che sia sottogradato? Dagli il tuo grado. Non serve averlo chiuso."
+    }
+  },
+  "similarClimbs": {
+    "loadError": "Impossibile caricare i blocchi simili.",
+    "emptyDefault": "Ancora nessun blocco simile.",
+    "emptyOnLayout": "Nessun blocco simile su questo layout.",
+    "untitledClimb": "Blocco senza titolo"
+  },
+  "multiboardList": {
+    "noClimbsFound": "Nessun blocco trovato",
+    "popular": "Popolari",
+    "new": "Nuovi",
+    "count_one": "{{count}} blocco",
+    "count_other": "{{count}} blocchi"
+  },
+  "createClimbForm": {
+    "draftBadge": "Bozza",
+    "namePlaceholder": "Nome del blocco",
+    "descriptionPlaceholder": "Aggiungi beta o note sul tuo blocco...",
+    "dismiss": "Chiudi",
+    "cannotOpen": {
+      "boardCannotAuthor": "Non puoi ancora tracciare blocchi su questo pannello.",
+      "boardConfigIncomplete": "I dettagli del pannello mancano o non sono validi. Scegli di nuovo il pannello per tracciare il tuo blocco.",
+      "noUsableBoard": "Scegli prima un pannello, poi traccia il tuo blocco.",
+      "boardTypeUnsupported": "Questa versione dell'app non può ancora tracciare blocchi su quel pannello. Scegli un altro pannello.",
+      "wallArchived": "Questa Spraywall è archiviata. I suoi blocchi e le sue ripetizioni restano, ma non se ne possono tracciare di nuovi."
+    },
+    "alerts": {
+      "publishDuplicateNamed": "Questa combinazione di prese coincide con \"{{name}}\". Attiva Bozza per salvarlo senza pubblicare, oppure cambia una presa.",
+      "publishDuplicateUnnamed": "Questa combinazione di prese coincide con un blocco esistente. Attiva Bozza per salvarlo senza pubblicare, oppure cambia una presa.",
+      "viewMatchingClimb": "Vedi il blocco uguale",
+      "saveFailedFallback": "Impossibile salvare il blocco. Riprova.",
+      "editConflict": "Questo blocco è cambiato altrove. Riaprilo per vedere l'ultima versione.",
+      "editNotAllowed": "Non puoi modificare questo blocco. Solo chi l'ha tracciato può farlo.",
+      "editWindowExpired": "Questo blocco è stato pubblicato più di 24 ore fa, quindi ora non si può modificare.",
+      "editNotEditable": "Questo blocco non si può più modificare.",
+      "localRefreshFailed": "Blocco salvato, ma non è stato possibile aggiornare la tua lista scaricata. Riconnettiti per aggiornarla."
+    },
+    "fields": {
+      "description": "Descrizione (facoltativa)"
+    },
+    "holds": {
+      "start": "Partenza",
+      "hand": "Mano",
+      "finish": "Arrivo",
+      "total": "Totale"
+    },
+    "validation": {
+      "needsStartFinish": "Un blocco valido ha bisogno di almeno 1 presa di partenza e 1 presa di arrivo"
+    }
+  },
+  "draftsDrawer": {
+    "count_one": "{{count}} bozza",
+    "count_other": "{{count}} bozze",
+    "loadError": "Impossibile caricare le tue bozze. Riprova.",
+    "empty": {
+      "title": "Ancora nessuna bozza"
+    },
+    "delete": {
+      "tooltip": "Elimina la bozza",
+      "title": "Eliminare questa bozza?",
+      "description": "Rimuove la bozza salvata. I blocchi pubblicati non vengono toccati.",
+      "confirm": "Elimina",
+      "success": "Bozza eliminata.",
+      "error": "Impossibile eliminare quella bozza. Riprova."
+    }
+  },
+  "holdTypePicker": {
+    "toolbarAriaLabel": "Tipo di presa",
+    "applyModeAriaLabel": "Applica come includi o escludi",
+    "clear": "Cancella",
+    "searchHelp": "Seleziona 1 o più tipi di presa, poi tocca altrove per chiudere il selettore",
+    "includeAriaSuffix": "includi",
+    "excludeAriaSuffix": "escludi",
+    "states": {
+      "starting": "Partenza",
+      "hand": "Intermedia",
+      "finish": "Arrivo",
+      "foot": "Piede",
+      "any": "Qualsiasi"
+    }
+  },
+  "moonboardImport": {
+    "picker": {
+      "title": "Scegli la tua MoonBoard",
+      "hint": "Scegli il pannello e l'inclinazione da cui importi, poi carica i tuoi screenshot.",
+      "angleOption": "{{angle}}°"
+    },
+    "card": {
+      "skipping": "Saltato",
+      "duplicate": "Saltato: esiste già",
+      "duplicateNamed": "Saltato: esiste già come \"{{name}}\"",
+      "removeAction": "Rimuovi",
+      "removeDescription": "Questo blocco non verrà importato."
+    },
+    "bulk": {
+      "title": "Importa blocchi MoonBoard - {{layoutName}} @ {{angle}}°",
+      "loginRequired": "Accedi per salvare i blocchi",
+      "loginRequiredTitle": "Accesso richiesto",
+      "loginRequiredBody": "Accedi per salvare i blocchi nel database.",
+      "logIn": "Accedi",
+      "uploadPrompt": "Clicca o trascina qui i file degli screenshot",
+      "uploadHelp": "Supporta gli screenshot dell'app MoonBoard. Carica più file per importarli tutti insieme.",
+      "processing": "Elaborazione degli screenshot...",
+      "checkingDuplicates": "Controllo dei blocchi importati rispetto a quelli MoonBoard esistenti...",
+      "reviewBeforeSaving": "Controlla i blocchi qui sotto. Puoi modificarne o rimuoverne qualcuno prima di salvare.",
+      "saveAll": "Salva tutti ({{count}})",
+      "clearAndRestart": "Cancella e ricomincia",
+      "contributeImages": "Contribuisci con immagini per migliorare la precisione dell'OCR",
+      "tryAgain": "Riprova",
+      "saveFailed": "Impossibile salvare i blocchi. Riprova."
+    }
+  },
+  "moonboardEditModal": {
+    "title": "Modifica il blocco",
+    "nameLabel": "Nome del blocco",
+    "nameRequired": "Inserisci un nome",
+    "save": "Salva le modifiche",
+    "setter": "Tracciatore: {{setter}}",
+    "grade": "Grado: {{grade}}",
+    "angle": "Inclinazione: {{angle}}°",
+    "unknown": "Sconosciuto"
+  },
+  "mobile": {
+    "listOptions": {
+      "title": "Opzioni dell'elenco dei blocchi",
+      "viewOptions": "Opzioni di visualizzazione",
+      "history": "Cronologia del pannello, {{board}}",
+      "historyTitle": "Cronologia del pannello",
+      "historyHint": "Guarda cosa è stato illuminato su questo pannello"
+    },
+    "moderation": {
+      "title": "Moderazione",
+      "pinnedFromNotification": "Dalla tua notifica",
+      "hiddenChip": "Nascosto",
+      "supersededChip": "Sostituito",
+      "unknownClimb": "Blocco senza nome",
+      "unknownClimber": "Qualcuno",
+      "openClimb": "Apri {{climb}}",
+      "loadError": "Impossibile caricare la coda",
+      "voteError": "Impossibile salvare il tuo voto",
+      "resolveError": "Impossibile risolvere",
+      "reasonsLoadError": "Impossibile caricare i motivi",
+      "noReasons": "Nessuno ha ancora aggiunto un motivo",
+      "moreReasons_one": "{{count}} altro motivo",
+      "moreReasons_other": "{{count}} altri motivi",
+      "reporters_one": "{{count}} segnalatore",
+      "reporters_other": "{{count}} segnalatori",
+      "empty": {
+        "title": "Niente da moderare",
+        "subtitle": "Qui arrivano le segnalazioni e le proposte di grado della crew. Tieni premuto su un blocco per segnalarlo."
+      },
+      "unavailable": {
+        "title": "La moderazione è disattivata in questo momento",
+        "subtitle": "Ripassa dopo il prossimo aggiornamento."
+      },
+      "filter": {
+        "open": "Aperte",
+        "all": "Tutte",
+        "thisBoard": "Questo pannello",
+        "allBoards": "Tutti i pannelli",
+        "statusLabel": "Stato",
+        "boardLabel": "Pannello"
+      },
+      "type": {
+        "hide": "Nascondi il blocco",
+        "unhide": "Mostra di nuovo il blocco",
+        "grade": "Grado {{from}} → {{to}}",
+        "classic": "Classic: {{value}}",
+        "benchmark": "Benchmark: {{value}}",
+        "unknown": "Proposta della community"
+      },
+      "confirm": {
+        "approve": {
+          "title": "Approvare?",
+          "message": "La modifica vale per tutti.",
+          "hideMessage": "Il blocco sparisce dalle liste di tutti.",
+          "unhideMessage": "Il blocco torna nelle liste di tutti."
+        },
+        "reject": {
+          "title": "Rifiutare?",
+          "message": "La segnalazione si chiude e non cambia niente."
+        },
+        "confirm": "Conferma"
+      }
+    },
+    "emptyState": {
+      "noBoard": {
+        "title": "Scegli il tuo pannello",
+        "subtitle": "Scegli il pannello su cui scali per sfogliarne i blocchi e illuminarli.",
+        "cta": "Trova il mio pannello"
+      },
+      "noClimbs": {
+        "title": "Nessun blocco trovato",
+        "subtitle": "Prova a modificare le impostazioni del pannello"
+      },
+      "unsetWall": {
+        "title": "Nessuno ha ancora tracciato su questa Spraywall",
+        "subtitle": "Scegli le prese, dagli un nome e la Spraywall ha il suo primo blocco.",
+        "cta": "Traccia il primo blocco"
+      },
+      "noMatches": {
+        "title": "Nessun risultato",
+        "description": "Niente corrisponde a \"{{query}}\""
+      },
+      "offlineFilter": {
+        "title": "Questo filtro richiede il segnale",
+        "titleServer": "Questo filtro richiede il nostro server",
+        "titleOfflineMode": "Questo filtro richiede che tu sia online",
+        "subtitle": "Bozze, beta, zone e filtri sulle prese funzionano solo online. Cancellalo per continuare a sfogliare il pannello scaricato.",
+        "cta": "Cancella il filtro"
+      },
+      "offlineNoCatalog": {
+        "title": "Niente qui offline",
+        "subtitle": "I blocchi di questo pannello non sono sul telefono, quindi senza connessione non c'è niente da cercare."
+      },
+      "offlineCatalogQueued": {
+        "title": "In coda per il download",
+        "subtitle": "{{name}} si scarica appena torni online, e questi blocchi compaiono nella ricerca."
+      },
+      "boardRestoreFailed": {
+        "title": "Impossibile ripristinare il tuo pannello",
+        "description": "Riprova per tornare ai tuoi blocchi."
+      },
+      "recovery": {
+        "scope": "{{board}} · {{angle}}°",
+        "filters": "Filtri attivi: {{filters}}",
+        "removeHint": "Rimuovi un filtro e riprova. Tutto il resto resta selezionato.",
+        "openFilters": "Regola i filtri"
+      }
+    },
+    "detail": {
+      "notFound": "Blocco non trovato",
+      "boardNotFound": "Questo pannello non c'è più, oppure non è condiviso con te.",
+      "backToHome": "Torna alla Home"
+    },
+    "logAscent": {
+      "errorMessage": "Impossibile salvare la tua salita. Riprova.",
+      "offlineErrorMessage": "Impossibile salvare questa salita offline. La memoria del telefono era occupata: riprova tra un attimo.",
+      "savedToast": "Salita salvata",
+      "climbDeletedMessage": "Questo blocco è stato eliminato."
+    },
+    "tick": {
+      "dateLabel": "Data",
+      "timeLabel": "Ora",
+      "gradeLabel": "Il mio grado",
+      "gradeHelp": "Lo vedi solo tu su questo blocco. Non serve averlo chiuso.",
+      "starsLabel": "Stelle",
+      "triesLabel": "Tentativi",
+      "noteLabel": "Nota",
+      "notePlaceholder": "Com'è andata?",
+      "noteAria": "Nota della salita",
+      "statusLabel": "Stato",
+      "angleLabel": "Inclinazione",
+      "attempt": "Tentativo",
+      "save": "Salva",
+      "deleteRow": "Elimina questa salita",
+      "closeAria": "Chiudi",
+      "futureTimeAdjusted": "Ora futura sostituita con l'ora attuale.",
+      "consensusMeta": "Consenso {{grade}} · {{angle}}°",
+      "angleMeta": "{{angle}}°",
+      "fallbackTitle": "Registra la salita",
+      "status": {
+        "flash": "Flash",
+        "send": "Chiuso",
+        "attempt": "Tentativo"
+      },
+      "logAscentAria": "Registra come {{status}}",
+      "setTriesAria_one": "Imposta {{count}} tentativo",
+      "setTriesAria_other": "Imposta {{count}} tentativi",
+      "moreTriesAria": "Un altro tentativo",
+      "firstAscent": "Prima salita: imposta il grado del blocco per registrare la ripetizione."
+    },
+    "filter": {
+      "climbType": {
+        "label": "Tipo",
+        "all": "Entrambi",
+        "boulders": "Blocchi",
+        "routes": "Vie"
+      },
+      "title": "Filtri",
+      "sortBy": "Ordina per",
+      "grade": "Grado",
+      "gradeRange": "Intervallo di gradi",
+      "anyAscents": "Qualsiasi",
+      "minRating": "Valutazione min.",
+      "anyRating": "Qualsiasi",
+      "myRating": "La mia valutazione",
+      "myRatingDescription": "Le stelle che hai dato a questa inclinazione",
+      "onlyRatedByMe": "Solo i blocchi che ho valutato",
+      "ratedByMeShort": "Valutati da me",
+      "apply": "Applica i filtri",
+      "reset": "Reimposta",
+      "section": {
+        "name": "Nome del blocco",
+        "difficulty": "Difficoltà",
+        "quality": "Qualità",
+        "theClimb": "Il blocco",
+        "sort": "Ordinamento"
+      },
+      "popularity": "Popolarità",
+      "collection": {
+        "label": "Raccolta",
+        "any": "Qualsiasi",
+        "liked": "Preferiti"
+      },
+      "pinChip": "Fissa {{name}} nella riga in alto",
+      "unpinChip": "Togli {{name}} dalla riga in alto",
+      "recentDescription": "Qui compariranno le tue ultime 10 ricerche.",
+      "ratingAtLeast": "{{count}}★+",
+      "quickFiltersLink": "Filtri rapidi",
+      "quickFiltersFooter": "Scegli i filtri da mostrare nella riga in alto e il loro ordine.",
+      "established2plus": "Consolidati 2+",
+      "benchmark": "Benchmark",
+      "showCount_one": "Mostra {{count}} blocco",
+      "showCount_other": "Mostra {{count}} blocchi",
+      "close": "Chiudi i filtri",
+      "matchingCount_one": "{{count, number}} blocco",
+      "matchingCount_other": "{{count, number}} blocchi",
+      "sort": {
+        "position": "Ordine della playlist",
+        "added": "Aggiunti di recente",
+        "ascents": "Salite",
+        "quality": "Qualità",
+        "difficulty": "Difficoltà",
+        "name": "Nome",
+        "popular": "Popolari",
+        "creation": "Più recenti",
+        "recentlyLiked": "Piaciuti di recente",
+        "recentlyClimbed": "Saliti di recente",
+        "mostTries": "Più tentativi",
+        "random": "Casuale",
+        "reshuffle": "Rimescola di nuovo"
+      },
+      "sortOrderLabel": "Ordine",
+      "sortOrder": {
+        "asc": "Crescente",
+        "desc": "Decrescente"
+      },
+      "sortDirection": {
+        "difficulty": {
+          "asc": "Prima i più facili",
+          "desc": "Prima i più duri"
+        },
+        "added": {
+          "desc": "Prima i più recenti",
+          "asc": "Prima i più vecchi"
+        },
+        "creation": {
+          "desc": "Prima i più recenti",
+          "asc": "Prima i più vecchi"
+        },
+        "quality": {
+          "desc": "Prima i meglio valutati",
+          "asc": "Prima i peggio valutati"
+        },
+        "ascents": {
+          "desc": "Prima i più ripetuti",
+          "asc": "Prima i meno ripetuti"
+        },
+        "name": {
+          "asc": "Dalla A alla Z",
+          "desc": "Dalla Z alla A"
+        }
+      },
+      "status": {
+        "drafts": "Bozze",
+        "established": "Consolidati"
+      },
+      "accuracy": {
+        "label": "Precisione del grado",
+        "description": "Quanto la community concorda con il grado",
+        "off": "Nessuna",
+        "loose": "Larga",
+        "moderate": "Media",
+        "tight": "Stretta"
+      },
+      "progress": {
+        "label": "Progressi",
+        "all": "Tutti",
+        "untried": "Non provati",
+        "projects": "Progetti",
+        "sent": "Chiusi",
+        "unsent": "Non chiusi"
+      },
+      "setters": "Tracciatori",
+      "none": "Nessuno",
+      "tall": "Solo blocchi alti",
+      "tallClimbs": "Blocchi alti",
+      "tallDescription": "Arrivano in cima al pannello",
+      "tallLockedHint": "Bloccato. Tieni premuto il chip Alti per sbloccare.",
+      "wide": "Solo blocchi larghi",
+      "wideClimbs": "Blocchi larghi",
+      "wideDescription": "Usano l'espansione laterale 10x10",
+      "wideLockedHint": "Bloccato. Tieni premuto il chip Larghi per sbloccare.",
+      "betaVideos": "Solo con video della beta",
+      "betaVideosShort": "🎥 Beta",
+      "betaVideosDescription": "Solo blocchi con un video della beta",
+      "boardFit": {
+        "label": "Adatti al mio pannello",
+        "switch": "Solo blocchi adatti al mio pannello",
+        "description": "Nasconde i blocchi tracciati per un altro pannello o un'altra misura."
+      },
+      "otherAngles": "Altre inclinazioni",
+      "otherAnglesDescription": "Mostra i blocchi tracciati a un'altra inclinazione",
+      "searchSetters": "Cerca tracciatori",
+      "noSetters": "Ancora nessun tracciatore",
+      "clearAll": "Cancella tutto",
+      "nameToken": "“{{name}}”",
+      "drafts": "Le mie bozze",
+      "popularityUnrepeated": "Mai ripetuti"
+    },
+    "search": {
+      "recentFilters": "Recenti",
+      "gradeRange": "{{min}}–{{max}}",
+      "gradeMin": "{{grade}}+",
+      "gradeMax": "≤{{grade}}",
+      "ascents": "{{count}}+ 🧗",
+      "rating": "{{count}}+ ⭐",
+      "myRating": "Mie {{count}}+ ⭐",
+      "more": "+{{count}} altri",
+      "setterName": "Di {{setter}}",
+      "settersCount_one": "{{count}} tracciatore",
+      "settersCount_other": "{{count}} tracciatori",
+      "climbsCount_one": "{{count}} blocco",
+      "climbsCount_other": "{{count}} blocchi",
+      "gradeClear": "Qualsiasi",
+      "filters": "Filtri",
+      "filterCountAria": "Filtri, {{count}} attivi",
+      "filterHint": "Apre tutti i filtri dei blocchi",
+      "gradeAction": "Imposta l'intervallo di gradi",
+      "gradeOpenHint": "Apre il selettore del grado",
+      "gradeCloseHint": "Chiude il selettore del grado",
+      "allClimbs": "Tutti i blocchi",
+      "clearRecentSearches": "Cancella le ricerche recenti",
+      "chips": {
+        "filtersWithCount": "Filtri · {{count}}",
+        "tall": "Alti",
+        "wide": "Larghi",
+        "lock": "Blocca",
+        "unlock": "Sblocca"
+      },
+      "removeFilterAria": "Rimuovi {{filter}}"
+    },
+    "gradeRail": {
+      "setFilterAria": "Imposta il filtro del grado su {{grade}}",
+      "selectedFilterAria": "Filtro del grado {{grade}} selezionato",
+      "rangeFilterAria": "{{grade}} è nell'intervallo di gradi selezionato",
+      "anyGradeAria": "Qualsiasi grado selezionato",
+      "clearFilterAria": "Cancella il filtro del grado",
+      "rangeHoldHint": "Tieni premuto per creare un intervallo con il grado selezionato",
+      "setLogGradeAria": "Imposta il grado della salita su {{grade}}",
+      "selectedLogGradeAria": "Grado della salita {{grade}} selezionato",
+      "consensusGradeAria": "{{grade}}, grado di consenso"
+    },
+    "angleRail": {
+      "any": "Qualsiasi",
+      "setFilterAria": "Imposta il filtro dell'inclinazione su {{angle}} gradi",
+      "selectedFilterAria": "Filtro dell'inclinazione {{angle}} gradi selezionato",
+      "rangeFilterAria": "{{angle}} gradi è nell'intervallo di inclinazione selezionato",
+      "anyAngleAria": "Qualsiasi inclinazione selezionata",
+      "clearFilterAria": "Cancella il filtro dell'inclinazione",
+      "rangeHoldHint": "Tieni premuto per creare un intervallo con l'inclinazione selezionata"
+    },
+    "climbRow": {
+      "toggleFavorite": "Attiva o disattiva il preferito",
+      "favorited": "Tra i preferiti",
+      "share": "Condividi il blocco",
+      "moreActions": "Altre azioni",
+      "projectFallback": "Progetto",
+      "directionStatus": "{{direction}}: {{status}}",
+      "ascentStatus": {
+        "flash": "Flash",
+        "send": "Chiuso",
+        "attempt": "Provato"
+      },
+      "noMatch": "Vietato accoppiare",
+      "campus": "Campus",
+      "anyFeet": "Piedi liberi",
+      "noKickboard": "No KB",
+      "benchmark": "Benchmark",
+      "method": {
+        "footless": "Senza piedi",
+        "footlessKickboard": "Senza piedi + KB",
+        "noKickboard": "No KB"
+      },
+      "setAngleMarker": "tracciato a {{angle}}°",
+      "setAngleMarkerAria": "Grado e ripetizioni sono di {{angle}} gradi",
+      "communityGradeAria": "Grado della community {{grade}}",
+      "frameCount_one": "{{count}} frame",
+      "frameCount_other": "{{count}} frame",
+      "progress": {
+        "flashed": "Flash",
+        "sent": "Chiuso",
+        "sentTimes": "Chiuso ×{{count}}",
+        "tries_one": "{{count}} tentativo",
+        "tries_other": "{{count}} tentativi",
+        "today": "oggi",
+        "daysAgo": "{{count}}g"
+      }
+    },
+    "climbRules": {
+      "matchingAllowed": "Accoppiare consentito",
+      "noMatching": "Vietato accoppiare",
+      "matchingUnknown": "Regola sull'accoppiare non registrata",
+      "anyFeet": "Piedi liberi",
+      "markedHoldsOnly": "Solo prese segnate",
+      "noFeet": "Niente piedi",
+      "feetUnknown": "Regola sui piedi non registrata",
+      "spoken": "Regole: {{matching}}, {{feet}}"
+    },
+    "report": {
+      "title": "Segnala il blocco",
+      "kind": {
+        "label": "Cosa non va?",
+        "hide": "Vota per nascondere",
+        "grade": "Il grado è sbagliato",
+        "hideHint": "Spazzatura, duplicato o impossibile da salire. La tua segnalazione è un voto. Quando abbastanza climber sono d'accordo, il blocco viene nascosto per tutti.",
+        "gradeHint": "Scegli il grado che secondo te merita."
+      },
+      "sameGrade": "È già il grado attuale",
+      "reasonPlaceholder": "Spiega alla crew perché (minimo 10 caratteri)",
+      "reasonAria": "Motivo della segnalazione",
+      "reasonRemaining_one": "Aggiungi ancora 1 carattere per inviare",
+      "reasonRemaining_other": "Aggiungi ancora {{count}} caratteri per inviare",
+      "reasonCount": "{{count}}/500",
+      "submit": "Invia",
+      "submitError": "Impossibile inviare la segnalazione",
+      "toast": {
+        "reported": "Segnalato. {{current}} voti su {{required}} per nasconderlo a tutti",
+        "reportedGrade": "Cambio di grado proposto. Ora vota la crew",
+        "alreadyReported": "Hai già segnalato questo blocco",
+        "gradeChanged": "Grado cambiato"
+      }
+    },
+    "hidden": {
+      "short": "nascosto",
+      "chip": "Nascosto",
+      "banner": "Nascosto dalla community"
+    },
+    "lostHolds": {
+      "chip_one": "{{count}} presa persa",
+      "chip_other": "{{count}} prese perse",
+      "chipAria_one": "{{count}} presa non è più in parete",
+      "chipAria_other": "{{count}} prese non sono più in parete",
+      "banner": "Questo blocco ha perso una presa. Remixalo con le prese che ci sono ora in parete.",
+      "remix": "Remix",
+      "editorHint_one": "Rimuovi la presa grigia per salvare",
+      "editorHint_other": "Rimuovi le prese grigie per salvare"
+    },
+    "climbActions": {
+      "preview": "Anteprima",
+      "playNext": "Metti subito dopo",
+      "playLast": "Metti in fondo",
+      "replayFromHere": "Riparti da qui",
+      "nameCopied": "Nome copiato",
+      "copyNameError": "Impossibile copiare il nome",
+      "copyNameHint": "Tieni premuto per copiare il nome",
+      "copyName": "Copia il nome",
+      "tick": "Registra una salita",
+      "addBetaVideo": "Aggiungi un video della beta",
+      "openInApp": "Apri nell'app Aurora",
+      "fork": "Remixa questo blocco",
+      "edit": "Modifica il blocco",
+      "editEntry": "Modifica la salita",
+      "report": "Segnala il blocco",
+      "changeGrade": "Cambia il grado",
+      "closeOverlay": "Chiudi le azioni del blocco",
+      "openQueue": "Apri la coda",
+      "deleteClimb": {
+        "row": "Elimina il blocco",
+        "title": "Eliminare questo blocco?",
+        "message": "Sparisce dalla Spraywall per tutti, insieme ai suoi commenti. Non si può annullare.",
+        "confirm": "Elimina",
+        "cancel": "Tienilo",
+        "success": "Blocco eliminato.",
+        "hasTicks": "Qualcuno ha registrato questo blocco, quindi resta sulla Spraywall.",
+        "pendingTick": "Hai una ripetizione su questo blocco in attesa di sincronizzazione, quindi resta.",
+        "notFound": "Questo blocco non c'è già più.",
+        "notAllowed": "Si possono eliminare solo i blocchi delle Spraywall.",
+        "archived": "Questa Spraywall è archiviata, quindi i suoi blocchi restano come sono.",
+        "offline": "Sei offline. Per eliminare un blocco serve una connessione.",
+        "error": "Impossibile eliminare il blocco. Riprova."
+      }
+    },
+    "create": {
+      "brush": {
+        "start": "Partenza",
+        "hand": "Mano",
+        "finish": "Arrivo",
+        "foot": "Piede",
+        "erase": "Cancella"
+      },
+      "counts": {
+        "start": "Partenza: {{count}}/2",
+        "finish": "Arrivo: {{count}}/2"
+      },
+      "actions": {
+        "clear": "Cancella le prese",
+        "setActive": "Illumina il blocco",
+        "setActiveHint": "Aggiungi prima una presa di partenza e una di arrivo",
+        "undo": "Annulla",
+        "redo": "Ripeti",
+        "newClimb": "Inizia un nuovo blocco",
+        "close": "Chiudi",
+        "closeHint": "La tua bozza resta su questo telefono."
+      },
+      "frames": {
+        "counter": "{{index}}/{{total}}"
+      },
+      "playback": {
+        "addFrame": "Aggiungi un frame",
+        "addFrameHint": "Copia il frame {{index}} e mette la copia dopo",
+        "deleteFrameA11y": "Elimina il frame {{index}} di {{total}}",
+        "deleteFrameBlocked": "Elimina il frame: una via ne tiene almeno uno",
+        "deleteFrameHint": "Annulla è nella barra qui sotto",
+        "frameDeleted": "Frame eliminato. Ne restano {{total}}."
+      },
+      "holdRole": {
+        "title": "Imposta il ruolo della presa",
+        "clear": "Cancella"
+      },
+      "settings": {
+        "draftLabel": "Salva come bozza",
+        "draftDescription": "Le bozze restano private finché non le pubblichi.",
+        "noMatchLabel": "Vietato accoppiare",
+        "noMatchDescription": "Non puoi accoppiare le mani sulla stessa presa",
+        "noKickboardLabel": "Niente kickboard",
+        "noKickboardDescription": "I piedi non possono usare il kickboard",
+        "campusLabel": "Campus (senza piedi)",
+        "campusDescription": "Solo mani: niente piedi",
+        "anyFeetLabel": "Piedi liberi",
+        "anyFeetDescription": "I piedi possono usare qualsiasi presa, non solo quelle segnate"
+      },
+      "drafts": {
+        "holds_one": "{{count}} presa",
+        "holds_other": "{{count}} prese",
+        "sectionTitle": "Bozze aperte",
+        "frames_one": "{{count}} frame",
+        "frames_other": "{{count}} frame"
+      },
+      "unavailable": {
+        "title": "Qui non puoi ancora tracciare",
+        "subtitle": "Questo layout del pannello non supporta la creazione di blocchi.",
+        "wrongSize": "Questo blocco è stato tracciato su un'altra misura del pannello. Cambia misura per modificarlo."
+      },
+      "fab": {
+        "ariaLabel": "Crea un blocco"
+      },
+      "header": {
+        "newClimb": "Nuovo blocco",
+        "nameRequired": "Dagli un nome per salvarlo"
+      },
+      "save": {
+        "idle": "Salva",
+        "login": "Accedi per salvare",
+        "saving": "Salvataggio…",
+        "done": "Salvato",
+        "draftToast": "Bozza salvata",
+        "publishedToast": "Blocco pubblicato",
+        "needsHold": "Disegna una presa per salvare"
+      },
+      "autosave": {
+        "onDevice": "Bozza salvata su questo telefono",
+        "inAccount": "Bozza salvata sul tuo account",
+        "onDevicePublish": "Salvato su questo telefono",
+        "inAccountPublish": "Salvato sul tuo account",
+        "unsyncedEdits": "Le ultime modifiche sono solo su questo telefono",
+        "notStored": "Accedi per tenere questa bozza",
+        "saveFailed": "Impossibile salvare sul tuo account. Tocca Salva per riprovare.",
+        "keptToast": "Bozza tenuta su questo telefono. Riapri l'editor per finirla."
+      },
+      "newClimb": {
+        "confirm": {
+          "title": "Ricominciare?",
+          "message": "Questo blocco non è ancora nelle tue bozze. Iniziandone uno nuovo lo perdi.",
+          "action": "Ricomincia"
+        }
+      },
+      "publish": {
+        "blocked": "Aggiungi una presa di partenza e una di arrivo per pubblicare"
+      },
+      "wallSizeMismatch": "Passa al pannello Woods di questa misura per illuminarlo.",
+      "routeMenu": {
+        "open": "Altre azioni del blocco",
+        "makeRoute": "Rendilo una via",
+        "makeBoulder": "Rendilo un blocco",
+        "makeBoulderBlocked": "Rendilo un blocco: elimina prima i frame"
+      }
+    },
+    "holdFilter": {
+      "title": "Tipi di presa",
+      "include": "Includi",
+      "exclude": "Escludi",
+      "applyModeLabel": "Includi o escludi",
+      "includedSuffix": "inclusa",
+      "excludedSuffix": "esclusa",
+      "hint": "Tocca le prese sul pannello per filtrare in base al tipo che devono avere.",
+      "summaryCount_one": "{{count}} presa",
+      "summaryCount_other": "{{count}} prese",
+      "type": {
+        "starting": "Partenza",
+        "hand": "Mano",
+        "finish": "Arrivo",
+        "foot": "Piede",
+        "any": "Qualsiasi"
+      }
+    },
+    "zoneFilter": {
+      "title": "Zona del pannello",
+      "summaryActive": "Attiva",
+      "enable": "Aggiungi una zona",
+      "clearZone": "Cancella la zona",
+      "allHolds": "Tutte le prese",
+      "anyHold": "Una presa qualsiasi",
+      "modeLabel": "Quali prese devono stare nella zona",
+      "hint": "Aggiungi una zona per trovare i blocchi che restano dentro una parte del pannello.",
+      "activeHint": "Trascina il riquadro e i suoi angoli per impostare la zona. Tutte le prese devono starci dentro; passa a Una presa qualsiasi per tenere i blocchi che ci arrivano.",
+      "regionLabel": "Zona del pannello",
+      "regionHint": "Scorri su o giù per spostare la zona sul pannello.",
+      "corner": {
+        "topLeft": "Angolo in alto a sinistra",
+        "topRight": "Angolo in alto a destra",
+        "bottomLeft": "Angolo in basso a sinistra",
+        "bottomRight": "Angolo in basso a destra",
+        "hint": "Scorri su o giù per allargare o stringere la zona da questo angolo."
+      }
+    },
+    "crossBoardAdd": {
+      "title": "Questo blocco è su {{board}}",
+      "message": "La tua coda è su un altro pannello. Aggiungilo comunque e resta lì in attesa finché non sei su {{board}}, oppure passa subito a quel pannello.",
+      "addAnyway": "Aggiungi comunque",
+      "switchBoard": "Passa a {{board}}",
+      "switchFailed": "Impossibile passare a {{board}}. Riprova.",
+      "cancel": "Annulla"
+    },
+    "setterNotes": {
+      "title": "Note del tracciatore"
+    },
+    "heatmap": {
+      "toggle": "Heatmap",
+      "modeLabel": "Colora le prese in base a",
+      "modes": {
+        "climbs": "Blocchi",
+        "startsFinishes": "Partenze e arrivi",
+        "grade": "Grado"
+      },
+      "legend": {
+        "fewClimbs": "Pochi blocchi",
+        "manyClimbs": "Molti blocchi",
+        "easier": "Più facili",
+        "harder": "Più difficili",
+        "allEqual": "Ogni presa usata allo stesso modo"
+      },
+      "climbCount_one": "{{formattedCount}} blocco",
+      "climbCount_other": "{{formattedCount}} blocchi",
+      "firstRun": {
+        "climbsDark": "Le prese più luminose sono in più blocchi",
+        "climbsLight": "Le prese più scure sono in più blocchi",
+        "startsFinishesDark": "Le prese più luminose sono in più partenze e arrivi",
+        "startsFinishesLight": "Le prese più scure sono in più partenze e arrivi",
+        "grade": "Le prese viola compaiono nei blocchi più difficili, quelle gialle nei più facili"
+      },
+      "wholeBoard": "Tutto il pannello",
+      "wholeBoardHint": "Conta invece ogni blocco del pannello",
+      "useFiltersHint": "Conta solo i blocchi che corrispondono ai tuoi filtri",
+      "filterUnsupported": "La heatmap non può seguire questi filtri offline. Tocca il chip per vedere tutto il pannello.",
+      "empty": "Nessun blocco corrisponde a questi filtri.",
+      "loadFailed": "La heatmap non si è caricata. Riprova tra un minuto.",
+      "needsDownload": "Scarica questo pannello per vedere quali prese vengono usate.",
+      "downloadLine": "Scarica {{name}} per vedere quali prese vengono usate",
+      "download": "Scarica",
+      "unavailable": "La heatmap non è disponibile in questo momento."
+    },
+    "project": {
+      "chip": "Progetto"
+    },
+    "boardAccessibility": {
+      "summary": "Pannello: {{starting}} prese di partenza, {{hand}} prese per le mani, {{finish}} prese di arrivo, {{foot}} prese per i piedi.",
+      "adjustHint": "Scorri su o giù per cambiare blocco.",
+      "next": "Blocco successivo",
+      "previous": "Blocco precedente",
+      "hold": "Presa {{id}}, {{role}}",
+      "unlit": "spenta",
+      "paintHint": "Tocca per disegnare con il pennello selezionato. Le azioni possono scegliere un ruolo.",
+      "chooseRole": "Scegli il ruolo della presa",
+      "showList": "Scegli le prese da un elenco",
+      "showBoard": "Torna al pannello"
+    },
+    "activeHolds": {
+      "title": "Prese attive",
+      "a11yGroup": "{{role}}: {{holds}}",
+      "empty": "Questo blocco non illumina nessuna presa."
+    }
+  },
+  "frontDoor": {
+    "breadcrumb": {
+      "aria": "Breadcrumb",
+      "home": "Boardsesh",
+      "board": "{{boardName}}",
+      "list": "Blocchi a {{angle}}°"
+    },
+    "boardImageAlt": "{{climbName}} illuminato sul {{boardName}} {{layoutName}} a {{angle}}°",
+    "setterLink": "Altri blocchi di {{setter}}",
+    "facts": {
+      "grade": "Grado",
+      "setter": "Tracciatore",
+      "ascents": "Ripetizioni",
+      "quality": "Qualità",
+      "angle": "Inclinazione",
+      "board": "Pannello",
+      "firstAscent": "Prima salita",
+      "firstAscentUnknown": "Non registrata",
+      "unknown": "Sconosciuto",
+      "angleValue": "{{angle}}°",
+      "qualityValue": "{{quality}} su 5",
+      "firstAscentValue": "{{setter}}, {{date}}"
+    },
+    "setterNotes": {
+      "heading": "Note del tracciatore"
+    },
+    "angles": {
+      "heading": "Stesso blocco, altre inclinazioni",
+      "link": "{{angle}}° · {{grade}}",
+      "current": "{{angle}}° · {{grade}} — sei qui"
+    },
+    "beta": {
+      "heading": "Video della beta",
+      "empty": "Ancora nessuna beta filmata.",
+      "unavailable": "Questa volta la beta non si è caricata. Ricarica la pagina per riprovare."
+    },
+    "community": {
+      "heading": "Community"
+    },
+    "similar": {
+      "heading": "Blocchi come questo",
+      "unavailable": "I blocchi come questo non si sono caricati. Nuovo caricamento in corso…"
+    },
+    "cta": {
+      "climbThis": "Prova questo blocco",
+      "ariaLabel": "Apri {{climbName}} nell'app Boardsesh",
+      "helper": "Apre l'app, illumina le prese, registra la ripetizione."
+    },
+    "install": {
+      "helper": "Non hai ancora l'app? Scaricala e illumina questo blocco sul tuo pannello."
+    }
+  },
+  "spray": {
+    "unknownGrade": "Senza grado",
+    "unknownSetter": "un tracciatore sconosciuto",
+    "heading": "{{climbName}} — {{grade}}",
+    "summary": "Su {{wallName}}, una Spraywall a {{angle}}° con {{holdCount}} prese.",
+    "setterLine": "Tracciato da {{setter}}. {{ascents}} salite registrate.",
+    "ascentsLine": "{{ascents}} salite registrate.",
+    "setterNotesHeading": "Note del tracciatore",
+    "keepLookingHeading": "Continua a cercare",
+    "setterLink": "Altri blocchi di {{setter}}",
+    "gymsLink": "Trova una palestra con dei pannelli",
+    "homeLink": "Home di Boardsesh",
+    "photoAlt": "{{climbName}}, {{grade}}, illuminato sulla Spraywall {{wallName}}",
+    "noPhoto": "Questa Spraywall non ha ancora una foto da mostrare.",
+    "metadata": {
+      "title": "{{climbName}} {{grade}} su {{wallName}} | Spraywall",
+      "description": "{{climbName}}, {{grade}}, sulla Spraywall {{wallName}} a {{angle}}°, tracciato da {{setter}}. Guarda le prese nella foto della Spraywall."
+    },
+    "wall": {
+      "summary": "Una Spraywall a {{angle}}° con {{holdCount}} prese.",
+      "photoAlt": "La Spraywall {{wallName}}",
+      "openInApp": "Apri questa Spraywall nell'app Boardsesh per sfogliare i suoi blocchi, tracciare i tuoi e registrare le tue ripetizioni.",
+      "openButton": "Apri nell'app",
+      "haveApp": "Hai già Boardsesh?",
+      "install": {
+        "helper": "Non hai ancora l'app? Scaricala e arrampica su questa Spraywall.",
+        "scanAgain": "Hai appena installato? Scansiona di nuovo per aprire questa Spraywall."
+      },
+      "metadata": {
+        "title": "{{wallName}} | Spraywall",
+        "description": "{{wallName}}, una Spraywall a {{angle}}°. Guarda la Spraywall e aprila nell'app Boardsesh."
+      }
+    },
+    "install": {
+      "heading": "Scarica l'app",
+      "body": "Registra le tue ripetizioni su questa Spraywall e traccia blocchi tuoi."
+    }
+  }
+}

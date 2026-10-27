@@ -1,0 +1,1208 @@
+{
+  "languageSwitcher": {
+    "ariaLabelWithCurrent": "Lingua: {{language}}"
+  },
+  "auth": {
+    "mustBeSignedIn": "Devi aver effettuato l'accesso"
+  },
+  "mobile": {
+    "avatar": {
+      "viewProfile": "Vedi il profilo di {{name}}",
+      "thisClimber": "questo climber"
+    },
+    "a11y": {
+      "clearSearch": "Cancella la ricerca",
+      "opensOutsideApp": "Si apre fuori da Boardsesh"
+    },
+    "settings": {
+      "title": "Impostazioni",
+      "pages": {
+        "general": {
+          "title": "Generali"
+        },
+        "board": {
+          "title": "Pannello"
+        },
+        "climbs": {
+          "title": "Blocchi e gradi"
+        },
+        "home": {
+          "title": "Home"
+        },
+        "earlyAccess": {
+          "title": "Accesso anticipato"
+        },
+        "developer": {
+          "title": "Sviluppatore"
+        },
+        "timers": {
+          "title": "Timer"
+        }
+      },
+      "development": "Sviluppo",
+      "dev": {
+        "forceServerUnreachable": "Forza server non raggiungibile",
+        "forceServerUnreachableDescription": "Fai finta che il server sia giù per provare il banner e il comportamento offline."
+      },
+      "metroServersTitle": "Server Metro",
+      "metroServersSubtitle": "Passa da un bundler Tailnet all'altro",
+      "boardLook": {
+        "title": "Aspetto del pannello",
+        "rendererUnavailable": {
+          "title": "Aggiorna l'app",
+          "body": "Questa versione non sa ancora disegnare l'aspetto Aura. Aggiorna Boardsesh per sbloccarlo: per ora il tuo pannello usa il Classico."
+        },
+        "mode": {
+          "title": "Rendering",
+          "options": {
+            "classic": "Classico",
+            "aura": "Aura"
+          }
+        },
+        "presets": {
+          "title": "Preset",
+          "custom": "Personalizzato",
+          "aura": "Aura",
+          "auraBold": "Aura intensa",
+          "auraSubtle": "Aura delicata",
+          "auraOutline": "Aura contorno",
+          "modernClassic": "Classico moderno",
+          "maxContrast": "Contrasto max",
+          "descriptions": {
+            "aura": "Le prese illuminate brillano su un pannello attenuato.",
+            "auraSubtle": "Un bagliore più morbido, che resta vicino a ogni presa.",
+            "modernClassic": "I cerchi che conosci, su un pannello attenuato.",
+            "maxContrast": "Il velo più forte e prese piene.",
+            "auraBold": "Un bagliore più ampio e deciso, che si vede da lontano.",
+            "auraOutline": "Un contorno netto su ogni presa, con un bagliore stretto.",
+            "classic": "I cerchi che Boardsesh ha sempre disegnato.",
+            "custom": "Regola ogni dettaglio dell'aspetto a modo tuo."
+          },
+          "activeBadge": "Attivo",
+          "position": "{{index}} di {{total}}",
+          "showFullSize": "Mostra {{look}} a schermo intero",
+          "carouselAccessibility": "Anteprime dell'aspetto del pannello"
+        },
+        "glowVeil": {
+          "title": "Bagliore e velo",
+          "falloff": {
+            "title": "Sfumatura del bagliore",
+            "options": {
+              "default": "Predefinita",
+              "soft": "Morbida",
+              "plateau": "Plateau"
+            }
+          },
+          "reach": {
+            "title": "Raggio del bagliore",
+            "value": "{{value}}x"
+          },
+          "plateauShare": {
+            "title": "Quota plateau",
+            "value": "{{value}}%"
+          },
+          "veil": {
+            "title": "Velo del pannello",
+            "options": {
+              "auto": "Auto",
+              "off": "Nessuno",
+              "soft": "Morbido",
+              "strong": "Forte",
+              "custom": "Personalizzato"
+            }
+          },
+          "veilOpacity": {
+            "title": "Intensità del velo",
+            "value": "{{value}}%"
+          }
+        },
+        "marks": {
+          "title": "Segni",
+          "holdShape": {
+            "title": "Forma delle prese",
+            "options": {
+              "silhouette": "Sagomata",
+              "circle": "Cerchi"
+            }
+          },
+          "style": {
+            "title": "Stile dei segni",
+            "options": {
+              "glow": "Bagliore",
+              "glowFill": "Bagliore + riempimento",
+              "fill": "Riempimento",
+              "outline": "Contorno"
+            }
+          },
+          "fillOpacity": {
+            "title": "Intensità del riempimento",
+            "value": "{{value}}%"
+          },
+          "outlineOpacity": {
+            "title": "Intensità del contorno"
+          },
+          "softDisc": {
+            "label": "Disco morbido",
+            "subtitle": "Aggiungi un disco di bagliore morbido sotto ogni segno."
+          },
+          "smallHoldBoost": {
+            "label": "Più bagliore alle prese piccole",
+            "subtitle": "Dai alle prese minuscole un bagliore più grande, così non spariscono."
+          },
+          "ledDots": {
+            "label": "Copri i puntini LED",
+            "subtitle": "Nascondi i puntini LED luminosi dell'immagine del pannello sulle prese spente."
+          },
+          "thumbnailStyle": {
+            "title": "Stile delle miniature nell'elenco",
+            "options": {
+              "fill": "Riempimento",
+              "glow": "Bagliore"
+            }
+          }
+        },
+        "accessibility": {
+          "title": "Accessibilità",
+          "pageTitle": "Colori e forme delle prese",
+          "classicOnlyNote": "Forma, pennello e dimensione dei segni valgono solo per il rendering Classico. In Boardsesh la sagoma della presa illuminata è già la forma: attiva qui sotto i glifi dei ruoli per avere un riferimento basato sulla forma.",
+          "roleGlyphs": {
+            "label": "Glifi dei ruoli",
+            "note": "Aggiunge una forma a ogni presa illuminata (un anello, una barra o una X) così i ruoli si distinguono anche senza colore."
+          },
+          "cvdPalette": {
+            "presets": {
+              "protanopia": "Protanopia",
+              "deuteranopia": "Deuteranopia",
+              "tritanopia": "Tritanopia"
+            }
+          },
+          "rowSubtitleDefault": "Colori e forme predefiniti",
+          "rowSubtitleOverridden_one": "{{count}} segno personalizzato",
+          "rowSubtitleOverridden_other": "{{count}} segni personalizzati"
+        },
+        "resetAll": "Ripristina l'aspetto del pannello",
+        "intro": {
+          "title": "Scegli l'aspetto del tuo pannello",
+          "subtitle": "Abbiamo aggiunto nuovi modi di mostrare il tuo pannello, ma non ti obblighiamo a usarli. Scorri e scegli quello che ti piace, oppure personalizza tutto.",
+          "accessibilityNote": "La tua scelta qui non cambia le tue impostazioni di accessibilità",
+          "changeLaterNote": "Puoi cambiarlo quando vuoi dalle impostazioni",
+          "saveNamed": "Usa {{look}}",
+          "customCta": "Configuralo",
+          "replayTitle": "Riproponi la scelta dell'aspetto",
+          "replaySubtitle": "Chiedi di nuovo quale aspetto vuoi, senza toccare i tuoi colori"
+        },
+        "customLook": {
+          "title": "Aspetto personalizzato",
+          "rowSubtitle": "Ora: {{look}}",
+          "rowSubtitleCustom": "La tua regolazione"
+        },
+        "resetAllNote": "Riporta aspetti e regolazioni ai valori predefiniti. I colori e le forme delle tue prese restano come li hai impostati.",
+        "suggestion": {
+          "increaseContrast": {
+            "titleIos": "Aumenta contrasto è attivo",
+            "titleAndroid": "Il testo ad alto contrasto è attivo",
+            "body": "Il contrasto max riempie ogni presa illuminata e scurisce il pannello dietro, così le prese risaltano.",
+            "apply": "Usa il contrasto max"
+          },
+          "grayscale": {
+            "title": "Il telefono è in scala di grigi",
+            "body": "I glifi dei ruoli mettono una forma su ogni presa illuminata, così partenza, intermedie, arrivo e piedi restano distinti senza colore. I LED del tuo pannello non cambiano.",
+            "apply": "Attiva i glifi dei ruoli"
+          },
+          "differentiateWithoutColor": {
+            "title": "Differenzia senza colore è attivo"
+          },
+          "dismiss": "Non ora",
+          "dismissAccessibility": "Chiudi questo suggerimento"
+        },
+        "sprayWalls": {
+          "title": "Spraywall",
+          "useOwnLook": "Usa il mio aspetto sulle Spraywall",
+          "footer": "Le Spraywall mostrano l'aspetto scelto da chi le ha create per la foto. Attiva questa opzione per vedere invece il tuo."
+        },
+        "moonboard": {
+          "title": "MoonBoard",
+          "gridLabels": "Lettere e numeri della griglia",
+          "footer": "Mostra da A a K e i numeri delle righe attorno al pannello, così puoi indicare le prese come F5."
+        }
+      },
+      "accessibility": {
+        "title": "Accessibilità",
+        "markersTitle": "Segni delle prese",
+        "resetAll": "Ripristina i segni delle prese",
+        "save": "Salva segno",
+        "rowAccessibility": "{{role}}, {{mode}}",
+        "rowSubtitle": "{{colorMode}}, {{shape}}",
+        "pickerSubtitle": "Imposta prima la luminosità, poi saturazione e tonalità.",
+        "shapeLabel": "Forma",
+        "modeLabel": "Modalità colore della presa",
+        "defaultCopy": "Boardsesh userà il colore predefinito per questo tipo di presa e la salterà nelle sostituzioni Bluetooth.",
+        "hexLabel": "Esadecimale",
+        "invalidHex": "Usa un colore esadecimale come #33ccff.",
+        "mode": {
+          "default": "Predefinito",
+          "user": "Colore personale"
+        },
+        "sliders": {
+          "lightness": "Luminosità",
+          "saturation": "Saturazione",
+          "hue": "Tonalità"
+        },
+        "shapes": {
+          "circle": "Cerchio",
+          "triangleUp": "Triangolo verso l'alto",
+          "triangleDown": "Triangolo verso il basso",
+          "square": "Quadrato",
+          "diamond": "Rombo",
+          "octagon": "Ottagono"
+        },
+        "cvd": {
+          "title": "Controllo daltonismo",
+          "subtitle": "Scegli una palette per i quattro ruoli delle prese e guardala prima sul tuo pannello.",
+          "openLarger": "Apre un'anteprima più grande",
+          "verdict": {
+            "clear": "Tutti e quattro i ruoli restano facili da distinguere.",
+            "close": "{{vision}}: {{first}} e {{second}} sembrano vicini. Prova una palette per la visione dei colori qui sopra.",
+            "faint": "I segni {{role}} si confondono con il pannello. Prova una palette per la visione dei colori qui sopra."
+          }
+        },
+        "brush": {
+          "title": "Spessore del pennello",
+          "subtitle": "Cambia lo spessore dei contorni dei segni sovrapposti.",
+          "value": "{{value}}x",
+          "save": "Salva spessore",
+          "rowAccessibility": "Spessore del pennello, {{value}}x"
+        },
+        "size": {
+          "title": "Dimensione dei segni",
+          "subtitle": "Cambia la grandezza delle forme dei segni sovrapposti.",
+          "value": "{{value}}x",
+          "save": "Salva dimensione",
+          "rowAccessibility": "Dimensione dei segni, {{value}}x"
+        },
+        "roles": {
+          "starting": "Partenza",
+          "hand": "Intermedia",
+          "finish": "Arrivo",
+          "foot": "Piede"
+        },
+        "palettes": {
+          "carouselAccessibility": "Palette per la visione dei colori",
+          "cards": {
+            "default": {
+              "title": "Predefinita",
+              "subtitle": "I colori con cui arriva Boardsesh."
+            },
+            "protanopia": {
+              "subtitle": "Restano distinguibili quando i rossi sembrano scuri."
+            },
+            "deuteranopia": {
+              "subtitle": "Restano distinguibili quando rosso e verde si confondono."
+            },
+            "tritanopia": {
+              "subtitle": "Restano distinguibili quando blu e giallo si confondono."
+            },
+            "custom": {
+              "title": "Personalizzata",
+              "subtitle": "I tuoi colori."
+            }
+          }
+        }
+      },
+      "storage": {
+        "title": "Archiviazione",
+        "rowSubtitle": "Guarda quanto spazio occupano i download e libera quello che non ti serve",
+        "intro": "I pannelli che scarichi occupano spazio su questo telefono. Elimina quelli su cui non ti alleni.",
+        "offNote": "I download offline sono disattivati. Puoi comunque eliminare quello che c'è già su questo telefono.",
+        "totalLabel": "Pannelli offline",
+        "freeLabel": "Libero su questo telefono",
+        "boardsHeader": "Pannelli scaricati",
+        "reservedHeader": "Spazio riservato",
+        "reservedNote": "{{size}} dei pannelli che hai rimosso occupano ancora spazio su questo telefono. Per liberarli serve un po' di spazio libero, quindi può non riuscire se ne hai poco.",
+        "compact": "Libera {{size}}",
+        "rowCaption_one": "Circa {{size}} · {{count, number}} blocco",
+        "rowCaption_other": "Circa {{size}} · {{count, number}} blocchi",
+        "unknownScope": "Layout {{layoutId}} · Misura {{sizeId}}",
+        "keptOffline": "Tenuto offline",
+        "notKeptOffline": "Non più tenuto offline: occupa ancora spazio",
+        "estimateNote": "Le dimensioni dei pannelli sono stime. Due misure dello stesso layout condividono i blocchi, quindi la loro somma non corrisponde al totale.",
+        "tapToRemove": "Tocca un pannello per rimuoverlo da questo telefono.",
+        "removeAria": "Rimuovi {{name}} da questo telefono",
+        "cancel": "Annulla",
+        "removeTitle": "Rimuovere {{name}}?",
+        "removeMessage": "Libera circa {{size}} e smette di tenere questo pannello offline. Le tue ripetizioni e le playlist restano al loro posto: puoi riscaricarlo quando vuoi.",
+        "removeConfirm": "Rimuovi",
+        "removeError": "Impossibile rimuovere quel pannello. Riprova.",
+        "compactFailed": "Blocchi rimossi, ma non è stato possibile ridurre il file. Libera un po' di spazio e riprova.",
+        "removeAll": "Rimuovi tutti i download",
+        "removeAllTitle": "Rimuovere tutti i download?",
+        "removeAllMessage": "Libera circa {{size}} e disattiva i download per ogni pannello. Le tue ripetizioni e le playlist restano al loro posto: vivono sul tuo account, non su questo telefono.",
+        "removeAllConfirm": "Rimuovi tutto",
+        "emptyTitle": "Ancora nessun download",
+        "emptySubtitle": "Rendi un pannello disponibile offline e comparirà qui.",
+        "errorTitle": "Impossibile misurare i download",
+        "errorSubtitle": "Qualcosa ha impedito di leggere cosa c'è su questo telefono.",
+        "errorRetry": "Riprova",
+        "downgradeTitle": "L'archiviazione offline è in pausa",
+        "downgradeSubtitle": "Questo telefono ha una versione dell'app più vecchia di quella che ha salvato i tuoi dati. I pannelli scaricati e le ripetizioni in attesa di sincronizzazione restano su questo telefono e tornano con il prossimo aggiornamento.",
+        "cachedImagesHeader": "Immagini in cache",
+        "cachedImagesArtLabel": "Immagini del pannello",
+        "cachedImagesPhotosLabel": "Foto",
+        "cachedImagesNote": "Le immagini del pannello vengono ridisegnate mentre navighi e le foto tornano quando sei online, quindi svuotare la cache costa un attimo, non i tuoi dati. Il telefono può anche svuotarla da solo quando lo spazio scarseggia.",
+        "clearCachedImages": "Svuota le immagini in cache",
+        "clearCachedImagesTitle": "Svuotare le immagini in cache?",
+        "clearCachedImagesMessage": "Libera circa {{size}}. Le immagini del pannello vengono ridisegnate mentre navighi e le foto tornano quando sei online: le tue ripetizioni, le playlist e i pannelli scaricati restano al loro posto.",
+        "clearCachedImagesConfirm": "Svuota",
+        "clearCachedImagesDone": "Immagini in cache svuotate.",
+        "clearCachedImagesPartial": "Immagini del pannello svuotate, ma le foto sono rimaste. Apri l'app e riprova.",
+        "clearCachedImagesError": "Impossibile svuotare le immagini in cache. Riprova."
+      },
+      "appearance": {
+        "title": "Aspetto",
+        "system": "Sistema",
+        "light": "Chiaro",
+        "dark": "Scuro"
+      },
+      "gradeFormat": {
+        "title": "Formato dei gradi",
+        "description": "Scegli come vengono mostrati i gradi dei blocchi in tutta l'app.",
+        "vGrade": "Grado V",
+        "font": "Francese",
+        "both": "Entrambi"
+      },
+      "displayOptions": {
+        "boardseshGrades": "Mostra i gradi Boardsesh",
+        "boardseshGradesDescription": "Gradi costruiti sulle ripetizioni reali di tutti i pannelli. Il grado del tracciatore resta finché non arrivano abbastanza ripetizioni.",
+        "personalGrades": "Usa i miei gradi",
+        "personalGradesDescription": "Mostra il grado che hai dato a un blocco al posto di quello della community, e ordina e filtra in base a quello."
+      },
+      "offline": {
+        "title": "Offline",
+        "offlineMode": "Modalità offline",
+        "offlineModeDescription": "Smetti di parlare con il server di Boardsesh finché non la disattivi. I pannelli scaricati continuano a funzionare e le ripetizioni restano in coda sul telefono.",
+        "autoDownload": "Tieni i pannelli offline",
+        "autoDownloadDescription": "Scarica ogni pannello che usi per sfogliare e registrare ripetizioni senza segnale. I nuovi pannelli si scaricano in automatico.",
+        "downloadingAll_one": "Download di 1 pannello per l'uso offline",
+        "downloadingAll_other": "Download di {{count}} pannelli per l'uso offline",
+        "pendingFooter_one": "1 modifica in attesa di sincronizzazione. Parte appena torni online.",
+        "pendingFooter_other": "{{count}} modifiche in attesa di sincronizzazione. Partono appena torni online.",
+        "syncingFooter_one": "Sincronizzazione di 1 modifica…",
+        "syncingFooter_other": "Sincronizzazione di {{count}} modifiche…"
+      },
+      "language": {
+        "title": "Lingua",
+        "system": "Sistema",
+        "description": "Sistema segue la lingua del dispositivo.",
+        "contributeTitle": "Aiuta a tradurre Boardsesh",
+        "contributeSubtitle": "Le traduzioni arrivano dalla community. Apri i file {{language}} su GitHub per correggere o aggiungere una frase."
+      },
+      "startup": {
+        "title": "Apri l'app su",
+        "footer": "Vale dalla prossima apertura dell'app. Link, notifiche e configurazione si aprono comunque dove puntano."
+      },
+      "diagnostics": {
+        "recording": "Condividi le registrazioni dello schermo",
+        "recordingDescription": "Registra lo schermo nell'app così possiamo vedere un bug mentre succede. Quello che scrivi e le foto restano nascosti. Attivalo mentre riproduci un problema per l'assistenza, poi disattivalo."
+      },
+      "syncIssues": {
+        "title": "Problemi di sincronizzazione",
+        "description_one": "1 modifica non si è sincronizzata. Riprova per inviarla ora.",
+        "description_other": "{{count}} modifiche non si sono sincronizzate. Riprova per inviarle ora.",
+        "retry": "Riprova la sincronizzazione"
+      },
+      "signOut": {
+        "title": "Vuoi uscire?",
+        "message": "Dovrai accedere di nuovo per tornare al tuo diario e ai tuoi pannelli.",
+        "messageOffline": "Uscendo, i pannelli scaricati e il tuo diario offline vengono rimossi da questo telefono. Li riscaricherai al prossimo accesso.",
+        "pendingMessage_one": "1 modifica non è ancora sincronizzata. Proveremo prima a inviarla; quello che resta verrà scartato.",
+        "pendingMessage_other": "{{count}} modifiche non sono ancora sincronizzate. Proveremo prima a inviarle; quello che resta verrà scartato.",
+        "failedMessage_one": "1 modifica non si è sincronizzata e uscendo viene eliminata. Annulla e tocca Riprova la sincronizzazione prima, se vuoi tenerla.",
+        "failedMessage_other": "{{count}} modifiche non si sono sincronizzate e uscendo vengono eliminate. Annulla e tocca Riprova la sincronizzazione prima, se vuoi tenerle.",
+        "confirm": "Esci",
+        "cancel": "Annulla",
+        "downgradeMessage": "Questo telefono aspetta un aggiornamento dell'app prima di poter aprire i tuoi dati offline. Se qualcun altro accede qui prima di quell'aggiornamento, le ripetizioni ancora in attesa di sincronizzazione su questo telefono vanno perse.",
+        "downgradeConfirm": "Esci comunque",
+        "downgradeCancel": "Non uscire",
+        "failureTitle": "Uscita non confermata",
+        "failure": "Impossibile confermare l'uscita. Riconnettiti ed esci di nuovo prima di lasciare questo dispositivo."
+      },
+      "previews": {
+        "title": "Anteprime",
+        "promptOnLaunchTitle": "Mostra le anteprime all'avvio",
+        "promptOnLaunchSubtitle": "Vale dal prossimo avvio di Boardsesh",
+        "pickTitle": "Prova l'anteprima di una PR",
+        "pickSubtitle": "Prova una modifica prima che esca e dicci com'è andata",
+        "testPlanTitle": "Piano di test #{{prNumber}}",
+        "testPlanSubtitle": "Cosa provare nell'anteprima che stai usando"
+      },
+      "earlyUpdates": {
+        "sectionTitle": "Aggiornamenti dell'app",
+        "title": "Ricevi gli aggiornamenti in anticipo",
+        "offSubtitle": "Le novità appena arrivano, prima di tutti gli altri",
+        "onSubtitle": "Ricevi gli aggiornamenti anticipati",
+        "waitingSubtitle": "Attivo, in attesa del prossimo aggiornamento anticipato",
+        "leavingSubtitle": "Disattivato. Gli aggiornamenti normali riprendono quando il prossimo è pronto per questo telefono.",
+        "testingBody": "Su questo telefono è fissata un'anteprima. Prima abbandonala, poi cambia questa opzione.",
+        "footer": "Gli aggiornamenti anticipati possono avere qualche imperfezione ogni tanto. Le modifiche valgono dalla prossima apertura dell'app.",
+        "joinDeferred": "Impossibile raggiungere il server degli aggiornamenti. Riproveremo alla prossima apertura dell'app; gli aggiornamenti anticipati partiranno da quella successiva.",
+        "leaveDeferred": "Non è ancora possibile tornare indietro. Riproveremo alla prossima apertura dell'app."
+      },
+      "climbDrawer": {
+        "description": "Scegli cosa vedere sotto il blocco e in che ordine.",
+        "settingsFooter": "Scegli cosa vedere sotto il blocco. Per cambiare l'ordine, apri il menu ⋯ su un blocco e scegli Opzioni di visualizzazione.",
+        "loading": "Caricamento delle opzioni di visualizzazione…",
+        "hideAll": "Nascondi tutto",
+        "showAll": "Mostra tutto",
+        "restoreDefaults": "Ripristina i predefiniti",
+        "sections": {
+          "activeHolds": "Prese attive",
+          "logbook": "Diario",
+          "climberLogs": "Log dei climber",
+          "setterNotes": "Note del tracciatore",
+          "betaVideos": "Video della beta",
+          "boardseshGrade": "Grado Boardsesh",
+          "community": "Community",
+          "similarClimbs": "Blocchi simili"
+        },
+        "sheetTitle": "Opzioni di visualizzazione",
+        "groupTitle": "Sotto il blocco",
+        "footer": "Le modifiche valgono subito. Nascondi tutto per vedere solo il blocco, senza scorrere in verticale.",
+        "tabs": {
+          "sections": "Sotto il blocco",
+          "buttons": "Pulsanti"
+        }
+      },
+      "sectionLayout": {
+        "moveUp": "Sposta {{section}} su",
+        "moveDown": "Sposta {{section}} giù",
+        "moved": "{{section}}, {{position}} di {{count}}"
+      },
+      "homeSections": {
+        "groupTitle": "In Home",
+        "customize": "Personalizza la Home",
+        "description": "Scegli cosa mostra la Home e in che ordine. Essenziale mostra il tuo pannello, la session e le playlist.",
+        "settingsFooter": "Scegli cosa mostra la Home e in che ordine. Anche Personalizza la Home, dalla Home, modifica la stessa lista.",
+        "footer": "Le modifiche valgono subito, solo su questo telefono. Non cambiano chi può vedere le tue arrampicate.",
+        "showAll": "Mostra tutto",
+        "focused": "Essenziale",
+        "restoreDefaults": "Ripristina i predefiniti",
+        "sections": {
+          "board": "Il tuo pannello",
+          "session": "Session",
+          "playlists": "Playlist",
+          "climbingNow": "In arrampicata ora",
+          "beta": "Beta fresche",
+          "feed": "Feed"
+        },
+        "descriptions": {
+          "board": "Sfoglia i blocchi o cambia pannello",
+          "session": "Avvia una session o guarda il suo timer",
+          "playlists": "Blocchi preferiti e Progetti",
+          "climbingNow": "Session in diretta a cui puoi unirti",
+          "beta": "Nuovi video della beta per il tuo pannello",
+          "feed": "Session e nuovi blocchi della tua crew. Sempre in fondo."
+        },
+        "presets": {
+          "default": "Predefinita",
+          "custom": "Personalizzata"
+        }
+      },
+      "climbList": {
+        "title": "Elenco dei blocchi",
+        "picture": "Immagine",
+        "underName": "Sotto il nome",
+        "yourClimbing": "Le tue arrampicate",
+        "actions": "Azioni",
+        "gradesTitle": "Gradi",
+        "previewFooter": "Esempio. Ripetizioni, salvataggi e tag compaiono sui blocchi che ne hanno.",
+        "gradeFooter": "Scegli quale grado mostrare in grande in Impostazioni → Blocchi e gradi.",
+        "personalFooter": "Segni personali e playlist richiedono l'accesso e si caricano quando sei online.",
+        "presetsLabel": "Configurazione rapida",
+        "presets": {
+          "namesOnly": "Solo nomi",
+          "textOnly": "Solo testo",
+          "default": "Predefinita",
+          "everything": "Tutto",
+          "custom": "Personalizzata"
+        },
+        "fields": {
+          "thumbnail": "Immagine del pannello",
+          "communityGrade": "Grado della community",
+          "sends": "Ripetizioni",
+          "rating": "Valutazione",
+          "setter": "Tracciatore",
+          "sentMark": "Segno di chiuso",
+          "playlistTags": "Mostra i tag delle playlist",
+          "quickActions": "Mostra il pulsante azioni rapide",
+          "progress": "I miei progressi"
+        },
+        "sampleName": "Progetto serale",
+        "sampleSetter": "crewsetter",
+        "samplePlaylistOne": "Progetti",
+        "samplePlaylistTwo": "Riscaldamento",
+        "playlistTagsDescription": "Vedi in quali playlist si trova ogni blocco, direttamente nell'elenco.",
+        "quickActionsDescription": "Aggiunge un pulsante ⋮ a ogni blocco che apre coda, salita, playlist e altro. Puoi sempre usare la pressione prolungata."
+      },
+      "playerButtons": {
+        "title": "Pulsanti",
+        "description": "Scegli i pulsanti attorno a Registra, il loro ordine e dove stanno.",
+        "position": {
+          "label": "Posizione",
+          "below": "Sotto il pannello",
+          "above": "Sopra il pannello",
+          "footer": "Registra e Luce del pannello restano sempre al loro posto."
+        },
+        "previousNext": "Precedente e successivo",
+        "previousNextDescription": "Scorrere il pannello con il dito continua a cambiare blocco.",
+        "buttons": {
+          "mirror": "Specchia",
+          "favorite": "Preferito",
+          "angle": "Inclinazione",
+          "share": "Condividi",
+          "queue": "Coda"
+        },
+        "mirrorDescription": "Solo sui pannelli che permettono di specchiare",
+        "angleDescription": "Solo sui pannelli con inclinazione regolabile",
+        "fixed": {
+          "previous": "Precedente",
+          "next": "Successivo",
+          "log": "Registra",
+          "boardLight": "Luce del pannello"
+        },
+        "footer": "Tra Coda e Specchia, quello che viene prima ottiene il pulsante grande. Un pulsante nascosto resta nel menu ⋯. Con tutti i pulsanti piccoli nascosti, il pannello prende la loro riga.",
+        "settingsFooter": "Per cambiare l'ordine, apri il menu ⋯ su un blocco e scegli Opzioni di visualizzazione.",
+        "previewLabel": "Anteprima, {{position}}: {{buttons}}"
+      },
+      "climbView": {
+        "title": "Vista del blocco",
+        "valueDefault": "Predefinita",
+        "valueCustom": "Personalizzata"
+      },
+      "quickFilters": {
+        "title": "Filtri rapidi",
+        "valueDefault": "Predefiniti",
+        "valueCustom": "Personalizzati",
+        "climbsTitle": "Blocchi",
+        "climbsFooter": "Compaiono sopra l'elenco dei blocchi, in questo ordine. Un filtro che attivi si aggiunge in fondo.",
+        "playlistsTitle": "Playlist",
+        "playlistsFooter": "Compaiono sopra ogni playlist, playlist smart e pagina dei tracciatori, in questo ordine.",
+        "restoreDefaults": "Ripristina i predefiniti",
+        "footer": "Le modifiche valgono subito, solo su questo telefono. Ogni filtro resta comunque in Filtri."
+      },
+      "timers": {
+        "restTitle": "Recupero",
+        "restLength": "Recupero",
+        "restLengthOff": "Spento",
+        "modeLabel": "Cadenza",
+        "modeAfterTick": "Dopo ogni blocco",
+        "modeEvery": "Ogni {{length}}",
+        "modeOnTheMinute": "Finestra fissa",
+        "modeAfterTickHint": "Il recupero riparte ogni volta che registri un tentativo o una ripetizione.",
+        "modeOnTheMinuteHint": "Finestre fisse dal momento in cui lo attivi. Registrare tentativi o ripetizioni non azzera mai il timer.",
+        "autoAdvance": "Passa al blocco successivo",
+        "autoAdvanceHint": "Lo illumina in parete per te, solo mentre Boardsesh è aperto.",
+        "autoAdvanceBlocked": "Solo chi gestisce il pannello può far avanzare la coda.",
+        "autoAdvanceNeedsLength": "Scegli la durata del recupero per far avanzare la coda in automatico.",
+        "cuesTitle": "Segnali",
+        "cuesFooter": "Se sono spenti, senti comunque una vibrazione di preavviso prima che il pannello passi da solo al blocco successivo.",
+        "countdownCues": "Conto alla rovescia degli ultimi secondi",
+        "countdownCuesHint": "Una vibrazione a ogni secondo finale, così sei sulle prese quando si illumina il blocco successivo.",
+        "sound": "Suono",
+        "soundHint": "Riproduci un tono con i segnali. Suona anche con il tasto silenzioso e non interrompe la tua musica.",
+        "rogueTitle": "Timer della palestra",
+        "rogueFooter": "Abbina un timer Rogue a un pannello e il suo cronometro riparte con il tuo recupero: quando registri un blocco, quando la coda avanza e a ogni scatto della finestra fissa. Lo controlla solo il telefono connesso al pannello.",
+        "rogueNotPaired": "Non abbinato",
+        "roguePairHint": "Abbina un timer della palestra a questo pannello",
+        "rogueChangeHint": "Abbina un altro timer della palestra a questo pannello",
+        "rogueRemove": "Rimuovi il timer da {{board}}",
+        "rogueNoBoardsTitle": "Ancora nessun pannello tuo",
+        "rogueNoBoards": "Aggiungi un tuo pannello per abbinargli un timer della palestra.",
+        "rogueConnected": "Connesso",
+        "rogueConnecting": "Connessione…",
+        "rogueUnreachable": "Impossibile raggiungerlo. Controlla che sia acceso e vicino.",
+        "rogueSaveFailed": "Impossibile salvare il timer. Riprova."
+      }
+    },
+    "sendRecovery": {
+      "title_one": "1 ripetizione in arrivo",
+      "title_other": "{{count}} ripetizioni in arrivo",
+      "body_one": "L'hai registrata, ma non ci è mai arrivata. L'abbiamo trovata e rimessa in coda. Parte appena sei online, quindi non serve registrarla di nuovo.",
+      "body_other": "Le hai registrate, ma non ci sono mai arrivate. Le abbiamo trovate e rimesse in coda. Partono appena sei online, quindi non serve registrarle di nuovo.",
+      "dismiss": "Ok"
+    },
+    "about": {
+      "title": "Info",
+      "heroTitle": "Boardsesh",
+      "heroBody": "Gestisci il tuo pannello dal telefono: trova blocchi, metti in coda le ripetizioni, illumina il pannello e tieni la session in movimento.",
+      "sectionTitle": "A cosa serve Boardsesh",
+      "whatItDoesTitle": "Arrampica senza saltare da un'app all'altra",
+      "whatItDoesBody": "Cerca, metti in coda, illumina, registra e condividi i blocchi da un solo posto, senza distrarti dalla parete.",
+      "boardsTitle": "Per i tuoi pannelli",
+      "boardsBody": "Boardsesh supporta le session sui tuoi Kilter, Tension e MoonBoard senza fingere di essere un'app ufficiale.",
+      "openTitle": "Sviluppato in modo aperto",
+      "openBody": "Il progetto è open source, così i climber possono segnalare problemi, chiedere funzioni e aiutare a decidere cosa verrà dopo.",
+      "independentBody": "Boardsesh non è affiliato ad Aurora Climbing, Kilter, Tension, Moon Climbing o ad altri produttori di pannelli, né approvato da loro.",
+      "viewOnGithub": "Vedi su GitHub",
+      "emailPartners": "Scrivici",
+      "joinDiscord": "Unisciti a Discord",
+      "partnerTitle": "Collabora con noi in modo ufficiale",
+      "partnerBody": "Boardsesh funziona con Kilter, Tension e MoonBoard dall'esterno. Se costruisci pannelli e vuoi fare qualcosa di ufficiale insieme, ci piacerebbe parlarne.",
+      "acknowledgementsLink": "Ringraziamenti",
+      "acknowledgementsLinkBody": "Le persone dietro Boardsesh",
+      "shareApp": {
+        "link": "Condividi Boardsesh",
+        "linkBody": "Codice QR per i telefoni della tua crew",
+        "title": "Condividi Boardsesh",
+        "body": "Fai inquadrare questo codice alla tua crew con la fotocamera del telefono per scaricare l'app.",
+        "appStore": "App Store",
+        "googlePlay": "Google Play",
+        "storeToggleLabel": "Store",
+        "qrLabelIos": "Codice QR di Boardsesh sull'App Store",
+        "qrLabelAndroid": "Codice QR di Boardsesh su Google Play",
+        "copyLink": "Copia il link",
+        "share": "Condividi",
+        "copied": "Link copiato",
+        "copyFailed": "Impossibile copiare il link",
+        "messageCopied": "Messaggio copiato",
+        "messageCopyFailed": "Impossibile copiare il messaggio",
+        "message": "Scarica Boardsesh per le tue session sul pannello.\niPhone: {{iosUrl}}\nAndroid: {{androidUrl}}"
+      }
+    },
+    "acknowledgements": {
+      "title": "Ringraziamenti",
+      "intro": "Boardsesh esiste grazie a chi lo costruisce, lo sostiene e sopporta discorsi infiniti sui pannelli. Grazie.",
+      "contributorsTitle": "Collaboratori",
+      "contributorsBody": "Tutti quelli che hanno contribuito con codice, correzioni e idee su GitHub.",
+      "sponsorsTitle": "Sponsor",
+      "sponsorsBody": "Climber che sostengono le spese tramite GitHub Sponsors.",
+      "sponsorsEmpty": "Ancora nessuno sponsor. Vuoi essere il primo?",
+      "privateSponsorsThanks": "e altri {{count}} che sostengono in privato: grazie anche a voi",
+      "becomeSponsor": "Sostieni Boardsesh",
+      "supportFallback": "Boardsesh è gratuito e finanziato dalla community. {{url}}",
+      "poweredByTitle": "Realizzato con",
+      "xpremBody": "Mercure Technologies ha dato a Boardsesh una licenza enterprise per xprem, il server dietro i nostri aggiornamenti over-the-air. È il motivo per cui le correzioni arrivano sul tuo telefono senza aspettare la revisione di uno store, e per cui puoi provare una build di anteprima da Novità.",
+      "personalTitle": "Ringraziamenti personali",
+      "discordTitle": "Tutti quelli del nostro Discord",
+      "discordBody": "Grazie per la beta, la carica e le segnalazioni di bug. Tocca per unirti.",
+      "friendsTitle": "La crew",
+      "friendsBody": "{{names}}, grazie perché avete ancora voglia di fare session con me, anche se vi costringo a fare beta test invece di arrampicare. I vostri feedback sul campo hanno aiutato davvero a indirizzare Boardsesh.",
+      "alexBody": "Per i feedback sul design dati dall'altra parte del mondo, durante la pensione: spero di incrociare di nuovo le nostre strade in arrampicata.",
+      "dogBody": "Grazie Scout per tutto il supporto emotivo: è lei la vera MVP di Boardsesh. Anche se non arrampica e vuole solo essere un cane da spiaggia.",
+      "ossLicensesLink": "Licenze open source",
+      "ossLicensesBody": "Il software open source su cui si basa Boardsesh"
+    },
+    "licenses": {
+      "title": "Licenze open source",
+      "intro": "Boardsesh è costruito con questi pacchetti open source. Grazie a chi li mantiene.",
+      "viewSource": "Vedi il codice",
+      "close": "Chiudi"
+    },
+    "onboarding": {
+      "replaySection": "Tutorial",
+      "replayTitle": "Rivedi il tutorial",
+      "replayError": "Impossibile riaprire il tutorial. Riprova.",
+      "prompt": {
+        "title": "Guarda in diretta cosa è illuminato sul tuo pannello",
+        "body": "Segui il pannello della tua palestra e Boardsesh mostra cosa è illuminato adesso: chi l'ha illuminato, il grado, chi l'ha tracciato, le ripetizioni recenti. Non devi avviare niente: è già lì.",
+        "footnote": "In più session con la crew, il creatore di allenamenti e il tracciamento delle ripetizioni, appena sei su un pannello.",
+        "continue": "Scegli il mio pannello"
+      },
+      "board": {
+        "title": "Su quale pannello arrampichi?",
+        "body": "Ogni pannello ha la sua storia. Scegli quello su cui arrampichi e vedrai cosa hanno chiuso tutti gli altri.",
+        "offlineHint": "Tocca la freccia per tenere un pannello su questo telefono. Si apre subito e funziona anche quando il wifi della palestra no.",
+        "findAnother": "Cerca un altro pannello",
+        "findFirst": "Trova il mio pannello",
+        "offlineSkip": "Salta per ora",
+        "downloadAria": "Tieni {{name}} su questo telefono"
+      },
+      "boardRevealTip": "Tocca l'orologio per vedere cosa è stato illuminato su questo pannello.",
+      "quickActionsTip": "Tieni premuto su un blocco per le azioni rapide come coda, salita e playlist.",
+      "tips": {
+        "workout": "Crea un allenamento: Volume, Piramide, Scala o Grado fisso. Imposta un grado, guarda in anteprima i blocchi e chiudili uno alla volta.",
+        "crew": "Arrampichi con altre persone? Avvia una session e condividete una sola coda. Chiunque può illuminare il blocco successivo, senza passarsi il telefono.",
+        "record": "Le tue ripetizioni finiscono nei grafici qui, in Progressi: distribuzione dei gradi e blocco più duro chiuso. Importa il tuo diario Kilter e Tension da Aurora per partire con la tua storia.",
+        "accessory": "La barra in basso mostra sempre cosa c'è sul pannello. Da lì scorri i blocchi."
+      },
+      "link": {
+        "title": "Porta con te le tue ripetizioni di {{boardName}}",
+        "body": "Il tuo account {{boardName}} e Boardsesh sono separati, anche se usi la stessa email. Collega il tuo account per sincronizzare nel diario le ripetizioni disponibili. Tempi di sincronizzazione e storico variano.",
+        "footnote": "Il collegamento chiede il tuo username di {{boardName}}, non la tua email.",
+        "continue": "Collega il mio account {{boardName}}",
+        "skip": "Non ora",
+        "skipHint": "Puoi farlo quando vuoi in Impostazioni › App collegate."
+      }
+    },
+    "nav": {
+      "home": "Home",
+      "boards": "Pannelli",
+      "climbs": "Blocchi",
+      "profile": "Profilo",
+      "holdFilter": "Tipi di presa",
+      "zoneFilter": "Zona del pannello",
+      "setters": "Tracciatori"
+    },
+    "changelog": {
+      "title": "Novità",
+      "intro": "Ultime modifiche",
+      "currentBuild": "Aggiornamento del {{date}}",
+      "currentBuildVersion": "Versione {{version}}",
+      "category": {
+        "new": "Nuovo",
+        "improved": "Migliorato",
+        "fixed": "Corretto"
+      },
+      "viewPr": "Vedi su GitHub",
+      "empty": "Ancora nessuna modifica registrata: siamo stati troppo impegnati ad arrampicare. Ripassa dopo il prossimo blocco chiuso.",
+      "nativeRelease": {
+        "title": "Aggiornamento dell'app",
+        "appStore": "Una nuova versione è arrivata sull'App Store.",
+        "playStore": "Una nuova versione è arrivata sul Play Store."
+      },
+      "checkForUpdates": "Cerca aggiornamenti",
+      "checking": "Controllo in corso…",
+      "downloading": "Download in corso…",
+      "upToDate": {
+        "title": "Tutto aggiornato",
+        "message": "Hai già l'ultima versione."
+      },
+      "updateReady": {
+        "title": "Aggiornamento pronto",
+        "message": "Riavviare Boardsesh ora per usare l'ultima versione?",
+        "restart": "Riavvia",
+        "later": "Più tardi"
+      },
+      "checkError": {
+        "title": "Impossibile cercare aggiornamenti",
+        "message": "Qualcosa è andato storto nel recupero dell'ultima versione. Riprova tra poco."
+      },
+      "updates": {
+        "regular": "Versione normale",
+        "canary": "Versione canary",
+        "canaryBody": "Selezionata in automatico per questo rilascio graduale. Le segnalazioni includono la tua versione.",
+        "statusUnknown": "Non è stato possibile confermare lo stato del rilascio graduale.",
+        "early": "Aggiornamenti anticipati",
+        "staging": "Versione di staging",
+        "preview": "Anteprima PR #{{prNumber}}",
+        "native": "Build installata",
+        "other": "Versione {{channel}}",
+        "changeRelease": "Versione",
+        "testPreview": "Prova l'anteprima di una PR",
+        "finishTesting": "Termina il test della PR #{{prNumber}}",
+        "options": "Opzioni di aggiornamento",
+        "earlyUpdatesHelp": "Gli aggiornamenti anticipati possono avere qualche imperfezione. Le modifiche valgono dal prossimo avvio."
+      }
+    },
+    "launchUpdate": {
+      "checking": "Ricerca aggiornamenti in corso",
+      "installing": "Installazione dell'ultimo aggiornamento",
+      "firstLaunchHint": "Solo al primo avvio. Ci vogliono pochi secondi."
+    },
+    "connectivity": {
+      "serverDown": {
+        "title": "Il server ha qualche problema",
+        "body": "Le tue arrampicate non vanno perse. Le ripetizioni che registri ora aspettano sul telefono e partono quando il server torna disponibile.",
+        "pill": "Server offline",
+        "retry": "Riprova",
+        "stillDown": "Ancora non raggiungibile. Continuiamo a controllare e ci riconnetteremo in automatico.",
+        "stayOffline": "Resta offline"
+      },
+      "noSignal": {
+        "title": "Nessun segnale",
+        "body": "Sui pannelli scaricati puoi ancora sfogliare, cercare e registrare. Le ripetizioni aspettano sul telefono finché non torni online.",
+        "pill": "Nessun segnale"
+      },
+      "offlineMode": {
+        "title": "La modalità offline è attiva",
+        "body": "Niente più contatti con il server di Boardsesh finché non la disattivi. I pannelli scaricati continuano a funzionare.",
+        "pill": "Modalità offline",
+        "goOnline": "Vai online"
+      },
+      "pending_one": "1 modifica in attesa",
+      "pending_other": "{{count}} modifiche in attesa",
+      "recovering": {
+        "backOnline": "Di nuovo online",
+        "syncing_one": "Di nuovo online. Sincronizzazione di 1 modifica…",
+        "syncing_other": "Di nuovo online. Sincronizzazione di {{count}} modifiche…",
+        "synced": "Tutto sincronizzato",
+        "needsRetry_one": "1 modifica da riprovare",
+        "needsRetry_other": "{{count}} modifiche da riprovare",
+        "openSyncIssues": "Apri i problemi di sincronizzazione"
+      },
+      "needsConnection": "Serve una connessione",
+      "expand": "Mostra i dettagli della connessione",
+      "dismiss": "Nascondi"
+    },
+    "offlineState": {
+      "title": "Nessun segnale",
+      "body": "Qui serve una connessione. Sui pannelli che hai scaricato puoi ancora sfogliare, cercare e registrare offline.",
+      "serverTitle": "Boardsesh non è raggiungibile in questo momento",
+      "serverBody": "Qui serve il nostro server. Sui pannelli scaricati puoi ancora sfogliare, cercare e registrare, e le tue ripetizioni aspettano sul telefono.",
+      "offlineModeTitle": "La modalità offline è attiva",
+      "offlineModeBody": "Qui serve una connessione. Disattiva la modalità offline dal banner o in Impostazioni per caricare questa schermata.",
+      "errorTitle": "Impossibile caricare",
+      "errorBody": "Non è arrivato niente. Riprova.",
+      "retry": "Riprova"
+    },
+    "storePrompt": {
+      "title": "Scarica l'app Boardsesh",
+      "body": "Illumina il tuo pannello e registra ogni ripetizione, anche senza segnale.",
+      "googlePlay": "Disponibile su Google Play",
+      "appStore": "Scarica dall'App Store",
+      "dismiss": "Non ora"
+    },
+    "reportRelease": {
+      "title": "Dettagli della versione",
+      "channel": "Canale",
+      "branch": "Branch",
+      "updateId": "ID aggiornamento",
+      "runtimeVersion": "Runtime",
+      "automaticCanary": "Canary automatico",
+      "embedded": "Bundle incorporato",
+      "checkedAt": "Canary controllato",
+      "yes": "Sì",
+      "no": "No",
+      "unknown": "Sconosciuto"
+    }
+  },
+  "lightControl": {
+    "turnOffAll": "Spegni tutte le luci",
+    "lightAdjacentHolds": "Illumina la presa sopra",
+    "lightAdjacentHoldsHelp": "Aggiunge un LED più tenue sopra ogni presa di partenza e intermedia illuminata. Richiede un controller MoonBoard con la funzione LED aggiuntivo.",
+    "disconnect": "Disconnetti il pannello"
+  },
+  "bluetooth": {
+    "boardNotFound": "Impossibile trovare il tuo pannello. Controlla che sia acceso e vicino; se un altro telefono è connesso, disconnettilo prima da lì.",
+    "connectFailed": "Impossibile connettersi. Avvicinati al pannello e riprova.",
+    "serviceMissing": "Connesso, ma il pannello non ha risposto. Spegnilo e riaccendilo, poi riprova.",
+    "unavailable": "Il Bluetooth è spento. Accendilo per connetterti al pannello.",
+    "unknownError": "Impossibile connettersi al pannello. Riprova."
+  },
+  "actions": {
+    "yes": "Sì",
+    "no": "No",
+    "cancel": "Annulla",
+    "clear": "Cancella",
+    "delete": "Elimina",
+    "edit": "Modifica",
+    "close": "Chiudi",
+    "back": "Indietro",
+    "done": "Fatto",
+    "retry": "Riprova",
+    "loading": "Caricamento..."
+  },
+  "ariaLabels": {
+    "close": "Chiudi",
+    "back": "Indietro",
+    "openStatsFilters": "Apri i filtri delle statistiche",
+    "shareProfile": "Condividi il profilo",
+    "settings": "Impostazioni",
+    "notifications": "Notifiche",
+    "userMenu": "Menu utente",
+    "startClimbing": "Inizia ad arrampicare nell'app",
+    "home": "Home di Boardsesh",
+    "yourProfile": "Il tuo profilo",
+    "openMenu": "Apri il menu"
+  },
+  "header": {
+    "you": "Tu",
+    "profile": "Profilo",
+    "statistics": "Statistiche",
+    "sessions": "Session",
+    "createdClimbs": "Blocchi creati",
+    "auroraMigration": "Porta il tuo diario",
+    "startClimbing": "Inizia ad arrampicare",
+    "signIn": "Accedi",
+    "nav": {
+      "gyms": "Palestre",
+      "playlists": "Playlist",
+      "about": "Info",
+      "help": "Aiuto"
+    },
+    "navLabel": "Navigazione principale"
+  },
+  "share": {
+    "profileTitle": "Il profilo di arrampicata di {{name}}",
+    "profileText": "Guarda il profilo di arrampicata di {{name}} su Boardsesh",
+    "viewedFallbackName": "Climber",
+    "linkCopied": "Link copiato negli appunti!",
+    "shareFailed": "Condivisione non riuscita"
+  },
+  "myBoards": {
+    "title": "Gestisci i pannelli"
+  },
+  "myGyms": {
+    "roleOwner": "Proprietario",
+    "roleAdmin": "Admin",
+    "roleEditor": "Editor",
+    "roleMember": "Membro"
+  },
+  "userDrawer": {
+    "signIn": "Accedi",
+    "changeBoard": "Cambia pannello",
+    "myPlaylists": "Le mie playlist",
+    "about": "Info",
+    "whatsNew": "Novità",
+    "newBadge": "Nuovo",
+    "rateBoardsesh": "Valuta Boardsesh",
+    "reportBug": "Segnala un bug",
+    "joinDiscord": "Unisciti a Discord",
+    "logout": "Esci",
+    "qa": {
+      "pick": "Prova l'anteprima di una PR",
+      "finishTesting": "Termina il test di #{{prNumber}}",
+      "testPlan": "Piano di test #{{prNumber}}",
+      "badge": "QA"
+    },
+    "accountTitle": "Account"
+  },
+  "qa": {
+    "shared": {
+      "backOnProduction": "Torni in produzione al prossimo aggiornamento",
+      "leaveFailed": "Impossibile disattivare questa anteprima: riprova",
+      "backOnEarlyUpdates": "Torni agli aggiornamenti anticipati alla prossima apertura dell'app"
+    },
+    "pick": {
+      "title": "Prova una PR",
+      "skip": "Salta",
+      "emptyTitle": "Niente da testare per ora",
+      "emptyBody": "Nessuna PR ha ancora pubblicato un'anteprima per questa build. Ripassa dopo il prossimo push.",
+      "surfingOffTitle": "Le anteprime sono disattivate",
+      "surfingOffBody": "Al momento questo canale non offre anteprime di PR.",
+      "unreachableTitle": "Impossibile raggiungere il server degli aggiornamenti",
+      "draftChip": "Bozza",
+      "approvedChip": "Hai approvato",
+      "declinedChip": "Hai rifiutato",
+      "headChangedChip": "Modificata da allora",
+      "crashedChip": "Crash all'avvio",
+      "nothingNewToast": "Niente di nuovo per #{{prNumber}} su questa build: il prossimo rilascio si applica al riavvio",
+      "stagingTitle": "Staging",
+      "productionTitle": "Produzione",
+      "stagingNextLaunch": "Staging è selezionato: il prossimo aggiornamento si applica al riavvio",
+      "productionNextLaunch": "Produzione è selezionata; questo bundle può restare finché non esce un aggiornamento più recente",
+      "buildingChip": "In costruzione",
+      "buildingNewerChip": "Più recente in arrivo",
+      "buildingToast": "Ancora in pubblicazione: compare qui quando il bundle arriva",
+      "buildingHint": "Questa anteprima è ancora in pubblicazione e non si può ancora caricare",
+      "searchPlaceholder": "Cerca per titolo o numero",
+      "clearSearch": "Cancella la ricerca",
+      "noMatchTitle": "Nessuna PR corrisponde",
+      "noMatchBody": "Per questa build non c'è niente di pubblicato che corrisponda a “{{query}}”.",
+      "trySurfAction": "Prova comunque #{{prNumber}}",
+      "trySurfHint": "Potrebbe non avere un'anteprima che questa build riesca a caricare.",
+      "notServableToast": "Nessuna anteprima di #{{prNumber}} per questa build: potrebbe servire un rebase su main",
+      "earlyUpdatesTitle": "Aggiornamenti anticipati",
+      "earlyUpdatesNextLaunch": "Gli aggiornamenti anticipati tornano attivi alla prossima apertura dell'app"
+    },
+    "brief": {
+      "screenTitle": "Cosa testare",
+      "startLabel": "Inizia il test",
+      "finishLabel": "Termina il test",
+      "githubLabel": "Apri su GitHub",
+      "leaveLabel": "Lascia l'anteprima",
+      "noPlanText": "Questa PR non ha ancora un piano di test: aprila su GitHub e usa il tuo giudizio.",
+      "unknownPr": "La PR #{{prNumber}} è chiusa o sconosciuta. Qui non c'è niente da testare.",
+      "onProductionTitle": "Sei in produzione",
+      "onProductionBody": "Scegli l'anteprima di una PR per iniziare a testarla.",
+      "riskLabel": "Rischio {{risk}}/5"
+    },
+    "verdict": {
+      "sheetTitle": "Com'è andata?",
+      "approveLabel": "Approva",
+      "declineLabel": "Rifiuta",
+      "verdictGroupLabel": "Esito",
+      "approvePlaceholder": "Qualcosa da segnalare? (facoltativo)",
+      "declinePlaceholder": "Cosa è andato storto? Indica i passaggi.",
+      "submitLabel": "Invia",
+      "leaveLabel": "Lascia l'anteprima senza feedback",
+      "submitError": "Impossibile inviare l'esito: riprova",
+      "notOnPreview": "Sei in produzione: non c'è niente su cui dare un esito.",
+      "verdictSentToast": "Esito inviato a #{{prNumber}}",
+      "moreCharsNeeded_one": "Manca {{count}} carattere",
+      "moreCharsNeeded_other": "Mancano {{count}} caratteri"
+    }
+  },
+  "screenshots": {
+    "addLabel": "Aggiungi",
+    "addAria": "Aggiungi uno screenshot",
+    "removeAria": "Rimuovi lo screenshot",
+    "attachedCount_one": "{{count}} screenshot allegato",
+    "attachedCount_other": "{{count}} screenshot allegati",
+    "publicWarning": "Gli screenshot che alleghi vengono pubblicati su GitHub, in pubblico.",
+    "pickFailed": "Impossibile leggere quello screenshot: scegline un altro.",
+    "uploadFailed": "Impossibile caricare i tuoi screenshot: la segnalazione è ancora qui."
+  },
+  "loading": {
+    "messages": [
+      "Preparazione del tuo pannello...",
+      "Configurazione dei blocchi...",
+      "Preparazione della parete...",
+      "Caricamento dei set di prese...",
+      "Quasi pronti per arrampicare...",
+      "Riscaldamento dei LED...",
+      "Sincronizzazione della configurazione del pannello...",
+      "Calibrazione dei gradi di difficoltà...",
+      "Entriamo nel ritmo giusto...",
+      "Controllo delle condizioni della parete..."
+    ]
+  },
+  "emptyState": {
+    "default": "Nessun dato"
+  },
+  "comment": {
+    "placeholder": "Aggiungi un commento...",
+    "replyPlaceholder": "Scrivi una risposta...",
+    "thoughtsPlaceholder": "Di' la tua...",
+    "submit": "Pubblica",
+    "save": "Salva",
+    "cancel": "Annulla",
+    "signInPrompt": "Accedi per lasciare un commento.",
+    "discussionTitle": "Discussione",
+    "empty": "Ancora nessun commento. Di' qualcosa.",
+    "deleted": "[eliminato]",
+    "edited": "(modificato)",
+    "userFallback": "Utente",
+    "reply": "Rispondi",
+    "showRepliesOne": "Mostra 1 risposta",
+    "showRepliesMany": "Mostra {{count}} risposte",
+    "count_one": "{{count}} commento",
+    "count_other": "{{count}} commenti",
+    "sort": {
+      "new": "Nuovi",
+      "top": "Migliori",
+      "controversial": "Controversi",
+      "hot": "Di tendenza"
+    },
+    "delete": {
+      "title": "Elimina il commento",
+      "description": "Vuoi davvero eliminare questo commento? Non si può annullare.",
+      "confirm": "Elimina",
+      "editAria": "Modifica il commento",
+      "deleteAria": "Elimina il commento"
+    },
+    "errors": {
+      "post": "Impossibile pubblicare il commento",
+      "update": "Impossibile aggiornare il commento",
+      "delete": "Impossibile eliminare il commento",
+      "reply": "Impossibile pubblicare la risposta",
+      "loadReplies": "Impossibile caricare le risposte"
+    }
+  },
+  "vote": {
+    "upvote": "Voto positivo",
+    "downvote": "Voto negativo",
+    "like": "Mi piace",
+    "unlike": "Non mi piace più",
+    "signInPrompt": "Accedi per votare",
+    "failed": "Impossibile votare"
+  },
+  "proposal": {
+    "trigger": "Proponi una modifica",
+    "drawerTitle": "Crea una proposta",
+    "submit": "Crea una proposta",
+    "submitting": "Creazione...",
+    "cancel": "Annulla",
+    "types": {
+      "grade": "Grado",
+      "classic": "Classic",
+      "benchmark": "Benchmark",
+      "hide": "Nascondi il blocco"
+    },
+    "fields": {
+      "angle": "Inclinazione",
+      "proposedGrade": "Grado proposto",
+      "proposedStatus": "Stato proposto",
+      "reasonLabel": "Motivo (facoltativo)",
+      "reasonPlaceholder": "Perché pensi che serva questa modifica?",
+      "yes": "Sì",
+      "no": "No"
+    },
+    "hints": {
+      "classic": "Le proposte Classic valgono per tutte le inclinazioni.",
+      "benchmark": "Le proposte Benchmark valgono per singola inclinazione.",
+      "hide": "Le proposte di nascondere valgono per tutte le inclinazioni."
+    },
+    "outlierWarning": "Il grado a questa inclinazione sembra anomalo rispetto alle inclinazioni vicine. Questa proposta può essere approvata in automatico se è in linea con i dati vicini.",
+    "validation": {
+      "signIn": "Accedi per creare proposte",
+      "signInToVote": "Accedi per votare le proposte",
+      "missingValue": "Inserisci un valore proposto",
+      "sameGrade": "Il grado proposto è uguale a quello attuale",
+      "noData": "Impossibile creare la proposta: nessun dato restituito",
+      "failed": "Impossibile creare la proposta",
+      "failedToVote": "Impossibile votare",
+      "failedToResolve": "Impossibile risolvere la proposta",
+      "failedToDelete": "Impossibile eliminare la proposta"
+    },
+    "created": "Proposta creata"
+  },
+  "follow": {
+    "follow": "Segui",
+    "following": "Segui già",
+    "unfollow": "Smetti di seguire"
+  },
+  "betaVideos": {
+    "empty": "Ancora nessun video della beta"
+  },
+  "moonboardImport": {
+    "removeConfirmTitle": "Rimuovere questo blocco?"
+  },
+  "ascents": {
+    "deleteTitle": "Elimina la salita",
+    "deleteDescription": "Vuoi davvero eliminarla? Non si può annullare.",
+    "statusFlash": "flash",
+    "statusSend": "chiuso",
+    "statusAttempt": "tentativo",
+    "flashed_one": "Flash",
+    "flashed_other": "{{count}} flash",
+    "sent_one": "Chiuso",
+    "sent_other": "{{count}} ripetizioni",
+    "attempts_one": "1 tentativo",
+    "attempts_other": "{{count}} tentativi"
+  },
+  "board": {
+    "resetZoom": "Reimposta lo zoom"
+  },
+  "capacitorRetirement": {
+    "title": "Boardsesh ha una nuova app",
+    "description": "Questa versione è stata ritirata. Scarica la nuova app Boardsesh: il tuo diario, le session e la crew vengono con te.",
+    "cta": "Scarica la nuova app",
+    "fallbackCta": "Apri invece la pagina dello store"
+  },
+  "footer": {
+    "tagline": "I tuoi pannelli. Una sola app. Cambia pannello senza cambiare app.",
+    "navLabel": "Footer",
+    "trademarkNote": "Funziona con Kilter, Tension e MoonBoard. Non affiliato ad Aurora Climbing né a Moon Climbing.",
+    "links": {
+      "home": "Home",
+      "about": "Info",
+      "support": "Sostieni Boardsesh",
+      "help": "Aiuto",
+      "docs": "Documentazione per sviluppatori",
+      "playlists": "Playlist",
+      "auroraMigration": "Porta il tuo diario",
+      "legal": "Note legali",
+      "privacy": "Privacy",
+      "gymsKilter": "Palestre con un Kilter Board",
+      "gymsTension": "Palestre con un Tension Board",
+      "gymsMoonboard": "Palestre con una MoonBoard",
+      "gyms": "Tutte le palestre e pareti"
+    },
+    "groups": {
+      "findAGym": "Trova una palestra",
+      "explore": "Esplora",
+      "smallPrint": "Informazioni legali"
+    }
+  },
+  "unsavedChanges": {
+    "title": "Scartare le modifiche?",
+    "message": "Le tue modifiche non verranno salvate.",
+    "discard": "Scarta le modifiche",
+    "keepEditing": "Continua a modificare"
+  },
+  "undoDelete": {
+    "removed": "Voce rimossa",
+    "undo": "Annulla",
+    "cancelled": "Eliminazione annullata. La tua voce è stata mantenuta."
+  }
+}
