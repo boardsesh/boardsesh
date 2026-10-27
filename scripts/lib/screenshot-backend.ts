@@ -29,6 +29,7 @@ import { extname, join, resolve as resolvePath, sep } from 'node:path';
 import type { Duplex } from 'node:stream';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import { Kind, parse } from 'graphql';
+import { SEARCH_CLIMBS_COUNT } from '../../packages/shared/graphql/src/operations/climb-search';
 import { createCppWsRecording, type CppWsOperation } from './cpp-ws-recording';
 import {
   assertCppNativeJoinResponse,
@@ -66,6 +67,7 @@ import {
   batchScopeKey,
   batchedOperationSpec,
   cappedUncoveredIds,
+  canonicalJson,
   collectBatchItems,
   composeBatchedResponse,
   emptyManifest,
@@ -988,6 +990,66 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
    */
   const batchedIndexes = new Map<string, Map<string, BatchedScopeIndex>>();
 
+  // Count queries do not consume pagination in count-climbs.ts. Keep the exact
+  // recorded lookup first, then reuse a genuine count only when every other
+  // variable and the query document still match. Never rewrite recording keys.
+  const countPaginationIndexes = new Map<string, Map<string, { entry: GraphqlManifestEntry; count: number } | null>>();
+  const countDocumentHash = graphqlFixtureKey(
+    { operationName: 'SearchClimbsCount', query: SEARCH_CLIMBS_COUNT },
+    sha256Hex,
+  ).documentHash;
+  const countVariablesScope = (variables: unknown): string | null => {
+    if (typeof variables !== 'object' || variables === null || Array.isArray(variables)) return null;
+    const input = (variables as Record<string, unknown>).input;
+    if (typeof input !== 'object' || input === null || Array.isArray(input)) return null;
+    return canonicalJson({
+      ...variables,
+      input: Object.fromEntries(Object.entries(input).filter(([name]) => name !== 'page' && name !== 'pageSize')),
+    });
+  };
+  const countEntryWithoutPagination = (documentHash: string, variables: unknown): GraphqlManifestEntry | null => {
+    if (documentHash !== countDocumentHash) return null;
+    const requestedScope = countVariablesScope(variables);
+    if (requestedScope === null) return null;
+    let scopes = countPaginationIndexes.get(documentHash);
+    if (!scopes) {
+      scopes = new Map();
+      for (const entry of manifest.graphql) {
+        if (entry.operationName !== 'SearchClimbsCount' || entry.documentHash !== documentHash) continue;
+        if (!isFixtureFileWithinDirectory(fixturesDir, entry.file)) throw new Error('Invalid count fixture path');
+        const fixture = JSON.parse(readFileSync(join(fixturesDir, entry.file), 'utf8')) as GraphqlFixtureFile;
+        const scope = countVariablesScope(fixture.variables);
+        if (scope === null) continue;
+        const fixtureKey = graphqlFixtureKey(fixture, sha256Hex);
+        const response = fixture.response as {
+          errors?: unknown;
+          data?: { searchClimbs?: { totalCount?: unknown } };
+        } | null;
+        const count = response?.data?.searchClimbs?.totalCount;
+        if (
+          fixture.operationName !== entry.operationName ||
+          fixture.documentHash !== documentHash ||
+          fixtureKey.documentHash !== documentHash ||
+          fixture.variablesHash !== entry.variablesHash ||
+          fixtureKey.variablesHash !== entry.variablesHash ||
+          fixture.status !== 200 ||
+          response?.errors !== undefined ||
+          typeof count !== 'number' ||
+          !Number.isSafeInteger(count) ||
+          count < 0
+        ) {
+          scopes.set(scope, null);
+          continue;
+        }
+        const previous = scopes.get(scope);
+        if (previous === null || (previous && previous.count !== count)) scopes.set(scope, null);
+        else if (!previous) scopes.set(scope, { entry, count });
+      }
+      countPaginationIndexes.set(documentHash, scopes);
+    }
+    return scopes.get(requestedScope)?.entry ?? null;
+  };
+
   const batchedIndexFor = (operationName: string, spec: BatchedOperationSpec): Map<string, BatchedScopeIndex> => {
     const cached = batchedIndexes.get(operationName);
     if (cached) return cached;
@@ -1177,6 +1239,14 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
       }
     }
     let entry = graphqlIndex.get(`${operationName}\n${key.variablesHash}`);
+    if (!entry && operationName === 'SearchClimbsCount') {
+      try {
+        entry = countEntryWithoutPagination(key.documentHash, parsedBody.variables) ?? undefined;
+      } catch {
+        missGraphql(operationName, 'unreadable-fixture');
+        return;
+      }
+    }
     let campaignResponse: { response: unknown } | null = null;
     const cpp = manifest.capture?.cpp;
     const cppReplayScope =
