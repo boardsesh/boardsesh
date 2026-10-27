@@ -22,6 +22,7 @@ export * from './proposals';
 export * from './new-climb-subscriptions';
 export * from './vote-counts';
 export * from './session-participants';
+export * from './session-workouts';
 export * from './feedback';
 export * from './qa-verdicts';
 export * from './profile-percentiles';

@@ -4504,6 +4504,13 @@ export type Mutation = {
    * Returns null when a saved board already matches the connect (nothing to record).
    */
   recordBoardSerial?: Maybe<BoardSerialConfig>;
+  /**
+   * Store the caller's workout for a session. Written only when revision is
+   * higher than the stored one; an equal or lower revision is a no-op that still
+   * returns true, so outbox replays are idempotent. The caller must have created
+   * or joined the session, or logged a tick in it.
+   */
+  recordSessionWorkout: Scalars['Boolean']['output'];
   /** Join the board a share link names as an approved member. NOT_FOUND for a revoked or unknown link. */
   redeemBoardShareLink: BoardShareLinkRedemption;
   /** HTTP cron credentials only. Refused refreshes report HTTP 409 and a CONFLICT error. */
@@ -5314,6 +5321,11 @@ export type MutationRecordBoardOpenedArgs = {
 /** Root mutation type for all write operations. */
 export type MutationRecordBoardSerialArgs = {
   input: RecordBoardSerialInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationRecordSessionWorkoutArgs = {
+  input: RecordSessionWorkoutInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -7384,6 +7396,17 @@ export type Query = {
    * Available for ended sessions or active sessions with ticks.
    */
   sessionSummary?: Maybe<SessionSummary>;
+  /**
+   * Feed-card headlines for up to 50 sessions. Sessions the viewer may not open,
+   * or with no workout, are left out.
+   */
+  sessionWorkoutHeadlines: Array<SessionWorkoutHeadline>;
+  /**
+   * The workouts followed in a session, one per climber, with what each block
+   * came to. Visible wherever the session is (the sessionDetail rule); climbs
+   * the viewer may not see are left out along with their ticks.
+   */
+  sessionWorkouts: Array<SessionWorkout>;
   /** Get climbs created by a setter. */
   setterClimbs: SetterClimbsConnection;
   /**
@@ -8238,6 +8261,16 @@ export type QuerySessionSummaryArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QuerySessionWorkoutHeadlinesArgs = {
+  sessionIds: Array<Scalars['ID']['input']>;
+};
+
+/** Root query type for all read operations. */
+export type QuerySessionWorkoutsArgs = {
+  sessionId: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
 export type QuerySetterClimbsArgs = {
   input: SetterClimbsInput;
 };
@@ -8703,6 +8736,14 @@ export type RecordBoardSerialInput = {
   setIds: Scalars['String']['input'];
   /** Size ID at connect */
   sizeId: Scalars['Int']['input'];
+};
+
+export type RecordSessionWorkoutInput = {
+  /** The phone's per-session write counter. Only a higher revision than the stored one is written. */
+  revision: Scalars['Int']['input'];
+  sessionId: Scalars['ID']['input'];
+  stages: Array<SessionWorkoutStageInput>;
+  ticks: Array<SessionWorkoutTickInput>;
 };
 
 export type RegisterControllerInput = {
@@ -9846,6 +9887,124 @@ export type SessionUser = {
   userId?: Maybe<Scalars['ID']['output']>;
   /** Display name */
   username: Scalars['String']['output'];
+};
+
+export type SessionWorkout = {
+  __typename?: 'SessionWorkout';
+  avatarUrl?: Maybe<Scalars['String']['output']>;
+  displayName?: Maybe<Scalars['String']['output']>;
+  /** The climber's ticks in the session that match no climb of the workout. */
+  offPlan: Scalars['Int']['output'];
+  stages: Array<SessionWorkoutStage>;
+  updatedAt: Scalars['String']['output'];
+  /** Null when the climber stays anonymous to this viewer, like a session summary's participant row. */
+  userId?: Maybe<Scalars['ID']['output']>;
+};
+
+export type SessionWorkoutClimb = {
+  __typename?: 'SessionWorkoutClimb';
+  angle: Scalars['Int']['output'];
+  boardType?: Maybe<Scalars['String']['output']>;
+  climbUuid: Scalars['String']['output'];
+  frames?: Maybe<Scalars['String']['output']>;
+  /** Display grade: the climber's own when they logged it, else the consensus at this angle. */
+  grade?: Maybe<Scalars['String']['output']>;
+  isMirror?: Maybe<Scalars['Boolean']['output']>;
+  layoutId?: Maybe<Scalars['Int']['output']>;
+  name?: Maybe<Scalars['String']['output']>;
+  queueItemUuid: Scalars['ID']['output'];
+  renderBoard?: Maybe<RenderBoardConfig>;
+  /** One per tick on this climb, in tick order. */
+  reps: Array<SessionWorkoutRepOutcome>;
+  /** True when the climber logged nothing on it. */
+  skipped: Scalars['Boolean']['output'];
+};
+
+/** One line for a feed card: the main block, the second for 'A + B', how many more. */
+export type SessionWorkoutHeadline = {
+  __typename?: 'SessionWorkoutHeadline';
+  /** Every block, warm-ups and cool-downs included. */
+  blockCount: Scalars['Int']['output'];
+  /** Main blocks after the first. */
+  extraMainBlocks: Scalars['Int']['output'];
+  mainKind?: Maybe<Scalars['String']['output']>;
+  /** Display grade name of the main block's target grade. */
+  mainTargetGrade?: Maybe<Scalars['String']['output']>;
+  secondMainKind?: Maybe<Scalars['String']['output']>;
+  sessionId: Scalars['ID']['output'];
+  /** Null when the climber stays anonymous to this viewer. */
+  userId?: Maybe<Scalars['ID']['output']>;
+};
+
+/** One queued climb of a workout block, captured when the run is written. */
+export type SessionWorkoutItemInput = {
+  angle: Scalars['Int']['input'];
+  climbUuid: Scalars['String']['input'];
+  isMirror?: InputMaybe<Scalars['Boolean']['input']>;
+  queueItemUuid: Scalars['ID']['input'];
+};
+
+/** A timed block's pacing. 4x4 adds repsPerSet and restBetweenSetsSeconds. */
+export type SessionWorkoutPacingInput = {
+  advanceOn?: InputMaybe<Scalars['String']['input']>;
+  /** onTheMinute or afterTick. */
+  mode: Scalars['String']['input'];
+  repsPerSet?: InputMaybe<Scalars['Int']['input']>;
+  restBetweenSetsSeconds?: InputMaybe<Scalars['Int']['input']>;
+  restSeconds: Scalars['Int']['input'];
+};
+
+/** How one rep or climb of a workout ended. */
+export type SessionWorkoutRepOutcome = 'ATTEMPT' | 'FLASH' | 'SEND';
+
+export type SessionWorkoutStage = {
+  __typename?: 'SessionWorkoutStage';
+  climbs: Array<SessionWorkoutClimb>;
+  id: Scalars['ID']['output'];
+  /** On the minute: the interval. */
+  intervalSeconds?: Maybe<Scalars['Int']['output']>;
+  isCoolDown: Scalars['Boolean']['output'];
+  kind: Scalars['String']['output'];
+  /** A 4x4: reps per climb. */
+  repsPerSet?: Maybe<Scalars['Int']['output']>;
+  /** A paced block's rest after each tick (a 4x4: between reps). */
+  restSeconds?: Maybe<Scalars['Int']['output']>;
+  /** A 4x4: one set per climb. */
+  sets?: Maybe<Scalars['Int']['output']>;
+  tally: SessionWorkoutTally;
+  /** Display grade name of the block's target grade. */
+  targetGrade?: Maybe<Scalars['String']['output']>;
+};
+
+export type SessionWorkoutStageInput = {
+  coolDown?: InputMaybe<Scalars['Boolean']['input']>;
+  /** The run stage's id (a uuid). */
+  id: Scalars['ID']['input'];
+  items: Array<SessionWorkoutItemInput>;
+  /** A workout stage kind (warmUp, volume, fourByFour, ...). Any string, so a newer kind survives. */
+  kind: Scalars['String']['input'];
+  pacing?: InputMaybe<SessionWorkoutPacingInput>;
+  /** Difficulty id the block was built around. */
+  targetGrade?: InputMaybe<Scalars['Int']['input']>;
+};
+
+/** Counts in ticks, the unit the session totals use. */
+export type SessionWorkoutTally = {
+  __typename?: 'SessionWorkoutTally';
+  /** Attempt ticks. */
+  attempts: Scalars['Int']['output'];
+  /** Climbs in the block. */
+  climbs: Scalars['Int']['output'];
+  /** Flash and send ticks. */
+  sent: Scalars['Int']['output'];
+  /** Climbs of the block with no tick. */
+  skipped: Scalars['Int']['output'];
+};
+
+/** Which queue item a tick was logged on. */
+export type SessionWorkoutTickInput = {
+  queueItemUuid: Scalars['ID']['input'];
+  tickUuid: Scalars['ID']['input'];
 };
 
 export type SetAnalyticsConsentInput = {

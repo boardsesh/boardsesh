@@ -99,11 +99,18 @@ const boardShareLinksSchema = readFileSync(
   new URL('../../../db/drizzle/0267_board_share_links.sql', import.meta.url),
   'utf8',
 );
+// The workout a climber followed in a session (#6903), straight from the
+// generated migration, after board_sessions and users.
+const sessionWorkoutsSchema = readFileSync(
+  new URL('../../../db/drizzle/0283_session_workouts.sql', import.meta.url),
+  'utf8',
+);
 
 export const schemaSQL = `
   DROP TABLE IF EXISTS board_share_links, resource_grants, resource_privacy, content_privacy, user_follow_requests, session_boards CASCADE;
   DROP TABLE IF EXISTS "board_session_queues" CASCADE;
   DROP TABLE IF EXISTS "session_health_kit_workouts" CASCADE;
+  DROP TABLE IF EXISTS "session_workouts" CASCADE;
   DROP TABLE IF EXISTS "board_session_participants" CASCADE;
   DROP TABLE IF EXISTS "board_sessions" CASCADE;
   DROP TABLE IF EXISTS "user_climb_percentiles" CASCADE;
@@ -2197,4 +2204,5 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${narrowedPrivacyTypeCheck}
   ${anonymousOnForeignBoardsSchema};
   ${boardShareLinksSchema}
+  ${sessionWorkoutsSchema}
 `;

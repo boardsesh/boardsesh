@@ -267,6 +267,9 @@ importers:
       '@boardsesh/text-redaction':
         specifier: workspace:*
         version: link:../shared/text-redaction
+      '@boardsesh/workout-summary':
+        specifier: workspace:*
+        version: link:../shared/workout-summary
       '@escape.tech/graphql-armor-cost-limit':
         specifier: ^2.4.3
         version: 2.4.3
@@ -1636,6 +1639,12 @@ importers:
         version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@25.9.5)(@vitest/browser-preview@4.1.11)(@vitest/coverage-v8@4.1.11)(happy-dom@20.11.6(bufferutil@4.1.0))(jsdom@28.1.0(canvas@3.2.3)(supports-color@8.1.1))(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(yaml@2.9.0))
 
   packages/shared/watch-pairing:
+    devDependencies:
+      typescript:
+        specifier: ~7.0.2
+        version: 7.0.2
+
+  packages/shared/workout-summary:
     devDependencies:
       typescript:
         specifier: ~7.0.2

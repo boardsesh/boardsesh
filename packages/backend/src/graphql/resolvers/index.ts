@@ -60,6 +60,7 @@ import { sessionFeedQueries } from './social/session-feed';
 import { followedAuthorQueries } from './social/followed-authors';
 import { crewFeedQueries } from './social/crew-feed';
 import { sessionEditMutations } from './social/session-mutations';
+import { sessionWorkoutMutations, sessionWorkoutQueries } from './sessions/session-workouts';
 import { socialCommentQueries, socialCommentMutations } from './social/comments';
 import { socialVoteQueries, socialVoteMutations } from './social/votes';
 import { socialBoardQueries, socialBoardMutations } from './social/boards';
@@ -153,6 +154,7 @@ export const resolvers = {
     ...socialGymOwnerReassignQueries,
     ...activityFeedQueries,
     ...sessionFeedQueries,
+    ...sessionWorkoutQueries,
     ...followedAuthorQueries,
     ...crewFeedQueries,
     ...socialNotificationQueries,
@@ -213,6 +215,7 @@ export const resolvers = {
     ...socialCommunitySettingsMutations,
     ...newClimbSubscriptionResolvers.Mutation,
     ...sessionEditMutations,
+    ...sessionWorkoutMutations,
     ...feedbackMutations,
     ...qaMutations,
     ...boardPresenceResolvers.Mutation,

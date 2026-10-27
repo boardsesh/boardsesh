@@ -740,6 +740,8 @@ const DEFAULT_SELECTION_DEPTH = 2;
 const SELECTION_DEPTH: Record<string, number> = {
   'Query.sessionGroupedFeed': 4,
   'Query.sessionDetail': 3,
+  // A workout names its climbs at `stages.climbs`.
+  'Query.sessionWorkouts': 3,
 };
 
 function enumerateRows(): SweepRow[] {
@@ -1089,6 +1091,26 @@ async function seedWorld(): Promise<SeededWorld> {
                                  comment, climbed_at, created_at, updated_at)
     VALUES (${tickUuid}, ${OWNER}, ${savedClimb.uuid}, 'spray', ${ANGLE}, 'send', 18, 3,
             1, false, false, ${sessionId}, ${boardId}, ${TICK_COMMENT}, now(), now(), now())
+  `);
+
+  // The workout the owner followed (#6903): one block on the wall's climb, so
+  // `sessionWorkouts` names it to the owner and has to leave it out for
+  // everybody else.
+  await db.execute(sql`
+    INSERT INTO session_workouts (session_id, user_id, plan, tick_map, revision)
+    VALUES (${sessionId}, ${OWNER},
+            ${JSON.stringify({
+              version: 1,
+              stages: [
+                {
+                  id: uuidv4(),
+                  kind: 'volume',
+                  targetGrade: 18,
+                  items: [{ queueItemUuid: uuidv4(), climbUuid: savedClimb.uuid, angle: ANGLE }],
+                },
+              ],
+            })}::jsonb,
+            '[]'::jsonb, 1)
   `);
 
   // The follow-scoped reader (`followingClimbAscents`) answers with logs by

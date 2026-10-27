@@ -103,7 +103,9 @@ and a position-based id would collide.
 
 The run stays on the phone. `packages/mobile/src/lib/workout-run-store.ts` keeps one
 slot, keyed by session id, with the run inside it keyed by queue-item uuid. Nothing is
-added to the queue item, the GraphQL schema or the wire.
+added to the queue item or the queue's wire format. A copy of the plan also goes to the
+server once the workout starts, for the summary, session detail and feed cards (see
+"Workouts on the server" below), but the live readout never reads it back.
 
 There is no wire field because a new field on the queue item has three costs that a
 phone-side readout does not justify:
@@ -120,11 +122,74 @@ phone-side readout does not justify:
 
 The limits that follow:
 
-- Only the phone that built the workout sees stages. A crew member's phone shows the same
-  climbs with no "Your workout" card. That is fine: the readout is for the climber
-  following the workout.
-- Ticks carry no stage on the server. Anything that attributes a tick to a stage (partner
-  results, per-stage stats) works from the queued climbs, not from the tick.
+- Only the phone that built the workout sees stages while the session runs. A crew
+  member's phone shows the same climbs with no "Your workout" card. That is fine: the
+  readout is for the climber following the workout. Once the plan is stored on the server,
+  the session's own surfaces (summary, detail, feed card) show it to everyone who can open
+  the session.
+- Ticks carry no stage on the server. The stored workout attributes them instead: its tick
+  map names the queue item each tick was logged on, and a tick missing from the map is
+  matched by climb and angle (see "Workouts on the server").
+
+## Workouts on the server
+
+Issue [#6903](https://github.com/boardsesh/boardsesh/issues/6903). The phone's run is
+enough for the player, but the session summary, session detail, feed cards and later
+Strava need the workout after the phone has moved on. So a copy goes to the server.
+
+**What is stored.** `session_workouts`, one row per climber per session (unique on
+`(session_id, user_id)`, both foreign keys cascade on delete):
+
+- `plan` (jsonb): `SessionWorkoutPlan` from `@boardsesh/workout-summary`. Per stage its
+  id, kind, `coolDown`, `targetGrade` (difficulty id) and flattened pacing (a 4x4's
+  `repsPerSet` and `restBetweenSetsSeconds` sit beside `restSeconds`), and per queued climb
+  its queue-item uuid, climb uuid, angle and mirror. The climb fields are captured when the
+  run is written, because the queue is gone by the time anyone reads the summary.
+- `tick_map` (jsonb): `{ tickUuid, queueItemUuid }[]` from the run's tick log.
+- `revision` (int): the phone's per-session write counter.
+
+The kind is a plain string, so a kind newer than the server survives a round trip. Caps:
+30 stages, 300 climbs, 4000 tick-map entries, strings up to 64 characters; anything over
+is rejected, not trimmed. `parseSessionWorkoutPlan` and `parseSessionWorkoutTickMap`
+check the input on write and every stored row on read.
+
+**Who writes.** Only the climber, for their own row, with `recordSessionWorkout`. They must
+have created the session, joined it (`board_session_participants`) or logged a tick in it.
+A write lands only when its revision is higher than the stored one; an equal or lower
+revision is a no-op that still answers true, so an outbox replay never rolls a newer plan
+back. An unknown session and a malformed plan answer `BAD_USER_INPUT` and a stranger
+`FORBIDDEN`, which the offline outbox treats as final instead of retrying.
+
+**How results are derived.** Nothing about results is stored. Each read takes the owner's
+ticks in the session and runs `deriveWorkoutStages`: a tick in the tick map goes to that
+queue item, any other tick to the first climb of the plan (in plan order) with the same
+climb and angle, and mirror when both say. A tick that matches nothing counts as off plan.
+Each climb's reps are its ticks in time order. Every tally counts ticks, the unit the
+session totals use: `sent` is flash plus send ticks, `attempts` is attempt ticks, `skipped`
+is the block's climbs with no tick. When every tick is on the plan, the blocks' `sent`
+add up to the owner's session sends. A tick edited or deleted later changes the result on
+the next read, with no rewrite. Mobile runs the same function on its local run and tick
+log while the write is still in the outbox.
+
+**What the queries answer.** `sessionWorkouts(sessionId)` gives one workout per climber:
+stages with their tallies, climbs with name, grade, frames and the board to draw them on
+(resolved like the summary's hardest climb), and the off-plan count.
+`sessionWorkoutHeadlines(sessionIds)` gives feed cards one line per workout for up to 50
+sessions: the main block's kind and grade, the second main block's kind, the block count
+and how many main blocks follow the first. Warm-ups and cool-downs are main only when they
+are all there is. Headlines read the plan alone, no ticks. Both are separate from
+`sessionSummary`, `sessionDetail` and `sessionGroupedFeed` so the pinned screenshot
+fixtures for those documents do not change.
+
+**Privacy.** A workout is visible wherever its session is: the same `canAccessResource`
+check `sessionDetail` makes, and nothing for a daily card. Inside it, a climb the viewer
+may not see goes with all of its reps: a spray climb on a wall they can't open, or a climb
+holding a tick the session's own tick rule hides from them (`sessionTickVisibleCondition`
+plus the spray tick rule, the pair the session summary's counts use). A climb goes whole,
+so a hidden tick never turns a climb the owner did into one that reads as skipped. A block
+left with no climbs goes too, and hidden off-plan ticks stop counting. A climber who stays
+anonymous on boards they don't own gets a null `userId`, name and avatar, like their row
+in the session summary. A per-session "Show workout" switch is a follow-up.
 
 ## Store lifecycle
 
