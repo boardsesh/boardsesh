@@ -447,8 +447,10 @@ dispatch (`commit_to_main`) — that is deliberately still `main`, because
    refresh the editable release draft. Read back all six Apple locales and their
    180 default-listing screenshots before submission. CPP/ad/video campaigns
    retain the original four app locales and five Apple locales.
-5. Verify the Play Italian listing and candidate's localized What's New. Play
-   release notes ship with the AAB; the metadata lane does not upload changelogs.
+5. After merging, dispatch **Android Play Internal Deploy** on `release/next`
+   with `force_native: true` if its candidate predates these changelogs. Verify
+   the Italian listing and localized What's New. Play release notes ship with
+   the AAB; the metadata lane does not upload changelogs.
 
 ### iPhone campaign capture
 
