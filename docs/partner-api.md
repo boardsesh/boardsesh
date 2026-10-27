@@ -1,102 +1,133 @@
-# Boardsesh Partner API: workouts
+# Boardsesh API for apps
 
-This is the contract for training apps that want to hand a planned board
-session to Boardsesh and get the results back. A coach's plan says "4x4 at V4,
-three minutes between sets". With this API the climber taps one button in your
-app, lands in Boardsesh with that workout ready, picks their board, climbs, and
-the grades and sends show up in your app without anyone typing them over.
+This is the contract for any app that wants to work with a climber's
+Boardsesh data: a training planner, a logbook, a coaching tool, a script you
+wrote for yourself. Register an app, send the climber through a standard
+OAuth consent screen, and then:
+
+- read their logbook (every tick on every board) and keep a copy in sync, and
+- hand them a planned board session and read back what they climbed.
+
+There is no application process and no commercial agreement. Every app gets
+the same API, the same scopes and the same limits.
 
 Status: draft v1, written before the endpoints exist. Field names and
-semantics here are what we intend to ship. Anything marked "later" is not part
-of the first release. Questions go to the Boardsesh team.
+semantics here are what we intend to ship. Questions go to the Boardsesh team
+until milestone 2 publishes a support channel with the docs. Each section says which milestone
+of [integration-platform.md](./integration-platform.md) delivers it: the
+logbook first (milestone 1), workouts next (milestone 3), webhooks after that
+(milestone 4). This file becomes the public developer docs at
+`https://www.boardsesh.com/developers` in milestone 2. The design behind it is
+in [integration-platform.md](./integration-platform.md); the workouts internals
+are in [partner-workouts-internal.md](./partner-workouts-internal.md).
 
-The examples use production hosts. Everything is HTTPS.
+Everything is HTTPS.
 
-| Host                     | What lives there                                  |
-| ------------------------ | ------------------------------------------------- |
-| `https://boardsesh.com`  | Consent page                                      |
-| `https://www.boardsesh.com` | Workout landing page and every link that opens the app |
-| `https://ws.boardsesh.com` | Token endpoint, the partner API, nothing else    |
+| Host | What lives there |
+| --- | --- |
+| `https://www.boardsesh.com` | App registration (`/developers/apps`), the consent page (`/oauth/authorize`), OAuth metadata (`/.well-known/oauth-authorization-server`), workout launch links (`/w/…`), these docs |
+| `https://api.boardsesh.com` | Token and revoke endpoints (`/oauth/*`) and the API (`/v1/*`) |
 
 ## How it fits together
 
 ```
- your app                       Boardsesh                          climber's phone
- ─────────                      ─────────                          ──────────────
- Connect Boardsesh  ──────────▶ /oauth/authorize (consent) ──────▶ (browser)
-                    ◀────────── redirect with code
- POST /oauth/token  ──────────▶ tokens
- POST /v1/partner/workouts ───▶ workout id + launch link
- Open in Boardsesh  ──────────────────────────────────────────────▶ app opens on Record
-                                                                    picks board, Start
-                                                                    climbs, End
-                    ◀────────── POST webhook: workout.completed
- GET /v1/partner/workouts/{id} (if the webhook never arrived)
+ your app                        Boardsesh                         climber
+ ────────                        ─────────                         ───────
+ register once at www.boardsesh.com/developers/apps → client_id
+
+ Connect Boardsesh ────────────▶ /oauth/authorize (consent) ─────▶ browser: sign in, Allow
+                   ◀──────────── redirect with code
+ POST /oauth/token ────────────▶ access + refresh token
+
+ GET /v1/logbook/changes ──────▶ ticks and deletions since your cursor   (milestone 1)
+
+ POST /v1/workouts ────────────▶ workout id + launch link                 (milestone 3)
+ Open in Boardsesh ──────────────────────────────────────────────▶ app opens, climbs, End
+ GET /v1/workouts/{id} ────────▶ results
+                   ◀──────────── webhook: "go read" (optional)           (milestone 4)
 ```
 
-Three things happen once per climber (connect), once per planned session
-(create + open), and once per finished session (results).
+---
 
-## 1. Connecting a Boardsesh account
+## 1. Registering your app
 
-Boardsesh is the OAuth 2.0 authorization server. Your app is a registered
-client. The climber approves once; you keep a refresh token and act on their
-behalf from then on.
+Sign in at `https://www.boardsesh.com/developers/apps` with a Boardsesh
+account whose email is verified, and create an app. It is usable immediately.
 
-### Registration
+| Field | Notes |
+| --- | --- |
+| Name | Shown on the consent screen. Names of Boardsesh and of board brands are refused |
+| Homepage URL | Linked from the consent screen |
+| Privacy policy URL | Linked from the consent screen. Required |
+| Type | **Confidential** if the token exchange happens on your server (you get a client secret). **Public** if it happens in a mobile app, a desktop or CLI tool, or a browser (no secret; PKCE protects the code) |
+| Redirect URIs | Up to 10, matched as exact strings. Allowed: any `https://` URL; loopback `http://127.0.0.1:{port}/…` or `http://[::1]:{port}/…` for tools running on the user's machine (the port is ignored when matching, so pick any free port at runtime); private-use schemes containing a dot, such as `com.example.app:/oauth/boardsesh`. Not allowed: other `http://` URLs, wildcards, fragments, `boardsesh.com` hosts, and the `boardsesh` and `com.boardsesh…` schemes |
 
-There is no self-serve portal in v1. Send us:
+You get a `client_id` (`bsk_…`), and for a confidential app a client secret,
+shown once. Never ship a client secret inside a mobile or desktop binary:
+make that app public instead. You can rotate the secret in the console; the
+old one keeps working for 24 hours.
 
-- The app name and icon that should appear on the consent screen.
-- Every redirect URI you will use, exactly. Custom schemes
-  (`com.example.app://oauth/boardsesh`) and HTTPS universal links are both
-  fine. We match the whole string, no prefixes, no wildcards.
-- The HTTPS URL that should receive webhooks.
-- Whether the token exchange happens from your servers (confidential client,
-  gets a client secret) or from the app itself (public client, PKCE only).
+Limits that apply to every app (see section 6 for request rates):
 
-You get back a `client_id`, a `client_secret` if confidential, and a
-`webhook_secret`. The secrets are shown once. Never ship the client secret
-inside a mobile binary.
+- 10 apps per developer account.
+- 200 new climber connections per app per day. If your app needs more, ask
+  through the form in the console.
+- The consent screen tells climbers that Boardsesh has not reviewed your app.
+  That is true of every app; it is not a warning about yours.
+- Browser-only apps work: the token, revoke and API endpoints answer CORS for
+  the origins of your registered `https` redirect URIs, and no others.
+
+## 2. Connecting a climber
+
+Boardsesh is an OAuth 2.0 authorization server following the OAuth 2.1
+profile: authorization code flow, PKCE required, refresh tokens rotate. The
+climber approves once; you keep a refresh token and act for them from then on.
+Climbers who sign in to Boardsesh with Apple, Google or a password all go
+through the same flow. They never give you their Boardsesh credentials.
+
+Server metadata (RFC 8414) is at
+`https://www.boardsesh.com/.well-known/oauth-authorization-server`.
 
 ### Scopes
 
-| Scope            | Grants                                                             |
-| ---------------- | ------------------------------------------------------------------ |
-| `workouts:write` | Create and cancel workouts for the climber                         |
-| `workouts:read`  | Read a workout, including its results                              |
-| `profile:read`   | The climber's Boardsesh user id, display name and avatar           |
+| Scope | Grants | Milestone |
+| --- | --- | --- |
+| `logbook:read` | Every tick the climber has logged, on every board, including ones they keep private on Boardsesh | 1 |
+| `profile:read` | The climber's display name and avatar | 1 |
+| `workouts:write` | Create and cancel workouts for the climber | 3 |
+| `workouts:read` | Read workouts your app created, including results | 3 |
 
 Ask for the smallest set you need. The consent screen lists each one in plain
-language.
+language. Separate scopes with spaces.
 
 ### Authorization request
 
 Open this URL in the system browser or an auth session
-(`ASWebAuthenticationSession` on iOS, Custom Tabs on Android). Do not use an
-embedded WebView: the climber may be signed in to Boardsesh in their browser
-already, and a WebView is where OAuth phishing lives.
+(`ASWebAuthenticationSession` on iOS, Custom Tabs on Android). Never in an
+embedded WebView: the climber may already be signed in to Boardsesh in their
+browser, and a WebView is where OAuth phishing lives.
 
 ```
-GET https://boardsesh.com/oauth/authorize
+GET https://www.boardsesh.com/oauth/authorize
     ?response_type=code
-    &client_id=seq_1a2b3c
-    &redirect_uri=com.example.app%3A%2F%2Foauth%2Fboardsesh
-    &scope=workouts%3Awrite%20workouts%3Aread
+    &client_id=bsk_4Rk2PzQ8mW1xTb7nYc3vLd
+    &redirect_uri=com.example.app%3A%2Foauth%2Fboardsesh
+    &scope=logbook%3Aread%20profile%3Aread
     &state=8f3c...            (random, at least 128 bits, you verify it)
     &code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM
     &code_challenge_method=S256
 ```
 
 PKCE is required for every client, confidential ones included. Only `S256` is
-accepted. A missing challenge, a `plain` method, or an unregistered redirect
-URI shows an error page on boardsesh.com and never redirects anywhere.
+accepted. A missing challenge, a `plain` method, an unknown client or an
+unregistered redirect URI shows an error page on boardsesh.com and never
+redirects anywhere.
 
 If the climber is not signed in they sign in first, then see the consent
 screen. Once they approve:
 
 ```
-com.example.app://oauth/boardsesh?code=bsc_...&state=8f3c...
+com.example.app:/oauth/boardsesh?code=bsc_...&state=8f3c...
 ```
 
 If they decline: `?error=access_denied&state=...`.
@@ -108,16 +139,20 @@ revokes everything that was issued from it, so treat a failed exchange as
 ### Token exchange
 
 ```
-POST https://ws.boardsesh.com/oauth/token
+POST https://api.boardsesh.com/oauth/token
 Content-Type: application/x-www-form-urlencoded
 
 grant_type=authorization_code
 &code=bsc_...
-&redirect_uri=com.example.app%3A%2F%2Foauth%2Fboardsesh
-&client_id=seq_1a2b3c
+&redirect_uri=com.example.app%3A%2Foauth%2Fboardsesh
+&client_id=bsk_4Rk2PzQ8mW1xTb7nYc3vLd
 &code_verifier=dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk
-&client_secret=...            (confidential clients only)
+&client_secret=...            (confidential apps only)
 ```
+
+Confidential apps may send their credentials in the body as above
+(`client_secret_post`) or as HTTP Basic (`client_secret_basic`); public apps
+send only `client_id`. The same applies to refresh and revoke.
 
 ```json
 {
@@ -125,48 +160,211 @@ grant_type=authorization_code
   "access_token": "bsa_...",
   "expires_in": 3600,
   "refresh_token": "bsr_...",
-  "scope": "workouts:write workouts:read"
+  "scope": "logbook:read profile:read"
 }
 ```
 
 Access tokens last an hour. Refresh tokens last 90 days and rotate on every
 use: each refresh returns a new refresh token and the old one stops working.
-Store the newest one. If a refresh token that has already been rotated is
-presented again we assume it leaked and revoke the whole connection; the
-climber has to connect again.
+Store the newest one before using the new access token. If a refresh token
+that has already been used is presented again we assume it leaked and revoke
+the whole connection; the climber has to connect again. If two of your
+processes might refresh at once, serialize refreshes per climber.
 
 ```
-POST https://ws.boardsesh.com/oauth/token
-grant_type=refresh_token&refresh_token=bsr_...&client_id=seq_1a2b3c
+POST https://api.boardsesh.com/oauth/token
+grant_type=refresh_token&refresh_token=bsr_...&client_id=bsk_...
+&client_secret=...            (confidential apps only)
 ```
+
+Connecting the same climber again (a second device, or more scopes) keeps
+earlier tokens working.
 
 Errors follow RFC 6749 section 5.2 (`invalid_grant`, `invalid_client`,
 `invalid_request`, `unauthorized_client`, `invalid_scope`), as JSON with an
 `error_description` you can log.
 
+### When a token stops working
+
+Every API call takes `Authorization: Bearer bsa_...`. A `401` with
+`error: "invalid_token"` means the access token expired or was revoked:
+refresh once and retry. If the refresh answers `invalid_grant`, the
+connection is gone. Show a "Reconnect Boardsesh" state and stop calling for
+that climber; do not loop.
+
 ### Disconnecting
 
 Either side can end it.
 
-- Your side: `POST https://ws.boardsesh.com/oauth/revoke` with
-  `token=<refresh or access token>&client_id=...`. Always returns 200.
-- The climber's side: Boardsesh lists connected apps under Settings → Connected
-  apps, with a Disconnect button. A password reset also revokes every
-  connection, the same way Sequence's own tokens behave.
+- Your side: `POST https://api.boardsesh.com/oauth/revoke` with
+  `token=<refresh token>&client_id=...` (plus `client_secret` for
+  confidential apps). Revoking a refresh token ends the connection. Revoking an
+  access token ends only that token. Always returns 200.
+- The climber's side: Settings → Connected apps in the Boardsesh app, or
+  account settings on the web, with a Disconnect button. Resetting their
+  password or deleting their account also disconnects every app.
 
-After a revoke, API calls return `401` with `error: "invalid_token"`, open
-workouts for that climber move to `revoked`, and no more webhooks are sent for
-them. Show a "Reconnect Boardsesh" state when you see that 401.
+After a disconnect, API calls return `401 invalid_token`, refreshes return
+`invalid_grant`, unfinished workouts for that climber move to `revoked`, and
+the only webhook still sent for them is `connection.revoked`. When a climber disconnects, delete what you stored
+from Boardsesh for them unless they asked you to keep it.
 
-## 2. Creating a workout
+## 3. Reading the logbook
 
-Everything under `https://ws.boardsesh.com/v1/partner/` takes
-`Authorization: Bearer bsa_...` and speaks JSON.
+Milestone 1. Scope `logbook:read`. Every path below is on
+`https://api.boardsesh.com` and already starts with `/v1`.
 
-### Request
+### Who is connected
 
 ```
-POST /v1/partner/workouts
+GET /v1/me
+```
+
+```json
+{ "id": "usr_7Qk3Vb9Xh2Lm4Np8Rs1Tw6", "displayName": "Alex", "avatarUrl": "https://…" }
+```
+
+`id` is the climber's id **for your app**: stable across reconnects, different
+for every app, and not the id Boardsesh uses anywhere else. Use it to tell
+whether a reconnect is the same climber. `displayName` and `avatarUrl` need
+`profile:read`.
+
+### Syncing
+
+There is one endpoint for both the first full download and every later
+update:
+
+```
+GET /v1/logbook/changes?cursor=<cursor>&limit=100
+```
+
+```json
+{
+  "changes": [
+    { "type": "tick", "tick": { "id": "0d6c4a2e-…", "…": "…" } },
+    { "type": "tick.deleted", "id": "9a1f7c3d-…", "deletedAt": "2026-10-21T07:02:44Z" }
+  ],
+  "cursor": "c1.eyJ0IjoiMjAy…",
+  "hasMore": true
+}
+```
+
+The loop:
+
+```js
+let cursor = await store.getCursor(climber);           // undefined the first time
+let hasMore = true;
+while (hasMore) {
+  const query = new URLSearchParams({ limit: '200' });
+  if (cursor) query.set('cursor', cursor);
+  const page = await api(`/v1/logbook/changes?${query}`); // handles 401/429, see below
+  for (const change of page.changes) {
+    if (change.type === 'tick') await store.upsertTick(climber, change.tick);
+    else if (change.type === 'tick.deleted') await store.deleteTick(climber, change.id);
+    // ignore change types you don't know
+  }
+  cursor = page.cursor;
+  await store.setCursor(climber, cursor);              // after the page is applied
+  hasMore = page.hasMore;
+}
+```
+
+- Omit `cursor` to start from the beginning. `limit` is 1 to 200, default 100.
+- Apply changes in the order given. A `tick` is an upsert by `id`; you will
+  sometimes receive a tick you already have, unchanged. `tick.deleted` removes
+  it; it may name a tick you never saw.
+- Save the returned `cursor` after applying each page, even when `changes` is
+  empty. Cursors are opaque: do not parse or build them.
+- A change becomes visible about 30 seconds after the climber makes it.
+- Sync when the climber opens your app, and in the background no more often
+  than every 15 minutes per climber.
+- Run a full sync (no cursor) about once a month, replacing your copy. It is
+  one request per 200 ticks, and it repairs the rare change an incremental
+  sync can miss.
+
+### Expired cursors
+
+A cursor you received more than 80 days ago answers `410` with
+`error: "cursor_expired"`, because we keep deletion records for 90 days. Every
+page hands you a fresh cursor, so this only happens to a climber you have not
+synced for 80 days. Start
+a full sync without a cursor, and when it finishes delete every tick you hold
+for that climber that the full sync did not return. To test this path, send
+the cursor `c1.expired`: it always answers `410`.
+
+### One tick
+
+```
+GET /v1/logbook/ticks/{id}
+```
+
+Returns one tick, or `404 not_found` if it was deleted or is not this
+climber's.
+
+### The tick
+
+```json
+{
+  "id": "0d6c4a2e-8f1b-4b7e-9c3a-5e2f1d0a9b77",
+  "climbedAt": "2026-10-20T18:42:11Z",
+  "status": "send",
+  "attempts": 3,
+  "angle": 40,
+  "mirrored": false,
+  "stars": 4,
+  "grade": { "v": 4, "font": "6B+", "label": "6B+/V4" },
+  "benchmark": false,
+  "comment": "Finally stuck the cross-through",
+  "climb": {
+    "id": "3f9c2a1e5b7d4c8e9a0b1c2d3e4f5a6b",
+    "name": "Slopey Business",
+    "board": { "type": "kilter", "layout": "Kilter Board Original" },
+    "grade": { "v": 4, "font": "6B+", "label": "6B+/V4" },
+    "boardseshGrade": 4.2
+  },
+  "createdAt": "2026-10-20T18:42:15Z",
+  "updatedAt": "2026-10-20T18:42:15Z"
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `id` | Stable id of this tick. Never reused |
+| `climbedAt` | When the climber logged the climb, UTC. Ticks imported from other board apps carry the time that app recorded |
+| `status` | `flash` (first go), `send` (topped after one or more failed goes), `attempt` (did not top). New values may be added; treat unknown ones as `attempt` |
+| `attempts` | Goes this tick represents. A `send` with `attempts: 3` went on the third go |
+| `angle` | Wall angle in degrees |
+| `mirrored` | Climbed mirrored, on boards that support it |
+| `stars` | The climber's 1 to 5 rating, or `null` |
+| `grade` | The grade the climber gave it, or `null` if they did not give one |
+| `benchmark` | The climb is a benchmark on its board |
+| `comment` | The climber's note, or `null` |
+| `climb.id` | Stable climb id. If Boardsesh merges duplicate climbs, a tick's `climb.id` can change to the surviving one without the tick appearing as changed |
+| `climb.name` | Climb name. `null` for a climb on someone else's spray wall that is not public: the wall's owner shared it with the climber, not with apps |
+| `climb.board.type` | `kilter`, `tension`, `moonboard`, `decoy`, `touchstone`, `grasshopper`, `soill`, `woods`, `spray` (a climber's own spray wall). New values may be added |
+| `climb.board.layout` | Layout name, for display (`"Spray wall"` when the name is withheld) |
+| `climb.grade` | The community grade at this angle when you read it. It drifts over time without the tick changing |
+| `climb.boardseshGrade` | The Boardsesh universal grade, a decimal on the V scale, or `null`. Optional; the model behind it may change |
+
+A grade object is `{ "v": 4, "font": "6B+", "label": "6B+/V4" }`: `v` is an
+integer or `null` where the board grade has no V equivalent, `font` the
+Fontainebleau grade, `label` the board's own label. Use whichever scale your
+climber prefers.
+
+The API does not include hold positions, other climbers' ticks or full board
+catalogs. If you need a catalog, the public nightly snapshots are documented
+at [board-snapshots-dataset.md](./board-snapshots-dataset.md).
+
+## 4. Workouts
+
+Milestone 3. For training apps: hand the climber a planned board session,
+they climb it in Boardsesh, you read back what they did. Scopes
+`workouts:write` and `workouts:read`.
+
+### Creating a workout
+
+```
+POST /v1/workouts
 Idempotency-Key: 0f4d6a2e-...        (uuid, required)
 ```
 
@@ -203,11 +401,11 @@ Idempotency-Key: 0f4d6a2e-...        (uuid, required)
 
 | Field            | Required | Notes                                                                                   |
 | ---------------- | -------- | --------------------------------------------------------------------------------------- |
-| `externalRef`    | yes      | Your id for this planned session. Unique per climber per client; reused refs return 409 |
+| `externalRef`    | yes      | Your id for this planned session. Unique per climber per app; reused refs return 409    |
 | `title`          | yes      | Shown on the workout card in Boardsesh. 80 characters                                   |
 | `scheduledFor`   | no       | ISO date, at most 90 days out. Only display; the climber can open it any day until it expires |
 | `notes`          | no       | Coach's notes, shown above the blocks. 2000 characters                                  |
-| `preferredBoard` | no       | A hint. `type` is `kilter`, `tension`, `moonboard`, `spray`; `angle` in degrees. The climber can still pick any board |
+| `preferredBoard` | no       | A hint. `type` is a board type from section 3; `angle` in degrees. The climber can still pick any board |
 | `blocks`         | yes      | 1 to 12 blocks, run in order                                                            |
 
 ### Blocks
@@ -250,20 +448,20 @@ the climber's board and paces it. A block that does not run natively yet is
 still shown, as a card with your `label` and `instructions`, and the climber
 climbs it freestyle. Every tick they log during the session still comes back
 in the results, so nothing is lost; the app just does not pace those blocks
-for them yet. The create response tells you which is which per block, so you can
-say so in your UI.
+for them yet. The create response tells you which is which per block, so you
+can say so in your UI.
 
 A 4x4 built in the app is reps × sets on one climb: a set is one climb done
 once for every rep (a fall counts as a rep), with an optional rest between
 reps, then the rest between sets, and the wall moves to the next climb for the
-next set. There are no rounds of several climbs. A partner `fourByFour` block
-keeps the fields above and stays freeform, a card with your `label` and
+next set. There are no rounds of several climbs. A `fourByFour` block keeps
+the fields above and stays freeform, a card with your `label` and
 `instructions`, until we decide how `climbCount`, `rounds` and the two rests
 map onto reps per set, sets and the two rests (tracked in
 [#6734](https://github.com/boardsesh/boardsesh/issues/6734)). That mapping is
 announced before `fourByFour` runs natively.
 
-### Grades
+### Grades in a request
 
 Send grades on a named scale, never as a bare string:
 
@@ -274,9 +472,7 @@ Send grades on a named scale, never as a bare string:
 
 `v` takes an integer 0 to 17. `font` takes the usual Fontainebleau strings
 from `3` to `9A`. Boardsesh converts to the grade table of whichever board the
-climber ends up on. Results carry the climb's grade on both scales plus the
-board's own label, so you can fill your logbook in whatever scale the climber
-has configured.
+climber ends up on. Results use the grade object from section 3.
 
 ### Response
 
@@ -297,9 +493,9 @@ has configured.
 ```
 
 `support` is `native` or `freeform` per the table above. A workout that is
-never opened expires seven days after creation (or the day after
-`scheduledFor`, whichever is later). `scheduledFor` more than 90 days out
-is rejected with `422`, so the longest an unopened workout can live is 91
+never started expires seven days after creation (or the day after
+`scheduledFor`, whichever is later), whether or not the climber opened it. `scheduledFor` more than 90 days out
+is rejected with `422`, so the longest an unstarted workout can live is 91
 days.
 
 ### Idempotency and duplicates
@@ -315,24 +511,25 @@ one first if the plan changed.
 ### Reading and cancelling
 
 ```
-GET    /v1/partner/workouts/{id}
-GET    /v1/partner/workouts?externalRef=session_88213
-DELETE /v1/partner/workouts/{id}
+GET    /v1/workouts/{id}
+GET    /v1/workouts?externalRef=session_88213
+DELETE /v1/workouts/{id}
 ```
 
 `GET` returns the workout, its current `status`, and once it has finished, a
-`results` object identical to the webhook payload. `DELETE` cancels a workout
-that has not been started; after `started` it returns `409`.
+`results` object. `DELETE` cancels a workout that has not been started; after
+`started` it returns `409`. You only ever see workouts your app created.
 
 ### Workout status
 
 ```
 created ──▶ opened ──▶ started ──▶ completed
    │           │           └──────▶ auto_closed
-   │           └──────▶ cancelled
+   │           ├──────▶ cancelled
+   │           └──────▶ expired
    ├──────────────────▶ cancelled
    ├──────────────────▶ expired
-   └──────────────────▶ revoked   (from any state, when the climber disconnects)
+   └──────────────────▶ revoked   (from created, opened or started, when the climber disconnects)
 ```
 
 | Status        | Meaning                                                                  |
@@ -343,10 +540,12 @@ created ──▶ opened ──▶ started ──▶ completed
 | `completed`   | They pressed End. Results are attached                                   |
 | `auto_closed` | They stopped climbing and never pressed End; Boardsesh closed the session after an hour of inactivity. Results are attached and complete up to the last tick |
 | `cancelled`   | You deleted it                                                           |
-| `expired`     | Never opened before `expiresAt`                                          |
-| `revoked`     | The climber disconnected your app                                        |
+| `expired`     | Not started before `expiresAt`                                           |
+| `revoked`     | The climber disconnected your app before the workout finished. Finished workouts keep their status |
 
-## 3. Opening the workout in Boardsesh
+New statuses may be added; treat an unknown one as "not finished".
+
+### Opening the workout in Boardsesh
 
 Put an "Open in Boardsesh" button on the planned session. When tapped:
 
@@ -354,9 +553,9 @@ Put an "Open in Boardsesh" button on the planned session. When tapped:
    `com.boardsesh.app` in `LSApplicationQueriesSchemes` and check
    `canOpenURL` first; on Android an intent for the scheme resolves without
    extra setup.
-2. Otherwise open `launchUrl` in the browser. That page shows the workout, an
-   "Open in Boardsesh" button that retries the scheme, and App Store / Play
-   links. On iOS the universal link opens the app directly when it is
+2. Otherwise open `launchUrl` in the browser. That page shows the workout
+   title, an "Open in Boardsesh" button that retries the scheme, and App Store
+   / Play links. On iOS the universal link opens the app directly when it is
    installed. On Android the universal link opens the app only on builds that
    carry the `/w` intent filter; until that build is in the store, the scheme
    is the reliable path there.
@@ -366,7 +565,7 @@ and the workout title, the blocks underneath, and the usual board picker. If
 they have a board already set up it is preselected. They press Start. The
 warm-up and native blocks are queued as real climbs on their board; freeform
 blocks show your instructions. When they press End they get the normal
-session summary, and the results are on their way to you.
+session summary, and the results are ready to read.
 
 A few cases worth handling in your UI:
 
@@ -379,11 +578,73 @@ A few cases worth handling in your UI:
 - Already in the middle of a session. Boardsesh offers to end that session or
   add the workout to it.
 
-## 4. Getting results back
+### Results
 
-### Webhooks
+When `status` is `completed` or `auto_closed`, `GET /v1/workouts/{id}`
+includes:
 
-When a workout changes state we `POST` to your webhook URL:
+```json
+{
+  "results": {
+    "completion": "ended",
+    "session": {
+      "startedAt": "2026-09-18T17:32:10Z",
+      "endedAt": "2026-09-18T18:41:55Z",
+      "durationSeconds": 4185,
+      "timezone": "Europe/Amsterdam",
+      "board": {
+        "type": "kilter",
+        "name": "Homewall",
+        "layout": "Kilter Board Original",
+        "size": "12x12",
+        "angle": 40
+      },
+      "notes": "Felt strong, last round fell apart."
+    },
+    "ticks": [
+      { "id": "0d6c4a2e-…", "climbedAt": "2026-09-18T17:51:03Z", "status": "send", "attempts": 2, "…": "…", "blockIndex": 1 }
+    ],
+    "blocks": [
+      { "index": 1, "type": "fourByFour", "support": "freeform", "planned": { "climbCount": 4, "rounds": 4 } }
+    ]
+  }
+}
+```
+
+- `completion` is `ended` (they pressed End) or `auto_closed`.
+- `ticks` are the climber's own ticks from that session, in time order, in
+  the tick shape from section 3, plus `blockIndex`. Other climbers in a shared
+  session are never included. With `logbook:read` the same ticks also arrive
+  through the logbook feed with the same `id`, so de-duplicate on it.
+- `blockIndex` is the block a tick was queued for, or `null` when Boardsesh
+  cannot tell (a climb the climber picked themselves during a freeform
+  block). Rests, totals and per-block counts are yours to compute from
+  `climbedAt` and `blockIndex`.
+- `blocks[].planned` echoes the block as you sent it.
+- `session.notes` is what the climber wrote on the session summary.
+- There is no effort rating (RPE or RIR); Boardsesh does not collect one. If
+  that changes it arrives as an optional `session.effort`.
+- There is no session id or session link. A Boardsesh session link invites
+  people into the session, so it is never shared with apps.
+
+If you poll instead of using webhooks: check `started` workouts when the
+climber opens your app, and sweep any `started` workout older than a day.
+
+## 5. Webhooks
+
+Milestone 4. Optional: everything works by polling. Set one HTTPS URL and
+the events you want in the console.
+
+Events carry no climbing data. They tell you to read with the climber's
+token, which is how a disconnect takes effect even for events already in
+flight. After a disconnect the only event still sent is
+`connection.revoked`:
+
+| Event | Means | Then |
+| --- | --- | --- |
+| `logbook.changed` | This climber's logbook changed. At most one per climber per minute | Run your sync |
+| `workout.completed` | A workout finished (ended or auto-closed) | `GET /v1/workouts/{workoutId}` |
+| `connection.revoked` | The climber disconnected your app | Delete what you hold for them |
 
 ```
 POST https://api.example.com/hooks/boardsesh
@@ -393,227 +654,150 @@ Boardsesh-Delivery-Id: 7e0a4b0c-...
 Boardsesh-Signature: t=1758150000,v1=5f1c...
 ```
 
-| Event               | When                                                     |
-| ------------------- | -------------------------------------------------------- |
-| `workout.opened`    | First time the climber opens it on their phone           |
-| `workout.completed` | They pressed End, or the session was auto-closed. `completion` in the body says which |
-| `workout.cancelled` | You deleted it (sent for symmetry, easy to ignore)       |
-| `workout.expired`   | It timed out unopened                                    |
+```json
+{ "id": "evt_01JA…", "type": "workout.completed", "occurredAt": "2026-09-18T18:41:55Z", "user": "usr_7Qk3…", "workoutId": "wk_01J9X7ZQ3M" }
+```
 
-Tell us at registration which events you want; most partners take
-`workout.completed` only.
+`user` is the id from `GET /v1/me`. Events can arrive out of order and more
+than once; because each one only means "go read", neither matters. Use
+`Boardsesh-Delivery-Id` to drop duplicates. Respond with any `2xx` within 10
+seconds and do the work afterwards.
 
-Respond with any `2xx` within 10 seconds. Do the heavy work after you have
-answered. Use `Boardsesh-Delivery-Id` to drop duplicates: retries reuse the
-same id.
+The URL must be public HTTPS on port 443. Private, loopback and link-local
+addresses are refused, and redirects are not followed.
 
 ### Verifying the signature
 
-`v1` is hex HMAC-SHA256 over `t + "." + rawBody` using your `webhook_secret`.
+`v1` is hex HMAC-SHA256 over `t + "." + rawBody` using your webhook secret.
 Compare in constant time and reject timestamps more than five minutes old.
 
 ```js
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 function verify(rawBody, header, secret) {
-  const parts = Object.fromEntries(header.split(',').map((kv) => kv.split('=')));
-  if (Math.abs(Date.now() / 1000 - Number(parts.t)) > 300) return false;
-  const expected = createHmac('sha256', secret).update(`${parts.t}.${rawBody}`).digest('hex');
-  return timingSafeEqual(Buffer.from(expected), Buffer.from(parts.v1));
+  const pairs = header.split(',').map((kv) => kv.split('='));
+  const t = pairs.find(([key]) => key === 't')?.[1];
+  const signatures = pairs.filter(([key]) => key === 'v1').map(([, value]) => value);
+  if (!t || Math.abs(Date.now() / 1000 - Number(t)) > 300) return false;
+  const expected = Buffer.from(createHmac('sha256', secret).update(`${t}.${rawBody}`).digest('hex'));
+  return signatures.some((signature) => {
+    const given = Buffer.from(signature);
+    return given.length === expected.length && timingSafeEqual(given, expected);
+  });
 }
 ```
 
-Sign over the raw request body, not a re-serialised copy. When we rotate your
-secret we send two `v1` entries for a while; accept the header if either
-matches.
+Sign over the raw request body, not a re-serialised copy. While you rotate
+the secret we send two `v1` entries; accept the header if either matches.
 
 ### Retries
 
 | Your response          | We do                                          |
 | ---------------------- | ---------------------------------------------- |
 | `2xx`                  | Mark delivered                                 |
-| `410 Gone`             | Stop sending to this URL until you tell us otherwise |
+| `410 Gone`             | Stop sending to this URL until you re-enable it in the console |
 | `408`, `429`, `5xx`, timeout, connection error | Retry with exponential backoff: about 2 min, then doubling, nine retries over roughly 17 hours |
 | Any other `4xx`        | Give up on this delivery immediately           |
 
-After the last retry the delivery is marked dead. The results are still there
-behind `GET /v1/partner/workouts/{id}`, so a periodic sweep over your
-`started` workouts is a cheap safety net.
+If every delivery to your URL fails for three days we switch webhooks off for
+your app and email you. Nothing is lost: everything an event pointed at is
+still readable through the API.
 
-### The results payload
-
-`workout.completed` carries this body. `GET` returns the same object under
-`results`.
-
-```json
-{
-  "event": "workout.completed",
-  "workoutId": "wk_01J9X7ZQ3M",
-  "externalRef": "session_88213",
-  "completion": "ended",
-  "session": {
-    "id": "7b1e5c2f-4a3d-4e8b-9f10-2c6d8a1b3e55",
-    "startedAt": "2026-09-18T17:32:10Z",
-    "endedAt": "2026-09-18T18:41:55Z",
-    "durationSeconds": 4185,
-    "timezone": "Europe/Amsterdam",
-    "board": {
-      "type": "kilter",
-      "name": "Kilter Homewall 12x12",
-      "angle": 40,
-      "layout": "Kilter Board Original",
-      "size": "12x12"
-    },
-    "notes": "Felt strong, last round fell apart.",
-    "url": "https://www.boardsesh.com/session/7b1e5c2f-4a3d-4e8b-9f10-2c6d8a1b3e55"
-  },
-  "totals": {
-    "climbs": 18,
-    "sends": 15,
-    "flashes": 9,
-    "attempts": 27,
-    "hardestSend": { "v": 5, "font": "6C", "boardLabel": "6C/V5" }
-  },
-  "climbs": [
-    {
-      "climbUuid": "3f9c2a1e-...",
-      "name": "Slopey Business",
-      "url": "https://www.boardsesh.com/kilter/8/25/15,17/40/view/3f9c2a1e-...",
-      "grade": { "v": 4, "font": "6B+", "boardLabel": "6B+/V4", "boardsesh": 4.2 },
-      "angle": 40,
-      "status": "send",
-      "attempts": 2,
-      "quality": 4,
-      "climbedAt": "2026-09-18T17:51:03Z",
-      "restBeforeSeconds": 84,
-      "blockIndex": 1,
-      "round": null
-    }
-  ],
-  "blocks": [
-    {
-      "index": 1,
-      "type": "fourByFour",
-      "support": "freeform",
-      "planned": { "climbCount": 4, "rounds": 4 },
-      "done": { "climbs": 12, "sends": 10, "attempts": 16 }
-    }
-  ]
-}
-```
-
-Field notes:
-
-- `completion` is `ended` (they pressed End) or `auto_closed`.
-- `climbs` is one entry per logged tick, in time order, for the climber who
-  connected your app only. Other climbers in a shared session are never
-  included.
-- `status` is `flash`, `send`, or `attempt`. `attempts` is the number of goes
-  that tick represents; a `send` with `attempts: 3` went on the third go.
-- `grade.boardsesh` is the Boardsesh universal grade, a decimal on the V
-  scale computed from ascent data. Optional; treat `v`/`font` as the truth for
-  logbooks.
-- `quality` is the climber's 1 to 5 star rating if they gave one.
-- `restBeforeSeconds` is the gap since the previous tick. It is derived from
-  timestamps, so the first climb has `null` and a long coffee break looks like
-  a long rest.
-- `blockIndex` says which block a tick belongs to, and `round` is reserved for
-  where in the block it fell. Today `blockIndex` is only set for native blocks
-  and `round` is always `null`; what `round` counts in a 4x4 (reps × sets on
-  one climb in the app) is announced with the `fourByFour` mapping (see
-  "Later").
-- `blocks[].done` is counted from ticks attributed to the block. For freeform
-  blocks the attribution is by time order against the plan, so treat it as a
-  best guess.
-
-Nothing in the payload is a rating of effort. Boardsesh does not collect RPE
-or RIR today, and will not invent one. If that changes it arrives as an
-optional `session.effort` field, never as a required one.
-
-### Mapping into a logbook-style tracker
-
-For a tracker whose logbook entries are name, grade, style, attempts and
-notes, the mapping is direct:
-
-| Boardsesh                          | Logbook field                                      |
-| ---------------------------------- | -------------------------------------------------- |
-| `climbs[].name`                    | Name                                               |
-| `climbs[].grade.v` or `.font`      | Grade, in the scale the climber has configured     |
-| `status: flash`                    | Flash                                              |
-| `status: send`, first ever send    | Sent                                               |
-| `status: send`, climbed before     | Repeat (you know their history, we do not)         |
-| `status: attempt`                  | Attempt                                            |
-| `climbs[].attempts`                | Attempts                                           |
-| `session.board.name`, `.angle`     | Location, or a note                                |
-| `session.notes`                    | Session notes                                      |
-
-For an interval-style exercise (a 4x4, on-the-minute), `blocks[].done` counts
-the ticks attributed to the block; per-set timing comes later.
-
-Sequence's Strava integration lets a climber decide per workout and per
-completion whether to sync. The same switch fits here: a workout the climber
-opted out of simply never gets created through this API.
-
-## 5. Limits, errors, versioning
+## 6. Limits, errors, versioning
 
 | Limit                            | Value                               |
 | -------------------------------- | ----------------------------------- |
-| Token endpoint                   | 60 requests per minute per client   |
-| Partner API                      | 120 requests per minute per client per climber |
-| Workouts per climber, unfinished | 20                                  |
+| Token endpoint, refresh          | 10 requests per minute per connected climber |
+| Token endpoint, code exchange and revoke | 60 requests per minute per app per client IP |
+| Token endpoint, whole app        | 6,000 requests per minute           |
+| API, per climber                 | 120 requests per minute per app per climber |
+| API, per app                     | 6,000 requests per minute across all your climbers |
+| Page size (`limit`)              | 200                                 |
+| Unfinished workouts per climber  | 20 per app                          |
 | Blocks per workout               | 12                                  |
 | Request body                     | 64 KB                               |
 
-Over the limit returns `429` with `Retry-After` in seconds.
+Every response carries `RateLimit-Limit`, `RateLimit-Remaining` and
+`RateLimit-Reset` for the tightest limit that applies. Over the limit returns
+`429` with `Retry-After` in seconds. If your app genuinely needs more, ask
+through the console.
+
+Every response carries `Boardsesh-Request-Id`. Quote it when something looks
+wrong.
 
 Errors are JSON:
 
 ```json
-{ "error": "invalid_block", "message": "blocks[1].rounds must be between 1 and 10", "field": "blocks[1].rounds" }
+{ "error": "invalid_block", "message": "blocks[1].rounds must be between 1 and 10", "field": "blocks[1].rounds", "requestId": "req_7Hc2…" }
 ```
 
 | HTTP  | `error`               | Cause                                                  |
 | ----- | --------------------- | ------------------------------------------------------ |
-| `400` | `invalid_request`     | Malformed JSON, missing required field                 |
+| `400` | `invalid_request`     | Malformed JSON, missing required field, bad parameter  |
+| `400` | `invalid_cursor`      | A cursor this API did not issue                        |
 | `401` | `invalid_token`       | Expired, revoked, or unknown access token              |
 | `403` | `insufficient_scope`  | Token lacks the scope this call needs                  |
-| `404` | `not_found`           | No such workout for this client and climber            |
+| `404` | `not_found`           | No such tick or workout for this app and climber       |
 | `409` | `conflict`            | Duplicate `externalRef`, or cancelling a started workout |
+| `409` | `workout_limit`       | This climber already has 20 unfinished workouts from your app |
+| `410` | `cursor_expired`      | Start a full sync (section 3)                          |
+| `413` | `payload_too_large`   | Body over 64 KB                                        |
 | `422` | `invalid_block`, `idempotency_mismatch` | Body fails validation                |
 | `429` | `rate_limited`        | See limits                                             |
+| `5xx` | `server_error`        | Our fault. Retry with backoff                          |
 
-The version is in the path. Additive changes (new fields, new block types,
-new events) ship on `v1` without notice; read what you know and ignore the
-rest. Anything that removes or renames a field becomes `v2`, with `v1` kept
-running for at least six months.
+If your app is suspended or deleted, the token endpoint answers
+`invalid_client` and the API answers `401 invalid_token`; the console says why.
+If your app has reached its daily cap of new connections, the authorize step
+redirects back with `error=temporarily_unavailable`; existing connections are
+unaffected.
+
+New `error` codes may be added; branch on the HTTP status first.
+
+The OpenAPI 3.1 description of every route is at
+`https://api.boardsesh.com/v1/openapi.json`.
+
+The version is in the path. Additive changes ship on `v1` without notice: new
+fields, new routes, new scopes, new event types, new enum values. Read what
+you know and ignore the rest. Anything that removes or renames a field becomes
+`v2`, with `v1` kept running for at least six months and a `Sunset` header on
+its responses for that whole time. Every contract change is listed on the
+changelog page at `https://www.boardsesh.com/developers/changelog`.
 
 ## Later
 
-These are on the Boardsesh roadmap and shape how the payload will grow. None
-of them changes the shape of what is described above.
+On the roadmap and shaped so none of them changes what is described above:
 
 - `fourByFour` and `limitBouldering` running natively. For `fourByFour` the
   field mapping onto the app's reps × sets on one climb is decided first
-  (#6734); until then the block stays freeform. When it runs natively,
-  `climbs[].round` and per-set timing in `blocks[]` start being populated, and
-  the same announcement says what `round` counts in a 4x4.
+  (#6734); until then the block stays freeform. When it runs natively, ticks
+  in results gain a position within the block, announced with the mapping.
 - Rest adherence per block (planned rest vs actual), once blocks are tracked
   on the server instead of inferred from tick timing.
-- Optional effort rating on the session summary.
-- A results event mid-session, for apps that want to show progress live.
+- Optional effort rating on the session.
+- A progress event during a workout, for apps that want to show it live.
+- Writing ticks (`logbook:write`), if apps ask for it.
 
 ## Checklist
 
-Before going live with a client id:
+Before you ship:
 
-1. Authorize URL opens in a system auth session, PKCE S256, `state` verified.
-2. Refresh tokens stored encrypted; the newest one replaces the old one on
-   every refresh.
-3. A `401 invalid_token` shows a reconnect prompt instead of retrying.
-4. `Idempotency-Key` is a fresh uuid per planned session, kept with the
-   session so a retry reuses it.
-5. `appUrl` first, `launchUrl` as the fallback.
-6. Webhook handler verifies the signature on the raw body, replies `2xx` in
-   under 10 seconds, and dedupes on `Boardsesh-Delivery-Id`.
-7. Something sweeps `started` workouts older than a day with `GET`, in case a
-   webhook never landed.
+1. The authorize URL opens in a system browser or auth session, with PKCE
+   S256 and a `state` you verify.
+2. Refresh tokens are stored encrypted, and the newest one replaces the old
+   one on every refresh. Refreshes for one climber never run in parallel.
+3. A `401` triggers one refresh; an `invalid_grant` on refresh shows a
+   reconnect prompt instead of retrying.
+4. The sync cursor is saved after each page is applied, and a `410` starts a
+   full sync that removes ticks it did not see.
+5. Unknown change types, statuses, board types and fields are ignored, not
+   fatal.
+6. Background sync runs no more than every 15 minutes per climber, and
+   honours `Retry-After`.
+7. Workouts: `Idempotency-Key` is a fresh uuid per planned session, kept with
+   the session so a retry reuses it; `appUrl` first, `launchUrl` as the
+   fallback.
+8. Webhooks, if used: the handler verifies the signature on the raw body,
+   replies `2xx` in under 10 seconds, and dedupes on `Boardsesh-Delivery-Id`.
+9. Disconnecting in your app calls `/oauth/revoke`, and a disconnect from
+   either side deletes the climber's Boardsesh data you stored.
