@@ -95,8 +95,9 @@ export default function SessionSummaryScreen() {
 
   // Settled but unusable: the query errored or resolved to no summary. Without
   // this branch the screen would spin forever with no way out but the back
-  // gesture, right at the post-session payoff moment.
-  if (isError || !summary) {
+  // gesture, right at the post-session payoff moment. A failed background
+  // refetch keeps the summary already on screen.
+  if (!summary) {
     return (
       <View style={[styles.centered, styles.errorContent]}>
         <Icon name="warning" size={40} color={systemColors.secondaryLabel} />

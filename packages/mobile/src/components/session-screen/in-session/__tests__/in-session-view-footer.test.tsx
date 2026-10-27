@@ -372,10 +372,10 @@ describe('InSessionView footer', () => {
   });
 
   it('marks the summary route as a store-review candidate after 3 ascents', async () => {
-    queue.endSession.mockResolvedValueOnce({
-      sessionId: 'session-1',
-      totalSends: 3,
-      totalAttempts: 0,
+    // Runs the tick wait like the real endSession: the prompt needs the ticks synced.
+    queue.endSession.mockImplementationOnce(async (options?: { beforeEnd?: (id: string) => Promise<void> }) => {
+      await options?.beforeEnd?.('session-1');
+      return { sessionId: 'session-1', totalSends: 3, totalAttempts: 0 };
     });
 
     render(createElement(InSessionView));

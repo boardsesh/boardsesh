@@ -516,7 +516,9 @@ export function InSessionView({
       // has, so ending right after the last tick read "0 attempts" (#6903).
       // Never throws; the session ends whatever it returns. Run by endSession
       // after it marks the session as ending, so a remote end is suppressed.
-      const tickSync: { result: SessionTickSyncResult } = { result: 'none' };
+      // Starts as timedOut so a beforeEnd that never ran fails safe: no review
+      // prompt, and the late-tick refresh still watches.
+      const tickSync: { result: SessionTickSyncResult } = { result: 'timedOut' };
       const summary = await endSession({
         notes: trimmedNotes,
         beforeEnd: async (id) => {
