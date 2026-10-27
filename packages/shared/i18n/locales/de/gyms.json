@@ -1,4 +1,26 @@
 {
+  "create": {
+    "action": "Halle erstellen",
+    "title": "Füge deine Halle hinzu",
+    "description": "Trage deine Halle auf der Karte ein und verknüpfe die Boards, die bereits auf Boardsesh stehen.",
+    "details": "Angaben zur Halle",
+    "boards": "Vorhandene Boards",
+    "continue": "Speichern und Boards auswählen",
+    "saved": "{{name}} ist gespeichert. Verknüpfe unten die vorhandenen Boards oder komm später zurück.",
+    "managerHint": "Du verwaltest diesen Eintrag. Das Hallenteam kann ihn später beanspruchen.",
+    "back": "Angaben bearbeiten",
+    "finish": "Halle ansehen",
+    "skip": "Vorerst überspringen",
+    "locationMissing": "Setze unter Angaben zur Halle eine Kartenmarkierung, um Boards in der Nähe zu finden. Eigene Boards kannst du weiterhin verknüpfen.",
+    "loadMore": "Weitere Boards laden",
+    "loadError": "Deine Boards konnten nicht geladen werden. Deine Halle ist gespeichert; versuche es erneut.",
+    "retry": "Erneut versuchen",
+    "refreshError": "Deine Änderungen sind gespeichert, aber das Hallenverzeichnis wurde noch nicht aktualisiert.",
+    "refreshRetry": "Verzeichnis aktualisieren",
+    "moveTitle": "Dieses Board verschieben?",
+    "moveBody": "{{board}} von {{source}} zu dieser Halle verschieben? Wenn der bisherige importierte Eintrag dadurch leer wird, wird er mit dieser Halle zusammengeführt und seine Links leiten hierher weiter.",
+    "moveConfirm": "Board verschieben"
+  },
   "metadata": {
     "all": {
       "title": "Kletterhallen mit Trainingsboards",

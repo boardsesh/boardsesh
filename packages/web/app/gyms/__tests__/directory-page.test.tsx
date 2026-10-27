@@ -81,6 +81,14 @@ describe('store button (#6027)', () => {
 });
 
 describe('reachability', () => {
+  it('offers gym creation in every directory header and empty state', async () => {
+    for (const facet of ['all', 'kilter', 'moonboard', 'tension'] as const) {
+      const markup = JSON.stringify(await renderGymDirectory(facet, props));
+      expect(markup.match(/"href":"\/gyms\/new"/g)?.length).toBe(2);
+      expect(markup).toContain('Create gym');
+    }
+  });
+
   it('renders /gyms for anyone who asks, with no flag in the way', async () => {
     const element = await renderGymDirectory('all', props);
 

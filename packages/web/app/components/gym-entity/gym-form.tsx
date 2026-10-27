@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Box from '@mui/material/Box';
 import TextField from '@mui/material/TextField';
@@ -16,10 +16,7 @@ export type GymFormFieldValues = {
   name: string;
   slug?: string;
   description: string;
-  /**
-   * Free-text opening hours. Optional because the create flow's CreateGymInput
-   * has no hours field — only the edit flow renders it (showHoursField).
-   */
+  /** Free-text opening hours. */
   hours?: string;
   address: string;
   website: string;
@@ -41,7 +38,6 @@ type GymFormProps = {
   submitLabel: string;
   initialValues: GymFormFieldValues;
   showSlugField?: boolean;
-  /** Opening hours are edit-only — createGym has no hours field to send them to. */
   showHoursField?: boolean;
   onSubmit: (values: GymFormFieldValues) => Promise<void>;
   onCancel?: () => void;
@@ -79,6 +75,7 @@ export default function GymForm({
   const [latitude, setLatitude] = useState<number | null>(initialValues.latitude);
   const [longitude, setLongitude] = useState<number | null>(initialValues.longitude);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const submittingRef = useRef(false);
 
   // Report unsaved edits so a host (the manage console's Profile tab) can guard
   // tab switches behind a discard confirmation. Report clean on unmount so a
@@ -103,6 +100,8 @@ export default function GymForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setIsSubmitting(true);
 
     try {
@@ -120,6 +119,7 @@ export default function GymForm({
         longitude,
       });
     } finally {
+      submittingRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -160,6 +160,7 @@ export default function GymForm({
         minRows={2}
         maxRows={4}
         placeholder={t('gymForm.placeholders.description')}
+        slotProps={{ htmlInput: { maxLength: 500 } }}
       />
 
       {showHoursField && (
@@ -186,6 +187,7 @@ export default function GymForm({
         fullWidth
         size="small"
         placeholder={t('gymForm.placeholders.address')}
+        slotProps={{ htmlInput: { maxLength: 300 } }}
       />
 
       <MapLocationPicker
@@ -217,6 +219,7 @@ export default function GymForm({
         size="small"
         type="email"
         placeholder={t('gymForm.placeholders.contactEmail')}
+        slotProps={{ htmlInput: { maxLength: 200 } }}
       />
 
       <TextField
@@ -226,6 +229,7 @@ export default function GymForm({
         fullWidth
         size="small"
         placeholder={t('gymForm.placeholders.contactPhone')}
+        slotProps={{ htmlInput: { maxLength: 30 } }}
       />
 
       <FormControlLabel

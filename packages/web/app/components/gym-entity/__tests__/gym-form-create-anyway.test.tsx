@@ -30,6 +30,33 @@ const initialValues: GymFormFieldValues = {
 };
 
 describe('GymForm — create-anyway path', () => {
+  it('blocks repeated submit events while a save is pending', async () => {
+    let finishSave: (() => void) | undefined;
+    const onSubmit = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishSave = resolve;
+        }),
+    );
+    const { container } = render(
+      <GymForm
+        title="Create Gym"
+        submitLabel="Create Gym"
+        initialValues={{ ...initialValues, name: 'Bowlo' }}
+        onSubmit={onSubmit}
+      />,
+    );
+    const form = container.querySelector('form');
+    if (!form) throw new Error('form missing');
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    finishSave?.();
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: 'Create Gym' }) as HTMLButtonElement).disabled).toBe(false),
+    );
+  });
+
   it('submits unchanged while dedup suggestions are shown, and never disables submit', async () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
 

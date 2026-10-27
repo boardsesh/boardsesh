@@ -192,6 +192,8 @@ export type StrayBoardReason = 'MERGED_TWIN' | 'NEARBY';
 export type StrayBoard = {
   uuid: string;
   name: string;
+  boardType: string;
+  angle: number;
   /** The gym the board is currently linked to (a merged twin or a synced listing); null when unlinked. */
   currentGymUuid?: string | null;
   /** Name of the gym the board is currently linked to; null when unlinked. */
@@ -210,6 +212,10 @@ export type StrayBoard = {
 export type AttachBoardToGymInput = {
   gymUuid: string;
   boardUuid: string;
+  /** False prevents retiring an emptied source listing. Omitted preserves legacy behavior. */
+  allowSourceGymMerge?: boolean;
+  /** Bind the move to the displayed source listing; null means the board was unlinked. */
+  expectedCurrentGymUuid?: string | null;
 };
 
 export type DetachBoardFromGymInput = {
@@ -220,6 +226,8 @@ export type DetachBoardFromGymInput = {
 export type CreateGymInput = {
   name: string;
   description?: string;
+  /** Nonblank hours are trimmed and receive a confirmation timestamp on creation. */
+  hours?: string;
   address?: string;
   website?: string;
   contactEmail?: string;

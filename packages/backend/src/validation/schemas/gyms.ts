@@ -103,6 +103,7 @@ export const GymHoursSchema = z.string().max(GYM_HOURS_MAX_LENGTH, 'Opening hour
 export const CreateGymInputSchema = z.object({
   name: z.string().min(1, 'Gym name cannot be empty').max(100, 'Gym name too long'),
   description: z.string().max(500, 'Description too long').optional(),
+  hours: GymHoursSchema.optional(),
   address: z.string().max(300, 'Address too long').optional(),
   website: GymWebsiteSchema.optional(),
   contactEmail: z.string().email('Invalid email').max(200).optional(),
@@ -296,6 +297,8 @@ export const LinkBoardToGymInputSchema = z.object({
 export const AttachBoardToGymInputSchema = z.object({
   gymUuid: UUIDSchema,
   boardUuid: UUIDSchema,
+  allowSourceGymMerge: z.boolean().optional(),
+  expectedCurrentGymUuid: UUIDSchema.nullable().optional(),
 });
 
 /**

@@ -108,7 +108,7 @@ export default async function ManageGymPage(props: ManageGymRouteProps) {
   if (!gym.canEdit) {
     const { t } = await getServerTranslation('kiosk');
     return (
-      <I18nProvider locale={locale} namespaces={['common', 'boards', 'kiosk']}>
+      <I18nProvider locale={locale} namespaces={['common', 'boards', 'kiosk', 'gyms']}>
         <Container maxWidth="md" sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)' }}>
           <Alert severity="error">{t('manage.accessDenied')}</Alert>
         </Container>
@@ -117,7 +117,7 @@ export default async function ManageGymPage(props: ManageGymRouteProps) {
   }
 
   return (
-    <I18nProvider locale={locale} namespaces={['common', 'boards', 'kiosk']}>
+    <I18nProvider locale={locale} namespaces={['common', 'boards', 'kiosk', 'gyms']}>
       <ManageGymContent initialGym={gym} />
     </I18nProvider>
   );

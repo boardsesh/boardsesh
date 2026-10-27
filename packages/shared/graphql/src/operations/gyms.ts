@@ -320,13 +320,15 @@ export const GET_GYM_BOARDS_FOR_SWITCHER = gql`
 `;
 
 // Boards that probably belong to the gym but aren't linked yet — merged-twin
-// leftovers and nearby unlinked/SYSTEM boards. Powers the "Boards that might be
-// yours" section on the manage-gym Boards tab. Requires gym edit access.
+// leftovers and nearby unlinked/SYSTEM boards, including public unlinked boards
+// within a platform admin's scope. Requires gym edit access.
 export const STRAY_BOARDS_FOR_GYM = gql`
   query StrayBoardsForGym($gymUuid: ID!) {
     strayBoardsForGym(gymUuid: $gymUuid) {
       uuid
       name
+      boardType
+      angle
       currentGymUuid
       currentGymName
       distanceMeters

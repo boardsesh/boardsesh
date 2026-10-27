@@ -15,11 +15,12 @@ import SimilarGymSuggestions from './similar-gym-suggestions';
 
 type CreateGymFormProps = {
   boardUuid?: string;
-  onSuccess?: (gym: Gym) => void;
+  onSuccess?: (gym: Gym) => void | Promise<void>;
   onCancel?: () => void;
+  submitLabel?: string;
 };
 
-export default function CreateGymForm({ boardUuid, onSuccess, onCancel }: CreateGymFormProps) {
+export default function CreateGymForm({ boardUuid, onSuccess, onCancel, submitLabel }: CreateGymFormProps) {
   const { t } = useTranslation('boards');
   const { showMessage } = useSnackbar();
 
@@ -39,6 +40,7 @@ export default function CreateGymForm({ boardUuid, onSuccess, onCancel }: Create
         input: {
           name: values.name,
           description: values.description || undefined,
+          hours: values.hours?.trim() || undefined,
           address: values.address || undefined,
           website: values.website || undefined,
           contactEmail: values.contactEmail || undefined,
@@ -52,7 +54,7 @@ export default function CreateGymForm({ boardUuid, onSuccess, onCancel }: Create
 
       if (data) {
         showMessage(t('gymForm.create.createdNamed', { name: data.createGym.name }), 'success');
-        onSuccess?.(data.createGym);
+        await onSuccess?.(data.createGym);
       }
     },
     [execute, boardUuid, showMessage, onSuccess, t],
@@ -61,10 +63,11 @@ export default function CreateGymForm({ boardUuid, onSuccess, onCancel }: Create
   return (
     <GymForm
       title={t('gymForm.create.title')}
-      submitLabel={t('gymForm.create.submit')}
+      submitLabel={submitLabel ?? t('gymForm.create.submit')}
       initialValues={{
         name: '',
         description: '',
+        hours: '',
         address: '',
         website: '',
         contactEmail: '',
@@ -73,6 +76,7 @@ export default function CreateGymForm({ boardUuid, onSuccess, onCancel }: Create
         latitude: null,
         longitude: null,
       }}
+      showHoursField
       onSubmit={handleSubmit}
       onCancel={onCancel}
       renderSuggestions={({ name, latitude, longitude }) => (

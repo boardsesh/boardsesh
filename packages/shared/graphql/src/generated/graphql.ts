@@ -513,8 +513,12 @@ export type AttachBetaLinkInput = {
  * the target gym plus the board actually being a stray candidate for it.
  */
 export type AttachBoardToGymInput = {
+  /** False prevents merging an emptied source gym. Omitted preserves legacy behavior. */
+  allowSourceGymMerge?: InputMaybe<Scalars['Boolean']['input']>;
   /** Stray board UUID to attach */
   boardUuid: Scalars['ID']['input'];
+  /** The source gym the user saw; null means unlinked. A changed source rejects the move. */
+  expectedCurrentGymUuid?: InputMaybe<Scalars['ID']['input']>;
   /** Gym UUID to attach the board to */
   gymUuid: Scalars['ID']['input'];
 };
@@ -2022,6 +2026,8 @@ export type CreateGymInput = {
   contactPhone?: InputMaybe<Scalars['String']['input']>;
   /** Optional description */
   description?: InputMaybe<Scalars['String']['input']>;
+  /** Opening hours; nonblank hours receive a confirmation timestamp. */
+  hours?: InputMaybe<Scalars['String']['input']>;
   /** Image URL */
   imageUrl?: InputMaybe<Scalars['String']['input']>;
   /** Whether publicly visible (default true) */
@@ -11034,10 +11040,16 @@ export type SprayWallVisibility = {
 /**
  * A board that probably belongs to a gym but isn't linked to it yet — either it
  * followed a listing that got merged into this gym, or it sits at the gym's
- * coordinates while unlinked or attached to a synced (SYSTEM) listing.
+ * coordinates while unlinked or attached to a synced (SYSTEM) listing. Public,
+ * unlinked boards owned by another person are candidates only for an in-scope
+ * platform admin who can read their location.
  */
 export type StrayBoard = {
   __typename?: 'StrayBoard';
+  /** Board angle in degrees. */
+  angle: Scalars['Int']['output'];
+  /** Board type (kilter, tension, moonboard, ...). */
+  boardType: Scalars['String']['output'];
   /** Name of the gym this board is currently linked to; null when unlinked. */
   currentGymName?: Maybe<Scalars['String']['output']>;
   /** The gym this board is currently linked to (a merged twin or a synced listing); null when unlinked. */

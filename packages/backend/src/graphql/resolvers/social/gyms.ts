@@ -1125,6 +1125,7 @@ export const socialGymMutations = {
 
     const uuid = uuidv4();
     const slug = await generateUniqueGymSlug(validatedInput.name);
+    const hours = validatedInput.hours?.trim() || null;
 
     const [gym] = await db
       .insert(dbSchema.gyms)
@@ -1134,6 +1135,8 @@ export const socialGymMutations = {
         ownerId: userId,
         name: validatedInput.name,
         description: validatedInput.description ?? null,
+        hours,
+        hoursUpdatedAt: hours === null ? null : new Date(),
         address: validatedInput.address ?? null,
         website: validatedInput.website ?? null,
         // The creator IS the owner, so a website supplied at creation is
