@@ -853,6 +853,21 @@ describe('NativeAccessoryClimbRow', () => {
         };
         expect(buttons(renderRow('regular').container)?.split(',')).toContain('mirror');
       });
+
+      it.each([
+        ['shows a preview', () => (miniPlayer.panePreview = true)],
+        ['has its controls above the board', () => (miniPlayer.position = 'above')],
+      ])('is not carried on the open Duo while the pane %s', (_label, arrange) => {
+        drawer.boardConfig = tensionBoard;
+        miniPlayer.phoneSplit = true;
+        layout.width = 800;
+        miniPlayer.playerButtons = {
+          order: ['queue', 'mirror', 'favorite', 'angle', 'share'],
+          visible: { mirror: true, favorite: true, angle: true, share: true, queue: true },
+        };
+        arrange();
+        expect(buttons(renderRow('regular').container)).toBeNull();
+      });
     });
 
     it("adds them on the open Duo while a screen's own content fills the pane", () => {
