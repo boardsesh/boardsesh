@@ -261,6 +261,8 @@ export type AppSettings = {
   playerButtonsV1: SectionLayoutRecord | null;
   /** The player's ⏮ and ⏭. Off leaves their slots empty; swiping the board still moves. */
   playerPreviousNext: boolean;
+  /** The badge on the player's board art that says whether this climb is lit on the wall. */
+  playerWallBadge: boolean;
   /** Where the player's controls block sits. Read through `sanitisePlayerButtonsPosition`. */
   playerButtonsPosition: PlayerButtonsPosition;
   /**

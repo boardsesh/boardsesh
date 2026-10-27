@@ -44,10 +44,12 @@ const playerButtons = vi.hoisted(() => ({
     visible: { mirror: true, favorite: true, angle: true, share: true, queue: true },
   } as { order: string[]; visible: Record<string, boolean> },
   previousNext: true,
+  wallBadge: true,
   position: 'below' as 'below' | 'above',
   setVisible: vi.fn(),
   move: vi.fn(),
   setPreviousNext: vi.fn(),
+  setWallBadge: vi.fn(),
   setPosition: vi.fn(),
   restoreDefaults: vi.fn(),
 }));
@@ -56,13 +58,16 @@ vi.mock('../../../lib/player-buttons-preference', () => ({
   isDefaultPlayerButtons: ({
     buttons,
     previousNext,
+    wallBadge,
     position,
   }: {
     buttons: { order: string[]; visible: Record<string, boolean> };
     previousNext: boolean;
+    wallBadge: boolean;
     position: string;
   }) =>
     previousNext &&
+    wallBadge &&
     position === 'below' &&
     buttons.order.join() === 'mirror,favorite,angle,share,queue' &&
     Object.values(buttons.visible).every(Boolean),
@@ -316,11 +321,13 @@ beforeEach(() => {
     visible: { mirror: true, favorite: true, angle: true, share: true, queue: true },
   };
   playerButtons.previousNext = true;
+  playerButtons.wallBadge = true;
   playerButtons.position = 'below';
   for (const action of [
     playerButtons.setVisible,
     playerButtons.move,
     playerButtons.setPreviousNext,
+    playerButtons.setWallBadge,
     playerButtons.setPosition,
     playerButtons.restoreDefaults,
   ]) {
@@ -542,6 +549,7 @@ describe('PlayDrawerSectionsSheet', () => {
     expect(position.closest('[data-list-header]')).not.toBeNull();
     expect(screen.getAllByRole('switch').map((control) => control.getAttribute('aria-label'))).toEqual([
       'mobile.settings.playerButtons.previousNext',
+      'mobile.settings.playerButtons.wallBadge',
       'mobile.settings.playerButtons.buttons.mirror',
       'mobile.settings.playerButtons.buttons.favorite',
       'mobile.settings.playerButtons.buttons.angle',
@@ -564,6 +572,8 @@ describe('PlayDrawerSectionsSheet', () => {
     expect(playerButtons.setPosition).toHaveBeenCalledWith('above');
     fireEvent.click(screen.getByRole('switch', { name: 'mobile.settings.playerButtons.previousNext' }));
     expect(playerButtons.setPreviousNext).toHaveBeenCalledWith(false);
+    fireEvent.click(screen.getByRole('switch', { name: 'mobile.settings.playerButtons.wallBadge' }));
+    expect(playerButtons.setWallBadge).toHaveBeenCalledWith(false);
   });
 
   it('lists the buttons in their saved order and draws the chosen position', () => {
@@ -571,7 +581,7 @@ describe('PlayDrawerSectionsSheet', () => {
     playerButtons.position = 'above';
     const screen = render(sheet());
     fireEvent.click(screen.getByRole('radio', { name: 'mobile.settings.climbDrawer.tabs.buttons' }));
-    expect(screen.getAllByRole('switch')[1]?.getAttribute('aria-label')).toBe(
+    expect(screen.getAllByRole('switch')[2]?.getAttribute('aria-label')).toBe(
       'mobile.settings.playerButtons.buttons.queue',
     );
     expect(screen.getByTestId('player-buttons-preview').getAttribute('data-position')).toBe('above');

@@ -826,6 +826,8 @@
         },
         "previousNext": "Anterior y siguiente",
         "previousNextDescription": "Deslizar el plafón sigue cambiando de bloque.",
+        "wallBadge": "Estado del muro en el plafón",
+        "wallBadgeDescription": "Una insignia en el plafón indica si este bloque está encendido en el muro.",
         "buttons": {
           "mirror": "Espejo",
           "favorite": "Favorito",

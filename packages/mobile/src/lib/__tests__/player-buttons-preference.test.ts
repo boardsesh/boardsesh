@@ -38,6 +38,7 @@ describe('player buttons preference', () => {
     const { result } = renderHook(() => usePlayerButtonsPreference());
     expect(result.current.buttons).toEqual(DEFAULT_PLAYER_BUTTONS);
     expect(result.current.previousNext).toBe(true);
+    expect(result.current.wallBadge).toBe(true);
     expect(result.current.position).toBe('below');
     expect(isDefaultPlayerButtons(result.current)).toBe(true);
   });
@@ -52,6 +53,7 @@ describe('player buttons preference', () => {
         visible: { share: false },
       },
       playerPreviousNext: false,
+      playerWallBadge: false,
       playerButtonsPosition: 'above',
     });
     const { result } = renderHook(() => usePlayerButtonsPreference());
@@ -64,6 +66,7 @@ describe('player buttons preference', () => {
       queue: true,
     });
     expect(result.current.previousNext).toBe(false);
+    expect(result.current.wallBadge).toBe(false);
     expect(result.current.position).toBe('above');
   });
 
@@ -71,10 +74,12 @@ describe('player buttons preference', () => {
     const { usePlayerButtonsPreference } = await launchWith({
       playerButtonsPosition: 'beside',
       playerPreviousNext: 'yes',
+      playerWallBadge: 'yes',
     });
     const { result } = renderHook(() => usePlayerButtonsPreference());
     expect(result.current.position).toBe('below');
     expect(result.current.previousNext).toBe(true);
+    expect(result.current.wallBadge).toBe(true);
   });
 
   it('stores a change, and Restore defaults clears all three keys back to the defaults', async () => {
@@ -84,6 +89,7 @@ describe('player buttons preference', () => {
     act(() => result.current.move('queue', -1));
     act(() => result.current.setVisible('share', false));
     act(() => result.current.setPreviousNext(false));
+    act(() => result.current.setWallBadge(false));
     act(() => result.current.setPosition('above'));
     expect(stored('playerButtonsV1')).toMatchObject({
       version: 1,
@@ -91,12 +97,14 @@ describe('player buttons preference', () => {
       visible: { share: false },
     });
     expect(result.current.position).toBe('above');
+    expect(result.current.wallBadge).toBe(false);
     expect(isDefaultPlayerButtons(result.current)).toBe(false);
 
     act(() => result.current.restoreDefaults());
     // `null` rather than a copy of today's defaults, so a later release's defaults still apply.
     expect(stored('playerButtonsV1')).toBeNull();
     expect(stored('playerPreviousNext')).toBe(true);
+    expect(stored('playerWallBadge')).toBe(true);
     expect(stored('playerButtonsPosition')).toBe('below');
     expect(result.current.buttons).toEqual(DEFAULT_PLAYER_BUTTONS);
     expect(isDefaultPlayerButtons(result.current)).toBe(true);
@@ -107,6 +115,7 @@ describe('player buttons preference', () => {
     playerButtonsStore.setVisible('favorite', false);
     restorePlayerButtonDefaults();
     expect(stored('playerPreviousNext')).toBeUndefined();
+    expect(stored('playerWallBadge')).toBeUndefined();
     expect(stored('playerButtonsPosition')).toBeUndefined();
   });
 
@@ -114,9 +123,11 @@ describe('player buttons preference', () => {
     const { usePlayerButtonsEditor, resetAllSettings, DEFAULT_PLAYER_BUTTONS } = await launchWith();
     const { result } = renderHook(() => usePlayerButtonsEditor());
     act(() => result.current.setVisible('mirror', false));
+    act(() => result.current.setWallBadge(false));
     act(() => result.current.setPosition('above'));
     act(() => resetAllSettings());
     expect(result.current.buttons).toEqual(DEFAULT_PLAYER_BUTTONS);
+    expect(result.current.wallBadge).toBe(true);
     expect(result.current.position).toBe('below');
   });
 

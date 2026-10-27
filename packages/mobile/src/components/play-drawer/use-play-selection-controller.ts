@@ -299,8 +299,11 @@ export function usePlaySelectionController({
     clearMirror,
   });
 
-  const handleSetActive = useCallback(() => {
-    if (!drawerPreviewItem) return;
+  // Whether the climb went up: false when there was nothing to commit or the
+  // tap only armed the busy-wall question. Put on the wall with no board
+  // connected (#6939) connects only after a real commit.
+  const handleSetActive = useCallback((): boolean => {
+    if (!drawerPreviewItem) return false;
     // First tap on a wall someone else moved mid-browse: ask instead of taking
     // it. Only under the browse latch — that is what makes
     // `wallUuidAtLatchStartRef` mean "the wall as it was when you started
@@ -322,7 +325,7 @@ export function usePlaySelectionController({
     ) {
       setBusyWallConfirmArmed(true);
       // The question row speaks for itself when it mounts (PlayDrawerCommitBar).
-      return;
+      return false;
     }
     markLatchExit('commit');
     setBusyWallConfirmArmed(false);
@@ -368,6 +371,7 @@ export function usePlaySelectionController({
     // toggled while previewing would leave the drawer showing the climb flipped
     // and the wall showing it straight.
     clearMirror();
+    return true;
   }, [
     drawerPreviewItem,
     drawerPreviewSuggestionSource,

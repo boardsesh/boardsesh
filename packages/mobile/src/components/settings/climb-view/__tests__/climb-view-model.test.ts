@@ -19,6 +19,10 @@ function makeInput(overrides: Partial<ClimbViewModelInput['buttons']> = {}): Cli
       previousNextDescription: 'Swiping still works',
       previousNext: true,
       onPreviousNextChange: vi.fn(),
+      wallBadgeLabel: 'Wall status on the board',
+      wallBadgeDescription: 'A badge says whether this climb is lit',
+      wallBadge: true,
+      onWallBadgeChange: vi.fn(),
       controls: [
         { id: 'queue', label: 'Queue', visible: true, movable: true },
         { id: 'mirror', label: 'Mirror', description: 'Only on boards that mirror', visible: false, movable: true },
@@ -71,10 +75,11 @@ describe('buildClimbViewModel', () => {
   });
 
   // Switches only: the order changes in View options, so the rows simply follow it.
-  it('lists Previous and next, then a switch per button in the saved order, then Restore defaults', () => {
+  it('lists Previous and next, the wall badge, then a switch per button in the saved order, then Restore defaults', () => {
     const rows = buildClimbViewModel(makeInput()).sections[1].rows;
     expect(rows.map((row) => row.key)).toEqual([
       'previousNext',
+      'wallBadge',
       'button.queue',
       'button.mirror',
       'button.favorite',

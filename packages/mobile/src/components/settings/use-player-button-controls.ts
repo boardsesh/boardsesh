@@ -12,7 +12,18 @@ export type PlayerButtonControl = SectionLayoutRowModel<PlayerButtonId>;
 export function usePlayerButtonControls() {
   const { t } = useTranslation('common');
   const editor = usePlayerButtonsEditor();
-  const { buttons, previousNext, position, setVisible, move, setPreviousNext, setPosition, restoreDefaults } = editor;
+  const {
+    buttons,
+    previousNext,
+    wallBadge,
+    position,
+    setVisible,
+    move,
+    setPreviousNext,
+    setWallBadge,
+    setPosition,
+    restoreDefaults,
+  } = editor;
 
   const title = t('mobile.settings.playerButtons.title');
   const description = t('mobile.settings.playerButtons.description');
@@ -24,6 +35,8 @@ export function usePlayerButtonControls() {
   const aboveLabel = t('mobile.settings.playerButtons.position.above');
   const previousNextLabel = t('mobile.settings.playerButtons.previousNext');
   const previousNextDescription = t('mobile.settings.playerButtons.previousNextDescription');
+  const wallBadgeLabel = t('mobile.settings.playerButtons.wallBadge');
+  const wallBadgeDescription = t('mobile.settings.playerButtons.wallBadgeDescription');
   const restoreDefaultsLabel = t('mobile.settings.climbDrawer.restoreDefaults');
   const mirrorLabel = t('mobile.settings.playerButtons.buttons.mirror');
   const favoriteLabel = t('mobile.settings.playerButtons.buttons.favorite');
@@ -78,7 +91,7 @@ export function usePlayerButtonControls() {
     (buttonId: PlayerButtonId, direction: SectionMoveDirection) => move(buttonId, direction),
     [move],
   );
-  const canRestoreDefaults = !isDefaultPlayerButtons({ buttons, previousNext, position });
+  const canRestoreDefaults = !isDefaultPlayerButtons({ buttons, previousNext, wallBadge, position });
   const handleRestoreDefaults = useCallback(() => {
     if (!canRestoreDefaults) return;
     hapticSelection();
@@ -94,14 +107,18 @@ export function usePlayerButtonControls() {
     positionFooter,
     previousNextLabel,
     previousNextDescription,
+    wallBadgeLabel,
+    wallBadgeDescription,
     restoreDefaultsLabel,
     buttons,
     previousNext,
+    wallBadge,
     position,
     positionOptions,
     controls,
     onPositionChange,
     onPreviousNextChange: setPreviousNext,
+    onWallBadgeChange: setWallBadge,
     onVisibleChange,
     onMove,
     canRestoreDefaults,

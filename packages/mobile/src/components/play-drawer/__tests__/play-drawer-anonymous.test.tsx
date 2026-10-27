@@ -105,7 +105,14 @@ const session = vi.hoisted(() => ({
 // busy-wall confirm.
 // The lightbulb's own signal — this device's BLE link, or a session member's.
 // `resolveWallPillState` / `resolveCommitBarModel` read it as `wallDriven`.
-const lightbulb = vi.hoisted(() => ({ lit: false }));
+// `pressAction` is what a tap on the bulb would do; 'connect' is the
+// disconnected phone Put on the wall connects from (#6939).
+const lightbulb = vi.hoisted(() => ({
+  lit: false,
+  pressAction: 'noop' as string,
+  pending: false,
+  connect: vi.fn(async () => true),
+}));
 const wall = vi.hoisted(() => ({
   uuid: null as string | null,
   name: null as string | null,
@@ -122,6 +129,7 @@ const ble = vi.hoisted(() => ({
     getMirrorIntent: ReturnType<typeof vi.fn>;
     setMirrorIntent: ReturnType<typeof vi.fn>;
     retainMirrorIntentFor: ReturnType<typeof vi.fn>;
+    wallHeldByOtherUser?: boolean;
   } | null,
 }));
 
@@ -285,6 +293,8 @@ vi.mock('../WallStateCallout', () => ({
     return createElement('div', { 'data-testid': 'wall-callout' });
   },
 }));
+// The wall badge's states are pinned in wall-badge.test.ts.
+vi.mock('../WallBadge', () => ({ WallBadge: () => null }));
 // Recorded: the end of a list (#6664) is a join this file pins, see below.
 vi.mock('../TrackEndCard', () => ({
   TrackEndCard: (props: Props) => {
@@ -428,7 +438,14 @@ vi.mock('../use-drawer-dismiss-gesture', () => ({
 }));
 vi.mock('../use-play-drawer-wake-lock', () => ({ usePlayDrawerWakeLock: () => undefined }));
 vi.mock('../../ble/use-lightbulb-control', () => ({
-  useLightbulbControl: () => ({ lit: lightbulb.lit, localConnected: false, pending: false, onPress: vi.fn() }),
+  useLightbulbControl: () => ({
+    lit: lightbulb.lit,
+    localConnected: false,
+    pending: lightbulb.pending,
+    onPress: vi.fn(),
+    pressAction: lightbulb.pressAction,
+    connect: lightbulb.connect,
+  }),
 }));
 vi.mock('../copy-climb-name', () => ({ copyClimbName: vi.fn() }));
 vi.mock('../../../lib/haptics', () => ({ hapticSuccess: vi.fn() }));
@@ -564,6 +581,8 @@ beforeEach(() => {
   });
   vi.stubGlobal('cancelAnimationFrame', (handle: number) => openingFrames.delete(handle));
   vi.clearAllMocks();
+  lightbulb.pressAction = 'noop';
+  lightbulb.pending = false;
   recorded.actionBar = [];
   recorded.wallPill = [];
   recorded.wallCallout = [];
@@ -604,6 +623,78 @@ afterEach(() => vi.unstubAllGlobals());
 // what only a render can see is whether PlayDrawer feeds them the crew flag at
 // all — hardcoding `inSharedSession: false` at these call sites leaves every
 // pure test green while the wall gets taken on the next swipe.
+describe('PlayDrawer — Put on the wall with no board connected (#6939)', () => {
+  it('offers it on the current climb, and the tap connects', () => {
+    lightbulb.pressAction = 'connect';
+    session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
+    renderDrawer('member');
+
+    const bar = lastActionBarProps();
+    expect(bar.commitButton).toBe('putOnWall');
+    expect(bar.commitLabel).toBe('putOnWall');
+    (bar.onCommit as () => void)();
+    expect(lightbulb.connect).toHaveBeenCalledWith('put_on_wall');
+  });
+
+  it('leaves the current climb alone when a tap on the bulb would not connect', () => {
+    session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
+    renderDrawer('member');
+
+    expect(lastActionBarProps().commitButton).toBeNull();
+  });
+
+  it('labels a preview Put on the wall, not Set active, and connects after setting it', () => {
+    lightbulb.pressAction = 'connect';
+    renderDrawer('member');
+
+    const bar = lastActionBarProps();
+    expect(bar.commitButton).toBe('putOnWall');
+    expect(bar.commitLabel).toBe('putOnWall');
+    (bar.onCommit as () => void)();
+    expect(lightbulb.connect).toHaveBeenCalledWith('put_on_wall');
+  });
+
+  it('keeps Set active on a preview when a tap would not connect', () => {
+    renderDrawer('member');
+
+    expect(lastActionBarProps().commitLabel).toBe('setActive');
+    (lastActionBarProps().onCommit as () => void)();
+    expect(lightbulb.connect).not.toHaveBeenCalled();
+  });
+
+  it('stays up while the connect it started is still finding the board', () => {
+    lightbulb.pending = true;
+    session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
+    renderDrawer('member');
+
+    expect(lastActionBarProps().commitButton).toBe('putOnWall');
+  });
+
+  it('is not offered while another account holds the board', () => {
+    lightbulb.pressAction = 'connect';
+    ble.current = {
+      isConnected: false,
+      sendFramesToBoard: vi.fn(async () => true),
+      getMirrorIntent: vi.fn(),
+      setMirrorIntent: vi.fn(),
+      retainMirrorIntentFor: vi.fn(),
+      wallHeldByOtherUser: true,
+    };
+    session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
+    renderDrawer('member');
+
+    expect(lastActionBarProps().commitButton).toBeNull();
+  });
+
+  it('never offers it to the signed-out reader', () => {
+    lightbulb.pressAction = 'connect';
+    session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
+    renderDrawer('anonymous');
+
+    expect(lastActionBarProps().commitButton).toBeNull();
+  });
+});
+
 describe('PlayDrawer — the shared-session browse latch', () => {
   const CREW = () => {
     session.isShared = true;

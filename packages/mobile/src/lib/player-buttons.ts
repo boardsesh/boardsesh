@@ -31,6 +31,7 @@ export const PLAYER_BUTTONS_LAYOUT: SectionLayoutSpec<PlayerButtonId> = {
 };
 
 export const DEFAULT_PLAYER_PREVIOUS_NEXT = true;
+export const DEFAULT_PLAYER_WALL_BADGE = true;
 export const DEFAULT_PLAYER_BUTTONS_POSITION: PlayerButtonsPosition = 'below';
 
 /** A stored position this build doesn't know (a newer bundle's) reads as the default. */
@@ -40,5 +41,10 @@ export function sanitisePlayerButtonsPosition(stored: unknown): PlayerButtonsPos
 
 /** Only an explicit `false` hides the pair. */
 export function sanitisePlayerPreviousNext(stored: unknown): boolean {
+  return stored !== false;
+}
+
+/** Only an explicit `false` hides the wall badge. */
+export function sanitisePlayerWallBadge(stored: unknown): boolean {
   return stored !== false;
 }

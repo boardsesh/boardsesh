@@ -226,9 +226,9 @@ export type CommitBarMode = 'actions' | 'commit';
 
 /**
  * Which label the filled commit button wears. With no wall reachable at all —
- * nobody driving a wall and no known lit climb (the plain #4640 / logbook
- * preview) — it falls back to "Set active" so the button never promises a
- * lighting it cannot do.
+ * nobody driving a wall, no known lit climb, and no board a tap could connect
+ * to (the plain #4640 / logbook preview, a wall with no lights) — it falls back
+ * to "Set active" so the button never promises a lighting it cannot do.
  */
 export type CommitButtonLabel = 'putOnWall' | 'setActive';
 
@@ -237,6 +237,12 @@ export type CommitBarModel = {
   showPutOnWall: boolean;
   showConfirm: boolean;
   commitLabel: CommitButtonLabel;
+  /**
+   * Put on the wall connects this phone after it sets the climb (#6939): no
+   * wall is driven, and a tap on the bulb would connect to a board with lights.
+   * The connect lights the climb the commit just made current.
+   */
+  connectsOnCommit: boolean;
 };
 
 export type CommitBarModelInput = {
@@ -259,6 +265,12 @@ export type CommitBarModelInput = {
   confirmArmed: boolean;
   /** A wall is genuinely being driven — see {@link WallPillStateInput.wallDriven}. */
   wallDriven: boolean;
+  /**
+   * A tap on the bulb would connect this phone (`pressAction === 'connect'`):
+   * a board is selected, it has lights, nothing is in flight and no session
+   * peer holds it.
+   */
+  tapConnects: boolean;
 };
 
 /**
@@ -280,6 +292,11 @@ export type CommitBarModelInput = {
  * `Put on the wall` hides (never renders disabled-dead) when the displayed climb
  * is already the lit one. Going back is not this row's job: the header's back
  * chip does it (`resolveHeaderPillState`).
+ *
+ * With no board connected (#6939) the row offers Put on the wall even on the
+ * climber's own current climb, so a first-timer is never left with only a grey
+ * bulb. That tap connects; it stays in the `actions` mode, since there is no
+ * preview to commit.
  */
 export function resolveCommitBarModel({
   previewPinned,
@@ -290,14 +307,19 @@ export function resolveCommitBarModel({
   wallClimbUuid,
   confirmArmed,
   wallDriven,
+  tapConnects,
 }: CommitBarModelInput): CommitBarModel {
-  const commitLabel: CommitButtonLabel = wallClimbUuid != null || wallDriven ? 'putOnWall' : 'setActive';
+  const connectsOnCommit = tapConnects && !wallDriven && !isAnonymous && !boardMismatch;
+  const commitLabel: CommitButtonLabel =
+    wallClimbUuid != null || wallDriven || connectsOnCommit ? 'putOnWall' : 'setActive';
   const displayedIsCommittedHead = displayedClimbUuid != null && displayedClimbUuid === committedHeadUuid;
+  const displayedIsWallClimb = wallClimbUuid != null && displayedClimbUuid === wallClimbUuid;
   const inCommitMode = previewPinned && !isAnonymous && !boardMismatch && !displayedIsCommittedHead;
   if (!inCommitMode) {
-    return { mode: 'actions', showPutOnWall: false, showConfirm: false, commitLabel };
+    // The climber's own current climb, dark because no board is connected.
+    const showPutOnWall = connectsOnCommit && displayedIsCommittedHead && !displayedIsWallClimb;
+    return { mode: 'actions', showPutOnWall, showConfirm: false, commitLabel, connectsOnCommit: showPutOnWall };
   }
-  const displayedIsWallClimb = wallClimbUuid != null && displayedClimbUuid === wallClimbUuid;
   // Browsing onto the busy wall's own climb resolves the conflict, so an armed
   // confirm has nothing left to ask — the pair snaps back to the browse buttons.
   const showConfirm = confirmArmed && !displayedIsWallClimb;
@@ -306,7 +328,29 @@ export function resolveCommitBarModel({
     showPutOnWall: !showConfirm && !displayedIsWallClimb,
     showConfirm,
     commitLabel,
+    connectsOnCommit,
   };
+}
+
+/**
+ * Which commit control the second row draws. Put on the wall with no board
+ * connected (#6939) shows on the climber's current climb too, but a timed
+ * block's Fell / Sent keeps the row: logging the attempt is what that moment is
+ * for, and the bulb still connects. #4979's held climb wears Put on the wall
+ * too (a reassert).
+ */
+export function resolveCommitButton({
+  model,
+  workoutOutcome,
+  heldClimbOnScreen,
+}: {
+  model: CommitBarModel;
+  workoutOutcome: boolean;
+  heldClimbOnScreen: boolean;
+}): 'putOnWall' | 'confirm' | null {
+  if (model.showConfirm) return 'confirm';
+  const putOnWallShown = model.showPutOnWall && (model.mode === 'commit' || !workoutOutcome);
+  return putOnWallShown || heldClimbOnScreen ? 'putOnWall' : null;
 }
 
 /** How a browse latch ended — recorded by the handler that ended it. */

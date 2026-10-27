@@ -17,6 +17,10 @@ export type ClimbViewModelInput = {
     previousNextDescription: string;
     previousNext: boolean;
     onPreviousNextChange: (enabled: boolean) => void;
+    wallBadgeLabel: string;
+    wallBadgeDescription: string;
+    wallBadge: boolean;
+    onWallBadgeChange: (enabled: boolean) => void;
     controls: readonly PlayerButtonControl[];
     onVisibleChange: (buttonId: PlayerButtonId, visible: boolean) => void;
     restoreDefaultsLabel: string;
@@ -44,6 +48,14 @@ export function buildClimbViewModel({ buttons, belowTheClimb }: ClimbViewModelIn
       subtitle: buttons.previousNextDescription,
       value: buttons.previousNext,
       onValueChange: buttons.onPreviousNextChange,
+    },
+    {
+      kind: 'toggle',
+      key: 'wallBadge',
+      label: buttons.wallBadgeLabel,
+      subtitle: buttons.wallBadgeDescription,
+      value: buttons.wallBadge,
+      onValueChange: buttons.onWallBadgeChange,
     },
     ...buttons.controls.map((control): MoreRow => ({
       kind: 'toggle',

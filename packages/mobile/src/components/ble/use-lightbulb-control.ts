@@ -24,6 +24,13 @@ export type LightbulbSurface = Extract<
   | 'header_pill'
 >;
 
+/**
+ * Where a connect can start from: any bulb, plus the play view's Put on the
+ * wall with no board connected (#6939), which isn't a bulb and never opens the
+ * controls sheet.
+ */
+export type ConnectSurface = LightbulbSurface | Extract<BoardConnectSurface, 'put_on_wall'>;
+
 type UseLightbulbControlOptions = {
   /** Required so every bulb reports where a connect tap came from. */
   surface: LightbulbSurface;
@@ -92,7 +99,7 @@ export type LightbulbControl = {
    * awaits it to know when to offer "Try again", so the card, the pill and
    * every bulb share this one connect path.
    */
-  connect: (surface?: LightbulbSurface) => Promise<boolean>;
+  connect: (surface?: ConnectSurface) => Promise<boolean>;
   /**
    * What a tap will actually do, resolved from the same ladder `onPress` runs.
    * Exposed so each bulb can LABEL itself honestly: before this, all three
@@ -157,7 +164,7 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
   // permission or a radio that's off never reaches either outcome event, so
   // without it "tapped connect" couldn't be told apart from "never tried".
   const connect = useCallback(
-    async (surfaceOverride?: LightbulbSurface): Promise<boolean> => {
+    async (surfaceOverride?: ConnectSurface): Promise<boolean> => {
       // The same gate onPress applies, so a caller that skips its own check
       // can't open a second link while one is pending or a peer holds the wall.
       if (!bluetooth || pressAction !== 'connect') return false;

@@ -299,6 +299,8 @@ vi.mock('../../LogAscentSheet', () => ({
 vi.mock('../WallStatePill', () => ({ WallStatePill: () => null }));
 vi.mock('../WallStateCallout', () => ({ WallStateCallout: () => null }));
 vi.mock('../TrackEndCard', () => ({ TrackEndCard: () => null }));
+// The wall badge's states are pinned in wall-badge.test.ts.
+vi.mock('../WallBadge', () => ({ WallBadge: () => null }));
 vi.mock('../WorkoutRunnerOverlay', () => ({ WorkoutRunnerOverlay: () => null }));
 vi.mock('../PanePlaceholder', () => ({ PanePlaceholder: () => null }));
 vi.mock('../BoardRenderUnavailable', () => ({ BoardRenderUnavailable: () => null }));

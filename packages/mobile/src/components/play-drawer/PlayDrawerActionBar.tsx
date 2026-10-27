@@ -234,6 +234,18 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
             : resolvedLabelKind === 'disconnect'
               ? tSettings('ble.turnOff')
               : tSettings('ble.connectBoard');
+  // The word under the bulb (#6939): what the board is doing (Connect, On), or
+  // Light while a crewmate holds the board and a tap puts this climb up on it.
+  // The full sentence above stays the accessibility label, so the word is
+  // hidden from screen readers. Walls with no lights keep the bare icon.
+  const lightbulbWord =
+    resolvedLabelKind === 'connect'
+      ? t('playView.bulbLabel.connect')
+      : resolvedLabelKind === 'disconnect' || resolvedLabelKind === 'peerDriving'
+        ? t('playView.bulbLabel.on')
+        : resolvedLabelKind === 'relay'
+          ? t('playView.bulbLabel.light')
+          : null;
   const isAnonymous = viewer === 'anonymous';
   // A signed-out reader has no queue to commit into and no wall to take, so the
   // suppression lives here with the rest of the `viewer` rules rather than only
@@ -372,6 +384,24 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
                 size={SIZES.lg.icon}
                 containerSize={SIZES.lg.dim}
               />
+              {lightbulbWord ? (
+                <Text
+                  variant="caption2"
+                  color={lightbulbActive ? theme.brandColors.warning : theme.systemColors.secondaryLabel}
+                  numberOfLines={1}
+                  // Fixed, like a tab bar's labels: it sits in the 8pt gap
+                  // above the second row, and the icon carries the meaning.
+                  maxFontSizeMultiplier={1}
+                  onPress={onLightbulb}
+                  suppressHighlighting
+                  accessibilityElementsHidden
+                  importantForAccessibility="no"
+                  style={styles.lightbulbWord}
+                  testID="play-drawer-lightbulb-word"
+                >
+                  {lightbulbWord}
+                </Text>
+              ) : null}
               {/* "Who's connected" pip — the board-presence holder's avatar overlaid
                   on the lightbulb's top-right. Self-reads board presence and renders
                   nothing when the wall is free, so it never disturbs the slot's layout.
@@ -653,6 +683,14 @@ const styles = StyleSheet.create({
     minHeight: ACTION_BAR_SECONDARY_ROW_HEIGHT,
   },
   // Holder avatar overlaid on the lightbulb's top-right corner.
+  // Sits in the gap under the big row, so the row and the board above keep
+  // their height.
+  lightbulbWord: {
+    position: 'absolute',
+    bottom: -spacing[3],
+    alignSelf: 'center',
+    fontWeight: '600',
+  },
   connectionBadge: {
     position: 'absolute',
     top: -2,

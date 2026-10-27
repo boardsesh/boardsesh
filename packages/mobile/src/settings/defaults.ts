@@ -46,6 +46,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   climbRowDisplayV1: null,
   playerButtonsV1: null,
   playerPreviousNext: true,
+  playerWallBadge: true,
   playerButtonsPosition: 'below',
   homeSectionsV1: null,
   playlistSortsV1: null,
