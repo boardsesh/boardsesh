@@ -152,17 +152,16 @@ function ClimbTopChromeComponent({
   const { nativeAccessory } = useTabChrome();
   const { isPad, widthClass } = useDeviceLayout();
   const accessoryCollapses = !(isPad && widthClass === 'regular');
-  const { inAppBoardConnection, ledless: liveLedless, localConnected } = useBoardConnectionState();
+  const { inAppBoardConnection, ledless: liveLedless } = useBoardConnectionState();
   const boardHeld = useSettledHeaderValue(
     nativeAccessory && accessoryCollapses && inAppBoardConnection === 'connectedByMe',
   );
   const ledless = useSettledHeaderValue(liveLedless);
-  const canOpenControls = useSettledHeaderValue(localConnected);
   const wallCapsule = useMemo(() => {
     if (wallClimb) return <WallStatusCapsule climb={wallClimb} boardName={boardName} />;
-    if (boardHeld) return <BoardHeldCapsule ledless={ledless} canOpenControls={canOpenControls} />;
+    if (boardHeld) return <BoardHeldCapsule ledless={ledless} />;
     return undefined;
-  }, [wallClimb, boardName, boardHeld, ledless, canOpenControls]);
+  }, [wallClimb, boardName, boardHeld, ledless]);
   const hasWallCapsule = wallClimb !== null;
   const loggedWallCapsuleRef = useRef(false);
   useEffect(() => {

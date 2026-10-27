@@ -483,11 +483,8 @@ vi.mock('../../queue-control/WallStatusCapsule', () => ({
 }));
 // Same for "You have the board": board-held-capsule.test.tsx covers its body.
 vi.mock('../../queue-control/BoardHeldCapsule', () => ({
-  BoardHeldCapsule: ({ ledless, canOpenControls }: { ledless: boolean; canOpenControls: boolean }) =>
-    createElement('div', {
-      'data-board-held-capsule': ledless ? 'ledless' : 'lit',
-      'data-can-open-controls': String(canOpenControls),
-    }),
+  BoardHeldCapsule: ({ ledless }: { ledless: boolean }) =>
+    createElement('div', { 'data-board-held-capsule': ledless ? 'ledless' : 'lit' }),
 }));
 
 import { ClimbTopChrome } from '../ClimbTopChrome';
@@ -689,7 +686,6 @@ describe('ClimbTopChrome', () => {
       const { container } = render(<ClimbTopChrome {...makeProps()} />);
       const capsule = container.querySelector('[data-board-held-capsule]');
       expect(capsule?.getAttribute('data-board-held-capsule')).toBe('lit');
-      expect(capsule?.getAttribute('data-can-open-controls')).toBe('true');
     });
 
     it('stays out while the board is free', () => {

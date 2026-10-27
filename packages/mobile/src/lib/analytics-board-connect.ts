@@ -22,7 +22,12 @@ export type BoardConnectSurface =
   // surface its taps would read as 'play_drawer' and the treatment's new entry
   // point could not be told apart from the bare bulb it replaces.
   | 'first_connect_card'
-  | 'first_connect_pill';
+  | 'first_connect_pill'
+  // The Climbs header's "You have the board" capsule: a tap disconnects, a
+  // long-press opens the controls sheet. It never connects (it only shows while
+  // you hold the board, and a tap that would connect is dropped), but it shares
+  // the bulbs' press path.
+  | 'header_pill';
 
 /**
  * Where the iOS 26 tab-bar accessory platter sits: open above the bar, or
@@ -58,12 +63,16 @@ export function trackBoardConnectTapped({
  * Disconnect): a lightbulb's long-press, or the Climbs header's "You have the
  * board" pill. The play drawer hosts its own sheet and is not counted.
  */
-export type BoardControlsSurface =
-  | Extract<
-      BoardConnectSurface,
-      'play_drawer' | 'toolbar' | 'app_bar' | 'board_control_indicator' | 'first_connect_card' | 'first_connect_pill'
-    >
-  | 'header_pill';
+export type BoardControlsSurface = Extract<
+  BoardConnectSurface,
+  | 'play_drawer'
+  | 'toolbar'
+  | 'app_bar'
+  | 'board_control_indicator'
+  | 'first_connect_card'
+  | 'first_connect_pill'
+  | 'header_pill'
+>;
 
 export type BoardControlsSource = {
   surface: BoardControlsSurface;

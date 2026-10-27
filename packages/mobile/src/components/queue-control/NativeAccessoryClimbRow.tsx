@@ -2,8 +2,6 @@ import { useCallback, useState } from 'react';
 import { StyleSheet, View, type ColorValue, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { Climb } from '@boardsesh/queue';
-import type { BoardName } from '@boardsesh/shared-schema';
-import { useEffectiveClimbStats } from '@boardsesh/board-react';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { useTheme } from '../../providers/theme-provider';
 import { useDrawerHost, type BoardConfig } from '../../providers/drawer-host-provider';
@@ -20,7 +18,7 @@ import { LargeContentViewer } from '../LargeContentViewer';
 import { largeContentTitle } from './accessory-large-content-title';
 import { LogAscentToolbarButton } from './LogAscentToolbarButton';
 import { BoardControlIndicator } from './BoardControlIndicator';
-import { formatQuality, formatSends } from '../../lib/format-climb-stats';
+import { useClimbByline } from './use-climb-byline';
 import { useBoardConnectionState } from '../ble/use-board-connection-state';
 import { AccessoryConnectionBadge } from './AccessoryConnectionBadge';
 import {
@@ -116,28 +114,6 @@ function ClimbLabel({
   );
 }
 
-/** Grade · sends, or grade · rating when there are no sends; the grade alone otherwise. */
-function useAccessoryByline(climb: Climb, boardConfig: BoardConfig | null, grade: string | null): string | null {
-  const { t } = useTranslation('climbs');
-  // The same live counts the list rows read, keyed on the climb's own board.
-  const stats = useEffectiveClimbStats(
-    (climb.boardType ?? boardConfig?.boardName ?? '') as BoardName,
-    climb.layoutId ?? boardConfig?.layoutId ?? 0,
-    climb.uuid,
-    climb.angle,
-    { ascensionistCount: climb.ascensionist_count, qualityAverage: climb.quality_average },
-    { enabled: boardConfig !== null },
-  );
-  const isDraft = climb.is_draft === true;
-  const sends = !isDraft && stats.ascensionistCount > 0 ? formatSends(stats.ascensionistCount, t) : null;
-  const rating =
-    stats.qualityAverage != null && parseFloat(stats.qualityAverage) > 0
-      ? `${formatQuality(stats.qualityAverage)}★`
-      : null;
-  const parts = [grade, sends ?? rating].filter((part): part is string => !!part);
-  return parts.length > 0 ? parts.join(' · ') : null;
-}
-
 /**
  * Content for the iOS 26 tab-bar bottom accessory (Liquid Glass variant only).
  * UIKit supplies the glass platter, so this stays bare: the current climb, then
@@ -181,7 +157,7 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
   // The platter shows a plain (non-colorized) grade; only the label swaps to the
   // Boardsesh grade when the toggle is on and a trusted one exists.
   const currentFormattedGrade = resolveGrade(climb, boardConfig?.boardName).label;
-  const byline = useAccessoryByline(climb, boardConfig, currentFormattedGrade);
+  const byline = useClimbByline(climb, boardConfig, currentFormattedGrade);
 
   const connectionBadge = getBoardConnectionBadgeVisual({
     boardConnection: inAppBoardConnection,

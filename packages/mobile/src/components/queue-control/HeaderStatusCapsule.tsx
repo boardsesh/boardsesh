@@ -3,21 +3,28 @@
 // capsule. One regular native-glass pill with a tint in the status tone; older
 // devices and Reduce Transparency keep an opaque pill with a tinted hairline.
 // The content row is the caller's; the shell owns the surface, the tap target,
-// the UIKit title-view rules and the entry fade.
+// the UIKit title-view rules and the entry fade. HeaderCapsuleClimbLabel is the
+// row both capsules use for a climb: a face, then the name over a grade · sends
+// byline, laid out like the tab-bar accessory platter.
 
 import { useContext, useMemo, type ReactNode } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, type AccessibilityActionEvent, type AccessibilityActionInfo } from 'react-native';
 import Animated, { FadeIn, useReducedMotion } from 'react-native-reanimated';
 import { useTheme } from '../../providers/theme-provider';
 import { useNativeGlass } from '../../hooks/use-native-glass';
 import { spacing } from '../../theme/tokens';
 import { withAlpha } from '../../theme/colors';
+import { glassSize } from '../../theme/layout';
+import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
+import { LargeContentViewer } from '../LargeContentViewer';
+import { Text } from '../Text';
 import { PressableSurface } from '../PressableSurface';
 import { GlassSurface } from '../GlassSurface';
 import { NativeHeaderActionContext, NativeTitleMaxWidthContext } from '../chrome/native-header-action-context';
 import { NATIVE_ACTION_SIZE } from '../chrome/GlassActionToolbar';
 
-const CAPSULE_HEIGHT = 32;
+// The native header's bar height, so a name over a byline fits at the 1.2 font cap.
+const CAPSULE_HEIGHT = glassSize.bar;
 // The leading-glyph → text → trailing gap and the trailing inset, each 2pt under
 // spacing[2] / spacing[3] so the text keeps more of the title slot. The spacing
 // scale has no 6 or 10.
@@ -40,6 +47,9 @@ type HeaderStatusCapsuleProps = {
   entryKey: string;
   /** Omit for a capsule that only states something; it then reads as text. */
   onPress?: () => void;
+  onLongPress?: () => void;
+  accessibilityActions?: readonly AccessibilityActionInfo[];
+  onAccessibilityAction?: (event: AccessibilityActionEvent) => void;
   accessibilityLabel: string;
   accessibilityHint?: string;
   /** From {@link useHeaderCapsuleCompact}: the leading element has dropped out. */
@@ -52,6 +62,9 @@ export function HeaderStatusCapsule({
   tintColor,
   entryKey,
   onPress,
+  onLongPress,
+  accessibilityActions,
+  onAccessibilityAction,
   accessibilityLabel,
   accessibilityHint,
   compact,
@@ -80,10 +93,13 @@ export function HeaderStatusCapsule({
       {onPress ? (
         <PressableSurface
           onPress={onPress}
+          onLongPress={onLongPress}
           feedback={nativeHeader ? 'none' : 'scale'}
           accessibilityRole="button"
           accessibilityLabel={accessibilityLabel}
           accessibilityHint={accessibilityHint}
+          accessibilityActions={accessibilityActions}
+          onAccessibilityAction={onAccessibilityAction}
           style={rowStyle}
           testID={testID}
         >
@@ -134,6 +150,63 @@ export function HeaderStatusCapsule({
   );
 }
 
+type HeaderCapsuleClimbLabelProps = {
+  /** The face before the name; dropped when the capsule is compact. */
+  avatar: ReactNode;
+  name: string;
+  byline: string | null;
+  compact: boolean;
+  /** Spoken by the Large Content Viewer when the text is too small to read. */
+  largeContentTitle: string;
+  onActivate?: () => void;
+};
+
+/** A face, then the climb's name over its byline: the accessory platter's row in a header capsule. */
+export function HeaderCapsuleClimbLabel({
+  avatar,
+  name,
+  byline,
+  compact,
+  largeContentTitle,
+  onActivate,
+}: HeaderCapsuleClimbLabelProps) {
+  const { systemColors } = useTheme();
+  return (
+    <>
+      {/* One tap target and one spoken label: the face is decoration here. */}
+      {compact ? null : (
+        <View style={styles.climbAvatar} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+          {avatar}
+        </View>
+      )}
+      <LargeContentViewer title={largeContentTitle} onActivate={onActivate} style={styles.climbLines}>
+        <Text
+          variant="caption1"
+          color={systemColors.label}
+          numberOfLines={1}
+          ellipsizeMode="tail"
+          maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+          style={styles.climbName}
+        >
+          {name}
+        </Text>
+        {byline ? (
+          <Text
+            variant="caption2"
+            color={systemColors.secondaryLabel}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+            maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+            style={styles.climbByline}
+          >
+            {byline}
+          </Text>
+        ) : null}
+      </LargeContentViewer>
+    </>
+  );
+}
+
 const styles = StyleSheet.create({
   glassWrapper: {
     flexShrink: 1,
@@ -175,5 +248,22 @@ const styles = StyleSheet.create({
   // Without the leading element the text starts at the trailing inset, so it sits evenly.
   rowCompact: {
     paddingStart: CAPSULE_PADDING_END,
+  },
+  climbAvatar: {
+    flexShrink: 0,
+  },
+  climbLines: {
+    // A flex:1 label has zero intrinsic width in a UIKit navigation title view.
+    flexShrink: 1,
+    minWidth: 0,
+    justifyContent: 'center',
+  },
+  climbName: {
+    flexShrink: 1,
+    minWidth: 0,
+    fontWeight: '600',
+  },
+  climbByline: {
+    fontVariant: ['tabular-nums'],
   },
 });

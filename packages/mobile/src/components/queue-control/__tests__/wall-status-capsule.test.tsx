@@ -17,6 +17,9 @@ const spies = vi.hoisted(() => ({
   colorScheme: 'dark' as 'dark' | 'light',
   nativeGlass: true,
   enterAnimation: vi.fn(() => ({})),
+  // The sends half of the byline; null leaves the grade alone, as for an unsent climb.
+  sends: null as string | null,
+  bylineArgs: null as unknown,
 }));
 
 vi.mock('react-native', () => ({
@@ -92,6 +95,22 @@ vi.mock('@boardsesh/board-constants/grade-colors', () => ({
   DEFAULT_GRADE_COLOR: '#808080',
 }));
 
+vi.mock('../../../providers/drawer-host-provider', () => ({
+  useDrawerHost: () => ({ boardConfig: { boardName: 'kilter', layoutId: 1 } }),
+}));
+vi.mock('../use-climb-byline', () => ({
+  useClimbByline: (
+    climb: unknown,
+    boardConfig: unknown,
+    grade: string | null,
+    options: { statsEnabled?: boolean } = {},
+  ) => {
+    spies.bylineArgs = { climb, boardConfig, grade, statsEnabled: options.statsEnabled };
+    const sends = options.statsEnabled === false ? null : spies.sends;
+    const parts = [grade, sends].filter((part): part is string => !!part);
+    return parts.length > 0 ? parts.join(' · ') : null;
+  },
+}));
 vi.mock('../use-open-wall-preview', () => ({ useOpenWallPreview: () => spies.openWallPreview }));
 vi.mock('../../../hooks/use-native-glass', () => ({ useNativeGlass: () => spies.nativeGlass }));
 vi.mock('../../GlassSurface', () => ({
@@ -285,6 +304,7 @@ describe('WallStatusCapsule', () => {
     spies.variant = 'liquidGlass';
     spies.colorScheme = 'dark';
     spies.nativeGlass = true;
+    spies.sends = null;
   });
 
   it('keeps the climb name intrinsic and shrinkable inside the native header', () => {
@@ -305,12 +325,12 @@ describe('WallStatusCapsule', () => {
     // UIKit's 38pt bar slot, the same height as the action groups beside it.
     expect(capsuleStyle).toMatchObject({ height: 38 });
     expect(glassSurface?.getAttribute('data-glass-radius')).toBe('19');
-    // 12pt caption text and a tighter row leave the name more of the slot.
+    // 12pt name over an 11pt byline fits the 38pt slot at the font cap.
     expect(getByText('Wax On').getAttribute('data-variant')).toBe('caption1');
-    expect(getByText('V5 6C').getAttribute('data-variant')).toBe('caption1');
+    expect(getByText('V5 6C').getAttribute('data-variant')).toBe('caption2');
     const rowStyle = JSON.parse(container.querySelector('[data-pressable]')?.getAttribute('data-style') ?? '{}');
     expect(rowStyle).toMatchObject({ gap: 6, paddingStart: 4, paddingEnd: 10 });
-    expect(container.querySelector('[data-driver-avatar]')?.getAttribute('data-size')).toBe('18');
+    expect(container.querySelector('[data-driver-avatar]')?.getAttribute('data-size')).toBe('24');
     expect(container.querySelector('[data-pressable]')?.getAttribute('data-feedback')).toBe('none');
     expect(container.querySelector('[data-animated]')).toBeNull();
     expect(spies.enterAnimation).not.toHaveBeenCalled();
@@ -361,7 +381,7 @@ describe('WallStatusCapsule', () => {
     expect(spies.enterAnimation).toHaveBeenCalledWith(180);
   });
 
-  it('lets a long native title shrink its name while retaining the avatar and grade', () => {
+  it('lets a long native title shrink its name while retaining the avatar and byline', () => {
     const { container, getByText } = render(
       <NativeHeaderActionContext.Provider value={true}>
         <WallStatusCapsule climb={makeClimb({ name: 'Lightest Pair of Shorts' })} />
@@ -379,13 +399,14 @@ describe('WallStatusCapsule', () => {
     const avatarStyle = JSON.parse(
       container.querySelector('[data-driver-avatar]')?.parentElement?.getAttribute('data-style') ?? '{}',
     ) as Record<string, unknown>;
-    const gradeStyle = JSON.parse(getByText('V5 6C').getAttribute('data-style') ?? '{}') as Record<string, unknown>;
     const nameStyle = JSON.parse(getByText('Lightest Pair of Shorts').getAttribute('data-style') ?? '{}') as Record<
       string,
       unknown
     >;
     expect(avatarStyle.flexShrink).toBe(0);
-    expect(gradeStyle.flexShrink).toBe(0);
+    // The byline sits under the name and ends in an ellipsis rather than wrapping.
+    expect(getByText('V5 6C').getAttribute('data-lines')).toBe('1');
+    expect(getByText('V5 6C').getAttribute('data-ellipsize')).toBe('tail');
     expect(nameStyle).toMatchObject({ flexShrink: 1, minWidth: 0 });
     // A capped title ends the name in an ellipsis instead of clipping it.
     expect(getByText('Lightest Pair of Shorts').getAttribute('data-lines')).toBe('1');
@@ -428,7 +449,7 @@ describe('WallStatusCapsule', () => {
 
   it('keeps floating native glass static instead of entering through an opacity fade', () => {
     const { container } = render(<WallStatusCapsule climb={makeClimb()} />);
-    expect(container.querySelector('[data-glass-surface]')?.getAttribute('data-glass-radius')).toBe('16');
+    expect(container.querySelector('[data-glass-surface]')?.getAttribute('data-glass-radius')).toBe('19');
     expect(container.querySelector('[data-animated]')).toBeNull();
     expect(spies.enterAnimation).not.toHaveBeenCalled();
   });
@@ -492,6 +513,27 @@ describe('WallStatusCapsule', () => {
     expect(getByText('V5 6C')).not.toBeNull();
   });
 
+  it('puts the name over a grade · sends byline, like the accessory platter (#6902)', () => {
+    spies.sends = '1.4k sends';
+    const { container } = render(<WallStatusCapsule climb={makeClimb()} />);
+    const lines = [...container.querySelectorAll('[data-pressable] [data-text]')].map((node) => node.textContent);
+    expect(lines).toEqual(['Wax On', 'V5 6C · 1.4k sends']);
+    // The live stats read the converted climb on the active board.
+    expect(spies.bylineArgs).toEqual({
+      climb: { uuid: 'wall-1', _converted: true },
+      boardConfig: { boardName: 'kilter', layoutId: 1 },
+      grade: 'V5 6C',
+      statsEnabled: true,
+    });
+  });
+
+  it("shows the grade alone when the reporter sent no angle, so no other angle's sends leak in", () => {
+    spies.sends = '1.4k sends';
+    const { container } = render(<WallStatusCapsule climb={makeClimb({ angle: null })} />);
+    const lines = [...container.querySelectorAll('[data-pressable] [data-text]')].map((node) => node.textContent);
+    expect(lines).toEqual(['Wax On', 'V5 6C']);
+  });
+
   it('renders without crashing when the climb name is null (empty name, grade kept)', () => {
     const { container, getByText } = render(<WallStatusCapsule climb={makeClimb({ name: null })} />);
     expect(container.querySelector('[data-pressable]')).not.toBeNull();
@@ -512,7 +554,7 @@ describe('WallStatusCapsule', () => {
     expect(avatar).not.toBeNull();
     expect(avatar?.getAttribute('data-uri')).toBe('https://example.com/casey.jpg');
     expect(avatar?.getAttribute('data-name')).toBe('Casey');
-    expect(avatar?.getAttribute('data-size')).toBe('18');
+    expect(avatar?.getAttribute('data-size')).toBe('24');
     expect(avatar?.getAttribute('data-user-id')).toBe('null');
     expect(avatar?.getAttribute('data-status')).toBe('none');
     expect(avatar?.parentElement?.getAttribute('data-a11y-hidden')).toBe('true');

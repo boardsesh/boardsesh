@@ -9,16 +9,18 @@
 //
 // Two platform-native skins behind one stateful body (see selectByVariant below):
 //   - Liquid Glass (iOS): one regular native-glass pill with a warm "lit" amber
-//     tint. Older devices and Reduce Transparency retain the opaque pill.
+//     tint, laid out like the tab-bar accessory platter: the face, then the name
+//     over "V7 · 1.4k sends" (#6902). Older devices and Reduce Transparency
+//     retain the opaque pill.
 //   - Material 3 (Android): a full-bleed titled status band — a tertiary accent
 //     rail + an "On the wall" overline (the lit semantic stated in words and
 //     carried by the tertiary colour role) + a bottom divider. No floating pill,
 //     no border, no lightbulb (the bottom queue bar already owns that glyph).
 // The data, grade derivation, tap handler and the debounced a11y announcement all
 // live in the single body so a variant flip never resets the announce dedupe.
-// Compact by design — the name truncates, the grade stays.
+// Compact by design — the name truncates.
 
-import { memo, useCallback, useEffect, useRef } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import { AccessibilityInfo, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, useReducedMotion } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
@@ -29,18 +31,20 @@ import { spacing, borderRadius } from '../../theme/tokens';
 import { selectByVariant } from '../../theme/variants/select-by-variant';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import { boardPresenceClimbToClimb } from '../../lib/board-presence/presence-climb';
+import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { LargeContentViewer } from '../LargeContentViewer';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { PressableSurface } from '../PressableSurface';
 import { BoardDriverAvatar } from '../board-presence/BoardDriverAvatar';
 import { useOpenWallPreview } from './use-open-wall-preview';
-import { HeaderStatusCapsule, useHeaderCapsuleCompact } from './HeaderStatusCapsule';
+import { HeaderCapsuleClimbLabel, HeaderStatusCapsule, useHeaderCapsuleCompact } from './HeaderStatusCapsule';
+import { useClimbByline } from './use-climb-byline';
 
-// The capsule's face: 18pt still reads as a face and leaves the truncating climb
-// name more of UIKit's tight title slot. Fixed — does not scale with Dynamic Type.
-const CAPSULE_AVATAR_SIZE = 18;
-const CAPSULE_ANON_GLYPH = 16;
+// The capsule's face stands in for the platter's board thumbnail, sized to the
+// two-line name block beside it. Fixed — does not scale with Dynamic Type.
+const CAPSULE_AVATAR_SIZE = 24;
+const CAPSULE_ANON_GLYPH = 20;
 // 20pt reads unambiguously as a face above M3's ~18dp floor in the Material band.
 // Fixed — does not scale with Dynamic Type.
 const BAND_AVATAR_SIZE = 20;
@@ -65,11 +69,12 @@ type WallStatusCapsuleProps = {
 // stable BoardPresenceClimb from useWallClimbIfDistinct (changes only on a wall event).
 function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
   const { t } = useTranslation('session');
-  const { variant, colorScheme, systemColors, brandColors, m3, m3SurfaceContainers } = useTheme();
+  const { variant, colorScheme, brandColors, m3, m3SurfaceContainers } = useTheme();
   const { resolveGrade } = useDisplayGrade();
   const reduceMotion = useReducedMotion();
   const openWallPreview = useOpenWallPreview();
   const compact = useHeaderCapsuleCompact();
+  const { boardConfig } = useDrawerHost();
 
   const name = climb.name ?? '';
   // BoardPresenceClimb carries no Boardsesh grade today, so `resolveGrade` falls
@@ -106,9 +111,17 @@ function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
     return () => clearTimeout(handle);
   }, [announceLabel]);
 
-  const handlePress = useCallback(() => openWallPreview(boardPresenceClimbToClimb(climb)), [openWallPreview, climb]);
-
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
+  const climbForStats = useMemo(() => boardPresenceClimbToClimb(climb), [climb]);
+  // The platter's byline: the plain grade, then the sends (or the rating). An
+  // older reporter sends no angle, and the converted climb's 0° would read some
+  // other angle's sends, so that shows the grade alone. The Material band has
+  // no byline, so it skips the stats read.
+  const byline = useClimbByline(climbForStats, boardConfig, formattedGrade, {
+    statsEnabled: !isMaterial && climb.angle != null,
+  });
+
+  const handlePress = useCallback(() => openWallPreview(climbForStats), [openWallPreview, climbForStats]);
 
   if (isMaterial) {
     // The grade sits on the app-bar surface (the band body is transparent). In the
@@ -220,9 +233,9 @@ function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
       compact={compact}
     >
       {/* One tap target and one spoken label; profile navigation lives in the preview. */}
-      {compact ? null : (
-        <View style={styles.capsuleAvatar} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-          {hasSenderIdentity ? (
+      <HeaderCapsuleClimbLabel
+        avatar={
+          hasSenderIdentity ? (
             <BoardDriverAvatar
               uri={climb.sentByAvatarUrl}
               name={senderName}
@@ -232,31 +245,14 @@ function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
             />
           ) : (
             <Icon maxFontSizeMultiplier={1} name="profile.fill" size={CAPSULE_ANON_GLYPH} color={brandColors.warning} />
-          )}
-        </View>
-      )}
-      <LargeContentViewer title={a11yLabel} onActivate={handlePress} style={styles.capsuleNameViewer}>
-        <Text
-          variant="caption1"
-          color={systemColors.label}
-          numberOfLines={1}
-          ellipsizeMode="tail"
-          maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-          style={styles.name}
-        >
-          {name}
-        </Text>
-      </LargeContentViewer>
-      {formattedGrade ? (
-        <Text
-          variant="caption1"
-          numberOfLines={1}
-          maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-          style={[styles.grade, { color: gradeColor }]}
-        >
-          {formattedGrade}
-        </Text>
-      ) : null}
+          )
+        }
+        name={name}
+        byline={byline}
+        compact={compact}
+        largeContentTitle={a11yLabel}
+        onActivate={handlePress}
+      />
     </HeaderStatusCapsule>
   );
 }
@@ -264,20 +260,6 @@ function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
 export const WallStatusCapsule = memo(WallStatusCapsuleImpl);
 
 const styles = StyleSheet.create({
-  // --- Liquid Glass (iOS), inside HeaderStatusCapsule ---
-  capsuleAvatar: {
-    flexShrink: 0,
-  },
-  capsuleNameViewer: {
-    // A flex:1 label has zero intrinsic width in a UIKit navigation title view.
-    flexShrink: 1,
-    minWidth: 0,
-  },
-  name: {
-    flexShrink: 1,
-    minWidth: 0,
-    fontWeight: '600',
-  },
   grade: {
     flexShrink: 0,
     fontVariant: ['tabular-nums'],

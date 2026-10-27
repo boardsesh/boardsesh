@@ -517,14 +517,15 @@
     "barControl": {
       "connectedLabel": "Board connected, you have control",
       "youHaveBoard": "You have the board",
+      "youHaveBoardWithClimb": "You have the board: {{name}}, {{grade}}",
       "connectedHint": "Disconnects from the board",
-      "openControlsHint": "Opens board controls",
       "peerLabel": "On {{name}}'s wall",
       "peerLabelAnonymous": "On the wall",
       "peerHint": "Opens the climb on the wall",
       "disconnectedLabel": "Board disconnected",
       "disconnectedHint": "Connect to the board",
       "wallHeldLabel": "You have the wall",
+      "wallHeldWithClimb": "You have the wall: {{name}}, {{grade}}",
       "wallHeldHint": "Releases the wall",
       "wallOpenLabel": "Wall's open",
       "wallOpenHint": "Takes the wall"

@@ -517,14 +517,15 @@
     "barControl": {
       "connectedLabel": "Plafón conectado, tienes el control",
       "youHaveBoard": "Tienes el plafón",
+      "youHaveBoardWithClimb": "Tienes el plafón: {{name}}, {{grade}}",
       "connectedHint": "Desconecta el plafón",
-      "openControlsHint": "Abre los controles del plafón",
       "peerLabel": "En el muro de {{name}}",
       "peerLabelAnonymous": "En el muro",
       "peerHint": "Abre la vía en el muro",
       "disconnectedLabel": "Plafón desconectado",
       "disconnectedHint": "Conéctate al plafón",
       "wallHeldLabel": "Tienes el muro",
+      "wallHeldWithClimb": "Tienes el muro: {{name}}, {{grade}}",
       "wallHeldHint": "Libera el muro",
       "wallOpenLabel": "El muro está libre",
       "wallOpenHint": "Toma el muro"

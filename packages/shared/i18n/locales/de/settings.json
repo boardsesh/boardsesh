@@ -517,14 +517,15 @@
     "barControl": {
       "connectedLabel": "Board verbunden, du hast die Steuerung",
       "youHaveBoard": "Du hast das Board",
+      "youHaveBoardWithClimb": "Du hast das Board: {{name}}, {{grade}}",
       "connectedHint": "Trennt das Board",
-      "openControlsHint": "Öffnet die Board-Steuerung",
       "peerLabel": "An der Wand von {{name}}",
       "peerLabelAnonymous": "An der Wand",
       "peerHint": "Öffnet den Boulder an der Wand",
       "disconnectedLabel": "Board getrennt",
       "disconnectedHint": "Mit dem Board verbinden",
       "wallHeldLabel": "Du hast die Wand",
+      "wallHeldWithClimb": "Du hast die Wand: {{name}}, {{grade}}",
       "wallHeldHint": "Gibt die Wand frei",
       "wallOpenLabel": "Wand ist frei",
       "wallOpenHint": "Übernimmt die Wand"

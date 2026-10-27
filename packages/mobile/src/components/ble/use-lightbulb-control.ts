@@ -15,7 +15,13 @@ import { useBoardConnectionState } from './use-board-connection-state';
 /** Which bulb was tapped, for Board Connect Tapped. */
 export type LightbulbSurface = Extract<
   BoardConnectSurface,
-  'play_drawer' | 'toolbar' | 'app_bar' | 'board_control_indicator' | 'first_connect_card' | 'first_connect_pill'
+  | 'play_drawer'
+  | 'toolbar'
+  | 'app_bar'
+  | 'board_control_indicator'
+  | 'first_connect_card'
+  | 'first_connect_pill'
+  | 'header_pill'
 >;
 
 type UseLightbulbControlOptions = {
