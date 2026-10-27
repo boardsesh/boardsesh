@@ -432,8 +432,9 @@ dispatch (`commit_to_main`) — that is deliberately still `main`, because
 `mobile-store-metadata.yml` reads the committed PNGs from there.
 
 For a capture-only diagnostic, the iOS workflow's `devices` input accepts
-`phones` or `ipads`; `common` remains the default. Narrowed device captures
-cannot upload to Apple, refresh the baseline, or run CPP publication.
+`phones`, `ipads`, `phone-pro`, or `phone-pro-max`; `common` remains the default.
+Narrowed device captures cannot upload to Apple, refresh the baseline, or run
+CPP publication.
 
 ### Italian release checklist
 

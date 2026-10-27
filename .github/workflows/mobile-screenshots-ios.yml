@@ -164,7 +164,7 @@ on:
         type: string
         default: ''
       devices:
-        description: 'Default-listing capture devices. phone-pro captures only iPhone 16 Pro. Narrowed runs are capture-only; uploads, baselines and CPPs require common.'
+        description: 'Default-listing capture devices. phone-pro and phone-pro-max capture one iPhone 16 Pro or Pro Max. Narrowed runs are capture-only; uploads, baselines and CPPs require common.'
         type: choice
         default: common
         options:
@@ -172,6 +172,7 @@ on:
           - phones
           - ipads
           - phone-pro
+          - phone-pro-max
       render_mode:
         description: 'Board drawing to shoot. Empty = the app default (Aura), which is what the store set is meant to show. "classic" shoots the old look for a comparison set.'
         type: choice
@@ -469,7 +470,7 @@ jobs:
           flow="$FLOW"
           upload="$UPLOAD_INPUT"
           gate="$GATE_INPUT"
-          case "$DEVICE_SELECTION" in common|phones|ipads|phone-pro) ;; *) echo '::error::devices must be common, phones, ipads, or phone-pro'; exit 1 ;; esac
+          case "$DEVICE_SELECTION" in common|phones|ipads|phone-pro|phone-pro-max) ;; *) echo '::error::devices must be common, phones, ipads, phone-pro, or phone-pro-max'; exit 1 ;; esac
           if [ "$DEVICE_SELECTION" != common ]; then
             if [ "$upload" = true ] || [ "$PUBLISH_BASELINE" = true ] || [ "$CPP_TARGET" != none ]; then
               echo '::error::narrowed devices are capture-only; uploads, baselines and CPPs require common'
@@ -540,6 +541,8 @@ jobs:
             capture_devices=$(printf '%s' "$devices" | jq -c '[.[] | select(.slug | startswith("ipad-"))]')
           elif [ "$DEVICE_SELECTION" = phone-pro ]; then
             capture_devices=$(printf '%s' "$devices" | jq -c '[.[] | select(.slug == "iphone-16-pro")]')
+          elif [ "$DEVICE_SELECTION" = phone-pro-max ]; then
+            capture_devices=$(printf '%s' "$devices" | jq -c '[.[] | select(.slug == "iphone-16-pro-max")]')
           fi
           # Two full matrices, always computed regardless of `gate` — ios-capture
           # itself picks between them at evaluation time, based on the probe's
