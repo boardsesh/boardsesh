@@ -889,6 +889,7 @@
       "lastOnWallDate": "Zuletzt am {{date}} am Board beleuchtet",
       "joinedBrowseNotice": "Du stöberst. Die Wand bleibt unverändert, bis du einen Boulder am Board beleuchtest.",
       "previewNotLit": "Vorschau, nicht beleuchtet",
+      "notOnWall": "Nicht an der Wand",
       "onlyYouSeeThis": "Nur du siehst das",
       "onlyYouSeeThisWallOn": "Nur du siehst das · an der Wand: {{name}}",
       "commitOverride": {
@@ -903,6 +904,11 @@
         "backToLive": "Zurück zu live: {{name}}",
         "committed": "{{name}} ist an der Wand"
       }
+    },
+    "bulbLabel": {
+      "connect": "Verbinden",
+      "on": "An",
+      "light": "Beleuchten"
     },
     "setActive": "Aktiv setzen",
     "paneEmpty": {

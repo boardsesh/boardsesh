@@ -146,6 +146,13 @@ export function PlayDrawerSectionsSheet({
             value={playerButtons.previousNext}
             onValueChange={playerButtons.onPreviousNextChange}
           />
+          <SwitchRow
+            label={playerButtons.wallBadgeLabel}
+            description={playerButtons.wallBadgeDescription}
+            wrapDescription
+            value={playerButtons.wallBadge}
+            onValueChange={playerButtons.onWallBadgeChange}
+          />
         </View>
         <SectionLayoutSheetGroupTitle title={playerButtons.title} />
       </View>
@@ -162,6 +169,10 @@ export function PlayDrawerSectionsSheet({
       playerButtons.previousNextDescription,
       playerButtons.previousNext,
       playerButtons.onPreviousNextChange,
+      playerButtons.wallBadgeLabel,
+      playerButtons.wallBadgeDescription,
+      playerButtons.wallBadge,
+      playerButtons.onWallBadgeChange,
       playerButtons.title,
     ],
   );

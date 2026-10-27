@@ -3,6 +3,7 @@ import {
   canLeavePreview,
   resolveBrowseCaption,
   resolveCommitBarModel,
+  resolveCommitButton,
   resolveHeaderPillState,
   resolveWallPillState,
   resolveWallStateAnnouncement,
@@ -47,6 +48,7 @@ const commitBase: CommitBarModelInput = {
   wallClimbUuid: null,
   confirmArmed: false,
   wallDriven: false,
+  tapConnects: false,
 };
 
 describe('resolveWallPillState', () => {
@@ -288,48 +290,49 @@ describe('resolveHeaderPillState', () => {
 });
 
 describe('resolveCommitBarModel', () => {
-  const cases: Array<[string, Partial<CommitBarModelInput>, Omit<CommitBarModel, 'commitLabel'>]> = [
+  const cases: Array<[string, Partial<CommitBarModelInput>, Omit<CommitBarModel, 'commitLabel' | 'connectsOnCommit'>]> =
     [
-      'no preview pinned: the row keeps the normal actions',
-      {},
-      { mode: 'actions', showPutOnWall: false, showConfirm: false },
-    ],
-    [
-      'preview pinned on a climb that is not the head',
-      { previewPinned: true, displayedClimbUuid: THEIR_CLIMB },
-      { mode: 'commit', showPutOnWall: true, showConfirm: false },
-    ],
-    [
-      'browsed onto the lit climb: nothing to put up, so no button; the header chip still exits the latch',
-      { previewPinned: true, displayedClimbUuid: WALL_CLIMB, wallClimbUuid: WALL_CLIMB },
-      { mode: 'commit', showPutOnWall: false, showConfirm: false },
-    ],
-    [
-      'wrong board: no commit controls under the switch-board overlay',
-      { previewPinned: true, displayedClimbUuid: THEIR_CLIMB, boardMismatch: true },
-      { mode: 'actions', showPutOnWall: false, showConfirm: false },
-    ],
-    [
-      'anonymous viewer never gets the commit row',
-      { previewPinned: true, displayedClimbUuid: THEIR_CLIMB, isAnonymous: true },
-      { mode: 'actions', showPutOnWall: false, showConfirm: false },
-    ],
-    [
-      'preview still nominally pinned but the displayed climb is the head again: collapses on its own',
-      { previewPinned: true, displayedClimbUuid: MY_CLIMB, committedHeadUuid: MY_CLIMB },
-      { mode: 'actions', showPutOnWall: false, showConfirm: false },
-    ],
-    [
-      'confirm armed: Put on the wall gives way to the busy-wall question',
-      { previewPinned: true, displayedClimbUuid: THEIR_CLIMB, wallClimbUuid: MY_CLIMB, confirmArmed: true },
-      { mode: 'commit', showPutOnWall: false, showConfirm: true },
-    ],
-    [
-      'confirm armed but the wall now shows the displayed climb: the conflict resolved itself',
-      { previewPinned: true, displayedClimbUuid: THEIR_CLIMB, wallClimbUuid: THEIR_CLIMB, confirmArmed: true },
-      { mode: 'commit', showPutOnWall: false, showConfirm: false },
-    ],
-  ];
+      [
+        'no preview pinned: the row keeps the normal actions',
+        {},
+        { mode: 'actions', showPutOnWall: false, showConfirm: false },
+      ],
+      [
+        'preview pinned on a climb that is not the head',
+        { previewPinned: true, displayedClimbUuid: THEIR_CLIMB },
+        { mode: 'commit', showPutOnWall: true, showConfirm: false },
+      ],
+      [
+        'browsed onto the lit climb: nothing to put up, so no button; the header chip still exits the latch',
+        { previewPinned: true, displayedClimbUuid: WALL_CLIMB, wallClimbUuid: WALL_CLIMB },
+        { mode: 'commit', showPutOnWall: false, showConfirm: false },
+      ],
+      [
+        'wrong board: no commit controls under the switch-board overlay',
+        { previewPinned: true, displayedClimbUuid: THEIR_CLIMB, boardMismatch: true },
+        { mode: 'actions', showPutOnWall: false, showConfirm: false },
+      ],
+      [
+        'anonymous viewer never gets the commit row',
+        { previewPinned: true, displayedClimbUuid: THEIR_CLIMB, isAnonymous: true },
+        { mode: 'actions', showPutOnWall: false, showConfirm: false },
+      ],
+      [
+        'preview still nominally pinned but the displayed climb is the head again: collapses on its own',
+        { previewPinned: true, displayedClimbUuid: MY_CLIMB, committedHeadUuid: MY_CLIMB },
+        { mode: 'actions', showPutOnWall: false, showConfirm: false },
+      ],
+      [
+        'confirm armed: Put on the wall gives way to the busy-wall question',
+        { previewPinned: true, displayedClimbUuid: THEIR_CLIMB, wallClimbUuid: MY_CLIMB, confirmArmed: true },
+        { mode: 'commit', showPutOnWall: false, showConfirm: true },
+      ],
+      [
+        'confirm armed but the wall now shows the displayed climb: the conflict resolved itself',
+        { previewPinned: true, displayedClimbUuid: THEIR_CLIMB, wallClimbUuid: THEIR_CLIMB, confirmArmed: true },
+        { mode: 'commit', showPutOnWall: false, showConfirm: false },
+      ],
+    ];
 
   it.each(cases)('%s', (_scenario, overrides, expected) => {
     // `commitLabel` is asserted on its own below — these rows are about what the
@@ -391,6 +394,101 @@ describe('resolveCommitBarModel', () => {
       expect(model.commitLabel).toBe(expected);
     });
   });
+});
+
+// #6939: with no board connected, Put on the wall is how a first-timer gets
+// the climb onto the wall, so it shows instead of leaving only a grey bulb, and
+// its tap connects.
+describe('resolveCommitBarModel with no board connected', () => {
+  const disconnected = { ...commitBase, tapConnects: true };
+
+  it('offers Put on the wall on your own current climb, and the tap connects', () => {
+    expect(resolveCommitBarModel(disconnected)).toEqual({
+      mode: 'actions',
+      showPutOnWall: true,
+      showConfirm: false,
+      commitLabel: 'putOnWall',
+      connectsOnCommit: true,
+    });
+  });
+
+  it('labels a preview Put on the wall, not Set active, and connects after setting it', () => {
+    const model = resolveCommitBarModel({ ...disconnected, previewPinned: true, displayedClimbUuid: THEIR_CLIMB });
+    expect(model).toMatchObject({
+      mode: 'commit',
+      showPutOnWall: true,
+      commitLabel: 'putOnWall',
+      connectsOnCommit: true,
+    });
+  });
+
+  it('hides it when the climb on screen is already the lit one', () => {
+    // A board keeps its last climb lit after the phone lets go of it.
+    const model = resolveCommitBarModel({ ...disconnected, wallClimbUuid: MY_CLIMB });
+    expect(model.showPutOnWall).toBe(false);
+  });
+
+  it.each([
+    ['a wall is driven (the tap would not connect anyway)', { wallDriven: true }],
+    ['the viewer is anonymous', { isAnonymous: true }],
+    ['the climb is on another board', { boardMismatch: true }],
+    ['there is no current climb', { committedHeadUuid: null }],
+  ] as Array<[string, Partial<CommitBarModelInput>]>)(
+    'stays off on the current climb when %s',
+    (_scenario, overrides) => {
+      const model = resolveCommitBarModel({ ...disconnected, ...overrides });
+      expect(model.showPutOnWall).toBe(false);
+      expect(model.connectsOnCommit).toBe(false);
+    },
+  );
+
+  it('keeps Set active where a tap cannot connect (a wall with no lights, a peer holding it)', () => {
+    const model = resolveCommitBarModel({ ...commitBase, previewPinned: true, displayedClimbUuid: THEIR_CLIMB });
+    expect(model).toMatchObject({ showPutOnWall: true, commitLabel: 'setActive', connectsOnCommit: false });
+  });
+
+  it('a driven wall commits without connecting', () => {
+    const model = resolveCommitBarModel({
+      ...disconnected,
+      wallDriven: true,
+      previewPinned: true,
+      displayedClimbUuid: THEIR_CLIMB,
+    });
+    expect(model).toMatchObject({ commitLabel: 'putOnWall', connectsOnCommit: false });
+  });
+});
+
+describe('resolveCommitButton', () => {
+  const model = (overrides: Partial<CommitBarModel>): CommitBarModel => ({
+    mode: 'actions',
+    showPutOnWall: false,
+    showConfirm: false,
+    commitLabel: 'putOnWall',
+    connectsOnCommit: false,
+    ...overrides,
+  });
+
+  it.each([
+    ['nothing to commit', model({}), false, false, null],
+    ['the busy-wall question wins', model({ mode: 'commit', showConfirm: true }), false, false, 'confirm'],
+    ['a preview’s Put on the wall', model({ mode: 'commit', showPutOnWall: true }), false, false, 'putOnWall'],
+    ['no board connected, current climb', model({ showPutOnWall: true }), false, false, 'putOnWall'],
+    // #6939 review: a timed block's one-tap Fell / Sent keeps its row.
+    ['no board connected, in a timed block', model({ showPutOnWall: true }), true, false, null],
+    [
+      'a preview still commits during a timed block',
+      model({ mode: 'commit', showPutOnWall: true }),
+      true,
+      false,
+      'putOnWall',
+    ],
+    ['#4979: the held climb re-lights', model({}), false, true, 'putOnWall'],
+  ] as Array<[string, CommitBarModel, boolean, boolean, string | null]>)(
+    '%s',
+    (_scenario, commitModel, workoutOutcome, heldClimbOnScreen, expected) => {
+      expect(resolveCommitButton({ model: commitModel, workoutOutcome, heldClimbOnScreen })).toBe(expected);
+    },
+  );
 });
 
 describe('shouldArmBusyWallConfirm', () => {

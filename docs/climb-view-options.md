@@ -10,9 +10,9 @@ this page covers the buttons and what both share.
 ## What the climber gets
 
 - **Buttons**: a switch and ↑/↓ arrows for Mirror, Favorite, Angle, Share and Queue; one switch for **Previous and
-  next**; and a **Position**, Below the board (the default) or Above the board. A pinned preview draws the bar for
+  next**; one for **Wall status on the board** (the badge that says whether the climb is lit); and a **Position**, Below the board (the default) or Above the board. A pinned preview draws the bar for
   the board on screen as the climber changes it.
-- **Restore defaults** on the Buttons tab brings back today's bar, below the board, with Previous and next. The
+- **Restore defaults** on the Buttons tab brings back today's bar, below the board, with Previous and next and the wall badge. The
   Below the climb tab has its own Restore defaults for the sections.
 - Nothing changes until the climber changes it.
 
@@ -21,10 +21,18 @@ Fixed, and why:
 | Control                                  | Why it doesn't move                                                         |
 | ---------------------------------------- | --------------------------------------------------------------------------- |
 | Log                                      | The core loop. Always the centre of the big row.                            |
-| Board light                              | Wall control must not move under a climber's thumb. Always the right slot.  |
+| Board light                              | Wall control must not move under a climber's thumb. Always the right slot, with a word under it for the board: Connect, On, or Light while a crewmate holds the wall. |
 | Put on the wall, busy-wall question, connect pill, Fell / Sent | Session states, not preferences. They show up in the small row when they need it. |
 | Playback slider                          | Belongs to the board, so it always sits next to it.                         |
 | Top row ⌄ · list · rest timer · ⋯        | ⋯ is how a hidden button comes back. Where you are (the list, "Projects · 4 of 23", or the workout stage, "4x4 · Rep 3 of 4 · Set 2 of 4") sits between ⌄ and the timer and costs the board nothing. A second, smaller line there is for what the wall is doing. |
+
+## Wall badge
+
+A capsule on the board art says whether the climb on screen is lit (#6939): **On the wall** (the `live` amber),
+**Preview, not lit**, **Only you see this** in a crew, or **Not on the wall** when nothing lights it. It takes the top
+corner the climb's holds leave clear (`resolveWallBadgeSide`, left on a tie) and is off for the signed-out reader, a
+wall with no lights and a climb on another board. Its states are `resolveWallBadge` in `play-drawer/wall-badge.ts`.
+While it shows, the solo "Preview, not lit" leaves the top bar's second line to the list again.
 
 ## Layout rules
 
@@ -45,7 +53,9 @@ Small row   [first half of the rest] ········ [last half]
   empty instead, so nothing jumps sides between climbs and today's bars come out exactly as they were.
 - **Previous and next off** leaves both slots empty, so Log stays centred. Swiping the board still moves.
 - **The connect pill** replaces the right-hand group. **Put on the wall** (`commitButton: 'putOnWall'`) sits in the
-  gap in the middle of the small row. The first button of the start group and the last of the end group keep their
+  gap in the middle of the small row. With no board connected it shows on the climber's own current climb too
+  (#6939), wherever a tap on the bulb would connect: its tap connects (sets a preview first), and the connect pill
+  stands down while it shows. The first button of the start group and the last of the end group keep their
   places; the rest step into ⋯ while it shows, because the label needs ~140 pt and a mirror board's full row leaves
   ~120 pt on a 375 pt phone. Only the busy-wall question (`commitButton: 'confirm'`, "Keep Sam's" / "Put mine up")
   replaces the whole row. Whatever the pill, the button and the question push out, and every button the climber
@@ -166,15 +176,16 @@ bar: no jump from today's bar to theirs.
 | ----------------------- | ----------------------------- | --------- | --------------------------------------------------------------------------------------------- |
 | `playerButtonsV1`       | `SectionLayoutRecord \| null` | `null`    | Order and switches. Read and written only by `playerButtonsStore` (`createSectionLayoutStore`). |
 | `playerPreviousNext`    | `boolean`                     | `true`    | Only an explicit `false` hides the pair.                                                      |
+| `playerWallBadge`       | `boolean`                     | `true`    | Only an explicit `false` hides the wall badge on the board art.                               |
 | `playerButtonsPosition` | `'below' \| 'above'`          | `'below'` | Anything else reads as `'below'`.                                                             |
 
 - `null` means the defaults, so a later release's default order still reaches a climber who never changed it. The
   store writes `null` again when a change lands back on the defaults, and on Restore defaults.
 - Ids this build doesn't know survive its writes, after the id they followed (`createSectionLayoutStore`), so a
   newer bundle's buttons survive an OTA rollback and one edit.
-- **Rollback**: an older bundle ignores all three keys and draws today's bar below the board. Nothing is lost; the
+- **Rollback**: an older bundle ignores all four keys and draws today's bar below the board. Nothing is lost; the
   choices come back with the newer bundle.
-- `resetAllSettings` clears all three.
+- `resetAllSettings` clears all four.
 
 The sections below the climb keep their own AsyncStorage record (`playDrawerSections`); see
 [mobile-sheets-vs-routes.md](mobile-sheets-vs-routes.md#play-drawer-section-controls).

@@ -554,6 +554,8 @@
         },
         "previousNext": "Previous and next",
         "previousNextDescription": "Swiping the board still moves between climbs.",
+        "wallBadge": "Wall status on the board",
+        "wallBadgeDescription": "A badge on the board says whether this climb is lit on the wall.",
         "buttons": {
           "mirror": "Mirror",
           "favorite": "Favorite",

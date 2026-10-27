@@ -420,7 +420,8 @@ export const SHARED_EVENTS = {
   // 'wall_kiosk' | 'create_climb' | 'picker_scan_again' | 'notification' (the
   // Android session notification's bulb) | 'first_connect_card' |
   // 'first_connect_pill' (the connect-step test's card and labelled pill, #5654
-  // PR 7). `reconnect` is true when a remembered board is targeted (silent
+  // PR 7) | 'put_on_wall' (the play view's Put on the wall with no board
+  // connected, #6939: sets the climb, then connects). `reconnect` is true when a remembered board is targeted (silent
   // auto-select), false when the tap opens the device picker. `placement`
   // ('regular' | 'inline') is set only by the iOS 26 tab-bar accessory platter's
   // bulb (open or collapsed), which shares 'board_control_indicator' with the

@@ -554,6 +554,8 @@
         },
         "previousNext": "Précédent et suivant",
         "previousNextDescription": "Glisser sur la board change toujours de bloc.",
+        "wallBadge": "État du mur sur la board",
+        "wallBadgeDescription": "Un badge sur la board indique si ce bloc est allumé sur le mur.",
         "buttons": {
           "mirror": "Miroir",
           "favorite": "Favori",

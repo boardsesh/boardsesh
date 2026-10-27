@@ -66,6 +66,13 @@ export function ClimbViewSettingsScreen() {
               hapticSelection();
               playerButtons.onPreviousNextChange(enabled);
             },
+            wallBadgeLabel: playerButtons.wallBadgeLabel,
+            wallBadgeDescription: playerButtons.wallBadgeDescription,
+            wallBadge: playerButtons.wallBadge,
+            onWallBadgeChange: (enabled) => {
+              hapticSelection();
+              playerButtons.onWallBadgeChange(enabled);
+            },
             controls: playerButtons.controls,
             onVisibleChange: (buttonId, visible) => {
               hapticSelection();

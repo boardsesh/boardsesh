@@ -554,6 +554,8 @@
         },
         "previousNext": "Zurück und Weiter",
         "previousNextDescription": "Das Wischen auf dem Board wechselt weiterhin zwischen Bouldern.",
+        "wallBadge": "Wandstatus auf dem Board",
+        "wallBadgeDescription": "Ein Badge auf dem Board zeigt, ob dieser Boulder an der Wand leuchtet.",
         "buttons": {
           "mirror": "Spiegeln",
           "favorite": "Favorit",

@@ -22,6 +22,8 @@ const mockBleControlSheet = vi.hoisted(() => ({
   props: null as {
     showLightAdjacentHolds: boolean;
     onToggleLightAdjacentHolds: (enabled: boolean) => void;
+    onClearLights: () => void;
+    onReassert: () => void;
   } | null,
 }));
 
@@ -45,6 +47,8 @@ vi.mock('../BleControlSheet', () => ({
   BleControlSheet: (props: {
     showLightAdjacentHolds: boolean;
     onToggleLightAdjacentHolds: (enabled: boolean) => void;
+    onClearLights: () => void;
+    onReassert: () => void;
   }) => {
     mockBleControlSheet.props = props;
     return createElement(
@@ -56,6 +60,9 @@ vi.mock('../BleControlSheet', () => ({
 }));
 
 import { BleControlSheetHost } from '../BleControlSheetHost';
+import { QueueActiveClimbContext } from '../../../providers/queue/queue-contexts';
+import { resetWallCleared, useWallClearedClimbUuid } from '../wall-cleared-store';
+import { renderHook } from '@testing-library/react';
 
 describe('BleControlSheetHost', () => {
   beforeEach(() => {
@@ -89,6 +96,29 @@ describe('BleControlSheetHost', () => {
     render(<BleControlSheetHost visible onClose={vi.fn()} />);
 
     expect(mockBleControlSheet.props?.showLightAdjacentHolds).toBe(false);
+  });
+
+  // #6939: the player's wall badge learns the wall went dark from here.
+  it('remembers which climb Turn off all lights darkened, and Re-light forgets it', () => {
+    resetWallCleared();
+    render(
+      createElement(
+        QueueActiveClimbContext.Provider,
+        { value: { activeClimbUuid: 'climb-on-the-wall' } },
+        createElement(BleControlSheetHost, { visible: true, onClose: vi.fn() }),
+      ),
+    );
+    const cleared = renderHook(() => useWallClearedClimbUuid());
+
+    mockBleControlSheet.props?.onClearLights();
+    cleared.rerender();
+    expect(mockBluetooth.clearBoard).toHaveBeenCalledTimes(1);
+    expect(cleared.result.current).toBe('climb-on-the-wall');
+
+    mockBleControlSheet.props?.onReassert();
+    cleared.rerender();
+    expect(cleared.result.current).toBeNull();
+    expect(mockReassertWall).toHaveBeenCalledTimes(1);
   });
 
   it('renders no sheet without a Bluetooth context', () => {

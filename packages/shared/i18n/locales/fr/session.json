@@ -889,6 +889,7 @@
       "lastOnWallDate": "Au mur pour la dernière fois le {{date}}",
       "joinedBrowseNotice": "Tu explores. Le mur ne change pas tant que tu n'allumes pas un bloc.",
       "previewNotLit": "Aperçu, pas allumé",
+      "notOnWall": "Pas sur le mur",
       "onlyYouSeeThis": "Toi seul le vois",
       "onlyYouSeeThisWallOn": "Toi seul le vois · au mur : {{name}}",
       "commitOverride": {
@@ -903,6 +904,11 @@
         "backToLive": "Retour au mur : {{name}}",
         "committed": "{{name}} est sur le mur"
       }
+    },
+    "bulbLabel": {
+      "connect": "Connecter",
+      "on": "Allumée",
+      "light": "Allumer"
     },
     "setActive": "Activer",
     "paneEmpty": {

@@ -70,6 +70,7 @@ import {
   canLeavePreview,
   type WallPillState,
   resolveCommitBarModel,
+  resolveCommitButton,
   shouldAdoptLateWallRead,
   shouldArmBusyWallConfirm,
   shouldShowHolderBadge,
@@ -100,6 +101,10 @@ import {
 import { visiblePlayDrawerSections, withoutPanelSections } from './play-drawer-sections';
 import { PlaybackFrameContext } from './playback-frame-context';
 import { usePlayerButtonsPreference } from '../../lib/player-buttons-preference';
+import { resolveWallBadge } from './wall-badge';
+import { resetWallCleared, useWallClearedClimbUuid } from '../ble/wall-cleared-store';
+import { nowMs } from '../../lib/clock';
+import { WallBadge } from './WallBadge';
 import { DEFAULT_PLAYER_BUTTONS_POSITION } from '../../lib/player-buttons';
 import { useDrawerDismissGesture } from './use-drawer-dismiss-gesture';
 import { useFullLogbookSheet } from './logbook/use-full-logbook-sheet';
@@ -205,6 +210,10 @@ const SWITCH_BOARD_CARD_MARGIN = spacing[2];
  * present ABOVE (the FullWindowOverlay it replaced could not, since native sheets
  * present off the key window beneath it).
  */
+// How long after Put on the wall's connect a #4979 hold still counts as the one
+// that tap ran into: long enough to pick a board in the picker.
+const RELIGHT_HELD_AFTER_CONNECT_MS = 60_000;
+
 export function PlayCore({
   swipeDismiss,
   onClose,
@@ -720,6 +729,7 @@ export function PlayCore({
     pressAction: lightbulbPressAction,
     holderIsAuthoritative: lightbulbHolderIsAuthoritative,
     wallHeldLocally,
+    ledless: boardIsLedless,
   } = useLightbulbControl({
     surface: 'play_drawer',
     onRelayToHolder: handleRelayToHolder,
@@ -1030,6 +1040,12 @@ export function PlayCore({
     wallClimbUuid,
     confirmArmed: busyWallConfirmArmed,
     wallDriven: lightbulbActive,
+    // A connect already in flight counts, so the button doesn't drop out (and
+    // hand its place to the connect pill) while the board is found. Never while
+    // another account holds the board: it takes one phone at a time.
+    tapConnects:
+      (lightbulbPressAction === 'connect' || (lightbulbPending && !bluetoothConnected)) &&
+      !(bluetooth?.wallHeldByOtherUser ?? false),
   });
   // #4979: the board connected but the hold kept this climb dark, because it
   // hasn't changed for 4 h or more. The climb on screen IS the current one, so
@@ -1048,16 +1064,38 @@ export function PlayCore({
   // preview commit keeps `handleSetActive`. A list pick of the held climb takes
   // the same path (the selection controller, section 6 decision A).
   const handlePutHeldClimbOnWall = useCallback(() => {
+    resetWallCleared();
     bluetooth?.armUndoWallChangeToast();
     bluetooth?.reassertWall();
   }, [bluetooth]);
-  // What the browse latch puts in the second row: one button in the middle of
-  // the usual row, or the busy-wall question in place of it.
-  const commitButton: ActionBarCommitButton = commitBarModel.showConfirm
-    ? 'confirm'
-    : commitBarModel.showPutOnWall || heldClimbOnScreen
-      ? 'putOnWall'
-      : null;
+  // "Turn off all lights" (#6939): the link is up and the queue didn't move, so
+  // only this says the current climb is dark. Put on the wall re-lights it, the
+  // same reassert as the held climb's.
+  const wallClearedClimbUuid = useWallClearedClimbUuid();
+  const clearedClimbOnScreen =
+    wallClearedClimbUuid !== null &&
+    bluetoothConnected &&
+    !isAnonymous &&
+    !showBoardMismatch &&
+    displayedClimbUuid === wallClearedClimbUuid &&
+    currentClimbQueueItem?.climb.uuid === wallClearedClimbUuid;
+  const currentClimbDark = heldClimbOnScreen || clearedClimbOnScreen;
+  // The badge on the board art (#6939): the board draws the same glowing holds
+  // whether or not they are lit, so this is what says which.
+  const wallBadgeResolution = playerButtons.wallBadge
+    ? resolveWallBadge({
+        isAnonymous,
+        boardHasLights: bluetooth !== null && !boardIsLedless && boardName !== 'spray',
+        boardMismatch: showBoardMismatch,
+        displayedClimbUuid: displayedClimbUuid ?? null,
+        committedHeadUuid: currentClimbQueueItem?.climb.uuid ?? null,
+        wallClimbUuid,
+        isPreview,
+        inCrew: isSharedSession,
+        wallDriven: lightbulbActive,
+        currentDark: currentClimbDark,
+      })
+    : null;
   // A timed workout block's one-tap Fell / Sent (#6231): the climb on the wall,
   // in a stage that paces the rest, that this climber can log from here. It
   // takes the second row (`workoutOutcome` below), so the connect pill can't be
@@ -1111,6 +1149,13 @@ export function PlayCore({
     canLog: isAuthenticated && !isAnonymous && !showBoardMismatch,
   });
   const workoutOutcome = workoutOutcomeShown?.target ?? null;
+  // What the browse latch puts in the second row: one button in the middle of
+  // the usual row, or the busy-wall question in place of it.
+  const commitButton: ActionBarCommitButton = resolveCommitButton({
+    model: commitBarModel,
+    workoutOutcome: workoutOutcome !== null,
+    heldClimbOnScreen: currentClimbDark,
+  });
   // The connect-step test's pill (#5654, PR 7, treatment only): the bulb with a
   // label, while this phone has never connected, and only where a tap on the
   // bulb would CONNECT this phone (see `deriveFirstConnectPillWouldConnect`).
@@ -1118,7 +1163,9 @@ export function PlayCore({
     isAnonymous,
     hasBluetooth: bluetooth !== null,
     boardMismatch: showBoardMismatch,
-    commitMode: commitBarModel.mode === 'commit',
+    // Put on the wall with no board connected (#6939) is the same connect, so
+    // the pill stands down while it shows and spends none of its days.
+    commitMode: commitBarModel.mode === 'commit' || commitButton === 'putOnWall',
     workoutOutcome: workoutOutcome !== null,
     sharedSession: isSharedSession,
     wallHeldByOtherUser: bluetooth?.wallHeldByOtherUser ?? false,
@@ -1170,9 +1217,9 @@ export function PlayCore({
   //
   // The solo half is gated on a wall being reachable at all. With no board
   // connected, no session and nothing lit, "the wall stays put" is a sentence
-  // about something the climber hasn't got, and the commit button reads "Set
-  // active" there for the same reason.
-  const wallReachable = commitBarModel.commitLabel === 'putOnWall';
+  // about something the climber hasn't got. Read from the wall itself, not the
+  // commit label: with no board connected that label offers to connect one.
+  const wallReachable = wallClimbUuid != null || lightbulbActive;
   useEffect(() => {
     if (isAnonymous || !browseLatchActive) return;
     const claimed = isSharedSession ? claimJoinedBrowseNotice(sessionId) : wallReachable && claimSoloBrowseNotice();
@@ -1240,17 +1287,20 @@ export function PlayCore({
   // (#6745), not the stats line, so it never pushes the sends and stars off;
   // the top bar does not swipe, so the peeks carry none of their own. Under a
   // list or a workout stage it takes the short crew form, which fits there.
+  // With the wall badge on the board, the solo "Preview, not lit" is the
+  // badge's to say; the crew form stays, since it names the climb on the wall.
+  const browseCaptionModel = resolveBrowseCaption({
+    isAnonymous,
+    isPreview,
+    climbUuid: displayedClimbUuid ?? null,
+    committedHeadUuid,
+    wallClimbUuid,
+    wallClimbName: wallClimb.name,
+    inCrew: isSharedSession,
+    wallDriven: lightbulbActive,
+  });
   const browseCaption = formatBrowseCaption(
-    resolveBrowseCaption({
-      isAnonymous,
-      isPreview,
-      climbUuid: displayedClimbUuid ?? null,
-      committedHeadUuid,
-      wallClimbUuid,
-      wallClimbName: wallClimb.name,
-      inCrew: isSharedSession,
-      wallDriven: lightbulbActive,
-    }),
+    wallBadgeResolution !== null && browseCaptionModel?.kind === 'preview' ? null : browseCaptionModel,
     t,
     { sharesLine: topBarParts !== null },
   );
@@ -1423,6 +1473,38 @@ export function PlayCore({
         putHeldClimbOnWall: handlePutHeldClimbOnWall,
       },
     });
+
+  // Put on the wall with no board connected (#6939): a preview is set first,
+  // then the bulb's own connect runs (the picker when no board is remembered),
+  // and the connect lights whatever is current by then. On the climber's own
+  // current climb there is nothing to set, so the tap only connects.
+  //
+  // A current climb unchanged for 4 h is held dark on the connect's first write
+  // (#4979). This tap asked for it, so the hold it meets right after the connect
+  // is released, instead of needing a second tap.
+  const relightHeldAfterConnectRef = useRef<{ queueItemUuid: string; at: number } | null>(null);
+  const handlePutOnWall = useCallback(() => {
+    if (!commitBarModel.connectsOnCommit) {
+      handleSetActive();
+      return;
+    }
+    if (commitBarModel.mode === 'commit') {
+      // The busy-wall question can take the tap instead of a commit: then nothing
+      // went up, and connecting would light the old climb under the question.
+      if (!handleSetActive()) return;
+    } else if (currentClimbQueueItem) {
+      relightHeldAfterConnectRef.current = { queueItemUuid: currentClimbQueueItem.uuid, at: nowMs() };
+    }
+    void connectLightbulb('put_on_wall');
+  }, [commitBarModel.connectsOnCommit, commitBarModel.mode, currentClimbQueueItem, handleSetActive, connectLightbulb]);
+  useEffect(() => {
+    const pending = relightHeldAfterConnectRef.current;
+    if (!pending || !staleCurrentHold) return;
+    relightHeldAfterConnectRef.current = null;
+    if (staleCurrentHold.queueItemUuid !== pending.queueItemUuid) return;
+    if (nowMs() - pending.at > RELIGHT_HELD_AFTER_CONNECT_MS) return;
+    bluetooth?.reassertWall();
+  }, [staleCurrentHold, bluetooth]);
 
   // A swipe step changes the climb with these, whichever render it follows.
   useSwipeNavigation(swipePager, handleNext, handlePrev);
@@ -1751,7 +1833,7 @@ export function PlayCore({
             isAuthenticated,
             isTickBarActive,
             commitButton,
-            heldClimbOnScreen,
+            currentClimbDark,
             showConnectPill,
             workoutOutcome !== null,
             bluetooth !== null,
@@ -1982,9 +2064,9 @@ export function PlayCore({
       workoutOutcomeWallLeftAtMs={workoutOutcomeShown?.wallLeftAtMs ?? null}
       wallClimbName={wallClimb.name}
       wallClimbUuid={wallClimbUuid}
-      commitLabel={heldClimbOnScreen ? 'putOnWall' : commitBarModel.commitLabel}
+      commitLabel={currentClimbDark ? 'putOnWall' : commitBarModel.commitLabel}
       onKeepTheirs={handleBackToLive}
-      onCommit={heldClimbOnScreen ? handlePutHeldClimbOnWall : handleSetActive}
+      onCommit={currentClimbDark ? handlePutHeldClimbOnWall : handlePutOnWall}
       ascentCount={ascentCount}
       onPrevClick={handlePrev}
       onNextClick={handleNextPress}
@@ -2363,6 +2445,19 @@ export function PlayCore({
                               climbName={displayedClimb.name}
                             />
                           )}
+                          {/* Before the overlays below, which cover it when they own the board. */}
+                          {boardRenderData ? (
+                            <WallBadge
+                              resolution={wallBadgeResolution}
+                              sectionSize={boardContainerSize ?? null}
+                              boardWidth={boardRenderData.boardWidth}
+                              boardHeight={boardRenderData.boardHeight}
+                              holds={boardRenderData.holdsData}
+                              frames={displayedClimb.frames}
+                              boardName={boardName as BoardName}
+                              mirrored={isMirrored}
+                            />
+                          ) : null}
                           {/* A timed block's rest and "Workout done" (#6291), for the
                             climb on the wall. The rest card leaves the board live;
                             both wait while the end-of-list card or the switch-board

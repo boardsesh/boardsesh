@@ -23,6 +23,9 @@ export type BoardConnectSurface =
   // point could not be told apart from the bare bulb it replaces.
   | 'first_connect_card'
   | 'first_connect_pill'
+  // The play view's Put on the wall while no board is connected (#6939): the
+  // tap sets the climb and connects, so it reads apart from the bare bulb.
+  | 'put_on_wall'
   // The Climbs header's "You have the board" capsule: a tap disconnects, a
   // long-press opens the controls sheet. It never connects (it only shows while
   // you hold the board, and a tap that would connect is dropped), but it shares

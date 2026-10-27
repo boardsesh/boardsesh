@@ -889,6 +889,7 @@
       "lastOnWallDate": "Last on the wall {{date}}",
       "joinedBrowseNotice": "You're browsing. The wall stays put until you put a climb up.",
       "previewNotLit": "Preview, not lit",
+      "notOnWall": "Not on the wall",
       "onlyYouSeeThis": "Only you see this",
       "onlyYouSeeThisWallOn": "Only you see this · the wall is on {{name}}",
       "commitOverride": {
@@ -903,6 +904,11 @@
         "backToLive": "Back to live: {{name}}",
         "committed": "{{name}} is on the wall"
       }
+    },
+    "bulbLabel": {
+      "connect": "Connect",
+      "on": "On",
+      "light": "Light"
     },
     "setActive": "Set active",
     "paneEmpty": {
