@@ -4,6 +4,7 @@ import {
   ACCESSORY_SLOT_WIDTH,
   PHONE_ACCESSORY_MIN_NAME_WIDTH,
   miniPlayerPaneCoveredButtons,
+  miniPlayerPaneMode,
   miniPlayerSlotCount,
   resolveMiniPlayerControls,
   type MiniPlayerControlsInput,
@@ -202,6 +203,31 @@ describe('resolveMiniPlayerControls with the pane covered (iPhone Duo open)', ()
 
   it('never claims ⏮ ⏭ from an override while the pane shows them', () => {
     expect(resolve({ playerPaneShowsTransport: true, buttonIds: ['next', 'share'] }).leading).toEqual(['share']);
+  });
+});
+
+describe('miniPlayerPaneMode', () => {
+  const pane = (overrides: Partial<Parameters<typeof miniPlayerPaneMode>[0]>) =>
+    miniPlayerPaneMode({
+      phoneSplit: true,
+      paneTaken: false,
+      paneShowsPreview: false,
+      controlsPosition: 'below',
+      ...overrides,
+    });
+
+  it('carries the covered row while the pane shows the current climb, controls below', () => {
+    expect(pane({})).toBe('carry');
+  });
+
+  it('steps aside for a preview, or controls above the board', () => {
+    expect(pane({ paneShowsPreview: true })).toBe('stepAside');
+    expect(pane({ controlsPosition: 'above' })).toBe('stepAside');
+  });
+
+  it('has nothing to do with no player in the pane', () => {
+    expect(pane({ phoneSplit: false })).toBe('none');
+    expect(pane({ paneTaken: true, paneShowsPreview: true })).toBe('none');
   });
 });
 

@@ -1,6 +1,11 @@
 import { visibleSectionIds } from '../../lib/section-layout';
 import type { MiniPlayerButtonId, MiniPlayerButtonsLayout } from '../../lib/mini-player-buttons';
-import { PLAYER_BUTTON_IDS, type PlayerButtonId, type PlayerButtonsLayout } from '../../lib/player-buttons';
+import {
+  PLAYER_BUTTON_IDS,
+  type PlayerButtonId,
+  type PlayerButtonsLayout,
+  type PlayerButtonsPosition,
+} from '../../lib/player-buttons';
 import { resolveActionBarLayout } from '../play-drawer/action-bar-layout';
 
 /**
@@ -145,6 +150,37 @@ export function resolveMiniPlayerControls({
   const others = claimed.filter((buttonId) => !TRANSPORT_ORDER.includes(buttonId));
   const transport = TRANSPORT_ORDER.filter((buttonId) => claimed.includes(buttonId));
   return { leading: [...others, ...transport], trailing };
+}
+
+/**
+ * How the open Duo's bar relates to the player in the split's pane (#6940).
+ *
+ * - `none`: no pane player above the bar (no split, or a screen fills the pane).
+ *   The bar is itself.
+ * - `carry`: the pane shows the queue's current climb with its controls below the
+ *   board, so the bar sits on the small row. It drops what the pane's big row
+ *   shows right above (⏮ ⏭ 💡 ✓) and carries the covered buttons instead.
+ * - `stepAside`: the pane shows a preview (a browse, a view-only swipe, a feed
+ *   climb), or its controls sit above the board where nothing is covered. The
+ *   covered buttons would act on a climb the pane isn't showing, or repeat ones
+ *   in plain view, so the bar keeps only Board light and Log for the climb it
+ *   names, as it did before the split carried anything.
+ */
+export type MiniPlayerPaneMode = 'none' | 'carry' | 'stepAside';
+
+export function miniPlayerPaneMode({
+  phoneSplit,
+  paneTaken,
+  paneShowsPreview,
+  controlsPosition,
+}: {
+  phoneSplit: boolean;
+  paneTaken: boolean;
+  paneShowsPreview: boolean;
+  controlsPosition: PlayerButtonsPosition;
+}): MiniPlayerPaneMode {
+  if (!phoneSplit || paneTaken) return 'none';
+  return !paneShowsPreview && controlsPosition === 'below' ? 'carry' : 'stepAside';
 }
 
 function isPlayerButtonId(item: string): item is PlayerButtonId {

@@ -300,6 +300,8 @@ const miniPlayer = vi.hoisted(() => ({
   signedIn: true,
   angleAdjustable: true,
   playerButtons: null as null | { order: readonly string[]; visible: Record<string, boolean> },
+  panePreview: false,
+  position: 'below' as 'below' | 'above',
 }));
 vi.mock('../../../lib/mini-player-buttons-preference', async () => {
   const { DEFAULT_MINI_PLAYER_BUTTONS } = await import('../../../lib/mini-player-buttons');
@@ -310,16 +312,14 @@ vi.mock('../../../hooks/use-phone-split', () => ({ usePhoneSplit: () => miniPlay
 vi.mock('../../navigation/phone-split-pane-slot', () => ({ usePhoneSplitPaneTaken: () => miniPlayer.paneTaken }));
 vi.mock('../../../lib/workout-run-store', () => ({ useWorkoutRun: () => null }));
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: miniPlayer.signedIn }) }));
-vi.mock('../../../lib/graphql/use-active-board', () => ({
-  useActiveBoard: () => ({ data: { angle: 40, isAngleAdjustable: miniPlayer.angleAdjustable } }),
-}));
+vi.mock('../../play-drawer/pane-preview-store', () => ({ usePanePlayerShowsPreview: () => miniPlayer.panePreview }));
 vi.mock('../../../lib/player-buttons-preference', async () => {
   const { DEFAULT_PLAYER_BUTTONS } = await import('../../../lib/player-buttons');
   return {
     usePlayerButtonsPreference: () => ({
       buttons: miniPlayer.playerButtons ?? DEFAULT_PLAYER_BUTTONS,
       previousNext: true,
-      position: 'below',
+      position: miniPlayer.position,
     }),
   };
 });
@@ -333,7 +333,14 @@ vi.mock('../MiniPlayerButtons', () => ({
 }));
 
 vi.mock('../../../providers/drawer-host-provider', () => ({
-  useDrawerHost: () => ({ boardConfig: drawer.boardConfig, openPlayDrawer: drawer.openPlayDrawer }),
+  useDrawerHost: () => ({
+    boardConfig: drawer.boardConfig,
+    openPlayDrawer: drawer.openPlayDrawer,
+    // The player's board: the stored one, as no foreign climb is open here.
+    playDrawerPaneProps: drawer.boardConfig
+      ? { boardConfig: drawer.boardConfig, isAngleAdjustable: miniPlayer.angleAdjustable }
+      : null,
+  }),
 }));
 
 vi.mock('../../../hooks/use-grade-format', () => ({
@@ -500,6 +507,8 @@ describe('NativeAccessoryClimbRow', () => {
     miniPlayer.signedIn = true;
     miniPlayer.angleAdjustable = true;
     miniPlayer.playerButtons = null;
+    miniPlayer.panePreview = false;
+    miniPlayer.position = 'below';
   });
 
   it('renders a regular now-climbing row with thumbnail, grade, and integrated tick', () => {
@@ -748,6 +757,19 @@ describe('NativeAccessoryClimbRow', () => {
       const current = queue.state.currentClimbQueueItem as ClimbQueueItem;
       queue.state.currentClimbQueueItem = { ...current, climb: { ...current.climb, is_draft: true } };
       expect(buttons(renderRow('regular').container)).toBeNull();
+    });
+
+    it.each([
+      ['shows a preview, whose buttons would act on another climb', () => (miniPlayer.panePreview = true)],
+      ['has its controls above the board, where nothing is covered', () => (miniPlayer.position = 'above')],
+    ])('keeps only the bulb and the tick on the open Duo while the pane %s', (_label, arrange) => {
+      miniPlayer.phoneSplit = true;
+      layout.width = 800;
+      arrange();
+      const { container } = renderRow('regular');
+      expect(buttons(container)).toBeNull();
+      expect(container.querySelector('[data-board-control]')).not.toBeNull();
+      expect(container.querySelector('[data-tick="true"]')).not.toBeNull();
     });
 
     it('places the extra buttons the climber switched on, on an iPad', () => {

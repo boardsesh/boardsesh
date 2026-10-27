@@ -11,8 +11,6 @@ vi.mock('../../../lib/analytics', () => ({ track: effects.track }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: effects.hapticSelection }));
 
 type Mutate = PlayCoreEnhancementSnapshot['toggleFavoriteMutate'];
-type CallbackOptions = NonNullable<Parameters<Mutate>[1]>;
-type SuccessResponse = Parameters<NonNullable<CallbackOptions['onSuccess']>>[0];
 const climb: Climb = {
   uuid: 'climb-a',
   name: 'Climb A',
@@ -59,13 +57,12 @@ describe('usePlayFavorite', () => {
     expect(effects.track).not.toHaveBeenCalled();
   });
 
-  it('optimistically toggles the real server state, then reconciles the returned truth', () => {
+  it('toggles from the shared cache entry and leaves the flip to the toggle', () => {
     const initial = { ...options(), serverFavorited: true };
     const { result } = renderHook(() => usePlayFavorite(initial));
     expect(result.current.isFavorited).toBe(true);
     act(() => result.current.handleToggleFavorite());
-    expect(result.current.isFavorited).toBe(false);
-    const [variables, callbacks] = initial.toggleFavoriteMutate.mock.calls[0];
+    const [variables] = initial.toggleFavoriteMutate.mock.calls[0];
     expect(variables).toEqual({
       input: { boardName: 'kilter', climbUuid: 'climb-a', angle: 40 },
       currentlyFavorited: true,
@@ -74,44 +71,29 @@ describe('usePlayFavorite', () => {
       expect.any(String),
       expect.objectContaining({ action: 'removed', climbUuid: 'climb-a', layoutId: 1, source: 'mobile_play_drawer' }),
     );
-    act(() =>
-      callbacks?.onSuccess?.(
-        { toggleFavorite: { favorited: true } } as SuccessResponse,
-        variables,
-        undefined,
-        {} as never,
-      ),
-    );
+    // No local copy: the heart moves only when the cache does.
     expect(result.current.isFavorited).toBe(true);
     expect(effects.hapticSelection).not.toHaveBeenCalled();
   });
 
-  it('rolls back only its own optimistic state and keeps menu haptics', () => {
-    const initial = options();
-    const { result } = renderHook(() => usePlayFavorite(initial));
-    act(() => result.current.handleToggleFavoriteFromMenu());
-    expect(result.current.isFavorited).toBe(true);
-    expect(effects.hapticSelection).toHaveBeenCalledOnce();
-    act(() => result.current.handleToggleFavorite());
-    expect(result.current.isFavorited).toBe(false);
-    act(() => errorFor(initial.toggleFavoriteMutate, 0));
-    expect(result.current.isFavorited).toBe(false);
-    expect(initial.showToast).toHaveBeenCalledWith('playView.favoriteError', 'error');
-  });
-
-  // The MiniPlayer's heart writes the same cache (#6940). Once the cache moves,
-  // the player's own tap no longer holds the heart, so the two agree.
-  it('follows the shared cache once it moves past its own optimistic tap', () => {
+  // The MiniPlayer's heart writes the same cache entry (#6940).
+  it('draws whatever the cache entry says, whoever moved it', () => {
     const initial = options();
     const { result, rerender } = renderHook((props) => usePlayFavorite(props), { initialProps: initial });
     act(() => result.current.handleToggleFavorite());
-    expect(result.current.isFavorited).toBe(true);
-    // The toggle's own optimistic write lands in the cache.
     rerender({ ...initial, serverFavorited: true });
     expect(result.current.isFavorited).toBe(true);
-    // A tap on the MiniPlayer's heart takes it off again.
     rerender({ ...initial, serverFavorited: false });
     expect(result.current.isFavorited).toBe(false);
+  });
+
+  it('says so when the toggle fails, and keeps the menu haptic', () => {
+    const initial = options();
+    const { result } = renderHook(() => usePlayFavorite(initial));
+    act(() => result.current.handleToggleFavoriteFromMenu());
+    expect(effects.hapticSelection).toHaveBeenCalledOnce();
+    act(() => errorFor(initial.toggleFavoriteMutate, 0));
+    expect(initial.showToast).toHaveBeenCalledWith('playView.favoriteError', 'error');
   });
 
   it('tags heart and menu toggles with this phone’s current connection', () => {
@@ -126,32 +108,18 @@ describe('usePlayFavorite', () => {
 
   // The heart and ⋯'s row are one toggle, but two places to tap it.
   it('tells a menu tap from a heart tap in the FavoriteToggle source', () => {
-    const { result } = renderHook(() => usePlayFavorite(options()));
+    const initial = options();
+    const { result, rerender } = renderHook((props) => usePlayFavorite(props), { initialProps: initial });
     act(() => result.current.handleToggleFavoriteFromMenu());
     expect(effects.track).toHaveBeenLastCalledWith(
       'Favorite Toggle',
       expect.objectContaining({ action: 'added', source: 'play_drawer_menu' }),
     );
+    rerender({ ...initial, serverFavorited: true });
     act(() => result.current.handleToggleFavorite());
     expect(effects.track).toHaveBeenLastCalledWith(
       'Favorite Toggle',
       expect.objectContaining({ action: 'removed', source: 'mobile_play_drawer' }),
     );
-  });
-
-  it('exposes a stable reset for the existing climb-change effect and explicit same-climb reopen', () => {
-    const initial = options();
-    const { result, rerender } = renderHook((props) => usePlayFavorite(props), { initialProps: initial });
-    const reset = result.current.resetFavoriteOverride;
-    act(() => result.current.handleToggleFavorite());
-    expect(result.current.isFavorited).toBe(true);
-    act(() => result.current.resetFavoriteOverride());
-    expect(result.current.isFavorited).toBe(false);
-    act(() => errorFor(initial.toggleFavoriteMutate, 0));
-    expect(result.current.isFavorited).toBe(false);
-    rerender({ ...initial, displayedClimb: { ...climb, uuid: 'climb-b' }, serverFavorited: true });
-    expect(result.current.resetFavoriteOverride).toBe(reset);
-    act(() => result.current.resetFavoriteOverride());
-    expect(result.current.isFavorited).toBe(true);
   });
 });

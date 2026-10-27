@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback } from 'react';
 import type { Climb } from '@boardsesh/shared-schema';
 import type { TFunction } from 'i18next';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -6,7 +6,6 @@ import { track } from '../../lib/analytics';
 import { hapticSelection } from '../../lib/haptics';
 import type { useToast } from '../../providers/toast-provider';
 import type { PlayCoreEnhancementSnapshot } from './PlayCoreEnhancements';
-import { resolveFavoriteRollback } from './favorite-rollback';
 
 /** Where the toggle came from, as the FavoriteToggle event's `source`. */
 type PlayFavoriteSource = 'mobile_play_drawer' | 'play_drawer_menu';
@@ -25,6 +24,14 @@ type PlayFavoriteOptions = {
   t: TFunction<'session'>;
 };
 
+/**
+ * The player's heart. It draws the shared `favoriteStatus` cache entry and
+ * nothing else: `useToggleFavorite` flips that entry the moment a tap lands,
+ * settles it on the server's answer, and puts it back on a failure, only ever
+ * for the newest tap on that climb at that angle. Every heart on the climb (this
+ * one, the MiniPlayer's, #6940) reads the same entry, so they can't disagree,
+ * and a new climb shows its own entry with nothing left over from the last.
+ */
 export function usePlayFavorite({
   displayedClimb,
   boardName,
@@ -36,39 +43,14 @@ export function usePlayFavorite({
   showToast,
   t,
 }: PlayFavoriteOptions) {
-  // The override answers the server value it was set against. Once the shared
-  // `favoriteStatus` cache moves (this toggle's own optimistic write, or a tap on
-  // the MiniPlayer's heart, #6940), the cache is the truth again, so the two
-  // hearts never disagree.
-  const [override, setOverride] = useState<{ favorited: boolean; against: boolean | undefined } | null>(null);
-  const serverFavoritedRef = useRef(serverFavorited);
-  serverFavoritedRef.current = serverFavorited;
-  const overrideCurrent = override !== null && override.against === serverFavorited;
-  // Dropped for good once the cache moves, so a later move back can't revive it.
-  if (override !== null && !overrideCurrent) setOverride(null);
-  const favoriteOverride = overrideCurrent ? override.favorited : null;
-  const isFavorited = favoriteOverride ?? serverFavorited ?? false;
-  const setFavoriteOverride = useCallback((update: boolean | null | ((current: boolean | null) => boolean | null)) => {
-    setOverride((current) => {
-      const against = serverFavoritedRef.current;
-      const currentValue = current !== null && current.against === against ? current.favorited : null;
-      const next = typeof update === 'function' ? update(currentValue) : update;
-      return next === null ? null : { favorited: next, against };
-    });
-  }, []);
-  // Core invokes this in its original climb-change effect and explicit-open
-  // callback, including a fresh nonce reopening the same climb.
-  const resetFavoriteOverride = useCallback(() => setFavoriteOverride(null), [setFavoriteOverride]);
+  const isFavorited = serverFavorited ?? false;
   const toggleFavorite = useCallback(
     (source: PlayFavoriteSource) => {
       if (!displayedClimb || !toggleFavoriteMutate) return;
       // No haptic here: the button that toggles it ticks a selection, and a
       // failure buzzes through its error toast.
-      const nextIsFavorited = !isFavorited;
-      const previousOverride = favoriteOverride;
-      setFavoriteOverride(nextIsFavorited);
       track(SHARED_EVENTS.FavoriteToggle, {
-        action: nextIsFavorited ? 'added' : 'removed',
+        action: isFavorited ? 'removed' : 'added',
         climbUuid: displayedClimb.uuid,
         boardName,
         layoutId,
@@ -76,46 +58,12 @@ export function usePlayFavorite({
         connected: bluetoothConnected,
       });
       toggleFavoriteMutate(
-        {
-          input: {
-            boardName,
-            climbUuid: displayedClimb.uuid,
-            angle,
-          },
-          currentlyFavorited: isFavorited,
-        },
-        {
-          // Reconcile to the server's authoritative result — the backend toggles
-          // off the real DB state, so this is the truth even if our optimistic
-          // guess was wrong.
-          onSuccess: (response) => {
-            setFavoriteOverride(response.toggleFavorite.favorited);
-          },
-          // Roll back the optimistic flip and tell the user it didn't stick, rather
-          // than leaving the heart diverged from the server. Only undo OUR flip,
-          // though: if a newer tap (or a climb change, which resets the override to
-          // null) has since moved the heart, this late error must not clobber the
-          // current state with this tap's stale previous value.
-          onError: () => {
-            setFavoriteOverride((current) => resolveFavoriteRollback(current, nextIsFavorited, previousOverride));
-            showToast(t('playView.favoriteError'), 'error');
-          },
-        },
+        { input: { boardName, climbUuid: displayedClimb.uuid, angle }, currentlyFavorited: isFavorited },
+        // The toggle puts the heart back itself; this says it didn't stick.
+        { onError: () => showToast(t('playView.favoriteError'), 'error') },
       );
     },
-    [
-      displayedClimb,
-      isFavorited,
-      favoriteOverride,
-      boardName,
-      layoutId,
-      angle,
-      bluetoothConnected,
-      toggleFavoriteMutate,
-      setFavoriteOverride,
-      showToast,
-      t,
-    ],
+    [displayedClimb, isFavorited, boardName, layoutId, angle, bluetoothConnected, toggleFavoriteMutate, showToast, t],
   );
 
   // The action bar's heart.
@@ -129,5 +77,5 @@ export function usePlayFavorite({
     toggleFavorite('play_drawer_menu');
   }, [toggleFavorite]);
 
-  return { isFavorited, resetFavoriteOverride, handleToggleFavorite, handleToggleFavoriteFromMenu };
+  return { isFavorited, handleToggleFavorite, handleToggleFavoriteFromMenu };
 }

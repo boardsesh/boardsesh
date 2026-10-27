@@ -72,7 +72,6 @@ function inputs(): SelectionInputs {
     },
     chrome: {
       clearMirror: vi.fn(),
-      resetFavoriteOverride: vi.fn(),
       setIsTickBarActive: vi.fn(),
       setActiveSubDrawer: vi.fn(),
     },
@@ -204,7 +203,6 @@ describe('host target application', () => {
     );
     expect(initialProps.preview.setDrawerPreviewItem).toHaveBeenCalledWith(null);
     expect(initialProps.preview.setSharedBrowseLatched).toHaveBeenCalledWith(false);
-    expect(initialProps.chrome.resetFavoriteOverride).toHaveBeenCalledOnce();
     expect(initialProps.chrome.setIsTickBarActive).toHaveBeenCalledWith(false);
     expect(initialProps.chrome.setActiveSubDrawer).toHaveBeenCalledWith('none');
     expect(initialProps.chrome.clearMirror).toHaveBeenCalledOnce();

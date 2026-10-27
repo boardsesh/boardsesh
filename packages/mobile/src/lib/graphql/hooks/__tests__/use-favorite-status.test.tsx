@@ -319,6 +319,88 @@ describe('useToggleFavorite', () => {
     await waitFor(() => expect(statusHook.result.current.data).toBe(false));
   });
 
+  // Two taps inside one round trip: the older answer must not flip the heart
+  // back for a moment, nor refetch over the newer tap.
+  it('leaves the heart to the newer tap when an older one lands first', async () => {
+    requestMock.mockResolvedValueOnce({ favorites: [] });
+    const { queryClient, Wrapper } = makeWrapper();
+    const statusHook = renderHook(() => useFavoriteStatus('kilter', 'climb-1', 40), { wrapper: Wrapper });
+    await waitFor(() => expect(statusHook.result.current.data).toBe(false));
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const answers: Array<(value: { toggleFavorite: { favorited: boolean } }) => void> = [];
+    requestMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answers.push(resolve);
+        }),
+    );
+    const toggleHook = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
+    const input = { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 };
+    const addTap = toggleHook.result.current.mutateAsync({ input, currentlyFavorited: false });
+    await waitFor(() => expect(statusHook.result.current.data).toBe(true));
+    const removeTap = toggleHook.result.current.mutateAsync({ input, currentlyFavorited: true });
+    await waitFor(() => expect(statusHook.result.current.data).toBe(false));
+    await waitFor(() => expect(answers).toHaveLength(2));
+
+    answers[0]({ toggleFavorite: { favorited: true } });
+    await addTap;
+    expect(statusHook.result.current.data).toBe(false);
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['favoriteStatus', 'kilter', 'climb-1', 40] });
+
+    requestMock.mockResolvedValue({ favorites: [] });
+    answers[1]({ toggleFavorite: { favorited: false } });
+    await removeTap;
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['favoriteStatus', 'kilter', 'climb-1', 40] });
+    expect(statusHook.result.current.data).toBe(false);
+  });
+
+  it('settles the heart on the server answer when it contradicts the tap', async () => {
+    requestMock.mockResolvedValueOnce({ favorites: [] });
+    const { Wrapper } = makeWrapper();
+    const statusHook = renderHook(() => useFavoriteStatus('kilter', 'climb-1', 40), { wrapper: Wrapper });
+    await waitFor(() => expect(statusHook.result.current.data).toBe(false));
+
+    // Another device had already liked it, so this "add" removes it.
+    requestMock.mockResolvedValueOnce({ toggleFavorite: { favorited: false } });
+    requestMock.mockResolvedValue({ favorites: [] });
+    const toggleHook = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
+    await toggleHook.result.current.mutateAsync({
+      input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+      currentlyFavorited: false,
+    });
+    await waitFor(() => expect(statusHook.result.current.data).toBe(false));
+  });
+
+  it("rolls each angle's heart back on its own: a newer tap at 25° leaves the 40° rollback alone", async () => {
+    const { queryClient, Wrapper } = makeWrapper();
+    let rejectFortyDegrees: (error: Error) => void = () => {};
+    requestMock
+      .mockReturnValueOnce(
+        new Promise((_resolve, reject) => {
+          rejectFortyDegrees = reject;
+        }),
+      )
+      .mockReturnValueOnce(new Promise(() => {}));
+    const toggleHook = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
+    const fortyDegrees = toggleHook.result.current.mutateAsync({
+      input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+      currentlyFavorited: false,
+    });
+    void toggleHook.result.current.mutateAsync({
+      input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 25 },
+      currentlyFavorited: false,
+    });
+    await waitFor(() =>
+      expect(queryClient.getQueryData(['favoriteStatus', 'kilter', 'climb-1', 25])).toEqual({ favorites: ['climb-1'] }),
+    );
+
+    rejectFortyDegrees(new Error('offline'));
+    await expect(fortyDegrees).rejects.toThrow('offline');
+    expect(queryClient.getQueryData(['favoriteStatus', 'kilter', 'climb-1', 40])).toEqual({ favorites: [] });
+    expect(queryClient.getQueryData(['favoriteStatus', 'kilter', 'climb-1', 25])).toEqual({ favorites: ['climb-1'] });
+  });
+
   // The store is a singleton scoped to one board+angle+user. A toggle that
   // resolves after the user switched angles must not paint its result onto the
   // list now showing a different angle.

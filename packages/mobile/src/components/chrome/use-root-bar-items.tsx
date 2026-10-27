@@ -2,7 +2,7 @@
 // hook mirrors one custom glass action: the same label, tap, haptic and badge,
 // built as a UIKit item that iPhone Duo can move onto its side rail. Mounted
 // only where `useNativeRootBarItems()` holds.
-import { useCallback, useMemo, useRef, type ReactElement } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, type ReactElement, type RefObject } from 'react';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../providers/theme-provider';
@@ -16,7 +16,7 @@ import { useDeviceLayout } from '../../hooks/use-device-layout';
 import { useVerticalTabBar } from '../../hooks/use-vertical-tab-bar';
 import { iconMap } from '../icon-map';
 import { useUserDrawer } from '../user-drawer/UserDrawerProvider';
-import { AnglePickerOpener, BoardAnglePicker } from './BoardAnglePicker';
+import { BoardAnglePicker } from './BoardAnglePicker';
 import { useToolbarLightbulb } from './LightbulbToolbarAction';
 import {
   BOARD_HISTORY_ITEM_ID,
@@ -147,6 +147,17 @@ export function useAngleBarItem({ onPickerOpenChange }: { onPickerOpenChange?: (
     [angle, openPicker, t],
   );
   return { item, picker };
+}
+
+/** Hands the picker's `open` to the native item, which lives outside the React tree. */
+function AnglePickerOpener({ open, openRef }: { open: () => void; openRef: RefObject<(() => void) | null> }) {
+  useLayoutEffect(() => {
+    openRef.current = open;
+    return () => {
+      if (openRef.current === open) openRef.current = null;
+    };
+  }, [open, openRef]);
+  return null;
 }
 
 /**

@@ -9,7 +9,6 @@ import type { MiniPlayerButtonId } from '../../../lib/mini-player-buttons';
 const host = vi.hoisted(() => ({
   openQueueSheet: vi.fn(),
   openAnglePicker: vi.fn(),
-  activeBoard: { angle: 40, isAngleAdjustable: true } as { angle: number; isAngleAdjustable: boolean } | null,
 }));
 const favorite = vi.hoisted(() => ({
   serverFavorited: undefined as boolean | undefined,
@@ -69,13 +68,9 @@ vi.mock('../../../providers/theme-provider', () => ({
 }));
 vi.mock('../../../theme/tokens', () => ({ opacity: { disabled: 0.4 } }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: effects.showToast }) }));
-vi.mock('../../../providers/bluetooth-provider', () => ({
-  useOptionalBluetoothContext: () => ({ isConnected: true }),
-}));
 vi.mock('../../../providers/drawer-host-provider', () => ({
   useDrawerHost: () => ({ openQueueSheet: host.openQueueSheet, openAnglePicker: host.openAnglePicker }),
 }));
-vi.mock('../../../lib/graphql/use-active-board', () => ({ useActiveBoard: () => ({ data: host.activeBoard }) }));
 vi.mock('../../../lib/graphql/hooks', () => ({
   useFavoriteStatus: (...args: unknown[]) => {
     favorite.statusArgs = args;
@@ -115,12 +110,25 @@ const climb = {
 } as Climb;
 const board: BoardConfig = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 40 };
 
-function renderButtons(buttonIds: readonly MiniPlayerButtonId[], climbBoard: BoardConfig | null = board) {
+type RenderOptions = {
+  climbBoard?: BoardConfig | null;
+  angle?: number | null;
+  /** `null`: a climb drawn on another board. */
+  angleClimbUuid?: string | null;
+};
+
+function renderButtons(
+  buttonIds: readonly MiniPlayerButtonId[],
+  { climbBoard = board, angle = 40, angleClimbUuid = 'climb-a' }: RenderOptions = {},
+) {
   return render(
     createElement(MiniPlayerLeadingButtons, {
       buttonIds,
       climb,
       climbBoard,
+      angle,
+      angleClimbUuid: angleClimbUuid ?? undefined,
+      bluetoothConnected: true,
       slotWidth: 44,
       rowHeight: 52,
       groupGap: 12,
@@ -130,7 +138,6 @@ function renderButtons(buttonIds: readonly MiniPlayerButtonId[], climbBoard: Boa
 
 beforeEach(() => {
   vi.clearAllMocks();
-  host.activeBoard = { angle: 40, isAngleAdjustable: true };
   favorite.serverFavorited = undefined;
   navigation.canPrevious = true;
   navigation.canNext = false;
@@ -188,7 +195,7 @@ describe('MiniPlayerLeadingButtons', () => {
     });
 
     it('waits for a board before drawing a heart', () => {
-      const { container } = renderButtons(['favorite'], null);
+      const { container } = renderButtons(['favorite'], { climbBoard: null });
       expect(container.querySelector('button')).toBeNull();
     });
   });
@@ -215,17 +222,22 @@ describe('MiniPlayerLeadingButtons', () => {
   });
 
   describe('Angle', () => {
-    it("shows the board's angle and opens the root's angle picker", () => {
-      const { getByLabelText } = renderButtons(['angle']);
-      const pill = getByLabelText('mobile.angleSelector.buttonAria:40');
-      expect(pill.textContent).toBe('40°');
+    it("shows the player's angle and opens the host's angle sheet for this climb", () => {
+      const { getByLabelText } = renderButtons(['angle'], { angle: 55 });
+      const pill = getByLabelText('mobile.angleSelector.buttonAria:55');
+      expect(pill.textContent).toBe('55°');
       fireEvent.click(pill);
-      expect(host.openAnglePicker).toHaveBeenCalledOnce();
+      expect(host.openAnglePicker).toHaveBeenCalledWith('climb-a');
+    });
+
+    it('asks for no per-angle grades for a climb drawn on another board', () => {
+      const { getByLabelText } = renderButtons(['angle'], { angleClimbUuid: null });
+      fireEvent.click(getByLabelText('mobile.angleSelector.buttonAria:40'));
+      expect(host.openAnglePicker).toHaveBeenCalledWith(undefined);
     });
 
     it('draws nothing on a fixed-angle board', () => {
-      host.activeBoard = { angle: 40, isAngleAdjustable: false };
-      const { container } = renderButtons(['angle']);
+      const { container } = renderButtons(['angle'], { angle: null });
       expect(container.querySelector('button')).toBeNull();
     });
   });

@@ -48,7 +48,7 @@ import { offlineAwareRequest } from '../offline-request';
 import { searchClimbsCountQueryKey } from './search-climbs-count-query';
 import { useOfflineDownloadsEnabled } from '../../../providers/feature-flags-provider';
 import { favoritesStore } from '@boardsesh/climb-actions';
-import { favoriteToggleOrder, ownsFavoriteWrite } from './favorite-toggle-order';
+import { FavoriteToggleOrder, favoriteToggleOrder, ownsFavoriteWrite } from './favorite-toggle-order';
 import { addFavoriteLocal, removeFavoriteLocal } from '../../../hooks/use-offline-mutations';
 import type { GraphQLFetch } from '@boardsesh/offline-sync';
 import {
@@ -169,6 +169,17 @@ type ToggleFavoriteVariables = ToggleFavoriteMutationVariables & {
 /** The per-climb heart's cache key: the backend keys a favourite on (board, climb, angle). */
 function favoriteStatusQueryKey(input: ToggleFavoriteVariables['input']) {
   return ['favoriteStatus', input.boardName, input.climbUuid, input.angle] as const;
+}
+
+/**
+ * The newest toggle per heart cache entry: the climb at one board and angle.
+ * Separate from `favoriteToggleOrder`, which orders the per-climb list store: a
+ * toggle at 25° must not lose the 40° heart's rollback, nor take it over.
+ */
+const favoriteStatusToggleOrder = new FavoriteToggleOrder();
+
+function favoriteStatusOrderKey(input: ToggleFavoriteVariables['input']): string {
+  return JSON.stringify(favoriteStatusQueryKey(input));
 }
 
 /** Pins the per-climb heart. The cached shape is the RAW GET_FAVORITES response (select runs on read). */
@@ -1165,6 +1176,7 @@ export function useToggleFavorite() {
     // heart, whether it succeeded or failed.
     onMutate: (variables) => {
       const token = favoriteToggleOrder.begin(variables.input.climbUuid);
+      const statusToken = favoriteStatusToggleOrder.begin(favoriteStatusOrderKey(variables.input));
       // The store is a singleton scoped to one board+angle+user at a time. Note
       // which scope this toggle belongs to so a slow response can't write a 40°
       // result into a store the user has since re-scoped to 25°.
@@ -1186,14 +1198,16 @@ export function useToggleFavorite() {
       } else if (variables.currentlyFavorited === false) {
         restoreClimbToLikedList(queryClient, variables.input.climbUuid);
       }
-      return { token, contextEpoch };
+      return { token, contextEpoch, statusToken };
     },
     onError: (_error, variables, context) => {
       if (typeof variables.currentlyFavorited !== 'boolean') return;
-      // A newer toggle for this climb owns both the heart and the Liked rows.
+      // The heart's cache entry goes back unless a newer tap on it has moved it since.
+      if (context && favoriteStatusToggleOrder.isLatest(favoriteStatusOrderKey(variables.input), context.statusToken)) {
+        setFavoriteStatusCache(queryClient, variables.input, variables.currentlyFavorited);
+      }
+      // A newer toggle for this climb owns both the list store and the Liked rows.
       if (!context || !favoriteToggleOrder.isLatest(variables.input.climbUuid, context.token)) return;
-      // The cache entry is keyed on this toggle's board and angle, so it is always this toggle's to undo.
-      setFavoriteStatusCache(queryClient, variables.input, variables.currentlyFavorited);
       // The heart store is scoped to one board+angle+user, so only roll it back
       // while it is still scoped to where this toggle started.
       if (ownsFavoriteWrite(variables.input.climbUuid, context)) {
@@ -1212,7 +1226,9 @@ export function useToggleFavorite() {
       }
     },
     onSettled: (_data, _error, variables, context) => {
-      if (context) favoriteToggleOrder.settle(variables.input.climbUuid, context.token);
+      if (!context) return;
+      favoriteToggleOrder.settle(variables.input.climbUuid, context.token);
+      favoriteStatusToggleOrder.settle(favoriteStatusOrderKey(variables.input), context.statusToken);
     },
     onSuccess: (data, variables, context) => {
       // Same ownership test as the rollback above, written the same way round:
@@ -1231,7 +1247,15 @@ export function useToggleFavorite() {
       // the optimistic setQueryData above holds until the drainer's
       // post-landing invalidation.
       if (!('viaLocalQueue' in data)) {
-        void queryClient.invalidateQueries({ queryKey: favoriteStatusQueryKey(variables.input) });
+        // Only the newest tap on this heart settles it. An older one landing
+        // between two taps would flip it back for a moment, then forward again.
+        if (
+          context &&
+          favoriteStatusToggleOrder.isLatest(favoriteStatusOrderKey(variables.input), context.statusToken)
+        ) {
+          setFavoriteStatusCache(queryClient, variables.input, data.toggleFavorite.favorited);
+          void queryClient.invalidateQueries({ queryKey: favoriteStatusQueryKey(variables.input) });
+        }
         // The Liked smart list (and its library count) would otherwise keep an
         // un-liked climb on screen for its 5-minute staleTime (#5304).
         // When the server confirms an un-like, the cached pages already lost the

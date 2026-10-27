@@ -27,11 +27,16 @@ import {
   type BoardConnectionBadgeVisual,
 } from './board-control-indicator-state';
 import type { AccessoryPlacement } from '../../lib/analytics-board-connect';
-import { miniPlayerPaneCoveredButtons, miniPlayerSlotCount, resolveMiniPlayerControls } from './mini-player-controls';
+import {
+  miniPlayerPaneCoveredButtons,
+  miniPlayerPaneMode,
+  miniPlayerSlotCount,
+  resolveMiniPlayerControls,
+} from './mini-player-controls';
 import { usePlayerButtonsPreference } from '../../lib/player-buttons-preference';
 import { resolveClimbRenderBoard } from '../../lib/boards/climb-render-board';
-import { canAdjustBoardAngle } from '../../lib/boards/can-adjust-board-angle';
-import { useActiveBoard } from '../../lib/graphql/use-active-board';
+import { resolvePlayerAngle } from '../play-drawer/player-angle';
+import { usePanePlayerShowsPreview } from '../play-drawer/pane-preview-store';
 import { useAuth } from '../../providers/auth-provider';
 import { boardSupportsMirroring } from '@boardsesh/play-view';
 import { MiniPlayerLeadingButtons } from './MiniPlayerButtons';
@@ -191,7 +196,7 @@ export function isMiniPlayerButtonAvailable(
  * capsule's colorized grade.
  */
 export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAccessoryClimbRowProps) {
-  const { boardConfig } = useDrawerHost();
+  const { boardConfig, playDrawerPaneProps } = useDrawerHost();
   const { systemColors, brandColors } = useTheme();
   const { resolveGrade } = useDisplayGrade();
   const { openPlay, preparePlay } = useAccessoryClimbTap();
@@ -202,13 +207,27 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
   const buttonsLayout = useMiniPlayerButtons();
   const transportAvailable = useTransportAvailable();
   const { isAuthenticated } = useAuth();
-  const { data: activeBoard } = useActiveBoard();
-  const angleAdjustable = canAdjustBoardAngle(activeBoard);
-  // iPhone Duo open with the player in the split's pane: the pane's big row is
-  // right above the bar, and the bar covers its small row (#6940).
+  // The angle the player's pill shows: the board it draws on, a foreign
+  // climb's override included, and none on a fixed-angle board.
+  const playerAngle = playDrawerPaneProps
+    ? resolvePlayerAngle({
+        isAngleAdjustable: playDrawerPaneProps.isAngleAdjustable,
+        angle: playDrawerPaneProps.boardConfig.angle,
+      })
+    : null;
+  const angleAdjustable = playerAngle !== null;
+  const playerBoardName = playDrawerPaneProps?.boardConfig.boardName ?? null;
+  const playerLayoutId = playDrawerPaneProps?.boardConfig.layoutId ?? null;
   const paneTaken = usePhoneSplitPaneTaken();
-  const playerPaneShowsTransport = phoneSplit && !paneTaken;
+  const paneShowsPreview = usePanePlayerShowsPreview();
   const playerButtons = usePlayerButtonsPreference();
+  const paneMode = miniPlayerPaneMode({
+    phoneSplit,
+    paneTaken,
+    paneShowsPreview,
+    controlsPosition: playerButtons.position,
+  });
+  const playerPaneShowsTransport = paneMode === 'carry';
   // The board the climb is drawn on, resolved the way the player resolves it, so
   // the heart and the share point at the same climb, board and angle.
   const climbBoard = useMemo(
@@ -268,19 +287,21 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
   const climbLayoutId = climbBoard?.layoutId ?? null;
   const paneCoveredButtons = useMemo(
     () =>
-      playerPaneShowsTransport
-        ? miniPlayerPaneCoveredButtons({
-            buttons: playerButtons.buttons,
-            previousNext: playerButtons.previousNext,
-            supportsMirroring:
-              climbBoardName !== null && climbLayoutId !== null
-                ? boardSupportsMirroring(climbBoardName, climbLayoutId)
-                : false,
-            hasShare: !isDraft,
-            angleAvailable: angleAdjustable,
-          })
-        : undefined,
-    [playerPaneShowsTransport, playerButtons, climbBoardName, climbLayoutId, isDraft, angleAdjustable],
+      paneMode === 'stepAside'
+        ? []
+        : paneMode === 'carry'
+          ? miniPlayerPaneCoveredButtons({
+              buttons: playerButtons.buttons,
+              previousNext: playerButtons.previousNext,
+              supportsMirroring:
+                climbBoardName !== null && climbLayoutId !== null
+                  ? boardSupportsMirroring(climbBoardName, climbLayoutId)
+                  : false,
+              hasShare: !isDraft,
+              angleAvailable: angleAdjustable,
+            })
+          : undefined,
+    [paneMode, playerButtons, climbBoardName, climbLayoutId, isDraft, angleAdjustable],
   );
   const controls = useMemo(
     () =>
@@ -351,6 +372,11 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
           buttonIds={controls.leading}
           climb={climb}
           climbBoard={climbBoard}
+          angle={playerAngle}
+          angleClimbUuid={
+            climbBoardName === playerBoardName && climbLayoutId === playerLayoutId ? climb.uuid : undefined
+          }
+          bluetoothConnected={bluetooth?.isConnected ?? false}
           slotWidth={glassSize.inline}
           rowHeight={rowHeight}
           groupGap={groupGap}

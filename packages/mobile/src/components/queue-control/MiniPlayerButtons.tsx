@@ -5,13 +5,10 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { Climb } from '@boardsesh/queue';
 import type { MiniPlayerButtonId } from '../../lib/mini-player-buttons';
 import { useFavoriteStatus, useToggleFavorite } from '../../lib/graphql/hooks';
-import { useActiveBoard } from '../../lib/graphql/use-active-board';
-import { canAdjustBoardAngle } from '../../lib/boards/can-adjust-board-angle';
 import { track } from '../../lib/analytics';
 import { hapticSelection } from '../../lib/haptics';
 import { useShareClimbAction } from '../../hooks/use-share-climb-action';
 import { useDrawerHost, type BoardConfig } from '../../providers/drawer-host-provider';
-import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { opacity } from '../../theme/tokens';
@@ -70,11 +67,15 @@ type ClimbButtonProps = {
  * player's heart (`useToggleFavorite` flips it optimistically), so the two agree
  * even side by side on the open Duo.
  */
-function MiniPlayerFavoriteButton({ climb, climbBoard, size }: ClimbButtonProps) {
+function MiniPlayerFavoriteButton({
+  climb,
+  climbBoard,
+  size,
+  bluetoothConnected,
+}: ClimbButtonProps & { bluetoothConnected: boolean }) {
   const { t } = useTranslation('session');
   const { actionColors } = useTheme();
   const { showToast } = useToast();
-  const bluetooth = useOptionalBluetoothContext();
   const { boardName, layoutId, angle } = climbBoard;
   const { data: serverFavorited } = useFavoriteStatus(boardName, climb.uuid, angle);
   const { mutate: toggleFavorite } = useToggleFavorite();
@@ -87,13 +88,13 @@ function MiniPlayerFavoriteButton({ climb, climbBoard, size }: ClimbButtonProps)
       boardName,
       layoutId,
       source: 'mini_player',
-      connected: bluetooth?.isConnected ?? false,
+      connected: bluetoothConnected,
     });
     toggleFavorite(
       { input: { boardName, climbUuid: climb.uuid, angle }, currentlyFavorited: isFavorited },
       { onError: () => showToast(t('playView.favoriteError'), 'error') },
     );
-  }, [isFavorited, climb.uuid, boardName, layoutId, angle, bluetooth, toggleFavorite, showToast, t]);
+  }, [isFavorited, climb.uuid, boardName, layoutId, angle, bluetoothConnected, toggleFavorite, showToast, t]);
   return (
     <MiniPlayerIconButton
       iconName={isFavorited ? 'favorite.fill' : 'favorite'}
@@ -143,18 +144,21 @@ function MiniPlayerQueueButton({ size }: { size: number }) {
   );
 }
 
-/** The board's angle, drawn like the player's angle pill. Opens the picker the root hosts. */
-function MiniPlayerAngleButton() {
+/**
+ * The player's angle pill and sheet: the same angle the player shows, changed
+ * through the player's own handler (the drawer host's), so the crew follows and
+ * a foreign climb's board takes it, as from the player.
+ */
+function MiniPlayerAngleButton({ angle, climbUuid }: { angle: number; climbUuid: string | undefined }) {
   const { t } = useTranslation('session');
-  const { data: activeBoard } = useActiveBoard();
   const { openAnglePicker } = useDrawerHost();
-  if (!canAdjustBoardAngle(activeBoard)) return null;
+  const handlePress = useCallback(() => openAnglePicker(climbUuid), [openAnglePicker, climbUuid]);
   return (
     <AnglePill
       compact
-      angle={activeBoard.angle}
-      onPress={openAnglePicker}
-      accessibilityLabel={t('mobile.angleSelector.buttonAria', { angle: activeBoard.angle })}
+      angle={angle}
+      onPress={handlePress}
+      accessibilityLabel={t('mobile.angleSelector.buttonAria', { angle })}
     />
   );
 }
@@ -211,6 +215,12 @@ type MiniPlayerLeadingButtonsProps = {
   climb: Climb;
   /** The board the climb is drawn on. `null` while no board is resolved: the climb's own buttons wait for one. */
   climbBoard: BoardConfig | null;
+  /** The angle the player's pill shows, `null` on a fixed-angle board (`resolvePlayerAngle`). */
+  angle: number | null;
+  /** The climb whose grades the angle sheet shows per angle, when it is drawn on the player's board. */
+  angleClimbUuid: string | undefined;
+  /** This phone holds the board's link: tags the heart's FavoriteToggle, as the player's does. */
+  bluetoothConnected: boolean;
   slotWidth: number;
   rowHeight: number;
   /** The space between the climber's other buttons and ⏮ ⏭. Zero on an iPhone, where every point goes to the name. */
@@ -228,6 +238,9 @@ export const MiniPlayerLeadingButtons = memo(function MiniPlayerLeadingButtons({
   buttonIds,
   climb,
   climbBoard,
+  angle,
+  angleClimbUuid,
+  bluetoothConnected,
   slotWidth,
   rowHeight,
   groupGap,
@@ -255,13 +268,20 @@ export const MiniPlayerLeadingButtons = memo(function MiniPlayerLeadingButtons({
   const renderButton = (buttonId: MiniPlayerButtonId) => {
     switch (buttonId) {
       case 'favorite':
-        return climbBoard ? <MiniPlayerFavoriteButton climb={climb} climbBoard={climbBoard} size={slotWidth} /> : null;
+        return climbBoard ? (
+          <MiniPlayerFavoriteButton
+            climb={climb}
+            climbBoard={climbBoard}
+            size={slotWidth}
+            bluetoothConnected={bluetoothConnected}
+          />
+        ) : null;
       case 'share':
         return climbBoard ? <MiniPlayerShareButton climb={climb} climbBoard={climbBoard} size={slotWidth} /> : null;
       case 'queue':
         return <MiniPlayerQueueButton size={slotWidth} />;
       case 'angle':
-        return <MiniPlayerAngleButton />;
+        return angle !== null ? <MiniPlayerAngleButton angle={angle} climbUuid={angleClimbUuid} /> : null;
       // Mirror arrives with its shared store (#6940, PR 3); ⏮ ⏭ render below.
       default:
         return null;

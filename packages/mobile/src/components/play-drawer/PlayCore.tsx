@@ -138,6 +138,8 @@ import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { useHorizontalSafeArea } from '../../hooks/use-horizontal-safe-area';
 import { playContentSideInsets } from './play-content-side-insets';
 import { useShareClimbAction } from '../../hooks/use-share-climb-action';
+import { reportPanePreview } from './pane-preview-store';
+import { resolvePlayerAngle } from './player-angle';
 import { activeBoardIsMoonboard } from '../../hooks/use-active-board-is-moonboard';
 import { isMoonboardBoardName } from '@boardsesh/board-config';
 import { LostHoldsBanner } from './LostHoldsBanner';
@@ -484,6 +486,15 @@ export function PlayCore({
   // never set `drawerPreviewItem`, so this is true only for genuine previews
   // (workout builder, logbook/cross-board, the peer-driven accessory wall climb).
   const isPreview = drawerPreviewItem != null;
+  // A pane's player says when it shows a preview, so the MiniPlayer below it
+  // stops standing in for its buttons (#6940): they'd act on another climb.
+  const panePreviewOwnerRef = useRef(Symbol('pane-player'));
+  useEffect(() => {
+    if (!isPane) return undefined;
+    const owner = panePreviewOwnerRef.current;
+    reportPanePreview(owner, isPreview);
+    return () => reportPanePreview(owner, false);
+  }, [isPane, isPreview]);
 
   // #5099: the shown climb does not have to belong to the board the climber has
   // selected. A queue item left over from a board switch, a party peer on
@@ -683,7 +694,7 @@ export function PlayCore({
       : null;
   const serverFavorited = matchingEnhancement?.serverFavorited;
   const toggleFavoriteMutate = matchingEnhancement?.toggleFavoriteMutate;
-  const { isFavorited, resetFavoriteOverride, handleToggleFavorite, handleToggleFavoriteFromMenu } = usePlayFavorite({
+  const { isFavorited, handleToggleFavorite, handleToggleFavoriteFromMenu } = usePlayFavorite({
     displayedClimb,
     boardName,
     layoutId,
@@ -847,12 +858,9 @@ export function PlayCore({
     suppressWallWrites: climbBoardMismatch,
   });
 
-  // Auto-close tick bar and drop the favorite override when climb changes, so the
-  // new climb's heart shows its real (server) status rather than the previous
-  // climb's optimistic value.
+  // Auto-close the tick bar when the climb changes.
   useEffect(() => {
     setIsTickBarActive(false);
-    resetFavoriteOverride();
     // Drop the local flip on EVERY climb change, not just the drawer's own
     // navigation handlers. A climb change it doesn't own (a party peer, Live
     // Activity, the accessory bar) would otherwise leave the flip parked on its
@@ -864,7 +872,7 @@ export function PlayCore({
     pendingFirstSectionScrollRef.current = false;
     // The end card was about the climb that was on screen.
     setTrackEndCardClimbUuid(null);
-  }, [displayedClimbUuid, resetFavoriteOverride]);
+  }, [displayedClimbUuid]);
 
   // --- The shared-session browse latch ---------------------------------------
   //
@@ -1442,7 +1450,7 @@ export function PlayCore({
       queue: { currentClimbQueueItem, setCurrentClimb, previousClimb, nextClimb },
       similarTrack,
       navigation: { navigationState, lightOnSwipe, browseByDefault },
-      chrome: { clearMirror, resetFavoriteOverride, setIsTickBarActive, setActiveSubDrawer },
+      chrome: { clearMirror, setIsTickBarActive, setActiveSubDrawer },
       confirmation: {
         busyWallConfirmArmed,
         browseLatchActive,
@@ -1752,7 +1760,7 @@ export function PlayCore({
   // the buttons it has put away (⋯ carries a row for each) and for the opening
   // layout's key (a second row that comes or goes moves the board).
   const hasBluetooth = bluetooth !== null;
-  const angleAvailable = isAngleAdjustable && activeAngle != null;
+  const angleAvailable = resolvePlayerAngle({ isAngleAdjustable, angle: activeAngle }) !== null;
   const actionBarLayout = useMemo(
     () =>
       resolveActionBarLayout({
