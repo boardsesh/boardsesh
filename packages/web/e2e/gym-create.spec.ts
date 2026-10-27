@@ -13,7 +13,7 @@ test.describe('Create a gym from the directory', () => {
 
   test('saves details, resumes setup, and publishes the same gym', async ({ page }) => {
     const browserErrors: string[] = [];
-    page.on('pageerror', (error) => browserErrors.push(error.message));
+    page.on('pageerror', (error) => browserErrors.push(`${page.url()}: ${error.stack ?? error.message}`));
     const gymName = `Gym setup ${randomUUID().slice(0, 8)}`;
     const address = '123 Gym Setup Street, London';
     const hours = 'Mon-Fri 9am-9pm';
@@ -24,6 +24,7 @@ test.describe('Create a gym from the directory', () => {
     );
 
     await loginAs(page, '/gyms');
+    await page.getByTestId('gym-directory-map').getByRole('button', { name: 'Zoom in', exact: true }).click();
     await page.getByRole('link', { name: 'Create gym', exact: true }).first().click();
     await expect(page.getByRole('heading', { name: 'Add your gym' })).toBeVisible();
     await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /noindex/);
@@ -44,6 +45,7 @@ test.describe('Create a gym from the directory', () => {
     await expect(page.getByLabel('Gym Name')).toHaveValue(gymName);
     await expect(page.getByLabel('Opening hours')).toHaveValue(hours);
     await page.getByLabel('Description', { exact: true }).fill('Created through the directory setup.');
+    await page.getByRole('button', { name: 'Zoom in', exact: true }).click();
     await page.getByRole('button', { name: 'Save and choose boards' }).click();
     await expect(page.getByRole('link', { name: 'Skip for now' })).toBeVisible({ timeout: 30_000 });
     expect(new URL(page.url()).searchParams.get('gym')).toBe(savedGymUuid);

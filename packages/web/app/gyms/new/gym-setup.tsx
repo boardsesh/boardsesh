@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import Alert from '@mui/material/Alert';
@@ -27,8 +27,14 @@ export default function GymSetup({ initialGym }: { initialGym: Gym | null }) {
   const [step, setStep] = useState(initialGym ? 1 : 0);
   const [directoryStale, setDirectoryStale] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const currentGymUuidRef = useRef(initialGym?.uuid ?? null);
 
   useEffect(() => {
+    const nextGymUuid = initialGym?.uuid ?? null;
+    // A server action can refresh the same gym while its editor has unsaved
+    // changes. Only navigation to another gym should reset the current step.
+    if (nextGymUuid === currentGymUuidRef.current) return;
+    currentGymUuidRef.current = nextGymUuid;
     setGym(initialGym);
     setStep(initialGym ? 1 : 0);
   }, [initialGym]);
@@ -57,6 +63,7 @@ export default function GymSetup({ initialGym }: { initialGym: Gym | null }) {
     async (savedGym: Gym) => {
       // Retain the successful create before doing cache work. A cache outage
       // must leave a saved gym ready to resume, never another Create button.
+      currentGymUuidRef.current = savedGym.uuid;
       setGym(savedGym);
       setStep(1);
       router.replace(`/gyms/new?gym=${encodeURIComponent(savedGym.uuid)}`, { scroll: false });

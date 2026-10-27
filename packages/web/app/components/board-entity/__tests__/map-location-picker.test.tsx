@@ -111,4 +111,40 @@ describe('map location picker lifecycle', () => {
     expect(onChange).not.toHaveBeenCalled();
     expect(map.flyTo).not.toHaveBeenCalled();
   });
+
+  it('lets users zoom and immediately leave without a late Leaflet transition touching removed panes', async () => {
+    vi.useFakeTimers();
+    const leaflet = await vi.importActual<typeof import('leaflet')>('leaflet');
+    const mockedLeaflet = await import('leaflet');
+    const originalAny3d = leaflet.Browser.any3d;
+    // jsdom has no 3D rendering, so explicitly enable Leaflet's real CSS zoom
+    // path. Without this capability the old teardown bug cannot be exercised.
+    Object.defineProperty(leaflet.Browser, 'any3d', { configurable: true, value: true });
+    let createdMap: import('leaflet').Map | undefined;
+    mocks.map.mockImplementation((container: HTMLElement, options: import('leaflet').MapOptions) => {
+      createdMap = leaflet.map(container, options);
+      return createdMap;
+    });
+    mocks.marker.mockImplementation(leaflet.marker);
+    vi.mocked(mockedLeaflet.divIcon).mockImplementation(leaflet.divIcon);
+
+    try {
+      const { unmount } = render(<MapLocationPicker latitude={-33.64} longitude={150.28} onChange={vi.fn()} />);
+      await flushLeafletImports();
+      if (!createdMap) throw new Error('Leaflet map was not initialized');
+      act(() => {
+        createdMap?.zoomIn(1, { animate: true });
+        vi.advanceTimersByTime(32);
+      });
+      expect(createdMap.getZoom()).toBe(15);
+      unmount();
+      expect(() => {
+        act(() => {
+          vi.advanceTimersByTime(300);
+        });
+      }).not.toThrow();
+    } finally {
+      Object.defineProperty(leaflet.Browser, 'any3d', { configurable: true, value: originalAny3d });
+    }
+  });
 });

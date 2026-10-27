@@ -125,6 +125,7 @@ export function GymBoardAssociation({
     const result = await unlinkMutation.execute({ input: { boardUuid: target.uuid, gymUuid: null } });
     if (result) {
       await fetchBoards();
+      await onAssociated?.();
     }
   };
 

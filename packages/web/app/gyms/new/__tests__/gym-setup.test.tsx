@@ -1,6 +1,6 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Gym } from '@boardsesh/shared-schema';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
@@ -38,15 +38,18 @@ vi.mock('@/app/components/gym-entity/create-gym-form', () => ({
   ),
 }));
 vi.mock('@/app/components/gym-entity/edit-gym-form', () => ({
-  default: ({ onSuccess }: { onSuccess: (gym: Gym) => Promise<void> }) => (
-    <button
-      onClick={() => {
-        mocks.edit();
-        void onSuccess(gym);
-      }}
-    >
-      Save test gym
-    </button>
+  default: ({ gym: editingGym, onSuccess }: { gym: Gym; onSuccess: (gym: Gym) => Promise<void> }) => (
+    <>
+      <input aria-label="Gym name draft" defaultValue={editingGym.name} />
+      <button
+        onClick={() => {
+          mocks.edit();
+          void onSuccess(editingGym);
+        }}
+      >
+        Save test gym
+      </button>
+    </>
   ),
 }));
 vi.mock('@/app/components/gym-entity/manage/gym-boards-tab', () => ({
@@ -58,11 +61,16 @@ const { default: GymSetup } = await import('../gym-setup');
 
 function renderSetup(initialGym: Gym | null) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const renderGymSetup = (nextGym: Gym | null) => (
     <QueryClientProvider client={queryClient}>
-      <GymSetup initialGym={initialGym} />
-    </QueryClientProvider>,
+      <GymSetup initialGym={nextGym} />
+    </QueryClientProvider>
   );
+  const renderedSetup = render(renderGymSetup(initialGym));
+  return {
+    ...renderedSetup,
+    rerenderSetup: (nextGym: Gym | null) => renderedSetup.rerender(renderGymSetup(nextGym)),
+  };
 }
 
 beforeEach(() => {
@@ -71,6 +79,60 @@ beforeEach(() => {
 });
 
 describe('gym setup', () => {
+  it('preserves the editor and unsaved input when the same gym is refreshed', () => {
+    const { rerenderSetup } = renderSetup(gym);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit details' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Gym name draft' }), {
+      target: { value: 'Unsaved gym name' },
+    });
+
+    rerenderSetup({ ...gym });
+
+    expect(screen.getByRole('textbox', { name: 'Gym name draft' })).toHaveProperty('value', 'Unsaved gym name');
+    expect(screen.getByRole('button', { name: 'Save test gym' })).toBeTruthy();
+  });
+
+  it('preserves edits made before the first save finishes refreshing the server page', async () => {
+    let finishRefresh: ((refreshed: boolean) => void) | undefined;
+    mocks.refresh.mockReturnValueOnce(
+      new Promise<boolean>((resolve) => {
+        finishRefresh = resolve;
+      }),
+    );
+    const { rerenderSetup } = renderSetup(null);
+    fireEvent.click(screen.getByRole('button', { name: 'Create test gym' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit details' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Gym name draft' }), { target: { value: 'Keep this draft' } });
+
+    rerenderSetup({ ...gym });
+    await act(async () => {
+      finishRefresh?.(true);
+    });
+
+    expect(screen.getByRole('textbox', { name: 'Gym name draft' })).toHaveProperty('value', 'Keep this draft');
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens the board step when navigating to a different saved gym', () => {
+    const { rerenderSetup } = renderSetup(gym);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit details' }));
+    const nextGym = { ...gym, uuid: '8d73d083-ae2b-4203-a568-7a3a10613cb6', slug: 'another-gym', name: 'Another gym' };
+
+    rerenderSetup(nextGym);
+
+    expect(screen.queryByRole('textbox', { name: 'Gym name draft' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'See gym' }).getAttribute('href')).toBe('/gym/another-gym');
+  });
+
+  it('starts a fresh gym when the saved gym is removed from the route', () => {
+    const { rerenderSetup } = renderSetup(gym);
+
+    rerenderSetup(null);
+
+    expect(screen.getByRole('button', { name: 'Create test gym' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Link test board' })).toBeNull();
+  });
+
   it('stores the gym before cache refresh, then edits it without replaying create', async () => {
     mocks.refresh.mockResolvedValueOnce(false);
     renderSetup(null);

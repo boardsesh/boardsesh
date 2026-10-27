@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import React from 'react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import type { Gym, StrayBoard, UserBoard } from '@boardsesh/shared-schema';
-import GymBoardsTab from '../gym-boards-tab';
+import GymBoardsTab, { GymBoardAssociation } from '../gym-boards-tab';
 
 vi.mock('react-i18next', () => ({
   useTranslation: (ns?: string) => ({
@@ -181,6 +181,30 @@ describe('GymBoardsTab — permission gating', () => {
     expect(screen.queryByRole('button', { name: /add a board/i })).toBeNull();
     expect(screen.getByText(/only the gym owner or an admin can link boards/i)).toBeTruthy();
   });
+});
+
+describe('GymBoardAssociation — unlink cache refresh', () => {
+  it.each([true, false])(
+    'refreshes directory only after a successful unlink (success: %s)',
+    async (mutationSucceeds) => {
+      const onAssociated = vi.fn().mockResolvedValue(undefined);
+      stubRequests({ gymBoards: [makeBoard({ gymUuid: GYM_UUID })], myBoards: [] });
+      mockExecute.mockResolvedValueOnce(mutationSucceeds ? { linkBoardToGym: true } : null);
+      render(<GymBoardAssociation gym={gym} onAssociated={onAssociated} />);
+
+      fireEvent.click(await screen.findByRole('button', { name: /^unlink$/i }));
+      const confirmation = await screen.findByRole('dialog');
+      fireEvent.click(within(confirmation).getByRole('button', { name: /unlink/i }));
+
+      await waitFor(() => expect(mockExecute).toHaveBeenCalledWith({ input: { boardUuid: 'board-1', gymUuid: null } }));
+      if (mutationSucceeds) {
+        await waitFor(() => expect(onAssociated).toHaveBeenCalledTimes(1));
+      } else {
+        expect(onAssociated).not.toHaveBeenCalled();
+        expect(screen.getByText('Garage Board')).toBeTruthy();
+      }
+    },
+  );
 });
 
 describe('GymBoardsTab — stray boards', () => {

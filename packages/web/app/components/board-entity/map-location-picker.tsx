@@ -104,6 +104,9 @@ export default function MapLocationPicker({ latitude, longitude, onChange }: Map
       const map = L.map(container, {
         zoomControl: true,
         attributionControl: false,
+        // Leaflet 1.9.4 leaves its CSS zoom completion timer alive after remove().
+        // This form map can unmount immediately when a setup step changes.
+        zoomAnimation: false,
       }).setView(center, zoom);
       ownedMap = map;
 
@@ -138,8 +141,8 @@ export default function MapLocationPicker({ latitude, longitude, onChange }: Map
     return () => {
       disposed = true;
       if (resizeTimer) clearTimeout(resizeTimer);
-      ownedMap?.off();
       ownedMap?.remove();
+      ownedMap?.off();
       if (ownedMap && mapRef.current === ownedMap) {
         mapRef.current = null;
         markerRef.current = null;
