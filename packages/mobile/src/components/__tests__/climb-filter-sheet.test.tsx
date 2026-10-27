@@ -4,6 +4,7 @@ vi.mock('../AccessibleTextInput', async () => {
   return { AccessibleTextInput: TextInput };
 });
 vi.mock('../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../hooks/use-device-layout', () => ({ useDeviceLayout: () => deviceLayoutMock }));
 vi.mock('../PressableSurface', async () => {
   const { Pressable } = await import('react-native');
   const { createElement } = await import('react');
@@ -98,6 +99,7 @@ type ScrollViewMockProps = NonNullable<typeof bottomSheetScrollViewProps.latest>
 const platformMock = vi.hoisted(() => ({ OS: 'android' as 'android' | 'ios' | 'web' }));
 // The theme variant the mocked useTheme reports; 'material' keeps the RN body.
 const themeVariantMock = vi.hoisted(() => ({ variant: 'material' as 'material' | 'liquidGlass' }));
+const deviceLayoutMock = vi.hoisted(() => ({ isPad: false, widthClass: 'compact' as 'compact' | 'regular' }));
 // The iOS Form stub records the model the sheet hands it (#6872).
 const filterFormMock = vi.hoisted(() => ({
   latest: null as null | {
@@ -637,6 +639,8 @@ beforeEach(() => {
   pinStore.pinnedKind = null;
   platformMock.OS = 'android';
   themeVariantMock.variant = 'material';
+  deviceLayoutMock.isPad = false;
+  deviceLayoutMock.widthClass = 'compact';
   filterFormMock.latest = null;
 });
 
@@ -2553,6 +2557,31 @@ describe('ClimbFilterSheet native iOS form (#6872)', () => {
     expect(queryByTestId('native-filter-form')).toBeNull();
     expect(filterFormMock.latest).toBeNull();
     expect((bottomSheetModalProps.latest as { snapPoints?: unknown } | null)?.snapPoints).toEqual(['90%']);
+  });
+
+  it('opens as a form sheet on a regular-width iPad', () => {
+    platformMock.OS = 'ios';
+    themeVariantMock.variant = 'liquidGlass';
+    deviceLayoutMock.isPad = true;
+    deviceLayoutMock.widthClass = 'regular';
+    renderFilterSheet();
+
+    expect(bottomSheetModalProps.latest).toMatchObject({ presentationSizing: 'form', snapPoints: ['50%', '90%'] });
+  });
+
+  it.each([
+    ['an iPhone', false, 'compact'],
+    ['a compact Split View iPad', true, 'compact'],
+  ] as const)('keeps the bottom-sheet detents on %s', (_device, isPad, widthClass) => {
+    platformMock.OS = 'ios';
+    themeVariantMock.variant = 'liquidGlass';
+    deviceLayoutMock.isPad = isPad;
+    deviceLayoutMock.widthClass = widthClass;
+    renderFilterSheet();
+
+    expect(
+      (bottomSheetModalProps.latest as { presentationSizing?: unknown } | null)?.presentationSizing,
+    ).toBeUndefined();
   });
 
   it('ends the form on a Quick filters row that suspends the sheet and pushes the Climbs route', () => {

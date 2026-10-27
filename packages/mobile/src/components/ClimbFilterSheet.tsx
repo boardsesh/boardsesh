@@ -57,6 +57,7 @@ import { collectionPatch, getCollectionFilter, type CollectionFilter } from '../
 import type { SegmentOption } from './SegmentedControl.types';
 import { useTheme } from '../providers/theme-provider';
 import { useManagedSheet } from '../providers/sheet-presentation-provider';
+import { useDeviceLayout } from '../hooks/use-device-layout';
 import { androidSafeSnapPoints } from './sheet-snap-points';
 import { useSheetColumnStyle } from './use-sheet-column-style';
 import { useSheetDetentProbe } from './sheet-detent-probe';
@@ -331,6 +332,10 @@ export function ClimbFilterSheet({
   // #6872). Android and the Material variant keep the RN body below.
   const nativeForm = Platform.OS === 'ios' && selectByVariant(variant, { liquidGlass: true, material: false });
   const { fontScale } = useWindowDimensions();
+  // A regular-width iPad shows Filters as a centred form sheet (#6908). iPhone
+  // and a compact Split View keep the bottom-sheet detents.
+  const { isPad, widthClass } = useDeviceLayout();
+  const formSheet = isPad && widthClass === 'regular';
   const iosBackgroundStyle = useIosSheetBackgroundStyle();
   const { isAuthenticated } = useAuth();
   // The WINDOW inset, not this mount point's: this sheet lives in the climbs
@@ -1205,6 +1210,7 @@ export function ClimbFilterSheet({
       snapPoints={snapPoints}
       enableDynamicSizing={false}
       enablePanDownToClose
+      presentationSizing={formSheet ? 'form' : undefined}
       onChange={handleSheetChange}
       onFullyDismissed={managed.onFullyDismissed}
       handleIndicatorStyle={[styles.indicator, { backgroundColor: systemColors.separator }]}

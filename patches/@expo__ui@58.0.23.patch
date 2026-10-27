@@ -1,8 +1,8 @@
 diff --git a/build/community/bottom-sheet/types.d.ts b/build/community/bottom-sheet/types.d.ts
-index cf72b27..1162b3e 100644
+index cf72b27f4304b6772a844acd0eb144796c03b5c0..b9b96abd7883f899d721318164ea932dc91f2075 100644
 --- a/build/community/bottom-sheet/types.d.ts
 +++ b/build/community/bottom-sheet/types.d.ts
-@@ -159,6 +159,11 @@ export interface BottomSheetProps {
+@@ -159,6 +159,19 @@ export interface BottomSheetProps {
       * Alias for `onClose`.
       */
      onDismiss?: () => void;
@@ -11,11 +11,19 @@ index cf72b27..1162b3e 100644
 +     * iOS only: Android uses the Boardsesh coordinator's bounded fallback timer.
 +     */
 +    onFullyDismissed?: () => void;
++    /**
++     * Presents the sheet at a fixed size instead of edge-attached detents
++     * (SwiftUI `presentationSizing`, iOS 18+). `'form'` is the centred iPad form
++     * sheet. Takes effect at regular width only: an iPhone in portrait and a
++     * compact Split View keep the detents. Ignored on Android.
++     * Boardsesh patch (#6908); opt in per sheet, unset leaves the sheet unchanged.
++     */
++    presentationSizing?: 'form' | 'page';
      /**
       * Whether the sheet can be dismissed by panning down.
       * @default false
 diff --git a/ios/ExpoUITouchHandlerHelper.mm b/ios/ExpoUITouchHandlerHelper.mm
-index eb34427..28b0aa0 100644
+index eb3442740e2c92364acef9a6fb4880b8a9c38fa4..28b0aa0271ad9953765c556b2949d7019d555e25 100644
 --- a/ios/ExpoUITouchHandlerHelper.mm
 +++ b/ios/ExpoUITouchHandlerHelper.mm
 @@ -3,24 +3,48 @@
@@ -55,7 +63,7 @@ index eb34427..28b0aa0 100644
 -    [(RCTSurfaceTouchHandler *)touchHandler detachFromView:view];
 +  if (![touchHandler isKindOfClass:[RCTSurfaceTouchHandler class]] || touchHandler.view != view) {
 +    return;
-   }
++  }
 +  NSNumber *leaseCount = objc_getAssociatedObject(touchHandler, &ExpoUITouchHandlerLeaseCountKey);
 +  if (leaseCount == nil) {
 +    return;
@@ -64,14 +72,14 @@ index eb34427..28b0aa0 100644
 +    objc_setAssociatedObject(touchHandler, &ExpoUITouchHandlerLeaseCountKey,
 +                             @(leaseCount.unsignedIntegerValue - 1), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 +    return;
-+  }
+   }
 +  objc_setAssociatedObject(touchHandler, &ExpoUITouchHandlerLeaseCountKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 +  [(RCTSurfaceTouchHandler *)touchHandler detachFromView:view];
  }
  
  @end
 diff --git a/src/community/bottom-sheet/BottomSheet.android.tsx b/src/community/bottom-sheet/BottomSheet.android.tsx
-index 419edef..ec73805 100644
+index 419edefacdca8b98e318dc924c66575171e35124..ec7380508361ba26211d1774fb006a5e1c47b372 100644
 --- a/src/community/bottom-sheet/BottomSheet.android.tsx
 +++ b/src/community/bottom-sheet/BottomSheet.android.tsx
 @@ -11,6 +11,26 @@ import { parseSnapPoint } from './types';
@@ -158,18 +166,20 @@ index 419edef..ec73805 100644
      return {
        snapToIndex,
 diff --git a/src/community/bottom-sheet/BottomSheet.ios.tsx b/src/community/bottom-sheet/BottomSheet.ios.tsx
-index ee198cf..4d108d7 100644
+index ee198cf8a3fe168cc319acb7460f11bcb4690c6e..c7a99335357c6c0ec1b7c7450223401be443261a 100644
 --- a/src/community/bottom-sheet/BottomSheet.ios.tsx
 +++ b/src/community/bottom-sheet/BottomSheet.ios.tsx
-@@ -87,6 +87,7 @@ export function BottomSheet(props: BottomSheetProps) {
+@@ -87,7 +87,9 @@ export function BottomSheet(props: BottomSheetProps) {
      index: indexProp = 0,
      onChange,
      onClose,
 +    onFullyDismissed,
      onDismiss,
++    presentationSizing: presentationSizingProp,
      enablePanDownToClose = false,
      enableDynamicSizing = true,
-@@ -110,6 +111,8 @@ export function BottomSheet(props: BottomSheetProps) {
+     handleComponent,
+@@ -110,6 +112,8 @@ export function BottomSheet(props: BottomSheetProps) {
    onCloseRef.current = onClose;
    const onDismissRef = useRef(onDismiss);
    onDismissRef.current = onDismiss;
@@ -178,7 +188,7 @@ index ee198cf..4d108d7 100644
  
    const detents = useMemo<PresentationDetent[]>(() => {
      if (!snapPointsProp || snapPointsProp.length === 0) return ['medium', 'large'];
-@@ -126,6 +129,10 @@ export function BottomSheet(props: BottomSheetProps) {
+@@ -126,6 +130,10 @@ export function BottomSheet(props: BottomSheetProps) {
      onCloseRef.current?.();
      onDismissRef.current?.();
      onChangeRef.current?.(-1);
@@ -189,11 +199,29 @@ index ee198cf..4d108d7 100644
    }, []);
  
    // Sync with external index prop changes
+@@ -211,6 +219,9 @@ export function BottomSheet(props: BottomSheetProps) {
+               selection: selectedDetent,
+               onSelectionChange: handleDetentChange,
+             }),
++            // Boardsesh patch (#6908): a fixed-size sheet (the iPad form sheet).
++            // SwiftUI applies it at regular width and keeps the detents at compact.
++            ...(presentationSizingProp ? [presentationSizing(presentationSizingProp)] : []),
+           ]),
+       presentationDragIndicator(handleComponent === null ? 'hidden' : 'visible'),
+       interactiveDismissDisabled(!enablePanDownToClose),
+@@ -219,6 +230,7 @@ export function BottomSheet(props: BottomSheetProps) {
+   }, [
+     fitToContents,
+     detents,
++    presentationSizingProp,
+     selectedDetent,
+     handleDetentChange,
+     handleComponent,
 diff --git a/src/community/bottom-sheet/types.ts b/src/community/bottom-sheet/types.ts
-index 51326fb..7674ed7 100644
+index 51326fbfdeb9642f52e6fe244093cc697fa585f7..cebb6bbfa0e6ff85710c7168ddc9ac5439e87b71 100644
 --- a/src/community/bottom-sheet/types.ts
 +++ b/src/community/bottom-sheet/types.ts
-@@ -178,6 +178,12 @@ export interface BottomSheetProps {
+@@ -178,6 +178,21 @@ export interface BottomSheetProps {
     */
    onDismiss?: () => void;
  
@@ -202,6 +230,15 @@ index 51326fb..7674ed7 100644
 +   * iOS only: Android uses the Boardsesh coordinator's bounded fallback timer.
 +   */
 +  onFullyDismissed?: () => void;
++
++  /**
++   * Presents the sheet at a fixed size instead of edge-attached detents
++   * (SwiftUI `presentationSizing`, iOS 18+). `'form'` is the centred iPad form
++   * sheet. Takes effect at regular width only: an iPhone in portrait and a
++   * compact Split View keep the detents. Ignored on Android.
++   * Boardsesh patch (#6908); opt in per sheet, unset leaves the sheet unchanged.
++   */
++  presentationSizing?: 'form' | 'page';
 +
    // --- Behavior ---
  

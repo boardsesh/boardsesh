@@ -162,6 +162,17 @@ React Native controls ignore taps, including filter stars and Logbook Advanced.
 Keep `BottomSheetScrollView` and the bounded column; changing the scroll adapter
 cannot restore a missing touch handler. This patch requires a new native build.
 
+**iPad form sheet (#6908).** The patch adds an opt-in `presentationSizing` prop (`'form'` |
+`'page'`) to the community `BottomSheet`. On iOS it appends SwiftUI's `presentationSizing` to the
+detent modifiers. `ClimbFilterSheet` passes `'form'` only when `useDeviceLayout()` reports an iPad
+at regular width, so on the 13" iPad Filters is a centred card about 578 pt wide in both
+orientations instead of a full-width sheet. The detents still set the height (the card floats at
+50% or 90% of the window), so `useSheetColumnStyle`'s formula needs no form-sheet branch. iPhone
+never gets the prop. That matters because a Pro Max in landscape is regular width, and SwiftUI
+would apply the sizing there too. Every other sheet leaves it unset and renders exactly as before.
+The JS hunk reaches the native `PresentationSizingModifier` that `@expo/ui` already ships, but
+the patch file is a fingerprint input, so it rides `release/next`.
+
 **Android sizing — only two real states.** `@expo/ui`'s Android sheet is a plain Material 3
 `ModalBottomSheet`: it never reads the requested `%` snap-point _values_, only the detent count
 and which index is requested — it has a fixed ~50% "partial" state and a content-fitting

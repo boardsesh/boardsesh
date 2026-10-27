@@ -503,7 +503,14 @@ export const RULES: readonly PatchRule[] = [
   {
     package: '@expo/ui',
     file: 'src/community/bottom-sheet/BottomSheet.ios.tsx',
-    sentinels: ['onFullyDismissedRef', 'onDismiss={fireCloseCallbacks}', 'coordinator must observe index -1'],
+    sentinels: [
+      'onFullyDismissedRef',
+      'onDismiss={fireCloseCallbacks}',
+      'coordinator must observe index -1',
+      // ClimbFilterSheet's iPad form sheet (#6908). Without it the prop
+      // type-checks and the sheet silently spans the full iPad width again.
+      '...(presentationSizingProp ? [presentationSizing(presentationSizingProp)] : []),',
+    ],
     orderedSentinels: ['onChangeRef.current?.(-1);', 'onFullyDismissedRef.current?.();'],
     patchedKey: '@expo/ui@58.0.23',
   },
