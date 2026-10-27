@@ -201,6 +201,7 @@ function makeProps(over: Partial<Parameters<typeof CollapsingTopChrome>[0]> = {}
     canCreate: false,
     onCreate: vi.fn(),
     createAccessibilityLabel: 'create.label',
+    materialTitle: 'Discover',
     onOpenBoardSwitcher: vi.fn(),
     onHeightChange: vi.fn(),
     ...over,
