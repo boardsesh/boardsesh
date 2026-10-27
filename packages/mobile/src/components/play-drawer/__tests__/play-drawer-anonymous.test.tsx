@@ -466,6 +466,8 @@ const { PlayDrawer, SHARED_BROWSE_LATCH_RELEASE_MS } = await import('../PlayDraw
 const { setSetting, resetAllSettings } = await import('../../../settings');
 const { _resetJoinedBrowseNoticeForTests } = await import('../joined-browse-notice');
 const { markWallCleared, resetWallCleared } = await import('../../ble/wall-cleared-store');
+const { __resetWallMirrorFlipForTests, getWallMirrorFlip, setWallMirrorFlip } =
+  await import('../../../lib/wall-mirror-store');
 
 const BOARD_CONFIG = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 40 };
 const CLIMB = {
@@ -1829,6 +1831,42 @@ describe('PlayDrawer — the mirror toggle and the wall', () => {
 
     // The provider owns the write and reads the explicit solo mirror intent.
     expect(bluetooth.setMirrorIntent).toHaveBeenCalledWith(CLIMB.uuid, true);
+  });
+
+  // The MiniPlayer's ⇄ flips the same solo wall flip (#6940).
+  describe('the solo wall flip it shares with the MiniPlayer', () => {
+    beforeEach(__resetWallMirrorFlipForTests);
+
+    it('writes a committed solo tap to the shared flip', () => {
+      connectBle();
+      session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
+      render(drawerElement('member', committedTargetFor(CLIMB)));
+      act(() => {
+        (lastActionBarProps().onMirror as () => void)();
+      });
+      expect(getWallMirrorFlip()).toEqual({ climbUuid: CLIMB.uuid, mirrored: true });
+      expect(lastActionBarProps().isMirrored).toBe(true);
+    });
+
+    it("shows a flip the MiniPlayer made on the wall's climb", () => {
+      connectBle();
+      session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
+      render(drawerElement('member', committedTargetFor(CLIMB)));
+      expect(lastActionBarProps().isMirrored).toBe(false);
+      act(() => setWallMirrorFlip(null, CLIMB.uuid, true));
+      expect(lastActionBarProps().isMirrored).toBe(true);
+    });
+
+    it("keeps a preview's flip out of the shared flip", () => {
+      connectBle();
+      session.currentItem = { uuid: 'queue-item-current', climb: SIMILAR_CLIMB };
+      render(drawerElement('member', openTargetFor(CLIMB)));
+      act(() => {
+        (lastActionBarProps().onMirror as () => void)();
+      });
+      expect(lastActionBarProps().isMirrored).toBe(true);
+      expect(getWallMirrorFlip()).toBeNull();
+    });
   });
 });
 

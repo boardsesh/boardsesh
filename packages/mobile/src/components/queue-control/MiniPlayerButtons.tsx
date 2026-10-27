@@ -17,12 +17,18 @@ import { AnglePill } from '../play-drawer/AnglePill';
 import { useSegments } from 'expo-router';
 import { isPlayerRoute } from '../../lib/route-segments';
 import { MiniPlayerTrackPager, useMiniPlayerNavigation } from './use-mini-player-navigation';
+import { useQueueActions, useQueueData, useQueueSessionId } from '../../providers/queue-provider';
+import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
+import { resolveMirroredOrientation } from '../../lib/ble/mirror-orientation';
+import { setWallMirrorFlip, useWallMirrorFlip, wallMirrorFlipFor } from '../../lib/wall-mirror-store';
 
 type MiniPlayerIconButtonProps = {
   iconName: IconName;
   accessibilityLabel: string;
   onPress: () => void;
   disabled?: boolean;
+  /** A toggle that is on (Mirror): VoiceOver says "selected". */
+  selected?: boolean;
   size: number;
   iconColor?: ColorValue;
 };
@@ -33,6 +39,7 @@ function MiniPlayerIconButton({
   accessibilityLabel,
   onPress,
   disabled = false,
+  selected,
   size,
   iconColor,
 }: MiniPlayerIconButtonProps) {
@@ -45,7 +52,7 @@ function MiniPlayerIconButton({
       hitSlop={4}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
-      accessibilityState={{ disabled }}
+      accessibilityState={selected === undefined ? { disabled } : { disabled, selected }}
       style={[styles.action, { width: size, height: size }, disabled ? styles.disabled : null]}
     >
       <Icon maxFontSizeMultiplier={1} name={iconName} size={22} color={iconColor ?? systemColors.label} />
@@ -120,6 +127,57 @@ function MiniPlayerShareButton({ climb, climbBoard, size }: ClimbButtonProps) {
       iconName="share"
       accessibilityLabel={t('mobile.climbRow.share')}
       onPress={handleShare}
+      size={size}
+    />
+  );
+}
+
+/**
+ * ⇄, on the climb on the wall, as the player's Mirror does on the committed
+ * climb: in a session it flips the crew's climb (`mirrorCurrentClimb`); solo it
+ * flips the wall flip the player reads too (`wall-mirror-store`), which tells
+ * the auto-sender to relight.
+ */
+function MiniPlayerMirrorButton({ climb, climbBoard, size }: ClimbButtonProps) {
+  const { t } = useTranslation('session');
+  const { brandColors } = useTheme();
+  const bluetooth = useOptionalBluetoothContext();
+  const { sessionId } = useQueueSessionId();
+  const { currentClimbQueueItem } = useQueueData();
+  const { mirrorCurrentClimb } = useQueueActions();
+  const wallMirrorFlip = useWallMirrorFlip();
+  const shared = sessionId !== null;
+  // The bar holds on to its climb for a moment as the queue changes under it;
+  // only the queue's own head is the crew's to flip.
+  const headItem = currentClimbQueueItem?.climb.uuid === climb.uuid ? currentClimbQueueItem : null;
+  const isMirrored = shared
+    ? (headItem?.climb ?? climb).mirrored === true
+    : resolveMirroredOrientation({
+        explicitFlip: wallMirrorFlipFor(wallMirrorFlip, climb.uuid),
+        statedIntent: bluetooth?.getMirrorIntent(climb.uuid),
+        climbMirrored: climb.mirrored,
+      });
+  const handlePress = useCallback(() => {
+    if (shared && !headItem) return;
+    hapticSelection();
+    track(SHARED_EVENTS.MirrorClimb, {
+      climbUuid: climb.uuid,
+      boardName: climbBoard.boardName,
+      layoutId: climbBoard.layoutId,
+      isMirrored: !isMirrored, // the new orientation
+      surface: 'mini_player',
+      shared,
+    });
+    if (shared && headItem) void mirrorCurrentClimb(!isMirrored, headItem.uuid);
+    else setWallMirrorFlip(bluetooth, climb.uuid, !isMirrored);
+  }, [shared, headItem, climb.uuid, climbBoard, isMirrored, mirrorCurrentClimb, bluetooth]);
+  return (
+    <MiniPlayerIconButton
+      iconName="mirror"
+      iconColor={isMirrored ? brandColors.primary : undefined}
+      selected={isMirrored}
+      accessibilityLabel={isMirrored ? t('playView.actionBar.unmirrorAria') : t('playView.actionBar.mirrorAria')}
+      onPress={handlePress}
       size={size}
     />
   );
@@ -276,7 +334,9 @@ export const MiniPlayerLeadingButtons = memo(function MiniPlayerLeadingButtons({
         return <MiniPlayerQueueButton size={slotWidth} />;
       case 'angle':
         return angle !== null ? <MiniPlayerAngleButton angle={angle} climbUuid={angleClimbUuid} /> : null;
-      // Mirror arrives with its shared store (#6940, PR 3); ⏮ ⏭ render below.
+      case 'mirror':
+        return climbBoard ? <MiniPlayerMirrorButton climb={climb} climbBoard={climbBoard} size={slotWidth} /> : null;
+      // ⏮ ⏭ render below.
       default:
         return null;
     }

@@ -793,8 +793,66 @@ describe('NativeAccessoryClimbRow', () => {
         order: ['next', 'previous', 'mirror', 'favorite', 'queue', 'share', 'angle'],
         visible: { next: true, previous: true, mirror: true, favorite: true, queue: true, share: true, angle: true },
       };
-      // Mirror waits for its own store; the rest keep the climber's order before ⏮ ⏭.
+      // Kilter can't mirror; the rest keep the climber's order before ⏮ ⏭.
       expect(buttons(renderRow('regular').container)).toBe('favorite,queue,share,angle,previous,next');
+    });
+
+    describe('Mirror', () => {
+      const tensionBoard: BoardConfig = { boardName: 'tension', layoutId: 10, sizeId: 1, setIds: '1,2', angle: 40 };
+
+      it('is on by default on an iPad, on a board that mirrors: ⇄ · ⏮ ⏭', () => {
+        drawer.boardConfig = tensionBoard;
+        miniPlayer.isTablet = true;
+        layout.width = 995;
+        expect(buttons(renderRow('regular').container)).toBe('mirror,previous,next');
+      });
+
+      it('takes no place on Kilter, nor on the Tension layout that cannot mirror', () => {
+        miniPlayer.isTablet = true;
+        layout.width = 995;
+        const kilter = renderRow('regular');
+        expect(buttons(kilter.container)).toBe('previous,next');
+        kilter.unmount();
+        drawer.boardConfig = { ...tensionBoard, layoutId: 11 };
+        expect(buttons(renderRow('regular').container)).toBe('previous,next');
+      });
+
+      it("claims its place in the climber's order on an iPhone", () => {
+        drawer.boardConfig = tensionBoard;
+        layout.width = 370;
+        const defaults = renderRow('regular');
+        expect(buttons(defaults.container)).toBe('next');
+        defaults.unmount();
+        miniPlayer.layout = {
+          order: ['mirror', 'next', 'previous', 'favorite', 'queue', 'share', 'angle'],
+          visible: {
+            next: true,
+            previous: true,
+            mirror: true,
+            favorite: false,
+            queue: false,
+            share: false,
+            angle: false,
+          },
+        };
+        expect(buttons(renderRow('regular').container)).toBe('mirror');
+      });
+
+      it("is carried on the open Duo only when the player's covered small row has it", () => {
+        drawer.boardConfig = tensionBoard;
+        miniPlayer.phoneSplit = true;
+        layout.width = 800;
+        // ⇄ leads the pane's big row by default, in view above the bar.
+        const defaults = renderRow('regular');
+        expect(buttons(defaults.container)?.split(',') ?? []).not.toContain('mirror');
+        defaults.unmount();
+        // With the queue leading instead, ⇄ sits in the small row the bar covers.
+        miniPlayer.playerButtons = {
+          order: ['queue', 'mirror', 'favorite', 'angle', 'share'],
+          visible: { mirror: true, favorite: true, angle: true, share: true, queue: true },
+        };
+        expect(buttons(renderRow('regular').container)?.split(',')).toContain('mirror');
+      });
     });
 
     it("adds them on the open Duo while a screen's own content fills the pane", () => {

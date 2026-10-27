@@ -148,6 +148,13 @@ import { getBoardRenderData } from '../../lib/board-details';
 import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
 import { hapticSuccess } from '../../lib/haptics';
 import { nextMirrorIntentAction, resolveMirroredOrientation } from '../../lib/ble/mirror-orientation';
+import {
+  retainWallMirrorFlip,
+  setWallMirrorFlip,
+  useWallMirrorFlip,
+  wallMirrorFlipFor,
+  type WallMirrorFlip,
+} from '../../lib/wall-mirror-store';
 import { usePlayDrawerWakeLock } from './use-play-drawer-wake-lock';
 import { swipeStaysViewOnly } from './play-drawer-navigation';
 import { useLightbulbControl } from '../ble/use-lightbulb-control';
@@ -304,17 +311,20 @@ export function PlayCore({
   // Keyed on the climb, and cleared on every climb change, so it never reopens
   // by itself on a climb the climber comes back to.
   const [trackEndCardClimbUuid, setTrackEndCardClimbUuid] = useState<string | null>(null);
-  // The mirror toggle, scoped to the climb it was made on. A bare boolean went
-  // stale whenever the current climb changed by a route the drawer doesn't own
-  // (a party peer advancing the queue, a reorder, the accessory bar) — the
-  // drawer only resets it in its own navigation handlers. `isMirrored` is
-  // derived below, so a climb this flip wasn't made on simply reads false.
-  const [mirrorFlip, setMirrorFlip] = useState<{ climbUuid: string; mirrored: boolean } | null>(null);
+  // A preview's mirror toggle, scoped to the climb it was made on. A bare
+  // boolean went stale whenever the current climb changed by a route the drawer
+  // doesn't own (a party peer advancing the queue, a reorder, the accessory
+  // bar) — the drawer only resets it in its own navigation handlers. `isMirrored`
+  // is derived below, so a climb this flip wasn't made on simply reads false.
+  // The wall's own solo flip is not here: the MiniPlayer flips it too, so it
+  // lives in `wall-mirror-store` (#6940).
+  const [previewMirrorFlip, setPreviewMirrorFlip] = useState<WallMirrorFlip | null>(null);
+  const wallMirrorFlip = useWallMirrorFlip();
   const [isTickBarActive, setIsTickBarActive] = useState(false);
   const [activeSubDrawer, setActiveSubDrawer] = useState<ActiveSubDrawer>('none');
   const [addBetaVideoOpen, setAddBetaVideoOpen] = useState(false);
   // The climb whose full climber-logs list is open. Keyed on the uuid (like
-  // `mirrorFlip`) so moving to another climb closes the sheet without an effect.
+  // `previewMirrorFlip`) so moving to another climb closes the sheet without an effect.
   const [climberLogsClimbUuid, setClimberLogsClimbUuid] = useState<string | null>(null);
   // Composer targets stay pinned while the climber types. A credential change
   // drops them and remounts the composers.
@@ -577,17 +587,23 @@ export function PlayCore({
   }, [visibleSectionsKey, scrollYSV]);
 
   const displayedClimbUuid = displayedClimb?.uuid;
-  // Live sessions have one shared orientation. Preview/solo flips stay local.
+  // Live sessions have one shared orientation. A preview's flip stays in the
+  // drawer; the solo wall flip is the one the MiniPlayer shares.
   const sharesMirrorState = sessionId !== null && !isPreview;
   const isMirrored = sharesMirrorState
     ? displayedClimb?.mirrored === true
     : resolveMirroredOrientation({
+        // A preview flip still standing once the preview became the wall's climb
+        // wins for the render before the effect below hands it to the store.
         explicitFlip:
-          mirrorFlip != null && mirrorFlip.climbUuid === displayedClimbUuid ? mirrorFlip.mirrored : undefined,
+          wallMirrorFlipFor(previewMirrorFlip, displayedClimbUuid) ??
+          (isPreview ? undefined : wallMirrorFlipFor(wallMirrorFlip, displayedClimbUuid)),
         statedIntent: bluetooth?.getMirrorIntent(displayedClimbUuid),
         climbMirrored: displayedClimb?.mirrored,
       });
-  const clearMirror = useCallback(() => setMirrorFlip(null), []);
+  // Every navigation drops the preview flip. The wall's flip is dropped by the
+  // retain below as the drawer settles on another climb, as the provider's is.
+  const clearMirror = useCallback(() => setPreviewMirrorFlip(null), []);
 
   // A climb that lost a hold: the banner's count and its one action, Remix.
   const { lostHoldCount, onRemix: handleRemixLostHolds } = useLostHoldRemix({
@@ -866,7 +882,7 @@ export function PlayCore({
     // Activity, the accessory bar) would otherwise leave the flip parked on its
     // old climb, and coming back to that climb would resurrect it — remembering
     // a flip that swiping away forgets.
-    setMirrorFlip(null);
+    setPreviewMirrorFlip(null);
     // A new climb's Logbook re-lays out from scratch — don't let a stale expand
     // intent auto-scroll it.
     pendingFirstSectionScrollRef.current = false;
@@ -1527,13 +1543,17 @@ export function PlayCore({
     continueIntoQueue(trackEndAction.target);
   }, [trackEndAction, handleBackToLive, continueIntoQueue]);
 
-  // Solo and preview surfaces retain their existing local mirror semantics.
+  // Settling on a committed solo climb: keep the wall flip made on it, drop one
+  // parked on any other. A preview flip still standing as its climb became the
+  // wall's (no navigation cleared it) goes to the wall, as it always has.
   useEffect(() => {
     if (isPreview || sharesMirrorState || !displayedClimbUuid) return;
-    const action = nextMirrorIntentAction({ isPreview, displayedClimbUuid, mirrorFlip });
-    if (action.kind === 'state') bluetooth?.setMirrorIntent(action.climbUuid, action.mirrored);
-    else if (action.kind === 'retain') bluetooth?.retainMirrorIntentFor(action.climbUuid);
-  }, [bluetooth, displayedClimbUuid, mirrorFlip, isPreview, sharesMirrorState]);
+    const action = nextMirrorIntentAction({ isPreview, displayedClimbUuid, mirrorFlip: previewMirrorFlip });
+    if (action.kind === 'state') {
+      setWallMirrorFlip(bluetooth, action.climbUuid, action.mirrored);
+      setPreviewMirrorFlip(null);
+    } else if (action.kind === 'retain') retainWallMirrorFlip(bluetooth, action.climbUuid);
+  }, [bluetooth, displayedClimbUuid, previewMirrorFlip, isPreview, sharesMirrorState]);
 
   // The lightbulb's relay while a session peer drives the wall (see the
   // `useLightbulbControl` call above). Committing a pinned preview IS the relay:
@@ -1566,15 +1586,20 @@ export function PlayCore({
     });
     if (sharesMirrorState && currentClimbQueueItem) {
       void mirrorCurrentClimb(!isMirrored, currentClimbQueueItem.uuid);
+    } else if (isPreview || sharesMirrorState) {
+      // On screen only: the wall keeps showing the climb it has.
+      setPreviewMirrorFlip({ climbUuid: displayedClimbUuid, mirrored: !isMirrored });
     } else {
-      setMirrorFlip({ climbUuid: displayedClimbUuid, mirrored: !isMirrored });
+      setWallMirrorFlip(bluetooth, displayedClimbUuid, !isMirrored);
     }
   }, [
     displayedClimbUuid,
     isMirrored,
+    isPreview,
     sharesMirrorState,
     currentClimbQueueItem,
     mirrorCurrentClimb,
+    bluetooth,
     boardName,
     layoutId,
   ]);
