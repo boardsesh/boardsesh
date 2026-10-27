@@ -986,24 +986,42 @@ function listSimulatorDevices(capture = runCapture): DeviceInfo[] {
   return devices;
 }
 
-/** Newest available iOS runtime identifier (for creating a missing device). */
-function newestIosRuntime(capture = runCapture): string | null {
+/** Newest available iOS runtime supporting the requested simulator device type. */
+function newestIosRuntime(deviceTypeId: string, capture = runCapture): string | null {
   const { status, stdout } = capture('xcrun', ['simctl', 'list', 'runtimes', '--json']);
   if (status !== 0) return null;
   // Same defensive parse as listSimulatorDevices: partial JSON during a Xcode
   // component install shouldn't crash the run.
   let parsed: {
-    runtimes: Array<{ identifier: string; isAvailable?: boolean; platform?: string; version?: string }>;
+    runtimes: Array<{
+      identifier: string;
+      isAvailable?: boolean;
+      platform?: string;
+      version?: string;
+      supportedDeviceTypes?: Array<{ identifier: string }>;
+    }>;
   };
   try {
     parsed = JSON.parse(stdout) as {
-      runtimes: Array<{ identifier: string; isAvailable?: boolean; platform?: string; version?: string }>;
+      runtimes: Array<{
+        identifier: string;
+        isAvailable?: boolean;
+        platform?: string;
+        version?: string;
+        supportedDeviceTypes?: Array<{ identifier: string }>;
+      }>;
     };
   } catch {
     return null;
   }
   const ios = parsed.runtimes
-    .filter((runtime) => runtime.isAvailable !== false && /iOS/i.test(runtime.identifier))
+    .filter(
+      (runtime) =>
+        runtime.isAvailable !== false &&
+        /iOS/i.test(runtime.identifier) &&
+        (runtime.supportedDeviceTypes === undefined ||
+          runtime.supportedDeviceTypes.some((device) => device.identifier === deviceTypeId)),
+    )
     .sort((a, b) => (a.version ?? '').localeCompare(b.version ?? '', undefined, { numeric: true }));
   return ios.length > 0 ? ios[ios.length - 1].identifier : null;
 }
@@ -1062,10 +1080,10 @@ export function findOrCreateIosDevice(screenshotDevice: IosScreenshotDevice, cap
     );
   }
 
-  const runtime = newestIosRuntime(capture);
+  const runtime = newestIosRuntime(screenshotDevice.typeId, capture);
   if (!runtime) {
     throw new Error(
-      `No "${screenshotDevice.name}" simulator found and no iOS runtime available to create one. Open Xcode > Settings > Components to install a simulator runtime, or create the device in Xcode.`,
+      `No "${screenshotDevice.name}" simulator found and no compatible iOS runtime is available for ${screenshotDevice.typeId}. Open Xcode > Settings > Components to install a simulator runtime, or create the device in Xcode.`,
     );
   }
   console.log(`${LOG} Creating simulator "${screenshotDevice.name}" (${runtime})...`);

@@ -24,6 +24,11 @@ screenshot-mode auto-login):
 - First run builds a Debug simulator `.app` (~30 min) unless you pass `--app-path`; it's cached
   at `packages/mobile/.app-cache/Boardsesh.app` and reused (only native changes force a rebuild).
 
+When creating a missing simulator, store capture selects the newest installed
+runtime that lists the requested device type as supported. A newer runtime can
+exclude older phone profiles; capture keeps the requested phone and its native
+screenshot size, using a compatible installed runtime instead.
+
 ## Take screenshots
 
 Preferred "boot once, shoot many" flow — boot in the background, then capture in the foreground:

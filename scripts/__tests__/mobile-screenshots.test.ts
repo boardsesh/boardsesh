@@ -1261,6 +1261,76 @@ describe('simulator creation diagnostics', () => {
     );
   });
 
+  it('creates phones on the newest runtime that declares support for their device type', () => {
+    vi.stubEnv('BOARDSESH_IOS_SIMULATOR_UDID', '');
+    const device = resolveIosScreenshotDevices(['iPhone 16 Pro'])[0];
+    const created = { udid: 'compatible-device', name: device.name, state: 'Shutdown' };
+    const capture = vi
+      .fn(() => ({ status: 0, stdout: '', stderr: '' }))
+      .mockReturnValueOnce({ status: 0, stdout: JSON.stringify({ devices: {} }), stderr: '' })
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: JSON.stringify({
+          runtimes: [
+            {
+              identifier: 'com.apple.CoreSimulator.SimRuntime.iOS-27-0',
+              version: '27.0',
+              isAvailable: true,
+              supportedDeviceTypes: [{ identifier: device.typeId }],
+            },
+            {
+              identifier: 'com.apple.CoreSimulator.SimRuntime.iOS-27-1',
+              version: '27.1',
+              isAvailable: true,
+              supportedDeviceTypes: [{ identifier: 'other-device' }],
+            },
+            {
+              identifier: 'com.apple.CoreSimulator.SimRuntime.iOS-28-0',
+              version: '28.0',
+              isAvailable: false,
+              supportedDeviceTypes: [{ identifier: device.typeId }],
+            },
+          ],
+        }),
+        stderr: '',
+      })
+      .mockReturnValueOnce({ status: 0, stdout: created.udid, stderr: '' })
+      .mockReturnValueOnce({ status: 0, stdout: JSON.stringify({ devices: { runtime: [created] } }), stderr: '' });
+    expect(findOrCreateIosDevice(device, capture)).toEqual(created);
+    expect(capture).toHaveBeenNthCalledWith(3, 'xcrun', [
+      'simctl',
+      'create',
+      device.name,
+      device.typeId,
+      'com.apple.CoreSimulator.SimRuntime.iOS-27-0',
+    ]);
+  });
+
+  it('reports incompatible installed runtimes before trying to create a simulator', () => {
+    vi.stubEnv('BOARDSESH_IOS_SIMULATOR_UDID', '');
+    const capture = vi
+      .fn(() => ({ status: 0, stdout: '', stderr: '' }))
+      .mockReturnValueOnce({ status: 0, stdout: JSON.stringify({ devices: {} }), stderr: '' })
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: JSON.stringify({
+          runtimes: [
+            {
+              identifier: 'com.apple.CoreSimulator.SimRuntime.iOS-27-1',
+              version: '27.1',
+              isAvailable: true,
+              supportedDeviceTypes: [],
+            },
+          ],
+        }),
+        stderr: '',
+      });
+    expect(() => findOrCreateIosDevice(resolveIosScreenshotDevices(['iPhone 16 Pro'])[0], capture)).toThrow(
+      'no compatible iOS runtime',
+    );
+    expect(capture).toHaveBeenCalledTimes(2);
+  });
+
   it('still resolves a successfully created simulator from the refreshed inventory', () => {
     const created = { udid: 'created-device', name: 'iPhone 16 Pro', state: 'Shutdown' };
     const capture = captureCommands()
