@@ -111,6 +111,7 @@ const lightbulb = vi.hoisted(() => ({
   lit: false,
   pressAction: 'noop' as string,
   pending: false,
+  localConnected: false,
   connect: vi.fn(async () => true),
 }));
 const wall = vi.hoisted(() => ({
@@ -130,6 +131,9 @@ const ble = vi.hoisted(() => ({
     setMirrorIntent: ReturnType<typeof vi.fn>;
     retainMirrorIntentFor: ReturnType<typeof vi.fn>;
     wallHeldByOtherUser?: boolean;
+    reassertWall?: ReturnType<typeof vi.fn>;
+    armUndoWallChangeToast?: ReturnType<typeof vi.fn>;
+    staleCurrentHold?: { queueItemUuid: string; lastCurrentChangeAt: number } | null;
   } | null,
 }));
 
@@ -440,7 +444,7 @@ vi.mock('../use-play-drawer-wake-lock', () => ({ usePlayDrawerWakeLock: () => un
 vi.mock('../../ble/use-lightbulb-control', () => ({
   useLightbulbControl: () => ({
     lit: lightbulb.lit,
-    localConnected: false,
+    localConnected: lightbulb.localConnected,
     pending: lightbulb.pending,
     onPress: vi.fn(),
     pressAction: lightbulb.pressAction,
@@ -461,6 +465,7 @@ const { AccessibilityInfo } = await import('react-native');
 const { PlayDrawer, SHARED_BROWSE_LATCH_RELEASE_MS } = await import('../PlayDrawer');
 const { setSetting, resetAllSettings } = await import('../../../settings');
 const { _resetJoinedBrowseNoticeForTests } = await import('../joined-browse-notice');
+const { markWallCleared, resetWallCleared } = await import('../../ble/wall-cleared-store');
 
 const BOARD_CONFIG = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 40 };
 const CLIMB = {
@@ -583,6 +588,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   lightbulb.pressAction = 'noop';
   lightbulb.pending = false;
+  lightbulb.localConnected = false;
+  resetWallCleared();
   recorded.actionBar = [];
   recorded.wallPill = [];
   recorded.wallCallout = [];
@@ -683,6 +690,62 @@ describe('PlayDrawer — Put on the wall with no board connected (#6939)', () =>
     session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
     renderDrawer('member');
 
+    expect(lastActionBarProps().commitButton).toBeNull();
+  });
+
+  const linkWith = (extra: Partial<NonNullable<typeof ble.current>> = {}) => {
+    ble.current = {
+      isConnected: false,
+      sendFramesToBoard: vi.fn(async () => true),
+      getMirrorIntent: vi.fn(),
+      setMirrorIntent: vi.fn(),
+      retainMirrorIntentFor: vi.fn(),
+      reassertWall: vi.fn(),
+      armUndoWallChangeToast: vi.fn(),
+      staleCurrentHold: null,
+      ...extra,
+    };
+    return ble.current;
+  };
+
+  // Codex review: a climb unchanged for 4 h is held dark on the connect's first
+  // write, and the tap that asked for it must not need a second tap.
+  it('releases a 4 h hold the connect it started runs into', () => {
+    lightbulb.pressAction = 'connect';
+    const link = linkWith();
+    session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
+    const { rerender } = renderDrawer('member');
+    (lastActionBarProps().onCommit as () => void)();
+
+    link.staleCurrentHold = { queueItemUuid: 'queue-item-current', lastCurrentChangeAt: 0 };
+    ble.current = { ...link };
+    rerender(drawerElement('member', openTargetFor(CLIMB)));
+
+    expect(ble.current.reassertWall).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a hold alone when no Put on the wall asked for the climb', () => {
+    const link = linkWith({ staleCurrentHold: { queueItemUuid: 'queue-item-current', lastCurrentChangeAt: 0 } });
+    session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
+    renderDrawer('member');
+
+    expect(link.reassertWall).not.toHaveBeenCalled();
+  });
+
+  // Codex review: Turn off all lights leaves the link up and the queue still.
+  it('offers Put on the wall after the lights were turned off, and it re-lights', () => {
+    lightbulb.lit = true;
+    lightbulb.localConnected = true;
+    const link = linkWith({ isConnected: true });
+    session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
+    markWallCleared(CLIMB.uuid);
+    renderDrawer('member');
+
+    const bar = lastActionBarProps();
+    expect(bar.commitButton).toBe('putOnWall');
+    expect(bar.commitLabel).toBe('putOnWall');
+    act(() => (bar.onCommit as () => void)());
+    expect(link.reassertWall).toHaveBeenCalledTimes(1);
     expect(lastActionBarProps().commitButton).toBeNull();
   });
 

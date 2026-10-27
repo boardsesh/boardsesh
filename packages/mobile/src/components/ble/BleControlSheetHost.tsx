@@ -1,6 +1,8 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useContext, useEffect } from 'react';
 import { isMoonboardBoardName } from '@boardsesh/board-config';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
+import { QueueActiveClimbContext } from '../../providers/queue/queue-contexts';
+import { markWallCleared, resetWallCleared } from './wall-cleared-store';
 import { disconnectAllBluetooth } from '../../lib/ble/bluetooth-status-store';
 import { BleControlSheet } from './BleControlSheet';
 import { useSetting } from '../../settings';
@@ -37,14 +39,20 @@ export function BleControlSheetHost({ visible, onClose }: BleControlSheetHostPro
     if (!isConnected && visible) onClose();
   }, [isConnected, visible, onClose]);
 
+  // Read without the throwing hook: the root host can mount outside a queue.
+  const activeClimbUuid = useContext(QueueActiveClimbContext)?.activeClimbUuid ?? null;
+
   const handleReassert = useCallback(() => {
+    resetWallCleared();
     bluetooth?.armUndoWallChangeToast();
     bluetooth?.reassertWall();
   }, [bluetooth]);
 
+  // The player's wall badge can't see a clear any other way (#6939).
   const handleClearLights = useCallback(() => {
+    markWallCleared(activeClimbUuid);
     void bluetooth?.clearBoard();
-  }, [bluetooth]);
+  }, [bluetooth, activeClimbUuid]);
 
   const handleToggleLightAdjacentHolds = useCallback(
     (enabled: boolean) => {

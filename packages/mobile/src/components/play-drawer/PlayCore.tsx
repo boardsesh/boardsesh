@@ -102,6 +102,8 @@ import { visiblePlayDrawerSections, withoutPanelSections } from './play-drawer-s
 import { PlaybackFrameContext } from './playback-frame-context';
 import { usePlayerButtonsPreference } from '../../lib/player-buttons-preference';
 import { resolveWallBadge } from './wall-badge';
+import { resetWallCleared, useWallClearedClimbUuid } from '../ble/wall-cleared-store';
+import { nowMs } from '../../lib/clock';
 import { WallBadge } from './WallBadge';
 import { DEFAULT_PLAYER_BUTTONS_POSITION } from '../../lib/player-buttons';
 import { useDrawerDismissGesture } from './use-drawer-dismiss-gesture';
@@ -208,6 +210,10 @@ const SWITCH_BOARD_CARD_MARGIN = spacing[2];
  * present ABOVE (the FullWindowOverlay it replaced could not, since native sheets
  * present off the key window beneath it).
  */
+// How long after Put on the wall's connect a #4979 hold still counts as the one
+// that tap ran into: long enough to pick a board in the picker.
+const RELIGHT_HELD_AFTER_CONNECT_MS = 60_000;
+
 export function PlayCore({
   swipeDismiss,
   onClose,
@@ -1058,9 +1064,22 @@ export function PlayCore({
   // preview commit keeps `handleSetActive`. A list pick of the held climb takes
   // the same path (the selection controller, section 6 decision A).
   const handlePutHeldClimbOnWall = useCallback(() => {
+    resetWallCleared();
     bluetooth?.armUndoWallChangeToast();
     bluetooth?.reassertWall();
   }, [bluetooth]);
+  // "Turn off all lights" (#6939): the link is up and the queue didn't move, so
+  // only this says the current climb is dark. Put on the wall re-lights it, the
+  // same reassert as the held climb's.
+  const wallClearedClimbUuid = useWallClearedClimbUuid();
+  const clearedClimbOnScreen =
+    wallClearedClimbUuid !== null &&
+    bluetoothConnected &&
+    !isAnonymous &&
+    !showBoardMismatch &&
+    displayedClimbUuid === wallClearedClimbUuid &&
+    currentClimbQueueItem?.climb.uuid === wallClearedClimbUuid;
+  const currentClimbDark = heldClimbOnScreen || clearedClimbOnScreen;
   // The badge on the board art (#6939): the board draws the same glowing holds
   // whether or not they are lit, so this is what says which.
   const wallBadgeResolution = playerButtons.wallBadge
@@ -1074,7 +1093,7 @@ export function PlayCore({
         isPreview,
         inCrew: isSharedSession,
         wallDriven: lightbulbActive,
-        heldDark: heldClimbOnScreen,
+        currentDark: currentClimbDark,
       })
     : null;
   // A timed workout block's one-tap Fell / Sent (#6231): the climb on the wall,
@@ -1135,7 +1154,7 @@ export function PlayCore({
   const commitButton: ActionBarCommitButton = resolveCommitButton({
     model: commitBarModel,
     workoutOutcome: workoutOutcome !== null,
-    heldClimbOnScreen,
+    heldClimbOnScreen: currentClimbDark,
   });
   // The connect-step test's pill (#5654, PR 7, treatment only): the bulb with a
   // label, while this phone has never connected, and only where a tap on the
@@ -1459,16 +1478,33 @@ export function PlayCore({
   // then the bulb's own connect runs (the picker when no board is remembered),
   // and the connect lights whatever is current by then. On the climber's own
   // current climb there is nothing to set, so the tap only connects.
+  //
+  // A current climb unchanged for 4 h is held dark on the connect's first write
+  // (#4979). This tap asked for it, so the hold it meets right after the connect
+  // is released, instead of needing a second tap.
+  const relightHeldAfterConnectRef = useRef<{ queueItemUuid: string; at: number } | null>(null);
   const handlePutOnWall = useCallback(() => {
     if (!commitBarModel.connectsOnCommit) {
       handleSetActive();
       return;
     }
-    // The busy-wall question can take the tap instead of a commit: then nothing
-    // went up, and connecting would light the old climb under the question.
-    if (commitBarModel.mode === 'commit' && !handleSetActive()) return;
+    if (commitBarModel.mode === 'commit') {
+      // The busy-wall question can take the tap instead of a commit: then nothing
+      // went up, and connecting would light the old climb under the question.
+      if (!handleSetActive()) return;
+    } else if (currentClimbQueueItem) {
+      relightHeldAfterConnectRef.current = { queueItemUuid: currentClimbQueueItem.uuid, at: nowMs() };
+    }
     void connectLightbulb('put_on_wall');
-  }, [commitBarModel.connectsOnCommit, commitBarModel.mode, handleSetActive, connectLightbulb]);
+  }, [commitBarModel.connectsOnCommit, commitBarModel.mode, currentClimbQueueItem, handleSetActive, connectLightbulb]);
+  useEffect(() => {
+    const pending = relightHeldAfterConnectRef.current;
+    if (!pending || !staleCurrentHold) return;
+    relightHeldAfterConnectRef.current = null;
+    if (staleCurrentHold.queueItemUuid !== pending.queueItemUuid) return;
+    if (nowMs() - pending.at > RELIGHT_HELD_AFTER_CONNECT_MS) return;
+    bluetooth?.reassertWall();
+  }, [staleCurrentHold, bluetooth]);
 
   // A swipe step changes the climb with these, whichever render it follows.
   useSwipeNavigation(swipePager, handleNext, handlePrev);
@@ -1797,7 +1833,7 @@ export function PlayCore({
             isAuthenticated,
             isTickBarActive,
             commitButton,
-            heldClimbOnScreen,
+            currentClimbDark,
             showConnectPill,
             workoutOutcome !== null,
             bluetooth !== null,
@@ -2028,9 +2064,9 @@ export function PlayCore({
       workoutOutcomeWallLeftAtMs={workoutOutcomeShown?.wallLeftAtMs ?? null}
       wallClimbName={wallClimb.name}
       wallClimbUuid={wallClimbUuid}
-      commitLabel={heldClimbOnScreen ? 'putOnWall' : commitBarModel.commitLabel}
+      commitLabel={currentClimbDark ? 'putOnWall' : commitBarModel.commitLabel}
       onKeepTheirs={handleBackToLive}
-      onCommit={heldClimbOnScreen ? handlePutHeldClimbOnWall : handlePutOnWall}
+      onCommit={currentClimbDark ? handlePutHeldClimbOnWall : handlePutOnWall}
       ascentCount={ascentCount}
       onPrevClick={handlePrev}
       onNextClick={handleNextPress}

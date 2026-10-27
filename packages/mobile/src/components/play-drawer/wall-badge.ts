@@ -38,8 +38,11 @@ export type WallBadgeInput = {
   inCrew: boolean;
   /** A wall is genuinely being driven — see `WallPillStateInput.wallDriven`. */
   wallDriven: boolean;
-  /** #4979: the board is connected but the hold keeps the current climb dark. */
-  heldDark: boolean;
+  /**
+   * The link is up but the current climb is dark: the #4979 hold kept it off,
+   * or its lights were turned off. The presence feed can still name it.
+   */
+  currentDark: boolean;
 };
 
 export function resolveWallBadge({
@@ -52,15 +55,16 @@ export function resolveWallBadge({
   isPreview,
   inCrew,
   wallDriven,
-  heldDark,
+  currentDark,
 }: WallBadgeInput): WallBadgeResolution {
   if (isAnonymous || !boardHasLights || boardMismatch || displayedClimbUuid === null) return null;
+  if (currentDark && displayedClimbUuid === committedHeadUuid) return 'notOnWall';
   if (displayedClimbUuid === wallClimbUuid) return 'onWall';
   if (isPreview && displayedClimbUuid !== committedHeadUuid) {
     if (inCrew) return 'onlyYou';
     return wallDriven || wallClimbUuid !== null ? 'previewNotLit' : 'notOnWall';
   }
-  if (!wallDriven || heldDark) return 'notOnWall';
+  if (!wallDriven) return 'notOnWall';
   // The climber's own current climb on a driven wall: the link lights whatever
   // is current. The board-presence echo that names the lit climb comes from the
   // server and can lag a swipe or never come at all offline, so waiting for it

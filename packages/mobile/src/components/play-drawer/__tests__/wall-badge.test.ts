@@ -21,7 +21,7 @@ const base: WallBadgeInput = {
   isPreview: false,
   inCrew: false,
   wallDriven: false,
-  heldDark: false,
+  currentDark: false,
 };
 
 describe('resolveWallBadge', () => {
@@ -44,7 +44,24 @@ describe('resolveWallBadge', () => {
     ['a preview of your own current climb reads like the current climb', { isPreview: true }, 'notOnWall'],
     // The link lights whatever is current; the server's echo can lag or never come offline.
     ['driven wall, echo not back yet', { wallDriven: true }, 'onWall'],
-    ['driven wall, but the 4 h hold keeps it dark', { wallDriven: true, heldDark: true }, 'notOnWall'],
+    ['driven wall, but the 4 h hold keeps it dark', { wallDriven: true, currentDark: true }, 'notOnWall'],
+    // Turn off all lights: the presence feed still names the climb.
+    [
+      'lights turned off on the lit climb',
+      { wallDriven: true, wallClimbUuid: MY_CLIMB, currentDark: true },
+      'notOnWall',
+    ],
+    [
+      'a dark current climb does not darken a preview of the lit one',
+      {
+        wallDriven: true,
+        isPreview: true,
+        displayedClimbUuid: THEIR_CLIMB,
+        wallClimbUuid: THEIR_CLIMB,
+        currentDark: true,
+      },
+      'onWall',
+    ],
     ['anonymous reader', { isAnonymous: true }, null],
     ['a wall with no lights', { boardHasLights: false }, null],
     ['the switch-board overlay covers the board', { boardMismatch: true }, null],
