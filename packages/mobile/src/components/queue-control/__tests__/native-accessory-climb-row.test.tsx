@@ -285,6 +285,30 @@ vi.mock('../../../providers/queue-provider', () => ({
     nextClimb: queue.nextClimb,
     previousClimb: queue.previousClimb,
   }),
+  useQueueData: () => ({ currentClimbQueueItem: queue.state.currentClimbQueueItem }),
+  useQueueSessionId: () => ({ sessionId: null }),
+}));
+
+// The MiniPlayer's buttons (#6940): the climber's layout, the device class and
+// the Duo split. The buttons themselves have their own tests; here each one is
+// a marker, so the tests see which ones the row placed and in what order.
+const miniPlayer = vi.hoisted(() => ({
+  layout: null as null | { order: readonly string[]; visible: Record<string, boolean> },
+  isTablet: false,
+  phoneSplit: false,
+  paneTaken: false,
+}));
+vi.mock('../../../lib/mini-player-buttons-preference', async () => {
+  const { DEFAULT_MINI_PLAYER_BUTTONS } = await import('../../../lib/mini-player-buttons');
+  return { useMiniPlayerButtons: () => miniPlayer.layout ?? DEFAULT_MINI_PLAYER_BUTTONS };
+});
+vi.mock('../../../hooks/use-device-layout', () => ({ useDeviceLayout: () => ({ isTablet: miniPlayer.isTablet }) }));
+vi.mock('../../../hooks/use-phone-split', () => ({ usePhoneSplit: () => miniPlayer.phoneSplit }));
+vi.mock('../../navigation/phone-split-pane-slot', () => ({ usePhoneSplitPaneTaken: () => miniPlayer.paneTaken }));
+vi.mock('../../../lib/workout-run-store', () => ({ useWorkoutRun: () => null }));
+vi.mock('../MiniPlayerButtons', () => ({
+  MiniPlayerLeadingButtons: ({ buttonIds }: { buttonIds: readonly string[] }) =>
+    createElement('span', { 'data-mini-player-buttons': buttonIds.join(',') }),
 }));
 
 vi.mock('../../../providers/drawer-host-provider', () => ({
@@ -448,6 +472,10 @@ describe('NativeAccessoryClimbRow', () => {
     liveStats.override = null;
     drawer.openPlayDrawer.mockClear();
     connection.state = { bluetooth: {}, inAppBoardConnection: 'disconnected', ledless: false, holderDisplayName: null };
+    miniPlayer.layout = null;
+    miniPlayer.isTablet = false;
+    miniPlayer.phoneSplit = false;
+    miniPlayer.paneTaken = false;
   });
 
   it('renders a regular now-climbing row with thumbnail, grade, and integrated tick', () => {
@@ -637,6 +665,68 @@ describe('NativeAccessoryClimbRow', () => {
       expect(held.container.querySelector('[data-accessory-play-link]')?.getAttribute('data-a11y-value')).toBe(
         'ble.barControl.connectedLabel',
       );
+    });
+  });
+
+  describe("the climber's MiniPlayer buttons (#6940)", () => {
+    const buttons = (container: HTMLElement) =>
+      container.querySelector('[data-mini-player-buttons]')?.getAttribute('data-mini-player-buttons') ?? null;
+
+    it('adds Next beside the bulb and the tick on an iPhone (~370pt)', () => {
+      layout.width = 370;
+      const { container } = renderRow('regular');
+      expect(buttons(container)).toBe('next');
+      expect(container.querySelector('[data-board-control]')).not.toBeNull();
+      expect(container.querySelector('[data-tick="true"]')).not.toBeNull();
+    });
+
+    it('adds ⏮ ⏭ on an iPad', () => {
+      miniPlayer.isTablet = true;
+      layout.width = 995;
+      const { container } = renderRow('regular');
+      expect(buttons(container)).toBe('previous,next');
+    });
+
+    it('adds nothing inline or on a narrow platter', () => {
+      miniPlayer.isTablet = true;
+      expect(buttons(renderRow('inline').container)).toBeNull();
+      layout.width = 290;
+      miniPlayer.isTablet = false;
+      expect(buttons(renderRow('regular').container)).toBeNull();
+    });
+
+    it("leaves ⏮ ⏭ to the open Duo's player pane, which shows them right above", () => {
+      miniPlayer.phoneSplit = true;
+      layout.width = 800;
+      const { container } = renderRow('regular');
+      expect(buttons(container)).toBeNull();
+      expect(container.querySelector('[data-board-control]')).not.toBeNull();
+      expect(container.querySelector('[data-tick="true"]')).not.toBeNull();
+    });
+
+    it("adds them on the open Duo while a screen's own content fills the pane", () => {
+      miniPlayer.phoneSplit = true;
+      miniPlayer.paneTaken = true;
+      layout.width = 800;
+      expect(buttons(renderRow('regular').container)).toBe('previous,next');
+    });
+
+    it("keeps today's bar for a climber who switched them off", () => {
+      miniPlayer.isTablet = true;
+      layout.width = 995;
+      miniPlayer.layout = {
+        order: ['next', 'previous', 'mirror', 'favorite', 'queue', 'share', 'angle'],
+        visible: {
+          next: false,
+          previous: false,
+          mirror: false,
+          favorite: false,
+          queue: false,
+          share: false,
+          angle: false,
+        },
+      };
+      expect(buttons(renderRow('regular').container)).toBeNull();
     });
   });
 

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { StyleSheet, View, type ColorValue, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { Climb } from '@boardsesh/queue';
@@ -27,7 +27,16 @@ import {
   type BoardConnectionBadgeVisual,
 } from './board-control-indicator-state';
 import type { AccessoryPlacement } from '../../lib/analytics-board-connect';
-import { accessoryFitsBothControls } from './accessory-control-slots';
+import { miniPlayerSlotCount, resolveMiniPlayerControls } from './mini-player-controls';
+import { MiniPlayerLeadingButtons } from './MiniPlayerButtons';
+import { useMiniPlayerButtons } from '../../lib/mini-player-buttons-preference';
+import type { MiniPlayerButtonId } from '../../lib/mini-player-buttons';
+import { useDeviceLayout } from '../../hooks/use-device-layout';
+import { usePhoneSplit } from '../../hooks/use-phone-split';
+import { usePhoneSplitPaneTaken } from '../navigation/phone-split-pane-slot';
+import { useQueueData, useQueueSessionId } from '../../providers/queue-provider';
+import { useWorkoutRun } from '../../lib/workout-run-store';
+import { findWorkoutRunStage, workoutOutcomeAvailable } from '../play-drawer/workout-outcome';
 
 type NativeAccessoryClimbRowProps = {
   climb: Climb;
@@ -44,6 +53,8 @@ const ACCESSORY_PLATTER_THUMBNAIL_SIZE = 32;
 // `labelInner`'s gap after the artwork and its trailing padding.
 const ACCESSORY_THUMBNAIL_GAP = spacing[2];
 const ACCESSORY_LABEL_TRAILING_PADDING = spacing[1];
+// Between the climber's buttons and ⏮ ⏭, and before 💡 ✓, on a wide bar.
+const ACCESSORY_GROUP_GAP = spacing[3];
 
 type ClimbLabelProps = {
   climb: Climb;
@@ -115,12 +126,29 @@ function ClimbLabel({
 }
 
 /**
+ * Whether ⏮ ⏭ can take a place on the bar. Not while the open Duo's player pane
+ * shows them right above it, and not in a timed workout block, whose stage moves
+ * the wall on its own beat (#6231): a tap there would skip a rep.
+ */
+function useTransportAvailable(): boolean {
+  const phoneSplit = usePhoneSplit();
+  const paneTaken = usePhoneSplitPaneTaken();
+  const { sessionId } = useQueueSessionId();
+  const { currentClimbQueueItem } = useQueueData();
+  const workoutRun = useWorkoutRun(sessionId);
+  const inTimedBlock = workoutOutcomeAvailable(findWorkoutRunStage(workoutRun, currentClimbQueueItem?.uuid ?? null));
+  return !(phoneSplit && !paneTaken) && !inTimedBlock;
+}
+
+/**
  * Content for the iOS 26 tab-bar bottom accessory (Liquid Glass variant only).
- * UIKit supplies the glass platter, so this stays bare: the current climb, then
- * the lightbulb and the tick at the trailing edge. The collapsed platter has room
- * for one control: the lightbulb while the board is free (so connecting stays one
- * tap away), the tick once someone holds it. A mark on the thumbnail says who
- * holds it, in both placements. The
+ * UIKit supplies the glass platter, so this stays bare: the current climb, the
+ * climber's MiniPlayer buttons (#6940), then the lightbulb and the tick at the
+ * trailing edge. How many controls fit is `miniPlayerSlotCount`; which ones is
+ * `resolveMiniPlayerControls`. The collapsed platter has room for one control:
+ * the lightbulb while the board is free (so connecting stays one tap away), the
+ * tick once someone holds it. A mark on the thumbnail says who holds it, in both
+ * placements. The
  * displayed climb is resolved once by {@link QueueBottomAccessory} and passed in,
  * so this component never re-gates (a second gate could blank the live platter for
  * a frame, which UIKit snapshotted as doubled text). Tap-to-open is shared with
@@ -135,13 +163,17 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
   const { openPlay, preparePlay } = useAccessoryClimbTap();
   const { t } = useTranslation('settings');
   const { bluetooth, inAppBoardConnection, ledless, holderDisplayName } = useBoardConnectionState();
+  const { isTablet } = useDeviceLayout();
+  const phoneSplit = usePhoneSplit();
+  const buttonsLayout = useMiniPlayerButtons();
+  const transportAvailable = useTransportAvailable();
 
   const isInline = placement === 'inline';
   const rowHeight = isInline ? glassSize.inline : glassSize.standard;
   const thumbnailSize = boardConfig === null ? null : ACCESSORY_PLATTER_THUMBNAIL_SIZE;
   // The width UIKit gave the platter. A narrow open platter (iPhone Duo's outer
   // display beside its side rail, a 320pt Display Zoom iPhone) keeps one control,
-  // like the collapsed one, so the name has room to read (accessoryFitsBothControls).
+  // like the collapsed one, so the name has room to read (miniPlayerSlotCount).
   const [rowWidth, setRowWidth] = useState<number | null>(null);
   const handleRowLayout = useCallback((event: LayoutChangeEvent) => {
     const measuredWidth = Math.round(event.nativeEvent.layout.width);
@@ -151,9 +183,12 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
     ACCESSORY_LEADING_INSET +
     (thumbnailSize === null ? 0 : thumbnailSize + ACCESSORY_THUMBNAIL_GAP) +
     ACCESSORY_LABEL_TRAILING_PADDING +
-    2 * glassSize.inline +
     ACCESSORY_TRAILING_INSET;
-  const singleControlSlot = isInline || !accessoryFitsBothControls(rowWidth, widthBesideName);
+  // iPad and the open Duo: as many as fit. An iPhone: three at most.
+  const wide = isTablet || phoneSplit;
+  // Between the climber's buttons and ⏮ ⏭, and before 💡 ✓, on a bar with room to spare.
+  const groupGap = wide ? ACCESSORY_GROUP_GAP : 0;
+  const slotCount = miniPlayerSlotCount({ placement, rowWidth, widthBesideName, wide, groupGap });
   // The platter shows a plain (non-colorized) grade; only the label swaps to the
   // Boardsesh grade when the toggle is on and a trusted one exists.
   const currentFormattedGrade = resolveGrade(climb, boardConfig?.boardName).label;
@@ -170,10 +205,25 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
   // connect to and nobody holds it. With no board bound the bulb renders nothing,
   // so the tick keeps the slot.
   const collapsedSlotShowsBulb = bluetooth != null && inAppBoardConnection === 'disconnected';
-  // A visible bulb already speaks the state; with one slot, only the mark shows
+  const isAvailable = useCallback(
+    (buttonId: MiniPlayerButtonId) => (buttonId === 'previous' || buttonId === 'next') && transportAvailable,
+    [transportAvailable],
+  );
+  const controls = useMemo(
+    () =>
+      resolveMiniPlayerControls({
+        slotCount,
+        layout: buttonsLayout,
+        isAvailable,
+        singleSlotShowsBulb: collapsedSlotShowsBulb,
+        playerPaneShowsTransport: false,
+      }),
+    [slotCount, buttonsLayout, isAvailable, collapsedSlotShowsBulb],
+  );
+  // A visible bulb already speaks the state; without it, only the mark shows
   // it, so the climb link says it.
   const connectionValue =
-    singleControlSlot && inAppBoardConnection !== 'disconnected'
+    !controls.trailing.includes('lightbulb') && inAppBoardConnection !== 'disconnected'
       ? getBoardConnectionLabel(t, { boardConnection: inAppBoardConnection, ledless, holderDisplayName })
       : undefined;
 
@@ -216,15 +266,31 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
           />
         </LargeContentViewer>
       </AccessoryPlayLink>
-      {/* The trailing controls sit beside the climb gesture, never inside it, so
-          their 44pt tap targets are never stolen by the row's tap. Long-press on
-          the bulb opens the controls sheet, as on the other lightbulbs now that a
+      {/* The controls sit beside the climb gesture, never inside it, so their
+          44pt tap targets are never stolen by the row's tap. Long-press on the
+          bulb opens the controls sheet, as on the other lightbulbs now that a
           short press disconnects. Collapsed or narrow, the one slot swaps its child
           in place and the row never remounts: UIKit snapshots the platter between
           placements. */}
-      {singleControlSlot ? (
-        <View style={[styles.controlSlot, { width: glassSize.inline, height: rowHeight }]}>
-          {collapsedSlotShowsBulb ? (
+      {controls.leading.length > 0 ? (
+        <MiniPlayerLeadingButtons
+          buttonIds={controls.leading}
+          slotWidth={glassSize.inline}
+          rowHeight={rowHeight}
+          groupGap={groupGap}
+        />
+      ) : null}
+      {controls.trailing.map((slot, index) => (
+        // Keyed by position, so the one collapsed slot swaps its child in place.
+        <View
+          key={`trailing-${index}`}
+          style={[
+            styles.controlSlot,
+            { width: glassSize.inline, height: rowHeight },
+            index === 0 && controls.leading.length > 0 ? { marginStart: groupGap } : null,
+          ]}
+        >
+          {slot === 'lightbulb' ? (
             <BoardControlIndicator
               size={glassSize.inline}
               iconSize={22}
@@ -236,22 +302,7 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
             <LogAscentToolbarButton climb={climb} size={glassSize.inline} iconSize={24} placement={placement} />
           )}
         </View>
-      ) : (
-        <>
-          <View style={[styles.controlSlot, { width: glassSize.inline, height: rowHeight }]}>
-            <BoardControlIndicator
-              size={glassSize.inline}
-              iconSize={22}
-              enableLongPress
-              solidGlyphs
-              placement={placement}
-            />
-          </View>
-          <View style={[styles.controlSlot, { width: glassSize.inline, height: rowHeight }]}>
-            <LogAscentToolbarButton climb={climb} size={glassSize.inline} iconSize={24} placement={placement} />
-          </View>
-        </>
-      )}
+      ))}
     </View>
   );
 }
