@@ -475,6 +475,20 @@ responses, not selector spelling or board count. The old fixture is rejected wit
 an actionable error because it lacks Decoy and spray-wall sources. The spray image
 must be an actual permitted wall photograph included in that fixture's static files.
 
+The campaign also records the current `SearchClimbsCount` query for all seven
+boards. `vp exec node --import tsx scripts/record-ios-campaign-counts.ts <new-output-directory>`
+refreshes the six public manufacturer counts anonymously and reuses the verified
+owner's Spraywall count from its existing CPP snapshot. Its immutable starting
+point is `app-stores/apple/campaign-counts-base.json`; the active campaign pin
+can advance without changing that source. The helper preserves the original
+449 responses, nine assets, account metadata, and capture clock, then checks all
+seven counts through normal replay before exporting a candidate. It rejects
+counts below the recorded page coverage. Count replay may ignore only `page`
+and `pageSize` for the exact count query; every other filter must match.
+The [count fixture proof](https://github.com/boardsesh/boardsesh/releases/download/screenshots-baseline/ios-campaign-df89b1599dd664add97c45332a476f079f0e31821df577240a099bef39cc383a.proof.json)
+binds each response to its source bytes. Full native replay is required before
+publishing screenshots or updating their pixel baseline.
+
 Use an entitled simulator client for the Dynamic Island. The flow uses the existing
 screenshot BLE adapter and verifies the native Next control before capturing;
 an empty island or disconnected widget fails. Inspect the sources on both phones
