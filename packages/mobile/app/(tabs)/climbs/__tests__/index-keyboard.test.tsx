@@ -117,6 +117,7 @@ const mocks = vi.hoisted(() => ({
   // Deep-link params, mutable so the screenshot-mode auto-opens can be driven
   // without a second mock scaffold.
   searchParams: {} as Record<string, string>,
+  isFocused: true,
   // Mutable per-test setting: false exercises the preview-open branch instead
   // of the committing activateClimb path.
   lightOnClimbTap: true,
@@ -302,6 +303,7 @@ vi.mock('expo-router', () => ({
   },
   useRouter: () => ({ push: mocks.push }),
   useLocalSearchParams: () => mocks.searchParams,
+  useIsFocused: () => mocks.isFocused,
   useFocusEffect: () => {},
 }));
 vi.mock('expo-router/react-navigation', async () => {
@@ -965,6 +967,7 @@ beforeEach(() => {
   mocks.refetchClimbs.mockReset();
   mocks.offlineCatalog = null;
   mocks.searchParams = {};
+  mocks.isFocused = true;
   mocks.isSharedSession = false;
   mocks.activationOptions = undefined;
   mocks.isPlaceholderData = false;
@@ -1899,6 +1902,66 @@ describe('ClimbList screenshot-mode wall-state deep links', () => {
     searchText: 'old project',
     updatedAt: 1,
   };
+
+  it('leaves the current board alone behind a retained capture route and consumes its open only once', async () => {
+    await withScreenshotMode(async () => {
+      const retainedBoard = gradeScene();
+      const currentBoard = { ...retainedBoard, uuid: 'current-moonboard', boardType: 'moonboard', layoutId: 2 };
+      mocks.activeBoard = currentBoard;
+      mocks.isFocused = false;
+      mocks.searchParams = { screenshotBoardIndex: '0', screenshotOpenFirst: '1' };
+      mocks.searchClimbs = [{ ...mocks.climb, boardType: 'kilter', layoutId: 1, angle: 40 }];
+      const view = render(<ClimbList />);
+      await act(async () => {});
+      expect(mocks.setActiveBoard).not.toHaveBeenCalled();
+      expect(mocks.activateClimb).not.toHaveBeenCalled();
+
+      // Even matching results arriving behind another route cannot open a player.
+      mocks.activeBoard = retainedBoard;
+      view.rerender(<ClimbList />);
+      await act(async () => {});
+      expect(mocks.activateClimb).not.toHaveBeenCalled();
+
+      mocks.isFocused = true;
+      view.rerender(<ClimbList />);
+      await waitFor(() => expect(mocks.activateClimb).toHaveBeenCalledTimes(1));
+      mocks.isFocused = false;
+      view.rerender(<ClimbList />);
+      mocks.isFocused = true;
+      view.rerender(<ClimbList />);
+      await act(async () => {});
+      expect(mocks.activateClimb).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('cancels a queued screenshot board selection when its route loses focus', async () => {
+    await withScreenshotMode(async () => {
+      const requestedBoard = gradeScene();
+      const currentBoard = { ...requestedBoard, uuid: 'current-moonboard', boardType: 'moonboard', layoutId: 2 };
+      mocks.activeBoard = currentBoard;
+      mocks.searchParams = { screenshotBoardIndex: '0', screenshotOpenFirst: '1' };
+      let finishWrite = () => {};
+      const queuedWrite = new Promise<void>((resolve) => (finishWrite = resolve));
+      const committedBoards: ScreenshotSelectableBoard[] = [];
+      mocks.setActiveBoard.mockImplementation(
+        async (board: ScreenshotSelectableBoard, isOperationCurrent: () => boolean) => {
+          await queuedWrite;
+          if (!isOperationCurrent()) return false;
+          committedBoards.push(board);
+          return true;
+        },
+      );
+      const view = render(<ClimbList />);
+      await waitFor(() => expect(mocks.setActiveBoard).toHaveBeenCalledTimes(1));
+      expect(mocks.setActiveBoard.mock.calls[0][0]).toBe(requestedBoard);
+      mocks.isFocused = false;
+      view.rerender(<ClimbList />);
+      await act(async () => finishWrite());
+      expect(committedBoards).toHaveLength(0);
+      expect(mocks.activeBoard).toBe(currentBoard);
+      expect(mocks.activateClimb).not.toHaveBeenCalled();
+    });
+  });
 
   it.each(['loading', 'placeholder'] as const)(
     'clears a reused simulator only after restoration and waits for real default rows (%s)',
