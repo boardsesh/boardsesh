@@ -389,7 +389,9 @@ describe('store screenshot presentation', () => {
     const input = directory();
     const output = directory();
     const size = ACCEPTED_SIZES['iphone-16-pro'][0];
-    const raw = await sharp(randomBytes(size.width * size.height * 3), { raw: { ...size, channels: 3 } })
+    const pixels = Buffer.alloc(size.width * size.height * 3, 57);
+    randomBytes(size.width * 64 * 3).copy(pixels);
+    const raw = await sharp(pixels, { raw: { ...size, channels: 3 } })
       .png()
       .toBuffer();
     for (const name of IOS_CAMPAIGN_CAPTURE_NAMES) writeFileSync(join(input, name), raw);
@@ -401,7 +403,7 @@ describe('store screenshot presentation', () => {
     expect(readFileSync(join(output, '07-session-detail.png'))).toEqual(
       await frameComposition([raw], readCaptionCatalog('it').session, 'screen', true),
     );
-    expect(session.sources?.['04-session-detail.png'].rawSha256).toBe(sha256Screenshot(raw));
+    expect(session.rawSha256).toBe(sha256Screenshot(raw));
     expect(Object.values(manifest.files).every((entry) => !entry.liveActivity)).toBe(true);
     expect(readPngDimensions(readFileSync(join(output, '07-session-detail.png')))).toEqual(size);
   }, 60_000);

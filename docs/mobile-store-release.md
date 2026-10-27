@@ -443,10 +443,12 @@ dispatch (`commit_to_main`) — that is deliberately still `main`, because
    `publish_baseline: true`. Store-only changes can skip the native build, so its
    automatic screenshot follow-up is insufficient. Review all 20 capture shards
    and the resulting 24 storefront sets, including Italian's session recap slot.
-4. Dispatch **Mobile Store Metadata** on `release/next` with `platform: ios` to
-   refresh the editable release draft. Read back all six Apple locales and their
-   180 default-listing screenshots before submission. CPP/ad/video campaigns
-   retain the original four app locales and five Apple locales.
+4. Dispatch **Mobile Store Metadata** on `release/next` with `platform: all`
+   before merge-back, while Play accepts listing edits, to refresh both listings
+   and the editable iOS draft. Native deploys do not upload Play listing text.
+   Read back all six Apple locales and their 180 default-listing screenshots
+   before submission. CPP/ad/video campaigns retain the original four app
+   locales and five Apple locales.
 5. After merging, dispatch **Android Play Internal Deploy** on `release/next`
    with `force_native: true` if its candidate predates these changelogs. Verify
    the Italian listing and localized What's New. Play release notes ship with
