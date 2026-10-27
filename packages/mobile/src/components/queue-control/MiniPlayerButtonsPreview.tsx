@@ -15,6 +15,7 @@ import {
   ACCESSORY_PLATTER_THUMBNAIL_SIZE,
   ACCESSORY_THUMBNAIL_GAP,
   ACCESSORY_TRAILING_INSET,
+  isMiniPlayerButtonAvailable,
   miniPlayerSlotCount,
   resolveMiniPlayerControls,
   type MiniPlayerControls,
@@ -53,6 +54,8 @@ type MiniPlayerButtonsPreviewProps = {
   board: PlayerButtonsPreviewBoard;
   /** An iPad or an open Duo: the bar holds every button that is on. Otherwise an iPhone's three slots. */
   wide: boolean;
+  /** Favorite and Queue need an account; the bar leaves them out when signed out. */
+  signedIn: boolean;
 };
 
 /**
@@ -66,16 +69,21 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
   buttons,
   board,
   wide,
+  signedIn,
 }: MiniPlayerButtonsPreviewProps) {
   const { t } = useTranslation('common');
   const { systemColors, brandColors } = useTheme();
 
   const resolve = useMemo(() => {
-    const isAvailable = (buttonId: MiniPlayerButtonId): boolean => {
-      if (buttonId === 'mirror') return board.supportsMirroring;
-      if (buttonId === 'angle') return board.angleAvailable;
-      return true;
-    };
+    // The bar's own rule. The preview has no session: transport is available and the climb is not a draft.
+    const isAvailable = (buttonId: MiniPlayerButtonId): boolean =>
+      isMiniPlayerButtonAvailable(buttonId, {
+        transport: true,
+        mirror: board.supportsMirroring,
+        signedIn,
+        isDraft: false,
+        angleAdjustable: board.angleAvailable,
+      });
     return (slotCount: number): MiniPlayerControls =>
       resolveMiniPlayerControls({
         slotCount,
@@ -84,7 +92,7 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
         singleSlotShowsBulb: board.showLightbulb,
         playerPaneShowsTransport: false,
       });
-  }, [buttons, board.supportsMirroring, board.angleAvailable, board.showLightbulb]);
+  }, [buttons, board.supportsMirroring, board.angleAvailable, board.showLightbulb, signedIn]);
   // The real bar's slot rule at a representative width. The group gap is wide-only, as on the bar.
   const groupGap = wide ? ACCESSORY_GROUP_GAP : 0;
   const slotCountAt = useCallback(

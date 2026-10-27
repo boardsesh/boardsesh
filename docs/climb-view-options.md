@@ -217,12 +217,20 @@ The MiniPlayer is the bar above the tabs: the current climb, then buttons. Tap i
   Queue, Share and Angle, a pinned preview, and **Restore defaults**. Settings → Climbs & grades → **Climb view** has
   a Mini player section with the switches only; the order changes in View options, the same rule as the player's
   buttons.
-- Defaults: Next, Previous and Mirror on (Mirror will only draw on boards that mirror: Tension, Decoy, Woods);
-  Favorite, Queue, Share and Angle off. The bar draws Next and Previous today; Mirror, Favorite, Queue, Share and
-  Angle arrive with PR 2 and PR 3 of #6940, and their switches already store the choice.
-- The preview draws two bars from `resolveMiniPlayerControls` and `miniPlayerSlotCount`, so it can't disagree with
-  the real one: the open bar for this device (an iPad or an open Duo drawn at 995 pt wide, otherwise an iPhone at
-  343 pt) and the collapsed one. Static glyphs; no Bluetooth component is mounted.
+- Defaults: Next, Previous and Mirror on; Favorite, Queue, Share and Angle off. Each switch drives a real button:
+  - **Next / Previous**: step the list. Solo with Light on swipe on they move the climb; in a crew, or with Light on
+    swipe off, they open the player on a preview, so one tap never moves the room's climb. Next at the end of a
+    list opens the player.
+  - **Mirror**: boards that mirror (Tension, Decoy, Woods). In a crew it sets the shared orientation; solo it
+    flips what the wall lights.
+  - **Favorite** and **Queue**: signed in only.
+  - **Share**: not on drafts.
+  - **Angle**: boards with an adjustable angle. It opens the player's angle sheet and is hidden while the player is
+    open.
+- The preview draws two bars from `resolveMiniPlayerControls`, `miniPlayerSlotCount` and the bar's own
+  `isMiniPlayerButtonAvailable`, so it can't disagree with the real one: the open bar for this device (an iPad or an
+  open Duo drawn at 995 pt wide, otherwise an iPhone at 343 pt) and the collapsed one, for the board on screen and
+  the signed-in state. Static glyphs; no Bluetooth component is mounted.
 - Board light and Log are fixed, like the player's: a note on the tab says so. They have no switch or arrows. The
   tab's footer differs by device: on iPhone it says the bar has room for one button beside them; on a wide screen
   it says the bar fits as many as it has room for.
@@ -241,12 +249,17 @@ The MiniPlayer is the bar above the tabs: the current climb, then buttons. Tap i
   iPhone bar has no group gap.
 - Buttons claim slots in the climber's order; what doesn't fit drops from the end of that list. The player's ⋯ still
   has every action.
-- The open Duo's split drops what the player pane already shows (⏮ ⏭ 💡 ✓).
+- The open Duo's split (`miniPlayerPaneMode`): while the pane shows the committed climb with its controls below the
+  board, the bar sits on the player's small row and carries those covered buttons (`miniPlayerPaneCoveredButtons`),
+  dropping what the pane's big row already shows (⏮ ⏭ 💡 ✓). While the pane shows a preview, or its controls are
+  above the board, the bar keeps Board light and Log only.
 
 ### Session states
 
 - A timed workout block hides ⏮ ⏭: the stage moves the wall on its own beat.
-- Next at the end of a list opens the player.
+- A crew, or Light on swipe off: Next and Previous open the player on a preview.
+- Signed out: no Favorite or Queue. A draft has no Share. A fixed-angle board has no Angle; a board that can't
+  mirror has no Mirror.
 
 ### Storage
 

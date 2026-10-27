@@ -34,6 +34,7 @@ import {
   ACCESSORY_PLATTER_THUMBNAIL_SIZE,
   ACCESSORY_THUMBNAIL_GAP,
   ACCESSORY_TRAILING_INSET,
+  isMiniPlayerButtonAvailable,
   miniPlayerPaneCoveredButtons,
   miniPlayerPaneMode,
   miniPlayerSlotCount,
@@ -141,40 +142,6 @@ function useTransportAvailable(): boolean {
   const { currentClimbQueueItem } = useQueueData();
   const workoutRun = useWorkoutRun(sessionId);
   return !workoutOutcomeAvailable(findWorkoutRunStage(workoutRun, currentClimbQueueItem?.uuid ?? null));
-}
-
-type MiniPlayerAvailability = {
-  transport: boolean;
-  /** The climb's board mirrors (Tension, Decoy, Woods...): `boardSupportsMirroring`. */
-  mirror: boolean;
-  signedIn: boolean;
-  isDraft: boolean;
-  angleAdjustable: boolean;
-};
-
-/**
- * Whether a button can take a place on the bar right now. Mirror only on a
- * board that mirrors; Favorite and Queue need an account; a draft has no link
- * to share; a fixed-angle board has no angle to change.
- */
-export function isMiniPlayerButtonAvailable(
-  buttonId: MiniPlayerButtonId,
-  { transport, mirror, signedIn, isDraft, angleAdjustable }: MiniPlayerAvailability,
-): boolean {
-  switch (buttonId) {
-    case 'previous':
-    case 'next':
-      return transport;
-    case 'mirror':
-      return mirror;
-    case 'favorite':
-    case 'queue':
-      return signedIn;
-    case 'share':
-      return !isDraft;
-    case 'angle':
-      return angleAdjustable;
-  }
 }
 
 /**

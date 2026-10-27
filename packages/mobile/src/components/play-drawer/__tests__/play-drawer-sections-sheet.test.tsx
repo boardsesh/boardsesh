@@ -85,6 +85,7 @@ const miniPlayer = vi.hoisted(() => ({
 vi.mock('../../../lib/mini-player-buttons-preference', () => ({
   useMiniPlayerButtonsEditor: () => miniPlayer,
 }));
+vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
 const deviceLayout = vi.hoisted(() => ({ isTablet: false, phoneSplit: false }));
 vi.mock('../../../hooks/use-device-layout', () => ({ useDeviceLayout: () => deviceLayout }));
 vi.mock('../../queue-control/MiniPlayerButtonsPreview', () => ({

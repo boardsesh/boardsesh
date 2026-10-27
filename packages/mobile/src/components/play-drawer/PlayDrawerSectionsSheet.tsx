@@ -18,6 +18,7 @@ import {
 } from '../section-layout/SectionLayoutSheet';
 import { PlayerButtonsPreview, type PlayerButtonsPreviewBoard } from '../player-buttons/PlayerButtonsPreview';
 import { MiniPlayerButtonsPreview } from '../queue-control/MiniPlayerButtonsPreview';
+import { useAuth } from '../../providers/auth-provider';
 import { useDeviceLayout } from '../../hooks/use-device-layout';
 import { useTheme } from '../../providers/theme-provider';
 import { borderRadius, spacing } from '../../theme/tokens';
@@ -50,6 +51,7 @@ export function PlayDrawerSectionsSheet({
   const playerButtons = usePlayerButtonControls();
   const miniPlayer = useMiniPlayerButtonControls();
   const { isTablet, phoneSplit } = useDeviceLayout();
+  const { isAuthenticated } = useAuth();
   const { systemColors } = useTheme();
   const tabOptions = useMemo<{ key: ViewOptionsTab; label: string }[]>(
     () => [
@@ -241,7 +243,12 @@ export function PlayDrawerSectionsSheet({
             />
           ) : null}
           {tab === 'miniPlayer' ? (
-            <MiniPlayerButtonsPreview buttons={miniPlayer.buttons} board={previewBoard} wide={miniPlayerWide} />
+            <MiniPlayerButtonsPreview
+              buttons={miniPlayer.buttons}
+              board={previewBoard}
+              wide={miniPlayerWide}
+              signedIn={isAuthenticated}
+            />
           ) : null}
         </>
       }

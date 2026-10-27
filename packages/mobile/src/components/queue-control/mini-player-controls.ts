@@ -90,6 +90,40 @@ export function miniPlayerSlotCount({
   return wide ? fit : Math.min(PHONE_MINI_PLAYER_MAX_SLOTS, fit);
 }
 
+export type MiniPlayerAvailability = {
+  transport: boolean;
+  /** The climb's board mirrors (Tension, Decoy, Woods...): `boardSupportsMirroring`. */
+  mirror: boolean;
+  signedIn: boolean;
+  isDraft: boolean;
+  angleAdjustable: boolean;
+};
+
+/**
+ * Whether a button can take a place on the bar right now. Mirror only on a
+ * board that mirrors; Favorite and Queue need an account; a draft has no link
+ * to share; a fixed-angle board has no angle to change.
+ */
+export function isMiniPlayerButtonAvailable(
+  buttonId: MiniPlayerButtonId,
+  { transport, mirror, signedIn, isDraft, angleAdjustable }: MiniPlayerAvailability,
+): boolean {
+  switch (buttonId) {
+    case 'previous':
+    case 'next':
+      return transport;
+    case 'mirror':
+      return mirror;
+    case 'favorite':
+    case 'queue':
+      return signedIn;
+    case 'share':
+      return !isDraft;
+    case 'angle':
+      return angleAdjustable;
+  }
+}
+
 /** One slot on the bar. `lightbulb` and `log` are the fixed pair at the trailing edge. */
 export type MiniPlayerSlot = MiniPlayerButtonId | 'lightbulb' | 'log';
 

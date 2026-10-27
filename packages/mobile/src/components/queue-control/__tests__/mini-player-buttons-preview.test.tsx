@@ -66,6 +66,7 @@ function preview(overrides: Partial<Parameters<typeof MiniPlayerButtonsPreview>[
       buttons: DEFAULT_MINI_PLAYER_BUTTONS,
       board: FALLBACK_PREVIEW_BOARD,
       wide: false,
+      signedIn: true,
       ...overrides,
     }),
   );
@@ -132,5 +133,25 @@ describe('MiniPlayerButtonsPreview', () => {
           buttons: 'mobile.settings.playerButtons.fixed.boardLight, mobile.settings.playerButtons.fixed.log',
         }),
     );
+  });
+
+  it('leaves Favorite and Queue out when signed out, as the bar does', () => {
+    const buttons = {
+      order: DEFAULT_MINI_PLAYER_BUTTONS.order,
+      visible: { ...DEFAULT_MINI_PLAYER_BUTTONS.visible, favorite: true, queue: true },
+    };
+    const signedIn = preview({ wide: true, buttons, board: TENSION }).open;
+    expect(signedIn).toEqual([
+      'mirror',
+      'favorite',
+      'queue',
+      'skip.previous',
+      'skip.next',
+      'lightbulb',
+      'tick.outline',
+    ]);
+    cleanup();
+    const signedOut = preview({ wide: true, buttons, board: TENSION, signedIn: false }).open;
+    expect(signedOut).toEqual(['mirror', 'skip.previous', 'skip.next', 'lightbulb', 'tick.outline']);
   });
 });

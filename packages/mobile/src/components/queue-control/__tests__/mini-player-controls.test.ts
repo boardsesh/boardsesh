@@ -3,6 +3,7 @@ import {
   ACCESSORY_MIN_NAME_WIDTH,
   ACCESSORY_SLOT_WIDTH,
   PHONE_ACCESSORY_MIN_NAME_WIDTH,
+  isMiniPlayerButtonAvailable,
   miniPlayerPaneCoveredButtons,
   miniPlayerPaneMode,
   miniPlayerSlotCount,
@@ -268,5 +269,34 @@ describe('miniPlayerPaneCoveredButtons', () => {
   it('is empty when every small-row button is off', () => {
     const bigRowOnly = playerLayout(DEFAULT_PLAYER_BUTTONS.order, ['favorite', 'angle', 'share']);
     expect(covered({ buttons: bigRowOnly })).toEqual([]);
+  });
+});
+
+describe('isMiniPlayerButtonAvailable', () => {
+  const everything = { transport: true, mirror: true, signedIn: true, isDraft: false, angleAdjustable: true };
+  const ids = ['next', 'previous', 'mirror', 'favorite', 'queue', 'share', 'angle'] as const;
+
+  it('offers every button on a mirroring, adjustable board for a signed-in climber', () => {
+    expect(ids.every((id) => isMiniPlayerButtonAvailable(id, everything))).toBe(true);
+  });
+
+  it('drops ⏮ ⏭ when transport is unavailable (a timed workout block)', () => {
+    const state = { ...everything, transport: false };
+    expect(isMiniPlayerButtonAvailable('next', state)).toBe(false);
+    expect(isMiniPlayerButtonAvailable('previous', state)).toBe(false);
+    expect(isMiniPlayerButtonAvailable('favorite', state)).toBe(true);
+  });
+
+  it('drops Mirror on a board that cannot mirror and Angle on a fixed-angle board', () => {
+    expect(isMiniPlayerButtonAvailable('mirror', { ...everything, mirror: false })).toBe(false);
+    expect(isMiniPlayerButtonAvailable('angle', { ...everything, angleAdjustable: false })).toBe(false);
+  });
+
+  it('drops Favorite and Queue when signed out, and Share on a draft', () => {
+    const signedOut = { ...everything, signedIn: false };
+    expect(isMiniPlayerButtonAvailable('favorite', signedOut)).toBe(false);
+    expect(isMiniPlayerButtonAvailable('queue', signedOut)).toBe(false);
+    expect(isMiniPlayerButtonAvailable('share', signedOut)).toBe(true);
+    expect(isMiniPlayerButtonAvailable('share', { ...everything, isDraft: true })).toBe(false);
   });
 });
