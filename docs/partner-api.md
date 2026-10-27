@@ -25,8 +25,8 @@ Everything is HTTPS.
 
 | Host | What lives there |
 | --- | --- |
-| `https://www.boardsesh.com` | App registration (`/developers/apps`), the consent page (`/oauth/authorize`), OAuth metadata (`/.well-known/oauth-authorization-server`), workout launch links (`/w/…`), these docs |
-| `https://api.boardsesh.com` | Token and revoke endpoints (`/oauth/*`) and the API (`/v1/*`) |
+| `https://api.boardsesh.com` | OAuth (`/oauth/authorize`, `/oauth/token`, `/oauth/revoke`, metadata at `/.well-known/oauth-authorization-server`) and the API (`/v1/*`) |
+| `https://www.boardsesh.com` | What people see: app registration (`/developers/apps`), sign-in and the consent screen (the authorize step sends the climber there), workout launch links (`/w/…`), these docs |
 
 ## How it fits together
 
@@ -86,7 +86,9 @@ Climbers who sign in to Boardsesh with Apple, Google or a password all go
 through the same flow. They never give you their Boardsesh credentials.
 
 Server metadata (RFC 8414) is at
-`https://www.boardsesh.com/.well-known/oauth-authorization-server`.
+`https://api.boardsesh.com/.well-known/oauth-authorization-server`; any
+standard OAuth client library can configure itself from it. The issuer is
+`https://api.boardsesh.com`.
 
 ### Scopes
 
@@ -108,7 +110,7 @@ embedded WebView: the climber may already be signed in to Boardsesh in their
 browser, and a WebView is where OAuth phishing lives.
 
 ```
-GET https://www.boardsesh.com/oauth/authorize
+GET https://api.boardsesh.com/oauth/authorize
     ?response_type=code
     &client_id=bsk_4Rk2PzQ8mW1xTb7nYc3vLd
     &redirect_uri=com.example.app%3A%2Foauth%2Fboardsesh
@@ -123,12 +125,16 @@ accepted. A missing challenge, a `plain` method, an unknown client or an
 unregistered redirect URI shows an error page on boardsesh.com and never
 redirects anywhere.
 
-If the climber is not signed in they sign in first, then see the consent
-screen. Once they approve:
+Boardsesh sends the browser on to the consent screen on `www.boardsesh.com`.
+If the climber is not signed in they sign in first, then see it. Once they
+approve:
 
 ```
-com.example.app:/oauth/boardsesh?code=bsc_...&state=8f3c...
+com.example.app:/oauth/boardsesh?code=SplxlOBeZQQYbYS6WxSbIA&state=8f3c...&iss=https%3A%2F%2Fapi.boardsesh.com
 ```
+
+Check `state`, and check `iss` equals `https://api.boardsesh.com` (RFC 9207;
+it stops a mix-up if your app talks to several OAuth servers).
 
 If they decline: `?error=access_denied&state=...`.
 
@@ -143,7 +149,7 @@ POST https://api.boardsesh.com/oauth/token
 Content-Type: application/x-www-form-urlencoded
 
 grant_type=authorization_code
-&code=bsc_...
+&code=SplxlOBeZQQYbYS6WxSbIA
 &redirect_uri=com.example.app%3A%2Foauth%2Fboardsesh
 &client_id=bsk_4Rk2PzQ8mW1xTb7nYc3vLd
 &code_verifier=dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk
@@ -157,9 +163,9 @@ send only `client_id`. The same applies to refresh and revoke.
 ```json
 {
   "token_type": "Bearer",
-  "access_token": "bsa_...",
+  "access_token": "2YotnFZFEjr1zCsicMWpAA…",
   "expires_in": 3600,
-  "refresh_token": "bsr_...",
+  "refresh_token": "tGzv3JOkF0XG5Qx2TlKWIA…",
   "scope": "logbook:read profile:read"
 }
 ```
@@ -173,7 +179,7 @@ processes might refresh at once, serialize refreshes per climber.
 
 ```
 POST https://api.boardsesh.com/oauth/token
-grant_type=refresh_token&refresh_token=bsr_...&client_id=bsk_...
+grant_type=refresh_token&refresh_token=tGzv3JOkF0XG5Qx2TlKWIA…&client_id=bsk_...
 &client_secret=...            (confidential apps only)
 ```
 
@@ -186,7 +192,10 @@ Errors follow RFC 6749 section 5.2 (`invalid_grant`, `invalid_client`,
 
 ### When a token stops working
 
-Every API call takes `Authorization: Bearer bsa_...`. A `401` with
+Codes and tokens are opaque strings: store them as secrets, never parse
+them, and do not assume a length or format.
+
+Every API call takes `Authorization: Bearer <access token>`. A `401` with
 `error: "invalid_token"` means the access token expired or was revoked:
 refresh once and retry. If the refresh answers `invalid_grant`, the
 connection is gone. Show a "Reconnect Boardsesh" state and stop calling for
@@ -244,7 +253,7 @@ GET /v1/logbook/changes?cursor=<cursor>&limit=100
     { "type": "tick", "tick": { "id": "0d6c4a2e-…", "…": "…" } },
     { "type": "tick.deleted", "id": "9a1f7c3d-…", "deletedAt": "2026-10-21T07:02:44Z" }
   ],
-  "cursor": "c1.eyJ0IjoiMjAy…",
+  "cursor": "c2.eyJ4IjoiOTg3…",
   "hasMore": true
 }
 ```
@@ -270,27 +279,41 @@ while (hasMore) {
 ```
 
 - Omit `cursor` to start from the beginning. `limit` is 1 to 200, default 100.
-- Apply changes in the order given. A `tick` is an upsert by `id`; you will
-  sometimes receive a tick you already have, unchanged. `tick.deleted` removes
-  it; it may name a tick you never saw.
+- Apply changes in the order given. Each entry is the tick **as it is now**,
+  not a diff: a `tick` is an upsert by `id`, and `tick.deleted` removes it (it
+  may name a tick you never saw). You will sometimes receive a tick you
+  already have, unchanged.
 - Save the returned `cursor` after applying each page, even when `changes` is
-  empty. Cursors are opaque: do not parse or build them.
-- A change becomes visible about 30 seconds after the climber makes it.
+  empty: an empty page still moves it forward. Cursors are opaque: do not
+  parse or build them.
 - Sync when the climber opens your app, and in the background no more often
   than every 15 minutes per climber.
-- Run a full sync (no cursor) about once a month, replacing your copy. It is
-  one request per 200 ticks, and it repairs the rare change an incremental
-  sync can miss.
+
+What the feed guarantees:
+
+- **Nothing is missed.** Every edit, every deletion, and every tick hidden or
+  revealed by Boardsesh's duplicate handling shows up. When a sync ends with
+  `hasMore: false`, your copy matches the climber's logbook as of that sync.
+  You never need a periodic full resync for correctness.
+- **At least once.** Treat every entry as "set this tick to this" or "remove
+  this tick", never as "add one".
+- **Usually within a second.** A change shows up once it is committed and
+  any database write that started before it has finished. A large import on
+  our side can delay the feed; it never drops anything.
+- **Computed fields are not changes.** `climb.name`, `climb.grade` and
+  `climb.boardseshGrade` are filled in when you read. They can change without
+  the tick appearing in the feed; refresh them when you display them if you
+  care.
 
 ### Expired cursors
 
-A cursor you received more than 80 days ago answers `410` with
-`error: "cursor_expired"`, because we keep deletion records for 90 days. Every
-page hands you a fresh cursor, so this only happens to a climber you have not
-synced for 80 days. Start
+We keep change history for 90 days. A cursor older than everything we still
+keep answers `410` with `error: "cursor_expired"`. Every page, empty or not,
+hands you a newer cursor, so this only happens to a climber you have not
+synced for about 90 days (or after a rare database move on our side). Start
 a full sync without a cursor, and when it finishes delete every tick you hold
 for that climber that the full sync did not return. To test this path, send
-the cursor `c1.expired`: it always answers `410`.
+the cursor `c2.expired`: it always answers `410`.
 
 ### One tick
 
@@ -783,7 +806,7 @@ On the roadmap and shaped so none of them changes what is described above:
 Before you ship:
 
 1. The authorize URL opens in a system browser or auth session, with PKCE
-   S256 and a `state` you verify.
+   S256, a `state` you verify, and an `iss` you check.
 2. Refresh tokens are stored encrypted, and the newest one replaces the old
    one on every refresh. Refreshes for one climber never run in parallel.
 3. A `401` triggers one refresh; an `invalid_grant` on refresh shows a

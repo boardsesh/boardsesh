@@ -62,12 +62,38 @@ the link back to the planned session.
 For an interval-style exercise (a 4x4, on-the-minute), count ticks per
 `blockIndex` in the workout results.
 
-### Their Strava-style opt-out
+### Their Strava-style opt-out: two separate choices
 
-Sequence lets a climber choose per workout whether to sync to Strava. The same
-switch fits here on their side: a workout the climber opted out of is never
-created through the API. For the logbook feed, a climber who does not want
-board ticks in Sequence simply does not grant `logbook:read`, or disconnects.
+Sequence lets a climber choose per workout whether to sync to Strava. Against
+Boardsesh there are two different things a climber might mean by "don't
+sync", and they must not be blurred:
+
+| The climber wants | What it means | How |
+| --- | --- | --- |
+| "Don't send this workout to Boardsesh" | No planned-workout handoff for that session | Sequence does not call `POST /v1/workouts` for it. Per workout, Sequence's own switch. Nothing on our side |
+| "Don't bring my board climbing into Sequence" | No imported activity at all | Sequence does not hold `logbook:read`. Account-level, on the consent screen |
+
+The per-workout switch only controls the handoff. If the climber has granted
+`logbook:read`, every tick they log arrives through the feed whether or not it
+was part of a workout, including ticks from a session they opted out of
+handing over. Boardsesh does not filter the feed per workout: the feed is the
+climber's logbook, and a per-workout filter would make "complete" untrue for
+every other app.
+
+So Sequence should present them as two settings:
+
+1. An account setting, "Import my Boardsesh climbing", which is the
+   `logbook:read` scope. Sequence asks for `workouts:write workouts:read` on
+   their own when the climber only wants the handoff, and asks again with
+   `logbook:read` added when the climber turns the import on (consenting again
+   widens the existing connection; the earlier tokens keep working).
+2. The per-workout switch, which decides whether a workout is created.
+
+Turning the import off later means disconnecting and reconnecting without
+`logbook:read`, since a connection's scopes only widen. If Sequence wants to
+hide imported ticks from a session the climber opted out of, it can do that
+in its own app with the workout's results (`ticks[].id`), but that is a
+Sequence display rule, not a sync contract.
 
 ### What changed from the original Sequence spec
 
