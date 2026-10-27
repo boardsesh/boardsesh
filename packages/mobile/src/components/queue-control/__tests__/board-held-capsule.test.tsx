@@ -164,12 +164,22 @@ vi.mock('../../Text', () => ({
     ),
 }));
 vi.mock('../../LargeContentViewer', () => ({
-  LargeContentViewer: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
+  LargeContentViewer: ({
+    children,
+    style,
+    onActivate,
+  }: {
+    children?: ReactNode;
+    style?: unknown;
+    onActivate?: () => void;
+  }) =>
     createElement(
       'div',
       {
         'data-label-viewer': 'true',
         'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
+        // Stands in for the finger lifting while the viewer is up.
+        onDoubleClick: onActivate,
       },
       children,
     ),
@@ -367,6 +377,13 @@ describe('BoardHeldCapsule', () => {
         { name: 'longpress', label: 'ble.holdForControls' },
       ]);
       fireEvent.contextMenu(button);
+      expect(spies.lightbulbLongPress).toHaveBeenCalledTimes(1);
+      expect(spies.lightbulbPress).not.toHaveBeenCalled();
+    });
+
+    it('opens the controls, never lets go, when the Large Content Viewer takes the hold', () => {
+      const { container } = render(<BoardHeldCapsule ledless={false} />);
+      fireEvent.doubleClick(container.querySelector('[data-label-viewer]') as HTMLElement);
       expect(spies.lightbulbLongPress).toHaveBeenCalledTimes(1);
       expect(spies.lightbulbPress).not.toHaveBeenCalled();
     });

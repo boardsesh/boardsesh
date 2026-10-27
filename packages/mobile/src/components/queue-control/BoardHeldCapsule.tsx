@@ -130,7 +130,10 @@ function BoardHeldCapsuleImpl({ ledless }: BoardHeldCapsuleProps) {
           color={toneColor}
         />
       )}
-      <LargeContentViewer title={statusLabel} onActivate={onPress} style={styles.labelViewer}>
+      {/* At an accessibility text size the viewer takes the hold and cancels the
+          capsule's own long press, then activates when the finger lifts. A hold
+          means "board controls" here, so the lift opens them; it never lets go. */}
+      <LargeContentViewer title={statusLabel} onActivate={handleLongPress} style={styles.labelViewer}>
         <Text
           variant="caption1"
           color={systemColors.label}
@@ -210,7 +213,9 @@ export function HeldClimbCapsule({
         byline={byline}
         compact={compact}
         largeContentTitle={accessibilityLabel}
-        onActivate={onPress}
+        // The viewer takes the hold at accessibility sizes; its lift is the long
+        // press (board controls), never the tap that lets go of the board.
+        onActivate={onLongPress}
       />
     </HeaderStatusCapsule>
   );
