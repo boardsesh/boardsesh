@@ -236,6 +236,12 @@ describe('MiniPlayerLeadingButtons', () => {
       expect(host.openAnglePicker).toHaveBeenCalledWith(undefined);
     });
 
+    it('steps out while the /play route is up, whose modal the root sheet would sit behind', () => {
+      navigation.playerOpen = true;
+      const { container } = renderButtons(['angle']);
+      expect(container.querySelector('button')).toBeNull();
+    });
+
     it('draws nothing on a fixed-angle board', () => {
       const { container } = renderButtons(['angle'], { angle: null });
       expect(container.querySelector('button')).toBeNull();

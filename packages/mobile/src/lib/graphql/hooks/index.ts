@@ -182,6 +182,21 @@ function favoriteStatusOrderKey(input: ToggleFavoriteVariables['input']): string
   return JSON.stringify(favoriteStatusQueryKey(input));
 }
 
+/**
+ * What the climb's heart shows right now, read straight from its cache entry:
+ * every toggle writes the entry the moment it is tapped, so this is already a
+ * second tap's truth while the screens are still drawing the first. `undefined`
+ * while nothing has read or written it.
+ */
+function readFavoriteStatusCache(
+  queryClient: ReturnType<typeof useQueryClient>,
+  input: ToggleFavoriteVariables['input'],
+): boolean | undefined {
+  return queryClient
+    .getQueryData<FavoritesQueryResponse>(favoriteStatusQueryKey(input))
+    ?.favorites.includes(input.climbUuid);
+}
+
 /** Pins the per-climb heart. The cached shape is the RAW GET_FAVORITES response (select runs on read). */
 function setFavoriteStatusCache(
   queryClient: ReturnType<typeof useQueryClient>,
@@ -1137,7 +1152,7 @@ export function useToggleFavorite() {
   const queryClient = useQueryClient();
   const offlineEnabled = useOfflineDownloadsEnabled();
 
-  return useMutation({
+  const mutation = useMutation({
     mutationFn: async (variables: ToggleFavoriteVariables) => {
       const db = getDatabaseHandle();
       // Local-first only with the offline flag on; otherwise the plain network
@@ -1150,13 +1165,11 @@ export function useToggleFavorite() {
         }
 
         const favorited = !variables.currentlyFavorited;
-        // Pin the per-climb heart optimistically instead of refetching: a
-        // network refetch here races the queued mutation and can cache the
-        // PRE-toggle state for 5 minutes. The drainer invalidates
-        // ['favoriteStatus'] once the queued write actually lands. The cached
-        // shape is the RAW GET_FAVORITES response (select runs on read).
-        setFavoriteStatusCache(queryClient, variables.input, favorited);
-
+        // No refetch and no write here: `onMutate` already pinned the heart, and
+        // a refetch would race the queued mutation and could cache the
+        // PRE-toggle state for 5 minutes. A write here could land over a newer
+        // tap's pin. The drainer invalidates ['favoriteStatus'] once the queued
+        // write actually lands.
         scheduleDrain(db, queryClient);
 
         return { toggleFavorite: { favorited }, viaLocalQueue: true as const };
@@ -1272,6 +1285,45 @@ export function useToggleFavorite() {
       }
     },
   });
+
+  // A caller says which way it is toggling from what it last drew, which can be
+  // a tap behind: the heart's cache entry moves at the tap, but screens redraw
+  // from it a moment later. A second tap in that moment would send the first
+  // tap's starting value and toggle the same way twice. So the entry decides
+  // whenever it has an answer, for every caller (the player's heart, its ⋯ row,
+  // the MiniPlayer's heart). A caller that says nothing keeps the plain server
+  // toggle.
+  //
+  // The entry is also flipped right here, at the call, not only in `onMutate`,
+  // which React Query runs a microtask later: a second call before then must
+  // already read the first one's flip.
+  const withCurrentFavorite = useCallback(
+    (variables: ToggleFavoriteVariables): ToggleFavoriteVariables => {
+      if (typeof variables.currentlyFavorited !== 'boolean') return variables;
+      const cached = readFavoriteStatusCache(queryClient, variables.input);
+      const resolved =
+        cached === undefined || cached === variables.currentlyFavorited
+          ? variables
+          : { ...variables, currentlyFavorited: cached };
+      void queryClient.cancelQueries({ queryKey: favoriteStatusQueryKey(resolved.input) });
+      setFavoriteStatusCache(queryClient, resolved.input, !resolved.currentlyFavorited);
+      return resolved;
+    },
+    [queryClient],
+  );
+  const { mutate, mutateAsync } = mutation;
+  const mutateFromCurrent = useCallback<typeof mutate>(
+    (variables, options) => mutate(withCurrentFavorite(variables), options),
+    [mutate, withCurrentFavorite],
+  );
+  const mutateAsyncFromCurrent = useCallback<typeof mutateAsync>(
+    (variables, options) => mutateAsync(withCurrentFavorite(variables), options),
+    [mutateAsync, withCurrentFavorite],
+  );
+  return useMemo(
+    () => ({ ...mutation, mutate: mutateFromCurrent, mutateAsync: mutateAsyncFromCurrent }),
+    [mutation, mutateFromCurrent, mutateAsyncFromCurrent],
+  );
 }
 
 /**

@@ -322,10 +322,9 @@ describe('useToggleFavorite', () => {
   // Two taps inside one round trip: the older answer must not flip the heart
   // back for a moment, nor refetch over the newer tap.
   it('leaves the heart to the newer tap when an older one lands first', async () => {
-    requestMock.mockResolvedValueOnce({ favorites: [] });
     const { queryClient, Wrapper } = makeWrapper();
-    const statusHook = renderHook(() => useFavoriteStatus('kilter', 'climb-1', 40), { wrapper: Wrapper });
-    await waitFor(() => expect(statusHook.result.current.data).toBe(false));
+    const key = ['favoriteStatus', 'kilter', 'climb-1', 40];
+    queryClient.setQueryData(key, { favorites: [] });
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
 
     const answers: Array<(value: { toggleFavorite: { favorited: boolean } }) => void> = [];
@@ -338,38 +337,72 @@ describe('useToggleFavorite', () => {
     const toggleHook = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
     const input = { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 };
     const addTap = toggleHook.result.current.mutateAsync({ input, currentlyFavorited: false });
-    await waitFor(() => expect(statusHook.result.current.data).toBe(true));
+    expect(queryClient.getQueryData(key)).toEqual({ favorites: ['climb-1'] });
     const removeTap = toggleHook.result.current.mutateAsync({ input, currentlyFavorited: true });
-    await waitFor(() => expect(statusHook.result.current.data).toBe(false));
+    expect(queryClient.getQueryData(key)).toEqual({ favorites: [] });
     await waitFor(() => expect(answers).toHaveLength(2));
 
+    // The add lands first: it must neither paint "liked" back nor refetch over the remove.
     answers[0]({ toggleFavorite: { favorited: true } });
     await addTap;
-    expect(statusHook.result.current.data).toBe(false);
-    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['favoriteStatus', 'kilter', 'climb-1', 40] });
+    expect(queryClient.getQueryData(key)).toEqual({ favorites: [] });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: key });
 
-    requestMock.mockResolvedValue({ favorites: [] });
     answers[1]({ toggleFavorite: { favorited: false } });
     await removeTap;
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['favoriteStatus', 'kilter', 'climb-1', 40] });
-    expect(statusHook.result.current.data).toBe(false);
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: key });
+    expect(queryClient.getQueryData(key)).toEqual({ favorites: [] });
   });
 
-  it('settles the heart on the server answer when it contradicts the tap', async () => {
-    requestMock.mockResolvedValueOnce({ favorites: [] });
-    const { Wrapper } = makeWrapper();
-    const statusHook = renderHook(() => useFavoriteStatus('kilter', 'climb-1', 40), { wrapper: Wrapper });
-    await waitFor(() => expect(statusHook.result.current.data).toBe(false));
-
-    // Another device had already liked it, so this "add" removes it.
+  it("settles the heart on the server's answer when it contradicts the tap", async () => {
+    const { queryClient, Wrapper } = makeWrapper();
+    const key = ['favoriteStatus', 'kilter', 'climb-1', 40];
+    queryClient.setQueryData(key, { favorites: [] });
+    // Another device had already liked it, so this "add" removes it. The refetch
+    // after it never answers, so only the toggle's own write can set the heart.
     requestMock.mockResolvedValueOnce({ toggleFavorite: { favorited: false } });
-    requestMock.mockResolvedValue({ favorites: [] });
+    requestMock.mockReturnValue(new Promise(() => {}));
     const toggleHook = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
-    await toggleHook.result.current.mutateAsync({
+    const toggle = toggleHook.result.current.mutateAsync({
       input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
       currentlyFavorited: false,
     });
-    await waitFor(() => expect(statusHook.result.current.data).toBe(false));
+    expect(queryClient.getQueryData(key)).toEqual({ favorites: ['climb-1'] });
+    await toggle;
+    expect(queryClient.getQueryData(key)).toEqual({ favorites: [] });
+  });
+
+  // A screen redraws from the cache a moment after the tap, so a second tap in
+  // that moment still says "not liked". The cache entry decides instead.
+  it('toggles from the heart the cache shows, not a caller one tap behind', async () => {
+    localQueue.db = { tag: 'db' };
+    localQueue.offlineEnabled = true;
+    localQueue.addFavoriteLocal.mockClear();
+    localQueue.removeFavoriteLocal.mockClear();
+    const { queryClient, Wrapper } = makeWrapper();
+    const key = ['favoriteStatus', 'kilter', 'climb-1', 40];
+    queryClient.setQueryData(key, { favorites: [] });
+    const toggleHook = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
+    const input = { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 };
+
+    const firstTap = toggleHook.result.current.mutateAsync({ input, currentlyFavorited: false });
+    const secondTap = toggleHook.result.current.mutateAsync({ input, currentlyFavorited: false });
+    await Promise.all([firstTap, secondTap]);
+
+    expect(localQueue.addFavoriteLocal).toHaveBeenCalledTimes(1);
+    expect(localQueue.removeFavoriteLocal).toHaveBeenCalledTimes(1);
+    expect(queryClient.getQueryData(key)).toEqual({ favorites: [] });
+  });
+
+  it('keeps the plain server toggle for a caller that does not say which way', async () => {
+    const { queryClient, Wrapper } = makeWrapper();
+    const key = ['favoriteStatus', 'kilter', 'climb-1', 40];
+    queryClient.setQueryData(key, { favorites: ['climb-1'] });
+    requestMock.mockResolvedValueOnce({ toggleFavorite: { favorited: false } });
+    requestMock.mockReturnValue(new Promise(() => {}));
+    const toggleHook = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
+    await toggleHook.result.current.mutateAsync({ input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 } });
+    expect(requestMock.mock.calls[0][0]).toContain('toggleFavorite');
   });
 
   it("rolls each angle's heart back on its own: a newer tap at 25° leaves the 40° rollback alone", async () => {

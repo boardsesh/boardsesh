@@ -148,11 +148,16 @@ function MiniPlayerQueueButton({ size }: { size: number }) {
  * The player's angle pill and sheet: the same angle the player shows, changed
  * through the player's own handler (the drawer host's), so the crew follows and
  * a foreign climb's board takes it, as from the player.
+ *
+ * Not while the `/play` route is up: the host's sheet presents from the app's
+ * root, so it would land behind that modal (the player has its own sheet).
  */
 function MiniPlayerAngleButton({ angle, climbUuid }: { angle: number; climbUuid: string | undefined }) {
   const { t } = useTranslation('session');
   const { openAnglePicker } = useDrawerHost();
+  const playerRouteUp = isPlayerRoute(useSegments());
   const handlePress = useCallback(() => openAnglePicker(climbUuid), [openAnglePicker, climbUuid]);
+  if (playerRouteUp) return null;
   return (
     <AnglePill
       compact
