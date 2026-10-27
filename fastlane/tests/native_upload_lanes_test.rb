@@ -430,4 +430,79 @@ class NativeUploadLanesTest < Minitest::Test
       "-authenticationKeyID", "FAKEKEY123", "-authenticationKeyIssuerID", "fake-issuer"
     ]], @dsl.commands
   end
+
+  def write_default_screenshot_campaign
+    phone_names = %w[00-your-boards.png 01-spray-wall.png 02-more-boards.png 03-your-crew.png
+                     04-on-the-wall.png 05-one-logbook.png 06-session-plan.png 07-live-activity.png 08-next-project.png]
+    ipad_names = %w[00-wall-kiosk.png 01-wall-status.png 02-home.png 03-discover.png 04-workout-generator.png 05-profile.png]
+    devices = %w[iphone-16-pro-max iphone-16-pro ipad-pro-13-inch-m5 ipad-pro-11-inch-m5]
+    @dsl.const_get(:EXPECTED_DELIVER_LOCALES).each do |locale|
+      devices.each do |device|
+        directory = File.join(@dsl.const_get(:APPLE_SCREENSHOTS_ROOT), locale, device)
+        FileUtils.mkdir_p(directory)
+        names = device.start_with?("iphone-") ? phone_names : ipad_names
+        names.each do |name|
+          filename = locale == "it" && device.start_with?("iphone-") && name == "07-live-activity.png" ? "07-session-detail.png" : name
+          File.write(File.join(directory, filename), "native screenshot bytes")
+        end
+      end
+    end
+    @dsl.extend(@dsl)
+  end
+
+  def campaign_screenshot(locale, device, name)
+    File.join(@dsl.const_get(:APPLE_SCREENSHOTS_ROOT), locale, device, name)
+  end
+
+  def test_screenshot_manifest_accepts_the_exact_six_locale_campaign_with_italian_session_slots
+    write_default_screenshot_campaign
+    manifest = @dsl.screenshot_manifest
+    assert_equal %w[de-DE en-US es-ES es-MX fr-FR it], manifest.keys.sort
+    assert_equal 180, manifest.values.sum { |devices| devices.values.sum(&:length) }
+    %w[iphone-16-pro-max iphone-16-pro].each do |device|
+      filenames = manifest.fetch("it").fetch(device).map { |path| File.basename(path) }
+      assert_includes filenames, "07-session-detail.png"
+      refute_includes filenames, "07-live-activity.png"
+      assert_equal 9, filenames.length
+    end
+    assert_equal 6, manifest.fetch("it").fetch("ipad-pro-13-inch-m5").length
+  end
+
+  def test_screenshot_manifest_rejects_a_missing_italian_session_capture
+    write_default_screenshot_campaign
+    FileUtils.rm(campaign_screenshot("it", "iphone-16-pro", "07-session-detail.png"))
+    error = assert_raises(RuntimeError) { @dsl.screenshot_manifest }
+    assert_includes error.message, "Screenshot files for it/iphone-16-pro do not match"
+  end
+
+  def test_screenshot_manifest_rejects_the_old_live_activity_in_the_italian_slot
+    write_default_screenshot_campaign
+    FileUtils.mv(campaign_screenshot("it", "iphone-16-pro", "07-session-detail.png"),
+      campaign_screenshot("it", "iphone-16-pro", "07-live-activity.png"))
+    error = assert_raises(RuntimeError) { @dsl.screenshot_manifest }
+    assert_includes error.message, "Screenshot files for it/iphone-16-pro do not match"
+  end
+
+  def test_screenshot_manifest_rejects_an_additional_italian_session_capture
+    write_default_screenshot_campaign
+    File.write(campaign_screenshot("it", "iphone-16-pro", "09-session-detail.png"), "unexpected capture")
+    error = assert_raises(RuntimeError) { @dsl.screenshot_manifest }
+    assert_includes error.message, "Screenshot files for it/iphone-16-pro do not match"
+  end
+
+  def test_screenshot_manifest_rejects_the_session_substitution_in_french
+    write_default_screenshot_campaign
+    FileUtils.mv(campaign_screenshot("fr-FR", "iphone-16-pro", "07-live-activity.png"),
+      campaign_screenshot("fr-FR", "iphone-16-pro", "07-session-detail.png"))
+    error = assert_raises(RuntimeError) { @dsl.screenshot_manifest }
+    assert_includes error.message, "Screenshot files for fr-FR/iphone-16-pro do not match"
+  end
+
+  def test_screenshot_manifest_rejects_the_session_substitution_on_italian_ipad
+    write_default_screenshot_campaign
+    FileUtils.mv(campaign_screenshot("it", "ipad-pro-13-inch-m5", "05-profile.png"),
+      campaign_screenshot("it", "ipad-pro-13-inch-m5", "07-session-detail.png"))
+    error = assert_raises(RuntimeError) { @dsl.screenshot_manifest }
+    assert_includes error.message, "Screenshot files for it/ipad-pro-13-inch-m5 do not match"
+  end
 end

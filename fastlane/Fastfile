@@ -191,6 +191,11 @@ def screenshot_manifest
 
     reference_devices.each do |device_slug|
       expected_names = manifest.fetch(reference_locale).fetch(device_slug).map { |path| File.basename(path) }
+      if locale == "it" && device_slug.start_with?("iphone-")
+        # Italian uses its native session capture until a physical Live Activity
+        # fixture is reviewed. Every other filename still matches exactly.
+        expected_names = expected_names.map { |name| name == "07-live-activity.png" ? "07-session-detail.png" : name }.sort
+      end
       actual_names = devices.fetch(device_slug).map { |path| File.basename(path) }
       if actual_names != expected_names
         UI.user_error!("Screenshot files for #{locale}/#{device_slug} do not match #{reference_locale}/#{device_slug}.")
