@@ -229,6 +229,8 @@ vi.mock('../../../../lib/rest-timer-effective', () => restTimerEffective);
 
 import {
   getWorkoutRunForSession,
+  isWorkoutRunPendingStart,
+  prepareWorkoutRun,
   resetWorkoutRunStoreForTests,
   setWorkoutRun,
 } from '../../../../lib/workout-run-store';
@@ -531,6 +533,20 @@ describe('AddWorkoutBlockSheet', () => {
     await press();
 
     expect(getWorkoutRunForSession('session-1')).toEqual(preview.staged.run);
+  });
+
+  it('keeps an added timed block prepared until the explicit Start workout action', async () => {
+    prepareWorkoutRun('session-1', {
+      stages: [{ id: 'stage-pyramid', kind: 'pyramid', itemUuids: ['p1'], targetGrade: 18 }],
+    });
+    readyFourByFourPreview(['f1', 'f2']);
+    renderSheet(true);
+
+    await press();
+
+    expect(getWorkoutRunForSession('session-1')?.stages).toHaveLength(2);
+    expect(isWorkoutRunPendingStart('session-1')).toBe(true);
+    expect(restTimerEffective.armRestTimerForWorkout).not.toHaveBeenCalled();
   });
 
   it('keeps Add to session off until the preview is ready', async () => {

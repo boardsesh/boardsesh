@@ -36,6 +36,7 @@ import { useActiveBoard } from '../../../lib/graphql/use-active-board';
 import {
   getWorkoutRunForSession,
   hydrateWorkoutRun,
+  isWorkoutRunPendingStart,
   setWorkoutRun,
   useWorkoutRun,
 } from '../../../lib/workout-run-store';
@@ -260,7 +261,7 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
     // The added block's own pacing, not the run's: adding a volume block to a
     // workout that once had a 4x4 must not turn back on a timer the climber
     // switched off.
-    armRestTimerForWorkout(sessionId, blockRun, nowMs());
+    if (!isWorkoutRunPendingStart(sessionId)) armRestTimerForWorkout(sessionId, blockRun, nowMs());
     track(SHARED_EVENTS.SessionQueueGenerated, {
       // One block and never a warm-up, so both fields hold the same type here;
       // `phase` tells this add apart from a pre-session workout.

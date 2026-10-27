@@ -13,6 +13,21 @@ const harness = vi.hoisted(() => ({
   restTimerBottom: 83,
   widthClass: 'compact' as 'compact' | 'regular',
   windowWidth: 390,
+  workoutStartPending: false,
+  hasWorkoutClimb: true,
+  startWorkout: vi.fn(),
+}));
+
+vi.mock('../../../providers/queue-provider', () => ({ useQueueSessionId: () => ({ sessionId: 'session-1' }) }));
+vi.mock('../../../lib/workout-run-store', () => ({
+  useWorkoutRunPendingStart: () => harness.workoutStartPending,
+}));
+vi.mock('../../../hooks/use-start-workout', () => ({
+  useStartWorkout: () => ({
+    pending: harness.workoutStartPending,
+    firstItem: harness.hasWorkoutClimb ? { climb: { name: 'First climb' } } : null,
+    startWorkout: harness.startWorkout,
+  }),
 }));
 
 vi.mock('react-native', () => ({
@@ -38,6 +53,21 @@ vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12, 4: 16 } 
 vi.mock('../RestTimerPill', () => ({
   RestTimerPill: ({ compact, onPress }: { compact?: boolean; onPress: () => void }) =>
     createElement('button', { 'data-testid': 'pill', 'data-compact': String(Boolean(compact)), onClick: onPress }),
+  WorkoutStartPill: ({
+    compact,
+    onPress,
+    firstClimbName,
+  }: {
+    compact?: boolean;
+    onPress: () => void;
+    firstClimbName: string | null;
+  }) =>
+    createElement('button', {
+      'data-testid': 'start-workout',
+      'data-compact': String(Boolean(compact)),
+      onClick: onPress,
+      disabled: firstClimbName === null,
+    }),
 }));
 
 vi.mock('../RestTimerSheet', () => ({
@@ -61,6 +91,9 @@ describe('RestTimerPillHost', () => {
     harness.insideTabs = true;
     harness.widthClass = 'compact';
     harness.windowWidth = 390;
+    harness.workoutStartPending = false;
+    harness.hasWorkoutClimb = true;
+    harness.startWorkout.mockClear();
   });
 
   afterEach(() => {
@@ -88,6 +121,37 @@ describe('RestTimerPillHost', () => {
     const { getByTestId } = render(<RestTimerPillHost compact />);
     expect(getByTestId('pill').getAttribute('data-compact')).toBe('true');
   });
+
+  it('offers Start workout before an unarmed timer and launches instead of opening settings', () => {
+    harness.workoutStartPending = true;
+    const { getByTestId, queryByTestId } = render(<RestTimerPillHost />);
+    fireEvent.click(getByTestId('start-workout'));
+    expect(harness.startWorkout).toHaveBeenCalledOnce();
+    expect(queryByTestId('sheet')).toBeNull();
+    expect(queryByTestId('pill')).toBeNull();
+  });
+
+  it('keeps Start disabled when every workout climb was removed', () => {
+    harness.workoutStartPending = true;
+    harness.hasWorkoutClimb = false;
+    const { getByTestId } = render(<RestTimerPillHost compact />);
+    const start = getByTestId('start-workout') as HTMLButtonElement;
+    expect(start.disabled).toBe(true);
+    expect(start.getAttribute('data-compact')).toBe('true');
+    fireEvent.click(start);
+    expect(harness.startWorkout).not.toHaveBeenCalled();
+  });
+
+  it('switches from Start to the timer after launch while preserving the mounted host', () => {
+    harness.workoutStartPending = true;
+    const { rerender, queryByTestId, getByTestId } = render(<RestTimerPillHost />);
+    arm();
+    harness.workoutStartPending = false;
+    rerender(<RestTimerPillHost />);
+    expect(queryByTestId('start-workout')).toBeNull();
+    fireEvent.click(getByTestId('pill'));
+    expect(getByTestId('sheet').getAttribute('data-visible')).toBe('true');
+  });
 });
 
 describe('RootRestTimerPillHost', () => {
@@ -96,6 +160,7 @@ describe('RootRestTimerPillHost', () => {
     harness.restTimerBottom = 83;
     harness.widthClass = 'compact';
     harness.windowWidth = 390;
+    harness.workoutStartPending = false;
   });
 
   afterEach(() => {
@@ -117,6 +182,12 @@ describe('RootRestTimerPillHost', () => {
     harness.insideTabs = false;
     const { queryByTestId } = render(<RootRestTimerPillHost />);
     expect(queryByTestId('pill')).toBeNull();
+  });
+
+  it('mounts the prepared Start pill even before the timer is armed', () => {
+    harness.workoutStartPending = true;
+    const { getByTestId } = render(<RootRestTimerPillHost />);
+    expect(getByTestId('start-workout')).toBeTruthy();
   });
 
   it('does not render on the regular-width iPad shell, where the pane owns the queue', () => {
@@ -174,4 +245,28 @@ describe('the root pill gate matches the bottom-chrome reserve', () => {
       computeBottomChromeMetrics({ ...baseInputs, insideTabs: true, restTimerArmed: false }).scrollBottomPadding,
     ).toBe(computeBottomChromeMetrics({ ...baseInputs, insideTabs: true }).scrollBottomPadding);
   });
+
+  for (const inputs of cases) {
+    it(`reserves exactly one pill for a prepared workout: ${inputs.label}`, () => {
+      const { label: _label, ...geometry } = inputs;
+      const prepared = computeBottomChromeMetrics({ ...baseInputs, ...geometry, workoutStartPending: true });
+      const armed = computeBottomChromeMetrics({ ...baseInputs, ...geometry, restTimerArmed: true });
+      const both = computeBottomChromeMetrics({
+        ...baseInputs,
+        ...geometry,
+        restTimerArmed: true,
+        workoutStartPending: true,
+      });
+      expect(prepared).toEqual(armed);
+      expect(both).toEqual(armed);
+      expect(
+        shouldRenderRestTimerPill({
+          armed: false,
+          workoutStartPending: true,
+          insideTabs: geometry.insideTabs,
+          usesSidebar: geometry.usesSidebar,
+        }),
+      ).toBe(reservesForPill(geometry));
+    });
+  }
 });

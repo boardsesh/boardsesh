@@ -21,6 +21,7 @@ const cfg = vi.hoisted(() => ({
   sessionId: null as string | null,
   activeSegment: null as string | null,
 }));
+vi.mock('../../../lib/workout-run-store', () => ({ useWorkoutRunPendingStart: () => false }));
 
 // useAccessoryClimbTap builds a preview queue item via climbToQueueItem, which
 // pulls expo-crypto's randomUUID — stub it so the native module isn't loaded.

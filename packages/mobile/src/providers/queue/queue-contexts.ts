@@ -111,6 +111,8 @@ type QueueContextValue = {
    * queue change.
    */
   getQueueSnapshot: () => {
+    /** Live session identity, for actions that must reject a stale session callback. */
+    sessionId?: string | null;
     queue: ClimbQueueItem[];
     currentClimbQueueItem: ClimbQueueItem | null;
     /** F3 now-slot mode: the History / Up next line. Null or absent in legacy mode. */

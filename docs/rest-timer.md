@@ -29,6 +29,14 @@ clock comes back from the session's seed, whoever set it (see "The crew's clock"
 
 ## Effective pacing
 
+A workout prepared on the Workout tab does not take over pacing until **Start
+workout** is tapped. Its saved pending marker gates stage sync and automatic arming
+when adding a block. The pill shows Start workout even with the timer off, and the
+workout card provides the same action on iPad. A timed launch uses an explicit
+fresh-stage transition through the effective-pacing helper, which also consumes
+the crew-start boundary: on the minute starts a full interval, and after-tick
+pacing waits for a tick. See `docs/workout-stages.md`, "Building a workout".
+
 The timer runs on an `EffectiveRestPacing`: a rest length, a cadence (`afterTick` or
 `onTheMinute`), an auto-advance switch, an advance rule and the source it came from.
 `resolveEffectiveRestPacing` picks the source, highest first:

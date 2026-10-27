@@ -21,7 +21,11 @@ const cfg = vi.hoisted(() => ({
   hasCurrentClimb: true,
   widthClass: 'compact' as 'compact' | 'regular',
   windowWidth: 430,
+  workoutStartPending: false,
 }));
+
+vi.mock('../../providers/queue-provider', () => ({ useQueueSessionId: () => ({ sessionId: 'session-1' }) }));
+vi.mock('../../lib/workout-run-store', () => ({ useWorkoutRunPendingStart: () => cfg.workoutStartPending }));
 
 vi.mock('expo-router', () => ({ useSegments: () => cfg.segments }));
 vi.mock('react-native', () => ({
@@ -81,6 +85,7 @@ describe('BottomChromeMetricsProvider fan-out', () => {
     cfg.hasCurrentClimb = true;
     cfg.widthClass = 'compact';
     cfg.windowWidth = 430;
+    cfg.workoutStartPending = false;
     resetNativeTabContentInsetForTests();
     for (const key of Object.keys(counts)) delete counts[key];
     for (const key of Object.keys(received)) delete received[key];
@@ -112,6 +117,18 @@ describe('BottomChromeMetricsProvider fan-out', () => {
     // re-runs but its memoized value keeps identity, so no consumer re-renders.
     rerender(<Harness tick={1} />);
     expect(counts).toEqual({ a: 1, b: 1, c: 1 });
+  });
+
+  it('reserves for a prepared workout before arming, and drops the reserve after it starts', () => {
+    const { rerender } = render(<Harness tick={0} />);
+    const initialPadding = received.a.scrollBottomPadding;
+    cfg.workoutStartPending = true;
+    rerender(<Harness tick={1} />);
+    expect(received.a.scrollBottomPadding).toBeGreaterThan(initialPadding);
+    expect(counts).toEqual({ a: 2, b: 2, c: 2 });
+    cfg.workoutStartPending = false;
+    rerender(<Harness tick={2} />);
+    expect(received.a.scrollBottomPadding).toBe(initialPadding);
   });
 
   it('does not re-render consumers when navigation keeps the same geometry', () => {

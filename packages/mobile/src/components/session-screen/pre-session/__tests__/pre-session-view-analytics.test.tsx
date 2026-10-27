@@ -43,7 +43,7 @@ const previewRows = vi.hoisted(() =>
 const previewRun = vi.hoisted((): WorkoutRun => ({
   stages: [{ id: 'stage-main', kind: 'volume', itemUuids: ['c1', 'c2'] }],
 }));
-const workoutRunStore = vi.hoisted(() => ({ setWorkoutRun: vi.fn() }));
+const workoutRunStore = vi.hoisted(() => ({ prepareWorkoutRun: vi.fn() }));
 vi.mock('../../../../lib/workout-run-store', () => workoutRunStore);
 // Whether a run arms the timer is pinned in rest-timer-effective.test.ts; here,
 // only that Start hands it the run it just stored.
@@ -250,7 +250,7 @@ beforeEach(() => {
   queue.startSession.mockClear();
   queue.startSession.mockResolvedValue('session-1');
   queue.appendQueueItems.mockClear();
-  workoutRunStore.setWorkoutRun.mockClear();
+  workoutRunStore.prepareWorkoutRun.mockClear();
   restTimerEffective.armRestTimerForWorkout.mockClear();
   screenState.sessionId = null;
   screenState.isFocused = true;
@@ -305,7 +305,7 @@ describe('PreSessionView Shuffle during Start', () => {
     expect(preview.result.items).toEqual(previewRows);
 
     await act(async () => creation.resolve('session-1'));
-    expect(queue.appendQueueItems).toHaveBeenCalledExactlyOnceWith(previewItems, { activateFirstWhenIdle: true });
+    expect(queue.appendQueueItems).toHaveBeenCalledExactlyOnceWith(previewItems);
   });
 
   it.each(['null', 'reject'] as const)('allows Shuffle again after a %s creation failure', async (failure) => {
@@ -329,7 +329,7 @@ describe('PreSessionView Shuffle during Start', () => {
     expect(navigation.navigate).not.toHaveBeenCalled();
   });
 
-  it('keeps Shuffle disabled after creation until the native tab handoff', async () => {
+  it('shows the prepared workout on the same tab once creation and queue preparation settle', async () => {
     const creation = Promise.withResolvers<string | null>();
     queue.startSession.mockReturnValueOnce(creation.promise);
     const screen = render(createElement(SessionScreen));
@@ -338,19 +338,13 @@ describe('PreSessionView Shuffle during Start', () => {
     await act(async () => startButton.onPress?.());
     screenState.sessionId = 'session-1';
     screen.rerender(createElement(SessionScreen));
+    expect(screen.queryByText('Live session settings')).toBeNull();
     await act(async () => creation.resolve('session-1'));
 
-    expect(navigation.navigate).toHaveBeenCalledExactlyOnceWith('/(tabs)/climbs');
-    const shuffleButton = screen.getByLabelText('mobile.session.preWorkoutPreviewShuffleAccessibilityLabel');
-    fireEvent.click(shuffleButton);
-    expect(preview.result.shuffle).not.toHaveBeenCalled();
-    expect(shuffleButton).toHaveProperty('disabled', true);
-    expect(queue.appendQueueItems).toHaveBeenCalledExactlyOnceWith(previewItems, { activateFirstWhenIdle: true });
-
-    screenState.isFocused = false;
-    screen.rerender(createElement(SessionScreen));
-    screenState.isFocused = true;
-    screen.rerender(createElement(SessionScreen));
+    expect(navigation.navigate).not.toHaveBeenCalled();
+    expect(queue.appendQueueItems).toHaveBeenCalledExactlyOnceWith(previewItems);
+    expect(workoutRunStore.prepareWorkoutRun).toHaveBeenCalledExactlyOnceWith('session-1', previewRun);
+    expect(restTimerEffective.armRestTimerForWorkout).not.toHaveBeenCalled();
     expect(screen.queryByLabelText('mobile.session.preWorkoutPreviewShuffleAccessibilityLabel')).toBeNull();
     expect(screen.getByText('Live session settings')).toBeTruthy();
   });
@@ -409,13 +403,10 @@ describe('PreSessionView analytics', () => {
     );
 
     // Preview items queued behind the live queue; the provider decides the
-    // current climb (it stays put unless nothing is active).
+    // current climb stays put, including when nothing is active.
     expect(queue.appendQueueItems).toHaveBeenCalledTimes(1);
-    expect(queue.appendQueueItems).toHaveBeenCalledWith(previewItems, { activateFirstWhenIdle: true });
-    expect(navigation.navigate).toHaveBeenCalledExactlyOnceWith('/(tabs)/climbs');
-    expect(queue.appendQueueItems.mock.invocationCallOrder[0]).toBeLessThan(
-      navigation.navigate.mock.invocationCallOrder[0],
-    );
+    expect(queue.appendQueueItems).toHaveBeenCalledWith(previewItems);
+    expect(navigation.navigate).not.toHaveBeenCalled();
     expect(analytics.track).toHaveBeenCalledWith('Session Queue Generated', {
       workoutType: 'volume',
       workoutTypes: 'volume',
@@ -429,16 +420,9 @@ describe('PreSessionView analytics', () => {
       substitutedCount: 0,
     });
     // The run is kept on the phone for the session that just started.
-    expect(workoutRunStore.setWorkoutRun).toHaveBeenCalledExactlyOnceWith('session-1', previewRun);
-    // Then a timed block in it can turn the rest timer on, for that session.
-    expect(restTimerEffective.armRestTimerForWorkout).toHaveBeenCalledExactlyOnceWith(
-      'session-1',
-      previewRun,
-      expect.any(Number),
-    );
-    expect(workoutRunStore.setWorkoutRun.mock.invocationCallOrder[0]).toBeLessThan(
-      restTimerEffective.armRestTimerForWorkout.mock.invocationCallOrder[0],
-    );
+    expect(workoutRunStore.prepareWorkoutRun).toHaveBeenCalledExactlyOnceWith('session-1', previewRun);
+    // Pacing waits for the explicit Start workout action in the pill/card.
+    expect(restTimerEffective.armRestTimerForWorkout).not.toHaveBeenCalled();
   });
 
   it('reports every block of a multi-block workout and stores its multi-stage run', async () => {
@@ -493,7 +477,7 @@ describe('PreSessionView analytics', () => {
         phase: 'pre_session',
         substitutedCount: 0,
       });
-      expect(workoutRunStore.setWorkoutRun).toHaveBeenCalledExactlyOnceWith('session-1', multiStageRun);
+      expect(workoutRunStore.prepareWorkoutRun).toHaveBeenCalledExactlyOnceWith('session-1', multiStageRun);
     } finally {
       preview.result.toStagedQueueItems = singleStageQueueItems;
     }
@@ -534,7 +518,7 @@ describe('PreSessionView analytics', () => {
 
         await act(async () => startButton.onPress?.());
 
-        expect(queue.appendQueueItems).toHaveBeenCalledExactlyOnceWith(previewItems, { activateFirstWhenIdle: true });
+        expect(queue.appendQueueItems).toHaveBeenCalledExactlyOnceWith(previewItems);
         expect(analytics.track).toHaveBeenCalledWith(
           'Session Queue Generated',
           expect.objectContaining({ savedCount: 2, failedCount, stageCount: 1 }),

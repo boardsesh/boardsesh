@@ -12,6 +12,17 @@ const queueState = vi.hoisted(() => ({
   playlistSuggestionSource: null as null,
 }));
 const queueActions = vi.hoisted(() => ({ setCurrentClimb: vi.fn() }));
+const startWorkout = vi.hoisted(() => vi.fn());
+vi.mock('../../../../hooks/use-start-workout', async () => {
+  const { useWorkoutRunPendingStart } = await import('../../../../lib/workout-run-store');
+  return {
+    useStartWorkout: () => ({
+      pending: useWorkoutRunPendingStart(queueState.sessionId),
+      firstItem: queueState.queue.find((item) => item.uuid === 'w1') ?? null,
+      startWorkout,
+    }),
+  };
+});
 // A queue item as the runner reads it: every one carries its climb.
 const withClimb = vi.hoisted(
   () => (item: { uuid: string; climb?: { uuid: string; name: string } }) =>
@@ -128,6 +139,7 @@ import {
   countWorkoutRunTicks,
   getWorkoutRunLog,
   noteWorkoutRunTick,
+  prepareWorkoutRun,
   resetWorkoutRunStoreForTests,
   setWorkoutRun,
 } from '../../../../lib/workout-run-store';
@@ -158,6 +170,7 @@ beforeEach(() => {
   queueActions.setCurrentClimb.mockClear();
   drawerHost.openPlayDrawer.mockClear();
   armRestTimerForWorkout.mockClear();
+  startWorkout.mockClear();
   timerDriver.canAdvanceQueue = true;
   queueState.playlistSuggestionSource = null;
   queueListeners.clear();
@@ -167,6 +180,35 @@ beforeEach(() => {
 });
 
 describe('WorkoutRunCard', () => {
+  it('offers explicit Start before current-climb and timer controls, including an already selected workout climb', () => {
+    prepareWorkoutRun('session-1', run);
+    render(createElement(WorkoutRunCard, { onAddBlock: vi.fn() }));
+
+    fireEvent.click(screen.getByTestId('workout-runner-start'));
+    expect(startWorkout).toHaveBeenCalledOnce();
+    expect(screen.queryByTestId('workout-runner-current')).toBeNull();
+    expect(screen.queryByTestId('workout-runner-overall')).toBeNull();
+    expect(screen.queryByTestId('workout-runner-rest')).toBeNull();
+    expect(screen.queryByTestId('workout-runner-turn-on')).toBeNull();
+    expect(screen.queryByTestId('workout-runner-done')).toBeNull();
+    expect(rowTexts()).toEqual([
+      'workout-stage|preWorkoutSectionWarmUpworkoutStageClimbs:3',
+      'workout-stage|preGeneratorVolumeworkoutStageClimbs:2',
+    ]);
+    expect(screen.getByTestId('workout-add-block')).toBeTruthy();
+  });
+
+  it('offers Add a block after every prepared climb leaves the queue', () => {
+    prepareWorkoutRun('session-1', run);
+    queueState.queue = queued(['hand-queued']);
+    const onAddBlock = vi.fn();
+    render(createElement(WorkoutRunCard, { onAddBlock }));
+
+    expect(screen.queryByTestId('workout-runner-start')).toBeNull();
+    fireEvent.click(screen.getByText('addWorkoutPromptTitle'));
+    expect(onAddBlock).toHaveBeenCalledOnce();
+  });
+
   it('renders nothing for a session without a workout', () => {
     const { container } = render(createElement(WorkoutRunCard));
     expect(container.textContent).toBe('');

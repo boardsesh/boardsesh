@@ -242,7 +242,7 @@ stage, leaves the climber's own rest settings in charge, exactly as before. The 
   the anchor: the rest waits for the next tick. A paused timer takes the change too, so Resume
   starts a fresh rest instead of carrying the last climb's into the new stage: the first climb
   on the minute still gets a whole interval.
-- **Arming.** Start, and "Add a block", arm the timer when the workout (for a mid-session
+- **Arming.** "Start workout", and "Add a block" in a workout already started, arm the timer when the workout (for a mid-session
   block: the block) has a timed stage and the timer is off (`armRestTimerForWorkout`), so a
   timed block runs hands-free. A timer the climber already set up is left alone, and arming
   still never survives a cold start.
@@ -407,9 +407,21 @@ whose key is still in the plan and was fetched for at least the demand it needs 
 kept, so one filter tap fetches only the changed block's pools, and a block whose
 settings and filters did not change keeps its rows (same climbs, same queue-item
 uuids) while their climbs still fit its pools. A board or sign-in change, and the
-public `regenerate`, start fresh. Start queues the preview with
-`activateFirstWhenIdle` so the first climb goes on the wall, then writes the run, each
-stage with its filters, for the new session.
+public `regenerate`, start fresh. Start creates the session, queues the reviewed
+preview without taking the wall, and stays on Workout. The saved run carries
+`pendingStart: true` until the climber taps **Start workout** in the floating timer
+pill or the workout card (also available on iPad). Reopening the app keeps the
+workout prepared; an older record without the marker keeps its existing behavior.
+Adding a block preserves the marker and does not arm workout pacing.
+
+Start workout opens the first remaining staged item in current queue order,
+reusing its queue-item uuid, and then starts its pacing. On the minute gets a full
+first interval; after-tick pacing waits for the climb's own tick. A failed player
+open leaves Start available for retry without touching the timer. Manual or remote
+climb selections never consume preparation. Existing personal or crew clocks keep
+running while the workout is prepared, but its stages cannot take over pacing.
+If every workout climb leaves the queue, the pill stays disabled with its space
+reserved and the card offers Add a block.
 
 **During a session.** The "Your workout" card has an "Add a block" button. A session
 without a workout shows one row, "Add a workout block", in the same spot, so a session

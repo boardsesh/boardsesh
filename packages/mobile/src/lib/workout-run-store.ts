@@ -85,7 +85,13 @@ export type WorkoutTickLogEntry = {
  */
 export const MAX_WORKOUT_TICK_LOG = 2000;
 
-export type WorkoutRunRecord = { sessionId: string; run: WorkoutRun; log?: WorkoutTickLogEntry[] };
+export type WorkoutRunRecord = {
+  sessionId: string;
+  run: WorkoutRun;
+  log?: WorkoutTickLogEntry[];
+  /** Prepared on Workout; only an explicit Start workout begins its pacing. */
+  pendingStart?: true;
+};
 
 const EMPTY_LOG: readonly WorkoutTickLogEntry[] = Object.freeze([]);
 
@@ -217,6 +223,7 @@ function readWorkoutRunRecord(candidate: unknown): WorkoutRunRecord | null {
     stages.push(stage);
   }
   const readable: WorkoutRunRecord = { sessionId: record.sessionId, run: { stages } };
+  if (record.pendingStart === true) readable.pendingStart = true;
   if (Array.isArray(record.log)) {
     const log = record.log.map(readTickLogEntry).filter((entry): entry is WorkoutTickLogEntry => entry !== null);
     if (log.length > 0) readable.log = log;
@@ -273,6 +280,7 @@ function mergeSlotsForSession(newerKinds: WorkoutRunRecord, originalKinds: Worko
     run = appendStageToRun(run, stage, stage.itemUuids);
   }
   const merged: WorkoutRunRecord = { sessionId: newerKinds.sessionId, run };
+  if (newerKinds.pendingStart || originalKinds.pendingStart) merged.pendingStart = true;
   const log = joinTickLogs(newerKinds.log, originalKinds.log);
   if (log) merged.log = log;
   return merged;
@@ -294,6 +302,28 @@ export function getWorkoutRunForSession(sessionId: string | null): WorkoutRun | 
   return sessionId !== null && state?.sessionId === sessionId ? state.run : null;
 }
 
+/** An older record without the optional marker is an already-started workout. */
+export function isWorkoutRunPendingStart(sessionId: string | null): boolean {
+  return sessionId !== null && state?.sessionId === sessionId && state.pendingStart === true;
+}
+
+/** Prepare a new workout without starting its first climb or its clock. */
+export function prepareWorkoutRun(sessionId: string, run: WorkoutRun): void {
+  const next: WorkoutRunRecord | null = run.stages.length > 0 ? { sessionId, run, pendingStart: true } : null;
+  setState(next);
+  persist(next);
+}
+
+/** Consume the launch once, even when multiple pill/card callbacks still hold the old render. */
+export function markWorkoutRunStarted(sessionId: string): boolean {
+  if (!isWorkoutRunPendingStart(sessionId) || state === null) return false;
+  const next = { ...state };
+  delete next.pendingStart;
+  setState(next);
+  persist(next);
+  return true;
+}
+
 /**
  * Remember a session's run, replacing whatever was stored. An empty run clears.
  * The tick log stays when the session is the same: "Add a block" rewrites the
@@ -305,6 +335,7 @@ export function setWorkoutRun(sessionId: string, run: WorkoutRun): void {
     next = { sessionId, run };
     const keptLog = state?.sessionId === sessionId ? state.log : undefined;
     if (keptLog) next.log = keptLog;
+    if (isWorkoutRunPendingStart(sessionId)) next.pendingStart = true;
   }
   setState(next);
   persist(next);
@@ -434,6 +465,12 @@ export async function clearWorkoutRunForSession(sessionId: string): Promise<void
 /** The run for `sessionId`. Re-renders only when that answer changes. */
 export function useWorkoutRun(sessionId: string | null): WorkoutRun | null {
   const getSnapshot = useCallback(() => getWorkoutRunForSession(sessionId), [sessionId]);
+  return useSyncExternalStore(subscribeWorkoutRun, getSnapshot, getSnapshot);
+}
+
+/** Separate from the run identity, which stays the same when Start is consumed. */
+export function useWorkoutRunPendingStart(sessionId: string | null): boolean {
+  const getSnapshot = useCallback(() => isWorkoutRunPendingStart(sessionId), [sessionId]);
   return useSyncExternalStore(subscribeWorkoutRun, getSnapshot, getSnapshot);
 }
 

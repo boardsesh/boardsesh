@@ -138,6 +138,8 @@ export type BottomChromeInputs = {
    * it — it anchors to {@link BottomChromeMetrics.restTimerBottom}.
    */
   restTimerArmed?: boolean;
+  /** A prepared workout uses the same pill reserve before its timer is armed. */
+  workoutStartPending?: boolean;
 };
 
 export type BottomChromeMetrics = {
@@ -270,6 +272,7 @@ export function computeBottomChromeMetrics({
   measuredTabContentInsetBottom = null,
   connectivityBannerHeight = 0,
   restTimerArmed = false,
+  workoutStartPending = false,
 }: BottomChromeInputs): BottomChromeMetrics {
   // Regular-width iPad with the detail pane mounted: the left sidebar replaces
   // the bottom tab bar and the selected-climb pane replaces the floating queue
@@ -373,7 +376,7 @@ export function computeBottomChromeMetrics({
   // off the sidebar shell (which returned above). A fixed reserve, not a
   // measured one — see REST_TIMER_RESERVE in theme/layout for why the pill is
   // not another publish-and-measure store.
-  const restTimerShows = restTimerArmed && insideTabs && !usesSidebar;
+  const restTimerShows = (restTimerArmed || workoutStartPending) && insideTabs && !usesSidebar;
   const restTimerReserve = restTimerShows ? REST_TIMER_RESERVE : 0;
   // The pill sits one gap ABOVE the queue chrome, not flush on it. Without this
   // the pill's rounded bottom edge touched the iOS 26 accessory platter and the

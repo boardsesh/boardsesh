@@ -12,9 +12,7 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import { track } from '../../../lib/analytics';
-import { setWorkoutRun } from '../../../lib/workout-run-store';
-import { armRestTimerForWorkout } from '../../../lib/rest-timer-effective';
-import { nowMs } from '../../../lib/clock';
+import { prepareWorkoutRun } from '../../../lib/workout-run-store';
 import { Card } from '../../Card';
 import { SectionHeader } from '../../SectionHeader';
 import { Text } from '../../Text';
@@ -71,7 +69,7 @@ type PreSessionViewProps = {
   /** The owning screen retains this form while session state becomes live. */
   onStartingChange?: (starting: boolean) => void;
   /** The owning screen completes the tab handoff after the queue is ready. */
-  onStarted?: () => void;
+  onStarted?: (hasWorkout: boolean) => void;
   /** Keep Start disabled until the native tab has left this screen. */
   isOpeningClimbs?: boolean;
 };
@@ -82,7 +80,8 @@ type PreSessionViewProps = {
  * then tap Start. The preview is built/refreshed by `useWorkoutPreview`; Start
  * creates the session (the ONLY create path besides joining — sessions are never
  * created lazily) and queues the preview behind the live queue without moving the
- * current climb, then opens Climbs with the new session running.
+ * current climb. A workout stays here ready for Start workout; a plain session
+ * opens Climbs with the new session running.
  */
 function previewKeyExtractor(row: PreviewListRow): string {
   return row.key;
@@ -277,20 +276,14 @@ export function PreSessionView({
       }
 
       if (hasWorkout) {
-        // Queue the reviewed preview behind whatever's already going, leaving
-        // the current climb alone so the wall doesn't repaint and hand-queued
-        // climbs survive. `activateFirstWhenIdle` opts this path — and only this
-        // path — into opening on climb #1 when nothing is current, which is what
-        // starting a generated session means. Bulk adds that aren't "start my
-        // session" (the playlist row) leave it off so they never take the wall.
-        appendQueueItems(generatedItems, { activateFirstWhenIdle: true });
+        // Prepare behind the live queue without moving the wall. The explicit
+        // Start workout action selects the first surviving workout item later.
+        appendQueueItems(generatedItems);
         // Remember which stage each queued climb belongs to, so the session
         // screen and the player can say "Warm-up · 2 of 5". Keyed by the same
         // queue-item uuids just appended; it never goes over the wire.
         if (generatedRun) {
-          setWorkoutRun(newSessionId, generatedRun);
-          // A timed block runs hands-free: its rest timer is on from Start.
-          armRestTimerForWorkout(newSessionId, generatedRun, nowMs());
+          prepareWorkoutRun(newSessionId, generatedRun);
         }
         track(SHARED_EVENTS.SessionQueueGenerated, {
           // The first workout block's type, so single-workout funnels keep their
@@ -309,8 +302,8 @@ export function PreSessionView({
           substitutedCount: planSummary.substituted,
         });
       }
-      if (onStarted) onStarted();
-      else browseClimbs();
+      if (onStarted) onStarted(hasWorkout);
+      else if (!hasWorkout) browseClimbs();
     } catch (error) {
       reportError(error, { tags: { source: 'preSessionStart' } });
       showToast(t('mobile.session.preStartError'), 'error');

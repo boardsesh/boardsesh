@@ -53,16 +53,20 @@ export function SessionScreen({ onClose, headerGesture, translateY, screenHeight
     },
     [isFocused],
   );
-  const handleStarted = useCallback(() => {
-    if (!mayOpenClimbs.current) return;
-    setIsOpeningClimbs(true);
-    try {
-      router.navigate('/(tabs)/climbs');
-    } catch (error) {
-      setIsOpeningClimbs(false);
-      throw error;
-    }
-  }, [router]);
+  const handleStarted = useCallback(
+    (hasWorkout: boolean) => {
+      if (hasWorkout) return;
+      if (!mayOpenClimbs.current) return;
+      setIsOpeningClimbs(true);
+      try {
+        router.navigate('/(tabs)/climbs');
+      } catch (error) {
+        setIsOpeningClimbs(false);
+        throw error;
+      }
+    },
+    [router],
+  );
 
   useEffect(() => {
     if (!isFocused) {
