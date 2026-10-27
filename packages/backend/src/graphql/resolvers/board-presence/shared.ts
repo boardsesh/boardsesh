@@ -149,6 +149,7 @@ export async function findActiveBoardsBySerial(
         latitude: dbSchema.gyms.latitude,
         longitude: dbSchema.gyms.longitude,
         isPublic: dbSchema.gyms.isPublic,
+        isListed: dbSchema.gyms.isListed,
         deletedAt: dbSchema.gyms.deletedAt,
       },
     })

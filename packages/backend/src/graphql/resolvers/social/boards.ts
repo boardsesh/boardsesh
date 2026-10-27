@@ -1,3 +1,6 @@
+import { boardGymListedCondition } from '@boardsesh/db/queries';
+import { z } from 'zod';
+import { BoardNameSchema, normalizeSerial } from '../../../validation/schemas/primitives';
 import { commentPrivacyCondition, tickPrivacyCondition } from '../shared/activity-privacy';
 import {
   canAccessBoard,
@@ -584,6 +587,7 @@ async function enrichBoard(
     boardId: boardPresenceChannelId(board, true, canEdit),
     gymUuid: location.gymUuid,
     gymName: location.gymName,
+    gymIsListed: gymInfoResult?.isListed ?? null,
     // A distance is measured from the board's own coordinates, so it goes only
     // where those may.
     distanceMeters: location.source === 'own' ? (distanceMeters ?? null) : null,
@@ -831,6 +835,7 @@ export async function enrichBoards(
         boardId: boardPresenceChannelId(board, true, canEdit),
         gymUuid: location.gymUuid,
         gymName: location.gymName,
+        gymIsListed: board.gymId ? (gymMap.get(board.gymId)?.isListed ?? null) : null,
         // Measured from the board's own coordinates: only where those may go.
         distanceMeters: location.source === 'own' ? (distanceMeters ?? null) : null,
         serialNumber: board.serialNumber ?? null,
@@ -840,6 +845,68 @@ export async function enrichBoards(
       };
     }),
   );
+}
+
+/** The serial is observed hardware, not a capability to hidden board metadata. */
+async function projectAnonymousSerialBoards(boards: Array<typeof dbSchema.userBoards.$inferSelect>) {
+  const nameable = await Promise.all(boards.map((board) => canAccessResourceWithoutLink('board', board.uuid, null)));
+  const locationVisible = await Promise.all(
+    boards.map(async (board, boardIndex) => (nameable[boardIndex] ? canViewResourceLocation(board.uuid, null) : false)),
+  );
+  const projectionGyms = await loadProjectionGyms(boards.map((board) => board.gymId));
+  return boards.map((board, boardIndex) => {
+    const canName = nameable[boardIndex];
+    return {
+      // A controller serial is geometry, never an Unlisted link capability.
+      uuid: canName ? board.uuid : '',
+      slug: canName ? board.slug : '',
+      ownerId: '',
+      ownerDisplayName: null,
+      ownerAvatarUrl: null,
+      boardType: board.boardType,
+      layoutId: Number(board.layoutId),
+      sizeId: Number(board.sizeId),
+      setIds: board.setIds,
+      name: canName ? board.name : board.boardType,
+      description: canName ? board.description : null,
+      // The board's own name when its location is shown, else a public gym's.
+      locationName: canName
+        ? projectBoardLocation(board, board.gymId ? projectionGyms.get(board.gymId) : null, locationVisible[boardIndex])
+            .locationName
+        : null,
+      latitude: null,
+      longitude: null,
+      isPublic: board.isPublic,
+      isUnlisted: board.isUnlisted,
+      hideLocation: board.hideLocation,
+      isOwned: false,
+      angle: Number(board.angle),
+      isAngleAdjustable: board.isAngleAdjustable,
+      hasLeds: board.hasLeds,
+      createdAt: board.createdAt.toISOString(),
+      layoutName: null,
+      sizeName: null,
+      sizeDescription: null,
+      setNames: null,
+      totalAscents: 0,
+      uniqueClimbers: 0,
+      followerCount: 0,
+      commentCount: 0,
+      isFollowedByMe: false,
+      gymId: null,
+      // Anonymous caller: a serial is not the board's link, so only a
+      // listed public board exposes its channel here.
+      boardId: boardPresenceChannelId(board, canName, false),
+      gymUuid: null,
+      gymName: null,
+      distanceMeters: null,
+      serialNumber: board.serialNumber ?? null,
+      timerName: null,
+      canEdit: false,
+      // Anonymous caller: no identity, so nothing can be pinned.
+      isPinnedByMe: false,
+    };
+  });
 }
 
 // ============================================
@@ -1066,76 +1133,8 @@ export const socialBoardQueries = {
         ),
       );
 
-    // Unauthenticated callers get an allowlisted response built directly from
-    // the DB rows — skip enrichBoards entirely (no owner/stats/follow queries).
-    // Public boards include UGC fields; non-public boards get config only.
-    if (!ctx.isAuthenticated) {
-      const nameable = await Promise.all(
-        boards.map((board) => canAccessResourceWithoutLink('board', board.uuid, null)),
-      );
-      const locationVisible = await Promise.all(
-        boards.map(async (board, boardIndex) =>
-          nameable[boardIndex] ? canViewResourceLocation(board.uuid, null) : false,
-        ),
-      );
-      const projectionGyms = await loadProjectionGyms(boards.map((board) => board.gymId));
-      return boards.map((board, boardIndex) => {
-        const canName = nameable[boardIndex];
-        return {
-          // A controller serial is geometry, never an Unlisted link capability.
-          uuid: canName ? board.uuid : '',
-          slug: canName ? board.slug : '',
-          ownerId: '',
-          ownerDisplayName: null,
-          ownerAvatarUrl: null,
-          boardType: board.boardType,
-          layoutId: Number(board.layoutId),
-          sizeId: Number(board.sizeId),
-          setIds: board.setIds,
-          name: canName ? board.name : board.boardType,
-          description: canName ? board.description : null,
-          // The board's own name when its location is shown, else a public gym's.
-          locationName: canName
-            ? projectBoardLocation(
-                board,
-                board.gymId ? projectionGyms.get(board.gymId) : null,
-                locationVisible[boardIndex],
-              ).locationName
-            : null,
-          latitude: null,
-          longitude: null,
-          isPublic: board.isPublic,
-          isUnlisted: board.isUnlisted,
-          hideLocation: board.hideLocation,
-          isOwned: false,
-          angle: Number(board.angle),
-          isAngleAdjustable: board.isAngleAdjustable,
-          hasLeds: board.hasLeds,
-          createdAt: board.createdAt.toISOString(),
-          layoutName: null,
-          sizeName: null,
-          sizeDescription: null,
-          setNames: null,
-          totalAscents: 0,
-          uniqueClimbers: 0,
-          followerCount: 0,
-          commentCount: 0,
-          isFollowedByMe: false,
-          gymId: null,
-          // Anonymous caller: a serial is not the board's link, so only a
-          // listed public board exposes its channel here.
-          boardId: boardPresenceChannelId(board, canName, false),
-          gymUuid: null,
-          gymName: null,
-          distanceMeters: null,
-          serialNumber: board.serialNumber ?? null,
-          timerName: null,
-          canEdit: false,
-          // Anonymous caller: no identity, so nothing can be pinned.
-          isPinnedByMe: false,
-        };
-      });
-    }
+    // Keep the existing geometry-only fallback for hidden controllers.
+    if (!ctx.isAuthenticated) return projectAnonymousSerialBoards(boards);
 
     const enriched = await enrichBoards(
       boards.map((board) => ({ board })),
@@ -1144,6 +1143,74 @@ export const socialBoardQueries = {
     );
 
     return enriched;
+  },
+
+  observedBoardSerialMatches: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
+    await applyRateLimit(ctx, 20, 'observedBoardSerialMatches');
+    const observed = validateInput(
+      z
+        .array(
+          z.object({
+            boardType: BoardNameSchema,
+            observedSerialNumber: z.string().trim().min(1).max(64).transform(normalizeSerial),
+          }),
+        )
+        .min(1)
+        .max(20),
+      input,
+      'input',
+    );
+    const unique = [
+      ...new Map(observed.map((entry) => [`${entry.boardType}\0${entry.observedSerialNumber}`, entry])).values(),
+    ];
+    const rows = await db
+      .select()
+      .from(dbSchema.userBoards)
+      .where(
+        and(
+          isNull(dbSchema.userBoards.deletedAt),
+          or(
+            ...unique.map((entry) =>
+              and(
+                eq(dbSchema.userBoards.boardType, entry.boardType),
+                eq(dbSchema.userBoards.serialNumber, entry.observedSerialNumber),
+              ),
+            ),
+          ),
+        ),
+      );
+    const candidatesByUuid = new Map<
+      string,
+      | Awaited<ReturnType<typeof projectAnonymousSerialBoards>>[number]
+      | Awaited<ReturnType<typeof enrichBoards>>[number]
+    >();
+    if (!ctx.isAuthenticated) {
+      const projected = await projectAnonymousSerialBoards(rows);
+      rows.forEach((board, index) => candidatesByUuid.set(board.uuid, projected[index]));
+    } else {
+      const visibility = await Promise.all(
+        rows.map((board) => canAccessResourceWithoutLink('board', board.uuid, ctx.userId)),
+      );
+      const readable = rows.filter((_, index) => visibility[index]);
+      const hidden = rows.filter((_, index) => !visibility[index]);
+      const [enriched, projected] = await Promise.all([
+        enrichBoards(
+          readable.map((board) => ({ board })),
+          ctx.userId,
+          { allowUnlistedLink: false },
+        ),
+        projectAnonymousSerialBoards(hidden),
+      ]);
+      enriched.forEach((board) => candidatesByUuid.set(board.uuid, board));
+      hidden.forEach((board, index) => candidatesByUuid.set(board.uuid, projected[index]));
+    }
+    return unique.map((entry) => ({
+      ...entry,
+      candidates: rows
+        .filter((board) => board.boardType === entry.boardType && board.serialNumber === entry.observedSerialNumber)
+        .map((board) => candidatesByUuid.get(board.uuid))
+        .filter((board) => board !== undefined),
+    }));
   },
 
   /**
@@ -1355,6 +1422,7 @@ export const socialBoardQueries = {
       // Build shared WHERE conditions
       const conditions = [
         eq(dbSchema.userBoards.isPublic, true),
+        boardGymListedCondition(dbSchema.userBoards.gymId),
         resourceAccessCondition('board', dbSchema.userBoards.uuid, ctx.userId),
         eq(dbSchema.userBoards.isUnlisted, false),
         isNull(dbSchema.userBoards.deletedAt),
@@ -1425,6 +1493,7 @@ export const socialBoardQueries = {
     // Text-only search path (no proximity)
     const conditions = [
       eq(dbSchema.userBoards.isPublic, true),
+      boardGymListedCondition(dbSchema.userBoards.gymId),
       resourceAccessCondition('board', dbSchema.userBoards.uuid, ctx.userId),
       eq(dbSchema.userBoards.isUnlisted, false),
       isNull(dbSchema.userBoards.deletedAt),

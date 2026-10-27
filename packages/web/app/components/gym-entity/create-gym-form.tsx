@@ -48,6 +48,7 @@ export default function CreateGymForm({ boardUuid, onSuccess, onCancel, submitLa
           latitude: values.latitude ?? undefined,
           longitude: values.longitude ?? undefined,
           isPublic: values.isPublic,
+          isListed: values.isListed,
           boardUuid,
         },
       });
@@ -73,6 +74,7 @@ export default function CreateGymForm({ boardUuid, onSuccess, onCancel, submitLa
         contactEmail: '',
         contactPhone: '',
         isPublic: true,
+        isListed: true,
         latitude: null,
         longitude: null,
       }}

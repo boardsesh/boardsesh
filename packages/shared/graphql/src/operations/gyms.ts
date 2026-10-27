@@ -69,6 +69,7 @@ const GYM_FIELDS = `
   latitude
   longitude
   isPublic
+  isListed
   imageUrl
   logoUrl
   brandPrimaryColor

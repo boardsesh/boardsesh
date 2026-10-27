@@ -111,6 +111,7 @@ export const CreateGymInputSchema = z.object({
   latitude: LatitudeSchema.optional(),
   longitude: LongitudeSchema.optional(),
   isPublic: z.boolean().optional(),
+  isListed: z.boolean().optional(),
   imageUrl: GymPhotoUrlSchema.optional(),
   boardUuid: UUIDSchema.optional(),
 });
@@ -131,6 +132,7 @@ export const UpdateGymInputSchema = z.object({
   latitude: LatitudeSchema.optional().nullable(),
   longitude: LongitudeSchema.optional().nullable(),
   isPublic: z.boolean().optional(),
+  isListed: z.boolean().optional(),
   imageUrl: GymPhotoUrlSchema.optional().nullable(),
   logoUrl: GymLogoUrlSchema.optional().nullable(),
   brandPrimaryColor: HexColorSchema.optional().nullable(),

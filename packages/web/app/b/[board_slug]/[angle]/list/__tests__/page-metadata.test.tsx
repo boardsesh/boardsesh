@@ -31,6 +31,7 @@ type ResolvedBoard = {
   setIds: string;
   isPublic: boolean;
   isUnlisted: boolean;
+  gymIsListed?: boolean;
 };
 
 function board(overrides: Partial<ResolvedBoard> = {}): ResolvedBoard {
@@ -161,6 +162,13 @@ describe('board slug list metadata', () => {
 
     const metadata = await generateMetadata();
 
+    expect(metadata.robots).toEqual({ index: false, follow: true });
+    expect(metadata.alternates).toBeUndefined();
+  });
+
+  it('inherits noindex from an unlisted gym while retaining the board link', async () => {
+    resolveBoardBySlug.mockResolvedValue(board({ gymIsListed: false }));
+    const metadata = await generateMetadata();
     expect(metadata.robots).toEqual({ index: false, follow: true });
     expect(metadata.alternates).toBeUndefined();
   });

@@ -1,3 +1,4 @@
+import { handleControllerPreview } from './handlers/controller-preview';
 import { createServer, type IncomingMessage, type ServerResponse } from 'http';
 import { createServer as createHttpsServer } from 'https';
 import { readFileSync } from 'node:fs';
@@ -375,6 +376,11 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
       // process warms WASM + caches rendered bytes in memory).
       if (pathname === '/og/climb' && (req.method === 'GET' || req.method === 'OPTIONS')) {
         await handleOgClimb(req, res, url);
+        return;
+      }
+
+      if (pathname === '/render/controller-preview' && ['GET', 'HEAD', 'OPTIONS'].includes(req.method || '')) {
+        await handleControllerPreview(req, res, url);
         return;
       }
 

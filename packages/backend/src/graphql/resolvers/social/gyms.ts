@@ -105,6 +105,7 @@ export function mapRawGymRow(row: Record<string, unknown>): typeof dbSchema.gyms
     latitude: row.latitude != null ? Number(row.latitude) : null,
     longitude: row.longitude != null ? Number(row.longitude) : null,
     isPublic: row.is_public as boolean,
+    isListed: row.is_listed !== false,
     description: (row.description as string | null) ?? null,
     // Snake_case, like every other key here — `row.hoursUpdatedAt` would compile
     // and then hand the proximity path a permanent null "Confirmed" date while
@@ -414,6 +415,7 @@ export async function enrichGym(gym: typeof dbSchema.gyms.$inferSelect, authenti
     latitude: gym.latitude,
     longitude: gym.longitude,
     isPublic: gym.isPublic,
+    isListed: gym.isListed !== false,
     imageUrl: gym.imageUrl,
     logoUrl: gym.logoUrl,
     brandPrimaryColor: gym.brandPrimaryColor,
@@ -532,7 +534,10 @@ export async function userCanEditGym(gym: typeof dbSchema.gyms.$inferSelect, use
  * a board-type-scoped role could self-promote to a persistent gym admin (a
  * gym_members row that outlives the community role) or evict other admins.
  */
-async function requireGymOwnerOrAdmin(gymUuid: string, userId: string): Promise<typeof dbSchema.gyms.$inferSelect> {
+export async function requireGymOwnerOrAdmin(
+  gymUuid: string,
+  userId: string,
+): Promise<typeof dbSchema.gyms.$inferSelect> {
   const { gym, isOwner, memberRole } = await loadGymWithMemberRole(gymUuid, userId);
   if (!isOwner && memberRole !== 'admin') {
     throw new Error('Not authorized: must be gym owner or admin');
@@ -969,8 +974,8 @@ export const socialGymQueries = {
 
       const countRows = await db.execute(
         likePattern
-          ? sql`SELECT count(*)::int as count FROM gyms WHERE is_public = true AND deleted_at IS NULL AND location IS NOT NULL AND ST_DWithin(location, ST_MakePoint(${lon}, ${lat})::geography, ${radiusMeters}) AND (name ILIKE ${likePattern} OR address ILIKE ${likePattern})${proximityFilterClause}`
-          : sql`SELECT count(*)::int as count FROM gyms WHERE is_public = true AND deleted_at IS NULL AND location IS NOT NULL AND ST_DWithin(location, ST_MakePoint(${lon}, ${lat})::geography, ${radiusMeters})${proximityFilterClause}`,
+          ? sql`SELECT count(*)::int as count FROM gyms WHERE is_public = true AND is_listed = true AND deleted_at IS NULL AND location IS NOT NULL AND ST_DWithin(location, ST_MakePoint(${lon}, ${lat})::geography, ${radiusMeters}) AND (name ILIKE ${likePattern} OR address ILIKE ${likePattern})${proximityFilterClause}`
+          : sql`SELECT count(*)::int as count FROM gyms WHERE is_public = true AND is_listed = true AND deleted_at IS NULL AND location IS NOT NULL AND ST_DWithin(location, ST_MakePoint(${lon}, ${lat})::geography, ${radiusMeters})${proximityFilterClause}`,
       );
       const totalCount = Number(rowsFromResult<Record<string, unknown>>(countRows)[0]?.count || 0);
 
@@ -981,8 +986,8 @@ export const socialGymQueries = {
       // page, duplicating one row and skipping another across the boundary.
       const gymRows = await db.execute(
         likePattern
-          ? sql`SELECT *, ST_Distance(location, ST_MakePoint(${lon}, ${lat})::geography) as distance_meters FROM gyms WHERE is_public = true AND deleted_at IS NULL AND location IS NOT NULL AND ST_DWithin(location, ST_MakePoint(${lon}, ${lat})::geography, ${radiusMeters}) AND (name ILIKE ${likePattern} OR address ILIKE ${likePattern})${proximityFilterClause} ORDER BY ${proximityOrder} LIMIT ${limit} OFFSET ${offset}`
-          : sql`SELECT *, ST_Distance(location, ST_MakePoint(${lon}, ${lat})::geography) as distance_meters FROM gyms WHERE is_public = true AND deleted_at IS NULL AND location IS NOT NULL AND ST_DWithin(location, ST_MakePoint(${lon}, ${lat})::geography, ${radiusMeters})${proximityFilterClause} ORDER BY ${proximityOrder} LIMIT ${limit} OFFSET ${offset}`,
+          ? sql`SELECT *, ST_Distance(location, ST_MakePoint(${lon}, ${lat})::geography) as distance_meters FROM gyms WHERE is_public = true AND is_listed = true AND deleted_at IS NULL AND location IS NOT NULL AND ST_DWithin(location, ST_MakePoint(${lon}, ${lat})::geography, ${radiusMeters}) AND (name ILIKE ${likePattern} OR address ILIKE ${likePattern})${proximityFilterClause} ORDER BY ${proximityOrder} LIMIT ${limit} OFFSET ${offset}`
+          : sql`SELECT *, ST_Distance(location, ST_MakePoint(${lon}, ${lat})::geography) as distance_meters FROM gyms WHERE is_public = true AND is_listed = true AND deleted_at IS NULL AND location IS NOT NULL AND ST_DWithin(location, ST_MakePoint(${lon}, ${lat})::geography, ${radiusMeters})${proximityFilterClause} ORDER BY ${proximityOrder} LIMIT ${limit} OFFSET ${offset}`,
       );
       const rows = rowsFromResult<Record<string, unknown>>(gymRows);
 
@@ -1000,7 +1005,11 @@ export const socialGymQueries = {
     }
 
     // Text-only search path
-    const conditions = [eq(dbSchema.gyms.isPublic, true), isNull(dbSchema.gyms.deletedAt)];
+    const conditions = [
+      eq(dbSchema.gyms.isPublic, true),
+      eq(dbSchema.gyms.isListed, true),
+      isNull(dbSchema.gyms.deletedAt),
+    ];
 
     if (query) {
       const escapedQuery = query.replace(/[%_\\]/g, '\\$&');
@@ -1149,6 +1158,7 @@ export const socialGymMutations = {
         latitude: validatedInput.latitude ?? null,
         longitude: validatedInput.longitude ?? null,
         isPublic: validatedInput.isPublic ?? true,
+        isListed: validatedInput.isListed ?? true,
         imageUrl: validatedInput.imageUrl ?? null,
       })
       .returning();
@@ -1245,6 +1255,7 @@ export const socialGymMutations = {
     if (validatedInput.latitude !== undefined) updateValues.latitude = validatedInput.latitude;
     if (validatedInput.longitude !== undefined) updateValues.longitude = validatedInput.longitude;
     if (validatedInput.isPublic !== undefined) updateValues.isPublic = validatedInput.isPublic;
+    if (validatedInput.isListed !== undefined) updateValues.isListed = validatedInput.isListed;
     if (validatedInput.imageUrl !== undefined) updateValues.imageUrl = validatedInput.imageUrl;
     // Branding: an explicit null clears the column (reset-to-default in the manage
     // UI); `undefined` (field omitted) leaves it untouched.

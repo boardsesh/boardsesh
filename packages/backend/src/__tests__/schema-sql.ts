@@ -897,6 +897,7 @@ export const schemaSQL = `
     "latitude" double precision,
     "longitude" double precision,
     "is_public" boolean DEFAULT true NOT NULL,
+    "is_listed" boolean DEFAULT true NOT NULL,
     "description" text,
     "hours" text,
     "hours_updated_at" timestamp,
@@ -918,6 +919,7 @@ export const schemaSQL = `
   -- above never lands on a DB that already exists. Backfill it here.
   ALTER TABLE "gyms" ADD COLUMN IF NOT EXISTS "hours" text;
   ALTER TABLE "gyms" ADD COLUMN IF NOT EXISTS "hours_updated_at" timestamp;
+  ALTER TABLE "gyms" ADD COLUMN IF NOT EXISTS "is_listed" boolean DEFAULT true NOT NULL;
 
   DROP TABLE IF EXISTS "user_boards" CASCADE;
   CREATE TABLE IF NOT EXISTS "user_boards" (

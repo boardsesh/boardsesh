@@ -183,6 +183,9 @@ importers:
       '@boardsesh/aurora-sync':
         specifier: workspace:*
         version: link:../aurora-sync
+      '@boardsesh/ble-protocol':
+        specifier: workspace:*
+        version: link:../shared/ble-protocol
       '@boardsesh/board-art-geometry':
         specifier: workspace:*
         version: link:../shared/board-art-geometry

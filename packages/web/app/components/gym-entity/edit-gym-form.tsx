@@ -62,6 +62,7 @@ export default function EditGymForm({ gym, onSuccess, onCancel, onDirtyChange, s
           latitude: values.latitude,
           longitude: values.longitude,
           isPublic: values.isPublic,
+          isListed: values.isListed,
         },
       });
 
@@ -86,6 +87,7 @@ export default function EditGymForm({ gym, onSuccess, onCancel, onDirtyChange, s
         contactEmail: gym.contactEmail ?? '',
         contactPhone: gym.contactPhone ?? '',
         isPublic: gym.isPublic,
+        isListed: gym.isListed,
         latitude: gym.latitude ?? null,
         longitude: gym.longitude ?? null,
       }}

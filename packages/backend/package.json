@@ -28,6 +28,7 @@
     "@aws-sdk/s3-request-presigner": "^3.1131.0",
     "@boardsesh/analytics": "workspace:*",
     "@boardsesh/aurora-sync": "workspace:*",
+    "@boardsesh/ble-protocol": "workspace:*",
     "@boardsesh/board-art-geometry": "workspace:*",
     "@boardsesh/board-config": "workspace:*",
     "@boardsesh/board-constants": "workspace:*",

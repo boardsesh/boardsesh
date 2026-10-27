@@ -1919,6 +1919,29 @@ export type ConsentRegion = {
 
 export type ControllerEvent = ControllerPing | ControllerQueueSync | LedUpdate;
 
+export type ControllerGymBoard = {
+  __typename?: 'ControllerGymBoard';
+  advertisedName: Scalars['String']['output'];
+  angle: Scalars['Int']['output'];
+  boardType: Scalars['String']['output'];
+  layoutId: Scalars['Int']['output'];
+  name: Scalars['String']['output'];
+  preview: ControllerPreviewDescriptor;
+  serialNumber: Scalars['String']['output'];
+  setIds: Scalars['String']['output'];
+  sizeId: Scalars['Int']['output'];
+  uuid: Scalars['ID']['output'];
+};
+
+export type ControllerGymManifest = {
+  __typename?: 'ControllerGymManifest';
+  boards: Array<ControllerGymBoard>;
+  gymUuid: Scalars['ID']['output'];
+  name: Scalars['String']['output'];
+  slug: Scalars['String']['output'];
+  version: Scalars['Int']['output'];
+};
+
 export type ControllerInfo = {
   __typename?: 'ControllerInfo';
   boardName: Scalars['String']['output'];
@@ -1935,6 +1958,19 @@ export type ControllerInfo = {
 export type ControllerPing = {
   __typename?: 'ControllerPing';
   timestamp: Scalars['String']['output'];
+};
+
+export type ControllerPreviewDescriptor = {
+  __typename?: 'ControllerPreviewDescriptor';
+  geometryBytes: Scalars['Int']['output'];
+  geometrySha256: Scalars['String']['output'];
+  geometryUrl: Scalars['String']['output'];
+  height: Scalars['Int']['output'];
+  imageBytes: Scalars['Int']['output'];
+  imageSha256: Scalars['String']['output'];
+  imageUrl: Scalars['String']['output'];
+  positionCount: Scalars['Int']['output'];
+  width: Scalars['Int']['output'];
 };
 
 export type ControllerQueueItem = {
@@ -2033,6 +2069,8 @@ export type CreateGymInput = {
   hours?: InputMaybe<Scalars['String']['input']>;
   /** Image URL */
   imageUrl?: InputMaybe<Scalars['String']['input']>;
+  /** Whether listed in discovery (default true) */
+  isListed?: InputMaybe<Scalars['Boolean']['input']>;
   /** Whether publicly visible (default true) */
   isPublic?: InputMaybe<Scalars['Boolean']['input']>;
   /** GPS latitude */
@@ -3246,6 +3284,8 @@ export type Gym = {
   isClaimed: Scalars['Boolean']['output'];
   /** Whether the current user follows this gym */
   isFollowedByMe: Scalars['Boolean']['output'];
+  /** Whether this gym appears in discovery. False keeps direct links readable. */
+  isListed: Scalars['Boolean']['output'];
   /** Whether the current user is a member */
   isMember: Scalars['Boolean']['output'];
   /** Whether publicly visible */
@@ -5975,6 +6015,18 @@ export type NotificationType =
   | 'vote_on_comment'
   | 'vote_on_tick';
 
+export type ObservedBoardSerialInput = {
+  boardType: Scalars['String']['input'];
+  observedSerialNumber: Scalars['String']['input'];
+};
+
+export type ObservedBoardSerialMatch = {
+  __typename?: 'ObservedBoardSerialMatch';
+  boardType: Scalars['String']['output'];
+  candidates: Array<UserBoard>;
+  observedSerialNumber: Scalars['String']['output'];
+};
+
 /** An alias-less, system-owned live gym with no location-sync source — an orphan for the audit list. */
 export type OrphanGym = {
   __typename?: 'OrphanGym';
@@ -6944,6 +6996,8 @@ export type Query = {
   /** Whether this request comes from a region where the analytics prompt is shown. No sign-in needed. */
   consentRegion: ConsentRegion;
   contentAudience: PrivacyContentAudience;
+  /** Read a gym's device configuration using a registered gym owner/admin's controller API key. */
+  controllerGymManifest: ControllerGymManifest;
   /** Sessions and the last 30 days of published climbs from followed authors. */
   crewFeed: CrewFeedResult;
   /**
@@ -7186,6 +7240,8 @@ export type Query = {
   notificationActors: FollowConnection;
   /** Get notifications for the current user. */
   notifications: NotificationConnection;
+  /** Correlate radio-observed serials with readable candidates without exposing stored owner-only serial fields. */
+  observedBoardSerialMatches: Array<ObservedBoardSerialMatch>;
   /**
    * Alias-less, system-owned live gyms with no location-sync source — the orphan
    * audit list (admin only). List-only; no bulk action.
@@ -7812,6 +7868,11 @@ export type QueryContentAudienceArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryControllerGymManifestArgs = {
+  gymRef: Scalars['String']['input'];
+};
+
+/** Root query type for all read operations. */
 export type QueryCrewFeedArgs = {
   input?: InputMaybe<CrewFeedInput>;
 };
@@ -8009,6 +8070,11 @@ export type QueryNotificationsArgs = {
   limit?: InputMaybe<Scalars['Int']['input']>;
   offset?: InputMaybe<Scalars['Int']['input']>;
   unreadOnly?: InputMaybe<Scalars['Boolean']['input']>;
+};
+
+/** Root query type for all read operations. */
+export type QueryObservedBoardSerialMatchesArgs = {
+  input: Array<ObservedBoardSerialInput>;
 };
 
 /** Root query type for all read operations. */
@@ -11619,6 +11685,8 @@ export type UpdateGymInput = {
   hours?: InputMaybe<Scalars['String']['input']>;
   /** New image URL */
   imageUrl?: InputMaybe<Scalars['String']['input']>;
+  /** Whether listed in discovery */
+  isListed?: InputMaybe<Scalars['Boolean']['input']>;
   /** New visibility */
   isPublic?: InputMaybe<Scalars['Boolean']['input']>;
   /** New GPS latitude */
@@ -11853,6 +11921,8 @@ export type UserBoard = {
   followerCount: Scalars['Int']['output'];
   /** Gym ID if linked to a gym */
   gymId?: Maybe<Scalars['Int']['output']>;
+  /** Whether the linked gym participates in discovery; null when no gym is linked. */
+  gymIsListed?: Maybe<Scalars['Boolean']['output']>;
   /** Gym name if linked to a gym */
   gymName?: Maybe<Scalars['String']['output']>;
   /** Gym UUID if linked to a gym */
@@ -12368,8 +12438,11 @@ export type ResolversTypes = ResolversObject<{
   CommunityStats: ResolverTypeWrapper<CommunityStats>;
   ConsentRegion: ResolverTypeWrapper<ConsentRegion>;
   ControllerEvent: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['ControllerEvent']>;
+  ControllerGymBoard: ResolverTypeWrapper<ControllerGymBoard>;
+  ControllerGymManifest: ResolverTypeWrapper<ControllerGymManifest>;
   ControllerInfo: ResolverTypeWrapper<ControllerInfo>;
   ControllerPing: ResolverTypeWrapper<ControllerPing>;
+  ControllerPreviewDescriptor: ResolverTypeWrapper<ControllerPreviewDescriptor>;
   ControllerQueueItem: ResolverTypeWrapper<ControllerQueueItem>;
   ControllerQueueSync: ResolverTypeWrapper<ControllerQueueSync>;
   ControllerRegistration: ResolverTypeWrapper<ControllerRegistration>;
@@ -12542,6 +12615,8 @@ export type ResolversTypes = ResolversObject<{
   NotificationConnection: ResolverTypeWrapper<NotificationConnection>;
   NotificationEvent: ResolverTypeWrapper<NotificationEvent>;
   NotificationType: NotificationType;
+  ObservedBoardSerialInput: ObservedBoardSerialInput;
+  ObservedBoardSerialMatch: ResolverTypeWrapper<ObservedBoardSerialMatch>;
   OrphanGym: ResolverTypeWrapper<OrphanGym>;
   OrphanGymConnection: ResolverTypeWrapper<OrphanGymConnection>;
   OrphanGymsInput: OrphanGymsInput;
@@ -12919,8 +12994,11 @@ export type ResolversParentTypes = ResolversObject<{
   CommunityStats: CommunityStats;
   ConsentRegion: ConsentRegion;
   ControllerEvent: ResolversUnionTypes<ResolversParentTypes>['ControllerEvent'];
+  ControllerGymBoard: ControllerGymBoard;
+  ControllerGymManifest: ControllerGymManifest;
   ControllerInfo: ControllerInfo;
   ControllerPing: ControllerPing;
+  ControllerPreviewDescriptor: ControllerPreviewDescriptor;
   ControllerQueueItem: ControllerQueueItem;
   ControllerQueueSync: ControllerQueueSync;
   ControllerRegistration: ControllerRegistration;
@@ -13073,6 +13151,8 @@ export type ResolversParentTypes = ResolversObject<{
   NotificationActorsInput: NotificationActorsInput;
   NotificationConnection: NotificationConnection;
   NotificationEvent: NotificationEvent;
+  ObservedBoardSerialInput: ObservedBoardSerialInput;
+  ObservedBoardSerialMatch: ObservedBoardSerialMatch;
   OrphanGym: OrphanGym;
   OrphanGymConnection: OrphanGymConnection;
   OrphanGymsInput: OrphanGymsInput;
@@ -14351,6 +14431,35 @@ export type ControllerEventResolvers<
   __resolveType: TypeResolveFn<'ControllerPing' | 'ControllerQueueSync' | 'LedUpdate', ParentType, ContextType>;
 }>;
 
+export type ControllerGymBoardResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ControllerGymBoard'] = ResolversParentTypes['ControllerGymBoard'],
+> = ResolversObject<{
+  advertisedName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  angle?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  layoutId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  preview?: Resolver<ResolversTypes['ControllerPreviewDescriptor'], ParentType, ContextType>;
+  serialNumber?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  setIds?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  sizeId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  uuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type ControllerGymManifestResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ControllerGymManifest'] = ResolversParentTypes['ControllerGymManifest'],
+> = ResolversObject<{
+  boards?: Resolver<Array<ResolversTypes['ControllerGymBoard']>, ParentType, ContextType>;
+  gymUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  slug?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  version?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type ControllerInfoResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['ControllerInfo'] = ResolversParentTypes['ControllerInfo'],
@@ -14372,6 +14481,23 @@ export type ControllerPingResolvers<
   ParentType extends ResolversParentTypes['ControllerPing'] = ResolversParentTypes['ControllerPing'],
 > = ResolversObject<{
   timestamp?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type ControllerPreviewDescriptorResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ControllerPreviewDescriptor'] =
+    ResolversParentTypes['ControllerPreviewDescriptor'],
+> = ResolversObject<{
+  geometryBytes?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  geometrySha256?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  geometryUrl?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  height?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  imageBytes?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  imageSha256?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  imageUrl?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  positionCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  width?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -14894,6 +15020,7 @@ export type GymResolvers<
   imageUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   isClaimed?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   isFollowedByMe?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  isListed?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   isMember?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   isPublic?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   latitude?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
@@ -16481,6 +16608,17 @@ export type NotificationEventResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type ObservedBoardSerialMatchResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ObservedBoardSerialMatch'] =
+    ResolversParentTypes['ObservedBoardSerialMatch'],
+> = ResolversObject<{
+  boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  candidates?: Resolver<Array<ResolversTypes['UserBoard']>, ParentType, ContextType>;
+  observedSerialNumber?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type OrphanGymResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['OrphanGym'] = ResolversParentTypes['OrphanGym'],
@@ -17138,6 +17276,12 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryContentAudienceArgs, 'entityId' | 'entityType'>
   >;
+  controllerGymManifest?: Resolver<
+    ResolversTypes['ControllerGymManifest'],
+    ParentType,
+    ContextType,
+    RequireFields<QueryControllerGymManifestArgs, 'gymRef'>
+  >;
   crewFeed?: Resolver<ResolversTypes['CrewFeedResult'], ParentType, ContextType, Partial<QueryCrewFeedArgs>>;
   defaultBoard?: Resolver<Maybe<ResolversTypes['UserBoard']>, ParentType, ContextType>;
   deleteAccountInfo?: Resolver<ResolversTypes['DeleteAccountInfo'], ParentType, ContextType>;
@@ -17352,6 +17496,12 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     Partial<QueryNotificationsArgs>
+  >;
+  observedBoardSerialMatches?: Resolver<
+    Array<ResolversTypes['ObservedBoardSerialMatch']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryObservedBoardSerialMatchesArgs, 'input'>
   >;
   orphanGyms?: Resolver<ResolversTypes['OrphanGymConnection'], ParentType, ContextType, Partial<QueryOrphanGymsArgs>>;
   pendingGymClaims?: Resolver<
@@ -19326,6 +19476,7 @@ export type UserBoardResolvers<
   distanceMeters?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
   followerCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   gymId?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  gymIsListed?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
   gymName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   gymUuid?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   hasLeds?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
@@ -19587,8 +19738,11 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   CommunityStats?: CommunityStatsResolvers<ContextType>;
   ConsentRegion?: ConsentRegionResolvers<ContextType>;
   ControllerEvent?: ControllerEventResolvers<ContextType>;
+  ControllerGymBoard?: ControllerGymBoardResolvers<ContextType>;
+  ControllerGymManifest?: ControllerGymManifestResolvers<ContextType>;
   ControllerInfo?: ControllerInfoResolvers<ContextType>;
   ControllerPing?: ControllerPingResolvers<ContextType>;
+  ControllerPreviewDescriptor?: ControllerPreviewDescriptorResolvers<ContextType>;
   ControllerQueueItem?: ControllerQueueItemResolvers<ContextType>;
   ControllerQueueSync?: ControllerQueueSyncResolvers<ContextType>;
   ControllerRegistration?: ControllerRegistrationResolvers<ContextType>;
@@ -19677,6 +19831,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   Notification?: NotificationResolvers<ContextType>;
   NotificationConnection?: NotificationConnectionResolvers<ContextType>;
   NotificationEvent?: NotificationEventResolvers<ContextType>;
+  ObservedBoardSerialMatch?: ObservedBoardSerialMatchResolvers<ContextType>;
   OrphanGym?: OrphanGymResolvers<ContextType>;
   OrphanGymConnection?: OrphanGymConnectionResolvers<ContextType>;
   OutlierAnalysis?: OutlierAnalysisResolvers<ContextType>;

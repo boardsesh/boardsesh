@@ -377,7 +377,10 @@ export async function findSimilarGymCandidates(opts: {
   // tier leaks private home walls (name + address + metre-precise distance) to any
   // authenticated caller. Public gyms and the viewer's own private gyms are fair
   // game. Mirrors the visibility gate on searchGyms / gymBoards.
-  const visibleCond: SQL = or(eq(dbSchema.gyms.isPublic, true), eq(dbSchema.gyms.ownerId, viewerUserId))!;
+  const visibleCond: SQL = or(
+    and(eq(dbSchema.gyms.isPublic, true), eq(dbSchema.gyms.isListed, true)),
+    eq(dbSchema.gyms.ownerId, viewerUserId),
+  )!;
 
   const exactNameCond: SQL = sql`${normalizedNameExpr} = ${normalized}`;
   const similarNameCond: SQL | undefined =

@@ -57,6 +57,41 @@ describe('GymForm — create-anyway path', () => {
     );
   });
 
+  it('submits unlisted gyms as link-readable without listing them', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(
+      <GymForm
+        title="Edit gym"
+        submitLabel="Save"
+        initialValues={{ ...initialValues, name: 'QA', isListed: true }}
+        onSubmit={onSubmit}
+      />,
+    );
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'gymForm.fields.visibility' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'gymForm.visibility.unlisted' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ isPublic: true, isListed: false })),
+    );
+  });
+
+  it('preserves an omitted legacy listing value when another field changes', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(
+      <GymForm
+        title="Edit gym"
+        submitLabel="Save"
+        initialValues={{ ...initialValues, name: 'QA' }}
+        onSubmit={onSubmit}
+      />,
+    );
+    fireEvent.change(screen.getByRole('textbox', { name: 'gymForm.fields.name' }), { target: { value: 'QA renamed' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ name: 'QA renamed', isListed: undefined })),
+    );
+  });
+
   it('submits unchanged while dedup suggestions are shown, and never disables submit', async () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
 

@@ -755,8 +755,8 @@
       "address": "Adresse",
       "contactEmail": "Kontakt-E-Mail",
       "contactPhone": "Kontakt-Telefon",
-      "isPublic": "Öffentliche Halle",
-      "website": "Website"
+      "website": "Website",
+      "visibility": "Sichtbarkeit"
     },
     "placeholders": {
       "name": "z. B. Boulderwelt, Kletterfabrik",
@@ -780,7 +780,13 @@
     },
     "helpers": {
       "website": "Damit prüfen wir die Inhaberschaft, wenn jemand diese Halle beansprucht",
-      "hours": "Eine Zeile, so wie du sie schreibst. Deine Seite zeigt, wann du sie zuletzt bestätigt hast."
+      "hours": "Eine Zeile, so wie du sie schreibst. Deine Seite zeigt, wann du sie zuletzt bestätigt hast.",
+      "visibility": "Nicht gelistete Hallen sind über ihren Link erreichbar und erscheinen weder in der Suche noch auf der Karte."
+    },
+    "visibility": {
+      "public": "Öffentlich",
+      "unlisted": "Nicht gelistet",
+      "private": "Privat"
     }
   },
   "claimGym": {

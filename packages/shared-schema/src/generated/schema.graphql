@@ -3341,6 +3341,15 @@ type SmartPlaylistCount {
   count: Int!
 }
 
+input ObservedBoardSerialInput {
+  boardType: String!
+  observedSerialNumber: String!
+}
+type ObservedBoardSerialMatch {
+  boardType: String!
+  observedSerialNumber: String!
+  candidates: [UserBoard!]!
+}
 "A redacted snapshot of the last confirmed climb while its sender still holds the board."
 type BoardDiscoveryClimb {
   uuid: ID!
@@ -3471,6 +3480,8 @@ type UserBoard {
   gymUuid: String
   "Gym name if linked to a gym"
   gymName: String
+  "Whether the linked gym participates in discovery; null when no gym is linked."
+  gymIsListed: Boolean
   "Distance in meters from search origin (only set for proximity queries)"
   distanceMeters: Float
   "Controller box serial number"
@@ -3936,6 +3947,8 @@ type Gym {
   longitude: Float
   "Whether publicly visible"
   isPublic: Boolean!
+  "Whether this gym appears in discovery. False keeps direct links readable."
+  isListed: Boolean!
   "Image URL"
   imageUrl: String
   "Square gym logo (transparent brand mark) for the kiosk and embeds — distinct from imageUrl, which is the gym photo."
@@ -4135,6 +4148,8 @@ input CreateGymInput {
   longitude: Float
   "Whether publicly visible (default true)"
   isPublic: Boolean
+  "Whether listed in discovery (default true)"
+  isListed: Boolean
   "Image URL"
   imageUrl: String
   "Optional board UUID to link on creation"
@@ -4169,6 +4184,8 @@ input UpdateGymInput {
   longitude: Float
   "New visibility"
   isPublic: Boolean
+  "Whether listed in discovery"
+  isListed: Boolean
   "New image URL"
   imageUrl: String
   "Square gym logo (transparent brand mark) for the kiosk and embeds — distinct from imageUrl, the gym photo. Pass null to clear it."
@@ -8059,6 +8076,8 @@ type Query {
 
   # Get current user's registered controllers
   myControllers: [ControllerInfo!]!
+  "Read a gym's device configuration using a registered gym owner/admin's controller API key."
+  controllerGymManifest(gymRef: String!): ControllerGymManifest!
 
   # ============================================
   # Social / Follow Queries
@@ -8329,6 +8348,8 @@ type Query {
   backward compatibility with already-shipped clients.
   """
   boardsBySerialNumbers(serialNumbers: [String!]!, boardType: String): [UserBoard!]!
+  "Correlate radio-observed serials with readable candidates without exposing stored owner-only serial fields."
+  observedBoardSerialMatches(input: [ObservedBoardSerialInput!]!): [ObservedBoardSerialMatch!]!
 
   """
   Recorded board configurations for the current user keyed by controller serial.
@@ -10628,6 +10649,39 @@ type PlaybackStateChanged {
   anchorTimestamp: String!
   "Client ID of the publisher, used for echo suppression"
   clientId: ID
+}
+
+type ControllerPreviewDescriptor {
+  imageUrl: String!
+  geometryUrl: String!
+  imageSha256: String!
+  geometrySha256: String!
+  imageBytes: Int!
+  geometryBytes: Int!
+  width: Int!
+  height: Int!
+  positionCount: Int!
+}
+
+type ControllerGymBoard {
+  uuid: ID!
+  name: String!
+  boardType: String!
+  serialNumber: String!
+  layoutId: Int!
+  sizeId: Int!
+  setIds: String!
+  angle: Int!
+  advertisedName: String!
+  preview: ControllerPreviewDescriptor!
+}
+
+type ControllerGymManifest {
+  version: Int!
+  gymUuid: ID!
+  name: String!
+  slug: String!
+  boards: [ControllerGymBoard!]!
 }
 
 # ============================================

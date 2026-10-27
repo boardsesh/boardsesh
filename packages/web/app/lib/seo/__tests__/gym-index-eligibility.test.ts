@@ -10,6 +10,10 @@ describe('gymIsIndexableVenue', () => {
     expect(gymIsIndexableVenue(candidate())).toBe(true);
   });
 
+  it('rejects an unlisted public gym even with a pin', () => {
+    expect(gymIsIndexableVenue(candidate({ isListed: false }))).toBe(false);
+  });
+
   it('rejects a public gym with no pin', () => {
     expect(gymIsIndexableVenue(candidate({ latitude: null, longitude: null }))).toBe(false);
   });

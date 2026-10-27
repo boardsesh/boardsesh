@@ -755,8 +755,8 @@
       "address": "Address",
       "contactEmail": "Contact Email",
       "contactPhone": "Contact Phone",
-      "isPublic": "Public gym",
-      "website": "Website"
+      "website": "Website",
+      "visibility": "Visibility"
     },
     "placeholders": {
       "name": "e.g., Boulder World, The Climbing Factory",
@@ -780,7 +780,13 @@
     },
     "helpers": {
       "website": "Used to verify ownership when someone claims this gym",
-      "hours": "One line, however you write it. Your gym page shows the date you last confirmed it."
+      "hours": "One line, however you write it. Your gym page shows the date you last confirmed it.",
+      "visibility": "Unlisted gyms open through their link and stay out of search and maps."
+    },
+    "visibility": {
+      "public": "Public",
+      "unlisted": "Unlisted",
+      "private": "Private"
     }
   },
   "claimGym": {

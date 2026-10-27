@@ -108,6 +108,8 @@ export const gymsTypeDefs = /* GraphQL */ `
     longitude: Float
     "Whether publicly visible"
     isPublic: Boolean!
+    "Whether this gym appears in discovery. False keeps direct links readable."
+    isListed: Boolean!
     "Image URL"
     imageUrl: String
     "Square gym logo (transparent brand mark) for the kiosk and embeds — distinct from imageUrl, which is the gym photo."
@@ -307,6 +309,8 @@ export const gymsTypeDefs = /* GraphQL */ `
     longitude: Float
     "Whether publicly visible (default true)"
     isPublic: Boolean
+    "Whether listed in discovery (default true)"
+    isListed: Boolean
     "Image URL"
     imageUrl: String
     "Optional board UUID to link on creation"
@@ -341,6 +345,8 @@ export const gymsTypeDefs = /* GraphQL */ `
     longitude: Float
     "New visibility"
     isPublic: Boolean
+    "Whether listed in discovery"
+    isListed: Boolean
     "New image URL"
     imageUrl: String
     "Square gym logo (transparent brand mark) for the kiosk and embeds — distinct from imageUrl, the gym photo. Pass null to clear it."

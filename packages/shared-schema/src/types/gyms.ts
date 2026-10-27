@@ -75,6 +75,8 @@ export type Gym = {
   latitude?: number | null;
   longitude?: number | null;
   isPublic: boolean;
+  /** Omitted by older cached clients; absence means listed. */
+  isListed?: boolean;
   imageUrl?: string | null;
   /** Square gym logo (transparent brand mark) for the kiosk and embeds — distinct from imageUrl, the gym photo. */
   logoUrl?: string | null;
@@ -235,6 +237,7 @@ export type CreateGymInput = {
   latitude?: number;
   longitude?: number;
   isPublic?: boolean;
+  isListed?: boolean;
   imageUrl?: string;
   boardUuid?: string;
 };
@@ -253,6 +256,7 @@ export type UpdateGymInput = {
   latitude?: number | null;
   longitude?: number | null;
   isPublic?: boolean;
+  isListed?: boolean;
   /** Gym photo. `undefined` leaves the column untouched; explicit `null` clears it. */
   imageUrl?: string | null;
   // Branding: `undefined` leaves the column untouched; explicit `null` clears it

@@ -3,6 +3,7 @@ import { alias, QueryBuilder } from 'drizzle-orm/pg-core';
 import * as schema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
 import {
+  boardGymListedCondition,
   climbDraftVisibilityCondition,
   ownedOrPublicClimbCondition,
   playlistClimbEntityClimbUuid,
@@ -222,7 +223,10 @@ export function listedSessionCondition(sessionId: SQLWrapper, viewerId: string |
  * inheritance. The same reading as `boardIdentityVisibleCondition`.
  */
 function listedBoardCondition(boardUuid: SQLWrapper, viewerId: string | null | undefined): SQL {
-  return resourceAccessCondition('board', boardUuid, viewerId, { allowUnlistedLink: false });
+  return and(
+    resourceAccessCondition('board', boardUuid, viewerId, { allowUnlistedLink: false }),
+    sql`EXISTS (SELECT 1 FROM user_boards listed_identity_board WHERE listed_identity_board.uuid = ${boardUuid} AND ${boardGymListedCondition(sql`listed_identity_board.gym_id`)})`,
+  )!;
 }
 
 export type SocialEntityReadOptions = {
@@ -374,7 +378,7 @@ function terminalSocialEntityPrivacyCondition(
         // A gym's thread reads exactly when the gym does: a private gym's
         // comments stay with the people `gym(gymUuid)` shows it to, for direct
         // reads and discovery alike.
-        .where(and(eq(gym.uuid, entityId), isNull(gym.deletedAt), gymVisibleCondition(gym, viewerId))),
+        .where(and(eq(gym.uuid, entityId), isNull(gym.deletedAt), gymVisibleCondition(gym, viewerId, discovery))),
     )}
     ELSE false END`;
 }

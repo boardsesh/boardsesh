@@ -755,8 +755,8 @@
       "address": "Adresse",
       "contactEmail": "E-mail de contact",
       "contactPhone": "Téléphone de contact",
-      "isPublic": "Salle publique",
-      "website": "Site web"
+      "website": "Site web",
+      "visibility": "Visibilité"
     },
     "placeholders": {
       "name": "ex. Boulder World, The Climbing Factory",
@@ -780,7 +780,13 @@
     },
     "helpers": {
       "website": "Sert à vérifier la propriété lorsque quelqu’un revendique cette salle",
-      "hours": "Une ligne, comme tu veux l'écrire. Ta page affiche la date de ta dernière confirmation."
+      "hours": "Une ligne, comme tu veux l'écrire. Ta page affiche la date de ta dernière confirmation.",
+      "visibility": "Les salles non répertoriées sont accessibles par leur lien et n’apparaissent ni dans les recherches ni sur la carte."
+    },
+    "visibility": {
+      "public": "Public",
+      "unlisted": "Non répertorié",
+      "private": "Privé"
     }
   },
   "claimGym": {

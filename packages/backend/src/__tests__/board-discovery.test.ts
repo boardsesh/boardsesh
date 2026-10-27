@@ -171,6 +171,7 @@ describe('physical board discovery', () => {
 
   it.each([
     ['private', { isPublic: false }],
+    ['unlisted', { isListed: false }],
     ['deleted', { deletedAt: new Date() }],
     ['missing slug', { slug: null }],
     ['empty slug', { slug: '' }],
@@ -298,5 +299,14 @@ describe('physical board discovery ranking cache', () => {
     const board = await seedBoard(gym.id);
 
     expect((await discover()).map((entry) => entry.uuid)).toEqual([board.uuid]);
+  });
+
+  it('immediately hides a gym and its linked boards after the gym becomes unlisted', async () => {
+    const gym = await seedGym();
+    const board = await seedBoard(gym.id);
+    expect((await discover()).map((entry) => entry.uuid)).toEqual([board.uuid]);
+    await db.update(gyms).set({ isListed: false }).where(eq(gyms.id, gym.id));
+    expect(await discover()).toEqual([]);
+    expect(setMock).toHaveBeenCalledTimes(1);
   });
 });

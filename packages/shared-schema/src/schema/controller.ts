@@ -1,4 +1,37 @@
 export const controllerTypeDefs = /* GraphQL */ `
+  type ControllerPreviewDescriptor {
+    imageUrl: String!
+    geometryUrl: String!
+    imageSha256: String!
+    geometrySha256: String!
+    imageBytes: Int!
+    geometryBytes: Int!
+    width: Int!
+    height: Int!
+    positionCount: Int!
+  }
+
+  type ControllerGymBoard {
+    uuid: ID!
+    name: String!
+    boardType: String!
+    serialNumber: String!
+    layoutId: Int!
+    sizeId: Int!
+    setIds: String!
+    angle: Int!
+    advertisedName: String!
+    preview: ControllerPreviewDescriptor!
+  }
+
+  type ControllerGymManifest {
+    version: Int!
+    gymUuid: ID!
+    name: String!
+    slug: String!
+    boards: [ControllerGymBoard!]!
+  }
+
   # ============================================
   # ESP32 Controller Types
   # ============================================
