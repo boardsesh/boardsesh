@@ -248,9 +248,10 @@ describe('default phone command compilation', () => {
     const env = buildScreenshotEnv(
       options,
       {
+        NODE_ENV: 'test',
         EXPO_PUBLIC_SCREENSHOT_CPP_URL: 'stale',
         EXPO_PUBLIC_SCREENSHOT_CPP_COMMANDS: 'stale',
-      } as NodeJS.ProcessEnv,
+      },
       'it',
       '2026-10-13T01:00:01Z',
       8090,
