@@ -27,6 +27,8 @@ vi.mock('react-native', () => ({
 vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 24, bottom: 0, left: 0, right: 0 }),
 }));
+const sideInsets = vi.hoisted(() => ({ left: 0, right: 0 }));
+vi.mock('../../../hooks/use-horizontal-safe-area', () => ({ useHorizontalSafeArea: () => sideInsets }));
 vi.mock('react-native-paper', () => ({
   Appbar: {
     Header: ({ children, elevated }: { children?: ReactNode; elevated?: boolean }) =>
@@ -72,6 +74,24 @@ describe('MaterialTopAppBar', () => {
     expect(bandStyle(container).backgroundColor).toBe('#221A33');
     act(() => edge.listProps.onScroll(scrollTo(0)));
     expect(bandStyle(container).backgroundColor).toBe('#0F0B16');
+  });
+
+  it("pads clear of iPhone Duo's side rail, and not at all on a portrait phone", () => {
+    sideInsets.left = 0;
+    const { container, rerender } = render(
+      <MaterialTopAppBar testID="bar" onHeightChange={vi.fn()}>
+        <span>Title</span>
+      </MaterialTopAppBar>,
+    );
+    expect(bandStyle(container)).toMatchObject({ paddingLeft: 0, paddingRight: 0 });
+    sideInsets.left = 62;
+    rerender(
+      <MaterialTopAppBar testID="bar" onHeightChange={vi.fn()}>
+        <span>Title</span>
+      </MaterialTopAppBar>,
+    );
+    expect(bandStyle(container)).toMatchObject({ paddingLeft: 62, paddingRight: 0 });
+    sideInsets.left = 0;
   });
 
   it('stays flat when no list is wired', () => {
