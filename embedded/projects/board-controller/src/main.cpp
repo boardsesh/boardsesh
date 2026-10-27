@@ -397,6 +397,42 @@ void fillWebStatus(JsonDocument& doc) {
 #endif
 }
 
+#ifdef ENABLE_WAVESHARE_AMOLED_DISPLAY
+// USB diagnostics run on the same task as rendering. Keep input bounded so an
+// incomplete command cannot block WiFi, BLE, or the display.
+void processDisplayDiagnostics() {
+    static char command[32];
+    static size_t commandLength = 0;
+    static bool commandOverflow = false;
+
+    Display.service();
+    for (int remaining = 64; remaining > 0 && Serial.available() > 0; remaining--) {
+        int incoming = Serial.read();
+        if (incoming < 0) break;
+        if (incoming == '\r') continue;
+        if (incoming == '\n') {
+            command[commandLength] = '\0';
+            if (!commandOverflow && strcmp(command, "screenshot") == 0) {
+                if (!Display.writeScreenshot(Serial)) {
+                    Serial.println("BOARDSESH_SCREENSHOT_ERROR capture failed");
+                }
+            } else if (!commandOverflow && strcmp(command, "display-status") == 0) {
+                JsonDocument status;
+                fillWebStatus(status);
+                serializeJson(status, Serial);
+                Serial.println();
+            }
+            commandLength = 0;
+            commandOverflow = false;
+        } else if (commandLength < sizeof(command) - 1) {
+            command[commandLength++] = static_cast<char>(incoming);
+        } else {
+            commandOverflow = true;
+        }
+    }
+}
+#endif
+
 #ifdef ENABLE_BLE_PROXY
 void onBLERawForward(const uint8_t* data, size_t len);
 void onProxyStateChange(BLEProxyState state);
@@ -532,6 +568,11 @@ void setup() {
     WebConfig.setStatusProvider(fillWebStatus);
     WebConfig.begin();
 
+#ifdef ENABLE_WAVESHARE_AMOLED_DISPLAY
+    // The portable preview board accepts climbs locally without WiFi setup.
+    initializeBLE();
+#endif
+
     Logger.logln("Setup complete!");
     if (WiFiMgr.isAPMode()) {
         Logger.logln("AP IP: %s", WiFiMgr.getAPIP().c_str());
@@ -565,6 +606,10 @@ void updateSettingsDisplay(bool proxyEnabled) {
 #endif
 
 void loop() {
+#ifdef ENABLE_WAVESHARE_AMOLED_DISPLAY
+    processDisplayDiagnostics();
+#endif
+
     // Process WiFi
     WiFiMgr.loop();
 

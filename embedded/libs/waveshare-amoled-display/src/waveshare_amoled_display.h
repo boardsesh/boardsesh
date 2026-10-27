@@ -3,7 +3,9 @@
 
 #include <Arduino.h>
 #include <Arduino_GFX_Library.h>
+
 #include <JPEGDEC.h>
+#include <atomic>
 #include <display_base.h>
 
 // Pin map from the current Waveshare ESP32-S3-Touch-AMOLED-2.16 docs/BSP.
@@ -11,9 +13,9 @@
 #define AMOLED_LCD_SDIO1 5
 #define AMOLED_LCD_SDIO2 6
 #define AMOLED_LCD_SDIO3 7
-#define AMOLED_LCD_SCLK  38
+#define AMOLED_LCD_SCLK 38
 #define AMOLED_LCD_RESET 39
-#define AMOLED_LCD_CS    12
+#define AMOLED_LCD_CS 12
 #define AMOLED_LCD_WIDTH 480
 #define AMOLED_LCD_HEIGHT 480
 
@@ -46,6 +48,13 @@ class WaveshareAmoledDisplay : public DisplayBase {
     void refreshInfoOnly() override;
     void showBlePreview(const char* boardType, int angle, bool fullRefresh);
 
+    // Status callbacks can run on the BLE task; rendering stays on the main loop.
+    void setWiFiStatus(bool connected);
+    void setBackendStatus(bool connected);
+    void setBleStatus(bool enabled, bool connected);
+    void service();
+    bool writeScreenshot(Print& output);
+
 #ifdef ENABLE_BOARD_IMAGE
     struct LedCmd {
         uint16_t position;
@@ -72,8 +81,14 @@ class WaveshareAmoledDisplay : public DisplayBase {
 
   private:
     Arduino_DataBus* _bus;
-    Arduino_CO5300* _gfx;
+    Arduino_CO5300* _panel;
+    Arduino_Canvas* _gfx;
     bool _ready;
+    bool _blePreviewVisible;
+    std::atomic<uint8_t> _pendingWiFiStatus;
+    std::atomic<uint8_t> _pendingBackendStatus;
+    std::atomic<uint8_t> _pendingBleStatus;
+    std::atomic<bool> _statusDirty;
 
 #ifdef ENABLE_BOARD_IMAGE
     bool _hasBoardImage;

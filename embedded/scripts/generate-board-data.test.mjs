@@ -24,6 +24,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
+import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { loadHolePlacements } from './generate-board-data.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,6 +34,56 @@ const OUTPUT_DIR = path.join(__dirname, '../libs/board-data/src');
 const IMAGE_HEADER = path.join(OUTPUT_DIR, 'board_image_data.h');
 const HOLD_HEADER = path.join(OUTPUT_DIR, 'board_hold_data.h');
 const DATA_CPP = path.join(OUTPUT_DIR, 'board_data.cpp');
+
+describe('hole-placement catalogue loading', () => {
+  it('loads every hold from the current Kilter and Tension shards', () => {
+    const generatedDirectory = path.join(__dirname, '../../packages/board-constants/src/generated');
+    const productSizesContent = fs.readFileSync(path.join(generatedDirectory, 'product-sizes-data.ts'), 'utf-8');
+    const placements = loadHolePlacements(productSizesContent);
+    const require = createRequire(import.meta.url);
+
+    assert.deepEqual(Object.keys(placements).sort(), ['kilter', 'tension']);
+    for (const boardName of ['kilter', 'tension']) {
+      const expected = require(path.join(generatedDirectory, 'hole-placements', `${boardName}.cjs`));
+      assert.ok(Object.values(expected).flat().length > 100, `${boardName} shard should contain real holds`);
+      assert.deepEqual(placements[boardName], expected, `${boardName} firmware holds must match its source shard`);
+    }
+  });
+
+  it('still accepts an inline TypeScript catalogue without reading shards', () => {
+    const placements = loadHolePlacements(
+      'export const HOLE_PLACEMENTS: Record<string, unknown> = { kilter: { "1-1": [[42, null, 8, 16]] } };',
+      '/catalogue-that-does-not-exist',
+    );
+    assert.deepEqual(placements, { kilter: { '1-1': [[42, null, 8, 16]] } });
+  });
+
+  it('extracts shard literals without executing module code', () => {
+    const fixtureDirectory = fs.mkdtempSync(path.join(tmpdir(), 'boardsesh-hole-shards-'));
+    try {
+      fs.mkdirSync(path.join(fixtureDirectory, 'hole-placements'));
+      for (const boardName of ['kilter', 'tension']) {
+        fs.writeFileSync(
+          path.join(fixtureDirectory, 'hole-placements', `${boardName}.cjs`),
+          'module.exports = { "1-1": [[42, null, 8, 16]] }; throw new Error("must not execute shard code");',
+        );
+      }
+      assert.deepEqual(loadHolePlacements('export { HOLE_PLACEMENTS } from "../hole-placements";', fixtureDirectory), {
+        kilter: { '1-1': [[42, null, 8, 16]] },
+        tension: { '1-1': [[42, null, 8, 16]] },
+      });
+    } finally {
+      fs.rmSync(fixtureDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it('names the missing source shard instead of silently generating empty holds', () => {
+    assert.throws(
+      () => loadHolePlacements('', '/catalogue-that-does-not-exist'),
+      /hole-placements\/kilter\.cjs/,
+    );
+  });
+});
 
 describe('generate-board-data', () => {
   let imageContent;

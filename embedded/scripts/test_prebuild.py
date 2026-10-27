@@ -6,9 +6,11 @@ Run with: python3 embedded/scripts/test_prebuild.py
 """
 
 import hashlib
+import runpy
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 def get_combined_hash(schema_path: Path, types_path: Path) -> str:
@@ -118,6 +120,33 @@ class TestHashStorage(unittest.TestCase):
         else:
             stored = ""
         self.assertEqual(stored, "")
+
+
+class TestBoardDataCache(unittest.TestCase):
+    def test_shard_and_generator_edits_invalidate_cached_board_data(self):
+        class BuildEnvironment(dict):
+            def GetProjectOption(self, _name, default):
+                return default
+
+            def AddPreAction(self, *_arguments):
+                pass
+
+        with patch("builtins.print"):
+            namespace = runpy.run_path(
+                str(Path(__file__).with_name("prebuild.py")),
+                init_globals={"env": BuildEnvironment(), "Import": lambda _name: None},
+            )
+        tracked_sources = namespace["BOARD_DATA_SOURCES"]
+        get_board_hash = namespace["get_board_data_hash"]
+        for source_name in ("kilter.cjs", "tension.cjs", "generate-board-data.mjs"):
+            with self.subTest(source=source_name), tempfile.TemporaryDirectory() as directory:
+                self.assertIn(source_name, [source.name for source in tracked_sources])
+                source = Path(directory) / source_name
+                source.write_text("original hold coordinates")
+                get_board_hash.__globals__["BOARD_DATA_SOURCES"] = [source]
+                original_hash = get_board_hash()
+                source.write_text("updated hold coordinates")
+                self.assertNotEqual(original_hash, get_board_hash())
 
 
 if __name__ == '__main__':
