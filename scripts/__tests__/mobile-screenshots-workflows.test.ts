@@ -189,6 +189,7 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
       'flow',
       'gate',
       'locales',
+      'devices',
       'render_mode',
       'boards',
       'fixtures',
@@ -212,6 +213,9 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
 
   it('resolves the gate, the matrix and the source commit in setup', () => {
     const setup = workflow.jobs.setup;
+    const compute = setup.steps?.find((step) => step.id === 'compute');
+    expect(compute?.env?.DEVICE_SELECTION).toBe("${{ inputs.devices || 'common' }}");
+    expect(compute?.env?.CPP_TARGET).toBe("${{ inputs.cpp_target || 'none' }}");
     expect(Object.keys(setup.outputs ?? {})).toEqual([
       'ios_locales',
       'ios_matrix_full',
@@ -247,6 +251,71 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
     expect(appLocales).toEqual(['en-US', 'es', 'fr', 'de', 'it']);
     expect(devices.length * appLocales.length).toBe(20);
     expect(devices.length * Object.keys(STORE_CAPTION_LOCALES).length).toBe(24);
+  });
+
+  it.each(['common', 'phones', 'ipads'] as const)('supports capture-only %s device selection', (selection) => {
+    const directory = mkdtempSync(join(tmpdir(), 'capture-device-matrix-'));
+    const output = join(directory, 'output');
+    try {
+      const script = workflow.jobs.setup.steps?.find((step) => step.id === 'compute')?.run ?? '';
+      const result = spawnSync('bash', ['-c', script], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          LOCALES: '',
+          FLOW: 'app-store',
+          UPLOAD_INPUT: 'false',
+          GATE_INPUT: 'probe',
+          FIXTURES_MODE: 'replay',
+          PUBLISH_BASELINE: 'false',
+          DEVICE_SELECTION: selection,
+          CPP_TARGET: 'none',
+          EVENT_NAME: 'workflow_dispatch',
+          SOURCE_SHA: 'a'.repeat(40),
+          GITHUB_OUTPUT: output,
+        },
+      });
+      expect({ status: result.status, stderr: result.stderr }).toEqual({ status: 0, stderr: '' });
+      const lines = readFileSync(output, 'utf8').split('\n');
+      const matrix = JSON.parse(
+        lines.find((line) => line.startsWith('ios_matrix_full='))!.slice('ios_matrix_full='.length),
+      ) as { locale: string[]; device: Array<{ slug: string }> };
+      expect(matrix.locale).toEqual(['en-US', 'es', 'fr', 'de', 'it']);
+      expect(matrix.device).toHaveLength(selection === 'common' ? 4 : 2);
+      if (selection !== 'common')
+        expect(
+          matrix.device.every((device) => device.slug.startsWith(selection === 'phones' ? 'iphone-' : 'ipad-')),
+        ).toBe(true);
+      expect(lines).toContain(selection === 'common' ? 'gate=probe' : 'gate=full');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    { DEVICE_SELECTION: 'unknown' },
+    { DEVICE_SELECTION: 'phones', UPLOAD_INPUT: 'true' },
+    { DEVICE_SELECTION: 'ipads', PUBLISH_BASELINE: 'true' },
+    { DEVICE_SELECTION: 'phones', CPP_TARGET: 'kilter' },
+  ])('rejects invalid or publishing partial device requests: %o', (request) => {
+    const script = workflow.jobs.setup.steps?.find((step) => step.id === 'compute')?.run ?? '';
+    const result = spawnSync('bash', ['-c', script], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        LOCALES: 'it',
+        FLOW: 'app-store',
+        UPLOAD_INPUT: 'false',
+        GATE_INPUT: 'full',
+        FIXTURES_MODE: 'replay',
+        PUBLISH_BASELINE: 'false',
+        CPP_TARGET: 'none',
+        EVENT_NAME: 'workflow_dispatch',
+        ...request,
+      },
+    });
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('::error::');
   });
 
   it('runs the probe on gate=probe only, off the shared shard action', () => {
@@ -381,13 +450,15 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
     expect(flatten(finalize.env?.FULL_SET_CAPTURED)).toBe(
       "${{ needs.ios-capture.result == 'success' && " +
         "(inputs.flow == null || inputs.flow == 'app-store') && " +
-        "(inputs.locales == null || inputs.locales == '') }}",
+        "(inputs.locales == null || inputs.locales == '') && " +
+        "(inputs.devices == null || inputs.devices == '' || inputs.devices == 'common') }}",
     );
 
     const gateStep = (finalize.steps ?? []).find((step) => step.name === 'Assert screenshot dimensions');
     expect(flatten(gateStep?.if)).toBe(
       "${{ success() && env.UNCHANGED != 'true' && inputs.flow != 'onboarding' && " +
-        "(inputs.locales == '' || inputs.locales == null) }}",
+        "(inputs.locales == '' || inputs.locales == null) && " +
+        "(inputs.devices == null || inputs.devices == '' || inputs.devices == 'common') }}",
     );
 
     const publishStep = (finalize.steps ?? []).find((step) => step.name === 'Publish screenshot baseline');
@@ -484,6 +555,32 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
       }
     },
   );
+
+  it.each(['phones', 'ipads'])('never treats a successful %s capture as a complete store tree', (devices) => {
+    const finalize = workflow.jobs['ios-finalize'];
+    const context = {
+      inputs: { flow: 'app-store', locales: '', devices },
+      needs: { 'ios-capture': { result: 'success' } },
+      env: { UNCHANGED: 'false' },
+      success: () => true,
+    };
+    const evaluate = (expression: string | undefined) =>
+      runInNewContext(
+        flatten(expression)
+          .replace(/^\$\{\{\s*/, '')
+          .replace(/\s*\}\}$/, '')
+          .replaceAll('needs.ios-capture', "needs['ios-capture']"),
+        context,
+      );
+    expect(evaluate(finalize.env?.FULL_SET_CAPTURED)).toBe(false);
+    for (const name of [
+      'Assert screenshot dimensions',
+      'Fetch previous screenshot baseline',
+      'Assert screenshot content',
+    ]) {
+      expect(evaluate(finalize.steps?.find((step) => step.name === name)?.if)).toBe(false);
+    }
+  });
 
   it('keeps the pinned simulator-app cache key in ios-build', () => {
     // scripts/mobile-ci-env-parity.test.ts asserts the shape of this line; it must

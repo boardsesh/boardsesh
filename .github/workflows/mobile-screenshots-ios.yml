@@ -163,6 +163,14 @@ on:
         description: 'iOS locales to capture (comma-separated, e.g. "en-US" or "en-US,es,fr"). Empty = the full en-US,es,fr,de,it set. A narrowed set (or the onboarding flow) skips the App Store dimension gate, which needs all six store locales at once.'
         type: string
         default: ''
+      devices:
+        description: 'Default-listing capture devices. Narrowed runs are capture-only; uploads, baselines and CPPs require common.'
+        type: choice
+        default: common
+        options:
+          - common
+          - phones
+          - ipads
       render_mode:
         description: 'Board drawing to shoot. Empty = the app default (Aura), which is what the store set is meant to show. "classic" shoots the old look for a comparison set.'
         type: choice
@@ -450,6 +458,8 @@ jobs:
           FLOW: ${{ inputs.flow || 'app-store' }}
           UPLOAD_INPUT: ${{ inputs.upload || 'false' }}
           GATE_INPUT: ${{ inputs.gate || 'full' }}
+          DEVICE_SELECTION: ${{ inputs.devices || 'common' }}
+          CPP_TARGET: ${{ inputs.cpp_target || 'none' }}
           FIXTURES_MODE: ${{ inputs.fixtures || 'replay' }}
           PUBLISH_BASELINE: ${{ inputs.publish_baseline || 'false' }}
         run: |
@@ -458,6 +468,14 @@ jobs:
           flow="$FLOW"
           upload="$UPLOAD_INPUT"
           gate="$GATE_INPUT"
+          case "$DEVICE_SELECTION" in common|phones|ipads) ;; *) echo '::error::devices must be common, phones, or ipads'; exit 1 ;; esac
+          if [ "$DEVICE_SELECTION" != common ]; then
+            if [ "$upload" = true ] || [ "$PUBLISH_BASELINE" = true ] || [ "$CPP_TARGET" != none ]; then
+              echo '::error::narrowed devices are capture-only; uploads, baselines and CPPs require common'
+              exit 1
+            fi
+            gate=full
+          fi
           if [ "$FIXTURES_MODE" != "replay" ] && { [ "$upload" = "true" ] || [ "$PUBLISH_BASELINE" = "true" ]; }; then
             echo "::error::store upload and baseline publication require the verified replay campaign."
             exit 1
@@ -514,6 +532,12 @@ jobs:
             echo "::error::devices[0] must be the iPhone 16 Pro Max entry (the probe shard assumption)."
             exit 1
           fi
+          capture_devices="$devices"
+          if [ "$DEVICE_SELECTION" = phones ]; then
+            capture_devices=$(printf '%s' "$devices" | jq -c '[.[] | select(.slug | startswith("iphone-"))]')
+          elif [ "$DEVICE_SELECTION" = ipads ]; then
+            capture_devices=$(printf '%s' "$devices" | jq -c '[.[] | select(.slug | startswith("ipad-"))]')
+          fi
           # Two full matrices, always computed regardless of `gate` — ios-capture
           # itself picks between them at evaluation time, based on the probe's
           # ACTUAL result rather than this job's gate input. A probe that
@@ -523,7 +547,7 @@ jobs:
           # ios-finalize's assertCompleteTree to catch as a red finalize job.
           ios_matrix_full=$(jq -cn \
             --argjson locale "$ios_locales" \
-            --argjson device "$devices" \
+            --argjson device "$capture_devices" \
             '{locale: $locale, device: $device, exclude: []}')
           # Derive the excluded (locale, device) pair from devices[0] instead of
           # hand-copying the literal, so it can never drift from the device the
@@ -532,7 +556,7 @@ jobs:
           probe_exclude=$(printf '%s' "$devices" | jq -c '[{locale:"en-US", device: .[0]}]')
           ios_matrix_without_probe=$(jq -cn \
             --argjson locale "$ios_locales" \
-            --argjson device "$devices" \
+            --argjson device "$capture_devices" \
             --argjson exclude "$probe_exclude" \
             '{locale: $locale, device: $device, exclude: $exclude}')
           {
@@ -899,7 +923,8 @@ jobs:
       FULL_SET_CAPTURED: >-
         ${{ needs.ios-capture.result == 'success' &&
             (inputs.flow == null || inputs.flow == 'app-store') &&
-            (inputs.locales == null || inputs.locales == '') }}
+            (inputs.locales == null || inputs.locales == '') &&
+            (inputs.devices == null || inputs.devices == '' || inputs.devices == 'common') }}
 
     steps:
       - name: Checkout repository
@@ -955,7 +980,7 @@ jobs:
         # success()/failure()/always()/cancelled() still gets the default
         # success() ANDed in automatically, so this condition would behave
         # identically without the explicit `success() &&` prefix.
-        if: ${{ success() && env.UNCHANGED != 'true' && inputs.flow != 'onboarding' && (inputs.locales == '' || inputs.locales == null) }}
+        if: ${{ success() && env.UNCHANGED != 'true' && inputs.flow != 'onboarding' && (inputs.locales == '' || inputs.locales == null) && (inputs.devices == null || inputs.devices == '' || inputs.devices == 'common') }}
         run: vp run check:screenshot-dimensions -- --platform ios
 
       # Fetch the last published baseline for the content gate below to compare
@@ -968,7 +993,7 @@ jobs:
       # `if` as the dimension gate: both protect the same automatic upload below.
       - name: Fetch previous screenshot baseline
         id: previous_baseline
-        if: ${{ success() && env.UNCHANGED != 'true' && inputs.flow != 'onboarding' && (inputs.locales == '' || inputs.locales == null) }}
+        if: ${{ success() && env.UNCHANGED != 'true' && inputs.flow != 'onboarding' && (inputs.locales == '' || inputs.locales == null) && (inputs.devices == null || inputs.devices == '' || inputs.devices == 'common') }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -983,7 +1008,7 @@ jobs:
       # already runs (mobile-screenshots-android.yml, "Assert screenshots are not
       # blank"). Same `if` as the dimension gate.
       - name: Assert screenshot content
-        if: ${{ success() && env.UNCHANGED != 'true' && inputs.flow != 'onboarding' && (inputs.locales == '' || inputs.locales == null) }}
+        if: ${{ success() && env.UNCHANGED != 'true' && inputs.flow != 'onboarding' && (inputs.locales == '' || inputs.locales == null) && (inputs.devices == null || inputs.devices == '' || inputs.devices == 'common') }}
         env:
           BASELINE_FOUND: ${{ steps.previous_baseline.outputs.found }}
         run: |

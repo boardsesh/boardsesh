@@ -430,6 +430,10 @@ uploads the artifact; committing the set back to `main` stays opt-in on a
 dispatch (`commit_to_main`) — that is deliberately still `main`, because
 `mobile-store-metadata.yml` reads the committed PNGs from there.
 
+For a capture-only diagnostic, the iOS workflow's `devices` input accepts
+`phones` or `ipads`; `common` remains the default. Narrowed device captures
+cannot upload to Apple, refresh the baseline, or run CPP publication.
+
 ### Italian release checklist
 
 1. Verify the candidate includes Italian in both its UI and native languages.
@@ -442,7 +446,7 @@ dispatch (`commit_to_main`) — that is deliberately still `main`, because
    creates the new Apple locale before screenshots are uploaded, refreshes the
    editable iOS draft, and uploads Play listing text; native deploys do not.
 4. Explicitly dispatch **Mobile Screenshots (iOS)** on `release/next` with
-   `flow: app-store`, `gate: full`, `fixtures: replay`, empty `locales`,
+   `flow: app-store`, `devices: common`, `gate: full`, `fixtures: replay`, empty `locales`,
    `cpp_target: none`, `upload: true`, and `publish_baseline: true`. Store-only
    changes can skip the native build, so its automatic screenshot follow-up is
    insufficient. Review all 20 capture shards and 24 storefront sets, including

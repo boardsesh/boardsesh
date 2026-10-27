@@ -47,9 +47,8 @@ name: app-store screenshots (iPad)
       - extendedWaitUntil:
           visible: ${SCREENSHOT_SIDEBAR_HIDE_LABEL}
           timeout: 15000
-      - tapOn:
-          text: ${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}
-          index: 0
+      # The primary-board ACK already selected Climbs. Tapping its label here
+      # can hit the matching header capsule, which opens the full-screen player.
       - extendedWaitUntil:
           visible:
             text: ${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}

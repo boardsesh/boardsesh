@@ -1073,8 +1073,16 @@ describe('renderMaestroFlowForIosDevice', () => {
         commands: [{ tapOn: '${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}' }],
       });
       expect(navigation[index][1].extendedWaitUntil?.visible).toBe('${SCREENSHOT_SIDEBAR_HIDE_LABEL}');
-      expect(navigation[index][2].tapOn).toEqual({ text: label, index: 0 });
-      expect(navigation[index][3].extendedWaitUntil?.visible).toEqual({ text: label, selected: true });
+      // The primary-board ACK already selected the first Climbs destination.
+      if (index === 0) {
+        expect(navigation[index].some((command) => command.tapOn?.text === label)).toBe(false);
+      } else {
+        expect(navigation[index][2].tapOn).toEqual({ text: label, index: 0 });
+      }
+      expect(navigation[index][index === 0 ? 2 : 3].extendedWaitUntil?.visible).toEqual({
+        text: label,
+        selected: true,
+      });
     }
     expect(commands.flatMap((command) => (command.takeScreenshot ? [command.takeScreenshot] : []))).toEqual([
       '02-climbs',
@@ -1091,7 +1099,13 @@ describe('renderMaestroFlowForIosDevice', () => {
     let collapsedControlVisible = false;
     let sidebarAbsent = false;
     for (const command of commands) {
-      if (command.retry?.commands.some((nested) => nested.tapOn)) selectedDestination = true;
+      if (
+        command.retry?.commands.some((nested) => {
+          const selected = nested.extendedWaitUntil?.visible;
+          return typeof selected === 'object' && selected.selected === true;
+        })
+      )
+        selectedDestination = true;
       if (command.tapOn === '${SCREENSHOT_SIDEBAR_HIDE_LABEL}') {
         expect(selectedDestination).toBe(true);
         collapseRequested = true;
