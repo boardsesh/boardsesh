@@ -54,7 +54,7 @@ inline bool jpeg(const uint8_t* bytes, size_t size, unsigned width, unsigned hei
         if (marker == 0xC0) {
             if (length < 11 || bytes[offset + 2] != 8 || big16(bytes + offset + 3) != height ||
                 big16(bytes + offset + 5) != width || (bytes[offset + 7] != 1 && bytes[offset + 7] != 3) ||
-                length != 8 + bytes[offset + 7] * 3)
+                length != 8u + static_cast<size_t>(bytes[offset + 7]) * 3u)
                 return false;
             dimensionsMatch = true;
         } else if (marker >= 0xC1 && marker <= 0xCF && marker != 0xC4 && marker != 0xC8 && marker != 0xCC) {
