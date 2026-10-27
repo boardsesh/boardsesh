@@ -99,7 +99,7 @@ resource API.
 
 | Option | What it is | Fit with our stack | What we would still write | Who ships security fixes | New things to run |
 | --- | --- | --- | --- | --- | --- |
-| **`oidc-provider`** (panva) | Node library, OpenID Certified, MIT. Covers authorization code + PKCE, refresh rotation (`rotateRefreshToken`; with rotation on, a reused refresh token revokes the whole grant), revocation (RFC 7009), RFC 8414 and OIDC discovery, per-client CORS (`clientBasedCORS`), resource indicators with opaque access tokens, dynamic client registration if we ever want it | Mounts as a plain `(req, res)` handler (`provider.callback()`) on our `http` server under `/oauth/*`. Koa is an internal dependency. Login and consent are "interactions" whose URL can be absolute, so the screen can live on `www` | A storage adapter (two tables), the interaction pages and their confirm handler, account lookup, client lookup from our `oauth_clients`, token checks on `/v1/*` | Upstream; we take releases through the existing dependency bot | Nothing |
+| **`oidc-provider`** (panva) | Node library, OpenID Certified, MIT. Covers authorization code + PKCE, refresh rotation (`rotateRefreshToken`; with rotation on, a reused refresh token revokes the whole grant), revocation (RFC 7009), RFC 8414 and OIDC discovery, per-client CORS (`clientBasedCORS`), resource indicators with opaque access tokens, dynamic client registration if we ever want it | Mounts as a plain `(req, res)` handler (`provider.callback()`) on our `http` server under `/oauth/*`. Koa is an internal dependency. Login and consent are "interactions" whose URL can be absolute, so the screen can live on `www` | A storage adapter (two tables), the interaction pages and their confirm handler, account lookup, client lookup from our `oauth_clients` (the library compares client secrets in plaintext, so we store them encrypted, not hashed), a login check on every authorize, token checks on `/v1/*` | Upstream; we take releases through the existing dependency bot | Nothing |
 | Ory Hydra (self-hosted) | Go service, OpenID Certified, Apache 2.0. Headless: redirects to our login and consent URLs with a challenge, we accept it over its admin API | A second service with its own migrations in our Postgres and an admin port to lock down. Opaque tokens are checked by calling its introspection endpoint, so every API request makes a network hop or caches and delays revocation | Login/consent pages, admin API calls, client sync from our console | Upstream, but we deploy and upgrade the service | A service on Railway (and later on EC2, #6632) |
 | Writing it ourselves (first draft) | Four handlers over Drizzle tables | Native | All of it, including the security-critical parts | Us | Nothing |
 | `@node-oauth/oauth2-server` | Library running grant flows over a model we write | Fits | Storage, rotation and reuse policy, revocation endpoint, metadata, CORS | Shared | Nothing |
@@ -116,23 +116,60 @@ these hold:
 
 1. Mounted under `/oauth/*` on the backend's `http` server without touching
    other routes, and the backend still builds and starts.
-2. `/oauth/authorize` → interaction page on `www` → the climber allows → the
-   confirm request to `api.boardsesh.com` identifies the climber from the
-   NextAuth session cookie (set on `.boardsesh.com` by `sessionCookieDomain()`,
-   so the backend host receives it, and `validateToken` already decrypts it),
-   with a CSRF token → code issued. Works in Safari on iOS and Chrome on
-   Android, including when the climber has to sign in first.
+2. `/oauth/authorize` → interaction page on `www` → the climber allows → a
+   plain HTML form POST (no `fetch`, so no CORS) to the confirm handler on
+   `api.boardsesh.com` → code issued. The confirm request must carry two
+   cookies: the library's `_interaction` cookie, which it sets on the `api`
+   host with its path equal to the pathname of `interactions.url` (so the
+   handler lives at `POST /oauth/consent/{uid}/confirm`, under the same
+   pathname as the `www` page `/oauth/consent/{uid}`; any other path and
+   `interactionFinished` throws `SessionNotFound`), and the NextAuth session
+   cookie (set on `.boardsesh.com` by `sessionCookieDomain()`, `SameSite=Lax`,
+   and `www` → `api` is same-site, so it is sent; the handler reassembles
+   NextAuth's chunked `.0`/`.1` cookies before `validateToken` decrypts the
+   JWE), plus a CSRF token. Works in Safari on iOS and Chrome on Android,
+   including when the climber has to sign in first.
 3. A Drizzle adapter stores every model; `revokeByGrantId` makes the next API
    call fail; grants are listable per climber for Connected apps.
-4. Policies hold: PKCE with `S256` required for every client, confidential
-   ones included; `plain` refused; `rotateRefreshToken: true`; a reused refresh
-   token or code revokes the grant; revoking an access token at `/oauth/revoke`
-   does not revoke the grant; opaque access tokens for the
-   `https://api.boardsesh.com` resource; `clientBasedCORS` driven by our
-   per-app origins; one live grant per (app, climber) via `loadExistingGrant`.
+4. The configuration holds, each item with a test:
+   - `pkce.required` returns true for every client (the library has no
+     `plain` method any more, so `S256` is the only one).
+   - `rotateRefreshToken: true`; a reused refresh token or code revokes the
+     grant.
+   - `features.revocation.enabled: true` (off by default). Revoking an access
+     token or a refresh token ends the connection: the library revokes by
+     grant for both, which RFC 7009 permits, and the contract says so.
+   - `issueRefreshToken` returns true whenever the client may use the
+     `refresh_token` grant. The default only issues one when `offline_access`
+     was requested, which is not one of our scopes.
+   - `ttl.Grant` at least as long as `ttl.RefreshToken` (90 days, sliding),
+     or unbounded with our own `revoked_at`. The default Grant TTL is 14 days,
+     after which every refresh fails.
+   - `ttl.Session` of a few seconds and no remembered login, plus a custom
+     `login` prompt check that re-reads the NextAuth cookie on every
+     `/oauth/authorize` (a top-level GET, so the `Lax` cookie is sent) and
+     requires `authTime` ≥ `credentials_changed_at`. Without it, the library's
+     own 14-day `_session` cookie on `api` would let a signed-out or
+     post-password-reset browser authorize apps with no prompt.
+   - `findClient` maps public apps to `application_type: 'native'` (that is
+     what enables loopback-port-insensitive matching and private-use schemes)
+     and confidential apps to `web`. Our console validation stays the
+     stricter layer.
+   - Access tokens are opaque (the default). `resourceIndicators` with
+     `defaultResource` = `https://api.boardsesh.com`, so apps never have to
+     send `resource=`, and `getResourceServerInfo` returning our scopes.
+   - `clientBasedCORS` from our per-app origins; one live grant per (app,
+     climber) via `loadExistingGrant`.
 5. `authenticateApiBearer` resolves an access token through the adapter in
    under 5 ms p95, with no cache.
-6. RFC 8414 metadata is served and lists exactly what we support.
+6. RFC 8414 metadata is served and lists exactly what we support. It lives at
+   the root, `/.well-known/oauth-authorization-server`, not under `/oauth`, so
+   the `server.ts` path switch forwards both prefixes to the provider.
+7. The token endpoint's per-connection rate limit can be keyed before the
+   provider consumes the request body: the wrapper parses the capped form body
+   once, keys on `sha256(refresh_token)`, and hands the provider a pre-parsed
+   `req.body`. If the provider cannot take a pre-parsed body, key on the
+   client and IP only and record the gap.
 
 **Required before any outside app, whichever implementation wins:** the
 protocol and adversarial suite in [Authorization server](#authorization-server).
@@ -165,7 +202,8 @@ integrators at the REST API.
 Access tokens live 1 hour, refresh tokens 90 days and rotate on every use,
 authorization codes 60 seconds and work once. Access tokens are opaque and
 looked up in storage on every API call, so revoking a connection takes
-effect on the next request; a signed JWT would outlive Disconnect. The
+effect on the next request; a signed JWT would outlive Disconnect. Revoking
+any token of a connection, access or refresh, ends the whole connection. The
 earlier `bsa_`/`bsr_`/`bsc_` prefixes are not part of the contract: token
 values are generated by `oidc-provider`, and apps must treat them as opaque
 strings. (A prefix would help secret scanners spot a leaked token. The spike
@@ -227,10 +265,11 @@ the screens a climber looks at (sign-in, consent) live on `www`.
 
 The consent screen is a Next page on `www` because that is where sign-in
 lives. It renders what the backend tells it (`oauthInteraction(uid)`: the
-app's name, links and the requested scopes) and posts Allow or Cancel to
-`api.boardsesh.com/oauth/interaction/{uid}/confirm`. That handler reads the
-climber from the NextAuth session cookie, checks the CSRF token, and calls
-`oidc-provider`'s `interactionFinished`. App registration and the Connected
+app's name, links and the requested scopes) and posts Allow or Cancel, as a
+plain form POST, to `api.boardsesh.com/oauth/consent/{uid}/confirm` (the same
+pathname, so the library's `_interaction` cookie comes along). That handler
+reads the climber from the NextAuth session cookie, checks the CSRF token and
+`authTime`, and calls `oidc-provider`'s `interactionFinished`. App registration and the Connected
 apps screen are internal GraphQL operations in `packages/backend`. None of
 these are part of the public contract, and an API token can never call them
 (D5).
@@ -359,9 +398,11 @@ model holds. Measured against the platform goals:
   (adapter, interaction handler, bearer check) so moving to Hydra stays
   possible, and keep tokens opaque so no app depends on their format.
 - **Secret encryption has no key versioning.** `@boardsesh/crypto` derives
-  one AES key from `AURORA_CREDENTIALS_SECRET` with a fixed salt. Fine for
-  hashed client secrets (never encrypted); webhook secrets in milestone 4 need a
-  versioned key so a rotation is possible.
+  one AES key from `AURORA_CREDENTIALS_SECRET` with a fixed salt. Client
+  secrets have to be stored encrypted (the library compares plaintext), and so
+  do webhook secrets in milestone 4, so milestone 1 adds a key version prefix
+  to the ciphertext and a second key slot, so a key can be rotated without
+  re-registering every app.
 
 ---
 
@@ -373,10 +414,10 @@ model holds. Measured against the platform goals:
 | --- | --- | --- |
 | `GET https://api.boardsesh.com/oauth/authorize` | `oidc-provider` | Validates the request, then redirects to the interaction page. Errors that make the redirect URI untrustworthy (unknown client, unregistered redirect) render an error page and never redirect |
 | `GET https://www.boardsesh.com/oauth/consent/{uid}` | Next page, `packages/web/app/oauth/consent/` | Sends a signed-out climber through `/auth/login` and back, then shows the consent screen |
-| `POST https://api.boardsesh.com/oauth/interaction/{uid}/confirm` | Our handler in `packages/backend/src/handlers/oauth/` | Climber from the NextAuth cookie, CSRF check, `authTime` check (see risks), then `interactionFinished` |
+| `POST https://api.boardsesh.com/oauth/consent/{uid}/confirm` | Our handler in `packages/backend/src/handlers/oauth/` | Plain form POST. Needs the library's `_interaction` cookie (path `/oauth/consent/{uid}`) and the NextAuth cookie. CSRF check, `authTime` check (see risks), then `interactionFinished` |
 | `POST https://api.boardsesh.com/oauth/token` | `oidc-provider` | `authorization_code` and `refresh_token` grants. Client auth `none` (public apps), `client_secret_post`, `client_secret_basic` |
-| `POST https://api.boardsesh.com/oauth/revoke` | `oidc-provider` | RFC 7009. Refresh token: revokes the grant. Access token: that token only |
-| `GET https://api.boardsesh.com/.well-known/oauth-authorization-server` | `oidc-provider` | RFC 8414 metadata: `code_challenge_methods_supported: ["S256"]`, scopes, auth methods, `authorization_response_iss_parameter_supported: true` |
+| `POST https://api.boardsesh.com/oauth/revoke` | `oidc-provider` | RFC 7009. Either token ends the connection. Unknown tokens still get 200; a wrong client credential gets 401 `invalid_client` |
+| `GET https://api.boardsesh.com/.well-known/oauth-authorization-server` | `oidc-provider` | RFC 8414 metadata at the root, outside `/oauth`: `code_challenge_methods_supported: ["S256"]`, scopes, auth methods, `authorization_response_iss_parameter_supported: true` |
 
 The authorization response carries `iss` (RFC 9207) so an app talking to
 several providers can detect a mix-up. `/oauth/*` on `api` is outside the
@@ -388,15 +429,20 @@ authorization code flow. `/oauth/token`, `/oauth/revoke` and `/v1/*` handle
 CORS in two steps, because a preflight `OPTIONS` carries neither a token nor
 a body and so cannot say which app is calling:
 
-1. Preflight: allowed when the `Origin` is the origin of any live app's
-   registered `https` redirect URI (a set cached for a minute and dropped on
-   app changes). The answer allows `GET`, `POST`, `DELETE` and the
-   `Authorization`, `Content-Type` and `Idempotency-Key` headers, never
-   credentials, with `Vary: Origin`.
+1. Preflight. On `/oauth/token` and `/oauth/revoke` the library answers
+   every preflight as allowed and decides on the actual request. On `/v1/*`
+   our router allows a preflight when the `Origin` is the origin of any live
+   app's registered `https` redirect URI (a set cached for a minute and
+   dropped on app changes). Either way the answer allows `GET`, `POST`,
+   `DELETE` and the `Authorization`, `Content-Type` and `Idempotency-Key`
+   headers, never credentials, with `Vary: Origin`.
 2. Actual request: `Access-Control-Allow-Origin` is echoed only when the
    `Origin` belongs to the calling app itself (`clientBasedCORS` on
    `/oauth/*`, the token's app on `/v1/*`). An origin registered by a different
-   app passes the preflight and is then refused by the browser.
+   app gets past the preflight and is then refused by the browser.
+
+The consent confirm is a plain form POST from `www`, a navigation rather than
+a `fetch`, so it needs no CORS and is the one place a cookie is sent to `api`.
 
 Every other origin gets no CORS headers. A form-encoded token request without
 an `Authorization` header is a simple request and skips the preflight.
@@ -412,9 +458,9 @@ one generic table.
 
 | Table | Holds | Notes |
 | --- | --- | --- |
-| `oauth_clients` | `id` (`bsk_…`), `owner_user_id`, `name`, `homepage_url`, `privacy_url`, `client_type` (`public`/`confidential`), `redirect_uris text[]`, `client_secret_hash`, `client_secret_prev_hash`, `client_secret_prev_expires_at`, `allowed_scopes text[]`, `daily_grant_cap`, `rate_limit_tier`, `suspended_at`, `suspended_reason`, `created_at`, `deleted_at` | Ours; the console writes it, the provider reads it through `findClient`. Secrets are hashed and compared in our client-auth hook. `suspended_at` fails every request closed |
+| `oauth_clients` | `id` (`bsk_…`), `owner_user_id`, `name`, `homepage_url`, `privacy_url`, `client_type` (`public`/`confidential`), `redirect_uris text[]`, `client_secret_enc`, `client_secret_prev_enc`, `client_secret_prev_expires_at`, `allowed_scopes text[]`, `daily_grant_cap`, `rate_limit_tier`, `suspended_at`, `suspended_reason`, `created_at`, `deleted_at` | Ours; the console writes it, the provider reads it through `findClient`. Secrets are encrypted, not hashed: the library compares the plaintext it is given in constant time and has no hook for a hash. That needs the versioned key from the risks list. `suspended_at` fails every request closed |
 | `oauth_grants` | `id`, `client_id`, `user_id`, `scopes text[]`, `payload jsonb`, `created_at`, `last_used_at`, `revoked_at`, `revoked_reason` | The provider's `Grant` model, typed, because Connected apps lists it and workouts reference it. One live grant per (app, climber) through `loadExistingGrant`: consenting again (a second device, more scopes) widens it, and earlier tokens keep working. `last_used_at` written at most hourly |
-| `oauth_provider_models` | `id`, `kind`, `payload jsonb`, `grant_id`, `uid`, `expires_at`, `consumed_at` | Every other model: `AuthorizationCode`, `AccessToken`, `RefreshToken`, `Interaction`, `Session`. Indexed on `(kind, id)`, `grant_id` (for `revokeByGrantId`) and `uid` |
+| `oauth_provider_models` | `id`, `kind`, `payload jsonb`, `user_id`, `grant_id`, `uid`, `expires_at`, `consumed_at` | Every other model: `AuthorizationCode`, `AccessToken`, `RefreshToken`, `Interaction`, `Session`. `user_id` (from the payload's `accountId`, nullable, FK with cascade) is what account deletion cascades through and what password reset uses to destroy a climber's provider sessions. Indexed on `(kind, id)`, `grant_id` (for `revokeByGrantId`), `user_id` and `uid` |
 | `oauth_subjects` | `client_id`, `user_id`, `subject` | D8. Primary key `(client_id, user_id)`; survives reconnects |
 
 Expired rows are cleaned by a pg-boss scheduled job (see
@@ -435,9 +481,9 @@ responses carry `WWW-Authenticate: Bearer error="invalid_token"` (RFC 6750).
 | --- | --- |
 | Climber taps Disconnect (mobile Settings → Connected apps, or web account settings) | `revokeByGrantId`, `oauth_grants.revoked_at` set, unfinished workouts → `revoked` |
 | App calls `/oauth/revoke` with a refresh token | Grant revoked |
-| App calls `/oauth/revoke` with an access token | That access token only (the acceptance test relies on this) |
-| Refresh-token or code reuse | Grant revoked, `revoked_reason = 'reuse'` |
-| Password reset or password set | Every grant for the climber revoked, `credentials_changed_at` stamped. Hooks in `api/auth/reset-password` and `api/internal/set-password`, which revoke nothing today |
+| App calls `/oauth/revoke` with an access token | Grant revoked too: the library revokes by grant for both token kinds |
+| Refresh-token or code reuse | Grant revoked, `revoked_reason = 'reuse'`. With one grant per (app, climber) that ends the connection on every device |
+| Password reset or password set | Every grant for the climber revoked, the climber's provider `Session` rows deleted, `credentials_changed_at` stamped. Hooks in `api/auth/reset-password` and `api/internal/set-password`, which revoke nothing today |
 | Account deletion | Cascades from `users`; tokens stop resolving |
 | App deleted or suspended by its developer or an admin | All its grants fail closed; the climber's Connected apps list shows it as "no longer available" |
 
@@ -461,13 +507,18 @@ Protocol:
   the library allows, and the docs say what apps should do.
 - Revocation semantics from the table above; expired access tokens; scopes
   not granted are refused; `iss` in the authorization response; error bodies
-  per RFC 6749 §5.2.
+  per RFC 6749 §5.2; a refresh token is issued without `offline_access`; a
+  refresh still works on day 30 (the Grant TTL is not the library's 14-day
+  default).
 
 Adversarial:
 
 - Consent CSRF (a cross-site POST to the confirm handler), clickjacking
   (`frame-ancestors 'none'` on the consent page), a stale session (`authTime`
   before `credentials_changed_at`) refused.
+- No login without the NextAuth cookie: authorize once, sign out of `www`,
+  authorize again: the climber is sent to sign in, not straight back with a
+  code. Same after a password reset.
 - `callbackUrl` and redirect-URI open redirects.
 - App A's tokens used with app B's `client_id`; an API token on `/graphql`
   and on the GraphQL operations behind consent and the console; a first-party
@@ -575,12 +626,12 @@ Mapping from `boardsesh_ticks` (semantics in [ascents-and-attempts.md](./ascents
 | Field | Source | Notes |
 | --- | --- | --- |
 | `id` | `uuid` | Stable, never reused. Not the bigserial `id` |
-| `status` | `status` | `flash`, `send`, `attempt`. Clients must tolerate new values |
+| `status` | `status` | `flash`, `send`, `attempt`. New values may be added; the public docs tell apps to treat an unknown one as `attempt` |
 | `attempts` | `attempt_count` | |
 | `stars` | `quality` | 1–5 or `null` |
 | `grade` | `difficulty` via the board's grade table | The climber's own grade; `null` when they gave none |
-| `comment` | `comment` | The climber's note |
-| `climb.id` | `COALESCE(board_climb_aliases.canonical_uuid, climb_uuid)` | Canonical at read time. A later catalog merge changes it without a tick change; documented |
+| `comment` | `comment` | The climber's note. The column defaults to `''`; an empty string is served as `null` |
+| `climb.id` | `COALESCE(board_climb_aliases.canonical_uuid, climb_uuid)`, joined on `(board_type, alias_uuid)` | Canonical at read time. A catalog merge writes a change row for every affected tick (trigger 4 below), so apps see the new id |
 | `climb.grade` | `board_climb_stats.display_difficulty` at the tick's angle | Community grade at read time. It drifts without a tick change; documented |
 | `climb.boardseshGrade` | `board_climb_grades.universal_grade` | Optional decimal on the V scale, `null` when not anchored |
 | `climb.board.type` | `board_type` | `kilter`, `tension`, `moonboard`, `spray`, … Clients must tolerate new values |
@@ -655,32 +706,54 @@ One table, `logbook_changes`, written only by triggers:
 | --- | --- | --- |
 | `seq` | `bigserial` primary key | Order within a transaction |
 | `txid` | `xid8`, default `pg_current_xact_id()` | The writing transaction. 64-bit, never wraps |
-| `user_id` | `text`, FK `users` with cascade | Whose logbook |
+| `user_id` | `text`, no FK | Whose logbook. No FK, like `sync_deletions`: deleting an account cascades into `boardsesh_ticks`, whose delete trigger writes rows for that same user, and those must not depend on cascade ordering. The rows age out in 90 days; nobody can read them, because the grants died with the user |
 | `tick_uuid` | `text` | Which tick. No FK: the tick may be gone |
 | `created_at` | `timestamp`, default `now()` | For pruning only |
 
-Index `(user_id, txid, seq)`.
+Indexes: `(user_id, txid, seq)` for reads, and a BRIN on `created_at` for the prune job.
 
-Writers, all `AFTER … FOR EACH ROW` triggers added with a `drizzle-kit
-generate --custom` migration, the way `0144_offline_sync_backend.sql` added the
+Writers, all triggers (`AFTER … FOR EACH ROW` unless noted) added with a
+`drizzle-kit generate --custom` migration, the way `0144_offline_sync_backend.sql` added the
 existing tick triggers (guarded so a re-applied test schema does not roll back,
 see the backend test-DDL notes):
 
 1. On `boardsesh_ticks` insert and delete: one row for the tick.
-2. On `boardsesh_ticks` update: one row, only when a column the public tick is
-   built from changed (`user_id`, `board_type`, `climb_uuid`, `angle`,
+2. On `boardsesh_ticks` update: one row, only when a column that either the
+   serializer or the twin rule reads is `IS DISTINCT FROM` its old value. The
+   serializer reads `user_id`, `board_type`, `climb_uuid`, `angle`,
    `is_mirror`, `status`, `attempt_count`, `quality`, `difficulty`,
-   `is_benchmark`, `comment`, `climbed_at`, `origin`, `aurora_id`). A
-   `user_id` change writes a row for both climbers. Updates that only touch
-   sync bookkeeping (the `aurora_*` and `kilter_*` columns) write nothing, which
-   also keeps Kilter's PowerSync redeliveries out of the feed.
-3. Twins: when the row is an Aurora-pull row with a real `aurora_id`, the same
-   trigger writes a row for every other Aurora-pull row of that climber with
-   the same board, climb, angle and `climbed_at`. Those are exactly the rows
-   whose visibility under `notAuroraTwinDuplicate` the write can flip.
-4. On `board_climb_aliases` insert or update: a row for every tick on the
-   alias climb, because its public `climb.id` (the canonical uuid) changed.
-   Merges are rare; the cost is one row per tick on the merged climb.
+   `is_benchmark`, `comment`, `climbed_at`, `created_at`, `updated_at`. The
+   twin rule in `aurora-twin-dedup.ts` also reads `origin`, `aurora_id`,
+   `aurora_type`, `aurora_synced_at` (its `isLocallyEdited` test) and
+   `kilter_id` (it never hides a row when both carry one), so those count
+   too: the pull's `toClear` path, a JSON re-import restamping
+   `aurora_synced_at` and Kilter push-back stamping `kilter_id` all change
+   what an app should see without touching a serialized field. Only
+   `aurora_sync_error`, `kilter_type`, `kilter_synced_at`,
+   `kilter_sync_error`, `kilter_detached_at`, `board_id`, `session_id` and
+   `climb_revision` are left out, which still keeps no-op Kilter PowerSync
+   redeliveries out of the feed. A `user_id` change writes a row for both
+   climbers.
+3. Twins: when the OLD or the NEW row is an Aurora-pull row with a real
+   `aurora_id`, the trigger also writes a row for every other Aurora-pull row
+   of that climber under the OLD natural key and under the NEW one (same
+   board, climb, angle and `climbed_at`). An update that moves `climbed_at`,
+   `angle` or `climb_uuid` can change visibility at both keys. Those are
+   exactly the rows whose visibility under `notAuroraTwinDuplicate` the write
+   can flip.
+4. On `board_climb_aliases`: on insert when `alias_uuid <> canonical_uuid`,
+   on update when `canonical_uuid` changed, and on delete (the canonical
+   climb's deletion cascades alias rows and `climb.id` reverts to
+   `climb_uuid`), a row for every tick with that `(board_type, climb_uuid =
+   alias_uuid)`. The guard matters: Kilter's catalog sync
+   (`packages/kilter-sync/src/sync/catalog-sync.ts`) re-upserts a self-alias
+   for climbs and refreshes `last_seen_at` once a day, which an unguarded
+   trigger would turn into a daily row for every tick on those climbs. Real
+   merges are rare; the cost is one row per tick on the merged climb.
+5. On `boardsesh_ticks` truncate: a `FOR EACH STATEMENT` trigger that raises.
+   `TRUNCATE` fires no row triggers, so it would silently bypass the log. No
+   production path truncates ticks today; tests that need to can disable the
+   trigger explicitly.
 
 A trigger, not application code, because ticks are written by GraphQL
 mutations, offline-sync pushes, the Aurora and Kilter sync daemons, JSON and
@@ -749,7 +822,11 @@ Written into the public docs in these words:
 - **Complete.** Every committed change to a tick's public fields, every
   deletion, and every change that hides or reveals a tick appears in the feed.
   An app that reads until `hasMore` is false holds the current state of every
-  tick that changed before that read, including deletions.
+  change that had settled (see below) when the last page was read, including
+  deletions.
+- **Account deletion.** A deleted climber's connections die with the account,
+  so the app's next call answers `401 invalid_token` and the refresh
+  `invalid_grant`. That is the signal; no `tick.deleted` entries are sent.
 - **At least once.** A tick can arrive more than once, always as its current
   state. Apply entries as upserts and removals; never as increments.
 - **Ordered by transaction, not by clock.** Entries come in the order the
@@ -770,13 +847,18 @@ Written into the public docs in these words:
 
 ### Retention, cursor validity and moving the database
 
-- A daily pg-boss job deletes `logbook_changes` rows older than 90 days and,
-  in the same transaction, raises a one-row watermark,
-  `logbook_change_watermark.pruned_through`, to the largest `(txid, seq)` it
-  deleted. A cursor below the watermark answers `410 cursor_expired`: a row
-  after it may be gone. A cursor at or above it is valid however old it is,
-  because nothing after it was deleted. Validity is measured against what is
-  still retained, not against when the cursor was issued.
+- A daily pg-boss job finds `(T, S)`, the largest `(txid, seq)` among rows
+  older than 90 days, deletes every row with `(txid, seq) <= (T, S)` in
+  batches, and in the same transaction as the last batch sets a one-row
+  watermark, `logbook_change_watermark.pruned_through`, to `(T, S)`. Deleting
+  by position rather than by `created_at` keeps the watermark exact: `now()`
+  is a transaction's start time while its `txid` comes at its first write, so
+  the two orders disagree slightly, and pruning by time would delete rows past
+  positions still retained. A cursor below the watermark answers
+  `410 cursor_expired`: a row after it may be gone. A cursor at or above it is
+  valid however old it is, because nothing after it was deleted. Validity is
+  measured against what was pruned, not against when the cursor was
+  issued.
 - The test cursor `c2.expired` always answers `410`, so an app can test its
   recovery path.
 - A cursor whose `txid` is above the current snapshot's `xmax` cannot come
@@ -875,7 +957,8 @@ What LEGAL.md implies:
 
 | Limit | Default | Key |
 | --- | --- | --- |
-| Token endpoint, refresh | 10 requests/min per connection | `oauth-refresh:<clientId>:<grantId>` |
+| `/oauth/authorize` | 60 requests/min per client IP | `oauth-authorize:<ip>`. Every hit writes an `Interaction` row |
+| Token endpoint, refresh | 10 requests/min per connection | `oauth-refresh:<clientId>:<sha256(refresh_token)>` (spike criterion 7) |
 | Token endpoint, code exchange and revoke | 60 requests/min per (app, client IP) | `oauth-client:<clientId>:<ip>`, IP from `getPublicClientIp` |
 | Token endpoint, whole app | 6,000 requests/min | `oauth-client:<clientId>` |
 | API, per connection | 120 requests/min per (app, climber) | `api:<clientId>:<userId>` |
@@ -1030,7 +1113,7 @@ authorization server gets a Fable review.
 
 | PR | Acceptance |
 | --- | --- |
-| `oidc-provider` spike (D2), throwaway branch, two days | The six go/no-go criteria in D2 are checked off in a short write-up appended to this doc. No-go → evaluate Ory Hydra against the same list before milestone 1 starts |
+| `oidc-provider` spike (D2), throwaway branch, two days | The seven go/no-go criteria in D2 are checked off in a short write-up appended to this doc. No-go → evaluate Ory Hydra against the same list before milestone 1 starts |
 | AASA: add `/oauth` and `/developers` to `WEB_ONLY_PATH_PREFIXES` | `/.well-known/apple-app-site-association` lists `NOT /oauth/*` and `NOT /developers/*`. Ships at least a week before milestone 1's consent page so installed phones refresh the file |
 | Constrain `callbackUrl` on `/auth/login` with `safe-callback-url.ts` | A test proves `?callbackUrl=https://evil.example` lands on `/` |
 | `api.boardsesh.com` CNAME in `infra/cloudflare`, custom domain on the backend service | `curl https://api.boardsesh.com/health` answers |
@@ -1046,7 +1129,7 @@ it, the app syncs the logbook, the climber disconnects it.
 | --- | --- | --- |
 | 1.1 | `@boardsesh/public-api`: zod schemas, OpenAPI registry, committed `openapi.json`, CI diff check | — |
 | 1.2 | `logbook_changes`, the watermark, the triggers, the prune job, and the concurrency and randomized tests from [Incremental sync](#incremental-sync) | — |
-| 1.3 | OAuth storage tables + adapter; `oidc-provider` mounted with the D2 configuration; `authenticateApiBearer`; `/v1` router; rate limits | M0 spike |
+| 1.3 | OAuth storage tables + adapter; `oidc-provider` mounted with the D2 configuration; versioned key for `@boardsesh/crypto`; `authenticateApiBearer`; `/v1` router; rate limits | M0 spike |
 | 1.4 | Consent page, interaction confirm handler, `authTime` and `credentials_changed_at`, revoke-all on password reset and set | 1.3, M0 |
 | 1.5 | `GET /v1/me`, `GET /v1/logbook/changes`, `GET /v1/logbook/ticks/{id}` | 1.1, 1.2, 1.3 |
 | 1.6 | Developer console (create, list, edit redirect URIs, rotate secret, delete) behind the web server flag `developer-console` | 1.3 |
@@ -1140,7 +1223,7 @@ A harness plays the climber, using the account's ordinary app or web session.
 | 4. Retrieve | Full sync | | Local file has exactly the account's ticks, all pages, no duplicates |
 | 5. Incremental | Syncs again | Logs 2 ticks, edits 1 | Exactly those 3 changes applied; stored cursor advanced |
 | 6a. Deletion | Syncs again | Deletes 1 tick | It is gone locally |
-| 6b. Token expiry | Next call | Revokes the agent's current access token only | Agent refreshes, stores the rotated refresh token, call succeeds |
+| 6b. Token expiry | Next call | Ages the agent's current access token out (a test-only script deletes its row, the state an expired token is in; revoking it would end the whole connection) | Agent gets `401`, refreshes, stores the rotated refresh token, call succeeds |
 | 6c. Expired cursor | Next sync | Replaces the stored cursor with the documented test cursor `c2.expired`, which always answers `410` | Agent does a full resync, keeps every tick that still exists, drops none it should keep |
 | 7. Disconnect | Implements "disconnect" via `/oauth/revoke`; then the harness reconnects and disconnects from Connected apps | Taps Disconnect | Agent's next call gets `401`, refresh gets `invalid_grant`, agent reports "reconnect needed" instead of looping |
 

@@ -139,8 +139,8 @@ it stops a mix-up if your app talks to several OAuth servers).
 If they decline: `?error=access_denied&state=...`.
 
 The code lives for 60 seconds and works exactly once. Presenting it twice
-revokes everything that was issued from it, so treat a failed exchange as
-"start over", not "retry".
+ends the climber's connection to your app on every device, so treat a failed
+exchange as "start over", not "retry".
 
 ### Token exchange
 
@@ -173,8 +173,8 @@ send only `client_id`. The same applies to refresh and revoke.
 Access tokens last an hour. Refresh tokens last 90 days and rotate on every
 use: each refresh returns a new refresh token and the old one stops working.
 Store the newest one before using the new access token. If a refresh token
-that has already been used is presented again we assume it leaked and revoke
-the whole connection; the climber has to connect again. If two of your
+that has already been used is presented again we assume it leaked and end
+the whole connection, on every device; the climber has to connect again. If two of your
 processes might refresh at once, serialize refreshes per climber.
 
 ```
@@ -183,8 +183,10 @@ grant_type=refresh_token&refresh_token=tGzv3JOkF0XG5Qx2TlKWIA…&client_id=bsk_.
 &client_secret=...            (confidential apps only)
 ```
 
-Connecting the same climber again (a second device, or more scopes) keeps
-earlier tokens working.
+Connecting the same climber again (a second device, or more scopes) gives
+you a new token pair with the new scopes, and earlier tokens keep working at
+the scopes they were issued with. To use newly granted scopes, replace your
+stored tokens with the new pair.
 
 Errors follow RFC 6749 section 5.2 (`invalid_grant`, `invalid_client`,
 `invalid_request`, `unauthorized_client`, `invalid_scope`), as JSON with an
@@ -207,8 +209,9 @@ Either side can end it.
 
 - Your side: `POST https://api.boardsesh.com/oauth/revoke` with
   `token=<refresh token>&client_id=...` (plus `client_secret` for
-  confidential apps). Revoking a refresh token ends the connection. Revoking an
-  access token ends only that token. Always returns 200.
+  confidential apps). Revoking either token, refresh or access, ends the
+  connection. Returns 200 for any token, known or not; a wrong client
+  credential returns 401 `invalid_client`.
 - The climber's side: Settings → Connected apps in the Boardsesh app, or
   account settings on the web, with a Disconnect button. Resetting their
   password or deleting their account also disconnects every app.
@@ -251,7 +254,7 @@ GET /v1/logbook/changes?cursor=<cursor>&limit=100
 {
   "changes": [
     { "type": "tick", "tick": { "id": "0d6c4a2e-…", "…": "…" } },
-    { "type": "tick.deleted", "id": "9a1f7c3d-…", "deletedAt": "2026-10-21T07:02:44Z" }
+    { "type": "tick.deleted", "id": "9a1f7c3d-…" }
   ],
   "cursor": "c2.eyJ4IjoiOTg3…",
   "hasMore": true
@@ -261,20 +264,64 @@ GET /v1/logbook/changes?cursor=<cursor>&limit=100
 The loop:
 
 ```js
-let cursor = await store.getCursor(climber);           // undefined the first time
-let hasMore = true;
-while (hasMore) {
-  const query = new URLSearchParams({ limit: '200' });
-  if (cursor) query.set('cursor', cursor);
-  const page = await api(`/v1/logbook/changes?${query}`); // handles 401/429, see below
-  for (const change of page.changes) {
-    if (change.type === 'tick') await store.upsertTick(climber, change.tick);
-    else if (change.type === 'tick.deleted') await store.deleteTick(climber, change.id);
-    // ignore change types you don't know
+const API = 'https://api.boardsesh.com';
+
+class ReconnectNeeded extends Error {}
+class CursorExpired extends Error {}
+
+// One request with the climber's token: refresh once on 401, wait on 429.
+async function api(climber, path) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const res = await fetch(API + path, {
+      headers: { Authorization: `Bearer ${await store.getAccessToken(climber)}` },
+    });
+    if (res.ok) return res.json();
+    if (res.status === 401 && attempt === 0) {
+      await refreshTokens(climber); // POST /oauth/token, store the NEW refresh token; throws ReconnectNeeded on invalid_grant
+      continue;
+    }
+    if (res.status === 401) throw new ReconnectNeeded();
+    if (res.status === 410) throw new CursorExpired();
+    if (res.status === 429 || res.status >= 500) {
+      const waitSeconds = Number(res.headers.get('Retry-After')) || 2 ** attempt;
+      await new Promise((resolve) => setTimeout(resolve, waitSeconds * 1000));
+      continue;
+    }
+    throw new Error(`${res.status} ${await res.text()}`);
   }
-  cursor = page.cursor;
-  await store.setCursor(climber, cursor);              // after the page is applied
-  hasMore = page.hasMore;
+  throw new Error('gave up after retries');
+}
+
+async function sync(climber) {
+  let cursor = await store.getCursor(climber); // undefined the first time
+  const fullSync = !cursor;
+  const seen = new Set();
+  let hasMore = true;
+  try {
+    while (hasMore) {
+      const query = new URLSearchParams({ limit: '200' });
+      if (cursor) query.set('cursor', cursor);
+      const page = await api(climber, `/v1/logbook/changes?${query}`);
+      for (const change of page.changes) {
+        if (change.type === 'tick') {
+          await store.upsertTick(climber, change.tick);
+          seen.add(change.tick.id);
+        } else if (change.type === 'tick.deleted') {
+          await store.deleteTick(climber, change.id);
+        } // ignore change types you don't know
+      }
+      cursor = page.cursor;
+      await store.setCursor(climber, cursor); // after the page is applied
+      hasMore = page.hasMore;
+    }
+    if (fullSync) await store.deleteTicksNotIn(climber, seen); // mark and sweep
+  } catch (error) {
+    if (error instanceof CursorExpired) {
+      await store.setCursor(climber, undefined);
+      return sync(climber); // start over from the beginning
+    }
+    throw error; // ReconnectNeeded: show "Reconnect Boardsesh" and stop
+  }
 }
 ```
 
@@ -293,8 +340,13 @@ What the feed guarantees:
 
 - **Nothing is missed.** Every edit, every deletion, and every tick hidden or
   revealed by Boardsesh's duplicate handling shows up. When a sync ends with
-  `hasMore: false`, your copy matches the climber's logbook as of that sync.
-  You never need a periodic full resync for correctness.
+  `hasMore: false`, your copy holds every change that had settled (next
+  point) when the last page was read. You never need a periodic full resync
+  for correctness.
+- **A deleted account answers `401`.** If the climber deletes their Boardsesh
+  account, your next call gets `401 invalid_token` and the refresh
+  `invalid_grant`, as for a disconnect. No `tick.deleted` entries are sent;
+  delete what you hold for them.
 - **At least once.** Treat every entry as "set this tick to this" or "remove
   this tick", never as "add one".
 - **Usually within a second.** A change shows up once it is committed and
@@ -361,8 +413,8 @@ climber's.
 | `stars` | The climber's 1 to 5 rating, or `null` |
 | `grade` | The grade the climber gave it, or `null` if they did not give one |
 | `benchmark` | The climb is a benchmark on its board |
-| `comment` | The climber's note, or `null` |
-| `climb.id` | Stable climb id. If Boardsesh merges duplicate climbs, a tick's `climb.id` can change to the surviving one without the tick appearing as changed |
+| `comment` | The climber's note, or `null` when they left none |
+| `climb.id` | Stable climb id. If Boardsesh merges duplicate climbs, a tick's `climb.id` changes to the surviving one, and the tick comes through the feed again with the new id |
 | `climb.name` | Climb name. `null` for a climb on someone else's spray wall that is not public: the wall's owner shared it with the climber, not with apps |
 | `climb.board.type` | `kilter`, `tension`, `moonboard`, `decoy`, `touchstone`, `grasshopper`, `soill`, `woods`, `spray` (a climber's own spray wall). New values may be added |
 | `climb.board.layout` | Layout name, for display (`"Spray wall"` when the name is withheld) |

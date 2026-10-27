@@ -85,8 +85,10 @@ So Sequence should present them as two settings:
 1. An account setting, "Import my Boardsesh climbing", which is the
    `logbook:read` scope. Sequence asks for `workouts:write workouts:read` on
    their own when the climber only wants the handoff, and asks again with
-   `logbook:read` added when the climber turns the import on (consenting again
-   widens the existing connection; the earlier tokens keep working).
+   `logbook:read` added when the climber turns the import on. Consenting
+   again widens the existing connection and returns a new token pair; Sequence
+   must replace its stored tokens with that pair, because the earlier refresh
+   token keeps only the scopes it was issued with.
 2. The per-workout switch, which decides whether a workout is created.
 
 Turning the import off later means disconnecting and reconnecting without
