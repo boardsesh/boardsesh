@@ -45,6 +45,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   otaLeaveBlockedUpdateId: null,
   climbRowDisplayV1: null,
   playerButtonsV1: null,
+  miniPlayerButtonsV1: null,
   playerPreviousNext: true,
   playerButtonsPosition: 'below',
   homeSectionsV1: null,

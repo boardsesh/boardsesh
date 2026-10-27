@@ -259,6 +259,13 @@ export type AppSettings = {
    * AsyncStorage, because the bar has to be right on the player's first frame.
    */
   playerButtonsV1: SectionLayoutRecord | null;
+  /**
+   * The MiniPlayer's buttons (#6940): their order and switches, `null` while they
+   * match the defaults. Read and written ONLY through `miniPlayerButtonsStore`
+   * (`lib/mini-player-buttons-preference.ts`); never `useSetting` this key. In
+   * this store, not AsyncStorage, because the bar has to be right on its first frame.
+   */
+  miniPlayerButtonsV1: SectionLayoutRecord | null;
   /** The player's ⏮ and ⏭. Off leaves their slots empty; swiping the board still moves. */
   playerPreviousNext: boolean;
   /** Where the player's controls block sits. Read through `sanitisePlayerButtonsPosition`. */
