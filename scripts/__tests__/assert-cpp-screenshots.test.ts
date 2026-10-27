@@ -10,11 +10,7 @@ import {
   verifyCppCaptureCompatibility,
   CPP_SOURCE_MANIFEST,
 } from '../assert-cpp-screenshots';
-import {
-  ACCEPTED_SIZES,
-  EXPECTED_APP_STORE_DEVICE_SLUGS,
-  EXPECTED_APP_STORE_LOCALES,
-} from '../assert-screenshot-dimensions';
+import { ACCEPTED_SIZES, EXPECTED_APP_STORE_DEVICE_SLUGS } from '../assert-screenshot-dimensions';
 import { DEFAULT_MIN_BYTES } from '../assert-screenshot-content';
 import { CPP_MANIFEST_PATH, CPP_TARGETS, readCppPage, type CppTarget } from '../lib/screenshot-cpp';
 import { captionLocaleForStore, sha256ScreenshotSources } from '../lib/screenshot-presentation';
@@ -50,6 +46,10 @@ interface DeviceFixture {
   bytes: number;
   hash: string;
 }
+
+// Optional CPP campaigns retain their own reviewed locale inventory.
+const cppManifest = JSON.parse(readFileSync(CPP_MANIFEST_PATH, 'utf8')) as { locales: Record<string, string[]> };
+const cppStoreLocales = Object.values(cppManifest.locales).flat();
 
 const digest = (bytes: Buffer): string => createHash('sha256').update(bytes).digest('hex');
 const ownedDirectories: string[] = [];
@@ -110,7 +110,7 @@ function createTree(targets: readonly CppTarget[] = ['kilter']): string {
         files: 1,
       }),
     );
-    for (const locale of EXPECTED_APP_STORE_LOCALES) {
+    for (const locale of cppStoreLocales) {
       for (const device of EXPECTED_APP_STORE_DEVICE_SLUGS) {
         const seed = deviceFixtures.get(device)!;
         const base = join(root, 'app-stores/apple/cpp', target);
@@ -253,7 +253,7 @@ describe('versioned CPP source compatibility', () => {
     const prior = manifest();
     prior.targets.kilter.referenceName = 'Prior unrelated target';
     context.manifest = JSON.stringify(prior);
-    for (const locale of EXPECTED_APP_STORE_LOCALES)
+    for (const locale of cppStoreLocales)
       for (const device of EXPECTED_APP_STORE_DEVICE_SLUGS) {
         const path = join(root, 'app-stores/apple/cpp/tension/screenshots', locale, device, 'presentation.json');
         const presentation = JSON.parse(readFileSync(path, 'utf8')) as TestPresentation;
