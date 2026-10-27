@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import { StyleSheet, View, type ColorValue } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../Icon';
@@ -9,7 +9,13 @@ import type { MiniPlayerButtonId, MiniPlayerButtonsLayout } from '../../lib/mini
 import { useTheme } from '../../providers/theme-provider';
 import { borderRadius, spacing } from '../../theme/tokens';
 import {
-  PHONE_MINI_PLAYER_MAX_SLOTS,
+  ACCESSORY_GROUP_GAP,
+  ACCESSORY_LABEL_TRAILING_PADDING,
+  ACCESSORY_LEADING_INSET,
+  ACCESSORY_PLATTER_THUMBNAIL_SIZE,
+  ACCESSORY_THUMBNAIL_GAP,
+  ACCESSORY_TRAILING_INSET,
+  miniPlayerSlotCount,
   resolveMiniPlayerControls,
   type MiniPlayerControls,
 } from './mini-player-controls';
@@ -17,9 +23,18 @@ import {
 /** Tall enough for both bars and their captions; fixed so a native form can host it. */
 export const MINI_PLAYER_PREVIEW_HEIGHT = 124;
 
-/** More slots than there are buttons: "every button fits", as on an iPad. */
-const WIDE_SLOT_COUNT = 9;
-const INLINE_SLOT_COUNT = 1;
+/**
+ * The widths the preview stands for: a 375pt iPhone's 343pt bar, and an iPad in
+ * portrait. The slot counts come from the real `miniPlayerSlotCount`.
+ */
+export const PREVIEW_PHONE_ROW_WIDTH = 343;
+export const PREVIEW_WIDE_ROW_WIDTH = 995;
+const WIDTH_BESIDE_NAME =
+  ACCESSORY_LEADING_INSET +
+  ACCESSORY_PLATTER_THUMBNAIL_SIZE +
+  ACCESSORY_THUMBNAIL_GAP +
+  ACCESSORY_LABEL_TRAILING_PADDING +
+  ACCESSORY_TRAILING_INSET;
 
 const BUTTON_ICONS: Record<MiniPlayerButtonId, IconName> = {
   next: 'skip.next',
@@ -70,8 +85,21 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
         playerPaneShowsTransport: false,
       });
   }, [buttons, board.supportsMirroring, board.angleAvailable, board.showLightbulb]);
-  const openControls = useMemo(() => resolve(wide ? WIDE_SLOT_COUNT : PHONE_MINI_PLAYER_MAX_SLOTS), [resolve, wide]);
-  const collapsedControls = useMemo(() => resolve(INLINE_SLOT_COUNT), [resolve]);
+  // The real bar's slot rule at a representative width. The group gap is wide-only, as on the bar.
+  const groupGap = wide ? ACCESSORY_GROUP_GAP : 0;
+  const slotCountAt = useCallback(
+    (placement: 'regular' | 'inline') =>
+      miniPlayerSlotCount({
+        placement,
+        rowWidth: wide ? PREVIEW_WIDE_ROW_WIDTH : PREVIEW_PHONE_ROW_WIDTH,
+        widthBesideName: WIDTH_BESIDE_NAME,
+        wide,
+        groupGap,
+      }),
+    [wide, groupGap],
+  );
+  const openControls = useMemo(() => resolve(slotCountAt('regular')), [resolve, slotCountAt]);
+  const collapsedControls = useMemo(() => resolve(slotCountAt('inline')), [resolve, slotCountAt]);
 
   const buttonLabel = (buttonId: MiniPlayerButtonId): string =>
     buttonId === 'next' || buttonId === 'previous'
@@ -91,13 +119,15 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
 
   const openCaption = t('mobile.settings.miniPlayer.open');
   const collapsedCaption = t('mobile.settings.miniPlayer.collapsed');
+  const openShape = t('mobile.settings.miniPlayer.shapeOpen');
+  const collapsedShape = t('mobile.settings.miniPlayer.shapeCollapsed');
 
   const glyph = (name: IconName, color: ColorValue) => (
     <View style={styles.slot}>
       <Icon maxFontSizeMultiplier={1} name={name} size={ICON_SIZE} color={color} />
     </View>
   );
-  const bar = (caption: string, controls: MiniPlayerControls, testID: string) => {
+  const bar = (caption: string, shape: string, controls: MiniPlayerControls, testID: string) => {
     const others = controls.leading.filter((buttonId) => !TRANSPORT.includes(buttonId));
     const transport = controls.leading.filter((buttonId) => TRANSPORT.includes(buttonId));
     const groups = [
@@ -114,7 +144,7 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
       <View
         accessible
         accessibilityRole="image"
-        accessibilityLabel={barLabel(caption, controls)}
+        accessibilityLabel={barLabel(shape, controls)}
         testID={testID}
         style={styles.barBlock}
       >
@@ -124,13 +154,13 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
         <View style={[styles.bar, { backgroundColor: systemColors.tertiaryFill }]}>
           <View style={[styles.thumbnail, { backgroundColor: systemColors.secondaryBackground }]} />
           <View style={[styles.name, { backgroundColor: systemColors.secondaryBackground }]} />
-          {groups.map((group) =>
-            group.slots.length > 0 ? (
-              <View key={group.key} style={styles.group}>
+          {groups
+            .filter((group) => group.slots.length > 0)
+            .map((group, index) => (
+              <View key={group.key} style={[styles.group, index > 0 ? { marginStart: groupGap } : null]}>
                 {group.slots}
               </View>
-            ) : null,
-          )}
+            ))}
         </View>
       </View>
     );
@@ -141,8 +171,8 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
       testID="mini-player-buttons-preview"
       style={[styles.frame, { backgroundColor: systemColors.secondaryBackground }]}
     >
-      {bar(openCaption, openControls, 'mini-player-preview-open')}
-      {bar(collapsedCaption, collapsedControls, 'mini-player-preview-collapsed')}
+      {bar(openCaption, openShape, openControls, 'mini-player-preview-open')}
+      {bar(collapsedCaption, collapsedShape, collapsedControls, 'mini-player-preview-collapsed')}
     </View>
   );
 });
@@ -164,15 +194,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[2],
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing[2],
   },
   thumbnail: {
+    marginEnd: spacing[2],
     width: 24,
     height: 24,
     borderRadius: borderRadius.sm,
   },
   name: {
     flex: 1,
+    marginEnd: spacing[2],
     height: 8,
     borderRadius: 4,
   },

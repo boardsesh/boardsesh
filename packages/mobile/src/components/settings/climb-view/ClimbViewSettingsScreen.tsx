@@ -20,7 +20,15 @@ import { buildClimbViewModel } from './climb-view-model';
 export function ClimbViewSettingsScreen() {
   const { settingsSection: belowTheClimb } = usePlayDrawerSectionControls();
   const playerButtons = usePlayerButtonControls();
-  const miniPlayer = useMiniPlayerButtonControls();
+  const {
+    title: miniPlayerTitle,
+    settingsFooter: miniPlayerSettingsFooter,
+    controls: miniPlayerControls,
+    onVisibleChange: onMiniPlayerVisibleChange,
+    restoreDefaultsLabel: miniPlayerRestoreLabel,
+    canRestoreDefaults: canRestoreMiniPlayer,
+    restoreDefaults: restoreMiniPlayer,
+  } = useMiniPlayerButtonControls();
   // The preview draws the bar for the board the climber has picked: Mirror only
   // where it mirrors, the angle pill only where the angle can change. Before a
   // board is picked it draws a Kilter-style bar.
@@ -87,22 +95,33 @@ export function ClimbViewSettingsScreen() {
             previewHeight: PLAYER_BUTTONS_PREVIEW_HEIGHT,
           },
           miniPlayer: {
-            title: miniPlayer.title,
-            settingsFooter: miniPlayer.settingsFooter,
-            controls: miniPlayer.controls,
+            title: miniPlayerTitle,
+            settingsFooter: miniPlayerSettingsFooter,
+            controls: miniPlayerControls,
             onVisibleChange: (buttonId, visible) => {
               hapticSelection();
-              miniPlayer.onVisibleChange(buttonId, visible);
+              onMiniPlayerVisibleChange(buttonId, visible);
             },
-            restoreDefaultsLabel: miniPlayer.restoreDefaultsLabel,
-            canRestoreDefaults: miniPlayer.canRestoreDefaults,
-            onRestoreDefaults: miniPlayer.restoreDefaults,
+            restoreDefaultsLabel: miniPlayerRestoreLabel,
+            canRestoreDefaults: canRestoreMiniPlayer,
+            onRestoreDefaults: restoreMiniPlayer,
           },
           belowTheClimb,
         }),
         'climbView',
       ),
-    [playerButtons, miniPlayer, preview, belowTheClimb],
+    [
+      playerButtons,
+      miniPlayerTitle,
+      miniPlayerSettingsFooter,
+      miniPlayerControls,
+      onMiniPlayerVisibleChange,
+      miniPlayerRestoreLabel,
+      canRestoreMiniPlayer,
+      restoreMiniPlayer,
+      preview,
+      belowTheClimb,
+    ],
   );
 
   // Compose RNHostView custom rows can measure correctly without drawing.

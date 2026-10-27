@@ -18,6 +18,7 @@ export function useMiniPlayerButtonControls() {
   const groupTitle = t('mobile.settings.playerButtons.title');
   const fixedNote = t('mobile.settings.miniPlayer.fixedNote');
   const footer = t('mobile.settings.miniPlayer.footer');
+  const footerWide = t('mobile.settings.miniPlayer.footerWide');
   const settingsFooter = t('mobile.settings.playerButtons.settingsFooter');
   const restoreDefaultsLabel = t('mobile.settings.climbDrawer.restoreDefaults');
   const nextLabel = t('mobile.settings.miniPlayer.buttons.next');
@@ -86,6 +87,7 @@ export function useMiniPlayerButtonControls() {
     groupTitle,
     fixedNote,
     footer,
+    footerWide,
     settingsFooter,
     restoreDefaultsLabel,
     buttons,

@@ -662,6 +662,8 @@ describe('PlayDrawerSectionsSheet', () => {
     const screen = render(sheet());
     fireEvent.click(screen.getByRole('radio', { name: 'mobile.settings.climbDrawer.tabs.miniPlayer' }));
     expect(screen.getByTestId('mini-player-buttons-preview').getAttribute('data-wide')).toBe('true');
+    expect(screen.getByText('mobile.settings.miniPlayer.footerWide')).toBeTruthy();
+    expect(screen.queryByText('mobile.settings.miniPlayer.footer')).toBeNull();
     deviceLayout.isTablet = false;
     deviceLayout.phoneSplit = true;
     screen.rerender(sheet());

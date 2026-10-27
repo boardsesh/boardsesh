@@ -633,10 +633,13 @@
           "previous": "Bloc précédent"
         },
         "fixedNote": "Éclairage de la board est toujours là, à côté d'Enregistrer. Enregistrer reste en dernier, sous ton pouce.",
-        "footer": "Sur iPhone, la barre garde la place d'un seul de ces boutons à côté d'Éclairage de la board et d'Enregistrer : le premier qui est activé.",
+        "footer": "Sur iPhone, la barre a de la place pour un seul de ces boutons à côté d'Éclairage de la board et d'Enregistrer : le premier qui est activé.",
         "open": "Ouverte",
         "collapsed": "Réduite",
-        "previewLabel": "Aperçu, barre {{shape}} : {{buttons}}"
+        "previewLabel": "Aperçu, barre {{shape}} : {{buttons}}",
+        "footerWide": "Sur un écran large, la barre garde autant de ces boutons qu'elle peut en contenir : les premiers de la liste passent d'abord.",
+        "shapeOpen": "ouverte",
+        "shapeCollapsed": "réduite"
       }
     },
     "sendRecovery": {

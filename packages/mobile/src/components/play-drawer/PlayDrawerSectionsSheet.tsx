@@ -122,16 +122,18 @@ export function PlayDrawerSectionsSheet({
     [playerButtons.footer, buttonsRestore],
   );
 
+  const miniPlayerWide = isTablet || phoneSplit;
+  const miniPlayerGuidance = miniPlayerWide ? miniPlayer.footerWide : miniPlayer.footer;
   const miniPlayerFooter = useMemo(
     () => (
       <>
         <Text variant="footnote" color={systemColors.secondaryLabel} style={sectionLayoutSheetStyles.guidance}>
           {miniPlayer.fixedNote}
         </Text>
-        <SectionLayoutSheetFooter guidance={miniPlayer.footer} restoreDefaults={miniPlayerRestore} />
+        <SectionLayoutSheetFooter guidance={miniPlayerGuidance} restoreDefaults={miniPlayerRestore} />
       </>
     ),
-    [systemColors.secondaryLabel, miniPlayer.fixedNote, miniPlayer.footer, miniPlayerRestore],
+    [systemColors.secondaryLabel, miniPlayer.fixedNote, miniPlayerGuidance, miniPlayerRestore],
   );
 
   // Scroll the description and actions away so large text cannot fill a small
@@ -239,7 +241,7 @@ export function PlayDrawerSectionsSheet({
             />
           ) : null}
           {tab === 'miniPlayer' ? (
-            <MiniPlayerButtonsPreview buttons={miniPlayer.buttons} board={previewBoard} wide={isTablet || phoneSplit} />
+            <MiniPlayerButtonsPreview buttons={miniPlayer.buttons} board={previewBoard} wide={miniPlayerWide} />
           ) : null}
         </>
       }

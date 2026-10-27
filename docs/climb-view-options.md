@@ -217,21 +217,28 @@ The MiniPlayer is the bar above the tabs: the current climb, then buttons. Tap i
   Queue, Share and Angle, a pinned preview, and **Restore defaults**. Settings → Climbs & grades → **Climb view** has
   a Mini player section with the switches only; the order changes in View options, the same rule as the player's
   buttons.
-- Defaults: Next, Previous and Mirror on (Mirror only draws on boards that mirror: Tension, Decoy, Woods);
-  Favorite, Queue, Share and Angle off.
-- The preview draws two bars from `resolveMiniPlayerControls`, so it can't disagree with the real one: the open bar
-  for this device (wide on an iPad or an open Duo, three slots on an iPhone) and the collapsed one. Static glyphs;
-  no Bluetooth component is mounted.
-- Board light and Log are fixed, like the player's: a note on the tab says so. They have no switch or arrows.
+- Defaults: Next, Previous and Mirror on (Mirror will only draw on boards that mirror: Tension, Decoy, Woods);
+  Favorite, Queue, Share and Angle off. The bar draws Next and Previous today; Mirror, Favorite, Queue, Share and
+  Angle arrive with PR 2 and PR 3 of #6940, and their switches already store the choice.
+- The preview draws two bars from `resolveMiniPlayerControls` and `miniPlayerSlotCount`, so it can't disagree with
+  the real one: the open bar for this device (an iPad or an open Duo drawn at 995 pt wide, otherwise an iPhone at
+  343 pt) and the collapsed one. Static glyphs; no Bluetooth component is mounted.
+- Board light and Log are fixed, like the player's: a note on the tab says so. They have no switch or arrows. The
+  tab's footer differs by device: on iPhone it says the bar has room for one button beside them; on a wide screen
+  it says the bar fits as many as it has room for.
 
 ### Layout rules
 
-- Drawing order, left to right: the climber's others, then ⏮ ⏭, then 💡 ✓. Slots inside a group touch; groups have a
-  12 pt gap.
-- Slot count: inline (tab bar minimized) 1; an iPhone 3, Board light and Log included, so the climber's first
-  button that is on takes the third; iPad and the open Duo fit every button (`floor((width - 68 - 160) / 44)`). A
-  bar too narrow for three (Duo closed, a 320 pt iPhone) keeps one slot: the bulb while the board is free,
-  otherwise Log.
+- Drawing order, left to right: the climber's others, then ⏮ ⏭, then 💡 ✓.
+- Slot count (`miniPlayerSlotCount`), Board light and Log included:
+  - inline (tab bar minimized): 1;
+  - iPhone: `min(3, floor((w − 68 − 140) / 44))`, at least 1, where `w` is the platter width and 68 pt is the
+    insets, artwork and label padding. 343 pt and up gives 3; Duo closed (~290 pt) and a 320 pt Display Zoom
+    iPhone give 1. With one slot the bar keeps the bulb while the board is free, otherwise Log;
+  - iPad and the open Duo: `floor((w − 68 − 160 − 2·12) / 44)`, which fits every button;
+  - before the first layout: 3 on an iPhone, everything when wide, so the common bar doesn't redraw.
+- The 12 pt gap between groups (others · ⏮ ⏭ · 💡 ✓) is drawn on wide bars only; slots inside a group touch, and an
+  iPhone bar has no group gap.
 - Buttons claim slots in the climber's order; what doesn't fit drops from the end of that list. The player's ⋯ still
   has every action.
 - The open Duo's split drops what the player pane already shows (⏮ ⏭ 💡 ✓).
@@ -239,10 +246,7 @@ The MiniPlayer is the bar above the tabs: the current climb, then buttons. Tap i
 ### Session states
 
 - A timed workout block hides ⏮ ⏭: the stage moves the wall on its own beat.
-- Next and Previous in a crew, or with Light on swipe off, open the player on a preview instead of moving the room's
-  climb.
-- Signed out: no Log or Favorite. A draft has no Share. A board that can't mirror has no Mirror; a fixed-angle board
-  has no Angle.
+- Next at the end of a list opens the player.
 
 ### Storage
 

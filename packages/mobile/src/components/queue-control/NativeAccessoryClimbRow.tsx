@@ -28,6 +28,12 @@ import {
 } from './board-control-indicator-state';
 import type { AccessoryPlacement } from '../../lib/analytics-board-connect';
 import {
+  ACCESSORY_GROUP_GAP,
+  ACCESSORY_LABEL_TRAILING_PADDING,
+  ACCESSORY_LEADING_INSET,
+  ACCESSORY_PLATTER_THUMBNAIL_SIZE,
+  ACCESSORY_THUMBNAIL_GAP,
+  ACCESSORY_TRAILING_INSET,
   miniPlayerPaneCoveredButtons,
   miniPlayerPaneMode,
   miniPlayerSlotCount,
@@ -56,18 +62,6 @@ type NativeAccessoryClimbRowProps = {
   placement: AccessoryPlacement;
   testID?: string;
 };
-
-// Measured against Apple Music's platter (iOS 27): the artwork starts 16pt in, and
-// the last control's centre sits ~30pt from the right edge (8pt + half its 44pt slot).
-const ACCESSORY_LEADING_INSET = spacing[4];
-const ACCESSORY_TRAILING_INSET = spacing[2];
-// One artwork size in both placements, as Music uses (~30pt).
-const ACCESSORY_PLATTER_THUMBNAIL_SIZE = 32;
-// `labelInner`'s gap after the artwork and its trailing padding.
-const ACCESSORY_THUMBNAIL_GAP = spacing[2];
-const ACCESSORY_LABEL_TRAILING_PADDING = spacing[1];
-// Between the climber's buttons and ⏮ ⏭, and before 💡 ✓, on a wide bar.
-const ACCESSORY_GROUP_GAP = spacing[3];
 
 type ClimbLabelProps = {
   climb: Climb;

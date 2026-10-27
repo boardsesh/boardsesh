@@ -128,7 +128,7 @@ describe('MiniPlayerButtonsPreview', () => {
     expect(screen.getByTestId('mini-player-preview-open').getAttribute('aria-label')).toBe(
       'mobile.settings.miniPlayer.previewLabel ' +
         JSON.stringify({
-          shape: 'mobile.settings.miniPlayer.open',
+          shape: 'mobile.settings.miniPlayer.shapeOpen',
           buttons: 'mobile.settings.playerButtons.fixed.boardLight, mobile.settings.playerButtons.fixed.log',
         }),
     );

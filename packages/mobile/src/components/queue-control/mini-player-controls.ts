@@ -23,6 +23,18 @@ export const ACCESSORY_MIN_NAME_WIDTH = 160;
  */
 export const PHONE_ACCESSORY_MIN_NAME_WIDTH = 140;
 
+// Measured against Apple Music's platter (iOS 27): the artwork starts 16pt in, and
+// the last control's centre sits ~30pt from the right edge (8pt + half its 44pt slot).
+export const ACCESSORY_LEADING_INSET = 16;
+export const ACCESSORY_TRAILING_INSET = 8;
+// One artwork size in both placements, as Music uses (~30pt).
+export const ACCESSORY_PLATTER_THUMBNAIL_SIZE = 32;
+// `labelInner`'s gap after the artwork and its trailing padding.
+export const ACCESSORY_THUMBNAIL_GAP = 8;
+export const ACCESSORY_LABEL_TRAILING_PADDING = 4;
+// Between the climber's buttons and ⏮ ⏭, and before 💡 ✓, on a wide bar.
+export const ACCESSORY_GROUP_GAP = 12;
+
 /** One control's tap target. Every slot on the bar is this wide. */
 export const ACCESSORY_SLOT_WIDTH = 44;
 

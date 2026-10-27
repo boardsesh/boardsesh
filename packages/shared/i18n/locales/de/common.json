@@ -636,7 +636,10 @@
         "footer": "Auf dem iPhone hat die Leiste neben Board beleuchten und Eintragen Platz für einen dieser Buttons: den ersten, der aktiv ist.",
         "open": "Geöffnet",
         "collapsed": "Eingeklappt",
-        "previewLabel": "Vorschau, Leiste {{shape}}: {{buttons}}"
+        "previewLabel": "Vorschau, Leiste {{shape}}: {{buttons}}",
+        "footerWide": "Auf einem breiten Bildschirm zeigt die Leiste so viele dieser Buttons, wie Platz haben: die ersten in der Liste zuerst.",
+        "shapeOpen": "geöffnet",
+        "shapeCollapsed": "eingeklappt"
       }
     },
     "sendRecovery": {
