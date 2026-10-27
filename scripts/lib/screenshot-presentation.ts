@@ -253,8 +253,8 @@ export function resolveScreenshotRecipes(
       : IOS_CAMPAIGN_RECIPES;
   }
   // The iPad listing is its own campaign, not the phone set in landscape: the
-  // wall kiosk leads, and the browse screen is shown twice — once whole, once
-  // with its trailing "Now on the wall" column lifted out and enlarged beside it.
+  // wall kiosk leads, followed by the complete browse screen. The current
+  // landscape UI has no trailing wall column to lift out of the capture.
   // It runs on the same six captures the sidebar flow already takes, so it needs
   // no board switching and no extra fixtures.
   //
@@ -266,9 +266,8 @@ export function resolveScreenshotRecipes(
   if (platform === 'ios' && device.startsWith('ipad-') && matches(legacyNames)) {
     return [
       { output: '00-wall-kiosk.png', caption: 'storeBoards', layout: 'screen', sources: ['00-wall.png'] },
-      // The wall column is part of this very capture, enlarged beside the screen
-      // it came from — never a second screen standing in for it.
-      { output: '01-wall-status.png', caption: 'wallStatus', layout: 'wall-column', sources: ['02-climbs.png'] },
+      // Keep the established output name while showing the genuine full list.
+      { output: '01-wall-status.png', caption: 'climbs', layout: 'screen', sources: ['02-climbs.png'] },
       { output: '02-home.png', caption: 'home', layout: 'screen', sources: ['01-home.png'] },
       { output: '03-discover.png', caption: 'discover', layout: 'screen', sources: ['04-discover.png'] },
       {

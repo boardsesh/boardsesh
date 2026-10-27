@@ -16,6 +16,7 @@ import { closeSync, existsSync, openSync, readFileSync, readSync, statSync, writ
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { MAX_IOS_CAMPAIGN_PHONE_COMMANDS, iosCampaignPhoneScene } from './ios-campaign-phone-scenes';
 
 const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const MOBILE_DIR = resolve(ROOT_DIR, 'packages', 'mobile');
@@ -136,7 +137,7 @@ export function buildReadinessServerScript(cppCountBackendPort?: number): string
     `const fs = require('fs');`,
     `let cppCommand = { sequence: 0, scene: 'reset' };`,
     `let cppAcknowledged = -1;`,
-    `const cppScenes = new Set(['reset', 'hero-1', 'hero-2', 'hero-3', 'hero-2-editor-list', 'hero-3-editor-list', 'other-1', 'other-2', 'other-3', 'accessory-prepare', 'search', 'search-grade', 'search-results', 'logbook', 'led', 'queue-join', 'queue', 'workout', 'status', 'status-ipad', 'island', 'kiosk']);`,
+    `const cppScenes = new Set(['reset', 'hero-1', 'hero-2', 'hero-3', 'hero-2-editor-list', 'hero-3-editor-list', 'other-1', 'other-2', 'other-3', 'accessory-prepare', 'search', 'search-grade', 'search-results', 'logbook', 'led', 'queue-join', 'queue', 'workout', 'status', 'status-ipad', 'island', 'kiosk', ...${JSON.stringify(Array.from({ length: MAX_IOS_CAMPAIGN_PHONE_COMMANDS }, (_, index) => iosCampaignPhoneScene(index)))}]);`,
     `http.createServer((request, response) => {`,
     `  const url = new URL(request.url || '/', 'http://localhost');`,
     `  if (url.pathname.startsWith('/cpp/')) {`,

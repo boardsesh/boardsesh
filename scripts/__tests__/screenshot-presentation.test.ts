@@ -1027,14 +1027,17 @@ describe('store screenshot presentation', () => {
       '04-workout-generator.png',
       '05-profile.png',
     ]);
-    // The browse capture carries the wall column; nothing else stands in for it,
-    // and it is the only capture that feeds two frames.
+    // The current landscape browse screen has no trailing wall column.
+    // Keep its full native capture and the established upload filename.
     expect(recipes[1]).toEqual({
       output: '01-wall-status.png',
-      caption: 'wallStatus',
-      layout: 'wall-column',
+      caption: 'climbs',
+      layout: 'screen',
       sources: ['02-climbs.png'],
     });
+    for (const locale of CAPTION_LOCALES) {
+      expect(resolveScreenshotRecipes('ios', 'ipad-pro-13-inch-m5', names, locale)).toEqual(recipes);
+    }
     expect(recipes.filter((recipe) => recipe.sources.includes('02-climbs.png'))).toHaveLength(1);
     for (const missing of names) {
       expect(() =>
@@ -1049,6 +1052,32 @@ describe('store screenshot presentation', () => {
       'Incomplete or unknown',
     );
   });
+
+  it('frames the complete Italian iPad browse screen with its own source provenance', async () => {
+    const input = directory();
+    const output = directory();
+    const size = ACCEPTED_SIZES['ipad-pro-13-inch-m5'][0];
+    const pixels = Buffer.alloc(size.width * size.height * 3, 57);
+    randomBytes(size.width * 64 * 3).copy(pixels);
+    const raw = await sharp(pixels, { raw: { ...size, channels: 3 } })
+      .png()
+      .toBuffer();
+    for (const name of Object.keys(screenshotCaptions('ios', 'ipad-pro-13-inch-m5'))) {
+      writeFileSync(join(input, name), raw);
+    }
+    const saved = await frameDirectory({ platform: 'ios', device: 'ipad-pro-13-inch-m5', locale: 'it', input, output });
+    expect(saved).toHaveLength(6);
+    const browse = readFileSync(join(output, '01-wall-status.png'));
+    expect(browse).toEqual(await frameComposition([raw], readCaptionCatalog('it').climbs, 'screen', true));
+    expect(readPngDimensions(browse)).toEqual(size);
+    const manifest = readPresentationManifest(output);
+    expect(manifest.locale).toBe('it');
+    expect(manifest.files['01-wall-status.png']).toEqual({
+      rawBytes: raw.length,
+      rawSha256: sha256Screenshot(raw),
+      framedSha256: sha256Screenshot(browse),
+    });
+  }, 60_000);
 
   it('leaves the iPhone and Android recipes untouched by the iPad campaign', () => {
     const phone = Object.keys(screenshotCaptions('ios', 'iphone-16-pro-max'));

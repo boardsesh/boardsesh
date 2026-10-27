@@ -105,21 +105,21 @@ The Android eight-image campaign is separate. [Apple screenshot guidance](https:
 ### iPad — six framed slots
 
 The iPad slot does not auto-scale from iPhone, and an iPad is used differently: it
-gets mounted by the wall. So it leads with the kiosk, then shows the browse screen
-twice — once whole, once with its trailing "Now on the wall" column lifted out and
-enlarged beside it. That column is the shell no phone screenshot can show.
+gets mounted by the wall. So it leads with the kiosk, then shows the complete
+browse screen. The current landscape UI has no trailing wall column; the browse
+frame preserves the full native list instead of enlarging an obsolete crop.
 
 | Output                     | What the image shows                                                                           |
 | -------------------------- | ---------------------------------------------------------------------------------------------- |
 | `00-wall-kiosk.png`        | The wall kiosk: the lit climb, readable from the mat.                                          |
-| `01-wall-status.png`       | The trailing "Now on the wall" column, lifted out of the browse screen and enlarged beside it. |
+| `01-wall-status.png`       | The complete native Climbs list, with the climb-search caption. The filename is retained for upload parity. |
 | `02-home.png`              | The crew's activity feed.                                                                      |
 | `03-discover.png`          | The playlist library.                                                                          |
 | `04-workout-generator.png` | The Record tab's workout generator.                                                            |
 | `05-profile.png`           | Sends and progress across every board.                                                         |
 
-It runs on the same six captures the sidebar flow already takes — the raw Climbs
-capture feeds two frames — so it needs no board switching and no extra fixtures.
+It runs on the same six captures the sidebar flow already takes, each feeding one
+frame, so it needs no board switching and no extra fixtures.
 
 **No board-family frame yet, and it is not an oversight.** Switching boards
 mid-flow works (the picker is a horizontal carousel; scroll right and tap the card

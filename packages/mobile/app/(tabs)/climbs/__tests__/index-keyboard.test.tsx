@@ -1859,12 +1859,18 @@ describe('ClimbList lightOnClimbTap setting', () => {
 describe('ClimbList screenshot-mode wall-state deep links', () => {
   const withScreenshotMode = async (run: () => Promise<void>) => {
     const original = process.env.EXPO_PUBLIC_SCREENSHOT_MODE;
+    const originalPrimary = process.env.EXPO_PUBLIC_SCREENSHOT_PRIMARY_BOARD_URL;
+    const originalCpp = process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL;
     process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
     try {
       await run();
     } finally {
       if (original === undefined) delete process.env.EXPO_PUBLIC_SCREENSHOT_MODE;
       else process.env.EXPO_PUBLIC_SCREENSHOT_MODE = original;
+      if (originalPrimary === undefined) delete process.env.EXPO_PUBLIC_SCREENSHOT_PRIMARY_BOARD_URL;
+      else process.env.EXPO_PUBLIC_SCREENSHOT_PRIMARY_BOARD_URL = originalPrimary;
+      if (originalCpp === undefined) delete process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL;
+      else process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL = originalCpp;
     }
   };
 
@@ -1902,6 +1908,27 @@ describe('ClimbList screenshot-mode wall-state deep links', () => {
     searchText: 'old project',
     updatedAt: 1,
   };
+
+  it.each([false, true])(
+    'leaves board selection to the regular command controller when enabled: %s',
+    async (commandMode) => {
+      await withScreenshotMode(async () => {
+        const previousBoard = gradeScene();
+        const nextBoard = { ...previousBoard, uuid: 'next-moonboard', boardType: 'moonboard', layoutId: 2 };
+        mocks.activeBoard = nextBoard;
+        mocks.isFocused = true;
+        mocks.searchParams = { screenshotBoardIndex: '0', screenshotOpenFirst: '1' };
+        process.env.EXPO_PUBLIC_SCREENSHOT_PRIMARY_BOARD_URL = commandMode ? 'http://localhost:19870/cpp' : '';
+        delete process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL;
+        render(<ClimbList />);
+        await act(async () => {});
+        if (commandMode) expect(mocks.setActiveBoard).not.toHaveBeenCalled();
+        else expect(mocks.setActiveBoard).toHaveBeenCalledWith(previousBoard, expect.any(Function));
+        expect(mocks.activeBoard).toBe(nextBoard);
+        expect(mocks.activateClimb).not.toHaveBeenCalled();
+      });
+    },
+  );
 
   it('leaves the current board alone behind a retained capture route and consumes its open only once', async () => {
     await withScreenshotMode(async () => {

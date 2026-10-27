@@ -1231,6 +1231,10 @@ function ClimbListInner() {
   // Retained deep-link screens keep their old params: only the focused screen
   // may choose the board, including while an asynchronous storage write waits.
   useEffect(() => {
+    // The regular campaign's command controller commits the board before route
+    // replacement. Old params can remain focused during that handoff; they must
+    // not compete with its selection. CPP and legacy deep links keep their path.
+    if (process.env.EXPO_PUBLIC_SCREENSHOT_PRIMARY_BOARD_URL && !process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL) return;
     if (!isFocused || !screenshotTargetBoard || activeBoard?.uuid === screenshotTargetBoard.uuid) return;
     let cancelled = false;
     void setActiveBoard(screenshotTargetBoard, () => !cancelled);

@@ -334,7 +334,28 @@ describe('iOS campaign capture', () => {
   const boardTypes = ['kilter', 'tension', 'moonboard', 'woods', 'decoy', 'grasshopper', 'spray'];
   const boards = boardTypes.map((boardType) => ({ name: `Demo ${boardType}`, boardType }));
   const capture = { sharedSessionId: 'crew', boards: boards.map((board) => board.name) };
-  const options = makeOptions({ flow: 'app-store-campaign', fixtures: 'replay' });
+  const options = makeOptions({
+    flow: 'app-store-campaign',
+    fixtures: 'replay',
+    iosCampaignPhoneBoards: boardTypes.map((boardType, index) => ({
+      selector: `Demo ${boardType}`,
+      board: {
+        name: `Demo ${boardType}`,
+        uuid: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+        boardType,
+        layoutId: index + 1,
+        sizeId: index + 1,
+        setIds: '1',
+        angle: 40,
+      },
+      climb: {
+        uuid: `10000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+        name: `Genuine ${boardType}`,
+        frames: 'p1r12',
+        angle: 40,
+      },
+    })),
+  });
 
   it('carries the replay roster into the localized Metro session without manual board flags', () => {
     const env = buildScreenshotSessionEnv(options, baseEnv({ EXPO_PUBLIC_SCREENSHOT_BOARDS: 'stale|boards' }), 'de', {

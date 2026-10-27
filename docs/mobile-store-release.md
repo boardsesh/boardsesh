@@ -344,16 +344,17 @@ used to be empty side gutters is now doing work. Panels are never bled off the
 canvas edge.
 
 The iPad set is its own campaign rather than the phone set in landscape — six
-frames leading with the wall kiosk, then the trailing wall column lifted out of
-the browse screen and enlarged beside it. It runs on the six captures the sidebar
+frames leading with the wall kiosk, then the complete native browse screen with
+the climb-search caption. The current landscape UI has no trailing wall column,
+so the browse frame preserves the full list instead of enlarging that obsolete crop.
+Its established `01-wall-status.png` filename is retained for upload parity.
+It runs on the six captures the sidebar
 flow already takes, so it needs no board switching and no extra fixtures. The
-frame table lives in `app-stores/apple/app-store-metadata.md`. The wall-column crop
-is derived, not hardcoded: the shell's column is `WALL_COLUMN_WIDTH` (300pt,
-`packages/mobile/src/theme/size-class.ts`) and every iPad capture is @2x, so the
-crop is 600px / capture width — 21.8% on the 13" slot, 24.8% on the 11". One
-expression covers both, unlike the Android rail crop, which is pinned to 1080x1920.
+frame table lives in `app-stores/apple/app-store-metadata.md`. Historical
+`wall-column` layout support remains available for older captures that actually
+contain that column; the current default iPad campaign does not use it.
 
-Edit copy in `app-stores/presentation/{en-US,es,fr,de}.json`. Apple uses the app
+Edit copy in `app-stores/presentation/{en-US,es,fr,de,it}.json`. Apple uses the app
 locale; `es-ES` and `es-MX` share Spanish captions. Google Play stays English.
 The renderer uses the pinned, licensed Roboto fonts in that directory and
 escapes caption markup. Text overflow fails the capture instead of clipping.
