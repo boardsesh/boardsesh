@@ -4,7 +4,9 @@ The first two apps that asked to integrate, and what each needs, mapped onto
 the one API in [partner-api.md](./partner-api.md). They are test cases for
 [integration-platform.md](./integration-platform.md), not specs: neither gets
 an endpoint, a scope, a limit or a client row that any other app could not
-get the same way.
+get the same way. First-party login/session changes are tracked separately in
+[better-auth-migration.md](./better-auth-migration.md); integrations launch
+only after their own OAuth and API gates pass.
 
 The rule for this file: if an app needs something the API does not offer, it
 is a gap in the platform, it goes into the platform doc as a feature for every
@@ -32,12 +34,12 @@ anyone typing them over.
 
 | Need | API | Milestone |
 | --- | --- | --- |
-| Connect a climber's Boardsesh account | OAuth, confidential app (they have a backend) | 1 |
+| Connect a climber's Boardsesh account | OAuth, confidential app (they have a backend); `offline_access` for refresh tokens | 1 |
 | Board ticks in the Sequence logbook | `logbook:read`, `GET /v1/logbook/changes` | 1 |
 | Hand over a planned session | `workouts:write`, `POST /v1/workouts`, launch links | 3 |
 | Results for the planned session | `workouts:read`, `GET /v1/workouts/{id}` | 3 |
 | Know when a session finished | Poll `started` workouts, or the `workout.completed` webhook | 3 (poll), 4 (webhook) |
-| Climber can stop it | Disconnect on either side | 1 |
+| Climber can stop it | Connected apps or `DELETE /v1/connection` | 1 |
 
 Sequence gets something useful at milestone 1, before workouts exist: every
 board tick a connected climber logs lands in their Sequence logbook. That is
@@ -83,13 +85,19 @@ every other app.
 So Sequence should present them as two settings:
 
 1. An account setting, "Import my Boardsesh climbing", which is the
-   `logbook:read` scope. Sequence asks for `workouts:write workouts:read` on
+   `logbook:read` scope. Sequence asks for `workouts:write workouts:read offline_access` on
    their own when the climber only wants the handoff, and asks again with
    `logbook:read` added when the climber turns the import on. Consenting
    again widens the existing connection and returns a new token pair; Sequence
    must replace its stored tokens with that pair, because the earlier refresh
    token keeps only the scopes it was issued with.
 2. The per-workout switch, which decides whether a workout is created.
+
+`offline_access` is required for background sync and refresh; it does not
+itself grant access to workouts or ticks. Token-only revocation at
+`/api/auth/oauth2/revoke` does not disconnect the app. Both consumers use
+`DELETE /v1/connection` for their "Disconnect Boardsesh" action, which revokes
+all credentials for this connection and unfinished workouts.
 
 Turning the import off later means disconnecting and reconnecting without
 `logbook:read`, since a connection's scopes only widen. If Sequence wants to
@@ -145,12 +153,12 @@ climbing alongside the rest of their training and climbing data.
 
 | DivePeaks asked for | API | Milestone |
 | --- | --- | --- |
-| User-authorized, read-only access to their own logbook | `logbook:read`; no write scope requested | 1 |
+| User-authorized, read-only access to their own logbook | `logbook:read offline_access`; no write scope requested | 1 |
 | Tick status, attempts, angle, date, climb name, grade | `status`, `attempts`, `angle`, `climbedAt`, `climb.name`, `grade` and `climb.grade` on every tick | 1 |
 | Works for Apple, Google and email/password accounts without sharing credentials | The consent page only needs the climber signed in to boardsesh.com, by any method; the app never sees credentials | 1 |
-| Incremental synchronization | `GET /v1/logbook/changes` with a stored cursor; deletions as `tick.deleted` | 1 |
+| Complete first import and incremental synchronization | `GET /v1/logbook/changes`; complete snapshot then catch-up, durable cursor and `tick.deleted`. A full replacement survives interruption | 1 |
 | Webhooks for new or updated ticks | `logbook.changed` ("go sync"), not a tick payload | 4 |
-| Revocable access | Disconnect on either side; `/oauth/revoke` | 1 |
+| Revocable access | Connected apps or `DELETE /v1/connection` | 1 |
 | No unrestricted access to board catalogs or community datasets | The API only returns climbs the climber ticked, as a summary; there is no catalog route | 1 |
 
 Every requirement maps onto something the platform builds for all apps. Nothing

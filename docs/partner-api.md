@@ -25,7 +25,7 @@ Everything is HTTPS.
 
 | Host | What lives there |
 | --- | --- |
-| `https://api.boardsesh.com` | OAuth (`/oauth/authorize`, `/oauth/token`, `/oauth/revoke`, metadata at `/.well-known/oauth-authorization-server`) and the API (`/v1/*`) |
+| `https://api.boardsesh.com` | OAuth (`/api/auth/oauth2/authorize`, `/api/auth/oauth2/token`, `/api/auth/oauth2/revoke`, metadata at `/.well-known/oauth-authorization-server/api/auth`) and the API (`/v1/*`) |
 | `https://www.boardsesh.com` | What people see: app registration (`/developers/apps`), sign-in and the consent screen (the authorize step sends the climber there), workout launch links (`/w/…`), these docs |
 
 ## How it fits together
@@ -35,9 +35,9 @@ Everything is HTTPS.
  ────────                        ─────────                         ───────
  register once at www.boardsesh.com/developers/apps → client_id
 
- Connect Boardsesh ────────────▶ /oauth/authorize (consent) ─────▶ browser: sign in, Allow
+ Connect Boardsesh ────────────▶ OAuth authorize (consent) ─────▶ browser: sign in, Allow
                    ◀──────────── redirect with code
- POST /oauth/token ────────────▶ access + refresh token
+ POST OAuth token ─────────────▶ access + refresh token
 
  GET /v1/logbook/changes ──────▶ ticks and deletions since your cursor   (milestone 1)
 
@@ -59,13 +59,13 @@ account whose email is verified, and create an app. It is usable immediately.
 | Name | Shown on the consent screen. Names of Boardsesh and of board brands are refused |
 | Homepage URL | Linked from the consent screen |
 | Privacy policy URL | Linked from the consent screen. Required |
-| Type | **Confidential** if the token exchange happens on your server (you get a client secret). **Public** if it happens in a mobile app, a desktop or CLI tool, or a browser (no secret; PKCE protects the code) |
+| Type | **Confidential** if the token exchange happens on your server (you get a client secret). **Public** if it happens in a mobile app, a desktop or CLI tool, or a browser (no secret; PKCE protects the code). Registration also records web versus native redirect behavior separately |
 | Redirect URIs | Up to 10, matched as exact strings. Allowed: any `https://` URL; loopback `http://127.0.0.1:{port}/…` or `http://[::1]:{port}/…` for tools running on the user's machine (the port is ignored when matching, so pick any free port at runtime); private-use schemes containing a dot, such as `com.example.app:/oauth/boardsesh`. Not allowed: other `http://` URLs, wildcards, fragments, `boardsesh.com` hosts, and the `boardsesh` and `com.boardsesh…` schemes |
 
-You get a `client_id` (`bsk_…`), and for a confidential app a client secret,
+You get an opaque `client_id`, and for a confidential app a client secret,
 shown once. Never ship a client secret inside a mobile or desktop binary:
 make that app public instead. You can rotate the secret in the console; the
-old one keeps working for 24 hours.
+old one stops working immediately. Coordinate the change with your token-exchange backend; there is no overlap window.
 
 Limits that apply to every app (see section 6 for request rates):
 
@@ -75,7 +75,11 @@ Limits that apply to every app (see section 6 for request rates):
 - The consent screen tells climbers that Boardsesh has not reviewed your app.
   That is true of every app; it is not a warning about yours.
 - Browser-only apps work: the token, revoke and API endpoints answer CORS for
-  the origins of your registered `https` redirect URIs, and no others.
+  the origins of your registered `https` redirect URIs. Generic authentication
+  errors are readable from registered origins even when an expired opaque
+  token no longer identifies its app, so a browser can see `401` and refresh.
+  `Retry-After`, `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`,
+  `WWW-Authenticate` and `Sunset` are exposed to browser JavaScript.
 
 ## 2. Connecting a climber
 
@@ -86,9 +90,14 @@ Climbers who sign in to Boardsesh with Apple, Google or a password all go
 through the same flow. They never give you their Boardsesh credentials.
 
 Server metadata (RFC 8414) is at
-`https://api.boardsesh.com/.well-known/oauth-authorization-server`; any
+`https://api.boardsesh.com/.well-known/oauth-authorization-server/api/auth`; any
 standard OAuth client library can configure itself from it. The issuer is
-`https://api.boardsesh.com`.
+`https://api.boardsesh.com/api/auth`. Discover endpoint URLs from metadata.
+The API's resource identifier is exactly `https://api.boardsesh.com/v1`, without
+a trailing slash. Every registered app is authorized to request it. Send this
+`resource` parameter when authorizing, exchanging a code and refreshing; it
+is distinct from the issuer and redirect URI. Tokens without that audience
+cannot call the API.
 
 ### Scopes
 
@@ -98,9 +107,10 @@ standard OAuth client library can configure itself from it. The issuer is
 | `profile:read` | The climber's display name and avatar | 1 |
 | `workouts:write` | Create and cancel workouts for the climber | 3 |
 | `workouts:read` | Read workouts your app created, including results | 3 |
+| `offline_access` | Receive a refresh token to keep accessing the other granted scopes while the climber is away | 1 |
 
 Ask for the smallest set you need. The consent screen lists each one in plain
-language. Separate scopes with spaces.
+language. Separate scopes with spaces. Include `offline_access` whenever you need a refresh token; it grants no logbook or workout access by itself.
 
 ### Authorization request
 
@@ -110,11 +120,12 @@ embedded WebView: the climber may already be signed in to Boardsesh in their
 browser, and a WebView is where OAuth phishing lives.
 
 ```
-GET https://api.boardsesh.com/oauth/authorize
+GET https://api.boardsesh.com/api/auth/oauth2/authorize
     ?response_type=code
     &client_id=bsk_4Rk2PzQ8mW1xTb7nYc3vLd
     &redirect_uri=com.example.app%3A%2Foauth%2Fboardsesh
-    &scope=logbook%3Aread%20profile%3Aread
+    &scope=logbook%3Aread%20profile%3Aread%20offline_access
+    &resource=https%3A%2F%2Fapi.boardsesh.com%2Fv1
     &state=8f3c...            (random, at least 128 bits, you verify it)
     &code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM
     &code_challenge_method=S256
@@ -130,22 +141,22 @@ If the climber is not signed in they sign in first, then see it. Once they
 approve:
 
 ```
-com.example.app:/oauth/boardsesh?code=SplxlOBeZQQYbYS6WxSbIA&state=8f3c...&iss=https%3A%2F%2Fapi.boardsesh.com
+com.example.app:/oauth/boardsesh?code=SplxlOBeZQQYbYS6WxSbIA&state=8f3c...&iss=https%3A%2F%2Fapi.boardsesh.com%2Fapi%2Fauth
 ```
 
-Check `state`, and check `iss` equals `https://api.boardsesh.com` (RFC 9207;
+Check `state`, and check `iss` equals `https://api.boardsesh.com/api/auth` (RFC 9207;
 it stops a mix-up if your app talks to several OAuth servers).
 
 If they decline: `?error=access_denied&state=...`.
 
-The code lives for 60 seconds and works exactly once. Presenting it twice
-ends the climber's connection to your app on every device, so treat a failed
-exchange as "start over", not "retry".
+The code lives for 60 seconds and works exactly once. Reusing it is rejected.
+If you cannot tell whether an exchange succeeded, restart authorization; do
+not retry the same code expecting another token pair.
 
 ### Token exchange
 
 ```
-POST https://api.boardsesh.com/oauth/token
+POST https://api.boardsesh.com/api/auth/oauth2/token
 Content-Type: application/x-www-form-urlencoded
 
 grant_type=authorization_code
@@ -153,12 +164,15 @@ grant_type=authorization_code
 &redirect_uri=com.example.app%3A%2Foauth%2Fboardsesh
 &client_id=bsk_4Rk2PzQ8mW1xTb7nYc3vLd
 &code_verifier=dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk
+&resource=https%3A%2F%2Fapi.boardsesh.com%2Fv1
 &client_secret=...            (confidential apps only)
 ```
 
-Confidential apps may send their credentials in the body as above
-(`client_secret_post`) or as HTTP Basic (`client_secret_basic`); public apps
-send only `client_id`. The same applies to refresh and revoke.
+A confidential app uses the authentication method chosen at registration:
+`client_secret_post` (body, as above) or `client_secret_basic` (HTTP Basic).
+Do not switch methods per request. A public app uses `none` and sends only
+`client_id` for client authentication, along with the other grant parameters.
+The same registered method applies to refresh and revoke.
 
 ```json
 {
@@ -166,20 +180,24 @@ send only `client_id`. The same applies to refresh and revoke.
   "access_token": "2YotnFZFEjr1zCsicMWpAA…",
   "expires_in": 3600,
   "refresh_token": "tGzv3JOkF0XG5Qx2TlKWIA…",
-  "scope": "logbook:read profile:read"
+  "scope": "logbook:read profile:read offline_access"
 }
 ```
 
 Access tokens last an hour. Refresh tokens last 90 days and rotate on every
 use: each refresh returns a new refresh token and the old one stops working.
 Store the newest one before using the new access token. If a refresh token
-that has already been used is presented again we assume it leaked and end
-the whole connection, on every device; the climber has to connect again. If two of your
-processes might refresh at once, serialize refreshes per climber.
+that has already been used is presented again, its token family is invalidated;
+reconnect when refreshing no longer works. Other independently issued token
+families are not implicitly a whole-connection disconnect. If two of your
+processes might refresh at once, serialize refreshes per climber. Ordinary
+Boardsesh sign-out does not end the `offline_access` connection. Security
+revocation and Connected apps Disconnect do.
 
 ```
-POST https://api.boardsesh.com/oauth/token
+POST https://api.boardsesh.com/api/auth/oauth2/token
 grant_type=refresh_token&refresh_token=tGzv3JOkF0XG5Qx2TlKWIA…&client_id=bsk_...
+&resource=https%3A%2F%2Fapi.boardsesh.com%2Fv1
 &client_secret=...            (confidential apps only)
 ```
 
@@ -189,7 +207,7 @@ the scopes they were issued with. To use newly granted scopes, replace your
 stored tokens with the new pair.
 
 Errors follow RFC 6749 section 5.2 (`invalid_grant`, `invalid_client`,
-`invalid_request`, `unauthorized_client`, `invalid_scope`), as JSON with an
+`invalid_request`, `unauthorized_client`, `invalid_scope`, `invalid_target`), as JSON with an
 `error_description` you can log.
 
 ### When a token stops working
@@ -200,26 +218,48 @@ them, and do not assume a length or format.
 Every API call takes `Authorization: Bearer <access token>`. A `401` with
 `error: "invalid_token"` means the access token expired or was revoked:
 refresh once and retry. If the refresh answers `invalid_grant`, the
-connection is gone. Show a "Reconnect Boardsesh" state and stop calling for
+stored credential can no longer renew access. Show a "Reconnect Boardsesh" state and stop calling for
 that climber; do not loop.
+
+### Revoking a token
+
+`POST https://api.boardsesh.com/api/auth/oauth2/revoke` accepts
+`token=<token>&client_id=...` with the client's registered authentication
+method. Revoking an opaque access token invalidates that token only; its
+refresh token can still work. Revoking a refresh token invalidates it and
+its associated access tokens, not every independently issued family or
+remembered consent. Unknown/already-invalid tokens return `200`; invalid
+client authentication returns `invalid_client` (`401` with a Basic challenge
+for `client_secret_basic`, `400` for `client_secret_post`).
+
+Use this endpoint to discard a credential. Use Disconnect below to end the
+entire app/climber connection.
 
 ### Disconnecting
 
-Either side can end it.
+Your app calls `DELETE https://api.boardsesh.com/v1/connection` with a valid
+API access token. It needs no additional scope and can only disconnect the
+connection that token belongs to; there is no user/client ID parameter. The
+response is `204`, which confirms the server disconnected the connection.
+The state change is idempotent, but a retry may return `401` because its token
+was revoked or expired. A `401` alone does not prove the earlier request
+succeeded: refresh once through your normal serialized refresh path and retry
+DELETE. If refresh returns `invalid_grant`, your saved credentials are unusable,
+but that does not prove every independent token family was disconnected.
+Direct the climber to Boardsesh Connected apps to confirm or finish the
+server-side disconnect. Network errors, `429` and `5xx` are retryable and do
+not confirm disconnect.
 
-- Your side: `POST https://api.boardsesh.com/oauth/revoke` with
-  `token=<refresh token>&client_id=...` (plus `client_secret` for
-  confidential apps). Revoking either token, refresh or access, ends the
-  connection. Returns 200 for any token, known or not; a wrong client
-  credential returns 401 `invalid_client`.
-- The climber's side: Settings → Connected apps in the Boardsesh app, or
-  account settings on the web, with a Disconnect button. Resetting their
-  password or deleting their account also disconnects every app.
+The climber can also choose Settings → Connected apps in the Boardsesh app,
+or account settings on the web, and tap Disconnect. A password reset,
+security revocation or account deletion also ends the affected connections.
 
-After a disconnect, API calls return `401 invalid_token`, refreshes return
-`invalid_grant`, unfinished workouts for that climber move to `revoked`, and
-the only webhook still sent for them is `connection.revoked`. When a climber disconnects, delete what you stored
-from Boardsesh for them unless they asked you to keep it.
+Disconnect removes remembered consent and invalidates every credential family
+for this connection. API calls then return `401 invalid_token`, refreshes
+return `invalid_grant`, unfinished workouts move to `revoked`, and the only
+remaining webhook is `connection.revoked`. Reconnecting requires consent
+again; old credentials stay invalid after reconnect. Delete stored Boardsesh
+data for the climber unless they asked you to keep it.
 
 ## 3. Reading the logbook
 
@@ -243,8 +283,7 @@ whether a reconnect is the same climber. `displayName` and `avatarUrl` need
 
 ### Syncing
 
-There is one endpoint for both the first full download and every later
-update:
+There is one endpoint for the first complete download and every later update:
 
 ```
 GET /v1/logbook/changes?cursor=<cursor>&limit=100
@@ -256,12 +295,29 @@ GET /v1/logbook/changes?cursor=<cursor>&limit=100
     { "type": "tick", "tick": { "id": "0d6c4a2e-…", "…": "…" } },
     { "type": "tick.deleted", "id": "9a1f7c3d-…" }
   ],
-  "cursor": "c2.eyJ4IjoiOTg3…",
+  "cursor": "c3.eyJraW5kIjo…",
   "hasMore": true
 }
 ```
 
-The loop:
+Omitting `cursor` creates a complete snapshot of the climber's visible ticks,
+including unchanged ticks older than our retained change history and ticks
+created before the API launched. Keep following its cursors: the last snapshot
+page leads into incremental catch-up and still has `hasMore: true`. Only
+`hasMore: false` means the complete snapshot and its catch-up are finished.
+
+Build a replacement copy separately and publish it **together with its final
+cursor in one durable transaction**. Keep the previous copy until then. After
+a crash during a full sync, restart that full sync without a cursor; never
+resume it as an incremental sync against the previous copy. Snapshot cursors
+expire after one hour and are private to this app connection.
+
+The loop below uses illustrative storage methods. Their transaction contracts
+matter: a sync lock serializes work for one climber; `requireFullSync` is
+durable; `applyPageAndCursor` commits tick mutations and the cursor together;
+`publishReplacement` atomically swaps the entire staged copy and its cursor
+and clears the full-sync requirement. A file-based client can implement the
+last two with an atomic file replacement containing both ticks and cursor.
 
 ```js
 const API = 'https://api.boardsesh.com';
@@ -269,15 +325,19 @@ const API = 'https://api.boardsesh.com';
 class ReconnectNeeded extends Error {}
 class CursorExpired extends Error {}
 
-// One request with the climber's token: refresh once on 401, wait on 429.
+// One request: refresh once on 401, including after earlier rate limits.
 async function api(climber, path) {
+  let refreshed = false;
   for (let attempt = 0; attempt < 5; attempt++) {
     const res = await fetch(API + path, {
       headers: { Authorization: `Bearer ${await store.getAccessToken(climber)}` },
     });
     if (res.ok) return res.json();
-    if (res.status === 401 && attempt === 0) {
-      await refreshTokens(climber); // POST /oauth/token, store the NEW refresh token; throws ReconnectNeeded on invalid_grant
+    if (res.status === 401 && !refreshed) {
+      // POST /api/auth/oauth2/token; atomically replace the token pair.
+      // Serialize refresh per climber; throw ReconnectNeeded on invalid_grant.
+      await refreshTokens(climber);
+      refreshed = true;
       continue;
     }
     if (res.status === 401) throw new ReconnectNeeded();
@@ -293,79 +353,93 @@ async function api(climber, path) {
 }
 
 async function sync(climber) {
-  let cursor = await store.getCursor(climber); // undefined the first time
-  const fullSync = !cursor;
-  const seen = new Set();
-  let hasMore = true;
-  try {
-    while (hasMore) {
-      const query = new URLSearchParams({ limit: '200' });
-      if (cursor) query.set('cursor', cursor);
-      const page = await api(climber, `/v1/logbook/changes?${query}`);
-      for (const change of page.changes) {
-        if (change.type === 'tick') {
-          await store.upsertTick(climber, change.tick);
-          seen.add(change.tick.id);
-        } else if (change.type === 'tick.deleted') {
-          await store.deleteTick(climber, change.id);
-        } // ignore change types you don't know
+  return store.withSyncLock(climber, async () => {
+    // At most one immediate full-sync restart; repeated expiry retries later.
+    for (let restart = 0; restart < 2; restart++) {
+      const state = await store.getSyncState(climber);
+      const fullSync = state.fullSyncRequired || !state.cursor;
+      let cursor = fullSync ? undefined : state.cursor;
+      // Empty staging is separate from the live copy. Abandoned staging from
+      // a crashed process is discarded; it is never a resumable normal cursor.
+      const staging = fullSync ? await store.beginEmptyReplacement(climber) : undefined;
+      try {
+        let hasMore;
+        do {
+          const query = new URLSearchParams({ limit: '200' });
+          if (cursor) query.set('cursor', cursor);
+          const page = await api(climber, `/v1/logbook/changes?${query}`);
+          if (fullSync) {
+            await store.applyToReplacement(staging, page.changes);
+          } else {
+            await store.applyPageAndCursor(climber, page.changes, page.cursor);
+          }
+          cursor = page.cursor;
+          hasMore = page.hasMore;
+        } while (hasMore);
+        if (fullSync) await store.publishReplacement(climber, staging, cursor);
+        return;
+      } catch (error) {
+        if (error instanceof CursorExpired) {
+          // Persist this before any new request, even when an old cursor exists.
+          await store.requireFullSync(climber);
+          continue;
+        }
+        throw error; // ReconnectNeeded: show "Reconnect Boardsesh" and stop.
+      } finally {
+        if (fullSync) await store.discardUnpublishedReplacement(staging);
       }
-      cursor = page.cursor;
-      await store.setCursor(climber, cursor); // after the page is applied
-      hasMore = page.hasMore;
     }
-    if (fullSync) await store.deleteTicksNotIn(climber, seen); // mark and sweep
-  } catch (error) {
-    if (error instanceof CursorExpired) {
-      await store.setCursor(climber, undefined);
-      return sync(climber); // start over from the beginning
-    }
-    throw error; // ReconnectNeeded: show "Reconnect Boardsesh" and stop
-  }
+    throw new CursorExpired();
+  });
 }
 ```
 
-- Omit `cursor` to start from the beginning. `limit` is 1 to 200, default 100.
-- Apply changes in the order given. Each entry is the tick **as it is now**,
-  not a diff: a `tick` is an upsert by `id`, and `tick.deleted` removes it (it
-  may name a tick you never saw). You will sometimes receive a tick you
-  already have, unchanged.
-- Save the returned `cursor` after applying each page, even when `changes` is
-  empty: an empty page still moves it forward. Cursors are opaque: do not
-  parse or build them.
+- `limit` is 1 to 200, default 100. A page may be empty while
+  `hasMore: true`; keep going.
+- Apply entries in order: `tick` upserts by `id`, and `tick.deleted`
+  removes that id, even if you never saw it. Ignore unknown change types.
+  Incremental entries describe the current state when read; snapshot entries
+  describe their consistent snapshot, followed by catch-up for later changes.
+  Public climb metadata is still redacted against current privacy rules on
+  each snapshot page.
+- Commit every incremental page and its cursor together, including empty
+  pages. During full sync only the completed replacement becomes live.
+  Cursors are opaque: do not parse or build them.
 - Sync when the climber opens your app, and in the background no more often
   than every 15 minutes per climber.
 
 What the feed guarantees:
 
-- **Nothing is missed.** Every edit, every deletion, and every tick hidden or
-  revealed by Boardsesh's duplicate handling shows up. When a sync ends with
-  `hasMore: false`, your copy holds every change that had settled (next
-  point) when the last page was read. You never need a periodic full resync
-  for correctness.
-- **A deleted account answers `401`.** If the climber deletes their Boardsesh
-  account, your next call gets `401 invalid_token` and the refresh
-  `invalid_grant`, as for a disconnect. No `tick.deleted` entries are sent;
-  delete what you hold for them.
-- **At least once.** Treat every entry as "set this tick to this" or "remove
-  this tick", never as "add one".
-- **Usually within a second.** A change shows up once it is committed and
-  any database write that started before it has finished. A large import on
-  our side can delay the feed; it never drops anything.
+- **Complete initial state and settled changes.** The initial snapshot includes
+  every visible tick. Catch-up and subsequent incremental syncs cover edits,
+  deletions, and ticks hidden or revealed by duplicate handling. A final
+  `hasMore: false` includes changes settled when that final page was read;
+  computed climb fields are the exception below.
+- **A deleted account answers `401`.** The next API call gets
+  `401 invalid_token` and refresh gets `invalid_grant`. There are no
+  `tick.deleted` entries for account deletion; delete what you hold for them.
+- **At least once.** Treat entries as "set this tick to this" or "remove this
+  tick", never "add one". Unchanged entries and snapshot/catch-up overlap are
+  normal.
+- **Usually within a second.** A change appears once committed and all
+  database writes that started before it have finished. A large import can
+  delay the feed.
 - **Computed fields are not changes.** `climb.name`, `climb.grade` and
-  `climb.boardseshGrade` are filled in when you read. They can change without
-  the tick appearing in the feed; refresh them when you display them if you
-  care.
+  `climb.boardseshGrade` are filled in when read. They may change without
+  the tick appearing in the feed; refresh them when displaying if needed.
 
 ### Expired cursors
 
-We keep change history for 90 days. A cursor older than everything we still
-keep answers `410` with `error: "cursor_expired"`. Every page, empty or not,
-hands you a newer cursor, so this only happens to a climber you have not
-synced for about 90 days (or after a rare database move on our side). Start
-a full sync without a cursor, and when it finishes delete every tick you hold
-for that climber that the full sync did not return. To test this path, send
-the cursor `c2.expired`: it always answers `410`.
+Incremental change history is retained for 90 days. Cursors outside retained
+history, expired snapshot cursors, or a cursor from before a database recovery
+answer `410` with `error: "cursor_expired"`. This can happen during a long
+bootstrap too; implement recovery even when syncing frequently.
+
+Persist that a full sync is required, then start without a cursor. Stage and
+publish the completed replacement as above so ticks absent from the new
+snapshot disappear and a crash cannot preserve stale ticks. To test recovery,
+send `c3.expired`: it always answers `410`. Also interrupt a full sync after
+one page and verify the next run still completes a full replacement.
 
 ### One tick
 
@@ -691,9 +765,11 @@ includes:
   the tick shape from section 3, plus `blockIndex`. Other climbers in a shared
   session are never included. With `logbook:read` the same ticks also arrive
   through the logbook feed with the same `id`, so de-duplicate on it.
-- `blockIndex` is the block a tick was queued for, or `null` when Boardsesh
-  cannot tell (a climb the climber picked themselves during a freeform
-  block). Rests, totals and per-block counts are yours to compute from
+- `blockIndex` is inferred from the recorded plan when a tick's climb matches
+  exactly one block. It is `null` when no block matches or more than one does
+  (for example, the same climb in both warm-up and volume). A plan snapshot
+  alone does not prove which stage produced a tick. Compute rest gaps and
+  per-block counts from
   `climbedAt` and `blockIndex`.
 - `blocks[].planned` echoes the block as you sent it.
 - `session.notes` is what the climber wrote on the session summary.
@@ -719,7 +795,7 @@ flight. After a disconnect the only event still sent is
 | --- | --- | --- |
 | `logbook.changed` | This climber's logbook changed. At most one per climber per minute | Run your sync |
 | `workout.completed` | A workout finished (ended or auto-closed) | `GET /v1/workouts/{workoutId}` |
-| `connection.revoked` | The climber disconnected your app | Delete what you hold for them |
+| `connection.revoked` | A connection for this climber was revoked; it may predate a reconnect | Check current credentials before removing their stored data |
 
 ```
 POST https://api.example.com/hooks/boardsesh
@@ -733,10 +809,23 @@ Boardsesh-Signature: t=1758150000,v1=5f1c...
 { "id": "evt_01JA…", "type": "workout.completed", "occurredAt": "2026-09-18T18:41:55Z", "user": "usr_7Qk3…", "workoutId": "wk_01J9X7ZQ3M" }
 ```
 
-`user` is the id from `GET /v1/me`. Events can arrive out of order and more
-than once; because each one only means "go read", neither matters. Use
-`Boardsesh-Delivery-Id` to drop duplicates. Respond with any `2xx` within 10
-seconds and do the work afterwards.
+`user` is the id from `GET /v1/me` and stays the same across reconnects.
+Events can arrive out of order and more than once. Use `Boardsesh-Delivery-Id`
+to drop duplicates. Respond with any `2xx` within 10 seconds and do the work
+afterwards.
+
+For `connection.revoked`, a delayed event must not erase a newer connection.
+In your background handler, call `GET /v1/me` with the currently stored access
+token, refreshing once on `401` through the same per-climber refresh lock used
+by ordinary API calls. If that succeeds, the current connection is
+valid and the old event needs no cleanup. Only remove stored credentials/data
+when that same credential set has been confirmed unusable (`invalid_grant`
+on refresh, or another `401` after successful refresh). Network failures,
+`429` and `5xx` are retryable, not evidence of revocation. Serialize this check
+and cleanup with reconnect and token replacement, or compare a stored
+credential version atomically before deletion and recheck if it changed. If
+you have no stored credential, keep the local disconnected state. Test an old
+revocation arriving after a successful reconnect.
 
 The URL must be public HTTPS on port 443. Private, loopback and link-local
 addresses are refused, and redirects are not followed.
@@ -863,8 +952,8 @@ Before you ship:
    one on every refresh. Refreshes for one climber never run in parallel.
 3. A `401` triggers one refresh; an `invalid_grant` on refresh shows a
    reconnect prompt instead of retrying.
-4. The sync cursor is saved after each page is applied, and a `410` starts a
-   full sync that removes ticks it did not see.
+4. Incremental pages and cursors commit together. A `410` starts a staged
+   full replacement that removes absent ticks, including after crash/restart.
 5. Unknown change types, statuses, board types and fields are ignored, not
    fatal.
 6. Background sync runs no more than every 15 minutes per climber, and
@@ -874,5 +963,5 @@ Before you ship:
    fallback.
 8. Webhooks, if used: the handler verifies the signature on the raw body,
    replies `2xx` in under 10 seconds, and dedupes on `Boardsesh-Delivery-Id`.
-9. Disconnecting in your app calls `/oauth/revoke`, and a disconnect from
+9. Disconnecting in your app calls `DELETE /v1/connection`, and a disconnect from
    either side deletes the climber's Boardsesh data you stored.

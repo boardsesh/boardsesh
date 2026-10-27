@@ -16,12 +16,13 @@ one more ordinary integration is zero engineering time on our side.
 | [partner-api.md](./partner-api.md) | The contract an app developer builds against: OAuth, the logbook, workouts, webhooks, errors, limits, versioning. It becomes the public developer docs in milestone 2 |
 | [partner-workouts-internal.md](./partner-workouts-internal.md) | The design behind the workouts part of the API (milestone 3): the workout row, the `/w/` launch link, the mobile pre-session card, results |
 | [integration-consumers.md](./integration-consumers.md) | What Sequence and DivePeaks each need, mapped onto the API above. Test cases, not specs |
+| [better-auth-migration.md](./better-auth-migration.md) | Moving first-party identity and sessions to Better Auth, including old native apps and Garmin watches, rollout gates and rollback |
 
 The `partner-*` file names are historical (code comments cite them by name).
 The documents themselves no longer use "partner": every integrator is an
 **app**, the person who registers it is a **developer**, the Boardsesh user is
 the **climber**, and a climber's approval of one app is a **connection**
-(an `oauth_grants` row).
+(an application-owned connection record, independent of any one token).
 
 ---
 
@@ -55,6 +56,7 @@ the scopes the climber saw on the consent screen.
 | `profile:read` | The climber's display name and avatar URL | 1 |
 | `workouts:write` | Create and cancel planned workouts for the climber | 3 |
 | `workouts:read` | Read a workout the app created, with its results | 3 |
+| `offline_access` | Keep a refresh credential for the other granted scopes when the climber is away | 1 |
 
 Not available, by design, at any milestone on this roadmap:
 
@@ -86,99 +88,75 @@ boardsesh.com. The rejected shape (Boardsesh as an OAuth *client* of each app,
 like Strava) is in [partner-workouts-internal.md](./partner-workouts-internal.md):
 it asks every small app to run an identity provider.
 
-### D2. `oidc-provider` inside the backend, confirmed by a spike
+### D2. Self-hosted Better Auth for identity and OAuth
 
-Revised 2026-10-27 after review. The first draft chose to write a narrow
-authorization server ourselves. Even narrow, that is authorization-code
-exchange, PKCE, client authentication, refresh rotation, replay detection,
-revocation and metadata: protocol code where every bug is a security bug, and
-whose upkeep would be ours alone. A maintained implementation moves that
-upkeep upstream. What stays ours either way: the consent UI, app
-registration, the Connected apps screen, rate limits, abuse controls and the
-resource API.
+Better Auth, with `@better-auth/oauth-provider`, is the selected direction.
+It runs in the existing Node backend with Postgres through Drizzle. Next.js
+renders the login and consent pages; it no longer owns identity decisions.
+The first-party migration is specified separately in
+[better-auth-migration.md](./better-auth-migration.md) ([epic #6975](https://github.com/boardsesh/boardsesh/issues/6975)). It preserves ordinary
+sessions and includes a maintained compatibility API for old native apps and
+Garmin watches, all backed by the same identity authority. Security events may
+require real reauthentication. The partner API does not ship merely because
+the identity migration has shipped, or vice versa.
 
-| Option | What it is | Fit with our stack | What we would still write | Who ships security fixes | New things to run |
-| --- | --- | --- | --- | --- | --- |
-| **`oidc-provider`** (panva) | Node library, OpenID Certified, MIT. Covers authorization code + PKCE, refresh rotation (`rotateRefreshToken`; with rotation on, a reused refresh token revokes the whole grant), revocation (RFC 7009), RFC 8414 and OIDC discovery, per-client CORS (`clientBasedCORS`), resource indicators with opaque access tokens, dynamic client registration if we ever want it | Mounts as a plain `(req, res)` handler (`provider.callback()`) on our `http` server under `/oauth/*`. Koa is an internal dependency. Login and consent are "interactions" whose URL can be absolute, so the screen can live on `www` | A storage adapter (two tables), the interaction pages and their confirm handler, account lookup, client lookup from our `oauth_clients` (the library compares client secrets in plaintext, so we store them encrypted, not hashed), a login check on every authorize, token checks on `/v1/*` | Upstream; we take releases through the existing dependency bot | Nothing |
-| Ory Hydra (self-hosted) | Go service, OpenID Certified, Apache 2.0. Headless: redirects to our login and consent URLs with a challenge, we accept it over its admin API | A second service with its own migrations in our Postgres and an admin port to lock down. Opaque tokens are checked by calling its introspection endpoint, so every API request makes a network hop or caches and delays revocation | Login/consent pages, admin API calls, client sync from our console | Upstream, but we deploy and upgrade the service | A service on Railway (and later on EC2, #6632) |
-| Writing it ourselves (first draft) | Four handlers over Drizzle tables | Native | All of it, including the security-critical parts | Us | Nothing |
-| `@node-oauth/oauth2-server` | Library running grant flows over a model we write | Fits | Storage, rotation and reuse policy, revocation endpoint, metadata, CORS | Shared | Nothing |
-| Keycloak, Ory Network, Auth0, WorkOS, Clerk, Stytch | Full identity servers, hosted or self-run | Each wants to own climber identity or federate it from NextAuth and native auth; per-user pricing for the hosted ones; the portability rule in CLAUDE.md ("Database hosting") argues against a hosted dependency | Identity migration or federation | Vendor | A service or a vendor |
-| better-auth OAuth provider plugin | Plugin | Only works when better-auth is the identity system. It is not | — | — | — |
+| Option | Assessment |
+| --- | --- |
+| **Better Auth + OAuth provider** | Chosen: one TypeScript identity authority and authorization server in our backend. Requires proving native login, session migration, database mapping and the OAuth configuration below |
+| Existing auth + `oidc-provider` | Preserves today's login implementation but leaves identity/session ownership split between web and backend. Retained as a comparison, not an automatic fallback |
+| Ory Kratos + Hydra | Self-hosted identity and OAuth services with a larger operational footprint; OSS release and commercial-feature differences need separate assessment |
+| Keycloak | A standalone identity server; native sign-in and existing-session preservation would require a separate migration proof |
+| Hand-written authorization server | Rejected: we would own protocol implementation and its security maintenance |
 
-**Decision: `oidc-provider`, mounted in `packages/backend` on
-`api.boardsesh.com`.** It is the only option that removes the protocol code
-without adding a service. Ory Hydra is the fallback if the spike fails;
-writing our own is the last resort, and only with the full test suite below.
+The initial compatibility investigation pins Better Auth and the provider to
+**1.7.14**. Pin matching versions in implementation and re-run the gates on
+upgrades. The [provider documentation](https://www.better-auth.com/docs/plugins/oauth-provider)
+describes supported integration points; the pinned source and tests settle
+version-specific behavior. No undocumented internal hook is assumed here.
+If a gate fails, stop that rollout and revise the decision explicitly. Do not
+quietly add a different provider, fork protocol code, or launch weaker behavior.
 
-**The spike (milestone 0, two days, throwaway branch).** Go only if all of
-these hold:
+The milestone 0 proof must cover these independent gates:
 
-1. Mounted under `/oauth/*` on the backend's `http` server without touching
-   other routes, and the backend still builds and starts.
-2. `/oauth/authorize` → interaction page on `www` → the climber allows → a
-   plain HTML form POST (no `fetch`, so no CORS) to the confirm handler on
-   `api.boardsesh.com` → code issued. The confirm request must carry two
-   cookies: the library's `_interaction` cookie, which it sets on the `api`
-   host with its path equal to the pathname of `interactions.url` (so the
-   handler lives at `POST /oauth/consent/{uid}/confirm`, under the same
-   pathname as the `www` page `/oauth/consent/{uid}`; any other path and
-   `interactionFinished` throws `SessionNotFound`), and the NextAuth session
-   cookie (set on `.boardsesh.com` by `sessionCookieDomain()`, `SameSite=Lax`,
-   and `www` → `api` is same-site, so it is sent; the handler reassembles
-   NextAuth's chunked `.0`/`.1` cookies before `validateToken` decrypts the
-   JWE), plus a CSRF token. Works in Safari on iOS and Chrome on Android,
-   including when the climber has to sign in first.
-3. A Drizzle adapter stores every model; `revokeByGrantId` makes the next API
-   call fail; grants are listable per climber for Connected apps.
-4. The configuration holds, each item with a test:
-   - `pkce.required` returns true for every client (the library has no
-     `plain` method any more, so `S256` is the only one).
-   - `rotateRefreshToken: true`; a reused refresh token or code revokes the
-     grant.
-   - `features.revocation.enabled: true` (off by default). Revoking an access
-     token or a refresh token ends the connection: the library revokes by
-     grant for both, which RFC 7009 permits, and the contract says so.
-   - `issueRefreshToken` returns true whenever the client may use the
-     `refresh_token` grant. The default only issues one when `offline_access`
-     was requested, which is not one of our scopes.
-   - `ttl.Grant` at least as long as `ttl.RefreshToken` (90 days, sliding),
-     or unbounded with our own `revoked_at`. The default Grant TTL is 14 days,
-     after which every refresh fails.
-   - `ttl.Session` of a few seconds and no remembered login, plus a custom
-     `login` prompt check that re-reads the NextAuth cookie on every
-     `/oauth/authorize` (a top-level GET, so the `Lax` cookie is sent) and
-     requires `authTime` ≥ `credentials_changed_at`. Without it, the library's
-     own 14-day `_session` cookie on `api` would let a signed-out or
-     post-password-reset browser authorize apps with no prompt.
-   - `findClient` maps public apps to `application_type: 'native'` (that is
-     what enables loopback-port-insensitive matching and private-use schemes)
-     and confidential apps to `web`. Our console validation stays the
-     stricter layer.
-   - Access tokens are opaque (the default). `resourceIndicators` with
-     `defaultResource` = `https://api.boardsesh.com`, so apps never have to
-     send `resource=`, and `getResourceServerInfo` returning our scopes.
-   - `clientBasedCORS` from our per-app origins; one live grant per (app,
-     climber) via `loadExistingGrant`.
-5. `authenticateApiBearer` resolves an access token through the adapter in
-   under 5 ms p95, with no cache.
-6. RFC 8414 metadata is served and lists exactly what we support. It lives at
-   the root, `/.well-known/oauth-authorization-server`, not under `/oauth`, so
-   the `server.ts` path switch forwards both prefixes to the provider.
-7. The token endpoint's per-connection rate limit can be keyed before the
-   provider consumes the request body: the wrapper parses the capped form body
-   once, keys on `sha256(refresh_token)`, and hands the provider a pre-parsed
-   `req.body`. If the provider cannot take a pre-parsed body, key on the
-   client and IP only and record the gap.
+1. **Identity compatibility.** Import existing IDs, bcrypt credentials,
+   provider subjects and verified state; preserve browser/native sessions and
+   old device contracts as the migration doc requires. Email identity is
+   case-insensitive across every entry point. Audit and resolve collisions
+   before enforcing database uniqueness; never merge accounts automatically
+   just because normalizing an address makes them collide.
+2. **Web and native auth boundary.** Mount the supported Node handler under
+   `/api/auth`, with issuer `https://api.boardsesh.com/api/auth`. Prove SSR,
+   cookie scope, CSRF, trusted origins, continuation parameters and a complete
+   `www` login/consent round trip in Safari on iOS and Chrome on Android.
+   Existing and newly issued first-party credentials resolve through one
+   authority, including revocation and password recovery.
+3. **OAuth configuration.** Enable only authorization-code and refresh grants,
+   S256 PKCE for all clients, published application scopes and `offline_access`.
+   Disable open dynamic registration and client-credentials grants. Configure
+   opaque access tokens (`disableJwtPlugin: true`) for the exact resource
+   `https://api.boardsesh.com/v1`, and validate client type independently from public/confidential
+   authentication. Native clients get the allowed loopback/private-scheme
+   behavior; browser clients keep web redirect validation. Prove token use
+   after first-party session expiry/sign-out and rotation beyond day 90.
+4. **Atomic protocol and connection lifecycle.** Race authorization-code and
+   refresh redemption against two backend instances using real Postgres.
+   Only one concurrent redemption may issue a usable successor; replay
+   detection and connection disconnect must invalidate all intended artifacts
+   even when issuance races revocation. Demonstrate supported transaction and
+   extension points; a check followed by a write is not sufficient. Verify
+   the token-vs-connection revocation rules below, secret rotation, suspension,
+   password reset, account deletion and rollback.
+5. **API integration.** Prove discovery at the issuer's metadata URL, accurate
+   advertised auth methods, uncached opaque-token introspection and resource
+   binding for public and confidential apps, per-app CORS including errors,
+   distributed rate limits, and the complete adversarial suite below. Record
+   p95 authentication cost and database load. No cached positive result may
+   keep a disconnected connection usable.
 
-**Required before any outside app, whichever implementation wins:** the
-protocol and adversarial suite in [Authorization server](#authorization-server).
-A library removes code we would write; it does not remove the need to prove
-our configuration and our glue are right.
-
-Revisit if we need OpenID Connect sign-in ("Sign in with Boardsesh") or
-dynamic client registration for MCP clients: `oidc-provider` has both, so
-those become configuration, not new code.
+App registration, consent presentation, connection lifecycle, abuse controls
+and the resource API remain Boardsesh code. Better Auth owns credential and
+protocol mechanics. OpenID Connect sign-in and MCP registration remain later
+features, each with its own configuration and acceptance tests.
 
 ### D3. REST with an OpenAPI contract, not the internal GraphQL schema
 
@@ -197,17 +175,24 @@ The `/docs` page also publishes the internal GraphQL SDL today. Milestone 2
 labels that tab "internal, unsupported, changes without notice" and points
 integrators at the REST API.
 
-### D4. Opaque tokens with grant-level revocation (kept)
+### D4. Opaque tokens and explicit connection revocation
 
 Access tokens live 1 hour, refresh tokens 90 days and rotate on every use,
 authorization codes 60 seconds and work once. Access tokens are opaque and
 looked up in storage on every API call, so revoking a connection takes
-effect on the next request; a signed JWT would outlive Disconnect. Revoking
-any token of a connection, access or refresh, ends the whole connection. The
-earlier `bsa_`/`bsr_`/`bsc_` prefixes are not part of the contract: token
-values are generated by `oidc-provider`, and apps must treat them as opaque
-strings. (A prefix would help secret scanners spot a leaked token. The spike
-checks whether the library lets us add one; it is not a launch requirement.)
+effect on the next request. These lifetimes are configured and tested, not
+inferred from library defaults. Refresh requires explicit `offline_access`;
+it remains usable after an ordinary first-party sign-out. The acceptance
+tests cover rotating refresh tokens after 90 days of continuous use.
+
+RFC 7009 token revocation and disconnect are different operations. Revoking
+an opaque access token removes that token; its refresh credential may still
+work. Revoking a refresh token removes it and its associated access tokens,
+not every independently issued credential for that climber and app. Disconnect
+invalidates the whole connection, all its token families and remembered
+consent, and revokes unfinished workouts. Neither tokens nor client IDs carry
+a promised prefix or length; the provider generates them and clients treat
+them as opaque strings.
 
 ### D5. API tokens never pass `validateToken` (kept)
 
@@ -215,7 +200,9 @@ checks whether the library lets us add one; it is not a launch requirement.)
 identity for `/graphql`, sessions, everything, with a 60-second success
 cache. An API token that satisfied it would be a full account session with a
 different label. API tokens are checked by their own function on their own
-router (`/v1/*`), with no cache.
+router (`/v1/*`), with no cache. The migration's first-party compatibility API
+is not an exception: an app's OAuth token cannot call native auth, Garmin,
+GraphQL, the developer console or a first-party session endpoint.
 
 ### D6. A transactional change log first, webhooks later
 
@@ -226,7 +213,8 @@ started, and the draft papered over the gap with a monthly full resync. A
 monthly resync is reconciliation, not a guarantee, and does nothing for an app
 that stops syncing before it runs.
 
-The public feed instead reads a change log written by a trigger in the same
+The public feed bootstraps from a complete, bounded snapshot of the climber's
+current public logbook, then reads a change log written by a trigger in the same
 transaction as every tick write, and only serves entries below the Postgres
 transaction horizon, the oldest transaction still in flight. Nothing below the
 horizon can still commit, so the feed never moves past a change that could
@@ -257,22 +245,26 @@ The Sequence plan used `ws.boardsesh.com`. The backend host has moved once
 and may move again (#6632, #5700). `api.boardsesh.com` is a proxied CNAME to
 the same backend service, managed in `infra/cloudflare` like `ws`, so a
 backend move never changes a URL a developer stored. The OAuth issuer and
-every OAuth endpoint (`/oauth/authorize`, `/oauth/token`, `/oauth/revoke`,
-the metadata) live on `api.boardsesh.com`, where `oidc-provider` runs. Only
+every OAuth endpoint (`/api/auth/oauth2/authorize`, `/api/auth/oauth2/token`,
+`/api/auth/oauth2/revoke`, and metadata under the `/api/auth` issuer) live on
+`api.boardsesh.com`, where Better Auth runs. Only
 the screens a climber looks at (sign-in, consent) live on `www`.
 
 ### D10. Consent runs on `www`, the decision is recorded on the backend
 
-The consent screen is a Next page on `www` because that is where sign-in
-lives. It renders what the backend tells it (`oauthInteraction(uid)`: the
-app's name, links and the requested scopes) and posts Allow or Cancel, as a
-plain form POST, to `api.boardsesh.com/oauth/consent/{uid}/confirm` (the same
-pathname, so the library's `_interaction` cookie comes along). That handler
-reads the climber from the NextAuth session cookie, checks the CSRF token and
-`authTime`, and calls `oidc-provider`'s `interactionFinished`. App registration and the Connected
-apps screen are internal GraphQL operations in `packages/backend`. None of
-these are part of the public contract, and an API token can never call them
-(D5).
+The consent screen is a Next page under `/oauth/consent` on `www`. It presents
+the backend-validated client, redirect host and requested scopes, then submits
+through Better Auth's supported consent/continuation flow. The backend owns
+session validation, continuation integrity, CSRF and account-security checks.
+The milestone 0 proof determines the exact supported UI integration; no
+`oidc-provider` interaction cookie or handler survives this design. Credentialed
+requests from `www` use an exact trusted-origin allowlist, independently from
+the credential-free third-party API CORS policy below.
+
+App registration and Connected apps use first-party backend operations. They
+wrap the provider's supported APIs and our application policy. A third-party
+OAuth token cannot call them; `DELETE /v1/connection` is the intentionally
+narrow exception for an app to disconnect its own current connection.
 
 ---
 
@@ -286,10 +278,10 @@ model holds. Measured against the platform goals:
 
 - Boardsesh as authorization server; PKCE S256 for every client, confidential
   ones included; exact redirect URI match; system browser only, no WebView.
-- Opaque tokens checked against storage on every call; refresh rotation
-  with reuse revoking the grant; codes revoke their grant on a second use.
-  (The `bsa_`/`bsr_` prefixes are dropped, see D4.)
-- `oauth_grants` as the unit the climber sees and revokes; no cache on
+- Opaque tokens checked against current authority state on every call;
+  single-use codes, refresh rotation and replay protection tested under
+  concurrent requests. Token revocation is distinguished from Disconnect (D4).
+- A connection as the unit the climber sees and revokes; no cache on
   partner auth; the hard separation from `validateToken`.
 - Consent-page hardening: validate everything before redirecting anywhere,
   CSRF bound to the session, parameters re-validated on POST,
@@ -318,8 +310,8 @@ model holds. Measured against the platform goals:
   `packages/web/app/lib/crawler-policy.ts`) and must follow the path.
 - Webhook URL, secret and event list move off the client row onto per-app
   webhook settings the developer edits in the console (milestone 4).
-- Client ids like `seq_1a2b3c` in the examples suggested hand-assigned,
-  named ids. Ids are random: `bsk_` + 22 base62 characters.
+- Client ids are provider-generated opaque strings. Examples do not reserve
+  a prefix or length and no client gets a hand-assigned brand-specific id.
 - Text addressed to Sequence inside the public contract (the Strava opt-out
   paragraph, "the same way Sequence's own tokens behave", the logbook mapping
   table) moves to [integration-consumers.md](./integration-consumers.md).
@@ -343,7 +335,7 @@ model holds. Measured against the platform goals:
   an app is then governed by that app.
 - Things the plan assumed exist and do not: refresh-token reuse detection
   (`native-auth.ts` has neither a `replaced_by` column nor reuse handling, so
-  it was never a copy; it now comes from `oidc-provider`, see D2), and
+  it was never a copy; Better Auth integration must prove it, see D2), and
   revocation on password reset (the reset route revokes nothing today, not
   even mobile refresh tokens).
 - A feed that cannot miss rows. Reusing the phone's 30-second window would
@@ -381,28 +373,25 @@ model holds. Measured against the platform goals:
   and `docs/websocket-implementation.md`: an Unlisted link joins). Handing it to
   a third party hands them a way into the climber's session. Removed; no public
   type carries a session id.
-- **Consent from a stale web session.** NextAuth sessions are stateless JWTs
-  with a 30-day default life and no server-side revocation. Someone holding a
-  stolen cookie can still approve an app after the climber resets their
-  password. NextAuth refreshes the JWT's `iat` on every rolling update, so
-  `iat` cannot tell an old login from a new one. Milestone 1 stamps a fixed
-  `authTime` claim once at sign-in (the same way `authSessionId` is stamped in
-  `auth-options.ts`), stamps `users.credentials_changed_at` wherever
-  credentials change (`api/auth/reset-password` and `api/internal/set-password`),
-  and the consent operation refuses a session whose `authTime` is older.
+- **Consent from a stale session.** The migration must validate legacy
+  cookies and current sessions against the same account security state.
+  A rolling JWT `iat` is not proof of a recent login. A reset or security
+  revocation must prevent an old web, native or watch credential from
+  authorizing a new app. If a legacy session cannot establish the required
+  assurance, ask for real reauthentication; ordinary migration is not a
+  reason to sign everyone out. The migration doc owns this shared policy.
 - **Self-registered webhook URLs are an SSRF vector** (milestone 4): see
   [Webhooks](#webhooks-later).
-- **A library at the centre of auth.** `oidc-provider` is maintained mainly
-  by one person. Mitigations: pin the version, take releases through the
-  dependency bot with the auth test suite as the gate, keep our glue thin
-  (adapter, interaction handler, bearer check) so moving to Hydra stays
-  possible, and keep tokens opaque so no app depends on their format.
+- **A library at the centre of auth.** Pin Better Auth and its provider,
+  gate upgrades on migration and protocol suites, and keep UI/application
+  policy separate from library integration. A provider upgrade must not
+  silently weaken revocation or change the old native/watch contract.
 - **Secret encryption has no key versioning.** `@boardsesh/crypto` derives
-  one AES key from `AURORA_CREDENTIALS_SECRET` with a fixed salt. Client
-  secrets have to be stored encrypted (the library compares plaintext), and so
-  do webhook secrets in milestone 4, so milestone 1 adds a key version prefix
-  to the ciphertext and a second key slot, so a key can be rotated without
-  re-registering every app.
+  one AES key from `AURORA_CREDENTIALS_SECRET` with a fixed salt. Better Auth
+  secret storage must follow the pinned provider's requirements for opaque
+  tokens, and any application-encrypted material needs versioned keys.
+  Webhook signing-secret rotation is a separate milestone 4 concern. OAuth
+  client-secret rotation is immediate; no previous-secret overlap is promised.
 
 ---
 
@@ -410,126 +399,168 @@ model holds. Measured against the platform goals:
 
 ### Endpoints
 
+The issuer is `https://api.boardsesh.com/api/auth`. Use the provider's native
+paths; there are no `/oauth/token` aliases. Discovery is authoritative and is
+validated against the configured handler before publication. For this pathful
+issuer, RFC 8414 derives the canonical metadata URL by inserting the well-known
+path before `/api/auth`: route `/.well-known/oauth-authorization-server/api/auth`
+to Better Auth's handler as well as mounting `/api/auth/*`. A mount limited to
+`/api/auth/*` is insufficient. Test discovery using an unmodified OAuth client.
+
 | Endpoint | Served by | Notes |
 | --- | --- | --- |
-| `GET https://api.boardsesh.com/oauth/authorize` | `oidc-provider` | Validates the request, then redirects to the interaction page. Errors that make the redirect URI untrustworthy (unknown client, unregistered redirect) render an error page and never redirect |
-| `GET https://www.boardsesh.com/oauth/consent/{uid}` | Next page, `packages/web/app/oauth/consent/` | Sends a signed-out climber through `/auth/login` and back, then shows the consent screen |
-| `POST https://api.boardsesh.com/oauth/consent/{uid}/confirm` | Our handler in `packages/backend/src/handlers/oauth/` | Plain form POST. Needs the library's `_interaction` cookie (path `/oauth/consent/{uid}`) and the NextAuth cookie. CSRF check, `authTime` check (see risks), then `interactionFinished` |
-| `POST https://api.boardsesh.com/oauth/token` | `oidc-provider` | `authorization_code` and `refresh_token` grants. Client auth `none` (public apps), `client_secret_post`, `client_secret_basic` |
-| `POST https://api.boardsesh.com/oauth/revoke` | `oidc-provider` | RFC 7009. Either token ends the connection. Unknown tokens still get 200; a wrong client credential gets 401 `invalid_client` |
-| `GET https://api.boardsesh.com/.well-known/oauth-authorization-server` | `oidc-provider` | RFC 8414 metadata at the root, outside `/oauth`: `code_challenge_methods_supported: ["S256"]`, scopes, auth methods, `authorization_response_iss_parameter_supported: true` |
+| `GET /api/auth/oauth2/authorize` on `api` | Better Auth OAuth provider | Validates client, redirect and PKCE before continuing to login/consent; untrusted redirects are never followed |
+| `/oauth/consent` on `www` | Next page | Renders the supported provider consent flow, requiring a current first-party session |
+| `POST /api/auth/oauth2/consent` on `api` | Better Auth OAuth provider | Supported session-bound consent API, with the provider's continuation and CSRF checks |
+| `POST /api/auth/oauth2/token` on `api` | Better Auth OAuth provider | Authorization-code and refresh grants only; each client uses its registered authentication method |
+| `POST /api/auth/oauth2/revoke` on `api` | Better Auth OAuth provider | RFC 7009 token revocation, distinct from disconnect |
+| `GET /.well-known/oauth-authorization-server/api/auth` on `api` | Better Auth handler, explicitly forwarded outside its base mount | Canonical RFC 8414 metadata for the pathful issuer; the provider's `/api/auth/.well-known/oauth-authorization-server` alias may also be served, with identical metadata |
+| `DELETE /v1/connection` on `api` | Boardsesh public API | Any valid user-delegated API access token can disconnect only its own app/climber connection; no extra scope |
 
-The authorization response carries `iss` (RFC 9207) so an app talking to
-several providers can detect a mix-up. `/oauth/*` on `api` is outside the
-iOS association file (the app claims `www` and the apex, not `api`); the
-consent page's `/oauth` on `www` is excluded in milestone 0.
+The authorization response carries the issuer in `iss` (RFC 9207). The app
+does not claim `api.boardsesh.com`; `/oauth` on `www` is excluded from iOS
+association before consent launches. First-party auth paths and their old
+native/watch aliases are owned by the migration doc, not this API contract.
 
-CORS: a browser-only app (no backend) is a public client using the
-authorization code flow. `/oauth/token`, `/oauth/revoke` and `/v1/*` handle
-CORS in two steps, because a preflight `OPTIONS` carries neither a token nor
-a body and so cannot say which app is calling:
+### Browser access
 
-1. Preflight. On `/oauth/token` and `/oauth/revoke` the library answers
-   every preflight as allowed and decides on the actual request. On `/v1/*`
-   our router allows a preflight when the `Origin` is the origin of any live
-   app's registered `https` redirect URI (a set cached for a minute and
-   dropped on app changes). Either way the answer allows `GET`, `POST`,
-   `DELETE` and the `Authorization`, `Content-Type` and `Idempotency-Key`
-   headers, never credentials, with `Vary: Origin`.
-2. Actual request: `Access-Control-Allow-Origin` is echoed only when the
-   `Origin` belongs to the calling app itself (`clientBasedCORS` on
-   `/oauth/*`, the token's app on `/v1/*`). An origin registered by a different
-   app gets past the preflight and is then refused by the browser.
+CORS on the token/revoke endpoints and `/v1/*` is credential-free and separate
+from trusted first-party browser origins. Only the HTTPS origins of registered,
+live apps are eligible. The provider integration must prove the complete
+policy; if its built-in CORS differs, resolve that through supported integration
+before launch rather than assuming a configuration switch exists.
 
-The consent confirm is a plain form POST from `www`, a navigation rather than
-a `fetch`, so it needs no CORS and is the one place a cookie is sent to `api`.
+- An unauthenticated `OPTIONS` may allow any eligible registered origin.
+  Allow `GET`, `POST`, `DELETE`, and `Authorization`, `Content-Type`,
+  `Idempotency-Key`; include `Vary: Origin`, never credentials.
+- For successful data/token responses, the origin must belong to the
+  authenticated app itself. Another app's registered origin is insufficient.
+- Authentication failures must also be readable by eligible origins. An
+  expired/deleted opaque token cannot identify an app, so a generic `401`
+  with no account/token details may use the global registered-origin set.
+  Apply the same error policy before auth for rate limits and failures. Never
+  expose a success response or personal data through that error-only rule.
+- Expose `Retry-After`, `RateLimit-Limit`, `RateLimit-Remaining`,
+  `RateLimit-Reset`, `WWW-Authenticate` and `Sunset` through
+  `Access-Control-Expose-Headers`. Test a real browser after the access-token
+  row has physically expired and been removed: it must see `401`, refresh,
+  and retry rather than receive a CORS network error.
+- The registered-origin cache is invalidated on app edits/deletion; generic
+  error responses cannot become a token-existence oracle. Credentialed
+  login/consent requests use only the exact first-party origin allowlist.
 
-Every other origin gets no CORS headers. A form-encoded token request without
-an `Authorization` header is a simple request and skips the preflight.
-Refresh-token rotation with reuse detection is what OAuth 2.1 requires before
-a browser app may hold a refresh token, and the configuration in D2 has it.
+### Storage and ownership
 
-### Storage
+Better Auth owns its identity/session schema and the provider's generated
+client, consent, access-token and refresh-token schema. Generate the Drizzle
+mapping for the pinned version, review its indexes and relations, and commit
+migrations through the repo's migration workflow. Do not recreate an
+`oidc-provider` generic model store or assume its `Grant`, `Session`,
+`findClient` or `revokeByGrantId` APIs exist.
 
-All in `packages/db/src/schema/auth/`, user columns `text` referencing
-`users.id` with cascade. `oidc-provider` builds one adapter instance per model
-name, so the models we query ourselves get typed tables and the rest share
-one generic table.
+Application records add only Boardsesh policy:
 
-| Table | Holds | Notes |
-| --- | --- | --- |
-| `oauth_clients` | `id` (`bsk_…`), `owner_user_id`, `name`, `homepage_url`, `privacy_url`, `client_type` (`public`/`confidential`), `redirect_uris text[]`, `client_secret_enc`, `client_secret_prev_enc`, `client_secret_prev_expires_at`, `allowed_scopes text[]`, `daily_grant_cap`, `rate_limit_tier`, `suspended_at`, `suspended_reason`, `created_at`, `deleted_at` | Ours; the console writes it, the provider reads it through `findClient`. Secrets are encrypted, not hashed: the library compares the plaintext it is given in constant time and has no hook for a hash. That needs the versioned key from the risks list. `suspended_at` fails every request closed |
-| `oauth_grants` | `id`, `client_id`, `user_id`, `scopes text[]`, `payload jsonb`, `created_at`, `last_used_at`, `revoked_at`, `revoked_reason` | The provider's `Grant` model, typed, because Connected apps lists it and workouts reference it. One live grant per (app, climber) through `loadExistingGrant`: consenting again (a second device, more scopes) widens it, and earlier tokens keep working. `last_used_at` written at most hourly |
-| `oauth_provider_models` | `id`, `kind`, `payload jsonb`, `user_id`, `grant_id`, `uid`, `expires_at`, `consumed_at` | Every other model: `AuthorizationCode`, `AccessToken`, `RefreshToken`, `Interaction`, `Session`. `user_id` (from the payload's `accountId`, nullable, FK with cascade) is what account deletion cascades through and what password reset uses to destroy a climber's provider sessions. Indexed on `(kind, id)`, `grant_id` (for `revokeByGrantId`), `user_id` and `uid` |
-| `oauth_subjects` | `client_id`, `user_id`, `subject` | D8. Primary key `(client_id, user_id)`; survives reconnects |
+| Record | Purpose |
+| --- | --- |
+| App policy keyed by provider client ID | Developer ownership, display/terms fields, registration caps, rate tier and suspension state; the provider remains authoritative for client authentication, redirects and token issuance |
+| `oauth_connections` | One current connection per (client, user), a durable connection ID/generation, consented scopes, revocation state/reason and last-used metadata; workouts reference this lifecycle |
+| `oauth_subjects` | Stable random per-app public user ID, preserved across reconnects; not `users.id` |
+| Versioned key material | Only what the selected provider configuration or application encryption needs; rotation and recovery tested before rollout |
 
-Expired rows are cleaned by a pg-boss scheduled job (see
-[background-workers.md](./background-workers.md)), not a `setInterval`.
+All user references preserve Boardsesh's identity mapping. The connection
+record is not a second password/session authority. Its relationship to every
+provider credential must be demonstrated in the spike: reconnect creates a
+new generation, and old credentials never become valid merely because a
+client/user pair has an active connection again. Use supported hooks and
+transaction boundaries, not undocumented provider-model assumptions.
+
+Whole-connection revocation first makes the application connection unusable
+atomically with unfinished-workout state changes and its lifecycle event.
+Provider consent/token cleanup must also prevent old refresh credentials from
+issuing new usable tokens, including after reconnect. A fail-closed generation
+check may protect reads during cleanup, but it is not a substitute for proving
+token issuance and cleanup races. Account deletion and password-reset paths
+invoke the same authority-owned operation. Cleanup jobs use pg-boss.
 
 ### Bearer auth for `/v1/*`
 
-`authenticateApiBearer(header)` in `packages/backend/src/middleware/api-auth.ts`
-looks the token up through the provider (`AccessToken.find`), then checks the
-grant is not revoked and the app is not suspended or deleted, and returns
-`{ clientId, grantId, userId, subject, scopes }` or a 401. No cache. Each
-route declares its scope; a mismatch is `403 insufficient_scope`. 401
-responses carry `WWW-Authenticate: Bearer error="invalid_token"` (RFC 6750).
+`authenticateApiBearer` uses the provider's supported opaque-token
+introspection/verification integration. It verifies activity, resource
+audience, client, user, scopes and the current connection generation, then
+checks suspension and revocation without a positive-result cache. The sole
+partner API resource identifier is `https://api.boardsesh.com/v1` (no trailing
+slash); it is distinct from the issuer. Register that resource and link every
+self-service client to it through supported provider APIs. Clients send it as
+`resource` at authorization, code exchange and refresh. A missing or different
+resource must never produce a usable API token: test request rejection or,
+if the provider issues an unbound token, `401 invalid_token` at `/v1/*`.
+Registration links alone are not assumed to supply a request default. The
+resource server must be authorized to inspect tokens minted for public and
+confidential clients; the spike proves that setup rather than using a guessed
+internal lookup. It returns `{ clientId, connectionId, connectionGeneration, userId, subject, scopes }`.
+Each route checks its required scope. Invalid tokens yield `401` and
+`WWW-Authenticate: Bearer error="invalid_token"`; missing scopes yield `403`.
 
 ### Revocation
 
-| Trigger | Effect |
+| Trigger | Required effect |
 | --- | --- |
-| Climber taps Disconnect (mobile Settings → Connected apps, or web account settings) | `revokeByGrantId`, `oauth_grants.revoked_at` set, unfinished workouts → `revoked` |
-| App calls `/oauth/revoke` with a refresh token | Grant revoked |
-| App calls `/oauth/revoke` with an access token | Grant revoked too: the library revokes by grant for both token kinds |
-| Refresh-token or code reuse | Grant revoked, `revoked_reason = 'reuse'`. With one grant per (app, climber) that ends the connection on every device |
-| Password reset or password set | Every grant for the climber revoked, the climber's provider `Session` rows deleted, `credentials_changed_at` stamped. Hooks in `api/auth/reset-password` and `api/internal/set-password`, which revoke nothing today |
-| Account deletion | Cascades from `users`; tokens stop resolving |
-| App deleted or suspended by its developer or an admin | All its grants fail closed; the climber's Connected apps list shows it as "no longer available" |
+| Connected apps Disconnect, or `DELETE /v1/connection` | End the whole connection, invalidate all its credential families and remembered consent, revoke unfinished workouts; a reconnect requires fresh consent and a new generation |
+| Revoke an opaque access token | That access token stops working; its refresh token and other token families are not disconnected |
+| Revoke a refresh token | That refresh token and access tokens associated with it stop working; independent families and the connection's remembered consent are not automatically removed |
+| Refresh-token reuse | Reject replay and invalidate the affected token family through proven provider behavior; do not promise whole-account or every-device revocation implicitly |
+| Authorization-code reuse | Reject replay; ensure simultaneous redemption cannot create two usable successors; test the pinned provider's exact resulting token-family behavior |
+| Password reset, security credential change or explicit account-wide revocation | Invalidate the relevant first-party and legacy credentials plus all partner connections, using the migration's shared security policy |
+| Account deletion | Connections and all credentials become unusable immediately; cascade/cleanup covers provider records and application policy |
+| App suspended or deleted | No token issuance or API access; the Connected apps UI explains the state |
+
+Disconnect returns `204` once complete. It is idempotent as a state change,
+but a retry can return `401` because the token was revoked or expired. Only
+`204` confirms disconnect; `401` does not prove a lost earlier request reached
+the server. Clients refresh once through their shared refresh lock and retry
+DELETE. If refresh returns `invalid_grant`, the local pair is unusable, but
+other families may remain; direct the climber to Connected apps to confirm or
+complete disconnect. Transport failures, `429` and `5xx` are retryable, not
+proof of disconnection. The caller never supplies an arbitrary user or client
+ID. Pending protocol/cleanup work must not be hidden behind a success response
+if a credential could still regain access.
 
 ### Test suite required before launch
 
-Milestone 1 does not let an outside app connect until these pass in CI
-against the real configuration. They are written whichever implementation D2
-ends with.
+The OAuth launch gate is separate from the first-party migration gate.
+Tests run against the pinned provider, real Postgres and two backend instances,
+not mocks of library internals.
 
-Protocol:
+Protocol coverage includes PKCE S256 for every client, exact redirects and
+allowed native loopback behavior, unknown-client errors, code expiry and
+single use, client-specific authentication methods, discovery/issuer
+consistency, opaque resource-bound tokens (including missing/wrong resource at every grant step),
+scope ceilings, remembered-consent widening with newly
+issued tokens and unchanged old-token scopes, and refresh issuance
+only with `offline_access`. Prove refresh on day 30 and after day 90 of
+continuous rotation, after ordinary browser sign-out, and after session expiry.
+The 1-hour access, 90-day refresh and 60-second code targets are acceptance
+requirements, not promises inferred from defaults.
 
-- PKCE: the RFC 7636 appendix B vector; a missing challenge, `plain`, or a
-  wrong verifier fails, for public and confidential apps alike.
-- Redirect URIs: exact match, the loopback port rule, the refused forms
-  (fragments, wildcards, `http` off loopback, our own schemes and hosts);
-  errors before validation never redirect.
-- Codes: single use; a second use revokes everything issued from it; a code is
-  bound to its app, redirect URI and verifier; expires after 60 seconds.
-- Refresh: rotation on every use; the old token fails; a reused one revokes
-  the grant; a rotated token survives a concurrent duplicate request only as
-  the library allows, and the docs say what apps should do.
-- Revocation semantics from the table above; expired access tokens; scopes
-  not granted are refused; `iss` in the authorization response; error bodies
-  per RFC 6749 §5.2; a refresh token is issued without `offline_access`; a
-  refresh still works on day 30 (the Grant TTL is not the library's 14-day
-  default).
+Concurrency coverage uses barriers to race code redemption, refresh rotation,
+disconnect, password reset and reconnect across instances. Assert one usable
+successor for one-time credentials, no token after security invalidation, and
+no resurrection of an old connection generation. A consumed-row update must
+fail on repeated consumption; merely returning zero affected rows is not a
+successful single-use guard.
 
-Adversarial:
+Adversarial coverage includes consent CSRF, forged continuations, clickjacking
+(`frame-ancestors 'none'`), unsafe callback URLs, stale migrated sessions,
+client A's credential presented as client B, and third-party tokens on
+first-party/GraphQL/native/watch endpoints. Test immediate secret rotation,
+app suspension/deletion, account deletion, connection cleanup failure, and
+correct CORS/headers for expired-token and rate-limit errors. Ordinary
+first-party sign-out must not silently revoke an offline connection; explicit
+security revocation must.
 
-- Consent CSRF (a cross-site POST to the confirm handler), clickjacking
-  (`frame-ancestors 'none'` on the consent page), a stale session (`authTime`
-  before `credentials_changed_at`) refused.
-- No login without the NextAuth cookie: authorize once, sign out of `www`,
-  authorize again: the climber is sent to sign in, not straight back with a
-  code. Same after a password reset.
-- `callbackUrl` and redirect-URI open redirects.
-- App A's tokens used with app B's `client_id`; an API token on `/graphql`
-  and on the GraphQL operations behind consent and the console; a first-party
-  token on `/v1/*`.
-- Suspended app, deleted app, deleted climber, password reset: every token
-  dies on the next request.
-- CORS from another app's origin; token-endpoint limits under rotating IPs.
-
-An outside security review of the configuration and glue before milestone 2
-opens registration to everyone is recommended; the cost is a few days of
-someone's time against an auth surface every app will use.
+An external security review of configuration and glue is recommended before
+milestone 2 opens registration. Failure of any launch gate blocks that
+deliverable; it does not authorize a fallback implementation.
 
 ---
 
@@ -540,8 +571,10 @@ A developer console at `https://www.boardsesh.com/developers/apps`
 `packages/backend` (`createOAuthClient`, `updateOAuthClient`,
 `rotateOAuthClientSecret`, `deleteOAuthClient`, `myOAuthClients`).
 
-Form fields: name, homepage URL, privacy policy URL, client type, redirect
-URIs. The secret (confidential clients) is shown once. No icon upload in the
+Form fields: name, homepage URL, privacy policy URL, client authentication
+type, web/native application topology and redirect URIs. Registration binds
+the client to the published `https://api.boardsesh.com/v1` resource; developers
+cannot expand its resource permissions. The secret (confidential clients) is shown once. No icon upload in the
 first version: the consent page shows a lettered avatar, so there is no image
 moderation to run.
 
@@ -588,6 +621,7 @@ Milestone 1 routes:
 | Route | Scope | Returns |
 | --- | --- | --- |
 | `GET /v1/me` | any | `{ id }`, plus `displayName`, `avatarUrl` with `profile:read` |
+| `DELETE /v1/connection` | any | Disconnect this token's app/climber connection; `204`, or `401` if its credentials are already invalid |
 | `GET /v1/logbook/changes?cursor=&limit=` | `logbook:read` | The change feed below |
 | `GET /v1/logbook/ticks/{id}` | `logbook:read` | One tick, or `404` if it was deleted or never existed |
 
@@ -653,7 +687,7 @@ API errors are one shape:
 shape instead (`error`, `error_description`). A suspended or deleted app gets
 `invalid_client` at the token endpoint and `401 invalid_token` from the API; an
 app over its daily connection cap gets `error=temporarily_unavailable` back
-from `/oauth/authorize`. The full table is in
+from `/api/auth/oauth2/authorize`. The full table is in
 partner-api.md. Every response carries `Boardsesh-Request-Id`, which is what
 a developer quotes when something is wrong and what our logs index on.
 
@@ -683,20 +717,67 @@ GET /v1/logbook/changes?cursor=<opaque>&limit=100
     { "type": "tick", "tick": { "id": "0d6c…", "...": "..." } },
     { "type": "tick.deleted", "id": "9a1f…" }
   ],
-  "cursor": "c2.eyJ4IjoiOTg3…",
+  "cursor": "c3.eyJnIjoi…",
   "hasMore": true
 }
 ```
 
-- No `cursor` starts from the beginning: a full sync is the same loop as an
-  incremental one.
+- No `cursor` starts a complete snapshot bootstrap, followed by incremental
+  catch-up. It does not replay the retained change log as a substitute for
+  existing history. The same response shape and loop cover both phases.
 - `limit` 1–200, default 100.
-- Keep calling with the returned `cursor` while `hasMore` is true, store the
-  last `cursor`, and start from it next time. Store it even when `changes` is
-  empty: an empty page still moves the cursor forward.
-- Each entry carries the tick's state **at the time of the read**. A `tick` is
+- Keep calling with the returned `cursor` while `hasMore` is true. During
+  incremental sync, commit each page and its cursor together even when empty.
+  During bootstrap, stage a replacement and publish it with the final cursor
+  only after catch-up finishes; never persist a partial bootstrap as an
+  ordinary incremental checkpoint.
+- Snapshot entries carry the state captured when the snapshot was created;
+  incremental entries carry the tick's state **at the time of the read**. A `tick` is
   an upsert by `id`; `tick.deleted` means the tick no longer exists for this
   app (deleted, or hidden as a duplicate) and removes it.
+
+### Complete bootstrap and transition
+
+The server materializes a temporary snapshot of every visible tick for this
+climber, including ticks that predate the change-log migration or have not
+changed within retention. In one bounded `REPEATABLE READ` transaction it
+captures the current feed generation and horizon `H`, applies the same
+ownership/twin/privacy rules and serializer, and writes the immutable snapshot
+tick values plus their starting change position `(H, 0)`. It publishes the snapshot
+only after that transaction commits. A failure publishes no partial snapshot.
+This is a server-side copy, not an open database transaction held across HTTP
+requests. Measure and bound its cost before launch; return a retryable error
+on resource exhaustion rather than silently truncating a large logbook.
+
+Snapshot cursors identify that snapshot and its next page. Snapshots are bound
+to the authenticated app/climber connection, checked on every page, expire
+after one hour, and are reclaimed by a job. Responses use `Cache-Control:
+no-store`. Rate-limit new snapshot creation separately from incremental reads;
+one sync worker per connection avoids accidental duplicate full downloads.
+Authorization and privacy always use current policy at page delivery: check the
+connection again, and reapply the serializer's current public-metadata redaction
+in that page's read transaction. A wall made private after snapshot creation
+must not leak its formerly public names from stored snapshot payloads. Preserve
+the snapshot's tick values/identity and recompute or redact its public climb
+metadata; fail closed if current authorization cannot be checked.
+
+The final snapshot page returns the ordinary change cursor `(H, 0)` and
+`hasMore: true`, even if it contained no ticks. The client must then drain
+changes until `hasMore: false` before publishing the replacement copy. All
+transactions below `H` had completed in the snapshot; every write that could
+commit later has a transaction ID at or above `H` and will be replayed. Some
+already visible writes at or above `H` are replayed too; upserts/removals make
+that harmless. Twin visibility and alias changes follow the same trigger rules.
+
+Validate the saved change position against the pruning watermark in the same
+snapshot as every incremental page. If history necessary for catch-up was
+pruned during the download, or the temporary snapshot expired, return `410`
+and restart bootstrap; never promote an incomplete copy. A client stages the
+whole replacement and atomically swaps it into its local store together with
+the final cursor. A crash leaves its old copy intact and a durable full-sync
+requirement, so retry starts a fresh snapshot. The public example specifies
+these storage operations and does not keep reconciliation markers only in
+memory.
 
 ### The change log
 
@@ -706,7 +787,7 @@ One table, `logbook_changes`, written only by triggers:
 | --- | --- | --- |
 | `seq` | `bigserial` primary key | Order within a transaction |
 | `txid` | `xid8`, default `pg_current_xact_id()` | The writing transaction. 64-bit, never wraps |
-| `user_id` | `text`, no FK | Whose logbook. No FK, like `sync_deletions`: deleting an account cascades into `boardsesh_ticks`, whose delete trigger writes rows for that same user, and those must not depend on cascade ordering. The rows age out in 90 days; nobody can read them, because the grants died with the user |
+| `user_id` | `text`, no FK | Whose logbook. No FK, like `sync_deletions`: deleting an account cascades into `boardsesh_ticks`, whose delete trigger writes rows for that same user, and those must not depend on cascade ordering. The rows age out in 90 days; nobody can read them, because the connections died with the user |
 | `tick_uuid` | `text` | Which tick. No FK: the tick may be gone |
 | `created_at` | `timestamp`, default `now()` | For pruning only |
 
@@ -784,9 +865,11 @@ serializer the rest of the API uses; emit `tick` for a visible row and
 
 Next cursor: the last `(txid, seq)` read when the page was full
 (`hasMore: true`); `(H, 0)` when it was not, meaning "everything below the
-horizon for this climber has been read". The cursor is `c2.` plus base64url
-JSON of that pair and its issue time; `c1.` cursors from the draft never
-shipped.
+horizon for this climber has been read". The `c3.` cursor is an authenticated
+opaque encoding of its kind (snapshot or changes), persistent feed generation,
+connection ID/generation binding and position. Its issue time is diagnostic, not its expiry
+rule. Neither `c1.` nor `c2.` from earlier drafts shipped. Validate generation,
+binding, watermark and rows in the same read snapshot.
 
 ### Why it cannot skip a change
 
@@ -821,17 +904,20 @@ Written into the public docs in these words:
 
 - **Complete.** Every committed change to a tick's public fields, every
   deletion, and every change that hides or reveals a tick appears in the feed.
-  An app that reads until `hasMore` is false holds the current state of every
+  After a complete bootstrap, an app that reads until `hasMore` is false holds the current state of every
   change that had settled (see below) when the last page was read, including
   deletions.
 - **Account deletion.** A deleted climber's connections die with the account,
   so the app's next call answers `401 invalid_token` and the refresh
   `invalid_grant`. That is the signal; no `tick.deleted` entries are sent.
-- **At least once.** A tick can arrive more than once, always as its current
-  state. Apply entries as upserts and removals; never as increments.
-- **Ordered by transaction, not by clock.** Entries come in the order the
-  writing transactions started. Since every entry carries current state, the
-  end result does not depend on the order.
+- **At least once.** A tick can arrive more than once. Snapshot tick values
+  describe the captured state with current privacy redaction; incremental
+  entries describe current state at read time. Apply upserts/removals, never
+  increments.
+- **Incremental ordering is by transaction, not by clock.** Entries follow
+  transaction-ID order, which need not match start or commit order. Each
+  incremental entry carries current state, so the final state does not depend
+  on commit ordering.
 - **Visible once settled.** A change becomes readable when its transaction
   has committed and every write transaction that started before it has
   finished. Normally that is well under a second. A long write elsewhere in
@@ -842,15 +928,19 @@ Written into the public docs in these words:
   shown. If you store them, refresh them when you show them.
 - **Expiry.** A cursor stays valid until the change log has been pruned past
   it. Entries older than 90 days are pruned, and an empty page moves the
-  cursor forward, so an app that syncs at least once every 90 days never sees
-  `410`.
+  cursor forward. Regular incremental sync normally avoids expiry; clients
+  must still handle `410` after maintenance, snapshot expiry or feed reset.
 
 ### Retention, cursor validity and moving the database
 
-- A daily pg-boss job finds `(T, S)`, the largest `(txid, seq)` among rows
-  older than 90 days, deletes every row with `(txid, seq) <= (T, S)` in
-  batches, and in the same transaction as the last batch sets a one-row
-  watermark, `logbook_change_watermark.pruned_through`, to `(T, S)`. Deleting
+- A daily pg-boss job chooses a settled retention boundary `(T, S)` below
+  the current horizon such that **every row in the contiguous prefix through
+  that boundary is older than 90 days**. A younger row stops the prefix even
+  if later positions contain older rows; do not select the greatest expired
+  row independently of preceding rows. It deletes that prefix in ordered batches. **Each committed batch advances
+  `logbook_change_watermark.pruned_through` atomically through precisely the
+  prefix it removed.** Serialize pruning jobs on the watermark row. There is
+  never a committed deletion hidden behind the old watermark. Deleting
   by position rather than by `created_at` keeps the watermark exact: `now()`
   is a transaction's start time while its `txid` comes at its first write, so
   the two orders disagree slightly, and pruning by time would delete rows past
@@ -859,19 +949,33 @@ Written into the public docs in these words:
   valid however old it is, because nothing after it was deleted. Validity is
   measured against what was pruned, not against when the cursor was
   issued.
-- The test cursor `c2.expired` always answers `410`, so an app can test its
+- The test cursor `c3.expired` always answers `410`, so an app can test its
   recovery path.
-- A cursor whose `txid` is above the current snapshot's `xmax` cannot come
-  from this database cluster and answers `410` too.
-- `xid8` values belong to one cluster. A physical replica promoted in a
-  failover keeps them ([postgres-dr-architecture.md](./postgres-dr-architecture.md)).
-  A logical move with `pg_dump`/`pg_restore` (the portability rule, and
+- Store a random persistent feed-generation ID alongside the watermark and
+  put it in every cursor and temporary snapshot. A mismatched generation
+  always answers `410`, even if its transaction numbers happen to lie inside
+  the current cluster's range. Transaction bounds detect malformed positions;
+  they do not identify a database cluster.
+- `xid8` values belong to one cluster. Only a proven lossless physical
+  failover may preserve the feed generation
+  ([postgres-dr-architecture.md](./postgres-dr-architecture.md)). A point-in-time
+  restore, snapshot rewind, or lagging-replica promotion may lose changes
+  already served to clients even while preserving/reusing transaction numbers
+  and the backed-up generation. Rotate the generation and reset the feed on
+  **any recovery that may discard acknowledged feed history**; uncertainty is
+  sufficient to require reset. A logical move with `pg_dump`/`pg_restore`
+  (the portability rule, and
   [neon-migration.md](./neon-migration.md)) starts a new cluster with smaller
-  `txid`s, so the restored change rows would sit above the new horizon and the
-  feed would stall. The move runbook gets two steps: `TRUNCATE
-  logbook_changes`, then set the watermark to the new cluster's current
-  position, so every stored cursor answers `410` and apps do one full resync.
-  The `xmax` check above catches any cursor that slips through.
+  `txid`s, so the restored change rows cannot be interpreted as new-cluster
+  changes. With the API and writers fenced during the move, rotate the
+  persistent generation, clear the change log and temporary snapshots, and
+  initialize the watermark before reopening traffic. Every old cursor now
+  receives `410`, even months later after the new cluster's IDs catch up.
+  Bootstrap reads all current ticks independently of the emptied log. An
+  incompatible feed rebuild, PITR, snapshot rewind or potentially lossy
+  physical promotion follows the same fenced generation-reset procedure.
+  Test a client holding a cursor from before the rewind and assert `410`,
+  including once transaction IDs overlap again.
 - The horizon is cluster-wide. A session left idle inside a write transaction
   holds every feed back. Set `idle_in_transaction_session_timeout` on the
   application roles, and alert when the oldest running write transaction is
@@ -957,13 +1061,14 @@ What LEGAL.md implies:
 
 | Limit | Default | Key |
 | --- | --- | --- |
-| `/oauth/authorize` | 60 requests/min per client IP | `oauth-authorize:<ip>`. Every hit writes an `Interaction` row |
-| Token endpoint, refresh | 10 requests/min per connection | `oauth-refresh:<clientId>:<sha256(refresh_token)>` (spike criterion 7) |
+| `/api/auth/oauth2/authorize` | 60 requests/min per client IP | `oauth-authorize:<ip>`; protects the authorization flow before any identity is established |
+| Token endpoint, refresh | 10 requests/min per connection | `oauth-refresh:<clientId>:<connectionId>` once validated, plus an IP bound before validation; prove supported middleware/body handling in D2 |
 | Token endpoint, code exchange and revoke | 60 requests/min per (app, client IP) | `oauth-client:<clientId>:<ip>`, IP from `getPublicClientIp` |
 | Token endpoint, whole app | 6,000 requests/min | `oauth-client:<clientId>` |
 | API, per connection | 120 requests/min per (app, climber) | `api:<clientId>:<userId>` |
 | API, per app | 6,000 requests/min across all its climbers | `api:<clientId>` |
 | Page size | 200 | |
+| Snapshot creation | 2 per minute per connection, one active build | A retry restarts safely; incomplete snapshots never become a partial full download |
 | New connections | 200/day per app | Postgres count, not Redis, so it cannot fail open |
 | Request body | 64 KB | |
 
@@ -971,7 +1076,7 @@ What LEGAL.md implies:
 `RateLimit-Remaining`, `RateLimit-Reset` on every response so a well-written
 client never sees a 429. Limits use `checkRateLimitRedis`, which falls back to
 per-instance memory when Redis is down: still a limit, just a looser one.
-Higher per-app limits are a column (`oauth_clients.rate_limit_tier`), raised
+Higher per-app limits are stored on the application-owned app policy, raised
 through the console request form; ordinary use never needs it.
 
 The token limits are keyed per connection and per IP, not only per app,
@@ -988,16 +1093,18 @@ higher tier, which by then is a conversation worth having.
 
 ### Database load
 
-Every API read is scoped by `user_id` on an index that leads with it; there is
+Every logbook read is scoped by `user_id` on an index that leads with it; there is
 no query in the API whose cost grows with the size of the catalog or the
-number of climbers. The heavy case is a first sync of a big logbook: 10,000
-ticks is 50 pages. Per-page climb lookups are batched. Measure p95 per route
+number of climbers. Bootstrap also makes a temporary complete snapshot: 10,000
+ticks is 50 pages plus one server-side snapshot build. Bound snapshot storage,
+concurrency and build time, and measure its transaction cost. Per-page climb
+lookups are batched. Measure p95 per route
 before milestone 2 opens registration, against the read replica numbers in
 [postgres-query-costs.md](./postgres-query-costs.md).
 
 ### Observability
 
-- Every `/v1` and `/oauth` log line carries `clientId` and `requestId`. The
+- Every `/v1` and `/api/auth/oauth2` log line carries `clientId` and `requestId`. The
   self-asserted `x-boardsesh-client` header is ignored here; the token says
   who is calling.
 - A per-minute per-app summary, the same shape as `Client Usage Summary` in
@@ -1014,9 +1121,9 @@ before milestone 2 opens registration, against the read replica numbers in
 ### The edge
 
 - `AUTOMATION_DEFAULT_DENY_EXEMPT_PATH_PREFIXES` in `crawler-policy.ts`
-  exempts `/v1/partner/`. Change it to `/v1/` and add `/oauth/` (the token
-  endpoint is POST, which the default-deny does not touch, but `/oauth/authorize`
-  is a GET a CLI may open). Mirror it in the Cloudflare rule.
+  exempts `/v1/partner/`. Change it to `/v1/` and permit the backend's
+  `/api/auth/oauth2/` and issuer metadata routes (authorize is a GET a CLI may
+  open). Mirror it in the Cloudflare rule with the correct hostname.
 - Milestone 0 exempts `/developers/`, `/auth/login` and `/oauth/` on `www`,
   and milestone 2 adds `/llms.txt`. Coding agents fetch docs with `curl`,
   `python-requests` and the like, and drive browsers whose UA says
@@ -1041,8 +1148,11 @@ change for it:
 - Thin bodies. `logbook.changed` says "this climber's logbook changed, run
   your sync". It is produced by a job that walks `logbook_changes` below the
   horizon, so it never fires for a change the feed cannot serve yet; `workout.completed` names a workout id; `connection.revoked`
-  says a climber disconnected (the one event sent after the grant is gone; it
-  carries only the per-app user id). No tick data in any body. The app then reads
+  says a climber disconnected (the one event sent after the connection is gone; it
+  carries only the per-app user id). Because that id survives reconnect, a
+  delayed revocation is advisory: the recipient verifies its current credentials
+  before removing current state, as specified in the public webhook guide.
+  No tick data in any body. The app then reads
   with its token, which is how revocation is enforced and why a leaked
   webhook URL or secret exposes nothing.
   ```json
@@ -1055,9 +1165,10 @@ change for it:
   about 17 hours of backoff). These carry over from the Sequence plan
   unchanged.
 - One pg-boss job per delivery, data = a `webhook_deliveries` ledger row id
-  (`id`, `client_id`, `event`, `body jsonb`, `status`, `attempts`,
+  (`id`, `client_id`, `connection_id`, `connection_generation`, `event`,
+  `body jsonb`, `status`, `attempts`,
   `last_status_code`, `last_error`, `delivered_at`). The handler re-checks the
-  grant before sending, so a climber who disconnected between the event and a
+  connection generation before sending, so a climber who disconnected between the event and a
   retry gets nothing sent, except `connection.revoked`, which skips that check
   by design. `2xx` completes; `410` completes, switches the
   app's webhook off and cancels its pending jobs; `408`, `429`, `5xx`, timeout
@@ -1075,8 +1186,11 @@ change for it:
   HTTPS. Delivery runs on the Railway backend, never on the homelab workers
   ([homelab-deploys.md](./homelab-deploys.md)), where a bypass would reach
   the home network.
-- Ordering is not guaranteed and does not need to be: every event means "go
-  read", and the read is ordered.
+- Ordering is not guaranteed. Every event means "go read", including
+  `connection.revoked`: a delayed old event cannot authorize deleting a new
+  connection's tokens/data. The recipient probes current auth, refreshes once,
+  and coordinates any deletion with reconnect/token replacement. Test delivery
+  of an old revocation after reconnect and after a concurrent token replacement.
 - An app whose deliveries fail for three days is switched off and emailed;
   the console has a re-enable button.
 
@@ -1105,7 +1219,14 @@ not enough.
 
 ## Roadmap
 
-Each milestone is shippable and useful alone. PRs inside a milestone are
+The first-party identity migration and the partner platform have independent
+rollout flags and acceptance gates. The migration may ship before the API;
+the API needs the authority/compatibility slice it uses to be proven, but does
+not require retiring support for old native apps or Garmin watches. Neither
+gate is waived by the other succeeding. The migration roadmap lives in
+[better-auth-migration.md](./better-auth-migration.md).
+
+Each partner milestone is useful on its own. PRs inside a milestone are
 small enough to review in one sitting, and every PR touching the
 authorization server gets a Fable review.
 
@@ -1113,11 +1234,11 @@ authorization server gets a Fable review.
 
 | PR | Acceptance |
 | --- | --- |
-| `oidc-provider` spike (D2), throwaway branch, two days | The seven go/no-go criteria in D2 are checked off in a short write-up appended to this doc. No-go → evaluate Ory Hydra against the same list before milestone 1 starts |
+| Better Auth/provider compatibility proof (D2) | Record results for the pinned version and all five gates. A failed gate blocks its deliverable and requires an explicit design revision; no automatic provider fallback |
 | AASA: add `/oauth` and `/developers` to `WEB_ONLY_PATH_PREFIXES` | `/.well-known/apple-app-site-association` lists `NOT /oauth/*` and `NOT /developers/*`. Ships at least a week before milestone 1's consent page so installed phones refresh the file |
 | Constrain `callbackUrl` on `/auth/login` with `safe-callback-url.ts` | A test proves `?callbackUrl=https://evil.example` lands on `/` |
 | `api.boardsesh.com` CNAME in `infra/cloudflare`, custom domain on the backend service | `curl https://api.boardsesh.com/health` answers |
-| Default-deny exemptions: `/v1/partner/` → `/v1/`, plus `/oauth/`, `/developers/`, `/auth/login` | Unit test in `crawler-policy`; a `HeadlessChrome` GET of `/oauth/consent/…` is not refused |
+| Default-deny exemptions: `/v1/`, backend `/api/auth/oauth2/` and issuer metadata; `www` `/oauth/`, `/developers/`, `/auth/login` | Unit test in `crawler-policy`; a `HeadlessChrome` GET of consent and discovery is not refused |
 | `idle_in_transaction_session_timeout` on the application roles | Set and documented in `docs/db-connectivity.md` |
 
 ### Milestone 1: connect and sync (the MVP)
@@ -1128,12 +1249,12 @@ it, the app syncs the logbook, the climber disconnects it.
 | # | PR | Depends on |
 | --- | --- | --- |
 | 1.1 | `@boardsesh/public-api`: zod schemas, OpenAPI registry, committed `openapi.json`, CI diff check | — |
-| 1.2 | `logbook_changes`, the watermark, the triggers, the prune job, and the concurrency and randomized tests from [Incremental sync](#incremental-sync) | — |
-| 1.3 | OAuth storage tables + adapter; `oidc-provider` mounted with the D2 configuration; versioned key for `@boardsesh/crypto`; `authenticateApiBearer`; `/v1` router; rate limits | M0 spike |
-| 1.4 | Consent page, interaction confirm handler, `authTime` and `credentials_changed_at`, revoke-all on password reset and set | 1.3, M0 |
+| 1.2 | Complete snapshot bootstrap, `logbook_changes`, feed generation, watermark, triggers, atomic pruning and concurrency/recovery tests | — |
+| 1.3 | Generated provider Drizzle schema, app/connection policy, opaque introspection, `/v1` router and rate limits | D2 OAuth gate; required identity/compatibility slice proven |
+| 1.4 | Supported Better Auth consent/continuation UI, connection-generation enforcement, security-revocation integration | 1.3; migration security gate |
 | 1.5 | `GET /v1/me`, `GET /v1/logbook/changes`, `GET /v1/logbook/ticks/{id}` | 1.1, 1.2, 1.3 |
 | 1.6 | Developer console (create, list, edit redirect URIs, rotate secret, delete) behind the web server flag `developer-console` | 1.3 |
-| 1.7 | Connected apps: mobile section in `app/settings/integrations.tsx`, web account section, `connectedApps` / `revokeConnectedApp` | 1.3 |
+| 1.7 | Connected apps on mobile/web and `DELETE /v1/connection`; atomic disconnect, consent removal and reconnect tests | 1.3, 1.4 |
 | 1.8 | The authorization-server test suite ([Authorization server](#test-suite-required-before-launch)) | 1.3, 1.4 |
 | 1.9 | LEGAL.md sentence (wording in "Data boundaries"), before the beta apps go live | Marco's approval |
 
@@ -1142,15 +1263,19 @@ Acceptance for the milestone:
 1. A backend end-to-end test (Vitest, real Postgres) registers an app, runs
    authorize → token → `changes` across three pages, creates, edits and
    deletes ticks and sees each in the feed, refreshes, replays an old refresh
-   token and sees the grant die, and gets `401` after Disconnect.
+   token and sees its family invalidated, and gets `401` after Disconnect.
 2. The interleaved-transaction test and the randomized concurrent-writer test
    pass: the reader's copy equals the database's public view after every run,
-   including twin pairs and alias merges.
+   including twin pairs and alias merges. Bootstrap includes pre-launch and
+   unchanged 90-day-old ticks; writes during pagination are caught up. Readers
+   interleaved with prune commits either see all rows or receive `410`.
 3. The authorization-server suite (1.8) passes.
 4. Contract tests validate every response against `openapi.json`.
 5. `410 cursor_expired` is returned for a cursor below the pruning watermark,
-   for one from another cluster and for `c2.expired`; a cursor issued 200 days
-   ago that is still above the watermark works.
+   for another feed generation, expired snapshots and `c3.expired`; a change
+   cursor issued 200 days ago that is still above the watermark works. Test
+   a logical restore after new transaction IDs pass the old IDs, and crashes
+   during bootstrap and before the client's atomic replacement/cursor commit.
 6. Party-session ticks of other climbers never appear (test with two
    climbers in one session).
 7. Manual: connect with an Apple-only account, a Google-only account and an
@@ -1181,7 +1306,10 @@ listed there.
 Only once an app asks for push. `logbook.changed`, `workout.completed`,
 `connection.revoked`, with the SSRF rules above. Acceptance: a delivery to a
 `127.0.0.1` or `169.254.169.254` URL is refused at registration and at send
-time; a revoked connection gets `connection.revoked` and nothing after it.
+time; a revoked generation gets only `connection.revoked` after revocation.
+Deliver that event after reconnect and race it with token replacement: the
+client preserves the new credential set and data. Transport failures never
+cause deletion.
 
 ### Later, each on demand
 
@@ -1218,14 +1346,14 @@ A harness plays the climber, using the account's ordinary app or web session.
 | Step | Agent does | Harness does | Pass when |
 | --- | --- | --- | --- |
 | 1. Register | Creates an app in the console with a loopback redirect | | `client_id` exists, owned by the account |
-| 2. Authorize | Implements PKCE + `state`, opens the browser, completes consent | | Grant exists with `logbook:read` |
+| 2. Authorize | Implements PKCE + `state`, requests `logbook:read offline_access`, completes consent | | Connection exists with the requested scopes |
 | 3. Connect | Exchanges the code, stores both tokens | | `GET /v1/me` succeeds |
 | 4. Retrieve | Full sync | | Local file has exactly the account's ticks, all pages, no duplicates |
 | 5. Incremental | Syncs again | Logs 2 ticks, edits 1 | Exactly those 3 changes applied; stored cursor advanced |
 | 6a. Deletion | Syncs again | Deletes 1 tick | It is gone locally |
-| 6b. Token expiry | Next call | Ages the agent's current access token out (a test-only script deletes its row, the state an expired token is in; revoking it would end the whole connection) | Agent gets `401`, refreshes, stores the rotated refresh token, call succeeds |
-| 6c. Expired cursor | Next sync | Replaces the stored cursor with the documented test cursor `c2.expired`, which always answers `410` | Agent does a full resync, keeps every tick that still exists, drops none it should keep |
-| 7. Disconnect | Implements "disconnect" via `/oauth/revoke`; then the harness reconnects and disconnects from Connected apps | Taps Disconnect | Agent's next call gets `401`, refresh gets `invalid_grant`, agent reports "reconnect needed" instead of looping |
+| 6b. Token expiry | Next call | Expires/removes the current opaque access token while keeping its refresh token | Agent sees `401`, refreshes, stores the rotated refresh token, call succeeds; repeat in a browser client |
+| 6c. Expired cursor | Next sync | Replaces the stored cursor with `c3.expired`, then interrupts one bootstrap after a page | Agent restarts safely, preserves every live tick including old unchanged history, and removes stale ticks only at atomic completion |
+| 7. Disconnect | Calls `DELETE /v1/connection`; then the harness reconnects and disconnects from Connected apps | Taps Disconnect | Old access/refresh credentials stay invalid after reconnect; agent reports "reconnect needed" instead of looping |
 
 Pass overall: all steps pass, the agent asked nobody anything, and it never
 read Boardsesh source. Run it with at least two different agent products.
@@ -1241,8 +1369,9 @@ bug: fix it and rerun.
 - **"Only me" ticks in `logbook:read`.** This design includes them and says so
   on the consent screen. The alternative is Strava's split (`read` vs
   `read_all`), which first needs privacy changes to reach the feed.
-- **The spike's outcome** (D2). If `oidc-provider` fails a criterion, Hydra
-  is next; the decision and the write-up land in this doc.
+- **The compatibility proof** (D2). Better Auth is selected, but implementation
+  is gated on the pinned-version results. Failed criteria require a reviewed
+  design revision, not an automatic switch to another provider.
 - **External security review** before milestone 2: who, and when.
 - **Moving the phone's sync onto the change log**, which would close its
   long-transaction hole too. Not needed for the public API.
@@ -1266,4 +1395,6 @@ bug: fix it and rerun.
 - [offline-sync-plan.md](./offline-sync-plan.md) and [sync-table-manifest.md](./sync-table-manifest.md), the cursor and tombstone machinery the feed reuses
 - [ascents-and-attempts.md](./ascents-and-attempts.md), what a tick means
 - [mobile-auth-flow.md](./mobile-auth-flow.md), first-party tokens
+- [better-auth-migration.md](./better-auth-migration.md), first-party identity,
+  session and native/watch compatibility migration
 - [background-workers.md](./background-workers.md), pg-boss roles

@@ -9,7 +9,11 @@ Workouts are milestone 3 of the integration platform. The OAuth server, app
 registration, scopes, bearer auth, rate limits, the logbook feed and webhooks
 are shared by every app and every scope, and their design lives in
 [integration-platform.md](./integration-platform.md). Read that first; this
-file only covers what is specific to workouts.
+file only covers what is specific to workouts. Identity and session migration
+are a separate deliverable in [better-auth-migration.md](./better-auth-migration.md).
+Workouts depend on the validated Better Auth OAuth provider and connection
+lifecycle, not on retiring compatibility endpoints for old native apps or
+Garmin watches. Both remain backed by the same auth authority.
 
 The first app to ask for workouts was Sequence (sequence-app.com): their plan
 says "4x4 at V4, three minutes rest", the climber taps Open in Boardsesh,
@@ -77,10 +81,10 @@ Settings → Connected apps.
 The second shape won, and [integration-platform.md](./integration-platform.md)
 generalizes it into the platform every app uses.
 
-If scope ever has to be cut hard, the smallest thing that still works is an
-app keypair signing a launch link that carries the workout, plus a signed
-webhook, with no user tokens at all. That drops the pull path and per-user
-revocation, so it is recorded here as the floor, not the plan.
+A signed launch link without user tokens was considered and rejected: it
+would lose the pull path and per-user revocation. If the Better Auth proof
+fails, revise the design explicitly before implementation; do not activate
+that alternative as a fallback.
 
 ---
 
@@ -89,16 +93,26 @@ revocation, so it is recorded here as the floor, not the plan.
 All in `packages/db/src/schema/`, user columns are `text` referencing
 `users.id` with cascade, matching every other user-scoped table. Migrations
 go through `vp run build:db` then `vp exec drizzle-kit generate` per
-[docs/db-migrations.md](./db-migrations.md). The OAuth tables (`oauth_clients`,
-`oauth_grants` and the rest) are in the platform doc and exist from
-milestone 1.
+[docs/db-migrations.md](./db-migrations.md). Better Auth's generated schema
+and the application-owned app policy and `oauth_connections` records are
+specified in the platform doc and exist from milestone 1. Workouts reference
+that explicit connection, not a provider-internal grant or browser session.
 
 | Table | Holds | Why a table |
 | --- | --- | --- |
-| `app_workouts` | `id`, `client_id`, `grant_id`, `user_id`, `external_ref`, `title`, `spec jsonb`, `plan_snapshot jsonb`, `status`, `session_id`, `opened_at`, `started_at`, `completed_at`, `expires_at`, `opened_by_mismatch`, `idempotency_key`, `idempotency_body_hash`, `idempotency_response jsonb` | Unique on `(client_id, user_id, external_ref)` gives the 409. `plan_snapshot` is what the app actually queued at Start, so results can attribute ticks to blocks |
+| `app_workouts` | `id`, `client_id`, `connection_id`, `connection_generation`, `user_id`, `external_ref`, `title`, `spec jsonb`, `plan_snapshot jsonb`, `status`, `session_id`, `opened_at`, `started_at`, `completed_at`, `expires_at`, `opened_by_mismatch`, `idempotency_key`, `idempotency_body_hash`, `idempotency_response jsonb` | Unique on `(client_id, user_id, external_ref)` gives the 409. `plan_snapshot` is what the app actually queued at Start, so results can attribute ticks to blocks |
 
 Plus one column: `board_sessions.app_workout_id`, nullable, FK to
 `app_workouts`, set by `createSession` when the app passes it.
+
+`connection_id` and `connection_generation` bind a workout to the authorization
+that created it. Creating, opening, attaching and starting a workout recheck
+that this generation is active in the same serialized transaction as the
+mutation; disconnect cannot race with creation or Start to leave an active
+workout behind. Revoking an individual access/refresh token does not revoke
+workouts. UI disconnect or `DELETE /v1/connection` invalidates the connection
+and moves unfinished workouts to `revoked` atomically. Reconnecting creates a
+new generation and never revives those workouts or their queued events.
 
 `session_id` stays internal. It links the workout to the session row so the
 results builder can find the ticks; it is never serialized to an app.
@@ -135,7 +149,7 @@ succeed:
 | `started` | `auto_closed` | The inactivity job                                           |
 | `created`, `opened` | `cancelled` | App `DELETE`; from `started` it is a 409               |
 | `created`, `opened` | `expired` | A daily scheduled job, `expires_at` passed. `opened` expires too, or a workout looked at and never started would count against the cap forever |
-| `created`, `opened`, `started` | `revoked` | Disconnect, password reset (the platform's revoke path). Finished workouts keep their status |
+| `created`, `opened`, `started` | `revoked` | Whole-connection disconnect or security revocation. Token revocation alone leaves workouts unchanged. Finished workouts keep their status |
 
 `Idempotency-Key` is stored on the row with a hash of the body and the
 response; a replay within 24 hours returns the stored response, a different
@@ -169,7 +183,7 @@ stores the workout id in AsyncStorage and sends them to sign in, the way
 `boardsesh_pending_join_session_id` and replays it after `checkAuth`. (The
 join screen's own `router.replace('/auth/login')` drops the link on the floor;
 do not copy that one.) It fetches `appWorkout(id)` over GraphQL with the
-viewer's normal JWT; the resolver checks `user_id` and answers 403 for anyone
+viewer's first-party session credential; the resolver checks `user_id` and answers 403 for anyone
 else, and records `opened_by_mismatch` on the row so the app that created it
 can see it. On success it puts the workout into a pending-workout store and
 navigates to `/(tabs)/record`. On 403 it shows "This workout was sent to a
@@ -193,7 +207,7 @@ is the durable copy.
 ### What the pre-session view does with it
 
 `PreSessionView` renders an `AppWorkoutCard` above `BoardSummaryCard` when
-the store has something: the source app's name (from `oauth_clients.name`)
+the store has something: the source app's name (from its registered app metadata)
 with a lettered avatar, the title, the coach's notes, then one row per block
 with its label and, for freeform blocks, the instructions. The board is
 whatever `useActiveBoard()` returns, or the picker if there is none,
@@ -231,9 +245,11 @@ climb to its block, so the player and the session card can say
 That run stays on the phone and the server never sees a stage, so what was
 actually queued, per block, is still written back as `plan_snapshot` through a
 `recordAppWorkoutPlan` mutation at Start. The snapshot can be built straight
-from the run. Results attribute ticks with it: a tick is assigned to the block
-whose queued climbs it belongs to; a tick on a climb that was never queued
-gets `blockIndex: null`. The contract no longer asks us to guess.
+from the run. Results can infer a block only when the tick's climb matches
+exactly one block in that snapshot. A climb never queued, or queued in more
+than one block, gets `blockIndex: null`; warm-up and volume can contain the
+same climb. Exact attribution requires a queue-item/stage identity recorded
+on each tick, which this milestone does not invent.
 
 If a session is already running when the workout lands, the card offers
 "End current session" or "Add to this session". Adding attaches the workout id
@@ -306,7 +322,7 @@ Jobs this design needs, and where the older candidates stand:
 | Job | State | Shape |
 | --- | --- | --- |
 | `session-inactivity` | Still the 60 s `setInterval` in `room-manager.ts`; tracked in #5542 | Scheduled every minute, fixed `singletonKey`. Workouts need its handler to close `started` workouts as `auto_closed` |
-| `refresh-token-cleanup` | Still `startRefreshTokenCleanup` in `native-auth.ts`; #5544 | The OAuth token cleanup in milestone 1 is a pg-boss job from the start |
+| Auth credential cleanup | Existing `startRefreshTokenCleanup` in `native-auth.ts`; #5544 | Coordinate migration with the maintained native/Garmin compatibility API. Better Auth and partner credential cleanup must follow the supported schema and retention policy proven in milestone 1 |
 | `integration-export` | Strava still fire-and-forget; #5545 | Not a workouts dependency |
 | `app-workout-expiry` | New, milestone 3 | Scheduled daily, moves `created` and `opened` past `expires_at` to `expired` |
 | webhook delivery | New, milestone 4 | Platform-wide; see the platform doc |
@@ -373,11 +389,15 @@ Acceptance for milestone 3:
 1. A backend test creates a workout with a native and a freeform block,
    starts a session with `appWorkoutId`, logs ticks from the climber and from
    a second climber in the same session, ends it, and `GET` returns only the
-   climber's ticks with the right `blockIndex` values.
+   climber's ticks with the right `blockIndex` values. Repeat a climb across
+   two blocks and assert its ticks have `blockIndex: null`.
 2. Replaying the create with the same `Idempotency-Key` returns the same
    response; a different body returns 422; a reused `externalRef` returns 409.
 3. An abandoned session ends as `auto_closed` with results.
-4. Disconnecting moves open workouts to `revoked` and `GET` answers 401.
+4. Disconnecting moves unfinished workouts to `revoked` and the old bearer
+   receives 401; race creation and Start with disconnect, reconnect, and prove
+   no revoked workout/event revives. Token-only revocation leaves the workout
+   usable through another valid token from the same connection.
 5. On a phone: tap a launch link signed out, sign in, land on the card; tap
    it signed in as another account, see the mismatch screen.
 
@@ -394,8 +414,8 @@ Telemetry, in `@boardsesh/analytics` `SHARED_EVENTS`: `App Workout Opened`,
 The contract promises a position within a block, rest adherence and an
 effort rating "later". Concretely:
 
-- `blockIndex` comes from the plan snapshot, which is exact for native blocks
-  and `null` for climbs the climber chose. #5379 gave every queued climb a
+- `blockIndex` is an inference from the plan snapshot, with `null` for missing
+  or ambiguous block matches; it is not exact for every native block. #5379 gave every queued climb a
   stage, but on the phone only (`docs/workout-stages.md` says why there is no
   wire field), so the server still cannot read a stage off a tick. Exact
   attribution needs the stage recorded on the tick itself; until then the
@@ -423,8 +443,10 @@ None of these change a field that already exists.
 - App-to-app consent. Once universal links are reliable on both platforms the
   consent screen could live in the app instead of the browser, which is a
   nicer flow when Boardsesh is installed. It also means the app would handle
-  `/oauth/authorize`, the opposite of what milestone 0 does, so it is a later
-  decision, not a small one.
+  the browser consent continuation currently served at `/oauth/consent`,
+  changing milestone 0's AASA exclusions. The authorization endpoint remains
+  on the backend at `/api/auth/oauth2/authorize`; moving consent is a separate
+  reviewed design, not a requirement of the Better Auth migration.
 - Whether an app may create workouts for a climber who has never opened
   Boardsesh on a phone. Today the answer is yes (the row just sits at
   `created` until it expires), and that seems right.
@@ -434,6 +456,7 @@ None of these change a field that already exists.
 - [partner-api.md](./partner-api.md), the contract this file implements (section 4)
 - [integration-platform.md](./integration-platform.md), OAuth, scopes, the API, webhooks, roadmap
 - [integration-consumers.md](./integration-consumers.md), what Sequence needs from workouts
+- [better-auth-migration.md](./better-auth-migration.md), first-party sessions and device compatibility
 - [workout-stages.md](./workout-stages.md), the stage model API blocks map onto
 - [integrations.md](./integrations.md), the Strava export path
 - [inferred-sessions.md](./inferred-sessions.md), why `board_sessions` is the

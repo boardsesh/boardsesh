@@ -1,5 +1,9 @@
 # Mobile Auth Flow
 
+This guide describes the current authentication system. The accepted replacement
+and its compatibility requirements are in [Better Auth migration](./better-auth-migration.md);
+that migration is planned, not yet deployed.
+
 ## Overview
 
 The native mobile auth flow lets React Native (Expo) clients authenticate with the Boardsesh backend. Native iOS and Android cannot share the NextAuth session cookie used by the web app because there is no embedded WebView hosting the Next.js origin. Instead, the native app completes OAuth with the provider SDK (or its system-browser fallback), then receives Boardsesh access and refresh tokens.
