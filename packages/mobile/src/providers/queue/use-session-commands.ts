@@ -31,7 +31,7 @@ import { track } from '../../lib/analytics';
 import { reportError, reportHandledError } from '../../lib/error-reporting';
 import { extractGraphqlMessage, isGraphqlRateLimitedError } from '../../lib/graphql/extract-error-message';
 import type { ToastVariant } from '../../components/Toast';
-import type { StartSessionConfig } from './queue-contexts';
+import type { EndSessionOptions, StartSessionConfig } from './queue-contexts';
 
 type UseSessionCommandsParams = {
   showToast: (message: string, variant?: ToastVariant, duration?: number) => void;
@@ -72,7 +72,7 @@ type SessionCommands = {
     sessionId: string,
     opts: { boardPath: string; userBoard: UserBoard; isOperationCurrent?: () => boolean },
   ) => Promise<boolean>;
-  endSession: (options?: { notes?: string }) => Promise<SessionSummary | null>;
+  endSession: (options?: EndSessionOptions) => Promise<SessionSummary | null>;
   clearSession: (options?: { notifyServer?: boolean }) => Promise<void>;
 };
 
@@ -304,7 +304,7 @@ export function useSessionCommands({
   );
 
   const endSession = useCallback(
-    async (options?: { notes?: string }): Promise<SessionSummary | null> => {
+    async (options?: EndSessionOptions): Promise<SessionSummary | null> => {
       const currentSessionId = sessionIdRef.current;
       if (!currentSessionId) return null;
 
@@ -314,6 +314,15 @@ export function useSessionCommands({
 
       try {
         locallyEndingSessionIdRef.current = currentSessionId;
+        // After the ref, so a remote SessionEnded arriving during the wait is
+        // suppressed exactly as one arriving during the mutation is.
+        if (options?.beforeEnd) {
+          try {
+            await options.beforeEnd(currentSessionId);
+          } catch (error) {
+            reportHandledError(error, { tags: { source: 'endSession', kind: 'before-end' } });
+          }
+        }
         const response = await getHttpClient().request<EndSessionMutationResponse>(END_SESSION, {
           sessionId: currentSessionId,
           // Device IANA zone so the backend can export wall-clock local times
@@ -323,7 +332,7 @@ export function useSessionCommands({
         });
         // The summary screen reads this cache next; without the write it can
         // show the copy cached at the start of the session (#6903).
-        if (queryClient && response.endSession) seedEndedSessionCaches(queryClient, response.endSession);
+        if (queryClient && response.endSession) await seedEndedSessionCaches(queryClient, response.endSession);
         await clearSession();
         locallyEndingSessionIdRef.current = null;
         suppressedRemoteEndSessionIdRef.current = null;

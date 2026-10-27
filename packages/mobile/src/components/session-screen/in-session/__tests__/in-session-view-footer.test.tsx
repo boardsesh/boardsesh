@@ -218,17 +218,16 @@ vi.mock('../../../../lib/store-review', () => ({
   isSessionStoreReviewEligible: (summary: { totalSends: number }) => summary.totalSends >= 3,
 }));
 vi.mock('../../../../lib/graphql/use-active-board', () => ({ useActiveBoard: () => ({ data: null }) }));
-// #6903: the queued-tick wait before END_SESSION and the post-end outbox read.
+// #6903: the queued-tick wait (handed to endSession as `beforeEnd`) and the
+// late-tick summary refresh.
 const outbox = vi.hoisted(() => ({
   calls: [] as string[],
   waitForSessionTicksToSync: vi.fn(),
-  hasQueuedTicksForSession: vi.fn(),
+  refreshSessionWhenQueuedTicksLand: vi.fn(),
 }));
 vi.mock('../../../../offline/session-tick-drain', () => ({
   waitForSessionTicksToSync: outbox.waitForSessionTicksToSync,
-}));
-vi.mock('../../../../offline/pending-tick', () => ({
-  hasQueuedTicksForSession: outbox.hasQueuedTicksForSession,
+  refreshSessionWhenQueuedTicksLand: outbox.refreshSessionWhenQueuedTicksLand,
 }));
 vi.mock('../../../../lib/integrations', () => ({
   runSessionEndExports: integrations.runSessionEndExports,
@@ -277,8 +276,7 @@ describe('InSessionView footer', () => {
       outbox.calls.push('wait');
       return 'none';
     });
-    outbox.hasQueuedTicksForSession.mockReset();
-    outbox.hasQueuedTicksForSession.mockResolvedValue(false);
+    outbox.refreshSessionWhenQueuedTicksLand.mockReset();
     router.push.mockClear();
     sheet.isEnding = false;
     sheet.onConfirm = null;
@@ -413,8 +411,9 @@ describe('InSessionView footer', () => {
     });
   });
 
-  it('waits for the session’s queued ticks before ending it (#6903)', async () => {
-    queue.endSession.mockImplementationOnce(async () => {
+  it('hands the queued-tick wait to endSession as beforeEnd (#6903)', async () => {
+    queue.endSession.mockImplementationOnce(async (options?: { beforeEnd?: (id: string) => Promise<void> }) => {
+      await options?.beforeEnd?.('session-1');
       outbox.calls.push('endSession');
       return { sessionId: 'session-1', totalSends: 1, totalAttempts: 0 };
     });
@@ -425,32 +424,35 @@ describe('InSessionView footer', () => {
       sheet.onConfirm?.();
     });
 
-    await waitFor(() => expect(queue.endSession).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(router.push).toHaveBeenCalled());
     expect(outbox.waitForSessionTicksToSync).toHaveBeenCalledWith('session-1', expect.anything());
     expect(outbox.calls).toEqual(['wait', 'endSession']);
+    expect(outbox.refreshSessionWhenQueuedTicksLand).not.toHaveBeenCalled();
   });
 
-  it('holds back the store-review prompt while ticks are still queued (#6903)', async () => {
-    outbox.hasQueuedTicksForSession.mockResolvedValue(true);
-    queue.endSession.mockResolvedValueOnce({
-      sessionId: 'session-1',
-      totalSends: 3,
-      totalAttempts: 0,
-    });
+  it.each(['timedOut', 'offline'])(
+    'holds back the store-review prompt and watches for late ticks when the wait ended %s (#6903)',
+    async (waitResult) => {
+      outbox.waitForSessionTicksToSync.mockResolvedValue(waitResult);
+      queue.endSession.mockImplementationOnce(async (options?: { beforeEnd?: (id: string) => Promise<void> }) => {
+        await options?.beforeEnd?.('session-1');
+        return { sessionId: 'session-1', totalSends: 3, totalAttempts: 0 };
+      });
 
-    render(createElement(InSessionView));
+      render(createElement(InSessionView));
 
-    await act(async () => {
-      sheet.onConfirm?.();
-    });
+      await act(async () => {
+        sheet.onConfirm?.();
+      });
 
-    await waitFor(() => expect(router.push).toHaveBeenCalled());
-    expect(outbox.hasQueuedTicksForSession).toHaveBeenCalledWith('session-1');
-    expect(router.push).toHaveBeenCalledWith({
-      pathname: '/(tabs)/record/summary',
-      params: { sessionId: 'session-1' },
-    });
-  });
+      await waitFor(() => expect(router.push).toHaveBeenCalled());
+      expect(router.push).toHaveBeenCalledWith({
+        pathname: '/(tabs)/record/summary',
+        params: { sessionId: 'session-1' },
+      });
+      expect(outbox.refreshSessionWhenQueuedTicksLand).toHaveBeenCalledWith('session-1', expect.anything());
+    },
+  );
 
   it.each(['p1r15', 'p1r15,"p2r15,"'])('announces route frame counts on the history action: %s', (frames) => {
     detail.ticks = [

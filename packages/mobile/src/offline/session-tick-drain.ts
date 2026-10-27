@@ -2,7 +2,8 @@ import type { QueryClient } from '@tanstack/react-query';
 import type { GraphQLFetch } from '@boardsesh/offline-sync';
 import { getDatabaseHandle } from '../db';
 import { getOfflineSyncHttpClient } from '../lib/graphql/client';
-import { drainMutationQueue, isOnline } from './offline-sync-adapter';
+import { drainMutationQueue, isOnline, subscribeMutationDelivery } from './offline-sync-adapter';
+import { sessionSummaryQueryKey } from '../lib/graphql/query-keys';
 import { hasQueuedTicksForSession } from './pending-tick';
 
 /** Longest "End session" waits for the session's queued ticks before ending anyway. */
@@ -44,6 +45,9 @@ export async function waitForSessionTicksToSync(
   let capTimer: ReturnType<typeof setTimeout> | undefined;
   const poll = async (): Promise<SessionTickSyncResult> => {
     if (!(await hasQueuedTicksForSession(sessionId))) return 'none';
+    // A first read that only came back after the cap must not start a drain
+    // for a caller that has already moved on.
+    if (settled) return 'timedOut';
     const graphqlFetch: GraphQLFetch = (query, variables) => getOfflineSyncHttpClient().request(query, variables);
     // Fire and forget: the poll below is what decides when we are done.
     drainMutationQueue(db, queryClient, graphqlFetch).catch(() => undefined);
@@ -68,4 +72,66 @@ export async function waitForSessionTicksToSync(
     clearTimeout(timer);
     clearTimeout(capTimer);
   }
+}
+
+/** Longest a finished session keeps listening for its late ticks. */
+export const SESSION_TICK_WATCH_LIFETIME_MS = 10 * 60 * 1000;
+
+/**
+ * After a session ended with some of its ticks still queued (the wait timed
+ * out, or the phone was offline), refresh its summary and detail once the last
+ * of them reaches the server, so the summary screen picks them up (#6903).
+ *
+ * Listens to mutation delivery and re-reads the outbox only for tick
+ * deliveries. Runs only after the session ended, so it never refetches per
+ * tick during a session. Stops after the refresh, or after `lifetimeMs`
+ * whatever happens. Returns the stop function.
+ */
+export function refreshSessionWhenQueuedTicksLand(
+  sessionId: string,
+  queryClient: QueryClient,
+  { lifetimeMs = SESSION_TICK_WATCH_LIFETIME_MS } = {},
+): () => void {
+  let done = false;
+  let checking = false;
+  let recheck = false;
+
+  const check = async (): Promise<void> => {
+    if (done) return;
+    if (checking) {
+      recheck = true;
+      return;
+    }
+    checking = true;
+    try {
+      do {
+        recheck = false;
+        if (!(await hasQueuedTicksForSession(sessionId))) {
+          if (done) return;
+          stop();
+          void queryClient.invalidateQueries({ queryKey: sessionSummaryQueryKey(sessionId) });
+          void queryClient.invalidateQueries({ queryKey: ['sessionDetail', sessionId] });
+          return;
+        }
+      } while (recheck && !done);
+    } finally {
+      checking = false;
+    }
+  };
+
+  const unsubscribe = subscribeMutationDelivery((event) => {
+    if (event.tableName === 'boardsesh_ticks') void check();
+  });
+  const lifetimeTimer = setTimeout(() => stop(), lifetimeMs);
+
+  function stop(): void {
+    if (done) return;
+    done = true;
+    unsubscribe();
+    clearTimeout(lifetimeTimer);
+  }
+
+  // The drain the wait started may have landed them between the cap and now.
+  void check();
+  return stop;
 }

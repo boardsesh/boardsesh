@@ -21,6 +21,17 @@ export type QueueReorderSource = 'drag' | 'play-next';
 
 export type WidgetNavigationOptions = { sendMutation?: boolean };
 
+export type EndSessionOptions = {
+  notes?: string;
+  /**
+   * Awaited just before END_SESSION, with the session marked as ending locally.
+   * The in-session screen passes the queued-tick wait here (#6903); it lives
+   * outside the queue hooks so they never load the native offline engine.
+   * Errors are swallowed: the session ends whatever it does.
+   */
+  beforeEnd?: (sessionId: string) => Promise<void>;
+};
+
 export type StartSessionConfig = {
   audience?: 'public' | 'unlisted' | 'followers' | 'invite_only';
   name?: string;
@@ -180,8 +191,11 @@ type QueueContextValue = {
    * End the active session. An optional recap (`notes`) is trimmed and sent only
    * when non-empty; the returned SessionSummary echoes it back for the summary
    * screen. Resolves null when there's no active session or the mutation failed.
+   * `beforeEnd` runs after the session is marked as ending locally (so a remote
+   * SessionEnded during it is suppressed) and before END_SESSION; see
+   * EndSessionOptions.
    */
-  endSession: (options?: { notes?: string }) => Promise<SessionSummary | null>;
+  endSession: (options?: EndSessionOptions) => Promise<SessionSummary | null>;
   /**
    * Explicitly create a session with optional config (name, goal, etc.).
    * Returns the new sessionId, or null if there is no active board or the

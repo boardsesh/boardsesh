@@ -14,8 +14,13 @@ import { sessionSummaryQueryKey } from './graphql/query-keys';
  * Also refreshes the session detail and the grouped feed, which now carry an
  * ended session.
  */
-export function seedEndedSessionCaches(queryClient: QueryClient, summary: SessionSummary): void {
-  queryClient.setQueryData(sessionSummaryQueryKey(summary.sessionId), { sessionSummary: summary });
+export async function seedEndedSessionCaches(queryClient: QueryClient, summary: SessionSummary): Promise<void> {
+  const summaryKey = sessionSummaryQueryKey(summary.sessionId);
+  // A GET_SESSION_SUMMARY still in flight (Home pull-to-refresh, a focus
+  // refetch) was asked before the end and would land on top of this write; its
+  // queryFn ignores the abort signal, so cancel it here and its answer is dropped.
+  await queryClient.cancelQueries({ queryKey: summaryKey });
+  queryClient.setQueryData(summaryKey, { sessionSummary: summary });
   void queryClient.invalidateQueries({ queryKey: ['sessionDetail', summary.sessionId] });
   void queryClient.invalidateQueries({ queryKey: ['sessionGroupedFeed'] });
 }

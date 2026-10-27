@@ -71,7 +71,7 @@ function renderEndSession(queryClient: QueryClient) {
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
-  return renderHook(() => useSessionCommands(params as unknown as SessionCommandsParams), { wrapper });
+  return { ...renderHook(() => useSessionCommands(params as unknown as SessionCommandsParams), { wrapper }), params };
 }
 
 describe('useSessionCommands — endSession summary cache', () => {
@@ -109,5 +109,88 @@ describe('useSessionCommands — endSession summary cache', () => {
       await result.current.endSession();
     });
     expect(queryClient.getQueryData(sessionSummaryQueryKey('session-1'))).toBeUndefined();
+  });
+});
+
+describe('useSessionCommands — endSession beforeEnd (#6903 queued-tick wait)', () => {
+  beforeEach(() => {
+    mocks.request.mockReset();
+    mocks.request.mockResolvedValue({ endSession: freshSummary });
+  });
+
+  it('runs beforeEnd with the session already marked as ending, then sends END_SESSION', async () => {
+    const calls: string[] = [];
+    mocks.request.mockImplementation(async (operation: string) => {
+      calls.push(operation);
+      return { endSession: freshSummary };
+    });
+    const { result, params } = renderEndSession(new QueryClient());
+    let endingDuringWait: string | null = null;
+    await act(async () => {
+      await result.current.endSession({
+        beforeEnd: async (sessionId) => {
+          endingDuringWait = params.locallyEndingSessionIdRef.current;
+          calls.push(`wait:${sessionId}`);
+        },
+      });
+    });
+    expect(endingDuringWait).toBe('session-1');
+    expect(calls).toEqual(['wait:session-1', 'EndSession']);
+    expect(params.locallyEndingSessionIdRef.current).toBeNull();
+  });
+
+  // useSessionRealtime's SessionEnded branch: while locallyEndingSessionIdRef
+  // names the session it only records the end and returns, no teardown.
+  function remoteSessionEnded(params: ReturnType<typeof renderEndSession>['params']) {
+    if (params.locallyEndingSessionIdRef.current === 'session-1') {
+      (params.suppressedRemoteEndSessionIdRef as { current: string | null }).current = 'session-1';
+      return 'suppressed';
+    }
+    return 'teardown';
+  }
+
+  it('suppresses a remote end that arrives during the wait and still returns the summary', async () => {
+    const { result, params } = renderEndSession(new QueryClient());
+    let remoteOutcome: string | null = null;
+    let returned: SessionSummary | null = null;
+    await act(async () => {
+      returned = await result.current.endSession({
+        beforeEnd: async () => {
+          remoteOutcome = remoteSessionEnded(params);
+        },
+      });
+    });
+    expect(remoteOutcome).toBe('suppressed');
+    expect(returned).toBe(freshSummary);
+    expect(params.showToast).toHaveBeenCalledWith('mobile.toast.sessionEnded', 'success');
+    expect(params.suppressedRemoteEndSessionIdRef.current).toBeNull();
+  });
+
+  it('treats a remote end during the wait as ended when END_SESSION then fails', async () => {
+    mocks.request.mockRejectedValue(new Error('already ended'));
+    const { result, params } = renderEndSession(new QueryClient());
+    let returned: SessionSummary | null = freshSummary;
+    await act(async () => {
+      returned = await result.current.endSession({
+        beforeEnd: async () => {
+          remoteSessionEnded(params);
+        },
+      });
+    });
+    expect(returned).toBeNull();
+    expect(params.showToast).toHaveBeenCalledWith('mobile.toast.sessionEnded', 'success');
+    expect(params.showToast).not.toHaveBeenCalledWith('mobile.queue.endSessionFailedLeft', 'error');
+  });
+
+  it('still ends the session when beforeEnd throws', async () => {
+    const { result } = renderEndSession(new QueryClient());
+    let returned: SessionSummary | null = null;
+    await act(async () => {
+      returned = await result.current.endSession({
+        beforeEnd: () => Promise.reject(new Error('sqlite gone')),
+      });
+    });
+    expect(mocks.request).toHaveBeenCalledWith('EndSession', expect.objectContaining({ sessionId: 'session-1' }));
+    expect(returned).toBe(freshSummary);
   });
 });

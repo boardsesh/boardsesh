@@ -28,8 +28,11 @@ import { useDrawerHost } from '../../../providers/drawer-host-provider';
 import { useSessionDetail, useSessionPreview, useSessionSummary } from '../../../lib/graphql/hooks';
 import { runSessionEndExports } from '../../../lib/integrations';
 import { SESSION_STORE_REVIEW_CANDIDATE_PARAM, isSessionStoreReviewEligible } from '../../../lib/store-review';
-import { hasQueuedTicksForSession } from '../../../offline/pending-tick';
-import { waitForSessionTicksToSync } from '../../../offline/session-tick-drain';
+import {
+  refreshSessionWhenQueuedTicksLand,
+  waitForSessionTicksToSync,
+  type SessionTickSyncResult,
+} from '../../../offline/session-tick-drain';
 import { setDraftComment, clearDraftComment } from '../../../lib/session-comment-draft-store';
 import { renderBoardToPlaylistConfig } from '../../../lib/playlists/board-details-for-playlist';
 import { isMultiFrameClimb } from '../../../lib/is-multi-frame-climb';
@@ -511,9 +514,15 @@ export function InSessionView({
       // Give ticks still in the offline outbox up to 3 s to land first: the
       // server builds the summary (and the Strava export) from the ticks it
       // has, so ending right after the last tick read "0 attempts" (#6903).
-      // Never throws; the session ends whatever it returns.
-      if (endingSessionId) await waitForSessionTicksToSync(endingSessionId, queryClient);
-      const summary = await endSession({ notes: trimmedNotes });
+      // Never throws; the session ends whatever it returns. Run by endSession
+      // after it marks the session as ending, so a remote end is suppressed.
+      const tickSync: { result: SessionTickSyncResult } = { result: 'none' };
+      const summary = await endSession({
+        notes: trimmedNotes,
+        beforeEnd: async (id) => {
+          tickSync.result = await waitForSessionTicksToSync(id, queryClient);
+        },
+      });
       onEndDismiss?.();
       if (summary) {
         // The recap landed with the session — drop the local draft and clear the
@@ -526,9 +535,11 @@ export function InSessionView({
         // rejection. The manual save button on the summary screen shares the same
         // dedup guard, so this won't double-write.
         runSessionEndExports(summary, {});
-        // No store-review prompt while some of this session's ticks are still
-        // queued on the phone: the summary is missing them for now.
-        const ticksStillQueued = await hasQueuedTicksForSession(summary.sessionId);
+        // Some of this session's ticks may still be queued on the phone, so the
+        // summary is short of them for now: refresh it when they land, and
+        // hold back the store-review prompt.
+        const ticksStillQueued = tickSync.result === 'timedOut' || tickSync.result === 'offline';
+        if (ticksStillQueued) refreshSessionWhenQueuedTicksLand(summary.sessionId, queryClient);
         const summaryParams =
           isSessionStoreReviewEligible(summary) && !ticksStillQueued
             ? { sessionId: summary.sessionId, reviewCandidate: SESSION_STORE_REVIEW_CANDIDATE_PARAM }

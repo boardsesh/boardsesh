@@ -232,17 +232,16 @@ vi.mock('../../../../lib/store-review', () => ({
   isSessionStoreReviewEligible: () => false,
 }));
 vi.mock('../../../../lib/integrations', () => ({ runSessionEndExports: integrations.runSessionEndExports }));
-// #6903: the queued-tick wait before END_SESSION and the post-end outbox read.
+// #6903: the queued-tick wait (handed to endSession as `beforeEnd`) and the
+// late-tick summary refresh.
 const outbox = vi.hoisted(() => ({
   calls: [] as string[],
   waitForSessionTicksToSync: vi.fn(),
-  hasQueuedTicksForSession: vi.fn(),
+  refreshSessionWhenQueuedTicksLand: vi.fn(),
 }));
 vi.mock('../../../../offline/session-tick-drain', () => ({
   waitForSessionTicksToSync: outbox.waitForSessionTicksToSync,
-}));
-vi.mock('../../../../offline/pending-tick', () => ({
-  hasQueuedTicksForSession: outbox.hasQueuedTicksForSession,
+  refreshSessionWhenQueuedTicksLand: outbox.refreshSessionWhenQueuedTicksLand,
 }));
 vi.mock('../../../../lib/session-comment-draft-store', () => ({
   setDraftComment: vi.fn(),
@@ -293,8 +292,7 @@ describe('InSessionView session exit (#3502)', () => {
       outbox.calls.push('wait');
       return 'none';
     });
-    outbox.hasQueuedTicksForSession.mockReset();
-    outbox.hasQueuedTicksForSession.mockResolvedValue(false);
+    outbox.refreshSessionWhenQueuedTicksLand.mockReset();
     queue.clearSession.mockReset();
     queue.clearSession.mockResolvedValue(undefined);
     router.push.mockClear();
