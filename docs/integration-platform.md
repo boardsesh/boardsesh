@@ -329,11 +329,22 @@ authentication at the token and revoke endpoints accepts `none` (public apps),
 `client_secret_post` and `client_secret_basic`; the metadata document says so.
 
 CORS: a browser-only app (no backend) is a public client using the
-authorization code flow. `/oauth/token`, `/oauth/revoke` and `/v1/*` answer
-CORS for exactly the origins of the calling app's registered `https` redirect
-URIs (looked up from the `client_id` in the body for `/oauth/*`, from the
-token for `/v1/*`), allow the `Authorization` header, and never allow
-credentials. Every other origin gets no CORS headers. Refresh-token rotation
+authorization code flow. `/oauth/token`, `/oauth/revoke` and `/v1/*` handle
+CORS in two steps, because a preflight `OPTIONS` carries neither a token nor
+a body and so cannot say which app is calling:
+
+1. Preflight: allowed when the `Origin` is the origin of any live app's
+   registered `https` redirect URI (a set cached for a minute and dropped on
+   app changes). The answer allows `GET`, `POST`, `DELETE` and the
+   `Authorization`, `Content-Type` and `Idempotency-Key` headers, never
+   credentials, with `Vary: Origin`.
+2. Actual request: `Access-Control-Allow-Origin` is echoed only when the
+   `Origin` belongs to the calling app itself (from the `client_id` in the body
+   for `/oauth/*`, from the token for `/v1/*`). An origin registered by a
+   different app passes the preflight and is then refused by the browser.
+
+Every other origin gets no CORS headers. A form-encoded token request without
+an `Authorization` header is a simple request and skips the preflight. Refresh-token rotation
 with reuse detection is what OAuth 2.1 requires before a browser app may hold a
 refresh token, and we have it.
 
@@ -551,7 +562,12 @@ Two keyset walks the backend already runs for the phone, merged:
    `notAuroraTwinDuplicate` filter user-facing reads apply, which `syncTicks`
    does not.
 2. Deletions: `sync_deletions WHERE table_name = 'boardsesh_ticks' AND user_id = $u`
-   walked by `(deleted_at, id)` on `sync_deletions_user_since_idx`.
+   `AND (deleted_at, id) > ($dt, $di) AND deleted_at < now() - stability`,
+   walked by `(deleted_at, id)` on `sync_deletions_user_since_idx`. The
+   stability cutoff matters here as much as for ticks: `deleted_at` is also
+   stamped at transaction start, so two concurrent deletes can commit out of
+   order and the later-started one would otherwise carry the cursor past the
+   other. The phone's `syncDeletions` applies the same cutoff.
 
 Fetch `limit` from each, merge by timestamp (a tick before a deletion at the
 same timestamp, since a delete in the same transaction as an update shares
