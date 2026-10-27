@@ -437,18 +437,18 @@ dispatch (`commit_to_main`) — that is deliberately still `main`, because
    supplies its permission prompts; use a candidate built after that addition.
 2. Check listing copy and release notes under `fastlane/metadata/it/` for Apple
    and `fastlane/metadata/android/it-IT/` for Play. Apple uses `it`, not `it-IT`.
-3. After these changes merge into `release/next`, explicitly dispatch **Mobile
-   Screenshots (iOS)** on that branch with `flow: app-store`, `gate: full`,
-   `fixtures: replay`, empty `locales`, `cpp_target: none`, `upload: true`, and
-   `publish_baseline: true`. Store-only changes can skip the native build, so its
-   automatic screenshot follow-up is insufficient. Review all 20 capture shards
-   and the resulting 24 storefront sets, including Italian's session recap slot.
-4. Dispatch **Mobile Store Metadata** on `release/next` with `platform: all`
-   before merge-back, while Play accepts listing edits, to refresh both listings
-   and the editable iOS draft. Native deploys do not upload Play listing text.
-   Read back all six Apple locales and their 180 default-listing screenshots
-   before submission. CPP/ad/video campaigns retain the original four app
-   locales and five Apple locales.
+3. After merging, dispatch **Mobile Store Metadata** on `release/next` with
+   `platform: all` before merge-back, while Play accepts listing edits. This
+   creates the new Apple locale before screenshots are uploaded, refreshes the
+   editable iOS draft, and uploads Play listing text; native deploys do not.
+4. Explicitly dispatch **Mobile Screenshots (iOS)** on `release/next` with
+   `flow: app-store`, `gate: full`, `fixtures: replay`, empty `locales`,
+   `cpp_target: none`, `upload: true`, and `publish_baseline: true`. Store-only
+   changes can skip the native build, so its automatic screenshot follow-up is
+   insufficient. Review all 20 capture shards and 24 storefront sets, including
+   Italian's session recap slot. Read back all six Apple locales and their 180
+   default-listing screenshots before submission. CPP/ad/video campaigns retain
+   the original four app locales and five Apple locales.
 5. After merging, dispatch **Android Play Internal Deploy** on `release/next`
    with `force_native: true` if its candidate predates these changelogs. Verify
    the Italian listing and localized What's New. Play release notes ship with
