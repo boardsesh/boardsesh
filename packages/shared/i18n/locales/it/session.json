@@ -889,6 +889,7 @@
       "lastOnWallDate": "Ultimo in parete {{date}}",
       "joinedBrowseNotice": "Stai sfogliando. La parete resta ferma finché non metti in parete un blocco.",
       "previewNotLit": "Anteprima, non illuminato",
+      "notOnWall": "Non in parete",
       "onlyYouSeeThis": "Lo vedi solo tu",
       "onlyYouSeeThisWallOn": "Lo vedi solo tu · la parete è su {{name}}",
       "commitOverride": {
@@ -903,6 +904,11 @@
         "backToLive": "Torna alla diretta: {{name}}",
         "committed": "{{name}} è in parete"
       }
+    },
+    "bulbLabel": {
+      "connect": "Connetti",
+      "on": "Acceso",
+      "light": "Illumina"
     },
     "setActive": "Imposta attivo",
     "paneEmpty": {
