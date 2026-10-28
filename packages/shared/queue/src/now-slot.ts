@@ -72,8 +72,10 @@ export type NowSlotRewrite =
 
 /**
  * What a new uuid does when its climb is only in History (the `dedupe-history`
- * row). `reuse` moves the newest History copy into the Now slot; `fresh` puts
- * the new uuid there and leaves History as it was (`insert`).
+ * row). `reuse` moves the newest History copy into the Now slot. `fresh` reuses
+ * only History's last entry, the one right behind the current climb (Previous
+ * then Next, so a back-and-forth adds no copy); for an older copy it puts the
+ * new uuid up and leaves History as it was (`insert`).
  *
  * A phone resolves its own open first and sends the entry it resolved to, so a
  * tap that reuses a History entry reaches the server as that entry's uuid. A
@@ -287,7 +289,7 @@ function moveIntoNow<TItem extends NowSlotQueueItem>(
  * | new uuid, same climb as current                            | any           | `dedupe-current` |
  * | new uuid, climb in Up next (first copy)                    | any           | `dedupe-up-next` |
  * | new uuid, climb only in History (newest copy)              | any           | `dedupe-history` |
- * | the same, `historyCopy: 'fresh'` (a forward step)          | any           | `insert`         |
+ * | the same, `historyCopy: 'fresh'`, not History's last entry | any           | `insert`         |
  * | new uuid, climb nowhere in `queue`                         | any           | `insert`         |
  * | `item: null`                                               | -             | `clear`          |
  *
@@ -364,8 +366,10 @@ export function placeOnWall<TItem extends NowSlotQueueItem>(
 
   // A forward step onto a climb History already holds puts up a fresh copy:
   // pulling an entry from an hour ago forward would rewrite History and replay
-  // the climbs after it with their old entries.
-  for (let index = line - 1; historyCopy === 'reuse' && index >= 0; index--) {
+  // the climbs after it with their old entries. The entry right behind is the
+  // one Previous just stepped off, so a forward step still takes it back.
+  const oldestReusableIndex = historyCopy === 'reuse' ? 0 : Math.max(line - 1, 0);
+  for (let index = line - 1; index >= oldestReusableIndex; index--) {
     if (isSameWallClimb(queue[index].climb, item.climb)) {
       return moveIntoNow(queue, line, hasCurrent, index, 'dedupe-history');
     }

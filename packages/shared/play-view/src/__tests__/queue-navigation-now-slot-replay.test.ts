@@ -316,6 +316,10 @@ function doubleNext(session: Session, previousStep: Step | null): { step: Step |
   };
 }
 
+function copiesOf(session: Session, climbUuid: string | undefined): number {
+  return session.queue.filter(({ climb }) => climb.uuid === climbUuid).length;
+}
+
 function expectConsistent(session: Session, trace: string[]): void {
   const uuids = session.queue.map(({ uuid }) => uuid);
   expect(new Set(uuids).size, trace.join('\n')).toBe(uuids.length);
@@ -406,6 +410,21 @@ describe("now-slot Next and Previous over a tester's session (26 Oct)", () => {
     expect(onward.step?.to?.climb.uuid).toBe('c');
   });
 
+  it('Previous then Next after an Up next detour goes back to the list climb, reusing its entry', () => {
+    const session = emptySession();
+    const search: ClimbList = { id: 'search', climbs: ['s0', 's1', 's2'].map(makeClimb) };
+    tapListRow(session, search, 0);
+    playNext(session, makeClimb('x'));
+    expect(next(session)?.to?.climb.uuid).toBe('x');
+    const ontoS1 = next(session);
+    expect(ontoS1?.to?.climb.uuid).toBe('s1');
+    expect(previous(session)?.to?.climb.uuid).toBe('x');
+    const backToS1 = checkedNext(session, null);
+    expect(backToS1.violation).toBeNull();
+    expect(backToS1.step?.to).toBe(ontoS1?.to);
+    expect(copiesOf(session, 's1')).toBe(1);
+  });
+
   it('keeps the forward-step invariants over seeded random walks', () => {
     const failures: string[] = [];
     for (let seed = 1; seed <= 300 && failures.length < 3; seed += 1) {
@@ -425,7 +444,20 @@ describe("now-slot Next and Previous over a tester's session (26 Oct)", () => {
         } else if (roll < 0.43) {
           ({ step, violation } = doubleNext(session, previousStep));
         } else if (roll < 0.58) {
+          const leftClimbUuid = session.current?.climb.uuid;
+          const copiesBefore = copiesOf(session, leftClimbUuid);
           step = previous(session);
+          // Previous then Next: a back-and-forth adds no copy of the climb Previous left.
+          if (step && step.from && step.to?.uuid !== step.from.uuid && random() < 0.5) {
+            trace.push(
+              `previous: ${step.from.climb.uuid}/${step.from.uuid} to ${step.to?.climb.uuid}/${step.to?.uuid} (${step.rewrite})`,
+            );
+            expectConsistent(session, trace);
+            ({ step, violation } = checkedNext(session, step));
+            if (!violation && copiesOf(session, leftClimbUuid) > copiesBefore) {
+              violation = `Previous then Next added a copy of ${leftClimbUuid}`;
+            }
+          }
         } else if (roll < 0.76) {
           const loadedRows = session.list?.id === currentList.id ? session.loaded : PAGE_SIZE;
           step = tapListRow(session, currentList, Math.floor(random() * loadedRows));

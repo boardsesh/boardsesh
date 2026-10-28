@@ -477,11 +477,18 @@ describe('setCurrentClimbAndPublish — F3 Now slot', () => {
     });
 
     it('a placement-carrying fresh uuid of a History climb is a fresh copy: the phone already chose not to reuse', async () => {
-      const room = standardRoom();
+      const room = makeRoom({ queue: [itemA, wallItem('x'), itemB, itemC, itemD], current: itemB });
       const { outcome, events } = await placeClimb(room, wallItem('a-prime', 'climb-a'), { placement: 'NOW' });
       expect(outcome.rewrite).toBe('insert');
-      expect(uuidsOf(room.room.queue)).toEqual(['a', 'b', 'a-prime', 'c', 'd']);
+      expect(uuidsOf(room.room.queue)).toEqual(['a', 'x', 'b', 'a-prime', 'c', 'd']);
       expect(events.map(({ event }) => event.__typename)).toEqual(['FullSync']);
+    });
+
+    it("a placement-carrying fresh uuid of History's last climb still reuses it, as Next after Previous does", async () => {
+      const room = standardRoom();
+      const { outcome } = await placeClimb(room, wallItem('a-prime', 'climb-a'), { placement: 'NOW' });
+      expect(outcome.rewrite).toBe('dedupe-history');
+      expect(uuidsOf(room.room.queue)).toEqual(['b', 'a', 'c', 'd']);
     });
 
     it('insert: a new climb lands at the Now slot as a plain FullSync (S1, S5)', async () => {
