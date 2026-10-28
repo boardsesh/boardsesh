@@ -16,10 +16,9 @@ import { resolveActionBarLayout } from '../play-drawer/action-bar-layout';
 export const ACCESSORY_MIN_NAME_WIDTH = 160;
 
 /**
- * The same floor on an iPhone, a little lower so a 375pt iPhone's 343pt bar
- * keeps its three controls (#6940): the name gets ~143pt there. Below it the
- * bar keeps fewer, down to today's one slot on iPhone Duo's closed display
- * (~290pt) and a 320pt Display Zoom iPhone (~288pt).
+ * The iPhone name floor: a 402pt phone's 360pt content fits three controls;
+ * a 375pt phone's 333pt content fits two. Smaller windows and the Duo's
+ * closed display can keep only one.
  */
 export const PHONE_ACCESSORY_MIN_NAME_WIDTH = 140;
 
@@ -45,10 +44,39 @@ export const ACCESSORY_SLOT_WIDTH = 44;
  */
 export const PHONE_MINI_PLAYER_MAX_SLOTS = 3;
 
+/**
+ * Window-to-regular-content difference measured on iOS 27 simulators:
+ * iPhone 17 Pro 402 -> 360pt; iPhone 13 mini 375 -> 333pt.
+ * This includes UIKit's platter margins and content padding, separately from
+ * our internal insets above. It is a phone sizing budget, not a UIKit API.
+ */
+const PHONE_ACCESSORY_CONTENT_GUTTER = 42;
+
+/**
+ * Both pre-mounted placement trees receive the same changing wrapper width.
+ * Horizontal phones therefore size regular controls from the stable viewport,
+ * so the hidden regular tree stays ready while the wrapper is inline. The
+ * returned width is only a control budget; UIKit still sizes the actual row.
+ * Rails, tablets and split layouts keep their real container measurements.
+ */
+export function miniPlayerCapacityWidth({
+  windowWidth,
+  rowWidth,
+  wide,
+  verticalTabBar,
+}: {
+  windowWidth: number;
+  rowWidth: number | null;
+  wide: boolean;
+  verticalTabBar: boolean;
+}): number | null {
+  return wide || verticalTabBar ? rowWidth : Math.max(0, windowWidth - PHONE_ACCESSORY_CONTENT_GUTTER);
+}
+
 /** How the bar is drawn right now. */
 export type MiniPlayerBarShape = {
   placement: 'regular' | 'inline';
-  /** The row's measured width, `null` before its first layout. */
+  /** Regular capacity width, or a live measured width for rails/wide layouts. */
   rowWidth: number | null;
   /** Everything in the row that is not the name or a slot: insets, the artwork and its gap, the label padding. */
   widthBesideName: number;
@@ -67,8 +95,8 @@ const UNMEASURED_WIDE_SLOTS = 99;
  * - Inline (the tab bar minimized) holds one, as Music's MiniPlayer drops its
  *   controls there (WWDC25 "Build a UIKit app with the new design").
  * - An iPhone holds as many as fit beside a 140pt name, three at most, Board
- *   light and Log included: three on every current iPhone (343pt and up), one
- *   on iPhone Duo's closed display and a 320pt Display Zoom iPhone.
+ *   light and Log included: three at 360pt, two at 333pt, one on the Duo's
+ *   closed display and a 320pt Display Zoom iPhone.
  * - iPad and the open Duo hold as many as fit beside a 160pt name and the two
  *   group gaps, which is every button the climber has on.
  * - Before the first layout the row guesses the answer most bars measure (three
