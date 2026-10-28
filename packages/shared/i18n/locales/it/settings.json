@@ -524,6 +524,7 @@
       "peerHint": "Apre il blocco in parete",
       "disconnectedLabel": "Pannello disconnesso",
       "disconnectedHint": "Connettiti al pannello",
+      "undoDisconnectAria": "Riconnettiti al pannello",
       "wallHeldLabel": "Hai il pannello",
       "wallHeldWithClimb": "Hai il pannello: {{name}}, {{grade}}",
       "wallHeldHint": "Libera il pannello",

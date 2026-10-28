@@ -6,6 +6,8 @@ import { BoardPresenceCurrentContext, type BoardPresenceCurrentState } from '@bo
 
 type BluetoothCtx = {
   boardName: string | undefined;
+  layoutId?: number;
+  sizeId?: number;
   isConnected: boolean;
   lastLocalHolderUserId: string | null;
   loading: boolean;
@@ -33,6 +35,7 @@ const ctrl = vi.hoisted(() => ({
   presence: undefined as BoardPresenceCurrentState | undefined,
 }));
 const trackMock = vi.hoisted(() => vi.fn());
+const offerUndoMock = vi.hoisted(() => vi.fn());
 const hapticLightMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../providers/bluetooth-provider', () => ({ useOptionalBluetoothContext: () => ctrl.bluetooth }));
@@ -52,10 +55,13 @@ vi.mock('../../../lib/analytics', () => ({ track: trackMock }));
 vi.mock('../../../lib/haptics', () => ({ hapticLight: hapticLightMock }));
 
 import { useLightbulbControl } from '../use-lightbulb-control';
+import { BoardDisconnectUndoContext, type BoardDisconnectUndoOffer } from '../board-disconnect-undo';
 
 function makeBluetooth(over: Partial<NonNullable<BluetoothCtx>> = {}): NonNullable<BluetoothCtx> {
   return {
     boardName: 'kilter',
+    layoutId: 8,
+    sizeId: 17,
     isConnected: false,
     lastLocalHolderUserId: null,
     loading: false,
@@ -79,8 +85,13 @@ const anonymousHolderPresence = { holder: {}, currentClimb: null } as unknown as
 const holderPresenceFor = (userId: string): BoardPresenceCurrentState =>
   ({ holder: { userId }, currentClimb: null }) as unknown as BoardPresenceCurrentState;
 
+const undoActions = { offerUndo: offerUndoMock };
 const wrapper = ({ children }: { children: ReactNode }) =>
-  createElement(BoardPresenceCurrentContext.Provider, { value: ctrl.presence }, children);
+  createElement(
+    BoardDisconnectUndoContext,
+    { value: undoActions },
+    createElement(BoardPresenceCurrentContext.Provider, { value: ctrl.presence }, children),
+  );
 
 function renderControl(options: Partial<Parameters<typeof useLightbulbControl>[0]> = {}) {
   return renderHook(() => useLightbulbControl({ surface: 'play_drawer', ...options }), { wrapper });
@@ -94,6 +105,7 @@ beforeEach(() => {
   ctrl.sessionMemberUserIds = new Set();
   ctrl.presence = undefined;
   trackMock.mockClear();
+  offerUndoMock.mockClear();
 });
 
 describe('useLightbulbControl lit state', () => {
@@ -576,5 +588,90 @@ describe('useLightbulbControl connect (#5654 connect step)', () => {
     expect(bluetooth.connect).not.toHaveBeenCalled();
     expect(bluetooth.armUndoWallChangeToast).not.toHaveBeenCalled();
     expect(trackMock).not.toHaveBeenCalledWith('Board Connect Tapped', expect.anything());
+  });
+});
+
+// #6940: a short tap on a lit bulb hangs up with no confirm, and the iPhone
+// MiniPlayer's bulb touches Next. The tap offers Undo, which reconnects the same
+// board through the bulbs' own connect.
+describe('useLightbulbControl disconnect undo (#6940)', () => {
+  it('offers undo for the board it just hung up, read before the disconnect forgets it', () => {
+    ctrl.bluetooth = makeBluetooth({ isConnected: true, reconnectSerialForCurrentBoard: 'serial-1' });
+    const { result } = renderControl({ surface: 'board_control_indicator', placement: 'inline' });
+    result.current.onPress();
+
+    expect(ctrl.bluetooth?.disconnect).toHaveBeenCalledOnce();
+    expect(offerUndoMock).toHaveBeenCalledExactlyOnceWith({
+      surface: 'board_control_indicator',
+      placement: 'inline',
+      target: { serial: 'serial-1', deviceId: undefined },
+      boardKey: 'kilter:8:17',
+    });
+  });
+
+  it('undo reconnects the captured board even after the disconnect forgot it', async () => {
+    ctrl.bluetooth = makeBluetooth({ isConnected: true, reconnectDeviceIdForCurrentBoard: 'moon-abc' });
+    const { result, rerender } = renderControl({ surface: 'toolbar' });
+    result.current.onPress();
+    const offer = offerUndoMock.mock.calls[0]?.[0] as BoardDisconnectUndoOffer;
+
+    // What the deliberate disconnect leaves behind: no link, no remembered board.
+    ctrl.bluetooth = makeBluetooth({ isConnected: false });
+    rerender();
+    await expect(result.current.connect(offer.surface, { target: offer.target, undo: true })).resolves.toBe(true);
+
+    expect(ctrl.bluetooth.connect).toHaveBeenCalledExactlyOnceWith(undefined, undefined, undefined, 'moon-abc');
+    expect(ctrl.bluetooth.armUndoWallChangeToast).toHaveBeenCalledOnce();
+    expect(trackMock).toHaveBeenCalledWith('Board Connect Tapped', {
+      surface: 'toolbar',
+      boardName: 'kilter',
+      reconnect: true,
+      undo: true,
+    });
+  });
+
+  it('long-press opens the controls and offers no undo', () => {
+    ctrl.bluetooth = makeBluetooth({ isConnected: true, reconnectSerialForCurrentBoard: 'serial-1' });
+    const onOpenControls = vi.fn();
+    const { result } = renderControl({ surface: 'toolbar', onOpenControls });
+    result.current.onLongPress();
+
+    expect(onOpenControls).toHaveBeenCalledExactlyOnceWith({ surface: 'toolbar', placement: undefined });
+    expect(ctrl.bluetooth?.disconnect).not.toHaveBeenCalled();
+    expect(offerUndoMock).not.toHaveBeenCalled();
+  });
+
+  it('offers no undo for a connect, whether it lands or fails', async () => {
+    ctrl.bluetooth = makeBluetooth({ isConnected: false, reconnectSerialForCurrentBoard: 'serial-1' });
+    ctrl.bluetooth.connect.mockResolvedValueOnce(false);
+    const { result } = renderControl();
+    await expect(result.current.connect()).resolves.toBe(false);
+    result.current.onPress();
+
+    expect(ctrl.bluetooth.connect).toHaveBeenCalledTimes(2);
+    expect(offerUndoMock).not.toHaveBeenCalled();
+  });
+
+  it('offers no undo for a tap that does nothing, or for a ledless hang-up Undo could not reverse', () => {
+    ctrl.bluetooth = makeBluetooth({ isConnected: true, loading: true });
+    const { result, rerender } = renderControl();
+    result.current.onPress();
+    expect(ctrl.bluetooth.disconnect).not.toHaveBeenCalled();
+
+    ctrl.bluetooth = makeBluetooth({ isConnected: true, ledless: true });
+    rerender();
+    result.current.onPress();
+    expect(ctrl.bluetooth.disconnect).toHaveBeenCalledOnce();
+    expect(offerUndoMock).not.toHaveBeenCalled();
+  });
+
+  it('still disconnects with no undo provider mounted', () => {
+    ctrl.bluetooth = makeBluetooth({ isConnected: true });
+    const { result } = renderHook(() => useLightbulbControl({ surface: 'play_drawer' }), {
+      wrapper: ({ children }: { children: ReactNode }) =>
+        createElement(BoardPresenceCurrentContext.Provider, { value: ctrl.presence }, children),
+    });
+    result.current.onPress();
+    expect(ctrl.bluetooth?.disconnect).toHaveBeenCalledOnce();
   });
 });

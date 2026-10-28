@@ -66,6 +66,7 @@ import {
 import { buildCarriedPaneTarget, resolvePlayerSurface, resolveSplitRouteClose } from '../lib/phone-split-player';
 import { usePhoneSplitPaneTaken } from '../components/navigation/phone-split-pane-slot';
 import { useQueueSnackbar } from './queue-snackbar-provider';
+import { BoardDisconnectUndoProvider } from './board-disconnect-undo-provider';
 import { useBoardPresenceControls, type ResolveBoardUuidArgs } from './board-presence-provider';
 import { boardUuidOrNull } from '../lib/boards/board-identity';
 import { useOptionalBluetoothContext } from './bluetooth-provider';
@@ -1373,7 +1374,9 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     <DrawerHostContext.Provider value={value}>
       <PreviewedClimbContext.Provider value={previewedClimbValue}>
         <PlayDrawerRouteContext.Provider value={routeValue}>
-          {children}
+          {/* Every bulb renders in here (tabs, iPad pane, the player route), so a
+              short-tap disconnect can offer its Undo (#6940). */}
+          <BoardDisconnectUndoProvider>{children}</BoardDisconnectUndoProvider>
           {logAscentData ? (
             <LogAscentSheet
               key={composerCredentialScope}

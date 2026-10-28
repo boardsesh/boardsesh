@@ -524,6 +524,7 @@
       "peerHint": "Öffnet den Boulder an der Wand",
       "disconnectedLabel": "Board getrennt",
       "disconnectedHint": "Mit dem Board verbinden",
+      "undoDisconnectAria": "Wieder mit dem Board verbinden",
       "wallHeldLabel": "Du hast die Wand",
       "wallHeldWithClimb": "Du hast die Wand: {{name}}, {{grade}}",
       "wallHeldHint": "Gibt die Wand frei",

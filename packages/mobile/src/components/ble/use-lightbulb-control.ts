@@ -11,6 +11,7 @@ import {
   type PlayDrawerLightbulbPressAction,
 } from '../play-drawer/lightbulb-control';
 import { useBoardConnectionState } from './use-board-connection-state';
+import { boardBluetoothKey, useBoardDisconnectUndo, type ReconnectTarget } from './board-disconnect-undo';
 
 /** Which bulb was tapped, for Board Connect Tapped. */
 export type LightbulbSurface = Extract<
@@ -30,6 +31,20 @@ export type LightbulbSurface = Extract<
  * controls sheet.
  */
 export type ConnectSurface = LightbulbSurface | Extract<BoardConnectSurface, 'put_on_wall'>;
+
+/** Optional overrides for {@link LightbulbControl.connect}. */
+export type ConnectOptions = {
+  /**
+   * Connect to this board instead of the one remembered for the current config.
+   * The disconnect undo passes the board it captured before the disconnect,
+   * which forgot the remembered one.
+   */
+  target?: ReconnectTarget;
+  /** The platter placement of the bulb the connect started from, when it differs from this hook's. */
+  placement?: AccessoryPlacement;
+  /** This connect is the Undo on a bulb's disconnect snackbar (Board Connect Tapped `undo: true`). */
+  undo?: boolean;
+};
 
 type UseLightbulbControlOptions = {
   /** Required so every bulb reports where a connect tap came from. */
@@ -97,9 +112,10 @@ export type LightbulbControl = {
    * when a connect starts from a different control than this hook's own (the
    * play drawer's bulb shown as the connect-step pill). The connect-step card
    * awaits it to know when to offer "Try again", so the card, the pill and
-   * every bulb share this one connect path.
+   * every bulb share this one connect path. The disconnect snackbar's Undo
+   * runs it too, with the board it captured as `options.target`.
    */
-  connect: (surface?: ConnectSurface) => Promise<boolean>;
+  connect: (surface?: ConnectSurface, options?: ConnectOptions) => Promise<boolean>;
   /**
    * What a tap will actually do, resolved from the same ladder `onPress` runs.
    * Exposed so each bulb can LABEL itself honestly: before this, all three
@@ -144,6 +160,7 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
   // hook so the in-app bulb and the lock-screen bulb can never disagree.
   const { bluetooth, lit, localConnected, pending, ledless, wallHeldLocally, holderIsAuthoritative } =
     useBoardConnectionState();
+  const disconnectUndo = useBoardDisconnectUndo();
 
   const pressAction = useMemo(
     () =>
@@ -164,17 +181,19 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
   // permission or a radio that's off never reaches either outcome event, so
   // without it "tapped connect" couldn't be told apart from "never tried".
   const connect = useCallback(
-    async (surfaceOverride?: ConnectSurface): Promise<boolean> => {
+    async (surfaceOverride?: ConnectSurface, options?: ConnectOptions): Promise<boolean> => {
       // The same gate onPress applies, so a caller that skips its own check
       // can't open a second link while one is pending or a peer holds the wall.
       if (!bluetooth || pressAction !== 'connect') return false;
-      const reconnectSerial = bluetooth.reconnectSerialForCurrentBoard ?? undefined;
-      const reconnectDeviceId = bluetooth.reconnectDeviceIdForCurrentBoard ?? undefined;
+      const target = options?.target;
+      const reconnectSerial = target ? target.serial : (bluetooth.reconnectSerialForCurrentBoard ?? undefined);
+      const reconnectDeviceId = target ? target.deviceId : (bluetooth.reconnectDeviceIdForCurrentBoard ?? undefined);
       trackBoardConnectTapped({
         surface: surfaceOverride ?? surface,
-        placement,
+        placement: options?.placement ?? placement,
         boardName: bluetooth.boardName,
         reconnect: reconnectSerial !== undefined || reconnectDeviceId !== undefined,
+        undo: options?.undo,
       });
       bluetooth.armUndoWallChangeToast();
       // Reconnect straight to the same board — by serial (Aurora) or device id
@@ -189,7 +208,19 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
     if (pressAction === 'noop') return;
 
     if (pressAction === 'disconnect') {
+      // A short tap hangs up with no confirm, and on iPhone the MiniPlayer's bulb
+      // touches Next, so a slip turns the wall dark (#6940). Offer Undo. Read the
+      // board first: a deliberate disconnect forgets it, so the undo could not
+      // find it afterwards. A ledless board's tap after the hang-up takes the
+      // wall rather than connecting, so there is nothing for Undo to run there.
+      const undoTarget: ReconnectTarget = {
+        serial: bluetooth.reconnectSerialForCurrentBoard ?? undefined,
+        deviceId: bluetooth.reconnectDeviceIdForCurrentBoard ?? undefined,
+      };
       void bluetooth.disconnect();
+      if (!ledless) {
+        disconnectUndo?.offerUndo({ surface, placement, target: undoTarget, boardKey: boardBluetoothKey(bluetooth) });
+      }
       return;
     }
 
@@ -223,7 +254,7 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
     // and makes this device the holder; on disconnect the bluetooth provider
     // fires the release itself, so we don't report here.
     void connect();
-  }, [bluetooth, pressAction, onRelayToHolder, connect]);
+  }, [bluetooth, pressAction, onRelayToHolder, connect, ledless, disconnectUndo, surface, placement]);
 
   const onLongPress = useCallback(() => {
     // Long-press is a power-user shortcut into the controls sheet; only meaningful

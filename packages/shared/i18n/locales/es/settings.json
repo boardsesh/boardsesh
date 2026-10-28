@@ -524,6 +524,7 @@
       "peerHint": "Abre la vía en el muro",
       "disconnectedLabel": "Plafón desconectado",
       "disconnectedHint": "Conéctate al plafón",
+      "undoDisconnectAria": "Vuelve a conectarte al plafón",
       "wallHeldLabel": "Tienes el muro",
       "wallHeldWithClimb": "Tienes el muro: {{name}}, {{grade}}",
       "wallHeldHint": "Libera el muro",

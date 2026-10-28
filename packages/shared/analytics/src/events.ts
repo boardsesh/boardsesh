@@ -425,7 +425,9 @@ export const SHARED_EVENTS = {
   // auto-select), false when the tap opens the device picker. `placement`
   // ('regular' | 'inline') is set only by the iOS 26 tab-bar accessory platter's
   // bulb (open or collapsed), which shares 'board_control_indicator' with the
-  // floating JS capsule's bulb.
+  // floating JS capsule's bulb. `undo: true` (sent only then) marks the Undo on
+  // the "Board disconnected" snackbar a bulb's short-tap disconnect shows
+  // (#6940); it keeps the bulb's `surface`, so undone slips count per bulb.
   BoardConnectTapped: 'Board Connect Tapped',
   // The Bluetooth controls sheet (Re-light / Turn off all lights / Disconnect)
   // opened. Props: { surface: 'board_control_indicator' | 'toolbar' | 'app_bar' |

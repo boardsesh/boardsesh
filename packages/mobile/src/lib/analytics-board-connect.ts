@@ -45,6 +45,8 @@ type BoardConnectTappedProperties = {
   boardName: string | undefined;
   /** A remembered board is targeted (silent auto-select) rather than the picker. */
   reconnect: boolean;
+  /** The connect is the Undo on a bulb's "Board disconnected" snackbar (#6940). Sent only when true. */
+  undo?: boolean;
 };
 
 /**
@@ -57,8 +59,15 @@ export function trackBoardConnectTapped({
   placement,
   boardName,
   reconnect,
+  undo,
 }: BoardConnectTappedProperties): void {
-  track(SHARED_EVENTS.BoardConnectTapped, { surface, ...(placement ? { placement } : {}), boardName, reconnect });
+  track(SHARED_EVENTS.BoardConnectTapped, {
+    surface,
+    ...(placement ? { placement } : {}),
+    boardName,
+    reconnect,
+    ...(undo ? { undo: true } : {}),
+  });
 }
 
 /**

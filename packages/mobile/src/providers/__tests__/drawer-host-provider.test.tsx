@@ -277,6 +277,10 @@ vi.mock('../../components/board-presence/BoardSheet', async () => {
 vi.mock('../../components/board-presence/UndoWallChangeSnackbar', () => ({
   UndoWallChangeSnackbar: () => createElement('div', { 'data-undo-snackbar': 'true' }),
 }));
+// The disconnect-undo host pulls in react-native-screens; its own suite covers it.
+vi.mock('../board-disconnect-undo-provider', () => ({
+  BoardDisconnectUndoProvider: ({ children }: { children?: ReactNode }) => children,
+}));
 vi.mock('../../components/board-discovery/BoardShareSheet', () => ({
   BoardShareSheet: (props: BoardShareSheetTestProps) => {
     boardShareSheet.props = props;

@@ -524,6 +524,7 @@
       "peerHint": "Opens the climb on the wall",
       "disconnectedLabel": "Board disconnected",
       "disconnectedHint": "Connect to the board",
+      "undoDisconnectAria": "Reconnect to the board",
       "wallHeldLabel": "You have the wall",
       "wallHeldWithClimb": "You have the wall: {{name}}, {{grade}}",
       "wallHeldHint": "Releases the wall",

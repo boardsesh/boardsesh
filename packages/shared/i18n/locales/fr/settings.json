@@ -524,6 +524,7 @@
       "peerHint": "Ouvre la voie sur le mur",
       "disconnectedLabel": "Board déconnectée",
       "disconnectedHint": "Se connecter à la board",
+      "undoDisconnectAria": "Se reconnecter à la board",
       "wallHeldLabel": "Vous avez le mur",
       "wallHeldWithClimb": "Vous avez le mur : {{name}}, {{grade}}",
       "wallHeldHint": "Libère le mur",
