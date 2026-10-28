@@ -203,6 +203,7 @@ vi.mock('../../../../providers/queue-provider', () => ({
     endSession: queue.endSession,
     clearSession: queue.clearSession,
     setCurrentClimb: vi.fn(),
+    getQueueSnapshot: () => ({ queue: outbox.queue, currentClimbQueueItem: null }),
   }),
   useQueueLiveStats: () => ({ liveStats: null, sessionUsers: session.users }),
   useQueueSessionControls: () => ({ participantId: 'participant-1', sessionId: 'session-1' }),
@@ -238,10 +239,15 @@ const outbox = vi.hoisted(() => ({
   calls: [] as string[],
   waitForSessionTicksToSync: vi.fn(),
   refreshSessionWhenQueuedTicksLand: vi.fn(),
+  enqueueSessionWorkoutWrite: vi.fn(),
+  queue: [{ uuid: 'item-1', climb: { uuid: 'climb-1', angle: 40 } }],
 }));
 vi.mock('../../../../offline/session-tick-drain', () => ({
   waitForSessionTicksToSync: outbox.waitForSessionTicksToSync,
   refreshSessionWhenQueuedTicksLand: outbox.refreshSessionWhenQueuedTicksLand,
+}));
+vi.mock('../../../../offline/session-workout-outbox', () => ({
+  enqueueSessionWorkoutWrite: outbox.enqueueSessionWorkoutWrite,
 }));
 vi.mock('../../../../lib/session-comment-draft-store', () => ({
   setDraftComment: vi.fn(),
@@ -293,6 +299,11 @@ describe('InSessionView session exit (#3502)', () => {
       return 'none';
     });
     outbox.refreshSessionWhenQueuedTicksLand.mockReset();
+    outbox.enqueueSessionWorkoutWrite.mockReset();
+    outbox.enqueueSessionWorkoutWrite.mockImplementation(async () => {
+      outbox.calls.push('workout');
+      return 'queued';
+    });
     queue.clearSession.mockReset();
     queue.clearSession.mockResolvedValue(undefined);
     router.push.mockClear();
@@ -508,5 +519,22 @@ describe('InSessionView session exit (#3502)', () => {
     expect(queue.endSession).toHaveBeenCalledTimes(1);
     expect(queue.clearSession).not.toHaveBeenCalled();
     expect(router.push).toHaveBeenCalledWith(expect.objectContaining({ pathname: '/(tabs)/record/summary' }));
+  });
+
+  it('queues the workout after the tick wait and before END_SESSION, with the live queue (#6903)', async () => {
+    queue.endSession.mockImplementation(async (options?: { beforeEnd?: (id: string) => Promise<void> }) => {
+      await options?.beforeEnd?.('session-1');
+      outbox.calls.push('end');
+      return null;
+    });
+    await renderInSession();
+    await act(async () => {
+      sheet.onConfirm?.();
+    });
+    await waitFor(() => expect(outbox.calls).toEqual(['wait', 'workout', 'end']));
+    expect(outbox.enqueueSessionWorkoutWrite).toHaveBeenCalledWith(
+      'session-1',
+      expect.objectContaining({ queueItems: outbox.queue }),
+    );
   });
 });

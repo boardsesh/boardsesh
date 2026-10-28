@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import i18next from 'i18next';
 import sessionEnUs from '@boardsesh/i18n/locales/en-US/session.json';
 import sessionDe from '@boardsesh/i18n/locales/de/session.json';
-import type { TranslateWorkoutStage } from '../../../../lib/workout-run-readout';
+import type { WorkoutTranslate } from '@boardsesh/workout-summary';
 import {
   workoutBlockAccessibilityLabel,
   workoutBlockDetail,
@@ -28,8 +28,8 @@ import {
 
 // The real catalogs through a real i18next instance, so plurals and
 // interpolation run exactly as they render in the app.
-let t: TranslateWorkoutStage;
-let tDe: TranslateWorkoutStage;
+let t: WorkoutTranslate;
+let tDe: WorkoutTranslate;
 
 beforeAll(async () => {
   const instance = i18next.createInstance();
@@ -41,8 +41,8 @@ beforeAll(async () => {
     resources: { 'en-US': { session: sessionEnUs }, de: { session: sessionDe } },
     interpolation: { escapeValue: false },
   });
-  t = instance.getFixedT('en-US', 'session') as unknown as TranslateWorkoutStage;
-  tDe = instance.getFixedT('de', 'session') as unknown as TranslateWorkoutStage;
+  t = instance.getFixedT('en-US', 'session') as unknown as WorkoutTranslate;
+  tDe = instance.getFixedT('de', 'session') as unknown as WorkoutTranslate;
 });
 
 const [onTheMinute, pyramid, limit, future] = OTHER_KIND_STAGES;
@@ -84,7 +84,7 @@ describe('workoutBlockDetail', () => {
 
   it('reads first climb to last when a climb has no difficulty', () => {
     const unranked = { ...WARM_UP, climbs: WARM_UP.climbs.map((climb) => ({ ...climb, difficulty: null })) };
-    expect(workoutGradeSpan(unranked)).toEqual({ from: 'V1', to: 'V3' });
+    expect(workoutGradeSpan(unranked)).toBe('V1–V3');
   });
 });
 

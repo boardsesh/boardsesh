@@ -8,6 +8,7 @@ import { FlashList } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
+import { enqueueSessionWorkoutWrite } from '../../../offline/session-workout-outbox';
 import type { SessionDetailTick, SessionFeedParticipant } from '@boardsesh/shared-schema';
 import { getGradeTextColor } from '@boardsesh/play-view';
 import { tickTimeMs } from '@boardsesh/profile-stats';
@@ -277,7 +278,7 @@ export function InSessionView({
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { sessionId, participantId } = useQueueSessionControls();
-  const { endSession, clearSession } = useQueueActions();
+  const { endSession, clearSession, getQueueSnapshot } = useQueueActions();
   const { liveStats, sessionUsers } = useQueueLiveStats();
   // End-for-everyone vs. drop-out-quietly, and which of the two this device
   // leads with. See use-session-exit-options for the id-space reasoning.
@@ -523,6 +524,11 @@ export function InSessionView({
         notes: trimmedNotes,
         beforeEnd: async (id) => {
           tickSync.result = await waitForSessionTicksToSync(id, queryClient);
+          // The workout's last copy, with every tick it logged mapped to its
+          // climb (#6903). Queued after the wait, so it drains after any tick
+          // still queued and the server keeps those ticks' entries. The queue
+          // is still here, so a climb the run never captured is filled in.
+          await enqueueSessionWorkoutWrite(id, { queryClient, queueItems: getQueueSnapshot().queue });
         },
       });
       onEndDismiss?.();
@@ -557,7 +563,7 @@ export function InSessionView({
       // confirm button spinning forever and the sheet undismissable.
       setIsEnding(false);
     }
-  }, [endSession, router, onEndDismiss, endNotes, sessionId, queryClient]);
+  }, [endSession, router, onEndDismiss, endNotes, sessionId, queryClient, getQueueSnapshot]);
 
   // Drop out WITHOUT ending the session for anyone else (#3502). Deliberately
   // NOT `clearSession()`: `notifyServer` emits LEAVE_SESSION so peers see the

@@ -105,7 +105,19 @@ The run stays on the phone. `packages/mobile/src/lib/workout-run-store.ts` keeps
 slot, keyed by session id, with the run inside it keyed by queue-item uuid. Nothing is
 added to the queue item or the queue's wire format. A copy of the plan also goes to the
 server once the workout starts, for the summary, session detail and feed cards (see
-"Workouts on the server" below), but the live readout never reads it back.
+"Workouts on the server" and "The write path" below), but the live readout never reads
+it back.
+
+The record beside the run holds two optional fields for that copy (#6903), both newer
+than the slot key, so an older run reads without them:
+
+- `climbs`: each queue item's climb uuid, angle and mirror, captured when the run is
+  written (`captureWorkoutRunClimbs`, at Start in `PreSessionView` and at "Add a block"
+  in `AddWorkoutBlockSheet`), because the queue is gone by the time the session ends.
+  The climb's name, grade label and board type ride along for the phone's own summary;
+  they never go to the server.
+- `revision`: the revision of the last copy queued for the server
+  (`nextWorkoutRunRevision`).
 
 There is no wire field because a new field on the queue item has three costs that a
 phone-side readout does not justify:
@@ -222,8 +234,8 @@ the way the derivation did. A 4x4 set row lists its own ticks under the reps, fo
 comments and delete. Feed cards on the web profile
 Sessions page ask `sessionWorkoutHeadlines` once per loaded page. The copy lives in
 `@boardsesh/workout-summary` (`format.ts`), which takes the caller's `t` over the `session`
-catalog: block names, detail lines, tallies, climb outcomes and the headline. Mobile still
-has its own copy under `mobile.workoutSummary.*` and can switch to it.
+catalog: block names, detail lines, tallies, climb outcomes and the headline. Mobile uses
+it too (see "On the phone").
 
 **On Strava.** An exported activity is named after the main block when the session
 followed a workout, "4x4 at V4 — 13 sends" (the same sends number as before), and the
@@ -234,6 +246,73 @@ the creator's queue); either way it is tallied from the exporter's own ticks, an
 creator's tick map is never applied to them. Block names come from the en-US `session`
 catalog; the rest of the activity text stays English. Reading the workout is best
 effort: a failure exports the session with the board name, as before.
+
+### The write path
+
+`packages/mobile/src/offline/session-workout-outbox.ts` sends the phone's run with
+`recordSessionWorkout` through the offline outbox (table name `session_workouts`, routed
+in `packages/shared/offline-sync/src/mutation-queue/handlers.ts`). It writes three times:
+
+1. At Start, right after `prepareWorkoutRun`.
+2. At "Add a block", right after `setWorkoutRun`.
+3. Before END_SESSION, inside `endSession`'s `beforeEnd`, after the wait for the
+   session's queued ticks (`waitForSessionTicksToSync`). The live queue is still there,
+   so a climb the run never captured is filled in from it first (`addWorkoutRunClimbs`).
+
+Each write carries the whole workout: the plan built from the run and its captured
+climbs (`buildSessionWorkoutPlan`, which leaves out an item with no captured climb, keeps
+an item named by two stages in the first, and keeps the first 30 stages and 300 items
+rather than have the write refused), and the tick map from the run's tick log
+(`tickUuid → queueItemUuid`, one entry per tick, the newest 4000). The revision is a
+counter stored with the run, floored at the seconds since 2026-01-01, so it stays inside a
+Postgres integer and keeps climbing after an OTA rollback rewrote the record without it.
+The idempotency key is `session_workout:<sessionId>:<revision>`, and queuing a write first
+drops the copies of the same session still waiting.
+
+Order matters. The server keeps a tick-map entry only when the tick is already one of the
+climber's ticks in the session, and the outbox drains first in, first out, so a write
+queued after the ticks lands after them. A tick still queued when END_SESSION goes is
+behind none of this: the last write is queued after it.
+
+Nothing is sent for a session id the server never minted (`isServerSessionId`: stories
+and fakes use readable ids, daily cards are `daily:…`), in a screenshot capture, or when
+the store holds no run for the session. Without the offline database (flag off, the web
+build without the engine) the write goes straight to the server, best effort.
+
+A bundle from before the `session_workouts` table dead-letters a queued row as an
+unknown table. That only happens after an OTA rollback with a write still queued; the
+workout stays off the server until the next write from a newer bundle.
+
+### On the phone
+
+`useSessionWorkoutView(sessionId, scope)` in
+`packages/mobile/src/components/session/workout/use-session-workout-view.ts` reads
+`sessionWorkouts` and picks one (`chooseSessionWorkout`):
+
+- **The summary** (`scope: 'viewer'`) shows only the viewer's own workout.
+- **Session detail** (`scope: 'session'`) shows the viewer's own workout when they ran
+  one, else the session owner's (a crew climbs the owner's queue, so theirs is the
+  session's workout), else the first one listed. Web shows the viewer's own, else the
+  first.
+
+The viewer's own workout comes from the phone (the live run, or the recap kept at the
+end) while the outbox still holds ticks or a workout write for the session, or while the
+server has none for them yet: the server answers nothing for an owner with no synced
+tick. The phone runs the same `deriveWorkoutStages` on its run and tick log, and the
+summary shows "Still saving N ticks" from the outbox count
+(`countPendingSessionWrites`). Detail groups its Climbs list with `assignWorkoutTicks`,
+the rule web uses.
+
+The answers refresh when a tick or workout write lands (`TABLE_INVALIDATE_KEYS` maps both
+tables to `['sessionWorkouts']`, the workout table to `['sessionWorkoutHeadlines']` too),
+when the session ends (`seedEndedSessionCaches`), and when late ticks land after it
+(`refreshSessionWhenQueuedTicksLand`).
+
+Feed cards on the Home feed and the You tab's Sessions list ask
+`useSessionWorkoutHeadlines(sessionIdPages)`: one `sessionWorkoutHeadlines` request per
+loaded feed page, so the next page never refetches the ones on screen. The copy is
+`@boardsesh/workout-summary`'s `format.ts`; mobile adds only the VoiceOver variants under
+`mobile.workoutSummary.*`.
 
 ## Store lifecycle
 
@@ -293,6 +372,12 @@ effort: a failure exports the session with the board name, as before.
   flight for it cannot land afterwards.
 - **Clear on sign-out.** `auth-provider` clears the store, both slots, with the rest of
   the per-user state (see the known limit above for an older bundle's sign-out).
+- **The recap after the end.** The clear on session end hands the record that went
+  (run, tick log, captured climbs) to `ended-workout-store.ts`, which keeps it as that
+  session's recap under its own key, `boardsesh_ended_workouts_v1`: the newest 10, none
+  older than 30 days, cleared on sign-out beside the run. No older bundle reads that key,
+  so it needs none of the slot rules above. The summary mounts after the run is gone,
+  and it reads the recap while the server's copy is behind (see "On the phone" below).
 - **No prune.** The run is never trimmed as climbs leave the queue. Undo in the queue
   sheet brings removed climbs back under their old uuids, and they must come back in
   their stage. Readers skip uuids that are not queued, so the stale ones cost nothing,

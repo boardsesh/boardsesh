@@ -1,4 +1,9 @@
-import { hasPendingTickForClimb, hasPendingTicksForSession } from '@boardsesh/offline-sync';
+import {
+  countPendingSessionWrites,
+  hasPendingTickForClimb,
+  hasPendingTicksForSession,
+  type PendingSessionWrites,
+} from '@boardsesh/offline-sync';
 import { getDatabaseHandle } from '../db';
 import { reportHandledError } from '../lib/error-reporting';
 
@@ -39,5 +44,23 @@ export async function hasQueuedTicksForSession(sessionId: string): Promise<boole
   } catch (error) {
     reportHandledError(error, { tags: { source: 'offline-sync', kind: 'pending-session-ticks-check' } });
     return false;
+  }
+}
+
+const NO_PENDING_WRITES: PendingSessionWrites = { ticks: 0, workouts: 0 };
+
+/**
+ * What this phone still has to send for `sessionId` (#6903): the summary's
+ * "Still saving N ticks", and whether its workout is newer than the server's.
+ * Same answers as above: no database, or a failed read (reported), is nothing.
+ */
+export async function readPendingSessionWrites(sessionId: string): Promise<PendingSessionWrites> {
+  const db = getDatabaseHandle();
+  if (!db) return NO_PENDING_WRITES;
+  try {
+    return await countPendingSessionWrites(db, sessionId);
+  } catch (error) {
+    reportHandledError(error, { tags: { source: 'offline-sync', kind: 'pending-session-writes-check' } });
+    return NO_PENDING_WRITES;
   }
 }

@@ -31,6 +31,8 @@ export {
   getPendingCount,
   hasPendingTickForClimb,
   hasPendingTicksForSession,
+  countPendingSessionWrites,
+  removePendingSessionWorkouts,
   getDeadLetterCount,
   getDeadLetters,
   getOutboxSummary,
@@ -38,7 +40,13 @@ export {
   discardDeadLetter,
   clearAll,
 } from './mutation-queue/queue';
-export type { PendingMutation, EnqueueResult, EnqueueOptions, OutboxSummary } from './mutation-queue/queue';
+export type {
+  PendingMutation,
+  PendingSessionWrites,
+  EnqueueResult,
+  EnqueueOptions,
+  OutboxSummary,
+} from './mutation-queue/queue';
 export { parseQueueTimestamp, queueTimestampAgeDays } from './mutation-queue/queue-timestamps';
 export {
   drainMutationQueue,

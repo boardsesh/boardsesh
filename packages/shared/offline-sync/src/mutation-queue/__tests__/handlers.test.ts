@@ -340,3 +340,36 @@ describe('graphqlErrorRejectsUnknownInputField', () => {
     expect(graphqlErrorRejectsUnknownInputField('Field "climbRevision" is not defined', 'climbRevision')).toBe(false);
   });
 });
+
+describe('session_workouts dispatch (#6903)', () => {
+  const input = {
+    sessionId: 'session-1',
+    revision: 4,
+    stages: [{ id: 'stage-1', kind: 'fourByFour', items: [{ queueItemUuid: 'q1', climbUuid: 'c1', angle: 40 }] }],
+    ticks: [{ tickUuid: 'tick-1', queueItemUuid: 'q1' }],
+  };
+
+  it('sends the queued workout as RecordSessionWorkoutInput, unchanged', async () => {
+    const graphqlFetch = vi.fn().mockResolvedValue({ recordSessionWorkout: true });
+    await processMutation(
+      pendingMutation({ table_name: 'session_workouts', operation: 'create', payload: JSON.stringify(input) }),
+      graphqlFetch,
+    );
+    expect(graphqlFetch).toHaveBeenCalledTimes(1);
+    expect(graphqlFetch.mock.calls[0][0]).toContain(
+      'mutation RecordSessionWorkout($input: RecordSessionWorkoutInput!)',
+    );
+    expect(graphqlFetch.mock.calls[0][1]).toEqual({ input });
+  });
+
+  it('refuses an operation it has no mutation for', async () => {
+    const graphqlFetch = vi.fn();
+    await expect(
+      processMutation(
+        pendingMutation({ table_name: 'session_workouts', operation: 'delete', payload: JSON.stringify(input) }),
+        graphqlFetch,
+      ),
+    ).rejects.toThrow('Unknown operation "delete" for table "session_workouts"');
+    expect(graphqlFetch).not.toHaveBeenCalled();
+  });
+});

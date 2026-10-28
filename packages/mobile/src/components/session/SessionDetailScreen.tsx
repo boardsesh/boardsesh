@@ -60,8 +60,9 @@ export default function SessionDetailScreen() {
 
   const { data: session, isPending } = useSessionDetail(sessionId);
   // The workout this session was climbed to, if any (#6903): the Climbs list
-  // then groups by block. Undefined until the workout data lands.
-  const workout = useSessionWorkoutView(sessionId)?.workout;
+  // then groups by block. The viewer's own when they ran one, else the session
+  // owner's (`chooseSessionWorkout`).
+  const workout = useSessionWorkoutView(sessionId, 'session')?.workout;
   const ticks = session?.ticks ?? EMPTY_TICKS;
   const climbRows = useMemo(
     () => (workout ? buildWorkoutClimbRows(ticks, workout) : plainTickRows(ticks)),

@@ -3,9 +3,10 @@
 // Mirrors `DerivedWorkoutStage` from `@boardsesh/workout-summary` (the pure
 // derivation the server and the phone both run over a stored plan and the
 // owner's ticks) plus what a row needs to draw a climb: its name, grade label
-// and thumbnail inputs. The GraphQL `SessionWorkout` maps into this one-to-one
-// (a later PR); the phone's own run maps into it too while its ticks are still
-// saving. Keep the two in step: a field added to the derivation lands here.
+// and thumbnail inputs. The GraphQL `SessionWorkout` maps into this one-to-one,
+// and the phone's own run maps into it too while its ticks are still saving
+// (`session-workout-view-model.ts`). Keep the two in step: a field added to the
+// derivation lands here.
 
 import type { RenderBoardConfig } from '@boardsesh/shared-schema';
 

@@ -1344,6 +1344,23 @@ export const REPLAY_DEFAULT_RESPONSES: Readonly<Record<string, ReplayDefaultResp
     response: { data: { profile: null } },
     reason: 'the screenshots account is not an admin',
   },
+  // query GetSessionWorkouts / GetSessionWorkoutHeadlines —
+  // packages/shared/graphql/src/operations/session-workouts.ts (#6903). Session
+  // detail and every feed card ask them. The pinned set's sessions were
+  // recorded before workouts were stored on the server, so none of them has
+  // one: an empty list is the server's own answer for each, and every screen
+  // then draws the session as before. A recording made after a workout session
+  // records them, and the keyed lookup takes over; GetSessionWorkoutHeadlines
+  // then wants a BATCHED_OPERATIONS row (`sessionIds` → `sessionId`), since a
+  // feed page's id list changes with timing.
+  GetSessionWorkouts: {
+    response: { data: { sessionWorkouts: [] } },
+    reason: 'no recorded session followed a workout stored on the server',
+  },
+  GetSessionWorkoutHeadlines: {
+    response: { data: { sessionWorkoutHeadlines: [] } },
+    reason: 'no recorded session followed a workout stored on the server',
+  },
 };
 
 /** This operation's replay default, or `null` when it has none. */

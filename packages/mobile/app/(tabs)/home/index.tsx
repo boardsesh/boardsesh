@@ -21,6 +21,7 @@ import { Card } from '../../../src/components/Card';
 import { Button } from '../../../src/components/Button';
 import { AppStorePrompt } from '../../../src/components/AppStorePrompt';
 import { SessionFeedCard } from '../../../src/components/you/SessionFeedCard';
+import { useSessionWorkoutHeadlines } from '../../../src/components/session/workout/use-session-workout-view';
 import { NewClimbFeedCard } from '../../../src/components/feed/NewClimbFeedCard';
 import { useCrewFeed } from '../../../src/lib/graphql/hooks/use-crew-feed';
 import { CommentSheet } from '../../../src/components/you/CommentSheet';
@@ -77,6 +78,7 @@ const getItemType = (item: CrewFeedItem) => item.__typename;
 const NO_FEED_ITEMS: CrewFeedItem[] = [];
 // A session card shows one climb, so it plays from a list of just that one.
 const NO_TICKS: SessionFeedTickHighlight[] = [];
+const NO_SESSION_ID_PAGES: readonly (readonly string[])[] = [];
 
 export default function HomeTab() {
   const nativeRootHeader = useNativeRootHeader();
@@ -233,6 +235,30 @@ export default function HomeTab() {
   // the stable `renderItem` always closes over the current vote data.
   summaryMapRef.current = summaryMap;
 
+  // Each session card's workout line (#6903): one headline request per loaded
+  // feed page. Read through a ref like the vote map, so `renderItem` stays
+  // stable; `listExtraData` below re-invokes it when a line arrives.
+  const sessionIdPages = useMemo(() => {
+    if (!feedVisible) return NO_SESSION_ID_PAGES;
+    if (mode === 'crew') {
+      return (
+        crewFeed.data?.pages.map((page) =>
+          page.crewFeed.items.flatMap((item) =>
+            item.__typename === 'CrewSessionItem' ? [item.session.sessionId] : [],
+          ),
+        ) ?? NO_SESSION_ID_PAGES
+      );
+    }
+    return (
+      sessionFeed.data?.pages.map((page) => page.sessionGroupedFeed.sessions.map((session) => session.sessionId)) ??
+      NO_SESSION_ID_PAGES
+    );
+  }, [feedVisible, mode, crewFeed.data, sessionFeed.data]);
+  const workoutHeadlines = useSessionWorkoutHeadlines(sessionIdPages);
+  const workoutHeadlinesRef = useRef(workoutHeadlines);
+  workoutHeadlinesRef.current = workoutHeadlines;
+  const listExtraData = useMemo(() => ({ summaryMap, workoutHeadlines }), [summaryMap, workoutHeadlines]);
+
   const handleOpenComments = useCallback((entityId: string, entityType: SocialEntityType) => {
     setCommentTarget({ entityId, entityType });
     commentSheetRef.current?.snapToIndex(0);
@@ -365,7 +391,7 @@ export default function HomeTab() {
   }, []);
 
   // Read the map through `summaryMapRef` (not `summaryMap`) so this stays
-  // referentially stable across vote/page updates — `extraData={summaryMap}` is
+  // referentially stable across vote/page updates — `extraData={listExtraData}` is
   // the single signal that re-invokes it. A churning `renderItem` would force
   // FlashList to re-render regardless of `extraData` (perf playbook rule 3).
   const renderItem = useCallback(
@@ -383,6 +409,7 @@ export default function HomeTab() {
             onOpenComments={handleOpenComments}
             onPress={handleSessionPress}
             onOpenClimb={handleOpenClimb}
+            workoutHeadline={workoutHeadlinesRef.current.get(item.session.sessionId)}
           />
         )}
       </>
@@ -548,7 +575,7 @@ export default function HomeTab() {
           ref={listRef}
           data={feedItems}
           getItemType={getItemType}
-          extraData={summaryMap}
+          extraData={listExtraData}
           renderItem={renderItem}
           keyExtractor={keyExtractor}
           // UIKit owns the native title inset; other variants use the measured chrome.

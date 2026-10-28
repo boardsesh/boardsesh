@@ -71,7 +71,7 @@ export const WorkoutListSectionLabel = memo(function WorkoutListSectionLabel({
 }) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
-  const title = kind === 'offPlan' ? t('mobile.workoutSummary.offPlan') : t('summary.crew');
+  const title = kind === 'offPlan' ? t('workout.offPlan') : t('summary.crew');
   const ticks = t('mobile.workoutSummary.tickCount', { count });
   return (
     <View style={styles.section} accessible accessibilityRole="header" accessibilityLabel={`${title}, ${ticks}`}>
@@ -106,7 +106,7 @@ export const WorkoutSetRow = memo(function WorkoutSetRow({
   // At large text sizes the reps go under the name, so the name keeps the width.
   const stacked = workoutRowStacks(useWindowDimensions().fontScale);
   const status = workoutClimbStatus(climb, repsPerSet, t);
-  const setLabel = t('mobile.workoutSummary.setLabel', { number: setNumber });
+  const setLabel = t('workout.setLabel', { number: setNumber });
   const name = climb.name ?? t('detail.unknownClimb');
   const subtitle = climb.grade ? `${setLabel} · ${climb.grade}` : setLabel;
   const accessibilityLabel = [name, setLabel, climb.grade, status.spoken].filter(Boolean).join(', ');

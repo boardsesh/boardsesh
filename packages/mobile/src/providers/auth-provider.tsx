@@ -42,6 +42,7 @@ import { clearFirstBoardPickerShowCount } from '../lib/onboarding/first-board-pi
 import { clearAllCreateClimbDrafts } from '../lib/create-climb-draft-store';
 import { clearSessionCommentDraft } from '../lib/session-comment-draft-store';
 import { clearWorkoutRun } from '../lib/workout-run-store';
+import { clearEndedWorkouts } from '../lib/ended-workout-store';
 import { setCurrentUserStorageOwner, type UserStorageOwner } from '../lib/user-storage-owner';
 import { ACTIVE_BOARD_QUERY_KEY, clearStoredActiveBoardCoordinated } from '../lib/graphql/use-active-board';
 import { getAppEntryHref } from '../lib/app-entry-route';
@@ -286,6 +287,8 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
         // Which workout stage each queued climb belongs to. New with #5379, so
         // there is no older native behaviour to keep: cleared on every platform.
         clearWorkoutRun(),
+        // The recaps of ended workouts (#6903), kept for their session summaries.
+        clearEndedWorkouts(),
       ]);
     },
     [],

@@ -197,6 +197,49 @@ export async function hasPendingTicksForSession(db: SqlExecutor, sessionId: stri
   return row != null;
 }
 
+/** What this phone still has to send for one session. */
+export type PendingSessionWrites = {
+  /** Ticks logged in the session (`create`s; edits and deletes are not counted). */
+  ticks: number;
+  /** Workout writes for the session (`session_workouts`). */
+  workouts: number;
+};
+
+/**
+ * What this phone still has to send for `sessionId` (#6903): the session
+ * summary's "Still saving N ticks", and whether the workout it shows is newer
+ * than the server's copy. Same row rules as `hasPendingTicksForSession`: an
+ * in-flight send counts, a dead letter does not.
+ */
+export async function countPendingSessionWrites(db: SqlExecutor, sessionId: string): Promise<PendingSessionWrites> {
+  const row = await db.getFirstAsync<{ ticks: number | null; workouts: number | null }>(
+    `SELECT
+       SUM(CASE WHEN table_name = 'boardsesh_ticks' AND operation = 'create' THEN 1 ELSE 0 END) AS ticks,
+       SUM(CASE WHEN table_name = 'session_workouts' THEN 1 ELSE 0 END) AS workouts
+     FROM pending_mutations
+     WHERE status = 'pending' AND table_name IN ('boardsesh_ticks', 'session_workouts')
+       AND json_extract(payload, '$.sessionId') = ?`,
+    [sessionId],
+  );
+  return { ticks: row?.ticks ?? 0, workouts: row?.workouts ?? 0 };
+}
+
+/**
+ * Drop the workout writes for `sessionId` still waiting in the outbox (#6903),
+ * before a newer one is queued: each write carries the whole workout, so the
+ * newest one is all the server needs. A row being sent stays `pending` until it
+ * is marked completed; deleting it then only makes that DELETE a no-op. Dead
+ * letters are left for Sync issues.
+ */
+export async function removePendingSessionWorkouts(db: SqlExecutor, sessionId: string): Promise<void> {
+  await db.runAsync(
+    `DELETE FROM pending_mutations
+     WHERE table_name = 'session_workouts' AND status = 'pending'
+       AND json_extract(payload, '$.sessionId') = ?`,
+    [sessionId],
+  );
+}
+
 export async function getPendingCount(db: SqlExecutor): Promise<number> {
   const row = await db.getFirstAsync<{ count: number }>(
     `SELECT COUNT(*) as count FROM pending_mutations WHERE status = 'pending'`,

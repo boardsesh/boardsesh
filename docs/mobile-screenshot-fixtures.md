@@ -735,11 +735,12 @@ For a few, the honest answer for the screenshots account is the same whatever
 was recorded, and re-recording to learn it buys nothing.
 
 `REPLAY_DEFAULT_RESPONSES` in `scripts/lib/screenshot-fixtures.ts` declares those
-answers. Today it holds one:
+answers. The ones a reader is most likely to meet:
 
 | Operation          | Answer                            | Why it is honest                                                                        |
 | ------------------ | --------------------------------- | --------------------------------------------------------------------------------------- |
 | `ProfileAdminFlag` | `{ "data": { "profile": null } }` | The screenshots account is not an admin, and `useIsAdmin` reads a null profile as "no". |
+| `GetSessionWorkouts`, `GetSessionWorkoutHeadlines` | an empty list | The pinned set's sessions were recorded before workouts were stored on the server (#6903), so the server answers an empty list for each, and session detail and the feed cards draw them as before. |
 
 `ProfileAdminFlag` gained a caller on 2026-09-26
 (`useCatalogQuerySourceState`, which asks it for every board that is not
