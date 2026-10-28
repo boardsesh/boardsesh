@@ -211,14 +211,17 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
       // A short tap hangs up with no confirm, and on iPhone the MiniPlayer's bulb
       // touches Next, so a slip turns the wall dark (#6940). Offer Undo. Read the
       // board first: a deliberate disconnect forgets it, so the undo could not
-      // find it afterwards. A ledless board's tap after the hang-up takes the
-      // wall rather than connecting, so there is nothing for Undo to run there.
+      // find it afterwards. With no board remembered, Undo could only open the
+      // picker, which is not undoing anything, so it is not offered. A ledless
+      // board's tap after the hang-up takes the wall rather than connecting,
+      // so there is nothing for Undo to run there either.
       const undoTarget: ReconnectTarget = {
         serial: bluetooth.reconnectSerialForCurrentBoard ?? undefined,
         deviceId: bluetooth.reconnectDeviceIdForCurrentBoard ?? undefined,
       };
       void bluetooth.disconnect();
-      if (!ledless) {
+      const canReconnectSameBoard = undoTarget.serial !== undefined || undoTarget.deviceId !== undefined;
+      if (!ledless && canReconnectSameBoard) {
         disconnectUndo?.offerUndo({ surface, placement, target: undoTarget, boardKey: boardBluetoothKey(bluetooth) });
       }
       return;

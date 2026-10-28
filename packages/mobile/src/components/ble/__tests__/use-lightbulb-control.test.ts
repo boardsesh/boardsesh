@@ -8,6 +8,7 @@ type BluetoothCtx = {
   boardName: string | undefined;
   layoutId?: number;
   sizeId?: number;
+  boardUuid?: string;
   isConnected: boolean;
   lastLocalHolderUserId: string | null;
   loading: boolean;
@@ -596,7 +597,11 @@ describe('useLightbulbControl connect (#5654 connect step)', () => {
 // board through the bulbs' own connect.
 describe('useLightbulbControl disconnect undo (#6940)', () => {
   it('offers undo for the board it just hung up, read before the disconnect forgets it', () => {
-    ctrl.bluetooth = makeBluetooth({ isConnected: true, reconnectSerialForCurrentBoard: 'serial-1' });
+    ctrl.bluetooth = makeBluetooth({
+      isConnected: true,
+      reconnectSerialForCurrentBoard: 'serial-1',
+      boardUuid: 'wall-a',
+    });
     const { result } = renderControl({ surface: 'board_control_indicator', placement: 'inline' });
     result.current.onPress();
 
@@ -605,7 +610,8 @@ describe('useLightbulbControl disconnect undo (#6940)', () => {
       surface: 'board_control_indicator',
       placement: 'inline',
       target: { serial: 'serial-1', deviceId: undefined },
-      boardKey: 'kilter:8:17',
+      // Keyed with the board uuid, so a twin wall at the same gym never matches.
+      boardKey: 'kilter::8::17::wall-a',
     });
   });
 
@@ -658,9 +664,22 @@ describe('useLightbulbControl disconnect undo (#6940)', () => {
     result.current.onPress();
     expect(ctrl.bluetooth.disconnect).not.toHaveBeenCalled();
 
-    ctrl.bluetooth = makeBluetooth({ isConnected: true, ledless: true });
+    ctrl.bluetooth = makeBluetooth({ isConnected: true, ledless: true, reconnectSerialForCurrentBoard: 'serial-1' });
     rerender();
     result.current.onPress();
+    expect(ctrl.bluetooth.disconnect).toHaveBeenCalledOnce();
+    expect(offerUndoMock).not.toHaveBeenCalled();
+  });
+
+  it('offers no undo when no board is remembered, since Undo could only open the picker', () => {
+    ctrl.bluetooth = makeBluetooth({
+      isConnected: true,
+      reconnectSerialForCurrentBoard: null,
+      reconnectDeviceIdForCurrentBoard: null,
+    });
+    const { result } = renderControl({ surface: 'board_control_indicator' });
+    result.current.onPress();
+
     expect(ctrl.bluetooth.disconnect).toHaveBeenCalledOnce();
     expect(offerUndoMock).not.toHaveBeenCalled();
   });

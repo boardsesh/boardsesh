@@ -1,5 +1,6 @@
 import { createContext, useContext } from 'react';
 import type { AccessoryPlacement } from '../../lib/analytics-board-connect';
+import { boardConfigKey } from '../../lib/ble/board-config-key';
 import type { LightbulbSurface } from './use-lightbulb-control';
 
 /**
@@ -20,7 +21,7 @@ export type BoardDisconnectUndoOffer = {
   placement?: AccessoryPlacement;
   target: ReconnectTarget;
   /** `boardBluetoothKey` at the tap. The offer drops when the route moves to another board. */
-  boardKey: string;
+  boardKey: string | null;
 };
 
 export type BoardDisconnectUndoActions = {
@@ -37,11 +38,18 @@ export function useBoardDisconnectUndo(): BoardDisconnectUndoActions | null {
   return useContext(BoardDisconnectUndoContext);
 }
 
-/** Which board config the Bluetooth provider is scoped to, as one comparable string. */
+/**
+ * Which board the Bluetooth provider is scoped to, as the same `boardConfigKey`
+ * the remembered board is stored under. It carries the board uuid: a gym can run
+ * two identically configured walls, and an undo captured on one must never
+ * relight it after the climber moves to the other. Null off a board route.
+ */
 export function boardBluetoothKey(bluetooth: {
   boardName: string | undefined;
   layoutId?: number;
   sizeId?: number;
-}): string {
-  return `${bluetooth.boardName ?? ''}:${bluetooth.layoutId ?? ''}:${bluetooth.sizeId ?? ''}`;
+  boardUuid?: string;
+}): string | null {
+  if (!bluetooth.boardName || bluetooth.layoutId === undefined || bluetooth.sizeId === undefined) return null;
+  return boardConfigKey(bluetooth.boardName, bluetooth.layoutId, bluetooth.sizeId, bluetooth.boardUuid);
 }

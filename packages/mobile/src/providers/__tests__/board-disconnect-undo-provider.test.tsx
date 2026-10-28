@@ -6,11 +6,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({
   connect: vi.fn(),
   localConnected: false,
-  bluetooth: { boardName: 'kilter', layoutId: 8, sizeId: 17 } as {
+  pressAction: 'connect',
+  bluetooth: { boardName: 'kilter', layoutId: 8, sizeId: 17, boardUuid: 'wall-a' } as {
     boardName: string | undefined;
     layoutId?: number;
     sizeId?: number;
+    boardUuid?: string;
   } | null,
+  hapticError: vi.fn(),
   lightbulbOptions: null as Record<string, unknown> | null,
   snackbar: null as Record<string, unknown> | null,
   os: 'ios',
@@ -19,9 +22,15 @@ const state = vi.hoisted(() => ({
 vi.mock('../../components/ble/use-lightbulb-control', () => ({
   useLightbulbControl: (options: Record<string, unknown>) => {
     state.lightbulbOptions = options;
-    return { connect: state.connect, localConnected: state.localConnected, bluetooth: state.bluetooth };
+    return {
+      connect: state.connect,
+      pressAction: state.pressAction,
+      localConnected: state.localConnected,
+      bluetooth: state.bluetooth,
+    };
   },
 }));
+vi.mock('../../lib/haptics', () => ({ hapticError: state.hapticError }));
 vi.mock('../../hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({ floatingControlBottom: 10 }),
 }));
@@ -75,13 +84,15 @@ const offer = {
   surface: 'board_control_indicator' as const,
   placement: 'inline' as const,
   target: { serial: 'serial-1' },
-  boardKey: 'kilter:8:17',
+  boardKey: 'kilter::8::17::wall-a',
 };
 
 beforeEach(() => {
   state.connect.mockReset().mockResolvedValue(true);
   state.localConnected = false;
-  state.bluetooth = { boardName: 'kilter', layoutId: 8, sizeId: 17 };
+  state.pressAction = 'connect';
+  state.bluetooth = { boardName: 'kilter', layoutId: 8, sizeId: 17, boardUuid: 'wall-a' };
+  state.hapticError.mockReset();
   state.lightbulbOptions = null;
   state.snackbar = null;
   state.os = 'ios';
@@ -151,9 +162,33 @@ describe('BoardDisconnectUndoProvider (#6940)', () => {
   it('goes away when the climber moves to another board', () => {
     const screen = render(tree());
     act(() => actions?.offerUndo(offer));
-    state.bluetooth = { boardName: 'kilter', layoutId: 8, sizeId: 25 };
+    state.bluetooth = { boardName: 'kilter', layoutId: 8, sizeId: 25, boardUuid: 'wall-a' };
     screen.rerender(tree());
     expect(screen.container.textContent).toBe('');
     expect(state.connect).not.toHaveBeenCalled();
+  });
+
+  it('goes away when the climber moves to a twin wall that differs only by uuid', () => {
+    // Two identical Kilter walls at one gym: the captured serial is wall A's, so
+    // an Undo after moving to wall B must not light A under B's route.
+    const screen = render(tree());
+    act(() => actions?.offerUndo(offer));
+    state.bluetooth = { boardName: 'kilter', layoutId: 8, sizeId: 17, boardUuid: 'wall-b' };
+    screen.rerender(tree());
+    expect(screen.container.textContent).toBe('');
+    expect(state.connect).not.toHaveBeenCalled();
+  });
+
+  it('stays up with a buzz when Undo cannot connect right now', () => {
+    // A peer took the wall, or the hang-up is still settling: connect would
+    // resolve false without trying, so the snackbar must not vanish as if it worked.
+    state.pressAction = 'relay';
+    const { container } = render(tree());
+    act(() => actions?.offerUndo(offer));
+    act(() => callSnackbar('onUndo'));
+
+    expect(state.connect).not.toHaveBeenCalled();
+    expect(state.hapticError).toHaveBeenCalledOnce();
+    expect(container.textContent).toBe('ble.barControl.disconnectedLabel');
   });
 });

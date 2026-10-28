@@ -165,6 +165,12 @@ type BluetoothContextValue = {
   layoutId?: number;
   sizeId?: number;
   /**
+   * Which box the route points at. Two identically configured walls at one gym
+   * differ only here, so anything that pins a connect to "this board" (the
+   * disconnect undo) keys on it too, like `boardConfigKey`.
+   */
+  boardUuid?: string;
+  /**
    * MoonBoard "V2" BLE feature: also light each active hold's firmware-
    * defined neighbour LED (typically the hold above), dimmer, alongside its
    * role colour. Persisted; no-op on Aurora boards.
@@ -2458,6 +2464,7 @@ export function BluetoothProvider({
       boardName,
       layoutId,
       sizeId,
+      boardUuid,
       moonboardLightAdjacentHolds,
       setMoonboardLightAdjacentHolds,
       ledless,
@@ -2492,6 +2499,7 @@ export function BluetoothProvider({
       boardName,
       layoutId,
       sizeId,
+      boardUuid,
       moonboardLightAdjacentHolds,
       setMoonboardLightAdjacentHolds,
       ledless,

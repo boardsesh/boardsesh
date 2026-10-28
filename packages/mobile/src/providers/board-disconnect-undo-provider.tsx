@@ -12,6 +12,7 @@ import {
 } from '../components/ble/board-disconnect-undo';
 import { useLightbulbControl } from '../components/ble/use-lightbulb-control';
 import { useBottomChromeMetrics } from '../hooks/use-bottom-chrome-metrics';
+import { hapticError } from '../lib/haptics';
 import { spacing } from '../theme/tokens';
 
 /** As long as the wall-change undo: the climber may already be walking to the wall. */
@@ -59,7 +60,7 @@ function BoardDisconnectUndoSnackbar({ offer, onDone }: { offer: ActiveOffer; on
   const { t } = useTranslation('settings');
   const { t: tSession } = useTranslation('session');
   const bottomChrome = useBottomChromeMetrics();
-  const { connect, localConnected, bluetooth } = useLightbulbControl({
+  const { connect, pressAction, localConnected, bluetooth } = useLightbulbControl({
     surface: offer.surface,
     placement: offer.placement,
   });
@@ -83,10 +84,19 @@ function BoardDisconnectUndoSnackbar({ offer, onDone }: { offer: ActiveOffer; on
     if (boardKey !== offer.boardKey) onDone();
   }, [boardKey, offer.boardKey, onDone]);
 
+  // `connect` runs only for a 'connect' press action. Anything else (the
+  // hang-up still settling, a peer who took the wall since) would make it
+  // resolve false without trying, so the snackbar stays up, with a buzz, rather
+  // than vanishing as if the board were back. A connect that starts and then
+  // fails reports itself the way any bulb connect does.
   const handleUndo = useCallback(() => {
+    if (pressAction !== 'connect') {
+      hapticError();
+      return;
+    }
     onDone();
     void connect(offer.surface, { target: offer.target, placement: offer.placement, undo: true });
-  }, [connect, offer, onDone]);
+  }, [connect, offer, onDone, pressAction]);
 
   const snackbar = (
     <UndoSnackbar
