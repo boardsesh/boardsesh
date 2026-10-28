@@ -19,7 +19,7 @@ const HINGE_MODIFIERS = [onHingeChange(handleHingeChange)];
  *
  * SwiftUI fires the modifier when the view appears (and again on every change),
  * so a fresh mount publishes the current status. Mounted once, by
- * `PhoneSplitHingeObserver`. A no-op on devices without a hinge and in builds
+ * `FoldHingeObserver`. A no-op on devices without a hinge and in builds
  * made before Xcode 27.1.
  */
 export function HingeObserver() {

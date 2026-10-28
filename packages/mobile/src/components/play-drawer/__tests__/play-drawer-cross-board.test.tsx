@@ -22,6 +22,7 @@ import type { Climb } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { LayoutChangeEvent } from 'react-native';
 import { clearOpeningLayoutCache } from '../opening-layout-cache';
+import { publishHingeStatus, resetHingeStatusForTests } from '../../../lib/device-hinge-store';
 
 type Props = Record<string, unknown>;
 
@@ -153,6 +154,7 @@ vi.mock('react-native', () => ({
     if (firstScreenStyle) recorded.firstScreen.push(firstScreenStyle);
     if (onLayout && style && !Array.isArray(style) && 'marginHorizontal' in style) recorded.boardLayout = onLayout;
     else if (onLayout && !style) recorded.headerLayout = onLayout;
+    if (testID === 'play-drawer-tabletop-controls') return createElement('div', { 'data-testid': testID }, children);
     if (testID === 'play-drawer-controls-region') {
       const flattened = Object.assign({}, ...[style].flat(10).filter(Boolean)) as Props;
       return createElement(
@@ -1502,5 +1504,73 @@ describe('PlayDrawer stale-climb hold', () => {
     const killed = renderDrawer();
     expect(killed.queryByTestId('last-on-wall')).toBeNull();
     expect(recorded.actionBar.at(-1)?.commitButton).toBeNull();
+  });
+});
+
+describe('PlayDrawer in tabletop (iPhone Duo half open, upright)', () => {
+  beforeEach(() => {
+    resetHingeStatusForTests();
+    platform.OS = 'ios';
+    viewport.width = 669;
+    viewport.height = 951;
+  });
+  afterEach(() => resetHingeStatusForTests());
+
+  function renderRoute() {
+    return render(createElement(PlayDrawer, { boardConfig: TWELVE_BY_TWELVE, openTarget: null, onOpenQueue: vi.fn() }));
+  }
+
+  it('ends the first screen at the fold and moves the controls just below it', () => {
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    act(() => publishHingeStatus('partiallyOpen'));
+    const rendered = renderRoute();
+    expect(recorded.firstScreen.at(-1)?.height).toBe(464);
+    const belowFold = rendered.getByTestId('play-drawer-tabletop-controls');
+    expect(belowFold.querySelector('[data-testid="play-drawer-controls-region"]')).not.toBeNull();
+  });
+
+  it('puts the controls back under the board when the Duo opens flat', () => {
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    act(() => publishHingeStatus('partiallyOpen'));
+    const rendered = renderRoute();
+    act(() => publishHingeStatus('fullyOpen'));
+    expect(rendered.queryByTestId('play-drawer-tabletop-controls')).toBeNull();
+    expect(rendered.getByTestId('play-drawer-controls-region')).not.toBeNull();
+    expect(recorded.firstScreen.at(-1)?.height).not.toBe(464);
+  });
+
+  it('keeps the controls below the fold when the View options put them above the board', () => {
+    setSetting('playerButtonsPosition', 'above');
+    onTestFinished(() => resetAllSettings());
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    act(() => publishHingeStatus('partiallyOpen'));
+    const rendered = renderRoute();
+    const belowFold = rendered.getByTestId('play-drawer-tabletop-controls');
+    expect(belowFold.querySelector('[data-testid="action-bar"]')).not.toBeNull();
+    expect(recorded.actionBar.at(-1)?.edge).toBe('top');
+  });
+
+  it('loads the section bodies on open, since they start inside the viewport', () => {
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    act(() => publishHingeStatus('partiallyOpen'));
+    renderRoute();
+    expect(recorded.deferredSections.at(-1)?.contentEnabled).toBe(true);
+  });
+
+  it('still scrolls with every section hidden, so tall controls stay reachable', () => {
+    drawerSections.sections = Object.fromEntries(
+      Object.keys(drawerSections.defaults).map((id) => [id, false]),
+    ) as typeof drawerSections.sections;
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    act(() => publishHingeStatus('partiallyOpen'));
+    renderRoute();
+    expect(recorded.scroll.at(-1)?.scrollEnabled).toBe(true);
+  });
+
+  it('leaves the persistent pane alone', () => {
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    act(() => publishHingeStatus('partiallyOpen'));
+    const rendered = renderDrawer();
+    expect(rendered.queryByTestId('play-drawer-tabletop-controls')).toBeNull();
   });
 });

@@ -2,8 +2,10 @@ import { describe, it, expect } from 'vitest';
 import {
   resolveDeviceLayout,
   resolveDetailPaneSurface,
+  resolveFoldableInnerDisplay,
   resolvePhoneSplit,
   resolvePhoneSplitColumns,
+  resolveTabletopFoldTop,
   resolveWallSurface,
   PHONE_SPLIT_FOLD_GUTTER,
   PHONE_SPLIT_MIN_HEIGHT,
@@ -119,5 +121,44 @@ describe('resolvePhoneSplitColumns', () => {
       leadingWidth: 476,
       foldInset: PHONE_SPLIT_FOLD_GUTTER / 2,
     });
+  });
+});
+
+describe('resolveFoldableInnerDisplay', () => {
+  it('is the open Duo either way up, and not the closed one', () => {
+    expect(resolveFoldableInnerDisplay({ platformOS: 'ios', isTablet: false, ...DUO_OPEN_PORTRAIT })).toBe(true);
+    expect(resolveFoldableInnerDisplay({ platformOS: 'ios', isTablet: false, ...DUO_OPEN_LANDSCAPE })).toBe(true);
+    expect(resolveFoldableInnerDisplay({ platformOS: 'ios', isTablet: false, ...DUO_CLOSED })).toBe(false);
+  });
+
+  it('leaves out every one-display iPhone, every tablet and other platforms', () => {
+    expect(resolveFoldableInnerDisplay({ platformOS: 'ios', isTablet: false, width: 440, height: 956 })).toBe(false);
+    expect(resolveFoldableInnerDisplay({ platformOS: 'ios', isTablet: false, width: 956, height: 440 })).toBe(false);
+    for (const ipadWindow of IPAD_WINDOWS) {
+      expect(resolveFoldableInnerDisplay({ platformOS: 'ios', isTablet: true, ...ipadWindow })).toBe(false);
+    }
+    expect(resolveFoldableInnerDisplay({ platformOS: 'android', isTablet: false, ...DUO_OPEN_PORTRAIT })).toBe(false);
+  });
+});
+
+describe('resolveTabletopFoldTop', () => {
+  const duo = { platformOS: 'ios' as const, isTablet: false };
+
+  it('ends the top half at the fold, less half the gutter, on the half-open Duo held upright', () => {
+    expect(resolveTabletopFoldTop({ ...duo, ...DUO_OPEN_PORTRAIT, partiallyFolded: true })).toBe(
+      476 - PHONE_SPLIT_FOLD_GUTTER / 2,
+    );
+  });
+
+  it('is null flat, in the book pose and closed', () => {
+    expect(resolveTabletopFoldTop({ ...duo, ...DUO_OPEN_PORTRAIT, partiallyFolded: false })).toBeNull();
+    expect(resolveTabletopFoldTop({ ...duo, ...DUO_OPEN_LANDSCAPE, partiallyFolded: true })).toBeNull();
+    expect(resolveTabletopFoldTop({ ...duo, ...DUO_CLOSED, partiallyFolded: true })).toBeNull();
+  });
+
+  it('is null on a tablet, whatever a stray hinge report says', () => {
+    expect(
+      resolveTabletopFoldTop({ platformOS: 'ios', isTablet: true, width: 834, height: 1210, partiallyFolded: true }),
+    ).toBeNull();
   });
 });
