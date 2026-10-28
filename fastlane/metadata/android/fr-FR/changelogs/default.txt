@@ -1,4 +1,5 @@
 Nouveautés de 2.7 :
+- Boardsesh est maintenant disponible en italien.
 - Ton compte à rebours de repos s'affiche dans la notification de séance, avec une tonalité à la fin.
 - Crée des entraînements en phases : échauffement, pyramide, puis volume.
 - Balayer te garde dans la liste touchée. Balaye un bloc pour le mettre juste après ou à la fin.

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 // Relative, not '@boardsesh/i18n': the scripts vitest project doesn't resolve
 // workspace package names (same as mobile-locales-parity.test.ts).
 import { SUPPORTED_LOCALES } from '../../packages/shared/i18n/src/config';
@@ -22,6 +22,7 @@ import {
   collectScreenshots,
   deviceSlug,
   findFrozenClockProblems,
+  findOrCreateIosDevice,
   parseRecordingStatus,
   readScreenshotBackendLogSince,
   reportRecordingSummary,
@@ -56,7 +57,7 @@ import { metroDevClientUrl, SCREENSHOT_READY_PORT, screenshotReadinessCount } fr
 const phoneDevices = ['iPhone 16 Pro Max', 'iPhone 16 Pro'];
 const ipadDevices = ['iPad Pro 13-inch (M5)', 'iPad Pro 11-inch (M5)'];
 const commonDevices = [...phoneDevices, ...ipadDevices];
-const allAppLocales = ['en-US', 'es', 'fr', 'de'] satisfies ScreenshotOptions['appLocales'];
+const allAppLocales = ['en-US', 'es', 'fr', 'de', 'it'] satisfies ScreenshotOptions['appLocales'];
 
 function makeOptions(overrides: Partial<ScreenshotOptions> = {}): ScreenshotOptions {
   return {
@@ -333,7 +334,28 @@ describe('iOS campaign capture', () => {
   const boardTypes = ['kilter', 'tension', 'moonboard', 'woods', 'decoy', 'grasshopper', 'spray'];
   const boards = boardTypes.map((boardType) => ({ name: `Demo ${boardType}`, boardType }));
   const capture = { sharedSessionId: 'crew', boards: boards.map((board) => board.name) };
-  const options = makeOptions({ flow: 'app-store-campaign', fixtures: 'replay' });
+  const options = makeOptions({
+    flow: 'app-store-campaign',
+    fixtures: 'replay',
+    iosCampaignPhoneBoards: boardTypes.map((boardType, index) => ({
+      selector: `Demo ${boardType}`,
+      board: {
+        name: `Demo ${boardType}`,
+        uuid: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+        boardType,
+        layoutId: index + 1,
+        sizeId: index + 1,
+        setIds: '1',
+        angle: 40,
+      },
+      climb: {
+        uuid: `10000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+        name: `Genuine ${boardType}`,
+        frames: 'p1r12',
+        angle: 40,
+      },
+    })),
+  });
 
   it('carries the replay roster into the localized Metro session without manual board flags', () => {
     const env = buildScreenshotSessionEnv(options, baseEnv({ EXPO_PUBLIC_SCREENSHOT_BOARDS: 'stale|boards' }), 'de', {
@@ -430,6 +452,34 @@ describe('iOS campaign capture', () => {
     },
   );
 
+  it('opens the populated crew queue by its native badge despite the Up next accessibility label', () => {
+    const catalog = JSON.parse(readFileSync('packages/shared/i18n/locales/it/session.json', 'utf8')) as {
+      playView: { actionBar: { queueCountAria: string; queueUpNextAria_other: string } };
+    };
+    const labels = catalog.playView.actionBar;
+    const actualLabel = labels.queueUpNextAria_other.replace('{{count}}', '5');
+    expect(actualLabel).toBe('Coda, 5 blocchi in arrivo');
+    expect(new RegExp(`^${labels.queueCountAria.replace('{{count}}', '.*')}$`).test(actualLabel)).toBe(false);
+
+    const campaign = readFileSync('packages/mobile/.maestro/app-store-campaign.yaml', 'utf8');
+    const steps = parseAllDocuments(campaign)[1].toJS() as {
+      tapOn?: { id: string } | string;
+      extendedWaitUntil?: { visible: string };
+      takeScreenshot?: string;
+    }[];
+    const queueTap = steps.findIndex(
+      (step) => typeof step.tapOn === 'object' && step.tapOn.id === '^play-drawer-queue-badge$',
+    );
+    expect(queueTap).toBeGreaterThan(0);
+    expect(steps.some((step) => step.tapOn === '${SCREENSHOT_QUEUE_LABEL}')).toBe(false);
+    const titleGate = steps.findIndex((step) => step.extendedWaitUntil?.visible === '.*${SCREENSHOT_QUEUE_TITLE}.*');
+    const contentGate = steps.findIndex((step) => step.extendedWaitUntil?.visible === '.*Wax On.*');
+    const capture = steps.findIndex((step) => step.takeScreenshot === '15-crew-queue');
+    expect(queueTap).toBeLessThan(titleGate);
+    expect(titleGate).toBeLessThan(contentGate);
+    expect(contentGate).toBeLessThan(capture);
+  });
+
   it('captures all seventeen runtime sources without optional skipping of campaign images', () => {
     const legacy = readFileSync('packages/mobile/.maestro/app-store.yaml', 'utf8');
     const campaign = readFileSync('packages/mobile/.maestro/app-store-campaign.yaml', 'utf8');
@@ -512,6 +562,23 @@ describe('iOS store capture content readiness', () => {
     expect(canCapture(prerequisites, ['play-drawer-board-overlay', 'cpp-climb-painted-board-uuid-climb-uuid'])).toBe(
       true,
     );
+  });
+
+  it.each([
+    ['app-store', '03-climbs'],
+    ['app-store-campaign', '16-wall-status'],
+  ])('blocks %s %s until the visible climb search has settled', (flow, screenshot) => {
+    const prerequisites = prerequisitesFor(flow, screenshot);
+    const settledIndex = prerequisites.findIndex(
+      (command) => command.extendedWaitUntil?.visible?.id === '^climbs-capture-settled$',
+    );
+    expect(settledIndex).toBeGreaterThanOrEqual(0);
+    // Earlier commands deliberately open then close the player. The final
+    // capture state starts after that navigation, once its rows have settled.
+    const captureState = prerequisites.slice(settledIndex);
+    expect(canCapture(captureState, ['climbs-screen'])).toBe(false);
+    expect(canCapture(captureState, ['climbs-screen', 'climbs-capture-settled'])).toBe(true);
+    expect(prerequisites.at(-1)).toBe('waitForAnimationToEnd');
   });
 });
 
@@ -1072,8 +1139,16 @@ describe('renderMaestroFlowForIosDevice', () => {
         commands: [{ tapOn: '${SCREENSHOT_SIDEBAR_TOGGLE_LABEL}' }],
       });
       expect(navigation[index][1].extendedWaitUntil?.visible).toBe('${SCREENSHOT_SIDEBAR_HIDE_LABEL}');
-      expect(navigation[index][2].tapOn).toEqual({ text: label, index: 0 });
-      expect(navigation[index][3].extendedWaitUntil?.visible).toEqual({ text: label, selected: true });
+      // The primary-board ACK already selected the first Climbs destination.
+      if (index === 0) {
+        expect(navigation[index].some((command) => command.tapOn?.text === label)).toBe(false);
+      } else {
+        expect(navigation[index][2].tapOn).toEqual({ text: label, index: 0 });
+      }
+      expect(navigation[index][index === 0 ? 2 : 3].extendedWaitUntil?.visible).toEqual({
+        text: label,
+        selected: true,
+      });
     }
     expect(commands.flatMap((command) => (command.takeScreenshot ? [command.takeScreenshot] : []))).toEqual([
       '02-climbs',
@@ -1090,7 +1165,13 @@ describe('renderMaestroFlowForIosDevice', () => {
     let collapsedControlVisible = false;
     let sidebarAbsent = false;
     for (const command of commands) {
-      if (command.retry?.commands.some((nested) => nested.tapOn)) selectedDestination = true;
+      if (
+        command.retry?.commands.some((nested) => {
+          const selected = nested.extendedWaitUntil?.visible;
+          return typeof selected === 'object' && selected.selected === true;
+        })
+      )
+        selectedDestination = true;
       if (command.tapOn === '${SCREENSHOT_SIDEBAR_HIDE_LABEL}') {
         expect(selectedDestination).toBe(true);
         collapseRequested = true;
@@ -1122,12 +1203,14 @@ describe('renderMaestroFlowForIosDevice', () => {
       es: ['Inicio', 'Bloques', 'Sesión', 'Descubre', 'Perfil'],
       fr: ['Accueil', 'Blocs', 'Session', 'Découvrir', 'Profil'],
       de: ['Start', 'Boulder', 'Session', 'Entdecken', 'Profil'],
+      it: ['Home', 'Blocchi', 'Session', 'Scopri', 'Profilo'],
     };
     const wallDisplay = {
       'en-US': ['Climb list options', 'Wall display', 'Exit wall display'],
       es: ['Opciones de la lista de bloques', 'Pantalla de muro', 'Salir de la pantalla de muro'],
       fr: ['Options de la liste de blocs', 'Affichage mural', "Quitter l'affichage mural"],
       de: ['Optionen für die Boulderliste', 'Wandanzeige', 'Wandanzeige beenden'],
+      it: ["Opzioni dell'elenco dei blocchi", 'Schermo parete', 'Esci dallo schermo parete'],
     };
     for (const locale of allAppLocales) {
       const env = buildIosSidebarMaestroEnv(locale);
@@ -1230,13 +1313,121 @@ describe('resolveIosScreenshotDevices', () => {
   });
 });
 
+describe('simulator creation diagnostics', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  function captureCommands() {
+    vi.stubEnv('BOARDSESH_IOS_SIMULATOR_UDID', '');
+    return vi
+      .fn(() => ({ status: 0, stdout: '', stderr: '' }))
+      .mockReturnValueOnce({ status: 0, stdout: JSON.stringify({ devices: {} }), stderr: '' })
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: JSON.stringify({
+          runtimes: [{ identifier: 'com.apple.CoreSimulator.SimRuntime.iOS-27-1', version: '27.1', isAvailable: true }],
+        }),
+        stderr: '',
+      });
+  }
+
+  it('includes the requested device, runtime and simctl failure diagnostic', () => {
+    const capture = captureCommands().mockReturnValueOnce({
+      status: 1,
+      stdout: '',
+      stderr: 'Invalid device type: com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro',
+    });
+    expect(() => findOrCreateIosDevice(resolveIosScreenshotDevices(['iPhone 16 Pro'])[0], capture)).toThrow(
+      /iPhone 16 Pro.*iOS-27-1.*Invalid device type/,
+    );
+  });
+
+  it('creates phones on the newest runtime that declares support for their device type', () => {
+    vi.stubEnv('BOARDSESH_IOS_SIMULATOR_UDID', '');
+    const device = resolveIosScreenshotDevices(['iPhone 16 Pro'])[0];
+    const created = { udid: 'compatible-device', name: device.name, state: 'Shutdown' };
+    const capture = vi
+      .fn(() => ({ status: 0, stdout: '', stderr: '' }))
+      .mockReturnValueOnce({ status: 0, stdout: JSON.stringify({ devices: {} }), stderr: '' })
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: JSON.stringify({
+          runtimes: [
+            {
+              identifier: 'com.apple.CoreSimulator.SimRuntime.iOS-27-0',
+              version: '27.0',
+              isAvailable: true,
+              supportedDeviceTypes: [{ identifier: device.typeId }],
+            },
+            {
+              identifier: 'com.apple.CoreSimulator.SimRuntime.iOS-27-1',
+              version: '27.1',
+              isAvailable: true,
+              supportedDeviceTypes: [{ identifier: 'other-device' }],
+            },
+            {
+              identifier: 'com.apple.CoreSimulator.SimRuntime.iOS-28-0',
+              version: '28.0',
+              isAvailable: false,
+              supportedDeviceTypes: [{ identifier: device.typeId }],
+            },
+          ],
+        }),
+        stderr: '',
+      })
+      .mockReturnValueOnce({ status: 0, stdout: created.udid, stderr: '' })
+      .mockReturnValueOnce({ status: 0, stdout: JSON.stringify({ devices: { runtime: [created] } }), stderr: '' });
+    expect(findOrCreateIosDevice(device, capture)).toEqual(created);
+    expect(capture).toHaveBeenNthCalledWith(3, 'xcrun', [
+      'simctl',
+      'create',
+      device.name,
+      device.typeId,
+      'com.apple.CoreSimulator.SimRuntime.iOS-27-0',
+    ]);
+  });
+
+  it('reports incompatible installed runtimes before trying to create a simulator', () => {
+    vi.stubEnv('BOARDSESH_IOS_SIMULATOR_UDID', '');
+    const capture = vi
+      .fn(() => ({ status: 0, stdout: '', stderr: '' }))
+      .mockReturnValueOnce({ status: 0, stdout: JSON.stringify({ devices: {} }), stderr: '' })
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: JSON.stringify({
+          runtimes: [
+            {
+              identifier: 'com.apple.CoreSimulator.SimRuntime.iOS-27-1',
+              version: '27.1',
+              isAvailable: true,
+              supportedDeviceTypes: [],
+            },
+          ],
+        }),
+        stderr: '',
+      });
+    expect(() => findOrCreateIosDevice(resolveIosScreenshotDevices(['iPhone 16 Pro'])[0], capture)).toThrow(
+      'no compatible iOS runtime',
+    );
+    expect(capture).toHaveBeenCalledTimes(2);
+  });
+
+  it('still resolves a successfully created simulator from the refreshed inventory', () => {
+    const created = { udid: 'created-device', name: 'iPhone 16 Pro', state: 'Shutdown' };
+    const capture = captureCommands()
+      .mockReturnValueOnce({ status: 0, stdout: created.udid, stderr: '' })
+      .mockReturnValueOnce({ status: 0, stdout: JSON.stringify({ devices: { runtime: [created] } }), stderr: '' });
+    expect(findOrCreateIosDevice(resolveIosScreenshotDevices([created.name])[0], capture)).toEqual(created);
+  });
+});
+
 describe('resolveAppStoreLocaleTargets', () => {
   it('maps app locales to App Store Connect locale directories', () => {
-    expect(resolveAppStoreLocaleTargets(['en-US', 'es', 'fr', 'de'])).toEqual([
+    expect(resolveAppStoreLocaleTargets(allAppLocales)).toEqual([
       { appLocale: 'en-US', appStoreLocales: ['en-US'] },
       { appLocale: 'es', appStoreLocales: ['es-ES', 'es-MX'] },
       { appLocale: 'fr', appStoreLocales: ['fr-FR'] },
       { appLocale: 'de', appStoreLocales: ['de-DE'] },
+      { appLocale: 'it', appStoreLocales: ['it'] },
     ]);
   });
 
@@ -1265,6 +1456,12 @@ describe('--fixtures', () => {
     const env = buildScreenshotEnv(options, baseEnv());
     expect(env.EXPO_PUBLIC_SCREENSHOT_NOW).toBeUndefined();
     expect(env.EXPO_PUBLIC_WS_URL).toBeUndefined();
+  });
+
+  it('keeps optional CPP locales scoped to their reviewed manifest', () => {
+    expect(parseArgs(['--cpp', 'kilter']).appLocales).toEqual(['en-US', 'es', 'fr', 'de']);
+    expect(parseArgs(['--cpp', 'all', '--locales', 'all']).appLocales).toEqual(['en-US', 'es', 'fr', 'de']);
+    expect(() => parseArgs(['--cpp', 'kilter', '--locales', 'it'])).toThrow('reviewed campaign assets');
   });
 
   it('isolates the iOS campaign recipe and fixture pin from Android and navigation smoke', () => {

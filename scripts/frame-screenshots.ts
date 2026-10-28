@@ -787,7 +787,7 @@ export async function frameDirectory(options: FrameDirectoryOptions): Promise<st
   if (options.cpp && options.platform !== 'ios') throw new Error('CPP framing requires iOS');
   const recipes = options.cpp
     ? resolveCppRecipes(readCppPage(options.cpp), options.device, names)
-    : resolveScreenshotRecipes(options.platform, options.device, names);
+    : resolveScreenshotRecipes(options.platform, options.device, names, options.locale);
   const outputNames = recipes.map((recipe) => recipe.output);
   const captures = names.map((name) => ({ name, buffer: readFileSync(join(input, name)) }));
   const offenders =
@@ -947,7 +947,7 @@ export function parseFrameArguments(argv: readonly string[]): {
   const output = flags.get('--output');
   if ((platform !== 'ios' && platform !== 'android') || !input || !output) {
     throw new Error(
-      'Usage: screenshot:frame --platform ios|android --input <raw tree> --output <store tree> [--device <slug> --locale en-US|es|fr|de]',
+      'Usage: screenshot:frame --platform ios|android --input <raw tree> --output <store tree> [--device <slug> --locale en-US|es|fr|de|it]',
     );
   }
   const cpp = flags.get('--cpp');

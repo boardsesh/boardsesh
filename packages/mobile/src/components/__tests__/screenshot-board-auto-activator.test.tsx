@@ -52,6 +52,52 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 describe('ScreenshotBoardAutoActivator', () => {
+  it.each([
+    { field: 'uuid', changed: { uuid: 'another-board' } },
+    { field: 'board type', changed: { boardType: 'tension' } },
+    { field: 'layout', changed: { layoutId: 1 } },
+    { field: 'size', changed: { sizeId: 19 } },
+    { field: 'sets', changed: { setIds: '26,27' } },
+    { field: 'angle', changed: { angle: 40 } },
+  ])('does not ACK a regular route while its active board has the wrong $field', async ({ changed }) => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_CPP_URL', '');
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_PRIMARY_BOARD_URL', 'http://localhost:19870/cpp');
+    vi.stubEnv(
+      'EXPO_PUBLIC_SCREENSHOT_PRIMARY_BOARD_COMMANDS',
+      JSON.stringify({
+        'campaign-phone-climbs-0': {
+          selector: boards.primary.name,
+          identity: { uuid: 'primary', boardType: 'kilter', layoutId: 8, sizeId: 25, setIds: [26], angle: 35 },
+          route: '/climbs?screenshotBoardIndex=0&screenshotCppScene=campaign-phone-climbs-0',
+        },
+      }),
+    );
+    boards.active = boards.primary;
+    const fetchCommand = vi.fn(async (_endpoint: string) => ({
+      status: 200,
+      json: async () => ({ sequence: 18, scene: 'campaign-phone-climbs-0' }),
+    }));
+    vi.stubGlobal('fetch', fetchCommand);
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const { rerender, unmount } = renderHook(() => ScreenshotBoardAutoActivator());
+    await waitFor(() => expect(boards.replace).toHaveBeenCalledTimes(1));
+    boards.route = '/climbs';
+    boards.params = { screenshotBoardIndex: '0', screenshotCppScene: 'campaign-phone-climbs-0' };
+    boards.active = { ...boards.primary, ...changed };
+    rerender();
+    expect(fetchCommand.mock.calls.some(([endpoint]) => endpoint.includes('/ack'))).toBe(false);
+    // Set ordering and duplicate representations do not change the board config.
+    boards.active = { ...boards.primary, setIds: ' 26,26 ' };
+    boards.pending = true;
+    rerender();
+    expect(fetchCommand.mock.calls.some(([endpoint]) => endpoint.includes('/ack'))).toBe(false);
+    boards.pending = false;
+    rerender();
+    await waitFor(() => expect(fetchCommand).toHaveBeenCalledWith('http://localhost:19870/cpp/ack?sequence=18'));
+    unmount();
+  });
+
   it('activates the genuine regular primary board without CPP mode and ACKs only its exact route', async () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_CPP_URL', '');

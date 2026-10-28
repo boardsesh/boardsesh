@@ -1,4 +1,5 @@
 New in 2.7:
+- Boardsesh is now available in Italian.
 - Your rest countdown shows in the session notification, with a tone when rest ends.
 - Build workouts out of blocks: warm up, then a pyramid, then volume.
 - Swiping stays on the list you tapped. Swipe a climb to play it next or last.

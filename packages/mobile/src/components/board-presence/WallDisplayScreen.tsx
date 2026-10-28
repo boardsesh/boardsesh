@@ -132,11 +132,15 @@ function WallDisplayScreenComponent() {
 
   return (
     <WallDisplayKeyScope active={isFocused} exitTitle={exitTitle} onExit={exit}>
-      <View style={styles.root} onTouchStart={handleTouchStart}>
+      <View
+        // Keep the readiness id on the visible kiosk: iOS prunes the controls'
+        // opacity-zero container from the native automation hierarchy.
+        testID={controlsVisible ? 'wall-display-controls' : 'wall-display-controls-faded'}
+        style={styles.root}
+        onTouchStart={handleTouchStart}
+      >
         <WallScreen />
         <Animated.View
-          // The id says whether the controls are faded, so a capture can wait for it.
-          testID={controlsVisible ? 'wall-display-controls' : 'wall-display-controls-faded'}
           pointerEvents="box-none"
           style={[
             styles.controls,

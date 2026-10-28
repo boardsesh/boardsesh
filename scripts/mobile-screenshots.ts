@@ -85,6 +85,7 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   CPP_TARGETS,
+  CPP_MANIFEST_PATH,
   isCppTarget,
   readCppPage,
   cppNavigationCommands,
@@ -162,6 +163,10 @@ import {
   parseScreenshotBackendLogLine,
   resolveScreenshotBackendPort,
   startOfSecondIso,
+  canonicalJson,
+  graphqlFixtureKey,
+  normalizeDocument,
+  type GraphqlFixtureFile,
   type ScreenshotBackendMode,
   type ScreenshotCaptureScenario,
 } from './lib/screenshot-fixtures';
@@ -171,6 +176,9 @@ import {
 import { ensureAndroidApk } from './mobile-android-apk';
 import { assertCppGradeCountProof, readCppCountFixtures } from './lib/cpp-grade-count';
 import { readIosCampaignPrimaryCapture, type IosCampaignPrimaryCapture } from './lib/ios-campaign-primary';
+import { iosCampaignPhoneScene } from './lib/ios-campaign-phone-scenes';
+import { SEARCH_CLIMBS } from '../packages/mobile/src/lib/graphql/operations';
+import { DEFAULT_CLIMB_FILTER_STATE, toClimbSearchInput } from '../packages/shared/climb-filters/src/filter-state';
 import {
   matchScreenshotBoardCandidates,
   parseScreenshotBoardSelectors,
@@ -346,11 +354,11 @@ const APP_STORE_LOCALES_BY_APP_LOCALE: Record<Locale, readonly string[]> = {
   es: ['es-ES', 'es-MX'],
   fr: ['fr-FR'],
   de: ['de-DE'],
-  it: ['it-IT'],
+  it: ['it'],
 };
 
 /** Default / `--locales all` set. Excludes app locales without store screenshot folders yet. */
-const STORE_READY_APP_LOCALES: readonly Locale[] = ['en-US', 'es', 'fr', 'de'];
+const STORE_READY_APP_LOCALES: readonly Locale[] = ['en-US', 'es', 'fr', 'de', 'it'];
 
 export interface ScreenshotOptions {
   platform: ScreenshotPlatform;
@@ -427,6 +435,7 @@ export interface ScreenshotOptions {
   cppScenarioFile?: string;
   cppCapturePage?: CppPage;
   iosCampaignPrimaryCapture?: IosCampaignPrimaryCapture;
+  iosCampaignPhoneBoards?: IosCampaignPhoneBoard[];
 }
 
 export function parseArgs(argv: readonly string[]): ScreenshotOptions {
@@ -575,6 +584,14 @@ export function parseArgs(argv: readonly string[]): ScreenshotOptions {
       options.boards
     )
       throw new Error('--cpp requires iOS App Store capture and controls its board selectors');
+    const campaign = JSON.parse(readFileSync(CPP_MANIFEST_PATH, 'utf8')) as { locales: Record<string, string[]> };
+    const campaignLocales = Object.keys(campaign.locales).filter(isSupportedLocale);
+    const localesFlag = args.indexOf('--locales');
+    if (localesFlag === -1 || args[localesFlag + 1] === 'all') {
+      options.appLocales = campaignLocales;
+    } else if (options.appLocales.some((locale) => !campaignLocales.includes(locale))) {
+      throw new Error(`--cpp locales must have reviewed campaign assets (${campaignLocales.join(', ')})`);
+    }
     options.flow = 'app-store-cpp';
     if (!args.includes('--fixtures')) options.fixtures = 'replay';
   }
@@ -807,6 +824,9 @@ export function buildScreenshotEnv(
         },
         route: '/climbs?screenshotBoardIndex=0',
       },
+      ...(options.iosCampaignPhoneBoards
+        ? compileIosCampaignPhoneNavigation(readIosCampaignPhoneSource(), options.iosCampaignPhoneBoards).commands
+        : {}),
     });
   }
   if (options.cpp && options.cpp !== 'all') {
@@ -896,7 +916,7 @@ function runCapture(
   args: string[],
   env?: NodeJS.ProcessEnv,
   timeoutMs?: number,
-): { status: number; stdout: string } {
+): { status: number; stdout: string; stderr: string } {
   guardSimulatorCommand(command, args, ROOT_DIR);
   // No `env` key at all when the caller passed none: spawnSync inherits
   // process.env only when the option is absent, and `env: undefined` would be a
@@ -906,7 +926,11 @@ function runCapture(
     ...(env ? { env } : {}),
     ...(timeoutMs ? { timeout: timeoutMs, killSignal: 'SIGKILL' as const } : {}),
   });
-  return { status: result.status ?? 1, stdout: result.stdout ?? '' };
+  return {
+    status: result.status ?? 1,
+    stdout: result.stdout ?? '',
+    stderr: result.stderr ?? result.error?.message ?? '',
+  };
 }
 
 /**
@@ -951,8 +975,8 @@ function commandExists(command: string): boolean {
 }
 
 /** All simulator devices, flattened across runtimes. */
-function listSimulatorDevices(): DeviceInfo[] {
-  const { status, stdout } = runCapture('xcrun', ['simctl', 'list', 'devices', '--json']);
+function listSimulatorDevices(capture = runCapture): DeviceInfo[] {
+  const { status, stdout } = capture('xcrun', ['simctl', 'list', 'devices', '--json']);
   if (status !== 0) return [];
   // simctl can emit partial/empty JSON while Xcode is installing or updating
   // components; treat unparseable output as "no devices" rather than throwing a
@@ -973,24 +997,42 @@ function listSimulatorDevices(): DeviceInfo[] {
   return devices;
 }
 
-/** Newest available iOS runtime identifier (for creating a missing device). */
-function newestIosRuntime(): string | null {
-  const { status, stdout } = runCapture('xcrun', ['simctl', 'list', 'runtimes', '--json']);
+/** Newest available iOS runtime supporting the requested simulator device type. */
+function newestIosRuntime(deviceTypeId: string, capture = runCapture): string | null {
+  const { status, stdout } = capture('xcrun', ['simctl', 'list', 'runtimes', '--json']);
   if (status !== 0) return null;
   // Same defensive parse as listSimulatorDevices: partial JSON during a Xcode
   // component install shouldn't crash the run.
   let parsed: {
-    runtimes: Array<{ identifier: string; isAvailable?: boolean; platform?: string; version?: string }>;
+    runtimes: Array<{
+      identifier: string;
+      isAvailable?: boolean;
+      platform?: string;
+      version?: string;
+      supportedDeviceTypes?: Array<{ identifier: string }>;
+    }>;
   };
   try {
     parsed = JSON.parse(stdout) as {
-      runtimes: Array<{ identifier: string; isAvailable?: boolean; platform?: string; version?: string }>;
+      runtimes: Array<{
+        identifier: string;
+        isAvailable?: boolean;
+        platform?: string;
+        version?: string;
+        supportedDeviceTypes?: Array<{ identifier: string }>;
+      }>;
     };
   } catch {
     return null;
   }
   const ios = parsed.runtimes
-    .filter((runtime) => runtime.isAvailable !== false && /iOS/i.test(runtime.identifier))
+    .filter(
+      (runtime) =>
+        runtime.isAvailable !== false &&
+        /iOS/i.test(runtime.identifier) &&
+        (runtime.supportedDeviceTypes === undefined ||
+          runtime.supportedDeviceTypes.some((device) => device.identifier === deviceTypeId)),
+    )
     .sort((a, b) => (a.version ?? '').localeCompare(b.version ?? '', undefined, { numeric: true }));
   return ios.length > 0 ? ios[ios.length - 1].identifier : null;
 }
@@ -1023,8 +1065,8 @@ export function resolveAppStoreLocaleTargets(appLocales: readonly Locale[]): App
   }));
 }
 
-export function findOrCreateIosDevice(screenshotDevice: IosScreenshotDevice): DeviceInfo {
-  const devices = listSimulatorDevices();
+export function findOrCreateIosDevice(screenshotDevice: IosScreenshotDevice, capture = runCapture): DeviceInfo {
+  const devices = listSimulatorDevices(capture);
   const selectedUdid = process.env.BOARDSESH_IOS_SIMULATOR_UDID;
   if (selectedUdid) {
     const selectedDevice = devices.find((device) => device.udid.toUpperCase() === selectedUdid.toUpperCase());
@@ -1049,18 +1091,26 @@ export function findOrCreateIosDevice(screenshotDevice: IosScreenshotDevice): De
     );
   }
 
-  const runtime = newestIosRuntime();
+  const runtime = newestIosRuntime(screenshotDevice.typeId, capture);
   if (!runtime) {
     throw new Error(
-      `No "${screenshotDevice.name}" simulator found and no iOS runtime available to create one. Open Xcode > Settings > Components to install a simulator runtime, or create the device in Xcode.`,
+      `No "${screenshotDevice.name}" simulator found and no compatible iOS runtime is available for ${screenshotDevice.typeId}. Open Xcode > Settings > Components to install a simulator runtime, or create the device in Xcode.`,
     );
   }
   console.log(`${LOG} Creating simulator "${screenshotDevice.name}" (${runtime})...`);
-  const { status } = runCapture('xcrun', ['simctl', 'create', screenshotDevice.name, screenshotDevice.typeId, runtime]);
+  const { status, stdout, stderr } = capture('xcrun', [
+    'simctl',
+    'create',
+    screenshotDevice.name,
+    screenshotDevice.typeId,
+    runtime,
+  ]);
   if (status !== 0) {
-    throw new Error(`Failed to create simulator "${screenshotDevice.name}". Create it manually in Xcode and rerun.`);
+    throw new Error(
+      `Failed to create simulator "${screenshotDevice.name}" (${screenshotDevice.typeId}, ${runtime}): ${stderr.trim() || stdout.trim() || 'simctl returned no diagnostic output'}`,
+    );
   }
-  const created = listSimulatorDevices().find((device) => device.name === screenshotDevice.name);
+  const created = listSimulatorDevices(capture).find((device) => device.name === screenshotDevice.name);
   if (!created) throw new Error(`Created "${screenshotDevice.name}" but could not locate it afterwards.`);
   return created;
 }
@@ -2668,6 +2718,10 @@ export function renderedFlowFileForIosDevice(
     // A replacement string expands $' in single-quoted regex anchors into the
     // campaign suffix. The callback inserts the legacy YAML bytes literally.
     source = source.replace('- runFlow: app-store.yaml', () => legacyCommands);
+    if (!options.cpp) {
+      if (!options.iosCampaignPhoneBoards) throw new Error('Default phone campaign requires verified board navigation');
+      source = compileIosCampaignPhoneNavigation(source, options.iosCampaignPhoneBoards).source;
+    }
   }
   if (options.cpp && options.cpp !== 'all')
     source = renderCppMaestroFlow(
@@ -3157,6 +3211,205 @@ export function assertIosCampaignSources(capturedNames: readonly string[]): void
 
 export type IosCampaignBoard = CppRecordedBoard & { layoutName?: string | null };
 
+export interface IosCampaignPhoneBoard {
+  selector: string;
+  board: CppRecordedBoard & { setIds: string };
+  climb: { uuid: string; name: string; frames: string; angle: number };
+}
+
+const IOS_CAMPAIGN_BOARD_TYPES = ['kilter', 'tension', 'moonboard', 'woods', 'decoy', 'grasshopper', 'spray'];
+
+const canonicalCampaignSets = (setIds: string) =>
+  setIds
+    .split(',')
+    .map(Number)
+    .sort((left, right) => left - right)
+    .join(',');
+
+/** Read every commanded identity from a genuine exact default-search seed. */
+export function readIosCampaignPhoneBoards(
+  fixturesDir: string,
+  selectors: readonly string[],
+  recordedBoards: readonly IosCampaignBoard[],
+): IosCampaignPhoneBoard[] {
+  if (selectors.length !== IOS_CAMPAIGN_BOARD_TYPES.length)
+    throw new Error('Phone campaign needs exactly seven board selectors');
+  const manifest = readScreenshotFixtureManifest(fixturesDir);
+  if (!manifest || manifest.flow !== 'app-store-campaign')
+    throw new Error('Phone campaign requires its recorded manifest');
+  const captures = selectors.map((selector, index) => {
+    const candidates = matchScreenshotBoardCandidates(recordedBoards, selector);
+    if (
+      !candidates.length ||
+      candidates.some(
+        (board) =>
+          !/^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(board.uuid) ||
+          board.boardType !== IOS_CAMPAIGN_BOARD_TYPES[index] ||
+          !Number.isSafeInteger(board.layoutId) ||
+          board.layoutId < 1 ||
+          !Number.isSafeInteger(board.sizeId) ||
+          board.sizeId < 1 ||
+          !Number.isFinite(board.angle) ||
+          !board.setIds ||
+          !/^\d+(,\d+)*$/.test(board.setIds),
+      )
+    )
+      throw new Error(`Phone campaign board[${index}] has no genuine recorded identity`);
+    const identities = new Map(
+      candidates.map((board) => [
+        canonicalJson({
+          uuid: board.uuid,
+          boardType: board.boardType,
+          layoutId: board.layoutId,
+          sizeId: board.sizeId,
+          setIds: canonicalCampaignSets(board.setIds!),
+          angle: board.angle,
+        }),
+        board,
+      ]),
+    );
+    if (identities.size !== 1) throw new Error(`Phone campaign board[${index}] identity is ambiguous`);
+    const recorded = [...identities.values()][0];
+    const board = { ...recorded, setIds: recorded.setIds! };
+    const expectedInput = toClimbSearchInput(
+      DEFAULT_CLIMB_FILTER_STATE,
+      {
+        boardName: board.boardType,
+        layoutId: board.layoutId,
+        sizeId: board.sizeId,
+        setIds: canonicalCampaignSets(board.setIds),
+        angle: board.angle,
+      },
+      { page: 0, pageSize: 6 },
+    );
+    const seeds = manifest.graphql
+      .filter((entry) => entry.operationName === 'SearchClimbs')
+      .flatMap((entry) => {
+        const fixture = JSON.parse(readFileSync(join(fixturesDir, entry.file), 'utf8')) as GraphqlFixtureFile;
+        const variables = fixture.variables as { input?: { setIds?: unknown } } | undefined;
+        const input = variables?.input;
+        if (
+          !input ||
+          typeof input.setIds !== 'string' ||
+          canonicalJson({ ...input, setIds: canonicalCampaignSets(input.setIds) }) !== canonicalJson(expectedInput)
+        )
+          return [];
+        if (normalizeDocument(fixture.query) !== normalizeDocument(SEARCH_CLIMBS))
+          throw new Error('Phone campaign seed document changed');
+        const key = graphqlFixtureKey(fixture, (text) => createHash('sha256').update(text).digest('hex'));
+        const response = fixture.response as {
+          errors?: unknown[];
+          data?: {
+            searchClimbs?: {
+              climbs?: Array<{
+                uuid: string;
+                name: string;
+                frames: string;
+                boardType: string;
+                layoutId: number;
+                angle: number;
+                compatibleSizeIds?: number[];
+              }>;
+            };
+          };
+        };
+        if (
+          fixture.status !== 200 ||
+          response.errors?.length ||
+          fixture.operationName !== entry.operationName ||
+          key.documentHash !== entry.documentHash ||
+          key.variablesHash !== entry.variablesHash ||
+          fixture.documentHash !== entry.documentHash ||
+          fixture.variablesHash !== entry.variablesHash
+        )
+          throw new Error('Phone campaign seed provenance is invalid');
+        const climb = response.data?.searchClimbs?.climbs?.[0];
+        if (
+          !climb ||
+          !isCppClimbId(climb.uuid) ||
+          !climb.name?.trim() ||
+          !climb.frames?.trim() ||
+          climb.boardType !== board.boardType ||
+          climb.layoutId !== board.layoutId ||
+          climb.angle !== board.angle ||
+          (climb.compatibleSizeIds && !climb.compatibleSizeIds.includes(board.sizeId))
+        )
+          throw new Error('Phone campaign seed has no genuine compatible hero climb');
+        return [{ uuid: climb.uuid, name: climb.name, frames: climb.frames, angle: climb.angle }];
+      });
+    const uniqueSeeds = new Map(seeds.map((climb) => [canonicalJson(climb), climb]));
+    if (uniqueSeeds.size !== 1) throw new Error(`Phone campaign board[${index}] needs one unambiguous exact seed`);
+    return { selector, board, climb: [...uniqueSeeds.values()][0] };
+  });
+  if (new Set(captures.map(({ board }) => board.uuid)).size !== 7)
+    throw new Error('Phone campaign board UUIDs must be distinct');
+  return captures;
+}
+
+function readIosCampaignPhoneSource(): string {
+  const source = readFileSync(join(MAESTRO_DIR, 'app-store-campaign.yaml'), 'utf8');
+  const legacy = readFileSync(join(MAESTRO_DIR, 'app-store.yaml'), 'utf8').split('\n---\n')[1];
+  return source.replace('- runFlow: app-store.yaml', () => legacy);
+}
+
+/** Replace only default campaign Climbs links; every occurrence has its own latch identity. */
+export function compileIosCampaignPhoneNavigation(source: string, boards: readonly IosCampaignPhoneBoard[]) {
+  if (boards.length !== 7) throw new Error('Phone campaign navigation requires seven verified boards');
+  const commands: Record<
+    string,
+    {
+      selector: string;
+      identity: { uuid: string; boardType: string; layoutId: number; sizeId: number; setIds: number[]; angle: number };
+      route: string;
+    }
+  > = {};
+  const rewritten = source.replace(
+    /^([ \t]*)- openLink:\s*(com\.boardsesh\.app:\/\/climbs(?:\?[^\r\n]*)?)[ \t]*$/gm,
+    (_line, indent: string, rawLink: string) => {
+      const link = new URL(rawLink.trim());
+      const rawIndex = link.searchParams.get('screenshotBoardIndex');
+      if (
+        link.searchParams.getAll('screenshotBoardIndex').length > 1 ||
+        (rawIndex !== null && !/^[0-6]$/.test(rawIndex))
+      )
+        throw new Error('Phone campaign link has an invalid board index');
+      const index = rawIndex === null ? 0 : Number(rawIndex);
+      const capture = boards[index];
+      const scene = iosCampaignPhoneScene(Object.keys(commands).length);
+      link.searchParams.set('screenshotBoardIndex', String(index));
+      link.searchParams.set('screenshotCppScene', scene);
+      if (link.searchParams.get('screenshotOpenFirst')) link.searchParams.set('screenshotClimbId', capture.climb.uuid);
+      commands[scene] = {
+        // Preflight accepts native selector aliases; the runtime command resolver
+        // intentionally requires the resolved recorded name plus exact identity.
+        selector: capture.board.name,
+        identity: {
+          uuid: capture.board.uuid,
+          boardType: capture.board.boardType,
+          layoutId: capture.board.layoutId,
+          sizeId: capture.board.sizeId,
+          setIds: capture.board.setIds.split(',').map(Number),
+          angle: capture.board.angle,
+        },
+        route: `/climbs${link.search}`,
+      };
+      return [
+        `- evalScript: \${output.campaignPhoneSequence = JSON.parse(http.get(SCREENSHOT_PRIMARY_BOARD_URL + '/set?scene=${scene}').body).sequence}`,
+        '- retry:',
+        '    maxRetries: 3',
+        '    commands:',
+        `      - evalScript: \${output.campaignPhoneAcknowledged = JSON.parse(http.get(SCREENSHOT_PRIMARY_BOARD_URL + '/status?waitFor=' + output.campaignPhoneSequence).body).acknowledged}`,
+        '      - assertTrue: ${output.campaignPhoneAcknowledged == output.campaignPhoneSequence}',
+      ]
+        .map((line) => `${indent}${line}`)
+        .join('\n');
+    },
+  );
+  if (/^\s*- openLink:\s*['"]?com\.boardsesh\.app:\/\/climbs/m.test(rewritten))
+    throw new Error('Uncompiled phone campaign Climbs link');
+  return { source: rewritten, commands };
+}
+
 export function readIosCampaignBoards(fixturesDir: string): IosCampaignBoard[] {
   const manifest = readScreenshotFixtureManifest(fixturesDir);
   return (manifest?.graphql ?? [])
@@ -3222,7 +3475,7 @@ export function assertIosCampaignCaptureReady(
   }
 }
 
-/** Read accessibility labels from the same catalog as the native UI for all four locales. */
+/** Read accessibility labels from the same catalog as the native UI for all store locales. */
 export function buildIosSidebarMaestroEnv(locale: Locale): string[] {
   const directory = join(ROOT_DIR, 'packages/shared/i18n/locales', locale);
   const common = JSON.parse(readFileSync(join(directory, 'common.json'), 'utf8')) as {
@@ -3258,7 +3511,7 @@ export function buildIosSidebarMaestroEnv(locale: Locale): string[] {
   return Object.entries(labels).flatMap(([name, label]) => ['-e', `${name}=${label}`]);
 }
 
-/** Read accessibility labels from the same catalog as the native UI for all four locales. */
+/** Read accessibility labels from the same catalog as the native UI for all store locales. */
 export function buildIosCampaignMaestroEnv(
   locale: Locale,
   capture?: ScreenshotCaptureScenario,
@@ -3840,6 +4093,12 @@ function runIos(options: ScreenshotOptions): number {
         parseScreenshotBoardSelectors(options.boards ?? backendSession.capture?.boards.join('|') ?? '')[0] ?? '',
         readIosCampaignBoards(backendSession.fixturesDir),
       );
+      if (screenshotDevices.some((device) => !isIpadScreenshotDevice(device)))
+        options.iosCampaignPhoneBoards = readIosCampaignPhoneBoards(
+          backendSession.fixturesDir,
+          parseScreenshotBoardSelectors(options.boards ?? backendSession.capture?.boards.join('|') ?? ''),
+          readIosCampaignBoards(backendSession.fixturesDir),
+        );
     }
     const status = runIosLocales(options, appPath, screenshotDevices, localeTargets, backendSession);
     if (status !== 0) return status;

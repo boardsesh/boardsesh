@@ -6,13 +6,14 @@
 > below — the App Name, Subtitle, Description, Keywords, Promotional Text, and
 > What's New copy live in `name.txt`, `subtitle.txt`, `description.txt`,
 > `keywords.txt`, `promotional_text.txt`, and `release_notes.txt` respectively.
-> The listing is localized: `en-US` (default), `es-ES`, `es-MX`, `fr-FR`, and
-> `de-DE` each have their own folder under `fastlane/metadata/`, and `deliver`
-> uploads every locale folder it finds. There's one Spanish app translation but no
+> The listing is localized: `en-US` (default), `es-ES`, `es-MX`, `fr-FR`,
+> `de-DE`, and `it` each have their own folder under `fastlane/metadata/`.
+> `deliver` uploads every locale folder it finds. There's one Spanish app translation but no
 > universal App Store Spanish (unlike `en-US`, which covers every English
 > storefront), so the same `es` copy serves both `es-ES` (Spain) and `es-MX`
 > (Mexico/Latin America) — matching the two Spanish screenshot locales. German and
-> French each map to a single storefront locale.
+> French each map to a single storefront locale. Italian uses `it` on Apple
+> and `it-IT` on Google Play.
 >
 > The "Languages" list Apple shows on the product page comes from the binary, not
 > from these folders: `ios.infoPlist.CFBundleLocalizations` plus the `locales` map
@@ -59,8 +60,10 @@ Canonical: [`fastlane/metadata/en-US/release_notes.txt`](../../fastlane/metadata
 
 The native capture and framing pipeline produces iPhone portrait and iPad
 landscape screenshots. `--devices common --locales all` covers iPhone 16 Pro Max,
-iPhone 16 Pro, and the 13-inch and 11-inch iPads in four app languages. Spanish
-is copied to both Apple Spanish locales. iPhone and iPad carry different stories.
+iPhone 16 Pro, and the 13-inch and 11-inch iPads in five app languages
+(`en-US`, `es`, `fr`, `de`, `it`). Spanish is copied to both Apple Spanish locales;
+Italian writes the `it` folder. The default listing has 20 capture shards,
+24 storefront sets and 180 images. iPhone and iPad carry different stories.
 
 ### iPhone — nine-image campaign
 
@@ -78,6 +81,11 @@ these nine outputs. Filename prefixes set the store display order:
 | `06-session-plan.png`   | Give your session a plan.        | The native workout generator.                                        |
 | `07-dynamic-island.png` | Next climb. From Dynamic Island. | Real expanded Live Activity controls.                                |
 | `08-next-project.png`   | Find your next project.          | Native climb search and filters.                                     |
+
+Italian uses `07-session-detail.png` in slot 07, framed from the native
+`04-session-detail.png` capture with the `session` caption. Its session recap
+replaces the physical Live Activity image until a reviewed Italian fixture exists.
+The other locales retain the Live Activity slot.
 
 The opening puts spray walls alongside supported boards; the second image gives
 the new spray feature its own scene. The third broadens board compatibility,
@@ -97,21 +105,21 @@ The Android eight-image campaign is separate. [Apple screenshot guidance](https:
 ### iPad — six framed slots
 
 The iPad slot does not auto-scale from iPhone, and an iPad is used differently: it
-gets mounted by the wall. So it leads with the kiosk, then shows the browse screen
-twice — once whole, once with its trailing "Now on the wall" column lifted out and
-enlarged beside it. That column is the shell no phone screenshot can show.
+gets mounted by the wall. So it leads with the kiosk, then shows the complete
+browse screen. The current landscape UI has no trailing wall column; the browse
+frame preserves the full native list instead of enlarging an obsolete crop.
 
 | Output                     | What the image shows                                                                           |
 | -------------------------- | ---------------------------------------------------------------------------------------------- |
 | `00-wall-kiosk.png`        | The wall kiosk: the lit climb, readable from the mat.                                          |
-| `01-wall-status.png`       | The trailing "Now on the wall" column, lifted out of the browse screen and enlarged beside it. |
+| `01-wall-status.png`       | The complete native Climbs list, with the climb-search caption. The filename is retained for upload parity. |
 | `02-home.png`              | The crew's activity feed.                                                                      |
 | `03-discover.png`          | The playlist library.                                                                          |
 | `04-workout-generator.png` | The Record tab's workout generator.                                                            |
 | `05-profile.png`           | Sends and progress across every board.                                                         |
 
-It runs on the same six captures the sidebar flow already takes — the raw Climbs
-capture feeds two frames — so it needs no board switching and no extra fixtures.
+It runs on the same six captures the sidebar flow already takes, each feeding one
+frame, so it needs no board switching and no extra fixtures.
 
 **No board-family frame yet, and it is not an oversight.** Switching boards
 mid-flow works (the picker is a horizontal carousel; scroll right and tap the card

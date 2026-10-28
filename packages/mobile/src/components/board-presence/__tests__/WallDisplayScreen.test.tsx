@@ -19,8 +19,12 @@ type HostProps = { children?: ReactNode; testID?: string; onTouchStart?: () => v
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
-  View: ({ children, onTouchStart }: HostProps) =>
-    createElement('div', { 'data-root': onTouchStart ? true : undefined, onTouchStart }, children),
+  View: ({ children, onTouchStart, testID }: HostProps) =>
+    createElement(
+      'div',
+      { 'data-root': onTouchStart ? true : undefined, 'data-testid': testID, onTouchStart },
+      children,
+    ),
   StyleSheet: { create: (styles: unknown) => styles, absoluteFill: {} },
 }));
 vi.mock('react-native-reanimated', () => ({
@@ -110,6 +114,10 @@ describe('WallDisplayScreen', () => {
       vi.advanceTimersByTime(WALL_DISPLAY_CONTROLS_VISIBLE_MS);
     });
     expect(container.querySelector('[data-testid="wall-display-controls-faded"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="wall-display-controls-faded"]')).toBe(
+      container.querySelector('[data-root]'),
+    );
+    expect(container.querySelector('[data-pointer-events="box-none"]')?.getAttribute('data-testid')).toBeNull();
     // Still in the tree (Switch Control, Voice Control and keyboard focus reach it).
     expect(getByRole('button', exitButton)).toBeTruthy();
 

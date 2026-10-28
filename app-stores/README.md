@@ -27,10 +27,11 @@ vp run mobile:screenshots -- --platform android --backend prod --theme dark --ap
 
 Apple screenshots are written to
 `app-stores/apple/screenshots/<app-store-locale>/<device>/`. `--locales all`
-captures the app locales `en-US`, `es`, `fr`, and `de`, then writes App Store
-Connect folders `en-US`, `es-ES`, `es-MX`, `fr-FR`, and `de-DE`. `--devices
-common` captures the full App Store matrix: the three iPhone portrait slots plus
-13-inch and 11-inch iPad landscape slots. Use `--devices phones` or `--devices
+captures the app locales `en-US`, `es`, `fr`, `de`, and `it`, then writes App Store
+Connect folders `en-US`, `es-ES`, `es-MX`, `fr-FR`, `de-DE`, and `it`. `--devices
+common` captures the full default-listing matrix: two iPhone portrait slots plus
+13-inch and 11-inch iPad landscape slots. That is 20 capture shards and
+24 storefront sets, containing 180 images. Use `--devices phones` or `--devices
 ipads` for narrowed local capture.
 
 Google Play screenshots are written to `app-stores/google/screenshots/<device>/`.

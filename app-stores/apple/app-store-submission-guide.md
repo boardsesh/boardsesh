@@ -49,9 +49,12 @@ for capture data.
 | iPad Pro 11-inch (M5) | 2420 × 1668   | Landscape   |
 
 The common matrix captures both iPhone display sizes and both iPads. The
-four app languages (`en-US`, `es`, `fr`, `de`) produce 16 capture shards and
-20 storefront sets: Spanish supplies both `es-ES` and `es-MX`, while French and
-German map to `fr-FR` and `de-DE`. iPad has its own six-image kiosk-first story.
+five app languages (`en-US`, `es`, `fr`, `de`, `it`) produce 20 capture shards and
+24 storefront sets: Spanish supplies both `es-ES` and `es-MX`, French and
+German map to `fr-FR` and `de-DE`, and Italian maps to `it`. Nine images per phone
+and six per iPad produce 180 default-listing screenshots. Italian phone slot 07
+shows `07-session-detail.png` until a reviewed Italian physical Live Activity
+fixture exists. iPad has its own six-image kiosk-first story.
 Use the actual PNG dimensions and the repository's dimension gate to verify
 slot assignment. [Apple screenshot specifications](https://developer.apple.com/help/app-store-connect/reference/app-information/screenshot-specifications)
 

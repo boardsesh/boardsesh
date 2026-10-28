@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { router, usePathname, useGlobalSearchParams, type Href } from 'expo-router';
 import { DEFAULT_CLIMB_FILTER_STATE, toClimbSearchInput } from '@boardsesh/climb-filters';
+import { normaliseSetIds } from '@boardsesh/board-config';
 import {
   buildScreenshotWallSeed,
   publishScreenshotWallClimbs,
@@ -13,7 +14,7 @@ import { resolveScreenshotCppBoard, type ScreenshotCppBoardIdentity } from '../l
 import { useScreenshotBoards } from '../hooks/use-screenshot-boards';
 import { useAuth } from '../providers/auth-provider';
 import { SCREENSHOT_NOW_MS } from '../lib/screenshot-mode';
-import type { ClimbSearchInput } from '@boardsesh/shared-schema';
+import type { ClimbSearchInput, UserBoard } from '@boardsesh/shared-schema';
 
 // Query-key placeholder for the frames before the active board resolves. The
 // paired `enabled: false` means React Query never runs the fetch — the object
@@ -97,7 +98,11 @@ export function ScreenshotBoardAutoActivator(): null {
   const cppSequence = useRef(-1);
   const pathname = usePathname();
   const routeParams = useGlobalSearchParams();
-  const [cppPending, setCppPending] = useState<{ sequence: number; route: string } | null>(null);
+  const [cppPending, setCppPending] = useState<{
+    sequence: number;
+    route: string;
+    board: Pick<UserBoard, 'uuid' | 'boardType' | 'layoutId' | 'sizeId' | 'setIds' | 'angle'>;
+  } | null>(null);
   const cppAckDiagnostic = useRef<string | null>(null);
   // The regular campaign uses this transport without enabling CPP board-slot mapping.
   const commandEndpoint =
@@ -105,6 +110,21 @@ export function ScreenshotBoardAutoActivator(): null {
   const commandConfiguration = process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL
     ? process.env.EXPO_PUBLIC_SCREENSHOT_CPP_COMMANDS
     : process.env.EXPO_PUBLIC_SCREENSHOT_PRIMARY_BOARD_COMMANDS;
+  // Regular campaign navigation owns board selection before replacing a route.
+  // A route match alone can precede the committed board's React Query projection.
+  const requiresBoardAck =
+    !!process.env.EXPO_PUBLIC_SCREENSHOT_PRIMARY_BOARD_URL && !process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL;
+  const activeBoardMatches =
+    !requiresBoardAck ||
+    (!activeBoardPending &&
+      !!activeBoard &&
+      !!cppPending &&
+      activeBoard.uuid === cppPending.board.uuid &&
+      activeBoard.boardType === cppPending.board.boardType &&
+      activeBoard.layoutId === cppPending.board.layoutId &&
+      activeBoard.sizeId === cppPending.board.sizeId &&
+      activeBoard.angle === cppPending.board.angle &&
+      normaliseSetIds(activeBoard.setIds ?? '') === normaliseSetIds(cppPending.board.setIds ?? ''));
   useEffect(() => {
     if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1' || !cppPending || !commandEndpoint) return;
     const destination = new URL(cppPending.route, 'http://localhost');
@@ -118,13 +138,14 @@ export function ScreenshotBoardAutoActivator(): null {
       actualPathname: cppDiagnosticPathname(pathname),
       pathnameMatches,
       requestedParamsMatch: mismatchedKeys.length === 0,
+      ...(requiresBoardAck ? { activeBoardMatches } : {}),
       mismatchedCaptureParamKeys: mismatchedKeys.filter((key) => CPP_CAPTURE_PARAM_KEYS.has(key)),
     });
     if (cppAckDiagnostic.current !== diagnostic) {
       cppAckDiagnostic.current = diagnostic;
       console.log(`[screenshot] CPP ACK route ${diagnostic}`);
     }
-    if (!pathnameMatches || mismatchedKeys.length > 0) return;
+    if (!pathnameMatches || mismatchedKeys.length > 0 || !activeBoardMatches) return;
     void (async () => {
       try {
         console.log(`[screenshot] CPP ACK request start ${JSON.stringify({ sequence: cppPending.sequence })}`);
@@ -142,7 +163,7 @@ export function ScreenshotBoardAutoActivator(): null {
         console.log(`[screenshot] CPP ACK request ${JSON.stringify({ sequence: cppPending.sequence, errorKind })}`);
       }
     })();
-  }, [cppPending, pathname, routeParams, commandEndpoint]);
+  }, [cppPending, pathname, routeParams, commandEndpoint, requiresBoardAck, activeBoardMatches]);
 
   // CPP commands carry navigation only. The real roster, search queries and native
   // screens supply all content; polling is sequential and each command runs once.
@@ -184,7 +205,7 @@ export function ScreenshotBoardAutoActivator(): null {
         if (!activated) throw new Error(`CPP verified board activation did not commit: ${scene.selector}`);
         cppSequence.current = command.sequence;
         console.log(`[screenshot] CPP command ${command.sequence} ${command.scene}: ${board.uuid}`);
-        setCppPending({ sequence: command.sequence, route: scene.route });
+        setCppPending({ sequence: command.sequence, route: scene.route, board });
         router.replace(scene.route as Href);
       } catch (error) {
         console.log(`[screenshot] WARN CPP navigation: ${error instanceof Error ? error.message : String(error)}`);

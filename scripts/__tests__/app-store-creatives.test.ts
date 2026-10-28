@@ -436,6 +436,7 @@ describe('multiboard App Store campaign', () => {
     expect(() => parseCreativeArguments([...args, '--variant', 'woods'])).toThrow('Usage');
     expect(() => parseCreativeArguments(args.slice(0, -2))).toThrow('Usage');
     expect(() => parseCreativeArguments([...args, '--locale', 'en-US'])).toThrow('Invalid');
-    expect(() => parseCreativeArguments([...args.slice(0, -1), 'it'])).toThrow('Usage');
+    expect(parseCreativeArguments([...args.slice(0, -1), 'it']).locale).toBe('it');
+    expect(() => parseCreativeArguments([...args.slice(0, -1), 'nl'])).toThrow('Usage');
   });
 });

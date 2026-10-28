@@ -13,7 +13,7 @@ description: >
 # through as inputs.
 inputs:
   locale:
-    description: 'App locale to capture (en-US | es | fr | de). `es` writes both es-ES and es-MX.'
+    description: 'App locale to capture (en-US | es | fr | de | it). `es` writes both es-ES and es-MX.'
     required: true
   device-name:
     description: 'Simulator device name, e.g. "iPhone 16 Pro Max".'
@@ -153,6 +153,16 @@ runs:
         echo "${MAESTRO_SHA256}  maestro.zip" | shasum -a 256 -c -
         unzip -q maestro.zip -d "$HOME/.maestro-dist"
         echo "$HOME/.maestro-dist/maestro/bin" >> "$GITHUB_PATH"
+
+    - name: Record simulator inventory
+      shell: bash
+      run: |
+        mkdir -p capture-debug
+        xcodebuild -version > capture-debug/xcode-version.txt 2>&1 || true
+        xcode-select -p > capture-debug/xcode-path.txt 2>&1 || true
+        xcrun simctl list runtimes --json > capture-debug/simulator-runtimes.json 2>&1 || true
+        xcrun simctl list devicetypes --json > capture-debug/simulator-device-types.json 2>&1 || true
+        xcrun simctl list devices --json > capture-debug/simulator-devices.json 2>&1 || true
 
     - name: Capture screenshots (${{ inputs.locale }} · ${{ inputs.device-slug }})
       id: capture

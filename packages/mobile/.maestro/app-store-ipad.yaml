@@ -47,9 +47,8 @@ name: app-store screenshots (iPad)
       - extendedWaitUntil:
           visible: ${SCREENSHOT_SIDEBAR_HIDE_LABEL}
           timeout: 15000
-      - tapOn:
-          text: ${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}
-          index: 0
+      # The primary-board ACK already selected Climbs. Tapping its label here
+      # can hit the matching header capsule, which opens the full-screen player.
       - extendedWaitUntil:
           visible:
             text: ${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}
@@ -164,7 +163,7 @@ name: app-store screenshots (iPad)
       id: ${SCREENSHOT_PRIMARY_WALL_PAINTED_ID}
     timeout: 90000
 # Exit and Settings fade a few seconds after the display opens; capture the kiosk alone.
-# Faded, they stay in the accessibility tree, so wait on the container's faded id.
+# The visible kiosk reports the faded state; opacity-zero controls are pruned by iOS.
 - extendedWaitUntil:
     visible:
       id: '^wall-display-controls-faded$'

@@ -4,8 +4,9 @@ import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { parseAllDocuments } from 'yaml';
 
-type NativeSelector = { id?: string; text?: string; childOf?: NativeSelector };
+type NativeSelector = { id?: string; text?: string; selected?: boolean; childOf?: NativeSelector };
 type NativeCommand = {
+  tapOn?: string | NativeSelector;
   evalScript?: string;
   assertTrue?: string;
   retry?: { maxRetries: number; commands: NativeCommand[] };
@@ -95,6 +96,31 @@ describe('regular iPad primary board readiness', () => {
     expect(firstSidebarRetry).toBeGreaterThan(requestIndex + 1);
     expect(flowSource).not.toContain('SCREENSHOT_CPP_URL');
     expect(flowSource).not.toContain('openLink:');
+  });
+
+  it('proves Climbs selection after its ACK without tapping the duplicate live-wall capsule', () => {
+    const initialNavigation = commands.find((command) =>
+      command.retry?.commands.some((nested) => {
+        const visible = nested.extendedWaitUntil?.visible;
+        return (
+          typeof visible === 'object' &&
+          visible.text === '${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}' &&
+          visible.selected === true
+        );
+      }),
+    )?.retry;
+    expect(initialNavigation).toBeDefined();
+    expect(
+      initialNavigation!.commands.some(
+        (command) => typeof command.tapOn === 'object' && command.tapOn.text === '${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}',
+      ),
+    ).toBe(false);
+    expect(captureGates('02-climbs')).toContainEqual({ id: '^climbs-screen$' });
+    expect(captureGates('02-climbs')).toContainEqual({
+      id: '^climb-row$',
+      text: '${SCREENSHOT_PRIMARY_CLIMB_ROW}',
+      childOf: { id: '^climb-list$' },
+    });
   });
 
   it.each([null, 16, 18])('rejects absent or foreign acknowledgement %s', (acknowledged) => {

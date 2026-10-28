@@ -21,7 +21,7 @@ import {
 import { FlashList, type FlashListRef, type ViewToken } from '@shopify/flash-list';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Stack, useFocusEffect, useRouter, useLocalSearchParams } from 'expo-router';
+import { Stack, useFocusEffect, useIsFocused, useRouter, useLocalSearchParams } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import type { Climb, BoardName } from '@boardsesh/shared-schema';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -256,6 +256,7 @@ function ClimbListInner() {
   const gradeUsesPopover = gradePopoverOpen || isRegularWidthPad;
   const nativeRootHeader = useNativeRootHeader();
   const router = useRouter();
+  const isFocused = useIsFocused();
   // Screenshot mode opens the first climb's board view via this deep-link param
   // (see the auto-open effect below). Absent on the plain `/climbs` list shot.
   // screenshotBoardIndex picks which followed board to render (default [0]); the
@@ -1227,10 +1228,20 @@ function ClimbListInner() {
 
   // Screenshot mode: when a specific board index is requested, switch the active
   // board to it first; the open-first effect below waits until it's active.
+  // Retained deep-link screens keep their old params: only the focused screen
+  // may choose the board, including while an asynchronous storage write waits.
   useEffect(() => {
-    if (!screenshotTargetBoard || activeBoard?.uuid === screenshotTargetBoard.uuid) return;
-    void setActiveBoard(screenshotTargetBoard);
-  }, [screenshotTargetBoard, activeBoard, setActiveBoard]);
+    // The regular campaign's command controller commits the board before route
+    // replacement. Old params can remain focused during that handoff; they must
+    // not compete with its selection. CPP and legacy deep links keep their path.
+    if (process.env.EXPO_PUBLIC_SCREENSHOT_PRIMARY_BOARD_URL && !process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL) return;
+    if (!isFocused || !screenshotTargetBoard || activeBoard?.uuid === screenshotTargetBoard.uuid) return;
+    let cancelled = false;
+    void setActiveBoard(screenshotTargetBoard, () => !cancelled);
+    return () => {
+      cancelled = true;
+    };
+  }, [isFocused, screenshotTargetBoard, activeBoard, setActiveBoard]);
 
   // Screenshot mode: deterministically open the first climb's play drawer (the
   // board-view shot) instead of a Maestro coordinate tap, which can't match RN
@@ -1241,6 +1252,9 @@ function ClimbListInner() {
   // normal builds.
   const screenshotOpenedForBoardRef = useRef<string | null>(null);
   useEffect(() => {
+    // Opening the player blurs this screen. Keep its consumed identity across
+    // that blur so closing the player does not immediately open it again.
+    if (!isFocused) return;
     if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1' || (!screenshotOpenFirst && screenshotClimbId === undefined)) {
       screenshotOpenedForBoardRef.current = null;
       return;
@@ -1264,6 +1278,7 @@ function ClimbListInner() {
     screenshotOpenedForBoardRef.current = captureIdentity;
     handleClimbPress(requestedClimb);
   }, [
+    isFocused,
     screenshotOpenFirst,
     screenshotClimbId,
     screenshotGradesReadyFor,
@@ -2226,6 +2241,19 @@ function ClimbListInner() {
         // still let the list visibly scroll underneath the blurred header, which
         // iOS honours.
         style={listClipStyle}
+        testID={
+          process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' &&
+          searchReady &&
+          !isBoardResolving &&
+          !isClimbsLoading &&
+          !isClimbsError &&
+          !isPlaceholderData &&
+          !isRefetching &&
+          !isFetchingNextPage &&
+          visibleClimbs.length > 0
+            ? 'climbs-capture-settled'
+            : undefined
+        }
       >
         {/* The no-board branches above unmount the list; it comes back at rest. */}
         <ScrollEdgeListReset edge={scrollEdge.list} />

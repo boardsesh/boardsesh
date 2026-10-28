@@ -38,7 +38,7 @@ export interface Dimensions {
   height: number;
 }
 
-export const EXPECTED_APP_STORE_LOCALES = ['en-US', 'es-ES', 'es-MX', 'fr-FR', 'de-DE'] as const;
+export const EXPECTED_APP_STORE_LOCALES = ['en-US', 'es-ES', 'es-MX', 'fr-FR', 'de-DE', 'it'] as const;
 export const EXPECTED_APP_STORE_DEVICE_SLUGS = [
   'iphone-16-pro-max',
   'iphone-16-pro',
@@ -273,7 +273,15 @@ export function findScreenshotTreeOffenders(tree: ScreenshotTree): Offender[] {
       }
       if (referenceDevices.includes(deviceName) && firstExpectedLocale) {
         const referenceFiles = tree[firstExpectedLocale]?.[deviceName] ?? [];
-        const expectedFiles = basenames(referenceFiles);
+        // Italian replaces the physical Live Activity shot with its native
+        // session recap. Only this exact phone slot may differ across locales.
+        const expectedFiles = basenames(referenceFiles)
+          .map((name) =>
+            expectedLocale === 'it' && deviceName.startsWith('iphone-') && name === '07-live-activity.png'
+              ? '07-session-detail.png'
+              : name,
+          )
+          .sort();
         const actualFiles = basenames(files);
         if (expectedFiles.length > 0 && !listsMatch(actualFiles, expectedFiles)) {
           offenders.push({

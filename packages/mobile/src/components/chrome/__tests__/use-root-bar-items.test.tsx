@@ -25,6 +25,7 @@ const ctrl = vi.hoisted(() => ({
   router: { push: vi.fn() },
   haptic: vi.fn(),
   onRail: false,
+  isTablet: false,
 }));
 
 vi.mock('expo-router', () => ({ useRouter: () => ctrl.router }));
@@ -49,6 +50,7 @@ vi.mock('../BoardAnglePicker', () => ({
   BoardAnglePicker: ({ children }: { children: (open: () => void) => ReactElement }) => children(ctrl.openAngle),
 }));
 vi.mock('../../../hooks/use-vertical-tab-bar', () => ({ useVerticalTabBar: () => ctrl.onRail }));
+vi.mock('../../../hooks/use-device-layout', () => ({ useDeviceLayout: () => ({ isTablet: ctrl.isTablet }) }));
 vi.mock('../LightbulbToolbarAction', () => ({ useToolbarLightbulb: () => ctrl.lightbulb }));
 
 import {
@@ -71,6 +73,7 @@ beforeEach(() => {
   ctrl.router.push.mockReset();
   ctrl.haptic.mockReset();
   ctrl.onRail = false;
+  ctrl.isTablet = false;
 });
 
 describe('useAccountRailItem', () => {
@@ -194,10 +197,44 @@ describe('useClimbListBarItems', () => {
 
     expect(menu).toMatchObject({ type: 'menu', label: 'mobile.listOptions.title', icon: { name: 'ellipsis' } });
     if (menu?.type !== 'menu') throw new Error('expected the list menu');
+    expect(menu.menu.items.map((item) => item.label)).toEqual([
+      'mobile.listOptions.viewOptions',
+      'mobile.boardPresence.switchBoard',
+    ]);
     const [viewOptions, switchBoard] = menu.menu.items;
     if (viewOptions?.type === 'action') viewOptions.onPress();
     if (switchBoard?.type === 'action') switchBoard.onPress();
     expect(ctrl.router.push.mock.calls).toEqual([['/(tabs)/climbs/settings/climb-list'], ['/boards']]);
+  });
+
+  it.each([false, true])('opens Wall display on a tablet with angle row %s', (withAngleRow) => {
+    ctrl.isTablet = true;
+    const openAngle = vi.fn();
+    const { result } = renderHook(() =>
+      useClimbListBarItems({
+        onOpenHistory: vi.fn(),
+        badge: false,
+        angleRow: withAngleRow ? { label: 'Board angle, 40°', onPress: openAngle } : null,
+      }),
+    );
+    const menu = result.current.find((item) => item.type === 'menu');
+    if (menu?.type !== 'menu') throw new Error('expected the list menu');
+    expect(menu.menu.items.map((item) => item.label)).toEqual([
+      ...(withAngleRow ? ['Board angle, 40°'] : []),
+      'mobile.listOptions.viewOptions',
+      'mobile.boardPresence.wallDisplay.open',
+      'mobile.boardPresence.switchBoard',
+    ]);
+    const wallDisplay = menu.menu.items.find((item) => item.label === 'mobile.boardPresence.wallDisplay.open');
+    expect(wallDisplay).toMatchObject({
+      type: 'action',
+      icon: { type: 'sfSymbol', name: 'arrow.up.left.and.arrow.down.right' },
+    });
+    if (wallDisplay?.type !== 'action') throw new Error('expected the Wall display action');
+    wallDisplay.onPress();
+    expect(ctrl.router.push).toHaveBeenCalledExactlyOnceWith('/wall-display');
+    expect(openAngle).not.toHaveBeenCalled();
+    expect(ctrl.haptic).not.toHaveBeenCalled();
   });
 
   it('puts the angle at the top of the menu when the bar has no room for it', () => {

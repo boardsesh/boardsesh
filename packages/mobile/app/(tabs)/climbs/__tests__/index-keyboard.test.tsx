@@ -117,6 +117,7 @@ const mocks = vi.hoisted(() => ({
   // Deep-link params, mutable so the screenshot-mode auto-opens can be driven
   // without a second mock scaffold.
   searchParams: {} as Record<string, string>,
+  isFocused: true,
   // Mutable per-test setting: false exercises the preview-open branch instead
   // of the committing activateClimb path.
   lightOnClimbTap: true,
@@ -302,6 +303,7 @@ vi.mock('expo-router', () => ({
   },
   useRouter: () => ({ push: mocks.push }),
   useLocalSearchParams: () => mocks.searchParams,
+  useIsFocused: () => mocks.isFocused,
   useFocusEffect: () => {},
 }));
 vi.mock('expo-router/react-navigation', async () => {
@@ -965,6 +967,7 @@ beforeEach(() => {
   mocks.refetchClimbs.mockReset();
   mocks.offlineCatalog = null;
   mocks.searchParams = {};
+  mocks.isFocused = true;
   mocks.isSharedSession = false;
   mocks.activationOptions = undefined;
   mocks.isPlaceholderData = false;
@@ -1856,12 +1859,18 @@ describe('ClimbList lightOnClimbTap setting', () => {
 describe('ClimbList screenshot-mode wall-state deep links', () => {
   const withScreenshotMode = async (run: () => Promise<void>) => {
     const original = process.env.EXPO_PUBLIC_SCREENSHOT_MODE;
+    const originalPrimary = process.env.EXPO_PUBLIC_SCREENSHOT_PRIMARY_BOARD_URL;
+    const originalCpp = process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL;
     process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
     try {
       await run();
     } finally {
       if (original === undefined) delete process.env.EXPO_PUBLIC_SCREENSHOT_MODE;
       else process.env.EXPO_PUBLIC_SCREENSHOT_MODE = original;
+      if (originalPrimary === undefined) delete process.env.EXPO_PUBLIC_SCREENSHOT_PRIMARY_BOARD_URL;
+      else process.env.EXPO_PUBLIC_SCREENSHOT_PRIMARY_BOARD_URL = originalPrimary;
+      if (originalCpp === undefined) delete process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL;
+      else process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL = originalCpp;
     }
   };
 
@@ -1899,6 +1908,152 @@ describe('ClimbList screenshot-mode wall-state deep links', () => {
     searchText: 'old project',
     updatedAt: 1,
   };
+
+  it.each(['isClimbsLoading', 'searchFailed', 'isPlaceholderData', 'isRefetching', 'isFetchingNextPage'] as const)(
+    'withdraws the capture-settled marker while %s and restores it after settling',
+    async (busyFlag) => {
+      await withScreenshotMode(async () => {
+        const view = render(<ClimbList />);
+        await view.findByTestId('climbs-capture-settled');
+
+        mocks[busyFlag] = true;
+        view.rerender(<ClimbList />);
+        expect(view.queryByTestId('climbs-capture-settled')).toBeNull();
+        if (busyFlag === 'isRefetching') {
+          expect(view.container.querySelector('[data-refresh-control]')?.getAttribute('data-refreshing')).toBe('true');
+        }
+
+        mocks[busyFlag] = false;
+        view.rerender(<ClimbList />);
+        expect(view.getByTestId('climbs-capture-settled')).toBeTruthy();
+        expect(view.container.querySelector('[data-refresh-control]')?.getAttribute('data-refreshing')).toBe('false');
+      });
+    },
+  );
+
+  it('waits for saved-search restoration and nonempty rows before marking capture settled', async () => {
+    await withScreenshotMode(async () => {
+      let finishRestore: (saved: LastSearch | null) => void = () => {
+        throw new Error('Expected saved-search restoration to start');
+      };
+      mocks.getLastSearch.mockReturnValueOnce(
+        new Promise<LastSearch | null>((resolve) => {
+          finishRestore = resolve;
+        }),
+      );
+      const view = render(<ClimbList />);
+      await waitFor(() => expect(mocks.getLastSearch).toHaveBeenCalled());
+      expect(view.queryByTestId('climbs-capture-settled')).toBeNull();
+      await act(async () => finishRestore(null));
+      await view.findByTestId('climbs-capture-settled');
+
+      mocks.searchClimbs = [];
+      view.rerender(<ClimbList />);
+      expect(view.queryByTestId('climbs-capture-settled')).toBeNull();
+      mocks.searchClimbs = [mocks.climb];
+      view.rerender(<ClimbList />);
+      expect(view.getByTestId('climbs-capture-settled')).toBeTruthy();
+    });
+  });
+
+  it('never marks a resolving board or ordinary app mode as capture settled', async () => {
+    await withScreenshotMode(async () => {
+      mocks.activeBoard = undefined;
+      mocks.boardStatus = 'pending';
+      mocks.boardFetchStatus = 'fetching';
+      const view = render(<ClimbList />);
+      expect(view.queryByTestId('climbs-capture-settled')).toBeNull();
+      mocks.activeBoard = { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1', angle: 40 };
+      mocks.boardStatus = 'success';
+      mocks.boardFetchStatus = 'idle';
+      view.rerender(<ClimbList />);
+      await view.findByTestId('climbs-capture-settled');
+      delete process.env.EXPO_PUBLIC_SCREENSHOT_MODE;
+      view.rerender(<ClimbList />);
+      expect(view.queryByTestId('climbs-capture-settled')).toBeNull();
+    });
+  });
+
+  it.each([false, true])(
+    'leaves board selection to the regular command controller when enabled: %s',
+    async (commandMode) => {
+      await withScreenshotMode(async () => {
+        const previousBoard = gradeScene();
+        const nextBoard = { ...previousBoard, uuid: 'next-moonboard', boardType: 'moonboard', layoutId: 2 };
+        mocks.activeBoard = nextBoard;
+        mocks.isFocused = true;
+        mocks.searchParams = { screenshotBoardIndex: '0', screenshotOpenFirst: '1' };
+        process.env.EXPO_PUBLIC_SCREENSHOT_PRIMARY_BOARD_URL = commandMode ? 'http://localhost:19870/cpp' : '';
+        delete process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL;
+        render(<ClimbList />);
+        await act(async () => {});
+        if (commandMode) expect(mocks.setActiveBoard).not.toHaveBeenCalled();
+        else expect(mocks.setActiveBoard).toHaveBeenCalledWith(previousBoard, expect.any(Function));
+        expect(mocks.activeBoard).toBe(nextBoard);
+        expect(mocks.activateClimb).not.toHaveBeenCalled();
+      });
+    },
+  );
+
+  it('leaves the current board alone behind a retained capture route and consumes its open only once', async () => {
+    await withScreenshotMode(async () => {
+      const retainedBoard = gradeScene();
+      const currentBoard = { ...retainedBoard, uuid: 'current-moonboard', boardType: 'moonboard', layoutId: 2 };
+      mocks.activeBoard = currentBoard;
+      mocks.isFocused = false;
+      mocks.searchParams = { screenshotBoardIndex: '0', screenshotOpenFirst: '1' };
+      mocks.searchClimbs = [{ ...mocks.climb, boardType: 'kilter', layoutId: 1, angle: 40 }];
+      const view = render(<ClimbList />);
+      await act(async () => {});
+      expect(mocks.setActiveBoard).not.toHaveBeenCalled();
+      expect(mocks.activateClimb).not.toHaveBeenCalled();
+
+      // Even matching results arriving behind another route cannot open a player.
+      mocks.activeBoard = retainedBoard;
+      view.rerender(<ClimbList />);
+      await act(async () => {});
+      expect(mocks.activateClimb).not.toHaveBeenCalled();
+
+      mocks.isFocused = true;
+      view.rerender(<ClimbList />);
+      await waitFor(() => expect(mocks.activateClimb).toHaveBeenCalledTimes(1));
+      mocks.isFocused = false;
+      view.rerender(<ClimbList />);
+      mocks.isFocused = true;
+      view.rerender(<ClimbList />);
+      await act(async () => {});
+      expect(mocks.activateClimb).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('cancels a queued screenshot board selection when its route loses focus', async () => {
+    await withScreenshotMode(async () => {
+      const requestedBoard = gradeScene();
+      const currentBoard = { ...requestedBoard, uuid: 'current-moonboard', boardType: 'moonboard', layoutId: 2 };
+      mocks.activeBoard = currentBoard;
+      mocks.searchParams = { screenshotBoardIndex: '0', screenshotOpenFirst: '1' };
+      let finishWrite = () => {};
+      const queuedWrite = new Promise<void>((resolve) => (finishWrite = resolve));
+      const committedBoards: ScreenshotSelectableBoard[] = [];
+      mocks.setActiveBoard.mockImplementation(
+        async (board: ScreenshotSelectableBoard, isOperationCurrent: () => boolean) => {
+          await queuedWrite;
+          if (!isOperationCurrent()) return false;
+          committedBoards.push(board);
+          return true;
+        },
+      );
+      const view = render(<ClimbList />);
+      await waitFor(() => expect(mocks.setActiveBoard).toHaveBeenCalledTimes(1));
+      expect(mocks.setActiveBoard.mock.calls[0][0]).toBe(requestedBoard);
+      mocks.isFocused = false;
+      view.rerender(<ClimbList />);
+      await act(async () => finishWrite());
+      expect(committedBoards).toHaveLength(0);
+      expect(mocks.activeBoard).toBe(currentBoard);
+      expect(mocks.activateClimb).not.toHaveBeenCalled();
+    });
+  });
 
   it.each(['loading', 'placeholder'] as const)(
     'clears a reused simulator only after restoration and waits for real default rows (%s)',

@@ -10,7 +10,9 @@ import { useUnreadNotificationCount } from '../../lib/graphql/hooks/use-notifica
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { formatActiveBoardLabel } from '../../lib/boards/active-board-label';
 import { canAdjustBoardAngle } from '../../lib/boards/can-adjust-board-angle';
+import { WALL_DISPLAY_HREF } from '../../lib/routing/wall-display-link';
 import { hapticLight } from '../../lib/haptics';
+import { useDeviceLayout } from '../../hooks/use-device-layout';
 import { useVerticalTabBar } from '../../hooks/use-vertical-tab-bar';
 import { iconMap } from '../icon-map';
 import { useUserDrawer } from '../user-drawer/UserDrawerProvider';
@@ -187,7 +189,8 @@ export function useLightbulbBarItem(): RootBarButtonItem | null {
 
 /**
  * The Climbs list's trailing actions after the angle: board history (with the
- * onboarding cue) and the list's ⋯ menu (View options, Switch board).
+ * onboarding cue) and the list's ⋯ menu (View options, Wall display on tablets,
+ * Switch board).
  * `angleRow` puts the angle at the top of that menu, for when the bar has no
  * room for the angle item beside the on-the-wall capsule.
  */
@@ -205,12 +208,14 @@ export function useClimbListBarItems({
   const { brandColors } = useTheme();
   const { data: activeBoard } = useActiveBoard();
   const router = useRouter();
+  const { isTablet } = useDeviceLayout();
   const boardLabel = formatActiveBoardLabel(activeBoard);
   const handleOpenHistory = useCallback(() => {
     hapticLight();
     onOpenHistory();
   }, [onOpenHistory]);
   const openViewOptions = useCallback(() => router.push('/(tabs)/climbs/settings/climb-list'), [router]);
+  const openWallDisplay = useCallback(() => router.push(WALL_DISPLAY_HREF), [router]);
   const openBoards = useCallback(() => router.push('/boards'), [router]);
   const badgeColor = brandColors.primary;
   return useMemo(() => {
@@ -238,6 +243,15 @@ export function useClimbListBarItems({
         rows: [
           ...(angleRow ? [{ label: angleRow.label, symbol: iconMap.angle.ios, onPress: angleRow.onPress }] : []),
           { label: t('mobile.listOptions.viewOptions'), symbol: iconMap['view.options'].ios, onPress: openViewOptions },
+          ...(isTablet
+            ? [
+                {
+                  label: tSession('mobile.boardPresence.wallDisplay.open'),
+                  symbol: 'arrow.up.left.and.arrow.down.right' as const,
+                  onPress: openWallDisplay,
+                },
+              ]
+            : []),
           {
             label: tSession('mobile.boardPresence.switchBoard'),
             symbol: 'arrow.left.arrow.right',
@@ -247,5 +261,17 @@ export function useClimbListBarItems({
       }),
     );
     return items;
-  }, [boardLabel, t, tSession, handleOpenHistory, badge, badgeColor, openViewOptions, openBoards, angleRow]);
+  }, [
+    boardLabel,
+    t,
+    tSession,
+    handleOpenHistory,
+    badge,
+    badgeColor,
+    openViewOptions,
+    openWallDisplay,
+    openBoards,
+    angleRow,
+    isTablet,
+  ]);
 }
