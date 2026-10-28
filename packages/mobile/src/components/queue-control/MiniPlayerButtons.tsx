@@ -1,9 +1,11 @@
 import { memo, useCallback, type ReactNode } from 'react';
 import { StyleSheet, View, type ColorValue } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { Climb } from '@boardsesh/queue';
 import type { MiniPlayerButtonId } from '../../lib/mini-player-buttons';
 import { useFavoriteStatus, useToggleFavorite } from '../../lib/graphql/hooks';
+import { track } from '../../lib/analytics';
 import { hapticSelection } from '../../lib/haptics';
 import { useShareClimbAction } from '../../hooks/use-share-climb-action';
 import { useDrawerHost, type BoardConfig } from '../../providers/drawer-host-provider';
