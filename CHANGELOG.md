@@ -14,6 +14,9 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Next no longer brings back a climb you already did earlier in the session ([#6996](https://github.com/boardsesh/boardsesh/pull/6996))
+- Connecting through the lightbulb finds the correct saved board before connecting. ([#6998](https://github.com/boardsesh/boardsesh/pull/6998))
+  Waveshare QA fixtures now load their gym and advertise all three boards.
 - Selected tabs and violet links are easier to read in dark mode on Android ([#6988](https://github.com/boardsesh/boardsesh/pull/6988))
 - Your profile picture in the top bar is a proper circle again on Android ([#6987](https://github.com/boardsesh/boardsesh/pull/6987))
 
