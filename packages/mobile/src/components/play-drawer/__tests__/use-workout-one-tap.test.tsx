@@ -1081,3 +1081,72 @@ describe('useWorkoutOneTap: two surfaces at once', () => {
     expect(toastMock.showToast).not.toHaveBeenCalled();
   });
 });
+
+// The MiniPlayer marks a saved go only on the climb its buttons log: a check on
+// another climb's Sent would read as that climb's send. A go no surface can
+// mark, or one whose tapped surface is gone, is a toast naming the climb.
+describe('useWorkoutOneTap: a saved go on another climb than the bar shows', () => {
+  const CLIMB_B = target({ climb: climb({ uuid: 'climb-2', name: 'Pinch roof' }), queueItemUuid: 'item-2' });
+
+  /** The next save settles only when the test says so. */
+  function deferNextSave() {
+    let settle = () => {};
+    saveMock.mutateAsync.mockImplementationOnce(() => ({
+      // oxlint-disable-next-line unicorn/no-thenable -- a save double that settles when the test says
+      then: (onSaved: (result: unknown) => void) => {
+        settle = () => onSaved({ savedTick: { uuid: 'tick-1' } });
+      },
+    }));
+    return () => settle();
+  }
+
+  it('toasts a late save from the player once it closed, though the bar is up on the next climb', () => {
+    const settle = deferNextSave();
+    const player = renderHook(() => useWorkoutOneTap(target(), vi.fn()), { wrapper: withQueue });
+    act(() => player.result.current.onSent());
+    // The climber swipes the player down; the set ended, so the bar shows B.
+    player.unmount();
+    const bar = renderHook(() => useWorkoutOneTap(CLIMB_B, vi.fn(), null, { messages: 'toast' }), {
+      wrapper: withQueue,
+    });
+
+    act(() => settle());
+
+    expect(toastMock.showToast).toHaveBeenCalledExactlyOnceWith(
+      'playView.workoutOutcome.flashLogged:Crimp line',
+      'success',
+    );
+    expect(bar.result.current.notice).toBeNull();
+  });
+
+  it("puts no check on B's Sent for a go the player logged on A", () => {
+    const player = renderHook(() => useWorkoutOneTap(target(), vi.fn()), { wrapper: withQueue });
+    const bar = renderHook(() => useWorkoutOneTap(CLIMB_B, vi.fn(), null, { messages: 'toast' }), {
+      wrapper: withQueue,
+    });
+
+    act(() => player.result.current.onSent());
+
+    expect(player.result.current.notice).toMatchObject({ kind: 'saved', queueItemUuid: QUEUE_ITEM_UUID });
+    expect(bar.result.current.notice).toBeNull();
+    expect(toastMock.showToast).not.toHaveBeenCalled();
+  });
+
+  it('toasts a bar tap just after the wall moved, which logs the climb it left', () => {
+    const bar = renderHook(
+      (props: { target: WorkoutOutcomeTarget }) => useWorkoutOneTap(props.target, vi.fn(), null, { messages: 'toast' }),
+      { initialProps: { target: target() }, wrapper: withQueue },
+    );
+    bar.rerender({ target: CLIMB_B });
+    advanceClock(300);
+
+    act(() => bar.result.current.onFell());
+
+    expect(sentInput()).toMatchObject({ climbUuid: CLIMB_UUID, status: 'attempt' });
+    expect(toastMock.showToast).toHaveBeenCalledExactlyOnceWith(
+      'playView.workoutOutcome.attemptLogged:Crimp line',
+      'success',
+    );
+    expect(bar.result.current.notice).toBeNull();
+  });
+});

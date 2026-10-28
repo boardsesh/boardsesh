@@ -31,7 +31,7 @@
 // (`workout-one-tap-store.ts`): UIKit mounts the MiniPlayer twice, and the
 // player's row can be up beside it, so per-hook state would let two surfaces
 // each take a tap within the guard.
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { deriveAscentType, type TickStatus } from '@boardsesh/play-view';
 import { logbookClimbAngleKey, useOptionalBoardLogbook } from '@boardsesh/board-react';
@@ -116,7 +116,7 @@ export function useWorkoutOneTap(
   wallLeftAtMs: number | null = null,
   { messages = 'row' }: WorkoutOneTapOptions = {},
 ): WorkoutOneTap {
-  const { notice, report, dismissNotice } = useOneTapNotice(messages);
+  const { notice, report, dismissNotice } = useOneTapNotice(messages, target.queueItemUuid);
   const wallLeft = useClimbTheWallLeft(target);
   // Bound to the climb the row was handed: the one on the wall, or, while the
   // row is held, the one the wall left.
@@ -148,26 +148,41 @@ export function useWorkoutOneTap(
 type ReportNotice = (notice: WorkoutOneTapNotice) => void;
 
 /**
- * The notice every surface shows, and how a logger reports one. While a
- * surface that can show it is up, the notice goes there, with the success
- * haptic (the toast used to own it; a failure already buzzed in
- * `useTickSaver`) and a spoken copy, since the buttons keep their own labels
- * for a screen reader. Once none is (the player closed, a swipe to a preview)
- * a late save falls back to the toast. With `messages: 'toast'` a message is
- * always a toast, and the surface shows only saved goes.
+ * The notice every surface shows, and how a logger reports one. While the
+ * tapped surface is up and some surface can show the notice, it goes there,
+ * with the success haptic (the toast used to own it; a failure already buzzed
+ * in `useTickSaver`) and a spoken copy, since the buttons keep their own
+ * labels for a screen reader. Otherwise (the player closed or swiped to a
+ * preview before the save landed, or the MiniPlayer now shows another climb)
+ * it falls back to the toast, whose line names the climb. With
+ * `messages: 'toast'` a message is always a toast, and the surface marks only
+ * a saved go on `queueItemUuid`, the climb its buttons log.
  */
-function useOneTapNotice(messages: 'row' | 'toast'): {
+function useOneTapNotice(
+  messages: 'row' | 'toast',
+  queueItemUuid: string,
+): {
   notice: WorkoutOneTapNotice | null;
   report: ReportNotice;
   dismissNotice: () => void;
 } {
   const { showToast } = useToast();
-  const sharedNotice = useSharedOneTapNotice(messages);
-  const notice = messages === 'toast' && sharedNotice?.kind === 'message' ? null : sharedNotice;
+  const notice = useSharedOneTapNotice(messages, queueItemUuid);
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const report = useCallback<ReportNotice>(
     (reportedNotice) => {
-      if ((messages === 'toast' && reportedNotice.kind === 'message') || !hasOneTapNoticeReader(reportedNotice.kind)) {
+      if (
+        !mountedRef.current ||
+        (messages === 'toast' && reportedNotice.kind === 'message') ||
+        !hasOneTapNoticeReader(reportedNotice)
+      ) {
         showToast(reportedNotice.message, reportedNotice.kind === 'saved' ? 'success' : reportedNotice.tone);
         return;
       }

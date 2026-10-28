@@ -149,6 +149,13 @@ describe('MiniPlayerWorkoutButtons', () => {
     expect(sent.container.querySelector('[data-icon]')?.getAttribute('data-icon')).toBe('checkmark.circle.fill');
   });
 
+  it('shows no check for a go saved on another climb', () => {
+    oneTap.notice = { kind: 'saved', status: 'send', queueItemUuid: 'item-0', message: 'Send logged · Crimp line' };
+    const { container } = renderButtons(['fell', 'sent']);
+    const icons = [...container.querySelectorAll('[data-icon]')].map((icon) => icon.getAttribute('data-icon'));
+    expect(icons).toEqual(['ascent.attempt', 'tick']);
+  });
+
   it("opens the bar's Log ascent on the climb the taps log, for a first ascent that needs a grade", () => {
     renderButtons(['sent']);
     const openLogSheet = oneTap.calls[0]?.[1] as () => void;

@@ -66,7 +66,8 @@ export const MiniPlayerWorkoutButtons = memo(function MiniPlayerWorkoutButtons({
   }, [openLogAscent, target]);
   const { onFell, onSent, notice } = useWorkoutOneTap(target, openLogSheet, wallLeftAtMs, { messages: 'toast' });
   const held = wallLeftAtMs !== null;
-  const savedStatus = notice?.kind === 'saved' ? notice.status : null;
+  // Only a go on the climb these buttons log: a check on another climb's Sent would read as its send.
+  const savedStatus = notice?.kind === 'saved' && notice.queueItemUuid === target.queueItemUuid ? notice.status : null;
 
   return (
     <>

@@ -310,7 +310,11 @@ climb).
   - Feedback: the root toast is in view over the tabs, so a failure, or where to log a first ascent, is a toast
     (`useWorkoutOneTap`'s `messages: 'toast'`). A saved go plays the success haptic, swaps the tapped button's glyph
     for a filled check for 2 s (`SAVED_NOTICE_MS`) and announces the full sentence; the buttons keep their Fell / Sent
-    labels. Glyphs: Fell ⊗ (`ascent.attempt`), Sent a circled check in the brand colour (`tick`).
+    labels. Glyphs: Fell ⊗ (`ascent.attempt`), Sent a circled check in the brand colour (`tick`). The check goes
+    only on the climb the go was logged on: the bar's buttons have no room to name another climb, so a go on a climb
+    the bar no longer shows (a tap in the grace after the wall moved, or a player save that lands after the player
+    was swiped down and the set ended) is a toast with the full sentence ("Send logged · Crimp line"). So is any save
+    whose tapped surface is gone.
   - Two bars at once: react-native-screens renders the accessory's regular and inline placements together, and
     they share no state, so there are two `MiniPlayerWorkoutButtons`. Everything a tap depends on is in the shared
     store above, so a Sent on the open bar and one on the minimized bar within 700 ms log once, and both bars show the

@@ -12,18 +12,27 @@
 //   dropped, wherever the first tap came from.
 // - The notice: the last thing a tap said, so every surface showing Fell / Sent
 //   marks the same button. Only the surface that was tapped plays the haptic and
-//   speaks it (`use-workout-one-tap.ts`).
+//   speaks it (`use-workout-one-tap.ts`). The MiniPlayer marks a saved go only
+//   on the climb it was logged on: its buttons have no room to name another.
+//   The player's row names the climb in the line when it isn't the one on
+//   screen, so it shows every notice.
 import { useCallback, useSyncExternalStore } from 'react';
 import type { WorkoutOneTapNotice } from './use-workout-one-tap';
 
-/** What a surface shows of a notice: `row` shows both kinds, `toast` (the MiniPlayer) only a saved go. */
+/**
+ * What a surface shows of a notice: `row` (the player) shows both kinds, for
+ * any climb; `toast` (the MiniPlayer) only a saved go on the queue item its
+ * buttons log.
+ */
 export type OneTapNoticeReader = 'row' | 'toast';
+
+type NoticeReaderEntry = { reader: OneTapNoticeReader; queueItemUuid: string };
 
 let lastTapAtMs: number | null = null;
 const pendingQueueItems = new Set<string>();
 let notice: WorkoutOneTapNotice | null = null;
 let noticeTimeout: ReturnType<typeof setTimeout> | null = null;
-const listeners = new Map<() => void, OneTapNoticeReader>();
+const listeners = new Map<() => void, NoticeReaderEntry>();
 
 function emit() {
   for (const listener of listeners.keys()) listener();
@@ -52,14 +61,20 @@ export function settleOneTapSave(queueItemUuid: string): void {
   pendingQueueItems.delete(queueItemUuid);
 }
 
+/** Whether a surface reading as `entry` shows `candidate`. */
+function readerShows({ reader, queueItemUuid }: NoticeReaderEntry, candidate: WorkoutOneTapNotice): boolean {
+  if (reader === 'row') return true;
+  return candidate.kind === 'saved' && candidate.queueItemUuid === queueItemUuid;
+}
+
 /**
- * Whether a mounted surface can show this notice: any surface shows a saved
- * go, only a `row` surface shows a message. When none can, the tap says it with
- * the toast instead.
+ * Whether a mounted surface can show this notice: a `row` surface shows any,
+ * a `toast` surface only a saved go on its own queue item. When none can, the
+ * tap says it with the toast instead.
  */
-export function hasOneTapNoticeReader(kind: WorkoutOneTapNotice['kind']): boolean {
-  for (const reader of listeners.values()) {
-    if (kind === 'saved' || reader === 'row') return true;
+export function hasOneTapNoticeReader(candidate: WorkoutOneTapNotice): boolean {
+  for (const entry of listeners.values()) {
+    if (readerShows(entry, candidate)) return true;
   }
   return false;
 }
@@ -88,18 +103,22 @@ function getNotice(): WorkoutOneTapNotice | null {
   return notice;
 }
 
-/** The shared notice, for a surface that reads it as `reader`. */
-export function useSharedOneTapNotice(reader: OneTapNoticeReader): WorkoutOneTapNotice | null {
+/**
+ * The shared notice as a surface reading as `reader`, for the queue item its
+ * buttons log, shows it: null when it shows none of it.
+ */
+export function useSharedOneTapNotice(reader: OneTapNoticeReader, queueItemUuid: string): WorkoutOneTapNotice | null {
   const subscribe = useCallback(
     (listener: () => void) => {
-      listeners.set(listener, reader);
+      listeners.set(listener, { reader, queueItemUuid });
       return () => {
         listeners.delete(listener);
       };
     },
-    [reader],
+    [reader, queueItemUuid],
   );
-  return useSyncExternalStore(subscribe, getNotice, getNotice);
+  const shared = useSyncExternalStore(subscribe, getNotice, getNotice);
+  return shared !== null && readerShows({ reader, queueItemUuid }, shared) ? shared : null;
 }
 
 export function resetWorkoutOneTapStoreForTests(): void {
