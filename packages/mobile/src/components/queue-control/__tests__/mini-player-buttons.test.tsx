@@ -107,7 +107,11 @@ vi.mock('../../../providers/queue-provider', () => ({
   }),
 }));
 vi.mock('../../../providers/drawer-host-provider', () => ({
-  useDrawerHost: () => ({ openQueueSheet: host.openQueueSheet, openAnglePicker: host.openAnglePicker }),
+  useDrawerHost: () => ({
+    openQueueSheet: host.openQueueSheet,
+    openAnglePicker: host.openAnglePicker,
+    boardConfig: { boardName: 'kilter' },
+  }),
 }));
 vi.mock('../../../lib/graphql/hooks', () => ({
   useFavoriteStatus: (...args: unknown[]) => {
@@ -251,6 +255,8 @@ describe('MiniPlayerLeadingButtons', () => {
     const { getByLabelText } = renderButtons(['queue']);
     fireEvent.click(getByLabelText('mobile.queueSnackbar.openAria'));
     expect(host.openQueueSheet).toHaveBeenCalledOnce();
+    expect(effects.track).toHaveBeenCalledOnce();
+    expect(effects.track).toHaveBeenCalledWith('Queue Sheet Opened', { surface: 'mini_player', boardType: 'kilter' });
   });
 
   it("Share runs the player's share action for this climb and board, tagged as the MiniPlayer's", () => {

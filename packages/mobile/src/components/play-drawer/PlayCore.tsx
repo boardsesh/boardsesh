@@ -39,7 +39,8 @@ import { DeferredBoard } from './DeferredBoard';
 import { screenshotPaintedClimbTestId, screenshotLocalMirrorTestId } from '../../lib/screenshot-climb-selection';
 import { PlayCoreSheetHosts } from './PlayCoreSheetHosts';
 import { usePlayFavorite } from './use-play-favorite';
-import { usePlaySelectionController } from './use-play-selection-controller';
+import { usePlaySelectionController, type PlayNavigationStep } from './use-play-selection-controller';
+import { trackQueueNavigation, trackQueueSheetOpened } from '../../lib/queue-navigation-analytics';
 import { useDeferredUntilFrame } from '../../hooks/use-deferred-until-frame';
 import { BoardRenderUnavailable } from './BoardRenderUnavailable';
 import { PlaybackControls } from '../playback/PlaybackControls';
@@ -1466,6 +1467,31 @@ export function PlayCore({
     };
   }, [boardName, layoutId, sizeId, setIds, activeBoardForNavigation, t]);
 
+  // `Queue Navigation` for each Next / Previous the climber takes here (#6940).
+  const navigationBoardType = activeBoardForNavigation?.boardType;
+  const navigationLayoutId = activeBoardForNavigation?.layoutId;
+  const handleNavigationStep = useCallback(
+    (step: PlayNavigationStep) =>
+      trackQueueNavigation({
+        ...step,
+        surface: 'player',
+        inSharedSession: isSharedSession,
+        lightOnSwipe,
+        boardType: navigationBoardType,
+        layoutId: navigationLayoutId,
+      }),
+    [isSharedSession, lightOnSwipe, navigationBoardType, navigationLayoutId],
+  );
+  // `Queue Sheet Opened`: the action bar's queue button and the ⋯ menu's row.
+  const handleOpenQueueFromBar = useCallback(() => {
+    trackQueueSheetOpened({ surface: 'player', boardType: navigationBoardType });
+    onOpenQueue();
+  }, [onOpenQueue, navigationBoardType]);
+  const handleOpenQueueFromMenu = useCallback(() => {
+    trackQueueSheetOpened({ surface: 'player_menu', boardType: navigationBoardType });
+    onOpenQueue();
+  }, [onOpenQueue, navigationBoardType]);
+
   const { handlePrev, handleNext, handleSetActive, handleSimilarClimbPress, commitDisplayedToWall, continueIntoQueue } =
     usePlaySelectionController({
       openTarget,
@@ -1496,7 +1522,13 @@ export function PlayCore({
         heldQueueItemUuid: staleCurrentHold?.queueItemUuid ?? null,
         putHeldClimbOnWall: handlePutHeldClimbOnWall,
       },
+      onNavigationStep: handleNavigationStep,
     });
+  // The same step, told apart by how it was asked for.
+  const handlePrevButton = useCallback(() => handlePrev('button'), [handlePrev]);
+  const handleNextButton = useCallback(() => handleNext('button'), [handleNext]);
+  const handlePrevSwipe = useCallback(() => handlePrev('swipe'), [handlePrev]);
+  const handleNextSwipe = useCallback(() => handleNext('swipe'), [handleNext]);
 
   // Put on the wall with no board connected (#6939): a preview is set first,
   // then the bulb's own connect runs (the picker when no board is remembered),
@@ -1531,7 +1563,7 @@ export function PlayCore({
   }, [staleCurrentHold, bluetooth]);
 
   // A swipe step changes the climb with these, whichever render it follows.
-  useSwipeNavigation(swipePager, handleNext, handlePrev);
+  useSwipeNavigation(swipePager, handleNextSwipe, handlePrevSwipe);
 
   // --- The end of the list (#6664) -------------------------------------------
   //
@@ -1545,7 +1577,9 @@ export function PlayCore({
   const trackEndCardVisible =
     trackEndCard !== null && trackEndCardClimbUuid !== null && trackEndCardClimbUuid === displayedClimbUuid;
   useTrackEndSwipe(swipePager, trackEndCard ? openTrackEndCard : null);
-  const handleNextPress = trackEndCard ? openTrackEndCard : handleNext;
+  const handleNextPress = trackEndCard ? openTrackEndCard : handleNextButton;
+  // The board's VoiceOver / TalkBack adjust action, the swipe's stand-in.
+  const handleNextAdjust = trackEndCard ? openTrackEndCard : handleNextSwipe;
   const canPressNext = navigationState.canNext || trackEndCard !== null;
   const trackEndAction = trackEndCard?.action ?? null;
   const handleTrackEndKeepGoing = useCallback(() => {
@@ -2110,14 +2144,14 @@ export function PlayCore({
       onKeepTheirs={handleBackToLive}
       onCommit={currentClimbDark ? handlePutHeldClimbOnWall : handlePutOnWall}
       ascentCount={ascentCount}
-      onPrevClick={handlePrev}
+      onPrevClick={handlePrevButton}
       onNextClick={handleNextPress}
       onMirror={handleMirror}
       onToggleFavorite={handleToggleFavorite}
       lightbulbLabelKind={lightbulbLabelKind}
       onLightbulb={handleLightbulb}
       onLightbulbLongPress={handleLightbulbLongPress}
-      onOpenQueue={onOpenQueue}
+      onOpenQueue={handleOpenQueueFromBar}
       onShare={displayedClimbIsDraft ? undefined : handleShare}
       onTickPress={handleTickFabPress}
       onTickLongPress={handleTickFabLongPress}
@@ -2310,7 +2344,7 @@ export function PlayCore({
                                       onAddBetaVideo={handleOpenAddBetaVideoForClimb}
                                       onReportClimb={handleOpenReportClimbForClimb}
                                       onSelectPlaylist={handleOpenAddToPlaylistForClimb}
-                                      onOpenQueue={onOpenQueue}
+                                      onOpenQueue={handleOpenQueueFromMenu}
                                       onOpenViewOptions={handleOpenSectionsSettings}
                                       dismissPlayerAndWait={dismissPlayerAndWait}
                                     />
@@ -2470,8 +2504,8 @@ export function PlayCore({
                               mirrored={isMirrored}
                               canSwipeNext={canPressNext}
                               canSwipePrevious={navigationState.canPrevious}
-                              onSwipeNext={handleNextPress}
-                              onSwipePrevious={handlePrev}
+                              onSwipeNext={handleNextAdjust}
+                              onSwipePrevious={handlePrevSwipe}
                               onResetZoomReady={handleResetZoomReady}
                               enabled={!isTickBarActive}
                               scrollRef={scrollGestureRef}

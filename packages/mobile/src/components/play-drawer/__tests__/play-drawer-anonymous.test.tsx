@@ -271,6 +271,12 @@ vi.mock('@boardsesh/analytics', () => ({
   },
 }));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
+// Queue Navigation's payloads have their own suites (use-play-selection-controller,
+// play-drawer-cross-board); the analytics package is stubbed above.
+vi.mock('../../../lib/queue-navigation-analytics', () => ({
+  trackQueueNavigation: vi.fn(),
+  trackQueueSheetOpened: vi.fn(),
+}));
 vi.mock('../../../lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: activeBoard.current, isPending: false }),
 }));

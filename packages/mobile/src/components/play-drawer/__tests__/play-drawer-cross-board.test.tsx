@@ -254,6 +254,11 @@ vi.mock('@boardsesh/analytics', () => ({
   },
 }));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
+const queueAnalytics = vi.hoisted(() => ({ navigation: vi.fn(), sheetOpened: vi.fn() }));
+vi.mock('../../../lib/queue-navigation-analytics', () => ({
+  trackQueueNavigation: queueAnalytics.navigation,
+  trackQueueSheetOpened: queueAnalytics.sheetOpened,
+}));
 
 // --- Children ----------------------------------------------------------------
 vi.mock('../DeferredBoard', () => ({
@@ -1572,5 +1577,67 @@ describe('PlayDrawer in tabletop (iPhone Duo half open, upright)', () => {
     act(() => publishHingeStatus('partiallyOpen'));
     const rendered = renderDrawer();
     expect(rendered.queryByTestId('play-drawer-tabletop-controls')).toBeNull();
+
+// #6940: which control asked for the step decides `method`; the selection
+// controller's own suite pins the moved / preview split.
+describe('PlayDrawer queue analytics', () => {
+  function arrangeNeighbours() {
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    navigation.state = {
+      nextItem: queueItem({ ...TWELVE_CLIMB, uuid: 'twelve-next' }, 'queue-next'),
+      prevItem: queueItem({ ...TWELVE_CLIMB, uuid: 'twelve-prev' }, 'queue-prev'),
+      canNext: true,
+      canPrevious: true,
+    };
+  }
+  const solo = { surface: 'player', inSharedSession: false, boardType: 'kilter', layoutId: 1 };
+  function press(props: Props | undefined, handler: string) {
+    const onPress = props?.[handler];
+    if (typeof onPress !== 'function') throw new Error(`${handler} was not handed over`);
+    act(() => {
+      onPress();
+    });
+  }
+
+  it('reports the action bar ⏮ ⏭ as button steps, once each', () => {
+    arrangeNeighbours();
+    renderDrawer();
+    press(recorded.actionBar.at(-1), 'onPrevClick');
+    press(recorded.actionBar.at(-1), 'onNextClick');
+    expect(queueAnalytics.navigation.mock.calls).toEqual([
+      [expect.objectContaining({ ...solo, direction: 'previous', method: 'button', outcome: 'moved' })],
+      [expect.objectContaining({ ...solo, direction: 'next', method: 'button', outcome: 'moved' })],
+    ]);
+  });
+
+  it('reports a board swipe as a swipe step', () => {
+    arrangeNeighbours();
+    renderDrawer();
+    const pager = lastBoardProps().pager as { requestStep: (direction: 1 | -1, step: number) => void };
+    act(() => pager.requestStep(-1, 1));
+    expect(queueAnalytics.navigation).toHaveBeenCalledOnce();
+    expect(queueAnalytics.navigation).toHaveBeenCalledWith(
+      expect.objectContaining({ ...solo, direction: 'previous', method: 'swipe', outcome: 'moved' }),
+    );
+  });
+
+  it("counts the board's screen-reader adjust action as the swipe it stands in for", () => {
+    arrangeNeighbours();
+    renderDrawer();
+    press(lastBoardProps(), 'onSwipeNext');
+    expect(queueAnalytics.navigation).toHaveBeenCalledWith(
+      expect.objectContaining({ direction: 'next', method: 'swipe' }),
+    );
+  });
+
+  it('reports the queue button and the ⋯ row as separate surfaces', () => {
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    renderDrawer();
+    press(recorded.actionBar.at(-1), 'onOpenQueue');
+    press(recorded.actionsMenu.at(-1), 'onOpenQueue');
+    expect(queueAnalytics.sheetOpened.mock.calls).toEqual([
+      [{ surface: 'player', boardType: 'kilter' }],
+      [{ surface: 'player_menu', boardType: 'kilter' }],
+    ]);
   });
 });

@@ -268,6 +268,38 @@ climb).
 - Signed out: no Favorite or Queue. A draft has no Share. A fixed-angle board has no Angle; a board that can't
   mirror has no Mirror.
 
+### What we measure
+
+The defaults above were picked without data. Two events (#6940) let them be revisited; their contract is
+`packages/shared/analytics/src/queue-navigation-events.ts`.
+
+- `Queue Navigation`, once per Next or Previous the climber takes: `direction` (`next`, `previous`), `method`
+  (`button`, `swipe`; the board's screen-reader adjust action counts as a swipe), `surface` (`player`,
+  `mini_player`), `outcome` (`moved`, or `preview` when a crew or Light on swipe off kept the wall still),
+  `sessionMode` (`party`, `solo`), `lightOnSwipe`, `boardType` and `layoutId` (null on a spray wall). The rest
+  timer's auto-advance and the workout runner don't fire it, and neither does Next opening the player at the end
+  of a list. www fired the same name before W-16 with other `method` values and no `surface`, so filter on
+  `surface`.
+- `Queue Sheet Opened`: `surface` (`player`, `player_menu`, `mini_player`, `snackbar`) and `boardType`. The
+  side-by-side iPad player's queue button shows Up next in its panel instead of a sheet, and still counts as
+  `player`.
+
+Button against swipe, and how much the MiniPlayer carries:
+
+```sql
+SELECT properties.surface AS surface, properties.method AS method,
+       properties.direction AS direction, properties.outcome AS outcome,
+       count() AS steps, uniq(person_id) AS climbers
+FROM events
+WHERE event = 'Queue Navigation'
+  AND properties.surface IS NOT NULL
+  AND timestamp >= now() - INTERVAL 28 DAY
+GROUP BY surface, method, direction, outcome
+ORDER BY steps DESC
+```
+
+Where the queue is opened from: the same query on `Queue Sheet Opened`, grouped by `surface`.
+
 ### Storage
 
 `miniPlayerButtonsV1` in the synchronous settings store (MMKV), a `SectionLayoutRecord | null` written only by

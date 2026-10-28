@@ -7,6 +7,7 @@ import {
 import { toBoardName } from '@boardsesh/board-config';
 import { isClimbOnReachableBoard, type ClimbQueueItem, type PlaylistSuggestionSource } from '@boardsesh/queue';
 import type { Climb } from '@boardsesh/shared-schema';
+import type { QueueNavigationDirection } from '@boardsesh/analytics';
 import {
   useIsSharedSession,
   usePlaylistSuggestionSource,
@@ -17,6 +18,7 @@ import { useReachableBoardKeys } from '../../providers/queue/use-reachable-board
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { hapticSelection } from '../../lib/haptics';
+import { trackQueueNavigation } from '../../lib/queue-navigation-analytics';
 import { canLoadMoreOfTrack } from '../../lib/playlists/track-pager';
 import { useSetting } from '../../settings/hooks';
 import { getSwipeNavigationTarget } from '../play-drawer/play-drawer-navigation';
@@ -43,7 +45,11 @@ export type MiniPlayerNavigation = {
  *   card, which the bar has no room for.
  *
  * Where there is nothing to move to (the first climb, a page still loading) the
- * button reads disabled and keeps its slot. {@link MiniPlayerTrackPager} keeps
+ * button reads disabled and keeps its slot.
+ *
+ * Each step that moves the wall or opens a preview fires `Queue Navigation`
+ * with `surface: 'mini_player'`. The end-of-list open does not: it changes no
+ * climb. {@link MiniPlayerTrackPager} keeps
  * a long list paging while the player is closed.
  */
 export function useMiniPlayerNavigation(): MiniPlayerNavigation {
@@ -78,8 +84,10 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
   // The list is done, not still loading: the player's end card takes it from here.
   const listEnded = nextItem === null && atTrackEnd && !canLoadMoreOfTrack(playlistSuggestionSource);
 
+  const boardType = activeBoard?.boardType;
+  const layoutId = activeBoard?.layoutId;
   const move = useCallback(
-    (targetItem: ClimbQueueItem | null, navigateQueue: () => void) => {
+    (targetItem: ClimbQueueItem | null, navigateQueue: () => void, direction: QueueNavigationDirection) => {
       if (!targetItem) return;
       hapticSelection();
       const target = getSwipeNavigationTarget({
@@ -89,19 +97,32 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
         lightOnSwipe,
         inSharedSession,
       });
+      const trackStep = (outcome: 'moved' | 'preview') =>
+        trackQueueNavigation({
+          direction,
+          method: 'button',
+          surface: 'mini_player',
+          outcome,
+          inSharedSession,
+          lightOnSwipe,
+          boardType,
+          layoutId,
+        });
       if (target.viewOnly) {
         if (!target.targetItem) return;
         openPlayDrawer(target.targetItem.climb as Climb, {
           previewQueueItem: target.targetItem,
           playlistSuggestionSource,
         });
+        trackStep('preview');
         return;
       }
       navigateQueue();
+      trackStep('moved');
     },
-    [lightOnSwipe, inSharedSession, openPlayDrawer, playlistSuggestionSource],
+    [lightOnSwipe, inSharedSession, openPlayDrawer, playlistSuggestionSource, boardType, layoutId],
   );
-  const onPrevious = useCallback(() => move(prevItem, previousClimb), [move, prevItem, previousClimb]);
+  const onPrevious = useCallback(() => move(prevItem, previousClimb, 'previous'), [move, prevItem, previousClimb]);
   const onNext = useCallback(() => {
     if (nextItem === null && listEnded && currentClimbQueueItem) {
       hapticSelection();
@@ -109,7 +130,7 @@ export function useMiniPlayerNavigation(): MiniPlayerNavigation {
       openPlayDrawer(currentClimbQueueItem.climb as Climb, { reopensCurrent: true });
       return;
     }
-    move(nextItem, nextClimb);
+    move(nextItem, nextClimb, 'next');
   }, [nextItem, listEnded, currentClimbQueueItem, openPlayDrawer, move, nextClimb]);
 
   return { canPrevious: prevItem !== null, canNext: nextItem !== null || listEnded, onPrevious, onNext };

@@ -7,6 +7,7 @@ import {
   type PlaylistSuggestionSource,
 } from '@boardsesh/queue';
 import type { ActiveSubDrawer, NavigationState } from '@boardsesh/play-view';
+import type { QueueNavigationDirection, QueueNavigationMethod, QueueNavigationOutcome } from '@boardsesh/analytics';
 import type { QueueActionsContextValue } from '../../providers/queue/queue-contexts';
 import { climbToQueueItem, resolveCommittableQueueItem } from '../../lib/climb-to-queue-item';
 import { toQueueClimb, toQueueClimbs } from '../../lib/climb-types';
@@ -67,6 +68,12 @@ type HeldClimbSelection = {
   /** Put on the wall for the held climb: releases the hold and lights the board. */
   putHeldClimbOnWall: () => void;
 };
+/** One step the climber took, for `Queue Navigation`; the caller adds the surface and the board. */
+export type PlayNavigationStep = {
+  direction: QueueNavigationDirection;
+  method: QueueNavigationMethod;
+  outcome: QueueNavigationOutcome;
+};
 type PlaySelectionInputs = {
   openTarget: PlayDrawerOpenTarget | null;
   viewer: NonNullable<PlayDrawerProps['viewer']>;
@@ -80,6 +87,8 @@ type PlaySelectionInputs = {
   chrome: SelectionChrome;
   confirmation: CommitConfirmation;
   hold: HeldClimbSelection;
+  /** Reports each Next / Previous that moved the wall or opened a preview. */
+  onNavigationStep: (step: PlayNavigationStep) => void;
 };
 
 type SwipeSelectionInputs = Pick<
@@ -90,9 +99,14 @@ type SwipeSelectionInputs = Pick<
     targetItem: ClimbQueueItem | null;
     navigateQueue: () => void;
     clearMirror: () => void;
+    direction: QueueNavigationDirection;
+    onNavigationStep: (step: PlayNavigationStep) => void;
   };
 
-/** One swipe intent, with independent callback identities for next and previous. */
+/**
+ * One swipe intent, with independent callback identities for next and previous.
+ * `method` says whether a button or a swipe asked for it, for the analytics.
+ */
 function useSwipeSelection({
   drawerPreviewItem,
   drawerPreviewSuggestionSource,
@@ -103,36 +117,46 @@ function useSwipeSelection({
   targetItem,
   navigateQueue,
   clearMirror,
+  direction,
+  onNavigationStep,
 }: SwipeSelectionInputs) {
-  return useCallback(() => {
-    const previewTarget = getSwipeNavigationTarget({
-      previewItem: drawerPreviewItem,
-      previewSuggestionSource: drawerPreviewSuggestionSource,
-      targetItem,
-      lightOnSwipe,
-      inSharedSession: browseByDefault,
-    });
-    if (previewTarget.viewOnly) {
-      if (!previewTarget.targetItem) return;
-      setDrawerPreviewItem(previewTarget.targetItem);
-      // The displayed climb moved; the wall did not.
+  return useCallback(
+    (method: QueueNavigationMethod) => {
+      const previewTarget = getSwipeNavigationTarget({
+        previewItem: drawerPreviewItem,
+        previewSuggestionSource: drawerPreviewSuggestionSource,
+        targetItem,
+        lightOnSwipe,
+        inSharedSession: browseByDefault,
+      });
+      if (previewTarget.viewOnly) {
+        if (!previewTarget.targetItem) return;
+        setDrawerPreviewItem(previewTarget.targetItem);
+        // The displayed climb moved; the wall did not.
+        setDrawerPreviewIsWallClimb(false);
+        clearMirror();
+        onNavigationStep({ direction, method, outcome: 'preview' });
+        return;
+      }
+      setDrawerPreviewItem(null);
       setDrawerPreviewIsWallClimb(false);
+      navigateQueue();
       clearMirror();
-      return;
-    }
-    setDrawerPreviewItem(null);
-    setDrawerPreviewIsWallClimb(false);
-    navigateQueue();
-    clearMirror();
-  }, [
-    drawerPreviewSuggestionSource,
-    drawerPreviewItem,
-    targetItem,
-    navigateQueue,
-    lightOnSwipe,
-    browseByDefault,
-    setDrawerPreviewItem,
-  ]);
+      // No target means the controls read disabled: nothing to count.
+      if (targetItem) onNavigationStep({ direction, method, outcome: 'moved' });
+    },
+    [
+      drawerPreviewSuggestionSource,
+      drawerPreviewItem,
+      targetItem,
+      navigateQueue,
+      lightOnSwipe,
+      browseByDefault,
+      setDrawerPreviewItem,
+      direction,
+      onNavigationStep,
+    ],
+  );
 }
 
 /**
@@ -166,6 +190,7 @@ export function usePlaySelectionController({
     markLatchExit,
   },
   hold: { heldQueueItemUuid, putHeldClimbOnWall },
+  onNavigationStep,
 }: PlaySelectionInputs) {
   const openDrawer = useCallback(
     (selectedClimb: Climb, options?: PlayDrawerOpenOptions) => {
@@ -282,6 +307,8 @@ export function usePlaySelectionController({
     targetItem: navigationState.prevItem,
     navigateQueue: previousClimb,
     clearMirror,
+    direction: 'previous',
+    onNavigationStep,
   });
   const handleNext = useSwipeSelection({
     drawerPreviewItem,
@@ -293,6 +320,8 @@ export function usePlaySelectionController({
     targetItem: navigationState.nextItem,
     navigateQueue: nextClimb,
     clearMirror,
+    direction: 'next',
+    onNavigationStep,
   });
 
   // Whether the climb went up: false when there was nothing to commit or the
