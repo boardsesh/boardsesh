@@ -62,7 +62,7 @@ export default function SessionDetailScreen() {
   // The workout this session was climbed to, if any (#6903): the Climbs list
   // then groups by block. The viewer's own when they ran one, else the session
   // owner's (`chooseSessionWorkout`).
-  const workout = useSessionWorkoutView(sessionId, 'session')?.workout;
+  const workout = useSessionWorkoutView(sessionId, 'session', session?.ownerUserId ?? null)?.workout;
   const ticks = session?.ticks ?? EMPTY_TICKS;
   const climbRows = useMemo(
     () => (workout ? buildWorkoutClimbRows(ticks, workout) : plainTickRows(ticks)),

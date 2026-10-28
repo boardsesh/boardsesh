@@ -18,7 +18,6 @@ import {
 import type { PendingSessionWrites } from '@boardsesh/offline-sync';
 import { getHttpClient } from '../../../lib/graphql/client';
 import { useProfile } from '../../../lib/graphql/hooks';
-import { useSessionOwnerUserId } from '../../../lib/graphql/hooks/use-session-detail';
 import { sessionWorkoutHeadlinesQueryKey, sessionWorkoutsQueryKey } from '../../../lib/graphql/query-keys';
 import { useGradeFormat } from '../../../hooks/use-grade-format';
 import { useIsOffline } from '../../../hooks/use-is-offline';
@@ -98,10 +97,18 @@ function usePendingSessionWrites(sessionId: string | null): PendingSessionWrites
  * first one listed. The viewer's own comes from this phone (its live run, or the
  * recap kept when the session ended) while the phone still has ticks or a
  * workout write for the session queued, or while the server has none.
+ *
+ * `sessionOwnerUserId` is the session's creator, which session detail already
+ * has from its own query (`SessionDetail.ownerUserId`).
+ *
+ * The workout keeps its identity while the chosen answer does: a change in
+ * connectivity or the pending count rebuilds only the thin outer object, so
+ * the grouped rows below never redraw for it.
  */
 export function useSessionWorkoutView(
   sessionId: string | null | undefined,
   scope: SessionWorkoutScope = 'viewer',
+  sessionOwnerUserId: string | null = null,
 ): SessionWorkoutState | undefined {
   const id = sessionId ?? null;
   const serverSessionId = canHoldWorkout(id) ? id : null;
@@ -127,32 +134,34 @@ export function useSessionWorkoutView(
     enabled: serverSessionId !== null,
     staleTime: SESSION_WORKOUTS_STALE_TIME_MS,
   });
-  const { data: sessionOwnerUserId = null } = useSessionOwnerUserId(
-    scope === 'session' && serverSessionId !== null ? serverSessionId : undefined,
-  );
 
   const localView = useMemo(
     () => (localRecord ? localWorkoutView(localRecord, viewerUserId ?? '', formatGrade) : null),
     [localRecord, viewerUserId, formatGrade],
   );
 
-  return useMemo(() => {
-    const choice = chooseSessionWorkout({
-      workouts,
-      viewerUserId,
-      sessionOwnerUserId,
-      localAvailable: localView !== null,
-      phoneAhead: pending.ticks > 0 || pending.workouts > 0,
-      scope,
-    });
-    if (choice?.source === 'local' && localView) {
-      return { workout: localView, pendingTicks: pending.ticks, offline };
-    }
-    if (choice?.source === 'server') {
-      return { workout: serverWorkoutView(choice.workout, formatGrade), pendingTicks: 0, offline };
-    }
-    return undefined;
-  }, [workouts, viewerUserId, sessionOwnerUserId, localView, pending, scope, offline, formatGrade]);
+  const phoneAhead = pending.ticks > 0 || pending.workouts > 0;
+  const choice = useMemo(
+    () =>
+      chooseSessionWorkout({
+        workouts,
+        viewerUserId,
+        sessionOwnerUserId: scope === 'session' ? sessionOwnerUserId : null,
+        localAvailable: localView !== null,
+        phoneAhead,
+        scope,
+      }),
+    [workouts, viewerUserId, sessionOwnerUserId, localView, phoneAhead, scope],
+  );
+  const chosenServerWorkout = choice?.source === 'server' ? choice.workout : null;
+  const serverView = useMemo(
+    () => (chosenServerWorkout ? serverWorkoutView(chosenServerWorkout, formatGrade) : null),
+    [chosenServerWorkout, formatGrade],
+  );
+  const workout = choice?.source === 'local' ? localView : serverView;
+  const pendingTicks = choice?.source === 'local' ? pending.ticks : 0;
+
+  return useMemo(() => (workout ? { workout, pendingTicks, offline } : undefined), [workout, pendingTicks, offline]);
 }
 
 function fetchHeadlines(sessionIds: readonly string[]): Promise<SessionWorkoutHeadlineResult[]> {

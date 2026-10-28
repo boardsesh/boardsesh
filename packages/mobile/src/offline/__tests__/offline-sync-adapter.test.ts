@@ -7,11 +7,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const authToken = vi.hoisted(() => ({
   token: 'e30.eyJzdWIiOiJ2aWV3ZXItNjY1MyJ9.signature' as string | null,
+  readFails: false,
   generationCurrent: true,
   generation: 1,
 }));
 vi.mock('../../lib/auth-store', () => ({
-  getAuthToken: async () => authToken.token,
+  getAuthToken: async () => {
+    if (authToken.readFails) throw new Error('SecureStore unavailable');
+    return authToken.token;
+  },
   captureAuthCredentialGeneration: () => authToken.generation,
   isAuthCredentialGenerationCurrent: () => authToken.generationCurrent,
 }));
@@ -188,6 +192,7 @@ import {
   __resetMeteredStateForTests,
   __resetOutboxOwnerReportForTests,
   readSignedInAccount,
+  readSignedInUserIdOrNull,
 } from '../offline-sync-adapter';
 import { resetLaunchReloadWindowForTests, setJsRestartCount } from '../../lib/launch-reload-window';
 import type {
@@ -1988,6 +1993,16 @@ describe('outbox owner binding', () => {
     authToken.token = 'e30.eyJzdWIiOiJ2aWV3ZXItNjY1MyJ9.signature';
     authToken.generationCurrent = false;
     await expect(readSignedInAccount()).resolves.toEqual({ status: 'unsettled' });
+  });
+
+  it("gives the workout write the token's account, or null, and never rejects (#6903)", async () => {
+    await expect(readSignedInUserIdOrNull()).resolves.toBe('viewer-6653');
+    authToken.token = null;
+    await expect(readSignedInUserIdOrNull()).resolves.toBeNull();
+    authToken.token = 'e30.eyJzdWIiOiJ2aWV3ZXItNjY1MyJ9.signature';
+    authToken.readFails = true;
+    await expect(readSignedInUserIdOrNull()).resolves.toBeNull();
+    authToken.readFails = false;
   });
 
   it('answers no account when credentials change while the token is read', async () => {

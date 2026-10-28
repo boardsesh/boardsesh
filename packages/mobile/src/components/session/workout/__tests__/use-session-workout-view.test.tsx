@@ -6,13 +6,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createElement, type ReactNode } from 'react';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { SessionWorkoutResult } from '@boardsesh/graphql/operations/session-workouts';
 import type { EndedWorkoutRecord } from '../../../../lib/ended-workout-store';
 
 const mocks = vi.hoisted(() => ({
   viewerId: 'user-1' as string | null,
   recap: null as EndedWorkoutRecord | null,
   pending: { ticks: 0, workouts: 0 },
-  request: vi.fn(async () => ({ sessionWorkouts: [] })),
+  offline: false,
+  serverRows: [] as SessionWorkoutResult[],
+  request: vi.fn(async () => ({ sessionWorkouts: [] as SessionWorkoutResult[] })),
 }));
 vi.mock('../../../../lib/graphql/client', () => ({ getHttpClient: () => ({ request: mocks.request }) }));
 vi.mock('../../../../hooks/use-grade-format', () => {
@@ -22,8 +25,7 @@ vi.mock('../../../../hooks/use-grade-format', () => {
 vi.mock('../../../../lib/graphql/hooks', () => ({
   useProfile: () => ({ data: mocks.viewerId ? { id: mocks.viewerId } : null }),
 }));
-vi.mock('../../../../lib/graphql/hooks/use-session-detail', () => ({ useSessionOwnerUserId: () => ({ data: null }) }));
-vi.mock('../../../../hooks/use-is-offline', () => ({ useIsOffline: () => false }));
+vi.mock('../../../../hooks/use-is-offline', () => ({ useIsOffline: () => mocks.offline }));
 vi.mock('../../../../offline/pending-tick', () => ({ readPendingSessionWrites: async () => mocks.pending }));
 vi.mock('../../../../offline/offline-sync-adapter', () => ({ subscribeMutationDelivery: () => () => undefined }));
 vi.mock('../../../../lib/ended-workout-store', () => ({ useEndedWorkout: () => mocks.recap }));
@@ -50,7 +52,50 @@ function wrapper({ children }: { children: ReactNode }) {
 beforeEach(() => {
   mocks.viewerId = 'user-1';
   mocks.pending = { ticks: 0, workouts: 0 };
-  mocks.request.mockClear();
+  mocks.offline = false;
+  mocks.recap = null;
+  mocks.serverRows = [];
+  mocks.request.mockReset().mockImplementation(async () => ({ sessionWorkouts: mocks.serverRows }));
+});
+
+/** A workout as sessionWorkouts answers it: one volume block, one sent climb. */
+const serverRow = (userId: string, name: string): SessionWorkoutResult => ({
+  userId,
+  displayName: null,
+  avatarUrl: null,
+  offPlan: 0,
+  offPlanTickUuids: [],
+  updatedAt: '2026-10-28T12:00:00Z',
+  stages: [
+    {
+      id: `stage-${userId}`,
+      kind: 'volume',
+      isCoolDown: false,
+      targetGrade: null,
+      repsPerSet: null,
+      sets: null,
+      intervalSeconds: null,
+      restSeconds: null,
+      tally: { sent: 2, attempts: 0, skipped: 0, climbs: 1 },
+      climbs: [
+        {
+          queueItemUuid: 'q1',
+          climbUuid: 'climb-1',
+          angle: 40,
+          isMirror: null,
+          name,
+          grade: null,
+          boardType: 'kilter',
+          layoutId: 1,
+          frames: null,
+          renderBoard: null,
+          reps: ['SEND', 'SEND'],
+          tickUuids: ['t1', 't2'],
+          skipped: false,
+        },
+      ],
+    },
+  ],
 });
 
 describe('useSessionWorkoutView', () => {
@@ -79,5 +124,45 @@ describe('useSessionWorkoutView', () => {
     const unknown = renderHook(() => useSessionWorkoutView(SESSION_ID), { wrapper });
     await waitFor(() => expect(mocks.request).toHaveBeenCalledTimes(2));
     expect(unknown.result.current).toBeUndefined();
+  });
+
+  it("takes the viewer's server copy once the phone has nothing left to send", async () => {
+    mocks.recap = recap('user-1');
+    mocks.serverRows = [serverRow('user-1', 'From the server')];
+    const { result } = renderHook(() => useSessionWorkoutView(SESSION_ID), { wrapper });
+    await waitFor(() => expect(result.current?.workout.stages[0]?.climbs[0]?.name).toBe('From the server'));
+    expect(result.current?.workout.stages[0]?.climbs[0]?.reps).toEqual(['send', 'send']);
+    expect(result.current?.pendingTicks).toBe(0);
+  });
+
+  it("keeps the phone's run over the server copy while ticks are still saving", async () => {
+    mocks.recap = recap('user-1');
+    mocks.pending = { ticks: 2, workouts: 0 };
+    mocks.serverRows = [serverRow('user-1', 'From the server')];
+    const { result } = renderHook(() => useSessionWorkoutView(SESSION_ID), { wrapper });
+    await waitFor(() => expect(result.current?.pendingTicks).toBe(2));
+    expect(result.current?.workout.stages[0]?.climbs[0]?.name).toBe('Crimps');
+  });
+
+  it("shows the session owner's workout on session detail, from the owner id detail already has", async () => {
+    mocks.viewerId = 'viewer';
+    mocks.serverRows = [serverRow('crewmate', 'Crewmate climb'), serverRow('owner', 'Owner climb')];
+    const { result } = renderHook(() => useSessionWorkoutView(SESSION_ID, 'session', 'owner'), { wrapper });
+    await waitFor(() => expect(result.current?.workout.userId).toBe('owner'));
+
+    const summary = renderHook(() => useSessionWorkoutView(SESSION_ID, 'viewer', 'owner'), { wrapper });
+    await waitFor(() => expect(mocks.request).toHaveBeenCalledTimes(2));
+    expect(summary.result.current).toBeUndefined();
+  });
+
+  it('keeps the workout object when only connectivity changes, so the rows below keep theirs', async () => {
+    mocks.serverRows = [serverRow('user-1', 'From the server')];
+    const { result, rerender } = renderHook(() => useSessionWorkoutView(SESSION_ID), { wrapper });
+    await waitFor(() => expect(result.current).toBeDefined());
+    const before = result.current?.workout;
+    mocks.offline = true;
+    rerender();
+    expect(result.current?.offline).toBe(true);
+    expect(result.current?.workout).toBe(before);
   });
 });

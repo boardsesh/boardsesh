@@ -276,7 +276,7 @@ const isRevision = (candidate: unknown): candidate is number =>
  * hand-queued; only a stage this bundle should read but cannot fails the whole
  * record. Unreadable log entries are left out one by one.
  */
-function readWorkoutRunRecord(candidate: unknown): WorkoutRunRecord | null {
+export function readWorkoutRunRecord(candidate: unknown): WorkoutRunRecord | null {
   if (typeof candidate !== 'object' || candidate === null) return null;
   const record = candidate as Partial<Record<keyof WorkoutRunRecord, unknown>>;
   if (typeof record.sessionId !== 'string' || typeof record.run !== 'object' || record.run === null) return null;
@@ -330,7 +330,7 @@ function joinTickLogs(
 }
 
 /** Both maps' captured climbs; an item in both keeps `earlier`'s. */
-function joinRunClimbs(
+export function joinRunClimbs(
   earlier: Record<string, WorkoutRunClimb> | undefined,
   later: Record<string, WorkoutRunClimb> | undefined,
 ): Record<string, WorkoutRunClimb> | undefined {
@@ -368,7 +368,8 @@ function mergeSlotsForSession(newerKinds: WorkoutRunRecord, originalKinds: Worko
   if (climbs) merged.climbs = climbs;
   const revision = Math.max(newerKinds.revision ?? -1, originalKinds.revision ?? -1);
   if (revision >= 0) merged.revision = revision;
-  // The merged run is new content: the next write must go out.
+  // No `sentDigest`: neither slot's copy holds the merged run, so the next
+  // write has to go out.
   return merged;
 }
 
@@ -651,11 +652,6 @@ export async function clearWorkoutRunForSession(
       ignoreStorageError();
     }
   }
-}
-
-/** A stored record as this bundle reads it, or null. For the ended-workout recap, which stores the same shape. */
-export function parseWorkoutRunRecord(candidate: unknown): WorkoutRunRecord | null {
-  return readWorkoutRunRecord(candidate);
 }
 
 /** The run for `sessionId`. Re-renders only when that answer changes. */

@@ -944,6 +944,20 @@ export async function readSignedInAccount(): Promise<SignedInAccount> {
   return userId ? { status: 'signed-in', userId } : { status: 'no-user-id' };
 }
 
+/**
+ * The signed-in account's id, or null while there is none, it is not settled,
+ * or the token cannot be read. Never rejects. For callers that must pin a write
+ * to one account (the workout write, #6903).
+ */
+export async function readSignedInUserIdOrNull(): Promise<string | null> {
+  try {
+    const account = await readSignedInAccount();
+    return account.status === 'signed-in' ? account.userId : null;
+  } catch {
+    return null;
+  }
+}
+
 async function readSignedInUserId(): Promise<string | undefined> {
   const account = await readSignedInAccount();
   return account.status === 'signed-in' ? account.userId : undefined;
