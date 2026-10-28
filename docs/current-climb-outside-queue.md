@@ -179,7 +179,7 @@ reducer, the same way `state-hash.ts` is shared so the two sides can't drift (#2
 | --- | --- |
 | `upNextStart(queue, current, historyCount)` | `indexOf(current) + 1` when the current climb is in `queue`, else (nothing current, or an orphan) `historyCount ?? 0`. Every reader that today does `findIndex(current)` and treats -1 as "all Up next" calls this instead. |
 | `historyLine(state)`, `historyOf(state)`, `upNextOf(state)` | The line and the two slices. Readers never do index arithmetic on `queue` themselves. |
-| `placeOnWall(state, item, placement, shouldAddToQueue)` | The table below. `shouldAddToQueue` only tells an old Next (`false`) from a shipped row tap (`true`) and the native socket (absent) on the `next-from-line` row. Returns `{ queue, currentClimbQueueItem, historyCount, rewrite }`, a state the other functions take as is. Never trims. |
+| `placeOnWall(state, item, placement, shouldAddToQueue, historyCopy)` | The table below. `shouldAddToQueue` only tells an old Next (`false`) from a shipped row tap (`true`) and the native socket (absent) on the `next-from-line` row. `historyCopy` (`reuse` by default, or `fresh`) decides the `dedupe-history` row; `historyCopyRuleFor(placement)` gives the server's and the reducer's value. Returns `{ queue, currentClimbQueueItem, historyCount, rewrite }`, a state the other functions take as is. Never trims. |
 | `capHistory(state, headroom)` | Trims History, oldest first (section 5). `headroom` is the number of entries about to be added; 0 once the add is already in the array, which is how `addQueueItem` calls it, after its write 1. Returns the state plus `trimmedCount`. Run `normaliseOrphanCurrent` first: an orphan counts as nothing current and passes through. |
 | `isUpNextFull(state, adding)`, `QUEUE_FULL` | The cap check on Up next and the `addQueueItem` error code (section 5). The climb on the wall doesn't count, and History doesn't either, because `capHistory` trims all of it first. Run `normaliseOrphanCurrent` first: an orphan is not counted until it is inserted. |
 | `historyAndUpNextCount(state)` | The entries the 500 cap counts: the array minus the current climb when it is in the array. `capHistory` trims against it. |
@@ -207,9 +207,25 @@ or a server-side caller that hasn't been changed. The first row that matches app
 | `item.uuid` is in Up next at k > 0 | any | That entry moves into the Now slot. The climbs before it stay in Up next. | `move-up-next` |
 | new uuid, same climb as current | any | Re-assert the current climb. The new uuid is dropped. | `dedupe-current` |
 | new uuid, climb in Up next | any | The first Up next copy moves into the Now slot. | `dedupe-up-next` |
-| new uuid, climb only in History | any | The newest History copy moves into the Now slot. | `dedupe-history` |
+| new uuid, climb only in History, `historyCopy: reuse` | any | The newest History copy moves into the Now slot. | `dedupe-history` |
+| new uuid, climb only in History, `historyCopy: fresh` | any | Inserted at the Now slot. The History copy stays where it is. | `insert` |
 | new uuid, climb nowhere in `queue` | any | Inserted at the Now slot. `shouldAddToQueue` is ignored, so no orphan can form. | `insert` |
 | `item: null` | — | The current climb stays as History's last entry. `historyCount` = its index + 1. | `clear` |
+
+**Who picks `reuse` or `fresh` for a climb only History holds (2026-10-28).** A new phone
+resolves its own open first and sends the entry it resolved to, so a tap that reuses a History
+entry reaches the server as that entry's uuid (`move-history`). A new uuid that arrives with
+`placement` is one the phone chose to put up fresh, so the server and the reducer place every
+request with `placement` as `fresh` (`historyCopyRuleFor`). Requests without `placement` keep
+`reuse`. On the phone, a list tap, a queue-sheet tap, Put on the wall and Previous resolve with
+`reuse`; Next (the button, a swipe, the rest timer) resolves with `fresh`. A tester on F3 hit
+the reason: Next off a search list whose next page held a climb from an hour earlier pulled
+that climb's old History entry into Now, and each Next after it pulled the next old entry, so
+History was rewritten and the wall replayed the old playlist. Next still reuses the entry right
+behind the current climb when it holds the list's next climb (Previous then Next on a list), so
+a back-and-forth swipe adds no copy. `queue-navigation-now-slot-replay.test.ts` in
+`@boardsesh/play-view` replays the tester's session and a seeded random walk over list taps,
+Next, Previous, page loads, Play next and new lists against both rules.
 
 **What "same climb" means.** `climb.uuid` and `climb.angle`, plus `climb.boardType` when both
 sides carry it. A climb queued at 40° is not reused for an open at 45°. The mirror flag is
@@ -1023,7 +1039,7 @@ mapping; the reducer decides what to do with it.
 | Subscription document (mobile) | `QUEUE_UPDATES_SUBSCRIPTION_NOW_SLOT` selects `historyCount` and `currentChangedAt` in `FullSync.state`; today's document stays for legacy mode | `src/lib/graphql/operations.ts:1229` |
 | Server probe | On every socket connect, before the join: the `__type(name: "QueueState")` probe, cached per connection, plus the narrow validation-error fallback (section 2). Injected into `create-queue-mutations.ts` as `useNowSlotDocuments()`. | `src/providers/queue/use-session-realtime.ts:884-908` |
 | Throttled open | A throttled `move-*` or `dedupe-*` reorders the array, so it can't use the "pointer self-heals" skip. It resyncs like any failed write. In now-slot mode a throttled `insert` resyncs too; `recoverThrottledQueueAdd` stays for the legacy branch only. | `queue-provider.tsx:1974-2000`, `:1844` |
-| `nextClimb` on a track | Sends `NOW`. A track peek still becomes a queue item, but at the Now slot, so it is History once you move on. If the list's neighbour is already queued, that entry moves instead of being copied. Since #6777 Next on a track plays Up next before the list (below), so the peek only comes once Up next is played. | `queue-provider.tsx:2234-2258` |
+| `nextClimb` on a track | Sends `NOW`, resolved with `historyCopy: fresh`. A track peek still becomes a queue item, but at the Now slot, so it is History once you move on. If the list's neighbour is already queued, that entry moves instead of being copied. A peek whose climb only History holds is put up fresh and the History entry stays (section 1). Since #6777 Next on a track plays Up next before the list (below), so the peek only comes once Up next is played. | `queue-provider.tsx:2234-2258` |
 | `previousClimb` | On a track: `NOW` (the list's previous climb, from History or new). With no track, walking the queue (rule 4): `STEP`. | `queue-provider.tsx:2261-2281` |
 | BLE board-compatibility skip | Moves the target into Now, so the skipped climbs for a crewmate's other board stay in Up next. In a mixed-board crew they stay at the head of Up next until someone removes or reorders them, so every Next walks past the same climbs. The "skipped N climbs" notice is latched on the set of skipped entries (and the climb the swipe landed on), not on the current climb, so it shows once per set; a swipe back, a queue-sheet tap or a crewmate's open re-arms it. | `shared/board-config/src/board-compatibility.ts:256-273`, `reportClimbsSkippedOnBoardSwitch` in `queue-provider.tsx` |
 | Queue sheet row tap | Up next or History row: `NOW` | `src/components/play-drawer/use-queue-sheet-handlers.ts:65` |
@@ -1163,7 +1179,7 @@ was measured, so old and new clients can be compared.
 | `Queue Sync Hash Drift` (`shared/analytics/src/events.ts:170`) per session-hour, before and during the PR 2 ramp | Any rise on old builds. It means `chooseQueueEvent` sent a pointer event for a reshape, the biggest risk in this design. |
 | Backend `logMutationMetrics('setCurrentClimb' / 'addQueueItem' / 'setQueue')` gains `placement` (`explicit` / `absent`), `rewrite`, `event` (`pointer` / `fullsync` / `fullsync+trailing`), `trimmed`, `queueFull` | `FullSync`s per session-hour over 2× the pre-ramp baseline |
 | Share of opens that were `dedupe-*` | Near 0 means the match key is wrong |
-| `Set Active Climb` (`shared/analytics/src/events.ts:139`, already tracked in `setCurrentClimb`, `queue-provider.tsx:2085`, with `sessionId` null when solo) gains `rewrite`, `placement` and `nowSlotMode` from the local `placeOnWall`. This is the only signal for the issue's headline case: a solo queue never reaches the server, so the backend metrics can't see it. | Near-zero `dedupe-*` share on new builds with `sessionId` null, while the session share is healthy: the match key misses on solo inputs (for example `boardType` on one side only) |
+| `Set Active Climb` (`shared/analytics/src/events.ts:139`, already tracked in `setCurrentClimb`, `queue-provider.tsx:2085`, with `sessionId` null when solo) gains `rewrite`, `placement` and `nowSlotMode` from the local `placeOnWall`. This is the only signal for the issue's headline case: a solo queue never reaches the server, so the backend metrics can't see it. Since 2026-10-28 `nextClimb` and `previousClimb` fire it too, with `trigger` `next` / `previous` / `rest_timer`, `navSource` (`up_next`, `list`, `peek`, `queue`), `listIndex` (the climb's place on the track, null off it), `fromQueueItemUuid` and `toQueueItemUuid`, so a "Next went somewhere odd" report can be read from the data. | Near-zero `dedupe-*` share on new builds with `sessionId` null, while the session share is healthy: the match key misses on solo inputs (for example `boardType` on one side only) |
 | New `Queue Snapshot Restored`, once per launch: `historyCount`, `upNextCount`, and `upNextDuplicates` (climbs that appear more than once in the restored solo Up next, by the `isSameWallClimb` key). PR 4 also sends `hasCurrent`, `lastCurrentChangeAgeHours` and `lastCurrentChangeSource` (`snapshot` / `savedAt`) | `upNextDuplicates` not falling on new builds as old solo snapshots age out |
 | Daily read-only query on `board_session_queues`: rooms where one climb appears more than once in Up next | Not falling as the ramp goes up. Measure the baseline before PR 2. |
 | `QUEUE_FULL` rejections, and rooms whose Up next alone exceeds 500 or whose array exceeds 501 (500 with nothing current) | Any sustained count |

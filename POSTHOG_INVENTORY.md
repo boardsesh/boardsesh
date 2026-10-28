@@ -603,11 +603,12 @@ Mobile only, shipped by OTA on 2026-10-05. Reading notes and queries: `docs/grow
 | `Login Account Age Resolved` | the login's own props (`auth_method`, `provider`, `flow`, `screen`, `is_registration`), `is_new_account`, `account_age_hours`, `resolved_after_ms` | `packages/mobile/src/lib/login-analytics.ts`, after a `Login Succeeded` that went out with `is_new_account` null, when the creation time arrives within two minutes | At most one per sign-in; never when `Login Succeeded` already carried the age |
 | `Tick Logged` / `Set Active Climb` / `Climb Created` (changed) | adds `boardType`: one of the nine board types or null, the climb's own board (`boardTypeProperty` in `@boardsesh/analytics`). On `Set Active Climb` it falls back to the active board when the climb carries none | `use-quick-tick-form.ts`, `queue-provider.tsx`, `use-create-climb-screen.ts` | Unchanged |
 | `Set Active Climb` (changed) | adds `trigger`: `climb_saved` when the create screen queued a climb it had just saved, null when a climber chose the climb | `packages/mobile/src/providers/queue-provider.tsx` | Unchanged |
+| `Set Active Climb` (changed, 2026-10-28) | also fires on Next and Previous: `trigger` `next` / `previous` / `rest_timer` (the rest timer's own Next), plus `navSource` (`up_next` / `list` / `peek` / `queue`), `listIndex` (place on the track, null off it), `fromQueueItemUuid`, `toQueueItemUuid`. `rewrite` / `placement` / `nowSlotMode` as on a pick | `nextClimb` / `previousClimb` in `packages/mobile/src/providers/queue-provider.tsx` | About one more per Next or Previous, roughly 15 per active session |
 | `Onboarding Gate Evaluated` (changed) | adds the skip reason `replayed_board_link`: this sign-in opened a board or climb link tapped while signed out, so the first-board picker is not pushed over it | `OnboardingGate.tsx` via `onboarding-gate-analytics.ts` | One per sign-in that opened a stashed link; not measured yet |
 
 - **Sign-ups** are people with `is_new_account = true` on `Login Succeeded` or
   `Login Account Age Resolved`. Both are backdated to the moment sign-in succeeded.
-- **`trigger` has two meanings by event.** On `Set Active Climb` it is `climb_saved` or null. On
+- **`trigger` has two meanings by event.** On `Set Active Climb` it is `climb_saved`, `put_on_wall`, null (a pick), or `next` / `previous` / `rest_timer` (a step). On
   `Onboarding Gate Evaluated` it is `cold_start` / `remount` / `account_switch`. Never pool them.
 - A spray wall's `layoutId` is created with the wall, so `boardType = 'spray'` is the only way to
   tell a spray session from a Kilter one. Leave `trigger = 'climb_saved'` rows out of any "lit a

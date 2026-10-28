@@ -271,7 +271,7 @@ export function RestTimerAutoAdvanceScheduler() {
       // this climb without a new one, it never moves on again from it.
       noteRestTimerAdvancedFrom(advanceInputsRef.current.currentClimbQueueItem?.uuid ?? null);
       playRestTimerCue({ kind: 'advance' });
-      nextClimb();
+      nextClimb('rest_timer');
     },
     [mode, advanceOn, nextClimb],
   );
@@ -388,7 +388,7 @@ export function RestTimerAutoAdvanceScheduler() {
           if ((advanceInputsRef.current.currentClimbQueueItem?.uuid ?? null) !== wallQueueItemUuid) return;
           noteRestTimerAdvancedFrom(wallQueueItemUuid);
           playRestTimerCue({ kind: 'advance' });
-          nextClimb();
+          nextClimb('rest_timer');
           return;
         case 'retry': {
           const retryCycleId = getRestTimerState().cycleId;

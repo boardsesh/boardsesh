@@ -70,6 +70,24 @@ export type NowSlotRewrite =
   | 'insert'
   | 'clear';
 
+/**
+ * What a new uuid does when its climb is only in History (the `dedupe-history`
+ * row). `reuse` moves the newest History copy into the Now slot; `fresh` puts
+ * the new uuid there and leaves History as it was (`insert`).
+ *
+ * A phone resolves its own open first and sends the entry it resolved to, so a
+ * tap that reuses a History entry reaches the server as that entry's uuid. A
+ * new uuid that comes with `placement` is therefore one the phone chose to put
+ * up fresh (a forward step, Next or a track peek), and the server and the
+ * reducer place it with `fresh`. Requests without `placement` keep `reuse`.
+ */
+export type HistoryCopyRule = 'reuse' | 'fresh';
+
+/** The {@link HistoryCopyRule} for a request: `fresh` when it carries `placement`, the phone already resolved it. */
+export function historyCopyRuleFor(placement: CurrentClimbPlacement | null | undefined): HistoryCopyRule {
+  return placement != null ? 'fresh' : 'reuse';
+}
+
 export type NowSlotPlacement<TItem extends NowSlotQueueItem> = NowSlotResolvedState<TItem> & {
   rewrite: NowSlotRewrite;
 };
@@ -269,6 +287,7 @@ function moveIntoNow<TItem extends NowSlotQueueItem>(
  * | new uuid, same climb as current                            | any           | `dedupe-current` |
  * | new uuid, climb in Up next (first copy)                    | any           | `dedupe-up-next` |
  * | new uuid, climb only in History (newest copy)              | any           | `dedupe-history` |
+ * | the same, `historyCopy: 'fresh'` (a forward step)          | any           | `insert`         |
  * | new uuid, climb nowhere in `queue`                         | any           | `insert`         |
  * | `item: null`                                               | -             | `clear`          |
  *
@@ -281,7 +300,8 @@ function moveIntoNow<TItem extends NowSlotQueueItem>(
  * and mirror flag: the returned `currentClimbQueueItem` is the array's own
  * entry, except for `insert`, where it is `item`. `shouldAddToQueue` only
  * tells a row tap (`true`) from an old Next; it never decides whether the climb
- * joins the array, so no orphan can form. Never trims: callers run
+ * joins the array, so no orphan can form. `historyCopy` decides the
+ * `dedupe-history` row (see {@link HistoryCopyRule}). Never trims: callers run
  * {@link capHistory} on the result.
  */
 export function placeOnWall<TItem extends NowSlotQueueItem>(
@@ -289,6 +309,7 @@ export function placeOnWall<TItem extends NowSlotQueueItem>(
   item: TItem | null,
   placement?: CurrentClimbPlacement | null,
   shouldAddToQueue?: boolean | null,
+  historyCopy: HistoryCopyRule = 'reuse',
 ): NowSlotPlacement<TItem> {
   const { queue, currentClimbQueueItem: current, historyCount: line } = normaliseOrphanCurrent(state);
   const currentIndex = currentIndexOf(queue, current);
@@ -341,7 +362,10 @@ export function placeOnWall<TItem extends NowSlotQueueItem>(
     }
   }
 
-  for (let index = line - 1; index >= 0; index--) {
+  // A forward step onto a climb History already holds puts up a fresh copy:
+  // pulling an entry from an hour ago forward would rewrite History and replay
+  // the climbs after it with their old entries.
+  for (let index = line - 1; historyCopy === 'reuse' && index >= 0; index--) {
     if (isSameWallClimb(queue[index].climb, item.climb)) {
       return moveIntoNow(queue, line, hasCurrent, index, 'dedupe-history');
     }

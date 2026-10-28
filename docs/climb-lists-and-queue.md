@@ -559,7 +559,12 @@ Seven rules. Each one reuses a part that already exists in the code: the list tr
    in discussion #6708 predicted climbers would get lost.
 3. **The queue holds only what you or your crew add**: the right swipe (Play next), Play next,
    Play last, a workout. Looking at a climb never adds it to Up next. Climbs that were on the wall show
-   under History.
+   under History, in the order they were on it. Next never pulls an old History entry forward:
+   when the list's next climb is one you climbed earlier, Next puts up a fresh entry for it
+   and the old one stays where History had it (owner decision, 2026-10-28). A tap on that
+   climb in a list still reuses its History entry, and so does Next right after Previous,
+   onto the climb just ahead (`historyCopy` in `docs/current-climb-outside-queue.md`,
+   section 1).
 4. **The queue is a list too.** Tap a queue row and you play from the queue. In a crew it is
    the room's list.
 5. **Playing a playlist never wipes your queue.** Play next and Play last copy the playlist in. The

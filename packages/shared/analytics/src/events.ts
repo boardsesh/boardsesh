@@ -136,7 +136,10 @@ export const SHARED_EVENTS = {
   // active board's. `trigger` (#6027) is 'climb_saved' when the create screen
   // queued a climb it had just saved, 'put_on_wall' when a climber committed a
   // pinned preview on purpose (Put on the wall / Set active, or the bulb relay;
-  // #4281), and null for any other pick. Before the #6027 OTA a save fired this
+  // #4281), null for any other pick, and 'next' / 'previous' / 'rest_timer'
+  // when a Next / Previous step moved the wall. A step also carries `navSource`,
+  // `listIndex`, `fromQueueItemUuid` and `toQueueItemUuid`. A count of picks
+  // keeps only null and 'put_on_wall'. Before the #6027 OTA a save fired this
   // event with nothing to tell it apart. F3 (#6666) adds `nowSlotMode`, and in
   // that mode `rewrite` (the `placeOnWall` row the local open took: `insert`,
   // `dedupe-up-next`, ...) and `placement` (`NOW` / `STEP`); both null in legacy

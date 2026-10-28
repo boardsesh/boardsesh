@@ -36,6 +36,7 @@ import type {
   Climb,
   ClimbAuthoredPatch,
   CurrentClimbPlacement,
+  HistoryCopyRule,
   NowSlotRewrite,
   QueueSearchParams,
   ClimbQueueItem,
@@ -133,6 +134,7 @@ import {
   type QueuePlaylistSuggestionContextValue,
   type QueueReorderSource,
   type WidgetNavigationOptions,
+  type NextClimbCaller,
 } from './queue/queue-contexts';
 import { createBoardFeedSuggestionSource } from '../lib/playlists/board-feed-suggestion-source';
 import { createBoardSuggestionCompatibilityCache } from './queue/board-suggestion-compatibility-cache';
@@ -242,13 +244,56 @@ type NowSlotOpen = {
 /** The rows that only move the pointer, so a throttled send self-heals as before. */
 const POINTER_REWRITES: ReadonlySet<NowSlotRewrite> = new Set(['none', 'next', 'step']);
 
-/** Run the server's placement rule on the local state (`placeOnWall`, never trims). */
+/** What moved the wall, on `Set Active Climb`: a pick's own trigger, or a Next / Previous step. */
+type SetActiveClimbTrigger = NonNullable<SetCurrentClimbOptions['trigger']> | 'next' | 'previous' | NextClimbCaller;
+
+/**
+ * Where a Next or Previous found its climb (`Set Active Climb` `navSource`):
+ * a list climb minted from the track (`peek`), a queued entry that carries the
+ * list on (`list`), a queued climb played between list climbs (`up_next`), or
+ * the plain queue walk with no track (`queue`).
+ */
+type QueueStepSource = 'up_next' | 'list' | 'peek' | 'queue';
+
+function queueStepSource(
+  walkedSource: PlaylistSuggestionSource | null,
+  converted: boolean,
+  trackResume: PlaylistTrackResume | null | undefined,
+): QueueStepSource {
+  if (converted) return 'peek';
+  if (!walkedSource) return 'queue';
+  // A step onto the list clears the resume (null); a step into or along Up
+  // next sets it or leaves it as it was.
+  return trackResume === null ? 'list' : 'up_next';
+}
+
+function listIndexOf(walkedSource: PlaylistSuggestionSource | null, item: ClimbQueueItem): number | null {
+  const listIndex = walkedSource ? findPlaylistClimbIndex(walkedSource, item.climb.uuid) : -1;
+  return listIndex >= 0 ? listIndex : null;
+}
+
+/** The `Set Active Climb` properties only a Next or Previous carries. */
+type QueueStepProperties = {
+  navSource: QueueStepSource;
+  /** The climb's place on the track walked, null off it. */
+  listIndex: number | null;
+  fromQueueItemUuid: string | null;
+  toQueueItemUuid: string;
+};
+
+/**
+ * Run the server's placement rule on the local state (`placeOnWall`, never
+ * trims). `historyCopy` is the phone's own choice for a climb only History
+ * holds: a tap reuses that entry, a forward step puts up a fresh copy. The
+ * entry it resolves to is what the reducer and the server then place.
+ */
 function placeLocally(
   state: Pick<QueueState, 'queue' | 'currentClimbQueueItem' | 'historyCount'>,
   item: ClimbQueueItem,
   placement: CurrentClimbPlacement,
+  historyCopy: HistoryCopyRule,
 ): NowSlotOpen {
-  const placed = placeOnWall(state, item, placement);
+  const placed = placeOnWall(state, item, placement, undefined, historyCopy);
   return { placement, rewrite: placed.rewrite, resolvedItem: placed.currentClimbQueueItem ?? item };
 }
 
@@ -2678,6 +2723,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       insertAfterCurrent?: boolean,
       suppliedCorrelationId?: string,
       requestedPlacement?: CurrentClimbPlacement,
+      historyCopy: HistoryCopyRule = 'reuse',
     ): NowSlotOpen | null => {
       if (credentialGeneration !== getCredentialGeneration()) return null;
       // Activating a climb that isn't in the queue yet (shouldAddToQueue, or the
@@ -2693,7 +2739,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // keeps the coalescer from ever firing a deferred add (section 7).
       const nowSlotMode = nowSlotModeRef.current;
       const placement = nowSlotMode ? (requestedPlacement ?? 'NOW') : undefined;
-      const nowSlotOpen = placement ? placeLocally(stateRef.current, attributedItem, placement) : null;
+      const nowSlotOpen = placement ? placeLocally(stateRef.current, attributedItem, placement, historyCopy) : null;
       const item = nowSlotOpen?.resolvedItem ?? attributedItem;
       const correlationId = suppliedCorrelationId ?? coordinator.generateCorrelationId();
       // Skip the broadcast for an unresolved climb (#2527), see below.
@@ -2909,6 +2955,61 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     [credentialGeneration],
   );
 
+  /**
+   * `Set Active Climb`: a pick (`setCurrentClimb`) or a Next / Previous step
+   * moved the wall. A step carries `trigger` `next` / `previous` /
+   * `rest_timer` and the `QueueStepProperties`, so a "Next went somewhere odd"
+   * report can be read from the data: which way the walk went and which
+   * `placeOnWall` row it took.
+   */
+  const trackSetActiveClimb = useCallback(
+    (
+      item: ClimbQueueItem,
+      nowSlotOpen: NowSlotOpen | null,
+      trigger: SetActiveClimbTrigger | null,
+      step?: QueueStepProperties,
+    ) => {
+      // `dispatchSetCurrent` bails on a stale credential generation (sign-out,
+      // account switch); a step that moved nothing must not be reported.
+      if (credentialGeneration !== getCredentialGeneration()) return;
+      // A spray wall's layout id is minted per wall, so `layoutId` cannot say
+      // "spray". The board type can, and it is one of nine values. It is the
+      // CLIMB's board, the same thing `Tick Logged` reports: a spray climb
+      // opened from a shared link while a Kilter is the active board is a spray
+      // climb, and a new account with no board bound yet still has one to name.
+      // The active board is the fallback for a climb that does not carry one.
+      const climbBoardType = boardTypeProperty(item.climb.boardType);
+      track(SHARED_EVENTS.SetActiveClimb, {
+        climbUuid: item.climb.uuid,
+        layoutId: activeBoardRef.current?.layoutId,
+        ...(climbBoardType.boardType ? climbBoardType : boardTypeProperty(activeBoardRef.current?.boardType)),
+        // `climb_saved` when the create screen queued a climb it just saved,
+        // null when a climber chose the climb. Saving is not climbing, and
+        // `next`, `previous` and `rest_timer` are steps, not picks, so the
+        // spray-wall activation measure leaves out all four.
+        trigger,
+        source: 'mobile',
+        // Which crew's wall just moved, and how many people were watching it.
+        // The preview-first work turns this event into the ONE deliberate act
+        // that drives a shared wall (every browse-shaped gesture stopped firing
+        // it), so without these two the "did people stop stepping on each
+        // other" question has no numerator. `sessionId` is a room id, not a
+        // person; the count is distinct humans, matching how `partyMode` is
+        // stamped on Climb Added to Queue rather than raw connection rows.
+        sessionId: sessionIdRef.current,
+        participantCount: countDistinctSessionUsers(sessionRuntimeStateRef.current?.users),
+        // F3: which placement row the local open took (`insert`,
+        // `dedupe-up-next`, ...). The only signal for the solo no-copy fix,
+        // since a solo open never reaches the server.
+        nowSlotMode: nowSlotOpen !== null,
+        rewrite: nowSlotOpen?.rewrite ?? null,
+        placement: nowSlotOpen?.placement ?? null,
+        ...step,
+      });
+    },
+    [credentialGeneration],
+  );
+
   const setCurrentClimb = useCallback(
     (item: ClimbQueueItem, options?: SetCurrentClimbOptions) => {
       if (credentialGeneration !== getCredentialGeneration()) return;
@@ -2929,13 +3030,6 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         if (trackResume === undefined) setPlaylistSuggestionSourceState(null);
         else storeTrackResume(heldTrack, trackResume);
       }
-      // A spray wall's layout id is minted per wall, so `layoutId` cannot say
-      // "spray". The board type can, and it is one of nine values. It is the
-      // CLIMB's board, the same thing `Tick Logged` reports: a spray climb
-      // opened from a shared link while a Kilter is the active board is a spray
-      // climb, and a new account with no board bound yet still has one to name.
-      // The active board is the fallback for a climb that does not carry one.
-      const climbBoardType = boardTypeProperty(item.climb.boardType);
       // Activating a climb slots it right after the current climb (issue #2217),
       // pushing the current climb into history — matching the local "set climb
       // active" intent instead of bumping the new climb to the bottom. Fresh-uuid
@@ -2964,33 +3058,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       if (currentUuidBeforeOpen !== null && openedQueueItemUuid === currentUuidBeforeOpen) {
         seedCurrentChange(currentUuidBeforeOpen, nowMs());
       }
-      track(SHARED_EVENTS.SetActiveClimb, {
-        climbUuid: item.climb.uuid,
-        layoutId: activeBoardRef.current?.layoutId,
-        ...(climbBoardType.boardType ? climbBoardType : boardTypeProperty(activeBoardRef.current?.boardType)),
-        // `climb_saved` when the create screen queued a climb it just saved,
-        // null when a climber chose the climb. Saving is not climbing, so the
-        // spray-wall activation measure reads only the null ones.
-        trigger: options?.trigger ?? null,
-        source: 'mobile',
-        // Which crew's wall just moved, and how many people were watching it.
-        // The preview-first work turns this event into the ONE deliberate act
-        // that drives a shared wall (every browse-shaped gesture stopped firing
-        // it), so without these two the "did people stop stepping on each
-        // other" question has no numerator. `sessionId` is a room id, not a
-        // person; the count is distinct humans, matching how `partyMode` is
-        // stamped on Climb Added to Queue rather than raw connection rows.
-        sessionId: sessionIdRef.current,
-        participantCount: countDistinctSessionUsers(sessionRuntimeStateRef.current?.users),
-        // F3: which placement row the local open took (`insert`,
-        // `dedupe-up-next`, ...). The only signal for the solo no-copy fix,
-        // since a solo open never reaches the server.
-        nowSlotMode: nowSlotOpen !== null,
-        rewrite: nowSlotOpen?.rewrite ?? null,
-        placement: nowSlotOpen?.placement ?? null,
-      });
+      trackSetActiveClimb(item, nowSlotOpen, options?.trigger ?? null);
     },
-    [dispatchSetCurrent, credentialGeneration, seedCurrentChange, storeTrackResume],
+    [dispatchSetCurrent, credentialGeneration, seedCurrentChange, storeTrackResume, trackSetActiveClimb],
   );
 
   // The editor saved a climb that is already in the queue. See the reducer's
@@ -3133,46 +3203,57 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     );
   }, [forwardSelection, activeBoardKey, showToast, tSettings, trackClimbsSkippedOnBoard]);
 
-  const nextClimb = useCallback(() => {
-    const { queue, currentClimbQueueItem, historyCount } = stateRef.current;
-    const activeConfig = toActiveBoardCompatibilityConfig(activeBoardRef.current);
-    const walkedSource = playlistSuggestionSourceRef.current;
-    // Up next first, then the list (#6777): the same selection the drawer, the
-    // rest timer and the workout runner make, so all of them land here.
-    const {
-      item: nextItem,
-      skippedItems,
-      trackResume,
-    } = selectNextQueueItemWithSuggestions(
-      queue,
-      currentClimbQueueItem,
-      walkedSource,
-      activeConfig,
-      isReachableClimbRef.current,
-      undefined,
-      historyCount,
-    );
-    // Mirror web: a transient `playlist-peek:<uuid>` must never reach the WS
-    // mutation (toQueueItemInput sends item.uuid verbatim). The laundering lives
-    // in `resolveCommittableQueueItem` so the play drawer's commit button —
-    // which can now pin a peek while browsing a shared session — applies exactly
-    // the same rule. A converted peek was never in the queue, so it has to be
-    // added; a real item is already there.
-    const committable = nextItem ? resolveCommittableQueueItem(nextItem) : null;
-    // Reported before the bail-out: a swipe that skipped everything and landed
-    // nowhere is exactly when the climber most needs to know why. (The gesture
-    // is normally disabled in that state — see the dead-end effect above — but
-    // the Next button and the widget path can still land here.)
-    reportClimbsSkippedOnBoardSwitch(skippedItems, nextItem, committable?.item.uuid ?? null);
-    if (!committable) return;
-    const { item, converted } = committable;
-    storeTrackResume(walkedSource, trackResume);
-    // New suggestions must match the server's insertion immediately after current.
-    // In now-slot mode it is a NOW: a track peek goes on the wall at the Now
-    // slot (History once you move on), and an already-queued neighbour moves
-    // instead of being copied.
-    dispatchSetCurrent(item, converted, undefined, converted, undefined, 'NOW');
-  }, [dispatchSetCurrent, reportClimbsSkippedOnBoardSwitch, storeTrackResume]);
+  const nextClimb = useCallback(
+    (caller?: NextClimbCaller) => {
+      const { queue, currentClimbQueueItem, historyCount } = stateRef.current;
+      const activeConfig = toActiveBoardCompatibilityConfig(activeBoardRef.current);
+      const walkedSource = playlistSuggestionSourceRef.current;
+      // Up next first, then the list (#6777): the same selection the drawer, the
+      // rest timer and the workout runner make, so all of them land here.
+      const {
+        item: nextItem,
+        skippedItems,
+        trackResume,
+      } = selectNextQueueItemWithSuggestions(
+        queue,
+        currentClimbQueueItem,
+        walkedSource,
+        activeConfig,
+        isReachableClimbRef.current,
+        undefined,
+        historyCount,
+      );
+      // Mirror web: a transient `playlist-peek:<uuid>` must never reach the WS
+      // mutation (toQueueItemInput sends item.uuid verbatim). The laundering lives
+      // in `resolveCommittableQueueItem` so the play drawer's commit button —
+      // which can now pin a peek while browsing a shared session — applies exactly
+      // the same rule. A converted peek was never in the queue, so it has to be
+      // added; a real item is already there.
+      const committable = nextItem ? resolveCommittableQueueItem(nextItem) : null;
+      // Reported before the bail-out: a swipe that skipped everything and landed
+      // nowhere is exactly when the climber most needs to know why. (The gesture
+      // is normally disabled in that state — see the dead-end effect above — but
+      // the Next button and the widget path can still land here.)
+      reportClimbsSkippedOnBoardSwitch(skippedItems, nextItem, committable?.item.uuid ?? null);
+      if (!committable) return;
+      const { item, converted } = committable;
+      storeTrackResume(walkedSource, trackResume);
+      // New suggestions must match the server's insertion immediately after current.
+      // In now-slot mode it is a NOW: a track peek goes on the wall at the Now
+      // slot (History once you move on), and an already-queued neighbour moves
+      // instead of being copied. A climb only History holds goes up as a fresh
+      // copy (`fresh`): reusing an entry from an hour ago would rewrite History
+      // and walk the climbs after it again with their old entries.
+      const nowSlotOpen = dispatchSetCurrent(item, converted, undefined, converted, undefined, 'NOW', 'fresh');
+      trackSetActiveClimb(item, nowSlotOpen, caller ?? 'next', {
+        navSource: queueStepSource(walkedSource, converted, trackResume),
+        listIndex: listIndexOf(walkedSource, item),
+        fromQueueItemUuid: currentClimbQueueItem?.uuid ?? null,
+        toQueueItemUuid: nowSlotOpen?.resolvedItem.uuid ?? item.uuid,
+      });
+    },
+    [dispatchSetCurrent, reportClimbsSkippedOnBoardSwitch, storeTrackResume, trackSetActiveClimb],
+  );
 
   const previousClimb = useCallback(() => {
     const { queue, currentClimbQueueItem, historyCount } = stateRef.current;
@@ -3206,8 +3287,14 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       walkedSource !== null &&
       currentClimbQueueItem?.climb?.uuid !== undefined &&
       findPlaylistClimbIndex(walkedSource, currentClimbQueueItem.climb.uuid) >= 0;
-    dispatchSetCurrent(item, converted, undefined, converted, undefined, onTrack ? 'NOW' : 'STEP');
-  }, [dispatchSetCurrent, storeTrackResume]);
+    const nowSlotOpen = dispatchSetCurrent(item, converted, undefined, converted, undefined, onTrack ? 'NOW' : 'STEP');
+    trackSetActiveClimb(item, nowSlotOpen, 'previous', {
+      navSource: queueStepSource(walkedSource, converted, trackResume),
+      listIndex: listIndexOf(walkedSource, item),
+      fromQueueItemUuid: currentClimbQueueItem?.uuid ?? null,
+      toQueueItemUuid: nowSlotOpen?.resolvedItem.uuid ?? item.uuid,
+    });
+  }, [dispatchSetCurrent, storeTrackResume, trackSetActiveClimb]);
 
   // Select the absolute native target so a racing server echo cannot double-step.
   // iOS publishes natively; Android forwards the event for JS to publish.

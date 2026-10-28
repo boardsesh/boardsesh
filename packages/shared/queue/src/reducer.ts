@@ -22,6 +22,7 @@ import {
   lineAfterDelta,
   normaliseHistoryCount,
   placeOnWall,
+  historyCopyRuleFor,
   upNextStart,
   type CurrentClimbPlacement,
 } from './now-slot';
@@ -99,7 +100,9 @@ function placeLocally<TSearchParams extends QueueSearchParams>(
   placement: CurrentClimbPlacement,
   trimHistory: boolean,
 ): NowSlotCurrentChange {
-  const placed = placeOnWall(state, item, placement);
+  // The provider resolved the open already, so a new uuid here is one it put up
+  // fresh, as the server places it (`historyCopyRuleFor`).
+  const placed = placeOnWall(state, item, placement, undefined, historyCopyRuleFor(placement));
   const { queue, currentClimbQueueItem, historyCount } = trimHistory ? capHistory(placed) : placed;
   return { queue, currentClimbQueueItem, historyCount };
 }
@@ -309,7 +312,13 @@ function reduceQueue<TSearchParams extends QueueSearchParams>(
       // server runs when it lands, so the queue, the line and the hash match
       // the server's once it does.
       const replayed = state.nowSlotMode
-        ? placeOnWall(snapshotState, movedItem, move.placement ?? 'NOW')
+        ? placeOnWall(
+            snapshotState,
+            movedItem,
+            move.placement ?? 'NOW',
+            undefined,
+            historyCopyRuleFor(move.placement ?? 'NOW'),
+          )
         : {
             queue: replayUnconfirmedMove(filteredQueue, snapshotCurrentUuid, move, movedItem),
             currentClimbQueueItem: movedItem,
