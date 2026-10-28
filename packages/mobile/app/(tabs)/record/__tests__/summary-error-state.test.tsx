@@ -29,6 +29,11 @@ const headerActions = vi.hoisted(() => ({
     trailing?: { label: string; onPress: () => void } | null;
   },
 }));
+// The workout data (#6903) has its own suites; these sessions carry no workout.
+vi.mock('../../../../src/components/session/workout/use-session-workout-view', () => ({
+  useSessionWorkoutView: () => undefined,
+  useSessionWorkoutHeadlines: () => new Map(),
+}));
 vi.mock('../../../../src/hooks/use-header-actions', () => ({
   useHeaderActions: (actions: typeof headerActions.current) => {
     headerActions.current = actions;

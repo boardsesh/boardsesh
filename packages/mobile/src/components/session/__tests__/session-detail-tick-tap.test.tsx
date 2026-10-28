@@ -75,6 +75,8 @@ vi.mock('../SessionTickRow', () => ({
     return null;
   },
 }));
+// The workout data has its own tests (use-session-workout-view, the view model).
+vi.mock('../workout/use-session-workout-view', () => ({ useSessionWorkoutView: () => undefined }));
 vi.mock('../workout/WorkoutClimbsListRows', () => ({
   WorkoutBlockSectionRow: () => null,
   WorkoutListSectionLabel: () => null,

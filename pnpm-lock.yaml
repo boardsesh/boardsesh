@@ -698,6 +698,9 @@ importers:
       '@boardsesh/watch-pairing':
         specifier: workspace:*
         version: link:../shared/watch-pairing
+      '@boardsesh/workout-summary':
+        specifier: workspace:*
+        version: link:../shared/workout-summary
       '@expo/ui':
         specifier: 58.0.23
         version: 58.0.23(patch_hash=e6142460e56be07312d1028ac84d4b2209d818842315880033a0595d67c8a92f)(@babel/core@7.29.7(supports-color@8.1.1))(expo@58.0.19)(react-dom@19.3.0(react@19.3.0))(react-native-worklets@0.13.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(react-native@0.88.0(patch_hash=5ba8e0b13c37400bdaf6697e48d0526d632aa6c9233e3e8a67fad9ef29482ae4)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)(supports-color@8.1.1))(react-native@0.88.0(patch_hash=5ba8e0b13c37400bdaf6697e48d0526d632aa6c9233e3e8a67fad9ef29482ae4)(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)

@@ -226,9 +226,17 @@ vi.mock('@react-native-async-storage/async-storage', () => ({ default: storage }
 // only that "Add to session" hands it the block it just added.
 const restTimerEffective = vi.hoisted(() => ({ armRestTimerForWorkout: vi.fn(() => false) }));
 vi.mock('../../../../lib/rest-timer-effective', () => restTimerEffective);
+// #6903: the workout's server copy, queued once the block is in the run.
+const workoutOutbox = vi.hoisted(() => ({ enqueueSessionWorkoutWrite: vi.fn(async () => 'queued') }));
+vi.mock('../../../../offline/session-workout-outbox', () => workoutOutbox);
+vi.mock('@tanstack/react-query', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-query')>()),
+  useQueryClient: () => ({ invalidateQueries: vi.fn() }),
+}));
 
 import {
   getWorkoutRunForSession,
+  getWorkoutRunState,
   isWorkoutRunPendingStart,
   prepareWorkoutRun,
   resetWorkoutRunStoreForTests,
@@ -237,7 +245,10 @@ import {
 import { AddWorkoutBlockSheet } from '../AddWorkoutBlockSheet';
 
 const climbItem = (uuid: string) =>
-  ({ uuid, climb: { uuid: `climb-${uuid}`, name: `Climb ${uuid}`, difficulty: '6a/V3' } }) as unknown as ClimbQueueItem;
+  ({
+    uuid,
+    climb: { uuid: `climb-${uuid}`, name: `Climb ${uuid}`, difficulty: '6a/V3', angle: 40 },
+  }) as unknown as ClimbQueueItem;
 
 function readyPreview(uuids: string[], stageId = 'new-stage-uuid', sections?: string[]): void {
   const items = uuids.map(climbItem);
@@ -292,6 +303,7 @@ function renderSheet(visible: boolean, onClose = vi.fn()) {
 
 beforeEach(() => {
   resetWorkoutRunStoreForTests();
+  workoutOutbox.enqueueSessionWorkoutWrite.mockClear();
   storage.getItem.mockReset();
   storage.getItem.mockImplementation(async () => null);
   sessionListeners.clear();
@@ -526,6 +538,25 @@ describe('AddWorkoutBlockSheet', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the added climbs with the run and queues the workout's server copy (#6903)", async () => {
+    setWorkoutRun(
+      'session-1',
+      { stages: [{ id: 'stage-pyramid', kind: 'pyramid', itemUuids: ['p1'], targetGrade: 18 }] },
+      { p1: { climbUuid: 'climb-p1', angle: 40 } },
+    );
+    readyPreview(['l1', 'l2']);
+    renderSheet(true);
+
+    await press();
+
+    expect(getWorkoutRunState()?.climbs).toEqual({
+      p1: { climbUuid: 'climb-p1', angle: 40 },
+      l1: { climbUuid: 'climb-l1', angle: 40, name: 'Climb l1', difficulty: '6a/V3' },
+      l2: { climbUuid: 'climb-l2', angle: 40, name: 'Climb l2', difficulty: '6a/V3' },
+    });
+    expect(workoutOutbox.enqueueSessionWorkoutWrite).toHaveBeenCalledExactlyOnceWith('session-1', expect.anything());
+  });
+
   it('turns a session without a workout into one', async () => {
     readyPreview(['v1']);
     renderSheet(true);
@@ -568,6 +599,7 @@ describe('AddWorkoutBlockSheet', () => {
 
     expect(screen.getByText(/error:addBlockQueueFull/)).toBeTruthy();
     expect(getWorkoutRunForSession('session-1')).toBeNull();
+    expect(workoutOutbox.enqueueSessionWorkoutWrite).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
   });
 

@@ -15,6 +15,7 @@
 // are passed over where the pool has others. The block's climb filters open on
 // those of the run's last stage, and its stage keeps them in the run.
 
+import { useQueryClient } from '@tanstack/react-query';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
@@ -66,6 +67,8 @@ import {
 import { buildPreviewListRows, type PreviewListRow } from '../pre-session/workout-preview-sections';
 import type { QueueItemRowBoard } from '../../QueueItemRow';
 import { addWorkoutBlock, defaultMidSessionBlock, defaultMidSessionFilters } from './add-workout-block';
+import { captureWorkoutRunClimbs } from '../../../lib/session-workout-plan';
+import { enqueueSessionWorkoutWrite } from '../../../offline/session-workout-outbox';
 
 // Keys the one block this sheet edits. Stage ids are minted per plan, so a
 // fixed id never reaches the run.
@@ -91,6 +94,7 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
   const { isAuthenticated } = useAuth();
   const { sessionId } = useQueueSessionId();
   const { appendQueueItems, getQueueSnapshot } = useQueueActions();
+  const queryClient = useQueryClient();
   const { data: activeBoard } = useActiveBoard();
   const run = useWorkoutRun(sessionId);
   const boardName = activeBoard ? toBoardName(activeBoard.boardType) : null;
@@ -257,7 +261,9 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
       setIsSubmitting(false);
       return;
     }
-    setWorkoutRun(sessionId, result.run);
+    setWorkoutRun(sessionId, result.run, captureWorkoutRunClimbs(blockItems));
+    // The server's copy gains the block (#6903).
+    void enqueueSessionWorkoutWrite(sessionId, { queryClient });
     // The added block's own pacing, not the run's: adding a volume block to a
     // workout that once had a 4x4 must not turn back on a timer the climber
     // switched off.
@@ -291,6 +297,7 @@ export const AddWorkoutBlockSheet = memo(function AddWorkoutBlockSheet({
     t,
     onClose,
     planSummary.substituted,
+    queryClient,
   ]);
   const handleAddPress = useCallback(() => void handleAdd(), [handleAdd]);
 

@@ -5,9 +5,9 @@
 // agnostic: the caller hands in its i18next `t` bound to the `session`
 // namespace. Every key is a literal so the orphan check sees it.
 //
-// The wording follows the mobile session summary (#6965). Mobile still carries
-// its own copy of these helpers under `mobile.workoutSummary.*`; it can switch to
-// this module and drop the duplicates.
+// The wording follows the mobile session summary (#6965). Mobile draws with
+// these helpers too and keeps only its VoiceOver variants under
+// `mobile.workoutSummary.*`.
 
 import { mainWorkoutStages } from './derive';
 import type { DerivedWorkoutTally, SessionWorkoutRepOutcome } from './types';

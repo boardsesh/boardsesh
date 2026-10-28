@@ -183,6 +183,7 @@ vi.mock('../../../../providers/queue-provider', () => ({
     endSession: queue.endSession,
     clearSession: vi.fn(),
     setCurrentClimb: queue.setCurrentClimb,
+    getQueueSnapshot: () => ({ queue: [], currentClimbQueueItem: null }),
   }),
   useQueueLiveStats: () => ({ liveStats: null, sessionUsers: [] }),
   useQueueSessionControls: () => ({
@@ -228,6 +229,9 @@ const outbox = vi.hoisted(() => ({
 vi.mock('../../../../offline/session-tick-drain', () => ({
   waitForSessionTicksToSync: outbox.waitForSessionTicksToSync,
   refreshSessionWhenQueuedTicksLand: outbox.refreshSessionWhenQueuedTicksLand,
+}));
+vi.mock('../../../../offline/session-workout-outbox', () => ({
+  enqueueSessionWorkoutWrite: vi.fn(async () => 'skipped'),
 }));
 vi.mock('../../../../lib/integrations', () => ({
   runSessionEndExports: integrations.runSessionEndExports,

@@ -10,7 +10,8 @@
 // Persisted in ONE slot keyed by session id (like `session-comment-draft-store`):
 // a read for a different session misses, and writing a run for a new session
 // replaces the old one. It survives a cold start mid-workout; it does not
-// survive the session ending, changing, or the account signing out.
+// survive the session ending, changing, or the account signing out (the end
+// hands the record to `ended-workout-store` as the summary's recap, #6903).
 //
 // Never pruned as climbs leave the queue: Undo restores removed climbs under
 // their old uuids, and they must come back in their stage. Readers count only
@@ -85,12 +86,42 @@ export type WorkoutTickLogEntry = {
  */
 export const MAX_WORKOUT_TICK_LOG = 2000;
 
+/** The server stores the revision as a Postgres integer. */
+export const MAX_WORKOUT_REVISION = 2_147_483_647;
+
+/** 2026-01-01T00:00:00Z: the revision floor counts seconds from here (see `nextWorkoutRunRevision`). */
+const REVISION_EPOCH_MS = Date.UTC(2026, 0, 1);
+
+/**
+ * The climb behind one queue item of the run, captured when the run is written
+ * (#6903): by the time the session ends the queue is gone, and the server's
+ * copy of the workout needs each item's climb, angle and mirror. `name`,
+ * `difficulty` (the climb's grade label, "6a/V3") and `boardType` stay on the
+ * phone; they draw the summary while its write is still in the outbox.
+ */
+export type WorkoutRunClimb = {
+  climbUuid: string;
+  angle: number;
+  isMirror?: boolean;
+  name?: string;
+  difficulty?: string;
+  boardType?: string;
+};
+
 export type WorkoutRunRecord = {
   sessionId: string;
   run: WorkoutRun;
   log?: WorkoutTickLogEntry[];
   /** Prepared on Workout; only an explicit Start workout begins its pacing. */
   pendingStart?: true;
+  /** By queue-item uuid. Newer than the key, so optional: an older run reads without it. */
+  climbs?: Record<string, WorkoutRunClimb>;
+  /**
+   * The revision of the last copy of this run queued for the server
+   * (`recordSessionWorkout`), so each write outranks the one before. Optional
+   * for the same reason as `climbs`.
+   */
+  revision?: number;
 };
 
 const EMPTY_LOG: readonly WorkoutTickLogEntry[] = Object.freeze([]);
@@ -203,6 +234,37 @@ function readTickLogEntry(candidate: unknown): WorkoutTickLogEntry | null {
   return readable;
 }
 
+function readRunClimb(candidate: unknown): WorkoutRunClimb | null {
+  if (typeof candidate !== 'object' || candidate === null) return null;
+  const climb = candidate as Partial<Record<keyof WorkoutRunClimb, unknown>>;
+  if (typeof climb.climbUuid !== 'string' || typeof climb.angle !== 'number' || !Number.isFinite(climb.angle)) {
+    return null;
+  }
+  const readable: WorkoutRunClimb = { climbUuid: climb.climbUuid, angle: climb.angle };
+  if (typeof climb.isMirror === 'boolean') readable.isMirror = climb.isMirror;
+  if (typeof climb.name === 'string') readable.name = climb.name;
+  if (typeof climb.difficulty === 'string') readable.difficulty = climb.difficulty;
+  if (typeof climb.boardType === 'string') readable.boardType = climb.boardType;
+  return readable;
+}
+
+/** The captured climbs, one by one: an unreadable entry costs only that item its server copy. */
+function readRunClimbs(candidate: unknown): Record<string, WorkoutRunClimb> | undefined {
+  if (typeof candidate !== 'object' || candidate === null || Array.isArray(candidate)) return undefined;
+  const climbs: Record<string, WorkoutRunClimb> = {};
+  let count = 0;
+  for (const [queueItemUuid, entry] of Object.entries(candidate)) {
+    const climb = readRunClimb(entry);
+    if (!climb) continue;
+    climbs[queueItemUuid] = climb;
+    count += 1;
+  }
+  return count > 0 ? climbs : undefined;
+}
+
+const isRevision = (candidate: unknown): candidate is number =>
+  typeof candidate === 'number' && Number.isInteger(candidate) && candidate >= 0 && candidate <= MAX_WORKOUT_REVISION;
+
 /**
  * The stored record, or null when it is not one. A stage of a kind this bundle
  * does not know is left out and the rest of the run kept, so its climbs read as
@@ -228,6 +290,9 @@ function readWorkoutRunRecord(candidate: unknown): WorkoutRunRecord | null {
     const log = record.log.map(readTickLogEntry).filter((entry): entry is WorkoutTickLogEntry => entry !== null);
     if (log.length > 0) readable.log = log;
   }
+  const climbs = readRunClimbs(record.climbs);
+  if (climbs) readable.climbs = climbs;
+  if (isRevision(record.revision)) readable.revision = record.revision;
   return readable;
 }
 
@@ -258,6 +323,16 @@ function joinTickLogs(
   return joined.length > MAX_WORKOUT_TICK_LOG ? joined.slice(joined.length - MAX_WORKOUT_TICK_LOG) : joined;
 }
 
+/** Both maps' captured climbs; an item in both keeps `earlier`'s. */
+function joinRunClimbs(
+  earlier: Record<string, WorkoutRunClimb> | undefined,
+  later: Record<string, WorkoutRunClimb> | undefined,
+): Record<string, WorkoutRunClimb> | undefined {
+  if (!later) return earlier;
+  if (!earlier) return later;
+  return { ...later, ...earlier };
+}
+
 /**
  * The run when both slots name the same session. That only happens after an
  * OTA rollback mid-session: a bundle that knows the timed kinds wrote `_v2` and
@@ -283,6 +358,10 @@ function mergeSlotsForSession(newerKinds: WorkoutRunRecord, originalKinds: Worko
   if (newerKinds.pendingStart || originalKinds.pendingStart) merged.pendingStart = true;
   const log = joinTickLogs(newerKinds.log, originalKinds.log);
   if (log) merged.log = log;
+  const climbs = joinRunClimbs(newerKinds.climbs, originalKinds.climbs);
+  if (climbs) merged.climbs = climbs;
+  const revision = Math.max(newerKinds.revision ?? -1, originalKinds.revision ?? -1);
+  if (revision >= 0) merged.revision = revision;
   return merged;
 }
 
@@ -307,9 +386,16 @@ export function isWorkoutRunPendingStart(sessionId: string | null): boolean {
   return sessionId !== null && state?.sessionId === sessionId && state.pendingStart === true;
 }
 
-/** Prepare a new workout without starting its first climb or its clock. */
-export function prepareWorkoutRun(sessionId: string, run: WorkoutRun): void {
-  const next: WorkoutRunRecord | null = run.stages.length > 0 ? { sessionId, run, pendingStart: true } : null;
+/**
+ * Prepare a new workout without starting its first climb or its clock.
+ * `climbs` is each queued item's climb (`captureWorkoutRunClimbs`).
+ */
+export function prepareWorkoutRun(sessionId: string, run: WorkoutRun, climbs?: Record<string, WorkoutRunClimb>): void {
+  let next: WorkoutRunRecord | null = null;
+  if (run.stages.length > 0) {
+    next = { sessionId, run, pendingStart: true };
+    if (climbs && Object.keys(climbs).length > 0) next.climbs = { ...climbs };
+  }
   setState(next);
   persist(next);
 }
@@ -326,19 +412,60 @@ export function markWorkoutRunStarted(sessionId: string): boolean {
 
 /**
  * Remember a session's run, replacing whatever was stored. An empty run clears.
- * The tick log stays when the session is the same: "Add a block" rewrites the
- * run mid-workout, and the ticks already logged must survive it.
+ * The tick log, the captured climbs and the revision stay when the session is
+ * the same: "Add a block" rewrites the run mid-workout, and the ticks already
+ * logged must survive it. `climbs` adds the new items' climbs.
  */
-export function setWorkoutRun(sessionId: string, run: WorkoutRun): void {
+export function setWorkoutRun(sessionId: string, run: WorkoutRun, climbs?: Record<string, WorkoutRunClimb>): void {
   let next: WorkoutRunRecord | null = null;
   if (run.stages.length > 0) {
     next = { sessionId, run };
-    const keptLog = state?.sessionId === sessionId ? state.log : undefined;
-    if (keptLog) next.log = keptLog;
+    const kept = state?.sessionId === sessionId ? state : null;
+    if (kept?.log) next.log = kept.log;
+    const mergedClimbs = { ...kept?.climbs, ...climbs };
+    if (Object.keys(mergedClimbs).length > 0) next.climbs = mergedClimbs;
+    if (kept?.revision !== undefined) next.revision = kept.revision;
     if (isWorkoutRunPendingStart(sessionId)) next.pendingStart = true;
   }
   setState(next);
   persist(next);
+}
+
+/**
+ * Fill in climbs the record lacks, from queue items still in the queue. Only
+ * an item the record has no climb for is touched. A run written by an older
+ * bundle (which drops `climbs` on read and write) gets its climbs back this way
+ * while the session is still live.
+ */
+export function addWorkoutRunClimbs(sessionId: string, climbs: Record<string, WorkoutRunClimb>): void {
+  if (state?.sessionId !== sessionId) return;
+  const missing = Object.entries(climbs).filter(([queueItemUuid]) => !state?.climbs?.[queueItemUuid]);
+  if (missing.length === 0) return;
+  const next: WorkoutRunRecord = { ...state, climbs: { ...state.climbs, ...Object.fromEntries(missing) } };
+  setState(next);
+  persist(next);
+}
+
+/**
+ * The next revision for `sessionId`'s server copy, stored with the run so the
+ * one after it is higher still. Null when the store holds another session's run
+ * or none.
+ *
+ * A counter, floored at the seconds since 2026 began: an OTA rollback to a
+ * bundle that predates the field rewrites the record without it, and after the
+ * roll forward a counter restarting at 1 would sit below the revision the
+ * server already holds, so every later write would be a no-op. The floor keeps
+ * it climbing (and inside a Postgres integer until 2094); the counter keeps two
+ * writes in one second apart.
+ */
+export function nextWorkoutRunRevision(sessionId: string, nowMs: number): number | null {
+  if (state?.sessionId !== sessionId) return null;
+  const floor = Math.max(0, Math.floor((nowMs - REVISION_EPOCH_MS) / 1000));
+  const revision = Math.min(MAX_WORKOUT_REVISION, Math.max((state.revision ?? 0) + 1, floor));
+  const next: WorkoutRunRecord = { ...state, revision };
+  setState(next);
+  persist(next);
+  return revision;
 }
 
 /**
@@ -442,10 +569,22 @@ export function clearWorkoutRun(): Promise<void> {
  * generation, so a hydrate for that session still in flight never lands after
  * it ended, and removes each stored slot that names that session (the restored
  * session may have ended before its run was ever read into memory).
+ *
+ * `onCleared` gets the record that went (#6903), so the session summary can
+ * keep a recap of it: called at once with the run in memory, or once the first
+ * stored slot naming the session is read when only the disk held it. Called at
+ * most once, and not at all when nothing named the session.
  */
-export async function clearWorkoutRunForSession(sessionId: string): Promise<void> {
+export async function clearWorkoutRunForSession(
+  sessionId: string,
+  onCleared?: (record: WorkoutRunRecord) => void,
+): Promise<void> {
+  let reported = false;
   if (state?.sessionId === sessionId) {
+    const cleared = state;
     setState(null);
+    reported = true;
+    onCleared?.(cleared);
   } else {
     writeGeneration += 1;
   }
@@ -455,16 +594,40 @@ export async function clearWorkoutRunForSession(sessionId: string): Promise<void
       const stored = await readStoredRecord(key);
       // A run written while this read was in flight is newer and stays.
       if (generationAtRead !== writeGeneration) return;
-      if (stored?.sessionId === sessionId) await removePreference(key);
+      if (stored?.sessionId === sessionId) {
+        if (!reported) {
+          reported = true;
+          onCleared?.(stored);
+        }
+        await removePreference(key);
+      }
     } catch {
       ignoreStorageError();
     }
   }
 }
 
+/** A stored record as this bundle reads it, or null. For the ended-workout recap, which stores the same shape. */
+export function parseWorkoutRunRecord(candidate: unknown): WorkoutRunRecord | null {
+  return readWorkoutRunRecord(candidate);
+}
+
 /** The run for `sessionId`. Re-renders only when that answer changes. */
 export function useWorkoutRun(sessionId: string | null): WorkoutRun | null {
   const getSnapshot = useCallback(() => getWorkoutRunForSession(sessionId), [sessionId]);
+  return useSyncExternalStore(subscribeWorkoutRun, getSnapshot, getSnapshot);
+}
+
+/**
+ * The whole record for `sessionId` (run, tick log, captured climbs), or null.
+ * Re-renders on every write to it, a tick included: for the session screens'
+ * workout (#6903), never for a list row.
+ */
+export function useWorkoutRunRecord(sessionId: string | null): WorkoutRunRecord | null {
+  const getSnapshot = useCallback(
+    () => (sessionId !== null && state?.sessionId === sessionId ? state : null),
+    [sessionId],
+  );
   return useSyncExternalStore(subscribeWorkoutRun, getSnapshot, getSnapshot);
 }
 

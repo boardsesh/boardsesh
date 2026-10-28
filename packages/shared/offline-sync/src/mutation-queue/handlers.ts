@@ -22,6 +22,7 @@ const MUTATIONS: Record<string, string> = {
   UnfollowPlaylist: `mutation UnfollowPlaylist($input: FollowPlaylistInput!) { unfollowPlaylist(input: $input) }`,
   PinPlaylist: `mutation PinPlaylist($input: PinPlaylistInput!) { pinPlaylist(input: $input) }`,
   UnpinPlaylist: `mutation UnpinPlaylist($input: PinPlaylistInput!) { unpinPlaylist(input: $input) }`,
+  RecordSessionWorkout: `mutation RecordSessionWorkout($input: RecordSessionWorkoutInput!) { recordSessionWorkout(input: $input) }`,
 };
 
 type MutationDispatch = {
@@ -246,6 +247,23 @@ function buildDispatch(mutation: PendingMutation): MutationDispatch {
           return {
             mutationName: 'UnpinPlaylist',
             variables: { input: { playlistUuid: payload.playlistUuid } },
+          };
+        default:
+          throw new Error(`Unknown operation "${mutation.operation}" for table "${mutation.table_name}"`);
+      }
+
+    // The workout a climber followed in a session (#6903). The payload is the
+    // whole RecordSessionWorkoutInput; the server writes it only when its
+    // revision beats the stored one, so a replay is a no-op. A bundle from
+    // before this table dead-letters the row as an unknown table (an OTA
+    // rollback with a write still queued): the workout then stays off the
+    // server until the next write from a newer bundle.
+    case 'session_workouts':
+      switch (mutation.operation) {
+        case 'create':
+          return {
+            mutationName: 'RecordSessionWorkout',
+            variables: { input: payload },
           };
         default:
           throw new Error(`Unknown operation "${mutation.operation}" for table "${mutation.table_name}"`);

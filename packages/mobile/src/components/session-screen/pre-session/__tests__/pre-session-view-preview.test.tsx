@@ -10,6 +10,13 @@ import { singleBlockSelection } from '../workout-blocks';
 // The preview hook is mocked; the test mutates `preview.result.items` /
 // `refreshingUuids` and rerenders to drive the view's row props.
 const header = vi.hoisted(() => ({ native: false, inBodyLargeTitle: false }));
+// #6903: the workout's server copy, queued at Start / Add a block.
+const workoutOutbox = vi.hoisted(() => ({ enqueueSessionWorkoutWrite: vi.fn(async () => 'queued') }));
+vi.mock('../../../../offline/session-workout-outbox', () => workoutOutbox);
+vi.mock('@tanstack/react-query', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-query')>()),
+  useQueryClient: () => ({ invalidateQueries: vi.fn() }),
+}));
 vi.mock('../../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: () => header.native }));
 
 const preview = vi.hoisted(() => ({

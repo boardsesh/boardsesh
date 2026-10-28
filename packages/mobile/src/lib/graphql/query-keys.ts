@@ -129,6 +129,18 @@ export const climbLogsPreviewQueryKey = (viewerId: string | undefined, boardName
 export const SESSION_SUMMARY_QUERY_KEY = 'sessionSummary';
 export const sessionSummaryQueryKey = (sessionId: string | null) => [SESSION_SUMMARY_QUERY_KEY, sessionId] as const;
 
+/**
+ * The workouts followed in a session (#6903): summary and session detail. A
+ * tick or workout write landing invalidates the `['sessionWorkouts']` prefix
+ * (`TABLE_INVALIDATE_KEYS`).
+ */
+export const sessionWorkoutsQueryKey = (sessionId: string | null | undefined) =>
+  ['sessionWorkouts', sessionId ?? null] as const;
+
+/** Feed-card workout lines for one page of sessions (#6903). */
+export const sessionWorkoutHeadlinesQueryKey = (sessionIds: readonly string[]) =>
+  ['sessionWorkoutHeadlines', ...sessionIds] as const;
+
 /** Home's Fresh beta shelf. Here so pull to refresh can invalidate it without rendering the shelf's query. */
 export const RECENT_BETA_LINKS_QUERY_KEY = 'recentBetaLinks';
 export const recentBetaLinksQueryKey = (limit: number, boardType: string | null, layoutId: number | null) =>

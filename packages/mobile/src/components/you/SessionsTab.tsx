@@ -35,6 +35,7 @@ type TFunc = (key: string) => string;
 const PENDING_SKELETON_KEYS = ['session-skeleton-1', 'session-skeleton-2'];
 // A session card shows one climb, so it plays from a list of just that one.
 const NO_TICKS: SessionFeedTickHighlight[] = [];
+const NO_SESSION_ID_PAGES: readonly (readonly string[])[] = [];
 
 type SessionsTabProps = {
   userId: string | undefined;
@@ -182,9 +183,14 @@ export function SessionsTab({ userId, topInset = 0, scrollEdge }: SessionsTabPro
     return map;
   }, [sessionVoteSummaries.data, tickVoteSummaries.data]);
 
-  // Each card's workout line (#6903). Empty until the workout data lands.
-  const sessionIds = useMemo(() => sessions.map((session) => session.sessionId), [sessions]);
-  const workoutHeadlines = useSessionWorkoutHeadlines(sessionIds);
+  // Each card's workout line (#6903): one headline request per feed page.
+  const sessionIdPages = useMemo(
+    () =>
+      feed.data?.pages.map((page) => page.sessionGroupedFeed.sessions.map((session) => session.sessionId)) ??
+      NO_SESSION_ID_PAGES,
+    [feed.data],
+  );
+  const workoutHeadlines = useSessionWorkoutHeadlines(sessionIdPages);
 
   const handleOpenComments = useCallback((entityId: string, entityType: SocialEntityType) => {
     setCommentTarget({ entityId, entityType });

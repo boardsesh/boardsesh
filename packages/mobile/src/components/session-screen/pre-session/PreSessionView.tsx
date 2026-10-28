@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useNativeRootHeader } from '../../../hooks/use-native-root-header';
 import { usePrivacySettings } from '../../../lib/graphql/hooks/use-privacy';
 import { AudiencePicker, SESSION_AUDIENCES } from '../../privacy/AudiencePicker';
@@ -14,6 +15,8 @@ import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import { track } from '../../../lib/analytics';
 import { prepareWorkoutRun } from '../../../lib/workout-run-store';
+import { captureWorkoutRunClimbs } from '../../../lib/session-workout-plan';
+import { enqueueSessionWorkoutWrite } from '../../../offline/session-workout-outbox';
 import { ScreenTitle } from '../../ScreenTitle';
 import type { QueueItemRowBoard } from '../../QueueItemRow';
 import { useTheme } from '../../../providers/theme-provider';
@@ -113,6 +116,7 @@ export function PreSessionView({
   const { data: activeBoard } = boardQuery;
   const { isAuthenticated } = useAuth();
   const { startSession, appendQueueItems } = useQueueActions();
+  const queryClient = useQueryClient();
   const { openPlayDrawer } = useDrawerHost();
   const { showToast } = useToast();
   // The phone split (iPhone Duo open in landscape) can show the workout preview in
@@ -293,7 +297,12 @@ export function PreSessionView({
         // screen and the player can say "Warm-up · 2 of 5". Keyed by the same
         // queue-item uuids just appended; it never goes over the wire.
         if (generatedRun) {
-          prepareWorkoutRun(newSessionId, generatedRun);
+          // Each item's climb rides with the run: the server's copy needs it,
+          // and the queue is gone by the time the session ends (#6903).
+          prepareWorkoutRun(newSessionId, generatedRun, captureWorkoutRunClimbs(generatedItems));
+          // The first copy of the workout for the session's summary, detail
+          // and feed card. Through the outbox, so it waits out a dead signal.
+          void enqueueSessionWorkoutWrite(newSessionId, { queryClient });
         }
         track(SHARED_EVENTS.SessionQueueGenerated, {
           // The first workout block's type, so single-workout funnels keep their
@@ -340,6 +349,7 @@ export function PreSessionView({
     onStarted,
     isStartPending,
     planSummary.substituted,
+    queryClient,
   ]);
 
   const generatorPreviewReady =
