@@ -23,6 +23,18 @@ export const ACCESSORY_MIN_NAME_WIDTH = 160;
  */
 export const PHONE_ACCESSORY_MIN_NAME_WIDTH = 140;
 
+// Measured against Apple Music's platter (iOS 27): the artwork starts 16pt in, and
+// the last control's centre sits ~30pt from the right edge (8pt + half its 44pt slot).
+export const ACCESSORY_LEADING_INSET = 16;
+export const ACCESSORY_TRAILING_INSET = 8;
+// One artwork size in both placements, as Music uses (~30pt).
+export const ACCESSORY_PLATTER_THUMBNAIL_SIZE = 32;
+// `labelInner`'s gap after the artwork and its trailing padding.
+export const ACCESSORY_THUMBNAIL_GAP = 8;
+export const ACCESSORY_LABEL_TRAILING_PADDING = 4;
+// Between the climber's buttons and ⏮ ⏭, and before 💡 ✓, on a wide bar.
+export const ACCESSORY_GROUP_GAP = 12;
+
 /** One control's tap target. Every slot on the bar is this wide. */
 export const ACCESSORY_SLOT_WIDTH = 44;
 
@@ -76,6 +88,43 @@ export function miniPlayerSlotCount({
   const nameFloor = wide ? ACCESSORY_MIN_NAME_WIDTH + 2 * groupGap : PHONE_ACCESSORY_MIN_NAME_WIDTH;
   const fit = Math.max(1, Math.floor((rowWidth - widthBesideName - nameFloor) / ACCESSORY_SLOT_WIDTH));
   return wide ? fit : Math.min(PHONE_MINI_PLAYER_MAX_SLOTS, fit);
+}
+
+export type MiniPlayerAvailability = {
+  transport: boolean;
+  /** The climb's board mirrors (Tension, Decoy, Woods...): `boardSupportsMirroring`. */
+  mirror: boolean;
+  signedIn: boolean;
+  isDraft: boolean;
+  angleAdjustable: boolean;
+  /** The `/play` route is up: the host's angle sheet would present behind it, so the bar has no Angle (the player has its own). */
+  playerRouteUp: boolean;
+};
+
+/**
+ * Whether a button can take a place on the bar right now. Mirror only on a
+ * board that mirrors; Favorite and Queue need an account; a draft has no link
+ * to share; a fixed-angle board has no angle to change, and neither does the bar while
+ * the player route is up.
+ */
+export function isMiniPlayerButtonAvailable(
+  buttonId: MiniPlayerButtonId,
+  { transport, mirror, signedIn, isDraft, angleAdjustable, playerRouteUp }: MiniPlayerAvailability,
+): boolean {
+  switch (buttonId) {
+    case 'previous':
+    case 'next':
+      return transport;
+    case 'mirror':
+      return mirror;
+    case 'favorite':
+    case 'queue':
+      return signedIn;
+    case 'share':
+      return !isDraft;
+    case 'angle':
+      return angleAdjustable && !playerRouteUp;
+  }
 }
 
 /** One slot on the bar. `lightbulb` and `log` are the fixed pair at the trailing edge. */

@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { buildClimbViewModel, type ClimbViewModelInput } from '../climb-view-model';
 import type { MoreRow } from '../../../MoreForm.types';
 
-function makeInput(overrides: Partial<ClimbViewModelInput['buttons']> = {}): ClimbViewModelInput {
+function makeInput(
+  overrides: Partial<ClimbViewModelInput['buttons']> = {},
+  miniPlayerOverrides: Partial<ClimbViewModelInput['miniPlayer']> = {},
+): ClimbViewModelInput {
   return {
     buttons: {
       title: 'Buttons',
@@ -36,6 +39,25 @@ function makeInput(overrides: Partial<ClimbViewModelInput['buttons']> = {}): Cli
       previewHeight: 132,
       ...overrides,
     },
+    miniPlayer: {
+      title: 'Mini player',
+      settingsFooter: 'Order lives in View options',
+      controls: [
+        { id: 'next', label: 'Next climb', visible: true, movable: true },
+        {
+          id: 'angle',
+          label: 'Angle',
+          description: 'Only on boards with an adjustable angle',
+          visible: false,
+          movable: true,
+        },
+      ],
+      onVisibleChange: vi.fn(),
+      restoreDefaultsLabel: 'Restore defaults',
+      canRestoreDefaults: true,
+      onRestoreDefaults: vi.fn(),
+      ...miniPlayerOverrides,
+    },
     belowTheClimb: { key: 'climbDrawer', title: 'Below the climb', rows: [] },
   };
 }
@@ -55,6 +77,7 @@ describe('buildClimbViewModel', () => {
     expect(buildClimbViewModel(makeInput()).sections.map((section) => section.key)).toEqual([
       'buttonsPosition',
       'buttons',
+      'miniPlayer',
       'climbDrawer',
     ]);
   });
@@ -102,5 +125,38 @@ describe('buildClimbViewModel', () => {
     const restore = findRow(makeInput({ canRestoreDefaults: false }), 'restoreButtonDefaults');
     if (restore.kind !== 'button') throw new Error('not a button');
     expect(restore.disabled).toBe(true);
+  });
+
+  it('lists a switch per MiniPlayer button in the saved order, then Restore defaults, and no arrows', () => {
+    const section = buildClimbViewModel(makeInput()).sections[2];
+    expect(section.title).toBe('Mini player');
+    expect(section.rows.map((row) => row.key)).toEqual([
+      'miniPlayer.next',
+      'miniPlayer.angle',
+      'restoreMiniPlayerDefaults',
+    ]);
+    expect(section.rows.every((row) => row.kind === 'toggle' || row.kind === 'button')).toBe(true);
+  });
+
+  it('flips the right MiniPlayer button and restores its defaults', () => {
+    const onVisibleChange = vi.fn();
+    const onRestoreDefaults = vi.fn();
+    const input = makeInput({}, { onVisibleChange, onRestoreDefaults });
+    const angle = findRow(input, 'miniPlayer.angle');
+    if (angle.kind !== 'toggle') throw new Error('not a toggle');
+    expect(angle.value).toBe(false);
+    expect(angle.subtitle).toBe('Only on boards with an adjustable angle');
+    angle.onValueChange(true);
+    expect(onVisibleChange).toHaveBeenCalledWith('angle', true);
+    const restore = findRow(input, 'restoreMiniPlayerDefaults');
+    if (restore.kind !== 'button') throw new Error('not a button');
+    restore.onPress();
+    expect(onRestoreDefaults).toHaveBeenCalled();
+  });
+
+  it('leaves the Mini player section out where there is no native bottom accessory', () => {
+    const input = makeInput();
+    const model = buildClimbViewModel({ ...input, miniPlayer: null });
+    expect(model.sections.map((section) => section.key)).toEqual(['buttonsPosition', 'buttons', 'climbDrawer']);
   });
 });

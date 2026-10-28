@@ -1,11 +1,11 @@
 # Climb view options
 
 What a climber can change about the player (the climb view): the sections below the climb, and the player buttons
-around Log (#6229). Both live in the player's ⋯ → **View options** sheet, on two tabs, **Below the climb** and
-**Buttons**. Settings → Climbs & grades → **Climb view** has the same switches on the native form; the order only
+around Log (#6229), plus the buttons on the MiniPlayer bar above the tabs (#6940). All three live in the player's
+⋯ → **View options** sheet, on three tabs, **Below the climb**, **Buttons** and **Mini player**. Settings → Climbs & grades → **Climb view** has the same switches on the native form; the order only
 changes in View options (#6477, #6480). The sections half is described in
 [mobile-sheets-vs-routes.md › Play drawer section controls](mobile-sheets-vs-routes.md#play-drawer-section-controls);
-this page covers the buttons and what both share.
+this page covers the buttons, the MiniPlayer and what they share.
 
 ## What the climber gets
 
@@ -206,6 +206,86 @@ The sections below the climb keep their own AsyncStorage record (`playDrawerSect
 | Preview                                 | `packages/mobile/src/components/player-buttons/PlayerButtonsPreview.tsx`        |
 | Settings › Climb view                   | `packages/mobile/src/components/settings/climb-view/`, `app/settings/climb-view.tsx` |
 | Reorder rows (shared with sections)     | `packages/mobile/src/components/section-layout/SectionLayoutList.tsx`           |
+
+## Mini player
+
+The MiniPlayer is the bar above the tabs: the current climb, then buttons. Tap it to open the climb.
+
+The tab and the Settings section show only where that bar is the native bottom accessory (`useTabChrome().nativeAccessory`:
+iOS 26 with the Liquid Glass tab bar). On Android, the Material shell and earlier iOS the current climb rides the
+floating bar, which has no such buttons, so the tab and section are left out (a selected tab falls back to Below the
+climb).
+
+### What the climber gets
+
+- A **Mini player** tab in View options: a switch and ↑/↓ arrows for Next climb, Previous climb, Mirror, Favorite,
+  Queue, Share and Angle, a pinned preview, and **Restore defaults**. Settings → Climbs & grades → **Climb view** has
+  a Mini player section with the switches only; the order changes in View options, the same rule as the player's
+  buttons.
+- Defaults: Next, Previous, Mirror and Favorite on; Queue, Share and Angle off. On iPhone the one extra slot goes to Next, so Mirror and Favorite only show on iPad and the open Duo by default. Each switch drives a real button:
+  - **Next / Previous**: step the list. Solo with Light on swipe on they move the climb; in a crew, or with Light on
+    swipe off, they open the player on a preview, so one tap never moves the room's climb. Next at the end of a
+    list opens the player.
+  - **Mirror**: boards that mirror (Tension, Decoy, Woods). In a crew it sets the shared orientation; solo it
+    flips what the wall lights.
+  - **Favorite** and **Queue**: signed in only.
+  - **Share**: not on drafts.
+  - **Angle**: boards with an adjustable angle. It opens the player's angle sheet and is hidden while the player is
+    open.
+- The preview draws two bars from `resolveMiniPlayerControls`, `miniPlayerSlotCount` and the bar's own
+  `isMiniPlayerButtonAvailable`, so it can't disagree with the real one: the open bar at the width the real bar last
+  measured on this device (`mini-player-measured-bar-store.ts`, published by `NativeAccessoryClimbRow`; an iPhone
+  Duo's closed display, ~290 pt, previews one slot) and the collapsed one, for the board on screen and the
+  signed-in state. Before the bar has ever drawn it falls back to 995 pt for an iPad or open Duo and 343 pt for an
+  iPhone. Static glyphs; no Bluetooth component is mounted.
+- Board light and Log are fixed, like the player's: a note on the tab says so. They have no switch or arrows. The
+  tab's footer differs by device: on iPhone it says the bar has room for one button beside them; on a wide screen
+  it says the bar fits as many as it has room for.
+
+### Layout rules
+
+- Drawing order, left to right: the climber's others, then ⏮ ⏭, then 💡 ✓.
+- Slot count (`miniPlayerSlotCount`), Board light and Log included:
+  - inline (tab bar minimized): 1;
+  - iPhone: `min(3, floor((w − 68 − 140) / 44))`, at least 1, where `w` is the platter width and 68 pt is the
+    insets, artwork and label padding. 343 pt and up gives 3; Duo closed (~290 pt) and a 320 pt Display Zoom
+    iPhone give 1. With one slot the bar keeps the bulb while the board is free, otherwise Log;
+  - iPad and the open Duo: `floor((w − 68 − 160 − 2·12) / 44)`, which fits every button;
+  - before the first layout: 3 on an iPhone, everything when wide, so the common bar doesn't redraw.
+- The 12 pt gap between groups (others · ⏮ ⏭ · 💡 ✓) is drawn on wide bars only; slots inside a group touch, and an
+  iPhone bar has no group gap.
+- Buttons claim slots in the climber's order; what doesn't fit drops from the end of that list. The player's ⋯ still
+  has every action.
+- The open Duo's split (`miniPlayerPaneMode`): while the pane shows the committed climb with its controls below the
+  board, the bar sits on the player's small row and carries those covered buttons (`miniPlayerPaneCoveredButtons`),
+  dropping what the pane's big row already shows (⏮ ⏭ 💡 ✓). While the pane shows a preview, or its controls are
+  above the board, the bar keeps Board light and Log only.
+
+### Session states
+
+- A timed workout block hides ⏮ ⏭: the stage moves the wall on its own beat.
+- A crew, or Light on swipe off: Next and Previous open the player on a preview.
+- Signed out: no Favorite or Queue. A draft has no Share. A fixed-angle board has no Angle; a board that can't
+  mirror has no Mirror.
+
+### Storage
+
+`miniPlayerButtonsV1` in the synchronous settings store (MMKV), a `SectionLayoutRecord | null` written only by
+`miniPlayerButtonsStore`. `null` means the defaults, written again when a change lands back on them and on Restore
+defaults; ids this build doesn't know survive its writes. **Rollback**: an older bundle ignores the key and draws
+today's bar (Board light and Log). `resetAllSettings` clears it.
+
+### Code map
+
+| Piece                                  | File                                                                                  |
+| -------------------------------------- | ------------------------------------------------------------------------------------- |
+| Ids and defaults                       | `packages/mobile/src/lib/mini-player-buttons.ts`                                      |
+| Store, `useMiniPlayerButtonsEditor`    | `packages/mobile/src/lib/mini-player-buttons-preference.ts`                           |
+| Slot count and what the bar holds      | `packages/mobile/src/components/queue-control/mini-player-controls.ts`                |
+| The bar                                | `packages/mobile/src/components/queue-control/NativeAccessoryClimbRow.tsx`            |
+| Preview                                | `packages/mobile/src/components/queue-control/MiniPlayerButtonsPreview.tsx`           |
+| Shared labels and actions              | `packages/mobile/src/components/settings/use-mini-player-button-controls.ts`          |
+| View options tab, Settings › Climb view | `PlayDrawerSectionsSheet.tsx`, `settings/climb-view/`                                |
 
 ## Adding a button
 

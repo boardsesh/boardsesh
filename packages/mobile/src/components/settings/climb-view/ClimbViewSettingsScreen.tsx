@@ -9,16 +9,29 @@ import {
   PlayerButtonsPreview,
   type PlayerButtonsPreviewBoard,
 } from '../../player-buttons/PlayerButtonsPreview';
+import { useTabChrome } from '../../../hooks/use-bottom-accessory';
 import { useActiveBoard } from '../../../lib/graphql/use-active-board';
 import { hapticSelection } from '../../../lib/haptics';
 import { withSettingTracking } from '../../../lib/settings-analytics';
 import { usePlayDrawerSectionControls } from '../use-play-drawer-section-controls';
+import { useMiniPlayerButtonControls } from '../use-mini-player-button-controls';
 import { usePlayerButtonControls } from '../use-player-button-controls';
 import { buildClimbViewModel } from './climb-view-model';
 
 export function ClimbViewSettingsScreen() {
   const { settingsSection: belowTheClimb } = usePlayDrawerSectionControls();
   const playerButtons = usePlayerButtonControls();
+  // No native bottom accessory (Android, the Material shell, before iOS 26): no MiniPlayer bar, so no section.
+  const { nativeAccessory } = useTabChrome();
+  const {
+    title: miniPlayerTitle,
+    settingsFooter: miniPlayerSettingsFooter,
+    controls: miniPlayerControls,
+    onVisibleChange: onMiniPlayerVisibleChange,
+    restoreDefaultsLabel: miniPlayerRestoreLabel,
+    canRestoreDefaults: canRestoreMiniPlayer,
+    restoreDefaults: restoreMiniPlayer,
+  } = useMiniPlayerButtonControls();
   // The preview draws the bar for the board the climber has picked: Mirror only
   // where it mirrors, the angle pill only where the angle can change. Before a
   // board is picked it draws a Kilter-style bar.
@@ -84,11 +97,37 @@ export function ClimbViewSettingsScreen() {
             preview,
             previewHeight: PLAYER_BUTTONS_PREVIEW_HEIGHT,
           },
+          miniPlayer: nativeAccessory
+            ? {
+                title: miniPlayerTitle,
+                settingsFooter: miniPlayerSettingsFooter,
+                controls: miniPlayerControls,
+                onVisibleChange: (buttonId, visible) => {
+                  hapticSelection();
+                  onMiniPlayerVisibleChange(buttonId, visible);
+                },
+                restoreDefaultsLabel: miniPlayerRestoreLabel,
+                canRestoreDefaults: canRestoreMiniPlayer,
+                onRestoreDefaults: restoreMiniPlayer,
+              }
+            : null,
           belowTheClimb,
         }),
         'climbView',
       ),
-    [playerButtons, preview, belowTheClimb],
+    [
+      playerButtons,
+      nativeAccessory,
+      miniPlayerTitle,
+      miniPlayerSettingsFooter,
+      miniPlayerControls,
+      onMiniPlayerVisibleChange,
+      miniPlayerRestoreLabel,
+      canRestoreMiniPlayer,
+      restoreMiniPlayer,
+      preview,
+      belowTheClimb,
+    ],
   );
 
   // Compose RNHostView custom rows can measure correctly without drawing.

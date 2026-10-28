@@ -17,7 +17,9 @@ export type MiniPlayerButtonsLayout = SectionLayout<MiniPlayerButtonId>;
 
 /**
  * Next first, so it is the one button an iPhone adds beside the bulb and the
- * tick. Mirror is on, but only boards that mirror give it a place.
+ * tick. Mirror is on, but only boards that mirror give it a place. Favorite is
+ * on too: the most-used optional action, and it only shows where the bar has
+ * room beyond Next (iPad, the open Duo), since an iPhone's one slot goes to Next.
  */
 export const DEFAULT_MINI_PLAYER_BUTTONS: MiniPlayerButtonsLayout = Object.freeze({
   order: MINI_PLAYER_BUTTON_IDS,
@@ -25,7 +27,7 @@ export const DEFAULT_MINI_PLAYER_BUTTONS: MiniPlayerButtonsLayout = Object.freez
     next: true,
     previous: true,
     mirror: true,
-    favorite: false,
+    favorite: true,
     queue: false,
     share: false,
     angle: false,

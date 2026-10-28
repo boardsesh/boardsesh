@@ -5,6 +5,7 @@ import { SegmentedControl } from '../SegmentedControl';
 import { SwitchRow } from '../SwitchRow';
 import { Text } from '../Text';
 import { usePlayDrawerSectionControls } from '../settings/use-play-drawer-section-controls';
+import { useMiniPlayerButtonControls } from '../settings/use-mini-player-button-controls';
 import { usePlayerButtonControls } from '../settings/use-player-button-controls';
 import {
   SectionLayoutSheetFooter,
@@ -16,10 +17,14 @@ import {
   type SectionLayoutSheetAction,
 } from '../section-layout/SectionLayoutSheet';
 import { PlayerButtonsPreview, type PlayerButtonsPreviewBoard } from '../player-buttons/PlayerButtonsPreview';
+import { MiniPlayerButtonsPreview } from '../queue-control/MiniPlayerButtonsPreview';
+import { useAuth } from '../../providers/auth-provider';
+import { useTabChrome } from '../../hooks/use-bottom-accessory';
+import { useDeviceLayout } from '../../hooks/use-device-layout';
 import { useTheme } from '../../providers/theme-provider';
 import { borderRadius, spacing } from '../../theme/tokens';
 
-type ViewOptionsTab = 'sections' | 'buttons';
+type ViewOptionsTab = 'sections' | 'buttons' | 'miniPlayer';
 
 type PlayDrawerSectionsSheetProps = {
   visible: boolean;
@@ -31,8 +36,8 @@ type PlayDrawerSectionsSheetProps = {
 };
 
 /**
- * ⋯ → View options. Two tabs: the sections below the climb, and the player's
- * buttons (#6229). Choices apply at once; there is no save step. Keep mounted
+ * ⋯ → View options. Three tabs: the sections below the climb, the player's
+ * buttons (#6229) and the MiniPlayer's buttons (#6940). Choices apply at once; there is no save step. Keep mounted
  * inside PlayDrawer so its managed presenter sits above /play.
  */
 export function PlayDrawerSectionsSheet({
@@ -45,14 +50,24 @@ export function PlayDrawerSectionsSheet({
   const [tab, setTab] = useState<ViewOptionsTab>('sections');
   const sections = usePlayDrawerSectionControls({ listsActiveHolds });
   const playerButtons = usePlayerButtonControls();
+  const miniPlayer = useMiniPlayerButtonControls();
+  const { isTablet, phoneSplit } = useDeviceLayout();
+  // The MiniPlayer's buttons only exist on the iOS 26 bottom accessory; elsewhere the tab would be switches that do nothing.
+  const { nativeAccessory } = useTabChrome();
+  const { isAuthenticated } = useAuth();
   const { systemColors } = useTheme();
   const tabOptions = useMemo<{ key: ViewOptionsTab; label: string }[]>(
     () => [
       { key: 'sections', label: t('mobile.settings.climbDrawer.tabs.sections') },
       { key: 'buttons', label: t('mobile.settings.climbDrawer.tabs.buttons') },
+      ...(nativeAccessory
+        ? [{ key: 'miniPlayer' as const, label: t('mobile.settings.climbDrawer.tabs.miniPlayer') }]
+        : []),
     ],
-    [t],
+    [t, nativeAccessory],
   );
+  // The chrome can change under an open sheet (a fold, a variant switch): fall back rather than show a dead tab.
+  const activeTab: ViewOptionsTab = tab === 'miniPlayer' && !nativeAccessory ? 'sections' : tab;
 
   const sectionActions = useMemo<[SectionLayoutSheetAction, SectionLayoutSheetAction]>(
     () => [
@@ -97,6 +112,16 @@ export function PlayDrawerSectionsSheet({
     [playerButtons.restoreDefaultsLabel, playerButtons.restoreDefaults, playerButtons.canRestoreDefaults],
   );
 
+  const miniPlayerRestore = useMemo<SectionLayoutSheetAction>(
+    () => ({
+      label: miniPlayer.restoreDefaultsLabel,
+      onPress: miniPlayer.restoreDefaults,
+      disabled: !miniPlayer.canRestoreDefaults,
+      testID: 'mini-player-buttons-restore-defaults',
+    }),
+    [miniPlayer.restoreDefaultsLabel, miniPlayer.restoreDefaults, miniPlayer.canRestoreDefaults],
+  );
+
   const sectionsFooter = useMemo(
     () => <SectionLayoutSheetFooter guidance={sections.footer} restoreDefaults={sectionsRestore} />,
     [sections.footer, sectionsRestore],
@@ -104,6 +129,20 @@ export function PlayDrawerSectionsSheet({
   const buttonsFooter = useMemo(
     () => <SectionLayoutSheetFooter guidance={playerButtons.footer} restoreDefaults={buttonsRestore} />,
     [playerButtons.footer, buttonsRestore],
+  );
+
+  const miniPlayerWide = isTablet || phoneSplit;
+  const miniPlayerGuidance = miniPlayerWide ? miniPlayer.footerWide : miniPlayer.footer;
+  const miniPlayerFooter = useMemo(
+    () => (
+      <>
+        <Text variant="footnote" color={systemColors.secondaryLabel} style={sectionLayoutSheetStyles.guidance}>
+          {miniPlayer.fixedNote}
+        </Text>
+        <SectionLayoutSheetFooter guidance={miniPlayerGuidance} restoreDefaults={miniPlayerRestore} />
+      </>
+    ),
+    [systemColors.secondaryLabel, miniPlayer.fixedNote, miniPlayerGuidance, miniPlayerRestore],
   );
 
   // Scroll the description and actions away so large text cannot fill a small
@@ -177,6 +216,18 @@ export function PlayDrawerSectionsSheet({
     ],
   );
 
+  const miniPlayerHeader = useMemo(
+    () => (
+      <View style={styles.buttonsHeader}>
+        <Text variant="subheadline" color={systemColors.secondaryLabel} style={sectionLayoutSheetStyles.guidance}>
+          {miniPlayer.description}
+        </Text>
+        <SectionLayoutSheetGroupTitle title={miniPlayer.groupTitle} />
+      </View>
+    ),
+    [systemColors.secondaryLabel, miniPlayer.description, miniPlayer.groupTitle],
+  );
+
   return (
     <SectionLayoutSheetFrame
       visible={visible}
@@ -186,11 +237,11 @@ export function PlayDrawerSectionsSheet({
         <>
           <SegmentedControl
             options={tabOptions}
-            selectedKey={tab}
+            selectedKey={activeTab}
             onSelect={setTab}
             accessibilityLabel={sections.sheetTitle}
           />
-          {tab === 'buttons' ? (
+          {activeTab === 'buttons' ? (
             <PlayerButtonsPreview
               buttons={playerButtons.buttons}
               previousNext={playerButtons.previousNext}
@@ -198,10 +249,18 @@ export function PlayDrawerSectionsSheet({
               board={previewBoard}
             />
           ) : null}
+          {activeTab === 'miniPlayer' ? (
+            <MiniPlayerButtonsPreview
+              buttons={miniPlayer.buttons}
+              board={previewBoard}
+              wide={miniPlayerWide}
+              signedIn={isAuthenticated}
+            />
+          ) : null}
         </>
       }
     >
-      {tab === 'sections' ? (
+      {activeTab === 'sections' ? (
         <SectionLayoutSheetList
           key="sections"
           rows={sections.controls}
@@ -210,6 +269,15 @@ export function PlayDrawerSectionsSheet({
           onMove={sections.onMove}
           ListHeaderComponent={sectionsHeader}
           ListFooterComponent={sectionsFooter}
+        />
+      ) : activeTab === 'miniPlayer' ? (
+        <SectionLayoutSheetList
+          key="miniPlayer"
+          rows={miniPlayer.controls}
+          onVisibleChange={miniPlayer.onVisibleChange}
+          onMove={miniPlayer.onMove}
+          ListHeaderComponent={miniPlayerHeader}
+          ListFooterComponent={miniPlayerFooter}
         />
       ) : (
         <SectionLayoutSheetList

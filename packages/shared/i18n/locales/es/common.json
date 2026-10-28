@@ -741,7 +741,8 @@
         "footer": "Los cambios se aplican al momento. Oculta todo para ver solo el bloque, sin desplazamiento vertical.",
         "tabs": {
           "sections": "Debajo del bloque",
-          "buttons": "Botones"
+          "buttons": "Botones",
+          "miniPlayer": "Mini reproductor"
         }
       },
       "sectionLayout": {
@@ -895,6 +896,22 @@
         "rogueConnecting": "Conectando…",
         "rogueUnreachable": "No se encuentra. Comprueba que esté encendido y cerca.",
         "rogueSaveFailed": "No se pudo guardar el temporizador. Inténtalo de nuevo."
+      },
+      "miniPlayer": {
+        "title": "Mini reproductor",
+        "description": "La barra sobre las pestañas. Tócala para abrir el bloque.",
+        "buttons": {
+          "next": "Bloque siguiente",
+          "previous": "Bloque anterior"
+        },
+        "fixedNote": "Luz del plafón siempre está, junto a Registrar. Registrar va siempre al final, bajo tu pulgar.",
+        "footer": "En iPhone la barra tiene sitio para uno de estos junto a Luz del plafón y Registrar: el primero que esté activado.",
+        "open": "Abierta",
+        "collapsed": "Reducida",
+        "previewLabel": "Vista previa, barra {{shape}}: {{buttons}}",
+        "footerWide": "En una pantalla ancha la barra muestra tantos de estos como le caben: ganan los primeros de la lista.",
+        "shapeOpen": "abierta",
+        "shapeCollapsed": "reducida"
       }
     },
     "sendRecovery": {

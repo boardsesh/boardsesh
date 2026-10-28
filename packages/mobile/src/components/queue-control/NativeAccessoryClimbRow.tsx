@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View, type ColorValue, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { Climb } from '@boardsesh/queue';
@@ -28,6 +28,13 @@ import {
 } from './board-control-indicator-state';
 import type { AccessoryPlacement } from '../../lib/analytics-board-connect';
 import {
+  ACCESSORY_GROUP_GAP,
+  ACCESSORY_LABEL_TRAILING_PADDING,
+  ACCESSORY_LEADING_INSET,
+  ACCESSORY_PLATTER_THUMBNAIL_SIZE,
+  ACCESSORY_THUMBNAIL_GAP,
+  ACCESSORY_TRAILING_INSET,
+  isMiniPlayerButtonAvailable,
   miniPlayerPaneCoveredButtons,
   miniPlayerPaneMode,
   miniPlayerSlotCount,
@@ -41,6 +48,7 @@ import { useAuth } from '../../providers/auth-provider';
 import { useSegments } from 'expo-router';
 import { isPlayerRoute } from '../../lib/route-segments';
 import { boardSupportsMirroring } from '@boardsesh/play-view';
+import { publishMeasuredMiniPlayerBar } from '../../lib/mini-player-measured-bar-store';
 import { MiniPlayerLeadingButtons } from './MiniPlayerButtons';
 import { useMiniPlayerButtons } from '../../lib/mini-player-buttons-preference';
 import type { MiniPlayerButtonId } from '../../lib/mini-player-buttons';
@@ -56,18 +64,6 @@ type NativeAccessoryClimbRowProps = {
   placement: AccessoryPlacement;
   testID?: string;
 };
-
-// Measured against Apple Music's platter (iOS 27): the artwork starts 16pt in, and
-// the last control's centre sits ~30pt from the right edge (8pt + half its 44pt slot).
-const ACCESSORY_LEADING_INSET = spacing[4];
-const ACCESSORY_TRAILING_INSET = spacing[2];
-// One artwork size in both placements, as Music uses (~30pt).
-const ACCESSORY_PLATTER_THUMBNAIL_SIZE = 32;
-// `labelInner`'s gap after the artwork and its trailing padding.
-const ACCESSORY_THUMBNAIL_GAP = spacing[2];
-const ACCESSORY_LABEL_TRAILING_PADDING = spacing[1];
-// Between the climber's buttons and ⏮ ⏭, and before 💡 ✓, on a wide bar.
-const ACCESSORY_GROUP_GAP = spacing[3];
 
 type ClimbLabelProps = {
   climb: Climb;
@@ -149,40 +145,6 @@ function useTransportAvailable(): boolean {
   return !workoutOutcomeAvailable(findWorkoutRunStage(workoutRun, currentClimbQueueItem?.uuid ?? null));
 }
 
-type MiniPlayerAvailability = {
-  transport: boolean;
-  /** The climb's board mirrors (Tension, Decoy, Woods...): `boardSupportsMirroring`. */
-  mirror: boolean;
-  signedIn: boolean;
-  isDraft: boolean;
-  angleAdjustable: boolean;
-};
-
-/**
- * Whether a button can take a place on the bar right now. Mirror only on a
- * board that mirrors; Favorite and Queue need an account; a draft has no link
- * to share; a fixed-angle board has no angle to change.
- */
-export function isMiniPlayerButtonAvailable(
-  buttonId: MiniPlayerButtonId,
-  { transport, mirror, signedIn, isDraft, angleAdjustable }: MiniPlayerAvailability,
-): boolean {
-  switch (buttonId) {
-    case 'previous':
-    case 'next':
-      return transport;
-    case 'mirror':
-      return mirror;
-    case 'favorite':
-    case 'queue':
-      return signedIn;
-    case 'share':
-      return !isDraft;
-    case 'angle':
-      return angleAdjustable;
-  }
-}
-
 /**
  * Content for the iOS 26 tab-bar bottom accessory (Liquid Glass variant only).
  * UIKit supplies the glass platter, so this stays bare: the current climb, the
@@ -220,10 +182,8 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
       })
     : null;
   const angleAdjustable = playerAngle !== null;
-  // Not while the `/play` route is up: the host's angle sheet presents from the
-  // app's root, so it would land behind that modal (the player has its own).
+  // `isMiniPlayerButtonAvailable` drops Angle while the `/play` route is up.
   const playerRouteUp = isPlayerRoute(useSegments());
-  const angleOnBar = angleAdjustable && !playerRouteUp;
   const playerBoardName = playDrawerPaneProps?.boardConfig.boardName ?? null;
   const playerLayoutId = playDrawerPaneProps?.boardConfig.layoutId ?? null;
   const paneTaken = usePhoneSplitPaneTaken();
@@ -264,6 +224,10 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
   // Between the climber's buttons and ⏮ ⏭, and before 💡 ✓, on a bar with room to spare.
   const groupGap = wide ? ACCESSORY_GROUP_GAP : 0;
   const slotCount = miniPlayerSlotCount({ placement, rowWidth, widthBesideName, wide, groupGap });
+  // Tell the View options preview what this device's open bar measures.
+  useEffect(() => {
+    if (placement === 'regular' && rowWidth !== null) publishMeasuredMiniPlayerBar({ rowWidth, widthBesideName });
+  }, [placement, rowWidth, widthBesideName]);
   // The platter shows a plain (non-colorized) grade; only the label swaps to the
   // Boardsesh grade when the toggle is on and a trusted one exists.
   const currentFormattedGrade = resolveGrade(climb, boardConfig?.boardName).label;
@@ -293,9 +257,10 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
         mirror: supportsMirroring,
         signedIn: isAuthenticated,
         isDraft,
-        angleAdjustable: angleOnBar,
+        angleAdjustable,
+        playerRouteUp,
       }),
-    [transportAvailable, supportsMirroring, isAuthenticated, isDraft, angleOnBar],
+    [transportAvailable, supportsMirroring, isAuthenticated, isDraft, angleAdjustable, playerRouteUp],
   );
   const paneCoveredButtons = useMemo(
     () =>
