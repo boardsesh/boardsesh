@@ -1,5 +1,12 @@
 import { visibleSectionIds } from '../../lib/section-layout';
 import type { MiniPlayerButtonId, MiniPlayerButtonsLayout } from '../../lib/mini-player-buttons';
+import {
+  PLAYER_BUTTON_IDS,
+  type PlayerButtonId,
+  type PlayerButtonsLayout,
+  type PlayerButtonsPosition,
+} from '../../lib/player-buttons';
+import { resolveActionBarLayout } from '../play-drawer/action-bar-layout';
 
 /**
  * The least room the climb name keeps before a wide bar gives up a slot. About
@@ -90,6 +97,12 @@ export type MiniPlayerControlsInput = {
    * has ⏮ ⏭ 💡 ✓ right above the bar, so the bar does not repeat them.
    */
   playerPaneShowsTransport: boolean;
+  /**
+   * Claim from these, in this order, instead of the climber's MiniPlayer list.
+   * The open Duo passes the player's small row, which the bar covers
+   * (`miniPlayerPaneCoveredButtons`).
+   */
+  buttonIds?: readonly MiniPlayerButtonId[];
 };
 
 export type MiniPlayerControls = {
@@ -123,6 +136,7 @@ export function resolveMiniPlayerControls({
   isAvailable,
   singleSlotShowsBulb,
   playerPaneShowsTransport,
+  buttonIds,
 }: MiniPlayerControlsInput): MiniPlayerControls {
   const trailing: ('lightbulb' | 'log')[] = playerPaneShowsTransport
     ? []
@@ -130,11 +144,89 @@ export function resolveMiniPlayerControls({
       ? [singleSlotShowsBulb ? 'lightbulb' : 'log']
       : ['lightbulb', 'log'];
   const room = Math.max(0, slotCount - trailing.length);
-  const claimed = visibleSectionIds(
-    layout,
-    (buttonId) => isAvailable(buttonId) && !(playerPaneShowsTransport && TRANSPORT_ORDER.includes(buttonId)),
-  ).slice(0, room);
+  const canClaim = (buttonId: MiniPlayerButtonId) =>
+    isAvailable(buttonId) && !(playerPaneShowsTransport && TRANSPORT_ORDER.includes(buttonId));
+  const claimed = (buttonIds ? buttonIds.filter(canClaim) : visibleSectionIds(layout, canClaim)).slice(0, room);
   const others = claimed.filter((buttonId) => !TRANSPORT_ORDER.includes(buttonId));
   const transport = TRANSPORT_ORDER.filter((buttonId) => claimed.includes(buttonId));
   return { leading: [...others, ...transport], trailing };
+}
+
+/**
+ * How the open Duo's bar relates to the player in the split's pane (#6940).
+ *
+ * - `none`: no pane player above the bar (no split, or a screen fills the pane).
+ *   The bar is itself.
+ * - `carry`: the pane shows the queue's current climb with its controls below the
+ *   board, so the bar sits on the small row. It drops what the pane's big row
+ *   shows right above (⏮ ⏭ 💡 ✓) and carries the covered buttons instead.
+ * - `stepAside`: the pane shows a preview (a browse, a view-only swipe, a feed
+ *   climb), or its controls sit above the board where nothing is covered. The
+ *   covered buttons would act on a climb the pane isn't showing, or repeat ones
+ *   in plain view, so the bar keeps only Board light and Log for the climb it
+ *   names, as it did before the split carried anything.
+ */
+export type MiniPlayerPaneMode = 'none' | 'carry' | 'stepAside';
+
+export function miniPlayerPaneMode({
+  phoneSplit,
+  paneTaken,
+  paneShowsPreview,
+  controlsPosition,
+}: {
+  phoneSplit: boolean;
+  paneTaken: boolean;
+  paneShowsPreview: boolean;
+  controlsPosition: PlayerButtonsPosition;
+}): MiniPlayerPaneMode {
+  if (!phoneSplit || paneTaken) return 'none';
+  return !paneShowsPreview && controlsPosition === 'below' ? 'carry' : 'stepAside';
+}
+
+function isPlayerButtonId(item: string): item is PlayerButtonId {
+  return (PLAYER_BUTTON_IDS as readonly string[]).includes(item);
+}
+
+export type PaneCoveredButtonsInput = {
+  /** The climber's player buttons (`usePlayerButtonsPreference`), not their MiniPlayer ones. */
+  buttons: PlayerButtonsLayout;
+  previousNext: boolean;
+  supportsMirroring: boolean;
+  /** The climb can be shared: not a draft. */
+  hasShare: boolean;
+  /** The board's angle can change. */
+  angleAvailable: boolean;
+};
+
+/**
+ * What the open Duo's bar carries while the player fills the split's pane
+ * (#6940): the buttons of the player's small row, which the bar sits on top of,
+ * left to right. The pane's big row (its lead ⇄ or ☰, ⏮ ⏭, the bulb and the
+ * tick) stays in view above the bar, so none of those repeat.
+ *
+ * It is the player's own layout for the climber's player buttons, in its plain
+ * state: no connect pill, no Put on the wall, no workout Fell / Sent. Those
+ * come and go with the moment, and the bar keeps its buttons through them.
+ */
+export function miniPlayerPaneCoveredButtons({
+  buttons,
+  previousNext,
+  supportsMirroring,
+  hasShare,
+  angleAvailable,
+}: PaneCoveredButtonsInput): PlayerButtonId[] {
+  const { secondaryRow } = resolveActionBarLayout({
+    supportsMirroring,
+    isAnonymous: false,
+    connectPill: false,
+    commitButton: null,
+    workoutOutcome: false,
+    showLightbulb: true,
+    hasShare,
+    angleAvailable,
+    buttons,
+    previousNext,
+  });
+  if (typeof secondaryRow === 'string') return [];
+  return secondaryRow.filter(isPlayerButtonId);
 }

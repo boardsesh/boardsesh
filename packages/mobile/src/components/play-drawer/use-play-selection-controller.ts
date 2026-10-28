@@ -25,7 +25,6 @@ type PreviewSelection = {
 };
 type SelectionChrome = {
   clearMirror: () => void;
-  resetFavoriteOverride: () => void;
   setIsTickBarActive: Dispatch<SetStateAction<boolean>>;
   setActiveSubDrawer: Dispatch<SetStateAction<ActiveSubDrawer>>;
 };
@@ -156,7 +155,7 @@ export function usePlaySelectionController({
   queue: { currentClimbQueueItem, setCurrentClimb, previousClimb, nextClimb },
   similarTrack,
   navigation: { navigationState, lightOnSwipe, browseByDefault },
-  chrome: { clearMirror, resetFavoriteOverride, setIsTickBarActive, setActiveSubDrawer },
+  chrome: { clearMirror, setIsTickBarActive, setActiveSubDrawer },
   confirmation: {
     busyWallConfirmArmed,
     browseLatchActive,
@@ -206,9 +205,6 @@ export function usePlaySelectionController({
       // crew is present.
       if (!pinnedItem) setSharedBrowseLatched(false);
       clearMirror();
-      // Drop any stale optimistic heart so the opened climb shows its real
-      // (server) favorite status rather than a leftover from the last climb.
-      resetFavoriteOverride();
       setIsTickBarActive(false);
       setActiveSubDrawer('none');
       if (isFreshActiveOpen && !isAlreadyCurrent && !opensAsBrowse) {

@@ -172,6 +172,23 @@ vi.mock('expo-crypto', () => ({
 // `app/play.tsx` route — so the host only needs the barrel to resolve (it imports
 // type-only symbols from it). A no-op keeps the real, native-heavy PlayDrawer out
 // of jsdom.
+// The MiniPlayer's angle sheet (#6940): the props the host hands it.
+type AngleSheetProps = {
+  visible: boolean;
+  onClose: () => void;
+  boardName: string;
+  layoutId: number;
+  climbUuid?: string;
+  currentAngle: number;
+  onAngleChange: (angle: number) => void;
+};
+const angleSheet = vi.hoisted(() => ({ props: null as null | AngleSheetProps }));
+vi.mock('../../components/play-drawer/AngleSelectorSheet', () => ({
+  AngleSelectorSheet: (props: AngleSheetProps) => {
+    angleSheet.props = props;
+    return null;
+  },
+}));
 vi.mock('../../components/play-drawer', () => ({
   PlayDrawer: () => null,
 }));
@@ -2130,6 +2147,65 @@ describe('DrawerHostProvider iPad pane open (regular width)', () => {
       sizeId: 10,
       setIds: '1,2',
       angle: 40,
+    });
+  });
+
+  describe("the MiniPlayer's angle sheet (#6940)", () => {
+    beforeEach(() => {
+      angleSheet.props = null;
+    });
+
+    it('mounts on the first open with the board the player shows, and closes again', async () => {
+      const hosts: Array<HostValue> = [];
+      renderHost((host) => hosts.push(host));
+      await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+      expect(angleSheet.props).toBeNull();
+
+      act(() => hosts.at(-1)?.openAnglePicker('climb-a'));
+      await waitFor(() => expect(angleSheet.props?.visible).toBe(true));
+      expect(angleSheet.props).toMatchObject({
+        boardName: 'kilter',
+        layoutId: 1,
+        currentAngle: 40,
+        climbUuid: 'climb-a',
+      });
+
+      act(() => angleSheet.props?.onClose());
+      await waitFor(() => expect(angleSheet.props?.visible).toBe(false));
+    });
+
+    it("changes the angle the way the player's pill does: crew path and AngleChanged", async () => {
+      const hosts: Array<HostValue> = [];
+      renderHost((host) => hosts.push(host));
+      await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+      act(() => hosts.at(-1)?.openAnglePicker());
+      await waitFor(() => expect(angleSheet.props?.visible).toBe(true));
+      analytics.track.mockClear();
+
+      act(() => angleSheet.props?.onAngleChange(30));
+
+      expect(queue.setSessionBoardPath).toHaveBeenCalledWith(expect.stringContaining('30'));
+      expect(analytics.track).toHaveBeenCalledWith('Angle Changed', expect.objectContaining({ angle: 30 }));
+      await waitFor(() => expect(angleSheet.props?.visible).toBe(false));
+    });
+
+    it("follows a foreign-board climb's override, as the pane's pill does", async () => {
+      const hosts: Array<HostValue> = [];
+      renderHost((host) => hosts.push(host));
+      await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+      const override: BoardConfig = { boardName: 'tension', layoutId: 8, sizeId: 7, setIds: '5,6', angle: 55 };
+      const climb = makeQueueItem('queue-x', 'pane-angle-bar').climb as unknown as Climb;
+      act(() => hosts.at(-1)?.openPlayDrawer(climb, { boardConfig: override }));
+      await waitFor(() => expect(hosts.at(-1)?.playDrawerPaneProps?.boardConfig).toMatchObject(override));
+
+      act(() => hosts.at(-1)?.openAnglePicker());
+      await waitFor(() => expect(angleSheet.props).toMatchObject({ boardName: 'tension', currentAngle: 55 }));
+      act(() => angleSheet.props?.onAngleChange(30));
+
+      await waitFor(() => {
+        expect(hosts.at(-1)?.playDrawerPaneProps?.boardConfig).toMatchObject({ ...override, angle: 30 });
+      });
+      expect(hosts.at(-1)?.boardPanelProps?.boardConfig).toMatchObject({ boardName: 'kilter', angle: 40 });
     });
   });
 

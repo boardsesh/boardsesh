@@ -75,6 +75,8 @@ vi.mock('../../../../hooks/use-offline-mutations', () => ({
   addFavoriteLocal: localQueue.addFavoriteLocal,
   removeFavoriteLocal: localQueue.removeFavoriteLocal,
 }));
+const analytics = vi.hoisted(() => ({ track: vi.fn() }));
+vi.mock('../../../analytics', () => ({ track: analytics.track }));
 vi.mock('../../../../offline/offline-sync-adapter', () => ({ drainMutationQueue: vi.fn(async () => undefined) }));
 
 import { favoritesStore } from '@boardsesh/climb-actions';
@@ -291,6 +293,244 @@ describe('useToggleFavorite', () => {
     ).rejects.toThrow('offline');
 
     expect(favoritesStore.getIsFavorited('climb-1')).toBe(false);
+  });
+
+  // The player's heart and the MiniPlayer's read this one cache entry (#6940),
+  // so a tap on either flips both at once, and a failure puts both back.
+  it('flips the per-climb heart at once, and puts it back when the toggle fails', async () => {
+    requestMock.mockResolvedValueOnce({ favorites: [] });
+    const { Wrapper } = makeWrapper();
+    const statusHook = renderHook(() => useFavoriteStatus('kilter', 'climb-1', 40), { wrapper: Wrapper });
+    await waitFor(() => expect(statusHook.result.current.data).toBe(false));
+
+    let rejectToggle: (error: Error) => void = () => {};
+    requestMock.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        rejectToggle = reject;
+      }),
+    );
+    const toggleHook = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
+    const toggle = toggleHook.result.current.mutateAsync({
+      input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+      currentlyFavorited: false,
+    });
+    await waitFor(() => expect(statusHook.result.current.data).toBe(true));
+
+    rejectToggle(new Error('offline'));
+    await expect(toggle).rejects.toThrow('offline');
+    await waitFor(() => expect(statusHook.result.current.data).toBe(false));
+  });
+
+  // Two taps inside one round trip: the older answer must not flip the heart
+  // back for a moment, nor refetch over the newer tap.
+  it('leaves the heart to the newer tap when an older one lands first', async () => {
+    const { queryClient, Wrapper } = makeWrapper();
+    const key = ['favoriteStatus', 'kilter', 'climb-1', 40];
+    queryClient.setQueryData(key, { favorites: [] });
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const answers: Array<(value: { toggleFavorite: { favorited: boolean } }) => void> = [];
+    requestMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answers.push(resolve);
+        }),
+    );
+    const toggleHook = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
+    const input = { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 };
+    const addTap = toggleHook.result.current.mutateAsync({ input, currentlyFavorited: false });
+    expect(queryClient.getQueryData(key)).toEqual({ favorites: ['climb-1'] });
+    const removeTap = toggleHook.result.current.mutateAsync({ input, currentlyFavorited: true });
+    expect(queryClient.getQueryData(key)).toEqual({ favorites: [] });
+    await waitFor(() => expect(answers).toHaveLength(2));
+
+    // The add lands first: it must neither paint "liked" back nor refetch over the remove.
+    answers[0]({ toggleFavorite: { favorited: true } });
+    await addTap;
+    expect(queryClient.getQueryData(key)).toEqual({ favorites: [] });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: key });
+
+    answers[1]({ toggleFavorite: { favorited: false } });
+    await removeTap;
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: key });
+    expect(queryClient.getQueryData(key)).toEqual({ favorites: [] });
+  });
+
+  it('re-reads the heart once the last tap settles when answers come back out of order', async () => {
+    const { queryClient, Wrapper } = makeWrapper();
+    const key = ['favoriteStatus', 'kilter', 'climb-1', 40];
+    queryClient.setQueryData(key, { favorites: [] });
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const answers: Array<(value: { toggleFavorite: { favorited: boolean } }) => void> = [];
+    requestMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answers.push(resolve);
+        }),
+    );
+    const toggleHook = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
+    const input = { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 };
+    const addTap = toggleHook.result.current.mutateAsync({ input, currentlyFavorited: false });
+    const removeTap = toggleHook.result.current.mutateAsync({ input, currentlyFavorited: true });
+    await waitFor(() => expect(answers).toHaveLength(2));
+
+    // The server ran the newer tap first: its answer is stale once the older one runs.
+    answers[1]({ toggleFavorite: { favorited: true } });
+    await removeTap;
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: key });
+
+    answers[0]({ toggleFavorite: { favorited: false } });
+    await addTap;
+    // The older answer doesn't paint the heart, but the server is asked again.
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: key });
+  });
+
+  it("settles the heart on the server's answer when it contradicts the tap", async () => {
+    const { queryClient, Wrapper } = makeWrapper();
+    const key = ['favoriteStatus', 'kilter', 'climb-1', 40];
+    queryClient.setQueryData(key, { favorites: [] });
+    // Another device had already liked it, so this "add" removes it. The refetch
+    // after it never answers, so only the toggle's own write can set the heart.
+    requestMock.mockResolvedValueOnce({ toggleFavorite: { favorited: false } });
+    requestMock.mockReturnValue(new Promise(() => {}));
+    const toggleHook = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
+    const toggle = toggleHook.result.current.mutateAsync({
+      input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+      currentlyFavorited: false,
+    });
+    expect(queryClient.getQueryData(key)).toEqual({ favorites: ['climb-1'] });
+    await toggle;
+    expect(queryClient.getQueryData(key)).toEqual({ favorites: [] });
+  });
+
+  // A screen redraws from the cache a moment after the tap, so a second tap in
+  // that moment still says "not liked". The cache entry decides instead.
+  it('toggles from the heart the cache shows, not a caller one tap behind', async () => {
+    localQueue.db = { tag: 'db' };
+    localQueue.offlineEnabled = true;
+    localQueue.addFavoriteLocal.mockClear();
+    localQueue.removeFavoriteLocal.mockClear();
+    const { queryClient, Wrapper } = makeWrapper();
+    const key = ['favoriteStatus', 'kilter', 'climb-1', 40];
+    queryClient.setQueryData(key, { favorites: [] });
+    const toggleHook = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
+    const input = { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 };
+
+    const firstTap = toggleHook.result.current.mutateAsync({ input, currentlyFavorited: false });
+    const secondTap = toggleHook.result.current.mutateAsync({ input, currentlyFavorited: false });
+    await Promise.all([firstTap, secondTap]);
+
+    expect(localQueue.addFavoriteLocal).toHaveBeenCalledTimes(1);
+    expect(localQueue.removeFavoriteLocal).toHaveBeenCalledTimes(1);
+    expect(queryClient.getQueryData(key)).toEqual({ favorites: [] });
+  });
+
+  it('tracks each tap in the direction the toggle really went', () => {
+    const { queryClient, Wrapper } = makeWrapper();
+    queryClient.setQueryData(['favoriteStatus', 'kilter', 'climb-1', 40], { favorites: [] });
+    requestMock.mockReturnValue(new Promise(() => {}));
+    analytics.track.mockClear();
+    const toggleHook = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
+    const tap = {
+      input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+      // Both taps come from a screen that still draws "not liked".
+      currentlyFavorited: false,
+      tracking: { source: 'mini_player', layoutId: 1, connected: true },
+    };
+
+    toggleHook.result.current.mutate(tap);
+    toggleHook.result.current.mutate(tap);
+
+    expect(analytics.track.mock.calls.map(([, properties]) => properties.action)).toEqual(['added', 'removed']);
+    expect(analytics.track).toHaveBeenLastCalledWith(
+      'Favorite Toggle',
+      expect.objectContaining({
+        climbUuid: 'climb-1',
+        boardName: 'kilter',
+        layoutId: 1,
+        source: 'mini_player',
+        connected: true,
+      }),
+    );
+  });
+
+  // The offline read recovery invalidates ['favoriteStatus'] while the local
+  // write may still be running; its refetch reads the PRE-toggle row.
+  it('pins the heart again once the local write is in', async () => {
+    localQueue.db = { tag: 'db' };
+    localQueue.offlineEnabled = true;
+    const { queryClient, Wrapper } = makeWrapper();
+    const key = ['favoriteStatus', 'kilter', 'climb-1', 40];
+    queryClient.setQueryData(key, { favorites: [] });
+    let finishLocalWrite: () => void = () => {};
+    localQueue.addFavoriteLocal.mockReset();
+    localQueue.addFavoriteLocal.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finishLocalWrite = resolve;
+      }),
+    );
+    const toggleHook = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
+    const toggle = toggleHook.result.current.mutateAsync({
+      input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+      currentlyFavorited: false,
+    });
+    await waitFor(() => expect(localQueue.addFavoriteLocal).toHaveBeenCalled());
+    // A recovery refetch lands mid-write with the old row.
+    queryClient.setQueryData(key, { favorites: [] });
+
+    finishLocalWrite();
+    await toggle;
+    expect(queryClient.getQueryData(key)).toEqual({ favorites: ['climb-1'] });
+    localQueue.addFavoriteLocal.mockReset();
+  });
+
+  it('keeps the plain server toggle for a caller that does not say which way', async () => {
+    const { queryClient, Wrapper } = makeWrapper();
+    const key = ['favoriteStatus', 'kilter', 'climb-1', 40];
+    queryClient.setQueryData(key, { favorites: ['climb-1'] });
+    requestMock.mockResolvedValueOnce({ toggleFavorite: { favorited: false } });
+    requestMock.mockReturnValue(new Promise(() => {}));
+    const toggleHook = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
+    const toggle = toggleHook.result.current.mutateAsync({
+      input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+    });
+    // Nothing is pinned before the server answers...
+    expect(queryClient.getQueryData(key)).toEqual({ favorites: ['climb-1'] });
+    await toggle;
+    expect(requestMock.mock.calls[0][0]).toContain('toggleFavorite');
+    // ...and no direction is made up for it.
+    await waitFor(() => expect(toggleHook.result.current.variables).toBeDefined());
+    expect(toggleHook.result.current.variables).not.toHaveProperty('currentlyFavorited');
+  });
+
+  it("rolls each angle's heart back on its own: a newer tap at 25° leaves the 40° rollback alone", async () => {
+    const { queryClient, Wrapper } = makeWrapper();
+    let rejectFortyDegrees: (error: Error) => void = () => {};
+    requestMock
+      .mockReturnValueOnce(
+        new Promise((_resolve, reject) => {
+          rejectFortyDegrees = reject;
+        }),
+      )
+      .mockReturnValueOnce(new Promise(() => {}));
+    const toggleHook = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
+    const fortyDegrees = toggleHook.result.current.mutateAsync({
+      input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+      currentlyFavorited: false,
+    });
+    void toggleHook.result.current.mutateAsync({
+      input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 25 },
+      currentlyFavorited: false,
+    });
+    await waitFor(() =>
+      expect(queryClient.getQueryData(['favoriteStatus', 'kilter', 'climb-1', 25])).toEqual({ favorites: ['climb-1'] }),
+    );
+
+    rejectFortyDegrees(new Error('offline'));
+    await expect(fortyDegrees).rejects.toThrow('offline');
+    expect(queryClient.getQueryData(['favoriteStatus', 'kilter', 'climb-1', 40])).toEqual({ favorites: [] });
+    expect(queryClient.getQueryData(['favoriteStatus', 'kilter', 'climb-1', 25])).toEqual({ favorites: ['climb-1'] });
   });
 
   // The store is a singleton scoped to one board+angle+user. A toggle that

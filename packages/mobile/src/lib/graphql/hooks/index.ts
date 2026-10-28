@@ -48,7 +48,9 @@ import { offlineAwareRequest } from '../offline-request';
 import { searchClimbsCountQueryKey } from './search-climbs-count-query';
 import { useOfflineDownloadsEnabled } from '../../../providers/feature-flags-provider';
 import { favoritesStore } from '@boardsesh/climb-actions';
-import { favoriteToggleOrder, ownsFavoriteWrite } from './favorite-toggle-order';
+import { FavoriteToggleOrder, favoriteToggleOrder, ownsFavoriteWrite } from './favorite-toggle-order';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { track } from '../../analytics';
 import { addFavoriteLocal, removeFavoriteLocal } from '../../../hooks/use-offline-mutations';
 import type { GraphQLFetch } from '@boardsesh/offline-sync';
 import {
@@ -162,9 +164,97 @@ import {
   type DeleteHoldOutlineOverrideMutationResponse,
 } from '../operations';
 
+/** What a heart's FavoriteToggle event says beside the climb and the direction. */
+export type FavoriteToggleTracking = {
+  source: string;
+  layoutId: number;
+  /** This phone holds the board's link. */
+  connected: boolean;
+};
+
 type ToggleFavoriteVariables = ToggleFavoriteMutationVariables & {
   currentlyFavorited?: boolean;
+  /**
+   * Track the tap as FavoriteToggle. The toggle tracks it, not the caller, so
+   * the event names the direction the toggle really went (see
+   * `withCurrentFavorite`).
+   */
+  tracking?: FavoriteToggleTracking;
 };
+
+/** The per-climb heart's cache key: the backend keys a favourite on (board, climb, angle). */
+function favoriteStatusQueryKey(input: ToggleFavoriteVariables['input']) {
+  return ['favoriteStatus', input.boardName, input.climbUuid, input.angle] as const;
+}
+
+/**
+ * The newest toggle per heart cache entry: the climb at one board and angle.
+ * Separate from `favoriteToggleOrder`, which orders the per-climb list store: a
+ * toggle at 25° must not lose the 40° heart's rollback, nor take it over.
+ */
+const favoriteStatusToggleOrder = new FavoriteToggleOrder();
+
+function favoriteStatusOrderKey(input: ToggleFavoriteVariables['input']): string {
+  return JSON.stringify(favoriteStatusQueryKey(input));
+}
+
+/**
+ * Each toggle's place in `favoriteStatusToggleOrder`, for the one step that
+ * runs without the `onMutate` context: the local write in `mutationFn`. React
+ * Query hands both the same variables object.
+ */
+const favoriteStatusTokens = new WeakMap<ToggleFavoriteVariables, number>();
+
+/**
+ * How many toggles on each heart are still out. Only the newest one writes the
+ * server's answer, but answers can come back in either order: when the older
+ * tap lands last, the newest answer is stale. So the heart re-reads the server
+ * once the last toggle on it settles, whichever that was.
+ */
+const favoriteStatusTogglesInFlight = new Map<string, number>();
+
+function noteFavoriteStatusToggleStarted(orderKey: string): void {
+  favoriteStatusTogglesInFlight.set(orderKey, (favoriteStatusTogglesInFlight.get(orderKey) ?? 0) + 1);
+}
+
+/** True when this was the last toggle still out on the heart. */
+function noteFavoriteStatusToggleSettled(orderKey: string): boolean {
+  const remaining = (favoriteStatusTogglesInFlight.get(orderKey) ?? 1) - 1;
+  if (remaining > 0) {
+    favoriteStatusTogglesInFlight.set(orderKey, remaining);
+    return false;
+  }
+  favoriteStatusTogglesInFlight.delete(orderKey);
+  return true;
+}
+
+function isNewestFavoriteStatusToggle(variables: ToggleFavoriteVariables, token: number | undefined): boolean {
+  return token !== undefined && favoriteStatusToggleOrder.isLatest(favoriteStatusOrderKey(variables.input), token);
+}
+
+/**
+ * What the climb's heart shows right now, read straight from its cache entry:
+ * every toggle writes the entry the moment it is tapped, so this is already a
+ * second tap's truth while the screens are still drawing the first. `undefined`
+ * while nothing has read or written it.
+ */
+function readFavoriteStatusCache(
+  queryClient: ReturnType<typeof useQueryClient>,
+  input: ToggleFavoriteVariables['input'],
+): boolean | undefined {
+  return queryClient
+    .getQueryData<FavoritesQueryResponse>(favoriteStatusQueryKey(input))
+    ?.favorites.includes(input.climbUuid);
+}
+
+/** Pins the per-climb heart. The cached shape is the RAW GET_FAVORITES response (select runs on read). */
+function setFavoriteStatusCache(
+  queryClient: ReturnType<typeof useQueryClient>,
+  input: ToggleFavoriteVariables['input'],
+  favorited: boolean,
+) {
+  queryClient.setQueryData(favoriteStatusQueryKey(input), { favorites: favorited ? [input.climbUuid] : [] });
+}
 
 function graphqlFetchFromClient(): GraphQLFetch {
   return (query, variables) => getHttpClient().request(query, variables);
@@ -1112,7 +1202,7 @@ export function useToggleFavorite() {
   const queryClient = useQueryClient();
   const offlineEnabled = useOfflineDownloadsEnabled();
 
-  return useMutation({
+  const mutation = useMutation({
     mutationFn: async (variables: ToggleFavoriteVariables) => {
       const db = getDatabaseHandle();
       // Local-first only with the offline flag on; otherwise the plain network
@@ -1125,16 +1215,16 @@ export function useToggleFavorite() {
         }
 
         const favorited = !variables.currentlyFavorited;
-        // Pin the per-climb heart optimistically instead of refetching: a
-        // network refetch here races the queued mutation and can cache the
-        // PRE-toggle state for 5 minutes. The drainer invalidates
-        // ['favoriteStatus'] once the queued write actually lands. The cached
-        // shape is the RAW GET_FAVORITES response (select runs on read).
-        queryClient.setQueryData(
-          ['favoriteStatus', variables.input.boardName, variables.input.climbUuid, variables.input.angle],
-          { favorites: favorited ? [variables.input.climbUuid] : [] },
-        );
-
+        // Pin the heart again now the local write is in: an ['favoriteStatus']
+        // invalidation that landed during it (the offline read recovery) would
+        // have read the PRE-toggle row. Only the newest tap on this heart pins
+        // it, so a slow first tap can't land over a second. No network refetch:
+        // it would race the queued mutation. The drainer invalidates
+        // ['favoriteStatus'] once the queued write actually lands.
+        if (isNewestFavoriteStatusToggle(variables, favoriteStatusTokens.get(variables))) {
+          void queryClient.cancelQueries({ queryKey: favoriteStatusQueryKey(variables.input) });
+          setFavoriteStatusCache(queryClient, variables.input, favorited);
+        }
         scheduleDrain(db, queryClient);
 
         return { toggleFavorite: { favorited }, viaLocalQueue: true as const };
@@ -1154,12 +1244,30 @@ export function useToggleFavorite() {
     // heart, whether it succeeded or failed.
     onMutate: (variables) => {
       const token = favoriteToggleOrder.begin(variables.input.climbUuid);
+      const statusToken = favoriteStatusToggleOrder.begin(favoriteStatusOrderKey(variables.input));
+      favoriteStatusTokens.set(variables, statusToken);
+      noteFavoriteStatusToggleStarted(favoriteStatusOrderKey(variables.input));
+      if (variables.tracking && typeof variables.currentlyFavorited === 'boolean') {
+        track(SHARED_EVENTS.FavoriteToggle, {
+          action: variables.currentlyFavorited ? 'removed' : 'added',
+          climbUuid: variables.input.climbUuid,
+          boardName: variables.input.boardName,
+          layoutId: variables.tracking.layoutId,
+          source: variables.tracking.source,
+          connected: variables.tracking.connected,
+        });
+      }
       // The store is a singleton scoped to one board+angle+user at a time. Note
       // which scope this toggle belongs to so a slow response can't write a 40°
       // result into a store the user has since re-scoped to 25°.
       const contextEpoch = favoritesStore.getContextEpoch();
       if (typeof variables.currentlyFavorited === 'boolean') {
         favoritesStore.setIsFavorited(variables.input.climbUuid, !variables.currentlyFavorited);
+        // Every heart on this climb reads the same cache entry (the player's,
+        // the MiniPlayer's, #6940), so they flip together. A fetch already in
+        // flight would land the pre-toggle state over it.
+        void queryClient.cancelQueries({ queryKey: favoriteStatusQueryKey(variables.input) });
+        setFavoriteStatusCache(queryClient, variables.input, !variables.currentlyFavorited);
       }
       // Un-liking drops the climb from the cached Liked list now, on both the
       // queued and the online path (#5304). Liking it again puts back the row an
@@ -1170,11 +1278,15 @@ export function useToggleFavorite() {
       } else if (variables.currentlyFavorited === false) {
         restoreClimbToLikedList(queryClient, variables.input.climbUuid);
       }
-      return { token, contextEpoch };
+      return { token, contextEpoch, statusToken };
     },
     onError: (_error, variables, context) => {
       if (typeof variables.currentlyFavorited !== 'boolean') return;
-      // A newer toggle for this climb owns both the heart and the Liked rows.
+      // The heart's cache entry goes back unless a newer tap on it has moved it since.
+      if (context && isNewestFavoriteStatusToggle(variables, context.statusToken)) {
+        setFavoriteStatusCache(queryClient, variables.input, variables.currentlyFavorited);
+      }
+      // A newer toggle for this climb owns both the list store and the Liked rows.
       if (!context || !favoriteToggleOrder.isLatest(variables.input.climbUuid, context.token)) return;
       // The heart store is scoped to one board+angle+user, so only roll it back
       // while it is still scoped to where this toggle started.
@@ -1193,8 +1305,19 @@ export function useToggleFavorite() {
         removeClimbFromLikedList(queryClient, variables.input.climbUuid);
       }
     },
-    onSettled: (_data, _error, variables, context) => {
-      if (context) favoriteToggleOrder.settle(variables.input.climbUuid, context.token);
+    onSettled: (data, _error, variables, context) => {
+      if (!context) return;
+      favoriteToggleOrder.settle(variables.input.climbUuid, context.token);
+      const orderKey = favoriteStatusOrderKey(variables.input);
+      favoriteStatusToggleOrder.settle(orderKey, context.statusToken);
+      // The last toggle out re-reads the heart from the server, so answers that
+      // came back out of order can't leave it wrong for the 5-minute staleTime.
+      // Not on the local-queue path: the server doesn't know about that toggle
+      // yet, and the drainer invalidates once it lands.
+      const lastOut = noteFavoriteStatusToggleSettled(orderKey);
+      if (lastOut && !(data && 'viaLocalQueue' in data)) {
+        void queryClient.invalidateQueries({ queryKey: favoriteStatusQueryKey(variables.input) });
+      }
     },
     onSuccess: (data, variables, context) => {
       // Same ownership test as the rollback above, written the same way round:
@@ -1213,9 +1336,12 @@ export function useToggleFavorite() {
       // the optimistic setQueryData above holds until the drainer's
       // post-landing invalidation.
       if (!('viaLocalQueue' in data)) {
-        void queryClient.invalidateQueries({
-          queryKey: ['favoriteStatus', variables.input.boardName, variables.input.climbUuid, variables.input.angle],
-        });
+        // Only the newest tap on this heart settles it. An older one landing
+        // between two taps would flip it back for a moment, then forward again.
+        // The re-read from the server waits for the last toggle out (onSettled).
+        if (context && isNewestFavoriteStatusToggle(variables, context.statusToken)) {
+          setFavoriteStatusCache(queryClient, variables.input, data.toggleFavorite.favorited);
+        }
         // The Liked smart list (and its library count) would otherwise keep an
         // un-liked climb on screen for its 5-minute staleTime (#5304).
         // When the server confirms an un-like, the cached pages already lost the
@@ -1232,6 +1358,38 @@ export function useToggleFavorite() {
       }
     },
   });
+
+  // A caller says which way it is toggling from what it last drew, which can be
+  // a tap behind: the heart's cache entry moves at the tap, but screens redraw
+  // from it a moment later. A second tap in that moment would send the first
+  // tap's starting value and toggle the same way twice. So the entry decides
+  // whenever it has an answer, for every caller (the player's heart, its ⋯ row,
+  // the MiniPlayer's heart). A caller that says nothing keeps the plain server
+  // toggle. `onMutate` runs synchronously inside `mutate` and writes the flip,
+  // so the very next call already reads it.
+  const withCurrentFavorite = useCallback(
+    (variables: ToggleFavoriteVariables): ToggleFavoriteVariables => {
+      if (typeof variables.currentlyFavorited !== 'boolean') return variables;
+      const cached = readFavoriteStatusCache(queryClient, variables.input);
+      return cached === undefined || cached === variables.currentlyFavorited
+        ? variables
+        : { ...variables, currentlyFavorited: cached };
+    },
+    [queryClient],
+  );
+  const { mutate, mutateAsync } = mutation;
+  const mutateFromCurrent = useCallback<typeof mutate>(
+    (variables, options) => mutate(withCurrentFavorite(variables), options),
+    [mutate, withCurrentFavorite],
+  );
+  const mutateAsyncFromCurrent = useCallback<typeof mutateAsync>(
+    (variables, options) => mutateAsync(withCurrentFavorite(variables), options),
+    [mutateAsync, withCurrentFavorite],
+  );
+  return useMemo(
+    () => ({ ...mutation, mutate: mutateFromCurrent, mutateAsync: mutateAsyncFromCurrent }),
+    [mutation, mutateFromCurrent, mutateAsyncFromCurrent],
+  );
 }
 
 /**

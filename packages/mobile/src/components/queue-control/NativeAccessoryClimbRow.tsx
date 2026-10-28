@@ -27,7 +27,20 @@ import {
   type BoardConnectionBadgeVisual,
 } from './board-control-indicator-state';
 import type { AccessoryPlacement } from '../../lib/analytics-board-connect';
-import { miniPlayerSlotCount, resolveMiniPlayerControls } from './mini-player-controls';
+import {
+  miniPlayerPaneCoveredButtons,
+  miniPlayerPaneMode,
+  miniPlayerSlotCount,
+  resolveMiniPlayerControls,
+} from './mini-player-controls';
+import { usePlayerButtonsPreference } from '../../lib/player-buttons-preference';
+import { resolveClimbRenderBoard } from '../../lib/boards/climb-render-board';
+import { resolvePlayerAngle } from '../play-drawer/player-angle';
+import { usePanePlayerShowsPreview } from '../play-drawer/pane-preview-store';
+import { useAuth } from '../../providers/auth-provider';
+import { useSegments } from 'expo-router';
+import { isPlayerRoute } from '../../lib/route-segments';
+import { boardSupportsMirroring } from '@boardsesh/play-view';
 import { MiniPlayerLeadingButtons } from './MiniPlayerButtons';
 import { useMiniPlayerButtons } from '../../lib/mini-player-buttons-preference';
 import type { MiniPlayerButtonId } from '../../lib/mini-player-buttons';
@@ -126,18 +139,46 @@ function ClimbLabel({
 }
 
 /**
- * Whether ⏮ ⏭ can take a place on the bar. Not while the open Duo's player pane
- * shows them right above it, and not in a timed workout block, whose stage moves
- * the wall on its own beat (#6231): a tap there would skip a rep.
+ * Whether ⏮ ⏭ can take a place on the bar. Not in a timed workout block, whose
+ * stage moves the wall on its own beat (#6231): a tap there would skip a rep.
  */
 function useTransportAvailable(): boolean {
-  const phoneSplit = usePhoneSplit();
-  const paneTaken = usePhoneSplitPaneTaken();
   const { sessionId } = useQueueSessionId();
   const { currentClimbQueueItem } = useQueueData();
   const workoutRun = useWorkoutRun(sessionId);
-  const inTimedBlock = workoutOutcomeAvailable(findWorkoutRunStage(workoutRun, currentClimbQueueItem?.uuid ?? null));
-  return !(phoneSplit && !paneTaken) && !inTimedBlock;
+  return !workoutOutcomeAvailable(findWorkoutRunStage(workoutRun, currentClimbQueueItem?.uuid ?? null));
+}
+
+type MiniPlayerAvailability = {
+  transport: boolean;
+  signedIn: boolean;
+  isDraft: boolean;
+  angleAdjustable: boolean;
+};
+
+/**
+ * Whether a button can take a place on the bar right now. Mirror waits for its
+ * shared store (#6940, PR 3); Favorite and Queue need an account; a draft has
+ * no link to share; a fixed-angle board has no angle to change.
+ */
+export function isMiniPlayerButtonAvailable(
+  buttonId: MiniPlayerButtonId,
+  { transport, signedIn, isDraft, angleAdjustable }: MiniPlayerAvailability,
+): boolean {
+  switch (buttonId) {
+    case 'previous':
+    case 'next':
+      return transport;
+    case 'mirror':
+      return false;
+    case 'favorite':
+    case 'queue':
+      return signedIn;
+    case 'share':
+      return !isDraft;
+    case 'angle':
+      return angleAdjustable;
+  }
 }
 
 /**
@@ -157,7 +198,7 @@ function useTransportAvailable(): boolean {
  * capsule's colorized grade.
  */
 export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAccessoryClimbRowProps) {
-  const { boardConfig } = useDrawerHost();
+  const { boardConfig, playDrawerPaneProps } = useDrawerHost();
   const { systemColors, brandColors } = useTheme();
   const { resolveGrade } = useDisplayGrade();
   const { openPlay, preparePlay } = useAccessoryClimbTap();
@@ -167,6 +208,38 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
   const phoneSplit = usePhoneSplit();
   const buttonsLayout = useMiniPlayerButtons();
   const transportAvailable = useTransportAvailable();
+  const { isAuthenticated } = useAuth();
+  // The angle the player's pill shows: the board it draws on, a foreign
+  // climb's override included, and none on a fixed-angle board.
+  const playerAngle = playDrawerPaneProps
+    ? resolvePlayerAngle({
+        isAngleAdjustable: playDrawerPaneProps.isAngleAdjustable,
+        angle: playDrawerPaneProps.boardConfig.angle,
+      })
+    : null;
+  const angleAdjustable = playerAngle !== null;
+  // Not while the `/play` route is up: the host's angle sheet presents from the
+  // app's root, so it would land behind that modal (the player has its own).
+  const playerRouteUp = isPlayerRoute(useSegments());
+  const angleOnBar = angleAdjustable && !playerRouteUp;
+  const playerBoardName = playDrawerPaneProps?.boardConfig.boardName ?? null;
+  const playerLayoutId = playDrawerPaneProps?.boardConfig.layoutId ?? null;
+  const paneTaken = usePhoneSplitPaneTaken();
+  const paneShowsPreview = usePanePlayerShowsPreview();
+  const playerButtons = usePlayerButtonsPreference();
+  const paneMode = miniPlayerPaneMode({
+    phoneSplit,
+    paneTaken,
+    paneShowsPreview,
+    controlsPosition: playerButtons.position,
+  });
+  const playerPaneShowsTransport = paneMode === 'carry';
+  // The board the climb is drawn on, resolved the way the player resolves it, so
+  // the heart and the share point at the same climb, board and angle.
+  const climbBoard = useMemo(
+    () => resolveClimbRenderBoard(climb, boardConfig)?.boardConfig ?? null,
+    [climb, boardConfig],
+  );
 
   const isInline = placement === 'inline';
   const rowHeight = isInline ? glassSize.inline : glassSize.standard;
@@ -205,9 +278,36 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
   // connect to and nobody holds it. With no board bound the bulb renders nothing,
   // so the tick keeps the slot.
   const collapsedSlotShowsBulb = bluetooth != null && inAppBoardConnection === 'disconnected';
+  const isDraft = climb.is_draft === true;
   const isAvailable = useCallback(
-    (buttonId: MiniPlayerButtonId) => (buttonId === 'previous' || buttonId === 'next') && transportAvailable,
-    [transportAvailable],
+    (buttonId: MiniPlayerButtonId) =>
+      isMiniPlayerButtonAvailable(buttonId, {
+        transport: transportAvailable,
+        signedIn: isAuthenticated,
+        isDraft,
+        angleAdjustable: angleOnBar,
+      }),
+    [transportAvailable, isAuthenticated, isDraft, angleOnBar],
+  );
+  const climbBoardName = climbBoard?.boardName ?? null;
+  const climbLayoutId = climbBoard?.layoutId ?? null;
+  const paneCoveredButtons = useMemo(
+    () =>
+      paneMode === 'stepAside'
+        ? []
+        : paneMode === 'carry'
+          ? miniPlayerPaneCoveredButtons({
+              buttons: playerButtons.buttons,
+              previousNext: playerButtons.previousNext,
+              supportsMirroring:
+                climbBoardName !== null && climbLayoutId !== null
+                  ? boardSupportsMirroring(climbBoardName, climbLayoutId)
+                  : false,
+              hasShare: !isDraft,
+              angleAvailable: angleAdjustable,
+            })
+          : undefined,
+    [paneMode, playerButtons, climbBoardName, climbLayoutId, isDraft, angleAdjustable],
   );
   const controls = useMemo(
     () =>
@@ -216,9 +316,10 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
         layout: buttonsLayout,
         isAvailable,
         singleSlotShowsBulb: collapsedSlotShowsBulb,
-        playerPaneShowsTransport: false,
+        playerPaneShowsTransport,
+        buttonIds: paneCoveredButtons,
       }),
-    [slotCount, buttonsLayout, isAvailable, collapsedSlotShowsBulb],
+    [slotCount, buttonsLayout, isAvailable, collapsedSlotShowsBulb, playerPaneShowsTransport, paneCoveredButtons],
   );
   // A visible bulb already speaks the state; without it, only the mark shows
   // it, so the climb link says it.
@@ -275,6 +376,13 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
       {controls.leading.length > 0 ? (
         <MiniPlayerLeadingButtons
           buttonIds={controls.leading}
+          climb={climb}
+          climbBoard={climbBoard}
+          angle={playerAngle}
+          angleClimbUuid={
+            climbBoardName === playerBoardName && climbLayoutId === playerLayoutId ? climb.uuid : undefined
+          }
+          bluetoothConnected={bluetooth?.isConnected ?? false}
           slotWidth={glassSize.inline}
           rowHeight={rowHeight}
           groupGap={groupGap}

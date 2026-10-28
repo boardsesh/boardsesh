@@ -462,20 +462,14 @@ export function useClimbActions({
           after();
           return;
         }
-        track(SHARED_EVENTS.FavoriteToggle, {
-          action: isFavorited ? 'removed' : 'added',
-          climbUuid: climb.uuid,
-          boardName,
-          layoutId,
-          source: analyticsSource ?? 'mobile_climb_actions',
-          connected: bluetoothConnected,
-        });
         // Pass the state the row just rendered from: it flips the heart in the
         // climb list optimistically, and it's what the offline local-first path
-        // needs to know which way to write.
+        // needs to know which way to write. The toggle tracks the tap, in the
+        // direction it really goes (the heart's cache entry has the last word).
         toggleFavoriteMutate({
           input: { boardName, climbUuid: climb.uuid, angle },
           currentlyFavorited: isFavorited,
+          tracking: { source: analyticsSource ?? 'mobile_climb_actions', layoutId, connected: bluetoothConnected },
         });
         after();
       },

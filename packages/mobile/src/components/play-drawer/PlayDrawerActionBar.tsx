@@ -10,6 +10,7 @@ import { LightbulbHolderBadge } from './LightbulbHolderBadge';
 import { FirstConnectPill } from './FirstConnectPill';
 import { PlayDrawerCommitBar, PutOnWallButton } from './PlayDrawerCommitBar';
 import { WorkoutOutcomeRow } from './WorkoutOutcomeRow';
+import { AnglePill } from './AnglePill';
 import type { WorkoutOutcomeTarget } from './workout-outcome';
 import type { CommitButtonLabel } from './wall-state';
 import { resolveActionBarLayout, type ActionBarCommitButton, type ActionBarSecondaryItem } from './action-bar-layout';
@@ -21,7 +22,6 @@ import { useTheme } from '../../providers/theme-provider';
 // with white text that must stay legible in both schemes.
 import { brandColors as staticBrandColors } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
-import { glassSize } from '../../theme/layout';
 import { spacing } from '../../theme/tokens';
 import { useVariantValue } from '../../theme/variants';
 import { hapticMedium, hapticSelection } from '../../lib/haptics';
@@ -453,24 +453,12 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
                   return <FavoriteButton key={item} size="sm" isFavorited={isFavorited} onPress={handleFavorite} />;
                 case 'angle':
                   return onOpenAngleSelector && currentAngle != null ? (
-                    <PressableSurface
+                    <AnglePill
                       key={item}
+                      angle={currentAngle}
                       onPress={onOpenAngleSelector}
-                      accessibilityRole="button"
                       accessibilityLabel={t('mobile.angleSelector.title')}
-                      // A label-only mini pill (32pt); hit-slop lifts the tap target back to
-                      // the 44pt floor without growing the visual chip.
-                      hitSlop={8}
-                      style={({ pressed }) => [
-                        styles.anglePill,
-                        { borderColor: theme.systemColors.separator },
-                        pressed && drawerActionBarStyles.actionButtonPressed,
-                      ]}
-                    >
-                      <Text variant="caption1" color={theme.systemColors.secondaryLabel} style={styles.angleText}>
-                        {currentAngle}°
-                      </Text>
-                    </PressableSurface>
+                    />
                   ) : null;
                 case 'spacer':
                   // Put on the wall sits between two spacers, so position keys them.
@@ -695,18 +683,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -2,
     right: -2,
-  },
-  // A neutral, label-only outlined capsule (no colour fill) — the mini inline tier.
-  anglePill: {
-    height: glassSize.mini,
-    borderRadius: glassSize.mini / 2,
-    paddingHorizontal: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  angleText: {
-    fontWeight: '600',
   },
   // caption2 (11pt) in a box that grows with the text (count-badge-style.ts).
   countBadge: {

@@ -458,7 +458,7 @@ vi.mock('../../../lib/board-details', () => ({
 }));
 
 // `play-drawer-navigation`, `play-drawer-layout`, `wall-state`,
-// `boardsesh-grade-display` and `favorite-rollback` stay REAL — the wiring of
+// and `boardsesh-grade-display` stay REAL — the wiring of
 // those helpers into the render is exactly what this file exists to measure.
 
 const { AccessibilityInfo } = await import('react-native');

@@ -70,6 +70,7 @@ import { useBoardPresenceControls, type ResolveBoardUuidArgs } from './board-pre
 import { boardUuidOrNull } from '../lib/boards/board-identity';
 import { useOptionalBluetoothContext } from './bluetooth-provider';
 import { dismissManagedSheetAndWait, type DismissAndWaitResult } from './sheet-presentation-provider';
+import { AngleSelectorSheet } from '../components/play-drawer/AngleSelectorSheet';
 
 export type BoardConfig = {
   boardName: string;
@@ -207,6 +208,13 @@ type DrawerHostValue = {
    *  separate Switch-board control). Wired to the board glyph when the
    *  `board-presence` flag is on. */
   openBoardSheet: () => void;
+  /** Opens the player's angle sheet for the MiniPlayer's Angle button (#6940),
+   *  with the player's own angle handler: the board override, the crew's board
+   *  path and AngleChanged, as the player's pill. The sheet lives here, not in
+   *  the tab bar's accessory, where it would present from inside UIKit's
+   *  platter. `climbUuid` asks for that climb's grade per angle; leave it out
+   *  for a climb drawn on another board. No-op on a fixed-angle board. */
+  openAnglePicker: (climbUuid?: string) => void;
   /** Props for the tablet shell's right-column PlayDrawer pane (regular width) and
    *  the iPhone Duo's split pane; null while no board is resolved. Consumed by
    *  `IpadPlayPane`. Where that pane is up, `openPlayDrawer` drives it instead of
@@ -934,6 +942,28 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     return dismissManagedSheetAndWait(queueSheetRef.current);
   }, []);
 
+  // The MiniPlayer's angle sheet: mounted on its first open, then toggled.
+  const [anglePicker, setAnglePicker] = useState<{ visible: boolean; climbUuid: string | undefined } | null>(null);
+  const angleIsAdjustable = activeBoard?.isAngleAdjustable !== false;
+  const openAnglePicker = useCallback(
+    (climbUuid?: string) => {
+      if (!angleIsAdjustable) return;
+      setAnglePicker({ visible: true, climbUuid });
+    },
+    [angleIsAdjustable],
+  );
+  const closeAnglePicker = useCallback(
+    () => setAnglePicker((current) => (current?.visible ? { ...current, visible: false } : current)),
+    [],
+  );
+  const handleAnglePickerChange = useCallback(
+    (newAngle: number) => {
+      handleAngleChange(newAngle);
+      closeAnglePicker();
+    },
+    [handleAngleChange, closeAnglePicker],
+  );
+
   const requestCloseBoardSheet = useCallback(() => boardSheetRef.current?.dismiss(), []);
   const dismissBoardSheetAndWait = useCallback((): Promise<DismissAndWaitResult> => {
     return dismissManagedSheetAndWait(boardSheetRef.current);
@@ -1284,6 +1314,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       openReportClimb,
       openQueueSheet,
       openBoardSheet,
+      openAnglePicker,
       playDrawerPaneProps,
       boardPanelProps,
       usesDetailPane,
@@ -1299,6 +1330,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       openReportClimb,
       openQueueSheet,
       openBoardSheet,
+      openAnglePicker,
       playDrawerPaneProps,
       boardPanelProps,
       usesDetailPane,
@@ -1430,6 +1462,17 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
             onOpenPlaylist={handleBoardSheetOpenPlaylist}
             onOpenActions={handleBoardSheetModalOpenActions}
           />
+          {anglePicker && activeBoardConfig ? (
+            <AngleSelectorSheet
+              visible={anglePicker.visible && angleIsAdjustable}
+              onClose={closeAnglePicker}
+              boardName={activeBoardConfig.boardName}
+              layoutId={activeBoardConfig.layoutId}
+              climbUuid={anglePicker.climbUuid}
+              currentAngle={activeBoardConfig.angle}
+              onAngleChange={handleAnglePickerChange}
+            />
+          ) : null}
           {sprayWallActions.shareSnapshot ? (
             <BoardShareSheet
               visible={sprayWallActions.shareVisible}

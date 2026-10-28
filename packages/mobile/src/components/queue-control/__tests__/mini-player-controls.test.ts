@@ -3,15 +3,19 @@ import {
   ACCESSORY_MIN_NAME_WIDTH,
   ACCESSORY_SLOT_WIDTH,
   PHONE_ACCESSORY_MIN_NAME_WIDTH,
+  miniPlayerPaneCoveredButtons,
+  miniPlayerPaneMode,
   miniPlayerSlotCount,
   resolveMiniPlayerControls,
   type MiniPlayerControlsInput,
+  type PaneCoveredButtonsInput,
 } from '../mini-player-controls';
 import {
   DEFAULT_MINI_PLAYER_BUTTONS,
   type MiniPlayerButtonId,
   type MiniPlayerButtonsLayout,
 } from '../../../lib/mini-player-buttons';
+import { DEFAULT_PLAYER_BUTTONS, type PlayerButtonId, type PlayerButtonsLayout } from '../../../lib/player-buttons';
 
 // 16pt leading inset + 32pt artwork + 8pt gap + 4pt label padding + 8pt trailing inset.
 const WIDTH_BESIDE_NAME = 68;
@@ -173,5 +177,96 @@ describe('resolveMiniPlayerControls', () => {
       leading: ['favorite'],
       trailing: [],
     });
+  });
+});
+
+describe('resolveMiniPlayerControls with the pane covered (iPhone Duo open)', () => {
+  it("claims from the covered row in its order, ignoring the climber's MiniPlayer list", () => {
+    expect(
+      resolve({
+        layout: layoutWith([...DEFAULT_MINI_PLAYER_BUTTONS.order], []),
+        playerPaneShowsTransport: true,
+        buttonIds: ['favorite', 'angle', 'share'],
+      }),
+    ).toEqual({ leading: ['favorite', 'angle', 'share'], trailing: [] });
+  });
+
+  it('skips the covered buttons that cannot show here', () => {
+    expect(
+      resolve({
+        playerPaneShowsTransport: true,
+        buttonIds: ['mirror', 'favorite', 'share'],
+        isAvailable: (buttonId) => buttonId !== 'mirror',
+      }).leading,
+    ).toEqual(['favorite', 'share']);
+  });
+
+  it('never claims ⏮ ⏭ from an override while the pane shows them', () => {
+    expect(resolve({ playerPaneShowsTransport: true, buttonIds: ['next', 'share'] }).leading).toEqual(['share']);
+  });
+});
+
+describe('miniPlayerPaneMode', () => {
+  const pane = (overrides: Partial<Parameters<typeof miniPlayerPaneMode>[0]>) =>
+    miniPlayerPaneMode({
+      phoneSplit: true,
+      paneTaken: false,
+      paneShowsPreview: false,
+      controlsPosition: 'below',
+      ...overrides,
+    });
+
+  it('carries the covered row while the pane shows the current climb, controls below', () => {
+    expect(pane({})).toBe('carry');
+  });
+
+  it('steps aside for a preview, or controls above the board', () => {
+    expect(pane({ paneShowsPreview: true })).toBe('stepAside');
+    expect(pane({ controlsPosition: 'above' })).toBe('stepAside');
+  });
+
+  it('has nothing to do with no player in the pane', () => {
+    expect(pane({ phoneSplit: false })).toBe('none');
+    expect(pane({ paneTaken: true, paneShowsPreview: true })).toBe('none');
+  });
+});
+
+function playerLayout(order: readonly PlayerButtonId[], off: readonly PlayerButtonId[] = []): PlayerButtonsLayout {
+  const visible = Object.fromEntries(order.map((buttonId) => [buttonId, !off.includes(buttonId)]));
+  return { order, visible: visible as PlayerButtonsLayout['visible'] };
+}
+
+function covered(overrides: Partial<PaneCoveredButtonsInput>) {
+  return miniPlayerPaneCoveredButtons({
+    buttons: DEFAULT_PLAYER_BUTTONS,
+    previousNext: true,
+    supportsMirroring: false,
+    hasShare: true,
+    angleAvailable: true,
+    ...overrides,
+  });
+}
+
+describe('miniPlayerPaneCoveredButtons', () => {
+  it("is the player's small row on a board that doesn't mirror: ♡ 40° ⬆ (☰ leads the big row)", () => {
+    expect(covered({})).toEqual(['favorite', 'angle', 'share']);
+  });
+
+  it('adds the queue at the right on a mirror board, where ⇄ leads the big row', () => {
+    expect(covered({ supportsMirroring: true })).toEqual(['favorite', 'angle', 'share', 'queue']);
+  });
+
+  it("follows the climber's player buttons: order and switches", () => {
+    const shareFirst = playerLayout(['share', 'queue', 'favorite', 'angle', 'mirror'], ['angle']);
+    expect(covered({ buttons: shareFirst })).toEqual(['share', 'favorite']);
+  });
+
+  it('leaves out Share on a draft and the angle on a fixed-angle board, as the pane does', () => {
+    expect(covered({ hasShare: false, angleAvailable: false })).toEqual(['favorite']);
+  });
+
+  it('is empty when every small-row button is off', () => {
+    const bigRowOnly = playerLayout(DEFAULT_PLAYER_BUTTONS.order, ['favorite', 'angle', 'share']);
+    expect(covered({ buttons: bigRowOnly })).toEqual([]);
   });
 });
