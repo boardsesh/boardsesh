@@ -356,6 +356,36 @@ describe('useToggleFavorite', () => {
     expect(queryClient.getQueryData(key)).toEqual({ favorites: [] });
   });
 
+  it('re-reads the heart once the last tap settles when answers come back out of order', async () => {
+    const { queryClient, Wrapper } = makeWrapper();
+    const key = ['favoriteStatus', 'kilter', 'climb-1', 40];
+    queryClient.setQueryData(key, { favorites: [] });
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const answers: Array<(value: { toggleFavorite: { favorited: boolean } }) => void> = [];
+    requestMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answers.push(resolve);
+        }),
+    );
+    const toggleHook = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
+    const input = { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 };
+    const addTap = toggleHook.result.current.mutateAsync({ input, currentlyFavorited: false });
+    const removeTap = toggleHook.result.current.mutateAsync({ input, currentlyFavorited: true });
+    await waitFor(() => expect(answers).toHaveLength(2));
+
+    // The server ran the newer tap first: its answer is stale once the older one runs.
+    answers[1]({ toggleFavorite: { favorited: true } });
+    await removeTap;
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: key });
+
+    answers[0]({ toggleFavorite: { favorited: false } });
+    await addTap;
+    // The older answer doesn't paint the heart, but the server is asked again.
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: key });
+  });
+
   it("settles the heart on the server's answer when it contradicts the tap", async () => {
     const { queryClient, Wrapper } = makeWrapper();
     const key = ['favoriteStatus', 'kilter', 'climb-1', 40];

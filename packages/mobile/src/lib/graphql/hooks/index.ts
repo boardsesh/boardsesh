@@ -205,6 +205,29 @@ function favoriteStatusOrderKey(input: ToggleFavoriteVariables['input']): string
  */
 const favoriteStatusTokens = new WeakMap<ToggleFavoriteVariables, number>();
 
+/**
+ * How many toggles on each heart are still out. Only the newest one writes the
+ * server's answer, but answers can come back in either order: when the older
+ * tap lands last, the newest answer is stale. So the heart re-reads the server
+ * once the last toggle on it settles, whichever that was.
+ */
+const favoriteStatusTogglesInFlight = new Map<string, number>();
+
+function noteFavoriteStatusToggleStarted(orderKey: string): void {
+  favoriteStatusTogglesInFlight.set(orderKey, (favoriteStatusTogglesInFlight.get(orderKey) ?? 0) + 1);
+}
+
+/** True when this was the last toggle still out on the heart. */
+function noteFavoriteStatusToggleSettled(orderKey: string): boolean {
+  const remaining = (favoriteStatusTogglesInFlight.get(orderKey) ?? 1) - 1;
+  if (remaining > 0) {
+    favoriteStatusTogglesInFlight.set(orderKey, remaining);
+    return false;
+  }
+  favoriteStatusTogglesInFlight.delete(orderKey);
+  return true;
+}
+
 function isNewestFavoriteStatusToggle(variables: ToggleFavoriteVariables, token: number | undefined): boolean {
   return token !== undefined && favoriteStatusToggleOrder.isLatest(favoriteStatusOrderKey(variables.input), token);
 }
@@ -1223,6 +1246,7 @@ export function useToggleFavorite() {
       const token = favoriteToggleOrder.begin(variables.input.climbUuid);
       const statusToken = favoriteStatusToggleOrder.begin(favoriteStatusOrderKey(variables.input));
       favoriteStatusTokens.set(variables, statusToken);
+      noteFavoriteStatusToggleStarted(favoriteStatusOrderKey(variables.input));
       if (variables.tracking && typeof variables.currentlyFavorited === 'boolean') {
         track(SHARED_EVENTS.FavoriteToggle, {
           action: variables.currentlyFavorited ? 'removed' : 'added',
@@ -1281,10 +1305,19 @@ export function useToggleFavorite() {
         removeClimbFromLikedList(queryClient, variables.input.climbUuid);
       }
     },
-    onSettled: (_data, _error, variables, context) => {
+    onSettled: (data, _error, variables, context) => {
       if (!context) return;
       favoriteToggleOrder.settle(variables.input.climbUuid, context.token);
-      favoriteStatusToggleOrder.settle(favoriteStatusOrderKey(variables.input), context.statusToken);
+      const orderKey = favoriteStatusOrderKey(variables.input);
+      favoriteStatusToggleOrder.settle(orderKey, context.statusToken);
+      // The last toggle out re-reads the heart from the server, so answers that
+      // came back out of order can't leave it wrong for the 5-minute staleTime.
+      // Not on the local-queue path: the server doesn't know about that toggle
+      // yet, and the drainer invalidates once it lands.
+      const lastOut = noteFavoriteStatusToggleSettled(orderKey);
+      if (lastOut && !(data && 'viaLocalQueue' in data)) {
+        void queryClient.invalidateQueries({ queryKey: favoriteStatusQueryKey(variables.input) });
+      }
     },
     onSuccess: (data, variables, context) => {
       // Same ownership test as the rollback above, written the same way round:
@@ -1305,9 +1338,9 @@ export function useToggleFavorite() {
       if (!('viaLocalQueue' in data)) {
         // Only the newest tap on this heart settles it. An older one landing
         // between two taps would flip it back for a moment, then forward again.
+        // The re-read from the server waits for the last toggle out (onSettled).
         if (context && isNewestFavoriteStatusToggle(variables, context.statusToken)) {
           setFavoriteStatusCache(queryClient, variables.input, data.toggleFavorite.favorited);
-          void queryClient.invalidateQueries({ queryKey: favoriteStatusQueryKey(variables.input) });
         }
         // The Liked smart list (and its library count) would otherwise keep an
         // un-liked climb on screen for its 5-minute staleTime (#5304).
