@@ -42,7 +42,7 @@ export type PlayCoreSheetHostsProps = {
   betaVideoTarget: ComposerTarget;
   playlistTarget: ComposerTarget;
   reportTarget: ComposerTarget;
-  tickTarget: ComposerTarget;
+  tickTarget: (NonNullable<ComposerTarget> & { isMirror: boolean }) | null;
   isMirrored: boolean;
   boardseshActive: boolean;
   sessionId: string | null;
@@ -239,7 +239,7 @@ export function PlayCoreSheetHosts({
           climbName={tickClimb.name}
           boardName={tickTarget?.boardConfig.boardName ?? boardName}
           angle={tickTarget?.boardConfig.angle ?? angle}
-          isMirror={isMirrored}
+          isMirror={tickTarget?.isMirror ?? isMirrored}
           isBenchmark={tickClimb.benchmark_difficulty != null}
           baseAscensionistCount={tickClimb.ascensionist_count ?? 0}
           layoutId={tickTarget?.boardConfig.layoutId ?? layoutId}

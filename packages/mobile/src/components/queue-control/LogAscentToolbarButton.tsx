@@ -10,6 +10,7 @@ import type { AccessoryPlacement } from '../../lib/analytics-board-connect';
 
 type LogAscentToolbarButtonProps = {
   climb: Climb;
+  queueItemUuid?: string;
   size?: number;
   iconSize?: number;
   /** The accessory platter's placement, when this tick sits on the platter (analytics). */
@@ -23,6 +24,7 @@ type LogAscentToolbarButtonProps = {
  */
 export function LogAscentToolbarButton({
   climb,
+  queueItemUuid,
   size = glassSize.standard,
   iconSize = 26,
   placement,
@@ -30,6 +32,7 @@ export function LogAscentToolbarButton({
   const { accessibilityLabel, disabled, handleLogAscentPress, iconColor, popStyle } = useLogAscentAction(
     climb,
     placement,
+    queueItemUuid,
   );
 
   return (

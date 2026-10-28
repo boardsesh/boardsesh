@@ -24,12 +24,6 @@ const navigation = vi.hoisted(() => ({
   playerOpen: false,
 }));
 const effects = vi.hoisted(() => ({ track: vi.fn(), hapticSelection: vi.fn(), showToast: vi.fn() }));
-const bluetooth = vi.hoisted(() => ({
-  isConnected: true,
-  getMirrorIntent: vi.fn((_climbUuid: string | undefined): boolean | undefined => undefined),
-  setMirrorIntent: vi.fn(),
-  retainMirrorIntentFor: vi.fn(),
-}));
 const queue = vi.hoisted(() => ({
   sessionId: null as string | null,
   currentClimbQueueItem: null as { uuid: string; climb: { uuid: string; mirrored?: boolean | null } } | null,
@@ -95,15 +89,16 @@ vi.mock('../../../providers/theme-provider', () => ({
 }));
 vi.mock('../../../theme/tokens', () => ({ opacity: { disabled: 0.4 } }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: effects.showToast }) }));
-vi.mock('../../../providers/bluetooth-provider', () => ({
-  useOptionalBluetoothContext: () => bluetooth,
-}));
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueSessionId: () => ({ sessionId: queue.sessionId }),
   useActiveClimbUuid: () => queue.currentClimbQueueItem?.climb.uuid ?? null,
   useQueueActions: () => ({
     mirrorCurrentClimb: queue.mirrorCurrentClimb,
-    getQueueSnapshot: () => ({ queue: [], currentClimbQueueItem: queue.currentClimbQueueItem }),
+    getQueueSnapshot: () => ({
+      sessionId: queue.sessionId,
+      queue: [],
+      currentClimbQueueItem: queue.currentClimbQueueItem,
+    }),
   }),
 }));
 vi.mock('../../../providers/drawer-host-provider', () => ({
@@ -132,7 +127,6 @@ vi.mock('../use-mini-player-navigation', () => ({
 }));
 
 import { MiniPlayerLeadingButtons } from '../MiniPlayerButtons';
-import { __resetWallMirrorFlipForTests, getWallMirrorFlip, setWallMirrorFlip } from '../../../lib/wall-mirror-store';
 
 const climb = {
   uuid: 'climb-a',
@@ -166,6 +160,7 @@ function renderButtons(
     createElement(MiniPlayerLeadingButtons, {
       buttonIds,
       climb: shownClimb,
+      queueItemUuid: 'item-a',
       climbBoard,
       angle,
       angleClimbUuid: angleClimbUuid ?? undefined,
@@ -183,10 +178,8 @@ beforeEach(() => {
   navigation.canPrevious = true;
   navigation.canNext = false;
   navigation.playerOpen = false;
-  bluetooth.getMirrorIntent.mockImplementation(() => undefined);
   queue.sessionId = null;
   queue.currentClimbQueueItem = { uuid: 'item-a', climb };
-  __resetWallMirrorFlipForTests();
 });
 
 describe('MiniPlayerLeadingButtons', () => {
@@ -311,87 +304,52 @@ describe('MiniPlayerLeadingButtons', () => {
     const mirrorButton = (container: HTMLElement) =>
       container.querySelector('[data-testid="mini-player-slot-mirror"] button') as HTMLButtonElement | null;
 
-    it('solo, flips the wall: the shared flip the player reads, and the BLE intent', () => {
-      const { container, getByLabelText } = renderButtons(['mirror'], { climbBoard: tension });
-      expect(mirrorButton(container)?.getAttribute('aria-pressed')).toBe('false');
+    it('solo, records the exact current occurrence and reads its saved selection', () => {
+      const { getByLabelText } = renderButtons(['mirror'], { climbBoard: tension });
       fireEvent.click(getByLabelText('playView.actionBar.mirrorAria'));
-      expect(getWallMirrorFlip()).toEqual({ climbUuid: 'climb-a', mirrored: true });
-      expect(bluetooth.setMirrorIntent).toHaveBeenCalledWith('climb-a', true);
-      expect(queue.mirrorCurrentClimb).not.toHaveBeenCalled();
+      expect(queue.mirrorCurrentClimb).toHaveBeenCalledWith(true, 'item-a');
       expect(effects.track).toHaveBeenCalledWith(
         'Mirror Climb',
-        expect.objectContaining({ climbUuid: 'climb-a', isMirrored: true, surface: 'mini_player', shared: false }),
+        expect.objectContaining({ shared: false, isMirrored: true }),
       );
-      // Selected now, and the next tap turns it back.
-      expect(mirrorButton(container)?.getAttribute('aria-pressed')).toBe('true');
-      expect(container.querySelector('[data-icon="mirror"]')?.getAttribute('data-icon-color')).toBe('#6D28D9');
-      fireEvent.click(getByLabelText('playView.actionBar.unmirrorAria'));
-      expect(getWallMirrorFlip()).toEqual({ climbUuid: 'climb-a', mirrored: false });
-      expect(bluetooth.setMirrorIntent).toHaveBeenLastCalledWith('climb-a', false);
+      const saved = { ...climb, mirrored: true };
+      queue.currentClimbQueueItem = { uuid: 'item-a', climb: saved };
+      const rendered = renderButtons(['mirror'], { climbBoard: tension, shownClimb: saved });
+      expect(mirrorButton(rendered.container)?.getAttribute('aria-pressed')).toBe('true');
+      fireEvent.click(rendered.getByLabelText('playView.actionBar.unmirrorAria'));
+      expect(queue.mirrorCurrentClimb).toHaveBeenLastCalledWith(false, 'item-a');
     });
 
-    it("shows a flip the player made, and only on that flip's climb", () => {
-      setWallMirrorFlip(null, 'climb-a', true);
-      expect(
-        mirrorButton(renderButtons(['mirror'], { climbBoard: tension }).container)?.getAttribute('aria-pressed'),
-      ).toBe('true');
-      __resetWallMirrorFlipForTests();
-      setWallMirrorFlip(null, 'climb-b', true);
-      expect(
-        mirrorButton(renderButtons(['mirror'], { climbBoard: tension }).container)?.getAttribute('aria-pressed'),
-      ).toBe('false');
-    });
-
-    it("solo, starts from the climb's own orientation (a mirrored tick relit)", () => {
-      const { container, getByLabelText } = renderButtons(['mirror'], {
-        climbBoard: tension,
-        shownClimb: { ...climb, mirrored: true },
-      });
-      expect(mirrorButton(container)?.getAttribute('aria-pressed')).toBe('true');
-      fireEvent.click(getByLabelText('playView.actionBar.unmirrorAria'));
-      expect(bluetooth.setMirrorIntent).toHaveBeenCalledWith('climb-a', false);
-    });
-
-    it("in a session, flips the crew's climb and leaves the solo flip alone", () => {
-      queue.sessionId = 'session-1';
-      const mirroredHead = { ...climb, mirrored: true };
-      queue.currentClimbQueueItem = { uuid: 'item-a', climb: mirroredHead };
-      const { container, getByLabelText } = renderButtons(['mirror'], {
-        climbBoard: tension,
-        shownClimb: mirroredHead,
-      });
-      // The crew's orientation is the queue item's.
-      expect(mirrorButton(container)?.getAttribute('aria-pressed')).toBe('true');
-      fireEvent.click(getByLabelText('playView.actionBar.unmirrorAria'));
+    it('toggles from the latest head orientation rather than a stale rendered flag', () => {
+      const { getByLabelText } = renderButtons(['mirror'], { climbBoard: tension });
+      queue.currentClimbQueueItem = { uuid: 'item-a', climb: { ...climb, mirrored: true } };
+      fireEvent.click(getByLabelText('playView.actionBar.mirrorAria'));
       expect(queue.mirrorCurrentClimb).toHaveBeenCalledWith(false, 'item-a');
-      expect(bluetooth.setMirrorIntent).not.toHaveBeenCalled();
-      expect(getWallMirrorFlip()).toBeNull();
+    });
+
+    it('uses the same guarded mutation for a crew', () => {
+      queue.sessionId = 'session-1';
+      const mirrored = { ...climb, mirrored: true };
+      queue.currentClimbQueueItem = { uuid: 'item-a', climb: mirrored };
+      const rendered = renderButtons(['mirror'], { climbBoard: tension, shownClimb: mirrored });
+      fireEvent.click(rendered.getByLabelText('playView.actionBar.unmirrorAria'));
+      expect(queue.mirrorCurrentClimb).toHaveBeenCalledWith(false, 'item-a');
       expect(effects.track).toHaveBeenCalledWith('Mirror Climb', expect.objectContaining({ shared: true }));
     });
 
-    it("in a session, does nothing while the bar still shows a climb that left the queue's head", () => {
-      queue.sessionId = 'session-1';
-      queue.currentClimbQueueItem = { uuid: 'item-b', climb: { uuid: 'climb-b' } };
-      const { getByLabelText } = renderButtons(['mirror'], { climbBoard: tension });
-      fireEvent.click(getByLabelText('playView.actionBar.mirrorAria'));
+    it('rejects a retained occurrence when another copy of the same climb is current', () => {
+      const rendered = renderButtons(['mirror'], { climbBoard: tension });
+      queue.currentClimbQueueItem = { uuid: 'item-a-repeat', climb };
+      fireEvent.click(rendered.getByLabelText('playView.actionBar.mirrorAria'));
       expect(queue.mirrorCurrentClimb).not.toHaveBeenCalled();
-      expect(bluetooth.setMirrorIntent).not.toHaveBeenCalled();
+      expect(effects.track).not.toHaveBeenCalled();
     });
 
-    it("solo, writes nothing while the bar still shows a climb that left the queue's head", () => {
-      // A presence blip: the bar keeps climb A while the head is already B.
-      queue.currentClimbQueueItem = { uuid: 'item-b', climb: { uuid: 'climb-b' } };
-      const { getByLabelText } = renderButtons(['mirror'], { climbBoard: tension });
-      fireEvent.click(getByLabelText('playView.actionBar.mirrorAria'));
-      expect(getWallMirrorFlip()).toBeNull();
-      expect(bluetooth.setMirrorIntent).not.toHaveBeenCalled();
-      expect(effects.track).not.toHaveBeenCalled();
-      // With no head at all (a queue rehydrating) too.
+    it('does nothing when the current occurrence disappears', () => {
+      const rendered = renderButtons(['mirror'], { climbBoard: tension });
       queue.currentClimbQueueItem = null;
-      const empty = renderButtons(['mirror'], { climbBoard: tension });
-      fireEvent.click(empty.getAllByLabelText('playView.actionBar.mirrorAria').at(-1) as HTMLElement);
-      expect(getWallMirrorFlip()).toBeNull();
-      expect(bluetooth.setMirrorIntent).not.toHaveBeenCalled();
+      fireEvent.click(rendered.getByLabelText('playView.actionBar.mirrorAria'));
+      expect(queue.mirrorCurrentClimb).not.toHaveBeenCalled();
     });
 
     it("never flips a crew's climb from a screenshot capture that picks its own climb", () => {

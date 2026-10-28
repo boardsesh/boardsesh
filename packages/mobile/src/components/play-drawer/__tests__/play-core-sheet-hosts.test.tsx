@@ -111,7 +111,7 @@ function props(open: boolean): PlayCoreSheetHostsProps {
 }
 
 function ScopedHosts({ open }: { open: boolean }) {
-  const [target] = usePrivacyScopedState({ climb: pinnedClimb, boardConfig: pinnedBoard });
+  const [target] = usePrivacyScopedState({ climb: pinnedClimb, boardConfig: pinnedBoard, isMirror: false });
   const credentialScope = usePrivacyCredentialScope();
   return (
     <PlayCoreSheetHosts
@@ -177,7 +177,7 @@ describe('PlayCoreSheetHosts lifetime and ownership', () => {
         climbBoardMismatch
         onAngleChange={onAngleChange}
         handleCloseSubDrawer={close}
-        tickTarget={{ climb: pinnedClimb, boardConfig: pinnedBoard }}
+        tickTarget={{ climb: pinnedClimb, boardConfig: pinnedBoard, isMirror: true }}
       />,
     );
     expect(recorded.props.get('angle')).toMatchObject({
@@ -223,4 +223,15 @@ describe('PlayCoreSheetHosts lifetime and ownership', () => {
       onClose: close,
     });
   });
+});
+
+it('keeps a tick orientation pinned when the live player changes direction', () => {
+  const initial = props(true);
+  const target = { climb: pinnedClimb, boardConfig: pinnedBoard, isMirror: true };
+  const { rerender } = render(
+    <PlayCoreSheetHosts {...initial} isTickBarActive tickTarget={target} isMirrored={true} />,
+  );
+  expect(recorded.props.get('tick')?.isMirror).toBe(true);
+  rerender(<PlayCoreSheetHosts {...initial} isTickBarActive tickTarget={target} isMirrored={false} />);
+  expect(recorded.props.get('tick')?.isMirror).toBe(true);
 });

@@ -19,10 +19,7 @@ import { AnglePill } from '../play-drawer/AnglePill';
 import { useSegments } from 'expo-router';
 import { isPlayerRoute } from '../../lib/route-segments';
 import { MiniPlayerTrackPager, useMiniPlayerNavigation } from './use-mini-player-navigation';
-import { useActiveClimbUuid, useQueueActions, useQueueSessionId } from '../../providers/queue-provider';
-import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
-import { resolveMirroredOrientation } from '../../lib/ble/mirror-orientation';
-import { setWallMirrorFlip, useWallMirrorFlip, wallMirrorFlipFor } from '../../lib/wall-mirror-store';
+import { useQueueActions } from '../../providers/queue-provider';
 
 type MiniPlayerIconButtonProps = {
   iconName: IconName;
@@ -134,58 +131,40 @@ function MiniPlayerShareButton({ climb, climbBoard, size }: ClimbButtonProps) {
   );
 }
 
-/**
- * ⇄, on the climb on the wall, as the player's Mirror does on the committed
- * climb: in a session it flips the crew's climb (`mirrorCurrentClimb`); solo it
- * flips the wall flip the player reads too (`wall-mirror-store`), which tells
- * the auto-sender to relight.
- */
-function MiniPlayerMirrorButton({ climb, climbBoard, size }: ClimbButtonProps) {
+/** Mirror the exact committed occurrence shown by this retained accessory. */
+function MiniPlayerMirrorButton({
+  climb,
+  climbBoard,
+  size,
+  queueItemUuid,
+}: ClimbButtonProps & { queueItemUuid?: string }) {
   const { t } = useTranslation('session');
   const { brandColors } = useTheme();
-  const bluetooth = useOptionalBluetoothContext();
-  const { sessionId } = useQueueSessionId();
-  // Only the head's uuid, so a queue edit elsewhere never re-renders the button.
-  const headClimbUuid = useActiveClimbUuid();
   const { mirrorCurrentClimb, getQueueSnapshot } = useQueueActions();
-  const wallMirrorFlip = useWallMirrorFlip();
-  const shared = sessionId !== null;
-  // The bar holds on to its climb through a presence blip (`useRetainedAccessoryClimb`),
-  // so it can show a climb that is no longer the queue's head. Only the head is
-  // the wall's climb, solo or crew, so a tap on any other does nothing.
-  const isHead = headClimbUuid === climb.uuid;
-  // The bar's climb is the head's own object, so a crew flip arrives on it.
-  const isMirrored = shared
-    ? climb.mirrored === true
-    : resolveMirroredOrientation({
-        explicitFlip: wallMirrorFlipFor(wallMirrorFlip, climb.uuid),
-        statedIntent: bluetooth?.getMirrorIntent(climb.uuid),
-        climbMirrored: climb.mirrored,
-      });
+  const isMirrored = climb.mirrored === true;
   const handlePress = useCallback(() => {
-    if (!isHead) return;
-    // As in the player: a screenshot capture that selects its own climb may
-    // flip what it photographs, never a crew's shared orientation.
+    const snapshot = getQueueSnapshot();
+    const headItem = snapshot.currentClimbQueueItem;
+    if (!queueItemUuid || headItem?.uuid !== queueItemUuid || headItem.climb.uuid !== climb.uuid) return;
+    const shared = snapshot.sessionId != null;
     if (
       process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' &&
       process.env.EXPO_PUBLIC_SCREENSHOT_CPP_COMMANDS?.includes('screenshotClimbId=') === true &&
       shared
     )
       return;
-    const headItem = getQueueSnapshot().currentClimbQueueItem;
-    if (headItem?.climb.uuid !== climb.uuid) return;
+    const mirrored = !(headItem.climb.mirrored === true);
     hapticSelection();
     track(SHARED_EVENTS.MirrorClimb, {
       climbUuid: climb.uuid,
       boardName: climbBoard.boardName,
       layoutId: climbBoard.layoutId,
-      isMirrored: !isMirrored, // the new orientation
+      isMirrored: mirrored,
       surface: 'mini_player',
       shared,
     });
-    if (shared) void mirrorCurrentClimb(!isMirrored, headItem.uuid);
-    else setWallMirrorFlip(bluetooth, climb.uuid, !isMirrored);
-  }, [isHead, shared, getQueueSnapshot, climb.uuid, climbBoard, isMirrored, mirrorCurrentClimb, bluetooth]);
+    void mirrorCurrentClimb(mirrored, headItem.uuid);
+  }, [getQueueSnapshot, queueItemUuid, climb.uuid, climbBoard, mirrorCurrentClimb]);
   return (
     <MiniPlayerIconButton
       iconName="mirror"
@@ -277,6 +256,7 @@ function MiniPlayerTransportButtons({
 const TRANSPORT: ReadonlySet<MiniPlayerButtonId> = new Set(['previous', 'next']);
 
 type MiniPlayerLeadingButtonsProps = {
+  queueItemUuid?: string;
   /** Left to right, as `resolveMiniPlayerControls` placed them. */
   buttonIds: readonly MiniPlayerButtonId[];
   climb: Climb;
@@ -304,6 +284,7 @@ type MiniPlayerLeadingButtonsProps = {
 export const MiniPlayerLeadingButtons = memo(function MiniPlayerLeadingButtons({
   buttonIds,
   climb,
+  queueItemUuid,
   climbBoard,
   angle,
   angleClimbUuid,
@@ -350,7 +331,14 @@ export const MiniPlayerLeadingButtons = memo(function MiniPlayerLeadingButtons({
       case 'angle':
         return angle !== null ? <MiniPlayerAngleButton angle={angle} climbUuid={angleClimbUuid} /> : null;
       case 'mirror':
-        return climbBoard ? <MiniPlayerMirrorButton climb={climb} climbBoard={climbBoard} size={slotWidth} /> : null;
+        return climbBoard ? (
+          <MiniPlayerMirrorButton
+            queueItemUuid={queueItemUuid}
+            climb={climb}
+            climbBoard={climbBoard}
+            size={slotWidth}
+          />
+        ) : null;
       // ⏮ ⏭ render below.
       default:
         return null;

@@ -402,6 +402,7 @@ vi.mock('../../../providers/theme-provider', () => ({
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueData: () => queueState,
   useQueueActions: () => ({
+    getQueueSnapshot: () => queueState,
     setCurrentClimb,
     nextClimb: vi.fn(),
     previousClimb: vi.fn(),
@@ -1263,6 +1264,18 @@ describe('PlayDrawer ⋯ menu', () => {
     expect(menuProps?.boardMismatch).toBe(false);
   });
 
+  it('keeps the pinned tick orientation when a matching current UUID belongs to another board', () => {
+    queueState.currentClimbQueueItem = queueItem(
+      { ...TWELVE_CLIMB, uuid: HOMEWALL_CLIMB.uuid, mirrored: true },
+      'current-slot',
+    );
+    renderDrawer();
+    const openTick = recorded.actionsMenu.at(-1)?.onTick as (climb: Climb, boardConfig: unknown) => void;
+    const targetBoard = { boardName: 'kilter', layoutId: 8, sizeId: 17, setIds: '26,27', angle: 30 };
+    act(() => openTick({ ...HOMEWALL_CLIMB, mirrored: false }, targetBoard));
+    expect(recorded.logAscent.at(-1)).toMatchObject({ climbUuid: HOMEWALL_CLIMB.uuid, layoutId: 8, isMirror: false });
+  });
+
   // Each sheet row opens the player's OWN sheet, pinned to the climb ⋯ was opened
   // for. A root opener presents under `/play` and flashes closed (#3505, #3294).
   it("opens each of ⋯'s sheets in the player, pinned to the climb and board it was opened for", () => {
@@ -1415,9 +1428,6 @@ describe('PlayDrawer stale-climb hold', () => {
       staleCurrentHold,
       reassertWall: vi.fn(),
       armUndoWallChangeToast: vi.fn(),
-      setMirrorIntent: vi.fn(),
-      getMirrorIntent: vi.fn(() => undefined),
-      retainMirrorIntentFor: vi.fn(),
       sendFramesToBoard: vi.fn(async () => true),
       wallHeldByOtherUser: false,
       autoDisconnectWarning: false,

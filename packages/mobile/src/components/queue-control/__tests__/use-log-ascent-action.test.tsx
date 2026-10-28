@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import type { Climb } from '@boardsesh/queue';
+import type { Climb, ClimbQueueItem } from '@boardsesh/queue';
 
 const spies = vi.hoisted(() => ({ track: vi.fn(), openLogAscent: vi.fn() }));
 
@@ -19,8 +19,15 @@ vi.mock('@boardsesh/board-react', () => ({
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: { label: '#111111' }, brandColors: { success: '#34C759' } }),
 }));
-const session = vi.hoisted(() => ({ sessionId: null as string | null }));
-vi.mock('../../../providers/queue-provider', () => ({ useQueueSessionId: () => ({ sessionId: session.sessionId }) }));
+const session = vi.hoisted(() => ({
+  sessionId: null as string | null,
+  currentClimbQueueItem: null as ClimbQueueItem | null,
+  queue: [] as ClimbQueueItem[],
+}));
+vi.mock('../../../providers/queue-provider', () => ({
+  useQueueSessionId: () => ({ sessionId: session.sessionId }),
+  useQueueActions: () => ({ getQueueSnapshot: () => session }),
+}));
 vi.mock('../../../providers/drawer-host-provider', () => ({
   useDrawerHost: () => ({
     openLogAscent: spies.openLogAscent,
@@ -33,7 +40,6 @@ vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../lib/analytics', () => ({ track: spies.track }));
 
 import { useLogAscentAction } from '../use-log-ascent-action';
-import { __resetWallMirrorFlipForTests, setWallMirrorFlip } from '../../../lib/wall-mirror-store';
 
 const climb = { uuid: 'climb-1', name: 'Test', frames: '', angle: 40 } as Climb;
 
@@ -66,7 +72,8 @@ describe('useLogAscentAction orientation', () => {
   beforeEach(() => {
     spies.openLogAscent.mockClear();
     session.sessionId = null;
-    __resetWallMirrorFlipForTests();
+    session.currentClimbQueueItem = null;
+    session.queue = [];
   });
 
   const openedMirror = () => spies.openLogAscent.mock.calls.at(-1)?.[0].isMirror;
@@ -77,24 +84,38 @@ describe('useLogAscentAction orientation', () => {
     expect(openedMirror()).toBe(true);
   });
 
-  it('logs the solo wall flip, so a climb mirrored from the bar saves mirrored', () => {
-    setWallMirrorFlip(null, 'climb-1', true);
+  it('reads a solo flip from the live queue at tap time', () => {
+    session.currentClimbQueueItem = { uuid: 'slot-1', climb: { ...climb, mirrored: true } };
     const { result } = renderHook(() => useLogAscentAction(climb));
     act(() => result.current.handleLogAscentPress());
     expect(openedMirror()).toBe(true);
   });
 
-  it('ignores a flip parked on another climb', () => {
-    setWallMirrorFlip(null, 'climb-2', true);
+  it('uses the supplied orientation when a different climb is current', () => {
+    session.currentClimbQueueItem = { uuid: 'slot-2', climb: { ...climb, uuid: 'climb-2', mirrored: true } };
     const { result } = renderHook(() => useLogAscentAction(climb));
     act(() => result.current.handleLogAscentPress());
     expect(openedMirror()).toBe(false);
   });
 
-  it("keeps a crew's orientation, which lives on the queue item", () => {
+  it("keeps a crew's current occurrence orientation", () => {
     session.sessionId = 'session-1';
-    setWallMirrorFlip(null, 'climb-1', true);
+    session.currentClimbQueueItem = { uuid: 'slot-1', climb: { ...climb, mirrored: false } };
     const { result } = renderHook(() => useLogAscentAction(climb));
+    act(() => result.current.handleLogAscentPress());
+    expect(openedMirror()).toBe(false);
+  });
+  it('keeps a retained history duplicate independent from the current occurrence', () => {
+    session.currentClimbQueueItem = { uuid: 'slot-new', climb: { ...climb, mirrored: true } };
+    session.queue = [{ uuid: 'slot-old', climb: { ...climb, mirrored: false } }];
+    const { result } = renderHook(() => useLogAscentAction(climb, undefined, 'slot-old'));
+    act(() => result.current.handleLogAscentPress());
+    expect(openedMirror()).toBe(false);
+  });
+
+  it('reads an explicit unmirror after rendering without reverting to the supplied true', () => {
+    const { result } = renderHook(() => useLogAscentAction({ ...climb, mirrored: true }));
+    session.currentClimbQueueItem = { uuid: 'slot-1', climb: { ...climb, mirrored: false } };
     act(() => result.current.handleLogAscentPress());
     expect(openedMirror()).toBe(false);
   });

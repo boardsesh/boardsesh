@@ -61,6 +61,7 @@ import { findWorkoutRunStage, workoutOutcomeAvailable } from '../play-drawer/wor
 
 type NativeAccessoryClimbRowProps = {
   climb: Climb;
+  queueItemUuid?: string;
   placement: AccessoryPlacement;
   testID?: string;
 };
@@ -161,7 +162,7 @@ function useTransportAvailable(): boolean {
  * are tuned for the platter, so they intentionally differ from the floating
  * capsule's colorized grade.
  */
-export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAccessoryClimbRowProps) {
+export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testID }: NativeAccessoryClimbRowProps) {
   const { boardConfig, playDrawerPaneProps } = useDrawerHost();
   const { systemColors, brandColors } = useTheme();
   const { resolveGrade } = useDisplayGrade();
@@ -343,6 +344,7 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
           placements. */}
       {controls.leading.length > 0 ? (
         <MiniPlayerLeadingButtons
+          queueItemUuid={queueItemUuid}
           buttonIds={controls.leading}
           climb={climb}
           climbBoard={climbBoard}
@@ -375,7 +377,13 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
               placement={placement}
             />
           ) : (
-            <LogAscentToolbarButton climb={climb} size={glassSize.inline} iconSize={24} placement={placement} />
+            <LogAscentToolbarButton
+              queueItemUuid={queueItemUuid}
+              climb={climb}
+              size={glassSize.inline}
+              iconSize={24}
+              placement={placement}
+            />
           )}
         </View>
       ))}

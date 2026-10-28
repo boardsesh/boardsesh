@@ -81,6 +81,11 @@ const queueActions = vi.hoisted(() => ({
   previousClimb: vi.fn(),
   addToQueue: vi.fn(async () => 'added'),
   mirrorCurrentClimb: vi.fn(async () => true),
+  getQueueSnapshot: () => ({
+    sessionId: session.sessionId,
+    queue: session.queue,
+    currentClimbQueueItem: session.currentItem,
+  }),
 }));
 // Mutable session fixtures: whether another climber is in the session, and the
 // navigation state the drawer swipes through. Read at call time so a case can
@@ -127,9 +132,6 @@ const ble = vi.hoisted(() => ({
   current: null as {
     isConnected: boolean;
     sendFramesToBoard: ReturnType<typeof vi.fn>;
-    getMirrorIntent: ReturnType<typeof vi.fn>;
-    setMirrorIntent: ReturnType<typeof vi.fn>;
-    retainMirrorIntentFor: ReturnType<typeof vi.fn>;
     wallHeldByOtherUser?: boolean;
     reassertWall?: ReturnType<typeof vi.fn>;
     armUndoWallChangeToast?: ReturnType<typeof vi.fn>;
@@ -466,8 +468,6 @@ const { PlayDrawer, SHARED_BROWSE_LATCH_RELEASE_MS } = await import('../PlayDraw
 const { setSetting, resetAllSettings } = await import('../../../settings');
 const { _resetJoinedBrowseNoticeForTests } = await import('../joined-browse-notice');
 const { markWallCleared, resetWallCleared } = await import('../../ble/wall-cleared-store');
-const { __resetWallMirrorFlipForTests, getWallMirrorFlip, setWallMirrorFlip } =
-  await import('../../../lib/wall-mirror-store');
 
 const BOARD_CONFIG = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20', angle: 40 };
 const CLIMB = {
@@ -684,9 +684,6 @@ describe('PlayDrawer — Put on the wall with no board connected (#6939)', () =>
     ble.current = {
       isConnected: false,
       sendFramesToBoard: vi.fn(async () => true),
-      getMirrorIntent: vi.fn(),
-      setMirrorIntent: vi.fn(),
-      retainMirrorIntentFor: vi.fn(),
       wallHeldByOtherUser: true,
     };
     session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
@@ -699,9 +696,6 @@ describe('PlayDrawer — Put on the wall with no board connected (#6939)', () =>
     ble.current = {
       isConnected: false,
       sendFramesToBoard: vi.fn(async () => true),
-      getMirrorIntent: vi.fn(),
-      setMirrorIntent: vi.fn(),
-      retainMirrorIntentFor: vi.fn(),
       reassertWall: vi.fn(),
       armUndoWallChangeToast: vi.fn(),
       staleCurrentHold: null,
@@ -1736,9 +1730,6 @@ describe('PlayDrawer — the mirror toggle and the wall', () => {
     ble.current = {
       isConnected: true,
       sendFramesToBoard: vi.fn(async () => true),
-      getMirrorIntent: vi.fn(),
-      setMirrorIntent: vi.fn(),
-      retainMirrorIntentFor: vi.fn(),
     };
     return ble.current;
   };
@@ -1820,80 +1811,40 @@ describe('PlayDrawer — the mirror toggle and the wall', () => {
     expect(lastActionBarProps().isMirrored).toBe(false);
   });
 
-  it('still states the live mirror intent when nothing is pinned', () => {
-    const bluetooth = connectBle();
+  it('records a committed solo Mirror against its exact queue occurrence', () => {
+    connectBle();
     session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
     render(drawerElement('member', committedTargetFor(CLIMB)));
-
-    act(() => {
-      (lastActionBarProps().onMirror as () => void)();
-    });
-
-    // The provider owns the write and reads the explicit solo mirror intent.
-    expect(bluetooth.setMirrorIntent).toHaveBeenCalledWith(CLIMB.uuid, true);
+    act(() => (lastActionBarProps().onMirror as () => void)());
+    expect(queueActions.mirrorCurrentClimb).toHaveBeenCalledWith(true, 'queue-item-current');
   });
 
-  // The MiniPlayer's ⇄ flips the same solo wall flip (#6940).
-  describe('the solo wall flip it shares with the MiniPlayer', () => {
-    beforeEach(__resetWallMirrorFlipForTests);
+  it('restores a saved solo orientation when reopening the same occurrence', () => {
+    connectBle();
+    session.currentItem = { uuid: 'queue-item-current', climb: { ...CLIMB, mirrored: true } };
+    render(drawerElement('member', committedTargetFor(CLIMB)));
+    expect(lastActionBarProps().isMirrored).toBe(true);
+  });
 
-    it('writes a committed solo tap to the shared flip', () => {
-      connectBle();
-      session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
-      render(drawerElement('member', committedTargetFor(CLIMB)));
-      act(() => {
-        (lastActionBarProps().onMirror as () => void)();
-      });
-      expect(getWallMirrorFlip()).toEqual({ climbUuid: CLIMB.uuid, mirrored: true });
-      expect(lastActionBarProps().isMirrored).toBe(true);
-    });
+  it('leaves a preview unchanged when the committed occurrence flips', () => {
+    connectBle();
+    session.currentItem = { uuid: 'queue-item-current', climb: SIMILAR_CLIMB };
+    const { rerender } = render(drawerElement('member', openTargetFor(CLIMB)));
+    expect(lastActionBarProps().isMirrored).toBe(false);
+    session.currentItem = { uuid: 'queue-item-current', climb: { ...SIMILAR_CLIMB, mirrored: true } };
+    rerender(drawerElement('member', openTargetFor(CLIMB)));
+    expect(lastActionBarProps().isMirrored).toBe(false);
+  });
 
-    it("shows a flip the MiniPlayer made on the wall's climb", () => {
-      connectBle();
-      session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
-      render(drawerElement('member', committedTargetFor(CLIMB)));
-      expect(lastActionBarProps().isMirrored).toBe(false);
-      act(() => setWallMirrorFlip(null, CLIMB.uuid, true));
-      expect(lastActionBarProps().isMirrored).toBe(true);
-    });
-
-    it("keeps a preview's flip out of the shared flip", () => {
-      connectBle();
-      session.currentItem = { uuid: 'queue-item-current', climb: SIMILAR_CLIMB };
-      render(drawerElement('member', openTargetFor(CLIMB)));
-      act(() => {
-        (lastActionBarProps().onMirror as () => void)();
-      });
-      expect(lastActionBarProps().isMirrored).toBe(true);
-      expect(getWallMirrorFlip()).toBeNull();
-    });
-
-    it('drops a flip the bar made on another climb from the store and the provider as it opens', () => {
-      // The bar flipped A with the player closed, then the queue moved on to B.
-      setWallMirrorFlip(null, SIMILAR_CLIMB.uuid, true);
-      const bluetooth = connectBle();
-      session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
-      render(drawerElement('member', committedTargetFor(CLIMB)));
-      expect(getWallMirrorFlip()).toBeNull();
-      expect(bluetooth.retainMirrorIntentFor).toHaveBeenCalledWith(CLIMB.uuid);
-      expect(lastActionBarProps().isMirrored).toBe(false);
-    });
-
-    it("leaves a preview alone while the bar flips the wall's climb", () => {
-      const bluetooth = connectBle();
-      session.currentItem = { uuid: 'queue-item-current', climb: SIMILAR_CLIMB };
-      render(drawerElement('member', openTargetFor(CLIMB)));
-      expect(lastActionBarProps().isMirrored).toBe(false);
-      // What the bar's ⇄ calls, with the drawer's own provider.
-      act(() =>
-        setWallMirrorFlip(bluetooth as unknown as Parameters<typeof setWallMirrorFlip>[0], SIMILAR_CLIMB.uuid, true),
-      );
-      // The preview on screen is unchanged, and the wall's flip stands.
-      expect(lastActionBarProps().isMirrored).toBe(false);
-      expect(getWallMirrorFlip()).toEqual({ climbUuid: SIMILAR_CLIMB.uuid, mirrored: true });
-      expect(bluetooth.setMirrorIntent).toHaveBeenCalledWith(SIMILAR_CLIMB.uuid, true);
-      expect(bluetooth.retainMirrorIntentFor).not.toHaveBeenCalled();
-    });
+  it('rejects a retained mirror callback after the exact slot changes', () => {
+    connectBle();
+    session.currentItem = { uuid: 'old-slot', climb: CLIMB };
+    render(drawerElement('member', committedTargetFor(CLIMB)));
+    const onMirror = lastActionBarProps().onMirror as () => void;
+    queueActions.mirrorCurrentClimb.mockClear();
+    session.currentItem = { uuid: 'new-slot', climb: CLIMB };
+    act(() => onMirror());
+    expect(queueActions.mirrorCurrentClimb).not.toHaveBeenCalled();
   });
 });
 

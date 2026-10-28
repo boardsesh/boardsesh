@@ -106,7 +106,9 @@ type StoredSnapshot = {
 const queueSnapshotStore = vi.hoisted(() => ({
   getStoredQueueSnapshot: vi.fn(async (): Promise<StoredSnapshot | null> => null),
   getQueueSnapshotGeneration: () => 0,
-  setStoredQueueSnapshot: vi.fn(async () => {}),
+  setStoredQueueSnapshot: vi.fn(
+    async (_snapshot: Omit<StoredSnapshot, 'savedAt'>, _owner?: unknown, _generation?: number) => {},
+  ),
   clearStoredQueueSnapshot: vi.fn(async () => {}),
 }));
 
@@ -199,6 +201,8 @@ type Snapshot = {
   startSession: ReturnType<typeof useQueue>['startSession'];
   joinSession: ReturnType<typeof useQueue>['joinSession'];
   lastCurrentChange: ReturnType<typeof useQueue>['lastCurrentChange'];
+  mirrorCurrentClimb: ReturnType<typeof useQueue>['mirrorCurrentClimb'];
+  getQueueSnapshot: ReturnType<typeof useQueue>['getQueueSnapshot'];
 };
 
 function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
@@ -224,6 +228,8 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
       startSession: queue.startSession,
       joinSession: queue.joinSession,
       lastCurrentChange: queue.lastCurrentChange,
+      mirrorCurrentClimb: queue.mirrorCurrentClimb,
+      getQueueSnapshot: queue.getQueueSnapshot,
     });
   }, [
     queue.state,
@@ -243,6 +249,8 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
     queue.startSession,
     queue.joinSession,
     queue.lastCurrentChange,
+    queue.mirrorCurrentClimb,
+    queue.getQueueSnapshot,
     onSnapshot,
   ]);
   return null;
@@ -362,6 +370,80 @@ describe('QueueProvider local solo queue', () => {
     });
     http.request.mockReset();
     http.request.mockResolvedValue({ createSession: { id: 'session-new' } });
+  });
+
+  it('saves solo flips per occurrence before navigation, including explicit false', async () => {
+    const original = makeQueueItem('first-occurrence', 'same-climb');
+    const repeat = makeQueueItem('second-occurrence', 'same-climb');
+    queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(storedSnapshot([original, repeat], original));
+    const snapshots: Snapshot[] = [];
+    const rendered = renderProvider((snapshot) => snapshots.push(snapshot));
+    await waitFor(() => expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe(original.uuid));
+    const controls = snapshots.at(-1)!;
+    act(() => {
+      void controls.mirrorCurrentClimb(true, original.uuid);
+      expect(controls.getQueueSnapshot().currentClimbQueueItem?.climb.mirrored).toBe(true);
+      controls.setCurrentClimb(repeat);
+    });
+    await waitFor(() => expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe(repeat.uuid));
+    expect(snapshots.at(-1)?.state.queue.find((item) => item.uuid === original.uuid)?.climb.mirrored).toBe(true);
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.climb.mirrored).not.toBe(true);
+    let rejected: boolean | undefined;
+    await act(async () => {
+      rejected = await controls.mirrorCurrentClimb(false, original.uuid);
+    });
+    expect(rejected).toBe(false);
+    act(() =>
+      snapshots.at(-1)?.setCurrentClimb(snapshots.at(-1)!.state.queue.find((item) => item.uuid === original.uuid)!),
+    );
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.climb.mirrored).toBe(true);
+    await act(async () => {
+      await controls.mirrorCurrentClimb(false, original.uuid);
+    });
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.climb.mirrored).toBe(false);
+    await waitFor(() =>
+      expect(queueSnapshotStore.setStoredQueueSnapshot).toHaveBeenCalledWith(
+        expect.objectContaining({
+          queue: expect.arrayContaining([
+            expect.objectContaining({ uuid: original.uuid, climb: expect.objectContaining({ mirrored: false }) }),
+          ]),
+        }),
+        null,
+        expect.any(Number),
+      ),
+    );
+    expect(queueMutations.mirrorCurrentClimb).not.toHaveBeenCalled();
+    const saved = queueSnapshotStore.setStoredQueueSnapshot.mock.calls.at(-1)?.[0];
+    if (!saved) throw new Error('Solo queue was not persisted');
+    rendered.unmount();
+    queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue({ ...saved, savedAt: new Date().toISOString() });
+    const restored: Snapshot[] = [];
+    renderProvider((snapshot) => restored.push(snapshot));
+    await waitFor(() => expect(restored.at(-1)?.state.currentClimbQueueItem?.uuid).toBe(original.uuid));
+    expect(restored.at(-1)?.state.currentClimbQueueItem?.climb.mirrored).toBe(false);
+    expect(restored.at(-1)?.state.queue.find((item) => item.uuid === repeat.uuid)?.climb.mirrored).not.toBe(true);
+  });
+
+  it('keeps a current-only solo flip when now-slot navigation files it into history', async () => {
+    const current = makeQueueItem('current-only', 'current-climb');
+    const next = makeQueueItem('next-slot', 'next-climb');
+    queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(storedSnapshot([], current));
+    const snapshots: Snapshot[] = [];
+    renderProvider((snapshot) => snapshots.push(snapshot));
+    await waitFor(() => expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe(current.uuid));
+    act(() => snapshots.at(-1)?.dispatch({ type: 'SET_NOW_SLOT_MODE', payload: true }));
+    expect(snapshots.at(-1)?.state.nowSlotMode).toBe(true);
+    const controls = snapshots.at(-1)!;
+    act(() => {
+      void controls.mirrorCurrentClimb(true, current.uuid);
+      controls.dispatch({
+        type: 'DELTA_UPDATE_CURRENT_CLIMB',
+        payload: { item: next, shouldAddToQueue: true, placement: 'NOW' },
+      });
+    });
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe(next.uuid);
+    const historical = snapshots.at(-1)?.state.queue.find((item) => item.uuid === current.uuid);
+    expect(historical?.climb.mirrored).toBe(true);
   });
 
   it('hydrates the stored solo queue snapshot when no session restores', async () => {

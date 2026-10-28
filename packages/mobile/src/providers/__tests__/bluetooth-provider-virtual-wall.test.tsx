@@ -41,6 +41,7 @@ const haptics = vi.hoisted(() => ({ hapticLight: vi.fn(), hapticSuccess: vi.fn()
 
 const queue = vi.hoisted(() => ({
   currentClimbQueueItem: null as ClimbQueueItem | null,
+  items: [] as ClimbQueueItem[],
   sessionId: 'session-1' as string | null,
   participantId: 'participant-self' as string | null,
   lastConnectedBoardSerial: null as string | null,
@@ -169,8 +170,16 @@ vi.mock('../../components/ble/DevicePickerSheet', () => ({
 }));
 
 vi.mock('../queue-provider', () => ({
-  useQueue: () => ({ state: { currentClimbQueueItem: queue.currentClimbQueueItem, queue: [] } }),
-  useQueueActions: () => ({ setCurrentClimb: vi.fn() }),
+  useQueue: () => ({ state: { currentClimbQueueItem: queue.currentClimbQueueItem, queue: queue.items } }),
+  useQueueActions: () => ({
+    setCurrentClimb: vi.fn(),
+    getQueueSnapshot: () => ({
+      sessionId: queue.sessionId,
+      currentClimbQueueItem: queue.currentClimbQueueItem,
+      queue: queue.items,
+      playlistSuggestionSource: null,
+    }),
+  }),
   useQueueSessionControls: () => ({
     sessionId: queue.sessionId,
     participantId: queue.participantId,
@@ -242,6 +251,7 @@ function renderProvider(options?: Parameters<typeof providerElement>[0]) {
 }
 
 beforeEach(() => {
+  queue.items = [];
   presence.lastConnectionSeq = 0;
   presence.currentClimb = null;
   bluetooth.state.pickerState = null;
