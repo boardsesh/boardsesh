@@ -52,9 +52,13 @@ vi.mock('../../../providers/theme-provider', () => ({
 
 import { FALLBACK_PREVIEW_BOARD } from '../../player-buttons/PlayerButtonsPreview';
 import { MiniPlayerButtonsPreview } from '../MiniPlayerButtonsPreview';
+import { publishMeasuredMiniPlayerBar, resetMeasuredMiniPlayerBar } from '../../../lib/mini-player-measured-bar-store';
 import { DEFAULT_MINI_PLAYER_BUTTONS } from '../../../lib/mini-player-buttons';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  resetMeasuredMiniPlayerBar();
+});
 
 const TENSION = { ...FALLBACK_PREVIEW_BOARD, supportsMirroring: true };
 const iconsIn = (element: Element) =>
@@ -153,5 +157,18 @@ describe('MiniPlayerButtonsPreview', () => {
     cleanup();
     const signedOut = preview({ wide: true, buttons, board: TENSION, signedIn: false }).open;
     expect(signedOut).toEqual(['mirror', 'skip.previous', 'skip.next', 'lightbulb', 'tick.outline']);
+  });
+
+  it("draws the width the bar measured: an iPhone Duo's closed display (290pt) holds Board light alone", () => {
+    publishMeasuredMiniPlayerBar({ rowWidth: 290, widthBesideName: 68 });
+    const { open, collapsed } = preview();
+    expect(open).toEqual(['lightbulb']);
+    expect(collapsed).toEqual(['lightbulb']);
+  });
+
+  it('falls back to the representative widths when the bar has not drawn', () => {
+    expect(preview().open).toEqual(['skip.next', 'lightbulb', 'tick.outline']);
+    cleanup();
+    expect(preview({ wide: true, board: TENSION }).open).toContain('mirror');
   });
 });

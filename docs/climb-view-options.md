@@ -233,9 +233,11 @@ climb).
   - **Angle**: boards with an adjustable angle. It opens the player's angle sheet and is hidden while the player is
     open.
 - The preview draws two bars from `resolveMiniPlayerControls`, `miniPlayerSlotCount` and the bar's own
-  `isMiniPlayerButtonAvailable`, so it can't disagree with the real one: the open bar for this device (an iPad or an
-  open Duo drawn at 995 pt wide, otherwise an iPhone at 343 pt) and the collapsed one, for the board on screen and
-  the signed-in state. Static glyphs; no Bluetooth component is mounted.
+  `isMiniPlayerButtonAvailable`, so it can't disagree with the real one: the open bar at the width the real bar last
+  measured on this device (`mini-player-measured-bar-store.ts`, published by `NativeAccessoryClimbRow`; an iPhone
+  Duo's closed display, ~290 pt, previews one slot) and the collapsed one, for the board on screen and the
+  signed-in state. Before the bar has ever drawn it falls back to 995 pt for an iPad or open Duo and 343 pt for an
+  iPhone. Static glyphs; no Bluetooth component is mounted.
 - Board light and Log are fixed, like the player's: a note on the tab says so. They have no switch or arrows. The
   tab's footer differs by device: on iPhone it says the bar has room for one button beside them; on a wide screen
   it says the bar fits as many as it has room for.

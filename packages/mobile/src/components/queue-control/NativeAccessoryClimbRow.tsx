@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View, type ColorValue, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { Climb } from '@boardsesh/queue';
@@ -48,6 +48,7 @@ import { useAuth } from '../../providers/auth-provider';
 import { useSegments } from 'expo-router';
 import { isPlayerRoute } from '../../lib/route-segments';
 import { boardSupportsMirroring } from '@boardsesh/play-view';
+import { publishMeasuredMiniPlayerBar } from '../../lib/mini-player-measured-bar-store';
 import { MiniPlayerLeadingButtons } from './MiniPlayerButtons';
 import { useMiniPlayerButtons } from '../../lib/mini-player-buttons-preference';
 import type { MiniPlayerButtonId } from '../../lib/mini-player-buttons';
@@ -223,6 +224,10 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
   // Between the climber's buttons and ⏮ ⏭, and before 💡 ✓, on a bar with room to spare.
   const groupGap = wide ? ACCESSORY_GROUP_GAP : 0;
   const slotCount = miniPlayerSlotCount({ placement, rowWidth, widthBesideName, wide, groupGap });
+  // Tell the View options preview what this device's open bar measures.
+  useEffect(() => {
+    if (placement === 'regular' && rowWidth !== null) publishMeasuredMiniPlayerBar({ rowWidth, widthBesideName });
+  }, [placement, rowWidth, widthBesideName]);
   // The platter shows a plain (non-colorized) grade; only the label swaps to the
   // Boardsesh grade when the toggle is on and a trusted one exists.
   const currentFormattedGrade = resolveGrade(climb, boardConfig?.boardName).label;

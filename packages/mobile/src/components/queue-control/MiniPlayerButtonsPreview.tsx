@@ -6,6 +6,7 @@ import type { IconName } from '../icon-map';
 import { Text } from '../Text';
 import type { PlayerButtonsPreviewBoard } from '../player-buttons/PlayerButtonsPreview';
 import type { MiniPlayerButtonId, MiniPlayerButtonsLayout } from '../../lib/mini-player-buttons';
+import { useMeasuredMiniPlayerBar } from '../../lib/mini-player-measured-bar-store';
 import { useTheme } from '../../providers/theme-provider';
 import { borderRadius, spacing } from '../../theme/tokens';
 import {
@@ -25,8 +26,10 @@ import {
 export const MINI_PLAYER_PREVIEW_HEIGHT = 124;
 
 /**
- * The widths the preview stands for: a 375pt iPhone's 343pt bar, and an iPad in
- * portrait. The slot counts come from the real `miniPlayerSlotCount`.
+ * The widths the preview stands for before the bar has ever drawn: a 375pt
+ * iPhone's 343pt bar, and an iPad in portrait. Once the bar has drawn, the preview
+ * uses the width it measured on this device. The slot counts come from the real
+ * `miniPlayerSlotCount`.
  */
 export const PREVIEW_PHONE_ROW_WIDTH = 343;
 export const PREVIEW_WIDE_ROW_WIDTH = 995;
@@ -73,6 +76,7 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
 }: MiniPlayerButtonsPreviewProps) {
   const { t } = useTranslation('common');
   const { systemColors, brandColors } = useTheme();
+  const measuredBar = useMeasuredMiniPlayerBar();
 
   const resolve = useMemo(() => {
     // The bar's own rule. The preview has no session: transport is available and the climb is not a draft.
@@ -94,18 +98,18 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
         playerPaneShowsTransport: false,
       });
   }, [buttons, board.supportsMirroring, board.angleAvailable, board.showLightbulb, signedIn]);
-  // The real bar's slot rule at a representative width. The group gap is wide-only, as on the bar.
+  // The real bar's slot rule at the width the bar measured on this device, or a representative one before it has drawn. The group gap is wide-only, as on the bar.
   const groupGap = wide ? ACCESSORY_GROUP_GAP : 0;
   const slotCountAt = useCallback(
     (placement: 'regular' | 'inline') =>
       miniPlayerSlotCount({
         placement,
-        rowWidth: wide ? PREVIEW_WIDE_ROW_WIDTH : PREVIEW_PHONE_ROW_WIDTH,
-        widthBesideName: WIDTH_BESIDE_NAME,
+        rowWidth: measuredBar?.rowWidth ?? (wide ? PREVIEW_WIDE_ROW_WIDTH : PREVIEW_PHONE_ROW_WIDTH),
+        widthBesideName: measuredBar?.widthBesideName ?? WIDTH_BESIDE_NAME,
         wide,
         groupGap,
       }),
-    [wide, groupGap],
+    [wide, groupGap, measuredBar],
   );
   const openControls = useMemo(() => resolve(slotCountAt('regular')), [resolve, slotCountAt]);
   const collapsedControls = useMemo(() => resolve(slotCountAt('inline')), [resolve, slotCountAt]);
