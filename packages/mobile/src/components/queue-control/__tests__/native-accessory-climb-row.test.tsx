@@ -427,6 +427,7 @@ vi.mock('../LogAscentToolbarButton', () => ({
 }));
 
 import { NativeAccessoryClimbRow } from '../NativeAccessoryClimbRow';
+import { getMeasuredMiniPlayerBar, resetMeasuredMiniPlayerBar } from '../../../lib/mini-player-measured-bar-store';
 
 function makeClimb(overrides: Partial<Climb> = {}): Climb {
   return {
@@ -495,6 +496,7 @@ describe('NativeAccessoryClimbRow', () => {
     queue.state.queue = [currentItem];
     drawer.boardConfig = makeBoardConfig();
     layout.width = 400;
+    resetMeasuredMiniPlayerBar();
     boardRender.boardWidth = 1080;
     boardRender.boardHeight = 1920;
     queue.nextClimb.mockClear();
@@ -1033,5 +1035,20 @@ describe('NativeAccessoryClimbRow', () => {
       expect(container.querySelector('[data-label="createClimbForm.draftBadge"]')).toBeNull();
       unmount();
     }
+  });
+
+  // The View options preview draws the width the open bar measured (#6940).
+  describe('publishing the measured bar to the preview', () => {
+    it('publishes the open platter width and what the row spends beside the name', () => {
+      layout.width = 290;
+      renderRow('regular');
+      expect(getMeasuredMiniPlayerBar()).toEqual({ rowWidth: 290, widthBesideName: 68 });
+    });
+
+    it('does not publish from the collapsed platter', () => {
+      layout.width = 120;
+      renderRow('inline');
+      expect(getMeasuredMiniPlayerBar()).toBeNull();
+    });
   });
 });
