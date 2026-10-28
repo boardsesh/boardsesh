@@ -133,7 +133,14 @@ vi.mock('react-native', () => ({
   Platform: { OS: 'ios', select: (options: Record<string, unknown>) => options.ios ?? options.default },
   AppState: { addEventListener: vi.fn(() => ({ remove: vi.fn() })), currentState: 'active' },
 }));
-vi.mock('expo-crypto', () => ({ randomUUID: () => 'test-correlation-id' }));
+// A fresh uuid per call: two track peeks minted in a row must not share one.
+const uuids = vi.hoisted(() => ({ minted: 0 }));
+vi.mock('expo-crypto', () => ({
+  randomUUID: () => {
+    uuids.minted += 1;
+    return `test-uuid-${uuids.minted}`;
+  },
+}));
 vi.mock('@boardsesh/graphql-client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@boardsesh/graphql-client')>()),
   execute: graph.execute,
@@ -157,6 +164,8 @@ vi.mock('../../lib/graphql/ws-client', () => ({ getWsClient: () => ws.client }))
 vi.mock('../../lib/session-store', () => sessionStore);
 vi.mock('../../lib/queue-snapshot-store', () => queueSnapshotStore);
 vi.mock('../../lib/active-board-store', () => ({ getStoredActiveBoard: activeBoard.getStoredActiveBoard }));
+// No board art in these tests, so a track keeps every climb it was given.
+vi.mock('../../lib/board-details', () => ({ getBoardRenderData: () => null }));
 vi.mock('../../lib/graphql/use-active-board', () => ({
   getActiveBoardWriteGeneration: () => 0,
   useActiveBoard: () => ({ data: activeBoard.stored }),
@@ -417,6 +426,44 @@ describe('QueueProvider now-slot mode (F3)', () => {
         nowSlotMode: true,
         rewrite: 'dedupe-up-next',
         placement: 'NOW',
+      });
+    });
+
+    it('Next onto a list climb History holds puts up a fresh copy, and says how it got there', async () => {
+      // A (climb x) was climbed earlier; B is on the wall, from a list [B, C, x].
+      const A = makeQueueItem('a', 'climb-x');
+      const latest = await renderSolo([A, B], B);
+      const list: PlaylistSuggestionSource = {
+        playlistUuid: 'search-1',
+        activatedClimbUuid: B.climb.uuid,
+        boardKey: 'kilter:1:10:1,2',
+        climbs: [B.climb, C.climb, A.climb],
+      };
+      act(() => latest().setCurrentClimb(B, { playlistSuggestionSource: list }));
+      act(() => latest().nextClimb());
+      const onC = latest().state.currentClimbQueueItem;
+      expect(onC?.climb.uuid).toBe(C.climb.uuid);
+      act(() => latest().nextClimb());
+      const onX = latest().state.currentClimbQueueItem;
+      expect(onX?.climb.uuid).toBe('climb-x');
+      expect(onX?.uuid).not.toBe('a');
+      // History keeps A where it was.
+      expect(uuidsOf(latest()).slice(0, 3)).toEqual(['a', 'b', onC?.uuid]);
+      expect(setActiveClimbEvents().at(-1)?.[1]).toMatchObject({
+        trigger: 'next',
+        navSource: 'peek',
+        rewrite: 'insert',
+        placement: 'NOW',
+        listIndex: 2,
+        fromQueueItemUuid: onC?.uuid,
+        toQueueItemUuid: onX?.uuid,
+      });
+      act(() => latest().previousClimb());
+      expect(setActiveClimbEvents().at(-1)?.[1]).toMatchObject({
+        trigger: 'previous',
+        navSource: 'list',
+        fromQueueItemUuid: onX?.uuid,
+        toQueueItemUuid: onC?.uuid,
       });
     });
 

@@ -99,7 +99,12 @@ class FixtureClient {
         _status = apiKey.isEmpty() ? "Add a controller key in settings" : "Waiting for WiFi";
         _enabled = !apiKey.isEmpty();
         _socket.onEvent([this](WStype_t type, uint8_t* payload, size_t length) { onEvent(type, payload, length); });
-        _socket.setReconnectInterval(60000);
+        // Native controllers have no browser origin. The library's default
+        // Origin: file:// is correctly rejected by the backend's browser checks.
+        _socket.setExtraHeaders("");
+        // Stay below our request deadline without allowing a reconnect in the
+        // same library loop after its disconnect callback schedules our backoff.
+        _socket.setReconnectInterval(1000);
         _socket.enableHeartbeat(20000, 5000, 2);
     }
 
@@ -122,7 +127,7 @@ class FixtureClient {
             connect();
         if (_running) {
             _socket.loop();
-            if (millis() - _startedAt > 20000) {
+            if (_running && millis() - _startedAt > 20000) {
                 _status = "Gym refresh timed out";
                 retry();
             }
@@ -143,9 +148,9 @@ class FixtureClient {
     bool denied() const { return _denied; }
     const String& status() const { return _status; }
 
-    void retryAfterAssetFailure() {
+    void retryAfterAssetFailure(const String& reason = "Preview download failed") {
         _enabled = !_apiKey.isEmpty() && !_denied;
-        _status = "Preview download failed; retrying";
+        _status = reason + "; retrying";
         retry();
     }
 

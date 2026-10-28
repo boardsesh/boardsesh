@@ -79,7 +79,12 @@ class FixtureBle : private NimBLEServerCallbacks, private NimBLECharacteristicCa
             // high bits for static random; guarantee both bit values below them.
             digest[5] |= 0xC0;
             digest[0] = (digest[0] & 0xFE) | 0x02;
-            board.address = NimBLEAddress(digest, BLE_ADDR_RANDOM);
+            // The byte-pointer constructor expects MSB-first input and reverses
+            // it. Preserve these native LSB-first bytes with the native overload.
+            ble_addr_t nativeAddress{};
+            nativeAddress.type = BLE_ADDR_RANDOM;
+            std::memcpy(nativeAddress.val, digest, sizeof(nativeAddress.val));
+            board.address = NimBLEAddress(nativeAddress);
             for (size_t previous = 0; previous < index; ++previous) {
                 if (proposed[previous].uuid == board.uuid || proposed[previous].serial == board.serial ||
                     proposed[previous].address == board.address)

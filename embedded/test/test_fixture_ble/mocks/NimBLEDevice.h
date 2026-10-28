@@ -44,7 +44,9 @@ class NimBLEAddress {
     NimBLEAddress(ble_addr_t address) : address(address) {}
     NimBLEAddress(const uint8_t* bytes, uint8_t type) {
         address.type = type;
-        memcpy(address.val, bytes, 6);
+        // Match NimBLE's MSB-first byte-pointer constructor.
+        for (size_t index = 0; index < 6; ++index)
+            address.val[index] = bytes[5 - index];
     }
     bool operator==(const NimBLEAddress& other) const {
         return address.type == other.address.type && memcmp(address.val, other.address.val, 6) == 0;

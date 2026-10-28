@@ -21,6 +21,9 @@ export type QueueReorderSource = 'drag' | 'play-next';
 
 export type WidgetNavigationOptions = { sendMutation?: boolean };
 
+/** A Next the climber did not press: the rest timer moving the wall on its own. */
+export type NextClimbCaller = 'rest_timer';
+
 export type EndSessionOptions = {
   notes?: string;
   /**
@@ -167,7 +170,8 @@ type QueueContextValue = {
    * Local-only; touches neither the queue order nor the party session.
    */
   refreshAuthoredClimb: (climbUuid: string, patch: ClimbAuthoredPatch) => void;
-  nextClimb: () => void;
+  /** `caller` names a Next the climber did not press (the `Set Active Climb` trigger). */
+  nextClimb: (caller?: NextClimbCaller) => void;
   previousClimb: () => void;
   /** Resolves true only when the server accepted the orientation. */
   mirrorCurrentClimb: (mirrored: boolean, queueItemUuid: string) => Promise<boolean>;

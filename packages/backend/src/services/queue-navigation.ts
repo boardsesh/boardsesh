@@ -4,6 +4,7 @@ import {
   chooseQueueEvent,
   normaliseOrphanCurrent,
   placeOnWall,
+  historyCopyRuleFor,
   upNextStart,
   type CurrentClimbPlacement,
   type NowSlotQueueEvent,
@@ -116,7 +117,7 @@ function planNowSlotWrite(
   shouldAddToQueue: boolean | null | undefined,
   placement: CurrentClimbPlacement | null | undefined,
 ): PlannedWrite {
-  const placed = placeOnWall(stored, item, placement, shouldAddToQueue);
+  const placed = placeOnWall(stored, item, placement, shouldAddToQueue, historyCopyRuleFor(placement));
   const capped = capHistory(placed, 0);
   const event = chooseQueueEvent(stored, { item, shouldAddToQueue, placement }, capped);
   return {
