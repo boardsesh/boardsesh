@@ -1008,5 +1008,29 @@
     "joinError": "Impossible de rejoindre la session",
     "offlineError": "Hors ligne — reconnectez-vous pour rejoindre cette session",
     "hostFallback": "un grimpeur"
+  },
+  "workout": {
+    "unknownBlock": "Phase",
+    "blockNameAtGrade": "{{name}} en {{grade}}",
+    "detailOnTheMinute_one": "{{count}} bloc, un toutes les {{interval}}",
+    "detailOnTheMinute_other": "{{count}} blocs, un toutes les {{interval}}",
+    "detailSpanClimbs_one": "{{span}} · {{count}} bloc",
+    "detailSpanClimbs_other": "{{span}} · {{count}} blocs",
+    "tallyAttempts_one": "{{count}} essai",
+    "tallyAttempts_other": "{{count}} essais",
+    "outcomeFlash": "Flash",
+    "outcomeSent": "Enchaîné",
+    "outcomeSkipped": "Sauté",
+    "repsSentOfTotal": "{{sent}} sur {{total}}",
+    "blockCount_one": "{{count}} phase",
+    "blockCount_other": "{{count}} phases",
+    "headlineTwoBlocks": "{{first}} + {{second}}",
+    "headlineMoreBlocks_one": "{{first}} + {{count}} autre",
+    "headlineMoreBlocks_other": "{{first}} + {{count}} autres",
+    "offPlan": "Hors programme",
+    "setLabel": "Série {{number}}",
+    "repFlash": "Flash",
+    "repSend": "Enchaîné",
+    "repAttempt": "Essai"
   }
 }

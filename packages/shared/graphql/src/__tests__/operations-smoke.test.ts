@@ -31,6 +31,7 @@ const operationModules: Array<{ name: string; load: () => Promise<Record<string,
   { name: 'qa', load: () => import('../operations/qa') },
   { name: 'queue-session', load: () => import('../operations/queue-session') },
   { name: 'sessions', load: () => import('../operations/sessions') },
+  { name: 'session-workouts', load: () => import('../operations/session-workouts') },
   { name: 'social', load: () => import('../operations/social') },
   { name: 'ticks', load: () => import('../operations/ticks') },
 ];

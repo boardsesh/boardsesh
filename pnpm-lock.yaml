@@ -1805,6 +1805,9 @@ importers:
       '@boardsesh/watch-pairing':
         specifier: workspace:*
         version: link:../shared/watch-pairing
+      '@boardsesh/workout-summary':
+        specifier: workspace:*
+        version: link:../shared/workout-summary
       '@emoji-mart/data':
         specifier: ^1.2.1
         version: 1.2.1

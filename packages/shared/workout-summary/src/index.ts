@@ -27,3 +27,30 @@ export {
   tallyWorkoutClimbs,
   workoutHeadline,
 } from './derive';
+export type { AssignableWorkoutClimb, AssignableWorkoutTick, AssignedWorkoutTicks } from './assign';
+export { assignWorkoutTicks } from './assign';
+export type {
+  WorkoutClimbLike,
+  WorkoutClimbOutcome,
+  WorkoutHeadlineLike,
+  WorkoutStageLike,
+  WorkoutTranslate,
+} from './format';
+export {
+  formatWorkoutSeconds,
+  isFourByFourStage,
+  plannedReps,
+  sentReps,
+  workoutBlockDetail,
+  workoutBlockName,
+  workoutClimbOutcome,
+  workoutClimbStatus,
+  workoutGradeSpan,
+  workoutHeadlineOfStages,
+  workoutHeadlineText,
+  workoutKindName,
+  workoutMainBlocksText,
+  workoutRepBar,
+  workoutTally,
+  workoutTallyParts,
+} from './format';

@@ -1008,5 +1008,29 @@
     "joinError": "Der Session konnte nicht beigetreten werden",
     "offlineError": "Offline — verbinde dich neu, um dieser Session beizutreten",
     "hostFallback": "jemandem aus der Crew"
+  },
+  "workout": {
+    "unknownBlock": "Block",
+    "blockNameAtGrade": "{{name}} im {{grade}}",
+    "detailOnTheMinute_one": "{{count}} Boulder, einer alle {{interval}}",
+    "detailOnTheMinute_other": "{{count}} Boulder, einer alle {{interval}}",
+    "detailSpanClimbs_one": "{{span}} · {{count}} Boulder",
+    "detailSpanClimbs_other": "{{span}} · {{count}} Boulder",
+    "tallyAttempts_one": "{{count}} Versuch",
+    "tallyAttempts_other": "{{count}} Versuche",
+    "outcomeFlash": "Geflasht",
+    "outcomeSent": "Getoppt",
+    "outcomeSkipped": "Übersprungen",
+    "repsSentOfTotal": "{{sent}} von {{total}}",
+    "blockCount_one": "{{count}} Block",
+    "blockCount_other": "{{count}} Blöcke",
+    "headlineTwoBlocks": "{{first}} + {{second}}",
+    "headlineMoreBlocks_one": "{{first}} + {{count}} weiterer",
+    "headlineMoreBlocks_other": "{{first}} + {{count}} weitere",
+    "offPlan": "Nicht im Plan",
+    "setLabel": "Satz {{number}}",
+    "repFlash": "Geflasht",
+    "repSend": "Getoppt",
+    "repAttempt": "Versuch"
   }
 }

@@ -46,6 +46,11 @@ export type StaticClimbListProps = {
    * point at an invented board and a climb that doesn't resolve.
    */
   unlinkedClimbUuids?: ReadonlySet<string>;
+  /**
+   * Climbs drawn faded, keyed by uuid: a workout climb the climber skipped on
+   * the session page (#6903).
+   */
+  dimmedClimbUuids?: ReadonlySet<string>;
   /** Viewer's ticks for the ascent badges. Absent on anonymous/crawler renders. */
   logbook?: readonly LogbookEntry[];
   /**
@@ -104,6 +109,7 @@ type SharedRowProps = {
   boardSlug?: string;
   resolveBoardDetails: (climb: Climb) => BoardDetails;
   unlinkedClimbUuids?: ReadonlySet<string>;
+  dimmedClimbUuids?: ReadonlySet<string>;
   pathname: string;
   logbook?: readonly LogbookEntry[];
   initialImageCount: number;
@@ -116,6 +122,7 @@ export default function StaticClimbList({
   boardSlug,
   boardDetailsByClimb,
   unlinkedClimbUuids,
+  dimmedClimbUuids,
   logbook,
   virtualize = true,
   isFetching = false,
@@ -142,6 +149,7 @@ export default function StaticClimbList({
     boardSlug,
     resolveBoardDetails,
     unlinkedClimbUuids,
+    dimmedClimbUuids,
     pathname,
     logbook,
     initialImageCount,
@@ -196,6 +204,7 @@ function PlainRows({
   boardSlug,
   resolveBoardDetails,
   unlinkedClimbUuids,
+  dimmedClimbUuids,
   pathname,
   logbook,
   initialImageCount,
@@ -204,7 +213,15 @@ function PlainRows({
   return (
     <div style={{ width: '100%', backgroundColor: 'inherit' }}>
       {climbs.map((climb, index) => (
-        <div key={climb.uuid} data-index={index} style={{ width: '100%', minHeight: LIST_ROW_HEIGHT }}>
+        <div
+          key={climb.uuid}
+          data-index={index}
+          style={{
+            width: '100%',
+            minHeight: LIST_ROW_HEIGHT,
+            opacity: dimmedClimbUuids?.has(climb.uuid) ? themeTokens.opacity.disabled : undefined,
+          }}
+        >
           <StaticClimbRow
             climb={climb}
             boardSlug={boardSlug}
@@ -250,6 +267,7 @@ function VirtualizedRows({
   boardSlug,
   resolveBoardDetails,
   unlinkedClimbUuids,
+  dimmedClimbUuids,
   pathname,
   logbook,
   initialImageCount,
@@ -325,6 +343,7 @@ function VirtualizedRows({
               // grow past this via measureElement.
               minHeight: LIST_ROW_HEIGHT,
               boxSizing: 'border-box',
+              opacity: dimmedClimbUuids?.has(climb.uuid) ? themeTokens.opacity.disabled : undefined,
               transform: `translateY(${virtualItem.start}px)`,
               // No `paint` here, unlike the classic list: paint
               // containment clips descendants to this box, and the row

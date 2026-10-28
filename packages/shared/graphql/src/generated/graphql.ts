@@ -15673,6 +15673,72 @@ export type SavedClimbDocumentsQuery = {
   } | null;
 };
 
+export type GetSessionWorkoutsQueryVariables = Exact<{
+  sessionId: Scalars['ID']['input'];
+}>;
+
+export type GetSessionWorkoutsQuery = {
+  __typename?: 'Query';
+  sessionWorkouts: Array<{
+    __typename?: 'SessionWorkout';
+    userId: string;
+    displayName?: string | null;
+    avatarUrl?: string | null;
+    offPlan: number;
+    updatedAt: string;
+    stages: Array<{
+      __typename?: 'SessionWorkoutStage';
+      id: string;
+      kind: string;
+      isCoolDown: boolean;
+      targetGrade?: string | null;
+      repsPerSet?: number | null;
+      sets?: number | null;
+      intervalSeconds?: number | null;
+      restSeconds?: number | null;
+      tally: { __typename?: 'SessionWorkoutTally'; sent: number; attempts: number; skipped: number; climbs: number };
+      climbs: Array<{
+        __typename?: 'SessionWorkoutClimb';
+        queueItemUuid: string;
+        climbUuid: string;
+        angle: number;
+        isMirror?: boolean | null;
+        name?: string | null;
+        grade?: string | null;
+        boardType?: string | null;
+        layoutId?: number | null;
+        frames?: string | null;
+        reps: Array<SessionWorkoutRepOutcome>;
+        skipped: boolean;
+        renderBoard?: {
+          __typename?: 'RenderBoardConfig';
+          layoutId: number;
+          sizeId: number;
+          setIds: Array<number>;
+        } | null;
+      }>;
+    }>;
+  }>;
+};
+
+export type GetSessionWorkoutHeadlinesQueryVariables = Exact<{
+  sessionIds: Array<Scalars['ID']['input']> | Scalars['ID']['input'];
+}>;
+
+export type GetSessionWorkoutHeadlinesQuery = {
+  __typename?: 'Query';
+  sessionWorkoutHeadlines: Array<{
+    __typename?: 'SessionWorkoutHeadline';
+    sessionId: string;
+    userId: string;
+    mainKind?: string | null;
+    mainTargetGrade?: string | null;
+    secondMainKind?: string | null;
+    blockCount: number;
+    extraMainBlocks: number;
+  }>;
+};
+
 export type SessionSummaryFieldsFragment = {
   __typename?: 'SessionSummary';
   sessionId: string;
@@ -25292,6 +25358,162 @@ export const SavedClimbDocumentsDocument = {
     },
   ],
 } as unknown as DocumentNode<SavedClimbDocumentsQuery, SavedClimbDocumentsQueryVariables>;
+export const GetSessionWorkoutsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetSessionWorkouts' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'sessionId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'sessionWorkouts' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'sessionId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'sessionId' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'avatarUrl' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'offPlan' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'updatedAt' } },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'stages' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'kind' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'isCoolDown' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'targetGrade' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'repsPerSet' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sets' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'intervalSeconds' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'restSeconds' } },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'tally' },
+                        selectionSet: {
+                          kind: 'SelectionSet',
+                          selections: [
+                            { kind: 'Field', name: { kind: 'Name', value: 'sent' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'attempts' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'skipped' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'climbs' } },
+                          ],
+                        },
+                      },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'climbs' },
+                        selectionSet: {
+                          kind: 'SelectionSet',
+                          selections: [
+                            { kind: 'Field', name: { kind: 'Name', value: 'queueItemUuid' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'climbUuid' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'grade' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                            {
+                              kind: 'Field',
+                              name: { kind: 'Name', value: 'renderBoard' },
+                              selectionSet: {
+                                kind: 'SelectionSet',
+                                selections: [
+                                  { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                                  { kind: 'Field', name: { kind: 'Name', value: 'sizeId' } },
+                                  { kind: 'Field', name: { kind: 'Name', value: 'setIds' } },
+                                ],
+                              },
+                            },
+                            { kind: 'Field', name: { kind: 'Name', value: 'reps' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'skipped' } },
+                          ],
+                        },
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetSessionWorkoutsQuery, GetSessionWorkoutsQueryVariables>;
+export const GetSessionWorkoutHeadlinesDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetSessionWorkoutHeadlines' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'sessionIds' } },
+          type: {
+            kind: 'NonNullType',
+            type: {
+              kind: 'ListType',
+              type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+            },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'sessionWorkoutHeadlines' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'sessionIds' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'sessionIds' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'sessionId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'mainKind' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'mainTargetGrade' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'secondMainKind' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'blockCount' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'extraMainBlocks' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetSessionWorkoutHeadlinesQuery, GetSessionWorkoutHeadlinesQueryVariables>;
 export const EndSessionDocument = {
   kind: 'Document',
   definitions: [

@@ -18,6 +18,7 @@ import { VoteSummaryProvider } from '@/app/components/social/vote-summary-contex
 import SessionFeedCard from './session-feed-card';
 import FeedItemSkeleton from './feed-item-skeleton';
 import { useInfiniteScroll } from '@/app/hooks/use-infinite-scroll';
+import { useSessionWorkoutHeadlines } from '@/app/hooks/use-session-workout-headlines';
 
 /** Page type for the session-grouped feed */
 export type SessionFeedPage = SessionFeedResult;
@@ -96,6 +97,17 @@ export default function ActivityFeed({
     [sessions],
   );
 
+  // One workout-headline batch per loaded page (#6903).
+  const pageSessionIds = useMemo(
+    () => data?.pages.map((page) => page.sessions.map((session) => session.sessionId)) ?? [],
+    [data],
+  );
+  const workoutHeadlines = useSessionWorkoutHeadlines({
+    pages: pageSessionIds,
+    token: isAuthenticated ? token : null,
+    enabled: isAuthenticated ? !!token : true,
+  });
+
   const { sentinelRef } = useInfiniteScroll({
     onLoadMore: fetchNextPage,
     hasMore: hasNextPage ?? false,
@@ -158,7 +170,11 @@ export default function ActivityFeed({
       ) : (
         <VoteSummaryProvider entityType="session" entityIds={sessionIds}>
           {sessions.map((session) => (
-            <SessionFeedCard key={session.sessionId} session={session} />
+            <SessionFeedCard
+              key={session.sessionId}
+              session={session}
+              workoutHeadline={workoutHeadlines.get(session.sessionId) ?? null}
+            />
           ))}
           <Box
             ref={sentinelRef}

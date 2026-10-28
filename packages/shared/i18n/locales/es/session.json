@@ -1008,5 +1008,29 @@
     "joinError": "No se pudo unir a la sesión",
     "offlineError": "Sin conexión: vuelve a conectarte para unirte a esta sesión",
     "hostFallback": "un escalador"
+  },
+  "workout": {
+    "unknownBlock": "Fase",
+    "blockNameAtGrade": "{{name}} en {{grade}}",
+    "detailOnTheMinute_one": "{{count}} bloque, uno cada {{interval}}",
+    "detailOnTheMinute_other": "{{count}} bloques, uno cada {{interval}}",
+    "detailSpanClimbs_one": "{{span}} · {{count}} bloque",
+    "detailSpanClimbs_other": "{{span}} · {{count}} bloques",
+    "tallyAttempts_one": "{{count}} intento",
+    "tallyAttempts_other": "{{count}} intentos",
+    "outcomeFlash": "Flash",
+    "outcomeSent": "Encadenado",
+    "outcomeSkipped": "Saltado",
+    "repsSentOfTotal": "{{sent}} de {{total}}",
+    "blockCount_one": "{{count}} fase",
+    "blockCount_other": "{{count}} fases",
+    "headlineTwoBlocks": "{{first}} + {{second}}",
+    "headlineMoreBlocks_one": "{{first}} + {{count}} más",
+    "headlineMoreBlocks_other": "{{first}} + {{count}} más",
+    "offPlan": "Fuera del plan",
+    "setLabel": "Serie {{number}}",
+    "repFlash": "Flash",
+    "repSend": "Encadenado",
+    "repAttempt": "Intento"
   }
 }

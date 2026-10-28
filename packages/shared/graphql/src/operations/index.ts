@@ -14,6 +14,7 @@ export * from './activity-feed';
 export * from './new-climb-feed';
 export * from './hold-heatmap';
 export * from './sessions';
+export * from './session-workouts';
 export * from './create-session';
 export * from './live-sessions';
 export * from './climb-stats-history';

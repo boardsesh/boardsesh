@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
  * Two-way static check over the i18n catalogs and the code that reads them,
- * across `packages/web/app/`, `packages/web/scripts/`, `packages/mobile/{src,app}/` and
- * `packages/backend/src/`:
+ * across `packages/web/app/`, `packages/web/scripts/`, `packages/mobile/{src,app}/`,
+ * `packages/backend/src/` and `packages/shared/workout-summary/src/`:
  *
  *   - ORPHANS — a key in `packages/shared/i18n/locales/en-US/<ns>.json` with no
  *     live reference. en-US is the source of truth — `es`, `fr`, and `de` fall
@@ -66,6 +66,8 @@ const mobileSrcRoot = join(packagesRoot, 'mobile', 'src');
 const mobileAppRoot = join(packagesRoot, 'mobile', 'app');
 // The backend reads catalogs directly (push copy); scanned for `i18n-keep` markers and `t()` calls alike.
 const backendSrcRoot = join(packagesRoot, 'backend', 'src');
+// Shared copy helpers that take a `t` from web and mobile alike (#6903).
+const workoutSummarySrcRoot = join(packagesRoot, 'shared', 'workout-summary', 'src');
 const catalogRoot = join(packagesRoot, 'shared', 'i18n', 'locales', 'en-US');
 const repoRoot = join(webRoot, '..', '..');
 
@@ -753,7 +755,14 @@ type Report = {
 function run(): Report {
   const namespaces = discoverNamespaces();
   const catalog = loadCatalog(namespaces);
-  const files = discoverFiles([appRoot, scriptsRoot, mobileSrcRoot, mobileAppRoot, backendSrcRoot]);
+  const files = discoverFiles([
+    appRoot,
+    scriptsRoot,
+    mobileSrcRoot,
+    mobileAppRoot,
+    backendSrcRoot,
+    workoutSummarySrcRoot,
+  ]);
   const usedKeys = new Map<string, Set<string>>();
   const globs = new Map<string, GlobPattern[]>();
   const references: KeyReference[] = [];

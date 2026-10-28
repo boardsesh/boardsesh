@@ -9,6 +9,7 @@ import Chip from '@mui/material/Chip';
 import Skeleton from '@mui/material/Skeleton';
 import FlagOutlined from '@mui/icons-material/FlagOutlined';
 import NotesOutlined from '@mui/icons-material/NotesOutlined';
+import FitnessCenterOutlined from '@mui/icons-material/FitnessCenterOutlined';
 import TimerOutlined from '@mui/icons-material/TimerOutlined';
 import FlashOnOutlined from '@mui/icons-material/FlashOnOutlined';
 import CheckCircleOutlineOutlined from '@mui/icons-material/CheckCircleOutlineOutlined';
@@ -72,6 +73,8 @@ type SessionOverviewPanelProps = {
   /** Optional free-text end-of-session recap saved by the session creator. */
   notes?: string | null;
   afterParticipants?: React.ReactNode;
+  /** "Workout · 4x4 at V4 · 3 blocks" when the session followed a workout (#6903). */
+  workoutLine?: string | null;
   /** When true, only render goal + notes (no chips/chart). */
   compact?: boolean;
 };
@@ -95,6 +98,7 @@ export default function SessionOverviewPanel({
   goal,
   notes,
   afterParticipants,
+  workoutLine,
   compact = false,
 }: SessionOverviewPanelProps) {
   const { t } = useTranslation('session');
@@ -108,6 +112,15 @@ export default function SessionOverviewPanel({
   return (
     <>
       {afterParticipants}
+
+      {workoutLine ? (
+        <Box data-testid="session-workout-line" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          <FitnessCenterOutlined sx={{ fontSize: 16 }} color="action" />
+          <Typography variant="body2" fontWeight={600}>
+            {workoutLine}
+          </Typography>
+        </Box>
+      ) : null}
 
       {goal ? (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>

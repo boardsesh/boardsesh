@@ -1008,5 +1008,29 @@
     "joinError": "Couldn't join the session",
     "offlineError": "You're offline — reconnect to join this session",
     "hostFallback": "a climber"
+  },
+  "workout": {
+    "unknownBlock": "Block",
+    "blockNameAtGrade": "{{name}} at {{grade}}",
+    "detailOnTheMinute_one": "{{count}} climb, one every {{interval}}",
+    "detailOnTheMinute_other": "{{count}} climbs, one every {{interval}}",
+    "detailSpanClimbs_one": "{{span}} · {{count}} climb",
+    "detailSpanClimbs_other": "{{span}} · {{count}} climbs",
+    "tallyAttempts_one": "{{count}} attempt",
+    "tallyAttempts_other": "{{count}} attempts",
+    "outcomeFlash": "Flash",
+    "outcomeSent": "Sent",
+    "outcomeSkipped": "Skipped",
+    "repsSentOfTotal": "{{sent}} of {{total}}",
+    "blockCount_one": "{{count}} block",
+    "blockCount_other": "{{count}} blocks",
+    "headlineTwoBlocks": "{{first}} + {{second}}",
+    "headlineMoreBlocks_one": "{{first}} + {{count}} more",
+    "headlineMoreBlocks_other": "{{first}} + {{count}} more",
+    "offPlan": "Off plan",
+    "setLabel": "Set {{number}}",
+    "repFlash": "Flash",
+    "repSend": "Sent",
+    "repAttempt": "Attempt"
   }
 }
