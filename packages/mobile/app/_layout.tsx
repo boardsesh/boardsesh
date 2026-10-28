@@ -101,7 +101,7 @@ import { AccessoryOnboardingTip } from '../src/components/onboarding/AccessoryOn
 import { RestTimerRuntime } from '../src/components/queue-control/RestTimerRuntime';
 import { WorkoutRunSessionSync } from '../src/components/queue-control/WorkoutRunSessionSync';
 import { RootRestTimerPillHost } from '../src/components/queue-control/RestTimerPillHost';
-import { PhoneSplitHingeObserver } from '../src/components/navigation/PhoneSplitHingeObserver';
+import { FoldHingeObserver } from '../src/components/navigation/FoldHingeObserver';
 import { OfflineDownloadPill } from '../src/components/offline/OfflineDownloadPill';
 import { ConnectivityBanner } from '../src/components/connectivity/ConnectivityBanner';
 import { QaTesterGate } from '../src/components/qa/QaTesterGate';
@@ -801,9 +801,9 @@ function RootLayout() {
                                                             play drawer mounts a second copy so that sheet can present
                                                             above the /play modal. */}
                                                                         <RootRestTimerPillHost />
-                                                                        {/* The phone split's one hinge observer (iPhone
-                                                            Duo): renders nothing until the split is up. */}
-                                                                        <PhoneSplitHingeObserver />
+                                                                        {/* The one hinge observer (iPhone Duo): renders
+                                                            nothing off the Duo's inner display. */}
+                                                                        <FoldHingeObserver />
                                                                         {/* The one app-wide "we can't reach the server"
                                                             banner (#4862). A root sibling like the tip above so
                                                             it survives navigation and floats over every route;

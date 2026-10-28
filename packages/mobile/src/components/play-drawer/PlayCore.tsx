@@ -136,6 +136,8 @@ import {
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { useHorizontalSafeArea } from '../../hooks/use-horizontal-safe-area';
+import { useTabletopFoldTop } from '../../hooks/use-tabletop-fold-top';
+import { PHONE_SPLIT_FOLD_GUTTER } from '../../theme/size-class';
 import { playContentSideInsets } from './play-content-side-insets';
 import { useShareClimbAction } from '../../hooks/use-share-climb-action';
 import { reportPanePreview } from './pane-preview-store';
@@ -452,7 +454,16 @@ export function PlayCore({
   // ignores the stored buttons for them, and the position is pinned here.
   const playerButtons = usePlayerButtonsPreference();
   const controlsPosition = isAnonymous ? DEFAULT_PLAYER_BUTTONS_POSITION : playerButtons.position;
-  const controlsAbove = controlsPosition === 'above';
+  // Tabletop (the iPhone Duo half open, its inner display upright): the first
+  // screen ends at the fold, so the board fills the top half and never sits on
+  // the crease. The controls move out of it to just below the fold, where a
+  // hand resting on the table reaches them, whatever the View options say:
+  // above the board they would sit above the crease and squeeze a half-height
+  // board. The sections follow. Only the full-screen route: the persistent pane
+  // lives in the landscape split.
+  const tabletopFoldTop = useTabletopFoldTop();
+  const tabletop = !isPane && tabletopFoldTop !== null;
+  const controlsAbove = controlsPosition === 'above' && !tabletop;
   // Where the controls block ends, measured only while it sits above the board:
   // the wall-state callout then hangs below it rather than over Log.
   const [controlsBottomY, setControlsBottomY] = useState(0);
@@ -532,6 +543,11 @@ export function PlayCore({
   );
   const firstSectionId = visibleSectionIds[0];
   const hasVisibleSections = sectionsReady && visibleSectionIds.length > 0;
+  // In tabletop the sections start inside the viewport, under the controls,
+  // rather than one header peek below the fold, so their bodies load at once.
+  useEffect(() => {
+    if (tabletop && hasVisibleSections) requestBelowFoldContent();
+  }, [tabletop, hasVisibleSections, requestBelowFoldContent]);
   const handleDeliberateScrollIntent = useCallback(() => {
     if (hasVisibleSections) requestBelowFoldContent();
   }, [hasVisibleSections, requestBelowFoldContent]);
@@ -1832,6 +1848,7 @@ export function PlayCore({
             boardSupportsMirroring(boardName, layoutId),
             actionBarLayout.secondaryRow,
             controlsPosition,
+            tabletop,
           ]),
           lostBanner: lostHoldCount > 0,
           playbackFingerprint: JSON.stringify([playback.isAnimatable]),
@@ -1874,21 +1891,28 @@ export function PlayCore({
     Array.isArray(actionBarLayout.secondaryRow) &&
     actionBarLayout.secondaryRow.length > 0;
   const firstScreenViewport = sheetViewportHeight || cachedOpeningLayout?.viewportHeight || windowHeight;
-  const firstScreenHeight = fitsBoardToHeight
-    ? computeFitToHeightFirstScreenHeight({
-        viewport: firstScreenViewport,
-        bottomInset: insets.bottom,
-        belowFoldRowHeight: ACTION_BAR_SECONDARY_ROW_HEIGHT,
-      })
-    : computeDrawerFirstScreenHeight({
-        viewport: firstScreenViewport,
-        bottomInset: insets.bottom,
-        firstSectionHeaderHeight: hasVisibleSections
-          ? firstSectionHeaderHeight || cachedOpeningLayout?.firstSectionHeaderHeight || DEFAULT_SECTION_HEADER_HEIGHT
-          : null,
-        sectionTopPadding: spacing[3],
-        sectionMargin: spacing[2],
-      });
+  // In tabletop the controls sit between the first screen and the sections.
+  const [tabletopControlsHeight, setTabletopControlsHeight] = useState(0);
+  const handleTabletopControlsLayout = useCallback((event: LayoutChangeEvent) => {
+    setTabletopControlsHeight(Math.round(event.nativeEvent.layout.height));
+  }, []);
+  const firstScreenHeight = tabletop
+    ? (tabletopFoldTop ?? 0)
+    : fitsBoardToHeight
+      ? computeFitToHeightFirstScreenHeight({
+          viewport: firstScreenViewport,
+          bottomInset: insets.bottom,
+          belowFoldRowHeight: ACTION_BAR_SECONDARY_ROW_HEIGHT,
+        })
+      : computeDrawerFirstScreenHeight({
+          viewport: firstScreenViewport,
+          bottomInset: insets.bottom,
+          firstSectionHeaderHeight: hasVisibleSections
+            ? firstSectionHeaderHeight || cachedOpeningLayout?.firstSectionHeaderHeight || DEFAULT_SECTION_HEADER_HEIGHT
+            : null,
+          sectionTopPadding: spacing[3],
+          sectionMargin: spacing[2],
+        });
   // Named because the wall-state callout needs it too: it hangs off the header's
   // measured bottom edge, and that measurement is relative to the a11y-trap
   // wrapper INSIDE this padding, not to the first screen itself.
@@ -1904,7 +1928,8 @@ export function PlayCore({
     (sectionHeight: number) => {
       if (!pendingFirstSectionScrollRef.current) return;
       const target = computeFirstSectionScrollTarget({
-        firstScreenHeight,
+        // In tabletop the controls sit between the first screen and the sections.
+        firstScreenHeight: firstScreenHeight + (tabletop ? tabletopControlsHeight : 0),
         topPadding: spacing[3],
         sectionHeight,
         viewport: sheetViewportHeight || windowHeight,
@@ -1914,7 +1939,7 @@ export function PlayCore({
       });
       scrollRef.current?.scrollTo({ y: target, animated: true });
     },
-    [firstScreenHeight, sheetViewportHeight, windowHeight, insets.bottom, insets.top],
+    [firstScreenHeight, tabletop, tabletopControlsHeight, sheetViewportHeight, windowHeight, insets.bottom, insets.top],
   );
 
   const ascentCount = displayedClimb?.userAscents ?? 0;
@@ -2145,7 +2170,9 @@ export function PlayCore({
               <ScrollView
                 ref={scrollRef}
                 nestedScrollEnabled
-                scrollEnabled={hasVisibleSections}
+                // In tabletop the controls hang below a fixed-height first
+                // screen, so a large text size can push them past the bottom.
+                scrollEnabled={hasVisibleSections || tabletop}
                 directionalLockEnabled={Platform.OS === 'ios'}
                 showsVerticalScrollIndicator={false}
                 showsHorizontalScrollIndicator={false}
@@ -2473,7 +2500,7 @@ export function PlayCore({
                           ) : null}
                         </View>
 
-                        {controlsAbove ? null : controlsRegion}
+                        {controlsAbove || tabletop ? null : controlsRegion}
                       </View>
 
                       {/* The pill's explainer. A sibling of the a11y-trap wrapper (so
@@ -2502,6 +2529,22 @@ export function PlayCore({
                         />
                       ) : null}
                     </View>
+
+                    {/* Tabletop: the fold's gutter, then the controls below it. Out
+                      of the first screen, so it joins the callout's trap the way
+                      the sections below do. */}
+                    {tabletop ? (
+                      <View
+                        testID="play-drawer-tabletop-controls"
+                        style={styles.tabletopBelowFold}
+                        onLayout={handleTabletopControlsLayout}
+                        accessibilityElementsHidden={wallCallout === 'explainer'}
+                        importantForAccessibility={wallCallout === 'explainer' ? 'no-hide-descendants' : 'auto'}
+                        pointerEvents={wallCallout === 'explainer' ? 'none' : 'auto'}
+                      >
+                        {controlsRegion}
+                      </View>
+                    ) : null}
 
                     {/* Below-fold deferred sections. The wrapper joins the
                       callout's assistive-tech trap: Android has no
@@ -2629,6 +2672,9 @@ const styles = StyleSheet.create({
   },
   firstScreen: {
     width: '100%',
+  },
+  tabletopBelowFold: {
+    paddingTop: PHONE_SPLIT_FOLD_GUTTER,
   },
   // Takes the whole first screen so the board section inside keeps its flex:1
   // share; exists only to give the wall-state callout a sibling it can hide from

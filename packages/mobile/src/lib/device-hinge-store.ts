@@ -2,9 +2,11 @@ import { useSyncExternalStore } from 'react';
 
 /**
  * Whether the iPhone Duo is half open (its hinge reports `partiallyOpen`), the
- * pose where the fold divides the inner display and the phone split keeps a
- * gutter clear of it. Published by `HingeObserver` (SwiftUI `onHingeChange`
- * through `@expo/ui`), read by the split host in `NativeTabletContent`.
+ * pose where the fold divides the inner display: the phone split keeps a gutter
+ * clear of it in landscape (the book pose), and the player keeps its board above
+ * it in portrait (tabletop). Published by `HingeObserver` (SwiftUI
+ * `onHingeChange` through `@expo/ui`), read by the split host in
+ * `NativeTabletContent` and by `useTabletopFoldTop`.
  *
  * A module store with a boolean snapshot on purpose: the hinge reports its angle
  * continuously while the device moves, and only the open/half-open/closed status

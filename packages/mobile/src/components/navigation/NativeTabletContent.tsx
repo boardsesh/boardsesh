@@ -62,7 +62,7 @@ function PhoneSplitContentHost({ children }: { children: ReactNode }) {
  * The leading half of the phone split: the pane, ending at the hinge, and a fold
  * gutter (zero wide unless the Duo is half open). Mounted only while the split
  * is on. It shows the player unless a screen in this tab handed it `content`.
- * The hinge status comes from the app's one observer (`PhoneSplitHingeObserver`,
+ * The hinge status comes from the app's one observer (`FoldHingeObserver`,
  * at the root).
  */
 function PhoneSplitPane({ content }: { content: ReactNode | null }) {

@@ -303,6 +303,27 @@ export function resolvePhoneSplit({
 }
 
 /**
+ * The iPhone Duo's inner display, either way up: an iPhone window whose short
+ * side is at least `PHONE_SPLIT_MIN_HEIGHT`. The inner display is 669pt on its
+ * short side; the largest one-display iPhone (a Pro Max) is 440pt, and the
+ * Duo's closed outer display 466pt. The only windows where the hinge can fold
+ * the content, so the hinge observer mounts on exactly these.
+ */
+export function resolveFoldableInnerDisplay({
+  platformOS,
+  isTablet,
+  width,
+  height,
+}: {
+  platformOS: PlatformOS;
+  isTablet: boolean;
+  width: number;
+  height: number;
+}): boolean {
+  return platformOS === 'ios' && !isTablet && Math.min(width, height) >= PHONE_SPLIT_MIN_HEIGHT;
+}
+
+/**
  * Room kept clear at the fold while the Duo is half open like a book, half on
  * each side of the hinge. The fold's exact frame is a reserved region only
  * native code can read (`UIView.reservedRegions`); 24pt keeps text and touch
@@ -337,4 +358,31 @@ export function resolvePhoneSplitColumns({
     leadingWidth: Math.round(windowWidth / 2),
     foldInset: partiallyFolded ? PHONE_SPLIT_FOLD_GUTTER / 2 : 0,
   };
+}
+
+/**
+ * Tabletop: the Duo half open with its inner display upright (portrait), the
+ * lower half lying on a table and the fold running across the window's middle.
+ * Returns where the top half ends, the fold less half of
+ * `PHONE_SPLIT_FOLD_GUTTER`, so the player can keep the board above the crease
+ * and its controls below it. Null in every other pose and on every other
+ * device: flat, the book pose (landscape, where the fold runs down the middle
+ * and the split already handles it), closed, and every other phone.
+ */
+export function resolveTabletopFoldTop({
+  platformOS,
+  isTablet,
+  width,
+  height,
+  partiallyFolded,
+}: {
+  platformOS: PlatformOS;
+  isTablet: boolean;
+  width: number;
+  height: number;
+  partiallyFolded: boolean;
+}): number | null {
+  if (!partiallyFolded || width >= height) return null;
+  if (!resolveFoldableInnerDisplay({ platformOS, isTablet, width, height })) return null;
+  return Math.round(height / 2) - PHONE_SPLIT_FOLD_GUTTER / 2;
 }

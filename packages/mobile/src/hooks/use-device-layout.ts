@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { Dimensions, Platform, useWindowDimensions } from 'react-native';
 import {
   resolveDeviceLayout,
+  resolveFoldableInnerDisplay,
   resolveIsTablet,
   resolvePhoneSplit,
   resolveWallDeviceClass,
@@ -36,12 +37,16 @@ import {
  * landscape; see `resolvePhoneSplit`). It is false on every tablet, so no iPad
  * value above changes with it. Read it through `usePhoneSplit`, which adds the
  * NativeTabs gate the split mounts in.
+ *
+ * `foldableInnerDisplay` is live too: the iPhone Duo's inner display either way
+ * up (see `resolveFoldableInnerDisplay`), the only window the hinge can fold.
  */
 export function useDeviceLayout(): DeviceLayout & {
   isPad: boolean;
   isTablet: boolean;
   wallDeviceClass: WallDeviceClass;
   phoneSplit: boolean;
+  foldableInnerDisplay: boolean;
 } {
   const { width, height } = useWindowDimensions();
   // `Platform.isPad` is iOS-only (undefined on Android), so guard on the OS too.
@@ -64,8 +69,16 @@ export function useDeviceLayout(): DeviceLayout & {
   // A boolean, not the height, goes into the memo below, so a height change that
   // leaves the split as it was keeps the returned object's identity.
   const phoneSplit = resolvePhoneSplit({ platformOS: Platform.OS, isTablet, width, height });
+  const foldableInnerDisplay = resolveFoldableInnerDisplay({ platformOS: Platform.OS, isTablet, width, height });
   return useMemo(
-    () => ({ ...resolveDeviceLayout({ width, isTablet }), isPad, isTablet, wallDeviceClass, phoneSplit }),
-    [width, isPad, isTablet, wallDeviceClass, phoneSplit],
+    () => ({
+      ...resolveDeviceLayout({ width, isTablet }),
+      isPad,
+      isTablet,
+      wallDeviceClass,
+      phoneSplit,
+      foldableInnerDisplay,
+    }),
+    [width, isPad, isTablet, wallDeviceClass, phoneSplit, foldableInnerDisplay],
   );
 }
