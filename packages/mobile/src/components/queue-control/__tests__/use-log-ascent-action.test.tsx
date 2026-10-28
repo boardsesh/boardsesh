@@ -19,7 +19,8 @@ vi.mock('@boardsesh/board-react', () => ({
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: { label: '#111111' }, brandColors: { success: '#34C759' } }),
 }));
-vi.mock('../../../providers/queue-provider', () => ({ useQueueSessionId: () => ({ sessionId: null }) }));
+const session = vi.hoisted(() => ({ sessionId: null as string | null }));
+vi.mock('../../../providers/queue-provider', () => ({ useQueueSessionId: () => ({ sessionId: session.sessionId }) }));
 vi.mock('../../../providers/drawer-host-provider', () => ({
   useDrawerHost: () => ({
     openLogAscent: spies.openLogAscent,
@@ -32,6 +33,7 @@ vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../lib/analytics', () => ({ track: spies.track }));
 
 import { useLogAscentAction } from '../use-log-ascent-action';
+import { __resetWallMirrorFlipForTests, setWallMirrorFlip } from '../../../lib/wall-mirror-store';
 
 const climb = { uuid: 'climb-1', name: 'Test', frames: '', angle: 40 } as Climb;
 
@@ -57,5 +59,43 @@ describe('useLogAscentAction Quick Tick Opened', () => {
       layoutId: 1,
       source: 'queue_bar',
     });
+  });
+});
+
+describe('useLogAscentAction orientation', () => {
+  beforeEach(() => {
+    spies.openLogAscent.mockClear();
+    session.sessionId = null;
+    __resetWallMirrorFlipForTests();
+  });
+
+  const openedMirror = () => spies.openLogAscent.mock.calls.at(-1)?.[0].isMirror;
+
+  it("logs the climb's own orientation when nobody flipped it", () => {
+    const { result } = renderHook(() => useLogAscentAction({ ...climb, mirrored: true }));
+    act(() => result.current.handleLogAscentPress());
+    expect(openedMirror()).toBe(true);
+  });
+
+  it('logs the solo wall flip, so a climb mirrored from the bar saves mirrored', () => {
+    setWallMirrorFlip(null, 'climb-1', true);
+    const { result } = renderHook(() => useLogAscentAction(climb));
+    act(() => result.current.handleLogAscentPress());
+    expect(openedMirror()).toBe(true);
+  });
+
+  it('ignores a flip parked on another climb', () => {
+    setWallMirrorFlip(null, 'climb-2', true);
+    const { result } = renderHook(() => useLogAscentAction(climb));
+    act(() => result.current.handleLogAscentPress());
+    expect(openedMirror()).toBe(false);
+  });
+
+  it("keeps a crew's orientation, which lives on the queue item", () => {
+    session.sessionId = 'session-1';
+    setWallMirrorFlip(null, 'climb-1', true);
+    const { result } = renderHook(() => useLogAscentAction(climb));
+    act(() => result.current.handleLogAscentPress());
+    expect(openedMirror()).toBe(false);
   });
 });
