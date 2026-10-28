@@ -3242,8 +3242,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // In now-slot mode it is a NOW: a track peek goes on the wall at the Now
       // slot (History once you move on), and an already-queued neighbour moves
       // instead of being copied. A climb only History holds goes up as a fresh
-      // copy (`fresh`): reusing an entry from an hour ago would rewrite History
-      // and walk the climbs after it again with their old entries.
+      // copy (`fresh`) unless it is the entry right behind, the one Previous
+      // just left: reusing an entry from an hour ago would rewrite History and
+      // walk the climbs after it again with their old entries.
       const nowSlotOpen = dispatchSetCurrent(item, converted, undefined, converted, undefined, 'NOW', 'fresh');
       trackSetActiveClimb(item, nowSlotOpen, caller ?? 'next', {
         navSource: queueStepSource(walkedSource, converted, trackResume),

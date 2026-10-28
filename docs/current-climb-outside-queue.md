@@ -208,7 +208,8 @@ or a server-side caller that hasn't been changed. The first row that matches app
 | new uuid, same climb as current | any | Re-assert the current climb. The new uuid is dropped. | `dedupe-current` |
 | new uuid, climb in Up next | any | The first Up next copy moves into the Now slot. | `dedupe-up-next` |
 | new uuid, climb only in History, `historyCopy: reuse` | any | The newest History copy moves into the Now slot. | `dedupe-history` |
-| new uuid, climb only in History, `historyCopy: fresh` | any | Inserted at the Now slot. The History copy stays where it is. | `insert` |
+| new uuid, climb only in History, `historyCopy: fresh`, History's last entry | any | That entry, the one right behind the current climb, moves into the Now slot. | `dedupe-history` |
+| new uuid, climb only in History further back, `historyCopy: fresh` | any | Inserted at the Now slot. The History copy stays where it is. | `insert` |
 | new uuid, climb nowhere in `queue` | any | Inserted at the Now slot. `shouldAddToQueue` is ignored, so no orphan can form. | `insert` |
 | `item: null` | — | The current climb stays as History's last entry. `historyCount` = its index + 1. | `clear` |
 
@@ -221,9 +222,11 @@ request with `placement` as `fresh` (`historyCopyRuleFor`). Requests without `pl
 `reuse`; Next (the button, a swipe, the rest timer) resolves with `fresh`. A tester on F3 hit
 the reason: Next off a search list whose next page held a climb from an hour earlier pulled
 that climb's old History entry into Now, and each Next after it pulled the next old entry, so
-History was rewritten and the wall replayed the old playlist. Next still reuses the entry right
-behind the current climb when it holds the list's next climb (Previous then Next on a list), so
-a back-and-forth swipe adds no copy. `queue-navigation-now-slot-replay.test.ts` in
+History was rewritten and the wall replayed the old playlist. `fresh` still reuses History's
+last entry, the one right behind the current climb: that is the climb Previous just stepped off,
+so Previous then Next goes back to it and a back-and-forth swipe adds no copy. The list walk
+cannot always hand it over itself: back from a list climb onto the Up next climbs played before
+it, Next picks the list up from ahead of the current climb only, and mints a peek. `queue-navigation-now-slot-replay.test.ts` in
 `@boardsesh/play-view` replays the tester's session and a seeded random walk over list taps,
 Next, Previous, page loads, Play next and new lists against both rules.
 
@@ -1039,7 +1042,7 @@ mapping; the reducer decides what to do with it.
 | Subscription document (mobile) | `QUEUE_UPDATES_SUBSCRIPTION_NOW_SLOT` selects `historyCount` and `currentChangedAt` in `FullSync.state`; today's document stays for legacy mode | `src/lib/graphql/operations.ts:1229` |
 | Server probe | On every socket connect, before the join: the `__type(name: "QueueState")` probe, cached per connection, plus the narrow validation-error fallback (section 2). Injected into `create-queue-mutations.ts` as `useNowSlotDocuments()`. | `src/providers/queue/use-session-realtime.ts:884-908` |
 | Throttled open | A throttled `move-*` or `dedupe-*` reorders the array, so it can't use the "pointer self-heals" skip. It resyncs like any failed write. In now-slot mode a throttled `insert` resyncs too; `recoverThrottledQueueAdd` stays for the legacy branch only. | `queue-provider.tsx:1974-2000`, `:1844` |
-| `nextClimb` on a track | Sends `NOW`, resolved with `historyCopy: fresh`. A track peek still becomes a queue item, but at the Now slot, so it is History once you move on. If the list's neighbour is already queued, that entry moves instead of being copied. A peek whose climb only History holds is put up fresh and the History entry stays (section 1). Since #6777 Next on a track plays Up next before the list (below), so the peek only comes once Up next is played. | `queue-provider.tsx:2234-2258` |
+| `nextClimb` on a track | Sends `NOW`, resolved with `historyCopy: fresh`. A track peek still becomes a queue item, but at the Now slot, so it is History once you move on. If the list's neighbour is already queued, that entry moves instead of being copied. A peek whose climb only History holds is put up fresh and the History entry stays, unless that entry is History's last, right behind the current climb (section 1). Since #6777 Next on a track plays Up next before the list (below), so the peek only comes once Up next is played. | `queue-provider.tsx:2234-2258` |
 | `previousClimb` | On a track: `NOW` (the list's previous climb, from History or new). With no track, walking the queue (rule 4): `STEP`. | `queue-provider.tsx:2261-2281` |
 | BLE board-compatibility skip | Moves the target into Now, so the skipped climbs for a crewmate's other board stay in Up next. In a mixed-board crew they stay at the head of Up next until someone removes or reorders them, so every Next walks past the same climbs. The "skipped N climbs" notice is latched on the set of skipped entries (and the climb the swipe landed on), not on the current climb, so it shows once per set; a swipe back, a queue-sheet tap or a crewmate's open re-arms it. | `shared/board-config/src/board-compatibility.ts:256-273`, `reportClimbsSkippedOnBoardSwitch` in `queue-provider.tsx` |
 | Queue sheet row tap | Up next or History row: `NOW` | `src/components/play-drawer/use-queue-sheet-handlers.ts:65` |
