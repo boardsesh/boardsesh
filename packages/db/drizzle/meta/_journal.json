@@ -1989,6 +1989,13 @@
       "when": 1793123365285,
       "tag": "0283_gym_listing",
       "breakpoints": true
+    },
+    {
+      "idx": 284,
+      "version": "7",
+      "when": 1793164265387,
+      "tag": "0284_session_workouts",
+      "breakpoints": true
     }
   ]
 }

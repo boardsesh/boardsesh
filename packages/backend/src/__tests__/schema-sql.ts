@@ -102,7 +102,7 @@ const boardShareLinksSchema = readFileSync(
 // The workout a climber followed in a session (#6903), straight from the
 // generated migration, after board_sessions and users.
 const sessionWorkoutsSchema = readFileSync(
-  new URL('../../../db/drizzle/0283_session_workouts.sql', import.meta.url),
+  new URL('../../../db/drizzle/0284_session_workouts.sql', import.meta.url),
   'utf8',
 );
 
