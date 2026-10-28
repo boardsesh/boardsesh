@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { QueryClient } from '@tanstack/react-query';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
-import { enqueue, ensureMutationQueueTable, peekPending } from '@boardsesh/offline-sync';
+import { enqueue, peekPending, runMigrations, stampLocalUserId } from '@boardsesh/offline-sync';
 
 const mocks = vi.hoisted(() => ({
   db: null as object | null,
@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   request: vi.fn(async () => ({ recordSessionWorkout: true })),
   reportHandledError: vi.fn(),
   now: Date.UTC(2026, 0, 2),
+  account: { status: 'signed-in', userId: 'user-1' } as { status: string; userId?: string },
 }));
 const storage = vi.hoisted(() => {
   let entries: Record<string, string> = {};
@@ -35,13 +36,15 @@ vi.mock('../../db', () => ({ getDatabaseHandle: () => mocks.db }));
 vi.mock('../../lib/graphql/client', () => ({ getOfflineSyncHttpClient: () => ({ request: mocks.request }) }));
 vi.mock('../../lib/error-reporting', () => ({ reportHandledError: mocks.reportHandledError }));
 vi.mock('../../lib/clock', () => ({ nowMs: () => mocks.now }));
-vi.mock('../offline-sync-adapter', () => ({ drainMutationQueue: mocks.drainMutationQueue }));
+vi.mock('../offline-sync-adapter', () => ({
+  drainMutationQueue: mocks.drainMutationQueue,
+  readSignedInAccount: async () => mocks.account,
+}));
 vi.mock('../outbox-store', () => ({ notifyOutboxChanged: vi.fn() }));
 vi.mock('../local-write-telemetry', () => ({ localWriteRetryOptions: () => ({}) }));
 
 import {
   SESSION_WORKOUTS_OUTBOX_TABLE,
-  SESSION_WORKOUT_MAX_RETRIES,
   enqueueEndedSessionWorkout,
   enqueueSessionWorkoutWrite,
   sessionWorkoutIdempotencyKey,
@@ -75,8 +78,10 @@ beforeEach(async () => {
   storage.reset();
   resetWorkoutRunStoreForTests();
   db = createTestDatabase();
-  await ensureMutationQueueTable(db);
+  await runMigrations(db);
+  await stampLocalUserId(db, 'user-1');
   mocks.db = db;
+  mocks.account = { status: 'signed-in', userId: 'user-1' };
   mocks.now = Date.UTC(2026, 0, 2);
   mocks.drainMutationQueue.mockClear();
   mocks.request.mockClear();
@@ -199,11 +204,16 @@ describe('enqueueSessionWorkoutWrite', () => {
     expect(mocks.reportHandledError).toHaveBeenCalledTimes(1);
   });
 
-  it('queues each copy with a short retry budget', async () => {
+  it('queues nothing into an outbox stamped for another account, or for none', async () => {
     prepareWorkoutRun(SESSION_ID, run, climbs);
-    await enqueueSessionWorkoutWrite(SESSION_ID, { queryClient });
-    const row = await db.getFirstAsync<{ max_retries: number }>('SELECT max_retries FROM pending_mutations');
-    expect(row?.max_retries).toBe(SESSION_WORKOUT_MAX_RETRIES);
+    await stampLocalUserId(db, 'user-2');
+    expect(await enqueueSessionWorkoutWrite(SESSION_ID, { queryClient })).toBe('skipped');
+
+    mocks.account = { status: 'unsettled' };
+    await stampLocalUserId(db, 'user-1');
+    expect(await enqueueSessionWorkoutWrite(SESSION_ID, { queryClient })).toBe('skipped');
+
+    expect(await queued()).toEqual([]);
   });
 
   it('skips a write with nothing new since the last copy', async () => {
@@ -274,7 +284,7 @@ describe('enqueueEndedSessionWorkout (the session ended some other way)', () => 
     const record = await clearedRecord();
     mocks.now += 1000;
 
-    expect(await enqueueEndedSessionWorkout(record, { queryClient })).toBe('queued');
+    expect(await enqueueEndedSessionWorkout(record, { queryClient, ownerUserId: 'user-1' })).toBe('queued');
 
     const rows = await queued();
     expect(rows).toHaveLength(1);
@@ -288,13 +298,53 @@ describe('enqueueEndedSessionWorkout (the session ended some other way)', () => 
     await enqueueSessionWorkoutWrite(SESSION_ID, { queryClient });
     const record = await clearedRecord();
 
-    expect(await enqueueEndedSessionWorkout(record, { queryClient })).toBe('skipped');
+    expect(await enqueueEndedSessionWorkout(record, { queryClient, ownerUserId: 'user-1' })).toBe('skipped');
     expect(await queued()).toHaveLength(1);
   });
 
   it('never sends for a story session', async () => {
     prepareWorkoutRun('story-summary-workout', run, climbs);
     const record = await clearedRecord('story-summary-workout');
-    expect(await enqueueEndedSessionWorkout(record, { queryClient })).toBe('skipped');
+    expect(await enqueueEndedSessionWorkout(record, { queryClient, ownerUserId: 'user-1' })).toBe('skipped');
+  });
+
+  it('sends again when the End copy dead-lettered, so the server never stays on an older copy', async () => {
+    prepareWorkoutRun(SESSION_ID, run, climbs);
+    noteWorkoutRunTick(SESSION_ID, {
+      queueItemUuid: 'q1',
+      status: 'send',
+      climbedAt: '2026-10-28T10:00:00Z',
+      tickUuid: 'tick-1',
+    });
+    // The End button's copy, then a minute of resolver errors kills it.
+    await enqueueSessionWorkoutWrite(SESSION_ID, { queryClient });
+    const [endCopy] = await peekPending(db, 1);
+    if (!endCopy) throw new Error('the End copy was not queued');
+    await db.runAsync("UPDATE pending_mutations SET status = 'dead_letter', last_error = ? WHERE id = ?", [
+      'INTERNAL_SERVER_ERROR',
+      endCopy.id,
+    ]);
+    const record = await clearedRecord();
+
+    expect(await enqueueEndedSessionWorkout(record, { queryClient, ownerUserId: 'user-1' })).toBe('queued');
+
+    const rows = await queued();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.input.revision).toBe(86_401);
+    expect(rows[0]?.input.ticks).toEqual([{ tickUuid: 'tick-1', queueItemUuid: 'q1' }]);
+    // The dead copy it replaces is gone from Sync issues.
+    const dead = await db.getAllAsync<{ id: number }>("SELECT id FROM pending_mutations WHERE status = 'dead_letter'");
+    expect(dead).toEqual([]);
+  });
+
+  it('keeps the cleared copy out of an outbox that now belongs to someone else', async () => {
+    prepareWorkoutRun(SESSION_ID, run, climbs);
+    const record = await clearedRecord();
+    // Sign-out wiped the outbox and the next account stamped it.
+    await stampLocalUserId(db, 'user-2');
+
+    expect(await enqueueEndedSessionWorkout(record, { queryClient, ownerUserId: 'user-1' })).toBe('skipped');
+    expect(await enqueueEndedSessionWorkout(record, { queryClient, ownerUserId: null })).toBe('skipped');
+    expect(await queued()).toEqual([]);
   });
 });

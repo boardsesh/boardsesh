@@ -28,17 +28,28 @@ const storage = vi.hoisted(() => {
 });
 vi.mock('@react-native-async-storage/async-storage', () => ({ default: storage }));
 
-// #6903: the run that goes becomes the summary's recap and sends its last copy.
+// #6903: the run that goes becomes the summary's recap and sends its last copy,
+// for the account the stored token names.
 const sync = vi.hoisted(() => ({
-  profileId: 'user-1' as string | null,
+  account: { status: 'signed-in', userId: 'user-1' } as { status: string; userId?: string },
+  accountReads: 0,
+  generation: 1,
   enqueueEndedSessionWorkout: vi.fn(async () => 'queued'),
-}));
-vi.mock('../../../lib/graphql/hooks', () => ({
-  useProfile: () => ({ data: sync.profileId ? { id: sync.profileId } : null }),
 }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({ invalidateQueries: vi.fn() }) }));
 vi.mock('../../../offline/session-workout-outbox', () => ({
   enqueueEndedSessionWorkout: sync.enqueueEndedSessionWorkout,
+}));
+vi.mock('../../../offline/offline-sync-adapter', () => ({
+  readSignedInAccount: async () => {
+    sync.accountReads += 1;
+    return sync.account;
+  },
+}));
+vi.mock('../../../lib/auth-store', () => ({
+  captureAuthCredentialGeneration: () => sync.generation,
+  isAuthCredentialGenerationCurrent: (generation: number) => generation === sync.generation,
+  subscribeAuthCredentialGenerationChanges: () => () => undefined,
 }));
 
 import {
@@ -60,7 +71,9 @@ const run: WorkoutRun = {
 beforeEach(() => {
   resetWorkoutRunStoreForTests();
   resetEndedWorkoutStoreForTests();
-  sync.profileId = 'user-1';
+  sync.account = { status: 'signed-in', userId: 'user-1' };
+  sync.accountReads = 0;
+  sync.generation = 1;
   sync.enqueueEndedSessionWorkout.mockClear();
   storage.reset();
   queueState.sessionId = null;
@@ -106,10 +119,15 @@ describe('WorkoutRunSessionSync', () => {
     expect(getWorkoutRunForSession('session-1')).toBe(run);
   });
 
-  it("keeps the ended run as the account's recap and sends its last copy, however the session ended", () => {
+  it("keeps the ended run as the account's recap and sends its last copy, however the session ended", async () => {
     queueState.sessionId = 'session-1';
     setWorkoutRun('session-1', run);
     const { rerender } = render(<WorkoutRunSessionSync />);
+    // The account was read ahead, so the recap is there at once.
+    await waitFor(() => expect(sync.accountReads).toBe(1));
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     // No End button: the session ended on another phone, or dropped this climber.
     queueState.sessionId = null;
@@ -118,11 +136,52 @@ describe('WorkoutRunSessionSync', () => {
     expect(getEndedWorkout('session-1')).toMatchObject({ sessionId: 'session-1', run, userId: 'user-1' });
     expect(sync.enqueueEndedSessionWorkout).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ sessionId: 'session-1', run }),
-      expect.anything(),
+      expect.objectContaining({ ownerUserId: 'user-1' }),
     );
   });
 
-  it('sends the last copy when the climber joins another session', () => {
+  it('stamps the recap from the token on a cold start that finds the session over', async () => {
+    const realAccount = sync.account;
+    sync.account = { status: 'unsettled' };
+    queueState.sessionId = 'session-1';
+    setWorkoutRun('session-1', run);
+    const { rerender } = render(<WorkoutRunSessionSync />);
+    // The read ahead found no settled account yet.
+    await waitFor(() => expect(sync.accountReads).toBe(1));
+    sync.account = realAccount;
+
+    queueState.sessionId = null;
+    rerender(<WorkoutRunSessionSync />);
+
+    await waitFor(() => expect(getEndedWorkout('session-1')?.userId).toBe('user-1'));
+    expect(sync.enqueueEndedSessionWorkout).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: 'session-1' }),
+      expect.objectContaining({ ownerUserId: 'user-1' }),
+    );
+  });
+
+  it('keeps nothing when the account changed between the end and the token read', async () => {
+    sync.account = { status: 'unsettled' };
+    queueState.sessionId = 'session-1';
+    setWorkoutRun('session-1', run);
+    const { rerender } = render(<WorkoutRunSessionSync />);
+    await waitFor(() => expect(sync.accountReads).toBe(1));
+
+    queueState.sessionId = null;
+    rerender(<WorkoutRunSessionSync />);
+    // Signed out and back in as someone else before the read came back.
+    sync.generation = 2;
+    sync.account = { status: 'signed-in', userId: 'user-2' };
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(getEndedWorkout('session-1')).toBeNull();
+    expect(sync.enqueueEndedSessionWorkout).not.toHaveBeenCalled();
+  });
+
+  it('sends the last copy when the climber joins another session', async () => {
     queueState.sessionId = 'session-1';
     setWorkoutRun('session-1', run);
     const { rerender } = render(<WorkoutRunSessionSync />);
@@ -130,9 +189,11 @@ describe('WorkoutRunSessionSync', () => {
     queueState.sessionId = 'session-2';
     rerender(<WorkoutRunSessionSync />);
 
-    expect(sync.enqueueEndedSessionWorkout).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ sessionId: 'session-1' }),
-      expect.anything(),
+    await waitFor(() =>
+      expect(sync.enqueueEndedSessionWorkout).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ sessionId: 'session-1' }),
+        expect.anything(),
+      ),
     );
   });
 });

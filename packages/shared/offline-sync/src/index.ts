@@ -33,6 +33,7 @@ export {
   hasPendingTicksForSession,
   countPendingSessionWrites,
   supersedePendingSessionWorkouts,
+  isMutationPending,
   getDeadLetterCount,
   getDeadLetters,
   getOutboxSummary,

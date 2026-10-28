@@ -20,6 +20,8 @@ import {
   beginImmediateWrite,
   enqueue,
   processMutation,
+  getLocalUserId,
+  isMutationPending,
   supersedePendingSessionWorkouts,
   runLocalWriteWithRetry,
   type GraphQLFetch,
@@ -44,19 +46,12 @@ import {
   revisionAfter,
   type WorkoutRunRecord,
 } from '../lib/workout-run-store';
-import { drainMutationQueue } from './offline-sync-adapter';
+import { drainMutationQueue, readSignedInAccount } from './offline-sync-adapter';
 import { notifyOutboxChanged } from './outbox-store';
 import { localWriteRetryOptions } from './local-write-telemetry';
 
 /** The outbox table name the drainer routes to `recordSessionWorkout`. */
 export const SESSION_WORKOUTS_OUTBOX_TABLE = 'session_workouts';
-
-/**
- * A workout row's retry budget, below the outbox's 10. A newer write replaces
- * it anyway, and an older bundle that cannot dispatch the table (after an OTA
- * rollback) holds every row behind it while this budget runs out (handlers.ts).
- */
-export const SESSION_WORKOUT_MAX_RETRIES = 3;
 
 /** One write per session and revision: a replay of the same write keeps its key. */
 export function sessionWorkoutIdempotencyKey(sessionId: string, revision: number): string {
@@ -108,27 +103,37 @@ async function sendDirectly(input: RecordSessionWorkoutInput): Promise<SessionWo
   }
 }
 
-/** Queue (or, with no offline database, send) one write. */
+/**
+ * Queue (or, with no offline database, send) one write for `ownerUserId`.
+ * Nothing is queued unless the outbox is stamped for that same account: a
+ * write that lost a lock to sign-out's wipe and retried after it would
+ * otherwise land in the next account's outbox (the drainer refuses an
+ * unstamped one anyway).
+ */
 async function queueWrite(
   input: RecordSessionWorkoutInput,
   queryClient: QueryClient,
+  ownerUserId: string | null,
 ): Promise<SessionWorkoutWriteOutcome> {
+  if (!ownerUserId) return 'skipped';
   const db = getDatabaseHandle();
   if (!db) return sendDirectly(input);
   const { sessionId, revision } = input;
-  let newerPending = false;
+  let queued = false;
   try {
     await runLocalWriteWithRetry(
       async (attempt) => {
+        queued = false;
         await db.withExclusiveTransactionAsync(async (txn) => {
           await beginImmediateWrite(
             txn,
             attempt === 1 ? OFFLINE_DB_FOREGROUND_WRITE_TIMEOUT_MS : OFFLINE_DB_RETRY_BUSY_TIMEOUT_MS,
           );
+          if ((await getLocalUserId(txn)) !== ownerUserId) return;
           // Safe to re-run: a retry after a COMMIT that landed finds its own
           // row at this revision and queues nothing more. A write that lost a
           // race to a newer one leaves that one alone and queues nothing.
-          ({ newerPending } = await supersedePendingSessionWorkouts(txn, sessionId, revision));
+          const { newerPending } = await supersedePendingSessionWorkouts(txn, sessionId, revision);
           if (newerPending) return;
           await enqueue(
             txn,
@@ -136,8 +141,8 @@ async function queueWrite(
             'create',
             input,
             sessionWorkoutIdempotencyKey(sessionId, revision),
-            { maxRetries: SESSION_WORKOUT_MAX_RETRIES },
           );
+          queued = true;
         });
       },
       localWriteRetryOptions(SESSION_WORKOUTS_OUTBOX_TABLE, 'create'),
@@ -146,7 +151,7 @@ async function queueWrite(
     reportHandledError(error, { tags: { source: 'session-workout', kind: 'enqueue' } });
     return 'failed';
   }
-  if (newerPending) return 'skipped';
+  if (!queued) return 'skipped';
   notifyOutboxChanged();
   drainMutationQueue(db, queryClient, offlineSyncFetch).catch((error: unknown) => {
     if (__DEV__) console.warn('[session-workout] drain failed after queuing the workout:', error);
@@ -155,11 +160,39 @@ async function queueWrite(
 }
 
 /**
+ * Whether the last copy (`revision`, holding `sentDigest`) already covers
+ * `digest`: the same content, and the copy is still waiting in the outbox (it
+ * will be sent) or was sent straight to the server. A copy that left the outbox
+ * may have been delivered or dead-lettered, and the outbox cannot tell which,
+ * so the write goes out again: a repeat of a delivered copy is one request the
+ * server writes over itself, a lost one would leave it on an older copy.
+ */
+async function lastCopyCovers(
+  record: Pick<WorkoutRunRecord, 'sessionId' | 'revision' | 'sentDigest'>,
+  digest: string,
+): Promise<boolean> {
+  if (record.sentDigest !== digest || record.revision === undefined) return false;
+  const db = getDatabaseHandle();
+  if (!db) return true;
+  try {
+    return await isMutationPending(db, sessionWorkoutIdempotencyKey(record.sessionId, record.revision));
+  } catch {
+    return false;
+  }
+}
+
+/** The account signed in now, or null while it is unknown. */
+async function signedInUserId(): Promise<string | null> {
+  const account = await readSignedInAccount();
+  return account.status === 'signed-in' ? account.userId : null;
+}
+
+/**
  * Queue the run for `sessionId` at its next revision. Does nothing for a
  * session id the server never minted (stories, fakes, daily cards), in a
  * screenshot capture, when the store holds no run for the session, or when the
- * last copy queued already holds everything. Never throws: losing a write
- * costs the session screens their workout, never the climb.
+ * last copy still waiting already holds everything. Never throws: losing a
+ * write costs the session screens their workout, never the climb.
  *
  * `queueItems` (the live queue) fills in climbs the run never captured and
  * brings each climb's mirror up to date.
@@ -179,13 +212,14 @@ export async function enqueueSessionWorkoutWrite(
     );
   }
   const latest = getWorkoutRunState();
-  const content = latest ? buildSessionWorkoutContent(latest) : null;
+  const content = latest?.sessionId === sessionId ? buildSessionWorkoutContent(latest) : null;
   if (!latest || !content) return 'skipped';
   const digest = sessionWorkoutDigest(content);
-  if (digest === latest.sentDigest) return 'skipped';
+  const ownerUserId = await signedInUserId();
+  if (await lastCopyCovers(latest, digest)) return 'skipped';
   const revision = nextWorkoutRunRevision(sessionId, nowMs());
   if (revision === null) return 'skipped';
-  const outcome = await queueWrite({ ...content, revision }, queryClient);
+  const outcome = await queueWrite({ ...content, revision }, queryClient, ownerUserId);
   if (outcome === 'queued' || outcome === 'sent') noteWorkoutRunSent(sessionId, revision, digest);
   return outcome;
 }
@@ -195,15 +229,19 @@ export async function enqueueSessionWorkoutWrite(
  * store let go of: the session ended on another phone, the climber dropped out
  * quietly or was removed, or the app was killed and came back to an ended
  * session. Only a local End reaches `enqueueSessionWorkoutWrite` from
- * `beforeEnd`; every way out reaches this. A record whose last copy already
- * holds everything (the usual case after a local End) sends nothing.
+ * `beforeEnd`; every way out reaches this. Skipped while the End's copy is
+ * still waiting with the same content; sent again when that copy left the
+ * outbox (it may have dead-lettered).
+ *
+ * `ownerUserId` is the account the record was cleared under; nothing is queued
+ * into an outbox stamped for anyone else.
  */
 export async function enqueueEndedSessionWorkout(
   record: WorkoutRunRecord,
-  { queryClient }: Pick<SessionWorkoutWriteOptions, 'queryClient'>,
+  { queryClient, ownerUserId }: Pick<SessionWorkoutWriteOptions, 'queryClient'> & { ownerUserId: string | null },
 ): Promise<SessionWorkoutWriteOutcome> {
   if (!isServerSessionId(record.sessionId) || isScreenshotCapture()) return 'skipped';
   const content = buildSessionWorkoutContent(record);
-  if (!content || sessionWorkoutDigest(content) === record.sentDigest) return 'skipped';
-  return queueWrite({ ...content, revision: revisionAfter(record.revision, nowMs()) }, queryClient);
+  if (!content || (await lastCopyCovers(record, sessionWorkoutDigest(content)))) return 'skipped';
+  return queueWrite({ ...content, revision: revisionAfter(record.revision, nowMs()) }, queryClient, ownerUserId);
 }
