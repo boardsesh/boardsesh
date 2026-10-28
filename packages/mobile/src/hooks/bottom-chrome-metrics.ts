@@ -152,6 +152,33 @@ export type BottomChromeInputs = {
   tabBarAtBottom?: boolean;
   /** A prepared workout uses the same pill reserve before its timer is armed. */
   workoutStartPending?: boolean;
+  /**
+   * The largest in-tab bottom inset measured since the bottom chrome last changed
+   * shape (route, current climb, orientation), from
+   * {@link trackExpandedTabContentInset}. On iOS 26 the bar minimizes as you
+   * scroll and re-expands when you tap it or scroll back, so the measured inset
+   * flips between two values; this is the larger one, the EXPANDED bar.
+   *
+   * It floors `scrollBottomPadding` on the native-overlay path. The
+   * reconstruction there adds accessory height only on a tab root, but UIKit
+   * also draws the platter on pushed tab routes (DEVICE_VERIFIED iPhone 17 Pro,
+   * iOS 26.5, Discover › playlist: 83 minimized, 139 expanded). Without this
+   * floor a list scrolled to its end with the bar minimized kept 83pt of padding,
+   * and re-expanding the bar put the last row under the MiniPlayer. `null` (the
+   * default) leaves every other call site byte-identical.
+   */
+  expandedTabContentInsetBottom?: number | null;
+  /**
+   * Left and right insets measured inside the focused native tab, from the same
+   * probe as {@link measuredTabContentInsetBottom}: the native iPad sidebar
+   * (DEVICE_VERIFIED 280pt left, iPad landscape, iPadOS 27.0) and the iPhone Duo
+   * rail (DEVICE_VERIFIED 84pt right, closed). The accessory spans the content
+   * column between them, so a root overlay meant to sit on it has to be inset
+   * by the same amount. `null` means no measurement yet; ignored off the
+   * native-tab-bar path.
+   */
+  measuredTabContentInsetLeft?: number | null;
+  measuredTabContentInsetRight?: number | null;
 };
 
 export type BottomChromeMetrics = {
@@ -235,7 +262,45 @@ export type BottomChromeMetrics = {
    * explicit `+ jsQueueReserve`.
    */
   preSessionFooterBottom: number;
+  /**
+   * Horizontal insets of the content column the bottom chrome spans, for
+   * overlays mounted at the ROOT (the rest-timer pill). The root lays out
+   * against the whole window, but on the native iPad the sidebar takes the
+   * leading 280pt and on the iPhone Duo the rail takes the trailing 84pt; the
+   * accessory sits on the column between. Centering the pill on the window put
+   * it 140pt left of the MiniPlayer on an iPad in landscape. Zero off the
+   * native-tab-bar path, where nothing narrows the column.
+   */
+  contentColumnLeft: number;
+  contentColumnRight: number;
 };
+
+/** What {@link trackExpandedTabContentInset} remembers between renders. */
+export type ExpandedTabContentInset = {
+  /** Identifies the bottom chrome's shape; a new key starts a fresh maximum. */
+  key: string;
+  /** Largest valid in-tab inset seen under `key`, or null before the first. */
+  bottom: number | null;
+};
+
+/**
+ * Folds one in-tab inset measurement into the running maximum for the current
+ * chrome shape, which is the expanded-bar inset once the bar has been expanded
+ * under that shape at least once. A changed `key` (route, current climb,
+ * window size) drops the old maximum: a cleared climb removes the platter, and
+ * keeping its height would leave a dead band under every list. Returns
+ * `previous` itself when nothing changed, so a caller can keep it in a ref.
+ */
+export function trackExpandedTabContentInset(
+  previous: ExpandedTabContentInset | null,
+  key: string,
+  measured: number | null,
+): ExpandedTabContentInset {
+  const carried = previous && previous.key === key ? previous.bottom : null;
+  const bottom = measured === null ? carried : carried === null ? measured : Math.max(carried, measured);
+  if (previous && previous.key === key && previous.bottom === bottom) return previous;
+  return { key, bottom };
+}
 
 /**
  * Pure bottom-chrome arbitration. `nativeAccessoryVisible` and
@@ -286,6 +351,9 @@ export function computeBottomChromeMetrics({
   restTimerArmed = false,
   tabBarAtBottom = true,
   workoutStartPending = false,
+  expandedTabContentInsetBottom = null,
+  measuredTabContentInsetLeft = null,
+  measuredTabContentInsetRight = null,
 }: BottomChromeInputs): BottomChromeMetrics {
   // Regular-width iPad with the detail pane mounted: the left sidebar replaces
   // the bottom tab bar and the selected-climb pane replaces the floating queue
@@ -320,6 +388,8 @@ export function computeBottomChromeMetrics({
       fixedFooterBottom: insetsBottom,
       inSessionListBottom: insetsBottom,
       preSessionFooterBottom: insetsBottom,
+      contentColumnLeft: 0,
+      contentColumnRight: 0,
     };
   }
 
@@ -394,7 +464,21 @@ export function computeBottomChromeMetrics({
   // the end of content. ≤49pt of extra padding while minimized is invisible
   // slack; floating controls deliberately keep tracking the live value instead
   // (a capsule following the minimizing bar is correct).
-  const scrollTabBarBottom = tabBarOverlaysContent ? Math.max(tabBarBottom, nativeChromeFallback) : tabBarBottom;
+  //
+  // The same reasoning covers the bar re-expanding at the END of a list: the
+  // padding has to be the expanded bar's, whichever state the bar is in, or the
+  // last row ends up under the MiniPlayer with nowhere left to scroll. The
+  // reconstruction only knows the expanded height on a tab root, so the largest
+  // inset measured under this chrome shape floors it too (see
+  // `expandedTabContentInsetBottom`). Invalid readings are rejected by the same
+  // `>= insetsBottom` rule as the live one.
+  const expandedNativeChromeBottom =
+    expandedTabContentInsetBottom !== null && expandedTabContentInsetBottom >= insetsBottom
+      ? expandedTabContentInsetBottom
+      : 0;
+  const scrollTabBarBottom = tabBarOverlaysContent
+    ? Math.max(tabBarBottom, nativeChromeFallback, expandedNativeChromeBottom)
+    : tabBarBottom;
   const activeQueueChromeReserve = Math.max(jsQueueReserve, nativeAccessoryReserve);
   // The rest-timer pill is a root-level floating overlay pinned just above the
   // queue chrome, so it exists exactly where that chrome does: inside the tabs,
@@ -432,6 +516,10 @@ export function computeBottomChromeMetrics({
   // clear it. This is where the pill parts company with the connectivity banner,
   // which is transient and deliberately left out of the docked offsets.
   const fixedFooterBottom = contentInsetBottom + activeQueueChromeReserve + restTimerReserve;
+  // The column the accessory spans: the window less the in-tab side insets, on
+  // the only path where UIKit lays the tab out beside a sidebar or rail.
+  const contentColumnLeft = tabBarOverlaysContent ? Math.max(measuredTabContentInsetLeft ?? 0, 0) : 0;
+  const contentColumnRight = tabBarOverlaysContent ? Math.max(measuredTabContentInsetRight ?? 0, 0) : 0;
 
   return {
     hasCurrentClimb,
@@ -474,5 +562,7 @@ export function computeBottomChromeMetrics({
       material: fixedFooterBottom,
       liquidGlass: (tabBarOverlaysContent ? tabBarBottom : insetsBottom) + jsQueueReserve + restTimerReserve,
     }),
+    contentColumnLeft,
+    contentColumnRight,
   };
 }

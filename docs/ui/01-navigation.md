@@ -130,7 +130,12 @@ The bar itself depends on the device:
   `resolveCurrentClimbSurface`
   (`src/hooks/current-climb-surface.ts`), decides who shows the current climb, so
   the floating JS bar never appears over the accessory; tab content clears the
-  accessory through the measured in-tab inset, as on the iPhone Duo. Root
+  accessory through the measured in-tab inset, as on the iPhone Duo. The rest
+  timer pill is a root overlay, so it centres on the content column the
+  accessory spans, using the in-tab side insets (the sidebar's 280pt in
+  landscape, the Duo rail's 84pt), not on the whole window. Lists pad for the
+  expanded tab bar even while it is minimized, so a bar that re-expands at the
+  end of a list never covers the last row. Root
   headers use native bar items, as on iPhone, so UIKit places them beside the
   sidebar button and the top tab bar (see "Root header actions are native bar
   items" in `docs/ai-design-guidelines.md`).

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeBottomChromeMetrics } from '../bottom-chrome-metrics';
+import { computeBottomChromeMetrics, trackExpandedTabContentInset } from '../bottom-chrome-metrics';
 import {
   MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT,
   MATERIAL_TAB_BAR_HEIGHT,
@@ -1339,6 +1339,167 @@ describe('computeBottomChromeMetrics', () => {
       expect(metrics.jsQueueToolbarVisible).toBe(true);
       expect(metrics.preSessionFooterBottom).toBeGreaterThanOrEqual(pillTopAboveScreenFloor);
       expect(metrics.inSessionListBottom).toBeGreaterThanOrEqual(pillTopAboveScreenFloor);
+    });
+  });
+
+  describe('expanded-bar floor for list padding (bar re-expanding at the end of a list)', () => {
+    // DEVICE_VERIFIED (iPhone 17 Pro, iOS 26.5, Discover › playlist, a climb
+    // selected): the in-tab inset reads 83 with the bar minimized and 139 with it
+    // expanded. The platter is drawn on this pushed route, so 139 is the expanded
+    // bar plus the MiniPlayer even though the route is not an accessory surface.
+    const PUSHED_MINIMIZED_INSET = 83;
+    const PUSHED_EXPANDED_INSET = 139;
+    const pushedInputs = {
+      uiVariant: 'liquidGlass' as const,
+      usesNativeTabBar: true,
+      insetsBottom: ROOT_WINDOW_INSET,
+      insideTabs: true,
+      onAccessorySurface: false,
+      hasCurrentClimb: true,
+      nativeAccessoryPresented: false,
+    };
+
+    it('pads lists for the expanded bar while the bar is minimized', () => {
+      const metrics = computeBottomChromeMetrics({
+        ...pushedInputs,
+        measuredTabContentInsetBottom: PUSHED_MINIMIZED_INSET,
+        expandedTabContentInsetBottom: PUSHED_EXPANDED_INSET,
+      });
+      expect(metrics.scrollBottomPadding).toBe(PUSHED_EXPANDED_INSET);
+      // Floating controls still follow the live bar down.
+      expect(metrics.floatingControlBottom).toBe(PUSHED_MINIMIZED_INSET);
+      expect(metrics.tabBarBottom).toBe(PUSHED_MINIMIZED_INSET);
+    });
+
+    it('stacks the rest pill reserve on top of the expanded floor', () => {
+      const metrics = computeBottomChromeMetrics({
+        ...pushedInputs,
+        measuredTabContentInsetBottom: PUSHED_MINIMIZED_INSET,
+        expandedTabContentInsetBottom: PUSHED_EXPANDED_INSET,
+        restTimerArmed: true,
+      });
+      expect(metrics.scrollBottomPadding).toBe(PUSHED_EXPANDED_INSET + REST_TIMER_RESERVE);
+    });
+
+    it('adds nothing where the platter was never drawn (#3776 dead gap stays fixed)', () => {
+      const metrics = computeBottomChromeMetrics({
+        ...pushedInputs,
+        measuredTabContentInsetBottom: IN_TAB_INFERRED_BAR_INSET,
+        expandedTabContentInsetBottom: IN_TAB_INFERRED_BAR_INSET,
+      });
+      expect(metrics.scrollBottomPadding).toBe(IN_TAB_INFERRED_BAR_INSET);
+    });
+
+    it('rejects an expanded reading below the window inset', () => {
+      const metrics = computeBottomChromeMetrics({
+        ...pushedInputs,
+        measuredTabContentInsetBottom: PUSHED_MINIMIZED_INSET,
+        expandedTabContentInsetBottom: ROOT_WINDOW_INSET - 1,
+      });
+      expect(metrics.scrollBottomPadding).toBe(PUSHED_MINIMIZED_INSET);
+    });
+
+    it('ignores the floor off the native tab bar, where the JS bars sit outside every UIKit inset', () => {
+      const metrics = computeBottomChromeMetrics({
+        ...pushedInputs,
+        uiVariant: 'material',
+        usesNativeTabBar: false,
+        expandedTabContentInsetBottom: PUSHED_EXPANDED_INSET,
+      });
+      expect(metrics.scrollBottomPadding).toBe(ROOT_WINDOW_INSET + MATERIAL_TAB_BAR_HEIGHT);
+    });
+  });
+
+  describe('trackExpandedTabContentInset', () => {
+    it('keeps the largest reading under one key', () => {
+      const first = trackExpandedTabContentInset(null, 'discover|climb', 139);
+      const minimized = trackExpandedTabContentInset(first, 'discover|climb', 83);
+      expect(minimized.bottom).toBe(139);
+      // Unchanged state comes back as the same object, so a ref holding it is stable.
+      expect(minimized).toBe(first);
+    });
+
+    it('grows when a later reading is larger', () => {
+      const minimized = trackExpandedTabContentInset(null, 'discover|climb', 83);
+      expect(trackExpandedTabContentInset(minimized, 'discover|climb', 139).bottom).toBe(139);
+    });
+
+    it('starts over when the chrome changes shape, so a cleared climb leaves no dead band', () => {
+      const withClimb = trackExpandedTabContentInset(null, 'discover|climb', 139);
+      expect(trackExpandedTabContentInset(withClimb, 'discover|none', 83)).toEqual({
+        key: 'discover|none',
+        bottom: 83,
+      });
+    });
+
+    it('carries the maximum through an unmeasured frame and starts empty', () => {
+      expect(trackExpandedTabContentInset(null, 'home', null).bottom).toBeNull();
+      const measured = trackExpandedTabContentInset(null, 'home', 139);
+      expect(trackExpandedTabContentInset(measured, 'home', null).bottom).toBe(139);
+      expect(trackExpandedTabContentInset(measured, 'climbs', null).bottom).toBeNull();
+    });
+  });
+
+  describe('content column for root overlays (the rest pill)', () => {
+    const nativeTabInputs = {
+      uiVariant: 'liquidGlass' as const,
+      usesNativeTabBar: true,
+      insideTabs: true,
+      onAccessorySurface: true,
+      hasCurrentClimb: true,
+      nativeAccessoryPresented: true,
+      tabBarAtBottom: false,
+      restTimerArmed: true,
+    };
+
+    it('insets by the native iPad sidebar in landscape', () => {
+      // DEVICE_VERIFIED (iPad Pro 13-inch, iPadOS 27.0, landscape): in-tab insets
+      // { left: 280, right: 0, bottom: 20 }.
+      const metrics = computeBottomChromeMetrics({
+        ...nativeTabInputs,
+        insetsBottom: 20,
+        measuredTabContentInsetLeft: 280,
+        measuredTabContentInsetRight: 0,
+      });
+      expect(metrics.contentColumnLeft).toBe(280);
+      expect(metrics.contentColumnRight).toBe(0);
+    });
+
+    it('insets by the iPhone Duo rail when closed', () => {
+      // DEVICE_VERIFIED (iPhone Duo, iOS 27.1, closed): in-tab insets
+      // { left: 0, right: 84, bottom: 34 }.
+      const metrics = computeBottomChromeMetrics({
+        ...nativeTabInputs,
+        insetsBottom: 34,
+        measuredTabContentInsetLeft: 0,
+        measuredTabContentInsetRight: 84,
+      });
+      expect(metrics.contentColumnLeft).toBe(0);
+      expect(metrics.contentColumnRight).toBe(84);
+    });
+
+    it('spans the window before a measurement and off the native tab bar', () => {
+      expect(computeBottomChromeMetrics({ ...nativeTabInputs, insetsBottom: 34 }).contentColumnLeft).toBe(0);
+      const material = computeBottomChromeMetrics({
+        ...nativeTabInputs,
+        uiVariant: 'material',
+        usesNativeTabBar: false,
+        insetsBottom: 34,
+        measuredTabContentInsetLeft: 280,
+        measuredTabContentInsetRight: 84,
+      });
+      expect(material.contentColumnLeft).toBe(0);
+      expect(material.contentColumnRight).toBe(0);
+    });
+
+    it('spans the window on the JS sidebar shell, where no pill renders', () => {
+      const metrics = computeBottomChromeMetrics({
+        ...nativeTabInputs,
+        insetsBottom: 20,
+        usesSidebar: true,
+        measuredTabContentInsetLeft: 280,
+      });
+      expect(metrics.contentColumnLeft).toBe(0);
     });
   });
 });

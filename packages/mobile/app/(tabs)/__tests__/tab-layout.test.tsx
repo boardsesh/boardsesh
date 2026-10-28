@@ -312,7 +312,7 @@ vi.mock('expo-router/unstable-native-tabs', () => {
 
 import TabLayout, { unstable_settings } from '../_layout';
 import {
-  publishNativeTabContentInsetSide,
+  publishNativeTabContentInsetSides,
   resetNativeTabContentInsetForTests,
 } from '../../../src/lib/native-tab-content-inset-store';
 import { TAB_BADGE_CONNECTED, TAB_BADGE_LIVE } from '../../../src/components/navigation/tab-badge';
@@ -875,7 +875,7 @@ describe('TabLayout', () => {
       // An iPhone 17 Pro: the probe's first publish is a 0 side inset.
       cfg.windowWidth = 402;
       cfg.windowHeight = 874;
-      act(() => publishNativeTabContentInsetSide(0));
+      act(() => publishNativeTabContentInsetSides(0, 0));
       const { container } = render(<TabLayout />);
 
       expect(minimizeBehavior(container)).toBe('onScrollDown');
@@ -890,10 +890,10 @@ describe('TabLayout', () => {
       expect(minimizeBehavior(container)).toBe('onScrollDown');
 
       // INFERRED: the rail plus the side status bar, 84pt as on the inner display.
-      act(() => publishNativeTabContentInsetSide(84));
+      act(() => publishNativeTabContentInsetSides(0, 84));
       expect(minimizeBehavior(container)).toBe('never');
 
-      act(() => publishNativeTabContentInsetSide(0));
+      act(() => publishNativeTabContentInsetSides(0, 0));
       expect(minimizeBehavior(container)).toBe('onScrollDown');
     });
 
@@ -924,7 +924,7 @@ describe('TabLayout', () => {
       cfg.windowHeight = height;
       cfg.nativeAccessoryActive = true;
       cfg.hasCurrentClimb = true;
-      act(() => publishNativeTabContentInsetSide(sideInset));
+      act(() => publishNativeTabContentInsetSides(0, sideInset));
 
       for (const route of ['holds', 'zone']) {
         cfg.segments = ['(tabs)', 'climbs', route];

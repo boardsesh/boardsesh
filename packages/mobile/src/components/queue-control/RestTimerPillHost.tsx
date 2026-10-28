@@ -89,7 +89,8 @@ export function shouldRenderRestTimerPill({
  *
  * The anchor is `bottomChrome.restTimerBottom` verbatim: it already clears the
  * tab bar and the active queue chrome exactly once. Adding an offset of our own
- * here is #4089's failure shape.
+ * here is #4089's failure shape. Horizontally it sits on the content column
+ * (`contentColumnLeft` / `contentColumnRight`), the same span as the accessory.
  */
 export function RootRestTimerPillHost() {
   const armed = useRestTimerArmed();
@@ -107,7 +108,19 @@ export function RootRestTimerPillHost() {
   }
 
   return (
-    <View pointerEvents="box-none" style={[styles.overlay, { bottom: bottomChrome.restTimerBottom }]}>
+    <View
+      pointerEvents="box-none"
+      style={[
+        styles.overlay,
+        {
+          bottom: bottomChrome.restTimerBottom,
+          // Centre on the column the accessory spans, not the window: the native
+          // iPad sidebar and the iPhone Duo rail take a side of it.
+          left: spacing[3] + bottomChrome.contentColumnLeft,
+          right: spacing[3] + bottomChrome.contentColumnRight,
+        },
+      ]}
+    >
       <RestTimerPillHost />
     </View>
   );
@@ -116,8 +129,6 @@ export function RootRestTimerPillHost() {
 const styles = StyleSheet.create({
   overlay: {
     position: 'absolute',
-    left: spacing[3],
-    right: spacing[3],
     alignItems: 'center',
     // Above the tab bar / native accessory in z-order, and one rung BELOW the
     // onboarding tip (100) so a tip pointing at the bar still wins.
