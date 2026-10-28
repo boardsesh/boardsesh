@@ -145,18 +145,39 @@ export function buildSessionWorkoutTickMap(
   return parseSessionWorkoutTickMap(kept) ?? [];
 }
 
+/** `recordSessionWorkout`'s input without its revision: what one write holds. */
+export type SessionWorkoutContent = Omit<RecordSessionWorkoutInput, 'revision'>;
+
+/** What a write for `record` would hold, or null when there is no plan to send. */
+export function buildSessionWorkoutContent(
+  record: Pick<WorkoutRunRecord, 'sessionId' | 'run' | 'climbs' | 'log'>,
+): SessionWorkoutContent | null {
+  if (!isServerSessionId(record.sessionId)) return null;
+  const plan = buildSessionWorkoutPlan(record);
+  if (!plan) return null;
+  return { sessionId: record.sessionId, stages: plan.stages, ticks: buildSessionWorkoutTickMap(record, plan) };
+}
+
 /** `recordSessionWorkout`'s input for `record` at `revision`, or null when there is no plan to send. */
 export function buildRecordSessionWorkoutInput(
   record: WorkoutRunRecord,
   revision: number,
 ): RecordSessionWorkoutInput | null {
-  if (!isServerSessionId(record.sessionId)) return null;
-  const plan = buildSessionWorkoutPlan(record);
-  if (!plan) return null;
-  return {
-    sessionId: record.sessionId,
-    revision,
-    stages: plan.stages,
-    ticks: buildSessionWorkoutTickMap(record, plan),
-  };
+  const content = buildSessionWorkoutContent(record);
+  return content ? { ...content, revision } : null;
+}
+
+/**
+ * A short digest of what a write holds (FNV-1a over its JSON), stored with the
+ * run as `sentDigest`: a later write with the same digest has nothing new and
+ * is skipped. Not a security check, only "did anything change".
+ */
+export function sessionWorkoutDigest(content: SessionWorkoutContent): string {
+  const text = JSON.stringify(content);
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return `${text.length.toString(36)}-${hash.toString(36)}`;
 }

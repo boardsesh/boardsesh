@@ -24,6 +24,12 @@ export const ENDED_WORKOUT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 export type EndedWorkoutRecord = WorkoutRunRecord & {
   /** Epoch ms the session was seen to end on this phone. */
   endedAtMs: number;
+  /**
+   * The account signed in when it ended. A reader ignores a recap of another
+   * account's (or of an unknown one), so a shared phone never shows one
+   * climber's workout as another's.
+   */
+  userId: string | null;
 };
 
 type StoredEndedWorkouts = { records: unknown[] };
@@ -43,9 +49,10 @@ function ignoreStorageError(): void {}
 
 function readEndedWorkout(candidate: unknown): EndedWorkoutRecord | null {
   const record = parseWorkoutRunRecord(candidate);
-  const endedAtMs = (candidate as { endedAtMs?: unknown } | null)?.endedAtMs;
+  const fields = candidate as { endedAtMs?: unknown; userId?: unknown } | null;
+  const endedAtMs = fields?.endedAtMs;
   if (!record || typeof endedAtMs !== 'number' || !Number.isFinite(endedAtMs)) return null;
-  return { ...record, endedAtMs };
+  return { ...record, endedAtMs, userId: typeof fields?.userId === 'string' ? fields.userId : null };
 }
 
 /** Newest first, one per session, within the count and age caps. */
@@ -70,12 +77,13 @@ function persist(next: readonly EndedWorkoutRecord[]): void {
 }
 
 /**
- * Keep `record` as `record.sessionId`'s recap, replacing an older one for the
- * same session. A run with no stages is not a workout and is not kept.
+ * Keep `record` as `record.sessionId`'s recap for `userId`, replacing an older
+ * one for the same session. A run with no stages is not a workout and is not
+ * kept.
  */
-export function rememberEndedWorkout(record: WorkoutRunRecord, nowMs: number): void {
+export function rememberEndedWorkout(record: WorkoutRunRecord, nowMs: number, userId: string | null): void {
   if (record.run.stages.length === 0) return;
-  const ended: EndedWorkoutRecord = { ...record, endedAtMs: nowMs };
+  const ended: EndedWorkoutRecord = { ...record, endedAtMs: nowMs, userId };
   delete (ended as { pendingStart?: true }).pendingStart;
   records = prune([ended, ...records.filter((kept) => kept.sessionId !== record.sessionId)], nowMs);
   emit();
@@ -91,6 +99,21 @@ export function rememberEndedWorkout(record: WorkoutRunRecord, nowMs: number): v
 export function getEndedWorkout(sessionId: string | null | undefined): EndedWorkoutRecord | null {
   if (!sessionId) return null;
   return records.find((record) => record.sessionId === sessionId) ?? null;
+}
+
+/** A tick deleted from the logbook: out of every recap's tick log, so a summary stops counting it. */
+export function forgetEndedWorkoutTick(tickUuid: string, nowMs: number): void {
+  if (!records.some((record) => record.log?.some((entry) => entry.tickUuid === tickUuid))) return;
+  records = records.map((record) =>
+    record.log?.some((entry) => entry.tickUuid === tickUuid)
+      ? { ...record, log: record.log.filter((entry) => entry.tickUuid !== tickUuid) }
+      : record,
+  );
+  emit();
+  const clearGenerationAtWrite = clearGeneration;
+  void hydrateEndedWorkouts(nowMs).then(() => {
+    if (clearGenerationAtWrite === clearGeneration) persist(records);
+  });
 }
 
 /**

@@ -122,6 +122,11 @@ export type WorkoutRunRecord = {
    * for the same reason as `climbs`.
    */
   revision?: number;
+  /**
+   * A digest of what that copy held (`sessionWorkoutDigest`), so a write with
+   * nothing new (the session-end write after the End button's) is skipped.
+   */
+  sentDigest?: string;
 };
 
 const EMPTY_LOG: readonly WorkoutTickLogEntry[] = Object.freeze([]);
@@ -293,6 +298,7 @@ function readWorkoutRunRecord(candidate: unknown): WorkoutRunRecord | null {
   const climbs = readRunClimbs(record.climbs);
   if (climbs) readable.climbs = climbs;
   if (isRevision(record.revision)) readable.revision = record.revision;
+  if (typeof record.sentDigest === 'string') readable.sentDigest = record.sentDigest;
   return readable;
 }
 
@@ -362,6 +368,7 @@ function mergeSlotsForSession(newerKinds: WorkoutRunRecord, originalKinds: Worko
   if (climbs) merged.climbs = climbs;
   const revision = Math.max(newerKinds.revision ?? -1, originalKinds.revision ?? -1);
   if (revision >= 0) merged.revision = revision;
+  // The merged run is new content: the next write must go out.
   return merged;
 }
 
@@ -425,6 +432,7 @@ export function setWorkoutRun(sessionId: string, run: WorkoutRun, climbs?: Recor
     const mergedClimbs = { ...kept?.climbs, ...climbs };
     if (Object.keys(mergedClimbs).length > 0) next.climbs = mergedClimbs;
     if (kept?.revision !== undefined) next.revision = kept.revision;
+    if (kept?.sentDigest !== undefined) next.sentDigest = kept.sentDigest;
     if (isWorkoutRunPendingStart(sessionId)) next.pendingStart = true;
   }
   setState(next);
@@ -432,40 +440,78 @@ export function setWorkoutRun(sessionId: string, run: WorkoutRun, climbs?: Recor
 }
 
 /**
- * Fill in climbs the record lacks, from queue items still in the queue. Only
- * an item the record has no climb for is touched. A run written by an older
- * bundle (which drops `climbs` on read and write) gets its climbs back this way
- * while the session is still live.
+ * Bring the captured climbs up to date from queue items still in the queue: an
+ * item the record has no climb for is filled in (a run written by an older
+ * bundle, which drops `climbs`, gets them back this way), and an item mirrored
+ * since it was captured takes its new mirror. The climb and angle a queue item
+ * names never change, so nothing else is touched.
  */
 export function addWorkoutRunClimbs(sessionId: string, climbs: Record<string, WorkoutRunClimb>): void {
   if (state?.sessionId !== sessionId) return;
-  const missing = Object.entries(climbs).filter(([queueItemUuid]) => !state?.climbs?.[queueItemUuid]);
-  if (missing.length === 0) return;
-  const next: WorkoutRunRecord = { ...state, climbs: { ...state.climbs, ...Object.fromEntries(missing) } };
+  const current = state.climbs ?? {};
+  const updates: Array<[string, WorkoutRunClimb]> = [];
+  for (const [queueItemUuid, climb] of Object.entries(climbs)) {
+    const kept = current[queueItemUuid];
+    if (!kept) {
+      updates.push([queueItemUuid, climb]);
+    } else if (climb.isMirror !== undefined && kept.isMirror !== climb.isMirror) {
+      updates.push([queueItemUuid, { ...kept, isMirror: climb.isMirror }]);
+    }
+  }
+  if (updates.length === 0) return;
+  const next: WorkoutRunRecord = { ...state, climbs: { ...current, ...Object.fromEntries(updates) } };
   setState(next);
   persist(next);
 }
 
 /**
+ * The revision after `revision`: a counter, floored at the seconds since 2026
+ * began. An OTA rollback to a bundle that predates the field rewrites the
+ * record without it, and after the roll forward a counter restarting at 1 would
+ * sit below the revision the server already holds, so every later write would
+ * be a no-op. The floor keeps it climbing (and inside a Postgres integer until
+ * 2094); the counter keeps two writes in one second apart.
+ */
+export function revisionAfter(revision: number | undefined, nowMs: number): number {
+  const floor = Math.max(0, Math.floor((nowMs - REVISION_EPOCH_MS) / 1000));
+  return Math.min(MAX_WORKOUT_REVISION, Math.max((revision ?? 0) + 1, floor));
+}
+
+/**
  * The next revision for `sessionId`'s server copy, stored with the run so the
- * one after it is higher still. Null when the store holds another session's run
- * or none.
- *
- * A counter, floored at the seconds since 2026 began: an OTA rollback to a
- * bundle that predates the field rewrites the record without it, and after the
- * roll forward a counter restarting at 1 would sit below the revision the
- * server already holds, so every later write would be a no-op. The floor keeps
- * it climbing (and inside a Postgres integer until 2094); the counter keeps two
- * writes in one second apart.
+ * one after it is higher still. Null when the store holds another session's
+ * run or none.
  */
 export function nextWorkoutRunRevision(sessionId: string, nowMs: number): number | null {
   if (state?.sessionId !== sessionId) return null;
-  const floor = Math.max(0, Math.floor((nowMs - REVISION_EPOCH_MS) / 1000));
-  const revision = Math.min(MAX_WORKOUT_REVISION, Math.max((state.revision ?? 0) + 1, floor));
+  const revision = revisionAfter(state.revision, nowMs);
   const next: WorkoutRunRecord = { ...state, revision };
   setState(next);
   persist(next);
   return revision;
+}
+
+/**
+ * The copy at `revision` is queued (or sent): remember what it held, so a
+ * later write with nothing new is skipped. Ignored when a newer revision was
+ * taken meanwhile.
+ */
+export function noteWorkoutRunSent(sessionId: string, revision: number, sentDigest: string): void {
+  if (state?.sessionId !== sessionId || state.revision !== revision || state.sentDigest === sentDigest) return;
+  const next: WorkoutRunRecord = { ...state, sentDigest };
+  setState(next);
+  persist(next);
+}
+
+/**
+ * A tick deleted from the logbook (#6903): out of the run's tick log, so the
+ * phone's own tallies and its "still saving" count stop counting it.
+ */
+export function forgetWorkoutRunTick(tickUuid: string): void {
+  if (!state?.log?.some((entry) => entry.tickUuid === tickUuid)) return;
+  const next: WorkoutRunRecord = { ...state, log: state.log.filter((entry) => entry.tickUuid !== tickUuid) };
+  setState(next);
+  persist(next);
 }
 
 /**

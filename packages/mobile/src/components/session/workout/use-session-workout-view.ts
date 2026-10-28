@@ -48,8 +48,6 @@ export type SessionWorkoutState = {
   pendingTicks: number;
   /** No connection to save them over: the note says so. */
   offline: boolean;
-  /** The workout is this phone's own run (the server is behind): the summary's hero counts from it. */
-  fromPhone: boolean;
 };
 
 const SESSION_WORKOUTS_STALE_TIME_MS = 30 * 1000;
@@ -83,6 +81,10 @@ function usePendingSessionWrites(sessionId: string | null): PendingSessionWrites
     return subscribeMutationDelivery((event) => {
       if (event.tableName !== 'boardsesh_ticks' && event.tableName !== 'session_workouts') return;
       void queryClient.invalidateQueries({ queryKey: pendingSessionWritesQueryKey(sessionId) });
+      // The server copy just changed: read it now, not when the drain ends.
+      if (event.tableName === 'session_workouts' && event.status === 'acknowledged') {
+        void queryClient.invalidateQueries({ queryKey: sessionWorkoutsQueryKey(sessionId) });
+      }
     });
   }, [queryClient, sessionId]);
   return data ?? NO_PENDING_WRITES;
@@ -110,7 +112,10 @@ export function useSessionWorkoutView(
 
   const liveRecord = useWorkoutRunRecord(id);
   const endedRecord = useEndedWorkout(id);
-  const localRecord = liveRecord ?? endedRecord;
+  // A recap counts only for the account it was kept for: a shared phone never
+  // shows one climber's workout as another's.
+  const ownRecap = endedRecord && viewerUserId !== null && endedRecord.userId === viewerUserId ? endedRecord : null;
+  const localRecord = liveRecord ?? ownRecap;
   const pending = usePendingSessionWrites(localRecord ? serverSessionId : null);
 
   const { data: workouts = NO_WORKOUTS } = useQuery({
@@ -141,10 +146,10 @@ export function useSessionWorkoutView(
       scope,
     });
     if (choice?.source === 'local' && localView) {
-      return { workout: localView, pendingTicks: pending.ticks, offline, fromPhone: true };
+      return { workout: localView, pendingTicks: pending.ticks, offline };
     }
     if (choice?.source === 'server') {
-      return { workout: serverWorkoutView(choice.workout, formatGrade), pendingTicks: 0, offline, fromPhone: false };
+      return { workout: serverWorkoutView(choice.workout, formatGrade), pendingTicks: 0, offline };
     }
     return undefined;
   }, [workouts, viewerUserId, sessionOwnerUserId, localView, pending, scope, offline, formatGrade]);

@@ -41,14 +41,19 @@ vi.mock('../local-write-telemetry', () => ({ localWriteRetryOptions: () => ({}) 
 
 import {
   SESSION_WORKOUTS_OUTBOX_TABLE,
+  SESSION_WORKOUT_MAX_RETRIES,
+  enqueueEndedSessionWorkout,
   enqueueSessionWorkoutWrite,
   sessionWorkoutIdempotencyKey,
 } from '../session-workout-outbox';
 import {
+  clearWorkoutRunForSession,
+  getWorkoutRunState,
   noteWorkoutRunTick,
   prepareWorkoutRun,
   resetWorkoutRunStoreForTests,
   setWorkoutRun,
+  type WorkoutRunRecord,
 } from '../../lib/workout-run-store';
 
 const SESSION_ID = '6f1c2a8e-3b4d-4c5e-9f60-7a8b9c0d1e2f';
@@ -192,5 +197,104 @@ describe('enqueueSessionWorkoutWrite', () => {
 
     expect(await enqueueSessionWorkoutWrite(SESSION_ID, { queryClient })).toBe('failed');
     expect(mocks.reportHandledError).toHaveBeenCalledTimes(1);
+  });
+
+  it('queues each copy with a short retry budget', async () => {
+    prepareWorkoutRun(SESSION_ID, run, climbs);
+    await enqueueSessionWorkoutWrite(SESSION_ID, { queryClient });
+    const row = await db.getFirstAsync<{ max_retries: number }>('SELECT max_retries FROM pending_mutations');
+    expect(row?.max_retries).toBe(SESSION_WORKOUT_MAX_RETRIES);
+  });
+
+  it('skips a write with nothing new since the last copy', async () => {
+    prepareWorkoutRun(SESSION_ID, run, climbs);
+    expect(await enqueueSessionWorkoutWrite(SESSION_ID, { queryClient })).toBe('queued');
+    expect(await enqueueSessionWorkoutWrite(SESSION_ID, { queryClient })).toBe('skipped');
+    expect(await queued()).toHaveLength(1);
+    expect(getWorkoutRunState()?.revision).toBe(86_400);
+  });
+
+  it('never leaves an older copy last when a newer one got into the outbox first', async () => {
+    prepareWorkoutRun(SESSION_ID, run, climbs);
+    // A newer write whose transaction ran first.
+    const newer = { sessionId: SESSION_ID, revision: 99_999_999, stages: [], ticks: [] };
+    await enqueue(
+      db,
+      SESSION_WORKOUTS_OUTBOX_TABLE,
+      'create',
+      newer,
+      sessionWorkoutIdempotencyKey(SESSION_ID, 99_999_999),
+    );
+
+    expect(await enqueueSessionWorkoutWrite(SESSION_ID, { queryClient })).toBe('skipped');
+
+    expect((await queued()).map((row) => row.input.revision)).toEqual([99_999_999]);
+  });
+
+  it('takes a climb mirrored since Start from the live queue at the last write', async () => {
+    prepareWorkoutRun(SESSION_ID, run, climbs);
+    await enqueueSessionWorkoutWrite(SESSION_ID, { queryClient });
+    const queueItems = [
+      { uuid: 'q2', climb: { uuid: 'climb-2', angle: 40, mirrored: true } },
+    ] as unknown as ClimbQueueItem[];
+
+    expect(await enqueueSessionWorkoutWrite(SESSION_ID, { queryClient, queueItems })).toBe('queued');
+
+    const [row] = await queued();
+    expect(row?.input.stages).toEqual([
+      expect.objectContaining({
+        items: [
+          { queueItemUuid: 'q1', climbUuid: 'climb-1', angle: 40 },
+          { queueItemUuid: 'q2', climbUuid: 'climb-2', angle: 40, isMirror: true },
+        ],
+      }),
+    ]);
+  });
+});
+
+describe('enqueueEndedSessionWorkout (the session ended some other way)', () => {
+  async function clearedRecord(sessionId = SESSION_ID): Promise<WorkoutRunRecord> {
+    const cleared: WorkoutRunRecord[] = [];
+    await clearWorkoutRunForSession(sessionId, (record) => cleared.push(record));
+    const [record] = cleared;
+    if (!record) throw new Error('nothing was cleared');
+    return record;
+  }
+
+  it('sends the tick map when the session ended on another phone after the last copy', async () => {
+    prepareWorkoutRun(SESSION_ID, run, climbs);
+    await enqueueSessionWorkoutWrite(SESSION_ID, { queryClient });
+    noteWorkoutRunTick(SESSION_ID, {
+      queueItemUuid: 'q2',
+      status: 'attempt',
+      climbedAt: '2026-10-28T10:00:00Z',
+      tickUuid: 'tick-9',
+    });
+    // A remote SessionEnded: no beforeEnd, the run is just cleared.
+    const record = await clearedRecord();
+    mocks.now += 1000;
+
+    expect(await enqueueEndedSessionWorkout(record, { queryClient })).toBe('queued');
+
+    const rows = await queued();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.input.revision).toBe(86_401);
+    expect(rows[0]?.input.ticks).toEqual([{ tickUuid: 'tick-9', queueItemUuid: 'q2' }]);
+  });
+
+  it('sends nothing more after a local End already sent the same copy', async () => {
+    prepareWorkoutRun(SESSION_ID, run, climbs);
+    // The End button's write from beforeEnd.
+    await enqueueSessionWorkoutWrite(SESSION_ID, { queryClient });
+    const record = await clearedRecord();
+
+    expect(await enqueueEndedSessionWorkout(record, { queryClient })).toBe('skipped');
+    expect(await queued()).toHaveLength(1);
+  });
+
+  it('never sends for a story session', async () => {
+    prepareWorkoutRun('story-summary-workout', run, climbs);
+    const record = await clearedRecord('story-summary-workout');
+    expect(await enqueueEndedSessionWorkout(record, { queryClient })).toBe('skipped');
   });
 });

@@ -128,23 +128,21 @@ export function workoutTotals(stages: readonly WorkoutStageView[]): { sent: numb
 }
 
 /**
- * The summary hero's number on a workout session. When the blocks drawn are
- * this phone's own (`fromPhone`: its run, because the server is behind), the
- * number is theirs too, labelled as this phone's, so a server zero never sits
- * next to the phone's blocks. Otherwise the server's totals, unless this phone
- * still holds ticks that would add to them.
+ * The summary hero's number on a workout session (#6903). The phone's own
+ * count, labelled as this phone's ("15 sends on this phone"), only while it
+ * beats the server summary's totals: the server is behind (ticks still saving,
+ * or the summary read before they landed), so a server zero never sits beside
+ * the phone's blocks. Otherwise the server's numbers and the plain label,
+ * whatever the blocks below are drawn from: the server counts every tick of
+ * the session, off-plan ones included, which the blocks never do.
  */
 export function workoutFeatured(
   summary: Pick<SessionSummary, 'totalSends' | 'totalAttempts'>,
   workout: Pick<SessionWorkoutView, 'stages'>,
-  pendingTicks: number,
-  fromPhone: boolean,
   t: WorkoutTranslate,
 ): { value: number; label: string } {
   const phone = workoutTotals(workout.stages);
-  const usePhone =
-    fromPhone || (pendingTicks > 0 && phone.sent + phone.attempts > summary.totalSends + summary.totalAttempts);
-  if (usePhone) {
+  if (phone.sent + phone.attempts > summary.totalSends + summary.totalAttempts) {
     return phone.sent > 0
       ? { value: phone.sent, label: t('summary.featuredPhoneSendsLabel', { count: phone.sent }) }
       : { value: phone.attempts, label: t('summary.featuredPhoneAttemptsLabel', { count: phone.attempts }) };

@@ -28,12 +28,26 @@ const storage = vi.hoisted(() => {
 });
 vi.mock('@react-native-async-storage/async-storage', () => ({ default: storage }));
 
+// #6903: the run that goes becomes the summary's recap and sends its last copy.
+const sync = vi.hoisted(() => ({
+  profileId: 'user-1' as string | null,
+  enqueueEndedSessionWorkout: vi.fn(async () => 'queued'),
+}));
+vi.mock('../../../lib/graphql/hooks', () => ({
+  useProfile: () => ({ data: sync.profileId ? { id: sync.profileId } : null }),
+}));
+vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({ invalidateQueries: vi.fn() }) }));
+vi.mock('../../../offline/session-workout-outbox', () => ({
+  enqueueEndedSessionWorkout: sync.enqueueEndedSessionWorkout,
+}));
+
 import {
   getWorkoutRunForSession,
   getWorkoutRunState,
   resetWorkoutRunStoreForTests,
   setWorkoutRun,
 } from '../../../lib/workout-run-store';
+import { getEndedWorkout, resetEndedWorkoutStoreForTests } from '../../../lib/ended-workout-store';
 import { WorkoutRunSessionSync } from '../WorkoutRunSessionSync';
 
 const run: WorkoutRun = {
@@ -45,6 +59,9 @@ const run: WorkoutRun = {
 
 beforeEach(() => {
   resetWorkoutRunStoreForTests();
+  resetEndedWorkoutStoreForTests();
+  sync.profileId = 'user-1';
+  sync.enqueueEndedSessionWorkout.mockClear();
   storage.reset();
   queueState.sessionId = null;
   queueState.queue = [];
@@ -87,5 +104,35 @@ describe('WorkoutRunSessionSync', () => {
     rerender(<WorkoutRunSessionSync />);
 
     expect(getWorkoutRunForSession('session-1')).toBe(run);
+  });
+
+  it("keeps the ended run as the account's recap and sends its last copy, however the session ended", () => {
+    queueState.sessionId = 'session-1';
+    setWorkoutRun('session-1', run);
+    const { rerender } = render(<WorkoutRunSessionSync />);
+
+    // No End button: the session ended on another phone, or dropped this climber.
+    queueState.sessionId = null;
+    rerender(<WorkoutRunSessionSync />);
+
+    expect(getEndedWorkout('session-1')).toMatchObject({ sessionId: 'session-1', run, userId: 'user-1' });
+    expect(sync.enqueueEndedSessionWorkout).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ sessionId: 'session-1', run }),
+      expect.anything(),
+    );
+  });
+
+  it('sends the last copy when the climber joins another session', () => {
+    queueState.sessionId = 'session-1';
+    setWorkoutRun('session-1', run);
+    const { rerender } = render(<WorkoutRunSessionSync />);
+
+    queueState.sessionId = 'session-2';
+    rerender(<WorkoutRunSessionSync />);
+
+    expect(sync.enqueueEndedSessionWorkout).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ sessionId: 'session-1' }),
+      expect.anything(),
+    );
   });
 });

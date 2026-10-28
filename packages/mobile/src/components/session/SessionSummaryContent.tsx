@@ -60,8 +60,6 @@ type SessionSummaryContentProps = {
   workout?: SessionWorkoutView;
   /** Ticks from this phone the server doesn't have yet. */
   pendingTicks?: number;
-  /** The workout drawn is this phone's own run, not the server's copy: the hero counts from it. */
-  workoutFromPhone?: boolean;
   /** No connection to save those ticks over. */
   offline?: boolean;
   /** Opens this block's climbs on first draw (stories, screenshots). */
@@ -81,7 +79,6 @@ export function SessionSummaryContent({
   storeReviewWillPrompt,
   workout,
   pendingTicks = 0,
-  workoutFromPhone = false,
   offline = false,
   initiallyExpandedStageId,
 }: SessionSummaryContentProps) {
@@ -132,7 +129,7 @@ export function SessionSummaryContent({
   const isSaving = isWorkout && pendingTicks > 0;
   const headline = isWorkout ? t('mobile.workoutRunner.done') : heroHeadline(isParty, totalSends, t);
   const featured = isWorkout
-    ? workoutFeatured(summary, workout, pendingTicks, workoutFromPhone, t)
+    ? workoutFeatured(summary, workout, t)
     : hasSends
       ? { value: totalSends, label: t('summary.featuredSendsLabel', { count: totalSends }) }
       : { value: totalAttempts, label: t('summary.featuredAttemptsLabel', { count: totalAttempts }) };

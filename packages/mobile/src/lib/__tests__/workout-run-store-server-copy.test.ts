@@ -30,6 +30,7 @@ import {
   WORKOUT_RUN_STORAGE_KEY,
   addWorkoutRunClimbs,
   clearWorkoutRunForSession,
+  forgetWorkoutRunTick,
   getWorkoutRunState,
   hydrateWorkoutRun,
   nextWorkoutRunRevision,
@@ -107,6 +108,38 @@ describe('captured climbs', () => {
       m2: climbs.m2,
     });
     expect(getWorkoutRunState()?.climbs).toEqual(climbs);
+  });
+});
+
+describe('mirror and deleted ticks', () => {
+  it('takes the mirror a queue item has now, and nothing else about a climb it already holds', () => {
+    prepareWorkoutRun('session-1', run, climbs);
+    addWorkoutRunClimbs('session-1', {
+      m1: { climbUuid: 'climb-1', angle: 40, isMirror: true },
+      m2: { climbUuid: 'climb-2', angle: 40, isMirror: true },
+    });
+    expect(getWorkoutRunState()?.climbs).toEqual({
+      m1: { climbUuid: 'climb-1', angle: 40, isMirror: true },
+      m2: { climbUuid: 'climb-2', angle: 40, isMirror: true },
+    });
+  });
+
+  it('drops a deleted tick from the log', () => {
+    prepareWorkoutRun('session-1', run, climbs);
+    noteWorkoutRunTick('session-1', {
+      queueItemUuid: 'm1',
+      status: 'send',
+      climbedAt: '2026-10-27T10:00:00Z',
+      tickUuid: 't1',
+    });
+    noteWorkoutRunTick('session-1', {
+      queueItemUuid: 'm2',
+      status: 'send',
+      climbedAt: '2026-10-27T10:01:00Z',
+      tickUuid: 't2',
+    });
+    forgetWorkoutRunTick('t1');
+    expect(getWorkoutRunState()?.log?.map((entry) => entry.tickUuid)).toEqual(['t2']);
   });
 });
 

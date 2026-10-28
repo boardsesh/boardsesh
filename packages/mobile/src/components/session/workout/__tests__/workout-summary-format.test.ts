@@ -181,10 +181,8 @@ describe('workoutTotals', () => {
 });
 
 describe('workoutFeatured', () => {
-  const serverZero = { totalSends: 0, totalAttempts: 0 };
-
-  it("counts from the phone whenever the phone's workout is drawn, never a server zero beside it", () => {
-    expect(workoutFeatured(serverZero, STORY_WORKOUT, 0, true, t)).toEqual({
+  it('counts from the phone while it beats the server, so a server zero never sits beside the blocks', () => {
+    expect(workoutFeatured({ totalSends: 0, totalAttempts: 0 }, STORY_WORKOUT, t)).toEqual({
       value: 15,
       label: 'sends on this phone',
     });
@@ -194,22 +192,21 @@ describe('workoutFeatured', () => {
     const attemptsOnly = {
       stages: [{ ...FOUR_BY_FOUR, tally: { sent: 0, attempts: 3, skipped: 0, climbs: 4 } }],
     };
-    expect(workoutFeatured(serverZero, attemptsOnly, 0, true, t)).toEqual({
+    expect(workoutFeatured({ totalSends: 0, totalAttempts: 0 }, attemptsOnly, t)).toEqual({
       value: 3,
       label: 'attempts on this phone',
     });
   });
 
-  it("keeps the server's totals for the server's workout", () => {
-    expect(workoutFeatured({ totalSends: 15, totalAttempts: 22 }, STORY_WORKOUT, 0, false, t)).toEqual({
-      value: 15,
+  it("keeps the server's numbers once they catch up, off-plan ticks included", () => {
+    // The blocks hold 15 sends and 7 attempts; the server also has the off-plan send.
+    expect(workoutFeatured({ totalSends: 16, totalAttempts: 7 }, STORY_WORKOUT, t)).toEqual({
+      value: 16,
       label: 'sends',
     });
   });
 
-  it('still prefers the phone while its ticks would add to a server copy', () => {
-    expect(workoutFeatured({ totalSends: 2, totalAttempts: 2 }, STORY_WORKOUT, 5, false, t).label).toBe(
-      'sends on this phone',
-    );
+  it("keeps the server's numbers when they tie the phone's", () => {
+    expect(workoutFeatured({ totalSends: 15, totalAttempts: 7 }, STORY_WORKOUT, t).label).toBe('sends');
   });
 });
