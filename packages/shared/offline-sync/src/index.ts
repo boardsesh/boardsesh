@@ -30,6 +30,7 @@ export {
   peekPending,
   getPendingCount,
   hasPendingTickForClimb,
+  hasPendingTicksForSession,
   getDeadLetterCount,
   getDeadLetters,
   getOutboxSummary,

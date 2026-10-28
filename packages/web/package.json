@@ -69,6 +69,7 @@
     "@boardsesh/sync-runtime": "workspace:*",
     "@boardsesh/velvet-tokens": "workspace:*",
     "@boardsesh/watch-pairing": "workspace:*",
+    "@boardsesh/workout-summary": "workspace:*",
     "@emoji-mart/data": "^1.2.1",
     "@emoji-mart/react": "^1.1.1",
     "@emotion/react": "^11.14.0",

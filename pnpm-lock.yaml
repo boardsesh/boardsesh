@@ -187,6 +187,9 @@ importers:
       '@boardsesh/aurora-sync':
         specifier: workspace:*
         version: link:../aurora-sync
+      '@boardsesh/ble-protocol':
+        specifier: workspace:*
+        version: link:../shared/ble-protocol
       '@boardsesh/board-art-geometry':
         specifier: workspace:*
         version: link:../shared/board-art-geometry
@@ -268,6 +271,9 @@ importers:
       '@boardsesh/text-redaction':
         specifier: workspace:*
         version: link:../shared/text-redaction
+      '@boardsesh/workout-summary':
+        specifier: workspace:*
+        version: link:../shared/workout-summary
       '@escape.tech/graphql-armor-cost-limit':
         specifier: ^2.4.3
         version: 2.4.3
@@ -1654,6 +1660,12 @@ importers:
         specifier: ~7.0.2
         version: 7.0.2
 
+  packages/shared/workout-summary:
+    devDependencies:
+      typescript:
+        specifier: ~7.0.2
+        version: 7.0.2
+
   packages/sync-runtime:
     devDependencies:
       '@types/node':
@@ -1809,6 +1821,9 @@ importers:
       '@boardsesh/watch-pairing':
         specifier: workspace:*
         version: link:../shared/watch-pairing
+      '@boardsesh/workout-summary':
+        specifier: workspace:*
+        version: link:../shared/workout-summary
       '@emoji-mart/data':
         specifier: ^1.2.1
         version: 1.2.1

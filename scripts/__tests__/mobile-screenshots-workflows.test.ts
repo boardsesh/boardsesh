@@ -241,7 +241,7 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
     expect(source).toContain(`probe_exclude=$(printf '%s' "$devices" | jq -c '[{locale:"en-US", device: .[0]}]')`);
   });
 
-  it('captures four devices across five app locales and six store locales', () => {
+  it('captures five devices across five app locales and six store locales', () => {
     const compute = workflow.jobs.setup.steps?.find((step) => step.id === 'compute')?.run ?? '';
     const devicesJson = compute.match(/devices='([^']+)'/)?.[1];
     expect(devicesJson).toBeDefined();
@@ -251,11 +251,12 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
       'iphone-16-pro',
       'ipad-pro-13-inch-m5',
       'ipad-pro-11-inch-m5',
+      'iphone-duo',
     ]);
     const appLocales = JSON.parse(compute.match(/ios_locales='([^']+)'/)?.[1] ?? '[]') as string[];
     expect(appLocales).toEqual(['en-US', 'es', 'fr', 'de', 'it']);
-    expect(devices.length * appLocales.length).toBe(20);
-    expect(devices.length * Object.keys(STORE_CAPTION_LOCALES).length).toBe(24);
+    expect(devices.length * appLocales.length).toBe(25);
+    expect(devices.length * Object.keys(STORE_CAPTION_LOCALES).length).toBe(30);
   });
 
   it.each([
@@ -298,7 +299,7 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
         ) as { locale: string[]; device: Array<{ slug: string }> };
         expect(matrix.locale).toEqual(locales === 'it' ? ['it'] : ['en-US', 'es', 'fr', 'de', 'it']);
         const isSinglePhone = selection === 'phone-pro' || selection === 'phone-pro-max';
-        expect(matrix.device).toHaveLength(selection === 'common' ? 4 : isSinglePhone ? 1 : 2);
+        expect(matrix.device).toHaveLength(selection === 'common' ? 5 : isSinglePhone ? 1 : 2);
         if (isSinglePhone) {
           expect(matrix.device).toEqual([
             selection === 'phone-pro'

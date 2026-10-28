@@ -164,5 +164,27 @@
   "install": {
     "heading": "Scarica l'app",
     "body": "Illumina i pannelli della tua palestra dal telefono e registra ogni ripetizione."
+  },
+  "create": {
+    "action": "Crea palestra",
+    "title": "Aggiungi la tua palestra",
+    "description": "Metti la tua palestra sulla mappa, poi collega i pannelli già presenti su Boardsesh.",
+    "details": "Dettagli della palestra",
+    "boards": "Pannelli esistenti",
+    "continue": "Salva e scegli i pannelli",
+    "saved": "{{name}} è salvata. Collega qui sotto i suoi pannelli esistenti, o torna più tardi.",
+    "managerHint": "Gestirai tu questa scheda. Lo staff della palestra potrà rivendicarla più tardi.",
+    "back": "Modifica i dettagli",
+    "finish": "Vedi la palestra",
+    "skip": "Salta per ora",
+    "locationMissing": "Aggiungi un segnaposto sulla mappa in Dettagli della palestra per trovare i pannelli vicini. Puoi comunque collegare i pannelli di tua proprietà.",
+    "loadMore": "Carica altri pannelli",
+    "loadError": "Impossibile caricare i tuoi pannelli. La tua palestra è salvata, riprova.",
+    "retry": "Riprova",
+    "refreshError": "Le tue modifiche sono salvate, ma l'elenco delle palestre non si è ancora aggiornato.",
+    "refreshRetry": "Aggiorna l'elenco",
+    "moveTitle": "Spostare questo pannello?",
+    "moveBody": "Spostare {{board}} da {{source}} a questa palestra? Se la sua vecchia scheda importata resta vuota, verrà unita a questa palestra e i suoi link porteranno qui.",
+    "moveConfirm": "Sposta il pannello"
   }
 }

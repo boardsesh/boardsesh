@@ -4,6 +4,7 @@ import { PgDialect } from 'drizzle-orm/pg-core';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { canAccessResourceWithoutLink, canViewResourceLocation } from '../services/privacy';
 import { socialBoardQueries, socialBoardMutations } from '../graphql/resolvers/social/boards';
+import { boardSessionPrivacyResolvers } from '../graphql/resolvers/shared/board-session-privacy';
 
 // Mock db + dependencies before importing resolver.
 // `vi.mock` is hoisted to the top of the file at parse time, so even though
@@ -804,5 +805,99 @@ describe('recordBoardSerial', () => {
     expect(values).toHaveBeenCalledWith(expect.objectContaining({ boardUuid: OWNED_UUID }));
     expect(result?.boardUuid).toBe(OWNED_UUID);
     expect(result?.boardSlug).toBe('my-board');
+  });
+});
+
+describe('observedBoardSerialMatches', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('correlates an observed serial for a stranger without releasing the owner-only serial field', async () => {
+    const board = makeDbBoard({
+      isPublic: true,
+      name: 'QA MoonBoard',
+      boardType: 'moonboard',
+      serialNumber: 'QA-MOON-01',
+    });
+    setupDbSelectSequence([[board], [], [], [], []]);
+    vi.mocked(canAccessResourceWithoutLink).mockResolvedValueOnce(true);
+    const matches = await socialBoardQueries.observedBoardSerialMatches(
+      null,
+      {
+        input: [{ boardType: 'moonboard', observedSerialNumber: ' qa-moon-01 ' }],
+      },
+      makeUnauthCtx(),
+    );
+    expect(matches).toHaveLength(1);
+    expect(matches[0]).toMatchObject({
+      boardType: 'moonboard',
+      observedSerialNumber: 'QA-MOON-01',
+      candidates: [{ uuid: board.uuid, name: 'QA MoonBoard', boardType: 'moonboard' }],
+    });
+    expect(
+      boardSessionPrivacyResolvers.UserBoard.serialNumber(
+        { ...matches[0].candidates[0], ownerDisplayName: undefined, ownerAvatarUrl: undefined },
+        null,
+        makeUnauthCtx(),
+      ),
+    ).toBeNull();
+  });
+
+  it.each([false, true])('preserves the legacy hidden-board geometry fallback when signed in: %s', async (signedIn) => {
+    const board = makeDbBoard({ isPublic: false, isUnlisted: true, serialNumber: 'QA-HIDDEN' });
+    setupDbSelect([board]);
+    const [legacyProjection] = await socialBoardQueries.boardsBySerialNumbers(
+      null,
+      { serialNumbers: ['QA-HIDDEN'], boardType: 'kilter' },
+      makeUnauthCtx(),
+    );
+    const context = signedIn ? makeAuthCtx('stranger') : makeUnauthCtx();
+    const matches = await socialBoardQueries.observedBoardSerialMatches(
+      null,
+      {
+        input: [{ boardType: 'kilter', observedSerialNumber: 'QA-HIDDEN' }],
+      },
+      context,
+    );
+    expect(matches[0].candidates).toEqual([legacyProjection]);
+    expect(matches[0].candidates[0]).toMatchObject({
+      uuid: '',
+      slug: '',
+      boardId: null,
+      name: 'kilter',
+      description: null,
+      ownerId: '',
+      locationName: null,
+      latitude: null,
+      longitude: null,
+      gymId: null,
+      gymUuid: null,
+      gymName: null,
+      layoutId: board.layoutId,
+      sizeId: board.sizeId,
+      setIds: board.setIds,
+    });
+    expect(
+      boardSessionPrivacyResolvers.UserBoard.serialNumber(
+        { ...matches[0].candidates[0], ownerDisplayName: undefined, ownerAvatarUrl: undefined },
+        null,
+        context,
+      ),
+    ).toBeNull();
+  });
+
+  it('rejects a scan exceeding twenty observations before querying', async () => {
+    await expect(
+      socialBoardQueries.observedBoardSerialMatches(
+        null,
+        {
+          input: Array.from({ length: 21 }, (_, index) => ({
+            boardType: 'kilter',
+            observedSerialNumber: `QA-${index}`,
+          })),
+        },
+        makeUnauthCtx(),
+      ),
+    ).rejects.toThrow();
+    expect(mockDb.select).not.toHaveBeenCalled();
   });
 });

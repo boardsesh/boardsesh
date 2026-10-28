@@ -1,0 +1,124 @@
+appId: com.boardsesh.app
+name: app-store screenshots (iPhone Duo, open)
+---
+# iPhone Duo store set, pass 2 of 2: the phone OPEN, on the inner display
+# (2853x2007 landscape: the board beside the list, split at the hinge).
+#
+# Maestro only sees the Duo's outer display, which is dark while the phone is
+# open, so `takeScreenshot` here is a marker, not a capture: the orchestrator
+# splits this file at each `takeScreenshot`, runs the commands before it as
+# their own Maestro flow, then captures the inner display with
+# `simctl io screenshot --display=primary-1` under that name
+# (splitDuoInnerFlow in scripts/mobile-screenshots.ts).
+#
+# Rules for this file:
+# - Deep links and id waits only. Maestro reports the open Duo as 669x951
+#   portrait while the inner display is 951x669 landscape, so taps, swipes and
+#   text matches land in the wrong place.
+# - No "Open" dialog taps: pass 1 (app-store-duo.yaml) primed it while closed.
+# - A shot whose commands contain the line `# duo: relaunch` starts from a
+#   freshly relaunched app at home. Use it where the phone flow would tap a
+#   close button (it cannot here).
+# - Filenames 00-04 sort these shots ahead of the closed ones (05-07).
+# - Every shot shows a lit climb in the board pane. The first shot opens the
+#   first climb's player; the open split keeps it in the left pane while the
+#   right pane moves to Home, the playlist and Climbs, and each of those shots
+#   waits for its painted marker before capturing.
+# - Every shot waits on an id only its own screen has, and on the
+#   "Open in 'Boardsesh'?" dialog being gone, so a swallowed deep link fails
+#   the run instead of capturing the dialog or the previous screen.
+
+# Board view — the first climb with its holds lit, beside the climb list.
+- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    notVisible: 'Open'
+    timeout: 15000
+- extendedWaitUntil:
+    visible:
+      id: '^cpp-climb-painted-.+$'
+    timeout: 90000
+- takeScreenshot: 00-board-view
+
+# Home — the global "Everyone" feed, the lit climb still in the left pane.
+- openLink: com.boardsesh.app://home
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    notVisible: 'Open'
+    timeout: 15000
+- extendedWaitUntil:
+    notVisible:
+      id: 'live-sessions-skeleton'
+    timeout: 90000
+- extendedWaitUntil:
+    visible:
+      id: 'session-feed-card'
+    timeout: 90000
+- extendedWaitUntil:
+    visible:
+      id: '^cpp-climb-painted-.+$'
+    timeout: 30000
+- takeScreenshot: 03-home
+
+# Playlist detail — a smart playlist (crowd favourites), the lit climb beside it.
+- openLink: com.boardsesh.app://discover/smart/RECOMMENDED_CROWD_FAVORITES
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    notVisible: 'Open'
+    timeout: 15000
+- extendedWaitUntil:
+    visible:
+      id: 'playlist-add-to-queue'
+    timeout: 90000
+- extendedWaitUntil:
+    notVisible:
+      id: 'climb-list-row-skeleton'
+    timeout: 90000
+- extendedWaitUntil:
+    visible:
+      id: '^cpp-climb-painted-.+$'
+    timeout: 30000
+- waitForAnimationToEnd
+- takeScreenshot: 04-playlist-detail
+
+# Climbs — the browse list beside the lit climb.
+- openLink: com.boardsesh.app://climbs
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    notVisible: 'Open'
+    timeout: 15000
+- extendedWaitUntil:
+    visible:
+      id: 'climbs-screen'
+    timeout: 90000
+- extendedWaitUntil:
+    notVisible:
+      id: 'playlist-add-to-queue'
+    timeout: 30000
+- extendedWaitUntil:
+    notVisible:
+      id: 'climb-list-row-skeleton'
+    timeout: 90000
+- extendedWaitUntil:
+    visible:
+      id: '^cpp-climb-painted-.+$'
+    timeout: 30000
+- waitForAnimationToEnd
+- takeScreenshot: 02-climbs
+
+# Board view on the second pinned wall. The phone flow taps the player's close
+# button first; here the app is relaunched instead, so the first climb's painted
+# marker cannot satisfy this wait.
+# duo: relaunch
+- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=1
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    notVisible: 'Open'
+    timeout: 15000
+- extendedWaitUntil:
+    visible:
+      id: '^cpp-climb-painted-.+$'
+    timeout: 90000
+- takeScreenshot: 01-board-view-2

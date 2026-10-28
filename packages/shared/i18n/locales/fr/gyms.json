@@ -1,4 +1,26 @@
 {
+  "create": {
+    "action": "Créer une salle",
+    "title": "Ajoute ta salle",
+    "description": "Ajoute ta salle sur la carte, puis associe les boards déjà présentes sur Boardsesh.",
+    "details": "Informations sur la salle",
+    "boards": "Boards existantes",
+    "continue": "Enregistrer et choisir les boards",
+    "saved": "{{name}} est enregistrée. Associe ses boards existantes ci-dessous ou reviens plus tard.",
+    "managerHint": "Tu géreras cette fiche. Le personnel de la salle pourra la revendiquer plus tard.",
+    "back": "Modifier les informations",
+    "finish": "Voir la salle",
+    "skip": "Passer pour le moment",
+    "locationMissing": "Ajoute un repère sur la carte dans Informations sur la salle pour trouver les boards proches. Tu peux toujours associer les boards dont tu es propriétaire.",
+    "loadMore": "Charger plus de boards",
+    "loadError": "Impossible de charger tes boards. Ta salle est enregistrée ; réessaie.",
+    "retry": "Réessayer",
+    "refreshError": "Tes modifications sont enregistrées, mais l'annuaire des salles n'a pas encore été actualisé.",
+    "refreshRetry": "Actualiser l'annuaire",
+    "moveTitle": "Déplacer cette board ?",
+    "moveBody": "Déplacer {{board}} de {{source}} vers cette salle ? Si son ancienne fiche importée devient vide, elle sera fusionnée avec cette salle et ses liens redirigeront ici.",
+    "moveConfirm": "Déplacer la board"
+  },
   "metadata": {
     "all": {
       "title": "Salles d'escalade avec des boards d'entraînement",

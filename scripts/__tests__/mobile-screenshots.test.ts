@@ -56,7 +56,8 @@ import { metroDevClientUrl, SCREENSHOT_READY_PORT, screenshotReadinessCount } fr
 
 const phoneDevices = ['iPhone 16 Pro Max', 'iPhone 16 Pro'];
 const ipadDevices = ['iPad Pro 13-inch (M5)', 'iPad Pro 11-inch (M5)'];
-const commonDevices = [...phoneDevices, ...ipadDevices];
+const duoDevices = ['iPhone Duo'];
+const commonDevices = [...phoneDevices, ...ipadDevices, ...duoDevices];
 const allAppLocales = ['en-US', 'es', 'fr', 'de', 'it'] satisfies ScreenshotOptions['appLocales'];
 
 function makeOptions(overrides: Partial<ScreenshotOptions> = {}): ScreenshotOptions {
@@ -211,6 +212,7 @@ describe('parseArgs', () => {
   it('maps --devices phones and --devices ipads to their platform groups', () => {
     expect(parseArgs(['--devices', 'phones']).devices).toEqual(phoneDevices);
     expect(parseArgs(['--devices', 'ipads']).devices).toEqual(ipadDevices);
+    expect(parseArgs(['--devices', 'duo']).devices).toEqual(duoDevices);
   });
 
   it('rejects invalid locales and empty comma lists', () => {

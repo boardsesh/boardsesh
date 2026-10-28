@@ -1,0 +1,87 @@
+appId: com.boardsesh.app
+name: app-store screenshots (iPhone Duo, closed)
+---
+# iPhone Duo store set, pass 1 of 2: the phone CLOSED, on the outer display
+# (1398x2034). Maestro only ever sees and shoots the outer display, so this pass
+# is a plain Maestro flow like app-store.yaml. Pass 2 (app-store-duo-inner.yaml)
+# unfolds the simulator and shoots the inner display; the orchestrator runs it
+# right after this one in the same shard (scripts/mobile-screenshots.ts).
+#
+# One App Store set holds both displays, ordered by filename: the inner shots
+# take 00-04 so the open layout leads, these outer shots take 05-07.
+#
+# Deep links only, as in app-store.yaml (see its header for the screenshot-mode
+# query params). No coordinate or percentage gestures anywhere in the Duo flows:
+# Maestro reports the open Duo with the wrong geometry.
+
+- setOrientation: ${MAESTRO_DEVICE_ORIENTATION}
+
+# Prime the "Open in 'Boardsesh'?" dialog here, while closed: the inner pass
+# cannot tap it (text taps miss on the open Duo) and relies on iOS having
+# remembered the answer. Same steps as app-store.yaml.
+- openLink: com.boardsesh.app://home
+- extendedWaitUntil:
+    visible: 'Open'
+    timeout: 12000
+    optional: true
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- repeat:
+    times: 3
+    commands:
+      - openLink: com.boardsesh.app://home
+      - waitForAnimationToEnd
+      - tapOn:
+          text: 'Open'
+          optional: true
+      - waitForAnimationToEnd
+
+# Profile — progress tab (stats charts).
+- openLink: com.boardsesh.app://profile
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    notVisible:
+      id: 'horizontal-scroll-section-loading'
+    timeout: 60000
+- scrollUntilVisible:
+    element:
+      id: 'profile-board-overview'
+    direction: UP
+    centerElement: false
+    visibilityPercentage: 100
+    timeout: 60000
+- waitForAnimationToEnd
+- takeScreenshot: 05-profile
+
+# Session detail — the Sessions sub-tab auto-opens the newest session's recap.
+- openLink: com.boardsesh.app://profile?screenshotTab=sessions
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- takeScreenshot: 06-session-detail
+
+# Workout generator — the Record screen with one Volume block pre-selected.
+- openLink: com.boardsesh.app://record
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: 'pre-session-footer'
+    timeout: 90000
+- scrollUntilVisible:
+    element:
+      id: 'pre-session-board-summary'
+    direction: UP
+    timeout: 60000
+- waitForAnimationToEnd:
+    timeout: 30000
+- takeScreenshot: 07-workout-generator

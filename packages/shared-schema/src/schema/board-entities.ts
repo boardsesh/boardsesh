@@ -1,4 +1,13 @@
 export const boardEntitiesTypeDefs = /* GraphQL */ `
+  input ObservedBoardSerialInput {
+    boardType: String!
+    observedSerialNumber: String!
+  }
+  type ObservedBoardSerialMatch {
+    boardType: String!
+    observedSerialNumber: String!
+    candidates: [UserBoard!]!
+  }
   "A redacted snapshot of the last confirmed climb while its sender still holds the board."
   type BoardDiscoveryClimb {
     uuid: ID!
@@ -129,6 +138,8 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
     gymUuid: String
     "Gym name if linked to a gym"
     gymName: String
+    "Whether the linked gym participates in discovery; null when no gym is linked."
+    gymIsListed: Boolean
     "Distance in meters from search origin (only set for proximity queries)"
     distanceMeters: Float
     "Controller box serial number"

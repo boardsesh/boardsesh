@@ -3341,6 +3341,15 @@ type SmartPlaylistCount {
   count: Int!
 }
 
+input ObservedBoardSerialInput {
+  boardType: String!
+  observedSerialNumber: String!
+}
+type ObservedBoardSerialMatch {
+  boardType: String!
+  observedSerialNumber: String!
+  candidates: [UserBoard!]!
+}
 "A redacted snapshot of the last confirmed climb while its sender still holds the board."
 type BoardDiscoveryClimb {
   uuid: ID!
@@ -3471,6 +3480,8 @@ type UserBoard {
   gymUuid: String
   "Gym name if linked to a gym"
   gymName: String
+  "Whether the linked gym participates in discovery; null when no gym is linked."
+  gymIsListed: Boolean
   "Distance in meters from search origin (only set for proximity queries)"
   distanceMeters: Float
   "Controller box serial number"
@@ -3936,6 +3947,8 @@ type Gym {
   longitude: Float
   "Whether publicly visible"
   isPublic: Boolean!
+  "Whether this gym appears in discovery. False keeps direct links readable."
+  isListed: Boolean!
   "Image URL"
   imageUrl: String
   "Square gym logo (transparent brand mark) for the kiosk and embeds — distinct from imageUrl, which is the gym photo."
@@ -4058,13 +4071,19 @@ enum StrayBoardReason {
 """
 A board that probably belongs to a gym but isn't linked to it yet — either it
 followed a listing that got merged into this gym, or it sits at the gym's
-coordinates while unlinked or attached to a synced (SYSTEM) listing.
+coordinates while unlinked or attached to a synced (SYSTEM) listing. Public,
+unlinked boards owned by another person are candidates only for an in-scope
+platform admin who can read their location.
 """
 type StrayBoard {
   "The board's unique identifier."
   uuid: ID!
   "The board's display name."
   name: String!
+  "Board type (kilter, tension, moonboard, ...)."
+  boardType: String!
+  "Board angle in degrees."
+  angle: Int!
   "The gym this board is currently linked to (a merged twin or a synced listing); null when unlinked."
   currentGymUuid: ID
   "Name of the gym this board is currently linked to; null when unlinked."
@@ -4113,6 +4132,8 @@ input CreateGymInput {
   name: String!
   "Optional description"
   description: String
+  "Opening hours; nonblank hours receive a confirmation timestamp."
+  hours: String
   "Physical address"
   address: String
   "Website URL"
@@ -4127,6 +4148,8 @@ input CreateGymInput {
   longitude: Float
   "Whether publicly visible (default true)"
   isPublic: Boolean
+  "Whether listed in discovery (default true)"
+  isListed: Boolean
   "Image URL"
   imageUrl: String
   "Optional board UUID to link on creation"
@@ -4161,6 +4184,8 @@ input UpdateGymInput {
   longitude: Float
   "New visibility"
   isPublic: Boolean
+  "Whether listed in discovery"
+  isListed: Boolean
   "New image URL"
   imageUrl: String
   "Square gym logo (transparent brand mark) for the kiosk and embeds — distinct from imageUrl, the gym photo. Pass null to clear it."
@@ -4293,6 +4318,10 @@ input AttachBoardToGymInput {
   gymUuid: ID!
   "Stray board UUID to attach"
   boardUuid: ID!
+  "False prevents merging an emptied source gym. Omitted preserves legacy behavior."
+  allowSourceGymMerge: Boolean
+  "The source gym the user saw; null means unlinked. A changed source rejects the move."
+  expectedCurrentGymUuid: ID
 }
 
 """
@@ -7398,6 +7427,162 @@ extend type Mutation {
   exportSprayTrainingDataset: SprayTrainingExportResult!
 }
 
+"One queued climb of a workout block, captured when the run is written."
+input SessionWorkoutItemInput {
+  queueItemUuid: ID!
+  climbUuid: String!
+  angle: Int!
+  isMirror: Boolean
+}
+
+"A timed block's pacing. 4x4 adds repsPerSet and restBetweenSetsSeconds."
+input SessionWorkoutPacingInput {
+  "onTheMinute or afterTick."
+  mode: String!
+  restSeconds: Int!
+  advanceOn: String
+  repsPerSet: Int
+  restBetweenSetsSeconds: Int
+}
+
+input SessionWorkoutStageInput {
+  "The run stage's id (a uuid)."
+  id: ID!
+  "A workout stage kind (warmUp, volume, fourByFour, ...). Any string, so a newer kind survives."
+  kind: String!
+  coolDown: Boolean
+  "Difficulty id the block was built around."
+  targetGrade: Int
+  pacing: SessionWorkoutPacingInput
+  items: [SessionWorkoutItemInput!]!
+}
+
+"Which queue item a tick was logged on."
+input SessionWorkoutTickInput {
+  tickUuid: ID!
+  queueItemUuid: ID!
+}
+
+input RecordSessionWorkoutInput {
+  sessionId: ID!
+  "The phone's per-session write counter. Only a higher revision than the stored one is written."
+  revision: Int!
+  stages: [SessionWorkoutStageInput!]!
+  ticks: [SessionWorkoutTickInput!]!
+}
+
+"How one rep or climb of a workout ended."
+enum SessionWorkoutRepOutcome {
+  FLASH
+  SEND
+  ATTEMPT
+}
+
+type SessionWorkoutClimb {
+  queueItemUuid: ID!
+  climbUuid: String!
+  angle: Int!
+  isMirror: Boolean
+  name: String
+  "Display grade: the climber's own when they logged it, else the consensus at this angle."
+  grade: String
+  boardType: String
+  layoutId: Int
+  frames: String
+  renderBoard: RenderBoardConfig
+  "One per tick on this climb, in tick order."
+  reps: [SessionWorkoutRepOutcome!]!
+  "The ticks behind reps, same order: only ticks the viewer may see, so a client can group the session's ticks by block."
+  tickUuids: [ID!]!
+  "True when the climber logged nothing on it."
+  skipped: Boolean!
+}
+
+"Counts in ticks, the unit the session totals use."
+type SessionWorkoutTally {
+  "Flash and send ticks."
+  sent: Int!
+  "Attempt ticks."
+  attempts: Int!
+  "Climbs of the block with no tick."
+  skipped: Int!
+  "Climbs in the block."
+  climbs: Int!
+}
+
+type SessionWorkoutStage {
+  id: ID!
+  kind: String!
+  isCoolDown: Boolean!
+  "Display grade name of the block's target grade."
+  targetGrade: String
+  "A 4x4: reps per climb."
+  repsPerSet: Int
+  "A 4x4: one set per climb."
+  sets: Int
+  "On the minute: the interval."
+  intervalSeconds: Int
+  "A paced block's rest after each tick (a 4x4: between reps)."
+  restSeconds: Int
+  climbs: [SessionWorkoutClimb!]!
+  tally: SessionWorkoutTally!
+}
+
+type SessionWorkout {
+  userId: ID!
+  displayName: String
+  avatarUrl: String
+  stages: [SessionWorkoutStage!]!
+  "The climber's ticks in the session that match no climb of the workout."
+  offPlan: Int!
+  "The climber's ticks behind offPlan that the viewer may see."
+  offPlanTickUuids: [ID!]!
+  updatedAt: String!
+}
+
+"One line for a feed card: the main block, the second for 'A + B', how many more."
+type SessionWorkoutHeadline {
+  sessionId: ID!
+  userId: ID!
+  mainKind: String
+  "Display grade name of the main block's target grade."
+  mainTargetGrade: String
+  secondMainKind: String
+  "Every block, warm-ups and cool-downs included."
+  blockCount: Int!
+  "Main blocks after the first."
+  extraMainBlocks: Int!
+}
+
+extend type Query {
+  """
+  The workouts followed in a session, one per climber, with what each block
+  came to. Follows sessionDetail: the session must open for the viewer, the
+  climber must be someone its own surfaces name to them, and at least one of
+  the climber's ticks in it must be visible to them. Climbs the viewer may not
+  see are left out along with their ticks.
+  """
+  sessionWorkouts(sessionId: ID!): [SessionWorkout!]!
+
+  """
+  Feed-card headlines for up to 50 sessions, under the sessionWorkouts rule
+  for who appears. Sessions the viewer may not open, or with no workout, are
+  left out.
+  """
+  sessionWorkoutHeadlines(sessionIds: [ID!]!): [SessionWorkoutHeadline!]!
+}
+
+extend type Mutation {
+  """
+  Store the caller's workout for a session. Written only when revision is
+  higher than the stored one; an equal or lower revision is a no-op that still
+  returns true, so outbox replays are idempotent. The caller must have created
+  or joined the session. Tick-map entries that are not the caller's own ticks
+  in the session are dropped.
+  """
+  recordSessionWorkout(input: RecordSessionWorkoutInput!): Boolean!
+}
+
 """
 One hold the client found in the NEW photo, already mapped through that photo's
 homography into the wall's canonical frame.
@@ -8047,6 +8232,8 @@ type Query {
 
   # Get current user's registered controllers
   myControllers: [ControllerInfo!]!
+  "Read a gym's device configuration using a registered gym owner/admin's controller API key."
+  controllerGymManifest(gymRef: String!): ControllerGymManifest!
 
   # ============================================
   # Social / Follow Queries
@@ -8317,6 +8504,8 @@ type Query {
   backward compatibility with already-shipped clients.
   """
   boardsBySerialNumbers(serialNumbers: [String!]!, boardType: String): [UserBoard!]!
+  "Correlate radio-observed serials with readable candidates without exposing stored owner-only serial fields."
+  observedBoardSerialMatches(input: [ObservedBoardSerialInput!]!): [ObservedBoardSerialMatch!]!
 
   """
   Recorded board configurations for the current user keyed by controller serial.
@@ -10616,6 +10805,39 @@ type PlaybackStateChanged {
   anchorTimestamp: String!
   "Client ID of the publisher, used for echo suppression"
   clientId: ID
+}
+
+type ControllerPreviewDescriptor {
+  imageUrl: String!
+  geometryUrl: String!
+  imageSha256: String!
+  geometrySha256: String!
+  imageBytes: Int!
+  geometryBytes: Int!
+  width: Int!
+  height: Int!
+  positionCount: Int!
+}
+
+type ControllerGymBoard {
+  uuid: ID!
+  name: String!
+  boardType: String!
+  serialNumber: String!
+  layoutId: Int!
+  sizeId: Int!
+  setIds: String!
+  angle: Int!
+  advertisedName: String!
+  preview: ControllerPreviewDescriptor!
+}
+
+type ControllerGymManifest {
+  version: Int!
+  gymUuid: ID!
+  name: String!
+  slug: String!
+  boards: [ControllerGymBoard!]!
 }
 
 # ============================================

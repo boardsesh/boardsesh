@@ -92,6 +92,13 @@ class StoreAuditTest < Minitest::Test
     refute report.fetch("readinessIssues").any? { |issue| issue.start_with?("CPP") && issue.include?("missing locale it") }
   end
 
+  def test_iphone_duo_set_is_required_on_the_app_version_but_not_on_custom_product_pages
+    issues = apple(FakeApple.new).run.fetch("readinessIssues")
+    assert_includes issues, "default/en-US: missing screenshot set APP_IPHONE_DUO"
+    refute issues.any? { |issue| issue.start_with?("CPP ") && issue.include?("APP_IPHONE_DUO") }
+    assert issues.any? { |issue| issue.start_with?("CPP ") && issue.include?("APP_IPHONE_61") }
+  end
+
   def test_missing_cpp_assets_are_reported_without_hiding_release_identity
     client = FakeApple.new
     client.cpp_pages = []

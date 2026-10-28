@@ -245,6 +245,7 @@ void WaveshareAmoledDisplay::refreshInfoOnly() {
 void WaveshareAmoledDisplay::showBlePreview(const char* boardType, int angle, bool fullRefresh) {
     if (!_ready)
         return;
+    _fixturePreview = false;
     const char* previewBoardType = boardType ? boardType : "kilter";
     bool redrawScreen = fullRefresh || !_blePreviewVisible || _angle != angle || _boardType != previewBoardType;
     _climbName = "BLE Preview";
@@ -261,6 +262,25 @@ void WaveshareAmoledDisplay::showBlePreview(const char* boardType, int angle, bo
         drawPreviewFrame();
         _gfx->flush();
     }
+    _blePreviewVisible = true;
+}
+
+void WaveshareAmoledDisplay::showGymPreview(const char* name, const char* boardType, int angle,
+                                            const char* serialNumber, int boardIndex, int boardCount, bool payloadSeen,
+                                            int ledCount, const char* syncStatus) {
+    _fixturePreview = true;
+    _fixtureFooter =
+        String(boardIndex + 1) + "/" + boardCount + "  #" + safeText(serialNumber) + "  " + safeText(syncStatus);
+    _fixtureHint = payloadSeen ? String(ledCount) + " LEDs received" : String("Nothing sent yet");
+    _fixtureHint += " | PWR prev | KEY next";
+    _climbName = safeText(name, "Gym board");
+    _grade = "";
+    _gradeColor = "";
+    _angle = angle;
+    _climbUuid = "";
+    _boardType = safeText(boardType);
+    _hasClimb = true;
+    refresh();
     _blePreviewVisible = true;
 }
 
@@ -524,7 +544,7 @@ void WaveshareAmoledDisplay::drawBoardImageWithHolds() {
     for (int i = 0; i < _ledCommandCount; i++) {
         uint16_t target = _ledCommands[i].position;
         const HoldMapEntry* hold = findHoldMapEntry(cfg, target);
-        if (!hold && target < UINT16_MAX) {
+        if (!hold && !_exactPositionMapping && target < UINT16_MAX) {
             hold = findHoldMapEntry(cfg, target + 1);
         }
         if (!hold)
@@ -548,6 +568,11 @@ void WaveshareAmoledDisplay::drawBoardImageWithHolds() {
 void WaveshareAmoledDisplay::drawFooter() {
     _gfx->fillRect(0, AMOLED_FOOTER_Y, SCREEN_WIDTH, AMOLED_FOOTER_HEIGHT, 0x0841);
     _gfx->drawFastHLine(0, AMOLED_FOOTER_Y, SCREEN_WIDTH, 0x2945);
+    if (_fixturePreview) {
+        drawTruncatedText(_fixtureFooter.c_str(), 18, AMOLED_FOOTER_Y + 14, 1, COLOR_TEXT_DIM, 73);
+        drawTruncatedText(_fixtureHint.c_str(), 18, AMOLED_FOOTER_Y + 42, 1, COLOR_TEXT, 73);
+        return;
+    }
 
     if (_hasNavigation && _queueTotal > 0) {
         char positionText[32];

@@ -290,6 +290,18 @@ describe('a workout started over a crewmate’s crew clock (#5382)', () => {
     expect(getRestTimerState().anchorMs).toBe(T0 - 20_000);
   });
 
+  it('consumes the crew start boundary when an explicit launch supplies its own transition', () => {
+    followCrewClock();
+    const transitions = recordStageTransitions();
+    armRestTimerForWorkout('session-1', EMOM_RUN, T0);
+
+    syncRestTimerStagePacing(onTheMinuteClimb('e1'), T0 + 1_000, 'anchorNow');
+    syncRestTimerStagePacing(onTheMinuteClimb('e2'), T0 + 61_000);
+
+    expect(transitions).toEqual(['anchorNow', 'none']);
+    expect(getRestTimerState().anchorMs).toBe(T0 + 1_000);
+  });
+
   it('keeps the beat of a clock this phone set: the climber’s own timer keeps going as it is', () => {
     armRestTimer('onTheMinute', T0 - 20_000, 'session-1');
     followCrewClock({ setByParticipantId: ME });

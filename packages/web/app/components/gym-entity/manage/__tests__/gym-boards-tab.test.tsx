@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import React from 'react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import type { Gym, StrayBoard, UserBoard } from '@boardsesh/shared-schema';
-import GymBoardsTab from '../gym-boards-tab';
+import GymBoardsTab, { GymBoardAssociation } from '../gym-boards-tab';
 
 vi.mock('react-i18next', () => ({
   useTranslation: (ns?: string) => ({
@@ -129,6 +129,33 @@ describe('GymBoardsTab — add-board dialog', () => {
 
     await waitFor(() => expect(screen.queryByText('New Wall')).toBeNull());
   });
+
+  it('loads one more page when followed boards fill the first page', async () => {
+    mockRequest.mockImplementation(async (document: string, variables?: { input?: { offset?: number } }) => {
+      if (document.includes('gymBoards')) return { gymBoards: [] };
+      if (document.includes('strayBoardsForGym')) return { strayBoardsForGym: [] };
+      if (variables?.input?.offset === 0) {
+        return {
+          myBoards: {
+            boards: Array.from({ length: 50 }, (_, index) =>
+              makeBoard({ uuid: `followed-${index}`, ownerId: 'another-user' }),
+            ),
+            totalCount: 51,
+            hasMore: true,
+          },
+        };
+      }
+      return { myBoards: { boards: [candidate], totalCount: 51, hasMore: false } };
+    });
+    render(<GymBoardsTab gym={gym} onGymChange={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: /add a board/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more boards' }));
+    await screen.findByText('New Wall');
+    expect(mockRequest).toHaveBeenCalledWith(expect.anything(), { input: { limit: 50, offset: 50 } });
+    mockExecute.mockResolvedValueOnce({ linkBoardToGym: true });
+    fireEvent.click(screen.getByRole('button', { name: /^link$/i }));
+    await waitFor(() => expect(screen.queryByText('New Wall')).toBeNull());
+  });
 });
 
 describe('GymBoardsTab — permission gating', () => {
@@ -156,6 +183,30 @@ describe('GymBoardsTab — permission gating', () => {
   });
 });
 
+describe('GymBoardAssociation — unlink cache refresh', () => {
+  it.each([true, false])(
+    'refreshes directory only after a successful unlink (success: %s)',
+    async (mutationSucceeds) => {
+      const onAssociated = vi.fn().mockResolvedValue(undefined);
+      stubRequests({ gymBoards: [makeBoard({ gymUuid: GYM_UUID })], myBoards: [] });
+      mockExecute.mockResolvedValueOnce(mutationSucceeds ? { linkBoardToGym: true } : null);
+      render(<GymBoardAssociation gym={gym} onAssociated={onAssociated} />);
+
+      fireEvent.click(await screen.findByRole('button', { name: /^unlink$/i }));
+      const confirmation = await screen.findByRole('dialog');
+      fireEvent.click(within(confirmation).getByRole('button', { name: /unlink/i }));
+
+      await waitFor(() => expect(mockExecute).toHaveBeenCalledWith({ input: { boardUuid: 'board-1', gymUuid: null } }));
+      if (mutationSucceeds) {
+        await waitFor(() => expect(onAssociated).toHaveBeenCalledTimes(1));
+      } else {
+        expect(onAssociated).not.toHaveBeenCalled();
+        expect(screen.getByText('Garage Board')).toBeTruthy();
+      }
+    },
+  );
+});
+
 describe('GymBoardsTab — stray boards', () => {
   const editableGym = { ...gym, canEdit: true } as unknown as Gym;
 
@@ -163,6 +214,8 @@ describe('GymBoardsTab — stray boards', () => {
     return {
       uuid: 'stray-1',
       name: 'Nearby Tension',
+      boardType: 'tension',
+      angle: 40,
       currentGymUuid: null,
       currentGymName: null,
       distanceMeters: 42,
@@ -205,7 +258,12 @@ describe('GymBoardsTab — stray boards', () => {
 
     await waitFor(() =>
       expect(mockExecute).toHaveBeenCalledWith({
-        input: { gymUuid: GYM_UUID, boardUuid: 'stray-nearby' },
+        input: {
+          gymUuid: GYM_UUID,
+          boardUuid: 'stray-nearby',
+          expectedCurrentGymUuid: null,
+          allowSourceGymMerge: false,
+        },
       }),
     );
     await waitFor(() => expect(screen.queryByText('Nearby Tension')).toBeNull());
@@ -283,7 +341,12 @@ describe('GymBoardsTab — stray boards', () => {
 
     await waitFor(() =>
       expect(mockExecute).toHaveBeenCalledWith({
-        input: { gymUuid: GYM_UUID, boardUuid: 'stray-last' },
+        input: {
+          gymUuid: GYM_UUID,
+          boardUuid: 'stray-last',
+          expectedCurrentGymUuid: 'other-gym',
+          allowSourceGymMerge: true,
+        },
       }),
     );
   });
@@ -315,7 +378,7 @@ describe('GymBoardsTab — stray boards', () => {
     expect(screen.getByText('Lonely Kilter')).toBeTruthy();
   });
 
-  it('keeps the one-tap path for a board that is not the last on its listing', async () => {
+  it('binds merge consent to the displayed source even when it currently has other boards', async () => {
     stubRequests({
       gymBoards: [],
       myBoards: [],
@@ -337,7 +400,18 @@ describe('GymBoardsTab — stray boards', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /add to gym/i }));
 
+    expect(await screen.findByText(/move this board/i)).toBeTruthy();
+    expect(mockExecute).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /move board/i }));
     await waitFor(() => expect(mockExecute).toHaveBeenCalledTimes(1));
+    expect(mockExecute).toHaveBeenCalledWith({
+      input: {
+        gymUuid: GYM_UUID,
+        boardUuid: 'stray-nearby',
+        expectedCurrentGymUuid: 'other-gym',
+        allowSourceGymMerge: true,
+      },
+    });
     expect(screen.queryByText(/this empties the other listing/i)).toBeNull();
   });
 

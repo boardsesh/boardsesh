@@ -61,7 +61,19 @@ export function VisibilityChip({ board }: { board: Pick<UserBoard, 'isPublic' | 
 }
 
 export default function GymBoardsTab({ gym }: GymManageTabProps) {
+  return <GymBoardAssociation gym={gym} />;
+}
+
+/** Shared by initial gym setup and the management console. */
+export function GymBoardAssociation({
+  gym,
+  onAssociated,
+}: {
+  gym: GymManageTabProps['gym'];
+  onAssociated?: () => Promise<void>;
+}) {
   const { t } = useTranslation('kiosk');
+  const { t: tGyms } = useTranslation('gyms');
   const { token } = useWsAuthToken();
   const { data: session } = useSession();
   const viewerUserId = session?.user?.id ?? null;
@@ -113,6 +125,7 @@ export default function GymBoardsTab({ gym }: GymManageTabProps) {
     const result = await unlinkMutation.execute({ input: { boardUuid: target.uuid, gymUuid: null } });
     if (result) {
       await fetchBoards();
+      await onAssociated?.();
     }
   };
 
@@ -122,6 +135,7 @@ export default function GymBoardsTab({ gym }: GymManageTabProps) {
     const result = await linkMutation.execute({ input: { boardUuid, gymUuid: gym.uuid } });
     if (result) {
       await fetchBoards();
+      await onAssociated?.();
       return true;
     }
     return false;
@@ -156,14 +170,23 @@ export default function GymBoardsTab({ gym }: GymManageTabProps) {
         </Typography>
       )}
 
+      {(gym.latitude == null || gym.longitude == null) && (
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          {tGyms('create.locationMissing')}
+        </Typography>
+      )}
+
       {boards === null ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
           <CircularProgress />
         </Box>
       ) : loadError ? (
-        <Typography variant="body2" color="error" sx={{ py: 2 }}>
-          {t('manage.boards.loadError')}
-        </Typography>
+        <Box sx={{ py: 2 }}>
+          <Typography variant="body2" color="error">
+            {t('manage.boards.loadError')}
+          </Typography>
+          <Button onClick={() => void fetchBoards()}>{tGyms('create.retry')}</Button>
+        </Box>
       ) : boards.length === 0 ? (
         <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
           {t('manage.boards.empty')}
@@ -213,7 +236,15 @@ export default function GymBoardsTab({ gym }: GymManageTabProps) {
         </List>
       )}
 
-      {gym.canEdit && <StrayBoardsSection gymUuid={gym.uuid} onAttached={fetchBoards} />}
+      {gym.canEdit && (
+        <StrayBoardsSection
+          gymUuid={gym.uuid}
+          onAttached={async () => {
+            await fetchBoards();
+            await onAssociated?.();
+          }}
+        />
+      )}
 
       <Dialog open={unlinkTarget !== null} onClose={() => setUnlinkTarget(null)}>
         <DialogTitle>{t('manage.boards.unlinkTitle')}</DialogTitle>
@@ -280,9 +311,16 @@ type AddBoardDialogProps = {
 
 function AddBoardDialog({ open, gymUuid, viewerUserId, linkedBoardUuids, onClose, onLink }: AddBoardDialogProps) {
   const { t } = useTranslation('kiosk');
+  const { t: tGyms } = useTranslation('gyms');
   const { token } = useWsAuthToken();
   const [candidates, setCandidates] = useState<UserBoard[] | null>(null);
   const [linkingUuid, setLinkingUuid] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextOffset, setNextOffset] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const requestVersionRef = useRef(0);
+  const loadingRef = useRef(false);
 
   // The candidates fetch runs once per dialog open. `linkedBoardUuids` changes
   // after every successful link (the parent refetches gymBoards), so reading it
@@ -294,29 +332,56 @@ function AddBoardDialog({ open, gymUuid, viewerUserId, linkedBoardUuids, onClose
     linkedBoardUuidsRef.current = linkedBoardUuids;
   }, [linkedBoardUuids]);
 
-  useEffect(() => {
-    if (!open || !token) return;
-    let cancelled = false;
-    setCandidates(null);
-    void (async () => {
+  const fetchPage = useCallback(
+    async (offset: number, append: boolean, requestVersion: number) => {
+      if (!token || loadingRef.current) return;
+      loadingRef.current = true;
+      setLoadingMore(append);
+      setLoadError(false);
       try {
         const client = createGraphQLHttpClient(token);
-        const data = await client.request<GetMyBoardsQueryResponse>(GET_MY_BOARDS, {
-          input: { limit: 50, offset: 0 },
+        const response = await client.request<GetMyBoardsQueryResponse>(GET_MY_BOARDS, {
+          input: { limit: 50, offset },
         });
-        if (cancelled) return;
+        if (requestVersionRef.current !== requestVersion) return;
         // ownerId, not isOwned — myBoards includes followed boards, and isOwned
         // is the physical-ownership column, not the account that may link it.
-        setCandidates(linkableBoards(data.myBoards.boards, gymUuid, linkedBoardUuidsRef.current, viewerUserId));
+        const available = linkableBoards(response.myBoards.boards, gymUuid, linkedBoardUuidsRef.current, viewerUserId);
+        setCandidates((previous) => {
+          const combined = append ? [...(previous ?? []), ...available] : available;
+          return [...new Map(combined.map((board) => [board.uuid, board])).values()];
+        });
+        setHasMore(response.myBoards.hasMore);
+        setNextOffset(offset + response.myBoards.boards.length);
       } catch (error) {
         console.error('Failed to load your boards:', error);
-        if (!cancelled) setCandidates([]);
+        if (requestVersionRef.current === requestVersion) {
+          setLoadError(true);
+          if (!append) setCandidates([]);
+        }
+      } finally {
+        if (requestVersionRef.current === requestVersion) {
+          loadingRef.current = false;
+          setLoadingMore(false);
+        }
       }
-    })();
+    },
+    [token, gymUuid, viewerUserId],
+  );
+
+  useEffect(() => {
+    requestVersionRef.current += 1;
+    loadingRef.current = false;
+    if (!open || !token) return;
+    setCandidates(null);
+    setHasMore(false);
+    setNextOffset(0);
+    void fetchPage(0, false, requestVersionRef.current);
     return () => {
-      cancelled = true;
+      requestVersionRef.current += 1;
+      loadingRef.current = false;
     };
-  }, [open, token, gymUuid, viewerUserId]);
+  }, [open, token, fetchPage]);
 
   const handleLinkClick = async (boardUuid: string) => {
     setLinkingUuid(boardUuid);
@@ -336,6 +401,16 @@ function AddBoardDialog({ open, gymUuid, viewerUserId, linkedBoardUuids, onClose
       <DialogTitle>{t('manage.boards.addDialog.title')}</DialogTitle>
       <DialogContent>
         <DialogContentText sx={{ mb: 1 }}>{t('manage.boards.addDialog.body')}</DialogContentText>
+        {loadError && (
+          <Box sx={{ py: 1 }}>
+            <Typography color="error" variant="body2">
+              {tGyms('create.loadError')}
+            </Typography>
+            <Button onClick={() => void fetchPage(nextOffset, nextOffset > 0, requestVersionRef.current)}>
+              {tGyms('create.retry')}
+            </Button>
+          </Box>
+        )}
         {candidates === null ? (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 2 }}>
             <CircularProgress size={18} />
@@ -343,7 +418,7 @@ function AddBoardDialog({ open, gymUuid, viewerUserId, linkedBoardUuids, onClose
               {t('manage.boards.addDialog.loading')}
             </Typography>
           </Box>
-        ) : candidates.length === 0 ? (
+        ) : candidates.length === 0 && !loadError && !hasMore ? (
           <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
             {t('manage.boards.addDialog.empty')}
           </Typography>
@@ -374,6 +449,11 @@ function AddBoardDialog({ open, gymUuid, viewerUserId, linkedBoardUuids, onClose
             ))}
           </List>
         )}
+        {hasMore && !loadError && (
+          <Button disabled={loadingMore} onClick={() => void fetchPage(nextOffset, true, requestVersionRef.current)}>
+            {loadingMore ? <CircularProgress size={16} /> : tGyms('create.loadMore')}
+          </Button>
+        )}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} sx={{ textTransform: 'none' }}>
@@ -402,6 +482,7 @@ type StrayBoardsSectionProps = {
  */
 function StrayBoardsSection({ gymUuid, onAttached }: StrayBoardsSectionProps) {
   const { t } = useTranslation('kiosk');
+  const { t: tGyms } = useTranslation('gyms');
   const { token } = useWsAuthToken();
   const [strays, setStrays] = useState<StrayBoard[] | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -435,10 +516,17 @@ function StrayBoardsSection({ gymUuid, onAttached }: StrayBoardsSectionProps) {
   }, [fetchStrays]);
 
   const handleAttach = useCallback(
-    async (board: StrayBoard) => {
+    async (board: StrayBoard, allowSourceGymMerge = false) => {
       setAttachingUuid(board.uuid);
       try {
-        const result = await attachMutation.execute({ input: { gymUuid, boardUuid: board.uuid } });
+        const result = await attachMutation.execute({
+          input: {
+            gymUuid,
+            boardUuid: board.uuid,
+            expectedCurrentGymUuid: board.currentGymUuid ?? null,
+            allowSourceGymMerge,
+          },
+        });
         if (result) {
           // Drop the attached candidate and pull it into the linked list above.
           setStrays((prev) => (prev === null ? prev : prev.filter((candidate) => candidate.uuid !== board.uuid)));
@@ -453,7 +541,7 @@ function StrayBoardsSection({ gymUuid, onAttached }: StrayBoardsSectionProps) {
 
   const handleAttachClick = useCallback(
     (board: StrayBoard) => {
-      if (board.isLastBoardAtCurrentGym) {
+      if (board.currentGymUuid) {
         setMergeConfirmTarget(board);
         return;
       }
@@ -466,7 +554,7 @@ function StrayBoardsSection({ gymUuid, onAttached }: StrayBoardsSectionProps) {
     const board = mergeConfirmTarget;
     setMergeConfirmTarget(null);
     if (board) {
-      void handleAttach(board);
+      void handleAttach(board, true);
     }
   }, [mergeConfirmTarget, handleAttach]);
 
@@ -559,8 +647,8 @@ function StrayBoardsSection({ gymUuid, onAttached }: StrayBoardsSectionProps) {
                 }
                 secondary={
                   board.currentGymName
-                    ? `${reasonText(board)} · ${t('manage.boards.strays.onListing', { name: board.currentGymName })}`
-                    : reasonText(board)
+                    ? `${boardTypeLabel(board.boardType)} · ${board.angle}° · ${reasonText(board)} · ${t('manage.boards.strays.onListing', { name: board.currentGymName })}`
+                    : `${boardTypeLabel(board.boardType)} · ${board.angle}° · ${reasonText(board)}`
                 }
               />
             </ListItem>
@@ -570,9 +658,24 @@ function StrayBoardsSection({ gymUuid, onAttached }: StrayBoardsSectionProps) {
 
       <ConfirmDialog
         open={mergeConfirmTarget !== null}
-        title={t('manage.boards.strays.lastBoardTitle')}
-        body={t('manage.boards.strays.lastBoardBody', { name: mergeConfirmTarget?.currentGymName ?? '' })}
-        confirmLabel={t('manage.boards.strays.lastBoardConfirm')}
+        title={
+          mergeConfirmTarget?.isLastBoardAtCurrentGym
+            ? t('manage.boards.strays.lastBoardTitle')
+            : tGyms('create.moveTitle')
+        }
+        body={
+          mergeConfirmTarget?.isLastBoardAtCurrentGym
+            ? t('manage.boards.strays.lastBoardBody', { name: mergeConfirmTarget.currentGymName ?? '' })
+            : tGyms('create.moveBody', {
+                board: mergeConfirmTarget?.name ?? '',
+                source: mergeConfirmTarget?.currentGymName ?? '',
+              })
+        }
+        confirmLabel={
+          mergeConfirmTarget?.isLastBoardAtCurrentGym
+            ? t('manage.boards.strays.lastBoardConfirm')
+            : tGyms('create.moveConfirm')
+        }
         cancelLabel={t('manage.boards.cancel')}
         confirmColor="primary"
         onConfirm={handleMergeConfirm}

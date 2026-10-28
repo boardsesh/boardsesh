@@ -35,16 +35,21 @@ const GYM_MODERATOR_COMMUNITY_ROLES = ['admin', 'community_leader'] as const;
  * `userCanEditGym` and the `gym` resolver, so the two rules cannot drift.
  */
 export function gymVisibleCondition(
-  gym: { id: SQLWrapper; ownerId: SQLWrapper; isPublic: SQLWrapper },
+  gym: { id: SQLWrapper; ownerId: SQLWrapper; isPublic: SQLWrapper; isListed?: SQLWrapper },
   viewerId: string | null | undefined,
+  discovery = false,
 ): SQL {
-  if (!viewerId) return eq(gym.isPublic, true);
+  const publicVisibility = and(
+    eq(gym.isPublic, true),
+    discovery ? eq(gym.isListed ?? dbSchema.gyms.isListed, true) : undefined,
+  )!;
+  if (!viewerId) return publicVisibility;
   const member = alias(dbSchema.gymMembers, 'gym_visibility_member');
   const role = alias(dbSchema.communityRoles, 'gym_visibility_role');
   const board = alias(dbSchema.userBoards, 'gym_visibility_board');
   const moderatorRole = and(eq(role.userId, viewerId), inArray(role.role, [...GYM_MODERATOR_COMMUNITY_ROLES]));
   return or(
-    eq(gym.isPublic, true),
+    publicVisibility,
     eq(gym.ownerId, viewerId),
     inArray(
       gym.id,

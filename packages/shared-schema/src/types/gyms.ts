@@ -75,6 +75,8 @@ export type Gym = {
   latitude?: number | null;
   longitude?: number | null;
   isPublic: boolean;
+  /** Omitted by older cached clients; absence means listed. */
+  isListed?: boolean;
   imageUrl?: string | null;
   /** Square gym logo (transparent brand mark) for the kiosk and embeds — distinct from imageUrl, the gym photo. */
   logoUrl?: string | null;
@@ -192,6 +194,8 @@ export type StrayBoardReason = 'MERGED_TWIN' | 'NEARBY';
 export type StrayBoard = {
   uuid: string;
   name: string;
+  boardType: string;
+  angle: number;
   /** The gym the board is currently linked to (a merged twin or a synced listing); null when unlinked. */
   currentGymUuid?: string | null;
   /** Name of the gym the board is currently linked to; null when unlinked. */
@@ -210,6 +214,10 @@ export type StrayBoard = {
 export type AttachBoardToGymInput = {
   gymUuid: string;
   boardUuid: string;
+  /** False prevents retiring an emptied source listing. Omitted preserves legacy behavior. */
+  allowSourceGymMerge?: boolean;
+  /** Bind the move to the displayed source listing; null means the board was unlinked. */
+  expectedCurrentGymUuid?: string | null;
 };
 
 export type DetachBoardFromGymInput = {
@@ -220,6 +228,8 @@ export type DetachBoardFromGymInput = {
 export type CreateGymInput = {
   name: string;
   description?: string;
+  /** Nonblank hours are trimmed and receive a confirmation timestamp on creation. */
+  hours?: string;
   address?: string;
   website?: string;
   contactEmail?: string;
@@ -227,6 +237,7 @@ export type CreateGymInput = {
   latitude?: number;
   longitude?: number;
   isPublic?: boolean;
+  isListed?: boolean;
   imageUrl?: string;
   boardUuid?: string;
 };
@@ -245,6 +256,7 @@ export type UpdateGymInput = {
   latitude?: number | null;
   longitude?: number | null;
   isPublic?: boolean;
+  isListed?: boolean;
   /** Gym photo. `undefined` leaves the column untouched; explicit `null` clears it. */
   imageUrl?: string | null;
   // Branding: `undefined` leaves the column untouched; explicit `null` clears it

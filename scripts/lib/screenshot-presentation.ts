@@ -111,6 +111,19 @@ const IPAD_CAPTIONS: Readonly<Record<string, CaptionId>> = {
   '04-discover.png': 'discover',
   '05-profile.png': 'profile',
 };
+// iPhone Duo: one App Store set across both displays. 00-04 are the inner
+// display open (landscape), 05-07 the outer display closed (portrait); the
+// frame follows each capture's own aspect ratio.
+const DUO_CAPTIONS: Readonly<Record<string, CaptionId>> = {
+  '00-board-view.png': 'board',
+  '01-board-view-2.png': 'boards',
+  '02-climbs.png': 'climbs',
+  '03-home.png': 'home',
+  '04-playlist-detail.png': 'playlist',
+  '05-profile.png': 'profile',
+  '06-session-detail.png': 'session',
+  '07-workout-generator.png': 'workout',
+};
 const ANDROID_CAPTIONS: Readonly<Record<string, CaptionId>> = {
   '00-tension-board-view.png': 'board',
   '01-kilter-board-view.png': 'boards',
@@ -125,6 +138,7 @@ const ANDROID_CAPTIONS: Readonly<Record<string, CaptionId>> = {
 export function screenshotCaptions(platform: 'ios' | 'android', device: string): Readonly<Record<string, CaptionId>> {
   if (platform === 'android') return ANDROID_CAPTIONS;
   if (device.startsWith('ipad-')) return IPAD_CAPTIONS;
+  if (device === 'iphone-duo') return DUO_CAPTIONS;
   if (device.startsWith('iphone-')) return PHONE_CAPTIONS;
   throw new Error(`No screenshot presentation for device ${device}`);
 }
@@ -236,7 +250,12 @@ export function resolveScreenshotRecipes(
   const actualNames = [...captureNames].sort();
   // Sorting copies ignores capture order while retaining duplicate-name rejection.
   const matches = (expected: readonly string[]) => [...expected].sort().join('\n') === actualNames.join('\n');
-  if (platform === 'ios' && device.startsWith('iphone-') && matches(IOS_CAMPAIGN_CAPTURE_NAMES)) {
+  if (
+    platform === 'ios' &&
+    device !== 'iphone-duo' &&
+    device.startsWith('iphone-') &&
+    matches(IOS_CAMPAIGN_CAPTURE_NAMES)
+  ) {
     // Italian has no reviewed physical Live Activity capture yet. Show the
     // genuine localized session screen in that slot, keeping nine phone images.
     return locale === 'it'

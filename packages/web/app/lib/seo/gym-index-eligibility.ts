@@ -5,7 +5,9 @@ import type { Gym } from '@boardsesh/shared-schema';
  * whole `Gym`, so the sitemap shard, a card model or a test can ask the same
  * question with the four columns it already has in hand.
  */
-export type IndexableVenueCandidate = Pick<Gym, 'isPublic' | 'latitude' | 'longitude'>;
+export type IndexableVenueCandidate = Pick<Gym, 'isPublic' | 'latitude' | 'longitude'> & {
+  isListed?: boolean;
+};
 
 function isRealCoordinate(value: number | null | undefined): value is number {
   return typeof value === 'number' && Number.isFinite(value);
@@ -55,5 +57,5 @@ function isRealCoordinate(value: number | null | undefined): value is number {
  * identical to the number that justifies it.
  */
 export function gymIsIndexableVenue(gym: IndexableVenueCandidate): boolean {
-  return gym.isPublic && isRealCoordinate(gym.latitude) && isRealCoordinate(gym.longitude);
+  return gym.isPublic && gym.isListed !== false && isRealCoordinate(gym.latitude) && isRealCoordinate(gym.longitude);
 }

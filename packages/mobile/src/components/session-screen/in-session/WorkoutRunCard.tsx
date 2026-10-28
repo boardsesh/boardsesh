@@ -34,6 +34,7 @@ import { useDrawerHost } from '../../../providers/drawer-host-provider';
 import { useQueueActions, useQueueSessionId } from '../../../providers/queue-provider';
 import { useDisplayGrade } from '../../../hooks/use-display-grade';
 import { useWorkoutRunner } from '../../../hooks/use-workout-runner';
+import { useStartWorkout } from '../../../hooks/use-start-workout';
 import { useWorkoutRun } from '../../../lib/workout-run-store';
 import {
   formatWorkoutStagePositionWithGo,
@@ -129,11 +130,12 @@ function WorkoutRunCardContent({
   const { t } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
   const { readout, currentItem, nextItem, resumeItem } = useWorkoutRunner(sessionId, run);
+  const { pending, firstItem, startWorkout } = useStartWorkout();
 
   // Every workout climb has left the queue: offer a fresh block instead.
   if (!readout) return onAddBlock ? <AddWorkoutPrompt onPress={onAddBlock} /> : null;
 
-  const inProgress = readout.phase !== 'done';
+  const inProgress = !pending && readout.phase !== 'done';
   return (
     <Card>
       <View style={styles.headerRow}>
@@ -158,7 +160,8 @@ function WorkoutRunCardContent({
           </Text>
         ) : null}
       </View>
-      {inProgress ? null : <WorkoutDoneLine totals={readout.totals} />}
+      {pending && firstItem ? <StartWorkoutRow item={firstItem} onPress={startWorkout} /> : null}
+      {!pending && !inProgress ? <WorkoutDoneLine totals={readout.totals} /> : null}
       {inProgress && readout.position && currentItem ? <CurrentClimbRow readout={readout} item={currentItem} /> : null}
       {inProgress && resumeItem ? <ResumeWorkoutRow readout={readout} item={resumeItem} /> : null}
       {inProgress && readout.rest?.timing ? <RestLine rest={readout.rest} nextItem={nextItem} /> : null}
@@ -168,23 +171,26 @@ function WorkoutRunCardContent({
       <View style={styles.stageList}>
         {readout.stages.map((stage) => {
           const name = workoutStageName(stage.kind, t, stage.isCoolDown);
-          const status = stageStatus(stage, t);
+          const status = pending
+            ? t('mobile.session.workoutStageClimbs', { count: stage.size })
+            : stageStatus(stage, t);
+          const isCurrent = !pending && stage.isCurrent;
           return (
             <View
               key={stage.id}
               style={styles.stageRow}
               accessible
               accessibilityLabel={
-                stage.isCurrent
+                isCurrent
                   ? t('mobile.session.workoutStageCurrentAccessibilityLabel', { stage: name, status })
                   : t('mobile.session.workoutStageAccessibilityLabel', { stage: name, status })
               }
-              testID={stage.isCurrent ? 'workout-stage-current' : 'workout-stage'}
+              testID={isCurrent ? 'workout-stage-current' : 'workout-stage'}
             >
               <View
                 style={[
                   styles.marker,
-                  stage.isCurrent
+                  isCurrent
                     ? { backgroundColor: brandColors.primaryFill, borderColor: brandColors.primaryFill }
                     : { borderColor: systemColors.tertiaryLabel },
                 ]}
@@ -195,15 +201,15 @@ function WorkoutRunCardContent({
               <View style={styles.stageText}>
                 <Text
                   variant="body"
-                  color={stage.isCurrent ? systemColors.label : systemColors.secondaryLabel}
-                  style={[styles.stageName, stage.isCurrent ? styles.currentStageName : null]}
+                  color={isCurrent ? systemColors.label : systemColors.secondaryLabel}
+                  style={[styles.stageName, isCurrent ? styles.currentStageName : null]}
                   numberOfLines={1}
                 >
                   {name}
                 </Text>
                 <Text
                   variant="subheadline"
-                  color={stage.isCurrent ? brandColors.primary : systemColors.secondaryLabel}
+                  color={isCurrent ? brandColors.primary : systemColors.secondaryLabel}
                   style={styles.stageStatus}
                   numeric
                 >
@@ -216,6 +222,34 @@ function WorkoutRunCardContent({
       </View>
       {onAddBlock ? <AddBlockButton onPress={onAddBlock} /> : null}
     </Card>
+  );
+}
+
+/** Available on every shell, including iPad where there is no floating pill. */
+function StartWorkoutRow({ item, onPress }: { item: ClimbQueueItem; onPress: () => void }) {
+  const { t } = useTranslation('session');
+  const { systemColors, brandColors } = useTheme();
+  return (
+    <PressableSurface
+      onPress={onPress}
+      feedback="opacity"
+      accessibilityRole="button"
+      accessibilityLabel={t('mobile.workoutRunner.startWorkout')}
+      accessibilityHint={t('mobile.workoutRunner.startHint', { name: item.climb.name })}
+      style={styles.climbRow}
+      testID="workout-runner-start"
+    >
+      <Icon name="play.fill" size={18} color={brandColors.primary} />
+      <View style={styles.rowText}>
+        <Text variant="body" color={brandColors.primary} style={styles.emphasis}>
+          {t('mobile.workoutRunner.startWorkout')}
+        </Text>
+        <Text variant="subheadline" color={systemColors.secondaryLabel} numberOfLines={1}>
+          {item.climb.name}
+        </Text>
+      </View>
+      <Icon name="chevron.right" size={18} color={systemColors.tertiaryLabel} />
+    </PressableSurface>
   );
 }
 

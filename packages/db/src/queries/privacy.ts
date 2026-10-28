@@ -3,6 +3,13 @@ import { Column, getTableName, is, sql, type SQL, type SQLWrapper } from 'drizzl
 type ViewerId = string | null | undefined;
 type PrivacyResourceKind = 'board' | 'session';
 
+/** A linked gym suppresses global board discovery, while direct board/radio reads remain independent. */
+export function boardGymListedCondition(gymIdColumn: SQLWrapper): SQL {
+  return sql`NOT EXISTS (SELECT 1 FROM gyms discovery_gym
+    WHERE discovery_gym.id = ${gymIdColumn}
+      AND (discovery_gym.deleted_at IS NOT NULL OR NOT discovery_gym.is_public OR NOT discovery_gym.is_listed))`;
+}
+
 export function approvedFollowerCondition(userIdColumn: SQLWrapper, viewerId: ViewerId): SQL {
   if (!viewerId) return sql`false`;
   return sql`EXISTS (SELECT 1 FROM user_follows privacy_follow WHERE privacy_follow.follower_id = ${viewerId} AND privacy_follow.following_id = ${userIdColumn})`;
@@ -238,6 +245,7 @@ export function boardIdentityVisibleCondition(
   return sql<boolean>`(${boardIdColumn} IS NOT NULL AND (${viewerIsAuthor}EXISTS (
     SELECT 1 FROM user_boards privacy_identity_board
     WHERE privacy_identity_board.id = ${boardIdColumn} AND privacy_identity_board.deleted_at IS NULL
+      AND ${boardGymListedCondition(sql`privacy_identity_board.gym_id`)}
       AND ${resourceAccessCondition('board', sql`privacy_identity_board.uuid`, viewerId, { allowUnlistedLink: false })}
   )))`;
 }

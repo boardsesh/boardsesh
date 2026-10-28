@@ -18,6 +18,7 @@ type PressableProps = {
   accessibilityActions?: ReadonlyArray<{ name: string; label?: string }>;
   onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
   testID?: string;
+  disabled?: boolean;
 };
 
 const harness = vi.hoisted(() => ({
@@ -111,6 +112,7 @@ vi.mock('../../PressableSurface', () => ({
         'data-hint': props.accessibilityHint,
         'data-actions': (props.accessibilityActions ?? []).map((action) => `${action.name}:${action.label}`).join('|'),
         onClick: props.onPress,
+        disabled: props.disabled,
       },
       props.children,
     );
@@ -132,9 +134,39 @@ import {
   resumeRestTimer,
   getRestTimerState,
 } from '../../../lib/rest-timer-store';
-import { RestTimerHeroClock, RestTimerPill } from '../RestTimerPill';
+import { RestTimerHeroClock, RestTimerPill, WorkoutStartPill } from '../RestTimerPill';
 
 const START_MS = Date.parse('2026-09-11T10:00:00.000Z');
+
+describe('WorkoutStartPill', () => {
+  afterEach(cleanup);
+
+  it.each([false, true])('offers a labeled start with compact=%s before the timer is armed', (compact) => {
+    const onPress = vi.fn();
+    const { getByTestId, queryByTestId } = render(
+      <WorkoutStartPill onPress={onPress} firstClimbName="First climb" compact={compact} />,
+    );
+    const start = getByTestId('workout-start-pill');
+    expect(start.textContent).toContain('mobile.workoutRunner.startWorkout');
+    expect(start.getAttribute('data-hint')).toBe('mobile.workoutRunner.startHint:First climb');
+    expect(queryByTestId('rest-timer-pill-elapsed')).toBeNull();
+    expect(harness.pressable?.onLongPress).toBeUndefined();
+    expect(harness.pressable?.accessibilityActions).toBeUndefined();
+    fireEvent.click(start);
+    expect(onPress).toHaveBeenCalledOnce();
+  });
+
+  it('disables Start and its large-content activation when no workout climb remains', () => {
+    const onPress = vi.fn();
+    const { getByTestId } = render(<WorkoutStartPill onPress={onPress} firstClimbName={null} />);
+    const start = getByTestId('workout-start-pill') as HTMLButtonElement;
+    expect(start.disabled).toBe(true);
+    expect(start.getAttribute('data-hint')).toBe('mobile.workoutRunner.startEmptyHint');
+    expect(harness.viewer?.onActivate).toBeUndefined();
+    fireEvent.click(start);
+    expect(onPress).not.toHaveBeenCalled();
+  });
+});
 
 function advanceSeconds(seconds: number) {
   advanceMs(seconds * 1000);

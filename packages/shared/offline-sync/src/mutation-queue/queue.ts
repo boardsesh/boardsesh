@@ -179,6 +179,24 @@ export async function hasPendingTickForClimb(db: SqlExecutor, climbUuid: string)
   return row != null;
 }
 
+/**
+ * Whether this device still has a tick logged in `sessionId` waiting in the
+ * outbox (#6903). Ending a session asks before END_SESSION: the server builds
+ * the summary, and the Strava export, from the ticks it already has, so a send
+ * still queued here would be missing from both. Same row rules as
+ * `hasPendingTickForClimb`: an in-flight send counts, a dead letter does not.
+ */
+export async function hasPendingTicksForSession(db: SqlExecutor, sessionId: string): Promise<boolean> {
+  const row = await db.getFirstAsync<{ found: number }>(
+    `SELECT 1 AS found FROM pending_mutations
+     WHERE table_name = 'boardsesh_ticks' AND operation = 'create' AND status = 'pending'
+       AND json_extract(payload, '$.sessionId') = ?
+     LIMIT 1`,
+    [sessionId],
+  );
+  return row != null;
+}
+
 export async function getPendingCount(db: SqlExecutor): Promise<number> {
   const row = await db.getFirstAsync<{ count: number }>(
     `SELECT COUNT(*) as count FROM pending_mutations WHERE status = 'pending'`,

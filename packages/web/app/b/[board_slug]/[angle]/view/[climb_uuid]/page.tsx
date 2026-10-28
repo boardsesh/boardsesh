@@ -101,7 +101,8 @@ export async function generateMetadata(props: BoardSlugViewPageProps): Promise<M
     // A climb hidden by an approved report joins them: the page still resolves,
     // because links and logbook entries pointing at it must not start 404ing,
     // but the crew voted it off the wall and it has no business ranking.
-    const shouldNoindex = board.isUnlisted || !board.isPublic || currentClimb.is_hidden === true;
+    const shouldNoindex =
+      board.isUnlisted || !board.isPublic || board.gymIsListed === false || currentClimb.is_hidden === true;
 
     // A1: this page canonicalises INTO the config-tuple tree rather than
     // self-canonicalising, via the same builder that tree uses — `/b/{slug}`
@@ -242,7 +243,7 @@ export default async function BoardSlugViewPage(props: BoardSlugViewPageProps) {
           // the same reason: on a noindex page a `CreativeWork.url` naming the
           // indexable config-tuple twin re-introduces exactly the conflicting
           // signal the missing `alternates` block avoids.
-          noindex={board.isUnlisted || !board.isPublic}
+          noindex={board.isUnlisted || !board.isPublic || board.gymIsListed === false}
         />
       </>
     );

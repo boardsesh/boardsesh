@@ -164,5 +164,27 @@
   "install": {
     "heading": "Get the app",
     "body": "Light up your gym's boards from your phone and log every send."
+  },
+  "create": {
+    "action": "Create gym",
+    "title": "Add your gym",
+    "description": "Put your gym on the map, then link the boards already listed on Boardsesh.",
+    "details": "Gym details",
+    "boards": "Existing boards",
+    "continue": "Save and choose boards",
+    "saved": "{{name}} is saved. Link its existing boards below, or come back later.",
+    "managerHint": "You will manage this listing. Gym staff can claim it later.",
+    "back": "Edit details",
+    "finish": "See gym",
+    "skip": "Skip for now",
+    "locationMissing": "Add a map pin in Gym details to find nearby boards. You can still link boards you own.",
+    "loadMore": "Load more boards",
+    "loadError": "We could not load your boards. Your gym is saved; try again.",
+    "retry": "Try again",
+    "refreshError": "Your changes are saved, but the gym directory has not refreshed yet.",
+    "refreshRetry": "Refresh directory",
+    "moveTitle": "Move this board?",
+    "moveBody": "Move {{board}} from {{source}} to this gym? If its old imported listing is left empty, it will be merged into this gym and its links will redirect here.",
+    "moveConfirm": "Move board"
   }
 }

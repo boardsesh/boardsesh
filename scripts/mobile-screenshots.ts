@@ -22,7 +22,7 @@ import { guardSimulatorCommand } from './lib/ios-simulator-lease';
  *
  * Usage:
  *   vp run mobile:screenshots -- [--platform ios] [--flow app-store|app-store-campaign|onboarding|help|smoke]
- *                                 [--backend local|prod] [--devices common|phones|ipads|<comma-list>]
+ *                                 [--backend local|prod] [--devices common|phones|ipads|duo|<comma-list>]
  *                                 [--locales all|<comma-list>] [--device "iPhone 16 Pro Max"]
  *                                 [--variant material|liquidGlass] [--shutdown]
  *                                 [--app-path <path/to/Boardsesh.app|app.apk>]
@@ -49,6 +49,11 @@ import { guardSimulatorCommand } from './lib/ios-simulator-lease';
  * (or resolves a dev-client APK itself with --dev-client).
  * Credentials come from SCREENSHOT_USER_EMAIL / SCREENSHOT_USER_PASSWORD
  * (default test@boardsesh.com / test).
+ *
+ * The iPhone Duo store capture runs twice in one shard: closed on the outer
+ * display (app-store-duo.yaml, plain Maestro), then open on the inner display
+ * (app-store-duo-inner.yaml, one Maestro run per shot, captured with simctl
+ * because Maestro only sees the outer display). See scripts/lib/ios-duo-hinge.ts.
  */
 
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
@@ -179,6 +184,7 @@ import { readIosCampaignPrimaryCapture, type IosCampaignPrimaryCapture } from '.
 import { iosCampaignPhoneScene } from './lib/ios-campaign-phone-scenes';
 import { SEARCH_CLIMBS } from '../packages/mobile/src/lib/graphql/operations';
 import { DEFAULT_CLIMB_FILTER_STATE, toClimbSearchInput } from '../packages/shared/climb-filters/src/filter-state';
+import { buildDuoHingeLibrary, captureDuoDisplay, installDuoHinge, pngIsLit, setDuoPose } from './lib/ios-duo-hinge';
 import {
   matchScreenshotBoardCandidates,
   parseScreenshotBoardSelectors,
@@ -331,17 +337,38 @@ export const IOS_IPAD_SCREENSHOT_DEVICES: readonly IosScreenshotDevice[] = [
   },
 ];
 
+/** The phones and iPads: every device with a custom product page set too. */
 export const IOS_SCREENSHOT_DEVICES: readonly IosScreenshotDevice[] = [
   ...IOS_PHONE_SCREENSHOT_DEVICES,
   ...IOS_IPAD_SCREENSHOT_DEVICES,
 ];
 
-const COMMON_IOS_DEVICE_NAMES = IOS_SCREENSHOT_DEVICES.map((device) => device.name);
+// The foldable's one App Store set takes both displays: the inner one open
+// (landscape, 2853x2007) and the outer one closed (1398x2034). One shard shoots
+// both, outer pass first; scripts/lib/ios-duo-hinge.ts folds the simulator in
+// between. Needs Xcode 27 and the iOS 27.1 runtime. No custom product page set.
+export const IOS_DUO_SCREENSHOT_DEVICES: readonly IosScreenshotDevice[] = [
+  {
+    name: 'iPhone Duo',
+    typeId: 'com.apple.CoreSimulator.SimDeviceType.iPhone-Duo',
+    orientation: 'PORTRAIT',
+  },
+];
+
+/** The full App Store matrix (`--devices common`). */
+export const IOS_STORE_SCREENSHOT_DEVICES: readonly IosScreenshotDevice[] = [
+  ...IOS_SCREENSHOT_DEVICES,
+  ...IOS_DUO_SCREENSHOT_DEVICES,
+];
+
+const COMMON_IOS_DEVICE_NAMES = IOS_STORE_SCREENSHOT_DEVICES.map((device) => device.name);
 const PHONE_IOS_DEVICE_NAMES = IOS_PHONE_SCREENSHOT_DEVICES.map((device) => device.name);
 const IPAD_IOS_DEVICE_NAMES = IOS_IPAD_SCREENSHOT_DEVICES.map((device) => device.name);
+const DUO_IOS_DEVICE_NAMES = IOS_DUO_SCREENSHOT_DEVICES.map((device) => device.name);
 const DEFAULT_IOS_DEVICES_ARGUMENT = 'common';
 const PHONE_IOS_DEVICES_ARGUMENT = 'phones';
 const IPAD_IOS_DEVICES_ARGUMENT = 'ipads';
+const DUO_IOS_DEVICES_ARGUMENT = 'duo';
 const DEFAULT_LOCALES_ARGUMENT = 'all';
 
 export interface AppStoreLocaleTarget {
@@ -661,6 +688,9 @@ function parseDevicesArgument(value: string): string[] {
   }
   if (value === IPAD_IOS_DEVICES_ARGUMENT) {
     return [...IPAD_IOS_DEVICE_NAMES];
+  }
+  if (value === DUO_IOS_DEVICES_ARGUMENT) {
+    return [...DUO_IOS_DEVICE_NAMES];
   }
   const devices = value
     .split(',')
@@ -997,44 +1027,45 @@ function listSimulatorDevices(capture = runCapture): DeviceInfo[] {
   return devices;
 }
 
-/** Newest available iOS runtime supporting the requested simulator device type. */
-function newestIosRuntime(deviceTypeId: string, capture = runCapture): string | null {
+interface SimulatorRuntimeInfo {
+  identifier: string;
+  isAvailable?: boolean;
+  version?: string;
+  supportedDeviceTypes?: Array<{ identifier?: string }>;
+}
+
+/**
+ * The newest available iOS runtime that can host `typeId`. The iPhone Duo only
+ * exists on iOS 27.1, and that runtime refuses older phones, so "newest" alone
+ * picks a runtime the device cannot be created on. Runtimes that do not list
+ * their device types are kept.
+ */
+export function pickIosRuntime(runtimes: readonly SimulatorRuntimeInfo[], typeId: string): string | null {
+  const candidates = runtimes
+    .filter((runtime) => runtime.isAvailable !== false && /iOS/i.test(runtime.identifier))
+    .filter(
+      (runtime) =>
+        !runtime.supportedDeviceTypes ||
+        typeId.length === 0 ||
+        runtime.supportedDeviceTypes.some((deviceType) => deviceType.identifier === typeId),
+    )
+    .sort((a, b) => (a.version ?? '').localeCompare(b.version ?? '', undefined, { numeric: true }));
+  return candidates.length > 0 ? candidates[candidates.length - 1].identifier : null;
+}
+
+/** Newest available iOS runtime identifier (for creating a missing device). */
+function newestIosRuntime(typeId: string, capture = runCapture): string | null {
   const { status, stdout } = capture('xcrun', ['simctl', 'list', 'runtimes', '--json']);
   if (status !== 0) return null;
   // Same defensive parse as listSimulatorDevices: partial JSON during a Xcode
   // component install shouldn't crash the run.
-  let parsed: {
-    runtimes: Array<{
-      identifier: string;
-      isAvailable?: boolean;
-      platform?: string;
-      version?: string;
-      supportedDeviceTypes?: Array<{ identifier: string }>;
-    }>;
-  };
+  let parsed: { runtimes: SimulatorRuntimeInfo[] };
   try {
-    parsed = JSON.parse(stdout) as {
-      runtimes: Array<{
-        identifier: string;
-        isAvailable?: boolean;
-        platform?: string;
-        version?: string;
-        supportedDeviceTypes?: Array<{ identifier: string }>;
-      }>;
-    };
+    parsed = JSON.parse(stdout) as { runtimes: SimulatorRuntimeInfo[] };
   } catch {
     return null;
   }
-  const ios = parsed.runtimes
-    .filter(
-      (runtime) =>
-        runtime.isAvailable !== false &&
-        /iOS/i.test(runtime.identifier) &&
-        (runtime.supportedDeviceTypes === undefined ||
-          runtime.supportedDeviceTypes.some((device) => device.identifier === deviceTypeId)),
-    )
-    .sort((a, b) => (a.version ?? '').localeCompare(b.version ?? '', undefined, { numeric: true }));
-  return ios.length > 0 ? ios[ios.length - 1].identifier : null;
+  return pickIosRuntime(parsed.runtimes, typeId);
 }
 
 export function resolveIosScreenshotDevices(
@@ -1042,7 +1073,7 @@ export function resolveIosScreenshotDevices(
   orientationOverride: IosDeviceOrientation | null = null,
 ): IosScreenshotDevice[] {
   return deviceNames.map((deviceName) => {
-    const knownDevice = IOS_SCREENSHOT_DEVICES.find((device) => device.name === deviceName);
+    const knownDevice = IOS_STORE_SCREENSHOT_DEVICES.find((device) => device.name === deviceName);
     // A known device keeps its own orientation — an override never clobbers a
     // record whose orientation we already know is correct.
     if (knownDevice) return knownDevice;
@@ -2050,6 +2081,59 @@ export function isIpadScreenshotDevice(screenshotDevice: IosScreenshotDevice): b
   return screenshotDevice.typeId.includes('iPad');
 }
 
+export function isDuoScreenshotDevice(screenshotDevice: IosScreenshotDevice): boolean {
+  return screenshotDevice.typeId.includes('iPhone-Duo');
+}
+
+/** Store flows that shoot the Duo's two passes instead of the phone listing. */
+export function usesDuoStoreFlow(options: ScreenshotOptions, screenshotDevice: IosScreenshotDevice): boolean {
+  return (
+    !options.cpp &&
+    (options.flow === 'app-store' || options.flow === 'app-store-campaign') &&
+    isDuoScreenshotDevice(screenshotDevice)
+  );
+}
+
+export const DUO_INNER_FLOW_FILE = 'app-store-duo-inner.yaml';
+/** A segment with this comment on a line of its own starts from a freshly launched app at home. */
+export const DUO_RELAUNCH_MARKER = '# duo: relaunch';
+
+export interface DuoInnerShot {
+  /** Capture name without `.png`. */
+  name: string;
+  /** A complete Maestro flow: the source's header plus this shot's commands. */
+  flow: string;
+  relaunch: boolean;
+}
+
+/**
+ * Split the inner-display flow at each `takeScreenshot` into one flow per shot.
+ * Maestro only sees the Duo's outer display, so the orchestrator runs each
+ * shot's commands, then captures the inner display itself.
+ */
+export function splitDuoInnerFlow(source: string): DuoInnerShot[] {
+  const separator = source.indexOf('\n---\n');
+  if (separator < 0) throw new Error('Duo inner flow has no `---` header separator');
+  const header = source.slice(0, separator + 5);
+  const shots: DuoInnerShot[] = [];
+  let commands: string[] = [];
+  for (const line of source.slice(separator + 5).split('\n')) {
+    const screenshot = /^- takeScreenshot:\s*(\S+)\s*$/.exec(line);
+    if (!screenshot) {
+      commands.push(line);
+      continue;
+    }
+    const body = commands.join('\n');
+    if (!/^- /m.test(body)) throw new Error(`Duo inner shot ${screenshot[1]} has no commands before it`);
+    const relaunch = body.split('\n').some((commandLine) => commandLine.trim() === DUO_RELAUNCH_MARKER);
+    shots.push({ name: screenshot[1], flow: `${header}${body}\n`, relaunch });
+    commands = [];
+  }
+  if (/^- /m.test(commands.join('\n'))) throw new Error('Duo inner flow has commands after its last takeScreenshot');
+  if (shots.length === 0) throw new Error('Duo inner flow takes no screenshots');
+  return shots;
+}
+
 /**
  * The Maestro flow source for an iOS device. iPad deep links don't navigate on
  * the simulator — the "Open in 'Boardsesh'?" scheme-confirm dialog swallows every
@@ -2059,6 +2143,7 @@ export function isIpadScreenshotDevice(screenshotDevice: IosScreenshotDevice): b
  */
 export function iosSourceFlowFile(options: ScreenshotOptions, screenshotDevice: IosScreenshotDevice): string {
   if (options.cpp) return join(MAESTRO_DIR, 'app-store-cpp.yaml');
+  if (usesDuoStoreFlow(options, screenshotDevice)) return join(MAESTRO_DIR, 'app-store-duo.yaml');
   if (isIpadScreenshotDevice(screenshotDevice)) {
     const ipadFlow = options.flow === 'app-store-campaign' ? 'app-store' : options.flow;
     const ipadFlowFile = join(MAESTRO_DIR, `${ipadFlow}-ipad.yaml`);
@@ -2711,7 +2796,11 @@ export function renderedFlowFileForIosDevice(
   if (!existsSync(flowFile)) return flowFile;
   const renderedFlowFile = join(captureDir, `${options.flow}-${deviceSlug(screenshotDevice.name)}.yaml`);
   let source = readFileSync(flowFile, 'utf8');
-  if (options.flow === 'app-store-campaign' && !isIpadScreenshotDevice(screenshotDevice)) {
+  if (
+    options.flow === 'app-store-campaign' &&
+    !isIpadScreenshotDevice(screenshotDevice) &&
+    !usesDuoStoreFlow(options, screenshotDevice)
+  ) {
     // Inline the existing ten-shot flow: Maestro resolves relative subflows from
     // this temporary directory, where the committed app-store.yaml does not live.
     const legacyCommands = readFileSync(join(MAESTRO_DIR, 'app-store.yaml'), 'utf8').split('\n---\n')[1];
@@ -2764,6 +2853,15 @@ function normalizeCapturedIosScreenshots(captureDir: string, screenshotDevice: I
   return 0;
 }
 
+/** Load the hinge library into the Duo's SpringBoard and start closed. Returns its log path. */
+function prepareDuoHinge(udid: string): string {
+  const logPath = join(tmpdir(), `boardsesh-duo-hinge-${udid}.log`);
+  console.log(`${LOG} Loading the Duo hinge helper into SpringBoard...`);
+  installDuoHinge(udid, buildDuoHingeLibrary(join(tmpdir(), 'boardsesh-duo-hinge')), logPath);
+  setDuoPose(udid, 'closed', logPath);
+  return logPath;
+}
+
 function captureIosDevice(
   options: ScreenshotOptions,
   screenshotDevice: IosScreenshotDevice,
@@ -2773,6 +2871,8 @@ function captureIosDevice(
 ): number {
   const device = findOrCreateIosDevice(screenshotDevice);
   bootDevice(device);
+  // Before the status bar overrides: loading the hinge library restarts SpringBoard.
+  const duoHingeLog = usesDuoStoreFlow(options, screenshotDevice) ? prepareDuoHinge(device.udid) : null;
   applyCleanStatusBar(device.udid);
 
   console.log(`${LOG} Installing ${appPath} on ${device.name} for ${localeTarget.appLocale}...`);
@@ -2919,37 +3019,29 @@ function captureIosDevice(
     // machine. Revisit with `--env-file` if/when we bump to a Maestro that has it.
     // The CPP supervisor changes the executable; keep the same lease boundary.
     if (options.cpp) guardSimulatorCommand('maestro', ['--device', device.udid], ROOT_DIR);
-    const maestroStatus = runInherit(
-      options.cpp ? 'tsx' : 'maestro',
-      [
-        ...(options.cpp ? [resolve(ROOT_DIR, 'scripts/mobile-screenshot-maestro.ts')] : []),
-        '--device',
-        device.udid,
-        'test',
-        flowFile,
-        // The flows load their JS via this dev-client deep link (port-agnostic).
-        '-e',
-        `MAESTRO_DEV_CLIENT_URL=${metroDevClientUrl()}`,
-        '-e',
-        `SCREENSHOT_USER_EMAIL=${email}`,
-        '-e',
-        `SCREENSHOT_USER_PASSWORD=${password}`,
-        ...(options.cpp ? ['-e', `SCREENSHOT_CPP_URL=http://localhost:${SCREENSHOT_READY_PORT}/cpp`] : []),
-        ...(['app-store', 'app-store-campaign'].includes(options.flow) || options.cpp
-          ? buildIosCampaignMaestroEnv(
-              localeTarget.appLocale,
-              backendSession?.capture,
-              options.iosCampaignPrimaryCapture,
-            )
-          : []),
-        ...(isIpadScreenshotDevice(screenshotDevice) &&
-        ['app-store', 'app-store-campaign', 'app-store-cpp'].includes(options.flow)
-          ? buildIosSidebarMaestroEnv(localeTarget.appLocale)
-          : []),
-      ],
-      process.env,
-      captureDir,
-    );
+    const maestroArgs = (maestroFlowFile: string): string[] => [
+      ...(options.cpp ? [resolve(ROOT_DIR, 'scripts/mobile-screenshot-maestro.ts')] : []),
+      '--device',
+      device.udid,
+      'test',
+      maestroFlowFile,
+      // The flows load their JS via this dev-client deep link (port-agnostic).
+      '-e',
+      `MAESTRO_DEV_CLIENT_URL=${metroDevClientUrl()}`,
+      '-e',
+      `SCREENSHOT_USER_EMAIL=${email}`,
+      '-e',
+      `SCREENSHOT_USER_PASSWORD=${password}`,
+      ...(options.cpp ? ['-e', `SCREENSHOT_CPP_URL=http://localhost:${SCREENSHOT_READY_PORT}/cpp`] : []),
+      ...(['app-store', 'app-store-campaign'].includes(options.flow) || options.cpp
+        ? buildIosCampaignMaestroEnv(localeTarget.appLocale, backendSession?.capture, options.iosCampaignPrimaryCapture)
+        : []),
+      ...(isIpadScreenshotDevice(screenshotDevice) &&
+      ['app-store', 'app-store-campaign', 'app-store-cpp'].includes(options.flow)
+        ? buildIosSidebarMaestroEnv(localeTarget.appLocale)
+        : []),
+    ];
+    const maestroStatus = runInherit(options.cpp ? 'tsx' : 'maestro', maestroArgs(flowFile), process.env, captureDir);
     if (options.flow === 'smoke') {
       // No screenshots to collect: the run is judged on evidence, pass or fail.
       const smokeStatus = judgeSmokeAttempt({
@@ -2968,6 +3060,50 @@ function captureIosDevice(
     if (maestroStatus !== 0) {
       console.error(`${LOG} FAILED: Maestro exited with ${maestroStatus}.`);
       return maestroStatus;
+    }
+
+    if (duoHingeLog) {
+      // Second pass: unfold, then shoot the inner display one shot at a time.
+      const shots = splitDuoInnerFlow(
+        renderMaestroFlowForIosDevice(readFileSync(join(MAESTRO_DIR, DUO_INNER_FLOW_FILE), 'utf8'), screenshotDevice),
+      );
+      setDuoPose(device.udid, 'open', duoHingeLog);
+      for (const [index, shot] of shots.entries()) {
+        if (shot.relaunch) {
+          const markerBaseline = homeReadyMarkerCount();
+          const readyBaseline = screenshotReadinessCount();
+          runCapture('xcrun', ['simctl', 'terminate', device.udid, APP_ID]);
+          runCapture('xcrun', ['simctl', 'launch', device.udid, APP_ID], simulatorLaunchEnv());
+          if (!waitForHomeReady(markerBaseline, readyBaseline, 120)) {
+            console.error(`${LOG} FAILED: the app did not return home before Duo shot ${shot.name}.`);
+            dumpMetroLogTail();
+            return 1;
+          }
+        }
+        const shotFlowFile = join(captureDir, `duo-inner-${String(index).padStart(2, '0')}.yaml`);
+        writeFileSync(shotFlowFile, shot.flow);
+        console.log(`${LOG} Duo inner display: ${shot.name}...`);
+        const shotStatus = runInherit('maestro', maestroArgs(shotFlowFile), process.env, captureDir);
+        if (shotStatus !== 0) {
+          console.error(`${LOG} FAILED: Maestro exited with ${shotStatus} before Duo shot ${shot.name}.`);
+          return shotStatus;
+        }
+        const shotPath = join(captureDir, `${shot.name}.png`);
+        // Judge the PNG that will ship, not a second screenshot taken after it.
+        if (captureDuoDisplay(device.udid, 'open', shotPath) !== 0 || !pngIsLit(shotPath)) {
+          console.error(`${LOG} FAILED: the Duo's inner display was dark for ${shot.name}.`);
+          return 1;
+        }
+      }
+      // The captures are done; folding back is tidying up. The finally block
+      // below tries again, so a failure here only warns.
+      try {
+        setDuoPose(device.udid, 'closed', duoHingeLog);
+      } catch (error) {
+        console.warn(
+          `${LOG} Could not fold the Duo back yet: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
     }
 
     const normalizeStatus = normalizeCapturedIosScreenshots(captureDir, screenshotDevice);
@@ -2993,7 +3129,11 @@ function captureIosDevice(
         deviceSlug(device.name),
         readdirSync(captureDir).filter((file) => file.endsWith('.png')),
       );
-    if (options.flow === 'app-store-campaign' && !isIpadScreenshotDevice(screenshotDevice)) {
+    if (
+      options.flow === 'app-store-campaign' &&
+      !isIpadScreenshotDevice(screenshotDevice) &&
+      !usesDuoStoreFlow(options, screenshotDevice)
+    ) {
       assertIosCampaignSources(readdirSync(captureDir).filter((file) => file.endsWith('.png')));
     }
 
@@ -3079,6 +3219,13 @@ function captureIosDevice(
     }
     deviceLogStream?.kill();
     rmSync(captureDir, { force: true, recursive: true });
+    if (duoHingeLog && !options.shutdown) {
+      try {
+        setDuoPose(device.udid, 'closed', duoHingeLog);
+      } catch (error) {
+        console.error(`${LOG} Could not fold the Duo back: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
     clearStatusBar(device.udid);
     if (options.shutdown) {
       runCapture('xcrun', ['simctl', 'shutdown', device.udid]);
@@ -4009,7 +4156,11 @@ function runIos(options: ScreenshotOptions): number {
     return 1;
   }
 
-  const screenshotDevices = resolveIosScreenshotDevices(options.devices, options.orientation);
+  const screenshotDevices = resolveIosScreenshotDevices(options.devices, options.orientation).filter((device) => {
+    if (!options.cpp || !isDuoScreenshotDevice(device)) return true;
+    console.log(`${LOG} Skipping ${device.name}: custom product pages have no iPhone Duo set.`);
+    return false;
+  });
   assertIosRegularIpadCaptureFlow(options, screenshotDevices);
   const appPath = resolveAppPath(options);
   const localeTargets = resolveAppStoreLocaleTargets(options.appLocales);

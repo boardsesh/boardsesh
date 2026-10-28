@@ -454,9 +454,9 @@ CPP publication.
    `flow: app-store`, `devices: common`, `gate: full`, `fixtures: replay`, empty `locales`,
    `cpp_target: none`, `upload: true`, and `publish_baseline: true`. Store-only
    changes can skip the native build, so its automatic screenshot follow-up is
-   insufficient. Review all 20 capture shards and 24 storefront sets, including
-   Italian's session recap slot. Read back all six Apple locales and their 180
-   default-listing screenshots before submission. CPP/ad/video campaigns retain
+   insufficient. Review all 25 capture shards and 30 storefront sets, including
+   Italian's session recap slot and the iPhone Duo set. Read back all six Apple
+   locales and their 228 default-listing screenshots before submission. CPP/ad/video campaigns retain
    the original four app locales and five Apple locales.
 5. After merging, dispatch **Android Play Internal Deploy** on `release/next`
    with `force_native: true` if its candidate predates these changelogs. Verify
@@ -504,21 +504,66 @@ with the `session` caption, until a reviewed Italian physical Live Activity
 fixture exists. All five app locales still require complete native captures.
 Missing campaign sources never select a legacy layout.
 
+### The iPhone Duo set
+
+App Store Connect has one iPhone Duo screenshot set (`APP_IPHONE_DUO`, up to 10
+images) that takes both displays: the outer one at 1398 × 2034 and the inner one
+at 2007 × 2853, either orientation. It is optional until April 2027. fastlane
+deliver learned the slot in 2.241.1; older versions stop the whole upload on an
+unknown size, so `fastlane/Gemfile.lock` pins 2.241.2.
+
+The `iphone-duo` shard captures eight images in one simulator: three closed on
+the outer display (`05-profile`, `06-session-detail`, `07-workout-generator`,
+from `app-store-duo.yaml`), then five open on the inner display in landscape
+(`00-board-view`, `01-board-view-2`, `02-climbs`, `03-home`,
+`04-playlist-detail`, from `app-store-duo-inner.yaml`). The filenames put the
+open layout first in the set. Every open shot has a lit climb in the board
+pane: the first shot opens the first climb's player, and the split keeps it in
+the left pane while the right pane moves to Home, the playlist and Climbs. Each
+shot waits on an id only its own screen has (the playlist's add-to-queue row carries
+`playlist-add-to-queue` for this) and on the "Open in 'Boardsesh'?" dialog being
+gone. The dimension gate pins each slot to its display: `00`-`04` must be
+2853 × 2007 and `05`-`07` must be 1398 × 2034 (`ACCEPTED_SIZES_BY_FILENAME`).
+
+Two simulator facts shape it:
+
+- Xcode 27 changes the Duo's pose only from Device Hub's buttons. A headless
+  runner cannot click them, so `scripts/lib/ios-duo-hinge.ts` compiles
+  `scripts/ios-duo-hinge/duo-hinge.m`, loads it into the simulator's SpringBoard
+  (through the simulator's `launchctl setenv DYLD_INSERT_LIBRARIES` and a
+  SpringBoard restart), and asks SpringBoard's display-swap test service for
+  the same hinge sweep Device Hub drives. The service refuses outside callers
+  without a private entitlement, which is why it runs inside SpringBoard. The
+  helper checks the result by which display is lit, and fails the shard if the
+  pose does not change.
+- Maestro only sees the outer display and reports the open Duo with portrait
+  geometry, so the inner flow uses deep links and id waits only, and the
+  orchestrator splits it at each `takeScreenshot`, runs each piece as its own
+  Maestro flow, and captures the inner display itself with
+  `simctl io screenshot --display=primary-1`. A piece marked `# duo: relaunch`
+  starts from a relaunched app, where the phone flow would tap a close button.
+
+The shard needs Xcode 27 and the iOS 27.1 runtime; the shard action selects
+the newest installed Xcode 27 for it. Custom product pages have no Duo set, so
+the CPP matrix, `custom-product-pages.json` and CPP review counts leave it out,
+while the app version's audit and review counts require it.
+
 ### The iOS probe gate
 
 Store capture now includes both iPhone 16 Pro Max (1320 × 2868) and iPhone 16 Pro
-(1206 × 2622), plus the existing 13-inch and 11-inch landscape iPads. The medium
-Dynamic Island set is captured natively rather than resized from Pro Max. The
+(1206 × 2622), the existing 13-inch and 11-inch landscape iPads, and the iPhone
+Duo. The medium Dynamic Island set is captured natively rather than resized from
+Pro Max. The
 navigation smoke still defaults to one Pro Max in English. Inventory changes
 force the first complete baseline even if the Pro Max probe pixels match.
 
-The default iOS capture is a 20-shard macOS fan-out (5 app locales × 4 devices).
+The default iOS capture is a 25-shard macOS fan-out (5 app locales × 5 devices).
 A public repo gets 5 concurrent macOS runners, so the run sizes itself. With
 `gate: probe` it shoots ONE shard first — en-US × iPhone 16 Pro Max — pulls the
 matching shard out of the stored baseline and compares them pixel by pixel
 (`vp run screenshot:compare`, `scripts/compare-screenshots.ts`). Unchanged and
 the run stops there in roughly 15 minutes; changed, or no baseline yet, and it
-fans out to the remaining 19 shards. Automatic runs always probe. On a dispatch
+fans out to the remaining 24 shards. Automatic runs always probe. On a dispatch
 `gate: full` is the default, and a narrowed `locales` list, the `onboarding` flow
 or `upload: true` force it back to `full` — none of those has a full-set baseline
 to compare against.
@@ -542,7 +587,9 @@ that gap with changed-file knowledge instead of pixels: the probe job diffs
 commit explicitly, since it may sit outside a shallow clone's default reach)
 and sets `force_full=true` when any changed path matches a documented scope —
 `packages/shared/i18n/locales/**` except `en-US/**`, `packages/mobile/locales/**`,
-an `ipad`/`tablet`-matching path under `packages/mobile/`,
+an `ipad`/`tablet`-matching path under `packages/mobile/`, a
+`duo`/`hinge`/`split-pane`-matching path under `packages/mobile/` (the iPhone
+Duo's open layout),
 `packages/mobile/app.config.ts`, `app-stores/apple/**`, screenshot presentation files,
 the capture-device inventory or dimension gate, the iOS capture workflow/action,
 or an App Store Maestro flow — or when the baseline
@@ -556,7 +603,7 @@ probe actually captured matched byte for byte.
 iPad (a `Platform.isPad` branch, a width-based layout switch) is caught by
 neither the pixel probe (en-US iPhone only) nor the path rules above — its
 file path says nothing about iPad. There is no changed-path signal to force a
-fan-out here without also forcing a full 20-shard capture on every ordinary
+fan-out here without also forcing a full 25-shard capture on every ordinary
 component edit, which would defeat probing in the first place. Dispatch with
 `gate: full` (or `upload: true`) by hand when a change is iPad-specific by
 intent.
@@ -874,9 +921,10 @@ After screenshot upload, independent image review and metadata readback, dispatc
 with `action=plan`, the exact version/build, and the selected comma-separated
 surfaces (`default,kilter,tension,moonboard,spray`). Download the `store-review`
 artifact and check its snapshot against the reviewed source images and copy.
-The default page requires 180 images across six Apple locales and four device
-slots. Each CPP still requires 180 images across its existing five Apple locales
-and four device slots; CPP/ad/video campaigns do not add Italian. Every image must
+The default page requires 228 images across six Apple locales and five device
+slots, eight of them per locale in the iPhone Duo set. Each CPP still requires 180
+images across its existing five Apple locales and four device slots; CPP/ad/video
+campaigns add neither Italian nor a Duo set. Every image must
 have a source checksum and be fully processed. A valid snapshot does not substitute
 for visual review or comparison
 with the expected source checksums.

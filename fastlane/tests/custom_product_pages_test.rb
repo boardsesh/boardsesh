@@ -699,6 +699,12 @@ class CustomProductPagesTest < Minitest::Test
     assert_includes BoardseshCPP::Runner::DISPLAY_DIMENSIONS.fetch("APP_IPAD_PRO_3GEN_11"), [2420, 1668]
   end
 
+  def test_iphone_duo_slot_accepts_both_displays_in_both_orientations_but_no_cpp_targets_it
+    assert_equal [[1398, 2034], [2034, 1398], [2007, 2853], [2853, 2007]], BoardseshCPP::Runner::DISPLAY_DIMENSIONS.fetch("APP_IPHONE_DUO")
+    manifest = JSON.parse(File.read(File.expand_path("../../app-stores/apple/custom-product-pages.json", __dir__)))
+    refute_includes manifest.fetch("devices").values, "APP_IPHONE_DUO"
+  end
+
   def test_processing_failure_never_submits
     @client.define_singleton_method(:upload) do |_operation, _path|
       raise BoardseshCPP::Error, "Processing failed"

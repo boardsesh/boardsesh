@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, render } from '@testing-library/react';
+import { act, render, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -218,6 +218,17 @@ vi.mock('../../../../lib/store-review', () => ({
   isSessionStoreReviewEligible: (summary: { totalSends: number }) => summary.totalSends >= 3,
 }));
 vi.mock('../../../../lib/graphql/use-active-board', () => ({ useActiveBoard: () => ({ data: null }) }));
+// #6903: the queued-tick wait (handed to endSession as `beforeEnd`) and the
+// late-tick summary refresh.
+const outbox = vi.hoisted(() => ({
+  calls: [] as string[],
+  waitForSessionTicksToSync: vi.fn(),
+  refreshSessionWhenQueuedTicksLand: vi.fn(),
+}));
+vi.mock('../../../../offline/session-tick-drain', () => ({
+  waitForSessionTicksToSync: outbox.waitForSessionTicksToSync,
+  refreshSessionWhenQueuedTicksLand: outbox.refreshSessionWhenQueuedTicksLand,
+}));
 vi.mock('../../../../lib/integrations', () => ({
   runSessionEndExports: integrations.runSessionEndExports,
 }));
@@ -259,6 +270,13 @@ describe('InSessionView footer', () => {
     theme.variant = 'liquidGlass';
     queue.endSession.mockReset();
     queue.endSession.mockResolvedValue(null);
+    outbox.calls = [];
+    outbox.waitForSessionTicksToSync.mockReset();
+    outbox.waitForSessionTicksToSync.mockImplementation(async () => {
+      outbox.calls.push('wait');
+      return 'none';
+    });
+    outbox.refreshSessionWhenQueuedTicksLand.mockReset();
     router.push.mockClear();
     sheet.isEnding = false;
     sheet.onConfirm = null;
@@ -347,27 +365,26 @@ describe('InSessionView footer', () => {
 
     await act(async () => {
       sheet.onConfirm?.();
-      // handleConfirmEnd awaits endSession before exporting; flush it.
-      await Promise.resolve();
     });
 
-    expect(integrations.runSessionEndExports).toHaveBeenCalledWith(summary, {});
+    // handleConfirmEnd awaits the tick wait and endSession before exporting.
+    await waitFor(() => expect(integrations.runSessionEndExports).toHaveBeenCalledWith(summary, {}));
   });
 
   it('marks the summary route as a store-review candidate after 3 ascents', async () => {
-    queue.endSession.mockResolvedValueOnce({
-      sessionId: 'session-1',
-      totalSends: 3,
-      totalAttempts: 0,
+    // Runs the tick wait like the real endSession: the prompt needs the ticks synced.
+    queue.endSession.mockImplementationOnce(async (options?: { beforeEnd?: (id: string) => Promise<void> }) => {
+      await options?.beforeEnd?.('session-1');
+      return { sessionId: 'session-1', totalSends: 3, totalAttempts: 0 };
     });
 
     render(createElement(InSessionView));
 
     await act(async () => {
       sheet.onConfirm?.();
-      await Promise.resolve();
     });
 
+    await waitFor(() => expect(router.push).toHaveBeenCalled());
     expect(router.push).toHaveBeenCalledWith({
       pathname: '/(tabs)/record/summary',
       params: { sessionId: 'session-1', reviewCandidate: '1' },
@@ -385,14 +402,58 @@ describe('InSessionView footer', () => {
 
     await act(async () => {
       sheet.onConfirm?.();
-      await Promise.resolve();
     });
 
+    await waitFor(() => expect(router.push).toHaveBeenCalled());
     expect(router.push).toHaveBeenCalledWith({
       pathname: '/(tabs)/record/summary',
       params: { sessionId: 'session-1' },
     });
   });
+
+  it('hands the queued-tick wait to endSession as beforeEnd (#6903)', async () => {
+    queue.endSession.mockImplementationOnce(async (options?: { beforeEnd?: (id: string) => Promise<void> }) => {
+      await options?.beforeEnd?.('session-1');
+      outbox.calls.push('endSession');
+      return { sessionId: 'session-1', totalSends: 1, totalAttempts: 0 };
+    });
+
+    render(createElement(InSessionView));
+
+    await act(async () => {
+      sheet.onConfirm?.();
+    });
+
+    await waitFor(() => expect(router.push).toHaveBeenCalled());
+    expect(outbox.waitForSessionTicksToSync).toHaveBeenCalledWith('session-1', expect.anything());
+    expect(outbox.calls).toEqual(['wait', 'endSession']);
+    expect(outbox.refreshSessionWhenQueuedTicksLand).not.toHaveBeenCalled();
+  });
+
+  it.each(['timedOut', 'offline'])(
+    'holds back the store-review prompt and watches for late ticks when the wait ended %s (#6903)',
+    async (waitResult) => {
+      outbox.waitForSessionTicksToSync.mockResolvedValue(waitResult);
+      queue.endSession.mockImplementationOnce(async (options?: { beforeEnd?: (id: string) => Promise<void> }) => {
+        await options?.beforeEnd?.('session-1');
+        return { sessionId: 'session-1', totalSends: 3, totalAttempts: 0 };
+      });
+
+      render(createElement(InSessionView));
+
+      await act(async () => {
+        sheet.onConfirm?.();
+      });
+
+      await waitFor(() => expect(router.push).toHaveBeenCalled());
+      expect(router.push).toHaveBeenCalledWith({
+        pathname: '/(tabs)/record/summary',
+        params: { sessionId: 'session-1' },
+      });
+      expect(outbox.refreshSessionWhenQueuedTicksLand).toHaveBeenCalledWith('session-1', expect.anything());
+    },
+  );
+
   it.each(['p1r15', 'p1r15,"p2r15,"'])('announces route frame counts on the history action: %s', (frames) => {
     detail.ticks = [
       {

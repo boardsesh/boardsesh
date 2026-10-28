@@ -2183,6 +2183,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // Action-only consumers get the latest without subscribing to state renders.
   const getQueueSnapshot = useCallback(
     () => ({
+      sessionId: sessionIdRef.current,
       queue: stateRef.current.queue,
       currentClimbQueueItem: stateRef.current.currentClimbQueueItem,
       historyCount: stateRef.current.historyCount ?? null,

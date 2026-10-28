@@ -92,7 +92,7 @@ export async function generateMetadata(props: BoardSlugListPageProps): Promise<M
       cleanPath: buildCanonicalClimbListUrl(getBoardDetailsForBoard(parsedParams), angle),
       page,
       searchParams: searchParams as unknown as ListPageSearchParams,
-      boardIsHidden: board.isUnlisted || !board.isPublic,
+      boardIsHidden: board.isUnlisted || !board.isPublic || board.gymIsListed === false,
     });
 
     return createBoardContentPageMetadata({

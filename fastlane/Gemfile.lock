@@ -62,7 +62,7 @@ GEM
     faraday-retry (2.4.0)
       faraday (~> 2.0)
     fastimage (2.4.1)
-    fastlane (2.240.1)
+    fastlane (2.241.2)
       CFPropertyList (>= 2.3, < 5.0.0)
       abbrev (~> 0.1)
       addressable (>= 2.9.0, < 3.0.0)
@@ -78,7 +78,8 @@ GEM
       csv (~> 3.3)
       dotenv (>= 2.1.1, < 3.0.0)
       emoji_regex (>= 0.1, < 4.0)
-      excon (>= 0.71.0, < 2.0.0)
+      erb (>= 4.0, < 7.0)
+      excon (>= 1.0.0, < 2.0.0)
       faraday (~> 2.7)
       faraday-cookie_jar (~> 0.0.8)
       faraday-follow_redirects (~> 0.3)
@@ -89,7 +90,7 @@ GEM
       gh_inspector (>= 1.1.2, < 2.0.0)
       google-apis-androidpublisher_v3 (~> 0.99)
       google-apis-playcustomapp_v1 (~> 0.1)
-      google-cloud-env (>= 1.6.0, < 2.4.0)
+      google-cloud-env (>= 1.6.0, < 2.5.0)
       google-cloud-storage (~> 1.31)
       highline (~> 2.0)
       irb (>= 1.8)
@@ -108,7 +109,7 @@ GEM
       rubyzip (>= 3.4.0, < 4.0.0)
       security (~> 0.3)
       simctl (~> 1.6.3)
-      terminal-notifier (>= 2.0.0, < 3.0.0)
+      terminal-notifier (>= 3.1.0, < 4.0.0)
       terminal-table (~> 4)
       tty-screen (>= 0.6.3, < 1.0.0)
       tty-spinner (>= 0.8.0, < 1.0.0)
@@ -223,7 +224,7 @@ GEM
     simctl (1.6.10)
       CFPropertyList
       naturally
-    terminal-notifier (2.0.0)
+    terminal-notifier (3.1.0)
     terminal-table (4.0.0)
       unicode-display_width (>= 1.1.1, < 4)
     trailblazer-option (0.1.2)
@@ -291,7 +292,7 @@ CHECKSUMS
   faraday-net_http (3.4.4) sha256=0e78af151747ed1b00f33e25973b4bc220d7f16c00c39676817c8b12331eb588
   faraday-retry (2.4.0) sha256=7b79c48fb7e56526faf247b12d94a680071ff40c9fda7cf1ec1549439ad11ebe
   fastimage (2.4.1) sha256=c64bebd46b6fd8943ab70c1e6e85ff728f970f2e48f92ecd249b6bc3a540ad20
-  fastlane (2.240.1) sha256=cf792bc99ec6af6574ea416cda6530f519c8b4b3a46b1a3b52488ebf1696aa5c
+  fastlane (2.241.2) sha256=9c23f6d1b4aa5d8570ff8584186d5fdb1fdf7a01dd7ad168501b43fe360fe122
   fastlane-sirp (1.1.0) sha256=10bc94f9682efd8e1badfb31452a76dd8981f1f3a33717c765fde6d75b54d847
   gh_inspector (1.1.3) sha256=04cca7171b87164e053aa43147971d3b7f500fcb58177698886b48a9fc4a1939
   google-apis-androidpublisher_v3 (0.102.0) sha256=562415c44bd7f81cc808abbea11845ede16cdc3696d95f95efcf50aaffb159cf
@@ -344,7 +345,7 @@ CHECKSUMS
   security (0.3.0) sha256=bc9d06718258a96c8552ce4044bfe69144491b10d3403d74c4753a03a720ecf0
   signet (0.22.0) sha256=b76d495ccb07ad35dbc89f3e920665a9d8ed717141955034005d7843dcfe4780
   simctl (1.6.10) sha256=b99077f4d13ad81eace9f86bf5ba4df1b0b893a4d1b368bd3ed59b5b27f9236b
-  terminal-notifier (2.0.0) sha256=7a0d2b2212ab9835c07f4b2e22a94cff64149dba1eed203c04835f7991078cea
+  terminal-notifier (3.1.0) sha256=073609e9da7bb60176ffadda903c8d9231fcdf18ffa7074dc9478b63fe25c69c
   terminal-table (4.0.0) sha256=f504793203f8251b2ea7c7068333053f0beeea26093ec9962e62ea79f94301d2
   trailblazer-option (0.1.2) sha256=20e4f12ea4e1f718c8007e7944ca21a329eee4eed9e0fa5dde6e8ad8ac4344a3
   tsort (0.2.0) sha256=9650a793f6859a43b6641671278f79cfead60ac714148aabe4e3f0060480089f

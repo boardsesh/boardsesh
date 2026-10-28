@@ -33,8 +33,27 @@ describe('decideProbeScope', () => {
     '.github/workflows/mobile-screenshots-ios.yml',
     '.github/actions/ios-screenshot-shard/action.yml',
     'packages/mobile/.maestro/app-store.yaml',
+    'packages/mobile/.maestro/app-store-duo-inner.yaml',
+    'scripts/lib/ios-duo-hinge.ts',
+    'scripts/ios-duo-hinge/duo-hinge.m',
   ])('forces a complete baseline when capture inventory changes: %s', (path) => {
     expect(decideProbeScope([path]).forceFull).toBe(true);
+  });
+
+  it.each([
+    'packages/mobile/src/lib/device-hinge-store.ts',
+    'packages/mobile/src/components/navigation/phone-split-pane-slot.tsx',
+    'packages/mobile/src/components/navigation/PhoneSplitHingeObserver.tsx',
+  ])('forces on an iPhone Duo layout path the iPhone probe cannot see: %s', (path) => {
+    const decision = decideProbeScope([path]);
+    expect(decision.forceFull).toBe(true);
+    expect(decision.reason).toContain('iPhone Duo');
+  });
+
+  it('does not treat "below the fold" as a foldable path', () => {
+    expect(
+      decideProbeScope(['packages/mobile/src/components/play-drawer/use-below-fold-content-request.ts']).forceFull,
+    ).toBe(false);
   });
 
   it('does not force on an unrelated file', () => {
@@ -101,6 +120,7 @@ describe('decideProbeScope', () => {
       'shared-i18n-non-en-us-locale',
       'mobile-locales',
       'mobile-ipad-tablet',
+      'mobile-iphone-duo',
       'mobile-app-config',
       'app-store-metadata',
     ]);

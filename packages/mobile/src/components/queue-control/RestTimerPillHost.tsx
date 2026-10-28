@@ -10,10 +10,13 @@
 import { useCallback, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useRestTimerArmed } from '../../hooks/use-rest-timer';
+import { useStartWorkout } from '../../hooks/use-start-workout';
+import { useQueueSessionId } from '../../providers/queue-provider';
+import { useWorkoutRunPendingStart } from '../../lib/workout-run-store';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { useCurrentClimbSurface } from '../../hooks/use-current-climb-surface';
 import { spacing } from '../../theme/tokens';
-import { RestTimerPill } from './RestTimerPill';
+import { RestTimerPill, WorkoutStartPill } from './RestTimerPill';
 import { RestTimerSheet } from './RestTimerSheet';
 
 export type RestTimerPillHostProps = {
@@ -22,17 +25,20 @@ export type RestTimerPillHostProps = {
 };
 
 /**
- * The pill plus the sheet it opens. Gated on the timer actually being armed — an
- * unarmed timer has no pill, which is also why `armed` is never persisted (see
- * lib/rest-timer-store.ts).
+ * A prepared workout offers its explicit Start before the timer's clock and
+ * settings sheet. Otherwise an unarmed timer has no pill.
  */
 export function RestTimerPillHost({ compact = false }: RestTimerPillHostProps) {
   const armed = useRestTimerArmed();
+  const { pending, firstItem, startWorkout } = useStartWorkout();
   const [sheetVisible, setSheetVisible] = useState(false);
 
   const openSheet = useCallback(() => setSheetVisible(true), []);
   const closeSheet = useCallback(() => setSheetVisible(false), []);
 
+  if (pending) {
+    return <WorkoutStartPill compact={compact} onPress={startWorkout} firstClimbName={firstItem?.climb.name ?? null} />;
+  }
   if (!armed) return null;
 
   return (
@@ -45,6 +51,7 @@ export function RestTimerPillHost({ compact = false }: RestTimerPillHostProps) {
 
 export type RestTimerPillGateInputs = {
   armed: boolean;
+  workoutStartPending?: boolean;
   /** `BottomChromeMetrics.insideTabs`. */
   insideTabs: boolean;
   /** True on the regular-width JS tablet shell, where its rail replaces the tab bar. */
@@ -56,7 +63,7 @@ export type RestTimerPillGateInputs = {
  *
  * This must agree with the bottom-chrome reserve, term for term. That reserve is
  *
- *     restTimerArmed && insideTabs && !usesSidebar        (bottom-chrome-metrics.ts)
+ *     (restTimerArmed || workoutStartPending) && insideTabs && !usesSidebar
  *
  * and if the two ever disagree the climber gets one of two visible bugs: a dead
  * 54pt gap under the last list row (reserve without a pill), or the pill sitting
@@ -66,8 +73,13 @@ export type RestTimerPillGateInputs = {
  * Pinned by `rest-timer-pill-host.test.tsx`, which drives this against the real
  * `computeBottomChromeMetrics`.
  */
-export function shouldRenderRestTimerPill({ armed, insideTabs, usesSidebar }: RestTimerPillGateInputs): boolean {
-  return armed && insideTabs && !usesSidebar;
+export function shouldRenderRestTimerPill({
+  armed,
+  workoutStartPending = false,
+  insideTabs,
+  usesSidebar,
+}: RestTimerPillGateInputs): boolean {
+  return (armed || workoutStartPending) && insideTabs && !usesSidebar;
 }
 
 /**
@@ -81,6 +93,8 @@ export function shouldRenderRestTimerPill({ armed, insideTabs, usesSidebar }: Re
  */
 export function RootRestTimerPillHost() {
   const armed = useRestTimerArmed();
+  const { sessionId } = useQueueSessionId();
+  const workoutStartPending = useWorkoutRunPendingStart(sessionId);
   const bottomChrome = useBottomChromeMetrics();
   // `usesSidebar` is the reserve's own term, from the same resolver the reserve
   // reads. The native iPad is not the sidebar shell, so there the pill floats
@@ -88,7 +102,9 @@ export function RootRestTimerPillHost() {
   const { sidebarShell } = useCurrentClimbSurface();
   const usesSidebar = bottomChrome.insideTabs && sidebarShell;
 
-  if (!shouldRenderRestTimerPill({ armed, insideTabs: bottomChrome.insideTabs, usesSidebar })) return null;
+  if (!shouldRenderRestTimerPill({ armed, workoutStartPending, insideTabs: bottomChrome.insideTabs, usesSidebar })) {
+    return null;
+  }
 
   return (
     <View pointerEvents="box-none" style={[styles.overlay, { bottom: bottomChrome.restTimerBottom }]}>

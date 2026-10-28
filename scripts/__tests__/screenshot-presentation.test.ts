@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
 import { afterEach, describe, expect, it } from 'vitest';
-import { IOS_SCREENSHOT_DEVICES, deviceSlug } from '../mobile-screenshots';
+import { IOS_STORE_SCREENSHOT_DEVICES, deviceSlug } from '../mobile-screenshots';
 import {
   frameComposition,
   frameDirectory,
@@ -358,7 +358,7 @@ describe('CPP trio board labels', () => {
 
 describe('store screenshot presentation', () => {
   it('maps every device in the actual store capture matrix', () => {
-    for (const device of IOS_SCREENSHOT_DEVICES) {
+    for (const device of IOS_STORE_SCREENSHOT_DEVICES) {
       expect(Object.keys(screenshotCaptions('ios', deviceSlug(device.name))).length).toBeGreaterThan(0);
     }
   });

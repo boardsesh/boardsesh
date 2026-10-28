@@ -260,6 +260,28 @@ export async function sessionVisibleUserIds(
   return visible;
 }
 
+/**
+ * `sessionVisibleUserIds` for many sessions at once, in the order given: each
+ * row's climbers that session's own surfaces name to the viewer (their
+ * account and board allow it, they are the viewer, or they are a fellow member
+ * of that session). One board resolution and one query for every row, plus one
+ * membership read when someone is left unnamed.
+ */
+export async function sessionsOwnSurfaceVisibleUserIds(rows: SessionRows, viewerId: ViewerId): Promise<Set<string>[]> {
+  const visible = await sessionsVisibleUserIds(rows, viewerId);
+  const unnamed = rows.map(({ session, userIds }, rowIndex) => {
+    const candidates = distinctIds(userIds);
+    if (viewerId && candidates.includes(viewerId)) visible[rowIndex].add(viewerId);
+    return { sessionId: session.id, userIds: candidates.filter((userId) => !visible[rowIndex].has(userId)) };
+  });
+  if (unnamed.every(({ userIds }) => userIds.length === 0)) return visible;
+  const coMembers = await sessionsCoMemberIds(unnamed, viewerId);
+  coMembers.forEach((members, rowIndex) => {
+    for (const userId of members) visible[rowIndex].add(userId);
+  });
+  return visible;
+}
+
 const pendingSessionVisibility: PendingLookups = new Map();
 /**
  * `sessionVisibleUserIds` for the GraphQL field projections (`ClimbQueueItem`,

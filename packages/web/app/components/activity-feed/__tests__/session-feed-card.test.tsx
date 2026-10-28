@@ -2,7 +2,16 @@ import { describe, it, expect, vi } from 'vite-plus/test';
 import { render, screen } from '@testing-library/react';
 import React from 'react';
 import type { SessionFeedItem } from '@boardsesh/shared-schema';
+import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import SessionFeedCard from '../session-feed-card';
+
+vi.mock('react-i18next', () => ({
+  useTranslation: (ns?: string) => ({
+    t: (key: string, options?: Record<string, unknown>) => tFromCatalog(ns, key, options),
+    i18n: { language: 'en-US' },
+  }),
+  Trans: ({ children }: { children?: React.ReactNode }) => children ?? null,
+}));
 
 // Mock dependencies
 vi.mock('next/link', () => ({
@@ -249,5 +258,22 @@ describe('SessionFeedCard', () => {
     // 2024-01-15 is a Monday
     render(<SessionFeedCard session={makeSession({ sessionName: null, boardTypes: ['kilter'] })} />);
     expect(screen.getByText('Monday Kilter Session')).toBeTruthy();
+  });
+
+  it('shows the workout line when the session followed a workout', () => {
+    const headline = {
+      sessionId: 'session-1',
+      userId: 'user-1',
+      mainKind: 'fourByFour',
+      mainTargetGrade: 'V4',
+      secondMainKind: null,
+      blockCount: 3,
+      extraMainBlocks: 0,
+    };
+    const { rerender } = render(<SessionFeedCard session={makeSession()} workoutHeadline={headline} />);
+    expect(screen.getByTestId('session-feed-workout').textContent).toBe('Workout · 4x4 at V4 · 3 blocks');
+
+    rerender(<SessionFeedCard session={makeSession()} />);
+    expect(screen.queryByTestId('session-feed-workout')).toBeNull();
   });
 });

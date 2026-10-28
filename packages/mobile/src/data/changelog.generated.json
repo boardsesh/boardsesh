@@ -1,6 +1,71 @@
 {
-  "generatedAt": "2026-10-26T15:27:14.797Z",
+  "generatedAt": "2026-10-28T05:48:40.646Z",
   "entries": [
+    {
+      "prNumber": 6989,
+      "category": "new",
+      "title": "Browse three board previews on one Waveshare using its buttons.",
+      "mergedAt": "2026-10-28T05:25:41Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6989",
+      "body": "Reconnect to compatible MoonBoard controllers that advertise a serial number."
+    },
+    {
+      "prNumber": 6985,
+      "category": "new",
+      "title": "Share your gym with the crew by link while keeping it out of search and maps.",
+      "mergedAt": "2026-10-28T04:55:04Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6985"
+    },
+    {
+      "prNumber": 6945,
+      "category": "fixed",
+      "title": "Android buttons, switches and filter chips now stay Boardsesh violet whatever your wallpaper colour",
+      "mergedAt": "2026-10-27T19:07:30Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6945"
+    },
+    {
+      "prNumber": 6962,
+      "category": "fixed",
+      "title": "Your session summary shows every climb you logged, even when you end right after your last tick.",
+      "mergedAt": "2026-10-27T19:03:08Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6962"
+    },
+    {
+      "prNumber": 6966,
+      "category": "fixed",
+      "title": "The wall sheet now says \"1 climber\" and \"1 send\" instead of \"1 climbers\"",
+      "mergedAt": "2026-10-27T19:02:51Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6966"
+    },
+    {
+      "prNumber": 6970,
+      "category": "new",
+      "title": "Add your gym from the directory and link boards already on Boardsesh.",
+      "mergedAt": "2026-10-27T19:02:27Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6970"
+    },
+    {
+      "prNumber": 6964,
+      "category": "fixed",
+      "title": "Prepare your workout without leaving Workout, then tap Start workout when you're ready to climb.",
+      "mergedAt": "2026-10-27T10:22:52Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6964"
+    },
+    {
+      "prNumber": 6950,
+      "category": "fixed",
+      "title": "Preview Bluetooth climbs on the Waveshare without setting up WiFi.",
+      "mergedAt": "2026-10-27T07:42:58Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6950",
+      "body": "See a larger board preview with highlights that leave hold shapes visible."
+    },
+    {
+      "prNumber": 6944,
+      "category": "fixed",
+      "title": "Your profile no longer says you've sent 0 climbs when your totals are still loading or didn't come through.",
+      "mergedAt": "2026-10-26T20:25:39Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6944"
+    },
     {
       "prNumber": 6894,
       "category": "fixed",
@@ -8229,6 +8294,19 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-10-27T11:28:21+01:00",
+      "sha": "bc1b5bec52cd9240e656526ea3f7faa04dd9c3f0",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "fingerprints": {
+        "android": "28c6d1025073f707d981f654da14d8634111466a",
+        "ios": "c8a2a325e517ed4b9c4be06892888bdbea2e56a4"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-10-26T05:56:50+01:00",

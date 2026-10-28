@@ -380,6 +380,8 @@ export const queriesTypeDefs = /* GraphQL */ `
 
     # Get current user's registered controllers
     myControllers: [ControllerInfo!]!
+    "Read a gym's device configuration using a registered gym owner/admin's controller API key."
+    controllerGymManifest(gymRef: String!): ControllerGymManifest!
 
     # ============================================
     # Social / Follow Queries
@@ -650,6 +652,8 @@ export const queriesTypeDefs = /* GraphQL */ `
     backward compatibility with already-shipped clients.
     """
     boardsBySerialNumbers(serialNumbers: [String!]!, boardType: String): [UserBoard!]!
+    "Correlate radio-observed serials with readable candidates without exposing stored owner-only serial fields."
+    observedBoardSerialMatches(input: [ObservedBoardSerialInput!]!): [ObservedBoardSerialMatch!]!
 
     """
     Recorded board configurations for the current user keyed by controller serial.

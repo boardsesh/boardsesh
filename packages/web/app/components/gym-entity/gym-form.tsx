@@ -1,11 +1,10 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Box from '@mui/material/Box';
 import TextField from '@mui/material/TextField';
-import Switch from '@mui/material/Switch';
-import FormControlLabel from '@mui/material/FormControlLabel';
+import MenuItem from '@mui/material/MenuItem';
 import MuiButton from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
 import MuiTypography from '@mui/material/Typography';
@@ -16,16 +15,14 @@ export type GymFormFieldValues = {
   name: string;
   slug?: string;
   description: string;
-  /**
-   * Free-text opening hours. Optional because the create flow's CreateGymInput
-   * has no hours field — only the edit flow renders it (showHoursField).
-   */
+  /** Free-text opening hours. */
   hours?: string;
   address: string;
   website: string;
   contactEmail: string;
   contactPhone: string;
   isPublic: boolean;
+  isListed?: boolean;
   latitude: number | null;
   longitude: number | null;
 };
@@ -41,7 +38,6 @@ type GymFormProps = {
   submitLabel: string;
   initialValues: GymFormFieldValues;
   showSlugField?: boolean;
-  /** Opening hours are edit-only — createGym has no hours field to send them to. */
   showHoursField?: boolean;
   onSubmit: (values: GymFormFieldValues) => Promise<void>;
   onCancel?: () => void;
@@ -75,10 +71,16 @@ export default function GymForm({
   const [website, setWebsite] = useState(initialValues.website);
   const [contactEmail, setContactEmail] = useState(initialValues.contactEmail);
   const [contactPhone, setContactPhone] = useState(initialValues.contactPhone);
-  const [isPublic, setIsPublic] = useState(initialValues.isPublic);
+  const initialVisibility = !initialValues.isPublic
+    ? 'private'
+    : initialValues.isListed === false
+      ? 'unlisted'
+      : 'public';
+  const [visibility, setVisibility] = useState(initialVisibility);
   const [latitude, setLatitude] = useState<number | null>(initialValues.latitude);
   const [longitude, setLongitude] = useState<number | null>(initialValues.longitude);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const submittingRef = useRef(false);
 
   // Report unsaved edits so a host (the manage console's Profile tab) can guard
   // tab switches behind a discard confirmation. Report clean on unmount so a
@@ -92,7 +94,7 @@ export default function GymForm({
     website !== initialValues.website ||
     contactEmail !== initialValues.contactEmail ||
     contactPhone !== initialValues.contactPhone ||
-    isPublic !== initialValues.isPublic ||
+    visibility !== initialVisibility ||
     latitude !== initialValues.latitude ||
     longitude !== initialValues.longitude;
 
@@ -103,6 +105,8 @@ export default function GymForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setIsSubmitting(true);
 
     try {
@@ -115,11 +119,15 @@ export default function GymForm({
         website: website.trim(),
         contactEmail: contactEmail.trim(),
         contactPhone: contactPhone.trim(),
-        isPublic,
+        isPublic: visibility !== 'private',
+        // An older payload can omit this field. Saving another field must
+        // preserve that server-side listing choice rather than re-list it.
+        isListed: visibility === initialVisibility ? initialValues.isListed : visibility === 'public',
         latitude,
         longitude,
       });
     } finally {
+      submittingRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -160,6 +168,7 @@ export default function GymForm({
         minRows={2}
         maxRows={4}
         placeholder={t('gymForm.placeholders.description')}
+        slotProps={{ htmlInput: { maxLength: 500 } }}
       />
 
       {showHoursField && (
@@ -186,6 +195,7 @@ export default function GymForm({
         fullWidth
         size="small"
         placeholder={t('gymForm.placeholders.address')}
+        slotProps={{ htmlInput: { maxLength: 300 } }}
       />
 
       <MapLocationPicker
@@ -217,6 +227,7 @@ export default function GymForm({
         size="small"
         type="email"
         placeholder={t('gymForm.placeholders.contactEmail')}
+        slotProps={{ htmlInput: { maxLength: 200 } }}
       />
 
       <TextField
@@ -226,12 +237,22 @@ export default function GymForm({
         fullWidth
         size="small"
         placeholder={t('gymForm.placeholders.contactPhone')}
+        slotProps={{ htmlInput: { maxLength: 30 } }}
       />
 
-      <FormControlLabel
-        control={<Switch checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} />}
-        label={t('gymForm.fields.isPublic')}
-      />
+      <TextField
+        select
+        label={t('gymForm.fields.visibility')}
+        value={visibility}
+        onChange={(event) => setVisibility(event.target.value)}
+        size="small"
+        fullWidth
+        helperText={t('gymForm.helpers.visibility')}
+      >
+        <MenuItem value="public">{t('gymForm.visibility.public')}</MenuItem>
+        <MenuItem value="unlisted">{t('gymForm.visibility.unlisted')}</MenuItem>
+        <MenuItem value="private">{t('gymForm.visibility.private')}</MenuItem>
+      </TextField>
 
       {renderSuggestions?.({ name: name.trim(), latitude, longitude })}
 

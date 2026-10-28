@@ -23,6 +23,10 @@ vi.mock('next-auth/react', () => ({
   useSession: () => mockSession,
 }));
 
+vi.mock('@/app/hooks/use-session-workouts', () => ({
+  useSessionWorkouts: () => [],
+}));
+
 vi.mock('@/app/hooks/use-session-detail', () => ({
   useSessionDetail: ({ initialData }: { initialData: unknown }) => ({
     session: initialData ?? null,

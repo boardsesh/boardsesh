@@ -15,7 +15,7 @@
 //
 // All copy is hardcoded English with `i18n-ignore` — tester-only.
 
-import { Host } from '@expo/ui';
+import { ComposeHost } from './ComposeHost.android';
 import {
   LazyColumn,
   Card,
@@ -38,14 +38,11 @@ import type { FeatureFlagsFormProps } from './FeatureFlagsForm.types';
 const ITEM_GAP = padding(0, spacing[3], 0, 0);
 
 export function FeatureFlagsForm({ rows, onSelect, onReset, canReset, noticeText, title }: FeatureFlagsFormProps) {
-  const { brandColors, colorScheme } = useTheme();
+  const { brandColors } = useTheme();
   const segmentColors = segmentedBrandColors(brandColors);
 
   return (
-    // `colorScheme` forces the Compose MaterialTheme to follow the in-app
-    // Light/Dark toggle (`themeOverride`) instead of the OS scheme — without it the
-    // cards stay dark when the user picks "Light" in-app.
-    <Host style={styles.host} colorScheme={colorScheme}>
+    <ComposeHost style={styles.host}>
       <LazyColumn contentPadding={{ start: spacing[4], top: spacing[4], end: spacing[4], bottom: spacing[10] }}>
         {/* i18n-ignore-next-line — tester-only screen */}
         <Text style={{ typography: 'titleLarge' }}>{title}</Text>
@@ -98,7 +95,7 @@ export function FeatureFlagsForm({ rows, onSelect, onReset, canReset, noticeText
           </Button>
         </Column>
       </LazyColumn>
-    </Host>
+    </ComposeHost>
   );
 }
 

@@ -116,6 +116,15 @@ describe('gym page metadata', () => {
     expect(metadata.alternates?.canonical).toBe('/gym/geocoded-gym');
   });
 
+  it('keeps an unlisted gym link readable without indexing it', async () => {
+    executeAuthenticatedGraphQL.mockResolvedValue({
+      gymBySlug: gym('qa-gym', { isPublic: true, isListed: false }),
+    });
+    const metadata = await metadataFor('qa-gym', {});
+    expect(metadata.robots).toEqual({ index: false, follow: true });
+    expect(metadata.alternates).toBeUndefined();
+  });
+
   // A public gym with no coordinates is a climber's personal home wall: the
   // Aurora sync geocodes every commercial gym it writes, and 1,053 of these
   // names begin with the owner's own display name.

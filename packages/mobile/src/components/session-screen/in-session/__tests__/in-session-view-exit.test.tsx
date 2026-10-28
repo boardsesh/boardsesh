@@ -232,6 +232,17 @@ vi.mock('../../../../lib/store-review', () => ({
   isSessionStoreReviewEligible: () => false,
 }));
 vi.mock('../../../../lib/integrations', () => ({ runSessionEndExports: integrations.runSessionEndExports }));
+// #6903: the queued-tick wait (handed to endSession as `beforeEnd`) and the
+// late-tick summary refresh.
+const outbox = vi.hoisted(() => ({
+  calls: [] as string[],
+  waitForSessionTicksToSync: vi.fn(),
+  refreshSessionWhenQueuedTicksLand: vi.fn(),
+}));
+vi.mock('../../../../offline/session-tick-drain', () => ({
+  waitForSessionTicksToSync: outbox.waitForSessionTicksToSync,
+  refreshSessionWhenQueuedTicksLand: outbox.refreshSessionWhenQueuedTicksLand,
+}));
 vi.mock('../../../../lib/session-comment-draft-store', () => ({
   setDraftComment: vi.fn(),
   clearDraftComment: vi.fn(),
@@ -275,6 +286,13 @@ describe('InSessionView session exit (#3502)', () => {
   beforeEach(() => {
     queue.endSession.mockReset();
     queue.endSession.mockResolvedValue(null);
+    outbox.calls = [];
+    outbox.waitForSessionTicksToSync.mockReset();
+    outbox.waitForSessionTicksToSync.mockImplementation(async () => {
+      outbox.calls.push('wait');
+      return 'none';
+    });
+    outbox.refreshSessionWhenQueuedTicksLand.mockReset();
     queue.clearSession.mockReset();
     queue.clearSession.mockResolvedValue(undefined);
     router.push.mockClear();
@@ -486,9 +504,9 @@ describe('InSessionView session exit (#3502)', () => {
     await act(async () => {
       sheet.onConfirm?.();
     });
+    await waitFor(() => expect(integrations.runSessionEndExports).toHaveBeenCalledTimes(1));
     expect(queue.endSession).toHaveBeenCalledTimes(1);
     expect(queue.clearSession).not.toHaveBeenCalled();
-    expect(integrations.runSessionEndExports).toHaveBeenCalledTimes(1);
     expect(router.push).toHaveBeenCalledWith(expect.objectContaining({ pathname: '/(tabs)/record/summary' }));
   });
 });

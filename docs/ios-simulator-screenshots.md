@@ -252,14 +252,18 @@ the first `navigate` / `screenshot --to` may catch the dialog.
 ## Store capture device coverage
 
 `vp run mobile:screenshots -- --devices common` captures iPhone 16 Pro Max
-(1320 × 2868), iPhone 16 Pro (1206 × 2622), and both existing landscape iPads.
-`--devices phones` selects both phones. The five default-listing app locales
-(`en-US`, `es`, `fr`, `de`, `it`) produce 20 capture shards and 24 storefront sets
-because Spanish targets both `es-ES` and `es-MX`; Italian targets `it`. The full
-default listing contains 180 screenshots: nine per phone and six per iPad.
-Italian phone slot 07 shows the native session recap, `07-session-detail.png`,
-until a reviewed Italian physical Live Activity fixture exists. CPP/ad/video
-campaigns retain their four app locales and five Apple locales.
+(1320 × 2868), iPhone 16 Pro (1206 × 2622), both existing landscape iPads, and
+the iPhone Duo (inner display open at 2853 × 2007, outer display closed at
+1398 × 2034, one set). `--devices phones` selects both phones; `--devices duo`
+the Duo alone, which needs Xcode 27 with the iOS 27.1 runtime. The five
+default-listing app locales (`en-US`, `es`, `fr`, `de`, `it`) produce 25 capture
+shards and 30 storefront sets because Spanish targets both `es-ES` and `es-MX`;
+Italian targets `it`. The full default listing contains 228 screenshots: nine per
+phone, six per iPad and eight in the Duo set. Italian phone slot 07 shows the
+native session recap, `07-session-detail.png`, until a reviewed Italian physical
+Live Activity fixture exists. CPP/ad/video campaigns retain their four app
+locales and five Apple locales, and have no Duo set. How the Duo is folded
+headlessly: [docs/mobile-store-release.md](mobile-store-release.md#the-iphone-duo-set).
 The `smoke` flow keeps its single Pro Max / English default; pass an explicit
 `--device` to inspect another device. The ad-hoc `mobile:ios-shots` default is
 unchanged.

@@ -106,7 +106,9 @@ module BoardseshCPP
       "APP_IPHONE_67" => [[1260, 2736], [1290, 2796], [1320, 2868]],
       "APP_IPHONE_61" => [[1170, 2532], [1179, 2556], [1206, 2622]],
       "APP_IPAD_PRO_3GEN_129" => [[2048, 2732], [2064, 2752], [2732, 2048], [2752, 2064]],
-      "APP_IPAD_PRO_3GEN_11" => [[1668, 2388], [1668, 2420], [2388, 1668], [2420, 1668]]
+      "APP_IPAD_PRO_3GEN_11" => [[1668, 2388], [1668, 2420], [2388, 1668], [2420, 1668]],
+      # App version only (no CPP set): outer display closed, inner display open.
+      "APP_IPHONE_DUO" => [[1398, 2034], [2034, 1398], [2007, 2853], [2853, 2007]]
     }.freeze
 
     def initialize(client:, repo_root:, manifest:, app_id:, manifest_sha256: nil, keyword_ids: {}, retained_source: nil, log: ->(_message) {}, sleeper: ->(seconds) { sleep(seconds) })

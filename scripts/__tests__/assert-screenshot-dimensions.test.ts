@@ -8,6 +8,7 @@ import {
   EXPECTED_APP_STORE_LOCALES,
   EXPECTED_APP_STORE_DEVICE_SLUGS,
   ACCEPTED_SIZES,
+  acceptedSizesForFile,
   findGooglePlayOffenders,
   findOffenders,
   findScreenshotTreeOffenders,
@@ -168,6 +169,17 @@ describe('findScreenshotTreeOffenders', () => {
             buffer: pngHeader({ width: 2420, height: 1668 }),
           },
         ],
+        // One set, two displays: inner (open, landscape) and outer (closed).
+        'iphone-duo': [
+          {
+            name: `${locale}/iphone-duo/00-board-view.png`,
+            buffer: pngHeader({ width: 2853, height: 2007 }),
+          },
+          {
+            name: `${locale}/iphone-duo/05-profile.png`,
+            buffer: pngHeader({ width: 1398, height: 2034 }),
+          },
+        ],
       };
     }
     for (const [locale, devices] of Object.entries(overrides)) {
@@ -187,26 +199,30 @@ describe('findScreenshotTreeOffenders', () => {
     for (const locale of EXPECTED_APP_STORE_LOCALES) {
       tree[locale] = {};
       for (const device of EXPECTED_APP_STORE_DEVICE_SLUGS) {
-        const sources = device.startsWith('iphone-')
-          ? IOS_CAMPAIGN_CAPTURE_NAMES
-          : Object.keys(screenshotCaptions('ios', device));
+        const sources =
+          device.startsWith('iphone-') && device !== 'iphone-duo'
+            ? IOS_CAMPAIGN_CAPTURE_NAMES
+            : Object.keys(screenshotCaptions('ios', device));
         tree[locale][device] = resolveScreenshotRecipes(
           'ios',
           device,
           sources,
           captionLocaleForStore('ios', locale),
-        ).map((recipe) => ({
-          name: `${locale}/${device}/${recipe.output}`,
-          buffer: pngHeader(ACCEPTED_SIZES[device][0]),
-        }));
+        ).map((recipe) => {
+          // The Duo set mixes displays, so its size depends on the file.
+          const sizes = acceptedSizesForFile(device, recipe.output);
+          if (typeof sizes === 'string') throw new Error(sizes);
+          return { name: `${locale}/${device}/${recipe.output}`, buffer: pngHeader(sizes[0]) };
+        });
       }
     }
     return tree;
   }
 
-  it('accepts the complete 180-image campaign with the intentional Italian phone substitution', () => {
+  it('accepts the complete 228-image campaign with the intentional Italian phone substitution', () => {
     const tree = campaignTree();
-    expect(Object.values(tree).flatMap((devices) => Object.values(devices).flat()).length).toBe(180);
+    // Six storefronts x (9 + 9 phone, 6 + 6 iPad, 8 iPhone Duo).
+    expect(Object.values(tree).flatMap((devices) => Object.values(devices).flat()).length).toBe(228);
     expect(findScreenshotTreeOffenders(tree)).toEqual([]);
   });
 

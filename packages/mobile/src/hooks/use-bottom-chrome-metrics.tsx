@@ -11,6 +11,8 @@ import {
 import { useNativeTabContentInsetBottom } from '../lib/native-tab-content-inset-store';
 import { useConnectivityBannerHeight } from '../lib/connectivity-banner-inset-store';
 import { getRestTimerState, subscribeRestTimer } from '../lib/rest-timer-store';
+import { useWorkoutRunPendingStart } from '../lib/workout-run-store';
+import { useQueueSessionId } from '../providers/queue-provider';
 import { useStickyAccessoryPresence } from './use-sticky-accessory-presence';
 import { useTabChrome } from './use-bottom-accessory';
 import { useDeviceLayout } from './use-device-layout';
@@ -120,6 +122,8 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
   // it here needs no flag plumbing. A module store rather than context, for the
   // same reason the two above are: the 1 Hz countdown must not re-render the app.
   const restTimerArmed = useSyncExternalStore(subscribeRestTimer, getRestTimerArmed, getRestTimerArmedServerSnapshot);
+  const { sessionId } = useQueueSessionId();
+  const workoutStartPending = useWorkoutRunPendingStart(sessionId);
 
   return useMemo(
     () =>
@@ -137,6 +141,7 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
         connectivityBannerHeight,
         restTimerArmed,
         tabBarAtBottom,
+        workoutStartPending,
       }),
     [
       tabBarAtBottom,
@@ -152,6 +157,7 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
       measuredTabContentInsetBottom,
       connectivityBannerHeight,
       restTimerArmed,
+      workoutStartPending,
     ],
   );
 }

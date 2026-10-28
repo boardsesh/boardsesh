@@ -306,7 +306,11 @@ export async function computeCommunityMonthlyStats({
       )
       .innerJoin(
         gyms,
-        and(eq(gyms.id, sql`community_gym_boards.gym_id`), isNull(gyms.deletedAt), gymVisibleCondition(gyms, null)),
+        and(
+          eq(gyms.id, sql`community_gym_boards.gym_id`),
+          isNull(gyms.deletedAt),
+          gymVisibleCondition(gyms, null, true),
+        ),
       )
       .where(
         sql`NOT EXISTS (SELECT 1 FROM spray_walls community_gym_wall

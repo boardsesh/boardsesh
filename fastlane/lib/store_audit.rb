@@ -37,6 +37,11 @@ module BoardseshStoreAudit
       "subscriptionGroupVersion" => "subscriptionGroupVersions"
     }.freeze
 
+    # Screenshot slots only the app version carries. Custom product pages have
+    # no iPhone Duo set, so the CPP display types (custom-product-pages.json)
+    # leave it out.
+    DEFAULT_ONLY_DISPLAY_TYPES = ["APP_IPHONE_DUO"].freeze
+
     def initialize(client:, app_id:, version:, build_number:, cpp_targets:, locales:, display_types:, cpp_locales: locales)
       raise Error, "Expected iOS version must be semver" unless version.match?(/\A\d+\.\d+\.\d+\z/)
       raise Error, "Expected iOS build must be numeric" unless build_number.match?(/\A[1-9]\d*\z/)
@@ -74,7 +79,7 @@ module BoardseshStoreAudit
         @issues << "Attached iOS build is not fully processed" unless build.dig("attributes", "processingState") == "VALID"
         @issues << "Attached iOS build is expired" if build.dig("attributes", "expired")
       end
-      report["localizations"] = localizations("appStoreVersions", version.fetch("id"), "appStoreVersionLocalizations", "default")
+      report["localizations"] = localizations("appStoreVersions", version.fetch("id"), "appStoreVersionLocalizations", "default", @display_types | DEFAULT_ONLY_DISPLAY_TYPES)
       report["customProductPages"] = custom_product_pages
       report["reviewSubmissions"] = review_submissions
       report
@@ -161,14 +166,14 @@ module BoardseshStoreAudit
           "versions" => versions.map do |version|
             {
               "id" => version.fetch("id"), "version" => version.dig("attributes", "version"), "state" => version.dig("attributes", "state"),
-              "localizations" => localizations("appCustomProductPageVersions", version.fetch("id"), "appCustomProductPageLocalizations", "CPP #{target}/#{version.fetch('id')}", expected_locales: @cpp_locales)
+              "localizations" => localizations("appCustomProductPageVersions", version.fetch("id"), "appCustomProductPageLocalizations", "CPP #{target}/#{version.fetch('id')}", @display_types, expected_locales: @cpp_locales)
             }
           end
         }
       end
     end
 
-    def localizations(parent_type, parent_id, localization_type, label, expected_locales: @locales)
+    def localizations(parent_type, parent_id, localization_type, label, display_types, expected_locales: @locales)
       entries = @client.list("/v1/#{parent_type}/#{parent_id}/#{localization_type}?limit=200")
       found_locales = entries.map { |entry| entry.dig("attributes", "locale") }
       (expected_locales - found_locales).each { |locale| @issues << "#{label}: missing locale #{locale}" }
@@ -176,7 +181,7 @@ module BoardseshStoreAudit
         locale = localization.fetch("attributes").fetch("locale")
         sets = @client.list("/v1/#{localization_type}/#{localization.fetch('id')}/appScreenshotSets?limit=200")
         found_types = sets.map { |set| set.dig("attributes", "screenshotDisplayType") }
-        (@display_types - found_types).each { |type| @issues << "#{label}/#{locale}: missing screenshot set #{type}" }
+        (display_types - found_types).each { |type| @issues << "#{label}/#{locale}: missing screenshot set #{type}" }
         {
           "id" => localization.fetch("id"), "locale" => locale,
           "metadata" => BoardseshStoreAudit.text_fields(localization.fetch("attributes"), LOCALIZED_FIELDS),

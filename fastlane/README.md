@@ -180,8 +180,10 @@ The iOS lane uploads PNGs in
 **screenshots only** — no binary, no text metadata, no review submission.
 deliver routes each image to its display slot by pixel dimensions; the `NN-`
 filename prefixes set the display order inside each slot. The common iOS matrix
-includes iPhone 16 Pro Max and iPhone 16 Pro portrait captures plus 13-inch and
-11-inch iPad landscape captures.
+includes iPhone 16 Pro Max and iPhone 16 Pro portrait captures, 13-inch and
+11-inch iPad landscape captures, and the iPhone Duo set. The Duo set holds both
+displays (inner 2853 × 2007 open, outer 1398 × 2034 closed); deliver routes both
+sizes to `APP_IPHONE_DUO`, which needs fastlane 2.241.1 or newer.
 
 The upload expects the generated Apple locale folders `en-US`, `es-ES`, `es-MX`,
 `fr-FR`, `de-DE`, and `it`. The app has one Spanish locale (`es`), so the capture
@@ -196,8 +198,9 @@ SHA-256 (matching leading images stay, the rest are replaced). It commits throug
 the review-protected Play listing runner described below.
 
 The default iOS replay campaign produces nine composed iPhone images from
-18 real captures and retains the six-image iPad story. Five app locales generate
-20 native shards and 24 storefront sets, containing 180 default-listing images.
+18 real captures and retains the six-image iPad story. Five app locales on five devices
+generate 25 native shards and 30 storefront sets, containing 228 default-listing
+images (the iPhone Duo set adds eight per storefront).
 Italian phone slot 07 uses `07-session-detail.png`, framed from the native
 session recap, until a reviewed Italian physical Live Activity fixture exists.
 CPP/ad/video campaigns keep their four app locales and five Apple locales.

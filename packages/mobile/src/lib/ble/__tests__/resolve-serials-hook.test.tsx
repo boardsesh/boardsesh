@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import { GET_BOARDS_BY_SERIAL_NUMBERS } from '@boardsesh/graphql/operations';
+import { GET_BOARDS_BY_SERIAL_NUMBERS, GET_OBSERVED_BOARD_SERIAL_MATCHES } from '@boardsesh/graphql/operations';
 
 // The pure resolveBleSerialNumbers / serialsFromDiscoveredDevices suite stays in
 // the node environment (resolve-serials.test.ts); only the React-Query hook
@@ -83,8 +83,12 @@ describe('useResolvedBleDeviceBoards', () => {
     // the query through — only the recorded-configs branch requires a token.
     vi.mocked(useAuthToken).mockReturnValue({ data: null } as ReturnType<typeof useAuthToken>);
     harness.request.mockImplementation((operation: unknown) => {
-      if (operation === GET_BOARDS_BY_SERIAL_NUMBERS) {
-        return Promise.resolve({ boardsBySerialNumbers: [makeBoard('SN-A')] });
+      if (operation === GET_OBSERVED_BOARD_SERIAL_MATCHES) {
+        return Promise.resolve({
+          observedBoardSerialMatches: [
+            { boardType: 'kilter', observedSerialNumber: 'SN-A', candidates: [makeBoard('SN-A')] },
+          ],
+        });
       }
       return Promise.reject(new Error('Unexpected operation'));
     });
@@ -101,9 +105,8 @@ describe('useResolvedBleDeviceBoards', () => {
     expect(harness.request).toHaveBeenCalledTimes(1);
     // Scoped to the type the device names advertise (`Kilter Board#SN-A@3`),
     // so a Tension controller sharing this serial can't come back.
-    expect(harness.request).toHaveBeenCalledWith(GET_BOARDS_BY_SERIAL_NUMBERS, {
-      serialNumbers: ['SN-A'],
-      boardType: 'kilter',
+    expect(harness.request).toHaveBeenCalledWith(GET_OBSERVED_BOARD_SERIAL_MATCHES, {
+      input: [{ boardType: 'kilter', observedSerialNumber: 'SN-A' }],
     });
   });
 
@@ -114,6 +117,7 @@ describe('useResolvedBleDeviceBoards', () => {
     // and the board stays mis-identified for the rest of the scan.
     vi.mocked(useAuthToken).mockReturnValue({ data: null } as ReturnType<typeof useAuthToken>);
     harness.request.mockImplementation((operation: unknown) => {
+      if (operation === GET_OBSERVED_BOARD_SERIAL_MATCHES) return Promise.resolve({ observedBoardSerialMatches: [] });
       if (operation === GET_BOARDS_BY_SERIAL_NUMBERS) {
         return Promise.resolve({ boardsBySerialNumbers: [] });
       }
@@ -129,16 +133,14 @@ describe('useResolvedBleDeviceBoards', () => {
     await waitFor(() =>
       expect(harness.request).toHaveBeenCalledWith(GET_BOARDS_BY_SERIAL_NUMBERS, {
         serialNumbers: ['SN-A'],
-        boardType: undefined,
       }),
     );
 
     rerender({ devices: makeDevices(['SN-A']) });
 
     await waitFor(() =>
-      expect(harness.request).toHaveBeenCalledWith(GET_BOARDS_BY_SERIAL_NUMBERS, {
-        serialNumbers: ['SN-A'],
-        boardType: 'kilter',
+      expect(harness.request).toHaveBeenCalledWith(GET_OBSERVED_BOARD_SERIAL_MATCHES, {
+        input: [{ boardType: 'kilter', observedSerialNumber: 'SN-A' }],
       }),
     );
   });

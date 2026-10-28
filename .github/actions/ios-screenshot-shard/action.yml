@@ -134,6 +134,59 @@ runs:
         key: ${{ inputs.app-cache-key }}
         fail-on-cache-miss: true
 
+    # The iPhone Duo simulator exists only in Xcode 27.1+ with the iOS 27.1
+    # runtime, which the runner's default Xcode may not be. Pick the newest
+    # installed RELEASE Xcode at 27.1 or later (a beta, or a 27.0 that cannot
+    # host the 27.1 runtime, never qualifies) and make sure the runtime is there
+    # before capturing. The Duo shard also compiles a small simulator library at
+    # capture time (scripts/ios-duo-hinge/duo-hinge.m) to fold the device, which
+    # needs that Xcode's iphonesimulator SDK.
+    #
+    # Command output is read into a variable before grepping: `cmd | grep -q`
+    # under pipefail can kill cmd with SIGPIPE and read as a false failure.
+    - name: Select Xcode 27 for the iPhone Duo
+      if: ${{ inputs.device-slug == 'iphone-duo' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        candidates=""
+        for candidate in /Applications/Xcode.app /Applications/Xcode_27*.app /Applications/Xcode-27*.app; do
+          [ -d "$candidate" ] || continue
+          case "$candidate" in *[Bb]eta*|*_RC*|*-RC*|*Release_Candidate*) continue ;; esac
+          version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$candidate/Contents/Info.plist" 2>/dev/null || true)"
+          [ -n "$version" ] || continue
+          # Keep only 27.1 or later.
+          lowest="$(printf '%s\n%s\n' 27.1 "$version" | sort -V | head -n 1)"
+          [ "$lowest" = "27.1" ] || continue
+          candidates="${candidates}${version} ${candidate}"$'\n'
+        done
+        xcode="$(printf '%s' "$candidates" | sort -V | tail -n 1 | cut -d' ' -f2-)"
+        if [ -z "$xcode" ]; then
+          echo "::error::The iPhone Duo shard needs a release Xcode 27.1 or later; found none under /Applications."
+          exit 1
+        fi
+        sudo xcode-select --switch "$xcode/Contents/Developer"
+        xcodebuild -version
+        runtimes="$(xcrun simctl list runtimes)"
+        if ! grep -Eq '^iOS 27\.([1-9]|[1-9][0-9])' <<<"$runtimes"; then
+          for attempt in 1 2 3; do
+            if xcodebuild -downloadPlatform iOS -buildVersion 27.1; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "::error::Could not download the iOS 27.1 simulator runtime after 3 attempts."
+              exit 1
+            fi
+            echo "iOS 27.1 runtime download failed (attempt $attempt/3); retrying in $((attempt * 30))s."
+            sleep $((attempt * 30))
+          done
+        fi
+        device_types="$(xcrun simctl list devicetypes)"
+        if ! grep -q 'com.apple.CoreSimulator.SimDeviceType.iPhone-Duo' <<<"$device_types"; then
+          echo "::error::Xcode at $xcode has no iPhone Duo simulator device type."
+          exit 1
+        fi
+
     - name: Install Maestro
       # Pinned to a specific GitHub Releases asset and verified against a
       # checksum committed in this repo — NOT `curl … get.maestro.mobile.dev | bash`,

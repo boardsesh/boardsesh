@@ -53,7 +53,9 @@ export const PlaylistAddToQueueRow = memo(function PlaylistAddToQueueRow({
   const isBlocked = pendingPlacement !== null;
 
   return (
-    <View style={styles.container}>
+    // The id is how the store screenshot flows know a playlist's detail
+    // screen (this row is only on it) has loaded.
+    <View testID="playlist-add-to-queue" style={styles.container}>
       <PlacementRow
         title={playNextTitle}
         subtitle={t('detail.addToQueue.playNextSubtitle')}

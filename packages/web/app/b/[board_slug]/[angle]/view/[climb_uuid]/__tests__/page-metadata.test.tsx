@@ -28,6 +28,7 @@ type ResolvedBoard = {
   setIds: string;
   isPublic: boolean;
   isUnlisted: boolean;
+  gymIsListed?: boolean;
 };
 
 const resolveBoardBySlug = vi.fn<(slug: string, wallUuid?: string) => Promise<ResolvedBoard | null>>(async () => ({
@@ -147,6 +148,25 @@ function getOpenGraphImageUrl(image: string | URL | { url: string | URL } | unde
 }
 
 describe('board slug climb metadata', () => {
+  it('inherits noindex from the unlisted parent gym', async () => {
+    resolveBoardBySlug.mockResolvedValueOnce({
+      slug: 'qa-board',
+      boardType: 'kilter',
+      layoutId: 1,
+      sizeId: 7,
+      setIds: '1,20',
+      isPublic: true,
+      isUnlisted: false,
+      gymIsListed: false,
+    });
+    const metadata = await pageModule.generateMetadata({
+      searchParams: Promise.resolve({}),
+      params: Promise.resolve({ board_slug: 'qa-board', angle: '40', climb_uuid: 'test-climb' }),
+    });
+    expect(metadata.robots).toEqual({ index: false, follow: true });
+    expect(metadata.alternates).toBeUndefined();
+  });
+
   it('keys the angle stats on the uuid the climb resolved to, not the alias in the URL', async () => {
     const { getClimb, getClimbStatsForAllAngles } = await import('@/app/lib/data/queries');
     vi.mocked(getClimb).mockResolvedValueOnce({

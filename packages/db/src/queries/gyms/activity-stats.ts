@@ -65,6 +65,8 @@ export const ENUMERABLE_GYM_BOARDS = sql`
     AND ub.deleted_at IS NULL
     AND ub.is_public
     AND NOT ub.is_unlisted
+    AND EXISTS (SELECT 1 FROM gyms enumerable_gym WHERE enumerable_gym.id = ub.gym_id
+      AND enumerable_gym.deleted_at IS NULL AND enumerable_gym.is_public AND enumerable_gym.is_listed)
 `;
 
 /**

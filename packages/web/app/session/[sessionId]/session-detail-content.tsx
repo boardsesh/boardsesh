@@ -34,10 +34,18 @@ import SessionOverviewPanel from './session-overview-panel';
 import { generateSessionName } from '@/app/lib/session-utils';
 import { ConfirmPopover } from '@/app/components/ui/confirm-popover';
 import { useDeleteTick } from '@/app/hooks/use-delete-tick';
+import { useSessionWorkouts } from '@/app/hooks/use-session-workouts';
+import { useGradeFormat } from '@/app/hooks/use-grade-format';
+import type { SessionWorkoutResult } from '@boardsesh/graphql/operations/session-workouts';
+import { workoutHeadlineOfStages, workoutHeadlineText } from '@boardsesh/workout-summary';
+import SessionWorkoutClimbs from './session-workout-climbs';
+import { buildWorkoutClimbGroups, pickWorkout, tickToClimb, toWorkoutView } from './session-workout';
 
 type SessionDetailContentProps = {
   session: SessionDetail | null;
   sessionId?: string;
+  /** The server-rendered `sessionWorkouts` answer (#6903). Empty for a session with no workout. */
+  workouts?: SessionWorkoutResult[] | null;
   fallbackBoardDetails?: BoardDetails | null;
   afterParticipants?: React.ReactNode;
   /** Current board angle for display in the board preview */
@@ -128,24 +136,7 @@ function convertSessionTicksToClimbs(ticks: SessionDetailTick[], unknownClimbLab
     order.push(tick.climbUuid);
     if (!tick.climbName) unknownClimbUuids.add(tick.climbUuid);
 
-    seen.set(tick.climbUuid, {
-      uuid: tick.climbUuid,
-      name: tick.climbName || unknownClimbLabel,
-      frames: tick.frames || '',
-      angle: tick.angle,
-      difficulty: tick.difficultyName || '',
-      quality_average: tick.quality != null ? String(tick.quality) : '0',
-      setter_username: tick.setterUsername || '',
-      description: '',
-      ascensionist_count: 0,
-      stars: 0,
-      difficulty_error: '0',
-      benchmark_difficulty: tick.isBenchmark ? tick.difficultyName || null : null,
-      mirrored: tick.isMirror,
-      is_no_match: tick.isNoMatch,
-      boardType: tick.boardType,
-      layoutId: tick.layoutId ?? null,
-    });
+    seen.set(tick.climbUuid, tickToClimb(tick, unknownClimbLabel));
   }
 
   return { climbs: order.map((uuid) => seen.get(uuid)!), unknownClimbUuids };
@@ -159,12 +150,18 @@ function convertSessionTicksToClimbs(ticks: SessionDetailTick[], unknownClimbLab
  * climbed on instead of the layout's largest size. Ticks the backend couldn't
  * resolve a board for are left out and keep the layout default.
  */
-function buildLoggedBoardDetails(ticks: SessionDetailTick[]): Record<string, BoardDetails> {
+function buildLoggedBoardDetails(
+  ticks: ReadonlyArray<{
+    climbUuid: string;
+    boardType?: string | null;
+    renderBoard?: { layoutId: number; sizeId: number; setIds: number[] } | null;
+  }>,
+): Record<string, BoardDetails> {
   const byClimb: Record<string, BoardDetails> = {};
 
   for (const tick of ticks) {
     const loggedBoard = tick.renderBoard;
-    if (!loggedBoard || byClimb[tick.climbUuid]) continue;
+    if (!loggedBoard || !tick.boardType || byClimb[tick.climbUuid]) continue;
 
     try {
       byClimb[tick.climbUuid] = getBoardDetailsForBoard({
@@ -294,6 +291,7 @@ function SessionTickItem({
 export default function SessionDetailContent({
   session: initialSession,
   sessionId: sessionIdProp,
+  workouts: initialWorkouts = null,
   fallbackBoardDetails = null,
   afterParticipants,
   currentAngle: _currentAngle,
@@ -311,6 +309,11 @@ export default function SessionDetailContent({
   });
 
   const session = hookSession;
+  const workoutResults = useSessionWorkouts({
+    sessionId: sessionIdProp ?? initialSession?.sessionId,
+    initialData: initialWorkouts,
+  });
+  const { formatGrade } = useGradeFormat();
 
   const [sessionCommentsOpen, setSessionCommentsOpen] = useState(false);
 
@@ -365,6 +368,42 @@ export default function SessionDetailContent({
   // Group ticks by climb for rendering tick details below each climb
   const ticksByClimb = useMemo(() => groupTicksByClimbUuid(ticks), [ticks]);
 
+  // The workout this session followed, when it followed one (#6903): the
+  // viewer's own, else the first climber's.
+  const workout = useMemo(() => {
+    const picked = pickWorkout(workoutResults, currentUserId);
+    return picked ? toWorkoutView(picked, formatGrade) : null;
+  }, [workoutResults, currentUserId, formatGrade]);
+  const workoutLine = useMemo(
+    () => (workout ? workoutHeadlineText(workoutHeadlineOfStages(workout.stages), t) : null),
+    [workout, t],
+  );
+  const workoutGroups = useMemo(
+    () => (workout ? buildWorkoutClimbGroups(ticks, workout, unknownClimbLabel) : null),
+    [workout, ticks, unknownClimbLabel],
+  );
+  // Planned climbs nobody ticked still need a board to draw on.
+  const listedClimbs = useMemo(() => {
+    if (!workoutGroups) return sessionClimbs;
+    const byUuid = new Map(sessionClimbs.map((climb) => [climb.uuid, climb]));
+    for (const group of workoutGroups) {
+      for (const { climb } of group.entries) {
+        if (!byUuid.has(climb.uuid)) byUuid.set(climb.uuid, climb);
+      }
+    }
+    return byUuid.size > sessionClimbs.length ? [...byUuid.values()] : sessionClimbs;
+  }, [sessionClimbs, workoutGroups]);
+  const workoutUnlinkedClimbUuids = useMemo(() => {
+    if (!workout) return unknownClimbUuids;
+    const unlinked = new Set(unknownClimbUuids);
+    for (const stage of workout.stages) {
+      for (const climb of stage.climbs) {
+        if (!climb.name && !ticksByClimb.has(climb.climbUuid)) unlinked.add(climb.climbUuid);
+      }
+    }
+    return unlinked;
+  }, [workout, unknownClimbUuids, ticksByClimb]);
+
   // Collect tick UUIDs for batch vote summary fetching
   const tickUuids = useMemo(() => ticks.map((t) => t.uuid), [ticks]);
 
@@ -374,13 +413,16 @@ export default function SessionDetailContent({
   // layout's largest size with every set — a guess the logged board below
   // overrides wherever the backend resolved one.
   const { boardDetailsByClimb: layoutDefaultBoardDetails, defaultBoardDetails } = useBoardDetailsMap(
-    sessionClimbs,
+    listedClimbs,
     myBoards,
     null,
     null,
     boardTypes,
   );
-  const loggedBoardDetails = useMemo(() => buildLoggedBoardDetails(ticks), [ticks]);
+  const loggedBoardDetails = useMemo(
+    () => buildLoggedBoardDetails([...ticks, ...(workout?.stages.flatMap((stage) => stage.climbs) ?? [])]),
+    [ticks, workout],
+  );
   const boardDetailsByClimb = useMemo(
     () => ({ ...layoutDefaultBoardDetails, ...loggedBoardDetails }),
     [layoutDefaultBoardDetails, loggedBoardDetails],
@@ -408,11 +450,10 @@ export default function SessionDetailContent({
     [deleteTick],
   );
 
-  // Render tick details below each climb item (per-user rows for multi-user, status/attempts for single-user)
-  const renderTickDetails = useCallback(
-    (climb: Climb) => {
-      const climbTicks = ticksByClimb.get(climb.uuid);
-      if (!climbTicks || climbTicks.length === 0) return null;
+  // Render tick rows (per-user rows for multi-user, status/attempts for single-user)
+  const renderTicks = useCallback(
+    (climbTicks: SessionDetailTick[]) => {
+      if (climbTicks.length === 0) return null;
 
       return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, px: 2, pb: 1 }}>
@@ -433,7 +474,13 @@ export default function SessionDetailContent({
         </Box>
       );
     },
-    [ticksByClimb, participantMap, isMultiUser, currentUserId, handleDeleteTick, deleteTick.isPending],
+    [participantMap, isMultiUser, currentUserId, handleDeleteTick, deleteTick.isPending],
+  );
+
+  // Tick details below each climb item
+  const renderTickDetails = useCallback(
+    (climb: Climb) => renderTicks(ticksByClimb.get(climb.uuid) ?? []),
+    [renderTicks, ticksByClimb],
   );
 
   const noopLoadMore = useCallback(() => {}, []);
@@ -507,6 +554,7 @@ export default function SessionDetailContent({
           goal={goal}
           notes={notes}
           afterParticipants={afterParticipants}
+          workoutLine={workoutLine}
         />
 
         {/* Session-level social */}
@@ -552,7 +600,19 @@ export default function SessionDetailContent({
         </Typography>
       </Box>
 
-      {effectiveBoardDetails && sessionClimbs.length > 0 && (
+      {effectiveBoardDetails && workoutGroups && (
+        <VoteSummaryProvider entityType="tick" entityIds={tickUuids}>
+          <SessionWorkoutClimbs
+            groups={workoutGroups}
+            boardDetails={effectiveBoardDetails}
+            boardDetailsByClimb={boardDetailsByClimb}
+            unlinkedClimbUuids={workoutUnlinkedClimbUuids}
+            renderTicks={renderTicks}
+          />
+        </VoteSummaryProvider>
+      )}
+
+      {effectiveBoardDetails && !workoutGroups && sessionClimbs.length > 0 && (
         <VoteSummaryProvider entityType="tick" entityIds={tickUuids}>
           <StaticClimbList
             boardDetails={effectiveBoardDetails}

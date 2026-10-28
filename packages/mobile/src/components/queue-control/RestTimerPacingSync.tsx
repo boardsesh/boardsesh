@@ -15,7 +15,12 @@
 import { useEffect, useMemo } from 'react';
 import { locateInRun, type WorkoutRun } from '@boardsesh/playlist-generator';
 import { useQueueData, useQueueSessionId } from '../../providers/queue-provider';
-import { countWorkoutRunTicks, useWorkoutRun, useWorkoutRunLog } from '../../lib/workout-run-store';
+import {
+  countWorkoutRunTicks,
+  useWorkoutRun,
+  useWorkoutRunLog,
+  useWorkoutRunPendingStart,
+} from '../../lib/workout-run-store';
 import { nowMs } from '../../lib/clock';
 import { resolveStageRestPacing } from '../../lib/rest-timer-pacing';
 import { syncRestTimerStagePacing } from '../../lib/rest-timer-effective';
@@ -23,7 +28,8 @@ import { syncRestTimerStagePacing } from '../../lib/rest-timer-effective';
 export function RestTimerPacingSync() {
   const { sessionId } = useQueueSessionId();
   const run = useWorkoutRun(sessionId);
-  const hasRun = sessionId !== null && run !== null;
+  const pendingStart = useWorkoutRunPendingStart(sessionId);
+  const hasRun = sessionId !== null && run !== null && !pendingStart;
 
   // The run went (session ended, signed out, every climb removed), or there
   // never was one: no stage paces the timer.
@@ -31,7 +37,7 @@ export function RestTimerPacingSync() {
     if (!hasRun) syncRestTimerStagePacing(null, nowMs());
   }, [hasRun]);
 
-  if (sessionId === null || run === null) return null;
+  if (sessionId === null || run === null || pendingStart) return null;
   return <RestTimerStagePacingResolver sessionId={sessionId} run={run} />;
 }
 

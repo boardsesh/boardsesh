@@ -5,7 +5,11 @@ require_relative "custom_product_pages"
 
 module BoardseshStoreReview
   Error = BoardseshStoreAudit::Error
-  DEFAULT_COUNTS = { "APP_IPHONE_67" => 9, "APP_IPHONE_61" => 9, "APP_IPAD_PRO_3GEN_129" => 6, "APP_IPAD_PRO_3GEN_11" => 6 }.freeze
+  # The app version's screenshot sets. The iPhone Duo set mixes five open
+  # (inner display) and three closed (outer display) shots.
+  DEFAULT_COUNTS = { "APP_IPHONE_67" => 9, "APP_IPHONE_61" => 9, "APP_IPAD_PRO_3GEN_129" => 6, "APP_IPAD_PRO_3GEN_11" => 6, "APP_IPHONE_DUO" => 8 }.freeze
+  # Custom product pages carry nine shots per set and no iPhone Duo set.
+  CPP_COUNTS = DEFAULT_COUNTS.except("APP_IPHONE_DUO").transform_values { 9 }.freeze
   EDITABLE = %w[PREPARE_FOR_SUBMISSION READY_FOR_REVIEW].freeze
   REQUIRES_RESOLUTION = %w[REJECTED METADATA_REJECTED DEVELOPER_REJECTED].freeze
   SUBMITTED = %w[WAITING_FOR_REVIEW IN_REVIEW ACCEPTED APPROVED PENDING_DEVELOPER_RELEASE PENDING_APPLE_RELEASE PROCESSING_FOR_DISTRIBUTION READY_FOR_DISTRIBUTION READY_FOR_SALE].freeze
@@ -188,7 +192,7 @@ module BoardseshStoreReview
           surface = {
             "target" => target, "item" => item, "pageId" => page.fetch("id"), "referenceName" => remote_page.dig("attributes", "name"),
             "visible" => page.fetch("visible"), "version" => current.fetch("version"), "deepLink" => remote_version.dig("attributes", "deepLink"),
-            "localizations" => normalized_localizations(current.fetch("localizations"), target, DEFAULT_COUNTS.transform_values { 9 })
+            "localizations" => normalized_localizations(current.fetch("localizations"), target, CPP_COUNTS)
           }
         end
         if REQUIRES_RESOLUTION.include?(state)

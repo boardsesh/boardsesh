@@ -14,13 +14,14 @@ import GymForm, { type GymFormFieldValues } from './gym-form';
 
 type EditGymFormProps = {
   gym: Gym;
-  onSuccess?: (gym: Gym) => void;
+  onSuccess?: (gym: Gym) => void | Promise<void>;
   onCancel?: () => void;
+  submitLabel?: string;
   /** Bubbles the form's unsaved-edit state (used by the console's dirty guard). */
   onDirtyChange?: (isDirty: boolean) => void;
 };
 
-export default function EditGymForm({ gym, onSuccess, onCancel, onDirtyChange }: EditGymFormProps) {
+export default function EditGymForm({ gym, onSuccess, onCancel, onDirtyChange, submitLabel }: EditGymFormProps) {
   const { t } = useTranslation('boards');
   const { showMessage } = useSnackbar();
 
@@ -61,11 +62,12 @@ export default function EditGymForm({ gym, onSuccess, onCancel, onDirtyChange }:
           latitude: values.latitude,
           longitude: values.longitude,
           isPublic: values.isPublic,
+          isListed: values.isListed,
         },
       });
 
       if (data) {
-        onSuccess?.(data.updateGym);
+        await onSuccess?.(data.updateGym);
       }
     },
     [execute, gym.uuid, gym.hours, showMessage, onSuccess, t],
@@ -74,7 +76,7 @@ export default function EditGymForm({ gym, onSuccess, onCancel, onDirtyChange }:
   return (
     <GymForm
       title={t('editGym.title')}
-      submitLabel={t('editGym.submitLabel')}
+      submitLabel={submitLabel ?? t('editGym.submitLabel')}
       initialValues={{
         name: gym.name,
         slug: gym.slug ?? '',
@@ -85,6 +87,7 @@ export default function EditGymForm({ gym, onSuccess, onCancel, onDirtyChange }:
         contactEmail: gym.contactEmail ?? '',
         contactPhone: gym.contactPhone ?? '',
         isPublic: gym.isPublic,
+        isListed: gym.isListed,
         latitude: gym.latitude ?? null,
         longitude: gym.longitude ?? null,
       }}

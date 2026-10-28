@@ -1,0 +1,1 @@
+ALTER TABLE "gyms" ADD COLUMN "is_listed" boolean DEFAULT true NOT NULL;

@@ -756,8 +756,8 @@
       "address": "Dirección",
       "contactEmail": "Correo de contacto",
       "contactPhone": "Teléfono de contacto",
-      "isPublic": "Rocódromo público",
-      "website": "Sitio web"
+      "website": "Sitio web",
+      "visibility": "Visibilidad"
     },
     "placeholders": {
       "name": "p. ej., Boulder World, The Climbing Factory",
@@ -781,7 +781,13 @@
     },
     "helpers": {
       "website": "Se usa para verificar la propiedad cuando alguien reclama este rocódromo",
-      "hours": "Una línea, como tú la escribas. Tu página muestra la fecha en que lo confirmaste por última vez."
+      "hours": "Una línea, como tú la escribas. Tu página muestra la fecha en que lo confirmaste por última vez.",
+      "visibility": "Los rocódromos no listados se abren con su enlace y no aparecen en las búsquedas ni en el mapa."
+    },
+    "visibility": {
+      "public": "Público",
+      "unlisted": "No listado",
+      "private": "Privado"
     }
   },
   "claimGym": {

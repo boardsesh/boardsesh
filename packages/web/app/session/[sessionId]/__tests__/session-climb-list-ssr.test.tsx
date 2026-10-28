@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from 'vite-plus/test';
 import { renderToString } from 'react-dom/server';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import type { SessionDetail, SessionDetailTick } from '@boardsesh/shared-schema';
+import type { SessionWorkoutResult } from '@boardsesh/graphql/operations/session-workouts';
 import SessionDetailContent from '../session-detail-content';
 
 /**
@@ -42,6 +43,10 @@ vi.mock('@/app/hooks/use-session-detail', () => ({
   useSessionDetail: ({ initialData }: { initialData: unknown }) => ({ session: initialData ?? null, isLoading: false }),
 }));
 
+vi.mock('@/app/hooks/use-session-workouts', () => ({
+  useSessionWorkouts: ({ initialData }: { initialData?: unknown[] | null }) => initialData ?? [],
+}));
+
 vi.mock('@/app/hooks/use-my-boards', () => ({
   useMyBoards: () => ({ boards: [], isLoading: false }),
 }));
@@ -53,7 +58,8 @@ vi.mock('@/app/hooks/use-delete-tick', () => ({
 vi.mock('@/app/hooks/use-grade-format', () => ({
   useGradeFormat: () => ({
     gradeFormat: 'v-grade',
-    formatGrade: (difficulty: string | null | undefined) => difficulty ?? null,
+    // The V half of a "6b/V4" label, as the default V-grade format reads it.
+    formatGrade: (difficulty: string | null | undefined) => difficulty?.split('/').pop() ?? null,
     getGradeColor: () => '#888',
     loaded: true,
   }),
@@ -198,5 +204,171 @@ describe('session climb list server render', () => {
     expect(html).toContain('Unknown Climb');
     expect(hrefs.some((href) => href.includes('MISSINGCLIMB'))).toBe(false);
     expect(hrefs).toContain('/kilter/original/12x12-square-without-kickboard/screw_bolt/40/view/crimp-ladder-CLIMB1');
+  });
+
+  describe('a workout session', () => {
+    const climbFields = { boardType: 'kilter', layoutId: 1, frames: 'p1080r15', renderBoard: null, isMirror: null };
+    const workout: SessionWorkoutResult = {
+      userId: 'user-1',
+      displayName: 'Test User',
+      avatarUrl: null,
+      offPlan: 1,
+      updatedAt: '2024-01-15T12:00:00.000Z',
+      stages: [
+        {
+          id: 'warm',
+          kind: 'warmUp',
+          isCoolDown: false,
+          targetGrade: null,
+          repsPerSet: null,
+          sets: null,
+          intervalSeconds: null,
+          restSeconds: null,
+          tally: { sent: 1, attempts: 0, skipped: 1, climbs: 2 },
+          climbs: [
+            {
+              ...climbFields,
+              queueItemUuid: 'q1',
+              climbUuid: 'CLIMB1',
+              angle: 40,
+              name: 'Crimp Ladder',
+              grade: '6a/V3',
+              reps: ['SEND'],
+              skipped: false,
+            },
+            {
+              ...climbFields,
+              queueItemUuid: 'q2',
+              climbUuid: 'SKIPPED1',
+              angle: 40,
+              name: 'Slab Stroll',
+              grade: '5c/V2',
+              reps: [],
+              skipped: true,
+            },
+          ],
+        },
+        {
+          id: 'main',
+          kind: 'fourByFour',
+          isCoolDown: false,
+          targetGrade: '6b/V4',
+          repsPerSet: 4,
+          sets: 1,
+          intervalSeconds: null,
+          restSeconds: 60,
+          tally: { sent: 3, attempts: 1, skipped: 0, climbs: 1 },
+          climbs: [
+            {
+              ...climbFields,
+              queueItemUuid: 'q3',
+              climbUuid: 'CLIMB4X4',
+              angle: 40,
+              name: 'Power Line',
+              grade: '6b/V4',
+              reps: ['FLASH', 'SEND', 'ATTEMPT', 'SEND'],
+              skipped: false,
+            },
+          ],
+        },
+      ],
+    };
+    const ticks = [
+      makeTick({ uuid: 't-warm', climbUuid: 'CLIMB1', climbedAt: '2024-01-15T10:00:00.000Z' }),
+      ...['flash', 'send', 'attempt', 'send'].map((status, index) =>
+        makeTick({
+          uuid: `t-4x4-${index}`,
+          climbUuid: 'CLIMB4X4',
+          climbName: 'Power Line',
+          status: status as SessionDetailTick['status'],
+          climbedAt: `2024-01-15T10:1${index}:00.000Z`,
+        }),
+      ),
+      makeTick({
+        uuid: 't-off',
+        climbUuid: 'OFFPLAN',
+        climbName: 'Bonus Boulder',
+        climbedAt: '2024-01-15T11:00:00.000Z',
+      }),
+      makeTick({
+        uuid: 't-crew',
+        userId: 'user-2',
+        climbUuid: 'CREW1',
+        climbName: 'Crew Pick',
+        climbedAt: '2024-01-15T11:05:00.000Z',
+      }),
+    ];
+
+    it('lists the climbs block by block with the workout line in the overview', () => {
+      const html = renderToString(
+        <SessionDetailContent session={makeSession(ticks)} sessionId="session-1" workouts={[workout]} />,
+      );
+      const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+
+      expect(text).toContain('Workout · 4x4 at V4 · 2 blocks');
+      // Block headers: name, detail line, tally in ticks.
+      expect(text).toContain('Warm-up V3–V2 · 2 climbs');
+      expect(text).toContain('1 sent · 1 skipped');
+      expect(text).toContain('4x4 at V4');
+      expect(text).toContain('4 reps × 1 set');
+      expect(text).toContain('3 sent · 1 attempt');
+      // One row per set with its reps; the skipped climb still has a row.
+      expect(text).toContain('Set 1');
+      expect(text).toContain('3 of 4');
+      expect(text).toContain('Skipped');
+      expect(html).toContain('slab-stroll-SKIPPED1');
+      // What matched no block, and the crew's.
+      expect(text).toContain('Off plan');
+      expect(text).toContain('Bonus Boulder');
+      expect(text).toContain('The crew');
+      expect(text.indexOf('Warm-up')).toBeLessThan(text.indexOf('Off plan'));
+      expect(text.indexOf('Off plan')).toBeLessThan(text.indexOf('The crew'));
+    });
+
+    it("places ticks by the server's uuids: a crewmate's go on a planned climb stays with the crew", () => {
+      const withUuids: SessionWorkoutResult = {
+        ...workout,
+        offPlanTickUuids: ['t-off'],
+        stages: workout.stages.map((stage) => ({
+          ...stage,
+          climbs: stage.climbs.map((climb) => ({
+            ...climb,
+            tickUuids:
+              climb.climbUuid === 'CLIMB1'
+                ? ['t-warm']
+                : climb.climbUuid === 'CLIMB4X4'
+                  ? ['t-4x4-0', 't-4x4-1', 't-4x4-2', 't-4x4-3']
+                  : [],
+          })),
+        })),
+      };
+      const crewOnPlanned = makeTick({
+        uuid: 't-crew-planned',
+        userId: 'user-2',
+        climbUuid: 'CLIMB1',
+        climbedAt: '2024-01-15T09:00:00.000Z',
+      });
+      const html = renderToString(
+        <SessionDetailContent
+          session={makeSession([...ticks, crewOnPlanned])}
+          sessionId="session-1"
+          workouts={[withUuids]}
+        />,
+      );
+      const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+      const crewSection = text.slice(text.indexOf('The crew'));
+
+      expect(text).toContain('3 of 4');
+      expect(crewSection).toContain('Crimp Ladder');
+      expect(crewSection).toContain('Crew Pick');
+    });
+
+    it('keeps the flat list without a workout', () => {
+      const html = renderToString(
+        <SessionDetailContent session={makeSession(ticks)} sessionId="session-1" workouts={[]} />,
+      );
+      expect(html).not.toContain('Off plan');
+      expect(html).not.toContain('session-workout-line');
+    });
   });
 });
