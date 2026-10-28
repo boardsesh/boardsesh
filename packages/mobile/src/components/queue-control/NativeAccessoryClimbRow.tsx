@@ -151,26 +151,28 @@ function useTransportAvailable(): boolean {
 
 type MiniPlayerAvailability = {
   transport: boolean;
+  /** The climb's board mirrors (Tension, Decoy, Woods...): `boardSupportsMirroring`. */
+  mirror: boolean;
   signedIn: boolean;
   isDraft: boolean;
   angleAdjustable: boolean;
 };
 
 /**
- * Whether a button can take a place on the bar right now. Mirror waits for its
- * shared store (#6940, PR 3); Favorite and Queue need an account; a draft has
- * no link to share; a fixed-angle board has no angle to change.
+ * Whether a button can take a place on the bar right now. Mirror only on a
+ * board that mirrors; Favorite and Queue need an account; a draft has no link
+ * to share; a fixed-angle board has no angle to change.
  */
 export function isMiniPlayerButtonAvailable(
   buttonId: MiniPlayerButtonId,
-  { transport, signedIn, isDraft, angleAdjustable }: MiniPlayerAvailability,
+  { transport, mirror, signedIn, isDraft, angleAdjustable }: MiniPlayerAvailability,
 ): boolean {
   switch (buttonId) {
     case 'previous':
     case 'next':
       return transport;
     case 'mirror':
-      return false;
+      return mirror;
     case 'favorite':
     case 'queue':
       return signedIn;
@@ -279,18 +281,22 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
   // so the tick keeps the slot.
   const collapsedSlotShowsBulb = bluetooth != null && inAppBoardConnection === 'disconnected';
   const isDraft = climb.is_draft === true;
+  const climbBoardName = climbBoard?.boardName ?? null;
+  const climbLayoutId = climbBoard?.layoutId ?? null;
+  // The climb's own board, as the player decides whether it shows ⇄.
+  const supportsMirroring =
+    climbBoardName !== null && climbLayoutId !== null ? boardSupportsMirroring(climbBoardName, climbLayoutId) : false;
   const isAvailable = useCallback(
     (buttonId: MiniPlayerButtonId) =>
       isMiniPlayerButtonAvailable(buttonId, {
         transport: transportAvailable,
+        mirror: supportsMirroring,
         signedIn: isAuthenticated,
         isDraft,
         angleAdjustable: angleOnBar,
       }),
-    [transportAvailable, isAuthenticated, isDraft, angleOnBar],
+    [transportAvailable, supportsMirroring, isAuthenticated, isDraft, angleOnBar],
   );
-  const climbBoardName = climbBoard?.boardName ?? null;
-  const climbLayoutId = climbBoard?.layoutId ?? null;
   const paneCoveredButtons = useMemo(
     () =>
       paneMode === 'stepAside'
@@ -299,15 +305,12 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
           ? miniPlayerPaneCoveredButtons({
               buttons: playerButtons.buttons,
               previousNext: playerButtons.previousNext,
-              supportsMirroring:
-                climbBoardName !== null && climbLayoutId !== null
-                  ? boardSupportsMirroring(climbBoardName, climbLayoutId)
-                  : false,
+              supportsMirroring,
               hasShare: !isDraft,
               angleAvailable: angleAdjustable,
             })
           : undefined,
-    [paneMode, playerButtons, climbBoardName, climbLayoutId, isDraft, angleAdjustable],
+    [paneMode, playerButtons, supportsMirroring, isDraft, angleAdjustable],
   );
   const controls = useMemo(
     () =>

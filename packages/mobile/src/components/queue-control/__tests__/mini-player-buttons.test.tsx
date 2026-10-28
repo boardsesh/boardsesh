@@ -24,6 +24,17 @@ const navigation = vi.hoisted(() => ({
   playerOpen: false,
 }));
 const effects = vi.hoisted(() => ({ track: vi.fn(), hapticSelection: vi.fn(), showToast: vi.fn() }));
+const bluetooth = vi.hoisted(() => ({
+  isConnected: true,
+  getMirrorIntent: vi.fn((_climbUuid: string | undefined): boolean | undefined => undefined),
+  setMirrorIntent: vi.fn(),
+  retainMirrorIntentFor: vi.fn(),
+}));
+const queue = vi.hoisted(() => ({
+  sessionId: null as string | null,
+  currentClimbQueueItem: null as { uuid: string; climb: { uuid: string; mirrored?: boolean | null } } | null,
+  mirrorCurrentClimb: vi.fn(async () => true),
+}));
 
 vi.mock('react-native', () => ({
   StyleSheet: { create: <Styles,>(styles: Styles) => styles },
@@ -41,12 +52,24 @@ vi.mock('../../PressableSurface', () => ({
     onPress,
     disabled,
     accessibilityLabel,
+    accessibilityState,
   }: {
     children?: ReactNode;
     onPress: () => void;
     disabled?: boolean;
     accessibilityLabel: string;
-  }) => createElement('button', { 'aria-label': accessibilityLabel, disabled, onClick: onPress }, children),
+    accessibilityState?: { selected?: boolean };
+  }) =>
+    createElement(
+      'button',
+      {
+        'aria-label': accessibilityLabel,
+        'aria-pressed': accessibilityState?.selected,
+        disabled,
+        onClick: onPress,
+      },
+      children,
+    ),
 }));
 vi.mock('../../Icon', () => ({
   Icon: ({ name, color }: { name: string; color?: string }) =>
@@ -64,10 +87,25 @@ vi.mock('../../play-drawer/AnglePill', () => ({
   }) => createElement('button', { 'aria-label': accessibilityLabel, onClick: onPress }, `${angle}°`),
 }));
 vi.mock('../../../providers/theme-provider', () => ({
-  useTheme: () => ({ systemColors: { label: '#000' }, actionColors: { favoriteSelected: '#E11D48' } }),
+  useTheme: () => ({
+    systemColors: { label: '#000' },
+    actionColors: { favoriteSelected: '#E11D48' },
+    brandColors: { primary: '#6D28D9' },
+  }),
 }));
 vi.mock('../../../theme/tokens', () => ({ opacity: { disabled: 0.4 } }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: effects.showToast }) }));
+vi.mock('../../../providers/bluetooth-provider', () => ({
+  useOptionalBluetoothContext: () => bluetooth,
+}));
+vi.mock('../../../providers/queue-provider', () => ({
+  useQueueSessionId: () => ({ sessionId: queue.sessionId }),
+  useActiveClimbUuid: () => queue.currentClimbQueueItem?.climb.uuid ?? null,
+  useQueueActions: () => ({
+    mirrorCurrentClimb: queue.mirrorCurrentClimb,
+    getQueueSnapshot: () => ({ queue: [], currentClimbQueueItem: queue.currentClimbQueueItem }),
+  }),
+}));
 vi.mock('../../../providers/drawer-host-provider', () => ({
   useDrawerHost: () => ({ openQueueSheet: host.openQueueSheet, openAnglePicker: host.openAnglePicker }),
 }));
@@ -94,6 +132,7 @@ vi.mock('../use-mini-player-navigation', () => ({
 }));
 
 import { MiniPlayerLeadingButtons } from '../MiniPlayerButtons';
+import { __resetWallMirrorFlipForTests, getWallMirrorFlip, setWallMirrorFlip } from '../../../lib/wall-mirror-store';
 
 const climb = {
   uuid: 'climb-a',
@@ -115,16 +154,18 @@ type RenderOptions = {
   angle?: number | null;
   /** `null`: a climb drawn on another board. */
   angleClimbUuid?: string | null;
+  /** The climb the bar shows. */
+  shownClimb?: Climb;
 };
 
 function renderButtons(
   buttonIds: readonly MiniPlayerButtonId[],
-  { climbBoard = board, angle = 40, angleClimbUuid = 'climb-a' }: RenderOptions = {},
+  { climbBoard = board, angle = 40, angleClimbUuid = 'climb-a', shownClimb = climb }: RenderOptions = {},
 ) {
   return render(
     createElement(MiniPlayerLeadingButtons, {
       buttonIds,
-      climb,
+      climb: shownClimb,
       climbBoard,
       angle,
       angleClimbUuid: angleClimbUuid ?? undefined,
@@ -142,6 +183,10 @@ beforeEach(() => {
   navigation.canPrevious = true;
   navigation.canNext = false;
   navigation.playerOpen = false;
+  bluetooth.getMirrorIntent.mockImplementation(() => undefined);
+  queue.sessionId = null;
+  queue.currentClimbQueueItem = { uuid: 'item-a', climb };
+  __resetWallMirrorFlipForTests();
 });
 
 describe('MiniPlayerLeadingButtons', () => {
@@ -261,8 +306,115 @@ describe('MiniPlayerLeadingButtons', () => {
     });
   });
 
-  it('leaves Mirror empty until it has its shared store', () => {
-    const { container } = renderButtons(['mirror']);
-    expect(container.querySelector('[data-testid="mini-player-slot-mirror"]')?.children).toHaveLength(0);
+  describe('Mirror', () => {
+    const tension: BoardConfig = { boardName: 'tension', layoutId: 10, sizeId: 1, setIds: '1,2', angle: 40 };
+    const mirrorButton = (container: HTMLElement) =>
+      container.querySelector('[data-testid="mini-player-slot-mirror"] button') as HTMLButtonElement | null;
+
+    it('solo, flips the wall: the shared flip the player reads, and the BLE intent', () => {
+      const { container, getByLabelText } = renderButtons(['mirror'], { climbBoard: tension });
+      expect(mirrorButton(container)?.getAttribute('aria-pressed')).toBe('false');
+      fireEvent.click(getByLabelText('playView.actionBar.mirrorAria'));
+      expect(getWallMirrorFlip()).toEqual({ climbUuid: 'climb-a', mirrored: true });
+      expect(bluetooth.setMirrorIntent).toHaveBeenCalledWith('climb-a', true);
+      expect(queue.mirrorCurrentClimb).not.toHaveBeenCalled();
+      expect(effects.track).toHaveBeenCalledWith(
+        'Mirror Climb',
+        expect.objectContaining({ climbUuid: 'climb-a', isMirrored: true, surface: 'mini_player', shared: false }),
+      );
+      // Selected now, and the next tap turns it back.
+      expect(mirrorButton(container)?.getAttribute('aria-pressed')).toBe('true');
+      expect(container.querySelector('[data-icon="mirror"]')?.getAttribute('data-icon-color')).toBe('#6D28D9');
+      fireEvent.click(getByLabelText('playView.actionBar.unmirrorAria'));
+      expect(getWallMirrorFlip()).toEqual({ climbUuid: 'climb-a', mirrored: false });
+      expect(bluetooth.setMirrorIntent).toHaveBeenLastCalledWith('climb-a', false);
+    });
+
+    it("shows a flip the player made, and only on that flip's climb", () => {
+      setWallMirrorFlip(null, 'climb-a', true);
+      expect(
+        mirrorButton(renderButtons(['mirror'], { climbBoard: tension }).container)?.getAttribute('aria-pressed'),
+      ).toBe('true');
+      __resetWallMirrorFlipForTests();
+      setWallMirrorFlip(null, 'climb-b', true);
+      expect(
+        mirrorButton(renderButtons(['mirror'], { climbBoard: tension }).container)?.getAttribute('aria-pressed'),
+      ).toBe('false');
+    });
+
+    it("solo, starts from the climb's own orientation (a mirrored tick relit)", () => {
+      const { container, getByLabelText } = renderButtons(['mirror'], {
+        climbBoard: tension,
+        shownClimb: { ...climb, mirrored: true },
+      });
+      expect(mirrorButton(container)?.getAttribute('aria-pressed')).toBe('true');
+      fireEvent.click(getByLabelText('playView.actionBar.unmirrorAria'));
+      expect(bluetooth.setMirrorIntent).toHaveBeenCalledWith('climb-a', false);
+    });
+
+    it("in a session, flips the crew's climb and leaves the solo flip alone", () => {
+      queue.sessionId = 'session-1';
+      const mirroredHead = { ...climb, mirrored: true };
+      queue.currentClimbQueueItem = { uuid: 'item-a', climb: mirroredHead };
+      const { container, getByLabelText } = renderButtons(['mirror'], {
+        climbBoard: tension,
+        shownClimb: mirroredHead,
+      });
+      // The crew's orientation is the queue item's.
+      expect(mirrorButton(container)?.getAttribute('aria-pressed')).toBe('true');
+      fireEvent.click(getByLabelText('playView.actionBar.unmirrorAria'));
+      expect(queue.mirrorCurrentClimb).toHaveBeenCalledWith(false, 'item-a');
+      expect(bluetooth.setMirrorIntent).not.toHaveBeenCalled();
+      expect(getWallMirrorFlip()).toBeNull();
+      expect(effects.track).toHaveBeenCalledWith('Mirror Climb', expect.objectContaining({ shared: true }));
+    });
+
+    it("in a session, does nothing while the bar still shows a climb that left the queue's head", () => {
+      queue.sessionId = 'session-1';
+      queue.currentClimbQueueItem = { uuid: 'item-b', climb: { uuid: 'climb-b' } };
+      const { getByLabelText } = renderButtons(['mirror'], { climbBoard: tension });
+      fireEvent.click(getByLabelText('playView.actionBar.mirrorAria'));
+      expect(queue.mirrorCurrentClimb).not.toHaveBeenCalled();
+      expect(bluetooth.setMirrorIntent).not.toHaveBeenCalled();
+    });
+
+    it("solo, writes nothing while the bar still shows a climb that left the queue's head", () => {
+      // A presence blip: the bar keeps climb A while the head is already B.
+      queue.currentClimbQueueItem = { uuid: 'item-b', climb: { uuid: 'climb-b' } };
+      const { getByLabelText } = renderButtons(['mirror'], { climbBoard: tension });
+      fireEvent.click(getByLabelText('playView.actionBar.mirrorAria'));
+      expect(getWallMirrorFlip()).toBeNull();
+      expect(bluetooth.setMirrorIntent).not.toHaveBeenCalled();
+      expect(effects.track).not.toHaveBeenCalled();
+      // With no head at all (a queue rehydrating) too.
+      queue.currentClimbQueueItem = null;
+      const empty = renderButtons(['mirror'], { climbBoard: tension });
+      fireEvent.click(empty.getAllByLabelText('playView.actionBar.mirrorAria').at(-1) as HTMLElement);
+      expect(getWallMirrorFlip()).toBeNull();
+      expect(bluetooth.setMirrorIntent).not.toHaveBeenCalled();
+    });
+
+    it("never flips a crew's climb from a screenshot capture that picks its own climb", () => {
+      const previousMode = process.env.EXPO_PUBLIC_SCREENSHOT_MODE;
+      const previousCommands = process.env.EXPO_PUBLIC_SCREENSHOT_CPP_COMMANDS;
+      process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
+      process.env.EXPO_PUBLIC_SCREENSHOT_CPP_COMMANDS = '{"hero-1":{"route":"/climbs?screenshotClimbId=real"}}';
+      try {
+        queue.sessionId = 'session-1';
+        const { getByLabelText } = renderButtons(['mirror'], { climbBoard: tension });
+        fireEvent.click(getByLabelText('playView.actionBar.mirrorAria'));
+        expect(queue.mirrorCurrentClimb).not.toHaveBeenCalled();
+      } finally {
+        if (previousMode === undefined) delete process.env.EXPO_PUBLIC_SCREENSHOT_MODE;
+        else process.env.EXPO_PUBLIC_SCREENSHOT_MODE = previousMode;
+        if (previousCommands === undefined) delete process.env.EXPO_PUBLIC_SCREENSHOT_CPP_COMMANDS;
+        else process.env.EXPO_PUBLIC_SCREENSHOT_CPP_COMMANDS = previousCommands;
+      }
+    });
+
+    it('waits for a board', () => {
+      const { container } = renderButtons(['mirror'], { climbBoard: null });
+      expect(container.querySelector('button')).toBeNull();
+    });
   });
 });

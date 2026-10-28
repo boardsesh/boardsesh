@@ -287,6 +287,12 @@ vi.mock('../../lib/board-details', () => ({
 
 import { BluetoothProvider, useBluetoothContext } from '../bluetooth-provider';
 import { BleControlSheetHost } from '../../components/ble/BleControlSheetHost';
+import {
+  __resetWallMirrorFlipForTests,
+  getWallMirrorFlip,
+  retainWallMirrorFlip,
+  setWallMirrorFlip,
+} from '../../lib/wall-mirror-store';
 
 function makeQueueItem(uuid: string, frames = 'p1r12', mirrored = false): ClimbQueueItem {
   return {
@@ -1078,6 +1084,97 @@ describe('BluetoothProvider wall-confirm integration', () => {
         expect.anything(),
         expect.anything(),
       );
+    });
+  });
+
+  // The MiniPlayer's ⇄ and the player write the wall flip through
+  // `wall-mirror-store` (#6940). Pin that a store write reaches the wall.
+  describe('through the shared wall flip', () => {
+    beforeEach(__resetWallMirrorFlipForTests);
+
+    const rerenderWith = (rerender: (ui: ReturnType<typeof createElement>) => void) =>
+      act(() => {
+        rerender(
+          createElement(BluetoothProvider, {
+            boardName: 'kilter',
+            layoutId: 1,
+            sizeId: 10,
+            setIds: '1,20',
+            children: createElement(BluetoothProbe),
+          }),
+        );
+      });
+
+    it('relights the wall mirrored when the store flips the current climb, and straight when it flips back', async () => {
+      queue.sessionId = null;
+      bluetooth.sendFramesToBoardForOptions = () => async (frames, mirrored, signal, sendContext) =>
+        bluetooth.state.sendFramesToBoard(frames, mirrored, signal, sendContext);
+      renderProvider(createElement(BluetoothProbe));
+      await waitFor(() => {
+        expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
+      });
+
+      act(() => setWallMirrorFlip(capturedBluetooth, 'climb-1', true));
+      await waitFor(() => {
+        expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2);
+      });
+      expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
+        'p1r12',
+        true,
+        expect.anything(),
+        expect.anything(),
+      );
+
+      act(() => setWallMirrorFlip(capturedBluetooth, 'climb-1', false));
+      await waitFor(() => {
+        expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(3);
+      });
+      expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
+        'p1r12',
+        false,
+        expect.anything(),
+        expect.anything(),
+      );
+    });
+
+    it('drops the flip from the store and the wall together when the player settles on another climb', async () => {
+      queue.sessionId = null;
+      bluetooth.sendFramesToBoardForOptions = () => async (frames, mirrored, signal, sendContext) =>
+        bluetooth.state.sendFramesToBoard(frames, mirrored, signal, sendContext);
+      const { rerender } = renderProvider(createElement(BluetoothProbe));
+      await waitFor(() => {
+        expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
+      });
+      act(() => setWallMirrorFlip(capturedBluetooth, 'climb-1', true));
+      await waitFor(() => {
+        expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2);
+      });
+
+      act(() => retainWallMirrorFlip(capturedBluetooth, 'climb-2'));
+      expect(getWallMirrorFlip()).toBeNull();
+      expect(capturedBluetooth?.getMirrorIntent('climb-1')).toBeUndefined();
+
+      // Back on climb-1 later, the flip is gone from both, so the wall lights it straight.
+      queue.currentClimbQueueItem = makeQueueItem('climb-2', 'p2r12');
+      rerenderWith(rerender);
+      await waitFor(() => {
+        expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
+          'p2r12',
+          false,
+          expect.anything(),
+          expect.anything(),
+        );
+      });
+      queue.currentClimbQueueItem = makeQueueItem('climb-1');
+      rerenderWith(rerender);
+      await waitFor(() => {
+        expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
+          'p1r12',
+          false,
+          expect.anything(),
+          expect.anything(),
+        );
+      });
     });
   });
 

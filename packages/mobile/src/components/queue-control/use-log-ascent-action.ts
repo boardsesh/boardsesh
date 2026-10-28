@@ -13,6 +13,8 @@ import { springs } from '../../theme/animations';
 import { hapticSelection } from '../../lib/haptics';
 import { countSentAscents } from '../../lib/ascent-status-utils';
 import type { AccessoryPlacement } from '../../lib/analytics-board-connect';
+import { resolveMirroredOrientation } from '../../lib/ble/mirror-orientation';
+import { getWallMirrorFlip, wallMirrorFlipFor } from '../../lib/wall-mirror-store';
 
 /**
  * `placement` is set only by the tab-bar accessory platter's tick, so its Quick
@@ -28,7 +30,6 @@ export function useLogAscentAction(climb: Climb, placement?: AccessoryPlacement)
   const reduceMotion = useReduceMotion();
 
   const angle = climb.angle;
-  const isMirror = climb.mirrored === true;
 
   // Count of send/flash ticks for this climb at this angle — the same logbook
   // selector the climb-row status glyph uses, so the toolbar and the list
@@ -81,6 +82,17 @@ export function useLogAscentAction(climb: Climb, placement?: AccessoryPlacement)
       source: 'queue_bar',
       ...(placement ? { placement } : {}),
     });
+    // The orientation the wall shows: a crew's is the queue item's, and solo
+    // it is the wall's flip when someone tapped Mirror on this climb (the
+    // player's or the MiniPlayer's), so the tick saves what was climbed.
+    // Read at the tap, so the button doesn't re-render on every flip.
+    const isMirror =
+      sessionId === null
+        ? resolveMirroredOrientation({
+            explicitFlip: wallMirrorFlipFor(getWallMirrorFlip(), climb.uuid),
+            climbMirrored: climb.mirrored,
+          })
+        : climb.mirrored === true;
     openLogAscent({
       climb,
       climbUuid: climb.uuid,
@@ -96,7 +108,7 @@ export function useLogAscentAction(climb: Climb, placement?: AccessoryPlacement)
       sessionId,
       consensusGradeName: climb.difficulty,
     });
-  }, [openLogAscent, boardConfig, sessionId, climb, angle, isMirror, placement]);
+  }, [openLogAscent, boardConfig, sessionId, climb, angle, placement]);
 
   // Always neutral glass — no coloured background. The "you sent this" signal
   // rides the glyph instead: a green tick when logged, the system label otherwise
