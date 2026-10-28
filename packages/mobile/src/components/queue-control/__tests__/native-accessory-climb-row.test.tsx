@@ -13,7 +13,7 @@ vi.mock('../../PressableSurface', async () => {
   };
 });
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { act, render } from '@testing-library/react';
 import { createElement, useEffect, type ReactNode, type CSSProperties } from 'react';
 import type { Climb, ClimbQueueItem } from '@boardsesh/queue';
 import type { BoardConfig } from '../../../providers/drawer-host-provider';
@@ -69,7 +69,10 @@ const drawer = vi.hoisted(() => ({
 
 // The width every mocked View reports from its layout pass: the row reads it
 // to decide whether the open platter fits both controls.
-const layout = vi.hoisted(() => ({ width: 400 }));
+const layout = vi.hoisted(() => ({
+  width: 400,
+  callbacks: new WeakMap<Element, (event: { nativeEvent: { layout: { width: number; height: number } } }) => void>(),
+}));
 
 const boardRender = vi.hoisted(() => ({
   boardWidth: 1080,
@@ -181,6 +184,10 @@ vi.mock('react-native', () => ({
         'data-actions': Array.isArray(accessibilityActions)
           ? accessibilityActions.map((action) => action.name).join(',')
           : '',
+        // Keep the real callback attached to this mounted host for resize tests.
+        ref: (host: HTMLDivElement | null) => {
+          if (host && onLayout) layout.callbacks.set(host, onLayout);
+        },
       },
       children,
     );
@@ -212,11 +219,13 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => k
 // with a marker so the layout tests see where it sits (it has its own unit test).
 vi.mock('../BoardControlIndicator', () => ({
   BoardControlIndicator: ({ solidGlyphs, placement }: { solidGlyphs?: boolean; placement?: string }) =>
-    createElement('span', {
-      'data-board-control': 'true',
-      'data-solid-glyphs': String(solidGlyphs === true),
-      'data-placement': placement ?? '',
-    }),
+    connection.state.bluetooth
+      ? createElement('span', {
+          'data-board-control': 'true',
+          'data-solid-glyphs': String(solidGlyphs === true),
+          'data-placement': placement ?? '',
+        })
+      : null,
 }));
 
 type TextMockProps = {
@@ -650,6 +659,80 @@ describe('NativeAccessoryClimbRow', () => {
   });
 
   describe("the collapsed platter's one slot", () => {
+    function resizeRow(container: HTMLElement, width: number) {
+      const onLayout = layout.callbacks.get(container.firstElementChild as Element);
+      expect(onLayout).toBeDefined();
+      act(() => onLayout?.({ nativeEvent: { layout: { width, height: 48 } } }));
+    }
+
+    it.each(['connectedByMe', 'heldByPeer', 'unbound'] as const)(
+      'retains the tick and its native slot through repeated resizing when %s',
+      (boardState) => {
+        layout.width = 290;
+        if (boardState === 'unbound') connection.state.bluetooth = null;
+        else connection.state.inAppBoardConnection = boardState;
+        const { container } = renderRow('regular');
+        const tick = container.querySelector('[data-tick="true"]');
+        const tickSlot = tick?.parentElement;
+        const row = container.firstElementChild;
+        expect(tick).not.toBeNull();
+        expect(tickSlot?.getAttribute('data-width')).toBe('44');
+        expect(container.querySelector('[data-board-control]')).toBeNull();
+
+        for (const width of [370, 290, 370]) {
+          resizeRow(container, width);
+          expect(container.firstElementChild).toBe(row);
+          expect(container.querySelector('[data-tick="true"]')).toBe(tick);
+          expect(tick?.parentElement).toBe(tickSlot);
+          expect(tickSlot?.getAttribute('data-width')).toBe('44');
+          expect(container.querySelector('[data-board-control]') !== null).toBe(
+            width === 370 && boardState !== 'unbound',
+          );
+        }
+      },
+    );
+
+    it('retains the disconnected bulb and its native slot through repeated resizing', () => {
+      layout.width = 290;
+      const { container } = renderRow('regular');
+      const bulb = container.querySelector('[data-board-control]');
+      const bulbSlot = bulb?.parentElement;
+      const row = container.firstElementChild;
+      expect(bulb).not.toBeNull();
+      expect(bulbSlot?.getAttribute('data-width')).toBe('44');
+      expect(container.querySelector('[data-tick="true"]')).toBeNull();
+
+      for (const width of [370, 290, 370]) {
+        resizeRow(container, width);
+        expect(container.firstElementChild).toBe(row);
+        expect(container.querySelector('[data-board-control]')).toBe(bulb);
+        expect(bulb?.parentElement).toBe(bulbSlot);
+        expect(bulbSlot?.getAttribute('data-width')).toBe('44');
+        expect(container.querySelector('[data-tick="true"]') !== null).toBe(width === 370);
+      }
+    });
+
+    it('changes the narrow control as the board connects and disconnects without remounting the row', () => {
+      layout.width = 290;
+      const climb = queue.state.currentClimbQueueItem?.climb as Climb;
+      const { container, rerender } = render(<NativeAccessoryClimbRow climb={climb} placement="regular" />);
+      const row = container.firstElementChild;
+      expect(container.querySelector('[data-board-control]')).not.toBeNull();
+      expect(container.querySelector('[data-tick="true"]')).toBeNull();
+
+      connection.state.inAppBoardConnection = 'connectedByMe';
+      rerender(<NativeAccessoryClimbRow climb={climb} placement="regular" />);
+      expect(container.firstElementChild).toBe(row);
+      expect(container.querySelector('[data-board-control]')).toBeNull();
+      expect(container.querySelector('[data-tick="true"]')).not.toBeNull();
+
+      connection.state.inAppBoardConnection = 'disconnected';
+      rerender(<NativeAccessoryClimbRow climb={climb} placement="regular" />);
+      expect(container.firstElementChild).toBe(row);
+      expect(container.querySelector('[data-board-control]')).not.toBeNull();
+      expect(container.querySelector('[data-tick="true"]')).toBeNull();
+    });
+
     it('offers the lightbulb while the board is free, and no tick', () => {
       const { container } = renderRow('inline');
       const bulb = container.querySelector('[data-board-control="true"]');
