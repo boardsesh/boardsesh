@@ -1470,17 +1470,20 @@ export function PlayCore({
   // `Queue Navigation` for each Next / Previous the climber takes here (#6940).
   const navigationBoardType = activeBoardForNavigation?.boardType;
   const navigationLayoutId = activeBoardForNavigation?.layoutId;
+  // `sessionMode` says whether a crew decides how navigation behaves, so it reads
+  // the latch the preview decision reads (`browseByDefault`), not the live
+  // roster: after a peer leaves mid-browse the latch still makes a step a preview.
   const handleNavigationStep = useCallback(
     (step: PlayNavigationStep) =>
       trackQueueNavigation({
         ...step,
         surface: 'player',
-        inSharedSession: isSharedSession,
+        inSharedSession: browseByDefault,
         lightOnSwipe,
         boardType: navigationBoardType,
         layoutId: navigationLayoutId,
       }),
-    [isSharedSession, lightOnSwipe, navigationBoardType, navigationLayoutId],
+    [browseByDefault, lightOnSwipe, navigationBoardType, navigationLayoutId],
   );
   // `Queue Sheet Opened`: the action bar's queue button and the ⋯ menu's row.
   const handleOpenQueueFromBar = useCallback(() => {
