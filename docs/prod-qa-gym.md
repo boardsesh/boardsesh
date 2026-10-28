@@ -1,6 +1,8 @@
 # Production QA gym
 
-`embedded/scripts/provision-qa-gym.mjs` provisions a shared, unlisted **Boardsesh QA gym** after the ESP32 hardware feasibility gate passes. It uses the normal authenticated GraphQL API. It does not deploy software, connect to Postgres, create accounts, or flash hardware.
+`embedded/scripts/provision-qa-gym.mjs` provisions a shared, unlisted **Boardsesh QA gym** through the normal authenticated GraphQL API. It does not deploy software, connect to Postgres, create accounts, or flash hardware.
+
+The shared production fixture is [Boardsesh QA gym](https://www.boardsesh.com/gym/boardsesh-qa), UUID `ef8b823e-8d2e-4840-8218-761369f9c059`. This UUID is the firmware startup default. Its three boards use the configurations and serials below. All three BLE identities have been observed on a phone; connection routing, payload handling, and display QA remain to be verified on the device.
 
 The gym is public by direct link and has `isListed: false`. Its description identifies it as simulated QA hardware, not a climbing venue. No address, location name, latitude, or longitude is invented. The linked boards remain public and listed individually so maintainers opening the gym link can enumerate them; inherited gym listing keeps them off global discovery and indexing.
 
@@ -20,7 +22,7 @@ MoonBoard's Standard size is `1`; its 2024 hold sets are `5` through `10`, as de
 4. Build the fixture firmware with the returned gym UUID, configure its private controller key locally, and capture the display while exercising all three boards.
 5. Ship the mobile observed-serial client change with its required Astra/Fable BLE review before relying on fixture serial resolution in mobile.
 
-The cloud/schema change can be reviewed separately from fixture firmware and mobile changes. Its PR notes must say that provisioning waits for the hardware gate. Fixture/mobile PR notes must name the deployed backend dependency and require the three-board connection and screenshot QA. No production UUID is recorded in this document until provisioning actually runs.
+The cloud/schema change can be reviewed separately from fixture firmware and mobile changes. Its PR notes must say that provisioning waits for the hardware gate. Fixture/mobile PR notes must name the deployed backend dependency and require the three-board connection and screenshot QA. Reuse the production fixture above rather than creating another gym for routine QA.
 
 ## Normal account credentials
 
@@ -82,7 +84,7 @@ To generate the small credential-free header from the actual returned gym UUID:
 vp exec node embedded/scripts/provision-qa-gym.mjs --apply --write-defaults
 ```
 
-The default header is `embedded/projects/board-controller/src/gym/provisioned_defaults.h`; `--defaults-header PATH` overrides it. The tracked placeholder carries the script's managed-file marker and the safe `boardsesh-qa` fallback. Provisioning can replace that placeholder or a previously generated header; it refuses to overwrite an unrelated file. The generated header defines only `GYM_FIXTURE_DEFAULT_GYM`, validates that the returned value is a UUID, and never invents a production ID. The fixture target includes this header globally through its compiler flags, keeping runtime and local settings defaults consistent. Provisioning does not build or flash firmware.
+The default header is `embedded/projects/board-controller/src/gym/provisioned_defaults.h`; `--defaults-header PATH` overrides it. The tracked default points to the production gym UUID above and carries the script's managed-file marker. Provisioning can replace a previously generated header; it refuses to overwrite an unrelated file. The generated header defines only `GYM_FIXTURE_DEFAULT_GYM`, validates that the returned value is a UUID, and never invents a production ID. The fixture target includes this header globally through its compiler flags, keeping runtime and local settings defaults consistent. Provisioning does not build or flash firmware.
 
 Open the device's existing local configuration page after connecting it to WiFi. Its **Gym Fixture** section accepts a Boardsesh gym URL, slug, or UUID, the production endpoint `wss://ws.boardsesh.com/graphql`, and the controller key from the private output file. Saving reloads the fixture configuration. A blank key keeps the saved key; the explicit clear checkbox removes it. GET configuration/status responses return only `fixture_key_configured`, never the key.
 
