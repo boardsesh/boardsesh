@@ -5,6 +5,7 @@ import {
   isAccessorySurfaceRoute,
   isAccessoryHostRoute,
   isAccessoryHiddenRoute,
+  isRestTimerPillHiddenRoute,
   isTabsChromeRoute,
   isWallDisplayRoute,
 } from '../route-segments';
@@ -176,5 +177,22 @@ describe('isAccessoryHiddenRoute', () => {
     // The Wall display covers the platter as a root modal; nothing to hide.
     expect(isAccessoryHiddenRoute(['wall-display'])).toBe(false);
     expect(isAccessoryHiddenRoute([])).toBe(false);
+  });
+});
+
+describe('isRestTimerPillHiddenRoute', () => {
+  it("hides the pill on the Session tab's own page, where its settings sit inline", () => {
+    expect(isRestTimerPillHiddenRoute(['(tabs)', 'record'])).toBe(true);
+  });
+
+  it('keeps the pill on pushed Session pages and every other screen', () => {
+    expect(isRestTimerPillHiddenRoute(['(tabs)', 'record', 'summary'])).toBe(false);
+    expect(isRestTimerPillHiddenRoute(['(tabs)', 'record', 'settings'])).toBe(false);
+    expect(isRestTimerPillHiddenRoute(['(tabs)', 'home'])).toBe(false);
+    expect(isRestTimerPillHiddenRoute(['(tabs)', 'climbs'])).toBe(false);
+    expect(isRestTimerPillHiddenRoute(['(tabs)', 'discover', '[playlist_uuid]'])).toBe(false);
+    expect(isRestTimerPillHiddenRoute(['(tabs)'])).toBe(false);
+    expect(isRestTimerPillHiddenRoute(['play'])).toBe(false);
+    expect(isRestTimerPillHiddenRoute([])).toBe(false);
   });
 });

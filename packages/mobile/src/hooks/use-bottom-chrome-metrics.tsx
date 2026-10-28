@@ -6,12 +6,14 @@ import { useTheme } from '../providers/theme-provider';
 import {
   isAccessoryHiddenRoute,
   isAccessorySurfaceRoute,
+  isRestTimerPillHiddenRoute,
   isTabsChromeRoute,
   isWallDisplayRoute,
 } from '../lib/route-segments';
 import {
   useNativeTabContentInsetBottom,
   useNativeTabContentInsetLeft,
+  useNativeTabContentInsetPublishCount,
   useNativeTabContentInsetRight,
 } from '../lib/native-tab-content-inset-store';
 import { useConnectivityBannerHeight } from '../lib/connectivity-banner-inset-store';
@@ -130,11 +132,15 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
   // two values the in-tab inset flips between as the bar minimizes and
   // re-expands. Lists pad for it so a bar re-expanding at the end of a list
   // never covers the last row. The key holds everything that legitimately
-  // changes the expanded height; a new key starts over from the live reading.
+  // changes the expanded height; a new key starts empty and folds only readings
+  // the probe publishes after it (the store still holds the old shape's inset
+  // when the key flips; see trackExpandedTabContentInset).
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const insetPublishCount = useNativeTabContentInsetPublishCount();
   const chromeShapeKey = [
     segments.join('/'),
     hasCurrentClimb ? 'climb' : 'none',
+    nativeAccessoryActive ? 'accessory' : 'no-accessory',
     accessoryHidden ? 'hidden' : 'shown',
     tabBarAtBottom ? 'bottom' : 'side',
     `${Math.round(windowWidth)}x${Math.round(windowHeight)}`,
@@ -144,6 +150,7 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
     expandedInsetRef.current,
     chromeShapeKey,
     measuredTabContentInsetBottom,
+    insetPublishCount,
   );
   const expandedTabContentInsetBottom = expandedInsetRef.current.bottom;
   // The connectivity banner (issue #4862) is a root-level absolute overlay above
@@ -160,6 +167,7 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
   const restTimerArmed = useSyncExternalStore(subscribeRestTimer, getRestTimerArmed, getRestTimerArmedServerSnapshot);
   const { sessionId } = useQueueSessionId();
   const workoutStartPending = useWorkoutRunPendingStart(sessionId);
+  const restTimerPillHiddenOnRoute = isRestTimerPillHiddenRoute(segments);
 
   return useMemo(
     () =>
@@ -178,6 +186,7 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
         restTimerArmed,
         tabBarAtBottom,
         workoutStartPending,
+        restTimerPillHiddenOnRoute,
         expandedTabContentInsetBottom,
         measuredTabContentInsetLeft,
         measuredTabContentInsetRight,
@@ -197,6 +206,7 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
       connectivityBannerHeight,
       restTimerArmed,
       workoutStartPending,
+      restTimerPillHiddenOnRoute,
       expandedTabContentInsetBottom,
       measuredTabContentInsetLeft,
       measuredTabContentInsetRight,

@@ -154,6 +154,25 @@ export function isAccessoryHostRoute(segments: Segments): boolean {
   return isTabsChromeRoute(segments);
 }
 
+// The Session tab's route name (it predates the tab's current label).
+const SESSION_TAB = 'record';
+
+/**
+ * True on the Session tab's own page, where the root rest-timer pill is hidden.
+ * That page already shows the rest timer's settings inline (and, during a
+ * workout block, its countdown), so the floating pill only stacked a fourth
+ * layer over the page between Start and the MiniPlayer. Pushed Session pages
+ * (summary, settings, a climber's profile) keep the pill, like every other
+ * screen. Hiding it is presentation only: the timer keeps running and the Live
+ * Activity is driven by the timer store, not by the pill.
+ *
+ * The pill host and the bottom-chrome reserve both read this one predicate,
+ * so a hidden pill never leaves its 54pt reserve behind.
+ */
+export function isRestTimerPillHiddenRoute(segments: Segments): boolean {
+  return isTopLevelTabRoute(segments) && segments[1] === SESSION_TAB;
+}
+
 /**
  * Tab sub-routes whose bottom controls sit where the accessory platter draws: the
  * full-screen hold-type and zone filter boards, in the two stacks that push them

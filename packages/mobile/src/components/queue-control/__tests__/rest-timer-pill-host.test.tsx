@@ -17,6 +17,9 @@ const harness = vi.hoisted(() => ({
   nativeTabBar: false,
   workoutStartPending: false,
   hasWorkoutClimb: true,
+  hiddenOnRoute: false,
+  rtl: false,
+  contentColumnLeft: 0,
   startWorkout: vi.fn(),
 }));
 
@@ -36,6 +39,7 @@ vi.mock('react-native', () => ({
   View: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
     createElement('div', { 'data-overlay': 'true', 'data-style': JSON.stringify(style) }, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
+  I18nManager: { isRTL: harness.rtl, doLeftAndRightSwapInRTL: true },
   useWindowDimensions: () => ({ width: harness.windowWidth, height: 844 }),
 }));
 
@@ -43,6 +47,9 @@ vi.mock('../../../hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({
     insideTabs: harness.insideTabs,
     restTimerBottom: harness.restTimerBottom,
+    restTimerPillHiddenOnRoute: harness.hiddenOnRoute,
+    contentColumnLeft: harness.contentColumnLeft,
+    contentColumnRight: 0,
   }),
 }));
 
@@ -178,6 +185,8 @@ describe('RootRestTimerPillHost', () => {
     harness.windowWidth = 390;
     harness.nativeTabBar = false;
     harness.workoutStartPending = false;
+    harness.hiddenOnRoute = false;
+    harness.contentColumnLeft = 0;
   });
 
   afterEach(() => {
@@ -192,6 +201,25 @@ describe('RootRestTimerPillHost', () => {
 
     const overlayStyle = getByTestId('pill').parentElement?.getAttribute('data-style') ?? '';
     expect(overlayStyle).toContain('"bottom":139');
+  });
+
+  it("does not render on the Session tab's own page, and comes back elsewhere", () => {
+    arm();
+    harness.hiddenOnRoute = true;
+    const { queryByTestId, rerender } = render(<RootRestTimerPillHost />);
+    expect(queryByTestId('pill')).toBeNull();
+    harness.hiddenOnRoute = false;
+    rerender(<RootRestTimerPillHost />);
+    expect(queryByTestId('pill')).toBeTruthy();
+  });
+
+  it('sits on the content column beside the native iPad sidebar', () => {
+    arm();
+    harness.contentColumnLeft = 280;
+    const { getByTestId } = render(<RootRestTimerPillHost />);
+    const overlayStyle = getByTestId('pill').parentElement?.getAttribute('data-style') ?? '';
+    expect(overlayStyle).toContain('"left":292');
+    expect(overlayStyle).toContain('"right":12');
   });
 
   it('does not render off the tabs', () => {
@@ -267,6 +295,24 @@ describe('the root pill gate matches the bottom-chrome reserve', () => {
       expect(renders).toBe(reservesForPill(inputs));
     });
   }
+
+  it("reserves nothing and renders nothing on the Session tab's own page", () => {
+    const geometry = { ...baseInputs, insideTabs: true };
+    const hidden = computeBottomChromeMetrics({ ...geometry, restTimerArmed: true, restTimerPillHiddenOnRoute: true });
+    const disarmed = computeBottomChromeMetrics({ ...geometry, restTimerArmed: false });
+    expect(hidden.scrollBottomPadding).toBe(disarmed.scrollBottomPadding);
+    expect(hidden.preSessionFooterBottom).toBe(disarmed.preSessionFooterBottom);
+    expect(hidden.restTimerBottom).toBe(disarmed.restTimerBottom);
+    expect(
+      shouldRenderRestTimerPill({
+        armed: true,
+        workoutStartPending: true,
+        insideTabs: true,
+        usesSidebar: false,
+        hiddenOnRoute: hidden.restTimerPillHiddenOnRoute,
+      }),
+    ).toBe(false);
+  });
 
   it('reserves nothing and renders nothing while disarmed', () => {
     expect(shouldRenderRestTimerPill({ armed: false, insideTabs: true, usesSidebar: false })).toBe(false);

@@ -1411,32 +1411,47 @@ describe('computeBottomChromeMetrics', () => {
   });
 
   describe('trackExpandedTabContentInset', () => {
-    it('keeps the largest reading under one key', () => {
-      const first = trackExpandedTabContentInset(null, 'discover|climb', 139);
-      const minimized = trackExpandedTabContentInset(first, 'discover|climb', 83);
-      expect(minimized.bottom).toBe(139);
+    // Each call is one render: (previous, key, the store's current reading, the
+    // store's publish count). On device a new key arrives one render BEFORE the
+    // probe publishes the new shape's inset, still carrying the old reading.
+    const ROOT = '(tabs)/discover|climb';
+
+    it('keeps the largest reading published under one key', () => {
+      const start = trackExpandedTabContentInset(null, ROOT, 139, 4);
+      expect(start.bottom).toBeNull();
+      const minimized = trackExpandedTabContentInset(start, ROOT, 83, 5);
+      const expanded = trackExpandedTabContentInset(minimized, ROOT, 139, 6);
+      const minimizedAgain = trackExpandedTabContentInset(expanded, ROOT, 83, 7);
+      expect(minimized.bottom).toBe(83);
+      expect(minimizedAgain.bottom).toBe(139);
       // Unchanged state comes back as the same object, so a ref holding it is stable.
-      expect(minimized).toBe(first);
+      expect(minimizedAgain).toBe(expanded);
     });
 
-    it('grows when a later reading is larger', () => {
-      const minimized = trackExpandedTabContentInset(null, 'discover|climb', 83);
-      expect(trackExpandedTabContentInset(minimized, 'discover|climb', 139).bottom).toBe(139);
+    it('ignores re-renders that carry no new publish', () => {
+      const start = trackExpandedTabContentInset(null, ROOT, 139, 4);
+      expect(trackExpandedTabContentInset(start, ROOT, 139, 4)).toBe(start);
+      expect(trackExpandedTabContentInset(start, ROOT, null, 5)).toBe(start);
     });
 
-    it('starts over when the chrome changes shape, so a cleared climb leaves no dead band', () => {
-      const withClimb = trackExpandedTabContentInset(null, 'discover|climb', 139);
-      expect(trackExpandedTabContentInset(withClimb, 'discover|none', 83)).toEqual({
-        key: 'discover|none',
-        bottom: 83,
-      });
+    it.each([
+      ['a push to a route without the platter', '(tabs)/discover/all|climb', 83],
+      ['clearing the climb', '(tabs)/discover|none', 83],
+      ['a rotation', '(tabs)/discover|climb|1376x1032', 76],
+    ])("starts over on %s without keeping the old shape's inset", (_label, nextKey, nextInset) => {
+      let state = trackExpandedTabContentInset(null, ROOT, 139, 1);
+      state = trackExpandedTabContentInset(state, ROOT, 139, 2);
+      expect(state.bottom).toBe(139);
+      // The key flips first; the store still holds the old 139.
+      state = trackExpandedTabContentInset(state, nextKey, 139, 2);
+      expect(state.bottom).toBeNull();
+      // Then the probe publishes the new shape's inset.
+      state = trackExpandedTabContentInset(state, nextKey, nextInset, 3);
+      expect(state.bottom).toBe(nextInset);
     });
 
-    it('carries the maximum through an unmeasured frame and starts empty', () => {
-      expect(trackExpandedTabContentInset(null, 'home', null).bottom).toBeNull();
-      const measured = trackExpandedTabContentInset(null, 'home', 139);
-      expect(trackExpandedTabContentInset(measured, 'home', null).bottom).toBe(139);
-      expect(trackExpandedTabContentInset(measured, 'climbs', null).bottom).toBeNull();
+    it('starts empty', () => {
+      expect(trackExpandedTabContentInset(null, 'home', null, 0).bottom).toBeNull();
     });
   });
 

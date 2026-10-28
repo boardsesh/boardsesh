@@ -153,6 +153,13 @@ export type BottomChromeInputs = {
   /** A prepared workout uses the same pill reserve before its timer is armed. */
   workoutStartPending?: boolean;
   /**
+   * Whether the focused route hides the root rest-timer pill
+   * (`isRestTimerPillHiddenRoute`: the Session tab's own page). The pill is then
+   * not on screen, so nothing reserves for it. `false` (the default) leaves
+   * every other call site byte-identical.
+   */
+  restTimerPillHiddenOnRoute?: boolean;
+  /**
    * The largest in-tab bottom inset measured since the bottom chrome last changed
    * shape (route, current climb, orientation), from
    * {@link trackExpandedTabContentInset}. On iOS 26 the bar minimizes as you
@@ -273,33 +280,54 @@ export type BottomChromeMetrics = {
    */
   contentColumnLeft: number;
   contentColumnRight: number;
+  /**
+   * The route-hidden input, passed through so the root pill host gates on the
+   * same value the reserve did (see `shouldRenderRestTimerPill`).
+   */
+  restTimerPillHiddenOnRoute: boolean;
 };
 
 /** What {@link trackExpandedTabContentInset} remembers between renders. */
 export type ExpandedTabContentInset = {
   /** Identifies the bottom chrome's shape; a new key starts a fresh maximum. */
   key: string;
-  /** Largest valid in-tab inset seen under `key`, or null before the first. */
+  /**
+   * The inset store's publish count when `key` began. Only readings published
+   * after it belong to this shape.
+   */
+  sincePublish: number;
+  /** Largest in-tab inset published under `key`, or null before the first. */
   bottom: number | null;
 };
 
 /**
  * Folds one in-tab inset measurement into the running maximum for the current
  * chrome shape, which is the expanded-bar inset once the bar has been expanded
- * under that shape at least once. A changed `key` (route, current climb,
- * window size) drops the old maximum: a cleared climb removes the platter, and
- * keeping its height would leave a dead band under every list. Returns
- * `previous` itself when nothing changed, so a caller can keep it in a ref.
+ * under that shape at least once.
+ *
+ * A changed `key` (route, current climb, accessory, window size) drops the old
+ * maximum AND ignores the reading that is current at that moment: the probe
+ * republishes only after UIKit lays the new shape out, so for at least one
+ * render the store still holds the OLD shape's inset. Folding it would seed the
+ * new shape with, say, the 139pt of a tab root with the platter and keep it
+ * after a push to a route without one publishes 83, which is a 56pt dead band
+ * under the list (#3776). So a new key starts empty and folds only readings
+ * whose `publishCount` moved past the one recorded at the key change; until
+ * then the floor is null and padding falls back to the live value.
+ *
+ * Returns `previous` itself when nothing changed, so a caller can keep it in a
+ * ref.
  */
 export function trackExpandedTabContentInset(
   previous: ExpandedTabContentInset | null,
   key: string,
   measured: number | null,
+  publishCount: number,
 ): ExpandedTabContentInset {
-  const carried = previous && previous.key === key ? previous.bottom : null;
-  const bottom = measured === null ? carried : carried === null ? measured : Math.max(carried, measured);
-  if (previous && previous.key === key && previous.bottom === bottom) return previous;
-  return { key, bottom };
+  if (!previous || previous.key !== key) return { key, sincePublish: publishCount, bottom: null };
+  if (measured === null || publishCount <= previous.sincePublish) return previous;
+  const bottom = previous.bottom === null ? measured : Math.max(previous.bottom, measured);
+  return bottom === previous.bottom ? previous : { ...previous, bottom };
 }
 
 /**
@@ -351,6 +379,7 @@ export function computeBottomChromeMetrics({
   restTimerArmed = false,
   tabBarAtBottom = true,
   workoutStartPending = false,
+  restTimerPillHiddenOnRoute = false,
   expandedTabContentInsetBottom = null,
   measuredTabContentInsetLeft = null,
   measuredTabContentInsetRight = null,
@@ -390,6 +419,7 @@ export function computeBottomChromeMetrics({
       preSessionFooterBottom: insetsBottom,
       contentColumnLeft: 0,
       contentColumnRight: 0,
+      restTimerPillHiddenOnRoute,
     };
   }
 
@@ -485,7 +515,11 @@ export function computeBottomChromeMetrics({
   // off the sidebar shell (which returned above). A fixed reserve, not a
   // measured one — see REST_TIMER_RESERVE in theme/layout for why the pill is
   // not another publish-and-measure store.
-  const restTimerShows = (restTimerArmed || workoutStartPending) && insideTabs && !usesSidebar;
+  // The Session tab's own page hides the pill (its settings sit inline there), so
+  // it reserves nothing either: a reserve without a pill is a dead band under
+  // Start.
+  const restTimerShows =
+    (restTimerArmed || workoutStartPending) && insideTabs && !usesSidebar && !restTimerPillHiddenOnRoute;
   const restTimerReserve = restTimerShows ? REST_TIMER_RESERVE : 0;
   // The pill sits one gap ABOVE the queue chrome, not flush on it. Without this
   // the pill's rounded bottom edge touched the iOS 26 accessory platter and the
@@ -564,5 +598,6 @@ export function computeBottomChromeMetrics({
     }),
     contentColumnLeft,
     contentColumnRight,
+    restTimerPillHiddenOnRoute,
   };
 }
