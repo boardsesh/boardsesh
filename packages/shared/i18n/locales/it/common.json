@@ -554,6 +554,8 @@
         },
         "previousNext": "Precedente e successivo",
         "previousNextDescription": "Scorrere il pannello con il dito continua a cambiare blocco.",
+        "wallBadge": "Stato in parete sul pannello",
+        "wallBadgeDescription": "Un badge sul pannello dice se questo blocco è illuminato in parete.",
         "buttons": {
           "mirror": "Specchia",
           "favorite": "Preferito",
