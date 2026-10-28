@@ -42,6 +42,14 @@ History keeps the saved flip for logging and replay; a fresh occurrence starts w
 its own supplied orientation. Mirroring a preview stays local and its temporary
 flip is cleared when the preview is committed.
 
+After mirroring the same solo climb, advancing and returning to it:
+
+Captured on an iOS simulator with recorded data; physical BLE was not exercised.
+
+| Before: flip forgotten | After: saved flip restored |
+| --- | --- |
+| ![Original orientation after returning to a mirrored climb](images/mirror-history-6993-before.png) | ![Saved mirror orientation after returning to the same climb](images/mirror-history-6993-after.png) |
+
 `resolveActionBarLayout` (`packages/mobile/src/components/play-drawer/action-bar-layout.ts`) is the one rule. The
 bar, the player's ⋯ menu and the preview all read it, so they can't disagree.
 
