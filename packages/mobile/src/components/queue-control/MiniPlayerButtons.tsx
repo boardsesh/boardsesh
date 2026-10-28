@@ -1,11 +1,9 @@
 import { memo, useCallback, type ReactNode } from 'react';
 import { StyleSheet, View, type ColorValue } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { Climb } from '@boardsesh/queue';
 import type { MiniPlayerButtonId } from '../../lib/mini-player-buttons';
 import { useFavoriteStatus, useToggleFavorite } from '../../lib/graphql/hooks';
-import { track } from '../../lib/analytics';
 import { hapticSelection } from '../../lib/haptics';
 import { useShareClimbAction } from '../../hooks/use-share-climb-action';
 import { useDrawerHost, type BoardConfig } from '../../providers/drawer-host-provider';
@@ -82,16 +80,12 @@ function MiniPlayerFavoriteButton({
   const isFavorited = serverFavorited ?? false;
   const handlePress = useCallback(() => {
     hapticSelection();
-    track(SHARED_EVENTS.FavoriteToggle, {
-      action: isFavorited ? 'removed' : 'added',
-      climbUuid: climb.uuid,
-      boardName,
-      layoutId,
-      source: 'mini_player',
-      connected: bluetoothConnected,
-    });
     toggleFavorite(
-      { input: { boardName, climbUuid: climb.uuid, angle }, currentlyFavorited: isFavorited },
+      {
+        input: { boardName, climbUuid: climb.uuid, angle },
+        currentlyFavorited: isFavorited,
+        tracking: { source: 'mini_player', layoutId, connected: bluetoothConnected },
+      },
       { onError: () => showToast(t('playView.favoriteError'), 'error') },
     );
   }, [isFavorited, climb.uuid, boardName, layoutId, angle, bluetoothConnected, toggleFavorite, showToast, t]);
@@ -148,16 +142,11 @@ function MiniPlayerQueueButton({ size }: { size: number }) {
  * The player's angle pill and sheet: the same angle the player shows, changed
  * through the player's own handler (the drawer host's), so the crew follows and
  * a foreign climb's board takes it, as from the player.
- *
- * Not while the `/play` route is up: the host's sheet presents from the app's
- * root, so it would land behind that modal (the player has its own sheet).
  */
 function MiniPlayerAngleButton({ angle, climbUuid }: { angle: number; climbUuid: string | undefined }) {
   const { t } = useTranslation('session');
   const { openAnglePicker } = useDrawerHost();
-  const playerRouteUp = isPlayerRoute(useSegments());
   const handlePress = useCallback(() => openAnglePicker(climbUuid), [openAnglePicker, climbUuid]);
-  if (playerRouteUp) return null;
   return (
     <AnglePill
       compact

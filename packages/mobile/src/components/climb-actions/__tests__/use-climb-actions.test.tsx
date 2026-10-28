@@ -531,11 +531,14 @@ describe('useClimbActions colours and dispatch', () => {
 
     result.current.find((action) => action.id === 'favorite')?.run();
 
-    expect(openers.track).toHaveBeenCalledWith(
-      undefined,
-      expect.objectContaining({ action: 'added', source: 'mobile_climb_actions', connected }),
-    );
+    // The toggle tracks the tap, in the direction it really goes.
     expect(openers.toggleFavoriteMutate).toHaveBeenCalledTimes(1);
+    expect(openers.toggleFavoriteMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        currentlyFavorited: false,
+        tracking: { source: 'mobile_climb_actions', layoutId: kilterBoard.layoutId, connected },
+      }),
+    );
   });
 
   it('hides "Play next" for the climb already on the wall', () => {

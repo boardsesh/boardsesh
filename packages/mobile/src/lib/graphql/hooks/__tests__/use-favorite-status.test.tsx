@@ -75,6 +75,8 @@ vi.mock('../../../../hooks/use-offline-mutations', () => ({
   addFavoriteLocal: localQueue.addFavoriteLocal,
   removeFavoriteLocal: localQueue.removeFavoriteLocal,
 }));
+const analytics = vi.hoisted(() => ({ track: vi.fn() }));
+vi.mock('../../../analytics', () => ({ track: analytics.track }));
 vi.mock('../../../../offline/offline-sync-adapter', () => ({ drainMutationQueue: vi.fn(async () => undefined) }));
 
 import { favoritesStore } from '@boardsesh/climb-actions';
@@ -394,6 +396,65 @@ describe('useToggleFavorite', () => {
     expect(queryClient.getQueryData(key)).toEqual({ favorites: [] });
   });
 
+  it('tracks each tap in the direction the toggle really went', () => {
+    const { queryClient, Wrapper } = makeWrapper();
+    queryClient.setQueryData(['favoriteStatus', 'kilter', 'climb-1', 40], { favorites: [] });
+    requestMock.mockReturnValue(new Promise(() => {}));
+    analytics.track.mockClear();
+    const toggleHook = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
+    const tap = {
+      input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+      // Both taps come from a screen that still draws "not liked".
+      currentlyFavorited: false,
+      tracking: { source: 'mini_player', layoutId: 1, connected: true },
+    };
+
+    toggleHook.result.current.mutate(tap);
+    toggleHook.result.current.mutate(tap);
+
+    expect(analytics.track.mock.calls.map(([, properties]) => properties.action)).toEqual(['added', 'removed']);
+    expect(analytics.track).toHaveBeenLastCalledWith(
+      'Favorite Toggle',
+      expect.objectContaining({
+        climbUuid: 'climb-1',
+        boardName: 'kilter',
+        layoutId: 1,
+        source: 'mini_player',
+        connected: true,
+      }),
+    );
+  });
+
+  // The offline read recovery invalidates ['favoriteStatus'] while the local
+  // write may still be running; its refetch reads the PRE-toggle row.
+  it('pins the heart again once the local write is in', async () => {
+    localQueue.db = { tag: 'db' };
+    localQueue.offlineEnabled = true;
+    const { queryClient, Wrapper } = makeWrapper();
+    const key = ['favoriteStatus', 'kilter', 'climb-1', 40];
+    queryClient.setQueryData(key, { favorites: [] });
+    let finishLocalWrite: () => void = () => {};
+    localQueue.addFavoriteLocal.mockReset();
+    localQueue.addFavoriteLocal.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finishLocalWrite = resolve;
+      }),
+    );
+    const toggleHook = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
+    const toggle = toggleHook.result.current.mutateAsync({
+      input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+      currentlyFavorited: false,
+    });
+    await waitFor(() => expect(localQueue.addFavoriteLocal).toHaveBeenCalled());
+    // A recovery refetch lands mid-write with the old row.
+    queryClient.setQueryData(key, { favorites: [] });
+
+    finishLocalWrite();
+    await toggle;
+    expect(queryClient.getQueryData(key)).toEqual({ favorites: ['climb-1'] });
+    localQueue.addFavoriteLocal.mockReset();
+  });
+
   it('keeps the plain server toggle for a caller that does not say which way', async () => {
     const { queryClient, Wrapper } = makeWrapper();
     const key = ['favoriteStatus', 'kilter', 'climb-1', 40];
@@ -401,8 +462,16 @@ describe('useToggleFavorite', () => {
     requestMock.mockResolvedValueOnce({ toggleFavorite: { favorited: false } });
     requestMock.mockReturnValue(new Promise(() => {}));
     const toggleHook = renderHook(() => useToggleFavorite(), { wrapper: Wrapper });
-    await toggleHook.result.current.mutateAsync({ input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 } });
+    const toggle = toggleHook.result.current.mutateAsync({
+      input: { boardName: 'kilter', climbUuid: 'climb-1', angle: 40 },
+    });
+    // Nothing is pinned before the server answers...
+    expect(queryClient.getQueryData(key)).toEqual({ favorites: ['climb-1'] });
+    await toggle;
     expect(requestMock.mock.calls[0][0]).toContain('toggleFavorite');
+    // ...and no direction is made up for it.
+    await waitFor(() => expect(toggleHook.result.current.variables).toBeDefined());
+    expect(toggleHook.result.current.variables).not.toHaveProperty('currentlyFavorited');
   });
 
   it("rolls each angle's heart back on its own: a newer tap at 25° leaves the 40° rollback alone", async () => {

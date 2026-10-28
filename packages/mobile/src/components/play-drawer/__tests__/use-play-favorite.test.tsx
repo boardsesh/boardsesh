@@ -63,14 +63,13 @@ describe('usePlayFavorite', () => {
     expect(result.current.isFavorited).toBe(true);
     act(() => result.current.handleToggleFavorite());
     const [variables] = initial.toggleFavoriteMutate.mock.calls[0];
+    // The toggle tracks the tap, in the direction it really goes.
     expect(variables).toEqual({
       input: { boardName: 'kilter', climbUuid: 'climb-a', angle: 40 },
       currentlyFavorited: true,
+      tracking: { source: 'mobile_play_drawer', layoutId: 1, connected: false },
     });
-    expect(effects.track).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({ action: 'removed', climbUuid: 'climb-a', layoutId: 1, source: 'mobile_play_drawer' }),
-    );
+    expect(effects.track).not.toHaveBeenCalled();
     // No local copy: the heart moves only when the cache does.
     expect(result.current.isFavorited).toBe(true);
     expect(effects.hapticSelection).not.toHaveBeenCalled();
@@ -99,27 +98,23 @@ describe('usePlayFavorite', () => {
   it('tags heart and menu toggles with this phone’s current connection', () => {
     const initial = options();
     const { result, rerender } = renderHook((props) => usePlayFavorite(props), { initialProps: initial });
+    const lastTracking = () => initial.toggleFavoriteMutate.mock.calls.at(-1)?.[0].tracking;
     act(() => result.current.handleToggleFavorite());
-    expect(effects.track).toHaveBeenLastCalledWith('Favorite Toggle', expect.objectContaining({ connected: false }));
+    expect(lastTracking()).toMatchObject({ connected: false });
     rerender({ ...initial, bluetoothConnected: true });
     act(() => result.current.handleToggleFavoriteFromMenu());
-    expect(effects.track).toHaveBeenLastCalledWith('Favorite Toggle', expect.objectContaining({ connected: true }));
+    expect(lastTracking()).toMatchObject({ connected: true });
   });
 
   // The heart and ⋯'s row are one toggle, but two places to tap it.
   it('tells a menu tap from a heart tap in the FavoriteToggle source', () => {
     const initial = options();
     const { result, rerender } = renderHook((props) => usePlayFavorite(props), { initialProps: initial });
+    const lastCall = () => initial.toggleFavoriteMutate.mock.calls.at(-1)?.[0];
     act(() => result.current.handleToggleFavoriteFromMenu());
-    expect(effects.track).toHaveBeenLastCalledWith(
-      'Favorite Toggle',
-      expect.objectContaining({ action: 'added', source: 'play_drawer_menu' }),
-    );
+    expect(lastCall()).toMatchObject({ currentlyFavorited: false, tracking: { source: 'play_drawer_menu' } });
     rerender({ ...initial, serverFavorited: true });
     act(() => result.current.handleToggleFavorite());
-    expect(effects.track).toHaveBeenLastCalledWith(
-      'Favorite Toggle',
-      expect.objectContaining({ action: 'removed', source: 'mobile_play_drawer' }),
-    );
+    expect(lastCall()).toMatchObject({ currentlyFavorited: true, tracking: { source: 'mobile_play_drawer' } });
   });
 });

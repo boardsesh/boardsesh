@@ -168,15 +168,17 @@ describe('MiniPlayerLeadingButtons', () => {
       favorite.serverFavorited = false;
       const { getByLabelText } = renderButtons(['favorite']);
       fireEvent.click(getByLabelText('playView.actionBar.addFavoriteAria'));
+      // The toggle tracks the tap, in the direction it really goes.
       expect(favorite.mutate).toHaveBeenCalledWith(
-        { input: { boardName: 'kilter', climbUuid: 'climb-a', angle: 40 }, currentlyFavorited: false },
+        {
+          input: { boardName: 'kilter', climbUuid: 'climb-a', angle: 40 },
+          currentlyFavorited: false,
+          tracking: { source: 'mini_player', layoutId: 1, connected: true },
+        },
         expect.objectContaining({ onError: expect.any(Function) }),
       );
       expect(effects.hapticSelection).toHaveBeenCalledOnce();
-      expect(effects.track).toHaveBeenCalledWith(
-        'Favorite Toggle',
-        expect.objectContaining({ action: 'added', source: 'mini_player', connected: true }),
-      );
+      expect(effects.track).not.toHaveBeenCalled();
     });
 
     it('shows a favourite filled and removes it on a tap', () => {
@@ -234,12 +236,6 @@ describe('MiniPlayerLeadingButtons', () => {
       const { getByLabelText } = renderButtons(['angle'], { angleClimbUuid: null });
       fireEvent.click(getByLabelText('mobile.angleSelector.buttonAria:40'));
       expect(host.openAnglePicker).toHaveBeenCalledWith(undefined);
-    });
-
-    it('steps out while the /play route is up, whose modal the root sheet would sit behind', () => {
-      navigation.playerOpen = true;
-      const { container } = renderButtons(['angle']);
-      expect(container.querySelector('button')).toBeNull();
     });
 
     it('draws nothing on a fixed-angle board', () => {

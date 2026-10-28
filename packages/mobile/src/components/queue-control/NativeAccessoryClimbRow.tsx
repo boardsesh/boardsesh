@@ -38,6 +38,8 @@ import { resolveClimbRenderBoard } from '../../lib/boards/climb-render-board';
 import { resolvePlayerAngle } from '../play-drawer/player-angle';
 import { usePanePlayerShowsPreview } from '../play-drawer/pane-preview-store';
 import { useAuth } from '../../providers/auth-provider';
+import { useSegments } from 'expo-router';
+import { isPlayerRoute } from '../../lib/route-segments';
 import { boardSupportsMirroring } from '@boardsesh/play-view';
 import { MiniPlayerLeadingButtons } from './MiniPlayerButtons';
 import { useMiniPlayerButtons } from '../../lib/mini-player-buttons-preference';
@@ -216,6 +218,10 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
       })
     : null;
   const angleAdjustable = playerAngle !== null;
+  // Not while the `/play` route is up: the host's angle sheet presents from the
+  // app's root, so it would land behind that modal (the player has its own).
+  const playerRouteUp = isPlayerRoute(useSegments());
+  const angleOnBar = angleAdjustable && !playerRouteUp;
   const playerBoardName = playDrawerPaneProps?.boardConfig.boardName ?? null;
   const playerLayoutId = playDrawerPaneProps?.boardConfig.layoutId ?? null;
   const paneTaken = usePhoneSplitPaneTaken();
@@ -279,9 +285,9 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
         transport: transportAvailable,
         signedIn: isAuthenticated,
         isDraft,
-        angleAdjustable,
+        angleAdjustable: angleOnBar,
       }),
-    [transportAvailable, isAuthenticated, isDraft, angleAdjustable],
+    [transportAvailable, isAuthenticated, isDraft, angleOnBar],
   );
   const climbBoardName = climbBoard?.boardName ?? null;
   const climbLayoutId = climbBoard?.layoutId ?? null;

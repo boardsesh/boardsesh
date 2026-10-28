@@ -1,8 +1,6 @@
 import { useCallback } from 'react';
 import type { Climb } from '@boardsesh/shared-schema';
 import type { TFunction } from 'i18next';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
-import { track } from '../../lib/analytics';
 import { hapticSelection } from '../../lib/haptics';
 import type { useToast } from '../../providers/toast-provider';
 import type { PlayCoreEnhancementSnapshot } from './PlayCoreEnhancements';
@@ -48,17 +46,14 @@ export function usePlayFavorite({
     (source: PlayFavoriteSource) => {
       if (!displayedClimb || !toggleFavoriteMutate) return;
       // No haptic here: the button that toggles it ticks a selection, and a
-      // failure buzzes through its error toast.
-      track(SHARED_EVENTS.FavoriteToggle, {
-        action: isFavorited ? 'removed' : 'added',
-        climbUuid: displayedClimb.uuid,
-        boardName,
-        layoutId,
-        source,
-        connected: bluetoothConnected,
-      });
+      // failure buzzes through its error toast. The toggle tracks the tap, in
+      // the direction it really goes.
       toggleFavoriteMutate(
-        { input: { boardName, climbUuid: displayedClimb.uuid, angle }, currentlyFavorited: isFavorited },
+        {
+          input: { boardName, climbUuid: displayedClimb.uuid, angle },
+          currentlyFavorited: isFavorited,
+          tracking: { source, layoutId, connected: bluetoothConnected },
+        },
         // The toggle puts the heart back itself; this says it didn't stick.
         { onError: () => showToast(t('playView.favoriteError'), 'error') },
       );

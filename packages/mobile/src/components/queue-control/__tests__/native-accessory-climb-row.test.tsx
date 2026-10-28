@@ -302,6 +302,7 @@ const miniPlayer = vi.hoisted(() => ({
   playerButtons: null as null | { order: readonly string[]; visible: Record<string, boolean> },
   panePreview: false,
   position: 'below' as 'below' | 'above',
+  playerRouteUp: false,
 }));
 vi.mock('../../../lib/mini-player-buttons-preference', async () => {
   const { DEFAULT_MINI_PLAYER_BUTTONS } = await import('../../../lib/mini-player-buttons');
@@ -312,6 +313,7 @@ vi.mock('../../../hooks/use-phone-split', () => ({ usePhoneSplit: () => miniPlay
 vi.mock('../../navigation/phone-split-pane-slot', () => ({ usePhoneSplitPaneTaken: () => miniPlayer.paneTaken }));
 vi.mock('../../../lib/workout-run-store', () => ({ useWorkoutRun: () => null }));
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: miniPlayer.signedIn }) }));
+vi.mock('expo-router', () => ({ useSegments: () => (miniPlayer.playerRouteUp ? ['play'] : ['(tabs)']) }));
 vi.mock('../../play-drawer/pane-preview-store', () => ({ usePanePlayerShowsPreview: () => miniPlayer.panePreview }));
 vi.mock('../../../lib/player-buttons-preference', async () => {
   const { DEFAULT_PLAYER_BUTTONS } = await import('../../../lib/player-buttons');
@@ -509,6 +511,7 @@ describe('NativeAccessoryClimbRow', () => {
     miniPlayer.playerButtons = null;
     miniPlayer.panePreview = false;
     miniPlayer.position = 'below';
+    miniPlayer.playerRouteUp = false;
   });
 
   it('renders a regular now-climbing row with thumbnail, grade, and integrated tick', () => {
@@ -770,6 +773,17 @@ describe('NativeAccessoryClimbRow', () => {
       expect(buttons(container)).toBeNull();
       expect(container.querySelector('[data-board-control]')).not.toBeNull();
       expect(container.querySelector('[data-tick="true"]')).not.toBeNull();
+    });
+
+    it('leaves Angle out while the /play route is up, so it never leaves a gap', () => {
+      miniPlayer.isTablet = true;
+      layout.width = 995;
+      miniPlayer.playerRouteUp = true;
+      miniPlayer.layout = {
+        order: ['next', 'previous', 'mirror', 'favorite', 'queue', 'share', 'angle'],
+        visible: { next: true, previous: true, mirror: false, favorite: false, queue: false, share: true, angle: true },
+      };
+      expect(buttons(renderRow('regular').container)).toBe('share,previous,next');
     });
 
     it('places the extra buttons the climber switched on, on an iPad', () => {
