@@ -47,6 +47,8 @@ class WaveshareAmoledDisplay : public DisplayBase {
     void refresh() override;
     void refreshInfoOnly() override;
     void showBlePreview(const char* boardType, int angle, bool fullRefresh);
+    void showGymPreview(const char* name, const char* boardType, int angle, const char* serialNumber, int boardIndex,
+                        int boardCount, bool payloadSeen, int ledCount, const char* syncStatus);
 
     // Status callbacks can run on the BLE task; rendering stays on the main loop.
     void setWiFiStatus(bool connected);
@@ -62,10 +64,11 @@ class WaveshareAmoledDisplay : public DisplayBase {
         uint8_t g;
         uint8_t b;
     };
-    static const int MAX_LED_COMMANDS = 512;
+    static const int MAX_LED_COMMANDS = 1024;
 
     void setBoardConfig(const BoardConfig* config);
     void setLedCommands(const LedCmd* commands, int count);
+    void setExactPositionMapping(bool exact) { _exactPositionMapping = exact; }
     int getLastJpegBlockCount() const { return _lastJpegBlockCount; }
     int getLastJpegDecodeResult() const { return _lastJpegDecodeResult; }
     int getLastMatchedHoldCount() const { return _lastMatchedHoldCount; }
@@ -85,6 +88,9 @@ class WaveshareAmoledDisplay : public DisplayBase {
     Arduino_Canvas* _gfx;
     bool _ready;
     bool _blePreviewVisible;
+    bool _fixturePreview = false;
+    String _fixtureFooter;
+    String _fixtureHint;
     std::atomic<uint8_t> _pendingWiFiStatus;
     std::atomic<uint8_t> _pendingBackendStatus;
     std::atomic<uint8_t> _pendingBleStatus;
@@ -103,6 +109,7 @@ class WaveshareAmoledDisplay : public DisplayBase {
     int _lastJpegBlockCount;
     int _lastJpegDecodeResult;
     int _lastMatchedHoldCount;
+    bool _exactPositionMapping = false;
 #endif
 
     void drawStatusBar();

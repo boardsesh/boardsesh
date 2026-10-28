@@ -23,6 +23,96 @@ String getConfigStringOrDefault(const char* key, const char* defaultValue) {
     return value.length() == 0 ? String(defaultValue) : value;
 }
 
+#ifdef ENABLE_GYM_FIXTURE
+bool normalizeFixtureGym(String& reference) {
+    reference.trim();
+    if (reference.length() == 0)
+        return true;  // An empty override restores the compiled default.
+    if (reference.startsWith("https://")) {
+        const int pathStart = reference.indexOf('/', 8);
+        if (pathStart < 0)
+            return false;
+        const String host = reference.substring(8, pathStart);
+        if (!(host == "boardsesh.com" || host == "www.boardsesh.com"))
+            return false;
+        String path = reference.substring(pathStart);
+        if (path.startsWith("/es/") || path.startsWith("/fr/") || path.startsWith("/de/"))
+            path = path.substring(3);
+        if (!path.startsWith("/gym/"))
+            return false;
+        reference = path.substring(5);
+        for (char separator : {'?', '#'}) {
+            const int end = reference.indexOf(separator);
+            if (end >= 0)
+                reference = reference.substring(0, end);
+        }
+        if (reference.length() > 0 && reference[reference.length() - 1] == '/')
+            reference = reference.substring(0, reference.length() - 1);
+    }
+    if (reference.length() == 0 || reference.length() > 120 || reference[0] == '-' ||
+        reference[reference.length() - 1] == '-')
+        return false;
+    String normalized;
+    for (size_t index = 0; index < reference.length(); ++index) {
+        char character = reference[index];
+        if (character >= 'A' && character <= 'Z')
+            character += 'a' - 'A';
+        if (!((character >= 'a' && character <= 'z') || (character >= '0' && character <= '9') || character == '-'))
+            return false;
+        normalized += character;
+    }
+    reference = normalized;
+    return true;
+}
+
+bool validFixtureEndpoint(const String& endpoint) {
+    if (endpoint.length() == 0)
+        return true;
+    if (!endpoint.startsWith("wss://") || endpoint.length() > 256)
+        return false;
+    const int pathStart = endpoint.indexOf('/', 6);
+    const String authority = pathStart < 0 ? endpoint.substring(6) : endpoint.substring(6, pathStart);
+    const int colon = authority.indexOf(':');
+    const String host = colon < 0 ? authority : authority.substring(0, colon);
+    if (host.length() == 0 || host[0] == '.' || host[host.length() - 1] == '.' || host[0] == '-' ||
+        host[host.length() - 1] == '-')
+        return false;
+    for (size_t index = 0; index < host.length(); ++index) {
+        const char character = host[index];
+        if (!((character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+              (character >= '0' && character <= '9') || character == '-' || character == '.'))
+            return false;
+    }
+    if (colon >= 0) {
+        const String port = authority.substring(colon + 1);
+        if (port.length() == 0 || port.length() > 5)
+            return false;
+        for (size_t index = 0; index < port.length(); ++index)
+            if (port[index] < '0' || port[index] > '9')
+                return false;
+        if (port.toInt() < 1 || port.toInt() > 65535)
+            return false;
+    }
+    if (pathStart >= 0) {
+        for (size_t index = pathStart; index < endpoint.length(); ++index) {
+            const char character = endpoint[index];
+            if (!((character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+                  (character >= '0' && character <= '9') || character == '/' || character == '-' || character == '_' ||
+                  character == '.'))
+                return false;
+        }
+    }
+    return true;
+}
+
+void appendFixtureConfig(JsonDocument& doc) {
+    doc["fixture_mode"] = true;
+    doc["fixture_gym_ref"] = getConfigStringOrDefault("fx_gym", GYM_FIXTURE_DEFAULT_GYM);
+    doc["fixture_endpoint"] = getConfigStringOrDefault("fx_endpoint", GYM_FIXTURE_DEFAULT_ENDPOINT);
+    doc["fixture_key_configured"] = Config.getString("fx_api_key").length() > 0;
+}
+#endif
+
 }  // namespace
 
 ESPWebServer WebConfig;
@@ -91,17 +181,16 @@ void ESPWebServer::setupRoutes() {
     server.on("/api/firmware/version", HTTP_GET, [this]() { handleFirmwareVersion(); });
 
     // Firmware upload - uses the two-callback pattern for file upload handling
-    server.on("/api/firmware/upload", HTTP_POST,
-        [this]() { handleFirmwareUploadComplete(); },
-        [this]() { handleFirmwareUploadData(); }
-    );
+    server.on(
+        "/api/firmware/upload", HTTP_POST, [this]() { handleFirmwareUploadComplete(); },
+        [this]() { handleFirmwareUploadData(); });
 
     // Captive portal detection endpoints (redirect to config page in AP mode)
-    server.on("/generate_204", HTTP_GET, [this]() { handleCaptivePortal(); });       // Android
-    server.on("/hotspot-detect.html", HTTP_GET, [this]() { handleCaptivePortal(); }); // Apple
-    server.on("/connecttest.txt", HTTP_GET, [this]() { handleCaptivePortal(); });     // Windows
-    server.on("/redirect", HTTP_GET, [this]() { handleCaptivePortal(); });            // Windows
-    server.on("/fwlink", HTTP_GET, [this]() { handleCaptivePortal(); });              // Windows
+    server.on("/generate_204", HTTP_GET, [this]() { handleCaptivePortal(); });         // Android
+    server.on("/hotspot-detect.html", HTTP_GET, [this]() { handleCaptivePortal(); });  // Apple
+    server.on("/connecttest.txt", HTTP_GET, [this]() { handleCaptivePortal(); });      // Windows
+    server.on("/redirect", HTTP_GET, [this]() { handleCaptivePortal(); });             // Windows
+    server.on("/fwlink", HTTP_GET, [this]() { handleCaptivePortal(); });               // Windows
 
     server.onNotFound([this]() { handleNotFound(); });
 }
@@ -164,6 +253,7 @@ void ESPWebServer::handleRoot() {
         .status-item { background: #0f3460; border-radius: 8px; padding: 10px; min-height: 58px; }
         .status-label { display: block; color: #888; font-size: 0.78em; margin-bottom: 5px; }
         .status-value { color: #fff; font-weight: 600; overflow-wrap: anywhere; }
+        .fixture-only { display: none; }
         .hint { color: #888; font-size: 0.85em; line-height: 1.4; margin-top: -4px; }
     </style>
 </head>
@@ -177,7 +267,7 @@ void ESPWebServer::handleRoot() {
         <button onclick="scanNetworks()" class="btn-secondary" id="scanBtn">Scan Networks</button>
     </div>
 
-    <div class="card">
+    <div class="card legacy-only">
         <h2>Controller Status</h2>
         <div class="status-grid">
             <div class="status-item"><span class="status-label">Backend</span><span class="status-value" id="backendStatus">Checking...</span></div>
@@ -220,7 +310,28 @@ void ESPWebServer::handleRoot() {
         </select>
     </div>
 
-    <div class="card">
+    <div class="card fixture-only">
+        <h2>Gym Fixture</h2>
+        <label>Gym link, slug, or UUID</label>
+        <input type="text" id="fixtureGymRef" maxlength="512" placeholder="boardsesh-qa">
+        <label>Backend WebSocket URL</label>
+        <input type="url" id="fixtureEndpoint" maxlength="256" placeholder="wss://ws.boardsesh.com/graphql">
+        <label>Controller key</label>
+        <input type="password" id="fixtureApiKey" maxlength="64" autocomplete="new-password" placeholder="Leave blank to keep the saved key">
+        <p class="hint" id="fixtureKeyStatus">Checking saved key...</p>
+        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+            <input type="checkbox" id="fixtureClearKey" style="width: auto; margin: 0;">
+            <span>Clear saved controller key</span>
+        </label>
+        <p class="hint">Saving a gym or backend change reloads its boards and previews.</p>
+        <h2>Gym Status</h2>
+        <p id="fixtureGymName">Checking gym...</p>
+        <p id="fixtureStatus">Waiting for status...</p>
+        <p id="fixtureStale"></p>
+        <div id="fixtureBoards"></div>
+    </div>
+
+    <div class="card legacy-only">
         <h2>BLE Proxy Mode</h2>
         <p style="color: #888; font-size: 0.9em; margin-bottom: 15px;">
             Enable proxy mode to forward data from official Kilter/Tension app to a nearby board.
@@ -239,7 +350,7 @@ void ESPWebServer::handleRoot() {
         </div>
     </div>
 
-    <div class="card">
+    <div class="card legacy-only">
         <h2>Boardsesh Session</h2>
         <p class="hint">
             Session sync is optional. Leave it off when this controller is only previewing BLE payloads.
@@ -254,7 +365,7 @@ void ESPWebServer::handleRoot() {
         <input type="password" id="apiKey" placeholder="Enter API key">
     </div>
 
-    <div class="card">
+    <div class="card legacy-only">
         <h2>BLE Preview Board</h2>
         <p class="hint">
             Incoming Bluetooth payloads use this board config to render a local preview. No session ID is required.
@@ -278,7 +389,7 @@ void ESPWebServer::handleRoot() {
         <input type="text" id="previewSetIds" placeholder="26,27,28,29">
     </div>
 
-    <div class="card">
+    <div class="card legacy-only">
         <h2>Backend Connection</h2>
         <label>Host</label>
         <input type="text" id="backendHost" placeholder="ws.boardsesh.com">
@@ -317,11 +428,23 @@ void ESPWebServer::handleRoot() {
 
     <script>
         let selectedNetwork = null;
+        let fixtureMode = false;
 
         async function loadConfig() {
             try {
                 const res = await fetch('/api/config');
                 const cfg = await res.json();
+                fixtureMode = cfg.fixture_mode === true;
+                document.querySelectorAll('.fixture-only').forEach(el => { el.style.display = fixtureMode ? 'block' : 'none'; });
+                document.querySelectorAll('.legacy-only').forEach(el => { el.style.display = fixtureMode ? 'none' : 'block'; });
+                if (fixtureMode) {
+                    document.getElementById('fixtureGymRef').value = cfg.fixture_gym_ref || '';
+                    document.getElementById('fixtureEndpoint').value = cfg.fixture_endpoint || '';
+                    document.getElementById('fixtureApiKey').value = '';
+                    document.getElementById('fixtureClearKey').checked = false;
+                    document.getElementById('fixtureKeyStatus').textContent = cfg.fixture_key_configured
+                        ? 'A controller key is saved. It is never shown here.' : 'No controller key is saved.';
+                }
                 document.getElementById('deviceName').value = cfg.device_name || '';
                 document.getElementById('brightness').value = cfg.brightness || 128;
                 document.getElementById('brightnessValue').textContent = cfg.brightness || 128;
@@ -351,10 +474,10 @@ void ESPWebServer::handleRoot() {
                 const el = document.getElementById('wifiStatus');
                 if (status.connected) {
                     el.className = 'status connected';
-                    el.innerHTML = 'Connected to <strong>' + status.ssid + '</strong><br>IP: ' + status.ip + ' | Signal: ' + status.rssi + ' dBm';
+                    el.textContent = 'Connected to ' + status.ssid + ' | IP: ' + status.ip + ' | Signal: ' + status.rssi + ' dBm';
                 } else if (status.ap_mode) {
                     el.className = 'status disconnected';
-                    el.innerHTML = 'Access Point Mode<br>IP: ' + status.ip + '<br><small>Connect to a WiFi network below</small>';
+                    el.textContent = 'Access Point Mode | IP: ' + status.ip + ' | Connect to a WiFi network below';
                 } else {
                     el.className = 'status disconnected';
                     el.textContent = 'Not connected';
@@ -376,6 +499,28 @@ void ESPWebServer::handleRoot() {
             try {
                 const res = await fetch('/api/status');
                 const status = await res.json();
+                if (status.fixture_mode === true) {
+                    document.getElementById('fixtureGymName').textContent = status.fixture_gym_name || 'No gym loaded';
+                    document.getElementById('fixtureStatus').textContent = status.fixture_status || 'Waiting for gym configuration';
+                    document.getElementById('fixtureStale').textContent = status.fixture_stale ? 'Using saved gym configuration' : '';
+                    const boards = document.getElementById('fixtureBoards');
+                    boards.textContent = '';
+                    (Array.isArray(status.fixture_boards) ? status.fixture_boards : []).slice(0, 3).forEach(board => {
+                        const item = document.createElement('div');
+                        item.className = 'status-item';
+                        const name = document.createElement('strong');
+                        name.textContent = board.name || 'Board';
+                        const serial = document.createElement('p');
+                        serial.textContent = 'Serial: ' + (board.serialNumber || 'Unavailable');
+                        const advertisement = document.createElement('p');
+                        advertisement.textContent = (board.advertisedName || '') + ' — ' + (board.advertising ? 'Advertising' : 'Stopped');
+                        const payload = document.createElement('p');
+                        payload.textContent = board.payloadSeen ? String(board.ledCount || 0) + ' LEDs received' : 'No payload received';
+                        item.append(name, serial, advertisement, payload);
+                        boards.appendChild(item);
+                    });
+                    return;
+                }
                 const backendText = status.backend_connected
                     ? 'Connected (' + status.backend_state + ')'
                     : 'Disconnected (' + status.backend_state + ')';
@@ -417,11 +562,16 @@ void ESPWebServer::handleRoot() {
                 const res = await fetch('/api/wifi/scan');
                 const data = await res.json();
                 const list = document.getElementById('networkList');
-                list.innerHTML = '';
+                list.textContent = '';
                 data.networks.sort((a, b) => b.rssi - a.rssi).forEach(n => {
                     const div = document.createElement('div');
                     div.className = 'network';
-                    div.innerHTML = '<span>' + n.ssid + (n.secure ? ' 🔒' : '') + '</span><span class="signal">' + n.rssi + ' dBm</span>';
+                    const name = document.createElement('span');
+                    name.textContent = n.ssid + (n.secure ? ' 🔒' : '');
+                    const signal = document.createElement('span');
+                    signal.className = 'signal';
+                    signal.textContent = n.rssi + ' dBm';
+                    div.append(name, signal);
                     div.onclick = () => selectNetwork(n.ssid, div);
                     list.appendChild(div);
                 });
@@ -457,7 +607,17 @@ void ESPWebServer::handleRoot() {
                 device_name: document.getElementById('deviceName').value,
                 brightness: parseInt(document.getElementById('brightness').value),
                 display_brightness: parseInt(document.getElementById('displayBrightness').value),
-                display_mode: parseInt(document.getElementById('displayMode').value),
+                display_mode: parseInt(document.getElementById('displayMode').value)
+            };
+            if (fixtureMode) {
+                Object.assign(config, {
+                    fixture_gym_ref: document.getElementById('fixtureGymRef').value,
+                    fixture_endpoint: document.getElementById('fixtureEndpoint').value,
+                    fixture_api_key: document.getElementById('fixtureApiKey').value,
+                    fixture_clear_key: document.getElementById('fixtureClearKey').checked
+                });
+            } else {
+                Object.assign(config, {
                 backend_sync_enabled: document.getElementById('backendSyncEnabled').checked,
                 session_id: document.getElementById('sessionId').value,
                 api_key: document.getElementById('apiKey').value,
@@ -470,15 +630,22 @@ void ESPWebServer::handleRoot() {
                 backend_path: document.getElementById('backendPath').value,
                 proxy_enabled: document.getElementById('proxyEnabled').checked,
                 proxy_mac: document.getElementById('proxyMac').value
-            };
+                });
+            }
             try {
-                await fetch('/api/config', {
+                const response = await fetch('/api/config', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(config)
                 });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.error || 'Failed to save configuration');
+                if (fixtureMode) {
+                    await loadConfig();
+                    await loadControllerStatus();
+                }
                 showMessage('Configuration saved!');
-            } catch (e) { showMessage('Failed to save configuration', true); }
+            } catch (error) { showMessage(error.message || 'Failed to save configuration', true); }
         }
 
         async function restart() {
@@ -631,7 +798,11 @@ void ESPWebServer::handleGetConfig() {
     doc["display_mode"] = Config.getInt("disp_mode", 0);
     doc["backend_sync_enabled"] = Config.getBool("backend_sync", false);
     doc["session_id"] = Config.getString("session_id");
+#ifdef ENABLE_GYM_FIXTURE
+    appendFixtureConfig(doc);
+#else
     doc["api_key"] = Config.getString("api_key");
+#endif
     doc["preview_board_name"] = getConfigStringOrDefault("preview_board_name", DEFAULT_PREVIEW_BOARD_NAME);
     doc["preview_layout_id"] = Config.getInt("preview_layout_id", DEFAULT_PREVIEW_LAYOUT_ID);
     doc["preview_size_id"] = Config.getInt("preview_size_id", DEFAULT_PREVIEW_SIZE_ID);
@@ -659,6 +830,9 @@ void ESPWebServer::handleGetStatus() {
     if (statusProvider) {
         statusProvider(doc);
     }
+#ifdef ENABLE_GYM_FIXTURE
+    appendFixtureConfig(doc);
+#endif
 
     sendJson(200, doc);
 }
@@ -678,6 +852,63 @@ void ESPWebServer::handleSetConfig() {
         sendError(400, "Invalid JSON");
         return;
     }
+
+#ifdef ENABLE_GYM_FIXTURE
+    // Validate the complete fixture update before writing any preferences.
+    const char* stringFields[] = {"fixture_gym_ref", "fixture_endpoint", "fixture_api_key"};
+    for (const char* field : stringFields) {
+        if (!doc[field].isNull() && !doc[field].is<const char*>()) {
+            sendError(400, "Fixture settings must be strings");
+            return;
+        }
+    }
+    if (!doc["fixture_clear_key"].isNull() && !doc["fixture_clear_key"].is<bool>()) {
+        sendError(400, "Fixture clear key must be a boolean");
+        return;
+    }
+    String fixtureGym = doc["fixture_gym_ref"] | "";
+    String fixtureEndpoint = doc["fixture_endpoint"] | "";
+    String fixtureKey = doc["fixture_api_key"] | "";
+    fixtureEndpoint.trim();
+    fixtureKey.trim();
+    const bool clearFixtureKey = doc["fixture_clear_key"].is<bool>() && doc["fixture_clear_key"].as<bool>();
+    if (!normalizeFixtureGym(fixtureGym)) {
+        sendError(400, "Enter a gym slug, UUID, or Boardsesh gym URL");
+        return;
+    }
+    if (!validFixtureEndpoint(fixtureEndpoint)) {
+        sendError(400, "Enter a secure wss:// backend URL without credentials or query parameters");
+        return;
+    }
+    if (fixtureKey.length() > 0) {
+        bool validKey = fixtureKey.length() == 64 && !clearFixtureKey;
+        for (size_t index = 0; index < fixtureKey.length(); ++index) {
+            const char character = fixtureKey[index];
+            validKey = validKey && ((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f') ||
+                                    (character >= 'A' && character <= 'F'));
+        }
+        if (!validKey) {
+            sendError(400, "Enter a 64-character controller key, or clear the existing key");
+            return;
+        }
+    }
+    if (doc["fixture_gym_ref"].is<const char*>()) {
+        if (fixtureGym.length() == 0)
+            Config.remove("fx_gym");
+        else
+            Config.setString("fx_gym", fixtureGym);
+    }
+    if (doc["fixture_endpoint"].is<const char*>()) {
+        if (fixtureEndpoint.length() == 0)
+            Config.remove("fx_endpoint");
+        else
+            Config.setString("fx_endpoint", fixtureEndpoint);
+    }
+    if (clearFixtureKey)
+        Config.remove("fx_api_key");
+    else if (fixtureKey.length() > 0)
+        Config.setString("fx_api_key", fixtureKey);
+#endif
 
     if (doc["backend_host"].is<const char*>()) {
         String backendHost = doc["backend_host"].as<const char*>();
@@ -901,8 +1132,8 @@ void ESPWebServer::handleFirmwareUploadData() {
                 if (written != upload.currentSize) {
                     _otaError = true;
                     _otaErrorMessage = "Write failed";
-                    Serial.printf("Update.write() failed: wrote %u of %u\n",
-                                  (unsigned)written, (unsigned)upload.currentSize);
+                    Serial.printf("Update.write() failed: wrote %u of %u\n", (unsigned)written,
+                                  (unsigned)upload.currentSize);
                 } else {
                     _otaBytesWritten += written;
                 }

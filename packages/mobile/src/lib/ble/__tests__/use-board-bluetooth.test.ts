@@ -1989,6 +1989,44 @@ describe('useBoardBluetooth', () => {
     expect(requestAndConnect.mock.calls.at(-1)).toEqual([undefined, 'moon-abc']);
   });
 
+  it('records a MoonBoard fixture serial without an Aurora API level and reconnects by serial', async () => {
+    mockParseSerialNumber.mockReturnValue('99000003');
+    const request = vi.fn().mockResolvedValue({ recordBoardSerial: null });
+    vi.mocked(getHttpClient).mockReturnValue({ request } as unknown as ReturnType<typeof getHttpClient>);
+    const requestAndConnect = vi.fn().mockResolvedValue({
+      deviceId: 'moon-fixture',
+      deviceName: 'MoonBoard A#99000003',
+    });
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      makeFakeAdapter({ requestAndConnect }) as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    const { result } = renderHook(() =>
+      useBoardBluetooth({ boardName: 'moonboard', layoutId: 3, sizeId: 1, setIds: '5,6,7,8,9,10' }),
+    );
+    await act(async () => {
+      await result.current.connect();
+    });
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(RECORD_BOARD_SERIAL, {
+        input: {
+          serialNumber: '99000003',
+          boardName: 'moonboard',
+          layoutId: 3,
+          sizeId: 1,
+          setIds: '5,6,7,8,9,10',
+          boardUuid: undefined,
+        },
+      }),
+    );
+    expect(result.current.reconnectSerialForCurrentBoard).toBe('99000003');
+    expect(result.current.reconnectDeviceIdForCurrentBoard).toBeNull();
+    await act(async () => {
+      await result.current.connect(undefined, undefined, '99000003');
+    });
+    expect(requestAndConnect.mock.calls.at(-1)).toEqual(['99000003', undefined]);
+    mockParseSerialNumber.mockReturnValue(undefined);
+  });
+
   it('ends an explicitly disconnected generation exactly once', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-08-01T00:00:00.000Z'));

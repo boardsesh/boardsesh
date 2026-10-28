@@ -1,4 +1,4 @@
-import { parseBoardTypeFromDeviceName, parseSerialNumber } from '@boardsesh/ble-protocol';
+import { parseAnyBoardTypeFromDeviceName, parseSerialNumber } from '@boardsesh/ble-protocol';
 
 /**
  * Only the advertised name matters here, so this takes the narrowest shape that
@@ -34,7 +34,7 @@ export function advertisedBoardTypesBySerial(devices: ReadonlyArray<NamedDevice>
   for (const device of devices) {
     const serial = parseSerialNumber(device.name);
     if (!serial || advertisedTypes.has(serial)) continue;
-    const boardType = parseBoardTypeFromDeviceName(device.name);
+    const boardType = parseAnyBoardTypeFromDeviceName(device.name);
     if (boardType) advertisedTypes.set(serial, boardType);
   }
   return advertisedTypes;
