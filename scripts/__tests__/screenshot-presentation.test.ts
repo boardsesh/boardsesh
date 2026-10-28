@@ -893,11 +893,16 @@ describe('store screenshot presentation', () => {
         const raw = await sharp({ create: { ...size, channels: 3, background: '#164c39' } })
           .png()
           .toBuffer();
-        for (const caption of Object.values(catalog)) {
-          const framed = await frameScreenshot(raw, caption);
-          expect(readPngDimensions(framed)).toEqual(size);
-          expect((await sharp(framed).metadata()).hasAlpha).toBe(false);
-        }
+        // One size's captions frame in parallel: each frame is mostly single-threaded
+        // work, and run one at a time the five locales × five devices outgrew the
+        // CI shard's 20 minutes once Italian and the iPhone Duo joined the matrix.
+        await Promise.all(
+          Object.values(catalog).map(async (caption) => {
+            const framed = await frameScreenshot(raw, caption);
+            expect(readPngDimensions(framed)).toEqual(size);
+            expect((await sharp(framed).metadata()).hasAlpha).toBe(false);
+          }),
+        );
       }
     },
     120_000,
