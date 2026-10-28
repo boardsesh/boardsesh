@@ -153,4 +153,10 @@ describe('buildClimbViewModel', () => {
     restore.onPress();
     expect(onRestoreDefaults).toHaveBeenCalled();
   });
+
+  it('leaves the Mini player section out where there is no native bottom accessory', () => {
+    const input = makeInput();
+    const model = buildClimbViewModel({ ...input, miniPlayer: null });
+    expect(model.sections.map((section) => section.key)).toEqual(['buttonsPosition', 'buttons', 'climbDrawer']);
+  });
 });

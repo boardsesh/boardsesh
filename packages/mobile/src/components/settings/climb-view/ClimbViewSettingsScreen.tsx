@@ -9,6 +9,7 @@ import {
   PlayerButtonsPreview,
   type PlayerButtonsPreviewBoard,
 } from '../../player-buttons/PlayerButtonsPreview';
+import { useTabChrome } from '../../../hooks/use-bottom-accessory';
 import { useActiveBoard } from '../../../lib/graphql/use-active-board';
 import { hapticSelection } from '../../../lib/haptics';
 import { withSettingTracking } from '../../../lib/settings-analytics';
@@ -20,6 +21,8 @@ import { buildClimbViewModel } from './climb-view-model';
 export function ClimbViewSettingsScreen() {
   const { settingsSection: belowTheClimb } = usePlayDrawerSectionControls();
   const playerButtons = usePlayerButtonControls();
+  // No native bottom accessory (Android, the Material shell, before iOS 26): no MiniPlayer bar, so no section.
+  const { nativeAccessory } = useTabChrome();
   const {
     title: miniPlayerTitle,
     settingsFooter: miniPlayerSettingsFooter,
@@ -94,24 +97,27 @@ export function ClimbViewSettingsScreen() {
             preview,
             previewHeight: PLAYER_BUTTONS_PREVIEW_HEIGHT,
           },
-          miniPlayer: {
-            title: miniPlayerTitle,
-            settingsFooter: miniPlayerSettingsFooter,
-            controls: miniPlayerControls,
-            onVisibleChange: (buttonId, visible) => {
-              hapticSelection();
-              onMiniPlayerVisibleChange(buttonId, visible);
-            },
-            restoreDefaultsLabel: miniPlayerRestoreLabel,
-            canRestoreDefaults: canRestoreMiniPlayer,
-            onRestoreDefaults: restoreMiniPlayer,
-          },
+          miniPlayer: nativeAccessory
+            ? {
+                title: miniPlayerTitle,
+                settingsFooter: miniPlayerSettingsFooter,
+                controls: miniPlayerControls,
+                onVisibleChange: (buttonId, visible) => {
+                  hapticSelection();
+                  onMiniPlayerVisibleChange(buttonId, visible);
+                },
+                restoreDefaultsLabel: miniPlayerRestoreLabel,
+                canRestoreDefaults: canRestoreMiniPlayer,
+                onRestoreDefaults: restoreMiniPlayer,
+              }
+            : null,
           belowTheClimb,
         }),
         'climbView',
       ),
     [
       playerButtons,
+      nativeAccessory,
       miniPlayerTitle,
       miniPlayerSettingsFooter,
       miniPlayerControls,

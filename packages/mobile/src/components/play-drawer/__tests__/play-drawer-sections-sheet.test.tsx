@@ -86,6 +86,8 @@ vi.mock('../../../lib/mini-player-buttons-preference', () => ({
   useMiniPlayerButtonsEditor: () => miniPlayer,
 }));
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
+const tabChrome = vi.hoisted(() => ({ nativeAccessory: true }));
+vi.mock('../../../hooks/use-bottom-accessory', () => ({ useTabChrome: () => tabChrome }));
 const deviceLayout = vi.hoisted(() => ({ isTablet: false, phoneSplit: false }));
 vi.mock('../../../hooks/use-device-layout', () => ({ useDeviceLayout: () => deviceLayout }));
 vi.mock('../../queue-control/MiniPlayerButtonsPreview', () => ({
@@ -354,6 +356,7 @@ beforeEach(() => {
   miniPlayer.isDefault = true;
   deviceLayout.isTablet = false;
   deviceLayout.phoneSplit = false;
+  tabChrome.nativeAccessory = true;
   for (const action of [miniPlayer.setVisible, miniPlayer.move, miniPlayer.restoreDefaults]) action.mockClear();
   for (const action of [
     playerButtons.setVisible,
@@ -656,6 +659,23 @@ describe('PlayDrawerSectionsSheet', () => {
     expect(screen.getByText('mobile.settings.miniPlayer.description').closest('[data-list-header]')).not.toBeNull();
     expect(screen.getByText('mobile.settings.miniPlayer.fixedNote').closest('footer')).toBeTruthy();
     expect(screen.getByText('mobile.settings.miniPlayer.footer').closest('footer')).toBeTruthy();
+  });
+
+  it('has no Mini player tab where there is no native bottom accessory to draw it', () => {
+    tabChrome.nativeAccessory = false;
+    const screen = render(sheet());
+    expect(screen.queryByRole('radio', { name: 'mobile.settings.climbDrawer.tabs.miniPlayer' })).toBeNull();
+    expect(screen.getAllByRole('radio')).toHaveLength(2);
+  });
+
+  it('falls back to Below the climb when the accessory goes away under the Mini player tab', () => {
+    const screen = render(sheet());
+    fireEvent.click(screen.getByRole('radio', { name: 'mobile.settings.climbDrawer.tabs.miniPlayer' }));
+    expect(screen.getByTestId('mini-player-buttons-preview')).toBeTruthy();
+    tabChrome.nativeAccessory = false;
+    screen.rerender(sheet());
+    expect(screen.queryByTestId('mini-player-buttons-preview')).toBeNull();
+    expect(screen.getByTestId('play-drawer-sections-show-all')).toBeTruthy();
   });
 
   it('draws the wide bar on an iPad and on the open Duo', () => {

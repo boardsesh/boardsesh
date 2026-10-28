@@ -211,6 +211,11 @@ The sections below the climb keep their own AsyncStorage record (`playDrawerSect
 
 The MiniPlayer is the bar above the tabs: the current climb, then buttons. Tap it to open the climb.
 
+The tab and the Settings section show only where that bar is the native bottom accessory (`useTabChrome().nativeAccessory`:
+iOS 26 with the Liquid Glass tab bar). On Android, the Material shell and earlier iOS the current climb rides the
+floating bar, which has no such buttons, so the tab and section are left out (a selected tab falls back to Below the
+climb).
+
 ### What the climber gets
 
 - A **Mini player** tab in View options: a switch and ↑/↓ arrows for Next climb, Previous climb, Mirror, Favorite,

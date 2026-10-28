@@ -32,8 +32,8 @@ export type ClimbViewModelInput = {
     preview: ReactNode;
     previewHeight: number;
   };
-  /** The MiniPlayer's buttons, from `useMiniPlayerButtonControls`. */
-  miniPlayer: {
+  /** The MiniPlayer's buttons, from `useMiniPlayerButtonControls`. `null` where there is no native bottom accessory to draw them. */
+  miniPlayer: null | {
     title: string;
     settingsFooter: string;
     controls: readonly MiniPlayerButtonControl[];
@@ -86,23 +86,26 @@ export function buildClimbViewModel({ buttons, miniPlayer, belowTheClimb }: Clim
     },
   ];
 
-  const miniPlayerRows: MoreRow[] = [
-    ...miniPlayer.controls.map((control): MoreRow => ({
-      kind: 'toggle',
-      key: `miniPlayer.${control.id}`,
-      label: control.label,
-      subtitle: control.description,
-      value: control.visible,
-      onValueChange: (visible: boolean) => miniPlayer.onVisibleChange(control.id, visible),
-    })),
-    {
-      kind: 'button',
-      key: 'restoreMiniPlayerDefaults',
-      label: miniPlayer.restoreDefaultsLabel,
-      disabled: !miniPlayer.canRestoreDefaults,
-      onPress: miniPlayer.onRestoreDefaults,
-    },
-  ];
+  const miniPlayerRows: MoreRow[] =
+    miniPlayer === null
+      ? []
+      : [
+          ...miniPlayer.controls.map((control): MoreRow => ({
+            kind: 'toggle',
+            key: `miniPlayer.${control.id}`,
+            label: control.label,
+            subtitle: control.description,
+            value: control.visible,
+            onValueChange: (visible: boolean) => miniPlayer.onVisibleChange(control.id, visible),
+          })),
+          {
+            kind: 'button',
+            key: 'restoreMiniPlayerDefaults',
+            label: miniPlayer.restoreDefaultsLabel,
+            disabled: !miniPlayer.canRestoreDefaults,
+            onPress: miniPlayer.onRestoreDefaults,
+          },
+        ];
 
   return {
     sections: [
@@ -123,7 +126,9 @@ export function buildClimbViewModel({ buttons, miniPlayer, belowTheClimb }: Clim
         ],
       },
       { key: 'buttons', footer: buttons.settingsFooter, rows: buttonRows },
-      { key: 'miniPlayer', title: miniPlayer.title, footer: miniPlayer.settingsFooter, rows: miniPlayerRows },
+      ...(miniPlayer === null
+        ? []
+        : [{ key: 'miniPlayer', title: miniPlayer.title, footer: miniPlayer.settingsFooter, rows: miniPlayerRows }]),
       belowTheClimb,
     ],
   };
