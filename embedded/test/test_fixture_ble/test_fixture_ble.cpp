@@ -47,6 +47,11 @@ std::vector<uint8_t> frame(uint8_t command, std::initializer_list<uint16_t> posi
 }
 int main() {
     Logger.enableSerial(false);
+    const uint8_t displayOrderAddress[]{0xc2, 0x12, 0x34, 0x56, 0x78, 0x9a};
+    const NimBLEAddress fromDisplayOrder(displayOrderAddress, BLE_ADDR_RANDOM);
+    CHECK(fromDisplayOrder.address.val[5] == 0xc2 && fromDisplayOrder.address.val[0] == 0x9a);
+    CHECK(fromDisplayOrder.toString() == "c2:12:34:56:78:9a");
+    CHECK(NimBLEAddress(fromDisplayOrder.address) == fromDisplayOrder);
     FixtureJsonNode manifest;
     manifest.object["gymUuid"] = "production-qa-gym";
     manifest.object["boards"].array = {makeBoard("kilter", "board-kilter", "99000001", 8),
@@ -58,8 +63,10 @@ int main() {
     for (size_t index = 0; index < 3; index++)
         CHECK(fixture.isAdvertising(index));
     auto addresses = fixture_ble_host::addresses;
-    for (auto address : addresses)
+    for (auto address : addresses) {
         CHECK((address.val[5] & 0xc0) == 0xc0);
+        CHECK((address.val[0] & 0x03) == 0x02);
+    }
     auto* service = NimBLEDevice::server.getServiceByUUID("6E400001-B5A3-F393-E0A9-E50E24DCCA9E");
     auto* rx = service->getCharacteristic("6E400002-B5A3-F393-E0A9-E50E24DCCA9E");
     auto write = [&](uint16_t handle, const std::vector<uint8_t>& bytes) { rx->write(handle, bytes); };

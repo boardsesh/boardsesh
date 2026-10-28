@@ -77,8 +77,11 @@ try {
     '-I', join(testRoot, 'test_fixture_buttons/mocks'), '-I', unityRoot,
   ]);
   compileSuite('cache', [join(testRoot, 'test_fixture_cache/test_fixture_cache.cpp')], ['-I', unityRoot]);
+  compileSuite('client', [join(testRoot, 'test_fixture_client/test_fixture_client.cpp')], [
+    '-I', join(testRoot, 'test_fixture_client/mocks'), '-I', unityRoot,
+  ]);
   compileSuite('geometry', [join(testRoot, 'test_amoled_preview/test_amoled_preview.cpp')], ['-I', unityRoot]);
-  console.log(`[fixture-tests] All four suites passed${sanitize ? ' with address/undefined sanitizers' : ''}.`);
+  console.log(`[fixture-tests] All five suites passed${sanitize ? ' with address/undefined sanitizers' : ''}.`);
 } finally {
   rmSync(buildDirectory, { recursive: true, force: true });
 }

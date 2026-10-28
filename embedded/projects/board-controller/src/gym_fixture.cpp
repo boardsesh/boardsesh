@@ -282,7 +282,7 @@ void serviceRefresh() {
             Config.setString("fx_denied", "");
         } else {
             statusMessage = state == -1 ? stagingError : error;
-            client.retryAfterAssetFailure();
+            client.retryAfterAssetFailure(statusMessage);
         }
         stagedManifest.clear();
         stagingState.store(0);
@@ -318,7 +318,7 @@ void serviceRefresh() {
         stagingState.store(0);
         stagedManifest.clear();
         statusMessage = "Cannot start preview download";
-        client.retryAfterAssetFailure();
+        client.retryAfterAssetFailure(statusMessage);
     }
 }
 
