@@ -107,7 +107,24 @@ export const SHARED_EVENTS = {
   // folded in here: `sessionMode: 'party' | 'solo'` carries what `Wall Advance`
   // added, and `method` already encoded what its `source` re-encoded. Round-trip
   // success stays a separate question — see `Wall Confirmed` / `Wall Confirm Timeout`.
+  //
+  // www stopped firing it with W-16 (#4435). Mobile fires it since #6940, once
+  // per deliberate Next or Previous: the player's ⏮ ⏭ and board swipe, and the
+  // MiniPlayer's ⏮ ⏭. Props (built by `queueNavigation`,
+  // queue-navigation-events.ts): { direction: 'next' | 'previous', method:
+  // 'button' | 'swipe', surface: 'player' | 'mini_player', outcome: 'moved' |
+  // 'preview', sessionMode: 'party' | 'solo', lightOnSwipe, boardType, layoutId
+  // (null on a spray wall) }. `preview` is a step that only looked: in a crew or
+  // with Light on swipe off the wall stays put. The rest timer's auto-advance
+  // and the workout runner do not fire it. www's `method` values differ, so read
+  // mobile on `surface`, which www never sent.
   QueueNavigation: 'Queue Navigation',
+  // Mobile-only (#6940): the climber asked for the queue. Props (built by
+  // `queueSheetOpened`): { surface: 'player' | 'player_menu' | 'mini_player' |
+  // 'snackbar', boardType }. On a side-by-side iPad player the queue button
+  // shows Up next in the side panel instead of a sheet; it still fires, as
+  // `player`, because the climber asked for the same thing.
+  QueueSheetOpened: 'Queue Sheet Opened',
   // A held swipe track stopped steering next/prev, so swipes fall back to the
   // queue. The climber still HAS a track; it just no longer anchors the climb
   // they are on, or they walked onto another board. Since #5403 this is

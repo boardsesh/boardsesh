@@ -19,6 +19,7 @@ const targets = vi.hoisted(() => ({
 }));
 const settings = vi.hoisted(() => ({ lightOnSwipe: true }));
 const drawer = vi.hoisted(() => ({ openPlayDrawer: vi.fn() }));
+const analytics = vi.hoisted(() => ({ track: vi.fn() }));
 
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueActions: () => ({ nextClimb: queue.nextClimb, previousClimb: queue.previousClimb }),
@@ -32,6 +33,7 @@ vi.mock('../../../providers/drawer-host-provider', () => ({
 }));
 vi.mock('../../../lib/graphql/use-active-board', () => ({ useActiveBoard: () => ({ data: null }) }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
+vi.mock('../../../lib/analytics', () => ({ track: analytics.track }));
 vi.mock('../../../lib/playlists/track-pager', () => ({ canLoadMoreOfTrack: () => targets.canLoadMore }));
 vi.mock('../../../settings/hooks', () => ({ useSetting: () => [settings.lightOnSwipe, vi.fn()] }));
 vi.mock('../../play-drawer/use-track-paging', () => ({ useTrackPaging: vi.fn() }));
@@ -79,7 +81,12 @@ describe('useMiniPlayerNavigation', () => {
     targets.canLoadMore = false;
     settings.lightOnSwipe = true;
     drawer.openPlayDrawer.mockClear();
+    analytics.track.mockClear();
   });
+
+  function navigationEvents() {
+    return analytics.track.mock.calls.filter(([eventName]) => eventName === 'Queue Navigation');
+  }
 
   it('moves the queue solo with Light on swipe on, as a swipe in the player would', () => {
     const { result } = renderHook(() => useMiniPlayerNavigation());
@@ -88,6 +95,58 @@ describe('useMiniPlayerNavigation', () => {
     expect(queue.nextClimb).toHaveBeenCalledTimes(1);
     expect(queue.previousClimb).toHaveBeenCalledTimes(1);
     expect(drawer.openPlayDrawer).not.toHaveBeenCalled();
+  });
+
+  it('reports each move once, as a MiniPlayer button press', () => {
+    const { result } = renderHook(() => useMiniPlayerNavigation());
+    act(() => result.current.onNext());
+    act(() => result.current.onPrevious());
+    expect(navigationEvents()).toEqual([
+      [
+        'Queue Navigation',
+        expect.objectContaining({
+          direction: 'next',
+          method: 'button',
+          surface: 'mini_player',
+          outcome: 'moved',
+          sessionMode: 'solo',
+          lightOnSwipe: true,
+        }),
+      ],
+      [
+        'Queue Navigation',
+        expect.objectContaining({ direction: 'previous', method: 'button', surface: 'mini_player', outcome: 'moved' }),
+      ],
+    ]);
+  });
+
+  it.each([
+    [
+      'in a crew',
+      () => {
+        queue.inSharedSession = true;
+      },
+      'party',
+      true,
+    ],
+    [
+      'with Light on swipe off',
+      () => {
+        settings.lightOnSwipe = false;
+      },
+      'solo',
+      false,
+    ],
+  ] as const)('reports a preview %s', (_label, arrange, sessionMode, lightOnSwipe) => {
+    arrange();
+    const { result } = renderHook(() => useMiniPlayerNavigation());
+    act(() => result.current.onNext());
+    expect(navigationEvents()).toEqual([
+      [
+        'Queue Navigation',
+        expect.objectContaining({ direction: 'next', outcome: 'preview', sessionMode, lightOnSwipe }),
+      ],
+    ]);
   });
 
   it.each([
@@ -112,6 +171,7 @@ describe('useMiniPlayerNavigation', () => {
     expect(result.current.canNext).toBe(false);
     act(() => result.current.onPrevious());
     expect(queue.previousClimb).not.toHaveBeenCalled();
+    expect(navigationEvents()).toHaveLength(0);
   });
 
   it("waits while the list's next page is still loading", () => {
@@ -130,5 +190,7 @@ describe('useMiniPlayerNavigation', () => {
     act(() => result.current.onNext());
     expect(queue.nextClimb).not.toHaveBeenCalled();
     expect(drawer.openPlayDrawer).toHaveBeenCalledWith(queue.current?.climb, { reopensCurrent: true });
+    // Opening the end card changes no climb.
+    expect(navigationEvents()).toHaveLength(0);
   });
 });

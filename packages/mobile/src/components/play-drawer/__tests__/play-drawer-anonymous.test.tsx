@@ -274,6 +274,13 @@ vi.mock('@boardsesh/analytics', () => ({
   },
 }));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
+// Queue Navigation's payloads have their own suites (use-play-selection-controller,
+// play-drawer-cross-board); the analytics package is stubbed above.
+const queueAnalytics = vi.hoisted(() => ({ navigation: vi.fn() }));
+vi.mock('../../../lib/queue-navigation-analytics', () => ({
+  trackQueueNavigation: queueAnalytics.navigation,
+  trackQueueSheetOpened: vi.fn(),
+}));
 vi.mock('../../../lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: activeBoard.current, isPending: false }),
 }));
@@ -1136,6 +1143,11 @@ describe('PlayDrawer — the shared-session browse latch', () => {
       (lastActionBarProps().onNextClick as () => void)();
     });
     expect(queueActions.nextClimb).not.toHaveBeenCalled();
+    // #6940: the latch made that step a preview, so it reports the crew mode
+    // that decided it, not the roster that just emptied.
+    expect(queueAnalytics.navigation).toHaveBeenLastCalledWith(
+      expect.objectContaining({ direction: 'next', method: 'button', outcome: 'preview', inSharedSession: true }),
+    );
   });
 
   it('releases the latch on its own once the session has been solo for a dwell', () => {

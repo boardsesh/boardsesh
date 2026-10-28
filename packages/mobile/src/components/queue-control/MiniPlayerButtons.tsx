@@ -7,6 +7,7 @@ import type { MiniPlayerButtonId } from '../../lib/mini-player-buttons';
 import { useFavoriteStatus, useToggleFavorite } from '../../lib/graphql/hooks';
 import { track } from '../../lib/analytics';
 import { hapticSelection } from '../../lib/haptics';
+import { trackQueueSheetOpened } from '../../lib/queue-navigation-analytics';
 import { useShareClimbAction } from '../../hooks/use-share-climb-action';
 import { useDrawerHost, type BoardConfig } from '../../providers/drawer-host-provider';
 import { useTheme } from '../../providers/theme-provider';
@@ -179,12 +180,17 @@ function MiniPlayerMirrorButton({
 
 function MiniPlayerQueueButton({ size }: { size: number }) {
   const { t } = useTranslation('session');
-  const { openQueueSheet } = useDrawerHost();
+  const { openQueueSheet, boardConfig } = useDrawerHost();
+  const boardType = boardConfig?.boardName;
+  const handlePress = useCallback(() => {
+    trackQueueSheetOpened({ surface: 'mini_player', boardType });
+    openQueueSheet();
+  }, [openQueueSheet, boardType]);
   return (
     <MiniPlayerIconButton
       iconName="queue"
       accessibilityLabel={t('mobile.queueSnackbar.openAria')}
-      onPress={openQueueSheet}
+      onPress={handlePress}
       size={size}
     />
   );

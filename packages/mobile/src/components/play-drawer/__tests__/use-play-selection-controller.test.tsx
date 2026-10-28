@@ -88,6 +88,7 @@ function inputs(): SelectionInputs {
       heldQueueItemUuid: null,
       putHeldClimbOnWall: vi.fn(),
     },
+    onNavigationStep: vi.fn(),
   };
 }
 function open(selected: ClimbQueueItem, options?: PlayDrawerOpenOptions) {
@@ -266,7 +267,7 @@ describe('swipe selection callbacks', () => {
   it.each(['handlePrev', 'handleNext'] as const)('%s preserves the live queue path', (handler) => {
     const initialProps = inputs();
     const { result } = renderHook(usePlaySelectionController, { initialProps });
-    act(() => result.current[handler]());
+    act(() => result.current[handler]('button'));
     expect(
       handler === 'handlePrev' ? initialProps.queue.previousClimb : initialProps.queue.nextClimb,
     ).toHaveBeenCalledOnce();
@@ -284,7 +285,7 @@ describe('swipe selection callbacks', () => {
       initialProps.preview.drawerPreviewSuggestionSource = source([item('preview'), item('next')]);
     }
     const { result } = renderHook(usePlaySelectionController, { initialProps });
-    act(() => result.current.handleNext());
+    act(() => result.current.handleNext('swipe'));
     expect(initialProps.preview.setDrawerPreviewItem).toHaveBeenCalledWith(
       initialProps.navigation.navigationState.nextItem,
     );
@@ -298,7 +299,7 @@ describe('swipe selection callbacks', () => {
     initialProps.navigation.browseByDefault = true;
     initialProps.navigation.navigationState.nextItem = null;
     const { result } = renderHook(usePlaySelectionController, { initialProps });
-    act(() => result.current.handleNext());
+    act(() => result.current.handleNext('swipe'));
     expect(initialProps.queue.nextClimb).not.toHaveBeenCalled();
     expect(initialProps.preview.setDrawerPreviewItem).not.toHaveBeenCalled();
     expect(initialProps.chrome.clearMirror).not.toHaveBeenCalled();
@@ -318,8 +319,50 @@ describe('swipe selection callbacks', () => {
     });
     expect(result.current.handlePrev).toBe(previous);
     expect(result.current.handleNext).not.toBe(next);
-    act(() => result.current.handleNext());
+    act(() => result.current.handleNext('swipe'));
     expect(initialProps.queue.nextClimb).toHaveBeenCalledOnce();
+  });
+
+  describe('Queue Navigation steps (#6940)', () => {
+    it.each([
+      ['handlePrev', 'previous', 'button'],
+      ['handleNext', 'next', 'button'],
+      ['handlePrev', 'previous', 'swipe'],
+      ['handleNext', 'next', 'swipe'],
+    ] as const)('%s reports one moved %s step by %s', (handler, direction, method) => {
+      const initialProps = inputs();
+      const { result } = renderHook(usePlaySelectionController, { initialProps });
+      act(() => result.current[handler](method));
+      expect(initialProps.onNavigationStep).toHaveBeenCalledOnce();
+      expect(initialProps.onNavigationStep).toHaveBeenCalledWith({ direction, method, outcome: 'moved' });
+    });
+
+    it.each(['crew', 'lighting-off'] as const)('reports a %s step as a preview', (kind) => {
+      const initialProps = inputs();
+      if (kind === 'crew') initialProps.navigation.browseByDefault = true;
+      if (kind === 'lighting-off') initialProps.navigation.lightOnSwipe = false;
+      const { result } = renderHook(usePlaySelectionController, { initialProps });
+      act(() => result.current.handleNext('swipe'));
+      expect(initialProps.onNavigationStep).toHaveBeenCalledOnce();
+      expect(initialProps.onNavigationStep).toHaveBeenCalledWith({
+        direction: 'next',
+        method: 'swipe',
+        outcome: 'preview',
+      });
+    });
+
+    it('reports nothing when there is nowhere to go', () => {
+      const initialProps = inputs();
+      initialProps.navigation.navigationState.nextItem = null;
+      const crew = inputs();
+      crew.navigation.browseByDefault = true;
+      crew.navigation.navigationState.nextItem = null;
+      for (const props of [initialProps, crew]) {
+        const { result } = renderHook(usePlaySelectionController, { initialProps: props });
+        act(() => result.current.handleNext('button'));
+        expect(props.onNavigationStep).not.toHaveBeenCalled();
+      }
+    });
   });
 });
 

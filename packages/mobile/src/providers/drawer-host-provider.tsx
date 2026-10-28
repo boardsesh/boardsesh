@@ -38,6 +38,7 @@ import { useGymBoards } from '../lib/graphql/hooks/use-gym-boards';
 import { useReachableBoardKeys } from './queue/use-reachable-board-keys';
 import { formatActiveBoardLabel } from '../lib/boards/active-board-label';
 import { track } from '../lib/analytics';
+import { trackQueueSheetOpened } from '../lib/queue-navigation-analytics';
 import { addErrorBreadcrumb } from '../lib/error-reporting';
 import { ClimbReactionMenu } from '../components/climb-actions/ClimbReactionMenu';
 import { AddBetaVideoSheet } from '../components/AddBetaVideoSheet';
@@ -983,10 +984,12 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     boardSheetRef.current?.present();
   }, [cancelPendingSprayAction]);
   // Snackbar "Open": dismiss the snackbar, then open the queue sheet.
+  const snackbarBoardType = storedActiveBoardConfig?.boardName;
   const handleSnackbarOpen = useCallback(() => {
     dismissSnackbar();
+    trackQueueSheetOpened({ surface: 'snackbar', boardType: snackbarBoardType });
     openQueueSheet();
-  }, [dismissSnackbar, openQueueSheet]);
+  }, [dismissSnackbar, openQueueSheet, snackbarBoardType]);
 
   // The queue sheet renders climbs against the active board (thumbnails + tick).
   const queueBoard = useMemo<QueueItemRowBoard | null>(() => {
