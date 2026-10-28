@@ -9899,6 +9899,8 @@ export type SessionWorkout = {
   displayName?: Maybe<Scalars['String']['output']>;
   /** The climber's ticks in the session that match no climb of the workout. */
   offPlan: Scalars['Int']['output'];
+  /** The climber's ticks behind offPlan that the viewer may see. */
+  offPlanTickUuids: Array<Scalars['ID']['output']>;
   stages: Array<SessionWorkoutStage>;
   updatedAt: Scalars['String']['output'];
   userId: Scalars['ID']['output'];
@@ -9921,6 +9923,8 @@ export type SessionWorkoutClimb = {
   reps: Array<SessionWorkoutRepOutcome>;
   /** True when the climber logged nothing on it. */
   skipped: Scalars['Boolean']['output'];
+  /** The ticks behind reps, same order: only ticks the viewer may see, so a client can group the session's ticks by block. */
+  tickUuids: Array<Scalars['ID']['output']>;
 };
 
 /** One line for a feed card: the main block, the second for 'A + B', how many more. */

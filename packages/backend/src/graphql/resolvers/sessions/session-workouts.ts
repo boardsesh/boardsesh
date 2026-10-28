@@ -436,6 +436,8 @@ export const sessionWorkoutQueries = {
               })
             : null,
           reps: climb.reps.map((rep) => REP_OUTCOME[rep]),
+          // Every tick here passed keepTick in restrictDerivedWorkout.
+          tickUuids: climb.tickUuids,
           skipped: climb.skipped,
         };
       };
@@ -464,6 +466,7 @@ export const sessionWorkoutQueries = {
         avatarUrl: row.avatarUrl,
         stages,
         offPlan: visible.offPlan,
+        offPlanTickUuids: visible.offPlanTickUuids,
         updatedAt: row.updatedAt.toISOString(),
       };
     });

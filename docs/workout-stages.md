@@ -180,7 +180,11 @@ log while the write is still in the outbox.
 
 **What the queries answer.** `sessionWorkouts(sessionId)` gives one workout per climber:
 stages with their tallies, climbs with name, grade, frames and the board to draw them on
-(resolved like the summary's hardest climb), and the off-plan count.
+(resolved like the summary's hardest climb), and the off-plan count. Each climb carries
+`tickUuids`, the ticks behind its reps in rep order, and the workout carries
+`offPlanTickUuids`, so a client groups the session's ticks under the right block without
+guessing by climb and angle. Both list only ticks the viewer may see: they pass through
+the same filter as the climbs and tallies.
 `sessionWorkoutHeadlines(sessionIds)` gives feed cards one line per workout for up to 50
 sessions: the main block's kind and grade, the second main block's kind, the block count
 and how many main blocks follow the first. Warm-ups and cool-downs are main only when they

@@ -313,7 +313,7 @@ describe('sessionWorkouts', () => {
   }
 
   it('derives every block from the owner’s ticks, with climb names and grades', async () => {
-    const { sessionId } = await playedSession();
+    const { sessionId, ticks } = await playedSession();
     const [workout] = await sessionWorkoutQueries.sessionWorkouts(null, { sessionId }, viewer(STRANGER));
 
     expect(workout).toMatchObject({ userId: CLIMBER, displayName: CLIMBER_NAME, offPlan: 1 });
@@ -344,6 +344,12 @@ describe('sessionWorkouts', () => {
     });
     expect(fourByFour.climbs[0].renderBoard).toMatchObject({ layoutId: 1, sizeId: 10, setIds: [1] });
     expect(fourByFour.climbs[1]).toMatchObject({ climbUuid: CLIMB_B, reps: ['ATTEMPT'], skipped: false });
+    // The ticks behind each climb's reps, in rep order, and the owner's off-plan ticks.
+    expect(warm.climbs[0].tickUuids).toEqual([ticks.warm]);
+    expect(fourByFour.climbs[0].tickUuids).toEqual([ticks.a1, ticks.a2, ticks.a3, ticks.a4]);
+    expect(fourByFour.climbs[1].tickUuids).toEqual([ticks.b1]);
+    expect(workout.offPlanTickUuids).toEqual([ticks.off]);
+    expect(JSON.stringify(workout)).not.toContain(ticks.member);
   });
 
   it('shows a climb with no tick as skipped', async () => {
@@ -369,6 +375,29 @@ describe('sessionWorkouts', () => {
 
     const [forOwner] = await sessionWorkoutQueries.sessionWorkouts(null, { sessionId }, viewer(CLIMBER));
     expect(forOwner.stages[1].climbs.map((climb) => climb.climbUuid)).toEqual([CLIMB_A, CLIMB_B]);
+    expect(forOwner.stages[1].climbs[0].tickUuids).toContain(ticks.a3);
+  });
+
+  it('never hands a viewer the uuid of a tick they may not see', async () => {
+    const { sessionId, ticks } = await playedSession();
+    for (const hidden of [ticks.a3, ticks.off]) {
+      await db.execute(sql`
+        INSERT INTO content_privacy (entity_type, entity_id, owner_id, audience)
+        VALUES ('tick', ${hidden}, ${CLIMBER}, 'only_me')
+      `);
+    }
+
+    const [forStranger] = await sessionWorkoutQueries.sessionWorkouts(null, { sessionId }, viewer(STRANGER));
+    const shown = JSON.stringify(forStranger);
+    // Climb A goes whole, so its visible reps' uuids go with it.
+    for (const absent of [ticks.a1, ticks.a2, ticks.a3, ticks.a4, ticks.off]) expect(shown).not.toContain(absent);
+    expect(forStranger.offPlan).toBe(0);
+    expect(forStranger.offPlanTickUuids).toEqual([]);
+    expect(forStranger.stages[1].climbs[0].tickUuids).toEqual([ticks.b1]);
+
+    const [forOwner] = await sessionWorkoutQueries.sessionWorkouts(null, { sessionId }, viewer(CLIMBER));
+    expect(forOwner.offPlanTickUuids).toEqual([ticks.off]);
+    expect(forOwner.stages[1].climbs[0].tickUuids).toEqual([ticks.a1, ticks.a2, ticks.a3, ticks.a4]);
   });
 
   it('answers nothing for a session the viewer may not open', async () => {

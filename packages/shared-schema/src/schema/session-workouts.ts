@@ -73,6 +73,8 @@ export const sessionWorkoutsTypeDefs = /* GraphQL */ `
     renderBoard: RenderBoardConfig
     "One per tick on this climb, in tick order."
     reps: [SessionWorkoutRepOutcome!]!
+    "The ticks behind reps, same order: only ticks the viewer may see, so a client can group the session's ticks by block."
+    tickUuids: [ID!]!
     "True when the climber logged nothing on it."
     skipped: Boolean!
   }
@@ -114,6 +116,8 @@ export const sessionWorkoutsTypeDefs = /* GraphQL */ `
     stages: [SessionWorkoutStage!]!
     "The climber's ticks in the session that match no climb of the workout."
     offPlan: Int!
+    "The climber's ticks behind offPlan that the viewer may see."
+    offPlanTickUuids: [ID!]!
     updatedAt: String!
   }
 

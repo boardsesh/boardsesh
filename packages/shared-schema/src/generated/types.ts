@@ -9902,6 +9902,8 @@ export type SessionWorkout = {
   displayName?: Maybe<Scalars['String']['output']>;
   /** The climber's ticks in the session that match no climb of the workout. */
   offPlan: Scalars['Int']['output'];
+  /** The climber's ticks behind offPlan that the viewer may see. */
+  offPlanTickUuids: Array<Scalars['ID']['output']>;
   stages: Array<SessionWorkoutStage>;
   updatedAt: Scalars['String']['output'];
   userId: Scalars['ID']['output'];
@@ -9924,6 +9926,8 @@ export type SessionWorkoutClimb = {
   reps: Array<SessionWorkoutRepOutcome>;
   /** True when the climber logged nothing on it. */
   skipped: Scalars['Boolean']['output'];
+  /** The ticks behind reps, same order: only ticks the viewer may see, so a client can group the session's ticks by block. */
+  tickUuids: Array<Scalars['ID']['output']>;
 };
 
 /** One line for a feed card: the main block, the second for 'A + B', how many more. */
@@ -18841,6 +18845,7 @@ export type SessionWorkoutResolvers<
   avatarUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   displayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   offPlan?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  offPlanTickUuids?: Resolver<Array<ResolversTypes['ID']>, ParentType, ContextType>;
   stages?: Resolver<Array<ResolversTypes['SessionWorkoutStage']>, ParentType, ContextType>;
   updatedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   userId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
@@ -18863,6 +18868,7 @@ export type SessionWorkoutClimbResolvers<
   renderBoard?: Resolver<Maybe<ResolversTypes['RenderBoardConfig']>, ParentType, ContextType>;
   reps?: Resolver<Array<ResolversTypes['SessionWorkoutRepOutcome']>, ParentType, ContextType>;
   skipped?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  tickUuids?: Resolver<Array<ResolversTypes['ID']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
