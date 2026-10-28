@@ -19,14 +19,20 @@ vi.mock('react-native', () => ({
   Platform: { OS: 'android' },
   PlatformColor: (name: string) => name,
 }));
-type StubTextProps = { children?: ReactNode; color?: string; variant?: string; style?: unknown };
+type StubTextProps = {
+  children?: ReactNode;
+  color?: string;
+  variant?: string;
+  style?: unknown;
+  accessibilityRole?: string;
+};
 // Flattens the style array so the test can read the resolved weight/opacity.
 function flatten(style: unknown): Record<string, unknown> {
   if (Array.isArray(style)) return Object.assign({}, ...style.map(flatten));
   return style && typeof style === 'object' ? (style as Record<string, unknown>) : {};
 }
 vi.mock('../Text', () => ({
-  Text: ({ children, color, variant, style }: StubTextProps) => {
+  Text: ({ children, color, variant, style, accessibilityRole }: StubTextProps) => {
     const flat = flatten(style);
     return createElement(
       'span',
@@ -36,6 +42,7 @@ vi.mock('../Text', () => ({
         'data-weight': String(flat.fontWeight),
         'data-opacity': String(flat.opacity),
         'data-tracking': String(flat.letterSpacing),
+        'data-role': accessibilityRole,
       },
       children,
     );
@@ -90,5 +97,21 @@ describe('SectionHeader caption', () => {
     const header = getByText('Stats summary');
     expect(header.getAttribute('data-weight')).toBe('500');
     expect(header.getAttribute('data-color')).toBe('#49454F');
+  });
+});
+
+describe('SectionHeader accessibility', () => {
+  it('is a heading VoiceOver can jump to', () => {
+    ctrl.variant = 'liquidGlass';
+    const { getByText } = render(createElement(SectionHeader, { title: 'Your workout' }));
+    expect(getByText('Your workout').getAttribute('data-role')).toBe('header');
+  });
+
+  it('leaves the role to the disclosure button when the header collapses', () => {
+    ctrl.variant = 'liquidGlass';
+    const { getByText } = render(
+      createElement(SectionHeader, { title: 'Stats', disclosure: { expanded: true, onToggle: () => {} } }),
+    );
+    expect(getByText('Stats').getAttribute('data-role')).toBeNull();
   });
 });

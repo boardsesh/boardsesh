@@ -75,6 +75,12 @@ vi.mock('../SessionTickRow', () => ({
     return null;
   },
 }));
+vi.mock('../workout/WorkoutClimbsListRows', () => ({
+  WorkoutBlockSectionRow: () => null,
+  WorkoutListSectionLabel: () => null,
+  WorkoutSetRow: () => null,
+  WorkoutPlannedClimbRow: () => null,
+}));
 vi.mock('../../../lib/graphql/hooks', () => ({
   useSessionDetail: () => ({ data: mocks.session, isPending: false }),
   useBulkVoteSummaries: (...args: unknown[]) => {

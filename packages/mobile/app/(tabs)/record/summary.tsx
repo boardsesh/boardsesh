@@ -1,67 +1,25 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  View,
-  ScrollView,
-  StyleSheet,
-  ActivityIndicator,
-  Keyboard,
-  Platform,
-  type ScrollViewInstance,
-} from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, withDelay, withSpring, withTiming } from 'react-native-reanimated';
+import { useEffect, useRef } from 'react';
+import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { SessionSummary } from '@boardsesh/shared-schema';
 import { Text } from '../../../src/components/Text';
 import { Button } from '../../../src/components/Button';
-import { Avatar } from '../../../src/components/Avatar';
-import { AvatarGroup } from '../../../src/components/you/AvatarGroup';
-import { Card } from '../../../src/components/Card';
 import { Icon } from '../../../src/components/Icon';
-import { SectionHeader } from '../../../src/components/SectionHeader';
-import { Separator } from '../../../src/components/Separator';
-import { ClimbListThumbnail } from '../../../src/components/ClimbListThumbnail';
-import { StatTile, GradeTile } from '../../../src/components/session/session-stat-tiles';
-import { SessionRecapCard } from '../../../src/components/session/SessionRecapCard';
-import { StackedBarChart } from '../../../src/components/you/YouCharts';
-import { buildSessionGradeBars, gradeBadgeColor } from '../../../src/components/you/profile-chart-colors';
+import { SessionSummaryContent } from '../../../src/components/session/SessionSummaryContent';
+import { useSessionWorkoutView } from '../../../src/components/session/workout/use-session-workout-view';
 import { useTheme } from '../../../src/providers/theme-provider';
 import { useHeaderActions } from '../../../src/hooks/use-header-actions';
 import { useSessionSummary } from '../../../src/lib/graphql/hooks';
-import { useGradeFormat } from '../../../src/hooks/use-grade-format';
-import { renderBoardToPlaylistConfig } from '../../../src/lib/playlists/board-details-for-playlist';
-import { formatSessionWhen } from '../../../src/lib/format-session-when';
-import { SaveToAppleHealthButton } from '../../../src/components/integrations/SaveToAppleHealthButton';
-import { ShareToStravaButton } from '../../../src/components/integrations/ShareToStravaButton';
-import { springs, timing } from '../../../src/theme/animations';
 import { STORE_REVIEW_PROMPT_DELAY_MS, maybeRequestSessionStoreReview } from '../../../src/lib/store-review';
 import { usePostSessionPrompt } from '../../../src/lib/offline-nudges/use-post-session-prompt';
-import { PostSessionOfflineNudge } from '../../../src/components/offline/PostSessionOfflineNudge';
 import { spacing } from '../../../src/theme/tokens';
-
-type TFunc = (key: string, opts?: Record<string, unknown>) => string;
-
-function formatDuration(minutes: number | null | undefined, t: TFunc): string {
-  if (!minutes || minutes <= 0) return '';
-  if (minutes < 60) return t('summary.minutes', { count: minutes });
-  const hours = Math.floor(minutes / 60);
-  const remainingMins = minutes % 60;
-  if (remainingMins === 0) return t('summary.hours', { count: hours });
-  return t('summary.hoursAndMinutes', { hours, mins: remainingMins });
-}
-
-/** Count-based celebratory headline. Deterministic, no historical lookup. */
-function heroHeadline(isParty: boolean, totalSends: number, t: TFunc): string {
-  if (isParty) return t('summary.heroCrewSession');
-  if (totalSends === 0) return t('summary.heroLoggedWork');
-  if (totalSends >= 5) return t('summary.heroCrushedIt');
-  return t('summary.heroNiceSession');
-}
 
 export default function SessionSummaryScreen() {
   const { sessionId, reviewCandidate } = useLocalSearchParams<{ sessionId: string; reviewCandidate?: string }>();
   const { data: summary, isPending, isFetching, isError, refetch } = useSessionSummary(sessionId ?? null);
+  // The workout this session was climbed to, if any (#6903). Undefined until the
+  // workout data lands, so the recap reads as a plain session.
+  const workoutState = useSessionWorkoutView(sessionId);
   const { t } = useTranslation('session');
   const { systemColors, brandColors: brand } = useTheme();
   const router = useRouter();
@@ -122,266 +80,18 @@ export default function SessionSummaryScreen() {
     );
   }
 
-  return <SessionSummaryContent summary={summary} storeReviewWillPrompt={postSessionPrompt !== 'offline'} />;
-}
-
-/**
- * The loaded recap. Split out so the celebration animation hooks mount fresh
- * with a settled summary (no conditional hooks behind the loading/error gates).
- * Mirrors the session-detail screen — hero, hardest-send card, the shared
- * stat tiles, and the same grade chart — so the post-session payoff feels like
- * the rest of the app.
- */
-function SessionSummaryContent({
-  summary,
-  storeReviewWillPrompt,
-}: {
-  summary: SessionSummary;
-  storeReviewWillPrompt: boolean;
-}) {
-  const { t } = useTranslation('session');
-  const { systemColors } = useTheme();
-  const insets = useSafeAreaInsets();
-  const { formatGrade } = useGradeFormat();
-  const scrollViewRef = useRef<ScrollViewInstance>(null);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-
-  // This screen is a modal route: on Android the dialog window ignores
-  // adjustResize, so the keyboard overlays the recap editor's Save/Cancel row
-  // and automaticallyAdjustKeyboardInsets is an iOS-only no-op. Track the
-  // keyboard height ourselves (same listener pattern as ClimbReactionMenu),
-  // pad the scroll content by it, and scroll the editor into view on focus.
-  useEffect(() => {
-    if (Platform.OS !== 'android') return undefined;
-    const onShow = Keyboard.addListener('keyboardDidShow', (event) => {
-      setKeyboardHeight(event.endCoordinates?.height ?? 0);
-      // Scroll after the padding from the state update has been laid out.
-      setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 50);
-    });
-    const onHide = Keyboard.addListener('keyboardDidHide', () => setKeyboardHeight(0));
-    return () => {
-      onShow.remove();
-      onHide.remove();
-    };
-  }, []);
-
-  const handleRecapEditorFocus = useCallback(() => {
-    setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 300);
-  }, []);
-
-  const participants = summary.participants;
-  const isParty = participants.length > 1;
-  const totalSends = summary.totalSends;
-  const totalFlashes = summary.totalFlashes;
-  const totalAttempts = summary.totalAttempts;
-  const hasSends = totalSends > 0;
-
-  const when = summary.endedAt ?? summary.startedAt ?? null;
-  const duration = formatDuration(summary.durationMinutes, t);
-  const whenLine = [when ? formatSessionWhen(when, t) : '', duration].filter(Boolean).join(' · ');
-
-  const headline = heroHeadline(isParty, totalSends, t);
-  const featuredValue = hasSends ? totalSends : totalAttempts;
-  const featuredLabel = hasSends
-    ? t('summary.featuredSendsLabel', { count: totalSends })
-    : t('summary.featuredAttemptsLabel', { count: totalAttempts });
-
-  const hardest = summary.hardestClimb ?? null;
-  // Resolve sizeId/setIds (and boardName) from boardType + layoutId, the same
-  // way the session-detail rows do. Null → no thumbnail (legacy climb / board
-  // the bundled-asset path can't render), so the card falls back to grade-only.
-  const thumbConfig =
-    hardest?.frames && hardest.boardType
-      ? renderBoardToPlaylistConfig(hardest.boardType, hardest.layoutId, hardest.renderBoard)
-      : null;
-
-  const gradeBars = useMemo(
-    () => buildSessionGradeBars(summary.gradeDistribution, formatGrade),
-    [summary.gradeDistribution, formatGrade],
-  );
-
-  // Celebration: the featured number springs in and the tiles rise in just
-  // after. Reanimated only — no confetti dependency. No haptic on mount: the
-  // screen appearing is not the climber's action (HIG "Playing haptics").
-  const heroScale = useSharedValue(0.85);
-  const heroOpacity = useSharedValue(0);
-  const tilesOpacity = useSharedValue(0);
-  const tilesTranslate = useSharedValue(12);
-
-  useEffect(() => {
-    heroOpacity.value = withTiming(1, { duration: timing.normal });
-    heroScale.value = withSpring(1, springs.bouncy);
-    tilesOpacity.value = withDelay(timing.fast, withTiming(1, { duration: timing.normal }));
-    tilesTranslate.value = withDelay(timing.fast, withSpring(0, springs.gentle));
-  }, [heroOpacity, heroScale, tilesOpacity, tilesTranslate]);
-
-  const heroAnimStyle = useAnimatedStyle(() => ({
-    opacity: heroOpacity.value,
-    transform: [{ scale: heroScale.value }],
-  }));
-  const tilesAnimStyle = useAnimatedStyle(() => ({
-    opacity: tilesOpacity.value,
-    transform: [{ translateY: tilesTranslate.value }],
-  }));
-
   return (
-    <ScrollView
-      ref={scrollViewRef}
-      style={styles.container}
-      contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + spacing[6] + keyboardHeight }]}
-      // The modal's native header floats over the scroll surface on iOS.
-      contentInsetAdjustmentBehavior="automatic"
-      // Keep the inline recap editor visible above the keyboard on iOS (no-op on
-      // Android). The recap card lives near the bottom of a scroll surface.
-      automaticallyAdjustKeyboardInsets
-      // Let the recap editor's Save/Cancel receive their first tap while the
-      // keyboard is open instead of only dismissing it.
-      keyboardShouldPersistTaps="handled"
-    >
-      {/* Hero — the payoff moment */}
-      <View style={styles.hero}>
-        {whenLine ? (
-          <Text variant="footnote" color={systemColors.secondaryLabel}>
-            {whenLine}
-          </Text>
-        ) : null}
-        {isParty ? <AvatarGroup participants={participants} size={36} /> : null}
-        <Text variant="title1" style={styles.headline}>
-          {headline}
-        </Text>
-        <Animated.View style={[styles.featured, heroAnimStyle]}>
-          <Text variant="largeTitle" style={styles.featuredValue}>
-            {featuredValue}
-          </Text>
-          <Text variant="subheadline" color={systemColors.secondaryLabel}>
-            {featuredLabel}
-          </Text>
-        </Animated.View>
-      </View>
-
-      {/* "You climbed here — keep it on your phone." Renders itself away unless
-          the board is un-downloaded, the flags are on, and the store review has
-          stood down. */}
-      <PostSessionOfflineNudge storeReviewWillPrompt={storeReviewWillPrompt} style={styles.offlineNudge} />
-
-      {/* Hardest send — a real achievement card with a board thumbnail */}
-      {hardest ? (
-        <Card>
-          <View style={styles.hardestRow}>
-            {thumbConfig ? (
-              <ClimbListThumbnail
-                frames={hardest.frames ?? ''}
-                boardName={thumbConfig.boardName}
-                layoutId={thumbConfig.layoutId}
-                sizeId={thumbConfig.sizeId}
-                setIds={thumbConfig.setIds.join(',')}
-                mirrored={hardest.isMirror ?? false}
-                size={{ width: 64, height: 82 }}
-              />
-            ) : null}
-            <View style={styles.hardestInfo}>
-              <Text variant="caption1" color={systemColors.secondaryLabel}>
-                {t('summary.hardestSendTitle')}
-              </Text>
-              <Text variant="title2" color={gradeBadgeColor(hardest.grade)} style={styles.hardestGrade}>
-                {formatGrade(hardest.grade, hardest.boardType) ?? hardest.grade}
-              </Text>
-              <Text variant="body" numberOfLines={1}>
-                {hardest.climbName}
-              </Text>
-            </View>
-          </View>
-        </Card>
-      ) : !hasSends ? (
-        <Card style={styles.effortCard}>
-          <Text variant="caption1" color={systemColors.secondaryLabel}>
-            {t('summary.effortTitle')}
-          </Text>
-          <Text variant="body">{t('summary.effortBody')}</Text>
-        </Card>
-      ) : null}
-
-      {/* Stat tiles — same Sends · Flashes · Attempts · Hardest as the detail card */}
-      <Animated.View style={[styles.tiles, tilesAnimStyle]}>
-        <StatTile value={totalSends} label={t('summary.sends')} icon="tick" />
-        <StatTile value={totalFlashes} label={t('summary.flashes')} icon="flash" />
-        <StatTile value={totalAttempts} label={t('summary.attempts')} icon="circle" />
-        {hardest ? <GradeTile grade={hardest.grade} boardName={hardest.boardType} /> : null}
-      </Animated.View>
-
-      {/* Grade distribution — the canonical chart used on the session-detail screen */}
-      {gradeBars ? (
-        <View style={styles.section}>
-          <SectionHeader title={t('summary.gradeDistribution')} />
-          <Card>
-            <StackedBarChart bars={gradeBars} colorBy="grade" fitYAxisToData />
-          </Card>
-        </View>
-      ) : null}
-
-      {/* Crew — only meaningful with more than one climber */}
-      {isParty ? (
-        <View style={styles.section}>
-          <SectionHeader title={t('summary.crew')} />
-          {participants.map((participant, index) => (
-            <View key={participant.userId}>
-              <View style={styles.participantRow}>
-                <Avatar uri={participant.avatarUrl} name={participant.displayName} size={36} />
-                <View style={styles.participantInfo}>
-                  <Text variant="body" numberOfLines={1}>
-                    {participant.displayName ?? t('detail.climberFallback')}
-                  </Text>
-                  <Text variant="caption1" color={systemColors.secondaryLabel}>
-                    {t('summary.crewStatLine', {
-                      sends: participant.sends,
-                      flashes: participant.flashes,
-                      attempts: participant.attempts,
-                    })}
-                  </Text>
-                </View>
-              </View>
-              {index < participants.length - 1 ? <Separator /> : null}
-            </View>
-          ))}
-        </View>
-      ) : null}
-
-      {/* Goal */}
-      {summary.goal ? (
-        <Card style={styles.goalCard}>
-          <Text variant="caption1" color={systemColors.secondaryLabel}>
-            {t('summary.goal')}
-          </Text>
-          <Text variant="body">{summary.goal}</Text>
-        </Card>
-      ) : null}
-
-      {/* Recap — the ender is the session creator, so the notes are editable here. */}
-      <SessionRecapCard
-        sessionId={summary.sessionId}
-        notes={summary.notes}
-        editable
-        onEditorFocus={handleRecapEditorFocus}
-      />
-
-      {/* External integration actions: save this session to Apple Health / share
-          to Strava. Each renders only when applicable (iOS / connected account). */}
-      <View style={styles.integrationActions}>
-        <SaveToAppleHealthButton summary={summary} />
-        <ShareToStravaButton sessionId={summary.sessionId} />
-      </View>
-    </ScrollView>
+    <SessionSummaryContent
+      summary={summary}
+      storeReviewWillPrompt={postSessionPrompt !== 'offline'}
+      workout={workoutState?.workout}
+      pendingTicks={workoutState?.pendingTicks}
+      offline={workoutState?.offline}
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  content: {
-    padding: spacing[4],
-    gap: spacing[5],
-  },
   centered: {
     flex: 1,
     alignItems: 'center',
@@ -401,61 +111,6 @@ const styles = StyleSheet.create({
     marginTop: spacing[2],
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing[3],
-  },
-  hero: {
-    alignItems: 'center',
-    gap: spacing[2],
-  },
-  headline: {
-    textAlign: 'center',
-  },
-  featured: {
-    alignItems: 'center',
-    marginTop: spacing[1],
-  },
-  featuredValue: {
-    fontWeight: '700',
-  },
-  offlineNudge: {
-    marginBottom: spacing[4],
-  },
-  hardestRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[3],
-  },
-  hardestInfo: {
-    flex: 1,
-    gap: spacing[1],
-  },
-  hardestGrade: {
-    fontWeight: '700',
-  },
-  effortCard: {
-    gap: spacing[1],
-  },
-  section: {
-    gap: spacing[2],
-  },
-  tiles: {
-    flexDirection: 'row',
-    gap: spacing[2],
-  },
-  participantRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[3],
-    paddingVertical: spacing[2],
-  },
-  participantInfo: {
-    flex: 1,
-    gap: 2,
-  },
-  goalCard: {
-    gap: spacing[1],
-  },
-  integrationActions: {
     gap: spacing[3],
   },
 });

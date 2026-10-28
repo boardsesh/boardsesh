@@ -48,6 +48,12 @@ export function SectionHeader({ title, actionLabel, onActionPress, disclosure }:
     <Text
       variant={headerText.textVariant}
       color={headerText.color}
+      // A heading VoiceOver's rotor can jump to. Inside the disclosure button
+      // the button's own role and label win, so the role only shows on a plain
+      // header. The raw title, not the uppercased caption, so it isn't spelled
+      // out letter by letter.
+      accessibilityRole={collapsible ? undefined : 'header'}
+      accessibilityLabel={collapsible ? undefined : title}
       style={[caption.style, { fontWeight: headerText.fontWeight }]}
     >
       {caption.text}

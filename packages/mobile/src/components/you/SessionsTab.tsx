@@ -16,6 +16,7 @@ import { OfflineState } from '../OfflineState';
 import { SessionFeedCard } from './SessionFeedCard';
 import { SessionsFeedHeader } from './SessionsFeedHeader';
 import { FeedSectionLabel } from './FeedSectionLabel';
+import { useSessionWorkoutHeadlines } from '../session/workout/use-session-workout-view';
 import { CommentSheet } from './CommentSheet';
 import { bucketSessionsByRecency, dedupeSessionsById, type FeedRecencyBucket } from '../../lib/feed-time-buckets';
 import { useSessionGroupedFeed, useBulkVoteSummaries } from '../../lib/graphql/hooks';
@@ -181,6 +182,10 @@ export function SessionsTab({ userId, topInset = 0, scrollEdge }: SessionsTabPro
     return map;
   }, [sessionVoteSummaries.data, tickVoteSummaries.data]);
 
+  // Each card's workout line (#6903). Empty until the workout data lands.
+  const sessionIds = useMemo(() => sessions.map((session) => session.sessionId), [sessions]);
+  const workoutHeadlines = useSessionWorkoutHeadlines(sessionIds);
+
   const handleOpenComments = useCallback((entityId: string, entityType: SocialEntityType) => {
     setCommentTarget({ entityId, entityType });
     commentSheetRef.current?.snapToIndex(0);
@@ -222,10 +227,11 @@ export function SessionsTab({ userId, topInset = 0, scrollEdge }: SessionsTabPro
           onOpenComments={handleOpenComments}
           onPress={handleOpenSession}
           onOpenClimb={handleOpenClimb}
+          workoutHeadline={workoutHeadlines.get(row.item.sessionId)}
         />
       );
     },
-    [handleOpenComments, handleOpenSession, summaryMap, t, handleOpenClimb],
+    [handleOpenComments, handleOpenSession, summaryMap, t, handleOpenClimb, workoutHeadlines],
   );
 
   // The feed rollup, shown when there are sessions. Memoized so FlashList doesn't

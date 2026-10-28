@@ -108,6 +108,11 @@ vi.mock('../../../../src/components/Text', () => ({
 vi.mock('../../../../src/components/Icon', () => ({ Icon: () => createElement('i', null) }));
 vi.mock('../../../../src/components/Avatar', () => ({ Avatar: () => createElement('div', null) }));
 vi.mock('../../../../src/components/SectionHeader', () => ({ SectionHeader: () => createElement('div', null) }));
+// The workout pieces (#6903) have their own suites; a plain session never draws them.
+vi.mock('../../../../src/components/session/workout/WorkoutSummarySection', () => ({
+  WorkoutSummarySection: () => null,
+}));
+vi.mock('../../../../src/components/session/workout/WorkoutSyncingNote', () => ({ WorkoutSyncingNote: () => null }));
 vi.mock('../../../../src/components/Separator', () => ({ Separator: () => createElement('div', null) }));
 vi.mock('../../../../src/components/Card', () => ({
   Card: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
