@@ -2077,6 +2077,35 @@ describe('useBoardBluetooth', () => {
     );
   });
 
+  it('numbers connection generations from 1 so 0 stays the "no link yet" sentinel', async () => {
+    // BluetoothProvider seeds its connectionGeneration state at 0 and feeds it
+    // from this handle. A first connect reported as 0 would set the same value
+    // back, the auto-sender's drain effect would not re-fire, and a link change
+    // could no longer retire its "already on the wall" caches (#4413).
+    const firstAdapter = makeFakeAdapter();
+    const secondAdapter = makeFakeAdapter({
+      requestAndConnect: vi.fn().mockResolvedValue({ deviceId: 'device-2', deviceName: 'Kilter Board#456@3' }),
+    });
+    vi.mocked(createBluetoothAdapter)
+      .mockReturnValueOnce(firstAdapter as unknown as ReturnType<typeof createBluetoothAdapter>)
+      .mockReturnValueOnce(secondAdapter as unknown as ReturnType<typeof createBluetoothAdapter>);
+    const generations: number[] = [];
+    const onConnectSuccess = vi.fn((_serial: string | null, connection: BleConnectionHandle) => {
+      generations.push(connection.generation);
+    });
+
+    const { result } = renderHook(() =>
+      useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1, onConnectSuccess }),
+    );
+
+    await act(async () => {
+      await result.current.connect();
+      await result.current.connect();
+    });
+
+    expect(generations).toEqual([1, 2]);
+  });
+
   it('attributes adapter replacement to the old generation', async () => {
     const firstAdapter = makeFakeAdapter();
     const secondAdapter = makeFakeAdapter({
@@ -3726,6 +3755,59 @@ describe('useBoardBluetooth connect() initial frame write (#3875)', () => {
     await act(async () => {
       await result.current.connect();
     });
+    expect(result.current.connectInitialSendRef.current).toBeNull();
+  });
+
+  it('drops the dedup seed when the link drops (#4413)', async () => {
+    // A seed left behind by a dropped link would let the next link's first
+    // drain record the climb as already lit on a wall this app never wrote to.
+    let dropLink: (() => void) | null = null;
+    const fakeAdapter = {
+      ...makeFakeAdapter(),
+      onDisconnect: vi.fn((callback: () => void) => {
+        dropLink = callback;
+        return () => {};
+      }),
+    };
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockAuroraSendable();
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    await act(async () => {
+      await result.current.connect('p100r12');
+    });
+    expect(result.current.connectInitialSendRef.current).not.toBeNull();
+    expect(dropLink).not.toBeNull();
+
+    await act(async () => {
+      dropLink?.();
+    });
+
+    expect(result.current.isConnected).toBe(false);
+    expect(result.current.connectInitialSendRef.current).toBeNull();
+  });
+
+  it('drops the dedup seed on a deliberate disconnect (#4413)', async () => {
+    const fakeAdapter = makeFakeAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockAuroraSendable();
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    await act(async () => {
+      await result.current.connect('p100r12');
+    });
+    expect(result.current.connectInitialSendRef.current).not.toBeNull();
+
+    await act(async () => {
+      await result.current.disconnect();
+    });
+
     expect(result.current.connectInitialSendRef.current).toBeNull();
   });
 
