@@ -364,6 +364,7 @@ jobs:
               - 'packages/shared/static-assets/**'
               - 'packages/shared/velvet-tokens/**'
               - 'packages/shared/watch-pairing/**'
+              - 'packages/shared/workout-summary/**'
               - 'packages/sync-runtime/**'
               - 'Dockerfile.web'
               - '.dockerignore'
