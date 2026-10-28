@@ -17,9 +17,10 @@ import {
   isAuthCredentialGenerationCurrent,
   subscribeAuthCredentialGenerationChanges,
 } from '../../lib/auth-store';
-import { readSignedInAccount } from '../../offline/offline-sync-adapter';
+import { readSignedInUserIdOrNull } from '../../offline/offline-sync-adapter';
 import { nowMs } from '../../lib/clock';
 import { enqueueEndedSessionWorkout } from '../../offline/session-workout-outbox';
+import { subscribeStoredSessionEnded } from '../../lib/ended-session-signal';
 
 export function WorkoutRunSessionSync() {
   const { sessionId } = useQueueSessionId();
@@ -50,26 +51,21 @@ export function WorkoutRunSessionSync() {
       return;
     }
     const generation = captureAuthCredentialGeneration();
-    void readSignedInAccount()
-      .then((account) => (account.status === 'signed-in' ? account.userId : null))
-      // A failed read keeps the recap unowned (no screen shows it) and sends nothing.
-      .catch(() => null)
-      .then((ownerUserId) => {
-        if (isAuthCredentialGenerationCurrent(generation)) keep(ownerUserId);
-      });
+    // A failed read keeps the recap unowned (no screen shows it) and sends nothing.
+    void readSignedInUserIdOrNull().then((ownerUserId) => {
+      if (isAuthCredentialGenerationCurrent(generation)) keep(ownerUserId);
+    });
   });
 
   useEffect(() => {
     let mounted = true;
     const readAccount = () => {
       const generation = captureAuthCredentialGeneration();
-      void readSignedInAccount()
-        .then((account) => {
-          if (!mounted || !isAuthCredentialGenerationCurrent(generation)) return;
-          accountRef.current = { generation, userId: account.status === 'signed-in' ? account.userId : null };
-        })
-        // Unknown until the next read: a run cleared meanwhile reads the token itself.
-        .catch(() => undefined);
+      // A failed read leaves it unknown: a run cleared meanwhile reads the token itself.
+      void readSignedInUserIdOrNull().then((userId) => {
+        if (!mounted || !isAuthCredentialGenerationCurrent(generation)) return;
+        accountRef.current = { generation, userId };
+      });
     };
     readAccount();
     const unsubscribe = subscribeAuthCredentialGenerationChanges(() => {
@@ -85,6 +81,16 @@ export function WorkoutRunSessionSync() {
   useEffect(() => {
     void hydrateEndedWorkouts(nowMs());
   }, []);
+
+  // A cold start that found the stored session over never sets its id, so the
+  // change below never fires for it: the restore says so instead.
+  useEffect(
+    () =>
+      subscribeStoredSessionEnded((endedSessionId) => {
+        void clearWorkoutRunForSession(endedSessionId, keepRecapRef.current);
+      }),
+    [],
+  );
 
   useEffect(() => {
     const previousSessionId = previousSessionIdRef.current;

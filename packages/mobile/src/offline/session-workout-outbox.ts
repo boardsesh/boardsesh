@@ -37,6 +37,7 @@ import {
   isServerSessionId,
   sessionWorkoutDigest,
   type RecordSessionWorkoutInput,
+  type SessionWorkoutContent,
 } from '../lib/session-workout-plan';
 import {
   addWorkoutRunClimbs,
@@ -46,7 +47,7 @@ import {
   revisionAfter,
   type WorkoutRunRecord,
 } from '../lib/workout-run-store';
-import { drainMutationQueue, readSignedInAccount } from './offline-sync-adapter';
+import { drainMutationQueue, readSignedInUserIdOrNull } from './offline-sync-adapter';
 import { notifyOutboxChanged } from './outbox-store';
 import { localWriteRetryOptions } from './local-write-telemetry';
 
@@ -181,14 +182,14 @@ async function lastCopyCovers(
   }
 }
 
-/** The account signed in now, or null while it is unknown (a failed read included). */
-async function signedInUserId(): Promise<string | null> {
-  try {
-    const account = await readSignedInAccount();
-    return account.status === 'signed-in' ? account.userId : null;
-  } catch {
-    return null;
-  }
+/** What a write for `sessionId`'s run would hold right now, from the store. */
+function currentContent(
+  sessionId: string,
+): { record: WorkoutRunRecord; content: SessionWorkoutContent; digest: string } | null {
+  const record = getWorkoutRunState();
+  if (record?.sessionId !== sessionId) return null;
+  const content = buildSessionWorkoutContent(record);
+  return content ? { record, content, digest: sessionWorkoutDigest(content) } : null;
 }
 
 /**
@@ -215,12 +216,19 @@ export async function enqueueSessionWorkoutWrite(
       captureWorkoutRunClimbs(queueItems.filter((queueItem) => runItems.has(queueItem.uuid))),
     );
   }
-  const latest = getWorkoutRunState();
-  const content = latest?.sessionId === sessionId ? buildSessionWorkoutContent(latest) : null;
-  if (!latest || !content) return 'skipped';
-  const digest = sessionWorkoutDigest(content);
-  const ownerUserId = await signedInUserId();
-  if (await lastCopyCovers(latest, digest)) return 'skipped';
+  const ownerUserId = await readSignedInUserIdOrNull();
+  const before = currentContent(sessionId);
+  if (!before) return 'skipped';
+  if (await lastCopyCovers(before.record, before.digest)) {
+    // Covered, unless the run moved on while the outbox was read.
+    const after = currentContent(sessionId);
+    if (!after || after.digest === before.digest) return 'skipped';
+  }
+  // Built and numbered with no await between them, so of two overlapping
+  // writes the one numbered higher always holds the newer run.
+  const latest = currentContent(sessionId);
+  if (!latest) return 'skipped';
+  const { content, digest } = latest;
   const revision = nextWorkoutRunRevision(sessionId, nowMs());
   if (revision === null) return 'skipped';
   const outcome = await queueWrite({ ...content, revision }, queryClient, ownerUserId);

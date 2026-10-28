@@ -14,7 +14,7 @@
 
 import { useCallback, useSyncExternalStore } from 'react';
 import { getPreference, removePreference, setPreference } from './preference-store';
-import { parseWorkoutRunRecord, type WorkoutRunRecord } from './workout-run-store';
+import { readWorkoutRunRecord, type WorkoutRunRecord } from './workout-run-store';
 
 export const ENDED_WORKOUTS_STORAGE_KEY = 'boardsesh_ended_workouts_v1';
 export const MAX_ENDED_WORKOUTS = 10;
@@ -48,7 +48,7 @@ function emit(): void {
 function ignoreStorageError(): void {}
 
 function readEndedWorkout(candidate: unknown): EndedWorkoutRecord | null {
-  const record = parseWorkoutRunRecord(candidate);
+  const record = readWorkoutRunRecord(candidate);
   const fields = candidate as { endedAtMs?: unknown; userId?: unknown } | null;
   const endedAtMs = fields?.endedAtMs;
   if (!record || typeof endedAtMs !== 'number' || !Number.isFinite(endedAtMs)) return null;

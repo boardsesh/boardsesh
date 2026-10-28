@@ -262,7 +262,9 @@ points:
    since Start takes its new mirror (`addWorkoutRunClimbs`).
 4. When the run is cleared for any other way out (`WorkoutRunSessionSync`): the session
    ended on another phone, the climber dropped out or was removed, or a relaunch found
-   it over. `enqueueEndedSessionWorkout` sends the cleared record's last copy. After a
+   it over. A relaunch never sets the ended session's id, so the queue's restore
+   announces it instead (`announceStoredSessionEnded` when `sessionStatus` says ended
+   or missing), and the sync ends its run the same way. `enqueueEndedSessionWorkout` sends the cleared record's last copy. After a
    local End it holds nothing new and is skipped while the End's copy waits.
 
 A write whose content matches the last one queued (`sentDigest`, a digest of the
@@ -281,7 +283,8 @@ Each write carries the whole workout: the plan built from the run and its captur
 climbs (`buildSessionWorkoutPlan`, which leaves out an item with no captured climb, keeps
 an item named by two stages in the first, and keeps the first 30 stages and 300 items
 rather than have the write refused), and the tick map from the run's tick log
-(`tickUuid → queueItemUuid`, one entry per tick, the newest 4000). The revision is a
+(`tickUuid → queueItemUuid`, one entry per tick, the newest 4000; the server's cap,
+never reached, since the log keeps only the newest 2000). The revision is a
 counter stored with the run, floored at the seconds since 2026-01-01, so it stays inside a
 Postgres integer and keeps climbing after an OTA rollback rewrote the record without it.
 The idempotency key is `session_workout:<sessionId>:<revision>`. Queuing a write first

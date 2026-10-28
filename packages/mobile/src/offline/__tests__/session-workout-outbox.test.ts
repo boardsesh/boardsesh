@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   now: Date.UTC(2026, 0, 2),
   account: { status: 'signed-in', userId: 'user-1' } as { status: string; userId?: string },
   accountReadFails: false,
+  // Lets a test hold one write's account read open while another goes ahead.
+  accountReadGate: [] as Array<PromiseWithResolvers<void>>,
 }));
 const storage = vi.hoisted(() => {
   let entries: Record<string, string> = {};
@@ -39,9 +41,11 @@ vi.mock('../../lib/error-reporting', () => ({ reportHandledError: mocks.reportHa
 vi.mock('../../lib/clock', () => ({ nowMs: () => mocks.now }));
 vi.mock('../offline-sync-adapter', () => ({
   drainMutationQueue: mocks.drainMutationQueue,
-  readSignedInAccount: async () => {
-    if (mocks.accountReadFails) throw new Error('SecureStore unavailable');
-    return mocks.account;
+  // The real helper never rejects; a failed read answers null.
+  readSignedInUserIdOrNull: async () => {
+    await mocks.accountReadGate.shift()?.promise;
+    if (mocks.accountReadFails || mocks.account.status !== 'signed-in') return null;
+    return mocks.account.userId ?? null;
   },
 }));
 vi.mock('../outbox-store', () => ({ notifyOutboxChanged: vi.fn() }));
@@ -87,6 +91,7 @@ beforeEach(async () => {
   mocks.db = db;
   mocks.account = { status: 'signed-in', userId: 'user-1' };
   mocks.accountReadFails = false;
+  mocks.accountReadGate = [];
   mocks.now = Date.UTC(2026, 0, 2);
   mocks.drainMutationQueue.mockClear();
   mocks.request.mockClear();
@@ -219,6 +224,30 @@ describe('enqueueSessionWorkoutWrite', () => {
     expect(await enqueueSessionWorkoutWrite(SESSION_ID, { queryClient })).toBe('skipped');
 
     expect(await queued()).toEqual([]);
+  });
+
+  it('gives the higher revision to the newer run when two writes overlap', async () => {
+    prepareWorkoutRun(SESSION_ID, run, climbs);
+    // The Add a block write starts, and its account read is slow...
+    const slowRead = Promise.withResolvers<void>();
+    mocks.accountReadGate.push(slowRead, Promise.withResolvers<void>());
+    mocks.accountReadGate[1]?.resolve();
+    const addBlock = enqueueSessionWorkoutWrite(SESSION_ID, { queryClient });
+    // ...the run grows meanwhile, and the End write goes ahead of it.
+    setWorkoutRun(
+      SESSION_ID,
+      { stages: [...run.stages, { id: 'more', kind: 'pyramid', itemUuids: ['q3'] }] },
+      { q3: { climbUuid: 'climb-3', angle: 40 } },
+    );
+    const end = enqueueSessionWorkoutWrite(SESSION_ID, { queryClient });
+    await end;
+    slowRead.resolve();
+    await addBlock;
+
+    const rows = await queued();
+    // Whatever was queued last holds the grown run at the highest revision.
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.input.stages).toHaveLength(2);
   });
 
   it('queues nothing, and never throws, when the token cannot be read', async () => {

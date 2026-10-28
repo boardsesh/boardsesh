@@ -28,6 +28,9 @@ vi.mock('@react-native-async-storage/async-storage', () => ({ default: storage }
 import {
   MAX_WORKOUT_REVISION,
   WORKOUT_RUN_STORAGE_KEY,
+  WORKOUT_RUN_V2_STORAGE_KEY,
+  joinRunClimbs,
+  revisionAfter,
   addWorkoutRunClimbs,
   clearWorkoutRunForSession,
   forgetWorkoutRunTick,
@@ -203,5 +206,61 @@ describe('clearWorkoutRunForSession', () => {
     const onCleared = vi.fn();
     await clearWorkoutRunForSession('session-1', onCleared);
     expect(onCleared).not.toHaveBeenCalled();
+  });
+});
+
+describe('revisionAfter', () => {
+  it('counts up from the last revision, floored at the seconds since 2026', () => {
+    expect(revisionAfter(undefined, JAN_2_2026_MS)).toBe(86_400);
+    expect(revisionAfter(86_400, JAN_2_2026_MS)).toBe(86_401);
+    // A rollback dropped the field: the floor still beats what the server holds.
+    expect(revisionAfter(3, JAN_2_2026_MS)).toBe(86_400);
+    // A clock set back: the counter still climbs.
+    expect(revisionAfter(90_000, JAN_2_2026_MS)).toBe(90_001);
+  });
+
+  it('never passes a Postgres integer', () => {
+    expect(revisionAfter(MAX_WORKOUT_REVISION, JAN_2_2026_MS)).toBe(MAX_WORKOUT_REVISION);
+    expect(revisionAfter(undefined, Date.UTC(2200, 0, 1))).toBe(MAX_WORKOUT_REVISION);
+  });
+});
+
+describe('joinRunClimbs', () => {
+  it("keeps the earlier map's climb for an item both name, and every other item", () => {
+    expect(joinRunClimbs({ a: climbs.m1 }, { a: climbs.m2, b: climbs.m2 })).toEqual({ a: climbs.m1, b: climbs.m2 });
+    expect(joinRunClimbs(undefined, { b: climbs.m2 })).toEqual({ b: climbs.m2 });
+    expect(joinRunClimbs({ a: climbs.m1 }, undefined)).toEqual({ a: climbs.m1 });
+    expect(joinRunClimbs(undefined, undefined)).toBeUndefined();
+  });
+});
+
+describe('both slots naming one session (a rollback mid-session)', () => {
+  it("joins the climbs (the v2 slot's copy wins on a shared item) and keeps the higher revision", async () => {
+    storage.write(WORKOUT_RUN_V2_STORAGE_KEY, {
+      sessionId: 'session-1',
+      run: { stages: [{ id: 'four', kind: 'fourByFour', itemUuids: ['f1'] }] },
+      climbs: { f1: { climbUuid: 'climb-f1', angle: 40 }, shared: { climbUuid: 'from-v2', angle: 40 } },
+      revision: 50,
+      sentDigest: 'v2-copy',
+    });
+    storage.write(WORKOUT_RUN_STORAGE_KEY, {
+      sessionId: 'session-1',
+      run: { stages: [{ id: 'vol', kind: 'volume', itemUuids: ['v1'] }] },
+      climbs: { v1: { climbUuid: 'climb-v1', angle: 40 }, shared: { climbUuid: 'from-v1', angle: 40 } },
+      revision: 70,
+    });
+
+    await hydrateWorkoutRun('session-1');
+
+    const merged = getWorkoutRunState();
+    expect(merged?.run.stages.map((stage) => stage.id)).toEqual(['four', 'vol']);
+    expect(merged?.climbs).toEqual({
+      f1: { climbUuid: 'climb-f1', angle: 40 },
+      v1: { climbUuid: 'climb-v1', angle: 40 },
+      shared: { climbUuid: 'from-v2', angle: 40 },
+    });
+    expect(merged?.revision).toBe(70);
+    // Neither slot's copy holds the merged run: the next write must go out.
+    expect(merged?.sentDigest).toBeUndefined();
   });
 });

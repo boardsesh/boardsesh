@@ -192,7 +192,6 @@ const summaryEntries = (userId: string): CacheEntry[] => [
 
 const detailEntries = (userId: string): CacheEntry[] => [
   { key: ['sessionDetail', SERVER_SESSION_ID], data: detail(userId) },
-  { key: ['sessionOwner', SERVER_SESSION_ID], data: userId },
   { key: sessionWorkoutsQueryKey(SERVER_SESSION_ID), data: [serverWorkout(userId)] },
 ];
 

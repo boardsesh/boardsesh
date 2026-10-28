@@ -18,6 +18,10 @@ vi.mock('../../hooks/use-bottom-chrome-metrics', () => ({
 vi.mock('../../lib/analytics', () => ({ track: state.track }));
 vi.mock('../../lib/haptics', () => ({ hapticSuccess: vi.fn() }));
 vi.mock('../../theme/tokens', () => ({ spacing: { 2: 8 } }));
+// #6903: a deleted tick leaves the workout's own tick log and the recaps.
+const workoutLog = vi.hoisted(() => ({ forgetRun: vi.fn(), forgetRecap: vi.fn() }));
+vi.mock('../../lib/workout-run-store', () => ({ forgetWorkoutRunTick: workoutLog.forgetRun }));
+vi.mock('../../lib/ended-workout-store', () => ({ forgetEndedWorkoutTick: workoutLog.forgetRecap }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
@@ -55,11 +59,37 @@ beforeEach(() => {
   state.toast.mockReset();
   state.track.mockReset();
   state.snackbar = null;
+  workoutLog.forgetRun.mockReset();
+  workoutLog.forgetRecap.mockReset();
 });
 afterEach(() => {
   vi.useRealTimers();
 });
 describe('persistent logbook delete Undo', () => {
+  it("drops a deleted tick from the workout's log once the delete lands, and only then (#6903)", async () => {
+    render(
+      <LogbookDeleteProvider>
+        <Route />
+      </LogbookDeleteProvider>,
+    );
+    act(() => {
+      actions.scheduleDelete({ originScope: 'account:board', uuid: 'tick', method: 'swipe' });
+    });
+    await act(() => vi.advanceTimersByTimeAsync(LOGBOOK_DELETE_UNDO_MS));
+    expect(workoutLog.forgetRun).toHaveBeenCalledExactlyOnceWith('tick');
+    expect(workoutLog.forgetRecap).toHaveBeenCalledExactlyOnceWith('tick', expect.any(Number));
+
+    workoutLog.forgetRun.mockReset();
+    workoutLog.forgetRecap.mockReset();
+    state.mutation.mockRejectedValueOnce(new Error('offline'));
+    act(() => {
+      actions.scheduleDelete({ originScope: 'account:board', uuid: 'kept', method: 'swipe' });
+    });
+    await act(() => vi.advanceTimersByTimeAsync(LOGBOOK_DELETE_UNDO_MS));
+    expect(workoutLog.forgetRun).not.toHaveBeenCalled();
+    expect(workoutLog.forgetRecap).not.toHaveBeenCalled();
+  });
+
   it('hides the entry and Undo cancels before any irreversible request', async () => {
     render(
       <LogbookDeleteProvider>

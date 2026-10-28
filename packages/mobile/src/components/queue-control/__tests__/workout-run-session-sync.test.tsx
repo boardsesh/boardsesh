@@ -42,10 +42,11 @@ vi.mock('../../../offline/session-workout-outbox', () => ({
   enqueueEndedSessionWorkout: sync.enqueueEndedSessionWorkout,
 }));
 vi.mock('../../../offline/offline-sync-adapter', () => ({
-  readSignedInAccount: async () => {
+  // The real helper never rejects: a failed read answers null.
+  readSignedInUserIdOrNull: async () => {
     sync.accountReads += 1;
-    if (sync.accountReadFails) throw new Error('SecureStore unavailable');
-    return sync.account;
+    if (sync.accountReadFails || sync.account.status !== 'signed-in') return null;
+    return sync.account.userId ?? null;
   },
 }));
 vi.mock('../../../lib/auth-store', () => ({
@@ -61,6 +62,7 @@ import {
   setWorkoutRun,
 } from '../../../lib/workout-run-store';
 import { getEndedWorkout, resetEndedWorkoutStoreForTests } from '../../../lib/ended-workout-store';
+import { announceStoredSessionEnded, resetStoredSessionEndedForTests } from '../../../lib/ended-session-signal';
 import { WorkoutRunSessionSync } from '../WorkoutRunSessionSync';
 
 const run: WorkoutRun = {
@@ -73,6 +75,7 @@ const run: WorkoutRun = {
 beforeEach(() => {
   resetWorkoutRunStoreForTests();
   resetEndedWorkoutStoreForTests();
+  resetStoredSessionEndedForTests();
   sync.account = { status: 'signed-in', userId: 'user-1' };
   sync.accountReads = 0;
   sync.accountReadFails = false;
@@ -199,6 +202,26 @@ describe('WorkoutRunSessionSync', () => {
 
     expect(getEndedWorkout('session-1')).toBeNull();
     expect(sync.enqueueEndedSessionWorkout).not.toHaveBeenCalled();
+  });
+
+  it('ends the run of a stored session a cold start found over, though its id never came back', async () => {
+    setWorkoutRun('session-1', run);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    resetWorkoutRunStoreForTests();
+    // The restore asked sessionStatus before this mounted: ended.
+    announceStoredSessionEnded('session-1');
+
+    render(<WorkoutRunSessionSync />);
+
+    await waitFor(() =>
+      expect(getEndedWorkout('session-1')).toMatchObject({ sessionId: 'session-1', userId: 'user-1' }),
+    );
+    expect(sync.enqueueEndedSessionWorkout).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ sessionId: 'session-1', run }),
+      expect.objectContaining({ ownerUserId: 'user-1' }),
+    );
   });
 
   it('sends the last copy when the climber joins another session', async () => {
