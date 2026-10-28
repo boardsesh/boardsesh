@@ -1577,6 +1577,8 @@ describe('PlayDrawer in tabletop (iPhone Duo half open, upright)', () => {
     act(() => publishHingeStatus('partiallyOpen'));
     const rendered = renderDrawer();
     expect(rendered.queryByTestId('play-drawer-tabletop-controls')).toBeNull();
+  });
+});
 
 // #6940: which control asked for the step decides `method`; the selection
 // controller's own suite pins the moved / preview split.
