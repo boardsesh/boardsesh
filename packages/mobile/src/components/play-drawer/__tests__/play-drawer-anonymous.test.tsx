@@ -41,7 +41,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render as renderInitial, act } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { Climb } from '@boardsesh/shared-schema';
-import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
+import { configKey, type ClimbQueueItem, type PlaylistSuggestionSource } from '@boardsesh/queue';
 
 type Props = Record<string, unknown>;
 const toggleFavorite = vi.hoisted(() => vi.fn());
@@ -49,6 +49,7 @@ const toggleFavorite = vi.hoisted(() => vi.fn());
 const recorded = vi.hoisted(() => ({
   actionBar: [] as Props[],
   wallPill: [] as Props[],
+  wallBadge: [] as Props[],
   wallCallout: [] as Props[],
   deferredSections: [] as Props[],
   favoriteStatus: [] as Props[],
@@ -297,8 +298,14 @@ vi.mock('../WallStateCallout', () => ({
     return createElement('div', { 'data-testid': 'wall-callout' });
   },
 }));
-// The wall badge's states are pinned in wall-badge.test.ts.
-vi.mock('../WallBadge', () => ({ WallBadge: () => null }));
+// Record the real resolver's result, including the distinction between an
+// incompatible climb and the switch-board scrim being hidden at the same gym.
+vi.mock('../WallBadge', () => ({
+  WallBadge: (props: Props) => {
+    recorded.wallBadge.push(props);
+    return createElement('div', { 'data-testid': 'wall-badge', 'data-resolution': props.resolution });
+  },
+}));
 // Recorded: the end of a list (#6664) is a join this file pins, see below.
 vi.mock('../TrackEndCard', () => ({
   TrackEndCard: (props: Props) => {
@@ -594,6 +601,7 @@ beforeEach(() => {
   resetWallCleared();
   recorded.actionBar = [];
   recorded.wallPill = [];
+  recorded.wallBadge = [];
   recorded.wallCallout = [];
   recorded.deferredSections = [];
   recorded.favoriteStatus = [];
@@ -1705,6 +1713,69 @@ describe('PlayDrawer — the busy-wall confirm', () => {
 // knowing it is the lit one — so "On the wall" could never be said after any
 // other navigation landed on it.
 describe('PlayDrawer — reading the wall', () => {
+  const connectBoard = () => {
+    lightbulb.lit = true;
+    lightbulb.localConnected = true;
+    ble.current = {
+      isConnected: true,
+      sendFramesToBoard: vi.fn(async () => true),
+      getMirrorIntent: vi.fn(),
+      setMirrorIntent: vi.fn(),
+      retainMirrorIntentFor: vi.fn(),
+    };
+  };
+
+  it('keeps a retained Tension climb Live without claiming Moon is lighting it', () => {
+    connectBoard();
+    const tensionBoard = { boardName: 'tension', layoutId: 10, sizeId: 6, setIds: '12,13', angle: 40 };
+    const moonBoard = { boardName: 'moonboard', layoutId: 3, sizeId: 1, setIds: '5,6,7,8,9,10', angle: 40 };
+    const masquerade = { ...CLIMB, name: 'Masquerade', boardType: 'tension', layoutId: 10, compatibleSizeIds: [6] };
+    const target = committedTargetFor(masquerade);
+    const reachableBoardKeys = new Set([configKey(tensionBoard), configKey(moonBoard)]);
+    session.currentItem = { uuid: 'queue-item-masquerade', climb: masquerade };
+    session.nextItem = { uuid: 'queue-item-next', climb: SIMILAR_CLIMB };
+    wall.uuid = masquerade.uuid;
+    const playerAt = (boardConfig: typeof tensionBoard) =>
+      createElement(PlayDrawer, {
+        viewer: 'member',
+        presentation: 'pane',
+        boardConfig,
+        reachableBoardKeys,
+        openTarget: target,
+        onOpenQueue: vi.fn(),
+      });
+    const view = render(playerAt(tensionBoard));
+    expect(view.getByTestId('wall-badge').getAttribute('data-resolution')).toBe('onWall');
+
+    // The normal queue head survives the BLE board switch. Moon's clear leaves
+    // its feed empty; being able to walk to Tension keeps navigation available.
+    wall.uuid = null;
+    view.rerender(playerAt(moonBoard));
+
+    expect(view.getByTestId('wall-badge').getAttribute('data-resolution')).toBe('notOnWall');
+    expect(recorded.wallPill.at(-1)?.state).toBe('live');
+    expect(lastDisplayedClimbUuid()).toBe(masquerade.uuid);
+    expect(lastActionBarProps().canSwipeNext).toBe(true);
+    expect(lastActionBarProps().lightbulbActive).toBe(true);
+    expect(queueActions.setCurrentClimb).not.toHaveBeenCalled();
+    expect(ble.current?.sendFramesToBoard).not.toHaveBeenCalled();
+  });
+
+  it('keeps the same-board badge accurate when its lights are cleared and relit', () => {
+    connectBoard();
+    session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
+    wall.uuid = CLIMB.uuid;
+    const target = committedTargetFor(CLIMB);
+    const view = render(drawerElement('member', target));
+    expect(view.getByTestId('wall-badge').getAttribute('data-resolution')).toBe('onWall');
+
+    act(() => markWallCleared(CLIMB.uuid));
+    expect(view.getByTestId('wall-badge').getAttribute('data-resolution')).toBe('notOnWall');
+
+    act(() => resetWallCleared());
+    expect(view.getByTestId('wall-badge').getAttribute('data-resolution')).toBe('onWall');
+  });
+
   it('says On the wall when presence reports the displayed climb as lit', () => {
     session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
     wall.uuid = CLIMB.uuid;

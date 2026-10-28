@@ -1127,6 +1127,7 @@ export function PlayCore({
         isAnonymous,
         boardHasLights: bluetooth !== null && !boardIsLedless && boardName !== 'spray',
         boardMismatch: showBoardMismatch,
+        climbBoardMismatch,
         displayedClimbUuid: displayedClimbUuid ?? null,
         committedHeadUuid: currentClimbQueueItem?.climb.uuid ?? null,
         wallClimbUuid,
