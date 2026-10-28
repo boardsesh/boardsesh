@@ -89,7 +89,7 @@ vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../theme/layout', () => ({ glassSize: { hero: 64, standard: 56 } }));
 
 // NB: ../../lib/ascent-status-utils is intentionally NOT mocked — the real,
-// pure countSentAscents drives the logged/green state from the logbook fixture.
+// pure countSentAscents drives the logged accessibility state from the fixture.
 
 import { LogAscentFab } from '../LogAscentFab';
 
@@ -225,7 +225,7 @@ describe('LogAscentFab', () => {
     expect(button.getAttribute('data-icon-color')).toBe('#111111');
   });
 
-  it('signals a logged climb with a green glyph, keeping the glass neutral', () => {
+  it('keeps a logged climb in the same label colour and announces its logged state', () => {
     // Real countSentAscents counts this send at climb-123 / angle 40 → logged.
     boardProvider.value = {
       logbook: [makeSendEntry({ climb_uuid: 'climb-123', angle: 40 })],
@@ -234,9 +234,7 @@ describe('LogAscentFab', () => {
     const { container } = render(<LogAscentFab climb={makeClimb({ uuid: 'climb-123', angle: 40 })} />);
     const button = fab(container);
 
-    // Logged → success-coloured glyph; the glass background stays neutral (no
-    // tint, the same fill as the resting state).
-    expect(button.getAttribute('data-icon-color')).toBe('#34C759');
+    expect(button.getAttribute('data-icon-color')).toBe('#111111');
     expect(button.getAttribute('data-tint')).toBe('');
     expect(button.getAttribute('data-fallback')).toBe('#EEEEEE');
     // The a11y label gains the "already logged" suffix.
@@ -258,6 +256,26 @@ describe('LogAscentFab', () => {
       getLogbook: vi.fn().mockResolvedValue(undefined),
     };
     const { container } = render(<LogAscentFab climb={makeClimb({ uuid: 'climb-123', angle: 40 })} />);
-    expect(fab(container).getAttribute('data-icon-color')).toBe('#34C759');
+    expect(fab(container).getAttribute('data-icon-color')).toBe('#111111');
+    expect(fab(container).getAttribute('data-label')).toContain('mobile.queue.alreadyLogged');
+  });
+
+  it('keeps the mounted tick colour when its logbook finishes loading', () => {
+    boardProvider.value = null;
+    const climb = makeClimb();
+    const { container, rerender } = render(<LogAscentFab climb={climb} />);
+    const button = fab(container);
+    expect(button.getAttribute('data-icon-color')).toBe('#111111');
+    expect(button.getAttribute('data-label')).not.toContain('mobile.queue.alreadyLogged');
+
+    boardProvider.value = {
+      logbook: [makeSendEntry()],
+      getLogbook: vi.fn().mockResolvedValue(undefined),
+    };
+    rerender(<LogAscentFab climb={climb} />);
+
+    expect(fab(container)).toBe(button);
+    expect(button.getAttribute('data-icon-color')).toBe('#111111');
+    expect(button.getAttribute('data-label')).toContain('mobile.queue.alreadyLogged');
   });
 });

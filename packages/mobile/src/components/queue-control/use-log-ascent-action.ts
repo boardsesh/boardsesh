@@ -21,7 +21,7 @@ import { resolveTickMirror } from '../../lib/queue-mirror-orientation';
  */
 export function useLogAscentAction(climb: Climb, placement?: AccessoryPlacement, queueItemUuid?: string) {
   const { t } = useTranslation('session');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
   const { boardConfig, openLogAscent } = useDrawerHost();
   const { sessionId } = useQueueSessionId();
   const { getQueueSnapshot } = useQueueActions();
@@ -103,11 +103,9 @@ export function useLogAscentAction(climb: Climb, placement?: AccessoryPlacement,
     });
   }, [openLogAscent, boardConfig, sessionId, climb, angle, placement, queueItemUuid, getQueueSnapshot]);
 
-  // Always neutral glass — no coloured background. The "you sent this" signal
-  // rides the glyph instead: a green tick when logged, the system label otherwise
-  // (colour on the icon, suitable for a glass element), keeping the action
-  // readable over whatever scrolls behind it.
-  const iconColor = isLogged ? brandColors.success : systemColors.label;
+  // The tick stays an action in the same label colour, even on a logged climb.
+  // Its accessibility label still announces that the climb was already logged.
+  const iconColor = systemColors.label;
 
   const baseLabel = t('mobile.queue.logAscent');
   const accessibilityLabel = isLogged ? `${baseLabel}, ${t('mobile.queue.alreadyLogged')}` : baseLabel;

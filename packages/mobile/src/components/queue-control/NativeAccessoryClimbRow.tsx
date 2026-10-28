@@ -339,9 +339,8 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
       {/* The controls sit beside the climb gesture, never inside it, so their
           44pt tap targets are never stolen by the row's tap. Long-press on the
           bulb opens the controls sheet, as on the other lightbulbs now that a
-          short press disconnects. Collapsed or narrow, the one slot swaps its child
-          in place and the row never remounts: UIKit snapshots the platter between
-          placements. */}
+          short press disconnects. The row stays mounted as controls appear and
+          disappear: UIKit snapshots the platter between placements. */}
       {controls.leading.length > 0 ? (
         <MiniPlayerLeadingButtons
           queueItemUuid={queueItemUuid}
@@ -359,9 +358,11 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
         />
       ) : null}
       {controls.trailing.map((slot, index) => (
-        // Keyed by position, so the one collapsed slot swaps its child in place.
+        // Keep each control's native view when the hidden regular row measures
+        // the collapsed width, then expands. A position key would replace the
+        // tick with the bulb before mounting a new tick in the next slot.
         <View
-          key={`trailing-${index}`}
+          key={`trailing-${slot}`}
           style={[
             styles.controlSlot,
             { width: glassSize.inline, height: rowHeight },
