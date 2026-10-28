@@ -316,9 +316,9 @@ climb).
     store above, so a Sent on the open bar and one on the minimized bar within 700 ms log once, and both bars show the
     same check. Slots are keyed `fell` / `sent`, so a change of buttons swaps slots and neither row remounts.
   - VoiceOver on the open Duo: in `carry` the bar covers the pane's own Fell / Sent, so the pane's row leaves the
-    accessibility tree while the open placement reports it carries it (`pane-workout-row-cover-store.ts`). Both
-    placements are mounted at once, so the report can't tell whether the tab bar is minimized: with it minimized the
-    pane's row stays hidden from VoiceOver and the bar's Sent is the one it reaches.
+    accessibility tree while the open placement reports it carries it (`pane-workout-row-cover-store.ts`). The
+    inline bar never shows there: the open Duo's tab bar is the vertical rail, which never minimizes
+    (`tabBarMinimizeBehavior` in `packages/mobile/app/(tabs)/_layout.tsx`).
   - Where the climber can't log the block (signed out, a draft, another board), the bar keeps its usual buttons
     but still drops ⏮ ⏭ (`isMiniPlayerButtonAvailable`'s `inTimedBlock`): the stage moves the wall on its own beat.
   - The Settings preview draws no workout: it shows the bar the climber set up.
