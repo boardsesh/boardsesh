@@ -66,6 +66,8 @@ type NativeAccessoryClimbRowProps = {
   testID?: string;
 };
 
+const TRAILING_CONTROL_SLOTS = ['lightbulb', 'log'] as const;
+
 type ClimbLabelProps = {
   climb: Climb;
   labelColor: ColorValue;
@@ -357,37 +359,63 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
           groupGap={groupGap}
         />
       ) : null}
-      {controls.trailing.map((slot, index) => (
-        // Keep each control's native view when the hidden regular row measures
-        // the collapsed width, then expands. A position key would replace the
-        // tick with the bulb before mounting a new tick in the next slot.
+      <View
+        pointerEvents="box-none"
+        style={[
+          styles.trailingSlot,
+          { width: controls.trailing.length * glassSize.inline, height: rowHeight },
+          controls.trailing.length > 0 && controls.leading.length > 0 ? { marginStart: groupGap } : null,
+        ]}
+      >
+        {/* UIKit also resizes the hidden regular row while the bar is inline.
+            Keep both native slot frames fixed inside one pair so expansion moves
+            them together. Empty slots mount no button, handler or accessibility
+            element. A lone bulb shifts the pair one slot to stay at the edge.
+            The pair and its slots must not flatten into independent views. */}
         <View
-          key={`trailing-${slot}`}
+          pointerEvents="box-none"
+          collapsable={false}
+          accessible={false}
           style={[
-            styles.controlSlot,
-            { width: glassSize.inline, height: rowHeight },
-            index === 0 && controls.leading.length > 0 ? { marginStart: groupGap } : null,
+            styles.trailingPair,
+            {
+              width: TRAILING_CONTROL_SLOTS.length * glassSize.inline,
+              height: rowHeight,
+              right: controls.trailing.length === 1 && controls.trailing[0] === 'lightbulb' ? -glassSize.inline : 0,
+            },
           ]}
         >
-          {slot === 'lightbulb' ? (
-            <BoardControlIndicator
-              size={glassSize.inline}
-              iconSize={22}
-              enableLongPress
-              solidGlyphs
-              placement={placement}
-            />
-          ) : (
-            <LogAscentToolbarButton
-              queueItemUuid={queueItemUuid}
-              climb={climb}
-              size={glassSize.inline}
-              iconSize={24}
-              placement={placement}
-            />
-          )}
+          {TRAILING_CONTROL_SLOTS.map((slot) => (
+            <View
+              key={`trailing-${slot}`}
+              pointerEvents="box-none"
+              collapsable={false}
+              accessible={false}
+              style={[styles.controlSlot, { width: glassSize.inline, height: rowHeight }]}
+            >
+              {controls.trailing.includes(slot) ? (
+                slot === 'lightbulb' ? (
+                  <BoardControlIndicator
+                    size={glassSize.inline}
+                    iconSize={22}
+                    enableLongPress
+                    solidGlyphs
+                    placement={placement}
+                  />
+                ) : (
+                  <LogAscentToolbarButton
+                    queueItemUuid={queueItemUuid}
+                    climb={climb}
+                    size={glassSize.inline}
+                    iconSize={24}
+                    placement={placement}
+                  />
+                )
+              ) : null}
+            </View>
+          ))}
         </View>
-      ))}
+      </View>
     </View>
   );
 }
@@ -442,5 +470,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
+  },
+  trailingSlot: {
+    flexShrink: 0,
+  },
+  trailingPair: {
+    position: 'absolute',
+    top: 0,
+    flexDirection: 'row',
   },
 });

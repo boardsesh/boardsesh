@@ -127,6 +127,8 @@ vi.mock('react-native', () => ({
     accessible,
     testID,
     onLayout,
+    collapsable,
+    pointerEvents,
   }: {
     children?: ReactNode;
     style?: unknown;
@@ -136,6 +138,8 @@ vi.mock('react-native', () => ({
     accessible?: boolean;
     testID?: string;
     onLayout?: (event: { nativeEvent: { layout: { width: number; height: number } } }) => void;
+    collapsable?: boolean;
+    pointerEvents?: string;
   }) => {
     // jsdom never lays out, so simulate the swipe viewport being measured —
     // otherwise width stays 0, canPeek is false, and the peek slots never render.
@@ -168,6 +172,11 @@ vi.mock('react-native', () => ({
       'div',
       {
         'data-width': styleDataValue(width),
+        'data-right': styleDataValue(readStyleValue('right')),
+        'data-position': styleDataValue(readStyleValue('position')),
+        'data-flex-direction': styleDataValue(readStyleValue('flexDirection')),
+        'data-collapsable': styleDataValue(collapsable),
+        'data-pointer-events': pointerEvents,
         'data-opacity': styleDataValue(opacity),
         'data-height': styleDataValue(height),
         'data-padding-end': styleDataValue(paddingEnd),
@@ -674,9 +683,23 @@ describe('NativeAccessoryClimbRow', () => {
         const { container } = renderRow('regular');
         const tick = container.querySelector('[data-tick="true"]');
         const tickSlot = tick?.parentElement;
+        const pair = tickSlot?.parentElement;
+        const bulbSlot = pair?.firstElementChild;
         const row = container.firstElementChild;
         expect(tick).not.toBeNull();
         expect(tickSlot?.getAttribute('data-width')).toBe('44');
+        expect(tickSlot?.getAttribute('data-collapsable')).toBe('false');
+        expect(pair?.getAttribute('data-width')).toBe('88');
+        expect(pair?.getAttribute('data-position')).toBe('absolute');
+        expect(pair?.getAttribute('data-flex-direction')).toBe('row');
+        expect(pair?.getAttribute('data-collapsable')).toBe('false');
+        expect(pair?.getAttribute('data-pointer-events')).toBe('box-none');
+        expect(pair?.parentElement?.getAttribute('data-pointer-events')).toBe('box-none');
+        expect(tickSlot?.getAttribute('data-pointer-events')).toBe('box-none');
+        expect(pair?.children.length).toBe(2);
+        expect(bulbSlot?.getAttribute('data-width')).toBe('44');
+        expect(bulbSlot?.getAttribute('data-collapsable')).toBe('false');
+        expect(bulbSlot?.getAttribute('data-pointer-events')).toBe('box-none');
         expect(container.querySelector('[data-board-control]')).toBeNull();
 
         for (const width of [370, 290, 370]) {
@@ -684,6 +707,11 @@ describe('NativeAccessoryClimbRow', () => {
           expect(container.firstElementChild).toBe(row);
           expect(container.querySelector('[data-tick="true"]')).toBe(tick);
           expect(tick?.parentElement).toBe(tickSlot);
+          expect(tickSlot?.parentElement).toBe(pair);
+          expect(pair?.firstElementChild).toBe(bulbSlot);
+          expect(pair?.getAttribute('data-width')).toBe('88');
+          expect(pair?.getAttribute('data-right')).toBe('0');
+          expect(pair?.parentElement?.getAttribute('data-width')).toBe(width === 370 ? '88' : '44');
           expect(tickSlot?.getAttribute('data-width')).toBe('44');
           expect(container.querySelector('[data-board-control]') !== null).toBe(
             width === 370 && boardState !== 'unbound',
@@ -697,9 +725,17 @@ describe('NativeAccessoryClimbRow', () => {
       const { container } = renderRow('regular');
       const bulb = container.querySelector('[data-board-control]');
       const bulbSlot = bulb?.parentElement;
+      const pair = bulbSlot?.parentElement;
+      const tickSlot = pair?.lastElementChild;
       const row = container.firstElementChild;
       expect(bulb).not.toBeNull();
       expect(bulbSlot?.getAttribute('data-width')).toBe('44');
+      expect(pair?.getAttribute('data-width')).toBe('88');
+      expect(pair?.getAttribute('data-flex-direction')).toBe('row');
+      expect(pair?.getAttribute('data-collapsable')).toBe('false');
+      expect(pair?.getAttribute('data-right')).toBe('-44');
+      expect(tickSlot?.getAttribute('data-width')).toBe('44');
+      expect(tickSlot?.getAttribute('data-collapsable')).toBe('false');
       expect(container.querySelector('[data-tick="true"]')).toBeNull();
 
       for (const width of [370, 290, 370]) {
@@ -707,6 +743,11 @@ describe('NativeAccessoryClimbRow', () => {
         expect(container.firstElementChild).toBe(row);
         expect(container.querySelector('[data-board-control]')).toBe(bulb);
         expect(bulb?.parentElement).toBe(bulbSlot);
+        expect(bulbSlot?.parentElement).toBe(pair);
+        expect(pair?.lastElementChild).toBe(tickSlot);
+        expect(pair?.getAttribute('data-width')).toBe('88');
+        expect(pair?.getAttribute('data-right')).toBe(width === 370 ? '0' : '-44');
+        expect(pair?.parentElement?.getAttribute('data-width')).toBe(width === 370 ? '88' : '44');
         expect(bulbSlot?.getAttribute('data-width')).toBe('44');
         expect(container.querySelector('[data-tick="true"]') !== null).toBe(width === 370);
       }
