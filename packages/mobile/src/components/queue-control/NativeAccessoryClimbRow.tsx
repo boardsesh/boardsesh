@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { StyleSheet, View, type ColorValue, type LayoutChangeEvent } from 'react-native';
+import { StyleSheet, View, useWindowDimensions, type ColorValue, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { Climb } from '@boardsesh/queue';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
@@ -35,6 +35,7 @@ import {
   ACCESSORY_THUMBNAIL_GAP,
   ACCESSORY_TRAILING_INSET,
   isMiniPlayerButtonAvailable,
+  miniPlayerCapacityWidth,
   miniPlayerPaneCoveredButtons,
   miniPlayerPaneMode,
   miniPlayerSlotCount,
@@ -54,6 +55,7 @@ import { useMiniPlayerButtons } from '../../lib/mini-player-buttons-preference';
 import type { MiniPlayerButtonId } from '../../lib/mini-player-buttons';
 import { useDeviceLayout } from '../../hooks/use-device-layout';
 import { usePhoneSplit } from '../../hooks/use-phone-split';
+import { useVerticalTabBar } from '../../hooks/use-vertical-tab-bar';
 import { usePhoneSplitPaneTaken } from '../navigation/phone-split-pane-slot';
 import { useQueueData, useQueueSessionId } from '../../providers/queue-provider';
 import { useWorkoutRun } from '../../lib/workout-run-store';
@@ -165,6 +167,7 @@ function useTransportAvailable(): boolean {
  * capsule's colorized grade.
  */
 export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testID }: NativeAccessoryClimbRowProps) {
+  const { width: windowWidth } = useWindowDimensions();
   const { boardConfig, playDrawerPaneProps } = useDrawerHost();
   const { systemColors, brandColors } = useTheme();
   const { resolveGrade } = useDisplayGrade();
@@ -173,6 +176,7 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
   const { bluetooth, inAppBoardConnection, ledless, holderDisplayName } = useBoardConnectionState();
   const { isTablet } = useDeviceLayout();
   const phoneSplit = usePhoneSplit();
+  const verticalTabBar = useVerticalTabBar();
   const buttonsLayout = useMiniPlayerButtons();
   const transportAvailable = useTransportAvailable();
   const { isAuthenticated } = useAuth();
@@ -226,11 +230,14 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
   const wide = isTablet || phoneSplit;
   // Between the climber's buttons and ⏮ ⏭, and before 💡 ✓, on a bar with room to spare.
   const groupGap = wide ? ACCESSORY_GROUP_GAP : 0;
-  const slotCount = miniPlayerSlotCount({ placement, rowWidth, widthBesideName, wide, groupGap });
+  const capacityWidth = miniPlayerCapacityWidth({ windowWidth, rowWidth, wide, verticalTabBar });
+  const slotCount = miniPlayerSlotCount({ placement, rowWidth: capacityWidth, widthBesideName, wide, groupGap });
   // Tell the View options preview what this device's open bar measures.
   useEffect(() => {
-    if (placement === 'regular' && rowWidth !== null) publishMeasuredMiniPlayerBar({ rowWidth, widthBesideName });
-  }, [placement, rowWidth, widthBesideName]);
+    if (placement === 'regular' && capacityWidth !== null) {
+      publishMeasuredMiniPlayerBar({ rowWidth: capacityWidth, widthBesideName });
+    }
+  }, [placement, capacityWidth, widthBesideName]);
   // The platter shows a plain (non-colorized) grade; only the label swaps to the
   // Boardsesh grade when the toggle is on and a trusted one exists.
   const currentFormattedGrade = resolveGrade(climb, boardConfig?.boardName).label;

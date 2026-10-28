@@ -116,6 +116,7 @@ vi.mock('../AccessoryPlayLink', () => ({
 }));
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
+  useWindowDimensions: () => ({ width: miniPlayer.windowWidth, height: 874, scale: 3, fontScale: 1 }),
   DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
   View: ({
@@ -311,6 +312,8 @@ vi.mock('../../../providers/queue-provider', () => ({
 // the Duo split. The buttons themselves have their own tests; here each one is
 // a marker, so the tests see which ones the row placed and in what order.
 const miniPlayer = vi.hoisted(() => ({
+  windowWidth: 402,
+  verticalTabBar: false,
   layout: null as null | { order: readonly string[]; visible: Record<string, boolean> },
   isTablet: false,
   phoneSplit: false,
@@ -328,6 +331,7 @@ vi.mock('../../../lib/mini-player-buttons-preference', async () => {
 });
 vi.mock('../../../hooks/use-device-layout', () => ({ useDeviceLayout: () => ({ isTablet: miniPlayer.isTablet }) }));
 vi.mock('../../../hooks/use-phone-split', () => ({ usePhoneSplit: () => miniPlayer.phoneSplit }));
+vi.mock('../../../hooks/use-vertical-tab-bar', () => ({ useVerticalTabBar: () => miniPlayer.verticalTabBar }));
 vi.mock('../../navigation/phone-split-pane-slot', () => ({ usePhoneSplitPaneTaken: () => miniPlayer.paneTaken }));
 vi.mock('../../../lib/workout-run-store', () => ({ useWorkoutRun: () => null }));
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: miniPlayer.signedIn }) }));
@@ -524,6 +528,8 @@ describe('NativeAccessoryClimbRow', () => {
     connection.state = { bluetooth: {}, inAppBoardConnection: 'disconnected', ledless: false, holderDisplayName: null };
     miniPlayer.layout = null;
     miniPlayer.isTablet = false;
+    miniPlayer.windowWidth = 402;
+    miniPlayer.verticalTabBar = false;
     miniPlayer.phoneSplit = false;
     miniPlayer.paneTaken = false;
     miniPlayer.signedIn = true;
@@ -677,6 +683,7 @@ describe('NativeAccessoryClimbRow', () => {
     it.each(['connectedByMe', 'heldByPeer', 'unbound'] as const)(
       'retains the tick and its native slot through repeated resizing when %s',
       (boardState) => {
+        miniPlayer.verticalTabBar = true;
         layout.width = 290;
         if (boardState === 'unbound') connection.state.bluetooth = null;
         else connection.state.inAppBoardConnection = boardState;
@@ -721,6 +728,7 @@ describe('NativeAccessoryClimbRow', () => {
     );
 
     it('retains the disconnected bulb and its native slot through repeated resizing', () => {
+      miniPlayer.verticalTabBar = true;
       layout.width = 290;
       const { container } = renderRow('regular');
       const bulb = container.querySelector('[data-board-control]');
@@ -754,6 +762,7 @@ describe('NativeAccessoryClimbRow', () => {
     });
 
     it('changes the narrow control as the board connects and disconnects without remounting the row', () => {
+      miniPlayer.verticalTabBar = true;
       layout.width = 290;
       const climb = queue.state.currentClimbQueueItem?.climb as Climb;
       const { container, rerender } = render(<NativeAccessoryClimbRow climb={climb} placement="regular" />);
@@ -809,11 +818,13 @@ describe('NativeAccessoryClimbRow', () => {
 
     it.each([
       // The platter beside iPhone Duo's side tab rail in the closed shots.
-      ['290pt (iPhone Duo outer display)', 290],
+      ['290pt (iPhone Duo outer display)', 290, 466, true],
       // INFERRED: a 320pt-wide Display Zoom iPhone (SE, 13 mini) less the platter margins.
-      ['288pt (320pt Display Zoom iPhone)', 288],
-    ] as const)('keeps one slot on a narrow open platter: %s', (_label, platterWidth) => {
+      ['278pt (320pt Display Zoom iPhone)', 278, 320, false],
+    ] as const)('keeps one slot on a narrow open platter: %s', (_label, platterWidth, windowWidth, vertical) => {
       layout.width = platterWidth;
+      miniPlayer.windowWidth = windowWidth;
+      miniPlayer.verticalTabBar = vertical;
       const free = renderRow('regular');
       expect(free.container.querySelector('[data-board-control]')?.getAttribute('data-placement')).toBe('regular');
       expect(free.container.querySelector('[data-tick="true"]')).toBeNull();
@@ -827,6 +838,66 @@ describe('NativeAccessoryClimbRow', () => {
       expect(held.container.querySelector('[data-accessory-play-link]')?.getAttribute('data-a11y-value')).toBe(
         'ble.barControl.connectedLabel',
       );
+    });
+  });
+
+  describe('expanded phone readiness', () => {
+    it.each(['connectedByMe', 'heldByPeer', 'disconnected'] as const)(
+      'keeps expanded controls mounted while the shared host is inline, when %s',
+      (boardState) => {
+        connection.state.inAppBoardConnection = boardState;
+        layout.width = 222;
+        const { container } = renderRow('regular');
+        const row = container.firstElementChild as Element;
+        const bulb = container.querySelector('[data-board-control]');
+        const tick = container.querySelector('[data-tick="true"]');
+        expect(bulb).not.toBeNull();
+        expect(tick).not.toBeNull();
+        expect(container.querySelector('[data-mini-player-buttons]')?.getAttribute('data-mini-player-buttons')).toBe(
+          'next',
+        );
+        expect(getMeasuredMiniPlayerBar()).toEqual({ rowWidth: 360, widthBesideName: 68 });
+
+        for (const width of [360, 222, 360]) {
+          const onLayout = layout.callbacks.get(row);
+          expect(onLayout).toBeDefined();
+          act(() => onLayout?.({ nativeEvent: { layout: { width, height: 48 } } }));
+          expect(container.firstElementChild).toBe(row);
+          expect(container.querySelector('[data-board-control]')).toBe(bulb);
+          expect(container.querySelector('[data-tick="true"]')).toBe(tick);
+          expect(container.querySelector('[data-mini-player-buttons]')?.getAttribute('data-mini-player-buttons')).toBe(
+            'next',
+          );
+          expect(getMeasuredMiniPlayerBar()).toEqual({ rowWidth: 360, widthBesideName: 68 });
+        }
+      },
+    );
+
+    it('follows viewport resizing before another host measurement arrives', () => {
+      layout.width = 222;
+      const climb = makeClimb();
+      const { container, rerender } = render(<NativeAccessoryClimbRow climb={climb} placement="regular" />);
+      for (const windowWidth of [320, 375, 402]) {
+        miniPlayer.windowWidth = windowWidth;
+        rerender(<NativeAccessoryClimbRow climb={climb} placement="regular" />);
+        expect(container.querySelector('[data-board-control]')).not.toBeNull();
+        expect(container.querySelector('[data-tick="true"]') !== null).toBe(windowWidth !== 320);
+        expect(container.querySelector('[data-mini-player-buttons]') !== null).toBe(windowWidth === 402);
+        expect(getMeasuredMiniPlayerBar()?.rowWidth).toBe(windowWidth - 42);
+      }
+    });
+
+    it('switches to live measurements when a Duo side rail is detected', () => {
+      miniPlayer.windowWidth = 466;
+      layout.width = 290;
+      const climb = makeClimb();
+      const { container, rerender } = render(<NativeAccessoryClimbRow climb={climb} placement="regular" />);
+      expect(container.querySelector('[data-tick="true"]')).not.toBeNull();
+      miniPlayer.verticalTabBar = true;
+      rerender(<NativeAccessoryClimbRow climb={climb} placement="regular" />);
+      expect(container.querySelector('[data-board-control]')).not.toBeNull();
+      expect(container.querySelector('[data-tick="true"]')).toBeNull();
+      expect(getMeasuredMiniPlayerBar()?.rowWidth).toBe(290);
     });
   });
 
@@ -854,6 +925,7 @@ describe('NativeAccessoryClimbRow', () => {
       expect(buttons(renderRow('inline').container)).toBeNull();
       layout.width = 290;
       miniPlayer.isTablet = false;
+      miniPlayer.verticalTabBar = true;
       expect(buttons(renderRow('regular').container)).toBeNull();
     });
 
@@ -1161,9 +1233,10 @@ describe('NativeAccessoryClimbRow', () => {
     }
   });
 
-  // The View options preview draws the width the open bar measured (#6940).
+  // The View options preview uses the same regular capacity as the real bar.
   describe('publishing the measured bar to the preview', () => {
     it('publishes the open platter width and what the row spends beside the name', () => {
+      miniPlayer.verticalTabBar = true;
       layout.width = 290;
       renderRow('regular');
       expect(getMeasuredMiniPlayerBar()).toEqual({ rowWidth: 290, widthBesideName: 68 });

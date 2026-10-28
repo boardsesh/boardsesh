@@ -4,6 +4,7 @@ import {
   ACCESSORY_SLOT_WIDTH,
   PHONE_ACCESSORY_MIN_NAME_WIDTH,
   isMiniPlayerButtonAvailable,
+  miniPlayerCapacityWidth,
   miniPlayerPaneCoveredButtons,
   miniPlayerPaneMode,
   miniPlayerSlotCount,
@@ -36,6 +37,63 @@ function wide(rowWidth: number | null, placement: 'regular' | 'inline' = 'regula
   });
 }
 
+describe('miniPlayerCapacityWidth', () => {
+  it.each([null, 222, 360])('keeps phone capacity stable when its native row measures %s', (rowWidth) => {
+    const capacityWidth = miniPlayerCapacityWidth({
+      windowWidth: 402,
+      rowWidth,
+      wide: false,
+      verticalTabBar: false,
+    });
+
+    expect(capacityWidth).toBe(360);
+    expect(phone(capacityWidth)).toBe(3);
+  });
+
+  it.each([
+    { windowWidth: 375, capacityWidth: 333, slots: 2 },
+    { windowWidth: 320, capacityWidth: 278, slots: 1 },
+  ])('fits $slots controls in a $windowWidth point phone window', ({ windowWidth, capacityWidth, slots }) => {
+    const measuredCapacity = miniPlayerCapacityWidth({
+      windowWidth,
+      rowWidth: 222,
+      wide: false,
+      verticalTabBar: false,
+    });
+
+    expect(measuredCapacity).toBe(capacityWidth);
+    expect(phone(measuredCapacity)).toBe(slots);
+  });
+
+  it('recomputes phone capacity when the window shrinks and grows', () => {
+    const capacities = [402, 375, 320, 402].map((windowWidth) =>
+      miniPlayerCapacityWidth({ windowWidth, rowWidth: 222, wide: false, verticalTabBar: false }),
+    );
+
+    expect(capacities).toEqual([360, 333, 278, 360]);
+    expect(capacities.map((capacityWidth) => phone(capacityWidth))).toEqual([3, 2, 1, 3]);
+  });
+
+  it.each([
+    { device: 'wide tablet', wide: true, verticalTabBar: false },
+    { device: 'vertical tab rail', wide: false, verticalTabBar: true },
+  ])(
+    'follows the actual row width on a $device, including decreases and no measurement',
+    ({ wide, verticalTabBar }) => {
+      const measuredWidths = [995, 290, 180, null];
+      const capacities = measuredWidths.map((rowWidth) =>
+        miniPlayerCapacityWidth({ windowWidth: 1200, rowWidth, wide, verticalTabBar }),
+      );
+
+      expect(capacities).toEqual(measuredWidths);
+    },
+  );
+
+  it('keeps a phone capacity nonnegative when the window is narrower than its insets', () => {
+    expect(miniPlayerCapacityWidth({ windowWidth: 32, rowWidth: null, wide: false, verticalTabBar: false })).toBe(0);
+  });
+});
+
 describe('miniPlayerSlotCount', () => {
   it('guesses what most bars measure before the first layout, so they never redraw on it', () => {
     expect(phone(null)).toBe(3);
@@ -49,7 +107,7 @@ describe('miniPlayerSlotCount', () => {
     expect(wide(995, 'inline')).toBe(1);
   });
 
-  it('holds three on an iPhone 17 Pro (~370pt) and a 375pt iPhone (~343pt)', () => {
+  it('holds three in measured phone content widths of 370pt and 343pt', () => {
     expect(phone(370)).toBe(3);
     expect(phone(343)).toBe(3);
   });
@@ -58,7 +116,7 @@ describe('miniPlayerSlotCount', () => {
     expect(phone(600)).toBe(3);
   });
 
-  it("keeps one on iPhone Duo's closed platter (290pt) and a 320pt Display Zoom iPhone (~288pt)", () => {
+  it('keeps one in narrow phone content widths of 290pt and 288pt', () => {
     expect(phone(290)).toBe(1);
     expect(phone(288)).toBe(1);
   });
