@@ -47,10 +47,12 @@ export type StaticClimbListProps = {
    */
   unlinkedClimbUuids?: ReadonlySet<string>;
   /**
-   * Climbs drawn faded, keyed by uuid: a workout climb the climber skipped on
-   * the session page (#6903).
+   * One key per entry of `climbs`, for a list that holds a climb more than
+   * once (a workout's 4x4 sets, #6903). Defaults to the climb's uuid.
    */
-  dimmedClimbUuids?: ReadonlySet<string>;
+  rowKeys?: readonly string[];
+  /** Rows drawn faded, by row key: a workout climb the climber skipped on the session page. */
+  dimmedRowKeys?: ReadonlySet<string>;
   /** Viewer's ticks for the ascent badges. Absent on anonymous/crawler renders. */
   logbook?: readonly LogbookEntry[];
   /**
@@ -90,7 +92,7 @@ export type StaticClimbListProps = {
   /** How many leading rows render from image layers rather than the canvas (LCP). */
   initialImageCount?: number;
   /** Extra content under a row, inside the measured wrapper but outside the link. */
-  renderItemExtra?: (climb: Climb) => React.ReactNode;
+  renderItemExtra?: (climb: Climb, rowKey: string) => React.ReactNode;
 };
 
 const sentinelBoxSx = { minHeight: `${themeTokens.spacing[5]}px` };
@@ -109,11 +111,12 @@ type SharedRowProps = {
   boardSlug?: string;
   resolveBoardDetails: (climb: Climb) => BoardDetails;
   unlinkedClimbUuids?: ReadonlySet<string>;
-  dimmedClimbUuids?: ReadonlySet<string>;
+  rowKeys?: readonly string[];
+  dimmedRowKeys?: ReadonlySet<string>;
   pathname: string;
   logbook?: readonly LogbookEntry[];
   initialImageCount: number;
-  renderItemExtra?: (climb: Climb) => React.ReactNode;
+  renderItemExtra?: (climb: Climb, rowKey: string) => React.ReactNode;
 };
 
 export default function StaticClimbList({
@@ -122,7 +125,8 @@ export default function StaticClimbList({
   boardSlug,
   boardDetailsByClimb,
   unlinkedClimbUuids,
-  dimmedClimbUuids,
+  rowKeys,
+  dimmedRowKeys,
   logbook,
   virtualize = true,
   isFetching = false,
@@ -149,7 +153,8 @@ export default function StaticClimbList({
     boardSlug,
     resolveBoardDetails,
     unlinkedClimbUuids,
-    dimmedClimbUuids,
+    rowKeys,
+    dimmedRowKeys,
     pathname,
     logbook,
     initialImageCount,
@@ -204,7 +209,8 @@ function PlainRows({
   boardSlug,
   resolveBoardDetails,
   unlinkedClimbUuids,
-  dimmedClimbUuids,
+  rowKeys,
+  dimmedRowKeys,
   pathname,
   logbook,
   initialImageCount,
@@ -212,29 +218,32 @@ function PlainRows({
 }: SharedRowProps) {
   return (
     <div style={{ width: '100%', backgroundColor: 'inherit' }}>
-      {climbs.map((climb, index) => (
-        <div
-          key={climb.uuid}
-          data-index={index}
-          style={{
-            width: '100%',
-            minHeight: LIST_ROW_HEIGHT,
-            opacity: dimmedClimbUuids?.has(climb.uuid) ? themeTokens.opacity.disabled : undefined,
-          }}
-        >
-          <StaticClimbRow
-            climb={climb}
-            boardSlug={boardSlug}
-            boardDetails={resolveBoardDetails(climb)}
-            unlinked={unlinkedClimbUuids?.has(climb.uuid)}
-            pathname={pathname}
-            logbook={logbook}
-            preferImageLayers={index < initialImageCount}
-            fetchPriority={index === 0 ? 'high' : undefined}
-          />
-          {renderItemExtra?.(climb)}
-        </div>
-      ))}
+      {climbs.map((climb, index) => {
+        const rowKey = rowKeys?.[index] ?? climb.uuid;
+        return (
+          <div
+            key={rowKey}
+            data-index={index}
+            style={{
+              width: '100%',
+              minHeight: LIST_ROW_HEIGHT,
+              opacity: dimmedRowKeys?.has(rowKey) ? themeTokens.opacity.disabled : undefined,
+            }}
+          >
+            <StaticClimbRow
+              climb={climb}
+              boardSlug={boardSlug}
+              boardDetails={resolveBoardDetails(climb)}
+              unlinked={unlinkedClimbUuids?.has(climb.uuid)}
+              pathname={pathname}
+              logbook={logbook}
+              preferImageLayers={index < initialImageCount}
+              fetchPriority={index === 0 ? 'high' : undefined}
+            />
+            {renderItemExtra?.(climb, rowKey)}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -267,7 +276,8 @@ function VirtualizedRows({
   boardSlug,
   resolveBoardDetails,
   unlinkedClimbUuids,
-  dimmedClimbUuids,
+  rowKeys,
+  dimmedRowKeys,
   pathname,
   logbook,
   initialImageCount,
@@ -291,7 +301,7 @@ function VirtualizedRows({
     count: climbs.length,
     estimateSize: () => LIST_ROW_HEIGHT,
     overscan: 10,
-    getItemKey: (index) => climbs[index]?.uuid ?? index,
+    getItemKey: (index) => rowKeys?.[index] ?? climbs[index]?.uuid ?? index,
     // Provide a fake viewport so the virtualizer renders items during SSR.
     // Without this, getVirtualItems() returns [] on the server and the list is
     // entirely client-rendered — which on this list would mean zero crawlable
@@ -327,6 +337,7 @@ function VirtualizedRows({
       {virtualItems.map((virtualItem) => {
         const climb = climbs[virtualItem.index];
         if (!climb) return null;
+        const rowKey = rowKeys?.[virtualItem.index] ?? climb.uuid;
         return (
           <div
             key={virtualItem.key}
@@ -343,7 +354,7 @@ function VirtualizedRows({
               // grow past this via measureElement.
               minHeight: LIST_ROW_HEIGHT,
               boxSizing: 'border-box',
-              opacity: dimmedClimbUuids?.has(climb.uuid) ? themeTokens.opacity.disabled : undefined,
+              opacity: dimmedRowKeys?.has(rowKey) ? themeTokens.opacity.disabled : undefined,
               transform: `translateY(${virtualItem.start}px)`,
               // No `paint` here, unlike the classic list: paint
               // containment clips descendants to this box, and the row
@@ -364,7 +375,7 @@ function VirtualizedRows({
               preferImageLayers={virtualItem.index < initialImageCount}
               fetchPriority={virtualItem.index === 0 ? 'high' : undefined}
             />
-            {renderItemExtra?.(climb)}
+            {renderItemExtra?.(climb, rowKey)}
           </div>
         );
       })}

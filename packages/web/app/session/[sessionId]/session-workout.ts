@@ -101,6 +101,8 @@ function workoutClimbToClimb(climb: WorkoutClimbView, unknownClimbLabel: string)
 }
 
 export type WorkoutClimbEntry = {
+  /** The row's key: the queue item for a planned climb, the climb uuid otherwise. */
+  key: string;
   climb: Climb;
   ticks: SessionDetailTick[];
   /** The block's climb this row is, absent for off-plan and crew rows. */
@@ -120,15 +122,21 @@ function entriesFromTicks(ticks: readonly SessionDetailTick[], unknownClimbLabel
   for (const tick of ticks) {
     const existing = byClimb.get(tick.climbUuid);
     if (existing) existing.ticks.push(tick);
-    else byClimb.set(tick.climbUuid, { climb: tickToClimb(tick, unknownClimbLabel), ticks: [tick] });
+    else {
+      byClimb.set(tick.climbUuid, {
+        key: tick.climbUuid,
+        climb: tickToClimb(tick, unknownClimbLabel),
+        ticks: [tick],
+      });
+    }
   }
   return [...byClimb.values()];
 }
 
 /**
- * Groups the session's ticks under the workout's blocks. A climb planned twice
- * in one block is one row holding both slots' ticks, since a row is keyed by
- * its climb.
+ * Groups the session's ticks under the workout's blocks, one row per planned
+ * slot (keyed by its queue item), so a climb planned twice shows twice: a 4x4
+ * that repeats a climb numbers every set and keeps each set's reps.
  */
 export function buildWorkoutClimbGroups(
   ticks: readonly SessionDetailTick[],
@@ -137,24 +145,19 @@ export function buildWorkoutClimbGroups(
 ): WorkoutClimbGroup[] {
   const { byClimb, offPlan, crew } = assignWorkoutTicks(ticks, workout);
   const groups: WorkoutClimbGroup[] = workout.stages.map((stage, stageIndex) => {
-    const entries = new Map<string, WorkoutClimbEntry>();
-    stage.climbs.forEach((workoutClimb, climbIndex) => {
+    const entries = stage.climbs.map((workoutClimb, climbIndex): WorkoutClimbEntry => {
       const climbTicks = byClimb[stageIndex][climbIndex];
-      const existing = entries.get(workoutClimb.climbUuid);
-      if (existing) {
-        existing.ticks.push(...climbTicks);
-        return;
-      }
-      entries.set(workoutClimb.climbUuid, {
+      return {
+        key: workoutClimb.queueItemUuid,
         climb: climbTicks[0]
           ? tickToClimb(climbTicks[0], unknownClimbLabel)
           : workoutClimbToClimb(workoutClimb, unknownClimbLabel),
-        ticks: [...climbTicks],
+        ticks: climbTicks,
         workoutClimb,
-        setNumber: isFourByFourStage(stage) ? entries.size + 1 : undefined,
-      });
+        setNumber: isFourByFourStage(stage) ? climbIndex + 1 : undefined,
+      };
     });
-    return { type: 'block', key: `block-${stage.id}`, stage, entries: [...entries.values()] };
+    return { type: 'block', key: `block-${stage.id}`, stage, entries };
   });
   if (offPlan.length > 0) {
     groups.push({

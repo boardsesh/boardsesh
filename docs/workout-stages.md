@@ -219,8 +219,8 @@ and the crew. Ticks are placed by the answer's uuids (`tickUuids` per climb,
 the crew, and an owner tick the answer doesn't name (logged after it was read) is off plan.
 An answer without the uuids falls back to matching the owner's ticks by climb and angle
 the way the derivation did. A 4x4 set row lists its own ticks under the reps, for likes,
-comments and delete. Feed cards on the web (profile
-Sessions, home feed) ask `sessionWorkoutHeadlines` once per loaded page. The copy lives in
+comments and delete. Feed cards on the web profile
+Sessions page ask `sessionWorkoutHeadlines` once per loaded page. The copy lives in
 `@boardsesh/workout-summary` (`format.ts`), which takes the caller's `t` over the `session`
 catalog: block names, detail lines, tallies, climb outcomes and the headline. Mobile still
 has its own copy under `mobile.workoutSummary.*` and can switch to it.

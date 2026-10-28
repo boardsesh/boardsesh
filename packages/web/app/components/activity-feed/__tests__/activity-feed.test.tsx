@@ -31,7 +31,7 @@ vi.mock('@boardsesh/graphql/operations', () => ({
   GET_SESSION_GROUPED_FEED: 'GET_SESSION_GROUPED_FEED',
 }));
 
-// The workout headlines are their own request per page; covered by their hook's test.
+// The workout headlines are their own request per page; see hooks/__tests__/use-session-workouts.test.tsx.
 vi.mock('@/app/hooks/use-session-workout-headlines', () => ({
   useSessionWorkoutHeadlines: () => new Map(),
 }));

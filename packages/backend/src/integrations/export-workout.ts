@@ -93,8 +93,9 @@ const boardTypeFromPath = (boardPath: string | null): string | null =>
  * the one the session's creator ran (a crew climbs the creator's queue).
  * Either way it is tallied from `userId`'s own ticks, so the numbers are
  * theirs; the creator's tick map is never applied to someone else's ticks.
- * Null when neither has a workout, the exporter logged nothing, or the row
- * can't be read.
+ * Null when neither has a workout, the exporter logged nothing, the row
+ * can't be read, or (on the creator's workout) none of the exporter's ticks
+ * landed on it: a crewmate who climbed their own thing keeps today's title.
  */
 export async function loadExportWorkout(sessionId: string, userId: string): Promise<ExportWorkout | null> {
   const [session] = await db
@@ -133,6 +134,7 @@ export async function loadExportWorkout(sessionId: string, userId: string): Prom
     tickMap,
     ticks.map((tick) => ({ ...tick, status: tick.status as SessionWorkoutRepOutcome })),
   );
+  if (row.userId !== userId && derived.offPlan >= ticks.length) return null;
   const boardType = ticks[0].boardType ?? boardTypeFromPath(session?.boardPath ?? null);
   return buildExportWorkout(derived, (difficulty) => {
     const label = getGradeLabel(difficulty, boardType);

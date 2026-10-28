@@ -37,7 +37,8 @@ const headerSx = {
   px: 2,
   pt: 2,
   pb: 1,
-  borderBottom: `1px solid ${themeTokens.neutral[200]}`,
+  borderBottom: 1,
+  borderColor: 'divider',
 } as const;
 
 function RepGlyph({ rep }: { rep: SessionWorkoutRepOutcome }) {
@@ -126,19 +127,20 @@ function WorkoutGroupList({
   unlinkedClimbUuids,
   renderTicks,
 }: Omit<SessionWorkoutClimbsProps, 'groups'> & { group: WorkoutClimbGroup }) {
-  const entryByClimb = useMemo(() => new Map(group.entries.map((entry) => [entry.climb.uuid, entry])), [group.entries]);
+  const entryByKey = useMemo(() => new Map(group.entries.map((entry) => [entry.key, entry])), [group.entries]);
   const climbs = useMemo(() => group.entries.map((entry) => entry.climb), [group.entries]);
+  const rowKeys = useMemo(() => group.entries.map((entry) => entry.key), [group.entries]);
   const dimmed = useMemo(
-    () => new Set(group.entries.filter((entry) => entry.workoutClimb?.skipped).map((entry) => entry.climb.uuid)),
+    () => new Set(group.entries.filter((entry) => entry.workoutClimb?.skipped).map((entry) => entry.key)),
     [group.entries],
   );
   const repsPerSet = group.type === 'block' ? group.stage.repsPerSet : null;
   const renderExtra = useCallback(
-    (climb: Climb) => {
-      const entry = entryByClimb.get(climb.uuid);
+    (_climb: Climb, rowKey: string) => {
+      const entry = entryByKey.get(rowKey);
       return entry ? <EntryExtra entry={entry} repsPerSet={repsPerSet} renderTicks={renderTicks} /> : null;
     },
-    [entryByClimb, repsPerSet, renderTicks],
+    [entryByKey, repsPerSet, renderTicks],
   );
 
   return (
@@ -147,7 +149,8 @@ function WorkoutGroupList({
       boardDetails={boardDetails}
       boardDetailsByClimb={boardDetailsByClimb}
       unlinkedClimbUuids={unlinkedClimbUuids}
-      dimmedClimbUuids={dimmed}
+      dimmedRowKeys={dimmed}
+      rowKeys={rowKeys}
       climbs={climbs}
       virtualize={false}
       renderItemExtra={renderExtra}

@@ -6,6 +6,7 @@ import type { SessionSummary } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
 import * as schema from '@boardsesh/db/schema';
 import { autoSyncSessionToIntegrations, buildSessionActivity } from '../integrations/export-service';
+import * as exportWorkout from '../integrations/export-workout';
 import { buildExportWorkout, englishSessionT } from '../integrations/export-workout';
 
 const { uploadSessionActivity } = vi.hoisted(() => ({ uploadSessionActivity: vi.fn() }));
@@ -13,6 +14,11 @@ vi.mock('../integrations/credentials', () => ({
   getFreshAccessToken: vi.fn(async (credential: { userId: string }) => `token:${credential.userId}`),
   recordSyncSuccess: vi.fn(async () => undefined),
 }));
+// The real loader, wrapped so one test can make it throw.
+vi.mock('../integrations/export-workout', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../integrations/export-workout')>();
+  return { ...actual, loadExportWorkout: vi.fn(actual.loadExportWorkout) };
+});
 vi.mock('../integrations/registry', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../integrations/registry')>()),
   getProvider: () => ({
@@ -278,6 +284,50 @@ describe('automatic Strava export of a workout session', () => {
     const crewCall = uploadSessionActivity.mock.calls.find(([token]) => token === `token:${crewId}`);
     expect(crewCall?.[1].name).toBe('4x4 at V4 — 2 sends');
     expect(crewCall?.[1].description.split('\n')[0]).toBe('Workout: Warm-up 1/4 · 4x4 V4 1/16 reps · Cool-down 0/3');
+  });
+
+  it("keeps the board name for a crewmate who climbed none of the creator's workout", async () => {
+    const { climbs, ownerId, sessionId } = await workoutSession();
+    const crewId = await createClimber();
+    const [ownPick] = await createClimbs(1);
+    await logTicks(ownerId, sessionId, workoutTicks(climbs));
+    await logTicks(crewId, sessionId, [
+      { uuid: uuidv4(), climbUuid: ownPick, angle: 40, status: 'send', climbedAt: minute(3) },
+    ]);
+    await db.insert(schema.sessionWorkouts).values({
+      sessionId,
+      userId: ownerId,
+      plan: workoutPlan(climbs),
+      tickMap: [],
+      revision: 1,
+    });
+    uploadSessionActivity.mockResolvedValue({ externalActivityId: 'crew-off-plan' });
+
+    await autoSyncSessionToIntegrations(sessionId, 'kilter/1');
+
+    const crewCall = uploadSessionActivity.mock.calls.find(([token]) => token === `token:${crewId}`);
+    expect(crewCall?.[1].name).toBe('Kilter Board session — 1 send');
+    expect(crewCall?.[1].description).not.toContain('Workout:');
+  });
+
+  it("exports today's text when the workout can't be read", async () => {
+    const { climbs, ownerId, sessionId } = await workoutSession();
+    await logTicks(ownerId, sessionId, workoutTicks(climbs).slice(0, 2));
+    await db.insert(schema.sessionWorkouts).values({
+      sessionId,
+      userId: ownerId,
+      plan: workoutPlan(climbs),
+      tickMap: [],
+      revision: 1,
+    });
+    const loader = vi.mocked(exportWorkout.loadExportWorkout);
+    loader.mockRejectedValueOnce(new Error('boom'));
+    uploadSessionActivity.mockResolvedValue({ externalActivityId: 'fallback-export' });
+
+    await autoSyncSessionToIntegrations(sessionId, 'kilter/1');
+
+    expect(loader).toHaveBeenCalled();
+    expect(uploadSessionActivity.mock.calls[0][1].name).toBe('Kilter Board session — 2 sends');
   });
 
   it('keeps the board name without a workout', async () => {
