@@ -8,12 +8,15 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- When something won't load, the screen now tells you what failed and whether it's our server, with a clear Try again button. ([#7021](https://github.com/boardsesh/boardsesh/pull/7021))
 - Browse three board previews on one Waveshare using its buttons. ([#6989](https://github.com/boardsesh/boardsesh/pull/6989))
   Reconnect to compatible MoonBoard controllers that advertise a serial number.
 - Share your gym with the crew by link while keeping it out of search and maps. ([#6985](https://github.com/boardsesh/boardsesh/pull/6985))
 
 ### Fixed
 
+- Recognize your spray wall by its thumbnail in the quick switcher. ([#6969](https://github.com/boardsesh/boardsesh/pull/6969))
+- Your saved MoonBoard keeps its own wall history when its controller has no serial. ([#7005](https://github.com/boardsesh/boardsesh/pull/7005))
 - Next no longer brings back a climb you already did earlier in the session ([#6996](https://github.com/boardsesh/boardsesh/pull/6996))
 - Connecting through the lightbulb finds the correct saved board before connecting. ([#6998](https://github.com/boardsesh/boardsesh/pull/6998))
   Waveshare QA fixtures now load their gym and advertise all three boards.

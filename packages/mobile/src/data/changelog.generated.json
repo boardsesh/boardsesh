@@ -1,6 +1,27 @@
 {
-  "generatedAt": "2026-10-28T08:06:45.916Z",
+  "generatedAt": "2026-10-28T20:16:54.813Z",
   "entries": [
+    {
+      "prNumber": 6969,
+      "category": "fixed",
+      "title": "Recognize your spray wall by its thumbnail in the quick switcher.",
+      "mergedAt": "2026-10-28T19:59:53Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6969"
+    },
+    {
+      "prNumber": 7021,
+      "category": "new",
+      "title": "When something won't load, the screen now tells you what failed and whether it's our server, with a clear Try again button.",
+      "mergedAt": "2026-10-28T19:54:00Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7021"
+    },
+    {
+      "prNumber": 7005,
+      "category": "fixed",
+      "title": "Your saved MoonBoard keeps its own wall history when its controller has no serial.",
+      "mergedAt": "2026-10-28T09:14:51Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7005"
+    },
     {
       "prNumber": 6996,
       "category": "fixed",
