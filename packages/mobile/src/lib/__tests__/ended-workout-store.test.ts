@@ -27,6 +27,7 @@ import {
   ENDED_WORKOUT_MAX_AGE_MS,
   MAX_ENDED_WORKOUTS,
   clearEndedWorkouts,
+  forgetEndedWorkoutTick,
   getEndedWorkout,
   hydrateEndedWorkouts,
   rememberEndedWorkout,
@@ -58,21 +59,21 @@ beforeEach(() => {
 
 describe('ended workout recaps', () => {
   it('keeps the run, tick log and captured climbs by session id', () => {
-    rememberEndedWorkout({ ...record('session-1'), pendingStart: true }, NOW);
+    rememberEndedWorkout({ ...record('session-1'), pendingStart: true }, NOW, 'user-1');
     const recap = getEndedWorkout('session-1');
-    expect(recap).toMatchObject({ ...record('session-1'), endedAtMs: NOW });
+    expect(recap).toMatchObject({ ...record('session-1'), endedAtMs: NOW, userId: 'user-1' });
     expect(recap?.pendingStart).toBeUndefined();
     expect(getEndedWorkout('session-2')).toBeNull();
   });
 
   it('skips a run with no stages', () => {
-    rememberEndedWorkout({ sessionId: 'session-1', run: { stages: [] } }, NOW);
+    rememberEndedWorkout({ sessionId: 'session-1', run: { stages: [] } }, NOW, 'user-1');
     expect(getEndedWorkout('session-1')).toBeNull();
   });
 
   it(`keeps the newest ${MAX_ENDED_WORKOUTS}`, () => {
     for (let index = 0; index <= MAX_ENDED_WORKOUTS; index += 1) {
-      rememberEndedWorkout(record(`session-${index}`), NOW + index);
+      rememberEndedWorkout(record(`session-${index}`), NOW + index, 'user-1');
     }
     expect(getEndedWorkout('session-0')).toBeNull();
     expect(getEndedWorkout(`session-${MAX_ENDED_WORKOUTS}`)).not.toBeNull();
@@ -91,11 +92,11 @@ describe('ended workout recaps', () => {
   });
 
   it('survives a cold start, and a recap remembered before the read wins', async () => {
-    rememberEndedWorkout(record('session-1'), NOW);
+    rememberEndedWorkout(record('session-1'), NOW, 'user-1');
     await flushStorageWrites();
     resetEndedWorkoutStoreForTests();
 
-    rememberEndedWorkout({ ...record('session-2'), revision: 9 }, NOW + 1);
+    rememberEndedWorkout({ ...record('session-2'), revision: 9 }, NOW + 1, 'user-1');
     await hydrateEndedWorkouts(NOW + 2);
     expect(getEndedWorkout('session-1')?.revision).toBe(3);
     expect(getEndedWorkout('session-2')?.revision).toBe(9);
@@ -111,7 +112,7 @@ describe('ended workout recaps', () => {
   });
 
   it('forgets everything on sign-out, a read in flight included', async () => {
-    rememberEndedWorkout(record('session-1'), NOW);
+    rememberEndedWorkout(record('session-1'), NOW, 'user-1');
     await flushStorageWrites();
     resetEndedWorkoutStoreForTests();
     const hydrating = hydrateEndedWorkouts(NOW);
@@ -119,5 +120,22 @@ describe('ended workout recaps', () => {
     await hydrating;
     expect(getEndedWorkout('session-1')).toBeNull();
     expect(storage.read(ENDED_WORKOUTS_STORAGE_KEY)).toBeNull();
+  });
+
+  it('keeps the account a recap belongs to across a cold start', async () => {
+    rememberEndedWorkout(record('session-1'), NOW, 'user-1');
+    rememberEndedWorkout(record('session-2'), NOW + 1, null);
+    await flushStorageWrites();
+    await flushStorageWrites();
+    resetEndedWorkoutStoreForTests();
+    await hydrateEndedWorkouts(NOW + 2);
+    expect(getEndedWorkout('session-1')?.userId).toBe('user-1');
+    expect(getEndedWorkout('session-2')?.userId).toBeNull();
+  });
+
+  it('drops a deleted tick from every recap', () => {
+    rememberEndedWorkout(record('session-1'), NOW, 'user-1');
+    forgetEndedWorkoutTick('tick-1', NOW);
+    expect(getEndedWorkout('session-1')?.log).toEqual([]);
   });
 });

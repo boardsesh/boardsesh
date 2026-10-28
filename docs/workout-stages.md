@@ -251,13 +251,23 @@ effort: a failure exports the session with the board name, as before.
 
 `packages/mobile/src/offline/session-workout-outbox.ts` sends the phone's run with
 `recordSessionWorkout` through the offline outbox (table name `session_workouts`, routed
-in `packages/shared/offline-sync/src/mutation-queue/handlers.ts`). It writes three times:
+in `packages/shared/offline-sync/src/mutation-queue/handlers.ts`). It writes at four
+points:
 
 1. At Start, right after `prepareWorkoutRun`.
 2. At "Add a block", right after `setWorkoutRun`.
 3. Before END_SESSION, inside `endSession`'s `beforeEnd`, after the wait for the
    session's queued ticks (`waitForSessionTicksToSync`). The live queue is still there,
-   so a climb the run never captured is filled in from it first (`addWorkoutRunClimbs`).
+   so a climb the run never captured is filled in from it first, and a climb mirrored
+   since Start takes its new mirror (`addWorkoutRunClimbs`).
+4. When the run is cleared for any other way out (`WorkoutRunSessionSync`): the session
+   ended on another phone, the climber dropped out or was removed, or a relaunch found
+   it over. `enqueueEndedSessionWorkout` sends the cleared record's last copy. After a
+   local End it holds nothing new and is skipped.
+
+A write whose content matches the last one queued (`sentDigest`, a digest of the
+input stored with the run) is skipped, so the End and the clear that follows it send
+one copy, not two.
 
 Each write carries the whole workout: the plan built from the run and its captured
 climbs (`buildSessionWorkoutPlan`, which leaves out an item with no captured climb, keeps
@@ -266,8 +276,11 @@ rather than have the write refused), and the tick map from the run's tick log
 (`tickUuid → queueItemUuid`, one entry per tick, the newest 4000). The revision is a
 counter stored with the run, floored at the seconds since 2026-01-01, so it stays inside a
 Postgres integer and keeps climbing after an OTA rollback rewrote the record without it.
-The idempotency key is `session_workout:<sessionId>:<revision>`, and queuing a write first
-drops the copies of the same session still waiting.
+The idempotency key is `session_workout:<sessionId>:<revision>`. Queuing a write first
+drops the session's waiting copies with a lower revision, and queues nothing when one with
+the same or a higher revision is still waiting, so two writes whose transactions run out
+of order never leave the older one last. A workout row's retry budget is 3, not the
+outbox's 10: a newer write replaces it anyway.
 
 Order matters. The server keeps a tick-map entry only when the tick is already one of the
 climber's ticks in the session, and the outbox drains first in, first out, so a write
@@ -279,9 +292,12 @@ and fakes use readable ids, daily cards are `daily:…`), in a screenshot captur
 the store holds no run for the session. Without the offline database (flag off, the web
 build without the engine) the write goes straight to the server, best effort.
 
-A bundle from before the `session_workouts` table dead-letters a queued row as an
-unknown table. That only happens after an OTA rollback with a write still queued; the
-workout stays off the server until the next write from a newer bundle.
+**After an OTA rollback across this change**, with a workout write still queued, the
+older bundle cannot dispatch the row: it throws `Unknown table`, which its drainer
+classes as retryable. The row is at the head of the outbox, so every write behind it,
+ticks included, waits while it spends its 3 retries; then it dead-letters and shows in
+Sync issues, and until then sign-out counts it as unsent. An older bundle cannot be
+taught to skip it. The workout stays off the server until a newer bundle writes again.
 
 ### On the phone
 
@@ -303,8 +319,19 @@ summary shows "Still saving N ticks" from the outbox count
 (`countPendingSessionWrites`). Detail groups its Climbs list with `assignWorkoutTicks`,
 the rule web uses.
 
+A recap counts only for the account it was kept for (`userId`, stamped when the run was
+cleared), so a shared phone never shows one climber's workout as another's. A tick
+deleted from the logbook leaves the run's tick log and every recap, so the phone's
+tallies and "still saving" stop counting it.
+
+The summary's big number is the phone's count ("15 sends on this phone") only while it
+beats the server summary's totals; otherwise it is the server's, whatever the blocks
+are drawn from, since the server's totals include off-plan ticks the blocks never count.
+
 The answers refresh when a tick or workout write lands (`TABLE_INVALIDATE_KEYS` maps both
-tables to `['sessionWorkouts']`, the workout table to `['sessionWorkoutHeadlines']` too),
+tables to `['sessionWorkouts']`, the workout table to `['sessionWorkoutHeadlines']` too;
+the summary and detail also refetch as soon as their session's workout write is
+acknowledged),
 when the session ends (`seedEndedSessionCaches`), and when late ticks land after it
 (`refreshSessionWhenQueuedTicksLand`).
 

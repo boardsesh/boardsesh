@@ -20,7 +20,7 @@ import {
   beginImmediateWrite,
   enqueue,
   processMutation,
-  removePendingSessionWorkouts,
+  supersedePendingSessionWorkouts,
   runLocalWriteWithRetry,
   type GraphQLFetch,
   type PendingMutation,
@@ -30,18 +30,33 @@ import { getOfflineSyncHttpClient } from '../lib/graphql/client';
 import { reportHandledError } from '../lib/error-reporting';
 import { nowMs } from '../lib/clock';
 import {
-  buildRecordSessionWorkoutInput,
+  buildSessionWorkoutContent,
   captureWorkoutRunClimbs,
   isServerSessionId,
+  sessionWorkoutDigest,
   type RecordSessionWorkoutInput,
 } from '../lib/session-workout-plan';
-import { addWorkoutRunClimbs, getWorkoutRunState, nextWorkoutRunRevision } from '../lib/workout-run-store';
+import {
+  addWorkoutRunClimbs,
+  getWorkoutRunState,
+  nextWorkoutRunRevision,
+  noteWorkoutRunSent,
+  revisionAfter,
+  type WorkoutRunRecord,
+} from '../lib/workout-run-store';
 import { drainMutationQueue } from './offline-sync-adapter';
 import { notifyOutboxChanged } from './outbox-store';
 import { localWriteRetryOptions } from './local-write-telemetry';
 
 /** The outbox table name the drainer routes to `recordSessionWorkout`. */
 export const SESSION_WORKOUTS_OUTBOX_TABLE = 'session_workouts';
+
+/**
+ * A workout row's retry budget, below the outbox's 10. A newer write replaces
+ * it anyway, and an older bundle that cannot dispatch the table (after an OTA
+ * rollback) holds every row behind it while this budget runs out (handlers.ts).
+ */
+export const SESSION_WORKOUT_MAX_RETRIES = 3;
 
 /** One write per session and revision: a replay of the same write keeps its key. */
 export function sessionWorkoutIdempotencyKey(sessionId: string, revision: number): string {
@@ -93,12 +108,61 @@ async function sendDirectly(input: RecordSessionWorkoutInput): Promise<SessionWo
   }
 }
 
+/** Queue (or, with no offline database, send) one write. */
+async function queueWrite(
+  input: RecordSessionWorkoutInput,
+  queryClient: QueryClient,
+): Promise<SessionWorkoutWriteOutcome> {
+  const db = getDatabaseHandle();
+  if (!db) return sendDirectly(input);
+  const { sessionId, revision } = input;
+  let newerPending = false;
+  try {
+    await runLocalWriteWithRetry(
+      async (attempt) => {
+        await db.withExclusiveTransactionAsync(async (txn) => {
+          await beginImmediateWrite(
+            txn,
+            attempt === 1 ? OFFLINE_DB_FOREGROUND_WRITE_TIMEOUT_MS : OFFLINE_DB_RETRY_BUSY_TIMEOUT_MS,
+          );
+          // Safe to re-run: a retry after a COMMIT that landed finds its own
+          // row at this revision and queues nothing more. A write that lost a
+          // race to a newer one leaves that one alone and queues nothing.
+          ({ newerPending } = await supersedePendingSessionWorkouts(txn, sessionId, revision));
+          if (newerPending) return;
+          await enqueue(
+            txn,
+            SESSION_WORKOUTS_OUTBOX_TABLE,
+            'create',
+            input,
+            sessionWorkoutIdempotencyKey(sessionId, revision),
+            { maxRetries: SESSION_WORKOUT_MAX_RETRIES },
+          );
+        });
+      },
+      localWriteRetryOptions(SESSION_WORKOUTS_OUTBOX_TABLE, 'create'),
+    );
+  } catch (error) {
+    reportHandledError(error, { tags: { source: 'session-workout', kind: 'enqueue' } });
+    return 'failed';
+  }
+  if (newerPending) return 'skipped';
+  notifyOutboxChanged();
+  drainMutationQueue(db, queryClient, offlineSyncFetch).catch((error: unknown) => {
+    if (__DEV__) console.warn('[session-workout] drain failed after queuing the workout:', error);
+  });
+  return 'queued';
+}
+
 /**
  * Queue the run for `sessionId` at its next revision. Does nothing for a
  * session id the server never minted (stories, fakes, daily cards), in a
- * screenshot capture, or when the store holds no run for the session. Never
- * throws: losing a write costs the session screens their workout, never the
- * climb.
+ * screenshot capture, when the store holds no run for the session, or when the
+ * last copy queued already holds everything. Never throws: losing a write
+ * costs the session screens their workout, never the climb.
+ *
+ * `queueItems` (the live queue) fills in climbs the run never captured and
+ * brings each climb's mirror up to date.
  */
 export async function enqueueSessionWorkoutWrite(
   sessionId: string | null | undefined,
@@ -114,43 +178,32 @@ export async function enqueueSessionWorkoutWrite(
       captureWorkoutRunClimbs(queueItems.filter((queueItem) => runItems.has(queueItem.uuid))),
     );
   }
+  const latest = getWorkoutRunState();
+  const content = latest ? buildSessionWorkoutContent(latest) : null;
+  if (!latest || !content) return 'skipped';
+  const digest = sessionWorkoutDigest(content);
+  if (digest === latest.sentDigest) return 'skipped';
   const revision = nextWorkoutRunRevision(sessionId, nowMs());
-  const current = getWorkoutRunState();
-  if (revision === null || !current) return 'skipped';
-  const input = buildRecordSessionWorkoutInput(current, revision);
-  if (!input) return 'skipped';
+  if (revision === null) return 'skipped';
+  const outcome = await queueWrite({ ...content, revision }, queryClient);
+  if (outcome === 'queued' || outcome === 'sent') noteWorkoutRunSent(sessionId, revision, digest);
+  return outcome;
+}
 
-  const db = getDatabaseHandle();
-  if (!db) return sendDirectly(input);
-  try {
-    await runLocalWriteWithRetry(
-      async (attempt) => {
-        await db.withExclusiveTransactionAsync(async (txn) => {
-          await beginImmediateWrite(
-            txn,
-            attempt === 1 ? OFFLINE_DB_FOREGROUND_WRITE_TIMEOUT_MS : OFFLINE_DB_RETRY_BUSY_TIMEOUT_MS,
-          );
-          // Both statements are safe to re-run: a retry after a COMMIT that
-          // landed deletes nothing new and finds its own key already queued.
-          await removePendingSessionWorkouts(txn, sessionId);
-          await enqueue(
-            txn,
-            SESSION_WORKOUTS_OUTBOX_TABLE,
-            'create',
-            input,
-            sessionWorkoutIdempotencyKey(sessionId, revision),
-          );
-        });
-      },
-      localWriteRetryOptions(SESSION_WORKOUTS_OUTBOX_TABLE, 'create'),
-    );
-  } catch (error) {
-    reportHandledError(error, { tags: { source: 'session-workout', kind: 'enqueue' } });
-    return 'failed';
-  }
-  notifyOutboxChanged();
-  drainMutationQueue(db, queryClient, offlineSyncFetch).catch((error: unknown) => {
-    if (__DEV__) console.warn('[session-workout] drain failed after queuing the workout:', error);
-  });
-  return 'queued';
+/**
+ * The last copy of a run whose session is over (#6903), from the record the
+ * store let go of: the session ended on another phone, the climber dropped out
+ * quietly or was removed, or the app was killed and came back to an ended
+ * session. Only a local End reaches `enqueueSessionWorkoutWrite` from
+ * `beforeEnd`; every way out reaches this. A record whose last copy already
+ * holds everything (the usual case after a local End) sends nothing.
+ */
+export async function enqueueEndedSessionWorkout(
+  record: WorkoutRunRecord,
+  { queryClient }: Pick<SessionWorkoutWriteOptions, 'queryClient'>,
+): Promise<SessionWorkoutWriteOutcome> {
+  if (!isServerSessionId(record.sessionId) || isScreenshotCapture()) return 'skipped';
+  const content = buildSessionWorkoutContent(record);
+  if (!content || sessionWorkoutDigest(content) === record.sentDigest) return 'skipped';
+  return queueWrite({ ...content, revision: revisionAfter(record.revision, nowMs()) }, queryClient);
 }

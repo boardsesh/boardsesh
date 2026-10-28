@@ -196,8 +196,8 @@ const detailEntries = (userId: string): CacheEntry[] => [
   { key: sessionWorkoutsQueryKey(SERVER_SESSION_ID), data: [serverWorkout(userId)] },
 ];
 
-const phoneEntries = (): CacheEntry[] => {
-  rememberEndedWorkout(phoneRecord(), nowMs());
+const phoneEntries = (userId: string): CacheEntry[] => {
+  rememberEndedWorkout(phoneRecord(), nowMs(), userId);
   return [
     {
       key: sessionSummaryQueryKey(PHONE_SESSION_ID),

@@ -254,10 +254,16 @@ function buildDispatch(mutation: PendingMutation): MutationDispatch {
 
     // The workout a climber followed in a session (#6903). The payload is the
     // whole RecordSessionWorkoutInput; the server writes it only when its
-    // revision beats the stored one, so a replay is a no-op. A bundle from
-    // before this table dead-letters the row as an unknown table (an OTA
-    // rollback with a write still queued): the workout then stays off the
-    // server until the next write from a newer bundle.
+    // revision beats the stored one, so a replay is a no-op.
+    //
+    // A bundle from before this table (only after an OTA rollback across it,
+    // with a write still queued) throws `Unknown table` here: a plain Error, so
+    // retryable. The row sits at the head of the outbox, and every write
+    // behind it (ticks included) waits while it spends its retries; then it
+    // dead-letters and shows in Sync issues, and sign-out counts it as unsent
+    // until then. Workout rows are queued with a budget of 3 retries instead
+    // of 10 (`SESSION_WORKOUT_MAX_RETRIES` on mobile) to keep that wait short;
+    // an older bundle cannot be taught to skip the row.
     case 'session_workouts':
       switch (mutation.operation) {
         case 'create':

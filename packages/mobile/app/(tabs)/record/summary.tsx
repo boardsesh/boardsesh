@@ -86,7 +86,6 @@ export default function SessionSummaryScreen() {
       storeReviewWillPrompt={postSessionPrompt !== 'offline'}
       workout={workoutState?.workout}
       pendingTicks={workoutState?.pendingTicks}
-      workoutFromPhone={workoutState?.fromPhone}
       offline={workoutState?.offline}
     />
   );

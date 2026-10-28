@@ -32,7 +32,7 @@ export {
   hasPendingTickForClimb,
   hasPendingTicksForSession,
   countPendingSessionWrites,
-  removePendingSessionWorkouts,
+  supersedePendingSessionWorkouts,
   getDeadLetterCount,
   getDeadLetters,
   getOutboxSummary,

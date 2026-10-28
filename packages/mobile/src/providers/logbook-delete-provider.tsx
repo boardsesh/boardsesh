@@ -11,6 +11,9 @@ import { UndoSnackbar } from '../components/UndoSnackbar';
 import { useBottomChromeMetrics } from '../hooks/use-bottom-chrome-metrics';
 import { track } from '../lib/analytics';
 import { hapticSuccess } from '../lib/haptics';
+import { forgetWorkoutRunTick } from '../lib/workout-run-store';
+import { forgetEndedWorkoutTick } from '../lib/ended-workout-store';
+import { nowMs } from '../lib/clock';
 import { spacing } from '../theme/tokens';
 
 export const LOGBOOK_DELETE_UNDO_MS = 8000;
@@ -95,6 +98,10 @@ export function LogbookDeleteProvider({ children }: { children: ReactNode }) {
             .current(task.uuid)
             .then(
               () => {
+                // A deleted tick leaves the workout's own tick log too (#6903), so
+                // the phone's tallies and "still saving" stop counting it.
+                forgetWorkoutRunTick(task.uuid);
+                forgetEndedWorkoutTick(task.uuid, nowMs());
                 // UI callbacks belong to the originating scope; the provider's mutation
                 // cache bookkeeping already ran before this promise settled.
                 if (task.scope === scopeRef.current) {
