@@ -25,11 +25,12 @@ function makeConnectionHandle(
   generation: number = 1,
   setIds: string = '1,20',
   setAnalyticsBoardId: (boardId: number) => boolean = () => true,
+  boardUuid?: string,
 ): BleConnectionHandle {
   return {
     generation,
     configIdentity: `kilter:1:10:${setIds}`,
-    config: { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds },
+    config: { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds, boardUuid },
     setAnalyticsBoardId,
   };
 }
@@ -1499,7 +1500,10 @@ describe('BluetoothProvider wall-confirm integration', () => {
         }),
       );
 
-      bluetooth.options?.onConnectSuccess?.('SERIAL-1', makeConnectionHandle());
+      bluetooth.options?.onConnectSuccess?.(
+        'SERIAL-1',
+        makeConnectionHandle(1, '1,20', () => true, boardUuid),
+      );
 
       expect(presence.resolveAndBindBoard).toHaveBeenCalledWith(
         expect.objectContaining({ serial: 'SERIAL-1', selectedBoardUuid: boardUuid }),
@@ -1646,6 +1650,112 @@ describe('BluetoothProvider wall-confirm integration', () => {
         setIds: '1,20',
       });
       expect(queue.setSessionBoardSerial).not.toHaveBeenCalled();
+    });
+
+    it('keeps a serial-less saved MoonBoard on its own named presence feed', async () => {
+      presence.enabled = true;
+      queue.currentClimbQueueItem = null;
+      const boardUuid = '803099ab-30ae-45e4-82e3-6bb2744af255';
+      presence.resolveAndBindBoardByUuid.mockResolvedValue({ boardId: 1511371 });
+      const setAnalyticsBoardId = vi.fn(() => true);
+      const connection: BleConnectionHandle = {
+        ...makeConnectionHandle(2, '5,6,7,8,9,10', setAnalyticsBoardId, boardUuid),
+        config: { boardName: 'moonboard', layoutId: 3, sizeId: 1, setIds: '5,6,7,8,9,10', boardUuid },
+        advertisedBoardType: 'moonboard',
+      };
+      render(createElement(BluetoothProvider, { ...connection.config, children: null }));
+
+      act(() => bluetooth.options?.onConnectSuccess?.(null, connection));
+
+      expect(presence.resolveAndBindBoardByUuid).toHaveBeenCalledExactlyOnceWith({ boardUuid });
+      expect(presence.resolveAndBindBoardByConfig).not.toHaveBeenCalled();
+      expect(presence.resolveAndBindBoard).not.toHaveBeenCalled();
+      await waitFor(() => expect(setAnalyticsBoardId).toHaveBeenCalledExactlyOnceWith(1511371));
+      expect(queue.setSessionBoardSerial).not.toHaveBeenCalled();
+    });
+
+    it('keeps geometry-only serial-less boards on the shared config fallback', () => {
+      presence.enabled = true;
+      const connection: BleConnectionHandle = {
+        ...makeConnectionHandle(),
+        config: { boardName: 'moonboard', layoutId: 3, sizeId: 1, setIds: '5,6,7,8,9,10', boardUuid: '' },
+      };
+      render(createElement(BluetoothProvider, { ...connection.config, children: null }));
+
+      bluetooth.options?.onConnectSuccess?.(null, connection);
+
+      expect(presence.resolveAndBindBoardByUuid).not.toHaveBeenCalled();
+      expect(presence.resolveAndBindBoardByConfig).toHaveBeenCalledExactlyOnceWith({
+        boardType: 'moonboard',
+        layoutId: 3,
+        sizeId: 1,
+        setIds: '5,6,7,8,9,10',
+      });
+    });
+
+    it.each(['null', 'rejected'] as const)(
+      'does not replace a failed named feed with shared history (%s)',
+      async (failure) => {
+        presence.enabled = true;
+        queue.currentClimbQueueItem = null;
+        const boardUuid = '803099ab-30ae-45e4-82e3-6bb2744af255';
+        if (failure === 'rejected') presence.resolveAndBindBoardByUuid.mockRejectedValue(new Error('not allowed'));
+        const setAnalyticsBoardId = vi.fn(() => true);
+        const connection = makeConnectionHandle(2, '1,20', setAnalyticsBoardId, boardUuid);
+        render(createElement(BluetoothProvider, { ...connection.config, children: null }));
+
+        await act(async () => bluetooth.options?.onConnectSuccess?.(null, connection));
+
+        expect(presence.resolveAndBindBoardByUuid).toHaveBeenCalledExactlyOnceWith({ boardUuid });
+        expect(presence.resolveAndBindBoardByConfig).not.toHaveBeenCalled();
+        expect(setAnalyticsBoardId).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([null, 'SERIAL-OLD'])(
+      'uses the connection-captured saved UUID after a same-layout board switch (%s)',
+      (serial) => {
+        presence.enabled = true;
+        const oldUuid = '33333333-3333-4333-8333-333333333333';
+        const newUuid = '44444444-4444-4444-8444-444444444444';
+        const connection = makeConnectionHandle(2, '1,20', () => false, oldUuid);
+        const { rerender } = render(createElement(BluetoothProvider, { ...connection.config, children: null }));
+        rerender(createElement(BluetoothProvider, { ...connection.config, boardUuid: newUuid, children: null }));
+
+        bluetooth.options?.onConnectSuccess?.(serial, connection);
+
+        if (serial) {
+          expect(presence.resolveAndBindBoard).toHaveBeenCalledWith(
+            expect.objectContaining({ selectedBoardUuid: oldUuid }),
+          );
+          expect(presence.resolveAndBindBoardByUuid).not.toHaveBeenCalled();
+        } else {
+          expect(presence.resolveAndBindBoardByUuid).toHaveBeenCalledExactlyOnceWith({ boardUuid: oldUuid });
+        }
+        expect(presence.resolveAndBindBoardByConfig).not.toHaveBeenCalled();
+      },
+    );
+
+    it('does not attach a late named-feed resolution to a retired connection generation', async () => {
+      presence.enabled = true;
+      queue.currentClimbQueueItem = null;
+      const boardUuid = '803099ab-30ae-45e4-82e3-6bb2744af255';
+      let finishResolve: (binding: TestResolvedBoard | null) => void = () => {};
+      presence.resolveAndBindBoardByUuid.mockReturnValue(
+        new Promise((resolve) => {
+          finishResolve = resolve;
+        }),
+      );
+      const setAnalyticsBoardId = vi.fn(() => false);
+      const connection = makeConnectionHandle(2, '1,20', setAnalyticsBoardId, boardUuid);
+      render(createElement(BluetoothProvider, { ...connection.config, children: null }));
+      act(() => bluetooth.options?.onConnectSuccess?.(null, connection));
+
+      await act(async () => finishResolve({ boardId: 1511371 }));
+
+      expect(setAnalyticsBoardId).toHaveBeenCalledExactlyOnceWith(1511371);
+      expect(presence.resolveAndBindBoardByConfig).not.toHaveBeenCalled();
+      expect(presence.reportClimbForBoard).not.toHaveBeenCalled();
     });
 
     it('reports the lit climb to the wall on wall-confirm in a SOLO flow without showing an unarmed Undo snackbar', async () => {

@@ -438,6 +438,8 @@ export type BleConnectionConfigSnapshot = {
   readonly layoutId?: number;
   readonly sizeId?: number;
   readonly setIds?: string;
+  /** The selected saved wall, captured with this adapter generation. */
+  readonly boardUuid?: string;
 };
 
 export type BleConnectionHandle = {
@@ -1671,7 +1673,7 @@ export function useBoardBluetooth({
         // initial write meant a board/layout/size/set change landing in that window
         // couldn't tear the (now-wrong) connection down. Both drop paths
         // (clearConnectionAfterDrop, teardownConnection) already clear it.
-        const connectionConfig = { boardName: boardName ?? '', layoutId, sizeId, setIds };
+        const connectionConfig = { boardName: boardName ?? '', layoutId, sizeId, setIds, boardUuid };
         const connectionIdentity = connectionConfigIdentity(boardName, layoutId, sizeId, setIds, boardUuid);
         connectedConfigIdentityRef.current = connectionIdentity;
         unsubDisconnectRef.current = adapter.onDisconnect((info) => {
@@ -2137,7 +2139,7 @@ export function useBoardBluetooth({
       // advertisement name.
       const adoptedBoardType = parseAnyBoardTypeFromDeviceName(deviceName);
       const currentConfigKey = boardConfigKey(boardName, layoutId, sizeId, boardUuid);
-      const currentConnectionConfig = { boardName, layoutId, sizeId, setIds };
+      const currentConnectionConfig = { boardName, layoutId, sizeId, setIds, boardUuid };
       const currentConnectionIdentity = connectionConfigIdentity(boardName, layoutId, sizeId, setIds, boardUuid);
       const rememberedBoard = lastConnectedBoardRef.current;
       const rememberedForCurrentConfig = rememberedBoard?.configKey === currentConfigKey ? rememberedBoard : null;
