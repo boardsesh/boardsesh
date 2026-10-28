@@ -325,6 +325,44 @@ describe('session climb list server render', () => {
       expect(text.indexOf('Off plan')).toBeLessThan(text.indexOf('The crew'));
     });
 
+    it("places ticks by the server's uuids: a crewmate's go on a planned climb stays with the crew", () => {
+      const withUuids: SessionWorkoutResult = {
+        ...workout,
+        offPlanTickUuids: ['t-off'],
+        stages: workout.stages.map((stage) => ({
+          ...stage,
+          climbs: stage.climbs.map((climb) => ({
+            ...climb,
+            tickUuids:
+              climb.climbUuid === 'CLIMB1'
+                ? ['t-warm']
+                : climb.climbUuid === 'CLIMB4X4'
+                  ? ['t-4x4-0', 't-4x4-1', 't-4x4-2', 't-4x4-3']
+                  : [],
+          })),
+        })),
+      };
+      const crewOnPlanned = makeTick({
+        uuid: 't-crew-planned',
+        userId: 'user-2',
+        climbUuid: 'CLIMB1',
+        climbedAt: '2024-01-15T09:00:00.000Z',
+      });
+      const html = renderToString(
+        <SessionDetailContent
+          session={makeSession([...ticks, crewOnPlanned])}
+          sessionId="session-1"
+          workouts={[withUuids]}
+        />,
+      );
+      const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+      const crewSection = text.slice(text.indexOf('The crew'));
+
+      expect(text).toContain('3 of 4');
+      expect(crewSection).toContain('Crimp Ladder');
+      expect(crewSection).toContain('Crew Pick');
+    });
+
     it('keeps the flat list without a workout', () => {
       const html = renderToString(
         <SessionDetailContent session={makeSession(ticks)} sessionId="session-1" workouts={[]} />,

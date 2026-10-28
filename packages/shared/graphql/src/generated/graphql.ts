@@ -15685,6 +15685,7 @@ export type GetSessionWorkoutsQuery = {
     displayName?: string | null;
     avatarUrl?: string | null;
     offPlan: number;
+    offPlanTickUuids: Array<string>;
     updatedAt: string;
     stages: Array<{
       __typename?: 'SessionWorkoutStage';
@@ -15709,6 +15710,7 @@ export type GetSessionWorkoutsQuery = {
         layoutId?: number | null;
         frames?: string | null;
         reps: Array<SessionWorkoutRepOutcome>;
+        tickUuids: Array<string>;
         skipped: boolean;
         renderBoard?: {
           __typename?: 'RenderBoardConfig';
@@ -25392,6 +25394,7 @@ export const GetSessionWorkoutsDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'avatarUrl' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'offPlan' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'offPlanTickUuids' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'updatedAt' } },
                 {
                   kind: 'Field',
@@ -25448,6 +25451,7 @@ export const GetSessionWorkoutsDocument = {
                               },
                             },
                             { kind: 'Field', name: { kind: 'Name', value: 'reps' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'tickUuids' } },
                             { kind: 'Field', name: { kind: 'Name', value: 'skipped' } },
                           ],
                         },

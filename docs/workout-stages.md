@@ -214,9 +214,12 @@ shows the viewer's own workout, else the first one stored. The overview gets the
 ("Workout · 4x4 at V4 · 3 blocks") and the Climbs list is grouped: one section per block
 with its name, detail line and tally, a 4x4 as one row per set ("Set 1 · 3 of 4" and a
 glyph per rep), a planned climb with no visible tick dimmed as "Skipped", then "Off plan"
-and the crew. The server's answer has rep counts but not tick uuids, so the page puts the
-owner's listed ticks back on their climbs the way the derivation did (oldest first, first
-climb in plan order with room; `assignWorkoutTicks`). Feed cards on the web (profile
+and the crew. Ticks are placed by the answer's uuids (`tickUuids` per climb,
+`offPlanTickUuids`; `assignWorkoutTicks`): a crewmate's go on a planned climb stays with
+the crew, and an owner tick the answer doesn't name (logged after it was read) is off plan.
+An answer without the uuids falls back to matching the owner's ticks by climb and angle
+the way the derivation did. A 4x4 set row lists its own ticks under the reps, for likes,
+comments and delete. Feed cards on the web (profile
 Sessions, home feed) ask `sessionWorkoutHeadlines` once per loaded page. The copy lives in
 `@boardsesh/workout-summary` (`format.ts`), which takes the caller's `t` over the `session`
 catalog: block names, detail lines, tallies, climb outcomes and the headline. Mobile still

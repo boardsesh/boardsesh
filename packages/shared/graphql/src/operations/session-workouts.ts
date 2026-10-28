@@ -11,6 +11,7 @@ export const GET_SESSION_WORKOUTS = gql`
       displayName
       avatarUrl
       offPlan
+      offPlanTickUuids
       updatedAt
       stages {
         id
@@ -43,6 +44,7 @@ export const GET_SESSION_WORKOUTS = gql`
             setIds
           }
           reps
+          tickUuids
           skipped
         }
       }
@@ -81,6 +83,8 @@ export type SessionWorkoutClimbResult = {
   frames: string | null;
   renderBoard: { layoutId: number; sizeId: number; setIds: number[] } | null;
   reps: SessionWorkoutRepOutcomeValue[];
+  /** The viewer-visible ticks behind `reps`, in rep order. Absent from an older server. */
+  tickUuids?: string[];
   skipped: boolean;
 };
 
@@ -102,6 +106,8 @@ export type SessionWorkoutResult = {
   displayName: string | null;
   avatarUrl: string | null;
   offPlan: number;
+  /** The viewer-visible off-plan ticks. Absent from an older server. */
+  offPlanTickUuids?: string[];
   updatedAt: string;
   stages: SessionWorkoutStageResult[];
 };

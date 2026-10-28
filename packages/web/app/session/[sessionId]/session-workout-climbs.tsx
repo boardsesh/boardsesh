@@ -113,8 +113,8 @@ function EntryExtra({
           </Box>
         ) : null}
       </Box>
-      {/* A 4x4 set is read by its reps; its single ticks would repeat them. */}
-      {!setNumber && entry.ticks.length > 0 ? renderTicks(entry.ticks) : null}
+      {/* The set's or climb's own ticks, for likes, comments and delete. */}
+      {entry.ticks.length > 0 ? renderTicks(entry.ticks) : null}
     </>
   );
 }

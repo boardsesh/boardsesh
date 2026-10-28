@@ -1,10 +1,18 @@
 // Which of a session's listed ticks belongs to which climb of a workout (#6903),
-// for a Climbs list grouped by block. The server's `sessionWorkouts` answer says
-// how many reps each climb holds but not which ticks they were, so the owner's
-// ticks are matched back the way `deriveWorkoutStages` placed them: oldest
-// first, each to the first climb in plan order with the same climb, angle (and
-// mirror, when both say) that still has fewer ticks than its reps. Owner ticks
-// left over are off plan; everyone else's go to the crew.
+// for a Climbs list grouped by block.
+//
+// With the server's tick uuids (each climb's `tickUuids`, the workout's
+// `offPlanTickUuids`), by uuid only: a tick in a climb's list goes to that
+// climb, one in the off-plan list goes off plan, as does any other owner tick
+// (one logged after the answer was read); everyone else's is the crew's.
+// The derivation already decided whose tick is whose; matching again by climb
+// could hand a crewmate's go on the same climb to the owner.
+//
+// Without them (an older payload), the owner's ticks are matched back the way
+// `deriveWorkoutStages` placed them: oldest first, each to the first climb in
+// plan order with the same climb, angle (and mirror, when both say) that still
+// has fewer ticks than its reps. Owner ticks left over are off plan; everyone
+// else's go to the crew.
 
 import type { SessionWorkoutRepOutcome } from './types';
 
@@ -24,6 +32,8 @@ export type AssignableWorkoutClimb = {
   angle: number;
   isMirror?: boolean | null;
   reps: ReadonlyArray<SessionWorkoutRepOutcome>;
+  /** The ticks behind `reps`, when the server sent them. */
+  tickUuids?: ReadonlyArray<string> | null;
 };
 
 export type AssignedWorkoutTicks<Tick> = {
@@ -49,7 +59,11 @@ const toMillis = (iso: string): number => {
 
 export function assignWorkoutTicks<Tick extends AssignableWorkoutTick>(
   ticks: ReadonlyArray<Tick>,
-  workout: { userId: string; stages: ReadonlyArray<{ climbs: ReadonlyArray<AssignableWorkoutClimb> }> },
+  workout: {
+    userId: string;
+    stages: ReadonlyArray<{ climbs: ReadonlyArray<AssignableWorkoutClimb> }>;
+    offPlanTickUuids?: ReadonlyArray<string> | null;
+  },
 ): AssignedWorkoutTicks<Tick> {
   const byClimb: Tick[][][] = workout.stages.map((stage) => stage.climbs.map(() => []));
   const slots = workout.stages.flatMap((stage, stageIndex) =>
@@ -61,6 +75,22 @@ export function assignWorkoutTicks<Tick extends AssignableWorkoutTick>(
     .map((tick, index) => ({ tick, index, millis: toMillis(tick.climbedAt) }))
     .sort((left, right) => left.millis - right.millis || left.index - right.index)
     .map(({ tick }) => tick);
+
+  const hasTickMap =
+    !!workout.offPlanTickUuids || workout.stages.some((stage) => stage.climbs.some((climb) => !!climb.tickUuids));
+  if (hasTickMap) {
+    const slotByTick = new Map<string, Tick[]>();
+    for (const slot of slots) for (const uuid of slot.climb.tickUuids ?? []) slotByTick.set(uuid, slot.ticks);
+    const offPlanUuids = new Set(workout.offPlanTickUuids ?? []);
+    for (const tick of sorted) {
+      const slotTicks = slotByTick.get(tick.uuid);
+      if (slotTicks) slotTicks.push(tick);
+      // An owner tick the answer doesn't name (logged after it was read) is off plan, not the crew's.
+      else if (offPlanUuids.has(tick.uuid) || tick.userId === workout.userId) offPlan.push(tick);
+      else crew.push(tick);
+    }
+    return { byClimb, offPlan, crew };
+  }
 
   for (const tick of sorted) {
     if (tick.userId !== workout.userId) {
