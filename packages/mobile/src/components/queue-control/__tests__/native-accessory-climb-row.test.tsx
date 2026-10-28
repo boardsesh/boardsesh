@@ -13,7 +13,7 @@ vi.mock('../../PressableSurface', async () => {
   };
 });
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { act, render } from '@testing-library/react';
+import { act, render, renderHook } from '@testing-library/react';
 import { createElement, useEffect, type ReactNode, type CSSProperties } from 'react';
 import type { Climb, ClimbQueueItem } from '@boardsesh/queue';
 import type { BoardConfig } from '../../../providers/drawer-host-provider';
@@ -460,6 +460,7 @@ vi.mock('../LogAscentToolbarButton', () => ({
 
 import { NativeAccessoryClimbRow } from '../NativeAccessoryClimbRow';
 import { getMeasuredMiniPlayerBar, resetMeasuredMiniPlayerBar } from '../../../lib/mini-player-measured-bar-store';
+import { useBarCarriesPaneWorkoutRow } from '../../play-drawer/pane-workout-row-cover-store';
 
 function makeClimb(overrides: Partial<Climb> = {}): Climb {
   return {
@@ -1052,6 +1053,30 @@ describe('NativeAccessoryClimbRow', () => {
         expect(workoutButtons(container)).toBe('fell,sent');
         expect(buttons(container)).toBeNull();
         expect(container.querySelector('[data-board-control]')).toBeNull();
+      });
+
+      it("gives an iPhone's third slot to the tick when no board is bound, not to an empty bulb", () => {
+        inBlock();
+        connection.state = { ...connection.state, bluetooth: null };
+        layout.width = 370;
+        const { container } = renderRow('regular');
+        expect(workoutButtons(container)).toBe('fell,sent');
+        expect(container.querySelector('[data-board-control]')).toBeNull();
+        expect(container.querySelector('[data-tick="true"]')).not.toBeNull();
+      });
+
+      it("tells the open Duo's pane it carries its Fell / Sent, from the open placement only", () => {
+        inBlock();
+        miniPlayer.phoneSplit = true;
+        layout.width = 800;
+        const carried = renderHook(() => useBarCarriesPaneWorkoutRow());
+        const inline = renderRow('inline');
+        expect(carried.result.current).toBe(false);
+        const regular = renderRow('regular');
+        expect(carried.result.current).toBe(true);
+        regular.unmount();
+        expect(carried.result.current).toBe(false);
+        inline.unmount();
       });
 
       it('keeps the step-aside bar while the Duo pane shows a preview', () => {

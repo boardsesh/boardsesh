@@ -16,7 +16,6 @@ const state = vi.hoisted(() => ({
   head: null as ClimbQueueItem | null,
   signedIn: true,
   run: null as WorkoutRun | null,
-  wallFlip: null as { climbUuid: string; mirrored: boolean } | null,
 }));
 
 vi.mock('../../../providers/queue-provider', () => ({
@@ -25,11 +24,6 @@ vi.mock('../../../providers/queue-provider', () => ({
 }));
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: state.signedIn }) }));
 vi.mock('../../../lib/workout-run-store', () => ({ useWorkoutRun: () => state.run }));
-vi.mock('../../../lib/wall-mirror-store', () => ({
-  useWallMirrorFlip: () => state.wallFlip,
-  wallMirrorFlipFor: (flip: { climbUuid: string; mirrored: boolean } | null, climbUuid: string | undefined) =>
-    flip && flip.climbUuid === climbUuid ? flip.mirrored : undefined,
-}));
 
 const { useMiniPlayerWorkoutOutcome } = await import('../use-mini-player-workout-outcome');
 
@@ -71,12 +65,13 @@ type HookInput = {
   barClimb: Climb;
   climbBoard?: ClimbRenderBoardResult | null;
   reachable?: ReadonlySet<string>;
+  playerRouteUp?: boolean;
 };
 
 function renderOutcome(initial: HookInput) {
   return renderHook(
-    ({ barClimb, climbBoard = exact, reachable }: HookInput) =>
-      useMiniPlayerWorkoutOutcome({ climb: barClimb, climbBoard, reachableBoardKeys: reachable }),
+    ({ barClimb, climbBoard = exact, reachable, playerRouteUp = false }: HookInput) =>
+      useMiniPlayerWorkoutOutcome({ climb: barClimb, climbBoard, reachableBoardKeys: reachable, playerRouteUp }),
     { initialProps: initial },
   );
 }
@@ -88,7 +83,6 @@ beforeEach(() => {
   state.head = item(LIMIT_ITEM);
   state.signedIn = true;
   state.run = RUN;
-  state.wallFlip = null;
 });
 
 afterEach(() => {
@@ -121,6 +115,11 @@ describe('useMiniPlayerWorkoutOutcome', () => {
     state.head = item(LIMIT_ITEM, { mirrored: true });
     rerender({ barClimb: state.head.climb });
     expect(result.current.shown?.target.isMirror).toBe(true);
+  });
+
+  it('offers none while the player route is up, which has its own Fell / Sent', () => {
+    const { result } = renderOutcome({ barClimb: state.head!.climb, playerRouteUp: true });
+    expect(result.current).toEqual({ inTimedBlock: true, shown: null });
   });
 
   it('is off outside a timed block, and ⏮ ⏭ come back', () => {

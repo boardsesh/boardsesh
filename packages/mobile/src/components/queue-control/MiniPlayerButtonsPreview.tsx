@@ -95,6 +95,7 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
         layout: buttons,
         isAvailable,
         singleSlotShowsBulb: board.showLightbulb,
+        bulbAvailable: board.showLightbulb,
         paneMode: 'none',
         workoutOutcome: false,
       });

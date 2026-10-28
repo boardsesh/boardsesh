@@ -11,8 +11,6 @@ import type { Climb } from '@boardsesh/queue';
 import { useQueueData, useQueueSessionId } from '../../providers/queue-provider';
 import { useAuth } from '../../providers/auth-provider';
 import { useWorkoutRun } from '../../lib/workout-run-store';
-import { resolveMirroredOrientation } from '../../lib/ble/mirror-orientation';
-import { useWallMirrorFlip, wallMirrorFlipFor } from '../../lib/wall-mirror-store';
 import type { ClimbRenderBoardResult } from '../../lib/boards/climb-render-board';
 import {
   findWorkoutRunStage,
@@ -29,6 +27,11 @@ export type MiniPlayerWorkoutOutcomeInput = {
   climbBoard: ClimbRenderBoardResult | null;
   /** Board models standing at this gym: a climb on one of them is a walk, not another board. */
   reachableBoardKeys: ReadonlySet<string> | undefined;
+  /**
+   * The `/play` route is up. The player has its own Fell / Sent, and a toast
+   * from the bar would draw behind it, so the bar offers none.
+   */
+  playerRouteUp: boolean;
 };
 
 export type MiniPlayerWorkoutOutcome = {
@@ -45,12 +48,12 @@ export function useMiniPlayerWorkoutOutcome({
   climb,
   climbBoard,
   reachableBoardKeys,
+  playerRouteUp,
 }: MiniPlayerWorkoutOutcomeInput): MiniPlayerWorkoutOutcome {
   const { sessionId } = useQueueSessionId();
   const { currentClimbQueueItem } = useQueueData();
   const { isAuthenticated } = useAuth();
   const workoutRun = useWorkoutRun(sessionId);
-  const wallMirrorFlip = useWallMirrorFlip();
 
   const committedQueueItemUuid = currentClimbQueueItem?.uuid ?? null;
   const inTimedBlock = workoutOutcomeAvailable(findWorkoutRunStage(workoutRun, committedQueueItemUuid));
@@ -65,10 +68,11 @@ export function useMiniPlayerWorkoutOutcome({
         reachableBoardKeys?.has(configKey({ boardName: renderBoard.boardName, layoutId: renderBoard.layoutId })) ??
         false
       ));
-  const canLog = isAuthenticated && !boardMismatch;
+  const canLog = isAuthenticated && !boardMismatch && !playerRouteUp;
   const showLive =
     sessionId !== null &&
     barShowsWall &&
+    !playerRouteUp &&
     shouldShowWorkoutOutcome({
       run: workoutRun,
       displayedQueueItemUuid: committedQueueItemUuid,
@@ -78,17 +82,9 @@ export function useMiniPlayerWorkoutOutcome({
       isDraft: climb.is_draft === true,
     });
   const wallClimb = currentClimbQueueItem?.climb ?? null;
-  // The orientation the wall shows, as the bar's Log reads it: a crew's is the
-  // queue item's, solo it is the wall flip when someone tapped Mirror.
-  const isMirror =
-    wallClimb === null
-      ? false
-      : sessionId === null
-        ? resolveMirroredOrientation({
-            explicitFlip: wallMirrorFlipFor(wallMirrorFlip, wallClimb.uuid),
-            climbMirrored: wallClimb.mirrored,
-          })
-        : wallClimb.mirrored === true;
+  // The pair needs a session, which has one shared orientation: the queue
+  // item's, as the player reads it (`sharesMirrorState`).
+  const isMirror = wallClimb?.mirrored === true;
 
   const live = useMemo<WorkoutOutcomeTarget | null>(() => {
     if (!showLive || wallClimb === null || committedQueueItemUuid === null || sessionId === null) return null;

@@ -121,7 +121,10 @@ tick's status and queue item exactly as from the sheet (`docs/workout-stages.md`
   climber's own send is in this block's tick log (this queue item) or their logbook (this angle), later Sents log in
   one tap again.
 - **One tap at a time.** A second tap within 700 ms (`ONE_TAP_GUARD_MS`), on either button, is dropped, and so is a
-  tap while a save is still in flight. A fumbled double tap logs one go, never a fall and a send.
+  tap while a save for that queue item is still in flight. A fumbled double tap logs one go, never a fall and a send.
+  The guard, the in-flight saves and the saved line are shared by every Fell / Sent on screen
+  (`workout-one-tap-store.ts`): the player's row and both MiniPlayer placements, so a tap on one and a tap on another
+  within the guard also log one go.
 - **A 4x4 set is one climb, every rep.** Each Fell or Sent is one rep on the climb on the wall, and the climb stays up
   (with the row) until the set's last rep is logged, then the set rest runs and the wall moves on. A Sent after the
   set's first rep logs a send, never a flash: the first rep is already in the block's tick log for this queue item.
@@ -282,11 +285,13 @@ climb).
   the flash rule, a spray first ascent opening Log ascent, one climb every rep of a 4x4 set).
   - When: `useMiniPlayerWorkoutOutcome` asks the player's `shouldShowWorkoutOutcome` about the committed head: in a
     session, its stage has `pacing`, signed in, not a draft, not another board's climb (a board at this gym counts
-    as here), and the bar names the head (not a climb retained through a presence blip). The climb is drawn and
-    logged on the board `resolveClimbRenderBoard` picks, at its angle, with the orientation the bar's Log reads.
+    as here), and the bar names the head (not a climb retained through a presence blip). Not while the `/play` route
+    is up: the player has its own pair, and a toast from the bar would draw behind it. The climb is drawn and logged
+    on the board `resolveClimbRenderBoard` picks, at its angle, with the session's orientation (the queue item's
+    `mirrored`, as the player reads it in a session).
   - What (`resolveMiniPlayerControls`, `workoutOutcome`): the climber's buttons, ⏮ ⏭ included, step aside, so a
     mis-tap mid-4x4 never flips the wall or skips a rep. Fell and Sent claim slots first, then the bulb, then the
-    tick:
+    tick. With no board bound the bulb draws nothing, so the tick takes its place (an iPhone shows Fell · Sent · ✓):
 
     | Bar                                  | Holds                  |
     | ------------------------------------ | ---------------------- |
@@ -306,7 +311,14 @@ climb).
     (`useWorkoutOneTap`'s `messages: 'toast'`). A saved go plays the success haptic, swaps the tapped button's glyph
     for a filled check for 2 s (`SAVED_NOTICE_MS`) and announces the full sentence; the buttons keep their Fell / Sent
     labels. Glyphs: Fell ⊗ (`ascent.attempt`), Sent a circled check in the brand colour (`tick`).
-  - Slots are keyed `fell` / `sent`, so the minimized bar's Sent is the open bar's Sent, and the row never remounts.
+  - Two bars at once: react-native-screens renders the accessory's regular and inline placements together, and
+    they share no state, so there are two `MiniPlayerWorkoutButtons`. Everything a tap depends on is in the shared
+    store above, so a Sent on the open bar and one on the minimized bar within 700 ms log once, and both bars show the
+    same check. Slots are keyed `fell` / `sent`, so a change of buttons swaps slots and neither row remounts.
+  - VoiceOver on the open Duo: in `carry` the bar covers the pane's own Fell / Sent, so the pane's row leaves the
+    accessibility tree while the open placement reports it carries it (`pane-workout-row-cover-store.ts`). Both
+    placements are mounted at once, so the report can't tell whether the tab bar is minimized: with it minimized the
+    pane's row stays hidden from VoiceOver and the bar's Sent is the one it reaches.
   - Where the climber can't log the block (signed out, a draft, another board), the bar keeps its usual buttons
     but still drops ⏮ ⏭ (`isMiniPlayerButtonAvailable`'s `inTimedBlock`): the stage moves the wall on its own beat.
   - The Settings preview draws no workout: it shows the bar the climber set up.
@@ -362,6 +374,7 @@ today's bar (Board light and Log). `resetAllSettings` clears it.
 | Slot count and what the bar holds      | `packages/mobile/src/components/queue-control/mini-player-controls.ts`                |
 | The bar                                | `packages/mobile/src/components/queue-control/NativeAccessoryClimbRow.tsx`            |
 | Workout gate and hold, Fell / Sent     | `use-mini-player-workout-outcome.ts`, `MiniPlayerWorkoutButtons.tsx` (same folder)    |
+| Shared one-tap state, Duo pane cover   | `play-drawer/workout-one-tap-store.ts`, `play-drawer/pane-workout-row-cover-store.ts` |
 | Preview                                | `packages/mobile/src/components/queue-control/MiniPlayerButtonsPreview.tsx`           |
 | Shared labels and actions              | `packages/mobile/src/components/settings/use-mini-player-button-controls.ts`          |
 | View options tab, Settings › Climb view | `PlayDrawerSectionsSheet.tsx`, `settings/climb-view/`                                |

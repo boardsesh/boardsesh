@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View, useWindowDimensions, type ColorValue, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { Climb } from '@boardsesh/queue';
@@ -59,6 +59,7 @@ import { useVerticalTabBar } from '../../hooks/use-vertical-tab-bar';
 import { usePhoneSplitPaneTaken } from '../navigation/phone-split-pane-slot';
 import { MiniPlayerWorkoutButtons } from './MiniPlayerWorkoutButtons';
 import { useMiniPlayerWorkoutOutcome } from './use-mini-player-workout-outcome';
+import { reportBarCarriesPaneWorkoutRow } from '../play-drawer/pane-workout-row-cover-store';
 
 type NativeAccessoryClimbRowProps = {
   climb: Climb;
@@ -177,8 +178,6 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
       })
     : null;
   const angleAdjustable = playerAngle !== null;
-  // `isMiniPlayerButtonAvailable` drops Angle while the `/play` route is up.
-  const playerRouteUp = isPlayerRoute(useSegments());
   const playerBoardName = playDrawerPaneProps?.boardConfig.boardName ?? null;
   const playerLayoutId = playDrawerPaneProps?.boardConfig.layoutId ?? null;
   const paneTaken = usePhoneSplitPaneTaken();
@@ -194,10 +193,14 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
   // the heart, the share and Fell / Sent point at the same climb, board and angle.
   const climbBoardResolution = useMemo(() => resolveClimbRenderBoard(climb, boardConfig), [climb, boardConfig]);
   const climbBoard = climbBoardResolution?.boardConfig ?? null;
+  // `isMiniPlayerButtonAvailable` drops Angle while the `/play` route is up,
+  // and the bar offers no Fell / Sent then: the player has its own.
+  const playerRouteUp = isPlayerRoute(useSegments());
   const workout = useMiniPlayerWorkoutOutcome({
     climb,
     climbBoard: climbBoardResolution,
     reachableBoardKeys: playDrawerPaneProps?.reachableBoardKeys,
+    playerRouteUp,
   });
 
   const isInline = placement === 'inline';
@@ -243,7 +246,8 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
   // One slot when collapsed or narrow: the bulb only while there is a board to
   // connect to and nobody holds it. With no board bound the bulb renders nothing,
   // so the tick keeps the slot.
-  const collapsedSlotShowsBulb = bluetooth != null && inAppBoardConnection === 'disconnected';
+  const bulbAvailable = bluetooth != null;
+  const collapsedSlotShowsBulb = bulbAvailable && inAppBoardConnection === 'disconnected';
   const isDraft = climb.is_draft === true;
   const climbBoardName = climbBoard?.boardName ?? null;
   const climbLayoutId = climbBoard?.layoutId ?? null;
@@ -283,14 +287,34 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
         layout: buttonsLayout,
         isAvailable,
         singleSlotShowsBulb: collapsedSlotShowsBulb,
+        bulbAvailable,
         paneMode,
         paneCoveredButtons,
         workoutOutcome,
       }),
-    [slotCount, buttonsLayout, isAvailable, collapsedSlotShowsBulb, paneMode, paneCoveredButtons, workoutOutcome],
+    [
+      slotCount,
+      buttonsLayout,
+      isAvailable,
+      collapsedSlotShowsBulb,
+      bulbAvailable,
+      paneMode,
+      paneCoveredButtons,
+      workoutOutcome,
+    ],
   );
   // A visible bulb already speaks the state; without it, only the mark shows
   // it, so the climb link says it.
+  // The open Duo's pane hides its own Fell / Sent from VoiceOver while the bar
+  // draws the pair over it. UIKit mounts this row once per placement at the same
+  // time, so only the open placement, the one that sits on the pane, reports.
+  const carriesPaneWorkoutRow = !isInline && paneMode === 'carry' && controls.workout.length > 0;
+  const coverOwnerRef = useRef(Symbol('mini-player-pane-cover'));
+  useEffect(() => {
+    const owner = coverOwnerRef.current;
+    reportBarCarriesPaneWorkoutRow(owner, carriesPaneWorkoutRow);
+    return () => reportBarCarriesPaneWorkoutRow(owner, false);
+  }, [carriesPaneWorkoutRow]);
   const connectionValue =
     !controls.trailing.includes('lightbulb') && inAppBoardConnection !== 'disconnected'
       ? getBoardConnectionLabel(t, { boardConnection: inAppBoardConnection, ledless, holderDisplayName })

@@ -26,7 +26,12 @@
 // root toast is in view, so they pass `messages: 'toast'`: a failure, or where
 // to log a first ascent, is a toast there, and a saved go still marks the
 // tapped button.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+//
+// The guard, the in-flight saves and the notice are shared by every surface
+// (`workout-one-tap-store.ts`): UIKit mounts the MiniPlayer twice, and the
+// player's row can be up beside it, so per-hook state would let two surfaces
+// each take a tap within the guard.
+import { useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { deriveAscentType, type TickStatus } from '@boardsesh/play-view';
 import { logbookClimbAngleKey, useOptionalBoardLogbook } from '@boardsesh/board-react';
@@ -37,10 +42,21 @@ import { getWorkoutRunLog } from '../../lib/workout-run-store';
 import { nowDate } from '../../lib/clock';
 import { isFirstAscentTick, useHasPriorTickHistory, useTickSaver } from './use-tick-saver';
 import { WALL_MOVED_GRACE_MS, type WorkoutOutcomeTarget } from './workout-outcome';
+import {
+  claimOneTapGuard,
+  clearOneTapNotice,
+  hasOneTapNoticeReader,
+  isOneTapSavePending,
+  markOneTapSavePending,
+  setOneTapNotice,
+  settleOneTapSave,
+  useSharedOneTapNotice,
+} from './workout-one-tap-store';
 
 /**
- * A second tap within this long of the last one, on either button, is dropped:
- * a fumbled double tap must not log two goes, or a fall and a send.
+ * A second tap within this long of the last one, on either button and on any
+ * surface, is dropped: a fumbled double tap must not log two goes, or a fall
+ * and a send.
  */
 export const ONE_TAP_GUARD_MS = 700;
 
@@ -109,19 +125,16 @@ export function useWorkoutOneTap(
   // while it hasn't moved. The sheet opens on the climb on screen, so this one
   // has no opener.
   const justLeft = useOneTapLogger(wallLeft?.target ?? target, null, report);
-  // Wall-clock, not `nowMs()`: screenshot mode freezes that, and a frozen clock
-  // would drop every tap after the first.
-  const lastTapAtRef = useRef<number | null>(null);
 
   /** The logger this tap goes to, or null when the tap guard or a spent hold drops it. */
   const claimTap = useCallback((): OneTapLogger | null => {
+    // Wall-clock, not `nowMs()`: screenshot mode freezes that, and a frozen
+    // clock would drop every tap after the first.
     const tappedAtMs = Date.now();
     // Held for the climb the wall left, and the swap is late: the climber is on
     // the next climb by now, and it has no Fell / Sent.
     if (wallLeftAtMs !== null && tappedAtMs - wallLeftAtMs >= WALL_MOVED_GRACE_MS) return null;
-    const lastTapAtMs = lastTapAtRef.current;
-    if (lastTapAtMs !== null && tappedAtMs - lastTapAtMs < ONE_TAP_GUARD_MS) return null;
-    lastTapAtRef.current = tappedAtMs;
+    if (!claimOneTapGuard(tappedAtMs, ONE_TAP_GUARD_MS)) return null;
     if (wallLeftAtMs !== null) return forTarget;
     return wallLeft !== null && tappedAtMs - wallLeft.leftAtMs < WALL_MOVED_GRACE_MS ? justLeft : forTarget;
   }, [wallLeftAtMs, wallLeft, justLeft, forTarget]);
@@ -135,12 +148,13 @@ export function useWorkoutOneTap(
 type ReportNotice = (notice: WorkoutOneTapNotice) => void;
 
 /**
- * The row's notice, and how a logger reports one. While the row is up the
- * notice goes to the row, with the success haptic (the toast used to own it;
- * a failure already buzzed in `useTickSaver`) and a spoken copy, since the
- * buttons keep their own labels for a screen reader. Once the row is gone (the
- * player closed, a swipe to a preview) a late save falls back to the toast.
- * With `messages: 'toast'` a message notice always goes to the toast.
+ * The notice every surface shows, and how a logger reports one. While a
+ * surface that can show it is up, the notice goes there, with the success
+ * haptic (the toast used to own it; a failure already buzzed in
+ * `useTickSaver`) and a spoken copy, since the buttons keep their own labels
+ * for a screen reader. Once none is (the player closed, a swipe to a preview)
+ * a late save falls back to the toast. With `messages: 'toast'` a message is
+ * always a toast, and the surface shows only saved goes.
  */
 function useOneTapNotice(messages: 'row' | 'toast'): {
   notice: WorkoutOneTapNotice | null;
@@ -148,38 +162,24 @@ function useOneTapNotice(messages: 'row' | 'toast'): {
   dismissNotice: () => void;
 } {
   const { showToast } = useToast();
-  const [notice, setNotice] = useState<WorkoutOneTapNotice | null>(null);
-  const mountedRef = useRef(false);
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
+  const sharedNotice = useSharedOneTapNotice(messages);
+  const notice = messages === 'toast' && sharedNotice?.kind === 'message' ? null : sharedNotice;
 
   const report = useCallback<ReportNotice>(
     (reportedNotice) => {
-      if (!mountedRef.current || (messages === 'toast' && reportedNotice.kind === 'message')) {
+      if ((messages === 'toast' && reportedNotice.kind === 'message') || !hasOneTapNoticeReader(reportedNotice.kind)) {
         showToast(reportedNotice.message, reportedNotice.kind === 'saved' ? 'success' : reportedNotice.tone);
         return;
       }
       if (reportedNotice.kind === 'saved') hapticSuccess();
       announceQueued(reportedNotice.message);
-      setNotice(reportedNotice);
+      // Each new notice replaces the last and restarts the clock.
+      setOneTapNotice(reportedNotice, reportedNotice.kind === 'saved' ? SAVED_NOTICE_MS : MESSAGE_NOTICE_MS);
     },
     [showToast, messages],
   );
 
-  // Each new notice replaces the last and restarts the clock.
-  useEffect(() => {
-    if (notice === null) return undefined;
-    const timeout = setTimeout(() => setNotice(null), notice.kind === 'saved' ? SAVED_NOTICE_MS : MESSAGE_NOTICE_MS);
-    return () => clearTimeout(timeout);
-  }, [notice]);
-
-  const dismissNotice = useCallback(() => setNotice(null), []);
-
-  return { notice, report, dismissNotice };
+  return { notice, report, dismissNotice: clearOneTapNotice };
 }
 
 /** The climb the wall moved on from, and when, as the row saw it. */
@@ -233,8 +233,11 @@ function useOneTapLogger(
 
   const logGo = useCallback(
     (status: TickStatus) => {
+      // A save for this queue item from another surface hasn't settled yet.
+      if (isOneTapSavePending(queueItemUuid)) return;
+      markOneTapSavePending(queueItemUuid);
       const baseAscensionistCount = climb.ascensionist_count ?? 0;
-      save(
+      const started = save(
         {
           status,
           attemptCount: 1,
@@ -255,6 +258,7 @@ function useOneTapLogger(
         },
         {
           onSaved: () => {
+            settleOneTapSave(queueItemUuid);
             // Named, because a tap just after the wall moved logs the climb it
             // left, which is no longer the one on screen.
             const message =
@@ -265,9 +269,14 @@ function useOneTapLogger(
                   : t('playView.workoutOutcome.sendLogged', { name: climb.name });
             report({ kind: 'saved', status, queueItemUuid, message });
           },
-          onFailed: (message) => report({ kind: 'message', tone: 'error', message }),
+          onFailed: (message) => {
+            settleOneTapSave(queueItemUuid);
+            report({ kind: 'message', tone: 'error', message });
+          },
         },
       );
+      // This surface's own save was still in flight: nothing was sent.
+      if (!started) settleOneTapSave(queueItemUuid);
     },
     [save, climb, angle, isMirror, queueItemUuid, report, t],
   );

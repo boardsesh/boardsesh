@@ -16,8 +16,26 @@ type PressMockProps = {
   accessibilityRole?: string;
 };
 vi.mock('react-native', () => ({
-  View: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
-    createElement('div', { 'data-testid': testID }, children),
+  View: ({
+    children,
+    testID,
+    accessibilityElementsHidden,
+    importantForAccessibility,
+  }: {
+    children?: ReactNode;
+    testID?: string;
+    accessibilityElementsHidden?: boolean;
+    importantForAccessibility?: string;
+  }) =>
+    createElement(
+      'div',
+      {
+        'data-testid': testID,
+        'data-a11y-hidden': accessibilityElementsHidden === true ? 'true' : undefined,
+        'data-important-for-a11y': importantForAccessibility,
+      },
+      children,
+    ),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
 }));
 vi.mock('../../PressableSurface', () => ({
@@ -117,6 +135,19 @@ describe('WorkoutOutcomeRow', () => {
     expect(sent.getAttribute('data-role')).toBe('button');
     expect(sent.getAttribute('data-label')).toBe('playView.workoutOutcome.sent');
     expect(sent.getAttribute('data-hint')).toBe('playView.workoutOutcome.sentHint');
+  });
+
+  it("stays in the accessibility tree unless the open Duo's MiniPlayer carries it", () => {
+    const shown = render(createElement(WorkoutOutcomeRow, { target: TARGET, onOpenLogSheet: vi.fn() }));
+    expect(shown.getByTestId('workout-outcome-row').getAttribute('data-a11y-hidden')).toBeNull();
+    shown.unmount();
+
+    const covered = render(
+      createElement(WorkoutOutcomeRow, { target: TARGET, onOpenLogSheet: vi.fn(), hiddenFromAccessibility: true }),
+    );
+    const row = covered.getByTestId('workout-outcome-row');
+    expect(row.getAttribute('data-a11y-hidden')).toBe('true');
+    expect(row.getAttribute('data-important-for-a11y')).toBe('no-hide-descendants');
   });
 
   it('caps the labels like the rest of the row and offers them in the Large Content Viewer', () => {

@@ -163,6 +163,7 @@ function resolve(overrides: Partial<MiniPlayerControlsInput>) {
     layout: DEFAULT_MINI_PLAYER_BUTTONS,
     isAvailable: everyButton,
     singleSlotShowsBulb: true,
+    bulbAvailable: true,
     paneMode: 'none',
     workoutOutcome: false,
     ...overrides,
@@ -310,6 +311,15 @@ describe('resolveMiniPlayerControls in a timed workout block', () => {
 
   it('brings the tick back on an iPhone once the block ends', () => {
     expect(resolve({ slotCount: phone(370), workoutOutcome: false }).trailing).toEqual(['lightbulb', 'log']);
+  });
+
+  it("gives an iPhone's third slot to the tick when no board is bound: the bulb would draw nothing", () => {
+    expect(workout({ slotCount: phone(370), bulbAvailable: false, singleSlotShowsBulb: false })).toEqual({
+      leading: [],
+      workout: ['fell', 'sent'],
+      trailing: ['log'],
+    });
+    expect(workout({ slotCount: wide(995), bulbAvailable: false }).trailing).toEqual(['log']);
   });
 
   it('keeps Fell and Sent on a two-slot bar', () => {

@@ -3,7 +3,9 @@
 // flash or a send, one tap at a time, and a tap just after the wall moved logs
 // for the climb it left. Over the tab screens the root toast is in view, so a
 // failure is a toast; a saved go marks the tapped button with a check for
-// `SAVED_NOTICE_MS`, with the success haptic and the full sentence spoken.
+// `SAVED_NOTICE_MS`, with the success haptic and the full sentence spoken. The
+// guard and the check are shared with every other Fell / Sent on screen
+// (`workout-one-tap-store.ts`), the player's row included.
 import { memo, useCallback } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -25,9 +27,13 @@ type MiniPlayerWorkoutButtonsProps = {
 };
 
 /**
- * Each button sits in a slot keyed by its id, so the collapsed bar's Sent is
- * the same slot as the open bar's: the row never remounts (UIKit snapshots the
- * platter) and a check on Sent survives the tab bar minimizing.
+ * Each button sits in a slot keyed by its id, so a change of buttons swaps
+ * slots inside the live row and the row itself never remounts (UIKit snapshots
+ * the platter). UIKit mounts the bar once per placement, regular and inline, at
+ * the same time, so this component runs twice with no state between the two.
+ * Everything a tap depends on lives in `workout-one-tap-store.ts` instead: a
+ * tap on the open bar's Sent and one on the minimized bar's Sent within the
+ * guard log one go, and both bars show the same check.
  */
 export const MiniPlayerWorkoutButtons = memo(function MiniPlayerWorkoutButtons({
   buttonIds,

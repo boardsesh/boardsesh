@@ -178,6 +178,11 @@ export type MiniPlayerControlsInput = {
    */
   singleSlotShowsBulb: boolean;
   /**
+   * A board is bound, so the bulb draws something. With none it renders
+   * nothing, and in a timed block its slot goes to the tick instead.
+   */
+  bulbAvailable: boolean;
+  /**
    * How the open Duo's bar relates to the player in the split's pane
    * (`miniPlayerPaneMode`); `none` everywhere else. In `carry` the pane's big
    * row has ⏮ ⏭ 💡 ✓ right above the bar, so the bar does not repeat them.
@@ -237,7 +242,8 @@ const TRANSPORT_ORDER: readonly MiniPlayerButtonId[] = ['previous', 'next'];
  * The climber's other buttons step aside for the block, so a mis-tap mid-4x4
  * never flips the wall or skips a rep. Fell and Sent claim their slots first,
  * then the bulb, then the tick: an iPhone's ✓ steps aside, since Fell and Sent
- * already log each go. With the player in the Duo's pane (`carry`) the bar
+ * already log each go. With no board bound the bulb draws nothing, so the tick
+ * takes its place. With the player in the Duo's pane (`carry`) the bar
  * covers the pane's own Fell / Sent and the pane's big row shows 💡 ✓, so the
  * bar carries Fell and Sent only. While the pane shows a preview, or its
  * controls sit above the board (`stepAside`), the bar keeps 💡 ✓, as it does
@@ -248,6 +254,7 @@ export function resolveMiniPlayerControls({
   layout,
   isAvailable,
   singleSlotShowsBulb,
+  bulbAvailable,
   paneMode,
   paneCoveredButtons,
   workoutOutcome,
@@ -256,8 +263,9 @@ export function resolveMiniPlayerControls({
   if (workoutOutcome && paneMode !== 'stepAside') {
     if (slotCount <= 1) return { leading: [], workout: ['sent'], trailing: [] };
     const room = carry ? 0 : slotCount - 2;
-    const trailing: ('lightbulb' | 'log')[] = room >= 2 ? ['lightbulb', 'log'] : room === 1 ? ['lightbulb'] : [];
-    return { leading: [], workout: ['fell', 'sent'], trailing };
+    // With no board bound the bulb draws nothing, so the tick keeps its slot.
+    const fixed: ('lightbulb' | 'log')[] = bulbAvailable ? ['lightbulb', 'log'] : ['log'];
+    return { leading: [], workout: ['fell', 'sent'], trailing: fixed.slice(0, room) };
   }
   const trailing: ('lightbulb' | 'log')[] = carry
     ? []

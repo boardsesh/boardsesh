@@ -106,7 +106,7 @@ beforeEach(() => {
 });
 
 describe('MiniPlayerWorkoutButtons', () => {
-  it('draws Fell then Sent, each in its own keyed slot, and logs through the one-tap hook', () => {
+  it('draws Fell then Sent and logs through the one-tap hook, with messages to the toast', () => {
     const { getByTestId, container } = renderButtons(['fell', 'sent']);
     const slots = [...container.querySelectorAll('[data-testid^="mini-player-slot-"]')].map((slot) =>
       slot.getAttribute('data-testid'),
