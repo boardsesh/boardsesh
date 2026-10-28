@@ -11,6 +11,9 @@ const ctrl = vi.hoisted(() => ({
   sessionId: null as string | null,
   moderationEnabled: true,
   activeClimbUuid: null as string | null,
+  currentItem: null as { uuid: string; climb: Climb } | null,
+  queueItems: [] as Array<{ uuid: string; climb: Climb }>,
+  boardMatches: false,
   // The History row Replay from here would replay; null hides the row (F3).
   replayItem: null as { uuid: string; climb: unknown } | null,
 }));
@@ -57,7 +60,7 @@ vi.mock('../../../providers/drawer-host-provider', () => ({
     openReportClimb: openers.openReportClimb,
     boardConfig: null,
   }),
-  boardConfigsMatch: () => false,
+  boardConfigsMatch: () => ctrl.boardMatches,
 }));
 // The kill switch reads as ENABLED when unresolved, so the default here is true.
 vi.mock('../../../providers/feature-flags-provider', () => ({
@@ -69,6 +72,7 @@ vi.mock('../../../providers/queue-provider', () => ({
     playNext: openers.playNext,
     setCurrentClimb: openers.setCurrentClimb,
     findReplayFromHereItem: openers.findReplayFromHereItem,
+    getQueueSnapshot: () => ({ currentClimbQueueItem: ctrl.currentItem, queue: ctrl.queueItems }),
   }),
   useQueueSessionId: () => ({ sessionId: ctrl.sessionId }),
   useActiveClimbUuid: () => ctrl.activeClimbUuid,
@@ -133,6 +137,9 @@ function ids(args: ActionArgs): ClimbActionId[] {
 beforeEach(() => {
   ctrl.wallArchived = false;
   ctrl.sessionId = null;
+  ctrl.currentItem = null;
+  ctrl.queueItems = [];
+  ctrl.boardMatches = false;
   ctrl.moderationEnabled = true;
   ctrl.activeClimbUuid = null;
   bluetoothCtrl.connected = false;
@@ -937,5 +944,54 @@ describe('useClimbActions for the player menu', () => {
     const longPress = renderActions({ climb, boardConfig: kilterBoard, isAuthenticated: true });
     act(() => longPress.result.current.find((action) => action.id === 'share')?.run());
     expect(track).toHaveBeenLastCalledWith(undefined, expect.objectContaining({ source: 'climb_actions_menu' }));
+  });
+});
+
+describe('Tick mirror orientation (#6993)', () => {
+  it.each([null, 'crew-session'])('logs the supplied mirrored climb in session %s', (sessionId) => {
+    ctrl.sessionId = sessionId;
+    const { result } = renderActions({
+      climb: { ...climb, mirrored: true },
+      boardConfig: tensionBoard,
+      isAuthenticated: true,
+    });
+    act(() => result.current.find((action) => action.id === 'tick')?.run());
+    expect(openers.openLogAscent).toHaveBeenCalledWith(expect.objectContaining({ isMirror: true }));
+  });
+
+  it('reads the current occurrence at tap time, including an explicit unmirror', () => {
+    ctrl.boardMatches = true;
+    const { result } = renderActions({
+      climb: { ...climb, mirrored: true },
+      boardConfig: tensionBoard,
+      isAuthenticated: true,
+    });
+    ctrl.currentItem = { uuid: 'current-slot', climb: { ...climb, mirrored: false } };
+    act(() => result.current.find((action) => action.id === 'tick')?.run());
+    expect(openers.openLogAscent).toHaveBeenLastCalledWith(expect.objectContaining({ isMirror: false }));
+    ctrl.currentItem = { uuid: 'current-slot', climb: { ...climb, mirrored: true } };
+    act(() => result.current.find((action) => action.id === 'tick')?.run());
+    expect(openers.openLogAscent).toHaveBeenLastCalledWith(expect.objectContaining({ isMirror: true }));
+  });
+
+  it('uses the named history occurrence instead of another current copy', () => {
+    ctrl.boardMatches = true;
+    ctrl.currentItem = { uuid: 'current-slot', climb: { ...climb, mirrored: false } };
+    ctrl.queueItems = [{ uuid: 'history-slot', climb: { ...climb, mirrored: true } }];
+    const { result } = renderActions({
+      climb,
+      boardConfig: tensionBoard,
+      queueItemUuid: 'history-slot',
+      isAuthenticated: true,
+    });
+    act(() => result.current.find((action) => action.id === 'tick')?.run());
+    expect(openers.openLogAscent).toHaveBeenCalledWith(expect.objectContaining({ isMirror: true }));
+  });
+
+  it('does not borrow the current orientation across board configurations', () => {
+    ctrl.currentItem = { uuid: 'current-slot', climb: { ...climb, mirrored: true } };
+    const { result } = renderActions({ climb, boardConfig: tensionBoard, isAuthenticated: true });
+    act(() => result.current.find((action) => action.id === 'tick')?.run());
+    expect(openers.openLogAscent).toHaveBeenCalledWith(expect.objectContaining({ isMirror: false }));
   });
 });

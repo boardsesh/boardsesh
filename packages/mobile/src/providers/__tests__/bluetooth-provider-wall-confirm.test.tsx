@@ -54,6 +54,7 @@ const alert = vi.hoisted(() => ({
 
 const queue = vi.hoisted(() => ({
   currentClimbQueueItem: null as ClimbQueueItem | null,
+  items: [] as ClimbQueueItem[],
   // The #4979 hold's clock (`useCurrentChangeClock` in the real provider). Null
   // here means "no clock", which never holds.
   lastCurrentChange: null as CurrentChangeClock | null,
@@ -251,12 +252,12 @@ vi.mock('../feature-flags-provider', async (importOriginal) => ({
 vi.mock('../queue-provider', () => ({
   useQueue: () => ({
     sessionId: queue.sessionId,
-    state: { currentClimbQueueItem: queue.currentClimbQueueItem, queue: [] },
+    state: { currentClimbQueueItem: queue.currentClimbQueueItem, queue: queue.items },
     lastCurrentChange: queue.lastCurrentChange,
   }),
   useQueueActions: () => ({
     setCurrentClimb: vi.fn(),
-    getQueueSnapshot: () => ({ currentClimbQueueItem: queue.currentClimbQueueItem, queue: [] }),
+    getQueueSnapshot: () => ({ currentClimbQueueItem: queue.currentClimbQueueItem, queue: queue.items }),
   }),
   useQueueSessionControls: () => {
     const activeSessionId = queue.sessionId;
@@ -287,12 +288,6 @@ vi.mock('../../lib/board-details', () => ({
 
 import { BluetoothProvider, useBluetoothContext } from '../bluetooth-provider';
 import { BleControlSheetHost } from '../../components/ble/BleControlSheetHost';
-import {
-  __resetWallMirrorFlipForTests,
-  getWallMirrorFlip,
-  retainWallMirrorFlip,
-  setWallMirrorFlip,
-} from '../../lib/wall-mirror-store';
 
 function makeQueueItem(uuid: string, frames = 'p1r12', mirrored = false): ClimbQueueItem {
   return {
@@ -341,6 +336,28 @@ function renderProvider(children?: ReactNode) {
   );
 }
 
+function rerenderProvider(rerender: (ui: ReturnType<typeof createElement>) => void): void {
+  act(() => {
+    rerender(
+      createElement(BluetoothProvider, {
+        boardName: 'kilter',
+        layoutId: 1,
+        sizeId: 10,
+        setIds: '1,20',
+        children: createElement(BluetoothProbe),
+      }),
+    );
+  });
+}
+
+function setCurrentOrientation(mirrored: boolean): void {
+  const current = queue.currentClimbQueueItem;
+  if (!current) throw new Error('Expected a current queue occurrence.');
+  const updatedCurrent = { ...current, climb: { ...current.climb, mirrored } };
+  queue.currentClimbQueueItem = updatedCurrent;
+  queue.items = queue.items.map((occurrence) => (occurrence.uuid === current.uuid ? updatedCurrent : occurrence));
+}
+
 function renderMoonboardProvider(children?: ReactNode) {
   return render(
     createElement(BluetoothProvider, {
@@ -379,6 +396,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
   beforeEach(async () => {
     await setHoldColorOverridesPreference({});
     queue.currentClimbQueueItem = makeQueueItem('climb-1');
+    queue.items = [];
     queue.lastCurrentChange = null;
     flags.staleCurrentHoldKill = false;
     queue.sessionId = 'session-1';
@@ -881,131 +899,94 @@ describe('BluetoothProvider wall-confirm integration', () => {
     renderProvider(createElement(BluetoothProbe));
     await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
     expect(bluetooth.state.sendFramesToBoard.mock.calls[0]?.[1]).toBe(true);
-    act(() => capturedBluetooth?.setMirrorIntent('climb-1', false));
     await act(async () => {
       await capturedBluetooth?.relightPresenceClimb(makePresenceClimb({ climbUuid: 'climb-1', frames: 'p1r12' }));
     });
     expect(bluetooth.state.sendFramesToBoard.mock.calls.at(-1)?.[1]).toBe(true);
   });
 
-  // ── Mirror intent (#5217) ────────────────────────────────────────────────
-  // Solo climbs keep their local mirror intent; sessions use confirmed queue state.
-
-  it('re-pushes the current climb mirrored when the drawer flips it', async () => {
-    queue.sessionId = null;
+  it.each([null, 'session-1'])('re-pushes the committed orientation for session %s', async (sessionId) => {
+    queue.sessionId = sessionId;
     bluetooth.sendFramesToBoardForOptions = () => async (frames, mirrored, signal, sendContext) =>
       bluetooth.state.sendFramesToBoard(frames, mirrored, signal, sendContext);
+    const { rerender } = renderProvider(createElement(BluetoothProbe));
+    await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
+    expect(bluetooth.state.sendFramesToBoard.mock.calls[0]?.[1]).toBe(false);
 
-    renderProvider(createElement(BluetoothProbe));
+    setCurrentOrientation(true);
+    rerenderProvider(rerender);
+    await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2));
+    expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
+      'p1r12',
+      true,
+      expect.anything(),
+      expect.anything(),
+    );
 
-    await waitFor(() => {
-      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
-    });
+    setCurrentOrientation(false);
+    rerenderProvider(rerender);
+    await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(3));
     expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
       'p1r12',
       false,
       expect.anything(),
       expect.anything(),
     );
-
-    act(() => {
-      capturedBluetooth?.setMirrorIntent('climb-1', true);
-    });
-
-    await waitFor(() => {
-      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2);
-    });
-    expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
-      'p1r12',
-      true,
-      expect.anything(),
-      expect.anything(),
-    );
   });
 
-  it('keeps the wall mirrored when the same climb is re-broadcast after a flip', async () => {
+  it('deduplicates a mirrored occurrence when the same state is broadcast again', async () => {
     queue.sessionId = null;
-    // The bug this guards: a direct sendFramesToBoard left the dedup record
-    // describing the un-mirrored orientation, so the next byte-identical
-    // re-broadcast re-pushed un-mirrored frames and silently un-flipped the wall.
     bluetooth.sendFramesToBoardForOptions = () => async (frames, mirrored, signal, sendContext) =>
       bluetooth.state.sendFramesToBoard(frames, mirrored, signal, sendContext);
-
     const { rerender } = renderProvider(createElement(BluetoothProbe));
+    await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
 
-    await waitFor(() => {
-      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
-    });
+    setCurrentOrientation(true);
+    rerenderProvider(rerender);
+    await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2));
 
-    act(() => {
-      capturedBluetooth?.setMirrorIntent('climb-1', true);
-    });
-    await waitFor(() => {
-      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2);
-    });
-
-    // A byte-identical re-broadcast of the same climb.
-    queue.currentClimbQueueItem = makeQueueItem('climb-1');
-    act(() => {
-      rerender(
-        createElement(BluetoothProvider, {
-          boardName: 'kilter',
-          layoutId: 1,
-          sizeId: 10,
-          setIds: '1,20',
-          children: createElement(BluetoothProbe),
-        }),
-      );
-    });
-
-    // No third write, and nothing un-mirrored went out.
+    queue.currentClimbQueueItem = makeQueueItem('climb-1', 'p1r12', true);
+    rerenderProvider(rerender);
+    await waitFor(() => expect(wallConfirm.emitWallConfirm).toHaveBeenCalledTimes(3));
     expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2);
-    expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
-      'p1r12',
-      true,
-      expect.anything(),
-      expect.anything(),
-    );
+    expect(bluetooth.state.sendFramesToBoard.mock.calls.at(-1)?.[1]).toBe(true);
   });
 
-  it('falls back to the queue item once the current climb changes', async () => {
+  it('keeps same-climb occurrences independent and restores a history occurrence on replay', async () => {
     queue.sessionId = null;
     bluetooth.sendFramesToBoardForOptions = () => async (frames, mirrored, signal, sendContext) =>
       bluetooth.state.sendFramesToBoard(frames, mirrored, signal, sendContext);
-
+    const mirroredOccurrence = makeQueueItem('climb-1', 'p1r12', true);
+    const originalOccurrence = { ...makeQueueItem('climb-1'), uuid: 'queue-climb-1-repeat' };
+    queue.items = [mirroredOccurrence, originalOccurrence];
+    queue.currentClimbQueueItem = mirroredOccurrence;
     const { rerender } = renderProvider(createElement(BluetoothProbe));
-    await waitFor(() => {
-      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
-    });
+    await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
+    expect(bluetooth.state.sendFramesToBoard.mock.calls[0]?.[1]).toBe(true);
 
-    act(() => {
-      capturedBluetooth?.setMirrorIntent('climb-1', true);
-    });
-    await waitFor(() => {
-      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2);
-    });
+    queue.currentClimbQueueItem = originalOccurrence;
+    rerenderProvider(rerender);
+    await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2));
+    expect(bluetooth.state.sendFramesToBoard.mock.calls[1]?.[1]).toBe(false);
 
-    // Navigating to another climb must not carry the previous climb's flip —
-    // through the real retain call the drawer makes, not a restatement.
-    act(() => {
-      capturedBluetooth?.retainMirrorIntentFor('climb-2');
-    });
+    queue.currentClimbQueueItem = mirroredOccurrence;
+    rerenderProvider(rerender);
+    await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(3));
+    expect(bluetooth.state.sendFramesToBoard.mock.calls[2]?.[1]).toBe(true);
+    expect(queue.items.map((occurrence) => occurrence.climb.mirrored)).toEqual([true, false]);
+  });
+
+  it('sends a new climb using its own original orientation', async () => {
+    queue.sessionId = null;
+    bluetooth.sendFramesToBoardForOptions = () => async (frames, mirrored, signal, sendContext) =>
+      bluetooth.state.sendFramesToBoard(frames, mirrored, signal, sendContext);
+    queue.currentClimbQueueItem = makeQueueItem('climb-1', 'p1r12', true);
+    const { rerender } = renderProvider(createElement(BluetoothProbe));
+    await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
+
     queue.currentClimbQueueItem = makeQueueItem('climb-2', 'p2r12');
-    act(() => {
-      rerender(
-        createElement(BluetoothProvider, {
-          boardName: 'kilter',
-          layoutId: 1,
-          sizeId: 10,
-          setIds: '1,20',
-          children: createElement(BluetoothProbe),
-        }),
-      );
-    });
-
-    await waitFor(() => {
-      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(3);
-    });
+    rerenderProvider(rerender);
+    await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2));
     expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
       'p2r12',
       false,
@@ -1014,221 +995,41 @@ describe('BluetoothProvider wall-confirm integration', () => {
     );
   });
 
-  it('does not re-light a stale flip when you navigate back to a climb you had mirrored', async () => {
+  it('restores the saved mirrored orientation after reconnecting', async () => {
     queue.sessionId = null;
-    // The drawer resets its mirror toggle on every navigation, so returning to a
-    // climb you had flipped must NOT light it mirrored under an un-mirrored
-    // screen. The drawer re-states the orientation on each climb change; this
-    // pins that the provider honours the re-statement rather than the old flip.
-    bluetooth.sendFramesToBoardForOptions = () => async (frames, mirrored, signal, sendContext) =>
-      bluetooth.state.sendFramesToBoard(frames, mirrored, signal, sendContext);
-
-    const rerenderProvider = (rerender: (ui: ReturnType<typeof createElement>) => void) =>
-      act(() => {
-        rerender(
-          createElement(BluetoothProvider, {
-            boardName: 'kilter',
-            layoutId: 1,
-            sizeId: 10,
-            setIds: '1,20',
-            children: createElement(BluetoothProbe),
-          }),
-        );
-      });
-
+    queue.currentClimbQueueItem = makeQueueItem('climb-1', 'p1r12', true);
     const { rerender } = renderProvider(createElement(BluetoothProbe));
-    await waitFor(() => {
-      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
-    });
+    await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
 
-    // Flip climb-1.
-    act(() => {
-      capturedBluetooth?.setMirrorIntent('climb-1', true);
-    });
-    await waitFor(() => {
-      expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
-        'p1r12',
-        true,
-        expect.anything(),
-        expect.anything(),
-      );
-    });
-
-    // Navigate to climb-2. The drawer drops a flip parked on another climb —
-    // the real call, not a restatement it no longer makes.
-    act(() => {
-      capturedBluetooth?.retainMirrorIntentFor('climb-2');
-    });
-    queue.currentClimbQueueItem = makeQueueItem('climb-2', 'p2r12');
+    bluetooth.state.isConnected = false;
     rerenderProvider(rerender);
-    await waitFor(() => {
-      expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
-        'p2r12',
-        false,
-        expect.anything(),
-        expect.anything(),
-      );
-    });
-
-    // Back to climb-1 — the flip was dropped, so the wall must be un-mirrored.
-    act(() => {
-      capturedBluetooth?.retainMirrorIntentFor('climb-1');
-    });
-    queue.currentClimbQueueItem = makeQueueItem('climb-1');
+    bluetooth.state.isConnected = true;
     rerenderProvider(rerender);
-
-    await waitFor(() => {
-      expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
-        'p1r12',
-        false,
-        expect.anything(),
-        expect.anything(),
-      );
-    });
-  });
-
-  // The MiniPlayer's ⇄ and the player write the wall flip through
-  // `wall-mirror-store` (#6940). Pin that a store write reaches the wall.
-  describe('through the shared wall flip', () => {
-    beforeEach(__resetWallMirrorFlipForTests);
-
-    const rerenderWith = (rerender: (ui: ReturnType<typeof createElement>) => void) =>
-      act(() => {
-        rerender(
-          createElement(BluetoothProvider, {
-            boardName: 'kilter',
-            layoutId: 1,
-            sizeId: 10,
-            setIds: '1,20',
-            children: createElement(BluetoothProbe),
-          }),
-        );
-      });
-
-    it('relights the wall mirrored when the store flips the current climb, and straight when it flips back', async () => {
-      queue.sessionId = null;
-      bluetooth.sendFramesToBoardForOptions = () => async (frames, mirrored, signal, sendContext) =>
-        bluetooth.state.sendFramesToBoard(frames, mirrored, signal, sendContext);
-      renderProvider(createElement(BluetoothProbe));
-      await waitFor(() => {
-        expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
-      });
-
-      act(() => setWallMirrorFlip(capturedBluetooth, 'climb-1', true));
-      await waitFor(() => {
-        expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2);
-      });
-      expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
-        'p1r12',
-        true,
-        expect.anything(),
-        expect.anything(),
-      );
-
-      act(() => setWallMirrorFlip(capturedBluetooth, 'climb-1', false));
-      await waitFor(() => {
-        expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(3);
-      });
-      expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
-        'p1r12',
-        false,
-        expect.anything(),
-        expect.anything(),
-      );
-    });
-
-    it('drops the flip from the store and the wall together when the player settles on another climb', async () => {
-      queue.sessionId = null;
-      bluetooth.sendFramesToBoardForOptions = () => async (frames, mirrored, signal, sendContext) =>
-        bluetooth.state.sendFramesToBoard(frames, mirrored, signal, sendContext);
-      const { rerender } = renderProvider(createElement(BluetoothProbe));
-      await waitFor(() => {
-        expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
-      });
-      act(() => setWallMirrorFlip(capturedBluetooth, 'climb-1', true));
-      await waitFor(() => {
-        expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2);
-      });
-
-      act(() => retainWallMirrorFlip(capturedBluetooth, 'climb-2'));
-      expect(getWallMirrorFlip()).toBeNull();
-      expect(capturedBluetooth?.getMirrorIntent('climb-1')).toBeUndefined();
-
-      // Back on climb-1 later, the flip is gone from both, so the wall lights it straight.
-      queue.currentClimbQueueItem = makeQueueItem('climb-2', 'p2r12');
-      rerenderWith(rerender);
-      await waitFor(() => {
-        expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
-          'p2r12',
-          false,
-          expect.anything(),
-          expect.anything(),
-        );
-      });
-      queue.currentClimbQueueItem = makeQueueItem('climb-1');
-      rerenderWith(rerender);
-      await waitFor(() => {
-        expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
-          'p1r12',
-          false,
-          expect.anything(),
-          expect.anything(),
-        );
-      });
-    });
+    await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2));
+    expect(bluetooth.state.sendFramesToBoard.mock.calls.at(-1)?.[1]).toBe(true);
   });
 
   it('does not write again when the orientation is restated unchanged', async () => {
     queue.sessionId = null;
-    // Restating the same orientation must not produce a write: the drain wakes,
-    // computes the same signature, and dedups.
-    bluetooth.sendFramesToBoardForOptions = () => async (frames, mirrored, signal, sendContext) =>
-      bluetooth.state.sendFramesToBoard(frames, mirrored, signal, sendContext);
+    const { rerender } = renderProvider(createElement(BluetoothProbe));
+    await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
 
-    renderProvider(createElement(BluetoothProbe));
-    await waitFor(() => {
-      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
-    });
-
-    act(() => {
-      capturedBluetooth?.setMirrorIntent('climb-1', false);
-      capturedBluetooth?.setMirrorIntent('climb-1', false);
-    });
-    await Promise.resolve();
-
+    setCurrentOrientation(false);
+    rerenderProvider(rerender);
+    await waitFor(() => expect(wallConfirm.emitWallConfirm).toHaveBeenCalledTimes(2));
     expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
   });
 
-  it('un-flips the wall when you turn off a climb that is mirrored by default', async () => {
+  it('un-flips a queue occurrence that was mirrored by default', async () => {
     queue.sessionId = null;
-    // A mirrored ascent (a logbook tick, or a crew member's item) is already lit
-    // mirrored off its own `climb.mirrored`. Turning the flip OFF records the
-    // first intent for that climb — so anything that decides "no write needed"
-    // by assuming nothing-recorded means un-mirrored leaves the wall mirrored
-    // under a toggle reading off, until some unrelated drain flips it later.
     queue.currentClimbQueueItem = makeQueueItem('tick-climb', 'p9r12', true);
-    bluetooth.sendFramesToBoardForOptions = () => async (frames, mirrored, signal, sendContext) =>
-      bluetooth.state.sendFramesToBoard(frames, mirrored, signal, sendContext);
+    const { rerender } = renderProvider(createElement(BluetoothProbe));
+    await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
+    expect(bluetooth.state.sendFramesToBoard.mock.calls[0]?.[1]).toBe(true);
 
-    renderProvider(createElement(BluetoothProbe));
-    await waitFor(() => {
-      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
-    });
-    // Lit mirrored from the climb's own flag, with nothing recorded.
-    expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
-      'p9r12',
-      true,
-      expect.anything(),
-      expect.anything(),
-    );
-
-    act(() => {
-      capturedBluetooth?.setMirrorIntent('tick-climb', false);
-    });
-
-    await waitFor(() => {
-      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2);
-    });
+    setCurrentOrientation(false);
+    rerenderProvider(rerender);
+    await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2));
     expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
       'p9r12',
       false,
@@ -2397,25 +2198,19 @@ describe('BluetoothProvider wall-confirm integration', () => {
       });
     });
 
-    it('relights a climb in the orientation it is still flipped to', async () => {
+    it('relights an older presence record using its unique queued occurrence', async () => {
       queue.sessionId = null;
-      // A flip belongs to the climb, so every write path honours it. Relighting
-      // it un-mirrored would leave the wall disagreeing with the toggle a drawer
-      // opening on that climb will show — reachable on iPhone, where the player
-      // is dismissed while the kiosk feed is up.
+      // An older presence record has no direction, but this queued occurrence does.
       presence.enabled = true;
       presence.boardId = 99;
       presence.currentClimb = makePresenceClimb();
       bluetooth.sendFramesToBoardForOptions = () => async (frames, mirrored, signal, sendContext) =>
         bluetooth.state.sendFramesToBoard(frames, mirrored, signal, sendContext);
 
+      queue.items = [makeQueueItem('relit-climb', 'relit-frames', true)];
       renderProvider(createElement(BluetoothProbe));
       await waitFor(() => {
         expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
-      });
-
-      act(() => {
-        capturedBluetooth?.setMirrorIntent('relit-climb', true);
       });
 
       await act(async () => {
@@ -2427,6 +2222,86 @@ describe('BluetoothProvider wall-confirm integration', () => {
       expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
         'relit-frames',
         true,
+        undefined,
+        expect.objectContaining({ sendSource: 'wall-relight' }),
+      );
+    });
+
+    it.each([null, 'session-1'])(
+      'relights recorded original orientation despite a mirrored current occurrence in session %s',
+      async (sessionId) => {
+        queue.sessionId = sessionId;
+        queue.currentClimbQueueItem = makeQueueItem('relit-climb', 'relit-frames', true);
+        presence.enabled = true;
+        presence.boardId = 99;
+        renderProvider(createElement(BluetoothProbe));
+        await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
+
+        await act(async () => {
+          await capturedBluetooth?.relightPresenceClimb(
+            makePresenceClimb({ climbUuid: 'relit-climb', frames: 'relit-frames', mirrored: false }),
+          );
+        });
+
+        expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
+          'relit-frames',
+          false,
+          undefined,
+          expect.objectContaining({ sendSource: 'wall-relight' }),
+        );
+        expect(presence.reportClimbForBoard).toHaveBeenLastCalledWith(
+          99,
+          expect.objectContaining({ climb: expect.objectContaining({ mirrored: false }) }),
+          35,
+        );
+      },
+    );
+
+    it('prefers the current copy when an older presence record matches one queue occurrence', async () => {
+      queue.sessionId = null;
+      queue.currentClimbQueueItem = makeQueueItem('relit-climb', 'relit-frames', true);
+      queue.items = [makeQueueItem('relit-climb', 'relit-frames', false)];
+      presence.enabled = true;
+      presence.boardId = 99;
+      renderProvider(createElement(BluetoothProbe));
+      await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
+
+      await act(async () => {
+        await capturedBluetooth?.relightPresenceClimb(
+          makePresenceClimb({ climbUuid: 'relit-climb', frames: 'relit-frames' }),
+        );
+      });
+
+      expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
+        'relit-frames',
+        true,
+        undefined,
+        expect.objectContaining({ sendSource: 'wall-relight' }),
+      );
+    });
+
+    it('does not infer a missing presence orientation from different occurrences of the same climb', async () => {
+      queue.sessionId = null;
+      const mirroredOccurrence = makeQueueItem('relit-climb', 'relit-frames', true);
+      queue.currentClimbQueueItem = mirroredOccurrence;
+      queue.items = [
+        mirroredOccurrence,
+        { ...makeQueueItem('relit-climb', 'relit-frames', false), uuid: 'queue-relit-climb-repeat' },
+      ];
+      presence.enabled = true;
+      presence.boardId = 99;
+      renderProvider(createElement(BluetoothProbe));
+      await waitFor(() => expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1));
+
+      await act(async () => {
+        await capturedBluetooth?.relightPresenceClimb(
+          makePresenceClimb({ climbUuid: 'relit-climb', frames: 'relit-frames' }),
+        );
+      });
+
+      expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
+        'relit-frames',
+        false,
         undefined,
         expect.objectContaining({ sendSource: 'wall-relight' }),
       );
@@ -2449,9 +2324,8 @@ describe('BluetoothProvider wall-confirm integration', () => {
         expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
       });
 
-      act(() => {
-        capturedBluetooth?.setMirrorIntent('climb-1', true);
-      });
+      setCurrentOrientation(true);
+      rerenderProvider(rerender);
       await waitFor(() => {
         expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(2);
       });
@@ -2462,7 +2336,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
       const sendsAfterUndo = bluetooth.state.sendFramesToBoard.mock.calls.length;
 
       // Anything that re-drains the same climb must not write over the undo.
-      queue.currentClimbQueueItem = makeQueueItem('climb-1');
+      queue.currentClimbQueueItem = makeQueueItem('climb-1', 'p1r12', true);
       act(() => {
         rerender(
           createElement(BluetoothProvider, {
@@ -2532,14 +2406,13 @@ describe('BluetoothProvider wall-confirm integration', () => {
       bluetooth.sendFramesToBoardForOptions = () => async (frames, mirrored, signal, sendContext) =>
         bluetooth.state.sendFramesToBoard(frames, mirrored, signal, sendContext);
 
-      renderProvider(createElement(BluetoothProbe));
+      const { rerender } = renderProvider(createElement(BluetoothProbe));
       await waitFor(() => {
         expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
       });
 
-      act(() => {
-        capturedBluetooth?.setMirrorIntent('climb-1', true);
-      });
+      setCurrentOrientation(true);
+      rerenderProvider(rerender);
 
       await waitFor(() => {
         expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(2);
@@ -2555,7 +2428,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
       queue.sessionId = null;
       presence.enabled = true;
       presence.boardId = 99;
-      // Another climber lit this mirrored; this phone holds no intent for it.
+      // Another climber lit this mirrored; no matching occurrence exists locally.
       presence.currentClimb = makePresenceClimb({ mirrored: true });
 
       renderProvider(createElement(BluetoothProbe));
@@ -2584,20 +2457,17 @@ describe('BluetoothProvider wall-confirm integration', () => {
       );
     });
 
-    it("undo falls back to this phone's flip when an older reporter left the orientation out", async () => {
+    it('undo falls back to a unique queued occurrence when its recorded orientation is missing', async () => {
       queue.sessionId = null;
       presence.enabled = true;
       presence.boardId = 99;
       // No `mirrored` on the feed climb: an older build reported it.
       presence.currentClimb = makePresenceClimb();
 
+      queue.items = [makeQueueItem('previous-climb', 'previous-frames', true)];
       renderProvider(createElement(BluetoothProbe));
       await waitFor(() => {
         expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
-      });
-
-      act(() => {
-        capturedBluetooth?.setMirrorIntent('previous-climb', true);
       });
 
       const undoResult = await capturedBluetooth?.undoWallChange();
@@ -2606,6 +2476,27 @@ describe('BluetoothProvider wall-confirm integration', () => {
       expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
         'previous-frames',
         true,
+        undefined,
+        expect.objectContaining({ sendSource: 'undo' }),
+      );
+    });
+
+    it('undo keeps recorded original orientation when its climb is now mirrored in the queue', async () => {
+      queue.sessionId = null;
+      presence.enabled = true;
+      presence.boardId = 99;
+      presence.currentClimb = makePresenceClimb({ mirrored: false });
+      renderProvider(createElement(BluetoothProbe));
+      await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1));
+
+      // The live snapshot may advance before React renders that queue change.
+      queue.currentClimbQueueItem = makeQueueItem('previous-climb', 'previous-frames', true);
+      const undoResult = await capturedBluetooth?.undoWallChange();
+
+      expect(undoResult).toBe(true);
+      expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
+        'previous-frames',
+        false,
         undefined,
         expect.objectContaining({ sendSource: 'undo' }),
       );
@@ -2676,9 +2567,8 @@ describe('BluetoothProvider wall-confirm integration', () => {
         );
       });
 
-      act(() => {
-        capturedBluetooth?.setMirrorIntent('climb-1', true);
-      });
+      setCurrentOrientation(true);
+      rerenderProvider(rerender);
       await waitFor(() => {
         expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(2);
       });

@@ -1,6 +1,6 @@
 import { useRef, useSyncExternalStore } from 'react';
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
-import type { Climb } from '@boardsesh/queue';
+import type { ClimbQueueItem } from '@boardsesh/queue';
 import { useQueue } from '../../providers/queue-provider';
 import { NativeAccessoryClimbRow } from './NativeAccessoryClimbRow';
 import { getCredentialGeneration, subscribeToCredentialChanges } from '../../lib/privacy/privacy-cache';
@@ -16,13 +16,13 @@ import { getCredentialGeneration, subscribeToCredentialChanges } from '../../lib
  * — rather than a second timer — keeps it consistent with the presence hold by
  * construction: the host unmount is the single thing that finally clears it.
  */
-function useRetainedAccessoryClimb(currentClimb: Climb | null): Climb | null {
+function useRetainedAccessoryClimb(currentClimb: ClimbQueueItem | null): ClimbQueueItem | null {
   const generation = useSyncExternalStore(
     subscribeToCredentialChanges,
     getCredentialGeneration,
     getCredentialGeneration,
   );
-  const retained = useRef({ generation, climb: currentClimb, withdrawn: null as Climb | null });
+  const retained = useRef({ generation, climb: currentClimb, withdrawn: null as ClimbQueueItem | null });
   if (retained.current.generation !== generation) {
     // The provider may not have painted its cleared queue yet. Do not adopt
     // that same old object again while the sticky UIKit host remains mounted.
@@ -49,10 +49,11 @@ export function QueueBottomAccessory() {
   // The accessory shows the local queue head only — never the wall's lit climb
   // (that lives in the top "On the wall" strip now). Retained across a presence
   // blip so the live platter never blanks while the host is held open.
-  const resolvedClimb = state.currentClimbQueueItem?.climb ?? null;
-  const currentClimb = useRetainedAccessoryClimb(resolvedClimb);
+  const resolvedItem = state.currentClimbQueueItem;
+  const currentItem = useRetainedAccessoryClimb(resolvedItem);
 
-  if (!currentClimb) return null;
+  if (!currentItem) return null;
+  const currentClimb = currentItem.climb;
 
   // A retained row during rehydration cannot prove that the real solo queue
   // currently contains this climb. Capture metadata belongs to the actual head.
@@ -60,8 +61,16 @@ export function QueueBottomAccessory() {
     process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' &&
     process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL &&
     sessionId === null &&
-    resolvedClimb?.uuid === currentClimb.uuid
+    resolvedItem != null &&
+    resolvedItem.uuid === currentItem.uuid
       ? `cpp-accessory-climb-${currentClimb.uuid}`
       : undefined;
-  return <NativeAccessoryClimbRow climb={currentClimb} placement={placement} testID={testID} />;
+  return (
+    <NativeAccessoryClimbRow
+      climb={currentClimb}
+      queueItemUuid={currentItem.uuid}
+      placement={placement}
+      testID={testID}
+    />
+  );
 }

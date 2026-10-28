@@ -73,7 +73,10 @@ vi.mock('../../../providers/theme-provider', () => ({
   }),
 }));
 
-vi.mock('../../../providers/queue-provider', () => ({ useQueueSessionId: () => ({ sessionId: queue.sessionId }) }));
+vi.mock('../../../providers/queue-provider', () => ({
+  useQueueSessionId: () => ({ sessionId: queue.sessionId }),
+  useQueueActions: () => ({ getQueueSnapshot: () => ({ queue: [], currentClimbQueueItem: null }) }),
+}));
 
 vi.mock('../../../providers/drawer-host-provider', () => ({
   useDrawerHost: () => ({ openLogAscent: drawer.openLogAscent, boardConfig: drawer.boardConfig }),

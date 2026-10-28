@@ -44,6 +44,7 @@ import type {
   PlaylistTrackResume,
   QueueAddPlacement,
   QueueState,
+  QueueAction,
   SetCurrentClimbOptions,
 } from '@boardsesh/queue';
 import {
@@ -3353,12 +3354,17 @@ export function QueueProvider({ children }: { children: ReactNode }) {
    */
   const mirrorCurrentClimb = useCallback(
     async (mirrored: boolean, queueItemUuid: string) => {
-      if (
-        !sessionIdRef.current ||
-        stateRef.current.currentClimbQueueItem?.uuid !== queueItemUuid ||
-        mirrorRequestRef.current
-      )
-        return false;
+      if (stateRef.current.currentClimbQueueItem?.uuid !== queueItemUuid || mirrorRequestRef.current) return false;
+      if (sessionIdRef.current === null) {
+        const action: QueueAction = {
+          type: 'DELTA_MIRROR_CURRENT_CLIMB',
+          payload: { mirrored, mirroredUuid: queueItemUuid },
+        };
+        // Imperative Tick/navigation calls in the same event must see this tap.
+        stateRef.current = queueReducer(stateRef.current, action);
+        dispatch(action);
+        return true;
+      }
       mirrorRequestRef.current = true;
       try {
         await mutations.mirrorCurrentClimb(mirrored, queueItemUuid);

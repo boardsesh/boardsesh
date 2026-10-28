@@ -36,6 +36,12 @@ While it shows, the solo "Preview, not lit" leaves the top bar's second line to 
 
 ## Layout rules
 
+Mirror is saved on each committed queue occurrence, in solo climbing and in a crew.
+The player, mini player, wall and Log ascent use that occurrence's orientation.
+History keeps the saved flip for logging and replay; a fresh occurrence starts with
+its own supplied orientation. Mirroring a preview stays local and its temporary
+flip is cleared when the preview is committed.
+
 `resolveActionBarLayout` (`packages/mobile/src/components/play-drawer/action-bar-layout.ts`) is the one rule. The
 bar, the player's ⋯ menu and the preview all read it, so they can't disagree.
 

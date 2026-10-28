@@ -35,6 +35,7 @@ import { useSprayWallIsArchived } from '../../lib/spray/use-spray-wall-archive';
 import { canDeleteClimb } from './delete-climb-rules';
 import { useDeleteClimbAction } from './use-delete-climb-action';
 
+import { resolveTickMirror } from '../../lib/queue-mirror-orientation';
 import { useBluetoothConnectedStatus } from '../../lib/ble/bluetooth-status-store';
 
 export type ClimbActionId =
@@ -241,7 +242,7 @@ export function useClimbActions({
   // edit and new climb on it, so neither Edit nor Fork is offered there.
   const wallArchived = useSprayWallIsArchived(boardConfig?.boardName, boardConfig?.layoutId ?? null);
   const { actionColors } = useTheme();
-  const { addToQueue, playNext, setCurrentClimb, findReplayFromHereItem } = useQueueActions();
+  const { addToQueue, playNext, setCurrentClimb, findReplayFromHereItem, getQueueSnapshot } = useQueueActions();
   // The active session, so a tick logged from a climb-actions sheet lands on it.
   // Every other tick entry point (play drawer, queue bar, queue sheet) already
   // passes this; this one didn't, so ticking from the climbs list, board sheet,
@@ -499,7 +500,12 @@ export function useClimbActions({
             climbName: climb.name,
             boardName,
             angle,
-            isMirror: false,
+            isMirror: resolveTickMirror(
+              getQueueSnapshot(),
+              climb,
+              queueItemUuid,
+              boardConfigsMatch(activeBoardConfig, boardConfig),
+            ),
             isBenchmark: !!climb.benchmark_difficulty,
             baseAscensionistCount: climb.ascensionist_count ?? 0,
             layoutId,
@@ -707,6 +713,7 @@ export function useClimbActions({
     playNext,
     setCurrentClimb,
     findReplayFromHereItem,
+    getQueueSnapshot,
     toggleFavoriteMutate,
     bluetoothConnected,
     isFavorited,

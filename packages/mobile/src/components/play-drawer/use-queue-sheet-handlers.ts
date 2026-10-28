@@ -6,6 +6,8 @@ import type {
   PlaylistSuggestionSource,
   SetCurrentClimbOptions,
 } from '@boardsesh/queue';
+import { useQueueActions } from '../../providers/queue-provider';
+import { resolveTickMirror } from '../../lib/queue-mirror-orientation';
 import { climbToQueueItem } from '../../lib/climb-to-queue-item';
 import type {
   BoardConfig,
@@ -56,6 +58,7 @@ export function useQueueSheetHandlers({
   requestCloseQueueSheet,
   dismissQueueSheetAndWait,
 }: QueueSheetHandlerDeps): QueueSheetHandlers {
+  const { getQueueSnapshot } = useQueueActions();
   // Tap a queue item → make it current (for the whole session, always-live) and
   // show it in the play drawer.
   const handleClimbPress = useCallback(
@@ -109,7 +112,7 @@ export function useQueueSheetHandlers({
         climbName: item.climb.name,
         boardName: storedBoardConfig.boardName,
         angle: item.climb.angle,
-        isMirror: item.climb.mirrored === true,
+        isMirror: resolveTickMirror(getQueueSnapshot(), item.climb, item.uuid),
         isBenchmark: !!item.climb.benchmark_difficulty,
         baseAscensionistCount: item.climb.ascensionist_count ?? 0,
         layoutId: storedBoardConfig.layoutId,
@@ -119,7 +122,7 @@ export function useQueueSheetHandlers({
         consensusGradeName: item.climb.difficulty,
       });
     },
-    [storedBoardConfig, sessionId, openLogAscent],
+    [storedBoardConfig, sessionId, openLogAscent, getQueueSnapshot],
   );
 
   return { handleClimbPress, handleOpenActions, handleSuggestionPress, handleTickHistory };

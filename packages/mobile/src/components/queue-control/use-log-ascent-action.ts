@@ -6,25 +6,25 @@ import { useTranslation } from 'react-i18next';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../../lib/analytics';
 import { useTheme } from '../../providers/theme-provider';
-import { useQueueSessionId } from '../../providers/queue-provider';
+import { useQueueActions, useQueueSessionId } from '../../providers/queue-provider';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { useReduceMotion } from '../../hooks/use-reduce-motion';
 import { springs } from '../../theme/animations';
 import { hapticSelection } from '../../lib/haptics';
 import { countSentAscents } from '../../lib/ascent-status-utils';
 import type { AccessoryPlacement } from '../../lib/analytics-board-connect';
-import { resolveMirroredOrientation } from '../../lib/ble/mirror-orientation';
-import { getWallMirrorFlip, wallMirrorFlipFor } from '../../lib/wall-mirror-store';
+import { resolveTickMirror } from '../../lib/queue-mirror-orientation';
 
 /**
  * `placement` is set only by the tab-bar accessory platter's tick, so its Quick
  * Tick Opened can be told apart from the JS bars that share `source: 'queue_bar'`.
  */
-export function useLogAscentAction(climb: Climb, placement?: AccessoryPlacement) {
+export function useLogAscentAction(climb: Climb, placement?: AccessoryPlacement, queueItemUuid?: string) {
   const { t } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
   const { boardConfig, openLogAscent } = useDrawerHost();
   const { sessionId } = useQueueSessionId();
+  const { getQueueSnapshot } = useQueueActions();
   const boardLogbook = useOptionalBoardLogbook();
   const boardActions = useOptionalBoardActions();
   const reduceMotion = useReduceMotion();
@@ -82,17 +82,10 @@ export function useLogAscentAction(climb: Climb, placement?: AccessoryPlacement)
       source: 'queue_bar',
       ...(placement ? { placement } : {}),
     });
-    // The orientation the wall shows: a crew's is the queue item's, and solo
-    // it is the wall's flip when someone tapped Mirror on this climb (the
-    // player's or the MiniPlayer's), so the tick saves what was climbed.
-    // Read at the tap, so the button doesn't re-render on every flip.
-    const isMirror =
-      sessionId === null
-        ? resolveMirroredOrientation({
-            explicitFlip: wallMirrorFlipFor(getWallMirrorFlip(), climb.uuid),
-            climbMirrored: climb.mirrored,
-          })
-        : climb.mirrored === true;
+    const matchesBoard =
+      (climb.boardType == null || climb.boardType === boardConfig.boardName) &&
+      (climb.layoutId == null || climb.layoutId === boardConfig.layoutId);
+    const isMirror = resolveTickMirror(getQueueSnapshot(), climb, queueItemUuid, matchesBoard);
     openLogAscent({
       climb,
       climbUuid: climb.uuid,
@@ -108,7 +101,7 @@ export function useLogAscentAction(climb: Climb, placement?: AccessoryPlacement)
       sessionId,
       consensusGradeName: climb.difficulty,
     });
-  }, [openLogAscent, boardConfig, sessionId, climb, angle, placement]);
+  }, [openLogAscent, boardConfig, sessionId, climb, angle, placement, queueItemUuid, getQueueSnapshot]);
 
   // Always neutral glass — no coloured background. The "you sent this" signal
   // rides the glyph instead: a green tick when logged, the system label otherwise
