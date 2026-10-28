@@ -15,7 +15,7 @@ import { StatTile, GradeTile } from './session-stat-tiles';
 import { SessionRecapCard } from './SessionRecapCard';
 import { WorkoutSummarySection } from './workout/WorkoutSummarySection';
 import { WorkoutSyncingNote } from './workout/WorkoutSyncingNote';
-import { workoutTotals } from './workout/workout-summary-format';
+import { workoutFeatured } from './workout/workout-summary-format';
 import type { SessionWorkoutView } from './workout/types';
 import { StackedBarChart } from '../you/YouCharts';
 import { buildSessionGradeBars, gradeBadgeColor } from '../you/profile-chart-colors';
@@ -48,29 +48,6 @@ function heroHeadline(isParty: boolean, totalSends: number, t: TFunc): string {
   return t('summary.heroNiceSession');
 }
 
-/**
- * The hero's number on a workout session. The server's totals, unless this
- * phone still holds ticks the server hasn't got: then never a server zero, but
- * the blocks' own count from this phone, labelled as such (#6903).
- */
-function workoutFeatured(
-  summary: SessionSummary,
-  workout: SessionWorkoutView,
-  pendingTicks: number,
-  t: TFunc,
-): { value: number; label: string } {
-  const phone = workoutTotals(workout.stages);
-  const usePhone = pendingTicks > 0 && phone.sent + phone.attempts > summary.totalSends + summary.totalAttempts;
-  if (usePhone) {
-    return phone.sent > 0
-      ? { value: phone.sent, label: t('summary.featuredPhoneSendsLabel', { count: phone.sent }) }
-      : { value: phone.attempts, label: t('summary.featuredPhoneAttemptsLabel', { count: phone.attempts }) };
-  }
-  return summary.totalSends > 0
-    ? { value: summary.totalSends, label: t('summary.featuredSendsLabel', { count: summary.totalSends }) }
-    : { value: summary.totalAttempts, label: t('summary.featuredAttemptsLabel', { count: summary.totalAttempts }) };
-}
-
 type SessionSummaryContentProps = {
   summary: SessionSummary;
   storeReviewWillPrompt: boolean;
@@ -83,6 +60,8 @@ type SessionSummaryContentProps = {
   workout?: SessionWorkoutView;
   /** Ticks from this phone the server doesn't have yet. */
   pendingTicks?: number;
+  /** The workout drawn is this phone's own run, not the server's copy: the hero counts from it. */
+  workoutFromPhone?: boolean;
   /** No connection to save those ticks over. */
   offline?: boolean;
   /** Opens this block's climbs on first draw (stories, screenshots). */
@@ -102,6 +81,7 @@ export function SessionSummaryContent({
   storeReviewWillPrompt,
   workout,
   pendingTicks = 0,
+  workoutFromPhone = false,
   offline = false,
   initiallyExpandedStageId,
 }: SessionSummaryContentProps) {
@@ -152,7 +132,7 @@ export function SessionSummaryContent({
   const isSaving = isWorkout && pendingTicks > 0;
   const headline = isWorkout ? t('mobile.workoutRunner.done') : heroHeadline(isParty, totalSends, t);
   const featured = isWorkout
-    ? workoutFeatured(summary, workout, pendingTicks, t)
+    ? workoutFeatured(summary, workout, pendingTicks, workoutFromPhone, t)
     : hasSends
       ? { value: totalSends, label: t('summary.featuredSendsLabel', { count: totalSends }) }
       : { value: totalAttempts, label: t('summary.featuredAttemptsLabel', { count: totalAttempts }) };

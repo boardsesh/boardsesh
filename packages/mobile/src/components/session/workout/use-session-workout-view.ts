@@ -48,6 +48,8 @@ export type SessionWorkoutState = {
   pendingTicks: number;
   /** No connection to save them over: the note says so. */
   offline: boolean;
+  /** The workout is this phone's own run (the server is behind): the summary's hero counts from it. */
+  fromPhone: boolean;
 };
 
 const SESSION_WORKOUTS_STALE_TIME_MS = 30 * 1000;
@@ -139,10 +141,10 @@ export function useSessionWorkoutView(
       scope,
     });
     if (choice?.source === 'local' && localView) {
-      return { workout: localView, pendingTicks: pending.ticks, offline };
+      return { workout: localView, pendingTicks: pending.ticks, offline, fromPhone: true };
     }
     if (choice?.source === 'server') {
-      return { workout: serverWorkoutView(choice.workout, formatGrade), pendingTicks: 0, offline };
+      return { workout: serverWorkoutView(choice.workout, formatGrade), pendingTicks: 0, offline, fromPhone: false };
     }
     return undefined;
   }, [workouts, viewerUserId, sessionOwnerUserId, localView, pending, scope, offline, formatGrade]);

@@ -14,6 +14,7 @@ import {
   workoutRepBar,
   workoutTally,
   workoutTotals,
+  workoutFeatured,
 } from '../workout-summary-format';
 import {
   COOL_DOWN,
@@ -176,5 +177,39 @@ describe('workoutHeadlineText', () => {
 describe('workoutTotals', () => {
   it('adds the blocks up to the session sends', () => {
     expect(workoutTotals(STORY_WORKOUT.stages)).toEqual({ sent: 15, attempts: 7 });
+  });
+});
+
+describe('workoutFeatured', () => {
+  const serverZero = { totalSends: 0, totalAttempts: 0 };
+
+  it("counts from the phone whenever the phone's workout is drawn, never a server zero beside it", () => {
+    expect(workoutFeatured(serverZero, STORY_WORKOUT, 0, true, t)).toEqual({
+      value: 15,
+      label: 'sends on this phone',
+    });
+  });
+
+  it('counts attempts from the phone when it sent nothing', () => {
+    const attemptsOnly = {
+      stages: [{ ...FOUR_BY_FOUR, tally: { sent: 0, attempts: 3, skipped: 0, climbs: 4 } }],
+    };
+    expect(workoutFeatured(serverZero, attemptsOnly, 0, true, t)).toEqual({
+      value: 3,
+      label: 'attempts on this phone',
+    });
+  });
+
+  it("keeps the server's totals for the server's workout", () => {
+    expect(workoutFeatured({ totalSends: 15, totalAttempts: 22 }, STORY_WORKOUT, 0, false, t)).toEqual({
+      value: 15,
+      label: 'sends',
+    });
+  });
+
+  it('still prefers the phone while its ticks would add to a server copy', () => {
+    expect(workoutFeatured({ totalSends: 2, totalAttempts: 2 }, STORY_WORKOUT, 5, false, t).label).toBe(
+      'sends on this phone',
+    );
   });
 });
