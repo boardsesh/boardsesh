@@ -246,11 +246,11 @@ describe('placeOnWall', () => {
   });
 
   it("new uuid, climb only in History, historyCopy 'fresh': inserted at Now, History left alone", () => {
-    const olderA = makeItem('A0', { climbUuid: a.climb.uuid });
+    const between = makeItem('X');
     const freshA = freshCopyOf(a, 'A2');
-    const placed = placeOnWall(state([olderA, a, b, c], b), freshA, 'NOW', undefined, 'fresh');
+    const placed = placeOnWall(state([a, between, b, c], b), freshA, 'NOW', undefined, 'fresh');
     expect(placed.rewrite).toBe('insert');
-    expect(uuids(placed.queue)).toEqual(['A0', 'A', 'B', 'A2', 'C']);
+    expect(uuids(placed.queue)).toEqual(['A', 'X', 'B', 'A2', 'C']);
     expect(placed.currentClimbQueueItem).toBe(freshA);
     // The rule only covers History: an Up next copy and the current climb still dedupe.
     expect(placeOnWall(state([a, b, c], b), freshCopyOf(c, 'C2'), 'NOW', undefined, 'fresh').rewrite).toBe(
@@ -259,6 +259,14 @@ describe('placeOnWall', () => {
     expect(placeOnWall(state([a, b, c], b), freshCopyOf(b, 'B2'), 'NOW', undefined, 'fresh').rewrite).toBe(
       'dedupe-current',
     );
+  });
+
+  it("historyCopy 'fresh' still reuses History's last entry, the one Previous stepped off", () => {
+    const olderA = makeItem('A0', { climbUuid: a.climb.uuid });
+    const placed = placeOnWall(state([olderA, a, b, c], b), freshCopyOf(a, 'A2'), 'NOW', undefined, 'fresh');
+    expect(placed.rewrite).toBe('dedupe-history');
+    expect(uuids(placed.queue)).toEqual(['A0', 'B', 'A', 'C']);
+    expect(placed.currentClimbQueueItem).toBe(a);
   });
 
   it('historyCopyRuleFor: fresh for a request with placement, which the phone already resolved', () => {
