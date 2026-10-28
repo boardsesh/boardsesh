@@ -469,7 +469,8 @@
         "footer": "Le modifiche valgono subito. Nascondi tutto per vedere solo il blocco, senza scorrere in verticale.",
         "tabs": {
           "sections": "Sotto il blocco",
-          "buttons": "Pulsanti"
+          "buttons": "Pulsanti",
+          "miniPlayer": "Mini player"
         }
       },
       "sectionLayout": {
@@ -623,6 +624,22 @@
         "rogueConnecting": "Connessione…",
         "rogueUnreachable": "Impossibile raggiungerlo. Controlla che sia acceso e vicino.",
         "rogueSaveFailed": "Impossibile salvare il timer. Riprova."
+      },
+      "miniPlayer": {
+        "title": "Mini player",
+        "description": "La barra sopra le schede. Toccala per aprire il blocco.",
+        "buttons": {
+          "next": "Blocco successivo",
+          "previous": "Blocco precedente"
+        },
+        "fixedNote": "Luce del pannello c’è sempre, accanto a Registra. Registra resta sempre ultimo, sotto il tuo pollice.",
+        "footer": "Su iPhone la barra ha posto per uno solo di questi accanto a Luce del pannello e Registra: il primo attivo.",
+        "open": "Aperta",
+        "collapsed": "Ridotta",
+        "previewLabel": "Anteprima, barra {{shape}}: {{buttons}}",
+        "footerWide": "Su uno schermo largo la barra tiene tutti quelli che ci stanno: vincono i primi della lista.",
+        "shapeOpen": "aperta",
+        "shapeCollapsed": "ridotta"
       }
     },
     "sendRecovery": {
