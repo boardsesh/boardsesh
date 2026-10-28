@@ -119,7 +119,12 @@ export function miniPlayerSlotCount({
 }
 
 export type MiniPlayerAvailability = {
-  transport: boolean;
+  /**
+   * The climb on the wall is in a timed workout block (#6231): its stage moves
+   * the wall on its own beat, so ⏮ ⏭ would skip a rep. True even where the bar
+   * can't offer Fell / Sent (signed out, a draft, another board's climb).
+   */
+  inTimedBlock: boolean;
   /** The climb's board mirrors (Tension, Decoy, Woods...): `boardSupportsMirroring`. */
   mirror: boolean;
   signedIn: boolean;
@@ -130,19 +135,19 @@ export type MiniPlayerAvailability = {
 };
 
 /**
- * Whether a button can take a place on the bar right now. Mirror only on a
- * board that mirrors; Favorite and Queue need an account; a draft has no link
+ * Whether a button can take a place on the bar right now. No ⏮ ⏭ in a timed
+ * workout block; Mirror only on a board that mirrors; Favorite and Queue need an account; a draft has no link
  * to share; a fixed-angle board has no angle to change, and neither does the bar while
  * the player route is up.
  */
 export function isMiniPlayerButtonAvailable(
   buttonId: MiniPlayerButtonId,
-  { transport, mirror, signedIn, isDraft, angleAdjustable, playerRouteUp }: MiniPlayerAvailability,
+  { inTimedBlock, mirror, signedIn, isDraft, angleAdjustable, playerRouteUp }: MiniPlayerAvailability,
 ): boolean {
   switch (buttonId) {
     case 'previous':
     case 'next':
-      return transport;
+      return !inTimedBlock;
     case 'mirror':
       return mirror;
     case 'favorite':
@@ -155,8 +160,11 @@ export function isMiniPlayerButtonAvailable(
   }
 }
 
+/** One-tap Fell / Sent for the climb on the wall, in a timed workout block (#6940). */
+export type MiniPlayerWorkoutButton = 'fell' | 'sent';
+
 /** One slot on the bar. `lightbulb` and `log` are the fixed pair at the trailing edge. */
-export type MiniPlayerSlot = MiniPlayerButtonId | 'lightbulb' | 'log';
+export type MiniPlayerSlot = MiniPlayerButtonId | MiniPlayerWorkoutButton | 'lightbulb' | 'log';
 
 export type MiniPlayerControlsInput = {
   slotCount: number;
@@ -170,21 +178,30 @@ export type MiniPlayerControlsInput = {
    */
   singleSlotShowsBulb: boolean;
   /**
-   * iPhone Duo open with the player in the split's pane. Its big row already
-   * has ⏮ ⏭ 💡 ✓ right above the bar, so the bar does not repeat them.
+   * How the open Duo's bar relates to the player in the split's pane
+   * (`miniPlayerPaneMode`); `none` everywhere else. In `carry` the pane's big
+   * row has ⏮ ⏭ 💡 ✓ right above the bar, so the bar does not repeat them.
    */
-  playerPaneShowsTransport: boolean;
+  paneMode: MiniPlayerPaneMode;
   /**
-   * Claim from these, in this order, instead of the climber's MiniPlayer list.
-   * The open Duo passes the player's small row, which the bar covers
-   * (`miniPlayerPaneCoveredButtons`).
+   * In `carry`, claim from these, in this order, instead of the climber's
+   * MiniPlayer list: the player's small row, which the bar covers
+   * (`miniPlayerPaneCoveredButtons`). Ignored in the other modes.
    */
-  buttonIds?: readonly MiniPlayerButtonId[];
+  paneCoveredButtons?: readonly MiniPlayerButtonId[];
+  /**
+   * The bar offers one-tap Fell / Sent: the climb on the wall is in a timed
+   * workout block and the climber can log it here, or the bar is holding the
+   * pair for the climb the wall just left (`useMiniPlayerWorkoutOutcome`).
+   */
+  workoutOutcome: boolean;
 };
 
 export type MiniPlayerControls = {
   /** Left to right: the climber's other buttons, then ⏮ ⏭. */
   leading: readonly MiniPlayerButtonId[];
+  /** Left to right after them: Fell and Sent in a timed workout block, or Sent alone in one slot. */
+  workout: readonly MiniPlayerWorkoutButton[];
   /** Left to right at the trailing edge: 💡 ✓, or the one of them a single slot keeps. */
   trailing: readonly ('lightbulb' | 'log')[];
 };
@@ -206,27 +223,60 @@ const TRANSPORT_ORDER: readonly MiniPlayerButtonId[] = ['previous', 'next'];
  * are the ones left out (the player's ⋯ still has every action). Where a
  * claimed button is drawn does not follow that order: ⏮ ⏭ sit together just
  * before the bulb, and the others keep the climber's order before them.
+ *
+ * In a timed workout block the bar logs each go instead (`workoutOutcome`), as
+ * the player's small row does:
+ *
+ * ```
+ * iPad, Duo open    [thumb] Name ··········· [Fell] [Sent] · [💡] [✓]
+ * iPhone            [thumb] Name ···················· [Fell] [Sent] [💡]
+ * One slot          [thumb] Name ································ [Sent]
+ * Duo, pane carry   [thumb] Name ························ [Fell] [Sent]
+ * ```
+ *
+ * The climber's other buttons step aside for the block, so a mis-tap mid-4x4
+ * never flips the wall or skips a rep. Fell and Sent claim their slots first,
+ * then the bulb, then the tick: an iPhone's ✓ steps aside, since Fell and Sent
+ * already log each go. With the player in the Duo's pane (`carry`) the bar
+ * covers the pane's own Fell / Sent and the pane's big row shows 💡 ✓, so the
+ * bar carries Fell and Sent only. While the pane shows a preview, or its
+ * controls sit above the board (`stepAside`), the bar keeps 💡 ✓, as it does
+ * outside a block.
  */
 export function resolveMiniPlayerControls({
   slotCount,
   layout,
   isAvailable,
   singleSlotShowsBulb,
-  playerPaneShowsTransport,
-  buttonIds,
+  paneMode,
+  paneCoveredButtons,
+  workoutOutcome,
 }: MiniPlayerControlsInput): MiniPlayerControls {
-  const trailing: ('lightbulb' | 'log')[] = playerPaneShowsTransport
+  const carry = paneMode === 'carry';
+  if (workoutOutcome && paneMode !== 'stepAside') {
+    if (slotCount <= 1) return { leading: [], workout: ['sent'], trailing: [] };
+    const room = carry ? 0 : slotCount - 2;
+    const trailing: ('lightbulb' | 'log')[] = room >= 2 ? ['lightbulb', 'log'] : room === 1 ? ['lightbulb'] : [];
+    return { leading: [], workout: ['fell', 'sent'], trailing };
+  }
+  const trailing: ('lightbulb' | 'log')[] = carry
     ? []
     : slotCount <= 1
       ? [singleSlotShowsBulb ? 'lightbulb' : 'log']
       : ['lightbulb', 'log'];
+  // A preview in the pane, or its controls above the board: the covered buttons
+  // would act on a climb the pane isn't showing, or repeat ones in plain view.
+  if (paneMode === 'stepAside') return { leading: [], workout: [], trailing };
   const room = Math.max(0, slotCount - trailing.length);
   const canClaim = (buttonId: MiniPlayerButtonId) =>
-    isAvailable(buttonId) && !(playerPaneShowsTransport && TRANSPORT_ORDER.includes(buttonId));
-  const claimed = (buttonIds ? buttonIds.filter(canClaim) : visibleSectionIds(layout, canClaim)).slice(0, room);
+    isAvailable(buttonId) && !(carry && TRANSPORT_ORDER.includes(buttonId));
+  const claimed = (carry ? (paneCoveredButtons ?? []).filter(canClaim) : visibleSectionIds(layout, canClaim)).slice(
+    0,
+    room,
+  );
   const others = claimed.filter((buttonId) => !TRANSPORT_ORDER.includes(buttonId));
   const transport = TRANSPORT_ORDER.filter((buttonId) => claimed.includes(buttonId));
-  return { leading: [...others, ...transport], trailing };
+  return { leading: [...others, ...transport], workout: [], trailing };
 }
 
 /**
@@ -283,7 +333,9 @@ export type PaneCoveredButtonsInput = {
  *
  * It is the player's own layout for the climber's player buttons, in its plain
  * state: no connect pill, no Put on the wall, no workout Fell / Sent. Those
- * come and go with the moment, and the bar keeps its buttons through them.
+ * come and go with the moment, and the bar keeps its buttons through them,
+ * except in a timed workout block, when it carries Fell / Sent in their place
+ * (`resolveMiniPlayerControls`).
  */
 export function miniPlayerPaneCoveredButtons({
   buttons,

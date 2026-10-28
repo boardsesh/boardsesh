@@ -277,7 +277,39 @@ climb).
 
 ### Session states
 
-- A timed workout block hides ⏮ ⏭: the stage moves the wall on its own beat.
+- **A timed workout block** (#6940) turns the bar into one-tap Fell / Sent for the climb on the wall, the same taps
+  as the player's small row (One-tap Fell / Sent above: `useWorkoutOneTap` and `useTickSaver`, the 700 ms guard,
+  the flash rule, a spray first ascent opening Log ascent, one climb every rep of a 4x4 set).
+  - When: `useMiniPlayerWorkoutOutcome` asks the player's `shouldShowWorkoutOutcome` about the committed head: in a
+    session, its stage has `pacing`, signed in, not a draft, not another board's climb (a board at this gym counts
+    as here), and the bar names the head (not a climb retained through a presence blip). The climb is drawn and
+    logged on the board `resolveClimbRenderBoard` picks, at its angle, with the orientation the bar's Log reads.
+  - What (`resolveMiniPlayerControls`, `workoutOutcome`): the climber's buttons, ⏮ ⏭ included, step aside, so a
+    mis-tap mid-4x4 never flips the wall or skips a rep. Fell and Sent claim slots first, then the bulb, then the
+    tick:
+
+    | Bar                                  | Holds                  |
+    | ------------------------------------ | ---------------------- |
+    | iPad, open Duo (pane doesn't cover)  | Fell · Sent · 💡 ✓     |
+    | iPhone (3 slots)                     | Fell · Sent · 💡       |
+    | Two slots                            | Fell · Sent            |
+    | Minimized / inline (1 slot)          | Sent                   |
+    | Open Duo, `carry`                    | Fell · Sent            |
+    | Open Duo, `stepAside` (pane preview) | 💡 ✓, as outside a block |
+
+    In `carry` the bar sits on the pane's small row, which shows Fell / Sent itself, and the pane's big row has 💡 ✓,
+    so the bar carries the pair only. The iPhone's ✓ comes back when the block ends.
+  - The 2 s hold: when the wall leaves the block, the bar keeps Fell / Sent for the climb it left through
+    `useWorkoutOutcomeHold` (`WALL_MOVED_GRACE_MS`), so a finger on its way to Fell never lands on Next, and a tap
+    there logs for that climb, as in the player. Its hints name it.
+  - Feedback: the root toast is in view over the tabs, so a failure, or where to log a first ascent, is a toast
+    (`useWorkoutOneTap`'s `messages: 'toast'`). A saved go plays the success haptic, swaps the tapped button's glyph
+    for a filled check for 2 s (`SAVED_NOTICE_MS`) and announces the full sentence; the buttons keep their Fell / Sent
+    labels. Glyphs: Fell ⊗ (`ascent.attempt`), Sent a circled check in the brand colour (`tick`).
+  - Slots are keyed `fell` / `sent`, so the minimized bar's Sent is the open bar's Sent, and the row never remounts.
+  - Where the climber can't log the block (signed out, a draft, another board), the bar keeps its usual buttons
+    but still drops ⏮ ⏭ (`isMiniPlayerButtonAvailable`'s `inTimedBlock`): the stage moves the wall on its own beat.
+  - The Settings preview draws no workout: it shows the bar the climber set up.
 - A crew, or Light on swipe off: Next and Previous open the player on a preview.
 - Signed out: no Favorite or Queue. A draft has no Share. A fixed-angle board has no Angle; a board that can't
   mirror has no Mirror.
@@ -329,6 +361,7 @@ today's bar (Board light and Log). `resetAllSettings` clears it.
 | Store, `useMiniPlayerButtonsEditor`    | `packages/mobile/src/lib/mini-player-buttons-preference.ts`                           |
 | Slot count and what the bar holds      | `packages/mobile/src/components/queue-control/mini-player-controls.ts`                |
 | The bar                                | `packages/mobile/src/components/queue-control/NativeAccessoryClimbRow.tsx`            |
+| Workout gate and hold, Fell / Sent     | `use-mini-player-workout-outcome.ts`, `MiniPlayerWorkoutButtons.tsx` (same folder)    |
 | Preview                                | `packages/mobile/src/components/queue-control/MiniPlayerButtonsPreview.tsx`           |
 | Shared labels and actions              | `packages/mobile/src/components/settings/use-mini-player-button-controls.ts`          |
 | View options tab, Settings › Climb view | `PlayDrawerSectionsSheet.tsx`, `settings/climb-view/`                                |

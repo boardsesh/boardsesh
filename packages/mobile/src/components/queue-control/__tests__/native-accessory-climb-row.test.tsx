@@ -333,7 +333,17 @@ vi.mock('../../../hooks/use-device-layout', () => ({ useDeviceLayout: () => ({ i
 vi.mock('../../../hooks/use-phone-split', () => ({ usePhoneSplit: () => miniPlayer.phoneSplit }));
 vi.mock('../../../hooks/use-vertical-tab-bar', () => ({ useVerticalTabBar: () => miniPlayer.verticalTabBar }));
 vi.mock('../../navigation/phone-split-pane-slot', () => ({ usePhoneSplitPaneTaken: () => miniPlayer.paneTaken }));
-vi.mock('../../../lib/workout-run-store', () => ({ useWorkoutRun: () => null }));
+// The bar's workout gate has its own test (use-mini-player-workout-outcome);
+// here it is set directly, and Fell / Sent are a marker.
+const workoutGate = vi.hoisted(() => ({
+  inTimedBlock: false,
+  shown: null as null | { target: { queueItemUuid: string }; wallLeftAtMs: number | null },
+}));
+vi.mock('../use-mini-player-workout-outcome', () => ({ useMiniPlayerWorkoutOutcome: () => workoutGate }));
+vi.mock('../MiniPlayerWorkoutButtons', () => ({
+  MiniPlayerWorkoutButtons: ({ buttonIds }: { buttonIds: readonly string[] }) =>
+    createElement('span', { 'data-workout-buttons': buttonIds.join(',') }),
+}));
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: miniPlayer.signedIn }) }));
 vi.mock('expo-router', () => ({ useSegments: () => (miniPlayer.playerRouteUp ? ['play'] : ['(tabs)']) }));
 vi.mock('../../play-drawer/pane-preview-store', () => ({ usePanePlayerShowsPreview: () => miniPlayer.panePreview }));
@@ -538,6 +548,8 @@ describe('NativeAccessoryClimbRow', () => {
     miniPlayer.panePreview = false;
     miniPlayer.position = 'below';
     miniPlayer.playerRouteUp = false;
+    workoutGate.inTimedBlock = false;
+    workoutGate.shown = null;
   });
 
   it('renders a regular now-climbing row with thumbnail, grade, and integrated tick', () => {
@@ -993,6 +1005,88 @@ describe('NativeAccessoryClimbRow', () => {
       };
       // Kilter can't mirror; the rest keep the climber's order before ⏮ ⏭.
       expect(buttons(renderRow('regular').container)).toBe('favorite,queue,share,angle,previous,next');
+    });
+
+    describe('in a timed workout block', () => {
+      const workoutButtons = (container: HTMLElement) =>
+        container.querySelector('[data-workout-buttons]')?.getAttribute('data-workout-buttons') ?? null;
+      const inBlock = () => {
+        workoutGate.inTimedBlock = true;
+        workoutGate.shown = { target: { queueItemUuid: 'climb-1' }, wallLeftAtMs: null };
+      };
+
+      it('shows Fell, Sent and the bulb on an iPhone: the tick and Next step aside', () => {
+        inBlock();
+        layout.width = 370;
+        const { container } = renderRow('regular');
+        expect(workoutButtons(container)).toBe('fell,sent');
+        expect(buttons(container)).toBeNull();
+        expect(container.querySelector('[data-board-control]')).not.toBeNull();
+        expect(container.querySelector('[data-tick="true"]')).toBeNull();
+      });
+
+      it("shows Fell, Sent, the bulb and the tick on an iPad, with the climber's buttons aside", () => {
+        inBlock();
+        miniPlayer.isTablet = true;
+        layout.width = 995;
+        const { container } = renderRow('regular');
+        expect(workoutButtons(container)).toBe('fell,sent');
+        expect(buttons(container)).toBeNull();
+        expect(container.querySelector('[data-board-control]')).not.toBeNull();
+        expect(container.querySelector('[data-tick="true"]')).not.toBeNull();
+      });
+
+      it('keeps Sent alone when the tab bar is minimized', () => {
+        inBlock();
+        const { container } = renderRow('inline');
+        expect(workoutButtons(container)).toBe('sent');
+        expect(container.querySelector('[data-board-control]')).toBeNull();
+        expect(container.querySelector('[data-tick="true"]')).toBeNull();
+      });
+
+      it("carries Fell and Sent over the open Duo pane's row, and nothing else", () => {
+        inBlock();
+        miniPlayer.phoneSplit = true;
+        layout.width = 800;
+        const { container } = renderRow('regular');
+        expect(workoutButtons(container)).toBe('fell,sent');
+        expect(buttons(container)).toBeNull();
+        expect(container.querySelector('[data-board-control]')).toBeNull();
+      });
+
+      it('keeps the step-aside bar while the Duo pane shows a preview', () => {
+        inBlock();
+        miniPlayer.phoneSplit = true;
+        miniPlayer.panePreview = true;
+        layout.width = 800;
+        const { container } = renderRow('regular');
+        expect(workoutButtons(container)).toBeNull();
+        expect(container.querySelector('[data-board-control]')).not.toBeNull();
+        expect(container.querySelector('[data-tick="true"]')).not.toBeNull();
+      });
+
+      it("drops ⏮ ⏭ but keeps the climber's other buttons where the climber can't log the block", () => {
+        workoutGate.inTimedBlock = true;
+        miniPlayer.isTablet = true;
+        layout.width = 995;
+        const { container } = renderRow('regular');
+        expect(workoutButtons(container)).toBeNull();
+        expect(buttons(container)).toBe('favorite');
+      });
+
+      it('swaps back to the usual bar when the block ends, without remounting the row', () => {
+        inBlock();
+        layout.width = 370;
+        const { container, rerender } = renderRow('regular');
+        const row = container.firstElementChild;
+        workoutGate.inTimedBlock = false;
+        workoutGate.shown = null;
+        rerender(<NativeAccessoryClimbRow climb={queue.state.currentClimbQueueItem!.climb} placement="regular" />);
+        expect(container.firstElementChild).toBe(row);
+        expect(workoutButtons(container)).toBeNull();
+        expect(buttons(container)).toBe('next');
+        expect(container.querySelector('[data-tick="true"]')).not.toBeNull();
+      });
     });
 
     describe('Mirror', () => {

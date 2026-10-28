@@ -79,10 +79,10 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
   const measuredBar = useMeasuredMiniPlayerBar();
 
   const resolve = useMemo(() => {
-    // The bar's own rule. The preview has no session: transport is available and the climb is not a draft.
+    // The bar's own rule. The preview has no session: no timed block, and the climb is not a draft.
     const isAvailable = (buttonId: MiniPlayerButtonId): boolean =>
       isMiniPlayerButtonAvailable(buttonId, {
-        transport: true,
+        inTimedBlock: false,
         mirror: board.supportsMirroring,
         signedIn,
         isDraft: false,
@@ -95,7 +95,8 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
         layout: buttons,
         isAvailable,
         singleSlotShowsBulb: board.showLightbulb,
-        playerPaneShowsTransport: false,
+        paneMode: 'none',
+        workoutOutcome: false,
       });
   }, [buttons, board.supportsMirroring, board.angleAvailable, board.showLightbulb, signedIn]);
   // The real bar's slot rule at the width the bar measured on this device, or a representative one before it has drawn. The group gap is wide-only, as on the bar.

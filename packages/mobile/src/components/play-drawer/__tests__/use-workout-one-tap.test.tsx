@@ -940,3 +940,49 @@ describe('useWorkoutOneTap: what the row says', () => {
     expect(result.current.notice).toMatchObject({ queueItemUuid: QUEUE_ITEM_UUID, status: 'flash' });
   });
 });
+
+// The MiniPlayer's Fell / Sent (#6940) sit over the tab screens, where the root
+// toast is in view: a message goes there, and a saved go still marks the button.
+describe('useWorkoutOneTap: on the MiniPlayer (messages to the toast)', () => {
+  function renderOnBar(initialTarget = target(), openLogSheet = vi.fn()) {
+    const rendered = renderHook(
+      (props: { target: WorkoutOutcomeTarget }) =>
+        useWorkoutOneTap(props.target, openLogSheet, null, { messages: 'toast' }),
+      { initialProps: { target: initialTarget }, wrapper: withQueue },
+    );
+    return { ...rendered, openLogSheet };
+  }
+
+  it('says a failure in a toast, not in place of the buttons', () => {
+    saveMock.state.failure = new Error('Server said no');
+    const { result } = renderOnBar();
+
+    act(() => result.current.onFell());
+
+    expect(toastMock.showToast).toHaveBeenCalledExactlyOnceWith('Server said no', 'error');
+    expect(result.current.notice).toBeNull();
+    expect(hapticError).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks a saved go on its button with the success haptic and the sentence spoken, without a toast', () => {
+    const { result } = renderOnBar();
+
+    act(() => result.current.onSent());
+
+    expect(result.current.notice).toMatchObject({ kind: 'saved', status: 'flash', queueItemUuid: QUEUE_ITEM_UUID });
+    expect(hapticSuccess).toHaveBeenCalledTimes(1);
+    expect(announceQueued).toHaveBeenCalledExactlyOnceWith('playView.workoutOutcome.flashLogged:Crimp line');
+    expect(toastMock.showToast).not.toHaveBeenCalled();
+  });
+
+  it('still opens Log ascent for a spray climb nobody has sent', () => {
+    const { result, openLogSheet } = renderOnBar(
+      target({ boardName: 'spray', climb: climb({ ascensionist_count: 0 }) }),
+    );
+
+    act(() => result.current.onSent());
+
+    expect(openLogSheet).toHaveBeenCalledTimes(1);
+    expect(saveMock.mutateAsync).not.toHaveBeenCalled();
+  });
+});

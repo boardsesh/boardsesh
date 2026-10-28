@@ -21,6 +21,11 @@
 // player is a native modal on iOS, and the root toast overlay draws behind it.
 // Only a save that lands after the row is gone falls back to the toast, since
 // there is no row left to say it.
+//
+// The MiniPlayer's Fell / Sent (#6940) sit over the tab screens, where the
+// root toast is in view, so they pass `messages: 'toast'`: a failure, or where
+// to log a first ascent, is a toast there, and a saved go still marks the
+// tapped button.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { deriveAscentType, type TickStatus } from '@boardsesh/play-view';
@@ -62,6 +67,15 @@ export type WorkoutOneTapNotice =
   | { kind: 'saved'; status: TickStatus; queueItemUuid: string; message: string }
   | { kind: 'message'; tone: 'error' | 'info'; message: string };
 
+export type WorkoutOneTapOptions = {
+  /**
+   * Where a failure, or where to log a first ascent, is said. `row` (the
+   * player): the row takes it, as the root toast draws behind the player.
+   * `toast` (the MiniPlayer): the root toast, which is in view over the tabs.
+   */
+  messages?: 'row' | 'toast';
+};
+
 export type WorkoutOneTap = {
   onFell: () => void;
   onSent: () => void;
@@ -84,8 +98,9 @@ export function useWorkoutOneTap(
   target: WorkoutOutcomeTarget,
   openLogSheet: () => void,
   wallLeftAtMs: number | null = null,
+  { messages = 'row' }: WorkoutOneTapOptions = {},
 ): WorkoutOneTap {
-  const { notice, report, dismissNotice } = useOneTapNotice();
+  const { notice, report, dismissNotice } = useOneTapNotice(messages);
   const wallLeft = useClimbTheWallLeft(target);
   // Bound to the climb the row was handed: the one on the wall, or, while the
   // row is held, the one the wall left.
@@ -125,8 +140,13 @@ type ReportNotice = (notice: WorkoutOneTapNotice) => void;
  * a failure already buzzed in `useTickSaver`) and a spoken copy, since the
  * buttons keep their own labels for a screen reader. Once the row is gone (the
  * player closed, a swipe to a preview) a late save falls back to the toast.
+ * With `messages: 'toast'` a message notice always goes to the toast.
  */
-function useOneTapNotice(): { notice: WorkoutOneTapNotice | null; report: ReportNotice; dismissNotice: () => void } {
+function useOneTapNotice(messages: 'row' | 'toast'): {
+  notice: WorkoutOneTapNotice | null;
+  report: ReportNotice;
+  dismissNotice: () => void;
+} {
   const { showToast } = useToast();
   const [notice, setNotice] = useState<WorkoutOneTapNotice | null>(null);
   const mountedRef = useRef(false);
@@ -139,7 +159,7 @@ function useOneTapNotice(): { notice: WorkoutOneTapNotice | null; report: Report
 
   const report = useCallback<ReportNotice>(
     (reportedNotice) => {
-      if (!mountedRef.current) {
+      if (!mountedRef.current || (messages === 'toast' && reportedNotice.kind === 'message')) {
         showToast(reportedNotice.message, reportedNotice.kind === 'saved' ? 'success' : reportedNotice.tone);
         return;
       }
@@ -147,7 +167,7 @@ function useOneTapNotice(): { notice: WorkoutOneTapNotice | null; report: Report
       announceQueued(reportedNotice.message);
       setNotice(reportedNotice);
     },
-    [showToast],
+    [showToast, messages],
   );
 
   // Each new notice replaces the last and restarts the clock.
