@@ -33,6 +33,7 @@ vi.mock('@react-native-async-storage/async-storage', () => ({ default: storage }
 const sync = vi.hoisted(() => ({
   account: { status: 'signed-in', userId: 'user-1' } as { status: string; userId?: string },
   accountReads: 0,
+  accountReadFails: false,
   generation: 1,
   enqueueEndedSessionWorkout: vi.fn(async () => 'queued'),
 }));
@@ -43,6 +44,7 @@ vi.mock('../../../offline/session-workout-outbox', () => ({
 vi.mock('../../../offline/offline-sync-adapter', () => ({
   readSignedInAccount: async () => {
     sync.accountReads += 1;
+    if (sync.accountReadFails) throw new Error('SecureStore unavailable');
     return sync.account;
   },
 }));
@@ -73,6 +75,7 @@ beforeEach(() => {
   resetEndedWorkoutStoreForTests();
   sync.account = { status: 'signed-in', userId: 'user-1' };
   sync.accountReads = 0;
+  sync.accountReadFails = false;
   sync.generation = 1;
   sync.enqueueEndedSessionWorkout.mockClear();
   storage.reset();
@@ -157,6 +160,23 @@ describe('WorkoutRunSessionSync', () => {
     expect(sync.enqueueEndedSessionWorkout).toHaveBeenCalledWith(
       expect.objectContaining({ sessionId: 'session-1' }),
       expect.objectContaining({ ownerUserId: 'user-1' }),
+    );
+  });
+
+  it('keeps the recap unowned when the token cannot be read, ahead or at the end', async () => {
+    sync.accountReadFails = true;
+    queueState.sessionId = 'session-1';
+    setWorkoutRun('session-1', run);
+    const { rerender } = render(<WorkoutRunSessionSync />);
+    await waitFor(() => expect(sync.accountReads).toBe(1));
+
+    queueState.sessionId = null;
+    rerender(<WorkoutRunSessionSync />);
+
+    await waitFor(() => expect(getEndedWorkout('session-1')).toMatchObject({ sessionId: 'session-1', userId: null }));
+    expect(sync.enqueueEndedSessionWorkout).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: 'session-1' }),
+      expect.objectContaining({ ownerUserId: null }),
     );
   });
 

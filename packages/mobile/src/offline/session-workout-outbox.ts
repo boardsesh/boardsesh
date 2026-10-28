@@ -181,10 +181,14 @@ async function lastCopyCovers(
   }
 }
 
-/** The account signed in now, or null while it is unknown. */
+/** The account signed in now, or null while it is unknown (a failed read included). */
 async function signedInUserId(): Promise<string | null> {
-  const account = await readSignedInAccount();
-  return account.status === 'signed-in' ? account.userId : null;
+  try {
+    const account = await readSignedInAccount();
+    return account.status === 'signed-in' ? account.userId : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
