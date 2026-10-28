@@ -222,7 +222,7 @@ climb).
   Queue, Share and Angle, a pinned preview, and **Restore defaults**. Settings → Climbs & grades → **Climb view** has
   a Mini player section with the switches only; the order changes in View options, the same rule as the player's
   buttons.
-- Defaults: Next, Previous and Mirror on; Favorite, Queue, Share and Angle off. Each switch drives a real button:
+- Defaults: Next, Previous, Mirror and Favorite on; Queue, Share and Angle off. On iPhone the one extra slot goes to Next, so Mirror and Favorite only show on iPad and the open Duo by default. Each switch drives a real button:
   - **Next / Previous**: step the list. Solo with Light on swipe on they move the climb; in a crew, or with Light on
     swipe off, they open the player on a preview, so one tap never moves the room's climb. Next at the end of a
     list opens the player.

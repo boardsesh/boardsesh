@@ -118,13 +118,16 @@ function layoutWith(order: MiniPlayerButtonId[], on: MiniPlayerButtonId[]): Mini
 }
 
 describe('resolveMiniPlayerControls', () => {
-  it('draws the defaults on a wide bar: Mirror, then ⏮ ⏭, then the bulb and the tick', () => {
-    expect(resolve({})).toEqual({ leading: ['mirror', 'previous', 'next'], trailing: ['lightbulb', 'log'] });
+  it('draws the defaults on a wide bar: Mirror and Favorite, then ⏮ ⏭, then the bulb and the tick', () => {
+    expect(resolve({})).toEqual({
+      leading: ['mirror', 'favorite', 'previous', 'next'],
+      trailing: ['lightbulb', 'log'],
+    });
   });
 
   it('leaves Mirror out where the board cannot mirror', () => {
     expect(resolve({ isAvailable: (buttonId) => buttonId !== 'mirror' })).toEqual({
-      leading: ['previous', 'next'],
+      leading: ['favorite', 'previous', 'next'],
       trailing: ['lightbulb', 'log'],
     });
   });

@@ -720,7 +720,7 @@ describe('NativeAccessoryClimbRow', () => {
       miniPlayer.isTablet = true;
       layout.width = 995;
       const { container } = renderRow('regular');
-      expect(buttons(container)).toBe('previous,next');
+      expect(buttons(container)).toBe('favorite,previous,next');
     });
 
     it('adds nothing inline or on a narrow platter', () => {
@@ -800,21 +800,21 @@ describe('NativeAccessoryClimbRow', () => {
     describe('Mirror', () => {
       const tensionBoard: BoardConfig = { boardName: 'tension', layoutId: 10, sizeId: 1, setIds: '1,2', angle: 40 };
 
-      it('is on by default on an iPad, on a board that mirrors: ⇄ · ⏮ ⏭', () => {
+      it('is on by default on an iPad, on a board that mirrors: ⇄ ♡ · ⏮ ⏭', () => {
         drawer.boardConfig = tensionBoard;
         miniPlayer.isTablet = true;
         layout.width = 995;
-        expect(buttons(renderRow('regular').container)).toBe('mirror,previous,next');
+        expect(buttons(renderRow('regular').container)).toBe('mirror,favorite,previous,next');
       });
 
       it('takes no place on Kilter, nor on the Tension layout that cannot mirror', () => {
         miniPlayer.isTablet = true;
         layout.width = 995;
         const kilter = renderRow('regular');
-        expect(buttons(kilter.container)).toBe('previous,next');
+        expect(buttons(kilter.container)).toBe('favorite,previous,next');
         kilter.unmount();
         drawer.boardConfig = { ...tensionBoard, layoutId: 11 };
-        expect(buttons(renderRow('regular').container)).toBe('previous,next');
+        expect(buttons(renderRow('regular').container)).toBe('favorite,previous,next');
       });
 
       it("claims its place in the climber's order on an iPhone", () => {
@@ -874,7 +874,7 @@ describe('NativeAccessoryClimbRow', () => {
       miniPlayer.phoneSplit = true;
       miniPlayer.paneTaken = true;
       layout.width = 800;
-      expect(buttons(renderRow('regular').container)).toBe('previous,next');
+      expect(buttons(renderRow('regular').container)).toBe('favorite,previous,next');
     });
 
     it("keeps today's bar for a climber who switched them off", () => {

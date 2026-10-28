@@ -87,7 +87,7 @@ describe('MiniPlayerButtonsPreview', () => {
 
   it('draws a wide bar with every button that is on: others, then previous and next, then the fixed pair', () => {
     const { open } = preview({ wide: true, board: TENSION });
-    expect(open).toEqual(['mirror', 'skip.previous', 'skip.next', 'lightbulb', 'tick.outline']);
+    expect(open).toEqual(['mirror', 'favorite', 'skip.previous', 'skip.next', 'lightbulb', 'tick.outline']);
   });
 
   it('leaves Mirror off a board that cannot mirror, and Angle off a fixed-angle board', () => {
@@ -96,7 +96,7 @@ describe('MiniPlayerButtonsPreview', () => {
       visible: { ...DEFAULT_MINI_PLAYER_BUTTONS.visible, angle: true },
     };
     const kilter = preview({ wide: true, buttons, board: { ...FALLBACK_PREVIEW_BOARD, angleAvailable: false } });
-    expect(kilter.open).toEqual(['skip.previous', 'skip.next', 'lightbulb', 'tick.outline']);
+    expect(kilter.open).toEqual(['favorite', 'skip.previous', 'skip.next', 'lightbulb', 'tick.outline']);
   });
 
   it("follows the climber's order for the others and keeps previous and next together", () => {
