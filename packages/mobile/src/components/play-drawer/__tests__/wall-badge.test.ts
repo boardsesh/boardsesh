@@ -15,6 +15,7 @@ const base: WallBadgeInput = {
   isAnonymous: false,
   boardHasLights: true,
   boardMismatch: false,
+  climbBoardMismatch: false,
   displayedClimbUuid: MY_CLIMB,
   committedHeadUuid: MY_CLIMB,
   wallClimbUuid: null,
@@ -44,6 +45,12 @@ describe('resolveWallBadge', () => {
     ['a preview of your own current climb reads like the current climb', { isPreview: true }, 'notOnWall'],
     // The link lights whatever is current; the server's echo can lag or never come offline.
     ['driven wall, echo not back yet', { wallDriven: true }, 'onWall'],
+    ['a reachable climb on another board stays dark', { wallDriven: true, climbBoardMismatch: true }, 'notOnWall'],
+    [
+      'a previous board echo cannot light an incompatible climb',
+      { wallDriven: true, climbBoardMismatch: true, wallClimbUuid: MY_CLIMB },
+      'notOnWall',
+    ],
     ['driven wall, but the 4 h hold keeps it dark', { wallDriven: true, currentDark: true }, 'notOnWall'],
     // Turn off all lights: the presence feed still names the climb.
     [

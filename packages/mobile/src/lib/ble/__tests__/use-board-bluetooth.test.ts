@@ -2160,6 +2160,36 @@ describe('useBoardBluetooth', () => {
     expect(result.current.isConnected).toBe(true);
   });
 
+  it('captures the saved board UUID for the direct connection and keeps it after a same-layout switch', async () => {
+    const adapter = makeFakeAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(adapter as unknown as ReturnType<typeof createBluetoothAdapter>);
+    const onConnectSuccess = vi.fn();
+    const oldUuid = '33333333-3333-4333-8333-333333333333';
+    const newUuid = '44444444-4444-4444-8444-444444444444';
+    const { result, rerender } = renderHook((props) => useBoardBluetooth(props), {
+      initialProps: {
+        boardName: 'kilter',
+        layoutId: 1,
+        sizeId: 1,
+        setIds: '1,20',
+        boardUuid: oldUuid,
+        onConnectSuccess,
+      },
+    });
+
+    await act(async () => {
+      await result.current.connect();
+    });
+    const connection = onConnectSuccess.mock.calls[0]?.[1] as BleConnectionHandle;
+    expect(connection.config.boardUuid).toBe(oldUuid);
+
+    await act(async () => {
+      rerender({ boardName: 'kilter', layoutId: 1, sizeId: 1, setIds: '1,20', boardUuid: newUuid, onConnectSuccess });
+    });
+    expect(connection.config.boardUuid).toBe(oldUuid);
+    expect(connection.setAnalyticsBoardId(41)).toBe(false);
+  });
+
   it('rejects a generation-one board id that resolves during generation two, then accepts generation two', async () => {
     const firstAdapter = makeFakeAdapter();
     const secondAdapter = makeFakeAdapter({
@@ -2457,7 +2487,11 @@ describe('useBoardBluetooth native connection adoption', () => {
     const adapter = makeAdoptableAdapter();
     vi.mocked(createBluetoothAdapter).mockReturnValue(adapter as unknown as ReturnType<typeof createBluetoothAdapter>);
 
-    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+    const boardUuid = '33333333-3333-4333-8333-333333333333';
+    const onConnectSuccess = vi.fn();
+    const { result } = renderHook(() =>
+      useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1, boardUuid, onConnectSuccess }),
+    );
 
     // Finish reconnect-memory hydration before emitting a native connection.
     await act(async () => {});
@@ -2467,6 +2501,12 @@ describe('useBoardBluetooth native connection adoption', () => {
 
     expect(adapter.adoptConnection).toHaveBeenCalledWith('native-dev');
     expect(result.current.isConnected).toBe(true);
+    expect(onConnectSuccess).toHaveBeenCalledWith(
+      '9',
+      expect.objectContaining({
+        config: expect.objectContaining({ boardUuid }),
+      }),
+    );
   });
 
   it('remembers an adopted MoonBoard by its device id (no serial)', async () => {

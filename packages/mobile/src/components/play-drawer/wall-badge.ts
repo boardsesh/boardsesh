@@ -27,6 +27,8 @@ export type WallBadgeInput = {
   boardHasLights: boolean;
   /** The switch-board overlay covers the board: it says what's wrong itself. */
   boardMismatch: boolean;
+  /** The displayed climb needs another board, even when that board is reachable at this gym. */
+  climbBoardMismatch: boolean;
   displayedClimbUuid: string | null;
   /** The climber's own committed climb (the queue head), if any. */
   committedHeadUuid: string | null;
@@ -49,6 +51,7 @@ export function resolveWallBadge({
   isAnonymous,
   boardHasLights,
   boardMismatch,
+  climbBoardMismatch,
   displayedClimbUuid,
   committedHeadUuid,
   wallClimbUuid,
@@ -58,6 +61,10 @@ export function resolveWallBadge({
   currentDark,
 }: WallBadgeInput): WallBadgeResolution {
   if (isAnonymous || !boardHasLights || boardMismatch || displayedClimbUuid === null) return null;
+  // A reachable board keeps the drawer and its navigation usable, but this
+  // board cannot light that climb. Neither a live link nor a late presence echo
+  // makes the retained artwork physically lit after a board switch.
+  if (climbBoardMismatch) return 'notOnWall';
   if (currentDark && displayedClimbUuid === committedHeadUuid) return 'notOnWall';
   if (displayedClimbUuid === wallClimbUuid) return 'onWall';
   if (isPreview && displayedClimbUuid !== committedHeadUuid) {
