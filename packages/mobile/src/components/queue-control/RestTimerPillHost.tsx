@@ -56,7 +56,7 @@ export type RestTimerPillGateInputs = {
   insideTabs: boolean;
   /** True on the regular-width JS tablet shell, where its rail replaces the tab bar. */
   usesSidebar: boolean;
-  /** `BottomChromeMetrics.restTimerPillHiddenOnRoute`: the Session tab's own page. */
+  /** `BottomChromeMetrics.restTimerPillHiddenOnRoute`: the Session page while the timer is idle. */
   hiddenOnRoute?: boolean;
 };
 

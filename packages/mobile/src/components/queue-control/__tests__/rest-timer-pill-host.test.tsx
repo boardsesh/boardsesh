@@ -101,6 +101,7 @@ vi.mock('../RestTimerSheet', () => ({
 import { fireEvent } from '@testing-library/react';
 import { armRestTimer, resetRestTimerStoreForTests } from '../../../lib/rest-timer-store';
 import { computeBottomChromeMetrics } from '../../../hooks/bottom-chrome-metrics';
+import { REST_TIMER_RESERVE } from '../../../theme/layout';
 import { RestTimerPillHost, RootRestTimerPillHost, shouldRenderRestTimerPill } from '../RestTimerPillHost';
 
 const NOW_MS = Date.parse('2026-09-11T10:00:00.000Z');
@@ -296,22 +297,47 @@ describe('the root pill gate matches the bottom-chrome reserve', () => {
     });
   }
 
-  it("reserves nothing and renders nothing on the Session tab's own page", () => {
-    const geometry = { ...baseInputs, insideTabs: true };
-    const hidden = computeBottomChromeMetrics({ ...geometry, restTimerArmed: true, restTimerPillHiddenOnRoute: true });
-    const disarmed = computeBottomChromeMetrics({ ...geometry, restTimerArmed: false });
-    expect(hidden.scrollBottomPadding).toBe(disarmed.scrollBottomPadding);
-    expect(hidden.preSessionFooterBottom).toBe(disarmed.preSessionFooterBottom);
-    expect(hidden.restTimerBottom).toBe(disarmed.restTimerBottom);
-    expect(
-      shouldRenderRestTimerPill({
-        armed: true,
-        workoutStartPending: true,
-        insideTabs: true,
-        usesSidebar: false,
-        hiddenOnRoute: hidden.restTimerPillHiddenOnRoute,
-      }),
-    ).toBe(false);
+  describe("on the Session tab's own page", () => {
+    const geometry = { ...baseInputs, insideTabs: true, restTimerIdleHiddenRoute: true };
+    const disarmed = computeBottomChromeMetrics({ ...baseInputs, insideTabs: true, restTimerArmed: false });
+    const elsewhere = computeBottomChromeMetrics({ ...baseInputs, insideTabs: true, restTimerArmed: true });
+
+    it('hides an idle timer and reserves nothing for it', () => {
+      const idle = computeBottomChromeMetrics({ ...geometry, restTimerArmed: true, restTimerCounting: false });
+      expect(idle.restTimerPillHiddenOnRoute).toBe(true);
+      expect(idle.scrollBottomPadding).toBe(disarmed.scrollBottomPadding);
+      expect(idle.preSessionFooterBottom).toBe(disarmed.preSessionFooterBottom);
+      expect(idle.restTimerBottom).toBe(disarmed.restTimerBottom);
+      expect(
+        shouldRenderRestTimerPill({
+          armed: true,
+          workoutStartPending: true,
+          insideTabs: true,
+          usesSidebar: false,
+          hiddenOnRoute: idle.restTimerPillHiddenOnRoute,
+        }),
+      ).toBe(false);
+    });
+
+    it('shows a counting timer and reserves for it, as on every other screen', () => {
+      const counting = computeBottomChromeMetrics({ ...geometry, restTimerArmed: true, restTimerCounting: true });
+      expect(counting.restTimerPillHiddenOnRoute).toBe(false);
+      expect(counting.scrollBottomPadding).toBe(elsewhere.scrollBottomPadding);
+      expect(counting.preSessionFooterBottom).toBe(disarmed.preSessionFooterBottom + REST_TIMER_RESERVE);
+      expect(
+        shouldRenderRestTimerPill({
+          armed: true,
+          insideTabs: true,
+          usesSidebar: false,
+          hiddenOnRoute: counting.restTimerPillHiddenOnRoute,
+        }),
+      ).toBe(true);
+    });
+
+    it('never hides a counting timer off the Session page', () => {
+      const offPage = computeBottomChromeMetrics({ ...baseInputs, insideTabs: true, restTimerArmed: true });
+      expect(offPage.restTimerPillHiddenOnRoute).toBe(false);
+    });
   });
 
   it('reserves nothing and renders nothing while disarmed', () => {

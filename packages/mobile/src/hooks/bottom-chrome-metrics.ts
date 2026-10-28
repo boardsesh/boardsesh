@@ -153,12 +153,19 @@ export type BottomChromeInputs = {
   /** A prepared workout uses the same pill reserve before its timer is armed. */
   workoutStartPending?: boolean;
   /**
-   * Whether the focused route hides the root rest-timer pill
-   * (`isRestTimerPillHiddenRoute`: the Session tab's own page). The pill is then
-   * not on screen, so nothing reserves for it. `false` (the default) leaves
-   * every other call site byte-identical.
+   * Whether the focused route hides the root rest-timer pill while the timer is
+   * idle (`isRestTimerPillHiddenRoute`: the Session tab's own page, which shows
+   * the timer's settings inline). `false` (the default) leaves every other call
+   * site byte-identical.
    */
-  restTimerPillHiddenOnRoute?: boolean;
+  restTimerIdleHiddenRoute?: boolean;
+  /**
+   * Whether the rest timer is counting a rest (it has something to count from:
+   * a logged climb, or the on-the-minute anchor). Idle means armed but waiting
+   * for the first climb. The Session page shows the pill again while it counts,
+   * because nothing inline there shows the running time outside a workout block.
+   */
+  restTimerCounting?: boolean;
   /**
    * The largest in-tab bottom inset measured since the bottom chrome last changed
    * shape (route, current climb, orientation), from
@@ -281,8 +288,9 @@ export type BottomChromeMetrics = {
   contentColumnLeft: number;
   contentColumnRight: number;
   /**
-   * The route-hidden input, passed through so the root pill host gates on the
-   * same value the reserve did (see `shouldRenderRestTimerPill`).
+   * Whether the focused route hides the pill right now: the Session page while
+   * the timer is idle. The root pill host gates on this same value, so the pill
+   * and its reserve come and go together (see `shouldRenderRestTimerPill`).
    */
   restTimerPillHiddenOnRoute: boolean;
 };
@@ -379,11 +387,14 @@ export function computeBottomChromeMetrics({
   restTimerArmed = false,
   tabBarAtBottom = true,
   workoutStartPending = false,
-  restTimerPillHiddenOnRoute = false,
+  restTimerIdleHiddenRoute = false,
+  restTimerCounting = false,
   expandedTabContentInsetBottom = null,
   measuredTabContentInsetLeft = null,
   measuredTabContentInsetRight = null,
 }: BottomChromeInputs): BottomChromeMetrics {
+  // The Session page keeps an idle pill off screen; a counting one comes back.
+  const restTimerPillHiddenOnRoute = restTimerIdleHiddenRoute && !restTimerCounting;
   // Regular-width iPad with the detail pane mounted: the left sidebar replaces
   // the bottom tab bar and the selected-climb pane replaces the floating queue
   // toolbar, so nothing floats at the bottom. Every offset collapses to the raw
@@ -515,9 +526,9 @@ export function computeBottomChromeMetrics({
   // off the sidebar shell (which returned above). A fixed reserve, not a
   // measured one — see REST_TIMER_RESERVE in theme/layout for why the pill is
   // not another publish-and-measure store.
-  // The Session tab's own page hides the pill (its settings sit inline there), so
-  // it reserves nothing either: a reserve without a pill is a dead band under
-  // Start.
+  // The Session tab's own page hides an idle pill (its settings sit inline
+  // there), so it reserves nothing either: a reserve without a pill is a dead
+  // band under Start. Once a rest counts, the pill and its 54pt are back.
   const restTimerShows =
     (restTimerArmed || workoutStartPending) && insideTabs && !usesSidebar && !restTimerPillHiddenOnRoute;
   const restTimerReserve = restTimerShows ? REST_TIMER_RESERVE : 0;

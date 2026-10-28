@@ -43,6 +43,9 @@ const getRestTimerArmed = () => getRestTimerState().armed;
 // Expo web renders the first pass on the server, where nothing has armed a timer
 // yet; the pill can only appear after hydration anyway.
 const getRestTimerArmedServerSnapshot = () => false;
+// Whether a rest is being counted (an anchor exists). A boolean snapshot too, so
+// the provider re-renders only when the timer goes from idle to counting or back.
+const getRestTimerCounting = () => getRestTimerState().anchorMs !== null;
 
 /**
  * Gathers the React inputs for the bottom-chrome geometry and delegates the
@@ -167,7 +170,12 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
   const restTimerArmed = useSyncExternalStore(subscribeRestTimer, getRestTimerArmed, getRestTimerArmedServerSnapshot);
   const { sessionId } = useQueueSessionId();
   const workoutStartPending = useWorkoutRunPendingStart(sessionId);
-  const restTimerPillHiddenOnRoute = isRestTimerPillHiddenRoute(segments);
+  const restTimerCounting = useSyncExternalStore(
+    subscribeRestTimer,
+    getRestTimerCounting,
+    getRestTimerArmedServerSnapshot,
+  );
+  const restTimerIdleHiddenRoute = isRestTimerPillHiddenRoute(segments);
 
   return useMemo(
     () =>
@@ -186,7 +194,8 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
         restTimerArmed,
         tabBarAtBottom,
         workoutStartPending,
-        restTimerPillHiddenOnRoute,
+        restTimerIdleHiddenRoute,
+        restTimerCounting,
         expandedTabContentInsetBottom,
         measuredTabContentInsetLeft,
         measuredTabContentInsetRight,
@@ -206,7 +215,8 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
       connectivityBannerHeight,
       restTimerArmed,
       workoutStartPending,
-      restTimerPillHiddenOnRoute,
+      restTimerIdleHiddenRoute,
+      restTimerCounting,
       expandedTabContentInsetBottom,
       measuredTabContentInsetLeft,
       measuredTabContentInsetRight,

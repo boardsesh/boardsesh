@@ -158,15 +158,17 @@ export function isAccessoryHostRoute(segments: Segments): boolean {
 const SESSION_TAB = 'record';
 
 /**
- * True on the Session tab's own page, where the root rest-timer pill is hidden.
- * That page already shows the rest timer's settings inline (and, during a
- * workout block, its countdown), so the floating pill only stacked a fourth
- * layer over the page between Start and the MiniPlayer. Pushed Session pages
- * (summary, settings, a climber's profile) keep the pill, like every other
- * screen. Hiding it is presentation only: the timer keeps running and the Live
- * Activity is driven by the timer store, not by the pill.
+ * True on the Session tab's own page, where the root rest-timer pill is hidden
+ * while the timer is IDLE (armed, waiting for the first climb). That page shows
+ * the timer's settings inline, so an idle pill only stacked a fourth layer over
+ * it between Start and the MiniPlayer. Once a rest is counting the pill comes
+ * back: outside a workout block nothing inline shows the running time. Pushed
+ * Session pages (summary, settings, a climber's profile) always keep the pill,
+ * like every other screen. Hiding it is presentation only: the timer keeps
+ * running and the Live Activity is driven by the timer store, not by the pill.
  *
- * The pill host and the bottom-chrome reserve both read this one predicate,
+ * The bottom-chrome metrics combine this with the timer's idle state into
+ * `restTimerPillHiddenOnRoute`, which both the pill host and the reserve read,
  * so a hidden pill never leaves its 54pt reserve behind.
  */
 export function isRestTimerPillHiddenRoute(segments: Segments): boolean {
