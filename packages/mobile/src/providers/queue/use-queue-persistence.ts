@@ -226,10 +226,11 @@ export function useQueuePersistence({
             if (__DEV__) {
               console.info(`[session] stored session ${storedId} ended/missing; clearing`);
             }
-            await clearStoredSessionId();
             // A workout run for it is over too (#6903): its last copy and recap
             // would otherwise wait for a session id that never comes back.
+            // Announced before any await, still under the isCurrent() check above.
             announceStoredSessionEnded(storedId);
+            await clearStoredSessionId();
             await hydrateLocalSnapshot();
             return;
           }
