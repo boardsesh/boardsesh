@@ -263,11 +263,19 @@ points:
 4. When the run is cleared for any other way out (`WorkoutRunSessionSync`): the session
    ended on another phone, the climber dropped out or was removed, or a relaunch found
    it over. `enqueueEndedSessionWorkout` sends the cleared record's last copy. After a
-   local End it holds nothing new and is skipped.
+   local End it holds nothing new and is skipped while the End's copy waits.
 
 A write whose content matches the last one queued (`sentDigest`, a digest of the
-input stored with the run) is skipped, so the End and the clear that follows it send
-one copy, not two.
+input stored with the run) is skipped only while that copy is still waiting in the
+outbox, so the End and the clear that follows it send one copy, not two. Once a copy has
+left the outbox it may have been delivered or dead-lettered (a minute of resolver
+errors can spend its retries), and the outbox cannot tell which, so the next trigger
+sends again: a repeat of a delivered copy costs one request.
+
+Nothing is queued unless the outbox is stamped for the account the write is for: the
+signed-in account for a live write, the account the run was cleared under for the last
+one. A write that lost a lock to sign-out's wipe and retried after it would otherwise
+land in the next account's outbox.
 
 Each write carries the whole workout: the plan built from the run and its captured
 climbs (`buildSessionWorkoutPlan`, which leaves out an item with no captured climb, keeps
@@ -279,8 +287,10 @@ Postgres integer and keeps climbing after an OTA rollback rewrote the record wit
 The idempotency key is `session_workout:<sessionId>:<revision>`. Queuing a write first
 drops the session's waiting copies with a lower revision, and queues nothing when one with
 the same or a higher revision is still waiting, so two writes whose transactions run out
-of order never leave the older one last. A workout row's retry budget is 3, not the
-outbox's 10: a newer write replaces it anyway.
+of order never leave the older one last. A lower revision left dead-lettered goes too:
+the newer copy replaces it. Workout rows keep the outbox's 10 retries; one drain cycle
+tries up to 7 times within about a minute, so a smaller budget would dead-letter the End
+copy on one bad minute.
 
 Order matters. The server keeps a tick-map entry only when the tick is already one of the
 climber's ticks in the session, and the outbox drains first in, first out, so a write
@@ -295,7 +305,7 @@ build without the engine) the write goes straight to the server, best effort.
 **After an OTA rollback across this change**, with a workout write still queued, the
 older bundle cannot dispatch the row: it throws `Unknown table`, which its drainer
 classes as retryable. The row is at the head of the outbox, so every write behind it,
-ticks included, waits while it spends its 3 retries; then it dead-letters and shows in
+ticks included, waits while it spends its 10 retries (about two drain cycles); then it dead-letters and shows in
 Sync issues, and until then sign-out counts it as unsent. An older bundle cannot be
 taught to skip it. The workout stays off the server until a newer bundle writes again.
 
@@ -319,8 +329,8 @@ summary shows "Still saving N ticks" from the outbox count
 (`countPendingSessionWrites`). Detail groups its Climbs list with `assignWorkoutTicks`,
 the rule web uses.
 
-A recap counts only for the account it was kept for (`userId`, stamped when the run was
-cleared), so a shared phone never shows one climber's workout as another's. A tick
+A recap counts only for the account it was kept for (`userId`, from the stored token
+when the run was cleared, never the profile query a relaunch may not have loaded yet), so a shared phone never shows one climber's workout as another's. A tick
 deleted from the logbook leaves the run's tick log and every recap, so the phone's
 tallies and "still saving" stop counting it.
 

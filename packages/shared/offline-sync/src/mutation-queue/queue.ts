@@ -50,13 +50,6 @@ export type EnqueueOptions = {
    * inherits the favorites/follows blind spot the moment it dead-letters.
    */
   reviveDeadLetter?: boolean;
-  /**
-   * The row's retry budget, when it should differ from the table default (10).
-   * Every bundle's drainer reads `max_retries` off the row, so a row that an
-   * older bundle cannot dispatch (a table it does not know, which it treats as
-   * retryable) holds the rows behind it for this many attempts at most.
-   */
-  maxRetries?: number;
 };
 
 export async function enqueue(
@@ -68,18 +61,11 @@ export async function enqueue(
   options: EnqueueOptions = {},
 ): Promise<EnqueueResult> {
   const serializedPayload = JSON.stringify(payload);
-  const result =
-    options.maxRetries === undefined
-      ? await db.runAsync(
-          `INSERT OR IGNORE INTO pending_mutations (table_name, operation, payload, idempotency_key)
+  const result = await db.runAsync(
+    `INSERT OR IGNORE INTO pending_mutations (table_name, operation, payload, idempotency_key)
      VALUES (?, ?, ?, ?)`,
-          [tableName, operation, serializedPayload, idempotencyKey],
-        )
-      : await db.runAsync(
-          `INSERT OR IGNORE INTO pending_mutations (table_name, operation, payload, idempotency_key, max_retries)
-     VALUES (?, ?, ?, ?, ?)`,
-          [tableName, operation, serializedPayload, idempotencyKey, options.maxRetries],
-        );
+    [tableName, operation, serializedPayload, idempotencyKey],
+  );
   // Anything other than an explicit `changes: 0` counts as inserted. A driver
   // (or test double) that doesn't report `changes` degrades to losing the
   // suppression signal rather than inventing a data-loss report for every write.
@@ -240,13 +226,14 @@ export async function countPendingSessionWrites(db: SqlExecutor, sessionId: stri
 
 /**
  * Make room for a workout write for `sessionId` at `revision` (#6903): drop
- * the session's waiting writes with a LOWER revision (each write carries the
- * whole workout, so the newest is all the server needs) and say whether one at
- * this revision or higher is still waiting, in which case the caller queues
- * nothing. Two writes whose transactions run out of order therefore never
- * leave the older one in the outbox last. A row being sent stays `pending`
- * until it is marked completed; deleting it then only makes that DELETE a
- * no-op. Dead letters are left for Sync issues.
+ * the session's writes with a LOWER revision, waiting or dead-lettered (each
+ * write carries the whole workout, so the newest is all the server needs, and
+ * an older copy left in Sync issues would only offer a Retry that does
+ * nothing), and say whether one at this revision or higher is still waiting,
+ * in which case the caller queues nothing. Two writes whose transactions run
+ * out of order therefore never leave the older one in the outbox last. A row
+ * being sent stays `pending` until it is marked completed; deleting it then
+ * only makes that DELETE a no-op.
  */
 export async function supersedePendingSessionWorkouts(
   db: SqlExecutor,
@@ -255,7 +242,7 @@ export async function supersedePendingSessionWorkouts(
 ): Promise<{ newerPending: boolean }> {
   await db.runAsync(
     `DELETE FROM pending_mutations
-     WHERE table_name = 'session_workouts' AND status = 'pending'
+     WHERE table_name = 'session_workouts' AND status IN ('pending', 'dead_letter')
        AND json_extract(payload, '$.sessionId') = ?
        AND CAST(json_extract(payload, '$.revision') AS INTEGER) < ?`,
     [sessionId, revision],
@@ -269,6 +256,15 @@ export async function supersedePendingSessionWorkouts(
     [sessionId, revision],
   );
   return { newerPending: newer != null };
+}
+
+/** Whether the row with `idempotencyKey` is still waiting to be sent (in flight included). */
+export async function isMutationPending(db: SqlExecutor, idempotencyKey: string): Promise<boolean> {
+  const row = await db.getFirstAsync<{ found: number }>(
+    `SELECT 1 AS found FROM pending_mutations WHERE idempotency_key = ? AND status = 'pending' LIMIT 1`,
+    [idempotencyKey],
+  );
+  return row != null;
 }
 
 export async function getPendingCount(db: SqlExecutor): Promise<number> {

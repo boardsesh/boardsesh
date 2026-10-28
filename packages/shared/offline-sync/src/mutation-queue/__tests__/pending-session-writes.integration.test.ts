@@ -2,7 +2,13 @@
 // against the real pending_mutations DDL.
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { countPendingSessionWrites, enqueue, markDeadLetter, supersedePendingSessionWorkouts } from '../queue';
+import {
+  countPendingSessionWrites,
+  enqueue,
+  isMutationPending,
+  markDeadLetter,
+  supersedePendingSessionWorkouts,
+} from '../queue';
 import { ensureMutationQueueTable } from '../schema';
 import { createTestDatabase, type TestSqliteDb } from '../../testing/sqlite-test-db';
 
@@ -53,16 +59,19 @@ describe('supersedePendingSessionWorkouts', () => {
     return rows.map((row) => row.idempotency_key);
   }
 
-  it("drops only that session's waiting lower revisions, never a tick or a dead letter", async () => {
+  it("drops only that session's lower revisions (waiting or dead), never a tick or a higher dead letter", async () => {
     await enqueue(db, 'boardsesh_ticks', 'create', tick('session-1'), 'tick-1');
     await enqueue(db, 'session_workouts', 'create', workout('session-1', 1), 'workout-1');
     await enqueue(db, 'session_workouts', 'create', workout('session-1', 2), 'workout-2');
     await markDeadLetter(db, await idOf('workout-2'), 'FORBIDDEN');
     await enqueue(db, 'session_workouts', 'create', workout('session-2', 1), 'workout-3');
+    await enqueue(db, 'session_workouts', 'create', workout('session-1', 9), 'workout-9');
+    await markDeadLetter(db, await idOf('workout-9'), 'FORBIDDEN');
 
     expect(await supersedePendingSessionWorkouts(db, 'session-1', 3)).toEqual({ newerPending: false });
 
-    expect(await keys()).toEqual(['tick-1', 'workout-2', 'workout-3']);
+    // The higher dead letter is not this write's to clear.
+    expect(await keys()).toEqual(['tick-1', 'workout-3', 'workout-9']);
   });
 
   it('keeps a newer waiting write and says so, when an older one comes in after it', async () => {
@@ -73,16 +82,12 @@ describe('supersedePendingSessionWorkouts', () => {
   });
 });
 
-describe('enqueue maxRetries', () => {
-  it('stores the retry budget given, and the table default otherwise', async () => {
-    await enqueue(db, 'session_workouts', 'create', workout('session-1', 1), 'workout-1', { maxRetries: 3 });
-    await enqueue(db, 'boardsesh_ticks', 'create', tick('session-1'), 'tick-1');
-    const rows = await db.getAllAsync<{ idempotency_key: string; max_retries: number }>(
-      'SELECT idempotency_key, max_retries FROM pending_mutations ORDER BY id',
-    );
-    expect(rows).toEqual([
-      { idempotency_key: 'workout-1', max_retries: 3 },
-      { idempotency_key: 'tick-1', max_retries: 10 },
-    ]);
+describe('isMutationPending', () => {
+  it('is true only while the row waits to be sent', async () => {
+    expect(await isMutationPending(db, 'workout-1')).toBe(false);
+    await enqueue(db, 'session_workouts', 'create', workout('session-1', 1), 'workout-1');
+    expect(await isMutationPending(db, 'workout-1')).toBe(true);
+    await markDeadLetter(db, await idOf('workout-1'), 'INTERNAL_SERVER_ERROR');
+    expect(await isMutationPending(db, 'workout-1')).toBe(false);
   });
 });
