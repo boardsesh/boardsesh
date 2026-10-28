@@ -850,7 +850,7 @@ export function LogbookTab({
             </View>
           ) : offline.isBlocked && offline.reason ? (
             <View style={[styles.centered, { paddingTop: scrollHeaderInset }]}>
-              <OfflineState reason={offline.reason} onRetry={handleRetry} />
+              <OfflineState reason={offline.reason} errorTitle={t('mobile.logbook.errorTitle')} onRetry={handleRetry} />
             </View>
           ) : feed.isPending ? (
             <View style={[styles.centered, { paddingTop: scrollHeaderInset }]}>

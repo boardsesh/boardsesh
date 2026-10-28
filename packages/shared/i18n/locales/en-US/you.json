@@ -262,6 +262,10 @@
       "moonboardBody": "Bring your MoonBoard history over by requesting your data from MoonBoard, then importing the file here.",
       "moonboardCta": "Import my MoonBoard logbook",
       "dismiss": "Not now"
+    },
+    "loadError": {
+      "sessions": "Couldn't load your sessions",
+      "progress": "Couldn't load your progress"
     }
   }
 }

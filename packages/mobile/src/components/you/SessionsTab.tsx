@@ -259,7 +259,11 @@ export function SessionsTab({ userId, topInset = 0, scrollEdge }: SessionsTabPro
   if (offline.isBlocked && offline.reason) {
     return (
       <View style={[styles.centered, { paddingTop: topInset }]}>
-        <OfflineState reason={offline.reason} onRetry={() => void feed.refetch()} />
+        <OfflineState
+          reason={offline.reason}
+          errorTitle={t('mobile.loadError.sessions')}
+          onRetry={() => void feed.refetch()}
+        />
       </View>
     );
   }

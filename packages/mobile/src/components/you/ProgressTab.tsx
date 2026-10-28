@@ -396,7 +396,11 @@ export const ProgressTab = memo(function ProgressTab({
   if (data.offline.isBlocked && data.offline.reason) {
     return (
       <View style={[styles.centered, { paddingTop: topInset }]}>
-        <OfflineState reason={data.offline.reason} onRetry={data.refetch} />
+        <OfflineState
+          reason={data.offline.reason}
+          errorTitle={tYou('mobile.loadError.progress')}
+          onRetry={data.refetch}
+        />
       </View>
     );
   }

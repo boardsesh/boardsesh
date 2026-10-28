@@ -983,7 +983,14 @@ export default function PlaylistDetail() {
     return (
       <View style={styles.stateContainer}>
         <PlaylistStateHeader />
-        <OfflineState reason={metadataOffline.reason} />
+        <OfflineState
+          reason={metadataOffline.reason}
+          onRetry={() => {
+            // They usually fail together; retrying only the header would land on the climbs placard next.
+            void refetchMeta();
+            void query.refetch();
+          }}
+        />
       </View>
     );
   }
@@ -1054,7 +1061,7 @@ export default function PlaylistDetail() {
         isLoading={query.isLoading && !climbsOffline.isBlocked}
         unavailableContent={
           climbsOffline.isBlocked && climbsOffline.reason && climbsOffline.reason !== 'error' ? (
-            <OfflineState reason={climbsOffline.reason} />
+            <OfflineState reason={climbsOffline.reason} onRetry={() => void query.refetch()} />
           ) : undefined
         }
         // Pagination is paused while editing the loaded window.

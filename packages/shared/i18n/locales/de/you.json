@@ -262,6 +262,10 @@
       "moonboardBody": "Fordere deine Daten bei MoonBoard an und importier die Datei hier, um dein Routenbuch zu übertragen.",
       "moonboardCta": "Mein MoonBoard-Routenbuch importieren",
       "dismiss": "Jetzt nicht"
+    },
+    "loadError": {
+      "sessions": "Deine Sessions konnten nicht geladen werden",
+      "progress": "Dein Fortschritt konnte nicht geladen werden"
     }
   }
 }

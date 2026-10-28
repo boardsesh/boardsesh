@@ -262,6 +262,10 @@
       "moonboardBody": "Demandez vos données à MoonBoard, puis importez le fichier ici pour récupérer votre carnet.",
       "moonboardCta": "Importer mon carnet MoonBoard",
       "dismiss": "Pas maintenant"
+    },
+    "loadError": {
+      "sessions": "Impossible de charger tes sessions",
+      "progress": "Impossible de charger ta progression"
     }
   }
 }
