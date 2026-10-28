@@ -83,6 +83,7 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
         signedIn,
         isDraft: false,
         angleAdjustable: board.angleAvailable,
+        playerRouteUp: false,
       });
     return (slotCount: number): MiniPlayerControls =>
       resolveMiniPlayerControls({

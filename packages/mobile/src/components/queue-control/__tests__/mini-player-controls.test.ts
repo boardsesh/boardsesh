@@ -273,7 +273,14 @@ describe('miniPlayerPaneCoveredButtons', () => {
 });
 
 describe('isMiniPlayerButtonAvailable', () => {
-  const everything = { transport: true, mirror: true, signedIn: true, isDraft: false, angleAdjustable: true };
+  const everything = {
+    transport: true,
+    mirror: true,
+    signedIn: true,
+    isDraft: false,
+    angleAdjustable: true,
+    playerRouteUp: false,
+  };
   const ids = ['next', 'previous', 'mirror', 'favorite', 'queue', 'share', 'angle'] as const;
 
   it('offers every button on a mirroring, adjustable board for a signed-in climber', () => {
@@ -290,6 +297,13 @@ describe('isMiniPlayerButtonAvailable', () => {
   it('drops Mirror on a board that cannot mirror and Angle on a fixed-angle board', () => {
     expect(isMiniPlayerButtonAvailable('mirror', { ...everything, mirror: false })).toBe(false);
     expect(isMiniPlayerButtonAvailable('angle', { ...everything, angleAdjustable: false })).toBe(false);
+  });
+
+  it('drops Angle while the player route is up, and nothing else', () => {
+    const state = { ...everything, playerRouteUp: true };
+    expect(isMiniPlayerButtonAvailable('angle', state)).toBe(false);
+    expect(isMiniPlayerButtonAvailable('mirror', state)).toBe(true);
+    expect(isMiniPlayerButtonAvailable('favorite', state)).toBe(true);
   });
 
   it('drops Favorite and Queue when signed out, and Share on a draft', () => {

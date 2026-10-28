@@ -97,16 +97,19 @@ export type MiniPlayerAvailability = {
   signedIn: boolean;
   isDraft: boolean;
   angleAdjustable: boolean;
+  /** The `/play` route is up: the host's angle sheet would present behind it, so the bar has no Angle (the player has its own). */
+  playerRouteUp: boolean;
 };
 
 /**
  * Whether a button can take a place on the bar right now. Mirror only on a
  * board that mirrors; Favorite and Queue need an account; a draft has no link
- * to share; a fixed-angle board has no angle to change.
+ * to share; a fixed-angle board has no angle to change, and neither does the bar while
+ * the player route is up.
  */
 export function isMiniPlayerButtonAvailable(
   buttonId: MiniPlayerButtonId,
-  { transport, mirror, signedIn, isDraft, angleAdjustable }: MiniPlayerAvailability,
+  { transport, mirror, signedIn, isDraft, angleAdjustable, playerRouteUp }: MiniPlayerAvailability,
 ): boolean {
   switch (buttonId) {
     case 'previous':
@@ -120,7 +123,7 @@ export function isMiniPlayerButtonAvailable(
     case 'share':
       return !isDraft;
     case 'angle':
-      return angleAdjustable;
+      return angleAdjustable && !playerRouteUp;
   }
 }
 

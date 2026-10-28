@@ -181,10 +181,8 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
       })
     : null;
   const angleAdjustable = playerAngle !== null;
-  // Not while the `/play` route is up: the host's angle sheet presents from the
-  // app's root, so it would land behind that modal (the player has its own).
+  // `isMiniPlayerButtonAvailable` drops Angle while the `/play` route is up.
   const playerRouteUp = isPlayerRoute(useSegments());
-  const angleOnBar = angleAdjustable && !playerRouteUp;
   const playerBoardName = playDrawerPaneProps?.boardConfig.boardName ?? null;
   const playerLayoutId = playDrawerPaneProps?.boardConfig.layoutId ?? null;
   const paneTaken = usePhoneSplitPaneTaken();
@@ -254,9 +252,10 @@ export function NativeAccessoryClimbRow({ climb, placement, testID }: NativeAcce
         mirror: supportsMirroring,
         signedIn: isAuthenticated,
         isDraft,
-        angleAdjustable: angleOnBar,
+        angleAdjustable,
+        playerRouteUp,
       }),
-    [transportAvailable, supportsMirroring, isAuthenticated, isDraft, angleOnBar],
+    [transportAvailable, supportsMirroring, isAuthenticated, isDraft, angleAdjustable, playerRouteUp],
   );
   const paneCoveredButtons = useMemo(
     () =>
