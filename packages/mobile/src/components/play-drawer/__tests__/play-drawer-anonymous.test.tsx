@@ -1713,9 +1713,6 @@ describe('PlayDrawer — reading the wall', () => {
     ble.current = {
       isConnected: true,
       sendFramesToBoard: vi.fn(async () => true),
-      getMirrorIntent: vi.fn(),
-      setMirrorIntent: vi.fn(),
-      retainMirrorIntentFor: vi.fn(),
     };
   };
 
