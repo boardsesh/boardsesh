@@ -21,7 +21,14 @@ import {
   workoutTallyParts,
   type WorkoutTranslate,
 } from '@boardsesh/workout-summary';
-import type { WorkoutClimbView, WorkoutHeadlineView, WorkoutStageTally, WorkoutStageView } from './types';
+import type { SessionSummary } from '@boardsesh/shared-schema';
+import type {
+  SessionWorkoutView,
+  WorkoutClimbView,
+  WorkoutHeadlineView,
+  WorkoutStageTally,
+  WorkoutStageView,
+} from './types';
 
 export { plannedReps, sentReps, workoutBlockName, workoutClimbOutcome, workoutGradeSpan, workoutRepBar };
 
@@ -118,4 +125,31 @@ export function workoutTotals(stages: readonly WorkoutStageView[]): { sent: numb
     attempts += stage.tally.attempts;
   }
   return { sent, attempts };
+}
+
+/**
+ * The summary hero's number on a workout session. When the blocks drawn are
+ * this phone's own (`fromPhone`: its run, because the server is behind), the
+ * number is theirs too, labelled as this phone's, so a server zero never sits
+ * next to the phone's blocks. Otherwise the server's totals, unless this phone
+ * still holds ticks that would add to them.
+ */
+export function workoutFeatured(
+  summary: Pick<SessionSummary, 'totalSends' | 'totalAttempts'>,
+  workout: Pick<SessionWorkoutView, 'stages'>,
+  pendingTicks: number,
+  fromPhone: boolean,
+  t: WorkoutTranslate,
+): { value: number; label: string } {
+  const phone = workoutTotals(workout.stages);
+  const usePhone =
+    fromPhone || (pendingTicks > 0 && phone.sent + phone.attempts > summary.totalSends + summary.totalAttempts);
+  if (usePhone) {
+    return phone.sent > 0
+      ? { value: phone.sent, label: t('summary.featuredPhoneSendsLabel', { count: phone.sent }) }
+      : { value: phone.attempts, label: t('summary.featuredPhoneAttemptsLabel', { count: phone.attempts }) };
+  }
+  return summary.totalSends > 0
+    ? { value: summary.totalSends, label: t('summary.featuredSendsLabel', { count: summary.totalSends }) }
+    : { value: summary.totalAttempts, label: t('summary.featuredAttemptsLabel', { count: summary.totalAttempts }) };
 }
