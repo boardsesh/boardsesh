@@ -12,6 +12,11 @@ manual changes). See docs/mobile-ota-updates.md.
   Reconnect to compatible MoonBoard controllers that advertise a serial number.
 - Share your gym with the crew by link while keeping it out of search and maps. ([#6985](https://github.com/boardsesh/boardsesh/pull/6985))
 
+### Fixed
+
+- Selected tabs and violet links are easier to read in dark mode on Android ([#6988](https://github.com/boardsesh/boardsesh/pull/6988))
+- Your profile picture in the top bar is a proper circle again on Android ([#6987](https://github.com/boardsesh/boardsesh/pull/6987))
+
 ## 2026-10-27
 
 ### App update

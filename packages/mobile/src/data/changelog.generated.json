@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-10-28T05:48:40.646Z",
+  "generatedAt": "2026-10-28T07:15:36.165Z",
   "entries": [
+    {
+      "prNumber": 6988,
+      "category": "fixed",
+      "title": "Selected tabs and violet links are easier to read in dark mode on Android",
+      "mergedAt": "2026-10-28T07:06:32Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6988"
+    },
+    {
+      "prNumber": 6987,
+      "category": "fixed",
+      "title": "Your profile picture in the top bar is a proper circle again on Android",
+      "mergedAt": "2026-10-28T07:06:23Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6987"
+    },
     {
       "prNumber": 6989,
       "category": "new",
