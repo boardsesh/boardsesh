@@ -15,6 +15,7 @@ import {
   type ActiveBoardForCompatibility,
 } from '@boardsesh/board-config';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { parseSerialNumber } from '@boardsesh/ble-protocol';
 import { useBoardPresenceCurrent } from '@boardsesh/board-presence-react';
 import type { BoardPresenceClimb, ClimbQueueItemInput } from '@boardsesh/shared-schema';
 import { emitWallConfirm } from '@boardsesh/play-view';
@@ -37,7 +38,12 @@ import {
   type StaleCurrentHoldReleaseReason,
 } from '../lib/ble/stale-current-hold';
 import { nowMs } from '../lib/clock';
-import { useResolvedBleDeviceBoards } from '../lib/ble/resolve-serials';
+import {
+  resolveBleSerialNumbers,
+  useResolvedBleDeviceBoards,
+  type ResolvedBoardEntry,
+} from '../lib/ble/resolve-serials';
+import { advertisedBoardTypesBySerial } from '../lib/ble/advertised-board-type';
 import { classifyBleDisconnect } from '../lib/ble/disconnect-category';
 import {
   decideBlePickerSelection,
@@ -49,6 +55,7 @@ import { getAndroidLocationPermissionState } from '../lib/ble/android-location-p
 import { trackBoardConnectTapped } from '../lib/analytics-board-connect';
 import { useSetActiveBoard } from '../lib/graphql/use-active-board';
 import { getHttpClient } from '../lib/graphql/client';
+import { getCredentialGeneration } from '../lib/privacy/privacy-cache';
 import { GET_BOARD, GET_PROFILE } from '../lib/graphql/operations';
 import type { GetBoardQueryResponse, GetProfileQueryResponse } from '../lib/graphql/operations';
 import { getBoardRenderData } from '../lib/board-details';
@@ -219,6 +226,13 @@ const EMPTY_PICKER_DEVICES: [] = [];
 // How long a switch-to-config auto-connect request stays armed waiting for the
 // switched board's props to reach this provider before it is dropped.
 const PENDING_AUTO_CONNECT_TTL_MS = 15_000;
+// A tap can beat the background serial lookup. Give that controller one bounded
+// lookup before connecting with the current wall's geometry.
+const PICKER_SELECTION_LOOKUP_TIMEOUT_MS = 3_000;
+type PickerSelectionIntent = {
+  isCurrent: () => boolean;
+  isPickerCurrent: () => boolean;
+};
 const UNDO_WALL_CHANGE_TOAST_ARM_TTL_MS = 10_000;
 // Stand-in for the physical write's latency on a wall with no lights. The
 // auto-sender's drain loop only coalesces while a commit is in flight, so
@@ -1728,6 +1742,7 @@ export function BluetoothProvider({
   resolvedPickerBoardsRef.current = resolvedPickerBoards;
   const currentBoardConfigRef = useRef(currentBoardConfig);
   currentBoardConfigRef.current = currentBoardConfig;
+  const pickerSelectionGenerationRef = useRef(0);
 
   // Track how often the picker's serial→board resolution actually pays off:
   // keep the tallies fresh while the sheet is open (devices and resolutions
@@ -1877,7 +1892,8 @@ export function BluetoothProvider({
   }, [boardName, layoutId, sizeId, setIds, boardUuid]);
 
   const handleMismatchSwitch = useCallback(
-    async (decision: Extract<PickerSelectionDecision, { kind: 'mismatch' }>) => {
+    async (decision: Extract<PickerSelectionDecision, { kind: 'mismatch' }>, intent: PickerSelectionIntent) => {
+      if (!intent.isCurrent()) return;
       const armUndoToastAfterSwitch = undoWallChangeToastArmIdRef.current !== null;
       try {
         let board: UserBoard;
@@ -1896,7 +1912,12 @@ export function BluetoothProvider({
           }
           board = response.board;
         }
-        await setActiveBoard(board);
+        if (!intent.isCurrent()) return;
+        const accepted = await setActiveBoard(board, intent.isCurrent);
+        // A rejected/superseded storage intent must not cancel this picker or
+        // connect later. The successful write itself may have changed the
+        // board props, so only the picker/auth intent is checked afterward.
+        if (!accepted || !intent.isPickerCurrent()) return;
         // Only cancel the picker once the switch actually went through: a failed
         // board fetch above leaves the picker open so the user can still pick a
         // device or use Connect anyway. The cancel rejects the old connect's
@@ -1913,6 +1934,7 @@ export function BluetoothProvider({
           armUndoToast: armUndoToastAfterSwitch,
         });
       } catch (error) {
+        if (!intent.isPickerCurrent()) return;
         console.error('Failed to switch to correct board config:', error);
         reportHandledError(error, { tags: { source: 'board-config', op: 'switch' } });
         track(SHARED_EVENTS.BleBoardConfigMismatchResolved, {
@@ -1937,84 +1959,155 @@ export function BluetoothProvider({
       const activePickerState = pickerStateRef.current;
       if (!activePickerState) return;
       const activeBoardConfig = currentBoardConfigRef.current;
-      const decision = decideBlePickerSelection({
-        deviceId,
-        devices: activePickerState.devices,
-        resolvedBoards: resolvedPickerBoardsRef.current,
-        currentBoardConfig: activeBoardConfig,
-      });
-      if (decision.kind === 'forward') {
-        activePickerState.handleSelect(deviceId);
+      const selectionGeneration = ++pickerSelectionGenerationRef.current;
+      const credentialGeneration = getCredentialGeneration();
+      const selectedDevice = activePickerState.devices.find((device) => device.deviceId === deviceId);
+      const selectedSerial = selectedDevice ? parseSerialNumber(selectedDevice.name) : undefined;
+      const advertisedTypes = advertisedBoardTypesBySerial(selectedDevice ? [selectedDevice] : []);
+      const selectedBoardType = selectedSerial ? advertisedTypes.get(selectedSerial) : undefined;
+      const existingEntry = selectedSerial ? resolvedPickerBoardsRef.current.get(selectedSerial) : undefined;
+      const isPickerCurrent = () => {
+        const currentPicker = pickerStateRef.current;
+        return (
+          !providerUnmountingRef.current &&
+          selectionGeneration === pickerSelectionGenerationRef.current &&
+          credentialGeneration === getCredentialGeneration() &&
+          currentPicker?.sessionId === activePickerState.sessionId &&
+          currentPicker.handleSelect === activePickerState.handleSelect &&
+          !currentPicker.closing
+        );
+      };
+      const isCurrent = () => {
+        if (!isPickerCurrent() || currentBoardConfigRef.current !== activeBoardConfig) return false;
+        const currentDevice = pickerStateRef.current?.devices.find((device) => device.deviceId === deviceId);
+        return (
+          currentDevice !== undefined &&
+          parseSerialNumber(currentDevice.name) === selectedSerial &&
+          (selectedSerial ? advertisedBoardTypesBySerial([currentDevice]).get(selectedSerial) : undefined) ===
+            selectedBoardType
+        );
+      };
+      const intent = { isCurrent, isPickerCurrent };
+      const completeSelection = (freshEntry?: ResolvedBoardEntry) => {
+        if (!isCurrent()) return;
+        const resolvedBoards = new Map(resolvedPickerBoardsRef.current);
+        // Preserve an already-known recorded/private-geometry mismatch when a
+        // refresh is empty or offline instead of silently connecting through it.
+        const selectedEntry =
+          freshEntry ?? (selectedSerial ? resolvedBoards.get(selectedSerial) : undefined) ?? existingEntry;
+        if (selectedSerial && selectedEntry) resolvedBoards.set(selectedSerial, selectedEntry);
+        const decision = decideBlePickerSelection({
+          deviceId,
+          devices: activePickerState.devices,
+          resolvedBoards,
+          currentBoardConfig: activeBoardConfig,
+        });
+        if (decision.kind === 'forward') {
+          activePickerState.handleSelect(deviceId);
+          return;
+        }
+
+        const currentLabel = activeBoardConfig
+          ? formatPickerBoardConfig(t, activeBoardConfig)
+          : t('boardConfigMismatch.mobileUnknownConfig');
+        const recordedLabel = formatPickerBoardConfig(t, decision.config);
+        const differentSavedBoard = Boolean(
+          activeBoardConfig?.boardUuid &&
+          decision.config.boardUuid &&
+          activeBoardConfig.boardUuid !== decision.config.boardUuid,
+        );
+        const mismatchWarning = differentSavedBoard
+          ? decision.entry.kind === 'saved' && decision.entry.board.name.trim().length > 0
+            ? t('boardConfigMismatch.mobileDifferentBoardNamedWarning', { name: decision.entry.board.name })
+            : t('boardConfigMismatch.mobileDifferentBoardWarning')
+          : t('boardConfigMismatch.mobileConnectAnywayWarning');
+        const canSwitch =
+          decision.entry.kind === 'saved' ||
+          (decision.entry.kind === 'recorded' && decision.entry.config.boardUuid != null);
+
+        const mismatchAnalytics = {
+          serial: decision.serial,
+          currentBoardName: activeBoardConfig?.boardName,
+          currentLayoutId: activeBoardConfig?.layoutId,
+          recordedBoardName: decision.config.boardName,
+          recordedLayoutId: decision.config.layoutId,
+          recordedEntryKind: decision.entry.kind,
+          canSwitch,
+        };
+        track(SHARED_EVENTS.BleBoardConfigMismatchShown, mismatchAnalytics);
+        const trackResolved = (action: 'cancel' | 'connect_anyway' | 'switch_setup') =>
+          track(SHARED_EVENTS.BleBoardConfigMismatchResolved, { ...mismatchAnalytics, action });
+
+        // "Connect anyway" is a warning, not a destructive action — connecting to a
+        // working board the user owns isn't dangerous, just possibly mis-mapped.
+        const buttons = [
+          {
+            text: t('boardConfigMismatch.cancel'),
+            style: 'cancel' as const,
+            onPress: () => {
+              if (isCurrent()) trackResolved('cancel');
+            },
+          },
+          {
+            text: t('boardConfigMismatch.mobileConnectAnyway'),
+            onPress: () => {
+              if (!isCurrent()) return;
+              trackResolved('connect_anyway');
+              connectedViaMismatchOverrideRef.current = true;
+              activePickerState.handleSelect(deviceId);
+            },
+          },
+          ...(canSwitch
+            ? [
+                {
+                  text:
+                    decision.entry.kind === 'saved'
+                      ? t('boardConfigMismatch.mobileSwitchSetup')
+                      : t('boardConfigMismatch.mobileUseRecordedSetup'),
+                  onPress: () => {
+                    if (!isCurrent()) return;
+                    trackResolved('switch_setup');
+                    void handleMismatchSwitch(decision, intent);
+                  },
+                },
+              ]
+            : []),
+        ];
+        Alert.alert(
+          differentSavedBoard ? t('boardConfigMismatch.mobileDifferentBoardTitle') : t('boardConfigMismatch.title'),
+          [
+            mismatchWarning,
+            t('boardConfigMismatch.mobileCurrentLabel', { config: currentLabel }),
+            t('boardConfigMismatch.mobileRecordedLabel', { config: recordedLabel }),
+          ].join('\n\n'),
+          buttons,
+        );
+      };
+
+      // Already-identified saved boards keep the synchronous path. A missing,
+      // recorded, or geometry-only row gets a fresh lookup for this exact
+      // advertised type/serial before any physical connection can start.
+      if (!selectedSerial || !selectedBoardType || (existingEntry?.kind === 'saved' && existingEntry.board.uuid)) {
+        completeSelection();
         return;
       }
-
-      const currentLabel = activeBoardConfig
-        ? formatPickerBoardConfig(t, activeBoardConfig)
-        : t('boardConfigMismatch.mobileUnknownConfig');
-      const recordedLabel = formatPickerBoardConfig(t, decision.config);
-      const differentSavedBoard = Boolean(
-        activeBoardConfig?.boardUuid &&
-        decision.config.boardUuid &&
-        activeBoardConfig.boardUuid !== decision.config.boardUuid,
-      );
-      const mismatchWarning = differentSavedBoard
-        ? decision.entry.kind === 'saved' && decision.entry.board.name.trim().length > 0
-          ? t('boardConfigMismatch.mobileDifferentBoardNamedWarning', { name: decision.entry.board.name })
-          : t('boardConfigMismatch.mobileDifferentBoardWarning')
-        : t('boardConfigMismatch.mobileConnectAnywayWarning');
-      const canSwitch =
-        decision.entry.kind === 'saved' ||
-        (decision.entry.kind === 'recorded' && decision.entry.config.boardUuid != null);
-
-      const mismatchAnalytics = {
-        serial: decision.serial,
-        currentBoardName: activeBoardConfig?.boardName,
-        currentLayoutId: activeBoardConfig?.layoutId,
-        recordedBoardName: decision.config.boardName,
-        recordedLayoutId: decision.config.layoutId,
-        recordedEntryKind: decision.entry.kind,
-        canSwitch,
-      };
-      track(SHARED_EVENTS.BleBoardConfigMismatchShown, mismatchAnalytics);
-      const trackResolved = (action: 'cancel' | 'connect_anyway' | 'switch_setup') =>
-        track(SHARED_EVENTS.BleBoardConfigMismatchResolved, { ...mismatchAnalytics, action });
-
-      // "Connect anyway" is a warning, not a destructive action — connecting to a
-      // working board the user owns isn't dangerous, just possibly mis-mapped.
-      const buttons = [
-        { text: t('boardConfigMismatch.cancel'), style: 'cancel' as const, onPress: () => trackResolved('cancel') },
-        {
-          text: t('boardConfigMismatch.mobileConnectAnyway'),
-          onPress: () => {
-            trackResolved('connect_anyway');
-            connectedViaMismatchOverrideRef.current = true;
-            activePickerState.handleSelect(deviceId);
-          },
-        },
-        ...(canSwitch
-          ? [
-              {
-                text:
-                  decision.entry.kind === 'saved'
-                    ? t('boardConfigMismatch.mobileSwitchSetup')
-                    : t('boardConfigMismatch.mobileUseRecordedSetup'),
-                onPress: () => {
-                  trackResolved('switch_setup');
-                  void handleMismatchSwitch(decision);
-                },
-              },
-            ]
-          : []),
-      ];
-      Alert.alert(
-        differentSavedBoard ? t('boardConfigMismatch.mobileDifferentBoardTitle') : t('boardConfigMismatch.title'),
-        [
-          mismatchWarning,
-          t('boardConfigMismatch.mobileCurrentLabel', { config: currentLabel }),
-          t('boardConfigMismatch.mobileRecordedLabel', { config: recordedLabel }),
-        ].join('\n\n'),
-        buttons,
-      );
+      void (async () => {
+        let timeoutId: ReturnType<typeof setTimeout> | undefined;
+        try {
+          const selectedEntries = await Promise.race([
+            resolveBleSerialNumbers([selectedSerial], undefined, advertisedTypes),
+            new Promise<undefined>((resolve) => {
+              timeoutId = setTimeout(() => resolve(undefined), PICKER_SELECTION_LOOKUP_TIMEOUT_MS);
+            }),
+          ]);
+          completeSelection(selectedEntries?.get(selectedSerial));
+        } catch {
+          // Unknown/offline controllers retain the manual-connect behavior.
+          completeSelection();
+        } finally {
+          if (timeoutId !== undefined) clearTimeout(timeoutId);
+        }
+      })();
     },
     [handleMismatchSwitch, t],
   );

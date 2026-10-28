@@ -188,6 +188,7 @@ vi.mock('../../lib/ble/use-board-bluetooth', () => ({
 
 vi.mock('../../lib/ble/resolve-serials', () => ({
   useResolvedBleDeviceBoards: () => resolvedBoards.value,
+  resolveBleSerialNumbers: vi.fn(async () => new Map<string, ResolvedBoardEntry>()),
 }));
 
 vi.mock('../../lib/ble/bluetooth-status-store', () => ({
@@ -2614,7 +2615,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
     });
   });
 
-  it('forwards picker selection immediately when the resolved board config matches', () => {
+  it('forwards picker selection after refreshing a matching recorded config', async () => {
     const handleSelect = vi.fn();
     bluetooth.state.pickerState = {
       devices: [{ deviceId: 'device-1', name: 'Kilter Board#SN-1@3', rssi: -40 }],
@@ -2631,13 +2632,13 @@ describe('BluetoothProvider wall-confirm integration', () => {
     resolvedBoards.value = new Map([['SN-1', { kind: 'recorded', config: makeSerialConfig({ setIds: '20,1' }) }]]);
 
     renderProvider();
-    pickerSheet.props?.onSelect('device-1');
+    await act(async () => pickerSheet.props?.onSelect('device-1'));
 
     expect(handleSelect).toHaveBeenCalledWith('device-1');
     expect(alert.alert).not.toHaveBeenCalled();
   });
 
-  it('asks before forwarding picker selection when the resolved board config mismatches', () => {
+  it('asks before forwarding picker selection when the resolved board config mismatches', async () => {
     const handleSelect = vi.fn();
     bluetooth.state.pickerState = {
       devices: [{ deviceId: 'device-2', name: 'Tension Board#SN-2@2', rssi: -50 }],
@@ -2656,7 +2657,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
     ]);
 
     renderProvider();
-    pickerSheet.props?.onSelect('device-2');
+    await act(async () => pickerSheet.props?.onSelect('device-2'));
 
     expect(handleSelect).not.toHaveBeenCalled();
     expect(alert.alert).toHaveBeenCalledOnce();
