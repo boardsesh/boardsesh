@@ -50,19 +50,26 @@ export function WorkoutRunSessionSync() {
       return;
     }
     const generation = captureAuthCredentialGeneration();
-    void readSignedInAccount().then((account) => {
-      if (isAuthCredentialGenerationCurrent(generation)) keep(account.status === 'signed-in' ? account.userId : null);
-    });
+    void readSignedInAccount()
+      .then((account) => (account.status === 'signed-in' ? account.userId : null))
+      // A failed read keeps the recap unowned (no screen shows it) and sends nothing.
+      .catch(() => null)
+      .then((ownerUserId) => {
+        if (isAuthCredentialGenerationCurrent(generation)) keep(ownerUserId);
+      });
   });
 
   useEffect(() => {
     let mounted = true;
     const readAccount = () => {
       const generation = captureAuthCredentialGeneration();
-      void readSignedInAccount().then((account) => {
-        if (!mounted || !isAuthCredentialGenerationCurrent(generation)) return;
-        accountRef.current = { generation, userId: account.status === 'signed-in' ? account.userId : null };
-      });
+      void readSignedInAccount()
+        .then((account) => {
+          if (!mounted || !isAuthCredentialGenerationCurrent(generation)) return;
+          accountRef.current = { generation, userId: account.status === 'signed-in' ? account.userId : null };
+        })
+        // Unknown until the next read: a run cleared meanwhile reads the token itself.
+        .catch(() => undefined);
     };
     readAccount();
     const unsubscribe = subscribeAuthCredentialGenerationChanges(() => {

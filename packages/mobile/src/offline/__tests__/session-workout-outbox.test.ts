@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   reportHandledError: vi.fn(),
   now: Date.UTC(2026, 0, 2),
   account: { status: 'signed-in', userId: 'user-1' } as { status: string; userId?: string },
+  accountReadFails: false,
 }));
 const storage = vi.hoisted(() => {
   let entries: Record<string, string> = {};
@@ -38,7 +39,10 @@ vi.mock('../../lib/error-reporting', () => ({ reportHandledError: mocks.reportHa
 vi.mock('../../lib/clock', () => ({ nowMs: () => mocks.now }));
 vi.mock('../offline-sync-adapter', () => ({
   drainMutationQueue: mocks.drainMutationQueue,
-  readSignedInAccount: async () => mocks.account,
+  readSignedInAccount: async () => {
+    if (mocks.accountReadFails) throw new Error('SecureStore unavailable');
+    return mocks.account;
+  },
 }));
 vi.mock('../outbox-store', () => ({ notifyOutboxChanged: vi.fn() }));
 vi.mock('../local-write-telemetry', () => ({ localWriteRetryOptions: () => ({}) }));
@@ -82,6 +86,7 @@ beforeEach(async () => {
   await stampLocalUserId(db, 'user-1');
   mocks.db = db;
   mocks.account = { status: 'signed-in', userId: 'user-1' };
+  mocks.accountReadFails = false;
   mocks.now = Date.UTC(2026, 0, 2);
   mocks.drainMutationQueue.mockClear();
   mocks.request.mockClear();
@@ -213,6 +218,13 @@ describe('enqueueSessionWorkoutWrite', () => {
     await stampLocalUserId(db, 'user-1');
     expect(await enqueueSessionWorkoutWrite(SESSION_ID, { queryClient })).toBe('skipped');
 
+    expect(await queued()).toEqual([]);
+  });
+
+  it('queues nothing, and never throws, when the token cannot be read', async () => {
+    prepareWorkoutRun(SESSION_ID, run, climbs);
+    mocks.accountReadFails = true;
+    await expect(enqueueSessionWorkoutWrite(SESSION_ID, { queryClient })).resolves.toBe('skipped');
     expect(await queued()).toEqual([]);
   });
 
