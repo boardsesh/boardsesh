@@ -901,6 +901,7 @@ export function BluetoothProvider({
     boardId: presenceBoardId,
     resolveAndBindBoard,
     resolveAndBindBoardByConfig,
+    resolveAndBindBoardByUuid,
     reportClimbForBoard,
     reportDisconnectForBoard,
     restampBoardMembershipByUuid,
@@ -1285,7 +1286,13 @@ export function BluetoothProvider({
       // never mutable route refs. A route/config change can render while a
       // connect is completing; its board identity must not be assigned to the
       // older physical link.
-      const { boardName: boardType, layoutId, sizeId, setIds: connectionSetIds } = connection.config;
+      const {
+        boardName: boardType,
+        layoutId,
+        sizeId,
+        setIds: connectionSetIds,
+        boardUuid: selectedBoardUuid,
+      } = connection.config;
       const setIds = connectionSetIds ?? '';
       // The type the controller announced, from the same immutable snapshot as
       // the config above. Aurora reuses a serial across board apps, so without
@@ -1294,9 +1301,10 @@ export function BluetoothProvider({
       const { advertisedBoardType } = connection;
 
       // Resolve+bind the shared board so the wall feed subscribes. Aurora uses
-      // its controller serial; serial-less boards use the per-config fallback
-      // when the backend supports it. An unchanged binding returns its cached
-      // identity instead of resolving over the network, because every new BLE
+      // its controller serial; a serial-less saved board retains its named feed.
+      // Only geometry without a saved identity uses the shared config fallback.
+      // An unchanged binding returns its cached identity instead of resolving
+      // over the network, because every new BLE
       // generation still needs to attach that board ID for holder release.
       // This is independent of party sessions.
       if (presenceEnabledRef.current && boardType && layoutId != null && layoutId > 0 && sizeId != null && sizeId > 0) {
@@ -1311,9 +1319,11 @@ export function BluetoothProvider({
                 sizeId,
                 setIds,
                 advertisedBoardType,
-                selectedBoardUuid: boardUuidRef.current ?? null,
+                selectedBoardUuid: selectedBoardUuid || null,
               })
-            : resolveAndBindBoardByConfig({ boardType, layoutId, sizeId, setIds });
+            : selectedBoardUuid
+              ? resolveAndBindBoardByUuid({ boardUuid: selectedBoardUuid })
+              : resolveAndBindBoardByConfig({ boardType, layoutId, sizeId, setIds });
         void resolvePromise
           .then((resolved) => {
             if (!resolved) return;
@@ -1357,7 +1367,13 @@ export function BluetoothProvider({
         boardId: resolvedPresenceBoardIdRef.current ?? presenceBoardIdRef.current ?? undefined,
       });
     },
-    [setSessionBoardSerial, resolveAndBindBoard, resolveAndBindBoardByConfig, replayPendingWallReport],
+    [
+      setSessionBoardSerial,
+      resolveAndBindBoard,
+      resolveAndBindBoardByConfig,
+      resolveAndBindBoardByUuid,
+      replayPendingWallReport,
+    ],
   );
 
   // Hold placements for the active board, required by the hook's
