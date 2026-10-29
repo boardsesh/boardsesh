@@ -58,7 +58,6 @@ export async function updateSessionBoardPathIfChanged(
   viewerId?: string | null,
   changedByParticipantId: string | null = null,
 ): Promise<string | null> {
-  const boardId = await resolveSessionBoardId(boardPath, viewerId, sessionId);
   const transition = await db.transaction(async (tx) => {
     const [existing] = await tx
       .select({ boardPath: sessions.boardPath, boardId: sessions.boardId })
@@ -66,6 +65,10 @@ export async function updateSessionBoardPathIfChanged(
       .where(eq(sessions.id, sessionId))
       .for('update');
     if (!existing) throw new Error(`updateSessionBoardPathIfChanged: session ${sessionId} not found`);
+    // Resolved under the row lock: a crew member's access to a home wall comes
+    // from this session being on it (#7013), so it must be judged against the
+    // session as it is now, not before a racing move off the wall committed.
+    const boardId = await resolveSessionBoardId(boardPath, viewerId, sessionId);
     await requireResourceAccess('session', sessionId, viewerId);
     const previousPathBoardId = await resolveSessionBoardId(existing.boardPath ?? '', viewerId, sessionId);
     if (existing.boardPath === boardPath && existing.boardId === boardId) return null;

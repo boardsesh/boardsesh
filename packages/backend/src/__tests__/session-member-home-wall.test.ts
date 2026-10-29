@@ -1,9 +1,10 @@
 /**
  * #7013: joining a session counts as holding its wall's link, for that session.
- * A crew member on a private or unlisted home wall reads the wall the session
- * is on (its named path, its page by slug, its binding when they change the
- * angle) while the session is live. Discovery, gym walls, spray walls and a
- * revoked grant keep every gate, and the access ends with the session.
+ * A crew member in the wall OWNER's live session on a private or unlisted home
+ * wall reads the wall the session is on (its named path, its page by slug, its
+ * binding when they change the angle) while they are in the session's live
+ * roster. Discovery, gym walls, spray walls, a revoked grant and a session
+ * someone other than the owner started keep every gate.
  */
 import { randomUUID } from 'node:crypto';
 import { beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test';
@@ -20,10 +21,10 @@ import { roomManager } from '../services/room-manager';
 import { buildSessionPayload } from '../graphql/resolvers/sessions/helpers';
 
 const HOST = 'home-wall-host';
+const GRANTEE = 'home-wall-grantee';
 const MEMBER = 'home-wall-member';
 const STRANGER = 'home-wall-stranger';
 const GYM_OWNER = 'home-wall-gym-owner';
-const SESSION_ID = 'home-wall-session';
 const GEOMETRY = '/kilter/1/1/1/40';
 
 const named = (slug: string, angle = 40) => `/b/${slug}/${angle}`;
@@ -36,7 +37,7 @@ const boardUuid = (slug: string) => `${slug}-board`;
 beforeAll(async () => {
   await db
     .insert(schema.users)
-    .values([HOST, MEMBER, STRANGER, GYM_OWNER].map((id) => ({ id, name: id, email: `${id}@test.invalid` })));
+    .values([HOST, GRANTEE, MEMBER, STRANGER, GYM_OWNER].map((id) => ({ id, name: id, email: `${id}@test.invalid` })));
   const [gym] = await db
     .insert(schema.gyms)
     .values({ uuid: 'home-wall-gym', name: 'Home wall gym', ownerId: GYM_OWNER, isPublic: true })
@@ -58,6 +59,8 @@ beforeAll(async () => {
     .values([
       board('private-home-wall', { isPublic: false }),
       board('unlisted-home-wall', { isPublic: true, isUnlisted: true }),
+      board('invite-only-home-wall', { isPublic: false }),
+      board('other-home-wall', { isPublic: true }),
       board('private-gym-wall', { isPublic: false, gymId: Number(gym.id) }),
       board('private-spray-wall', {
         isPublic: false,
@@ -69,28 +72,38 @@ beforeAll(async () => {
     ])
     .returning({ id: schema.userBoards.id, slug: schema.userBoards.slug });
   for (const row of rows) boardIds.set(row.slug!, Number(row.id));
+  // An Invite-only wall the owner shared with one friend.
+  await db.insert(schema.resourcePrivacy).values({
+    kind: 'board',
+    resourceId: boardUuid('invite-only-home-wall'),
+    ownerId: HOST,
+    audience: 'invite_only',
+  });
 });
 
-/** A live session on this wall, with the host and the member in it. */
-async function sessionOn(slug: string) {
-  await db.insert(schema.boardSessions).values({
-    id: SESSION_ID,
-    boardPath: named(slug),
-    boardId: boardIds.get(slug),
-    createdByUserId: HOST,
-    isPublic: true,
-  });
-  await db.insert(schema.boardSessionParticipants).values([
-    { sessionId: SESSION_ID, userId: HOST },
-    { sessionId: SESSION_ID, userId: MEMBER },
-  ]);
+let sessionId = '';
+let connections = 0;
+
+/** Join the live session the way joinSession does: a roster seat and a participant row. */
+async function join(userId: string, boardPath = GEOMETRY): Promise<string> {
+  const connectionId = `home-wall-${userId}-${(connections += 1)}`;
+  await roomManager.registerClient(connectionId, userId, userId);
+  await roomManager.joinSession(connectionId, sessionId, boardPath);
+  return connectionId;
+}
+
+/** A live session on this wall, started by `host`, with the member in it. */
+async function sessionOn(slug: string, host = HOST) {
+  sessionId = randomUUID();
+  await join(host, named(slug));
+  return join(MEMBER);
 }
 
 async function endSession() {
   await db
     .update(schema.boardSessions)
     .set({ status: 'ended', endedAt: new Date() })
-    .where(eq(schema.boardSessions.id, SESSION_ID));
+    .where(eq(schema.boardSessions.id, sessionId));
 }
 
 const boardBySlug = (slug: string, userId: string) => socialBoardQueries.boardBySlug(null, { slug }, viewer(userId));
@@ -114,11 +127,11 @@ describe('a session member on a home wall', () => {
 
   it('keeps the session on the wall when the member changes the angle', async () => {
     await sessionOn('private-home-wall');
-    await updateSessionBoardPathIfChanged(SESSION_ID, named('private-home-wall', 45), MEMBER, 'member-pid');
+    await updateSessionBoardPathIfChanged(sessionId, named('private-home-wall', 45), MEMBER, 'member-pid');
     const [session] = await db
       .select({ boardPath: schema.boardSessions.boardPath, boardId: schema.boardSessions.boardId })
       .from(schema.boardSessions)
-      .where(eq(schema.boardSessions.id, SESSION_ID));
+      .where(eq(schema.boardSessions.id, sessionId));
     expect(session).toEqual({ boardPath: named('private-home-wall', 45), boardId: boardIds.get('private-home-wall') });
   });
 
@@ -162,18 +175,16 @@ describe('a session member on a home wall', () => {
     expect(await projectSessionBoardPath(named('private-gym-wall'), MEMBER)).toBe(GEOMETRY);
     expect(await canAccessBoard(boardUuid('private-gym-wall'), MEMBER, null)).toBe(false);
 
-    await db.delete(schema.boardSessions).where(eq(schema.boardSessions.id, SESSION_ID));
     await sessionOn('private-spray-wall');
     expect(await projectSessionBoardPath(named('private-spray-wall'), MEMBER)).toBe('/spray/876543/876543/1/40');
     expect(await canAccessBoard(boardUuid('private-spray-wall'), MEMBER, null)).toBe(false);
   });
 
   it('names the wall to a fresh joiner once they have joined, not from the invite before', async () => {
-    // No seeded participant row: the host opens the session, the friend joins it
-    // through the room manager the way joinSession does.
-    const sessionId = randomUUID();
-    await roomManager.registerClient('home-wall-host-conn', 'Host', HOST);
-    await roomManager.joinSession('home-wall-host-conn', sessionId, named('private-home-wall'));
+    // No seeded rows: the owner opens the session, the friend joins it through
+    // the room manager the way joinSession does.
+    sessionId = randomUUID();
+    await join(HOST, named('private-home-wall'));
     const sessionRead = async (userId: string) => {
       const [sessionData] = await db.select().from(schema.boardSessions).where(eq(schema.boardSessions.id, sessionId));
       const payload = await buildSessionPayload(sessionId, viewer(userId), {
@@ -189,11 +200,79 @@ describe('a session member on a home wall', () => {
 
     // The invite alone is not the wall's link: the confirm screen shows geometry.
     expect(await sessionRead(MEMBER)).toBe(GEOMETRY);
-
-    await roomManager.registerClient('home-wall-member-conn', 'Member', MEMBER);
-    await roomManager.joinSession('home-wall-member-conn', sessionId, GEOMETRY);
-
+    await join(MEMBER);
     expect(await sessionRead(MEMBER)).toBe(named('private-home-wall'));
     expect(await sessionRead(STRANGER)).toBe(GEOMETRY);
+  });
+
+  it('grants nothing through a session someone other than the owner started on the wall', async () => {
+    // The owner shared the Invite-only wall with GRANTEE, who may start a
+    // session on it. That must not hand the wall to whoever joins.
+    await db.insert(schema.resourceGrants).values({
+      kind: 'board',
+      resourceId: boardUuid('invite-only-home-wall'),
+      userId: GRANTEE,
+      status: 'approved',
+    });
+    await sessionOn('invite-only-home-wall', GRANTEE);
+    expect(await projectSessionBoardPath(named('invite-only-home-wall'), MEMBER)).toBe(GEOMETRY);
+    expect(await canAccessBoard(boardUuid('invite-only-home-wall'), MEMBER, null)).toBe(false);
+
+    // The same wall in the owner's own session does.
+    await sessionOn('invite-only-home-wall');
+    expect(await projectSessionBoardPath(named('invite-only-home-wall'), MEMBER)).toBe(named('invite-only-home-wall'));
+  });
+
+  it('withholds the wall from a member who left, while the session goes on', async () => {
+    const memberConnection = await sessionOn('private-home-wall');
+    expect(await canAccessBoard(boardUuid('private-home-wall'), MEMBER, null)).toBe(true);
+    await roomManager.leaveSession(memberConnection);
+    // Their participant row stays, a permanent record; the live roster decides.
+    expect(await projectSessionBoardPath(named('private-home-wall'), MEMBER)).toBe(GEOMETRY);
+    expect(await canAccessBoard(boardUuid('private-home-wall'), MEMBER, null)).toBe(false);
+  });
+
+  it('refuses a member angle change that lost a race with the owner moving off the wall', async () => {
+    await sessionOn('private-home-wall');
+    // The owner's move holds the session row; the member's angle change on the
+    // old wall arrives while it is uncommitted and must not write the old wall back.
+    let releaseMove: () => void = () => {};
+    const moveHeld = new Promise<void>((resolve) => {
+      releaseMove = resolve;
+    });
+    let moveLocked: () => void = () => {};
+    const locked = new Promise<void>((resolve) => {
+      moveLocked = resolve;
+    });
+    const move = db.transaction(async (tx) => {
+      await tx.select().from(schema.boardSessions).where(eq(schema.boardSessions.id, sessionId)).for('update');
+      await tx
+        .update(schema.boardSessions)
+        .set({ boardPath: named('other-home-wall'), boardId: boardIds.get('other-home-wall') })
+        .where(eq(schema.boardSessions.id, sessionId));
+      moveLocked();
+      await moveHeld;
+    });
+    await locked;
+    const angleChange = updateSessionBoardPathIfChanged(
+      sessionId,
+      named('private-home-wall', 45),
+      MEMBER,
+      'member-pid',
+    );
+    const settled = angleChange.then(
+      () => 'written',
+      () => 'refused',
+    );
+    // Long enough for the angle change to reach the row lock.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    releaseMove();
+    await move;
+    expect(await settled).toBe('refused');
+    const [session] = await db
+      .select({ boardId: schema.boardSessions.boardId })
+      .from(schema.boardSessions)
+      .where(eq(schema.boardSessions.id, sessionId));
+    expect(session.boardId).toBe(boardIds.get('other-home-wall'));
   });
 });

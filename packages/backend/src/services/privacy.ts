@@ -405,8 +405,9 @@ export async function canAccessBoard(
 /**
  * Joining a session counts as holding its wall's link, for that session (#7013).
  *
- * True when the viewer is a participant of a session that has not ended and is
- * on this board right now (`board_sessions.board_id`). Without it, a crew
+ * True when the wall's OWNER hosts a session that has not ended and is on this
+ * board right now (`board_sessions.board_id`), and the viewer is in that
+ * session's live roster. Without it, a crew
  * member on a private or unlisted home wall is handed the wall's geometry
  * instead of the wall, mints a private board of their own, logs to an empty
  * history, and meets "Different saved board" at the wall's own controller.
@@ -414,8 +415,16 @@ export async function canAccessBoard(
  * Deliberately narrow:
  * - Home walls only (`gym_id IS NULL`). A wall at a gym keeps the gym's gates,
  *   and spray walls keep their own wall rules.
- * - Only while the session is live. `board_session_participants` keeps no
- *   "left" marker, so a member who left keeps the wall until the session ends.
+ * - Only a session the owner started (`created_by_user_id = owner_id`). A
+ *   grantee or follower who starts or moves a session onto the wall must not
+ *   hand it to whoever joins that session.
+ * - Only while the viewer is in the session's live roster, so a member who
+ *   left, or a stale row in a permanent session, holds nothing.
+ *   `board_session_participants.joined_at` is not used as a freshness bound:
+ *   it is never bumped on rejoin, and bumping it would shrink the co-member
+ *   tick window (`sessionCoMemberTickCondition`) that reads it.
+ * - This overrides the wall's own audience for that crew, an Only-me wall
+ *   included: the owner chose to climb on it with them.
  * - A grant the owner revoked from this viewer still withholds it.
  * - Never part of `resourceAccessCondition`: listings, search, feeds and
  *   nearby sessions keep every gate. Only the single-board reads that call
@@ -432,8 +441,8 @@ export async function isLiveSessionMemberOnHomeWall(
   inSessionId?: string,
 ): Promise<boolean> {
   if (!viewerId) return false;
-  const [row] = await db
-    .select({ id: schema.userBoards.id })
+  const rows = await db
+    .select({ sessionId: schema.boardSessions.id })
     .from(schema.boardSessionParticipants)
     .innerJoin(schema.boardSessions, eq(schema.boardSessions.id, schema.boardSessionParticipants.sessionId))
     .innerJoin(schema.userBoards, eq(schema.userBoards.id, schema.boardSessions.boardId))
@@ -443,6 +452,7 @@ export async function isLiveSessionMemberOnHomeWall(
         inSessionId === undefined ? undefined : eq(schema.boardSessionParticipants.sessionId, inSessionId),
         ne(schema.boardSessions.status, 'ended'),
         isNull(schema.boardSessions.endedAt),
+        eq(schema.boardSessions.createdByUserId, schema.userBoards.ownerId),
         eq(schema.userBoards.uuid, boardUuid),
         isNull(schema.userBoards.deletedAt),
         isNull(schema.userBoards.gymId),
@@ -462,8 +472,15 @@ export async function isLiveSessionMemberOnHomeWall(
         ),
       ),
     )
-    .limit(1);
-  return row !== undefined;
+    .limit(5);
+  if (rows.length === 0) return false;
+  // Lazy: the room manager imports this module.
+  const { roomManager } = await import('./room-manager');
+  for (const { sessionId } of rows) {
+    const roster = await roomManager.getSessionUsers(sessionId);
+    if (roster.some((member) => member.userId === viewerId)) return true;
+  }
+  return false;
 }
 export async function requireResourceAccess(
   kind: PrivacyResourceKind,
