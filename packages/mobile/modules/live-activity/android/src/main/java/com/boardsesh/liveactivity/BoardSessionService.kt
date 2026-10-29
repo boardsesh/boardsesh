@@ -71,6 +71,7 @@ class BoardSessionService : Service() {
     private var nextLabel: String = "Next"
     private var relightLabel: String = "Relight wall"
     private var reconnectLabel: String = "Connect to board"
+    private var connectingLabel: String = "Connecting…"
     private var onWallTemplate: String = "{{name}} is on the wall"
 
     private var sessionId: String = ""
@@ -88,6 +89,13 @@ class BoardSessionService : Service() {
     private var totalClimbs: Int = 0
     private var boardConnection: String = CONNECTION_CONNECTED_BY_ME
     private var holderDisplayName: String? = null
+    // Both ride every ACTION_UPDATE and default to false when an older bundle
+    // leaves them out (#7087). bulbOpensApp: no remembered board, so the outline
+    // bulb opens the app rather than starting a reconnect that would need the
+    // board list on a paused activity. boardConnecting: a connect is running, so
+    // the outline bulb says so and a repeat tap is visibly not lost.
+    private var bulbOpensApp: Boolean = false
+    private var boardConnecting: Boolean = false
 
     // On-device climb thumbnail (the app's no-network board-art rule): the
     // BoardRenderer holds-only PNG and the bundled board background layers under it,
@@ -216,6 +224,7 @@ class BoardSessionService : Service() {
                 nextLabel = intent.getStringExtra(EXTRA_NEXT_LABEL) ?: nextLabel
                 relightLabel = intent.getStringExtra(EXTRA_RELIGHT_LABEL) ?: relightLabel
                 reconnectLabel = intent.getStringExtra(EXTRA_RECONNECT_LABEL) ?: reconnectLabel
+                connectingLabel = intent.getStringExtra(EXTRA_CONNECTING_LABEL) ?: connectingLabel
                 onWallTemplate = intent.getStringExtra(EXTRA_ON_WALL_TEMPLATE) ?: onWallTemplate
                 boardConnection = intent.getStringExtra(EXTRA_BOARD_CONNECTION) ?: boardConnection
                 holderDisplayName = intent.getStringExtra(EXTRA_HOLDER_NAME)
@@ -253,6 +262,8 @@ class BoardSessionService : Service() {
                     // Absent extra ⇒ no peer holder ⇒ clear (the controller only sends
                     // it for heldByPeer).
                     holderDisplayName = intent.getStringExtra(EXTRA_HOLDER_NAME)
+                    bulbOpensApp = intent.getBooleanExtra(EXTRA_BULB_OPENS_APP, false)
+                    boardConnecting = intent.getBooleanExtra(EXTRA_BOARD_CONNECTING, false)
                     // Absent overlay ⇒ render not ready yet; keep the last one so the
                     // thumbnail doesn't flicker out between updates.
                     intent.getStringExtra(EXTRA_OVERLAY_PATH)?.let { overlayPath = it }
@@ -398,7 +409,11 @@ class BoardSessionService : Service() {
                 builder.addAction(R.drawable.ic_skip_next, nextLabel, actionPendingIntent(ACTION_NAV_NEXT, REQ_NEXT))
             }
         } else {
-            builder.addAction(R.drawable.ic_lightbulb_outline, reconnectLabel, bulbPendingIntent())
+            builder.addAction(
+                R.drawable.ic_lightbulb_outline,
+                if (boardConnecting) connectingLabel else reconnectLabel,
+                outlineBulbPendingIntent(),
+            )
         }
         return builder.build()
     }
@@ -630,6 +645,16 @@ class BoardSessionService : Service() {
             putExtra(EXTRA_MIRRORED, !mirrored)
         }
         return PendingIntent.getBroadcast(this, REQ_MIRROR, intent, pendingFlags())
+    }
+
+    // With no remembered board a background reconnect can only end in the board
+    // list, which would land on a paused activity where nobody can pick from it.
+    // Open the app instead (an activity PendingIntent: Android 12+ forbids a
+    // broadcast receiver from starting one), and the climber connects from the
+    // in-app bulb (#7087).
+    private fun outlineBulbPendingIntent(): PendingIntent {
+        if (bulbOpensApp) launchAppIntent()?.let { return it }
+        return bulbPendingIntent()
     }
 
     private fun bulbPendingIntent(): PendingIntent {
@@ -949,6 +974,9 @@ class BoardSessionService : Service() {
         const val EXTRA_NEXT_LABEL = "nextLabel"
         const val EXTRA_RELIGHT_LABEL = "relightLabel"
         const val EXTRA_RECONNECT_LABEL = "reconnectLabel"
+        const val EXTRA_CONNECTING_LABEL = "connectingLabel"
+        const val EXTRA_BULB_OPENS_APP = "bulbOpensApp"
+        const val EXTRA_BOARD_CONNECTING = "boardConnecting"
         const val EXTRA_ON_WALL_TEMPLATE = "onWallTemplate"
         const val EXTRA_CLIMB_NAME = "climbName"
         const val EXTRA_SUBTITLE = "subtitle"

@@ -875,6 +875,7 @@
         "unmirror": "Quitar espejo",
         "relight": "Reactivar el muro",
         "reconnect": "Conectar al plafón",
+        "connecting": "Conectando…",
         "onWall": "{{name}} está en el muro"
       },
       "inStatsFlashes": "Flashes",

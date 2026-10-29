@@ -211,6 +211,30 @@ class SessionPresenceControllerTest {
 
     @Test
     @Config(sdk = [30])
+    fun `startSession forwards the connecting label and updateActivity the bulb's open-app and connecting flags`() {
+        val (controller, launchedIntents) = recordingController()
+        controller.startSession(
+            StartSessionOptions().apply {
+                androidNotification = AndroidNotificationStrings().apply { connectingLabel = "Conectando…" }
+            },
+        )
+        assertEquals("Conectando…", launchedIntents.single().getStringExtra(BoardSessionService.EXTRA_CONNECTING_LABEL))
+
+        controller.updateActivity(
+            updateOptions().apply {
+                boardConnection = "disconnected"
+                bulbOpensApp = true
+                boardConnecting = true
+            },
+        )
+
+        val update = launchedIntents.last()
+        assertTrue(update.getBooleanExtra(BoardSessionService.EXTRA_BULB_OPENS_APP, false))
+        assertTrue(update.getBooleanExtra(BoardSessionService.EXTRA_BOARD_CONNECTING, false))
+    }
+
+    @Test
+    @Config(sdk = [30])
     fun `updateActivity before a session starts is a no-op`() {
         val (controller, launchedIntents) = recordingController()
 

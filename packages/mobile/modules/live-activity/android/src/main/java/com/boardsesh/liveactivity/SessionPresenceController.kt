@@ -83,6 +83,7 @@ internal class SessionPresenceController(
             putExtra(BoardSessionService.EXTRA_NEXT_LABEL, strings?.nextLabel ?: "Next")
             putExtra(BoardSessionService.EXTRA_RELIGHT_LABEL, strings?.relightLabel ?: "Relight wall")
             putExtra(BoardSessionService.EXTRA_RECONNECT_LABEL, strings?.reconnectLabel ?: "Connect to board")
+            putExtra(BoardSessionService.EXTRA_CONNECTING_LABEL, strings?.connectingLabel ?: "Connecting…")
             putExtra(BoardSessionService.EXTRA_ON_WALL_TEMPLATE, strings?.onWallTemplate ?: "{{name}} is on the wall")
             // Initial lightbulb / controls state before the first climb update.
             putExtra(
@@ -124,6 +125,8 @@ internal class SessionPresenceController(
             putExtra(BoardSessionService.EXTRA_TOTAL_CLIMBS, options.totalClimbs)
             putExtra(BoardSessionService.EXTRA_BOARD_CONNECTION, options.boardConnection)
             options.holderDisplayName?.let { putExtra(BoardSessionService.EXTRA_HOLDER_NAME, it) }
+            putExtra(BoardSessionService.EXTRA_BULB_OPENS_APP, options.bulbOpensApp)
+            putExtra(BoardSessionService.EXTRA_BOARD_CONNECTING, options.boardConnecting)
             // On-device thumbnail: the BoardRenderer overlay PNG + the bundled board
             // background layers, composited by the service (no backend fetch).
             options.androidThumbnailOverlayPath?.let { putExtra(BoardSessionService.EXTRA_OVERLAY_PATH, it) }

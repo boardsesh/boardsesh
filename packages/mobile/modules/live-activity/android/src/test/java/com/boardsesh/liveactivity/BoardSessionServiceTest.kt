@@ -5,6 +5,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.content.pm.ResolveInfo
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
@@ -22,6 +24,7 @@ import androidx.test.core.app.ApplicationProvider
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockkStatic
+import io.mockk.CapturingSlot
 import io.mockk.Runs
 import io.mockk.slot
 import io.mockk.unmockkStatic
@@ -365,6 +368,119 @@ class BoardSessionServiceTest {
             "heldByPeer",
             shadowOf(outlineBulb.actionIntent).savedIntent.getStringExtra(BoardSessionService.EXTRA_BOARD_CONNECTION),
         )
+    }
+
+    // Robolectric's package manager knows no launcher activity by default, so
+    // getLaunchIntentForPackage would return null and the bulb could never open
+    // the app. Register one the way the real manifest does.
+    private fun registerLauncherActivity() {
+        val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage(context.packageName)
+        shadowOf(context.packageManager).addResolveInfoForIntent(
+            launcher,
+            ResolveInfo().apply {
+                activityInfo = ActivityInfo().apply {
+                    packageName = context.packageName
+                    name = "com.boardsesh.app.MainActivity"
+                }
+            },
+        )
+    }
+
+    private fun startForActions(): Pair<BoardSessionService, CapturingSlot<Notification>> {
+        val captured = slot<Notification>()
+        every { ServiceCompat.startForeground(any(), any(), capture(captured), any()) } just Runs
+        val intent = Intent(context, BoardSessionService::class.java).apply { action = BoardSessionService.ACTION_START }
+        val controller = Robolectric.buildService(BoardSessionService::class.java, intent).create()
+        val service = controller.get()
+        controller.startCommand(0, 1)
+        return service to captured
+    }
+
+    @Test
+    @Config(sdk = [31])
+    fun `with no remembered board the outline bulb opens the app instead of reconnecting in the background`() {
+        registerLauncherActivity()
+        val (service, captured) = startForActions()
+
+        for ((startId, connection) in listOf("disconnected", "heldByPeer").withIndex()) {
+            service.onStartCommand(
+                updateIntent(connection).putExtra(BoardSessionService.EXTRA_BULB_OPENS_APP, true),
+                0,
+                startId + 2,
+            )
+            val bulb = captured.captured.actions.single()
+            assertEquals("Connect to board", bulb.title.toString())
+            // An activity PendingIntent: Android 12+ forbids the broadcast receiver
+            // from starting the activity itself, so the bulb must be one (#7087).
+            assertTrue(shadowOf(bulb.actionIntent).isActivityIntent)
+            assertEquals(
+                context.packageName,
+                shadowOf(bulb.actionIntent).savedIntent.component?.packageName,
+            )
+        }
+    }
+
+    @Test
+    @Config(sdk = [31])
+    fun `with a remembered board, or from an older bundle, the outline bulb still reconnects by broadcast`() {
+        registerLauncherActivity()
+        val (service, captured) = startForActions()
+
+        // An older bundle never sends the extra.
+        service.onStartCommand(updateIntent("disconnected"), 0, 2)
+        val legacyBulb = captured.captured.actions.single()
+        assertTrue(shadowOf(legacyBulb.actionIntent).isBroadcastIntent)
+        assertEquals(BoardSessionService.ACTION_BULB, shadowOf(legacyBulb.actionIntent).savedIntent.action)
+
+        // Opens the app, then the climber connects and the board is remembered.
+        service.onStartCommand(updateIntent("disconnected").putExtra(BoardSessionService.EXTRA_BULB_OPENS_APP, true), 0, 3)
+        assertTrue(shadowOf(captured.captured.actions.single().actionIntent).isActivityIntent)
+        service.onStartCommand(updateIntent("disconnected").putExtra(BoardSessionService.EXTRA_BULB_OPENS_APP, false), 0, 4)
+        assertTrue(shadowOf(captured.captured.actions.single().actionIntent).isBroadcastIntent)
+
+        // The driver's lit bulb re-lights the wall, whatever the flag says.
+        service.onStartCommand(updateIntent("connectedByMe").putExtra(BoardSessionService.EXTRA_BULB_OPENS_APP, true), 0, 5)
+        val litBulb = captured.captured.actions.single()
+        assertEquals("Relight wall", litBulb.title.toString())
+        assertTrue(shadowOf(litBulb.actionIntent).isBroadcastIntent)
+    }
+
+    @Test
+    @Config(sdk = [31])
+    fun `the outline bulb reads Connecting while a connect runs and goes back when it ends`() {
+        val captured = slot<Notification>()
+        every { ServiceCompat.startForeground(any(), any(), capture(captured), any()) } just Runs
+        val intent = Intent(context, BoardSessionService::class.java).apply {
+            action = BoardSessionService.ACTION_START
+            putExtra(BoardSessionService.EXTRA_RECONNECT_LABEL, "Conectar al plafón")
+            putExtra(BoardSessionService.EXTRA_CONNECTING_LABEL, "Conectando…")
+        }
+        val controller = Robolectric.buildService(BoardSessionService::class.java, intent).create()
+        val service = controller.get()
+        controller.startCommand(0, 1)
+
+        service.onStartCommand(updateIntent("disconnected").putExtra(BoardSessionService.EXTRA_BOARD_CONNECTING, true), 0, 2)
+        val connectingBulb = captured.captured.actions.single()
+        assertEquals("Conectando…", connectingBulb.title.toString())
+        // Still the reconnect broadcast: a repeat tap lands on JS's in-flight
+        // guard, and the label is what tells the climber the first one took.
+        assertEquals(BoardSessionService.ACTION_BULB, shadowOf(connectingBulb.actionIntent).savedIntent.action)
+
+        // The connect failed (or an older bundle omits the extra): back to Connect.
+        service.onStartCommand(updateIntent("disconnected"), 0, 3)
+        assertEquals(listOf("Conectar al plafón"), actionTitles(captured.captured))
+
+        // A peer holds the board while this device connects: still Connecting.
+        service.onStartCommand(
+            updateIntent("heldByPeer", holderName = "Alex").putExtra(BoardSessionService.EXTRA_BOARD_CONNECTING, true),
+            0,
+            4,
+        )
+        assertEquals(listOf("Conectando…"), actionTitles(captured.captured))
+
+        // The connect landed: the lit bulb, never a Connecting label.
+        service.onStartCommand(updateIntent("connectedByMe").putExtra(BoardSessionService.EXTRA_BOARD_CONNECTING, true), 0, 5)
+        assertEquals(listOf("Relight wall"), actionTitles(captured.captured))
     }
 
     @Test
