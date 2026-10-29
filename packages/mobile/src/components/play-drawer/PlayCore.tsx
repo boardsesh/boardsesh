@@ -142,6 +142,7 @@ import { PHONE_SPLIT_FOLD_GUTTER } from '../../theme/size-class';
 import { playContentSideInsets } from './play-content-side-insets';
 import { useShareClimbAction } from '../../hooks/use-share-climb-action';
 import { reportPanePreview } from './pane-preview-store';
+import { useBarCarriesPaneWorkoutRow } from './pane-workout-row-cover-store';
 import { resolvePlayerAngle } from './player-angle';
 import { activeBoardIsMoonboard } from '../../hooks/use-active-board-is-moonboard';
 import { isMoonboardBoardName } from '@boardsesh/board-config';
@@ -1177,6 +1178,10 @@ export function PlayCore({
     canLog: isAuthenticated && !isAnonymous && !showBoardMismatch,
   });
   const workoutOutcome = workoutOutcomeShown?.target ?? null;
+  // On the open Duo the MiniPlayer draws Fell / Sent over the pane's row (#6940):
+  // the pane's own pair leaves the accessibility tree so VoiceOver finds one.
+  const barCarriesPaneWorkoutRow = useBarCarriesPaneWorkoutRow();
+  const workoutOutcomeCovered = isPane && barCarriesPaneWorkoutRow;
   // What the browse latch puts in the second row: one button in the middle of
   // the usual row, or the busy-wall question in place of it.
   const commitButton: ActionBarCommitButton = resolveCommitButton({
@@ -2153,6 +2158,7 @@ export function PlayCore({
       // A timed workout block: the second row is one-tap Fell / Sent.
       workoutOutcome={workoutOutcome}
       workoutOutcomeWallLeftAtMs={workoutOutcomeShown?.wallLeftAtMs ?? null}
+      workoutOutcomeCovered={workoutOutcomeCovered}
       wallClimbName={wallClimb.name}
       wallClimbUuid={wallClimbUuid}
       commitLabel={currentClimbDark ? 'putOnWall' : commitBarModel.commitLabel}

@@ -38,6 +38,11 @@ type WorkoutOutcomeRowProps = {
   wallLeftAtMs?: number | null;
   /** The player's Log ascent opener, for a spray climb nobody has sent yet. */
   onOpenLogSheet: () => void;
+  /**
+   * The open Duo's MiniPlayer draws the pair over this row (#6940): hide it
+   * from accessibility so VoiceOver finds one Fell and one Sent.
+   */
+  hiddenFromAccessibility?: boolean;
 };
 
 type SavedNotice = Extract<WorkoutOneTapNotice, { kind: 'saved' }>;
@@ -46,6 +51,7 @@ export const WorkoutOutcomeRow = memo(function WorkoutOutcomeRow({
   target,
   wallLeftAtMs = null,
   onOpenLogSheet,
+  hiddenFromAccessibility = false,
 }: WorkoutOutcomeRowProps) {
   const { t } = useTranslation('session');
   const { brandColors, systemColors, radii } = useTheme();
@@ -53,10 +59,13 @@ export const WorkoutOutcomeRow = memo(function WorkoutOutcomeRow({
   // While held, the climb the buttons log is no longer the one on screen.
   const held = wallLeftAtMs !== null;
   const onScreenQueueItemUuid = held ? null : target.queueItemUuid;
+  const accessibilityHiding = hiddenFromAccessibility
+    ? ({ accessibilityElementsHidden: true, importantForAccessibility: 'no-hide-descendants' } as const)
+    : null;
 
   if (notice?.kind === 'message') {
     return (
-      <View style={styles.row} testID="workout-outcome-row">
+      <View style={styles.row} testID="workout-outcome-row" {...accessibilityHiding}>
         <PressableSurface
           testID="workout-outcome-message"
           onPress={dismissNotice}
@@ -100,7 +109,7 @@ export const WorkoutOutcomeRow = memo(function WorkoutOutcomeRow({
     notice && notice.status !== 'attempt' ? savedNoticeLabel(t, notice, onScreenQueueItemUuid) : null;
 
   return (
-    <View style={styles.row} testID="workout-outcome-row">
+    <View style={styles.row} testID="workout-outcome-row" {...accessibilityHiding}>
       <PressableSurface
         testID="workout-outcome-fell"
         onPress={onFell}

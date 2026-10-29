@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View, useWindowDimensions, type ColorValue, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { Climb } from '@boardsesh/queue';
@@ -57,9 +57,9 @@ import { useDeviceLayout } from '../../hooks/use-device-layout';
 import { usePhoneSplit } from '../../hooks/use-phone-split';
 import { useVerticalTabBar } from '../../hooks/use-vertical-tab-bar';
 import { usePhoneSplitPaneTaken } from '../navigation/phone-split-pane-slot';
-import { useQueueData, useQueueSessionId } from '../../providers/queue-provider';
-import { useWorkoutRun } from '../../lib/workout-run-store';
-import { findWorkoutRunStage, workoutOutcomeAvailable } from '../play-drawer/workout-outcome';
+import { MiniPlayerWorkoutButtons } from './MiniPlayerWorkoutButtons';
+import { useMiniPlayerWorkoutOutcome } from './use-mini-player-workout-outcome';
+import { reportBarCarriesPaneWorkoutRow } from '../play-drawer/pane-workout-row-cover-store';
 
 type NativeAccessoryClimbRowProps = {
   climb: Climb;
@@ -140,21 +140,11 @@ function ClimbLabel({
 }
 
 /**
- * Whether ⏮ ⏭ can take a place on the bar. Not in a timed workout block, whose
- * stage moves the wall on its own beat (#6231): a tap there would skip a rep.
- */
-function useTransportAvailable(): boolean {
-  const { sessionId } = useQueueSessionId();
-  const { currentClimbQueueItem } = useQueueData();
-  const workoutRun = useWorkoutRun(sessionId);
-  return !workoutOutcomeAvailable(findWorkoutRunStage(workoutRun, currentClimbQueueItem?.uuid ?? null));
-}
-
-/**
  * Content for the iOS 26 tab-bar bottom accessory (Liquid Glass variant only).
  * UIKit supplies the glass platter, so this stays bare: the current climb, the
  * climber's MiniPlayer buttons (#6940), then the lightbulb and the tick at the
- * trailing edge. How many controls fit is `miniPlayerSlotCount`; which ones is
+ * trailing edge. In a timed workout block the climber's buttons step aside for
+ * one-tap Fell / Sent (`useMiniPlayerWorkoutOutcome`). How many controls fit is `miniPlayerSlotCount`; which ones is
  * `resolveMiniPlayerControls`. The collapsed platter has room for one control:
  * the lightbulb while the board is free (so connecting stays one tap away), the
  * tick once someone holds it. A mark on the thumbnail says who holds it, in both
@@ -178,7 +168,6 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
   const phoneSplit = usePhoneSplit();
   const verticalTabBar = useVerticalTabBar();
   const buttonsLayout = useMiniPlayerButtons();
-  const transportAvailable = useTransportAvailable();
   const { isAuthenticated } = useAuth();
   // The angle the player's pill shows: the board it draws on, a foreign
   // climb's override included, and none on a fixed-angle board.
@@ -189,8 +178,6 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
       })
     : null;
   const angleAdjustable = playerAngle !== null;
-  // `isMiniPlayerButtonAvailable` drops Angle while the `/play` route is up.
-  const playerRouteUp = isPlayerRoute(useSegments());
   const playerBoardName = playDrawerPaneProps?.boardConfig.boardName ?? null;
   const playerLayoutId = playDrawerPaneProps?.boardConfig.layoutId ?? null;
   const paneTaken = usePhoneSplitPaneTaken();
@@ -202,13 +189,19 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
     paneShowsPreview,
     controlsPosition: playerButtons.position,
   });
-  const playerPaneShowsTransport = paneMode === 'carry';
   // The board the climb is drawn on, resolved the way the player resolves it, so
-  // the heart and the share point at the same climb, board and angle.
-  const climbBoard = useMemo(
-    () => resolveClimbRenderBoard(climb, boardConfig)?.boardConfig ?? null,
-    [climb, boardConfig],
-  );
+  // the heart, the share and Fell / Sent point at the same climb, board and angle.
+  const climbBoardResolution = useMemo(() => resolveClimbRenderBoard(climb, boardConfig), [climb, boardConfig]);
+  const climbBoard = climbBoardResolution?.boardConfig ?? null;
+  // `isMiniPlayerButtonAvailable` drops Angle while the `/play` route is up,
+  // and the bar offers no Fell / Sent then: the player has its own.
+  const playerRouteUp = isPlayerRoute(useSegments());
+  const workout = useMiniPlayerWorkoutOutcome({
+    climb,
+    climbBoard: climbBoardResolution,
+    reachableBoardKeys: playDrawerPaneProps?.reachableBoardKeys,
+    playerRouteUp,
+  });
 
   const isInline = placement === 'inline';
   const rowHeight = isInline ? glassSize.inline : glassSize.standard;
@@ -253,7 +246,8 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
   // One slot when collapsed or narrow: the bulb only while there is a board to
   // connect to and nobody holds it. With no board bound the bulb renders nothing,
   // so the tick keeps the slot.
-  const collapsedSlotShowsBulb = bluetooth != null && inAppBoardConnection === 'disconnected';
+  const bulbAvailable = bluetooth != null;
+  const collapsedSlotShowsBulb = bulbAvailable && inAppBoardConnection === 'disconnected';
   const isDraft = climb.is_draft === true;
   const climbBoardName = climbBoard?.boardName ?? null;
   const climbLayoutId = climbBoard?.layoutId ?? null;
@@ -263,30 +257,29 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
   const isAvailable = useCallback(
     (buttonId: MiniPlayerButtonId) =>
       isMiniPlayerButtonAvailable(buttonId, {
-        transport: transportAvailable,
+        inTimedBlock: workout.inTimedBlock,
         mirror: supportsMirroring,
         signedIn: isAuthenticated,
         isDraft,
         angleAdjustable,
         playerRouteUp,
       }),
-    [transportAvailable, supportsMirroring, isAuthenticated, isDraft, angleAdjustable, playerRouteUp],
+    [workout.inTimedBlock, supportsMirroring, isAuthenticated, isDraft, angleAdjustable, playerRouteUp],
   );
   const paneCoveredButtons = useMemo(
     () =>
-      paneMode === 'stepAside'
-        ? []
-        : paneMode === 'carry'
-          ? miniPlayerPaneCoveredButtons({
-              buttons: playerButtons.buttons,
-              previousNext: playerButtons.previousNext,
-              supportsMirroring,
-              hasShare: !isDraft,
-              angleAvailable: angleAdjustable,
-            })
-          : undefined,
+      paneMode === 'carry'
+        ? miniPlayerPaneCoveredButtons({
+            buttons: playerButtons.buttons,
+            previousNext: playerButtons.previousNext,
+            supportsMirroring,
+            hasShare: !isDraft,
+            angleAvailable: angleAdjustable,
+          })
+        : undefined,
     [paneMode, playerButtons, supportsMirroring, isDraft, angleAdjustable],
   );
+  const workoutOutcome = workout.shown !== null;
   const controls = useMemo(
     () =>
       resolveMiniPlayerControls({
@@ -294,13 +287,34 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
         layout: buttonsLayout,
         isAvailable,
         singleSlotShowsBulb: collapsedSlotShowsBulb,
-        playerPaneShowsTransport,
-        buttonIds: paneCoveredButtons,
+        bulbAvailable,
+        paneMode,
+        paneCoveredButtons,
+        workoutOutcome,
       }),
-    [slotCount, buttonsLayout, isAvailable, collapsedSlotShowsBulb, playerPaneShowsTransport, paneCoveredButtons],
+    [
+      slotCount,
+      buttonsLayout,
+      isAvailable,
+      collapsedSlotShowsBulb,
+      bulbAvailable,
+      paneMode,
+      paneCoveredButtons,
+      workoutOutcome,
+    ],
   );
   // A visible bulb already speaks the state; without it, only the mark shows
   // it, so the climb link says it.
+  // The open Duo's pane hides its own Fell / Sent from VoiceOver while the bar
+  // draws the pair over it. UIKit mounts this row once per placement at the same
+  // time, so only the open placement, the one that sits on the pane, reports.
+  const carriesPaneWorkoutRow = !isInline && paneMode === 'carry' && controls.workout.length > 0;
+  const coverOwnerRef = useRef(Symbol('mini-player-pane-cover'));
+  useEffect(() => {
+    const owner = coverOwnerRef.current;
+    reportBarCarriesPaneWorkoutRow(owner, carriesPaneWorkoutRow);
+    return () => reportBarCarriesPaneWorkoutRow(owner, false);
+  }, [carriesPaneWorkoutRow]);
   const connectionValue =
     !controls.trailing.includes('lightbulb') && inAppBoardConnection !== 'disconnected'
       ? getBoardConnectionLabel(t, { boardConnection: inAppBoardConnection, ledless, holderDisplayName })
@@ -366,12 +380,22 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
           groupGap={groupGap}
         />
       ) : null}
+      {controls.workout.length > 0 && workout.shown !== null ? (
+        <MiniPlayerWorkoutButtons
+          buttonIds={controls.workout}
+          shown={workout.shown}
+          slotWidth={glassSize.inline}
+          rowHeight={rowHeight}
+        />
+      ) : null}
       <View
         pointerEvents="box-none"
         style={[
           styles.trailingSlot,
           { width: controls.trailing.length * glassSize.inline, height: rowHeight },
-          controls.trailing.length > 0 && controls.leading.length > 0 ? { marginStart: groupGap } : null,
+          controls.trailing.length > 0 && (controls.leading.length > 0 || controls.workout.length > 0)
+            ? { marginStart: groupGap }
+            : null,
         ]}
       >
         {/* UIKit also resizes the hidden regular row while the bar is inline.

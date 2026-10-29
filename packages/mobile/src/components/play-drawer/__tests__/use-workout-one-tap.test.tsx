@@ -117,6 +117,7 @@ vi.mock('../../privacy/use-publication-audience', () => ({
 
 import { MESSAGE_NOTICE_MS, ONE_TAP_GUARD_MS, SAVED_NOTICE_MS, useWorkoutOneTap } from '../use-workout-one-tap';
 import { WALL_MOVED_GRACE_MS, type WorkoutOutcomeTarget } from '../workout-outcome';
+import { resetWorkoutOneTapStoreForTests } from '../workout-one-tap-store';
 import { track } from '../../../lib/analytics';
 import { hapticError, hapticSuccess } from '../../../lib/haptics';
 import { announceQueued } from '../../../lib/announce-queued';
@@ -244,6 +245,7 @@ beforeEach(() => {
   vi.mocked(track).mockClear();
   vi.mocked(noteRestTimerTick).mockClear();
   resetWorkoutRunStoreForTests();
+  resetWorkoutOneTapStoreForTests();
   setWorkoutRun(SESSION_ID, LIMIT_RUN);
 });
 
@@ -938,5 +940,213 @@ describe('useWorkoutOneTap: what the row says', () => {
     rerender({ target: target({ climb: climb({ uuid: 'climb-2', name: 'Pinch roof' }), queueItemUuid: 'item-2' }) });
 
     expect(result.current.notice).toMatchObject({ queueItemUuid: QUEUE_ITEM_UUID, status: 'flash' });
+  });
+});
+
+// The MiniPlayer's Fell / Sent (#6940) sit over the tab screens, where the root
+// toast is in view: a message goes there, and a saved go still marks the button.
+describe('useWorkoutOneTap: on the MiniPlayer (messages to the toast)', () => {
+  function renderOnBar(initialTarget = target(), openLogSheet = vi.fn()) {
+    const rendered = renderHook(
+      (props: { target: WorkoutOutcomeTarget }) =>
+        useWorkoutOneTap(props.target, openLogSheet, null, { messages: 'toast' }),
+      { initialProps: { target: initialTarget }, wrapper: withQueue },
+    );
+    return { ...rendered, openLogSheet };
+  }
+
+  it('says a failure in a toast, not in place of the buttons', () => {
+    saveMock.state.failure = new Error('Server said no');
+    const { result } = renderOnBar();
+
+    act(() => result.current.onFell());
+
+    expect(toastMock.showToast).toHaveBeenCalledExactlyOnceWith('Server said no', 'error');
+    expect(result.current.notice).toBeNull();
+    expect(hapticError).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks a saved go on its button with the success haptic and the sentence spoken, without a toast', () => {
+    const { result } = renderOnBar();
+
+    act(() => result.current.onSent());
+
+    expect(result.current.notice).toMatchObject({ kind: 'saved', status: 'flash', queueItemUuid: QUEUE_ITEM_UUID });
+    expect(hapticSuccess).toHaveBeenCalledTimes(1);
+    expect(announceQueued).toHaveBeenCalledExactlyOnceWith('playView.workoutOutcome.flashLogged:Crimp line');
+    expect(toastMock.showToast).not.toHaveBeenCalled();
+  });
+
+  it('still opens Log ascent for a spray climb nobody has sent', () => {
+    const { result, openLogSheet } = renderOnBar(
+      target({ boardName: 'spray', climb: climb({ ascensionist_count: 0 }) }),
+    );
+
+    act(() => result.current.onSent());
+
+    expect(openLogSheet).toHaveBeenCalledTimes(1);
+    expect(saveMock.mutateAsync).not.toHaveBeenCalled();
+  });
+});
+
+// UIKit mounts the MiniPlayer once per placement at the same time (regular and
+// inline), and the player's row can be up beside it: every surface shares the
+// guard, the in-flight saves and the saved line (`workout-one-tap-store.ts`).
+describe('useWorkoutOneTap: two surfaces at once', () => {
+  function renderSurfaces() {
+    const openBar = renderHook(() => useWorkoutOneTap(target(), vi.fn(), null, { messages: 'toast' }), {
+      wrapper: withQueue,
+    });
+    const minimizedBar = renderHook(() => useWorkoutOneTap(target(), vi.fn(), null, { messages: 'toast' }), {
+      wrapper: withQueue,
+    });
+    const player = renderHook(() => useWorkoutOneTap(target(), vi.fn()), { wrapper: withQueue });
+    return { openBar, minimizedBar, player };
+  }
+
+  it('logs one go for a Sent on the open bar and one on the minimized bar within the guard', () => {
+    const { openBar, minimizedBar } = renderSurfaces();
+
+    act(() => openBar.result.current.onSent());
+    advanceClock(ONE_TAP_GUARD_MS - 1);
+    act(() => minimizedBar.result.current.onSent());
+
+    expect(saveMock.mutateAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('logs one go for a tap on the player and one on the bar within the guard', () => {
+    const { openBar, player } = renderSurfaces();
+
+    act(() => player.result.current.onFell());
+    advanceClock(100);
+    act(() => openBar.result.current.onSent());
+
+    expect(saveMock.mutateAsync).toHaveBeenCalledTimes(1);
+    expect(sentInput().status).toBe('attempt');
+  });
+
+  it("takes the other surface's next tap once the guard has passed", () => {
+    const { openBar, minimizedBar } = renderSurfaces();
+
+    act(() => openBar.result.current.onFell());
+    advanceClock(ONE_TAP_GUARD_MS);
+    act(() => minimizedBar.result.current.onFell());
+
+    expect(saveMock.mutateAsync).toHaveBeenCalledTimes(2);
+  });
+
+  it('drops a tap on any surface while a save for that queue item is still in flight', () => {
+    // The first save settles only when the test says so. The other surface's
+    // own saver has nothing in flight, so only the shared mark can drop its tap.
+    let settle = () => {};
+    saveMock.mutateAsync.mockImplementationOnce(() => ({
+      // oxlint-disable-next-line unicorn/no-thenable -- a save double that settles when the test says
+      then: (onSaved: (result: unknown) => void) => {
+        settle = () => onSaved({ savedTick: { uuid: 'tick-1' } });
+      },
+    }));
+    const { openBar, minimizedBar } = renderSurfaces();
+
+    act(() => openBar.result.current.onFell());
+    advanceClock(ONE_TAP_GUARD_MS);
+    act(() => minimizedBar.result.current.onFell());
+    expect(saveMock.mutateAsync).toHaveBeenCalledTimes(1);
+
+    act(() => settle());
+    advanceClock(ONE_TAP_GUARD_MS);
+    act(() => minimizedBar.result.current.onFell());
+    expect(saveMock.mutateAsync).toHaveBeenCalledTimes(2);
+  });
+
+  it('marks the saved go on every surface, with one haptic and one spoken line', () => {
+    const { openBar, minimizedBar, player } = renderSurfaces();
+
+    act(() => minimizedBar.result.current.onSent());
+
+    for (const surface of [openBar, minimizedBar, player]) {
+      expect(surface.result.current.notice).toMatchObject({ kind: 'saved', status: 'flash' });
+    }
+    expect(hapticSuccess).toHaveBeenCalledTimes(1);
+    expect(announceQueued).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a player's failure in the player's row, off the bar's buttons", () => {
+    saveMock.state.failure = new Error('Server said no');
+    const { openBar, player } = renderSurfaces();
+
+    act(() => player.result.current.onFell());
+
+    expect(player.result.current.notice).toMatchObject({ kind: 'message', tone: 'error' });
+    expect(openBar.result.current.notice).toBeNull();
+    expect(toastMock.showToast).not.toHaveBeenCalled();
+  });
+});
+
+// The MiniPlayer marks a saved go only on the climb its buttons log: a check on
+// another climb's Sent would read as that climb's send. A go no surface can
+// mark, or one whose tapped surface is gone, is a toast naming the climb.
+describe('useWorkoutOneTap: a saved go on another climb than the bar shows', () => {
+  const CLIMB_B = target({ climb: climb({ uuid: 'climb-2', name: 'Pinch roof' }), queueItemUuid: 'item-2' });
+
+  /** The next save settles only when the test says so. */
+  function deferNextSave() {
+    let settle = () => {};
+    saveMock.mutateAsync.mockImplementationOnce(() => ({
+      // oxlint-disable-next-line unicorn/no-thenable -- a save double that settles when the test says
+      then: (onSaved: (result: unknown) => void) => {
+        settle = () => onSaved({ savedTick: { uuid: 'tick-1' } });
+      },
+    }));
+    return () => settle();
+  }
+
+  it('toasts a late save from the player once it closed, though the bar is up on the next climb', () => {
+    const settle = deferNextSave();
+    const player = renderHook(() => useWorkoutOneTap(target(), vi.fn()), { wrapper: withQueue });
+    act(() => player.result.current.onSent());
+    // The climber swipes the player down; the set ended, so the bar shows B.
+    player.unmount();
+    const bar = renderHook(() => useWorkoutOneTap(CLIMB_B, vi.fn(), null, { messages: 'toast' }), {
+      wrapper: withQueue,
+    });
+
+    act(() => settle());
+
+    expect(toastMock.showToast).toHaveBeenCalledExactlyOnceWith(
+      'playView.workoutOutcome.flashLogged:Crimp line',
+      'success',
+    );
+    expect(bar.result.current.notice).toBeNull();
+  });
+
+  it("puts no check on B's Sent for a go the player logged on A", () => {
+    const player = renderHook(() => useWorkoutOneTap(target(), vi.fn()), { wrapper: withQueue });
+    const bar = renderHook(() => useWorkoutOneTap(CLIMB_B, vi.fn(), null, { messages: 'toast' }), {
+      wrapper: withQueue,
+    });
+
+    act(() => player.result.current.onSent());
+
+    expect(player.result.current.notice).toMatchObject({ kind: 'saved', queueItemUuid: QUEUE_ITEM_UUID });
+    expect(bar.result.current.notice).toBeNull();
+    expect(toastMock.showToast).not.toHaveBeenCalled();
+  });
+
+  it('toasts a bar tap just after the wall moved, which logs the climb it left', () => {
+    const bar = renderHook(
+      (props: { target: WorkoutOutcomeTarget }) => useWorkoutOneTap(props.target, vi.fn(), null, { messages: 'toast' }),
+      { initialProps: { target: target() }, wrapper: withQueue },
+    );
+    bar.rerender({ target: CLIMB_B });
+    advanceClock(300);
+
+    act(() => bar.result.current.onFell());
+
+    expect(sentInput()).toMatchObject({ climbUuid: CLIMB_UUID, status: 'attempt' });
+    expect(toastMock.showToast).toHaveBeenCalledExactlyOnceWith(
+      'playView.workoutOutcome.attemptLogged:Crimp line',
+      'success',
+    );
+    expect(bar.result.current.notice).toBeNull();
   });
 });
