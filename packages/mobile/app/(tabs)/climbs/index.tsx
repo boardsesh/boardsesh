@@ -57,11 +57,14 @@ import {
 } from '../../../src/components/climb-row-layout';
 import {
   ClimbListThumbnailSizeContext,
+  climbListColumnsForRoom,
+  climbListHasRoomForTwoColumns,
   climbListThumbnailSize,
+  estimateClimbListWidth,
   useClimbListThumbnailSize,
   type ClimbListColumns,
 } from '../../../src/components/climb-list-thumbnail-metrics';
-import { useClimbListColumns } from '../../../src/hooks/use-climb-list-layout';
+import { useClimbListLayout } from '../../../src/hooks/use-climb-list-layout';
 import { useClimbRowDisplay, useClimbRowField } from '../../../src/lib/climb-row-display-preference';
 import { shouldFetchNextPage, type NextPageTrigger } from '../../../src/lib/climb-list-pagination';
 import { requestPlayBoardPrewarm } from '../../../src/lib/board-render/play-board-prewarm';
@@ -374,15 +377,32 @@ function ClimbListInner() {
   // The list's own width decides its columns (see `climbListColumns`): two from
   // 900pt, where each column keeps an iPhone-wide row. Measured on the list's
   // frame, so the iPad sidebar and the iPhone Duo's player pane and rail are
-  // already left out. Until the first layout, the window less the side insets.
-  const { width: windowWidth } = useWindowDimensions();
-  const [measuredListWidth, setMeasuredListWidth] = useState<number | null>(null);
-  const listWidth = measuredListWidth ?? windowWidth - horizontalSafeArea.left - horizontalSafeArea.right;
-  const handleListClipLayout = useCallback((event: LayoutChangeEvent) => {
-    setMeasuredListWidth(Math.round(event.nativeEvent.layout.width));
-  }, []);
-  const listColumns = useClimbListColumns(listWidth);
+  // already left out. Only whether it fits two is kept, so a measurement that
+  // agrees with the first guess (every phone) re-renders nothing.
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const [listLayoutPreference] = useClimbListLayout();
+  const [listHasRoomForTwo, setListHasRoomForTwo] = useState(() =>
+    climbListHasRoomForTwoColumns(
+      estimateClimbListWidth({
+        windowWidth,
+        windowHeight,
+        safeAreaLeft: horizontalSafeArea.left,
+        safeAreaRight: horizontalSafeArea.right,
+        measuredContentColumnLeft: bottomChrome.contentColumnLeft,
+        isPad,
+        regularWidth: widthClass === 'regular',
+      }),
+    ),
+  );
+  const listColumns = climbListColumnsForRoom({ hasRoomForTwo: listHasRoomForTwo, preference: listLayoutPreference });
   const listThumbnailSize = climbListThumbnailSize(listColumns);
+  // A column change remounts the list (its `key`, below). This holds the climb
+  // at the top of the old layout, so the new list opens on it, not at the top.
+  const columnChangeTopIndexRef = useRef<number | null>(null);
+  const listColumnsRef = useRef(listColumns);
+  listColumnsRef.current = listColumns;
+  const listLayoutPreferenceRef = useRef(listLayoutPreference);
+  listLayoutPreferenceRef.current = listLayoutPreference;
 
   const listPaddingBottom = bottomChrome.scrollBottomPadding;
   const listBottomSpacerHeight = useSharedValue(listPaddingBottom);
@@ -1066,6 +1086,7 @@ function ClimbListInner() {
     isRefetching,
     lastFetchFailed: isFetchNextPageError,
     loadedCount: visibleClimbs.length,
+    climbsPerRow: listColumns,
   };
   const paginationStateRef = useRef(paginationState);
   paginationStateRef.current = paginationState;
@@ -1115,6 +1136,27 @@ function ClimbListInner() {
     if (pagination.hasNextPage && !pagination.isPlaceholderData) endReachedPendingRef.current = true;
     maybeFetchNextPage('scroll');
   }, [maybeFetchNextPage]);
+
+  const handleListClipLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      const hasRoomForTwo = climbListHasRoomForTwoColumns(event.nativeEvent.layout.width);
+      const nextColumns = climbListColumnsForRoom({ hasRoomForTwo, preference: listLayoutPreferenceRef.current });
+      if (nextColumns !== listColumnsRef.current) {
+        const firstVisibleIndex = visibleRowsStore.getFirst();
+        columnChangeTopIndexRef.current = firstVisibleIndex > 0 ? firstVisibleIndex : null;
+      }
+      setListHasRoomForTwo(hasRoomForTwo);
+    },
+    [visibleRowsStore],
+  );
+
+  // The remounted list has laid out: put the climb that was at the top back there.
+  const handleListLoad = useCallback(() => {
+    const index = columnChangeTopIndexRef.current;
+    columnChangeTopIndexRef.current = null;
+    if (index === null || index >= paginationStateRef.current.loadedCount) return;
+    void climbListRef.current?.scrollToIndex({ index, animated: false });
+  }, []);
 
   const handleViewableItemsChanged = useCallback(
     ({ viewableItems }: { viewableItems: ViewToken<Climb>[] }) => {
@@ -2096,9 +2138,12 @@ function ClimbListInner() {
         // The row applies the climber's quick-actions setting itself, so a toggle
         // re-renders the rows and leaves this callback alone.
         showMoreButton
+        // Grid cells fill the row height FlashList gives them.
+        fillCell={listColumns > 1}
       />
     ),
     [
+      listColumns,
       boardName,
       layoutId,
       sizeId,
@@ -2282,7 +2327,7 @@ function ClimbListInner() {
         }
       >
         {/* The no-board branches above unmount the list; it comes back at rest. */}
-        <ScrollEdgeListReset edge={scrollEdge.list} />
+        <ScrollEdgeListReset key={`scroll-edge-${listColumns}-columns`} edge={scrollEdge.list} />
         {/* The rows' thumbnail cell: 88×112 in two columns, 76×96 in one. Wraps
             the list and its prewarm only, so sheets opened from a row keep the
             one-column card. */}
@@ -2293,7 +2338,14 @@ function ClimbListInner() {
           >
             <ClimbProgressProvider targets={progressTargets}>
               <FlashList
+                // Remounted when the column count changes. FlashList keeps its
+                // measured layouts when it swaps between its grid and linear
+                // layout managers, so the grid's row-height floor (`minHeight`,
+                // 128pt in two columns) survived into one column and left rows
+                // 16pt too tall after a rotation to portrait.
+                key={`climb-list-${listColumns}-columns`}
                 ref={climbListRef}
+                onLoad={handleListLoad}
                 testID={screenshotCppClimbListTestId({
                   captureEnabled:
                     process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && !!process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL,

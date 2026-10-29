@@ -15,7 +15,7 @@ export type ClimbListThumbnailSize = Readonly<{ width: number; height: number }>
 /** How many climbs sit side by side in the Climbs list. */
 export type ClimbListColumns = 1 | 2;
 
-/** The climber's Layout choice in Settings → Climb list. Two columns is the default. */
+/** The climber's Columns choice in Settings → Climb list. Two columns is the default. */
 export type ClimbListLayoutPreference = 'one' | 'two';
 
 export const DEFAULT_CLIMB_LIST_LAYOUT: ClimbListLayoutPreference = 'two';
@@ -59,7 +59,64 @@ export function climbListColumns({
   listWidth: number;
   preference: ClimbListLayoutPreference;
 }): ClimbListColumns {
-  return preference !== 'one' && listWidth >= CLIMB_LIST_TWO_COLUMN_MIN_WIDTH ? 2 : 1;
+  return climbListColumnsForRoom({ hasRoomForTwo: climbListHasRoomForTwoColumns(listWidth), preference });
+}
+
+/** Whether a list this wide fits two columns. A boolean, so a screen can keep it in state and skip re-renders. */
+export function climbListHasRoomForTwoColumns(listWidth: number): boolean {
+  return listWidth >= CLIMB_LIST_TWO_COLUMN_MIN_WIDTH;
+}
+
+/** {@link climbListColumns} from the room already decided. */
+export function climbListColumnsForRoom({
+  hasRoomForTwo,
+  preference,
+}: {
+  hasRoomForTwo: boolean;
+  preference: ClimbListLayoutPreference;
+}): ClimbListColumns {
+  return preference !== 'one' && hasRoomForTwo ? 2 : 1;
+}
+
+/**
+ * The native iPad sidebar in landscape (DEVICE_VERIFIED 280pt, iPadOS 27.0; see
+ * `measuredTabContentInsetLeft` in `bottom-chrome-metrics.ts`). In portrait the
+ * tabs sit in a bar at the top and take no width.
+ */
+export const IPAD_LANDSCAPE_SIDEBAR_WIDTH = 280;
+
+/**
+ * The list's width before it has been measured, for the first render: the
+ * window less the side safe area and, on a regular-width iPad in landscape, the
+ * sidebar. The measured content-column inset wins when the probe has one. The
+ * list's own `onLayout` replaces the guess; a right guess means that replacement
+ * changes nothing.
+ */
+export function estimateClimbListWidth({
+  windowWidth,
+  windowHeight,
+  safeAreaLeft,
+  safeAreaRight,
+  measuredContentColumnLeft,
+  isPad,
+  regularWidth,
+}: {
+  windowWidth: number;
+  windowHeight: number;
+  safeAreaLeft: number;
+  safeAreaRight: number;
+  /** `useBottomChromeMetrics().contentColumnLeft`: 0 until measured, and off the native tab bar. */
+  measuredContentColumnLeft: number;
+  isPad: boolean;
+  regularWidth: boolean;
+}): number {
+  const sidebar =
+    measuredContentColumnLeft > 0
+      ? measuredContentColumnLeft
+      : isPad && regularWidth && windowWidth > windowHeight
+        ? IPAD_LANDSCAPE_SIDEBAR_WIDTH
+        : 0;
+  return windowWidth - Math.max(safeAreaLeft, sidebar) - safeAreaRight;
 }
 
 /** The thumbnail for a column count: 88×112 in two columns, 76×96 in one (every phone). */
@@ -68,32 +125,54 @@ export function climbListThumbnailSize(columns: ClimbListColumns): ClimbListThum
 }
 
 /**
- * Whether this device can ever give the list two columns, which is when the
- * Layout choice is worth showing. A tablet (iPad, Android tablet, a wide browser
- * screen) whose physical long side clears the floor: every iPad, also in a
- * narrow split it can widen out of. Among iPhones only the Duo's open inner
- * display (951pt long) qualifies, and only while it is open: the closed outer
- * display (466pt) and every other iPhone are portrait-locked at phone width.
- * On the open Duo the player pane takes half the window today, so the list
- * measures about 391pt and stays one column; the choice is there for the
- * moment the list gets the room.
+ * Whether this device's list can ever be wide enough for two columns, which is
+ * when the choice is worth showing: a tablet (iPad, Android tablet, a wide
+ * browser screen) whose physical long side clears the floor. Every iPad
+ * qualifies, also in a narrow split it can widen out of, because with the
+ * sidebar hidden its list spans the screen. Every iPhone is left out: they are
+ * portrait-locked at phone width, and on the open iPhone Duo the player pane
+ * takes half the inner display, so its list measures about 391pt (475pt with
+ * the rail collapsed) and two columns never happen there.
  */
 export function climbListTwoColumnsPossible({
   isTablet,
-  foldableInnerDisplay,
   screenLongSide,
 }: {
   isTablet: boolean;
-  /** `useDeviceLayout().foldableInnerDisplay`: the iPhone Duo, open. Live. */
-  foldableInnerDisplay: boolean;
   screenLongSide: number;
 }): boolean {
-  return (isTablet || foldableInnerDisplay) && screenLongSide >= CLIMB_LIST_TWO_COLUMN_MIN_WIDTH;
+  return isTablet && screenLongSide >= CLIMB_LIST_TWO_COLUMN_MIN_WIDTH;
 }
 
-/** Reads a stored Layout choice; anything unknown is the default. */
+/** Reads a stored Columns choice; anything unknown is the default. */
 export function sanitiseClimbListLayout(value: unknown): ClimbListLayoutPreference {
   return value === 'one' || value === 'two' ? value : DEFAULT_CLIMB_LIST_LAYOUT;
+}
+
+/** The overlay width every list cell renders at, and the MiniPlayer accessory's: the `_w400_` cache key. */
+const LIST_RENDER_WIDTH_FLOOR = 400;
+
+/**
+ * Overlay + background width, in pixels, for a climb list cell: its pixel width
+ * with 25% headroom, never under 400. 76pt at 3× is 285px and 88pt at 2× (iPad)
+ * is 220px, so both land on 400 and share the `_w400_` key with the MiniPlayer
+ * accessory (`AccessoryClimbThumbnail`): a climb seen in the list paints there
+ * from cache. 5× would have made the 88pt cell 440px and its own key. One
+ * function, because the width is part of the overlay cache key: the thumbnail
+ * and its prewarm have to ask for the same PNG.
+ */
+export function climbListThumbnailRenderWidth(cellWidth: number, pixelRatio: number): number {
+  return Math.max(LIST_RENDER_WIDTH_FLOOR, Math.ceil(cellWidth * pixelRatio * 1.25));
+}
+
+/**
+ * Overlay + background width for a cell whose caller passed its own `size` (feed
+ * cards, notifications, the session hero): ~5× the cell width, at least 400px,
+ * so expo-image never has to downscale a ~1080px source on the main thread while
+ * scrolling. Unchanged since those sizes shipped, so their cached PNGs stay valid.
+ */
+export function sizedThumbnailRenderWidth(cellWidth: number): number {
+  return Math.max(LIST_RENDER_WIDTH_FLOOR, Math.round(cellWidth * 5));
 }
 
 /**

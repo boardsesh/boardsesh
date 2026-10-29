@@ -15,7 +15,7 @@ export function buildClimbListSettingsModel(input: {
   previewHeight: number;
   /**
    * The One column / Two columns choice. `null` on a device that can never draw
-   * two columns (every iPhone but the open Duo), where the section is left out.
+   * two columns (every iPhone, the Duo included), where the section is left out.
    */
   layout: { value: ClimbListLayoutPreference; onChange: (value: ClimbListLayoutPreference) => void } | null;
 }): MoreFormModel {
@@ -53,8 +53,9 @@ export function buildClimbListSettingsModel(input: {
               rows: [
                 {
                   kind: 'segmented' as const,
+                  // No label of its own: the section title already names it, and
+                  // VoiceOver would read it twice.
                   key: 'climbListLayout',
-                  label: t('mobile.settings.climbList.layout.title'),
                   options: [
                     { key: 'one', label: t('mobile.settings.climbList.layout.one') },
                     { key: 'two', label: t('mobile.settings.climbList.layout.two') },

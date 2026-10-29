@@ -72,10 +72,17 @@ export type NextPageInput = {
   /** FlashList reported the end and that report has not been acted on yet. */
   endReachedPending: boolean;
   pageSize: number;
+  /**
+   * Climbs side by side on screen: 2 in a two-column iPad list. The indices and
+   * counts above are climbs, so the lookahead is scaled by this to reach as far
+   * down the screen in two columns as in one. Left out, one.
+   */
+  climbsPerRow?: number;
 };
 
-export function nextPageLookaheadRows(loadedCount: number, pageSize: number): number {
-  return loadedCount > pageSize ? SCROLLING_LOOKAHEAD_ROWS : FIRST_PAGE_LOOKAHEAD_ROWS;
+/** How many loaded climbs left below the last one on screen trigger the next page. */
+export function nextPageLookaheadRows(loadedCount: number, pageSize: number, climbsPerRow = 1): number {
+  return (loadedCount > pageSize ? SCROLLING_LOOKAHEAD_ROWS : FIRST_PAGE_LOOKAHEAD_ROWS) * climbsPerRow;
 }
 
 /** True when exactly one next-page fetch should start now. */
@@ -97,5 +104,5 @@ export function shouldFetchNextPage(input: NextPageInput): boolean {
   // Still at the top of the first page: opening the tab is one search.
   if (input.loadedCount <= input.pageSize && input.firstVisibleIndex === 0) return false;
   const rowsBelow = input.loadedCount - 1 - input.lastVisibleIndex;
-  return rowsBelow <= nextPageLookaheadRows(input.loadedCount, input.pageSize);
+  return rowsBelow <= nextPageLookaheadRows(input.loadedCount, input.pageSize, input.climbsPerRow);
 }

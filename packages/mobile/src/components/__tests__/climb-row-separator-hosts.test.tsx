@@ -287,6 +287,26 @@ describe('where each climb row host starts its separator', () => {
     expect(row.leadingPadding + TWO_COLUMNS.width + row.columnGap).toBe(116);
   });
 
+  it('a two-column grid cell: the row fills the cell and the separator sits on its bottom', () => {
+    const { container } = render(
+      <ClimbListThumbnailSizeContext.Provider value={TWO_COLUMNS}>
+        <ClimbListRow {...listRowProps} fillCell />
+      </ClimbListThumbnailSizeContext.Provider>,
+    );
+    const styles = drawnStyles(container) as Array<DrawnStyle & { flexGrow?: number; marginTop?: string }>;
+    expect(styles.filter((style) => style.flexGrow === 1).length).toBeGreaterThanOrEqual(2);
+    const separator = styles.find((style) => style.height === HAIRLINE);
+    expect(separator?.marginTop).toBe('auto');
+    expect(separator?.marginLeft).toBe(116);
+  });
+
+  it('a one-column row neither grows nor pins its separator', () => {
+    const { container } = render(<ClimbListRow {...listRowProps} />);
+    const styles = drawnStyles(container) as Array<DrawnStyle & { flexGrow?: number; marginTop?: string }>;
+    expect(styles.some((style) => style.flexGrow === 1)).toBe(false);
+    expect(styles.find((style) => style.height === HAIRLINE)?.marginTop).toBeUndefined();
+  });
+
   it('the loading placeholder in two columns: 116 and an 88×112 picture, like the row', () => {
     const { container } = render(
       <ClimbListThumbnailSizeContext.Provider value={TWO_COLUMNS}>

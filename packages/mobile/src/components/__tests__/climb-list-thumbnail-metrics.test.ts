@@ -4,8 +4,11 @@ import {
   DEFAULT_CLIMB_LIST_LAYOUT,
   climbListColumns,
   climbListThumbnailSize,
+  climbListThumbnailRenderWidth,
   climbListTwoColumnsPossible,
+  estimateClimbListWidth,
   sanitiseClimbListLayout,
+  sizedThumbnailRenderWidth,
 } from '../climb-list-thumbnail-metrics';
 
 // The list's own width on each device, as `climbListColumns` sees it: the window
@@ -113,30 +116,62 @@ describe('climbListThumbnailSize', () => {
 
 describe('climbListTwoColumnsPossible', () => {
   it('offers the choice on every iPad', () => {
-    expect(climbListTwoColumnsPossible({ isTablet: true, foldableInnerDisplay: false, screenLongSide: 1133 })).toBe(
-      true,
-    );
-    expect(climbListTwoColumnsPossible({ isTablet: true, foldableInnerDisplay: false, screenLongSide: 1366 })).toBe(
-      true,
-    );
+    expect(climbListTwoColumnsPossible({ isTablet: true, screenLongSide: 1133 })).toBe(true);
+    expect(climbListTwoColumnsPossible({ isTablet: true, screenLongSide: 1366 })).toBe(true);
   });
 
   it('hides it on an iPhone, the Pro Max included: portrait-locked at phone width', () => {
-    expect(climbListTwoColumnsPossible({ isTablet: false, foldableInnerDisplay: false, screenLongSide: 874 })).toBe(
-      false,
-    );
-    expect(climbListTwoColumnsPossible({ isTablet: false, foldableInnerDisplay: false, screenLongSide: 956 })).toBe(
-      false,
-    );
+    expect(climbListTwoColumnsPossible({ isTablet: false, screenLongSide: 874 })).toBe(false);
+    expect(climbListTwoColumnsPossible({ isTablet: false, screenLongSide: 956 })).toBe(false);
   });
 
-  it('hides it on the closed Duo and offers it on the open one', () => {
-    expect(climbListTwoColumnsPossible({ isTablet: false, foldableInnerDisplay: false, screenLongSide: 678 })).toBe(
-      false,
-    );
-    expect(climbListTwoColumnsPossible({ isTablet: false, foldableInnerDisplay: true, screenLongSide: 951 })).toBe(
-      true,
-    );
+  it('hides it on the iPhone Duo, closed or open: its list never reaches 900pt', () => {
+    expect(climbListTwoColumnsPossible({ isTablet: false, screenLongSide: 678 })).toBe(false);
+    expect(climbListTwoColumnsPossible({ isTablet: false, screenLongSide: 951 })).toBe(false);
+  });
+});
+
+describe('estimateClimbListWidth: the first render, before the list is measured', () => {
+  const ipad = { safeAreaLeft: 0, safeAreaRight: 0, measuredContentColumnLeft: 0, isPad: true, regularWidth: true };
+
+  it('takes the sidebar off a regular-width iPad in landscape', () => {
+    // iPad mini landscape: 1133 − 280 = 853, one column, the same as it measures.
+    expect(estimateClimbListWidth({ ...ipad, windowWidth: 1133, windowHeight: 744 })).toBe(853);
+    expect(columnsAt(estimateClimbListWidth({ ...ipad, windowWidth: 1133, windowHeight: 744 }))).toBe(1);
+    expect(estimateClimbListWidth({ ...ipad, windowWidth: 1194, windowHeight: 834 })).toBe(914);
+  });
+
+  it('takes nothing off an iPad in portrait, where the tabs sit at the top', () => {
+    expect(estimateClimbListWidth({ ...ipad, windowWidth: 1032, windowHeight: 1376 })).toBe(1032);
+  });
+
+  it('prefers the measured content column when there is one', () => {
+    expect(
+      estimateClimbListWidth({ ...ipad, windowWidth: 1194, windowHeight: 834, measuredContentColumnLeft: 320 }),
+    ).toBe(874);
+  });
+
+  it('takes the side safe area off a phone and never a sidebar', () => {
+    const phone = { ...ipad, isPad: false, regularWidth: false };
+    expect(estimateClimbListWidth({ ...phone, windowWidth: 402, windowHeight: 874 })).toBe(402);
+    expect(estimateClimbListWidth({ ...phone, windowWidth: 951, windowHeight: 669, safeAreaRight: 84 })).toBe(867);
+  });
+});
+
+describe('climbListThumbnailRenderWidth: the overlay cache key', () => {
+  it('keeps the one-column cell on 400px at every phone density', () => {
+    expect(climbListThumbnailRenderWidth(76, 2)).toBe(400);
+    expect(climbListThumbnailRenderWidth(76, 3)).toBe(400);
+    expect(climbListThumbnailRenderWidth(76, 4)).toBe(400);
+  });
+
+  it('keeps the two-column cell on 400px on an iPad, sharing the MiniPlayer’s entry', () => {
+    expect(climbListThumbnailRenderWidth(88, 2)).toBe(400);
+  });
+
+  it('leaves the sized cells on their shipped 5× widths', () => {
+    expect(sizedThumbnailRenderWidth(84)).toBe(420);
+    expect(sizedThumbnailRenderWidth(64)).toBe(400);
   });
 });
 

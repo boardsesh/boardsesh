@@ -189,10 +189,28 @@ const mocks = vi.hoisted(() => ({
   isFetchingNextPage: false,
   // Whether the scroll-ahead thumbnail warm-up is mounted right now.
   thumbnailPrewarmMounted: false,
+  // The list's frame reports its width here, the way `onLayout` would.
+  listClipLayout: undefined as
+    | ((event: { nativeEvent: { layout: { width: number; height: number } } }) => void)
+    | undefined,
+  // What the list was last rendered with, and how many times it mounted.
+  listNumColumns: undefined as number | undefined,
+  listMounts: 0,
+  listOnLoad: undefined as (() => void) | undefined,
+  listViewableItemsChanged: undefined as
+    | ((info: { viewableItems: Array<{ index: number | null }> }) => void)
+    | undefined,
+  scrollToIndex: vi.fn(),
 }));
 
 type FlashListProps<Item> = {
-  ref?: Ref<{ scrollToOffset: (params: { offset: number; animated?: boolean }) => void }>;
+  ref?: Ref<{
+    scrollToOffset: (params: { offset: number; animated?: boolean }) => void;
+    scrollToIndex: (params: { index: number; animated?: boolean }) => void;
+  }>;
+  numColumns?: number;
+  onLoad?: () => void;
+  onViewableItemsChanged?: (info: { viewableItems: Array<{ index: number | null }> }) => void;
   scrollToOverflowEnabled?: boolean;
   onCommitLayoutEffect?: () => void;
   contentContainerStyle?: { paddingTop: number };
@@ -207,8 +225,22 @@ type FlashListProps<Item> = {
 vi.mock('react-native', () => ({
   Pressable: ({ children, onPress, disabled }: { children?: ReactNode; onPress?: () => void; disabled?: boolean }) =>
     createElement('button', { onClick: disabled ? undefined : onPress }, children),
-  View: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
-    createElement('div', testID ? { 'data-testid': testID } : null, children),
+  View: ({
+    children,
+    testID,
+    onLayout,
+    style,
+  }: {
+    children?: ReactNode;
+    testID?: string;
+    onLayout?: (event: { nativeEvent: { layout: { width: number; height: number } } }) => void;
+    style?: unknown;
+  }) => {
+    // The list's frame: the one absolutely placed box that reports its layout.
+    const flat = Object.assign({}, ...[style].flat(10).filter(Boolean)) as { position?: string };
+    if (onLayout && flat.position === 'absolute') mocks.listClipLayout = onLayout;
+    return createElement('div', testID ? { 'data-testid': testID } : null, children);
+  },
   StyleSheet: {
     flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
     create: (styles: Record<string, unknown>) => styles,
@@ -254,8 +286,17 @@ vi.mock('@shopify/flash-list', () => ({
     onMomentumScrollEnd,
     onCommitLayoutEffect,
     contentContainerStyle,
+    numColumns,
+    onLoad,
+    onViewableItemsChanged,
   }: FlashListProps<Item>) => {
     mocks.listCommitLayout = onCommitLayoutEffect;
+    mocks.listNumColumns = numColumns;
+    mocks.listOnLoad = onLoad;
+    mocks.listViewableItemsChanged = onViewableItemsChanged;
+    useEffect(() => {
+      mocks.listMounts += 1;
+    }, []);
     mocks.listScrollProps = {
       onScroll,
       onScrollBeginDrag,
@@ -263,7 +304,7 @@ vi.mock('@shopify/flash-list', () => ({
       onMomentumScrollBegin,
       onMomentumScrollEnd,
     };
-    useImperativeHandle(ref, () => ({ scrollToOffset: mocks.scrollToOffset }), []);
+    useImperativeHandle(ref, () => ({ scrollToOffset: mocks.scrollToOffset, scrollToIndex: mocks.scrollToIndex }), []);
     return createElement(
       'div',
       {
@@ -505,6 +546,19 @@ vi.mock('../../../../src/components/ClimbListRowSkeleton', () => ({
 // thumbnail warm-up reports whether it is mounted, which is all a test can ask
 // of a component that draws nothing.
 vi.mock('../../../../src/components/ClimbListScrollAhead', () => ({
+  // A store that remembers: the screen reads the first row on screen from it
+  // when the column count changes. (The real module pulls the native renderer in.)
+  createVisibleRowsStore: () => {
+    let rows = { first: 0, last: 0 };
+    return {
+      getFirst: () => rows.first,
+      getLast: () => rows.last,
+      set: (first: number, last: number) => {
+        rows = { first, last };
+      },
+      subscribe: () => () => {},
+    };
+  },
   ClimbListThumbnailPrewarmWindow: () => {
     useEffect(() => {
       mocks.thumbnailPrewarmMounted = true;
@@ -514,7 +568,6 @@ vi.mock('../../../../src/components/ClimbListScrollAhead', () => ({
     }, []);
     return null;
   },
-  createVisibleRowsStore: () => ({ getFirst: () => 0, getLast: () => 0, set: () => {}, subscribe: () => () => {} }),
 }));
 
 vi.mock('../../../../src/components/play-drawer/PlayBoardPrewarmHost', () => ({
@@ -1008,6 +1061,74 @@ beforeEach(() => {
 
 // The list has no search field: a second tap on the Climbs tab, with the list
 // showing, opens Filters, whose first row is the climb-name search. No keyboard.
+describe('ClimbList columns follow the list width', () => {
+  const manyClimbs = () =>
+    Array.from({ length: 120 }, (_climb, index) => ({
+      ...mocks.climb,
+      uuid: `climb-${index}`,
+      name: `Climb ${index}`,
+    })) as unknown as Climb[];
+  const layoutTo = (width: number) =>
+    act(() => {
+      mocks.listClipLayout?.({ nativeEvent: { layout: { width, height: 1000 } } });
+    });
+
+  beforeEach(() => {
+    mocks.searchClimbs = manyClimbs();
+    mocks.listMounts = 0;
+    mocks.scrollToIndex.mockClear();
+  });
+
+  it('keeps a phone on one column and never remounts the list for its first measurement', () => {
+    render(<ClimbList />);
+    expect(mocks.listNumColumns).toBe(1);
+    const mounts = mocks.listMounts;
+    layoutTo(390);
+    expect(mocks.listNumColumns).toBe(1);
+    expect(mocks.listMounts).toBe(mounts);
+  });
+
+  it('remounts the list on each column change, so no row keeps the other layout’s height', () => {
+    render(<ClimbList />);
+    layoutTo(914);
+    expect(mocks.listNumColumns).toBe(2);
+    const twoColumnMounts = mocks.listMounts;
+    layoutTo(834);
+    expect(mocks.listNumColumns).toBe(1);
+    expect(mocks.listMounts).toBe(twoColumnMounts + 1);
+    layoutTo(1086);
+    expect(mocks.listNumColumns).toBe(2);
+    expect(mocks.listMounts).toBe(twoColumnMounts + 2);
+  });
+
+  it('opens the remounted list on the climb that was at the top, both ways round', async () => {
+    const { findByText } = render(<ClimbList />);
+    // The rows arrive once the board's saved search has been read.
+    await findByText('Climb 0');
+    layoutTo(914);
+    act(() => mocks.listViewableItemsChanged?.({ viewableItems: [{ index: 100 }, { index: 107 }] }));
+    layoutTo(834);
+    act(() => mocks.listOnLoad?.());
+    expect(mocks.scrollToIndex).toHaveBeenLastCalledWith({ index: 100, animated: false });
+
+    act(() => mocks.listViewableItemsChanged?.({ viewableItems: [{ index: 60 }, { index: 64 }] }));
+    layoutTo(914);
+    act(() => mocks.listOnLoad?.());
+    expect(mocks.scrollToIndex).toHaveBeenLastCalledWith({ index: 60, animated: false });
+    // Spent: a later load of the same list does not jump back.
+    act(() => mocks.listOnLoad?.());
+    expect(mocks.scrollToIndex).toHaveBeenCalledTimes(2);
+  });
+
+  it('leaves a list at the top where it is', () => {
+    render(<ClimbList />);
+    layoutTo(914);
+    layoutTo(834);
+    act(() => mocks.listOnLoad?.());
+    expect(mocks.scrollToIndex).not.toHaveBeenCalled();
+  });
+});
+
 describe('ClimbList second tap on the Climbs tab', () => {
   const trackedPayloads = (event: string) =>
     mocks.track.mock.calls.filter(([eventName]) => eventName === event).map(([, payload]) => payload);

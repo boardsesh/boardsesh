@@ -6,34 +6,12 @@ import { isBoardArtInMemory, warmBoardArtMemory } from '../lib/board-render/warm
 import { useTheme } from '../providers/theme-provider';
 import { borderRadius } from '../theme/tokens';
 import { LayeredClimbImage } from './LayeredClimbImage';
-import { useClimbListThumbnailSize } from './climb-list-thumbnail-metrics';
+import {
+  climbListThumbnailRenderWidth,
+  sizedThumbnailRenderWidth,
+  useClimbListThumbnailSize,
+} from './climb-list-thumbnail-metrics';
 import type { ReadyBoardArtSource } from '../lib/board-render/ready-board-art';
-
-/** The overlay width every list cell renders at, and the MiniPlayer accessory's: the `_w400_` cache key. */
-const LIST_RENDER_WIDTH_FLOOR = 400;
-
-/**
- * Overlay + background width for a cell whose caller passed its own `size` (feed
- * cards, notifications, the session hero): ~5× the cell width, at least 400px,
- * so expo-image never has to downscale a ~1080px source on the main thread while
- * scrolling. Unchanged since those sizes shipped, so their cached PNGs stay valid.
- */
-function sizedThumbnailRenderWidth(cellWidth: number): number {
-  return Math.max(LIST_RENDER_WIDTH_FLOOR, Math.round(cellWidth * 5));
-}
-
-/**
- * Overlay + background width for a climb list cell: its pixel width with 25%
- * headroom, never under 400px. 76pt at 3× is 285px and 88pt at 2× (iPad) is
- * 220px, so both land on 400 and share the `_w400_` key with the MiniPlayer
- * accessory (`AccessoryClimbThumbnail`): a climb seen in the list paints there
- * from cache. 5× would have made the 88pt cell 440px and its own key. One
- * function, because the width is part of the overlay cache key: the thumbnail
- * and its prewarm below have to ask for the same PNG.
- */
-function listThumbnailRenderWidth(cellWidth: number): number {
-  return Math.max(LIST_RENDER_WIDTH_FLOOR, Math.ceil(cellWidth * PixelRatio.get() * 1.25));
-}
 
 type ClimbListThumbnailPrewarmProps = {
   frames: string;
@@ -74,7 +52,7 @@ export const ClimbListThumbnailPrewarm = React.memo(function ClimbListThumbnailP
     // Must match ClimbListThumbnail's call exactly, or this warms a PNG no row
     // ever looks up.
     filledStyle: true,
-    renderWidth: listThumbnailRenderWidth(cellWidth),
+    renderWidth: climbListThumbnailRenderWidth(cellWidth, PixelRatio.get()),
     prefetch: true,
   });
   useEffect(() => {
@@ -147,7 +125,9 @@ const ClimbListThumbnail = React.memo(function ClimbListThumbnail({
     sizeId,
     setIds,
     filledStyle: true,
-    renderWidth: size ? sizedThumbnailRenderWidth(size.width) : listThumbnailRenderWidth(listCell.width),
+    renderWidth: size
+      ? sizedThumbnailRenderWidth(size.width)
+      : climbListThumbnailRenderWidth(listCell.width, PixelRatio.get()),
   });
 
   // Rendered when the row took this climb (a revisit, or a row the list warmed

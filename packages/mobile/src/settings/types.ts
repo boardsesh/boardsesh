@@ -255,8 +255,9 @@ export type AppSettings = {
   /**
    * One or two columns in the Climbs list where the list is wide enough for two
    * (a regular-width iPad). Read through `useClimbListLayout`, which sanitises it.
-   * In this store, not AsyncStorage, because the column count has to be known
-   * before the first row paints.
+   * In this store, not AsyncStorage, so the choice is read synchronously on the
+   * list's first render. The list's width is measured after that render, and a
+   * first guess that turns out wrong changes the column count once.
    */
   climbListLayout: ClimbListLayoutPreference;
   /**

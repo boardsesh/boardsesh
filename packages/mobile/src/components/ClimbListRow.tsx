@@ -259,6 +259,13 @@ type ClimbListRowProps = {
   separatorStyle?: StyleProp<ViewStyle>;
   showSeparator?: boolean;
   /**
+   * The row is a cell of a FlashList grid (the two-column Climbs list). The grid
+   * gives the shorter cell of a row the taller one's height as a minimum, so the
+   * row grows to fill it: the highlight and the touch area reach the cell's
+   * bottom, and the separator sits on it, level with its neighbour's.
+   */
+  fillCell?: boolean;
+  /**
    * Show the playlist-membership tag row in the default content layout. Only the
    * main filtered climb list opts in; the content still needs the user setting,
    * and the tags their fetched data. Ignored when `renderContent` supplies a
@@ -309,6 +316,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
   contentRowStyle,
   separatorStyle,
   showSeparator = true,
+  fillCell = false,
   showPlaylistChips = false,
   showProgress = false,
   showFavorite = false,
@@ -579,8 +587,12 @@ const ClimbListRow = React.memo(function ClimbListRow({
   );
 
   return (
-    <View style={[styles.outerContainer, containerStyle, unsupported && styles.unsupported]}>
+    <View
+      style={[styles.outerContainer, fillCell && styles.fillCell, containerStyle, unsupported && styles.unsupported]}
+    >
       <ReanimatedSwipeable
+        containerStyle={fillCell ? styles.fillCell : undefined}
+        childrenContainerStyle={fillCell ? styles.fillCell : undefined}
         ref={swipeableRef}
         friction={SWIPE_FRICTION}
         simultaneousWith={fullSwipe.gesture}
@@ -604,7 +616,12 @@ const ClimbListRow = React.memo(function ClimbListRow({
             ref={contentViewRef}
             collapsable={false}
             testID={testID}
-            style={[climbListRowStyles.contentRow, { backgroundColor: systemColors.background }, contentRowStyle]}
+            style={[
+              climbListRowStyles.contentRow,
+              fillCell && styles.fillCell,
+              { backgroundColor: systemColors.background },
+              contentRowStyle,
+            ]}
             accessible
             accessibilityRole="button"
             // Let React Native compose the name, grade and status from the
@@ -660,6 +677,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
           style={[
             climbListRowStyles.separator,
             climbRowSeparatorInsetStyle(hasThumbnail, thumbnailSize.width),
+            fillCell && styles.separatorAtCellBottom,
             { backgroundColor: systemColors.separator },
             separatorStyle,
           ]}
@@ -678,6 +696,13 @@ const styles = StyleSheet.create({
   },
   unsupported: {
     opacity: 0.5,
+  },
+  // A grid cell's row grows into the height the grid gave the cell.
+  fillCell: {
+    flexGrow: 1,
+  },
+  separatorAtCellBottom: {
+    marginTop: 'auto',
   },
   // Active-climb wash + left accent bar. The COLOUR is applied inline from the
   // scheme-aware brand (see `highlight` / selectedRowColors) so dark mode uses the

@@ -515,7 +515,7 @@
         "yourClimbing": "Your climbing",
         "actions": "Actions",
         "layout": {
-          "title": "Layout",
+          "title": "Columns",
           "one": "One column",
           "two": "Two columns",
           "footer": "Two columns show when the list has room, like on an iPad in landscape."
