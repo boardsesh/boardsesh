@@ -34,6 +34,10 @@ import { handleOcrTestDataUpload } from './handlers/ocr-test-data';
 import { handleSprayWallTestDataUpload } from './handlers/spray-wall-test-data';
 import { handlePosthogProxy } from './handlers/posthog';
 import { handleUserDataExport, handleUserDataExportDownload } from './handlers/user-data-export';
+import { handleCncArtUpload } from './handlers/cnc-art-upload';
+import { handleCncStripeWebhook } from './handlers/cnc-stripe-webhook';
+import { handleCncWorkerApi } from './handlers/cnc-worker';
+import { handleCncPackDownload, handleCncPackPreviewImage } from './handlers/cnc-download';
 import { pruneSyncDeletions } from './services/sync-deletions-prune';
 import { handleAuroraCredentials, handleAuroraCredentialsUnsynced } from './handlers/aurora-credentials';
 import { handleAuroraImport } from './handlers/aurora-import';
@@ -87,6 +91,7 @@ import { startClientUsageReporter, stopClientUsageReporter } from './services/cl
 import { isClientAbortError } from './utils/http-errors';
 import { setDbConnectObserver } from '@boardsesh/db/client';
 import { isProductionSentryEnvironment, resolveSentryEnvironment } from '@boardsesh/db/client/config';
+import { warnIfCheckoutBypassEnabled } from './services/cnc/checkout-bypass';
 import type { QueueEvent } from '@boardsesh/shared-schema';
 
 /**
@@ -482,6 +487,58 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
         return;
       }
 
+      // Stripe webhook for CNC build packs. Deliberately no CORS and no bearer
+      // token: the only caller is Stripe, and the `stripe-signature` header
+      // over the raw body is the authentication. 404s when Stripe is not
+      // configured rather than accepting unverifiable bodies. The method check
+      // is the handler's — it answers 405, which is the honest code for a GET
+      // to a route that exists, and it is covered by a test.
+      if (pathname === '/api/cnc/stripe/webhook') {
+        await handleCncStripeWebhook(req, res);
+        return;
+      }
+
+      // Buyer artwork upload. CORS-enabled and Bearer-authenticated: the
+      // configurator posts a multipart body to it from the browser, the same
+      // shape the gym image uploads use. Registered BEFORE the worker prefix
+      // only for readability — the paths do not overlap.
+      if (pathname === '/api/cnc/art' && (req.method === 'POST' || req.method === 'OPTIONS')) {
+        await handleCncArtUpload(req, res);
+        return;
+      }
+
+      // The pack generator's job API: claim, heartbeat, complete, fail and the
+      // art-asset stream. One prefix rather than five exact matches because the
+      // paths are parameterised (`:orderId`, `:assetId`); `handleCncWorkerApi`
+      // owns the dispatch. Bearer CNC_WORKER_SECRET on every route, and 404s
+      // wholesale when that secret is unset. Deliberately no CORS: no browser
+      // calls any of it.
+      if (pathname.startsWith('/api/cnc/worker/')) {
+        await handleCncWorkerApi(req, res, url);
+        return;
+      }
+
+      // Authenticated build-pack download. CORS-enabled for the Bearer path —
+      // the app calls it cross-origin — and it also accepts a short-lived
+      // `?token=` grant for a plain browser navigation.
+      if (/^\/api\/cnc\/packs\/[^/]+\/download$/.test(pathname) && (req.method === 'GET' || req.method === 'OPTIONS')) {
+        await handleCncPackDownload(req, res, url);
+        return;
+      }
+
+      // One watermarked preview sheet. Its own route rather than a `kind` on
+      // the download above because it is the only thing here a browser fetches
+      // as an `<img src>`: it answers `image/png` with a private hour-long
+      // cache, where every other route in this family is a `no-store`
+      // attachment.
+      if (
+        /^\/api\/cnc\/packs\/[^/]+\/preview\/[^/]+$/.test(pathname) &&
+        (req.method === 'GET' || req.method === 'OPTIONS')
+      ) {
+        await handleCncPackPreviewImage(req, res, url);
+        return;
+      }
+
       if (
         pathname === '/api/aurora-credentials' &&
         (req.method === 'GET' || req.method === 'POST' || req.method === 'DELETE' || req.method === 'OPTIONS')
@@ -763,6 +820,9 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
   const intervals: NodeJS.Timeout[] = [pingInterval];
 
   logger.info(`Boardsesh Backend starting on port ${PORT}...`);
+  // Dev-only Stripe bypass. Loud, once, at boot: a stack that hands out
+  // licensed packs without a payment must never be a surprise.
+  warnIfCheckoutBypassEnabled();
   // Whether this process reports to the production Sentry/PostHog projects is
   // inferred, not configured (see @boardsesh/db/client/config), so say the answer
   // out loud at boot: a developer chasing a missing event shouldn't have to guess
@@ -798,6 +858,10 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
     logger.info(`  Spray wall test data: ${httpScheme}://${urlHost}:${PORT}/api/spray-wall-test-data`);
     logger.info(`  PostHog proxy: ${httpScheme}://${urlHost}:${PORT}/api/posthog/*`);
     logger.info(`  User data export: ${httpScheme}://${urlHost}:${PORT}/api/user-data-export`);
+    logger.info(`  CNC worker API: ${httpScheme}://${urlHost}:${PORT}/api/cnc/worker/claim`);
+    logger.info(`  CNC pack download: ${httpScheme}://${urlHost}:${PORT}/api/cnc/packs/:licenceId/download`);
+    logger.info(`  CNC preview image: ${httpScheme}://${urlHost}:${PORT}/api/cnc/packs/:licenceId/preview/:name`);
+    logger.info(`  CNC artwork upload: ${httpScheme}://${urlHost}:${PORT}/api/cnc/art`);
     logger.info(`  Aurora credentials: ${httpScheme}://${urlHost}:${PORT}/api/aurora-credentials`);
     logger.info(`  Aurora import: ${httpScheme}://${urlHost}:${PORT}/api/aurora-import`);
     logger.info(`  MoonBoard import: ${httpScheme}://${urlHost}:${PORT}/api/moonboard-import`);

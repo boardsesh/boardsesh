@@ -108,6 +108,14 @@ export default function AdminPage() {
         </MuiLink>
         <MuiLink
           component={LocaleLink}
+          href="/admin/build-plans"
+          underline="hover"
+          sx={{ color: themeTokens.colors.primary }}
+        >
+          {t('nav.buildPlans')}
+        </MuiLink>
+        <MuiLink
+          component={LocaleLink}
           href="/admin/location-sync"
           underline="hover"
           sx={{ color: themeTokens.colors.primary }}

@@ -1101,5 +1101,71 @@ export const mutationsTypeDefs = /* GraphQL */ `
     Caller must be a participant of the session. Requires authentication.
     """
     syncSessionToIntegration(provider: IntegrationProvider!, sessionId: ID!): IntegrationExportResult!
+
+    """
+    Ask the pack generator whether a configuration's artwork actually fits:
+    inside its panel, clear of every hole keep-out, not crossing a seam.
+
+    A mutation rather than a query because it is the authoritative verdict the
+    placement editor debounces against while the buyer drags — it is a call
+    out to the generator, not a cacheable read. Requires authentication.
+    """
+    validateCncArtwork(config: CncBoardConfigInput!): CncArtworkValidation!
+
+    """
+    Generate a free, watermarked preview of a configuration.
+
+    Nothing is charged and nothing is licensed: the order comes back in
+    \`preview_queued\`, and its \`previewImages\` fill in once the generator is
+    done. Asking again for a configuration this buyer has already previewed
+    returns THAT order rather than queueing a second job — the configuration's
+    \`configHash\` is the identity. Change anything and this writes a new order;
+    a preview is an immutable snapshot of one configuration.
+
+    Four previews per hour per buyer. Throws \`RATE_LIMITED\` past that, and
+    \`CNC_INVALID_CONFIG\` for a wall that is not on sale, an option out of
+    range or artwork that will not fit.
+
+    Requires authentication.
+    """
+    createCncPreview(config: CncBoardConfigInput!): CncOrder!
+
+    """
+    Buy a previewed order: attach the licence and open Stripe Checkout for it.
+
+    The order must be the caller's own and in \`preview_ready\` — this is the
+    only way a build pack is ever paid for, so nothing can be bought that was
+    not previewed first. It takes the tier, the licensee and the acceptance,
+    moves to \`pending_payment\` and returns the hosted page to send the buyer
+    to; nothing is queued for generation until Stripe confirms the charge. If
+    Stripe will not open a session the order goes back to \`preview_ready\` and
+    this throws \`CNC_CHECKOUT_UNAVAILABLE\`. The returned session expires 31
+    minutes after it is created.
+
+    Requires authentication.
+    """
+    finaliseCncOrder(input: FinaliseCncOrderInput!): CncCheckoutSession!
+
+    """
+    Mint a five-minute link to your own build pack, or to its free preview.
+
+    Throws \`NOT_FOUND\` for a licence that does not exist and for one belonging
+    to someone else, identically — a licence id identifies an order, it never
+    grants access to one. Throws \`CNC_PACK_NOT_DOWNLOADABLE\` when that
+    deliverable is not available yet or the order was refunded: \`FULL\` needs
+    \`ready\`, \`PREVIEW\` needs \`preview_ready\` or anything after it.
+
+    Requires authentication.
+    """
+    createCncDownloadGrant(licenceId: String!, kind: CncDownloadKind = FULL): CncDownloadGrant!
+
+    """
+    Rebuild a pack from scratch: back to \`queued\` with the generation counter
+    bumped, the same licence id and the same output key, so the new zip replaces
+    the old one instead of issuing a second licensed copy.
+
+    Allowed from \`ready\` and \`failed\` only. Requires an admin.
+    """
+    regenerateCncPack(licenceId: String!): CncOrder!
   }
 `;

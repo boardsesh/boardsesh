@@ -1996,6 +1996,13 @@
       "when": 1793164265387,
       "tag": "0284_session_workouts",
       "breakpoints": true
+    },
+    {
+      "idx": 285,
+      "version": "7",
+      "when": 1793166640086,
+      "tag": "0285_cnc_packs",
+      "breakpoints": true
     }
   ]
 }

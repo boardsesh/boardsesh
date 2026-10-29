@@ -1211,5 +1211,51 @@ export const queriesTypeDefs = /* GraphQL */ `
 
     "Pull hard deletions (user-scoped + reference data) since the cursor."
     syncDeletions(cursor: SyncCursorInput, limit: Int! = 500): SyncDeletionsResult!
+
+    # ============================================
+    # CNC build packs
+    # ============================================
+
+    """
+    Everything Boardsesh sells a CNC build pack for, with prices and the
+    manufacturing choices each wall allows. Public: the configurator renders
+    this before anyone signs in.
+    """
+    cncCatalog: CncCatalog!
+
+    """
+    Panel layout for a configuration: panels, seams, keep-outs and a BOM
+    preview, straight from the pack generator. Public, rate-limited, and
+    validated against the catalogue before the generator is touched.
+
+    Set \`includeHoles\` to draw the drill pattern; it adds roughly 40 KB of
+    hole positions and is left off for a plain panel outline. Requesting the
+    hole list requires a signed-in user and is held to a tighter rate limit
+    than the hole-free preview. Hold ids and set-screw angles are never
+    returned.
+    """
+    cncLayout(config: CncBoardConfigInput!, includeHoles: Boolean): JSON!
+
+    "The signed-in buyer's own orders, newest first. Requires authentication."
+    myCncOrders: [CncOrder!]!
+
+    """
+    One order by its licence id. Returns null for a licence that does not
+    exist and for one belonging to someone else — a licence id identifies an
+    order, it never grants access to it. Requires authentication.
+    """
+    cncOrder(licenceId: String!): CncOrder
+
+    """
+    Every buyer's orders, newest first — the list behind \`/admin/build-plans\`.
+    Admin only.
+
+    Carries the three fields \`CncOrder\` withholds (licensee email, attempts,
+    the generator's real error), because those are what an operator needs to
+    answer "whose pack is this, why did it fail, and who do I write to". Filter
+    with \`status\` to work one bucket at a time; \`limit\` defaults to 25 and
+    is capped at 100, and \`cursor\` comes from the previous page.
+    """
+    adminCncOrders(status: CncOrderStatus, limit: Int, cursor: String): CncOrderConnection!
   }
 `;

@@ -40,6 +40,7 @@ import { userDataExportTypeDefs } from './user-data-export';
 import { analyticsConsentTypeDefs } from './analytics-consent';
 import { appleAdsAttributionTypeDefs } from './apple-ads-attribution';
 import { releaseContextTypeDefs } from './release-context';
+import { cncPacksTypeDefs } from './cnc-packs';
 
 export const typeDefs = [
   releaseContextTypeDefs,
@@ -76,6 +77,7 @@ export const typeDefs = [
   sessionWorkoutsTypeDefs,
   sprayWallResetTypeDefs,
   sprayWallModerationTypeDefs,
+  cncPacksTypeDefs,
   queriesTypeDefs,
   mutationsTypeDefs,
   subscriptionsTypeDefs,

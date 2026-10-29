@@ -38,7 +38,33 @@ export type BackendAnalyticsEvent =
   // below. Contract: services/analytics/community-monthly-events.ts and
   // docs/growth-metrics.md.
   | 'Community Monthly Summary'
-  | 'Community Monthly Rank';
+  | 'Community Monthly Rank'
+  // Fires from the Stripe webhook once a build-pack payment is confirmed —
+  // never from the browser. The purchase is a server fact, and a client-side
+  // "Checkout Started" is not one: it fires whether or not the card clears,
+  // and an ad blocker eats it either way. Stratify revenue by `tier` and
+  // `board_name`; the two tiers are 5x apart in price, so pooling them makes
+  // the average meaningless.
+  // `amount_cents` is GST-inclusive — it is `session.amount_total`, i.e. what
+  // Stripe actually charged, not the catalogue's pre-tax display price.
+  // `amount_excluding_tax_cents` is the GST-exclusive equivalent, derived from
+  // `session.total_details.amount_tax` when Stripe reported a tax breakdown
+  // (null otherwise); use it rather than deriving a pre-tax figure from
+  // `amount_cents` with a guessed rate.
+  | 'Build Plans Pack Purchased'
+  // Fires from the worker's preview completion — the free, watermarked pack
+  // that now stands between "configured a wall" and "paid for one". It is the
+  // top of the build-plans funnel and the denominator every later step is read
+  // against: previews generated → `Checkout Started` (client, at finalise) →
+  // `Build Plans Pack Purchased`. Backend events count operations, not people;
+  // `preview_index` above 1 is a generator retry, not a buyer iterating, since
+  // changing anything writes a new order row.
+  | 'Build Plans Preview Generated'
+  // Fires from the authenticated download route, once per successful stream.
+  // Counts EVENTS, not distinct users, on purpose: a buyer re-downloading their
+  // own pack is the signal (a pack that is fetched twenty times is a pack
+  // someone is having trouble with, or sharing).
+  | 'Build Plans Pack Downloaded';
 
 /**
  * Backend events are operational telemetry sent under legitimate interest, not

@@ -137,7 +137,46 @@
     "feedback": "Reportes de errores",
     "gymDuplicates": "Rocódromos duplicados",
     "locationSync": "Bloqueos de sincronización de ubicaciones",
+    "buildPlans": "Pedidos de packs de construcción",
     "sprayWalls": "Datos de entrenamiento de Spraywalls"
+  },
+  "buildPlans": {
+    "title": "Pedidos de packs de construcción",
+    "subtitle": "Todos los pedidos, vistas previas gratis incluidas, del más nuevo al más antiguo. Lee el error del generador y vuelve a poner el pack en cola.",
+    "previewsLastHour_one": "{{count}} vista previa dibujada en la última hora, de los pedidos cargados aquí.",
+    "previewsLastHour_other": "{{count}} vistas previas dibujadas en la última hora, de los pedidos cargados aquí.",
+    "backToAdmin": "Volver al panel",
+    "statusFilter": {
+      "all": "Todos"
+    },
+    "table": {
+      "licence": "Licencia",
+      "licensee": "Titular",
+      "tier": "Tarifa",
+      "wall": "Muro",
+      "status": "Estado",
+      "attempts": "Intentos",
+      "created": "Creado",
+      "actions": "Acciones"
+    },
+    "actions": {
+      "regenerate": "Regenerar"
+    },
+    "confirm": {
+      "title": "¿Volver a generar este pack?",
+      "body": "{{licenceId}} se vuelve a generar con el mismo id de licencia y sustituye al archivo que descarga el comprador. Conserva la licencia que pagó.",
+      "cancel": "Dejarlo como está",
+      "confirm": "Volver a generar"
+    },
+    "snackbar": {
+      "regenerated": "De vuelta en la cola",
+      "regenerateFailed": "No se pudo volver a encolar ese pack"
+    },
+    "empty": "Ningún pedido coincide con estos filtros.",
+    "error": "No se pudieron cargar los pedidos.",
+    "retry": "Reintentar",
+    "loadMore": "Cargar más",
+    "unknown": "No indicado"
   },
   "feedback": {
     "title": "Errores y comentarios",
