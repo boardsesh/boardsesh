@@ -339,6 +339,7 @@ jobs:
               - 'packages/shared/board-react/**'
               - 'packages/shared/board-look/**'
               - 'packages/shared/board-render/**'
+              - 'packages/shared/frosted-bokeh/**'
               - 'packages/shared/climb-actions/**'
               - 'packages/shared/climb-filters/**'
               - 'packages/shared/community-roles/**'
