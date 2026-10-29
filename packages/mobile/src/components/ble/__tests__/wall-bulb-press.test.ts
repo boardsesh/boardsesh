@@ -70,7 +70,7 @@ describe('the bulb’s look, back in the first row', () => {
     ['put_on_wall', true, 'lit'],
     ['dark', true, 'lit'],
     ['lit', true, 'lit'],
-    ['crew', false, 'lit'],
+    ['crew', false, 'ready'],
     ['on_wall_unlinked', false, 'ready'],
     ['take_wall', false, 'off'],
     ['release_wall', false, 'lit'],
@@ -78,10 +78,11 @@ describe('the bulb’s look, back in the first row', () => {
     expect(resolveWallBulbLook(state, selfHolds)).toBe(expected);
   });
 
-  // #7015: a crewmate turned the lights off; presence says the climb is dark.
-  it("reads a crewmate's board dark once they turned the lights off", () => {
+  // Filled means this phone has the board; a crewmate's board, lit (or dark
+  // after #7015's lights-off), is an outline.
+  it("never fills for a crewmate's board", () => {
     expect(resolveWallBulbLook('crew', false, false)).toBe('ready');
-    expect(resolveWallBulbLook('crew', false, true)).toBe('lit');
+    expect(resolveWallBulbLook('crew', false, true)).toBe('ready');
   });
 
   it('draws ready as an amber outline and off as a grey one', () => {

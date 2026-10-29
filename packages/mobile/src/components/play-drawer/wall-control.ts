@@ -195,18 +195,18 @@ export function resolveWallControlAction({
 }
 
 /**
- * The bulb's look: grey outline with no board, filled amber whenever this phone
- * holds the board, in any state (Marco's QA: "Put on the wall" on a preview
- * with the link up, and "You have the board", fill too), or when a crewmate's
- * climb is lit. Amber outline when the board is on the wall but not this
- * phone's (no link, or a crewmate's board after they turned the lights off,
- * #7015, heard through presence).
+ * The bulb's look: grey outline with no board, filled amber only while this
+ * phone holds the board, in any state (Marco's QA: "Put on the wall" on a
+ * preview with the link up, and "You have the board", fill too). Amber outline
+ * when the board is on the wall but not this phone's: no link, or a crewmate's
+ * board, lit or dark (#7015); their face says whose.
  */
 export type WallBulbLook = 'off' | 'ready' | 'lit';
 
 export function resolveWallBulbLook(state: WallControlState, selfHolds: boolean, displayedLit = true): WallBulbLook {
   if (state === 'lit' || state === 'release_wall' || selfHolds) return 'lit';
-  if (state === 'crew') return displayedLit ? 'lit' : 'ready';
+  // A crewmate's board: an outline (their face says whose); filled means yours.
+  if (state === 'crew') return 'ready';
   // On the wall but not this phone's: an outline, never the filled "you have it".
   if (state === 'on_wall_unlinked') return 'ready';
   return 'off';

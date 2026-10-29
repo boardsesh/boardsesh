@@ -1825,7 +1825,8 @@ describe('PlayDrawer — reading the wall', () => {
     wall.uuid = CLIMB.uuid;
     const view = render(drawerElement('member', committedTargetFor(CLIMB)));
     expect(lastActionBarProps().wallControlState).toBe('crew');
-    expect(lastActionBarProps().wallControl).toMatchObject({ look: 'lit' });
+    // A crewmate's board is an outline whether lit or dark; filled means yours.
+    expect(lastActionBarProps().wallControl).toMatchObject({ look: 'ready' });
 
     const pillsBeforeClear = recorded.wallPill.length;
     wall.uuid = null;
@@ -1839,7 +1840,8 @@ describe('PlayDrawer — reading the wall', () => {
     // The queue moves on before the feed's echo: the new climb is not called dark.
     session.currentItem = { uuid: 'queue-item-next', climb: SIMILAR_CLIMB };
     view.rerender(drawerElement('member', committedTargetFor(SIMILAR_CLIMB)));
-    expect(lastActionBarProps().wallControl).toMatchObject({ look: 'lit' });
+    expect(lastActionBarProps().wallControl).toMatchObject({ state: 'crew', look: 'ready' });
+    expect(recorded.wallPill.at(-1)?.state).not.toBe('browsing');
   });
 
   // Fable review: a Turn off all lights outlived the link, so after a

@@ -142,7 +142,7 @@ const rows: Row[] = [
       labelKey: 'onBoard',
       a11yLabelKey: 'onBoard',
       a11yHintKey: 'relayHint',
-      look: 'lit',
+      look: 'ready',
     },
   ],
   // #7015: Sam turned all the lights off; this phone hears it through presence.
@@ -385,8 +385,8 @@ describe('resolveWallControl: presence freshness', () => {
       'lit',
     ],
     ['stale, your link, lit', { ...WALL, ...MINE, displayedLit: true }, 'lit', 'disconnect', 'lit'],
-    ["fresh, Sam's link", { ...WALL, ...SAMS, presenceFresh: true, displayedLit: true }, 'crew', 'relay', 'lit'],
-    ["stale, Sam's link", { ...WALL, ...SAMS, displayedLit: true }, 'crew', 'relay', 'lit'],
+    ["fresh, Sam's link", { ...WALL, ...SAMS, presenceFresh: true, displayedLit: true }, 'crew', 'relay', 'ready'],
+    ["stale, Sam's link", { ...WALL, ...SAMS, displayedLit: true }, 'crew', 'relay', 'ready'],
     [
       'fresh, no link, not the wall’s climb: as before',
       { presenceFresh: true, commitButton: 'putOnWall' },

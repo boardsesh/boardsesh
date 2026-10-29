@@ -175,7 +175,9 @@ function WallControlButtonComponent({
           <Icon
             name={holdsBoard ? 'lightbulb.fill' : 'lightbulb'}
             size={ICON_SIZE}
-            color={holdsBoard || onWallUnlinked ? brandColors.live : foreground}
+            // Amber, except on the plain amber fill (a lit climb with no holds to
+            // frost), where it would vanish: there it takes the label colour.
+            color={(holdsBoard || onWallUnlinked) && !(lit && !glowLayer) ? brandColors.live : foreground}
             maxFontSizeMultiplier={1}
           />
         )}
