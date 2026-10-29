@@ -1,20 +1,25 @@
 import { PressableSurface } from '../PressableSurface';
-import { memo, useCallback } from 'react';
+import { memo, useCallback, type ReactNode } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../Icon';
 import { Text } from '../Text';
-import { BleLightbulbButton } from '../ble/BleLightbulbButton';
-import type { BleLightbulbLabelKind } from '../ble/ble-lightbulb-button-state';
-import { LightbulbHolderBadge } from './LightbulbHolderBadge';
-import { FirstConnectPill } from './FirstConnectPill';
-import { PlayDrawerCommitBar, PutOnWallButton } from './PlayDrawerCommitBar';
+import { PlayDrawerCommitBar } from './PlayDrawerCommitBar';
 import { WorkoutOutcomeRow } from './WorkoutOutcomeRow';
 import { AnglePill } from './AnglePill';
 import type { WorkoutOutcomeTarget } from './workout-outcome';
-import type { CommitButtonLabel } from './wall-state';
-import { resolveActionBarLayout, type ActionBarCommitButton, type ActionBarSecondaryItem } from './action-bar-layout';
-import { DEFAULT_PLAYER_BUTTONS, type PlayerButtonsLayout } from '../../lib/player-buttons';
+import { WALL_CONTROL_HEIGHT, WallControlButton } from './WallControlButton';
+import { WallControlBulb } from './WallControlBulb';
+import { EMPTY_WALL_CONTROL, type WallControlModel } from './wall-control';
+import type { WallGlowInput } from './use-wall-glow';
+import { resolveActionBarLayout, type ActionBarCommitButton } from './action-bar-layout';
+import {
+  DEFAULT_PLAYER_BUTTONS,
+  type PlayerBoardControl,
+  type PlayerButtonId,
+  type PlayerButtonsLayout,
+} from '../../lib/player-buttons';
+import type { WallControlSurface } from '../../lib/analytics-wall-control';
 import { ActionButton, SIZES, type ButtonSize, drawerActionBarStyles } from '../drawer-action-bar/DrawerActionBar';
 import { useTheme } from '../../providers/theme-provider';
 // Aliased: foregrounds in this file read scheme-aware brand from `useTheme()`.
@@ -27,8 +32,12 @@ import { useVariantValue } from '../../theme/variants';
 import { hapticMedium, hapticSelection } from '../../lib/haptics';
 import { COUNT_BADGE_MAX_FONT_SCALE, countBadgeBox, countBadgeText, formatCountBadge } from '../count-badge-style';
 
-/** The second row's usual height: its padding plus one small button. */
-export const ACTION_BAR_SECONDARY_ROW_HEIGHT = spacing[2] + SIZES.sm.dim + spacing[3];
+/**
+ * The second row's height: its padding plus the wall button (or, for the
+ * signed-out reader, one small button), whichever is taller. Held in every
+ * state, so the board never moves.
+ */
+export const ACTION_BAR_SECONDARY_ROW_HEIGHT = spacing[2] + Math.max(SIZES.sm.dim, WALL_CONTROL_HEIGHT) + spacing[3];
 
 type PlayDrawerActionBarProps = {
   canSwipePrevious: boolean;
@@ -44,57 +53,43 @@ type PlayDrawerActionBarProps = {
    * plain queue label.
    */
   upNextBadgeCount?: number | null;
-  /** Filled/lit visual — OR'd in the parent (this device's BLE, a board-presence
-   *  holder, or the session wall-lit signal). Visual only. */
-  lightbulbActive: boolean;
-  /** Whether THIS device's BLE link is connected. Drives the tap action's
-   *  meaning, so it also drives the accessibility label + selected state:
-   *  connected → tapping disconnects ("turn off"); not connected → tapping
-   *  connects ("connect board"). Distinct from `lightbulbActive`, which a peer
-   *  can light. */
-  lightbulbConnected: boolean;
-  lightbulbPending?: boolean;
-  autoDisconnectWarning?: boolean;
-  lightbulbAccessibilityLabel?: string;
   /**
-   * Which sentence the bulb's label carries, resolved from what a tap actually
-   * does (`getBleLightbulbLabelKind`). Defaults to the old connected/not-connected
-   * split for callers that don't pass it.
+   * The board control's model (`resolveWallControl`): what the wall button and
+   * the bulb draw. Both views draw only this, so they can't disagree.
    */
-  lightbulbLabelKind?: BleLightbulbLabelKind;
-  lightbulbLongPressAccessibilityHint?: string;
-  lightbulbLongPressEnabled?: boolean;
+  wallControl?: WallControlModel;
+  /** A tap on one view of the board control; the host's `useWallControl` runs it. */
+  onWallControlPress?: (control: WallControlSurface) => void;
+  /** A hold on one view of the board control: the board sheet, while this phone holds the link. */
+  onWallControlLongPress?: (control: WallControlSurface) => void;
+  /** View options › Buttons › Board control: the wall button (the default) or the bulb. */
+  boardControl?: PlayerBoardControl;
+  /** The lit wall button's glow (F1b): the climb's lit holds, while it is lit. */
+  wallGlow?: WallGlowInput | null;
+  /**
+   * The MiniPlayer beside the player stands in for its first row (#7000: the
+   * open Duo's pane, a tablet's player route; `playerMirroredByMiniPlayer`).
+   */
+  miniPlayerMirrors?: boolean;
   /**
    * Whether the host platform has a Bluetooth provider at all. Only that — an
    * anonymous viewer never gets the bulb regardless, and that rule lives here
    * rather than at the call site (see `viewer`).
    */
   showLightbulb?: boolean;
+  /** A wall with lights to put a climb on; without one the wall button's row folds (`resolveActionBarLayout`). */
+  hasWall?: boolean;
   /**
-   * The connect-step test's treatment (#5654, PR 7): the bulb leaves the first
-   * row and comes back as a labelled "Light it on the board" pill at the right
-   * end of the second row. Share (and the queue, on a mirror board) moves into
-   * the top row's ⋯, the heart and angle stay, and the tick keeps the hero slot.
-   * The host decides it (`useFirstConnectPill`); commit mode and an anonymous
-   * viewer still win here, like every other row rule (`resolveActionBarLayout`).
+   * Show the holder's face on the bulb. Suppressed while the header's back chip
+   * carries the driver's face, so the same face never appears twice in the
+   * drawer (see `shouldShowHolderBadge` in wall-state.ts).
    */
-  connectPill?: boolean;
-  /**
-   * The pill's tap. Separate from `onLightbulb` so a connect from the pill is
-   * logged as the pill's (Board Connect Tapped `first_connect_pill`), not the
-   * bare bulb's. Falls back to `onLightbulb`.
-   */
-  onConnectPill?: () => void;
-  /** Show the holder avatar pip on the lightbulb. Suppressed when the wall-state
-   *  pill already carries the driver's face in the header, so the same face never
-   *  appears twice in the drawer (see `shouldShowHolderBadge` in wall-state.ts). */
   showHolderBadge?: boolean;
   /**
-   * The browse latch's control in the second row. `putOnWall` puts one button in
-   * the middle of the usual row; `confirm` (someone else moved the wall while you
-   * looked around) swaps the row for Keep theirs / Put mine up. Resolved from
-   * `resolveCommitBarModel`; an anonymous viewer never gets either, alongside the
-   * rest of the `viewer` rules.
+   * The browse latch's control. `putOnWall` is one of the wall button's states;
+   * `confirm` (someone else moved the wall while you looked around) swaps the
+   * row for Keep theirs / Put mine up. Resolved from `resolveCommitBarModel`; an
+   * anonymous viewer never gets either, alongside the rest of the `viewer` rules.
    */
   commitButton?: ActionBarCommitButton;
   /**
@@ -113,10 +108,9 @@ type PlayDrawerActionBarProps = {
   wallClimbName?: string | null;
   /** Confirm only: the lit climb's uuid, to name who put it up. */
   wallClimbUuid?: string | null;
-  /** "Put on the wall" vs "Set active" where no wall is reachable. */
-  commitLabel?: CommitButtonLabel;
   /** Confirm only: leave their climb up. */
   onKeepTheirs?: () => void;
+  /** Confirm only: Put mine up. */
   onCommit?: () => void;
   ascentCount: number;
   currentAngle?: number;
@@ -144,8 +138,6 @@ type PlayDrawerActionBarProps = {
   onNextClick: () => void;
   onMirror: () => void;
   onToggleFavorite: () => void;
-  onLightbulb: () => void;
-  onLightbulbLongPress?: () => void;
   onOpenQueue: () => void;
   /** Absent on a draft: only its setter can open it, so a link goes nowhere (#5960). */
   onShare?: () => void;
@@ -153,9 +145,9 @@ type PlayDrawerActionBarProps = {
   onTickLongPress: () => void;
   onOpenAngleSelector?: () => void;
   /**
-   * The climber's buttons from View options (#6229): order and switches.
-   * `resolveActionBarLayout` decides what that means here, and ignores it for an
-   * anonymous reader. Defaults to today's bar.
+   * The climber's buttons from View options (#6229, #7000): order and switches.
+   * `resolveActionBarLayout` decides which fill the first row's ends, and
+   * ignores them for an anonymous reader. Defaults to Marco's bar.
    */
   buttons?: PlayerButtonsLayout;
   /** The Previous and next switch. Off leaves both slots empty, so Log stays centred. */
@@ -175,24 +167,20 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   isFavorited,
   remainingQueueCount,
   upNextBadgeCount = null,
-  lightbulbActive,
-  lightbulbConnected,
-  lightbulbPending = false,
-  autoDisconnectWarning = false,
-  lightbulbAccessibilityLabel,
-  lightbulbLabelKind,
-  lightbulbLongPressAccessibilityHint,
-  lightbulbLongPressEnabled = lightbulbActive,
+  wallControl = EMPTY_WALL_CONTROL,
+  onWallControlPress,
+  onWallControlLongPress,
+  boardControl = 'wallButton',
+  wallGlow = null,
+  miniPlayerMirrors = false,
   showLightbulb = true,
-  connectPill = false,
-  onConnectPill,
+  hasWall = true,
   showHolderBadge = true,
   commitButton = null,
   workoutOutcome = null,
   workoutOutcomeWallLeftAtMs = null,
   wallClimbName = null,
   wallClimbUuid = null,
-  commitLabel = 'putOnWall',
   onKeepTheirs,
   onCommit,
   ascentCount,
@@ -203,8 +191,6 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   onNextClick,
   onMirror,
   onToggleFavorite,
-  onLightbulb,
-  onLightbulbLongPress,
   onOpenQueue,
   onShare,
   onTickPress,
@@ -216,36 +202,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
 }: PlayDrawerActionBarProps) {
   const { t } = useTranslation('session');
   const { t: tClimbs } = useTranslation('climbs');
-  const { t: tSettings } = useTranslation('settings');
   const theme = useTheme();
-  // What the bulb says it does. Resolved here rather than inline in the JSX so
-  // the four cases read as four cases. Callers that don't pass a kind fall back
-  // to the old connected/not-connected split.
-  const resolvedLabelKind = lightbulbLabelKind ?? (lightbulbConnected ? 'disconnect' : 'connect');
-  const lightbulbLabel =
-    resolvedLabelKind === 'releaseWall'
-      ? tSettings('ble.releaseWall')
-      : resolvedLabelKind === 'takeWall'
-        ? tSettings('ble.takeWall')
-        : resolvedLabelKind === 'relay'
-          ? tSettings('ble.relayToWall')
-          : resolvedLabelKind === 'peerDriving'
-            ? tSettings('ble.peerDrivingBoard')
-            : resolvedLabelKind === 'disconnect'
-              ? tSettings('ble.turnOff')
-              : tSettings('ble.connectBoard');
-  // The word under the bulb (#6939): what the board is doing (Connect, On), or
-  // Light while a crewmate holds the board and a tap puts this climb up on it.
-  // The full sentence above stays the accessibility label, so the word is
-  // hidden from screen readers. Walls with no lights keep the bare icon.
-  const lightbulbWord =
-    resolvedLabelKind === 'connect'
-      ? t('playView.bulbLabel.connect')
-      : resolvedLabelKind === 'disconnect' || resolvedLabelKind === 'peerDriving'
-        ? t('playView.bulbLabel.on')
-        : resolvedLabelKind === 'relay'
-          ? t('playView.bulbLabel.light')
-          : null;
   const isAnonymous = viewer === 'anonymous';
   // A signed-out reader has no queue to commit into and no wall to take, so the
   // suppression lives here with the rest of the `viewer` rules rather than only
@@ -257,7 +214,6 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   const layout = resolveActionBarLayout({
     supportsMirroring,
     isAnonymous,
-    connectPill,
     commitButton: commit,
     workoutOutcome: workoutOutcome !== null,
     showLightbulb,
@@ -265,10 +221,11 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
     angleAvailable: onOpenAngleSelector != null && currentAngle != null,
     buttons,
     previousNext,
+    hasWall,
+    boardControl,
+    miniPlayerMirrors,
   });
-  // No second row at all: the climber switched every small button off, and
-  // neither Put on the wall, the busy-wall question, the workout's Fell / Sent
-  // nor the connect pill wants it.
+  // No wall to light and nothing to commit: the second row folds away.
   const hasSecondaryRow = typeof layout.secondaryRow === 'string' || layout.secondaryRow.length > 0;
 
   // Haptics follow HIG "Playing haptics": plain buttons (prev / next / share /
@@ -287,6 +244,53 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
     onToggleFavorite();
   }, [onToggleFavorite]);
 
+  // One handler behind both views (`useWallControl` in the host): each says which it is.
+  const pressWallButton = useCallback(() => onWallControlPress?.('button'), [onWallControlPress]);
+  const holdWallButton = useCallback(() => onWallControlLongPress?.('button'), [onWallControlLongPress]);
+  const pressBulb = useCallback(() => onWallControlPress?.('bulb'), [onWallControlPress]);
+  const holdBulb = useCallback(() => onWallControlLongPress?.('bulb'), [onWallControlLongPress]);
+
+  // One of the climber's buttons in a first-row end slot (`resolveActionBarLayout`).
+  const slotButton = (buttonId: PlayerButtonId): ReactNode => {
+    switch (buttonId) {
+      case 'mirror':
+        return (
+          <ActionButton
+            size="lg"
+            iconName="mirror"
+            onPress={handleMirror}
+            active={isMirrored}
+            activeColor={theme.brandColors.primary}
+            accessibilityLabel={isMirrored ? t('playView.actionBar.unmirrorAria') : t('playView.actionBar.mirrorAria')}
+          />
+        );
+      case 'favorite':
+        return <FavoriteButton size="lg" isFavorited={isFavorited} onPress={handleFavorite} />;
+      case 'queue':
+        return (
+          <QueueButton
+            size="lg"
+            remainingCount={remainingQueueCount}
+            upNextBadgeCount={upNextBadgeCount}
+            onPress={onOpenQueue}
+          />
+        );
+      // A draft has no link anybody else could open (#5960): its slot stays empty.
+      case 'share':
+        return onShare ? (
+          <ShareButton size="lg" onPress={onShare} accessibilityLabel={tClimbs('mobile.climbRow.share')} />
+        ) : null;
+      case 'angle':
+        return onOpenAngleSelector && currentAngle != null ? (
+          <AnglePill
+            angle={currentAngle}
+            onPress={onOpenAngleSelector}
+            accessibilityLabel={t('mobile.angleSelector.title')}
+          />
+        ) : null;
+    }
+  };
+
   return (
     <View
       testID="play-drawer-action-bar"
@@ -296,126 +300,122 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
           : [styles.containerAbove, { borderBottomColor: theme.systemColors.separator }]
       }
     >
-      <View style={[drawerActionBarStyles.rowPrimary, !hasSecondaryRow && styles.rowPrimaryAlone]}>
-        {/* Mirror, or the queue where a board can't mirror: the list ⏮ and ⏭
-            walk, and up here it survives commit mode and the connect pill. An
-            anonymous reader has no queue, so on a board without mirror the slot
-            stays empty and the row keeps its five-slot spacing either way. */}
-        <View style={drawerActionBarStyles.primarySlot}>
-          {layout.leadingSlot === 'mirror' ? (
-            <ActionButton
-              size="lg"
-              iconName="mirror"
-              onPress={handleMirror}
-              active={isMirrored}
-              activeColor={theme.brandColors.primary}
-              accessibilityLabel={
-                isMirrored ? t('playView.actionBar.unmirrorAria') : t('playView.actionBar.mirrorAria')
-              }
-            />
-          ) : layout.leadingSlot === 'queue' ? (
-            <QueueButton
-              size="lg"
-              remainingCount={remainingQueueCount}
-              upNextBadgeCount={upNextBadgeCount}
-              onPress={onOpenQueue}
-            />
-          ) : null}
+      {layout.primaryCenter === 'none' ? null : layout.primaryCenter === 'wallControlFull' ? (
+        // Beside a MiniPlayer that has ⏮ ⏭, the climber's buttons and ✓ (#7000,
+        // tablets and the open Duo): the wall button takes the first row, full width.
+        <View
+          style={[drawerActionBarStyles.rowPrimary, styles.rowWallControl, !hasSecondaryRow && styles.rowPrimaryAlone]}
+          testID="play-drawer-action-bar-wall-row"
+        >
+          <WallControlButton
+            model={wallControl}
+            glow={wallGlow}
+            onPress={pressWallButton}
+            onLongPress={holdWallButton}
+          />
         </View>
-        {/* Previous and next switched off leaves both slots standing empty,
+      ) : layout.primaryCenter === 'wallControl' ? (
+        // A timed block with the wall button chosen (#7000): ⏮ [wall button] ⏭.
+        // Fell / Sent below log each go, and Log and the climber's buttons wait
+        // in ⋯. The ⏮ ⏭ slots hold their width and height even when switched
+        // off, so the button stays centred and the board keeps its size.
+        <View
+          style={[drawerActionBarStyles.rowPrimary, !hasSecondaryRow && styles.rowPrimaryAlone]}
+          testID="play-drawer-action-bar-workout-row"
+        >
+          <View style={styles.compactSlot}>
+            {layout.showPreviousNext ? (
+              <ActionButton
+                size="lg"
+                iconName="skip.previous"
+                onPress={onPrevClick}
+                disabled={!canSwipePrevious}
+                accessibilityLabel={t('playView.actionBar.previousAria')}
+              />
+            ) : null}
+          </View>
+          <View style={styles.compactCenter}>
+            <WallControlButton
+              model={wallControl}
+              compact
+              glow={wallGlow}
+              onPress={pressWallButton}
+              onLongPress={holdWallButton}
+            />
+          </View>
+          <View style={styles.compactSlot}>
+            {layout.showPreviousNext ? (
+              <ActionButton
+                size="lg"
+                iconName="skip.next"
+                onPress={onNextClick}
+                disabled={!canSwipeNext}
+                accessibilityLabel={t('playView.actionBar.nextAria')}
+              />
+            ) : null}
+          </View>
+        </View>
+      ) : (
+        <View style={[drawerActionBarStyles.rowPrimary, !hasSecondaryRow && styles.rowPrimaryAlone]}>
+          {/* The climber's first button on (Mirror or the heart by default).
+            An empty slot keeps the row's five-slot spacing. */}
+          <View style={drawerActionBarStyles.primarySlot}>
+            {layout.leadingSlot ? slotButton(layout.leadingSlot) : null}
+          </View>
+          {/* Previous and next switched off leaves both slots standing empty,
             so Log keeps the middle. Swiping the board still moves. */}
-        <View style={drawerActionBarStyles.primarySlot}>
-          {layout.showPreviousNext ? (
-            <ActionButton
-              size="lg"
-              iconName="skip.previous"
-              onPress={onPrevClick}
-              disabled={!canSwipePrevious}
-              accessibilityLabel={t('playView.actionBar.previousAria')}
-            />
-          ) : null}
-        </View>
-        <View style={drawerActionBarStyles.primarySlot}>
-          {/* The one prompt in the anonymous bar. It stays the hero slot and
+          <View style={drawerActionBarStyles.primarySlot}>
+            {layout.showPreviousNext ? (
+              <ActionButton
+                size="lg"
+                iconName="skip.previous"
+                onPress={onPrevClick}
+                disabled={!canSwipePrevious}
+                accessibilityLabel={t('playView.actionBar.previousAria')}
+              />
+            ) : null}
+          </View>
+          <View style={drawerActionBarStyles.primarySlot}>
+            {/* The one prompt in the anonymous bar. It stays the hero slot and
               keeps its glyph — a visitor who came to log a send should not have
               to hunt for the way in — but it opens login carrying this URL
               instead of the tick sheet, and drops the ascent badge, which counts
               a logbook they do not have. */}
-          <TickButton
-            size="lg"
-            ascentCount={isAnonymous ? 0 : ascentCount}
-            onPress={isAnonymous ? handleSignIn : onTickPress}
-            onLongPress={isAnonymous ? undefined : onTickLongPress}
-            accessibilityLabel={isAnonymous ? t('mobile.anonymous.tickAria') : t('playView.tickFab.logAscentAria')}
-          />
-        </View>
-        <View style={drawerActionBarStyles.primarySlot}>
-          {layout.showPreviousNext ? (
-            <ActionButton
+            <TickButton
               size="lg"
-              iconName="skip.next"
-              onPress={onNextClick}
-              disabled={!canSwipeNext}
-              accessibilityLabel={t('playView.actionBar.nextAria')}
+              ascentCount={isAnonymous ? 0 : ascentCount}
+              onPress={isAnonymous ? handleSignIn : onTickPress}
+              onLongPress={isAnonymous ? undefined : onTickLongPress}
+              accessibilityLabel={isAnonymous ? t('mobile.anonymous.tickAria') : t('playView.tickFab.logAscentAria')}
             />
-          ) : null}
-        </View>
-        <View style={drawerActionBarStyles.primarySlot}>
-          {/* With the connect pill up, this slot stays empty: the bulb is the
-              pill in the row below, and the row keeps its five-slot spacing. */}
-          {layout.trailingSlot === 'lightbulb' ? (
-            <>
-              <BleLightbulbButton
-                isConnected={lightbulbActive}
-                accessibilitySelected={lightbulbConnected}
-                isScanning={lightbulbPending}
-                autoDisconnectWarning={autoDisconnectWarning}
-                onPress={onLightbulb}
-                onLongPress={lightbulbLongPressEnabled ? onLightbulbLongPress : undefined}
-                accessibilityLabel={lightbulbAccessibilityLabel ?? lightbulbLabel}
-                scanningAccessibilityHint={tSettings('ble.scanning')}
-                writingAccessibilityHint={tSettings('ble.writing')}
-                longPressAccessibilityHint={
-                  lightbulbLongPressEnabled
-                    ? (lightbulbLongPressAccessibilityHint ?? tSettings('ble.holdForControls'))
-                    : undefined
-                }
-                haptic="medium"
-                size={SIZES.lg.icon}
-                containerSize={SIZES.lg.dim}
+          </View>
+          <View style={drawerActionBarStyles.primarySlot}>
+            {layout.showPreviousNext ? (
+              <ActionButton
+                size="lg"
+                iconName="skip.next"
+                onPress={onNextClick}
+                disabled={!canSwipeNext}
+                accessibilityLabel={t('playView.actionBar.nextAria')}
               />
-              {lightbulbWord ? (
-                <Text
-                  variant="caption2"
-                  color={lightbulbActive ? theme.brandColors.warning : theme.systemColors.secondaryLabel}
-                  numberOfLines={1}
-                  // Fixed, like a tab bar's labels: it sits in the 8pt gap
-                  // above the second row, and the icon carries the meaning.
-                  maxFontSizeMultiplier={1}
-                  onPress={onLightbulb}
-                  suppressHighlighting
-                  accessibilityElementsHidden
-                  importantForAccessibility="no"
-                  style={styles.lightbulbWord}
-                  testID="play-drawer-lightbulb-word"
-                >
-                  {lightbulbWord}
-                </Text>
-              ) : null}
-              {/* "Who's connected" pip — the board-presence holder's avatar overlaid
-                  on the lightbulb's top-right. Self-reads board presence and renders
-                  nothing when the wall is free, so it never disturbs the slot's layout.
-                  Suppressed when the on-wall banner already shows the driver in the
-                  header, so the same face never appears twice in the drawer. */}
-              {showHolderBadge ? (
-                <View style={styles.connectionBadge} pointerEvents="none">
-                  <LightbulbHolderBadge size={18} />
-                </View>
-              ) : null}
-            </>
-          ) : null}
+            ) : null}
+          </View>
+          <View style={drawerActionBarStyles.primarySlot}>
+            {layout.trailingSlot === 'lightbulb' ? (
+              // The bulb chosen, or back while the busy-wall question takes the
+              // second row. It draws the same model as the wall button.
+              <WallControlBulb
+                model={wallControl}
+                showFace={showHolderBadge}
+                onPress={pressBulb}
+                onLongPress={holdBulb}
+              />
+            ) : layout.trailingSlot ? (
+              slotButton(layout.trailingSlot)
+            ) : null}
+          </View>
         </View>
-      </View>
+      )}
 
       {hasSecondaryRow ? (
         <View style={[drawerActionBarStyles.rowSecondary, styles.rowSecondaryHeight]}>
@@ -433,8 +433,41 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
               onOpenLogSheet={onTickPress}
             />
           ) : typeof layout.secondaryRow === 'string' ? null : (
-            layout.secondaryRow.map((item: ActionBarSecondaryItem, index: number) => {
+            layout.secondaryRow.map((item, index) => {
               switch (item) {
+                case 'wallControl':
+                  return (
+                    <WallControlButton
+                      key={item}
+                      model={wallControl}
+                      glow={wallGlow}
+                      onPress={pressWallButton}
+                      onLongPress={holdWallButton}
+                    />
+                  );
+                case 'angle':
+                  return onOpenAngleSelector && currentAngle != null ? (
+                    <AnglePill
+                      key={item}
+                      angle={currentAngle}
+                      onPress={onOpenAngleSelector}
+                      accessibilityLabel={t('mobile.angleSelector.title')}
+                    />
+                  ) : null;
+                case 'spacer':
+                  return <View key={`${item}-${index}`} style={drawerActionBarStyles.spacer} />;
+                // Share is a pure client action and the whole point of a read-only
+                // climb page, so an anonymous reader keeps it.
+                case 'share':
+                  return onShare ? (
+                    <ShareButton
+                      key={item}
+                      size="sm"
+                      onPress={onShare}
+                      accessibilityLabel={tClimbs('mobile.climbRow.share')}
+                    />
+                  ) : null;
+                // The bulb's row (#7000): the climber's other buttons, small, either side.
                 case 'mirror':
                   return (
                     <ActionButton
@@ -451,35 +484,6 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
                   );
                 case 'favorite':
                   return <FavoriteButton key={item} size="sm" isFavorited={isFavorited} onPress={handleFavorite} />;
-                case 'angle':
-                  return onOpenAngleSelector && currentAngle != null ? (
-                    <AnglePill
-                      key={item}
-                      angle={currentAngle}
-                      onPress={onOpenAngleSelector}
-                      accessibilityLabel={t('mobile.angleSelector.title')}
-                    />
-                  ) : null;
-                case 'spacer':
-                  // Put on the wall sits between two spacers, so position keys them.
-                  return <View key={`${item}-${index}`} style={drawerActionBarStyles.spacer} />;
-                case 'putOnWall':
-                  return onCommit ? <PutOnWallButton key={item} commitLabel={commitLabel} onPress={onCommit} /> : null;
-                case 'connectPill':
-                  return (
-                    <FirstConnectPill key={item} pending={lightbulbPending} onPress={onConnectPill ?? onLightbulb} />
-                  );
-                // Share is a pure client action and the whole point of a read-only
-                // climb page, so an anonymous reader keeps it.
-                case 'share':
-                  return onShare ? (
-                    <ShareButton
-                      key={item}
-                      size="sm"
-                      onPress={onShare}
-                      accessibilityLabel={tClimbs('mobile.climbRow.share')}
-                    />
-                  ) : null;
                 case 'queue':
                   return (
                     <QueueButton
@@ -665,24 +669,28 @@ const styles = StyleSheet.create({
   rowPrimaryAlone: {
     paddingBottom: spacing[3],
   },
-  // The second row's usual 64pt (its padding plus one small button), held even
-  // when a draft leaves it nothing to draw, so the board doesn't move.
+  // The second row's fixed height, held in every state so the board doesn't move.
   rowSecondaryHeight: {
     minHeight: ACTION_BAR_SECONDARY_ROW_HEIGHT,
   },
-  // Holder avatar overlaid on the lightbulb's top-right corner.
-  // Sits in the gap under the big row, so the row and the board above keep
-  // their height.
-  lightbulbWord: {
-    position: 'absolute',
-    bottom: -spacing[3],
-    alignSelf: 'center',
-    fontWeight: '600',
+  // The full-width wall button's row: as tall as the icon row it replaces, so
+  // nothing jumps between a phone-sized pane and a tablet's.
+  rowWallControl: {
+    minHeight: SIZES.lg.dim + spacing[3],
   },
-  connectionBadge: {
-    position: 'absolute',
-    top: -2,
-    right: -2,
+  // ⏮ and ⏭ beside the workout's wall button: the big buttons' own size, held
+  // even when switched off, so the row keeps its height and the button its centre.
+  compactSlot: {
+    width: SIZES.lg.dim,
+    height: SIZES.lg.dim,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // ~239pt on a 375pt phone: 343pt of row less two 48pt buttons and 4pt either side.
+  compactCenter: {
+    flex: 1,
+    flexDirection: 'row',
+    marginHorizontal: spacing[1],
   },
   // caption2 (11pt) in a box that grows with the text (count-badge-style.ts).
   countBadge: {

@@ -107,6 +107,7 @@ function props(open: boolean): PlayCoreSheetHostsProps {
     handleCloseReportClimb: noAction,
     handleTickBarDismiss: noAction,
     handleCloseBleControl: noAction,
+    wallClearedTarget: null,
   };
 }
 

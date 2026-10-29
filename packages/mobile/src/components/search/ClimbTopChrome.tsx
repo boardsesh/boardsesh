@@ -36,6 +36,7 @@ import { useBoardConnectionState } from '../ble/use-board-connection-state';
 import { useTabChrome } from '../../hooks/use-bottom-accessory';
 import { useDeviceLayout } from '../../hooks/use-device-layout';
 import { useWallClimbIfDistinct } from '../queue-control/use-wall-or-queue-climb';
+import { trustedWallCapsuleClimb, usePresenceFresh } from '../../lib/board-presence/presence-freshness';
 import { useActiveClimbUuid } from '../../providers/queue-provider';
 import { addErrorBreadcrumb } from '../../lib/error-reporting';
 import { FilterButton } from './FilterButton';
@@ -141,7 +142,14 @@ function ClimbTopChromeComponent({
   // header out of large-title mode, which must not happen under the player's
   // dismiss animation (#6619).
   const currentClimbUuid = useActiveClimbUuid();
-  const liveWallClimb = useWallClimbIfDistinct(currentClimbUuid);
+  const distinctWallClimb = useWallClimbIfDistinct(currentClimbUuid);
+  const { inAppBoardConnection, ledless: liveLedless } = useBoardConnectionState();
+  // Hidden past an hour with no live link (#7095): the same trust rule as the player.
+  const wallPresenceFresh = usePresenceFresh(distinctWallClimb?.sentAt ?? null);
+  const liveWallClimb = trustedWallCapsuleClimb(distinctWallClimb, {
+    linked: inAppBoardConnection !== 'disconnected',
+    presenceFresh: wallPresenceFresh,
+  });
   const wallClimb = useSettledHeaderValue(liveWallClimb);
   // "You have the board" takes the same slot while this climber holds the board
   // and the wall shows their own climb. Only where the iOS 26 accessory platter
@@ -155,7 +163,6 @@ function ClimbTopChromeComponent({
   const { nativeAccessory } = useTabChrome();
   const { isPad, widthClass } = useDeviceLayout();
   const accessoryCollapses = !(isPad && widthClass === 'regular');
-  const { inAppBoardConnection, ledless: liveLedless } = useBoardConnectionState();
   const boardHeld = useSettledHeaderValue(
     nativeAccessory && accessoryCollapses && inAppBoardConnection === 'connectedByMe',
   );

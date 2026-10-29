@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { PlayerButtonId, PlayerButtonsPosition } from '../../lib/player-buttons';
+import type { PlayerBoardControl, PlayerButtonId, PlayerButtonsPosition } from '../../lib/player-buttons';
 import { isDefaultPlayerButtons, usePlayerButtonsEditor } from '../../lib/player-buttons-preference';
 import type { SectionMoveDirection } from '../../lib/section-layout';
 import { hapticSelection } from '../../lib/haptics';
@@ -15,13 +15,13 @@ export function usePlayerButtonControls() {
   const {
     buttons,
     previousNext,
-    wallBadge,
     position,
+    boardControl,
     setVisible,
     move,
     setPreviousNext,
-    setWallBadge,
     setPosition,
+    setBoardControl,
     restoreDefaults,
   } = editor;
 
@@ -35,24 +35,29 @@ export function usePlayerButtonControls() {
   const aboveLabel = t('mobile.settings.playerButtons.position.above');
   const previousNextLabel = t('mobile.settings.playerButtons.previousNext');
   const previousNextDescription = t('mobile.settings.playerButtons.previousNextDescription');
-  const wallBadgeLabel = t('mobile.settings.playerButtons.wallBadge');
-  const wallBadgeDescription = t('mobile.settings.playerButtons.wallBadgeDescription');
   const restoreDefaultsLabel = t('mobile.settings.climbDrawer.restoreDefaults');
+  const boardControlLabel = t('mobile.settings.playerButtons.boardControl.label');
+  const boardControlFooter = t('mobile.settings.playerButtons.boardControl.footer');
+  const wallButtonLabel = t('mobile.settings.playerButtons.boardControl.wallButton');
+  const lightbulbLabel = t('mobile.settings.playerButtons.boardControl.lightbulb');
   const mirrorLabel = t('mobile.settings.playerButtons.buttons.mirror');
   const favoriteLabel = t('mobile.settings.playerButtons.buttons.favorite');
-  const angleLabel = t('mobile.settings.playerButtons.buttons.angle');
-  const shareLabel = t('mobile.settings.playerButtons.buttons.share');
   const queueLabel = t('mobile.settings.playerButtons.buttons.queue');
+  const shareLabel = t('mobile.settings.playerButtons.buttons.share');
+  const angleLabel = t('mobile.settings.playerButtons.buttons.angle');
   const mirrorDescription = t('mobile.settings.playerButtons.mirrorDescription');
   const angleDescription = t('mobile.settings.playerButtons.angleDescription');
 
+  // The five buttons that share the top row's two ends (#7000), in the
+  // climber's order: the first on takes the left end, the last the right, the
+  // rest live in ⋯. Log, ⏮ ⏭ and the wall button are fixed and not listed.
   const controls = useMemo<PlayerButtonControl[]>(() => {
     const labels: Record<PlayerButtonId, string> = {
       mirror: mirrorLabel,
       favorite: favoriteLabel,
-      angle: angleLabel,
-      share: shareLabel,
       queue: queueLabel,
+      share: shareLabel,
+      angle: angleLabel,
     };
     // Two buttons only appear on some boards; their rows say which.
     const descriptions: Partial<Record<PlayerButtonId, string>> = {
@@ -66,7 +71,7 @@ export function usePlayerButtonControls() {
       visible: buttons.visible[id],
       movable: true,
     }));
-  }, [buttons, mirrorLabel, favoriteLabel, angleLabel, shareLabel, queueLabel, mirrorDescription, angleDescription]);
+  }, [buttons, mirrorLabel, favoriteLabel, queueLabel, shareLabel, angleLabel, mirrorDescription, angleDescription]);
 
   const positionOptions = useMemo<{ key: PlayerButtonsPosition; label: string }[]>(
     () => [
@@ -83,6 +88,21 @@ export function usePlayerButtonControls() {
     },
     [setPosition],
   );
+  const boardControlOptions = useMemo<{ key: PlayerBoardControl; label: string }[]>(
+    () => [
+      { key: 'wallButton', label: wallButtonLabel },
+      { key: 'lightbulb', label: lightbulbLabel },
+    ],
+    [wallButtonLabel, lightbulbLabel],
+  );
+  const onBoardControlChange = useCallback(
+    (key: string) => {
+      if (key !== 'wallButton' && key !== 'lightbulb') return;
+      hapticSelection();
+      setBoardControl(key);
+    },
+    [setBoardControl],
+  );
   const onVisibleChange = useCallback(
     (buttonId: PlayerButtonId, visible: boolean) => setVisible(buttonId, visible),
     [setVisible],
@@ -91,7 +111,7 @@ export function usePlayerButtonControls() {
     (buttonId: PlayerButtonId, direction: SectionMoveDirection) => move(buttonId, direction),
     [move],
   );
-  const canRestoreDefaults = !isDefaultPlayerButtons({ buttons, previousNext, wallBadge, position });
+  const canRestoreDefaults = !isDefaultPlayerButtons({ buttons, previousNext, position, boardControl });
   const handleRestoreDefaults = useCallback(() => {
     if (!canRestoreDefaults) return;
     hapticSelection();
@@ -107,18 +127,19 @@ export function usePlayerButtonControls() {
     positionFooter,
     previousNextLabel,
     previousNextDescription,
-    wallBadgeLabel,
-    wallBadgeDescription,
     restoreDefaultsLabel,
     buttons,
     previousNext,
-    wallBadge,
     position,
     positionOptions,
+    boardControl,
+    boardControlLabel,
+    boardControlFooter,
+    boardControlOptions,
+    onBoardControlChange,
     controls,
     onPositionChange,
     onPreviousNextChange: setPreviousNext,
-    onWallBadgeChange: setWallBadge,
     onVisibleChange,
     onMove,
     canRestoreDefaults,

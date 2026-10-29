@@ -262,12 +262,19 @@ export type AppSettings = {
   climbListLayout: ClimbListLayoutPreference;
   /**
    * The player's buttons (#6229): their order and switches, `null` while they
-   * match the defaults so a later release's defaults still apply. Read and
+   * match the defaults so a later release's defaults still apply. V2 since
+   * #7000, when the five became the first row's two end slots: the meaning
+   * changed, so everyone starts on the new defaults and a V1 record is never
+   * read. Read and
    * written ONLY through `playerButtonsStore` (`lib/player-buttons-preference.ts`),
    * which keeps its own snapshot; never `useSetting` this key. In this store, not
    * AsyncStorage, because the bar has to be right on the player's first frame.
+   *
+   * `boardControl` rides the same record (#7000): `'lightbulb'` for the bulb in
+   * the top row, absent (or anything else) for the wall button. The record
+   * stays non-null while it is set, even with the buttons on their defaults.
    */
-  playerButtonsV1: SectionLayoutRecord | null;
+  playerButtonsV2: (SectionLayoutRecord & { readonly boardControl?: string }) | null;
   /**
    * The MiniPlayer's buttons (#6940): their order and switches, `null` while they
    * match the defaults. Read and written ONLY through `miniPlayerButtonsStore`
@@ -277,8 +284,6 @@ export type AppSettings = {
   miniPlayerButtonsV1: SectionLayoutRecord | null;
   /** The player's ⏮ and ⏭. Off leaves their slots empty; swiping the board still moves. */
   playerPreviousNext: boolean;
-  /** The badge on the player's board art that says whether this climb is lit on the wall. */
-  playerWallBadge: boolean;
   /** Where the player's controls block sits. Read through `sanitisePlayerButtonsPosition`. */
   playerButtonsPosition: PlayerButtonsPosition;
   /**

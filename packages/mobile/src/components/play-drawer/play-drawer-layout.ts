@@ -113,6 +113,20 @@ export function computeFitToHeightFirstScreenHeight({
 }
 
 /**
+ * Where the #4979 hold's "Last on the wall …" note (#7000) sits in the
+ * controls. Normally after everything (the action bar, its second row and
+ * playback). Fit-to-height mode puts exactly one row (the action bar's second
+ * row) below the fold, so that row has to stay last: the note goes above the
+ * action bar instead, and the board gives up the note's height rather than
+ * the tick row.
+ */
+export type WallStatusLinePlacement = 'aboveActionBar' | 'afterControls';
+
+export function resolveWallStatusLinePlacement(fitsBoardToHeight: boolean): WallStatusLinePlacement {
+  return fitsBoardToHeight ? 'aboveActionBar' : 'afterControls';
+}
+
+/**
  * The preview item a drawer should already be showing on its FIRST render.
  *
  * The open target is normally applied by an effect, which does not run until

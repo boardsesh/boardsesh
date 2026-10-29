@@ -1,9 +1,18 @@
 import type { AppMenuAction } from '../AppMenu.types';
-import type { ClimbActionId, ClimbActionItem } from '../climb-actions/use-climb-actions';
-import { iconMap } from '../icon-map';
+import type { ClimbActionId } from '../climb-actions/use-climb-actions';
+import { iconMap, type IconName } from '../icon-map';
+
+/**
+ * Every row the player's ⋯ can carry: the shared climb actions, plus the
+ * player's own Board controls (the board sheet, #7000).
+ */
+export type PlayDrawerMenuRowId = ClimbActionId | 'boardControls';
+
+/** What a row is built from. A `ClimbActionItem` is one. */
+export type PlayDrawerMenuItem = { id: PlayDrawerMenuRowId; title: string; icon: IconName; run: () => void };
 
 /** One row of the player's ⋯ menu: what the menu draws, plus what a tap on it runs. */
-export type PlayDrawerMenuRow = AppMenuAction & { id: ClimbActionId; run: () => void };
+export type PlayDrawerMenuRow = AppMenuAction & { id: PlayDrawerMenuRowId; run: () => void };
 
 /**
  * Action-bar buttons this viewer is entitled to but the bar is not showing right
@@ -12,6 +21,8 @@ export type PlayDrawerMenuRow = AppMenuAction & { id: ClimbActionId; run: () => 
  * button. Resolved by `resolveActionBarLayout`.
  */
 export type PlayDrawerHiddenButtons = {
+  /** Log: only in a timed block with the wall button in the top row, where Fell / Sent log each go. */
+  tick: boolean;
   favorite: boolean;
   share: boolean;
   queue: boolean;
@@ -33,7 +44,7 @@ export type PlayDrawerMenuRowOptions = {
 };
 
 /** A menu's order: one array per group, a divider before every group after the first that has a row. */
-export type ClimbMenuGroups = readonly (readonly ClimbActionId[])[];
+export type ClimbMenuGroups = readonly (readonly PlayDrawerMenuRowId[])[];
 
 /**
  * The menu's fixed order, one array per group. A divider opens every group after
@@ -41,12 +52,14 @@ export type ClimbMenuGroups = readonly (readonly ClimbActionId[])[];
  * player:
  *
  * - `preview`: the climber is already looking at the climb.
- * - `tick`: the hero button in the bar is always there for a member.
  * - `editEntry`: a logbook-only row.
+ *
+ * `tick` is offered only while the bar puts Log away (a timed block in wall
+ * button mode, #7000).
  */
 const MENU_GROUPS: ClimbMenuGroups = [
-  ['playNext', 'queue', 'openQueue'],
-  ['mirror', 'angle'],
+  ['tick', 'playNext', 'queue', 'openQueue'],
+  ['mirror', 'angle', 'boardControls'],
   ['playlist', 'favorite', 'share'],
   ['betaVideo', 'edit', 'fork'],
   ['viewOptions', 'openInApp'],
@@ -59,13 +72,15 @@ const MENU_GROUPS: ClimbMenuGroups = [
  * hidden: a disabled row says what is unavailable, and keeping it in its slot
  * keeps the menu the same shape as the bar's scrim comes and goes.
  */
-const LIVE_ON_BOARD_MISMATCH: ReadonlySet<ClimbActionId> = new Set<ClimbActionId>([
+const LIVE_ON_BOARD_MISMATCH: ReadonlySet<PlayDrawerMenuRowId> = new Set<PlayDrawerMenuRowId>([
   'share',
   'viewOptions',
   'openInApp',
+  // The board sheet acts on the connected board, not on this climb.
+  'boardControls',
 ]);
 
-function isOffered(id: ClimbActionId, { hidden, isActiveClimb }: PlayDrawerMenuRowOptions): boolean {
+function isOffered(id: PlayDrawerMenuRowId, { hidden, isActiveClimb }: PlayDrawerMenuRowOptions): boolean {
   switch (id) {
     case 'playNext':
       return !isActiveClimb;
@@ -73,6 +88,8 @@ function isOffered(id: ClimbActionId, { hidden, isActiveClimb }: PlayDrawerMenuR
     // put the button away, so the same action never shows up twice.
     case 'openQueue':
       return hidden.queue;
+    case 'tick':
+      return hidden.tick;
     case 'favorite':
       return hidden.favorite;
     case 'share':
@@ -94,10 +111,10 @@ function isOffered(id: ClimbActionId, { hidden, isActiveClimb }: PlayDrawerMenuR
  * tapped index back through the array THIS call returned, never a later one.
  */
 export function buildPlayDrawerMenuRows(
-  items: readonly ClimbActionItem[],
+  items: readonly PlayDrawerMenuItem[],
   options: PlayDrawerMenuRowOptions,
 ): PlayDrawerMenuRow[] {
-  const itemsById = new Map<ClimbActionId, ClimbActionItem>(items.map((item) => [item.id, item]));
+  const itemsById = new Map<PlayDrawerMenuRowId, PlayDrawerMenuItem>(items.map((item) => [item.id, item]));
   const rows: PlayDrawerMenuRow[] = [];
 
   for (const group of options.groups ?? MENU_GROUPS) {

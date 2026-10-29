@@ -833,8 +833,6 @@
         },
         "previousNext": "Anterior y siguiente",
         "previousNextDescription": "Deslizar el plafón sigue cambiando de bloque.",
-        "wallBadge": "Estado del muro en el plafón",
-        "wallBadgeDescription": "Una insignia en el plafón indica si este bloque está encendido en el muro.",
         "buttons": {
           "mirror": "Espejo",
           "favorite": "Favorito",
@@ -850,9 +848,15 @@
           "log": "Registrar",
           "boardLight": "Luz del plafón"
         },
-        "footer": "El primero entre Cola y Espejo se queda con el botón grande. Un botón oculto sigue en el menú ⋯. Sin botones pequeños, el plafón ocupa su fila.",
+        "footer": "El primer botón activo va en el extremo izquierdo de la fila de arriba y el último en el derecho. El resto, y los que ocultes, están en el menú ⋯.",
         "settingsFooter": "Para cambiar el orden, abre el menú ⋯ de un bloque y elige Opciones de vista.",
-        "previewLabel": "Vista previa, {{position}}: {{buttons}}"
+        "previewLabel": "Vista previa, {{position}}: {{buttons}}",
+        "boardControl": {
+          "label": "Control del plafón",
+          "wallButton": "Botón del muro",
+          "lightbulb": "Bombilla",
+          "footer": "Los dos conectan, encienden el bloque y muestran de quién es el plafón. Mantén pulsado para las opciones del plafón. La bombilla ocupa el extremo derecho de la fila de arriba."
+        }
       },
       "climbView": {
         "title": "Vista del bloque",

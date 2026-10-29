@@ -15,14 +15,15 @@ export type ClimbViewModelInput = {
     positionOptions: MoreOption[];
     position: PlayerButtonsPosition;
     onPositionChange: (key: string) => void;
+    /** Board control: the wall button or the bulb (#7000). */
+    boardControlLabel: string;
+    boardControlOptions: MoreOption[];
+    boardControl: string;
+    onBoardControlChange: (key: string) => void;
     previousNextLabel: string;
     previousNextDescription: string;
     previousNext: boolean;
     onPreviousNextChange: (enabled: boolean) => void;
-    wallBadgeLabel: string;
-    wallBadgeDescription: string;
-    wallBadge: boolean;
-    onWallBadgeChange: (enabled: boolean) => void;
     controls: readonly PlayerButtonControl[];
     onVisibleChange: (buttonId: PlayerButtonId, visible: boolean) => void;
     restoreDefaultsLabel: string;
@@ -60,14 +61,6 @@ export function buildClimbViewModel({ buttons, miniPlayer, belowTheClimb }: Clim
       subtitle: buttons.previousNextDescription,
       value: buttons.previousNext,
       onValueChange: buttons.onPreviousNextChange,
-    },
-    {
-      kind: 'toggle',
-      key: 'wallBadge',
-      label: buttons.wallBadgeLabel,
-      subtitle: buttons.wallBadgeDescription,
-      value: buttons.wallBadge,
-      onValueChange: buttons.onWallBadgeChange,
     },
     ...buttons.controls.map((control): MoreRow => ({
       kind: 'toggle',
@@ -122,6 +115,14 @@ export function buildClimbViewModel({ buttons, miniPlayer, belowTheClimb }: Clim
             options: buttons.positionOptions,
             selectedKey: buttons.position,
             onSelect: buttons.onPositionChange,
+          },
+          {
+            kind: 'segmented',
+            key: 'boardControl',
+            label: buttons.boardControlLabel,
+            options: buttons.boardControlOptions,
+            selectedKey: buttons.boardControl,
+            onSelect: buttons.onBoardControlChange,
           },
         ],
       },

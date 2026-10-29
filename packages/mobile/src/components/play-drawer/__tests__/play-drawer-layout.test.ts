@@ -9,6 +9,7 @@ import {
   initialDrawerPreviewItem,
   PLAYER_SIDE_PANEL_WIDTH,
   resolvePlayerArrangement,
+  resolveWallStatusLinePlacement,
   shouldShowPanePlaceholder,
 } from '../play-drawer-layout';
 
@@ -227,5 +228,17 @@ describe('computeDrawerFirstScreenHeight', () => {
         sectionMargin: 8,
       }),
     ).toBe(754);
+  });
+});
+
+describe('resolveWallStatusLinePlacement', () => {
+  // Fit-to-height puts only the action bar's second row below the fold; a line
+  // after it would push itself out of sight and clip that row.
+  it('keeps the second row last when the board fits to height', () => {
+    expect(resolveWallStatusLinePlacement(true)).toBe('aboveActionBar');
+  });
+
+  it('sits after the controls otherwise', () => {
+    expect(resolveWallStatusLinePlacement(false)).toBe('afterControls');
   });
 });

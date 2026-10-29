@@ -4,8 +4,8 @@
 //
 // The surfaces:
 // - treatment only: a card at the top of the Climbs list ("Light climbs on
-//   {{board}}") and a labelled "Light it on the board" pill in place of the
-//   play view's bare bulb;
+//   {{board}}"). Its play-view pill went in #7000: the player's Connect board
+//   button now does that job for everyone;
 // - both arms: a one-time "Connected to {{board}}" confirmation after this
 //   phone's first successful connect.
 
@@ -25,9 +25,6 @@ export const CONNECT_STEP_MIN_NATIVE_VERSION = '2.7.0';
 
 /** How many app launches the Climbs card may appear on. */
 export const FIRST_CONNECT_CARD_MAX_LAUNCHES = 2;
-
-/** How many calendar days (the phone's own) the play-view pill may appear on. */
-export const FIRST_CONNECT_PILL_MAX_DAYS = 3;
 
 /** One account's place in the test, written once, at exposure. */
 export type ConnectStepEnrolment = {
@@ -56,7 +53,10 @@ export type FirstConnectDeviceState = {
   confirmationShownAt: number | null;
   /** The launches the Climbs card appeared on (one id per JS process). */
   cardLaunchIds: string[];
-  /** The local calendar days (`YYYY-MM-DD`) the play-view pill appeared on. */
+  /**
+   * The local calendar days (`YYYY-MM-DD`) the play-view pill appeared on.
+   * Nothing writes it since the pill went (#7000); kept so stored records stay valid.
+   */
   pillDays: string[];
 };
 
@@ -232,67 +232,6 @@ export function shouldShowFirstConnectCard(input: FirstConnectCardInput): boolea
   if (!input.treatmentLive || !input.boardHasLights || input.dismissedThisLaunch || !input.wallFree) return false;
   if (input.cardLaunchIds.includes(input.launchId)) return true;
   return input.cardLaunchIds.length < FIRST_CONNECT_CARD_MAX_LAUNCHES;
-}
-
-export type FirstConnectPillWouldConnectInput = {
-  /** Signed out: a reader gets no bulb at all. */
-  isAnonymous: boolean;
-  /** A Bluetooth provider exists, i.e. a board is selected. */
-  hasBluetooth: boolean;
-  /** The switch-board scrim covers the row. */
-  boardMismatch: boolean;
-  /** The second row is the browse latch's commit row. */
-  commitMode: boolean;
-  /**
-   * The second row is a timed workout block's one-tap Fell / Sent (#6231), which
-   * wins over the pill, so a day there would count without the pill on screen.
-   */
-  workoutOutcome: boolean;
-  /** A party session with a crew in it. */
-  sharedSession: boolean;
-  /** Another account holds the wall. */
-  wallHeldByOtherUser: boolean;
-  /** The bulb's press action is `'connect'`. */
-  tapConnects: boolean;
-  /** A connect or disconnect is in flight. */
-  pending: boolean;
-  /** This phone holds a Bluetooth link. */
-  localConnected: boolean;
-  /** This phone holds the wall with no Bluetooth link. */
-  wallHeldLocally: boolean;
-};
-
-/**
- * Whether a tap on the play view's bulb right now would connect THIS phone,
- * which is the only moment the pill may stand in for it. Never for a signed-out
- * reader, under the switch-board scrim, in commit mode, while a workout's Fell /
- * Sent holds the row, with a crew in the session, or while someone else holds
- * the wall. A connect already in flight
- * keeps it (no link and no virtual hold yet, so the pending work is the
- * connect), so the pill does not jump back to a bulb mid-connect; a pending
- * disconnect does not.
- */
-export function deriveFirstConnectPillWouldConnect(input: FirstConnectPillWouldConnectInput): boolean {
-  if (input.isAnonymous || !input.hasBluetooth || input.boardMismatch) return false;
-  if (input.commitMode || input.workoutOutcome) return false;
-  if (input.sharedSession || input.wallHeldByOtherUser) return false;
-  return input.tapConnects || (input.pending && !input.localConnected && !input.wallHeldLocally);
-}
-
-export type FirstConnectPillInput = {
-  treatmentLive: boolean;
-  /** Today on the phone's own calendar, `YYYY-MM-DD`. */
-  today: string;
-  pillDays: readonly string[];
-  /** The bulb's tap would connect this phone (`deriveFirstConnectPillWouldConnect`). */
-  wouldConnect: boolean;
-};
-
-/** The play-view pill: on at most three calendar days, same rule as the card. */
-export function shouldShowFirstConnectPill(input: FirstConnectPillInput): boolean {
-  if (!input.treatmentLive || !input.wouldConnect) return false;
-  if (input.pillDays.includes(input.today)) return true;
-  return input.pillDays.length < FIRST_CONNECT_PILL_MAX_DAYS;
 }
 
 /**

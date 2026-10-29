@@ -3,8 +3,8 @@ import { useSyncExternalStore } from 'react';
 /**
  * The climb "Turn off all lights" darkened (#6939). The link stays up and the
  * queue doesn't move, so nothing else tells the player the wall is dark: the
- * board-presence feed still names the climb, and the badge would say On the
- * wall over a blank board.
+ * board-presence feed still names the climb, and the status line would say Lit
+ * on the wall (and the pill On the wall) over a blank board.
  *
  * Keyed by the climb that was current, so a new current climb (which the link
  * lights on its own) no longer matches. A deliberate re-light (Re-light, Put on

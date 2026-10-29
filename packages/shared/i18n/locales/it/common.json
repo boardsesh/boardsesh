@@ -561,8 +561,6 @@
         },
         "previousNext": "Precedente e successivo",
         "previousNextDescription": "Scorrere il pannello con il dito continua a cambiare blocco.",
-        "wallBadge": "Stato in parete sul pannello",
-        "wallBadgeDescription": "Un badge sul pannello dice se questo blocco è illuminato in parete.",
         "buttons": {
           "mirror": "Specchia",
           "favorite": "Preferito",
@@ -578,9 +576,15 @@
           "log": "Registra",
           "boardLight": "Luce del pannello"
         },
-        "footer": "Tra Coda e Specchia, quello che viene prima ottiene il pulsante grande. Un pulsante nascosto resta nel menu ⋯. Con tutti i pulsanti piccoli nascosti, il pannello prende la loro riga.",
+        "footer": "Il primo pulsante attivo va all'estremità sinistra della riga in alto e l'ultimo a quella destra. Gli altri, e quelli che nascondi, sono nel menu ⋯.",
         "settingsFooter": "Per cambiare l'ordine, apri il menu ⋯ su un blocco e scegli Opzioni di visualizzazione.",
-        "previewLabel": "Anteprima, {{position}}: {{buttons}}"
+        "previewLabel": "Anteprima, {{position}}: {{buttons}}",
+        "boardControl": {
+          "label": "Controllo del pannello",
+          "wallButton": "Pulsante parete",
+          "lightbulb": "Lampadina",
+          "footer": "Entrambi connettono, illuminano il blocco e mostrano di chi è il pannello. Tieni premuto per le opzioni del pannello. La lampadina occupa l'estremo destro della riga in alto."
+        }
       },
       "climbView": {
         "title": "Vista del blocco",

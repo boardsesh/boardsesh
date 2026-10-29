@@ -75,8 +75,8 @@ export function FeatureFlagsScreen() {
     [overrides, baseFlags],
   );
 
-  // Drop overrides a flag can no longer honour — a boolean forced on a flag
-  // that has since become multivariate. The row already renders at 'Default',
+  // Drop overrides a flag can no longer honour — a boolean on a multivariate
+  // flag, a variant it no longer declares, or a string on a plain flag. The row already renders at 'Default',
   // which is exactly why the tester can't clear it by hand: re-selecting the
   // segment it's already on fires nothing. See findStaleFeatureFlagOverrideKeys.
   useEffect(() => {

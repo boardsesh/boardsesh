@@ -438,10 +438,11 @@ export const SHARED_EVENTS = {
   // off). Props: { surface, boardName, reconnect }. `surface`: 'play_drawer' |
   // 'toolbar' | 'app_bar' | 'board_control_indicator' | 'wall_empty_state' |
   // 'wall_kiosk' | 'create_climb' | 'picker_scan_again' | 'notification' (the
-  // Android session notification's bulb) | 'first_connect_card' |
-  // 'first_connect_pill' (the connect-step test's card and labelled pill, #5654
-  // PR 7) | 'put_on_wall' (the play view's Put on the wall with no board
-  // connected, #6939: sets the climb, then connects). `reconnect` is true when a remembered board is targeted (silent
+  // Android session notification's bulb) | 'first_connect_card' (the
+  // connect-step test's card, #5654 PR 7; its play-view pill sent
+  // 'first_connect_pill' until #7000) | 'put_on_wall' (the play view's Put on
+  // the wall on a preview with no board connected: sets the climb, then
+  // connects). 'play_drawer' is the player's Connect board since #7000. `reconnect` is true when a remembered board is targeted (silent
   // auto-select), false when the tap opens the device picker. `placement`
   // ('regular' | 'inline') is set only by the iOS 26 tab-bar accessory platter's
   // bulb (open or collapsed), which shares 'board_control_indicator' with the
@@ -449,10 +450,45 @@ export const SHARED_EVENTS = {
   BoardConnectTapped: 'Board Connect Tapped',
   // The Bluetooth controls sheet (Re-light / Turn off all lights / Disconnect)
   // opened. Props: { surface: 'board_control_indicator' | 'toolbar' | 'app_bar' |
-  // 'header_pill', placement? }. A lightbulb's long-press, or the Climbs header's
-  // "You have the board" pill. Same `placement` rule as Board Connect Tapped. The
-  // play drawer's own sheet host does not fire it.
+  // 'header_pill' | 'play_drawer', placement?, source? }. A lightbulb's
+  // long-press, or the Climbs header's "You have the board" pill. Same
+  // `placement` rule as Board Connect Tapped. Since #7000 the play drawer's own
+  // sheet fires it too, with `surface: 'play_drawer'` and `source`: the view
+  // of the board control that was held, 'button' (the wall button, full width
+  // or in a workout's top row) | 'bulb' (the first row's bulb) | 'mini_bar'
+  // (the MiniPlayer's bulb standing in for a tablet or open-Duo player's), or
+  // 'player_menu' (⋯ › Board controls). A tap never opens it. QA builds before
+  // the one-model refactor sent 'wall_control' and 'bulb_long_press' for the
+  // holds; no store build did. Before #7000 the player's sheet sent nothing, so
+  // play_drawer has no history.
   BoardControlsOpened: 'Board Controls Opened',
+  // Mobile-only (#7000): the player's wall button asked the climber to act on
+  // the climb on screen, only for the two states that ask: 'connect' (no board
+  // linked; "Connect board", or the bulb while it is back in the first row),
+  // once per player open, and 'put_on_wall' (a preview or crew browse), once per
+  // climb per open. Props: { state, climbUuid }; `climbUuid` is the climb on
+  // screen when it was first shown. Read with Wall Control Tapped for "lit from
+  // a preview per time it was offered". Roughly 10-20k per 28 days at today's
+  // ~10.6k player sessions. Events from the QA builds of PR #7017 also carry a
+  // `variant` ('current' | 'bulb' | 'button'); store builds never sent one.
+  WallControlShown: 'Wall Control Shown',
+  // Mobile-only (#7000): a tap on any view of the player's board control (one
+  // handler, so one event per tap). Props: { state, action, control }. `state`:
+  // 'connect' | 'on_wall_unlinked' | 'put_on_wall' | 'lit' | 'dark' | 'crew' |
+  // 'take_wall' | 'release_wall' | 'none', what the control showed when tapped
+  // ('on_wall_unlinked': On the wall per presence, lit under an hour ago, with
+  // no live link; its tap connects and lights it again, 'relight' for the
+  // climber's own climb, 'put_on_wall' for a preview). `action`:
+  // 'disconnect' | 'connect' | 'put_on_wall' | 'relight' | 'relay' |
+  // 'take_wall' | 'release_wall' | 'noop', what the tap did ('disconnect' is a
+  // tap on You have the board, state 'lit'; QA builds before Marco's phone
+  // test sent 'open_sheet' there instead). `control`: 'button' (the wall
+  // button, full width or in a workout's top row) | 'bulb' (the first row's
+  // bulb, back for the busy-wall question or chosen in View options) |
+  // 'mini_bar' (the MiniPlayer's bulb standing in for a tablet or open-Duo player's).
+  // QA builds before the one-model refactor sent 'wall_control' for the
+  // button. A tap while the busy-wall question is up is a 'noop'. Roughly 15-25k per 28 days.
+  WallControlTapped: 'Wall Control Tapped',
   // Mobile-only (#5654): the /boards Bluetooth quickstart scan ended. Before this
   // the quickstart scanned without any event, so a climber who found their board
   // through it never counted as having scanned. Fires once per scan that started

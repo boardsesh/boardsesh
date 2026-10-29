@@ -518,8 +518,10 @@ Three mobile events so the "opened a climb, never scanned" stage of the newcomer
 
 | Event                            | Properties                                                                                                                                          | Emit sites                                                                                                                                                                                                                                                    |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Board Connect Tapped`           | `surface` (`play_drawer` / `toolbar` / `app_bar` / `board_control_indicator` / `wall_empty_state` / `wall_kiosk` / `create_climb` / `picker_scan_again` / `notification` / `first_connect_card` / `first_connect_pill`), `boardName`, `reconnect`, `placement?` (`regular` / `inline`) | `packages/mobile/src/lib/analytics-board-connect.ts`, called from `use-lightbulb-control.ts`, `WallEmptyState.tsx`, `WallScrubber.tsx`, `use-create-climb-screen.ts`, the device picker's Scan again in `bluetooth-provider.tsx` and the Android session notification's bulb in `live-activity-bridge.tsx`. Fires on the tap, before permissions. `placement` comes only from the iOS 26 tab-bar platter's bulb (open or collapsed); the floating JS capsule's bulb shares `board_control_indicator` and sends none. |
-| `Board Controls Opened`          | `surface` (`board_control_indicator` / `toolbar` / `app_bar` / `header_pill`; the type also admits the other `play_drawer` / `first_connect_*` values), `placement?` (`regular` / `inline`) | `packages/mobile/src/providers/ble-control-sheet-provider.tsx` (`open(source)`), via `trackBoardControlsOpened` in `analytics-board-connect.ts`. Fires only when the sheet opens, which needs this device to hold the link. Callers: a lightbulb's long-press and the Climbs header's "You have the board" pill (`header_pill`). The play drawer's own sheet host does not fire it. |
+| `Board Connect Tapped`           | `surface` (`play_drawer` / `toolbar` / `app_bar` / `board_control_indicator` / `wall_empty_state` / `wall_kiosk` / `create_climb` / `picker_scan_again` / `notification` / `first_connect_card` / `put_on_wall`; `first_connect_pill` until #7000), `boardName`, `reconnect`, `placement?` (`regular` / `inline`) | `packages/mobile/src/lib/analytics-board-connect.ts`, called from `use-lightbulb-control.ts`, `WallEmptyState.tsx`, `WallScrubber.tsx`, `use-create-climb-screen.ts`, the device picker's Scan again in `bluetooth-provider.tsx` and the Android session notification's bulb in `live-activity-bridge.tsx`. Fires on the tap, before permissions. `placement` comes only from the iOS 26 tab-bar platter's bulb (open or collapsed); the floating JS capsule's bulb shares `board_control_indicator` and sends none. |
+| `Board Controls Opened`          | `surface` (`board_control_indicator` / `toolbar` / `app_bar` / `header_pill` / `play_drawer`; the type also admits `first_connect_card`), `placement?` (`regular` / `inline`), `source?` (`button` / `bulb` / `mini_bar` / `player_menu`, play drawer only: the view that was held, or ⋯; pre-release QA builds sent `wall_control` / `bulb_long_press`) | `packages/mobile/src/providers/ble-control-sheet-provider.tsx` (`open(source)`), via `trackBoardControlsOpened` in `analytics-board-connect.ts`, and since #7000 the player's own sheet in `PlayCore.tsx` (`surface: 'play_drawer'` plus `source`). Fires only when the sheet opens, which needs this device to hold the link. Callers: a lightbulb's long-press, the Climbs header's "You have the board" pill (`header_pill`), and in the player a hold on any view of the board control (through `use-wall-control.ts`), and ⋯ › Board controls. A tap never opens it. |
+| `Wall Control Shown`             | `state` (`connect` / `put_on_wall`), `climbUuid` | `packages/mobile/src/components/play-drawer/use-wall-control-shown.ts`, via `analytics-wall-control.ts`. `connect` once per player open, `put_on_wall` once per climb per open, only while drawn. QA builds of PR #7017 also sent `variant`. |
+| `Wall Control Tapped`            | `state` (`connect` / `on_wall_unlinked` / `put_on_wall` / `lit` / `dark` / `crew` / `take_wall` / `release_wall` / `none`), `action` (`disconnect` / `connect` / `put_on_wall` / `relight` / `relay` / `take_wall` / `release_wall` / `noop`), `control` (`button` / `bulb` / `mini_bar`) | `use-wall-control.ts`, via `analytics-wall-control.ts`. One handler for every view of the player's board control: the wall button (full width, or in a workout's top row), the first row's bulb, and the MiniPlayer's bulb standing in for a tablet or open-Duo player's, with the bulb chosen (`mini_bar`). Pre-release QA builds sent `wall_control` for the button. `disconnect` is a tap on You have the board (`state: lit`); pre-release QA builds sent `open_sheet` there. |
 | `Quick Tick Opened`              | `source` (mobile `play_fab` / `climb_actions` / `queue_bar`), `placement?` (`regular` / `inline`) | `use-log-ascent-action.ts`, `use-climb-actions.ts`, `PlayCore.tsx`. `placement` comes only from the tab-bar platter's tick, whose `source` stays `queue_bar` (shared with the JS bars). |
 | `Bluetooth Unavailable`          | `reason` (`unauthorized` / `powered_off` / `unsupported` / `unknown`), `surface` (`connect` / `quickstart_scan`), `platform`, `boardName` (connect only) | `packages/mobile/src/lib/ble/bluetooth-unavailable.ts`, called from `bluetooth-unavailable-alert.ts` (connect) and `use-board-scan.ts` (quickstart). Fires with the alert or sheet state.                                                                    |
 | `Board Quickstart Scan Finished` | `outcome` (`completed` / `stopped` / `error`), `found_count`, `serialless_count`, `moonboard_count`                                                 | `packages/mobile/src/lib/ble/use-board-scan.ts`. Once per quickstart scan that started the radio.                                                                                                                                                             |
@@ -624,8 +626,20 @@ An A/B test on the largest drop-off: 18.6% of newcomers open a climb and never t
 bulb. The treatment puts a "Light climbs on {{board}}" card at the top of Climbs (Connect · This
 wall has no lights · X "Not now", on at most two launches) and turns the play view's bulb into a
 labelled "Light it on the board" pill (share and queue move into ⋯) for at most three calendar
-days. Control keeps today's UI. Both arms get a one-time "Connected to {{board}}" confirmation
+days. Control keeps the bare bulb. Both arms get a one-time "Connected to {{board}}" confirmation
 after the phone's first successful connect. Kill switch: `first-connect-cta-kill`.
+
+**#7000 changes both arms mid-test.** From the #7000 OTA the player has no bulb in either arm:
+its second row is a labelled "Connect board" wall button for everyone, and the treatment's pill
+is gone. After #7000 the arms are:
+
+- **treatment**: the Climbs card, plus the player's Connect board;
+- **control**: the player's Connect board alone.
+
+So the player half of the test no longer differs between arms, and the control arm got a labelled
+connect control it never had. Read exposures from before and after the #7000 OTA as two separate
+comparisons, never pooled: split by exposure date (the OTA's publish day per platform) or by
+`ota_is_embedded` together with the bundle the launch ran.
 
 **Assignment** is local and needs no flag: `murmurHash3_32(concat(user_id, ':first-connect-cta-v1')) % 2`,
 1 = treatment (`packages/mobile/src/lib/onboarding/connect-step-arm.ts`). **Eligible**: the
@@ -658,9 +672,11 @@ Reading it:
   100% rollout day (Android). `ota_is_embedded` still splits a first launch on the binary's own JS
   from a later OTA launch.
 - **Leading**: `Board Connect Tapped` with `surface` `first_connect_card` (the card's Connect and
-  Try again) and `first_connect_pill` (the play-view pill), next to the bare bulb's `play_drawer`,
-  plus `First Run Card Action` with `action = 'connect'`. The card, the pill and every bulb run
-  one connect (`useLightbulbControl().connect`), so each tap is logged once.
+  Try again) and, before #7000, `first_connect_pill` (the play-view pill), next to the player's
+  own `play_drawer` (the bare bulb before #7000, Connect board after), plus `First Run Card
+  Action` with `action = 'connect'`. The card and every connect control run one connect
+  (`useLightbulbControl().connect`), so each tap is logged once. Compare `play_drawer` taps
+  before and after #7000 separately: the control behind it changed.
 - **"a"**: `Board Lights Declined` ÷ `First Run Exposed` bounds how many newcomers had no LED board
   to connect to. Over 40% of card views in week 2 means the Bluetooth-first work should wait.
   "No lights" is recorded per phone, not per board: one `noLightsAt` in the phone's

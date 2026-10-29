@@ -293,6 +293,7 @@ React Native + Expo SDK 58, React Native 0.88, Expo Router 58, React 19.3.
 - **Dev mode**: `__DEV__` global, not `process.env.NODE_ENV`.
 - **Storage**: `expo-secure-store` for credentials, not IndexedDB.
 - **Navigation**: Expo Router, not Next.js App Router.
+- **Nothing over the climb.** Never draw status or decoration over the rendered climb. Put it beside the art: the header pill, the top bar's caption, or the action bar's row. The only exceptions (board-takeover cards, the pill's explainer, thumbnail corner badges, MoonBoard grid letters, reset zoom) are listed in "Nothing over the climb" in `docs/ai-design-guidelines.md`.
 
 ### Expo web
 

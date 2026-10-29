@@ -1,4 +1,5 @@
 import type { SessionUser } from '@boardsesh/shared-schema';
+import type { WallLitState } from '../../components/play-drawer/wall-lit';
 
 /**
  * Live values a story can fake on top of the real app. Each field patches one
@@ -53,6 +54,17 @@ export type ScenarioOverrides = {
   wall?: {
     connection: 'connectedByMe' | 'heldByPeer' | 'disconnected';
     holderDisplayName?: string | null;
+  };
+  /**
+   * What the player says about the wall (#6939, #7000): the header's back chip
+   * and whether the climb on screen reads as lit (the wall button's Lit on the
+   * wall), forced past their resolvers. Patches only what PlayCore draws, so
+   * the commit bar and the bulb keep the real board link. `null` hides the
+   * chip; leaving a field out keeps the real value.
+   */
+  player?: {
+    wallPill?: 'browsing' | null;
+    wallLit?: WallLitState | null;
   };
 };
 

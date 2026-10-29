@@ -494,7 +494,6 @@
       "playlistTapLoadsQueueLabel": "Toucher une playlist la charge dans ma file",
       "playlistTapLoadsQueueDescription": "Toucher un bloc d'une playlist, de Pour vous ou de la page d'un ouvreur remplace votre file par cette liste. Si Allumer la board quand je touche un bloc est désactivé, utilisez Lecture pour la charger."
     },
-    "turnOff": "Éteindre la board",
     "holdForControls": "Maintenir pour les commandes",
     "boardControls": "Commandes de la board",
     "sendFailedTitle": "Impossible d'allumer la board",

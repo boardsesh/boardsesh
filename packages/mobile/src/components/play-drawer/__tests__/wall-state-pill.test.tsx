@@ -19,7 +19,7 @@ vi.mock('../../PressableSurface', async () => {
 // actually reachable. Narration is the host's job now — see
 // use-wall-state-announcer.test.ts.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, render } from '@testing-library/react';
+import { render } from '@testing-library/react';
 import { createElement, type ComponentProps, type ReactNode } from 'react';
 
 type ViewMockProps = { children?: ReactNode; style?: unknown };
@@ -80,7 +80,11 @@ vi.mock('react-native-reanimated', () => ({
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, opts?: { name?: string }) =>
-      key === 'mobile.boardPresence.drivenByA11y' ? `${opts?.name} is lighting the wall.` : key,
+      key === 'mobile.boardPresence.drivenByA11y'
+        ? `${opts?.name} is lighting the wall.`
+        : opts?.name
+          ? `${key}:${JSON.stringify({ name: opts.name })}`
+          : key,
   }),
 }));
 
@@ -166,17 +170,18 @@ type WallStatePillProps = ComponentProps<typeof WallStatePill>;
 
 const renderPill = (
   props: Partial<{
-    state: 'onWall' | 'live' | 'browsing';
+    state: 'browsing';
     reserveOnly: boolean;
     backTarget: 'wall' | 'current' | null;
     latched: boolean;
+    targetName: string | null;
   }> = {},
 ) => {
-  const { state = 'browsing', reserveOnly, backTarget, latched } = props;
+  const { state = 'browsing', reserveOnly, backTarget, latched, targetName } = props;
   return render(
     reserveOnly
-      ? createElement(WallStatePill, { state, backTarget, latched, reserveOnly: true })
-      : createElement(WallStatePill, { state, backTarget, latched, onPress: vi.fn() }),
+      ? createElement(WallStatePill, { state, backTarget, latched, targetName, reserveOnly: true })
+      : createElement(WallStatePill, { state, backTarget, latched, targetName, onPress: vi.fn() }),
   );
 };
 
@@ -190,45 +195,35 @@ beforeEach(() => {
 });
 
 describe('WallStatePill', () => {
-  it('opens live controls once through its viewer and leaves reserved chrome inert', () => {
-    const onPress = vi.fn();
-    const { container, rerender } = render(createElement(WallStatePill, { state: 'live', onPress }));
-    const viewer = () => container.querySelector('[data-viewer-title]')!;
-    expect(viewer().getAttribute('data-viewer-title')).toBe(pill(container).getAttribute('data-label'));
-    fireEvent.contextMenu(viewer());
-    expect(onPress).toHaveBeenCalledOnce();
-    rerender(createElement(WallStatePill, { state: 'live', reserveOnly: true }));
-    fireEvent.contextMenu(viewer());
-    expect(onPress).toHaveBeenCalledOnce();
-  });
-
-  // Browsing, the pill is the way back: a back glyph, plus the face of whoever
-  // lit the wall when back lands on the lit climb. Neutral like the other two
-  // states, because the loud thing on screen is Put on the wall, the one
-  // control that changes anything.
-  it('shows a back glyph and the wall driver’s face when back goes to the wall, on the neutral surface', () => {
+  // The back chip (#7000): a back glyph, the word "Back", and the face of
+  // whoever lit the wall when back lands on the lit climb. Neutral, because the
+  // loud thing on screen is the wall button, the one control that changes
+  // anything.
+  it('shows a back glyph, "On the wall" and the wall driver’s face when back goes to the wall, on the neutral surface', () => {
     driverState.value = { driver: { userId: 'u1', avatarUrl: 'https://x/y.png' }, name: 'Sam', litAgo: null };
-    const { container } = renderPill({ state: 'browsing', backTarget: 'wall' });
+    const { container } = renderPill({ backTarget: 'wall' });
 
     expect(container.querySelector('[data-icon="undo"]')?.getAttribute('data-color')).toBe('#111');
     const avatar = container.querySelector('[data-driver-avatar="true"]') as HTMLElement;
     expect(avatar).toBeTruthy();
     expect(avatar.getAttribute('data-name')).toBe('Sam');
     expect(avatar.getAttribute('data-size')).toBe('20');
-    // Same no-nested-touchable rule as the on-wall face.
+    // A pressable avatar inside a pressable chip would be a nested touchable.
     expect(avatar.getAttribute('data-user-id')).toBe('');
     expect(avatar.getAttribute('data-status')).toBe('none');
-    // No accent fill, and no word: the label carries the meaning.
     expect(styles(container).some((style) => style.includes('#FF8A3D'))).toBe(false);
     expect(styles(container).some((style) => style.includes('"backgroundColor":"#FFF"'))).toBe(true);
-    expect(container.textContent).toBe('');
+    // QA #147: the word says where back goes.
+    expect(container.textContent).toBe('playView.wallState.backOnWall');
+    // The label says where back goes; the word is only for sighted climbers.
     expect(pill(container).getAttribute('data-label')).toBe('playView.wallState.backToWall');
   });
 
-  it('keeps the back glyph alone, at the 44pt touch width, with nobody to show', () => {
-    const { container } = renderPill({ state: 'browsing', backTarget: 'current' });
+  it('keeps the glyph and "My pick", at least the 44pt touch width, with nobody to show', () => {
+    const { container } = renderPill({ backTarget: 'current' });
 
     expect(container.querySelector('[data-icon="undo"]')).toBeTruthy();
+    expect(container.textContent).toBe('playView.wallState.backMyPick');
     expect(container.querySelector('[data-driver-avatar="true"]')).toBeNull();
     expect(styles(container).some((style) => style.includes('"minWidth":44'))).toBe(true);
     expect(pill(container).getAttribute('data-label')).toBe('playView.wallState.backToCurrent');
@@ -241,85 +236,34 @@ describe('WallStatePill', () => {
     ['unset', null],
   ])('keeps the driver’s face off a back chip whose target is %s', (_label, backTarget) => {
     driverState.value = { driver: { userId: 'u1', avatarUrl: 'https://x/y.png' }, name: 'Sam', litAgo: null };
-    const { container } = renderPill({ state: 'browsing', backTarget });
+    const { container } = renderPill({ backTarget });
 
-    expect(container.querySelector('[data-icon="undo"]')).toBeTruthy();
     expect(container.querySelector('[data-driver-avatar="true"]')).toBeNull();
-    expect(styles(container).some((style) => style.includes('"minWidth":44'))).toBe(true);
     expect(pill(container).getAttribute('data-label')).toBe('playView.wallState.backToCurrent');
   });
 
-  // Back to the wall with nobody to show: still the wall's words, glyph alone.
+  // QA #147: named to a screen reader, "Back to my pick: The Eyes".
+  it('names the climb back goes to', () => {
+    const mine = renderPill({ backTarget: 'current', targetName: 'The Eyes' });
+    expect(pill(mine.container).getAttribute('data-label')).toBe(
+      'playView.wallState.backToMyPickNamed:{"name":"The Eyes"}',
+    );
+    mine.unmount();
+    const wall = renderPill({ backTarget: 'wall', targetName: 'The Eyes' });
+    expect(pill(wall.container).getAttribute('data-label')).toBe(
+      'playView.wallState.backToWallNamed:{"name":"The Eyes"}',
+    );
+  });
+
   it('says back to the wall without a face when nobody can be named', () => {
-    const { container } = renderPill({ state: 'browsing', backTarget: 'wall' });
+    const { container } = renderPill({ backTarget: 'wall' });
 
     expect(container.querySelector('[data-driver-avatar="true"]')).toBeNull();
-    expect(styles(container).some((style) => style.includes('"minWidth":44'))).toBe(true);
     expect(pill(container).getAttribute('data-label')).toBe('playView.wallState.backToWall');
   });
 
-  // backTarget only means anything on the back chip.
-  it('ignores backTarget on the wall and Live', () => {
-    driverState.value = { driver: { userId: 'u1', avatarUrl: 'https://x/y.png' }, name: 'Marco', litAgo: null };
-    const onWall = renderPill({ state: 'onWall', backTarget: 'current' });
-    expect(onWall.container.querySelector('[data-driver-avatar="true"]')).toBeTruthy();
-    expect(pill(onWall.container).getAttribute('data-label')).toContain('playView.wallState.onWall');
-
-    const live = renderPill({ state: 'live', backTarget: 'wall' });
-    expect(live.container.querySelector('[data-driver-avatar="true"]')).toBeNull();
-    expect(pill(live.container).getAttribute('data-label')).toBe('playView.wallState.live');
-  });
-
-  it('says "Live" beside the shared board-presence dot', () => {
-    const { container } = renderPill({ state: 'live' });
-
-    expect(container.textContent).toContain('playView.wallState.live');
-    // The shared WALL_LIVE_DOT_SIZE, filled with the dedicated `live` role —
-    // one dot vocabulary across every board-presence surface.
-    expect(
-      styles(container).some((style) => style.includes('"width":10') && style.includes('"backgroundColor":"#B45309"')),
-    ).toBe(true);
-    expect(container.querySelector('[data-driver-avatar="true"]')).toBeNull();
-  });
-
-  it('shows the driver instead of a label on the wall — the words ride the a11y label', () => {
-    driverState.value = { driver: { userId: 'u1', avatarUrl: 'https://x/y.png' }, name: 'Marco', litAgo: '5m' };
-    const { container } = renderPill({ state: 'onWall' });
-
-    const avatar = container.querySelector('[data-driver-avatar="true"]') as HTMLElement;
-    expect(avatar).toBeTruthy();
-    expect(avatar.getAttribute('data-name')).toBe('Marco');
-    // A pressable avatar inside a pressable pill would be a nested touchable;
-    // the profile tap lives in the callout instead. The face still resolves
-    // from `uri`, so passing null here costs nothing visually.
-    expect(avatar.getAttribute('data-user-id')).toBe('');
-    // Dropped out of the BLE glyph → the corner shows nothing, and recency moves
-    // to the label below.
-    expect(avatar.getAttribute('data-status')).toBe('none');
-    expect(container.textContent).not.toContain('playView.wallState.onWall');
-
-    const label = pill(container).getAttribute('data-label') ?? '';
-    expect(label).toContain('playView.wallState.onWall');
-    expect(label).toContain('Marco is lighting the wall.');
-    expect(label).toContain('5m');
-  });
-
-  it('names an anonymous driver as such rather than dropping the attribution', () => {
-    driverState.value = { driver: { userId: null, avatarUrl: null }, name: null, litAgo: null };
-    const { container } = renderPill({ state: 'onWall' });
-
-    expect(pill(container).getAttribute('data-label')).toContain('mobile.boardPresence.drivenByAnonA11y');
-  });
-
-  it('appends the "there is more here" hint where a tap opens the explainer', () => {
-    for (const state of ['onWall', 'live'] as const) {
-      const { container } = renderPill({ state });
-      expect(pill(container).getAttribute('data-hint')).toContain('playView.wallState.pillHint');
-    }
-  });
-
-  it('hints only the browsing rule while browsing, since the label already says where a tap goes', () => {
-    const { container } = renderPill({ state: 'browsing' });
+  it('hints only the browsing rule, since the label already says where a tap goes', () => {
+    const { container } = renderPill({});
 
     expect(pill(container).getAttribute('data-hint')).toBe('playView.wallState.browsingHint');
   });
@@ -327,38 +271,25 @@ describe('WallStatePill', () => {
   // "The wall stays where it is" is only true under a latch. A preview with
   // lighting on still lights each swipe, so its back chip promises nothing.
   it('drops the browsing hint when no latch holds the wall still', () => {
-    const latched = renderPill({ state: 'browsing', backTarget: 'current', latched: true });
-    expect(pill(latched.container).getAttribute('data-hint')).toBe('playView.wallState.browsingHint');
-
-    const unlatched = renderPill({ state: 'browsing', backTarget: 'current', latched: false });
+    const unlatched = renderPill({ backTarget: 'current', latched: false });
     expect(pill(unlatched.container).getAttribute('data-hint')).toBeNull();
-    // The label still says where the tap goes.
     expect(pill(unlatched.container).getAttribute('data-label')).toBe('playView.wallState.backToCurrent');
   });
 
-  it('keeps the explainer hint on the wall and Live whatever the latch', () => {
-    for (const state of ['onWall', 'live'] as const) {
-      const { container } = renderPill({ state, latched: false });
-      expect(pill(container).getAttribute('data-hint')).toContain('playView.wallState.pillHint');
-    }
-  });
-
-  // The pill never decides what a tap does: PlayCore hands it the explainer on
-  // the wall and Live, and Back to live while browsing.
-  it.each(['onWall', 'live', 'browsing'] as const)('hands a %s tap to the host, once', (state) => {
+  it('hands a tap to the host, once', () => {
     const onPress = vi.fn();
-    const { container } = render(createElement(WallStatePill, { state, onPress }));
+    const { container } = render(createElement(WallStatePill, { state: 'browsing', onPress }));
 
     pill(container).click();
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 
   // hitSlop can't do this job: the touch area never extends past the parent's
-  // bounds, and every ancestor of the pill (the header's measured leading flank)
+  // bounds, and every ancestor of the chip (the header's measured leading flank)
   // sizes to its content — so the PRESSABLE itself has to carry the 44pt floor,
   // with the 32pt capsule centred inside it.
   it('gives the tap a real 44pt target rather than a 32pt chip with inert slop', () => {
-    const { container } = renderPill({ state: 'browsing' });
+    const { container } = renderPill({});
     const target = pill(container).getAttribute('data-style') ?? '';
     const capsule = styles(container).find((style) => style.includes('"borderRadius":9999')) ?? '';
 
@@ -367,10 +298,9 @@ describe('WallStatePill', () => {
   });
 
   it('answers a press — a ripple on Material, opacity and scale on Liquid Glass', () => {
-    const { container } = renderPill({ state: 'browsing' });
+    const { container } = renderPill({});
     const button = pill(container);
 
-    // Borderless, in the M3 on-surface state layer: browsing is neutral now.
     expect(button.getAttribute('data-ripple')).toContain('"borderless":true');
     expect(button.getAttribute('data-ripple')).toContain('"color":"#111"');
     expect(button.getAttribute('data-style-pressed')).toContain('"opacity":0.6');
@@ -382,12 +312,12 @@ describe('WallStatePill', () => {
   // climb name and its attribute glyphs stepping mid-swipe. It must hold the
   // space and nothing else: no tap, no words, nothing for a screen reader.
   describe('reserveOnly', () => {
-    it("keeps the real pill's footprint so the reserved flank measures true", () => {
-      const visible = renderPill({ state: 'live' });
-      const reserved = renderPill({ state: 'live', reserveOnly: true });
+    it("keeps the real chip's footprint so the reserved flank measures true", () => {
+      const visible = renderPill({});
+      const reserved = renderPill({ reserveOnly: true });
 
       // Same tree, same intrinsic size — a fixed-width spacer could not track a
-      // translated label ('Live' / 'En vivo' / 'En direct' all differ).
+      // translated word ("Back" / "Volver" / "Zurück" all differ).
       expect(reserved.container.textContent).toBe(visible.container.textContent);
       expect(pill(reserved.container).getAttribute('data-style')).toContain('"height":44');
       expect(pill(reserved.container).getAttribute('data-style')).toContain('"opacity":0');
@@ -399,7 +329,11 @@ describe('WallStatePill', () => {
       // compile-time half. The cast reaches past it to the runtime guard sitting
       // behind it, which is what still protects a JavaScript caller.
       const { container } = render(
-        createElement(WallStatePill, { state: 'live', onPress, reserveOnly: true } as unknown as WallStatePillProps),
+        createElement(WallStatePill, {
+          state: 'browsing',
+          onPress,
+          reserveOnly: true,
+        } as unknown as WallStatePillProps),
       );
       const button = pill(container);
 
@@ -409,7 +343,6 @@ describe('WallStatePill', () => {
       expect(button.getAttribute('data-label')).toBeNull();
       expect(button.getAttribute('data-a11y-hidden')).toBe('true');
       expect(button.getAttribute('data-ripple')).toBe('');
-      // Inertness rides the style now, not the deprecated Pressable prop.
       expect(button.getAttribute('data-style')).toContain('"pointerEvents":"none"');
     });
   });

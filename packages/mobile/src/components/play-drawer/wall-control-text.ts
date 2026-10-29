@@ -1,0 +1,132 @@
+import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
+import type {
+  WallControlA11yHintKey,
+  WallControlA11yHolderKey,
+  WallControlBulbValueKey,
+  WallControlLabelKey,
+  WallControlModel,
+} from './wall-control';
+
+// The words for a board control model (`resolveWallControl`), shared by every
+// view of it, so the wall button, the bulb and the Duo's bar bulb can't word
+// one state two ways. Each key is spelled out once here, so the catalog
+// checks see every string the control can say.
+
+export type WallControlText = {
+  /** The wall button's label. Empty with nothing to offer. */
+  label: string;
+  /** The wall button's screen-reader label: the label, then who has the board. */
+  accessibilityLabel: string;
+  /** What a tap does; the scanning and writing hints win while they apply. */
+  accessibilityHint: string | undefined;
+  /** The bulb's own label ("Board lights"); its state rides `bulbValue`. */
+  bulbAccessibilityLabel: string;
+  bulbValue: string;
+  /** The named accessibility action for a hold: "Board options". */
+  longPressActionLabel: string;
+};
+
+function labelText(t: TFunction, tSettings: TFunction, key: WallControlLabelKey, name: string | null): string {
+  switch (key) {
+    case 'connect':
+      return t('playView.wallControl.connect');
+    case 'onWall':
+      return t('playView.wallControl.onWall');
+    case 'putOnWall':
+      return t('playView.wallState.putOnWall');
+    case 'setActive':
+      return t('playView.setActive');
+    case 'putOnBoard':
+      return t('playView.wallControl.putOnBoard', { name });
+    case 'putOnCrewBoard':
+      return t('playView.wallControl.putOnCrewBoard');
+    case 'youHaveBoard':
+      return t('playView.wallControl.youHaveBoard');
+    case 'onBoard':
+      return t('playView.wallControl.onBoard', { name });
+    case 'onCrewBoard':
+      return t('playView.wallControl.onCrewBoard');
+    case 'takeWall':
+      return tSettings('ble.takeWall');
+    case 'releaseWall':
+      return tSettings('ble.releaseWall');
+  }
+}
+
+function holderText(t: TFunction, key: WallControlA11yHolderKey, name: string | null): string {
+  switch (key) {
+    case 'youHaveBoard':
+      return t('playView.wallControl.youHaveBoard');
+    case 'holderHasBoard':
+      return t('playView.wallControl.holderHasBoard', { name });
+    case 'crewHasBoard':
+      return t('playView.wallControl.crewHasBoard');
+  }
+}
+
+function hintText(t: TFunction, key: WallControlA11yHintKey, name: string | null): string {
+  switch (key) {
+    case 'connectHint':
+      return t('playView.wallControl.connectHint');
+    case 'lightHint':
+      return t('playView.wallControl.lightHint');
+    case 'lightAgainHint':
+      return t('playView.wallControl.lightAgainHint');
+    case 'litHint':
+      return t('playView.wallControl.litHint');
+    case 'relayHint':
+      return t('playView.wallControl.relayHint', { name });
+    case 'relayHintCrew':
+      return t('playView.wallControl.relayHintCrew');
+  }
+}
+
+function bulbValueText(t: TFunction, key: WallControlBulbValueKey, name: string | null): string {
+  switch (key) {
+    case 'youHaveBoardLit':
+      return t('playView.wallControl.youHaveBoardLit');
+    case 'onWall':
+      return t('playView.wallControl.onWall');
+    case 'onBoard':
+      return t('playView.wallControl.onBoard', { name });
+    case 'onCrewBoard':
+      return t('playView.wallControl.onCrewBoard');
+    case 'valueOtherClimb':
+      return t('playView.wallControl.valueOtherClimb');
+    case 'valueOff':
+      return t('playView.wallControl.valueOff');
+  }
+}
+
+/** Pure, for tests: `t` is the session namespace, `tSettings` the settings one. */
+export function wallControlText(model: WallControlModel, t: TFunction, tSettings: TFunction): WallControlText {
+  const name = model.holderName;
+  const label = model.labelKey ? labelText(t, tSettings, model.labelKey, name) : '';
+  const spokenLabel =
+    model.a11yLabelKey === 'youHaveBoardLit'
+      ? t('playView.wallControl.youHaveBoardLit')
+      : model.a11yLabelKey
+        ? labelText(t, tSettings, model.a11yLabelKey, name)
+        : '';
+  const spokenHolder = model.a11yHolderKey ? holderText(t, model.a11yHolderKey, name) : null;
+  let accessibilityHint: string | undefined = model.a11yHintKey ? hintText(t, model.a11yHintKey, name) : undefined;
+  if (model.pending) accessibilityHint = tSettings('ble.scanning');
+  else if (model.writing) accessibilityHint = tSettings('ble.writing');
+  return {
+    label,
+    accessibilityLabel: spokenHolder ? `${spokenLabel}, ${spokenHolder}` : spokenLabel,
+    accessibilityHint,
+    bulbAccessibilityLabel: t('playView.wallControl.bulbAria'),
+    bulbValue: bulbValueText(t, model.bulbValueKey, name),
+    longPressActionLabel: t('playView.wallControl.boardOptions'),
+  };
+}
+
+/** The words for one model, in the climber's language. */
+export function useWallControlText(model: WallControlModel): WallControlText {
+  const { t } = useTranslation('session');
+  const { t: tSettings } = useTranslation('settings');
+  return useMemo(() => wallControlText(model, t, tSettings), [model, t, tSettings]);
+}

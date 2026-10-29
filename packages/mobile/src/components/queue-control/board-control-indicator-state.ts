@@ -86,6 +86,41 @@ export function getBoardControlIndicatorVisual({
   }
 }
 
+/**
+ * The open Duo's bar bulb while it stands in for the pane player's board
+ * control (#7000): drawn from that control's model, in the indicator's own
+ * glyphs. Amber fill when lit, an amber outline when linked but dark, the
+ * person glyph for a crewmate's board, the pin on a wall with no lights.
+ */
+export function getPaneWallControlVisual({
+  look,
+  holder,
+  state,
+  connectedColor,
+  peerColor,
+  disconnectedColor,
+  wallHeldColor,
+  solidGlyphs = false,
+}: {
+  look: 'off' | 'ready' | 'lit';
+  holder: 'self' | 'crew' | null;
+  state: string | null;
+  connectedColor: string;
+  peerColor: string | OpaqueColorValue;
+  disconnectedColor: string | OpaqueColorValue;
+  wallHeldColor: string;
+  solidGlyphs?: boolean;
+}): BoardControlIndicatorVisual {
+  if (state === 'release_wall')
+    return { iconName: 'pin.fill', iconColor: wallHeldColor, haloColor: `${wallHeldColor}24` };
+  if (state === 'take_wall') return { iconName: solidGlyphs ? 'pin.fill' : 'pin', iconColor: disconnectedColor };
+  if (holder === 'crew') return { iconName: 'person.fill', iconColor: peerColor };
+  if (look === 'lit')
+    return { iconName: 'lightbulb.fill', iconColor: connectedColor, haloColor: `${connectedColor}24` };
+  if (look === 'ready') return { iconName: solidGlyphs ? 'lightbulb.fill' : 'lightbulb', iconColor: connectedColor };
+  return { iconName: solidGlyphs ? 'lightbulb.fill' : 'lightbulb', iconColor: disconnectedColor };
+}
+
 export type BoardConnectionBadgeVisual = {
   iconName: IconName;
   iconColor: string | OpaqueColorValue;

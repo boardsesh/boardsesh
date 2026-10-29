@@ -494,7 +494,6 @@
       "playlistTapLoadsQueueLabel": "Al tocar una playlist, cargarla en mi cola",
       "playlistTapLoadsQueueDescription": "Tocar un bloque de una playlist, de Para ti o de la página de un setter sustituye tu cola por esa lista. Si Iluminar el plafón al tocar un bloque está desactivado, usa Reproducir para cargarla."
     },
-    "turnOff": "Apagar el plafón",
     "holdForControls": "Mantén pulsado para los controles",
     "boardControls": "Controles del plafón",
     "sendFailedTitle": "No se pudo iluminar el plafón",

@@ -7,6 +7,7 @@ const signals = vi.hoisted(() => ({
   differentiateWithoutColor: 'off' as 'on' | 'off' | 'unknown',
   openControls: vi.fn(),
   lightbulbOptions: [] as unknown[],
+  lightbulbPress: vi.fn(),
 }));
 
 vi.mock('react-native', () => ({
@@ -20,8 +21,15 @@ vi.mock('react-native', () => ({
 vi.mock('../../AccessibleTextInput', () => ({ AccessibleTextInput: () => null }));
 vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
 vi.mock('../../PressableSurface', () => ({
-  PressableSurface: ({ children, onLongPress }: { children?: ReactNode; onLongPress?: () => void }) =>
-    createElement('button', { 'data-long-press': 'true', onContextMenu: onLongPress }, children),
+  PressableSurface: ({
+    children,
+    onPress,
+    onLongPress,
+  }: {
+    children?: ReactNode;
+    onPress?: () => void;
+    onLongPress?: () => void;
+  }) => createElement('button', { 'data-long-press': 'true', onClick: onPress, onContextMenu: onLongPress }, children),
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../Icon', () => ({ Icon: ({ name }: { name: string }) => createElement('span', { 'data-icon': name }) }));
@@ -39,7 +47,7 @@ vi.mock('../use-accessory-climb-tap', () => ({ useAccessoryClimbTap: () => ({ op
 vi.mock('../../ble/use-lightbulb-control', () => ({
   useLightbulbControl: (options: unknown) => {
     signals.lightbulbOptions.push(options);
-    return { onPress: vi.fn() };
+    return { onPress: signals.lightbulbPress };
   },
 }));
 vi.mock('../../ble/use-board-connection-state', () => ({
@@ -64,6 +72,13 @@ describe('BoardControlIndicator analytics source', () => {
   beforeEach(() => {
     signals.openControls.mockClear();
     signals.lightbulbOptions.length = 0;
+    signals.lightbulbPress.mockClear();
+  });
+
+  it('toggles the link on a tap', () => {
+    const { container } = render(createElement(BoardControlIndicator, {}));
+    fireEvent.click(container.querySelector('[data-long-press]')!);
+    expect(signals.lightbulbPress).toHaveBeenCalledTimes(1);
   });
 
   it('passes the platter placement to the connect path', () => {

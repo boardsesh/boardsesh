@@ -49,8 +49,6 @@ const toggleFavorite = vi.hoisted(() => vi.fn());
 const recorded = vi.hoisted(() => ({
   actionBar: [] as Props[],
   wallPill: [] as Props[],
-  wallBadge: [] as Props[],
-  wallCallout: [] as Props[],
   deferredSections: [] as Props[],
   favoriteStatus: [] as Props[],
   navigationBoardConfigs: [] as unknown[],
@@ -61,6 +59,7 @@ const recorded = vi.hoisted(() => ({
   listContext: [] as Props[],
   swipeableHeader: [] as { next?: ReactNode; previous?: ReactNode }[],
   panePlaceholder: 0,
+  boardSheet: [] as Props[],
 }));
 // Signed out unless a case says otherwise: both viewers here render without a
 // session, which is what the web export's read-only climb view is.
@@ -115,6 +114,7 @@ const session = vi.hoisted(() => ({
 // disconnected phone Put on the wall connects from (#6939).
 const lightbulb = vi.hoisted(() => ({
   lit: false,
+  holderIsAuthoritative: false,
   pressAction: 'noop' as string,
   pending: false,
   localConnected: false,
@@ -289,9 +289,32 @@ vi.mock('../../../lib/graphql/use-active-board', () => ({
 
 // --- Children ----------------------------------------------------------------
 // Recorded rather than stubbed: these three carry the props under test.
+vi.mock('../LastOnWallNote', () => ({
+  LastOnWallNote: (props: { lastOnWallAt: number }) =>
+    createElement('div', { 'data-testid': 'last-on-wall', 'data-at': String(props.lastOnWallAt) }),
+}));
+// The tablet rule (#7000) reads the device's chrome; a phone here.
+vi.mock('../use-mini-player-mirrors', () => ({ useMiniPlayerMirrorsPlayer: () => false }));
+// The bar records the board control model flattened (#7000), so the assertions
+// read the state, the holder, and each view's tap and hold through one handler.
 vi.mock('../PlayDrawerActionBar', () => ({
   PlayDrawerActionBar: (props: Props) => {
-    recorded.actionBar.push(props);
+    const model = props.wallControl as
+      | { state: string | null; holder: string | null; longPress: string | null; holderFace: unknown }
+      | undefined;
+    const press = props.onWallControlPress as ((control: string) => void) | undefined;
+    const hold = props.onWallControlLongPress as ((control: string) => void) | undefined;
+    const holdable = model?.longPress === 'sheet' && hold !== undefined;
+    recorded.actionBar.push({
+      ...props,
+      wallControlState: model?.state ?? null,
+      wallHolder: model?.holder ?? null,
+      commitLabel: (model as { labelKey?: string } | undefined)?.labelKey === 'setActive' ? 'setActive' : 'putOnWall',
+      onWallControl: press ? () => press('button') : undefined,
+      onLightbulb: press ? () => press('bulb') : undefined,
+      onWallControlLongPress: holdable ? () => hold('button') : undefined,
+      onLightbulbLongPress: holdable ? () => hold('bulb') : undefined,
+    });
     return createElement('div', { 'data-testid': 'action-bar' });
   },
 }));
@@ -303,20 +326,8 @@ vi.mock('../WallStatePill', () => ({
 }));
 // Recorded, not stubbed: only the host decides when the explainer opens, and
 // there is no card of its own any more when a browse begins.
-vi.mock('../WallStateCallout', () => ({
-  WallStateCallout: (props: Props) => {
-    recorded.wallCallout.push(props);
-    return createElement('div', { 'data-testid': 'wall-callout' });
-  },
-}));
-// Record the real resolver's result, including the distinction between an
-// incompatible climb and the switch-board scrim being hidden at the same gym.
-vi.mock('../WallBadge', () => ({
-  WallBadge: (props: Props) => {
-    recorded.wallBadge.push(props);
-    return createElement('div', { 'data-testid': 'wall-badge', 'data-resolution': props.resolution });
-  },
-}));
+// Record the real resolver's result, including a climb for another board at
+// the same gym, where the switch-board scrim stays hidden.
 // Recorded: the end of a list (#6664) is a join this file pins, see below.
 vi.mock('../TrackEndCard', () => ({
   TrackEndCard: (props: Props) => {
@@ -396,7 +407,12 @@ vi.mock('../../AddBetaVideoSheet', () => ({ AddBetaVideoSheet: () => null }));
 vi.mock('../logbook/LogbookFullSheet', () => ({ LogbookFullSheet: () => null }));
 vi.mock('../ClimberLogsSheet', () => ({ ClimberLogsSheet: () => null }));
 vi.mock('../../report-climb/ReportClimbSheet', () => ({ ReportClimbSheet: () => null }));
-vi.mock('../../ble/BleControlSheetHost', () => ({ BleControlSheetHost: () => null }));
+vi.mock('../../ble/BleControlSheetHost', () => ({
+  BleControlSheetHost: (props: Props) => {
+    recorded.boardSheet.push(props);
+    return null;
+  },
+}));
 vi.mock('../../queue-control/RestTimerPillHost', () => ({ RestTimerPillHost: () => null }));
 vi.mock('../../ChromeIconButton', () => ({
   ChromeIconButton: ({
@@ -469,11 +485,16 @@ vi.mock('../../ble/use-lightbulb-control', () => ({
     pending: lightbulb.pending,
     onPress: vi.fn(),
     pressAction: lightbulb.pressAction,
+    holderIsAuthoritative: lightbulb.holderIsAuthoritative,
     connect: lightbulb.connect,
   }),
 }));
 vi.mock('../copy-climb-name', () => ({ copyClimbName: vi.fn() }));
-vi.mock('../../../lib/haptics', () => ({ hapticSuccess: vi.fn() }));
+vi.mock('../../../lib/haptics', () => ({
+  hapticSuccess: vi.fn(),
+  hapticMedium: vi.fn(),
+  hapticWarning: vi.fn(),
+}));
 vi.mock('../../../lib/board-details', () => ({
   getBoardRenderData: () => ({ boardWidth: 100, boardHeight: 100, holdsData: [], imagesToHolds: {} }),
 }));
@@ -612,9 +633,8 @@ beforeEach(() => {
   lightbulb.localConnected = false;
   resetWallCleared();
   recorded.actionBar = [];
+  recorded.boardSheet = [];
   recorded.wallPill = [];
-  recorded.wallBadge = [];
-  recorded.wallCallout = [];
   recorded.deferredSections = [];
   recorded.favoriteStatus = [];
   recorded.navigationBoardConfigs = [];
@@ -638,6 +658,7 @@ beforeEach(() => {
   wall.name = null;
   wall.sentAt = null;
   wall.clearedClimbUuid = null;
+  lightbulb.holderIsAuthoritative = false;
   ble.current = null;
   resetAllSettings();
   _resetJoinedBrowseNoticeForTests();
@@ -653,18 +674,20 @@ afterEach(() => vi.unstubAllGlobals());
 // what only a render can see is whether PlayDrawer feeds them the crew flag at
 // all — hardcoding `inSharedSession: false` at these call sites leaves every
 // pure test green while the wall gets taken on the next swipe.
-describe('PlayDrawer — Put on the wall with no board connected (#6939)', () => {
-  it('offers it on the current climb, and the tap connects', () => {
+// #7000: the wall button says Connect board on the climber's own climb; Put
+// on the wall is for previews and crew browsing.
+describe('PlayDrawer — the wall button with no board connected (#6939, #7000)', () => {
+  it('offers Connect board on the current climb, and the tap connects', () => {
     lightbulb.pressAction = 'connect';
     session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
     renderDrawer('member');
 
     const bar = lastActionBarProps();
-    expect(bar.commitButton).toBe('putOnWall');
-    expect(bar.commitLabel).toBe('putOnWall');
-    (bar.onCommit as () => void)();
+    expect(bar.commitButton).toBeNull();
+    expect(bar.wallControlState).toBe('connect');
+    act(() => (bar.onWallControl as () => void)());
     // The climb rides along: its board picks the board to connect to (#7001).
-    expect(lightbulb.connect).toHaveBeenCalledWith('put_on_wall', CLIMB);
+    expect(lightbulb.connect).toHaveBeenCalledWith('play_drawer', expect.objectContaining({ uuid: CLIMB.uuid }));
   });
 
   it('leaves the current climb alone when a tap on the bulb would not connect', () => {
@@ -680,8 +703,9 @@ describe('PlayDrawer — Put on the wall with no board connected (#6939)', () =>
 
     const bar = lastActionBarProps();
     expect(bar.commitButton).toBe('putOnWall');
+    expect(bar.wallControlState).toBe('put_on_wall');
     expect(bar.commitLabel).toBe('putOnWall');
-    (bar.onCommit as () => void)();
+    act(() => (bar.onWallControl as () => void)());
     // The climb just set, which the queue may not report yet, picks the board
     // to connect to (#7001).
     expect(lightbulb.connect).toHaveBeenCalledWith('put_on_wall', expect.objectContaining({ uuid: CLIMB.uuid }));
@@ -691,16 +715,16 @@ describe('PlayDrawer — Put on the wall with no board connected (#6939)', () =>
     renderDrawer('member');
 
     expect(lastActionBarProps().commitLabel).toBe('setActive');
-    (lastActionBarProps().onCommit as () => void)();
+    act(() => (lastActionBarProps().onWallControl as () => void)());
     expect(lightbulb.connect).not.toHaveBeenCalled();
   });
 
-  it('stays up while the connect it started is still finding the board', () => {
+  it('keeps Connect board while the connect it started is still finding the board', () => {
     lightbulb.pending = true;
     session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
     renderDrawer('member');
 
-    expect(lastActionBarProps().commitButton).toBe('putOnWall');
+    expect(lastActionBarProps().wallControlState).toBe('connect');
   });
 
   it('is not offered while another account holds the board', () => {
@@ -735,7 +759,7 @@ describe('PlayDrawer — Put on the wall with no board connected (#6939)', () =>
     const link = linkWith();
     session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
     const { rerender } = renderDrawer('member');
-    (lastActionBarProps().onCommit as () => void)();
+    act(() => (lastActionBarProps().onWallControl as () => void)());
 
     link.staleCurrentHold = { queueItemUuid: 'queue-item-current', lastCurrentChangeAt: 0 };
     ble.current = { ...link };
@@ -744,7 +768,7 @@ describe('PlayDrawer — Put on the wall with no board connected (#6939)', () =>
     expect(ble.current.reassertWall).toHaveBeenCalledTimes(1);
   });
 
-  it('leaves a hold alone when no Put on the wall asked for the climb', () => {
+  it('leaves a hold alone when no tap asked for the climb', () => {
     const link = linkWith({ staleCurrentHold: { queueItemUuid: 'queue-item-current', lastCurrentChangeAt: 0 } });
     session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
     renderDrawer('member');
@@ -753,20 +777,21 @@ describe('PlayDrawer — Put on the wall with no board connected (#6939)', () =>
   });
 
   // Codex review: Turn off all lights leaves the link up and the queue still.
-  it('offers Put on the wall after the lights were turned off, and it re-lights', () => {
+  it('reads the climb as dark after the lights were turned off, and a tap re-lights it', () => {
     lightbulb.lit = true;
     lightbulb.localConnected = true;
+    lightbulb.pressAction = 'disconnect';
     const link = linkWith({ isConnected: true });
     session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
     markWallCleared(CLIMB.uuid);
     renderDrawer('member');
 
     const bar = lastActionBarProps();
-    expect(bar.commitButton).toBe('putOnWall');
-    expect(bar.commitLabel).toBe('putOnWall');
-    act(() => (bar.onCommit as () => void)());
+    expect(bar.commitButton).toBeNull();
+    expect(bar.wallControlState).toBe('dark');
+    act(() => (bar.onWallControl as () => void)());
     expect(link.reassertWall).toHaveBeenCalledTimes(1);
-    expect(lastActionBarProps().commitButton).toBeNull();
+    expect(lastActionBarProps().wallControlState).toBe('lit');
   });
 
   it('never offers it to the signed-out reader', () => {
@@ -807,6 +832,8 @@ describe('PlayDrawer — the shared-session browse latch', () => {
     session.currentItem = { uuid: 'queue-item-current', climb: SIMILAR_CLIMB };
     wall.uuid = SIMILAR_CLIMB.uuid;
     wall.name = SIMILAR_CLIMB.name;
+    // Lit a minute ago: with no link, presence is trusted for an hour (QA #147).
+    wall.sentAt = new Date(Date.now() - 60_000).toISOString();
     renderDrawer('member');
 
     const pill = recorded.wallPill.at(-1);
@@ -852,10 +879,9 @@ describe('PlayDrawer — the shared-session browse latch', () => {
     expect(lastActionBarProps().showHolderBadge).toBe(true);
   });
 
-  // Solo with lighting on, a lit wall makes the pill say Live. A pinned preview
-  // over a committed climb shows the back chip instead: back to live used to
-  // be in the second row, and the header chip is the one way back now.
-  it('gives a solo pinned preview the back chip, not Live, while the wall is lit', () => {
+  // A pinned preview over a committed climb shows the back chip: the header
+  // chip is the one way back, and since #7000 the header's only chip.
+  it('gives a solo pinned preview the back chip while the wall is lit', () => {
     session.currentItem = { uuid: 'queue-item-current', climb: SIMILAR_CLIMB };
     wall.uuid = SIMILAR_CLIMB.uuid;
     wall.name = SIMILAR_CLIMB.name;
@@ -876,11 +902,10 @@ describe('PlayDrawer — the shared-session browse latch', () => {
     act(() => {
       pressWallPill(pill);
     });
-    expect(recorded.wallCallout).toHaveLength(0);
     expect(queueActions.setCurrentClimb).not.toHaveBeenCalled();
     expect(lastDisplayedClimbUuid()).toBe(SIMILAR_CLIMB.uuid);
-    // Back on the lit climb: the chip is On the wall again.
-    expect(recorded.wallPill.at(-1)?.state).toBe('onWall');
+    // Back on the lit climb: no chip; the wall button says it is lit.
+    expect(recorded.wallPill).toHaveLength(0);
   });
 
   it('gives a solo pinned preview the back chip to the climber’s climb while a different one is lit', () => {
@@ -894,12 +919,13 @@ describe('PlayDrawer — the shared-session browse latch', () => {
     expect(pill).toMatchObject({ state: 'browsing', backTarget: 'current', latched: false });
     expect(lastActionBarProps().showHolderBadge).toBe(true);
 
+    recorded.wallPill = [];
     act(() => {
       pressWallPill(pill);
     });
-    // Back on the committed climb with a different one lit: Live, as before.
+    // Back on the committed climb: no chip at all.
     expect(lastDisplayedClimbUuid()).toBe(SIMILAR_CLIMB.uuid);
-    expect(recorded.wallPill.at(-1)).toMatchObject({ state: 'live', backTarget: null });
+    expect(recorded.wallPill).toHaveLength(0);
   });
 
   // A preview of the committed climb itself: back goes nowhere, so there is no
@@ -913,14 +939,14 @@ describe('PlayDrawer — the shared-session browse latch', () => {
     expect(lastActionBarProps().showHolderBadge).toBe(true);
   });
 
-  it('keeps Live, not a back chip, on a solo preview of the committed climb', () => {
+  it('draws no chip at all on a solo preview of the committed climb, whatever the wall shows', () => {
     session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
     wall.uuid = 'wall-climb-b';
     wall.name = 'Their Project';
     lightbulb.lit = true;
     renderDrawer('member');
 
-    expect(recorded.wallPill.at(-1)).toMatchObject({ state: 'live', backTarget: null });
+    expect(recorded.wallPill).toHaveLength(0);
   });
 
   // Solo with lighting on and nothing lit, a pinned preview has no pill of its
@@ -1204,26 +1230,22 @@ describe('PlayDrawer — the shared-session browse latch', () => {
     });
 
     // Back on the committed head: no explainer, nothing sent, the latch is gone.
-    expect(recorded.wallCallout).toHaveLength(0);
     expect(queueActions.setCurrentClimb).not.toHaveBeenCalled();
     expect(lastDisplayedClimbUuid()).toBe(SIMILAR_CLIMB.uuid);
     expect(recorded.wallPill.filter((props) => props.state === 'browsing')).toHaveLength(0);
     expect(lastActionBarProps().commitButton).toBeNull();
   });
 
-  it('keeps the on-the-wall pill an indicator that opens the explainer', () => {
+  // #7000: the header has no On the wall chip; the wall button says it.
+  it('draws no header chip on the lit climb in a crew', () => {
     CREW();
+    // A crewmate's link drives the wall.
+    lightbulb.lit = true;
     wall.uuid = CLIMB.uuid;
     wall.name = CLIMB.name;
     session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
     render(drawerElement('member', committedTargetFor(CLIMB)));
-    expect(recorded.wallPill.at(-1)?.state).toBe('onWall');
-
-    act(() => {
-      pressWallPill();
-    });
-
-    expect(recorded.wallCallout.at(-1)?.state).toBe('onWall');
+    expect(recorded.wallPill).toHaveLength(0);
     expect(lastDisplayedClimbUuid()).toBe(CLIMB.uuid);
   });
 
@@ -1260,7 +1282,6 @@ describe('PlayDrawer — the shared-session browse latch', () => {
     render(drawerElement('member', openTargetFor(CLIMB)));
 
     expect(joinedNoticeAnnouncements()).toBe(1);
-    expect(recorded.wallCallout).toHaveLength(0);
   });
 
   it('does not explain it again on the next drawer open in the same session', () => {
@@ -1294,7 +1315,6 @@ describe('PlayDrawer — the shared-session browse latch', () => {
     wall.name = 'What Was Up';
     const rendered = render(drawerElement('member', openTargetFor(CLIMB)));
     expect(joinedNoticeAnnouncements()).toBe(1);
-    expect(recorded.wallCallout).toHaveLength(0);
     rendered.unmount();
   });
 
@@ -1554,13 +1574,14 @@ describe('PlayDrawer — the busy-wall confirm', () => {
     expect(spoken.filter((sentence) => sentence.startsWith('playView.wallState.commitOverride'))).toEqual([]);
   });
 
-  // Put on the wall keeps the heart and the queue in the row (angle and share
-  // already wait in ⋯). The question takes the whole row, so ⋯ picks up the
-  // rest of it too.
-  it('hands the row the question took to ⋯', () => {
+  // Put on the wall is a wall button state, so the queue keeps its slot (the
+  // heart, Angle and Share already wait in ⋯ on this mirror board). The
+  // question takes the whole row; with no Bluetooth here there is no bulb to
+  // bring back, so the queue keeps its slot through it.
+  it('keeps the queue through the question where there is no bulb to bring back', () => {
     browseThenLoseTheWall();
     expect(recorded.actionsMenu.at(-1)?.hidden).toMatchObject({
-      favorite: false,
+      favorite: true,
       queue: false,
       share: true,
       angle: true,
@@ -1570,9 +1591,10 @@ describe('PlayDrawer — the busy-wall confirm', () => {
       (lastActionBarProps().onCommit as () => void)();
     });
 
+    expect(lastActionBarProps().commitButton).toBe('confirm');
     expect(recorded.actionsMenu.at(-1)?.hidden).toMatchObject({
       favorite: true,
-      queue: true,
+      queue: false,
       share: true,
       angle: true,
     });
@@ -1737,7 +1759,7 @@ describe('PlayDrawer — reading the wall', () => {
     };
   };
 
-  it('keeps a retained Tension climb Live without claiming Moon is lighting it', () => {
+  it('keeps a retained Tension climb navigable without claiming Moon is lighting it', () => {
     connectBoard();
     const tensionBoard = { boardName: 'tension', layoutId: 10, sizeId: 6, setIds: '12,13', angle: 40 };
     const moonBoard = { boardName: 'moonboard', layoutId: 3, sizeId: 1, setIds: '5,6,7,8,9,10', angle: 40 };
@@ -1757,74 +1779,149 @@ describe('PlayDrawer — reading the wall', () => {
         onOpenQueue: vi.fn(),
       });
     const view = render(playerAt(tensionBoard));
-    expect(view.getByTestId('wall-badge').getAttribute('data-resolution')).toBe('onWall');
+    expect(lastActionBarProps().wallControlState).toBe('lit');
 
     // The normal queue head survives the BLE board switch. Moon's clear leaves
     // its feed empty; being able to walk to Tension keeps navigation available.
     wall.uuid = null;
+    recorded.wallPill = [];
     view.rerender(playerAt(moonBoard));
 
-    expect(view.getByTestId('wall-badge').getAttribute('data-resolution')).toBe('notOnWall');
-    expect(recorded.wallPill.at(-1)?.state).toBe('live');
+    // #7000: the connected wall can't light it, so there is no wall control, and no chip.
+    expect(lastActionBarProps().wallControlState).toBeNull();
+    expect(recorded.wallPill).toHaveLength(0);
     expect(lastDisplayedClimbUuid()).toBe(masquerade.uuid);
     expect(lastActionBarProps().canSwipeNext).toBe(true);
-    expect(lastActionBarProps().lightbulbActive).toBe(true);
     expect(queueActions.setCurrentClimb).not.toHaveBeenCalled();
     expect(ble.current?.sendFramesToBoard).not.toHaveBeenCalled();
   });
 
-  it('keeps the same-board badge accurate when its lights are cleared and relit', () => {
+  it('keeps the wall button accurate when the lights are cleared and relit', () => {
     connectBoard();
     session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
     wall.uuid = CLIMB.uuid;
     const target = committedTargetFor(CLIMB);
-    const view = render(drawerElement('member', target));
-    expect(view.getByTestId('wall-badge').getAttribute('data-resolution')).toBe('onWall');
+    render(drawerElement('member', target));
+    expect(lastActionBarProps().wallControlState).toBe('lit');
 
     act(() => markWallCleared(CLIMB.uuid));
-    expect(view.getByTestId('wall-badge').getAttribute('data-resolution')).toBe('notOnWall');
+    expect(lastActionBarProps().wallControlState).toBe('dark');
 
     act(() => resetWallCleared());
-    expect(view.getByTestId('wall-badge').getAttribute('data-resolution')).toBe('onWall');
+    expect(lastActionBarProps().wallControlState).toBe('lit');
   });
 
   // #7015: the crewmate holding the link turned all the lights off. This phone
-  // has no link; it only hears it through board presence.
+  // has no link; it only hears it through board presence. The board control
+  // stops reading their climb as lit (an amber outline, not filled), and a new
+  // climb the queue moves to before the feed's echo is not called dark.
   it("stops calling a crewmate's turned-off climb lit, and lets a new climb be lit", () => {
-    // A crewmate drives the wall; this phone's Bluetooth is up but not linked.
     lightbulb.lit = true;
+    lightbulb.holderIsAuthoritative = true;
+    lightbulb.pressAction = 'relay';
     ble.current = { isConnected: false, sendFramesToBoard: vi.fn(async () => true) };
     session.isShared = true;
     session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
     wall.uuid = CLIMB.uuid;
     const view = render(drawerElement('member', committedTargetFor(CLIMB)));
-    expect(view.getByTestId('wall-badge').getAttribute('data-resolution')).toBe('onWall');
+    expect(lastActionBarProps().wallControlState).toBe('crew');
+    expect(lastActionBarProps().wallControl).toMatchObject({ look: 'lit' });
 
     const pillsBeforeClear = recorded.wallPill.length;
     wall.uuid = null;
     wall.clearedClimbUuid = CLIMB.uuid;
     view.rerender(drawerElement('member', committedTargetFor(CLIMB)));
-    expect(view.getByTestId('wall-badge').getAttribute('data-resolution')).toBe('notOnWall');
+    expect(lastActionBarProps().wallControl).toMatchObject({ state: 'crew', look: 'ready' });
     expect(recorded.wallPill.slice(pillsBeforeClear).map((pill) => pill.state)).not.toContain('onWall');
-    // Known limitation: no relight from here, the holder relights from the bulb.
+    // Known limitation: no relight from here, the holder relights from their bulb.
     expect(lastActionBarProps().commitButton).toBeNull();
 
     // The queue moves on before the feed's echo: the new climb is not called dark.
     session.currentItem = { uuid: 'queue-item-next', climb: SIMILAR_CLIMB };
     view.rerender(drawerElement('member', committedTargetFor(SIMILAR_CLIMB)));
-    expect(view.getByTestId('wall-badge').getAttribute('data-resolution')).toBe('onWall');
+    expect(lastActionBarProps().wallControl).toMatchObject({ look: 'lit' });
   });
 
-  it('says On the wall when presence reports the displayed climb as lit', () => {
+  // Fable review: a Turn off all lights outlived the link, so after a
+  // tap-disconnect and a reconnect the lit climb read "Put on the wall".
+  it('forgets a Turn off all lights when the link drops, so the reconnect reads lit', () => {
+    connectBoard();
+    session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
+    wall.uuid = CLIMB.uuid;
+    const view = render(drawerElement('member', committedTargetFor(CLIMB)));
+    act(() => markWallCleared(CLIMB.uuid));
+    expect(lastActionBarProps().wallControlState).toBe('dark');
+
+    lightbulb.lit = false;
+    lightbulb.localConnected = false;
+    ble.current = { isConnected: false, sendFramesToBoard: vi.fn(async () => true) };
+    view.rerender(drawerElement('member', committedTargetFor(CLIMB)));
+
+    connectBoard();
+    view.rerender(drawerElement('member', committedTargetFor(CLIMB)));
+    expect(lastActionBarProps().wallControlState).toBe('lit');
+  });
+
+  it('forgets a Turn off all lights once the wall comes back to that climb (clear A, Next, Previous)', () => {
+    connectBoard();
+    session.currentItem = { uuid: 'queue-item-a', climb: CLIMB };
+    wall.uuid = CLIMB.uuid;
+    const view = render(drawerElement('member', committedTargetFor(CLIMB)));
+    act(() => markWallCleared(CLIMB.uuid));
+    expect(lastActionBarProps().wallControlState).toBe('dark');
+
+    // Next: the wall moves on to B.
+    session.currentItem = { uuid: 'queue-item-b', climb: SIMILAR_CLIMB };
+    wall.uuid = SIMILAR_CLIMB.uuid;
+    view.rerender(drawerElement('member', { ...committedTargetFor(SIMILAR_CLIMB), nonce: 2 }));
+    // Previous: the write lights A again.
+    session.currentItem = { uuid: 'queue-item-a', climb: CLIMB };
+    wall.uuid = CLIMB.uuid;
+    view.rerender(drawerElement('member', { ...committedTargetFor(CLIMB), nonce: 3 }));
+    expect(lastActionBarProps().wallControlState).toBe('lit');
+  });
+
+  // #7000 review: Turn off all lights from a lit preview of the wall's climb (not
+  // the queue head) marks the climb on screen, so the preview reads dark.
+  it('reads a lit preview dark once its lights are turned off from the board sheet', () => {
+    connectBoard();
+    session.currentItem = { uuid: 'queue-item-current', climb: SIMILAR_CLIMB };
+    wall.uuid = CLIMB.uuid;
+    render(drawerElement('member', openTargetFor(CLIMB)));
+    expect(lastActionBarProps().wallControlState).toBe('lit');
+    // A hold on the wall button opens the board sheet, which marks the climb on screen.
+    const openSheet = lastActionBarProps().onWallControlLongPress;
+    if (typeof openSheet !== 'function') throw new Error('no wall button');
+    act(() => {
+      openSheet();
+    });
+    expect(recorded.boardSheet.at(-1)?.clearedClimbUuid).toBe(CLIMB.uuid);
+
+    act(() => markWallCleared(CLIMB.uuid));
+    expect(lastActionBarProps().wallControlState).toBe('dark');
+  });
+
+  it('says Lit on the wall, and draws no header chip, when the climb on screen is lit on a driven wall', () => {
+    connectBoard();
     session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
     wall.uuid = CLIMB.uuid;
     wall.name = CLIMB.name;
     render(drawerElement('member', committedTargetFor(CLIMB)));
 
-    expect(recorded.wallPill.at(-1)?.state).toBe('onWall');
-    // The same face never twice: the pill owns the driver's avatar in this
-    // state, so the lightbulb's holder pip stands down.
-    expect(lastActionBarProps().showHolderBadge).toBe(false);
+    expect(lastActionBarProps().wallControlState).toBe('lit');
+    expect(lastActionBarProps().wallHolder).toBe('self');
+    expect(recorded.wallPill).toHaveLength(0);
+  });
+
+  // #7000 QA: presence can name a climb lit hours ago; with no link nobody
+  // can vouch for the LEDs.
+  it('claims nothing from presence alone when no link drives the wall', () => {
+    session.currentItem = { uuid: 'queue-item-current', climb: CLIMB };
+    wall.uuid = CLIMB.uuid;
+    wall.name = CLIMB.name;
+    render(drawerElement('member', committedTargetFor(CLIMB)));
+
+    expect(recorded.wallPill.at(-1)?.state).not.toBe('onWall');
   });
 
   it('says nothing about a wall lit with a different climb', () => {
@@ -2167,16 +2264,16 @@ describe('PlayDrawer — the anonymous joins', () => {
     expect(props.commitLabel).toBe('setActive');
   });
 
-  // Put on the wall needs the room: one button keeps its place on each side
-  // (the heart, and the queue on this mirror board) and the angle and share
-  // wait in ⋯ until the climb is up.
-  it('keeps the heart in the row while browsing, and hands the angle and share to ⋯', () => {
+  // Put on the wall is a wall button state, so browsing moves nothing: the
+  // queue keeps its slot, and the heart (this is a mirror board), the angle
+  // and share stay in ⋯.
+  it('keeps the bar as it was while browsing', () => {
     setSetting('lightOnSwipe', false);
     renderDrawer('member');
 
     expect(lastActionBarProps().commitButton).toBe('putOnWall');
     expect(recorded.actionsMenu.at(-1)?.hidden).toMatchObject({
-      favorite: false,
+      favorite: true,
       queue: false,
       angle: true,
       share: true,

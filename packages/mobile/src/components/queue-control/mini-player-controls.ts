@@ -290,6 +290,19 @@ export type MiniPlayerControlsInput = {
    */
   bulbAvailable: boolean;
   /**
+   * Whether the bar stands in for the player's first row (`miniPlayerPaneMode`):
+   * `mirror` while a player is on screen beside it (the open Duo's pane, the
+   * iPad's player), `none` everywhere else.
+   */
+  paneMode: MiniPlayerPaneMode;
+  /**
+   * In `mirror`, whether the bar keeps Board light. With the wall button chosen
+   * the player's first row is the wall button, so the bar has no bulb; with the
+   * bulb chosen the bar's bulb is the player's board control. Defaults to the
+   * wall button (no bulb).
+   */
+  mirrorShowsBulb?: boolean;
+  /**
    * The bar offers one-tap Fell / Sent: the climb on the wall is in a timed
    * workout block and the climber can log it here, or the bar is holding the
    * pair for the climb the wall just left (`useMiniPlayerWorkoutOutcome`).
@@ -380,6 +393,11 @@ const TRANSPORT_ORDER: readonly MiniPlayerButtonId[] = ['previous', 'next'];
  * iPhone's ✓ steps aside, since Fell and Sent already log each go. Wall display
  * stays because it changes neither the wall nor the queue. With no board bound
  * the bulb draws nothing, so the tick takes its place.
+ *
+ * Beside a player (`mirror`: the open Duo's pane, the iPad's player) the bar is
+ * that player's first row, so it keeps its full layout; Board light goes with
+ * the wall button chosen, since the player's first row is the wall button then,
+ * and Fell / Sent go too: the player's own, larger pair sits by the climb (#7000).
  */
 export function resolveMiniPlayerControls({
   slotCount,
@@ -387,17 +405,24 @@ export function resolveMiniPlayerControls({
   isAvailable,
   singleSlotShowsBulb,
   bulbAvailable,
+  paneMode,
+  mirrorShowsBulb = false,
   workoutOutcome,
   wideLayout,
   moreAvailable,
 }: MiniPlayerControlsInput): MiniPlayerControls {
+  // Beside a player with the wall button chosen, the wall button is the
+  // player's first row: the bar has no bulb of its own.
+  const bulbShown = paneMode !== 'mirror' || mirrorShowsBulb;
   const offersMore = wideLayout && moreAvailable;
   // Drawn only in a wide bar's trailing cluster; an iPhone or an inline bar never claims it.
   const wallDisplayOn = wideLayout && layout.visible.wallDisplay && isAvailable('wallDisplay');
-  if (workoutOutcome) {
+  // Beside a player the player's own, larger Fell / Sent sit next to the climb,
+  // so the bar shows none: one pair on screen (#7000).
+  if (workoutOutcome && paneMode !== 'mirror') {
     if (slotCount <= 1) return { leading: [], workout: ['sent'], more: false, wallDisplay: false, trailing: [] };
     // With no board bound the bulb draws nothing, so the tick keeps its slot.
-    const fixed: ('lightbulb' | 'log')[] = bulbAvailable ? ['lightbulb', 'log'] : ['log'];
+    const fixed: ('lightbulb' | 'log')[] = bulbAvailable && bulbShown ? ['lightbulb', 'log'] : ['log'];
     const trailing = fixed.slice(0, slotCount - 2);
     const more = offersMore && slotCount - 2 - trailing.length >= 1;
     return {
@@ -409,7 +434,11 @@ export function resolveMiniPlayerControls({
     };
   }
   const trailing: ('lightbulb' | 'log')[] =
-    slotCount <= 1 ? [singleSlotShowsBulb ? 'lightbulb' : 'log'] : ['lightbulb', 'log'];
+    slotCount <= 1
+      ? [singleSlotShowsBulb && bulbShown ? 'lightbulb' : 'log']
+      : bulbShown
+        ? ['lightbulb', 'log']
+        : ['log'];
   const more = offersMore && slotCount > trailing.length;
   const room = Math.max(0, slotCount - trailing.length - (more ? 1 : 0));
   const canClaim = (buttonId: MiniPlayerButtonId) =>
@@ -445,4 +474,53 @@ export function trailingSlotFrame(
   const first = shownIndices[0];
   const last = shownIndices[shownIndices.length - 1];
   return { slotsShown: last - first + 1, trailingShift: slots.length - 1 - last };
+}
+
+/**
+ * Whether the bar stands in for a player's first row (#7000, Marco's tablet
+ * rule): `mirror` while a player is on screen beside the bar, which on these
+ * devices always shows: the open iPhone Duo's pane (unless a screen fills it),
+ * or the iPad's player route. The bar then has the player's ⏮ ⏭, the
+ * climber's buttons, ⋯ and ✓, so the player drops its first row of icons and
+ * puts the full-width wall button there instead (`playerMirroredByMiniPlayer`
+ * is the player's side of the same rule). `none` everywhere else: an iPhone,
+ * where the player covers the bar, or no player on screen.
+ */
+export type MiniPlayerPaneMode = 'none' | 'mirror';
+
+export function miniPlayerPaneMode({
+  phoneSplit,
+  paneTaken,
+  isTablet,
+  playerRouteUp,
+}: {
+  phoneSplit: boolean;
+  paneTaken: boolean;
+  isTablet: boolean;
+  playerRouteUp: boolean;
+}): MiniPlayerPaneMode {
+  if (phoneSplit) return paneTaken ? 'none' : 'mirror';
+  return isTablet && playerRouteUp ? 'mirror' : 'none';
+}
+
+/**
+ * The player's side of the same rule: this player has the MiniPlayer beside it
+ * standing in for its first row (#7000). The bar is the native accessory, and
+ * the player is the open Duo's pane, or on a tablet the player route. The JS
+ * tablet shell's pane has no bar beside it (the pane is the climb's home), and
+ * on an iPhone the player covers the bar.
+ */
+export function playerMirroredByMiniPlayer({
+  home,
+  phoneSplit,
+  isTablet,
+  isPane,
+}: {
+  home: 'detailPane' | 'nativeAccessory' | 'floatingBar';
+  phoneSplit: boolean;
+  isTablet: boolean;
+  isPane: boolean;
+}): boolean {
+  if (home !== 'nativeAccessory') return false;
+  return phoneSplit ? isPane : isTablet && !isPane;
 }

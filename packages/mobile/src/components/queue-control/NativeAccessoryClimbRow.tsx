@@ -35,6 +35,7 @@ import {
   accessoryWidthBesideName,
   isMiniPlayerButtonAvailable,
   miniPlayerCapacityWidth,
+  miniPlayerPaneMode,
   miniPlayerSlotCount,
   miniPlayerUsesWideLayout,
   recordRowWidth,
@@ -49,6 +50,8 @@ import { useNativeTabContentInsetLeft, useNativeTabContentInsetRight } from '../
 import { MiniPlayerActionsMenu } from './MiniPlayerActionsMenu';
 import { resolveClimbRenderBoard } from '../../lib/boards/climb-render-board';
 import { resolvePlayerAngle } from '../play-drawer/player-angle';
+import { usePaneWallControl } from '../play-drawer/pane-wall-control-store';
+import { PaneWallControlBulb } from './PaneWallControlBulb';
 import { useAuth } from '../../providers/auth-provider';
 import { useSegments } from 'expo-router';
 import { isPlayerRoute } from '../../lib/route-segments';
@@ -60,6 +63,8 @@ import type { MiniPlayerButtonId } from '../../lib/mini-player-buttons';
 import { useDeviceLayout } from '../../hooks/use-device-layout';
 import { usePhoneSplit } from '../../hooks/use-phone-split';
 import { useVerticalTabBar } from '../../hooks/use-vertical-tab-bar';
+import { usePhoneSplitPaneTaken } from '../navigation/phone-split-pane-slot';
+import { usePlayerButtonsPreference } from '../../lib/player-buttons-preference';
 import { MiniPlayerWorkoutButtons } from './MiniPlayerWorkoutButtons';
 import { useMiniPlayerWorkoutOutcome } from './use-mini-player-workout-outcome';
 
@@ -202,13 +207,22 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
   const angleAdjustable = playerAngle !== null;
   const playerBoardName = playDrawerPaneProps?.boardConfig.boardName ?? null;
   const playerLayoutId = playDrawerPaneProps?.boardConfig.layoutId ?? null;
+  const paneTaken = usePhoneSplitPaneTaken();
+  const playerButtons = usePlayerButtonsPreference();
+  // `isMiniPlayerButtonAvailable` drops Angle while the `/play` route is up,
+  // and the bar offers no Fell / Sent then: the player has its own.
+  const playerRouteUp = isPlayerRoute(useSegments());
+  // Beside a player (the open Duo's pane, the iPad's player route) the bar is
+  // that player's first row (#7000): see `miniPlayerPaneMode`.
+  const paneMode = miniPlayerPaneMode({ phoneSplit, paneTaken, isTablet, playerRouteUp });
+  // With the bulb chosen, the bar's bulb is that player's board control: its
+  // model, its tap and its hold. With the wall button, the bar has no bulb.
+  const mirrorShowsBulb = playerButtons.boardControl === 'lightbulb';
+  const paneWallControl = usePaneWallControl();
   // The board the climb is drawn on, resolved the way the player resolves it, so
   // the heart, the share and Fell / Sent point at the same climb, board and angle.
   const climbBoardResolution = useMemo(() => resolveClimbRenderBoard(climb, boardConfig), [climb, boardConfig]);
   const climbBoard = climbBoardResolution?.boardConfig ?? null;
-  // `isMiniPlayerButtonAvailable` drops Angle while the `/play` route is up,
-  // and the bar offers no Fell / Sent then: the player has its own.
-  const playerRouteUp = isPlayerRoute(useSegments());
   const workout = useMiniPlayerWorkoutOutcome({
     climb,
     climbBoard: climbBoardResolution,
@@ -307,6 +321,8 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
         isAvailable,
         singleSlotShowsBulb: collapsedSlotShowsBulb,
         bulbAvailable,
+        paneMode,
+        mirrorShowsBulb,
         workoutOutcome,
         wideLayout,
         // ⋯'s sheets would present behind `/play`; the player has its own ⋯.
@@ -318,6 +334,8 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
       isAvailable,
       collapsedSlotShowsBulb,
       bulbAvailable,
+      paneMode,
+      mirrorShowsBulb,
       workoutOutcome,
       wideLayout,
       playerRouteUp,
@@ -483,13 +501,19 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
               ) : slot === 'wallDisplay' ? (
                 <MiniPlayerWallDisplayButton size={glassSize.inline} />
               ) : slot === 'lightbulb' ? (
-                <BoardControlIndicator
-                  size={glassSize.inline}
-                  iconSize={22}
-                  enableLongPress
-                  solidGlyphs
-                  placement={placement}
-                />
+                // Beside a player with the bulb chosen, the bulb is that
+                // player's board control (#7000): its model, its tap and its hold.
+                paneMode === 'mirror' && paneWallControl ? (
+                  <PaneWallControlBulb control={paneWallControl} size={glassSize.inline} iconSize={22} solidGlyphs />
+                ) : (
+                  <BoardControlIndicator
+                    size={glassSize.inline}
+                    iconSize={22}
+                    enableLongPress
+                    solidGlyphs
+                    placement={placement}
+                  />
+                )
               ) : (
                 <LogAscentToolbarButton
                   queueItemUuid={queueItemUuid}

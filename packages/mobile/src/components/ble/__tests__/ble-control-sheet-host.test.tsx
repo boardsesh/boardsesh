@@ -25,6 +25,7 @@ const mockBleControlSheet = vi.hoisted(() => ({
     onToggleLightAdjacentHolds: (enabled: boolean) => void;
     onClearLights: () => void;
     onReassert: () => void;
+    showLightingSwitches?: boolean;
   } | null,
 }));
 
@@ -73,6 +74,19 @@ describe('BleControlSheetHost', () => {
     mockBleControlSheet.props = null;
   });
 
+  // #7000: only the player's sheet drops auto-disconnect and the two
+  // lighting switches; the app-wide sheet keeps them whatever the QA switch says.
+  it.each([
+    ['the app-wide sheet', undefined, true],
+    ['the player’s sheet', false, false],
+  ] as const)('%s shows the lighting switches: %s', (_host, showLightingSwitches, shown) => {
+    render(<BleControlSheetHost visible onClose={vi.fn()} showLightingSwitches={showLightingSwitches} />);
+
+    expect(mockBleControlSheet.props?.showLightingSwitches).toBe(shown);
+    // The MoonBoard-only switch lives nowhere else, so it stays.
+    expect(mockBleControlSheet.props?.showLightAdjacentHolds).toBe(true);
+  });
+
   it('re-lights the current climb after changing the MoonBoard adjacent-hold setting', () => {
     const { getByText } = render(<BleControlSheetHost visible onClose={vi.fn()} />);
 
@@ -99,7 +113,7 @@ describe('BleControlSheetHost', () => {
     expect(mockBleControlSheet.props?.showLightAdjacentHolds).toBe(false);
   });
 
-  // #6939: the player's wall badge learns the wall went dark from here.
+  // #6939: the player's wall status line learns the wall went dark from here.
   it('remembers which climb Turn off all lights darkened, and Re-light forgets it', () => {
     resetWallCleared();
     render(
@@ -122,6 +136,24 @@ describe('BleControlSheetHost', () => {
     cleared.rerender();
     expect(cleared.result.current).toBeNull();
     expect(mockReassertWall).toHaveBeenCalledTimes(1);
+  });
+
+  // #7000: the player passes the climb it shows, so Turn off all lights from a
+  // lit preview marks that climb dark rather than the queue's head.
+  it('marks the climb the player names, not the queue head', () => {
+    resetWallCleared();
+    render(
+      createElement(
+        QueueActiveClimbContext.Provider,
+        { value: { activeClimbUuid: 'queue-head' } },
+        createElement(BleControlSheetHost, { visible: true, onClose: vi.fn(), clearedClimbUuid: 'lit-preview' }),
+      ),
+    );
+    const cleared = renderHook(() => useWallClearedClimbUuid());
+
+    mockBleControlSheet.props?.onClearLights();
+    cleared.rerender();
+    expect(cleared.result.current).toBe('lit-preview');
   });
 
   it('renders no sheet without a Bluetooth context', () => {

@@ -550,14 +550,14 @@
       },
       "wall": {
         "title": "Quién enciende el muro",
-        "p1": "Un plafón admite una conexión Bluetooth a la vez. En los demás móviles, abre la vista previa de un bloque y toca la bombilla, y el móvil conectado lo enciende por ti.",
-        "p2": "En un muro sin luces la bombilla pone Tomar el muro.",
+        "p1": "Un plafón admite una conexión Bluetooth a la vez. En los demás móviles, abre la vista previa de un bloque y toca Ponerlo en el muro, y el móvil conectado lo enciende por ti.",
+        "p2": "En un muro sin luces el botón de debajo del plafón pone Tomar el muro.",
         "bluetoothLink": "Conectarse a un plafón"
       },
       "crowd": {
         "title": "Cotillear sin mover el muro",
-        "p1": "Con alguien más en tu sesión, deslizar deja de encender el plafón. Toca Ponerlo en el muro cuando quieras el tuyo, o toca la foto de perfil de arriba para volver al bloque del muro.",
-        "p2": "¿Escalas solo? Mantén pulsada la bombilla y apaga Iluminar el plafón al tocar un bloque e Iluminar el plafón al deslizar.",
+        "p1": "Con alguien más en tu sesión, deslizar deja de encender el plafón. Toca Ponerlo en el muro cuando quieras el tuyo, o toca En el plafón arriba para volver al bloque del plafón.",
+        "p2": "¿Escalas solo? En Ajustes, en Plafón, apaga Iluminar el plafón al tocar un bloque e Iluminar el plafón al deslizar.",
         "previewLink": "Vista previa de un bloque desde cualquier lista"
       },
       "history": {
@@ -686,29 +686,28 @@
       "breadcrumb": "Plafón y Bluetooth",
       "hero": {
         "title": "Conecta el móvil al plafón",
-        "subtitle": "Toca la bombilla, elige tu plafón y tu bloque se enciende."
+        "subtitle": "Toca Conectar plafón, elige tu plafón y tu bloque se enciende."
       },
       "connect": {
         "title": "Conectar",
-        "p1": "Toca la bombilla del reproductor o de la barra de arriba, y luego toca tu plafón en Seleccionar plafón. La lista va de señal más fuerte a más débil, con el número de serie en cada fila.",
+        "p1": "En un bloque, toca Conectar plafón debajo del plafón, o toca la bombilla de la barra de arriba. Luego toca tu plafón en Seleccionar plafón. La lista va de señal más fuerte a más débil, con el número de serie en cada fila.",
         "p2": "La primera vez, iOS pide Bluetooth. Android pide dispositivos cercanos, o Ubicación en Android 11 y anteriores.",
         "shotAlt": "La hoja Seleccionar plafón",
         "shotCaption": "Señal más fuerte primero, con números de serie.",
         "litShotAlt": "Un bloque encendido",
-        "litShotCaption": "La bombilla rellena significa que el muro está encendido.",
-        "p3": "¿Estás en otro muro? Cambiar de plafón es la primera fila detrás de tu avatar."
+        "litShotCaption": "Un bloque encendido en el plafón.",
+        "p3": "¿Estás en otro muro? Cambiar de plafón es la primera fila detrás de tu avatar.",
+        "p4": "¿Prefieres la bombilla? En un bloque, toca ⋯, luego Opciones de vista, Botones, y pon Control del plafón en Bombilla. La bombilla ocupa el extremo derecho de la fila de arriba en lugar del botón del muro, y tocarla o mantenerla pulsada hace lo mismo."
       },
       "hidden": {
-        "title": "Mantén pulsada la bombilla",
-        "p1": "Con el plafón conectado, mantén pulsada la bombilla para estos controles, de arriba abajo.",
-        "row1": "Desconexión automática. Libera el plafón tras 30 segundos sin uso. Cambia el tiempo en Ajustes, en Plafón.",
-        "row2": "Iluminar la presa de arriba. Solo MoonBoard.",
-        "row3": "Iluminar el plafón al tocar un bloque.",
-        "row4": "Iluminar el plafón al deslizar, cuando ya hay un bloque en el muro. Apaga los dos y explorar deja de mover el muro.",
-        "row5": "Reiluminar plafón. Manda el bloque a los LED otra vez.",
-        "row6": "Apagar todas las luces. Tu móvil sigue conectado.",
-        "row7": "Desconectar plafón. Úsalo cuando te has conectado al muro equivocado.",
-        "p2": "Un toque corto reconecta al último plafón que usaste."
+        "title": "Controles del plafón",
+        "p1": "Con el plafón conectado, mantén pulsado el botón de debajo del plafón. Cuando dice Tienes el plafón, un toque corto lo desconecta. En un bloque también se abren con ⋯ y luego Controles del plafón, o manteniendo pulsada la bombilla de la barra de arriba.",
+        "row1": "Reiluminar plafón. Manda el bloque a los LED otra vez.",
+        "row2": "Apagar todas las luces. Tu móvil sigue conectado.",
+        "row3": "Desconectar plafón. Úsalo cuando te has conectado al muro equivocado.",
+        "row4": "Iluminar la presa de arriba. Solo MoonBoard.",
+        "p2": "Desconexión automática, Iluminar el plafón al tocar un bloque e Iluminar el plafón al deslizar están en Ajustes, en Plafón, y en el menú que abre la bombilla de la barra superior. La desconexión automática libera el plafón tras 30 segundos sin uso. Apaga los dos interruptores de iluminación y explorar deja de mover el muro.",
+        "p3": "Sin plafón conectado, Conectar plafón, o un toque corto en la bombilla de la barra de arriba, conecta al último plafón que usaste."
       },
       "failed": {
         "title": "Cuando no conecta",
@@ -727,13 +726,13 @@
       },
       "duplicate": {
         "title": "El mismo plafón dos veces en la lista",
-        "p1": "Dos filas con números de serie distintos son dos controladores. Una fila que solo pone Kilter Board, sin serie, es una caja LED nueva de fábrica. Dos de esas en un rocódromo salen como dos filas. La que tiene más barras de señal suele ser el muro que tienes delante. Si se enciende el muro equivocado, mantén pulsada la bombilla, toca Desconectar plafón y prueba otra vez.",
+        "p1": "Dos filas con números de serie distintos son dos controladores. Una fila que solo pone Kilter Board, sin serie, es una caja LED nueva de fábrica. Dos de esas en un rocódromo salen como dos filas. La que tiene más barras de señal suele ser el muro que tienes delante. Si se enciende el muro equivocado, abre Controles del plafón, toca Desconectar plafón y prueba otra vez.",
         "p2": "No hay lista de dispositivos olvidados. La app solo recuerda tu último plafón.",
         "p3": "Un plafón que sale dos veces en Tus plafones es otra cosa. Toca Editar junto a Tus plafones y luego Eliminar o Dejar de seguir."
       },
       "control": {
         "title": "Cuando el plafón lo tiene otra persona",
-        "p1": "En una sesión, un móvil lleva el plafón. En los demás, abre la vista previa de un bloque y toca la bombilla, y el móvil que lo lleva lo enciende.",
+        "p1": "En una sesión, un móvil lleva el plafón. En los demás, abre la vista previa de un bloque y toca Ponerlo en el muro, y el móvil que lo lleva lo enciende.",
         "p2": "En muros sin luces el botón pone Tomar el muro.",
         "sessionsLink": "Más sobre compartir un muro"
       },
@@ -769,10 +768,10 @@
         "title": "Mira un bloque sin encender el plafón",
         "intro": "Vista previa es lo primero de la lista.",
         "p1": "Abre el bloque en el reproductor sin tocar tu cola. Tu siguiente deslizamiento vuelve a tu cola.",
-        "p2": "En una sesión, o con Iluminar el plafón al deslizar apagado, sale una etiqueta Explorando. La línea bajo el nombre dice Solo tú lo ves en una sesión, o Vista previa, sin encender cuando hay un plafón conectado o un bloque encendido. Toca Activar o Ponerlo en el muro cuando quieras el bloque.",
+        "p2": "En una sesión, o con Iluminar el plafón al deslizar apagado, arriba sale un botón para volver: Mi elección para tu bloque, En el plafón para el bloque encendido. La línea bajo el nombre dice Solo tú lo ves en una sesión, o Vista previa, sin encender cuando hay un plafón conectado o un bloque encendido. Toca Ponerlo en el muro (o Activar) debajo del plafón cuando quieras el bloque.",
         "sessionsLink": "Cómo una sesión mantiene el muro quieto",
-        "clipAlt": "La etiqueta Explorando",
-        "clipCaption": "La etiqueta llega tras el deslizamiento. El muro se queda como estaba."
+        "clipAlt": "El botón Mi elección",
+        "clipCaption": "El botón llega tras el deslizamiento. El muro se queda como estaba."
       },
       "quick": {
         "title": "Los tres botones de arriba",

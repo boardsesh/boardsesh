@@ -88,3 +88,35 @@ it('keeps expanded accessibility labels in a bounded scrollable sheet, with work
   expect(onDisconnect).toHaveBeenCalledOnce();
   expect(onClose).toHaveBeenCalledOnce();
 });
+
+// #7000: the player's sheet is just the board's actions (and the
+// MoonBoard-only switch, which lives nowhere else).
+it('drops auto-disconnect and the two lighting switches when asked, keeping the actions', () => {
+  const { queryByText, getByText } = render(
+    <BleControlSheet
+      visible
+      onReassert={vi.fn()}
+      onClearLights={vi.fn()}
+      onDisconnect={vi.fn()}
+      autoDisconnectEnabled={false}
+      autoDisconnectTimeoutLabel="30 seconds"
+      onToggleAutoDisconnect={vi.fn()}
+      showLightAdjacentHolds
+      lightAdjacentHoldsEnabled={false}
+      onToggleLightAdjacentHolds={vi.fn()}
+      lightOnSwipe={false}
+      onToggleLightOnSwipe={vi.fn()}
+      lightOnClimbTap={false}
+      onToggleLightOnClimbTap={vi.fn()}
+      showLightingSwitches={false}
+      onClose={vi.fn()}
+    />,
+  );
+  expect(queryByText('ble.autoDisconnect.toggleTitle'.repeat(3))).toBeNull();
+  expect(queryByText('ble.lighting.onTapLabel'.repeat(3))).toBeNull();
+  expect(queryByText('ble.lighting.onSwipeLabel'.repeat(3))).toBeNull();
+  getByText('lightControl.lightAdjacentHolds'.repeat(3));
+  getByText('ble.relightBoard'.repeat(3));
+  getByText('lightControl.turnOffAll'.repeat(3));
+  getByText('lightControl.disconnect'.repeat(3));
+});

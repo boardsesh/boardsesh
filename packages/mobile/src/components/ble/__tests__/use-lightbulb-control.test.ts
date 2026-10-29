@@ -544,10 +544,10 @@ describe('useLightbulbControl connect (#5654 connect step)', () => {
   it('tags a connect with the surface it was started from', async () => {
     const { result } = renderControl({ surface: 'play_drawer' });
 
-    await result.current.connect('first_connect_pill');
+    await result.current.connect('put_on_wall');
 
     expect(trackMock).toHaveBeenCalledWith('Board Connect Tapped', {
-      surface: 'first_connect_pill',
+      surface: 'put_on_wall',
       boardName: 'kilter',
       reconnect: false,
     });

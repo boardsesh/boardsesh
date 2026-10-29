@@ -434,6 +434,73 @@ The summary's Add a recap action is a full-width inset row. Apple Health saving
 and saved states are readable, noninteractive statuses; Save/Retry are action
 rows. These labels wrap rather than truncate at larger text sizes.
 
+### Nothing over the climb
+
+The rendered climb is the one thing a climber reads from across the room, so no status or decoration is drawn over the
+board art (#7000). A tester found the "Not on the wall" badge from #6939 distracting on the climb, and it showed beside a
+Live pill that said the opposite.
+
+New status goes beside the art instead: the header's back chip, the top bar's second line (the caption), or the
+action bar's rows, like the wall button's "You have the board" (`WallControlButton`).
+
+Allowed over the board, and nothing else:
+
+1. Cards that take the board over: a workout's rest and "Workout done", the end of a list, and Switch board.
+2. Corner badges on thumbnails.
+3. The MoonBoard grid letters.
+4. The reset-zoom button.
+
+![Before](images/nothing-over-the-climb-before.png)
+
+![After](images/nothing-over-the-climb-after.png)
+
+![The wall button in each state](images/wall-button-states.png)
+
+The wall button on real phones (iPhone 13 Pro on a Tension board, Pixel 8 Pro on a MoonBoard): no board, lit, a preview, and a board that can't mirror, where the heart leads the top row. The lit shots still read "Lit on the wall"; after the phone test that state says "You have the board", same amber and face.
+
+These shots predate the wall button: they show round 2's "Lit on the wall" text.
+
+#### One place says "is it lit" (#7000)
+
+Round 2 still answered "is this climb lit?" in up to four places that could disagree: the header face pill, the bulb's
+fill, the "Lit on the wall" text and the purple button. Now one board control says it, drawn from one model
+(`resolveWallControl`, `docs/climb-view-options.md`, "The board control"). By default it is the full-width wall
+button in the second row; View options › Buttons › Board control can make it the first row's bulb instead. Either
+way it looks like this:
+
+- Tonal violet for what the climber can do: "Connect board", "Put on the wall", "On Sam's board". The fill is 20% of
+  the brand fill, strong enough not to read as disabled and the most the violet label keeps 4.5:1 on.
+- **Lit: the climb's holds glow in it (look F1b).** "You have the board", and a crewmate's lit board ("On Sam's
+  board"), in the full-width and the workout button: every lit hold of the climb, turned a quarter clockwise so the
+  climb reads start (left) to finish (right), as a soft blob of the colour the player draws its role (Aura or
+  classic, with the climber's overrides). The blobs screen together on a near-black `#0E0D12` with an 8% white
+  frost and a still 6% grain; the label is white with a soft shadow, over the smallest label-zone fade that keeps it
+  at 4.5:1 (`wall-glow.ts` checks the brightest pixel the glow can put there). The border is a plain 1 pt hairline,
+  white at 20%: Marco wanted a simple border with the busy fill. Light scheme: a pale `#F6F3FB` the blobs multiply
+  into at lower strength, a dark label, black hairline at 12%. Android below 10 can't screen-blend, so the blobs
+  draw normally, fainter. A new climb or playback frame cross-fades in over 200 ms (at once with Reduce Motion).
+  With no holds the lit button falls back to the filled `live` amber with white text (dark text on the dark
+  scheme's pale amber). The climber's own face sits at the trailing edge either way.
+- The bulb at the leading edge in every state, and whoever holds the board as a 24 pt face at the trailing edge, so
+  the label stays centred.
+
+A tap lights the climb, or on You have the board disconnects (a warning buzz, and "Board disconnected" for screen
+readers); a hold opens the board sheet, a named "Board options" action for screen readers. The header keeps only the
+back chip, which names where back goes: "My pick" for the climber's own climb, "On the wall" for the wall's.
+
+- **On the wall, not yours (QA #147).** With no live link but presence saying the climb on screen was lit on the wall
+  under an hour ago, the button reads "On the wall": an amber outline on the sheet, the label in the sheet's own
+  label colour, an outline bulb, no face and no frost, since the filled amber, the frost and the face all mean "you
+  have the board". A tap still connects and lights it again.
+
+- **A face means a live link.** The holder's face, on the button's trailing edge or the bulb's corner, comes only
+  from the model, which needs this phone's link or a crewmate's authoritative one. Board presence alone never puts a
+  face up, so it goes the moment the climber disconnects.
+- **A timed block keeps the chosen look.** With the wall button, the top row becomes ⏮, the same button about 239 pt
+  wide (on a 375 pt phone), and ⏭, over Fell | Sent: same height, radius, colours, leading bulb, centred label and
+  trailing face, so the board art keeps its size. With the bulb, the block keeps ⇄ ⏮ ✓ ⏭ 💡. The two never swap
+  mid-block.
+
 ### Content hierarchy and brand accents
 
 Boardsesh keeps the native tab bar and toolbar symbols neutral while climbing content supplies

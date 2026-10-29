@@ -5,7 +5,6 @@ import { DEFAULT_PLAYER_BUTTONS, type PlayerButtonId, type PlayerButtonsLayout }
 const MEMBER: ActionBarLayoutInput = {
   supportsMirroring: false,
   isAnonymous: false,
-  connectPill: false,
   commitButton: null,
   workoutOutcome: false,
   showLightbulb: true,
@@ -15,393 +14,403 @@ const MEMBER: ActionBarLayoutInput = {
   previousNext: true,
 };
 const MIRROR: ActionBarLayoutInput = { ...MEMBER, supportsMirroring: true };
-const NOTHING_HIDDEN = { favorite: false, share: false, queue: false, mirror: false, angle: false };
-const PLAYER_ORDER = DEFAULT_PLAYER_BUTTONS.order;
+const NOTHING_HIDDEN = { tick: false, favorite: false, share: false, queue: false, mirror: false, angle: false };
+const BULB: Partial<ActionBarLayoutInput> = { boardControl: 'lightbulb' };
 
-/** A layout in the given order, with the listed buttons switched off. */
-function buttons(order: readonly PlayerButtonId[], off: readonly PlayerButtonId[] = []): PlayerButtonsLayout {
-  const visible = { mirror: true, favorite: true, angle: true, share: true, queue: true };
-  for (const buttonId of off) visible[buttonId] = false;
+/** The default switches, with the listed buttons switched off. */
+function off(...buttonIds: PlayerButtonId[]): PlayerButtonsLayout {
+  const visible = { ...DEFAULT_PLAYER_BUTTONS.visible };
+  for (const buttonId of buttonIds) visible[buttonId] = false;
+  return { order: DEFAULT_PLAYER_BUTTONS.order, visible };
+}
+
+// #7000: one wall button fills the second row on every board, in every wall
+// state, so nothing moves; the first row's ends are fixed per board.
+describe('resolveActionBarLayout: the bars', () => {
+  // [♡] [⏮] [✓] [⏭] [☰] / [ wall button ]
+  it('leads with the heart on a board that cannot mirror', () => {
+    expect(resolveActionBarLayout(MEMBER)).toEqual({
+      primaryCenter: 'tick',
+      leadingSlot: 'favorite',
+      trailingSlot: 'queue',
+      showPreviousNext: true,
+      secondaryRow: ['wallControl'],
+      hidden: { ...NOTHING_HIDDEN, share: true, angle: true },
+    });
+  });
+
+  // [⇄] [⏮] [✓] [⏭] [☰] / [ wall button ]  (♡ in ⋯)
+  it('keeps Mirror first on a board that mirrors, and the heart lives in ⋯ only', () => {
+    expect(resolveActionBarLayout(MIRROR)).toEqual({
+      primaryCenter: 'tick',
+      leadingSlot: 'mirror',
+      trailingSlot: 'queue',
+      showPreviousNext: true,
+      secondaryRow: ['wallControl'],
+      hidden: { ...NOTHING_HIDDEN, favorite: true, share: true, angle: true },
+    });
+  });
+
+  it.each([
+    ['no board, a preview, lit, a crew', { commitButton: null }],
+    ['a preview (Put on the wall is a wall button state)', { commitButton: 'putOnWall' as const }],
+    ['a preview in a timed block', { commitButton: 'putOnWall' as const, workoutOutcome: true }],
+  ])('draws the wall button alone, full width, for %s', (_state, input) => {
+    for (const board of [MEMBER, MIRROR]) {
+      const layout = resolveActionBarLayout({ ...board, ...input });
+      expect(layout.secondaryRow).toEqual(['wallControl']);
+      expect(layout.trailingSlot).toBe('queue');
+    }
+  });
+
+  it('shares and changes the angle from ⋯ only, wherever they could draw', () => {
+    const layout = resolveActionBarLayout(MIRROR);
+    expect(layout.hidden.share).toBe(true);
+    expect(layout.hidden.angle).toBe(true);
+    // A draft has no link and a fixed-angle board no angle sheet, so ⋯ has no row for them.
+    const nothingToOffer = resolveActionBarLayout({ ...MIRROR, hasShare: false, angleAvailable: false });
+    expect(nothingToOffer.hidden.share).toBe(false);
+    expect(nothingToOffer.hidden.angle).toBe(false);
+  });
+
+  it('leaves both ⏮ ⏭ slots empty with Previous and next off', () => {
+    expect(resolveActionBarLayout({ ...MEMBER, previousNext: false }).showPreviousNext).toBe(false);
+  });
+});
+
+// The wall button goes with the second row, so the bulb comes back: a link
+// that drops mid-workout can still be reconnected, and the sheet still opens.
+describe('resolveActionBarLayout: the row the wall button gives up', () => {
+  it.each([
+    ['the busy-wall question with the bulb chosen', { commitButton: 'confirm' as const, ...BULB }, 'confirm'],
+    ['Fell / Sent with the bulb chosen', { workoutOutcome: true, ...BULB }, 'workoutOutcome'],
+  ])('keeps the bulb in the first row under %s, the queue stepping into ⋯', (_row, input, row) => {
+    for (const board of [MEMBER, MIRROR]) {
+      const layout = resolveActionBarLayout({ ...board, ...input });
+      expect(layout.primaryCenter).toBe('tick');
+      expect(layout.secondaryRow).toBe(row);
+      expect(layout.trailingSlot).toBe('lightbulb');
+      expect(layout.hidden.queue).toBe(true);
+      // The leading slot never moves with the wall state.
+      expect(layout.leadingSlot).toBe(board.supportsMirroring ? 'mirror' : 'favorite');
+    }
+  });
+
+  it('keeps the queue in the slot where there is no Bluetooth to reconnect', () => {
+    const layout = resolveActionBarLayout({ ...MEMBER, workoutOutcome: true, showLightbulb: false });
+    expect(layout.trailingSlot).toBe('queue');
+    expect(layout.hidden.queue).toBe(false);
+  });
+});
+
+const PLAYER_ORDER = ['mirror', 'favorite', 'queue', 'share', 'angle'] as const;
+
+/** A layout in the given order, with the listed buttons switched on and the rest off. */
+function layout(order: readonly PlayerButtonId[], on: readonly PlayerButtonId[]): PlayerButtonsLayout {
+  const visible = { mirror: false, favorite: false, queue: false, share: false, angle: false };
+  for (const buttonId of on) visible[buttonId] = true;
   return { order, visible };
 }
-const ALL_OFF = buttons(PLAYER_ORDER, ['mirror', 'favorite', 'angle', 'share', 'queue']);
 
-describe('resolveActionBarLayout: the defaults draw today’s bars', () => {
-  // [☰] [⏮] [✓] [⏭] [💡] / [♡] [40°] ··· [⬆]
-  it('puts the queue in the first slot on a board without mirror, and hides nothing', () => {
-    expect(resolveActionBarLayout(MEMBER)).toEqual({
-      leadingSlot: 'queue',
-      trailingSlot: 'lightbulb',
-      showPreviousNext: true,
-      secondaryRow: ['favorite', 'angle', 'spacer', 'share'],
-      showConnectPill: false,
-      hidden: NOTHING_HIDDEN,
+// The climber's buttons fill the first row's two ends: the first on that
+// applies here takes the leading slot, the last the trailing one, the rest ⋯.
+// Every case runs on both board kinds, plain and under the busy-wall question
+// and Fell / Sent, which hand the trailing slot to the bulb.
+describe('resolveActionBarLayout: the climber’s buttons', () => {
+  type Ends = [PlayerButtonId | null, PlayerButtonId | null];
+  type Row = [string, PlayerButtonsLayout, Ends, Ends];
+  const rows: Row[] = [
+    ['the defaults', DEFAULT_PLAYER_BUTTONS, ['mirror', 'queue'], ['favorite', 'queue']],
+    [
+      'Share moved first and on',
+      layout(['share', 'mirror', 'favorite', 'queue', 'angle'], ['share', 'mirror', 'favorite', 'queue']),
+      ['share', 'queue'],
+      ['share', 'queue'],
+    ],
+    [
+      'Angle last and on',
+      layout(['mirror', 'favorite', 'queue', 'share', 'angle'], ['mirror', 'favorite', 'angle']),
+      ['mirror', 'angle'],
+      ['favorite', 'angle'],
+    ],
+    [
+      'the queue alone',
+      layout(['mirror', 'favorite', 'queue', 'share', 'angle'], ['queue']),
+      ['queue', null],
+      ['queue', null],
+    ],
+    [
+      'Mirror alone (it applies only where the board mirrors)',
+      layout(['mirror', 'favorite', 'queue', 'share', 'angle'], ['mirror']),
+      ['mirror', null],
+      [null, null],
+    ],
+    ['everything off', layout(['mirror', 'favorite', 'queue', 'share', 'angle'], []), [null, null], [null, null]],
+  ];
+
+  it.each(rows)('%s', (_case, buttons, [mirrorLead, mirrorTrail], [plainLead, plainTrail]) => {
+    for (const [board, lead, trail] of [
+      [MIRROR, mirrorLead, mirrorTrail],
+      [MEMBER, plainLead, plainTrail],
+    ] as const) {
+      const plain = resolveActionBarLayout({ ...board, buttons });
+      expect(plain.leadingSlot).toBe(lead);
+      expect(plain.trailingSlot).toBe(trail);
+      expect(plain.secondaryRow).toEqual(['wallControl']);
+      // ⋯ carries every button that applies here and is not drawn.
+      for (const buttonId of ['mirror', 'favorite', 'queue', 'share', 'angle'] as const) {
+        const applies = buttonId !== 'mirror' || board.supportsMirroring;
+        expect(plain.hidden[buttonId]).toBe(applies && lead !== buttonId && trail !== buttonId);
+      }
+
+      for (const overlay of [
+        { commitButton: 'confirm' as const, ...BULB },
+        { workoutOutcome: true, ...BULB },
+      ]) {
+        const taken = resolveActionBarLayout({ ...board, buttons, ...overlay });
+        expect(taken.leadingSlot).toBe(lead);
+        expect(taken.trailingSlot).toBe('lightbulb');
+        if (trail !== null) expect(taken.hidden[trail]).toBe(true);
+      }
+
+      // Fell / Sent or the busy-wall question with the wall button: ⏮ [wall button] ⏭, everything else in ⋯.
+      for (const overlay of [{ workoutOutcome: true }, { commitButton: 'confirm' as const }]) {
+        const block = resolveActionBarLayout({ ...board, buttons, ...overlay });
+        expect(block.primaryCenter).toBe('wallControl');
+        expect([block.leadingSlot, block.trailingSlot]).toEqual([null, null]);
+        expect(block.hidden.tick).toBe(true);
+        for (const buttonId of ['favorite', 'queue'] as const) expect(block.hidden[buttonId]).toBe(true);
+      }
+    }
+  });
+
+  it('gives Angle no slot on a board whose angle is fixed, and ⋯ no row for it', () => {
+    const angleLast = layout(['mirror', 'favorite', 'queue', 'share', 'angle'], ['favorite', 'angle']);
+    const fixed = resolveActionBarLayout({ ...MEMBER, buttons: angleLast, angleAvailable: false });
+    expect(fixed.leadingSlot).toBe('favorite');
+    expect(fixed.trailingSlot).toBeNull();
+    expect(fixed.hidden.angle).toBe(false);
+  });
+
+  it('keeps Share’s slot on a draft, empty, so nothing jumps between climbs', () => {
+    const shareLast = layout(['mirror', 'favorite', 'queue', 'share', 'angle'], ['favorite', 'share']);
+    const draft = resolveActionBarLayout({ ...MEMBER, buttons: shareLast, hasShare: false });
+    expect(draft.trailingSlot).toBe('share');
+    expect(draft.hidden.share).toBe(false);
+  });
+
+  it('defaults to Marco’s bar, Share and Angle in ⋯', () => {
+    expect(DEFAULT_PLAYER_BUTTONS.order).toEqual(['mirror', 'favorite', 'queue', 'share', 'angle']);
+    expect(DEFAULT_PLAYER_BUTTONS.visible).toEqual({
+      mirror: true,
+      favorite: true,
+      queue: true,
+      share: false,
+      angle: false,
+    });
+  });
+});
+
+// #7000: View options › Buttons › Board control. One model behind both looks;
+// only where the control sits changes. Mode × board × the wall's moment.
+describe('resolveActionBarLayout: the board control choice', () => {
+  type Moment = [string, Partial<ActionBarLayoutInput>];
+  const moments: Moment[] = [
+    ['nothing asked', {}],
+    ['a preview', { commitButton: 'putOnWall' }],
+    ['the busy-wall question', { commitButton: 'confirm' }],
+    ['Fell / Sent', { workoutOutcome: true }],
+    ['the busy-wall question in a block', { commitButton: 'confirm', workoutOutcome: true }],
+  ];
+  // [mode, moment] → [primaryCenter, trailing slot, second row on a mirror board, on another board]
+  type Expected = [string, string | null, unknown, unknown];
+  const expected: Record<string, Record<string, Expected | ((board: 'mirror' | 'plain') => Expected)>> = {
+    wallButton: {
+      'nothing asked': ['tick', 'queue', ['wallControl'], ['wallControl']],
+      'a preview': ['tick', 'queue', ['wallControl'], ['wallControl']],
+      // Never the old bulb: the wall button moves up, and Log waits in ⋯ while the question is up.
+      'the busy-wall question': ['wallControl', null, 'confirm', 'confirm'],
+      'Fell / Sent': ['wallControl', null, 'workoutOutcome', 'workoutOutcome'],
+      'the busy-wall question in a block': ['wallControl', null, 'confirm', 'confirm'],
+    },
+    lightbulb: {
+      // The row stays, so the board never jumps: ♡ left and ☰ right on a mirror
+      // board (⇄ leads), ☰ alone on the left of another (♡ leads).
+      'nothing asked': ['tick', 'lightbulb', ['favorite', 'spacer', 'queue'], ['queue', 'spacer']],
+      // Put on the wall takes the gap, and pushes nothing into ⋯.
+      'a preview': ['tick', 'lightbulb', ['favorite', 'wallControl', 'queue'], ['queue', 'wallControl']],
+      'the busy-wall question': ['tick', 'lightbulb', 'confirm', 'confirm'],
+      'Fell / Sent': ['tick', 'lightbulb', 'workoutOutcome', 'workoutOutcome'],
+      'the busy-wall question in a block': ['tick', 'lightbulb', 'confirm', 'confirm'],
+    },
+  };
+
+  it.each(
+    (['wallButton', 'lightbulb'] as const).flatMap((mode) =>
+      moments.map(([moment, input]) => [mode, moment, input] as const),
+    ),
+  )('%s, %s', (mode, moment, input) => {
+    const [center, trailing, mirrorRow, plainRow] = expected[mode][moment] as Expected;
+    for (const board of [MIRROR, MEMBER]) {
+      const layout = resolveActionBarLayout({ ...board, ...input, boardControl: mode });
+      expect(layout.primaryCenter).toBe(center);
+      expect(layout.secondaryRow).toEqual(board.supportsMirroring ? mirrorRow : plainRow);
+      // The bulb or the wall button replaces the climber's last button; Mirror
+      // leads where the board mirrors, the heart where it doesn't.
+      expect(layout.trailingSlot).toBe(trailing);
+      if (center === 'tick') expect(layout.leadingSlot).toBe(board.supportsMirroring ? 'mirror' : 'favorite');
+    }
+  });
+
+  it('draws every button on with the bulb, so ⋯ has none to stand in for: ⇄ ⏮ ✓ ⏭ 💡 / ♡ ··· ☰', () => {
+    const layout = resolveActionBarLayout({ ...MIRROR, ...BULB });
+    expect([layout.leadingSlot, layout.trailingSlot]).toEqual(['mirror', 'lightbulb']);
+    expect(layout.hidden).toMatchObject({ favorite: false, queue: false, mirror: false, tick: false });
+    // Share and Angle are off by default, so ⋯ still offers them.
+    expect(layout.hidden).toMatchObject({ share: true, angle: true });
+    // Under the busy-wall question or Fell / Sent the side buttons step into ⋯.
+    expect(resolveActionBarLayout({ ...MIRROR, ...BULB, workoutOutcome: true }).hidden).toMatchObject({
+      favorite: true,
+      queue: true,
     });
   });
 
-  // [⇄] [⏮] [✓] [⏭] [💡] / [♡] [40°] ··· [⬆] [☰]
-  it('keeps mirror first and the queue rightmost in the second row on a mirror board', () => {
-    expect(resolveActionBarLayout(MIRROR)).toEqual({
-      leadingSlot: 'mirror',
-      trailingSlot: 'lightbulb',
-      showPreviousNext: true,
-      secondaryRow: ['favorite', 'angle', 'spacer', 'share', 'queue'],
-      showConnectPill: false,
-      hidden: NOTHING_HIDDEN,
-    });
-  });
-
-  // [ ] [⏮] [✓] [⏭] [ ] / [40°] ··· [⬆]
-  it('gives an anonymous reader no queue, heart or bulb, and flags nothing for a ⋯ they do not get', () => {
+  it('splits the side buttons, the first half left of the gap', () => {
+    const all = layout(
+      ['mirror', 'favorite', 'queue', 'share', 'angle'],
+      ['mirror', 'favorite', 'queue', 'share', 'angle'],
+    );
+    expect(resolveActionBarLayout({ ...MIRROR, ...BULB, buttons: all }).secondaryRow).toEqual([
+      'favorite',
+      'queue',
+      'spacer',
+      'share',
+      'angle',
+    ]);
+    // Only the leading button on: the row is the gap alone, kept for the board's size.
     expect(
-      resolveActionBarLayout({ ...MEMBER, isAnonymous: true, connectPill: true, commitButton: 'putOnWall' }),
-    ).toEqual({
+      resolveActionBarLayout({ ...MIRROR, ...BULB, buttons: layout(PLAYER_ORDER, ['mirror']) }).secondaryRow,
+    ).toEqual(['spacer']);
+  });
+
+  it('gives the bulb no slot with no wall to light, and folds the row', () => {
+    const layout = resolveActionBarLayout({ ...MIRROR, ...BULB, hasWall: false });
+    expect(layout.trailingSlot).toBe('queue');
+    expect(layout.secondaryRow).toEqual([]);
+  });
+
+  it('keeps Log in a block with no Bluetooth, where the wall button would have nothing to say', () => {
+    const layout = resolveActionBarLayout({ ...MIRROR, workoutOutcome: true, showLightbulb: false });
+    expect(layout.primaryCenter).toBe('tick');
+    expect(layout.hidden.tick).toBe(false);
+  });
+});
+
+// #7000, the tablet rule: beside a MiniPlayer that stands in for the first row
+// (the open Duo's pane, a tablet's player route) the wall button moves up into
+// it, full width; the second row is only the busy-wall question or Fell / Sent.
+describe('resolveActionBarLayout: beside a MiniPlayer (tablets, the open Duo)', () => {
+  const BESIDE: Partial<ActionBarLayoutInput> = { miniPlayerMirrors: true };
+  type Moment = [string, Partial<ActionBarLayoutInput>];
+  const moments: Moment[] = [
+    ['nothing asked', {}],
+    ['a preview', { commitButton: 'putOnWall' }],
+    ['the busy-wall question', { commitButton: 'confirm' }],
+    ['Fell / Sent', { workoutOutcome: true }],
+    ['the busy-wall question in a block', { commitButton: 'confirm', workoutOutcome: true }],
+  ];
+  // [mode, moment] → [first row, second row]
+  const expected: Record<string, Record<string, [string, unknown]>> = {
+    wallButton: {
+      'nothing asked': ['wallControlFull', []],
+      'a preview': ['wallControlFull', []],
+      'the busy-wall question': ['wallControlFull', 'confirm'],
+      'Fell / Sent': ['wallControlFull', 'workoutOutcome'],
+      'the busy-wall question in a block': ['wallControlFull', 'confirm'],
+    },
+    // The bar has the bulb: no first row, and a preview's Put on the wall takes the second.
+    lightbulb: {
+      'nothing asked': ['none', []],
+      'a preview': ['none', ['wallControl']],
+      'the busy-wall question': ['none', 'confirm'],
+      'Fell / Sent': ['none', 'workoutOutcome'],
+      'the busy-wall question in a block': ['none', 'confirm'],
+    },
+  };
+
+  it.each(
+    (['wallButton', 'lightbulb'] as const).flatMap((mode) =>
+      moments.map(([moment, input]) => [mode, moment, input] as const),
+    ),
+  )('%s, %s', (mode, moment, input) => {
+    const [first, second] = expected[mode][moment] ?? ['', null];
+    for (const board of [MIRROR, MEMBER]) {
+      const layout = resolveActionBarLayout({ ...board, ...BESIDE, ...input, boardControl: mode });
+      expect(layout.primaryCenter).toBe(first);
+      expect(layout.secondaryRow).toEqual(second);
+      // The icon buttons live in the bar, and ⋯ still has every action.
+      expect([layout.leadingSlot, layout.trailingSlot, layout.showPreviousNext]).toEqual([null, null, false]);
+      expect(layout.hidden).toMatchObject({ tick: true, favorite: true, queue: true });
+    }
+  });
+
+  it('keeps a preview’s Set active where there is no wall, and nothing else', () => {
+    expect(resolveActionBarLayout({ ...MIRROR, ...BESIDE, hasWall: false }).primaryCenter).toBe('none');
+    expect(
+      resolveActionBarLayout({ ...MIRROR, ...BESIDE, hasWall: false, commitButton: 'putOnWall' }).primaryCenter,
+    ).toBe('wallControlFull');
+  });
+
+  it('leaves the phone’s bar alone', () => {
+    expect(resolveActionBarLayout(MIRROR).primaryCenter).toBe('tick');
+  });
+});
+
+// #7000 review: with no wall to light the wall button has nothing to say.
+describe('resolveActionBarLayout: no wall to light', () => {
+  it('folds the second row away, so the board gets its height', () => {
+    expect(resolveActionBarLayout({ ...MIRROR, hasWall: false }).secondaryRow).toEqual([]);
+  });
+
+  it('keeps the row for a preview, whose Set active is the way to commit it', () => {
+    expect(resolveActionBarLayout({ ...MIRROR, hasWall: false, commitButton: 'putOnWall' }).secondaryRow).toEqual([
+      'wallControl',
+    ]);
+  });
+
+  it('still gives the row to Fell / Sent', () => {
+    expect(resolveActionBarLayout({ ...MIRROR, hasWall: false, workoutOutcome: true }).secondaryRow).toBe(
+      'workoutOutcome',
+    );
+  });
+});
+
+describe('resolveActionBarLayout: the signed-out reader', () => {
+  // [⇄ or  ] [⏮] [✓] [⏭] [ ] / [40°] ··· [⬆]
+  it('keeps Angle and Share in the row, with no heart, queue, bulb or wall button, and flags nothing', () => {
+    expect(resolveActionBarLayout({ ...MEMBER, isAnonymous: true, commitButton: 'putOnWall' })).toEqual({
+      primaryCenter: 'tick',
       leadingSlot: null,
       trailingSlot: null,
       showPreviousNext: true,
       secondaryRow: ['angle', 'spacer', 'share'],
-      showConnectPill: false,
       hidden: NOTHING_HIDDEN,
     });
-    // No wall to take and no queue to commit into: neither latch control reaches them.
-    expect(resolveActionBarLayout({ ...MEMBER, isAnonymous: true, commitButton: 'confirm' }).secondaryRow).toEqual([
-      'angle',
-      'spacer',
-      'share',
-    ]);
     expect(resolveActionBarLayout({ ...MIRROR, isAnonymous: true }).leadingSlot).toBe('mirror');
-    expect(resolveActionBarLayout({ ...MIRROR, isAnonymous: true }).secondaryRow).toEqual(['angle', 'spacer', 'share']);
   });
 
-  // Today the angle pill renders nothing on a fixed-angle board but keeps its
-  // place left of the spacer, so share stays at the right end.
-  it('keeps every button on its side on a fixed-angle board', () => {
-    expect(resolveActionBarLayout({ ...MEMBER, angleAvailable: false }).secondaryRow).toEqual([
-      'favorite',
-      'spacer',
-      'share',
-    ]);
-    expect(resolveActionBarLayout({ ...MIRROR, angleAvailable: false }).secondaryRow).toEqual([
-      'favorite',
-      'spacer',
-      'share',
-      'queue',
-    ]);
-    expect(resolveActionBarLayout({ ...MEMBER, isAnonymous: true, angleAvailable: false }).secondaryRow).toEqual([
-      'spacer',
-      'share',
-    ]);
+  it('ignores the busy-wall question, Fell / Sent and the stored switches', () => {
+    const plain = resolveActionBarLayout({ ...MIRROR, isAnonymous: true });
+    expect(resolveActionBarLayout({ ...MIRROR, isAnonymous: true, commitButton: 'confirm' })).toEqual(plain);
+    expect(resolveActionBarLayout({ ...MIRROR, isAnonymous: true, workoutOutcome: true })).toEqual(plain);
+    expect(
+      resolveActionBarLayout({ ...MIRROR, isAnonymous: true, buttons: off('mirror'), previousNext: false }),
+    ).toEqual(plain);
   });
 
-  it('swaps share for the connect pill without mirror, and hands share to ⋯', () => {
-    expect(resolveActionBarLayout({ ...MEMBER, connectPill: true })).toEqual({
-      leadingSlot: 'queue',
-      trailingSlot: null,
-      showPreviousNext: true,
-      secondaryRow: ['favorite', 'angle', 'spacer', 'connectPill'],
-      showConnectPill: true,
-      hidden: { ...NOTHING_HIDDEN, share: true },
-    });
-  });
-
-  it('swaps share and the queue for the connect pill on a mirror board, and hands both to ⋯', () => {
-    const layout = resolveActionBarLayout({ ...MIRROR, connectPill: true });
-    expect(layout.secondaryRow).toEqual(['favorite', 'angle', 'spacer', 'connectPill']);
-    expect(layout.hidden).toEqual({ ...NOTHING_HIDDEN, share: true, queue: true });
-  });
-
-  // [☰] [⏮] [✓] [⏭] [💡] / [♡] · [Put on the wall] · [⬆]
-  it('keeps one button each side of Put on the wall while browsing, and hands the angle to ⋯', () => {
-    expect(resolveActionBarLayout({ ...MEMBER, commitButton: 'putOnWall' })).toEqual({
-      leadingSlot: 'queue',
-      trailingSlot: 'lightbulb',
-      showPreviousNext: true,
-      secondaryRow: ['favorite', 'spacer', 'putOnWall', 'spacer', 'share'],
-      showConnectPill: false,
-      hidden: { ...NOTHING_HIDDEN, angle: true },
-    });
-  });
-
-  // [⇄] [⏮] [✓] [⏭] [💡] / [♡] · [Put on the wall] · [☰]
-  it('keeps the heart and the rightmost queue beside Put on the wall on a mirror board, angle and share to ⋯', () => {
-    const layout = resolveActionBarLayout({ ...MIRROR, commitButton: 'putOnWall' });
-    expect(layout.leadingSlot).toBe('mirror');
-    expect(layout.secondaryRow).toEqual(['favorite', 'spacer', 'putOnWall', 'spacer', 'queue']);
-    expect(layout.hidden).toEqual({ ...NOTHING_HIDDEN, angle: true, share: true });
-  });
-
-  it('flags only what could have drawn: an undrawable angle or share is not handed to ⋯', () => {
-    const fixedAngle = resolveActionBarLayout({ ...MEMBER, commitButton: 'putOnWall', angleAvailable: false });
-    expect(fixedAngle.secondaryRow).toEqual(['favorite', 'spacer', 'putOnWall', 'spacer', 'share']);
-    expect(fixedAngle.hidden).toEqual(NOTHING_HIDDEN);
-
-    // A draft has no share, so the right side is empty and the angle still steps aside.
-    const draft = resolveActionBarLayout({ ...MEMBER, commitButton: 'putOnWall', hasShare: false });
-    expect(draft.secondaryRow).toEqual(['favorite', 'spacer', 'putOnWall', 'spacer']);
-    expect(draft.hidden).toEqual({ ...NOTHING_HIDDEN, angle: true });
-  });
-
-  // The first DRAWABLE button keeps the left place: an angle this board can't
-  // change doesn't hold it empty.
-  it('keeps the first drawable button on the left when an undrawable one leads', () => {
-    const angleFirst = buttons(['angle', 'favorite', 'share', 'mirror', 'queue']);
-    const layout = resolveActionBarLayout({
-      ...MEMBER,
-      buttons: angleFirst,
-      commitButton: 'putOnWall',
-      angleAvailable: false,
-    });
-    expect(layout.secondaryRow).toEqual(['favorite', 'spacer', 'putOnWall', 'spacer', 'share']);
-    expect(layout.hidden).toEqual(NOTHING_HIDDEN);
-    // Where it can draw, it keeps the place and the heart steps into ⋯.
-    const drawable = resolveActionBarLayout({ ...MEMBER, buttons: angleFirst, commitButton: 'putOnWall' });
-    expect(drawable.secondaryRow).toEqual(['angle', 'spacer', 'putOnWall', 'spacer', 'share']);
-    expect(drawable.hidden).toEqual({ ...NOTHING_HIDDEN, favorite: true });
-  });
-
-  it('gives the buttons back once Put on the wall goes', () => {
-    const browsing = resolveActionBarLayout({ ...MIRROR, commitButton: 'putOnWall' });
-    expect(browsing.hidden.angle).toBe(true);
-    const back = resolveActionBarLayout({ ...MIRROR, commitButton: null });
-    expect(back.secondaryRow).toEqual(['favorite', 'angle', 'spacer', 'share', 'queue']);
-    expect(back.hidden).toEqual(NOTHING_HIDDEN);
-  });
-
-  it('gives the whole second row to the busy-wall question, and hands its buttons to ⋯; the first-slot queue stays', () => {
-    expect(resolveActionBarLayout({ ...MEMBER, commitButton: 'confirm' })).toEqual({
-      leadingSlot: 'queue',
-      trailingSlot: 'lightbulb',
-      showPreviousNext: true,
-      secondaryRow: 'confirm',
-      showConnectPill: false,
-      hidden: { ...NOTHING_HIDDEN, favorite: true, share: true, angle: true },
-    });
-  });
-
-  it('hands the queue to ⋯ too under the busy-wall question on a mirror board', () => {
-    expect(resolveActionBarLayout({ ...MIRROR, commitButton: 'confirm' }).hidden).toEqual({
-      favorite: true,
-      share: true,
-      queue: true,
-      mirror: false,
-      angle: true,
-    });
-  });
-
-  it('lets either latch control win over the pill, which puts the bulb back in its slot', () => {
-    const browsing = resolveActionBarLayout({ ...MEMBER, connectPill: true, commitButton: 'putOnWall' });
-    expect(browsing.showConnectPill).toBe(false);
-    expect(browsing.trailingSlot).toBe('lightbulb');
-    // Share keeps its place: the pill would have taken it, Put on the wall doesn't.
-    expect(browsing.secondaryRow).toEqual(['favorite', 'spacer', 'putOnWall', 'spacer', 'share']);
-    expect(browsing.hidden.share).toBe(false);
-
-    const confirming = resolveActionBarLayout({ ...MEMBER, connectPill: true, commitButton: 'confirm' });
-    expect(confirming.showConnectPill).toBe(false);
-    expect(confirming.trailingSlot).toBe('lightbulb');
-    expect(confirming.secondaryRow).toBe('confirm');
-  });
-
-  it('never shows the pill or the bulb without Bluetooth', () => {
-    const layout = resolveActionBarLayout({ ...MEMBER, connectPill: true, showLightbulb: false });
-    expect(layout.showConnectPill).toBe(false);
-    expect(layout.trailingSlot).toBeNull();
-    expect(layout.secondaryRow).toEqual(['favorite', 'angle', 'spacer', 'share']);
-  });
-
-  // A draft has no share at all (#5960), so ⋯ must not invent one either. Its
-  // empty place keeps the angle pill on the left, where it sits on every climb.
-  it('neither draws nor hands on share for a climb that has none', () => {
-    expect(resolveActionBarLayout({ ...MEMBER, hasShare: false }).secondaryRow).toEqual([
-      'favorite',
-      'angle',
-      'spacer',
-    ]);
-    expect(resolveActionBarLayout({ ...MIRROR, hasShare: false }).secondaryRow).toEqual([
-      'favorite',
-      'angle',
-      'spacer',
-      'queue',
-    ]);
-    expect(resolveActionBarLayout({ ...MEMBER, hasShare: false, commitButton: 'confirm' }).hidden.share).toBe(false);
-    expect(resolveActionBarLayout({ ...MEMBER, hasShare: false, commitButton: 'putOnWall' }).hidden.share).toBe(false);
-    expect(resolveActionBarLayout({ ...MEMBER, hasShare: false, connectPill: true }).hidden.share).toBe(false);
-    const shareOff = buttons(PLAYER_ORDER, ['share']);
-    expect(resolveActionBarLayout({ ...MEMBER, hasShare: false, buttons: shareOff }).hidden.share).toBe(false);
-  });
-});
-
-describe('resolveActionBarLayout: the climber’s buttons', () => {
-  it('collapses the second row when every small button is off, and puts each in ⋯', () => {
-    expect(resolveActionBarLayout({ ...MIRROR, buttons: ALL_OFF })).toEqual({
-      leadingSlot: null,
-      trailingSlot: 'lightbulb',
-      showPreviousNext: true,
-      secondaryRow: [],
-      showConnectPill: false,
-      hidden: { favorite: true, share: true, queue: true, mirror: true, angle: true },
-    });
-    // Mirror and the angle are only flagged where this board has them.
-    expect(resolveActionBarLayout({ ...MEMBER, buttons: ALL_OFF, angleAvailable: false }).hidden).toEqual({
-      favorite: true,
-      share: true,
-      queue: true,
-      mirror: false,
-      angle: false,
-    });
-  });
-
-  it('brings the row back for Put on the wall, the busy-wall question and the connect pill', () => {
-    // Put on the wall alone, centred between the two gaps; every switched-off
-    // button stays in ⋯ where it already was.
-    const browsing = resolveActionBarLayout({ ...MIRROR, buttons: ALL_OFF, commitButton: 'putOnWall' });
-    expect(browsing.secondaryRow).toEqual(['spacer', 'putOnWall', 'spacer']);
-    expect(browsing.hidden).toEqual({ favorite: true, share: true, queue: true, mirror: true, angle: true });
-    expect(resolveActionBarLayout({ ...MEMBER, buttons: ALL_OFF, commitButton: 'confirm' }).secondaryRow).toBe(
-      'confirm',
-    );
-    expect(resolveActionBarLayout({ ...MEMBER, buttons: ALL_OFF, connectPill: true }).secondaryRow).toEqual([
-      'spacer',
-      'connectPill',
-    ]);
-  });
-
-  it('collapses the row when all that is left on is an angle this board cannot change', () => {
-    const angleOnly = buttons(PLAYER_ORDER, ['mirror', 'favorite', 'share', 'queue']);
-    expect(resolveActionBarLayout({ ...MEMBER, buttons: angleOnly, angleAvailable: false }).secondaryRow).toEqual([]);
-    expect(resolveActionBarLayout({ ...MEMBER, buttons: angleOnly }).secondaryRow).toEqual(['angle', 'spacer']);
-  });
-
-  // Share is the one button that comes and goes climb to climb. Collapsing for
-  // a draft would move the board 52 pt on the swipe there and back.
-  it('keeps an empty row for a switched-on Share on a draft, so the board does not jump', () => {
-    const shareOnly = buttons(PLAYER_ORDER, ['mirror', 'favorite', 'angle', 'queue']);
-    expect(resolveActionBarLayout({ ...MEMBER, buttons: shareOnly }).secondaryRow).toEqual(['share', 'spacer']);
-    expect(resolveActionBarLayout({ ...MEMBER, buttons: shareOnly, hasShare: false }).secondaryRow).toEqual(['spacer']);
-    expect(resolveActionBarLayout({ ...MEMBER, buttons: shareOnly, hasShare: false }).hidden.share).toBe(false);
-  });
-
-  // Tension: [☰] [⏮] [✓] [⏭] [💡] / [⇄] [♡] ··· [40°] [⬆]
-  it('turns the queue big on a mirror board when it comes before Mirror', () => {
-    const queueFirst = buttons(['queue', 'mirror', 'favorite', 'angle', 'share']);
-    expect(resolveActionBarLayout({ ...MIRROR, buttons: queueFirst })).toMatchObject({
-      leadingSlot: 'queue',
-      secondaryRow: ['mirror', 'favorite', 'spacer', 'angle', 'share'],
-      hidden: NOTHING_HIDDEN,
-    });
-  });
-
-  it('gives the big slot to the queue when Mirror is off, and Mirror to ⋯', () => {
-    const layout = resolveActionBarLayout({ ...MIRROR, buttons: buttons(PLAYER_ORDER, ['mirror']) });
-    expect(layout.leadingSlot).toBe('queue');
-    expect(layout.secondaryRow).toEqual(['favorite', 'angle', 'spacer', 'share']);
-    expect(layout.hidden).toEqual({ ...NOTHING_HIDDEN, mirror: true });
-  });
-
-  it('never gives the big slot to Mirror on a board that cannot mirror', () => {
-    const mirrorFirst = buttons(['mirror', 'share', 'favorite', 'angle', 'queue']);
-    const layout = resolveActionBarLayout({ ...MEMBER, buttons: mirrorFirst });
-    expect(layout.leadingSlot).toBe('queue');
-    expect(layout.secondaryRow).toEqual(['share', 'favorite', 'spacer', 'angle']);
-    expect(layout.hidden.mirror).toBe(false);
-  });
-
-  it('leaves the big slot empty with both Mirror and Queue off', () => {
-    const layout = resolveActionBarLayout({ ...MIRROR, buttons: buttons(PLAYER_ORDER, ['mirror', 'queue']) });
-    expect(layout.leadingSlot).toBeNull();
-    expect(layout.hidden).toMatchObject({ mirror: true, queue: true });
-  });
-
-  it('splits the small row in the climber’s order, the odd one out on the left', () => {
-    const order: PlayerButtonId[] = ['share', 'angle', 'favorite', 'mirror', 'queue'];
-    expect(resolveActionBarLayout({ ...MEMBER, buttons: buttons(order) }).secondaryRow).toEqual([
-      'share',
-      'angle',
-      'spacer',
-      'favorite',
-    ]);
-    expect(resolveActionBarLayout({ ...MIRROR, buttons: buttons(order) }).secondaryRow).toEqual([
-      'share',
-      'angle',
-      'spacer',
-      'favorite',
-      'queue',
-    ]);
-  });
-
-  it('hands a switched-off share to ⋯', () => {
-    const layout = resolveActionBarLayout({ ...MEMBER, buttons: buttons(PLAYER_ORDER, ['share']) });
-    expect(layout.secondaryRow).toEqual(['favorite', 'spacer', 'angle']);
-    expect(layout.hidden).toEqual({ ...NOTHING_HIDDEN, share: true });
-  });
-
-  it('empties both ⏮ ⏭ slots with Previous and next off', () => {
-    expect(resolveActionBarLayout({ ...MEMBER, previousNext: false }).showPreviousNext).toBe(false);
-  });
-
-  it('gives an anonymous reader today’s bar whatever is stored on the device', () => {
-    expect(resolveActionBarLayout({ ...MIRROR, isAnonymous: true, buttons: ALL_OFF, previousNext: false })).toEqual(
-      resolveActionBarLayout({ ...MIRROR, isAnonymous: true }),
-    );
-  });
-});
-
-describe('resolveActionBarLayout: a timed workout block’s Fell / Sent', () => {
-  const WORKOUT: ActionBarLayoutInput = { ...MEMBER, workoutOutcome: true };
-
-  // [☰] [⏮] [✓] [⏭] [💡] / [ Fell ] [ Sent ]
-  it('gives the whole small row to Fell / Sent and hands its buttons to ⋯; the first-slot queue stays', () => {
-    expect(resolveActionBarLayout(WORKOUT)).toEqual({
-      leadingSlot: 'queue',
-      trailingSlot: 'lightbulb',
-      showPreviousNext: true,
-      secondaryRow: 'workoutOutcome',
-      showConnectPill: false,
-      hidden: { ...NOTHING_HIDDEN, favorite: true, share: true, angle: true },
-    });
-  });
-
-  it('hands the queue to ⋯ too on a mirror board, and leaves Mirror in its big slot', () => {
-    const layout = resolveActionBarLayout({ ...MIRROR, workoutOutcome: true });
-    expect(layout.leadingSlot).toBe('mirror');
-    expect(layout.secondaryRow).toBe('workoutOutcome');
-    expect(layout.hidden).toEqual({ favorite: true, share: true, queue: true, mirror: false, angle: true });
-  });
-
-  it('gives way to the busy-wall question and to Put on the wall', () => {
-    expect(resolveActionBarLayout({ ...WORKOUT, commitButton: 'confirm' }).secondaryRow).toBe('confirm');
-    expect(resolveActionBarLayout({ ...WORKOUT, commitButton: 'putOnWall' }).secondaryRow).toEqual(
-      resolveActionBarLayout({ ...MEMBER, commitButton: 'putOnWall' }).secondaryRow,
-    );
-  });
-
-  it('wins over the connect pill, which puts the bulb back in its slot', () => {
-    const layout = resolveActionBarLayout({ ...WORKOUT, connectPill: true });
-    expect(layout.secondaryRow).toBe('workoutOutcome');
-    expect(layout.showConnectPill).toBe(false);
-    expect(layout.trailingSlot).toBe('lightbulb');
-  });
-
-  it('never reaches a signed-out reader', () => {
-    expect(resolveActionBarLayout({ ...WORKOUT, isAnonymous: true })).toEqual(
-      resolveActionBarLayout({ ...MEMBER, isAnonymous: true }),
-    );
-  });
-
-  // The row is a session state, not a button: it shows with every button off,
-  // and the buttons the climber switched off stay in ⋯.
-  it('brings the small row back with every button switched off', () => {
-    const layout = resolveActionBarLayout({ ...MIRROR, buttons: ALL_OFF, workoutOutcome: true });
-    expect(layout.secondaryRow).toBe('workoutOutcome');
-    expect(layout.hidden).toEqual({ favorite: true, share: true, queue: true, mirror: true, angle: true });
-  });
-
-  it('flags only what could have drawn here', () => {
-    const draftOnFixedAngle = resolveActionBarLayout({ ...WORKOUT, hasShare: false, angleAvailable: false });
-    expect(draftOnFixedAngle.hidden).toEqual({ ...NOTHING_HIDDEN, favorite: true });
-  });
-
-  it('gives the buttons back once the block is over', () => {
-    expect(resolveActionBarLayout({ ...WORKOUT, workoutOutcome: false })).toEqual(resolveActionBarLayout(MEMBER));
+  it('drops what a draft or a fixed-angle board cannot draw', () => {
+    expect(
+      resolveActionBarLayout({ ...MEMBER, isAnonymous: true, hasShare: false, angleAvailable: false }).secondaryRow,
+    ).toEqual(['spacer']);
   });
 });

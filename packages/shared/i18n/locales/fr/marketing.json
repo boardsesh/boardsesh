@@ -550,14 +550,14 @@
       },
       "wall": {
         "title": "Qui allume le mur",
-        "p1": "Une board prend une connexion Bluetooth à la fois. Sur tous les autres téléphones, ouvre l'aperçu d'un bloc et touche l'ampoule, et le téléphone connecté l'allume pour toi.",
-        "p2": "Sur un mur sans lumières, l'ampoule dit Prendre le mur.",
+        "p1": "Une board prend une connexion Bluetooth à la fois. Sur tous les autres téléphones, ouvre l'aperçu d'un bloc et touche Allumer au mur, et le téléphone connecté l'allume pour toi.",
+        "p2": "Sur un mur sans lumières, le bouton sous la board dit Prendre le mur.",
         "bluetoothLink": "Se connecter à une board"
       },
       "crowd": {
         "title": "Explorer sans bouger le mur",
-        "p1": "Avec quelqu'un d'autre dans ta session, faire défiler n'allume plus la board. Touche Allumer au mur quand tu veux le tien, ou touche l'avatar en haut pour revenir au bloc au mur.",
-        "p2": "Tu grimpes seul ? Garde l'ampoule appuyée et désactive Allumer la board quand je touche un bloc et Allumer la board quand je fais défiler.",
+        "p1": "Avec quelqu'un d'autre dans ta session, faire défiler n'allume plus la board. Touche Allumer au mur quand tu veux le tien, ou touche Au mur en haut pour revenir au bloc au mur.",
+        "p2": "Tu grimpes seul ? Dans Paramètres, puis Board, désactive Allumer la board quand je touche un bloc et Allumer la board quand je fais défiler.",
         "previewLink": "Voir un bloc depuis n'importe quelle liste"
       },
       "history": {
@@ -686,29 +686,28 @@
       "breadcrumb": "Board et Bluetooth",
       "hero": {
         "title": "Connecte ton téléphone à la board",
-        "subtitle": "Touche l'ampoule, choisis ta board, et ton bloc s'allume."
+        "subtitle": "Touche Connecter la board, choisis ta board, et ton bloc s'allume."
       },
       "connect": {
         "title": "Se connecter",
-        "p1": "Touche l'ampoule dans le lecteur ou dans la barre du haut, puis touche ta board dans Sélectionner une board. La liste met le signal le plus fort en premier, chaque ligne avec son numéro de série.",
+        "p1": "Dans un bloc, touche Connecter la board sous la board, ou touche l'ampoule dans la barre du haut. Puis touche ta board dans Sélectionner une board. La liste met le signal le plus fort en premier, chaque ligne avec son numéro de série.",
         "p2": "La première fois, iOS demande le Bluetooth. Android demande les appareils à proximité, ou la localisation sur Android 11 et antérieur.",
         "shotAlt": "La fiche Sélectionner une board",
         "shotCaption": "Signal le plus fort en premier, avec les numéros de série.",
         "litShotAlt": "Un bloc allumé",
-        "litShotCaption": "Une ampoule pleine veut dire que le mur est allumé.",
-        "p3": "Sur un autre mur ? Changer de board est la première ligne derrière ton avatar."
+        "litShotCaption": "Un bloc allumé sur la board.",
+        "p3": "Sur un autre mur ? Changer de board est la première ligne derrière ton avatar.",
+        "p4": "Tu préfères l’ampoule ? Dans un bloc, touche ⋯, puis Options d’affichage, Boutons, et mets Commande de la board sur Ampoule. L’ampoule prend le bout droit de la rangée du haut à la place du bouton du mur, et une touche ou un appui long fait la même chose."
       },
       "hidden": {
-        "title": "Garde l'ampoule appuyée",
-        "p1": "Une fois connecté, garde l'ampoule appuyée pour ces réglages, de haut en bas.",
-        "row1": "Déconnexion automatique. Libère la board après 30 secondes d'inactivité. Change le délai dans Paramètres, puis Board.",
-        "row2": "Allumer la prise du dessus. MoonBoard uniquement.",
-        "row3": "Allumer la board quand je touche un bloc.",
-        "row4": "Allumer la board quand je fais défiler, une fois un bloc au mur. Désactive les deux et explorer ne change plus le mur.",
-        "row5": "Rallumer la board. Renvoie le bloc aux LED.",
-        "row6": "Tout éteindre. Ton téléphone reste connecté.",
-        "row7": "Déconnecter la board. Sers-t'en quand tu t'es connecté au mauvais mur.",
-        "p2": "Une touche courte reconnecte à la dernière board utilisée."
+        "title": "Commandes de la board",
+        "p1": "Une fois connecté, garde appuyé le bouton sous la board. Quand il affiche Tu as la board, une touche brève la déconnecte. Dans un bloc, ⋯ puis Commandes de la board les ouvre aussi, tout comme garder l'ampoule de la barre du haut appuyée.",
+        "row1": "Rallumer la board. Renvoie le bloc aux LED.",
+        "row2": "Tout éteindre. Ton téléphone reste connecté.",
+        "row3": "Déconnecter la board. Sers-t'en quand tu t'es connecté au mauvais mur.",
+        "row4": "Allumer la prise du dessus. MoonBoard uniquement.",
+        "p2": "Déconnexion automatique, Allumer la board quand je touche un bloc et Allumer la board quand je fais défiler sont dans Paramètres, puis Board, et dans le menu qu'ouvre l'ampoule de la barre du haut. La déconnexion automatique libère la board après 30 secondes d'inactivité. Désactive les deux réglages d'allumage et explorer ne change plus le mur.",
+        "p3": "Sans board connectée, Connecter la board, ou une touche courte sur l'ampoule de la barre du haut, connecte à la dernière board utilisée."
       },
       "failed": {
         "title": "Quand ça ne se connecte pas",
@@ -727,13 +726,13 @@
       },
       "duplicate": {
         "title": "La même board deux fois dans la liste",
-        "p1": "Deux lignes avec des numéros de série différents, ce sont deux contrôleurs. Une ligne qui affiche seulement Kilter Board, sans numéro de série, est un boîtier LED récent fait par le fabricant. Deux de ces boîtiers dans la même salle apparaissent sur deux lignes. Celle qui a le plus de barres de signal est en général le mur devant toi. Si le mauvais mur s'allume, garde l'ampoule appuyée, touche Déconnecter la board et réessaie.",
+        "p1": "Deux lignes avec des numéros de série différents, ce sont deux contrôleurs. Une ligne qui affiche seulement Kilter Board, sans numéro de série, est un boîtier LED récent fait par le fabricant. Deux de ces boîtiers dans la même salle apparaissent sur deux lignes. Celle qui a le plus de barres de signal est en général le mur devant toi. Si le mauvais mur s'allume, ouvre Commandes de la board, touche Déconnecter la board et réessaie.",
         "p2": "Il n'y a pas de liste d'appareils à oublier. L'app ne retient que ta dernière board.",
         "p3": "Une board affichée deux fois sous Tes boards, c'est autre chose. Touche Modifier à côté de Tes boards, puis Supprimer ou Se désabonner."
       },
       "control": {
         "title": "Quand quelqu'un d'autre a la board",
-        "p1": "En session, un seul téléphone tient la board. Sur les autres, ouvre l'aperçu d'un bloc et touche l'ampoule, et le téléphone qui la tient l'allume.",
+        "p1": "En session, un seul téléphone tient la board. Sur les autres, ouvre l'aperçu d'un bloc et touche Allumer au mur, et le téléphone qui la tient l'allume.",
         "p2": "Sur les murs sans lumières, le bouton affiche Prendre le mur.",
         "sessionsLink": "Plus sur le partage d'un mur"
       },
@@ -769,10 +768,10 @@
         "title": "Voir un bloc sans allumer la board",
         "intro": "Aperçu est le premier élément de la liste.",
         "p1": "Ça ouvre le bloc dans le lecteur sans toucher à ta file. Ton glissement suivant te ramène à ta file.",
-        "p2": "En session, ou avec Allumer la board quand je fais défiler désactivé, une étiquette Exploration apparaît. La ligne sous le nom indique Toi seul le vois en session, ou Aperçu, pas allumé quand une board est connectée ou un bloc allumé. Touche Activer ou Allumer au mur quand tu veux le bloc.",
+        "p2": "En session, ou avec Allumer la board quand je fais défiler désactivé, un bouton en haut te ramène : Mon choix pour ton bloc, Au mur pour le bloc allumé. La ligne sous le nom indique Toi seul le vois en session, ou Aperçu, pas allumé quand une board est connectée ou un bloc allumé. Touche Allumer au mur (ou Activer) sous la board quand tu veux le bloc.",
         "sessionsLink": "Comment une session garde le mur tranquille",
-        "clipAlt": "L'étiquette Exploration",
-        "clipCaption": "L'étiquette arrive après le glissement. Le mur ne bouge pas."
+        "clipAlt": "Le bouton Mon choix",
+        "clipCaption": "Le bouton arrive après le glissement. Le mur ne bouge pas."
       },
       "quick": {
         "title": "Les trois boutons du haut",

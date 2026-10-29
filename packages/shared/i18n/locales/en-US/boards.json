@@ -121,7 +121,6 @@
         "failed": "Not connected to {{board}} yet. Try again when you're ready.",
         "failedNoName": "Not connected to your board yet. Try again when you're ready."
       },
-      "pill": "Light it on the board",
       "confirm": {
         "title": "Connected to {{board}}",
         "titleNoName": "Connected to your board",

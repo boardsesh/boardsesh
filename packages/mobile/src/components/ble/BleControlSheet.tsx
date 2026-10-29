@@ -29,6 +29,12 @@ type BleControlSheetProps = {
   onToggleLightOnSwipe: (enabled: boolean) => void;
   lightOnClimbTap: boolean;
   onToggleLightOnClimbTap: (enabled: boolean) => void;
+  /**
+   * Auto-disconnect and the two lighting switches. The player's own sheet
+   * (#7000) leaves them to Settings › Board, where they also live, so
+   * the sheet is just the board's actions. Today's bar keeps them.
+   */
+  showLightingSwitches?: boolean;
   onClose: () => void;
 };
 
@@ -50,6 +56,7 @@ function BleControlSheet({
   onToggleLightOnSwipe,
   lightOnClimbTap,
   onToggleLightOnClimbTap,
+  showLightingSwitches = true,
   onClose,
 }: BleControlSheetProps) {
   const { t: tSettings } = useTranslation('settings');
@@ -79,13 +86,15 @@ function BleControlSheet({
         {/* The app's native SwitchRow (SwiftUI Toggle / Compose Switch) instead of
             raw RN Switches, which render system green on iOS: HIG Color asks for
             one tint across every control. */}
-        <SwitchRow
-          label={tSettings('ble.autoDisconnect.toggleTitle')}
-          description={tSettings('ble.autoDisconnect.toggleSubtitle', { timeout: autoDisconnectTimeoutLabel })}
-          wrapDescription
-          value={autoDisconnectEnabled}
-          onValueChange={onToggleAutoDisconnect}
-        />
+        {showLightingSwitches && (
+          <SwitchRow
+            label={tSettings('ble.autoDisconnect.toggleTitle')}
+            description={tSettings('ble.autoDisconnect.toggleSubtitle', { timeout: autoDisconnectTimeoutLabel })}
+            wrapDescription
+            value={autoDisconnectEnabled}
+            onValueChange={onToggleAutoDisconnect}
+          />
+        )}
         {showLightAdjacentHolds && (
           <SwitchRow
             label={tCommon('lightControl.lightAdjacentHolds')}
@@ -95,24 +104,28 @@ function BleControlSheet({
             onValueChange={onToggleLightAdjacentHolds}
           />
         )}
-        <SwitchRow
-          label={tSettings('ble.lighting.onTapLabel')}
-          description={tSettings('ble.lighting.onTapDescription')}
-          wrapDescription
-          value={lightOnClimbTap}
-          onValueChange={onToggleLightOnClimbTap}
-        />
+        {showLightingSwitches && (
+          <SwitchRow
+            label={tSettings('ble.lighting.onTapLabel')}
+            description={tSettings('ble.lighting.onTapDescription')}
+            wrapDescription
+            value={lightOnClimbTap}
+            onValueChange={onToggleLightOnClimbTap}
+          />
+        )}
         {/* Under the tap switch, the same pair and order as Settings › Board:
             swiping only lights the board once a climb is on the wall, and its
             description says so. Not indented, so both toggles stay aligned. */}
-        <SwitchRow
-          label={tSettings('ble.lighting.onSwipeLabel')}
-          description={tSettings('ble.lighting.onSwipeDescription')}
-          wrapDescription
-          value={lightOnSwipe}
-          onValueChange={onToggleLightOnSwipe}
-        />
-        <Separator />
+        {showLightingSwitches && (
+          <SwitchRow
+            label={tSettings('ble.lighting.onSwipeLabel')}
+            description={tSettings('ble.lighting.onSwipeDescription')}
+            wrapDescription
+            value={lightOnSwipe}
+            onValueChange={onToggleLightOnSwipe}
+          />
+        )}
+        {showLightingSwitches || showLightAdjacentHolds ? <Separator /> : null}
         <ListRow
           title={tSettings('ble.relightBoard')}
           leading={<Icon name="lightbulb.fill" size={22} color={brandColors.warning} />}

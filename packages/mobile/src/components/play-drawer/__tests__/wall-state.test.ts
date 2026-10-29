@@ -36,6 +36,8 @@ const pillBase: WallPillStateInput = {
   browseLatchActive: false,
   navigationCommits: false,
   wallDriven: false,
+  currentDark: false,
+  otherBoard: false,
 };
 
 /** Signed-in climber on their own head, no preview pinned, nothing armed. */
@@ -60,16 +62,66 @@ describe('resolveWallPillState', () => {
       null,
     ],
     // Rung 2 — displayed equals lit.
-    ['displayed climb is the lit one', { displayedClimbUuid: WALL_CLIMB, wallClimbUuid: WALL_CLIMB }, 'onWall'],
     [
-      'browsed back onto the lit climb mid-latch — on-wall outranks browsing',
-      { displayedClimbUuid: WALL_CLIMB, wallClimbUuid: WALL_CLIMB, browseLatchActive: true },
+      'displayed climb is the lit one',
+      { displayedClimbUuid: WALL_CLIMB, wallClimbUuid: WALL_CLIMB, wallDriven: true },
       'onWall',
     ],
     [
+      'browsed back onto the lit climb mid-latch — on-wall outranks browsing',
+      { displayedClimbUuid: WALL_CLIMB, wallClimbUuid: WALL_CLIMB, browseLatchActive: true, wallDriven: true },
+      'onWall',
+    ],
+    // #7000 QA: presence names a climb lit hours ago and no link drives the
+    // wall, so nobody can vouch for the LEDs.
+    [
+      'presence names the climb but no link drives the wall',
+      { displayedClimbUuid: WALL_CLIMB, wallClimbUuid: WALL_CLIMB },
+      null,
+    ],
+    [
       'a lit wall showing a different climb is not on-wall',
-      { displayedClimbUuid: MY_CLIMB, wallClimbUuid: THEIR_CLIMB, navigationCommits: true },
+      { displayedClimbUuid: MY_CLIMB, wallClimbUuid: THEIR_CLIMB, navigationCommits: true, wallDriven: true },
       'live',
+    ],
+    // Rung 2 (#7000) — a dark current climb claims nothing, whatever presence says.
+    [
+      'the 4 h hold keeps the climb dark while presence still names it',
+      {
+        displayedClimbUuid: MY_CLIMB,
+        wallClimbUuid: MY_CLIMB,
+        navigationCommits: true,
+        wallDriven: true,
+        currentDark: true,
+      },
+      null,
+    ],
+    [
+      'the 4 h hold keeps the climb dark and presence names nothing',
+      { navigationCommits: true, wallDriven: true, currentDark: true },
+      null,
+    ],
+    [
+      'lights turned off while the wall still names the climb',
+      { displayedClimbUuid: WALL_CLIMB, wallClimbUuid: WALL_CLIMB, wallDriven: true, currentDark: true },
+      null,
+    ],
+    [
+      'a climb for another board the wall still names',
+      { displayedClimbUuid: WALL_CLIMB, wallClimbUuid: WALL_CLIMB, wallDriven: true, otherBoard: true },
+      null,
+    ],
+    [
+      'a climb for another board on a driven wall is not Live',
+      { navigationCommits: true, wallDriven: true, otherBoard: true },
+      null,
+    ],
+    // A latch over a dark climb still says browsing, so the browse announcement fires.
+    ['browse latch up over a dark current climb', { browseLatchActive: true, currentDark: true }, 'browsing'],
+    [
+      'a dark climb presence names as lit beats the latch',
+      { displayedClimbUuid: WALL_CLIMB, wallClimbUuid: WALL_CLIMB, browseLatchActive: true, currentDark: true },
+      null,
     ],
     // Rung 3 — the latch.
     ['browse latch up with no wall known', { browseLatchActive: true }, 'browsing'],
@@ -78,12 +130,13 @@ describe('resolveWallPillState', () => {
       { browseLatchActive: true, navigationCommits: true, wallDriven: true },
       'browsing',
     ],
-    // Rung 4 — live needs stakes, and either one is enough.
+    // Rung 4 — live needs a wall someone is driving.
     ['committing navigation over a wall someone is driving', { navigationCommits: true, wallDriven: true }, 'live'],
+    // With no link the next swipe lights nothing (#7000): a known lit climb is not enough.
     [
       'committing navigation with a known lit climb but no link of our own',
       { navigationCommits: true, wallClimbUuid: THEIR_CLIMB },
-      'live',
+      null,
     ],
     // Rung 5 — no stakes, so the leading slot stays empty exactly as today.
     ['plain solo: nothing lit, no session, no link', {}, null],
@@ -106,7 +159,7 @@ describe('resolveWallPillState', () => {
 
   it('suppresses the pill for the anonymous viewer in every state that would otherwise light it', () => {
     const wouldLightThePill: Array<Partial<WallPillStateInput>> = [
-      { displayedClimbUuid: WALL_CLIMB, wallClimbUuid: WALL_CLIMB },
+      { displayedClimbUuid: WALL_CLIMB, wallClimbUuid: WALL_CLIMB, wallDriven: true },
       { browseLatchActive: true },
       { navigationCommits: true, wallDriven: true },
     ];
@@ -118,13 +171,11 @@ describe('resolveWallPillState', () => {
 });
 
 describe('shouldShowHolderBadge', () => {
-  // The same-face-never-twice contract: the pill owns the driver's avatar in the
-  // on-wall state and on the back chip that goes to the wall, so the lightbulb's
-  // holder pip stands down for exactly those two and comes back for the rest. A
-  // back chip to the climber's own climb wears no face, so the pip stays.
+  // The same-face-never-twice contract: the back chip that goes to the wall
+  // wears the driver's avatar, so the bulb's holder pip stands down for it and
+  // comes back for the rest. A back chip to the climber's own climb wears no
+  // face, so the pip stays.
   it.each([
-    ['on the wall', { state: 'onWall', backTarget: null }, false],
-    ['live', { state: 'live', backTarget: null }, true],
     ['back chip to the wall', { state: 'browsing', backTarget: 'wall' }, false],
     ['back chip to the climber’s own climb', { state: 'browsing', backTarget: 'current' }, true],
     ['no chip', null, true],
@@ -135,7 +186,6 @@ describe('shouldShowHolderBadge', () => {
 
 /** Signed-in climber, a preview pinned over their own head, nothing lit. */
 const headerBase: HeaderPillInput = {
-  wallPillState: null,
   previewPinned: true,
   isAnonymous: false,
   displayedClimbUuid: THEIR_CLIMB,
@@ -172,120 +222,79 @@ describe('canLeavePreview', () => {
   });
 });
 
+// #7000: the header carries the back chip and nothing else. The wall button
+// says whether the climb on screen is lit, so there is no On the wall or Live.
 describe('resolveHeaderPillState', () => {
   const cases: Array<[string, Partial<HeaderPillInput>, HeaderPill]> = [
-    // The read-only viewer never gets wall chrome.
-    [
-      'anonymous viewer on the lit climb',
-      { isAnonymous: true, wallPillState: 'onWall', displayedClimbUuid: WALL_CLIMB, wallClimbUuid: WALL_CLIMB },
-      null,
-    ],
-    ['anonymous viewer mid-preview', { isAnonymous: true, wallPillState: 'browsing' }, null],
-    // On the wall stays: its chip opens the explainer, it isn't a way back.
-    [
-      'on the wall, even with a preview pinned',
-      { wallPillState: 'onWall', displayedClimbUuid: WALL_CLIMB, wallClimbUuid: WALL_CLIMB },
-      { state: 'onWall', backTarget: null },
-    ],
-    [
-      'on the wall, no preview pinned',
-      { wallPillState: 'onWall', previewPinned: false, displayedClimbUuid: WALL_CLIMB, wallClimbUuid: WALL_CLIMB },
-      { state: 'onWall', backTarget: null },
-    ],
-    // A crew latch: back lands on the head, which is what's lit.
-    [
-      'crew latch, wall shows the committed climb',
-      { wallPillState: 'browsing', wallClimbUuid: MY_CLIMB },
-      { state: 'browsing', backTarget: 'wall' },
-    ],
+    ['anonymous viewer mid-preview', { isAnonymous: true }, null],
+    // Back lands on the committed climb, which is what's lit.
+    ['wall shows the committed climb', { wallClimbUuid: MY_CLIMB }, { state: 'browsing', backTarget: 'wall' }],
     // Back lands on the climber's own climb; the wall shows something else.
+    ['wall shows a third climb', { wallClimbUuid: WALL_CLIMB }, { state: 'browsing', backTarget: 'current' }],
+    ['wall dark', { wallClimbUuid: null }, { state: 'browsing', backTarget: 'current' }],
+    // Previewing the lit climb from elsewhere: the way back stays.
     [
-      'crew latch, wall shows a third climb',
-      { wallPillState: 'browsing', wallClimbUuid: WALL_CLIMB },
-      { state: 'browsing', backTarget: 'current' },
-    ],
-    [
-      'crew latch, wall dark',
-      { wallPillState: 'browsing', wallClimbUuid: null },
+      'previewing the lit climb',
+      { displayedClimbUuid: WALL_CLIMB, wallClimbUuid: WALL_CLIMB },
       { state: 'browsing', backTarget: 'current' },
     ],
     // Nowhere to go back to: the sheet empties, so no chip and ⌄ closes.
-    ['crew latch with no committed climb, in the sheet', { wallPillState: 'browsing', committedHeadUuid: null }, null],
+    ['no committed climb, in the sheet', { committedHeadUuid: null }, null],
     [
-      'crew latch with no committed climb, in the iPad pane',
-      { wallPillState: 'browsing', committedHeadUuid: null, wallClimbUuid: WALL_CLIMB, isPane: true },
+      'no committed climb, in the iPad pane',
+      { committedHeadUuid: null, wallClimbUuid: WALL_CLIMB, isPane: true },
       { state: 'browsing', backTarget: 'current' },
     ],
     // A two-unknowns wall never reads as "back to the wall".
     [
       'iPad pane, no committed climb and a dark wall',
-      { wallPillState: 'browsing', committedHeadUuid: null, wallClimbUuid: null, isPane: true },
+      { committedHeadUuid: null, wallClimbUuid: null, isPane: true },
       { state: 'browsing', backTarget: 'current' },
     ],
-    // A solo preview with lighting on: Live used to stand here and the way back
-    // sat in the second row. The back chip takes both jobs now.
+    // Displayed is the head, or no preview: back goes nowhere, and nothing else is drawn.
+    ['preview on the committed climb', { displayedClimbUuid: MY_CLIMB }, null],
     [
-      'solo preview with lighting on (live) and a committed climb',
-      { wallPillState: 'live', wallClimbUuid: MY_CLIMB },
-      { state: 'browsing', backTarget: 'wall' },
+      'no preview, on the lit climb',
+      { previewPinned: false, displayedClimbUuid: MY_CLIMB, wallClimbUuid: MY_CLIMB },
+      null,
     ],
-    [
-      'solo preview with lighting on (live), wall elsewhere',
-      { wallPillState: 'live', wallClimbUuid: WALL_CLIMB },
-      { state: 'browsing', backTarget: 'current' },
-    ],
-    // A plain preview with no stakes had no chip at all; now back has one.
-    [
-      'solo preview with no stakes (no pill) and a committed climb',
-      { wallPillState: null },
-      { state: 'browsing', backTarget: 'current' },
-    ],
-    // Displayed is the head: back goes nowhere, so the pill underneath stands.
-    ['preview on the committed climb, no pill', { wallPillState: null, displayedClimbUuid: MY_CLIMB }, null],
-    [
-      'preview on the committed climb, live',
-      { wallPillState: 'live', displayedClimbUuid: MY_CLIMB },
-      { state: 'live', backTarget: null },
-    ],
-    ['preview on the committed climb, latched', { wallPillState: 'browsing', displayedClimbUuid: MY_CLIMB }, null],
-    // No preview: Live and nothing pass straight through.
-    [
-      'no preview, live',
-      { wallPillState: 'live', previewPinned: false, displayedClimbUuid: MY_CLIMB },
-      { state: 'live', backTarget: null },
-    ],
-    ['no preview, no pill', { wallPillState: null, previewPinned: false, displayedClimbUuid: MY_CLIMB }, null],
   ];
 
   it.each(cases)('%s → %j', (_scenario, overrides, expected) => {
     expect(resolveHeaderPillState({ ...headerBase, ...overrides })).toEqual(expected);
   });
 
-  // The chip and the explainer's Back to live share one rule: the chip is a way
-  // back exactly when `canLeavePreview` says back lands somewhere.
-  it('draws the back chip exactly when canLeavePreview holds (outside On the wall)', () => {
-    const pillStates: WallPillState[] = ['live', 'browsing', null];
-    const heads: Array<string | null> = [MY_CLIMB, null];
-    const displayed: Array<string | null> = [MY_CLIMB, THEIR_CLIMB, null];
-    for (const wallPillState of pillStates) {
-      for (const committedHeadUuid of heads) {
-        for (const displayedClimbUuid of displayed) {
+  // The chip and the explainer's Back to live used to share one rule; now the
+  // chip is the only way back, and it shows exactly when back lands somewhere.
+  // Over every combination, nothing but the back chip is ever drawn.
+  it('draws the back chip exactly when canLeavePreview holds, and nothing else, over every combination', () => {
+    const climbs: Array<string | null> = [MY_CLIMB, WALL_CLIMB, THEIR_CLIMB, null];
+    let combinations = 0;
+    for (const committedHeadUuid of climbs) {
+      for (const displayedClimbUuid of climbs) {
+        for (const wallClimbUuid of climbs) {
           for (const previewPinned of [true, false]) {
             for (const isPane of [true, false]) {
-              const input: HeaderPillInput = {
-                ...headerBase,
-                wallPillState,
-                committedHeadUuid,
-                displayedClimbUuid,
-                previewPinned,
-                isPane,
-              };
-              expect(resolveHeaderPillState(input)?.state === 'browsing').toBe(canLeavePreview(input));
+              for (const isAnonymous of [true, false]) {
+                const input: HeaderPillInput = {
+                  committedHeadUuid,
+                  displayedClimbUuid,
+                  wallClimbUuid,
+                  previewPinned,
+                  isPane,
+                  isAnonymous,
+                };
+                const pill = resolveHeaderPillState(input);
+                combinations += 1;
+                expect(pill === null || pill.state === 'browsing').toBe(true);
+                expect(pill !== null).toBe(canLeavePreview(input));
+              }
             }
           }
         }
       }
     }
+    expect(combinations).toBe(512);
   });
 });
 
@@ -402,13 +411,15 @@ describe('resolveCommitBarModel', () => {
 describe('resolveCommitBarModel with no board connected', () => {
   const disconnected = { ...commitBase, tapConnects: true };
 
-  it('offers Put on the wall on your own current climb, and the tap connects', () => {
+  // #7000: the wall button's Connect board lights your own climb, so there is
+  // no Put on the wall for it.
+  it('offers nothing to commit on your own current climb', () => {
     expect(resolveCommitBarModel(disconnected)).toEqual({
       mode: 'actions',
-      showPutOnWall: true,
+      showPutOnWall: false,
       showConfirm: false,
       commitLabel: 'putOnWall',
-      connectsOnCommit: true,
+      connectsOnCommit: false,
     });
   });
 
@@ -422,10 +433,14 @@ describe('resolveCommitBarModel with no board connected', () => {
     });
   });
 
-  it('hides it when the climb on screen is already the lit one', () => {
-    // A board keeps its last climb lit after the phone lets go of it.
-    const model = resolveCommitBarModel({ ...disconnected, wallClimbUuid: MY_CLIMB });
-    expect(model.showPutOnWall).toBe(false);
+  it('offers a preview of the climb presence names as lit (#7000): with no link nobody can see the LEDs', () => {
+    const model = resolveCommitBarModel({
+      ...disconnected,
+      previewPinned: true,
+      displayedClimbUuid: THEIR_CLIMB,
+      wallClimbUuid: THEIR_CLIMB,
+    });
+    expect(model.showPutOnWall).toBe(true);
   });
 
   it.each([
@@ -468,27 +483,17 @@ describe('resolveCommitButton', () => {
     ...overrides,
   });
 
+  // Put on the wall (a wall button state) for previews and crew browsing only;
+  // on your own climb, dark or with no board, the wall button lights it.
   it.each([
-    ['nothing to commit', model({}), false, false, null],
-    ['the busy-wall question wins', model({ mode: 'commit', showConfirm: true }), false, false, 'confirm'],
-    ['a preview’s Put on the wall', model({ mode: 'commit', showPutOnWall: true }), false, false, 'putOnWall'],
-    ['no board connected, current climb', model({ showPutOnWall: true }), false, false, 'putOnWall'],
-    // #6939 review: a timed block's one-tap Fell / Sent keeps its row.
-    ['no board connected, in a timed block', model({ showPutOnWall: true }), true, false, null],
-    [
-      'a preview still commits during a timed block',
-      model({ mode: 'commit', showPutOnWall: true }),
-      true,
-      false,
-      'putOnWall',
-    ],
-    ['#4979: the held climb re-lights', model({}), false, true, 'putOnWall'],
-  ] as Array<[string, CommitBarModel, boolean, boolean, string | null]>)(
-    '%s',
-    (_scenario, commitModel, workoutOutcome, heldClimbOnScreen, expected) => {
-      expect(resolveCommitButton({ model: commitModel, workoutOutcome, heldClimbOnScreen })).toBe(expected);
-    },
-  );
+    ['nothing to commit', model({}), null],
+    ['the busy-wall question wins', model({ mode: 'commit', showConfirm: true }), 'confirm'],
+    ['a preview’s Put on the wall', model({ mode: 'commit', showPutOnWall: true }), 'putOnWall'],
+    ['previewing the lit climb: nothing to put up', model({ mode: 'commit', showPutOnWall: false }), null],
+    ['an actions-mode model never offers it', model({ showPutOnWall: true }), null],
+  ] as Array<[string, CommitBarModel, string | null]>)('%s', (_scenario, commitModel, expected) => {
+    expect(resolveCommitButton(commitModel)).toBe(expected);
+  });
 });
 
 describe('shouldArmBusyWallConfirm', () => {

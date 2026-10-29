@@ -531,7 +531,6 @@
       "close": "Schließen",
       "setByLine": "Gebaut von {{setter}}",
       "drivenByA11y": "{{name}} beleuchtet die Wand. Profil öffnen.",
-      "drivenByAnonA11y": "Jemand beleuchtet die Wand.",
       "litAgoNow": "jetzt",
       "litAgoMinutes": "{{count}} Min.",
       "litAgoHours": "{{count}} Std.",
@@ -898,14 +897,9 @@
   "playView": {
     "wallState": {
       "onWall": "An der Wand",
-      "live": "Live",
-      "onWallHint": "Dieser Boulder ist gerade am Board beleuchtet.",
-      "liveHint": "Dein nächster Boulder wird direkt am Board beleuchtet.",
       "browsingHint": "Du schaust dich nur um. Die Wand bleibt, wie sie ist.",
-      "pillHint": "Wand-Optionen anzeigen",
-      "backToLive": "Zurück zu live",
       "backToWall": "Zurück zum Boulder an der Wand",
-      "backToCurrent": "Zurück zu deinem Boulder",
+      "backToCurrent": "Zurück zu meiner Wahl",
       "putOnWall": "Am Board beleuchten",
       "lastOnWallTime": "Zuletzt um {{time}} am Board beleuchtet",
       "lastOnWallYesterday": "Zuletzt gestern am Board beleuchtet",
@@ -913,7 +907,6 @@
       "lastOnWallDate": "Zuletzt am {{date}} am Board beleuchtet",
       "joinedBrowseNotice": "Du stöberst. Die Wand bleibt unverändert, bis du einen Boulder am Board beleuchtest.",
       "previewNotLit": "Vorschau, nicht beleuchtet",
-      "notOnWall": "Nicht an der Wand",
       "onlyYouSeeThis": "Nur du siehst das",
       "onlyYouSeeThisWallOn": "Nur du siehst das · an der Wand: {{name}}",
       "commitOverride": {
@@ -927,12 +920,33 @@
         "browseAnnounce": "Stöbern. Die Wand bleibt, wie sie ist.",
         "backToLive": "Zurück zu live: {{name}}",
         "committed": "{{name}} ist an der Wand"
-      }
+      },
+      "backMyPick": "Meine Wahl",
+      "backOnWall": "Am Board",
+      "backToMyPickNamed": "Zurück zu meiner Wahl: {{name}}",
+      "backToWallNamed": "Zurück zum Boulder am Board: {{name}}"
     },
-    "bulbLabel": {
-      "connect": "Verbinden",
-      "on": "An",
-      "light": "Beleuchten"
+    "wallControl": {
+      "connect": "Board verbinden",
+      "connectHint": "Verbindet dein Board und beleuchtet diesen Boulder",
+      "litHint": "Tippen zum Trennen. Halten für die Board-Steuerung.",
+      "onBoard": "Am Board von {{name}}",
+      "onCrewBoard": "Am Board deiner Crew",
+      "bulbAria": "Board-Beleuchtung",
+      "valueOff": "Aus",
+      "valueOtherClimb": "Ein anderer Boulder ist beleuchtet",
+      "lightHint": "Beleuchtet diesen Boulder",
+      "relayHint": "Beleuchtet ihn am Board von {{name}}",
+      "relayHintCrew": "Beleuchtet ihn am Board deiner Crew",
+      "putOnBoard": "Am Board von {{name}} beleuchten",
+      "putOnCrewBoard": "Am Board deiner Crew beleuchten",
+      "youHaveBoard": "Du hast das Board",
+      "youHaveBoardLit": "Du hast das Board, der Boulder ist beleuchtet",
+      "holderHasBoard": "{{name}} hat das Board",
+      "crewHasBoard": "Deine Crew hat das Board",
+      "boardOptions": "Board-Optionen",
+      "onWall": "Am Board",
+      "lightAgainHint": "Beleuchtet ihn noch mal am Board"
     },
     "setActive": "Aktiv setzen",
     "paneEmpty": {

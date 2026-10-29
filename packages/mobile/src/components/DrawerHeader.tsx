@@ -77,7 +77,10 @@ export const DrawerHeader = memo(function DrawerHeader({
             </View>
           </View>
         ) : (
-          <View style={[styles.leadingSpacer, { width: trailingWidth }]} />
+          // The floor too: a width measured while a leading element was up is the
+          // grade's own width, narrower than this branch's trailing slot, so a pill
+          // that goes away would otherwise leave the name off-centre.
+          <View style={[styles.leadingSpacer, { width: Math.max(trailingWidth, trailingMinWidth) }]} />
         )}
         <View style={styles.centerColumn}>{center}</View>
         {hasLeading ? (

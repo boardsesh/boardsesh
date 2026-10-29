@@ -13,14 +13,49 @@ import type { FeatureFlagOption } from './FeatureFlagsForm.types';
  * `SegmentedButton` row, and the test stub so the options can't diverge across
  * platforms.
  */
+// i18n-ignore-next-line — tester-only screen
+const DEFAULT_OPTION: FeatureFlagOption = { key: 'default', label: 'Default' };
+
 export const BOOLEAN_FLAG_OPTIONS: readonly FeatureFlagOption[] = [
-  // i18n-ignore-next-line — tester-only screen
-  { key: 'default', label: 'Default' },
+  DEFAULT_OPTION,
   // i18n-ignore-next-line — tester-only screen
   { key: 'on', label: 'On' },
   // i18n-ignore-next-line — tester-only screen
   { key: 'off', label: 'Off' },
 ];
+/** A row with more choices than this draws a menu instead of a segmented control. */
+export const MAX_SEGMENTS = 3;
+
+/**
+ * A variant's choice key. Prefixed so a variant can never collide with the
+ * `default` / `on` / `off` keys (a variant named `default` would otherwise
+ * read as "clear the override").
+ */
+const VARIANT_PREFIX = 'variant:';
+
+export function variantChoiceKey(variant: string): string {
+  return `${VARIANT_PREFIX}${variant}`;
+}
+
+/** The variant a choice key names, or null for `default` / `on` / `off`. */
+export function variantFromChoiceKey(choice: string): string | null {
+  return choice.startsWith(VARIANT_PREFIX) ? choice.slice(VARIANT_PREFIX.length) : null;
+}
+
+/** Default, then one choice per declared variant, in the catalog's order. */
+export function variantFlagOptions(variants: readonly string[]): readonly FeatureFlagOption[] {
+  return [
+    DEFAULT_OPTION,
+    // Variant strings are the label: they are what PostHog and the code read.
+    ...variants.map((variant) => ({ key: variantChoiceKey(variant), label: variant })),
+  ];
+}
+
+/** The selected option's label, for a menu's collapsed row. */
+export function selectedFeatureFlagLabel(options: readonly FeatureFlagOption[], choice: string): string {
+  return options.find((option) => option.key === choice)?.label ?? DEFAULT_OPTION.label;
+}
+
 /**
  * Narrows a native picker's untyped selection (`string | number | null` on
  * iOS) to one of a row's own option keys before it's handed to `onSelect`.

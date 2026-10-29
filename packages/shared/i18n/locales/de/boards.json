@@ -121,7 +121,6 @@
         "failed": "Noch keine Verbindung zu {{board}}. Versuch es nochmal, wenn du so weit bist.",
         "failedNoName": "Noch keine Verbindung zu deinem Board. Versuch es nochmal, wenn du so weit bist."
       },
-      "pill": "Am Board beleuchten",
       "confirm": {
         "title": "Mit {{board}} verbunden",
         "titleNoName": "Mit deinem Board verbunden",

@@ -121,7 +121,6 @@
         "failed": "Todavía no hay conexión con {{board}}. Inténtalo de nuevo cuando quieras.",
         "failedNoName": "Todavía no hay conexión con tu plafón. Inténtalo de nuevo cuando quieras."
       },
-      "pill": "Iluminar en el plafón",
       "confirm": {
         "title": "Conectado a {{board}}",
         "titleNoName": "Conectado a tu plafón",

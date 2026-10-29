@@ -31,8 +31,12 @@ vi.mock('../../../AppMenu', () => ({ AppMenu: () => null }));
 vi.mock('../../../ListRow', () => ({ ListRow: () => null }));
 vi.mock('../../../SectionHeader', () => ({ SectionHeader: () => null }));
 vi.mock('../../../SegmentedControl', () => ({
-  SegmentedControl: ({ onSelect }: { onSelect: (key: string) => void }) =>
-    createElement('button', { onClick: () => onSelect('above') }, 'Place buttons above'),
+  // One per segmented row: Position, then Board control (#7000). Only the
+  // position one is driven here.
+  SegmentedControl: ({ onSelect, selectedKey }: { onSelect: (key: string) => void; selectedKey?: string }) =>
+    selectedKey === 'below' || selectedKey === 'above'
+      ? createElement('button', { onClick: () => onSelect('above') }, 'Place buttons above')
+      : null,
 }));
 vi.mock('../../../SwitchRow', () => ({
   SwitchRow: ({
@@ -80,10 +84,6 @@ vi.mock('../../use-player-button-controls', () => ({
       previousNextDescription: '',
       previousNext,
       onPreviousNextChange: setPreviousNext,
-      wallBadgeLabel: 'Wall status on the board',
-      wallBadgeDescription: '',
-      wallBadge: true,
-      onWallBadgeChange: vi.fn(),
       controls: [],
       onVisibleChange: vi.fn(),
       restoreDefaultsLabel: 'Restore defaults',

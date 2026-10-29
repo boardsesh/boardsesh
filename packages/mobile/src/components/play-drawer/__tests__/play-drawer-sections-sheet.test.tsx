@@ -40,16 +40,16 @@ const preferences = vi.hoisted(() => ({
 const accessibility = vi.hoisted(() => ({ announce: vi.fn() }));
 const playerButtons = vi.hoisted(() => ({
   buttons: {
-    order: ['mirror', 'favorite', 'angle', 'share', 'queue'],
-    visible: { mirror: true, favorite: true, angle: true, share: true, queue: true },
+    order: ['mirror', 'favorite', 'queue', 'share', 'angle'],
+    visible: { mirror: true, favorite: true, queue: true, share: false, angle: false },
   } as { order: string[]; visible: Record<string, boolean> },
   previousNext: true,
-  wallBadge: true,
   position: 'below' as 'below' | 'above',
+  boardControl: 'wallButton' as 'wallButton' | 'lightbulb',
+  setBoardControl: vi.fn(),
   setVisible: vi.fn(),
   move: vi.fn(),
   setPreviousNext: vi.fn(),
-  setWallBadge: vi.fn(),
   setPosition: vi.fn(),
   restoreDefaults: vi.fn(),
 }));
@@ -58,19 +58,23 @@ vi.mock('../../../lib/player-buttons-preference', () => ({
   isDefaultPlayerButtons: ({
     buttons,
     previousNext,
-    wallBadge,
     position,
+    boardControl,
   }: {
     buttons: { order: string[]; visible: Record<string, boolean> };
     previousNext: boolean;
-    wallBadge: boolean;
     position: string;
+    boardControl: string;
   }) =>
     previousNext &&
-    wallBadge &&
     position === 'below' &&
-    buttons.order.join() === 'mirror,favorite,angle,share,queue' &&
-    Object.values(buttons.visible).every(Boolean),
+    boardControl === 'wallButton' &&
+    buttons.order.join() === 'mirror,favorite,queue,share,angle' &&
+    buttons.visible.mirror &&
+    buttons.visible.favorite &&
+    buttons.visible.queue &&
+    !buttons.visible.share &&
+    !buttons.visible.angle,
 }));
 const miniPlayer = vi.hoisted(() => ({
   buttons: {
@@ -343,12 +347,12 @@ beforeEach(() => {
   preferences.restoreDefaults.mockClear();
   accessibility.announce.mockClear();
   playerButtons.buttons = {
-    order: ['mirror', 'favorite', 'angle', 'share', 'queue'],
-    visible: { mirror: true, favorite: true, angle: true, share: true, queue: true },
+    order: ['mirror', 'favorite', 'queue', 'share', 'angle'],
+    visible: { mirror: true, favorite: true, queue: true, share: false, angle: false },
   };
   playerButtons.previousNext = true;
-  playerButtons.wallBadge = true;
   playerButtons.position = 'below';
+  playerButtons.boardControl = 'wallButton';
   miniPlayer.buttons = {
     order: ['next', 'previous', 'mirror', 'favorite', 'queue', 'share', 'angle'],
     visible: { next: true, previous: true, mirror: true, favorite: false, queue: false, share: false, angle: false },
@@ -360,9 +364,9 @@ beforeEach(() => {
   for (const action of [miniPlayer.setVisible, miniPlayer.move, miniPlayer.restoreDefaults]) action.mockClear();
   for (const action of [
     playerButtons.setVisible,
+    playerButtons.setBoardControl,
     playerButtons.move,
     playerButtons.setPreviousNext,
-    playerButtons.setWallBadge,
     playerButtons.setPosition,
     playerButtons.restoreDefaults,
   ]) {
@@ -572,7 +576,7 @@ describe('PlayDrawerSectionsSheet', () => {
     expect(screen.queryByTestId('player-buttons-preview')).toBeNull();
   });
 
-  it('shows the buttons tab: a pinned preview of this board, then position, Previous and next, and the five buttons', () => {
+  it('shows the buttons tab: a pinned preview, Board control, position, Previous and next, and the five buttons with arrows', () => {
     const screen = render(sheet());
     fireEvent.click(screen.getByRole('radio', { name: 'mobile.settings.climbDrawer.tabs.buttons' }));
 
@@ -585,14 +589,22 @@ describe('PlayDrawerSectionsSheet', () => {
     expect(position.closest('[data-list-header]')).not.toBeNull();
     expect(screen.getAllByRole('switch').map((control) => control.getAttribute('aria-label'))).toEqual([
       'mobile.settings.playerButtons.previousNext',
-      'mobile.settings.playerButtons.wallBadge',
       'mobile.settings.playerButtons.buttons.mirror',
       'mobile.settings.playerButtons.buttons.favorite',
-      'mobile.settings.playerButtons.buttons.angle',
-      'mobile.settings.playerButtons.buttons.share',
       'mobile.settings.playerButtons.buttons.queue',
+      'mobile.settings.playerButtons.buttons.share',
+      'mobile.settings.playerButtons.buttons.angle',
     ]);
     expect(screen.container.querySelectorAll('[data-icon="arrow.up"]')).toHaveLength(5);
+    // The board control is always there; the climber picks how it looks (#7000).
+    const boardControl = screen.getByRole('radiogroup', { name: 'mobile.settings.playerButtons.boardControl.label' });
+    expect(boardControl.closest('[data-list-header]')).not.toBeNull();
+    expect(screen.getByRole('radio', { name: 'mobile.settings.playerButtons.boardControl.wallButton' })).toHaveProperty(
+      'ariaChecked',
+      'true',
+    );
+    fireEvent.click(screen.getByRole('radio', { name: 'mobile.settings.playerButtons.boardControl.lightbulb' }));
+    expect(playerButtons.setBoardControl).toHaveBeenCalledWith('lightbulb');
     expect(screen.getByText('mobile.settings.playerButtons.footer').closest('footer')).toBeTruthy();
   });
 
@@ -600,24 +612,22 @@ describe('PlayDrawerSectionsSheet', () => {
     const screen = render(sheet());
     fireEvent.click(screen.getByRole('radio', { name: 'mobile.settings.climbDrawer.tabs.buttons' }));
 
-    fireEvent.click(screen.getByRole('switch', { name: 'mobile.settings.playerButtons.buttons.share' }));
-    expect(playerButtons.setVisible).toHaveBeenCalledWith('share', false);
+    fireEvent.click(screen.getByRole('switch', { name: 'mobile.settings.playerButtons.buttons.favorite' }));
+    expect(playerButtons.setVisible).toHaveBeenCalledWith('favorite', false);
     fireEvent.click(screen.getByTestId('section-layout-move-up-queue'));
     expect(playerButtons.move).toHaveBeenCalledWith('queue', -1);
     fireEvent.click(screen.getByRole('radio', { name: 'mobile.settings.playerButtons.position.above' }));
     expect(playerButtons.setPosition).toHaveBeenCalledWith('above');
     fireEvent.click(screen.getByRole('switch', { name: 'mobile.settings.playerButtons.previousNext' }));
     expect(playerButtons.setPreviousNext).toHaveBeenCalledWith(false);
-    fireEvent.click(screen.getByRole('switch', { name: 'mobile.settings.playerButtons.wallBadge' }));
-    expect(playerButtons.setWallBadge).toHaveBeenCalledWith(false);
   });
 
   it('lists the buttons in their saved order and draws the chosen position', () => {
-    playerButtons.buttons = { ...playerButtons.buttons, order: ['queue', 'mirror', 'favorite', 'angle', 'share'] };
+    playerButtons.buttons = { ...playerButtons.buttons, order: ['queue', 'mirror', 'favorite', 'share', 'angle'] };
     playerButtons.position = 'above';
     const screen = render(sheet());
     fireEvent.click(screen.getByRole('radio', { name: 'mobile.settings.climbDrawer.tabs.buttons' }));
-    expect(screen.getAllByRole('switch')[2]?.getAttribute('aria-label')).toBe(
+    expect(screen.getAllByRole('switch')[1]?.getAttribute('aria-label')).toBe(
       'mobile.settings.playerButtons.buttons.queue',
     );
     expect(screen.getByTestId('player-buttons-preview').getAttribute('data-position')).toBe('above');

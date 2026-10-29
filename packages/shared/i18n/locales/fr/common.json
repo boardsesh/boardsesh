@@ -561,8 +561,6 @@
         },
         "previousNext": "Précédent et suivant",
         "previousNextDescription": "Glisser sur la board change toujours de bloc.",
-        "wallBadge": "État du mur sur la board",
-        "wallBadgeDescription": "Un badge sur la board indique si ce bloc est allumé sur le mur.",
         "buttons": {
           "mirror": "Miroir",
           "favorite": "Favori",
@@ -578,9 +576,15 @@
           "log": "Enregistrer",
           "boardLight": "Éclairage de la board"
         },
-        "footer": "Le premier entre File et Miroir prend le grand bouton. Un bouton masqué reste dans le menu ⋯. Sans petits boutons, la board prend leur rangée.",
+        "footer": "Le premier bouton activé prend l’extrémité gauche de la rangée du haut et le dernier l’extrémité droite. Les autres, et ceux que tu masques, sont dans le menu ⋯.",
         "settingsFooter": "Pour changer l’ordre, ouvre le menu ⋯ d’un bloc et choisis Options d’affichage.",
-        "previewLabel": "Aperçu, {{position}} : {{buttons}}"
+        "previewLabel": "Aperçu, {{position}} : {{buttons}}",
+        "boardControl": {
+          "label": "Commande de la board",
+          "wallButton": "Bouton du mur",
+          "lightbulb": "Ampoule",
+          "footer": "Les deux connectent, allument le bloc et montrent à qui est la board. Maintiens pour les options de la board. L’ampoule prend le bout droit de la rangée du haut."
+        }
       },
       "climbView": {
         "title": "Vue du bloc",

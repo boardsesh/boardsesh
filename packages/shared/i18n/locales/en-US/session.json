@@ -531,7 +531,6 @@
       "close": "Close",
       "setByLine": "Set by {{setter}}",
       "drivenByA11y": "{{name}} is lighting the wall. Open profile.",
-      "drivenByAnonA11y": "Someone is lighting the wall.",
       "litAgoNow": "now",
       "litAgoMinutes": "{{count}}m",
       "litAgoHours": "{{count}}h",
@@ -898,14 +897,9 @@
   "playView": {
     "wallState": {
       "onWall": "On the wall",
-      "live": "Live",
-      "onWallHint": "This one's lit on the wall right now.",
-      "liveHint": "Your next climb goes up on the wall.",
       "browsingHint": "You're just looking. The wall stays where it is.",
-      "pillHint": "See wall options",
-      "backToLive": "Back to live",
       "backToWall": "Back to the climb on the wall",
-      "backToCurrent": "Back to your climb",
+      "backToCurrent": "Back to my pick",
       "putOnWall": "Put on the wall",
       "lastOnWallTime": "Last on the wall at {{time}}",
       "lastOnWallYesterday": "Last on the wall yesterday",
@@ -913,7 +907,6 @@
       "lastOnWallDate": "Last on the wall {{date}}",
       "joinedBrowseNotice": "You're browsing. The wall stays put until you put a climb up.",
       "previewNotLit": "Preview, not lit",
-      "notOnWall": "Not on the wall",
       "onlyYouSeeThis": "Only you see this",
       "onlyYouSeeThisWallOn": "Only you see this · the wall is on {{name}}",
       "commitOverride": {
@@ -927,12 +920,33 @@
         "browseAnnounce": "Browsing. The wall stays where it is.",
         "backToLive": "Back to live: {{name}}",
         "committed": "{{name}} is on the wall"
-      }
+      },
+      "backMyPick": "My pick",
+      "backOnWall": "On the wall",
+      "backToMyPickNamed": "Back to my pick: {{name}}",
+      "backToWallNamed": "Back to the climb on the wall: {{name}}"
     },
-    "bulbLabel": {
-      "connect": "Connect",
-      "on": "On",
-      "light": "Light"
+    "wallControl": {
+      "connect": "Connect board",
+      "connectHint": "Connects your board and lights this climb",
+      "litHint": "Tap to disconnect. Hold for board controls.",
+      "onBoard": "On {{name}}'s board",
+      "onCrewBoard": "On your crew's board",
+      "bulbAria": "Board lights",
+      "valueOff": "Off",
+      "valueOtherClimb": "Another climb is up",
+      "lightHint": "Lights this climb",
+      "relayHint": "Puts it on {{name}}'s board",
+      "relayHintCrew": "Puts it on your crew's board",
+      "putOnBoard": "Put on {{name}}'s board",
+      "putOnCrewBoard": "Put on your crew's board",
+      "youHaveBoard": "You have the board",
+      "youHaveBoardLit": "You have the board, lit on the wall",
+      "holderHasBoard": "{{name}} has the board",
+      "crewHasBoard": "Your crew has the board",
+      "boardOptions": "Board options",
+      "onWall": "On the wall",
+      "lightAgainHint": "Lights it again on the board"
     },
     "setActive": "Set active",
     "paneEmpty": {

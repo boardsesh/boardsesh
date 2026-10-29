@@ -38,6 +38,7 @@ Put this in the issue or the PR description:
 - Backend and GraphQL: `packages/backend`.
 - Bottom sheet or route: [docs/mobile-sheets-vs-routes.md](./mobile-sheets-vs-routes.md).
 - Colours, type, spacing: [docs/ai-design-guidelines.md](./ai-design-guidelines.md).
+- Nothing draws over the rendered climb; status goes beside it. See "Nothing over the climb" in [docs/ai-design-guidelines.md](./ai-design-guidelines.md#nothing-over-the-climb).
 
 ## Make it configurable
 
