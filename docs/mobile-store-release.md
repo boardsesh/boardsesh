@@ -442,8 +442,9 @@ CPP publication.
    `APP_LOCALIZATIONS` already declares `it`, and `packages/mobile/locales/it.json`
    supplies its permission prompts. After this preparation PR merges, dispatch
    **iOS TestFlight Deploy (React Native)** on `release/next` with
-   `force_native: true` so the submitted binary also bundles the restored iPad
-   Wall display menu. Verify that menu in the resulting TestFlight candidate.
+   `force_native: true` so the submitted binary also bundles the iPad Wall
+   display entry (⛶ on the mini player since #7092). Verify it in the resulting
+   TestFlight candidate.
 2. Check listing copy and release notes under `fastlane/metadata/it/` for Apple
    and `fastlane/metadata/android/it-IT/` for Play. Apple uses `it`, not `it-IT`.
 3. After merging, dispatch **Mobile Store Metadata** on `release/next` with

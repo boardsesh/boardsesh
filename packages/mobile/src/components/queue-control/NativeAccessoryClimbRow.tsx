@@ -86,9 +86,10 @@ const WIDE_TRAILING_SLOTS: readonly TrailingControlSlot[] = ['more', 'lightbulb'
 const WIDE_TRAILING_SLOTS_NO_BULB: readonly TrailingControlSlot[] = ['more', 'log'];
 // A tablet's bar with Wall display on adds ⛶ after ⋯, where Music's iPad bar
 // puts lyrics. Whether it shows follows the climber's switch, the bar's widest
-// width under this window shape (`wideRowCapacityWidth`) and the `/play` route,
-// none of which changes while UIKit squeezes the open row, so its frame never
-// comes or goes mid-expand.
+// width under this window shape (`wideRowCapacityWidth`), the `/play` route and
+// what claims ahead of it for this climb (Mirror, Favorite, a timed block), none
+// of which changes while UIKit squeezes the open row, so its frame never comes
+// or goes mid-expand. A new climb on a full bar can still bring it or drop it.
 const WIDE_TRAILING_SLOTS_WALL: readonly TrailingControlSlot[] = ['more', 'wallDisplay', 'lightbulb', 'log'];
 const WIDE_TRAILING_SLOTS_WALL_NO_BULB: readonly TrailingControlSlot[] = ['more', 'wallDisplay', 'log'];
 // ✓ on a wide bar: Music's one large filled control.

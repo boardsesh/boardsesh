@@ -329,8 +329,10 @@ sheet's push), with the existing `mobile.boardPresence.wallDisplay.open` label.
 - Claim: in the climber's order like the leading buttons (straight after Favorite by default), but drawn in the
   trailing cluster, so it is `MiniPlayerControls.wallDisplay`, never in `leading`. In a timed block it stays after ⋯
   when there is room: it moves neither the wall nor the queue.
-- The frame exists only while ⛶ shows. That follows the switch, the widest width under the window shape and the
-  `/play` route, none of which changes while UIKit squeezes the hidden regular row, so no frame moves mid-expand.
+- The frame exists only while ⛶ shows. That follows the switch, the widest width under the window shape, the
+  `/play` route and what claims ahead of it for this climb (Mirror, Favorite, a timed block), none of which changes
+  while UIKit squeezes the hidden regular row, so no frame moves mid-expand. On a full bar a new climb can bring ⛶
+  or drop it, which moves ⋯ one slot.
 - Not offered (`isMiniPlayerButtonAvailable`): on a phone, the open Duo included; while the `/play` route is up.
 - Switched off, or squeezed out, it is a row in the bar's ⋯, in the queue's group after Open queue
   (`withWallDisplayRow`).
