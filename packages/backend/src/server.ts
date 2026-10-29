@@ -46,6 +46,8 @@ import {
   handleKilterCredentialsStart,
 } from './handlers/kilter-credentials-oauth';
 import { handleGymClaimVerify } from './handlers/gym-claims';
+import { handleProjectNewsUnsubscribe } from './handlers/project-news-unsubscribe';
+import { PROJECT_NEWS_UNSUBSCRIBE_PATH } from './services/project-news-unsubscribe-token';
 import { handleWidgetMirror } from './handlers/widget-mirror';
 import { handleWidgetNavigate } from './handlers/widget-navigate';
 import { handleWidgetTakeControl } from './handlers/widget-take-control';
@@ -613,6 +615,12 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
       // Gym claim domain-verification link (browser click from the claim email).
       if (pathname === '/api/gym-claims/verify' && req.method === 'GET') {
         await handleGymClaimVerify(req, res, url);
+        return;
+      }
+
+      // Project news email unsubscribe link (signed token; POST switches it off).
+      if (pathname === PROJECT_NEWS_UNSUBSCRIBE_PATH && ['GET', 'HEAD', 'POST'].includes(req.method || '')) {
+        await handleProjectNewsUnsubscribe(req, res, url);
         return;
       }
 

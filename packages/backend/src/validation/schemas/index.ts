@@ -25,4 +25,5 @@ export * from './hold-outline-overrides';
 export * from './playback';
 export * from './spray-walls';
 export * from './analytics-consent';
+export * from './project-news-email';
 export * from './rest-cadence';

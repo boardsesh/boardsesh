@@ -4846,6 +4846,8 @@ export type Mutation = {
    * Requires authentication.
    */
   setIntegrationAutoSync: IntegrationStatus;
+  /** Turn project news email on or off for the signed-in climber and return the account's answer. */
+  setProjectNewsEmailConsent: ProjectNewsEmailConsent;
   /**
    * Replace the entire queue state.
    * Used for bulk operations or syncing from external sources.
@@ -5724,6 +5726,11 @@ export type MutationSetCurrentClimbArgs = {
 export type MutationSetIntegrationAutoSyncArgs = {
   enabled: Scalars['Boolean']['input'];
   provider: IntegrationProvider;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationSetProjectNewsEmailConsentArgs = {
+  input: SetProjectNewsEmailConsentInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -6692,6 +6699,18 @@ export type ProfileStats = {
   totalDistinctClimbs: Scalars['Int']['output'];
 };
 
+/**
+ * Whether the signed-in climber gets project news by email. Off until they turn
+ * it on. See docs/project-news-email.md.
+ */
+export type ProjectNewsEmailConsent = {
+  __typename?: 'ProjectNewsEmailConsent';
+  /** ISO 8601 server time of the current answer, or null when the climber never answered. */
+  decidedAt?: Maybe<Scalars['String']['output']>;
+  /** True only after the climber switched it on, and until they switch it off or unsubscribe. */
+  subscribed: Scalars['Boolean']['output'];
+};
+
 /** A community proposal for changing a climb's grade, classic status, or benchmark status. */
 export type Proposal = {
   __typename?: 'Proposal';
@@ -7350,6 +7369,8 @@ export type Query = {
    * Capped server-side (small grid surface). Requires authentication.
    */
   myPinnedPlaylists: Array<Playlist>;
+  /** The signed-in climber's project news email answer. Never answered reads as off. */
+  myProjectNewsEmailConsent: ProjectNewsEmailConsent;
   /** Get the current user's community roles. */
   myRoles: Array<CommunityRoleAssignment>;
   /**
@@ -10210,6 +10231,13 @@ export type SetContentAudienceInput = {
   privacyRevision: Scalars['Int']['input'];
 };
 
+export type SetProjectNewsEmailConsentInput = {
+  /** web, ios or android: where the climber flipped the switch. */
+  source: Scalars['String']['input'];
+  /** True to opt in, false to opt out. */
+  subscribed: Scalars['Boolean']['input'];
+};
+
 /** Result of `setSessionRestCadence`. */
 export type SetSessionRestCadencePayload = {
   __typename?: 'SetSessionRestCadencePayload';
@@ -12989,6 +13017,7 @@ export type ResolversTypes = ResolversObject<{
   PrivacyResourceKind: PrivacyResourceKind;
   PrivacySettings: ResolverTypeWrapper<PrivacySettings>;
   ProfileStats: ResolverTypeWrapper<ProfileStats>;
+  ProjectNewsEmailConsent: ResolverTypeWrapper<ProjectNewsEmailConsent>;
   Proposal: ResolverTypeWrapper<Proposal>;
   ProposalConnection: ResolverTypeWrapper<ProposalConnection>;
   ProposalReportReleaseContext: ResolverTypeWrapper<ProposalReportReleaseContext>;
@@ -13105,6 +13134,7 @@ export type ResolversTypes = ResolversObject<{
   SetAnalyticsConsentInput: SetAnalyticsConsentInput;
   SetCommunitySettingInput: SetCommunitySettingInput;
   SetContentAudienceInput: SetContentAudienceInput;
+  SetProjectNewsEmailConsentInput: SetProjectNewsEmailConsentInput;
   SetSessionRestCadencePayload: ResolverTypeWrapper<SetSessionRestCadencePayload>;
   SetSprayTrainingReviewInput: SetSprayTrainingReviewInput;
   SetSprayWallHiddenInput: SetSprayWallHiddenInput;
@@ -13533,6 +13563,7 @@ export type ResolversParentTypes = ResolversObject<{
   PrivacyResourceGrant: PrivacyResourceGrant;
   PrivacySettings: PrivacySettings;
   ProfileStats: ProfileStats;
+  ProjectNewsEmailConsent: ProjectNewsEmailConsent;
   Proposal: Proposal;
   ProposalConnection: ProposalConnection;
   ProposalReportReleaseContext: ProposalReportReleaseContext;
@@ -13637,6 +13668,7 @@ export type ResolversParentTypes = ResolversObject<{
   SetAnalyticsConsentInput: SetAnalyticsConsentInput;
   SetCommunitySettingInput: SetCommunitySettingInput;
   SetContentAudienceInput: SetContentAudienceInput;
+  SetProjectNewsEmailConsentInput: SetProjectNewsEmailConsentInput;
   SetSessionRestCadencePayload: SetSessionRestCadencePayload;
   SetSprayTrainingReviewInput: SetSprayTrainingReviewInput;
   SetSprayWallHiddenInput: SetSprayWallHiddenInput;
@@ -16694,6 +16726,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationSetIntegrationAutoSyncArgs, 'enabled' | 'provider'>
   >;
+  setProjectNewsEmailConsent?: Resolver<
+    ResolversTypes['ProjectNewsEmailConsent'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationSetProjectNewsEmailConsentArgs, 'input'>
+  >;
   setQueue?: Resolver<
     ResolversTypes['QueueState'],
     ParentType,
@@ -17320,6 +17358,15 @@ export type ProfileStatsResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type ProjectNewsEmailConsentResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ProjectNewsEmailConsent'] = ResolversParentTypes['ProjectNewsEmailConsent'],
+> = ResolversObject<{
+  decidedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  subscribed?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type ProposalResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['Proposal'] = ResolversParentTypes['Proposal'],
@@ -17928,6 +17975,7 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryMyPinnedPlaylistsArgs, 'input'>
   >;
+  myProjectNewsEmailConsent?: Resolver<ResolversTypes['ProjectNewsEmailConsent'], ParentType, ContextType>;
   myRoles?: Resolver<Array<ResolversTypes['CommunityRoleAssignment']>, ParentType, ContextType>;
   mySessions?: Resolver<Array<ResolversTypes['DiscoverableSession']>, ParentType, ContextType>;
   mySmartPlaylistCounts?: Resolver<Array<ResolversTypes['SmartPlaylistCount']>, ParentType, ContextType>;
@@ -20407,6 +20455,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   PrivacyResourceGrant?: PrivacyResourceGrantResolvers<ContextType>;
   PrivacySettings?: PrivacySettingsResolvers<ContextType>;
   ProfileStats?: ProfileStatsResolvers<ContextType>;
+  ProjectNewsEmailConsent?: ProjectNewsEmailConsentResolvers<ContextType>;
   Proposal?: ProposalResolvers<ContextType>;
   ProposalConnection?: ProposalConnectionResolvers<ContextType>;
   ProposalReportReleaseContext?: ProposalReportReleaseContextResolvers<ContextType>;
