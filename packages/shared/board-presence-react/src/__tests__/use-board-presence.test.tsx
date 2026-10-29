@@ -14,6 +14,7 @@ import {
   useBoardPresenceFeed,
   useBoardPresenceHasClimb,
   useBoardPresenceWallClimb,
+  useBoardPresenceClearedClimbUuid,
   useBoardPresenceClient,
 } from '../board-presence-provider';
 import type { BoardPresenceClient } from '../types';
@@ -146,6 +147,7 @@ function makeClient() {
 
   const reportClimb = vi.fn(async () => true);
   const reportDisconnect = vi.fn(async () => true);
+  const reportClear = vi.fn(async () => true);
   // Captured separately so assertions reference the bound mock directly
   // (referencing `client.fetchX` trips the unbound-method lint).
   const fetchRecentClimbs = vi.fn((boardId: number) => pushDeferred(recentByBoard, boardId).promise);
@@ -182,6 +184,7 @@ function makeClient() {
     fetchConnection,
     reportClimb,
     reportDisconnect,
+    reportClear,
     onReconnect,
     resolveBoardForSerial: vi.fn(),
   };
@@ -191,6 +194,7 @@ function makeClient() {
     unsubscribe,
     reportClimb,
     reportDisconnect,
+    reportClear,
     fetchRecentClimbs,
     fetchStats,
     fetchConnection,
@@ -865,6 +869,98 @@ describe('useBoardPresence — actions', () => {
   it('reportDisconnect resolves false when inert', async () => {
     const { result } = renderHook(() => useBoardPresence(null, null));
     await expect(result.current.reportDisconnect()).resolves.toBe(false);
+  });
+
+  it('reportClear forwards the active boardId to the client', async () => {
+    const harness = makeClient();
+    const { result } = renderHook(() => useBoardPresence(3, harness.client));
+
+    let accepted = false;
+    await act(async () => {
+      accepted = await result.current.reportClear();
+    });
+
+    expect(accepted).toBe(true);
+    expect(harness.reportClear).toHaveBeenCalledWith(3);
+  });
+
+  it('reportClear resolves false when inert or when the client cannot clear', async () => {
+    const { result: inert } = renderHook(() => useBoardPresence(null, null));
+    await expect(inert.current.reportClear()).resolves.toBe(false);
+
+    const harness = makeClient();
+    delete harness.client.reportClear;
+    const { result } = renderHook(() => useBoardPresence(3, harness.client));
+    await expect(result.current.reportClear()).resolves.toBe(false);
+  });
+});
+
+describe('useBoardPresence — Turn off all lights (#7015)', () => {
+  const clearOf = (seq: number, climbUuid: string | null): BoardPresenceEvent => ({
+    __typename: 'BoardClimbCleared',
+    clearedAt: new Date(seq * 1000).toISOString(),
+    seq,
+    climbUuid,
+  });
+
+  it('stops naming the climb on the wall when the holder turns the lights off, and keeps the send in history', async () => {
+    const harness = makeClient();
+    const { result } = renderHook(() => useBoardPresence(1, harness.client));
+    const angelEyes = climb('angel-eyes', 5);
+    act(() => harness.emit(setEvent(angelEyes)));
+    expect(result.current.currentClimb).toEqual(angelEyes);
+
+    act(() => harness.emit(clearOf(6, 'angel-eyes')));
+
+    expect(result.current.currentClimb).toBeNull();
+    expect(result.current.clearedClimbUuid).toBe('angel-eyes');
+    expect(result.current.history).toEqual([angelEyes]);
+  });
+
+  it('keeps a late joiner dark when the replayed clear beats the history backfill', async () => {
+    const harness = makeClient();
+    const { result } = renderHook(() => useBoardPresence(1, harness.client));
+    act(() => harness.emit(clearOf(6, 'angel-eyes')));
+    await act(async () => {
+      await harness.resolveRecent(1, [climb('angel-eyes', 5), climb('older', 4)]);
+    });
+
+    expect(result.current.currentClimb).toBeNull();
+    expect(result.current.clearedClimbUuid).toBe('angel-eyes');
+    expect(result.current.history).toHaveLength(2);
+  });
+
+  it('lets a relit climb take the wall back', async () => {
+    const harness = makeClient();
+    const { result } = renderHook(() => useBoardPresence(1, harness.client));
+    act(() => harness.emit(setEvent(climb('angel-eyes', 5))));
+    act(() => harness.emit(clearOf(6, 'angel-eyes')));
+    act(() => harness.emit(setEvent(climb('angel-eyes', 7))));
+
+    expect(result.current.currentClimb?.climbUuid).toBe('angel-eyes');
+    expect(result.current.clearedClimbUuid).toBeNull();
+  });
+
+  it('exposes the cleared climb through a narrow provider context', async () => {
+    const harness = makeClient();
+    const snapshots: Array<string | null> = [];
+    function ClearedConsumer() {
+      snapshots.push(useBoardPresenceClearedClimbUuid());
+      return null;
+    }
+    render(
+      <BoardPresenceProvider boardId={1} client={harness.client}>
+        <ClearedConsumer />
+      </BoardPresenceProvider>,
+    );
+    act(() => harness.emit(setEvent(climb('angel-eyes', 5))));
+    act(() => harness.emit(clearOf(6, 'angel-eyes')));
+    await waitFor(() => expect(snapshots.at(-1)).toBe('angel-eyes'));
+    const rendersAfterClear = snapshots.length;
+
+    // Holder churn leaves the cleared climb as it is: no re-render.
+    act(() => harness.emit(connectionEvent(7, holder())));
+    expect(snapshots).toHaveLength(rendersAfterClear);
   });
 });
 

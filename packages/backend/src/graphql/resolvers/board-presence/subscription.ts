@@ -66,6 +66,14 @@ export const boardPresenceSubscriptions = {
       const asyncIterator = await lifetime.own(
         createEagerAsyncIterator<BoardPresenceEvent>(async (push) => {
           const unsubscribe = await pubsub.subscribeBoardPresence(boardKey, push);
+          // Replay a "Turn off all lights" that is still the wall's latest state
+          // (#7015). The history backfill only carries climbs, so without this a
+          // late joiner would put the cleared climb back on the wall. Pushed
+          // through the iterator, after the live subscribe, so it passes the same
+          // per-event access gate and redaction as live events, and a set that
+          // lands in between outranks it by seq on the client.
+          const activeClear = await pubsub.getActiveBoardClear(boardKey);
+          if (activeClear) push({ __typename: 'BoardClimbCleared', ...activeClear });
           // The managed lifetime closes late setup and idle subscriptions.
           // Keep the polling lease in the same owned source as its listener.
           const stopWatching =

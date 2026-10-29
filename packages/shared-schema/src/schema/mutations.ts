@@ -278,6 +278,16 @@ export const mutationsTypeDefs = /* GraphQL */ `
     """
     reportBoardDisconnect(boardId: Int!): Boolean!
 
+    """
+    Report that this client turned off every light on \`boardId\` while keeping its
+    BLE link (the "Turn off all lights" action). Publishes \`BoardClimbCleared\` so
+    every viewer stops showing the cleared climb as lit, and keeps the clear for a
+    week so a late subscriber sees it too. Requires board membership, and is refused
+    when another emitter holds the board. History is untouched. Auth-optional.
+    Returns whether the clear was accepted.
+    """
+    reportBoardClear(boardId: Int!): Boolean!
+
     # ============================================
     # User Management Mutations (require auth)
     # ============================================

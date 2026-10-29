@@ -630,13 +630,17 @@ export type BoardCandidate = {
 };
 
 /**
- * Event: the wall was cleared (best-effort — only emitted on a deliberate
- * disconnect; an involuntary BLE drop leaves the last climb sticky).
+ * Event: the wall was cleared. Emitted when the phone driving the wall turns
+ * off all its lights (`reportBoardClear`), and replayed to a new subscriber
+ * while that clear is still the wall's latest state. A disconnect, deliberate
+ * or not, leaves the last climb sticky: the board keeps its lights.
  */
 export type BoardClimbCleared = {
   __typename?: 'BoardClimbCleared';
   /** ISO 8601 timestamp when the wall was cleared */
   clearedAt: Scalars['String']['output'];
+  /** UUID of the climb that was on the wall when it was cleared, when known */
+  climbUuid?: Maybe<Scalars['String']['output']>;
   /** Monotonic per-board sequence number */
   seq: Scalars['Int']['output'];
 };
@@ -4558,6 +4562,15 @@ export type Mutation = {
   /** Replace a queue item with a new one (same UUID). */
   replaceQueueItem: ClimbQueueItem;
   /**
+   * Report that this client turned off every light on `boardId` while keeping its
+   * BLE link (the "Turn off all lights" action). Publishes `BoardClimbCleared` so
+   * every viewer stops showing the cleared climb as lit, and keeps the clear for a
+   * week so a late subscriber sees it too. Requires board membership, and is refused
+   * when another emitter holds the board. History is untouched. Auth-optional.
+   * Returns whether the clear was accepted.
+   */
+  reportBoardClear: Scalars['Boolean']['output'];
+  /**
    * Report the climb a connected phone just lit on the wall to the board's live
    * "now on the wall" feed. Auth-optional — anyone connected to the board emits
    * (logged-in or anonymous); a logged-in sender's identity is derived
@@ -5404,6 +5417,11 @@ export type MutationReorderQueueItemArgs = {
 export type MutationReplaceQueueItemArgs = {
   item: ClimbQueueItemInput;
   uuid: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationReportBoardClearArgs = {
+  boardId: Scalars['Int']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -13908,6 +13926,7 @@ export type BoardClimbClearedResolvers<
   ParentType extends ResolversParentTypes['BoardClimbCleared'] = ResolversParentTypes['BoardClimbCleared'],
 > = ResolversObject<{
   clearedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  climbUuid?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   seq?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
@@ -16230,6 +16249,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationReplaceQueueItemArgs, 'item' | 'uuid'>
+  >;
+  reportBoardClear?: Resolver<
+    ResolversTypes['Boolean'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationReportBoardClearArgs, 'boardId'>
   >;
   reportBoardClimb?: Resolver<
     ResolversTypes['Boolean'],

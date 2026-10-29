@@ -2,7 +2,7 @@
 // works in any JS runtime. The React wrapper (useReducer bound to the presence
 // subscription) lives in a separate `@boardsesh/board-presence-react` package.
 
-export { boardPresenceReducer, initialBoardPresenceState, HISTORY_CAP } from './reducer';
+export { boardPresenceReducer, initialBoardPresenceState, HISTORY_CAP, selectClearedClimbUuid } from './reducer';
 export { compareBoardHistoryEntries, mergeBoardHistory, boardHistoryEntryKey } from './history';
 
 export { mapBoardPresenceEnvelopeToAction } from './map-envelope';

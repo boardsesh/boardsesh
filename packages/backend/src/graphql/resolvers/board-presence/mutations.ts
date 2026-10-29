@@ -1149,4 +1149,52 @@ export const boardPresenceMutations = {
     }
     return cleared;
   },
+
+  /**
+   * "Turn off all lights" (#7015): the phone driving the wall blanked every LED
+   * but kept its BLE link. Without this, every other viewer kept showing the
+   * last climb as lit, because nothing told the feed the wall went dark.
+   *
+   * Gate: board membership (the same proof-of-presence `reportBoardClimb` asks
+   * for), and refused only when ANOTHER emitter holds the wall. A free wall is
+   * accepted: the WS-close backstop deletes the writer key on a socket reconnect
+   * while BLE stays up, and an anonymous holder's `conn:` id rotates with that
+   * reconnect, so "free" is the normal state for a genuine clearer after a blip.
+   *
+   * The seq comes from `nextBoardSeq` first (it may consult the Postgres floor,
+   * which can't run inside Lua), then the clear is compare-and-set stored. Seq
+   * ordering makes that safe against a racing climb set or a second clear. The
+   * holder slot is untouched: the phone is still connected. History is untouched.
+   */
+  reportBoardClear: async (_: unknown, { boardId }: { boardId: number }, ctx: ConnectionContext): Promise<boolean> => {
+    // Same anon-per-IP headroom as reportBoardDisconnect (issue #2863).
+    await applyRateLimit(ctx, ctx.isAuthenticated ? 60 : 240, 'reportBoardClear');
+    const emitterId = ctx.userId ?? `conn:${ctx.connectionId}`;
+    const boardKey = String(boardId);
+
+    const [board, gate] = await Promise.all([
+      requireActiveBoardWithVisibilityById(boardId),
+      pubsub.getBoardReportGate(boardKey, emitterId),
+    ]);
+    if (!gate.isMember) {
+      throw new GraphQLError('Not connected to this board');
+    }
+    await assertSprayBoardIsReadable(board, ctx.userId, board.uuid, db);
+    if (gate.currentWriter !== null && gate.currentWriter !== emitterId) {
+      return false;
+    }
+
+    const seq = await pubsub.nextBoardSeq(boardKey);
+    // Name the climb that went dark so a viewer can say which one is no longer
+    // lit, even when this clear reaches it before its history backfill does.
+    // Read after the seq is allocated, and only below it: a set that commits in
+    // between with a higher seq outranks this clear and must not be named.
+    const recentClimbs = await pubsub.getRecentBoardClimbs(boardKey);
+    const clearedClimb = recentClimbs.find((climb) => climb.seq < seq && climb.source !== 'kilter');
+    const climbUuid = clearedClimb?.climbUuid ?? null;
+    const clearedAt = new Date().toISOString();
+    await pubsub.commitBoardClear(boardKey, { seq, clearedAt, climbUuid });
+    pubsub.publishBoardPresenceEvent(boardKey, { __typename: 'BoardClimbCleared', clearedAt, seq, climbUuid });
+    return true;
+  },
 };

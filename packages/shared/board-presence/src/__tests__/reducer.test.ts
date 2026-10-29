@@ -5,7 +5,7 @@ import type {
   BoardPresenceEvent,
   BoardPresenceStats,
 } from '@boardsesh/shared-schema';
-import { boardPresenceReducer, initialBoardPresenceState, HISTORY_CAP } from '../reducer';
+import { boardPresenceReducer, initialBoardPresenceState, HISTORY_CAP, selectClearedClimbUuid } from '../reducer';
 import { mapBoardPresenceEnvelopeToAction } from '../map-envelope';
 import type { BoardPresenceState } from '../types';
 
@@ -55,6 +55,7 @@ describe('initialBoardPresenceState', () => {
       history: [],
       lastSeq: 0,
       lastClearedAt: null,
+      lastClearedClimbUuid: null,
       stats: null,
       lastStatsSeq: 0,
       holder: null,
@@ -202,6 +203,65 @@ describe('APPLY_CLIMB_CLEARED', () => {
     });
 
     expect(result).toBe(state);
+  });
+});
+
+describe('selectClearedClimbUuid (#7015)', () => {
+  const clearedAt = '2026-06-09T01:00:00.000Z';
+
+  it('names the climb a live clear turned off, from the event', () => {
+    const current = makeClimb({ seq: 7, climbUuid: 'angel-eyes' });
+    const state = makeState({ currentClimb: current, history: [current], lastSeq: 7 });
+
+    const result = boardPresenceReducer(state, {
+      type: 'APPLY_CLIMB_CLEARED',
+      payload: { clearedAt, seq: 8, climbUuid: 'angel-eyes' },
+    });
+
+    expect(selectClearedClimbUuid(result)).toBe('angel-eyes');
+  });
+
+  it('falls back to the climb that was current when an older server sends no climb', () => {
+    const current = makeClimb({ seq: 7, climbUuid: 'angel-eyes' });
+    const state = makeState({ currentClimb: current, history: [current], lastSeq: 7 });
+
+    const result = boardPresenceReducer(state, { type: 'APPLY_CLIMB_CLEARED', payload: { clearedAt, seq: 8 } });
+
+    expect(selectClearedClimbUuid(result)).toBe('angel-eyes');
+  });
+
+  it('keeps the wall dark when the replayed clear lands before the history backfill', () => {
+    const replayed = boardPresenceReducer(initialBoardPresenceState, {
+      type: 'APPLY_CLIMB_CLEARED',
+      payload: { clearedAt, seq: 8, climbUuid: 'angel-eyes' },
+    });
+    const backfilled = boardPresenceReducer(replayed, {
+      type: 'BACKFILL_HISTORY',
+      payload: [makeClimb({ seq: 7, climbUuid: 'angel-eyes' }), makeClimb({ seq: 6 })],
+    });
+
+    expect(backfilled.currentClimb).toBeNull();
+    expect(backfilled.history).toHaveLength(2);
+    expect(selectClearedClimbUuid(backfilled)).toBe('angel-eyes');
+  });
+
+  it('answers null once a climb is lit again', () => {
+    const current = makeClimb({ seq: 7, climbUuid: 'angel-eyes' });
+    const cleared = boardPresenceReducer(makeState({ currentClimb: current, history: [current], lastSeq: 7 }), {
+      type: 'APPLY_CLIMB_CLEARED',
+      payload: { clearedAt, seq: 8, climbUuid: 'angel-eyes' },
+    });
+    const relit = boardPresenceReducer(cleared, {
+      type: 'APPLY_CLIMB_SET',
+      payload: makeClimb({ seq: 9, climbUuid: 'angel-eyes' }),
+    });
+
+    expect(relit.currentClimb?.climbUuid).toBe('angel-eyes');
+    expect(selectClearedClimbUuid(relit)).toBeNull();
+  });
+
+  it('is null when no clear was ever seen', () => {
+    expect(selectClearedClimbUuid(initialBoardPresenceState)).toBeNull();
   });
 });
 
@@ -650,7 +710,21 @@ describe('mapBoardPresenceEnvelopeToAction', () => {
 
     expect(mapBoardPresenceEnvelopeToAction(event)).toEqual({
       type: 'APPLY_CLIMB_CLEARED',
-      payload: { clearedAt: '2026-06-09T02:00:00.000Z', seq: 12 },
+      payload: { clearedAt: '2026-06-09T02:00:00.000Z', seq: 12, climbUuid: null },
+    });
+  });
+
+  it('carries the cleared climb named by a newer server (#7015)', () => {
+    const event: BoardPresenceEvent = {
+      __typename: 'BoardClimbCleared',
+      clearedAt: '2026-06-09T02:00:00.000Z',
+      seq: 12,
+      climbUuid: 'angel-eyes',
+    };
+
+    expect(mapBoardPresenceEnvelopeToAction(event)).toEqual({
+      type: 'APPLY_CLIMB_CLEARED',
+      payload: { clearedAt: '2026-06-09T02:00:00.000Z', seq: 12, climbUuid: 'angel-eyes' },
     });
   });
 

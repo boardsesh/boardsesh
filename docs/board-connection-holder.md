@@ -16,6 +16,7 @@ Display states (client):
 
 - `board:{boardId}:writer` → the current holder's emitter id. Set atomically by `setBoardWriter` (`SET … EX … GET` so concurrent sends detect only a real hand-off); cleared by `clearBoardWriterIf` (Lua compare-and-delete — only the current holder can clear it). TTL = `BOARD_MEMBERSHIP_TTL` (12 h). Redis-only: without Redis the holder degrades to "no holder".
 - `presence:board:{boardId}:user:{emitterId}` → proof-of-presence membership stamp (gates who may emit; `NX`, stores first-seen for the durable-write dwell gate).
+- `board:{boardId}:cleared` → a hash (`seq`, `clearedAt`, `climbUuid`) for the latest "Turn off all lights". Written by `commitBoardClear`; TTL = the one-week history TTL. See [Turning off all lights](#turning-off-all-lights-7015).
 
 ## GraphQL surface (`packages/shared-schema/src/schema/board-presence.ts`)
 
@@ -24,6 +25,7 @@ Display states (client):
 - `query boardConnection(boardId): BoardConnectionHolder` — late-joiner initial state.
 - `mutation reportBoardClimb(boardId, climb, angle)` — report a confirmed send (sets the holder).
 - `mutation reportBoardDisconnect(boardId)` — release this client's hold (lightbulb-off / BLE drop).
+- `mutation reportBoardClear(boardId)` — the holder turned every light off but kept its link. Publishes `BoardClimbCleared { clearedAt, seq, climbUuid }`.
 
 ## Auth model
 
@@ -71,6 +73,28 @@ The settle window exists because the drain loop's latest-wins coalescing only en
 **Two connection values, on purpose.** `deriveBoardConnection` stays BLE-only: it is the Live Activity contract, read by the lock-screen bulb, the Dynamic Island, Prev/Next and both native iOS intents, every one of which acts by writing the radio. `deriveInAppBoardConnection` is the widened value that in-app surfaces read — it reports `connectedByMe` under a virtual hold, yields to `heldByPeer` when the server holder is someone else, and (on a ledless board only) reports a peer holder to a **bystander** who never took the wall. That last branch is restricted to ledless boards because on a wall with lights the holder can be a stranger sharing the board feed, and the session gate deliberately keeps them from lighting your bulb.
 
 **Membership.** A report rejected for lapsed membership triggers one `restampBoardMembershipByUuid` and one retry. It calls the client resolver directly and never enters `beginResolution`, which would clear `boardId` and blank the wall screen mid-hold. Anonymous emitters are keyed `conn:{connectionId}` and lose membership on every socket reconnect, which is the case this covers.
+
+## Turning off all lights (#7015)
+
+"Turn off all lights" in the Bluetooth controls sheet blanks the board but keeps the link, so the holder slot does not change. Before #7015 nothing told the feed: every other phone kept showing the last climb as "On the wall".
+
+**Server** (`reportBoardClear`, `packages/backend/src/graphql/resolvers/board-presence/mutations.ts`):
+
+1. The caller needs board membership, like `reportBoardClimb`. The clear is refused (returns `false`) only when a _different_ emitter holds the wall. A free wall is accepted, because the WS-close backstop deletes the writer key on a socket reconnect while BLE stays up, and an anonymous holder's `conn:` id changes with that reconnect.
+2. The seq is allocated with `nextBoardSeq` first. It may consult the Postgres floor, which can't run inside Lua.
+3. `commitBoardClear` stores the clear with a compare-and-set on `seq`, so an older clear that loses the race never overwrites a newer one. It also deletes `board:{id}:lastReport`: re-lighting the same climb inside the 10 s dedup window is a wall change and must publish a fresh `BoardClimbSet`. `commitBoardClimb` sets that marker through a small Lua step that skips it when a stored clear has a higher seq, so a set that loses the race to a clear cannot put the marker back.
+4. `BoardClimbCleared` names, as `climbUuid`, the newest climb in the history buffer whose seq is below the clear's. History is read after the seq is allocated, so a set numbered after the clear is never named. History and the holder are untouched.
+
+**Late joiners.** The history backfill only carries climbs, so it would put the cleared climb back on the wall. `boardNowPlaying` replays the stored clear right after it subscribes, through the same iterator as live events, so it passes the per-event access gate. It replays only while the clear's seq is above every climb in the history buffer and the seq counter (`board:{id}:seq`) has reached the clear (`getActiveBoardClear`). A counter that went back (it expires a few ms before the clear key, and a durable-floor reseed never counts clears) would number every new climb below the clear, so the clear is treated as stale. The clear key lives as long as that buffer (one week). A 12 h TTL would let the buffer outlive it and re-light the climb. `getBoardDiscoveryClimb` (the anonymous marketing preview) returns nothing when the clear is newer than the newest climb, with the same counter check.
+
+**Client.** The reducer already applied `APPLY_CLIMB_CLEARED` (wall to `null`, history kept). It now also keeps `lastClearedClimbUuid`: the event's `climbUuid`, or the climb that was current when an older server sends none. `selectClearedClimbUuid` returns it only while nothing has been lit since, and the provider exposes it as `useBoardPresenceClearedClimbUuid()`. Compare it with the climb on screen. Never read it as "the wall is dark": a peer's queue moves before the presence echo, and its new climb must not read as turned off.
+
+**Not covered.**
+
+- Seqs are numbered in allocation order. `reportBoardClimb` does database reads before `nextBoardSeq`, so a set and a clear sent close together can be numbered in the opposite order. The app waits for an in-flight report before sending the other kind.
+- A seq-gap catch-up does not recover a missed clear. It re-reads history, which has no clear in it. Only a re-subscribe replays it: a socket reconnect re-subscribes, but a gap seen on a live socket does not.
+- Only "Turn off all lights" reports a clear. The light-show stop and the party-session spill skip also blank the wall through `clearBoard()`, and peers keep the last climb.
+- A peer has no way to re-light a cleared climb. The holder re-lights it from the bulb.
 
 ## Known limitations
 
