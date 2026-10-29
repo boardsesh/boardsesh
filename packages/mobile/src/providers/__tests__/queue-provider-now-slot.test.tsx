@@ -187,7 +187,7 @@ vi.mock('../queue/use-board-continuation-feed', () => ({ useBoardContinuationFee
 
 import { QueueProvider, useQueue, useQueueSessionId } from '../queue-provider';
 import { resetQueueServerProbeReportForTests } from '../queue/now-slot-server';
-import { resetRelayReceiptForTests, takeRelayReceipt } from '../../lib/relay-receipt';
+import { clearRelayReceipt, takeRelayReceipt } from '../../lib/relay-receipt';
 
 type Queue = ReturnType<typeof useQueue>;
 type Snapshot = Pick<
@@ -744,7 +744,7 @@ describe('QueueProvider now-slot mode (F3)', () => {
 
       it('stamps a crewmate moving the wall', async () => {
         const latest = await renderSession([A, B, C], B);
-        resetRelayReceiptForTests();
+        clearRelayReceipt();
 
         sendCurrentClimbChanged(C, 'client-peer', 'corr-peer');
 
@@ -756,11 +756,49 @@ describe('QueueProvider now-slot mode (F3)', () => {
         });
       });
 
+      it('does not stamp the FullSync that opens the stream', async () => {
+        clearRelayReceipt();
+
+        // The join's FullSync makes B current on a phone that had nothing.
+        const latest = await renderSession([A, B, C], B);
+
+        expect(latest().state.currentClimbQueueItem?.uuid).toBe('b');
+        expect(takeRelayReceipt('b')).toBeNull();
+      });
+
+      it('stamps a crewmate’s open that arrives as a FullSync on the live stream', async () => {
+        const latest = await renderSession([A, B, C], B);
+        clearRelayReceipt();
+        const sink = ws.getQueueUpdatesSink();
+        if (!sink) throw new Error('queue updates sink was not captured');
+
+        act(() => {
+          sink.next({
+            data: {
+              queueUpdates: {
+                __typename: 'FullSync',
+                sequence: 2,
+                state: {
+                  sequence: 2,
+                  stateHash: 'hash-2',
+                  queue: [A, B, C],
+                  currentClimbQueueItem: C,
+                  historyCount: 2,
+                },
+              },
+            },
+          });
+        });
+
+        await waitFor(() => expect(latest().state.currentClimbQueueItem?.uuid).toBe('c'));
+        expect(takeRelayReceipt('c')).toMatchObject({ queueItemUuid: 'c', eventType: 'FullSync' });
+      });
+
       it('does not stamp the echo of this phone’s own move', async () => {
         const latest = await renderSession([A, B, C], B);
         act(() => latest().setCurrentClimb(C));
         expect(latest().state.currentClimbQueueItem?.uuid).toBe('c');
-        resetRelayReceiptForTests();
+        clearRelayReceipt();
 
         sendCurrentClimbChanged(C, 'client-self', 'corr-self');
 

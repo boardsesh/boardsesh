@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { noteRelayReceipt, resetRelayReceiptForTests, takeRelayReceipt } from '../relay-receipt';
+import { RELAY_RECEIPT_MAX_AGE_MS, clearRelayReceipt, noteRelayReceipt, takeRelayReceipt } from '../relay-receipt';
 
 describe('relay receipt (#7014)', () => {
   beforeEach(() => {
-    resetRelayReceiptForTests();
+    clearRelayReceipt();
     vi.spyOn(performance, 'now').mockReturnValue(1_000);
   });
   afterEach(() => {
@@ -42,6 +42,32 @@ describe('relay receipt (#7014)', () => {
     noteRelayReceipt({ eventType: 'FullSync', incomingQueueItemUuid: null, localQueueItemUuid: 'queue-a' });
 
     expect(takeRelayReceipt('queue-a')).toBeNull();
+  });
+
+  it('drops a receipt the write reaches too late to be a relay', () => {
+    noteRelayReceipt({ eventType: 'FullSync', incomingQueueItemUuid: 'queue-b', localQueueItemUuid: 'queue-a' });
+
+    vi.spyOn(performance, 'now').mockReturnValue(1_000 + RELAY_RECEIPT_MAX_AGE_MS + 1);
+
+    expect(takeRelayReceipt('queue-b')).toBeNull();
+    vi.spyOn(performance, 'now').mockReturnValue(1_000);
+    expect(takeRelayReceipt('queue-b')).toBeNull();
+  });
+
+  it('hands over a receipt right at the age limit', () => {
+    noteRelayReceipt({ eventType: 'FullSync', incomingQueueItemUuid: 'queue-b', localQueueItemUuid: 'queue-a' });
+
+    vi.spyOn(performance, 'now').mockReturnValue(1_000 + RELAY_RECEIPT_MAX_AGE_MS);
+
+    expect(takeRelayReceipt('queue-b')).toMatchObject({ queueItemUuid: 'queue-b' });
+  });
+
+  it('forgets the receipt when the session ends or the climber signs out', () => {
+    noteRelayReceipt({ eventType: 'FullSync', incomingQueueItemUuid: 'queue-b', localQueueItemUuid: 'queue-a' });
+
+    clearRelayReceipt();
+
+    expect(takeRelayReceipt('queue-b')).toBeNull();
   });
 
   it('keeps the receipt from a write for another item, and a newer event replaces it', () => {

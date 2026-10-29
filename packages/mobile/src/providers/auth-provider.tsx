@@ -30,6 +30,7 @@ import {
 import { SCREENSHOT_USER_EMAIL, SCREENSHOT_USER_PASSWORD } from '../lib/screenshot-mode';
 import { isAnalyticsPinnedToAPerson, reset as resetAnalytics, track } from '../lib/analytics';
 import { resetOfflineUsageSignal } from '../offline/offline-usage-signal';
+import { clearRelayReceipt } from '../lib/relay-receipt';
 import { reportError, reportHandledError } from '../lib/error-reporting';
 import { setOnForcedSignOut } from '../lib/auth-interceptor';
 import { getHttpClient, resetHttpClient } from '../lib/graphql/client';
@@ -410,6 +411,8 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       const localDb = getDatabaseHandle();
       if (localDb) await reportOutboxDiscardedOnSignOut(localDb);
       resetOfflineUsageSignal();
+      // #7014: a pending relay timing belongs to the account that is leaving.
+      clearRelayReceipt();
       await deactivateNotificationDevice();
       const stopTokenCleanup = stopTokenManagement(async () => {});
       if (Platform.OS === 'web') await waitForCleanupPhase(stopTokenCleanup);

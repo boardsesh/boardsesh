@@ -295,7 +295,7 @@ vi.mock('../../lib/board-details', () => ({
 
 import { BluetoothProvider, useBluetoothContext } from '../bluetooth-provider';
 import { BleControlSheetHost } from '../../components/ble/BleControlSheetHost';
-import { noteRelayReceipt, resetRelayReceiptForTests } from '../../lib/relay-receipt';
+import { noteRelayReceipt, clearRelayReceipt } from '../../lib/relay-receipt';
 
 function makeQueueItem(uuid: string, frames = 'p1r12', mirrored = false): ClimbQueueItem {
   return {
@@ -425,7 +425,7 @@ describe('BluetoothProvider wall-confirm integration', () => {
     presence.showUndoWallChangeSnackbar.mockClear();
     capturedBluetooth = null;
     appState.current = 'active';
-    resetRelayReceiptForTests();
+    clearRelayReceipt();
   });
 
   afterEach(() => {
@@ -587,6 +587,52 @@ describe('BluetoothProvider wall-confirm integration', () => {
       });
       queue.currentClimbQueueItem = makeQueueItem('climb-2');
       rerenderKilter(rerender);
+      await waitFor(() => expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-2'));
+
+      expect(relayTimedEvents()).toHaveLength(0);
+    });
+
+    // The auto-sender can skip a relayed climb (here the off-screen adopt gate)
+    // and write it much later on Put on the wall. That wait is the climber's,
+    // so it must not come back as relay time.
+    it('reports nothing for a relayed climb written long after a skip', async () => {
+      const clock = { now: 0 };
+      const performanceNow = vi.spyOn(performance, 'now').mockImplementation(() => clock.now);
+      onTestFinished(() => performanceNow.mockRestore());
+      const { rerender } = renderProvider(createElement(BluetoothProbe));
+      await waitFor(() => expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1'));
+
+      clock.now = 100;
+      noteRelayReceipt({
+        eventType: 'CurrentClimbChanged',
+        incomingQueueItemUuid: 'queue-climb-2',
+        localQueueItemUuid: 'queue-climb-1',
+      });
+      bluetooth.state.consumeBackgroundAdoptSendGate.mockReturnValue(true);
+      queue.currentClimbQueueItem = makeQueueItem('climb-2');
+      rerender(
+        createElement(BluetoothProvider, {
+          boardName: 'kilter',
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,20',
+          children: createElement(BluetoothProbe),
+        }),
+      );
+      await waitFor(() =>
+        expect(analytics.track).toHaveBeenCalledWith(
+          'BLE Implicit Relight Suppressed',
+          expect.objectContaining({ climbUuid: 'climb-2' }),
+        ),
+      );
+      expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledTimes(1);
+
+      // A minute later the climber taps Put on the wall.
+      clock.now = 60_100;
+      bluetooth.state.consumeBackgroundAdoptSendGate.mockReturnValue(false);
+      act(() => {
+        capturedBluetooth?.reassertWall();
+      });
       await waitFor(() => expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-2'));
 
       expect(relayTimedEvents()).toHaveLength(0);

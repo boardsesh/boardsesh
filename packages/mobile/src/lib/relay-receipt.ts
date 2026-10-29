@@ -24,6 +24,15 @@ export type RelayReceipt = {
   receivedAt: number;
 };
 
+/**
+ * A receipt older than this is not a relay any more. The auto-sender can skip
+ * the item (no board connected, the 4 h hold, the off-screen adopt gate, a
+ * byte-identical dedup) and write it much later on a reconnect or a Put on the
+ * wall; that wait is the climber's, not the pipeline's. QA's slowest relay was
+ * about 8 s, so 30 s keeps every real one with room to spare.
+ */
+export const RELAY_RECEIPT_MAX_AGE_MS = 30_000;
+
 let pendingReceipt: RelayReceipt | null = null;
 
 export function relayClockMs(): number {
@@ -59,15 +68,22 @@ export function noteRelayReceipt({
 
 /**
  * Hand the receipt to the write for that queue item, once. A write for any
- * other item leaves it: the crew moved on and a newer event replaces it.
+ * other item leaves it: the crew moved on and a newer event replaces it. A
+ * receipt past `RELAY_RECEIPT_MAX_AGE_MS` is dropped instead of reported.
  */
 export function takeRelayReceipt(queueItemUuid: string): RelayReceipt | null {
   const receipt = pendingReceipt;
-  if (!receipt || receipt.queueItemUuid !== queueItemUuid) return null;
+  if (!receipt) return null;
+  if (relayClockMs() - receipt.receivedAt > RELAY_RECEIPT_MAX_AGE_MS) {
+    pendingReceipt = null;
+    return null;
+  }
+  if (receipt.queueItemUuid !== queueItemUuid) return null;
   pendingReceipt = null;
   return receipt;
 }
 
-export function resetRelayReceiptForTests(): void {
+/** Forget any pending receipt: the session ended or the climber signed out. */
+export function clearRelayReceipt(): void {
   pendingReceipt = null;
 }
