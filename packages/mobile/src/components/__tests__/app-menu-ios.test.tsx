@@ -21,6 +21,7 @@ vi.mock('@expo/ui/swift-ui', () => ({
   Button: ({ label, onPress }: { label: string; onPress: () => void }) =>
     createElement('button', { onClick: onPress }, label),
   Divider: () => createElement('hr'),
+  ControlGroup: ({ children }: { children: ReactNode }) => createElement('section', { 'data-palette': true }, children),
   HStack: ({ children }: { children: ReactNode }) => createElement('div', null, children),
   VStack: ({ children }: { children: ReactNode }) => createElement('div', { 'data-vstack': true }, children),
   Text: ({ children }: { children: ReactNode }) => createElement('span', null, children),
@@ -191,5 +192,48 @@ describe('AppMenu (iOS) hosting', () => {
       );
       unmount();
     }
+  });
+});
+
+describe('AppMenu (iOS) palette rows', () => {
+  const paletteActions = [
+    { label: 'Favourite', palette: true as const, systemIcon: 'heart' },
+    { label: 'Playlist', palette: true as const, disabled: true },
+    { label: 'Share', palette: true as const },
+    { label: 'Queue', dividerBefore: true },
+  ];
+  const render3 = (actions: typeof paletteActions, onSelectIndex = vi.fn()) =>
+    render(createElement(AppMenu, { iconName: 'more', accessibilityLabel: 'More', actions, onSelectIndex }));
+
+  it('draws the leading palette rows as one control group and keeps indices', () => {
+    const onSelectIndex = vi.fn();
+    const { container, getByText } = render3(paletteActions, onSelectIndex);
+    const group = container.querySelector('[data-palette]')!;
+    expect([...group.querySelectorAll('button')].map((node) => node.textContent)).toEqual([
+      'Favourite',
+      'Playlist',
+      'Share',
+    ]);
+    fireEvent.click(getByText('Share'));
+    expect(onSelectIndex).toHaveBeenLastCalledWith(2);
+    fireEvent.click(getByText('Queue'));
+    expect(onSelectIndex).toHaveBeenLastCalledWith(3);
+    onSelectIndex.mockClear();
+    fireEvent.click(getByText('Playlist'));
+    expect(onSelectIndex).not.toHaveBeenCalled();
+  });
+
+  it('falls back to plain rows for a lone palette row', () => {
+    const { container } = render3([{ label: 'Share', palette: true as const }, ...paletteActions.slice(3)]);
+    expect(container.querySelector('[data-palette]')).toBeNull();
+  });
+
+  it('does not group a palette row that follows a plain row', () => {
+    const { container } = render3([
+      { label: 'Queue' } as never,
+      { label: 'A', palette: true as const },
+      { label: 'B', palette: true as const },
+    ]);
+    expect(container.querySelector('[data-palette]')).toBeNull();
   });
 });

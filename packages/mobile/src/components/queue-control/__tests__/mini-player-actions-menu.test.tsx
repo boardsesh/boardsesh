@@ -113,6 +113,7 @@ import {
   MiniPlayerActionsMenu,
   climbViewSettingsHref,
   miniPlayerMenuHiddenButtons,
+  withPaletteRows,
   type MiniPlayerActionsMenuProps,
 } from '../MiniPlayerActionsMenu';
 
@@ -158,6 +159,47 @@ beforeEach(() => {
   bar.isMirrored = false;
   route.segments = ['(tabs)', 'climbs'];
   profile.id = 'me';
+});
+
+describe('MiniPlayerActionsMenu icon row', () => {
+  const paletteLabels = () => menu.props!.actions.filter((action) => action.palette).map((action) => action.label);
+
+  it('marks Favourite, Add to playlist and Share as the leading icon row', () => {
+    renderMenu();
+    expect(paletteLabels()).toEqual([
+      'session:playView.actionBar.addFavoriteAria',
+      'actions.playlist.popover.title',
+      'share.actionLabel',
+    ]);
+    expect(menu.props!.actions.slice(0, 3).every((action) => action.palette)).toBe(true);
+  });
+
+  it('holds 2 for a draft, which has no Share', () => {
+    const draft = { ...CLIMB, is_draft: true, userId: 'me' } as unknown as Climb;
+    renderMenu({ climb: draft, isAvailable: (buttonId) => buttonId !== 'share' });
+    expect(paletteLabels()).toHaveLength(2);
+  });
+
+  it('falls back to plain rows when fewer than 2 remain', () => {
+    renderMenu({ shownButtons: ['previous', 'next', 'favorite', 'share'] });
+    expect(paletteLabels()).toEqual([]);
+  });
+});
+
+describe('withPaletteRows', () => {
+  const ids = (list: string[]) => list.map((id) => ({ id }));
+  it('marks only the leading run', () => {
+    expect(withPaletteRows(ids(['favorite', 'share', 'openQueue', 'playlist']))).toEqual([
+      { id: 'favorite', palette: true },
+      { id: 'share', palette: true },
+      { id: 'openQueue' },
+      { id: 'playlist' },
+    ]);
+  });
+  it('leaves a lone row, or a run that is not at the top, alone', () => {
+    expect(withPaletteRows(ids(['share', 'openQueue']))).toEqual(ids(['share', 'openQueue']));
+    expect(withPaletteRows(ids(['openQueue', 'favorite', 'share']))).toEqual(ids(['openQueue', 'favorite', 'share']));
+  });
 });
 
 describe('MiniPlayerActionsMenu', () => {

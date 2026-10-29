@@ -76,6 +76,19 @@ export function climbViewSettingsHref(segments: readonly string[]): string {
     : '/settings/climb-view';
 }
 
+const PALETTE_ROW_IDS: ReadonlySet<string> = new Set(['favorite', 'playlist', 'share']);
+
+/**
+ * Marks the leading Favourite / Add to playlist / Share rows as the menu's icon
+ * row. Needs 2 or more; otherwise the rows come back untouched.
+ */
+export function withPaletteRows<Row extends { id: string }>(rows: readonly Row[]): (Row & { palette?: true })[] {
+  let leading = 0;
+  while (leading < rows.length && PALETTE_ROW_IDS.has(rows[leading].id)) leading += 1;
+  if (leading < 2) return [...rows];
+  return rows.map((row, index) => (index < leading ? { ...row, palette: true as const } : row));
+}
+
 export type MiniPlayerActionsMenuProps = {
   climb: Climb;
   /** The board the climb is drawn on (`resolveClimbRenderBoard`), as the bar's buttons use. */
@@ -186,6 +199,10 @@ export const MiniPlayerActionsMenu = memo(function MiniPlayerActionsMenu({
       }).map((row) => (row.id === 'viewOptions' ? { ...row, label: climbViewTitle } : row)),
     [items, hidden, isActiveClimb, climbViewTitle],
   );
+  // Music's icon row: Favourite, Add to playlist and Share lead the menu. Fewer than
+  // 2 left (a draft has no Share, signed out has neither of the first two) falls back
+  // to plain rows, since a one-item control group looks odd.
+  const menuRows = useMemo(() => withPaletteRows(rows), [rows]);
   const handleSelectIndex = useCallback(
     (index: number) => {
       const row = rows[index];
@@ -207,7 +224,7 @@ export const MiniPlayerActionsMenu = memo(function MiniPlayerActionsMenu({
       iconAppearance="plain"
       anchorSize={size}
       accessibilityLabel={t('playView.actionBar.moreActionsForAria', { name: climb.name })}
-      actions={rows}
+      actions={menuRows}
       onSelectIndex={handleSelectIndex}
     />
   );
