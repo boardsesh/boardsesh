@@ -241,6 +241,19 @@ describe('useIpadTabSwitchImageCacheSweep', () => {
     expect(clearMemoryCache).not.toHaveBeenCalled();
   });
 
+  // Review of #7096: the player pushes root routes of its own (a crew member's
+  // profile, the moderation page). Coming back through one must not read as a
+  // tab switch either, or the close sweeps twice again.
+  it('does not sweep through a root route pushed from the player', () => {
+    segments.value = ['(tabs)', 'climbs'];
+    const { rerender } = renderHook(() => useIpadTabSwitchImageCacheSweep());
+    for (const nextSegments of [['play'], ['moderation'], ['play'], ['(tabs)', 'climbs']]) {
+      segments.value = nextSegments;
+      rerender();
+    }
+    expect(clearMemoryCache).not.toHaveBeenCalled();
+  });
+
   it('sweeps once when the player closes onto a different tab', () => {
     segments.value = ['(tabs)', 'climbs'];
     const { rerender } = renderHook(() => useIpadTabSwitchImageCacheSweep());

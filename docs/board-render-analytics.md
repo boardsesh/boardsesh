@@ -145,7 +145,7 @@ Common props (the table above) plus:
 | `queue_depth`           | `render_stalled` only, absent elsewhere: renders waiting in the JS render scheduler, this one included when queued                          |
 | `dispatched_count`      | `render_stalled` only, absent elsewhere: renders handed to native and not yet answered                                                     |
 | `ms_waiting`            | `render_stalled` only, absent elsewhere: milliseconds since this surface asked for the render                                              |
-| `bridging`              | `paint_timeout` only, absent elsewhere: whether the play board was still held invisible under the opening-art bridge (the tapped row's art shown in its place) |
+| `bridging`              | `paint_timeout` only, absent elsewhere: whether the play board was under the opening-art bridge when the watchdog fired. In practice this means "opened from a row whose art was ready"; see the paint watchdog section |
 | `ms_since_image_sweep`  | `paint_timeout` only, absent elsewhere: milliseconds since the image memory cache was last swept (background, memory warning or iPad tab switch), or `null` when none ran this JS lifetime |
 
 `stage` and `failure_kind` are one discriminated pair in
@@ -257,12 +257,24 @@ before the remount ever got the chance to answer.
 The event carries two more fields, added for issue #7081 (a blank play board
 on iPad, where play paint timeouts per affected person ran about four times the
 iPhone rate). `ms_since_image_sweep` says how long ago the image memory cache
-was last emptied. Until #7081 the iPad tab-switch sweep also ran every time the
-player opened, the moment its board mounted, so a small value points at that
-race. `bridging` says whether the live board was still held at opacity 0 under
-the opening-art bridge in `BoardImageNative`. Compare the iPad `paint_timeout`
-rate per person before and after that fix shipped; if it holds steady, the
-sweep was not the cause.
+was last emptied, on the monotonic clock. Until #7081 the iPad tab-switch sweep
+also ran every time the player opened, the moment its board mounted, so a small
+value points at that race.
+
+`bridging` is weaker than it looks. It is true when the live board was still
+held at opacity 0 under the opening-art bridge in `BoardImageNative`, and the
+bridge lifts only when the live board's images report `onDisplay`. A paint
+timeout means the overlay never answered `onLoad`, so its `onDisplay` almost
+certainly never came either. On any timed-out open that started from a row
+with ready art, `bridging` is therefore true by construction. Read it as "this
+open started from a row whose art was ready", which splits timeouts by entry
+path. It does not show that the bridge hid a board that had painted. Proving
+that needs a signal the bridge cannot cause, such as whether the bridge's own
+overlay painted.
+
+Compare the iPad `paint_timeout` rate per person before and after that fix
+shipped; if it holds steady, the sweep was not the cause. Builds before it never
+sent either field, so the rate is the only before-and-after signal.
 
 **Observation only.** The overlay is not nulled and nothing is retried. A file
 that renders correctly but never paints is a different fault from one that

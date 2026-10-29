@@ -401,19 +401,26 @@ in check:
 - **Release board-art on background + memory pressure.** `LayeredClimbImage` blanks its `<Image>`
   layers when `useIsAppBackgrounded()` is true or the surface is a non-focused iPad tab
   (`BoardArtVisibilityProvider` — the iPad shell keeps every tab mounted, and
-  `Image.clearMemoryCache()` cannot reclaim a bitmap a mounted view still holds). Alongside the cap,
-  `useImageCacheMemoryManagement` sweeps expo-image's memory cache on background and on the OS
-  `memoryWarning` event, and `useIpadTabSwitchImageCacheSweep` sweeps at iPad tab switches. Note the
+  `Image.clearMemoryCache()` cannot reclaim a bitmap a mounted view still holds). The tab the
+  player is open over still counts as focused (#7081); every other tab is released. Alongside the
+  cap, `useImageCacheMemoryManagement` sweeps expo-image's memory cache on background and on the OS
+  `memoryWarning` event, and `useIpadTabSwitchImageCacheSweep` sweeps at iPad tab switches. Root
+  routes over the tabs (the player and the pages it pushes) are not switches: the sweep follows the
+  last tab the climber was on, so opening and closing the player never sweeps. Note the
   `memoryWarning` event is a _last_ resort, not a foreground lever: iOS delivers it only after an
   allocation has already failed. Re-decodes from disk (no network).
 
-**Phone player transitions retain thumbnails.** Opening `/play` must keep the underlying
-list's image layers mounted. Although the player has an opaque backing, its opening and closing
+**Player transitions retain thumbnails, on phones and iPad.** Opening `/play` must keep the
+underlying list's image layers mounted. Although the player has an opaque backing, its opening and closing
 animations expose the list; an interactive swipe exposes it while `/play` is still focused.
 Unmounting on route focus leaves blank thumbnails until their images decode again. Keep the
 existing image instances throughout the transition, including a cancelled swipe. This retains
 the mounted list thumbnails while the player is open; list virtualization, cache limits,
-app-background cleanup, and inactive-iPad-tab cleanup continue to bound image memory.
+app-background cleanup, and inactive-iPad-tab cleanup continue to bound image memory. iPad did
+the opposite until #7081: it hid the tab under the player and swept the memory cache on every
+open and close, so the list came back blank behind the closing player. On iPad, a session that
+stays on one tab plus the player now never sweeps, and the 256 MB `maxMemoryCost` cap is the
+bound that matters for #3803.
 
 **Why:** On-device profiling (Pixel 8 Pro, Android 16) showed ~248 MB native heap idle on the feed
 and the play-drawer carousel piling a native-res (~7 MB RGBA) overlay per swiped climb into the

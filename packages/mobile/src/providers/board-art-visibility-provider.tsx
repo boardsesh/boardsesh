@@ -1,6 +1,6 @@
 import { type ReactNode } from 'react';
 import { BoardArtVisibilityContext } from '../components/board-art-visibility-context';
-import { useBoardArtFocusedTab } from '../hooks/use-board-art-focused-tab';
+import { useBoardArtTabs } from '../hooks/use-board-art-tabs';
 import { useDeviceLayout } from '../hooks/use-device-layout';
 
 // The top-level tab names ((tabs)/<name>). Typing the `tab` prop as this union
@@ -24,7 +24,7 @@ export type BoardArtTab = 'climbs' | 'discover' | 'home' | 'profile' | 'record' 
  */
 export function BoardArtVisibilityProvider({ tab, children }: { tab: BoardArtTab; children: ReactNode }) {
   const { isPad } = useDeviceLayout();
-  const focusedTab = useBoardArtFocusedTab();
+  const { focusedTab } = useBoardArtTabs();
   // On iPad, visible only while THIS tab is the focused top-level destination
   // (segment 1), or the one the player is open over. A pushed sub-route of the
   // tab keeps it active. The value is a primitive boolean, so the provider needs

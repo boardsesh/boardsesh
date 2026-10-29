@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   boardArtFocusedTab,
+  rememberBoardArtTab,
   isTabsRoute,
   isTopLevelTabRoute,
   isAccessorySurfaceRoute,
@@ -174,5 +175,21 @@ describe('boardArtFocusedTab', () => {
   it('counts no tab under any other root route', () => {
     expect(boardArtFocusedTab(['user-drawer'], 'climbs')).toBeNull();
     expect(boardArtFocusedTab(['wall-display'], 'climbs')).toBeNull();
+  });
+});
+
+describe('rememberBoardArtTab', () => {
+  it('takes the focused tab on a tab route', () => {
+    expect(rememberBoardArtTab(['(tabs)', 'discover'], 'climbs')).toBe('discover');
+  });
+
+  it('keeps the last tab through the player and the root pages it pushes', () => {
+    expect(rememberBoardArtTab(['play'], 'climbs')).toBe('climbs');
+    expect(rememberBoardArtTab(['moderation'], 'climbs')).toBe('climbs');
+    expect(rememberBoardArtTab(['users', 'abc'], 'climbs')).toBe('climbs');
+  });
+
+  it('knows no tab before the first tab route', () => {
+    expect(rememberBoardArtTab(['play'], null)).toBeNull();
   });
 });

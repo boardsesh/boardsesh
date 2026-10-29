@@ -74,6 +74,22 @@ describe('BoardArtVisibilityProvider', () => {
     expect(readVisible(container)).toBe('true');
   });
 
+  // Review of #7096: a root route pushed from the player hides the tabs while it
+  // is up, but the tab under the player is still there when the climber comes back.
+  it('keeps the iPad tab beneath the player through a root route pushed from it', () => {
+    segments.value = ['(tabs)', 'climbs'];
+    const { container, rerender } = renderWithin('climbs');
+    const visibleAfter = (nextSegments: readonly string[]) => {
+      segments.value = nextSegments;
+      rerender(createElement(BoardArtVisibilityProvider, { tab: 'climbs', children: createElement(VisibleProbe) }));
+      return readVisible(container);
+    };
+    expect(visibleAfter(['play'])).toBe('true');
+    expect(visibleAfter(['moderation'])).toBe('false');
+    expect(visibleAfter(['play'])).toBe('true');
+    expect(visibleAfter(['(tabs)', 'climbs'])).toBe('true');
+  });
+
   it('keeps every other iPad tab hidden while the player is up', () => {
     segments.value = ['(tabs)', 'climbs'];
     const { container, rerender } = renderWithin('home');

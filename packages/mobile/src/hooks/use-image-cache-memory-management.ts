@@ -4,7 +4,7 @@ import { Image } from 'expo-image';
 import { useIsAppBackgrounded } from '../lib/app-visibility';
 import { forgetBoardArtInMemory } from '../lib/board-render/warm-board-art-memory';
 import { useDeviceLayout } from './use-device-layout';
-import { useBoardArtFocusedTab } from './use-board-art-focused-tab';
+import { useBoardArtTabs } from './use-board-art-tabs';
 
 /**
  * Ceiling for expo-image's in-memory decoded-bitmap cache, in bytes.
@@ -113,20 +113,21 @@ export function useImageCacheMemoryManagement(): void {
 // Opening the player is not a switch (#7081). `/play` is a root route, so its
 // segments name no tab, and reading them directly swept twice per visit: once
 // as the player covered the list and again as it closed, leaving every
-// thumbnail to re-decode while the list came back into view. The focused tab
-// under the player is the one it opened over, so closing onto the same tab
+// thumbnail to re-decode while the list came back into view. So the sweep
+// follows the last TAB the climber was on, kept through every root route (the
+// player and the pages it pushes over itself): closing onto the same tab
 // sweeps nothing and closing onto another tab sweeps once.
 export function useIpadTabSwitchImageCacheSweep(): void {
   const { isPad } = useDeviceLayout();
-  const activeTab = useBoardArtFocusedTab();
+  const { rememberedTab: activeTab } = useBoardArtTabs();
   const lastTab = useRef<string | null>(null);
   const seeded = useRef(false);
 
   useEffect(() => {
     // Seed the first observation so mounting never sweeps — only a genuine
     // tab-to-tab change should clear the cache. A pushed sub-route inside a tab
-    // keeps `activeTab` the same (it reads segment 1), and so does the player,
-    // so neither sweeps.
+    // keeps `activeTab` the same (it reads segment 1), and so does any root
+    // route over the tabs, so neither sweeps.
     if (!seeded.current) {
       seeded.current = true;
       lastTab.current = activeTab;
