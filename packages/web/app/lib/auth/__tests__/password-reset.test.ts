@@ -2,24 +2,40 @@ import { describe, it, expect } from 'vite-plus/test';
 import { createHash } from 'node:crypto';
 import {
   PASSWORD_RESET_IDENTIFIER_PREFIX,
+  PASSWORD_RESET_USER_IDENTIFIER_PREFIX,
   getPasswordResetIdentifier,
+  getPasswordResetUserId,
+  getLegacyPasswordResetEmail,
   hashResetToken,
   consistentDelay,
 } from '../password-reset';
 
 describe('password-reset utilities', () => {
   describe('getPasswordResetIdentifier', () => {
-    it('prefixes the email with the reset namespace', () => {
-      expect(getPasswordResetIdentifier('user@example.com')).toBe('password-reset:user@example.com');
+    it('binds the reset identifier to the selected user id', () => {
+      expect(getPasswordResetIdentifier('user-123')).toBe('password-reset:v2:user:user-123');
     });
 
-    it('uses the exported prefix constant', () => {
-      const email = 'climber@boardsesh.com';
-      expect(getPasswordResetIdentifier(email)).toBe(`${PASSWORD_RESET_IDENTIFIER_PREFIX}${email}`);
+    it('uses the exported user-id prefix constant', () => {
+      expect(getPasswordResetIdentifier('user-123')).toBe(`${PASSWORD_RESET_USER_IDENTIFIER_PREFIX}user-123`);
     });
 
     it('keeps password-reset identifiers distinct from raw emails (no token collision)', () => {
-      expect(getPasswordResetIdentifier('a@b.com')).not.toBe('a@b.com');
+      expect(getPasswordResetIdentifier('user-123')).not.toBe('user-123');
+    });
+  });
+
+  describe('identifier parsing', () => {
+    it('parses current user-bound identifiers', () => {
+      expect(getPasswordResetUserId('password-reset:v2:user:user-123')).toBe('user-123');
+      expect(getLegacyPasswordResetEmail('password-reset:v2:user:user-123')).toBeNull();
+    });
+
+    it('keeps legacy email identifiers distinguishable for fail-closed resolution', () => {
+      expect(getPasswordResetUserId('password-reset:Foo@example.com')).toBeNull();
+      expect(getLegacyPasswordResetEmail('password-reset:Foo@example.com')).toBe('Foo@example.com');
+      expect(getLegacyPasswordResetEmail('unrelated:value')).toBeNull();
+      expect(getLegacyPasswordResetEmail(PASSWORD_RESET_IDENTIFIER_PREFIX)).toBeNull();
     });
   });
 

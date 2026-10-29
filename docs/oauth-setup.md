@@ -6,6 +6,12 @@ that migration is planned, not yet deployed.
 
 This guide covers setting up OAuth authentication providers (Google, Apple, Facebook) and email verification for Boardsesh.
 
+## Duplicate-account merge hold
+
+Case-insensitive sign-in and account-bound verification/reset tokens work independently of the duplicate-account merge tool. The merge tool deliberately rejects the current schema before generating a dry-run report or writing account data: its foreign-key audit finds 13 references to `users(id)` without reviewed merge policies, as of migration 0279. They cover ownership, notifications, privacy, access grants, activity, consent and follow requests, plus two added after the tool was written: `board_share_links.created_by` (migration 0267) and `spray_wall_training_reviews.reviewed_by` (migration 0278). The tool prints the current list each time it refuses, so trust that output over this count when the schema moves again.
+
+Do not run an account merge until each reference has a tested policy. Profile reconciliation must preserve the stricter `is_private`, `privacy_revision`, and `default_session_audience` settings, and access grants and analytics consent require explicit decisions. The existing apply-path integration suite is not verified against the current schema. Account deletion or production merge execution requires separate approval and a reviewed backup/restore plan.
+
 ## Table of Contents
 
 - [Architecture Overview](#architecture-overview)
@@ -316,6 +322,14 @@ vp dlx ngrok http 3000
 ## Email Verification Setup
 
 Email verification is required for email/password accounts. OAuth accounts are pre-verified by the provider.
+
+Password and verification links are bound to the account selected when the
+email is sent. This matters while older accounts with the same address in
+different letter casing are being consolidated: credentials sign-in checks the
+password-authenticated account itself, and a current link cannot verify or reset
+a same-address twin. Older email-only links remain usable only when their
+normalized address resolves to exactly one account; ambiguous links fail closed
+and the person can request a fresh link after the accounts are consolidated.
 
 ### Fastmail Setup (Recommended)
 
