@@ -1363,6 +1363,13 @@ describe('BluetoothProvider connectAfterBoardSwitch (#7001)', () => {
         vi.advanceTimersByTime(15_000);
       });
       await expect(connected).resolves.toBe(false);
+      // Countable: a tap that never reached a scan otherwise leaves no outcome.
+      expect(analytics.track).toHaveBeenCalledWith('Bluetooth Connection Failed', {
+        boardName: 'moonboard',
+        layoutId: 2,
+        sizeId: 1,
+        failureReason: 'board_switch_timeout',
+      });
 
       rerenderOn(rerender, MOON_PROPS);
       await act(async () => {});

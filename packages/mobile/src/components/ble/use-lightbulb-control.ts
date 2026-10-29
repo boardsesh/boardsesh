@@ -182,6 +182,11 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
       const move = climbBoardConnect ? await climbBoardConnect.moveToClimbBoard(climb) : null;
       if (move?.kind === 'failed') return false;
       if (move?.kind === 'switched') {
+        // A wall with no light kit has no radio, so there is nothing to scan
+        // for. Stop at the move: on the new board the bulb re-derives to taking
+        // the wall, the same tap a ledless board offers everywhere else. Taking
+        // it here would bind the wall still in these props, the board just left.
+        if (move.board.hasLeds === false) return false;
         trackBoardConnectTapped({
           surface: surfaceOverride ?? surface,
           placement,

@@ -1808,11 +1808,11 @@ export function BluetoothProvider({
   // Who is waiting on the request in the slot: `connectAfterBoardSwitch`'s
   // promise. Kept beside the slot rather than in it, so a request that is
   // replaced or expires can still be told "no" instead of hanging.
-  const pendingConnectWaiterRef = useRef<((connected: boolean) => void) | null>(null);
+  const pendingConnectWaiterRef = useRef<{ resolve: (connected: boolean) => void; board: UserBoard } | null>(null);
   const settlePendingConnectWaiter = useCallback((connected: boolean) => {
     const waiter = pendingConnectWaiterRef.current;
     pendingConnectWaiterRef.current = null;
-    waiter?.(connected);
+    waiter?.resolve(connected);
   }, []);
   useEffect(() => () => settlePendingConnectWaiter(false), [settlePendingConnectWaiter]);
 
@@ -1833,6 +1833,17 @@ export function BluetoothProvider({
     if (!pendingConfigKey) return;
     const expiryTimeoutId = setTimeout(() => {
       setPendingAutoConnect(null);
+      // A connect that followed the climb and never saw its board arrive. It
+      // never reached a scan, so without this it would leave no outcome at all.
+      const expiredTarget = pendingConnectWaiterRef.current?.board;
+      if (expiredTarget) {
+        track(SHARED_EVENTS.BluetoothConnectionFailed, {
+          boardName: expiredTarget.boardType,
+          layoutId: expiredTarget.layoutId,
+          sizeId: expiredTarget.sizeId,
+          failureReason: 'board_switch_timeout',
+        });
+      }
       settlePendingConnectWaiter(false);
     }, PENDING_AUTO_CONNECT_TTL_MS);
     return () => clearTimeout(expiryTimeoutId);
@@ -1875,7 +1886,7 @@ export function BluetoothProvider({
         )
       : connect(undefined, undefined, serial);
     if (waiter) {
-      connecting.then(waiter, () => waiter(false));
+      connecting.then(waiter.resolve, () => waiter.resolve(false));
     } else {
       void connecting;
     }
@@ -1900,7 +1911,7 @@ export function BluetoothProvider({
     (board: UserBoard) =>
       new Promise<boolean>((resolve) => {
         settlePendingConnectWaiter(false);
-        pendingConnectWaiterRef.current = resolve;
+        pendingConnectWaiterRef.current = { resolve, board };
         setPendingAutoConnect({
           configKey: boardConfigKey(board.boardType, board.layoutId, board.sizeId, board.uuid),
           setIds: board.setIds,

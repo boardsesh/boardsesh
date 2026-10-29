@@ -676,6 +676,27 @@ describe('useLightbulbControl connect follows the climb (#7001)', () => {
     expect(bluetooth.connectAfterBoardSwitch).not.toHaveBeenCalled();
   });
 
+  // A gym MoonBoard with no light kit has no radio to scan for. The bulb on a
+  // ledless board takes the wall instead of connecting, so after the move the
+  // tap stops there: the bulb re-derives to take-the-wall on the new board.
+  it('moves to a ledless board but never scans for it', async () => {
+    const bluetooth = makeBluetooth();
+    ctrl.bluetooth = bluetooth;
+    const ledlessMoonBoard = { ...GYM_MOONBOARD, hasLeds: false } as UserBoard;
+    const climbBoardConnect = {
+      moveToClimbBoard: vi.fn().mockResolvedValue({ kind: 'switched', board: ledlessMoonBoard }),
+    };
+    ctrl.climbBoardConnect = climbBoardConnect;
+    const { result } = renderControl();
+
+    await expect(result.current.connect()).resolves.toBe(false);
+
+    expect(climbBoardConnect.moveToClimbBoard).toHaveBeenCalledOnce();
+    expect(bluetooth.connectAfterBoardSwitch).not.toHaveBeenCalled();
+    expect(bluetooth.connect).not.toHaveBeenCalled();
+    expect(trackMock).not.toHaveBeenCalledWith('Board Connect Tapped', expect.anything());
+  });
+
   it('never moves boards for a tap that does not connect', async () => {
     const bluetooth = makeBluetooth({ isConnected: true });
     ctrl.bluetooth = bluetooth;
