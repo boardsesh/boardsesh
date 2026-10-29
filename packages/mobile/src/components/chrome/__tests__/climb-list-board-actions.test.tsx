@@ -282,19 +282,16 @@ describe('Climb list angle, history and options', () => {
     }
   });
 
-  it('offers the full-screen Wall display on a tablet, between View options and Switch board', () => {
+  it('leaves Wall display to the MiniPlayer and the board sheet on a tablet', () => {
     state.isPad = true;
     state.isTablet = true;
-    const { getByRole } = render(<ClimbListBoardActions onOpenHistory={vi.fn()} />);
+    render(<ClimbListBoardActions onOpenHistory={vi.fn()} />);
     expect(state.menu?.actions.map(({ label }) => label)).toEqual([
       'mobile.listOptions.viewOptions',
-      'mobile.boardPresence.wallDisplay.open',
       'mobile.boardPresence.switchBoard',
     ]);
     // Switch board still opens its own group.
-    expect(state.menu?.actions[2].dividerBefore).toBe(true);
-    fireEvent.click(getByRole('button', { name: 'mobile.boardPresence.wallDisplay.open' }));
-    expect(state.push).toHaveBeenCalledExactlyOnceWith('/wall-display');
+    expect(state.menu?.actions[1].dividerBefore).toBe(true);
   });
 
   it('cancels a phone picker without saving and applies only after confirmation', () => {

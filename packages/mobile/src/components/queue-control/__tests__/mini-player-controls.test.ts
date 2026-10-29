@@ -233,7 +233,8 @@ describe('accessoryPlatterGeometry', () => {
   });
 });
 
-const everyButton = (buttonId: MiniPlayerButtonId) => buttonId !== undefined;
+// Every button but Wall display: an iPhone, or the open Duo, which is a phone.
+const everyButton = (buttonId: MiniPlayerButtonId) => buttonId !== 'wallDisplay';
 
 function resolve(overrides: Partial<MiniPlayerControlsInput>) {
   return resolveMiniPlayerControls({
@@ -263,6 +264,7 @@ describe('resolveMiniPlayerControls', () => {
       leading: ['mirror', 'favorite', 'previous', 'next'],
       workout: [],
       more: false,
+      wallDisplay: false,
       trailing: ['lightbulb', 'log'],
     });
   });
@@ -272,6 +274,7 @@ describe('resolveMiniPlayerControls', () => {
       leading: ['favorite', 'previous', 'next'],
       workout: [],
       more: false,
+      wallDisplay: false,
       trailing: ['lightbulb', 'log'],
     });
   });
@@ -281,6 +284,7 @@ describe('resolveMiniPlayerControls', () => {
       leading: ['next'],
       workout: [],
       more: false,
+      wallDisplay: false,
       trailing: ['lightbulb', 'log'],
     });
   });
@@ -294,6 +298,7 @@ describe('resolveMiniPlayerControls', () => {
       leading: ['mirror'],
       workout: [],
       more: false,
+      wallDisplay: false,
       trailing: ['lightbulb', 'log'],
     });
   });
@@ -307,11 +312,18 @@ describe('resolveMiniPlayerControls', () => {
   });
 
   it('keeps the one slot for the bulb while the board is free, the tick otherwise', () => {
-    expect(resolve({ slotCount: 1 })).toEqual({ leading: [], workout: [], more: false, trailing: ['lightbulb'] });
+    expect(resolve({ slotCount: 1 })).toEqual({
+      leading: [],
+      workout: [],
+      more: false,
+      wallDisplay: false,
+      trailing: ['lightbulb'],
+    });
     expect(resolve({ slotCount: 1, singleSlotShowsBulb: false })).toEqual({
       leading: [],
       workout: [],
       more: false,
+      wallDisplay: false,
       trailing: ['log'],
     });
   });
@@ -321,12 +333,14 @@ describe('resolveMiniPlayerControls', () => {
       leading: [],
       workout: [],
       more: false,
+      wallDisplay: false,
       trailing: ['lightbulb', 'log'],
     });
     expect(resolve({ layout: layoutWith([...DEFAULT_MINI_PLAYER_BUTTONS.order], []) })).toEqual({
       leading: [],
       workout: [],
       more: false,
+      wallDisplay: false,
       trailing: ['lightbulb', 'log'],
     });
   });
@@ -336,6 +350,7 @@ describe('resolveMiniPlayerControls', () => {
       leading: ['previous'],
       workout: [],
       more: false,
+      wallDisplay: false,
       trailing: ['lightbulb', 'log'],
     });
   });
@@ -348,6 +363,7 @@ describe('resolveMiniPlayerControls', () => {
       leading: ['favorite'],
       workout: [],
       more: false,
+      wallDisplay: false,
       trailing: [],
     });
   });
@@ -361,6 +377,7 @@ describe("resolveMiniPlayerControls on a wide bar (Music's iPad layout)", () => 
       leading: ['previous', 'next', 'mirror', 'favorite'],
       workout: [],
       more: true,
+      wallDisplay: false,
       trailing: ['lightbulb', 'log'],
     });
   });
@@ -368,9 +385,24 @@ describe("resolveMiniPlayerControls on a wide bar (Music's iPad layout)", () => 
   it("keeps the climber's claim order: a short bar drops the end of the list, ⋯ claims after 💡 ✓", () => {
     expect(wideBar({ slotCount: 4 })).toMatchObject({ leading: ['next'], more: true });
     expect(wideBar({ slotCount: 5 })).toMatchObject({ leading: ['previous', 'next'], more: true });
-    expect(wideBar({ slotCount: 3 })).toMatchObject({ leading: [], more: true, trailing: ['lightbulb', 'log'] });
-    expect(wideBar({ slotCount: 2 })).toMatchObject({ leading: [], more: false, trailing: ['lightbulb', 'log'] });
-    expect(wideBar({ slotCount: 1 })).toMatchObject({ leading: [], more: false, trailing: ['lightbulb'] });
+    expect(wideBar({ slotCount: 3 })).toMatchObject({
+      leading: [],
+      more: true,
+      wallDisplay: false,
+      trailing: ['lightbulb', 'log'],
+    });
+    expect(wideBar({ slotCount: 2 })).toMatchObject({
+      leading: [],
+      more: false,
+      wallDisplay: false,
+      trailing: ['lightbulb', 'log'],
+    });
+    expect(wideBar({ slotCount: 1 })).toMatchObject({
+      leading: [],
+      more: false,
+      wallDisplay: false,
+      trailing: ['lightbulb'],
+    });
   });
 
   it('puts ⏮ ⏭ first whatever order the climber chose', () => {
@@ -386,6 +418,7 @@ describe("resolveMiniPlayerControls on a wide bar (Music's iPad layout)", () => 
       leading: ['previous', 'next'],
       workout: [],
       more: false,
+      wallDisplay: false,
       trailing: ['lightbulb', 'log'],
     });
   });
@@ -403,12 +436,18 @@ describe("resolveMiniPlayerControls on a wide bar (Music's iPad layout)", () => 
       leading: [],
       workout: ['fell', 'sent'],
       more: true,
+      wallDisplay: false,
       trailing: ['lightbulb', 'log'],
     });
-    expect(wideBar({ workoutOutcome: true, bulbAvailable: false })).toMatchObject({ more: true, trailing: ['log'] });
+    expect(wideBar({ workoutOutcome: true, bulbAvailable: false })).toMatchObject({
+      more: true,
+      wallDisplay: false,
+      trailing: ['log'],
+    });
     // ⋯ claims last: four slots keep Fell, Sent, 💡 ✓.
     expect(wideBar({ workoutOutcome: true, slotCount: 4 })).toMatchObject({
       more: false,
+      wallDisplay: false,
       trailing: ['lightbulb', 'log'],
     });
   });
@@ -418,20 +457,78 @@ describe("resolveMiniPlayerControls on a wide bar (Music's iPad layout)", () => 
       leading: ['favorite', 'share'],
       workout: [],
       more: true,
+      wallDisplay: false,
       trailing: [],
     });
     expect(wideBar({ paneMode: 'stepAside' })).toEqual({
       leading: [],
       workout: [],
       more: true,
+      wallDisplay: false,
       trailing: ['lightbulb', 'log'],
     });
     expect(wideBar({ paneMode: 'carry', workoutOutcome: true })).toEqual({
       leading: [],
       workout: ['fell', 'sent'],
       more: true,
+      wallDisplay: false,
       trailing: [],
     });
+  });
+});
+
+describe('resolveMiniPlayerControls with Wall display (tablets)', () => {
+  const tabletBar = (overrides: Partial<MiniPlayerControlsInput>) =>
+    resolve({ wideLayout: true, isAvailable: () => true, ...overrides });
+
+  it('draws ⛶ after ⋯, never in the leading cluster', () => {
+    expect(tabletBar({})).toEqual({
+      leading: ['previous', 'next', 'mirror', 'favorite'],
+      workout: [],
+      more: true,
+      wallDisplay: true,
+      trailing: ['lightbulb', 'log'],
+    });
+  });
+
+  it("claims its slot in the climber's order, straight after Favorite by default", () => {
+    // 💡 ✓ ⋯ and the four before it in the list.
+    expect(tabletBar({ slotCount: 7 })).toMatchObject({ leading: ['previous', 'next', 'mirror', 'favorite'] });
+    expect(tabletBar({ slotCount: 7 }).wallDisplay).toBe(false);
+    expect(tabletBar({ slotCount: 8 }).wallDisplay).toBe(true);
+    const wallFirst = layoutWith(
+      ['wallDisplay', 'next', 'previous', 'mirror', 'favorite', 'queue', 'share', 'angle'],
+      ['wallDisplay', 'next', 'previous'],
+    );
+    expect(tabletBar({ slotCount: 4, layout: wallFirst })).toMatchObject({ leading: [], wallDisplay: true });
+  });
+
+  it('leaves the bar when switched off, or when the bar may not offer it', () => {
+    const off = layoutWith([...DEFAULT_MINI_PLAYER_BUTTONS.order], ['next', 'previous', 'mirror', 'favorite']);
+    expect(tabletBar({ layout: off }).wallDisplay).toBe(false);
+    expect(tabletBar({ isAvailable: (buttonId) => buttonId !== 'wallDisplay' }).wallDisplay).toBe(false);
+  });
+
+  it('never shows on an inline bar or outside the wide layout', () => {
+    expect(tabletBar({ wideLayout: false }).wallDisplay).toBe(false);
+    expect(tabletBar({ wideLayout: false }).leading).not.toContain('wallDisplay');
+    expect(tabletBar({ slotCount: 1 }).wallDisplay).toBe(false);
+  });
+
+  it('stays in a timed block after ⋯, when the bar has room', () => {
+    expect(tabletBar({ workoutOutcome: true })).toEqual({
+      leading: [],
+      workout: ['fell', 'sent'],
+      more: true,
+      wallDisplay: true,
+      trailing: ['lightbulb', 'log'],
+    });
+    expect(tabletBar({ workoutOutcome: true, slotCount: 5 }).wallDisplay).toBe(false);
+    expect(tabletBar({ workoutOutcome: true, slotCount: 6 }).wallDisplay).toBe(true);
+  });
+
+  it('steps aside with the other buttons when the pane shows a preview', () => {
+    expect(tabletBar({ paneMode: 'stepAside' }).wallDisplay).toBe(false);
   });
 });
 
@@ -460,6 +557,18 @@ describe('trailingSlotFrame', () => {
     // No board bound in a timed block: the bulb's slot stays empty between ⋯ and ✓.
     expect(trailingSlotFrame(wideSlots, showing('more', 'log'))).toEqual({ slotsShown: 3, trailingShift: 0 });
   });
+
+  it('spans ⋯ ⛶ 💡 ✓ on a tablet, and keeps ⛶ beside 💡 while ⋯ is away', () => {
+    const tabletSlots = ['more', 'wallDisplay', 'lightbulb', 'log'] as const;
+    expect(trailingSlotFrame(tabletSlots, showing('more', 'wallDisplay', 'lightbulb', 'log'))).toEqual({
+      slotsShown: 4,
+      trailingShift: 0,
+    });
+    expect(trailingSlotFrame(tabletSlots, showing('wallDisplay', 'lightbulb', 'log'))).toEqual({
+      slotsShown: 3,
+      trailingShift: 0,
+    });
+  });
 });
 
 describe('resolveMiniPlayerControls with the pane covered (iPhone Duo open)', () => {
@@ -470,7 +579,7 @@ describe('resolveMiniPlayerControls with the pane covered (iPhone Duo open)', ()
         paneMode: 'carry',
         paneCoveredButtons: ['favorite', 'angle', 'share'],
       }),
-    ).toEqual({ leading: ['favorite', 'angle', 'share'], workout: [], more: false, trailing: [] });
+    ).toEqual({ leading: ['favorite', 'angle', 'share'], workout: [], more: false, wallDisplay: false, trailing: [] });
   });
 
   it('skips the covered buttons that cannot show here', () => {
@@ -500,6 +609,7 @@ describe('resolveMiniPlayerControls in a timed workout block', () => {
       leading: [],
       workout: ['fell', 'sent'],
       more: false,
+      wallDisplay: false,
       trailing: ['lightbulb', 'log'],
     });
   });
@@ -513,6 +623,7 @@ describe('resolveMiniPlayerControls in a timed workout block', () => {
       leading: [],
       workout: ['fell', 'sent'],
       more: false,
+      wallDisplay: false,
       trailing: ['lightbulb'],
     });
   });
@@ -526,17 +637,24 @@ describe('resolveMiniPlayerControls in a timed workout block', () => {
       leading: [],
       workout: ['fell', 'sent'],
       more: false,
+      wallDisplay: false,
       trailing: ['log'],
     });
     expect(workout({ slotCount: wide(995), bulbAvailable: false }).trailing).toEqual(['log']);
   });
 
   it('keeps Fell and Sent on a two-slot bar', () => {
-    expect(workout({ slotCount: 2 })).toEqual({ leading: [], workout: ['fell', 'sent'], more: false, trailing: [] });
+    expect(workout({ slotCount: 2 })).toEqual({
+      leading: [],
+      workout: ['fell', 'sent'],
+      more: false,
+      wallDisplay: false,
+      trailing: [],
+    });
   });
 
   it('keeps Sent alone in one slot (the tab bar minimized), whatever the board state', () => {
-    const inline = { leading: [], workout: ['sent'], more: false, trailing: [] };
+    const inline = { leading: [], workout: ['sent'], more: false, wallDisplay: false, trailing: [] };
     expect(workout({ slotCount: phone(370, 'inline') })).toEqual(inline);
     expect(workout({ slotCount: wide(995, 'inline'), singleSlotShowsBulb: false })).toEqual(inline);
     expect(workout({ slotCount: 1, paneMode: 'carry' })).toEqual(inline);
@@ -545,7 +663,7 @@ describe('resolveMiniPlayerControls in a timed workout block', () => {
   it("carries Fell and Sent on the Duo's pane row, without the bulb and tick the pane's big row shows", () => {
     expect(
       workout({ slotCount: wide(800), paneMode: 'carry', paneCoveredButtons: ['favorite', 'angle', 'share'] }),
-    ).toEqual({ leading: [], workout: ['fell', 'sent'], more: false, trailing: [] });
+    ).toEqual({ leading: [], workout: ['fell', 'sent'], more: false, wallDisplay: false, trailing: [] });
   });
 
   it('keeps the step-aside bar (bulb and tick only) while the pane shows a preview', () => {
@@ -553,6 +671,7 @@ describe('resolveMiniPlayerControls in a timed workout block', () => {
       leading: [],
       workout: [],
       more: false,
+      wallDisplay: false,
       trailing: ['lightbulb', 'log'],
     });
   });
@@ -571,11 +690,13 @@ describe('resolveMiniPlayerControls in a timed workout block', () => {
         isDraft: false,
         angleAdjustable: true,
         playerRouteUp: false,
+        tablet: true,
       });
     expect(resolve({ slotCount: wide(995), layout: allOn, isAvailable: signedOutInBlock })).toEqual({
       leading: ['mirror', 'share', 'angle'],
       workout: [],
       more: false,
+      wallDisplay: false,
       trailing: ['lightbulb', 'log'],
     });
   });
@@ -654,8 +775,9 @@ describe('isMiniPlayerButtonAvailable', () => {
     isDraft: false,
     angleAdjustable: true,
     playerRouteUp: false,
+    tablet: true,
   };
-  const ids = ['next', 'previous', 'mirror', 'favorite', 'queue', 'share', 'angle'] as const;
+  const ids = ['next', 'previous', 'mirror', 'favorite', 'wallDisplay', 'queue', 'share', 'angle'] as const;
 
   it('offers every button on a mirroring, adjustable board for a signed-in climber', () => {
     expect(ids.every((id) => isMiniPlayerButtonAvailable(id, everything))).toBe(true);
@@ -673,8 +795,15 @@ describe('isMiniPlayerButtonAvailable', () => {
     expect(isMiniPlayerButtonAvailable('angle', { ...everything, angleAdjustable: false })).toBe(false);
   });
 
-  it('drops Angle while the player route is up, and nothing else', () => {
+  it('offers Wall display on a tablet only (the open Duo is a phone)', () => {
+    expect(isMiniPlayerButtonAvailable('wallDisplay', everything)).toBe(true);
+    expect(isMiniPlayerButtonAvailable('wallDisplay', { ...everything, tablet: false })).toBe(false);
+    expect(isMiniPlayerButtonAvailable('favorite', { ...everything, tablet: false })).toBe(true);
+  });
+
+  it('drops Angle and Wall display while the player route is up, and nothing else', () => {
     const state = { ...everything, playerRouteUp: true };
+    expect(isMiniPlayerButtonAvailable('wallDisplay', state)).toBe(false);
     expect(isMiniPlayerButtonAvailable('angle', state)).toBe(false);
     expect(isMiniPlayerButtonAvailable('mirror', state)).toBe(true);
     expect(isMiniPlayerButtonAvailable('favorite', state)).toBe(true);

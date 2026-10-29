@@ -636,7 +636,8 @@
         "description": "La barre au-dessus des onglets. Touche-la pour ouvrir le bloc.",
         "buttons": {
           "next": "Bloc suivant",
-          "previous": "Bloc précédent"
+          "previous": "Bloc précédent",
+          "wallDisplay": "Affichage mural"
         },
         "fixedNote": "Éclairage de la board est toujours là, à côté d'Enregistrer. Enregistrer reste en dernier, sous ton pouce.",
         "footer": "Sur iPhone, la barre a de la place pour un seul de ces boutons à côté d'Éclairage de la board et d'Enregistrer : le premier qui est activé.",

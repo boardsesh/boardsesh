@@ -58,7 +58,7 @@ import { useSegments } from 'expo-router';
 import { isPlayerRoute } from '../../lib/route-segments';
 import { boardSupportsMirroring } from '@boardsesh/play-view';
 import { publishMeasuredMiniPlayerBar } from '../../lib/mini-player-measured-bar-store';
-import { MiniPlayerLeadingButtons } from './MiniPlayerButtons';
+import { MiniPlayerLeadingButtons, MiniPlayerWallDisplayButton } from './MiniPlayerButtons';
 import { useMiniPlayerButtons } from '../../lib/mini-player-buttons-preference';
 import type { MiniPlayerButtonId } from '../../lib/mini-player-buttons';
 import { useDeviceLayout } from '../../hooks/use-device-layout';
@@ -84,6 +84,13 @@ const WIDE_TRAILING_SLOTS: readonly TrailingControlSlot[] = ['more', 'lightbulb'
 // rather than leave a gap between ⋯ and ✓. Whether a board is bound is the same
 // in both placements, so this never moves a frame as the bar expands.
 const WIDE_TRAILING_SLOTS_NO_BULB: readonly TrailingControlSlot[] = ['more', 'log'];
+// A tablet's bar with Wall display on adds ⛶ after ⋯, where Music's iPad bar
+// puts lyrics. Whether it shows follows the climber's switch, the bar's widest
+// width under this window shape (`wideRowCapacityWidth`) and the `/play` route,
+// none of which changes while UIKit squeezes the open row, so its frame never
+// comes or goes mid-expand.
+const WIDE_TRAILING_SLOTS_WALL: readonly TrailingControlSlot[] = ['more', 'wallDisplay', 'lightbulb', 'log'];
+const WIDE_TRAILING_SLOTS_WALL_NO_BULB: readonly TrailingControlSlot[] = ['more', 'wallDisplay', 'log'];
 // ✓ on a wide bar: Music's one large filled control.
 const WIDE_LOG_GLYPH_SIZE = 32;
 
@@ -301,8 +308,9 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
         isDraft,
         angleAdjustable,
         playerRouteUp,
+        tablet: isTablet,
       }),
-    [workout.inTimedBlock, supportsMirroring, isAuthenticated, isDraft, angleAdjustable, playerRouteUp],
+    [workout.inTimedBlock, supportsMirroring, isAuthenticated, isDraft, angleAdjustable, playerRouteUp, isTablet],
   );
   const paneCoveredButtons = useMemo(
     () =>
@@ -394,13 +402,26 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
       ) : null}
     </>
   );
-  const trailingSlots = wideLayout
-    ? bulbAvailable
-      ? WIDE_TRAILING_SLOTS
-      : WIDE_TRAILING_SLOTS_NO_BULB
-    : PHONE_TRAILING_SLOTS;
+  const trailingSlots = !wideLayout
+    ? PHONE_TRAILING_SLOTS
+    : controls.wallDisplay
+      ? bulbAvailable
+        ? WIDE_TRAILING_SLOTS_WALL
+        : WIDE_TRAILING_SLOTS_WALL_NO_BULB
+      : bulbAvailable
+        ? WIDE_TRAILING_SLOTS
+        : WIDE_TRAILING_SLOTS_NO_BULB;
   const slotShown = (slot: TrailingControlSlot) =>
-    slot === 'more' ? controls.more && climbBoard !== null : controls.trailing.includes(slot);
+    slot === 'more'
+      ? controls.more && climbBoard !== null
+      : slot === 'wallDisplay'
+        ? controls.wallDisplay
+        : controls.trailing.includes(slot);
+  // What ⋯ stands in for is everything the bar is not drawing, ⛶ included.
+  const menuShownButtons = useMemo<readonly MiniPlayerButtonId[]>(
+    () => (controls.wallDisplay ? [...controls.leading, 'wallDisplay'] : controls.leading),
+    [controls.leading, controls.wallDisplay],
+  );
   const { slotsShown, trailingShift } = trailingSlotFrame(trailingSlots, slotShown);
 
   // UIKit can omit the central zoom-source subtree from its accessory AX tree.
@@ -493,13 +514,15 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
                     climbBoard={climbBoard}
                     queueItemUuid={queueItemUuid}
                     isAuthenticated={isAuthenticated}
-                    shownButtons={controls.leading}
+                    shownButtons={menuShownButtons}
                     isAvailable={isAvailable}
                     angleClimbUuid={angleClimbUuid}
                     bluetoothConnected={bluetoothConnected}
                     size={glassSize.inline}
                   />
                 ) : null
+              ) : slot === 'wallDisplay' ? (
+                <MiniPlayerWallDisplayButton size={glassSize.inline} />
               ) : slot === 'lightbulb' ? (
                 <BoardControlIndicator
                   size={glassSize.inline}

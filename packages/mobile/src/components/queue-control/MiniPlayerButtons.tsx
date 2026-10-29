@@ -17,7 +17,8 @@ import { Icon } from '../Icon';
 import type { IconName } from '../icon-map';
 import { PressableSurface } from '../PressableSurface';
 import { AnglePill } from '../play-drawer/AnglePill';
-import { useSegments } from 'expo-router';
+import { useRouter, useSegments } from 'expo-router';
+import { WALL_DISPLAY_HREF } from '../../lib/routing/wall-display-link';
 import { isPlayerRoute } from '../../lib/route-segments';
 import { MiniPlayerTrackPager, useMiniPlayerNavigation } from './use-mini-player-navigation';
 import { useQueueActions } from '../../providers/queue-provider';
@@ -286,6 +287,28 @@ function MiniPlayerAngleButton({ angle, climbUuid }: { angle: number; climbUuid:
     />
   );
 }
+
+/**
+ * ⛶ on a tablet's bar: the full-screen Wall display, the same push as the board
+ * sheet's `WallDisplayEntry`. Drawn after ⋯ like Music's lyrics button, at the
+ * bulb's 22pt in the label colour.
+ */
+export const MiniPlayerWallDisplayButton = memo(function MiniPlayerWallDisplayButton({ size }: { size: number }) {
+  const { t } = useTranslation('session');
+  const router = useRouter();
+  const handlePress = useCallback(() => router.push(WALL_DISPLAY_HREF), [router]);
+  return (
+    <View testID="mini-player-slot-wallDisplay">
+      <MiniPlayerIconButton
+        iconName="expand"
+        accessibilityLabel={t('mobile.boardPresence.wallDisplay.open')}
+        onPress={handlePress}
+        size={size}
+        iconSize={PHONE_GLYPH_SIZE}
+      />
+    </View>
+  );
+});
 
 /** ⏮ ⏭: their targets are walked only while one of them is on the bar. */
 function MiniPlayerTransportButtons({

@@ -41,6 +41,7 @@ const BUTTON_ICONS: Record<MiniPlayerButtonId, IconName> = {
   previous: 'skip.previous',
   mirror: 'mirror',
   favorite: 'favorite',
+  wallDisplay: 'expand',
   queue: 'queue',
   share: 'share',
   angle: 'angle',
@@ -61,6 +62,8 @@ type MiniPlayerButtonsPreviewProps = {
   wide: boolean;
   /** Favorite and Queue need an account; the bar leaves them out when signed out. */
   signedIn: boolean;
+  /** An iPad or an Android tablet: the only bar with Wall display. */
+  tablet: boolean;
 };
 
 /**
@@ -75,6 +78,7 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
   board,
   wide,
   signedIn,
+  tablet,
 }: MiniPlayerButtonsPreviewProps) {
   const { t } = useTranslation('common');
   const { systemColors, brandColors } = useTheme();
@@ -90,6 +94,7 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
         isDraft: false,
         angleAdjustable: board.angleAvailable,
         playerRouteUp: false,
+        tablet,
       });
     return (slotCount: number, placement: 'regular' | 'inline'): MiniPlayerControls =>
       resolveMiniPlayerControls({
@@ -103,7 +108,7 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
         wideLayout: miniPlayerUsesWideLayout({ wide, placement }),
         moreAvailable: true,
       });
-  }, [buttons, board.supportsMirroring, board.angleAvailable, board.showLightbulb, signedIn, wide]);
+  }, [buttons, board.supportsMirroring, board.angleAvailable, board.showLightbulb, signedIn, wide, tablet]);
   // The real bar's slot rule at the width the bar measured on this device, or a representative one before it has drawn.
   const slotCountAt = useCallback(
     (placement: 'regular' | 'inline') =>
@@ -120,13 +125,14 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
   const openWideLayout = miniPlayerUsesWideLayout({ wide, placement: 'regular' });
 
   const buttonLabel = (buttonId: MiniPlayerButtonId): string =>
-    buttonId === 'next' || buttonId === 'previous'
+    buttonId === 'next' || buttonId === 'previous' || buttonId === 'wallDisplay'
       ? t(`mobile.settings.miniPlayer.buttons.${buttonId}`)
       : t(`mobile.settings.playerButtons.buttons.${buttonId}`);
   const spoken = (controls: MiniPlayerControls): string =>
     [
       ...controls.leading.map(buttonLabel),
       ...(controls.more ? [t('mobile.settings.miniPlayer.more')] : []),
+      ...(controls.wallDisplay ? [buttonLabel('wallDisplay')] : []),
       ...controls.trailing.map((slot) =>
         slot === 'lightbulb'
           ? t('mobile.settings.playerButtons.fixed.boardLight')
@@ -159,6 +165,7 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
     });
     const trailingGlyphs = [
       ...(controls.more ? [glyph('more', 'more', systemColors.label)] : []),
+      ...(controls.wallDisplay ? [glyph('wallDisplay', BUTTON_ICONS.wallDisplay, systemColors.label)] : []),
       ...controls.trailing.map((slot) =>
         slot === 'lightbulb'
           ? glyph(slot, 'lightbulb', systemColors.label)

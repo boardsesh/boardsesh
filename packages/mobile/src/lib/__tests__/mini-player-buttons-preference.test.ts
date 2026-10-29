@@ -47,7 +47,7 @@ describe('mini player buttons editor', () => {
     act(() => result.current.move('queue', -1));
     expect(stored('miniPlayerButtonsV1')).toMatchObject({
       version: 1,
-      order: ['next', 'previous', 'mirror', 'queue', 'favorite', 'share', 'angle'],
+      order: ['next', 'previous', 'mirror', 'favorite', 'queue', 'wallDisplay', 'share', 'angle'],
     });
     expect(result.current.buttons.visible.favorite).toBe(true);
     expect(result.current.isDefault).toBe(false);
@@ -61,6 +61,39 @@ describe('mini player buttons editor', () => {
     act(() => result.current.setVisible('next', true));
     expect(stored('miniPlayerButtonsV1')).toBeNull();
     expect(result.current.isDefault).toBe(true);
+  });
+
+  it('gives a layout saved before Wall display existed the button, on, straight after Favorite', async () => {
+    const { useMiniPlayerButtons } = await launchWith({
+      miniPlayerButtonsV1: {
+        version: 1,
+        order: ['favorite', 'next', 'previous', 'mirror', 'queue', 'share', 'angle'],
+        visible: {
+          next: true,
+          previous: false,
+          mirror: true,
+          favorite: true,
+          queue: true,
+          share: false,
+          angle: false,
+        },
+      },
+    });
+    const { result } = renderHook(() => useMiniPlayerButtons());
+    expect(result.current.order).toEqual([
+      'favorite',
+      'wallDisplay',
+      'next',
+      'previous',
+      'mirror',
+      'queue',
+      'share',
+      'angle',
+    ]);
+    expect(result.current.visible.wallDisplay).toBe(true);
+    // The climber's own switches are untouched.
+    expect(result.current.visible.previous).toBe(false);
+    expect(result.current.visible.queue).toBe(true);
   });
 
   it('keeps an id this build does not know when the climber changes something else', async () => {

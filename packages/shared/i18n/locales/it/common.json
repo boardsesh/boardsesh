@@ -636,7 +636,8 @@
         "description": "La barra sopra le schede. Toccala per aprire il blocco.",
         "buttons": {
           "next": "Blocco successivo",
-          "previous": "Blocco precedente"
+          "previous": "Blocco precedente",
+          "wallDisplay": "Schermo parete"
         },
         "fixedNote": "Luce del pannello c’è sempre, accanto a Registra. Registra resta sempre ultimo, sotto il tuo pollice.",
         "footer": "Su iPhone la barra ha posto per uno solo di questi accanto a Luce del pannello e Registra: il primo attivo.",

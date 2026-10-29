@@ -153,7 +153,8 @@ The bar itself depends on the device:
   persistent player pane (`IpadPlayPane`) and, in landscape, the live wall column.
 - **Wall display (tablets):** a full-screen kiosk for a tablet mounted at the
   board, read from 3–5 m (`app/wall-display/`). It opens from the board sheet
-  and from the Climbs ⋯ menu, on a tablet only; the old
+  and from ⛶ on the MiniPlayer (or the MiniPlayer's ⋯ when ⛶ is switched off),
+  on a tablet only; the old
   `com.boardsesh.app://wall` link opens it too (`+native-intent.ts`). A root
   `transparentModal` like `/play`, never `fullScreenModal`
   (`docs/mobile-sheets-vs-routes.md` rule 2), so it covers the sidebar, the tab
