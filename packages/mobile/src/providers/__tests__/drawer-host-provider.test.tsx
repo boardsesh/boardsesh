@@ -292,7 +292,7 @@ const nativeNavigation = vi.hoisted(() => ({
   segments: ['(tabs)', 'climbs'] as string[],
   // On a device the root state is expo-router's own stack (`ExpoRoot`'s
   // `Content`), with one `__root` screen whose nested state is the app's Stack.
-  // False only where a test still needs the old flat shape (see #7069).
+  // False only where a test also covers the flat shape.
   wrappedInExpoRoot: true,
   dispatch: vi.fn(),
 }));
@@ -311,7 +311,7 @@ const nativeNavigationRef = {
   dispatch: nativeNavigation.dispatch,
 };
 vi.mock('expo-router', () => ({
-  router: { push: vi.fn(), navigate: vi.fn(), dismiss: vi.fn() },
+  router: { push: vi.fn(), navigate: vi.fn(), dismiss: vi.fn(), back: vi.fn() },
   useNavigationContainerRef: () => nativeNavigationRef,
   useSegments: () => nativeNavigation.segments,
 }));
@@ -2245,13 +2245,19 @@ describe('DrawerHostProvider iPad pane open (regular width)', () => {
     expect(routerNavigate).not.toHaveBeenCalled();
   });
 
-  it('dispatches the known native player route during the open batch', async () => {
+  // The player opens through `router.navigate('/play')` and nothing else. A
+  // direct `NAVIGATE play` dispatch would jump ahead of router calls a caller
+  // queued first (the deep-link hand-off leaves its screen, then opens), and
+  // that queued pop would land on the player it just opened (#7069). Both root
+  // shapes are covered: the flat one is the shape the deleted fast path read.
+  it.each([
+    { shape: 'wrapped in expo-router __root', wrappedInExpoRoot: true },
+    { shape: 'flat app stack', wrappedInExpoRoot: false },
+  ])('opens the player through the router, never a direct dispatch ($shape)', async ({ wrappedInExpoRoot }) => {
     layoutCfg.widthClass = 'compact';
     nativeNavigation.ready = true;
-    // `navigateToPlayer` reads the root state as if it were the app's Stack, so
-    // on a device (root wrapped in `__root`) this fast path never runs and the
-    // open falls back to the router. Flat shape until #7069 fixes it.
-    nativeNavigation.wrappedInExpoRoot = false;
+    nativeNavigation.wrappedInExpoRoot = wrappedInExpoRoot;
+    nativeNavigation.routeNames = ['(tabs)', 'play'];
     const hosts: Array<HostValue> = [];
     const routes: RouteValue[] = [];
     renderHost(
@@ -2259,38 +2265,56 @@ describe('DrawerHostProvider iPad pane open (regular width)', () => {
       (route) => routes.push(route),
     );
     await waitFor(() => expect(hosts.at(-1)).toBeDefined());
-    const climb = makeQueueItem('queue-native', 'native-open').climb as unknown as Climb;
-    act(() => {
-      hosts.at(-1)?.openPlayDrawer(climb);
-      expect(nativeNavigation.dispatch).toHaveBeenCalledWith({
-        type: 'NAVIGATE',
-        target: 'root-stack',
-        payload: { name: 'play' },
-      });
-      expect(routerNavigate).not.toHaveBeenCalled();
-    });
-    expect(hosts.at(-1)?.playDrawerPaneProps?.openTarget).toBeNull();
-    expect(routes.at(-1)?.playTarget?.climb.uuid).toBe('native-open');
+    const climb = makeQueueItem('queue-router', 'router-open').climb as unknown as Climb;
+    act(() => hosts.at(-1)?.openPlayDrawer(climb));
+    expect(routerNavigate).toHaveBeenCalledWith('/play');
+    expect(nativeNavigation.dispatch).not.toHaveBeenCalled();
+    expect(routes.at(-1)?.playTarget?.climb.uuid).toBe('router-open');
     const firstNonce = routes.at(-1)?.playTarget?.nonce;
     act(() => hosts.at(-1)?.openPlayDrawer(climb));
     expect(routes.at(-1)?.playTarget?.nonce).not.toBe(firstNonce);
-    expect(nativeNavigation.dispatch).toHaveBeenCalledTimes(2);
-    expect(queue.setCurrentClimb).not.toHaveBeenCalled();
+    expect(routerNavigate).toHaveBeenCalledTimes(2);
+    expect(nativeNavigation.dispatch).not.toHaveBeenCalled();
   });
 
-  it('uses the router if the mounted navigator does not own the player', async () => {
+  // The deep-link hand-off (`use-board-route-target`) leaves its redirector with
+  // `router.back()` and THEN opens the player. expo-router queues both and runs
+  // them in order after the commit, so the pop takes the redirector and `/play`
+  // stays. Modelled here with a queue: a direct dispatch to the navigator runs
+  // at once, jumps the queued pop, and the pop then closes the player it just
+  // opened (#7069). Covers both root shapes so a fast path that learns to read
+  // through expo-router's `__root` wrapper is caught too.
+  it.each([
+    { shape: 'wrapped in expo-router __root', wrappedInExpoRoot: true },
+    { shape: 'flat app stack', wrappedInExpoRoot: false },
+  ])('keeps the player open when a caller queued a pop before opening ($shape)', async ({ wrappedInExpoRoot }) => {
     layoutCfg.widthClass = 'compact';
     nativeNavigation.ready = true;
-    // Flat like the fast-path test above (#7069): wrapped, `navigateToPlayer`
-    // never sees `routeNames` and this would pass whatever they held.
-    nativeNavigation.wrappedInExpoRoot = false;
-    nativeNavigation.routeNames = ['(tabs)'];
-    const hosts: Array<HostValue> = [];
-    renderHost((host) => hosts.push(host));
-    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
-    act(() => hosts.at(-1)?.openPlayDrawer(makeQueueItem('queue-fallback').climb as unknown as Climb));
-    expect(nativeNavigation.dispatch).not.toHaveBeenCalled();
-    expect(routerNavigate).toHaveBeenCalledWith('/play');
+    nativeNavigation.wrappedInExpoRoot = wrappedInExpoRoot;
+    nativeNavigation.routeNames = ['(tabs)', 'play'];
+    const routerBack = router.back as unknown as ReturnType<typeof vi.fn>;
+    const appStack = ['(tabs)', 'redirector'];
+    const routerQueue: Array<() => void> = [];
+    routerBack.mockImplementation(() => routerQueue.push(() => appStack.pop()));
+    routerNavigate.mockImplementation((href: string) => routerQueue.push(() => appStack.push(href)));
+    nativeNavigation.dispatch.mockImplementation((action: { type: string; payload?: { name?: string } }) => {
+      if (action.type === 'NAVIGATE' && action.payload?.name === 'play') appStack.push('/play');
+    });
+    try {
+      const hosts: Array<HostValue> = [];
+      renderHost((host) => hosts.push(host));
+      await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+      act(() => {
+        router.back();
+        hosts.at(-1)?.openPlayDrawer(makeQueueItem('queue-handoff', 'handoff-open').climb as unknown as Climb);
+      });
+      for (const step of routerQueue.splice(0)) step();
+      expect(appStack).toEqual(['(tabs)', '/play']);
+    } finally {
+      routerBack.mockReset();
+      routerNavigate.mockReset();
+      nativeNavigation.dispatch.mockReset();
+    }
   });
 
   it('navigates to /play and leaves the pane open target null on compact width', async () => {
