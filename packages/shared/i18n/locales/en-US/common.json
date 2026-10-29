@@ -636,7 +636,8 @@
         "description": "The bar above the tabs. Tap it to open the climb.",
         "buttons": {
           "next": "Next climb",
-          "previous": "Previous climb"
+          "previous": "Previous climb",
+          "wallDisplay": "Wall display"
         },
         "fixedNote": "Board light is always there, beside Log. Log is always last, under your thumb.",
         "footer": "On iPhone the bar has room for one of these beside Board light and Log: the first one that's on.",

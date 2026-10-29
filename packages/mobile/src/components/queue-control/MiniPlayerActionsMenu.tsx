@@ -12,7 +12,10 @@ import {
   buildPlayDrawerMenuRows,
   type ClimbMenuGroups,
   type PlayDrawerHiddenButtons,
+  type PlayDrawerMenuRow,
 } from '../play-drawer/play-drawer-menu-rows';
+import { iconMap } from '../icon-map';
+import { WALL_DISPLAY_HREF } from '../../lib/routing/wall-display-link';
 import { useDrawerHost, type BoardConfig } from '../../providers/drawer-host-provider';
 import { useActiveClimbUuid } from '../../providers/queue-provider';
 import { useProfile } from '../../lib/graphql/hooks';
@@ -22,7 +25,8 @@ import { useMiniPlayerFavorite, useMiniPlayerMirrorToggle, useOpenMiniPlayerQueu
 
 /**
  * The MiniPlayer ⋯'s order, as Music orders its own: what you keep (Favourite,
- * Add to playlist, Share), the queue, the wall (Mirror, Change angle), the
+ * Add to playlist, Share), the queue (and Wall display, `withWallDisplayRow`),
+ * the wall (Mirror, Change angle), the
  * climb itself (Add beta video, Edit, Fork), Climb view settings and Open in
  * the Kilter / Tension app (the player's ⋯ groups those two the same way), then
  * Report and Delete. Play next, Play last and Log are never offered: the climb
@@ -54,6 +58,42 @@ export function miniPlayerMenuHiddenButtons(
     mirror: hidden('mirror'),
     angle: hidden('angle'),
   };
+}
+
+/** A ⋯ row: one of the climb's actions, or Wall display, which is the bar's and not the climb's. */
+export type MiniPlayerMenuRow = Omit<PlayDrawerMenuRow, 'id'> & { id: PlayDrawerMenuRow['id'] | 'wallDisplay' };
+
+/** The groups Wall display's row follows: what you keep, then the queue. It shares the queue's group. */
+const BEFORE_WALL_DISPLAY: ReadonlySet<string> = new Set([
+  ...MINI_PLAYER_MENU_GROUPS[0],
+  ...MINI_PLAYER_MENU_GROUPS[1],
+]);
+
+/**
+ * Puts Wall display's row into the queue's group, straight after Open queue (or
+ * where Open queue would be when the bar shows Queue), keeping one divider
+ * before each group. Pure, so the dividers are tested per row set.
+ */
+export function withWallDisplayRow(
+  rows: readonly PlayDrawerMenuRow[],
+  wallDisplayRow: Omit<MiniPlayerMenuRow, 'id' | 'dividerBefore'>,
+): MiniPlayerMenuRow[] {
+  let insertAt = 0;
+  rows.forEach((row, index) => {
+    if (BEFORE_WALL_DISPLAY.has(row.id)) insertAt = index + 1;
+  });
+  const previous = insertAt > 0 ? rows[insertAt - 1] : undefined;
+  const result: MiniPlayerMenuRow[] = [...rows];
+  result.splice(insertAt, 0, {
+    ...wallDisplayRow,
+    id: 'wallDisplay',
+    // Opens the queue's group unless Open queue already did.
+    dividerBefore: previous !== undefined && previous.id !== 'openQueue',
+  });
+  // Now first in the menu, it pushes the old first row down: that row opens a group again.
+  const next = result[insertAt + 1];
+  if (insertAt === 0 && next !== undefined) result[insertAt + 1] = { ...next, dividerBefore: true };
+  return result;
 }
 
 const CLIMB_VIEW_SETTINGS_BY_TAB = {
@@ -95,7 +135,7 @@ export type MiniPlayerActionsMenuProps = {
   climbBoard: BoardConfig;
   queueItemUuid?: string;
   isAuthenticated: boolean;
-  /** The climber's buttons the bar is drawing right now (`MiniPlayerControls.leading`). */
+  /** The climber's buttons the bar is drawing right now: `MiniPlayerControls.leading`, plus `wallDisplay` while ⛶ is on the bar. */
   shownButtons: readonly MiniPlayerButtonId[];
   /** The bar's own availability rule, so ⋯ offers what the bar would. */
   isAvailable: (buttonId: MiniPlayerButtonId) => boolean;
@@ -110,7 +150,8 @@ export type MiniPlayerActionsMenuProps = {
  * ⋯ on the wide MiniPlayer (iPad, the open Duo): Music's "more" beside its
  * transport. The same climb actions as the player's ⋯ (`useClimbActions` and
  * `buildPlayDrawerMenuRows`), in Music's order, with a row for every bar button
- * the bar is not showing.
+ * the bar is not showing. On a tablet that includes Wall display, switched off
+ * or squeezed out.
  *
  * The bar sits over the tabs, never under `/play` (the bar offers no ⋯ while
  * the player route is up), so every sheet opens through the root openers on
@@ -142,6 +183,7 @@ export const MiniPlayerActionsMenu = memo(function MiniPlayerActionsMenu({
   const currentUserId = isAuthenticated ? (profile?.id ?? null) : null;
 
   const hidden = useMemo(() => miniPlayerMenuHiddenButtons(shownButtons, isAvailable), [shownButtons, isAvailable]);
+  const wallDisplayHidden = isAvailable('wallDisplay') && !shownButtons.includes('wallDisplay');
 
   const favorite = useMiniPlayerFavorite({
     climb,
@@ -189,16 +231,21 @@ export const MiniPlayerActionsMenu = memo(function MiniPlayerActionsMenu({
   // Off `/play` the row pushes Settings → Climb view, not the player's View
   // options sheet, so it is named after the screen it opens.
   const climbViewTitle = tCommon('mobile.settings.climbView.title');
-  const rows = useMemo(
-    () =>
-      buildPlayDrawerMenuRows(items, {
-        hidden,
-        boardMismatch: false,
-        isActiveClimb,
-        groups: MINI_PLAYER_MENU_GROUPS,
-      }).map((row) => (row.id === 'viewOptions' ? { ...row, label: climbViewTitle } : row)),
-    [items, hidden, isActiveClimb, climbViewTitle],
-  );
+  const wallDisplayLabel = t('mobile.boardPresence.wallDisplay.open');
+  const rows = useMemo<MiniPlayerMenuRow[]>(() => {
+    const climbRows = buildPlayDrawerMenuRows(items, {
+      hidden,
+      boardMismatch: false,
+      isActiveClimb,
+      groups: MINI_PLAYER_MENU_GROUPS,
+    }).map((row) => (row.id === 'viewOptions' ? { ...row, label: climbViewTitle } : row));
+    if (!wallDisplayHidden) return climbRows;
+    return withWallDisplayRow(climbRows, {
+      label: wallDisplayLabel,
+      systemIcon: iconMap.expand.ios,
+      run: () => router.push(WALL_DISPLAY_HREF),
+    });
+  }, [items, hidden, isActiveClimb, climbViewTitle, wallDisplayHidden, wallDisplayLabel, router]);
   // Music's icon row: Favourite, Add to playlist and Share lead the menu. Fewer than
   // 2 left (a draft has no Share, signed out has neither of the first two) falls back
   // to plain rows, since a one-item control group looks odd.

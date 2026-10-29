@@ -908,7 +908,8 @@
         "description": "La barra sobre las pestañas. Tócala para abrir el bloque.",
         "buttons": {
           "next": "Bloque siguiente",
-          "previous": "Bloque anterior"
+          "previous": "Bloque anterior",
+          "wallDisplay": "Pantalla de muro"
         },
         "fixedNote": "Luz del plafón siempre está, junto a Registrar. Registrar va siempre al final, bajo tu pulgar.",
         "footer": "En iPhone la barra tiene sitio para uno de estos junto a Luz del plafón y Registrar: el primero que esté activado.",

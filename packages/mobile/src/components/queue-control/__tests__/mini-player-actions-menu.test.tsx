@@ -4,7 +4,7 @@
 // are doubles. The bar sits over the tabs, so its sheets open through the root
 // openers on `useDrawerHost()`.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render } from '@testing-library/react';
+import { cleanup, fireEvent, render } from '@testing-library/react';
 import { createElement } from 'react';
 import type { Climb } from '@boardsesh/queue';
 import type { AppMenuProps } from '../../AppMenu.types';
@@ -114,6 +114,7 @@ import {
   climbViewSettingsHref,
   miniPlayerMenuHiddenButtons,
   withPaletteRows,
+  withWallDisplayRow,
   type MiniPlayerActionsMenuProps,
 } from '../MiniPlayerActionsMenu';
 
@@ -125,7 +126,8 @@ const CLIMB = {
 } as unknown as Climb;
 // Tension can be set on, so Fork shows; it mirrors.
 const TENSION = { boardName: 'tension', layoutId: 10, sizeId: 6, setIds: '12,13', angle: 35 };
-const everyButton = () => true;
+// Every button but Wall display: the open Duo, a phone. The tablet tests opt in.
+const everyButton = (buttonId: MiniPlayerButtonId) => buttonId !== 'wallDisplay';
 
 function renderMenu(overrides: Partial<MiniPlayerActionsMenuProps> = {}) {
   return render(
@@ -329,6 +331,51 @@ describe('MiniPlayerActionsMenu', () => {
     const anchor = getByLabelText(`playView.actionBar.moreActionsForAria ${JSON.stringify({ name: 'Crimp Line' })}`);
     expect(anchor.getAttribute('data-icon')).toBe('more');
     expect(menu.props).toMatchObject({ iconAppearance: 'plain', anchorSize: 44 });
+  });
+
+  describe('Wall display on a tablet', () => {
+    const tablet = () => true;
+
+    it('stands in for ⛶ in the queue group, straight after Open queue', () => {
+      const { container } = renderMenu({ isAvailable: tablet });
+      const rows = labels(container);
+      expect(rows.indexOf('mobile.boardPresence.wallDisplay.open')).toBe(
+        rows.indexOf('mobile.climbActions.openQueue') + 1,
+      );
+      const wall = [...container.querySelectorAll('button')].find(
+        (row) => row.textContent === 'mobile.boardPresence.wallDisplay.open',
+      );
+      expect(wall?.getAttribute('data-divider')).toBe('false');
+      tap(container, 'mobile.boardPresence.wallDisplay.open');
+      expect(route.push).toHaveBeenCalledExactlyOnceWith('/wall-display');
+    });
+
+    it('opens the queue group itself while the bar shows Queue', () => {
+      const { container } = renderMenu({ isAvailable: tablet, shownButtons: ['previous', 'next', 'queue'] });
+      const rows = [...container.querySelectorAll('button')];
+      const wallIndex = rows.findIndex((row) => row.textContent === 'mobile.boardPresence.wallDisplay.open');
+      expect(rows[wallIndex - 1]?.textContent).toBe('share.actionLabel');
+      expect(rows[wallIndex]?.getAttribute('data-divider')).toBe('true');
+      expect(rows[wallIndex + 1]?.getAttribute('data-divider')).toBe('true');
+    });
+
+    it('offers no row while ⛶ is on the bar, or where the bar may not offer it', () => {
+      const shown: MiniPlayerButtonId[] = ['previous', 'next', 'wallDisplay'];
+      expect(labels(renderMenu({ isAvailable: tablet, shownButtons: shown }).container)).not.toContain(
+        'mobile.boardPresence.wallDisplay.open',
+      );
+      cleanup();
+      expect(labels(renderMenu().container)).not.toContain('mobile.boardPresence.wallDisplay.open');
+    });
+
+    it('leads the menu with a divider after it when nothing comes before it', () => {
+      const row = { label: 'Wall display', systemIcon: 'expand', run: vi.fn() };
+      const mirror = { id: 'mirror' as const, label: 'Mirror', run: vi.fn(), dividerBefore: false };
+      expect(withWallDisplayRow([mirror], row).map(({ id, dividerBefore }) => [id, dividerBefore])).toEqual([
+        ['wallDisplay', false],
+        ['mirror', true],
+      ]);
+    });
   });
 
   it('draws nothing while the /play route is up: its sheets would present behind the player', () => {

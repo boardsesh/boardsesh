@@ -364,6 +364,7 @@ vi.mock('../../../lib/boards/climb-render-board', () => ({
 vi.mock('../MiniPlayerButtons', () => ({
   MiniPlayerLeadingButtons: ({ buttonIds }: { buttonIds: readonly string[] }) =>
     createElement('span', { 'data-mini-player-buttons': buttonIds.join(',') }),
+  MiniPlayerWallDisplayButton: () => createElement('span', { 'data-wall-display': 'true' }),
 }));
 
 // ⋯ has its own test (mini-player-actions-menu); here it is a marker.
@@ -967,12 +968,56 @@ describe('NativeAccessoryClimbRow', () => {
         const { container } = renderRow('regular');
         const cluster = container.querySelector('[data-mini-player-buttons]');
         expect(precedes(cluster, nameOf(container))).toBe(true);
-        expect(more(container)?.getAttribute('data-more-menu')).toBe('previous,next,favorite');
+        // ⋯ is told ⛶ is on the bar too, so it offers no Wall display row.
+        expect(more(container)?.getAttribute('data-more-menu')).toBe('previous,next,favorite,wallDisplay');
         expect(precedes(more(container), container.querySelector('[data-board-control]'))).toBe(true);
         const tick = container.querySelector('[data-tick="true"]');
         expect(tick?.getAttribute('data-appearance')).toBe('hero');
         expect(tick?.getAttribute('data-icon-size')).toBe('32');
         expect(nameOf(container).getAttribute('data-variant')).toBe('body');
+      });
+
+      it('draws ⛶ Wall display between ⋯ and 💡 on a tablet', () => {
+        miniPlayer.isTablet = true;
+        layout.width = 995;
+        const { container } = renderRow('regular');
+        const wall = container.querySelector('[data-wall-display]');
+        expect(precedes(more(container), wall)).toBe(true);
+        expect(precedes(wall, container.querySelector('[data-board-control]'))).toBe(true);
+        // Four fixed frames: ⋯ ⛶ 💡 ✓.
+        const pair = container.querySelector('[data-tick="true"]')?.parentElement?.parentElement;
+        expect(pair?.children.length).toBe(4);
+        expect(pair?.getAttribute('data-width')).toBe('176');
+      });
+
+      it('drops the ⛶ frame when the climber switches it off, and ⋯ stands in for it', async () => {
+        const { DEFAULT_MINI_PLAYER_BUTTONS } = await import('../../../lib/mini-player-buttons');
+        miniPlayer.layout = {
+          order: DEFAULT_MINI_PLAYER_BUTTONS.order,
+          visible: { ...DEFAULT_MINI_PLAYER_BUTTONS.visible, wallDisplay: false },
+        };
+        miniPlayer.isTablet = true;
+        layout.width = 995;
+        const { container } = renderRow('regular');
+        expect(container.querySelector('[data-wall-display]')).toBeNull();
+        expect(more(container)?.getAttribute('data-more-menu')).toBe('previous,next,favorite');
+        const pair = container.querySelector('[data-tick="true"]')?.parentElement?.parentElement;
+        expect(pair?.children.length).toBe(3);
+      });
+
+      it('offers no ⛶ inline, under the /play route, or on the open Duo', () => {
+        miniPlayer.isTablet = true;
+        layout.width = 995;
+        expect(renderRow('inline').container.querySelector('[data-wall-display]')).toBeNull();
+        cleanup();
+        miniPlayer.playerRouteUp = true;
+        expect(renderRow('regular').container.querySelector('[data-wall-display]')).toBeNull();
+        cleanup();
+        miniPlayer.playerRouteUp = false;
+        miniPlayer.isTablet = false;
+        miniPlayer.phoneSplit = true;
+        layout.width = 800;
+        expect(renderRow('regular').container.querySelector('[data-wall-display]')).toBeNull();
       });
 
       it('leaves an iPhone as it was: buttons after the climb, no ⋯, a plain ✓, a subheadline name', () => {
@@ -1056,10 +1101,12 @@ describe('NativeAccessoryClimbRow', () => {
       const { container } = renderRow('regular');
       const tick = container.querySelector('[data-tick="true"]');
       const pair = tick?.parentElement?.parentElement;
-      expect(pair?.children.length).toBe(2);
+      // ⋯ ⛶ ✓, with no empty bulb frame between ⛶ and ✓.
+      expect(pair?.children.length).toBe(3);
       expect(pair?.firstElementChild?.querySelector('[data-more-menu]')).not.toBeNull();
-      expect(pair?.getAttribute('data-width')).toBe('88');
-      expect(pair?.parentElement?.getAttribute('data-width')).toBe('88');
+      expect(pair?.children[1]?.querySelector('[data-wall-display]')).not.toBeNull();
+      expect(pair?.getAttribute('data-width')).toBe('132');
+      expect(pair?.parentElement?.getAttribute('data-width')).toBe('132');
     });
 
     it("keeps an iPad's collapsed platter on the short geometry", () => {

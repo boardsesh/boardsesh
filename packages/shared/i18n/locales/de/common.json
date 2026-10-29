@@ -636,7 +636,8 @@
         "description": "Die Leiste über den Tabs. Tippe darauf, um den Boulder zu öffnen.",
         "buttons": {
           "next": "Nächster Boulder",
-          "previous": "Vorheriger Boulder"
+          "previous": "Vorheriger Boulder",
+          "wallDisplay": "Wandanzeige"
         },
         "fixedNote": "Board beleuchten ist immer da, neben Eintragen. Eintragen steht immer ganz hinten, direkt unter deinem Daumen.",
         "footer": "Auf dem iPhone hat die Leiste neben Board beleuchten und Eintragen Platz für einen dieser Buttons: den ersten, der aktiv ist.",

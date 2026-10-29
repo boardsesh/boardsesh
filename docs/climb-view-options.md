@@ -236,10 +236,10 @@ climb).
 ### What the climber gets
 
 - A **Mini player** tab in View options: a switch and ↑/↓ arrows for Next climb, Previous climb, Mirror, Favorite,
-  Queue, Share and Angle, a pinned preview, and **Restore defaults**. Settings → Climbs & grades → **Climb view** has
+  Wall display (tablets only), Queue, Share and Angle, a pinned preview, and **Restore defaults**. Settings → Climbs & grades → **Climb view** has
   a Mini player section with the switches only; the order changes in View options, the same rule as the player's
   buttons.
-- Defaults: Next, Previous, Mirror and Favorite on; Queue, Share and Angle off. On iPhone the one extra slot goes to Next, so Mirror and Favorite only show on iPad and the open Duo by default. Each switch drives a real button:
+- Defaults: Next, Previous, Mirror, Favorite and Wall display on; Queue, Share and Angle off. On iPhone the one extra slot goes to Next, so Mirror and Favorite only show on iPad and the open Duo by default. Each switch drives a real button:
   - **Next / Previous**: step the list. Solo with Light on swipe on they move the climb; in a crew, or with Light on
     swipe off, they open the player on a preview, so one tap never moves the room's climb. Next at the end of a
     list opens the player.
@@ -249,6 +249,9 @@ climb).
   - **Share**: not on drafts.
   - **Angle**: boards with an adjustable angle. It opens the player's angle sheet and is hidden while the player is
     open.
+  - **Wall display**: tablets only (`useDeviceLayout().isTablet`, the gate `WallDisplayEntry` uses), so an iPhone
+    and the open Duo list no switch for it; there a move steps over it (`miniPlayerMoveSteps`). Hidden while the
+    player is open. See Wall display below.
 - The preview draws two bars from `resolveMiniPlayerControls`, `miniPlayerSlotCount` and the bar's own
   `isMiniPlayerButtonAvailable`, so it can't disagree with the real one: the open bar at the width the real bar last
   measured on this device (`mini-player-measured-bar-store.ts`, published by `NativeAccessoryClimbRow`; an iPhone
@@ -290,7 +293,8 @@ The open bar on an iPad or the open Duo (`miniPlayerUsesWideLayout`: `isTablet |
 copies Apple Music's iPad MiniPlayer:
 
 ```
-[⏮][⏭] [⇄][♡] | [art 40] Name (17 pt) / V5 · 1.6k sends | [⋯] [💡] [✓]
+iPad      [⏮][⏭] [⇄][♡] | [art 40] Name (17 pt) / V5 · 1.6k sends | [⋯] [⛶] [💡] [✓]
+Duo open  [⏮][⏭] [⇄][♡] | [art 40] Name (17 pt) / V5 · 1.6k sends | [⋯] [💡] [✓]
 ```
 
 - ⏮ ⏭ lead the row, filled (`skip.previous.fill` / `skip.next.fill`) at 24 pt. The climber's other buttons follow at
@@ -317,11 +321,27 @@ copies Apple Music's iPad MiniPlayer:
   timed block Fell / Sent take the leading cluster before the climb, and ⋯ claims after 💡 ✓.
 - iPhone and every inline bar are unchanged.
 
+**Wall display (tablets).** ⛶ opens the full-screen Wall display (`router.push(WALL_DISPLAY_HREF)`, the board
+sheet's push), with the existing `mobile.boardPresence.wallDisplay.open` label.
+
+- Where: right after ⋯, where Music's iPad bar puts lyrics: `[⋯][⛶][💡][✓]`. `expand` glyph at 22 pt, the bulb's
+  size and colour. It is a fourth fixed frame in the trailing pair (`MiniPlayerWallDisplayButton`).
+- Claim: in the climber's order like the leading buttons (straight after Favorite by default), but drawn in the
+  trailing cluster, so it is `MiniPlayerControls.wallDisplay`, never in `leading`. In a timed block it stays after ⋯
+  when there is room: it moves neither the wall nor the queue.
+- The frame exists only while ⛶ shows. That follows the switch, the widest width under the window shape and the
+  `/play` route, none of which changes while UIKit squeezes the hidden regular row, so no frame moves mid-expand.
+- Not offered (`isMiniPlayerButtonAvailable`): on a phone, the open Duo included; while the `/play` route is up.
+- Switched off, or squeezed out, it is a row in the bar's ⋯, in the queue's group after Open queue
+  (`withWallDisplayRow`).
+- The Climbs ⋯ no longer lists Wall display. The board sheet's `WallDisplayEntry` button stays, so Wall display is
+  reachable with an empty queue, when there is no bar.
+
 **The ⋯ menu** (`MiniPlayerActionsMenu`) is the player's ⋯ over the same `useClimbActions` and
 `buildPlayDrawerMenuRows`, in Music's order (`MINI_PLAYER_MENU_GROUPS`):
 
 1. Favourite, Add to playlist, Share
-2. Open queue
+2. Open queue, Wall display (tablets, when ⛶ is not on the bar)
 3. Mirror, Change angle
 4. Add beta video, Edit, Fork
 5. Climb view (settings), Open in Kilter / Tension app
@@ -359,7 +379,8 @@ copies Apple Music's iPad MiniPlayer:
 
     | Bar                                  | Holds                  |
     | ------------------------------------ | ---------------------- |
-    | iPad, open Duo (pane doesn't cover)  | Fell · Sent · ⋯ 💡 ✓   |
+    | iPad                                 | Fell · Sent · ⋯ ⛶ 💡 ✓ |
+    | Open Duo (pane doesn't cover)        | Fell · Sent · ⋯ 💡 ✓   |
     | iPhone (3 slots)                     | Fell · Sent · 💡       |
     | Two slots                            | Fell · Sent            |
     | Minimized / inline (1 slot)          | Sent                   |

@@ -56,6 +56,7 @@ const tabChrome = vi.hoisted(() => ({ nativeAccessory: true }));
 vi.mock('../../../../hooks/use-bottom-accessory', () => ({ useTabChrome: () => tabChrome }));
 vi.mock('../../../../lib/graphql/use-active-board', () => ({ useActiveBoard: () => ({ data: null }) }));
 vi.mock('../../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
+vi.mock('../../../../hooks/use-device-layout', () => ({ useDeviceLayout: () => ({ isTablet: false }) }));
 vi.mock('../../../../lib/settings-analytics', () => ({ withSettingTracking: (model: MoreFormModel) => model }));
 vi.mock('../../use-play-drawer-section-controls', () => ({
   usePlayDrawerSectionControls: () => ({ settingsSection: { key: 'below', rows: [] } }),

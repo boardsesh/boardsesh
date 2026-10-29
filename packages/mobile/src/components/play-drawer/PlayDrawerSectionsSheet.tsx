@@ -255,6 +255,7 @@ export function PlayDrawerSectionsSheet({
               board={previewBoard}
               wide={miniPlayerWide}
               signedIn={isAuthenticated}
+              tablet={isTablet}
             />
           ) : null}
         </>

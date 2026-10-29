@@ -71,6 +71,7 @@ function preview(overrides: Partial<Parameters<typeof MiniPlayerButtonsPreview>[
       board: FALLBACK_PREVIEW_BOARD,
       wide: false,
       signedIn: true,
+      tablet: false,
       ...overrides,
     }),
   );
@@ -102,6 +103,23 @@ describe('MiniPlayerButtonsPreview', () => {
     ]);
     // The collapsed bar keeps its one slot, as on an iPhone.
     expect(collapsed).toEqual(['lightbulb']);
+  });
+
+  it('draws ⛶ Wall display after ⋯ on a tablet, and says it', () => {
+    const { open, screen } = preview({ wide: true, tablet: true, board: TENSION });
+    expect(open).toEqual([
+      'skip.previous.fill',
+      'skip.next.fill',
+      'mirror',
+      'favorite',
+      'more',
+      'expand',
+      'lightbulb',
+      'checkmark.circle.fill',
+    ]);
+    expect(screen.getByTestId('mini-player-preview-open').getAttribute('aria-label')).toContain(
+      'mobile.settings.miniPlayer.buttons.wallDisplay',
+    );
   });
 
   it("says ⋯ in the wide bar's sentence", () => {

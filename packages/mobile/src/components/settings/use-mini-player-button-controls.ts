@@ -1,9 +1,10 @@
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { MiniPlayerButtonId } from '../../lib/mini-player-buttons';
+import { listedMiniPlayerButtons, miniPlayerMoveSteps, type MiniPlayerButtonId } from '../../lib/mini-player-buttons';
 import { useMiniPlayerButtonsEditor } from '../../lib/mini-player-buttons-preference';
 import type { SectionMoveDirection } from '../../lib/section-layout';
 import { hapticSelection } from '../../lib/haptics';
+import { useDeviceLayout } from '../../hooks/use-device-layout';
 import type { SectionLayoutRowModel } from '../section-layout/SectionLayoutList';
 
 export type MiniPlayerButtonControl = SectionLayoutRowModel<MiniPlayerButtonId>;
@@ -12,6 +13,8 @@ export type MiniPlayerButtonControl = SectionLayoutRowModel<MiniPlayerButtonId>;
 export function useMiniPlayerButtonControls() {
   const { t } = useTranslation('common');
   const { buttons, isDefault, setVisible, move, restoreDefaults } = useMiniPlayerButtonsEditor();
+  // Wall display is for a tablet mounted at the board; a phone's list leaves it out.
+  const { isTablet } = useDeviceLayout();
 
   const title = t('mobile.settings.miniPlayer.title');
   const description = t('mobile.settings.miniPlayer.description');
@@ -28,6 +31,7 @@ export function useMiniPlayerButtonControls() {
   const queueLabel = t('mobile.settings.playerButtons.buttons.queue');
   const shareLabel = t('mobile.settings.playerButtons.buttons.share');
   const angleLabel = t('mobile.settings.playerButtons.buttons.angle');
+  const wallDisplayLabel = t('mobile.settings.miniPlayer.buttons.wallDisplay');
   const mirrorDescription = t('mobile.settings.playerButtons.mirrorDescription');
   const angleDescription = t('mobile.settings.playerButtons.angleDescription');
 
@@ -37,6 +41,7 @@ export function useMiniPlayerButtonControls() {
       previous: previousLabel,
       mirror: mirrorLabel,
       favorite: favoriteLabel,
+      wallDisplay: wallDisplayLabel,
       queue: queueLabel,
       share: shareLabel,
       angle: angleLabel,
@@ -46,7 +51,7 @@ export function useMiniPlayerButtonControls() {
       mirror: mirrorDescription,
       angle: angleDescription,
     };
-    return buttons.order.map((id) => ({
+    return listedMiniPlayerButtons(buttons.order, isTablet).map((id) => ({
       id,
       label: labels[id],
       description: descriptions[id],
@@ -55,6 +60,7 @@ export function useMiniPlayerButtonControls() {
     }));
   }, [
     buttons,
+    isTablet,
     nextLabel,
     previousLabel,
     mirrorLabel,
@@ -62,6 +68,7 @@ export function useMiniPlayerButtonControls() {
     queueLabel,
     shareLabel,
     angleLabel,
+    wallDisplayLabel,
     mirrorDescription,
     angleDescription,
   ]);
@@ -70,9 +77,14 @@ export function useMiniPlayerButtonControls() {
     (buttonId: MiniPlayerButtonId, visible: boolean) => setVisible(buttonId, visible),
     [setVisible],
   );
+  // A phone steps a button over Wall display, which it doesn't list, so every
+  // move it offers visibly moves a row.
   const onMove = useCallback(
-    (buttonId: MiniPlayerButtonId, direction: SectionMoveDirection) => move(buttonId, direction),
-    [move],
+    (buttonId: MiniPlayerButtonId, direction: SectionMoveDirection) => {
+      const steps = miniPlayerMoveSteps(buttons, buttonId, direction, isTablet);
+      for (let step = 0; step < steps; step += 1) move(buttonId, direction);
+    },
+    [move, buttons, isTablet],
   );
   const canRestoreDefaults = !isDefault;
   const handleRestoreDefaults = useCallback(() => {

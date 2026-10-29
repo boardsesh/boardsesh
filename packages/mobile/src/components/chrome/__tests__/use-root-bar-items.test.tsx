@@ -207,7 +207,7 @@ describe('useClimbListBarItems', () => {
     expect(ctrl.router.push.mock.calls).toEqual([['/(tabs)/climbs/settings/climb-list'], ['/boards']]);
   });
 
-  it.each([false, true])('opens Wall display on a tablet with angle row %s', (withAngleRow) => {
+  it.each([false, true])('leaves Wall display out on a tablet with angle row %s', (withAngleRow) => {
     ctrl.isTablet = true;
     const openAngle = vi.fn();
     const { result } = renderHook(() =>
@@ -219,22 +219,12 @@ describe('useClimbListBarItems', () => {
     );
     const menu = result.current.find((item) => item.type === 'menu');
     if (menu?.type !== 'menu') throw new Error('expected the list menu');
+    // A tablet opens it from the MiniPlayer's ⛶ or the board sheet.
     expect(menu.menu.items.map((item) => item.label)).toEqual([
       ...(withAngleRow ? ['Board angle, 40°'] : []),
       'mobile.listOptions.viewOptions',
-      'mobile.boardPresence.wallDisplay.open',
       'mobile.boardPresence.switchBoard',
     ]);
-    const wallDisplay = menu.menu.items.find((item) => item.label === 'mobile.boardPresence.wallDisplay.open');
-    expect(wallDisplay).toMatchObject({
-      type: 'action',
-      icon: { type: 'sfSymbol', name: 'arrow.up.left.and.arrow.down.right' },
-    });
-    if (wallDisplay?.type !== 'action') throw new Error('expected the Wall display action');
-    wallDisplay.onPress();
-    expect(ctrl.router.push).toHaveBeenCalledExactlyOnceWith('/wall-display');
-    expect(openAngle).not.toHaveBeenCalled();
-    expect(ctrl.haptic).not.toHaveBeenCalled();
   });
 
   it('puts the angle at the top of the menu when the bar has no room for it', () => {
