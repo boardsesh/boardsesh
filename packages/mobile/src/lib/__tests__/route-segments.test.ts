@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  boardArtFocusedTab,
   isTabsRoute,
   isTopLevelTabRoute,
   isAccessorySurfaceRoute,
@@ -153,5 +154,25 @@ describe('isAccessoryHiddenRoute', () => {
     expect(isAccessoryHiddenRoute(['(tabs)', 'home', 'holds'])).toBe(false);
     expect(isAccessoryHiddenRoute(['play'])).toBe(false);
     expect(isAccessoryHiddenRoute([])).toBe(false);
+  });
+});
+
+describe('boardArtFocusedTab', () => {
+  it('is the focused tab on a tab route, whatever came before', () => {
+    expect(boardArtFocusedTab(['(tabs)', 'discover'], 'climbs')).toBe('discover');
+    expect(boardArtFocusedTab(['(tabs)', 'climbs', 'abc-uuid'], null)).toBe('climbs');
+  });
+
+  it('keeps the tab the player opened over', () => {
+    expect(boardArtFocusedTab(['play'], 'climbs')).toBe('climbs');
+  });
+
+  it('knows no tab under a player the app launched into', () => {
+    expect(boardArtFocusedTab(['play'], null)).toBeNull();
+  });
+
+  it('counts no tab under any other root route', () => {
+    expect(boardArtFocusedTab(['user-drawer'], 'climbs')).toBeNull();
+    expect(boardArtFocusedTab(['wall-display'], 'climbs')).toBeNull();
   });
 });

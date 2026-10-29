@@ -172,3 +172,17 @@ export function isAccessoryHiddenRoute(segments: Segments): boolean {
 export function tabsActiveSegment(segments: Segments): string | null {
   return isTabsRoute(segments) ? (segments[1] ?? null) : null;
 }
+
+/**
+ * The tab whose board art is on screen, given the tab that was before this
+ * navigation. That is the focused tab, except under the player (`/play`): the
+ * player is a `transparentModal` over the live tabs, and its open and close
+ * animations show the tab beneath it, so that tab still counts as on screen
+ * (issue #7081). Any other root route answers `null`, so no tab counts.
+ *
+ * `previousTab` is the answer from the last navigation. On a launch straight
+ * into the player it is `null`, and no tab is known to be beneath it.
+ */
+export function boardArtFocusedTab(segments: Segments, previousTab: string | null): string | null {
+  return isPlayerRoute(segments) ? previousTab : tabsActiveSegment(segments);
+}

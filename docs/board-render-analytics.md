@@ -51,7 +51,7 @@ event's name.
 | `Board Render Preset Applied`  | `surface` (`'settings'` \| `'onboarding'`, optional) — otherwise the common props ARE the event | `trackBoardLookApplied` in `packages/mobile/src/lib/board-render/board-look-analytics.ts`, from the board-look carousel on both its surfaces |
 | `Board Look Step Shown`        | `options_shown`                                        | The one-time board-look step (`BoardLookStep.tsx`), once per presentation |
 | `Board Look Step Resolved`     | `outcome` (`'saved'` \| `'customized'` \| `'skipped'`), `selected_option`, `cards_viewed`, `ms_to_resolve` | The same step — exactly once per Shown, including the unmount-without-choosing path |
-| `Board Render Failed`          | `surface`, `stage`, `failure_kind`, `error_code`, `render_width`, `frames_length`, `failures_this_session`, plus `lit_count` / `unmatched_count` on the config stage, plus `stall_state` / `queue_depth` / `dispatched_count` / `ms_waiting` on `render_stalled` | `noteRenderFailure` in `packages/mobile/src/hooks/use-native-climb-render.ts` — the hold-match check before the render, the native render's `.catch` (real failures and the capability fallbacks), `reportOverlayLoadFailure` (every expo-image load failure), the paint watchdog, and the render stall watchdog |
+| `Board Render Failed`          | `surface`, `stage`, `failure_kind`, `error_code`, `render_width`, `frames_length`, `failures_this_session`, plus `lit_count` / `unmatched_count` on the config stage, plus `stall_state` / `queue_depth` / `dispatched_count` / `ms_waiting` on `render_stalled`, plus `bridging` / `ms_since_image_sweep` on `paint_timeout` | `noteRenderFailure` in `packages/mobile/src/hooks/use-native-climb-render.ts` — the hold-match check before the render, the native render's `.catch` (real failures and the capability fallbacks), `reportOverlayLoadFailure` (every expo-image load failure), the paint watchdog, and the render stall watchdog |
 
 A sixth board-look event, `Board Look Step Evaluated`, is not in this table on
 purpose. It describes a device, not a render: it carries no common props and
@@ -145,6 +145,8 @@ Common props (the table above) plus:
 | `queue_depth`           | `render_stalled` only, absent elsewhere: renders waiting in the JS render scheduler, this one included when queued                          |
 | `dispatched_count`      | `render_stalled` only, absent elsewhere: renders handed to native and not yet answered                                                     |
 | `ms_waiting`            | `render_stalled` only, absent elsewhere: milliseconds since this surface asked for the render                                              |
+| `bridging`              | `paint_timeout` only, absent elsewhere: whether the play board was still held invisible under the opening-art bridge (the tapped row's art shown in its place) |
+| `ms_since_image_sweep`  | `paint_timeout` only, absent elsewhere: milliseconds since the image memory cache was last swept (background, memory warning or iPad tab switch), or `null` when none ran this JS lifetime |
 
 `stage` and `failure_kind` are one discriminated pair in
 `BoardRenderFailedInput`, not two free fields: a native rejection can never be
@@ -246,11 +248,21 @@ It arms off the view layer's MOUNT signal (`onOverlayMounted` in
 `LayeredClimbImage`), never off `overlayUri`, and that distinction is the whole
 correctness argument. `LayeredClimbImage` renders a bare `<View>` and no image at
 all while the app is backgrounded or the tab's board art is released — and
-opening `/play` releases it for every other tab surface
-(`board-art-visibility-provider.tsx`). Nothing there can fire `onLoad`, because
+on iPad an inactive tab releases it, including every tab other than the one
+the player opened over (`board-art-visibility-provider.tsx`). Nothing there can fire `onLoad`, because
 there is no `<Image>` to fire it, so a watchdog armed on the URI would report
 guaranteed-bogus silence, and a backgrounded app's JS timers would land on resume
 before the remount ever got the chance to answer.
+
+The event carries two more fields, added for issue #7081 (a blank play board
+on iPad, where play paint timeouts per affected person ran about four times the
+iPhone rate). `ms_since_image_sweep` says how long ago the image memory cache
+was last emptied. Until #7081 the iPad tab-switch sweep also ran every time the
+player opened, the moment its board mounted, so a small value points at that
+race. `bridging` says whether the live board was still held at opacity 0 under
+the opening-art bridge in `BoardImageNative`. Compare the iPad `paint_timeout`
+rate per person before and after that fix shipped; if it holds steady, the
+sweep was not the cause.
 
 **Observation only.** The overlay is not nulled and nothing is retried. A file
 that renders correctly but never paints is a different fault from one that

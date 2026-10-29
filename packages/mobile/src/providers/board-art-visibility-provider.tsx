@@ -1,8 +1,7 @@
 import { type ReactNode } from 'react';
-import { useSegments } from 'expo-router';
 import { BoardArtVisibilityContext } from '../components/board-art-visibility-context';
+import { useBoardArtFocusedTab } from '../hooks/use-board-art-focused-tab';
 import { useDeviceLayout } from '../hooks/use-device-layout';
-import { tabsActiveSegment } from '../lib/route-segments';
 
 // The top-level tab names ((tabs)/<name>). Typing the `tab` prop as this union
 // (not a bare string) makes a typo in a layout's `tab="…"` a compile error rather
@@ -19,15 +18,17 @@ export type BoardArtTab = 'climbs' | 'discover' | 'home' | 'profile' | 'record' 
  * backing, but its opening/closing animations reveal the list beneath it. During
  * swipe dismissal `/play` stays focused until the player is offscreen, so hiding
  * on route focus would expose blank thumbnails while their images reload.
+ * The same holds on iPad, so there the tab the player opened over keeps its art
+ * too (#7081): only the other tabs are released while the player is up.
  * App-background cleanup remains owned by LayeredClimbImage on every device.
  */
 export function BoardArtVisibilityProvider({ tab, children }: { tab: BoardArtTab; children: ReactNode }) {
   const { isPad } = useDeviceLayout();
-  const segments = useSegments();
+  const focusedTab = useBoardArtFocusedTab();
   // On iPad, visible only while THIS tab is the focused top-level destination
-  // (segment 1). A pushed sub-route of the tab keeps it active (`tabsActiveSegment`
-  // still returns the tab name). The value is a primitive boolean, so the provider
-  // needs no memo (react/jsx-no-constructed-context-values).
-  const visible = !isPad || tabsActiveSegment(segments) === tab;
+  // (segment 1), or the one the player is open over. A pushed sub-route of the
+  // tab keeps it active. The value is a primitive boolean, so the provider needs
+  // no memo (react/jsx-no-constructed-context-values).
+  const visible = !isPad || focusedTab === tab;
   return <BoardArtVisibilityContext.Provider value={visible}>{children}</BoardArtVisibilityContext.Provider>;
 }

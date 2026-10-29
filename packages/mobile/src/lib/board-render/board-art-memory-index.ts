@@ -22,7 +22,22 @@ export function isBoardArtInMemory(uri: string | null | undefined, generation?: 
   );
 }
 
+// Wall-clock time of the last forget. Every image-memory sweep (app background,
+// memory warning, iPad tab switch) forgets here in the same breath as it clears
+// expo-image's memory cache, so this is also when that cache was last emptied.
+let lastForgottenAtMs: number | null = null;
+
 export function forgetBoardArtInMemory(): void {
   inMemoryUris.clear();
   displayedGenerations.clear();
+  lastForgottenAtMs = Date.now();
+}
+
+/**
+ * Milliseconds since the image memory cache was last swept, or `null` when no
+ * sweep has run this JS lifetime. Reported on the play board's paint timeout,
+ * to tell a board that went blank right after a sweep from one that did not.
+ */
+export function msSinceImageMemorySweep(): number | null {
+  return lastForgottenAtMs === null ? null : Math.max(0, Date.now() - lastForgottenAtMs);
 }

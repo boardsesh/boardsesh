@@ -1,4 +1,13 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react';
 import { View, type ViewStyle } from 'react-native';
 import { isMoonboardBoardName } from '@boardsesh/board-config';
 import type { BoardName } from '@boardsesh/shared-schema';
@@ -192,6 +201,9 @@ const BoardImageNative = React.memo(function BoardImageNative({
   emptyOverlayFallback,
   showGridLabels = false,
 }: BoardImageNativeProps) {
+  // Whether the live stack is held invisible under the opening-art bridge, for
+  // the play board's paint-timeout telemetry. Written after each commit below.
+  const paintBridgingRef = useRef(false);
   const {
     overlayUri,
     overlayLoadKey,
@@ -214,6 +226,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
     setIds,
     filledStyle,
     playSurface,
+    paintBridgingRef,
     renderWidth,
     backgroundVariant,
     renderSettingsOverride,
@@ -243,6 +256,9 @@ const BoardImageNative = React.memo(function BoardImageNative({
     !openingArtIsCurrent &&
     !overlayUnavailable &&
     displayedArtIdentity !== currentArtIdentity;
+  useLayoutEffect(() => {
+    paintBridgingRef.current = bridging;
+  }, [bridging]);
   const handleArtReadinessChange = useCallback(
     (ready: boolean) => onArtReadinessChange?.(overlayFailed ? 'failed' : ready && !bridging ? 'ready' : 'loading'),
     [onArtReadinessChange, overlayFailed, bridging],
