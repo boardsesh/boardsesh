@@ -222,3 +222,15 @@ export function materialElevationLevels(scheme: 'light' | 'dark'): {
 }
 
 export type MaterialSurfaceContainers = typeof materialSurfaceContainers.light;
+
+/**
+ * The lit wall button's glow surfaces (#7000, look F1b): the pill the climb's
+ * hold colours glow on, the label over them, and a plain 1 pt hairline border.
+ * Dark: a near-black with an 8% frost, white label, white border at 20%. Light:
+ * a pale violet the blobs multiply into, dark label, black border at 12%.
+ * `wall-glow.ts` keeps the label at 4.5:1 over either.
+ */
+export const wallGlowSurfaces = {
+  dark: { base: '#0E0D12', label: '#FFFFFF', frost: true, border: 'rgba(255, 255, 255, 0.2)' },
+  light: { base: '#F6F3FB', label: '#16111F', frost: false, border: 'rgba(0, 0, 0, 0.12)' },
+} as const;

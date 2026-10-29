@@ -121,7 +121,7 @@ const ctrl = vi.hoisted(() => ({
   nativeAccessory: true,
   isPad: false,
   widthClass: 'compact' as 'compact' | 'regular',
-  wallClimb: null as { climbUuid: string; name: string } | null,
+  wallClimb: null as { climbUuid: string; name: string; sentAt: string } | null,
   // The chrome's focus effects, kept so a test can run one and its cleanup: the
   // cleanup is what the screen losing focus does.
   focusEffects: [] as Array<() => void | (() => void)>,
@@ -639,7 +639,7 @@ describe('ClimbTopChrome', () => {
     (_label, board, widths, max) => {
       nativeChrome.enabled = true;
       ctrl.board = board;
-      ctrl.wallClimb = { climbUuid: 'wall-9', name: 'Angel Eyes' };
+      ctrl.wallClimb = { climbUuid: 'wall-9', name: 'Angel Eyes', sentAt: new Date().toISOString() };
       const { container } = render(<ClimbTopChrome {...makeProps({ canCreate: true })} />);
       expect(nativeChrome.centerActionWidths).toEqual(widths);
       const center = container.querySelector('[data-native-center]');
@@ -652,7 +652,7 @@ describe('ClimbTopChrome', () => {
 
   it('gives the capsule exactly the 38pt a fixed-angle wall frees', () => {
     nativeChrome.enabled = true;
-    ctrl.wallClimb = { climbUuid: 'wall-9', name: 'Angel Eyes' };
+    ctrl.wallClimb = { climbUuid: 'wall-9', name: 'Angel Eyes', sentAt: new Date().toISOString() };
     const centerWidth = (board: BoardLabelFields) => {
       ctrl.board = board;
       const { container, unmount } = render(<ClimbTopChrome {...makeProps({ canCreate: true })} />);
@@ -665,9 +665,31 @@ describe('ClimbTopChrome', () => {
 
   it('mounts the "On the wall" capsule (glass centre slot) when a distinct wall climb is live', () => {
     ctrl.board = typedBoard;
-    ctrl.wallClimb = { climbUuid: 'wall-9', name: 'Angel Eyes' };
+    ctrl.wallClimb = { climbUuid: 'wall-9', name: 'Angel Eyes', sentAt: new Date().toISOString() };
     const { container } = render(<ClimbTopChrome {...makeProps()} />);
     expect(container.querySelector('[data-wall-capsule="wall-9"]')).not.toBeNull();
+  });
+
+  // #7095, QA #147: past an hour with no live link the capsule hides; a live
+  // link keeps it, whatever the age.
+  it('hides the "On the wall" capsule past an hour with no live link, and keeps it with one', () => {
+    ctrl.board = typedBoard;
+    ctrl.wallClimb = {
+      climbUuid: 'wall-9',
+      name: 'Angel Eyes',
+      sentAt: new Date(Date.now() - 61 * 60_000).toISOString(),
+    };
+    const stale = render(<ClimbTopChrome {...makeProps()} />);
+    expect(stale.container.querySelector('[data-wall-capsule]')).toBeNull();
+    stale.unmount();
+    ctrl.bluetooth = {
+      isConnected: true,
+      connect: vi.fn(),
+      disconnect: vi.fn().mockResolvedValue(undefined),
+      armUndoWallChangeToast: vi.fn(),
+    };
+    const linked = render(<ClimbTopChrome {...makeProps()} />);
+    expect(linked.container.querySelector('[data-wall-capsule="wall-9"]')).not.toBeNull();
   });
 
   it('omits the "On the wall" capsule when there is no distinct wall climb', () => {
@@ -704,7 +726,7 @@ describe('ClimbTopChrome', () => {
     it('gives way to "On the wall" when the wall lights a different climb', () => {
       ctrl.board = typedBoard;
       ctrl.bluetooth = connectedBoard();
-      ctrl.wallClimb = { climbUuid: 'wall-9', name: 'Angel Eyes' };
+      ctrl.wallClimb = { climbUuid: 'wall-9', name: 'Angel Eyes', sentAt: new Date().toISOString() };
       const { container } = render(<ClimbTopChrome {...makeProps()} />);
       expect(container.querySelector('[data-wall-capsule="wall-9"]')).not.toBeNull();
       expect(container.querySelector('[data-board-held-capsule]')).toBeNull();
@@ -757,7 +779,7 @@ describe('ClimbTopChrome', () => {
   it('mounts the "On the wall" capsule under the Material app bar when a wall climb is live', () => {
     ctrl.variant = 'material';
     ctrl.board = typedBoard;
-    ctrl.wallClimb = { climbUuid: 'wall-9', name: 'Angel Eyes' };
+    ctrl.wallClimb = { climbUuid: 'wall-9', name: 'Angel Eyes', sentAt: new Date().toISOString() };
     const { container } = render(<ClimbTopChrome {...makeProps()} />);
     expect(container.querySelector('[data-wall-capsule="wall-9"]')).not.toBeNull();
   });

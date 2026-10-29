@@ -5,19 +5,65 @@ import type { ScenarioOverrides } from '../../dev/stories/scenario-overrides';
 import type { StoryModule } from '../../dev/stories/types';
 import { setSetting } from '../../settings';
 import { spacing } from '../../theme/tokens';
-import { PlayDrawerCommitBar, PutOnWallButton } from './PlayDrawerCommitBar';
-import { WallStateCallout } from './WallStateCallout';
-import { WallStatePill, type WallStatePillState } from './WallStatePill';
+import { WallControlButton } from './WallControlButton';
+import { WallStatePill } from './WallStatePill';
+import { resolveWallControl, type WallControlModel, type WallControlState, type WallHolder } from './wall-control';
 
-// Browsing in a crew session (#4281): the chip in the drawer header (the wall
-// driver's face, with a back glyph while you browse), the Put on the wall button
-// and the busy-wall question, and the explainer the On the wall / Live chips open.
+// Browsing in a crew session (#4281): the back chip in the drawer header (a back
+// glyph, "Back", and the face of whoever lit the wall) and the wall button in
+// each state (#7000). The busy-wall question has its own file (BusyWall.stories).
 // The scenario stories put the real drawer into the same states with a fake
 // second climber, since a real crew needs two phones.
 
 const noop = () => {};
 
-const PILL_STATES: readonly WallStatePillState[] = ['onWall', 'live', 'browsing'];
+const WALL_BUTTON_STATES: readonly {
+  label: string;
+  state: WallControlState;
+  holder: WallHolder;
+  /** A swipe from here goes up on the wall: solo, not browsing (#7017). */
+  driving?: boolean;
+  holderIsSelfAccount?: boolean;
+}[] = [
+  { label: 'no board', state: 'connect', holder: null },
+  { label: 'preview, no board', state: 'put_on_wall', holder: null },
+  { label: 'preview, your board', state: 'put_on_wall', holder: 'self' },
+  { label: "preview, Sam's board", state: 'put_on_wall', holder: 'crew' },
+  { label: 'your board, this climb dark', state: 'dark', holder: 'self' },
+  { label: 'lit, solo: driving the board', state: 'lit', holder: 'self', driving: true },
+  { label: 'lit, in a crew: swipes browse', state: 'lit', holder: 'self' },
+  { label: "Sam's board", state: 'crew', holder: 'crew' },
+  { label: 'your other phone has the board', state: 'crew', holder: null, holderIsSelfAccount: true },
+];
+
+/** The model the player would build for one state, so the story draws what the app draws. */
+function storyModel(
+  state: WallControlState,
+  holder: WallHolder,
+  driving = false,
+  holderIsSelfAccount = false,
+): WallControlModel {
+  const selfHolds = holder === 'self';
+  return resolveWallControl({
+    commitButton: state === 'put_on_wall' ? 'putOnWall' : null,
+    pressAction: state === 'connect' ? 'connect' : state === 'crew' ? 'relay' : selfHolds ? 'disconnect' : 'noop',
+    holderIsAuthoritative: state === 'crew',
+    localConnected: selfHolds,
+    pending: false,
+    displayedLit: state === 'lit',
+    offWall: false,
+    wallHeldLocally: false,
+    holderIsSelfAccount,
+    selfFace: { name: 'You', avatarUrl: null },
+    crewFace: { name: 'Sam', avatarUrl: null },
+    confirmArmed: false,
+    commitLabel: 'putOnWall',
+    otherClimbLit: false,
+    writing: false,
+    autoDisconnectWarning: false,
+    navigationCommits: driving,
+  });
+}
 
 const CREW: SessionUser[] = [
   { id: 'story-me', username: 'You', isLeader: true, connectionState: 'CONNECTED' },
@@ -51,14 +97,14 @@ const stories: StoryModule = {
   title: 'Play drawer / Crew browse',
   stories: {
     pills: {
-      name: 'Wall-state pill, every state',
+      name: 'Back chip, to your climb and to the wall',
       render: () => (
         <View style={styles.stack}>
-          {PILL_STATES.map((state) => (
-            <StoryVariant key={state} label={state}>
+          {(['current', 'wall'] as const).map((backTarget) => (
+            <StoryVariant key={backTarget} label={`back to ${backTarget}`}>
               <StorySurface>
                 <View style={styles.pillRow}>
-                  <WallStatePill state={state} onPress={noop} />
+                  <WallStatePill state="browsing" backTarget={backTarget} onPress={noop} />
                 </View>
               </StorySurface>
             </StoryVariant>
@@ -67,47 +113,20 @@ const stories: StoryModule = {
       ),
     },
     commitBar: {
-      name: 'Put on the wall, and the busy-wall question',
+      name: 'The wall button in each state',
       render: () => (
         <View style={styles.stack}>
-          <StoryVariant label="browsing, wall reachable">
-            <StorySurface>
-              <View style={styles.buttonRow}>
-                <PutOnWallButton commitLabel="putOnWall" onPress={noop} />
-              </View>
-            </StorySurface>
-          </StoryVariant>
-          <StoryVariant label="browsing, no wall">
-            <StorySurface>
-              <View style={styles.buttonRow}>
-                <PutOnWallButton commitLabel="setActive" onPress={noop} />
-              </View>
-            </StorySurface>
-          </StoryVariant>
-          <StoryVariant label="someone else lit the wall">
-            <StorySurface>
-              <View style={styles.confirmRoom}>
-                <PlayDrawerCommitBar
-                  wallClimbName="Moonlight Sonata"
-                  wallClimbUuid={null}
-                  onKeepTheirs={noop}
-                  onConfirm={noop}
-                />
-              </View>
-            </StorySurface>
-          </StoryVariant>
-        </View>
-      ),
-    },
-    callouts: {
-      name: 'Pill callout, every state',
-      render: () => (
-        <View style={styles.stack}>
-          {PILL_STATES.map((state) => (
-            <StoryVariant key={state} label={`explainer: ${state}`}>
-              <View style={styles.calloutRoom}>
-                <WallStateCallout state={state} top={0} onBackToLive={noop} onDismiss={noop} />
-              </View>
+          {WALL_BUTTON_STATES.map(({ label, state, holder, driving, holderIsSelfAccount }) => (
+            <StoryVariant key={label} label={label}>
+              <StorySurface>
+                <View style={styles.buttonRow}>
+                  <WallControlButton
+                    model={storyModel(state, holder, driving, holderIsSelfAccount)}
+                    onPress={noop}
+                    onLongPress={noop}
+                  />
+                </View>
+              </StorySurface>
             </StoryVariant>
           ))}
         </View>
@@ -145,14 +164,9 @@ const styles = StyleSheet.create({
   pillRow: {
     flexDirection: 'row',
   },
-  confirmRoom: {
-    paddingTop: spacing[16],
-  },
+  // The width of a 375pt phone's row, so the stories show the real fit.
   buttonRow: {
     flexDirection: 'row',
-    justifyContent: 'center',
-  },
-  calloutRoom: {
-    height: 160,
+    width: 343,
   },
 });

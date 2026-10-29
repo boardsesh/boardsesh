@@ -170,6 +170,17 @@ export function PlayDrawerSectionsSheet({
         <Text variant="subheadline" color={systemColors.secondaryLabel} style={sectionLayoutSheetStyles.guidance}>
           {playerButtons.description}
         </Text>
+        {/* The board control is always there; this picks how it looks (#7000). */}
+        <SectionLayoutSheetGroupTitle title={playerButtons.boardControlLabel} />
+        <SegmentedControl
+          options={playerButtons.boardControlOptions}
+          selectedKey={playerButtons.boardControl}
+          onSelect={playerButtons.onBoardControlChange}
+          accessibilityLabel={playerButtons.boardControlLabel}
+        />
+        <Text variant="footnote" color={systemColors.secondaryLabel} style={sectionLayoutSheetStyles.guidance}>
+          {playerButtons.boardControlFooter}
+        </Text>
         <SectionLayoutSheetGroupTitle title={playerButtons.positionLabel} />
         <SegmentedControl
           options={playerButtons.positionOptions}
@@ -185,13 +196,6 @@ export function PlayDrawerSectionsSheet({
             value={playerButtons.previousNext}
             onValueChange={playerButtons.onPreviousNextChange}
           />
-          <SwitchRow
-            label={playerButtons.wallBadgeLabel}
-            description={playerButtons.wallBadgeDescription}
-            wrapDescription
-            value={playerButtons.wallBadge}
-            onValueChange={playerButtons.onWallBadgeChange}
-          />
         </View>
         <SectionLayoutSheetGroupTitle title={playerButtons.title} />
       </View>
@@ -200,6 +204,11 @@ export function PlayDrawerSectionsSheet({
       systemColors.secondaryLabel,
       systemColors.secondaryBackground,
       playerButtons.description,
+      playerButtons.boardControlLabel,
+      playerButtons.boardControlOptions,
+      playerButtons.boardControl,
+      playerButtons.onBoardControlChange,
+      playerButtons.boardControlFooter,
       playerButtons.positionLabel,
       playerButtons.positionOptions,
       playerButtons.position,
@@ -208,10 +217,6 @@ export function PlayDrawerSectionsSheet({
       playerButtons.previousNextDescription,
       playerButtons.previousNext,
       playerButtons.onPreviousNextChange,
-      playerButtons.wallBadgeLabel,
-      playerButtons.wallBadgeDescription,
-      playerButtons.wallBadge,
-      playerButtons.onWallBadgeChange,
       playerButtons.title,
     ],
   );
@@ -246,6 +251,7 @@ export function PlayDrawerSectionsSheet({
               buttons={playerButtons.buttons}
               previousNext={playerButtons.previousNext}
               position={playerButtons.position}
+              boardControl={playerButtons.boardControl}
               board={previewBoard}
             />
           ) : null}

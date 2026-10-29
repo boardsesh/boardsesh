@@ -217,13 +217,13 @@ export const FEATURE_FLAG_DEFINITIONS = [
     key: 'first-connect-cta-kill',
     label: 'Disable the connect step',
     description:
-      'Emergency kill switch for the connect-step test (#5654): the "Light climbs on" card on Climbs, the "Light it on the board" pill in the play view, and the one-time "Connected to" confirmation. With it on, no new account is enrolled and everyone already enrolled gets the plain bulb back. Unresolved reads as enabled; the gate waits for flags to resolve before it enrols anyone.',
+      'Emergency kill switch for the connect-step test (#5654): the "Light climbs on" card on Climbs and the one-time "Connected to" confirmation (the play view pill went in #7000: its Connect board button does that job for everyone). With it on, no new account is enrolled and everyone already enrolled stops seeing the card. Unresolved reads as enabled; the gate waits for flags to resolve before it enrols anyone.',
   },
   {
     key: 'first-connect-cta-arm',
     label: 'Force the connect-step arm (QA)',
     description:
-      'QA only. Puts the signed-in account in the treatment (card + pill) or control arm of the connect-step test, whatever its age, build or app version, and starts this phone from a clean slate as if it had never connected. Takes effect right away. Only the on-device choice here counts; a PostHog value for this key is ignored. Forced exposures are tagged arm_forced and left out of the analysis. Default lets the account hash decide.',
+      'QA only. Puts the signed-in account in the treatment (the Climbs card) or control arm of the connect-step test, whatever its age, build or app version, and starts this phone from a clean slate as if it had never connected. Takes effect right away. Only the on-device choice here counts; a PostHog value for this key is ignored. Forced exposures are tagged arm_forced and left out of the analysis. Default lets the account hash decide.',
     variants: ['treatment', 'control'],
   },
   {
@@ -529,8 +529,8 @@ export function useFirstBoardPickerEnabled(): boolean {
 }
 
 /**
- * Kill switch for the connect-step test (#5654, PR 7): the Climbs card, the
- * play-view pill and the first-connect confirmation, plus new enrolments.
+ * Kill switch for the connect-step test (#5654, PR 7): the Climbs card and the
+ * first-connect confirmation, plus new enrolments.
  * Unresolved reads as "not killed". The gate waits for
  * `useFeatureFlagsResolved()` before it enrols, and the surfaces re-render when
  * the value lands, so flipping it in PostHog takes the whole test down.

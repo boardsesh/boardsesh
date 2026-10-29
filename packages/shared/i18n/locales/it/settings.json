@@ -494,7 +494,6 @@
       "playlistTapLoadsQueueLabel": "Toccare una playlist la carica nella mia coda",
       "playlistTapLoadsQueueDescription": "Un tocco in una playlist, in una lista Per te o nella pagina di un tracciatore sostituisce la tua coda con quella lista. Con Illumina il pannello quando tocco un blocco disattivato, usa Avvia per caricarla."
     },
-    "turnOff": "Spegni il pannello",
     "holdForControls": "Tieni premuto per i controlli del pannello",
     "boardControls": "Controlli del pannello",
     "sendFailedTitle": "Impossibile illuminare il pannello",

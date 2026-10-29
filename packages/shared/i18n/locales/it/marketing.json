@@ -550,14 +550,14 @@
       },
       "wall": {
         "title": "Chi illumina il pannello",
-        "p1": "Un pannello accetta una sola connessione Bluetooth alla volta. Su tutti gli altri telefoni, guarda l'anteprima di un blocco e tocca la lampadina: il telefono connesso lo illumina per te.",
-        "p2": "Su un pannello senza luci la lampadina dice Prendi il pannello.",
+        "p1": "Un pannello accetta una sola connessione Bluetooth alla volta. Su tutti gli altri telefoni, guarda l'anteprima di un blocco e tocca Metti in parete: il telefono connesso lo illumina per te.",
+        "p2": "Su un pannello senza luci il pulsante sotto il pannello dice Prendi il pannello.",
         "bluetoothLink": "Connettersi a un pannello"
       },
       "crowd": {
         "title": "Sfogliare senza cambiare il blocco in parete",
-        "p1": "Con qualcun altro nella tua session, scorrere smette di illuminare il pannello. Tocca Metti in parete quando vuoi mettere su il tuo, oppure tocca la faccia in alto per tornare al blocco in parete.",
-        "p2": "Arrampichi da solo? Tieni premuta la lampadina e disattiva Illumina il pannello quando tocco un blocco e Illumina il pannello mentre scorro.",
+        "p1": "Con qualcun altro nella tua session, scorrere smette di illuminare il pannello. Tocca Metti in parete quando vuoi mettere su il tuo, oppure tocca In parete in alto per tornare al blocco in parete.",
+        "p2": "Arrampichi da solo? In Impostazioni, poi Pannello, disattiva Illumina il pannello quando tocco un blocco e Illumina il pannello mentre scorro.",
         "previewLink": "Anteprima di un blocco da qualsiasi lista"
       },
       "history": {
@@ -686,29 +686,28 @@
       "breadcrumb": "Pannello e Bluetooth",
       "hero": {
         "title": "Connetti il telefono al pannello",
-        "subtitle": "Tocca la lampadina, scegli il pannello e il tuo blocco si illumina."
+        "subtitle": "Tocca Connetti pannello, scegli il pannello e il tuo blocco si illumina."
       },
       "connect": {
         "title": "Connetti",
-        "p1": "Tocca la lampadina nel cassetto di riproduzione o nella barra in alto, poi tocca il tuo pannello in Seleziona pannello. La lista parte dal segnale più forte, ogni riga con il suo numero di serie.",
+        "p1": "In un blocco, tocca Connetti pannello sotto il pannello, oppure tocca la lampadina nella barra in alto. Poi tocca il tuo pannello in Seleziona pannello. La lista parte dal segnale più forte, ogni riga con il suo numero di serie.",
         "p2": "La prima volta, iOS chiede il Bluetooth. Android chiede i dispositivi nelle vicinanze, o la posizione su Android 11 e precedenti.",
         "shotAlt": "Il foglio Seleziona pannello",
         "shotCaption": "Segnale più forte per primo, con i numeri di serie.",
         "litShotAlt": "Un blocco illuminato",
-        "litShotCaption": "Una lampadina piena significa che il pannello è illuminato.",
-        "p3": "Davanti a un altro pannello? Cambia pannello è la prima riga dietro il tuo avatar."
+        "litShotCaption": "Un blocco illuminato sul pannello.",
+        "p3": "Davanti a un altro pannello? Cambia pannello è la prima riga dietro il tuo avatar.",
+        "p4": "Preferisci la lampadina? In un blocco, tocca ⋯, poi Opzioni di visualizzazione, Pulsanti, e imposta Controllo del pannello su Lampadina. La lampadina occupa l'estremo destro della riga in alto al posto del pulsante parete, e toccarla o tenerla premuta fa lo stesso."
       },
       "hidden": {
-        "title": "Tieni premuta la lampadina",
-        "p1": "Quando sei connesso, tieni premuta la lampadina per questi controlli, dall'alto in basso.",
-        "row1": "Disconnessione automatica. Libera il pannello dopo 30 secondi di inattività. Cambia il tempo in Impostazioni, poi Pannello.",
-        "row2": "Illumina la presa sopra. Solo MoonBoard.",
-        "row3": "Illumina il pannello quando tocco un blocco.",
-        "row4": "Illumina il pannello mentre scorro, quando un blocco è già in parete. Disattiva entrambi e sfogliare non cambierà più il blocco in parete.",
-        "row5": "Illumina di nuovo il pannello. Riaccende il blocco sui LED.",
-        "row6": "Spegni tutte le luci. Il telefono resta connesso.",
-        "row7": "Disconnetti il pannello. Usalo se ti sei connesso al pannello sbagliato.",
-        "p2": "Un tocco breve ti riconnette all'ultimo pannello che hai usato."
+        "title": "Controlli del pannello",
+        "p1": "Quando sei connesso, tieni premuto il pulsante sotto il pannello. Quando dice Hai tu il pannello, un tocco breve lo disconnette. In un blocco li apri anche da ⋯ e poi Controlli del pannello, o tenendo premuta la lampadina della barra in alto.",
+        "row1": "Illumina di nuovo il pannello. Riaccende il blocco sui LED.",
+        "row2": "Spegni tutte le luci. Il telefono resta connesso.",
+        "row3": "Disconnetti il pannello. Usalo se ti sei connesso al pannello sbagliato.",
+        "row4": "Illumina la presa sopra. Solo MoonBoard.",
+        "p2": "Disconnessione automatica, Illumina il pannello quando tocco un blocco e Illumina il pannello mentre scorro sono in Impostazioni, poi Pannello, e nel menu che apre la lampadina della barra in alto. La disconnessione automatica libera il pannello dopo 30 secondi di inattività. Disattiva entrambe le opzioni di illuminazione e sfogliare non cambierà più il blocco in parete.",
+        "p3": "Senza pannello connesso, Connetti pannello, o un tocco breve sulla lampadina della barra in alto, ti connette all'ultimo pannello che hai usato."
       },
       "failed": {
         "title": "Quando non si connette",
@@ -727,13 +726,13 @@
       },
       "duplicate": {
         "title": "Lo stesso pannello elencato due volte",
-        "p1": "Due righe con numeri di serie diversi sono due controller. Una riga che dice solo Kilter Board, senza numero di serie, è una scatola LED più recente costruita dal produttore. Due di queste nella stessa palestra compaiono come due righe. Quella con più barre di segnale di solito è il pannello davanti a cui ti trovi. Se si illumina il pannello sbagliato, tieni premuta la lampadina, tocca Disconnetti il pannello e riprova.",
+        "p1": "Due righe con numeri di serie diversi sono due controller. Una riga che dice solo Kilter Board, senza numero di serie, è una scatola LED più recente costruita dal produttore. Due di queste nella stessa palestra compaiono come due righe. Quella con più barre di segnale di solito è il pannello davanti a cui ti trovi. Se si illumina il pannello sbagliato, apri Controlli del pannello, tocca Disconnetti il pannello e riprova.",
         "p2": "Non esiste una lista per dimenticare un dispositivo. L'app ricorda solo l'ultimo pannello.",
         "p3": "Un pannello che compare due volte sotto I tuoi pannelli è un'altra cosa. Tocca Modifica accanto a I tuoi pannelli, poi Elimina o Smetti di seguire."
       },
       "control": {
         "title": "Quando il pannello ce l'ha qualcun altro",
-        "p1": "In una session, un telefono gestisce il pannello. Sugli altri, guarda l'anteprima di un blocco e tocca la lampadina: il telefono che lo gestisce lo illumina.",
+        "p1": "In una session, un telefono gestisce il pannello. Sugli altri, guarda l'anteprima di un blocco e tocca Metti in parete: il telefono che lo gestisce lo illumina.",
         "p2": "Sui pannelli senza luci il pulsante dice Prendi il pannello.",
         "sessionsLink": "Altro sulla condivisione di un pannello"
       },
@@ -769,10 +768,10 @@
         "title": "Guarda l'anteprima di un blocco senza illuminare il pannello",
         "intro": "Anteprima è la prima voce della lista.",
         "p1": "Apre il blocco nel cassetto di riproduzione senza toccare la tua coda. Il tuo prossimo scorrimento ti riporta alla coda.",
-        "p2": "In una session, o con Illumina il pannello mentre scorro disattivato, compare la pillola Stai sfogliando. La riga sotto il nome dice Lo vedi solo tu in una session, oppure Anteprima, non illuminato quando un pannello è connesso o un blocco è illuminato. Tocca Imposta attivo o Metti in parete quando vuoi quel blocco.",
+        "p2": "In una session, o con Illumina il pannello mentre scorro disattivato, in alto compare un pulsante per tornare indietro: La mia scelta per il tuo blocco, In parete per il blocco illuminato. La riga sotto il nome dice Lo vedi solo tu in una session, oppure Anteprima, non illuminato quando un pannello è connesso o un blocco è illuminato. Tocca Metti in parete (o Imposta attivo) sotto il pannello quando vuoi quel blocco.",
         "sessionsLink": "Come una session ti fa sfogliare senza cambiare il blocco in parete",
-        "clipAlt": "La pillola Stai sfogliando",
-        "clipCaption": "La pillola arriva dopo lo scorrimento. Il blocco in parete resta lo stesso."
+        "clipAlt": "Il pulsante La mia scelta",
+        "clipCaption": "Il pulsante arriva dopo lo scorrimento. Il blocco in parete resta lo stesso."
       },
       "quick": {
         "title": "I tre pulsanti in alto",

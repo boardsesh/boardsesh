@@ -11,6 +11,19 @@ import { useAutoDisconnectTimeoutLabels } from './use-auto-disconnect-timeout-la
 type BleControlSheetHostProps = {
   visible: boolean;
   onClose: () => void;
+  /**
+   * Auto-disconnect and the two lighting switches. Only the player's own sheet
+   * drops them (#7000); the app-wide sheet (toolbar
+   * bulb, Climbs header pill) always keeps them.
+   */
+  showLightingSwitches?: boolean;
+  /**
+   * The climb "Turn off all lights" marks dark. The player passes the climb
+   * physically on the wall, so a lit preview that isn't the queue head reads
+   * dark after it (#7000). Omitted, the queue's active climb, as the app-wide
+   * sheet always has.
+   */
+  clearedClimbUuid?: string | null;
 };
 
 /**
@@ -22,7 +35,12 @@ type BleControlSheetHostProps = {
  *     the route instead of behind it (an @expo/ui sheet presents off the VC that
  *     owns its subtree; a root-only instance lands under the modal player).
  */
-export function BleControlSheetHost({ visible, onClose }: BleControlSheetHostProps) {
+export function BleControlSheetHost({
+  visible,
+  onClose,
+  showLightingSwitches = true,
+  clearedClimbUuid,
+}: BleControlSheetHostProps) {
   const bluetooth = useOptionalBluetoothContext();
   const isConnected = bluetooth?.isConnected ?? false;
   const [autoDisconnectEnabled, setAutoDisconnectEnabled] = useSetting('autoDisconnectBle');
@@ -48,12 +66,12 @@ export function BleControlSheetHost({ visible, onClose }: BleControlSheetHostPro
     bluetooth?.reassertWall();
   }, [bluetooth]);
 
-  // This phone's badge reads the local store (#6939); every other viewer hears it
-  // through board presence (#7015).
+  // This phone's wall button reads the local store (#6939); every other viewer
+  // hears it through board presence (#7015).
   const handleClearLights = useCallback(() => {
-    markWallCleared(activeClimbUuid);
+    markWallCleared(clearedClimbUuid === undefined ? activeClimbUuid : clearedClimbUuid);
     void bluetooth?.turnOffAllLights();
-  }, [bluetooth, activeClimbUuid]);
+  }, [bluetooth, activeClimbUuid, clearedClimbUuid]);
 
   const handleToggleLightAdjacentHolds = useCallback(
     (enabled: boolean) => {
@@ -81,6 +99,7 @@ export function BleControlSheetHost({ visible, onClose }: BleControlSheetHostPro
       onToggleLightOnSwipe={setLightOnSwipe}
       lightOnClimbTap={lightOnClimbTap}
       onToggleLightOnClimbTap={setLightOnClimbTap}
+      showLightingSwitches={showLightingSwitches}
       onClose={onClose}
     />
   );

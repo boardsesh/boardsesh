@@ -3,7 +3,8 @@
 //
 // Two records in AsyncStorage (via preference-store):
 // - `firstConnectDevice`: what this phone has done with a board (first connect,
-//   "no lights", how often the card and pill have shown). One per phone, kept
+//   "no lights", how often the card has shown; the play-view pill's days are
+//   kept but no longer written since #7000). One per phone, kept
 //   across sign-outs: it describes the phone and the wall, not the account, and
 //   clearing it at sign-out would make a returning phone look brand new.
 // - `firstConnectEnrolments`: each account's arm, written once at exposure, so
@@ -16,8 +17,8 @@
 // Surfaces read the store through `useFirstConnectSelector`
 // (useSyncExternalStore over a derived primitive), so a write repaints only the
 // surfaces whose answer it changed, and never re-renders a provider tree. The
-// Climbs list and the play drawer are heavy screens: they must not re-render
-// because the other one recorded a launch or a pill day.
+// Climbs list is a heavy screen: it must not re-render because a launch was
+// recorded.
 
 import { useSyncExternalStore } from 'react';
 import { getPreference, setPreference } from '../preference-store';
@@ -224,12 +225,6 @@ export function recordFirstConnectCardLaunch(launchId: string): Promise<FirstCon
     device.cardLaunchIds.includes(launchId)
       ? null
       : { ...device, cardLaunchIds: appendCapped(device.cardLaunchIds, launchId) },
-  );
-}
-
-export function recordFirstConnectPillDay(day: string): Promise<FirstConnectDeviceState | null> {
-  return updateDevice((device) =>
-    device.pillDays.includes(day) ? null : { ...device, pillDays: appendCapped(device.pillDays, day) },
   );
 }
 

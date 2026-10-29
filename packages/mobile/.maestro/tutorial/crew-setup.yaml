@@ -25,8 +25,9 @@ name: Tutorial setup - private crew session
       - tapOn: '.*Connect.*[Bb]oard.*'
 - extendedWaitUntil:
     visible:
-      id: play-drawer-header-accessibility
-      text: '.*On the wall.*'
+      # The wall button says this phone has the lit board (#7000).
+      id: play-drawer-wall-control
+      text: 'You have the board.*'
     timeout: 15000
 - openLink: com.boardsesh.app://record
 - waitForAnimationToEnd
@@ -59,10 +60,11 @@ name: Tutorial setup - private crew session
       text: 'NuVu, .*'
     timeout: 20000
 - extendedWaitUntil:
-    # The header's screen-reader stand-in reads the title and then the wall
-    # pill, which names the driver. The recorder additionally verifies its
-    # exact UUID as the sole joined row.
+    # The wall button says the climb is lit and whose board it is (#7000):
+    # this phone's ("You have the board, lit on the wall") or Alex's ("On
+    # Alex's board"). The recorder additionally verifies its exact UUID as the
+    # sole joined row.
     visible:
-      id: play-drawer-header-accessibility
-      text: 'NuVu, .*On the wall\. Alex is lighting the wall\..*'
+      id: play-drawer-wall-control
+      text: '(You have the board|On Alex.s board).*'
     timeout: 20000

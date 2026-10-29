@@ -46,6 +46,7 @@ export default function BoardAndBluetoothContent() {
         <Prose>{t('help.bluetooth.connect.p1')}</Prose>
         <Prose>{t('help.bluetooth.connect.p2')}</Prose>
         <Prose>{t('help.bluetooth.connect.p3')}</Prose>
+        <Prose>{t('help.bluetooth.connect.p4')}</Prose>
       </PageSection>
 
       <PageSection id="failed" title={t('help.bluetooth.failed.title')} lead={t('help.bluetooth.failed.intro')}>
@@ -61,16 +62,14 @@ export default function BoardAndBluetoothContent() {
 
       <PageSection id="hold-the-lightbulb" title={t('help.bluetooth.hidden.title')}>
         <Prose>{t('help.bluetooth.hidden.p1')}</Prose>
-        <ProseList ordered>
+        <ProseList>
           <li>{t('help.bluetooth.hidden.row1')}</li>
           <li>{t('help.bluetooth.hidden.row2')}</li>
           <li>{t('help.bluetooth.hidden.row3')}</li>
           <li>{t('help.bluetooth.hidden.row4')}</li>
-          <li>{t('help.bluetooth.hidden.row5')}</li>
-          <li>{t('help.bluetooth.hidden.row6')}</li>
-          <li>{t('help.bluetooth.hidden.row7')}</li>
         </ProseList>
         <Prose>{t('help.bluetooth.hidden.p2')}</Prose>
+        <Prose>{t('help.bluetooth.hidden.p3')}</Prose>
       </PageSection>
 
       <PageSection id="two-boards" title={t('help.bluetooth.twoBoards.title')}>

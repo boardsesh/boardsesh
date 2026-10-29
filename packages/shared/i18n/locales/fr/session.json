@@ -531,7 +531,6 @@
       "close": "Fermer",
       "setByLine": "Ouvert par {{setter}}",
       "drivenByA11y": "{{name}} allume le mur. Ouvre le profil.",
-      "drivenByAnonA11y": "Quelqu'un allume le mur.",
       "litAgoNow": "à l'instant",
       "litAgoMinutes": "{{count}} min",
       "litAgoHours": "{{count}} h",
@@ -898,14 +897,9 @@
   "playView": {
     "wallState": {
       "onWall": "Sur le mur",
-      "live": "En direct",
-      "onWallHint": "Ce bloc est allumé au mur en ce moment.",
-      "liveHint": "Le prochain bloc que tu choisis s'allume au mur.",
       "browsingHint": "Tu regardes seulement. Le mur ne bouge pas.",
-      "pillHint": "Voir les options du mur",
-      "backToLive": "Revenir au mur",
       "backToWall": "Revenir au bloc au mur",
-      "backToCurrent": "Revenir à ton bloc",
+      "backToCurrent": "Revenir à mon choix",
       "putOnWall": "Allumer au mur",
       "lastOnWallTime": "Au mur pour la dernière fois à {{time}}",
       "lastOnWallYesterday": "Au mur pour la dernière fois hier",
@@ -913,26 +907,50 @@
       "lastOnWallDate": "Au mur pour la dernière fois le {{date}}",
       "joinedBrowseNotice": "Tu explores. Le mur ne change pas tant que tu n'allumes pas un bloc.",
       "previewNotLit": "Aperçu, pas allumé",
-      "notOnWall": "Pas sur le mur",
       "onlyYouSeeThis": "Toi seul le vois",
       "onlyYouSeeThisWallOn": "Toi seul le vois · au mur : {{name}}",
       "commitOverride": {
-        "body": "Quelqu'un vient d'allumer {{name}}. Allumer le tien quand même ?",
         "confirm": "Allumer le mien",
         "cancel": "Garder le mur",
-        "bodyNamed": "{{person}} vient d'allumer {{name}}. Allumer le tien quand même ?",
         "cancelNamed": "Garder celui de {{person}}"
+      },
+      "busyWall": {
+        "captionNamed": "{{person}} vient d'allumer {{name}}",
+        "caption": "Quelqu'un vient d'allumer {{name}}"
       },
       "a11y": {
         "browseAnnounce": "Exploration. Le mur ne bouge pas.",
         "backToLive": "Retour au mur : {{name}}",
         "committed": "{{name}} est sur le mur"
-      }
+      },
+      "backMyPick": "Mon choix",
+      "backOnWall": "Au mur",
+      "backToMyPickNamed": "Revenir à mon choix : {{name}}",
+      "backToWallNamed": "Revenir au bloc au mur : {{name}}"
     },
-    "bulbLabel": {
-      "connect": "Connecter",
-      "on": "Allumée",
-      "light": "Allumer"
+    "wallControl": {
+      "connect": "Connecter la board",
+      "connectHint": "Connecte ta board et allume ce bloc",
+      "litHint": "Touche pour déconnecter. Maintiens pour les commandes de la board.",
+      "onBoard": "Sur la board de {{name}}",
+      "onCrewBoard": "Sur la board de ton crew",
+      "onOtherPhone": "Sur ton autre téléphone",
+      "bulbAria": "Lumières de la board",
+      "valueOff": "Éteintes",
+      "valueOtherClimb": "Un autre bloc est allumé",
+      "lightHint": "Allume ce bloc",
+      "relayHint": "L'allume sur la board de {{name}}",
+      "relayHintCrew": "L'allume sur la board de ton crew",
+      "relayHintOtherPhone": "L'allume sur la board depuis ton autre téléphone",
+      "putOnBoard": "Allumer sur la board de {{name}}",
+      "putOnCrewBoard": "Allumer sur la board de ton crew",
+      "youHaveBoard": "Tu as la board",
+      "youHaveBoardLit": "Tu as la board, allumé au mur",
+      "holderHasBoard": "{{name}} a la board",
+      "crewHasBoard": "Ton crew a la board",
+      "boardOptions": "Options de la board",
+      "onWall": "Au mur",
+      "lightAgainHint": "Le rallume sur la board"
     },
     "setActive": "Activer",
     "paneEmpty": {

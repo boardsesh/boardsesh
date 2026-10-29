@@ -94,8 +94,8 @@ name: Tutorial - a workout advances after real rest
       - tapOn: '.*Connect.*[Bb]oard.*'
 - extendedWaitUntil:
     visible:
-      id: play-drawer-header-accessibility
-      text: '.*On the wall.*'
+      id: play-drawer-wall-control
+      text: 'You have the board.*'
     timeout: 15000
 - tapOn:
     id: rest-timer-pill
@@ -151,8 +151,8 @@ name: Tutorial - a workout advances after real rest
 - back
 - assertNotVisible: "Queue's empty"
 - assertVisible:
-    id: play-drawer-header-accessibility
-    text: '.*On the wall.*'
+    id: play-drawer-wall-control
+    text: 'You have the board.*'
 - evalScript: ${http.get(TUTORIAL_SIGNAL_URL + '/mark/advanced')}
 - extendedWaitUntil:
     visible: tutorial-pause

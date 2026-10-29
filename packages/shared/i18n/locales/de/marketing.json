@@ -550,14 +550,14 @@
       },
       "wall": {
         "title": "Wer die Wand beleuchtet",
-        "p1": "Ein Board nimmt immer nur eine Bluetooth-Verbindung. Auf jedem anderen Handy rufst du die Vorschau auf und tippst auf die Glühbirne, und das verbundene Handy beleuchtet den Boulder für dich.",
-        "p2": "An einer Wand ohne Licht heißt die Glühbirne Wand übernehmen.",
+        "p1": "Ein Board nimmt immer nur eine Bluetooth-Verbindung. Auf jedem anderen Handy rufst du die Vorschau auf und tippst auf „Am Board beleuchten“, und das verbundene Handy beleuchtet den Boulder für dich.",
+        "p2": "An einer Wand ohne Licht heißt der Button unter dem Board Wand übernehmen.",
         "bluetoothLink": "Mit einem Board verbinden"
       },
       "crowd": {
         "title": "Stöbern, ohne die Wand zu bewegen",
-        "p1": "Ist noch jemand in deiner Session, beleuchtet Wischen das Board nicht mehr. Tipp auf Am Board beleuchten, wenn du deinen willst, oder tipp oben aufs Profilbild, um zum Boulder an der Wand zurückzukehren.",
-        "p2": "Allein am Board? Halt die Glühbirne gedrückt und schalt „Board beleuchten, wenn ich einen Boulder antippe“ und „Board beim Wischen beleuchten“ aus.",
+        "p1": "Ist noch jemand in deiner Session, beleuchtet Wischen das Board nicht mehr. Tipp auf „Am Board beleuchten“, wenn du deinen willst, oder oben auf „Am Board“, um zum beleuchteten Boulder zurückzukehren.",
+        "p2": "Allein am Board? Schalt unter Einstellungen, dann Board, „Board beleuchten, wenn ich einen Boulder antippe“ und „Board beim Wischen beleuchten“ aus.",
         "previewLink": "Einen Boulder aus jeder Liste in der Vorschau ansehen"
       },
       "history": {
@@ -686,29 +686,28 @@
       "breadcrumb": "Board und Bluetooth",
       "hero": {
         "title": "Verbinde dein Handy mit dem Board",
-        "subtitle": "Tipp auf die Glühbirne, wähl dein Board, und dein Boulder leuchtet."
+        "subtitle": "Tipp auf Board verbinden, wähl dein Board, und dein Boulder leuchtet."
       },
       "connect": {
         "title": "Verbinden",
-        "p1": "Tipp auf die Glühbirne im Player oder in der oberen Leiste, dann in Board auswählen auf dein Board. Die Liste läuft vom stärksten Signal abwärts, jede Zeile mit ihrer Seriennummer.",
+        "p1": "In einem Boulder tippst du auf Board verbinden unter dem Board oder auf die Glühbirne in der oberen Leiste. Dann tippst du in Board auswählen auf dein Board. Die Liste läuft vom stärksten Signal abwärts, jede Zeile mit ihrer Seriennummer.",
         "p2": "Beim ersten Mal fragt iOS nach Bluetooth. Android fragt nach Geräten in der Nähe, auf Android 11 und älter nach dem Standort.",
         "shotAlt": "Das Sheet Board auswählen",
         "shotCaption": "Stärkstes Signal zuerst, mit Seriennummern.",
         "litShotAlt": "Ein beleuchteter Boulder",
-        "litShotCaption": "Eine gefüllte Glühbirne heißt, die Wand leuchtet.",
-        "p3": "An einer anderen Wand? Board wechseln ist die erste Zeile hinter deinem Avatar."
+        "litShotCaption": "Ein am Board beleuchteter Boulder.",
+        "p3": "An einer anderen Wand? Board wechseln ist die erste Zeile hinter deinem Avatar.",
+        "p4": "Lieber die Glühbirne? Tippe in einem Boulder auf ⋯, dann Ansichtsoptionen, Buttons, und stell Board-Steuerung auf Glühbirne. Die Glühbirne sitzt dann rechts außen in der oberen Reihe statt des Wand-Buttons, und Tippen oder Halten macht dasselbe."
       },
       "hidden": {
-        "title": "Halt die Glühbirne gedrückt",
-        "p1": "Solange du verbunden bist, hältst du die Glühbirne gedrückt. Diese Schalter kommen, von oben nach unten.",
-        "row1": "Automatisch trennen. Gibt das Board nach 30 Sekunden Leerlauf frei. Die Zeit änderst du unter Einstellungen, dann Board.",
-        "row2": "Griff darüber beleuchten. Nur MoonBoard.",
-        "row3": "Board beleuchten, wenn ich einen Boulder antippe.",
-        "row4": "Board beim Wischen beleuchten, sobald ein Boulder am Board leuchtet. Schalt beides aus, und Stöbern ändert die Wand nicht mehr.",
-        "row5": "Board neu beleuchten. Schickt den Boulder nochmal an die LEDs.",
-        "row6": "Alle Lichter ausschalten. Dein Handy bleibt verbunden.",
-        "row7": "Board trennen. Nimm das, wenn du an der falschen Wand hängst.",
-        "p2": "Ein kurzer Tipp verbindet wieder mit deinem letzten Board."
+        "title": "Board-Steuerung",
+        "p1": "Solange du verbunden bist, hältst du den Button unter dem Board gedrückt. Steht dort „Du hast das Board“, trennt ein kurzes Tippen die Verbindung. In einem Boulder öffnet sie auch ⋯ und dann Board-Steuerung, und ebenso die gedrückte Glühbirne oben in der Leiste.",
+        "row1": "Board neu beleuchten. Schickt den Boulder nochmal an die LEDs.",
+        "row2": "Alle Lichter ausschalten. Dein Handy bleibt verbunden.",
+        "row3": "Board trennen. Nimm das, wenn du an der falschen Wand hängst.",
+        "row4": "Griff darüber beleuchten. Nur MoonBoard.",
+        "p2": "„Automatisch trennen“, „Board beleuchten, wenn ich einen Boulder antippe“ und „Board beim Wischen beleuchten“ findest du unter Einstellungen, dann Board, und im Menü der Glühbirne oben in der Leiste. Automatisch trennen gibt das Board nach 30 Sekunden Leerlauf frei. Schalt beide Beleuchtungsschalter aus, und Stöbern ändert die Wand nicht mehr.",
+        "p3": "Ohne verbundenes Board verbindet Board verbinden, oder ein kurzer Tipp auf die Glühbirne oben in der Leiste, mit deinem letzten Board."
       },
       "failed": {
         "title": "Wenn es nicht verbindet",
@@ -727,13 +726,13 @@
       },
       "duplicate": {
         "title": "Dasselbe Board zweimal in der Liste",
-        "p1": "Zwei Zeilen mit verschiedenen Seriennummern sind zwei Controller. Eine Zeile, in der nur Kilter Board steht, ohne Seriennummer, ist eine neuere LED-Box vom Hersteller. Zwei davon in einer Halle stehen als zwei Zeilen in der Liste. Die mit mehr Signalbalken ist meist die Wand, vor der du stehst. Leuchtet die falsche Wand, halt die Glühbirne gedrückt, tipp auf Board trennen und versuch es nochmal.",
+        "p1": "Zwei Zeilen mit verschiedenen Seriennummern sind zwei Controller. Eine Zeile, in der nur Kilter Board steht, ohne Seriennummer, ist eine neuere LED-Box vom Hersteller. Zwei davon in einer Halle stehen als zwei Zeilen in der Liste. Die mit mehr Signalbalken ist meist die Wand, vor der du stehst. Leuchtet die falsche Wand, öffne die Board-Steuerung, tipp auf Board trennen und versuch es nochmal.",
         "p2": "Eine Liste zum Vergessen von Geräten gibt es nicht. Die App merkt sich nur dein letztes Board.",
         "p3": "Ein Board, das doppelt unter Deine Boards steht, ist etwas anderes. Tipp neben Deine Boards auf Bearbeiten, dann auf Löschen oder Nicht mehr folgen."
       },
       "control": {
         "title": "Wenn jemand anderes das Board hat",
-        "p1": "In einer Session hält ein Handy das Board. Auf den anderen rufst du die Vorschau auf und tippst auf die Glühbirne, und das verbundene Handy beleuchtet den Boulder.",
+        "p1": "In einer Session hält ein Handy das Board. Auf den anderen rufst du die Vorschau auf und tippst auf „Am Board beleuchten“, und das verbundene Handy beleuchtet den Boulder.",
         "p2": "An Wänden ohne Licht heißt der Button Wand übernehmen.",
         "sessionsLink": "Mehr zum Teilen einer Wand"
       },
@@ -769,10 +768,10 @@
         "title": "Einen Boulder ansehen, ohne das Board zu beleuchten",
         "intro": "Vorschau ist der erste Eintrag in der Liste.",
         "p1": "Sie öffnet den Boulder im Player, ohne deine Warteschlange anzurühren. Dein nächster Wisch bringt dich zurück.",
-        "p2": "In einer Session, oder wenn „Board beim Wischen beleuchten“ aus ist, erscheint die Anzeige Stöbern. Unter dem Namen steht dann in einer Session Nur du siehst das, sonst Vorschau, nicht beleuchtet, sobald ein Board verbunden oder ein Boulder beleuchtet ist. Tipp auf Aktiv setzen oder Am Board beleuchten, wenn du den Boulder willst.",
+        "p2": "In einer Session, oder wenn „Board beim Wischen beleuchten“ aus ist, bringt dich oben ein Button zurück: „Meine Wahl“ zu deinem Boulder, „Am Board“ zum beleuchteten. Unter dem Namen steht dann in einer Session Nur du siehst das, sonst Vorschau, nicht beleuchtet, sobald ein Board verbunden oder ein Boulder beleuchtet ist. Tipp unter dem Board auf „Am Board beleuchten“ (oder Aktiv setzen), wenn du den Boulder willst.",
         "sessionsLink": "Wie eine Session die Wand in Ruhe lässt",
-        "clipAlt": "Die Anzeige Stöbern",
-        "clipCaption": "Die Anzeige kommt nach dem Wisch. Die Wand bleibt, wie sie war."
+        "clipAlt": "Der Button „Meine Wahl“",
+        "clipCaption": "Der Button kommt nach dem Wisch. Die Wand bleibt, wie sie war."
       },
       "quick": {
         "title": "Die drei Buttons oben",

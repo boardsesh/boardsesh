@@ -1,8 +1,13 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
-import { BoardPresenceCurrentContext, type BoardPresenceCurrentState } from '@boardsesh/board-presence-react';
+import { renderHook, waitFor } from '@testing-library/react';
+import { createElement, Fragment, type ReactNode } from 'react';
+import {
+  BoardPresenceActionsContext,
+  BoardPresenceCurrentContext,
+  type BoardPresenceActions,
+  type BoardPresenceCurrentState,
+} from '@boardsesh/board-presence-react';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { ClimbBoardConnectContext, type ClimbBoardConnectValue } from '../../../lib/boards/climb-board-connect-context';
 
@@ -36,6 +41,8 @@ const ctrl = vi.hoisted(() => ({
   presence: undefined as BoardPresenceCurrentState | undefined,
   // The drawer host's connect-follows-the-climb hook (#7001). Null = no host.
   climbBoardConnect: null as ClimbBoardConnectValue | null,
+  // The presence feed's catch-up trigger, behind its actions context.
+  refreshPresence: null as ReturnType<typeof vi.fn> | null,
 }));
 const trackMock = vi.hoisted(() => vi.fn());
 const hapticLightMock = vi.hoisted(() => vi.fn());
@@ -52,11 +59,13 @@ vi.mock('../../../providers/queue-provider', () => ({
   }),
 }));
 vi.mock('../../../lib/analytics', () => ({ track: trackMock }));
+vi.mock('../../../hooks/use-viewer-user-id', () => ({ useViewerUserId: () => 'me' }));
 // The hook fires a light haptic on take/release; the real module pulls in
 // react-native (Flow-typed), which this jsdom suite can't parse.
 vi.mock('../../../lib/haptics', () => ({ hapticLight: hapticLightMock }));
 
 import { useLightbulbControl } from '../use-lightbulb-control';
+import { CrewHolderSuspicionSync } from '../../../providers/crew-holder-suspicion';
 
 function makeBluetooth(over: Partial<NonNullable<BluetoothCtx>> = {}): NonNullable<BluetoothCtx> {
   return {
@@ -89,7 +98,19 @@ const wrapper = ({ children }: { children: ReactNode }) =>
   createElement(
     ClimbBoardConnectContext.Provider,
     { value: ctrl.climbBoardConnect },
-    createElement(BoardPresenceCurrentContext.Provider, { value: ctrl.presence }, children),
+    createElement(
+      BoardPresenceActionsContext.Provider,
+      {
+        value: ctrl.refreshPresence
+          ? ({ refresh: ctrl.refreshPresence } as unknown as BoardPresenceActions)
+          : undefined,
+      },
+      createElement(
+        BoardPresenceCurrentContext.Provider,
+        { value: ctrl.presence },
+        createElement(Fragment, null, createElement(CrewHolderSuspicionSync), children),
+      ),
+    ),
   );
 
 function renderControl(options: Partial<Parameters<typeof useLightbulbControl>[0]> = {}) {
@@ -104,6 +125,7 @@ beforeEach(() => {
   ctrl.sessionMemberUserIds = new Set();
   ctrl.presence = undefined;
   ctrl.climbBoardConnect = null;
+  ctrl.refreshPresence = null;
   trackMock.mockClear();
 });
 
@@ -544,10 +566,10 @@ describe('useLightbulbControl connect (#5654 connect step)', () => {
   it('tags a connect with the surface it was started from', async () => {
     const { result } = renderControl({ surface: 'play_drawer' });
 
-    await result.current.connect('first_connect_pill');
+    await result.current.connect('put_on_wall');
 
     expect(trackMock).toHaveBeenCalledWith('Board Connect Tapped', {
-      surface: 'first_connect_pill',
+      surface: 'put_on_wall',
       boardName: 'kilter',
       reconnect: false,
     });
@@ -709,5 +731,72 @@ describe('useLightbulbControl connect follows the climb (#7001)', () => {
 
     expect(bluetooth.disconnect).toHaveBeenCalledOnce();
     expect(climbBoardConnect.moveToClimbBoard).not.toHaveBeenCalled();
+  });
+});
+
+describe('useLightbulbControl with a crewmate presence has not confirmed as holder (#7017 QA)', () => {
+  // The Pixel that joined Liz's session: its feed named the climb Liz lit a
+  // minute ago but no holder yet. It read that as a free board, so one Put on
+  // the wall moved the crew's climb AND opened the Select Board picker.
+  function arrangeJoinedCrewBeforeHolder(
+    over: { holder?: { userId: string | null } | null; lastConnectionSeq?: number; sentAt?: string } = {},
+  ) {
+    ctrl.boardId = 42;
+    ctrl.sessionId = 'session-1';
+    ctrl.sessionMemberUserIds = new Set(['me', 'liz']);
+    ctrl.refreshPresence = vi.fn();
+    ctrl.presence = {
+      holder: over.holder ?? null,
+      lastConnectionSeq: over.lastConnectionSeq ?? 0,
+      currentClimb: { climbUuid: 'propagation', sentByUserId: 'liz', sentAt: over.sentAt ?? new Date().toISOString() },
+    } as unknown as BoardPresenceCurrentState;
+  }
+
+  it('relays the preview and never connects', async () => {
+    arrangeJoinedCrewBeforeHolder();
+    const onRelayToHolder = vi.fn();
+    const { result } = renderControl({ onRelayToHolder, canRelay: true });
+
+    expect(result.current.pressAction).toBe('relay');
+    expect(result.current.holderIsAuthoritative).toBe(true);
+    result.current.onPress();
+    expect(onRelayToHolder).toHaveBeenCalledTimes(1);
+    // The Put on the wall chain's connect is refused too: no picker, no scan.
+    await expect(result.current.connect('put_on_wall')).resolves.toBe(false);
+    expect(ctrl.bluetooth?.connect).not.toHaveBeenCalled();
+    // And the feed is asked to confirm the holder now, not at the next wall event.
+    await waitFor(() => expect(ctrl.refreshPresence).toHaveBeenCalledWith('crew-holder-unconfirmed'));
+  });
+
+  it('does nothing on the crew climb itself rather than open the picker', () => {
+    arrangeJoinedCrewBeforeHolder();
+    const { result } = renderControl({ onRelayToHolder: vi.fn(), canRelay: false });
+    expect(result.current.pressAction).toBe('noop');
+    result.current.onPress();
+    expect(ctrl.bluetooth?.connect).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a holder event said the board is free', { lastConnectionSeq: 7 }],
+    ['the climb was lit over an hour ago', { sentAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() }],
+  ])('connects as before once %s', (_case, over) => {
+    arrangeJoinedCrewBeforeHolder(over);
+    const { result } = renderControl({ onRelayToHolder: vi.fn(), canRelay: true });
+    expect(result.current.pressAction).toBe('connect');
+    expect(result.current.holderIsAuthoritative).toBe(false);
+  });
+
+  it('connects as before when this phone held the board as that account', () => {
+    arrangeJoinedCrewBeforeHolder();
+    ctrl.bluetooth = makeBluetooth({ lastLocalHolderUserId: 'liz' });
+    const { result } = renderControl({ onRelayToHolder: vi.fn(), canRelay: true });
+    expect(result.current.pressAction).toBe('connect');
+  });
+
+  it('connects as before outside a session', () => {
+    arrangeJoinedCrewBeforeHolder();
+    ctrl.sessionId = null;
+    const { result } = renderControl({ onRelayToHolder: vi.fn(), canRelay: true });
+    expect(result.current.pressAction).toBe('connect');
   });
 });

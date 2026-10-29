@@ -54,10 +54,17 @@ export function ClimbViewSettingsScreen() {
         buttons={playerButtons.buttons}
         previousNext={playerButtons.previousNext}
         position={playerButtons.position}
+        boardControl={playerButtons.boardControl}
         board={previewBoard}
       />
     ),
-    [playerButtons.buttons, playerButtons.previousNext, playerButtons.position, previewBoard],
+    [
+      playerButtons.buttons,
+      playerButtons.previousNext,
+      playerButtons.position,
+      playerButtons.boardControl,
+      previewBoard,
+    ],
   );
 
   const model = useMemo(
@@ -72,19 +79,16 @@ export function ClimbViewSettingsScreen() {
             positionOptions: playerButtons.positionOptions,
             position: playerButtons.position,
             onPositionChange: playerButtons.onPositionChange,
+            boardControlLabel: playerButtons.boardControlLabel,
+            boardControlOptions: playerButtons.boardControlOptions,
+            boardControl: playerButtons.boardControl,
+            onBoardControlChange: playerButtons.onBoardControlChange,
             previousNextLabel: playerButtons.previousNextLabel,
             previousNextDescription: playerButtons.previousNextDescription,
             previousNext: playerButtons.previousNext,
             onPreviousNextChange: (enabled) => {
               hapticSelection();
               playerButtons.onPreviousNextChange(enabled);
-            },
-            wallBadgeLabel: playerButtons.wallBadgeLabel,
-            wallBadgeDescription: playerButtons.wallBadgeDescription,
-            wallBadge: playerButtons.wallBadge,
-            onWallBadgeChange: (enabled) => {
-              hapticSelection();
-              playerButtons.onWallBadgeChange(enabled);
             },
             controls: playerButtons.controls,
             onVisibleChange: (buttonId, visible) => {

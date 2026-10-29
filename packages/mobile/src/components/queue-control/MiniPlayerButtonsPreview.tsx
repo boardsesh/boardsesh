@@ -106,6 +106,7 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
         workoutOutcome: false,
         wideLayout: miniPlayerUsesWideLayout({ wide, placement }),
         moreAvailable: true,
+        paneMode: 'none',
       });
   }, [buttons, board.supportsMirroring, board.angleAvailable, board.showLightbulb, signedIn, wide, tablet]);
   // The real bar's slot rule at the width the bar measured on this device, or a representative one before it has drawn.

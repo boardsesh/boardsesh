@@ -43,11 +43,15 @@ vi.mock('../Text', () => ({
     children,
     numberOfLines,
     ellipsizeMode,
+    adjustsFontSizeToFit,
+    minimumFontScale,
     onLayout,
   }: {
     children?: ReactNode;
     numberOfLines?: number;
     ellipsizeMode?: string;
+    adjustsFontSizeToFit?: boolean;
+    minimumFontScale?: number;
     onLayout?: (event: unknown) => void;
   }) => {
     useEffect(() => {
@@ -55,7 +59,12 @@ vi.mock('../Text', () => ({
     }, [onLayout]);
     return createElement(
       'span',
-      { 'data-text': 'true', 'data-lines': String(numberOfLines ?? ''), 'data-ellipsize': ellipsizeMode ?? '' },
+      {
+        'data-text': 'true',
+        'data-lines': String(numberOfLines ?? ''),
+        'data-ellipsize': ellipsizeMode ?? '',
+        'data-shrink': adjustsFontSizeToFit ? String(minimumFontScale) : undefined,
+      },
       children,
     );
   },
@@ -155,5 +164,48 @@ describe('MarqueeText', () => {
     expect(fallback?.getAttribute('data-lines')).toBe('2');
     expect(container.querySelector('[data-animated]')).toBeNull();
     expect(reanim.withRepeat).not.toHaveBeenCalled();
+  });
+
+  // #7017: a name a few points too long scrolled by those points, and at rest at
+  // the far end its first glyph sat clipped ("ɹrain from the Brain").
+  it('shrinks a name that fits at the shrink scale instead of scrolling it, first glyph and all', () => {
+    reduceMotion.value = false;
+    layout.clipWidth = 190;
+    layout.contentWidth = 200; // 95% fits a 0.9 floor
+    const { container } = render(
+      <MarqueeText active shrinkToFitScale={0.9}>
+        Drain from the Brain
+      </MarqueeText>,
+    );
+
+    expect(container.querySelector('[data-animated]')).toBeNull();
+    expect(reanim.withRepeat).not.toHaveBeenCalled();
+    const fitted = container.querySelector('[data-shrink]');
+    expect(fitted?.getAttribute('data-shrink')).toBe('0.9');
+    expect(fitted?.getAttribute('data-lines')).toBe('1');
+  });
+
+  it('still scrolls a name too long to shrink into place', () => {
+    reduceMotion.value = false;
+    layout.clipWidth = 100;
+    layout.contentWidth = 320;
+    const { container } = render(
+      <MarqueeText active shrinkToFitScale={0.9}>
+        Some Really Long Climb Name That Overflows The Bar
+      </MarqueeText>,
+    );
+
+    expect(container.querySelector('[data-animated]')).not.toBeNull();
+    expect(container.querySelector('[data-shrink]')).toBeNull();
+  });
+
+  it('never shrinks without the option: the bars keep their scroll', () => {
+    reduceMotion.value = false;
+    layout.clipWidth = 190;
+    layout.contentWidth = 200;
+    const { container } = render(<MarqueeText active>Drain from the Brain</MarqueeText>);
+
+    expect(container.querySelector('[data-animated]')).not.toBeNull();
+    expect(container.querySelector('[data-shrink]')).toBeNull();
   });
 });

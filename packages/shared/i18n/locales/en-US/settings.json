@@ -494,7 +494,6 @@
       "playlistTapLoadsQueueLabel": "Tapping a playlist loads it into my queue",
       "playlistTapLoadsQueueDescription": "A tap in a playlist, For You list or setter's page replaces your queue with that list. With Light the board when I tap a climb off, use Play to load it."
     },
-    "turnOff": "Turn off the board",
     "holdForControls": "Hold for board controls",
     "boardControls": "Board controls",
     "sendFailedTitle": "Couldn't light board",

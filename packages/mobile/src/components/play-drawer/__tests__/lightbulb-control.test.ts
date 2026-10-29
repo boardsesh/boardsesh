@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   deriveBoardConnection,
+  deriveCrewHolderSuspected,
+  deriveCrewHolderUnconfirmed,
   deriveInAppBoardConnection,
   deriveLightbulbLit,
   derivePlayDrawerLightbulbPressAction,
@@ -520,5 +522,56 @@ describe('deriveBoardConnection is the Live Activity contract', () => {
       }
     }
     expect(Object.keys(expected)).toHaveLength(32);
+  });
+});
+
+describe('deriveCrewHolderSuspected (#7017 QA)', () => {
+  // A crewmate joined Liz's session: presence names the climb Liz lit, no holder event yet.
+  const joined = {
+    inSession: true,
+    holder: null,
+    lastConnectionSeq: 0,
+    wallSenderUserId: 'liz',
+    wallPresenceFresh: true,
+    sessionMemberUserIds: new Set(['me', 'liz']),
+    viewerUserId: 'me',
+  };
+
+  it.each([
+    ['no holder event yet, a crewmate lit the wall', {}, true],
+    ['an anonymous holder seeded, no holder event yet', { holder: { userId: null } }, true],
+    ['solo', { inSession: false }, false],
+    ['a named holder', { holder: { userId: 'stranger' } }, false],
+    ['a holder event said the board is free', { lastConnectionSeq: 5 }, false],
+    // Any holder event ends it, named or not (#7017 review).
+    ['a holder event named an anonymous holder', { holder: { userId: null }, lastConnectionSeq: 5 }, false],
+    ['presence over an hour old', { wallPresenceFresh: false }, false],
+    ['nobody named for the climb', { wallSenderUserId: null }, false],
+    ['the sender is not in the session', { wallSenderUserId: 'stranger' }, false],
+    // This climber's own climb, lit here before a relaunch or on another phone.
+    ['the sender is this climber', { wallSenderUserId: 'me' }, false],
+    ['the climber is not known yet', { viewerUserId: null }, false],
+  ])('%s', (_case, over, expected) => {
+    expect(deriveCrewHolderSuspected({ ...joined, ...over })).toBe(expected);
+  });
+});
+
+describe('deriveCrewHolderUnconfirmed (#7017 QA)', () => {
+  const suspected = {
+    suspected: true,
+    localConnected: false,
+    holderIsAuthoritative: false,
+    wallSenderUserId: 'liz',
+    lastLocalHolderUserId: null,
+  };
+
+  it.each([
+    ['the owner suspects a crewmate', {}, true],
+    ['no suspicion, or released after the window', { suspected: false }, false],
+    ['this phone holds the link', { localConnected: true }, false],
+    ['already authoritative', { holderIsAuthoritative: true }, false],
+    ["this phone's own stale hold", { lastLocalHolderUserId: 'liz' }, false],
+  ])('%s', (_case, over, expected) => {
+    expect(deriveCrewHolderUnconfirmed({ ...suspected, ...over })).toBe(expected);
   });
 });

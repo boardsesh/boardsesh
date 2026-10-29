@@ -121,7 +121,6 @@
         "failed": "Non ancora connesso a {{board}}. Riprova quando vuoi.",
         "failedNoName": "Non ancora connesso al tuo pannello. Riprova quando vuoi."
       },
-      "pill": "Illumina sul pannello",
       "confirm": {
         "title": "Connesso a {{board}}",
         "titleNoName": "Connesso al tuo pannello",

@@ -7,9 +7,11 @@ import { useWallStatePillAccessibility, type WallStatePillState } from './WallSt
 type PlayDrawerHeaderAccessibilityProps = {
   /** The current climb's header, the same model the drawn header reads. */
   model: LivePlayDrawerHeaderModel;
-  /** The wall pill in the header's leading slot; null when there is none. */
+  /** The back chip in the header's leading slot; null when there is none. */
   pillState: WallStatePillState | null;
   pillBackTarget: 'wall' | 'current' | null;
+  /** The climb the back chip goes to, for its spoken label. */
+  pillTargetName?: string | null;
   pillLatched: boolean;
   onPillPress?: () => void;
   onLongPressName?: () => void;
@@ -37,6 +39,7 @@ export const PlayDrawerHeaderAccessibility = memo(function PlayDrawerHeaderAcces
   model,
   pillState,
   pillBackTarget,
+  pillTargetName = null,
   pillLatched,
   onPillPress,
   onLongPressName,
@@ -46,14 +49,13 @@ export const PlayDrawerHeaderAccessibility = memo(function PlayDrawerHeaderAcces
   const pillAccessibility = useWallStatePillAccessibility({
     state: pillState,
     backTarget: pillBackTarget,
+    targetName: pillTargetName,
     latched: pillLatched,
   });
   const { headerProps } = model;
-  // What the wall is doing is part of the header a sighted climber sees, so it
-  // is part of what this view reads. Browsing's pill words are an instruction
-  // ("Back to your climb"), not a state: they stay on the action only.
-  const wallStateLabel = pillState && pillState !== 'browsing' ? pillAccessibility?.label : undefined;
-  const label = [describePlayDrawerHeader(headerProps, t), wallStateLabel].filter(Boolean).join(', ');
+  // The back chip's words are an instruction ("Back to your climb"), not a
+  // state, so they stay on the action and out of what this view reads.
+  const label = describePlayDrawerHeader(headerProps, t);
   const setterUsername = headerProps.setterUsername;
   const canOpenSetter = Boolean(setterUsername) && onPressSetter !== undefined;
   const pillActionLabel = onPillPress ? pillAccessibility?.label : undefined;

@@ -561,8 +561,6 @@
         },
         "previousNext": "Previous and next",
         "previousNextDescription": "Swiping the board still moves between climbs.",
-        "wallBadge": "Wall status on the board",
-        "wallBadgeDescription": "A badge on the board says whether this climb is lit on the wall.",
         "buttons": {
           "mirror": "Mirror",
           "favorite": "Favorite",
@@ -578,9 +576,15 @@
           "log": "Log",
           "boardLight": "Board light"
         },
-        "footer": "Whichever of Queue and Mirror comes first gets the big button. A hidden button stays in the ⋯ menu. With every small button off, the board gets their row.",
+        "footer": "The first button on takes the top row's left end and the last one its right end. The rest, and any you hide, are in the ⋯ menu.",
         "settingsFooter": "To change the order, open the ⋯ menu on a climb and pick View options.",
-        "previewLabel": "Preview, {{position}}: {{buttons}}"
+        "previewLabel": "Preview, {{position}}: {{buttons}}",
+        "boardControl": {
+          "label": "Board control",
+          "wallButton": "Wall button",
+          "lightbulb": "Lightbulb",
+          "footer": "Either one connects, lights the climb and shows whose board it is. Hold it for board options. The lightbulb takes the top row's right end."
+        }
       },
       "climbView": {
         "title": "Climb view",

@@ -263,7 +263,7 @@ describe('MiniPlayerActionsMenu', () => {
 
   it('leaves out what the bar could never show here: no heart or queue signed out, no Mirror on Kilter', () => {
     const hidden = miniPlayerMenuHiddenButtons(['next'], (buttonId) => buttonId !== 'mirror');
-    expect(hidden).toEqual({ favorite: true, share: true, queue: true, mirror: false, angle: true });
+    expect(hidden).toEqual({ tick: false, favorite: true, share: true, queue: true, mirror: false, angle: true });
     const signedOut = renderMenu({
       isAuthenticated: false,
       isAvailable: (buttonId) => buttonId !== 'favorite' && buttonId !== 'queue',

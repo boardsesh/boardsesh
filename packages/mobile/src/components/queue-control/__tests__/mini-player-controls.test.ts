@@ -8,6 +8,8 @@ import {
   accessoryWidthBesideName,
   isMiniPlayerButtonAvailable,
   miniPlayerCapacityWidth,
+  miniPlayerPaneMode,
+  playerMirroredByMiniPlayer,
   miniPlayerSlotCount,
   resolveMiniPlayerControls,
   trailingSlotFrame,
@@ -242,6 +244,7 @@ function resolve(overrides: Partial<MiniPlayerControlsInput>) {
     workoutOutcome: false,
     wideLayout: false,
     moreAvailable: true,
+    paneMode: 'none',
     ...overrides,
   });
 }
@@ -349,6 +352,24 @@ describe('resolveMiniPlayerControls', () => {
       trailing: ['lightbulb', 'log'],
     });
   });
+
+  // #7000, the tablet rule: beside a player the bar is its first row, and the
+  // player's wall button replaces the bar's bulb.
+  it('keeps the whole bar beside a player, without the bulb when the wall button is chosen', () => {
+    const withFavorite = layoutWith([...DEFAULT_MINI_PLAYER_BUTTONS.order], ['next', 'previous', 'favorite']);
+    expect(resolve({ layout: withFavorite, paneMode: 'mirror' })).toEqual({
+      leading: ['favorite', 'previous', 'next'],
+      workout: [],
+      more: false,
+      wallDisplay: false,
+      trailing: ['log'],
+    });
+    // The bulb chosen: the bar's bulb is the player's board control.
+    expect(resolve({ layout: withFavorite, paneMode: 'mirror', mirrorShowsBulb: true }).trailing).toEqual([
+      'lightbulb',
+      'log',
+    ]);
+  });
 });
 
 describe("resolveMiniPlayerControls on a wide bar (Music's iPad layout)", () => {
@@ -448,6 +469,20 @@ describe("resolveMiniPlayerControls on a wide bar (Music's iPad layout)", () => 
       more: true,
       wallDisplay: false,
       trailing: ['lightbulb', 'log'],
+    });
+  });
+
+  it('keeps ⋯ beside a player (the open Duo, the iPad player), with no bulb for the wall button', () => {
+    expect(wideBar({ paneMode: 'mirror' })).toMatchObject({ more: true, trailing: ['log'] });
+    expect(wideBar({ paneMode: 'mirror', mirrorShowsBulb: true })).toMatchObject({
+      more: true,
+      wallDisplay: false,
+      trailing: ['lightbulb', 'log'],
+    });
+    expect(wideBar({ paneMode: 'mirror', workoutOutcome: true })).toMatchObject({
+      workout: [],
+      more: true,
+      trailing: ['log'],
     });
   });
 });
@@ -604,6 +639,18 @@ describe('resolveMiniPlayerControls in a timed workout block', () => {
     expect(workout({ slotCount: wide(995, 'inline'), singleSlotShowsBulb: false })).toEqual(inline);
   });
 
+  // One pair on screen (#7000): beside a player its own, larger Fell / Sent sit
+  // next to the climb, so the bar shows none, only when the player isn't beside it.
+  it('draws no Fell or Sent beside a player, which has its own pair', () => {
+    expect(workout({ slotCount: wide(800), paneMode: 'mirror' }).workout).toEqual([]);
+    expect(workout({ slotCount: 1, paneMode: 'mirror' }).workout).toEqual([]);
+    expect(workout({ slotCount: wide(800), paneMode: 'mirror', mirrorShowsBulb: true }).trailing).toEqual([
+      'lightbulb',
+      'log',
+    ]);
+    expect(workout({ slotCount: wide(800) }).workout).toEqual(['fell', 'sent']);
+  });
+
   it('draws no Fell or Sent outside a block, or after the hold ends', () => {
     expect(resolve({ slotCount: wide(995) }).workout).toEqual([]);
     expect(resolve({ slotCount: 1 }).workout).toEqual([]);
@@ -627,6 +674,42 @@ describe('resolveMiniPlayerControls in a timed workout block', () => {
       wallDisplay: false,
       trailing: ['lightbulb', 'log'],
     });
+  });
+});
+
+describe('miniPlayerPaneMode', () => {
+  const mode = (overrides: Partial<Parameters<typeof miniPlayerPaneMode>[0]>) =>
+    miniPlayerPaneMode({ phoneSplit: false, paneTaken: false, isTablet: false, playerRouteUp: false, ...overrides });
+
+  it('mirrors the open Duo’s pane player, whatever it shows', () => {
+    expect(mode({ phoneSplit: true })).toBe('mirror');
+    expect(mode({ phoneSplit: true, paneTaken: true })).toBe('none');
+  });
+
+  it('mirrors the iPad’s player route, and nothing else on a tablet', () => {
+    expect(mode({ isTablet: true, playerRouteUp: true })).toBe('mirror');
+    expect(mode({ isTablet: true })).toBe('none');
+  });
+
+  it('leaves an iPhone alone: its player covers the bar', () => {
+    expect(mode({ playerRouteUp: true })).toBe('none');
+  });
+});
+
+describe('playerMirroredByMiniPlayer', () => {
+  type Input = Parameters<typeof playerMirroredByMiniPlayer>[0];
+  it.each([
+    ['the open Duo’s pane', { home: 'nativeAccessory', phoneSplit: true, isTablet: false, isPane: true }, true],
+    ['a tablet’s player route', { home: 'nativeAccessory', phoneSplit: false, isTablet: true, isPane: false }, true],
+    ['an iPhone’s player', { home: 'nativeAccessory', phoneSplit: false, isTablet: false, isPane: false }, false],
+    [
+      'the JS tablet shell’s pane (no bar beside it)',
+      { home: 'detailPane', phoneSplit: false, isTablet: true, isPane: true },
+      false,
+    ],
+    ['a floating bar', { home: 'floatingBar', phoneSplit: false, isTablet: true, isPane: false }, false],
+  ] as Array<[string, Input, boolean]>)('%s: %s', (_case, input, expected) => {
+    expect(playerMirroredByMiniPlayer(input)).toBe(expected);
   });
 });
 

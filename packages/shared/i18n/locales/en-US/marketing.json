@@ -550,14 +550,14 @@
       },
       "wall": {
         "title": "Who lights the wall",
-        "p1": "A board takes one Bluetooth connection at a time. On every other phone, preview a climb and tap the lightbulb, and the connected phone lights it for you.",
-        "p2": "On a wall with no lights the bulb says Take the wall.",
+        "p1": "A board takes one Bluetooth connection at a time. On every other phone, preview a climb and tap Put on the wall, and the connected phone lights it for you.",
+        "p2": "On a wall with no lights the button under the board says Take the wall.",
         "bluetoothLink": "Connecting to a board"
       },
       "crowd": {
         "title": "Browsing without moving the wall",
-        "p1": "With someone else in your session, swiping stops lighting the board. Tap Put on the wall when you want yours up, or tap the face at the top to go back to the climb on the wall.",
-        "p2": "Climbing alone? Hold the lightbulb and turn off Light the board when I tap a climb and Light the board as I swipe.",
+        "p1": "With someone else in your session, swiping stops lighting the board. Tap Put on the wall when you want yours up, or tap On the wall at the top to go back to the climb on the wall.",
+        "p2": "Climbing alone? Under Settings, then Board, turn off Light the board when I tap a climb and Light the board as I swipe.",
         "previewLink": "Preview a climb from any list"
       },
       "history": {
@@ -686,29 +686,28 @@
       "breadcrumb": "Board and Bluetooth",
       "hero": {
         "title": "Connect your phone to the board",
-        "subtitle": "Tap the lightbulb, pick your board, and your climb lights up."
+        "subtitle": "Tap Connect board, pick your board, and your climb lights up."
       },
       "connect": {
         "title": "Connect",
-        "p1": "Tap the lightbulb in the play drawer or the top bar, then tap your board in Select Board. The list runs strongest signal first, each row with its serial.",
+        "p1": "In a climb, tap Connect board under the board, or tap the lightbulb in the top bar. Then tap your board in Select Board. The list runs strongest signal first, each row with its serial.",
         "p2": "The first time, iOS asks for Bluetooth. Android asks for nearby devices, or Location on Android 11 and older.",
         "shotAlt": "The Select Board sheet",
         "shotCaption": "Strongest signal first, with serials.",
         "litShotAlt": "A lit climb",
-        "litShotCaption": "A filled bulb means the wall is lit.",
-        "p3": "At a different wall? Change board is the first row behind your avatar."
+        "litShotCaption": "A climb lit on the board.",
+        "p3": "At a different wall? Change board is the first row behind your avatar.",
+        "p4": "Prefer the lightbulb? In a climb, tap ⋯, then View options, Buttons, and set Board control to Lightbulb. The bulb takes the top row's right end in place of the wall button, and a tap or a hold does the same."
       },
       "hidden": {
-        "title": "Hold the lightbulb",
-        "p1": "While connected, press and hold the lightbulb for these controls, top to bottom.",
-        "row1": "Auto-disconnect. Frees the board after 30 seconds idle. Change the time under Settings, then Board.",
-        "row2": "Light the hold above. MoonBoard only.",
-        "row3": "Light the board when I tap a climb.",
-        "row4": "Light the board as I swipe, once a climb is on the wall. Turn both off and browsing stops changing the wall.",
-        "row5": "Re-light board. Sends the climb to the LEDs again.",
-        "row6": "Turn off all lights. Your phone stays connected.",
-        "row7": "Disconnect board. Use it when you connected to the wrong wall.",
-        "p2": "A short tap reconnects to the last board you used."
+        "title": "Board controls",
+        "p1": "While connected, hold the button under the board. When it says You have the board, a short tap disconnects instead. In a climb ⋯, then Board controls, opens them too, and so does holding the lightbulb in the top bar.",
+        "row1": "Re-light board. Sends the climb to the LEDs again.",
+        "row2": "Turn off all lights. Your phone stays connected.",
+        "row3": "Disconnect board. Use it when you connected to the wrong wall.",
+        "row4": "Light the hold above. MoonBoard only.",
+        "p2": "Auto-disconnect, Light the board when I tap a climb and Light the board as I swipe are under Settings, then Board, and in the sheet the top bar's lightbulb opens. Auto-disconnect frees the board after 30 seconds idle. Turn both lighting switches off and browsing stops changing the wall.",
+        "p3": "With no board connected, Connect board, or a short tap on the top bar's lightbulb, connects to the last board you used."
       },
       "failed": {
         "title": "When it won't connect",
@@ -727,13 +726,13 @@
       },
       "duplicate": {
         "title": "The same board listed twice",
-        "p1": "Two rows with different serials are two controllers. A row that reads only Kilter Board, with no serial, is a newer manufacturer-built LED box. Two of those in one gym show as two rows. The one with more signal bars is usually the wall you're standing at. If the wrong wall lights, hold the lightbulb, tap Disconnect board and try again.",
+        "p1": "Two rows with different serials are two controllers. A row that reads only Kilter Board, with no serial, is a newer manufacturer-built LED box. Two of those in one gym show as two rows. The one with more signal bars is usually the wall you're standing at. If the wrong wall lights, open Board controls, tap Disconnect board and try again.",
         "p2": "There is no forget-this-device list. The app only remembers your last board.",
         "p3": "A board showing twice under Your boards is different. Tap Edit next to Your boards, then Delete or Unfollow."
       },
       "control": {
         "title": "When someone else has the board",
-        "p1": "In a session, one phone holds the board. On the others, preview a climb and tap the lightbulb, and the holder's phone lights it.",
+        "p1": "In a session, one phone holds the board. On the others, preview a climb and tap Put on the wall, and the holder's phone lights it.",
         "p2": "On walls with no lights the button reads Take the wall.",
         "sessionsLink": "More on sharing a wall"
       },
@@ -769,10 +768,10 @@
         "title": "Preview a climb without lighting the board",
         "intro": "Preview is the first item in the list.",
         "p1": "It opens the climb in the play drawer without touching your queue. Your next swipe returns to your queue.",
-        "p2": "In a session, or with Light the board as I swipe off, a Browsing pill appears. The line under the name says Only you see this in a session, or Preview, not lit when a board is connected or a climb is lit. Tap Set active or Put on the wall when you want the climb.",
+        "p2": "In a session, or with Light the board as I swipe off, a chip at the top takes you back: My pick for your own climb, On the wall for the climb on the wall. The line under the name says Only you see this in a session, or Preview, not lit when a board is connected or a climb is lit. Tap Put on the wall (or Set active) under the board when you want the climb.",
         "sessionsLink": "How a session keeps browsing off the wall",
-        "clipAlt": "The Browsing pill",
-        "clipCaption": "The pill arrives after the swipe. The wall stays as it was."
+        "clipAlt": "The My pick chip",
+        "clipCaption": "The chip arrives after the swipe. The wall stays as it was."
       },
       "quick": {
         "title": "The three buttons across the top",

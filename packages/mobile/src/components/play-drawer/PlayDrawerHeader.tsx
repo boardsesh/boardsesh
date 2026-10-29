@@ -30,6 +30,11 @@ import { climbStatsKnown, isProjectClimb, splitGradeLabel } from '@boardsesh/pla
 
 /** Holds the stats line's height when there is nothing to print on it. */
 const ZERO_WIDTH_SPACE = '\u200B';
+/**
+ * How far the climb name may shrink to fit whole before it scrolls instead: a
+ * name up to ~10% too long for the header reads at 90% and keeps every glyph.
+ */
+export const NAME_SHRINK_TO_FIT_SCALE = 0.9;
 
 type PlayDrawerHeaderProps = {
   name: string;
@@ -272,7 +277,16 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
               accessibilityHint={onLongPressName ? t('mobile.climbActions.copyNameHint') : undefined}
               style={styles.namePressable}
             >
-              <MarqueeText active variant="body" style={styles.nameClip} textStyle={styles.nameText} fallbackLines={2}>
+              <MarqueeText
+                active
+                variant="body"
+                style={styles.nameClip}
+                textStyle={styles.nameText}
+                fallbackLines={2}
+                // A name a few points too long shrinks into place rather than
+                // scrolling by those points, which left its first glyph clipped (#7017).
+                shrinkToFitScale={NAME_SHRINK_TO_FIT_SCALE}
+              >
                 {name}
               </MarqueeText>
             </PressableSurface>

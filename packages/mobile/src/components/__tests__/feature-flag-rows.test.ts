@@ -4,6 +4,8 @@ import {
   findStaleFeatureFlagOverrideKeys,
   resolveFeatureFlagOverrideAction,
 } from '../feature-flag-rows';
+import { selectedFeatureFlagLabel } from '../FeatureFlagsForm.logic';
+import { parseObserveSampleRate } from '../../lib/observe-config';
 import { FEATURE_FLAG_DEFINITIONS } from '../../providers/feature-flags-provider';
 
 // `__DEV__` is a compile-time define here as well as under Metro, so the
@@ -14,6 +16,18 @@ vi.mock('../../lib/is-dev-build', () => ({ isDevBuild: () => build.dev }));
 beforeEach(() => {
   build.dev = false;
 });
+
+function rowFor(
+  key: string,
+  overrides: Record<string, boolean | string> = {},
+  baseFlags: Record<string, boolean | string> = {},
+) {
+  const row = buildFeatureFlagRows(FEATURE_FLAG_DEFINITIONS, overrides, baseFlags).find(
+    (candidate) => candidate.key === key,
+  );
+  if (!row) throw new Error(`no row for ${key}`);
+  return row;
+}
 
 function captionFor(key: string, overrides: Record<string, boolean>, baseFlags: Record<string, boolean>): string {
   const row = buildFeatureFlagRows(FEATURE_FLAG_DEFINITIONS, overrides, baseFlags).find(
@@ -70,10 +84,67 @@ describe('buildFeatureFlagRows', () => {
     expect(row?.effectiveLabel).toBe('Live default: not set · Effective: on');
   });
 
-  it('gives every boolean row the Default/On/Off options, in order', () => {
+  it('gives every boolean row the Default/On/Off options, in order, as segments', () => {
     const rows = buildFeatureFlagRows(FEATURE_FLAG_DEFINITIONS, {}, {});
     const row = rows.find((candidate) => candidate.key === 'garmin-watch');
     expect(row?.options.map((option) => option.key)).toEqual(['default', 'on', 'off']);
+    expect(row?.control).toBe('segmented');
+  });
+});
+
+// The variant select (rebuilt for #7000): Default plus one choice per declared
+// variant, writing the variant string.
+describe('buildFeatureFlagRows: multivariate flags', () => {
+  it.each([
+    ['first-connect-cta-arm', ['treatment', 'control'], 'segmented'],
+    ['observe-sample-rate', ['1', '0.5', '0.25', '0.1', '0'], 'menu'],
+  ] as const)('%s offers Default and each variant as a %s', (key, variants, control) => {
+    const row = rowFor(key);
+    expect(row.options.map((option) => option.label)).toEqual(['Default', ...variants]);
+    expect(row.control).toBe(control);
+    expect(row.choice).toBe('default');
+  });
+
+  it('every flag with variants renders them; no flag without variants does', () => {
+    for (const definition of FEATURE_FLAG_DEFINITIONS) {
+      const row = rowFor(definition.key);
+      const variants: readonly string[] = 'variants' in definition ? definition.variants : [];
+      if (variants.length > 0) expect(row.options).toHaveLength(variants.length + 1);
+      else expect(row.options.map((option) => option.key)).toEqual(['default', 'on', 'off']);
+    }
+  });
+
+  it('selects the forced variant and says what is live', () => {
+    const row = rowFor(
+      'first-connect-cta-arm',
+      { 'first-connect-cta-arm': 'treatment' },
+      { 'first-connect-cta-arm': 'control' },
+    );
+    expect(selectedFeatureFlagLabel(row.options, row.choice)).toBe('treatment');
+    expect(row.effectiveLabel).toBe('Live default: control · Effective: treatment');
+    expect(rowFor('first-connect-cta-arm').effectiveLabel).toBe('Live default: not set · Effective: default');
+  });
+
+  it('round-trips each choice through the override store', () => {
+    for (const option of rowFor('observe-sample-rate').options) {
+      const resolved = resolveFeatureFlagOverrideAction(option.key);
+      const overrides: Record<string, boolean | string> =
+        resolved.action === 'set' ? { 'observe-sample-rate': resolved.value } : {};
+      expect(rowFor('observe-sample-rate', overrides).choice).toBe(option.key);
+    }
+  });
+
+  it('writes a sample rate the observe config reads back', () => {
+    const half = rowFor('observe-sample-rate').options.find((option) => option.label === '0.5');
+    if (!half) throw new Error('no 0.5 choice');
+    const resolved = resolveFeatureFlagOverrideAction(half.key);
+    expect(resolved).toEqual({ action: 'set', value: '0.5' });
+    expect(resolved.action === 'set' ? parseObserveSampleRate(resolved.value) : null).toBe(0.5);
+  });
+
+  it('renders an unknown variant or a leftover boolean at Default', () => {
+    expect(rowFor('first-connect-cta-arm', { 'first-connect-cta-arm': 'retired' }).choice).toBe('default');
+    expect(rowFor('observe-sample-rate', { 'observe-sample-rate': true }).choice).toBe('default');
   });
 });
 
@@ -85,6 +156,16 @@ describe('resolveFeatureFlagOverrideAction', () => {
     expect(resolveFeatureFlagOverrideAction('default')).toEqual({
       action: 'clear',
     });
+  });
+
+  it('stores the variant string for a variant choice, even one named like a segment', () => {
+    expect(resolveFeatureFlagOverrideAction('variant:bulb')).toEqual({ action: 'set', value: 'bulb' });
+    expect(resolveFeatureFlagOverrideAction('variant:default')).toEqual({ action: 'set', value: 'default' });
+    expect(resolveFeatureFlagOverrideAction('variant:off')).toEqual({ action: 'set', value: 'off' });
+  });
+
+  it('clears for a key no row offers', () => {
+    expect(resolveFeatureFlagOverrideAction('treatment')).toEqual({ action: 'clear' });
   });
 
   it('stores a boolean for a plain on/off flag', () => {
@@ -117,13 +198,24 @@ describe('findStaleFeatureFlagOverrideKeys', () => {
     ]);
   });
 
-  it('leaves every well-formed override alone', () => {
+  it('leaves every well-formed override alone, variants included', () => {
     expect(
       findStaleFeatureFlagOverrideKeys(FEATURE_FLAG_DEFINITIONS, {
         'garmin-watch': true,
         'strava-integration': false,
+        'first-connect-cta-arm': 'treatment',
+        'observe-sample-rate': '0.25',
       }),
     ).toEqual([]);
+  });
+
+  it('finds a boolean or an undeclared variant on a multivariate flag', () => {
+    expect(
+      findStaleFeatureFlagOverrideKeys(FEATURE_FLAG_DEFINITIONS, {
+        'observe-sample-rate': true,
+        'first-connect-cta-arm': 'retired',
+      }),
+    ).toEqual(['observe-sample-rate', 'first-connect-cta-arm']);
   });
 
   it('leaves a key the catalog no longer lists alone', () => {

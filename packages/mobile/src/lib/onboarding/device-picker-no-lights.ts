@@ -9,7 +9,7 @@ import { getFirstConnectSnapshot, markFirstConnectNoLightsBeforeFirstConnect } f
 
 /**
  * Called from the picker's tap. The climber is telling us what the card's "This
- * wall has no lights" says, so the card and the pill stop offering a connect the
+ * wall has no lights" says, so the card stops offering a connect the
  * wall cannot take. Recorded for every phone that has never connected (the
  * phone's history is worth keeping in or out of the test); the event is for
  * enrolled accounts only, in both arms, like the card's.

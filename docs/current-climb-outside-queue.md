@@ -1018,8 +1018,8 @@ As built: `{{time}}` is `hour: numeric, minute: 2-digit`, so it reads "9:30 AM" 
 day plus short month ("15 oct.", "15. Okt."), with the year added once it is another year. The
 four bands are calendar days, not 24 h steps (`src/lib/last-on-wall.ts`). The player shows Put
 on the wall in the browse latch's slot of the second row while the held climb is the one on
-screen, and the line under the controls (`LastOnWallNote`); a pinned preview keeps its own
-commit.
+screen, and the "Last on the wall …" note in the controls (`LastOnWallNote`, #7000); a pinned
+preview keeps its own commit.
 
 The gate lives in `bluetooth-provider.tsx`, which isn't on the CLAUDE.md Bluetooth list. It
 still gets a Fable review, because it decides what the wall lights.

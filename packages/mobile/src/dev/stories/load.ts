@@ -43,6 +43,27 @@ function noScenarioWall(): DevScenarioWall | null {
  */
 export const useDevScenarioWall: () => DevScenarioWall | null = __DEV__ ? useScenarioWallFromStories : noScenarioWall;
 
+/** What a story says the player shows about the wall (`ScenarioOverrides.player`). */
+export type DevScenarioPlayer = NonNullable<ScenarioOverrides['player']>;
+
+const getScenarioPlayer = (): DevScenarioPlayer | null => getScenarioOverrides()?.player ?? null;
+
+function useScenarioPlayerFromStories(): DevScenarioPlayer | null {
+  return useSyncExternalStore(subscribeScenarioOverrides, getScenarioPlayer, getScenarioPlayer);
+}
+
+function noScenarioPlayer(): DevScenarioPlayer | null {
+  return null;
+}
+
+/**
+ * A story's forced wall pill and lit label, for shooting every wall state of the
+ * player on one simulator. Always null in production, where no story ever runs.
+ */
+export const useDevScenarioPlayer: () => DevScenarioPlayer | null = __DEV__
+  ? useScenarioPlayerFromStories
+  : noScenarioPlayer;
+
 /** The story index and story screens, or `null` in a production bundle. */
 export function loadStoryScreens(): typeof import('./screens') | null {
   return __DEV__ ? (require('./screens') as typeof import('./screens')) : null;

@@ -19,7 +19,7 @@ export type FeatureFlagOption = {
 /**
  * One flag's fully-resolved view model. `options` is the exact set of segments
  * to render, in order: `['default', 'on', 'off']` for a plain boolean flag, or
- * `['default', ...variants]` for a multivariate one (see
+ * `['default', ...variant choices]` (keys `variant:<name>`) for a multivariate one (see
  * FeatureFlagsForm.logic.ts) — so iOS and Android render the same segments for
  * the same row without either platform needing to know which kind a flag is.
  * `choice` is the current selection (one of `options`' keys); `effectiveLabel`
@@ -31,6 +31,8 @@ export type FeatureFlagRow = {
   label: string;
   description: string;
   options: readonly FeatureFlagOption[];
+  /** `segmented` for up to three choices, `menu` for more (`MAX_SEGMENTS`). */
+  control: 'segmented' | 'menu';
   choice: string;
   effectiveLabel: string;
 };

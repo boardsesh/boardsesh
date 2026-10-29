@@ -494,7 +494,6 @@
       "playlistTapLoadsQueueLabel": "Antippen einer Playlist lädt sie in meine Warteschlange",
       "playlistTapLoadsQueueDescription": "Tippst du einen Boulder in einer Playlist, in Für dich oder auf der Seite von Routenbauer*innen an, ersetzt diese Liste deine Warteschlange. Ist „Board beleuchten, wenn ich einen Boulder antippe“ aus, lädst du sie mit Abspielen."
     },
-    "turnOff": "Board ausschalten",
     "holdForControls": "Halten für die Board-Steuerung",
     "boardControls": "Board-Steuerung",
     "sendFailedTitle": "Board ließ sich nicht beleuchten",

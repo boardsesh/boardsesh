@@ -17,14 +17,11 @@ export type BoardConnectSurface =
   | 'picker_scan_again'
   // Android's ongoing-session notification bulb, when the board was out.
   | 'notification'
-  // The connect-step test's (#5654) Climbs card, and its labelled play-view
-  // pill. The pill is the play drawer's bulb with a label, so without its own
-  // surface its taps would read as 'play_drawer' and the treatment's new entry
-  // point could not be told apart from the bare bulb it replaces.
+  // The connect-step test's (#5654) Climbs card. Its play-view pill
+  // ('first_connect_pill') went in #7000 and sends nothing now.
   | 'first_connect_card'
-  | 'first_connect_pill'
   // The play view's Put on the wall while no board is connected (#6939): the
-  // tap sets the climb and connects, so it reads apart from the bare bulb.
+  // tap sets the preview and connects, so it reads apart from Connect board.
   | 'put_on_wall'
   // The Climbs header's "You have the board" capsule: a tap disconnects, a
   // long-press opens the controls sheet. It never connects (it only shows while
@@ -64,25 +61,34 @@ export function trackBoardConnectTapped({
 /**
  * Every control that opens the Bluetooth controls sheet (Re-light / Turn off /
  * Disconnect): a lightbulb's long-press, or the Climbs header's "You have the
- * board" pill. The play drawer hosts its own sheet and is not counted.
+ * board" pill. The play drawer hosts its own sheet and counts it as
+ * `play_drawer` with a `source` (#7000).
  */
 export type BoardControlsSurface = Extract<
   BoardConnectSurface,
-  | 'play_drawer'
-  | 'toolbar'
-  | 'app_bar'
-  | 'board_control_indicator'
-  | 'first_connect_card'
-  | 'first_connect_pill'
-  | 'header_pill'
+  'play_drawer' | 'toolbar' | 'app_bar' | 'board_control_indicator' | 'first_connect_card' | 'header_pill'
 >;
+
+/**
+ * How the player's own sheet was opened (#7000): a hold on one view of the
+ * board control (`button`, `bulb`, or the open Duo's `mini_bar`), or ⋯ › Board
+ * controls (`player_menu`). A tap never opens it: on You have the board a tap
+ * disconnects.
+ */
+export type PlayerBoardControlsSource = 'button' | 'bulb' | 'mini_bar' | 'player_menu';
 
 export type BoardControlsSource = {
   surface: BoardControlsSurface;
   placement?: AccessoryPlacement;
+  /** The player's sheet only. */
+  source?: PlayerBoardControlsSource;
 };
 
 /** Fired when the controls sheet actually opens (this device holds the link). */
-export function trackBoardControlsOpened({ surface, placement }: BoardControlsSource): void {
-  track(SHARED_EVENTS.BoardControlsOpened, { surface, ...(placement ? { placement } : {}) });
+export function trackBoardControlsOpened({ surface, placement, source }: BoardControlsSource): void {
+  track(SHARED_EVENTS.BoardControlsOpened, {
+    surface,
+    ...(placement ? { placement } : {}),
+    ...(source ? { source } : {}),
+  });
 }

@@ -234,9 +234,10 @@ diagnostic) applies on native. The whole surface lives in three files:
   `useFeatureFlagsResolved()` before it decides, like the others.
   `first-connect-cta-kill` (read through `useFirstConnectCtaEnabled`,
   unresolved = enabled) takes down the connect-step A/B test (#5654, PR 7):
-  no new account is enrolled, and every enrolled one gets the plain bulb back
-  (no Climbs card, no "Light it on the board" pill, no first-connect
-  confirmation). The test deliberately assigns arms WITHOUT a PostHog flag: a
+  no new account is enrolled, and every enrolled one stops seeing the Climbs
+  card and the first-connect confirmation. (The play view's "Light it on the
+  board" pill went in #7000: the player's Connect board button does that job
+  in both arms.) The test deliberately assigns arms WITHOUT a PostHog flag: a
   first launch has no cached flags, so a flag-driven arm could change under a
   climber the moment it resolved. The arm is
   `murmurHash3_32(concat(user_id, ':first-connect-cta-v1')) % 2` (1 =
@@ -431,9 +432,14 @@ The coercion happens once, in `readPosthogFeatureFlags` /
 flag's `variants` and only a declared member survives the read; omit it for a
 plain boolean flag and the behaviour is byte-identical to before multivariate
 flags existed. The on-device override widens the same way — `setOverride(key,
-value)` accepts `boolean | string`, and the Feature Flags screen renders a
-`select`-style row (Default + each declared variant) instead of the boolean
-On/Off segmented control whenever a definition has `variants`.
+value)` accepts `boolean | string`, and the Feature Flags screen renders
+Default plus one choice per declared variant instead of the boolean On/Off
+control whenever a definition has `variants`: a segmented control for up to
+three choices, a menu past that (`buildFeatureFlagRows`, `MAX_SEGMENTS`). A
+choice writes the variant string; Default clears it. A boolean left on a
+multivariate flag (the screen wrote one while the select was gone), or a
+variant the flag no longer declares, is cleared when the screen opens
+(`findStaleFeatureFlagOverrideKeys`).
 
 ### `donation-links` — the one flag whose targeting is a compliance boundary
 
@@ -517,14 +523,12 @@ coercion branch and the `variants` field on a definition.
 
 `observe-sample-rate` (#5038) brought back the two pieces a live flag actually
 needs — `variants` on the definition, and the coercion branch that lets a
-declared member survive `readPosthogFeatureFlags`. **The tester screen was not
-rebuilt.** `buildFeatureFlagRows` and `FeatureFlagOverrideAction`
-(`packages/mobile/src/components/feature-flag-rows.ts`) are still boolean-only,
-so a multivariate flag renders there as On/Off and an on-device override can
-only write a boolean. For `observe-sample-rate` that is harmless — a boolean
-parses back to the shipped rate — but it does mean **the sample rate can only be
-changed from the PostHog dashboard, not from the device.** Rebuild the row
-rendering if a future flag needs on-device variant selection.
+declared member survive `readPosthogFeatureFlags`. The tester screen's variant
+select came back with the QA-only `first-connect-cta-arm`, which is read from
+the on-device override alone, during #7000: `buildFeatureFlagRows` and `resolveFeatureFlagOverrideAction`
+(`packages/mobile/src/components/feature-flag-rows.ts`) render Default plus each
+variant and write the variant string, so the sample rate can be forced from
+the device too (`parseObserveSampleRate` reads the string).
 
 Full event contract, the PostHog dashboard setup (both flags plus the
 Experiment), and the stratification rule for reading the results:

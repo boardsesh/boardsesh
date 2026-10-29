@@ -4,6 +4,12 @@ import type { PlayDrawerLightbulbPressAction } from '../play-drawer/lightbulb-co
 
 type BleLightbulbVisualStateInput = {
   isConnected: boolean;
+  /**
+   * Not lit, but this phone holds the link: the player's bulb (#7000), back in
+   * the first row, draws an amber outline, so "connected, this climb is dark" reads
+   * apart from "no board". Ignored while `isConnected`.
+   */
+  ready?: boolean;
   connectedColor: string;
   disconnectedColor: string | OpaqueColorValue;
 };
@@ -34,13 +40,14 @@ export function getBleLightbulbSpinnerSize(size: number): 'small' | 'large' {
 
 export function getBleLightbulbVisualState({
   isConnected,
+  ready = false,
   connectedColor,
   disconnectedColor,
 }: BleLightbulbVisualStateInput): BleLightbulbVisualState {
   if (!isConnected) {
     return {
       iconName: 'lightbulb',
-      iconColor: disconnectedColor,
+      iconColor: ready ? connectedColor : disconnectedColor,
     };
   }
 

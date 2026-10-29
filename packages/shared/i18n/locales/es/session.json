@@ -531,7 +531,6 @@
       "close": "Cerrar",
       "setByLine": "Abierto por {{setter}}",
       "drivenByA11y": "{{name}} está encendiendo el muro. Abre el perfil.",
-      "drivenByAnonA11y": "Alguien está encendiendo el muro.",
       "litAgoNow": "ahora",
       "litAgoMinutes": "{{count}} min",
       "litAgoHours": "{{count}} h",
@@ -898,14 +897,9 @@
   "playView": {
     "wallState": {
       "onWall": "En el muro",
-      "live": "En directo",
-      "onWallHint": "Este bloque está encendido en el muro ahora mismo.",
-      "liveHint": "El siguiente bloque que elijas se enciende en el muro.",
       "browsingHint": "Solo estás mirando. El muro sigue como está.",
-      "pillHint": "Ver opciones del muro",
-      "backToLive": "Volver al muro",
       "backToWall": "Volver al bloque del muro",
-      "backToCurrent": "Volver a tu bloque",
+      "backToCurrent": "Volver a mi elección",
       "putOnWall": "Ponerlo en el muro",
       "lastOnWallTime": "En el muro por última vez a las {{time}}",
       "lastOnWallYesterday": "En el muro por última vez ayer",
@@ -913,26 +907,50 @@
       "lastOnWallDate": "En el muro por última vez el {{date}}",
       "joinedBrowseNotice": "Estás explorando. El muro no cambia hasta que pongas un bloque.",
       "previewNotLit": "Vista previa, sin encender",
-      "notOnWall": "No está en el muro",
       "onlyYouSeeThis": "Solo tú lo ves",
       "onlyYouSeeThisWallOn": "Solo tú lo ves · en el muro: {{name}}",
       "commitOverride": {
-        "body": "Alguien acaba de encender {{name}}. ¿Pones el tuyo igualmente?",
         "confirm": "Poner el mío",
         "cancel": "Dejar el muro",
-        "bodyNamed": "{{person}} acaba de encender {{name}}. ¿Pones el tuyo igualmente?",
         "cancelNamed": "Dejar el de {{person}}"
+      },
+      "busyWall": {
+        "captionNamed": "{{person}} acaba de encender {{name}}",
+        "caption": "Alguien acaba de encender {{name}}"
       },
       "a11y": {
         "browseAnnounce": "Explorando. El muro sigue como está.",
         "backToLive": "Volver al muro: {{name}}",
         "committed": "{{name}} está en el muro"
-      }
+      },
+      "backMyPick": "Mi elección",
+      "backOnWall": "En el plafón",
+      "backToMyPickNamed": "Volver a mi elección: {{name}}",
+      "backToWallNamed": "Volver al bloque del plafón: {{name}}"
     },
-    "bulbLabel": {
-      "connect": "Conectar",
-      "on": "Encendido",
-      "light": "Encender"
+    "wallControl": {
+      "connect": "Conectar plafón",
+      "connectHint": "Conecta tu plafón y enciende este bloque",
+      "litHint": "Toca para desconectar. Mantén pulsado para los controles del plafón.",
+      "onBoard": "En el plafón de {{name}}",
+      "onCrewBoard": "En el plafón de tu grupo",
+      "onOtherPhone": "En tu otro móvil",
+      "bulbAria": "Luces del plafón",
+      "valueOff": "Apagadas",
+      "valueOtherClimb": "Hay otro bloque encendido",
+      "lightHint": "Enciende este bloque",
+      "relayHint": "Lo pone en el plafón de {{name}}",
+      "relayHintCrew": "Lo pone en el plafón de tu grupo",
+      "relayHintOtherPhone": "Lo pone en el plafón desde tu otro móvil",
+      "putOnBoard": "Poner en el plafón de {{name}}",
+      "putOnCrewBoard": "Poner en el plafón de tu grupo",
+      "youHaveBoard": "Tienes el plafón",
+      "youHaveBoardLit": "Tienes el plafón, encendido en el muro",
+      "holderHasBoard": "{{name}} tiene el plafón",
+      "crewHasBoard": "Tu grupo tiene el plafón",
+      "boardOptions": "Opciones del plafón",
+      "onWall": "En el plafón",
+      "lightAgainHint": "Lo vuelve a encender en el plafón"
     },
     "setActive": "Activar",
     "paneEmpty": {
