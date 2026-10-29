@@ -58,7 +58,7 @@ export async function updateSessionBoardPathIfChanged(
   viewerId?: string | null,
   changedByParticipantId: string | null = null,
 ): Promise<string | null> {
-  const boardId = await resolveSessionBoardId(boardPath, viewerId);
+  const boardId = await resolveSessionBoardId(boardPath, viewerId, sessionId);
   const transition = await db.transaction(async (tx) => {
     const [existing] = await tx
       .select({ boardPath: sessions.boardPath, boardId: sessions.boardId })
@@ -67,7 +67,7 @@ export async function updateSessionBoardPathIfChanged(
       .for('update');
     if (!existing) throw new Error(`updateSessionBoardPathIfChanged: session ${sessionId} not found`);
     await requireResourceAccess('session', sessionId, viewerId);
-    const previousPathBoardId = await resolveSessionBoardId(existing.boardPath ?? '', viewerId);
+    const previousPathBoardId = await resolveSessionBoardId(existing.boardPath ?? '', viewerId, sessionId);
     if (existing.boardPath === boardPath && existing.boardId === boardId) return null;
     // A session is readable only through every wall it references. Prior wall
     // activity stays capped when the party moves to another wall.

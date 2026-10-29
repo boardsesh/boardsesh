@@ -16,7 +16,7 @@ export {
   resourceLocationCondition,
   sessionBoardLocationCondition,
 } from '@boardsesh/db/queries';
-import { and, eq, inArray, not, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
+import { and, eq, inArray, isNull, ne, not, notExists, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import * as schema from '@boardsesh/db/schema';
 import {
@@ -386,6 +386,11 @@ export async function canAccessResourceWithoutLink(
  * reading. Everything else gets `withoutLink`: a numeric `user_boards.id`
  * (enumerable), a slug or uuid carried across another owner's merge, or a uuid
  * of some other board, which unlocks nothing here.
+ *
+ * A climber in a live session on the board also reads it, whatever key they
+ * hold (`isLiveSessionMemberOnHomeWall`): these are the reads of the wall you
+ * are standing at, its page, presence and connect lookups. Listings never come
+ * through here.
  */
 export async function canAccessBoard(
   boardUuid: string,
@@ -393,7 +398,72 @@ export async function canAccessBoard(
   presentedBoardUuid: string | null | undefined,
 ): Promise<boolean> {
   const access = await resourceAccess('board', boardUuid, viewerId);
-  return presentedBoardUuid === boardUuid ? access.withLink : access.withoutLink;
+  if (presentedBoardUuid === boardUuid ? access.withLink : access.withoutLink) return true;
+  return isLiveSessionMemberOnHomeWall(boardUuid, viewerId);
+}
+
+/**
+ * Joining a session counts as holding its wall's link, for that session (#7013).
+ *
+ * True when the viewer is a participant of a session that has not ended and is
+ * on this board right now (`board_sessions.board_id`). Without it, a crew
+ * member on a private or unlisted home wall is handed the wall's geometry
+ * instead of the wall, mints a private board of their own, logs to an empty
+ * history, and meets "Different saved board" at the wall's own controller.
+ *
+ * Deliberately narrow:
+ * - Home walls only (`gym_id IS NULL`). A wall at a gym keeps the gym's gates,
+ *   and spray walls keep their own wall rules.
+ * - Only while the session is live. `board_session_participants` keeps no
+ *   "left" marker, so a member who left keeps the wall until the session ends.
+ * - A grant the owner revoked from this viewer still withholds it.
+ * - Never part of `resourceAccessCondition`: listings, search, feeds and
+ *   nearby sessions keep every gate. Only the single-board reads that call
+ *   this (`canAccessBoard`, session path projection and binding) see it.
+ *
+ * Driven from the viewer's participant rows (indexed on `user_id`), then the
+ * session and board by primary key. `inSessionId` narrows it to one session,
+ * for writes that must not let a member carry the wall into a session of their
+ * own (`resolveSessionBoardId`).
+ */
+export async function isLiveSessionMemberOnHomeWall(
+  boardUuid: string,
+  viewerId: ViewerId,
+  inSessionId?: string,
+): Promise<boolean> {
+  if (!viewerId) return false;
+  const [row] = await db
+    .select({ id: schema.userBoards.id })
+    .from(schema.boardSessionParticipants)
+    .innerJoin(schema.boardSessions, eq(schema.boardSessions.id, schema.boardSessionParticipants.sessionId))
+    .innerJoin(schema.userBoards, eq(schema.userBoards.id, schema.boardSessions.boardId))
+    .where(
+      and(
+        eq(schema.boardSessionParticipants.userId, viewerId),
+        inSessionId === undefined ? undefined : eq(schema.boardSessionParticipants.sessionId, inSessionId),
+        ne(schema.boardSessions.status, 'ended'),
+        isNull(schema.boardSessions.endedAt),
+        eq(schema.userBoards.uuid, boardUuid),
+        isNull(schema.userBoards.deletedAt),
+        isNull(schema.userBoards.gymId),
+        ne(schema.userBoards.boardType, 'spray'),
+        notExists(
+          db
+            .select({ userId: schema.resourceGrants.userId })
+            .from(schema.resourceGrants)
+            .where(
+              and(
+                eq(schema.resourceGrants.kind, 'board'),
+                eq(schema.resourceGrants.resourceId, boardUuid),
+                eq(schema.resourceGrants.userId, viewerId),
+                eq(schema.resourceGrants.status, 'revoked'),
+              ),
+            ),
+        ),
+      ),
+    )
+    .limit(1);
+  return row !== undefined;
 }
 export async function requireResourceAccess(
   kind: PrivacyResourceKind,
