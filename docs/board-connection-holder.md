@@ -44,6 +44,12 @@ The clean release path is the client calling `reportBoardDisconnect` on BLE drop
 
 The relay suppresses connecting only for a session member identified by the authoritative board-presence holder. The best-effort session wall-lit flag can be stale and never suppresses reconnecting. `BluetoothProvider` remembers the account observed holding the board while its local BLE link was connected, scoped to the bound board and session. After a drop, every control—including one mounted later—can recognize a delayed self-release and reconnect. A scope change discards the old identity immediately. Presence identifies accounts rather than individual devices, so after a local hold, another device on that account can conservatively fall back to connecting. Relaying an unchanged current climb does not force a physical re-light; that requires a separate remote reassert path.
 
+### No undo on a lightbulb disconnect (product decision)
+
+A short tap on a lit lightbulb hangs up the board at once. There is no confirm and no Undo, on every bulb (MiniPlayer, toolbar, Android app bar, the header pill, the player). A climber who hangs up by mistake taps the bulb again to reconnect. A deliberate hang-up forgets the remembered board (`forgetConnectedBoard`), so that tap opens the board picker.
+
+Decided 2026-10-28. #6997 built an 8 s "Board disconnected · Undo" snackbar for every bulb after a slip on the iPhone MiniPlayer, where the bulb now sits beside ⏭. It was declined: we don't want an Undo option here. Don't add a confirm or an Undo to the bulb's short tap. Long-press and the controls sheet's Disconnect stay as they are.
+
 ## Holding a wall with no light kit
 
 `user_boards.has_leds` is a capability flag, `NOT NULL DEFAULT true`. The client type is `hasLeds?: boolean` and every branch tests `=== false`, so a stale snapshot or a query that omitted the field degrades to "has LEDs" — an LED wall can only lose its Bluetooth affordances through an explicit `false` from someone with edit access. 79% of production board rows have no serial number, so absence of hardware evidence is emphatically **not** evidence of absence.
