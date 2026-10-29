@@ -70,7 +70,12 @@ import {
   readRoutePlayerSnapshot,
   useRoutePlayerBusy,
 } from '../components/play-drawer/route-player-handoff';
-import { buildCarriedPaneTarget, resolvePlayerSurface, resolveSplitRouteClose } from '../lib/phone-split-player';
+import {
+  buildCarriedPaneTarget,
+  resolveAppStackState,
+  resolvePlayerSurface,
+  resolveSplitRouteClose,
+} from '../lib/phone-split-player';
 import { usePhoneSplitPaneTaken } from '../components/navigation/phone-split-pane-slot';
 import { useQueueSnackbar } from './queue-snackbar-provider';
 import { useBoardPresenceControls, type ResolveBoardUuidArgs } from './board-presence-provider';
@@ -716,16 +721,17 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   }, [phoneSplit]);
   useEffect(() => {
     if (!splitRouteClosePending) return;
-    const rootState = navigationRef.isReady() ? navigationRef.getRootState() : null;
+    // The app's Stack, not the root: expo-router mounts its own stack above it.
+    const appStack = navigationRef.isReady() ? resolveAppStackState(navigationRef.getRootState()) : null;
     const decision = resolveSplitRouteClose({
       phoneSplit,
-      routeOnTop: rootState?.routes[rootState.index]?.name === 'play',
-      routeOverTabs: rootState?.routes[rootState.index - 1]?.name === '(tabs)',
+      routeOnTop: appStack?.routes[appStack.index]?.name === 'play',
+      routeOverTabs: appStack?.routes[appStack.index - 1]?.name === '(tabs)',
       routeBusy: routePlayerBusy,
     });
     if (decision === 'wait') return;
     setSplitRouteClosePending(false);
-    if (decision !== 'close' || !rootState) return;
+    if (decision !== 'close' || !appStack) return;
     const routePlayer = readRoutePlayerSnapshot();
     const carriedTarget = buildCarriedPaneTarget(routePlayer, paneTargetNonceRef.current + 1);
     if (carriedTarget) {
@@ -737,7 +743,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     armPlayerScrollHandoff(
       routePlayer?.climbUuid ? { climbUuid: routePlayer.climbUuid, offsetY: routePlayer.offsetY } : null,
     );
-    navigationRef.dispatch({ type: 'POP', target: rootState.key, payload: { count: 1 } });
+    navigationRef.dispatch({ type: 'POP', target: appStack.key, payload: { count: 1 } });
   }, [splitRouteClosePending, phoneSplit, routePlayerBusy, navigationRef, setPaneTarget]);
 
   // Reset on route unmount (close): drop the board override so non-drawer surfaces

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { ClimbQueueItem } from '@boardsesh/queue';
-import { buildCarriedPaneTarget, resolvePlayerSurface, resolveSplitRouteClose } from '../phone-split-player';
+import {
+  buildCarriedPaneTarget,
+  resolveAppStackState,
+  resolvePlayerSurface,
+  resolveSplitRouteClose,
+} from '../phone-split-player';
 
 function queueItem(climbUuid: string): ClimbQueueItem {
   return {
@@ -98,6 +103,38 @@ describe('resolveSplitRouteClose', () => {
 
   it('leaves the player up over a page pushed over the tabs, which a close would reveal instead of the pane', () => {
     expect(resolveSplitRouteClose({ ...overTabs, routeOverTabs: false, routeBusy: false })).toBe('none');
+  });
+});
+
+describe('resolveAppStackState', () => {
+  const appStack = {
+    key: 'app-stack',
+    index: 1,
+    routes: [{ name: '(tabs)' }, { name: 'play' }],
+  };
+
+  it("steps through expo-router's __root wrapper to the app's Stack", () => {
+    // The shape `navigationRef.getRootState()` returns on a device (ExpoRoot's Content).
+    const deviceRoot = { key: 'expo-root', index: 0, routes: [{ name: '__root', state: appStack }] };
+    expect(resolveAppStackState(deviceRoot)).toBe(appStack);
+  });
+
+  it('finds __root by name while a dev-only route is focused above it', () => {
+    const devRoot = {
+      key: 'expo-root',
+      index: 1,
+      routes: [{ name: '__root', state: appStack }, { name: '_sitemap' }],
+    };
+    expect(resolveAppStackState(devRoot)).toBe(appStack);
+  });
+
+  it('is null while the app Stack under __root has not mounted', () => {
+    expect(resolveAppStackState({ key: 'expo-root', index: 0, routes: [{ name: '__root' }] })).toBeNull();
+    expect(resolveAppStackState(undefined)).toBeNull();
+  });
+
+  it('returns a root that is already the app Stack', () => {
+    expect(resolveAppStackState(appStack)).toBe(appStack);
   });
 });
 

@@ -39,6 +39,46 @@ export function resolvePlayerSurface({
 }
 
 /**
+ * The navigation state shape `resolveAppStackState` reads: just the stack fields
+ * it needs, so a test can build one without React Navigation.
+ */
+export type StackStateLike = {
+  key: string;
+  index: number;
+  routes: ReadonlyArray<{ name: string; state?: unknown }>;
+};
+
+/**
+ * The name expo-router gives the one screen of the stack it mounts above the app
+ * (`INTERNAL_SLOT_NAME` in `expo-router/build/constants.js`, not exported). The
+ * app's own `app/_layout.tsx` Stack, the one holding `(tabs)` and `play`, is that
+ * screen's nested state.
+ */
+const EXPO_ROUTER_ROOT_SLOT = '__root';
+
+function isStackStateLike(state: unknown): state is StackStateLike {
+  if (typeof state !== 'object' || state === null) return false;
+  const candidate = state as { key?: unknown; index?: unknown; routes?: unknown };
+  return typeof candidate.key === 'string' && typeof candidate.index === 'number' && Array.isArray(candidate.routes);
+}
+
+/**
+ * The app's root Stack from `navigationRef.getRootState()`. On a device that root
+ * is expo-router's own wrapper stack (`ExpoRoot`'s `Content`), holding `__root`
+ * (plus `+not-found` / `_sitemap` in development), so reading `routes[index]`
+ * there never finds `play`. Steps into `__root`'s nested state wherever it sits,
+ * even while a dev-only route is focused above it; null while that state has not
+ * mounted yet. Only a root with no `__root` route at all is already the app stack
+ * and is returned as it is.
+ */
+export function resolveAppStackState(rootState: unknown): StackStateLike | null {
+  if (!isStackStateLike(rootState)) return null;
+  const slot = rootState.routes.find((route) => route.name === EXPO_ROUTER_ROOT_SLOT);
+  if (!slot) return rootState;
+  return isStackStateLike(slot.state) ? slot.state : null;
+}
+
+/**
  * What to do with a `/play` route that was up when the split appeared: close it
  * so the pane takes over, wait while it has work open (a tick being typed, a
  * sheet up), or nothing. Nothing when the split went away again, the route
