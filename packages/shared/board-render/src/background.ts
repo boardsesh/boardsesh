@@ -106,8 +106,7 @@ export function createOgFrameBuffer(board: OgBoardRect): Buffer {
   return Buffer.from(
     `
       <svg width="${OG_IMAGE_WIDTH}" height="${OG_IMAGE_HEIGHT}" viewBox="0 0 ${OG_IMAGE_WIDTH} ${OG_IMAGE_HEIGHT}" xmlns="http://www.w3.org/2000/svg">
-        <rect x="24" y="24" width="${OG_IMAGE_WIDTH - 48}" height="${OG_IMAGE_HEIGHT - 48}" rx="28" fill="none" stroke="rgba(255,255,255,0.09)" />
-        <rect x="${frameX}" y="${frameY}" width="${frameWidth}" height="${frameHeight}" rx="20" fill="rgba(255,255,255,0.045)" stroke="rgba(255,255,255,0.16)" />
+        <rect x="${frameX}" y="${frameY}" width="${frameWidth}" height="${frameHeight}" rx="20" fill="rgba(255,255,255,0.015)" stroke="rgba(255,255,255,0.08)" />
       </svg>
     `,
   );

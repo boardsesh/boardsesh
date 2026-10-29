@@ -41,12 +41,12 @@ const DPI = 96;
 const FALLBACK_TEXT_COLOR = '#F8FAFC';
 const NAME_COLOR = '#F1F5F9';
 const BOARD_LINE_COLOR = '#94A3B8';
-const SETTER_COLOR = '#64748B';
-const ANGLE_COLOR = '#5EEAD4';
-const WORDMARK_COLOR = '#475569';
+const SETTER_COLOR = BOARD_LINE_COLOR;
+const ANGLE_COLOR = BOARD_LINE_COLOR;
+const WORDMARK_COLOR = '#8791A3';
 
 /** Room for three lines of the climb name before it has to be truncated. */
-const MAX_NAME_HEIGHT = 156;
+const MAX_NAME_HEIGHT = 168;
 const NAME_TRUNCATION_ATTEMPTS = 4;
 
 export type OgCardContent = {
@@ -121,7 +121,7 @@ async function renderName(
   let candidate = name;
 
   for (let attempt = 0; attempt < NAME_TRUNCATION_ATTEMPTS; attempt++) {
-    const rendered = await renderText(span(candidate, { size: 30, weight: 700, color: NAME_COLOR }), {
+    const rendered = await renderText(span(candidate, { size: 32, weight: 700, color: NAME_COLOR }), {
       fontFamily,
       width: COLUMN_WIDTH,
       align,
@@ -133,7 +133,7 @@ async function renderName(
     candidate = `${codePoints.slice(0, keep).join('').trimEnd()}…`;
   }
 
-  return renderText(span(candidate, { size: 30, weight: 700, color: NAME_COLOR }), {
+  return renderText(span(candidate, { size: 32, weight: 700, color: NAME_COLOR }), {
     fontFamily,
     width: COLUMN_WIDTH,
     align,
@@ -172,13 +172,13 @@ export async function renderOgCardLayers(content: OgCardContent): Promise<TextLa
 
   if (grade) {
     const hero = await renderText(
-      span(grade, { size: 64, weight: 800, color: getGradeColor(grade) ?? FALLBACK_TEXT_COLOR }),
+      span(grade, { size: 52, weight: 800, color: getGradeColor(grade) ?? FALLBACK_TEXT_COLOR }),
       { fontFamily },
     );
     rows.push({ input: hero.buffer, left: anchor(hero.width), offset: cursor });
 
     if (content.angle !== undefined) {
-      const chip = await renderText(span(`${content.angle}°`, { size: 21, weight: 600, color: ANGLE_COLOR }), {
+      const chip = await renderText(span(`${content.angle}°`, { size: 18, weight: 600, color: ANGLE_COLOR }), {
         fontFamily,
       });
       // Anchored to the opposite edge from the grade, and vertically centred on
@@ -190,12 +190,12 @@ export async function renderOgCardLayers(content: OgCardContent): Promise<TextLa
       });
     }
 
-    cursor += hero.height + 26;
+    cursor += hero.height + 18;
   } else if (content.angle !== undefined) {
     // A climb with no recorded difficulty still has a wall angle, and the chip
     // is only laid out beside the grade because that is where it looks right —
     // not because it depends on one.
-    const chip = await renderText(span(`${content.angle}\u00B0`, { size: 21, weight: 600, color: ANGLE_COLOR }), {
+    const chip = await renderText(span(`${content.angle}\u00B0`, { size: 18, weight: 600, color: ANGLE_COLOR }), {
       fontFamily,
     });
     rows.push({ input: chip.buffer, left: anchor(chip.width), offset: cursor });
@@ -205,7 +205,7 @@ export async function renderOgCardLayers(content: OgCardContent): Promise<TextLa
   if (name) {
     const rendered = await renderName(name, fontFamily, align);
     rows.push({ input: rendered.buffer, left: anchor(rendered.width), offset: cursor });
-    cursor += rendered.height + 20;
+    cursor += rendered.height + 16;
   }
 
   // Bottom-up: a long name is allowed to push the supporting lines off rather
@@ -232,7 +232,7 @@ export async function renderOgCardLayers(content: OgCardContent): Promise<TextLa
   const layers: TextLayer[] = rows.map((row) => ({ input: row.input, left: row.left, top: blockTop + row.offset }));
 
   const wordmark = await renderText(
-    `<span size="15pt" weight="700" letter_spacing="3000" foreground="${WORDMARK_COLOR}">BOARDSESH</span>`,
+    `<span size="16pt" weight="700" letter_spacing="1800" foreground="${WORDMARK_COLOR}">BOARDSESH</span>`,
     { fontFamily },
   );
   layers.push({ input: wordmark.buffer, left: anchor(wordmark.width), top: WORDMARK_TOP });

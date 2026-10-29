@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import sharp from 'sharp';
+import { contrastRatio } from '@boardsesh/board-constants/readable-text-color';
 import { getOgBokehInput, renderFrostedBokehBuffer } from '../frosted-bokeh';
+import { renderOgCardLayers } from '../og-card';
 import type { WasmRenderConfig } from '../types';
 
 function renderConfig(frames: string): WasmRenderConfig {
@@ -57,7 +60,8 @@ describe('renderFrostedBokehBuffer', () => {
     const open = await renderFrostedBokehBuffer(input);
     const protectedCard = await renderFrostedBokehBuffer({ ...input, protectDetails: true });
     const center = (315 * 1200 + 900) * 4;
-    expect(open[center]).toBeGreaterThan(open[center + 2] + 50);
+    // Background colours remain distinct at the subdued OG opacity.
+    expect(open[center]).toBeGreaterThan(open[center + 2] + 20);
     expect(protectedCard[center]).toBeLessThan(open[center]);
   });
 
@@ -67,5 +71,46 @@ describe('renderFrostedBokehBuffer', () => {
       source,
     });
     expect(rendered.length).toBe(1200 * 630 * 4);
+  });
+
+  it('keeps rendered supporting text readable over crowded white background lights', async () => {
+    const background = await renderFrostedBokehBuffer({
+      source,
+      points: Array.from({ length: 15 }, (_, index) => ({ x: 10 + (80 * index) / 14, y: 30, color: '#FFFFFF' })),
+      protectDetails: true,
+    });
+    const layers = await renderOgCardLayers({
+      name: 'Lightest Pair of Shorts',
+      grade: '6b/V4',
+      angle: 35,
+      boardLine: 'Kilter · 10x12',
+      setter: 'KilterStudio',
+    });
+    expect(layers).toHaveLength(6);
+    // The grade keeps its semantic data colour. Every other label, including
+    // the setter and wordmark, must meet the normal-text AA threshold.
+    for (const layer of layers.slice(1)) {
+      const { data: textPixels, info: dimensions } = await sharp(layer.input)
+        .ensureAlpha()
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      let foreground: string | undefined;
+      for (let offset = 0; offset < textPixels.length; offset += 4) {
+        if ((textPixels[offset + 3] ?? 0) >= 250) {
+          foreground = `#${textPixels.subarray(offset, offset + 3).toString('hex')}`;
+          break;
+        }
+      }
+      if (!foreground) throw new Error('Text layer has no opaque glyph pixels');
+      for (let column = 0; column <= 4; column += 1) {
+        for (let row = 0; row <= 2; row += 1) {
+          const x = layer.left + Math.round(((dimensions.width - 1) * column) / 4);
+          const y = layer.top + Math.round(((dimensions.height - 1) * row) / 2);
+          const offset = (y * 1200 + x) * 4;
+          const surface = `#${background.subarray(offset, offset + 3).toString('hex')}`;
+          expect(contrastRatio(foreground, surface), `${foreground} on ${surface}`).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+    }
   });
 });

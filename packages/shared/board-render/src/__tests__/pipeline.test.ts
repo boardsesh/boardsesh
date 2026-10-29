@@ -442,8 +442,10 @@ describe('renderBoardImageBuffer with caches', () => {
     const redCard = await sharp(first.buffer).ensureAlpha().raw().toBuffer();
     const blueCard = await sharp(second.buffer).ensureAlpha().raw().toBuffer();
     const center = (315 * 1200 + 300) * 4;
-    expect(redCard[center]).toBeGreaterThan(blueCard[center] + 50);
-    expect(blueCard[center + 2]).toBeGreaterThan(redCard[center + 2] + 50);
+    // The new OG look is deliberately subdued; both role channels must still
+    // distinguish the two cards rather than reusing a climb's cached colour.
+    expect(redCard[center]).toBeGreaterThan(blueCard[center] + 20);
+    expect(blueCard[center + 2]).toBeGreaterThan(redCard[center + 2] + 20);
   });
 
   it.each([
@@ -467,7 +469,7 @@ describe('renderBoardImageBuffer with caches', () => {
     });
     const pixels = await sharp(result.buffer).ensureAlpha().raw().toBuffer();
     const glow = (315 * 1200 + 300) * 4;
-    expect(pixels[glow]).toBeGreaterThan(pixels[glow + 2] + 50);
+    expect(pixels[glow]).toBeGreaterThan(pixels[glow + 2] + 20);
     expect(readPixel(pixels, 620 * 1200 + 1190)).toEqual([0, 255, 0, 255]);
   });
 

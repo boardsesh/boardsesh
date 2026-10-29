@@ -135,8 +135,8 @@ describe('renderSprayOgCard — the visibility gate', () => {
     const green = await sharp(starting.buffer).ensureAlpha().raw().toBuffer();
     const red = await sharp(finishing.buffer).ensureAlpha().raw().toBuffer();
     const margin = (140 * 1200 + 900) * 4;
-    expect(green[margin + 1]).toBeGreaterThan(red[margin + 1] + 50);
-    expect(red[margin]).toBeGreaterThan(green[margin] + 50);
+    expect(green[margin + 1]).toBeGreaterThan(red[margin + 1] + 20);
+    expect(red[margin]).toBeGreaterThan(green[margin] + 20);
     const photoCenter = (315 * 1200 + 600) * 4;
     expect(green.subarray(photoCenter, photoCenter + 4)).toEqual(red.subarray(photoCenter, photoCenter + 4));
   });

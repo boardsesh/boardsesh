@@ -489,7 +489,9 @@ way it looks like this:
   The geometry, falloff, presets and original grain texture live in `@boardsesh/frosted-bokeh`;
   the reusable native `FrostedBokeh` component draws them while `WallGlow` owns the button's label fade.
   Climb-link previews reuse the dark preset behind the board/photo and details at 1200×630,
-  with blur and radii scaled by `1200 / 360`. Public spray-wall previews use photo-mapped hold colours.
+  with an OG-only preset: blur/radii scaled by `1200 / 225`, 45% blob opacity,
+  5% frost and 3% grain. A 240px scrim transition protects text; supporting labels keep at least 4.5:1.
+  Public spray-wall previews use photo-mapped hold colours. The native preset stays at its original strength.
 - The bulb at the leading edge in every state, and whoever holds the board as a 24 pt face at the trailing edge, so
   the label stays centred.
 
