@@ -6,12 +6,13 @@
 // create sheet, an inline pair in the edit sheet). One rail replaces both, any
 // visible count is one tap, and a screen-reader user can jump straight to '7'
 // instead of swiping an adjustable six times.
-import React, { useCallback, useEffect, useMemo, useRef, useState, type ElementRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, type ElementRef } from 'react';
 import { ScrollView, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { MIN_ATTEMPT_COUNT } from '@boardsesh/play-view';
 import { TickChip } from './TickChip';
-import { railRestOffset, railSnapOffsets, type RailChipLayout } from '../grade/grade-rail-offset';
+import type { RailChipLayout } from '../grade/grade-rail-offset';
+import { useRailRest } from '../grade/use-rail-rest';
 import { hapticSelection } from '../../lib/haptics';
 import { useTheme } from '../../providers/theme-provider';
 import { TICK_COUNT_RAIL_MIN_CHIPS, TICK_RAIL_TRAIL_INSET } from './tick-sheet-metrics';
@@ -99,16 +100,6 @@ export const TickCountRail = React.memo(function TickCountRail({
   const { t } = useTranslation('climbs');
   const { spacing } = useTheme();
   const scrollRef = useRef<ElementRef<typeof ScrollView>>(null);
-  const chipLayoutsRef = useRef<Record<number, RailChipLayout>>({});
-  const [railWidth, setRailWidth] = useState(0);
-  const [contentWidth, setContentWidth] = useState(0);
-  // Bumped whenever a chip re-measures, so the snap table recomputes off the
-  // layout ref without every chip's onLayout rendering the rail.
-  const [layoutVersion, setLayoutVersion] = useState(0);
-  const didCenterRef = useRef(false);
-  // Latched by the first tap or drag: after the climber has touched the rail it
-  // must never scroll itself out from under their thumb.
-  const userInteractedRef = useRef(false);
   // The last count the rail ITSELF put on the wire. Anything else arriving in
   // `value` came from outside — a new climb loaded into a still-mounted sheet —
   // and has to clear the latch. PlayDrawer keeps LogAscentSheet mounted for the
@@ -123,35 +114,16 @@ export const TickCountRail = React.memo(function TickCountRail({
     return range;
   }, [min, value]);
 
-  const snapOffsets = useMemo(() => {
-    void layoutVersion;
-    return railSnapOffsets(chipLayoutsRef.current, RAIL_LEAD_IN);
-  }, [layoutVersion]);
-
-  // Rest with the selected count readable and flush to a chip start.
-  // `railRestOffset` clamps to the scrollable range and snaps DOWN to a chip
-  // boundary, so the rail can neither overscroll nor come to rest mid-chip.
-  const maybeCenter = useCallback(() => {
-    if (userInteractedRef.current || didCenterRef.current) return;
-    const offset = railRestOffset({
-      layouts: chipLayoutsRef.current,
-      focusId: value,
-      railWidth,
-      contentWidth,
-      leadIn: RAIL_LEAD_IN,
-      // This rail snaps while scrolling, so it must also come to rest on a chip
-      // start rather than mid-chip.
-      snapToChipStart: true,
-    });
-    if (offset == null) return;
-    didCenterRef.current = true;
-    scrollRef.current?.scrollTo({ x: offset, animated: false });
-  }, [value, railWidth, contentWidth]);
+  // Rest with the selected count readable and flush to a chip start (this rail
+  // snaps while scrolling), again whenever the rail's width or the count
+  // changes, until the climber's first tap or drag.
+  const { snapOffsets, maybeRest, onChipLayout, onRailLayout, onContentSizeChange, markInteracted, resetLatches } =
+    useRailRest({ scrollRef, focusId: value, leadIn: RAIL_LEAD_IN, snapToChipStart: true });
 
   const resetKeyRef = useRef(resetKey);
   useEffect(() => {
-    // Reset BEFORE the bail-out: the latch is what makes the rail hold still
-    // for the climber, but it must not outlive the climb it was set on.
+    // Reset BEFORE resting: the latch is what makes the rail hold still for the
+    // climber, but it must not outlive the climb it was set on.
     //
     // A new climb is the authoritative signal, because a value change alone
     // cannot distinguish one from a chip tap — and a different climb carrying
@@ -160,46 +132,23 @@ export const TickCountRail = React.memo(function TickCountRail({
     if (climbChanged) resetKeyRef.current = resetKey;
     if (climbChanged || railSelectedRef.current !== value) {
       railSelectedRef.current = value;
-      userInteractedRef.current = false;
-      didCenterRef.current = false;
+      resetLatches();
     }
-    if (userInteractedRef.current) return;
-    didCenterRef.current = false;
-    maybeCenter();
-  }, [value, resetKey, maybeCenter]);
-
-  const handleChipLayout = useCallback(
-    (count: number, layout: RailChipLayout) => {
-      const previous = chipLayoutsRef.current[count];
-      chipLayoutsRef.current[count] = layout;
-      if (previous?.x !== layout.x || previous?.width !== layout.width) {
-        setLayoutVersion((version) => version + 1);
-      }
-      maybeCenter();
-    },
-    [maybeCenter],
-  );
+    maybeRest();
+  }, [value, resetKey, maybeRest, resetLatches]);
 
   const handleSelect = useCallback(
     (next: number) => {
       if (disabled) return;
-      userInteractedRef.current = true;
+      markInteracted();
       railSelectedRef.current = next;
       hapticSelection();
       onSelect(next);
     },
-    [disabled, onSelect],
+    [disabled, onSelect, markInteracted],
   );
 
   const handleMore = useCallback(() => handleSelect(value + 1), [handleSelect, value]);
-
-  const handleContentSizeChange = useCallback(
-    (width: number) => {
-      setContentWidth(width);
-      maybeCenter();
-    },
-    [maybeCenter],
-  );
 
   return (
     <ScrollView
@@ -213,14 +162,9 @@ export const TickCountRail = React.memo(function TickCountRail({
       snapToAlignment="start"
       decelerationRate="fast"
       contentContainerStyle={[styles.content, { gap: spacing[2], paddingVertical: spacing[1] }]}
-      onScrollBeginDrag={() => {
-        userInteractedRef.current = true;
-      }}
-      onContentSizeChange={handleContentSizeChange}
-      onLayout={(event) => {
-        setRailWidth(event.nativeEvent.layout.width);
-        maybeCenter();
-      }}
+      onScrollBeginDrag={markInteracted}
+      onContentSizeChange={onContentSizeChange}
+      onLayout={onRailLayout}
     >
       {counts.map((count) => (
         <TickCountChip
@@ -230,7 +174,7 @@ export const TickCountRail = React.memo(function TickCountRail({
           disabled={disabled}
           accessibilityLabel={t('mobile.tick.setTriesAria', { count })}
           onSelect={handleSelect}
-          onMeasure={handleChipLayout}
+          onMeasure={onChipLayout}
         />
       ))}
       <TickChip

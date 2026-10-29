@@ -43,12 +43,13 @@ export function AppMenu(props: AppMenuProps) {
   // Paper greys a disabled row itself, but `titleStyle` would override that colour,
   // so the disabled tint is picked here rather than left to the theme.
   const disabledColor = systemColors.tertiaryLabel as string;
+  const headline = props.iconName == null ? props.headline : undefined;
 
   const anchor = (
     <PressableSurface
       onPress={() => setVisible(true)}
       accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel ?? props.label}
+      accessibilityLabel={accessibilityLabel ?? (headline ? `${headline}, ${props.label}` : props.label)}
       accessibilityHint={accessibilityHint}
       style={[
         styles.anchor,
@@ -61,18 +62,30 @@ export function AppMenu(props: AppMenuProps) {
               props.iconAppearance !== 'plain' ? { backgroundColor: systemColors.fill as string } : null,
             ]
           : null,
+        headline != null ? styles.headlineAnchor : null,
         maxWidth != null ? { maxWidth } : null,
         style,
       ]}
     >
-      {props.iconName != null ? (
+      {headline != null ? (
+        // The Material title-menu: the app bar's title over the active scope.
+        <>
+          <Text numberOfLines={1} variant="title2" color={labelColor}>
+            {headline}
+          </Text>
+          <Text numberOfLines={1} variant="subheadline" color={caretColor}>
+            {props.label}
+            {props.showCaret !== false ? ` ${CARET}` : ''}
+          </Text>
+        </>
+      ) : props.iconName != null ? (
         <Text style={[styles.anchorLabel, { color: labelColor }]}>{anchorGlyphForIcon(props.iconName)}</Text>
       ) : (
         <Text numberOfLines={1} style={[styles.anchorLabel, { color: labelColor }]}>
           {props.label}
         </Text>
       )}
-      {props.iconName == null && props.showCaret !== false ? (
+      {props.iconName == null && headline == null && props.showCaret !== false ? (
         <Text style={[styles.caret, { color: caretColor }]}>{` ${CARET}`}</Text>
       ) : null}
     </PressableSurface>
@@ -120,6 +133,14 @@ const createStyles = (textStyles: TypographyScale) =>
       justifyContent: 'center',
       paddingHorizontal: 0,
       paddingVertical: 0,
+    },
+    // Headline over the scope line, flush with the 56dp title inset the other
+    // tabs' `MaterialAppBarTitle` uses.
+    headlineAnchor: {
+      flexDirection: 'column',
+      alignItems: 'flex-start',
+      paddingHorizontal: 0,
+      paddingRight: spacing[1],
     },
     anchorLabel: {
       fontSize: textStyles.body.fontSize,

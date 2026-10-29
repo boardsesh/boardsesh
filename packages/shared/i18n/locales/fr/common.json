@@ -1227,6 +1227,7 @@
   },
   "undoDelete": {
     "removed": "Entrée supprimée",
+    "removedMany": "{{count}} entrées supprimées",
     "undo": "Annuler",
     "cancelled": "Suppression annulée. Ton entrée a été conservée."
   }

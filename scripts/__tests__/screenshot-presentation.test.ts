@@ -883,27 +883,27 @@ describe('store screenshot presentation', () => {
     );
   }, 60_000);
 
-  it.each(CAPTION_LOCALES)(
-    'fits every %s caption in every store device shape',
-    async (locale) => {
+  // One test per locale and shape keeps each case within the CI time budget.
+  const captionShapes = [{ width: 1080, height: 1920 }, ...Object.values(ACCEPTED_SIZES).map((sizes) => sizes[0])];
+  it.each(
+    CAPTION_LOCALES.flatMap((locale) =>
+      captionShapes.map((size) => ({ locale, size, shape: `${size.width}x${size.height}` })),
+    ),
+  )(
+    'fits every $locale caption in the $shape store shape',
+    async ({ locale, size }) => {
       const catalog = readCaptionCatalog(locale);
       expect(Object.keys(catalog)).toEqual([...CAPTION_IDS]);
-      const dimensions = [{ width: 1080, height: 1920 }, ...Object.values(ACCEPTED_SIZES).map((sizes) => sizes[0])];
-      for (const size of dimensions) {
-        const raw = await sharp({ create: { ...size, channels: 3, background: '#164c39' } })
-          .png()
-          .toBuffer();
-        // One size's captions frame in parallel: each frame is mostly single-threaded
-        // work, and run one at a time the five locales × five devices outgrew the
-        // CI shard's 20 minutes once Italian and the iPhone Duo joined the matrix.
-        await Promise.all(
-          Object.values(catalog).map(async (caption) => {
-            const framed = await frameScreenshot(raw, caption);
-            expect(readPngDimensions(framed)).toEqual(size);
-            expect((await sharp(framed).metadata()).hasAlpha).toBe(false);
-          }),
-        );
-      }
+      const raw = await sharp({ create: { ...size, channels: 3, background: '#164c39' } })
+        .png()
+        .toBuffer();
+      await Promise.all(
+        Object.values(catalog).map(async (caption) => {
+          const framed = await frameScreenshot(raw, caption);
+          expect(readPngDimensions(framed)).toEqual(size);
+          expect((await sharp(framed).metadata()).hasAlpha).toBe(false);
+        }),
+      );
     },
     120_000,
   );

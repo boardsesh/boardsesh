@@ -48,6 +48,12 @@ type AppMenuTextAnchorProps = AppMenuSharedProps & {
   accessibilityLabel?: string;
   /** Trailing down-caret on the anchor. Default `true`. */
   showCaret?: boolean;
+  /**
+   * Material title-menu: a headline drawn above `label`, so the anchor is the
+   * app bar's title ("Home") with the active scope under it and the whole block
+   * opens the menu. Read aloud as "Home, My crew" unless `accessibilityLabel` is set.
+   */
+  headline?: string;
   anchorSize?: never;
 };
 
@@ -61,6 +67,7 @@ type AppMenuIconAnchorProps = AppMenuSharedProps & {
   accessibilityLabel: string;
   /** A glyph anchor never carries a caret — the glyph itself is the affordance. */
   showCaret?: never;
+  headline?: never;
   /**
    * Side of the glyph anchor's square frame, for a menu in a toolbar slot that is
    * not 44pt (UIKit's narrower native bar slot). iOS and web; Android's M3

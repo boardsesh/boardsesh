@@ -16916,6 +16916,15 @@ export type GetUserDataExportDownloadQuery = {
   };
 };
 
+export type JoinRedirectSessionBoardPathQueryVariables = Exact<{
+  sessionId: Scalars['ID']['input'];
+}>;
+
+export type JoinRedirectSessionBoardPathQuery = {
+  __typename?: 'Query';
+  session?: { __typename?: 'Session'; boardPath: string } | null;
+};
+
 export const SessionFeedItemFieldsFragmentDoc = {
   kind: 'Document',
   definitions: [
@@ -28188,3 +28197,40 @@ export const GetUserDataExportDownloadDocument = {
     },
   ],
 } as unknown as DocumentNode<GetUserDataExportDownloadQuery, GetUserDataExportDownloadQueryVariables>;
+export const JoinRedirectSessionBoardPathDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'JoinRedirectSessionBoardPath' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'sessionId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'session' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'sessionId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'sessionId' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [{ kind: 'Field', name: { kind: 'Name', value: 'boardPath' } }],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<JoinRedirectSessionBoardPathQuery, JoinRedirectSessionBoardPathQueryVariables>;

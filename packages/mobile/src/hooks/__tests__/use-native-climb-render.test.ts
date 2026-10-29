@@ -608,6 +608,28 @@ describe('renderedOverlays warm-up from disk cache', () => {
     expect(() => _runWarmupForTests()).not.toThrow();
     expect(_renderedOverlaysForTests.has('v16_kilter_1_10_24_bbbbbbbb')).toBe(true);
   });
+
+  // #7026: expo-file-system lists the directory through Android's
+  // `Uri.fromFile(...).toString()`, which writes the commas between set ids as
+  // `%2C`. The renderer's own URI for the same file is unencoded, and the session
+  // notification opens what it is handed as a raw path, so an encoded URI in the
+  // index left the notification artwork black for every climb adopted from disk.
+  it('indexes a listed multi-set overlay under the unencoded URI the renderer returns', () => {
+    const name = 'v16_f_w384_moonboard_2_1_1,2,3_cafef00d.png';
+    directoryListSpy.mockReturnValue([
+      {
+        uri: 'file:///data/user/0/com.boardsesh.app/cache/board-thumbnails/v16_f_w384_moonboard_2_1_1%2C2%2C3_cafef00d.png',
+        name,
+        delete: vi.fn(),
+      },
+    ]);
+
+    _runWarmupForTests();
+
+    expect(_renderedOverlaysForTests.get('v16_f_w384_moonboard_2_1_1,2,3_cafef00d')?.uri).toBe(
+      'file:///data/user/0/com.boardsesh.app/cache/board-thumbnails/v16_f_w384_moonboard_2_1_1,2,3_cafef00d.png',
+    );
+  });
 });
 
 describe('withLitHoldGeometry', () => {

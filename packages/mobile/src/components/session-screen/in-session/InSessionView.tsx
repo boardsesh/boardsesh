@@ -42,6 +42,7 @@ import { formatRelativeTime } from '../../../lib/format-relative-time';
 import { useTickListActivation } from '../../../lib/playlists/use-tick-list-activation';
 import { useGradeFormat } from '../../../hooks/use-grade-format';
 import { useBottomChromeMetrics } from '../../../hooks/use-bottom-chrome-metrics';
+import { useScrollEdgeBackdrop } from '../../../hooks/use-scroll-edge-backdrop';
 import { withAlpha } from '../../../theme/colors';
 import { springs } from '../../../theme/animations';
 import { borderRadius, spacing } from '../../../theme/tokens';
@@ -452,6 +453,9 @@ export function InSessionView({
   const overlayMode = translateY !== undefined && screenHeight !== undefined;
   const scrollOffset = useSharedValue(0);
   const startedAtTop = useSharedValue(true);
+  // Tells the Material app bar when the session list has scrolled under it.
+  const scrollEdge = useScrollEdgeBackdrop();
+  const edgeOnScroll = scrollEdge.list?.listProps.onScroll;
   // FlashList forwards a plain JS scroll event (it isn't a reanimated host
   // component), so we mirror the offset into the shared value here. The dismiss
   // gesture only reads `scrollOffset.value <= 0` on start, so JS-thread latency
@@ -459,8 +463,9 @@ export function InSessionView({
   const handleScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       scrollOffset.value = event.nativeEvent.contentOffset.y;
+      edgeOnScroll?.(event);
     },
-    [scrollOffset],
+    [scrollOffset, edgeOnScroll],
   );
   // Measured chrome height (incl. the top safe-area inset) so the list pads its
   // top by it. Only used when the floating chrome renders (tab mode).
@@ -745,6 +750,7 @@ export function InSessionView({
       }}
       scrollIndicatorInsets={{ top: showChrome ? chromeHeight : 0 }}
       showsVerticalScrollIndicator={false}
+      {...scrollEdge.list?.listProps}
       onScroll={handleScroll}
       scrollEventThrottle={16}
       bounces={false}
@@ -760,6 +766,7 @@ export function InSessionView({
           title={sessionTitle}
           onEditTitle={canEditTitle ? openTitleSheet : undefined}
           onHeightChange={setChromeHeight}
+          scrollEdge={scrollEdge.backdrop}
           onShare={onShare}
           onEndSession={onRequestEndSession}
           exitVariant={defaultMode}

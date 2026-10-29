@@ -10,10 +10,11 @@
 // UIMenu separator) above its row. SF Symbols come straight from `action.systemIcon`.
 //
 // The menu popup is always a native UIMenu, so this file is OS-split (iOS), not
-// variant-routed — a user who forces the Material variant on iOS still gets it.
+// variant-routed — a user who forces the Material variant on iOS still gets it,
+// and a `headline` anchor (Material's title-menu) draws as flat title text.
 
 import { Host } from '@expo/ui';
-import { Menu, Button, Divider, HStack, Text, Image } from '@expo/ui/swift-ui';
+import { Menu, Button, Divider, HStack, VStack, Text, Image } from '@expo/ui/swift-ui';
 import {
   buttonStyle,
   clipShape,
@@ -23,6 +24,7 @@ import {
   disabled as disabledModifier,
   frame,
   font,
+  foregroundStyle,
   lineLimit,
   shapes,
   truncationMode,
@@ -54,6 +56,8 @@ export function AppMenu(props: AppMenuProps) {
   const fillColor = systemColors.fill;
   const resolved = useMemo(() => resolveMenuActions(actions), [actions]);
   const iconName = props.iconName;
+  const headline = props.iconName == null ? props.headline : undefined;
+  const resolvedLabel = accessibilityLabel ?? (headline ? `${headline}, ${props.label}` : undefined);
   const plainIcon = props.iconName != null && props.iconAppearance === 'plain';
   // A glyph anchor in a narrower toolbar slot (UIKit's native bar) takes that
   // slot's frame; everywhere else it keeps the 44pt top-bar target.
@@ -89,17 +93,26 @@ export function AppMenu(props: AppMenuProps) {
             ...(accessibilityLabel ? [a11yLabel(accessibilityLabel)] : []),
             ...(accessibilityHint ? [a11yHint(accessibilityHint)] : []),
           ]
-        : [
-            // Neutral translucent glass capsule (no brand tint) — matches the old
-            // `clear` GlassSurface pill. iOS 26 Liquid Glass, degrades gracefully on
-            // older iOS.
-            buttonStyle('glass'),
-            controlSize('large'),
-            ...(maxWidth != null ? [frame({ maxWidth })] : []),
-            ...(accessibilityLabel ? [a11yLabel(accessibilityLabel)] : []),
-            ...(accessibilityHint ? [a11yHint(accessibilityHint)] : []),
-          ],
-    [iconName, anchorSize, plainIcon, fillColor, maxWidth, accessibilityLabel, accessibilityHint],
+        : headline != null
+          ? [
+              // The Material title-menu (a user who forces Material on iOS): flat
+              // text in the app bar, no glass capsule around the title.
+              buttonStyle('plain'),
+              ...(maxWidth != null ? [frame({ maxWidth, alignment: 'leading' })] : []),
+              ...(resolvedLabel ? [a11yLabel(resolvedLabel)] : []),
+              ...(accessibilityHint ? [a11yHint(accessibilityHint)] : []),
+            ]
+          : [
+              // Neutral translucent glass capsule (no brand tint) — matches the old
+              // `clear` GlassSurface pill. iOS 26 Liquid Glass, degrades gracefully on
+              // older iOS.
+              buttonStyle('glass'),
+              controlSize('large'),
+              ...(maxWidth != null ? [frame({ maxWidth })] : []),
+              ...(resolvedLabel ? [a11yLabel(resolvedLabel)] : []),
+              ...(accessibilityHint ? [a11yHint(accessibilityHint)] : []),
+            ],
+    [iconName, headline, anchorSize, plainIcon, fillColor, maxWidth, resolvedLabel, accessibilityHint],
   );
 
   // `ignoreSafeArea="all"`: every Host is its own UIHostingController. One that
@@ -124,6 +137,34 @@ export function AppMenu(props: AppMenuProps) {
               color={systemColors.label}
               modifiers={glyphModifiers}
             />
+          ) : headline != null ? (
+            <VStack spacing={0} alignment="leading">
+              <Text
+                modifiers={[
+                  font({ textStyle: 'title2' }),
+                  lineLimit(1),
+                  truncationMode('tail'),
+                  foregroundStyle(systemColors.label),
+                ]}
+              >
+                {headline}
+              </Text>
+              <HStack spacing={spacing[1]} alignment="center">
+                <Text
+                  modifiers={[
+                    font({ textStyle: 'subheadline' }),
+                    lineLimit(1),
+                    truncationMode('tail'),
+                    foregroundStyle(systemColors.secondaryLabel),
+                  ]}
+                >
+                  {props.label}
+                </Text>
+                {props.showCaret !== false ? (
+                  <Image systemName="chevron.down" size={11} color={systemColors.secondaryLabel} />
+                ) : null}
+              </HStack>
+            </VStack>
           ) : (
             <HStack spacing={spacing[1]} alignment="center">
               {/* Headline weight + label colour by default — reads like the old pill's
