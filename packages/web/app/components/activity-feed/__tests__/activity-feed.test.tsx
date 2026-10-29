@@ -106,6 +106,7 @@ describe('ActivityFeed', () => {
   describe('Loading state', () => {
     it('shows skeleton placeholders while loading', () => {
       mockUseWsAuthToken.mockReturnValue({
+        refetch: vi.fn(),
         token: null,
         isAuthenticated: false,
         isLoading: true,
@@ -121,6 +122,7 @@ describe('ActivityFeed', () => {
   describe('Unauthenticated', () => {
     beforeEach(() => {
       mockUseWsAuthToken.mockReturnValue({
+        refetch: vi.fn(),
         token: null,
         isAuthenticated: false,
         isLoading: false,
@@ -212,6 +214,7 @@ describe('ActivityFeed', () => {
   describe('Authenticated', () => {
     beforeEach(() => {
       mockUseWsAuthToken.mockReturnValue({
+        refetch: vi.fn(),
         token: 'test-token',
         isAuthenticated: true,
         isLoading: false,
@@ -253,6 +256,7 @@ describe('ActivityFeed', () => {
   describe('initialData', () => {
     it('renders SSR-provided session data immediately', () => {
       mockUseWsAuthToken.mockReturnValue({
+        refetch: vi.fn(),
         token: null,
         isAuthenticated: false,
         isLoading: false,
@@ -276,6 +280,7 @@ describe('ActivityFeed', () => {
   describe('Board filter', () => {
     it('passes boardUuid to the query', async () => {
       mockUseWsAuthToken.mockReturnValue({
+        refetch: vi.fn(),
         token: null,
         isAuthenticated: false,
         isLoading: false,
