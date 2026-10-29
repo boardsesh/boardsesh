@@ -25,6 +25,7 @@ import {
   type BleConnectInitialSend,
   type BleConnectionHandle,
   type BleConnectionEnded,
+  type BluetoothConnectOptions,
   type BluetoothDisconnectReason,
   type SendFramesToBoard,
 } from '../lib/ble/use-board-bluetooth';
@@ -99,7 +100,13 @@ type BluetoothContextValue = {
    * the picker for it. Resolves with the connect's result, or false when the
    * switch never arrives or a newer connect request replaces this one.
    */
-  connectAfterBoardSwitch: (board: UserBoard) => Promise<boolean>;
+  connectAfterBoardSwitch: (board: UserBoard, options?: BluetoothConnectOptions) => Promise<boolean>;
+  /**
+   * This phone has connected to `board` before and still remembers it (#7076):
+   * a connect there reconnects instead of opening the picker. Forgotten by a
+   * deliberate disconnect from it.
+   */
+  hasRememberedDeviceForBoard: (board: UserBoard) => boolean;
   disconnect: (reason?: BluetoothDisconnectReason) => Promise<void>;
   sendFramesToBoard: SendFramesToBoard;
   clearBoard: () => Promise<boolean | undefined>;
@@ -1467,6 +1474,7 @@ export function BluetoothProvider({
     pickerState,
     reconnectSerialForCurrentBoard,
     reconnectDeviceIdForCurrentBoard,
+    hasRememberedDeviceForConfigKey,
     connectInitialSendRef,
     consumeBackgroundAdoptSendGate,
   } = useBoardBluetooth({
@@ -1841,6 +1849,8 @@ export function BluetoothProvider({
      * when the request fires, once the provider is on that board (#7001).
      */
     useRememberedBoard?: boolean;
+    /** Look for the remembered board out of sight (`BluetoothConnectOptions.quiet`). */
+    quiet?: boolean;
   } | null>(null);
   // Who is waiting on the request in the slot: `connectAfterBoardSwitch`'s
   // promise. Kept beside the slot rather than in it, so a request that is
@@ -1902,7 +1912,7 @@ export function BluetoothProvider({
     // connectInFlightRef is set (which tracks `loading`), so a new connect fired
     // now would be silently swallowed — wait for it to clear first.
     if (loading) return;
-    const { serial, armUndoToast, useRememberedBoard } = pendingAutoConnect;
+    const { serial, armUndoToast, useRememberedBoard, quiet } = pendingAutoConnect;
     setPendingAutoConnect(null);
     const waiter = pendingConnectWaiterRef.current;
     pendingConnectWaiterRef.current = null;
@@ -1920,6 +1930,7 @@ export function BluetoothProvider({
           undefined,
           reconnectSerialForCurrentBoard ?? undefined,
           reconnectDeviceIdForCurrentBoard ?? undefined,
+          { quiet },
         )
       : connect(undefined, undefined, serial);
     if (waiter) {
@@ -1945,19 +1956,27 @@ export function BluetoothProvider({
   // a board at this gym that draws the current climb. Queue the connect in the
   // slot above, which holds it until the switch reaches these props.
   const connectAfterBoardSwitch = useCallback(
-    (board: UserBoard) =>
+    (board: UserBoard, options?: BluetoothConnectOptions) =>
       new Promise<boolean>((resolve) => {
         settlePendingConnectWaiter(false);
         pendingConnectWaiterRef.current = { resolve, board };
         setPendingAutoConnect({
           configKey: boardConfigKey(board.boardType, board.layoutId, board.sizeId, board.uuid),
           setIds: board.setIds,
-          // The bulb tap that got here is a deliberate take of the wall.
-          armUndoToast: true,
+          // The bulb tap that got here is a deliberate take of the wall. The
+          // auto-follow is the climber's own next climb, not a take: no undo.
+          armUndoToast: options?.quiet !== true,
           useRememberedBoard: true,
+          quiet: options?.quiet === true,
         });
       }),
     [settlePendingConnectWaiter],
+  );
+
+  const hasRememberedDeviceForBoard = useCallback(
+    (board: UserBoard) =>
+      hasRememberedDeviceForConfigKey(boardConfigKey(board.boardType, board.layoutId, board.sizeId, board.uuid)),
+    [hasRememberedDeviceForConfigKey],
   );
 
   // "Scan again" in a picker whose scan found nothing (#5654). The adapter's
@@ -2405,18 +2424,6 @@ export function BluetoothProvider({
       next: ClimbQueueItem | null;
       skippedCount: number;
     }) => {
-      // A climb on a board at this gym is not a spill. The climber swiped onto
-      // it deliberately — queue navigation treats it as a target rather than
-      // walking past it. Advancing here would snap them forward off the climb
-      // they just chose, with a toast calling their own navigation a skip.
-      // Disconnected, Connect moves them to the board that draws it (#7001);
-      // from a live link to another board there is no route yet (#7076).
-      //
-      // The write is still refused: this wall cannot draw it. Clear the wall so
-      // it stops showing the previous climb, and say nothing — the callout on
-      // screen is the explanation, and counting this as a skip would poison the
-      // spill metric with deliberate moves.
-      //
       // Every clear below reports to the feed (#7047), or everyone watching this
       // board keeps the previous climb "On the wall" over a dark board. The write
       // stays untagged (no sendSource): the user didn't press Clear Lights, so it
@@ -2426,10 +2433,19 @@ export function BluetoothProvider({
           console.warn('[bluetooth] clearing the wall after a spill skip failed', error),
         );
       };
-      if (isClimbOnReachableBoard(skipped.climb, reachableBoardKeysRef.current)) {
-        clearWall();
-        return;
-      }
+      // A climb on a board at this gym is not a spill. The climber moved onto
+      // it deliberately: queue navigation treats it as a target rather than
+      // walking past it. Advancing here would snap them forward off the climb
+      // they just chose, with a toast calling their own navigation a skip, and
+      // counting it would poison the spill metric with deliberate moves.
+      //
+      // The write is still refused: this wall can't draw it. The wall keeps
+      // what it shows rather than going dark (#7076). The climber is either on
+      // their way to the board that draws it (the drawer host follows a driving
+      // climber there on its own) or about to tap Put on {board}; blanking first
+      // would leave them with two dark walls if that board doesn't answer, and
+      // the box keeps its LEDs after the move's disconnect anyway.
+      if (isClimbOnReachableBoard(skipped.climb, reachableBoardKeysRef.current)) return;
 
       // The wall is cleared (rather than advanced to a compatible climb) in a
       // party session — never hijack shared state — or when nothing compatible
@@ -2671,6 +2687,7 @@ export function BluetoothProvider({
       loading,
       connect,
       connectAfterBoardSwitch,
+      hasRememberedDeviceForBoard,
       disconnect: wrappedDisconnect,
       sendFramesToBoard: sendFramesToBoardWithActivityReset,
       clearBoard,
@@ -2704,6 +2721,7 @@ export function BluetoothProvider({
       loading,
       connect,
       connectAfterBoardSwitch,
+      hasRememberedDeviceForBoard,
       wrappedDisconnect,
       sendFramesToBoardWithActivityReset,
       clearBoard,

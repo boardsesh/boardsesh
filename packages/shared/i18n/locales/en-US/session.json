@@ -950,7 +950,9 @@
       "crewHasBoard": "Your crew has the board",
       "boardOptions": "Board options",
       "onWall": "On the wall",
-      "lightAgainHint": "Lights it again on the board"
+      "lightAgainHint": "Lights it again on the board",
+      "putOnGymBoard": "Put on {{board}}",
+      "moveToGymBoardHint": "Moves you to {{board}} and lights this climb"
     },
     "setActive": "Set active",
     "paneEmpty": {

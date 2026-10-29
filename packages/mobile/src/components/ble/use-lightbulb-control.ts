@@ -14,6 +14,7 @@ import { useBoardConnectionState } from './use-board-connection-state';
 import { useCrewHolderUnconfirmed } from './use-crew-holder-unconfirmed';
 import { useClimbBoardConnect } from '../../lib/boards/climb-board-connect-context';
 import type { ClimbBoardModel } from '../../lib/boards/gym-board-for-climb';
+import type { UserBoard } from '@boardsesh/shared-schema';
 
 /** Which bulb was tapped, for Board Connect Tapped. */
 export type LightbulbSurface = Extract<
@@ -26,7 +27,7 @@ export type LightbulbSurface = Extract<
  * wall with no board connected (#6939), which isn't a bulb and never opens the
  * controls sheet.
  */
-export type ConnectSurface = LightbulbSurface | Extract<BoardConnectSurface, 'put_on_wall'>;
+export type ConnectSurface = LightbulbSurface | Extract<BoardConnectSurface, 'put_on_wall' | 'move_to_board'>;
 
 type UseLightbulbControlOptions = {
   /** Required so every bulb reports where a connect tap came from. */
@@ -102,6 +103,14 @@ export type LightbulbControl = {
    * current, since the queue may not have caught up yet.
    */
   connect: (surface?: ConnectSurface, climb?: ClimbBoardModel | null) => Promise<boolean>;
+  /**
+   * Put on {board} (#7076): the climb is on another board at this gym. Moves
+   * there (a crew session moves too) and connects to that board, whatever this
+   * phone is linked to now: the switch tears the old link down. Resolves with
+   * whether the new link came up; false without a move, while a connect is in
+   * flight, or for a board with no lights (the move still happens).
+   */
+  moveToClimbBoard: (surface?: ConnectSurface, climb?: ClimbBoardModel | null) => Promise<boolean>;
   /**
    * What a tap will actually do, resolved from the same ladder `onPress` runs.
    * Exposed so each bulb can LABEL itself honestly: before this, all three
@@ -184,6 +193,26 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
   // later. The tap itself is tracked too (#5654): a tap that dies at a denied
   // permission or a radio that's off never reaches either outcome event, so
   // without it "tapped connect" couldn't be told apart from "never tried".
+  // The connect after a move to another board at this gym (#7001, #7076).
+  const connectAfterMove = useCallback(
+    (board: UserBoard, surfaceOverride?: ConnectSurface): Promise<boolean> => {
+      if (!bluetooth) return Promise.resolve(false);
+      // A wall with no light kit has no radio, so there is nothing to scan
+      // for. Stop at the move: on the new board the bulb re-derives to taking
+      // the wall, the same tap a ledless board offers everywhere else. Taking
+      // it here would bind the wall still in these props, the board just left.
+      if (board.hasLeds === false) return Promise.resolve(false);
+      trackBoardConnectTapped({
+        surface: surfaceOverride ?? surface,
+        placement,
+        boardName: board.boardType,
+        reconnect: bluetooth.hasRememberedDeviceForBoard(board),
+      });
+      return bluetooth.connectAfterBoardSwitch(board);
+    },
+    [bluetooth, surface, placement],
+  );
+
   const connect = useCallback(
     async (surfaceOverride?: ConnectSurface, climb?: ClimbBoardModel | null): Promise<boolean> => {
       // The same gate onPress applies, so a caller that skips its own check
@@ -194,22 +223,7 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
       // wrong family: a Kilter scan never lists the MoonBoard the climb needs.
       const move = climbBoardConnect ? await climbBoardConnect.moveToClimbBoard(climb) : null;
       if (move?.kind === 'failed') return false;
-      if (move?.kind === 'switched') {
-        // A wall with no light kit has no radio, so there is nothing to scan
-        // for. Stop at the move: on the new board the bulb re-derives to taking
-        // the wall, the same tap a ledless board offers everywhere else. Taking
-        // it here would bind the wall still in these props, the board just left.
-        if (move.board.hasLeds === false) return false;
-        trackBoardConnectTapped({
-          surface: surfaceOverride ?? surface,
-          placement,
-          boardName: move.board.boardType,
-          // Whether this device remembers that board is only known once the
-          // provider has switched to it, so this reads as a cold connect.
-          reconnect: false,
-        });
-        return bluetooth.connectAfterBoardSwitch(move.board);
-      }
+      if (move?.kind === 'switched') return connectAfterMove(move.board, surfaceOverride);
       const reconnectSerial = bluetooth.reconnectSerialForCurrentBoard ?? undefined;
       const reconnectDeviceId = bluetooth.reconnectDeviceIdForCurrentBoard ?? undefined;
       trackBoardConnectTapped({
@@ -223,7 +237,19 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
       // (MoonBoard). With neither remembered, the adapter opens the picker.
       return bluetooth.connect(undefined, undefined, reconnectSerial, reconnectDeviceId);
     },
-    [bluetooth, pressAction, surface, placement, climbBoardConnect],
+    [bluetooth, pressAction, surface, placement, climbBoardConnect, connectAfterMove],
+  );
+
+  const moveToClimbBoard = useCallback(
+    async (surfaceOverride?: ConnectSurface, climb?: ClimbBoardModel | null): Promise<boolean> => {
+      // Unlike `connect`, a live link doesn't stop this: the move tears it down.
+      // A connect already in flight does, so two can't race for the radio.
+      if (!bluetooth || !climbBoardConnect || bluetooth.loading) return false;
+      const move = await climbBoardConnect.moveToClimbBoard(climb);
+      if (move.kind !== 'switched') return false;
+      return connectAfterMove(move.board, surfaceOverride);
+    },
+    [bluetooth, climbBoardConnect, connectAfterMove],
   );
 
   const onPress = useCallback(() => {
@@ -282,6 +308,7 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
     pending,
     onPress,
     connect,
+    moveToClimbBoard,
     onLongPress,
     ledless,
     wallHeldLocally,

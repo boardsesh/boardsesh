@@ -950,7 +950,9 @@
       "crewHasBoard": "Tu grupo tiene el plafón",
       "boardOptions": "Opciones del plafón",
       "onWall": "En el plafón",
-      "lightAgainHint": "Lo vuelve a encender en el plafón"
+      "lightAgainHint": "Lo vuelve a encender en el plafón",
+      "putOnGymBoard": "Ponerlo en el {{board}}",
+      "moveToGymBoardHint": "Te lleva al {{board}} y enciende este bloque"
     },
     "setActive": "Activar",
     "paneEmpty": {

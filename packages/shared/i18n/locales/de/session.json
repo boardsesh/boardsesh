@@ -950,7 +950,9 @@
       "crewHasBoard": "Deine Crew hat das Board",
       "boardOptions": "Board-Optionen",
       "onWall": "Am Board",
-      "lightAgainHint": "Beleuchtet ihn noch mal am Board"
+      "lightAgainHint": "Beleuchtet ihn noch mal am Board",
+      "putOnGymBoard": "Am {{board}} beleuchten",
+      "moveToGymBoardHint": "Wechselt zum {{board}} und beleuchtet diesen Boulder"
     },
     "setActive": "Aktiv setzen",
     "paneEmpty": {

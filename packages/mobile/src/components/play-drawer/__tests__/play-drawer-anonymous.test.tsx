@@ -457,6 +457,8 @@ vi.mock('../use-wall-climb', () => ({
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => auth }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../../lib/graphql/hooks', () => ({
+  // No gym roster: Put on {board} reads it (#7076).
+  useGymBoards: () => ({ data: undefined }),
   useProfile: () => ({ data: undefined }),
   useToggleFavorite: () => ({ mutate: toggleFavorite }),
   useFavoriteStatus: (_boardName: string, _uuid: string | null, _angle: number, options?: Props) => {

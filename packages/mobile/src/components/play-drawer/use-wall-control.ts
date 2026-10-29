@@ -23,6 +23,11 @@ export type WallControlRunners = {
    * the #4979 hold) or a preview put up. Never left to the auto-send.
    */
   lightAgain: () => void;
+  /**
+   * The climb on screen is on another board at this gym (#7076): move there (a
+   * crew session moves too), connect, and light it. A preview is put up first.
+   */
+  moveToBoard: () => void;
 };
 
 export type UseWallControlOptions = {
@@ -125,6 +130,10 @@ export function useWallControl({
       case 'release_wall':
         hapticMedium();
         run.toggle();
+        return;
+      case 'move_to_board':
+        hapticMedium();
+        run.moveToBoard();
         return;
       case 'noop':
         return;

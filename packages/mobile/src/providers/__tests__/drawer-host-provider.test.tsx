@@ -347,6 +347,7 @@ vi.mock('../queue-provider', () => ({
     playNext: queue.playNext,
     setSessionBoardPath: queue.setSessionBoardPath,
     setCurrentClimb: queue.setCurrentClimb,
+    getQueueSnapshot: () => ({ currentClimbQueueItem: null }),
   }),
   useQueueSessionControls: () => ({
     sessionId: queue.sessionId,

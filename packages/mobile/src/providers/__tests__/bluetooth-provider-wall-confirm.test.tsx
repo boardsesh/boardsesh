@@ -2197,16 +2197,26 @@ describe('BluetoothProvider wall-confirm integration', () => {
         expect(bluetooth.state.sendFramesToBoard.mock.calls.some(([frames]) => frames === 'frames-spill')).toBe(false);
       });
 
-      it.each([
-        ['a climb on another board at this gym', 'tension:1'],
-        ['nothing compatible left in a solo queue', undefined],
-      ])('reports the clear for %s', async (_case, reachable) => {
+      it('reports the clear when nothing compatible is left in a solo queue', async () => {
         queue.sessionId = null;
-        await lightClimbOneThenMoveTo(makeSpillItem('spill'), [], reachable);
+        await lightClimbOneThenMoveTo(makeSpillItem('spill'), []);
 
         await waitFor(() => expect(presence.reportClearForBoard).toHaveBeenCalledExactlyOnceWith(99));
         expect(blankWrites()).toHaveLength(1);
         expect(taggedClearWrites()).toHaveLength(0);
+      });
+
+      // #7076: the climber is on their way to the board that draws it. The wall
+      // keeps what it shows, so a board that doesn't answer leaves one lit wall,
+      // not two dark ones.
+      it('leaves the wall as it is for a climb on another board at this gym', async () => {
+        queue.sessionId = null;
+        await lightClimbOneThenMoveTo(makeSpillItem('spill'), [], 'tension:1');
+        await settleReports();
+
+        expect(presence.reportClearForBoard).not.toHaveBeenCalled();
+        expect(blankWrites()).toHaveLength(0);
+        expect(bluetooth.state.sendFramesToBoard.mock.calls.some(([frames]) => frames === 'frames-spill')).toBe(false);
       });
 
       it('reports no clear when a solo queue advances to a compatible climb', async () => {

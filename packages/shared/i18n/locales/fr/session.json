@@ -950,7 +950,9 @@
       "crewHasBoard": "Ton crew a la board",
       "boardOptions": "Options de la board",
       "onWall": "Au mur",
-      "lightAgainHint": "Le rallume sur la board"
+      "lightAgainHint": "Le rallume sur la board",
+      "putOnGymBoard": "Allumer sur la {{board}}",
+      "moveToGymBoardHint": "Passe sur la {{board}} et allume ce bloc"
     },
     "setActive": "Activer",
     "paneEmpty": {

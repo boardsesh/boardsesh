@@ -61,6 +61,15 @@ import {
   setStoredLastConnectedBoard,
   type StoredLastConnectedBoard,
 } from './last-connected-board-store';
+import {
+  findKnownBoardDevice,
+  forgetKnownBoardDevice,
+  getStoredKnownBoardDevices,
+  MAX_KNOWN_BOARD_DEVICES,
+  rememberKnownBoardDevice,
+  setStoredKnownBoardDevices,
+  type KnownBoardDevices,
+} from './known-board-devices-store';
 import type { BleWriteActivityStore } from './write-activity-store';
 import { getBleEncodingSignature } from './encoding-signature';
 
@@ -516,6 +525,16 @@ type UseBoardBluetoothOptions = {
 
 const KEEP_AWAKE_TAG = 'boardsesh-ble';
 
+export type BluetoothConnectOptions = {
+  /**
+   * Look for the saved board out of sight (#7076): no picker, and no alert if
+   * it doesn't answer. Only for a connect nobody tapped, the auto-follow of a
+   * climber driving a wall onto another board at the gym. Ignored without a
+   * saved board to look for.
+   */
+  quiet?: boolean;
+};
+
 /**
  * Identity of the board a live connection was opened against.
  *
@@ -652,18 +671,48 @@ export function useBoardBluetooth({
   // one-tap silent reconnect survives a cold start or provider remount, not just
   // the current session (#3609). Storage writes are fire-and-forget: a failure
   // just means the next launch falls back to the picker, never a thrown error.
-  const rememberConnectedBoard = useCallback((board: StoredLastConnectedBoard) => {
-    rememberedBoardIntentGenerationRef.current += 1;
-    lastConnectedBoardRef.current = board;
-    setRememberedBoardState((current) => ({ ...current, board }));
-    void setStoredLastConnectedBoard(board).catch(() => {});
+  // One handle per board as well (#7076), so walking back to a board this phone
+  // has already used at a gym reconnects instead of opening the picker. The
+  // single record above still decides native adoption; this only adds reconnect
+  // targets. Same intent-generation rule for the read on mount.
+  const [knownBoardDevices, setKnownBoardDevices] = useState<KnownBoardDevices>([]);
+  const knownBoardDevicesRef = useRef<KnownBoardDevices>([]);
+  const knownBoardDevicesIntentGenerationRef = useRef(0);
+  // Boards remembered or forgotten since mount: the read on mount never
+  // overrides them.
+  const knownBoardDevicesTouchedRef = useRef(new Set<string>());
+  const writeKnownBoardDevices = useCallback((devices: KnownBoardDevices) => {
+    if (devices === knownBoardDevicesRef.current) return;
+    knownBoardDevicesIntentGenerationRef.current += 1;
+    knownBoardDevicesRef.current = devices;
+    setKnownBoardDevices(devices);
+    void setStoredKnownBoardDevices(devices).catch(() => {});
   }, []);
+
+  const rememberConnectedBoard = useCallback(
+    (board: StoredLastConnectedBoard) => {
+      rememberedBoardIntentGenerationRef.current += 1;
+      lastConnectedBoardRef.current = board;
+      setRememberedBoardState((current) => ({ ...current, board }));
+      void setStoredLastConnectedBoard(board).catch(() => {});
+      knownBoardDevicesTouchedRef.current.add(board.configKey);
+      writeKnownBoardDevices(rememberKnownBoardDevice(knownBoardDevicesRef.current, board));
+    },
+    [writeKnownBoardDevices],
+  );
   const forgetConnectedBoard = useCallback(() => {
+    const forgotten = lastConnectedBoardRef.current;
     rememberedBoardIntentGenerationRef.current += 1;
     lastConnectedBoardRef.current = null;
     setRememberedBoardState((current) => ({ ...current, board: null }));
     void clearStoredLastConnectedBoard().catch(() => {});
-  }, []);
+    // A deliberate disconnect frees that board for the next climber, so its
+    // per-board handle goes too. Handles for the other boards stay.
+    if (forgotten) {
+      knownBoardDevicesTouchedRef.current.add(forgotten.configKey);
+      writeKnownBoardDevices(forgetKnownBoardDevice(knownBoardDevicesRef.current, forgotten.configKey));
+    }
+  }, [writeKnownBoardDevices]);
 
   const adapterRef = useRef<BluetoothAdapter | null>(null);
   const apiLevelRef = useRef<number>(3);
@@ -692,6 +741,10 @@ export function useBoardBluetooth({
   // the singleton BLE manager, and the first attempt's scan teardown kills
   // the second attempt's scan, stranding the picker.
   const connectInFlightRef = useRef(false);
+  // The running connect is quiet (`BluetoothConnectOptions.quiet`): its picker
+  // never shows and its failure says nothing. Read by `devicePicker` when the
+  // connect opens it.
+  const quietConnectRef = useRef(false);
   // True after an explicit user disconnect, false again on the next deliberate
   // connect. While set, the native-connection adoption path is ignored — it
   // would otherwise race the in-flight native disconnect and re-establish the
@@ -868,7 +921,10 @@ export function useBoardBluetooth({
       // Whether the climber has seen this sheet decides how the scan ends
       // (#7038): a sheet they saw waits with its empty state, one they never
       // saw ends the connect with "board not found".
-      const presentedAtOpen = mode === 'list' || isAppActive();
+      // A quiet connect (#7076, the auto-follow) is never seen either: it looks
+      // for the saved board out of sight and ends as "board not found" if it
+      // doesn't answer, with no alert (see the catch in `connect`).
+      const presentedAtOpen = !quietConnectRef.current && (mode === 'list' || isAppActive());
 
       // Every write is scoped to this session: a late callback from an earlier
       // connect must never change, or clear, a newer picker.
@@ -1521,7 +1577,13 @@ export function useBoardBluetooth({
   );
 
   const connect = useCallback(
-    async (initialFrames?: string, mirrored?: boolean, targetSerial?: string, targetDeviceId?: string) => {
+    async (
+      initialFrames?: string,
+      mirrored?: boolean,
+      targetSerial?: string,
+      targetDeviceId?: string,
+      options?: BluetoothConnectOptions,
+    ) => {
       if (!boardName) {
         console.error('Cannot connect to Bluetooth without board name');
         return false;
@@ -1534,6 +1596,10 @@ export function useBoardBluetooth({
         return false;
       }
       connectInFlightRef.current = true;
+      // Quiet only with a saved board to look for: without one the connect is
+      // the picker's list, which can't be quiet.
+      const quiet = options?.quiet === true && (targetSerial !== undefined || targetDeviceId !== undefined);
+      quietConnectRef.current = quiet;
       // A deliberate connect re-arms native-connection adoption after an
       // earlier explicit disconnect suppressed it.
       adoptionSuppressedRef.current = false;
@@ -1960,7 +2026,9 @@ export function useBoardBluetooth({
         // "Operation was cancelled", so those real failures showed nothing — the
         // connect just looked like a dead tap. Only an explicit user-cancel stays
         // silent now. Literal-key switch (the i18n linter forbids `t(variable)`).
-        switch (failureCategory) {
+        // A quiet connect (#7076) fails without a word: the climber didn't tap
+        // anything, and the player's Put on {board} is still there to try.
+        switch (quiet ? 'user_cancelled' : failureCategory) {
           case 'user_cancelled':
             break;
           case 'unavailable':
@@ -2011,6 +2079,7 @@ export function useBoardBluetooth({
         }
       } finally {
         connectInFlightRef.current = false;
+        quietConnectRef.current = false;
         setLoading(false);
       }
 
@@ -2342,10 +2411,12 @@ export function useBoardBluetooth({
       : null;
   // The remembered board only counts while the route still points at the same
   // config; a stored handle for a different board is never offered as a target.
+  // The last board held wins; otherwise this board's own handle from an earlier
+  // visit (#7076), so a walk back to it at a gym reconnects.
   const rememberedForCurrentBoard =
     lastConnectedBoard && currentConfigKey && lastConnectedBoard.configKey === currentConfigKey
       ? lastConnectedBoard
-      : null;
+      : findKnownBoardDevice(knownBoardDevices, currentConfigKey);
   // Aurora reconnects by serial; MoonBoard (no serial) reconnects by BLE device
   // id. The lightbulb passes whichever is set so the tap reconnects to the same
   // board (the picker shows "searching" meanwhile) instead of the board list.
@@ -2376,6 +2447,45 @@ export function useBoardBluetooth({
       cancelled = true;
     };
   }, []);
+
+  // The per-board handles (#7076), read once on mount. A remember or forget
+  // made during the read wins for its board; the stored handles for every other
+  // board are kept, so an early connect can't erase them.
+  useEffect(() => {
+    let cancelled = false;
+    const intentGeneration = knownBoardDevicesIntentGenerationRef.current;
+    void getStoredKnownBoardDevices().then(
+      (stored) => {
+        if (cancelled) return;
+        if (knownBoardDevicesIntentGenerationRef.current === intentGeneration) {
+          knownBoardDevicesRef.current = stored;
+          setKnownBoardDevices(stored);
+          return;
+        }
+        const touched = knownBoardDevicesTouchedRef.current;
+        const merged = stored.reduceRight<KnownBoardDevices>(
+          (devices, device) =>
+            touched.has(device.configKey) || findKnownBoardDevice(devices, device.configKey)
+              ? devices
+              : [...devices, device].slice(0, MAX_KNOWN_BOARD_DEVICES),
+          knownBoardDevicesRef.current,
+        );
+        writeKnownBoardDevices(merged);
+      },
+      () => {},
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [writeKnownBoardDevices]);
+
+  // Whether this phone has a handle for a board, the one it holds now included.
+  const hasRememberedDeviceForConfigKey = useCallback(
+    (configKey: string) =>
+      lastConnectedBoardRef.current?.configKey === configKey ||
+      findKnownBoardDevice(knownBoardDevicesRef.current, configKey) !== null,
+    [],
+  );
 
   // Clean up on unmount
   useEffect(() => {
@@ -2431,6 +2541,7 @@ export function useBoardBluetooth({
     pickerState,
     reconnectSerialForCurrentBoard,
     reconnectDeviceIdForCurrentBoard,
+    hasRememberedDeviceForConfigKey,
     connectInitialSendRef,
     consumeBackgroundAdoptSendGate,
   };

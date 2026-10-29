@@ -29,6 +29,7 @@ function runners(): MockRunners {
     disconnect: vi.fn<() => void>(),
     openSheet: vi.fn<() => void>(),
     lightAgain: vi.fn<() => void>(),
+    moveToBoard: vi.fn<() => void>(),
   };
 }
 

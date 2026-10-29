@@ -18,6 +18,7 @@ type BluetoothCtx = {
   loading: boolean;
   connect: ReturnType<typeof vi.fn>;
   connectAfterBoardSwitch: ReturnType<typeof vi.fn>;
+  hasRememberedDeviceForBoard: ReturnType<typeof vi.fn>;
   disconnect: ReturnType<typeof vi.fn>;
   armUndoWallChangeToast: ReturnType<typeof vi.fn>;
   reconnectSerialForCurrentBoard: string | null;
@@ -75,6 +76,7 @@ function makeBluetooth(over: Partial<NonNullable<BluetoothCtx>> = {}): NonNullab
     loading: false,
     connect: vi.fn().mockResolvedValue(true),
     connectAfterBoardSwitch: vi.fn().mockResolvedValue(true),
+    hasRememberedDeviceForBoard: vi.fn(() => false),
     disconnect: vi.fn().mockResolvedValue(undefined),
     armUndoWallChangeToast: vi.fn(),
     reconnectSerialForCurrentBoard: null,

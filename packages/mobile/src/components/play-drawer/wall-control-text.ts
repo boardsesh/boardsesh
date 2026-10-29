@@ -28,7 +28,13 @@ export type WallControlText = {
   longPressActionLabel: string;
 };
 
-function labelText(t: TFunction, tSettings: TFunction, key: WallControlLabelKey, name: string | null): string {
+function labelText(
+  t: TFunction,
+  tSettings: TFunction,
+  key: WallControlLabelKey,
+  name: string | null,
+  board: string | null,
+): string {
   switch (key) {
     case 'connect':
       return t('playView.wallControl.connect');
@@ -54,6 +60,8 @@ function labelText(t: TFunction, tSettings: TFunction, key: WallControlLabelKey,
       return tSettings('ble.takeWall');
     case 'releaseWall':
       return tSettings('ble.releaseWall');
+    case 'putOnGymBoard':
+      return t('playView.wallControl.putOnGymBoard', { board });
   }
 }
 
@@ -68,7 +76,7 @@ function holderText(t: TFunction, key: WallControlA11yHolderKey, name: string | 
   }
 }
 
-function hintText(t: TFunction, key: WallControlA11yHintKey, name: string | null): string {
+function hintText(t: TFunction, key: WallControlA11yHintKey, name: string | null, board: string | null): string {
   switch (key) {
     case 'connectHint':
       return t('playView.wallControl.connectHint');
@@ -84,6 +92,8 @@ function hintText(t: TFunction, key: WallControlA11yHintKey, name: string | null
       return t('playView.wallControl.relayHintCrew');
     case 'relayHintOtherPhone':
       return t('playView.wallControl.relayHintOtherPhone');
+    case 'moveToGymBoardHint':
+      return t('playView.wallControl.moveToGymBoardHint', { board });
   }
 }
 
@@ -109,15 +119,18 @@ function bulbValueText(t: TFunction, key: WallControlBulbValueKey, name: string 
 /** Pure, for tests: `t` is the session namespace, `tSettings` the settings one. */
 export function wallControlText(model: WallControlModel, t: TFunction, tSettings: TFunction): WallControlText {
   const name = model.holderName;
-  const label = model.labelKey ? labelText(t, tSettings, model.labelKey, name) : '';
+  const board = model.gymBoardName;
+  const label = model.labelKey ? labelText(t, tSettings, model.labelKey, name, board) : '';
   const spokenLabel =
     model.a11yLabelKey === 'youHaveBoardLit'
       ? t('playView.wallControl.youHaveBoardLit')
       : model.a11yLabelKey
-        ? labelText(t, tSettings, model.a11yLabelKey, name)
+        ? labelText(t, tSettings, model.a11yLabelKey, name, board)
         : '';
   const spokenHolder = model.a11yHolderKey ? holderText(t, model.a11yHolderKey, name) : null;
-  let accessibilityHint: string | undefined = model.a11yHintKey ? hintText(t, model.a11yHintKey, name) : undefined;
+  let accessibilityHint: string | undefined = model.a11yHintKey
+    ? hintText(t, model.a11yHintKey, name, board)
+    : undefined;
   if (model.pending) accessibilityHint = tSettings('ble.scanning');
   else if (model.writing) accessibilityHint = tSettings('ble.writing');
   return {

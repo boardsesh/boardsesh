@@ -5,6 +5,7 @@
 // take the climber to one board while the Switch board button named another.
 
 import type { UserBoard } from '@boardsesh/shared-schema';
+import { formatBoardDisplayName } from '@boardsesh/board-config';
 import { boardLooselyMatches } from './board-matches';
 
 /** A climb's board model as the queue carries it. */
@@ -53,4 +54,14 @@ export function findGymBoardToConnectForClimb(
     return null;
   }
   return findGymBoardForClimb(climbBoard, activeBoard.uuid, gymBoards);
+}
+
+/**
+ * What Put on {board} calls a gym board (#7076): the brand ("Kilter",
+ * "MoonBoard"), which is how climbers name the boards in a room. A gym with two
+ * of that brand gets the board's own name, or the button couldn't say which.
+ */
+export function gymBoardButtonName(board: UserBoard, gymBoards: ReadonlyArray<UserBoard> | null | undefined): string {
+  const sameBrand = gymBoards?.filter((gymBoard) => gymBoard.boardType === board.boardType).length ?? 0;
+  return sameBrand > 1 ? board.name : formatBoardDisplayName(board.boardType);
 }

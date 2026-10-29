@@ -137,6 +137,17 @@ const mockLastConnectedBoardStore = vi.hoisted(() => ({
   clearStoredLastConnectedBoard: vi.fn(async () => {}),
 }));
 vi.mock('../last-connected-board-store', () => mockLastConnectedBoardStore);
+// The per-board handles (#7076) persist through the same preference store.
+const mockKnownBoardDevicesStore = vi.hoisted(() => ({
+  getStoredKnownBoardDevices: vi.fn(
+    async (): Promise<Array<{ configKey: string; serial?: string; deviceId?: string }>> => [],
+  ),
+  setStoredKnownBoardDevices: vi.fn(async () => {}),
+}));
+vi.mock('../known-board-devices-store', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../known-board-devices-store')>()),
+  ...mockKnownBoardDevicesStore,
+}));
 
 // Spy on reportHandledError (keep the real noise-policy/other exports) so a
 // connect failure's Sentry tags can be asserted (#3480).
