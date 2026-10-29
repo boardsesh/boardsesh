@@ -59,6 +59,8 @@ vi.mock('../../../lib/route-segments', () => ({
   isTabsChromeRoute: () => cfg.insideTabs,
   // None of these tests opens the Wall display.
   isWallDisplayRoute: () => false,
+  // None of these tests sits on the Session page, where the rest pill hides.
+  isRestTimerPillHiddenRoute: () => false,
   // The bar's own route gate (top-level tab only) and the bottom-chrome surface gate.
   isTopLevelTabRoute: () => cfg.onTopLevelTab,
   isAccessorySurfaceRoute: () => cfg.onAccessorySurface,

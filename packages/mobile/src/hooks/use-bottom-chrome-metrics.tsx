@@ -1,14 +1,21 @@
-import { createContext, useContext, useMemo, useSyncExternalStore, type ReactNode } from 'react';
+import { createContext, useContext, useMemo, useRef, useSyncExternalStore, type ReactNode } from 'react';
+import { useWindowDimensions } from 'react-native';
 import { useSegments } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../providers/theme-provider';
 import {
   isAccessoryHiddenRoute,
   isAccessorySurfaceRoute,
+  isRestTimerPillHiddenRoute,
   isTabsChromeRoute,
   isWallDisplayRoute,
 } from '../lib/route-segments';
-import { useNativeTabContentInsetBottom } from '../lib/native-tab-content-inset-store';
+import {
+  useNativeTabContentInsetBottom,
+  useNativeTabContentInsetLeft,
+  useNativeTabContentInsetPublishCount,
+  useNativeTabContentInsetRight,
+} from '../lib/native-tab-content-inset-store';
 import { useConnectivityBannerHeight } from '../lib/connectivity-banner-inset-store';
 import { getRestTimerState, subscribeRestTimer } from '../lib/rest-timer-store';
 import { useWorkoutRunPendingStart } from '../lib/workout-run-store';
@@ -18,7 +25,12 @@ import { useTabChrome } from './use-bottom-accessory';
 import { useDeviceLayout } from './use-device-layout';
 import { useVerticalTabBar } from './use-vertical-tab-bar';
 import { useCurrentClimbSurface } from './use-current-climb-surface';
-import { computeBottomChromeMetrics, type BottomChromeMetrics } from './bottom-chrome-metrics';
+import {
+  computeBottomChromeMetrics,
+  trackExpandedTabContentInset,
+  type BottomChromeMetrics,
+  type ExpandedTabContentInset,
+} from './bottom-chrome-metrics';
 import { shouldThrowOnMissingProvider } from './bottom-chrome-provider-gate';
 import { reportHandledError } from '../lib/error-reporting';
 
@@ -31,6 +43,9 @@ const getRestTimerArmed = () => getRestTimerState().armed;
 // Expo web renders the first pass on the server, where nothing has armed a timer
 // yet; the pill can only appear after hydration anyway.
 const getRestTimerArmedServerSnapshot = () => false;
+// Whether a rest is being counted (an anchor exists). A boolean snapshot too, so
+// the provider re-renders only when the timer goes from idle to counting or back.
+const getRestTimerCounting = () => getRestTimerState().anchorMs !== null;
 
 /**
  * Gathers the React inputs for the bottom-chrome geometry and delegates the
@@ -86,6 +101,10 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
   // accessory height on every sub-route, and `scrollBottomPadding` takes
   // `Math.max(measured, fallback)` — so the measured inset could not correct it and
   // every pushed screen got dead space under its last row (#3776's failure shape).
+  // iOS 26.5 does draw the platter on some pushes (Discover › playlist on an
+  // iPhone 17 Pro simulator, 2026-10-28). Lists there get its height from the
+  // measured inset instead, through `expandedTabContentInsetBottom` below, so the
+  // reserve follows what UIKit draws on each route rather than a guess.
   const nativeAccessoryPresented = onAccessorySurface && nativeAccessoryActive;
   const usesNativeTabBar = insideTabs && nativeTabBar;
   // The regular-width JS tablet shell replaces the bottom tab bar with its rail.
@@ -110,6 +129,33 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
   // accessory — is published by NativeTabContentInsetProbe from inside the
   // focused tab; see the sampling-point contract in bottom-chrome-metrics.ts.
   const measuredTabContentInsetBottom = useNativeTabContentInsetBottom();
+  const measuredTabContentInsetLeft = useNativeTabContentInsetLeft();
+  const measuredTabContentInsetRight = useNativeTabContentInsetRight();
+  // The expanded bar's inset under the current chrome shape: the larger of the
+  // two values the in-tab inset flips between as the bar minimizes and
+  // re-expands. Lists pad for it so a bar re-expanding at the end of a list
+  // never covers the last row. The key holds everything that legitimately
+  // changes the expanded height; a new key starts empty and folds only readings
+  // the probe publishes after it (the store still holds the old shape's inset
+  // when the key flips; see trackExpandedTabContentInset).
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const insetPublishCount = useNativeTabContentInsetPublishCount();
+  const chromeShapeKey = [
+    segments.join('/'),
+    hasCurrentClimb ? 'climb' : 'none',
+    nativeAccessoryActive ? 'accessory' : 'no-accessory',
+    accessoryHidden ? 'hidden' : 'shown',
+    tabBarAtBottom ? 'bottom' : 'side',
+    `${Math.round(windowWidth)}x${Math.round(windowHeight)}`,
+  ].join('|');
+  const expandedInsetRef = useRef<ExpandedTabContentInset | null>(null);
+  expandedInsetRef.current = trackExpandedTabContentInset(
+    expandedInsetRef.current,
+    chromeShapeKey,
+    measuredTabContentInsetBottom,
+    insetPublishCount,
+  );
+  const expandedTabContentInsetBottom = expandedInsetRef.current.bottom;
   // The connectivity banner (issue #4862) is a root-level absolute overlay above
   // ALL of this chrome, on every route. It measures itself and publishes through
   // another module store for the same reason the in-tab probe does: `Toast` reads
@@ -124,6 +170,12 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
   const restTimerArmed = useSyncExternalStore(subscribeRestTimer, getRestTimerArmed, getRestTimerArmedServerSnapshot);
   const { sessionId } = useQueueSessionId();
   const workoutStartPending = useWorkoutRunPendingStart(sessionId);
+  const restTimerCounting = useSyncExternalStore(
+    subscribeRestTimer,
+    getRestTimerCounting,
+    getRestTimerArmedServerSnapshot,
+  );
+  const restTimerIdleHiddenRoute = isRestTimerPillHiddenRoute(segments);
 
   return useMemo(
     () =>
@@ -142,6 +194,11 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
         restTimerArmed,
         tabBarAtBottom,
         workoutStartPending,
+        restTimerIdleHiddenRoute,
+        restTimerCounting,
+        expandedTabContentInsetBottom,
+        measuredTabContentInsetLeft,
+        measuredTabContentInsetRight,
       }),
     [
       tabBarAtBottom,
@@ -158,6 +215,11 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
       connectivityBannerHeight,
       restTimerArmed,
       workoutStartPending,
+      restTimerIdleHiddenRoute,
+      restTimerCounting,
+      expandedTabContentInsetBottom,
+      measuredTabContentInsetLeft,
+      measuredTabContentInsetRight,
     ],
   );
 }

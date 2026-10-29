@@ -3,10 +3,12 @@ import { beforeEach, describe, it, expect } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import {
   publishNativeTabContentInsetBottom,
-  publishNativeTabContentInsetSide,
+  publishNativeTabContentInsetSides,
   resetNativeTabContentInsetForTests,
   useNativeTabContentInsetBottom,
+  useNativeTabContentInsetLeft,
   useNativeTabContentInsetPublishCount,
+  useNativeTabContentInsetRight,
   useNativeTabContentInsetSideAtLeast,
 } from '../native-tab-content-inset-store';
 
@@ -56,7 +58,7 @@ describe('native-tab-content-inset-store', () => {
     const { result: bottom } = renderHook(() => useNativeTabContentInsetBottom());
     const { result: publishCount } = renderHook(() => useNativeTabContentInsetPublishCount());
     expect(reached.current).toBe(false);
-    act(() => publishNativeTabContentInsetSide(84));
+    act(() => publishNativeTabContentInsetSides(0, 84));
     expect(reached.current).toBe(true);
     expect(bottom.current).toBeNull();
     // The diagnostic counter tracks bottom publishes only.
@@ -72,14 +74,14 @@ describe('native-tab-content-inset-store', () => {
       return useNativeTabContentInsetSideAtLeast(20);
     });
     const rendersBefore = renders;
-    act(() => publishNativeTabContentInsetSide(0));
-    act(() => publishNativeTabContentInsetSide(12));
+    act(() => publishNativeTabContentInsetSides(0, 0));
+    act(() => publishNativeTabContentInsetSides(12, 0));
     expect(result.current).toBe(false);
     expect(renders).toBe(rendersBefore);
-    act(() => publishNativeTabContentInsetSide(84));
+    act(() => publishNativeTabContentInsetSides(0, 84));
     expect(result.current).toBe(true);
     expect(renders).toBe(rendersBefore + 1);
-    act(() => publishNativeTabContentInsetSide(90));
+    act(() => publishNativeTabContentInsetSides(0, 90));
     expect(renders).toBe(rendersBefore + 1);
   });
 
@@ -88,5 +90,20 @@ describe('native-tab-content-inset-store', () => {
     act(() => publishNativeTabContentInsetBottom(83));
     act(() => resetNativeTabContentInsetForTests());
     expect(result.current).toBeNull();
+  });
+
+  it('carries the left and right insets separately', () => {
+    // DEVICE_VERIFIED (iPad Pro 13-inch, iPadOS 27.0, landscape): the sidebar is
+    // a 280pt left inset inside the tab.
+    const { result: left } = renderHook(() => useNativeTabContentInsetLeft());
+    const { result: right } = renderHook(() => useNativeTabContentInsetRight());
+    expect(left.current).toBeNull();
+    expect(right.current).toBeNull();
+    act(() => publishNativeTabContentInsetSides(280, 0));
+    expect(left.current).toBe(280);
+    expect(right.current).toBe(0);
+    act(() => publishNativeTabContentInsetSides(0, 84));
+    expect(left.current).toBe(0);
+    expect(right.current).toBe(84);
   });
 });

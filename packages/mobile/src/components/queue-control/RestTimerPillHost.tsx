@@ -8,7 +8,7 @@
 // each mount owns its own `visible` state.
 
 import { useCallback, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { I18nManager, StyleSheet, View } from 'react-native';
 import { useRestTimerArmed } from '../../hooks/use-rest-timer';
 import { useStartWorkout } from '../../hooks/use-start-workout';
 import { useQueueSessionId } from '../../providers/queue-provider';
@@ -56,6 +56,8 @@ export type RestTimerPillGateInputs = {
   insideTabs: boolean;
   /** True on the regular-width JS tablet shell, where its rail replaces the tab bar. */
   usesSidebar: boolean;
+  /** `BottomChromeMetrics.restTimerPillHiddenOnRoute`: the Session page while the timer is idle. */
+  hiddenOnRoute?: boolean;
 };
 
 /**
@@ -63,7 +65,7 @@ export type RestTimerPillGateInputs = {
  *
  * This must agree with the bottom-chrome reserve, term for term. That reserve is
  *
- *     (restTimerArmed || workoutStartPending) && insideTabs && !usesSidebar
+ *     (restTimerArmed || workoutStartPending) && insideTabs && !usesSidebar && !restTimerPillHiddenOnRoute
  *
  * and if the two ever disagree the climber gets one of two visible bugs: a dead
  * 54pt gap under the last list row (reserve without a pill), or the pill sitting
@@ -78,8 +80,9 @@ export function shouldRenderRestTimerPill({
   workoutStartPending = false,
   insideTabs,
   usesSidebar,
+  hiddenOnRoute = false,
 }: RestTimerPillGateInputs): boolean {
-  return (armed || workoutStartPending) && insideTabs && !usesSidebar;
+  return (armed || workoutStartPending) && insideTabs && !usesSidebar && !hiddenOnRoute;
 }
 
 /**
@@ -89,7 +92,8 @@ export function shouldRenderRestTimerPill({
  *
  * The anchor is `bottomChrome.restTimerBottom` verbatim: it already clears the
  * tab bar and the active queue chrome exactly once. Adding an offset of our own
- * here is #4089's failure shape.
+ * here is #4089's failure shape. Horizontally it sits on the content column
+ * (`contentColumnLeft` / `contentColumnRight`), the same span as the accessory.
  */
 export function RootRestTimerPillHost() {
   const armed = useRestTimerArmed();
@@ -102,22 +106,54 @@ export function RootRestTimerPillHost() {
   const { sidebarShell } = useCurrentClimbSurface();
   const usesSidebar = bottomChrome.insideTabs && sidebarShell;
 
-  if (!shouldRenderRestTimerPill({ armed, workoutStartPending, insideTabs: bottomChrome.insideTabs, usesSidebar })) {
+  if (
+    !shouldRenderRestTimerPill({
+      armed,
+      workoutStartPending,
+      insideTabs: bottomChrome.insideTabs,
+      usesSidebar,
+      hiddenOnRoute: bottomChrome.restTimerPillHiddenOnRoute,
+    })
+  ) {
     return null;
   }
 
   return (
-    <View pointerEvents="box-none" style={[styles.overlay, { bottom: bottomChrome.restTimerBottom }]}>
+    <View
+      pointerEvents="box-none"
+      style={[
+        styles.overlay,
+        {
+          bottom: bottomChrome.restTimerBottom,
+          // Centre on the column the accessory spans, not the window: the native
+          // iPad sidebar and the iPhone Duo rail take a side of it.
+          ...physicalHorizontalInsets(
+            spacing[3] + bottomChrome.contentColumnLeft,
+            spacing[3] + bottomChrome.contentColumnRight,
+          ),
+        },
+      ]}
+    >
       <RestTimerPillHost />
     </View>
   );
 }
 
+/**
+ * Safe-area insets are physical (the sidebar is on the left whatever the
+ * language), but React Native swaps `left` and `right` in a right-to-left
+ * layout by default. Swap them back there so the offsets stay on the side the
+ * inset came from. No shipped locale is right-to-left yet; this keeps the pill
+ * right when one is.
+ */
+function physicalHorizontalInsets(left: number, right: number): { left: number; right: number } {
+  const swapped = I18nManager.isRTL && I18nManager.doLeftAndRightSwapInRTL;
+  return swapped ? { left: right, right: left } : { left, right };
+}
+
 const styles = StyleSheet.create({
   overlay: {
     position: 'absolute',
-    left: spacing[3],
-    right: spacing[3],
     alignItems: 'center',
     // Above the tab bar / native accessory in z-order, and one rung BELOW the
     // onboarding tip (100) so a tip pointing at the bar still wins.

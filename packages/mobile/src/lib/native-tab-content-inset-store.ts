@@ -29,10 +29,14 @@ import { useSyncExternalStore } from 'react';
  */
 
 let measuredBottom: number | null = null;
-// The larger of the left and right insets from the same measurement. A tab bar
-// that iOS draws as a vertical rail (iPhone Duo) shows up here, never in the
-// bottom inset alone; `useVerticalTabBar` reads it through a boolean snapshot.
-let measuredSide: number | null = null;
+// The left and right insets from the same measurement. A tab bar that iOS draws
+// as a vertical rail (iPhone Duo, 84pt on the right) or the native iPad sidebar
+// (280pt on the left in landscape, iPadOS 27) shows up here, never in the bottom
+// inset; `useVerticalTabBar` reads the larger of the two through a boolean
+// snapshot, and the bottom-chrome metrics read both to find the content column
+// the accessory spans, so a root overlay (the rest-timer pill) centres on it.
+let measuredLeft: number | null = null;
+let measuredRight: number | null = null;
 const listeners = new Set<() => void>();
 // Total accepted publishes since launch, surfaced by BottomChromeDebugOverlay so
 // device QA can tell whether a tab-bar minimize animation delivers a couple of
@@ -74,9 +78,14 @@ export function publishNativeTabContentInsetBottom(value: number): void {
   notify();
 }
 
-export function publishNativeTabContentInsetSide(value: number): void {
-  if (measuredSide !== null && Math.abs(measuredSide - value) < PUBLISH_EPSILON) return;
-  measuredSide = value;
+function sameMeasurement(previous: number | null, value: number): boolean {
+  return previous !== null && Math.abs(previous - value) < PUBLISH_EPSILON;
+}
+
+export function publishNativeTabContentInsetSides(left: number, right: number): void {
+  if (sameMeasurement(measuredLeft, left) && sameMeasurement(measuredRight, right)) return;
+  measuredLeft = left;
+  measuredRight = right;
   notify();
 }
 
@@ -92,7 +101,23 @@ export function useNativeTabContentInsetBottom(): number | null {
  * null → 0 among them).
  */
 export function useNativeTabContentInsetSideAtLeast(minimum: number): boolean {
-  return useSyncExternalStore(subscribe, () => measuredSide !== null && measuredSide >= minimum);
+  return useSyncExternalStore(
+    subscribe,
+    () => measuredLeft !== null && measuredRight !== null && Math.max(measuredLeft, measuredRight) >= minimum,
+  );
+}
+
+const getLeftSnapshot = () => measuredLeft;
+const getRightSnapshot = () => measuredRight;
+
+/** The latest in-tab left inset (the native iPad sidebar), or null before the first publish. */
+export function useNativeTabContentInsetLeft(): number | null {
+  return useSyncExternalStore(subscribe, getLeftSnapshot);
+}
+
+/** The latest in-tab right inset (the iPhone Duo rail), or null before the first publish. */
+export function useNativeTabContentInsetRight(): number | null {
+  return useSyncExternalStore(subscribe, getRightSnapshot);
 }
 
 /** Diagnostic-only: accepted-publish counter for BottomChromeDebugOverlay. */
@@ -102,7 +127,8 @@ export function useNativeTabContentInsetPublishCount(): number {
 
 export function resetNativeTabContentInsetForTests(): void {
   measuredBottom = null;
-  measuredSide = null;
+  measuredLeft = null;
+  measuredRight = null;
   publishCount = 0;
   notify();
 }

@@ -17,6 +17,9 @@ const harness = vi.hoisted(() => ({
   nativeTabBar: false,
   workoutStartPending: false,
   hasWorkoutClimb: true,
+  hiddenOnRoute: false,
+  rtl: false,
+  contentColumnLeft: 0,
   startWorkout: vi.fn(),
 }));
 
@@ -36,6 +39,7 @@ vi.mock('react-native', () => ({
   View: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
     createElement('div', { 'data-overlay': 'true', 'data-style': JSON.stringify(style) }, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
+  I18nManager: { isRTL: harness.rtl, doLeftAndRightSwapInRTL: true },
   useWindowDimensions: () => ({ width: harness.windowWidth, height: 844 }),
 }));
 
@@ -43,6 +47,9 @@ vi.mock('../../../hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({
     insideTabs: harness.insideTabs,
     restTimerBottom: harness.restTimerBottom,
+    restTimerPillHiddenOnRoute: harness.hiddenOnRoute,
+    contentColumnLeft: harness.contentColumnLeft,
+    contentColumnRight: 0,
   }),
 }));
 
@@ -94,6 +101,7 @@ vi.mock('../RestTimerSheet', () => ({
 import { fireEvent } from '@testing-library/react';
 import { armRestTimer, resetRestTimerStoreForTests } from '../../../lib/rest-timer-store';
 import { computeBottomChromeMetrics } from '../../../hooks/bottom-chrome-metrics';
+import { REST_TIMER_RESERVE } from '../../../theme/layout';
 import { RestTimerPillHost, RootRestTimerPillHost, shouldRenderRestTimerPill } from '../RestTimerPillHost';
 
 const NOW_MS = Date.parse('2026-09-11T10:00:00.000Z');
@@ -178,6 +186,8 @@ describe('RootRestTimerPillHost', () => {
     harness.windowWidth = 390;
     harness.nativeTabBar = false;
     harness.workoutStartPending = false;
+    harness.hiddenOnRoute = false;
+    harness.contentColumnLeft = 0;
   });
 
   afterEach(() => {
@@ -192,6 +202,25 @@ describe('RootRestTimerPillHost', () => {
 
     const overlayStyle = getByTestId('pill').parentElement?.getAttribute('data-style') ?? '';
     expect(overlayStyle).toContain('"bottom":139');
+  });
+
+  it("does not render on the Session tab's own page, and comes back elsewhere", () => {
+    arm();
+    harness.hiddenOnRoute = true;
+    const { queryByTestId, rerender } = render(<RootRestTimerPillHost />);
+    expect(queryByTestId('pill')).toBeNull();
+    harness.hiddenOnRoute = false;
+    rerender(<RootRestTimerPillHost />);
+    expect(queryByTestId('pill')).toBeTruthy();
+  });
+
+  it('sits on the content column beside the native iPad sidebar', () => {
+    arm();
+    harness.contentColumnLeft = 280;
+    const { getByTestId } = render(<RootRestTimerPillHost />);
+    const overlayStyle = getByTestId('pill').parentElement?.getAttribute('data-style') ?? '';
+    expect(overlayStyle).toContain('"left":292');
+    expect(overlayStyle).toContain('"right":12');
   });
 
   it('does not render off the tabs', () => {
@@ -267,6 +296,49 @@ describe('the root pill gate matches the bottom-chrome reserve', () => {
       expect(renders).toBe(reservesForPill(inputs));
     });
   }
+
+  describe("on the Session tab's own page", () => {
+    const geometry = { ...baseInputs, insideTabs: true, restTimerIdleHiddenRoute: true };
+    const disarmed = computeBottomChromeMetrics({ ...baseInputs, insideTabs: true, restTimerArmed: false });
+    const elsewhere = computeBottomChromeMetrics({ ...baseInputs, insideTabs: true, restTimerArmed: true });
+
+    it('hides an idle timer and reserves nothing for it', () => {
+      const idle = computeBottomChromeMetrics({ ...geometry, restTimerArmed: true, restTimerCounting: false });
+      expect(idle.restTimerPillHiddenOnRoute).toBe(true);
+      expect(idle.scrollBottomPadding).toBe(disarmed.scrollBottomPadding);
+      expect(idle.preSessionFooterBottom).toBe(disarmed.preSessionFooterBottom);
+      expect(idle.restTimerBottom).toBe(disarmed.restTimerBottom);
+      expect(
+        shouldRenderRestTimerPill({
+          armed: true,
+          workoutStartPending: true,
+          insideTabs: true,
+          usesSidebar: false,
+          hiddenOnRoute: idle.restTimerPillHiddenOnRoute,
+        }),
+      ).toBe(false);
+    });
+
+    it('shows a counting timer and reserves for it, as on every other screen', () => {
+      const counting = computeBottomChromeMetrics({ ...geometry, restTimerArmed: true, restTimerCounting: true });
+      expect(counting.restTimerPillHiddenOnRoute).toBe(false);
+      expect(counting.scrollBottomPadding).toBe(elsewhere.scrollBottomPadding);
+      expect(counting.preSessionFooterBottom).toBe(disarmed.preSessionFooterBottom + REST_TIMER_RESERVE);
+      expect(
+        shouldRenderRestTimerPill({
+          armed: true,
+          insideTabs: true,
+          usesSidebar: false,
+          hiddenOnRoute: counting.restTimerPillHiddenOnRoute,
+        }),
+      ).toBe(true);
+    });
+
+    it('never hides a counting timer off the Session page', () => {
+      const offPage = computeBottomChromeMetrics({ ...baseInputs, insideTabs: true, restTimerArmed: true });
+      expect(offPage.restTimerPillHiddenOnRoute).toBe(false);
+    });
+  });
 
   it('reserves nothing and renders nothing while disarmed', () => {
     expect(shouldRenderRestTimerPill({ armed: false, insideTabs: true, usesSidebar: false })).toBe(false);

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeBottomChromeMetrics } from '../bottom-chrome-metrics';
+import { computeBottomChromeMetrics, trackExpandedTabContentInset } from '../bottom-chrome-metrics';
 import {
   MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT,
   MATERIAL_TAB_BAR_HEIGHT,
@@ -1339,6 +1339,182 @@ describe('computeBottomChromeMetrics', () => {
       expect(metrics.jsQueueToolbarVisible).toBe(true);
       expect(metrics.preSessionFooterBottom).toBeGreaterThanOrEqual(pillTopAboveScreenFloor);
       expect(metrics.inSessionListBottom).toBeGreaterThanOrEqual(pillTopAboveScreenFloor);
+    });
+  });
+
+  describe('expanded-bar floor for list padding (bar re-expanding at the end of a list)', () => {
+    // DEVICE_VERIFIED (iPhone 17 Pro, iOS 26.5, Discover › playlist, a climb
+    // selected): the in-tab inset reads 83 with the bar minimized and 139 with it
+    // expanded. The platter is drawn on this pushed route, so 139 is the expanded
+    // bar plus the MiniPlayer even though the route is not an accessory surface.
+    const PUSHED_MINIMIZED_INSET = 83;
+    const PUSHED_EXPANDED_INSET = 139;
+    const pushedInputs = {
+      uiVariant: 'liquidGlass' as const,
+      usesNativeTabBar: true,
+      insetsBottom: ROOT_WINDOW_INSET,
+      insideTabs: true,
+      onAccessorySurface: false,
+      hasCurrentClimb: true,
+      nativeAccessoryPresented: false,
+    };
+
+    it('pads lists for the expanded bar while the bar is minimized', () => {
+      const metrics = computeBottomChromeMetrics({
+        ...pushedInputs,
+        measuredTabContentInsetBottom: PUSHED_MINIMIZED_INSET,
+        expandedTabContentInsetBottom: PUSHED_EXPANDED_INSET,
+      });
+      expect(metrics.scrollBottomPadding).toBe(PUSHED_EXPANDED_INSET);
+      // Floating controls still follow the live bar down.
+      expect(metrics.floatingControlBottom).toBe(PUSHED_MINIMIZED_INSET);
+      expect(metrics.tabBarBottom).toBe(PUSHED_MINIMIZED_INSET);
+    });
+
+    it('stacks the rest pill reserve on top of the expanded floor', () => {
+      const metrics = computeBottomChromeMetrics({
+        ...pushedInputs,
+        measuredTabContentInsetBottom: PUSHED_MINIMIZED_INSET,
+        expandedTabContentInsetBottom: PUSHED_EXPANDED_INSET,
+        restTimerArmed: true,
+      });
+      expect(metrics.scrollBottomPadding).toBe(PUSHED_EXPANDED_INSET + REST_TIMER_RESERVE);
+    });
+
+    it('adds nothing where the platter was never drawn (#3776 dead gap stays fixed)', () => {
+      const metrics = computeBottomChromeMetrics({
+        ...pushedInputs,
+        measuredTabContentInsetBottom: IN_TAB_INFERRED_BAR_INSET,
+        expandedTabContentInsetBottom: IN_TAB_INFERRED_BAR_INSET,
+      });
+      expect(metrics.scrollBottomPadding).toBe(IN_TAB_INFERRED_BAR_INSET);
+    });
+
+    it('rejects an expanded reading below the window inset', () => {
+      const metrics = computeBottomChromeMetrics({
+        ...pushedInputs,
+        measuredTabContentInsetBottom: PUSHED_MINIMIZED_INSET,
+        expandedTabContentInsetBottom: ROOT_WINDOW_INSET - 1,
+      });
+      expect(metrics.scrollBottomPadding).toBe(PUSHED_MINIMIZED_INSET);
+    });
+
+    it('ignores the floor off the native tab bar, where the JS bars sit outside every UIKit inset', () => {
+      const metrics = computeBottomChromeMetrics({
+        ...pushedInputs,
+        uiVariant: 'material',
+        usesNativeTabBar: false,
+        expandedTabContentInsetBottom: PUSHED_EXPANDED_INSET,
+      });
+      expect(metrics.scrollBottomPadding).toBe(ROOT_WINDOW_INSET + MATERIAL_TAB_BAR_HEIGHT);
+    });
+  });
+
+  describe('trackExpandedTabContentInset', () => {
+    // Each call is one render: (previous, key, the store's current reading, the
+    // store's publish count). On device a new key arrives one render BEFORE the
+    // probe publishes the new shape's inset, still carrying the old reading.
+    const ROOT = '(tabs)/discover|climb';
+
+    it('keeps the largest reading published under one key', () => {
+      const start = trackExpandedTabContentInset(null, ROOT, 139, 4);
+      expect(start.bottom).toBeNull();
+      const minimized = trackExpandedTabContentInset(start, ROOT, 83, 5);
+      const expanded = trackExpandedTabContentInset(minimized, ROOT, 139, 6);
+      const minimizedAgain = trackExpandedTabContentInset(expanded, ROOT, 83, 7);
+      expect(minimized.bottom).toBe(83);
+      expect(minimizedAgain.bottom).toBe(139);
+      // Unchanged state comes back as the same object, so a ref holding it is stable.
+      expect(minimizedAgain).toBe(expanded);
+    });
+
+    it('ignores re-renders that carry no new publish', () => {
+      const start = trackExpandedTabContentInset(null, ROOT, 139, 4);
+      expect(trackExpandedTabContentInset(start, ROOT, 139, 4)).toBe(start);
+      expect(trackExpandedTabContentInset(start, ROOT, null, 5)).toBe(start);
+    });
+
+    it.each([
+      ['a push to a route without the platter', '(tabs)/discover/all|climb', 83],
+      ['clearing the climb', '(tabs)/discover|none', 83],
+      ['a rotation', '(tabs)/discover|climb|1376x1032', 76],
+    ])("starts over on %s without keeping the old shape's inset", (_label, nextKey, nextInset) => {
+      let state = trackExpandedTabContentInset(null, ROOT, 139, 1);
+      state = trackExpandedTabContentInset(state, ROOT, 139, 2);
+      expect(state.bottom).toBe(139);
+      // The key flips first; the store still holds the old 139.
+      state = trackExpandedTabContentInset(state, nextKey, 139, 2);
+      expect(state.bottom).toBeNull();
+      // Then the probe publishes the new shape's inset.
+      state = trackExpandedTabContentInset(state, nextKey, nextInset, 3);
+      expect(state.bottom).toBe(nextInset);
+    });
+
+    it('starts empty', () => {
+      expect(trackExpandedTabContentInset(null, 'home', null, 0).bottom).toBeNull();
+    });
+  });
+
+  describe('content column for root overlays (the rest pill)', () => {
+    const nativeTabInputs = {
+      uiVariant: 'liquidGlass' as const,
+      usesNativeTabBar: true,
+      insideTabs: true,
+      onAccessorySurface: true,
+      hasCurrentClimb: true,
+      nativeAccessoryPresented: true,
+      tabBarAtBottom: false,
+      restTimerArmed: true,
+    };
+
+    it('insets by the native iPad sidebar in landscape', () => {
+      // DEVICE_VERIFIED (iPad Pro 13-inch, iPadOS 27.0, landscape): in-tab insets
+      // { left: 280, right: 0, bottom: 20 }.
+      const metrics = computeBottomChromeMetrics({
+        ...nativeTabInputs,
+        insetsBottom: 20,
+        measuredTabContentInsetLeft: 280,
+        measuredTabContentInsetRight: 0,
+      });
+      expect(metrics.contentColumnLeft).toBe(280);
+      expect(metrics.contentColumnRight).toBe(0);
+    });
+
+    it('insets by the iPhone Duo rail when closed', () => {
+      // DEVICE_VERIFIED (iPhone Duo, iOS 27.1, closed): in-tab insets
+      // { left: 0, right: 84, bottom: 34 }.
+      const metrics = computeBottomChromeMetrics({
+        ...nativeTabInputs,
+        insetsBottom: 34,
+        measuredTabContentInsetLeft: 0,
+        measuredTabContentInsetRight: 84,
+      });
+      expect(metrics.contentColumnLeft).toBe(0);
+      expect(metrics.contentColumnRight).toBe(84);
+    });
+
+    it('spans the window before a measurement and off the native tab bar', () => {
+      expect(computeBottomChromeMetrics({ ...nativeTabInputs, insetsBottom: 34 }).contentColumnLeft).toBe(0);
+      const material = computeBottomChromeMetrics({
+        ...nativeTabInputs,
+        uiVariant: 'material',
+        usesNativeTabBar: false,
+        insetsBottom: 34,
+        measuredTabContentInsetLeft: 280,
+        measuredTabContentInsetRight: 84,
+      });
+      expect(material.contentColumnLeft).toBe(0);
+      expect(material.contentColumnRight).toBe(0);
+    });
+
+    it('spans the window on the JS sidebar shell, where no pill renders', () => {
+      const metrics = computeBottomChromeMetrics({
+        ...nativeTabInputs,
+        insetsBottom: 20,
+        usesSidebar: true,
+        measuredTabContentInsetLeft: 280,
+      });
+      expect(metrics.contentColumnLeft).toBe(0);
     });
   });
 });
