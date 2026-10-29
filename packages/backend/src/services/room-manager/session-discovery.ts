@@ -238,8 +238,9 @@ export async function findNearbySessions(
     liveSessions.map(async ({ session, distance, participantCount }, index): Promise<DiscoverableSession> => ({
       id: session.id,
       name: session.name,
-      // A deleted or renamed named board's slug is not this viewer's to read.
-      boardPath: await projectSessionBoardPath(session.boardPath, viewerId),
+      // A deleted or renamed named board's slug is not this viewer's to read,
+      // and a nearby listing is discovery: an unlisted gym's walls stay unnamed.
+      boardPath: await projectSessionBoardPath(session.boardPath, viewerId, { discovery: true }),
       latitude: 0,
       longitude: 0,
       createdAt: session.createdAt,

@@ -409,12 +409,15 @@ export function redactBoardIdentity<T extends Partial<Record<BoardIdentityField,
  *
  * A gym's listing is not part of that standing (`sessionMayNameLiveBoard`): a
  * public board at an unlisted gym is named to the crew climbing on it, or every
- * joiner lands on a private board of their own (#7013).
+ * joiner lands on a private board of their own (#7013). A discovery listing
+ * (`discovery: true`, nearby sessions) is the exception: there the viewer holds
+ * no session, so an unlisted gym's walls stay unnamed, as on every other
+ * discovery surface.
  */
 export async function projectSessionBoardPath(
   boardPath: string,
   viewerId: string | null | undefined,
-  linkHolders: { presentedByViewer?: boolean } = {},
+  linkHolders: { presentedByViewer?: boolean; discovery?: boolean } = {},
 ): Promise<string> {
   const named = parseNamedBoardPath(boardPath);
   if (!named) return boardPath;
@@ -446,7 +449,8 @@ export async function projectSessionBoardPath(
   const board = live ?? deleted;
   if (!board) return '';
   const mayName = live
-    ? (await sessionMayNameLiveBoard(live.id, viewerId)) || (await holdsLiveBoardLink(live, viewerId, linkHolders))
+    ? (await sessionMayNameLiveBoard(live.id, viewerId, linkHolders.discovery === true)) ||
+      (await holdsLiveBoardLink(live, viewerId, linkHolders))
     : await holdsDeletedBoard(board, viewerId);
   if (mayName) return boardPath;
   return `/${board.boardType}/${board.layoutId}/${board.sizeId}/${board.setIds}/${named.angle ?? board.angle}`;
@@ -471,9 +475,17 @@ export async function projectSessionBoardPath(
  *   always keeps it, and so do the people `gymVisibleCondition` admits to a
  *   private gym (its owner, admins and editors, covering moderators);
  * - an admin-hidden spray wall, to everyone but its owner, the same rule
- *   `sessionBoardLocationCondition` applies to the session's place.
+ *   `sessionBoardLocationCondition` applies to the session's place;
+ * - with `discovery`, an unlisted gym too, to everyone but the board's owner
+ *   and the gym's owner, editors and moderators. A stranger browsing nearby
+ *   sessions holds no session, and discovery never names an unlisted gym's
+ *   walls (`toVisibleBoard` in live-sessions.ts).
  */
-async function sessionMayNameLiveBoard(boardId: number, viewerId: string | null | undefined): Promise<boolean> {
+async function sessionMayNameLiveBoard(
+  boardId: number,
+  viewerId: string | null | undefined,
+  discovery: boolean,
+): Promise<boolean> {
   const gym = alias(gyms, 'session_path_gym');
   const viewerOwnsBoard = viewerId ? eq(userBoards.ownerId, viewerId) : undefined;
   const [row] = await db
@@ -495,7 +507,11 @@ async function sessionMayNameLiveBoard(boardId: number, viewerId: string | null 
                 and(
                   eq(gym.id, userBoards.gymId),
                   isNull(gym.deletedAt),
-                  gymVisibleCondition({ id: gym.id, ownerId: gym.ownerId, isPublic: gym.isPublic }, viewerId),
+                  gymVisibleCondition(
+                    { id: gym.id, ownerId: gym.ownerId, isPublic: gym.isPublic, isListed: gym.isListed },
+                    viewerId,
+                    discovery,
+                  ),
                 ),
               ),
           ),

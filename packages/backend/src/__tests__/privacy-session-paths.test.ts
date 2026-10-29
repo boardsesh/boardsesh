@@ -5,6 +5,7 @@ import * as schema from '@boardsesh/db/schema';
 import { db } from '../db/client';
 import { canAccessResource, canAccessResourceWithoutLink } from '../services/privacy';
 import { projectSessionBoardPath } from '../services/board-session-privacy';
+import { roomManager } from '../services/room-manager';
 
 const ownerId = 'privacy-path-owner';
 let publicBoardId: number;
@@ -190,6 +191,7 @@ describe('legacy session paths', () => {
 describe('named session paths at gyms', () => {
   const gymOwnerId = 'gym-path-gym-owner';
   const gymEditorId = 'gym-path-gym-editor';
+  const gymMemberId = 'gym-path-gym-member';
   const strangerId = 'gym-path-stranger';
   const geometry = '/kilter/1/1/1/40';
   const named = (slug: string) => `/b/${slug}/40`;
@@ -197,7 +199,9 @@ describe('named session paths at gyms', () => {
   beforeAll(async () => {
     await db
       .insert(schema.users)
-      .values([gymOwnerId, gymEditorId, strangerId].map((id) => ({ id, name: id, email: `${id}@test.invalid` })));
+      .values(
+        [gymOwnerId, gymEditorId, gymMemberId, strangerId].map((id) => ({ id, name: id, email: `${id}@test.invalid` })),
+      );
     const insertGym = async (name: string, values: Partial<typeof schema.gyms.$inferInsert>) => {
       const [gym] = await db
         .insert(schema.gyms)
@@ -209,7 +213,11 @@ describe('named session paths at gyms', () => {
     const privateGymId = await insertGym('private', { isPublic: false });
     const deletedGymId = await insertGym('deleted', { isPublic: true, deletedAt: new Date() });
     const listedGymId = await insertGym('listed', { isPublic: true, isListed: true });
-    await db.insert(schema.gymMembers).values({ gymId: privateGymId, userId: gymEditorId, role: 'editor' });
+    await db.insert(schema.gymMembers).values([
+      { gymId: privateGymId, userId: gymEditorId, role: 'editor' },
+      // A plain member does not see a private gym (`gymVisibleCondition`).
+      { gymId: privateGymId, userId: gymMemberId, role: 'member' },
+    ]);
     const gymBoard = (slug: string, gymId: number, values: Partial<typeof schema.userBoards.$inferInsert> = {}) => ({
       uuid: `${slug}-board`,
       slug,
@@ -239,6 +247,34 @@ describe('named session paths at gyms', () => {
     expect(await projectSessionBoardPath(named('unlisted-gym-public'), strangerId)).toBe(named('unlisted-gym-public'));
     expect(await projectSessionBoardPath(named('unlisted-gym-public'), gymOwnerId)).toBe(named('unlisted-gym-public'));
     expect(await projectSessionBoardPath(named('unlisted-gym-public'), ownerId)).toBe(named('unlisted-gym-public'));
+    // Signed out, the invite still holds the session.
+    expect(await projectSessionBoardPath(named('unlisted-gym-public'), null)).toBe(named('unlisted-gym-public'));
+  });
+
+  it('keeps a wall at an unlisted gym unnamed in nearby sessions, which are discovery', async () => {
+    const latitude = 51.5;
+    const longitude = -0.12;
+    const sessionId = 'gym-path-nearby';
+    await roomManager.createDiscoverableSession(
+      sessionId,
+      named('unlisted-gym-public'),
+      ownerId,
+      latitude,
+      longitude,
+      'Board night',
+    );
+    await roomManager.registerClient('gym-path-nearby-host', 'Host', ownerId);
+    await roomManager.joinSession('gym-path-nearby-host', sessionId, named('unlisted-gym-public'));
+    const nearbyPath = async (viewerId: string | undefined) =>
+      (await roomManager.findNearbySessions(latitude, longitude, 10_000, viewerId)).find(
+        (session) => session.id === sessionId,
+      )?.boardPath;
+
+    expect(await nearbyPath(strangerId)).toBe(geometry);
+    expect(await nearbyPath(undefined)).toBe(geometry);
+    // The gym's own people and the wall's owner still see which wall it is.
+    expect(await nearbyPath(gymOwnerId)).toBe(named('unlisted-gym-public'));
+    expect(await nearbyPath(ownerId)).toBe(named('unlisted-gym-public'));
   });
 
   it('keeps a public wall at a listed gym named', async () => {
@@ -256,12 +292,14 @@ describe('named session paths at gyms', () => {
     expect(await projectSessionBoardPath(named('private-gym-public'), ownerId)).toBe(named('private-gym-public'));
     expect(await projectSessionBoardPath(named('private-gym-public'), gymOwnerId)).toBe(named('private-gym-public'));
     expect(await projectSessionBoardPath(named('private-gym-public'), gymEditorId)).toBe(named('private-gym-public'));
+    expect(await projectSessionBoardPath(named('private-gym-public'), gymMemberId)).toBe(geometry);
     expect(await projectSessionBoardPath(named('private-gym-public'), strangerId)).toBe(geometry);
     expect(await projectSessionBoardPath(named('private-gym-public'), null)).toBe(geometry);
   });
 
   it('withholds a wall whose gym was deleted', async () => {
     expect(await projectSessionBoardPath(named('deleted-gym-public'), strangerId)).toBe(geometry);
+    expect(await projectSessionBoardPath(named('deleted-gym-public'), ownerId)).toBe(named('deleted-gym-public'));
   });
 
   it('withholds an admin-hidden spray wall from everyone but its owner', async () => {
