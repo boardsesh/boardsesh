@@ -336,8 +336,9 @@ sheet's push), with the existing `mobile.boardPresence.wallDisplay.open` label.
 - Not offered (`isMiniPlayerButtonAvailable`): on a phone, the open Duo included; while the `/play` route is up.
 - Switched off, or squeezed out, it is a row in the bar's ⋯, in the queue's group after Open queue
   (`withWallDisplayRow`).
-- The Climbs ⋯ no longer lists Wall display. The board sheet's `WallDisplayEntry` button stays, so Wall display is
-  reachable with an empty queue, when there is no bar.
+- The Climbs ⋯ lists Wall display only on a tablet with no native MiniPlayer (Material, Android, iPadOS before 26),
+  since those have no ⛶ to open it from. The board sheet's `WallDisplayEntry` button stays everywhere, so Wall display
+  is reachable with an empty queue, when there is no bar.
 
 **The ⋯ menu** (`MiniPlayerActionsMenu`) is the player's ⋯ over the same `useClimbActions` and
 `buildPlayDrawerMenuRows`, in Music's order (`MINI_PLAYER_MENU_GROUPS`):
