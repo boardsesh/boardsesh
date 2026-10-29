@@ -55,7 +55,7 @@ vi.mock('../ble-manager', () => ({
 // real module index loads expo-modules-core). Null is Android, web, or a binary
 // without the module: the paths this suite covers, unchanged by the
 // ask-at-first-scan work.
-vi.mock('../../../../modules/live-activity/src/index', () => ({ boardBleNative: null }));
+vi.mock('../../../../modules/live-activity/src/index', () => ({ boardBleNative: null, sessionPresenceNative: null }));
 
 vi.mock('expo-keep-awake', () => ({
   activateKeepAwakeAsync: vi.fn().mockResolvedValue(undefined),
@@ -4881,8 +4881,10 @@ describe('useBoardBluetooth when the picker scan finds nothing (#5654)', () => {
 
   // The Android session notification's bulb connects with the app in the
   // background. With the board off, nobody is there to close the picker, and the
-  // in-flight connect would swallow every later bulb tap.
-  it('ends a connect nobody is looking at when its scan finds nothing', async () => {
+  // in-flight connect would swallow every later bulb tap. It ends with the
+  // standard "board not found" alert, which Android holds until the app is back
+  // on screen (#7038).
+  it('ends a connect nobody is looking at with board not found when its scan finds nothing', async () => {
     mockAppState.currentState = 'background';
     const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
 
@@ -4895,14 +4897,12 @@ describe('useBoardBluetooth when the picker scan finds nothing (#5654)', () => {
     await expect(connectPromise).resolves.toBe(false);
     expect(result.current.pickerState).toBeNull();
     expect(result.current.loading).toBe(false);
-    expect(Alert.alert).not.toHaveBeenCalled();
-    // A cancel is not a failure (#4547): it reports as 'Bluetooth Connection
-    // Cancelled', never as a 'Bluetooth Connection Failed' with a cancel reason.
+    expect(Alert.alert).toHaveBeenCalledOnce();
+    expect(Alert.alert).toHaveBeenCalledWith('ble.connectionFailedTitle', 'bluetooth.boardNotFound');
     expect(mockTrack).toHaveBeenCalledWith(
-      'Bluetooth Connection Cancelled',
-      expect.objectContaining({ boardName: 'kilter' }),
+      'Bluetooth Connection Failed',
+      expect.objectContaining({ boardName: 'kilter', failureReason: 'board_not_found' }),
     );
-    expect(mockTrack.mock.calls.map(([eventName]) => eventName)).not.toContain('Bluetooth Connection Failed');
 
     // The next bulb tap scans again instead of being swallowed.
     await act(async () => {
@@ -4910,6 +4910,63 @@ describe('useBoardBluetooth when the picker scan finds nothing (#5654)', () => {
       await vi.advanceTimersByTimeAsync(0);
     });
     expect(mockBleManager.startDeviceScan).toHaveBeenCalledTimes(2);
+  });
+
+  // The grace window would put the list up on a paused activity, where nobody
+  // can pick from it, and it would also turn a hidden search into a "seen" one.
+  it('keeps a background connect off screen for the whole scan (#7038)', async () => {
+    mockAppState.currentState = 'background';
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    await act(async () => {
+      void result.current.connect(undefined, undefined, 'SN-1');
+      await vi.advanceTimersByTimeAsync(SERIAL_RECONNECT_GRACE_MS + 1);
+    });
+
+    expect(result.current.pickerState).toMatchObject({ mode: 'searching', presented: false });
+    expect(result.current.loading).toBe(true);
+  });
+
+  // Opening the app mid-search shows the bulb spinner, not a sheet, and the
+  // search still ends with the alert when the scan does (#7038).
+  it('still ends a background connect with board not found when the app opens mid-search', async () => {
+    mockAppState.currentState = 'background';
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    let connectPromise: Promise<boolean> = Promise.resolve(true);
+    await act(async () => {
+      connectPromise = result.current.connect(undefined, undefined, 'SN-1');
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    mockAppState.currentState = 'active';
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SCAN_TIMEOUT_MS - 15_000);
+    });
+
+    expect(Alert.alert).toHaveBeenCalledWith('ble.connectionFailedTitle', 'bluetooth.boardNotFound');
+    expect(result.current.pickerState).toBeNull();
+    await expect(connectPromise).resolves.toBe(false);
+  });
+
+  // The gate is whether the climber ever saw the sheet, not where the app is
+  // when the scan ends: a sheet they saw waits for them with its empty state.
+  it('keeps a picker the climber saw when the app goes to the background before the scan ends', async () => {
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    await act(async () => {
+      void result.current.connect();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.pickerState).toMatchObject({ presented: true });
+
+    mockAppState.currentState = 'background';
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SCAN_TIMEOUT_MS);
+    });
+
+    expect(result.current.pickerState).toMatchObject({ devices: [], isScanning: false, presented: true });
+    expect(result.current.loading).toBe(true);
+    expect(Alert.alert).not.toHaveBeenCalled();
   });
 
   it('keeps the empty picker up behind an iOS call banner, where the climber can still see it', async () => {
@@ -5025,8 +5082,14 @@ describe('useBoardBluetooth connect sheet for a saved board (#5658)', () => {
     expect(mockBleManager.connectToDevice).not.toHaveBeenCalled();
   });
 
-  it('keeps a background tap (Android notification bulb) silent until the list starts', async () => {
+  // #7038: nobody can pick from a list in the background, so the grace window
+  // leaves a background tap searching off screen, and a board that turns up later
+  // in the scan still connects without the app being opened.
+  it('keeps a background tap (Android notification bulb) silent and auto-selecting for the whole scan', async () => {
     mockAppState.currentState = 'background';
+    // The link itself is out of scope here: hold it open so only the auto-select
+    // is under test.
+    mockBleManager.connectToDevice.mockImplementation(() => new Promise(() => {}));
     const { result } = renderBluetooth();
     await act(async () => {
       void result.current.connect(undefined, undefined, 'NEEDLE');
@@ -5036,9 +5099,16 @@ describe('useBoardBluetooth connect sheet for a saved board (#5658)', () => {
     expect(result.current.pickerState).toMatchObject({ mode: 'searching', presented: false });
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(SERIAL_RECONNECT_GRACE_MS);
+      await vi.advanceTimersByTimeAsync(SERIAL_RECONNECT_GRACE_MS + 10_000);
     });
-    expect(result.current.pickerState).toMatchObject({ mode: 'list', presented: true });
+    expect(result.current.pickerState).toMatchObject({ mode: 'searching', presented: false });
+
+    await act(async () => {
+      scanCallbacks[0](null, advert('NEEDLE', 'needle-device'));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(mockBleManager.connectToDevice).toHaveBeenCalledWith('needle-device', { timeout: 12_000 });
+    expect(Alert.alert).not.toHaveBeenCalled();
   });
 
   it('closes the sheet by dismissal, not by unmount, when the saved board is found', async () => {
@@ -5058,7 +5128,7 @@ describe('useBoardBluetooth connect sheet for a saved board (#5658)', () => {
     });
     await expect(connectPromise).resolves.toBe(false);
     expect(mockBleManager.connectToDevice).toHaveBeenCalledOnce();
-    expect(mockBleManager.connectToDevice).toHaveBeenCalledWith('needle-device');
+    expect(mockBleManager.connectToDevice).toHaveBeenCalledWith('needle-device', { timeout: 12_000 });
 
     // Still mounted and closing: the host clears it once the dismissal settled.
     expect(result.current.pickerState).toMatchObject({ closing: true, mode: 'searching' });
@@ -5115,7 +5185,7 @@ describe('useBoardBluetooth connect sheet for a saved board (#5658)', () => {
       scanCallbacks[0](null, advert('NEEDLE', 'needle-device'));
       await vi.advanceTimersByTimeAsync(0);
     });
-    expect(mockBleManager.connectToDevice).toHaveBeenCalledWith('needle-device');
+    expect(mockBleManager.connectToDevice).toHaveBeenCalledWith('needle-device', { timeout: 12_000 });
     await expect(connectPromise).resolves.toBe(false);
   });
 

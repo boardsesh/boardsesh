@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { BleAdapterOptions, DevicePickerFn, DevicePickerTargetSearch, BoardScanFamily } from '../types';
 import { recordingTargetPicker } from './recording-target-picker';
 
@@ -57,7 +57,18 @@ vi.mock('../ble-manager', () => ({
 // real module index loads expo-modules-core). Null is Android, web, or a binary
 // without the module: the paths this suite covers, unchanged by the
 // ask-at-first-scan work.
-vi.mock('../../../../modules/live-activity/src/index', () => ({ boardBleNative: null }));
+// SessionPresence is the Android module whose native `delay` keeps the scan and
+// power-on watchdogs running while Android has paused JS timers (#7038). Null by
+// default (iOS, or a binary without it); the #7038 tests install one.
+const mockNativeModules = vi.hoisted(() => ({
+  sessionPresenceNative: null as { delay?: (ms: number) => Promise<void> } | null,
+}));
+vi.mock('../../../../modules/live-activity/src/index', () => ({
+  boardBleNative: null,
+  get sessionPresenceNative() {
+    return mockNativeModules.sessionPresenceNative;
+  },
+}));
 
 vi.mock('@boardsesh/ble-protocol', () => ({
   AURORA_ADVERTISED_SERVICE_UUID: 'aurora-uuid',
@@ -191,6 +202,7 @@ describe('RNBleAdapter', () => {
     mockBleManager.onStateChange.mockReturnValue({ remove: vi.fn() });
     mockRuntime.platformOs = 'ios';
     mockRuntime.appState = 'active';
+    mockNativeModules.sessionPresenceNative = null;
   });
 
   describe('isAvailable', () => {
@@ -883,7 +895,7 @@ describe('RNBleAdapter', () => {
       await adapter.requestAndConnect();
 
       expect(seenDeviceIdsByUpdate).toEqual([[], ['first-native-id'], ['second-native-id']]);
-      expect(mockBleManager.connectToDevice).toHaveBeenCalledWith('second-native-id');
+      expect(mockBleManager.connectToDevice).toHaveBeenCalledWith('second-native-id', { timeout: 12_000 });
     });
 
     it('replaces an unnamed row when a later scan response adds the board name', async () => {
@@ -984,7 +996,7 @@ describe('RNBleAdapter', () => {
       await adapter.requestAndConnect();
 
       expect(seenDeviceIdsByUpdate.at(-1)).toEqual(['wall-a', 'wall-b']);
-      expect(mockBleManager.connectToDevice).toHaveBeenCalledWith('wall-a');
+      expect(mockBleManager.connectToDevice).toHaveBeenCalledWith('wall-a', { timeout: 12_000 });
     });
   });
 
@@ -1296,6 +1308,116 @@ describe('RNBleAdapter', () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+
+    // #7038: the session notification's bulb connects with the app in the
+    // background, where Android has paused JS timers. Fake timers that are never
+    // advanced stand in for that pause.
+    describe('from the Android background (#7038)', () => {
+      type PendingDelay = { ms: number; resolve: () => void };
+      let pendingDelays: PendingDelay[] = [];
+
+      function installNativeDelay() {
+        pendingDelays = [];
+        const delay = vi.fn(
+          (ms: number) =>
+            new Promise<void>((resolve) => {
+              pendingDelays.push({ ms, resolve });
+            }),
+        );
+        mockNativeModules.sessionPresenceNative = { delay };
+        return delay;
+      }
+
+      async function flushMicrotasks() {
+        for (let tick = 0; tick < 20; tick++) {
+          await Promise.resolve();
+        }
+      }
+
+      beforeEach(() => {
+        mockRuntime.platformOs = 'android';
+        mockRuntime.appState = 'background';
+        vi.useFakeTimers();
+      });
+
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it('ends the scan on the native clock while JS timers are paused', async () => {
+        setupNeedleBoard();
+        const nativeDelay = installNativeDelay();
+        const { picker, record } = recordingTargetPicker();
+        const adapter = new RNBleAdapter(picker);
+        void adapter.requestAndConnect('NEEDLE').catch(() => {});
+        await flushMicrotasks();
+
+        expect(nativeDelay).toHaveBeenCalledWith(SCAN_TIMEOUT_MS);
+        expect(record.scanStopped).toBe(0);
+
+        // The JS timer never fires. The native one does.
+        pendingDelays.find((pending) => pending.ms === SCAN_TIMEOUT_MS)?.resolve();
+        await flushMicrotasks();
+
+        expect(mockBleManager.stopDeviceScan).toHaveBeenCalled();
+        expect(record.searchEnded).toBe(1);
+        expect(record.scanStopped).toBe(1);
+      });
+
+      it('keeps auto-selecting the saved board through the grace window', async () => {
+        const captured = setupNeedleBoard();
+        const { picker, record } = recordingTargetPicker();
+        const adapter = new RNBleAdapter(picker);
+        const connectPromise = adapter.requestAndConnect('NEEDLE');
+
+        // Nobody can pick from a list in the background, so the grace window must
+        // not end the search: the saved board gets the whole scan to show up.
+        await vi.advanceTimersByTimeAsync(SERIAL_RECONNECT_GRACE_MS + 5_000);
+        expect(record.searchEnded).toBe(0);
+
+        captured[0](null, needleAdvert);
+        const connection = await connectPromise;
+        expect(connection.deviceId).toBe('needle-device');
+        expect(record.found).toBe(1);
+      });
+
+      it('falls back to the JS timer on a binary without the native delay', async () => {
+        setupNeedleBoard();
+        mockNativeModules.sessionPresenceNative = {};
+        const { picker, record } = recordingTargetPicker();
+        const adapter = new RNBleAdapter(picker);
+        void adapter.requestAndConnect('NEEDLE').catch(() => {});
+
+        await vi.advanceTimersByTimeAsync(SCAN_TIMEOUT_MS);
+        expect(record.scanStopped).toBe(1);
+      });
+
+      it('waits for Bluetooth to power on with the native clock', async () => {
+        installNativeDelay();
+        mockBleManager.state.mockResolvedValue(State.Unknown);
+        let available: boolean | 'pending' = 'pending';
+        const adapter = new RNBleAdapter(createMockDevicePicker());
+        void adapter.isAvailable().then((result) => (available = result));
+        await flushMicrotasks();
+        expect(available).toBe('pending');
+
+        for (const pending of pendingDelays) pending.resolve();
+        await flushMicrotasks();
+        expect(available).toBe(false);
+      });
+    });
+
+    it('asks the native stack to time out the connect as well as the JS race', async () => {
+      const adapter = setupConnectableAdapter(
+        'aurora',
+        'timeout-device',
+        vi.fn().mockResolvedValue([{ uuid: 'uart-write-uuid', isWritableWithoutResponse: true }]),
+      );
+      await adapter.requestAndConnect();
+      // ble-plx runs this timeout on an Android RxJava timer, which keeps
+      // running while JS timers are paused (#7038).
+      expect(mockBleManager.connectToDevice).toHaveBeenCalledWith('timeout-device', { timeout: 12_000 });
     });
   });
 

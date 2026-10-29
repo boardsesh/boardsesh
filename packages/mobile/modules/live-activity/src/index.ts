@@ -505,6 +505,12 @@ type SessionPresenceNativeModule = {
   supportsRestTimer?: boolean;
   /** Optional for OTA compatibility with binaries predating #6513; `null` clears it. */
   updateRestTimer?(options: LiveActivityRestTimerOptions | null): Promise<void>;
+  /**
+   * Resolves after `ms` on a native clock that keeps running while the activity
+   * is paused, when Android stops firing JS timers (#7038). Optional for OTA
+   * compatibility with binaries that predate it; callers fall back to setTimeout.
+   */
+  delay?(ms: number): Promise<void>;
   addListener(event: 'queueMirror', listener: (payload: WidgetMirrorEvent) => void): EventSubscription;
   addListener(event: 'queueNavigate', listener: (payload: WidgetQueueNavigateEvent) => void): EventSubscription;
   // Android-only: lightbulb taps on the ongoing notification (reconnect/reassert).
