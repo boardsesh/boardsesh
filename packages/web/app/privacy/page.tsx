@@ -28,6 +28,9 @@ export default async function PrivacyPolicyPage() {
           <strong>{t('privacy.collect.accountLabel')}</strong> {t('privacy.collect.accountBody')}
         </Prose>
         <Prose>
+          <strong>{t('privacy.collect.projectNewsLabel')}</strong> {t('privacy.collect.projectNewsBody')}
+        </Prose>
+        <Prose>
           <strong>{t('privacy.collect.activityLabel')}</strong> {t('privacy.collect.activityBody')}
         </Prose>
         <Prose>

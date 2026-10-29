@@ -12,6 +12,7 @@ import {
   sprayWalls,
   userBoards,
   userFavorites,
+  userProjectNewsEmailEvents,
   users,
 } from '@boardsesh/db/schema';
 import type { AuroraBoardName, BoardName } from '@boardsesh/shared-schema';
@@ -101,6 +102,16 @@ export type ArchiveSprayWall = {
   trainingConsentAt: string | null;
 };
 
+/**
+ * One "Email me project news" answer: when the climber opted in or out, and
+ * where (`web`, `ios`, `android`, or `email_link` for an unsubscribe link).
+ */
+export type ArchiveProjectNewsEmailAnswer = {
+  subscribed: boolean;
+  source: string;
+  decidedAt: string;
+};
+
 /** Personal climbing records, not a catalogue or an authentication backup. */
 export type BoardseshUserDataArchive = {
   schemaVersion: 1;
@@ -114,6 +125,12 @@ export type BoardseshUserDataArchive = {
   climbs: ArchiveClimb[];
   /** Spray exports only: the walls the climber owns. */
   sprayWalls?: ArchiveSprayWall[];
+  /**
+   * Every project news email answer, oldest first; the last one is current.
+   * Account-wide, so every board's export carries it. Optional: archives
+   * stored before it existed lack it and still read back.
+   */
+  projectNewsEmail?: ArchiveProjectNewsEmailAnswer[];
 };
 
 // Query and upload limits are deliberately all-or-nothing: an oversized history
@@ -424,6 +441,19 @@ export async function buildUserDataArchive(
       : [];
   checkedRowCount(loadedRows, ownedSprayWalls);
   signal?.throwIfAborted();
+  // One row per change of mind, so a handful per account; counted anyway.
+  const projectNewsEmail = await database
+    .select({
+      subscribed: userProjectNewsEmailEvents.subscribed,
+      source: userProjectNewsEmailEvents.source,
+      decidedAt: userProjectNewsEmailEvents.decidedAt,
+    })
+    .from(userProjectNewsEmailEvents)
+    .where(eq(userProjectNewsEmailEvents.userId, userId))
+    .orderBy(asc(userProjectNewsEmailEvents.id))
+    .limit(MAX_USER_DATA_EXPORT_ROWS - loadedRows + 1);
+  checkedRowCount(loadedRows, projectNewsEmail);
+  signal?.throwIfAborted();
   const archivedPlaylists = new Map<string, ArchivePlaylist>();
   for (const row of playlistRows) {
     const playlistId = String(row.playlistId);
@@ -488,6 +518,7 @@ export async function buildUserDataArchive(
           })),
         }
       : {}),
+    projectNewsEmail: projectNewsEmail.map((answer) => ({ ...answer, decidedAt: timestamp(answer.decidedAt) })),
   };
 }
 
