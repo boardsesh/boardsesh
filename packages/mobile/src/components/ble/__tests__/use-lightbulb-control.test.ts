@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { BoardPresenceCurrentContext, type BoardPresenceCurrentState } from '@boardsesh/board-presence-react';
+import type { UserBoard } from '@boardsesh/shared-schema';
+import { ClimbBoardConnectContext, type ClimbBoardConnectValue } from '../../../lib/boards/climb-board-connect-context';
 
 type BluetoothCtx = {
   boardName: string | undefined;
@@ -10,6 +12,7 @@ type BluetoothCtx = {
   lastLocalHolderUserId: string | null;
   loading: boolean;
   connect: ReturnType<typeof vi.fn>;
+  connectAfterBoardSwitch: ReturnType<typeof vi.fn>;
   disconnect: ReturnType<typeof vi.fn>;
   armUndoWallChangeToast: ReturnType<typeof vi.fn>;
   reconnectSerialForCurrentBoard: string | null;
@@ -31,6 +34,8 @@ const ctrl = vi.hoisted(() => ({
   sessionMemberUserIds: new Set<string>(),
   // Holder rides the per-climb BoardPresenceCurrentContext; null = wall free.
   presence: undefined as BoardPresenceCurrentState | undefined,
+  // The drawer host's connect-follows-the-climb hook (#7001). Null = no host.
+  climbBoardConnect: null as ClimbBoardConnectValue | null,
 }));
 const trackMock = vi.hoisted(() => vi.fn());
 const hapticLightMock = vi.hoisted(() => vi.fn());
@@ -60,6 +65,7 @@ function makeBluetooth(over: Partial<NonNullable<BluetoothCtx>> = {}): NonNullab
     lastLocalHolderUserId: null,
     loading: false,
     connect: vi.fn().mockResolvedValue(true),
+    connectAfterBoardSwitch: vi.fn().mockResolvedValue(true),
     disconnect: vi.fn().mockResolvedValue(undefined),
     armUndoWallChangeToast: vi.fn(),
     reconnectSerialForCurrentBoard: null,
@@ -80,7 +86,11 @@ const holderPresenceFor = (userId: string): BoardPresenceCurrentState =>
   ({ holder: { userId }, currentClimb: null }) as unknown as BoardPresenceCurrentState;
 
 const wrapper = ({ children }: { children: ReactNode }) =>
-  createElement(BoardPresenceCurrentContext.Provider, { value: ctrl.presence }, children);
+  createElement(
+    ClimbBoardConnectContext.Provider,
+    { value: ctrl.climbBoardConnect },
+    createElement(BoardPresenceCurrentContext.Provider, { value: ctrl.presence }, children),
+  );
 
 function renderControl(options: Partial<Parameters<typeof useLightbulbControl>[0]> = {}) {
   return renderHook(() => useLightbulbControl({ surface: 'play_drawer', ...options }), { wrapper });
@@ -93,6 +103,7 @@ beforeEach(() => {
   ctrl.sessionId = null;
   ctrl.sessionMemberUserIds = new Set();
   ctrl.presence = undefined;
+  ctrl.climbBoardConnect = null;
   trackMock.mockClear();
 });
 
@@ -576,5 +587,106 @@ describe('useLightbulbControl connect (#5654 connect step)', () => {
     expect(bluetooth.connect).not.toHaveBeenCalled();
     expect(bluetooth.armUndoWallChangeToast).not.toHaveBeenCalled();
     expect(trackMock).not.toHaveBeenCalledWith('Board Connect Tapped', expect.anything());
+  });
+});
+
+// #7001: at a gym with a Kilter, a MoonBoard and a Tension, Previous lands on a
+// MoonBoard climb while the Kilter is selected. Connect has to reach the
+// MoonBoard. A Kilter connect scans the Aurora family, so its picker listed the
+// Kilter and the Tension and never the MoonBoard.
+describe('useLightbulbControl connect follows the climb (#7001)', () => {
+  const GYM_MOONBOARD = {
+    uuid: 'gym-moon',
+    boardType: 'moonboard',
+    layoutId: 2,
+    sizeId: 1,
+    setIds: '1,2',
+  } as UserBoard;
+
+  function climbOnMoonBoard(): ClimbBoardConnectValue & { moveToClimbBoard: ReturnType<typeof vi.fn> } {
+    return { moveToClimbBoard: vi.fn().mockResolvedValue({ kind: 'switched', board: GYM_MOONBOARD }) };
+  }
+
+  it('moves to the MoonBoard and connects there, not to the selected Kilter', async () => {
+    const bluetooth = makeBluetooth({ reconnectSerialForCurrentBoard: 'kilter-serial' });
+    ctrl.bluetooth = bluetooth;
+    const climbBoardConnect = climbOnMoonBoard();
+    ctrl.climbBoardConnect = climbBoardConnect;
+    const { result } = renderControl();
+
+    await expect(result.current.connect()).resolves.toBe(true);
+
+    expect(climbBoardConnect.moveToClimbBoard).toHaveBeenCalledOnce();
+    expect(bluetooth.connectAfterBoardSwitch).toHaveBeenCalledWith(GYM_MOONBOARD);
+    // Never the Kilter's remembered serial, and never a Kilter-family scan.
+    expect(bluetooth.connect).not.toHaveBeenCalled();
+    expect(trackMock).toHaveBeenCalledWith('Board Connect Tapped', {
+      surface: 'play_drawer',
+      boardName: 'moonboard',
+      reconnect: false,
+    });
+  });
+
+  it('does the same for a plain bulb tap', async () => {
+    const bluetooth = makeBluetooth();
+    ctrl.bluetooth = bluetooth;
+    ctrl.climbBoardConnect = climbOnMoonBoard();
+    const { result } = renderControl();
+
+    result.current.onPress();
+
+    await vi.waitFor(() => expect(bluetooth.connectAfterBoardSwitch).toHaveBeenCalledWith(GYM_MOONBOARD));
+    expect(bluetooth.connect).not.toHaveBeenCalled();
+  });
+
+  it('hands the climb the caller just made current to the board lookup', async () => {
+    ctrl.bluetooth = makeBluetooth();
+    const climbBoardConnect = climbOnMoonBoard();
+    ctrl.climbBoardConnect = climbBoardConnect;
+    const { result } = renderControl();
+    const justCommitted = { boardType: 'moonboard', layoutId: 2 };
+
+    await result.current.connect('put_on_wall', justCommitted);
+
+    expect(climbBoardConnect.moveToClimbBoard).toHaveBeenCalledWith(justCommitted);
+  });
+
+  it('connects to the selected board as before when it draws the climb', async () => {
+    const bluetooth = makeBluetooth({ reconnectSerialForCurrentBoard: 'kilter-serial' });
+    ctrl.bluetooth = bluetooth;
+    ctrl.climbBoardConnect = { moveToClimbBoard: vi.fn().mockResolvedValue({ kind: 'none' }) };
+    const { result } = renderControl();
+
+    await expect(result.current.connect()).resolves.toBe(true);
+
+    expect(bluetooth.connect).toHaveBeenCalledWith(undefined, undefined, 'kilter-serial', undefined);
+    expect(bluetooth.armUndoWallChangeToast).toHaveBeenCalledOnce();
+    expect(bluetooth.connectAfterBoardSwitch).not.toHaveBeenCalled();
+  });
+
+  it('connects nowhere when the switch fails, rather than falling back to the Kilter', async () => {
+    const bluetooth = makeBluetooth();
+    ctrl.bluetooth = bluetooth;
+    ctrl.climbBoardConnect = { moveToClimbBoard: vi.fn().mockResolvedValue({ kind: 'failed' }) };
+    const { result } = renderControl();
+
+    await expect(result.current.connect()).resolves.toBe(false);
+
+    expect(bluetooth.connect).not.toHaveBeenCalled();
+    expect(bluetooth.connectAfterBoardSwitch).not.toHaveBeenCalled();
+  });
+
+  it('never moves boards for a tap that does not connect', async () => {
+    const bluetooth = makeBluetooth({ isConnected: true });
+    ctrl.bluetooth = bluetooth;
+    const climbBoardConnect = climbOnMoonBoard();
+    ctrl.climbBoardConnect = climbBoardConnect;
+    const { result } = renderControl();
+
+    result.current.onPress();
+    await expect(result.current.connect()).resolves.toBe(false);
+
+    expect(bluetooth.disconnect).toHaveBeenCalledOnce();
+    expect(climbBoardConnect.moveToClimbBoard).not.toHaveBeenCalled();
   });
 });

@@ -50,6 +50,12 @@ import { useStoredUserId } from '../hooks/use-current-user-id';
 import { usePrivacyCredentialScope, usePrivacyScopedState } from '../hooks/use-privacy-scoped-state';
 import { getCredentialGeneration } from '../lib/privacy/privacy-cache';
 import { boardLooselyMatches } from '../lib/boards/board-matches';
+import { findGymBoardForClimb, findGymBoardToConnectForClimb } from '../lib/boards/gym-board-for-climb';
+import {
+  ClimbBoardConnectContext,
+  type ClimbBoardConnectValue,
+  type ClimbBoardMove,
+} from '../lib/boards/climb-board-connect-context';
 import { useAuth } from './auth-provider';
 import { useReduceMotion } from '../hooks/use-reduce-motion';
 import { useSprayWall, useSprayWallLoader } from '../lib/spray/use-spray-wall';
@@ -502,7 +508,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     dismissSourceSheet?: () => Promise<DismissAndWaitResult>;
     dismissPlayerAndWait?: () => Promise<DismissAndWaitResult>;
   } | null>(null);
-  const { playNext, setSessionBoardPath, setCurrentClimb } = useQueueActions();
+  const { playNext, setSessionBoardPath, setCurrentClimb, getQueueSnapshot } = useQueueActions();
   // Read at a board-sheet tap, which must not take a crewmate's wall (#6665).
   const isSharedSession = useIsSharedSession();
   const isSharedSessionRef = useRef(isSharedSession);
@@ -1109,11 +1115,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       // session left every peer bound to the board the climber walked away from
       // — and board presence with them. `switchBoard` broadcasts the session
       // board path, clears the override and adopts the board's own angle.
-      const gymSibling = gymBoardsRef.current?.find(
-        (board) =>
-          board.uuid !== activeBoardRef.current?.uuid &&
-          boardLooselyMatches({ boardName: board.boardType, layoutId: board.layoutId }, override),
-      );
+      const gymSibling = findGymBoardForClimb(override, activeBoardRef.current?.uuid, gymBoardsRef.current);
       if (gymSibling) {
         void switchBoard(gymSibling, activeBoardRef.current ?? null, 'move_to_wall_callout');
         return;
@@ -1152,6 +1154,22 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     },
     [setActiveBoard, switchBoard],
   );
+
+  // Connect follows the climb (#7001). A connect on a MoonBoard climb while the
+  // gym's Kilter is active moves to the MoonBoard first, through the same switch
+  // as the Switch board button, so a crew session moves with it. Everything is
+  // read through refs, so the context value keeps one identity.
+  const moveToClimbBoard = useCallback(
+    async (climb?: Parameters<ClimbBoardConnectValue['moveToClimbBoard']>[0]): Promise<ClimbBoardMove> => {
+      const targetClimb = climb ?? getQueueSnapshot().currentClimbQueueItem?.climb ?? null;
+      const target = findGymBoardToConnectForClimb(targetClimb, activeBoardRef.current, gymBoardsRef.current);
+      if (!target) return { kind: 'none' };
+      const outcome = await switchBoard(target, activeBoardRef.current ?? null, 'connect_climb_board');
+      return outcome === 'switched' ? { kind: 'switched', board: target } : { kind: 'failed' };
+    },
+    [getQueueSnapshot, switchBoard],
+  );
+  const climbBoardConnectValue = useMemo<ClimbBoardConnectValue>(() => ({ moveToClimbBoard }), [moveToClimbBoard]);
 
   // The switch-board gate fires only when the drawer is showing a climb from a
   // genuinely DIFFERENT board model (board name + layout) than the user's stored
@@ -1374,152 +1392,154 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
 
   return (
     <DrawerHostContext.Provider value={value}>
-      <PreviewedClimbContext.Provider value={previewedClimbValue}>
-        <PlayDrawerRouteContext.Provider value={routeValue}>
-          {children}
-          {logAscentData ? (
-            <LogAscentSheet
-              key={composerCredentialScope}
-              visible={logAscentVisible}
-              onClose={closeLogAscentSheet}
-              onFullyDismissed={clearLogAscentSheet}
-              climbUuid={logAscentData.climbUuid}
-              climbName={logAscentData.climbName}
-              boardName={logAscentData.boardName}
-              angle={logAscentData.angle}
-              isMirror={logAscentData.isMirror}
-              isBenchmark={logAscentData.isBenchmark}
-              baseAscensionistCount={logAscentData.baseAscensionistCount}
-              layoutId={logAscentData.layoutId}
-              sizeId={logAscentData.sizeId}
-              setIds={logAscentData.setIds}
-              sessionId={logAscentData.sessionId}
-              consensusGradeName={logAscentData.consensusGradeName}
+      <ClimbBoardConnectContext.Provider value={climbBoardConnectValue}>
+        <PreviewedClimbContext.Provider value={previewedClimbValue}>
+          <PlayDrawerRouteContext.Provider value={routeValue}>
+            {children}
+            {logAscentData ? (
+              <LogAscentSheet
+                key={composerCredentialScope}
+                visible={logAscentVisible}
+                onClose={closeLogAscentSheet}
+                onFullyDismissed={clearLogAscentSheet}
+                climbUuid={logAscentData.climbUuid}
+                climbName={logAscentData.climbName}
+                boardName={logAscentData.boardName}
+                angle={logAscentData.angle}
+                isMirror={logAscentData.isMirror}
+                isBenchmark={logAscentData.isBenchmark}
+                baseAscensionistCount={logAscentData.baseAscensionistCount}
+                layoutId={logAscentData.layoutId}
+                sizeId={logAscentData.sizeId}
+                setIds={logAscentData.setIds}
+                sessionId={logAscentData.sessionId}
+                consensusGradeName={logAscentData.consensusGradeName}
+              />
+            ) : null}
+            {betaVideoData ? (
+              <AddBetaVideoSheet
+                key={composerCredentialScope}
+                visible={betaVideoVisible}
+                climb={betaVideoData.climb}
+                boardName={betaVideoData.boardConfig.boardName as BoardName}
+                layoutId={betaVideoData.boardConfig.layoutId}
+                angle={betaVideoData.boardConfig.angle}
+                onClose={closeAddBetaVideo}
+                onFullyDismissed={clearBetaVideoSheet}
+              />
+            ) : null}
+            {reportClimbData ? (
+              <ReportClimbSheet
+                key={composerCredentialScope}
+                visible={reportClimbVisible}
+                climb={reportClimbData.climb}
+                boardName={reportClimbData.boardConfig.boardName as BoardName}
+                layoutId={reportClimbData.boardConfig.layoutId}
+                sizeId={reportClimbData.boardConfig.sizeId}
+                setIds={reportClimbData.boardConfig.setIds}
+                angle={reportClimbData.boardConfig.angle}
+                onClose={closeReportClimb}
+                onFullyDismissed={clearReportClimbSheet}
+              />
+            ) : null}
+            {playlistData ? (
+              <AddToPlaylistSheet
+                key={composerCredentialScope}
+                visible={playlistVisible}
+                climb={playlistData.climb}
+                boardName={playlistData.boardConfig.boardName as BoardName}
+                layoutId={playlistData.boardConfig.layoutId}
+                sizeId={playlistData.boardConfig.sizeId}
+                setIds={playlistData.boardConfig.setIds}
+                angle={playlistData.boardConfig.angle}
+                anchorPoint={playlistData.anchorPoint}
+                onClose={closeAddToPlaylist}
+                onFullyDismissed={clearPlaylistSheet}
+              />
+            ) : null}
+            {queueBoard ? (
+              <QueueSheet
+                ref={queueSheetRef}
+                board={queueBoard}
+                onClose={requestCloseQueueSheet}
+                onClimbPress={handleQueueClimbPress}
+                onOpenActions={handleQueueOpenActions}
+                onSuggestionPress={handleQueueSuggestionPress}
+                onTickHistory={handleQueueTickHistory}
+              />
+            ) : null}
+            <BoardSheet
+              ref={boardSheetRef}
+              boardLabel={boardSheetLabel}
+              boardConfig={storedActiveBoardConfig}
+              onClose={requestCloseBoardSheet}
+              onSwitchBoard={handleSwitchBoardFromSheet}
+              activeBoard={activeBoard ?? null}
+              onOpenSprayMaintenance={sprayWallActions.openMaintenance}
+              onShareSprayWall={sprayWallActions.openShare}
+              viewerUserId={sprayViewerUserId}
+              onSelectGymWall={handleSelectGymWall}
+              onClimbPress={handleBoardSheetClimbPress}
+              onPlayNext={handleBoardSheetPlayNext}
+              onOpenPlaylist={handleBoardSheetOpenPlaylist}
+              onOpenActions={handleBoardSheetModalOpenActions}
             />
-          ) : null}
-          {betaVideoData ? (
-            <AddBetaVideoSheet
-              key={composerCredentialScope}
-              visible={betaVideoVisible}
-              climb={betaVideoData.climb}
-              boardName={betaVideoData.boardConfig.boardName as BoardName}
-              layoutId={betaVideoData.boardConfig.layoutId}
-              angle={betaVideoData.boardConfig.angle}
-              onClose={closeAddBetaVideo}
-              onFullyDismissed={clearBetaVideoSheet}
-            />
-          ) : null}
-          {reportClimbData ? (
-            <ReportClimbSheet
-              key={composerCredentialScope}
-              visible={reportClimbVisible}
-              climb={reportClimbData.climb}
-              boardName={reportClimbData.boardConfig.boardName as BoardName}
-              layoutId={reportClimbData.boardConfig.layoutId}
-              sizeId={reportClimbData.boardConfig.sizeId}
-              setIds={reportClimbData.boardConfig.setIds}
-              angle={reportClimbData.boardConfig.angle}
-              onClose={closeReportClimb}
-              onFullyDismissed={clearReportClimbSheet}
-            />
-          ) : null}
-          {playlistData ? (
-            <AddToPlaylistSheet
-              key={composerCredentialScope}
-              visible={playlistVisible}
-              climb={playlistData.climb}
-              boardName={playlistData.boardConfig.boardName as BoardName}
-              layoutId={playlistData.boardConfig.layoutId}
-              sizeId={playlistData.boardConfig.sizeId}
-              setIds={playlistData.boardConfig.setIds}
-              angle={playlistData.boardConfig.angle}
-              anchorPoint={playlistData.anchorPoint}
-              onClose={closeAddToPlaylist}
-              onFullyDismissed={clearPlaylistSheet}
-            />
-          ) : null}
-          {queueBoard ? (
-            <QueueSheet
-              ref={queueSheetRef}
-              board={queueBoard}
-              onClose={requestCloseQueueSheet}
-              onClimbPress={handleQueueClimbPress}
-              onOpenActions={handleQueueOpenActions}
-              onSuggestionPress={handleQueueSuggestionPress}
-              onTickHistory={handleQueueTickHistory}
-            />
-          ) : null}
-          <BoardSheet
-            ref={boardSheetRef}
-            boardLabel={boardSheetLabel}
-            boardConfig={storedActiveBoardConfig}
-            onClose={requestCloseBoardSheet}
-            onSwitchBoard={handleSwitchBoardFromSheet}
-            activeBoard={activeBoard ?? null}
-            onOpenSprayMaintenance={sprayWallActions.openMaintenance}
-            onShareSprayWall={sprayWallActions.openShare}
-            viewerUserId={sprayViewerUserId}
-            onSelectGymWall={handleSelectGymWall}
-            onClimbPress={handleBoardSheetClimbPress}
-            onPlayNext={handleBoardSheetPlayNext}
-            onOpenPlaylist={handleBoardSheetOpenPlaylist}
-            onOpenActions={handleBoardSheetModalOpenActions}
-          />
-          {anglePicker && activeBoardConfig ? (
-            <AngleSelectorSheet
-              visible={anglePicker.visible && angleIsAdjustable}
-              onClose={closeAnglePicker}
-              boardName={activeBoardConfig.boardName}
-              layoutId={activeBoardConfig.layoutId}
-              climbUuid={anglePicker.climbUuid}
-              currentAngle={activeBoardConfig.angle}
-              onAngleChange={handleAnglePickerChange}
-            />
-          ) : null}
-          {sprayWallActions.shareSnapshot ? (
-            <BoardShareSheet
-              visible={sprayWallActions.shareVisible}
-              onDismiss={sprayWallActions.closeShare}
-              onFullyDismissed={sprayWallActions.clearShareSnapshot}
-              shareUrl={sprayWallActions.shareSnapshot.url}
-              wallName={sprayWallActions.shareSnapshot.wallName}
-              visibility={sprayWallActions.shareSnapshot.visibility}
-              posterUrl={sprayWallActions.shareSnapshot.posterUrl}
-            />
-          ) : null}
-          {/* Rendered after the queue/board sheets so its iOS FullWindowOverlay mounts as a
+            {anglePicker && activeBoardConfig ? (
+              <AngleSelectorSheet
+                visible={anglePicker.visible && angleIsAdjustable}
+                onClose={closeAnglePicker}
+                boardName={activeBoardConfig.boardName}
+                layoutId={activeBoardConfig.layoutId}
+                climbUuid={anglePicker.climbUuid}
+                currentAngle={activeBoardConfig.angle}
+                onAngleChange={handleAnglePickerChange}
+              />
+            ) : null}
+            {sprayWallActions.shareSnapshot ? (
+              <BoardShareSheet
+                visible={sprayWallActions.shareVisible}
+                onDismiss={sprayWallActions.closeShare}
+                onFullyDismissed={sprayWallActions.clearShareSnapshot}
+                shareUrl={sprayWallActions.shareSnapshot.url}
+                wallName={sprayWallActions.shareSnapshot.wallName}
+                visibility={sprayWallActions.shareSnapshot.visibility}
+                posterUrl={sprayWallActions.shareSnapshot.posterUrl}
+              />
+            ) : null}
+            {/* Rendered after the queue/board sheets so its iOS FullWindowOverlay mounts as a
           later sibling and floats above them when a row inside those sheets is
           long-pressed (RN-screens doesn't strictly guarantee cross-overlay z-order). */}
-          {climbActions ? (
-            <ClimbReactionMenu
-              key={climbActions.climb.uuid}
-              climb={climbActions.climb}
-              boardConfig={climbActions.boardConfig}
-              queueItemUuid={climbActions.queueItemUuid}
-              currentUserId={profile?.id ?? null}
-              isAuthenticated={isAuthenticated}
-              onEditEntry={climbActions.onEditEntry}
-              dismissSourceSheet={climbActions.dismissSourceSheet}
-              dismissPlayerAndWait={climbActions.dismissPlayerAndWait}
-              reduceMotion={reduceMotion}
-              onClose={closeClimbActions}
+            {climbActions ? (
+              <ClimbReactionMenu
+                key={climbActions.climb.uuid}
+                climb={climbActions.climb}
+                boardConfig={climbActions.boardConfig}
+                queueItemUuid={climbActions.queueItemUuid}
+                currentUserId={profile?.id ?? null}
+                isAuthenticated={isAuthenticated}
+                onEditEntry={climbActions.onEditEntry}
+                dismissSourceSheet={climbActions.dismissSourceSheet}
+                dismissPlayerAndWait={climbActions.dismissPlayerAndWait}
+                reduceMotion={reduceMotion}
+                onClose={closeClimbActions}
+              />
+            ) : null}
+            <QueueAddedSnackbar
+              visible={snackbarVisible}
+              nonce={snackbarNonce}
+              queueAdded={snackbarQueueAdded}
+              onDismiss={dismissSnackbar}
+              onOpen={handleSnackbarOpen}
             />
-          ) : null}
-          <QueueAddedSnackbar
-            visible={snackbarVisible}
-            nonce={snackbarNonce}
-            queueAdded={snackbarQueueAdded}
-            onDismiss={dismissSnackbar}
-            onOpen={handleSnackbarOpen}
-          />
-          <UndoWallChangeSnackbar
-            visible={undoWallChangeVisible}
-            nonce={undoWallChangeNonce}
-            onDismiss={dismissUndoWallChangeSnackbar}
-            onUndo={handleUndoWallChange}
-          />
-        </PlayDrawerRouteContext.Provider>
-      </PreviewedClimbContext.Provider>
+            <UndoWallChangeSnackbar
+              visible={undoWallChangeVisible}
+              nonce={undoWallChangeNonce}
+              onDismiss={dismissUndoWallChangeSnackbar}
+              onUndo={handleUndoWallChange}
+            />
+          </PlayDrawerRouteContext.Provider>
+        </PreviewedClimbContext.Provider>
+      </ClimbBoardConnectContext.Provider>
     </DrawerHostContext.Provider>
   );
 }

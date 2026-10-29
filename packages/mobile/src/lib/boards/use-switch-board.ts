@@ -23,8 +23,12 @@ import { reportError } from '../error-reporting';
 import { track } from '../analytics';
 import { useToast } from '../../providers/toast-provider';
 
-/** Why the board changed — carried into analytics so a spike is attributable. */
-export type BoardSwitchSource = 'presence_sheet_sibling' | 'move_to_wall_callout';
+/**
+ * Why the board changed — carried into analytics so a spike is attributable.
+ * `connect_climb_board`: a connect on a climb from another board at this gym
+ * moved to that board first (#7001).
+ */
+export type BoardSwitchSource = 'presence_sheet_sibling' | 'move_to_wall_callout' | 'connect_climb_board';
 
 export type SwitchBoardOutcome = 'switched' | 'noop' | 'failed';
 

@@ -11,6 +11,8 @@ import {
   type PlayDrawerLightbulbPressAction,
 } from '../play-drawer/lightbulb-control';
 import { useBoardConnectionState } from './use-board-connection-state';
+import { useClimbBoardConnect } from '../../lib/boards/climb-board-connect-context';
+import type { ClimbBoardModel } from '../../lib/boards/gym-board-for-climb';
 
 /** Which bulb was tapped, for Board Connect Tapped. */
 export type LightbulbSurface = Extract<
@@ -98,8 +100,13 @@ export type LightbulbControl = {
    * play drawer's bulb shown as the connect-step pill). The connect-step card
    * awaits it to know when to offer "Try again", so the card, the pill and
    * every bulb share this one connect path.
+   *
+   * When the current climb is on another board at this gym (a MoonBoard climb
+   * with the Kilter selected), the connect moves to that board first and
+   * connects there (#7001). Pass `climb` when the caller has just made it
+   * current, since the queue may not have caught up yet.
    */
-  connect: (surface?: ConnectSurface) => Promise<boolean>;
+  connect: (surface?: ConnectSurface, climb?: ClimbBoardModel | null) => Promise<boolean>;
   /**
    * What a tap will actually do, resolved from the same ladder `onPress` runs.
    * Exposed so each bulb can LABEL itself honestly: before this, all three
@@ -144,6 +151,7 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
   // hook so the in-app bulb and the lock-screen bulb can never disagree.
   const { bluetooth, lit, localConnected, pending, ledless, wallHeldLocally, holderIsAuthoritative } =
     useBoardConnectionState();
+  const climbBoardConnect = useClimbBoardConnect();
 
   const pressAction = useMemo(
     () =>
@@ -164,10 +172,26 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
   // permission or a radio that's off never reaches either outcome event, so
   // without it "tapped connect" couldn't be told apart from "never tried".
   const connect = useCallback(
-    async (surfaceOverride?: ConnectSurface): Promise<boolean> => {
+    async (surfaceOverride?: ConnectSurface, climb?: ClimbBoardModel | null): Promise<boolean> => {
       // The same gate onPress applies, so a caller that skips its own check
       // can't open a second link while one is pending or a peer holds the wall.
       if (!bluetooth || pressAction !== 'connect') return false;
+      // The climb decides which board to connect to, not the board that happens
+      // to be selected. Connecting to the selected board would scan for the
+      // wrong family: a Kilter scan never lists the MoonBoard the climb needs.
+      const move = climbBoardConnect ? await climbBoardConnect.moveToClimbBoard(climb) : null;
+      if (move?.kind === 'failed') return false;
+      if (move?.kind === 'switched') {
+        trackBoardConnectTapped({
+          surface: surfaceOverride ?? surface,
+          placement,
+          boardName: move.board.boardType,
+          // Whether this device remembers that board is only known once the
+          // provider has switched to it, so this reads as a cold connect.
+          reconnect: false,
+        });
+        return bluetooth.connectAfterBoardSwitch(move.board);
+      }
       const reconnectSerial = bluetooth.reconnectSerialForCurrentBoard ?? undefined;
       const reconnectDeviceId = bluetooth.reconnectDeviceIdForCurrentBoard ?? undefined;
       trackBoardConnectTapped({
@@ -181,7 +205,7 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
       // (MoonBoard). With neither remembered, the adapter opens the picker.
       return bluetooth.connect(undefined, undefined, reconnectSerial, reconnectDeviceId);
     },
-    [bluetooth, pressAction, surface, placement],
+    [bluetooth, pressAction, surface, placement, climbBoardConnect],
   );
 
   const onPress = useCallback(() => {

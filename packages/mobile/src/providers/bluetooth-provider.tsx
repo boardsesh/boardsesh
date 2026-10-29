@@ -91,6 +91,15 @@ type BluetoothContextValue = {
     targetSerial?: string,
     targetDeviceId?: string,
   ) => Promise<boolean>;
+  /**
+   * Connect to `board` once this provider has switched to it (#7001). Call it
+   * right after the board switch is accepted. The switch reaches this provider a
+   * render later, and a connect fired before that would scan for the board just
+   * left. Reconnects to whatever this device remembers for `board`, else opens
+   * the picker for it. Resolves with the connect's result, or false when the
+   * switch never arrives or a newer connect request replaces this one.
+   */
+  connectAfterBoardSwitch: (board: UserBoard) => Promise<boolean>;
   disconnect: (reason?: BluetoothDisconnectReason) => Promise<void>;
   sendFramesToBoard: SendFramesToBoard;
   clearBoard: () => Promise<boolean | undefined>;
@@ -1790,7 +1799,22 @@ export function BluetoothProvider({
     /** Expected hold sets from the board snapshot selected by the switch. */
     setIds?: string;
     armUndoToast: boolean;
+    /**
+     * Reconnect to what this device remembers for the switched-to board, read
+     * when the request fires, once the provider is on that board (#7001).
+     */
+    useRememberedBoard?: boolean;
   } | null>(null);
+  // Who is waiting on the request in the slot: `connectAfterBoardSwitch`'s
+  // promise. Kept beside the slot rather than in it, so a request that is
+  // replaced or expires can still be told "no" instead of hanging.
+  const pendingConnectWaiterRef = useRef<((connected: boolean) => void) | null>(null);
+  const settlePendingConnectWaiter = useCallback((connected: boolean) => {
+    const waiter = pendingConnectWaiterRef.current;
+    pendingConnectWaiterRef.current = null;
+    waiter?.(connected);
+  }, []);
+  useEffect(() => () => settlePendingConnectWaiter(false), [settlePendingConnectWaiter]);
 
   // The switched config normally propagates within one re-render, so a request
   // still pending after this window means it can no longer complete (e.g. the
@@ -1807,9 +1831,12 @@ export function BluetoothProvider({
   const pendingConfigKey = pendingAutoConnect?.configKey;
   useEffect(() => {
     if (!pendingConfigKey) return;
-    const expiryTimeoutId = setTimeout(() => setPendingAutoConnect(null), PENDING_AUTO_CONNECT_TTL_MS);
+    const expiryTimeoutId = setTimeout(() => {
+      setPendingAutoConnect(null);
+      settlePendingConnectWaiter(false);
+    }, PENDING_AUTO_CONNECT_TTL_MS);
     return () => clearTimeout(expiryTimeoutId);
-  }, [pendingConfigKey]);
+  }, [pendingConfigKey, settlePendingConnectWaiter]);
 
   useEffect(() => {
     if (!pendingAutoConnect) return;
@@ -1827,15 +1854,63 @@ export function BluetoothProvider({
     // connectInFlightRef is set (which tracks `loading`), so a new connect fired
     // now would be silently swallowed — wait for it to clear first.
     if (loading) return;
-    const { serial, armUndoToast } = pendingAutoConnect;
+    const { serial, armUndoToast, useRememberedBoard } = pendingAutoConnect;
     setPendingAutoConnect(null);
+    const waiter = pendingConnectWaiterRef.current;
+    pendingConnectWaiterRef.current = null;
     if (armUndoToast) {
       armUndoWallChangeToast();
     }
     // connect's third param auto-selects that serial while the picker shows
-    // "searching", falling back to the list only if it never advertises.
-    void connect(undefined, undefined, serial);
-  }, [pendingAutoConnect, boardName, layoutId, sizeId, setIds, boardUuid, loading, armUndoWallChangeToast, connect]);
+    // "searching", falling back to the list only if it never advertises. A
+    // remembered target is read now: the props describe the switched-to board,
+    // so it is that board's own, never the one just left. A MoonBoard is
+    // remembered by device id, not serial.
+    const connecting = useRememberedBoard
+      ? connect(
+          undefined,
+          undefined,
+          reconnectSerialForCurrentBoard ?? undefined,
+          reconnectDeviceIdForCurrentBoard ?? undefined,
+        )
+      : connect(undefined, undefined, serial);
+    if (waiter) {
+      connecting.then(waiter, () => waiter(false));
+    } else {
+      void connecting;
+    }
+  }, [
+    pendingAutoConnect,
+    boardName,
+    layoutId,
+    sizeId,
+    setIds,
+    boardUuid,
+    loading,
+    armUndoWallChangeToast,
+    connect,
+    reconnectSerialForCurrentBoard,
+    reconnectDeviceIdForCurrentBoard,
+  ]);
+
+  // Connect follows the climb (#7001): the caller has just switched to `board`,
+  // a board at this gym that draws the current climb. Queue the connect in the
+  // slot above, which holds it until the switch reaches these props.
+  const connectAfterBoardSwitch = useCallback(
+    (board: UserBoard) =>
+      new Promise<boolean>((resolve) => {
+        settlePendingConnectWaiter(false);
+        pendingConnectWaiterRef.current = resolve;
+        setPendingAutoConnect({
+          configKey: boardConfigKey(board.boardType, board.layoutId, board.sizeId, board.uuid),
+          setIds: board.setIds,
+          // The bulb tap that got here is a deliberate take of the wall.
+          armUndoToast: true,
+          useRememberedBoard: true,
+        });
+      }),
+    [settlePendingConnectWaiter],
+  );
 
   // "Scan again" in a picker whose scan found nothing (#5654). The adapter's
   // connect owns that scan, so instead of teaching both adapters to restart it
@@ -1859,12 +1934,13 @@ export function BluetoothProvider({
     const armUndoToastAfterRescan = undoWallChangeToastArmIdRef.current !== null;
     trackBoardConnectTapped({ surface: 'picker_scan_again', boardName, reconnect: false });
     activePickerState.handleCancel();
+    settlePendingConnectWaiter(false);
     setPendingAutoConnect({
       configKey: boardConfigKey(boardName, layoutId, sizeId, boardUuid),
       setIds,
       armUndoToast: armUndoToastAfterRescan,
     });
-  }, [boardName, layoutId, sizeId, setIds, boardUuid]);
+  }, [boardName, layoutId, sizeId, setIds, boardUuid, settlePendingConnectWaiter]);
 
   const handleMismatchSwitch = useCallback(
     async (decision: Extract<PickerSelectionDecision, { kind: 'mismatch' }>, intent: PickerSelectionIntent) => {
@@ -1900,6 +1976,7 @@ export function BluetoothProvider({
         // failed" alert), which clears `loading` and lets the auto-connect
         // effect fire against the switched config.
         pickerStateRef.current?.handleCancel();
+        settlePendingConnectWaiter(false);
         setPendingAutoConnect({
           serial: decision.serial,
           // A recorded serial can point at an alias or an older configuration.
@@ -1926,7 +2003,7 @@ export function BluetoothProvider({
         Alert.alert(t('boardConfigMismatch.title'), t('boardConfigMismatch.mobileSwitchFailed'));
       }
     },
-    [setActiveBoard, t],
+    [setActiveBoard, settlePendingConnectWaiter, t],
   );
 
   const handlePickerSelect = useCallback(
@@ -2208,9 +2285,10 @@ export function BluetoothProvider({
     }) => {
       // A climb on a board at this gym is not a spill. The climber swiped onto
       // it deliberately — queue navigation treats it as a target rather than
-      // walking past it — and the drawer is already offering to move them to the
-      // board that draws it. Advancing here would snap them forward off the climb
+      // walking past it. Advancing here would snap them forward off the climb
       // they just chose, with a toast calling their own navigation a skip.
+      // Disconnected, Connect moves them to the board that draws it (#7001);
+      // from a live link to another board there is no route yet (#7076).
       //
       // The write is still refused: this wall cannot draw it. Clear the wall so
       // it stops showing the previous climb, and say nothing — the callout on
@@ -2462,6 +2540,7 @@ export function BluetoothProvider({
       lastLocalHolderUserId,
       loading,
       connect,
+      connectAfterBoardSwitch,
       disconnect: wrappedDisconnect,
       sendFramesToBoard: sendFramesToBoardWithActivityReset,
       clearBoard,
@@ -2493,6 +2572,7 @@ export function BluetoothProvider({
       lastLocalHolderUserId,
       loading,
       connect,
+      connectAfterBoardSwitch,
       wrappedDisconnect,
       sendFramesToBoardWithActivityReset,
       clearBoard,

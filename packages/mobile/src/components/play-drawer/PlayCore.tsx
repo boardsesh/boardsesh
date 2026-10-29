@@ -1539,15 +1539,27 @@ export function PlayCore({
       handleSetActive();
       return;
     }
+    // The climb the connect is for: the one just made current, which the queue
+    // may not report yet, or the current one. Its board picks the board to
+    // connect to (#7001).
+    let connectClimb = currentClimbQueueItem?.climb ?? null;
     if (commitBarModel.mode === 'commit') {
       // The busy-wall question can take the tap instead of a commit: then nothing
       // went up, and connecting would light the old climb under the question.
       if (!handleSetActive()) return;
+      connectClimb = displayedClimb ?? null;
     } else if (currentClimbQueueItem) {
       relightHeldAfterConnectRef.current = { queueItemUuid: currentClimbQueueItem.uuid, at: nowMs() };
     }
-    void connectLightbulb('put_on_wall');
-  }, [commitBarModel.connectsOnCommit, commitBarModel.mode, currentClimbQueueItem, handleSetActive, connectLightbulb]);
+    void connectLightbulb('put_on_wall', connectClimb);
+  }, [
+    commitBarModel.connectsOnCommit,
+    commitBarModel.mode,
+    currentClimbQueueItem,
+    displayedClimb,
+    handleSetActive,
+    connectLightbulb,
+  ]);
   useEffect(() => {
     const pending = relightHeldAfterConnectRef.current;
     if (!pending || !staleCurrentHold) return;

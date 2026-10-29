@@ -657,7 +657,8 @@ describe('PlayDrawer — Put on the wall with no board connected (#6939)', () =>
     expect(bar.commitButton).toBe('putOnWall');
     expect(bar.commitLabel).toBe('putOnWall');
     (bar.onCommit as () => void)();
-    expect(lightbulb.connect).toHaveBeenCalledWith('put_on_wall');
+    // The climb rides along: its board picks the board to connect to (#7001).
+    expect(lightbulb.connect).toHaveBeenCalledWith('put_on_wall', CLIMB);
   });
 
   it('leaves the current climb alone when a tap on the bulb would not connect', () => {
@@ -675,7 +676,9 @@ describe('PlayDrawer — Put on the wall with no board connected (#6939)', () =>
     expect(bar.commitButton).toBe('putOnWall');
     expect(bar.commitLabel).toBe('putOnWall');
     (bar.onCommit as () => void)();
-    expect(lightbulb.connect).toHaveBeenCalledWith('put_on_wall');
+    // The climb just set, which the queue may not report yet, picks the board
+    // to connect to (#7001).
+    expect(lightbulb.connect).toHaveBeenCalledWith('put_on_wall', expect.objectContaining({ uuid: CLIMB.uuid }));
   });
 
   it('keeps Set active on a preview when a tap would not connect', () => {
