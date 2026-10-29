@@ -48,6 +48,9 @@ vi.mock('../../../../modules/live-activity/src/index', async () => {
     get boardBleNative() {
       return harness.nativeModule;
     },
+    // Android's SessionPresence (the power-on wait's native clock, #7038):
+    // absent, so the wait runs on its JS timer as these tests drive it.
+    sessionPresenceNative: null,
   };
 });
 

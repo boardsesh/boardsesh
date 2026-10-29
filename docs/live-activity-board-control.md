@@ -51,6 +51,35 @@ option field names, presence, and types; they exclude payload contents. This
 contains rejected updates without claiming to fix Android's unconfirmed native
 Record-decoding failure (#6595).
 
+### Background bulb reconnect and paused JS timers
+
+React Native's `JavaTimerManager` stops firing JS timers while the activity is
+paused, but the JS thread keeps running. The notification bulb's reconnect runs
+in exactly that state, so its watchdogs cannot rely on `setTimeout` alone (#7038):
+
+- **Scan timeout (30 s) and the Bluetooth power-on wait (2.5 s)** race their JS
+  timer against SessionPresence's native `delay` (`setBackgroundSafeTimeout` in
+  `packages/mobile/src/lib/ble/background-safe-timeout.ts`). A binary without
+  `delay` keeps the JS timer, so an OTA'd bundle on an older build behaves as
+  before. Cancelling is a JS flag; the native delay is never cancelled.
+- **Connect timeout (12 s)** also goes to ble-plx as `connectToDevice(id, { timeout })`,
+  which runs on an RxJava timer. The JS race stays.
+- **Grace window (10 s)** does nothing while the app is not `active`: nobody can
+  pick from a list in the background, so the saved board keeps the whole scan to
+  show up and auto-connect.
+- **The picker** of a connect that started in the background is never shown. If
+  its scan ends without the saved board, it rejects with `No boards found`, so
+  `connect()` shows the standard "board not found" alert and clears its in-flight
+  guard; a later bulb tap scans again. Android holds that alert until the app is
+  on screen. A sheet the climber did see keeps its empty state instead, whatever
+  the app state when the scan ends.
+
+Limits: the native clock stops in deep sleep, so with the screen locked the scan
+ends, and the alert is raised, after the phone wakes. Android keeps one pending
+alert, with no age limit, and a process death loses it. The other JS timers on
+this path (the queue's move re-send fallback, the presence update retry, the
+WebSocket's reconnect) still pause with the activity.
+
 ## Mirroring from the Lock Screen and Android notification
 
 On supported layouts (Tension except layout 11, Decoy, and Woods), the BLE holder
