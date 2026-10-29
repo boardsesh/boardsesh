@@ -1,16 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mockRuntime = vi.hoisted(() => ({
-  platformOs: 'android' as 'ios' | 'android',
   sessionPresenceNative: null as { delay?: (ms: number) => Promise<void> } | null,
-}));
-
-vi.mock('react-native', () => ({
-  Platform: {
-    get OS() {
-      return mockRuntime.platformOs;
-    },
-  },
 }));
 
 vi.mock('../../../../modules/live-activity/src/index', () => ({
@@ -34,7 +25,6 @@ describe('setBackgroundSafeTimeout (#7038)', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
-    mockRuntime.platformOs = 'android';
     nativeDelay = vi.fn(
       () =>
         new Promise<void>((resolve) => {
@@ -100,11 +90,11 @@ describe('setBackgroundSafeTimeout (#7038)', () => {
     expect(callback).toHaveBeenCalledOnce();
   });
 
-  it('leaves the native clock alone on iOS, whose JS timers keep running', async () => {
-    mockRuntime.platformOs = 'ios';
+  // SessionPresence is Android's module alone, so iOS reads null here.
+  it('uses the JS timer alone on iOS, whose JS timers keep running', async () => {
+    mockRuntime.sessionPresenceNative = null;
     const callback = vi.fn();
     setBackgroundSafeTimeout(callback, 2_500);
-    expect(nativeDelay).not.toHaveBeenCalled();
 
     await vi.advanceTimersByTimeAsync(2_500);
     expect(callback).toHaveBeenCalledOnce();

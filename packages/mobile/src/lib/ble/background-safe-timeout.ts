@@ -1,4 +1,3 @@
-import { Platform } from 'react-native';
 import { sessionPresenceNative } from '../../../modules/live-activity/src/index';
 
 /**
@@ -13,8 +12,9 @@ import { sessionPresenceNative } from '../../../modules/live-activity/src/index'
  * sleep, like every uptime clock, so a locked phone hears it after unlock).
  * Whichever lands first runs the callback; the other is ignored.
  *
- * A binary that predates the native method (an OTA'd bundle on an older build)
- * and iOS, whose JS timers keep running, get the plain JS timer.
+ * SessionPresence is Android's module alone, so iOS (whose JS timers keep
+ * running) gets the plain JS timer, as does a binary that predates the native
+ * method (an OTA'd bundle on an older build).
  *
  * Returns a cancel function. Cancelling is a JS flag: the native delay still
  * resolves later, into a callback that does nothing.
@@ -29,10 +29,9 @@ export function setBackgroundSafeTimeout(callback: () => void, delayMs: number):
   };
   const jsTimer = setTimeout(fire, delayMs);
 
-  const nativeModule = Platform.OS === 'android' ? sessionPresenceNative : null;
-  if (nativeModule && typeof nativeModule.delay === 'function') {
+  if (sessionPresenceNative && typeof sessionPresenceNative.delay === 'function') {
     // A rejected native delay leaves the JS timer in charge, as on an old binary.
-    nativeModule.delay(delayMs).then(fire, () => {});
+    sessionPresenceNative.delay(delayMs).then(fire, () => {});
   }
 
   return () => {
