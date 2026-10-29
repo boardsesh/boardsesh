@@ -8,7 +8,7 @@ import { useRefocusCount } from '../../../src/hooks/use-refocus-count';
 import { useTabReselect } from '../../../src/hooks/use-tab-reselect';
 import { useLiveClimbFilters, type ClimbFilterSelection } from '../../../src/hooks/use-live-climb-filters';
 import type { WindowAnchorPoint } from '../../../src/components/navigation/AnchoredPopover.types';
-import { memo, useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { memo, useState, useCallback, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -399,10 +399,7 @@ function ClimbListInner() {
   // A column change remounts the list (its `key`, below). This holds the climb
   // at the top of the old layout, so the new list opens on it, not at the top.
   const columnChangeTopIndexRef = useRef<number | null>(null);
-  const listColumnsRef = useRef(listColumns);
-  listColumnsRef.current = listColumns;
-  const listLayoutPreferenceRef = useRef(listLayoutPreference);
-  listLayoutPreferenceRef.current = listLayoutPreference;
+  const savedColumnsRef = useRef(listColumns);
 
   const listPaddingBottom = bottomChrome.scrollBottomPadding;
   const listBottomSpacerHeight = useSharedValue(listPaddingBottom);
@@ -922,6 +919,9 @@ function ClimbListInner() {
     // Back at the top: the row index from the previous search would otherwise
     // read as "near the end" of the new first page and fetch its second page.
     visibleRowsStore.set(0, 0);
+    // A place saved for a column change belongs to the previous search too. An
+    // empty list never loads, so it would otherwise wait for the next results.
+    columnChangeTopIndexRef.current = null;
     // And an end-reached report from the previous search is not this one's.
     endReachedPendingRef.current = false;
     loadedCountAtLastFetchRef.current = null;
@@ -1141,18 +1141,23 @@ function ClimbListInner() {
     maybeFetchNextPage('scroll');
   }, [maybeFetchNextPage]);
 
-  const handleListClipLayout = useCallback(
-    (event: LayoutChangeEvent) => {
-      const hasRoomForTwo = climbListHasRoomForTwoColumns(event.nativeEvent.layout.width);
-      const nextColumns = climbListColumnsForRoom({ hasRoomForTwo, preference: listLayoutPreferenceRef.current });
-      if (nextColumns !== listColumnsRef.current) {
-        const firstVisibleIndex = visibleRowsStore.getFirst();
-        columnChangeTopIndexRef.current = firstVisibleIndex > 0 ? firstVisibleIndex : null;
-      }
-      setListHasRoomForTwo(hasRoomForTwo);
-    },
-    [visibleRowsStore],
-  );
+  const handleListClipLayout = useCallback((event: LayoutChangeEvent) => {
+    setListHasRoomForTwo(climbListHasRoomForTwoColumns(event.nativeEvent.layout.width));
+  }, []);
+
+  // Save the climb at the top whenever the column count changes, whether the
+  // list's width or the Columns setting changed it. This runs in the commit that
+  // mounts the new list, before it can report its own rows, so the store still
+  // holds the old list's top climb. A restore the new list has not used yet wins:
+  // two changes in a row (a rotation passing through a narrow width) would
+  // otherwise save the in-between list's first row.
+  useLayoutEffect(() => {
+    if (savedColumnsRef.current === listColumns) return;
+    savedColumnsRef.current = listColumns;
+    if (columnChangeTopIndexRef.current !== null) return;
+    const firstVisibleIndex = visibleRowsStore.getFirst();
+    columnChangeTopIndexRef.current = firstVisibleIndex > 0 ? firstVisibleIndex : null;
+  }, [listColumns, visibleRowsStore]);
 
   // The remounted list has laid out: put the climb that was at the top back there,
   // below the header and controls the list draws under (`useListTopOffset`), not
