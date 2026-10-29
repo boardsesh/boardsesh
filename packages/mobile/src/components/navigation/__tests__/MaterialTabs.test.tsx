@@ -1,9 +1,17 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
-import { render, fireEvent } from '@testing-library/react';
+import { act, render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 const haptics = vi.hoisted(() => ({ selection: vi.fn() }));
+
+type LayoutHandler = (event: { nativeEvent: { layout: { width: number } } }) => void;
+// The latest onLayout handed to the tablist container and to each label, keyed
+// by label text, so a test can feed in the measurements the native side would.
+const layoutHandlers = vi.hoisted(() => ({
+  container: undefined as LayoutHandler | undefined,
+  labels: new Map<string, LayoutHandler>(),
+}));
 
 vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
@@ -11,22 +19,33 @@ vi.mock('react-native', () => ({
     children,
     accessibilityRole,
     accessibilityLabel,
+    onLayout,
   }: {
     children?: ReactNode;
     accessibilityRole?: string;
     accessibilityLabel?: string;
-  }) => createElement('div', { role: accessibilityRole, 'aria-label': accessibilityLabel }, children),
+    onLayout?: LayoutHandler;
+  }) => {
+    if (accessibilityRole === 'tablist') layoutHandlers.container = onLayout;
+    return createElement('div', { role: accessibilityRole, 'aria-label': accessibilityLabel }, children);
+  },
 }));
 
 vi.mock('react-native-reanimated', () => ({
-  default: { View: ({ children }: { children?: ReactNode }) => createElement('div', null, children) },
+  default: {
+    View: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
+      createElement('div', { 'data-testid': testID }, children),
+  },
   useAnimatedStyle: () => ({}),
   useDerivedValue: (fn: () => unknown) => ({ value: fn() }),
   withTiming: (value: number) => value,
 }));
 
 vi.mock('../../Text', () => ({
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+  Text: ({ children, onLayout }: { children?: ReactNode; onLayout?: LayoutHandler }) => {
+    if (typeof children === 'string' && onLayout) layoutHandlers.labels.set(children, onLayout);
+    return createElement('span', null, children);
+  },
 }));
 
 // PressableSurface forwards onPress to a button and mirrors the tab role /
@@ -118,6 +137,31 @@ describe('MaterialTabs', () => {
   it('exposes the group accessibility label on a tablist', () => {
     const { getByRole } = render(<MaterialTabs {...makeProps({ accessibilityLabel: 'Dashboard' })} />);
     expect(getByRole('tablist').getAttribute('aria-label')).toBe('Dashboard');
+  });
+});
+
+function layout(handler: LayoutHandler | undefined, width: number) {
+  act(() => handler?.({ nativeEvent: { layout: { width } } }));
+}
+
+describe('MaterialTabs indicator', () => {
+  it('appears only once the container and the active label are measured', () => {
+    const { queryByTestId } = render(<MaterialTabs {...makeProps({ selectedKey: 'sessions' })} />);
+    expect(queryByTestId('material-tabs-indicator')).toBeNull();
+
+    layout(layoutHandlers.container, 360);
+    layout(layoutHandlers.labels.get('Progress'), 60);
+    expect(queryByTestId('material-tabs-indicator')).toBeNull();
+
+    layout(layoutHandlers.labels.get('Sessions'), 64);
+    expect(queryByTestId('material-tabs-indicator')).not.toBeNull();
+  });
+
+  it('falls back to the first tab when selectedKey is not an option', () => {
+    const { queryByTestId } = render(<MaterialTabs {...makeProps({ selectedKey: 'missing' })} />);
+    layout(layoutHandlers.container, 360);
+    layout(layoutHandlers.labels.get('Progress'), 60);
+    expect(queryByTestId('material-tabs-indicator')).not.toBeNull();
   });
 });
 

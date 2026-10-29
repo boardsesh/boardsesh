@@ -82,6 +82,27 @@ function MaterialTab({
 }
 
 /**
+ * The sliding underline. A separate component so its animated style is first
+ * created with measured values: mounting it only once geometry exists means the
+ * first frame lands in place instead of easing out from zero width at x = 0.
+ * After that, width and offset ease together, so the indicator stretches or
+ * shrinks to the next label while it slides.
+ */
+function MaterialTabIndicator({ width, offset, color }: { width: number; offset: number; color: string }) {
+  const indicatorStyle = useAnimatedStyle(() => ({
+    width: withTiming(width),
+    transform: [{ translateX: withTiming(offset) }],
+  }));
+  return (
+    <Animated.View
+      testID="material-tabs-indicator"
+      pointerEvents="none"
+      style={[styles.indicator, { backgroundColor: color }, indicatorStyle]}
+    />
+  );
+}
+
+/**
  * Material 3 primary tabs — a horizontal equal-width row of text labels with a
  * sliding active-indicator underline. The flat M3 counterpart of the Liquid
  * Glass `SegmentedControl`, sharing its generic prop API so call sites read the
@@ -117,16 +138,14 @@ export function MaterialTabs<K extends string = string>({
   // Equal-width slots: each tab spans containerWidth / N. Read as primitives so
   // the worklet's deps stay length-free.
   const slotWidth = tabCount > 0 ? containerWidth / tabCount : 0;
-  const geometry = primaryIndicatorGeometry(slotWidth, activeIndex, labelWidths[selectedKey]);
-  const indicatorWidth = geometry?.width ?? 0;
-  const indicatorOffset = geometry?.offset ?? 0;
-
-  // Width and offset ease together, so the indicator stretches or shrinks to the
-  // next label while it slides.
-  const indicatorStyle = useAnimatedStyle(() => ({
-    width: withTiming(indicatorWidth),
-    transform: [{ translateX: withTiming(indicatorOffset) }],
-  }));
+  // Read the width of the tab actually highlighted, so an unknown selectedKey
+  // still underlines tab 0 like activeIndex does.
+  const activeKey = options[activeIndex]?.key;
+  const geometry = primaryIndicatorGeometry(
+    slotWidth,
+    activeIndex,
+    activeKey === undefined ? undefined : labelWidths[activeKey],
+  );
 
   const handleSelect = useCallback(
     (key: K) => {
@@ -157,12 +176,7 @@ export function MaterialTabs<K extends string = string>({
           />
         ))}
       </View>
-      {geometry ? (
-        <Animated.View
-          pointerEvents="none"
-          style={[styles.indicator, { backgroundColor: m3.primary }, indicatorStyle]}
-        />
-      ) : null}
+      {geometry ? <MaterialTabIndicator width={geometry.width} offset={geometry.offset} color={m3.primary} /> : null}
     </View>
   );
 }
