@@ -18,6 +18,7 @@ import type {
   SessionDisconnectResult,
 } from './types';
 import { restoreSessionWithLock } from './session-restoration';
+import { loadAccountSessionIdentity } from './account-identity';
 import { logger } from '../../utils/logger';
 import { markErrorReported } from '../../utils/sentry-dedupe';
 
@@ -156,6 +157,15 @@ export async function joinSession(
   void participantId;
   const resolvedParticipantId = client.userId ? sessionParticipantId(sessionId, client.userId) : connectionId;
 
+  // A signed-in join that doesn't name itself takes the account's profile
+  // identity. Every connection of one account shares this participant row, so
+  // the per-connection `User-xxxxxx` placeholder would otherwise overwrite the
+  // name and avatar the app's socket sent (#7018: the iOS Live Activity socket
+  // joins without them). An explicit name or avatar from the client still wins.
+  const accountIdentity = !username && client.userId ? await loadAccountSessionIdentity(client.userId) : null;
+  const joinUsername = username || accountIdentity?.username;
+  const joinAvatarUrl = avatarUrl || accountIdentity?.avatarUrl;
+
   // Leave current session if in one
   if (client.sessionId) {
     await leaveSessionFn(connectionId);
@@ -164,11 +174,11 @@ export async function joinSession(
   // Update client info
   client.sessionId = sessionId;
   client.participantId = resolvedParticipantId;
-  if (username) {
-    client.username = username;
+  if (joinUsername) {
+    client.username = joinUsername;
   }
-  if (avatarUrl) {
-    client.avatarUrl = avatarUrl;
+  if (joinAvatarUrl) {
+    client.avatarUrl = joinAvatarUrl;
   }
 
   // Track if this is a new session
