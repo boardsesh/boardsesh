@@ -32,6 +32,7 @@ import {
   hydrateWorkoutRun,
   isWorkoutRunPendingStart,
   markWorkoutRunStarted,
+  addWorkoutRunClimbs,
   noteWorkoutRunTick,
   prepareWorkoutRun,
   resetWorkoutRunStoreForTests,
@@ -147,6 +148,32 @@ describe('workout-run-store', () => {
     expect(getWorkoutRunState()?.climbs).toEqual({ w1: { climbUuid: 'climb-w1', angle: 40, isMirror: false } });
     await flushStorageWrites();
     expect(storedRecord()).toMatchObject({ climbs: { w1: { climbUuid: 'climb-w1', angle: 40, isMirror: false } } });
+  });
+
+  it('lets the queue name a climb a tick filled in, never moving its climb or angle (#6903)', () => {
+    setWorkoutRun('session-1', run);
+    noteWorkoutRunTick('session-1', tick('w1'), { climbUuid: 'climb-w1', angle: 40, isMirror: false });
+
+    // The local End fills from the live queue: its name, grade and board are new.
+    addWorkoutRunClimbs('session-1', {
+      w1: {
+        climbUuid: 'climb-other',
+        angle: 25,
+        isMirror: true,
+        name: 'Crimp City',
+        difficulty: '6a/V3',
+        boardType: 'kilter',
+      },
+    });
+
+    expect(getWorkoutRunState()?.climbs?.w1).toEqual({
+      climbUuid: 'climb-w1',
+      angle: 40,
+      isMirror: true,
+      name: 'Crimp City',
+      difficulty: '6a/V3',
+      boardType: 'kilter',
+    });
   });
 
   it('preserves preparation while joining split storage slots and clears it with the session', async () => {

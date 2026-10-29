@@ -440,12 +440,17 @@ export function setWorkoutRun(sessionId: string, run: WorkoutRun, climbs?: Recor
   persist(next);
 }
 
+/** The display fields a climb filled from a tick lacks; the queue item has them. */
+const CLIMB_DISPLAY_FIELDS = ['name', 'difficulty', 'boardType'] as const;
+
 /**
  * Bring the captured climbs up to date from queue items still in the queue: an
  * item the record has no climb for is filled in (a run written by an older
- * bundle, which drops `climbs`, gets them back this way), and an item mirrored
- * since it was captured takes its new mirror. The climb and angle a queue item
- * names never change, so nothing else is touched.
+ * bundle, which drops `climbs`, gets them back this way), an item mirrored
+ * since it was captured takes its new mirror, and a name, grade or board the
+ * kept climb lacks is added (a climb filled from a tick carries none, #6903).
+ * The climb and angle a queue item names never change, so they are never
+ * touched.
  */
 export function addWorkoutRunClimbs(sessionId: string, climbs: Record<string, WorkoutRunClimb>): void {
   if (state?.sessionId !== sessionId) return;
@@ -455,9 +460,22 @@ export function addWorkoutRunClimbs(sessionId: string, climbs: Record<string, Wo
     const kept = current[queueItemUuid];
     if (!kept) {
       updates.push([queueItemUuid, climb]);
-    } else if (climb.isMirror !== undefined && kept.isMirror !== climb.isMirror) {
-      updates.push([queueItemUuid, { ...kept, isMirror: climb.isMirror }]);
+      continue;
     }
+    const updated: WorkoutRunClimb = { ...kept };
+    let changed = false;
+    if (climb.isMirror !== undefined && kept.isMirror !== climb.isMirror) {
+      updated.isMirror = climb.isMirror;
+      changed = true;
+    }
+    for (const field of CLIMB_DISPLAY_FIELDS) {
+      const incoming = climb[field];
+      if (kept[field] === undefined && incoming !== undefined) {
+        updated[field] = incoming;
+        changed = true;
+      }
+    }
+    if (changed) updates.push([queueItemUuid, updated]);
   }
   if (updates.length === 0) return;
   const next: WorkoutRunRecord = { ...state, climbs: { ...current, ...Object.fromEntries(updates) } };
