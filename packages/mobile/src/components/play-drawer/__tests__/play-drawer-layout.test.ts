@@ -10,8 +10,12 @@ import {
   PLAYER_SIDE_PANEL_WIDTH,
   resolvePlayerArrangement,
   resolveWallStatusLinePlacement,
+  secondaryRowCanFold,
+  shouldFitBoardToHeight,
   shouldShowPanePlaceholder,
 } from '../play-drawer-layout';
+import { resolveActionBarLayout, type ActionBarLayoutInput } from '../action-bar-layout';
+import { DEFAULT_PLAYER_BUTTONS } from '../../../lib/player-buttons';
 
 describe('resolvePlayerArrangement', () => {
   const ipads = [
@@ -240,5 +244,76 @@ describe('resolveWallStatusLinePlacement', () => {
 
   it('sits after the controls otherwise', () => {
     expect(resolveWallStatusLinePlacement(false)).toBe('afterControls');
+  });
+});
+
+describe('shouldFitBoardToHeight (#6956)', () => {
+  // A member on a board with lights, on the landscape iPad player's route,
+  // where the MiniPlayer stands in for the first row.
+  const member: ActionBarLayoutInput = {
+    supportsMirroring: false,
+    isAnonymous: false,
+    commitButton: null,
+    workoutOutcome: false,
+    showLightbulb: true,
+    hasShare: true,
+    angleAvailable: true,
+    buttons: DEFAULT_PLAYER_BUTTONS,
+    previousNext: true,
+    miniPlayerMirrors: true,
+  };
+  const landscapeIpad = { fitBoardToHeight: true, isPane: false, hasVisibleSections: true, controlsAbove: false };
+  const fits = (input: Partial<ActionBarLayoutInput>) =>
+    shouldFitBoardToHeight({
+      ...landscapeIpad,
+      secondaryRow: resolveActionBarLayout({ ...member, ...input }).secondaryRow,
+    });
+
+  // Marco: never fold the wall button. With the bulb chosen a preview's Put on
+  // the wall is the second row, and the only way to commit the preview.
+  it("keeps the bulb's Put on the wall on screen", () => {
+    expect(fits({ boardControl: 'lightbulb', commitButton: 'putOnWall' })).toBe(false);
+  });
+
+  it('keeps the wall button on screen where no MiniPlayer stands in for the first row', () => {
+    expect(fits({ miniPlayerMirrors: false })).toBe(false);
+    expect(fits({ miniPlayerMirrors: false, commitButton: 'putOnWall' })).toBe(false);
+  });
+
+  it('keeps the busy-wall question and Fell / Sent on screen', () => {
+    expect(fits({ boardControl: 'lightbulb', commitButton: 'confirm' })).toBe(false);
+    expect(fits({ workoutOutcome: true })).toBe(false);
+  });
+
+  it("folds a plain row: the signed-out reader's Angle / Share, the bulb row's buttons", () => {
+    expect(fits({ isAnonymous: true })).toBe(true);
+    expect(fits({ miniPlayerMirrors: false, boardControl: 'lightbulb', supportsMirroring: true })).toBe(true);
+  });
+
+  it('does not fit with an empty second row, no sections, controls above, or a host that did not ask', () => {
+    const plainRow = resolveActionBarLayout({ ...member, isAnonymous: true }).secondaryRow;
+    expect(fits({})).toBe(false);
+    expect(shouldFitBoardToHeight({ ...landscapeIpad, hasVisibleSections: false, secondaryRow: plainRow })).toBe(false);
+    expect(shouldFitBoardToHeight({ ...landscapeIpad, controlsAbove: true, secondaryRow: plainRow })).toBe(false);
+    expect(shouldFitBoardToHeight({ ...landscapeIpad, fitBoardToHeight: false, secondaryRow: plainRow })).toBe(false);
+  });
+
+  it("always fits the Duo's pane, whose inset clears the MiniPlayer", () => {
+    const pane = { ...landscapeIpad, isPane: true };
+    expect(shouldFitBoardToHeight({ ...pane, secondaryRow: ['wallControl'] })).toBe(true);
+    expect(shouldFitBoardToHeight({ ...pane, hasVisibleSections: false, secondaryRow: [] })).toBe(true);
+    expect(shouldFitBoardToHeight({ ...pane, fitBoardToHeight: false, secondaryRow: [] })).toBe(false);
+  });
+});
+
+describe('secondaryRowCanFold', () => {
+  it('folds only a row of plain items', () => {
+    expect(secondaryRowCanFold(['angle', 'spacer', 'share'])).toBe(true);
+    expect(secondaryRowCanFold(['favorite', 'spacer', 'queue'])).toBe(true);
+    expect(secondaryRowCanFold(['wallControl'])).toBe(false);
+    expect(secondaryRowCanFold(['favorite', 'wallControl', 'queue'])).toBe(false);
+    expect(secondaryRowCanFold([])).toBe(false);
+    expect(secondaryRowCanFold('confirm')).toBe(false);
+    expect(secondaryRowCanFold('workoutOutcome')).toBe(false);
   });
 });

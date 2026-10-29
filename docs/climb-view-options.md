@@ -225,6 +225,12 @@ Anonymous                  [ ]  [⏮]  [✓]  [⏭]  [ ]    /  [40°] ·····
   phones are unchanged. Nothing in the player sits under the bar: in the Duo's pane `insets.bottom` already
   includes the accessory, and with the second row folded or taken by Fell / Sent the board no longer fits to the
   height past it.
+- **What may hang below the fold (#6956).** The landscape iPad player fits the board to the screen's height only
+  when its second row is plain: every item a player button or the gap (`secondaryRowCanFold`,
+  `shouldFitBoardToHeight` in `play-drawer-layout.ts`). The wall button never folds (Marco's call), so with the bulb
+  chosen a preview's Put on the wall stays on screen, and so do the busy-wall question and Fell / Sent. The
+  allow-list ends in a `never` switch, so a new kind of item stays on screen until someone decides otherwise. The
+  Duo's pane always fits, since its inset already clears the MiniPlayer.
 - **After a tap-disconnect.** Taps are dropped for 600 ms (`DISCONNECT_TAP_GUARD_MS`): the provider marks the link
   down before the adapter lets go, so a double tap's second tap would otherwise start a connect. "Board
   disconnected" is announced when the link actually drops. A dropped link, or the wall coming back to the cleared

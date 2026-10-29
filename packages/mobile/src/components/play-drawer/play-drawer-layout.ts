@@ -5,6 +5,7 @@
  */
 
 import type { ClimbQueueItem } from '@boardsesh/queue';
+import type { ActionBarSecondaryItem, ActionBarSecondaryRow } from './action-bar-layout';
 
 export type BoardBox = { width: number; height: number };
 
@@ -110,6 +111,67 @@ export function computeFitToHeightFirstScreenHeight({
   belowFoldHeight: number;
 }): number {
   return Math.max(0, viewport - bottomInset) + belowFoldHeight;
+}
+
+/**
+ * Whether an item may sit below the fold: a plain player button or the gap
+ * between them. The wall button never folds (#6956, Marco's call): a preview's
+ * Put on the wall is the only way to commit it, so it stays on screen. The
+ * `never` default makes a new kind of item a compile error here, so it stays
+ * on screen until someone decides otherwise.
+ */
+function isPlainSecondaryRowItem(item: ActionBarSecondaryItem): boolean {
+  switch (item) {
+    case 'mirror':
+    case 'favorite':
+    case 'queue':
+    case 'share':
+    case 'angle':
+    case 'spacer':
+      return true;
+    case 'wallControl':
+      return false;
+    default: {
+      const unhandled: never = item;
+      return unhandled;
+    }
+  }
+}
+
+/**
+ * Whether the action bar's second row may fold below the fold: an array with
+ * something in it, every item plain. The busy-wall question and Fell / Sent
+ * (the string rows) and any row with the wall button stay on screen.
+ */
+export function secondaryRowCanFold(secondaryRow: ActionBarSecondaryRow): boolean {
+  if (typeof secondaryRow === 'string' || secondaryRow.length === 0) return false;
+  return secondaryRow.every(isPlainSecondaryRowItem);
+}
+
+/**
+ * Whether the player fits the board to the viewport's height
+ * (`computeFitToHeightFirstScreenHeight`). The host must ask for it.
+ * - The phone split's pane always does: its bottom inset clears the MiniPlayer
+ *   capsule, so every row ends above it whatever the rows hold.
+ * - The landscape iPad player does only with sections to scroll to, with the
+ *   controls under the board, and with a plain second row
+ *   (`secondaryRowCanFold`), which hangs below the fold.
+ */
+export function shouldFitBoardToHeight({
+  fitBoardToHeight,
+  isPane,
+  hasVisibleSections,
+  controlsAbove,
+  secondaryRow,
+}: {
+  fitBoardToHeight: boolean;
+  isPane: boolean;
+  hasVisibleSections: boolean;
+  controlsAbove: boolean;
+  secondaryRow: ActionBarSecondaryRow;
+}): boolean {
+  if (!fitBoardToHeight) return false;
+  return isPane || (hasVisibleSections && !controlsAbove && secondaryRowCanFold(secondaryRow));
 }
 
 /**
