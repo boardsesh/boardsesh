@@ -278,6 +278,7 @@ final class BoardBleRelightAuthorizationTests: XCTestCase {
         installConnection(peripheral: peripheral)
         manager.testHooks.sync {
             manager.setEventHandlers(
+                owner: UUID(),
                 onScanResult: nil,
                 onDisconnect: nil,
                 onConnected: { deviceId, _ in connectedEvents.append(deviceId) }
@@ -354,6 +355,7 @@ final class BoardBleRelightAuthorizationTests: XCTestCase {
         installConnection(peripheral: peripheral)
         manager.testHooks.sync {
             manager.setEventHandlers(
+                owner: UUID(),
                 onScanResult: nil,
                 onDisconnect: { deviceId, body in disconnectEvents.append((deviceId, body)) },
                 onConnected: nil
@@ -463,6 +465,7 @@ final class BoardBleRelightAuthorizationTests: XCTestCase {
         manager.testHooks.sync {
             manager.testHooks.setConfiguration(moonboardConfiguration())
             manager.setEventHandlers(
+                owner: UUID(),
                 onScanResult: nil,
                 onDisconnect: nil,
                 onConnected: { deviceId, _ in connectedEvents.append(deviceId) }

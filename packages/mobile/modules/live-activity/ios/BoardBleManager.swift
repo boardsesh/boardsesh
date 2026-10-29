@@ -778,7 +778,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     /// ran, but no result reached JS, so the picker said "No boards found
     /// nearby" until the app was restarted (#7023).
     func setEventHandlers(
-        owner: UUID? = nil,
+        owner: UUID,
         onScanResult: ((BoardBleScanResult) -> Void)?,
         onDisconnect: ((String, [String: Any]?) -> Void)?,
         onConnected: ((String, String?) -> Void)? = nil

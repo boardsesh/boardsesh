@@ -75,6 +75,7 @@ final class BoardBleDisconnectTests: XCTestCase {
         manager.testHooks.sync {
             manager.testHooks.setConfiguration(moonboardConfiguration())
             manager.setEventHandlers(
+                owner: UUID(),
                 onScanResult: nil,
                 onDisconnect: onDisconnect,
                 onConnected: nil
@@ -537,6 +538,7 @@ final class BoardBleDisconnectTests: XCTestCase {
         var disconnectEventCount = 0
         manager.testHooks.sync {
             manager.setEventHandlers(
+                owner: UUID(),
                 onScanResult: nil,
                 onDisconnect: { _, _ in disconnectEventCount += 1 },
                 onConnected: nil
@@ -618,6 +620,7 @@ final class BoardBleDisconnectTests: XCTestCase {
         var connectedEventCount = 0
         manager.testHooks.sync {
             manager.setEventHandlers(
+                owner: UUID(),
                 onScanResult: nil,
                 onDisconnect: { _, _ in disconnectEventCount += 1 },
                 onConnected: { _, _ in connectedEventCount += 1 }
@@ -725,6 +728,7 @@ final class BoardBleDisconnectTests: XCTestCase {
         var disconnectEventCount = 0
         manager.testHooks.sync {
             manager.setEventHandlers(
+                owner: UUID(),
                 onScanResult: nil,
                 onDisconnect: { _, _ in disconnectEventCount += 1 },
                 onConnected: nil
@@ -793,6 +797,7 @@ final class BoardBleDisconnectTests: XCTestCase {
         var disconnectEventCount = 0
         manager.testHooks.sync {
             manager.setEventHandlers(
+                owner: UUID(),
                 onScanResult: nil,
                 onDisconnect: { _, _ in disconnectEventCount += 1 },
                 onConnected: nil
@@ -859,6 +864,7 @@ final class BoardBleDisconnectTests: XCTestCase {
         var disconnectEventCount = 0
         manager.testHooks.sync {
             manager.setEventHandlers(
+                owner: UUID(),
                 onScanResult: nil,
                 onDisconnect: { _, _ in disconnectEventCount += 1 },
                 onConnected: nil
@@ -912,6 +918,7 @@ final class BoardBleDisconnectTests: XCTestCase {
         var disconnectEventCount = 0
         manager.testHooks.sync {
             manager.setEventHandlers(
+                owner: UUID(),
                 onScanResult: nil,
                 onDisconnect: { _, _ in disconnectEventCount += 1 },
                 onConnected: nil
