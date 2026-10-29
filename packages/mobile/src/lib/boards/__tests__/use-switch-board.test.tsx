@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import type { UserBoard } from '@boardsesh/shared-schema';
 
-const setActiveBoardMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const setActiveBoardMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 const adoptFoundBoardMock = vi.hoisted(() => vi.fn());
 const resolveBoardAngleMock = vi.hoisted(() => vi.fn());
 const hapticMock = vi.hoisted(() => vi.fn());
@@ -52,7 +52,7 @@ function switcher(options: Partial<SwitchBoardOptions> = {}) {
 describe('useSwitchBoard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    setActiveBoardMock.mockResolvedValue(undefined);
+    setActiveBoardMock.mockResolvedValue(true);
     resolveBoardAngleMock.mockImplementation((board: UserBoard) => Promise.resolve(board.angle));
   });
 
@@ -107,6 +107,28 @@ describe('useSwitchBoard', () => {
     expect(broadcastBoardPath).not.toHaveBeenCalled();
     expect(adoptFoundBoardMock).not.toHaveBeenCalled();
     expect(trackMock).toHaveBeenCalledWith('Board Swap Failed', expect.objectContaining({ reason: 'write_failed' }));
+  });
+
+  // The write queue resolves false when a newer write took over before this one
+  // committed, e.g. a crew roster's angle-follow landing mid-switch. The board
+  // never changed, so nothing downstream may act as if it had: the connect that
+  // follows the climb (#7001) would wait out its 15 s limit for a switch that
+  // never happens, and the crew would be told about a board nobody is on.
+  it('reports a superseded write as failed and leaves the climber where they were', async () => {
+    setActiveBoardMock.mockResolvedValue(false);
+    const onSwitched = vi.fn();
+    const broadcastBoardPath = vi.fn();
+    const result = switcher({ onSwitched, broadcastBoardPath });
+
+    const outcome = await result.current(TENSION, KILTER);
+
+    expect(outcome).toBe('failed');
+    expect(onSwitched).not.toHaveBeenCalled();
+    expect(broadcastBoardPath).not.toHaveBeenCalled();
+    expect(adoptFoundBoardMock).not.toHaveBeenCalled();
+    expect(trackMock).not.toHaveBeenCalledWith('Board Swap Completed', expect.anything());
+    expect(trackMock).toHaveBeenCalledWith('Board Swap Failed', expect.objectContaining({ reason: 'superseded' }));
+    expect(showToastMock).toHaveBeenCalledWith('mobile.boardPresence.gymWalls.switchFailed', 'error');
   });
 
   it('skips adoption when the board list came from on-device data', async () => {

@@ -23,8 +23,12 @@ import { reportError } from '../error-reporting';
 import { track } from '../analytics';
 import { useToast } from '../../providers/toast-provider';
 
-/** Why the board changed — carried into analytics so a spike is attributable. */
-export type BoardSwitchSource = 'presence_sheet_sibling' | 'move_to_wall_callout';
+/**
+ * Why the board changed — carried into analytics so a spike is attributable.
+ * `connect_climb_board`: a connect on a climb from another board at this gym
+ * moved to that board first (#7001).
+ */
+export type BoardSwitchSource = 'presence_sheet_sibling' | 'move_to_wall_callout' | 'connect_climb_board';
 
 export type SwitchBoardOutcome = 'switched' | 'noop' | 'failed';
 
@@ -124,21 +128,26 @@ export function useSwitchBoard({
         // "on" a fixed-angle spray wall at 40°.
         const angle = await resolveBoardAngle(target);
 
-        try {
-          await setActiveBoard({ ...target, angle });
-        } catch (error: unknown) {
-          reportError(error);
-          track(SHARED_EVENTS.BoardSwapFailed, {
-            source: callSource,
-            toBoardUuid: target.uuid,
-            reason: 'write_failed',
-          });
-          // Success says nothing: the surface the climber tapped from visibly
-          // becomes the other board. A failure has nothing to show, so it says so
-          // — otherwise the tap reads as ignored and they tap again.
+        // Success says nothing: the surface the climber tapped from visibly
+        // becomes the other board. A failure has nothing to show, so it says so
+        // — otherwise the tap reads as ignored and they tap again.
+        const reportFailure = (reason: 'write_failed' | 'superseded'): SwitchBoardOutcome => {
+          track(SHARED_EVENTS.BoardSwapFailed, { source: callSource, toBoardUuid: target.uuid, reason });
           showToast(t('mobile.boardPresence.gymWalls.switchFailed', { board: target.name }), 'error');
           return 'failed';
+        };
+
+        let accepted: boolean;
+        try {
+          accepted = await setActiveBoard({ ...target, angle });
+        } catch (error: unknown) {
+          reportError(error);
+          return reportFailure('write_failed');
         }
+        // A newer write took over before this one committed (a crew roster's
+        // angle-follow, a credential change). The board never changed, so the
+        // crew must not hear about it and a connect waiting on it must not wait.
+        if (!accepted) return reportFailure('superseded');
 
         onSwitched?.(target);
 

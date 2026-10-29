@@ -50,6 +50,12 @@ import { useStoredUserId } from '../hooks/use-current-user-id';
 import { usePrivacyCredentialScope, usePrivacyScopedState } from '../hooks/use-privacy-scoped-state';
 import { getCredentialGeneration } from '../lib/privacy/privacy-cache';
 import { boardLooselyMatches } from '../lib/boards/board-matches';
+import { findGymBoardForClimb, findGymBoardToConnectForClimb } from '../lib/boards/gym-board-for-climb';
+import {
+  ClimbBoardConnectContext,
+  type ClimbBoardConnectValue,
+  type ClimbBoardMove,
+} from '../lib/boards/climb-board-connect-context';
 import { useAuth } from './auth-provider';
 import { useReduceMotion } from '../hooks/use-reduce-motion';
 import { useSprayWall, useSprayWallLoader } from '../lib/spray/use-spray-wall';
@@ -502,7 +508,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     dismissSourceSheet?: () => Promise<DismissAndWaitResult>;
     dismissPlayerAndWait?: () => Promise<DismissAndWaitResult>;
   } | null>(null);
-  const { playNext, setSessionBoardPath, setCurrentClimb } = useQueueActions();
+  const { playNext, setSessionBoardPath, setCurrentClimb, getQueueSnapshot } = useQueueActions();
   // Read at a board-sheet tap, which must not take a crewmate's wall (#6665).
   const isSharedSession = useIsSharedSession();
   const isSharedSessionRef = useRef(isSharedSession);
@@ -1109,11 +1115,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       // session left every peer bound to the board the climber walked away from
       // — and board presence with them. `switchBoard` broadcasts the session
       // board path, clears the override and adopts the board's own angle.
-      const gymSibling = gymBoardsRef.current?.find(
-        (board) =>
-          board.uuid !== activeBoardRef.current?.uuid &&
-          boardLooselyMatches({ boardName: board.boardType, layoutId: board.layoutId }, override),
-      );
+      const gymSibling = findGymBoardForClimb(override, activeBoardRef.current?.uuid, gymBoardsRef.current);
       if (gymSibling) {
         void switchBoard(gymSibling, activeBoardRef.current ?? null, 'move_to_wall_callout');
         return;
@@ -1152,6 +1154,22 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     },
     [setActiveBoard, switchBoard],
   );
+
+  // Connect follows the climb (#7001). A connect on a MoonBoard climb while the
+  // gym's Kilter is active moves to the MoonBoard first, through the same switch
+  // as the Switch board button, so a crew session moves with it. Everything is
+  // read through refs, so the context value keeps one identity.
+  const moveToClimbBoard = useCallback(
+    async (climb?: Parameters<ClimbBoardConnectValue['moveToClimbBoard']>[0]): Promise<ClimbBoardMove> => {
+      const targetClimb = climb ?? getQueueSnapshot().currentClimbQueueItem?.climb ?? null;
+      const target = findGymBoardToConnectForClimb(targetClimb, activeBoardRef.current, gymBoardsRef.current);
+      if (!target) return { kind: 'none' };
+      const outcome = await switchBoard(target, activeBoardRef.current ?? null, 'connect_climb_board');
+      return outcome === 'switched' ? { kind: 'switched', board: target } : { kind: 'failed' };
+    },
+    [getQueueSnapshot, switchBoard],
+  );
+  const climbBoardConnectValue = useMemo<ClimbBoardConnectValue>(() => ({ moveToClimbBoard }), [moveToClimbBoard]);
 
   // The switch-board gate fires only when the drawer is showing a climb from a
   // genuinely DIFFERENT board model (board name + layout) than the user's stored
@@ -1376,7 +1394,10 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     <DrawerHostContext.Provider value={value}>
       <PreviewedClimbContext.Provider value={previewedClimbValue}>
         <PlayDrawerRouteContext.Provider value={routeValue}>
-          {children}
+          {/* Bulbs live in the screens, so only they need connect-follows-the-climb (#7001). */}
+          <ClimbBoardConnectContext.Provider value={climbBoardConnectValue}>
+            {children}
+          </ClimbBoardConnectContext.Provider>
           {logAscentData ? (
             <LogAscentSheet
               key={composerCredentialScope}
