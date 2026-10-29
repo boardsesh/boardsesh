@@ -169,6 +169,12 @@ const mocks = vi.hoisted(() => ({
     listeners: new Set<() => void>(),
     set: vi.fn<(shown: boolean) => void>(),
   },
+  // The climber's Columns choice, as a store the screen re-renders from, the way
+  // a write from Settings → Climb list reaches the screen under it.
+  listLayout: {
+    preference: 'two' as 'one' | 'two',
+    listeners: new Set<() => void>(),
+  },
   // The change the grade rail reports, so a test can make one.
   changeGrade: undefined as
     | ((
@@ -768,6 +774,23 @@ vi.mock('../../../../src/settings', async () => {
   };
 });
 
+vi.mock('../../../../src/hooks/use-climb-list-layout', async () => {
+  const { useSyncExternalStore } = await import('react');
+  const subscribeListLayout = (listener: () => void) => {
+    mocks.listLayout.listeners.add(listener);
+    return () => mocks.listLayout.listeners.delete(listener);
+  };
+  return {
+    useClimbListLayout: () => [
+      useSyncExternalStore(subscribeListLayout, () => mocks.listLayout.preference),
+      (preference: 'one' | 'two') => {
+        mocks.listLayout.preference = preference;
+        for (const listener of mocks.listLayout.listeners) listener();
+      },
+    ],
+  };
+});
+
 vi.mock('../../../../src/hooks/use-bottom-accessory', () => ({
   useNativeAccessoryActive: () => false,
   useLiquidGlassTabBar: () => false,
@@ -1048,6 +1071,8 @@ beforeEach(() => {
     mocks.gradeRow.shown = shown;
     for (const listener of mocks.gradeRow.listeners) listener();
   });
+  mocks.listLayout.preference = 'two';
+  mocks.listLayout.listeners.clear();
   mocks.changeGrade = undefined;
   mocks.setGrade.mockClear();
   mocks.refocusCount = 0;
@@ -1127,6 +1152,46 @@ describe('ClimbList columns follow the list width', () => {
     layoutTo(834);
     act(() => mocks.listOnLoad?.());
     expect(mocks.scrollToIndex).not.toHaveBeenCalled();
+  });
+
+  const chooseColumns = (preference: 'one' | 'two') =>
+    act(() => {
+      mocks.listLayout.preference = preference;
+      for (const listener of mocks.listLayout.listeners) listener();
+    });
+
+  // #7065: Settings → Climb list → Columns changed the count without a width
+  // change, and the remounted list opened on the first climb.
+  it('keeps the climb at the top when the Columns setting changes, both ways round', async () => {
+    const { findByText } = render(<ClimbList />);
+    await findByText('Climb 0');
+    layoutTo(1086);
+    expect(mocks.listNumColumns).toBe(2);
+    act(() => mocks.listViewableItemsChanged?.({ viewableItems: [{ index: 100 }, { index: 107 }] }));
+    chooseColumns('one');
+    expect(mocks.listNumColumns).toBe(1);
+    act(() => mocks.listOnLoad?.());
+    expect(mocks.scrollToIndex).toHaveBeenLastCalledWith({ index: 100, animated: false, viewOffset: -160 });
+
+    act(() => mocks.listViewableItemsChanged?.({ viewableItems: [{ index: 60 }, { index: 64 }] }));
+    chooseColumns('two');
+    expect(mocks.listNumColumns).toBe(2);
+    act(() => mocks.listOnLoad?.());
+    expect(mocks.scrollToIndex).toHaveBeenLastCalledWith({ index: 60, animated: false, viewOffset: -160 });
+    expect(mocks.scrollToIndex).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the first saved climb through two column changes before the list loads', async () => {
+    const { findByText } = render(<ClimbList />);
+    await findByText('Climb 0');
+    layoutTo(914);
+    act(() => mocks.listViewableItemsChanged?.({ viewableItems: [{ index: 100 }, { index: 107 }] }));
+    layoutTo(834);
+    // The in-between list reports its own first rows before it has scrolled.
+    act(() => mocks.listViewableItemsChanged?.({ viewableItems: [{ index: 0 }, { index: 6 }] }));
+    layoutTo(914);
+    act(() => mocks.listOnLoad?.());
+    expect(mocks.scrollToIndex).toHaveBeenCalledExactlyOnceWith({ index: 100, animated: false, viewOffset: -160 });
   });
 });
 
