@@ -40,6 +40,7 @@ import { useAuth } from '../../../src/providers/auth-provider';
 import { useTheme } from '../../../src/providers/theme-provider';
 import { useBottomChromeMetrics } from '../../../src/hooks/use-bottom-chrome-metrics';
 import { useOfflineQueryState } from '../../../src/hooks/use-offline-query-state';
+import { useScrollEdgeBackdrop } from '../../../src/hooks/use-scroll-edge-backdrop';
 import { OfflineState } from '../../../src/components/OfflineState';
 import { dedupeSessionsById } from '../../../src/lib/feed-time-buckets';
 import { deriveFeedScopeInput, type FeedMode } from '../../../src/lib/feed/feed-scope';
@@ -96,6 +97,9 @@ export default function HomeTab() {
   const [commentTarget, setCommentTarget] = useState<CommentTarget | null>(null);
   // UIKit owns its title inset. Other variants measure the floating chrome.
   const [chromeHeight, setChromeHeight] = useState(() => (nativeRootHeader ? 0 : insets.top + TOP_ISLAND_BAND));
+  // Tells the Material app bar when the feed has scrolled under it. `list` stays
+  // undefined, and the feed listener-free, until a bar attaches.
+  const scrollEdge = useScrollEdgeBackdrop();
 
   // Which sections the climber shows, and in what order (Customize Home). Read
   // synchronously, so a hidden section never mounts and its queries never start.
@@ -585,6 +589,10 @@ export default function HomeTab() {
             paddingBottom: bottomChrome.scrollBottomPadding + spacing[5],
           }}
           scrollIndicatorInsets={{ top: chromeHeight }}
+          // Every frame, so the app bar tints while rows pass under it (the browser
+          // build otherwise reports little more than the start and end of a scroll).
+          scrollEventThrottle={16}
+          {...scrollEdge.list?.listProps}
           onEndReached={handleEndReached}
           onEndReachedThreshold={0.5}
           ListHeaderComponent={header}
@@ -680,6 +688,7 @@ export default function HomeTab() {
         searchAccessibilityLabel={t('mobile.home.searchAction')}
         scopeAccessibilityHint={t('mobile.home.scope.hint')}
         onHeightChange={setChromeHeight}
+        scrollEdge={scrollEdge.backdrop}
       />
       <CommentSheet
         sheetRef={commentSheetRef}

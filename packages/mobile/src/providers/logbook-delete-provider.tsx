@@ -19,18 +19,20 @@ import { spacing } from '../theme/tokens';
 export const LOGBOOK_DELETE_UNDO_MS = 8000;
 type DeleteRequest = {
   originScope: string;
-  uuid: string;
+  /** One entry, or every entry of a day for Delete all: one Undo restores them all. */
+  uuids: readonly string[];
   method: 'swipe' | 'a11y';
   viaChooser?: boolean;
-  onSuccess?: () => void;
-  onSettled?: () => void;
+  onSuccess?: (uuid: string) => void;
 };
-type PendingDelete = DeleteRequest & {
+type PendingDelete = Omit<DeleteRequest, 'uuids'> & {
+  uuid: string;
+  bulk: boolean;
   scope: string;
-  nonce: number;
   timer: ReturnType<typeof setTimeout>;
   executing: boolean;
 };
+type UndoOffer = { nonce: number; tasks: readonly PendingDelete[] };
 type DeleteActions = { scheduleDelete: (request: DeleteRequest) => boolean; getDeleteScope: () => string };
 const ActionsContext = createContext<DeleteActions | null>(null);
 const PendingContext = createContext<ReadonlySet<string>>(new Set());
@@ -61,16 +63,15 @@ export function LogbookDeleteProvider({ children }: { children: ReactNode }) {
   const pending = useRef(new Map<string, PendingDelete>());
   const nonce = useRef(0);
   const [hiddenUuids, setHiddenUuids] = useState<ReadonlySet<string>>(new Set());
-  const [offer, setOffer] = useState<{ uuid: string; nonce: number } | null>(null);
+  const [offer, setOffer] = useState<UndoOffer | null>(null);
   const publish = useCallback(() => setHiddenUuids(new Set(pending.current.keys())), []);
   const retire = useCallback(
     (task: PendingDelete) => {
       if (pending.current.get(task.uuid) !== task) return;
       clearTimeout(task.timer);
       pending.current.delete(task.uuid);
-      setOffer((current) => (current?.nonce === task.nonce ? null : current));
+      setOffer((current) => (current?.tasks.includes(task) ? null : current));
       publish();
-      task.onSettled?.();
     },
     [publish],
   );
@@ -81,57 +82,65 @@ export function LogbookDeleteProvider({ children }: { children: ReactNode }) {
         showToast(tCommon('undoDelete.cancelled'), 'info');
         return false;
       }
-      if (pending.current.has(request.uuid)) return false;
-      const task: PendingDelete = {
-        ...request,
-        scope: scopeRef.current,
-        nonce: ++nonce.current,
-        executing: false,
-        timer: setTimeout(() => {
-          if (pending.current.get(task.uuid) !== task || task.scope !== scopeRef.current) {
-            retire(task);
-            return;
-          }
-          task.executing = true;
-          setOffer((current) => (current?.nonce === task.nonce ? null : current));
-          void transportRef
-            .current(task.uuid)
-            .then(
-              () => {
-                // A deleted tick leaves the workout's own tick log too (#6903), so
-                // the phone's tallies and "still saving" stop counting it.
-                forgetWorkoutRunTick(task.uuid);
-                forgetEndedWorkoutTick(task.uuid, nowMs());
-                // UI callbacks belong to the originating scope; the provider's mutation
-                // cache bookkeeping already ran before this promise settled.
-                if (task.scope === scopeRef.current) {
-                  track(SHARED_EVENTS.LogbookEntryDeleted, {
-                    method: task.method,
-                    viaChooser: task.viaChooser ?? false,
-                  });
-                  hapticSuccess();
-                  task.onSuccess?.();
-                }
-              },
-              () => {
-                if (task.scope === scopeRef.current) showToast(t('mobile.logbook.deleteError'), 'error');
-              },
-            )
-            .finally(() => retire(task))
-            .catch(() => {});
-        }, LOGBOOK_DELETE_UNDO_MS),
-      };
-      pending.current.set(task.uuid, task);
+      const { uuids, ...shared } = request;
+      const freshUuids = uuids.filter((uuid) => !pending.current.has(uuid));
+      if (freshUuids.length === 0) return false;
+      const tasks = freshUuids.map((uuid) => {
+        const task: PendingDelete = {
+          ...shared,
+          uuid,
+          bulk: uuids.length > 1,
+          scope: scopeRef.current,
+          executing: false,
+          timer: setTimeout(() => {
+            if (pending.current.get(task.uuid) !== task || task.scope !== scopeRef.current) {
+              retire(task);
+              return;
+            }
+            task.executing = true;
+            setOffer((current) => (current?.tasks.includes(task) ? null : current));
+            void transportRef
+              .current(task.uuid)
+              .then(
+                () => {
+                  // A deleted tick leaves the workout's own tick log too (#6903), so
+                  // the phone's tallies and "still saving" stop counting it.
+                  forgetWorkoutRunTick(task.uuid);
+                  forgetEndedWorkoutTick(task.uuid, nowMs());
+                  // UI callbacks belong to the originating scope; the provider's mutation
+                  // cache bookkeeping already ran before this promise settled.
+                  if (task.scope === scopeRef.current) {
+                    track(SHARED_EVENTS.LogbookEntryDeleted, {
+                      method: task.method,
+                      viaChooser: task.viaChooser ?? false,
+                      bulk: task.bulk,
+                    });
+                    hapticSuccess();
+                    task.onSuccess?.(task.uuid);
+                  }
+                },
+                () => {
+                  if (task.scope === scopeRef.current) showToast(t('mobile.logbook.deleteError'), 'error');
+                },
+              )
+              .finally(() => retire(task))
+              .catch(() => {});
+          }, LOGBOOK_DELETE_UNDO_MS),
+        };
+        pending.current.set(task.uuid, task);
+        return task;
+      });
       publish();
-      setOffer({ uuid: task.uuid, nonce: task.nonce });
+      setOffer({ nonce: ++nonce.current, tasks });
       return true;
     },
     [publish, retire, showToast, t, tCommon],
   );
   const undo = useCallback(() => {
     if (!offer) return;
-    const task = pending.current.get(offer.uuid);
-    if (task && task.nonce === offer.nonce && !task.executing && task.scope === scopeRef.current) retire(task);
+    for (const task of offer.tasks) {
+      if (pending.current.get(task.uuid) === task && !task.executing && task.scope === scopeRef.current) retire(task);
+    }
   }, [offer, retire]);
   // Dismissing the visual offer does not shorten the promised Undo period or
   // fire a server request. The provider timer is the only commit authority.
@@ -158,7 +167,11 @@ export function LogbookDeleteProvider({ children }: { children: ReactNode }) {
     <UndoSnackbar
       visible
       nonce={offer.nonce}
-      message={tCommon('undoDelete.removed')}
+      message={
+        offer.tasks.length > 1
+          ? tCommon('undoDelete.removedMany', { count: offer.tasks.length })
+          : tCommon('undoDelete.removed')
+      }
       undoLabel={tCommon('undoDelete.undo')}
       onUndo={undo}
       onDismiss={dismissOffer}

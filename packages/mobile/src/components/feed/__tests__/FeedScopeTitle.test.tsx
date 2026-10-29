@@ -13,16 +13,18 @@ const capture = vi.hoisted(() => ({
   actions: undefined as AppMenuAction[] | undefined,
   onSelectIndex: undefined as ((index: number) => void) | undefined,
   accessibilityLabel: undefined as string | undefined,
+  headline: undefined as string | undefined,
   maxWidth: undefined as number | undefined,
 }));
 const ctrl = vi.hoisted(() => ({ variant: 'liquidGlass' as 'liquidGlass' | 'material' }));
 
 vi.mock('../../AppMenu', () => ({
-  AppMenu: ({ label, actions, onSelectIndex, accessibilityLabel, maxWidth }: AppMenuProps) => {
+  AppMenu: ({ label, actions, onSelectIndex, accessibilityLabel, headline, maxWidth }: AppMenuProps) => {
     capture.label = label;
     capture.actions = actions;
     capture.onSelectIndex = onSelectIndex;
     capture.accessibilityLabel = accessibilityLabel;
+    capture.headline = headline;
     capture.maxWidth = maxWidth;
     return createElement('div', { 'data-app-menu': 'true' }, label);
   },
@@ -46,6 +48,7 @@ beforeEach(() => {
   capture.actions = undefined;
   capture.onSelectIndex = undefined;
   capture.accessibilityLabel = undefined;
+  capture.headline = undefined;
   capture.maxWidth = undefined;
   ctrl.variant = 'liquidGlass';
 });
@@ -61,9 +64,17 @@ describe('FeedScopeTitle', () => {
     const onSelectIndex = vi.fn();
     render(createElement(FeedScopeTitle, { title: 'My crew', actions: ACTIONS, onSelectIndex }));
     expect(capture.label).toBe('My crew');
-    expect(capture.accessibilityLabel).toBe('My crew');
+    // AppMenu reads its label (and any headline) aloud itself.
+    expect(capture.accessibilityLabel).toBeUndefined();
     capture.onSelectIndex?.(1);
     expect(onSelectIndex).toHaveBeenCalledWith(1);
+  });
+
+  it('forwards the Material headline to the title-menu', () => {
+    render(
+      createElement(FeedScopeTitle, { title: 'My crew', headline: 'Home', actions: ACTIONS, onSelectIndex: vi.fn() }),
+    );
+    expect(capture.headline).toBe('Home');
   });
 
   it('caps the anchor wider on Liquid Glass (the floating pill has room to grow)', () => {

@@ -8,16 +8,19 @@ vi.mock('../../../lib/playlists/use-tick-list-activation', () => ({
   },
 }));
 vi.mock('../../../providers/logbook-delete-provider', () => ({
-  usePendingLogbookDeletes: () => new Set(),
+  usePendingLogbookDeletes: () => new Set(pendingDeletes.uuids),
   useLogbookDeleteActions: () => ({
     getDeleteScope: () => 'scope',
-    scheduleDelete: (request: { uuid: string; onSuccess?: () => void; onSettled?: () => void }) => {
-      deleteTick.mutate(request.uuid, {
-        onSuccess: () => {
-          request.onSuccess?.();
-          request.onSettled?.();
-        },
-      });
+    scheduleDelete: (request: { uuids: readonly string[]; onSuccess?: (uuid: string) => void }) => {
+      for (const uuid of request.uuids) {
+        pendingDeletes.uuids.add(uuid);
+        deleteTick.mutate(uuid, {
+          onSuccess: () => {
+            pendingDeletes.uuids.delete(uuid);
+            request.onSuccess?.(uuid);
+          },
+        });
+      }
       return true;
     },
   }),
@@ -45,6 +48,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // (never acting on the whole group).
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
 const deleteTick = vi.hoisted(() => ({ mutate: vi.fn(), isPending: false }));
+const pendingDeletes = vi.hoisted(() => ({ uuids: new Set<string>() }));
 const dialog = vi.hoisted(() => ({ confirm: vi.fn<(options: unknown) => Promise<boolean>>(async () => false) }));
 const toast = vi.hoisted(() => ({ showToast: vi.fn() }));
 const haptics = vi.hoisted(() => ({ hapticSelection: vi.fn(), hapticSuccess: vi.fn(), hapticError: vi.fn() }));
@@ -246,6 +250,7 @@ async function fireDeleteRequest(method: 'swipe' | 'a11y') {
 beforeEach(() => {
   analytics.track.mockClear();
   deleteTick.mutate.mockClear();
+  pendingDeletes.uuids.clear();
   deleteTick.mutate.mockImplementation((_uuid: string, mutateOptions?: { onSuccess?: () => void }) => {
     mutateOptions?.onSuccess?.();
   });
@@ -314,6 +319,72 @@ describe('LogbookTab grouped mode', () => {
     });
     expect(deleteTick.mutate).toHaveBeenCalledWith('tick-send', expect.anything());
     expect(chooser.props).toBeNull();
+  });
+
+  it('drops an entry from the chooser while it waits out Undo, so the next pick deletes the next tick', async () => {
+    // The owner holds every delete in its Undo window: nothing commits here.
+    deleteTick.mutate.mockImplementation(() => {});
+    const { rerender } = render(createElement(LogbookTab, { userId: 'user-1' }));
+
+    await fireDeleteRequest('swipe');
+    const onPick = chooser.props?.onPick as ((entry: { uuid: string }) => void) | undefined;
+    await act(async () => {
+      onPick?.(GROUP_ITEMS[1]);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    rerender(createElement(LogbookTab, { userId: 'user-1' }));
+    const remaining = chooser.props?.entries as Array<{ uuid: string }>;
+    expect(remaining.map((entry) => entry.uuid)).toEqual(['tick-send']);
+
+    const onPickNext = chooser.props?.onPick as ((entry: { uuid: string }) => void) | undefined;
+    await act(async () => {
+      onPickNext?.(GROUP_ITEMS[0]);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(deleteTick.mutate).toHaveBeenCalledTimes(2);
+    expect(deleteTick.mutate).toHaveBeenLastCalledWith('tick-send', expect.anything());
+
+    // Both entries pending: the emptied sheet closes itself.
+    chooser.props = null;
+    rerender(createElement(LogbookTab, { userId: 'user-1' }));
+    expect(chooser.props).toBeNull();
+  });
+
+  it('Delete all confirms once with the count, then deletes every entry and closes the chooser', async () => {
+    deleteTick.mutate.mockImplementation(() => {});
+    const { rerender } = render(createElement(LogbookTab, { userId: 'user-1' }));
+
+    await fireDeleteRequest('swipe');
+    const onDeleteAll = chooser.props?.onDeleteAll as (() => void) | undefined;
+    expect(onDeleteAll).toBeDefined();
+    await act(async () => {
+      onDeleteAll?.();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(dialog.confirm).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        title: 'mobile.logbook.deleteAllTitle',
+        confirmLabel: 'mobile.logbook.deleteAll',
+        destructive: true,
+      }),
+    );
+    expect(deleteTick.mutate.mock.calls.map(([uuid]) => uuid)).toEqual(['tick-send', 'tick-burn']);
+
+    chooser.props = null;
+    rerender(createElement(LogbookTab, { userId: 'user-1' }));
+    expect(chooser.props).toBeNull();
+  });
+
+  it('Delete all deletes nothing when the confirm is declined', async () => {
+    dialog.confirm.mockImplementationOnce(async () => false);
+    render(createElement(LogbookTab, { userId: 'user-1' }));
+    await fireDeleteRequest('swipe');
+    await act(async () => {
+      (chooser.props?.onDeleteAll as () => void)();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(deleteTick.mutate).not.toHaveBeenCalled();
+    expect((chooser.props?.entries as Array<{ uuid: string }>).length).toBe(2);
   });
 
   it('routes edit on a multi-entry group through the chooser to the edit sheet', async () => {

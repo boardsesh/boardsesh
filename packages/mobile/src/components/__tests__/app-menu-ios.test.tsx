@@ -22,6 +22,7 @@ vi.mock('@expo/ui/swift-ui', () => ({
     createElement('button', { onClick: onPress }, label),
   Divider: () => createElement('hr'),
   HStack: ({ children }: { children: ReactNode }) => createElement('div', null, children),
+  VStack: ({ children }: { children: ReactNode }) => createElement('div', { 'data-vstack': true }, children),
   Text: ({ children }: { children: ReactNode }) => createElement('span', null, children),
   Image: ({ systemName, size, modifiers }: { systemName: string; size?: number; modifiers?: Modifier[] }) =>
     createElement('i', {
@@ -41,6 +42,7 @@ vi.mock('@expo/ui/swift-ui/modifiers', () => ({
       'disabled',
       'frame',
       'font',
+      'foregroundStyle',
       'lineLimit',
       'truncationMode',
       'accessibilityLabel',
@@ -143,6 +145,21 @@ describe('AppMenu (iOS) icon surfaces', () => {
 });
 
 describe('AppMenu (iOS) dividers', () => {
+  it('draws a Material headline as flat title text over the scope, read as one name', () => {
+    const { container } = render(
+      createElement(AppMenu, { label: 'My crew', headline: 'Home', actions, onSelectIndex: vi.fn() }),
+    );
+    const stack = container.querySelector('[data-vstack]');
+    expect(Array.from(stack?.querySelectorAll('span') ?? []).map((text) => text.textContent)).toEqual([
+      'Home',
+      'My crew',
+    ]);
+    const kinds = modifiersOf(container).map((modifier) => modifier.kind);
+    expect(modifiersOf(container)).toContainEqual({ kind: 'buttonStyle', params: 'plain' });
+    expect(kinds).not.toContain('controlSize');
+    expect(modifiersOf(container)).toContainEqual({ kind: 'accessibilityLabel', params: 'Home, My crew' });
+  });
+
   it('draws a UIMenu separator above a row that opens a group, without taking an index', () => {
     const onSelectIndex = vi.fn();
     const { container, getByText } = render(

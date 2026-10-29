@@ -1,17 +1,15 @@
 import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import type { ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
-import { type ReactElement, type ReactNode, isValidElement, useCallback, useMemo, useState } from 'react';
-import { type LayoutChangeEvent, StyleSheet, View } from 'react-native';
+import { type ReactElement, type ReactNode, isValidElement, useMemo, useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { useFrameSize } from 'expo-router/react-navigation';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Appbar } from 'react-native-paper';
 import { useTheme } from '../../providers/theme-provider';
 import { selectByVariant } from '../../theme/variants';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { canAdjustBoardAngle } from '../../lib/boards/can-adjust-board-angle';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useNativeGlass } from '../../hooks/use-native-glass';
-import { useHorizontalSafeArea } from '../../hooks/use-horizontal-safe-area';
 import { useNativeRootBarItems } from '../../hooks/use-native-root-bar-items';
 import { shadows } from '../../theme/tokens';
 import { Icon } from '../Icon';
@@ -33,6 +31,7 @@ import { MaterialAngleAction, MaterialLightbulbAction } from './MaterialBoardAct
 import { CollapsingLargeTitleHeader } from './CollapsingLargeTitleHeader';
 import { NativeRootHeader } from './NativeRootHeader';
 import { NativeHeaderActionContext } from './native-header-action-context';
+import { MaterialTopAppBar } from './MaterialTopAppBar';
 import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction';
 import { iconMap } from '../icon-map';
 import { BOARD_HISTORY_ITEM_ID, barItemsFactory, symbolBarItem, type RootBarItem } from './root-bar-items';
@@ -71,6 +70,9 @@ type CollapsingTopChromeProps = {
   climbListBarActions?: { onOpenHistory: () => void; badge: boolean };
   /** Report the measured chrome height so the list can inset its top padding. */
   onHeightChange: (height: number) => void;
+  /** The destination's name, the Material app bar's title ("Discover"). The
+   *  liquid-glass islands have no title slot and ignore it. */
+  materialTitle: string;
   /** Optional persistent plain centre title (Climbs filter summary). */
   centerTitle?: string;
   /** Optional interactive element for the centre slot (Climbs "On the wall"
@@ -129,6 +131,7 @@ export function CollapsingTopChrome({
   boardControls,
   climbListBarActions,
   onHeightChange,
+  materialTitle,
   centerTitle,
   centerContent,
   titleHidden = false,
@@ -142,23 +145,16 @@ export function CollapsingTopChrome({
   scrollEdge,
 }: CollapsingTopChromeProps) {
   const { systemColors, variant } = useTheme();
-  const insets = useSafeAreaInsets();
-  const horizontalSafeArea = useHorizontalSafeArea();
   const nativeGlass = useNativeGlass();
   const nativeHeader = useNativeRootHeader();
   const nativeBarItems = useNativeRootBarItems();
   const { data: activeBoard } = useActiveBoard();
   const bluetooth = useOptionalBluetoothContext();
 
-  const handleLayout = useCallback(
-    (event: LayoutChangeEvent) => onHeightChange(event.nativeEvent.layout.height),
-    [onHeightChange],
-  );
-
-  // Material (Android default): a real M3 small top app bar instead of the floating
-  // glass islands. Climbs/Record short-circuit to their own Appbar before delegating
-  // here, so in practice only Discover reaches this branch — the avatar, board
-  // switcher, angle, and lightbulb come from the shared Material helpers. The create
+  // Material (Android default): the shared M3 small top app bar instead of the
+  // floating glass islands. Climbs short-circuits to its own bar before delegating
+  // here, so in practice only Discover reaches this branch — the avatar, the
+  // screen title with the board switcher as its subtitle, angle, and lightbulb. The create
   // action is the screen's Material FAB (see `DiscoverLibrary`), not an app-bar
   // control, so `canCreate` / `onCreate` are intentionally unused here. The `children`
   // / `centerTitle` / leading / trailing props are liquid-glass-only affordances
@@ -166,38 +162,18 @@ export function CollapsingTopChrome({
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
   if (isMaterial) {
     return (
-      <View
-        // NOT box-none — the opaque Material band must swallow touches; see ClimbTopChrome for the RNGH mechanism.
-        pointerEvents="auto"
-        style={[
-          styles.materialContainer,
-          {
-            paddingTop: insets.top,
-            paddingLeft: horizontalSafeArea.left,
-            paddingRight: horizontalSafeArea.right,
-            backgroundColor: systemColors.secondaryBackground,
-            borderBottomColor: systemColors.separator,
-          },
-        ]}
-        onLayout={handleLayout}
-      >
-        <Appbar.Header
-          statusBarHeight={0}
-          mode="small"
-          elevated
-          style={[styles.materialAppbar, { backgroundColor: systemColors.secondaryBackground }]}
-        >
-          <UserAvatarToolbarAction variant="material" />
-          <BoardSwitcherButton
-            onPress={onOpenBoardSwitcher}
-            accessibilityHint={boardPillAccessibilityHint}
-            badge={boardBadge}
-            showcaseAnchor={anchorBoardButton}
-          />
-          <MaterialAngleAction />
-          <MaterialLightbulbAction />
-        </Appbar.Header>
-      </View>
+      <MaterialTopAppBar onHeightChange={onHeightChange} scrollEdge={scrollEdge}>
+        <UserAvatarToolbarAction variant="material" />
+        <BoardSwitcherButton
+          title={materialTitle}
+          onPress={onOpenBoardSwitcher}
+          accessibilityHint={boardPillAccessibilityHint}
+          badge={boardBadge}
+          showcaseAnchor={anchorBoardButton}
+        />
+        <MaterialAngleAction />
+        <MaterialLightbulbAction />
+      </MaterialTopAppBar>
     );
   }
 
@@ -624,19 +600,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-end',
     overflow: 'hidden',
-  },
-  // Material small app bar (mirrors ClimbTopChrome / RecordTopChrome): absolutely
-  // positioned so the list scrolls under it, height reported via onLayout.
-  materialContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 20,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  materialAppbar: {
-    elevation: 0,
-    shadowOpacity: 0,
   },
 });

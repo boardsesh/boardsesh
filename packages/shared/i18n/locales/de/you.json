@@ -106,8 +106,11 @@
       "reset": "Zurücksetzen",
       "editTitle": "Begehung bearbeiten",
       "delete": "Löschen",
+      "deleteAll": "Alle löschen",
       "deleteTitle": "Begehung löschen",
+      "deleteAllTitle": "{{count}} Einträge löschen",
       "deleteConfirm": "Das entfernt die eingetragene Begehung und lässt sich nicht rückgängig machen.",
+      "deleteAllConfirm": "Das entfernt alle {{count}} Einträge dieses Tages und lässt sich nicht rückgängig machen.",
       "saveError": "Deine Änderungen konnten nicht gespeichert werden. Versuch es erneut.",
       "deleteError": "Die Begehung konnte nicht gelöscht werden. Versuch es erneut.",
       "tries_one": "{{count}} Versuch",
@@ -147,7 +150,8 @@
       },
       "chooser": {
         "editTitle": "Welchen Eintrag bearbeiten?",
-        "deleteTitle": "Welchen Eintrag löschen?"
+        "deleteTitle": "Welchen Eintrag löschen?",
+        "deleteAll": "Alle {{count}} löschen"
       },
       "boardLabel": "Board",
       "boardNone": "Keines",

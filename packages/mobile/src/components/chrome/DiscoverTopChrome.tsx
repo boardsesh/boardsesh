@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import type { ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
 import { CollapsingTopChrome } from './CollapsingTopChrome';
 
 type DiscoverTopChromeProps = {
@@ -10,6 +11,8 @@ type DiscoverTopChromeProps = {
   onOpenBoardSwitcher: () => void;
   /** Report the measured chrome height so the list can inset its top padding. */
   onHeightChange: (height: number) => void;
+  /** The scrolling shelves, so the Material app bar tints once they pass under it. */
+  scrollEdge?: ScrollEdgeBackdrop;
 };
 
 /**
@@ -17,6 +20,7 @@ type DiscoverTopChromeProps = {
  * `CollapsingTopChrome` that injects the playlist / boards i18n strings. The
  * board pill + islands stay put over the progressive blur; the in-body "Discover"
  * title scrolls away (the tab bar already labels the tab, so no scrolled title).
+ * Material has no in-body title: "Discover" is the app bar's title instead.
  */
 export function DiscoverTopChrome(props: DiscoverTopChromeProps) {
   const { t } = useTranslation('playlists');
@@ -24,6 +28,7 @@ export function DiscoverTopChrome(props: DiscoverTopChromeProps) {
   return (
     <CollapsingTopChrome
       {...props}
+      materialTitle={t('bottomTabBar.discover')}
       createAccessibilityLabel={t('library.createFab.ariaLabel')}
       boardPillAccessibilityHint={tBoards('boardPill.switchHint')}
     />

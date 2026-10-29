@@ -204,6 +204,7 @@ type Documents = {
   '\n  query GetUserDataExport($boardType: String!, $period: String) {\n    userDataExport(boardType: $boardType, period: $period) {\n      ...UserDataExportStatusFields\n    }\n  }\n  \n': typeof types.GetUserDataExportDocument;
   '\n  mutation RequestUserDataExport($boardType: String!) {\n    requestUserDataExport(boardType: $boardType) {\n      ...UserDataExportStatusFields\n    }\n  }\n  \n': typeof types.RequestUserDataExportDocument;
   '\n  query GetUserDataExportDownload($boardType: String!, $period: String!, $format: UserDataExportFormat!) {\n    userDataExportDownload(boardType: $boardType, period: $period, format: $format) {\n      url\n      expiresAt\n      filename\n    }\n  }\n': typeof types.GetUserDataExportDownloadDocument;
+  '\n  query JoinRedirectSessionBoardPath($sessionId: ID!) {\n    session(sessionId: $sessionId) {\n      boardPath\n    }\n  }\n': typeof types.JoinRedirectSessionBoardPathDocument;
 };
 const documents: Documents = {
   '\n  query GetDeleteAccountInfo {\n    deleteAccountInfo {\n      publishedClimbCount\n    }\n  }\n':
@@ -581,6 +582,8 @@ const documents: Documents = {
     types.RequestUserDataExportDocument,
   '\n  query GetUserDataExportDownload($boardType: String!, $period: String!, $format: UserDataExportFormat!) {\n    userDataExportDownload(boardType: $boardType, period: $period, format: $format) {\n      url\n      expiresAt\n      filename\n    }\n  }\n':
     types.GetUserDataExportDownloadDocument,
+  '\n  query JoinRedirectSessionBoardPath($sessionId: ID!) {\n    session(sessionId: $sessionId) {\n      boardPath\n    }\n  }\n':
+    types.JoinRedirectSessionBoardPathDocument,
 };
 
 /**
@@ -1737,6 +1740,12 @@ export function graphql(
 export function graphql(
   source: '\n  query GetUserDataExportDownload($boardType: String!, $period: String!, $format: UserDataExportFormat!) {\n    userDataExportDownload(boardType: $boardType, period: $period, format: $format) {\n      url\n      expiresAt\n      filename\n    }\n  }\n',
 ): (typeof documents)['\n  query GetUserDataExportDownload($boardType: String!, $period: String!, $format: UserDataExportFormat!) {\n    userDataExportDownload(boardType: $boardType, period: $period, format: $format) {\n      url\n      expiresAt\n      filename\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query JoinRedirectSessionBoardPath($sessionId: ID!) {\n    session(sessionId: $sessionId) {\n      boardPath\n    }\n  }\n',
+): (typeof documents)['\n  query JoinRedirectSessionBoardPath($sessionId: ID!) {\n    session(sessionId: $sessionId) {\n      boardPath\n    }\n  }\n'];
 
 export function graphql(source: string) {
   return (documents as any)[source] ?? {};

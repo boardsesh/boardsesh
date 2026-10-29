@@ -106,8 +106,11 @@
       "reset": "Restablecer",
       "editTitle": "Editar ascenso",
       "delete": "Eliminar",
+      "deleteAll": "Eliminar todo",
       "deleteTitle": "Eliminar ascenso",
+      "deleteAllTitle": "Eliminar {{count}} registros",
       "deleteConfirm": "Esto elimina el ascenso registrado y no se puede deshacer.",
+      "deleteAllConfirm": "Esto elimina los {{count}} registros de este día y no se puede deshacer.",
       "saveError": "No se pudieron guardar los cambios. Inténtalo de nuevo.",
       "deleteError": "No se pudo eliminar el ascenso. Inténtalo de nuevo.",
       "tries_one": "{{count}} intento",
@@ -147,7 +150,8 @@
       },
       "chooser": {
         "editTitle": "¿Qué registro quieres editar?",
-        "deleteTitle": "¿Qué registro quieres eliminar?"
+        "deleteTitle": "¿Qué registro quieres eliminar?",
+        "deleteAll": "Eliminar los {{count}}"
       },
       "boardLabel": "Plafón",
       "boardNone": "Ninguno",

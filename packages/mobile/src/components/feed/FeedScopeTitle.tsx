@@ -5,8 +5,8 @@
 // button on iOS, a Compose DropdownMenu on Android), so this component just feeds it
 // the scope label and a per-variant width cap. The two parents position it: the glass
 // floating chrome centres the slot (`headerCenter`), the Material app bar lays it
-// leading. The only thing left to vary is how wide the title-menu may grow before it
-// crowds the trailing find-climbers action.
+// leading as its title ("Home") with the scope under it. The only thing left to vary
+// is how wide the title-menu may grow before it crowds the trailing actions.
 
 import { AppMenu, type AppMenuAction } from '../AppMenu';
 import { useVariantValue } from '../../theme/variants';
@@ -19,9 +19,11 @@ type FeedScopeTitleProps = {
   onSelectIndex: (index: number) => void;
   /** VoiceOver hint — the control is a menu, so cue what activating it does. */
   accessibilityHint?: string;
+  /** Material: the app bar's title ("Home"), drawn above the scope. */
+  headline?: string;
 };
 
-export function FeedScopeTitle({ title, actions, onSelectIndex, accessibilityHint }: FeedScopeTitleProps) {
+export function FeedScopeTitle({ title, actions, onSelectIndex, accessibilityHint, headline }: FeedScopeTitleProps) {
   // The glass pill floats with more room to grow; the Material app-bar title shares
   // its row with the avatar + find-climbers action, so it stays a touch tighter.
   const maxWidth = useVariantValue({ liquidGlass: 240, material: 220 });
@@ -29,10 +31,10 @@ export function FeedScopeTitle({ title, actions, onSelectIndex, accessibilityHin
   return (
     <AppMenu
       label={title}
+      headline={headline}
       actions={actions}
       onSelectIndex={onSelectIndex}
       maxWidth={maxWidth}
-      accessibilityLabel={title}
       accessibilityHint={accessibilityHint}
     />
   );

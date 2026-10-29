@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ElementRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, type ElementRef } from 'react';
 import { StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 import { useTranslation } from 'react-i18next';
@@ -12,10 +12,8 @@ import { buildGradeRailStops, type GradeRailStop } from '../../lib/grade-stops';
 import { hapticSelection } from '../../lib/haptics';
 import { spacing } from '../../theme/tokens';
 import { GradeChip, type GradeChipColorway } from './GradeChip';
-import { railRestOffset, railSnapOffsets } from './grade-rail-offset';
+import { useRailRest } from './use-rail-rest';
 import { RangeRail, type RangeRailChange, type RangeRailStopState } from './RangeRail';
-
-type ChipLayout = { x: number; width: number };
 
 function sortedGrades(grades: readonly Grade[]): Grade[] {
   return [...grades].sort((firstGrade, secondGrade) => firstGrade.difficultyId - secondGrade.difficultyId);
@@ -185,18 +183,6 @@ export function GradeSingleSelectRail({
   const { t } = useTranslation('climbs');
   const { gradeFormat } = useGradeFormat();
   const scrollRef = useRef<ElementRef<typeof ScrollView>>(null);
-  const chipLayoutsRef = useRef<Record<number, ChipLayout>>({});
-  const [railWidth, setRailWidth] = useState(0);
-  const [contentWidth, setContentWidth] = useState(0);
-  // Bumped whenever a chip re-measures, so the snap table recomputes off the
-  // layout ref without every chip's onLayout forcing a render of its own.
-  const [layoutVersion, setLayoutVersion] = useState(0);
-  const didCenterRef = useRef(false);
-  // Latched by the first tap or drag: after the climber has touched the rail it
-  // must never scroll itself out from under their thumb. Reset only when the rail
-  // takes on a new identity (below) — never on `focusId`, since a tap moves the
-  // focus and re-centring there IS the yank.
-  const userInteractedRef = useRef(false);
   const grades = useMemo(() => sortedGrades(unsortedGrades), [unsortedGrades]);
   // No two chips read the same: "V0 V0 V0" becomes "V0 / 4A", "V0 / 4B"... (#5960).
   const chipLabels = useMemo(
@@ -210,10 +196,11 @@ export function GradeSingleSelectRail({
   // that just rests on the focus chip, so gate the three snap props on colorway.
   const snapsToChips = colorway === 'selection';
 
-  const snapOffsets = useMemo(() => {
-    void layoutVersion;
-    return railSnapOffsets(chipLayoutsRef.current, contentInsetLeft);
-  }, [layoutVersion, contentInsetLeft]);
+  // Rest with the focus chip readable and flush to a chip start, again whenever
+  // the rail's width changes (the iPad sheet lays out at the window width first,
+  // #7062), until the climber's first tap or drag.
+  const { snapOffsets, maybeRest, onChipLayout, onRailLayout, onContentSizeChange, markInteracted, resetLatches } =
+    useRailRest({ scrollRef, focusId, leadIn: contentInsetLeft, snapToChipStart: snapsToChips });
 
   // What makes this a DIFFERENT rail rather than the same one with a new pick:
   // the grade set it renders, and whose consensus grade it is pointing at. Both
@@ -224,65 +211,26 @@ export function GradeSingleSelectRail({
     [consensusDifficultyId, grades],
   );
 
-  // Rest with the focus chip readable and flush to a chip start. `railRestOffset`
-  // clamps to the scrollable range and snaps DOWN to a chip boundary, so the rail
-  // can neither overscroll past its content nor come to rest mid-chip.
-  const maybeCenter = useCallback(() => {
-    if (userInteractedRef.current || didCenterRef.current) return;
-    const offset = railRestOffset({
-      layouts: chipLayoutsRef.current,
-      focusId,
-      railWidth,
-      contentWidth,
-      leadIn: contentInsetLeft,
-      snapToChipStart: snapsToChips,
-    });
-    if (offset == null) return;
-    didCenterRef.current = true;
-    scrollRef.current?.scrollTo({ x: offset, animated: false });
-  }, [focusId, railWidth, contentWidth, contentInsetLeft, snapsToChips]);
-
   // A new rail starts fresh: drop both latches so it rests on its own focus chip
   // even if the previous climb's rail had been dragged. One effect (rather than a
-  // reset effect plus a centring effect) so the reset can never land in a commit
-  // where the centring pass has already run.
+  // reset effect plus a resting effect) so the reset can never land in a commit
+  // where the resting pass has already run.
   const railIdentityRef = useRef(railIdentity);
   useEffect(() => {
     if (railIdentityRef.current !== railIdentity) {
       railIdentityRef.current = railIdentity;
-      userInteractedRef.current = false;
-      didCenterRef.current = false;
+      resetLatches();
     }
-    maybeCenter();
-  }, [railIdentity, maybeCenter]);
-
-  const handleChipLayout = useCallback(
-    (difficultyId: number, layout: ChipLayout) => {
-      const previous = chipLayoutsRef.current[difficultyId];
-      chipLayoutsRef.current[difficultyId] = layout;
-      if (previous?.x !== layout.x || previous?.width !== layout.width) {
-        setLayoutVersion((version) => version + 1);
-      }
-      maybeCenter();
-    },
-    [maybeCenter],
-  );
-
-  const handleContentSizeChange = useCallback(
-    (width: number) => {
-      setContentWidth(width);
-      maybeCenter();
-    },
-    [maybeCenter],
-  );
+    maybeRest();
+  }, [railIdentity, maybeRest, resetLatches]);
 
   const handleSelect = useCallback(
     (difficultyId: number) => {
-      userInteractedRef.current = true;
+      markInteracted();
       hapticSelection();
       onSelect(allowClear && selectedDifficultyId === difficultyId ? undefined : difficultyId);
     },
-    [allowClear, selectedDifficultyId, onSelect],
+    [allowClear, selectedDifficultyId, onSelect, markInteracted],
   );
 
   return (
@@ -294,19 +242,14 @@ export function GradeSingleSelectRail({
       snapToOffsets={snapsToChips && snapOffsets.length > 0 ? snapOffsets : undefined}
       snapToAlignment={snapsToChips ? 'start' : undefined}
       decelerationRate={snapsToChips ? 'fast' : undefined}
-      onScrollBeginDrag={() => {
-        userInteractedRef.current = true;
-      }}
+      onScrollBeginDrag={markInteracted}
       contentContainerStyle={[
         styles.singleSelectContent,
         style,
         { paddingStart: contentInsetLeft, paddingEnd: contentInsetRight },
       ]}
-      onContentSizeChange={handleContentSizeChange}
-      onLayout={(event) => {
-        setRailWidth(event.nativeEvent.layout.width);
-        maybeCenter();
-      }}
+      onContentSizeChange={onContentSizeChange}
+      onLayout={onRailLayout}
     >
       {grades.map((grade) => {
         const label = chipLabels.get(grade.difficultyId) ?? grade.name;
@@ -329,7 +272,7 @@ export function GradeSingleSelectRail({
                   : t('mobile.gradeRail.setLogGradeAria', { grade: label })
             }
             accessibilityState={{ selected }}
-            onLayout={({ nativeEvent }) => handleChipLayout(grade.difficultyId, nativeEvent.layout)}
+            onLayout={({ nativeEvent }) => onChipLayout(grade.difficultyId, nativeEvent.layout)}
           />
         );
       })}
