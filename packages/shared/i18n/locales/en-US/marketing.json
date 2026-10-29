@@ -1014,13 +1014,15 @@
   },
   "privacy": {
     "title": "Privacy Policy",
-    "lastUpdated": "Last updated: October 17, 2026",
+    "lastUpdated": "Last updated: October 29, 2026",
     "intro1": "Boardsesh is an open-source app for controlling climbing training boards (Kilter, Tension, MoonBoard) over Bluetooth. This policy explains what data we collect, why, and what we do with it.",
     "intro2ProductAnalytics": "The short version: we collect only what we need to make the app work. We do not sell your data, we do not run ads, and we do not share data with third-party marketers or data brokers.",
     "collect": {
       "title": "What we collect",
       "accountLabel": "Account information.",
-      "accountBody": "When you create an account, we store your email address and username. Your email is used for authentication. Your username is displayed on your profile and visible to other users in Party Mode sessions and social features.",
+      "accountBody": "When you create an account, we store your email address and username. Your email is used for authentication, and for project news email only if you opt in. Your username is displayed on your profile and visible to other users in Party Mode sessions and social features.",
+      "projectNewsLabel": "Project news email.",
+      "projectNewsBody": "Only if you switch on “Email me project news” (in the app under Settings → Account, or on the website’s Settings page), we use your email address to send you a few emails a year about what’s new in Boardsesh and how you can support it. It is off unless you turn it on, wherever you live. Our legal basis is your consent. We keep a record of when and where you opted in and out, as evidence of consent, until you delete your account. Every email says who it is from and has an unsubscribe link that works without signing in, and you can switch it off in Settings at any time. Switching it off stops future emails. We never send these emails to anyone who has not opted in.",
       "activityLabel": "Climb activity.",
       "activityBody": "When you log a send or attempt, we store the climb details, grade, date, and any notes you add. This powers your logbook and progression tracking.",
       "locationLabel": "Location.",

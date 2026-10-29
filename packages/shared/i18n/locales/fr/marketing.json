@@ -1014,13 +1014,15 @@
   },
   "privacy": {
     "title": "Politique de confidentialité",
-    "lastUpdated": "Dernière mise à jour : 17 octobre 2026",
+    "lastUpdated": "Dernière mise à jour : 29 octobre 2026",
     "intro1": "Boardsesh est une app open source pour piloter les boards d'entraînement (Kilter, Tension, MoonBoard) en Bluetooth. Cette politique explique quelles données nous collectons, pourquoi, et ce que nous en faisons.",
     "intro2ProductAnalytics": "La version courte : nous collectons uniquement ce qui est nécessaire au fonctionnement de l'app. Nous ne vendons pas vos données, nous n'affichons pas de publicités, et nous ne partageons pas vos données avec des marketeurs tiers ou des courtiers en données.",
     "collect": {
       "title": "Ce que nous collectons",
       "accountLabel": "Informations de compte.",
-      "accountBody": "Quand vous créez un compte, nous stockons votre adresse e-mail et votre nom d'utilisateur. Votre e-mail sert à l'authentification. Votre nom d'utilisateur est affiché sur votre profil et visible par les autres utilisateurs dans les sessions Mode Party et les fonctionnalités sociales.",
+      "accountBody": "Quand vous créez un compte, nous stockons votre adresse e-mail et votre nom d'utilisateur. Votre e-mail sert à l'authentification et, seulement si vous l'activez, à vous envoyer les nouvelles du projet. Votre nom d'utilisateur est affiché sur votre profil et visible par les autres utilisateurs dans les sessions Mode Party et les fonctionnalités sociales.",
+      "projectNewsLabel": "E-mails sur les nouvelles du projet.",
+      "projectNewsBody": "Uniquement si vous activez « Recevoir les nouvelles du projet par e-mail » (dans l’app sous Paramètres → Compte, ou sur la page Paramètres du site), nous utilisons votre adresse e-mail pour vous envoyer quelques e-mails par an sur les nouveautés de Boardsesh et sur la façon de le soutenir. C’est désactivé tant que vous ne l’activez pas, où que vous viviez. La base légale est votre consentement. Nous conservons quand et où vous l’avez activé ou désactivé, comme preuve du consentement, jusqu’à la suppression de votre compte. Chaque e-mail indique qui l’envoie et contient un lien de désabonnement qui fonctionne sans connexion, et vous pouvez le désactiver à tout moment dans Paramètres. Le désactiver arrête les envois suivants. Nous n’envoyons jamais ces e-mails à quelqu’un qui ne l’a pas activé.",
       "activityLabel": "Activité de grimpe.",
       "activityBody": "Quand vous enregistrez une croix ou un essai, nous stockons les détails du bloc, la cotation, la date et les notes que vous ajoutez. Cela alimente votre carnet et le suivi de progression.",
       "locationLabel": "Localisation.",

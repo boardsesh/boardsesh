@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { buildAccountModel, type AccountModelInput } from '../account-model';
+import { buildAccountModel, type AccountModelInput, type ProjectNewsEmailInput } from '../account-model';
 import { buildSettingsRootModel } from '../../root/settings-root-model';
-import type { MoreButtonRow } from '../../../MoreForm.types';
+import type { MoreButtonRow, MoreToggleRow } from '../../../MoreForm.types';
 
 const echo = (key: string, options?: Record<string, unknown>) => (options ? `${key}:${JSON.stringify(options)}` : key);
 
@@ -10,6 +10,7 @@ function makeInput(overrides: Partial<AccountModelInput> = {}): AccountModelInpu
     t: echo,
     syncIssues: null,
     email: 'alex@example.com',
+    projectNewsEmail: null,
     onEditProfile: vi.fn(),
     onExportData: vi.fn(),
     onSignOut: vi.fn(),
@@ -105,5 +106,58 @@ describe('buildAccountModel', () => {
     expect(input.onSignOut).toHaveBeenCalledOnce();
     expect(input.onDeleteAccount).toHaveBeenCalledOnce();
     expect(input.onEditProfile).toHaveBeenCalledOnce();
+  });
+
+  describe('project news email', () => {
+    function newsInput(overrides: Partial<ProjectNewsEmailInput> = {}): ProjectNewsEmailInput {
+      return { value: false, disabled: false, failure: null, onValueChange: vi.fn(), ...overrides };
+    }
+
+    function newsToggle(input: AccountModelInput): MoreToggleRow {
+      const row = buildAccountModel(input)
+        .sections.flatMap((section) => section.rows)
+        .find((candidate) => candidate.key === 'projectNewsEmail');
+      if (!row || row.kind !== 'toggle') throw new Error('no project news toggle');
+      return row;
+    }
+
+    it('sits between the profile and your data when shown', () => {
+      expect(
+        buildAccountModel(makeInput({ projectNewsEmail: newsInput() })).sections.map((section) => section.key),
+      ).toEqual(['profile', 'projectNewsEmail', 'yourData', 'accountActions']);
+    });
+
+    it('is left out entirely when the screen passes null (signed out, screenshot mode)', () => {
+      const keys = buildAccountModel(makeInput()).sections.flatMap((section) => section.rows.map((row) => row.key));
+      expect(keys).not.toContain('projectNewsEmail');
+    });
+
+    it('shows the answer it is given, off by default, and says what the climber gets', () => {
+      const model = buildAccountModel(makeInput({ projectNewsEmail: newsInput() }));
+      const section = model.sections.find((candidate) => candidate.key === 'projectNewsEmail');
+      expect(section?.title).toBe('settings:projectNews.sectionTitle');
+      expect(section?.footer).toBe('settings:projectNews.description');
+      const toggle = newsToggle(makeInput({ projectNewsEmail: newsInput() }));
+      expect(toggle).toMatchObject({ label: 'settings:projectNews.toggle', value: false, disabled: false });
+      expect(newsToggle(makeInput({ projectNewsEmail: newsInput({ value: true, disabled: true }) }))).toMatchObject({
+        value: true,
+        disabled: true,
+      });
+    });
+
+    it('puts a failed load or save in front of the description', () => {
+      const footer = (failure: ProjectNewsEmailInput['failure']) =>
+        buildAccountModel(makeInput({ projectNewsEmail: newsInput({ failure }) })).sections.find(
+          (section) => section.key === 'projectNewsEmail',
+        )?.footer;
+      expect(footer('save')).toBe('settings:projectNews.saveFailed settings:projectNews.description');
+      expect(footer('load')).toBe('settings:projectNews.loadFailed settings:projectNews.description');
+    });
+
+    it('hands the flip to the screen', () => {
+      const projectNewsEmail = newsInput();
+      newsToggle(makeInput({ projectNewsEmail })).onValueChange(true);
+      expect(projectNewsEmail.onValueChange).toHaveBeenCalledWith(true);
+    });
   });
 });

@@ -59,6 +59,8 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'GetMyAnalyticsConsent',
   'GetMyBoardSerialConfigs',
   'GetMyGyms',
+  // Settings › Account hides the project news switch in screenshot mode.
+  'GetMyProjectNewsEmailConsent',
   'GetMyRoles',
   'GetMySprayWallLifecycle',
   'GetMySprayWalls',

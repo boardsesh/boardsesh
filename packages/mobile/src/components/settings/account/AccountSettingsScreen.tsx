@@ -4,11 +4,22 @@ import { scopedRouter as router } from '../../../lib/routing/scoped-navigation';
 import { MoreForm } from '../../MoreForm';
 import { useConfirmSignOut } from '../../../hooks/use-confirm-sign-out';
 import { useProfile } from '../../../lib/graphql/hooks';
-import { hapticLight } from '../../../lib/haptics';
+import {
+  useProjectNewsEmailConsent,
+  useSetProjectNewsEmailConsent,
+} from '../../../lib/graphql/hooks/use-project-news-email';
+import { selectEffectiveOffline, useConnectivityField } from '../../../lib/connectivity/use-connectivity';
+import { hapticLight, hapticSelection } from '../../../lib/haptics';
 import { withSettingTracking } from '../../../lib/settings-analytics';
 import { useAuth } from '../../../providers/auth-provider';
 import { useSyncIssuesSection } from '../root/use-sync-issues';
-import { buildAccountModel } from './account-model';
+import { buildAccountModel, type ProjectNewsEmailInput } from './account-model';
+
+/**
+ * Screenshot mode never shows anything about supporting Boardsesh, and the
+ * project news switch mentions it, so store captures leave it out.
+ */
+const SCREENSHOT_MODE = process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1';
 
 export function AccountSettingsScreen() {
   const { t } = useTranslation('common');
@@ -21,6 +32,36 @@ export function AccountSettingsScreen() {
   const syncIssues = useSyncIssuesSection();
   const email = profile?.email ?? null;
 
+  const showProjectNews = isAuthenticated && !SCREENSHOT_MODE;
+  const projectNewsQuery = useProjectNewsEmailConsent(showProjectNews);
+  const setProjectNews = useSetProjectNewsEmailConsent();
+  const effectiveOffline = useConnectivityField(selectEffectiveOffline);
+  const { isPending: projectNewsSaving, isError: projectNewsSaveFailed, pendingValue, reset, mutate } = setProjectNews;
+  const projectNewsEmail = useMemo((): ProjectNewsEmailInput | null => {
+    if (!showProjectNews) return null;
+    const loaded = projectNewsQuery.data;
+    return {
+      value: pendingValue ?? loaded?.subscribed ?? false,
+      disabled: !loaded || projectNewsSaving || effectiveOffline,
+      failure: projectNewsSaveFailed ? 'save' : projectNewsQuery.isError && !loaded ? 'load' : null,
+      onValueChange: (next) => {
+        hapticSelection();
+        reset();
+        mutate(next);
+      },
+    };
+  }, [
+    showProjectNews,
+    projectNewsQuery.data,
+    projectNewsQuery.isError,
+    pendingValue,
+    projectNewsSaving,
+    projectNewsSaveFailed,
+    effectiveOffline,
+    reset,
+    mutate,
+  ]);
+
   const model = useMemo(
     () =>
       withSettingTracking(
@@ -28,6 +69,7 @@ export function AccountSettingsScreen() {
           t,
           syncIssues,
           email,
+          projectNewsEmail,
           onEditProfile: () => {
             hapticLight();
             router.push('/settings/edit');
@@ -46,7 +88,7 @@ export function AccountSettingsScreen() {
         }),
         'account',
       ),
-    [t, syncIssues, email, confirmSignOut],
+    [t, syncIssues, email, projectNewsEmail, confirmSignOut],
   );
 
   return <MoreForm model={model} />;

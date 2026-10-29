@@ -16,6 +16,7 @@ import { DEFAULT_LOCALE, isSupportedLocale, type Locale } from '@/app/lib/i18n/c
 import { useTranslation } from 'react-i18next';
 import Logo from '@/app/components/brand/logo';
 import ControllersSection from '@/app/components/account/controllers-section';
+import ProjectNewsEmailCard from '@/app/components/account/project-news-email-card';
 import SetPasswordSection from '@/app/components/account/set-password-section';
 import BackButton from '@/app/components/back-button';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
@@ -26,7 +27,8 @@ import { buildAppHandoffUrl } from '@/app/lib/app-handoff';
  * (Web Bluetooth/serial hardware that never moved to the SPA) and set a first
  * password for an OAuth-only account (the app has reset-password, not
  * set-password). Profile, board accounts and account deletion all live in the
- * app now — W-21 (#4440).
+ * app now — W-21 (#4440). The two consent switches stay on both: analytics,
+ * and project news email, which the unsubscribe page points people to.
  *
  * The destination is named explicitly rather than mirroring this pathname: the
  * two `/settings` routes are the same idea on different origins, but the app's
@@ -151,6 +153,8 @@ export default function SettingsPageContent() {
         }}
       >
         <ConsentSettingsCard />
+        <MuiDivider sx={{ my: 2 }} />
+        <ProjectNewsEmailCard />
         <MuiDivider sx={{ my: 2 }} />
         <SetPasswordSection
           hasPassword={profile?.hasPassword ?? false}

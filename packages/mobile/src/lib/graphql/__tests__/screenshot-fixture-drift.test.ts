@@ -59,6 +59,7 @@ import * as sharedQueueSession from '@boardsesh/graphql/operations/queue-session
 import * as sharedPrivacy from '@boardsesh/graphql/operations/privacy';
 import * as sharedNotifications from '@boardsesh/graphql/operations/notifications';
 import * as sharedAnalyticsConsent from '@boardsesh/graphql/operations/analytics-consent';
+import * as sharedProjectNewsEmail from '@boardsesh/graphql/operations/project-news-email';
 import * as sharedAppleAdsAttribution from '@boardsesh/graphql/operations/apple-ads-attribution';
 
 import {
@@ -162,6 +163,7 @@ const SHARED_OPERATION_MODULES: Record<string, Record<string, unknown>> = {
   '@boardsesh/graphql/operations/apple-ads-attribution': sharedAppleAdsAttribution,
   '@boardsesh/graphql/operations/privacy': sharedPrivacy,
   '@boardsesh/graphql/operations/analytics-consent': sharedAnalyticsConsent,
+  '@boardsesh/graphql/operations/project-news-email': sharedProjectNewsEmail,
   '@boardsesh/graphql/operations/notifications': sharedNotifications,
   '@boardsesh/graphql/operations': sharedOperations,
   '@boardsesh/graphql/operations/ticks': sharedTicks,

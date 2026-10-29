@@ -1014,13 +1014,15 @@
   },
   "privacy": {
     "title": "Datenschutzerklärung",
-    "lastUpdated": "Zuletzt aktualisiert: 17. Oktober 2026",
+    "lastUpdated": "Zuletzt aktualisiert: 29. Oktober 2026",
     "intro1": "Boardsesh ist eine quelloffene App, die Kletter-Trainingsboards (Kilter, Tension, MoonBoard) über Bluetooth steuert. Diese Erklärung sagt dir, welche Daten wir erheben, wozu, und was wir damit machen.",
     "intro2ProductAnalytics": "Kurz gesagt: Wir erheben nur, was die App zum Laufen braucht. Wir verkaufen deine Daten nicht, wir schalten keine Werbung, und wir geben nichts an Werbetreibende oder Datenhändler weiter.",
     "collect": {
       "title": "Was wir erheben",
       "accountLabel": "Kontodaten.",
-      "accountBody": "Wenn du ein Konto anlegst, speichern wir deine E-Mail-Adresse und deinen Benutzernamen. Die E-Mail-Adresse dient der Anmeldung. Dein Benutzername steht auf deinem Profil und ist für andere in Party-Modus-Sessions und den sozialen Funktionen sichtbar.",
+      "accountBody": "Wenn du ein Konto anlegst, speichern wir deine E-Mail-Adresse und deinen Benutzernamen. Die E-Mail-Adresse dient der Anmeldung und, nur wenn du es einschaltest, dem Versand von Projekt-News. Dein Benutzername steht auf deinem Profil und ist für andere in Party-Modus-Sessions und den sozialen Funktionen sichtbar.",
+      "projectNewsLabel": "Projekt-News per E-Mail.",
+      "projectNewsBody": "Nur wenn du „Projekt-News per E-Mail“ einschaltest (in der App unter Einstellungen → Konto oder auf der Einstellungsseite der Website), nutzen wir deine E-Mail-Adresse für ein paar E-Mails im Jahr darüber, was es Neues bei Boardsesh gibt und wie du es unterstützen kannst. Es ist aus, bis du es einschaltest, egal wo du wohnst. Rechtsgrundlage ist deine Einwilligung. Wann und wo du es ein- und ausgeschaltet hast, speichern wir als Nachweis der Einwilligung bis zur Löschung deines Kontos. Jede E-Mail nennt den Absender und enthält einen Abmeldelink, der ohne Anmeldung funktioniert, und du kannst es jederzeit in den Einstellungen ausschalten. Danach bekommst du keine weiteren E-Mails. Wir schicken diese E-Mails nie an jemanden, der es nicht eingeschaltet hat.",
       "activityLabel": "Kletteraktivität.",
       "activityBody": "Wenn du eine Begehung oder einen Versuch einträgst, speichern wir die Details des Boulders, den Grad, das Datum und deine Notizen. Daraus entstehen dein Routenbuch und deine Entwicklung.",
       "locationLabel": "Standort.",

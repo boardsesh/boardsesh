@@ -643,5 +643,12 @@
     "publishLinkMessage": "Alle mit dem Link können dieses Board öffnen, auch wenn es in Suche und Karte nicht auftaucht. Der Link enthält den Namen des Boards, er ist also nicht geheim. Lass den Standort verborgen, wenn du ihn nicht teilen möchtest.",
     "publishLink": "Per Link teilen",
     "publishResourceMessage": "Alle können diese Session oder dieses Board öffnen. Deine anderen privaten Aktivitäten sehen weiterhin nur Personen, die du bestätigst."
+  },
+  "projectNews": {
+    "sectionTitle": "E-Mail",
+    "toggle": "Projekt-News per E-Mail",
+    "description": "Ein paar E-Mails im Jahr darüber, was es Neues bei Boardsesh gibt und wie du es unterstützen kannst. Aus, bis du es einschaltest, und du kannst es hier oder in jeder E-Mail wieder ausschalten.",
+    "loadFailed": "Deine E-Mail-Einstellung konnte nicht geladen werden.",
+    "saveFailed": "Speichern fehlgeschlagen. Deine E-Mail-Einstellung bleibt bestehen. Verbinde dich und versuche es erneut."
   }
 }

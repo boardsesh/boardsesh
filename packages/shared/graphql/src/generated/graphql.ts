@@ -4803,6 +4803,8 @@ export type Mutation = {
    * Requires authentication.
    */
   setIntegrationAutoSync: IntegrationStatus;
+  /** Turn project news email on or off for the signed-in climber and return the account's answer. */
+  setProjectNewsEmailConsent: ProjectNewsEmailConsent;
   /**
    * Replace the entire queue state.
    * Used for bulk operations or syncing from external sources.
@@ -5681,6 +5683,11 @@ export type MutationSetCurrentClimbArgs = {
 export type MutationSetIntegrationAutoSyncArgs = {
   enabled: Scalars['Boolean']['input'];
   provider: IntegrationProvider;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationSetProjectNewsEmailConsentArgs = {
+  input: SetProjectNewsEmailConsentInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -6649,6 +6656,18 @@ export type ProfileStats = {
   totalDistinctClimbs: Scalars['Int']['output'];
 };
 
+/**
+ * Whether the signed-in climber gets project news by email. Off until they turn
+ * it on. See docs/project-news-email.md.
+ */
+export type ProjectNewsEmailConsent = {
+  __typename?: 'ProjectNewsEmailConsent';
+  /** ISO 8601 server time of the current answer, or null when the climber never answered. */
+  decidedAt?: Maybe<Scalars['String']['output']>;
+  /** True only after the climber switched it on, and until they switch it off or unsubscribe. */
+  subscribed: Scalars['Boolean']['output'];
+};
+
 /** A community proposal for changing a climb's grade, classic status, or benchmark status. */
 export type Proposal = {
   __typename?: 'Proposal';
@@ -7300,6 +7319,8 @@ export type Query = {
    * Capped server-side (small grid surface). Requires authentication.
    */
   myPinnedPlaylists: Array<Playlist>;
+  /** The signed-in climber's project news email answer. Never answered reads as off. */
+  myProjectNewsEmailConsent: ProjectNewsEmailConsent;
   /** Get the current user's community roles. */
   myRoles: Array<CommunityRoleAssignment>;
   /**
@@ -10152,6 +10173,13 @@ export type SetContentAudienceInput = {
   entityId: Scalars['ID']['input'];
   entityType: PrivacyContentType;
   privacyRevision: Scalars['Int']['input'];
+};
+
+export type SetProjectNewsEmailConsentInput = {
+  /** web, ios or android: where the climber flipped the switch. */
+  source: Scalars['String']['input'];
+  /** True to opt in, false to opt out. */
+  subscribed: Scalars['Boolean']['input'];
 };
 
 /** Result of `setSessionRestCadence`. */
@@ -15163,6 +15191,32 @@ export type BoardShareLinkPreviewQuery = {
   boardShareLinkPreview?: { __typename?: 'BoardShareLinkPreview'; name: string } | null;
 };
 
+export type ProjectNewsEmailConsentFieldsFragment = {
+  __typename?: 'ProjectNewsEmailConsent';
+  subscribed: boolean;
+  decidedAt?: string | null;
+};
+
+export type GetMyProjectNewsEmailConsentQueryVariables = Exact<{ [key: string]: never }>;
+
+export type GetMyProjectNewsEmailConsentQuery = {
+  __typename?: 'Query';
+  myProjectNewsEmailConsent: { __typename?: 'ProjectNewsEmailConsent'; subscribed: boolean; decidedAt?: string | null };
+};
+
+export type SetProjectNewsEmailConsentMutationVariables = Exact<{
+  input: SetProjectNewsEmailConsentInput;
+}>;
+
+export type SetProjectNewsEmailConsentMutation = {
+  __typename?: 'Mutation';
+  setProjectNewsEmailConsent: {
+    __typename?: 'ProjectNewsEmailConsent';
+    subscribed: boolean;
+    decidedAt?: string | null;
+  };
+};
+
 export type GetClimbProposalsQueryVariables = Exact<{
   input: GetClimbProposalsInput;
 }>;
@@ -17368,6 +17422,23 @@ export const PlaylistFieldsFragmentDoc = {
     },
   ],
 } as unknown as DocumentNode<PlaylistFieldsFragment, unknown>;
+export const ProjectNewsEmailConsentFieldsFragmentDoc = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'FragmentDefinition',
+      name: { kind: 'Name', value: 'ProjectNewsEmailConsentFields' },
+      typeCondition: { kind: 'NamedType', name: { kind: 'Name', value: 'ProjectNewsEmailConsent' } },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          { kind: 'Field', name: { kind: 'Name', value: 'subscribed' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'decidedAt' } },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<ProjectNewsEmailConsentFieldsFragment, unknown>;
 export const SessionSummaryFieldsFragmentDoc = {
   kind: 'Document',
   definitions: [
@@ -24043,6 +24114,93 @@ export const BoardShareLinkPreviewDocument = {
     },
   ],
 } as unknown as DocumentNode<BoardShareLinkPreviewQuery, BoardShareLinkPreviewQueryVariables>;
+export const GetMyProjectNewsEmailConsentDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetMyProjectNewsEmailConsent' },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'myProjectNewsEmailConsent' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [{ kind: 'FragmentSpread', name: { kind: 'Name', value: 'ProjectNewsEmailConsentFields' } }],
+            },
+          },
+        ],
+      },
+    },
+    {
+      kind: 'FragmentDefinition',
+      name: { kind: 'Name', value: 'ProjectNewsEmailConsentFields' },
+      typeCondition: { kind: 'NamedType', name: { kind: 'Name', value: 'ProjectNewsEmailConsent' } },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          { kind: 'Field', name: { kind: 'Name', value: 'subscribed' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'decidedAt' } },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetMyProjectNewsEmailConsentQuery, GetMyProjectNewsEmailConsentQueryVariables>;
+export const SetProjectNewsEmailConsentDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'SetProjectNewsEmailConsent' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'SetProjectNewsEmailConsentInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'setProjectNewsEmailConsent' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [{ kind: 'FragmentSpread', name: { kind: 'Name', value: 'ProjectNewsEmailConsentFields' } }],
+            },
+          },
+        ],
+      },
+    },
+    {
+      kind: 'FragmentDefinition',
+      name: { kind: 'Name', value: 'ProjectNewsEmailConsentFields' },
+      typeCondition: { kind: 'NamedType', name: { kind: 'Name', value: 'ProjectNewsEmailConsent' } },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          { kind: 'Field', name: { kind: 'Name', value: 'subscribed' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'decidedAt' } },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<SetProjectNewsEmailConsentMutation, SetProjectNewsEmailConsentMutationVariables>;
 export const GetClimbProposalsDocument = {
   kind: 'Document',
   definitions: [

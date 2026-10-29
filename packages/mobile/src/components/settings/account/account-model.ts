@@ -2,6 +2,20 @@ import type { MoreFormModel, MoreSection } from '../../MoreForm.types';
 import type { SettingsTranslate } from '../root/settings-pages';
 import { buildSyncIssuesSection, type SyncIssuesSectionInput } from '../root/sync-issues-section';
 
+/**
+ * The "Email me project news" switch. `null` hides the section: signed out,
+ * or screenshot mode, which never shows anything about supporting Boardsesh.
+ */
+export type ProjectNewsEmailInput = {
+  /** The answer on screen: the save in flight, else the account's, else off. */
+  value: boolean;
+  /** True while the answer loads or saves, and while offline. */
+  disabled: boolean;
+  /** Which request failed last, if any; shown under the switch. */
+  failure: 'load' | 'save' | null;
+  onValueChange: (value: boolean) => void;
+};
+
 export type AccountModelInput = {
   t: SettingsTranslate;
   /**
@@ -11,6 +25,7 @@ export type AccountModelInput = {
   syncIssues: SyncIssuesSectionInput | null;
   /** The signed-in email, shown under Edit profile. `null` while it loads, or offline. */
   email: string | null;
+  projectNewsEmail: ProjectNewsEmailInput | null;
   onEditProfile: () => void;
   onExportData: () => void;
   onSignOut: () => void;
@@ -18,7 +33,7 @@ export type AccountModelInput = {
 };
 
 /**
- * "Account": your profile, your data, and the two ways out.
+ * "Account": your profile, project news email, your data, and the two ways out.
  *
  * Stuck writes come first when there are any. Signing out deletes them, and the
  * sign-out dialog says to cancel and hit Retry sync first, so Retry sits on the
@@ -47,6 +62,7 @@ export function buildAccountModel(input: AccountModelInput): MoreFormModel {
         },
       ],
     },
+    ...(input.projectNewsEmail ? [buildProjectNewsEmailSection(t, input.projectNewsEmail)] : []),
     {
       key: 'yourData',
       title: t('settings:privacy.yourData'),
@@ -83,4 +99,34 @@ export function buildAccountModel(input: AccountModelInput): MoreFormModel {
     },
   );
   return { sections };
+}
+
+/**
+ * Off until the climber turns it on. The footer always says what they get and
+ * that they can leave any time; a failed load or save puts its note in front.
+ */
+function buildProjectNewsEmailSection(t: SettingsTranslate, input: ProjectNewsEmailInput): MoreSection {
+  const description = t('settings:projectNews.description');
+  const failureNote =
+    input.failure === 'save'
+      ? t('settings:projectNews.saveFailed')
+      : input.failure === 'load'
+        ? t('settings:projectNews.loadFailed')
+        : null;
+  const footer = failureNote ? `${failureNote} ${description}` : description;
+  return {
+    key: 'projectNewsEmail',
+    title: t('settings:projectNews.sectionTitle'),
+    footer,
+    rows: [
+      {
+        kind: 'toggle',
+        key: 'projectNewsEmail',
+        label: t('settings:projectNews.toggle'),
+        value: input.value,
+        disabled: input.disabled,
+        onValueChange: input.onValueChange,
+      },
+    ],
+  };
 }

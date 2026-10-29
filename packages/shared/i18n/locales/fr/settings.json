@@ -643,5 +643,12 @@
     "publishLinkMessage": "Toute personne disposant du lien peut ouvrir cette board, même si elle n'apparaît ni dans la recherche ni sur la carte. Le lien reprend le nom de la board, il n'est donc pas secret. Garde son emplacement masqué si tu ne souhaites pas le partager.",
     "publishLink": "Partager le lien",
     "publishResourceMessage": "Tout le monde peut ouvrir cette séance ou cette board. Tes autres activités privées restent réservées aux personnes que tu approuves."
+  },
+  "projectNews": {
+    "sectionTitle": "E-mail",
+    "toggle": "Recevoir les nouvelles du projet par e-mail",
+    "description": "Quelques e-mails par an sur les nouveautés de Boardsesh et sur la façon de le soutenir. C’est désactivé tant que tu ne l’actives pas, et tu peux le désactiver ici ou depuis n’importe quel e-mail.",
+    "loadFailed": "Impossible de charger ton réglage e-mail.",
+    "saveFailed": "Enregistrement impossible. Ton réglage e-mail n’a pas changé. Connecte-toi et réessaie."
   }
 }
