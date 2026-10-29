@@ -66,8 +66,8 @@ vi.mock('../../PressableSurface', () => ({
     ),
 }));
 vi.mock('../../Icon', () => ({
-  Icon: ({ name, color }: { name: string; color?: string }) =>
-    createElement('i', { 'data-icon': name, 'data-icon-color': color ?? '' }),
+  Icon: ({ name, color, size }: { name: string; color?: string; size?: number }) =>
+    createElement('i', { 'data-icon': name, 'data-icon-color': color ?? '', 'data-icon-size': size }),
 }));
 vi.mock('../../play-drawer/AnglePill', () => ({
   AnglePill: ({
@@ -82,7 +82,7 @@ vi.mock('../../play-drawer/AnglePill', () => ({
 }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
-    systemColors: { label: '#000' },
+    systemColors: { label: '#000', secondaryLabel: '#888' },
     actionColors: { favoriteSelected: '#E11D48' },
     brandColors: { primary: '#6D28D9' },
   }),
@@ -154,11 +154,18 @@ type RenderOptions = {
   angleClimbUuid?: string | null;
   /** The climb the bar shows. */
   shownClimb?: Climb;
+  wideLayout?: boolean;
 };
 
 function renderButtons(
   buttonIds: readonly MiniPlayerButtonId[],
-  { climbBoard = board, angle = 40, angleClimbUuid = 'climb-a', shownClimb = climb }: RenderOptions = {},
+  {
+    climbBoard = board,
+    angle = 40,
+    angleClimbUuid = 'climb-a',
+    shownClimb = climb,
+    wideLayout = false,
+  }: RenderOptions = {},
 ) {
   return render(
     createElement(MiniPlayerLeadingButtons, {
@@ -171,6 +178,7 @@ function renderButtons(
       bluetoothConnected: true,
       slotWidth: 44,
       rowHeight: 52,
+      wideLayout,
     }),
   );
 }
@@ -199,10 +207,41 @@ describe('MiniPlayerLeadingButtons', () => {
     ]);
   });
 
+  it('draws ⏮ ⏭ first on a wide bar, as the resolver orders them', () => {
+    const { container } = renderButtons(['previous', 'next', 'favorite'], { wideLayout: true });
+    const slots = Array.from(container.querySelectorAll('[data-testid^="mini-player-slot-"]')).map((slot) =>
+      slot.getAttribute('data-testid'),
+    );
+    expect(slots).toEqual(['mini-player-slot-previous', 'mini-player-slot-next', 'mini-player-slot-favorite']);
+  });
+
+  it("draws Music's iPad glyphs on a wide bar: ⏮ ⏭ filled at 24pt, the others 19pt and secondary", () => {
+    favorite.serverFavorited = false;
+    const icons = (wideLayout: boolean) =>
+      Array.from(
+        renderButtons(['previous', 'next', 'favorite'], { wideLayout }).container.querySelectorAll('[data-icon]'),
+      ).map((icon) => [
+        icon.getAttribute('data-icon'),
+        icon.getAttribute('data-icon-size'),
+        icon.getAttribute('data-icon-color'),
+      ]);
+    expect(icons(true)).toEqual([
+      ['skip.previous.fill', '24', '#000'],
+      ['skip.next.fill', '24', '#000'],
+      ['favorite', '19', '#888'],
+    ]);
+    // An iPhone keeps the glyphs it always had.
+    expect(icons(false)).toEqual([
+      ['favorite', '22', '#000'],
+      ['skip.previous', '22', '#000'],
+      ['skip.next', '22', '#000'],
+    ]);
+  });
+
   describe('Favorite', () => {
     it('reads the heart for the climb on its own board and angle', () => {
       renderButtons(['favorite']);
-      expect(favorite.statusArgs).toEqual(['kilter', 'climb-a', 40]);
+      expect(favorite.statusArgs).toEqual(['kilter', 'climb-a', 40, { enabled: true }]);
     });
 
     it('adds a favourite through the shared toggle, from the server state', () => {

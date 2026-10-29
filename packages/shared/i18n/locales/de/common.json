@@ -645,7 +645,8 @@
         "previewLabel": "Vorschau, Leiste {{shape}}: {{buttons}}",
         "footerWide": "Auf einem breiten Bildschirm zeigt die Leiste so viele dieser Buttons, wie Platz haben: die ersten in der Liste zuerst.",
         "shapeOpen": "geöffnet",
-        "shapeCollapsed": "eingeklappt"
+        "shapeCollapsed": "eingeklappt",
+        "more": "Mehr"
       }
     },
     "sendRecovery": {

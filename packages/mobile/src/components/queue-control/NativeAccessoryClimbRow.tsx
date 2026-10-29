@@ -38,8 +38,12 @@ import {
   miniPlayerPaneCoveredButtons,
   miniPlayerPaneMode,
   miniPlayerSlotCount,
+  miniPlayerUsesWideLayout,
   resolveMiniPlayerControls,
+  trailingSlotFrame,
+  type TrailingControlSlot,
 } from './mini-player-controls';
+import { MiniPlayerActionsMenu } from './MiniPlayerActionsMenu';
 import { usePlayerButtonsPreference } from '../../lib/player-buttons-preference';
 import { resolveClimbRenderBoard } from '../../lib/boards/climb-render-board';
 import { resolvePlayerAngle } from '../play-drawer/player-angle';
@@ -67,7 +71,12 @@ type NativeAccessoryClimbRowProps = {
   testID?: string;
 };
 
-const TRAILING_CONTROL_SLOTS = ['lightbulb', 'log'] as const;
+// The fixed frames at the trailing edge, left to right. A wide bar adds ⋯
+// before the pair (Music's iPad layout); an iPhone keeps the pair it always had.
+const PHONE_TRAILING_SLOTS: readonly TrailingControlSlot[] = ['lightbulb', 'log'];
+const WIDE_TRAILING_SLOTS: readonly TrailingControlSlot[] = ['more', 'lightbulb', 'log'];
+// ✓ on a wide bar: Music's one large filled control.
+const WIDE_LOG_GLYPH_SIZE = 32;
 
 type ClimbLabelProps = {
   climb: Climb;
@@ -77,6 +86,8 @@ type ClimbLabelProps = {
   thumbnailSize: number | null;
   boardConfig: BoardConfig | null;
   connectionBadge: BoardConnectionBadgeVisual | null;
+  /** A wide bar sets the name in body (17pt), as Music's iPad bar does; subheadline elsewhere. */
+  nameVariant: 'subheadline' | 'body';
 };
 
 /**
@@ -91,6 +102,7 @@ function ClimbLabel({
   thumbnailSize,
   boardConfig,
   connectionBadge,
+  nameVariant,
 }: ClimbLabelProps) {
   return (
     <View style={styles.labelInner}>
@@ -108,7 +120,7 @@ function ClimbLabel({
               back to tail-ellipsis when it fits or motion is off. */}
           <MarqueeText
             active
-            variant="subheadline"
+            variant={nameVariant}
             color={labelColor}
             maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
             style={styles.name}
@@ -228,6 +240,8 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
   const widthBesideName = accessoryWidthBesideName(geometry, thumbnailSize !== null);
   // iPad and the open Duo: as many as fit. An iPhone: three at most.
   const wide = isTablet || phoneSplit;
+  // The open wide bar draws Music's iPad layout: ⏮ ⏭ first, ⋯ before 💡 ✓.
+  const wideLayout = miniPlayerUsesWideLayout({ wide, placement });
   const capacityWidth = miniPlayerCapacityWidth({ windowWidth, rowWidth, wide, verticalTabBar });
   const slotCount = miniPlayerSlotCount({ placement, rowWidth: capacityWidth, widthBesideName, wide });
   // Tell the View options preview what this device's open bar measures.
@@ -296,6 +310,9 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
         paneMode,
         paneCoveredButtons,
         workoutOutcome,
+        wideLayout,
+        // ⋯'s sheets would present behind `/play`; the player has its own ⋯.
+        moreAvailable: !playerRouteUp,
       }),
     [
       slotCount,
@@ -306,6 +323,8 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
       paneMode,
       paneCoveredButtons,
       workoutOutcome,
+      wideLayout,
+      playerRouteUp,
     ],
   );
   // A visible bulb already speaks the state; without it, only the mark shows
@@ -324,6 +343,42 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
     !controls.trailing.includes('lightbulb') && inAppBoardConnection !== 'disconnected'
       ? getBoardConnectionLabel(t, { boardConnection: inAppBoardConnection, ledless, holderDisplayName })
       : undefined;
+
+  const angleClimbUuid =
+    climbBoardName === playerBoardName && climbLayoutId === playerLayoutId ? climb.uuid : undefined;
+  const bluetoothConnected = bluetooth?.isConnected ?? false;
+  // The climber's buttons, or Fell / Sent in a timed block. Before the climb on
+  // a wide bar, as Music puts its transport; after it elsewhere.
+  const buttonCluster = (
+    <>
+      {controls.leading.length > 0 ? (
+        <MiniPlayerLeadingButtons
+          queueItemUuid={queueItemUuid}
+          buttonIds={controls.leading}
+          climb={climb}
+          climbBoard={climbBoard}
+          angle={playerAngle}
+          angleClimbUuid={angleClimbUuid}
+          bluetoothConnected={bluetoothConnected}
+          slotWidth={glassSize.inline}
+          rowHeight={rowHeight}
+          wideLayout={wideLayout}
+        />
+      ) : null}
+      {controls.workout.length > 0 && workout.shown !== null ? (
+        <MiniPlayerWorkoutButtons
+          buttonIds={controls.workout}
+          shown={workout.shown}
+          slotWidth={glassSize.inline}
+          rowHeight={rowHeight}
+        />
+      ) : null}
+    </>
+  );
+  const trailingSlots = wideLayout ? WIDE_TRAILING_SLOTS : PHONE_TRAILING_SLOTS;
+  const slotShown = (slot: TrailingControlSlot) =>
+    slot === 'more' ? controls.more && climbBoard !== null : controls.trailing.includes(slot);
+  const { slotsShown, trailingShift } = trailingSlotFrame(trailingSlots, slotShown);
 
   // UIKit can omit the central zoom-source subtree from its accessory AX tree.
   // CPP metadata belongs to this existing visible row; ordinary captures and
@@ -345,6 +400,7 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
       accessible={testID ? true : undefined}
       accessibilityLabel={testID ? climb.name : undefined}
     >
+      {wideLayout ? buttonCluster : null}
       <AccessoryPlayLink
         style={styles.tapClip}
         accessibilityLabel={climb.name}
@@ -366,6 +422,7 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
             thumbnailSize={thumbnailSize}
             boardConfig={boardConfig}
             connectionBadge={connectionBadge}
+            nameVariant={wideLayout ? 'body' : 'subheadline'}
           />
         </LargeContentViewer>
       </AccessoryPlayLink>
@@ -374,38 +431,17 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
           bulb opens the controls sheet, as on the other lightbulbs now that a
           short press disconnects. The row stays mounted as controls appear and
           disappear: UIKit snapshots the platter between placements. */}
-      {controls.leading.length > 0 ? (
-        <MiniPlayerLeadingButtons
-          queueItemUuid={queueItemUuid}
-          buttonIds={controls.leading}
-          climb={climb}
-          climbBoard={climbBoard}
-          angle={playerAngle}
-          angleClimbUuid={
-            climbBoardName === playerBoardName && climbLayoutId === playerLayoutId ? climb.uuid : undefined
-          }
-          bluetoothConnected={bluetooth?.isConnected ?? false}
-          slotWidth={glassSize.inline}
-          rowHeight={rowHeight}
-        />
-      ) : null}
-      {controls.workout.length > 0 && workout.shown !== null ? (
-        <MiniPlayerWorkoutButtons
-          buttonIds={controls.workout}
-          shown={workout.shown}
-          slotWidth={glassSize.inline}
-          rowHeight={rowHeight}
-        />
-      ) : null}
+      {wideLayout ? null : buttonCluster}
       <View
         pointerEvents="box-none"
-        style={[styles.trailingSlot, { width: controls.trailing.length * glassSize.inline, height: rowHeight }]}
+        style={[styles.trailingSlot, { width: slotsShown * glassSize.inline, height: rowHeight }]}
       >
         {/* UIKit also resizes the hidden regular row while the bar is inline.
-            Keep both native slot frames fixed inside one pair so expansion moves
+            Keep the native slot frames fixed inside one pair so expansion moves
             them together. Empty slots mount no button, handler or accessibility
-            element. A lone bulb shifts the pair one slot to stay at the edge.
-            The pair and its slots must not flatten into independent views. */}
+            element. A lone bulb (or a lone ⋯ on the open Duo's pane) shifts the
+            pair to stay at the edge (`trailingSlotFrame`). The pair and its
+            slots must not flatten into independent views. */}
         <View
           pointerEvents="box-none"
           collapsable={false}
@@ -413,13 +449,13 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
           style={[
             styles.trailingPair,
             {
-              width: TRAILING_CONTROL_SLOTS.length * glassSize.inline,
+              width: trailingSlots.length * glassSize.inline,
               height: rowHeight,
-              right: controls.trailing.length === 1 && controls.trailing[0] === 'lightbulb' ? -glassSize.inline : 0,
+              right: -trailingShift * glassSize.inline,
             },
           ]}
         >
-          {TRAILING_CONTROL_SLOTS.map((slot) => (
+          {trailingSlots.map((slot) => (
             <View
               key={`trailing-${slot}`}
               pointerEvents="box-none"
@@ -427,25 +463,38 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
               accessible={false}
               style={[styles.controlSlot, { width: glassSize.inline, height: rowHeight }]}
             >
-              {controls.trailing.includes(slot) ? (
-                slot === 'lightbulb' ? (
-                  <BoardControlIndicator
-                    size={glassSize.inline}
-                    iconSize={22}
-                    enableLongPress
-                    solidGlyphs
-                    placement={placement}
-                  />
-                ) : (
-                  <LogAscentToolbarButton
-                    queueItemUuid={queueItemUuid}
+              {!slotShown(slot) ? null : slot === 'more' ? (
+                climbBoard ? (
+                  <MiniPlayerActionsMenu
                     climb={climb}
+                    climbBoard={climbBoard}
+                    queueItemUuid={queueItemUuid}
+                    isAuthenticated={isAuthenticated}
+                    shownButtons={controls.leading}
+                    isAvailable={isAvailable}
+                    angleClimbUuid={angleClimbUuid}
+                    bluetoothConnected={bluetoothConnected}
                     size={glassSize.inline}
-                    iconSize={geometry.logGlyphSize}
-                    placement={placement}
                   />
-                )
-              ) : null}
+                ) : null
+              ) : slot === 'lightbulb' ? (
+                <BoardControlIndicator
+                  size={glassSize.inline}
+                  iconSize={22}
+                  enableLongPress
+                  solidGlyphs
+                  placement={placement}
+                />
+              ) : (
+                <LogAscentToolbarButton
+                  queueItemUuid={queueItemUuid}
+                  climb={climb}
+                  size={glassSize.inline}
+                  iconSize={wideLayout ? WIDE_LOG_GLYPH_SIZE : geometry.logGlyphSize}
+                  appearance={wideLayout ? 'hero' : 'plain'}
+                  placement={placement}
+                />
+              )}
             </View>
           ))}
         </View>

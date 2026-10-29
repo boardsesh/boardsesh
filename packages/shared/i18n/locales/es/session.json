@@ -968,6 +968,7 @@
       "addFavoriteAria": "Añadir favorito",
       "removeFavoriteAria": "Quitar favorito",
       "climbActionsAria": "Acciones del bloque",
+      "moreActionsForAria": "Más acciones de {{name}}",
       "queueCountAria": "Cola, {{count}} bloques",
       "queueUpNextAria_zero": "Cola, nada a continuación",
       "queueUpNextAria_one": "Cola, {{count}} bloque a continuación",

@@ -968,6 +968,7 @@
       "addFavoriteAria": "Zu Favoriten hinzufügen",
       "removeFavoriteAria": "Aus Favoriten entfernen",
       "climbActionsAria": "Boulder-Aktionen",
+      "moreActionsForAria": "Weitere Aktionen für {{name}}",
       "queueCountAria": "Warteschlange, {{count}} Boulder",
       "queueUpNextAria_zero": "Warteschlange, nichts als Nächstes",
       "queueUpNextAria_one": "Warteschlange, als Nächstes {{count}} Boulder",

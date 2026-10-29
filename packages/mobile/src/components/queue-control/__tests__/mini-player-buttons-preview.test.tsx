@@ -39,7 +39,7 @@ vi.mock('../../Text', () => ({
 }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
-    brandColors: { success: 'green' },
+    brandColors: { success: 'green', primary: 'purple' },
     systemColors: {
       label: 'label',
       secondaryLabel: 'secondary',
@@ -89,9 +89,26 @@ describe('MiniPlayerButtonsPreview', () => {
     expect(collapsed).toEqual(['lightbulb']);
   });
 
-  it('draws a wide bar with every button that is on: others, then previous and next, then the fixed pair', () => {
-    const { open } = preview({ wide: true, board: TENSION });
-    expect(open).toEqual(['mirror', 'favorite', 'skip.previous', 'skip.next', 'lightbulb', 'tick.outline']);
+  it("draws a wide bar in Music's iPad layout: ⏮ ⏭ filled, the others, then ⋯ 💡 and the hero ✓", () => {
+    const { open, collapsed } = preview({ wide: true, board: TENSION });
+    expect(open).toEqual([
+      'skip.previous.fill',
+      'skip.next.fill',
+      'mirror',
+      'favorite',
+      'more',
+      'lightbulb',
+      'checkmark.circle.fill',
+    ]);
+    // The collapsed bar keeps its one slot, as on an iPhone.
+    expect(collapsed).toEqual(['lightbulb']);
+  });
+
+  it("says ⋯ in the wide bar's sentence", () => {
+    const { screen } = preview({ wide: true, board: TENSION });
+    expect(screen.getByTestId('mini-player-preview-open').getAttribute('aria-label')).toContain(
+      'mobile.settings.miniPlayer.more',
+    );
   });
 
   it('leaves Mirror off a board that cannot mirror, and Angle off a fixed-angle board', () => {
@@ -100,16 +117,32 @@ describe('MiniPlayerButtonsPreview', () => {
       visible: { ...DEFAULT_MINI_PLAYER_BUTTONS.visible, angle: true },
     };
     const kilter = preview({ wide: true, buttons, board: { ...FALLBACK_PREVIEW_BOARD, angleAvailable: false } });
-    expect(kilter.open).toEqual(['favorite', 'skip.previous', 'skip.next', 'lightbulb', 'tick.outline']);
+    expect(kilter.open).toEqual([
+      'skip.previous.fill',
+      'skip.next.fill',
+      'favorite',
+      'more',
+      'lightbulb',
+      'checkmark.circle.fill',
+    ]);
   });
 
-  it("follows the climber's order for the others and keeps previous and next together", () => {
+  it("follows the climber's order for the others and keeps previous and next together, first", () => {
     const buttons = {
       order: ['share', 'next', 'favorite', 'previous', 'mirror', 'queue', 'angle'] as const,
       visible: { ...DEFAULT_MINI_PLAYER_BUTTONS.visible, share: true, favorite: true },
     };
     const { open } = preview({ wide: true, buttons, board: TENSION });
-    expect(open).toEqual(['share', 'favorite', 'mirror', 'skip.previous', 'skip.next', 'lightbulb', 'tick.outline']);
+    expect(open).toEqual([
+      'skip.previous.fill',
+      'skip.next.fill',
+      'share',
+      'favorite',
+      'mirror',
+      'more',
+      'lightbulb',
+      'checkmark.circle.fill',
+    ]);
   });
 
   it('on an iPhone the first button in the list that is on takes the third slot', () => {
@@ -146,17 +179,25 @@ describe('MiniPlayerButtonsPreview', () => {
     };
     const signedIn = preview({ wide: true, buttons, board: TENSION }).open;
     expect(signedIn).toEqual([
+      'skip.previous.fill',
+      'skip.next.fill',
       'mirror',
       'favorite',
       'queue',
-      'skip.previous',
-      'skip.next',
+      'more',
       'lightbulb',
-      'tick.outline',
+      'checkmark.circle.fill',
     ]);
     cleanup();
     const signedOut = preview({ wide: true, buttons, board: TENSION, signedIn: false }).open;
-    expect(signedOut).toEqual(['mirror', 'skip.previous', 'skip.next', 'lightbulb', 'tick.outline']);
+    expect(signedOut).toEqual([
+      'skip.previous.fill',
+      'skip.next.fill',
+      'mirror',
+      'more',
+      'lightbulb',
+      'checkmark.circle.fill',
+    ]);
   });
 
   it("draws the width the bar measured: an iPhone Duo's closed display (290pt) holds Board light alone", () => {

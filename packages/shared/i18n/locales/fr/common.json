@@ -645,7 +645,8 @@
         "previewLabel": "Aperçu, barre {{shape}} : {{buttons}}",
         "footerWide": "Sur un écran large, la barre garde autant de ces boutons qu'elle peut en contenir : les premiers de la liste passent d'abord.",
         "shapeOpen": "ouverte",
-        "shapeCollapsed": "réduite"
+        "shapeCollapsed": "réduite",
+        "more": "Plus"
       }
     },
     "sendRecovery": {

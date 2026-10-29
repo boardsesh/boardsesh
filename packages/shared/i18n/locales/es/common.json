@@ -917,7 +917,8 @@
         "previewLabel": "Vista previa, barra {{shape}}: {{buttons}}",
         "footerWide": "En una pantalla ancha la barra muestra tantos de estos como le caben: ganan los primeros de la lista.",
         "shapeOpen": "abierta",
-        "shapeCollapsed": "reducida"
+        "shapeCollapsed": "reducida",
+        "more": "Más"
       }
     },
     "sendRecovery": {

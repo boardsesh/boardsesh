@@ -79,10 +79,10 @@ export type QueueNavigationProps = BoardTypeProperty & {
 /**
  * Where the queue sheet was opened from. `player` is the queue button on the
  * player's action bar, `player_menu` the player's ⋯ menu, `mini_player` the
- * MiniPlayer's queue button, `snackbar` the "Open" on the added-to-queue
- * snackbar.
+ * MiniPlayer's queue button, `mini_player_menu` the MiniPlayer's ⋯ menu on a
+ * wide bar, `snackbar` the "Open" on the added-to-queue snackbar.
  */
-export type QueueSheetSurface = 'player' | 'player_menu' | 'mini_player' | 'snackbar';
+export type QueueSheetSurface = 'player' | 'player_menu' | 'mini_player' | 'mini_player_menu' | 'snackbar';
 
 export type QueueSheetOpenedInput = {
   surface: QueueSheetSurface;

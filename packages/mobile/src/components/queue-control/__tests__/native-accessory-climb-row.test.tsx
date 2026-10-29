@@ -13,7 +13,7 @@ vi.mock('../../PressableSurface', async () => {
   };
 });
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { act, render, renderHook } from '@testing-library/react';
+import { act, cleanup, render, renderHook } from '@testing-library/react';
 import { createElement, useEffect, type ReactNode, type CSSProperties } from 'react';
 import type { Climb, ClimbQueueItem } from '@boardsesh/queue';
 import type { BoardConfig } from '../../../providers/drawer-host-provider';
@@ -366,6 +366,12 @@ vi.mock('../MiniPlayerButtons', () => ({
     createElement('span', { 'data-mini-player-buttons': buttonIds.join(',') }),
 }));
 
+// ⋯ has its own test (mini-player-actions-menu); here it is a marker.
+vi.mock('../MiniPlayerActionsMenu', () => ({
+  MiniPlayerActionsMenu: ({ shownButtons }: { shownButtons: readonly string[] }) =>
+    createElement('span', { 'data-more-menu': shownButtons.join(',') }),
+}));
+
 vi.mock('../../../providers/drawer-host-provider', () => ({
   useDrawerHost: () => ({
     boardConfig: drawer.boardConfig,
@@ -449,9 +455,20 @@ vi.mock('../../BoardImageNative', () => ({
 }));
 
 vi.mock('../LogAscentToolbarButton', () => ({
-  LogAscentToolbarButton: ({ size, iconSize, placement }: { size?: number; iconSize?: number; placement?: string }) =>
+  LogAscentToolbarButton: ({
+    size,
+    iconSize,
+    placement,
+    appearance,
+  }: {
+    size?: number;
+    iconSize?: number;
+    placement?: string;
+    appearance?: string;
+  }) =>
     createElement('button', {
       'data-tick': 'true',
+      'data-appearance': appearance ?? 'plain',
       'data-placement': placement ?? '',
       'data-tick-size': String(size),
       'data-icon-size': String(iconSize),
@@ -926,14 +943,66 @@ describe('NativeAccessoryClimbRow', () => {
       expect(container.querySelector('[data-tick="true"]')).not.toBeNull();
     });
 
-    it('adds ⏮ ⏭ on an iPad', () => {
+    it('adds ⏮ ⏭ on an iPad, first', () => {
       miniPlayer.isTablet = true;
       layout.width = 995;
       const { container } = renderRow('regular');
-      expect(buttons(container)).toBe('favorite,previous,next');
+      expect(buttons(container)).toBe('previous,next,favorite');
     });
 
-    it("centres in iPad's taller platter with 40pt artwork and a 22pt ✓ (#7048)", () => {
+    describe("Music's iPad layout", () => {
+      const nameOf = (container: HTMLElement) =>
+        Array.from(container.querySelectorAll('[data-text="true"]')).find(
+          (node) => node.textContent === "Alvin's Nuts",
+        ) as Element;
+      const precedes = (first: Element | null, second: Element | null) =>
+        first !== null &&
+        second !== null &&
+        (first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+      const more = (container: HTMLElement) => container.querySelector('[data-more-menu]');
+
+      it('draws the buttons before the climb, ⋯ before 💡, and a 32pt hero ✓', () => {
+        miniPlayer.isTablet = true;
+        layout.width = 995;
+        const { container } = renderRow('regular');
+        const cluster = container.querySelector('[data-mini-player-buttons]');
+        expect(precedes(cluster, nameOf(container))).toBe(true);
+        expect(more(container)?.getAttribute('data-more-menu')).toBe('previous,next,favorite');
+        expect(precedes(more(container), container.querySelector('[data-board-control]'))).toBe(true);
+        const tick = container.querySelector('[data-tick="true"]');
+        expect(tick?.getAttribute('data-appearance')).toBe('hero');
+        expect(tick?.getAttribute('data-icon-size')).toBe('32');
+        expect(nameOf(container).getAttribute('data-variant')).toBe('body');
+      });
+
+      it('leaves an iPhone as it was: buttons after the climb, no ⋯, a plain ✓, a subheadline name', () => {
+        layout.width = 370;
+        const { container } = renderRow('regular');
+        expect(precedes(nameOf(container), container.querySelector('[data-mini-player-buttons]'))).toBe(true);
+        expect(more(container)).toBeNull();
+        expect(container.querySelector('[data-tick="true"]')?.getAttribute('data-appearance')).toBe('plain');
+        expect(nameOf(container).getAttribute('data-variant')).toBe('subheadline');
+      });
+
+      it('offers no ⋯ inline, or while the /play route is up', () => {
+        miniPlayer.isTablet = true;
+        layout.width = 995;
+        expect(more(renderRow('inline').container)).toBeNull();
+        cleanup();
+        miniPlayer.playerRouteUp = true;
+        expect(more(renderRow('regular').container)).toBeNull();
+      });
+
+      it("keeps ⋯ on the open Duo's bar while it carries the pane's row", () => {
+        miniPlayer.phoneSplit = true;
+        layout.width = 800;
+        const { container } = renderRow('regular');
+        expect(more(container)?.getAttribute('data-more-menu')).toBe('favorite,angle,share');
+        expect(container.querySelector('[data-tick="true"]')).toBeNull();
+      });
+    });
+
+    it("centres in iPad's taller platter with 40pt artwork and the hero ✓ (#7048)", () => {
       miniPlayer.isTablet = true;
       layout.width = 995;
       const { container } = renderRow('regular');
@@ -942,7 +1011,7 @@ describe('NativeAccessoryClimbRow', () => {
       expect(row.getAttribute('data-height')).toBe('100%');
       expect(row.getAttribute('data-padding-end')).toBe('10');
       expectNumericAttribute(getCurrentThumbnail(container), 'data-board-height', 40);
-      expect(container.querySelector('[data-tick="true"]')?.getAttribute('data-icon-size')).toBe('22');
+      expect(container.querySelector('[data-tick="true"]')?.getAttribute('data-icon-size')).toBe('32');
     });
 
     it('keeps the tall geometry when UIKit squeezes the hidden regular row while inline', () => {
@@ -1025,7 +1094,7 @@ describe('NativeAccessoryClimbRow', () => {
         order: ['next', 'previous', 'mirror', 'favorite', 'queue', 'share', 'angle'],
         visible: { next: true, previous: true, mirror: false, favorite: false, queue: false, share: true, angle: true },
       };
-      expect(buttons(renderRow('regular').container)).toBe('share,previous,next');
+      expect(buttons(renderRow('regular').container)).toBe('previous,next,share');
     });
 
     it('places the extra buttons the climber switched on, on an iPad', () => {
@@ -1035,8 +1104,8 @@ describe('NativeAccessoryClimbRow', () => {
         order: ['next', 'previous', 'mirror', 'favorite', 'queue', 'share', 'angle'],
         visible: { next: true, previous: true, mirror: true, favorite: true, queue: true, share: true, angle: true },
       };
-      // Kilter can't mirror; the rest keep the climber's order before ⏮ ⏭.
-      expect(buttons(renderRow('regular').container)).toBe('favorite,queue,share,angle,previous,next');
+      // Kilter can't mirror; ⏮ ⏭ lead and the rest keep the climber's order.
+      expect(buttons(renderRow('regular').container)).toBe('previous,next,favorite,queue,share,angle');
     });
 
     describe('in a timed workout block', () => {
@@ -1148,21 +1217,21 @@ describe('NativeAccessoryClimbRow', () => {
     describe('Mirror', () => {
       const tensionBoard: BoardConfig = { boardName: 'tension', layoutId: 10, sizeId: 1, setIds: '1,2', angle: 40 };
 
-      it('is on by default on an iPad, on a board that mirrors: ⇄ ♡ · ⏮ ⏭', () => {
+      it('is on by default on an iPad, on a board that mirrors: ⏮ ⏭ · ⇄ ♡', () => {
         drawer.boardConfig = tensionBoard;
         miniPlayer.isTablet = true;
         layout.width = 995;
-        expect(buttons(renderRow('regular').container)).toBe('mirror,favorite,previous,next');
+        expect(buttons(renderRow('regular').container)).toBe('previous,next,mirror,favorite');
       });
 
       it('takes no place on Kilter, nor on the Tension layout that cannot mirror', () => {
         miniPlayer.isTablet = true;
         layout.width = 995;
         const kilter = renderRow('regular');
-        expect(buttons(kilter.container)).toBe('favorite,previous,next');
+        expect(buttons(kilter.container)).toBe('previous,next,favorite');
         kilter.unmount();
         drawer.boardConfig = { ...tensionBoard, layoutId: 11 };
-        expect(buttons(renderRow('regular').container)).toBe('favorite,previous,next');
+        expect(buttons(renderRow('regular').container)).toBe('previous,next,favorite');
       });
 
       it("claims its place in the climber's order on an iPhone", () => {
@@ -1222,7 +1291,7 @@ describe('NativeAccessoryClimbRow', () => {
       miniPlayer.phoneSplit = true;
       miniPlayer.paneTaken = true;
       layout.width = 800;
-      expect(buttons(renderRow('regular').container)).toBe('favorite,previous,next');
+      expect(buttons(renderRow('regular').container)).toBe('previous,next,favorite');
     });
 
     it("keeps today's bar for a climber who switched them off", () => {

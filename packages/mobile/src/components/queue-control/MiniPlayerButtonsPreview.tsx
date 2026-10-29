@@ -16,6 +16,7 @@ import {
   accessoryWidthBesideName,
   isMiniPlayerButtonAvailable,
   miniPlayerSlotCount,
+  miniPlayerUsesWideLayout,
   resolveMiniPlayerControls,
   type MiniPlayerControls,
 } from './mini-player-controls';
@@ -44,8 +45,14 @@ const BUTTON_ICONS: Record<MiniPlayerButtonId, IconName> = {
   share: 'share',
   angle: 'angle',
 };
-const TRANSPORT: readonly MiniPlayerButtonId[] = ['previous', 'next'];
+// Music's iPad layout draws ⏮ ⏭ filled.
+const WIDE_TRANSPORT_ICONS: Partial<Record<MiniPlayerButtonId, IconName>> = {
+  next: 'skip.next.fill',
+  previous: 'skip.previous.fill',
+};
 const ICON_SIZE = 18;
+// ✓ on a wide bar: the one large filled control, as on the real bar.
+const WIDE_LOG_ICON_SIZE = 22;
 
 type MiniPlayerButtonsPreviewProps = {
   buttons: MiniPlayerButtonsLayout;
@@ -84,7 +91,7 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
         angleAdjustable: board.angleAvailable,
         playerRouteUp: false,
       });
-    return (slotCount: number): MiniPlayerControls =>
+    return (slotCount: number, placement: 'regular' | 'inline'): MiniPlayerControls =>
       resolveMiniPlayerControls({
         slotCount,
         layout: buttons,
@@ -93,8 +100,10 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
         bulbAvailable: board.showLightbulb,
         paneMode: 'none',
         workoutOutcome: false,
+        wideLayout: miniPlayerUsesWideLayout({ wide, placement }),
+        moreAvailable: true,
       });
-  }, [buttons, board.supportsMirroring, board.angleAvailable, board.showLightbulb, signedIn]);
+  }, [buttons, board.supportsMirroring, board.angleAvailable, board.showLightbulb, signedIn, wide]);
   // The real bar's slot rule at the width the bar measured on this device, or a representative one before it has drawn.
   const slotCountAt = useCallback(
     (placement: 'regular' | 'inline') =>
@@ -106,8 +115,9 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
       }),
     [wide, measuredBar],
   );
-  const openControls = useMemo(() => resolve(slotCountAt('regular')), [resolve, slotCountAt]);
-  const collapsedControls = useMemo(() => resolve(slotCountAt('inline')), [resolve, slotCountAt]);
+  const openControls = useMemo(() => resolve(slotCountAt('regular'), 'regular'), [resolve, slotCountAt]);
+  const collapsedControls = useMemo(() => resolve(slotCountAt('inline'), 'inline'), [resolve, slotCountAt]);
+  const openWideLayout = miniPlayerUsesWideLayout({ wide, placement: 'regular' });
 
   const buttonLabel = (buttonId: MiniPlayerButtonId): string =>
     buttonId === 'next' || buttonId === 'previous'
@@ -116,6 +126,7 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
   const spoken = (controls: MiniPlayerControls): string =>
     [
       ...controls.leading.map(buttonLabel),
+      ...(controls.more ? [t('mobile.settings.miniPlayer.more')] : []),
       ...controls.trailing.map((slot) =>
         slot === 'lightbulb'
           ? t('mobile.settings.playerButtons.fixed.boardLight')
@@ -130,20 +141,30 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
   const openShape = t('mobile.settings.miniPlayer.shapeOpen');
   const collapsedShape = t('mobile.settings.miniPlayer.shapeCollapsed');
 
-  const glyph = (key: string, name: IconName, color: ColorValue) => (
+  const glyph = (key: string, name: IconName, color: ColorValue, size = ICON_SIZE) => (
     <View key={key} style={styles.slot}>
-      <Icon maxFontSizeMultiplier={1} name={name} size={ICON_SIZE} color={color} />
+      <Icon maxFontSizeMultiplier={1} name={name} size={size} color={color} />
     </View>
   );
-  const bar = (caption: string, shape: string, controls: MiniPlayerControls, testID: string) => {
-    const others = controls.leading.filter((buttonId) => !TRANSPORT.includes(buttonId));
-    const transport = controls.leading.filter((buttonId) => TRANSPORT.includes(buttonId));
-    const slots = [
-      ...[...others, ...transport].map((buttonId) => glyph(buttonId, BUTTON_ICONS[buttonId], systemColors.label)),
+  /**
+   * The resolver already orders `leading`: on a wide bar ⏮ ⏭ first and the
+   * whole cluster before the climb, as the real bar draws it (Music's iPad
+   * layout); elsewhere after the climb.
+   */
+  const bar = (caption: string, shape: string, controls: MiniPlayerControls, wideLayout: boolean, testID: string) => {
+    const buttonGlyphs = controls.leading.map((buttonId) => {
+      const transportIcon = wideLayout ? WIDE_TRANSPORT_ICONS[buttonId] : undefined;
+      if (transportIcon) return glyph(buttonId, transportIcon, systemColors.label);
+      return glyph(buttonId, BUTTON_ICONS[buttonId], wideLayout ? systemColors.secondaryLabel : systemColors.label);
+    });
+    const trailingGlyphs = [
+      ...(controls.more ? [glyph('more', 'more', systemColors.label)] : []),
       ...controls.trailing.map((slot) =>
         slot === 'lightbulb'
           ? glyph(slot, 'lightbulb', systemColors.label)
-          : glyph(slot, 'tick.outline', brandColors.success),
+          : wideLayout
+            ? glyph(slot, 'checkmark.circle.fill', brandColors.primary, WIDE_LOG_ICON_SIZE)
+            : glyph(slot, 'tick.outline', brandColors.success),
       ),
     ];
     return (
@@ -158,9 +179,17 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
           {caption}
         </Text>
         <View style={[styles.bar, { backgroundColor: systemColors.tertiaryFill }]}>
-          <View style={[styles.thumbnail, { backgroundColor: systemColors.secondaryBackground }]} />
+          {wideLayout ? buttonGlyphs : null}
+          <View
+            style={[
+              styles.thumbnail,
+              wideLayout ? styles.thumbnailAfterButtons : null,
+              { backgroundColor: systemColors.secondaryBackground },
+            ]}
+          />
           <View style={[styles.name, { backgroundColor: systemColors.secondaryBackground }]} />
-          {slots}
+          {wideLayout ? null : buttonGlyphs}
+          {trailingGlyphs}
         </View>
       </View>
     );
@@ -171,8 +200,8 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
       testID="mini-player-buttons-preview"
       style={[styles.frame, { backgroundColor: systemColors.secondaryBackground }]}
     >
-      {bar(openCaption, openShape, openControls, 'mini-player-preview-open')}
-      {bar(collapsedCaption, collapsedShape, collapsedControls, 'mini-player-preview-collapsed')}
+      {bar(openCaption, openShape, openControls, openWideLayout, 'mini-player-preview-open')}
+      {bar(collapsedCaption, collapsedShape, collapsedControls, false, 'mini-player-preview-collapsed')}
     </View>
   );
 });
@@ -200,6 +229,9 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: borderRadius.sm,
+  },
+  thumbnailAfterButtons: {
+    marginStart: spacing[1],
   },
   name: {
     flex: 1,
