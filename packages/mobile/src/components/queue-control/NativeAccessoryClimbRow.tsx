@@ -32,6 +32,7 @@ import {
   ACCESSORY_THUMBNAIL_GAP,
   TALL_PLATTER_MIN_HEIGHT,
   accessoryPlatterGeometry,
+  accessoryWidthBesideName,
   isMiniPlayerButtonAvailable,
   miniPlayerCapacityWidth,
   miniPlayerPaneCoveredButtons,
@@ -208,13 +209,15 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
   // display beside its side rail, a 320pt Display Zoom iPhone) keeps one control,
   // like the collapsed one, so the name has room to read (miniPlayerSlotCount).
   const [rowWidth, setRowWidth] = useState<number | null>(null);
-  // And its height: ~62pt open on iPad against the iPhone's 48pt (#7048).
+  // And its height: ~62pt open on iPad against the iPhone's 48pt (#7048). Only
+  // ever grows: UIKit also squeezes the hidden regular row while the bar is
+  // inline, and swapping geometry back mid-expand is the doubled-text case.
   const [platterHeight, setPlatterHeight] = useState<number | null>(null);
   const handleRowLayout = useCallback((event: LayoutChangeEvent) => {
     const measuredWidth = Math.round(event.nativeEvent.layout.width);
     const measuredHeight = Math.round(event.nativeEvent.layout.height);
     setRowWidth((previous) => (previous === measuredWidth ? previous : measuredWidth));
-    setPlatterHeight((previous) => (previous === measuredHeight ? previous : measuredHeight));
+    setPlatterHeight((previous) => (previous !== null && previous >= measuredHeight ? previous : measuredHeight));
   }, []);
   // Before the first layout, guess the platter most bars measure, so the common
   // bar never redraws on its first measurement (the doubled-text snapshot case).
@@ -222,11 +225,7 @@ export function NativeAccessoryClimbRow({ climb, queueItemUuid, placement, testI
     platterHeight ?? (isTablet && !isInline ? TALL_PLATTER_MIN_HEIGHT : rowHeight),
   );
   const thumbnailSize = boardConfig === null ? null : geometry.thumbnailSize;
-  const widthBesideName =
-    geometry.leadingInset +
-    (thumbnailSize === null ? 0 : thumbnailSize + ACCESSORY_THUMBNAIL_GAP) +
-    ACCESSORY_LABEL_TRAILING_PADDING +
-    geometry.trailingInset;
+  const widthBesideName = accessoryWidthBesideName(geometry, thumbnailSize !== null);
   // iPad and the open Duo: as many as fit. An iPhone: three at most.
   const wide = isTablet || phoneSplit;
   const capacityWidth = miniPlayerCapacityWidth({ windowWidth, rowWidth, wide, verticalTabBar });

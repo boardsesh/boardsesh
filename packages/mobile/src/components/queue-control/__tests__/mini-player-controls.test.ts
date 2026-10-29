@@ -5,6 +5,7 @@ import {
   PHONE_ACCESSORY_MIN_NAME_WIDTH,
   TALL_PLATTER_MIN_HEIGHT,
   accessoryPlatterGeometry,
+  accessoryWidthBesideName,
   isMiniPlayerButtonAvailable,
   miniPlayerCapacityWidth,
   miniPlayerPaneCoveredButtons,
@@ -170,6 +171,12 @@ describe('accessoryPlatterGeometry', () => {
       thumbnailSize: 40,
       logGlyphSize: 22,
     });
+  });
+
+  it('sums the row beside the name from the geometry', () => {
+    expect(accessoryWidthBesideName(accessoryPlatterGeometry(48), true)).toBe(WIDTH_BESIDE_NAME);
+    expect(accessoryWidthBesideName(accessoryPlatterGeometry(62), true)).toBe(74);
+    expect(accessoryWidthBesideName(accessoryPlatterGeometry(62), false)).toBe(26);
   });
 
   it('switches at the tall-platter threshold', () => {

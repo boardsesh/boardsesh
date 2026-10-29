@@ -267,10 +267,14 @@ climb).
   - iPhone: `min(3, floor((w − 68 − 140) / 44))`, at least 1, where `w` is the platter width and 68 pt is the
     insets, artwork and label padding. 343 pt and up gives 3; Duo closed (~290 pt) and a 320 pt Display Zoom
     iPhone give 1. With one slot the bar keeps the bulb while the board is free, otherwise Log;
-  - iPad and the open Duo: `floor((w − 68 − 160 − 2·12) / 44)`, which fits every button;
+  - iPad and the open Duo: `floor((w − b − 160) / 44)`, which fits every button. `b` is 68 pt on a 48 pt platter and
+    74 pt on iPad's ~62 pt one (below);
   - before the first layout: 3 on an iPhone, everything when wide, so the common bar doesn't redraw.
-- The 12 pt gap between groups (others · ⏮ ⏭ · 💡 ✓) is drawn on wide bars only; slots inside a group touch, and an
-  iPhone bar has no group gap.
+- Every slot sits at one even 44 pt pitch, on every bar, as on Music's (#7048).
+- Platter height (`accessoryPlatterGeometry`): the row fills the platter UIKit gives it, so the controls centre in it.
+  From 56 pt up (iPad's open bar, ~62 pt) the artwork is 40 pt at a 12 pt inset, the trailing inset is 10 pt so ✓
+  centres in the rounded end, and ✓ is 22 pt like its neighbours. Below that, an iPhone's 16 / 8 pt insets, 32 pt
+  artwork and 24 pt ✓. The measured height only grows, so a squeezed hidden row never swaps the geometry back.
 - Buttons claim slots in the climber's order; what doesn't fit drops from the end of that list. The player's ⋯ still
   has every action.
 - The open Duo's split (`miniPlayerPaneMode`): while the pane shows the committed climb with its controls below the

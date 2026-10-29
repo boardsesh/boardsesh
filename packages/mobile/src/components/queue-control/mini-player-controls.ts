@@ -107,6 +107,16 @@ export function miniPlayerCapacityWidth({
 }
 
 /** How the bar is drawn right now. */
+/** Everything in the row that is not the name or a slot: insets, the artwork and its gap, the label padding. */
+export function accessoryWidthBesideName(geometry: AccessoryPlatterGeometry, hasThumbnail: boolean): number {
+  return (
+    geometry.leadingInset +
+    (hasThumbnail ? geometry.thumbnailSize + ACCESSORY_THUMBNAIL_GAP : 0) +
+    ACCESSORY_LABEL_TRAILING_PADDING +
+    geometry.trailingInset
+  );
+}
+
 export type MiniPlayerBarShape = {
   placement: 'regular' | 'inline';
   /** Regular capacity width, or a live measured width for rails/wide layouts. */

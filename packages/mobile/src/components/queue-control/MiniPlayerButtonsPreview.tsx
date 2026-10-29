@@ -9,12 +9,11 @@ import type { MiniPlayerButtonId, MiniPlayerButtonsLayout } from '../../lib/mini
 import { useMeasuredMiniPlayerBar } from '../../lib/mini-player-measured-bar-store';
 import { useTheme } from '../../providers/theme-provider';
 import { borderRadius, spacing } from '../../theme/tokens';
+import { glassSize } from '../../theme/layout';
 import {
-  ACCESSORY_LABEL_TRAILING_PADDING,
-  ACCESSORY_LEADING_INSET,
-  ACCESSORY_PLATTER_THUMBNAIL_SIZE,
-  ACCESSORY_THUMBNAIL_GAP,
-  ACCESSORY_TRAILING_INSET,
+  TALL_PLATTER_MIN_HEIGHT,
+  accessoryPlatterGeometry,
+  accessoryWidthBesideName,
   isMiniPlayerButtonAvailable,
   miniPlayerSlotCount,
   resolveMiniPlayerControls,
@@ -32,12 +31,9 @@ export const MINI_PLAYER_PREVIEW_HEIGHT = 124;
  */
 export const PREVIEW_PHONE_ROW_WIDTH = 343;
 export const PREVIEW_WIDE_ROW_WIDTH = 995;
-const WIDTH_BESIDE_NAME =
-  ACCESSORY_LEADING_INSET +
-  ACCESSORY_PLATTER_THUMBNAIL_SIZE +
-  ACCESSORY_THUMBNAIL_GAP +
-  ACCESSORY_LABEL_TRAILING_PADDING +
-  ACCESSORY_TRAILING_INSET;
+// The row's insets and artwork on an iPhone's 48pt platter and on iPad's taller one.
+const PHONE_WIDTH_BESIDE_NAME = accessoryWidthBesideName(accessoryPlatterGeometry(glassSize.standard), true);
+const WIDE_WIDTH_BESIDE_NAME = accessoryWidthBesideName(accessoryPlatterGeometry(TALL_PLATTER_MIN_HEIGHT), true);
 
 const BUTTON_ICONS: Record<MiniPlayerButtonId, IconName> = {
   next: 'skip.next',
@@ -105,7 +101,7 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
       miniPlayerSlotCount({
         placement,
         rowWidth: measuredBar?.rowWidth ?? (wide ? PREVIEW_WIDE_ROW_WIDTH : PREVIEW_PHONE_ROW_WIDTH),
-        widthBesideName: measuredBar?.widthBesideName ?? WIDTH_BESIDE_NAME,
+        widthBesideName: measuredBar?.widthBesideName ?? (wide ? WIDE_WIDTH_BESIDE_NAME : PHONE_WIDTH_BESIDE_NAME),
         wide,
       }),
     [wide, measuredBar],
@@ -134,23 +130,21 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
   const openShape = t('mobile.settings.miniPlayer.shapeOpen');
   const collapsedShape = t('mobile.settings.miniPlayer.shapeCollapsed');
 
-  const glyph = (name: IconName, color: ColorValue) => (
-    <View style={styles.slot}>
+  const glyph = (key: string, name: IconName, color: ColorValue) => (
+    <View key={key} style={styles.slot}>
       <Icon maxFontSizeMultiplier={1} name={name} size={ICON_SIZE} color={color} />
     </View>
   );
   const bar = (caption: string, shape: string, controls: MiniPlayerControls, testID: string) => {
     const others = controls.leading.filter((buttonId) => !TRANSPORT.includes(buttonId));
     const transport = controls.leading.filter((buttonId) => TRANSPORT.includes(buttonId));
-    const groups = [
-      { key: 'others', slots: others.map((buttonId) => glyph(BUTTON_ICONS[buttonId], systemColors.label)) },
-      { key: 'transport', slots: transport.map((buttonId) => glyph(BUTTON_ICONS[buttonId], systemColors.label)) },
-      {
-        key: 'trailing',
-        slots: controls.trailing.map((slot) =>
-          slot === 'lightbulb' ? glyph('lightbulb', systemColors.label) : glyph('tick.outline', brandColors.success),
-        ),
-      },
+    const slots = [
+      ...[...others, ...transport].map((buttonId) => glyph(buttonId, BUTTON_ICONS[buttonId], systemColors.label)),
+      ...controls.trailing.map((slot) =>
+        slot === 'lightbulb'
+          ? glyph(slot, 'lightbulb', systemColors.label)
+          : glyph(slot, 'tick.outline', brandColors.success),
+      ),
     ];
     return (
       <View
@@ -166,13 +160,7 @@ export const MiniPlayerButtonsPreview = memo(function MiniPlayerButtonsPreview({
         <View style={[styles.bar, { backgroundColor: systemColors.tertiaryFill }]}>
           <View style={[styles.thumbnail, { backgroundColor: systemColors.secondaryBackground }]} />
           <View style={[styles.name, { backgroundColor: systemColors.secondaryBackground }]} />
-          {groups
-            .filter((group) => group.slots.length > 0)
-            .map((group) => (
-              <View key={group.key} style={styles.group}>
-                {group.slots}
-              </View>
-            ))}
+          {slots}
         </View>
       </View>
     );
@@ -218,11 +206,6 @@ const styles = StyleSheet.create({
     marginEnd: spacing[2],
     height: 8,
     borderRadius: 4,
-  },
-  // Slots inside a group touch; the gap is between groups, as on the real bar.
-  group: {
-    flexDirection: 'row',
-    alignItems: 'center',
   },
   slot: {
     width: 26,
