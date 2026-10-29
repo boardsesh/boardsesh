@@ -16,7 +16,6 @@ import type { TickClimbIdentity } from '@boardsesh/board-config';
 import { useClimbModerationEnabled } from './feature-flags-provider';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { router, useNavigationContainerRef, useSegments } from 'expo-router';
-import { Platform } from 'react-native';
 import { isTabsRoute } from '../lib/route-segments';
 import { useWallDisplayOpen } from '../lib/wall-display-presence';
 import type { BoardName, Climb, UserBoard } from '@boardsesh/shared-schema';
@@ -349,6 +348,17 @@ export function usePlayDrawerRoute(): PlayDrawerRouteValue {
   return context;
 }
 
+/**
+ * Opens the `/play` route. Always through expo-router's queue, never a direct
+ * navigator dispatch: callers queue router calls of their own around an open
+ * (the deep-link hand-off leaves its screen with `router.back()` first), and a
+ * dispatch would run ahead of them, so the queued pop would close the player it
+ * just opened (#7069).
+ */
+function navigateToPlayer() {
+  router.navigate('/play');
+}
+
 export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const navigationRef = useNavigationContainerRef();
   const composerCredentialScope = usePrivacyCredentialScope();
@@ -619,17 +629,6 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const myBoardsRef = useRef(myBoardsConn);
   myBoardsRef.current = myBoardsConn;
 
-  const navigateToPlayer = useCallback(() => {
-    if (Platform.OS !== 'web' && navigationRef.isReady()) {
-      const rootState = navigationRef.getRootState();
-      if (rootState.routeNames.some((routeName) => routeName === 'play')) {
-        navigationRef.dispatch({ type: 'NAVIGATE', target: rootState.key, payload: { name: 'play' } });
-        return;
-      }
-    }
-    router.navigate('/play');
-  }, [navigationRef]);
-
   const openPlayDrawer = useCallback(
     (climb: Climb, options?: OpenPlayDrawerOptions) => {
       if (composerCredentialScope !== getCredentialGeneration()) return;
@@ -681,13 +680,10 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
           nonce: target.nonce,
           credentialGeneration: getCredentialGeneration(),
         };
-        // This is a known root-stack route. Dispatch it in the tap's batch:
-        // Expo's imperative URL queue otherwise waits for a provider commit
-        // before its passive effect dispatches the navigation action.
         navigateToPlayer();
       }
     },
-    [navigateToPlayer, setPaneTarget, setPlayTarget, composerCredentialScope],
+    [setPaneTarget, setPlayTarget, composerCredentialScope],
   );
 
   // Drop the pane's selected climb when the pane goes away (a resize into compact,
@@ -811,7 +807,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
         navigateToPlayer();
       });
     },
-    [navigateToPlayer, setPlayTarget],
+    [setPlayTarget],
   );
 
   // Apply an angle change made from the play drawer's angle selector.

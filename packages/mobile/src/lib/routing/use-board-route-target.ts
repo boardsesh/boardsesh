@@ -715,6 +715,11 @@ export function useBoardRouteTarget(
     // appeared, leaving this redirector on screen with `handedOffRef` already
     // claimed, so the effect could never retry and the spinner never ended.
     //
+    // This order holds only because the open goes through the same router
+    // queue as the leave. A direct navigator dispatch for `/play` would run
+    // ahead of the queued pop and be popped by it (#7069); the drawer host's
+    // tests model exactly this hand-off.
+    //
     // Leaving first is safe for the pop as well: `/play` is a root
     // `transparentModal` (see `app/_layout.tsx`), not a child of the stack this
     // screen sits in, so popping this screen cannot take the drawer with it.
