@@ -278,6 +278,19 @@ async function seedCatalogClimb(): Promise<void> {
 }
 
 async function cleanup(): Promise<void> {
+  // setup.ts resets the in-memory limiter. Redis-backed cases also need to
+  // retire only these fixture users' distributed buckets between tests.
+  if (redisClientManager.isRedisConnected()) {
+    const { publisher } = redisClientManager.getClients();
+    for (const userId of [TEST_USER_ID, SECOND_USER_ID]) {
+      let cursor = '0';
+      do {
+        const [nextCursor, bucketKeys] = await publisher.scan(cursor, 'MATCH', `ratelimit:${userId}:*`, 'COUNT', 100);
+        cursor = nextCursor;
+        if (bucketKeys.length > 0) await publisher.del(...bucketKeys);
+      } while (cursor !== '0');
+    }
+  }
   await db
     .delete(dbSchema.boardseshTicks)
     .where(inArray(dbSchema.boardseshTicks.userId, [TEST_USER_ID, SECOND_USER_ID]));
