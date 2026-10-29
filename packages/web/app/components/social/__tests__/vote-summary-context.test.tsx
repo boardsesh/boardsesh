@@ -39,13 +39,7 @@ function makeWrapper(entityIds: string[]) {
 
 beforeEach(() => {
   mockRequest.mockReset();
-  mockUseWsAuthToken.mockReturnValue({
-    refetch: vi.fn(),
-    token: 'test-token',
-    isAuthenticated: true,
-    isLoading: false,
-    error: null,
-  });
+  mockUseWsAuthToken.mockReturnValue({ token: 'test-token', isAuthenticated: true, isLoading: false, error: null });
 });
 
 // Regression coverage for #4102: any of the four VoteSummaryProvider call

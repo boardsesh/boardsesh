@@ -56,28 +56,6 @@ describe('useWsAuthToken', () => {
     expect(result.current.error).toBeNull();
   });
 
-  it('clears a failed token request after an explicit successful retry', async () => {
-    mockFetch.mockResolvedValue({ ok: false, status: 500 });
-    const { result } = renderHook(() => useWsAuthToken(), { wrapper: createQueryWrapper() });
-    await waitFor(() => expect(result.current.error).toBe('Failed to fetch auth token: 500'));
-    expect(result.current.token).toBeNull();
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        token: 'recovered-token',
-        authenticated: true,
-        userId: 'user-1',
-        authSessionId: 'session-1',
-      }),
-    });
-    await act(async () => {
-      await result.current.refetch();
-    });
-    await waitFor(() => expect(result.current.token).toBe('recovered-token'));
-    expect(result.current.isAuthenticated).toBe(true);
-    expect(result.current.error).toBeNull();
-  });
-
   it('never reuses account A’s fresh token after sign-out and account B sign-in', async () => {
     mockFetch.mockResolvedValue({
       ok: true,

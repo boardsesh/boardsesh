@@ -41,7 +41,6 @@ describe('useMyBoards', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockUseWsAuthToken.mockReturnValue({
-      refetch: vi.fn(),
       token: 'test-token',
       isAuthenticated: true,
       isLoading: false,
@@ -75,7 +74,6 @@ describe('useMyBoards', () => {
 
   it('does not fetch when not authenticated', () => {
     mockUseWsAuthToken.mockReturnValue({
-      refetch: vi.fn(),
       token: null,
       isAuthenticated: false,
       isLoading: false,
@@ -91,7 +89,6 @@ describe('useMyBoards', () => {
 
   it('does not fetch when token is null', () => {
     mockUseWsAuthToken.mockReturnValue({
-      refetch: vi.fn(),
       token: null,
       isAuthenticated: true,
       isLoading: false,
@@ -161,7 +158,6 @@ describe('useMyBoards', () => {
 
     // Simulate token change
     mockUseWsAuthToken.mockReturnValue({
-      refetch: vi.fn(),
       token: 'new-token',
       isAuthenticated: true,
       isLoading: false,
@@ -189,7 +185,6 @@ describe('useMyBoards', () => {
 
     // Simulate re-enable with new token triggering refetch
     mockUseWsAuthToken.mockReturnValue({
-      refetch: vi.fn(),
       token: 'new-token',
       isAuthenticated: true,
       isLoading: false,

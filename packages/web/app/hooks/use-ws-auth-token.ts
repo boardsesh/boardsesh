@@ -32,7 +32,7 @@ export function useWsAuthToken(enabled = true) {
   const sessionUserId = session?.user?.id ?? null;
   const authSessionId = session?.authSessionId ?? null;
 
-  const { data, isLoading, error, refetch } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ['wsAuthToken', status, sessionUserId, authSessionId],
     queryFn: async () => {
       const result = await fetchWsAuthToken();
@@ -80,6 +80,5 @@ export function useWsAuthToken(enabled = true) {
     isAuthenticated: enabled ? (data?.authenticated ?? false) : false,
     isLoading: enabled && (isLoading || status === 'loading'),
     error: enabled ? errorMessage : null,
-    refetch,
   };
 }

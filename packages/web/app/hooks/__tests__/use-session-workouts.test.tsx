@@ -33,13 +33,7 @@ beforeEach(() => {
 
 describe('useSessionWorkouts', () => {
   it('keeps the server copy for a signed-out viewer', () => {
-    vi.mocked(useWsAuthToken).mockReturnValue({
-      refetch: vi.fn(),
-      token: null,
-      isAuthenticated: false,
-      isLoading: false,
-      error: null,
-    });
+    vi.mocked(useWsAuthToken).mockReturnValue({ token: null, isAuthenticated: false, isLoading: false, error: null });
     const initialData = [{ userId: 'user-1' }] as never;
 
     const { result } = renderHook(() => useSessionWorkouts({ sessionId: 'session-1', initialData }), { wrapper });
@@ -49,13 +43,7 @@ describe('useSessionWorkouts', () => {
   });
 
   it('refetches signed in, and never for a daily group', async () => {
-    vi.mocked(useWsAuthToken).mockReturnValue({
-      refetch: vi.fn(),
-      token: 'token',
-      isAuthenticated: true,
-      isLoading: false,
-      error: null,
-    });
+    vi.mocked(useWsAuthToken).mockReturnValue({ token: 'token', isAuthenticated: true, isLoading: false, error: null });
     mockRequest.mockResolvedValue({ sessionWorkouts: [{ userId: 'fresh' }] });
 
     const { result } = renderHook(() => useSessionWorkouts({ sessionId: 'session-1', initialData: [] }), { wrapper });
@@ -69,13 +57,7 @@ describe('useSessionWorkouts', () => {
 
 describe('useSessionWorkoutHeadlines', () => {
   it('asks once per page, leaves out daily groups, and keeps the first headline per session', async () => {
-    vi.mocked(useWsAuthToken).mockReturnValue({
-      refetch: vi.fn(),
-      token: null,
-      isAuthenticated: false,
-      isLoading: false,
-      error: null,
-    });
+    vi.mocked(useWsAuthToken).mockReturnValue({ token: null, isAuthenticated: false, isLoading: false, error: null });
     mockRequest.mockImplementation(async (_document: string, { sessionIds }: { sessionIds: string[] }) => ({
       sessionWorkoutHeadlines: sessionIds.flatMap((id) => [headline(id, 'first'), headline(id, 'second')]),
     }));

@@ -34,7 +34,6 @@ describe('useMyGyms', () => {
     vi.clearAllMocks();
     mockUserId = 'user-1';
     mockUseWsAuthToken.mockReturnValue({
-      refetch: vi.fn(),
       token: 'test-token',
       isAuthenticated: true,
       isLoading: false,
@@ -54,7 +53,6 @@ describe('useMyGyms', () => {
 
   it('does not fetch when not authenticated', () => {
     mockUseWsAuthToken.mockReturnValue({
-      refetch: vi.fn(),
       token: null,
       isAuthenticated: false,
       isLoading: false,
@@ -74,7 +72,6 @@ describe('useMyGyms', () => {
     // token yet. The query stays disabled until the token resolves, so it
     // must never look like a settled "0 gyms" result.
     mockUseWsAuthToken.mockReturnValue({
-      refetch: vi.fn(),
       token: null,
       isAuthenticated: true,
       isLoading: true,

@@ -60,7 +60,6 @@ describe('AscentStatus', () => {
     vi.clearAllMocks();
     mockRequest.mockReset();
     mockUseWsAuthToken.mockReturnValue({
-      refetch: vi.fn(),
       token: 'test-token',
       isAuthenticated: true,
       isLoading: false,

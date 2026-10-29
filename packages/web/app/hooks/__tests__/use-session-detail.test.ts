@@ -35,13 +35,7 @@ describe('useSessionDetail', () => {
   });
 
   it('refetches the signed-out server copy once a signed-in viewer’s token is in', async () => {
-    mockUseWsAuthToken.mockReturnValue({
-      refetch: vi.fn(),
-      token: 'test-token',
-      isAuthenticated: true,
-      isLoading: false,
-      error: null,
-    });
+    mockUseWsAuthToken.mockReturnValue({ token: 'test-token', isAuthenticated: true, isLoading: false, error: null });
 
     const { result } = renderHook(() => useSessionDetail({ sessionId: 'session-1', initialData: serverCopy }), {
       wrapper: createQueryWrapper(),
@@ -53,38 +47,20 @@ describe('useSessionDetail', () => {
   });
 
   it('refetches when the token arrives after the first render', async () => {
-    mockUseWsAuthToken.mockReturnValue({
-      refetch: vi.fn(),
-      token: null,
-      isAuthenticated: false,
-      isLoading: true,
-      error: null,
-    });
+    mockUseWsAuthToken.mockReturnValue({ token: null, isAuthenticated: false, isLoading: true, error: null });
     const { result, rerender } = renderHook(
       () => useSessionDetail({ sessionId: 'session-1', initialData: serverCopy }),
       { wrapper: createQueryWrapper() },
     );
     expect(mockRequest).not.toHaveBeenCalled();
 
-    mockUseWsAuthToken.mockReturnValue({
-      refetch: vi.fn(),
-      token: 'test-token',
-      isAuthenticated: true,
-      isLoading: false,
-      error: null,
-    });
+    mockUseWsAuthToken.mockReturnValue({ token: 'test-token', isAuthenticated: true, isLoading: false, error: null });
     rerender();
     await waitFor(() => expect(result.current.session).toEqual(memberCopy));
   });
 
   it('keeps the server copy for a signed-out reader', () => {
-    mockUseWsAuthToken.mockReturnValue({
-      refetch: vi.fn(),
-      token: null,
-      isAuthenticated: false,
-      isLoading: false,
-      error: null,
-    });
+    mockUseWsAuthToken.mockReturnValue({ token: null, isAuthenticated: false, isLoading: false, error: null });
 
     const { result } = renderHook(() => useSessionDetail({ sessionId: 'session-1', initialData: serverCopy }), {
       wrapper: createQueryWrapper(),

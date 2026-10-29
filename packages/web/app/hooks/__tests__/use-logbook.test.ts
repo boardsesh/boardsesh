@@ -50,7 +50,6 @@ describe('useLogbook', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockUseWsAuthToken.mockReturnValue({
-      refetch: vi.fn(),
       token: 'test-token',
       isAuthenticated: true,
       isLoading: false,
@@ -82,7 +81,6 @@ describe('useLogbook', () => {
 
   it('returns empty logbook when no token', async () => {
     mockUseWsAuthToken.mockReturnValue({
-      refetch: vi.fn(),
       token: null,
       isAuthenticated: false,
       isLoading: false,
@@ -557,7 +555,6 @@ describe('useInvalidateLogbook', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockUseWsAuthToken.mockReturnValue({
-      refetch: vi.fn(),
       token: 'test-token',
       isAuthenticated: true,
       isLoading: false,
