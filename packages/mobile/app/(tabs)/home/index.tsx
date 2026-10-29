@@ -487,7 +487,7 @@ export default function HomeTab() {
             />
           </View>
         ) : null}
-        {/* A few days in December, where store rules allow; usually nothing. */}
+        {/* Days 1 to 7 of each month, where store rules allow; usually nothing. */}
         <HomeSupportCard />
         {/* Browser app on a phone only; renders nothing on native. */}
         <AppStorePrompt surface="home" />

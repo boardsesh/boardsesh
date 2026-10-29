@@ -447,8 +447,8 @@ since May 2025). Everywhere else the compliant surface is unlinked text that
 merely names the website — the pattern StreetComplete ships and Google
 sanctions. The Acknowledgements screen renders exactly one of those two, and
 `useDonationLinksAllowed` (`packages/mobile/src/lib/donation-links.ts`) picks.
-The same answer gates the Support Boardsesh row in Account and the December
-card on Home (`packages/mobile/src/lib/support-asks.ts`), which also need the
+The same answer gates the Support Boardsesh row in Account and the monthly
+card on Home (days 1 to 7 of each month) (`packages/mobile/src/lib/support-asks.ts`), which also need the
 climber's own "Show support asks" switch in Settings › General to be on. The
 Home card is US iPhones only: it never shows in the Expo browser app, where the
 Account row and the Acknowledgements link are the only asks.

@@ -1,22 +1,20 @@
-// The December support card at the top of Home (donations plan, initiative 5).
+// The monthly support card at the top of Home (donations plan, initiative 5).
 //
 // Every rule for when it shows lives in `planSupportCard` (lib/support-asks.ts):
-// US iPhones only, 1–7 and 29–31 Dec 2026, two days on
-// screen at most, gone after a tap or a close, never during a session or with a
-// board connected, and never with "Show support asks" off. It sits in Home's
-// list header, above the sections, so it can never cover board art (#7000).
+// US iPhones only, days 1 to 7 of each month, on every Home visit until closed,
+// hidden for the rest of the month after a close or a tap on either Give
+// button, never during a session or with a board connected, and never with
+// "Show support asks" off. It sits in Home's list header, above the sections,
+// so it can never cover board art (#7000).
 //
-// Never in the Expo browser app, although the Account row shows there. The plan
-// names the card for US iPhones only, and its two-day cap counts the card and
-// the boardsesh.com `/` banner together: a browser climber already gets that
-// banner, and the card's per-device count could not see it.
+// Never in the Expo browser app, although the Account row shows there: a
+// browser climber already gets the boardsesh.com `/` banner on the same days.
 //
 // Self-contained on purpose: it subscribes to its own inputs, so mounting it in
 // Home's memoised header adds nothing to that header's dependencies.
 
 import { useCallback } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
-import { useIsFocused } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../Button';
 import { Card } from '../Card';
@@ -39,19 +37,18 @@ export function HomeSupportCard() {
   const { sessionId } = useQueueSessionId();
   const boardConnected = useBluetoothConnectedStatus();
   const today = useToday();
-  const focused = useIsFocused();
   const { visible, close } = useSupportCard({
     asksAllowed,
     today,
     sessionActive: sessionId !== null,
     boardConnected,
-    focused,
   });
 
   const give = useCallback(
     (cadence: SupportCadence) => {
       trackSupportLinkTapped('home-card', cadence);
-      // A tap is an answer: the card does not come back after the browser closes.
+      // A tap counts like a close: the app cannot see whether the climber gave,
+      // so the card stays away until next month.
       close();
       void openExternalUrl(supportUrlFor('home-card', cadence), 'home-support-card');
     },

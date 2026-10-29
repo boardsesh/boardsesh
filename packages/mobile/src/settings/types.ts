@@ -282,13 +282,14 @@ export type AppSettings = {
   playlistSortsV1: { entries: StoredListSort[] } | null;
   /**
    * "Show support asks" in Settings › General. Off hides the Support Boardsesh
-   * row in Account and the December card on Home. Only offered where those can
+   * row in Account and the monthly card on Home. Only offered where those can
    * show at all (`useDonationLinksAllowed`). Per device; survives sign-out.
    */
   supportAsksShown: boolean;
   /**
-   * The Home support card's days on screen and whether it was tapped or closed,
-   * for one campaign. Read with `getSetting` on Home's mount and written only by
+   * The calendar month (`YYYY-MM`) the Home support card was last closed or
+   * tapped in; it stays hidden for the rest of that month. `null` until the
+   * first close. Read with `getSetting` on Home's mount and written only by
    * `useSupportCard` (`lib/support-asks.ts`); never `useSetting` this key.
    */
   supportCardV1: SupportCardRecord | null;

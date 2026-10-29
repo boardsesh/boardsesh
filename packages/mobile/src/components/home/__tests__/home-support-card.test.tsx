@@ -5,12 +5,11 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 
 // The real gates (lib/support-asks.ts) over the real settings store, on an
 // in-memory MMKV. Only the inputs a phone supplies are stubbed: the store-rule
-// answer, the calendar day, focus, the session and the Bluetooth link.
+// answer, the calendar day, the session and the Bluetooth link.
 const mockStorage = vi.hoisted(() => new Map<string, string>());
 const state = vi.hoisted(() => ({
   linksAllowed: true,
-  today: new Date(2026, 11, 3),
-  focused: true,
+  today: new Date(2027, 2, 3),
   sessionId: null as string | null,
   boardConnected: false,
   platform: 'ios',
@@ -36,7 +35,6 @@ vi.mock('react-native', () => ({
     createElement('div', { 'data-testid': testID }, children),
   StyleSheet: { create: (styles: unknown) => styles },
 }));
-vi.mock('expo-router', () => ({ useIsFocused: () => state.focused }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('p', null, children),
@@ -87,8 +85,7 @@ beforeEach(() => {
   mockStorage.clear();
   resetAllSettings();
   state.linksAllowed = true;
-  state.today = new Date(2026, 11, 3);
-  state.focused = true;
+  state.today = new Date(2027, 2, 3);
   state.sessionId = null;
   state.boardConnected = false;
   state.platform = 'ios';
@@ -97,12 +94,20 @@ beforeEach(() => {
 });
 
 describe('HomeSupportCard', () => {
-  it('shows on a December window day with both ways to give', () => {
+  it.each([1, 7])('shows on day %i of the month with both ways to give', (day) => {
+    state.today = new Date(2027, 2, day);
     renderCard();
 
     expect(screen.getByTestId('home-support-card')).toBeTruthy();
     expect(screen.getByText('mobile.supportAsks.giveMonthly')).toBeTruthy();
     expect(screen.getByText('mobile.supportAsks.giveOnce')).toBeTruthy();
+  });
+
+  it.each([8, 31])('renders nothing on day %i of the month', (day) => {
+    state.today = new Date(2027, 2, day);
+    renderCard();
+
+    expect(screen.queryByTestId('home-support-card')).toBeNull();
   });
 
   it('renders nothing where store rules turn links down (Android, non-US iPhones, screenshot mode)', () => {
@@ -112,24 +117,15 @@ describe('HomeSupportCard', () => {
     expect(screen.queryByTestId('home-support-card')).toBeNull();
   });
 
-  it('renders nothing in the browser app, where only the Account row asks, and spends none of its days', () => {
+  it('renders nothing in the browser app, where only the Account row asks', () => {
     state.platform = 'web';
     renderCard();
 
     expect(screen.queryByTestId('home-support-card')).toBeNull();
-    // Nothing written: the browser app never counts a day against the card.
-    expect(getSetting('supportCardV1')).toBeNull();
   });
 
   it('renders nothing with Show support asks off', () => {
     setSetting('supportAsksShown', false);
-    renderCard();
-
-    expect(screen.queryByTestId('home-support-card')).toBeNull();
-  });
-
-  it('renders nothing between the two windows', () => {
-    state.today = new Date(2026, 11, 8);
     renderCard();
 
     expect(screen.queryByTestId('home-support-card')).toBeNull();
@@ -149,7 +145,17 @@ describe('HomeSupportCard', () => {
     expect(screen.queryByTestId('home-support-card')).toBeNull();
   });
 
-  it('Give monthly counts the tap, opens the support page and hides the card for good', () => {
+  it('shows again on every Home visit until it is closed', () => {
+    renderCard().unmount();
+    renderCard().unmount();
+    state.today = new Date(2027, 2, 5);
+    renderCard();
+
+    expect(screen.getByTestId('home-support-card')).toBeTruthy();
+    expect(getSetting('supportCardV1')).toBeNull();
+  });
+
+  it('Give monthly counts the tap, opens the support page and hides the card for the month', () => {
     const { unmount } = renderCard();
 
     fireEvent.click(screen.getByTestId('home-support-card-monthly'));
@@ -160,14 +166,15 @@ describe('HomeSupportCard', () => {
       'home-support-card',
     );
     expect(screen.queryByTestId('home-support-card')).toBeNull();
+    expect(getSetting('supportCardV1')).toEqual({ closedMonth: '2027-03' });
 
     unmount();
-    state.today = new Date(2026, 11, 30);
+    state.today = new Date(2027, 2, 6);
     renderCard();
     expect(screen.queryByTestId('home-support-card')).toBeNull();
   });
 
-  it('Give once opens the same page, starting on a one-off gift', () => {
+  it('Give once opens the same page, starting on a one-off gift, and hides the card for the month', () => {
     renderCard();
 
     fireEvent.click(screen.getByTestId('home-support-card-once'));
@@ -177,9 +184,11 @@ describe('HomeSupportCard', () => {
       'https://www.boardsesh.com/support?src=app-home-card&cadence=once',
       'home-support-card',
     );
+    expect(screen.queryByTestId('home-support-card')).toBeNull();
+    expect(getSetting('supportCardV1')).toEqual({ closedMonth: '2027-03' });
   });
 
-  it('the close hides the card for good without opening anything', () => {
+  it('the close hides the card for the month without opening anything', () => {
     const { unmount } = renderCard();
 
     fireEvent.click(screen.getByTestId('home-support-card-close'));
@@ -187,11 +196,19 @@ describe('HomeSupportCard', () => {
     expect(screen.queryByTestId('home-support-card')).toBeNull();
     expect(browser.openExternalUrl).not.toHaveBeenCalled();
     expect(analytics.trackSupportLinkTapped).not.toHaveBeenCalled();
-    expect(getSetting('supportCardV1')).toMatchObject({ closed: true });
+    expect(getSetting('supportCardV1')).toEqual({ closedMonth: '2027-03' });
 
     unmount();
     renderCard();
     expect(screen.queryByTestId('home-support-card')).toBeNull();
+  });
+
+  it('comes back on the 1st of the next month after a close', () => {
+    setSetting('supportCardV1', { closedMonth: '2027-02' });
+    state.today = new Date(2027, 2, 1);
+    renderCard();
+
+    expect(screen.getByTestId('home-support-card')).toBeTruthy();
   });
 
   it('hides when a board connects while Home is open, and comes back once it disconnects', () => {

@@ -18,31 +18,23 @@ vi.mock('../donation-links', () => ({ useDonationLinksAllowed: () => links.allow
 
 import { getSetting, resetAllSettings, setSetting } from '../../settings/hooks';
 import {
-  SUPPORT_CARD_CAMPAIGN,
+  isSupportCardDay,
   planSupportCard,
   readSupportCardRecord,
-  supportCardDay,
+  supportCardMonth,
   useSupportAsksAllowed,
   useSupportCard,
-  withSupportCardView,
   type SupportCardInput,
-  type SupportCardRecord,
   type UseSupportCardInput,
 } from '../support-asks';
 
-const DEC = 11;
-const record = (overrides: Partial<SupportCardRecord> = {}): SupportCardRecord => ({
-  campaign: SUPPORT_CARD_CAMPAIGN,
-  viewDays: [],
-  closed: false,
-  ...overrides,
-});
+const MARCH = 2;
 const input = (overrides: Partial<SupportCardInput> = {}): SupportCardInput => ({
   asksAllowed: true,
-  today: new Date(2026, DEC, 2),
+  today: new Date(2027, MARCH, 3),
   sessionActive: false,
   boardConnected: false,
-  record: record(),
+  record: { closedMonth: null },
   ...overrides,
 });
 
@@ -52,34 +44,43 @@ beforeEach(() => {
   links.allowed = true;
 });
 
-describe('supportCardDay', () => {
+describe('isSupportCardDay', () => {
   it.each([
-    ['30 Nov 2026', new Date(2026, 10, 30, 23, 59), null],
-    ['1 Dec 2026, just after midnight', new Date(2026, DEC, 1, 0, 1), 1],
-    ['7 Dec 2026, late evening', new Date(2026, DEC, 7, 23, 59), 7],
-    ['8 Dec 2026', new Date(2026, DEC, 8, 0, 0), null],
-    ['28 Dec 2026', new Date(2026, DEC, 28, 23, 59), null],
-    ['29 Dec 2026', new Date(2026, DEC, 29, 0, 0), 29],
-    ['31 Dec 2026, late evening', new Date(2026, DEC, 31, 23, 59), 31],
-    ['1 Jan 2027', new Date(2027, 0, 1, 0, 0), null],
-    ['3 Dec 2025, a year early', new Date(2025, DEC, 3), null],
-    ['3 Dec 2027, a year late', new Date(2027, DEC, 3), null],
+    ['1 Mar, just after midnight', new Date(2027, MARCH, 1, 0, 1), true],
+    ['7 Mar, late evening', new Date(2027, MARCH, 7, 23, 59), true],
+    ['8 Mar, just after midnight', new Date(2027, MARCH, 8, 0, 0), false],
+    ['31 Mar', new Date(2027, MARCH, 31, 12, 0), false],
+    ['28 Feb', new Date(2027, 1, 28), false],
+    ['1 Dec', new Date(2026, 11, 1), true],
+    ['29 Dec', new Date(2026, 11, 29), false],
   ])('%s', (_label, date, expected) => {
-    expect(supportCardDay(date)).toBe(expected);
+    expect(isSupportCardDay(date)).toBe(expected);
+  });
+});
+
+describe('supportCardMonth', () => {
+  it('pads the month to two digits', () => {
+    expect(supportCardMonth(new Date(2027, MARCH, 3))).toBe('2027-03');
+  });
+
+  it('reads the phone calendar, so late on the 31st is still that month', () => {
+    expect(supportCardMonth(new Date(2026, 11, 31, 23, 59))).toBe('2026-12');
   });
 });
 
 describe('planSupportCard', () => {
-  it('shows on a window day and counts the first showing', () => {
-    expect(planSupportCard(input())).toEqual({ visible: true, day: 2, countView: true });
+  it('shows on day 1 and day 7 of a month that is not December', () => {
+    expect(planSupportCard(input({ today: new Date(2027, MARCH, 1) }))).toEqual({ visible: true });
+    expect(planSupportCard(input({ today: new Date(2027, MARCH, 7) }))).toEqual({ visible: true });
+  });
+
+  it('stays hidden from day 8 on', () => {
+    expect(planSupportCard(input({ today: new Date(2027, MARCH, 8) }))).toEqual({ visible: false });
+    expect(planSupportCard(input({ today: new Date(2027, MARCH, 31) }))).toEqual({ visible: false });
   });
 
   it('stays hidden where support asks are not allowed (store rules or the switch)', () => {
     expect(planSupportCard(input({ asksAllowed: false }))).toEqual({ visible: false });
-  });
-
-  it('stays hidden outside the December windows', () => {
-    expect(planSupportCard(input({ today: new Date(2026, DEC, 15) }))).toEqual({ visible: false });
   });
 
   it('never shows during a session', () => {
@@ -90,54 +91,36 @@ describe('planSupportCard', () => {
     expect(planSupportCard(input({ boardConnected: true }))).toEqual({ visible: false });
   });
 
-  it('stays gone after a tap or a close', () => {
-    expect(planSupportCard(input({ record: record({ closed: true }) }))).toEqual({ visible: false });
+  it('stays hidden for the rest of the month it was closed in', () => {
+    expect(planSupportCard(input({ record: { closedMonth: '2027-03' } }))).toEqual({ visible: false });
   });
 
-  it('shows again on a day already counted without counting it twice', () => {
-    expect(planSupportCard(input({ record: record({ viewDays: [2] }) }))).toEqual({
-      visible: true,
-      day: 2,
-      countView: false,
-    });
+  it('comes back on the 1st after a close last month', () => {
+    const plan = planSupportCard(input({ today: new Date(2027, MARCH, 1), record: { closedMonth: '2027-02' } }));
+    expect(plan).toEqual({ visible: true });
   });
 
-  it('allows a second day', () => {
-    const plan = planSupportCard(input({ today: new Date(2026, DEC, 30), record: record({ viewDays: [2] }) }));
-    expect(plan).toEqual({ visible: true, day: 30, countView: true });
-  });
-
-  it('stops after two days on screen, across both windows', () => {
-    const plan = planSupportCard(input({ today: new Date(2026, DEC, 29), record: record({ viewDays: [1, 6] }) }));
-    expect(plan).toEqual({ visible: false });
+  it('comes back in the same month a year later', () => {
+    const plan = planSupportCard(input({ today: new Date(2028, MARCH, 2), record: { closedMonth: '2027-03' } }));
+    expect(plan).toEqual({ visible: true });
   });
 });
 
 describe('readSupportCardRecord', () => {
-  it('starts fresh with nothing stored', () => {
-    expect(readSupportCardRecord(null)).toEqual(record());
+  it.each([
+    ['nothing stored', null],
+    ['a string', '2027-03'],
+    ['an empty object', {}],
+    ['a month with no padding', { closedMonth: '2027-3' }],
+    ['month 13', { closedMonth: '2027-13' }],
+    ['a number', { closedMonth: 202703 }],
+    ['the old campaign shape', { campaign: 'dec-2026', viewDays: [1, 2], closed: true }],
+  ])('reads %s as empty', (_label, stored) => {
+    expect(readSupportCardRecord(stored)).toEqual({ closedMonth: null });
   });
 
-  it('starts fresh for another campaign, so an old close never carries over', () => {
-    expect(readSupportCardRecord({ campaign: 'dec-2025', viewDays: [1, 2], closed: true })).toEqual(record());
-  });
-
-  it('starts fresh on a malformed record', () => {
-    expect(readSupportCardRecord({ campaign: SUPPORT_CARD_CAMPAIGN, viewDays: ['1'], closed: false })).toEqual(
-      record(),
-    );
-  });
-
-  it('keeps a valid record for this campaign', () => {
-    const stored = record({ viewDays: [3], closed: true });
-    expect(readSupportCardRecord(stored)).toEqual(stored);
-  });
-});
-
-describe('withSupportCardView', () => {
-  it('returns the same record for a day already counted', () => {
-    const counted = record({ viewDays: [4] });
-    expect(withSupportCardView(counted, 4)).toBe(counted);
+  it('keeps a valid record', () => {
+    expect(readSupportCardRecord({ closedMonth: '2027-03' })).toEqual({ closedMonth: '2027-03' });
   });
 });
 
@@ -163,60 +146,58 @@ describe('useSupportAsksAllowed', () => {
 describe('useSupportCard', () => {
   const hookInput = (overrides: Partial<UseSupportCardInput> = {}): UseSupportCardInput => ({
     asksAllowed: true,
-    today: new Date(2026, DEC, 1),
+    today: new Date(2027, MARCH, 1),
     sessionActive: false,
     boardConnected: false,
-    focused: true,
     ...overrides,
   });
 
-  it('counts a view once per day, and persists it', () => {
-    const { rerender } = renderHook((props: UseSupportCardInput) => useSupportCard(props), {
-      initialProps: hookInput(),
-    });
-    rerender(hookInput());
-    expect(getSetting('supportCardV1')).toEqual(record({ viewDays: [1] }));
-  });
-
-  it('does not count a day while Home is not on screen', () => {
-    const { result } = renderHook(() => useSupportCard(hookInput({ focused: false })));
-    expect(result.current.visible).toBe(true);
-    expect(getSetting('supportCardV1')).toBeNull();
-  });
-
-  it('does not count a day it is hidden for a session', () => {
-    renderHook(() => useSupportCard(hookInput({ sessionActive: true })));
-    expect(getSetting('supportCardV1')).toBeNull();
-  });
-
-  it('is gone on the third day after two days on screen', () => {
-    const first = renderHook(() => useSupportCard(hookInput({ today: new Date(2026, DEC, 1) })));
+  it('shows on every visit in the window without writing anything', () => {
+    const first = renderHook(() => useSupportCard(hookInput({ today: new Date(2027, MARCH, 1) })));
+    expect(first.result.current.visible).toBe(true);
     first.unmount();
-    const second = renderHook(() => useSupportCard(hookInput({ today: new Date(2026, DEC, 5) })));
-    expect(second.result.current.visible).toBe(true);
-    second.unmount();
 
-    const third = renderHook(() => useSupportCard(hookInput({ today: new Date(2026, DEC, 30) })));
-    expect(third.result.current.visible).toBe(false);
-    expect(getSetting('supportCardV1')).toEqual(record({ viewDays: [1, 5] }));
+    for (const day of [2, 3, 4, 5, 6, 7]) {
+      const visit = renderHook(() => useSupportCard(hookInput({ today: new Date(2027, MARCH, day) })));
+      expect(visit.result.current.visible).toBe(true);
+      visit.unmount();
+    }
+    expect(getSetting('supportCardV1')).toBeNull();
   });
 
-  it('rolls over to a new day without a remount', () => {
-    const { result, rerender } = renderHook((props: UseSupportCardInput) => useSupportCard(props), {
-      initialProps: hookInput({ today: new Date(2026, DEC, 7) }),
-    });
-    expect(result.current.visible).toBe(true);
-
-    rerender(hookInput({ today: new Date(2026, DEC, 8) }));
-    expect(result.current.visible).toBe(false);
-  });
-
-  it('hides for good on close, across a relaunch', () => {
-    const { result } = renderHook(() => useSupportCard(hookInput()));
+  it('a close stores this month and hides the card, across a relaunch', () => {
+    const { result } = renderHook(() => useSupportCard(hookInput({ today: new Date(2027, MARCH, 2) })));
     act(() => result.current.close());
     expect(result.current.visible).toBe(false);
+    expect(getSetting('supportCardV1')).toEqual({ closedMonth: '2027-03' });
 
-    const relaunched = renderHook(() => useSupportCard(hookInput({ today: new Date(2026, DEC, 30) })));
+    const relaunched = renderHook(() => useSupportCard(hookInput({ today: new Date(2027, MARCH, 6) })));
     expect(relaunched.result.current.visible).toBe(false);
+  });
+
+  it('comes back on the 1st of the next month after a close', () => {
+    setSetting('supportCardV1', { closedMonth: '2027-02' });
+    const { result } = renderHook(() => useSupportCard(hookInput({ today: new Date(2027, MARCH, 1) })));
+    expect(result.current.visible).toBe(true);
+  });
+
+  it('rolls over from day 7 to day 8 without a remount', () => {
+    const { result, rerender } = renderHook((props: UseSupportCardInput) => useSupportCard(props), {
+      initialProps: hookInput({ today: new Date(2027, MARCH, 7) }),
+    });
+    expect(result.current.visible).toBe(true);
+
+    rerender(hookInput({ today: new Date(2027, MARCH, 8) }));
+    expect(result.current.visible).toBe(false);
+  });
+
+  it('a close left open past midnight into a new month counts for the new month', () => {
+    const { result, rerender } = renderHook((props: UseSupportCardInput) => useSupportCard(props), {
+      initialProps: hookInput({ today: new Date(2027, MARCH, 31, 23, 59) }),
+    });
+    rerender(hookInput({ today: new Date(2027, 3, 1, 0, 1) }));
+    expect(result.current.visible).toBe(true);
+    act(() => result.current.close());
+    expect(getSetting('supportCardV1')).toEqual({ closedMonth: '2027-04' });
   });
 });
