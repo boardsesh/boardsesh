@@ -35,6 +35,7 @@ async function renderAllowed(): Promise<boolean> {
 }
 
 beforeEach(() => {
+  vi.unstubAllEnvs();
   storefrontMock = null;
   platformMock.OS = 'ios';
   for (const key of Object.keys(flagsMock)) delete flagsMock[key];
@@ -54,11 +55,28 @@ describe('useDonationLinksAllowed', () => {
     expect(await renderAllowed()).toBe(false);
   });
 
-  it('shows links on Android when the flag is on (PostHog carries the country targeting)', async () => {
+  it('never shows links on Android, even with the flag on', async () => {
     platformMock.OS = 'android';
     flagsMock['donation-links'] = true;
 
-    expect(await renderAllowed()).toBe(true);
+    expect(await renderAllowed()).toBe(false);
+  });
+
+  it('hides links in screenshot mode, even in the US storefront with the flag on', async () => {
+    platformMock.OS = 'ios';
+    flagsMock['donation-links'] = true;
+    storefrontMock = { getCountryCode: vi.fn().mockResolvedValue('USA') };
+
+    const { useDonationLinksAllowed } = await loadDonationLinks();
+    const { result, rerender } = renderHook(() => useDonationLinksAllowed());
+    // Reach the allowed state first, so the false below is the screenshot guard
+    // answering and not a first frame that has not read the storefront yet.
+    await waitFor(() => expect(result.current).toBe(true));
+
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    rerender();
+
+    expect(result.current).toBe(false);
   });
 
   it('hides links on iOS when the storefront module is missing (every binary shipped today)', async () => {
@@ -173,5 +191,11 @@ describe('useDonationLinksAllowed', () => {
     expect(SUPPORT_URL).toBe('https://www.boardsesh.com/support');
     // The displayed form is the same address, bare enough to type off a screen.
     expect(SUPPORT_URL_DISPLAY).toBe('boardsesh.com/support');
+  });
+
+  it('tags the support link with the surface that sent the climber', async () => {
+    const { supportUrlFor } = await loadDonationLinks();
+
+    expect(supportUrlFor('acknowledgements')).toBe('https://www.boardsesh.com/support?src=app-acknowledgements');
   });
 });

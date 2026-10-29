@@ -425,6 +425,11 @@ export const SHARED_EVENTS = {
   // PR 7). `reconnect` is true when a remembered board is targeted (silent
   // auto-select), false when the tap opens the device picker.
   BoardConnectTapped: 'Board Connect Tapped',
+  // Mobile-only: a climber tapped a link to boardsesh.com/support. Only US
+  // iPhones can see one (see packages/mobile/src/lib/donation-links.ts), so this
+  // counts the in-app half of the donation funnel. Props: { surface }.
+  // `surface`: 'acknowledgements'.
+  SupportLinkTapped: 'Support Link Tapped',
   // Mobile-only (#5654): the /boards Bluetooth quickstart scan ended. Before this
   // the quickstart scanned without any event, so a climber who found their board
   // through it never counted as having scanned. Fires once per scan that started
