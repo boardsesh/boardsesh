@@ -1163,6 +1163,9 @@ export function BluetoothProvider({
       const angle = item.climb.angle ?? null;
       const sendReport = async () => {
         await clearReportInFlightRef.current;
+        // A second clear, a reconnect or a board switch during the wait makes this
+        // report stale. Once sent, the server numbers it after that change.
+        if (!isCurrentOperation()) return false;
         const report = reportClimbForBoardRef.current(boardId, climbInput, angle).catch((error: unknown) => {
           console.warn('[board-presence] reportBoardClimb failed', error);
           return false;
@@ -1256,6 +1259,8 @@ export function BluetoothProvider({
   const handleConnectSuccess = useCallback(
     (serial: string | null, connection: BleConnectionHandle) => {
       wallOperationEpochRef.current += 1;
+      // A new link must not wait up to a mutation timeout on the old link's clear.
+      clearReportInFlightRef.current = null;
       lastAcceptedReportSignatureRef.current = null;
       lastAcceptedWallSignatureRef.current = null;
       pendingReportSignatureRef.current = null;

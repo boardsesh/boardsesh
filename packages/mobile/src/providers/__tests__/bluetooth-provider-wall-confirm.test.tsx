@@ -2063,6 +2063,47 @@ describe('BluetoothProvider wall-confirm integration', () => {
         await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(2));
       });
 
+      // Fable re-review: a re-light report waiting on a clear can go stale.
+      it('drops a re-light report that went stale while it waited on a clear', async () => {
+        presence.enabled = true;
+        presence.boardId = 99;
+        presence.currentClimb = litClimbOneEcho();
+        const firstClearReport = deferredBoolean();
+        presence.reportClearForBoard.mockImplementationOnce(() => firstClearReport.promise);
+        renderProvider(createElement(BluetoothProbe));
+        await waitFor(() => expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1));
+
+        await act(async () => {
+          await capturedBluetooth?.turnOffAllLights();
+        });
+        await waitFor(() => expect(presence.reportClearForBoard).toHaveBeenCalledTimes(1));
+        presence.currentClimb = null;
+        act(() => {
+          capturedBluetooth?.reassertWall();
+        });
+        await waitFor(() =>
+          expect(bluetooth.state.sendFramesToBoard).toHaveBeenLastCalledWith(
+            'p1r12',
+            false,
+            expect.anything(),
+            expect.objectContaining({ sendSource: 'auto' }),
+          ),
+        );
+        // The re-light report now waits on the first clear. A second Turn off all
+        // lights lands within that round trip and reports its own clear at once.
+        await act(async () => {
+          await capturedBluetooth?.turnOffAllLights();
+        });
+        await waitFor(() => expect(presence.reportClearForBoard).toHaveBeenCalledTimes(2));
+
+        await act(async () => {
+          firstClearReport.resolve(true);
+        });
+        await settleReports();
+        // Sent now, the re-light would be numbered after the second clear.
+        expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
+      });
+
       it('does not let a report of the pre-clear wall settle after the clear', async () => {
         presence.enabled = true;
         presence.boardId = 99;
