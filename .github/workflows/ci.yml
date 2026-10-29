@@ -421,6 +421,18 @@ jobs:
               - 'packages/db/scripts/migration-journal.ts'
               - 'packages/db/scripts/verify-migration-journal.ts'
               - 'packages/db/scripts/migration-journal-verification.integration.test.ts'
+              # The dev-db pending-migration selector and the discover-path
+              # applier that test drives against real Postgres (#3979): a ledger
+              # hole must stop both before any migration SQL runs.
+              - 'scripts/lib/dev-db-pending-migrations.ts'
+              - 'scripts/dev-db-pending-migrations.ts'
+              - 'scripts/dev-db-discover.ts'
+              # The local-container applier is POSIX sh, and its guard test reads
+              # it with readFileSync, so Vitest's `--changed` graph in
+              # test-default never relates a .sh-only diff to that test. This job
+              # runs the guard unfiltered instead.
+              - 'scripts/dev-db-up.sh'
+              - 'scripts/__tests__/dev-db-up-migration-selection.test.ts'
               # The deletion cutoff bootstrap and teardown, their SQL, and the
               # integration tests this job runs against its Postgres.
               - 'packages/db/scripts/*sync-deletions-cutoff*'
@@ -1093,6 +1105,11 @@ jobs:
       # catalog counterpart runs in test-dev-db via scripts/dev-db-image-smoke.sh.
       - name: Every trigger function pins search_path
         run: vp test run --project scripts scripts/__tests__/db-trigger-search-path.test.ts
+      # #3979: scripts/dev-db-up.sh must stop on a selector refusal before any
+      # migration SQL runs. It is shell, outside Vitest's module graph, so the
+      # file-reading guard runs here on every change to the script.
+      - name: dev-db up stops on an unverified ledger
+        run: vp test run --project scripts scripts/__tests__/dev-db-up-migration-selection.test.ts
       # #5352: `ALTER DATABASE ... SET max_parallel_workers_per_gather = 0` needs
       # database ownership, which the production migration role deliberately does
       # not have — so migration 0225 was a silent no-op there. The integration
