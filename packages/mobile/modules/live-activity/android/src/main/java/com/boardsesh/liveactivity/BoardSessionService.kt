@@ -19,6 +19,7 @@ import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
 import android.graphics.Rect
 import android.graphics.RectF
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -33,6 +34,7 @@ import androidx.annotation.VisibleForTesting
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import java.io.File
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executor
@@ -101,6 +103,16 @@ class BoardSessionService : Service() {
     // compose only applies its result if this still matches (stale guard).
     @Volatile
     private var currentImageKey: String? = null
+
+    // The image key whose compose last returned no bitmap. The slot is hidden for
+    // it, and a retry for the same key neither logs nor re-posts again.
+    @Volatile
+    private var failedImageKey: String? = null
+
+    // The overlay path and bitmap last put in the slot, so a new variant of the
+    // same climb (mirrored, or with late backgrounds) keeps showing while it
+    // composes. Main thread only (buildContentView).
+    private var lastShownThumbnail: Pair<String, Bitmap>? = null
 
     @Volatile
     private var foregrounded: Boolean = false
@@ -431,12 +443,36 @@ class BoardSessionService : Service() {
         views.setContentDescription(R.id.session_mirror, if (mirrored) unmirrorLabel else mirrorLabel)
         views.setInt(R.id.session_mirror, "setImageAlpha", if (mirrored) 255 else 140)
         if (showMirror) views.setOnClickPendingIntent(R.id.session_mirror, mirrorPendingIntent())
-        val bitmap = currentBitmap()
-        if (bitmap != null) {
-            views.setImageViewBitmap(R.id.session_image, bitmap)
-        }
+        bindThumbnail(views)
         bindRestTimer(views)
         return views
+    }
+
+    // Every branch sets both the image and the visibility. SystemUI may reapply a
+    // later RemoteViews onto the view tree it already shows, so a branch that set
+    // nothing would leave the previous climb's board (or a hidden slot) in place.
+    private fun bindThumbnail(views: RemoteViews) {
+        val overlay = overlayPath?.takeIf { it.isNotBlank() }
+        val key = overlay?.let { imageKey(it, backgroundPaths, mirrored) }
+        val bitmap = key?.let { bitmapCache.get(it) }
+            // Same climb, new variant (mirror toggled, backgrounds resolved late):
+            // keep its last board up while that variant composes, rather than flash
+            // the placeholder, and keep it if the variant's compose fails, since the
+            // climb's own board beats a hidden slot.
+            ?: lastShownThumbnail?.takeIf { it.first == overlay }?.second
+        if (overlay != null && bitmap != null) {
+            lastShownThumbnail = overlay to bitmap
+            views.setViewVisibility(R.id.session_image, View.VISIBLE)
+            views.setImageViewBitmap(R.id.session_image, bitmap)
+            return
+        }
+        // Resource 0 clears the drawable, leaving the dark rounded background.
+        views.setImageViewResource(R.id.session_image, 0)
+        // Nothing of this climb to show. The placeholder holds the slot while its
+        // compose runs. With no overlay, or once the compose failed, hide it: an
+        // empty black box reads as a broken picture.
+        val composing = key != null && key != failedImageKey
+        views.setViewVisibility(R.id.session_image, if (composing) View.VISIBLE else View.GONE)
     }
 
     // --- Rest countdown ---
@@ -626,9 +662,6 @@ class BoardSessionService : Service() {
         return if (mirrored) base + "\u0000mirrored" else base
     }
 
-    private fun currentBitmap(): Bitmap? =
-        overlayPath?.takeIf { it.isNotBlank() }?.let { bitmapCache.get(imageKey(it, backgroundPaths, mirrored)) }
-
     // Composites the current climb's thumbnail off the main thread (after
     // promotion), then re-posts the notification with it. Never blocks
     // startForeground(), never touches the network.
@@ -641,6 +674,7 @@ class BoardSessionService : Service() {
         if (bitmapCache.get(key) != null) return
         if (!inFlight.add(key)) return
         imageExecutor.execute {
+            var composeError: Throwable? = null
             val bitmap = try {
                 imageComposer(overlay, backgrounds)?.let { orientThumbnail(it, imageMirrored) }
             } catch (error: Throwable) {
@@ -648,13 +682,25 @@ class BoardSessionService : Service() {
                 // OutOfMemoryError on low-memory devices, which is an Error — catching
                 // only Exception would let it kill this background thread noisily.
                 // Degrade to no thumbnail (the notification still posts without art).
-                Log.w(TAG, "thumbnail compose failed: ${error.message}")
+                composeError = error
                 null
             } finally {
                 inFlight.remove(key)
             }
-            if (bitmap == null) return@execute
-            bitmapCache.put(key, bitmap)
+            if (bitmap == null) {
+                // Every update for this climb retries the compose; only the first
+                // failure logs and re-posts (the re-post hides the placeholder).
+                if (failedImageKey == key) return@execute
+                failedImageKey = key
+                if (composeError != null) {
+                    Log.w(TAG, "thumbnail compose failed: ${composeError.javaClass.simpleName}: ${composeError.message}")
+                } else {
+                    Log.w(TAG, "thumbnail overlay did not decode (file exists: ${File(localFilePath(overlay)).exists()})")
+                }
+            } else {
+                bitmapCache.put(key, bitmap)
+                if (failedImageKey == key) failedImageKey = null
+            }
             postToMain {
                 // Stale guard: the climb may have moved on (or the session ended)
                 // while the compose was in flight.
@@ -707,10 +753,7 @@ class BoardSessionService : Service() {
         }
     }
 
-    private fun decodeLocalFile(path: String): Bitmap? {
-        val fsPath = if (path.startsWith("file://")) path.removePrefix("file://") else path
-        return BitmapFactory.decodeFile(fsPath)
-    }
+    private fun decodeLocalFile(path: String): Bitmap? = BitmapFactory.decodeFile(localFilePath(path))
 
     // Cap the long side so a large render can't blow the ~1 MB RemoteViews Binder
     // transaction limit. The bitmap is parcelled TWICE — RemoteViews doesn't dedupe,
@@ -759,6 +802,21 @@ class BoardSessionService : Service() {
         // count, so it can't balloon if a board ever renders larger than the 256px
         // downscale ceiling. ~256 KB per thumbnail → ~8 entries at 2 MB.
         private const val BITMAP_CACHE_BYTES = 2 * 1024 * 1024
+
+        /**
+         * The filesystem path for an overlay or background JS handed over. A
+         * scheme-less path is used as is. A `file://` URI is read raw when that file
+         * exists (the renderer's own unencoded form), and otherwise decoded, since
+         * `Uri.fromFile` encodes characters such as the `,` in overlay names as `%2C`.
+         * Reading the raw form first means a literal `%` in a name is never decoded.
+         */
+        @VisibleForTesting
+        internal fun localFilePath(path: String, exists: (String) -> Boolean = { File(it).exists() }): String {
+            if (!path.startsWith("file://")) return path
+            val raw = path.removePrefix("file://")
+            if (exists(raw)) return raw
+            return Uri.parse(path).path ?: raw
+        }
 
         @VisibleForTesting
         internal fun orientThumbnail(bitmap: Bitmap, mirrored: Boolean): Bitmap {
