@@ -20,7 +20,6 @@ type DeleteRequest = {
   method: 'swipe' | 'a11y';
   viaChooser?: boolean;
   onSuccess?: () => void;
-  onSettled?: () => void;
 };
 type PendingDelete = DeleteRequest & {
   scope: string;
@@ -67,7 +66,6 @@ export function LogbookDeleteProvider({ children }: { children: ReactNode }) {
       pending.current.delete(task.uuid);
       setOffer((current) => (current?.nonce === task.nonce ? null : current));
       publish();
-      task.onSettled?.();
     },
     [publish],
   );

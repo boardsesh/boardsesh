@@ -591,6 +591,16 @@ export function LogbookTab({
   const chooserOpenRef = useRef(false);
   chooserOpenRef.current = chooser != null;
   const closeChooser = useCallback(() => setChooser(null), []);
+  // Entries waiting out their Undo window leave the sheet at once, so the next
+  // pick is the next mislog; an Undo puts the entry back.
+  const visibleChooserEntries = useMemo(
+    () => chooser?.entries.filter((chooserEntry) => !hiddenTickUuids.has(chooserEntry.uuid)) ?? [],
+    [chooser, hiddenTickUuids],
+  );
+  const chooserEmptied = chooser != null && visibleChooserEntries.length === 0;
+  useEffect(() => {
+    if (chooserEmptied) setChooser(null);
+  }, [chooserEmptied]);
 
   const openEditSheet = useCallback((ascent: AscentFeedItem) => {
     setEditAscent(ascent);
@@ -621,13 +631,13 @@ export function LogbookTab({
   // the dialog blocks touches, not data, and FlashList can recycle the source
   // row onto a different ascent while it's up. The optimistic removal from the
   // feed is hidden locally during Undo; the persistent owner commits later.
+  // Several deletes can sit in their Undo windows at once: the owner keys them
+  // by uuid and gives each its own timer.
   const confirmDialog = useConfirm();
-  const deleteTickPendingRef = useRef(false);
-  deleteTickPendingRef.current = hiddenTickUuids.size > 0;
-  // Covers the CONFIRM window (swipe-commit → dialog resolution), where
-  // isPending is still false — a second swipe there would stack a second
-  // dialog. The modal itself blocks touches on both platforms; this flag makes
-  // single-flight true by construction rather than by dialog behaviour.
+  // Covers the CONFIRM window only (swipe-commit → dialog resolution): a second
+  // swipe there would stack a second dialog. The modal itself blocks touches on
+  // both platforms; this flag makes single-flight true by construction rather
+  // than by dialog behaviour.
   const deleteFlowActiveRef = useRef(false);
   // The guarded core, shared by direct deletes and chooser picks: confirm
   // dialog, then DELETE_TICK. Callers own the single-flight flag transitions
@@ -643,23 +653,17 @@ export function LogbookTab({
           cancelLabel: t('mobile.cancel'),
           destructive: true,
         });
-        if (!confirmed) {
-          deleteFlowActiveRef.current = false;
-          return;
-        }
-        const scheduled = scheduleDelete({
+        deleteFlowActiveRef.current = false;
+        if (!confirmed) return;
+        scheduleDelete({
           originScope,
           uuid: targetUuid,
           method,
           viaChooser,
-          onSettled: () => {
-            deleteFlowActiveRef.current = false;
-          },
           onSuccess: () => {
-            deleteFlowActiveRef.current = false;
-            // Sequential-delete flow: prune the deleted entry so the chooser
-            // stays open (even down to a single entry) while any remain, and
-            // closes itself once the day's group is emptied.
+            // Sequential-delete flow: prune the committed entry from the
+            // chooser's snapshot. Entries still in their Undo window are
+            // already filtered out of the sheet by visibleChooserEntries.
             if (viaChooser) {
               setChooser((current) => {
                 if (!current) return current;
@@ -669,7 +673,6 @@ export function LogbookTab({
             }
           },
         });
-        if (!scheduled) deleteFlowActiveRef.current = false;
       };
       // A rejected dialog promise (unmounted host, provider bug) is treated as
       // a decline: nothing was confirmed, so nothing is deleted — the safe
@@ -683,7 +686,7 @@ export function LogbookTab({
 
   const handleDeleteRequest = useCallback(
     (ascent: AscentFeedItem, method: 'swipe' | 'a11y') => {
-      if (chooserOpenRef.current || deleteFlowActiveRef.current || deleteTickPendingRef.current) return;
+      if (chooserOpenRef.current || deleteFlowActiveRef.current) return;
       const unit = ascent as LogbookGroupUnit;
       if (unit.groupItems && unit.groupItems.length > 1) {
         // The chooser is part of the delete flow: chooserOpenRef blocks
@@ -712,7 +715,7 @@ export function LogbookTab({
         openEditSheet(entry);
         return;
       }
-      if (deleteFlowActiveRef.current || deleteTickPendingRef.current) return;
+      if (deleteFlowActiveRef.current) return;
       deleteFlowActiveRef.current = true;
       startGuardedDelete(entry.uuid, active.method, true);
     },
@@ -952,9 +955,9 @@ export function LogbookTab({
         <LogbookEditSheet sheetRef={editSheetRef} ascent={editAscent} onClose={() => setEditAscent(null)} />
       ) : null}
 
-      {chooser ? (
+      {chooser && !chooserEmptied ? (
         <LogbookEntryChooserSheet
-          entries={chooser.entries}
+          entries={visibleChooserEntries}
           intent={chooser.intent}
           onPick={handleChooserPick}
           onDismiss={closeChooser}

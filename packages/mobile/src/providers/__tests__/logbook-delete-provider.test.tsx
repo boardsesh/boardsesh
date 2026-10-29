@@ -97,6 +97,28 @@ describe('persistent logbook delete Undo', () => {
     expect(state.mutation).toHaveBeenCalledExactlyOnceWith('tick');
     expect(state.track).toHaveBeenCalledWith('Logbook Entry Deleted', { method: 'a11y', viaChooser: false });
   });
+  it('holds two deletes at once: Undo restores the latest, the first commits on its own deadline', async () => {
+    render(
+      <LogbookDeleteProvider>
+        <Route />
+      </LogbookDeleteProvider>,
+    );
+    act(() => {
+      expect(actions.scheduleDelete({ originScope: 'account:board', uuid: 'first', method: 'swipe' })).toBe(true);
+    });
+    await act(() => vi.advanceTimersByTimeAsync(1000));
+    act(() => {
+      expect(actions.scheduleDelete({ originScope: 'account:board', uuid: 'second', method: 'swipe' })).toBe(true);
+    });
+    expect([...hidden].sort()).toEqual(['first', 'second']);
+    act(() => {
+      (state.snackbar?.onUndo as () => void)();
+    });
+    expect([...hidden]).toEqual(['first']);
+    await act(() => vi.advanceTimersByTimeAsync(LOGBOOK_DELETE_UNDO_MS));
+    expect(state.mutation).toHaveBeenCalledExactlyOnceWith('first');
+    expect(hidden.size).toBe(0);
+  });
   it('cancels pending deletion on scope change and reports that the entry was kept', async () => {
     const screen = render(
       <LogbookDeleteProvider>
@@ -138,13 +160,11 @@ describe('persistent logbook delete Undo', () => {
         <Route />
       </LogbookDeleteProvider>,
     );
-    const settled = vi.fn();
     act(() => {
-      actions.scheduleDelete({ originScope: 'account:board', uuid: 'tick', method: 'swipe', onSettled: settled });
+      actions.scheduleDelete({ originScope: 'account:board', uuid: 'tick', method: 'swipe' });
     });
     await act(() => vi.advanceTimersByTimeAsync(LOGBOOK_DELETE_UNDO_MS));
     expect(hidden.has('tick')).toBe(false);
-    expect(settled).toHaveBeenCalledOnce();
     expect(state.toast).toHaveBeenCalledExactlyOnceWith('mobile.logbook.deleteError', 'error');
     expect(state.track).not.toHaveBeenCalled();
   });

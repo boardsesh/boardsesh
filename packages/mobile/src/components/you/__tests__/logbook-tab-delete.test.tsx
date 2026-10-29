@@ -205,7 +205,7 @@ describe('LogbookTab guarded delete', () => {
       render(createElement(LogbookTab, { userId: 'user-1' }));
       await fireDeleteRequest(method);
       expect(owner.scheduleDelete).toHaveBeenCalledWith(
-        expect.objectContaining({ uuid: 'tick-1', method, viaChooser: false, onSettled: expect.any(Function) }),
+        expect.objectContaining({ uuid: 'tick-1', method, viaChooser: false }),
       );
       expect(analytics.track).not.toHaveBeenCalled();
     },
@@ -257,12 +257,21 @@ describe('LogbookTab guarded delete', () => {
     );
   });
 
-  it('re-arms the local flow after the owner settles an Undo', async () => {
+  it('takes a second delete while the first is still in its Undo window', async () => {
     dialog.confirm.mockImplementation(async () => true);
     render(createElement(LogbookTab, { userId: 'user-1' }));
     await fireDeleteRequest('swipe');
-    const request = owner.scheduleDelete.mock.calls[0][0] as unknown as { onSettled: () => void };
-    act(() => request.onSettled());
+    // The owner never settles the first request here: it is waiting out Undo.
+    await fireDeleteRequest('swipe');
+    expect(dialog.confirm).toHaveBeenCalledTimes(2);
+    expect(owner.scheduleDelete).toHaveBeenCalledTimes(2);
+  });
+
+  it('re-arms the local flow when the owner refuses to schedule', async () => {
+    dialog.confirm.mockImplementation(async () => true);
+    owner.scheduleDelete.mockImplementationOnce(() => false);
+    render(createElement(LogbookTab, { userId: 'user-1' }));
+    await fireDeleteRequest('swipe');
     await fireDeleteRequest('swipe');
     expect(owner.scheduleDelete).toHaveBeenCalledTimes(2);
   });
